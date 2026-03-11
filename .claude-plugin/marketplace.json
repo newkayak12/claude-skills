@@ -1,19 +1,20 @@
 {
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "newkayak12-claude-skills",
-  "description": "A curated collection of Claude Code skills for software engineering, architecture, testing, and more",
+  "description": "25 Claude Code skills for software engineering workflows",
   "owner": {
-    "name": "newkayak12",
-    "url": "https://github.com/newkayak12"
+    "name": "newkayak12"
   },
   "plugins": [
     {
       "name": "newkayak12-skills",
-      "description": "25 Claude Code skills covering architecture, brainstorming, testing, microservices, Kotlin, Spring Boot, SQL, SRE, and more",
+      "description": "25 skills for software engineering: architecture design, brainstorming, TDD, user stories, SQL, Kotlin, Spring Boot, microservices, SRE, and more.",
       "version": "1.0.0",
-      "source": "./",
       "author": {
         "name": "newkayak12"
-      }
+      },
+      "source": "./plugins/newkayak12-skills",
+      "category": "productivity"
     }
   ]
 }
