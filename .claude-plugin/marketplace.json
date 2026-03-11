@@ -1,0 +1,27 @@
+{
+  "name": "newkayak12-claude-skills",
+  "owner": {
+    "name": "newkayak12",
+    "url": "https://github.com/newkayak12"
+  },
+  "metadata": {
+    "description": "A curated collection of Claude Code skills for software engineering, architecture, testing, and more",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "newkayak12-skills",
+      "description": "25 Claude Code skills covering architecture, brainstorming, testing, microservices, Kotlin, Spring Boot, SQL, SRE, and more",
+      "version": "1.0.0",
+      "author": {
+        "name": "newkayak12"
+      },
+      "source": "./plugins/newkayak12-skills",
+      "category": "developer-tools",
+      "tags": [
+        "skills", "architecture", "testing", "kotlin", "spring-boot",
+        "sql", "microservices", "sre", "brainstorming", "tdd"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+name: Validate Plugins
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate-structure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate marketplace.json
+        run: |
+          if [ ! -f ".claude-plugin/marketplace.json" ]; then
+            echo "ERROR: .claude-plugin/marketplace.json not found"
+            exit 1
+          fi
+          python3 -c "
+          import json, sys
+          with open('.claude-plugin/marketplace.json') as f:
+            data = json.load(f)
+          required = ['name', 'owner', 'plugins']
+          for field in required:
+            if field not in data:
+              print(f'ERROR: missing field: {field}')
+              sys.exit(1)
+          print('marketplace.json is valid')
+          "
+
+  validate-plugins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate plugin.json files
+        run: |
+          for plugin_dir in plugins/*/; do
+            plugin_json="$plugin_dir/.claude-plugin/plugin.json"
+            if [ ! -f "$plugin_json" ]; then
+              echo "ERROR: $plugin_json not found"
+              exit 1
+            fi
+            python3 -c "
+          import json, sys
+          with open('$plugin_json') as f:
+            data = json.load(f)
+          if 'name' not in data:
+            print('ERROR: plugin.json missing name')
+            sys.exit(1)
+          print('$plugin_json is valid')
+            "
+          done
