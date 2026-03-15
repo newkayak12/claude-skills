@@ -8,8 +8,8 @@
   "plugins": [
     {
       "name": "newkayak12-skills",
-      "description": "25 skills for software engineering: architecture design, brainstorming, TDD, user stories, SQL, Kotlin, Spring Boot, microservices, SRE, and more.",
-      "version": "1.0.0",
+      "description": "28 skills for software engineering: architecture design, brainstorming, TDD, user stories, SQL, Kotlin, Spring Boot, microservices, SRE, skill creation, and more.",
+      "version": "1.1.0",
       "author": {
         "name": "newkayak12"
       },
