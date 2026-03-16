@@ -8,8 +8,8 @@ description: Use when asked to review, proofread, check, or verify written text 
 **Core rule:** Every finding must include original → fix + reason. Pointing out without fixing is half a review.
 
 **MCP usage by mode:**
-- **Inline mode only (< 300 chars):** If `mcp__claude_ai_sequential-thinking__sequentialthinking` is available, use it to structure the four passes as sequential steps.
-- **Both modes:** If `mcp__claude_ai_think-tool__think` is available, use it before each pass to reason through the text and audience before acting.
+- **Inline mode only (< 300 chars):** If sequential-thinking is available, use it to structure the four passes as sequential steps.
+- **Both modes:** If think-tool is available, use it before each pass to reason through the text and audience before acting.
 
 ---
 
@@ -30,25 +30,16 @@ Count the characters in the submitted text first.
 
 If a Korean spelling issue is uncertain, load `references/korean-spelling.md`.
 
+**Aggregation rules (parallel mode):**
+- Deduplicate by location: if two passes flag the same span, keep the higher-severity finding and note both sources
+- Conflicting severity: elevate to the higher level (🔴 beats 🟡 beats 🟢)
+- Conflicting fixes: surface both options with attribution (e.g., `[grammarian] fix A / [copywriter] fix B`)
+- If mcp-reasoner is available, invoke it during aggregation to resolve ambiguous conflicts before producing the final report
+
 ---
 
 ## Output Format
 
-```
-## Spelling & Grammar
-- [fix] "됬어요" → "됐어요"
-
-## Writing Patterns
-- [warning] Para 1: 3 sentences starting with "그리고" → reorder or drop connectors
-
-## Expression & Style
-- [fix] "혁신적인 솔루션을 제공합니다" → "배포 시간을 50% 단축하는 자동화 도구를 제공합니다"
-
-## Reader Perspective
-- [check] Adjust tech-term density in para 2 for general audience
-
-## Summary
-[2-3 lines: strengths + top improvement points]
-```
+See `references/output-format.md` for the full template and examples.
 
 Priority: 🔴 Must fix (meaning errors, logic gaps) · 🟡 Recommended (patterns, phrasing) · 🟢 Optional (style preference)
