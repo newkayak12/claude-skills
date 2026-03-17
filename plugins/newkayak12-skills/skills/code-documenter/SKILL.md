@@ -6,7 +6,7 @@ metadata:
   author: https://github.com/Jeffallan
   version: "1.1.0"
   domain: quality
-  triggers: documentation, docstrings, OpenAPI, Swagger, JSDoc, comments, API docs, tutorials, user guides, doc site
+  triggers: documentation, docstrings, OpenAPI, Swagger, JSDoc, comments, API docs, tutorials, user guides, doc site, README, changelog, CHANGELOG, ADR, architecture decision record
   role: specialist
   scope: implementation
   output-format: code
@@ -23,7 +23,7 @@ Applies to any task involving code documentation, API specs, or developer-facing
 
 ## Core Workflow
 
-1. **Discover** - Ask for format preference and exclusions
+1. **Discover** - Ask for format preference and exclusions. _Fallback: if the user does not specify a format preference, inspect the existing codebase for docstring or JSDoc style patterns first. If an existing convention is found, match it. If none is found, default to Google style for Python and JSDoc for TypeScript/JavaScript. State the chosen default explicitly before proceeding._
 2. **Detect** - Identify language and framework
 3. **Analyze** - Find undocumented code
 4. **Document** - Apply consistent format
@@ -32,7 +32,7 @@ Applies to any task involving code documentation, API specs, or developer-facing
    - TypeScript/JavaScript: `tsc --noEmit` to confirm typed examples compile
    - OpenAPI: validate spec with `npx @redocly/cli lint openapi.yaml`
    - If validation fails: fix examples and re-validate before proceeding to the Report step
-6. **Report** - Generate coverage summary
+6. **Report** - Generate coverage summary. _Coverage gate: flag any file below 70% function coverage or any API endpoint below 100% coverage as requiring follow-up documentation work — do not silently complete on low-coverage codebases._
 
 ## Quick-Reference Examples
 
@@ -111,9 +111,14 @@ Load detailed guidance based on context:
 | FastAPI/Django API | `references/api-docs-fastapi-django.md` | Python API documentation |
 | NestJS/Express API | `references/api-docs-nestjs-express.md` | Node.js API documentation |
 | Coverage Reports | `references/coverage-reports.md` | Generating documentation reports |
-| Documentation Systems | `references/documentation-systems.md` | Doc sites, static generators, search, testing |
-| Interactive API Docs | `references/interactive-api-docs.md` | OpenAPI 3.1, portals, GraphQL, WebSocket, gRPC, SDKs |
-| User Guides & Tutorials | `references/user-guides-tutorials.md` | Getting started, tutorials, troubleshooting, FAQs |
+| Doc Site Generators | `references/doc-site-generators.md` | Docusaurus, MkDocs, VitePress config |
+| Doc Site Infrastructure | `references/doc-site-infrastructure.md` | Search, versioning, testing, performance, analytics |
+| OpenAPI Advanced | `references/openapi-advanced.md` | OpenAPI 3.1 reusable components, security schemes |
+| API Portals | `references/api-portals.md` | Swagger UI customization, Redoc, Stoplight |
+| Multi-Protocol Docs | `references/multi-protocol-docs.md` | GraphQL, AsyncAPI/WebSocket, gRPC, SDK multi-language examples |
+| Tutorial Structure | `references/tutorial-structure.md` | Progressive learning paths, step-by-step format, checkpoints |
+| Information Architecture | `references/information-architecture.md` | Content hierarchy, navigation, progressive disclosure |
+| Troubleshooting & FAQs | `references/troubleshooting-faqs.md` | Problem-solution format, FAQ structure |
 
 ## Constraints
 

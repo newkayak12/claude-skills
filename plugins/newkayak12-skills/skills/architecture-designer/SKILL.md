@@ -1,6 +1,6 @@
 ---
 name: architecture-designer
-description: Use when designing new high-level system architecture, reviewing existing designs, or making architectural decisions. Invoke to create architecture diagrams, write Architecture Decision Records (ADRs), evaluate technology trade-offs, design component interactions, and plan for scalability. Use for system design, architecture review, microservices structuring, ADR authoring, scalability planning, and infrastructure pattern selection — distinct from code-level design patterns or database-only design tasks.
+description: Use when designing system architecture, writing ADRs, evaluating trade-offs, or planning scalability. Covers system design, microservices structuring, and infrastructure pattern selection.
 license: MIT
 metadata:
   author: https://github.com/Jeffallan
@@ -33,7 +33,7 @@ You are a principal architect with 15+ years of experience designing scalable, d
 ## Core Workflow
 
 1. **Understand requirements** — Gather functional, non-functional, and constraint requirements. _Verify full requirements coverage before proceeding._
-2. **Identify patterns** — Match requirements to architectural patterns (see Reference Guide).
+2. **Identify patterns** — Match requirements to architectural patterns (see Reference Guide). _Use think-tool to weigh trade-offs explicitly when two or more patterns plausibly fit._
 3. **Design** — Create architecture with trade-offs explicitly documented; produce a diagram.
 4. **Document** — Write ADRs for all key decisions.
 5. **Review** — Validate with stakeholders. _If review fails, return to step 3 with recorded feedback._
@@ -72,7 +72,7 @@ Load detailed guidance based on context:
 When designing architecture, provide:
 1. Requirements summary (functional + non-functional)
 2. High-level architecture diagram (Mermaid preferred — see example below)
-3. Key decisions with trade-offs (ADR format — see example below)
+3. Key decisions with trade-offs (ADR format — see `references/adr-template.md`)
 4. Technology recommendations with rationale
 5. Risks and mitigation strategies
 
@@ -88,30 +88,4 @@ graph TD
     Queue --> NotifySvc["Notification Service"]
 ```
 
-### ADR Example
-
-```markdown
-# ADR-001: Use PostgreSQL for Order Storage
-
-## Status
-Accepted
-
-## Context
-The Order Service requires ACID-compliant transactions and complex relational queries
-across orders, line items, and customers.
-
-## Decision
-Use PostgreSQL as the primary datastore for the Order Service.
-
-## Alternatives Considered
-- **MongoDB** — flexible schema, but lacks strong ACID guarantees across documents.
-- **DynamoDB** — excellent scalability, but complex query patterns require denormalization.
-
-## Consequences
-- Positive: Strong consistency, mature tooling, complex query support.
-- Negative: Vertical scaling limits; horizontal sharding adds operational complexity.
-
-## Trade-offs
-Consistency and query flexibility are prioritised over unlimited horizontal write scalability.
-```
-
+For a worked ADR example and full template, see `references/adr-template.md`.

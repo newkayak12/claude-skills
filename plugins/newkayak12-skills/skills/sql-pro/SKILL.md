@@ -19,9 +19,10 @@ metadata:
 
 1. **Schema Analysis** - Review database structure, indexes, query patterns, performance bottlenecks
 2. **Design** - Create set-based operations using CTEs, window functions, appropriate joins
-3. **Optimize** - Analyze execution plans, implement covering indexes, eliminate table scans
-4. **Verify** - Run `EXPLAIN ANALYZE` and confirm no sequential scans on large tables; if query does not meet sub-100ms target, iterate on index selection or query rewrite before proceeding
-5. **Document** - Provide query explanations, index rationale, performance metrics
+3. **Version Check** - Confirm the target engine and version. Flag any syntax or feature in the proposed solution that requires a minimum version (e.g., `GENERATED ALWAYS AS IDENTITY` requires PostgreSQL 10+, `WITH RECURSIVE` requires MySQL 8.0+)
+4. **Optimize** - Analyze execution plans, implement covering indexes, eliminate table scans
+5. **Verify** - Run `EXPLAIN ANALYZE` and confirm no sequential scans on large tables; if query does not meet sub-100ms target, iterate on index selection or query rewrite before proceeding
+6. **Document** - Provide query explanations, index rationale, performance metrics
 
 ## Reference Guide
 
@@ -127,3 +128,4 @@ When implementing SQL solutions, provide:
 3. Execution plan analysis
 4. Performance metrics (before/after)
 5. Platform-specific notes if applicable
+6. Minimum version requirements (if any) — e.g., `PostgreSQL >= 10 (GENERATED ALWAYS AS IDENTITY)`, `MySQL >= 8.0 (WITH RECURSIVE, JSON type)`

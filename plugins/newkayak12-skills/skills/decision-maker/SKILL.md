@@ -23,7 +23,7 @@ Structured decision facilitation for technology and architecture choices, using 
 2. **Assess decision weight** — reversible (two-way door) or irreversible (one-way door)?
 3. **Pick the right framework** — match process complexity to decision weight
 4. **Surface criteria** — what actually matters here? (performance, cost, team skill, timeline)
-5. **Analyze** — apply framework to options. For 3+ options, research their characteristics in parallel before scoring begins.
+5. **Analyze** — apply framework to options. For 3+ options, research their characteristics in parallel before scoring begins. For one-way-door decisions with 3+ options, invoke mcp-reasoner before scoring begins — this prevents anchoring and produces an auditable evaluation trail.
 6. **Recommend** — state a clear recommendation with top 2-3 reasons; don't hedge into uselessness
 
 ## Decision Weight Assessment
@@ -64,18 +64,7 @@ Best for: 3+ options, multiple stakeholders, criteria with different importance.
 5. For one-way-door decisions with 3+ options, use mcp-reasoner to systematically evaluate each option against all criteria before scoring. This prevents anchoring and improves auditability.
 6. Sanity-check: does the top scorer match intuition? If not, re-examine weights.
 
-**Example: Choosing a primary database**
-
-| Criterion              | Weight | PostgreSQL | MongoDB | DynamoDB |
-|------------------------|--------|-----------|---------|---------|
-| Query flexibility      | 30     | 5 (150)   | 4 (120) | 2 (60)  |
-| Operational simplicity | 25     | 3 (75)    | 3 (75)  | 5 (125) |
-| Team familiarity       | 20     | 5 (100)   | 2 (40)  | 1 (20)  |
-| Scalability ceiling    | 15     | 3 (45)    | 4 (60)  | 5 (75)  |
-| Cost at scale          | 10     | 4 (40)    | 4 (40)  | 3 (30)  |
-| **Total**              |        | **410**   | **335** | **310** |
-
-Recommendation: **PostgreSQL** — strong relational query support and existing team expertise outweigh DynamoDB's operational simplicity at the current scale.
+Example: see `references/worked-examples.md` for a full database selection walkthrough using this format.
 
 ### 3. DACI (decisions with unclear ownership)
 
@@ -96,6 +85,8 @@ Before finalizing a one-way door decision, ask:
 - What does it cost to undo this in 12 months?
 - Are we choosing this because it's right, or because we're already invested?
 - Is the team comfortable they have enough information?
+
+Use think-tool to work through the answers before proceeding — this step is specifically designed to surface sunk-cost bias and unstated assumptions.
 
 If "not enough information" — define the smallest experiment to get it (spike, prototype, load test).
 

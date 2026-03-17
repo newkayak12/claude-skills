@@ -29,10 +29,7 @@ test('renders sidebar', () => {
 });
 ```
 
-**Why this is wrong:**
-- You're verifying the mock works, not that the component works
-- Test passes when mock is present, fails when it's not
-- Tells you nothing about real behavior
+**Why this is wrong:** You're verifying the mock works, not that the component works. Test passes when mock is present, fails when it's not. Tells you nothing about real behavior.
 
 **your human partner's correction:** "Are we testing the behavior of a mock?"
 
@@ -76,11 +73,7 @@ class Session {
 afterEach(() => session.destroy());
 ```
 
-**Why this is wrong:**
-- Production class polluted with test-only code
-- Dangerous if accidentally called in production
-- Violates YAGNI and separation of concerns
-- Confuses object lifecycle with entity lifecycle
+**Why this is wrong:** Production class polluted with test-only code. Dangerous if accidentally called in production. Violates YAGNI and separation of concerns.
 
 **The fix:**
 ```typescript
@@ -131,10 +124,7 @@ test('detects duplicate server', () => {
 });
 ```
 
-**Why this is wrong:**
-- Mocked method had side effect test depended on (writing config)
-- Over-mocking to "be safe" breaks actual behavior
-- Test passes for wrong reason or fails mysteriously
+**Why this is wrong:** Mocked method had side effect test depended on (writing config). Over-mocking to "be safe" breaks actual behavior.
 
 **The fix:**
 ```typescript
@@ -188,11 +178,7 @@ const mockResponse = {
 // Later: breaks when code accesses response.metadata.requestId
 ```
 
-**Why this is wrong:**
-- **Partial mocks hide structural assumptions** - You only mocked fields you know about
-- **Downstream code may depend on fields you didn't include** - Silent failures
-- **Tests pass but integration fails** - Mock incomplete, real API complete
-- **False confidence** - Test proves nothing about real behavior
+**Why this is wrong:** Partial mocks hide structural assumptions. Downstream code may depend on fields not included. Tests pass but integration fails.
 
 **The Iron Rule:** Mock the COMPLETE data structure as it exists in reality, not just fields your immediate test uses.
 
@@ -234,10 +220,7 @@ BEFORE creating mock responses:
 "Ready for testing"
 ```
 
-**Why this is wrong:**
-- Testing is part of implementation, not optional follow-up
-- TDD would have caught this
-- Can't claim complete without tests
+**Why this is wrong:** Testing is part of implementation, not optional follow-up. TDD would have caught this. Can't claim complete without tests.
 
 **The fix:**
 ```
@@ -256,19 +239,7 @@ TDD cycle:
 - Mocks missing methods real components have
 - Test breaks when mock changes
 
-**your human partner's question:** "Do we need to be using a mock here?"
-
 **Consider:** Integration tests with real components often simpler than complex mocks
-
-## TDD Prevents These Anti-Patterns
-
-**Why TDD helps:**
-1. **Write test first** → Forces you to think about what you're actually testing
-2. **Watch it fail** → Confirms test tests real behavior, not mocks
-3. **Minimal implementation** → No test-only methods creep in
-4. **Real dependencies** → You see what the test actually needs before mocking
-
-**If you're testing mock behavior, you violated TDD** - you added mocks without watching test fail against real code first.
 
 ## Quick Reference
 

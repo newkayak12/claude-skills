@@ -105,6 +105,40 @@ describe('Security Headers', () => {
 });
 ```
 
+## Python / pytest Examples
+
+```python
+import pytest
+import httpx
+
+@pytest.mark.anyio
+async def test_rejects_invalid_credentials(async_client: httpx.AsyncClient):
+    response = await async_client.post("/api/login", json={"email": "user@test.com", "password": "wrong"})
+    assert response.status_code == 401
+
+@pytest.mark.anyio
+async def test_rejects_expired_token(async_client: httpx.AsyncClient, expired_token: str):
+    response = await async_client.get("/api/protected", headers={"Authorization": f"Bearer {expired_token}"})
+    assert response.status_code == 401
+
+@pytest.mark.anyio
+async def test_denies_access_to_other_users_resources(async_client: httpx.AsyncClient, user_a_token: str):
+    response = await async_client.get("/api/users/other-user-id/data", headers={"Authorization": f"Bearer {user_a_token}"})
+    assert response.status_code == 403
+
+@pytest.mark.anyio
+async def test_rejects_sql_injection(async_client: httpx.AsyncClient):
+    response = await async_client.get("/api/users", params={"search": "'; DROP TABLE users; --"})
+    assert response.status_code == 400
+
+@pytest.mark.anyio
+async def test_sets_security_headers(async_client: httpx.AsyncClient):
+    response = await async_client.get("/")
+    assert response.headers.get("x-content-type-options") == "nosniff"
+    assert response.headers.get("x-frame-options") == "DENY"
+    assert "strict-transport-security" in response.headers
+```
+
 ## Security Test Checklist
 
 | Category | Tests |

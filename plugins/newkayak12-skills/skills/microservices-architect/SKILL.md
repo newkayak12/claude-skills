@@ -19,6 +19,25 @@ Senior distributed systems architect specializing in cloud-native microservices 
 
 ## Core Workflow
 
+### Step 0: Should You Use Microservices?
+
+Before beginning domain analysis, confirm the following prerequisites are in place. If most are absent, recommend a **modular monolith first** and re-evaluate when the team has grown.
+
+| Prerequisite | Present? |
+|---|---|
+| Automated CI/CD pipeline per service | |
+| Container orchestration (Kubernetes or equivalent) | |
+| Distributed tracing capability (Jaeger, Zipkin, or OpenTelemetry) | |
+| Team size ≥ 2 independent squads who can own separate services | |
+| Clear ownership boundaries across domains | |
+
+**Decision outcomes:**
+- **(a) Proceed with microservices** — all or most prerequisites are met.
+- **(b) Build a modular monolith first** — prerequisites are mostly absent; revisit when team and infra are ready.
+- **(c) Extract one pilot service** — start with one well-bounded service from an existing monolith to build the operational muscle before committing to full decomposition.
+
+---
+
 1. **Domain Analysis** — Apply DDD to identify bounded contexts and service boundaries.
    - *Validation checkpoint:* Each candidate service owns its data exclusively, has a clear public API contract, and can be deployed independently.
 2. **Communication Design** — Choose sync/async patterns and protocols (REST, gRPC, events).
@@ -40,8 +59,8 @@ Load detailed guidance based on context:
 |-------|-----------|-----------|
 | Service Boundaries | `references/decomposition.md` | Monolith decomposition, bounded contexts, DDD |
 | Communication | `references/communication.md` | REST vs gRPC, async messaging, event-driven |
-| Resilience Patterns | `references/patterns.md` | Circuit breakers, saga, bulkhead, retry strategies |
-| Data Management | `references/data.md` | Database per service, event sourcing, CQRS |
+| Resilience Patterns | `references/patterns.md` | Circuit breakers, bulkhead, retry, timeout, health checks, graceful degradation |
+| Data Management | `references/data.md` | Database per service, Saga pattern, Event Sourcing, CQRS, CDC, distributed transactions |
 | Observability | `references/observability.md` | Distributed tracing, correlation IDs, metrics |
 
 ## Implementation Examples
@@ -152,13 +171,26 @@ readinessProbe:
 
 ## Output Templates
 
-When designing microservices architecture, provide:
+When designing microservices architecture, structure output as an Architecture Decision Record (ADR):
+
+### ADR Format
+
+**Context:** Brief description of the system, its current state, and the scope of this design.
+
+**Decision:** Chosen service boundaries with rationale — why these bounded contexts and not alternatives.
+
+**Consequences:** Trade-offs accepted (e.g., increased operational complexity in exchange for independent deployability).
+
+**Service Inventory:**
+
+| Service | Responsibility | Data Owned | Communication | SLA |
+|---|---|---|---|---|
+| Example Service | What it does | Entities/tables it owns | REST / gRPC / events | 99.9% |
+
+**Additionally provide:**
 1. Service boundary diagram with bounded contexts
 2. Communication patterns (sync/async, protocols)
 3. Data ownership and consistency model
 4. Resilience patterns for each integration point
 5. Deployment and infrastructure requirements
 
-## Knowledge Reference
-
-Domain-driven design, bounded contexts, event storming, REST/gRPC, message queues (Kafka, RabbitMQ), service mesh (Istio, Linkerd), Kubernetes, circuit breakers, saga patterns, event sourcing, CQRS, distributed tracing (Jaeger, Zipkin), API gateways, eventual consistency, CAP theorem

@@ -20,6 +20,11 @@ metadata:
 1. **Analyze UX** — Identify user workflows, command hierarchy, common tasks. Validate by listing all commands and their expected `--help` output before writing code.
 2. **Design commands** — Plan subcommands, flags, arguments, configuration. Confirm flag naming is consistent and no existing signatures are broken.
 3. **Implement** — Build with the appropriate CLI framework for the language (see Reference Guide below). After wiring up commands, run `<cli> --help` to verify help text renders correctly and `<cli> --version` to confirm version output.
+
+   **Framework selection:**
+   - Node.js: `commander` (default) → `yargs` (if middleware/validation pipeline needed) → `oclif` (if plugin system needed)
+   - Python: `typer` (default, Python 3.10+) → `click` (if 3.7–3.9 support needed) → `argparse` (if zero-dependency required)
+   - Go: `cobra` + `viper` (default) → `bubbletea` (only if interactive TUI required; see `references/go-tui.md`)
 4. **Polish** — Add completions, help text, error messages, progress indicators. Verify TTY detection for color output and graceful SIGINT handling.
 5. **Test** — Run cross-platform smoke tests; benchmark startup time (target: <50ms).
 
@@ -32,7 +37,8 @@ Load detailed guidance based on context:
 | Design Patterns | `references/design-patterns.md` | Subcommands, flags, config, architecture |
 | Node.js CLIs | `references/node-cli.md` | commander, yargs, inquirer, chalk |
 | Python CLIs | `references/python-cli.md` | click, typer, argparse, rich |
-| Go CLIs | `references/go-cli.md` | cobra, viper, bubbletea |
+| Go CLIs | `references/go-cli.md` | cobra, viper, error handling, testing, build/distribution |
+| Go TUI | `references/go-tui.md` | Interactive terminal UI (bubbletea, progress bars, spinners, color output) |
 | UX Patterns | `references/ux-patterns.md` | Progress bars, colors, help text |
 
 ## Quick-Start Example
@@ -108,6 +114,3 @@ When implementing CLI features, provide:
 4. Shell completion scripts if applicable
 5. Brief explanation of UX decisions
 
-## Knowledge Reference
-
-CLI frameworks (commander, yargs, oclif, click, typer, argparse, cobra, viper), terminal UI (chalk, inquirer, rich, bubbletea), testing (snapshot testing, E2E), distribution (npm, pip, homebrew, releases), performance optimization

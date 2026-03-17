@@ -1,6 +1,8 @@
 ---
 name: test-driven-development
 description: Use when implementing any feature or bugfix, before writing implementation code
+references:
+  - references/testing-anti-patterns.md
 ---
 
 # Test-Driven Development (TDD)
@@ -46,27 +48,7 @@ Implement fresh from tests. Period.
 
 ## Red-Green-Refactor
 
-```dot
-digraph tdd_cycle {
-    rankdir=LR;
-    red [label="RED\nWrite failing test", shape=box, style=filled, fillcolor="#ffcccc"];
-    verify_red [label="Verify fails\ncorrectly", shape=diamond];
-    green [label="GREEN\nMinimal code", shape=box, style=filled, fillcolor="#ccffcc"];
-    verify_green [label="Verify passes\nAll green", shape=diamond];
-    refactor [label="REFACTOR\nClean up", shape=box, style=filled, fillcolor="#ccccff"];
-    next [label="Next", shape=ellipse];
-
-    red -> verify_red;
-    verify_red -> green [label="yes"];
-    verify_red -> red [label="wrong\nfailure"];
-    green -> verify_green;
-    verify_green -> refactor [label="yes"];
-    verify_green -> green [label="no"];
-    refactor -> verify_green [label="stay\ngreen"];
-    verify_green -> next;
-    next -> red;
-}
-```
+Cycle: RED → verify failure → GREEN → verify pass → REFACTOR → repeat
 
 ### RED - Write Failing Test
 
@@ -180,11 +162,15 @@ Confirm:
 - Other tests still pass
 - Output pristine (no errors, warnings)
 
+If think-tool is available, invoke it now: reason about whether the test is passing because the feature is correctly implemented, or because the assertion was inadvertently weakened or the scope of the test narrowed.
+
 **Test fails?** Fix code, not test.
 
 **Other tests fail?** Fix now.
 
 ### REFACTOR - Clean Up
+
+If think-tool is available, invoke it now: reason about each planned change and classify it as structure-only (rename, extract, deduplicate) or behavior-changing. Proceed only if all changes are structure-only.
 
 After green only:
 - Remove duplication
@@ -205,61 +191,15 @@ Next failing test for next feature.
 | **Clear** | Name describes behavior | `test('test1')` |
 | **Shows intent** | Demonstrates desired API | Obscures what code should do |
 
+## Red Flags
 
-## Red Flags - STOP and Start Over
+See `references/rationalization-red-flags.md` for the full list of rationalizations that mean: Delete code. Start over with TDD.
 
-- Code before test
-- Test after implementation
-- Test passes immediately
-- Can't explain why test failed
-- Tests added "later"
-- Rationalizing "just this once"
-- "I already manually tested it"
-- "Tests after achieve the same purpose"
-- "It's about spirit not ritual"
-- "Keep as reference" or "adapt existing code"
-- "Already spent X hours, deleting is wasteful"
-- "TDD is dogmatic, I'm being pragmatic"
-- "This is different because..."
-
-**All of these mean: Delete code. Start over with TDD.**
+Common ones: "I already manually tested it," "just this once," "keeping as reference."
 
 ## Example: Bug Fix
 
-**Bug:** Empty email accepted
-
-**RED**
-```typescript
-test('rejects empty email', async () => {
-  const result = await submitForm({ email: '' });
-  expect(result.error).toBe('Email required');
-});
-```
-
-**Verify RED**
-```bash
-$ npm test
-FAIL: expected 'Email required', got undefined
-```
-
-**GREEN**
-```typescript
-function submitForm(data: FormData) {
-  if (!data.email?.trim()) {
-    return { error: 'Email required' };
-  }
-  // ...
-}
-```
-
-**Verify GREEN**
-```bash
-$ npm test
-PASS
-```
-
-**REFACTOR**
-Extract validation for multiple fields if needed.
+See `references/bug-fix-example.md` for a full worked walkthrough.
 
 ## Verification Checklist
 
@@ -293,7 +233,7 @@ Never fix bugs without a test.
 
 ## Testing Anti-Patterns
 
-Before writing any RED test, read `testing-anti-patterns.md` to pre-screen test design. Don't defer this to "only when adding mocks" — catching anti-patterns before the cycle advances is cheaper than fixing them after GREEN.
+Before writing any RED test, read `references/testing-anti-patterns.md` to pre-screen test design. If sequential-thinking is available, walk through each gate function in `references/testing-anti-patterns.md` as sequential steps before writing the test.
 
 Common pitfalls:
 - Testing mock behavior instead of real behavior

@@ -26,7 +26,7 @@ metadata:
 
 ## Core Workflow
 
-1. **System Analysis** - Map architecture, dependencies, critical paths, and failure modes
+1. **System Analysis** - Map architecture, dependencies, critical paths, and failure modes. _Pre-condition: confirm a monitoring stack (Prometheus, Datadog, or equivalent) exists and can emit metric thresholds — if none is available, halt and recommend setting up observability before proceeding with chaos experiments._
 2. **Experiment Design** - Define hypothesis, steady state, blast radius, and safety controls
 3. **Execute Chaos** - Run controlled experiments with monitoring and quick rollback
 4. **Learn & Improve** - Document findings, implement fixes, enhance monitoring
@@ -43,6 +43,7 @@ Load detailed guidance based on context:
 | Kubernetes | `references/kubernetes-chaos.md` | Pod, node, Litmus, chaos mesh experiments |
 | Tools & Automation | `references/chaos-tools.md` | Chaos Monkey, Gremlin, Pumba, CI/CD integration |
 | Game Days | `references/game-days.md` | Planning, executing, learning from game days |
+| Post-Mortems | `references/post-mortem.md` | Post-mortem template for game days and unplanned production incidents |
 
 ## Safety Checklist
 

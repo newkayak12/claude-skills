@@ -34,6 +34,7 @@ Load detailed guidance based on context:
 | Data Access | `references/data.md` | Spring Data JPA, repositories, transactions, projections |
 | Security | `references/security.md` | Spring Security 6, OAuth2, JWT, method security |
 | Cloud Native | `references/cloud.md` | Spring Cloud, Config, Discovery, Gateway, resilience |
+| Cloud / Deploy | `references/cloud.md` | Docker, Kubernetes, health probes, Actuator, Spring Cloud |
 | Testing | `references/testing.md` | @SpringBootTest, MockMvc, Testcontainers, test slices |
 
 ## Quick Start — Minimal Working Structure

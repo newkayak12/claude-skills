@@ -25,6 +25,8 @@ Are there obvious gaps — missing edge cases, unclear instructions, steps that 
 
 ## How to respond
 
+Before committing to a PASS / WARN / FAIL verdict, if `think-tool` is available, invoke it to explicitly weigh all five criteria against each other. This is especially important on skills that score mixed across dimensions — for example, a skill with high recurrence but a weak without-skill baseline, or a skill with excellent description quality but questionable scope. The goal is to avoid anchoring on whichever criterion is most salient and instead reach a verdict that reflects the full picture.
+
 Return a short, direct assessment:
 
 ```

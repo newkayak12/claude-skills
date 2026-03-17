@@ -120,7 +120,7 @@ Start with whichever section has the most unknowns (usually the core decision/pr
 If the document structure is clear:
 Ask which section they'd like to start with.
 
-Suggest starting with whichever section has the most unknowns. For decision docs, that's usually the core proposal. For specs, it's typically the technical approach. Summary sections are best left for last.
+Use think-tool to reason explicitly about which section has the most unresolved questions given the context gathered in Stage 1, then suggest starting there. For decision docs, that's usually the core proposal. For specs, it's typically the technical approach. Summary sections are best left for last.
 
 If user doesn't know what sections they need:
 Based on the type of document and template, suggest 3-5 sections appropriate for the doc type.
@@ -258,19 +258,19 @@ Announce intention to predict what questions readers might ask when trying to di
 
 Generate 5-10 questions that readers would realistically ask.
 
-### Step 2: Test with Sub-Agent
+### Step 2: Test with ReaderAgent
 
 Announce that these questions will be tested with a fresh Claude instance (no context from this conversation).
 
-For each question, invoke a sub-agent with just the document content and the question.
+For each question, invoke `agents/reader-agent.md` (ReaderAgent) with just the document content and the question. Dispatch all questions in parallel — each is a fully independent call.
 
-Summarize what Reader Claude got right/wrong for each question.
+Summarize what ReaderAgent got right/wrong for each question.
 
 ### Step 3: Run Additional Checks
 
 Announce additional checks will be performed.
 
-Invoke sub-agent to check for ambiguity, false assumptions, contradictions.
+Invoke ReaderAgent to check for ambiguity, false assumptions, contradictions.
 
 Summarize any issues found.
 
@@ -289,40 +289,7 @@ Loop back to refinement for problematic sections.
 
 **If no access to sub-agents (e.g., claude.ai web interface):**
 
-The user will need to do the testing manually.
-
-### Step 1: Predict Reader Questions
-
-Ask what questions people might ask when trying to discover this document. What would they type into Claude.ai?
-
-Generate 5-10 questions that readers would realistically ask.
-
-### Step 2: Setup Testing
-
-Provide testing instructions:
-1. Open a fresh Claude conversation: https://claude.ai
-2. Paste or share the document content (if using a shared doc platform with connectors enabled, provide the link)
-3. Ask Reader Claude the generated questions
-
-For each question, instruct Reader Claude to provide:
-- The answer
-- Whether anything was ambiguous or unclear
-- What knowledge/context the doc assumes is already known
-
-Check if Reader Claude gives correct answers or misinterprets anything.
-
-### Step 3: Additional Checks
-
-Also ask Reader Claude:
-- "What in this doc might be ambiguous or unclear to readers?"
-- "What knowledge or context does this doc assume readers already have?"
-- "Are there any internal contradictions or inconsistencies?"
-
-### Step 4: Iterate Based on Results
-
-Ask what Reader Claude got wrong or struggled with. Indicate intention to fix those gaps.
-
-Loop back to refinement for any problematic sections.
+The user will need to do the testing manually. Follow the protocol in `references/manual-reader-testing.md`.
 
 ---
 
@@ -349,27 +316,4 @@ Announce document completion. Provide a few final tips:
 
 ## Tips for Effective Guidance
 
-**Tone:**
-- Be direct and procedural
-- Explain rationale briefly when it affects user behavior
-- Don't try to "sell" the approach - just execute it
-
-**Handling Deviations:**
-- If user wants to skip a stage: Ask if they want to skip this and write freeform
-- If user seems frustrated: Acknowledge this is taking longer than expected. Suggest ways to move faster
-- Always give user agency to adjust the process
-
-**Context Management:**
-- Throughout, if context is missing on something mentioned, proactively ask
-- Don't let gaps accumulate - address them as they come up
-
-**Artifact Management:**
-- Use `create_file` for drafting full sections
-- Use `str_replace` for all edits
-- Provide artifact link after every change
-- Never use artifacts for brainstorming lists - that's just conversation
-
-**Quality over Speed:**
-- Don't rush through stages
-- Each iteration should make meaningful improvements
-- The goal is a document that actually works for readers
+See `references/guidance-tips.md` for tone, deviation handling, context management, artifact management, and quality guidance.

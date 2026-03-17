@@ -6,66 +6,9 @@ intent: >-
 type: component
 ---
 
+## Framework Background
 
-## Purpose
-Visualize the user journey by creating a hierarchical map that breaks down high-level activities into steps and tasks, organized left-to-right as a narrative flow. Use this to build shared understanding across product, design, and engineering, prioritize features based on user workflows, and identify gaps or opportunities in the user experience.
-
-This is not a backlog—it's a strategic artifact that shows *how* users accomplish their goals, which then informs *what* to build.
-
-## Key Concepts
-
-### The Jeff Patton Story Mapping Framework
-Invented by Jeff Patton, story mapping organizes work into a 2D structure:
-
-**Horizontal axis (left-to-right):** User journey over time
-- **Backbone:** High-level activities the user performs
-- **Steps:** Specific actions within each activity
-- **Tasks:** Detailed work required to complete each step
-
-**Vertical axis (top-to-bottom):** Priority and releases
-- **Top rows:** Essential tasks (MVP / Release 1)
-- **Lower rows:** Nice-to-have tasks (Future releases)
-
-### Story Map Structure
-
-```
-Segment → Persona → Narrative (User's goal)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[Activity 1] → [Activity 2] → [Activity 3] → [Activity 4] → [Activity 5]
-     ↓              ↓              ↓              ↓              ↓
-  [Step 1.1]     [Step 2.1]     [Step 3.1]     [Step 4.1]     [Step 5.1]
-  [Step 1.2]     [Step 2.2]     [Step 3.2]     [Step 4.2]     [Step 5.2]
-  [Step 1.3]     [Step 2.3]     [Step 3.3]     [Step 4.3]     [Step 5.3]
-     ↓              ↓              ↓              ↓              ↓
-  [Task 1.1.1]   [Task 2.1.1]   [Task 3.1.1]   [Task 4.1.1]   [Task 5.1.1]
-  [Task 1.1.2]   [Task 2.1.2]   [Task 3.1.2]   [Task 4.1.2]   [Task 5.1.2]
-  [Task 1.1.3]   [Task 2.1.3]   [Task 3.1.3]   [Task 4.1.3]   [Task 5.1.3]
-  ...            ...            ...            ...            ...
-```
-
-### Why This Works
-- **User-centric:** Organizes work around user goals, not engineering modules
-- **Shared understanding:** Product, design, engineering all see the same journey
-- **Prioritization clarity:** Top tasks = MVP, lower tasks = future iterations
-- **Gap identification:** Missing steps or tasks become obvious
-- **Release planning:** Draw horizontal "release lines" to define scope
-
-### Anti-Patterns (What This Is NOT)
-- **Not a Gantt chart:** This isn't project management—it's user journey visualization
-- **Not a feature list:** Activities aren't features—they're user behaviors
-- **Not static:** Story maps evolve as you learn more about users
-
-### When to Use This
-- Kicking off a new product or major feature
-- Aligning stakeholders on user workflow
-- Prioritizing backlog based on user needs
-- Identifying MVP vs. future releases
-- Onboarding new team members to the product vision
-
-### When NOT to Use This
-- For trivial features (don't map what you already understand)
-- When user workflows are constantly changing (map stabilizes workflows)
-- As a replacement for user stories (the map informs stories, doesn't replace them)
+See `references/framework-overview.md` for the Jeff Patton model, anti-patterns, and use criteria.
 
 ---
 
@@ -132,6 +75,10 @@ List 3-5 high-level activities the persona engages in to fulfill the narrative. 
 - **User actions:** Describe what the user *does*, not what the product *provides*
 - **3-5 activities:** Too few = oversimplified, too many = overwhelming
 
+> Parallelism note: Once activities are confirmed, steps for each activity can be
+> generated concurrently. Similarly, once steps are finalized, tasks for each step
+> across all activities can be generated in parallel.
+
 ---
 
 ### Step 4: Break Activities into Steps
@@ -195,6 +142,8 @@ Arrange tasks top-to-bottom by priority:
 
 Draw horizontal "release lines" to demarcate scope.
 
+If think-tool is available, invoke it now: reason about trade-offs in MVP vs. future-release scope before committing to the vertical prioritization.
+
 ---
 
 ### Step 7: Identify Gaps and Opportunities
@@ -203,6 +152,18 @@ Review the map and ask:
 - Are there pain points we're not addressing?
 - Are there opportunities to delight users?
 - Do all activities flow logically?
+
+If sequential-thinking is available, invoke it now: re-read the completed map step by step and reason about missing steps, logical discontinuities, or activities that may be miscategorized before finalizing output.
+
+---
+
+## Output Format
+
+Use `template.md` as the canonical output structure. Render the map as follows:
+- Place Segment, Persona, and Narrative at the top before the backbone
+- Render activities as `###` headers
+- Render steps as `-` bullets under each activity header
+- Render tasks as indented `-` bullets with release labels (MVP / Release 2 / Future)
 
 ---
 
@@ -214,48 +175,7 @@ See `examples/sample.md` for a full story map example.
 
 ## Common Pitfalls
 
-### Pitfall 1: Activities Are Features, Not User Behaviors
-**Symptom:** "Activity 1: Use the dashboard. Activity 2: Generate reports."
-
-**Consequence:** You've mapped the product, not the user journey.
-
-**Fix:** Reframe as user actions: "Activity 1: Monitor project progress. Activity 2: Summarize work for stakeholders."
-
----
-
-### Pitfall 2: Too Many Activities
-**Symptom:** 10+ activities across the backbone
-
-**Consequence:** Map becomes overwhelming and loses focus.
-
-**Fix:** Consolidate. If you have 10 activities, you're likely mixing activities with steps. Aim for 3-5 high-level activities.
-
----
-
-### Pitfall 3: Tasks Are Too Vague
-**Symptom:** "Task 1: Do the thing"
-
-**Consequence:** Can't prioritize or estimate vague tasks.
-
-**Fix:** Be specific: "Task 1: Enter client email address in the 'Bill To' field."
-
----
-
-### Pitfall 4: Ignoring Vertical Prioritization
-**Symptom:** All tasks at the same level—no MVP vs. future releases defined
-
-**Consequence:** No clarity on what to build first.
-
-**Fix:** Explicitly prioritize. Draw release lines. Force hard choices about what's MVP.
-
----
-
-### Pitfall 5: Mapping in Isolation
-**Symptom:** PM creates the map alone, then presents it to the team
-
-**Consequence:** No shared ownership or understanding.
-
-**Fix:** Map collaboratively. Run a story mapping workshop with product, design, and engineering.
+See `references/pitfalls.md` for symptom/consequence/fix patterns when map quality is low.
 
 ---
 
@@ -271,15 +191,5 @@ See `examples/sample.md` for a full story map example.
 - Jeff Patton, *User Story Mapping* (2014) — Origin of the story mapping technique
 - Teresa Torres, *Continuous Discovery Habits* (2021) — Opportunity solution trees (complementary to story maps)
 
-### Dean's Work
-- User Story Mapping Prompt (adapted from Jeff Patton's methodology)
-
 ### Provenance
 - Adapted from `prompts/user-story-mapping.md` in the `https://github.com/deanpeters/product-manager-prompts` repo.
-
----
-
-**Skill type:** Component
-**Suggested filename:** `user-story-mapping.md`
-**Suggested placement:** `/skills/components/`
-**Dependencies:** References `skills/proto-persona/SKILL.md`, `skills/jobs-to-be-done/SKILL.md`, `skills/user-story/SKILL.md`, `skills/problem-statement/SKILL.md`

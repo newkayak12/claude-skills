@@ -6,12 +6,6 @@ intent: >-
 type: interactive
 ---
 
-
-## Purpose
-Guide product managers through creating a user story map by asking adaptive questions about the system, users, workflow, and priorities—then generating a two-dimensional map with backbone (activities), user tasks, and release slices. Use this to move from flat backlogs to visual story maps that communicate the big picture, identify missing functionality, and enable meaningful release planning—avoiding "context-free mulch" where stories lose connection to the overall system narrative.
-
-This is not a backlog generator—it's a visual communication framework that organizes work by user workflow (horizontal) and priority (vertical).
-
 ## Key Concepts
 
 ### What is a User Story Map?
@@ -65,19 +59,11 @@ Details/Acceptance Criteria (at the bottom)
 
 ---
 
-### Facilitation Source of Truth
+### Facilitation Protocol
 
-Use [`workshop-facilitation`](../workshop-facilitation/SKILL.md) as the default interaction protocol for this skill.
+Use one-question-at-a-time turns with plain-language prompts. Offer numbered options at each step so the user can respond quickly. Include `Other (specify)` when the enumerated choices don't cover the user's case. Handle interruptions gracefully — if the user pauses mid-flow, resume from the last answered question. If there is a conflict between general facilitation practice and the domain logic below, follow this file's domain logic.
 
-It defines:
-- session heads-up + entry mode (Guided, Context dump, Best guess)
-- one-question turns with plain-language prompts
-- progress labels (for example, Context Qx/8 and Scoring Qx/5)
-- interruption handling and pause/resume behavior
-- numbered recommendations at decision points
-- quick-select numbered response options for regular questions (include `Other (specify)` when useful)
-
-This file defines the domain-specific assessment content. If there is a conflict, follow this file's domain logic.
+If sequential-thinking is available, use it to maintain backbone state across turns so that user modifications at Q3 propagate correctly into Q4 and Q5, preventing stale activity names from appearing in task and slice outputs.
 
 ## Application
 
@@ -85,7 +71,7 @@ This interactive skill asks **up to 5 adaptive questions**, offering **3-4 enume
 
 Use `template.md` for the facilitation agenda and outputs checklist.
 
-Interaction pattern: Pair with `skills/workshop-facilitation/SKILL.md` when you want a one-step-at-a-time flow with numbered recommendations at decision points and quick-select options for regular questions. If the user asks for a single-shot output, skip the multi-turn facilitation.
+Interaction pattern: Use one-step-at-a-time flow with numbered recommendations at decision points and quick-select options for regular questions. If the user asks for a single-shot output, skip the multi-turn facilitation.
 
 ---
 
@@ -154,6 +140,8 @@ Before we create your story map, let's gather context:
 "Let's build the backbone—the narrative flow of activities users perform to accomplish their goal."
 
 **Agent generates 5-8 activities** based on scope (Q1) and users (Q2), arranged left-to-right in workflow order.
+
+Before presenting backbone activities to the user: if think-tool is available, invoke it to check — "Do any of these activity names map to a technical layer (frontend, backend, API, database, deployment) rather than a user workflow step?" If yes, regenerate before surfacing.
 
 **Example (if Scope = "E-commerce checkout"):**
 
@@ -256,198 +244,19 @@ Release 3 (Polish):
 
 ### Output: User Story Map
 
-After completing the flow, the agent outputs:
-
-```markdown
-# User Story Map: [Scope from Q1]
-
-**Users:** [From Q2]
-**Date:** [Today's date]
-
----
-
-## Backbone (Activities)
-
-[Activity 1] → [Activity 2] → [Activity 3] → [Activity 4] → [Activity 5] → [Activity 6]
-
----
-
-## Full Story Map
-
-### [Activity 1: Name]
-- **[Task 1.1]** — Must-have (Release 1)
-- **[Task 1.2]** — Should-have (Release 2)
-- **[Task 1.3]** — Nice-to-have (Release 3)
-
-### [Activity 2: Name]
-- **[Task 2.1]** — Must-have (Release 1)
-- **[Task 2.2]** — Should-have (Release 2)
-- **[Task 2.3]** — Nice-to-have (Release 3)
-
-[...repeat for all activities...]
-
----
-
-## Release Slices
-
-### Release 1: Walking Skeleton (MVP)
-**Goal:** Minimal end-to-end functionality
-
-**Stories:**
-- [Task 1.1] — [Activity 1]
-- [Task 2.1] — [Activity 2]
-- [Task 3.1] — [Activity 3]
-- [Task 4.1] — [Activity 4]
-- [Task 5.1] — [Activity 5]
-- [Task 6.1] — [Activity 6]
-
-**Why this is the walking skeleton:** Delivers complete workflow with simplest version of each activity.
-
----
-
-### Release 2: Enhanced Functionality
-**Goal:** Improve core workflow with priority enhancements
-
-**Stories:**
-- [Task 1.2] — [Activity 1]
-- [Task 2.2] — [Activity 2]
-- [Task 3.2] — [Activity 3]
-[...]
-
----
-
-### Release 3: Polish & Expansion
-**Goal:** Nice-to-haves, edge cases, optimizations
-
-**Stories:**
-- [Task 1.3] — [Activity 1]
-- [Task 2.3] — [Activity 2]
-[...]
-
----
-
-## Next Steps
-
-1. **Refine stories:** Use `skills/user-story/SKILL.md` to write detailed stories with acceptance criteria
-2. **Estimate effort:** Score stories (story points, t-shirt sizes)
-3. **Validate with stakeholders:** Walk through map left-to-right, confirm priorities
-4. **Display map:** Print/post as information radiator for ongoing reference
-
----
-
-**Ready to write user stories? Let me know if you'd like to refine the map or break down specific stories.**
-```
+After completing the flow, generate the map using the structure in `references/output-template.md`.
 
 ---
 
 ## Examples
 
-### Example 1: Good Story Map (E-commerce Checkout)
-
-**Q1 Response:** "Major feature area — E-commerce checkout workflow"
-
-**Q2 Response:** "Single persona — Online shopper"
-
-**Q3 - Backbone Generated:**
-```
-Browse → Add to Cart → Review Cart → Enter Shipping → Enter Payment → Confirm → Receive Confirmation
-```
-
-**Q4 - User Tasks Generated:**
-
-```
-Browse Products
-├─ View product list (R1)
-├─ Search/filter (R2)
-└─ Product recommendations (R3)
-
-Add to Cart
-├─ Add single item (R1)
-├─ Adjust quantity (R2)
-└─ Save for later (R3)
-
-Review Cart
-├─ View line items + total (R1)
-├─ Apply promo code (R2)
-└─ Estimate shipping cost (R3)
-
-[...etc...]
-```
-
-**Q5 - Release Slices:**
-- **Release 1:** Walking skeleton—basic flow with no extras
-- **Release 2:** Search, quantity adjustment, promo codes
-- **Release 3:** Recommendations, guest checkout, gift options
-
-**Why this works:**
-- Backbone follows user narrative (not technical layers)
-- Walking skeleton delivers end-to-end value
-- Incremental releases add sophistication without breaking core flow
-
----
-
-### Example 2: Bad Story Map (Technical Layers)
-
-**Backbone (WRONG):**
-```
-UI Layer → API Layer → Database Layer → Deployment
-```
-
-**Why this fails:**
-- Not user-centric (users don't care about technical architecture)
-- Can't deliver end-to-end value incrementally
-- Waterfall thinking disguised as story mapping
-
-**Fix:**
-- Map by user workflow: "Sign Up → Configure Settings → Invite Team → Start Project"
-- Each release delivers full workflow, not a single layer
+Anti-patterns: see `references/examples.md` for a good (user-workflow) and bad (technical-layers) story map.
 
 ---
 
 ## Common Pitfalls
 
-### Pitfall 1: Flat Backlog in Disguise
-**Symptom:** Story map is just a vertical list, no horizontal narrative
-
-**Consequence:** Loses communication benefit; still "context-free mulch"
-
-**Fix:** Force horizontal structure—activities across top, tasks descending vertically
-
----
-
-### Pitfall 2: Technical Architecture as Backbone
-**Symptom:** Backbone = "Frontend → Backend → Database"
-
-**Consequence:** Not user-centric, can't deliver value incrementally
-
-**Fix:** Backbone should follow user workflow, not system layers
-
----
-
-### Pitfall 3: Feature-Complete Waterfall
-**Symptom:** Release 1 = "Build Activity 1 fully," Release 2 = "Build Activity 2 fully"
-
-**Consequence:** No end-to-end value until all activities complete
-
-**Fix:** Walking skeleton = thin slice across ALL activities, incrementally enhanced
-
----
-
-### Pitfall 4: Too Much Detail Too Soon
-**Symptom:** Trying to map every edge case and acceptance criterion upfront
-
-**Consequence:** Analysis paralysis, lost big picture
-
-**Fix:** Start with backbone + high-level tasks, refine later
-
----
-
-### Pitfall 5: Map Hidden in a Tool
-**Symptom:** Story map lives in Jira/Miro, never displayed
-
-**Consequence:** Loses value as information radiator
-
-**Fix:** Print/post map physically; make it visible to team daily
+Anti-patterns: see `references/pitfalls.md` for symptom/consequence/fix patterns.
 
 ---
 
@@ -463,15 +272,5 @@ UI Layer → API Layer → Database Layer → Deployment
 - Jeff Patton, *User Story Mapping* (2014) — Origin of story mapping framework
 - Jeff Patton, "The New User Story Backlog is a Map" (blog) — Explains backbone concept
 
-### Dean's Work
-- [If Dean has story mapping resources, link here]
-
 ### Provenance
 - Derived from `skills/user-story/SKILL.md`, `skills/user-story-splitting/SKILL.md`, and `skills/user-story-mapping/SKILL.md`.
-
----
-
-**Skill type:** Interactive
-**Suggested filename:** `user-story-mapping-workshop.md`
-**Suggested placement:** `/skills/interactive/`
-**Dependencies:** Uses `skills/user-story-mapping/SKILL.md`, `skills/user-story/SKILL.md`, `skills/proto-persona/SKILL.md`

@@ -1,6 +1,6 @@
 ---
 name: test-master
-description: Generates test files, creates mocking strategies, analyzes code coverage, designs test architectures, and produces test plans and defect reports across functional, performance, and security testing disciplines. Use when writing unit tests, integration tests, or E2E tests; creating test strategies or automation frameworks; analyzing coverage gaps; performance testing with k6 or Artillery; security testing with OWASP methods; debugging flaky tests; or working on QA, regression, test automation, quality gates, shift-left testing, or test maintenance.
+description: "Comprehensive testing specialist — generates unit, integration, E2E, performance, and security tests, analyzes coverage gaps, debugs flaky tests, and produces structured test plans and defect reports."
 license: MIT
 metadata:
   author: https://github.com/Jeffallan
@@ -19,12 +19,14 @@ Comprehensive testing specialist ensuring software quality through functional, p
 
 ## Core Workflow
 
+If sequential-thinking is available, invoke it for steps 1–2 before writing any test code: explicitly complete "Define scope" and "Create strategy" as separate sequential steps, passing each step's output as input to the next. This prevents generating test files before the testing type, framework, and coverage targets are confirmed.
+
 1. **Define scope** — Identify what to test and which testing types apply
 2. **Create strategy** — Plan the test approach across functional, performance, and security perspectives
 3. **Write tests** — Implement tests with proper assertions (see example below)
 4. **Execute** — Run tests and collect results
    - If tests fail: classify the failure (assertion error vs. environment/flakiness), fix root cause, re-run
-   - If tests are flaky: isolate ordering dependencies, check async handling, add retry or stabilization logic
+   - If tests are flaky: if think-tool is available, invoke it to reason through the failure chain before committing to a diagnosis; isolate ordering dependencies, check async handling, add retry or stabilization logic
 5. **Report** — Document findings with severity ratings and actionable fix recommendations
    - Verify coverage targets are met before closing; flag gaps explicitly
 
@@ -64,7 +66,8 @@ Load detailed guidance based on context:
 | Security | `references/security-testing.md` | Security test checklist |
 | Reports | `references/test-reports.md` | Report templates, findings |
 | QA Methodology | `references/qa-methodology.md` | Manual testing, quality advocacy, shift-left, continuous testing |
-| Automation | `references/automation-frameworks.md` | Framework patterns, scaling, maintenance, team enablement |
+| Automation | `references/automation-frameworks.md` | Framework patterns, scaling, maintenance strategies |
+| Automation Ops | `references/automation-operations.md` | CI/CD setup, team rollout, automation ROI |
 | TDD Iron Laws | `references/tdd-iron-laws.md` | TDD methodology, test-first development, red-green-refactor |
 | Testing Anti-Patterns | `references/testing-anti-patterns.md` | Test review, mock issues, test quality problems |
 
