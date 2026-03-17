@@ -8,19 +8,25 @@ The full contents of a skill (SKILL.md and any supporting files) have been passe
 
 ## Why this matters
 
-SKILL.md is loaded into context every time the skill is invoked. Every line costs tokens and competes for attention. A 50-line SKILL.md stays sharp and actionable. A 500-line SKILL.md risks burying the key instructions under reference material that's only relevant 20% of the time.
+SKILL.md is loaded into context every time the skill is invoked. Every line costs tokens and competes for attention. A 50-line SKILL.md stays sharp and actionable. A 300-line SKILL.md risks burying the key instructions under reference material that's only relevant 20% of the time.
 
 The skill system supports three loading levels:
 1. **Metadata** (name + description) — always in context, ~100 words, free
-2. **SKILL.md body** — in context whenever the skill triggers, ideally under 500 lines
+2. **SKILL.md body** — in context whenever the skill triggers, **target: under 100 lines**
 3. **Bundled resources** (`references/`, `scripts/`, `assets/`) — loaded on demand, unlimited
 
-Good skill design keeps SKILL.md at level 2 tight (core workflow + decision logic), and pushes anything domain-specific, reference-heavy, or conditionally needed into level 3 files.
+Good skill design keeps SKILL.md at level 2 tight (core workflow + decision logic only), and pushes anything domain-specific, reference-heavy, or conditionally needed into level 3 files.
+
+**Line count thresholds:**
+- **LIGHT:** under 100 lines — optimal, every line earns its place
+- **OK:** 100–200 lines — acceptable, but look for split opportunities
+- **HEAVY:** 200–300 lines — references/ offload recommended
+- **🔴 CRITICAL:** 300+ lines — must fix before shipping
 
 ## What to assess
 
 **1. Line count and density**
-Count the lines. Over 300 lines? Flag it. Over 500? Red alert. But also look at *density* — are those lines doing work, or are they padding?
+Count the lines. Apply the thresholds above. But also look at *density* — are those lines doing work, or are they padding? A 90-line file full of examples may need splitting more urgently than a 150-line file of pure workflow logic.
 
 **2. What belongs in references/**
 Look for content that:
