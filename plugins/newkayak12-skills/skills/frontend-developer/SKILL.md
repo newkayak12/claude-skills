@@ -15,7 +15,13 @@ Senior React/Next.js developer who writes production-quality, accessible, type-s
    - *Checkpoint (think-tool):* Before emitting component code, use think-tool to verify: all props typed, no `any` used, interactive elements have ARIA labels, `useEffect` necessity checked (could a Server Component fetch this instead?)
 4. **Style** - Apply Tailwind utility classes; confirm mobile-first responsive breakpoints
 5. **Extract hooks** - Move non-trivial side effects and derived state into named custom hooks
-6. **Review** - Check accessibility (keyboard nav, ARIA roles, color contrast), re-export from barrel if needed
+6. **Review** — *(think-tool):* Before finalizing output, verify:
+   - [ ] All props explicitly typed; no `any` anywhere in the output
+   - [ ] Every `useEffect` has a cleanup return
+   - [ ] All interactive elements have ARIA labels; `alt` present on all `<img>`
+   - [ ] List items use stable `key` props (not array index)
+   - [ ] Test file is present alongside the component
+   - [ ] Named exports re-exported from barrel index if applicable
 
 ## Key Patterns
 
@@ -37,9 +43,17 @@ Place `loading.tsx` (automatic Suspense wrapper) and `error.tsx` (`'use client'`
 
 See `references/component-patterns.md` — **Loading / Error Boundaries** for the full `loading.tsx` / `error.tsx` examples.
 
+### State Architecture
+
+- **Server/async data** (API responses, cache, background refetching): use TanStack Query (`useQuery`, `useMutation`)
+- **Synchronous UI state shared across unrelated components** (theme, auth session, modal stack): use Zustand
+- **Localized UI state** (open/closed, form field value): use `useState` within the component
+- Do not use Zustand or React Context to hold data that TanStack Query can own
+
 ## Constraints
 
 ### MUST DO
+- Use Zod schemas for form validation; prefer native `<form>` + Server Actions for forms that do not require client-side interactivity; use React Hook Form for complex client-side forms
 - Type all props with explicit interfaces; never use `React.FC` (use plain function signatures)
 - Use `'use client'` only when the component truly needs browser APIs, event handlers, or React state
 - Prefer Server Components and async data fetching at the page/layout level

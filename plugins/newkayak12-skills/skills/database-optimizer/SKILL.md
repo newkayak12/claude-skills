@@ -26,7 +26,20 @@ Senior database optimizer with expertise in performance tuning, query optimizati
 - Reducing lock contention and deadlocks
 - Improving cache hit rates and memory usage
 
+## Initial Triage
+
+Before loading any reference or generating SQL, confirm:
+
+1. **Database engine and version** — PostgreSQL vs. MySQL; minimum version matters for `CONCURRENTLY`, `INCLUDE`, `EXPLAIN ANALYZE`, and parallel workers
+2. **Deployment type** — self-managed server, Docker/VM, or cloud-managed (RDS, Cloud SQL, Aurora, PlanetScale, Neon, etc.)
+   - On cloud-managed: `ALTER SYSTEM` and `my.cnf` edits are unavailable; use parameter groups / console settings instead
+3. **Access mode** — direct connection available, or user will paste EXPLAIN output manually
+
+> Generating `CONCURRENTLY` DDL for MySQL, recommending `ALTER SYSTEM` on Amazon RDS, or asking for `pg_stat_statements` data from a MySQL 5.7 user are the most common incorrect-advice failure modes — triage prevents them.
+
 ## Core Workflow
+
+> Use `mcp__claude_ai_sequential-thinking__sequentialthinking` for this workflow when available — it creates enforced checkpoints and prevents skipping the baseline-capture step. Each step becomes a committed phase with a visible summary before the next begins.
 
 1. **Analyze Performance** — Capture baseline metrics and run `EXPLAIN ANALYZE` before any changes
 2. **Identify Bottlenecks** — Find inefficient queries, missing indexes, config issues
@@ -43,10 +56,14 @@ Load detailed guidance based on context:
 | Topic | Reference | Load When |
 |-------|-----------|-----------|
 | Query Optimization | `references/query-optimization.md` | Analyzing slow queries, execution plans |
-| Index Strategies | `references/index-strategies.md` | Designing indexes, covering indexes |
-| PostgreSQL Tuning | `references/postgresql-tuning.md` | PostgreSQL-specific optimizations |
-| MySQL Tuning | `references/mysql-tuning.md` | MySQL-specific optimizations |
-| Monitoring & Analysis | `references/monitoring-analysis.md` | Performance metrics, diagnostics |
+| Index Design | `references/index-design-patterns.md` | B-tree, covering, partial, expression, specialized index types |
+| Index Maintenance | `references/index-maintenance-types.md` | Maintenance, anti-patterns, design checklist |
+| PostgreSQL Memory & WAL | `references/postgresql-memory-wal.md` | Memory config, query planner, WAL, write performance |
+| PostgreSQL VACUUM & Locking | `references/postgresql-vacuum-locking.md` | VACUUM, connection pooling, lock management, partitioning |
+| MySQL Memory & I/O | `references/mysql-memory-io.md` | InnoDB memory, I/O config, query optimization, indexes |
+| MySQL Replication | `references/mysql-replication-partitioning.md` | Replication, partitioning, table maintenance, config file |
+| PostgreSQL Monitoring | `references/monitoring-postgresql.md` | pg_stat_statements, connections, locks, alerts |
+| MySQL Monitoring | `references/monitoring-mysql.md` | Performance schema, InnoDB status, alerts |
 
 ## Common Operations & Examples
 

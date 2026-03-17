@@ -27,6 +27,9 @@ If you haven't run the verification command in this message, you cannot claim it
 BEFORE claiming any status or expressing satisfaction:
 
 1. IDENTIFY: What command proves this claim?
+   → If think-tool is available, invoke it here to reason about which
+     command constitutes sufficient proof before running anything.
+     This makes the identification step explicit and auditable.
 2. RUN: Execute the FULL command (fresh, complete)
 3. READ: Full output, check exit code, count failures
 4. VERIFY: Does output confirm the claim?
@@ -104,6 +107,7 @@ Skip any step = lying, not verifying
 ✅ Agent reports success → Check VCS diff → Verify changes → Report actual state
 ❌ Trust agent report
 ```
+For the full agent-delegation verification procedure, see `agents/delegation-verifier.md`.
 
 ## Why This Matters
 
@@ -129,6 +133,10 @@ From 24 failure memories:
 - Paraphrases and synonyms
 - Implications of success
 - ANY communication suggesting completion/correctness
+
+## Verification Result Standards
+
+Running the command is not enough — the output must confirm the claim. For edge cases (flaky tests, partial suites, builds that exit 0 with warnings), see `references/verification-patterns.md` for what counts as a passing result in each scenario.
 
 ## The Bottom Line
 

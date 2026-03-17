@@ -11,29 +11,12 @@ Execute plan by dispatching fresh subagent per task, with two-stage review after
 
 ## When to Use
 
-```dot
-digraph when_to_use {
-    "Have implementation plan?" [shape=diamond];
-    "Tasks mostly independent?" [shape=diamond];
-    "Stay in this session?" [shape=diamond];
-    "subagent-driven-development" [shape=box];
-    "executing-plans" [shape=box];
-    "Manual execution or brainstorm first" [shape=box];
+Use this skill when all three conditions are met:
+- You have an implementation plan with defined tasks
+- The tasks are mostly independent (not tightly coupled)
+- You want to stay in the current session (not open parallel worktrees)
 
-    "Have implementation plan?" -> "Tasks mostly independent?" [label="yes"];
-    "Have implementation plan?" -> "Manual execution or brainstorm first" [label="no"];
-    "Tasks mostly independent?" -> "Stay in this session?" [label="yes"];
-    "Tasks mostly independent?" -> "Manual execution or brainstorm first" [label="no - tightly coupled"];
-    "Stay in this session?" -> "subagent-driven-development" [label="yes"];
-    "Stay in this session?" -> "executing-plans" [label="no - parallel session"];
-}
-```
-
-**vs. Executing Plans (parallel session):**
-- Same session (no context switch)
-- Fresh subagent per task (no context pollution)
-- Two-stage review after each task: spec compliance first, then code quality
-- Faster iteration (no human-in-loop between tasks)
+Use `executing-plans` instead when you need isolated parallel sessions. Use manual execution when you don't yet have a plan or tasks are tightly coupled.
 
 ## The Process
 
@@ -81,7 +64,13 @@ digraph process {
 }
 ```
 
-**Parallel review note:** After each implementation task, dispatch the spec-reviewer and code-quality-reviewer in the **same turn** — both are read-only and have no dependency on each other's output. Wait for both to complete, then act on their combined findings. If either flags issues, the implementer fixes them and both reviewers re-run. Only mark the task complete when both pass.
+**Parallel review note:** After each implementation task, dispatch the spec-reviewer and code-quality-reviewer in the **same turn** — both are read-only and have no dependency on each other's output. Wait for both to complete, then act on their combined findings.
+
+**Re-review routing after fixes:**
+- If spec reviewer found issues: implementer fixes them, then re-run **both** reviewers in the same turn (spec compliance may have affected quality too).
+- If spec reviewer already passed and only quality issues remain: re-dispatch **only the code quality reviewer** — spec compliance was already verified and does not need to re-run.
+
+Only mark the task complete when both spec and quality reviewers have passed in the same review round.
 
 ## Model Selection
 
@@ -106,11 +95,11 @@ Implementer subagents report one of four statuses. Handle each appropriately:
 
 **DONE:** Proceed to spec compliance review.
 
-**DONE_WITH_CONCERNS:** Read the concerns first — if they touch correctness or scope, address before review; if they're observations only (e.g., "file is getting large"), note and proceed to review.
+**DONE_WITH_CONCERNS:** Read the concerns first — if they touch correctness or scope, address before review; if they're observations only (e.g., "file is getting large"), note and proceed to review. If think-tool is available and the concerns are ambiguous, invoke it to reason: does this touch correctness or scope, and what is the right action?
 
 **NEEDS_CONTEXT:** Provide the missing information and re-dispatch with the same prompt + new context.
 
-**BLOCKED:** Something must change before retrying — provide more context and re-dispatch, escalate to a more capable model, break the task into smaller pieces, or surface to the human if the plan itself is wrong. Never retry the same model with the same inputs.
+**BLOCKED:** Something must change before retrying. If think-tool is available, invoke it before deciding how to proceed — reason over: what specifically blocked the subagent, whether the plan has a gap, whether model escalation vs. task decomposition is the right remedy, and what context to add on re-dispatch. Then: provide more context and re-dispatch, escalate to a more capable model, break the task into smaller pieces, or surface to the human if the plan itself is wrong. Never retry the same model with the same inputs.
 
 **Never** ignore an escalation or force the same model to retry without changes. If the implementer said it's stuck, something needs to change.
 
@@ -122,111 +111,7 @@ Implementer subagents report one of four statuses. Handle each appropriately:
 
 ## Example Workflow
 
-```
-You: I'm using Subagent-Driven Development to execute this plan.
-
-[Read plan file once: docs/superpowers/plans/feature-plan.md]
-[Extract all 5 tasks with full text and context]
-[Create TodoWrite with all tasks]
-
-Task 1: Hook installation script
-
-[Get Task 1 text and context (already extracted)]
-[Dispatch implementation subagent with full task text + context]
-
-Implementer: "Before I begin - should the hook be installed at user or system level?"
-
-You: "User level (~/.config/superpowers/hooks/)"
-
-Implementer: "Got it. Implementing now..."
-[Later] Implementer:
-  - Implemented install-hook command
-  - Added tests, 5/5 passing
-  - Self-review: Found I missed --force flag, added it
-  - Committed
-
-[Dispatch spec compliance reviewer]
-Spec reviewer: ✅ Spec compliant - all requirements met, nothing extra
-
-[Get git SHAs, dispatch code quality reviewer]
-Code reviewer: Strengths: Good test coverage, clean. Issues: None. Approved.
-
-[Mark Task 1 complete]
-
-Task 2: Recovery modes
-
-[Get Task 2 text and context (already extracted)]
-[Dispatch implementation subagent with full task text + context]
-
-Implementer: [No questions, proceeds]
-Implementer:
-  - Added verify/repair modes
-  - 8/8 tests passing
-  - Self-review: All good
-  - Committed
-
-[Dispatch spec compliance reviewer]
-Spec reviewer: ❌ Issues:
-  - Missing: Progress reporting (spec says "report every 100 items")
-  - Extra: Added --json flag (not requested)
-
-[Implementer fixes issues]
-Implementer: Removed --json flag, added progress reporting
-
-[Spec reviewer reviews again]
-Spec reviewer: ✅ Spec compliant now
-
-[Dispatch code quality reviewer]
-Code reviewer: Strengths: Solid. Issues (Important): Magic number (100)
-
-[Implementer fixes]
-Implementer: Extracted PROGRESS_INTERVAL constant
-
-[Code reviewer reviews again]
-Code reviewer: ✅ Approved
-
-[Mark Task 2 complete]
-
-...
-
-[After all tasks]
-[Dispatch final code-reviewer]
-Final reviewer: All requirements met, ready to merge
-
-Done!
-```
-
-## Advantages
-
-**vs. Manual execution:**
-- Subagents follow TDD naturally
-- Fresh context per task (no confusion)
-- Parallel-safe (subagents don't interfere)
-- Subagent can ask questions (before AND during work)
-
-**vs. Executing Plans:**
-- Same session (no handoff)
-- Continuous progress (no waiting)
-- Review checkpoints automatic
-
-**Efficiency gains:**
-- No file reading overhead (controller provides full text)
-- Controller curates exactly what context is needed
-- Subagent gets complete information upfront
-- Questions surfaced before work begins (not after)
-
-**Quality gates:**
-- Self-review catches issues before handoff
-- Two-stage review: spec compliance, then code quality
-- Review loops ensure fixes actually work
-- Spec compliance prevents over/under-building
-- Code quality ensures implementation is well-built
-
-**Cost:**
-- More subagent invocations (implementer + 2 reviewers per task)
-- Controller does more prep work (extracting all tasks upfront)
-- Review loops add iterations
-- But catches issues early (cheaper than debugging later)
+See `references/example-workflow.md` for a full concrete trace. For context on why this approach works better than alternatives, see `references/rationale.md`.
 
 ## Red Flags
 
@@ -240,6 +125,7 @@ Done!
 - Ignore subagent questions (answer before letting them proceed)
 - Accept "close enough" on spec compliance (spec reviewer found issues = not done)
 - Skip review loops (reviewer found issues = implementer fixes = review again)
+- Re-run spec reviewer when spec already passed and only quality issues remain — if spec reviewer already passed, re-dispatch only the code quality reviewer after quality fixes
 - Let implementer self-review replace actual review (both are needed)
 - **Act on only one review result while the other is still running** — wait for both, then decide
 - Move to next task while either review has open issues

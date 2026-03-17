@@ -60,7 +60,7 @@ The `description` frontmatter field should be one focused paragraph — not a bu
 ## How to respond
 
 ```
-### 5. SKILL.md Weight — [LIGHT / OK / HEAVY]
+### 4. SKILL.md Weight — [LIGHT / OK / HEAVY / CRITICAL]
 
 **Line count:** [N lines]
 **Assessment:** [What's making it heavy, or why it's appropriately sized]

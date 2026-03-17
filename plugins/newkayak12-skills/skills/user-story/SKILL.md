@@ -15,12 +15,6 @@ scenarios:
 estimated_time: "5-10 min"
 ---
 
-
-## Purpose
-Create clear, concise user stories that combine Mike Cohn's user story format with Gherkin-style acceptance criteria. Use this to translate user needs into actionable development work that focuses on outcomes, ensures shared understanding between product and engineering, and provides testable success criteria.
-
-This is not a feature spec—it's a conversation starter that captures *who* benefits, *what* they're trying to do, *why* it matters, and *how* you'll know it works.
-
 ## Key Concepts
 
 ### The Mike Cohn + Gherkin Format
@@ -89,20 +83,7 @@ python3 scripts/user-story-template.py --persona \"trial user\" --action \"log i
 
 ### Step 2: Write the Use Case
 
-Use `template.md` for the full fill-in structure.
-
-Fill in the template:
-
-```markdown
-### User Story [ID]:
-
-- **Summary:** [Brief, memorable title focused on value to the user]
-
-#### Use Case:
-- **As a** [user name if available, otherwise persona, otherwise role]
-- **I want to** [action user takes to get to outcome]
-- **so that** [desired outcome]
-```
+Use `template.md` for the full fill-in structure. Fill in the Use Case section with As a / I want to / so that fields.
 
 **Quality checks:**
 - **"As a" specificity:** Is this a specific persona (e.g., "trial user") or generic ("user")?
@@ -117,20 +98,7 @@ Fill in the template:
 
 ### Step 3: Write the Acceptance Criteria
 
-Fill in the template:
-
-```markdown
-#### Acceptance Criteria:
-
-- **Scenario:** [Brief, human-readable scenario describing value]
-- **Given:** [Initial context or precondition]
-- **and Given:** [Additional context or preconditions]
-- **and Given:** [Additional context as needed]
-- **and Given:** [UI-focused context ensuring 'When' can happen]
-- **and Given:** [Outcomes-focused context ensuring 'Then' is delivered]
-- **When:** [Event that triggers the action—aligns with 'I want to']
-- **Then:** [Expected outcome—aligns with 'so that']
-```
+Use `template.md` for the full fill-in structure. Fill in the Acceptance Criteria section with Scenario / Given / When / Then fields.
 
 **Quality checks:**
 - **Multiple Givens are okay:** Preconditions stack up (e.g., "Given I'm logged in" + "Given I have items in my cart")
@@ -148,10 +116,6 @@ Fill in the template:
 
 Write a short, memorable summary that captures the story's value:
 
-```markdown
-- **Summary:** [Brief, human-readable title]
-```
-
 **Examples:**
 - ✅ "Enable Google login for trial users to reduce signup friction"
 - ✅ "Bulk delete items to save time for power users"
@@ -161,10 +125,18 @@ Write a short, memorable summary that captures the story's value:
 
 ### Step 5: Validate and Refine
 
+If think-tool is available, invoke it now to review the completed story against these three criteria:
+1. Exactly one `When` and one `Then` in the acceptance criteria
+2. The `As a` persona is more specific than "user" or "customer"
+3. The `Then` clause is independently falsifiable and does not restate the `When` clause
+
+The think-tool should output PASS or FLAG with a one-sentence reason for each flagged criterion.
+
 - **Read aloud to the team:** Does everyone understand who, what, why?
 - **Test acceptance criteria:** Can QA write test cases from this?
 - **Check for splitting:** If the story feels too big, use `skills/user-story-splitting/SKILL.md`
 - **Ensure testability:** Can you prove "Then" happened?
+- **INVEST check:** Is the story Independent, Negotiable, Valuable, Estimable, Small, and Testable?
 
 ---
 
@@ -172,72 +144,11 @@ Write a short, memorable summary that captures the story's value:
 
 See `examples/sample.md` for full examples (good, bad, and split-needed stories).
 
-Mini example excerpt:
-
-```markdown
-### User Story 042:
-
-- **Summary:** Enable Google login for trial users to reduce signup friction
-
-#### Use Case:
-- **As a** trial user visiting the app for the first time
-- **I want to** log in using my Google account
-- **so that** I can access the app without creating and remembering a new password
-
-#### Acceptance Criteria:
-- **Scenario:** First-time trial user logs in via Google OAuth
-- **Given:** I am on the login page
-- **and Given:** I have a login account
-- **When:** I click the "Sign in with Google" button and authorize the app
-- **Then:** I am logged into the app and redirected to the onboarding flow
-```
-
 ---
 
 ## Common Pitfalls
 
-### Pitfall 1: Technical Tasks Disguised as User Stories
-**Symptom:** "As a developer, I want to refactor the API, so that the code is cleaner"
-
-**Consequence:** This is an engineering task, not a user story. No user value is delivered.
-
-**Fix:** If there's no user outcome, it's not a user story—use an engineering task or tech debt ticket instead.
-
----
-
-### Pitfall 2: "As a User" (Too Generic)
-**Symptom:** Every story starts with "As a user"
-
-**Consequence:** No persona clarity. Different users have different needs.
-
-**Fix:** Use specific personas: "As a trial user," "As a paid subscriber," "As an admin," etc. (reference `skills/proto-persona/SKILL.md`)
-
----
-
-### Pitfall 3: "So That" Restates "I Want To"
-**Symptom:** "I want to click the save button, so that I can save my work"
-
-**Consequence:** No insight into *why* the user cares. Just restating the action.
-
-**Fix:** Dig into the motivation: "so that I don't lose my progress if the page crashes" (real outcome).
-
----
-
-### Pitfall 4: Multiple When/Then Statements
-**Symptom:** Acceptance criteria with 5 "When" statements and 5 "Then" statements
-
-**Consequence:** Story is too big. Likely multiple features bundled together.
-
-**Fix:** Split the story using `skills/user-story-splitting/SKILL.md`. Each When/Then pair should be its own story (or at least evaluated for splitting).
-
----
-
-### Pitfall 5: Untestable Acceptance Criteria
-**Symptom:** "Then the user has a better experience" or "Then it's faster"
-
-**Consequence:** QA can't verify success. Ambiguous definition of "done."
-
-**Fix:** Make it measurable: "Then the page loads in under 2 seconds" or "Then the user sees a success confirmation message."
+For detailed pitfall diagnosis and fixes, see `references/pitfalls.md`.
 
 ---
 
@@ -257,16 +168,5 @@ Mini example excerpt:
 - Gherkin (Cucumber) — "Given/When/Then" acceptance criteria format
 - INVEST criteria (Independent, Negotiable, Valuable, Estimable, Small, Testable)
 
-### Dean's Work
-- [Link to relevant Dean Peters' Substack articles if applicable]
-
 ### Provenance
 - Adapted from `prompts/user-story-prompt-template.md` in the `https://github.com/deanpeters/product-manager-prompts` repo.
-
----
-
-**Skill type:** Component
-**Suggested filename:** `user-story.md`
-**Suggested placement:** `/skills/components/`
-**Dependencies:** References `skills/proto-persona/SKILL.md`, `skills/problem-statement/SKILL.md`
-**Used by:** `skills/user-story-splitting/SKILL.md`, `skills/epic-hypothesis/SKILL.md`

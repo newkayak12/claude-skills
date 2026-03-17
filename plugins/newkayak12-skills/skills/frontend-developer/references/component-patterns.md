@@ -121,6 +121,8 @@ export function useDebounce<T>(value: T, delayMs: number): T {
 
 ### useFetch
 
+> **Note:** This is a teaching example for discriminated-union state. Prefer `useQuery` from TanStack Query when it is available in the project.
+
 Generic client-side fetch with discriminated-union state. Use only when a Server Component cannot own the fetch (e.g., user-triggered, browser-only URL).
 
 ```tsx

@@ -146,91 +146,33 @@ Review for:
 
 See language-specific guides for detailed testing approaches and quality checklists.
 
+#### 3.3 Phase 3 Gate Checklist
+
+**Do not proceed to Phase 4 until all items below are checked:**
+
+- [ ] Build compiles without errors (TypeScript: `npm run build`; Python: `py_compile`)
+- [ ] All tools use `registerTool` (TypeScript) or `@mcp.tool` decorator (Python) — no deprecated `server.tool()` patterns
+- [ ] Every tool has explicit annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`)
+- [ ] Zod schemas use `.strict()` (TypeScript) / Pydantic models use `extra='forbid'` (Python)
+- [ ] List tools return pagination metadata (`has_more`, `next_offset`) where applicable
+- [ ] All error messages include actionable next steps (not just error codes)
+- [ ] No `any` types in TypeScript source
+- [ ] `structuredContent` used in tool responses where applicable (TypeScript SDK)
+- [ ] Tool names use consistent prefixes and action-oriented naming
+- [ ] Response sizes are bounded (character-limit truncation in place for large payloads)
+
 ---
 
 ### Phase 4: Create Evaluations
 
 After implementing your MCP server, create comprehensive evaluations to test its effectiveness.
 
-**Load [✅ Evaluation Guide](./reference/evaluation.md) for complete evaluation guidelines.**
+**Delegate to [`agents/evaluation-creator.md`](./agents/evaluation-creator.md).** Pass the list of available MCP tools and the target service description as inputs. The agent will explore data, generate 10 verified QA pairs, and produce a valid `evaluation.xml`.
 
-#### 4.1 Understand Evaluation Purpose
-
-Use evaluations to test whether LLMs can effectively use your MCP server to answer realistic, complex questions.
-
-#### 4.2 Create 10 Evaluation Questions
-
-To create effective evaluations, follow the process outlined in the evaluation guide:
-
-1. **Tool Inspection**: List available tools and understand their capabilities
-2. **Content Exploration**: Use READ-ONLY operations to explore available data
-3. **Question Generation**: Create 10 complex, realistic questions
-4. **Answer Verification**: Solve each question yourself to verify answers
-
-#### 4.3 Evaluation Requirements
-
-Ensure each question is:
-- **Independent**: Not dependent on other questions
-- **Read-only**: Only non-destructive operations required
-- **Complex**: Requiring multiple tool calls and deep exploration
-- **Realistic**: Based on real use cases humans would care about
-- **Verifiable**: Single, clear answer that can be verified by string comparison
-- **Stable**: Answer won't change over time
-
-#### 4.4 Output Format
-
-Create an XML file with this structure:
-
-```xml
-<evaluation>
-  <qa_pair>
-    <question>Find discussions about AI model launches with animal codenames. One model needed a specific safety designation that uses the format ASL-X. What number X was being determined for the model named after a spotted wild cat?</question>
-    <answer>3</answer>
-  </qa_pair>
-<!-- More qa_pairs... -->
-</evaluation>
-```
+For full evaluation guidelines, scoring, and how to run the harness, see [`reference/evaluation.md`](./reference/evaluation.md) and `scripts/`.
 
 ---
 
-# Reference Files
+## Reference Files
 
-## 📚 Documentation Library
-
-Load these resources as needed during development:
-
-### Core MCP Documentation (Load First)
-- **MCP Protocol**: Start with sitemap at `https://modelcontextprotocol.io/sitemap.xml`, then fetch specific pages with `.md` suffix
-- [📋 MCP Best Practices](./reference/mcp_best_practices.md) - Universal MCP guidelines including:
-  - Server and tool naming conventions
-  - Response format guidelines (JSON vs Markdown)
-  - Pagination best practices
-  - Transport selection (streamable HTTP vs stdio)
-  - Security and error handling standards
-
-### SDK Documentation (Load During Phase 1/2)
-- **Python SDK**: Fetch from `https://raw.githubusercontent.com/modelcontextprotocol/python-sdk/main/README.md`
-- **TypeScript SDK**: Fetch from `https://raw.githubusercontent.com/modelcontextprotocol/typescript-sdk/main/README.md`
-
-### Language-Specific Implementation Guides (Load During Phase 2)
-- [🐍 Python Implementation Guide](./reference/python_mcp_server.md) - Complete Python/FastMCP guide with:
-  - Server initialization patterns
-  - Pydantic model examples
-  - Tool registration with `@mcp.tool`
-  - Complete working examples
-  - Quality checklist
-
-- [⚡ TypeScript Implementation Guide](./reference/node_mcp_server.md) - Complete TypeScript guide with:
-  - Project structure
-  - Zod schema patterns
-  - Tool registration with `server.registerTool`
-  - Complete working examples
-  - Quality checklist
-
-### Evaluation Guide (Load During Phase 4)
-- [✅ Evaluation Guide](./reference/evaluation.md) - Complete evaluation creation guide with:
-  - Question creation guidelines
-  - Answer verification strategies
-  - XML format specifications
-  - Example questions and answers
-  - Running an evaluation with the provided scripts
+See `reference/` for implementation guides (`mcp_best_practices.md`, `node_mcp_server.md`, `python_mcp_server.md`, `evaluation.md`) and `scripts/` for the evaluation harness.

@@ -1,6 +1,6 @@
 ---
 name: brainstorming
-description: "You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation."
+description: "You MUST use this before any implementation work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation."
 compatibility:
   optional:
     - think-tool
@@ -85,6 +85,7 @@ digraph brainstorming {
 **Exploring approaches:**
 
 - Propose 2-3 different approaches with trade-offs
+- If think-tool is available, invoke it before presenting approaches to surface trade-offs you might otherwise compress.
 - Present options conversationally with your recommendation and reasoning
 - Lead with your recommended option and explain why
 

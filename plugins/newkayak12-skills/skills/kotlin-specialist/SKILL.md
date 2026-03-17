@@ -20,13 +20,16 @@ Senior Kotlin developer with deep expertise in coroutines, Kotlin Multiplatform 
 ## Core Workflow
 
 1. **Analyze architecture** - Identify platform targets, coroutine patterns, shared code strategy
+   - *For cross-platform or multi-scope architectural decisions,* invoke `sequential-thinking` to enumerate constraints before committing to a source-set or concurrency design
 2. **Design models** - Create sealed classes, data classes, type hierarchies
 3. **Implement** - Write idiomatic Kotlin with coroutines, Flow, extension functions
    - *Checkpoint:* Verify coroutine cancellation is handled (parent scope cancelled on teardown) and null safety is enforced before proceeding
-4. **Validate** - Run `detekt` and `ktlint`; verify coroutine cancellation handling and null safety
-   - *If detekt/ktlint fails:* Fix all reported issues and re-run both tools before proceeding to step 5
+   - *If cancellation behavior is ambiguous,* use `think-tool` to reason through scope propagation (coroutineScope vs. supervisorScope, flowOn placement, CancellationException propagation) before proceeding
+4. **Validate** - Invoke `agents/lint-qa.md` (lint-qa agent) on all source files; it runs `detekt` and `ktlint` in parallel and returns PASS or a structured violation list
+   - *If lint-qa returns FAIL:* Fix all reported violations and re-invoke the agent before proceeding to step 5
 5. **Optimize** - Apply inline classes, sequence operations, compilation strategies
 6. **Test** - Write multiplatform tests with coroutine test support (`runTest`, Turbine)
+   - Provide: data models (sealed classes, data classes), implementation file, test file, and brief explanation of Kotlin-specific patterns used
 
 ## Reference Guide
 
@@ -134,14 +137,3 @@ val user = createUser(form).also { logger.info("Created user ${it.id}") }
 - Ignore coroutine cancellation
 - Create memory leaks with coroutine scopes
 
-## Output Templates
-
-When implementing Kotlin features, provide:
-1. Data models (sealed classes, data classes)
-2. Implementation file (extension functions, suspend functions)
-3. Test file with coroutine test support
-4. Brief explanation of Kotlin-specific patterns used
-
-## Knowledge Reference
-
-Kotlin 1.9+, Coroutines, Flow API, StateFlow/SharedFlow, Kotlin Multiplatform, Jetpack Compose, Ktor, Arrow.kt, kotlinx.serialization, Detekt, ktlint, Gradle Kotlin DSL, JUnit 5, MockK, Turbine

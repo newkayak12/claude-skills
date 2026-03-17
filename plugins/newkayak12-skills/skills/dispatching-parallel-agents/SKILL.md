@@ -7,33 +7,28 @@ description: Use when facing 2+ independent tasks that can be worked on without 
 
 ## Overview
 
-When you have multiple unrelated failures (different test files, different subsystems, different bugs), investigating them sequentially wastes time. Each investigation is independent and can happen in parallel.
+When you have multiple independent work streams — different failing test files, separate code reviews, independent reports to generate, isolated module refactors — working on them sequentially wastes time. Each task is independent and can happen in parallel.
 
 **Core principle:** Dispatch one agent per independent problem domain. Let them work concurrently.
 
 ## When to Use
 
-```dot
-digraph when_to_use {
-    "Multiple failures?" [shape=diamond];
-    "Are they independent?" [shape=diamond];
-    "Single agent investigates all" [shape=box];
-    "One agent per problem domain" [shape=box];
-    "Can they work in parallel?" [shape=diamond];
-    "Sequential agents" [shape=box];
-    "Parallel dispatch" [shape=box];
-
-    "Multiple failures?" -> "Are they independent?" [label="yes"];
-    "Are they independent?" -> "Single agent investigates all" [label="no - related"];
-    "Are they independent?" -> "Can they work in parallel?" [label="yes"];
-    "Can they work in parallel?" -> "Parallel dispatch" [label="yes"];
-    "Can they work in parallel?" -> "Sequential agents" [label="no - shared state"];
-}
+```
+Multiple tasks or failures?
+  No  → Single agent handles it
+  Yes → Are they independent? (no shared files, no causal relationship)
+          No  → Single agent investigates all (related — fix one may fix others)
+          Yes → Can they work in parallel? (no shared state)
+                  No  → Sequential agents
+                  Yes → Parallel dispatch
 ```
 
 **Use when:**
 - 3+ test files failing with different root causes
 - Multiple subsystems broken independently
+- Parallel code reviews across separate modules
+- Generating multiple independent reports simultaneously
+- Running independent linters or audits on separate subsystems
 - Each problem can be understood without context from others
 - No shared state between investigations
 
@@ -60,6 +55,15 @@ Each agent gets:
 - **Clear goal:** Make these tests pass
 - **Constraints:** Don't change other code
 - **Expected output:** Summary of what you found and fixed
+
+### 2.5. Verify Independence (think-tool)
+
+Before dispatching, use think-tool to confirm true independence. Check:
+1. No two agents will edit the same files
+2. Failures have no causal relationship (fixing one won't fix others)
+3. Each domain can be fully understood without context from the others
+
+Only proceed to parallel dispatch after this check passes. A bad parallelism decision — dispatching agents that turn out to be coupled — wastes more time than sequential investigation would have.
 
 ### 3. Dispatch in Parallel
 
@@ -170,11 +174,3 @@ After agents return:
 3. **Run full suite** - Verify all fixes work together
 4. **Spot check** - Agents can make systematic errors
 
-## Real-World Impact
-
-From debugging session (2025-10-03):
-- 6 failures across 3 files
-- 3 agents dispatched in parallel
-- All investigations completed concurrently
-- All fixes integrated successfully
-- Zero conflicts between agent changes

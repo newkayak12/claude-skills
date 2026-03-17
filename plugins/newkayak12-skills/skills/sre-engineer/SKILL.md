@@ -17,6 +17,7 @@ metadata:
 
 ## Core Workflow
 
+0. **Identify observability stack** - Confirm the user's stack (Prometheus/Kubernetes, Datadog, CloudWatch, New Relic, ECS, bare-metal VMs, or other) before generating any configuration. All examples in the reference files default to Prometheus/Kubernetes — if the user is on a different stack, request their tooling before proceeding so generated output is directly usable rather than requiring translation.
 1. **Assess reliability** - Review architecture, SLOs, incidents, toil levels
 2. **Define SLOs** - Identify meaningful SLIs and set appropriate targets
 3. **Verify alignment** - Confirm SLO targets reflect user expectations before proceeding
@@ -34,11 +35,13 @@ Load detailed guidance based on context:
 | Error Budgets | `references/error-budget-policy.md` | Managing budgets, burn rates, policies |
 | Monitoring | `references/monitoring-alerting.md` | Golden signals, alert design, dashboards |
 | Automation | `references/automation-toil.md` | Toil reduction, automation patterns |
+| Capacity Planning | `references/capacity-planning.md` | Forecasting resource growth, scaling decisions |
 | Incidents | `references/incident-chaos.md` | Incident response, chaos engineering |
 
 ## Constraints
 
 ### MUST DO
+- Do not proceed past Step 3 until the user has explicitly confirmed SLO targets and error budget policy thresholds in writing
 - Define quantitative SLOs (e.g., 99.9% availability)
 - Calculate error budgets from SLO targets
 - Monitor golden signals (latency, traffic, errors, saturation)

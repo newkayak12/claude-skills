@@ -12,12 +12,27 @@ Takes messy, scattered input — rough notes, half-formed ideas, stream-of-consc
 1. **Absorb** — Read all input without filtering. Identify every distinct idea, no matter how fragmented.
 2. **Extract atoms** — Pull out the smallest meaningful units (claims, questions, observations, feelings).
    - *Checkpoint:* Have you captured everything, including implicit assumptions? If not, ask one focused clarifying question before continuing.
-   - For complex inputs, use sequential-thinking for steps 3–5 (Cluster → Rank → Structure) to ensure each step builds explicitly on the previous rather than collapsing into a single pass.
 3. **Cluster** — Group atoms by theme or relationship. Name each cluster with a short label.
 4. **Rank** — Identify the single core claim or goal. Mark supporting ideas vs. tangential ones.
 5. **Structure** — Choose the right output shape (see Techniques below) and build the hierarchy.
 6. **Surface gaps** — Note what is missing, contradictory, or unresolved. Flag explicitly.
 7. **Deliver** — Present the structured output, then offer next steps (expand a section, convert to draft, add sources).
+
+## MCP Usage
+
+- **sequential-thinking:** Invoke for steps 3–5 when input contains more than ~5 distinct ideas or the user explicitly requests a structured breakdown. Each step's output should be passed explicitly as input to the next.
+- **think-tool:** Invoke at step 6 (Surface gaps). Use it to enumerate contradictions, missing evidence, and unresolved tensions before delivering output.
+
+## Technique Selection
+
+Choose the output shape before structuring. Use this table:
+
+| Situation | Technique |
+|---|---|
+| Goal is a document, essay, or presentation | Outline |
+| User says "map" or input has no clear hierarchy | Mind Map |
+| 5+ ideas with named cross-links or a knowledge-base goal | Zettelkasten |
+| User needs only the core message, not full structure | Core Claim Extraction |
 
 ## Techniques
 

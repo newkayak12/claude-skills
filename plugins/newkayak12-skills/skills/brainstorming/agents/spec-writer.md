@@ -13,7 +13,7 @@ Write the validated design to `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.
 
 ## Step 2: Spec review loop
 
-Dispatch a spec-document-reviewer subagent to check the written spec.
+Dispatch a spec-document-reviewer subagent to check the written spec (see `agents/spec-reviewer-prompt.md` for the dispatch template).
 
 - If issues found: fix them, re-dispatch, repeat until approved
 - Max 5 iterations — if still failing after 5, surface to the user for guidance

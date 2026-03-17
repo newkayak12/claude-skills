@@ -17,15 +17,16 @@ Read all skill files before dispatching agents:
 - `references/*.md` (if present)
 - `scripts/*` (if present)
 
+If no `agents/` directory exists, note "no subagents present" in the Agent Structure section rather than skipping it. If no `references/` directory exists, skip the references check in the Weight section. This ensures the report is complete and consistent even for minimal skills that only have a SKILL.md.
+
 ## Execution — run all five checks in parallel
 
 | # | Check | Agent | What it examines |
 |---|-------|-------|-----------------|
 | 1 | Usefulness | `agents/usefulness-checker.md` | Does this skill earn its place? |
-| 2 | Agent Structure | `agents/structure-reviewer.md` | Should personas be split into subagents? Can tasks run in parallel? |
-| 3 | Parallelism | _(inline in structure-reviewer)_ | Which steps are truly independent? |
-| 4 | MCP Fit | `agents/mcp-advisor.md` | Which MCPs would help? (load `references/mcp-catalog.md`) |
-| 5 | SKILL.md Weight | `agents/weight-analyzer.md` | Can it be split and lightened for progressive loading? |
+| 2 | Agent Structure + Parallelism | `agents/structure-reviewer.md` | Should personas be split into subagents? Which steps are truly independent and could run concurrently? |
+| 3 | MCP Fit | `agents/mcp-advisor.md` | Which MCPs would help? (load `references/mcp-catalog.md`) |
+| 4 | SKILL.md Weight | `agents/weight-analyzer.md` | Can it be split and lightened for progressive loading? |
 
 Pass the **full content of all skill files** to each agent as context.
 
@@ -46,11 +47,11 @@ Produce a self-contained report in this format:
 ### 3. MCP Opportunities — [NONE / OPTIONAL / RECOMMENDED]
 [specific MCP names, what they'd replace, why they help]
 
-### 4. SKILL.md Weight — [LIGHT / OK / HEAVY]
+### 4. SKILL.md Weight — [LIGHT / OK / HEAVY / CRITICAL]
 [line count, what's heavy, concrete split suggestions with file names]
 
 ---
-## Top Improvements for skill-creator
+## Top Improvements for [skill-name]
 1. 🔴 [highest priority — must fix]
 2. 🟡 [recommended improvement]
 3. 🟢 [optional enhancement]
