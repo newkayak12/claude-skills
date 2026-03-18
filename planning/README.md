@@ -1,4 +1,4 @@
-# newkayak12-planning
+# planning
 
 Planning skills for structured implementation and roadmap execution.
 
@@ -6,10 +6,10 @@ Planning skills for structured implementation and roadmap execution.
 
 ```bash
 # Install
-claude plugin install newkayak12/claude-skills#newkayak12-planning
+/plugin install planning@newkayak12-claude-skills
 
 # Uninstall
-claude plugin uninstall newkayak12-planning
+/plugin uninstall planning@newkayak12-claude-skills
 ```
 
 ## Skills

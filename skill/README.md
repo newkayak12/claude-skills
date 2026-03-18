@@ -1,4 +1,4 @@
-# newkayak12-skill
+# skill
 
 Skills for creating, improving, and validating Claude Code skills.
 
@@ -6,10 +6,10 @@ Skills for creating, improving, and validating Claude Code skills.
 
 ```bash
 # Install
-claude plugin install newkayak12/claude-skills#newkayak12-skill
+/plugin install skill@newkayak12-claude-skills
 
 # Uninstall
-claude plugin uninstall newkayak12-skill
+/plugin uninstall skill@newkayak12-claude-skills
 ```
 
 ## Skills

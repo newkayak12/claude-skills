@@ -1,4 +1,4 @@
-# newkayak12-write
+# write
 
 Writing skills for documentation, plans, and content review.
 
@@ -6,10 +6,10 @@ Writing skills for documentation, plans, and content review.
 
 ```bash
 # Install
-claude plugin install newkayak12/claude-skills#newkayak12-write
+/plugin install write@newkayak12-claude-skills
 
 # Uninstall
-claude plugin uninstall newkayak12-write
+/plugin uninstall write@newkayak12-claude-skills
 ```
 
 ## Skills

@@ -1,4 +1,4 @@
-# newkayak12-completion
+# completion
 
 Verification workflow to confirm work is complete before claiming success.
 
@@ -6,10 +6,10 @@ Verification workflow to confirm work is complete before claiming success.
 
 ```bash
 # Install
-claude plugin install newkayak12/claude-skills#newkayak12-completion
+/plugin install completion@newkayak12-claude-skills
 
 # Uninstall
-claude plugin uninstall newkayak12-completion
+/plugin uninstall completion@newkayak12-claude-skills
 ```
 
 ## Skills
