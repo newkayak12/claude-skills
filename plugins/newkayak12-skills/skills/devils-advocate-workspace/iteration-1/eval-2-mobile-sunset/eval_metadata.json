@@ -1,0 +1,12 @@
+{
+  "eval_id": 2,
+  "eval_name": "mobile-app-sunset-counterarguments",
+  "prompt": "Devil's advocate: we should sunset our mobile app and go web-only to reduce maintenance overhead.",
+  "assertions": [
+    "3 counterarguments are presented",
+    "Arguments are steel-manned — they represent the strongest possible case against the web-only decision, not obvious objections",
+    "A 'Core Vulnerability' section is present identifying the deepest structural flaw in the proposal",
+    "Arguments are specific to mobile-vs-web product tradeoffs, not generic product strategy warnings",
+    "Response is in English (matching the prompt's language)"
+  ]
+}

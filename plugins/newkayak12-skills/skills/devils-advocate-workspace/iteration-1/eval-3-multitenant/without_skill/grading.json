@@ -1,0 +1,92 @@
+{
+  "expectations": [
+    {
+      "text": "Counterarguments are written in Korean (matching the prompt's language)",
+      "passed": true,
+      "evidence": "The entire output.md is written in Korean. All section headers, arguments, and conclusions use Korean text throughout."
+    },
+    {
+      "text": "Arguments address the specific startup context — the early-stage cost of premature multi-tenancy, not just 'multi-tenancy is complex' in the abstract",
+      "passed": true,
+      "evidence": "Multiple sections explicitly target the startup context: Section 3 invokes CB Insights data about startup failure rates and limited runway ('런웨이(runway)는 유한하다. 멀티테넌트 구현에 4개월을 쓰면 그만큼 고객 검증 기회가 줄어든다'), Section 6 addresses small teams of 2-5 people ('소규모 초기 팀(2~5명)'), and Section 5 addresses the risk of early customers rejecting multi-tenant infrastructure. These are startup-specific cost arguments, not generic complexity warnings."
+    },
+    {
+      "text": "The '핵심 취약점' section is present",
+      "passed": false,
+      "evidence": "No section titled '핵심 취약점' exists anywhere in output.md. The output uses '종합 평가' as its summary section, which lists core errors but under a different heading. The required section label is absent."
+    },
+    {
+      "text": "At least one argument challenges the core assumption that early investment prevents future pain (YAGNI or pivot risk angle)",
+      "passed": true,
+      "evidence": "Section 4 directly challenges this assumption: 'Martin Fowler의 YAGNi(You Aren't Gonna Need It) 원칙: 필요하지 않을 수도 있는 기능을 미리 구현하지 말라.' It further argues that early complexity creates harder-to-remove structural debt ('초기에 복잡하게 만든 아키텍처는 근본적인 전제를 바꾸기 어려운 구조적 부채를 낳는다'). Section 1 also raises the pivot risk angle (B2B to B2C or enterprise on-premise pivot scenarios)."
+    },
+    {
+      "text": "No section that softens the critique by restating the benefits of multi-tenancy",
+      "passed": false,
+      "evidence": "Section 7 '대안적 접근: 점진적 멀티테넌트화' proposes a roadmap toward full multi-tenancy and validates it as the correct end goal. The conclusion explicitly states '멀티테넌트 SaaS는 스타트업이 달성해야 할 목적지이지, 출발점이 되어서는 안 된다' ('Multi-tenant SaaS is the destination a startup must reach, not the starting point'). This restates multi-tenancy as the correct architecture, softening the overall critique from 'this is wrong for startups' to 'the timing is wrong.' Section 7 also cites Stripe, Airbnb, and Shopify as companies that eventually did adopt multi-tenant infrastructure, which further legitimizes the approach."
+    }
+  ],
+  "summary": {
+    "passed": 3,
+    "failed": 2,
+    "total": 5,
+    "pass_rate": 0.60
+  },
+  "execution_metrics": {
+    "tool_calls": {
+      "Bash": 2,
+      "Write": 2
+    },
+    "total_tool_calls": 4,
+    "total_steps": 3,
+    "files_created": 2,
+    "errors_encountered": 0,
+    "output_chars": 7053,
+    "transcript_chars": 0
+  },
+  "timing": {
+    "executor_duration_seconds": 76.9,
+    "total_duration_seconds": 76.9
+  },
+  "claims": [
+    {
+      "claim": "The output takes a devil's advocate position against early multi-tenancy in startups",
+      "type": "quality",
+      "verified": true,
+      "evidence": "The document presents 6 substantive counterarguments against the position that startups should adopt multi-tenant architecture from day one."
+    },
+    {
+      "claim": "The critique is unqualified and purely adversarial",
+      "type": "quality",
+      "verified": false,
+      "evidence": "Section 7 proposes a graduated adoption path and endorses multi-tenancy as the eventual destination, which undermines the adversarial framing. The conclusion is conciliatory rather than challenging."
+    },
+    {
+      "claim": "CB Insights data cited (42% of startups fail due to no market need)",
+      "type": "factual",
+      "verified": false,
+      "evidence": "The 42% figure is cited but cannot be independently verified from available outputs. The CB Insights figure in widely-cited reports is typically around 35-42%, so it is plausible but unverified."
+    }
+  ],
+  "user_notes_summary": {
+    "uncertainties": [],
+    "needs_review": [],
+    "workarounds": []
+  },
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "assertion": "The '핵심 취약점' section is present",
+        "reason": "This assertion checks for a specific section label that the skill is expected to produce. Without knowing the exact prompt given to the executor, it is unclear whether '핵심 취약점' is a label the skill's template requires or just one the eval author hoped to see. If the skill doesn't define this as required output structure, the assertion may be testing for a formatting convention rather than a meaningful outcome. Consider verifying that the skill's prompt explicitly requires this section label."
+      },
+      {
+        "assertion": "No section that softens the critique by restating the benefits of multi-tenancy",
+        "reason": "This assertion is well-targeted and caught a real failure mode: the output ends with a roadmap toward multi-tenancy. However, the assertion could be sharpened — it currently focuses on 'a section,' but softening can also appear in the conclusion or framing. Consider checking whether the overall conclusion endorses the original position, not just whether a dedicated section restates benefits."
+      },
+      {
+        "reason": "No assertion checks the depth or accuracy of the startup-specific arguments. Section 3 cites a CB Insights statistic (42% fail due to no market demand) that is presented without verification. An assertion verifying that cited data points are plausible or that the arguments go beyond surface-level talking points would improve discriminability."
+      }
+    ],
+    "overall": "The evals are well-constructed and catch the most important failure modes (section presence, critique softening, YAGNI angle). The '핵심 취약점' label check is the weakest — it may reflect a template requirement that wasn't enforced in the prompt. The softening check correctly identified a substantive failure where the output undermined its own adversarial stance."
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "skill_name": "devils-advocate",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "우리 팀이 다음 분기에 TypeScript로 전환하기로 결정했어. 반론 3가지를 들어줘.",
+      "expected_output": "3개의 구체적이고 강력한 반론 제시. 각 반론은 TypeScript 전환의 실제 비용, 리스크, 대안을 구체적으로 다뤄야 함. 핵심 취약점 포함. Strawman이 아닌 steel-man 형태.",
+      "files": [],
+      "expectations": [
+        "Exactly 3 counterarguments are presented (not more, not fewer unless justified)",
+        "Each counterargument is specific to TypeScript migration, not generic change-resistance arguments",
+        "A 'core vulnerability' or '핵심 취약점' section is present",
+        "The arguments are stated directly without excessive hedging ('some might argue...')",
+        "The response does NOT include a balanced 'but here are the benefits' section that undermines the adversarial framing"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Devil's advocate: we should sunset our mobile app and go web-only to reduce maintenance overhead.",
+      "expected_output": "3 strong counterarguments against going web-only, covering user behavior, competitive positioning, and technical/business risks. Core vulnerability identified. No hedging, direct and specific.",
+      "files": [],
+      "expectations": [
+        "3 counterarguments are presented",
+        "Arguments are steel-manned — they represent the strongest possible case against web-only",
+        "A core vulnerability section is present identifying the deepest structural flaw",
+        "Arguments are specific to mobile-vs-web tradeoffs, not generic product strategy platitudes",
+        "Response is in English (matching the prompt language)"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "이 설계의 반대 입장 검토해줘: 우리 스타트업은 초기부터 멀티테넌트 SaaS 아키텍처로 시작해야 한다. 처음부터 제대로 만들어야 나중에 고생 안 한다.",
+      "expected_output": "멀티테넌트 초기 도입에 대한 강력한 반론들. 초기 스타트업 맥락에서의 복잡성 비용, YAGNI 원칙, 피벗 가능성 등을 다뤄야 함. 핵심 취약점 포함.",
+      "files": [],
+      "expectations": [
+        "Counterarguments are presented in Korean (matching prompt language)",
+        "Arguments address the specific startup context — not just 'multi-tenancy is complex' in the abstract",
+        "The '핵심 취약점' section is present",
+        "At least one argument challenges the 'premature optimization' nature of the claim",
+        "No section that softens the critique by restating the benefits of multi-tenancy"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,92 @@
+{
+  "expectations": [
+    {
+      "text": "Exactly 3 counterarguments are presented (not more, not fewer unless explicitly justified)",
+      "passed": true,
+      "evidence": "The output contains exactly 3 numbered counterarguments: '반론 1', '반론 2', '반론 3'. No additional counterarguments appear."
+    },
+    {
+      "text": "Each counterargument is specific to TypeScript migration — not generic change-resistance or 'change is hard' platitudes",
+      "passed": true,
+      "evidence": "All three counterarguments are TypeScript-specific: (1) addresses the 'any' type proliferation and ts-ignore shortcuts under deadline pressure; (2) covers TypeScript-specific migration overhead (tsconfig, type guards, generics, utility types, build pipeline); (3) discusses TypeScript's specific limitation of not catching runtime data issues (external APIs, user input). None resort to generic 'change is hard' framing."
+    },
+    {
+      "text": "A 'core vulnerability' or '핵심 취약점' section is clearly present",
+      "passed": true,
+      "evidence": "The output ends with an explicit section labeled '핵심 취약점: 일정이 TypeScript의 가치를 역전시킨다', which identifies the 'any-laden TypeScript codebase' pattern as the core failure mode."
+    },
+    {
+      "text": "The arguments are stated directly and confidently, without excessive hedging phrases like '어떤 사람들은 생각할 수도 있는데...' or 'some might argue...'",
+      "passed": true,
+      "evidence": "All arguments are stated in the first-person authoritative voice (e.g., '...만든다', '...된다', '...남는다'). No hedging phrases like '어떤 사람들은', 'some might argue', or equivalent qualifiers appear anywhere in the output."
+    },
+    {
+      "text": "The response does NOT include a balancing section that lists benefits of TypeScript (which would undermine the adversarial framing)",
+      "passed": true,
+      "evidence": "The output contains no section listing TypeScript benefits. The 핵심 취약점 section and all three counterarguments maintain the adversarial framing throughout. The closest thing to acknowledging TypeScript's upside is incidental (e.g., 'TypeScript의 핵심 이점은 거의 얻지 못하는'), but this is framed as a cost argument, not a benefit endorsement."
+    }
+  ],
+  "summary": {
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "pass_rate": 1.0
+  },
+  "execution_metrics": {
+    "tool_calls": {
+      "Read": 1,
+      "ToolSearch": 1,
+      "mcp__claude_ai_think-tool__think": 1,
+      "Bash": 1,
+      "Write": 2
+    },
+    "total_tool_calls": 6,
+    "total_steps": 4,
+    "files_created": 2,
+    "errors_encountered": 0,
+    "output_chars": 1486,
+    "transcript_chars": 5800
+  },
+  "timing": {
+    "executor_duration_seconds": 87.1,
+    "grader_duration_seconds": null,
+    "total_duration_seconds": 87.1
+  },
+  "claims": [
+    {
+      "claim": "The output presents exactly 3 counterarguments",
+      "type": "factual",
+      "verified": true,
+      "evidence": "Counted 3 sections labeled 반론 1, 반론 2, 반론 3 in output.md"
+    },
+    {
+      "claim": "Arguments are TypeScript-migration-specific rather than generic",
+      "type": "quality",
+      "verified": true,
+      "evidence": "반론 1 discusses 'any' type spread; 반론 2 discusses tsconfig, type guards, generics, build pipeline changes; 반론 3 discusses TypeScript's inability to catch runtime data issues. All are TS-specific."
+    },
+    {
+      "claim": "The 핵심 취약점 section focuses the vulnerability on the timeline constraint, not TypeScript itself",
+      "type": "quality",
+      "verified": true,
+      "evidence": "The section title is '일정이 TypeScript의 가치를 역전시킨다' (the schedule reverses TypeScript's value), correctly centering the timeline as the specific vulnerability rather than TypeScript generically."
+    }
+  ],
+  "user_notes_summary": {
+    "uncertainties": [],
+    "needs_review": [],
+    "workarounds": []
+  },
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "assertion": "Each counterargument is specific to TypeScript migration — not generic change-resistance or 'change is hard' platitudes",
+        "reason": "This assertion passes but is underspecified. A response that rehashed well-known criticisms from blog posts without applying them to the specific decision ('다음 분기에 전환') would also pass. Consider requiring that at least one argument engage with the specific constraint in the prompt (the timeline, team size, or other contextual detail) to verify the skill is doing genuine reasoning rather than template-filling."
+      },
+      {
+        "reason": "No assertion checks that the 핵심 취약점 section synthesizes the three counterarguments rather than introducing a fourth unrelated point. The current output does synthesize well, but this isn't enforced by any expectation."
+      }
+    ],
+    "overall": "The evals are well-targeted and all pass with genuine substance. Two gaps worth closing: (1) specificity of 'TypeScript-specific' could be tightened to require engagement with the prompt's stated context; (2) the 핵심 취약점 quality (synthesis vs. new content) goes unchecked."
+  }
+}
