@@ -1,0 +1,97 @@
+{
+  "expectations": [
+    {
+      "text": "3 counterarguments are presented",
+      "passed": true,
+      "evidence": "Output contains exactly three numbered sections: 'Counterargument 1: Mobile users don't migrate to web — they churn', 'Counterargument 2: Progressive Web Apps cannot replace what your native app delivers — especially on iOS', 'Counterargument 3: Sunsetting the app treats the symptom, not the problem'."
+    },
+    {
+      "text": "Arguments are steel-manned — they represent the strongest possible case against the web-only decision, not obvious objections",
+      "passed": true,
+      "evidence": "CA1 cites a specific behavioral data point (4-5x time-in-app vs. mobile web) and identifies why user loss is systematically undercounted ('deferred and harder to attribute cleanly'). CA2 goes beyond a generic 'apps are better' claim to cite specific iOS policy constraints — partial web push support as of 2023, restricted background sync, and divergent home-screen PWA behavior. CA3 invokes concrete alternatives (React Native, Flutter maturity) and identifies the irreversible second-order costs of app store exit (review history, organic discoverability, expertise loss). None of these are surface-level objections."
+    },
+    {
+      "text": "A 'Core Vulnerability' section is present identifying the deepest structural flaw in the proposal",
+      "passed": true,
+      "evidence": "The output contains a '## Core Vulnerability' section (line 22-24). It identifies the structural flaw as conflating 'reduce maintenance overhead' (the stated sub-objective) with 'maximize business outcomes given available resources' (the actual goal), and explains why costs are systematically discounted: they are deferred and harder to measure than the engineering savings."
+    },
+    {
+      "text": "Arguments are specific to mobile-vs-web product tradeoffs, not generic product strategy warnings",
+      "passed": true,
+      "evidence": "All three counterarguments and the Core Vulnerability section are grounded in mobile-specific dynamics: native app retention curves vs. mobile web, iOS PWA capability restrictions, app store reentry friction, cross-platform framework maturity, and the difficulty of modeling mobile-web migration rates. No argument is a generic 'don't change strategy' or 'consider the risks' warning."
+    },
+    {
+      "text": "Response is in English (matching the prompt's language)",
+      "passed": true,
+      "evidence": "The entire output.md is written in English with no foreign-language content."
+    }
+  ],
+  "summary": {
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "pass_rate": 1.0
+  },
+  "execution_metrics": {
+    "tool_calls": {
+      "Read": 1,
+      "ToolSearch": 1,
+      "mcp__claude_ai_think-tool__think": 1,
+      "Bash": 2,
+      "Write": 2
+    },
+    "total_tool_calls": 7,
+    "total_steps": 5,
+    "errors_encountered": 0,
+    "output_chars": 3969,
+    "transcript_chars": 8500
+  },
+  "timing": {
+    "executor_duration_seconds": 84.4,
+    "grader_duration_seconds": null,
+    "total_duration_seconds": 84.4
+  },
+  "claims": [
+    {
+      "claim": "Native app users spend 4-5x more time in apps than mobile web",
+      "type": "factual",
+      "verified": false,
+      "evidence": "This is cited as established research in CA1 but no source is provided. The figure is consistent with commonly cited industry data (e.g., from eMarketer/App Annie studies), but cannot be independently verified from the available outputs."
+    },
+    {
+      "claim": "Apple only partially enabled web push on iOS in 2023 and it remains limited",
+      "type": "factual",
+      "verified": false,
+      "evidence": "This is accurate as of the knowledge cutoff — Apple added web push for home screen PWAs in iOS 16.4 (2023) with notable restrictions. The claim is substantively correct but unverifiable from the output files alone."
+    },
+    {
+      "claim": "React Native and Flutter have matured to allow single-codebase near-native performance",
+      "type": "quality",
+      "verified": false,
+      "evidence": "This is a widely held view but cannot be verified from the output files. It is a reasonable and defensible claim rather than an implausible one."
+    },
+    {
+      "claim": "The output correctly identifies the deepest structural flaw (not just a surface-level flaw)",
+      "type": "quality",
+      "verified": true,
+      "evidence": "The Core Vulnerability section targets the decision framing itself — the substitution of a proximate operational metric for a business objective — which is structurally deeper than any individual counterargument. This is a genuine meta-level critique of the proposal's reasoning."
+    }
+  ],
+  "user_notes_summary": {
+    "uncertainties": [],
+    "needs_review": [],
+    "workarounds": []
+  },
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "reason": "No assertion checks the depth or accuracy of the Core Vulnerability section — only its presence. A section titled 'Core Vulnerability' that contained a generic or shallow observation would pass expectation 3. Consider adding an assertion like 'The Core Vulnerability section identifies a structural flaw in the decision's reasoning process, not merely another product concern.'"
+      },
+      {
+        "assertion": "Arguments are steel-manned — they represent the strongest possible case against the web-only decision, not obvious objections",
+        "reason": "This assertion is directionally correct but subjective and hard to fail. A grader has to make a judgment call about what counts as 'steel-manned.' Consider a more discriminating formulation: 'Each counterargument includes at least one specific mechanism, data point, or named technology that distinguishes it from a generic objection.' This would be more objectively verifiable."
+      }
+    ],
+    "overall": "The evals are well-targeted to the task. The main gap is that assertion 3 checks presence of the Core Vulnerability section but not its quality, and assertion 2 relies on grader judgment in a way that could be tightened with a specificity criterion."
+  }
+}

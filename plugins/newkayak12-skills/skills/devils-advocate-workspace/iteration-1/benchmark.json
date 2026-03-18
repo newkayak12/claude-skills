@@ -1,0 +1,182 @@
+{
+  "metadata": {
+    "skill_name": "devils-advocate",
+    "skill_path": "/home/newkayak12/projects/claude-skills/plugins/newkayak12-skills/skills/devils-advocate",
+    "executor_model": "claude-sonnet-4-6",
+    "analyzer_model": "claude-sonnet-4-6",
+    "timestamp": "2026-03-18T08:00:00Z",
+    "evals_run": [1, 2, 3],
+    "runs_per_configuration": 1
+  },
+  "runs": [
+    {
+      "eval_id": 1,
+      "eval_name": "TypeScript Migration",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 87.1,
+        "tokens": 14109,
+        "tool_calls": 6,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Exactly 3 counterarguments presented", "passed": true, "evidence": "반론 1, 반론 2, 반론 3 — exactly 3"},
+        {"text": "TypeScript-specific arguments", "passed": true, "evidence": "any타입 지옥, build pipeline, runtime data gaps — all TS-specific"},
+        {"text": "핵심 취약점 section present", "passed": true, "evidence": "Section '핵심 취약점: 일정이 TypeScript의 가치를 역전시킨다' present"},
+        {"text": "Direct tone without hedging", "passed": true, "evidence": "All declarative constructions, no hedging phrases"},
+        {"text": "No TypeScript benefits balancing section", "passed": true, "evidence": "Fully adversarial framing throughout"}
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "eval_name": "TypeScript Migration",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.6,
+        "passed": 3,
+        "failed": 2,
+        "total": 5,
+        "time_seconds": 43.6,
+        "tokens": 10602,
+        "tool_calls": 3,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Exactly 3 counterarguments presented", "passed": true, "evidence": "3 sections present"},
+        {"text": "TypeScript-specific arguments", "passed": true, "evidence": "Cited type erasure, any abuse, @types gaps"},
+        {"text": "핵심 취약점 section present", "passed": false, "evidence": "Used '핵심 위험' per-argument, not a standalone '핵심 취약점' section"},
+        {"text": "Direct tone without hedging", "passed": true, "evidence": "Declarative throughout"},
+        {"text": "No TypeScript benefits balancing section", "passed": false, "evidence": "Conclusion said 'TypeScript 전환 자체가 나쁜 결정이라는 것이 아닙니다' and recommended phased adoption"}
+      ],
+      "notes": ["Softening conclusion undermines adversarial framing"]
+    },
+    {
+      "eval_id": 2,
+      "eval_name": "Mobile App Sunset",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 84.4,
+        "tokens": 13733,
+        "tool_calls": 7,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "3 counterarguments presented", "passed": true, "evidence": "Exactly 3 counterarguments labeled"},
+        {"text": "Steel-manned arguments", "passed": true, "evidence": "Cited 4-5x time-in-app data, iOS PWA policy constraints, RN/Flutter maturity"},
+        {"text": "Core Vulnerability section present", "passed": true, "evidence": "'## Core Vulnerability' section present, identifies structural framing flaw"},
+        {"text": "Mobile-vs-web specific", "passed": true, "evidence": "All arguments grounded in mobile-specific dynamics"},
+        {"text": "Response in English", "passed": true, "evidence": "Entire output in English"}
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "eval_name": "Mobile App Sunset",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.8,
+        "passed": 4,
+        "failed": 1,
+        "total": 5,
+        "time_seconds": 52.7,
+        "tokens": 10340,
+        "tool_calls": 3,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "3 counterarguments presented", "passed": true, "evidence": "7 counterarguments presented (exceeds minimum)"},
+        {"text": "Steel-manned arguments", "passed": true, "evidence": "Sophisticated arguments with specific technical details"},
+        {"text": "Core Vulnerability section present", "passed": false, "evidence": "No labeled Core Vulnerability section; conclusion touches on flaw conceptually"},
+        {"text": "Mobile-vs-web specific", "passed": true, "evidence": "References Safari WebKit, MDM, biometric auth, App Store distribution"},
+        {"text": "Response in English", "passed": true, "evidence": "Entire response in English"}
+      ],
+      "notes": ["7 arguments instead of 3 — listicle dilutes the force of the strongest objections"]
+    },
+    {
+      "eval_id": 3,
+      "eval_name": "Multi-tenant SaaS Early Adoption",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 88.1,
+        "tokens": 14453,
+        "tool_calls": 6,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Korean language", "passed": true, "evidence": "Entire output in Korean"},
+        {"text": "Startup-specific context", "passed": true, "evidence": "Cited PMF validation, 2~5명 team size, runway burn"},
+        {"text": "핵심 취약점 section present", "passed": true, "evidence": "## 핵심 취약점 section present on lines 22-27"},
+        {"text": "YAGNI / pivot-risk challenge", "passed": true, "evidence": "반론 3 and 핵심 취약점 both directly challenge 'early investment prevents future pain'"},
+        {"text": "No softening section", "passed": true, "evidence": "Consistently adversarial; no benefit-restating language anywhere"}
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "eval_name": "Multi-tenant SaaS Early Adoption",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.6,
+        "passed": 3,
+        "failed": 2,
+        "total": 5,
+        "time_seconds": 76.9,
+        "tokens": 12323,
+        "tool_calls": 4,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Korean language", "passed": true, "evidence": "Entire output in Korean"},
+        {"text": "Startup-specific context", "passed": true, "evidence": "CB Insights data, runway constraints, 2-5 person teams"},
+        {"text": "핵심 취약점 section present", "passed": false, "evidence": "Used '종합 평가' as summary section, not '핵심 취약점'"},
+        {"text": "YAGNI / pivot-risk challenge", "passed": true, "evidence": "Section 4 explicitly invokes Martin Fowler's YAGNI, Section 1 covers pivot risk"},
+        {"text": "No softening section", "passed": false, "evidence": "Section 7 '대안적 접근: 점진적 멀티테넌트화' endorses multi-tenancy as eventual destination"}
+      ],
+      "notes": ["Concluded with 'multi-tenant SaaS is the destination' — concedes original position"]
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {"mean": 1.0, "stddev": 0.0, "min": 1.0, "max": 1.0},
+      "time_seconds": {"mean": 86.5, "stddev": 1.9, "min": 84.4, "max": 88.1},
+      "tokens": {"mean": 14098, "stddev": 362, "min": 13733, "max": 14453}
+    },
+    "without_skill": {
+      "pass_rate": {"mean": 0.67, "stddev": 0.09, "min": 0.6, "max": 0.8},
+      "time_seconds": {"mean": 57.7, "stddev": 14.2, "min": 43.6, "max": 76.9},
+      "tokens": {"mean": 11088, "stddev": 1020, "min": 10340, "max": 12323}
+    },
+    "delta": {
+      "pass_rate": "+0.33",
+      "time_seconds": "+28.8",
+      "tokens": "+3010"
+    }
+  },
+  "notes": [
+    "With-skill: 15/15 across all evals (100%). Without-skill: 10/15 (67%).",
+    "The two consistent failure modes for without-skill: (1) missing labeled '핵심 취약점' section, (2) softening conclusion that undermines adversarial framing.",
+    "Without-skill produces listicles (7 arguments in eval-2) vs. skill's disciplined 3 — diffuses the force of the best objections.",
+    "With-skill uses think-tool before every response; without-skill skips this reasoning phase.",
+    "Time cost: +29s average for using the skill (think-tool overhead), but quality uplift is consistent and significant.",
+    "Assertions on '핵심 취약점' presence are well-discriminating — they consistently separate the two configurations."
+  ]
+}

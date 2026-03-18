@@ -1,0 +1,1325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eval Review</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600&family=Lora:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js" integrity="sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --bg: #faf9f5;
+      --surface: #ffffff;
+      --border: #e8e6dc;
+      --text: #141413;
+      --text-muted: #b0aea5;
+      --accent: #d97757;
+      --accent-hover: #c4613f;
+      --green: #788c5d;
+      --green-bg: #eef2e8;
+      --red: #c44;
+      --red-bg: #fceaea;
+      --header-bg: #141413;
+      --header-text: #faf9f5;
+      --radius: 6px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Lora', Georgia, serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ---- Header ---- */
+    .header {
+      background: var(--header-bg);
+      color: var(--header-text);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .header h1 {
+      font-family: 'Poppins', sans-serif;
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    .header .instructions {
+      font-size: 0.8rem;
+      opacity: 0.7;
+      margin-top: 0.25rem;
+    }
+    .header .progress {
+      font-size: 0.875rem;
+      opacity: 0.8;
+      text-align: right;
+    }
+
+    /* ---- Main content ---- */
+    .main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.5rem 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    /* ---- Sections ---- */
+    .section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      flex-shrink: 0;
+    }
+    .section-header {
+      font-family: 'Poppins', sans-serif;
+      padding: 0.75rem 1rem;
+      font-size: 0.75rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .section-body {
+      padding: 1rem;
+    }
+
+    /* ---- Config badge ---- */
+    .config-badge {
+      display: inline-block;
+      padding: 0.2rem 0.625rem;
+      border-radius: 9999px;
+      font-family: 'Poppins', sans-serif;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      margin-left: 0.75rem;
+      vertical-align: middle;
+    }
+    .config-badge.config-primary {
+      background: rgba(33, 150, 243, 0.12);
+      color: #1976d2;
+    }
+    .config-badge.config-baseline {
+      background: rgba(255, 193, 7, 0.15);
+      color: #f57f17;
+    }
+
+    /* ---- Prompt ---- */
+    .prompt-text {
+      white-space: pre-wrap;
+      font-size: 0.9375rem;
+      line-height: 1.6;
+    }
+
+    /* ---- Outputs ---- */
+    .output-file {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .output-file + .output-file {
+      margin-top: 1rem;
+    }
+    .output-file-header {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      font-family: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .output-file-header .dl-btn {
+      font-size: 0.7rem;
+      color: var(--accent);
+      text-decoration: none;
+      cursor: pointer;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-weight: 500;
+      opacity: 0.8;
+    }
+    .output-file-header .dl-btn:hover {
+      opacity: 1;
+      text-decoration: underline;
+    }
+    .output-file-content {
+      padding: 0.75rem;
+      overflow-x: auto;
+    }
+    .output-file-content pre {
+      font-size: 0.8125rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+    }
+    .output-file-content img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 4px;
+    }
+    .output-file-content iframe {
+      width: 100%;
+      height: 600px;
+      border: none;
+    }
+    .output-file-content table {
+      border-collapse: collapse;
+      font-size: 0.8125rem;
+      width: 100%;
+    }
+    .output-file-content table td,
+    .output-file-content table th {
+      border: 1px solid var(--border);
+      padding: 0.375rem 0.5rem;
+      text-align: left;
+    }
+    .output-file-content table th {
+      background: var(--bg);
+      font-weight: 600;
+    }
+    .output-file-content .download-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 0.875rem;
+      cursor: pointer;
+    }
+    .output-file-content .download-link:hover {
+      background: var(--border);
+    }
+    .empty-state {
+      color: var(--text-muted);
+      font-style: italic;
+      padding: 2rem;
+      text-align: center;
+    }
+
+    /* ---- Feedback ---- */
+    .prev-feedback {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.625rem 0.75rem;
+      margin-top: 0.75rem;
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .prev-feedback-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.25rem;
+      color: var(--text-muted);
+    }
+    .feedback-textarea {
+      width: 100%;
+      min-height: 100px;
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 0.9375rem;
+      line-height: 1.5;
+      resize: vertical;
+      color: var(--text);
+    }
+    .feedback-textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+    .feedback-status {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+      min-height: 1.1em;
+    }
+
+    /* ---- Grades (collapsible) ---- */
+    .grades-toggle {
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+    }
+    .grades-toggle:hover {
+      color: var(--accent);
+    }
+    .grades-toggle .arrow {
+      margin-right: 0.5rem;
+      transition: transform 0.15s;
+      font-size: 0.75rem;
+    }
+    .grades-toggle .arrow.open {
+      transform: rotate(90deg);
+    }
+    .grades-content {
+      display: none;
+      margin-top: 0.75rem;
+    }
+    .grades-content.open {
+      display: block;
+    }
+    .grades-summary {
+      font-size: 0.875rem;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .grade-badge {
+      display: inline-block;
+      padding: 0.125rem 0.5rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .grade-pass { background: var(--green-bg); color: var(--green); }
+    .grade-fail { background: var(--red-bg); color: var(--red); }
+    .assertion-list {
+      list-style: none;
+    }
+    .assertion-item {
+      padding: 0.625rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8125rem;
+    }
+    .assertion-item:last-child { border-bottom: none; }
+    .assertion-status {
+      font-weight: 600;
+      margin-right: 0.5rem;
+    }
+    .assertion-status.pass { color: var(--green); }
+    .assertion-status.fail { color: var(--red); }
+    .assertion-evidence {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      margin-top: 0.25rem;
+      padding-left: 1.5rem;
+    }
+
+    /* ---- View tabs ---- */
+    .view-tabs {
+      display: flex;
+      gap: 0;
+      padding: 0 2rem;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .view-tab {
+      font-family: 'Poppins', sans-serif;
+      padding: 0.625rem 1.25rem;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      background: none;
+      color: var(--text-muted);
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    .view-tab:hover { color: var(--text); }
+    .view-tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+    .view-panel { display: none; }
+    .view-panel.active { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+
+    /* ---- Benchmark view ---- */
+    .benchmark-view {
+      padding: 1.5rem 2rem;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .benchmark-table {
+      border-collapse: collapse;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 0.8125rem;
+      width: 100%;
+      margin-bottom: 1.5rem;
+    }
+    .benchmark-table th, .benchmark-table td {
+      padding: 0.625rem 0.75rem;
+      text-align: left;
+      border: 1px solid var(--border);
+    }
+    .benchmark-table th {
+      font-family: 'Poppins', sans-serif;
+      background: var(--header-bg);
+      color: var(--header-text);
+      font-weight: 500;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .benchmark-table tr:hover { background: var(--bg); }
+    .benchmark-table tr.benchmark-row-with { background: rgba(33, 150, 243, 0.06); }
+    .benchmark-table tr.benchmark-row-without { background: rgba(255, 193, 7, 0.06); }
+    .benchmark-table tr.benchmark-row-with:hover { background: rgba(33, 150, 243, 0.12); }
+    .benchmark-table tr.benchmark-row-without:hover { background: rgba(255, 193, 7, 0.12); }
+    .benchmark-table tr.benchmark-row-avg { font-weight: 600; border-top: 2px solid var(--border); }
+    .benchmark-table tr.benchmark-row-avg.benchmark-row-with { background: rgba(33, 150, 243, 0.12); }
+    .benchmark-table tr.benchmark-row-avg.benchmark-row-without { background: rgba(255, 193, 7, 0.12); }
+    .benchmark-delta-positive { color: var(--green); font-weight: 600; }
+    .benchmark-delta-negative { color: var(--red); font-weight: 600; }
+    .benchmark-notes {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem;
+    }
+    .benchmark-notes h3 {
+      font-family: 'Poppins', sans-serif;
+      font-size: 0.875rem;
+      margin-bottom: 0.75rem;
+    }
+    .benchmark-notes ul {
+      list-style: disc;
+      padding-left: 1.25rem;
+    }
+    .benchmark-notes li {
+      font-size: 0.8125rem;
+      line-height: 1.6;
+      margin-bottom: 0.375rem;
+    }
+    .benchmark-empty {
+      color: var(--text-muted);
+      font-style: italic;
+      text-align: center;
+      padding: 3rem;
+    }
+
+    /* ---- Navigation ---- */
+    .nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 2rem;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+    .nav-btn {
+      font-family: 'Poppins', sans-serif;
+      padding: 0.5rem 1.25rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text);
+      transition: all 0.15s;
+    }
+    .nav-btn:hover:not(:disabled) {
+      background: var(--bg);
+      border-color: var(--text-muted);
+    }
+    .nav-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .done-btn {
+      font-family: 'Poppins', sans-serif;
+      padding: 0.5rem 1.5rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+    .done-btn:hover {
+      background: var(--bg);
+      border-color: var(--text-muted);
+    }
+    .done-btn.ready {
+      border: none;
+      background: var(--accent);
+      color: white;
+      font-weight: 600;
+    }
+    .done-btn.ready:hover {
+      background: var(--accent-hover);
+    }
+    /* ---- Done overlay ---- */
+    .done-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 100;
+      justify-content: center;
+      align-items: center;
+    }
+    .done-overlay.visible {
+      display: flex;
+    }
+    .done-card {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 2rem 3rem;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 500px;
+    }
+    .done-card h2 {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+    .done-card p {
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+      line-height: 1.5;
+    }
+    .done-card .btn-row {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: center;
+    }
+    .done-card button {
+      padding: 0.5rem 1.25rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      cursor: pointer;
+      font-size: 0.875rem;
+    }
+    .done-card button:hover {
+      background: var(--bg);
+    }
+    /* ---- Toast ---- */
+    .toast {
+      position: fixed;
+      bottom: 5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--header-bg);
+      color: var(--header-text);
+      padding: 0.625rem 1.25rem;
+      border-radius: var(--radius);
+      font-size: 0.875rem;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      z-index: 200;
+    }
+    .toast.visible {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div id="app" style="height:100vh; display:flex; flex-direction:column;">
+    <div class="header">
+      <div>
+        <h1>Eval Review: <span id="skill-name"></span></h1>
+        <div class="instructions">Review each output and leave feedback below. Navigate with arrow keys or buttons. When done, copy feedback and paste into Claude Code.</div>
+      </div>
+      <div class="progress" id="progress"></div>
+    </div>
+
+    <!-- View tabs (only shown when benchmark data exists) -->
+    <div class="view-tabs" id="view-tabs" style="display:none;">
+      <button class="view-tab active" onclick="switchView('outputs')">Outputs</button>
+      <button class="view-tab" onclick="switchView('benchmark')">Benchmark</button>
+    </div>
+
+    <!-- Outputs panel (qualitative review) -->
+    <div class="view-panel active" id="panel-outputs">
+    <div class="main">
+      <!-- Prompt -->
+      <div class="section">
+        <div class="section-header">Prompt <span class="config-badge" id="config-badge" style="display:none;"></span></div>
+        <div class="section-body">
+          <div class="prompt-text" id="prompt-text"></div>
+        </div>
+      </div>
+
+      <!-- Outputs -->
+      <div class="section">
+        <div class="section-header">Output</div>
+        <div class="section-body" id="outputs-body">
+          <div class="empty-state">No output files found</div>
+        </div>
+      </div>
+
+      <!-- Previous Output (collapsible) -->
+      <div class="section" id="prev-outputs-section" style="display:none;">
+        <div class="section-header">
+          <div class="grades-toggle" onclick="togglePrevOutputs()">
+            <span class="arrow" id="prev-outputs-arrow">&#9654;</span>
+            Previous Output
+          </div>
+        </div>
+        <div class="grades-content" id="prev-outputs-content"></div>
+      </div>
+
+      <!-- Grades (collapsible) -->
+      <div class="section" id="grades-section" style="display:none;">
+        <div class="section-header">
+          <div class="grades-toggle" onclick="toggleGrades()">
+            <span class="arrow" id="grades-arrow">&#9654;</span>
+            Formal Grades
+          </div>
+        </div>
+        <div class="grades-content" id="grades-content"></div>
+      </div>
+
+      <!-- Feedback -->
+      <div class="section">
+        <div class="section-header">Your Feedback</div>
+        <div class="section-body">
+          <textarea
+            class="feedback-textarea"
+            id="feedback"
+            placeholder="What do you think of this output? Any issues, suggestions, or things that look great?"
+          ></textarea>
+          <div class="feedback-status" id="feedback-status"></div>
+          <div class="prev-feedback" id="prev-feedback" style="display:none;">
+            <div class="prev-feedback-label">Previous feedback</div>
+            <div id="prev-feedback-text"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="nav" id="outputs-nav">
+      <button class="nav-btn" id="prev-btn" onclick="navigate(-1)">&#8592; Previous</button>
+      <button class="done-btn" id="done-btn" onclick="showDoneDialog()">Submit All Reviews</button>
+      <button class="nav-btn" id="next-btn" onclick="navigate(1)">Next &#8594;</button>
+    </div>
+    </div><!-- end panel-outputs -->
+
+    <!-- Benchmark panel (quantitative stats) -->
+    <div class="view-panel" id="panel-benchmark">
+      <div class="benchmark-view" id="benchmark-content">
+        <div class="benchmark-empty">No benchmark data available. Run a benchmark to see quantitative results here.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Done overlay -->
+  <div class="done-overlay" id="done-overlay">
+    <div class="done-card">
+      <h2>Review Complete</h2>
+      <p>Your feedback has been saved. Go back to your Claude Code session and tell Claude you're done reviewing.</p>
+      <div class="btn-row">
+        <button onclick="closeDoneDialog()">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // ---- Embedded data (injected by generate_review.py) ----
+    const EMBEDDED_DATA = {"skill_name": "devils-advocate", "runs": [{"id": "eval-1-typescript-with_skill", "prompt": "\uc6b0\ub9ac \ud300\uc774 \ub2e4\uc74c \ubd84\uae30\uc5d0 TypeScript\ub85c \uc804\ud658\ud558\uae30\ub85c \uacb0\uc815\ud588\uc5b4. \ubc18\ub860 3\uac00\uc9c0\ub97c \ub4e4\uc5b4\uc918.", "eval_id": 1, "outputs": [{"name": "output.md", "type": "text", "content": "# Devil's Advocate: TypeScript \uc804\ud658 \uacb0\uc815\uc5d0 \ub300\ud55c \ubc18\ub860\n\n**\ub3c4\uc804\ubc1b\ub294 \uacb0\uc815:**\n\"\uc6b0\ub9ac \ud300\uc774 \ub2e4\uc74c \ubd84\uae30\uc5d0 TypeScript\ub85c \uc804\ud658\ud558\uae30\ub85c \uacb0\uc815\ud588\ub2e4\"\n\n---\n\n\ubc18\ub860 1: \"\ub2e4\uc74c \ubd84\uae30\" \uc77c\uc815\uc774 `any` \ud0c0\uc785 \uc9c0\uc625\uc744 \ub9cc\ub4e0\ub2e4\n\nTypeScript \ub9c8\uc774\uadf8\ub808\uc774\uc158\uc744 \ud55c \ubd84\uae30 \uc548\uc5d0 \ub05d\ub0b4\uc57c \ud55c\ub2e4\ub294 \uc555\ubc15\uc740 \uac00\uc7a5 \ub098\uc05c \ud615\ud0dc\uc758 TypeScript \ucf54\ub4dc\ubca0\uc774\uc2a4\ub97c \ub9cc\ub4e0\ub2e4. \ud0c0\uc785 \uc624\ub958\uac00 \ub9c9\ud790 \ub54c\ub9c8\ub2e4 `any`\ub97c \ubd99\uc774\uac70\ub098 `@ts-ignore`\ub85c \ub36e\uc5b4\ubc84\ub9ac\uac8c \ub418\ub294\ub370, \uc774\ub807\uac8c \uc313\uc778 \ucf54\ub4dc\ub294 TypeScript\ucc98\ub7fc \ubcf4\uc774\uc9c0\ub9cc \uc2e4\uc81c\ub85c\ub294 JS\ubcf4\ub2e4 \ub354 \uc704\ud5d8\ud558\ub2e4 \u2014 \ud0c0\uc785\uc774 \uc788\ub2e4\ub294 \uac70\uc9d3 \uc548\ub3c4\uac10\uc744 \uc8fc\uba74\uc11c \ub7f0\ud0c0\uc784 \ubc84\uadf8\ub294 \uadf8\ub300\ub85c \ub0a8\uc544 \uc788\uae30 \ub54c\ubb38\uc774\ub2e4. \ub9c8\uc774\uadf8\ub808\uc774\uc158 \ube44\uc6a9\uc740 \uc804\ubd80 \uc9c0\ubd88\ud558\uace0 TypeScript\uc758 \ud575\uc2ec \uc774\uc810\uc740 \uac70\uc758 \uc5bb\uc9c0 \ubabb\ud558\ub294 \uacb0\uacfc\uac00 \ub41c\ub2e4. \uadf8\ub9ac\uace0 `any`\uac00 \ud37c\uc9c4 \ucf54\ub4dc\ubca0\uc774\uc2a4\ub97c \ub098\uc911\uc5d0 \uc815\ub9ac\ud558\ub294 \uac83\uc740 \ucc98\uc74c\ubd80\ud130 \ub2e4\uc2dc \uc791\uc131\ud558\ub294 \uac83\ubcf4\ub2e4 \uc5b4\ub835\ub2e4 \u2014 \ud300\uc774 \uc774\ubbf8 \ud0c0\uc785 \uc2dc\uc2a4\ud15c\uc744 \ubb34\uc2dc\ud558\ub294 \uc2b5\uad00\uc774 \ub4e4\uc5b4 \uc788\uae30 \ub54c\ubb38\uc774\ub2e4.\n\n\ubc18\ub860 2: \uc804\ud658 \uae30\uac04\uc758 \uc0dd\uc0b0\uc131 \ud558\ub77d\uc740 \ucd94\uc0c1\uc801\uc778 \uc704\ud5d8\uc774 \uc544\ub2c8\ub77c \ub2e4\uc74c \ubd84\uae30\uc758 \uc2e4\uc81c \ube44\uc6a9\uc774\ub2e4\n\nTypeScript\ub294 \ub2e8\uc21c\ud788 `.ts` \ud655\uc7a5\uc790\ub97c \ubd99\uc774\ub294 \uac8c \uc544\ub2c8\ub2e4. \ube4c\ub4dc \ud30c\uc774\ud504\ub77c\uc778 \ubcc0\uacbd, tsconfig \uc124\uc815, \ud14c\uc2a4\ud2b8 \ud504\ub808\uc784\uc6cc\ud06c \uc5c5\ub370\uc774\ud2b8, CI/CD \uc218\uc815, \uadf8\ub9ac\uace0 \ud300 \uc804\uccb4\uac00 \uc81c\ub124\ub9ad\u00b7\ud0c0\uc785 \uac00\ub4dc\u00b7\uc720\ud2f8\ub9ac\ud2f0 \ud0c0\uc785\uc5d0 \uc775\uc219\ud574\uc9c0\ub294 \uacfc\uc815\uc774 \ud544\uc694\ud558\ub2e4. \uc774 \ubaa8\ub4e0 \uac83\uc774 \ub2e4\uc74c \ubd84\uae30\uc5d0 \ub3d9\uc2dc\uc5d0 \ubc8c\uc5b4\uc9c0\ub294 \ub3d9\uc548, \uc0c8 \uae30\ub2a5 \uac1c\ubc1c\uacfc \ubc84\uadf8 \uc218\uc815 \uc18d\ub3c4\ub294 \ub208\uc5d0 \ub744\uac8c \uc904\uc5b4\ub4e0\ub2e4. \ud300\uc774 \ub2e4\uc74c \ubd84\uae30\uc5d0 \uc81c\ud488 \uc57d\uc18d\uc774\ub098 \ub9c8\uac10\uc774 \uc788\ub2e4\uba74, \ub9c8\uc774\uadf8\ub808\uc774\uc158\uacfc \ub3d9\uc2dc\uc5d0 \uc774\ub97c \uc9c0\ud0a4\ub824\ub294 \uc2dc\ub3c4\ub294 \ub450 \uac00\uc9c0 \ubaa8\ub450 \ub9dd\uce60 \uac00\ub2a5\uc131\uc774 \ub192\ub2e4. \"TypeScript \uc804\ud658\"\uacfc \"\ub2e4\uc74c \ubd84\uae30 \ubaa9\ud45c \ub2ec\uc131\"\uc740 \uac19\uc740 \uc2dc\uac04 \uc608\uc0b0\uc744 \ub193\uace0 \uacbd\uc7c1\ud55c\ub2e4.\n\n\ubc18\ub860 3: TypeScript\uac00 \ud574\uacb0\ud558\uc9c0 \ubabb\ud558\ub294 \ud488\uc9c8 \ubb38\uc81c\ub97c \ud574\uacb0\ud55c\ub2e4\uace0 \ucc29\uac01\ud558\uac8c \ub9cc\ub4e0\ub2e4\n\nTypeScript\ub294 \ucef4\ud30c\uc77c \ud0c0\uc784\uc758 \ud0c0\uc785 \ubd88\uc77c\uce58\ub294 \uc7a1\uc544\uc8fc\uc9c0\ub9cc, \uc678\ubd80 API \uc751\ub2f5, \uc0ac\uc6a9\uc790 \uc785\ub825, \ub7f0\ud0c0\uc784 \ub370\uc774\ud130\ub294 \uc5ec\uc804\ud788 \ud0c0\uc785 \uc2dc\uc2a4\ud15c \ubc16\uc5d0 \uc788\ub2e4. \ud300\uc774 \"TypeScript\ub85c \uc804\ud658\ud588\uc73c\ub2c8 \ucf54\ub4dc\uac00 \uc548\uc804\ud574\uc84c\ub2e4\"\uace0 \ubbff\ub294 \uc21c\uac04, \ub7f0\ud0c0\uc784 \uc720\ud6a8\uc131 \uac80\uc0ac\ub098 \uc2e4\uc9c8\uc801\uc778 \ud14c\uc2a4\ud2b8 \ucee4\ubc84\ub9ac\uc9c0\uc5d0 \ub300\ud55c \ud22c\uc790\ub97c \uc904\uc774\uac8c \ub41c\ub2e4. \uc2e4\uc81c\ub85c \ud488\uc9c8 \ubb38\uc81c\uac00 \ubd88\ubd84\uba85\ud55c \uc124\uacc4, \ube48\uc57d\ud55c \ud14c\uc2a4\ud2b8, \uc798\ubabb\ub41c \ub370\uc774\ud130 \ud750\ub984\uc5d0\uc11c \ube44\ub86f\ub41c \uac83\uc774\ub77c\uba74, TypeScript\ub294 \uadf8 \ubb38\uc81c\ub97c \ub354 \uc120\uba85\ud558\uac8c \ubcf4\uc774\uac8c \ud560 \ubfd0 \ud574\uacb0\ud574 \uc8fc\uc9c0 \uc54a\ub294\ub2e4. \uc804\ud658 \uc774\ud6c4\uc5d0\ub3c4 \ubc84\uadf8\uac00 \uc904\uc9c0 \uc54a\uc73c\uba74 \ud300\uc740 \ud63c\ub780\uc5d0 \ube60\uc9c0\uace0, TypeScript\uc5d0 \ub300\ud55c \ubd88\uc2e0\ub9cc \ub0a8\ub294\ub2e4.\n\n---\n\n\ud575\uc2ec \ucde8\uc57d\uc810: \uc77c\uc815\uc774 TypeScript\uc758 \uac00\uce58\ub97c \uc5ed\uc804\uc2dc\ud0a8\ub2e4\n\nTypeScript \uc804\ud658\uc5d0\uc11c \uac00\uc7a5 \ud30c\uad34\uc801\uc778 \uc2e4\ud328 \ud328\ud134\uc740 \"\ud55c \uac83\ucc98\ub7fc \ubcf4\uc774\ub294 \ub9c8\uc774\uadf8\ub808\uc774\uc158\"\uc774\ub2e4. `any`\uac00 \uc218\ubc31 \uacf3\uc5d0 \ubc15\ud78c TypeScript \ucf54\ub4dc\ubca0\uc774\uc2a4\ub294 \uc21c\uc218\ud55c JavaScript\ubcf4\ub2e4 \ub098\uc058\ub2e4 \u2014 \ud0c0\uc785 \uc548\uc804\uc131\ub3c4 \uc5c6\uace0, \uc720\uc9c0 \ubcf4\uc218 \ubcf5\uc7a1\uc131\ub9cc \ub298\uc5b4\ub0ac\uc73c\uba70, \ud300\uc740 \"\uc774\ubbf8 TypeScript \uc4f0\uace0 \uc788\uc796\uc544\"\ub77c\ub294 \uc774\uc720\ub85c \ub2e4\uc2dc \uc190\ubcf4\ub824 \ud558\uc9c0 \uc54a\ub294\ub2e4. \"\ub2e4\uc74c \ubd84\uae30\"\ub77c\ub294 \uae30\ud55c\uc740 \uc815\ud655\ud788 \uc774 \uacb0\uacfc\ub97c \ud5a5\ud574 \ud300\uc744 \ubc00\uc5b4\ubd99\uc774\uace0 \uc788\ub2e4. TypeScript \uc804\ud658\uc758 \uc131\ud328\ub294 \uae30\uc220 \uc120\ud0dd\uc774 \uc544\ub2c8\ub77c \ucda9\ubd84\ud55c \uc2dc\uac04\uc744 \ud655\ubcf4\ud588\ub294\uac00\uc5d0 \ub2ec\ub824 \uc788\ub2e4.\n"}], "grading": {"expectations": [{"text": "Exactly 3 counterarguments are presented (not more, not fewer unless explicitly justified)", "passed": true, "evidence": "The output contains exactly 3 numbered counterarguments: '\ubc18\ub860 1', '\ubc18\ub860 2', '\ubc18\ub860 3'. No additional counterarguments appear."}, {"text": "Each counterargument is specific to TypeScript migration \u2014 not generic change-resistance or 'change is hard' platitudes", "passed": true, "evidence": "All three counterarguments are TypeScript-specific: (1) addresses the 'any' type proliferation and ts-ignore shortcuts under deadline pressure; (2) covers TypeScript-specific migration overhead (tsconfig, type guards, generics, utility types, build pipeline); (3) discusses TypeScript's specific limitation of not catching runtime data issues (external APIs, user input). None resort to generic 'change is hard' framing."}, {"text": "A 'core vulnerability' or '\ud575\uc2ec \ucde8\uc57d\uc810' section is clearly present", "passed": true, "evidence": "The output ends with an explicit section labeled '\ud575\uc2ec \ucde8\uc57d\uc810: \uc77c\uc815\uc774 TypeScript\uc758 \uac00\uce58\ub97c \uc5ed\uc804\uc2dc\ud0a8\ub2e4', which identifies the 'any-laden TypeScript codebase' pattern as the core failure mode."}, {"text": "The arguments are stated directly and confidently, without excessive hedging phrases like '\uc5b4\ub5a4 \uc0ac\ub78c\ub4e4\uc740 \uc0dd\uac01\ud560 \uc218\ub3c4 \uc788\ub294\ub370...' or 'some might argue...'", "passed": true, "evidence": "All arguments are stated in the first-person authoritative voice (e.g., '...\ub9cc\ub4e0\ub2e4', '...\ub41c\ub2e4', '...\ub0a8\ub294\ub2e4'). No hedging phrases like '\uc5b4\ub5a4 \uc0ac\ub78c\ub4e4\uc740', 'some might argue', or equivalent qualifiers appear anywhere in the output."}, {"text": "The response does NOT include a balancing section that lists benefits of TypeScript (which would undermine the adversarial framing)", "passed": true, "evidence": "The output contains no section listing TypeScript benefits. The \ud575\uc2ec \ucde8\uc57d\uc810 section and all three counterarguments maintain the adversarial framing throughout. The closest thing to acknowledging TypeScript's upside is incidental (e.g., 'TypeScript\uc758 \ud575\uc2ec \uc774\uc810\uc740 \uac70\uc758 \uc5bb\uc9c0 \ubabb\ud558\ub294'), but this is framed as a cost argument, not a benefit endorsement."}], "summary": {"passed": 5, "failed": 0, "total": 5, "pass_rate": 1.0}, "execution_metrics": {"tool_calls": {"Read": 1, "ToolSearch": 1, "mcp__claude_ai_think-tool__think": 1, "Bash": 1, "Write": 2}, "total_tool_calls": 6, "total_steps": 4, "files_created": 2, "errors_encountered": 0, "output_chars": 1486, "transcript_chars": 5800}, "timing": {"executor_duration_seconds": 87.1, "grader_duration_seconds": null, "total_duration_seconds": 87.1}, "claims": [{"claim": "The output presents exactly 3 counterarguments", "type": "factual", "verified": true, "evidence": "Counted 3 sections labeled \ubc18\ub860 1, \ubc18\ub860 2, \ubc18\ub860 3 in output.md"}, {"claim": "Arguments are TypeScript-migration-specific rather than generic", "type": "quality", "verified": true, "evidence": "\ubc18\ub860 1 discusses 'any' type spread; \ubc18\ub860 2 discusses tsconfig, type guards, generics, build pipeline changes; \ubc18\ub860 3 discusses TypeScript's inability to catch runtime data issues. All are TS-specific."}, {"claim": "The \ud575\uc2ec \ucde8\uc57d\uc810 section focuses the vulnerability on the timeline constraint, not TypeScript itself", "type": "quality", "verified": true, "evidence": "The section title is '\uc77c\uc815\uc774 TypeScript\uc758 \uac00\uce58\ub97c \uc5ed\uc804\uc2dc\ud0a8\ub2e4' (the schedule reverses TypeScript's value), correctly centering the timeline as the specific vulnerability rather than TypeScript generically."}], "user_notes_summary": {"uncertainties": [], "needs_review": [], "workarounds": []}, "eval_feedback": {"suggestions": [{"assertion": "Each counterargument is specific to TypeScript migration \u2014 not generic change-resistance or 'change is hard' platitudes", "reason": "This assertion passes but is underspecified. A response that rehashed well-known criticisms from blog posts without applying them to the specific decision ('\ub2e4\uc74c \ubd84\uae30\uc5d0 \uc804\ud658') would also pass. Consider requiring that at least one argument engage with the specific constraint in the prompt (the timeline, team size, or other contextual detail) to verify the skill is doing genuine reasoning rather than template-filling."}, {"reason": "No assertion checks that the \ud575\uc2ec \ucde8\uc57d\uc810 section synthesizes the three counterarguments rather than introducing a fourth unrelated point. The current output does synthesize well, but this isn't enforced by any expectation."}], "overall": "The evals are well-targeted and all pass with genuine substance. Two gaps worth closing: (1) specificity of 'TypeScript-specific' could be tightened to require engagement with the prompt's stated context; (2) the \ud575\uc2ec \ucde8\uc57d\uc810 quality (synthesis vs. new content) goes unchecked."}}}, {"id": "eval-1-typescript-without_skill", "prompt": "\uc6b0\ub9ac \ud300\uc774 \ub2e4\uc74c \ubd84\uae30\uc5d0 TypeScript\ub85c \uc804\ud658\ud558\uae30\ub85c \uacb0\uc815\ud588\uc5b4. \ubc18\ub860 3\uac00\uc9c0\ub97c \ub4e4\uc5b4\uc918.", "eval_id": 1, "outputs": [{"name": "output.md", "type": "text", "content": "# TypeScript \uc804\ud658\uc5d0 \ub300\ud55c \ubc18\ub860 3\uac00\uc9c0\n\n\ub2e4\uc74c \ubd84\uae30\uc5d0 TypeScript\ub85c \uc804\ud658\ud558\uae30\ub85c \uacb0\uc815\ud588\ub2e4\ub294 \uc18c\uc2dd\uc744 \ub4e4\uc5c8\uc2b5\ub2c8\ub2e4. TypeScript\uc758 \uc7a5\uc810\uc740 \ubd84\uba85\ud788 \uc874\uc7ac\ud558\uc9c0\ub9cc, \uc544\ub798 3\uac00\uc9c0 \ubc18\ub860\uc744 \uc2e0\uc911\ud788 \uac80\ud1a0\ud574 \ubcf4\uc2dc\uae38 \uad8c\uc7a5\ud569\ub2c8\ub2e4.\n\n---\n\n## \ubc18\ub860 1: \ub2e8\uae30\uc801 \uc0dd\uc0b0\uc131 \uc800\ud558\uc640 \uc804\ud658 \ube44\uc6a9\n\nTypeScript \uc804\ud658\uc740 \ub2e8\uc21c\ud788 \ucf54\ub4dc\uc5d0 \ud0c0\uc785 \uc8fc\uc11d\uc744 \ucd94\uac00\ud558\ub294 \uc791\uc5c5\uc774 \uc544\ub2d9\ub2c8\ub2e4. \uae30\uc874 JavaScript \ucf54\ub4dc\ubca0\uc774\uc2a4\ub97c TypeScript\ub85c \ub9c8\uc774\uadf8\ub808\uc774\uc158\ud558\ub294 \ub370\ub294 \uc0c1\ub2f9\ud55c \uc2dc\uac04\uacfc \ub178\ub825\uc774 \ud544\uc694\ud569\ub2c8\ub2e4.\n\n- **\ub7ec\ub2dd \ucee4\ube0c**: \ud300\uc6d0 \uc911 TypeScript\uc5d0 \uc775\uc219\ud558\uc9c0 \uc54a\uc740 \uac1c\ubc1c\uc790\ub294 \uc81c\ub124\ub9ad, \uc720\ud2f8\ub9ac\ud2f0 \ud0c0\uc785, \ud0c0\uc785 \ucd94\ub860 \ub4f1\uc744 \ud559\uc2b5\ud558\ub294 \ub370 \uc2dc\uac04\uc774 \uc18c\uc694\ub429\ub2c8\ub2e4.\n- **\uae30\uc874 \ucf54\ub4dc \ub9c8\uc774\uadf8\ub808\uc774\uc158**: \uae30\uc874 `.js` \ud30c\uc77c\uc744 `.ts`\ub85c \uc804\ud658\ud558\uba74\uc11c \ubc1c\uc0dd\ud558\ub294 \ud0c0\uc785 \uc5d0\ub7ec \uc218\ucc9c \uac1c\ub97c \ucc98\ub9ac\ud574\uc57c \ud569\ub2c8\ub2e4.\n- **\uc11c\ub4dc\ud30c\ud2f0 \ub77c\uc774\ube0c\ub7ec\ub9ac \ud638\ud658\uc131**: `@types/*` \ud328\ud0a4\uc9c0\uac00 \uc5c6\uac70\ub098 \ubd88\uc644\uc804\ud55c \ub77c\uc774\ube0c\ub7ec\ub9ac\ub97c \uc0ac\uc6a9\ud560 \uacbd\uc6b0, \uc9c1\uc811 \ud0c0\uc785 \uc815\uc758\ub97c \uc791\uc131\ud574\uc57c \ud569\ub2c8\ub2e4.\n\n**\ud575\uc2ec \uc704\ud5d8**: \"\ub2e4\uc74c \ubd84\uae30\"\ub77c\ub294 \uc9e7\uc740 \uae30\uac04 \uc548\uc5d0 \uc804\ud658\uc744 \uac15\ud589\ud558\uba74, \uc815\uc791 \ube44\uc988\ub2c8\uc2a4 \uac00\uce58\ub97c \ub9cc\ub4dc\ub294 \uae30\ub2a5 \uac1c\ubc1c \uc18d\ub3c4\uac00 \ud06c\uac8c \ub5a8\uc5b4\uc9c8 \uc218 \uc788\uc2b5\ub2c8\ub2e4.\n\n---\n\n## \ubc18\ub860 2: TypeScript\uac00 \ubc84\uadf8\ub97c \uc644\uc804\ud788 \ub9c9\uc544\uc8fc\uc9c0 \uc54a\ub294\ub2e4\n\nTypeScript\uac00 \ud0c0\uc785 \uc548\uc815\uc131\uc744 \uc81c\uacf5\ud55c\ub2e4\ub294 \uac83\uc740 \uc0ac\uc2e4\uc774\uc9c0\ub9cc, \uc774\ub97c \"\ubc84\uadf8 \uc5c6\ub294 \ucf54\ub4dc\"\uc640 \ub3d9\uc77c\uc2dc\ud558\ub294 \uac83\uc740 \uacfc\ub3c4\ud55c \uae30\ub300\uc785\ub2c8\ub2e4.\n\n- **`any` \ud0c0\uc785 \ub0a8\uc6a9**: \ud300\uc774 TypeScript\uc5d0 \uc775\uc219\ud558\uc9c0 \uc54a\uac70\ub098 \ub9c8\uc774\uadf8\ub808\uc774\uc158 \uc555\ubc15\uc774 \ud074 \uacbd\uc6b0, `any`\ub97c \ub0a8\ubc1c\ud558\uc5ec \uc0ac\uc2e4\uc0c1 \ud0c0\uc785 \uac80\uc0ac\ub97c \ubb34\ub825\ud654\uc2dc\ud0a4\ub294 \ucf54\ub4dc\uac00 \uc591\uc0b0\ub420 \uc218 \uc788\uc2b5\ub2c8\ub2e4.\n- **\ub7f0\ud0c0\uc784 \uc624\ub958\ub294 \uc5ec\uc804\ud788 \ubc1c\uc0dd**: TypeScript\ub294 \ucef4\ud30c\uc77c \ud0c0\uc784\uc5d0\ub9cc \ub3d9\uc791\ud569\ub2c8\ub2e4. \uc678\ubd80 API \uc751\ub2f5, \uc0ac\uc6a9\uc790 \uc785\ub825 \ub4f1 \ub7f0\ud0c0\uc784\uc5d0 \ub4e4\uc5b4\uc624\ub294 \ub370\uc774\ud130\uc758 \ud0c0\uc785\uc740 TypeScript\ub9cc\uc73c\ub85c \ubcf4\uc7a5\ud560 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4.\n- **\ud0c0\uc785\uc774 \uace7 \ud14c\uc2a4\ud2b8\uac00 \uc544\ub2d8**: \ud0c0\uc785 \uc2dc\uc2a4\ud15c\uc774 \uc788\ub2e4\uace0 \ud574\uc11c \ub2e8\uc704 \ud14c\uc2a4\ud2b8, \ud1b5\ud569 \ud14c\uc2a4\ud2b8\uc758 \ud544\uc694\uc131\uc774 \uc904\uc5b4\ub4dc\ub294 \uac83\uc740 \uc544\ub2d9\ub2c8\ub2e4. \ud300\uc774 \"TypeScript \uc4f0\ub2c8\uae4c \uad1c\ucc2e\uaca0\uc9c0\"\ub77c\ub294 \uc548\ub3c4\uac10\uc5d0 \ube60\uc9c8 \uc704\ud5d8\uc774 \uc788\uc2b5\ub2c8\ub2e4.\n\n**\ud575\uc2ec \uc704\ud5d8**: TypeScript \ub3c4\uc785\uc5d0 \ud22c\uc790\ud55c \ube44\uc6a9\ub9cc\ud07c \uc2e4\uc9c8\uc801\uc778 \ud488\uc9c8 \ud5a5\uc0c1\uc774 \uc774\ub8e8\uc5b4\uc9c0\uc9c0 \uc54a\uc744 \uc218 \uc788\uc73c\uba70, \uc774\ub294 \ud22c\uc790 \ub300\ube44 \ud6a8\uacfc(ROI)\uc5d0 \ub300\ud55c \uc758\ubb38\uc73c\ub85c \uc774\uc5b4\uc9d1\ub2c8\ub2e4.\n\n---\n\n## \ubc18\ub860 3: \ud300 \uaddc\ubaa8\uc640 \ud504\ub85c\uc81d\ud2b8 \uc131\uaca9\uc5d0 \ub530\ub978 \uc624\ubc84\uc5d4\uc9c0\ub2c8\uc5b4\ub9c1\n\nTypeScript\ub294 \ub300\uaddc\ubaa8 \ud300\uacfc \uc7a5\uae30\uc801\uc73c\ub85c \uc720\uc9c0\ubcf4\uc218\ud574\uc57c \ud558\ub294 \ub300\ud615 \ud504\ub85c\uc81d\ud2b8\uc5d0\uc11c \uadf8 \uac00\uce58\uac00 \uadf9\ub300\ud654\ub429\ub2c8\ub2e4. \ubaa8\ub4e0 \uc0c1\ud669\uc5d0 \uc801\ud569\ud55c \uac83\uc740 \uc544\ub2d9\ub2c8\ub2e4.\n\n- **\uc18c\uaddc\ubaa8 \ud300 / \ube60\ub978 \uc774\ud130\ub808\uc774\uc158**: \ud300\uc774 \uc18c\uaddc\ubaa8\uc774\uace0 \uc11c\ub85c \ucf54\ub4dc\ub97c \uc798 \uc54c\uace0 \uc788\ub2e4\uba74, \uc5c4\uaca9\ud55c \ud0c0\uc785 \uc2dc\uc2a4\ud15c\ubcf4\ub2e4 \ucf54\ub4dc \ub9ac\ubdf0\uc640 \ud14c\uc2a4\ud2b8\uac00 \ub354 \ud6a8\uc728\uc801\uc77c \uc218 \uc788\uc2b5\ub2c8\ub2e4.\n- **\ud504\ub85c\ud1a0\ud0c0\uc785 / \uc2e4\ud5d8\uc801 \ub2e8\uacc4**: \uc81c\ud488\uc774 \uc544\uc9c1 \ubc29\ud5a5\uc131\uc744 \uc7a1\ub294 \ub2e8\uacc4\ub77c\uba74, TypeScript\uc758 \uc5c4\uaca9\ud568\uc774 \uc624\ud788\ub824 \ube60\ub978 \uc2e4\ud5d8\uacfc \ud53c\ubc97\uc744 \ubc29\ud574\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4.\n- **\ube4c\ub4dc \ud30c\uc774\ud504\ub77c\uc778 \ubcf5\uc7a1\ub3c4 \uc99d\uac00**: TypeScript \ucef4\ud30c\uc77c\ub7ec(`tsc`), `tsconfig.json` \uc124\uc815, \uc18c\uc2a4\ub9f5 \uad00\ub9ac \ub4f1 \ube4c\ub4dc \uc778\ud504\ub77c\uac00 \ubcf5\uc7a1\ud574\uc9c0\uba70, \uc774\ub294 CI/CD \uc18d\ub3c4\uc640 \ub514\ubc84\uae45 \ud658\uacbd\uc5d0\ub3c4 \uc601\ud5a5\uc744 \uc90d\ub2c8\ub2e4.\n\n**\ud575\uc2ec \uc704\ud5d8**: \ud604\uc7ac \ud300\uc758 \uc0c1\ud669\uacfc \uc81c\ud488 \ub2e8\uacc4\ub97c \uace0\ub824\ud558\uc9c0 \uc54a\uace0 \uc5c5\uacc4 \ud2b8\ub80c\ub4dc\ub9cc \ub530\ub77c \ub3c4\uc785\ud558\uba74, \uc2e4\uc9c8\uc801\uc778 \uc774\uc810 \uc5c6\uc774 \ubcf5\uc7a1\uc131\ub9cc \ub298\uc5b4\ub0a0 \uc218 \uc788\uc2b5\ub2c8\ub2e4.\n\n---\n\n## \uacb0\ub860\n\nTypeScript \uc804\ud658 \uc790\uccb4\uac00 \ub098\uc05c \uacb0\uc815\uc774\ub77c\ub294 \uac83\uc774 \uc544\ub2d9\ub2c8\ub2e4. \ub2e4\ub9cc, \"\ub2e4\uc74c \ubd84\uae30\"\ub77c\ub294 \uc77c\uc815 \uc555\ubc15 \ud558\uc5d0 \uc11c\ub450\ub974\uae30\ubcf4\ub2e4\ub294 \ub2e4\uc74c\uc744 \uba3c\uc800 \uac80\ud1a0\ud574 \ubcf4\uc2dc\uae30\ub97c \uad8c\uc7a5\ud569\ub2c8\ub2e4:\n\n1. \ud300 \uc804\uccb4\uc758 TypeScript \uc5ed\ub7c9 \uc218\uc900 \ud30c\uc545 \ubc0f \ud559\uc2b5 \uc2dc\uac04 \ud655\ubcf4\n2. \uc804\uccb4 \ub9c8\uc774\uadf8\ub808\uc774\uc158\ubcf4\ub2e4 \uc2e0\uaddc \ubaa8\ub4c8\ubd80\ud130 \uc810\uc9c4\uc801 \ub3c4\uc785 \uc804\ub7b5 \uc218\ub9bd\n3. \ub3c4\uc785 \ubaa9\ud45c(\uc5b4\ub5a4 \ubb38\uc81c\ub97c \ud574\uacb0\ud558\ub824 \ud558\ub294\uac00)\ub97c \uba85\ud655\ud788 \uc815\uc758\ud558\uace0 \uc131\uacf5 \uc9c0\ud45c \uc124\uc815\n"}], "grading": {"expectations": [{"text": "Exactly 3 counterarguments are presented (not more, not fewer unless explicitly justified)", "passed": true, "evidence": "The output has exactly 3 sections: '\ubc18\ub860 1: \ub2e8\uae30\uc801 \uc0dd\uc0b0\uc131 \uc800\ud558\uc640 \uc804\ud658 \ube44\uc6a9', '\ubc18\ub860 2: TypeScript\uac00 \ubc84\uadf8\ub97c \uc644\uc804\ud788 \ub9c9\uc544\uc8fc\uc9c0 \uc54a\ub294\ub2e4', '\ubc18\ub860 3: \ud300 \uaddc\ubaa8\uc640 \ud504\ub85c\uc81d\ud2b8 \uc131\uaca9\uc5d0 \ub530\ub978 \uc624\ubc84\uc5d4\uc9c0\ub2c8\uc5b4\ub9c1'. No more, no fewer."}, {"text": "Each counterargument is specific to TypeScript migration \u2014 not generic change-resistance or 'change is hard' platitudes", "passed": true, "evidence": "Counterargument 1 cites TypeScript-specific concerns: generic/utility type learning curves, .js to .ts migration errors, missing @types/* packages. Counterargument 2 cites TypeScript-specific issues: 'any' type abuse, compile-time-only type checking, runtime data safety gaps. Counterargument 3 cites TypeScript-specific tooling: tsc compiler, tsconfig.json complexity, source map management. All are grounded in actual TypeScript mechanics, not generic resistance to change."}, {"text": "A 'core vulnerability' or '\ud575\uc2ec \ucde8\uc57d\uc810' section is clearly present", "passed": false, "evidence": "Each counterargument includes a '\ud575\uc2ec \uc704\ud5d8' (core risk) section, but there is no '\ud575\uc2ec \ucde8\uc57d\uc810' (core vulnerability) section. '\ud575\uc2ec \uc704\ud5d8' is semantically related but literally different. The expectation calls for '\ud575\uc2ec \ucde8\uc57d\uc810' specifically; what appears is '\ud575\uc2ec \uc704\ud5d8'. If the intent was a per-argument summary of the core risk, '\ud575\uc2ec \uc704\ud5d8' may satisfy the spirit, but the literal term requested is not present anywhere in the output."}, {"text": "The arguments are stated directly and confidently, without excessive hedging phrases like '\uc5b4\ub5a4 \uc0ac\ub78c\ub4e4\uc740 \uc0dd\uac01\ud560 \uc218\ub3c4 \uc788\ub294\ub370...' or 'some might argue...'", "passed": true, "evidence": "The output makes direct declarative statements throughout: '\uae30\uc874 JavaScript \ucf54\ub4dc\ubca0\uc774\uc2a4\ub97c TypeScript\ub85c \ub9c8\uc774\uadf8\ub808\uc774\uc158\ud558\ub294 \ub370\ub294 \uc0c1\ub2f9\ud55c \uc2dc\uac04\uacfc \ub178\ub825\uc774 \ud544\uc694\ud569\ub2c8\ub2e4', 'TypeScript\ub294 \ucef4\ud30c\uc77c \ud0c0\uc784\uc5d0\ub9cc \ub3d9\uc791\ud569\ub2c8\ub2e4', 'TypeScript\uc758 \uc5c4\uaca9\ud568\uc774 \uc624\ud788\ub824 \ube60\ub978 \uc2e4\ud5d8\uacfc \ud53c\ubc97\uc744 \ubc29\ud574\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4'. No hedging phrases like 'some might argue' or '\uc5b4\ub5a4 \uc0ac\ub78c\ub4e4\uc740 \uc0dd\uac01\ud560 \uc218\ub3c4 \uc788\ub294\ub370' are present."}, {"text": "The response does NOT include a balancing section that lists benefits of TypeScript (which would undermine the adversarial framing)", "passed": false, "evidence": "The conclusion section (\uacb0\ub860) explicitly softens the adversarial stance: 'TypeScript \uc804\ud658 \uc790\uccb4\uac00 \ub098\uc05c \uacb0\uc815\uc774\ub77c\ub294 \uac83\uc774 \uc544\ub2d9\ub2c8\ub2e4' (This is not to say TypeScript migration is a bad decision) and recommends conditions for adoption rather than arguing against it. While it does not list explicit TypeScript benefits, it frames the response as cautionary advice rather than adversarial argumentation, effectively undermining the devil's advocate framing. The conclusion acts as a pro-TypeScript hedge."}], "summary": {"passed": 3, "failed": 2, "total": 5, "pass_rate": 0.6}, "execution_metrics": {"tool_calls": {"Bash": 1, "Write": 2}, "total_tool_calls": 3, "total_steps": 2, "errors_encountered": 0, "output_chars": 2134, "transcript_chars": 0}, "timing": {"executor_duration_seconds": 43.6, "grader_duration_seconds": null, "total_duration_seconds": 43.6}, "claims": [{"claim": "TypeScript migration requires handling thousands of type errors in existing .js files", "type": "factual", "verified": true, "evidence": "Plausible and commonly observed in large JS-to-TS migrations; the claim is directionally accurate and not an exaggeration for a medium-to-large codebase."}, {"claim": "TypeScript only operates at compile time and cannot guarantee runtime data types", "type": "factual", "verified": true, "evidence": "Accurate: TypeScript types are erased at runtime; external API responses and user inputs are untyped at runtime unless validated separately (e.g., with Zod or io-ts)."}, {"claim": "The conclusion section does not list benefits of TypeScript", "type": "quality", "verified": false, "evidence": "While the conclusion avoids explicit benefit listing, it recommends conditions for successful TypeScript adoption ('\uc810\uc9c4\uc801 \ub3c4\uc785 \uc804\ub7b5', 'TypeScript \uc5ed\ub7c9 \uc218\uc900 \ud30c\uc545'), which implies TypeScript is worthwhile if done right \u2014 contradicting the adversarial framing required."}], "user_notes_summary": {"uncertainties": [], "needs_review": [], "workarounds": []}, "eval_feedback": {"suggestions": [{"assertion": "A 'core vulnerability' or '\ud575\uc2ec \ucde8\uc57d\uc810' section is clearly present", "reason": "The assertion uses two labels ('core vulnerability' / '\ud575\uc2ec \ucde8\uc57d\uc810') without clarifying whether both must appear or if semantically equivalent terms like '\ud575\uc2ec \uc704\ud5d8' count. The without-skill run used '\ud575\uc2ec \uc704\ud5d8' throughout, which the grader must judge ambiguously. The assertion should specify whether the exact Korean term is required or whether equivalent phrasing like '\ud575\uc2ec \uc704\ud5d8' also passes."}, {"assertion": "The response does NOT include a balancing section that lists benefits of TypeScript", "reason": "This assertion only checks for an explicit benefits list, but the without-skill output violated the adversarial framing via a softening conclusion that recommended adoption conditions \u2014 which is functionally similar to listing benefits. The assertion should also prohibit hedging conclusions that undermine the devil's advocate posture (e.g., 'this does not mean TypeScript is bad')."}, {"reason": "No assertion checks for overall adversarial tone or framing. The output presents itself as 'balanced advice' rather than a committed devil's advocate argument. A tone/framing assertion \u2014 such as 'the response argues against TypeScript migration as a committed position, not merely raises cautions' \u2014 would catch this class of failure."}], "overall": "Two of the five assertions exposed genuine weaknesses in the without-skill output. The '\ud575\uc2ec \ucde8\uc57d\uc810' vs '\ud575\uc2ec \uc704\ud5d8' ambiguity and the absence of a tone/framing assertion are the most actionable gaps to address."}}}, {"id": "eval-2-mobile-sunset-with_skill", "prompt": "Devil's advocate: we should sunset our mobile app and go web-only to reduce maintenance overhead.", "eval_id": 2, "outputs": [{"name": "output.md", "type": "text", "content": "# Devil's Advocate: Sunsetting the Mobile App\n\n**Position being challenged:**\n\"We should sunset our mobile app and go web-only to reduce maintenance overhead.\"\n\n---\n\n## Counterargument 1: Mobile users don't migrate to web \u2014 they churn\n\nThe assumption that mobile app users will simply switch to your mobile web experience is not supported by user behavior. Native app users have actively chosen the app over mobile web at some point; when forced back to the browser, a substantial portion will not adapt \u2014 they will leave. Research consistently shows that users spend 4\u20135x more time in native apps than in mobile web, and retention curves diverge sharply after forced migration events. The maintenance overhead you're eliminating is a real, measurable engineering cost. The user loss is equally real but deferred and harder to attribute cleanly \u2014 which makes it easy to undercount. If mobile represents a meaningful share of your DAU, revenue, or engagement, you may be trading a manageable ongoing cost for an irreversible reduction in your user base.\n\n## Counterargument 2: Progressive Web Apps cannot replace what your native app delivers \u2014 especially on iOS\n\nIf your app currently uses push notifications, background sync, offline-first storage, biometrics, camera pipelines, or Bluetooth \u2014 you cannot fully replicate these on the web across all platforms. This is not a temporary technical gap; it is active platform policy. Apple has repeatedly constrained PWA capabilities on Safari/iOS: web push on iOS was only partially enabled in 2023 and remains limited in scope, background sync is restricted, and home-screen PWAs on iOS behave differently from their Android equivalents in ways that materially degrade the experience. Your web-only product will not be equivalent to your native app for iOS users, who may represent the majority of your higher-value users. \"Web-only\" will mean \"a worse experience for a large segment,\" not \"the same experience with less overhead.\"\n\n## Counterargument 3: Sunsetting the app treats the symptom, not the problem\n\nIf mobile maintenance is genuinely burdensome, the right question is: why? Duplicated business logic between platforms, lack of a shared design system, inadequate mobile expertise on the team, or a poorly architected codebase are all fixable problems. Cross-platform frameworks \u2014 React Native, Flutter \u2014 have matured to the point where a single codebase can serve iOS and Android with near-native performance and a fraction of the previous maintenance overhead. Sunsetting the app permanently eliminates the product and the user base to avoid fixing an operational problem that has known, lower-cost solutions. Once you exit the app stores, rebuilding takes years: you lose your review history, your organic discoverability, your established user base, and your team's mobile expertise. If the business grows or competitors press you from the mobile side, re-entry will cost far more than the maintenance savings ever justified.\n\n---\n\n## Core Vulnerability\n\nThe proposal frames \"reduce maintenance overhead\" as the goal, but the actual goal is presumably \"maximize business outcomes given available resources.\" These are not the same thing. Sunsetting the app achieves the stated sub-objective with certainty and immediacy. The costs \u2014 user churn, capability loss, competitive exposure, re-entry friction \u2014 are real but deferred and harder to measure, which makes them easy to discount when making the decision. This is the structural flaw: the decision optimizes for what is directly visible to the engineering team (maintenance burden) while externalizing costs onto users, the business, and a future team that will have to rebuild what was abandoned. A sound analysis would require modeling the expected user retention rate on mobile web, the revenue impact of the delta, and comparing that against the actual maintenance cost reduction \u2014 not just asserting the tradeoff is favorable.\n"}], "grading": {"expectations": [{"text": "3 counterarguments are presented", "passed": true, "evidence": "Output contains exactly three numbered sections: 'Counterargument 1: Mobile users don't migrate to web \u2014 they churn', 'Counterargument 2: Progressive Web Apps cannot replace what your native app delivers \u2014 especially on iOS', 'Counterargument 3: Sunsetting the app treats the symptom, not the problem'."}, {"text": "Arguments are steel-manned \u2014 they represent the strongest possible case against the web-only decision, not obvious objections", "passed": true, "evidence": "CA1 cites a specific behavioral data point (4-5x time-in-app vs. mobile web) and identifies why user loss is systematically undercounted ('deferred and harder to attribute cleanly'). CA2 goes beyond a generic 'apps are better' claim to cite specific iOS policy constraints \u2014 partial web push support as of 2023, restricted background sync, and divergent home-screen PWA behavior. CA3 invokes concrete alternatives (React Native, Flutter maturity) and identifies the irreversible second-order costs of app store exit (review history, organic discoverability, expertise loss). None of these are surface-level objections."}, {"text": "A 'Core Vulnerability' section is present identifying the deepest structural flaw in the proposal", "passed": true, "evidence": "The output contains a '## Core Vulnerability' section (line 22-24). It identifies the structural flaw as conflating 'reduce maintenance overhead' (the stated sub-objective) with 'maximize business outcomes given available resources' (the actual goal), and explains why costs are systematically discounted: they are deferred and harder to measure than the engineering savings."}, {"text": "Arguments are specific to mobile-vs-web product tradeoffs, not generic product strategy warnings", "passed": true, "evidence": "All three counterarguments and the Core Vulnerability section are grounded in mobile-specific dynamics: native app retention curves vs. mobile web, iOS PWA capability restrictions, app store reentry friction, cross-platform framework maturity, and the difficulty of modeling mobile-web migration rates. No argument is a generic 'don't change strategy' or 'consider the risks' warning."}, {"text": "Response is in English (matching the prompt's language)", "passed": true, "evidence": "The entire output.md is written in English with no foreign-language content."}], "summary": {"passed": 5, "failed": 0, "total": 5, "pass_rate": 1.0}, "execution_metrics": {"tool_calls": {"Read": 1, "ToolSearch": 1, "mcp__claude_ai_think-tool__think": 1, "Bash": 2, "Write": 2}, "total_tool_calls": 7, "total_steps": 5, "errors_encountered": 0, "output_chars": 3969, "transcript_chars": 8500}, "timing": {"executor_duration_seconds": 84.4, "grader_duration_seconds": null, "total_duration_seconds": 84.4}, "claims": [{"claim": "Native app users spend 4-5x more time in apps than mobile web", "type": "factual", "verified": false, "evidence": "This is cited as established research in CA1 but no source is provided. The figure is consistent with commonly cited industry data (e.g., from eMarketer/App Annie studies), but cannot be independently verified from the available outputs."}, {"claim": "Apple only partially enabled web push on iOS in 2023 and it remains limited", "type": "factual", "verified": false, "evidence": "This is accurate as of the knowledge cutoff \u2014 Apple added web push for home screen PWAs in iOS 16.4 (2023) with notable restrictions. The claim is substantively correct but unverifiable from the output files alone."}, {"claim": "React Native and Flutter have matured to allow single-codebase near-native performance", "type": "quality", "verified": false, "evidence": "This is a widely held view but cannot be verified from the output files. It is a reasonable and defensible claim rather than an implausible one."}, {"claim": "The output correctly identifies the deepest structural flaw (not just a surface-level flaw)", "type": "quality", "verified": true, "evidence": "The Core Vulnerability section targets the decision framing itself \u2014 the substitution of a proximate operational metric for a business objective \u2014 which is structurally deeper than any individual counterargument. This is a genuine meta-level critique of the proposal's reasoning."}], "user_notes_summary": {"uncertainties": [], "needs_review": [], "workarounds": []}, "eval_feedback": {"suggestions": [{"reason": "No assertion checks the depth or accuracy of the Core Vulnerability section \u2014 only its presence. A section titled 'Core Vulnerability' that contained a generic or shallow observation would pass expectation 3. Consider adding an assertion like 'The Core Vulnerability section identifies a structural flaw in the decision's reasoning process, not merely another product concern.'"}, {"assertion": "Arguments are steel-manned \u2014 they represent the strongest possible case against the web-only decision, not obvious objections", "reason": "This assertion is directionally correct but subjective and hard to fail. A grader has to make a judgment call about what counts as 'steel-manned.' Consider a more discriminating formulation: 'Each counterargument includes at least one specific mechanism, data point, or named technology that distinguishes it from a generic objection.' This would be more objectively verifiable."}], "overall": "The evals are well-targeted to the task. The main gap is that assertion 3 checks presence of the Core Vulnerability section but not its quality, and assertion 2 relies on grader judgment in a way that could be tightened with a specificity criterion."}}}, {"id": "eval-2-mobile-sunset-without_skill", "prompt": "Devil's advocate: we should sunset our mobile app and go web-only to reduce maintenance overhead.", "eval_id": 2, "outputs": [{"name": "output.md", "type": "text", "content": "# Devil's Advocate: Against Sunsetting the Mobile App\n\n**Position being challenged:** \"We should sunset our mobile app and go web-only to reduce maintenance overhead.\"\n\n---\n\n## Opening Rebuttal\n\nThe maintenance overhead argument is real, but it is a symptom, not the disease. Sunsetting the mobile app to eliminate that overhead is like amputating a limb because it has a splinter. The following arguments challenge the premise and expose the hidden costs of going web-only.\n\n---\n\n## 1. You Will Not Eliminate Maintenance \u2014 You Will Redistribute It\n\nThe assumption is that web-only means less work. This is rarely true in practice.\n\n- **Progressive Web Apps (PWAs) and responsive design are not free.** A web app that must work flawlessly on mobile browsers requires constant testing across Safari (iOS), Chrome (Android), Samsung Internet, Firefox Mobile, and various WebViews. Each of these has its own rendering quirks, update cadence, and security policies.\n- **Safari on iOS is a second platform in disguise.** Apple's WebKit restrictions mean that web apps on iPhones cannot access push notifications reliably (only recently partially addressed), cannot use background sync, cannot install without user friction, and face storage limitations. You are still building for iOS \u2014 you just gave up the tools that make it manageable.\n- **You shift maintenance from engineers who own it to users who suffer it.** Native app updates can be pushed and controlled. When a web browser changes behavior, users are silently affected and you find out through support tickets.\n\n---\n\n## 2. Mobile Users Are Not a Minority You Can Afford to Degrade\n\n- As of 2025, over **60% of global web traffic originates from mobile devices**. In many verticals (e-commerce, social, media, fintech), this number exceeds 70\u201380%.\n- Mobile users on web apps experience higher friction: no home screen icon by default, no push notifications without opt-in flows that convert poorly, no biometric authentication without WebAuthn adoption, slower load times on cellular connections.\n- **Churn is silent and fast.** A user who opens a web app on their phone and finds it clunky does not file a complaint \u2014 they leave. You will not see this in your maintenance ticket count; you will see it in retention and revenue metrics, often months later.\n\n---\n\n## 3. The Competitive Moat You Are About to Hand to Competitors\n\n- Native mobile apps provide access to device capabilities that web cannot match: reliable offline mode, background processing, deep OS integrations (widgets, Siri/Google Assistant shortcuts, notification actions, App Clips / Instant Apps), and camera/sensor APIs at full fidelity.\n- If your competitors retain native apps and you go web-only, you have created a meaningful differentiation gap. Users who rely on any of these capabilities will migrate.\n- App store presence is also a **distribution channel**. Organic discovery through App Store and Google Play search is non-trivial. Removing yourself from those storefronts is not neutral \u2014 it is an active surrender of acquisition surface.\n\n---\n\n## 4. The \"Maintenance Overhead\" Problem Is Likely a Process Problem, Not a Platform Problem\n\nBefore sunsetting the app, the harder question should be asked: *why is maintenance overhead high?*\n\n- **Is the codebase fragmented?** Solutions: React Native, Flutter, or Kotlin Multiplatform allow sharing significant logic across platforms without going web-only.\n- **Is the team too small?** Hiring or reorganizing around a cross-platform framework costs far less than the revenue impact of losing mobile users.\n- **Is the release process painful?** CI/CD tooling, automated testing, and over-the-air update mechanisms (CodePush, Expo Updates) can dramatically reduce the human cost of mobile releases.\n- **Is the feature parity burden high?** This is a product prioritization problem. Scope the mobile app to the highest-value workflows rather than building feature parity with desktop.\n\nTreating the symptom by deleting the app means these underlying problems remain \u2014 and will resurface in your web infrastructure.\n\n---\n\n## 5. Regulatory and Compliance Risk in Key Industries\n\nIn industries such as healthcare, financial services, and enterprise SaaS:\n\n- Mobile apps can be managed via MDM (Mobile Device Management), enabling corporate security policies, remote wipe, and access control. Web apps in browsers cannot be controlled at this level.\n- Some compliance frameworks explicitly require app-level controls that browsers cannot provide.\n- **Going web-only may disqualify you from certain enterprise contracts or regulated markets entirely.**\n\n---\n\n## 6. User Trust and Brand Perception\n\n- A native mobile app signals investment and commitment to your users. Sunsetting it sends the opposite signal.\n- Power users \u2014 often your most valuable cohort \u2014 tend to be heavy mobile app users. Forcing them to a mobile web experience communicates that you are deprioritizing them.\n- Press coverage of \"company kills its app\" is rarely positive. It invites speculation about financial health and strategic direction.\n\n---\n\n## 7. The Actual Math May Not Support the Decision\n\nTo justify sunsetting the mobile app, you need to honestly quantify:\n\n| Factor | Question |\n|---|---|\n| Revenue at risk | What % of conversions, subscriptions, or transactions come from the native app? |\n| Retention delta | What is historical retention difference between mobile app users vs mobile web users? |\n| CAC impact | What does losing app store organic discovery do to customer acquisition cost? |\n| Migration rate | What fraction of mobile app users will successfully migrate to mobile web vs. churn? |\n| True savings | After accounting for PWA maintenance, increased support load, and re-engineering costs, what is the *net* maintenance reduction? |\n\nIn most honest analyses, the maintenance savings are a one-time or short-term reduction, while the revenue and retention impact is permanent and compounding.\n\n---\n\n## Conclusion\n\nThe premise that going web-only reduces meaningful overhead is attractive but largely illusory. The maintenance problem is real and worth solving \u2014 but the solution is better tooling, smarter cross-platform architecture, and scoped feature strategy. Sunsetting the mobile app trades a solvable engineering problem for an unsolvable user experience gap and a permanent competitive disadvantage. The burden of proof should be on demonstrating that the business can survive the user impact, not on defending the cost of maintaining the app.\n\n**Before making this decision, the team should be required to answer: what happens to our mobile users, and are we comfortable with that answer?**\n"}], "grading": {"expectations": [{"text": "3 counterarguments are presented", "passed": true, "evidence": "The output presents 7 distinct numbered counterarguments: (1) maintenance redistribution, (2) mobile user degradation, (3) competitive moat loss, (4) maintenance as a process problem, (5) regulatory/compliance risk, (6) user trust and brand perception, (7) the actual math may not support the decision. Clearly exceeds the minimum of 3."}, {"text": "Arguments are steel-manned \u2014 they represent the strongest possible case against the web-only decision, not obvious objections", "passed": true, "evidence": "The arguments go well beyond obvious objections. Argument 1 specifically anticipates and rebuts the 'web is simpler' assumption by pointing out PWA complexity and Safari/WebKit as a hidden second platform. Argument 4 attacks the root cause (process problems) rather than just the surface decision. Argument 7 provides a structured ROI analysis framework. These represent substantive, sophisticated rebuttals rather than surface-level pushback."}, {"text": "A 'Core Vulnerability' section is present identifying the deepest structural flaw in the proposal", "passed": false, "evidence": "No section labeled 'Core Vulnerability' or equivalent exists in the output. The output has sections 1-7 and a Conclusion, but there is no dedicated section that explicitly identifies the deepest structural flaw in the proposal. The Conclusion gestures at this idea ('the maintenance problem is real and worth solving \u2014 but the solution is better tooling') but it is not a labeled 'Core Vulnerability' section."}, {"text": "Arguments are specific to mobile-vs-web product tradeoffs, not generic product strategy warnings", "passed": true, "evidence": "Arguments reference mobile-specific technical details: Safari WebKit restrictions, push notification limitations on iOS, App Store/Google Play organic discovery, MDM controls, biometric authentication via WebAuthn, home screen icon friction, background sync limitations, and specific cross-platform frameworks (React Native, Flutter, Kotlin Multiplatform). These are clearly specific to mobile-vs-web tradeoffs, not generic product strategy advice."}, {"text": "Response is in English (matching the prompt's language)", "passed": true, "evidence": "The entire response is written in English throughout."}], "summary": {"passed": 4, "failed": 1, "total": 5, "pass_rate": 0.8}, "execution_metrics": {"tool_calls": {"Bash": 1, "Write": 2}, "total_tool_calls": 3, "total_steps": 2, "errors_encountered": 0, "output_chars": 4987, "transcript_chars": 512}, "timing": {"executor_duration_seconds": 52.7, "grader_duration_seconds": null, "total_duration_seconds": 52.7}, "claims": [{"claim": "Over 60% of global web traffic originates from mobile devices as of 2025", "type": "factual", "verified": true, "evidence": "This statistic is consistent with widely reported figures; multiple sources (StatCounter, Statista) have reported mobile traffic exceeding 60% globally in recent years. The claim is reasonable and specific."}, {"claim": "Safari on iOS cannot use push notifications reliably (only recently partially addressed)", "type": "factual", "verified": true, "evidence": "Apple added limited Web Push support in Safari 16.4 (iOS 16.4, March 2023), which is only available for installed PWAs, not regular browser tabs. The claim that this is only 'recently partially addressed' is accurate."}, {"claim": "Sunsetting the mobile app hands competitive moat to competitors", "type": "quality", "verified": true, "evidence": "This is a reasoned quality claim grounded in specific capabilities (offline mode, OS integrations, app store distribution) that are genuinely difficult or impossible to replicate on mobile web. The argument is well-supported and specific."}, {"claim": "Maintenance savings from going web-only are one-time or short-term while revenue/retention impact is permanent and compounding", "type": "quality", "verified": true, "evidence": "This is stated in the conclusion and is consistent with the analysis in section 7 (the math table). It is a quality/analytical claim, not independently verifiable, but logically supported within the argument."}], "user_notes_summary": {"uncertainties": [], "needs_review": [], "workarounds": []}, "eval_feedback": {"suggestions": [{"assertion": "A 'Core Vulnerability' section is present identifying the deepest structural flaw in the proposal", "reason": "This is the most discriminating expectation in the eval and it failed. The distinction between a labeled 'Core Vulnerability' section vs. a conclusion that implicitly identifies a flaw is meaningful \u2014 a skill that structures its output with an explicit, dedicated section for the deepest structural flaw produces more actionable devil's advocate analysis. The expectation is well-designed and correctly caught the absence."}, {"assertion": null, "reason": "No expectation checks the depth or specificity of the 'Core Vulnerability' content itself \u2014 only its presence. Even if the without_skill run had included such a section, it might have been shallow or mislabeled. A follow-up assertion like 'the Core Vulnerability section identifies a structural assumption in the proposal rather than just listing a risk' would add meaningful discrimination."}, {"assertion": "Arguments are steel-manned \u2014 they represent the strongest possible case against the web-only decision, not obvious objections", "reason": "This assertion is somewhat subjective and could pass for mediocre outputs that simply sound confident. Consider adding a companion assertion that checks for a specific high-quality element, e.g., 'at least one argument anticipates and refutes the strongest pro-web-only rationale (maintenance cost reduction)' \u2014 which would fail for arguments that only assert mobile is important without engaging the opposing reasoning."}], "overall": "The eval has good coverage of the key structural requirements (argument count, quality, specificity, language). The Core Vulnerability section expectation is the sharpest and most discriminating check \u2014 and it correctly failed here. The steel-manning assertion could be strengthened to reduce subjectivity."}}}, {"id": "eval-3-multitenant-with_skill", "prompt": "\uc774 \uc124\uacc4\uc758 \ubc18\ub300 \uc785\uc7a5 \uac80\ud1a0\ud574\uc918: \uc6b0\ub9ac \uc2a4\ud0c0\ud2b8\uc5c5\uc740 \ucd08\uae30\ubd80\ud130 \uba40\ud2f0\ud14c\ub10c\ud2b8 SaaS \uc544\ud0a4\ud14d\ucc98\ub85c \uc2dc\uc791\ud574\uc57c \ud55c\ub2e4. \ucc98\uc74c\ubd80\ud130 \uc81c\ub300\ub85c \ub9cc\ub4e4\uc5b4\uc57c \ub098\uc911\uc5d0 \uace0\uc0dd \uc548 \ud55c\ub2e4.", "eval_id": 3, "outputs": [{"name": "output.md", "type": "text", "content": "# \ubc18\ub300 \uc785\uc7a5 \uac80\ud1a0: \uba40\ud2f0\ud14c\ub10c\ud2b8 SaaS \uc544\ud0a4\ud14d\ucc98 \ucd08\uae30 \ub3c4\uc785\n\n## \uac80\ud1a0 \ub300\uc0c1 \uc8fc\uc7a5\n\n> \"\uc6b0\ub9ac \uc2a4\ud0c0\ud2b8\uc5c5\uc740 \ucd08\uae30\ubd80\ud130 \uba40\ud2f0\ud14c\ub10c\ud2b8 SaaS \uc544\ud0a4\ud14d\ucc98\ub85c \uc2dc\uc791\ud574\uc57c \ud55c\ub2e4. \ucc98\uc74c\ubd80\ud130 \uc81c\ub300\ub85c \ub9cc\ub4e4\uc5b4\uc57c \ub098\uc911\uc5d0 \uace0\uc0dd \uc548 \ud55c\ub2e4.\"\n\n---\n\n## \ubc18\ub860 1: PMF \uac80\uc99d \uc804 \uba40\ud2f0\ud14c\ub10c\ud2b8 \ud22c\uc790\ub294 \uac00\uc7a5 \uc704\ud5d8\ud55c \uc2dc\uae30\uc5d0 \uc790\uc6d0\uc744 \ub0ad\ube44\ud558\ub294 \uacb0\uc815\uc774\ub2e4\n\n\uc2a4\ud0c0\ud2b8\uc5c5\uc774 \uac00\uc7a5 \ud06c\uac8c \uc2e4\ud328\ud558\ub294 \uc774\uc720\ub294 \ud655\uc7a5\ud558\uc9c0 \ubabb\ud574\uc11c\uac00 \uc544\ub2c8\ub77c \uc544\ubb34\ub3c4 \uc6d0\ud558\uc9c0 \uc54a\ub294 \uac78 \ub9cc\ub4e4\uc5b4\uc11c\ub2e4. \uba40\ud2f0\ud14c\ub10c\ud2b8 \uc778\ud504\ub77c\ub294 \ud14c\ub10c\ud2b8 \ud504\ub85c\ube44\uc800\ub2dd, \uaca9\ub9ac \uacc4\uce35, \ud14c\ub10c\ud2b8\ubcc4 \uc124\uc815, \ube4c\ub9c1 \ud6c5 \ub4f1\uc744 \ud3ec\ud568\ud558\ub294 \ube44\uae30\ub2a5 \uc694\uad6c\uc0ac\ud56d \ub369\uc5b4\ub9ac\uc774\uba70, \uc774\uac83\uc744 \uad6c\ud604\ud558\ub294 \ub370 \uc18c\ud615 \ud300(2~5\uba85)\uc774 \uc218 \uc8fc\uc5d0\uc11c \uc218 \uac1c\uc6d4\uc744 \uc368\uc57c \ud55c\ub2e4. \uadf8 \uae30\uac04 \ub3d9\uc548 \uc2e4\uc81c \uace0\uac1d\uc5d0\uac8c \ubcf4\uc5ec\uc904 \uae30\ub2a5\uc740 \ub098\uc624\uc9c0 \uc54a\uace0, \ub7f0\uc6e8\uc774\ub294 \uc904\uc5b4\ub4e0\ub2e4. \"\ucc98\uc74c\ubd80\ud130 \uc81c\ub300\ub85c\"\ub77c\ub294 \uc6d0\uce59\uc740 \ub9de\uc9c0\ub9cc, \uc2a4\ud0c0\ud2b8\uc5c5\uc758 \ud604 \ub2e8\uacc4\uc5d0\uc11c \"\uc81c\ub300\ub85c\"\ub294 \ube60\ub974\uac8c \uac00\uc124\uc744 \uac80\uc99d\ud558\ub294 \uac83\uc774\uc9c0 10\ubc88\uc9f8 \uace0\uac1d\uc744 \uc704\ud55c \uc778\ud504\ub77c\ub97c \ubbf8\ub9ac \uc9d3\ub294 \uac8c \uc544\ub2c8\ub2e4.\n\n## \ubc18\ub860 2: \uba40\ud2f0\ud14c\ub10c\ud2b8 \uc544\ud0a4\ud14d\ucc98\uc758 \"\uc62c\ubc14\ub978\" \uc124\uacc4\ub294 \uace0\uac1d\uc744 \uc54c\uc544\uc57c \uacb0\uc815\ud560 \uc218 \uc788\ub2e4 \u2014 \uace0\uac1d \uc5c6\uc774 \ub9cc\ub4e4\uba74 \uc798\ubabb\ub41c \ucd94\uc0c1\ud654\uac00 \uace0\ucc29\ub41c\ub2e4\n\n\uba40\ud2f0\ud14c\ub10c\uc2dc\uc5d0\ub294 \uc5ec\ub7ec \ubaa8\ub378\uc774 \uc788\ub2e4: \uacf5\uc720 \ub370\uc774\ud130\ubca0\uc774\uc2a4 + \ud589 \uc218\uc900 \uaca9\ub9ac, \uc2a4\ud0a4\ub9c8 \ubd84\ub9ac, \ub370\uc774\ud130\ubca0\uc774\uc2a4 \ubd84\ub9ac, \uc778\uc2a4\ud134\uc2a4 \ubd84\ub9ac. \uc5b4\ub5a4 \ubaa8\ub378\uc774 \ub9de\ub294\uc9c0\ub294 \uace0\uac1d\uc774 \ub204\uad6c\ub0d0\uc5d0 \ub530\ub77c \uc644\uc804\ud788 \ub2ec\ub77c\uc9c4\ub2e4. SMB \uace0\uac1d\uc740 \uacf5\uc720 DB\ub85c \ucda9\ubd84\ud558\uc9c0\ub9cc, \uc5d4\ud130\ud504\ub77c\uc774\uc988 \uace0\uac1d\uc740 \ub370\uc774\ud130 \uac70\uc8fc\uc9c0 \uaddc\uc815(data residency)\uc774\ub098 \ucef4\ud50c\ub77c\uc774\uc5b8\uc2a4 \uc694\uac74\uc73c\ub85c \uc804\uc6a9 \uc778\uc2a4\ud134\uc2a4\ub97c \uc694\uad6c\ud55c\ub2e4. \uace0\uac1d\uc774 \uc5c6\ub294 \uc0c1\ud0dc\uc5d0\uc11c \uc774 \uacb0\uc815\uc744 \ub0b4\ub9ac\uba74 \ucd94\uce21\uc5d0 \uae30\ubc18\ud55c \uc124\uacc4\uac00 \ucf54\ub4dc\ubca0\uc774\uc2a4\uc5d0 \uad73\ub294\ub2e4. \ub098\uc911\uc5d0 \uace0\uac1d \uc694\uad6c\uc0ac\ud56d\uc774 \ubc1d\ud600\uc84c\uc744 \ub54c \uc774 \uc798\ubabb\ub41c \uaca9\ub9ac \ubaa8\ub378\uc744 \ubc14\uafb8\ub294 \uac83\uc740, \ucc98\uc74c\ubd80\ud130 \ub2e8\uc77c \ud14c\ub10c\ud2b8\ub85c \uc2dc\uc791\ud588\ub2e4\uac00 \uba40\ud2f0\ud14c\ub10c\ud2b8\ub97c \ucd94\uac00\ud558\ub294 \uac83\ubcf4\ub2e4 \ud6e8\uc52c \ub354 \uc5b4\ub835\ub2e4.\n\n## \ubc18\ub860 3: \ub2e8\uc77c \ud14c\ub10c\ud2b8\uc5d0\uc11c \uba40\ud2f0\ud14c\ub10c\ud2b8\ub85c\uc758 \uc804\ud658 \ube44\uc6a9\uc740 \"\ub098\uc911\uc5d0 \uace0\uc0dd\"\uc758 \uc218\uc900\uc774\uc9c0, \ub418\ub3cc\ub9b4 \uc218 \uc5c6\ub294 \ubd80\ucc44\uac00 \uc544\ub2c8\ub2e4\n\n\uc774 \uc8fc\uc7a5\uc758 \uc804\uc81c\ub294 \ub098\uc911\uc5d0 \uc804\ud658\ud558\uba74 \uac10\ub2f9\ud560 \uc218 \uc5c6\ub294 \ube44\uc6a9\uc774 \ub4e0\ub2e4\ub294 \uac83\uc774\ub2e4. \ud558\uc9c0\ub9cc \ud604\uc2e4\uc740 \ub2e4\ub974\ub2e4. \ub2e8\uc77c \ud14c\ub10c\ud2b8 \uc2dc\uc2a4\ud15c\uc5d0 \uba40\ud2f0\ud14c\ub10c\uc2dc\ub97c \ucd94\uac00\ud558\ub294 \uac83\uc740 \uba85\ud655\ud788 \uc54c\ub824\uc9c4 \uacf5\ud559\uc801 \uc791\uc5c5\uc774\uace0, \uc2e4\uc81c\ub85c \ub9ce\uc740 \uc131\uacf5\ud55c SaaS \uc81c\ud488\uc774 \uadf8 \uacbd\ub85c\ub97c \ubc1f\uc558\ub2e4. \ub354 \uc911\uc694\ud55c \uac83\uc740: \uadf8 \uc2dc\uc810\uc5d0\ub294 \uc2e4\uc81c \uace0\uac1d\uc758 \uc694\uad6c\uc0ac\ud56d, \ud14c\ub10c\ud2b8 \uaca9\ub9ac \uc218\uc900, \uaddc\ubaa8\uac00 \ubb34\uc5c7\uc778\uc9c0 \uc54c\uace0 \uc791\uc5c5\ud558\uac8c \ub41c\ub2e4\ub294 \uc810\uc774\ub2e4. \ubc18\uba74 \uc9c0\uae08 \uba40\ud2f0\ud14c\ub10c\ud2b8\ub97c \ub9cc\ub4e4\uba74 \ubaa8\ub4e0 \uacb0\uc815\uc744 \ucd94\uce21\uc73c\ub85c \ud574\uc57c \ud55c\ub2e4. \uae30\uc220\uc801 \uc804\ud658 \ube44\uc6a9\uc744 \uac10\uc218\ud558\ub354\ub77c\ub3c4, \uc798\ubabb\ub41c \uc544\ud0a4\ud14d\ucc98\ub97c \ucc98\uc74c\ubd80\ud130 \uc9c0\uc740 \uac83\ubcf4\ub2e4 \ub0ab\ub2e4.\n\n---\n\n## \ud575\uc2ec \ucde8\uc57d\uc810\n\n**\"\ucc98\uc74c\ubd80\ud130 \uc81c\ub300\ub85c\"\ub294 \uc9c0\uae08 \ubb34\uc5c7\uc774 \"\uc81c\ub300\ub85c\"\uc778\uc9c0 \uc54c\uace0 \uc788\ub2e4\ub294 \uac00\uc815\uc744 \uc804\uc81c\ub85c \ud55c\ub2e4.**\n\n\uc774 \uc8fc\uc7a5\uc758 \uac00\uc7a5 \uae4a\uc740 \ubb38\uc81c\ub294 \uc124\uacc4 \uc120\ud0dd\uc758 \uc633\uace0 \uadf8\ub984\uc774 \uc544\ub2c8\ub77c, \uc2a4\ud0c0\ud2b8\uc5c5\uc774 \uc544\uc9c1 \uc54c\uc9c0 \ubabb\ud558\ub294 \uac83\uc5d0 \ub300\ud55c \uacb0\uc815\uc744 \ud655\uc815\uc9d3\ub294\ub2e4\ub294 \uac83\uc774\ub2e4. \uba40\ud2f0\ud14c\ub10c\ud2b8 \uc124\uacc4\ub294 \ub204\uac00 \ud14c\ub10c\ud2b8\uc778\uc9c0, \uc5b4\ub5bb\uac8c \uaca9\ub9ac\ud574\uc57c \ud558\ub294\uc9c0, \uc5b4\ub5a4 \uc694\uae08 \ubaa8\ub378\uc778\uc9c0, \uc5b4\ub5a4 \uaddc\ubaa8\ub85c \uc6b4\uc601\ub418\ub294\uc9c0\ub97c \uc804\uc81c\ub85c \ud55c\ub2e4. \uc9c0\uae08 \uac00\uc9c4 \uc815\ubcf4\ub294 \ubaa8\ub450 \uac00\uc124\uc774\ub2e4. \"\ub098\uc911\uc5d0 \uace0\uc0dd \uc548 \ud55c\ub2e4\"\uace0 \ud655\uc2e0\ud558\ub824\uba74 \uc9c0\uae08\uc758 \uac00\uc124\uc774 \uc633\ub2e4\ub294 \ubcf4\uc7a5\uc774 \uc788\uc5b4\uc57c \ud558\ub294\ub370, \uc2a4\ud0c0\ud2b8\uc5c5 \ucd08\uae30\uc5d0 \uadf8\ub7f0 \ubcf4\uc7a5\uc740 \uc874\uc7ac\ud558\uc9c0 \uc54a\ub294\ub2e4. \uac00\uc7a5 \ud070 \ub9ac\uc2a4\ud06c\ub294 \uae30\uc220 \ubd80\ucc44\uac00 \uc544\ub2c8\ub77c, \uc798\ubabb\ub41c \ud655\uc2e0\uc73c\ub85c \ub9cc\ub4e4\uc5b4\uc9c4 \ubcf5\uc7a1\ud55c \uc2dc\uc2a4\ud15c\uc774\ub2e4.\n"}], "grading": {"expectations": [{"text": "Counterarguments are written in Korean (matching the prompt's language)", "passed": true, "evidence": "The entire output.md is in Korean \u2014 title, section headers, all body text, and the \ud575\uc2ec \ucde8\uc57d\uc810 section."}, {"text": "Arguments address the specific startup context \u2014 the early-stage cost of premature multi-tenancy, not just 'multi-tenancy is complex' in the abstract", "passed": true, "evidence": "\ubc18\ub860 1 explicitly cites PMF validation risk, team size (2~5\uba85), runway burn, and weeks-to-months of time lost building non-customer-facing infrastructure. \ubc18\ub860 3 frames the cost argument in terms of early-stage unknowns. All three arguments are anchored to startup-specific conditions, not generic architectural complexity."}, {"text": "The '\ud575\uc2ec \ucde8\uc57d\uc810' section is present", "passed": true, "evidence": "Lines 22\u201327 of output.md contain the section '## \ud575\uc2ec \ucde8\uc57d\uc810' with substantive content attacking the core assumption."}, {"text": "At least one argument challenges the core assumption that early investment prevents future pain (YAGNI or pivot risk angle)", "passed": true, "evidence": "\ubc18\ub860 3 directly addresses and refutes this premise: '\uc774 \uc8fc\uc7a5\uc758 \uc804\uc81c\ub294 \ub098\uc911\uc5d0 \uc804\ud658\ud558\uba74 \uac10\ub2f9\ud560 \uc218 \uc5c6\ub294 \ube44\uc6a9\uc774 \ub4e0\ub2e4\ub294 \uac83\uc774\ub2e4. \ud558\uc9c0\ub9cc \ud604\uc2e4\uc740 \ub2e4\ub974\ub2e4.' It argues migration is known engineering work and that premature commitment is the real risk. The \ud575\uc2ec \ucde8\uc57d\uc810 section reinforces this with: '\ub098\uc911\uc5d0 \uace0\uc0dd \uc548 \ud55c\ub2e4\uace0 \ud655\uc2e0\ud558\ub824\uba74 \uc9c0\uae08\uc758 \uac00\uc124\uc774 \uc633\ub2e4\ub294 \ubcf4\uc7a5\uc774 \uc788\uc5b4\uc57c \ud558\ub294\ub370, \uc2a4\ud0c0\ud2b8\uc5c5 \ucd08\uae30\uc5d0 \uadf8\ub7f0 \ubcf4\uc7a5\uc740 \uc874\uc7ac\ud558\uc9c0 \uc54a\ub294\ub2e4.'"}, {"text": "No section that softens the critique by restating the benefits of multi-tenancy", "passed": true, "evidence": "The output contains no section acknowledging multi-tenancy benefits or offering a balanced view. Even \ubc18\ub860 2, which enumerates multi-tenancy models, uses that knowledge only to argue that choosing without customers locks in wrong abstractions \u2014 not to endorse multi-tenancy."}], "summary": {"passed": 5, "failed": 0, "total": 5, "pass_rate": 1.0}, "execution_metrics": {"tool_calls": {"Read": 1, "ToolSearch": 1, "mcp__claude_ai_think-tool__think": 1, "Bash": 1, "Write": 2}, "total_tool_calls": 6, "total_steps": 4, "errors_encountered": 0, "output_chars": 1793, "transcript_chars": 5200}, "timing": {"executor_duration_seconds": 88.1, "grader_duration_seconds": null, "total_duration_seconds": 88.1}, "claims": [{"claim": "The output presents three distinct counterarguments plus a \ud575\uc2ec \ucde8\uc57d\uc810 section", "type": "factual", "verified": true, "evidence": "output.md contains \ubc18\ub860 1, \ubc18\ub860 2, \ubc18\ub860 3, and ## \ud575\uc2ec \ucde8\uc57d\uc810 as clearly delineated sections."}, {"claim": "Arguments are adversarial rather than balanced", "type": "quality", "verified": true, "evidence": "No hedging or benefit-restating language appears. Each argument maintains a consistently oppositional stance."}, {"claim": "The YAGNI/pivot-risk angle is covered", "type": "quality", "verified": true, "evidence": "\ubc18\ub860 3 and the \ud575\uc2ec \ucde8\uc57d\uc810 section both challenge the 'early investment prevents future pain' assumption, with \ubc18\ub860 1 also implicitly covering it via PMF risk framing."}], "user_notes_summary": {"uncertainties": [], "needs_review": [], "workarounds": []}, "eval_feedback": {"suggestions": [{"reason": "Expectation 5 ('No section that softens the critique') is a weak negative assertion \u2014 it would also pass for an output that simply omitted any depth or context. Consider pairing it with a positive assertion such as 'Every argument ends in a net-negative conclusion for the proposition' to make the adversarial quality testable in a discriminating way."}, {"reason": "No assertion checks argument depth or specificity. An output that listed three vague one-sentence counterarguments in Korean would pass all five expectations. Consider adding: 'Each argument cites at least one concrete mechanism or real-world example that is specific to the startup context.'"}, {"assertion": "At least one argument challenges the core assumption that early investment prevents future pain (YAGNI or pivot risk angle)", "reason": "This assertion passed but multiple arguments qualify (\ubc18\ub860 1, \ubc18\ub860 3, and \ud575\uc2ec \ucde8\uc57d\uc810 all touch this angle). Consider specifying a distinct YAGNI framing or pivot-risk angle to ensure the assertion captures something the others don't, rather than being redundantly covered."}], "overall": "The evals cover the essential structural and tonal requirements well. The main gap is that no assertion tests argument quality or specificity \u2014 a superficial output with the right structure and language would pass all five."}}}, {"id": "eval-3-multitenant-without_skill", "prompt": "\uc774 \uc124\uacc4\uc758 \ubc18\ub300 \uc785\uc7a5 \uac80\ud1a0\ud574\uc918: \uc6b0\ub9ac \uc2a4\ud0c0\ud2b8\uc5c5\uc740 \ucd08\uae30\ubd80\ud130 \uba40\ud2f0\ud14c\ub10c\ud2b8 SaaS \uc544\ud0a4\ud14d\ucc98\ub85c \uc2dc\uc791\ud574\uc57c \ud55c\ub2e4. \ucc98\uc74c\ubd80\ud130 \uc81c\ub300\ub85c \ub9cc\ub4e4\uc5b4\uc57c \ub098\uc911\uc5d0 \uace0\uc0dd \uc548 \ud55c\ub2e4.", "eval_id": 3, "outputs": [{"name": "output.md", "type": "text", "content": "# \ubc18\ub300 \uc785\uc7a5 \uac80\ud1a0: \ucd08\uae30 \uc2a4\ud0c0\ud2b8\uc5c5\uc758 \uba40\ud2f0\ud14c\ub10c\ud2b8 SaaS \uc544\ud0a4\ud14d\ucc98\n\n## \uc6d0\ub798 \uc8fc\uc7a5 \uc694\uc57d\n\n> \"\uc6b0\ub9ac \uc2a4\ud0c0\ud2b8\uc5c5\uc740 \ucd08\uae30\ubd80\ud130 \uba40\ud2f0\ud14c\ub10c\ud2b8 SaaS \uc544\ud0a4\ud14d\ucc98\ub85c \uc2dc\uc791\ud574\uc57c \ud55c\ub2e4. \ucc98\uc74c\ubd80\ud130 \uc81c\ub300\ub85c \ub9cc\ub4e4\uc5b4\uc57c \ub098\uc911\uc5d0 \uace0\uc0dd \uc548 \ud55c\ub2e4.\"\n\n---\n\n## \ubc18\ub300 \uc785\uc7a5 \ubd84\uc11d\n\n### 1. \"\ucc98\uc74c\ubd80\ud130 \uc81c\ub300\ub85c\"\ub77c\ub294 \uc804\uc81c \uc790\uccb4\uac00 \uc624\ub958\uc77c \uc218 \uc788\ub2e4\n\n**\ubc18\ub860:** \uc2a4\ud0c0\ud2b8\uc5c5 \ucd08\uae30\uc5d0\ub294 \"\uc81c\ub300\ub85c \ub41c \uac83\"\uc774 \ubb34\uc5c7\uc778\uc9c0 \uc54c \uc218 \uc5c6\ub2e4.\n\n- \uba40\ud2f0\ud14c\ub10c\ud2b8 \uc544\ud0a4\ud14d\ucc98\uac00 \"\uc62c\ubc14\ub978\" \ubc29\ud5a5\uc778\uc9c0\ub294 \uc2e4\uc81c \uace0\uac1d\uacfc \uc0ac\uc6a9 \ud328\ud134\uc744 \ud1b5\ud574\uc11c\ub9cc \uac80\uc99d \uac00\ub2a5\ud558\ub2e4.\n- Eric Ries\uc758 \ub9b0 \uc2a4\ud0c0\ud2b8\uc5c5 \uc6d0\uce59\uc5d0 \ub530\ub974\uba74, \uc2a4\ud0c0\ud2b8\uc5c5\uc758 \uac00\uc7a5 \ud070 \uc704\ud5d8\uc740 **\uc544\ubb34\ub3c4 \uc6d0\ud558\uc9c0 \uc54a\ub294 \uac83\uc744 \uc644\ubcbd\ud558\uac8c \ub9cc\ub4dc\ub294 \uac83**\uc774\ub2e4.\n- \ucd08\uae30\uc5d0 \uba40\ud2f0\ud14c\ub10c\ud2b8\ub97c \"\uc81c\ub300\ub85c\" \uc124\uacc4\ud588\ub354\ub77c\ub3c4, \ube44\uc988\ub2c8\uc2a4 \ubaa8\ub378\uc774 \ubc14\ub00c\uba74 \uadf8 \uc124\uacc4\uac00 \uc624\ud788\ub824 \uc871\uc1c4\uac00 \ub420 \uc218 \uc788\ub2e4.\n\n**\uad6c\uccb4\uc801 \uc0ac\ub840:** \ucc98\uc74c\uc5d4 B2B SaaS\ub85c \uae30\ud68d\ud588\ub2e4\uac00 B2C\ub85c \uc804\ud658\ud558\uac70\ub098, \uc5d4\ud130\ud504\ub77c\uc774\uc988 \uc628\ud504\ub808\ubbf8\uc2a4 \uc218\uc694\uac00 \ub354 \ud06c\ub2e4\ub294 \uac83\uc744 \ub4a4\ub2a6\uac8c \ubc1c\uacac\ud558\ub294 \uacbd\uc6b0 \u2014 \uba40\ud2f0\ud14c\ub10c\ud2b8 SaaS \uc544\ud0a4\ud14d\ucc98\ub294 \uc624\ud788\ub824 \ubc29\ud574\uac00 \ub41c\ub2e4.\n\n---\n\n### 2. \ucd08\uae30 \ubcf5\uc7a1\ub3c4 \ud3ed\ubc1c: \uc2e4\ud589 \uc18d\ub3c4\ub97c \uc2ec\uac01\ud558\uac8c \uc800\ud574\ud55c\ub2e4\n\n**\ubc18\ub860:** \uba40\ud2f0\ud14c\ub10c\ud2b8 \uc544\ud0a4\ud14d\ucc98\ub294 \ub2e8\uc21c\ud55c \uae30\ub2a5 \ucd94\uac00\uac00 \uc544\ub2c8\ub77c \uadfc\ubcf8\uc801\uc778 \ubcf5\uc7a1\ub3c4 \uc99d\uac00\ub2e4.\n\n\uba40\ud2f0\ud14c\ub10c\ud2b8 \uad6c\ud604 \uc2dc \ubc18\ub4dc\uc2dc \ud574\uacb0\ud574\uc57c \ud560 \ubb38\uc81c\ub4e4:\n- **\ub370\uc774\ud130 \uaca9\ub9ac**: \ud14c\ub10c\ud2b8 \uac04 \ub370\uc774\ud130 \uc720\ucd9c \ubc29\uc9c0 (row-level security, schema separation, DB separation)\n- **\uc778\uc99d/\uc778\uac00**: \ud14c\ub10c\ud2b8\ubcc4 \uc5ed\ud560, \uad8c\ud55c, SSO \uc5f0\ub3d9\n- **\ube4c\ub9c1/\uad6c\ub3c5 \uad00\ub9ac**: \ud14c\ub10c\ud2b8\ubcc4 \ud50c\ub79c, \uc0ac\uc6a9\ub7c9 \ucd94\uc801, \uccad\uad6c\n- **\uc628\ubcf4\ub529 \ud50c\ub85c\uc6b0**: \ud14c\ub10c\ud2b8 \ud504\ub85c\ube44\uc800\ub2dd, \uc124\uc815, \ucee4\uc2a4\ud130\ub9c8\uc774\uc9d5\n- **\ubaa8\ub2c8\ud130\ub9c1**: \ud14c\ub10c\ud2b8\ubcc4 \uc131\ub2a5 \uaca9\ub9ac, \ub178\uc774\uc9c0 \ub124\uc774\ubc84 \ubb38\uc81c\n- **\ucef4\ud50c\ub77c\uc774\uc5b8\uc2a4**: \ud14c\ub10c\ud2b8\ubcc4 \ub370\uc774\ud130 \uc9c0\uc5ed\uc131 \uc694\uad6c\uc0ac\ud56d (GDPR \ub4f1)\n\n\uc774 \ubaa8\ub4e0 \uac83\uc744 \"\uc81c\ub300\ub85c\" \ud558\ub824\uba74 \uc5d4\uc9c0\ub2c8\uc5b4\ub9c1 \ud300\uc774 \uc218\uac1c\uc6d4\uc744 \uc18c\ube44\ud574\uc57c \ud55c\ub2e4. \uadf8 \uae30\uac04 \ub3d9\uc548 \uacbd\uc7c1\uc0ac\ub294 \ub2e8\uc21c\ud55c MVP\ub85c \uc2dc\uc7a5\uc744 \uc120\uc810\ud560 \uc218 \uc788\ub2e4.\n\n---\n\n### 3. PMF(Product-Market Fit) \uc804 \uacfc\ub3c4\ud55c \uc778\ud504\ub77c \ud22c\uc790\ub294 \uc0dd\uc874\uc728\uc744 \ub0ae\ucd98\ub2e4\n\n**\ubc18\ub860:** \uc2a4\ud0c0\ud2b8\uc5c5\uc758 1\ubc88 \uc0ac\ub9dd \uc6d0\uc778\uc740 \uae30\uc220 \ubb38\uc81c\uac00 \uc544\ub2c8\ub77c \uc2dc\uc7a5 \uc218\uc694 \ubd80\uc7ac\ub2e4.\n\n- CB Insights \ubd84\uc11d\uc5d0 \ub530\ub974\uba74 \uc2a4\ud0c0\ud2b8\uc5c5 \uc2e4\ud328\uc758 42%\ub294 \uc2dc\uc7a5 \uc218\uc694 \uc5c6\uc74c\uc774 \uc6d0\uc778\uc774\ub2e4.\n- PMF\ub97c \ucc3e\uae30 \uc804\uc5d0 \ud655\uc7a5\uc131 \uc778\ud504\ub77c\uc5d0 \uacfc\ud22c\uc790\ud558\ub294 \uac83\uc740 \"\uc544\uc9c1 \uc624\uc9c0 \uc54a\uc740 \ubb38\uc81c\ub97c \uc704\ud55c \uc194\ub8e8\uc158\"\uc774\ub2e4.\n- \ub7f0\uc6e8\uc774(runway)\ub294 \uc720\ud55c\ud558\ub2e4. \uba40\ud2f0\ud14c\ub10c\ud2b8 \uad6c\ud604\uc5d0 4\uac1c\uc6d4\uc744 \uc4f0\uba74 \uadf8\ub9cc\ud07c \uace0\uac1d \uac80\uc99d \uae30\ud68c\uac00 \uc904\uc5b4\ub4e0\ub2e4.\n\n**\uc2a4\ud0c0\ud2b8\uc5c5 \uc790\uc6d0 \ubc30\ubd84 \uc6d0\uce59:** \ucd08\uae30\uc5d0\ub294 \ud559\uc2b5(learning)\uc5d0 \ucd5c\ub300\ud55c \ud22c\uc790\ud574\uc57c \ud558\uba70, \ud655\uc7a5(scaling)\uc740 \uac80\uc99d \uc774\ud6c4\uc758 \ubb38\uc81c\ub2e4.\n\n---\n\n### 4. \"\ub098\uc911\uc5d0 \uace0\uc0dd \uc548 \ud55c\ub2e4\"\ub294 \uac00\uc815\uc774 \ud2c0\ub9b4 \uc218 \uc788\ub2e4\n\n**\ubc18\ub860:** \uc870\uae30 \ucd5c\uc801\ud654(premature optimization)\ub294 \uc624\ud788\ub824 \ub354 \ub9ce\uc740 \uace0\uc0dd\uc744 \ub9cc\ub4e0\ub2e4.\n\n- \ucd08\uae30\uc5d0 \ub9cc\ub4e0 \uba40\ud2f0\ud14c\ub10c\ud2b8 \uc544\ud0a4\ud14d\ucc98\ub294 \ube44\uc988\ub2c8\uc2a4 \uc694\uad6c\uc0ac\ud56d\uc774 \uba85\ud655\ud574\uc9c0\uae30 \uc804\uc5d0 \uc124\uacc4\ub41c \uac83\uc774\ubbc0\ub85c, \ub098\uc911\uc5d0 **\uc798\ubabb\ub41c \ucd94\uc0c1\ud654\ub97c \uac77\uc5b4\ub0b4\ub294 \uc791\uc5c5**\uc774 \uc0c8\ub85c \ub9cc\ub4dc\ub294 \uac83\ubcf4\ub2e4 \uc5b4\ub824\uc6b8 \uc218 \uc788\ub2e4.\n- \"\ub808\uac70\uc2dc \ucf54\ub4dc\"\uc758 \uc0c1\ub2f9 \ubd80\ubd84\uc740 \ucd08\uae30\uc5d0 \"\uc81c\ub300\ub85c \ub9cc\ub4e0\ub2e4\"\uace0 \ud55c \ucf54\ub4dc\uc5d0\uc11c \ube44\ub86f\ub41c\ub2e4.\n- Martin Fowler\uc758 YAGNi(You Aren't Gonna Need It) \uc6d0\uce59: \ud544\uc694\ud558\uc9c0 \uc54a\uc744 \uc218\ub3c4 \uc788\ub294 \uae30\ub2a5\uc744 \ubbf8\ub9ac \uad6c\ud604\ud558\uc9c0 \ub9d0\ub77c.\n\n**\uae30\uc220 \ubd80\ucc44 \uc5ed\uc124:** \ub2e8\uae30\uc801\uc73c\ub85c \uac04\ub2e8\ud558\uac8c \ub9cc\ub4e0 \ucf54\ub4dc\uac00 \uc7a5\uae30\uc801\uc73c\ub85c \uc81c\uac70\ud558\uae30 \uc26c\uc6b4 \uae30\uc220 \ubd80\ucc44\ub97c \ub0b3\ub294 \ubc18\uba74, \ucd08\uae30\uc5d0 \ubcf5\uc7a1\ud558\uac8c \ub9cc\ub4e0 \uc544\ud0a4\ud14d\ucc98\ub294 \uadfc\ubcf8\uc801\uc778 \uc804\uc81c\ub97c \ubc14\uafb8\uae30 \uc5b4\ub824\uc6b4 \uad6c\uc870\uc801 \ubd80\ucc44\ub97c \ub0b3\ub294\ub2e4.\n\n---\n\n### 5. \uccab \ubc88\uc9f8 \uace0\uac1d\uc774 \uba40\ud2f0\ud14c\ub10c\uc2dc\ub97c \uc6d0\ud558\uc9c0 \uc54a\uc744 \uc218 \uc788\ub2e4\n\n**\ubc18\ub860:** \ucd08\uae30 \uace0\uac1d\uc740 \uc885\uc885 \ucee4\uc2a4\ud130\ub9c8\uc774\uc9d5, \uc804\uc6a9 \uc778\uc2a4\ud134\uc2a4, \ub370\uc774\ud130 \uc8fc\uad8c\uc744 \uc694\uad6c\ud55c\ub2e4.\n\n- \uc5d4\ud130\ud504\ub77c\uc774\uc988 \uace0\uac1d: \"\uc6b0\ub9ac \ub370\uc774\ud130\uac00 \ub2e4\ub978 \uace0\uac1d\uacfc \uac19\uc740 DB\uc5d0 \uc788\uc73c\uba74 \uc548 \ub429\ub2c8\ub2e4\" \u2014 \uba40\ud2f0\ud14c\ub10c\ud2b8 \uacf5\uc720 \uc778\ud504\ub77c \uac70\ubd80\n- \uaddc\uc81c \uc0b0\uc5c5(\uae08\uc735, \uc758\ub8cc): \ub370\uc774\ud130 \uaca9\ub9ac \uc694\uad6c\uc0ac\ud56d\uc774 \uba40\ud2f0\ud14c\ub10c\ud2b8 SaaS\uc640 \ucda9\ub3cc\n- \ub300\ud615 \uace0\uac1d \ud55c \uba85\uc774 \uc2a4\ud0c0\ud2b8\uc5c5 \uc0dd\uc874\uc744 \uacb0\uc815\ud560 \uc218 \uc788\ub294 \ucd08\uae30\uc5d0, \uadf8 \uace0\uac1d\uc758 \uc694\uad6c\uac00 \uc544\ud0a4\ud14d\ucc98\uc640 \uc5b4\uae0b\ub098\uba74 \uce58\uba85\uc801\uc774\ub2e4.\n\n\ucd08\uae30 \uba87 \uba85\uc758 \uace0\uac1d\uc740 \uc624\ud788\ub824 **\uc2f1\uae00\ud14c\ub10c\ud2b8 \uc804\uc6a9 \ubc30\ud3ec**\ub97c \uc6d0\ud560 \uac00\ub2a5\uc131\uc774 \ub192\uc73c\uba70, \uc774 \uacbd\uc6b0 \uba40\ud2f0\ud14c\ub10c\ud2b8 \uc778\ud504\ub77c\uac00 \uc624\ubc84\uc5d4\uc9c0\ub2c8\uc5b4\ub9c1\uc774 \ub41c\ub2e4.\n\n---\n\n### 6. \ud300 \uc5ed\ub7c9\uacfc \ud604\uc2e4 \uc0ac\uc774\uc758 \uad34\ub9ac\n\n**\ubc18\ub860:** \uba40\ud2f0\ud14c\ub10c\ud2b8 SaaS\ub97c \uc81c\ub300\ub85c \uad6c\ud604\ud558\ub824\uba74 \uc0c1\ub2f9\ud55c \uc804\ubb38 \uc9c0\uc2dd\uc774 \ud544\uc694\ud558\ub2e4.\n\n- \uc18c\uaddc\ubaa8 \ucd08\uae30 \ud300(2~5\uba85)\uc774 \uba40\ud2f0\ud14c\ub10c\uc2dc, \ubcf4\uc548, \ube4c\ub9c1, \uc628\ubcf4\ub529\uc744 \ub3d9\uc2dc\uc5d0 \uc81c\ub300\ub85c \uad6c\ud604\ud558\uae30\ub294 \uc0ac\uc2e4\uc0c1 \ubd88\uac00\ub2a5\ud558\ub2e4.\n- \"\uc81c\ub300\ub85c \ub9cc\ub4e4\uaca0\ub2e4\"\ub294 \uc758\ub3c4\uc640 \ub2ec\ub9ac, \ucd09\ubc15\ud55c \uc77c\uc815 \uc18d\uc5d0\uc11c \ub9cc\ub4e4\uc5b4\uc9c4 \ubcf5\uc7a1\ud55c \uba40\ud2f0\ud14c\ub10c\ud2b8 \uc2dc\uc2a4\ud15c\uc740 \uc624\ud788\ub824 \ub354 \ub9ce\uc740 \ubc84\uadf8\uc640 \ubcf4\uc548 \ucde8\uc57d\uc810\uc744 \ub0b4\ud3ec\ud55c\ub2e4.\n- \ud14c\ub10c\ud2b8 \uac04 \ub370\uc774\ud130 \uc720\ucd9c \ubc84\uadf8\ub294 \ub2e8\uc21c\ud55c \ubc84\uadf8\uac00 \uc544\ub2c8\ub77c \uc0ac\uc5c5\uc744 \ub05d\ub0bc \uc218 \uc788\ub294 \uc0ac\uace0\ub2e4.\n\n**\ub9ac\uc2a4\ud06c \uc5ed\uc804:** \uba40\ud2f0\ud14c\ub10c\ud2b8\ub97c \ub3c4\uc785\ud568\uc73c\ub85c\uc368 \ud574\uacb0\ud558\ub824\ub294 \ub9ac\uc2a4\ud06c\ubcf4\ub2e4, \ucd08\uae30\uc5d0 \uc798\ubabb \uad6c\ud604\ub41c \uba40\ud2f0\ud14c\ub10c\ud2b8\uac00 \ub9cc\ub4dc\ub294 \ub9ac\uc2a4\ud06c\uac00 \ub354 \ud074 \uc218 \uc788\ub2e4.\n\n---\n\n### 7. \ub300\uc548\uc801 \uc811\uadfc: \uc810\uc9c4\uc801 \uba40\ud2f0\ud14c\ub10c\ud2b8\ud654\n\n\ub2e8\uc21c\ud568\uc73c\ub85c \uc2dc\uc791\ud574\uc11c \uac80\uc99d \ud6c4 \ud655\uc7a5\ud558\ub294 \uc804\ub7b5\uc774 \ub354 \ud604\uc2e4\uc801\uc774\ub2e4:\n\n| \ub2e8\uacc4 | \uc804\ub7b5 | \ubaa9\ud45c |\n|------|------|------|\n| 0~3\uac1c\uc6d4 | \uc2f1\uae00\ud14c\ub10c\ud2b8 MVP | PMF \ud0d0\uc0c9, \uccab \uace0\uac1d \ud655\ubcf4 |\n| 3~9\uac1c\uc6d4 | \uc18c\ud504\ud2b8 \uba40\ud2f0\ud14c\ub10c\ud2b8 (\ub17c\ub9ac\uc801 \ubd84\ub9ac) | 5~20\uac1c \uace0\uac1d \uc9c0\uc6d0 |\n| 9~18\uac1c\uc6d4 | \ud558\ub4dc \uba40\ud2f0\ud14c\ub10c\ud2b8 (\ubb3c\ub9ac\uc801 \uaca9\ub9ac \uc635\uc158) | \uc5d4\ud130\ud504\ub77c\uc774\uc988 \uc9c4\ucd9c |\n\n\uc774 \ubc29\uc2dd\uc740:\n- \ucd08\uae30 \uc2e4\ud589 \uc18d\ub3c4\ub97c \uc720\uc9c0\ud558\uba74\uc11c\n- \uc2e4\uc81c \uace0\uac1d \ub370\uc774\ud130\ub97c \uae30\ubc18\uc73c\ub85c \uc544\ud0a4\ud14d\ucc98\ub97c \uc124\uacc4\ud558\uace0\n- \uac01 \ub2e8\uacc4\uc758 \ub9c8\uc774\uadf8\ub808\uc774\uc158 \ube44\uc6a9\uc744 \ucd5c\uc18c\ud654\ud55c\ub2e4\n\nStripe, Airbnb, Shopify \ub4f1 \uc131\uacf5\uc801\uc778 SaaS \uae30\uc5c5\ub4e4\ub3c4 \ucd08\uae30\uc5d0\ub294 \ub2e8\uc21c\ud55c \uad6c\uc870\ub85c \uc2dc\uc791\ud574 \uc131\uc7a5\ud558\uba74\uc11c \uba40\ud2f0\ud14c\ub10c\ud2b8 \uc778\ud504\ub77c\ub97c \uc9c4\ud654\uc2dc\ucf30\ub2e4.\n\n---\n\n## \uc885\ud569 \ud3c9\uac00\n\n\uc6d0\ub798 \uc8fc\uc7a5\uc758 \uc9c1\uad00\uc801 \ub9e4\ub825(\ub098\uc911\uc5d0 \uace0\uc0dd\ud558\uc9c0 \uc54a\uaca0\ub2e4\ub294 \ubaa9\ud45c)\uc740 \uc774\ud574\ud560 \uc218 \uc788\uc9c0\ub9cc, \ub2e4\uc74c\uc758 \ud575\uc2ec \uc624\ub958\ub97c \ud3ec\ud568\ud558\uace0 \uc788\ub2e4:\n\n1. **\ubd88\ud655\uc2e4\uc131 \ubb34\uc2dc**: \uc2a4\ud0c0\ud2b8\uc5c5 \ucd08\uae30\uc5d0\ub294 \ubb34\uc5c7\uc774 \"\uc81c\ub300\ub85c \ub41c \uac83\"\uc778\uc9c0 \uc54c \uc218 \uc5c6\ub2e4.\n2. **\uc0dd\uc874 \uc6b0\uc120\uc21c\uc704 \uc5ed\uc804**: PMF \uc804\uc5d0 \ud655\uc7a5\uc131\uc5d0 \ud22c\uc790\ud558\ub294 \uac83\uc740 \uc0dd\uc874 \ud655\ub960\uc744 \ub0ae\ucd98\ub2e4.\n3. **\ubcf5\uc7a1\ub3c4 \uacfc\uc18c\ud3c9\uac00**: \uba40\ud2f0\ud14c\ub10c\ud2b8\ub294 \ub2e8\uc21c\ud55c \uc124\uacc4 \uc120\ud0dd\uc774 \uc544\ub2c8\ub77c \uc0ac\uc5c5 \uc804\ubc18\uc5d0 \uc601\ud5a5\uc744 \ubbf8\uce58\ub294 \ubcf5\uc7a1\ub3c4 \ubc30\uc218\ub2e4.\n4. **\uace0\uac1d \uac80\uc99d \uc0dd\ub7b5**: \uccab \uace0\uac1d\uc774 \uc2e4\uc81c\ub85c \ubb34\uc5c7\uc744 \uc6d0\ud558\ub294\uc9c0 \ubaa8\ub978 \ucc44 \uc778\ud504\ub77c\ub97c \uacb0\uc815\ud558\ub294 \uac83\uc740 \ub3c4\ubc15\uc774\ub2e4.\n\n**\uacb0\ub860:** \"\ucc98\uc74c\ubd80\ud130 \uc81c\ub300\ub85c\"\uc758 \uc9c4\uc9dc \uc758\ubbf8\ub294 \ud655\uc7a5 \uac00\ub2a5\ud55c \ubcf5\uc7a1\ud55c \uc2dc\uc2a4\ud15c\uc744 \uad6c\ucd95\ud558\ub294 \uac83\uc774 \uc544\ub2c8\ub77c, **\ube60\ub974\uac8c \ud559\uc2b5\ud558\uace0 \uac80\uc99d\ud560 \uc218 \uc788\ub294 \uad6c\uc870**\ub97c \ub9cc\ub4dc\ub294 \uac83\uc774\ub2e4. \uba40\ud2f0\ud14c\ub10c\ud2b8 SaaS\ub294 \uc2a4\ud0c0\ud2b8\uc5c5\uc774 \ub2ec\uc131\ud574\uc57c \ud560 \ubaa9\uc801\uc9c0\uc774\uc9c0, \ucd9c\ubc1c\uc810\uc774 \ub418\uc5b4\uc11c\ub294 \uc548 \ub41c\ub2e4.\n"}], "grading": {"expectations": [{"text": "Counterarguments are written in Korean (matching the prompt's language)", "passed": true, "evidence": "The entire output.md is written in Korean. All section headers, arguments, and conclusions use Korean text throughout."}, {"text": "Arguments address the specific startup context \u2014 the early-stage cost of premature multi-tenancy, not just 'multi-tenancy is complex' in the abstract", "passed": true, "evidence": "Multiple sections explicitly target the startup context: Section 3 invokes CB Insights data about startup failure rates and limited runway ('\ub7f0\uc6e8\uc774(runway)\ub294 \uc720\ud55c\ud558\ub2e4. \uba40\ud2f0\ud14c\ub10c\ud2b8 \uad6c\ud604\uc5d0 4\uac1c\uc6d4\uc744 \uc4f0\uba74 \uadf8\ub9cc\ud07c \uace0\uac1d \uac80\uc99d \uae30\ud68c\uac00 \uc904\uc5b4\ub4e0\ub2e4'), Section 6 addresses small teams of 2-5 people ('\uc18c\uaddc\ubaa8 \ucd08\uae30 \ud300(2~5\uba85)'), and Section 5 addresses the risk of early customers rejecting multi-tenant infrastructure. These are startup-specific cost arguments, not generic complexity warnings."}, {"text": "The '\ud575\uc2ec \ucde8\uc57d\uc810' section is present", "passed": false, "evidence": "No section titled '\ud575\uc2ec \ucde8\uc57d\uc810' exists anywhere in output.md. The output uses '\uc885\ud569 \ud3c9\uac00' as its summary section, which lists core errors but under a different heading. The required section label is absent."}, {"text": "At least one argument challenges the core assumption that early investment prevents future pain (YAGNI or pivot risk angle)", "passed": true, "evidence": "Section 4 directly challenges this assumption: 'Martin Fowler\uc758 YAGNi(You Aren't Gonna Need It) \uc6d0\uce59: \ud544\uc694\ud558\uc9c0 \uc54a\uc744 \uc218\ub3c4 \uc788\ub294 \uae30\ub2a5\uc744 \ubbf8\ub9ac \uad6c\ud604\ud558\uc9c0 \ub9d0\ub77c.' It further argues that early complexity creates harder-to-remove structural debt ('\ucd08\uae30\uc5d0 \ubcf5\uc7a1\ud558\uac8c \ub9cc\ub4e0 \uc544\ud0a4\ud14d\ucc98\ub294 \uadfc\ubcf8\uc801\uc778 \uc804\uc81c\ub97c \ubc14\uafb8\uae30 \uc5b4\ub824\uc6b4 \uad6c\uc870\uc801 \ubd80\ucc44\ub97c \ub0b3\ub294\ub2e4'). Section 1 also raises the pivot risk angle (B2B to B2C or enterprise on-premise pivot scenarios)."}, {"text": "No section that softens the critique by restating the benefits of multi-tenancy", "passed": false, "evidence": "Section 7 '\ub300\uc548\uc801 \uc811\uadfc: \uc810\uc9c4\uc801 \uba40\ud2f0\ud14c\ub10c\ud2b8\ud654' proposes a roadmap toward full multi-tenancy and validates it as the correct end goal. The conclusion explicitly states '\uba40\ud2f0\ud14c\ub10c\ud2b8 SaaS\ub294 \uc2a4\ud0c0\ud2b8\uc5c5\uc774 \ub2ec\uc131\ud574\uc57c \ud560 \ubaa9\uc801\uc9c0\uc774\uc9c0, \ucd9c\ubc1c\uc810\uc774 \ub418\uc5b4\uc11c\ub294 \uc548 \ub41c\ub2e4' ('Multi-tenant SaaS is the destination a startup must reach, not the starting point'). This restates multi-tenancy as the correct architecture, softening the overall critique from 'this is wrong for startups' to 'the timing is wrong.' Section 7 also cites Stripe, Airbnb, and Shopify as companies that eventually did adopt multi-tenant infrastructure, which further legitimizes the approach."}], "summary": {"passed": 3, "failed": 2, "total": 5, "pass_rate": 0.6}, "execution_metrics": {"tool_calls": {"Bash": 2, "Write": 2}, "total_tool_calls": 4, "total_steps": 3, "files_created": 2, "errors_encountered": 0, "output_chars": 7053, "transcript_chars": 0}, "timing": {"executor_duration_seconds": 76.9, "total_duration_seconds": 76.9}, "claims": [{"claim": "The output takes a devil's advocate position against early multi-tenancy in startups", "type": "quality", "verified": true, "evidence": "The document presents 6 substantive counterarguments against the position that startups should adopt multi-tenant architecture from day one."}, {"claim": "The critique is unqualified and purely adversarial", "type": "quality", "verified": false, "evidence": "Section 7 proposes a graduated adoption path and endorses multi-tenancy as the eventual destination, which undermines the adversarial framing. The conclusion is conciliatory rather than challenging."}, {"claim": "CB Insights data cited (42% of startups fail due to no market need)", "type": "factual", "verified": false, "evidence": "The 42% figure is cited but cannot be independently verified from available outputs. The CB Insights figure in widely-cited reports is typically around 35-42%, so it is plausible but unverified."}], "user_notes_summary": {"uncertainties": [], "needs_review": [], "workarounds": []}, "eval_feedback": {"suggestions": [{"assertion": "The '\ud575\uc2ec \ucde8\uc57d\uc810' section is present", "reason": "This assertion checks for a specific section label that the skill is expected to produce. Without knowing the exact prompt given to the executor, it is unclear whether '\ud575\uc2ec \ucde8\uc57d\uc810' is a label the skill's template requires or just one the eval author hoped to see. If the skill doesn't define this as required output structure, the assertion may be testing for a formatting convention rather than a meaningful outcome. Consider verifying that the skill's prompt explicitly requires this section label."}, {"assertion": "No section that softens the critique by restating the benefits of multi-tenancy", "reason": "This assertion is well-targeted and caught a real failure mode: the output ends with a roadmap toward multi-tenancy. However, the assertion could be sharpened \u2014 it currently focuses on 'a section,' but softening can also appear in the conclusion or framing. Consider checking whether the overall conclusion endorses the original position, not just whether a dedicated section restates benefits."}, {"reason": "No assertion checks the depth or accuracy of the startup-specific arguments. Section 3 cites a CB Insights statistic (42% fail due to no market demand) that is presented without verification. An assertion verifying that cited data points are plausible or that the arguments go beyond surface-level talking points would improve discriminability."}], "overall": "The evals are well-constructed and catch the most important failure modes (section presence, critique softening, YAGNI angle). The '\ud575\uc2ec \ucde8\uc57d\uc810' label check is the weakest \u2014 it may reflect a template requirement that wasn't enforced in the prompt. The softening check correctly identified a substantive failure where the output undermined its own adversarial stance."}}}], "previous_feedback": {}, "previous_outputs": {}, "benchmark": {"metadata": {"skill_name": "devils-advocate", "skill_path": "/home/newkayak12/projects/claude-skills/plugins/newkayak12-skills/skills/devils-advocate", "executor_model": "claude-sonnet-4-6", "analyzer_model": "claude-sonnet-4-6", "timestamp": "2026-03-18T08:00:00Z", "evals_run": [1, 2, 3], "runs_per_configuration": 1}, "runs": [{"eval_id": 1, "eval_name": "TypeScript Migration", "configuration": "with_skill", "run_number": 1, "result": {"pass_rate": 1.0, "passed": 5, "failed": 0, "total": 5, "time_seconds": 87.1, "tokens": 14109, "tool_calls": 6, "errors": 0}, "expectations": [{"text": "Exactly 3 counterarguments presented", "passed": true, "evidence": "\ubc18\ub860 1, \ubc18\ub860 2, \ubc18\ub860 3 \u2014 exactly 3"}, {"text": "TypeScript-specific arguments", "passed": true, "evidence": "any\ud0c0\uc785 \uc9c0\uc625, build pipeline, runtime data gaps \u2014 all TS-specific"}, {"text": "\ud575\uc2ec \ucde8\uc57d\uc810 section present", "passed": true, "evidence": "Section '\ud575\uc2ec \ucde8\uc57d\uc810: \uc77c\uc815\uc774 TypeScript\uc758 \uac00\uce58\ub97c \uc5ed\uc804\uc2dc\ud0a8\ub2e4' present"}, {"text": "Direct tone without hedging", "passed": true, "evidence": "All declarative constructions, no hedging phrases"}, {"text": "No TypeScript benefits balancing section", "passed": true, "evidence": "Fully adversarial framing throughout"}], "notes": []}, {"eval_id": 1, "eval_name": "TypeScript Migration", "configuration": "without_skill", "run_number": 1, "result": {"pass_rate": 0.6, "passed": 3, "failed": 2, "total": 5, "time_seconds": 43.6, "tokens": 10602, "tool_calls": 3, "errors": 0}, "expectations": [{"text": "Exactly 3 counterarguments presented", "passed": true, "evidence": "3 sections present"}, {"text": "TypeScript-specific arguments", "passed": true, "evidence": "Cited type erasure, any abuse, @types gaps"}, {"text": "\ud575\uc2ec \ucde8\uc57d\uc810 section present", "passed": false, "evidence": "Used '\ud575\uc2ec \uc704\ud5d8' per-argument, not a standalone '\ud575\uc2ec \ucde8\uc57d\uc810' section"}, {"text": "Direct tone without hedging", "passed": true, "evidence": "Declarative throughout"}, {"text": "No TypeScript benefits balancing section", "passed": false, "evidence": "Conclusion said 'TypeScript \uc804\ud658 \uc790\uccb4\uac00 \ub098\uc05c \uacb0\uc815\uc774\ub77c\ub294 \uac83\uc774 \uc544\ub2d9\ub2c8\ub2e4' and recommended phased adoption"}], "notes": ["Softening conclusion undermines adversarial framing"]}, {"eval_id": 2, "eval_name": "Mobile App Sunset", "configuration": "with_skill", "run_number": 1, "result": {"pass_rate": 1.0, "passed": 5, "failed": 0, "total": 5, "time_seconds": 84.4, "tokens": 13733, "tool_calls": 7, "errors": 0}, "expectations": [{"text": "3 counterarguments presented", "passed": true, "evidence": "Exactly 3 counterarguments labeled"}, {"text": "Steel-manned arguments", "passed": true, "evidence": "Cited 4-5x time-in-app data, iOS PWA policy constraints, RN/Flutter maturity"}, {"text": "Core Vulnerability section present", "passed": true, "evidence": "'## Core Vulnerability' section present, identifies structural framing flaw"}, {"text": "Mobile-vs-web specific", "passed": true, "evidence": "All arguments grounded in mobile-specific dynamics"}, {"text": "Response in English", "passed": true, "evidence": "Entire output in English"}], "notes": []}, {"eval_id": 2, "eval_name": "Mobile App Sunset", "configuration": "without_skill", "run_number": 1, "result": {"pass_rate": 0.8, "passed": 4, "failed": 1, "total": 5, "time_seconds": 52.7, "tokens": 10340, "tool_calls": 3, "errors": 0}, "expectations": [{"text": "3 counterarguments presented", "passed": true, "evidence": "7 counterarguments presented (exceeds minimum)"}, {"text": "Steel-manned arguments", "passed": true, "evidence": "Sophisticated arguments with specific technical details"}, {"text": "Core Vulnerability section present", "passed": false, "evidence": "No labeled Core Vulnerability section; conclusion touches on flaw conceptually"}, {"text": "Mobile-vs-web specific", "passed": true, "evidence": "References Safari WebKit, MDM, biometric auth, App Store distribution"}, {"text": "Response in English", "passed": true, "evidence": "Entire response in English"}], "notes": ["7 arguments instead of 3 \u2014 listicle dilutes the force of the strongest objections"]}, {"eval_id": 3, "eval_name": "Multi-tenant SaaS Early Adoption", "configuration": "with_skill", "run_number": 1, "result": {"pass_rate": 1.0, "passed": 5, "failed": 0, "total": 5, "time_seconds": 88.1, "tokens": 14453, "tool_calls": 6, "errors": 0}, "expectations": [{"text": "Korean language", "passed": true, "evidence": "Entire output in Korean"}, {"text": "Startup-specific context", "passed": true, "evidence": "Cited PMF validation, 2~5\uba85 team size, runway burn"}, {"text": "\ud575\uc2ec \ucde8\uc57d\uc810 section present", "passed": true, "evidence": "## \ud575\uc2ec \ucde8\uc57d\uc810 section present on lines 22-27"}, {"text": "YAGNI / pivot-risk challenge", "passed": true, "evidence": "\ubc18\ub860 3 and \ud575\uc2ec \ucde8\uc57d\uc810 both directly challenge 'early investment prevents future pain'"}, {"text": "No softening section", "passed": true, "evidence": "Consistently adversarial; no benefit-restating language anywhere"}], "notes": []}, {"eval_id": 3, "eval_name": "Multi-tenant SaaS Early Adoption", "configuration": "without_skill", "run_number": 1, "result": {"pass_rate": 0.6, "passed": 3, "failed": 2, "total": 5, "time_seconds": 76.9, "tokens": 12323, "tool_calls": 4, "errors": 0}, "expectations": [{"text": "Korean language", "passed": true, "evidence": "Entire output in Korean"}, {"text": "Startup-specific context", "passed": true, "evidence": "CB Insights data, runway constraints, 2-5 person teams"}, {"text": "\ud575\uc2ec \ucde8\uc57d\uc810 section present", "passed": false, "evidence": "Used '\uc885\ud569 \ud3c9\uac00' as summary section, not '\ud575\uc2ec \ucde8\uc57d\uc810'"}, {"text": "YAGNI / pivot-risk challenge", "passed": true, "evidence": "Section 4 explicitly invokes Martin Fowler's YAGNI, Section 1 covers pivot risk"}, {"text": "No softening section", "passed": false, "evidence": "Section 7 '\ub300\uc548\uc801 \uc811\uadfc: \uc810\uc9c4\uc801 \uba40\ud2f0\ud14c\ub10c\ud2b8\ud654' endorses multi-tenancy as eventual destination"}], "notes": ["Concluded with 'multi-tenant SaaS is the destination' \u2014 concedes original position"]}], "run_summary": {"with_skill": {"pass_rate": {"mean": 1.0, "stddev": 0.0, "min": 1.0, "max": 1.0}, "time_seconds": {"mean": 86.5, "stddev": 1.9, "min": 84.4, "max": 88.1}, "tokens": {"mean": 14098, "stddev": 362, "min": 13733, "max": 14453}}, "without_skill": {"pass_rate": {"mean": 0.67, "stddev": 0.09, "min": 0.6, "max": 0.8}, "time_seconds": {"mean": 57.7, "stddev": 14.2, "min": 43.6, "max": 76.9}, "tokens": {"mean": 11088, "stddev": 1020, "min": 10340, "max": 12323}}, "delta": {"pass_rate": "+0.33", "time_seconds": "+28.8", "tokens": "+3010"}}, "notes": ["With-skill: 15/15 across all evals (100%). Without-skill: 10/15 (67%).", "The two consistent failure modes for without-skill: (1) missing labeled '\ud575\uc2ec \ucde8\uc57d\uc810' section, (2) softening conclusion that undermines adversarial framing.", "Without-skill produces listicles (7 arguments in eval-2) vs. skill's disciplined 3 \u2014 diffuses the force of the best objections.", "With-skill uses think-tool before every response; without-skill skips this reasoning phase.", "Time cost: +29s average for using the skill (think-tool overhead), but quality uplift is consistent and significant.", "Assertions on '\ud575\uc2ec \ucde8\uc57d\uc810' presence are well-discriminating \u2014 they consistently separate the two configurations."]}};
+
+    // ---- State ----
+    let feedbackMap = {};  // run_id -> feedback text
+    let currentIndex = 0;
+    let visitedRuns = new Set();
+
+    // ---- Init ----
+    async function init() {
+      // Load saved feedback from server — but only if this isn't a fresh
+      // iteration (indicated by previous_feedback being present). When
+      // previous feedback exists, the feedback.json on disk is stale from
+      // the prior iteration and should not pre-fill the textareas.
+      const hasPrevious = Object.keys(EMBEDDED_DATA.previous_feedback || {}).length > 0
+        || Object.keys(EMBEDDED_DATA.previous_outputs || {}).length > 0;
+      if (!hasPrevious) {
+        try {
+          const resp = await fetch("/api/feedback");
+          const data = await resp.json();
+          if (data.reviews) {
+            for (const r of data.reviews) feedbackMap[r.run_id] = r.feedback;
+          }
+        } catch { /* first run, no feedback yet */ }
+      }
+
+      document.getElementById("skill-name").textContent = EMBEDDED_DATA.skill_name;
+      showRun(0);
+
+      // Wire up feedback auto-save
+      const textarea = document.getElementById("feedback");
+      let saveTimeout = null;
+      textarea.addEventListener("input", () => {
+        clearTimeout(saveTimeout);
+        document.getElementById("feedback-status").textContent = "";
+        saveTimeout = setTimeout(() => saveCurrentFeedback(), 800);
+      });
+    }
+
+    // ---- Navigation ----
+    function navigate(delta) {
+      const newIndex = currentIndex + delta;
+      if (newIndex >= 0 && newIndex < EMBEDDED_DATA.runs.length) {
+        saveCurrentFeedback();
+        showRun(newIndex);
+      }
+    }
+
+    function updateNavButtons() {
+      document.getElementById("prev-btn").disabled = currentIndex === 0;
+      document.getElementById("next-btn").disabled =
+        currentIndex === EMBEDDED_DATA.runs.length - 1;
+    }
+
+    // ---- Show a run ----
+    function showRun(index) {
+      currentIndex = index;
+      const run = EMBEDDED_DATA.runs[index];
+
+      // Progress
+      document.getElementById("progress").textContent =
+        `${index + 1} of ${EMBEDDED_DATA.runs.length}`;
+
+      // Prompt
+      document.getElementById("prompt-text").textContent = run.prompt;
+
+      // Config badge
+      const badge = document.getElementById("config-badge");
+      const configMatch = run.id.match(/(with_skill|without_skill|new_skill|old_skill)/);
+      if (configMatch) {
+        const config = configMatch[1];
+        const isBaseline = config === "without_skill" || config === "old_skill";
+        badge.textContent = config.replace(/_/g, " ");
+        badge.className = "config-badge " + (isBaseline ? "config-baseline" : "config-primary");
+        badge.style.display = "inline-block";
+      } else {
+        badge.style.display = "none";
+      }
+
+      // Outputs
+      renderOutputs(run);
+
+      // Previous outputs
+      renderPrevOutputs(run);
+
+      // Grades
+      renderGrades(run);
+
+      // Previous feedback
+      const prevFb = (EMBEDDED_DATA.previous_feedback || {})[run.id];
+      const prevEl = document.getElementById("prev-feedback");
+      if (prevFb) {
+        document.getElementById("prev-feedback-text").textContent = prevFb;
+        prevEl.style.display = "block";
+      } else {
+        prevEl.style.display = "none";
+      }
+
+      // Feedback
+      document.getElementById("feedback").value = feedbackMap[run.id] || "";
+      document.getElementById("feedback-status").textContent = "";
+
+      updateNavButtons();
+
+      // Track visited runs and promote done button when all visited
+      visitedRuns.add(index);
+      const doneBtn = document.getElementById("done-btn");
+      if (visitedRuns.size >= EMBEDDED_DATA.runs.length) {
+        doneBtn.classList.add("ready");
+      }
+
+      // Scroll main content to top
+      document.querySelector(".main").scrollTop = 0;
+    }
+
+    // ---- Render outputs ----
+    function renderOutputs(run) {
+      const container = document.getElementById("outputs-body");
+      container.innerHTML = "";
+
+      const outputs = run.outputs || [];
+      if (outputs.length === 0) {
+        container.innerHTML = '<div class="empty-state">No output files</div>';
+        return;
+      }
+
+      for (const file of outputs) {
+        const fileDiv = document.createElement("div");
+        fileDiv.className = "output-file";
+
+        // Always show file header with download link
+        const header = document.createElement("div");
+        header.className = "output-file-header";
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = file.name;
+        header.appendChild(nameSpan);
+        const dlBtn = document.createElement("a");
+        dlBtn.className = "dl-btn";
+        dlBtn.textContent = "Download";
+        dlBtn.download = file.name;
+        dlBtn.href = getDownloadUri(file);
+        header.appendChild(dlBtn);
+        fileDiv.appendChild(header);
+
+        const content = document.createElement("div");
+        content.className = "output-file-content";
+
+        if (file.type === "text") {
+          const pre = document.createElement("pre");
+          pre.textContent = file.content;
+          content.appendChild(pre);
+        } else if (file.type === "image") {
+          const img = document.createElement("img");
+          img.src = file.data_uri;
+          img.alt = file.name;
+          content.appendChild(img);
+        } else if (file.type === "pdf") {
+          const iframe = document.createElement("iframe");
+          iframe.src = file.data_uri;
+          content.appendChild(iframe);
+        } else if (file.type === "xlsx") {
+          renderXlsx(content, file.data_b64);
+        } else if (file.type === "binary") {
+          const a = document.createElement("a");
+          a.className = "download-link";
+          a.href = file.data_uri;
+          a.download = file.name;
+          a.textContent = "Download " + file.name;
+          content.appendChild(a);
+        } else if (file.type === "error") {
+          const pre = document.createElement("pre");
+          pre.textContent = file.content;
+          pre.style.color = "var(--red)";
+          content.appendChild(pre);
+        }
+
+        fileDiv.appendChild(content);
+        container.appendChild(fileDiv);
+      }
+    }
+
+    // ---- XLSX rendering via SheetJS ----
+    function renderXlsx(container, b64Data) {
+      try {
+        const raw = Uint8Array.from(atob(b64Data), c => c.charCodeAt(0));
+        const wb = XLSX.read(raw, { type: "array" });
+
+        for (let i = 0; i < wb.SheetNames.length; i++) {
+          const sheetName = wb.SheetNames[i];
+          const ws = wb.Sheets[sheetName];
+
+          if (wb.SheetNames.length > 1) {
+            const sheetLabel = document.createElement("div");
+            sheetLabel.style.cssText =
+              "font-weight:600; font-size:0.8rem; color:#b0aea5; margin-top:0.5rem; margin-bottom:0.25rem;";
+            sheetLabel.textContent = "Sheet: " + sheetName;
+            container.appendChild(sheetLabel);
+          }
+
+          const htmlStr = XLSX.utils.sheet_to_html(ws, { editable: false });
+          const wrapper = document.createElement("div");
+          wrapper.innerHTML = htmlStr;
+          container.appendChild(wrapper);
+        }
+      } catch (err) {
+        container.textContent = "Error rendering spreadsheet: " + err.message;
+      }
+    }
+
+    // ---- Grades ----
+    function renderGrades(run) {
+      const section = document.getElementById("grades-section");
+      const content = document.getElementById("grades-content");
+
+      if (!run.grading) {
+        section.style.display = "none";
+        return;
+      }
+
+      const grading = run.grading;
+      section.style.display = "block";
+      // Reset to collapsed
+      content.classList.remove("open");
+      document.getElementById("grades-arrow").classList.remove("open");
+
+      const summary = grading.summary || {};
+      const expectations = grading.expectations || [];
+
+      let html = '<div style="padding: 1rem;">';
+
+      // Summary line
+      const passRate = summary.pass_rate != null
+        ? Math.round(summary.pass_rate * 100) + "%"
+        : "?";
+      const badgeClass = summary.pass_rate >= 0.8 ? "grade-pass" : summary.pass_rate >= 0.5 ? "" : "grade-fail";
+      html += '<div class="grades-summary">';
+      html += '<span class="grade-badge ' + badgeClass + '">' + passRate + '</span>';
+      html += '<span>' + (summary.passed || 0) + ' passed, ' + (summary.failed || 0) + ' failed of ' + (summary.total || 0) + '</span>';
+      html += '</div>';
+
+      // Assertions list
+      html += '<ul class="assertion-list">';
+      for (const exp of expectations) {
+        const statusClass = exp.passed ? "pass" : "fail";
+        const statusIcon = exp.passed ? "\u2713" : "\u2717";
+        html += '<li class="assertion-item">';
+        html += '<span class="assertion-status ' + statusClass + '">' + statusIcon + '</span>';
+        html += '<span>' + escapeHtml(exp.text) + '</span>';
+        if (exp.evidence) {
+          html += '<div class="assertion-evidence">' + escapeHtml(exp.evidence) + '</div>';
+        }
+        html += '</li>';
+      }
+      html += '</ul>';
+
+      html += '</div>';
+      content.innerHTML = html;
+    }
+
+    function toggleGrades() {
+      const content = document.getElementById("grades-content");
+      const arrow = document.getElementById("grades-arrow");
+      content.classList.toggle("open");
+      arrow.classList.toggle("open");
+    }
+
+    // ---- Previous outputs (collapsible) ----
+    function renderPrevOutputs(run) {
+      const section = document.getElementById("prev-outputs-section");
+      const content = document.getElementById("prev-outputs-content");
+      const prevOutputs = (EMBEDDED_DATA.previous_outputs || {})[run.id];
+
+      if (!prevOutputs || prevOutputs.length === 0) {
+        section.style.display = "none";
+        return;
+      }
+
+      section.style.display = "block";
+      // Reset to collapsed
+      content.classList.remove("open");
+      document.getElementById("prev-outputs-arrow").classList.remove("open");
+
+      // Render the files into the content area
+      content.innerHTML = "";
+      const wrapper = document.createElement("div");
+      wrapper.style.padding = "1rem";
+
+      for (const file of prevOutputs) {
+        const fileDiv = document.createElement("div");
+        fileDiv.className = "output-file";
+
+        const header = document.createElement("div");
+        header.className = "output-file-header";
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = file.name;
+        header.appendChild(nameSpan);
+        const dlBtn = document.createElement("a");
+        dlBtn.className = "dl-btn";
+        dlBtn.textContent = "Download";
+        dlBtn.download = file.name;
+        dlBtn.href = getDownloadUri(file);
+        header.appendChild(dlBtn);
+        fileDiv.appendChild(header);
+
+        const fc = document.createElement("div");
+        fc.className = "output-file-content";
+
+        if (file.type === "text") {
+          const pre = document.createElement("pre");
+          pre.textContent = file.content;
+          fc.appendChild(pre);
+        } else if (file.type === "image") {
+          const img = document.createElement("img");
+          img.src = file.data_uri;
+          img.alt = file.name;
+          fc.appendChild(img);
+        } else if (file.type === "pdf") {
+          const iframe = document.createElement("iframe");
+          iframe.src = file.data_uri;
+          fc.appendChild(iframe);
+        } else if (file.type === "xlsx") {
+          renderXlsx(fc, file.data_b64);
+        } else if (file.type === "binary") {
+          const a = document.createElement("a");
+          a.className = "download-link";
+          a.href = file.data_uri;
+          a.download = file.name;
+          a.textContent = "Download " + file.name;
+          fc.appendChild(a);
+        }
+
+        fileDiv.appendChild(fc);
+        wrapper.appendChild(fileDiv);
+      }
+
+      content.appendChild(wrapper);
+    }
+
+    function togglePrevOutputs() {
+      const content = document.getElementById("prev-outputs-content");
+      const arrow = document.getElementById("prev-outputs-arrow");
+      content.classList.toggle("open");
+      arrow.classList.toggle("open");
+    }
+
+    // ---- Feedback (saved to server -> feedback.json) ----
+    function saveCurrentFeedback() {
+      const run = EMBEDDED_DATA.runs[currentIndex];
+      const text = document.getElementById("feedback").value;
+
+      if (text.trim() === "") {
+        delete feedbackMap[run.id];
+      } else {
+        feedbackMap[run.id] = text;
+      }
+
+      // Build reviews array from map
+      const reviews = [];
+      for (const [run_id, feedback] of Object.entries(feedbackMap)) {
+        if (feedback.trim()) {
+          reviews.push({ run_id, feedback, timestamp: new Date().toISOString() });
+        }
+      }
+
+      fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reviews, status: "in_progress" }),
+      }).then(() => {
+        document.getElementById("feedback-status").textContent = "Saved";
+      }).catch(() => {
+        // Static mode or server unavailable — no-op on auto-save,
+        // feedback will be downloaded on final submit
+        document.getElementById("feedback-status").textContent = "Will download on submit";
+      });
+    }
+
+    // ---- Done ----
+    function showDoneDialog() {
+      // Save current textarea to feedbackMap (but don't POST yet)
+      const run = EMBEDDED_DATA.runs[currentIndex];
+      const text = document.getElementById("feedback").value;
+      if (text.trim() === "") {
+        delete feedbackMap[run.id];
+      } else {
+        feedbackMap[run.id] = text;
+      }
+
+      // POST once with status: complete — include ALL runs so the model
+      // can distinguish "no feedback" (looks good) from "not reviewed"
+      const reviews = [];
+      const ts = new Date().toISOString();
+      for (const r of EMBEDDED_DATA.runs) {
+        reviews.push({ run_id: r.id, feedback: feedbackMap[r.id] || "", timestamp: ts });
+      }
+      const payload = JSON.stringify({ reviews, status: "complete" }, null, 2);
+      fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+      }).then(() => {
+        document.getElementById("done-overlay").classList.add("visible");
+      }).catch(() => {
+        // Server not available (static mode) — download as file
+        const blob = new Blob([payload], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "feedback.json";
+        a.click();
+        URL.revokeObjectURL(url);
+        document.getElementById("done-overlay").classList.add("visible");
+      });
+    }
+
+    function closeDoneDialog() {
+      // Reset status back to in_progress
+      saveCurrentFeedback();
+      document.getElementById("done-overlay").classList.remove("visible");
+    }
+
+    // ---- Toast ----
+    function showToast(message) {
+      const toast = document.getElementById("toast");
+      toast.textContent = message;
+      toast.classList.add("visible");
+      setTimeout(() => toast.classList.remove("visible"), 2000);
+    }
+
+    // ---- Keyboard nav ----
+    document.addEventListener("keydown", (e) => {
+      // Don't capture when typing in textarea
+      if (e.target.tagName === "TEXTAREA") return;
+
+      if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+        e.preventDefault();
+        navigate(-1);
+      } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+        e.preventDefault();
+        navigate(1);
+      }
+    });
+
+    // ---- Util ----
+    function getDownloadUri(file) {
+      if (file.data_uri) return file.data_uri;
+      if (file.data_b64) return "data:application/octet-stream;base64," + file.data_b64;
+      if (file.type === "text") return "data:text/plain;charset=utf-8," + encodeURIComponent(file.content);
+      return "#";
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // ---- View switching ----
+    function switchView(view) {
+      document.querySelectorAll(".view-tab").forEach(t => t.classList.remove("active"));
+      document.querySelectorAll(".view-panel").forEach(p => p.classList.remove("active"));
+      document.querySelector(`[onclick="switchView('${view}')"]`).classList.add("active");
+      document.getElementById("panel-" + view).classList.add("active");
+    }
+
+    // ---- Benchmark rendering ----
+    function renderBenchmark() {
+      const data = EMBEDDED_DATA.benchmark;
+      if (!data) return;
+
+      // Show the tabs
+      document.getElementById("view-tabs").style.display = "flex";
+
+      const container = document.getElementById("benchmark-content");
+      const summary = data.run_summary || {};
+      const metadata = data.metadata || {};
+      const notes = data.notes || [];
+
+      let html = "";
+
+      // Header
+      html += "<h2 style='font-family: Poppins, sans-serif; margin-bottom: 0.5rem;'>Benchmark Results</h2>";
+      html += "<p style='color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1.25rem;'>";
+      if (metadata.skill_name) html += "<strong>" + escapeHtml(metadata.skill_name) + "</strong> &mdash; ";
+      if (metadata.timestamp) html += metadata.timestamp + " &mdash; ";
+      if (metadata.evals_run) html += "Evals: " + metadata.evals_run.join(", ") + " &mdash; ";
+      html += (metadata.runs_per_configuration || "?") + " runs per configuration";
+      html += "</p>";
+
+      // Summary table
+      html += '<table class="benchmark-table">';
+
+      function fmtStat(stat, pct) {
+        if (!stat) return "—";
+        const suffix = pct ? "%" : "";
+        const m = pct ? (stat.mean * 100).toFixed(0) : stat.mean.toFixed(1);
+        const s = pct ? (stat.stddev * 100).toFixed(0) : stat.stddev.toFixed(1);
+        return m + suffix + " ± " + s + suffix;
+      }
+
+      function deltaClass(val) {
+        if (!val) return "";
+        const n = parseFloat(val);
+        if (n > 0) return "benchmark-delta-positive";
+        if (n < 0) return "benchmark-delta-negative";
+        return "";
+      }
+
+      // Discover config names dynamically (everything except "delta")
+      const configs = Object.keys(summary).filter(k => k !== "delta");
+      const configA = configs[0] || "config_a";
+      const configB = configs[1] || "config_b";
+      const labelA = configA.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+      const labelB = configB.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+      const a = summary[configA] || {};
+      const b = summary[configB] || {};
+      const delta = summary.delta || {};
+
+      html += "<thead><tr><th>Metric</th><th>" + escapeHtml(labelA) + "</th><th>" + escapeHtml(labelB) + "</th><th>Delta</th></tr></thead>";
+      html += "<tbody>";
+
+      html += "<tr><td><strong>Pass Rate</strong></td>";
+      html += "<td>" + fmtStat(a.pass_rate, true) + "</td>";
+      html += "<td>" + fmtStat(b.pass_rate, true) + "</td>";
+      html += '<td class="' + deltaClass(delta.pass_rate) + '">' + (delta.pass_rate || "—") + "</td></tr>";
+
+      // Time (only show row if data exists)
+      if (a.time_seconds || b.time_seconds) {
+        html += "<tr><td><strong>Time (s)</strong></td>";
+        html += "<td>" + fmtStat(a.time_seconds, false) + "</td>";
+        html += "<td>" + fmtStat(b.time_seconds, false) + "</td>";
+        html += '<td class="' + deltaClass(delta.time_seconds) + '">' + (delta.time_seconds ? delta.time_seconds + "s" : "—") + "</td></tr>";
+      }
+
+      // Tokens (only show row if data exists)
+      if (a.tokens || b.tokens) {
+        html += "<tr><td><strong>Tokens</strong></td>";
+        html += "<td>" + fmtStat(a.tokens, false) + "</td>";
+        html += "<td>" + fmtStat(b.tokens, false) + "</td>";
+        html += '<td class="' + deltaClass(delta.tokens) + '">' + (delta.tokens || "—") + "</td></tr>";
+      }
+
+      html += "</tbody></table>";
+
+      // Per-eval breakdown (if runs data available)
+      const runs = data.runs || [];
+      if (runs.length > 0) {
+        const evalIds = [...new Set(runs.map(r => r.eval_id))].sort((a, b) => a - b);
+
+        html += "<h3 style='font-family: Poppins, sans-serif; margin-bottom: 0.75rem;'>Per-Eval Breakdown</h3>";
+
+        const hasTime = runs.some(r => r.result && r.result.time_seconds != null);
+        const hasErrors = runs.some(r => r.result && r.result.errors > 0);
+
+        for (const evalId of evalIds) {
+          const evalRuns = runs.filter(r => r.eval_id === evalId);
+          const evalName = evalRuns[0] && evalRuns[0].eval_name ? evalRuns[0].eval_name : "Eval " + evalId;
+
+          html += "<h4 style='font-family: Poppins, sans-serif; margin: 1rem 0 0.5rem; color: var(--text);'>" + escapeHtml(evalName) + "</h4>";
+          html += '<table class="benchmark-table">';
+          html += "<thead><tr><th>Config</th><th>Run</th><th>Pass Rate</th>";
+          if (hasTime) html += "<th>Time (s)</th>";
+          if (hasErrors) html += "<th>Crashes During Execution</th>";
+          html += "</tr></thead>";
+          html += "<tbody>";
+
+          // Group by config and render with average rows
+          const configGroups = [...new Set(evalRuns.map(r => r.configuration))];
+          for (let ci = 0; ci < configGroups.length; ci++) {
+            const config = configGroups[ci];
+            const configRuns = evalRuns.filter(r => r.configuration === config);
+            if (configRuns.length === 0) continue;
+
+            const rowClass = ci === 0 ? "benchmark-row-with" : "benchmark-row-without";
+            const configLabel = config.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+
+            for (const run of configRuns) {
+              const r = run.result || {};
+              const prClass = r.pass_rate >= 0.8 ? "benchmark-delta-positive" : r.pass_rate < 0.5 ? "benchmark-delta-negative" : "";
+              html += '<tr class="' + rowClass + '">';
+              html += "<td>" + configLabel + "</td>";
+              html += "<td>" + run.run_number + "</td>";
+              html += '<td class="' + prClass + '">' + ((r.pass_rate || 0) * 100).toFixed(0) + "% (" + (r.passed || 0) + "/" + (r.total || 0) + ")</td>";
+              if (hasTime) html += "<td>" + (r.time_seconds != null ? r.time_seconds.toFixed(1) : "—") + "</td>";
+              if (hasErrors) html += "<td>" + (r.errors || 0) + "</td>";
+              html += "</tr>";
+            }
+
+            // Average row
+            const rates = configRuns.map(r => (r.result || {}).pass_rate || 0);
+            const avgRate = rates.reduce((a, b) => a + b, 0) / rates.length;
+            const avgPrClass = avgRate >= 0.8 ? "benchmark-delta-positive" : avgRate < 0.5 ? "benchmark-delta-negative" : "";
+            html += '<tr class="benchmark-row-avg ' + rowClass + '">';
+            html += "<td>" + configLabel + "</td>";
+            html += "<td>Avg</td>";
+            html += '<td class="' + avgPrClass + '">' + (avgRate * 100).toFixed(0) + "%</td>";
+            if (hasTime) {
+              const times = configRuns.map(r => (r.result || {}).time_seconds).filter(t => t != null);
+              html += "<td>" + (times.length ? (times.reduce((a, b) => a + b, 0) / times.length).toFixed(1) : "—") + "</td>";
+            }
+            if (hasErrors) html += "<td></td>";
+            html += "</tr>";
+          }
+          html += "</tbody></table>";
+
+          // Per-assertion detail for this eval
+          const runsWithExpectations = {};
+          for (const config of configGroups) {
+            runsWithExpectations[config] = evalRuns.filter(r => r.configuration === config && r.expectations && r.expectations.length > 0);
+          }
+          const hasAnyExpectations = Object.values(runsWithExpectations).some(runs => runs.length > 0);
+          if (hasAnyExpectations) {
+            // Collect all unique assertion texts across all configs
+            const allAssertions = [];
+            const seen = new Set();
+            for (const config of configGroups) {
+              for (const run of runsWithExpectations[config]) {
+                for (const exp of (run.expectations || [])) {
+                  if (!seen.has(exp.text)) {
+                    seen.add(exp.text);
+                    allAssertions.push(exp.text);
+                  }
+                }
+              }
+            }
+
+            html += '<table class="benchmark-table" style="margin-top: 0.5rem;">';
+            html += "<thead><tr><th>Assertion</th>";
+            for (const config of configGroups) {
+              const label = config.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+              html += "<th>" + escapeHtml(label) + "</th>";
+            }
+            html += "</tr></thead><tbody>";
+
+            for (const assertionText of allAssertions) {
+              html += "<tr><td>" + escapeHtml(assertionText) + "</td>";
+
+              for (const config of configGroups) {
+                html += "<td>";
+                for (const run of runsWithExpectations[config]) {
+                  const exp = (run.expectations || []).find(e => e.text === assertionText);
+                  if (exp) {
+                    const cls = exp.passed ? "benchmark-delta-positive" : "benchmark-delta-negative";
+                    const icon = exp.passed ? "\u2713" : "\u2717";
+                    html += '<span class="' + cls + '" title="Run ' + run.run_number + ': ' + escapeHtml(exp.evidence || "") + '">' + icon + "</span> ";
+                  } else {
+                    html += "— ";
+                  }
+                }
+                html += "</td>";
+              }
+              html += "</tr>";
+            }
+            html += "</tbody></table>";
+          }
+        }
+      }
+
+      // Notes
+      if (notes.length > 0) {
+        html += '<div class="benchmark-notes">';
+        html += "<h3>Analysis Notes</h3>";
+        html += "<ul>";
+        for (const note of notes) {
+          html += "<li>" + escapeHtml(note) + "</li>";
+        }
+        html += "</ul></div>";
+      }
+
+      container.innerHTML = html;
+    }
+
+    // ---- Start ----
+    init();
+    renderBenchmark();
+  </script>
+</body>
+</html>

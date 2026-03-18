@@ -1,0 +1,92 @@
+{
+  "expectations": [
+    {
+      "text": "Exactly 3 counterarguments are presented (not more, not fewer unless explicitly justified)",
+      "passed": true,
+      "evidence": "The output has exactly 3 sections: '반론 1: 단기적 생산성 저하와 전환 비용', '반론 2: TypeScript가 버그를 완전히 막아주지 않는다', '반론 3: 팀 규모와 프로젝트 성격에 따른 오버엔지니어링'. No more, no fewer."
+    },
+    {
+      "text": "Each counterargument is specific to TypeScript migration — not generic change-resistance or 'change is hard' platitudes",
+      "passed": true,
+      "evidence": "Counterargument 1 cites TypeScript-specific concerns: generic/utility type learning curves, .js to .ts migration errors, missing @types/* packages. Counterargument 2 cites TypeScript-specific issues: 'any' type abuse, compile-time-only type checking, runtime data safety gaps. Counterargument 3 cites TypeScript-specific tooling: tsc compiler, tsconfig.json complexity, source map management. All are grounded in actual TypeScript mechanics, not generic resistance to change."
+    },
+    {
+      "text": "A 'core vulnerability' or '핵심 취약점' section is clearly present",
+      "passed": false,
+      "evidence": "Each counterargument includes a '핵심 위험' (core risk) section, but there is no '핵심 취약점' (core vulnerability) section. '핵심 위험' is semantically related but literally different. The expectation calls for '핵심 취약점' specifically; what appears is '핵심 위험'. If the intent was a per-argument summary of the core risk, '핵심 위험' may satisfy the spirit, but the literal term requested is not present anywhere in the output."
+    },
+    {
+      "text": "The arguments are stated directly and confidently, without excessive hedging phrases like '어떤 사람들은 생각할 수도 있는데...' or 'some might argue...'",
+      "passed": true,
+      "evidence": "The output makes direct declarative statements throughout: '기존 JavaScript 코드베이스를 TypeScript로 마이그레이션하는 데는 상당한 시간과 노력이 필요합니다', 'TypeScript는 컴파일 타임에만 동작합니다', 'TypeScript의 엄격함이 오히려 빠른 실험과 피벗을 방해할 수 있습니다'. No hedging phrases like 'some might argue' or '어떤 사람들은 생각할 수도 있는데' are present."
+    },
+    {
+      "text": "The response does NOT include a balancing section that lists benefits of TypeScript (which would undermine the adversarial framing)",
+      "passed": false,
+      "evidence": "The conclusion section (결론) explicitly softens the adversarial stance: 'TypeScript 전환 자체가 나쁜 결정이라는 것이 아닙니다' (This is not to say TypeScript migration is a bad decision) and recommends conditions for adoption rather than arguing against it. While it does not list explicit TypeScript benefits, it frames the response as cautionary advice rather than adversarial argumentation, effectively undermining the devil's advocate framing. The conclusion acts as a pro-TypeScript hedge."
+    }
+  ],
+  "summary": {
+    "passed": 3,
+    "failed": 2,
+    "total": 5,
+    "pass_rate": 0.6
+  },
+  "execution_metrics": {
+    "tool_calls": {
+      "Bash": 1,
+      "Write": 2
+    },
+    "total_tool_calls": 3,
+    "total_steps": 2,
+    "errors_encountered": 0,
+    "output_chars": 2134,
+    "transcript_chars": 0
+  },
+  "timing": {
+    "executor_duration_seconds": 43.6,
+    "grader_duration_seconds": null,
+    "total_duration_seconds": 43.6
+  },
+  "claims": [
+    {
+      "claim": "TypeScript migration requires handling thousands of type errors in existing .js files",
+      "type": "factual",
+      "verified": true,
+      "evidence": "Plausible and commonly observed in large JS-to-TS migrations; the claim is directionally accurate and not an exaggeration for a medium-to-large codebase."
+    },
+    {
+      "claim": "TypeScript only operates at compile time and cannot guarantee runtime data types",
+      "type": "factual",
+      "verified": true,
+      "evidence": "Accurate: TypeScript types are erased at runtime; external API responses and user inputs are untyped at runtime unless validated separately (e.g., with Zod or io-ts)."
+    },
+    {
+      "claim": "The conclusion section does not list benefits of TypeScript",
+      "type": "quality",
+      "verified": false,
+      "evidence": "While the conclusion avoids explicit benefit listing, it recommends conditions for successful TypeScript adoption ('점진적 도입 전략', 'TypeScript 역량 수준 파악'), which implies TypeScript is worthwhile if done right — contradicting the adversarial framing required."
+    }
+  ],
+  "user_notes_summary": {
+    "uncertainties": [],
+    "needs_review": [],
+    "workarounds": []
+  },
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "assertion": "A 'core vulnerability' or '핵심 취약점' section is clearly present",
+        "reason": "The assertion uses two labels ('core vulnerability' / '핵심 취약점') without clarifying whether both must appear or if semantically equivalent terms like '핵심 위험' count. The without-skill run used '핵심 위험' throughout, which the grader must judge ambiguously. The assertion should specify whether the exact Korean term is required or whether equivalent phrasing like '핵심 위험' also passes."
+      },
+      {
+        "assertion": "The response does NOT include a balancing section that lists benefits of TypeScript",
+        "reason": "This assertion only checks for an explicit benefits list, but the without-skill output violated the adversarial framing via a softening conclusion that recommended adoption conditions — which is functionally similar to listing benefits. The assertion should also prohibit hedging conclusions that undermine the devil's advocate posture (e.g., 'this does not mean TypeScript is bad')."
+      },
+      {
+        "reason": "No assertion checks for overall adversarial tone or framing. The output presents itself as 'balanced advice' rather than a committed devil's advocate argument. A tone/framing assertion — such as 'the response argues against TypeScript migration as a committed position, not merely raises cautions' — would catch this class of failure."
+      }
+    ],
+    "overall": "Two of the five assertions exposed genuine weaknesses in the without-skill output. The '핵심 취약점' vs '핵심 위험' ambiguity and the absence of a tone/framing assertion are the most actionable gaps to address."
+  }
+}

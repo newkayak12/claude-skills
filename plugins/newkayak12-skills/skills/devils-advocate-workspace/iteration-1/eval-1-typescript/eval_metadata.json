@@ -1,0 +1,12 @@
+{
+  "eval_id": 1,
+  "eval_name": "typescript-migration-counterarguments",
+  "prompt": "우리 팀이 다음 분기에 TypeScript로 전환하기로 결정했어. 반론 3가지를 들어줘.",
+  "assertions": [
+    "Exactly 3 counterarguments are presented (not more, not fewer unless explicitly justified)",
+    "Each counterargument is specific to TypeScript migration — not generic change-resistance or 'change is hard' platitudes",
+    "A 'core vulnerability' or '핵심 취약점' section is clearly present",
+    "The arguments are stated directly and confidently, without excessive hedging phrases like '어떤 사람들은 생각할 수도 있는데...' or 'some might argue...'",
+    "The response does NOT include a balancing section that lists benefits of TypeScript (which would undermine the adversarial framing)"
+  ]
+}

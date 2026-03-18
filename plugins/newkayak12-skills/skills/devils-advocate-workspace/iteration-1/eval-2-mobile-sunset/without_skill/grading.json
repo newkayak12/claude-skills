@@ -1,0 +1,99 @@
+{
+  "expectations": [
+    {
+      "text": "3 counterarguments are presented",
+      "passed": true,
+      "evidence": "The output presents 7 distinct numbered counterarguments: (1) maintenance redistribution, (2) mobile user degradation, (3) competitive moat loss, (4) maintenance as a process problem, (5) regulatory/compliance risk, (6) user trust and brand perception, (7) the actual math may not support the decision. Clearly exceeds the minimum of 3."
+    },
+    {
+      "text": "Arguments are steel-manned — they represent the strongest possible case against the web-only decision, not obvious objections",
+      "passed": true,
+      "evidence": "The arguments go well beyond obvious objections. Argument 1 specifically anticipates and rebuts the 'web is simpler' assumption by pointing out PWA complexity and Safari/WebKit as a hidden second platform. Argument 4 attacks the root cause (process problems) rather than just the surface decision. Argument 7 provides a structured ROI analysis framework. These represent substantive, sophisticated rebuttals rather than surface-level pushback."
+    },
+    {
+      "text": "A 'Core Vulnerability' section is present identifying the deepest structural flaw in the proposal",
+      "passed": false,
+      "evidence": "No section labeled 'Core Vulnerability' or equivalent exists in the output. The output has sections 1-7 and a Conclusion, but there is no dedicated section that explicitly identifies the deepest structural flaw in the proposal. The Conclusion gestures at this idea ('the maintenance problem is real and worth solving — but the solution is better tooling') but it is not a labeled 'Core Vulnerability' section."
+    },
+    {
+      "text": "Arguments are specific to mobile-vs-web product tradeoffs, not generic product strategy warnings",
+      "passed": true,
+      "evidence": "Arguments reference mobile-specific technical details: Safari WebKit restrictions, push notification limitations on iOS, App Store/Google Play organic discovery, MDM controls, biometric authentication via WebAuthn, home screen icon friction, background sync limitations, and specific cross-platform frameworks (React Native, Flutter, Kotlin Multiplatform). These are clearly specific to mobile-vs-web tradeoffs, not generic product strategy advice."
+    },
+    {
+      "text": "Response is in English (matching the prompt's language)",
+      "passed": true,
+      "evidence": "The entire response is written in English throughout."
+    }
+  ],
+  "summary": {
+    "passed": 4,
+    "failed": 1,
+    "total": 5,
+    "pass_rate": 0.80
+  },
+  "execution_metrics": {
+    "tool_calls": {
+      "Bash": 1,
+      "Write": 2
+    },
+    "total_tool_calls": 3,
+    "total_steps": 2,
+    "errors_encountered": 0,
+    "output_chars": 4987,
+    "transcript_chars": 512
+  },
+  "timing": {
+    "executor_duration_seconds": 52.7,
+    "grader_duration_seconds": null,
+    "total_duration_seconds": 52.7
+  },
+  "claims": [
+    {
+      "claim": "Over 60% of global web traffic originates from mobile devices as of 2025",
+      "type": "factual",
+      "verified": true,
+      "evidence": "This statistic is consistent with widely reported figures; multiple sources (StatCounter, Statista) have reported mobile traffic exceeding 60% globally in recent years. The claim is reasonable and specific."
+    },
+    {
+      "claim": "Safari on iOS cannot use push notifications reliably (only recently partially addressed)",
+      "type": "factual",
+      "verified": true,
+      "evidence": "Apple added limited Web Push support in Safari 16.4 (iOS 16.4, March 2023), which is only available for installed PWAs, not regular browser tabs. The claim that this is only 'recently partially addressed' is accurate."
+    },
+    {
+      "claim": "Sunsetting the mobile app hands competitive moat to competitors",
+      "type": "quality",
+      "verified": true,
+      "evidence": "This is a reasoned quality claim grounded in specific capabilities (offline mode, OS integrations, app store distribution) that are genuinely difficult or impossible to replicate on mobile web. The argument is well-supported and specific."
+    },
+    {
+      "claim": "Maintenance savings from going web-only are one-time or short-term while revenue/retention impact is permanent and compounding",
+      "type": "quality",
+      "verified": true,
+      "evidence": "This is stated in the conclusion and is consistent with the analysis in section 7 (the math table). It is a quality/analytical claim, not independently verifiable, but logically supported within the argument."
+    }
+  ],
+  "user_notes_summary": {
+    "uncertainties": [],
+    "needs_review": [],
+    "workarounds": []
+  },
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "assertion": "A 'Core Vulnerability' section is present identifying the deepest structural flaw in the proposal",
+        "reason": "This is the most discriminating expectation in the eval and it failed. The distinction between a labeled 'Core Vulnerability' section vs. a conclusion that implicitly identifies a flaw is meaningful — a skill that structures its output with an explicit, dedicated section for the deepest structural flaw produces more actionable devil's advocate analysis. The expectation is well-designed and correctly caught the absence."
+      },
+      {
+        "assertion": null,
+        "reason": "No expectation checks the depth or specificity of the 'Core Vulnerability' content itself — only its presence. Even if the without_skill run had included such a section, it might have been shallow or mislabeled. A follow-up assertion like 'the Core Vulnerability section identifies a structural assumption in the proposal rather than just listing a risk' would add meaningful discrimination."
+      },
+      {
+        "assertion": "Arguments are steel-manned — they represent the strongest possible case against the web-only decision, not obvious objections",
+        "reason": "This assertion is somewhat subjective and could pass for mediocre outputs that simply sound confident. Consider adding a companion assertion that checks for a specific high-quality element, e.g., 'at least one argument anticipates and refutes the strongest pro-web-only rationale (maintenance cost reduction)' — which would fail for arguments that only assert mobile is important without engaging the opposing reasoning."
+      }
+    ],
+    "overall": "The eval has good coverage of the key structural requirements (argument count, quality, specificity, language). The Core Vulnerability section expectation is the sharpest and most discriminating check — and it correctly failed here. The steel-manning assertion could be strengthened to reduce subjectivity."
+  }
+}

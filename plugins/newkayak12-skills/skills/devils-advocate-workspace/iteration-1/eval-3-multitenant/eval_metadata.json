@@ -1,0 +1,12 @@
+{
+  "eval_id": 3,
+  "eval_name": "multitenant-saas-early-adoption-counterarguments",
+  "prompt": "이 설계의 반대 입장 검토해줘: 우리 스타트업은 초기부터 멀티테넌트 SaaS 아키텍처로 시작해야 한다. 처음부터 제대로 만들어야 나중에 고생 안 한다.",
+  "assertions": [
+    "Counterarguments are written in Korean (matching the prompt's language)",
+    "Arguments address the specific startup context — the early-stage cost of premature multi-tenancy, not just 'multi-tenancy is complex' in the abstract",
+    "The '핵심 취약점' section is present",
+    "At least one argument challenges the core assumption that early investment prevents future pain (YAGNI or pivot risk angle)",
+    "No section that softens the critique by restating the benefits of multi-tenancy"
+  ]
+}
