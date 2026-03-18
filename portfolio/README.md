@@ -1,4 +1,4 @@
-# newkayak12-portfolio
+# portfolio
 
 Portfolio and career skills for job search and interview preparation.
 
@@ -6,10 +6,10 @@ Portfolio and career skills for job search and interview preparation.
 
 ```bash
 # Install
-claude plugin install newkayak12/claude-skills#newkayak12-portfolio
+/plugin install portfolio@newkayak12-claude-skills
 
 # Uninstall
-claude plugin uninstall newkayak12-portfolio
+/plugin uninstall portfolio@newkayak12-claude-skills
 ```
 
 ## Skills

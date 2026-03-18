@@ -1,4 +1,4 @@
-# newkayak12-develop
+# develop
 
 Engineering skills for software development workflows.
 
@@ -6,10 +6,10 @@ Engineering skills for software development workflows.
 
 ```bash
 # Install
-claude plugin install newkayak12/claude-skills#newkayak12-develop
+/plugin install develop@newkayak12-claude-skills
 
 # Uninstall
-claude plugin uninstall newkayak12-develop
+/plugin uninstall develop@newkayak12-claude-skills
 ```
 
 ## Skills

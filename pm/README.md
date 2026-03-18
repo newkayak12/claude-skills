@@ -1,4 +1,4 @@
-# newkayak12-pm
+# pm
 
 Product management skills for backlog and delivery workflows.
 
@@ -6,10 +6,10 @@ Product management skills for backlog and delivery workflows.
 
 ```bash
 # Install
-claude plugin install newkayak12/claude-skills#newkayak12-pm
+/plugin install pm@newkayak12-claude-skills
 
 # Uninstall
-claude plugin uninstall newkayak12-pm
+/plugin uninstall pm@newkayak12-claude-skills
 ```
 
 ## Skills

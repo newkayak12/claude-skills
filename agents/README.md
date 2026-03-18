@@ -1,4 +1,4 @@
-# newkayak12-agents
+# agents
 
 Agent orchestration skills for multi-agent workflows.
 
@@ -6,10 +6,10 @@ Agent orchestration skills for multi-agent workflows.
 
 ```bash
 # Install
-claude plugin install newkayak12/claude-skills#newkayak12-agents
+/plugin install agents@newkayak12-claude-skills
 
 # Uninstall
-claude plugin uninstall newkayak12-agents
+/plugin uninstall agents@newkayak12-claude-skills
 ```
 
 ## Skills

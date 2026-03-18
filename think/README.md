@@ -1,4 +1,4 @@
-# newkayak12-think
+# think
 
 Thinking and ideation skills for better decisions and clearer ideas.
 
@@ -6,10 +6,10 @@ Thinking and ideation skills for better decisions and clearer ideas.
 
 ```bash
 # Install
-claude plugin install newkayak12/claude-skills#newkayak12-think
+/plugin install think@newkayak12-claude-skills
 
 # Uninstall
-claude plugin uninstall newkayak12-think
+/plugin uninstall think@newkayak12-claude-skills
 ```
 
 ## Skills
