@@ -16,16 +16,16 @@
     },
     {
       "name": "pm",
-      "description": "Product management skills: user stories, story mapping, story splitting, story mapping workshop, PRD development, and contagious (STEPPS virality framework).",
-      "version": "1.0.1",
+      "description": "Product management skills: user stories, story mapping, story splitting, PRD development, contagious (STEPPS), product discovery (Inspired/Shape Up), OKR planning, and hypothesis-driven development.",
+      "version": "1.0.2",
       "author": { "name": "newkayak12" },
       "source": "./pm",
       "category": "product-management"
     },
     {
       "name": "think",
-      "description": "Thinking and ideation skills: brainstorming, decision making, devil's advocate, problem reframing, retrospective, thought organizing, microinteractions design, and negotiation.",
-      "version": "1.0.1",
+      "description": "Thinking and ideation skills: brainstorming, decision making, devil's advocate, problem reframing, retrospective, thought organizing, microinteractions design, negotiation, and first-principles thinking.",
+      "version": "1.0.2",
       "author": { "name": "newkayak12" },
       "source": "./think",
       "category": "productivity"
@@ -76,6 +76,14 @@
       "version": "1.0.0",
       "author": { "name": "newkayak12" },
       "source": "./portfolio",
+      "category": "productivity"
+    },
+    {
+      "name": "leadership",
+      "description": "Engineering leadership skills: 1-on-1 meetings for managers and ICs, engineer leveling and promotion cases, calibration conversations.",
+      "version": "1.0.0",
+      "author": { "name": "newkayak12" },
+      "source": "./leadership",
       "category": "productivity"
     }
   ]
