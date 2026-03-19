@@ -21,3 +21,9 @@ Product management skills for backlog and delivery workflows.
 | `user-story-mapping` | Create user story maps with activities, steps, tasks, and release slices |
 | `user-story-mapping-workshop` | Run a story mapping workshop with adaptive questions and structured output |
 | `user-story-splitting` | Break large stories/epics into smaller deliverable stories |
+| `contagious` | Engineer word-of-mouth and virality using the STEPPS framework (Berger) |
+| `inspired-pm` | Continuous discovery, four product risks, and outcome-based product management (Cagan) |
+| `shape-up` | Fixed 6-week cycles with appetite-based scoping, shaping, and betting table (Basecamp) |
+| `product-discovery` | Meta-skill: routes to Inspired or Shape Up based on your team's context |
+| `okr-planning` | Set and align goals using Objectives and Key Results with CFRs (Doerr) |
+| `hypothesis-driven-dev` | Design and run product experiments using assumption mapping and Build-Measure-Learn |
