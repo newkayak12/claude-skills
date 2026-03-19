@@ -17,15 +17,14 @@ A framework for individual contributors to understand what their current level a
 
 **The foundation:** Most ICs have two blind spots. First: they don't know what the next level actually looks like in practice (rubrics are opaque or theoretical). Second: they assume good performance will be noticed and rewarded automatically. Both assumptions are wrong. You need to understand the criteria, actively work on the gaps, collect evidence as you go, and have an explicit conversation with your manager about timing and readiness.
 
-## Scoring
+## Session Intake
 
-**Goal: 10/10.** When evaluating your own leveling practice as an IC, rate 0-10. A 10/10 means you understand your current level, know the specific gaps to the next level, are actively working on them, and have a running evidence log. Always provide the current score and specific improvements needed.
+Before applying the framework, establish context with three questions:
+1. **Current level:** "What's your current level title?" (Junior / Mid / Senior / Staff / Principal)
+2. **Target level:** "What level are you working toward, and over what timeline?"
+3. **Rubric access:** "Does your company have a published career ladder? If yes, can you share or describe the next-level criteria?"
 
-- **9-10:** Understand next-level criteria by dimension; know your gaps specifically; evidence log is current; active promotion conversation with manager
-- **7-8:** Know roughly what next level looks like; some evidence collection; manager is aware of your growth goals
-- **5-6:** Have a vague sense that "Senior means more autonomy" but criteria are not specific; no evidence log; waiting to be noticed
-- **3-4:** Level criteria are opaque; no evidence log; promotion feels like something that happens to you, not something you drive
-- **1-2:** Don't know what level you're at; haven't asked; doing good work and hoping for the best
+Then use the Quick Diagnostic (at the bottom of this skill) to identify which of the five phases is most relevant. **Focus the conversation on the highest-leverage phase — don't walk through all five sections unless the IC explicitly wants a full review.**
 
 ## The Leveling IC Framework
 

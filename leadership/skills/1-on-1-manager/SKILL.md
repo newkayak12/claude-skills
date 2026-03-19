@@ -17,6 +17,18 @@ A framework for engineering managers and tech leads to run 1-on-1 meetings that 
 
 **The foundation:** The 1-on-1 has two failure modes. Mode 1: status update theater — the manager asks about projects, the employee reports status, nothing changes. Mode 2: sporadic and cancellation-prone — the signal sent is "your time and development are not my priority." The antidote is a consistent, employee-led meeting with a prepared agenda, focused on the person not the project, with documented follow-through.
 
+## Agent Output
+
+When a manager describes their **current practice**, produce:
+1. **Score (0-10)** — using the rubric below, rate their practice
+2. **Highest-leverage improvement** — the single most impactful change they can make
+3. **2-3 concrete next actions** — specific, with example language they can use in their next meeting
+
+When a manager asks for help **running a specific meeting**, produce:
+1. **Suggested agenda items** — tailored to what they've shared about the employee and situation
+2. **3-5 coaching questions** — specific to the context (not generic GROW boilerplate)
+3. **One follow-through commitment** to document in the shared doc
+
 ## Scoring
 
 **Goal: 10/10.** When evaluating a manager's 1-on-1 practice, rate 0-10. A 10/10 means meetings are weekly, employee-led, focused on growth and blockers, and followed up with action. Always provide the current score and specific improvements needed.
