@@ -24,8 +24,8 @@
     },
     {
       "name": "think",
-      "description": "Thinking and ideation skills: brainstorming, decision making, devil's advocate, problem reframing, retrospective, and thought organizing.",
-      "version": "1.0.0",
+      "description": "Thinking and ideation skills: brainstorming, decision making, devil's advocate, problem reframing, retrospective, thought organizing, microinteractions design, and negotiation.",
+      "version": "1.0.1",
       "author": { "name": "newkayak12" },
       "source": "./think",
       "category": "productivity"
