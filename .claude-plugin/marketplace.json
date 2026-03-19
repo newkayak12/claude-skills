@@ -8,16 +8,16 @@
   "plugins": [
     {
       "name": "develop",
-      "description": "Engineering skills: CLI, SQL, architecture, database optimization, chaos engineering, Spring Boot, microservices, Kotlin, TDD, frontend, code documentation, testing, MCP builder, SRE.",
-      "version": "1.0.0",
+      "description": "Engineering skills: CLI, SQL, clean architecture, clean code, DDD, pragmatic programming, database optimization, chaos engineering, Spring Boot, microservices, Kotlin, TDD, frontend, code documentation, testing, MCP builder, SRE.",
+      "version": "1.0.1",
       "author": { "name": "newkayak12" },
       "source": "./develop",
       "category": "engineering"
     },
     {
       "name": "pm",
-      "description": "Product management skills: user stories, story mapping, story splitting, story mapping workshop, and PRD development.",
-      "version": "1.0.0",
+      "description": "Product management skills: user stories, story mapping, story splitting, story mapping workshop, PRD development, and contagious (STEPPS virality framework).",
+      "version": "1.0.1",
       "author": { "name": "newkayak12" },
       "source": "./pm",
       "category": "product-management"
