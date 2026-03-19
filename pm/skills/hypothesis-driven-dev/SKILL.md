@@ -1,6 +1,6 @@
 ---
 name: hypothesis-driven-dev
-description: 'Design and run product experiments using assumption mapping, opportunity trees, and Build-Measure-Learn loops. Use when the user mentions "hypothesis", "experiment", "validated learning", "assumption testing", "opportunity tree", "Build-Measure-Learn", or "Lean Startup". Covers experiment design, minimum viable experiments, and continuous discovery loops.'
+description: 'Design and run product experiments using assumption mapping and Build-Measure-Learn loops. Use when the user mentions "hypothesis", "write a hypothesis", "MVE", "minimum viable experiment", "fake door test", "concierge test", "assumption map", "validated learning", "assumption testing", "Build-Measure-Learn", "Lean Startup", or "falsifiable hypothesis". Covers experiment design, minimum viable experiments, and discovery loops.'
 license: MIT
 metadata:
   author: wondelai
@@ -16,6 +16,19 @@ A framework for making product decisions based on validated learning rather than
 **Every product decision is a hypothesis. The question is whether you test it before or after building it.** Hypothesis-driven development makes the implicit explicit: "We believe [action] will result in [outcome] for [customer segment]. We'll know we're right when [measurable signal]." This structure separates what you know from what you assume, and forces you to design the smallest possible test.
 
 **The foundation:** The core loop is Build-Measure-Learn: form a hypothesis → design the smallest viable test → measure the real signal → decide based on evidence. Teresa Torres adds the opportunity tree: start with the desired outcome → map the opportunity space → generate solution ideas → design experiments. Together, these frameworks create a disciplined alternative to building by instinct or stakeholder pressure.
+
+## Agent Output
+
+When a user asks to **write a hypothesis**, produce:
+1. **The hypothesis** — using the four-part formula: "We believe [doing X] for [customer Y] will result in [outcome Z]. We'll know we're right when [metric M reaches level L]."
+2. **Null hypothesis** — "We'll stop if [abandonment criteria]"
+3. **Riskiest assumption** — one assumption to test first, before building
+4. **Suggested MVE type** — concierge / fake door / prototype / A/B (matched to assumption type)
+
+When a user asks to **evaluate their practice**, produce:
+1. **Score (0-10)** using the rubric below
+2. **Highest-leverage improvement**
+3. **One concrete next experiment** they can run this week
 
 ## Scoring
 

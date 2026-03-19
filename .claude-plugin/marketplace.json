@@ -17,7 +17,7 @@
     {
       "name": "pm",
       "description": "Product management skills: user stories, story mapping, story splitting, PRD development, contagious (STEPPS), product discovery (Inspired/Shape Up), OKR planning, and hypothesis-driven development.",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "author": { "name": "newkayak12" },
       "source": "./pm",
       "category": "product-management"
@@ -81,7 +81,7 @@
     {
       "name": "leadership",
       "description": "Engineering leadership skills: 1-on-1 meetings for managers and ICs, engineer leveling and promotion cases, calibration conversations.",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": { "name": "newkayak12" },
       "source": "./leadership",
       "category": "productivity"
