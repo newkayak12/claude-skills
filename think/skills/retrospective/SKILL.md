@@ -1,6 +1,6 @@
 ---
 name: retrospective
-description: Use when conducting a personal or project retrospective — sprint end, project close, weekly/monthly review, or when asked to "회고", "돌아보기", "스프린트 리뷰", "이번 주 회고", or "프로젝트 마무리". Guides structured reflection using KPT, 5 Whys, or timeline formats and produces concrete action items.
+description: Use when conducting a personal or project retrospective — sprint end, project close, weekly/monthly review, or when asked to "회고", "돌아보기", "스프린트 리뷰", "이번 주 회고", "프로젝트 마무리", "팀 회고", "스프린트 회고 퍼실리테이션", "retrospective 진행", or "회고 운영". Guides structured reflection using KPT, 5 Whys, or timeline formats and produces concrete action items. Also facilitates group/team retrospectives with timebox management, psychological safety, and synthesis techniques.
 ---
 
 # Retrospective
@@ -134,3 +134,67 @@ For solo retrospective adjustments, see `references/solo-retro.md`.
 - Skip the insight synthesis step — patterns matter more than individual events
 - Produce more than 5 action items per retrospective (focus beats volume)
 - Re-ask for data the user has already provided in their opening message
+
+---
+
+## Group Facilitation
+
+When the retrospective is a live team session (not a solo reflection), the facilitator role changes. The job is not to produce the retrospective — it is to create the conditions in which the team produces it.
+
+### Before the Session
+
+Prepare a run-of-show with explicit timeboxes. Without a visible clock, groups spend 40 minutes on one item and rush or skip the rest.
+
+Example 60-minute sprint retrospective run-of-show:
+```
+00:00 – 05:00  Check-in (how is everyone arriving?)
+05:00 – 15:00  Data gathering (each person adds items silently to sticky notes)
+15:00 – 25:00  Grouping and reading aloud (no discussion yet)
+25:00 – 40:00  Discussion (facilitator picks top clusters)
+40:00 – 50:00  Action item generation
+50:00 – 58:00  Prioritization (dot voting)
+58:00 – 60:00  Close and ownership assignment
+```
+
+Announce the timebox for each segment at the start. Enforce the clock — it is the facilitator's most important tool.
+
+### Establishing Psychological Safety
+
+A retrospective where people only say safe things produces only safe actions. Create conditions for honesty:
+
+- **Start with a check-in question** that is low-stakes but personal ("On a scale of 1–5, how did this sprint feel? Why?"). This normalizes speaking before the harder questions arrive.
+- **Use anonymous input channels** when the team is new, has hierarchy present, or has recent conflict. Tools: anonymous sticky notes, a shared document, Mentimeter, or EasyRetro with names hidden.
+- **Separate data gathering from discussion.** Collecting items silently (everyone writes independently before sharing) prevents anchoring — the first person to speak does not set the frame for everyone else.
+- **Name the purpose explicitly**: "This session is for improving how we work together, not for assigning blame. Everything stays in the room."
+
+### Handling Dominant Voices
+
+In most team retrospectives, 2–3 people speak first and most. The others follow or stay silent. This produces a retrospective that reflects those 2–3 people's experience, not the team's.
+
+Techniques to counter this:
+
+- **Round-robin for initial input**: "Let's go around once. Everyone shares one item from their Keep list — no discussion yet."
+- **Directed questions to quieter members**: "Minjun, I haven't heard from you on this one — what was your experience?"
+- **Parking lot for tangents**: When one person goes long on a specific incident, write it down and say "I want to make sure we capture that — let's put it in the parking lot and come back at the end."
+- **Visible time allocation**: If one person has spoken for 3 of the last 5 minutes, the timebox pressure becomes a natural social cue to invite others.
+
+### Synthesis Techniques
+
+**Dot Voting (Dotmocracy)**
+After all items are visible, give each team member 3–5 dot stickers (physical or virtual). Each person places dots on the items they believe deserve action most. Count dots. Discuss the top 3 — do not try to discuss everything.
+
+Dot voting is not democratic consensus — it is a prioritization filter. The top items get discussion time. The others may still get captured as parking lot items.
+
+**Affinity Mapping**
+When the board has many similar-sounding items, group them before discussion. Read each item aloud, ask "Does anyone see this as related to another item here?" Move related items into clusters. Name each cluster with one phrase that captures the shared theme.
+
+Affinity mapping shifts the conversation from "this one thing happened once" to "here is a systemic pattern." Systemic patterns produce systemic action items. One-off incidents rarely do.
+
+### Closing the Group Session
+
+End with:
+1. **Named owners for every action item** — "team" as owner means no one owns it
+2. **Read the action list aloud** — this creates shared memory and makes the commitment public
+3. **Date of the next retrospective** — close the loop explicitly
+
+After the session, send a written summary within 24 hours: action items, owners, due dates. Memory fades fast. The summary is the contract.
