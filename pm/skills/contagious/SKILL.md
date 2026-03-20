@@ -1,6 +1,6 @@
 ---
 name: contagious
-description: 'Engineer word-of-mouth and virality using the STEPPS framework (Social Currency, Triggers, Emotion, Public, Practical Value, Stories). Use when the user mentions "go viral", "word of mouth", "shareable content", "social currency", or "why people share". Covers environmental triggers and high-arousal emotional content.'
+description: 'Engineers word-of-mouth and virality using the STEPPS framework. Use when trying to make a product, campaign, or idea spread — wanting more shares, referrals, or organic growth; wondering why some things catch on and others do not; or designing something meant to be talked about.'
 license: MIT
 metadata:
   author: wondelai

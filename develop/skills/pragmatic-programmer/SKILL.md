@@ -1,6 +1,6 @@
 ---
 name: pragmatic-programmer
-description: 'Apply meta-principles of software craftsmanship: DRY, orthogonality, tracer bullets, and design by contract. Use when the user mentions "best practices", "pragmatic approach", "broken windows", "tracer bullet", or "software craftsmanship". Covers estimation, domain languages, and reversibility. For code-level quality, see clean-code.'
+description: 'Applies meta-principles of software craftsmanship: DRY, orthogonality, tracer bullets, and design by contract. Use when reflecting on engineering practices, identifying systemic problems in a codebase, deciding how to approach technical debt, or asking what a pragmatic engineer would do in a given situation. Covers estimation, reversibility, and domain languages. For code-level quality, see clean-code.'
 license: MIT
 metadata:
   author: wondelai

@@ -1,6 +1,6 @@
 ---
 name: leveling-manager
-description: 'Design leveling rubrics, write promotion cases, and run calibration conversations as an engineering manager. Use when a manager asks about "engineer leveling", "promotion case", "performance calibration", "leveling rubric", "how to evaluate engineers", or "promotion criteria". Covers level definitions, evidence collection, calibration, and writing compelling promotion narratives.'
+description: 'Helps engineering managers design leveling rubrics, write promotion cases, and run calibration conversations. Use when a manager needs to evaluate an engineer''s level fairly, build the case for a promotion, or align with peers on what each level actually means at their company.'
 license: MIT
 metadata:
   author: wondelai

@@ -1,6 +1,6 @@
 ---
 name: okr-planning
-description: 'Set and align goals using Objectives and Key Results (OKRs) with CFRs for ongoing accountability. Use when the user mentions "OKR", "objectives and key results", "goal setting", "stretch goals", "quarterly goals", "north star metric", or "goal alignment". Covers OKR design, CFRs, grading, and organizational cascading.'
+description: 'Sets and aligns goals using OKRs with CFRs for ongoing accountability. Use when defining team or company goals for a quarter, aligning cross-team efforts around shared outcomes, or when goals exist but progress is unclear or teams are pulling in different directions. Covers OKR design, grading, and organizational cascading.'
 license: MIT
 metadata:
   author: wondelai

@@ -1,6 +1,6 @@
 ---
 name: 1-on-1-ic
-description: 'Get more value from your 1-on-1s as an individual contributor — prepare agendas, drive career conversations, and give upward feedback. Use when an IC asks about "1-on-1 with my manager", "what to talk about in 1-on-1s", "career conversation with manager", "how to get feedback", or "upward feedback". Covers preparation, agenda ownership, and growth conversation frameworks.'
+description: 'Helps individual contributors get more value from 1-on-1s — preparing agendas, driving career conversations, and giving upward feedback. Use when an IC wants to stop wasting 1-on-1 time, needs to raise something difficult with their manager, or wants to steer their own growth instead of waiting to be managed.'
 license: MIT
 metadata:
   author: wondelai

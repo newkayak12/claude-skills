@@ -1,6 +1,6 @@
 ---
 name: clean-code
-description: 'Write readable, maintainable code through disciplined naming, small functions, and clean error handling. Use when the user mentions "code review", "naming conventions", "function too long", "code smells", or "readable code". Covers SRP, comment discipline, formatting, and unit testing. For architecture, see clean-architecture.'
+description: 'Improves code quality through disciplined naming, function design, and smell detection. Use when reviewing, refactoring, or writing code that others need to read and maintain — any code that is hard to understand, has grown too long, or whose intent is not immediately clear. Covers SRP, comment discipline, formatting, and unit testing. For architecture, see clean-architecture.'
 license: MIT
 metadata:
   author: wondelai

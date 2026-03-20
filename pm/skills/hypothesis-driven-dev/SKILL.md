@@ -1,6 +1,6 @@
 ---
 name: hypothesis-driven-dev
-description: 'Design and run product experiments using assumption mapping and Build-Measure-Learn loops. Use when the user mentions "hypothesis", "write a hypothesis", "MVE", "minimum viable experiment", "fake door test", "concierge test", "assumption map", "validated learning", "assumption testing", "Build-Measure-Learn", "Lean Startup", or "falsifiable hypothesis". Covers experiment design, minimum viable experiments, and discovery loops.'
+description: 'Designs and runs product experiments using assumption mapping and Build-Measure-Learn loops. Use when testing a product idea before committing to building it, validating whether a key assumption is true, or designing the smallest possible experiment to reduce uncertainty. Covers fake door tests, concierge MVEs, validated learning, and discovery loops.'
 license: MIT
 metadata:
   author: wondelai

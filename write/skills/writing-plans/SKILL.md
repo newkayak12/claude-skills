@@ -1,6 +1,6 @@
 ---
 name: writing-plans
-description: Use when you have a spec or requirements for a multi-step task, before touching code
+description: Breaks a spec or set of requirements into an ordered implementation plan before touching code. Use when the task is large enough that diving in without a plan would lead to rework — any feature with multiple moving parts, a migration, or a refactor with dependencies.
 ---
 
 # Writing Plans

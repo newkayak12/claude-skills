@@ -1,6 +1,6 @@
 ---
 name: inspired-pm
-description: 'Apply Marty Cagan's empowered team model: continuous discovery, outcome-based thinking, and product vision. Use when the user mentions "empowered team", "four product risks", "customer interview", "opportunity assessment", "product vision", "outcome vs output", "Cagan", "product trio", or "Inspired". Covers continuous discovery habits, the four risk types, and outcome ownership. For "what should we build" or framework selection, use the product-discovery skill first.'
+description: 'Applies Marty Cagan''s empowered team model: continuous discovery, outcome-based thinking, and product vision. Use when building product team culture, shifting from output to outcome thinking, structuring discovery habits, or assessing whether a product is addressing the right risks. For framework selection, use product-discovery first.'
 license: MIT
 metadata:
   author: wondelai
