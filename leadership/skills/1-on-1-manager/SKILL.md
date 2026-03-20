@@ -1,6 +1,6 @@
 ---
 name: 1-on-1-manager
-description: 'Run high-impact 1-on-1 meetings that build trust, accelerate growth, and surface blockers early. Use when a manager asks about "1-on-1 agenda", "how to run 1-on-1s", "employee growth conversation", "coaching questions", "direct report", or "team member development". Covers meeting cadence, employee-led agendas, coaching frameworks, and follow-through.'
+description: 'Helps managers run high-impact 1-on-1s that build trust, surface blockers, and accelerate growth. Use when a manager wants better 1-on-1s, feels like check-ins are just status updates, or needs to have a growth or feedback conversation with a direct report.'
 license: MIT
 metadata:
   author: wondelai

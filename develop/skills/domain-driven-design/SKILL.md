@@ -1,6 +1,6 @@
 ---
 name: domain-driven-design
-description: 'Model software around the business domain using bounded contexts, aggregates, and ubiquitous language. Use when the user mentions "domain modeling", "bounded context", "aggregate root", "ubiquitous language", or "anti-corruption layer". Covers entities vs value objects, domain events, and context mapping strategies. For architecture layers, see clean-architecture.'
+description: 'Models software around the business domain using bounded contexts, aggregates, and ubiquitous language. Use when aligning code structure with business concepts, designing service boundaries, or when domain experts and developers cannot agree on what things mean. Covers entities vs value objects, domain events, and context mapping strategies. For architecture layers, see clean-architecture.'
 license: MIT
 metadata:
   author: wondelai

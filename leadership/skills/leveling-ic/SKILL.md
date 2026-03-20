@@ -1,6 +1,6 @@
 ---
 name: leveling-ic
-description: 'Understand your current level, identify gaps to the next level, and build a promotion-ready evidence portfolio as an individual contributor. Use when an IC asks about "how to get promoted", "what does senior mean", "leveling up", "staff engineer criteria", "next level gap", or "promotion readiness". Covers self-assessment, gap analysis, evidence collection, and promotion conversation preparation.'
+description: 'Helps ICs understand their current level, close gaps to the next level, and build a promotion-ready evidence portfolio. Use when an engineer wants to understand what senior actually means in practice, feels stuck at their current level, or is preparing a promotion conversation with their manager.'
 license: MIT
 metadata:
   author: wondelai

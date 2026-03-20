@@ -1,6 +1,6 @@
 ---
 name: test-driven-development
-description: Use when implementing any feature or bugfix, before writing implementation code
+description: Guides test-driven development — writing failing tests first, then only enough code to pass them. Use before implementing any feature or fixing any bug, when a codebase needs to be built with confidence from scratch, or when someone wants to understand how TDD shapes design decisions.
 references:
   - references/testing-anti-patterns.md
 ---

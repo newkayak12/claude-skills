@@ -1,6 +1,6 @@
 ---
 name: shape-up
-description: 'Plan and execute product work in fixed 6-week cycles using appetite-based scoping, fat-marker shaping, and betting table decisions. Use when the user mentions "shape up", "6-week cycle", "appetite", "shaping work", "betting table", "hill chart", or "no backlog". Covers pitches, cool-down periods, and scope hammering.'
+description: 'Plans and executes product work in fixed 6-week cycles using appetite-based scoping and betting table decisions. Use when a team is drowning in backlog, cannot ship anything complete, or needs a planning process with real tradeoffs and real commitments. Covers shaping, pitches, betting, hill charts, and scope hammering.'
 license: MIT
 metadata:
   author: wondelai
