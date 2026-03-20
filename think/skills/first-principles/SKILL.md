@@ -1,6 +1,6 @@
 ---
 name: first-principles
-description: 'Break any assumption down to its foundational truths and rebuild from scratch using philosophical decomposition (Aristotle) and practical reconstruction (Musk/Munger). Use when the user mentions "first principles", "challenging assumptions", "why does this cost so much", "are we solving the right problem", or "rethinking from scratch". Evaluates from philosophical (A), practical (B), and synthesis (C) perspectives.'
+description: 'Breaks assumptions to foundational truths and rebuilds from scratch. Use when the current approach feels fundamentally flawed or too expensive, when inherited constraints need questioning, or when someone wants to think from the ground up — any situation where "why does this have to be this way?" is the right question.'
 license: MIT
 metadata:
   author: wondelai

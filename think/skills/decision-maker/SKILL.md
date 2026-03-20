@@ -1,6 +1,6 @@
 ---
 name: decision-maker
-description: Use when facing a technology choice, architecture decision, or trade-off analysis — "A vs B", "should we use X?", "is this direction right?", database selection, microservices vs monolith, build vs buy, framework selection, or any situation where options need structured comparison before committing.
+description: Structured framework for technology and architecture choices. Use when facing a decision between options where the trade-offs aren't obvious — choosing a database, framework, or architecture pattern; deciding whether to build or buy; or any situation where committing to one direction means ruling out another.
 ---
 
 # Decision Maker
