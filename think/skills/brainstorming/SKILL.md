@@ -1,6 +1,6 @@
 ---
 name: brainstorming
-description: "You MUST use this before any implementation work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation."
+description: "Explores intent, requirements, and design before any implementation. MUST run before building features, writing code, scaffolding projects, or modifying behavior — even for requests that seem simple. Use whenever someone wants to create or implement something that hasn't been fully designed yet."
 compatibility:
   optional:
     - think-tool

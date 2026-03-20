@@ -1,6 +1,6 @@
 ---
 name: microinteractions
-description: 'Design the small details — triggers, rules, feedback, loops and modes — that separate good products from great ones. Use when the user mentions "microinteraction", "button feedback", "loading state", "toggle design", "animation detail", or "interaction polish". Covers trigger design, state rules, feedback mechanisms, and progressive loops.'
+description: 'Designs small interactive details — triggers, rules, feedback, and loops — that make products feel polished and human. Use when a UI element feels off, robotic, or incomplete; when adding delight or personality to interactions; or when refining buttons, toggles, loading states, animations, or any moment-to-moment user feedback.'
 license: MIT
 metadata:
   author: wondelai

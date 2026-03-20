@@ -1,6 +1,6 @@
 ---
 name: negotiation
-description: 'Prepare and execute negotiations using tactical empathy, calibrated questions, and the Ackerman method. Use when the user mentions "salary negotiation", "contract terms", "handling objections", "mirroring and labeling", or "difficult conversation". Covers accusation audits, Black Swan discovery, and the "That''s Right" technique.'
+description: 'Prepares and guides any negotiation using tactical empathy, calibrated questions, and the Ackerman method. Use when someone needs to negotiate, persuade, or navigate a hard conversation — asking for a raise, contract discussions, handling repeated rejection, convincing a manager or client, or any situation where one party needs something from another and isn''t getting it.'
 license: MIT
 metadata:
   author: wondelai

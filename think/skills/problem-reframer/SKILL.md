@@ -1,6 +1,6 @@
 ---
 name: problem-reframer
-description: Use when stuck on a problem and need a different angle — not more solutions, but a better question. Triggers on "why can't I solve this", "am I solving the wrong problem", needing to challenge assumptions, reframe constraints, or shift perspective. Works for any domain: software, career, product, life decisions. Routing rule: if the user has already tried multiple solutions and they all feel wrong, use problem-reframer. If the user has not yet generated solutions, use brainstorming.
+description: Finds a better question when all solutions feel wrong. Use when someone has already tried multiple approaches and none of them feel right — the problem keeps resisting, solutions feel shallow, or there's a nagging sense that the wrong thing is being solved. Routing: use this when solutions have been tried; use brainstorming when none have been tried yet.
 ---
 
 # Problem Reframer
