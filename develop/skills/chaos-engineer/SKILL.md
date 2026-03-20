@@ -1,6 +1,6 @@
 ---
 name: chaos-engineer
-description: Designs chaos experiments, creates failure injection frameworks, and facilitates game day exercises for distributed systems — producing runbooks, experiment manifests, rollback procedures, and post-mortem templates. Use when designing chaos experiments, implementing failure injection frameworks, or conducting game day exercises. Invoke for chaos experiments, resilience testing, blast radius control, game days, antifragile systems, fault injection, Chaos Monkey, Litmus Chaos.
+description: "Use when someone wants to proactively test whether a distributed system will survive real failures — by designing controlled chaos experiments, injecting faults (network latency, pod deletion, zone outages), planning a game day exercise, or building rollback-safe automation for continuous resilience testing. Distinct from sre-engineer, which focuses on SLOs and incident response; this skill focuses on the experiment design and execution layer."
 license: MIT
 metadata:
   author: https://github.com/Jeffallan

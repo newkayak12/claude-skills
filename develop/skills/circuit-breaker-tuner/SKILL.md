@@ -1,7 +1,6 @@
 ---
 name: circuit-breaker-tuner
-description: |
-  Resilience patterns tuner — analyzes failure patterns and recommends Resilience4j circuit breaker, bulkhead, timeout, and fallback settings with explanation of tradeoffs. Use when the user mentions "circuit breaker", "서킷 브레이커", "Resilience4j", "폴백", "fallback", "장애 전파 방지", "timeout 설정", or is asking about handling downstream service failures, preventing cascading failures, or configuring retry/fallback behavior. Trigger this skill even if the user just says "외부 API가 느려지면 우리 서비스도 같이 죽어" or "how do I stop one slow service from killing everything?" without naming circuit breakers.
+description: 'Configures circuit breakers, bulkheads, timeouts, and fallbacks to prevent cascading failures. Use when a slow or failing downstream service is causing upstream latency or outages, when someone needs to tune failure thresholds and recovery behavior, or when an application has no resilience layer and a downstream failure takes down the whole system.'
 ---
 
 # Circuit Breaker Tuner

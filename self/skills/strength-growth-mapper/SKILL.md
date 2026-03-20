@@ -1,7 +1,6 @@
 ---
 name: strength-growth-mapper
-description: |
-  Use when the user wants to understand what they're genuinely good at, is processing performance feedback, is trying to figure out where to invest development effort, or is preparing for career decisions. Triggers on "강점", "약점", "strengths and weaknesses", "성장 포인트", "개선할 점", "내가 잘하는 것", "성장 엣지", "역량 개발", "피드백 정리", "잘하는 것 vs 못하는 것", "내 장점 단점", "어떤 사람인지", "커리어 개발", "어떻게 성장해야 하나", "360 피드백". Also triggers when users receive or anticipate feedback, are deciding whether to double down on a strength or fix a weakness, or are feeling uncertain about their own capabilities. This skill goes beyond surface labels to find the underlying patterns, including "weakness that's a strength overused" and "strength shadow" — then identifies the precise growth edge rather than generic improvement areas.
+description: 'Use when someone wants to understand what they are genuinely good at, is processing feedback, or deciding where to invest development effort. Goes deeper than good at or bad at: maps the underlying strength pattern, the shadow it casts when overused, whether a weakness is a misapplied strength, and the specific growth edge for the next challenge. Distinct from identity-explorer (who you are) — this is about capability patterns and development.'
 ---
 
 # Strength and Growth Mapper

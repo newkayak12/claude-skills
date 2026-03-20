@@ -1,6 +1,6 @@
 ---
 name: portfolio-feedback
-description: Reviews a backend developer's portfolio (PDF or text) from an interviewer's perspective and delivers structured feedback in Korean. Evaluates technical depth, system design, leadership/ownership, and impact narrative for senior (5+ year) backend engineers. Use this skill whenever the user says "포트폴리오 봐줘", "이력서 피드백", "포트폴리오 검토", "면접 준비", "내 포트폴리오 어때", "포트폴리오 고쳐줘", or attaches a portfolio PDF.
+description: 'Use when someone shares a portfolio and wants an overall assessment from an interviewer''s perspective — overall impression, scoring across dimensions (technical depth, ownership, impact narrative), and prioritized improvement areas. The user is asking how this looks overall, not asking to fix a specific section, compare to a JD, or practice for interviews. Triggers when a portfolio PDF is attached without a more specific request.'
 ---
 
 # Backend Developer Portfolio Feedback

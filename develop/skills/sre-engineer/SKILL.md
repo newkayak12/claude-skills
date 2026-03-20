@@ -1,6 +1,6 @@
 ---
 name: sre-engineer
-description: Defines service level objectives, creates error budget policies, designs incident response procedures, develops capacity models, and produces monitoring configurations and automation scripts for production systems. Use when defining SLIs/SLOs, managing error budgets, building reliable systems at scale, incident management, chaos engineering, toil reduction, or capacity planning.
+description: 'Use when someone needs to establish or improve production reliability practices: defining SLOs and error budgets, setting up golden-signal alerting and dashboards, building incident response runbooks, reducing operational toil through automation, or planning capacity. Applies to the reliability posture of a running system — distinct from chaos-engineer, which handles the design and execution of controlled failure experiments.'
 license: MIT
 metadata:
   author: https://github.com/Jeffallan

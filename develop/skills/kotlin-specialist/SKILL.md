@@ -1,6 +1,6 @@
 ---
 name: kotlin-specialist
-description: Provides idiomatic Kotlin implementation patterns including coroutine concurrency, Flow stream handling, multiplatform architecture, Compose UI construction, Ktor server setup, and type-safe DSL design. Use when building Kotlin applications requiring coroutines, multiplatform development, or Android with Compose. Invoke for Flow API, KMP projects, Ktor servers, DSL design, sealed classes, suspend function, Android Kotlin, Kotlin Multiplatform.
+description: 'Use when someone is writing Kotlin code and needs idiomatic guidance — coroutine and Flow patterns, multiplatform (KMP) structure, Android with Jetpack Compose, Ktor server setup, or type-safe DSL authoring. For Kotlin used within a Spring Boot service, consider spring-boot-engineer alongside this skill. Not for general Java or Android XML layouts.'
 license: MIT
 metadata:
   author: https://github.com/Jeffallan

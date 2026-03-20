@@ -1,12 +1,6 @@
 ---
 name: technical-blog-writer
-description: |
-  Helps developer-writers outline, draft, and polish technical blog posts for developer audiences.
-  Use this skill when someone wants to write about a technical experience, lesson, or project —
-  and especially when they have good content but do not know how to structure or start.
-  Trigger on: "기술 블로그", "tech blog", "블로그 포스트 작성", "개발 블로그",
-  "포스팅", "글 써줘", "경험 공유".
-  Do not just offer advice — produce an outline or draft immediately based on what the user shares.
+description: 'Use when someone wants to write a technical blog post about something they built, fixed, or learned — especially when they have the content but do not know how to start, structure it, or make it engaging for developer readers. Applies to posts about engineering experiences, lessons from production incidents, project retrospectives, and tutorials.'
 ---
 
 # Technical Blog Writer

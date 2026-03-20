@@ -1,7 +1,6 @@
 ---
 name: transaction-boundary-reviewer
-description: |
-  Transaction boundary design review specialist — evaluates ACID properties, isolation levels, distributed transaction patterns (saga, outbox), and common anti-patterns like overly wide transactions or missing rollback. Use when the user mentions "트랜잭션 경계", "transaction boundary", "@Transactional", "분산 트랜잭션", "saga", "트랜잭션 설계", or is asking about data consistency, rollback behavior, or how to coordinate writes across services. Trigger this skill even if the user just says "데이터 일관성이 깨지는 것 같아" or "how do I keep these two writes atomic?" without using the word transaction.
+description: 'Reviews database and distributed transaction boundaries — evaluates isolation levels, atomicity gaps, overly wide transactions holding locks, missing rollback declarations, and cross-service consistency using Outbox or Saga patterns. Use when data appears inconsistent after failures, when someone needs two writes to succeed or fail together, or when transactions are causing lock contention or timeout errors under load.'
 ---
 
 # Transaction Boundary Reviewer

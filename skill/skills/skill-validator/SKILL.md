@@ -1,6 +1,6 @@
 ---
 name: skill-validator
-description: Validate a skill built with skill-creator across five quality dimensions. Use when reviewing a finished or in-progress skill — asking things like "이 스킬 잘 만든 거야?", "SKILL.md 너무 무거운가?", "agent 구조로 바꿀 수 있을까?", "mcp 쓸 수 있어?", "skill 검토해줘", "validate this skill", "review my skill design", "스킬 피드백 줘", "이 스킬 개선해줘". Invoke proactively after skill-creator finishes building a skill.
+description: 'Audits an existing skill across five quality dimensions: usefulness, agent structure, MCP fit, and SKILL.md weight. Use when someone wants a design review of a skill they have already written or partially built — is this skill well-designed, review my skill, is the SKILL.md too heavy, should this use agents or MCP. Also invoked automatically after skill-creator finishes a new skill.'
 ---
 
 # Skill Validator

@@ -1,6 +1,6 @@
 ---
 name: microservices-architect
-description: Designs distributed system architectures, decomposes monoliths into bounded-context services, recommends communication patterns, and produces service boundary diagrams and resilience strategies. Use when designing distributed systems, decomposing monoliths, or implementing microservices patterns — including service boundaries, DDD, saga patterns, event sourcing, CQRS, service mesh, or distributed tracing.
+description: 'Use when someone needs to design or evaluate a distributed system — decomposing a monolith, defining service boundaries with DDD, choosing between sync and async communication, or planning resilience and observability. Focused on architecture decisions and trade-offs, not implementation code. For coding Spring-based microservices, use spring-boot-engineer.'
 license: MIT
 metadata:
   author: https://github.com/Jeffallan

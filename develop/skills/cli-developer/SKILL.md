@@ -1,6 +1,6 @@
 ---
 name: cli-developer
-description: Use when building CLI tools, implementing argument parsing, or adding interactive prompts. Invoke for parsing flags and subcommands, displaying progress bars and spinners, generating bash/zsh/fish completion scripts, CLI design, shell completions, and cross-platform terminal applications using commander, click, typer, or cobra.
+description: 'Use when someone needs to build a command-line tool — defining subcommands, flags, and argument parsing; adding interactive prompts, progress bars, or shell completions; or distributing a cross-platform terminal application. Covers Node.js (commander), Python (typer/click), and Go (cobra). Related: sre-engineer for pipeline integration.'
 license: MIT
 metadata:
   author: https://github.com/Jeffallan

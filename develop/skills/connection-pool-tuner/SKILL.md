@@ -1,7 +1,6 @@
 ---
 name: connection-pool-tuner
-description: |
-  Database connection pool analysis and tuning specialist — diagnoses pool exhaustion, timeout spikes, and idle connection waste, then recommends concrete settings for HikariCP, pgBouncer, c3p0, and DBCP. Use when the user mentions "커넥션 풀", "connection pool", "HikariCP", "DB 연결", "pool exhaustion", "connection timeout", or describes symptoms like slow API responses under load, DB connection errors, or idle connections piling up. Trigger this skill even if the user just says "DB가 느린 것 같아요" or "connection errors are appearing" without naming the pool library.
+description: 'Diagnoses and tunes database connection pools — resolves pool exhaustion, connection timeout errors, idle connection waste, and slow API responses under DB load. Use when an application shows intermittent DB connection failures, API latency that spikes under traffic, or someone is unsure how to size or configure a connection pool for their database setup.'
 ---
 
 # Connection Pool Tuner

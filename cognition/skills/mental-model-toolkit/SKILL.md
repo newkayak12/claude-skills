@@ -1,7 +1,6 @@
 ---
 name: mental-model-toolkit
-description: |
-  Use when someone needs a new angle on a problem, suspects they have blind spots, wants to think more rigorously, or feels stuck in conventional thinking. Trigger on "멘탈 모델", "mental model", "모르는 것 찾기", "blind spot", "unknown unknowns", "수평적 사고", "lateral thinking", "새로운 관점", "프레임워크", "다른 각도로", "고정관념 깨기", "뭔가 놓치고 있는 것 같아", "다른 방식으로 생각해봐", "왜 이 문제가 안 풀리지", "관점을 바꿔줘", "창의적인 해결책". Three instruments: apply the right mental model, reveal unknown unknowns, and generate lateral thinking leaps.
+description: 'Use when someone is stuck on a problem and needs a different frame entirely, suspects they have blind spots, or has exhausted obvious solutions. Three instruments: choose the right mental model (first principles, inversion, Occam''s razor), systematically surface unknown unknowns, and break out of conventional solution gravity with lateral thinking. Distinct from second-order-thinker (consequence chains) and assumption-extractor (what''s being taken for granted).'
 ---
 
 # Mental Model Toolkit

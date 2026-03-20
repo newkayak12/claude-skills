@@ -1,6 +1,6 @@
 ---
 name: user-story-mapping
-description: Create a user story map that lays out activities, steps, tasks, and release slices. Use when planning a workflow, backlog, or MVP around the user journey.
+description: 'Use when someone wants to generate a structured user story map directly — outputting a two-dimensional artifact with backbone activities, steps, tasks, and release slices from provided context. Best when the user has their product, persona, and workflow in hand and wants a map produced, not a facilitated conversation to discover them.'
 intent: >-
   Visualize the user journey by creating a hierarchical map that breaks down high-level activities into steps and tasks, organized left-to-right as a narrative flow. Use this to build shared understanding across product, design, and engineering, prioritize features based on user workflows, and identify gaps or opportunities in the user experience.
 type: component

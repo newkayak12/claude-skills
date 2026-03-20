@@ -1,11 +1,6 @@
 ---
 name: agent-task-decomposer
-description: |
-  Decomposes a complex task into agent-ready subtasks and writes an optimized prompt for each one.
-  Use this skill the moment a task feels too large, ambiguous, or entangled to hand to a single agent.
-  Trigger on: "태스크 분해", "task decomposition", "에이전트 프롬프트", "prompt 개선",
-  "이 작업 어떻게 나눠", "프롬프트 최적화", "복잡한 작업 분리".
-  Do not just think about decomposition — produce the full breakdown with prompts immediately.
+description: 'Use when a task is too large, ambiguous, or multi-part to hand to a single agent as-is — and the work needs to be broken into scoped subtasks with clear inputs, outputs, and constraints before any agent is dispatched. Distinct from dispatching-parallel-agents, which executes already-defined tasks; this skill produces the task definitions themselves.'
 ---
 
 # Agent Task Decomposer

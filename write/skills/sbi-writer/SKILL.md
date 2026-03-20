@@ -1,12 +1,6 @@
 ---
 name: sbi-writer
-description: |
-  Transforms rough feedback ideas into clear, non-judgmental SBI (Situation–Behavior–Impact) format.
-  Use this skill whenever someone needs to write feedback but is not sure how to phrase it —
-  whether praise, constructive criticism, or peer review.
-  Trigger on: "피드백 작성", "SBI", "피드백 어떻게 줘야", "동료 피드백", "feedback",
-  "행동 피드백", "칭찬 어떻게".
-  Do not just explain SBI — take the user's raw input and produce a finished SBI statement.
+description: 'Use when someone wants to give feedback to a colleague but is unsure how to phrase it — whether the feedback is positive, constructive, or a peer review. Also use when the user has a rough idea of what to say but the wording feels judgmental, vague, or accusatory. Produces a finished SBI statement, not just advice.'
 ---
 
 # SBI Feedback Writer

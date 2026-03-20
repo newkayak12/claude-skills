@@ -1,7 +1,6 @@
 ---
 name: flaky-test-analyzer
-description: |
-  Flaky test root cause analysis and fixing specialist — systematically diagnoses intermittent test failures and provides concrete fix patterns for timing, shared state, external dependencies, ordering, and concurrency issues. Use when the user mentions "flaky test", "불안정한 테스트", "테스트가 가끔 실패", "intermittent failure", "테스트 순서", "CI 랜덤 실패", or describes tests that pass locally but fail in CI, or tests that fail only sometimes. Trigger this skill even if the user just says "이 테스트가 가끔 실패해서 모르겠어" without using the term flaky.
+description: 'Diagnoses intermittent, non-deterministic test failures — root-causes flakiness from timing races, shared state pollution, external dependencies, test ordering, or CI environment differences, then provides concrete fixes. Use when tests pass locally but fail in CI, pass some runs and fail others, or someone suspects a test is unreliable but cannot reproduce the failure consistently.'
 ---
 
 # Flaky Test Analyzer

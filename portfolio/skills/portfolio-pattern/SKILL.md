@@ -1,6 +1,6 @@
 ---
 name: portfolio-pattern
-description: Analyzes writing patterns in a backend developer's portfolio to surface hidden ownership signals, passive voice habits, missing failure narratives, and number-free claims — then reports findings in Korean. Use when the user asks "내 포트폴리오 패턴 분석해줘", "오너십이 잘 드러나나", "피동형 많이 썼나", "약한 표현 찾아줘", or after portfolio-feedback when they want to understand *why* their narrative feels weak. Always use this skill for writing pattern and ownership signal analysis.
+description: 'Use when someone wants to understand the writing patterns in their portfolio — not what it says but how it reads: passive voice ratio, subject audit, number density, and decision visibility. The user is asking about narrative signals and habits, not requesting a rewrite or an overall score. Triggers on "패턴 분석해줘", "오너십이 잘 드러나나", "피동형 많이 썼나", "주어 분석".'
 ---
 
 # Portfolio Writing Pattern Analyzer

@@ -1,6 +1,6 @@
 ---
 name: skill-trigger-validator
-description: Validates and improves skill trigger quality — use when a skill isn't firing on natural language or Korean input, when auditing description coverage, or when improving how reliably a skill gets invoked. Invoke for "스킬이 안 걸려", "trigger 개선해줘", "이 스킬 잘 안 트리거돼", "description 고쳐줘", "왜 이 스킬이 안 뜨지", "trigger coverage 감사", or any request to validate or strengthen a skill's description field.
+description: 'Audits and rewrites skill description fields so skills fire reliably on natural language and Korean input. Use when a skill isn''t triggering as expected, when descriptions feel keyword-heavy or English-only, or when running a coverage audit. Distinct from skill-validator: this focuses only on the description field, not overall skill design.'
 ---
 
 # Skill Trigger Validator

@@ -1,6 +1,6 @@
 ---
 name: architecture-designer
-description: Use when designing system architecture, writing ADRs, evaluating trade-offs, or planning scalability. Covers system design, microservices structuring, and infrastructure pattern selection.
+description: 'Use when someone needs to make or document architectural decisions from scratch — choosing between system topologies (monolith vs. microservices), writing ADRs, evaluating scalability trade-offs, or selecting database and infrastructure patterns. Distinct from clean-architecture (which focuses on internal layer dependencies and the Dependency Rule) and domain-driven-design (which focuses on domain modeling). Use this skill for structural and deployment-level decisions.'
 license: MIT
 metadata:
   author: https://github.com/Jeffallan

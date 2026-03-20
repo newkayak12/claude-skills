@@ -1,13 +1,6 @@
 ---
 name: interview-prep
-description: |
-  Creates a personalized technical interview preparation plan based on the user's background,
-  target company, and role. Covers coding, system design, and behavioral prep with a
-  prioritized study schedule and weak-area identification.
-  This is a planning skill — it produces a prep plan, not a live mock interview.
-  Trigger on: "면접 준비", "interview prep", "코딩테스트 준비", "기술 면접 공부",
-  "어떻게 준비해야", "면접 공부 계획", "FAANG 준비".
-  Do not just list generic topics — gather the user's context first, then produce a specific plan.
+description: 'Use when someone needs a structured interview preparation plan — a study schedule, gap analysis by topic area, and STAR story prompts — before their interview process begins. This is planning, not practice. Triggers on "면접 준비 계획", "코딩테스트 어떻게 준비해", "기술 면접 공부법", "FAANG 준비". Prefer portfolio-interview when the user wants to practice answering questions live.'
 ---
 
 # Interview Prep Planner

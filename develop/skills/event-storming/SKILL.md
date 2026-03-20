@@ -1,7 +1,6 @@
 ---
 name: event-storming
-description: |
-  Event Storming workshop facilitation for domain modeling — guides you through Big Picture, Process Level, and Design Level sessions. Use when the user mentions "이벤트 스토밍", "도메인 모델링", "event storming", "도메인 이벤트 찾기", "워크숍", or is trying to understand a business domain, map out a system, discover bounded contexts, or collaboratively model complex processes. Trigger this skill even if the user just asks "how do we model this domain?" or "어디서부터 시작하지?" without naming Event Storming explicitly.
+description: 'Facilitates Event Storming workshops — the structured technique for exploring business domains, discovering bounded contexts, and aligning engineers with domain experts. Use when someone is starting a new product, untangling a legacy system, mapping how a business process actually works, or asking where to begin domain modeling — even if they do not name Event Storming.'
 ---
 
 # Event Storming Facilitation

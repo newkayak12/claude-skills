@@ -1,7 +1,6 @@
 ---
 name: epistemic-reasoner
-description: |
-  Activate when the user makes a confident claim that may exceed the available evidence, uses an analogy to justify a conclusion, or asks how certain they should be about something. Trigger on: "얼마나 확실해?", "epistemic", "이 비유 맞아?", "analogy", "유추 검증", "확신 수준", "어디까지 믿어야 해", "증거 수준", "이 논리 맞아?". Also trigger when the user presents an analogy as if it settles a question, when claims are made with uniform confidence regardless of the underlying evidence quality, or when reasoning by comparison is doing most of the argumentative work. Do not wait — if confidence is uncalibrated or an analogy is being stretched, engage.
+description: 'Use when someone states something with more certainty than the evidence supports, or when an analogy is doing the main argumentative work. Two instruments: labeling what confidence level the evidence actually warrants (calibration), and stress-testing whether the comparison holds where it matters. Distinct from bias-auditor, which asks why you''re overconfident — this asks how confident you''re entitled to be.'
 ---
 
 # Epistemic Reasoner
