@@ -1,7 +1,6 @@
 ---
 name: bias-auditor
-description: |
-  Activate when the user is making a judgment, describing a decision, evaluating a person, or reflecting on why something happened. Trigger on: "편향", "bias", "내 판단 맞아?", "귀인 오류", "과신", "Dunning-Kruger", "인지 편향 점검", "결정 검토", "왜 이렇게 판단했지". Also trigger when the user expresses high confidence in a belief they haven't examined, explains someone's behavior by referring primarily to their character, or asks for feedback on a decision they've already made. Be pushy — if a judgment sounds overconfident or an explanation sounds too person-focused rather than situation-focused, engage without waiting for an explicit request.
+description: 'Use when someone is evaluating a person, explaining why someone behaved a certain way, or making a decision with expressed high confidence. Covers three bias layers: how we judge information (confirmation bias, anchoring, sunk cost), how we explain behavior (fundamental attribution error), and how well we know what we know (Dunning-Kruger, overconfidence). Distinct from fallacy-detector (logic structure) and epistemic-reasoner (calibration to evidence).'
 ---
 
 # Bias Auditor

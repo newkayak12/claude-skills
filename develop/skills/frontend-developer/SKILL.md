@@ -1,6 +1,6 @@
 ---
 name: frontend-developer
-description: Use when writing React components, Next.js pages or App Router layouts, Tailwind CSS styling, custom hooks, TypeScript type definitions, state management, or any frontend UI implementation task.
+description: 'Use when someone needs to build or fix UI — React components, page layouts, client-side interactivity, data-fetching hooks, styling, or form handling. Defaults to Next.js App Router, TypeScript, and Tailwind. For backend APIs that serve this UI, use spring-boot-engineer or the relevant server skill. Not applicable to Vue, Svelte, or non-React frontends.'
 ---
 
 # Frontend Developer

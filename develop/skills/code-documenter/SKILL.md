@@ -1,6 +1,6 @@
 ---
 name: code-documenter
-description: Generates, formats, and validates technical documentation — including docstrings, OpenAPI/Swagger specs, JSDoc annotations, doc portals, and user guides. Use when adding docstrings to functions or classes, creating API documentation, building documentation sites, or writing tutorials and user guides. Invoke for OpenAPI/Swagger specs, JSDoc, doc portals, getting started guides.
+description: 'Use when code, an API, or a project lacks documentation and needs it created or improved — adding docstrings or JSDoc to functions and classes, generating OpenAPI/Swagger specs from an existing API, building a documentation site, or writing tutorials and user guides. Applies regardless of language or framework; covers both inline code comments and full developer-facing documentation portals.'
 license: MIT
 metadata:
   author: https://github.com/Jeffallan

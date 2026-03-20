@@ -1,6 +1,6 @@
 ---
 name: thought-organizer
-description: Use when someone wants to organize scattered thoughts, structure an idea, create an outline before writing, untangle a complex concept, or says things like "생각 정리 도와줘", "이 아이디어 정리해줘", "복잡한데 어떻게 구성할까", "머릿속이 복잡해". Invoke for mind mapping, outlining, concept structuring.
+description: "Use when someone has raw, unordered thoughts, notes, or ideas they need to make sense of before writing, presenting, or deciding. The input exists but lacks structure — there's no design question (that's brainstorming), just a need to see what's there and how the pieces relate. Produces outlines, mind maps, or concept maps depending on the goal."
 ---
 
 # Thought Organizer

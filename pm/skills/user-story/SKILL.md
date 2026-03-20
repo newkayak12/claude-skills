@@ -1,6 +1,6 @@
 ---
 name: user-story
-description: Create user stories with Mike Cohn format and Gherkin acceptance criteria. Use when turning user needs into development-ready work with clear outcomes and testable conditions.
+description: 'Use when someone needs to write a single user story or a small set of stories — translating a known user need into a structured, development-ready format with acceptance criteria. Best fit when the problem is already understood and the work is authoring individual story artifacts, not planning a full backlog or mapping a workflow.'
 intent: >-
   Create clear, concise user stories that combine Mike Cohn's user story format with Gherkin-style acceptance criteria. Use this to translate user needs into actionable development work that focuses on outcomes, ensures shared understanding between product and engineering, and provides testable success criteria.
 type: component

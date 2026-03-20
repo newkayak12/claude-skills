@@ -1,6 +1,6 @@
 ---
 name: writer-verification
-description: Use when asked to review, proofread, check, or verify written text — blog posts, emails, reports, docs, marketing copy, Korean or English writing. Trigger on words like 검수, 교정, 검토, 맞춤법, 퇴고, review, proofread, "이거 봐줘", "고쳐줘", "어색하지 않아?". Always run all four passes in order.
+description: 'Use when someone wants existing writing reviewed, proofread, or improved — whether the request is about correctness (spelling, grammar), style (phrasing, clarity), or overall quality. Applies to any written text in Korean or English: blog posts, emails, documents, reports, or marketing copy. Also triggers when someone asks if their writing sounds natural or wants feedback before publishing.'
 ---
 
 # Writer Verification

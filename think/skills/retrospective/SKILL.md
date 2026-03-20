@@ -1,6 +1,6 @@
 ---
 name: retrospective
-description: Use when conducting a personal or project retrospective — sprint end, project close, weekly/monthly review, or when asked to "회고", "돌아보기", "스프린트 리뷰", "이번 주 회고", "프로젝트 마무리", "팀 회고", "스프린트 회고 퍼실리테이션", "retrospective 진행", or "회고 운영". Guides structured reflection using KPT, 5 Whys, or timeline formats and produces concrete action items. Also facilitates group/team retrospectives with timebox management, psychological safety, and synthesis techniques.
+description: 'Use when someone wants to reflect on a completed period — a sprint, project, week, or personal milestone — in order to extract lessons and commit to improvements. Covers solo and team retrospectives. Captures what went well, what did not, and what to change next, using KPT, 5 Whys, or timeline formats depending on scope.'
 ---
 
 # Retrospective

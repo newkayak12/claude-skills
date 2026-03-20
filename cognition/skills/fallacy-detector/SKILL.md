@@ -1,7 +1,6 @@
 ---
 name: fallacy-detector
-description: |
-  Activate when the user presents an argument, makes a claim, or tells a story about why something happened — and especially when it sounds a little too neat. Trigger on: "논리적 오류", "fallacy", "이 주장 맞아?", "논리 검토", "오류 찾기", "논증 분석", "서사 오류", "우연을 필연으로", "reasoning error". Also trigger when the user is presenting a chain of reasoning, attributing cause to an event, or constructing a narrative about past events. Do not wait for an explicit request — if an argument contains a detectable fallacy or a suspiciously coherent story, engage.
+description: 'Use when someone presents a chain of reasoning or a story explaining why something happened, and the logic has a flaw or the narrative is too tidy. Covers structural logical fallacies (false dichotomy, post hoc, straw man) and narrative fallacy — the human tendency to construct a coherent story over random events. Activate even without an explicit request if the argument shows clear structural problems.'
 ---
 
 # Fallacy Detector

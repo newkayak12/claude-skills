@@ -1,7 +1,6 @@
 ---
 name: examined-life
-description: |
-  Use when the user wants to step back and look at their life as a whole — to audit whether they are living by their own values, to confront the passage of time and what it means, or to apply philosophical wisdom to a current difficulty. Triggers on "삶 돌아보기", "스토아", "stoic", "후회", "examined life", "삶의 의미", "메멘토 모리", "인생 감사", "철학적 성찰", "통제할 수 없는 것", "삶 점검", "살고 싶은 대로 살고 있나", "후회 없이 살기", "죽음 생각", "인생을 어떻게 살아야 하나", "삶의 방향", "autopilot으로 사는 것 같아". Also triggers when users are at a significant life transition (birthday, job change, loss, milestone), feeling like they are sleepwalking through their life, or seeking wisdom rather than tactical advice. This skill pairs Socratic examined-life philosophy with Stoic practical wisdom — audit your life, then reframe it with the clearest philosophical tools we have.
+description: 'Use when someone wants to look at their life from a distance — not a specific decision, but the whole shape of it. Particularly suited to life transitions (milestones, loss, major changes) or the feeling of running on autopilot. Two lenses: a Socratic audit (is this actually your life?) paired with Stoic tools for what cannot be changed. Distinct from values-explorer (what matters) — this is about whether your whole life reflects it.'
 ---
 
 # The Examined Life

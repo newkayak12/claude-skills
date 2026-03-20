@@ -1,7 +1,6 @@
 ---
 name: ego-state-identifier
-description: |
-  Use when the user wants to understand why they reacted a certain way, why they feel stuck in a relational pattern, or why they feel like two different people in conflict with each other. Triggers on "에고 상태", "ego state", "내 안의 부모/어른/아이", "TA", "교류분석", "왜 이렇게 반응했지", "비판적인 내면", "트랜잭셔널 분석", "transactional analysis", "내면의 목소리", "자동 반응", "왜 이런 말이 나왔지", "어릴 때처럼 반응했어". Also triggers when the user describes a reaction that felt "automatic", "childish", "like my parent", or "not like me." This skill applies Eric Berne's Transactional Analysis framework to map the user's internal ego states and understand where their behavior is coming from.
+description: 'Use when someone is confused about why they reacted the way they did — especially when it felt automatic, disproportionate, childlike, or like they heard a parental voice in their head. Also triggers when someone describes feeling like two conflicting inner voices or a pattern in relationships that keeps repeating. Maps three internal states (Parent, Adult, Child) to explain where behavior is coming from.'
 ---
 
 # Ego State Identifier

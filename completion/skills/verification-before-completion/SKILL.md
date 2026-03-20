@@ -1,6 +1,6 @@
 ---
 name: verification-before-completion
-description: Use when about to claim work is complete, fixed, or passing, before committing or creating PRs - requires running verification commands and confirming output before making any success claims; evidence before assertions always
+description: 'Use before making any claim that work is complete, a bug is fixed, tests are passing, or a build succeeds — and before committing, pushing, or creating a PR. Also applies before expressing satisfaction or moving to the next task. The trigger is any moment where a success claim is about to be made without fresh evidence.'
 ---
 
 # Verification Before Completion

@@ -1,6 +1,6 @@
 ---
 name: spring-boot-engineer
-description: Generates Spring Boot 3.x configurations, creates REST controllers, implements Spring Security 6 authentication flows, sets up Spring Data JPA repositories, and configures reactive WebFlux endpoints. Use when building Spring Boot 3.x applications, microservices, or reactive Java applications; invoke for Spring Data JPA, Spring Security 6, WebFlux, Spring Cloud integration, Java REST API design, or Microservices Java architecture.
+description: 'Use when someone needs to build or extend a Java backend using the Spring ecosystem — whether that means wiring up a new REST API, configuring security and authentication, connecting to a database via JPA, or setting up reactive endpoints. Focused on Spring Boot 3.x implementation. For architecture-level service decomposition or service-mesh decisions, prefer microservices-architect.'
 license: MIT
 metadata:
   author: https://github.com/Jeffallan

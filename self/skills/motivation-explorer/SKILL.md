@@ -1,7 +1,6 @@
 ---
 name: motivation-explorer
-description: |
-  Use when the user doesn't understand why they're doing something, has lost motivation, is burning out, or suspects their surface reason for pursuing a goal isn't the real reason. Triggers on "동기", "motivation", "왜 이걸 하는지 모르겠어", "진짜 이유", "내재적 동기", "무엇이 나를 움직이나", "번아웃 이유", "목표 의욕이 없어", "왜 열심히 하는지 모르겠어", "진짜 원하는 게 뭔지", "의욕이 사라졌어", "억지로 하는 것 같아", "남들 때문에 하는 것 같아". Also triggers when users express confusion about why they started something, why they're staying in something despite not wanting to, or why they can't seem to start something they "should" want. This skill does two things: separates intrinsic from extrinsic motivations, and peels back motivation layers to find the root drivers.
+description: 'Use when someone has lost motivation, is doing something but does not know why, or suspects their stated reason is not the real one. Also triggers when someone knows what they want but cannot seem to pursue it — ambivalence almost always has a motivation structure underneath. Two moves: locate where on the intrinsic-extrinsic spectrum the motivation sits, and peel back to find the root driver. Distinct from values-explorer (what matters).'
 ---
 
 # Motivation Explorer

@@ -1,7 +1,6 @@
 ---
 name: assumption-extractor
-description: |
-  Activate when the user presents a plan, argument, belief, or decision — especially when they state it with confidence. Trigger on: "가정", "assumption", "전제", "근거 없는 믿음", "당연하게 여기는 것", "이 계획의 전제", "숨겨진 전제", "무엇을 가정하고 있나". Also trigger when a plan sounds well-constructed but its dependencies haven't been named, when an argument is made with implicit premises, or when a belief is stated as if it needs no support. Do not wait for permission — if something is being taken for granted, surface it.
+description: 'Use when someone presents a plan or argument with confidence and its hidden dependencies have not been examined — surfacing what is being taken for granted: factual, causal, value, and definitional assumptions, then ranking which ones would collapse everything if wrong. Distinct from fallacy-detector (reasoning structure) and bias-auditor (why you are misjudging).'
 ---
 
 # Assumption Extractor

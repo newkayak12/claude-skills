@@ -1,14 +1,6 @@
 ---
 name: resume-tailorer
-description: |
-  Tailors a resume or CV to a specific job description — aligns keywords, reframes achievements,
-  and adjusts signals for the target company's culture and role requirements.
-  This is JD-specific targeting, not general writing improvement (see portfolio-rewrite for that).
-  Takes the user's current resume + the target JD and produces concrete before/after rewrites.
-  Korean market focus with awareness of chaebols, startups, and global tech companies hiring in Korea.
-  Trigger on: "이력서 맞춤", "resume tailoring", "공고에 맞게", "JD 기반 수정",
-  "서류 통과", "이력서 최적화", "채용 공고 맞춤".
-  Do not give generic resume advice — analyze the specific JD and produce specific rewrites.
+description: 'Use when the user has a resume and a specific job description and wants the resume rewritten to match that JD — keyword alignment, achievement reframing, and skills reordering for the target company. Not general improvement (that is portfolio-rewrite) and not fit assessment (that is portfolio-jd). Triggers on "이력서 맞춰줘", "공고에 맞게 고쳐줘", "이력서 최적화".'
 ---
 
 # Resume Tailorer

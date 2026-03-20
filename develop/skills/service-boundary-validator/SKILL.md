@@ -1,7 +1,6 @@
 ---
 name: service-boundary-validator
-description: |
-  Microservice boundary validation specialist — evaluates service decomposition using DDD and Team Topology principles, identifies distributed monolith patterns, shared database anti-patterns, and excessive coupling. Use when the user mentions "서비스 경계", "service boundary", "마이크로서비스 분리", "어디서 잘라야", "서비스 설계 검토", "bounded context", or is asking whether to split a service, how to decompose a monolith, or why services are too tightly coupled. Trigger this skill even if the user just says "서비스가 너무 얽혀 있어" or "should I split this into two services?" without using DDD terminology.
+description: 'Evaluates microservice decomposition — identifies distributed monolith patterns, shared database anti-patterns, excessive synchronous coupling, and unclear data ownership. Use when someone is deciding whether to split a service, suspects their services are too tightly coupled to deploy independently, wants to validate a proposed service boundary, or is decomposing a monolith.'
 ---
 
 # Service Boundary Validator

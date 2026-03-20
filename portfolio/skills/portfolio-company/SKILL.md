@@ -1,6 +1,6 @@
 ---
 name: portfolio-company
-description: Analyzes how well a backend developer's portfolio fits specific companies or company types — identifying where it resonates and where it falls short, in Korean. Use when the user says "어느 회사에 잘 맞아", "네이버/카카오 지원하려는데", "이 포트폴리오로 어디 가면 좋아", "어떤 회사 스타일에 맞아", "회사 핏 분석해줘", or wants to know which companies their profile would appeal to. Always use this skill for company fit and targeting analysis.
+description: 'Use when someone wants to know which companies or company types their portfolio would appeal to — without a specific JD in hand. Covers fit against large platforms (네이버, 카카오, 쿠팡), growth-stage startups, fintech/enterprise, and global tech. Triggers on "어느 회사에 잘 맞아?", "네이버 지원하려는데 어때?", "어디 써볼 만해?". Prefer portfolio-jd when the user has an actual job posting.'
 ---
 
 # Portfolio × Company Fit Analyzer

@@ -1,6 +1,6 @@
 ---
 name: product-discovery
-description: 'Discover the right product to build by routing to the best framework for the situation — continuous discovery and empowered teams (Inspired/Cagan) or fixed-appetite shaping and betting (Shape Up/Basecamp). Use when the user mentions "product discovery", "what should we build next", "product process", "how to decide what to build", or "discovery vs delivery". Diagnoses context and applies the right framework.'
+description: 'Use when someone is uncertain which product development approach fits their situation, wants to evaluate or improve their discovery process, or is deciding between continuous discovery and fixed-cycle planning. Acts as a meta-framework that diagnoses organizational context and routes to Inspired (Cagan) or Shape Up accordingly.'
 license: MIT
 metadata:
   author: wondelai

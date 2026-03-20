@@ -1,6 +1,6 @@
 ---
 name: test-driven-development
-description: Guides test-driven development — writing failing tests first, then only enough code to pass them. Use before implementing any feature or fixing any bug, when a codebase needs to be built with confidence from scratch, or when someone wants to understand how TDD shapes design decisions.
+description: "Apply when someone wants to drive implementation through tests rather than write tests after the fact — new features, bug fixes, or refactors where design confidence matters. Covers the Red-Green-Refactor cycle, how to write a minimal failing test, and how TDD constrains design toward simplicity. For test quality in existing code without the TDD workflow, see clean-code."
 references:
   - references/testing-anti-patterns.md
 ---

@@ -1,6 +1,6 @@
 ---
 name: devils-advocate
-description: "Only use this skill when the user EXPLICITLY requests devil's advocate analysis, counterarguments, or opposing views. Trigger phrases: 'devil's advocate', '반론', '반대 입장', '약점', 'counterargument', 'steelman the opposition', '이 설계의 반대 입장', 'what could go wrong', 'challenge this', '반박'. Do NOT trigger for normal Q&A or design reviews — only when the user deliberately asks for adversarial critique."
+description: 'Use only when someone deliberately asks for adversarial critique — they want objections, counterarguments, weaknesses, or stress-testing of an idea they already hold. Do not trigger for design questions, general reviews, or clarification requests. The distinguishing signal is that the user is explicitly inviting pushback, not just asking for analysis.'
 compatibility:
   optional:
     - think-tool

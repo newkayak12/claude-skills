@@ -1,7 +1,6 @@
 ---
 name: adr-writer
-description: |
-  Architecture Decision Record (ADR) writing assistant — helps articulate WHY an architecture decision was made, not just what was decided. Use when the user mentions "ADR", "아키텍처 결정", "architecture decision", "결정 기록", "왜 이렇게 설계했는지", or is trying to document a technical choice, explain a design rationale to their team, or record a tradeoff. Trigger this skill even if the user simply asks "how do I explain this design?" or "나중에 팀이 이걸 왜 이렇게 했는지 이해해야 해" without explicitly asking for an ADR.
+description: 'Writes Architecture Decision Records — documents that capture why a technical choice was made, what tradeoffs were accepted, and what alternatives were rejected. Use when someone needs to document a design rationale, explain a past architectural choice to their team, preserve the reasoning behind a hard-to-reverse decision, or formally record that a decision supersedes a previous one.'
 ---
 
 # Architecture Decision Record Writer

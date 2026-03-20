@@ -1,6 +1,6 @@
 ---
 name: brainstorming
-description: "Explores intent, requirements, and design before any implementation. MUST run before building features, writing code, scaffolding projects, or modifying behavior — even for requests that seem simple. Use whenever someone wants to create or implement something that hasn't been fully designed yet."
+description: "Use when someone wants to design or build something that doesn't have a clear spec yet — a new feature, product, tool, or system where the shape of the solution still needs to be worked out. Not for bug fixes or changes to already-designed things. Routing: use problem-reframer if the problem itself keeps resisting, and thought-organizer if the user has scattered ideas to sort rather than something to design."
 compatibility:
   optional:
     - think-tool

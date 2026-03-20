@@ -1,6 +1,6 @@
 ---
 name: contagious
-description: 'Engineers word-of-mouth and virality using the STEPPS framework. Use when trying to make a product, campaign, or idea spread — wanting more shares, referrals, or organic growth; wondering why some things catch on and others do not; or designing something meant to be talked about.'
+description: 'Use when someone wants to make a product, feature, campaign, or idea spread through word-of-mouth or organic sharing. Applies the STEPPS framework (Social Currency, Triggers, Emotion, Public, Practical Value, Stories) to diagnose what makes things contagious and how to engineer shareability into any offering.'
 license: MIT
 metadata:
   author: wondelai

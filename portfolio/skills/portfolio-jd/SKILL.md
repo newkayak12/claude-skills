@@ -1,6 +1,6 @@
 ---
 name: portfolio-jd
-description: Compares a backend developer's portfolio against a specific job description (JD) and delivers a gap analysis with actionable positioning advice in Korean. Use when the user pastes a JD and says "이 공고에 맞아?", "JD 분석해줘", "이 포지션 지원해도 돼?", "공고랑 내 포트폴리오 비교해줘", "서류 통과 가능성", "합격 가능성 봐줘". Always use this skill when a user provides both a portfolio and a job description for comparison.
+description: 'Use when the user provides both a portfolio and a specific job description (JD) and wants to know how well they match — gap analysis, fit score across dimensions, and positioning advice for that role. The key signal is the presence of an actual JD, not just a named company. Triggers on "이 공고에 맞아?", "JD랑 비교해줘", "이 포지션 지원해도 돼?".'
 ---
 
 # Portfolio × JD Gap Analyzer

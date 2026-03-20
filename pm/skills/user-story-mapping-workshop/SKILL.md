@@ -1,6 +1,6 @@
 ---
 name: user-story-mapping-workshop
-description: Run a user story mapping workshop with adaptive questions and a structured map output. Use when you need backbone activities, tasks, and release slices for a workflow.
+description: 'Use when someone wants to be guided through building a story map interactively — step by step through scope, personas, backbone activities, tasks, and release slices via adaptive questions. Best when the user does not yet have clear answers and needs facilitation to discover and structure them, rather than wanting a map generated from existing context.'
 intent: >-
   Guide product managers through creating a user story map by asking adaptive questions about the system, users, workflow, and priorities—then generating a two-dimensional map with backbone (activities), user tasks, and release slices. Use this to move from flat backlogs to visual story maps that communicate the big picture, identify missing functionality, and enable meaningful release planning—avoiding "context-free mulch" where stories lose connection to the overall system narrative.
 type: interactive

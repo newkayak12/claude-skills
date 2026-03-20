@@ -1,7 +1,6 @@
 ---
 name: values-explorer
-description: |
-  Use when the user is trying to understand what truly matters to them, feeling torn between competing priorities, experiencing a sense of emptiness or misalignment, or making a major life decision. Triggers on "가치관", "나에게 중요한 것", "values", "가치 충돌", "무엇을 위해 사는지", "핵심 가치", "진짜 원하는 것", "내 가치관 찾기", "뭐가 중요한지 모르겠어", "무엇을 위해 이걸 하는지", "삶의 방향", "가치관 정리", "우선순위". Also triggers when the user is agonizing over a choice that seems to require sacrificing something important — this often signals a values conflict beneath the surface. This skill applies values clarification therapy and ACT (Acceptance and Commitment Therapy) to do two things: uncover genuinely held values through behavioral evidence, and navigate when those values collide.
+description: 'Use when someone is unclear about what actually matters to them, feeling torn between competing priorities, or agonizing over a choice where something important has to be sacrificed. Two moves: extract genuinely held values from behavioral evidence, and navigate collisions between values that cannot both be fully honored. Distinct from clarity-toolkit (information overload) and examined-life (life as a whole).'
 ---
 
 # Values Explorer

@@ -9,7 +9,7 @@
     {
       "name": "develop",
       "description": "Engineering skills: CLI, SQL, clean architecture, clean code, DDD, pragmatic programming, database optimization, chaos engineering, Spring Boot, microservices, Kotlin, TDD, frontend, code documentation, testing, MCP builder, SRE.",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "author": { "name": "newkayak12" },
       "source": "./develop",
       "category": "engineering"
@@ -17,7 +17,7 @@
     {
       "name": "pm",
       "description": "Product management skills: user stories, story mapping, story splitting, PRD development, contagious (STEPPS), product discovery (Inspired/Shape Up), OKR planning, and hypothesis-driven development.",
-      "version": "1.0.4",
+      "version": "1.0.5",
       "author": { "name": "newkayak12" },
       "source": "./pm",
       "category": "product-management"
@@ -25,7 +25,7 @@
     {
       "name": "think",
       "description": "Thinking and ideation skills: brainstorming, decision making, devil's advocate, problem reframing, retrospective, thought organizing, microinteractions design, negotiation, and first-principles thinking.",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "author": { "name": "newkayak12" },
       "source": "./think",
       "category": "productivity"
@@ -33,7 +33,7 @@
     {
       "name": "write",
       "description": "Writing skills: doc co-authoring, writing plans, skill writing, and writer verification.",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "author": { "name": "newkayak12" },
       "source": "./write",
       "category": "productivity"
@@ -41,7 +41,7 @@
     {
       "name": "agents",
       "description": "Agent orchestration skills: dispatching parallel agents and subagent-driven development.",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": { "name": "newkayak12" },
       "source": "./agents",
       "category": "productivity"
@@ -49,7 +49,7 @@
     {
       "name": "planning",
       "description": "Planning skills: executing implementation plans and roadmap planning.",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": { "name": "newkayak12" },
       "source": "./planning",
       "category": "productivity"
@@ -57,7 +57,7 @@
     {
       "name": "skill",
       "description": "Skill management: create new skills, improve existing ones, validate skill quality, and audit trigger coverage.",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "author": { "name": "newkayak12" },
       "source": "./skill",
       "category": "productivity"
@@ -65,7 +65,7 @@
     {
       "name": "completion",
       "description": "Verification before completion: evidence-based workflow to confirm work is done before claiming success.",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": { "name": "newkayak12" },
       "source": "./completion",
       "category": "productivity"
@@ -73,7 +73,7 @@
     {
       "name": "portfolio",
       "description": "Portfolio and career skills: JD analysis, portfolio rewriting, company research, feedback, pattern extraction, and interview prep.",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": { "name": "newkayak12" },
       "source": "./portfolio",
       "category": "productivity"
