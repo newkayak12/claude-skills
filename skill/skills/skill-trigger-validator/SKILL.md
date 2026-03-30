@@ -1,6 +1,24 @@
 ---
 name: skill-trigger-validator
-description: 'Audits and rewrites skill description fields so skills fire reliably on natural language and Korean input. Use when a skill isn''t triggering as expected, when descriptions feel keyword-heavy or English-only, or when running a coverage audit. Distinct from skill-validator: this focuses only on the description field, not overall skill design.'
+description: >-
+  Use when a skill isn't triggering reliably on natural language or Korean input.
+  Triggers on: "스킬이 트리거 안 돼", "skill not firing", "description 개선해줘", "한국어 트리거 추가해줘",
+  "trigger coverage audit", "skill 발동 조건 점검", "description이 너무 keyword만 있어".
+  Best for: fixing English-only descriptions, improving natural language trigger coverage, coverage audits.
+  Not for: overall skill design review (use skill-validator for that).
+scenarios:
+  - "이 skill이 한국어로 말할 때 안 트리거돼"
+  - "Skill description이 너무 기술적인 키워드만 있어"
+  - "Run a trigger coverage audit on the think plugin"
+  - "한국어 자연어 trigger 추가해줘"
+  - "This skill isn't firing when users ask in casual English"
+  - "Description 재작성해서 더 잘 트리거되게 해줘"
+compatibility:
+  optional:
+    - think-tool           # reasoning about whether rewritten description avoids false positives
+  remote_mcp_note: >-
+    think-tool이 있으면 재작성된 description이 false positive 없이 올바르게 트리거되는지 검토할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Skill Trigger Validator

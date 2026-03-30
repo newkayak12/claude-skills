@@ -1,153 +1,139 @@
 ---
 name: values-explorer
-description: 'Use when someone is unclear about what actually matters to them, feeling torn between competing priorities, or agonizing over a choice where something important has to be sacrificed. Two moves: extract genuinely held values from behavioral evidence, and navigate collisions between values that cannot both be fully honored. Distinct from clarity-toolkit (information overload) and examined-life (life as a whole).'
+description: >-
+  Use when someone is unclear about what actually matters to them, feeling torn between
+  competing priorities, or agonizing over a choice where something important has to be sacrificed.
+  Two moves: extract genuinely held values from behavioral evidence, and navigate collisions
+  between values that cannot both be fully honored.
+  Triggers on: "가치관", "values", "뭐가 중요한지", "우선순위", "가치 충돌", "선택이 힘들어",
+  "진짜 원하는 게 뭔지", "무엇을 희생해야 하나", "삶에서 중요한 것".
+  Best for: major life decisions, chronic dissatisfaction despite external success, values conflicts between career and life.
+  Not for: information overload without a values question (use clarity-toolkit), whole-life audit (use examined-life).
+
+scenarios:
+  - "I keep making choices that feel wrong but I can't name why"
+  - "Help me figure out what I actually value — not what I think I should value"
+  - "I'm torn between two things I care deeply about"
+  - "뭐가 진짜 나한테 중요한지 모르겠어"
+  - "두 가지 가치관이 충돌해서 결정을 못 하겠어"
+  - "내 삶에서 중요한 게 뭔지 정리하고 싶어"
+
+compatibility:
+  optional:
+    - think-tool
+    - mcp-reasoner
+  remote_mcp_note: >-
+    think-tool이 있으면 가치 충돌 해결 프레임워크 선택에 유용합니다.
+    mcp-reasoner는 네 가지 충돌 해결 경로를 탐색하는 데 사용할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Values Explorer
 
-Values are not what you say you care about. They are what your behavior reveals you care about when the stakes are real. Most people carry a declared set of values (family, integrity, creativity) and a revealed set of values (what they actually sacrifice time, money, and comfort for). The gap between the two is not a moral failure — it is information. Closing that gap is the work.
+## When to Use / When Not to Use
 
-The theoretical foundation: values clarification therapy (Rokeach, Simon) and Acceptance and Commitment Therapy (ACT, Steven Hayes). ACT in particular treats values not as fixed truths to be discovered but as chosen directions that give behavior meaning — you can commit to a value even if you're not sure you've been living it.
+**Use when:**
+- Success feels hollow — external achievement isn't producing satisfaction
+- A recurring sense that choices feel wrong, without being able to name why
+- Two values are pulling in opposite directions in a real decision
 
-## Part 1 — Values Extraction
+**Not for:**
+- Information overload (use clarity-toolkit)
+- Whole-life audit (use examined-life — it uses values as an input)
 
-The goal is not a list of nice-sounding words. The goal is a precise, behavioral, evidenced account of what this specific person actually values.
+## Process
 
-### Method 1 — Behavioral Evidence
+### Part 1 — Values Extraction
 
-Forget self-report. Look at the pattern of actual choices:
+Goal: not a list of nice-sounding words, but a precise, evidenced account of what this person actually values.
 
-Ask the user to answer these questions concretely, with specific examples:
-- *In the last three months, what did you consistently make time for, even when it was inconvenient?*
-- *When you've spent money in a way that felt deeply right — not just pleasurable but meaningful — what was it for?*
-- *When have you felt most proud? Not successful — proud. What were you doing?*
-- *When have you been most angry or morally outraged? What value was being violated?*
+**Method 1 — Behavioral evidence.** Forget self-report. Ask:
+- What did you make time for in the last 3 months, even when inconvenient?
+- When did spending money feel deeply *right* — not just pleasurable, but meaningful?
+- When were you most proud (not successful — proud)?
+- When were you most angry or morally outraged? What value was being violated?
 
-These questions reveal values through behavioral residue. What someone protects when under pressure, what makes them angry when violated, what makes them proud — these are more reliable than what they say on a Sunday afternoon.
+**Method 2 — Peak experience.** A moment of feeling deeply alive, right, or at peace. What were you doing? What role were you playing? What value was being expressed?
 
-### Method 2 — Peak Experience Analysis
+**Method 3 — Anger as compass.** Anger at injustice → fairness. Anger at wasted time → purposefulness. Anger at betrayal → loyalty. Anger at own compromise → integrity.
 
-Ask about a moment of feeling deeply alive, deeply right, or deeply at peace. Not necessarily happy — sometimes the most values-laden moments are hard. But there is a quality of rightness.
+**Method 4 — Deathbed perspective.** "What would you need to have done, been, or stood for for this period to feel well lived?"
 
-Probe the peak experience:
-- *What were you doing?*
-- *What role were you playing — for yourself? for others?*
-- *What was it about that moment that mattered?*
-
-Then: *what values were being expressed in that moment?*
-
-### Method 3 — Anger as Values Compass
-
-Anger is not just an emotion — it is a signal that something you care about has been threatened or violated. Map recent anger:
-- *What has made you genuinely angry in the past month?*
-- *What was at stake — what was the principle that felt violated?*
-
-Anger at injustice → value: fairness
-Anger at wasted time → value: purposefulness or efficiency
-Anger at betrayal → value: loyalty or honesty
-Anger at one's own compromise → value: integrity
-
-### Method 4 — Deathbed Perspective
-
-A classic clarification technique: *If you were looking back on this period of your life at the end of it, what would you need to have done, been, or stood for in order to feel it was well lived?*
-
-This removes the noise of immediate preference and reveals what genuinely matters at the level of a life, not a week.
-
-### Extracting the Values List
-
-From the above, produce a values list of 5-8 items maximum. More than that usually means the list is too abstract.
-
-For each value:
-- Name it precisely (not just "family" — "being genuinely present with the people I love")
-- Identify the behavioral evidence that confirms it
-- Rate current expression: thriving / adequate / starved
-
+**Values inventory (5–8 maximum — more means too abstract):**
 ```
 Values Inventory
 ----------------
-Value 1: [precise name]
+Value 1: [precise name — not "family" but "being genuinely present with people I love"]
 Evidence: [specific behavior, moment, or pattern]
 Current expression: thriving / adequate / starved
 
-[repeat for each value]
+[repeat for each]
 
-Most alive value: [which is being most richly lived]
-Most starved value: [which is most neglected — often the source of dissatisfaction]
+Most alive value: [most richly lived]
+Most starved value: [most neglected — often the source of dissatisfaction]
 ```
 
-## Part 2 — Values Conflict Resolution
+### Part 2 — Values Conflict Resolution
 
-### MCP Instructions
+**MCP notes:** If `think-tool` is available, use it before selecting a framework — which one fits this specific conflict? If `mcp-reasoner` is available, use it to explore all four frameworks in parallel before committing.
 
-If `think-tool` is available, use it before selecting a conflict resolution framework — pause to assess which of the four frameworks (prioritization, integration, contextual, temporal) best fits this specific conflict.
+Values conflicts are real. Freedom vs security. Achievement vs family. Honesty vs kindness. These are not problems with a right answer — they are tensions navigated with wisdom.
 
-If `mcp-reasoner` is available, use it for values conflict resolution. The four resolution frameworks are parallel reasoning paths — mcp-reasoner explores each and evaluates which produces the most coherent navigation strategy. This is exactly the kind of open-ended problem where exploring multiple paths before committing yields better outcomes.
+**Name the conflict precisely:** What are the two values? In what specific situation are they pulling opposite directions? What would choosing each cost?
 
-Values conflicts are real and common. Freedom vs security. Achievement vs family. Honesty vs kindness. Loyalty vs integrity. These are not problems with a right answer — they are tensions to be navigated with wisdom.
+**Four navigation frameworks:**
 
-### Identifying the Conflict
+| Framework | When to use |
+|-----------|------------|
+| **Hierarchy in context** | Ask: in this situation, this time in your life, which value is more essential to honor? |
+| **Cost accounting** | Make costs explicit for each path — asymmetric costs usually emerge |
+| **Creative third** | Is there an option that partially honors both at reduced intensity? (Not a compromise that honors neither) |
+| **ACT commitment** | Choose one value, name explicitly what the other loses, and carry that loss with awareness |
 
-Name the conflict precisely:
-- What are the two (or more) values in tension?
-- In what specific situation are they pulling in different directions?
-- What would choosing each value cost in this situation?
+**ACT commitment frame:** "I am choosing [A] in this situation. I value [B] deeply, and I am choosing not to honor it fully here, and I accept what that costs." This is deciding — not resolving.
 
-Avoid the trap of treating these as problems with a solution. A value is not negotiable — you cannot resolve the conflict by deciding that one value "doesn't count." You resolve it by choosing which value to honor *in this situation*, while acknowledging what that costs.
-
-### Frameworks for Navigation
-
-**Framework 1 — Hierarchy in Context**
-Values don't have a fixed rank — they have situational priority. In some contexts, freedom matters more; in others, security. Ask:
-- *In this particular situation, at this particular time in your life, which value is more essential to honor?*
-- *If you look back in five years, which choice would you be more at peace with?*
-
-Not which is abstractly more important — which is more important *here and now, in this life, with these stakes.*
-
-**Framework 2 — The Cost Accounting**
-For each option, make the cost explicit:
-- If you honor value A: what specifically does value B lose? Who is affected? How much? How reversible?
-- If you honor value B: same questions for value A.
-
-Most conflicts have an asymmetric cost structure once examined carefully. One path costs more. Making that explicit allows clearer choice.
-
-**Framework 3 — Creative Third**
-Before choosing between values, ask: *Is there an option that partially honors both?*
-
-Not a compromise that honors neither — a creative third path that is genuinely honoring to both, even at reduced intensity. Often this option exists and has not been seen because the person was stuck in binary framing.
-
-**Framework 4 — ACT Commitment**
-ACT's insight: we cannot always live all our values fully. The mature response to a values conflict is not resolution but committed choice — choosing which value to act on in this situation, without pretending the other doesn't matter, and carrying the loss with awareness rather than suppression.
-
-Say explicitly: *"I am choosing [A] in this situation. I value [B] deeply, and I am choosing not to honor it fully here, and I accept what that costs."*
-
-This is different from resolving the conflict. It is deciding, consciously and with open eyes.
-
-### Output for Values Conflict
-
+**Values conflict output:**
 ```
 Values Conflict Analysis
 ------------------------
 Values in tension: [A] vs [B]
-The specific situation: [concrete context]
+Specific situation: [concrete context]
 
-If you honor [A]:
-  What [B] loses: [concrete, specific]
-  Cost level: [high / medium / low]
-  Reversibility: [can you return to [B] later?]
-
-If you honor [B]:
-  What [A] loses: [concrete, specific]
-  Cost level: [high / medium / low]
-  Reversibility: [can you return to [A] later?]
+If you honor [A]: What [B] loses / Cost level / Reversibility
+If you honor [B]: What [A] loses / Cost level / Reversibility
 
 Creative third option: [if one exists]
-
-My read on the asymmetry: [which path costs more and why]
-The ACT commitment frame: [what a conscious, eyes-open choice looks like here]
+Cost asymmetry: [which path costs more and why]
+ACT commitment frame: [what a conscious, eyes-open choice looks like]
 ```
 
-## Closing Note
+## Output Template
 
-Values clarification is ongoing work, not a one-time exercise. Values shift over a life — the value of security that meant everything at 25 may matter less at 40; the value of meaning that was abstract at 25 may become urgent at 40. Revisit this work at major life transitions.
+See inline formats in each section above. Summary structure:
 
-The point is not to have perfect values alignment all the time — that is not possible. The point is to reduce the gap between declared and lived values enough that life feels like yours.
+```
+Values Inventory: [5-8 values with evidence and expression rating]
+Most alive: [richly lived value]
+Most starved: [neglected value — often the source of dissatisfaction]
+
+Values Conflict Analysis (when applicable):
+Values in tension / Specific situation
+Costs of each path / Reversibility / Creative third option
+Cost asymmetry / ACT commitment frame
+```
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Extracts values from behavioral evidence, not self-report | Provide specific moments, choices, and reactions to work from |
+| Names the gap between declared and lived values | Sit with the gap without shame — it's information |
+| Identifies the creative third option when it exists | Decide which framework fits this conflict |
+| Frames the ACT commitment when no creative third is available | Make the committed choice and carry the acknowledged loss |
+
+## Related Skills
+
+- `examined-life` — for using values as input to a whole-life audit
+- `motivation-explorer` — when values gaps show up as hollow motivation
+- `decision-maker` — when values are clear and a structured decision framework is needed
+- `flow-antigoal` — for designing work and life conditions around lived values

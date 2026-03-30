@@ -1,12 +1,83 @@
 ---
 name: user-story-splitting
-description: Break a large story or epic into smaller deliverable stories using proven split patterns. Use when backlog items are too big for estimation, sequencing, or independent release.
-intent: >-
-  Break down large user stories, epics, or features into smaller, independently deliverable stories using systematic splitting patterns. Use this to make work more manageable, reduce risk, enable faster feedback cycles, and maintain flow in agile development. This skill applies to user stories, epics, and any work that's too large to complete in a single sprint.
+description: >-
+  Use when a user story, epic, or feature is too large to estimate, sequence, or release independently — breaking it into smaller, independently deliverable stories using proven split patterns.
+  Triggers on: "split this story", "story is too big", "break down this epic", "this won't fit in a sprint", "story splitting", "스토리 분리", "에픽 분해", "너무 큰 스토리 나눠줘".
+  Best for: oversized backlog items, epics with multiple personas or workflows bundled together, stories with multiple When/Then conditions.
+  Not for: technical task decomposition, stories that are already small and well-scoped, architectural planning.
 type: component
+scenarios:
+  - "This user story is too big for one sprint — help me split it using splitting patterns"
+  - "Break this epic into smaller, independently deliverable stories"
+  - "My story has 3 When clauses — how do I split it?"
+  - "너무 큰 유저 스토리를 분리해줘"
+  - "에픽을 독립적으로 배포 가능한 스토리들로 분해해줘"
+compatibility:
+  recommended: []
+  optional:
+    - think-tool
+  remote_mcp_note: >-
+    think-tool이 있으면 분리된 스토리가 독립적으로 배포 가능하고 사용자 가치를 전달하는지 검증 품질이 높아집니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
-This is not arbitrary slicing—it's strategic decomposition that preserves user value while reducing complexity.
+## When to Use / When Not to Use
+
+**Use when:**
+- Story is too large for a single sprint
+- Multiple "When" or "Then" statements exist in acceptance criteria
+- Epic needs to be broken into independently deliverable increments
+- Team cannot estimate or agree on story scope
+
+**Not for:**
+- Stories that are already small and well-scoped (don't over-split)
+- Technical tasks and refactoring items with no user value
+- Splitting that would create hard dependencies between new stories
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Applies 8 splitting patterns to the original story | Provides the original story and context |
+| Writes split stories in full As a/I want/So that + Gherkin format | Validates that each split delivers real user value |
+| Validates splits against INVEST criteria | Confirms splits can be developed and tested independently |
+| Flags splits that fail "independently deliverable" test | Prioritizes which splits go into which sprint |
+
+## Process
+
+1. **Provide the original story** — in As a / I want / So that + Gherkin format
+2. **Apply the 8 splitting patterns in order** — stop when one fits (workflow steps, business rules, data variations, acceptance criteria complexity, major effort, external dependencies, DevOps steps, or TADs)
+3. **Write each split story** — full user story format with acceptance criteria
+4. **Validate each split** — against the 5 INVEST criteria; especially: independently deliverable and distinct user value
+5. **Check completeness** — splits combined should equal the original; nothing lost in translation
+
+## Output Template
+
+```
+### Split using [Pattern Name]
+
+**Split 1:** [Summary title]
+- As a [persona], I want to [action], so that [outcome]
+- Given: [preconditions] | When: [action] | Then: [outcome]
+
+**Split 2:** [Summary title]
+- As a [persona], I want to [action], so that [outcome]
+- Given: [preconditions] | When: [action] | Then: [outcome]
+
+INVEST check:
+- Independent: [Yes / No — note if dependency exists]
+- Valuable: [Yes / No — each split delivers user value]
+- Small: [Yes / No — fits in one sprint?]
+```
+
+## Related Skills
+
+- `../user-story/SKILL.md` — format for writing split stories
+- `../user-story-mapping/SKILL.md` — story map tasks often need splitting before authoring
+
+## Application
+
+This is not arbitrary slicing — it's strategic decomposition that preserves user value while reducing complexity.
 
 ## Key Concepts
 

@@ -1,6 +1,24 @@
 ---
 name: writer-verification
-description: 'Use when someone wants existing writing reviewed, proofread, or improved — whether the request is about correctness (spelling, grammar), style (phrasing, clarity), or overall quality. Applies to any written text in Korean or English: blog posts, emails, documents, reports, or marketing copy. Also triggers when someone asks if their writing sounds natural or wants feedback before publishing.'
+description: >-
+  Use when existing writing needs reviewing, proofreading, or improvement.
+  Triggers on: "글 검토해줘", "맞춤법 확인", "proofread", "이 문장 자연스러워?", "글 다듬어줘",
+  "review my writing", "출판 전에 확인해줘", "표현이 어색한 것 같아", "문법 맞아?", "글 퀄리티 봐줘".
+  Best for: blog posts, emails, documents, reports, marketing copy in Korean or English.
+  Not for: writing new content from scratch (use technical-blog-writer or doc-coauthoring).
+scenarios:
+  - "이 이메일 자연스러워?"
+  - "블로그 포스트 올리기 전에 검토해줘"
+  - "Proofread this PR description"
+  - "문서 표현이 어색한 것 같아, 봐줘"
+  - "이 문장들 맞춤법이랑 스타일 체크해줘"
+  - "Does this read naturally to a native speaker?"
+compatibility:
+  optional:
+    - think-tool        # reasoning about which findings most affect reader experience
+  remote_mcp_note: >-
+    think-tool이 있으면 어떤 발견이 독자 경험에 가장 큰 영향을 미치는지 종합할 때 활용됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Writer Verification

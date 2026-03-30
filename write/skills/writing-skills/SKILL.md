@@ -1,6 +1,24 @@
 ---
 name: writing-skills
-description: Use when creating new skills, editing existing skills, writing SKILL.md content, or authoring skill documentation
+description: >-
+  Use when creating new skills, editing existing skills, or writing SKILL.md content.
+  Triggers on: "스킬 만들어줘", "새 skill 작성", "SKILL.md 써줘", "skill 개선해줘",
+  "create a skill", "skill documentation", "스킬 문서 작성", "workflow skill로 만들어줘".
+  Best for: building new reusable skills, iterating on existing skill quality, capturing workflows as skills.
+  Not for: project-specific documentation or one-off process notes.
+scenarios:
+  - "이 워크플로우를 skill로 만들어줘"
+  - "새 skill SKILL.md 작성해줘"
+  - "Create a skill for this repeatable process"
+  - "기존 skill 개선해줘"
+  - "I want to capture this pattern as a reusable skill"
+  - "Skill 설명이 너무 약한 것 같아, 개선해줘"
+compatibility:
+  optional:
+    - think-tool           # reasoning before finalizing description field to avoid workflow summaries
+  remote_mcp_note: >-
+    think-tool이 있으면 description 필드에 workflow 요약이 포함되지 않았는지 확인하는 데 활용됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Writing Skills

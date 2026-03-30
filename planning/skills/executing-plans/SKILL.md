@@ -1,6 +1,26 @@
 ---
 name: executing-plans
-description: Use when you have a written implementation plan to execute in a separate session with review checkpoints
+description: >-
+  Use when there is a written implementation plan to execute step by step with review checkpoints.
+  Triggers on: "계획 실행해줘", "plan 따라 구현해줘", "execute this plan", "implementation plan 실행",
+  "plan 파일 있는데 실행해줘", "서브에이전트 없이 계획 실행".
+  Best for: executing plans in a separate session without subagents, with checkpoint reviews.
+  Not for: creating plans (use writing-plans) or subagent-based execution (use subagent-driven-development).
+scenarios:
+  - "이 구현 계획 실행해줘"
+  - "Plan 파일 있는데 그대로 따라 실행해줘"
+  - "Execute this implementation plan step by step"
+  - "서브에이전트 없이 계획 실행해야 해"
+  - "Plan 있는데 단계별로 체크하면서 진행해줘"
+  - "Walk through this plan and execute it"
+compatibility:
+  recommended:
+    - sequential-thinking  # plan review and coherence check before execution
+  optional:
+    - think-tool           # confirming step intent and verification criteria before touching files
+  remote_mcp_note: >-
+    sequential-thinking이 있으면 계획의 일관성과 의존성 갭을 실행 전에 체계적으로 검토할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Executing Plans

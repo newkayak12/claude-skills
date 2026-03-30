@@ -1,10 +1,34 @@
 ---
 name: hypothesis-driven-dev
-description: 'Designs and runs product experiments using assumption mapping and Build-Measure-Learn loops. Use when testing a product idea before committing to building it, validating whether a key assumption is true, or designing the smallest possible experiment to reduce uncertainty. Covers fake door tests, concierge MVEs, validated learning, and discovery loops.'
+description: >-
+  Use when testing a product idea before committing to building it, or when a team
+  needs to validate a key assumption with the smallest possible experiment.
+  Triggers on: "hypothesis", "experiment design", "가설 검증", "실험 설계",
+  "최소 테스트", "fake door test", "Build-Measure-Learn", "assumption mapping",
+  "should we build this first". Best for: writing falsifiable hypotheses; choosing
+  the right MVE type (concierge, fake door, prototype); mapping risky assumptions
+  before engineering begins. Not for: post-launch metric analysis (use
+  metrics-interpretation); deciding what to build (use feature-prioritization).
 license: MIT
 metadata:
   author: wondelai
   version: "1.0.0"
+scenarios:
+  - "Help me write a hypothesis for this feature before we start building."
+  - "이 아이디어를 검증하기 위한 가장 작은 실험이 뭘까?"
+  - "Which assumptions are the riskiest in this product bet?"
+  - "가설 주도 개발로 불확실성을 줄이는 방법을 알려줘."
+  - "Design a fake door test for this feature to measure demand."
+  - "Build-Measure-Learn 루프를 어떻게 팀에 적용하면 될까?"
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - sequential-thinking
+    - mcp-reasoner
+  remote_mcp_note: >-
+    think-tool이 있으면 가설의 반증 가능성과 가장 위험한 가정을 체계적으로 검토하는 데 도움이 됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Hypothesis-Driven Development Framework
@@ -184,6 +208,23 @@ When a user asks to **evaluate their practice**, produce:
 | Are real behavior metrics being measured (not surveys)? | Data is self-reported preference, not actual behavior | Instrument real behavior: click tracking, completion rates, retention, conversion |
 | Is there a documented decision after each experiment? | Learning happens but direction doesn't change | Require a written learning record: what we tested, what we found, what we're doing next |
 | Does the opportunity tree connect experiments to the desired outcome? | Experiments feel disconnected from business goals | Build or update the opportunity tree before the next experiment cycle |
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Writes the four-part hypothesis formula and null hypothesis | Validates hypothesis against real business context |
+| Identifies riskiest assumptions with criticality × evidence matrix | Conducts the actual customer interviews and experiments |
+| Recommends MVE type matched to assumption type | Instruments real behavior tracking and reads results |
+| Scores team's hypothesis-driven practice (0-10) | Makes persevere / pivot / stop decisions after each loop |
+| Builds opportunity tree structure from provided outcomes | Owns weekly discovery cadence and team alignment |
+
+## Related Skills
+
+- `../customer-research-synthesis/SKILL.md` — feeds validated hypotheses into experiment design
+- `../feature-prioritization/SKILL.md` — high-confidence hypotheses inform RICE impact estimates
+- `../product-discovery/SKILL.md` — routes to this skill when continuous discovery is the practice
+- `../post-launch-retrospective/SKILL.md` — retrospective validates original hypothesis results
 
 ## Further Reading
 

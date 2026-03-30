@@ -1,8 +1,18 @@
 ---
 name: prd-development
-description: Build a structured PRD that connects problem, users, solution, and success criteria. Use when turning discovery notes into an engineering-ready document for a major initiative.
+description: >-
+  Use when turning scattered discovery notes, Slack threads, or stakeholder requests
+  into a structured PRD that engineers can act on. Triggers on: "PRD 작성", "기획서",
+  "제품 요구사항 문서", "write a PRD", "product requirements document", "engineering
+  handoff", "I need to document this feature". Best for: writing a complete PRD from
+  scratch across 8 structured phases; creating problem statement, personas, success
+  metrics, and user stories in one session; aligning cross-functional teams on scope
+  before engineering begins. Not for: small bug fixes or trivial features (overkill);
+  continuous discovery experiments (use hypothesis-driven-dev instead).
 intent: >-
-  Guide product managers through structured PRD (Product Requirements Document) creation by orchestrating problem framing, user research synthesis, solution definition, and success criteria into a cohesive document. Use this to move from scattered notes and Slack threads to a clear, comprehensive PRD that aligns stakeholders, provides engineering context, and serves as a source of truth—avoiding ambiguity, scope creep, and the "build what's in my head" trap.
+  Guide product managers through structured PRD creation by orchestrating problem
+  framing, user research synthesis, solution definition, and success criteria into a
+  cohesive document — moving from scattered notes to a clear source of truth.
 type: workflow
 theme: pm-artifacts
 best_for:
@@ -10,9 +20,22 @@ best_for:
   - "Structuring product requirements for an engineering handoff"
   - "Documenting a major new feature before development begins"
 scenarios:
-  - "I need a PRD for a new AI-powered recommendation feature in our e-commerce platform"
-  - "I've completed a discovery sprint and need to turn the findings into a PRD my engineers can act on"
+  - "I need a PRD for a new AI-powered recommendation feature in our e-commerce platform."
+  - "I've completed a discovery sprint and need to turn the findings into a PRD my engineers can act on."
+  - "PRD 템플릿에 맞춰 새 기능을 문서화해줘."
+  - "Help me write the problem statement and success metrics for this initiative."
+  - "기획서를 엔지니어가 바로 개발에 들어갈 수 있게 정리해줘."
+  - "We have user research findings — help me turn them into a PRD."
 estimated_time: "60-120 min"
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - sequential-thinking
+    - mcp-reasoner
+  remote_mcp_note: >-
+    think-tool이 있으면 문제 정의와 성공 지표 간 일관성, 스코프 경계의 논리를 검증하는 데 도움이 됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 ## Key Concepts
@@ -252,3 +275,24 @@ See `references/pitfalls.md` for symptom/consequence/fix detail on each pitfall.
 - Martin Eriksson, "How to Write a Good PRD" (2012) — PRD structure
 - Marty Cagan, *Inspired* (2017) — Product spec principles
 - Amazon, "Working Backwards" (PR/FAQ format) — Alternative to PRD
+
+---
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Guides 8-phase PRD structure with prompts and templates | Provides discovery findings, customer quotes, business context |
+| Drafts problem statement, persona profiles, solution description | Validates scope with engineering and design partners |
+| Writes success metrics (primary, secondary, guardrails) | Makes trade-off decisions on what is in vs. out of scope |
+| Generates user stories and acceptance criteria | Gets stakeholder sign-off on the final document |
+| Surfaces open questions and dependency gaps | Owns the living PRD and updates it as decisions are made |
+
+## Related Skills
+
+- `../customer-research-synthesis/SKILL.md` — feeds problem statement and JTBD into PRD Phase 2-3
+- `../competitive-analysis/SKILL.md` — feeds strategic context into PRD Phase 4
+- `../user-story-mapping-workshop/SKILL.md` — feeds solution overview into PRD Phase 5
+- `../technical-feasibility-assessment/SKILL.md` — feeds constraints section in PRD Phase 8
+- `../go-to-market-planning/SKILL.md` — receives completed PRD as primary input
+- `../hypothesis-driven-dev/SKILL.md` — PRD success metrics define the hypothesis to test

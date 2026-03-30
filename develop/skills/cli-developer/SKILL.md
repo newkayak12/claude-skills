@@ -1,6 +1,21 @@
 ---
 name: cli-developer
-description: 'Use when someone needs to build a command-line tool — defining subcommands, flags, and argument parsing; adding interactive prompts, progress bars, or shell completions; or distributing a cross-platform terminal application. Covers Node.js (commander), Python (typer/click), and Go (cobra). Related: sre-engineer for pipeline integration.'
+description: >-
+  Use when someone needs to build a command-line tool — defining subcommands, flags,
+  and argument parsing; adding interactive prompts, progress bars, or shell completions;
+  or distributing a cross-platform terminal application.
+  Triggers on: "build a CLI", "command-line tool", "terminal app", "argument parsing",
+  "shell completion", "interactive prompt", "commander", "click", "typer", "cobra",
+  "CLI 개발", "커맨드라인 툴 만들기".
+  Best for: Node.js (commander), Python (typer/click), Go (cobra) CLIs.
+  Not for: web UI, REST API servers, or SRE pipeline tooling (use sre-engineer for the latter).
+compatibility:
+  recommended: []
+  optional:
+    - think-tool
+  remote_mcp_note: >-
+    think-tool이 있으면 커맨드 계층 구조와 UX 설계를 더 체계적으로 검토할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 license: MIT
 metadata:
   author: https://github.com/Jeffallan
@@ -15,22 +30,46 @@ metadata:
 
 # CLI Developer
 
-## Core Workflow
+## When to Use / When Not to Use
 
-1. **Analyze UX** — Identify user workflows, command hierarchy, common tasks. Validate by listing all commands and their expected `--help` output before writing code.
+**Use when:**
+- Building a new CLI tool with subcommands, flags, config handling
+- Adding shell completions, progress bars, or interactive prompts
+- Distributing a cross-platform terminal binary
+
+**Do not use when:**
+- Building a web UI or REST API
+- The task is SRE pipeline integration only (use `sre-engineer`)
+
+## Process
+
+1. **Analyze UX** — Identify user workflows, command hierarchy, and common tasks. List all commands with expected `--help` output before writing code.
 2. **Design commands** — Plan subcommands, flags, arguments, configuration. Confirm flag naming is consistent and no existing signatures are broken.
-3. **Implement** — Build with the appropriate CLI framework for the language (see Reference Guide below). After wiring up commands, run `<cli> --help` to verify help text renders correctly and `<cli> --version` to confirm version output.
+3. **Select framework** — Node.js: `commander` → `yargs` → `oclif`; Python: `typer` → `click` → `argparse`; Go: `cobra + viper` → `bubbletea` (TUI only)
+4. **Implement** — Build with the chosen framework. After wiring commands, run `<cli> --help` to verify help text and `<cli> --version` for version output.
+5. **Polish** — Add completions, error messages, progress indicators. Verify TTY detection for color output and graceful SIGINT handling.
+6. **Test** — Cross-platform smoke tests; benchmark startup time (target: <50ms).
 
-   **Framework selection:**
-   - Node.js: `commander` (default) → `yargs` (if middleware/validation pipeline needed) → `oclif` (if plugin system needed)
-   - Python: `typer` (default, Python 3.10+) → `click` (if 3.7–3.9 support needed) → `argparse` (if zero-dependency required)
-   - Go: `cobra` + `viper` (default) → `bubbletea` (only if interactive TUI required; see `references/go-tui.md`)
-4. **Polish** — Add completions, help text, error messages, progress indicators. Verify TTY detection for color output and graceful SIGINT handling.
-5. **Test** — Run cross-platform smoke tests; benchmark startup time (target: <50ms).
+## Output Template
+
+For each CLI feature, provide:
+1. Command structure (main entry point, subcommands)
+2. Configuration handling (files, env vars, flags)
+3. Core implementation with error handling
+4. Shell completion scripts (if applicable)
+5. Brief note on UX decisions
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Designs command hierarchy and flag naming | Confirm the UX matches your user workflows |
+| Generates framework boilerplate (commander/typer/cobra) | Implement domain-specific business logic |
+| Writes TTY detection and SIGINT handling | Test on all target platforms |
+| Generates shell completion scripts | Verify completions in your actual shell |
+| Recommends cross-platform path handling | Run final distribution and packaging |
 
 ## Reference Guide
-
-Load detailed guidance based on context:
 
 | Topic | Reference | Load When |
 |-------|-----------|-----------|
@@ -38,16 +77,13 @@ Load detailed guidance based on context:
 | Node.js CLIs | `references/node-cli.md` | commander, yargs, inquirer, chalk |
 | Python CLIs | `references/python-cli.md` | click, typer, argparse, rich |
 | Go CLIs | `references/go-cli.md` | cobra, viper, error handling, testing, build/distribution |
-| Go TUI | `references/go-tui.md` | Interactive terminal UI (bubbletea, progress bars, spinners, color output) |
+| Go TUI | `references/go-tui.md` | bubbletea, progress bars, spinners |
 | UX Patterns | `references/ux-patterns.md` | Progress bars, colors, help text |
 
-## Quick-Start Example
-
-### Node.js (commander)
+## Quick-Start Example (Node.js / commander)
 
 ```js
 #!/usr/bin/env node
-// npm install commander
 const { program } = require('commander');
 
 program
@@ -67,50 +103,28 @@ program
 program.parse();
 ```
 
-For Python (click/typer) and Go (cobra) quick-start examples, see `references/python-cli.md` and `references/go-cli.md`.
+For Python (click/typer) and Go (cobra) examples, see `references/python-cli.md` and `references/go-cli.md`.
 
 ## Constraints
 
-### MUST DO
+**MUST DO:**
 - Keep startup time under 50ms
-- Provide clear, actionable error messages
 - Support `--help` and `--version` flags
 - Use consistent flag naming conventions
 - Handle SIGINT (Ctrl+C) gracefully
 - Validate user input early
+- Detect TTY before applying color output
 - Support both interactive and non-interactive modes
-- Test on Windows, macOS, and Linux
 
-### MUST NOT DO
+**MUST NOT DO:**
+- Print logs/diagnostics to stdout when output will be piped (use stderr)
+- Break existing command signatures — treat renames as breaking changes
+- Require interactive input in CI/CD without non-interactive flag fallbacks
+- Hardcode platform-specific paths (use `os.homedir()` / `Path.home()`)
+- Ship without shell completions
 
-- **Block on synchronous I/O unnecessarily** — use async reads or stream processing instead.
-- **Print to stdout when output will be piped** — write logs/diagnostics to stderr.
-- **Use colors when output is not a TTY** — detect before applying color:
-  ```js
-  // Node.js
-  const useColor = process.stdout.isTTY;
-  ```
-  ```python
-  # Python
-  import sys
-  use_color = sys.stdout.isatty()
-  ```
-  ```go
-  // Go
-  import "golang.org/x/term"
-  useColor := term.IsTerminal(int(os.Stdout.Fd()))
-  ```
-- **Break existing command signatures** — treat flag/subcommand renames as breaking changes.
-- **Require interactive input in CI/CD environments** — always provide non-interactive fallbacks via flags or env vars.
-- **Hardcode paths or platform-specific logic** — use `os.homedir()` / `os.UserHomeDir()` / `Path.home()` instead.
-- **Ship without shell completions** — all three frameworks above have built-in completion generation.
+## Related Skills
 
-## Output Templates
-
-When implementing CLI features, provide:
-1. Command structure (main entry point, subcommands)
-2. Configuration handling (files, env vars, flags)
-3. Core implementation with error handling
-4. Shell completion scripts if applicable
-5. Brief explanation of UX decisions
-
+- `mcp-builder` — if the CLI wraps an MCP tool
+- `sre-engineer` — for integrating CLI tools into SRE pipelines
+- `code-documenter` — for documenting CLI commands and flags

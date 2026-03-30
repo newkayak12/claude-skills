@@ -22,3 +22,5 @@ Portfolio and career skills for job search and interview preparation.
 | `portfolio-jd` | Analyze a job description and align your portfolio to it |
 | `portfolio-pattern` | Extract recurring patterns and strengths from your portfolio |
 | `portfolio-rewrite` | Rewrite portfolio content for clarity and impact |
+
+| `job-application-workflow` | End-to-end job application workflow — JD analysis through interview prep |

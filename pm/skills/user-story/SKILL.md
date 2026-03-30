@@ -1,19 +1,54 @@
 ---
 name: user-story
-description: 'Use when someone needs to write a single user story or a small set of stories — translating a known user need into a structured, development-ready format with acceptance criteria. Best fit when the problem is already understood and the work is authoring individual story artifacts, not planning a full backlog or mapping a workflow.'
-intent: >-
-  Create clear, concise user stories that combine Mike Cohn's user story format with Gherkin-style acceptance criteria. Use this to translate user needs into actionable development work that focuses on outcomes, ensures shared understanding between product and engineering, and provides testable success criteria.
+description: >-
+  Use when someone needs to write a single user story or a small set of stories — translating a known user need into a structured, development-ready format with acceptance criteria.
+  Triggers on: "write a user story", "user story format", "acceptance criteria", "As a user I want", "Gherkin criteria", "유저 스토리 써줘", "인수 조건 작성".
+  Best for: authoring individual story artifacts, converting PRD requirements to stories, establishing story quality standards.
+  Not for: splitting large epics (use user-story-splitting), mapping full workflows (use user-story-mapping), or writing problem statements before understanding the user need.
 type: component
 theme: pm-artifacts
-best_for:
-  - "Writing user stories with proper acceptance criteria"
-  - "Converting requirements into development-ready stories"
-  - "Establishing story quality standards across your team"
 scenarios:
   - "I need to write a user story for a new notification system in our B2B SaaS app"
   - "Convert this PRD requirement into a properly formatted user story with Gherkin acceptance criteria"
+  - "Write me a user story with Given/When/Then criteria for the checkout flow"
+  - "유저 스토리 포맷으로 이 기능 요건을 변환해줘"
+  - "인수 조건이 포함된 사용자 스토리 작성해줘"
 estimated_time: "5-10 min"
+compatibility:
+  recommended: []
+  optional:
+    - think-tool
+  remote_mcp_note: >-
+    think-tool이 있으면 완성된 스토리의 INVEST 기준 검증 품질이 높아집니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+
+## When to Use / When Not to Use
+
+**Use when:**
+- Translating a known user need into a development-ready artifact
+- Backlog grooming, sprint planning, or story authoring sessions
+- Establishing a shared story quality standard across PM and engineering
+
+**Not for:**
+- Stories that are too large — split first (see user-story-splitting)
+- Before the user problem is understood — validate the problem first
+- Technical tasks or refactoring tickets (no user value)
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Drafts As a / I want / So that structure | Validates persona accuracy against real users |
+| Writes Given/When/Then acceptance criteria | Confirms testability with QA |
+| Flags anti-patterns (task-style, vague, too large) | Decides on story scope and priority |
+| Validates against INVEST criteria | Signs off the story before it enters the sprint |
+
+## Related Skills
+
+- `../user-story-splitting/SKILL.md` — split stories that fail the "Small" INVEST check
+- `../user-story-mapping/SKILL.md` — generate a full story map first, then author individual stories
+- `../prd-development/SKILL.md` — PRD requirements decompose into user stories
 
 ## Key Concepts
 

@@ -1,6 +1,27 @@
 ---
 name: first-principles
-description: 'Breaks assumptions to foundational truths and rebuilds from scratch. Use when the current approach feels fundamentally flawed or too expensive, when inherited constraints need questioning, or when someone wants to think from the ground up — any situation where "why does this have to be this way?" is the right question.'
+description: >-
+  Use when the current approach feels fundamentally wrong, inherited constraints need questioning,
+  or someone wants to reason from the ground up.
+  Triggers on: "왜 이렇게 해야 해?", "기본부터 다시 생각해", "first principles", "가정을 의심해봐",
+  "이 방식 자체가 맞는 건지", "처음부터 다시 설계하면?", "why does it have to be this way?".
+  Best for: cost-reduction challenges, architectural redesigns, questioning inherited constraints.
+  Not for: routine decisions where existing solutions already work — reserve for novel situations.
+scenarios:
+  - "왜 배포가 2주나 걸려야 해? 진짜 필수적인 단계가 뭐야?"
+  - "배터리 비용이 왜 이렇게 비싸야 해? 원재료부터 생각해보자"
+  - "Why does onboarding have to take 3 weeks?"
+  - "이 아키텍처가 당연하다는 가정을 버리고 처음부터 설계하면 어때?"
+  - "We keep optimizing the wrong thing — what do we actually know for certain?"
+  - "레거시 제약 없이 설계하면 어떻게 될까?"
+compatibility:
+  recommended:
+    - think-tool        # Lens A decomposition and Lens C adversarial stress-testing
+  optional:
+    - mcp-reasoner      # for systematically evaluating reconstructed alternatives
+  remote_mcp_note: >-
+    think-tool이 있으면 Lens A 분해(가정 열거)와 Lens C 합성(반론 테스트)을 체계적으로 수행할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 license: MIT
 metadata:
   author: wondelai

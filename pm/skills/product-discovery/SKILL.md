@@ -1,10 +1,35 @@
 ---
 name: product-discovery
-description: 'Use when someone is uncertain which product development approach fits their situation, wants to evaluate or improve their discovery process, or is deciding between continuous discovery and fixed-cycle planning. Acts as a meta-framework that diagnoses organizational context and routes to Inspired (Cagan) or Shape Up accordingly.'
+description: >-
+  Use when uncertain which discovery approach fits the situation, or when evaluating
+  whether continuous discovery vs. fixed-cycle planning better suits the team.
+  Triggers on: "discovery process", "product discovery", "우리 팀에 맞는 프로세스가 뭘까",
+  "continuous discovery vs Shape Up", "how do we improve discovery", "sprint이 지옥 같아",
+  "백로그가 너무 많아서 뭐부터 해야 할지 모르겠어". Best for: diagnosing which framework
+  (Cagan or Shape Up) fits organizational context; combining both at different timescales;
+  improving a team's discovery-to-delivery pipeline. Not for: writing individual
+  hypotheses (use hypothesis-driven-dev); running a specific workshop (use
+  user-story-mapping-workshop or product-discovery session directly).
 license: MIT
 metadata:
   author: wondelai
   version: "1.0.0"
+scenarios:
+  - "Our team builds features but doesn't know if they're the right ones. How do we fix this?"
+  - "우리 팀이 계속 스프린트 지옥에 빠져 있어. 탈출하는 방법이 있을까?"
+  - "Should we use Shape Up or continuous discovery for our product team?"
+  - "discovery와 delivery가 분리되어 있어. 어떻게 연결하면 될까?"
+  - "Help me diagnose our team's current discovery practice and score it."
+  - "Shape Up과 continuous discovery를 같이 쓰는 방법이 있어?"
+compatibility:
+  recommended:
+    - sequential-thinking
+  optional:
+    - think-tool
+    - mcp-reasoner
+  remote_mcp_note: >-
+    sequential-thinking이 있으면 팀 상황 진단과 프레임워크 선택 로직을 단계적으로 처리하는 데 도움이 됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Product Discovery Framework

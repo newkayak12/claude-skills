@@ -1,6 +1,26 @@
 ---
 name: negotiation
-description: 'Prepares and guides any negotiation using tactical empathy, calibrated questions, and the Ackerman method. Use when someone needs to negotiate, persuade, or navigate a hard conversation — asking for a raise, contract discussions, handling repeated rejection, convincing a manager or client, or any situation where one party needs something from another and isn''t getting it.'
+description: >-
+  Use when someone needs to negotiate, persuade, or navigate a hard conversation.
+  Triggers on: "연봉 협상", "salary negotiation", "계약 협상", "거절당했어", "설득해야 해",
+  "협상 준비", "ask for a raise", "contract terms", "클라이언트 설득", "상사한테 어떻게 말해".
+  Best for: salary/raise asks, contract discussions, convincing a skeptical stakeholder.
+  Not for: pure conflict resolution without a desired outcome, or technical trade-off decisions.
+scenarios:
+  - "연봉 협상을 해야 하는데 어떻게 접근해야 해?"
+  - "클라이언트가 가격을 너무 낮게 제시했어, 어떻게 대응하지?"
+  - "I need to convince my manager to approve this project"
+  - "계약 조건이 마음에 안 드는데 어떻게 협상해?"
+  - "The other side keeps saying no — what do I do?"
+  - "입찰에서 자꾸 떨어지는데 뭔가 전략이 필요해"
+compatibility:
+  recommended:
+    - think-tool        # pre-negotiation reasoning about counterpart motivations and black swans
+  optional:
+    - sequential-thinking  # for multi-stage negotiation planning
+  remote_mcp_note: >-
+    think-tool이 있으면 협상 전 상대방 입장 분석과 Black Swan 탐색을 체계적으로 수행할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 license: MIT
 metadata:
   author: wondelai

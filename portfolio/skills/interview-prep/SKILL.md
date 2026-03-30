@@ -1,9 +1,72 @@
 ---
 name: interview-prep
-description: 'Use when someone needs a structured interview preparation plan — a study schedule, gap analysis by topic area, and STAR story prompts — before their interview process begins. This is planning, not practice. Triggers on "면접 준비 계획", "코딩테스트 어떻게 준비해", "기술 면접 공부법", "FAANG 준비". Prefer portfolio-interview when the user wants to practice answering questions live.'
+description: >-
+  Use when someone needs a structured interview preparation plan before their interview process begins — a study schedule, gap analysis by topic area, and STAR story bank. This is planning, not practice.
+  Triggers on: "interview prep plan", "how to prepare for FAANG", "coding test study plan", "면접 준비 계획", "코딩테스트 어떻게 준비해", "기술 면접 공부법", "FAANG 준비".
+  Best for: engineers 2-12 weeks out from interviews who need a structured plan; gap analysis by coding/system design/behavioral topics; calibrating study to a specific company type.
+  Not for: live interview practice (use portfolio-interview), portfolio review (use portfolio-feedback), or resume tailoring (use resume-tailorer).
+scenarios:
+  - "I have 8 weeks until my Google interview — give me a structured prep plan"
+  - "I'm preparing for Kakao backend engineer interviews — what should I study?"
+  - "Make me a FAANG interview prep schedule with STAR story prompts"
+  - "카카오 백엔드 면접 준비 계획 세워줘"
+  - "기술 면접 8주 전인데 어떻게 준비해야 해?"
+compatibility:
+  recommended: []
+  optional:
+    - sequential-thinking
+  remote_mcp_note: >-
+    sequential-thinking이 있으면 컨텍스트 수집 → 회사 캘리브레이션 → 갭 분석 → 플랜 생성 순서를 강제하여
+    갭 분석 전에 플랜부터 생성하는 흔한 오류를 방지합니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Interview Prep Planner
+
+## When to Use / When Not to Use
+
+**Use when:**
+- 2–12 weeks before an interview and you need a structured study plan
+- You want gap analysis across coding, system design, and behavioral topics
+- You need STAR story prompts calibrated to a specific company type
+
+**Not for:**
+- Live mock interview practice (use portfolio-interview)
+- Resume tailoring to a specific JD (use resume-tailorer)
+- General portfolio improvement (use portfolio-feedback or portfolio-rewrite)
+
+## Process
+
+1. **Gather context** — experience level, target company/role, timeline, interview format, biggest worry
+2. **Calibrate to company type** — FAANG, Korean Tier-1, growth startup, or enterprise — each tests differently
+3. **Identify weak areas** — coding, system design, behavioral across specific topic areas
+4. **Produce week-by-week plan** — primary focus, daily practice, named resources, measurable weekly milestone
+5. **Generate STAR story bank** — 6-8 behavioral story prompts matched to common question areas
+6. **Final week guidance** — consolidation, mock interviews, logistics prep
+
+## Standalone Inputs
+
+If following portfolio-feedback, portfolio-jd, or portfolio-company, you can start here by providing:
+- Your experience level and tech stack
+- Target company and role level
+- Interview timeline (weeks until interview)
+- Known format (e.g., 2 coding rounds + system design + behavioral)
+- Your biggest area of concern
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Calibrates study plan to company type (FAANG, Korean Tier-1, startup, enterprise) | Does the actual practice problems and mock interviews |
+| Identifies weak areas from your described background | Builds and refines your STAR story bank |
+| Produces week-by-week schedule with measurable milestones | Validates study plan with anyone who has done this interview |
+| Generates STAR story prompts for behavioral areas | Shows up rested and prepared on interview day |
+
+## Related Skills
+
+- `../portfolio-interview/SKILL.md` — practice answering questions live after building this plan
+- `../portfolio-feedback/SKILL.md` — overall portfolio assessment before targeting specific companies
+- `../portfolio-jd/SKILL.md` — JD-specific gap analysis if you have a posting
 
 ## Why Generic Prep Fails
 

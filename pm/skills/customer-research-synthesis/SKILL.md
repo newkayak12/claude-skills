@@ -1,15 +1,47 @@
 ---
 name: customer-research-synthesis
-description: 'Transforms raw qualitative research — interview notes, survey responses, session recordings — into structured insights, patterns, and actionable recommendations. Use when someone says "인터뷰 정리", "고객 인터뷰 분석", "리서치 결과 정리", "설문 분석", "고객 목소리", "VOC 정리", "UX research synthesis", "interview notes analysis", or wants to make sense of what customers told them. Also use when someone has raw interview transcripts and needs themes, Jobs-to-be-Done, or a clean insight summary to feed into PRD, prioritization, or hypothesis work.'
+description: >-
+  Use when raw qualitative research — interview notes, survey responses, session
+  recordings — needs to become structured insights that drive decisions.
+  Triggers on: "인터뷰 정리", "고객 인터뷰 분석", "리서치 결과 정리", "설문 분석", "VOC 정리",
+  "UX research synthesis", "interview notes analysis", "what did users tell us".
+  Best for: affinity mapping with n= counts; Jobs-to-be-Done extraction; insight
+  cards that feed PRD or prioritization. Not for: quantitative survey stats (use
+  metrics-interpretation); competitive research (use competitive-analysis).
 license: MIT
 metadata:
   author: wondelai
   version: "1.0.0"
+scenarios:
+  - "I have 10 interview transcripts — help me find the patterns."
+  - "고객 인터뷰 결과를 정리해서 PRD에 넣을 인사이트로 만들어줘."
+  - "Synthesize these survey verbatims into themes with evidence counts."
+  - "인터뷰 노트에서 Jobs-to-be-Done을 뽑아줘."
+  - "Which of these research findings are real patterns vs. one-off anecdotes?"
+  - "VOC 데이터를 우선순위 결정에 쓸 수 있게 정리해줘."
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - sequential-thinking
+    - mcp-reasoner
+  remote_mcp_note: >-
+    think-tool이 있으면 패턴과 일화를 구분하는 판단과 JTBD 추출의 논리를 검증하는 데 도움이 됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Customer Research Synthesis Framework
 
 A structured process for turning raw qualitative data — messy interview notes, survey verbatims, usability observations — into clear patterns, Jobs-to-be-Done, and insight cards that directly feed product decisions.
+
+## When to Use / When Not to Use
+
+| Use | Do Not Use |
+|-----|-----------|
+| Raw interview notes needing thematic structure | Quantitative survey with closed-ended stats |
+| Verbatim quotes needing n= pattern analysis | Competitive research (use competitive-analysis) |
+| Discovery research feeding a PRD or roadmap | Product analytics / behavioral data (use metrics-interpretation) |
+| Post-research readout that needs insight cards | Research planning or question design |
 
 ## Core Principle
 
@@ -182,10 +214,20 @@ When research will feed pricing work, flag WTP verbatims (e.g. "I'd pay $X", "th
 | Does the synthesis feed a hypothesis? | Learning doesn't reach the build process | Connect each insight card to a testable hypothesis |
 | Are segments analyzed separately? | Mixed-segment averages hide the real signal | Re-run clustering per segment if you have 2+ distinct user types |
 
-## Cross-Skill Connections
+## What Claude Does / What You Do
 
-- **Feeds into:** `../feature-prioritization/SKILL.md` — insight cards as prioritization evidence
-- **Feeds into:** `../prd-development/SKILL.md` — problem statement, personas, and Jobs-to-be-Done
-- **Feeds into:** `../hypothesis-driven-dev/SKILL.md` — validated hypotheses ready for experiment design
-- **Feeds into:** `../pricing-monetization-strategy/SKILL.md` — WTP signals from research
-- **Triggered after:** `../product-discovery/SKILL.md` customer research phase completes
+| Claude | You |
+|--------|-----|
+| Groups observations into affinity clusters with verb phrases | Conducts the actual interviews and recordings |
+| Counts n= occurrences and flags pattern vs. anecdote | Judges whether each participant is a representative sample |
+| Extracts Jobs-to-be-Done using the JTBD template | Validates JTBD accuracy against live customer context |
+| Writes insight cards (observation + evidence + implication) | Makes final decisions on what to build based on insights |
+| Chains insights to testable hypotheses | Decides experiment priority and runs the experiments |
+
+## Related Skills
+
+- `../feature-prioritization/SKILL.md` — insight cards as prioritization evidence
+- `../prd-development/SKILL.md` — problem statement, personas, and Jobs-to-be-Done
+- `../hypothesis-driven-dev/SKILL.md` — validated hypotheses ready for experiment design
+- `../pricing-monetization-strategy/SKILL.md` — WTP signals from research
+- `../product-discovery/SKILL.md` — triggered after the customer research phase completes

@@ -1,6 +1,25 @@
 ---
 name: writing-plans
-description: Breaks a spec or set of requirements into an ordered implementation plan before touching code. Use when the task is large enough that diving in without a plan would lead to rework — any feature with multiple moving parts, a migration, or a refactor with dependencies.
+description: >-
+  Use when a task is large enough that diving in without a plan leads to rework.
+  Triggers on: "구현 계획 써줘", "implementation plan", "코딩 전에 계획 잡아줘", "migration plan",
+  "이 기능 어떻게 나눠서 구현해?", "plan before coding", "스텝별로 정리해줘", "리팩토링 계획".
+  Best for: multi-part features, migrations, refactors with dependencies, anything with 3+ moving parts.
+  Not for: single-step tasks or already-planned work ready to execute (use executing-plans).
+scenarios:
+  - "이 기능 구현 계획 작성해줘"
+  - "DB 마이그레이션 단계별로 계획 잡아줘"
+  - "Create an implementation plan for this new service"
+  - "리팩토링 어떻게 단계별로 나눠야 해?"
+  - "I need a step-by-step plan before I start coding this"
+  - "의존성 있는 작업들 어떻게 순서 잡아?"
+compatibility:
+  optional:
+    - sequential-thinking  # for planning tasks with complex dependency chains
+    - think-tool           # reasoning about file structure and task boundaries
+  remote_mcp_note: >-
+    sequential-thinking이 있으면 복잡한 의존성 체인이 있는 계획을 단계별로 추적할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Writing Plans

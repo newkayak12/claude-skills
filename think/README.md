@@ -25,3 +25,5 @@ Thinking and ideation skills for better decisions and clearer ideas.
 | `microinteractions` | Design triggers, rules, feedback, and loops for polished product moments (Saffer) |
 | `negotiation` | Tactical empathy, calibrated questions, and the Ackerman method (Voss) |
 | `first-principles` | Decompose assumptions to irreducible truths and reconstruct from scratch (Aristotle + Musk/Munger) |
+
+| `deep-thinking-workflow` | End-to-end structured thinking — diverge, decompose, challenge, converge |

@@ -1,13 +1,66 @@
 ---
 name: portfolio-pattern
-description: 'Use when someone wants to understand the writing patterns in their portfolio — not what it says but how it reads: passive voice ratio, subject audit, number density, and decision visibility. The user is asking about narrative signals and habits, not requesting a rewrite or an overall score. Triggers on "패턴 분석해줘", "오너십이 잘 드러나나", "피동형 많이 썼나", "주어 분석".'
+description: >-
+  Use when someone wants to understand the writing patterns in their portfolio — not what it says but how it reads: passive voice ratio, subject audit, number density, and decision visibility.
+  Triggers on: "패턴 분석해줘", "오너십이 잘 드러나나", "피동형 많이 썼나", "주어 분석", "writing pattern analysis", "ownership signal audit", "how does my writing come across".
+  Best for: understanding narrative habits that hurt ownership perception; diagnosing passive voice, vague agency, and number-free impact claims before rewriting.
+  Not for: rewriting specific sentences (use portfolio-rewrite), overall quality scoring (use portfolio-feedback), JD-specific positioning (use portfolio-jd).
+scenarios:
+  - "Analyze the writing patterns in my portfolio — do I show ownership clearly?"
+  - "How much passive voice am I using and how does it affect my portfolio?"
+  - "Do my impact claims have numbers or are they all vague?"
+  - "내 포트폴리오 주어 비율 분석해줘"
+  - "오너십이 잘 드러나는지 패턴 분석 해줘"
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - sequential-thinking
+  remote_mcp_note: >-
+    think-tool이 있으면 "우리 팀이 구축했습니다"가 적절한 팀 크레딧인지 수동적 소유권 회피인지
+    구분하는 판단 품질이 높아집니다. Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Portfolio Writing Pattern Analyzer
 
-You are a linguist-turned-engineer who has read hundreds of technical portfolios. You know that how a candidate writes reveals as much as what they write — often more. Your job is to surface the patterns in a portfolio that an interviewer reads instinctively but the candidate never notices.
+## When to Use / When Not to Use
 
-This is not a grammar check. It is an ownership signal audit.
+**Use when:**
+- Wanting to understand how your writing reads to an interviewer before making changes
+- Diagnosing patterns: passive voice, vague participation language, number-free impact claims, missing decision visibility
+- You've received feedback that your portfolio lacks "ownership" but don't know where
+
+**Not for:**
+- Rewriting specific weak sections (use portfolio-rewrite)
+- Overall portfolio quality scoring (use portfolio-feedback)
+- JD-specific keyword matching (use portfolio-jd)
+
+## Process
+
+1. **Map the dimensions** — identify which patterns to analyze: subject ratio, agency language, number density, failure narrative, decision visibility, verb energy
+2. **Detect patterns** — tally each dimension; flag ambiguous cases with think-tool
+3. **Calculate ratios** — subject frequency (저는/제가 vs. 팀이 vs. passive); number-free impact claim rate
+4. **Identify top 3 patterns** — which most hurt (or help) this portfolio's impression; quote specific examples
+5. **Produce per-pattern fixes** — concrete, specific rewrites: not "use active voice" but exactly which sentence to change and how
+
+## Standalone Inputs
+
+Provide: your portfolio text (paste or upload). Korean-language portfolios are fully supported.
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Audits 6 dimensions: subject ratio, agency language, number density, failure narrative, decision visibility, verb energy | Provides the portfolio text |
+| Calculates approximate ratios (subject frequency, number-free impact claims) | Validates findings against your actual intent |
+| Identifies top 3 patterns hurting (or helping) the portfolio | Decides which patterns to address in a rewrite |
+| Gives one concrete fix per flagged pattern | Executes the rewrites (or uses portfolio-rewrite) |
+
+## Related Skills
+
+- `../portfolio-rewrite/SKILL.md` — act on the patterns identified here
+- `../portfolio-feedback/SKILL.md` — overall assessment alongside pattern analysis
+- `../portfolio-jd/SKILL.md` — after improving patterns, check fit against a specific JD
 
 ---
 

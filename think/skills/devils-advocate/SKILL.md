@@ -1,11 +1,27 @@
 ---
 name: devils-advocate
-description: 'Use when someone wants an idea, design, plan, or decision stress-tested through the strongest possible objections — not balanced feedback, but adversarial pushback. Trigger on: "반론 들어봐", "허점 찾아줘", "약점이 뭐야", "비판해줘", "반대 입장에서 봐줘", "문제점이 뭔지", "왜 안되는지", "devil''s advocate", "poke holes in", "tear this apart", "what''s wrong with this", "stress test", "worst case", "steelman the objection". Also trigger when someone shares a proposal and asks for counterarguments, objections, or explicitly wants pushback rather than help improving it.'
+description: >-
+  Use when someone wants their idea, plan, or decision stress-tested with the strongest possible objections.
+  Triggers on: "반론 던져줘", "약점 찾아줘", "이 계획 문제점이 뭐야?", "devil's advocate 해줘",
+  "결함 찾아줘", "비판해줘", "이 아이디어 왜 틀렸어?", "steel-man the opposite view",
+  "반대 의견 강하게 말해줘", "치명적 약점이 뭔지 알고 싶어".
+  Best for: pre-commitment stress testing, finding fatal flaws, adversarial design review.
+  Not for: balanced pro/con analysis or improvement help — this is adversarial critique only.
+scenarios:
+  - "MSA로 전환하자는 계획, 반론 세 가지 던져줘"
+  - "이 설계의 약점이 뭔지 공격적으로 말해줘"
+  - "Play devil's advocate on our go-to-market strategy"
+  - "우리 제품 아이디어 왜 실패할 수 있는지 말해줘"
+  - "이 결정에 반대하는 가장 강력한 주장이 뭐야?"
+  - "Punch holes in this architecture proposal"
 compatibility:
   optional:
-    - think-tool
-    - mcp-reasoner
-    - sequential-thinking
+    - think-tool        # pre-counterargument reasoning about assumptions and second-order effects
+    - mcp-reasoner      # for systematically evaluating whether objections are genuinely strong
+    - sequential-thinking  # for multi-step adversarial analysis
+  remote_mcp_note: >-
+    think-tool이 있으면 반론을 작성하기 전에 제안의 근본 가정과 2차 효과를 체계적으로 탐색할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Devil's Advocate

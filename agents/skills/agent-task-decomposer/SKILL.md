@@ -1,6 +1,28 @@
 ---
 name: agent-task-decomposer
-description: 'Use when a task is too large, ambiguous, or multi-part to hand to a single agent as-is — and the work needs to be broken into scoped subtasks with clear inputs, outputs, and constraints before any agent is dispatched. Distinct from dispatching-parallel-agents, which executes already-defined tasks; this skill produces the task definitions themselves.'
+description: >-
+  Use when a task is too large or ambiguous to hand to a single agent without first defining
+  clear subtask boundaries.
+  Triggers on: "큰 작업 분해해줘", "에이전트 분리해줘", "subtask로 나눠줘", "task decomposition",
+  "이 작업 어떻게 나눠야 해?", "agent에게 어떻게 전달해?", "병렬 작업 계획 잡아줘".
+  Best for: multi-agent orchestration planning, producing subtask definitions with prompts.
+  Not for: executing already-defined tasks (use dispatching-parallel-agents for that).
+scenarios:
+  - "이 큰 기능 여러 에이전트로 나눠서 처리해줘"
+  - "작업이 너무 크고 모호해서 subtask로 분해해줘"
+  - "Help me decompose this feature into agent-ready tasks"
+  - "에이전트한테 어떤 프롬프트로 전달할지 정리해줘"
+  - "의존성 있는 작업들 어떻게 나눠야 해?"
+  - "How should I split this into parallel and sequential agent work?"
+compatibility:
+  recommended:
+    - sequential-thinking  # enforces Steps 1-5 in order, prevents skipping dependency mapping
+  optional:
+    - think-tool           # reasoning about context isolation and subtask boundary quality
+  remote_mcp_note: >-
+    sequential-thinking이 있으면 task 파악 → subtask 경계 → 의존성 매핑 → context 분리 → 프롬프트 작성
+    순서를 올바르게 강제할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Agent Task Decomposer

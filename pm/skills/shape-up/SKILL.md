@@ -1,15 +1,73 @@
 ---
 name: shape-up
-description: 'Plans and executes product work in fixed 6-week cycles using appetite-based scoping and betting table decisions. Use when a team is drowning in backlog, cannot ship anything complete, or needs a planning process with real tradeoffs and real commitments. Covers shaping, pitches, betting, hill charts, and scope hammering.'
+description: >-
+  Use when a team is stuck in an infinite backlog, cannot ship complete features, or needs a planning process with real tradeoffs and hard commitments. Also use when setting up 6-week cycles, writing pitches, running a betting table, or replacing sprint estimates with appetite-based scoping.
+  Triggers on: "shape up", "6-week cycle", "appetite vs estimate", "pitch writing", "betting table", "scope hammering", "hill chart", "백로그 없애기", "6주 사이클", "피치 작성", "베팅 테이블".
+  Best for: teams replacing Scrum/sprints, PMs writing shaped pitches, leaders setting up betting table decisions.
+  Not for: single-story estimation, daily standups, bug triage prioritization, or OKR goal-setting.
 license: MIT
 metadata:
   author: wondelai
   version: "1.0.0"
+compatibility:
+  recommended: []
+  optional:
+    - think-tool
+    - sequential-thinking
+  remote_mcp_note: >-
+    think-tool이 있으면 피치 작성 시 토끼굴(rabbit hole)과 no-go 판단의 품질이 높아집니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Shape Up Framework
 
-A product development methodology for shipping meaningful work in fixed time without a backlog, sprints, or estimates. Developed at Basecamp and used for over a decade before being published publicly by Ryan Singer in 2019. The core insight: time is fixed, scope is variable — and that inversion changes everything about how you plan and build.
+## When to Use / When Not to Use
+
+**Use when:**
+- Team is drowning in a growing backlog and cannot ship complete work
+- You need to replace sprint-based planning with a fixed-time, variable-scope model
+- Writing or reviewing a shaped pitch before a betting table
+- Evaluating whether a team is actually practicing Shape Up or just renaming sprints
+
+**Not for:**
+- Individual story estimation or ticket grooming
+- Bug triage and hotfix prioritization
+- OKR goal-setting or roadmap planning at the portfolio level
+
+## Process
+
+1. **Set appetite** — leadership decides how much time the problem is worth (2 weeks or 6 weeks), before scoping begins
+2. **Shape the work** — senior PM/design produces a pitch: problem + rough solution + rabbit holes + explicit no-gos
+3. **Betting table** — leadership reviews shaped pitches and places bets; unselected pitches are dropped (no backlog)
+4. **Build** — small autonomous team owns the cycle; creates its own task breakdown; tracks via hill charts
+5. **Cool-down** — 2-week period between cycles; bug fixes, tech debt, pitch writing for the next cycle
+
+## Output Template
+
+```
+Pitch: [Name]
+Appetite: [Small batch 1-2 weeks / Big batch 6 weeks]
+Problem: [One paragraph — what user/business pain are we solving?]
+Solution sketch: [Fat-marker description — what the product does, not how it's built]
+Rabbit holes: [Named traps — things that would suck the team in for weeks; declare them off-limits]
+No-gos: [Explicit exclusions — what is OUT of this pitch]
+```
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Generates pitch structure from a described problem | Validates solution sketch with engineering before betting |
+| Identifies likely rabbit holes from described scope | Runs the betting table with leadership authority |
+| Scores team's Shape Up practice (0-10) with gap analysis | Enforces cycle end — no extensions |
+| Explains framework concepts (appetite, hill charts, etc.) | Decides which pitches get funded |
+| Produces diagnostic questions for your team | Protects cool-down from overflow work |
+
+## Related Skills
+
+- `../technical-feasibility-assessment/SKILL.md` — reality-check appetite before the betting table
+- `../prd-development/SKILL.md` — pitch can feed into a lightweight PRD
+- `../feature-prioritization/SKILL.md` — use before betting table to identify strongest candidates
 
 ## Core Principle
 

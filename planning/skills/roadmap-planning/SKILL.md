@@ -1,18 +1,29 @@
 ---
 name: roadmap-planning
-description: 'Use when someone needs to turn a set of product goals, customer problems, or competing initiatives into a structured, sequenced roadmap that stakeholders can align on — covering quarterly or half-year horizons. Also applies when an existing roadmap needs to shift from a feature list to an outcome-driven plan.'
-intent: >-
-  Guide product managers through strategic roadmap planning by orchestrating prioritization, epic definition, stakeholder alignment, and release sequencing skills into a structured process. Use this to move from disconnected feature requests to a cohesive, outcome-driven roadmap that aligns stakeholders, sequences work logically, and communicates strategic intent—avoiding "feature factory" roadmaps that lack strategic narrative or customer-centric framing.
+description: >-
+  Use when product goals or competing initiatives need to become a sequenced, stakeholder-ready roadmap.
+  Triggers on: "로드맵 만들어줘", "분기 계획", "roadmap planning", "이니셔티브 우선순위 정해줘",
+  "feature list를 outcome 기반으로 바꿔줘", "Q2 로드맵", "분기별 계획 세워줘", "이해관계자 정렬".
+  Best for: quarterly/half-year roadmaps, shifting from feature lists to outcome-driven plans.
+  Not for: sprint-level backlog planning or when strategy is still unclear.
+scenarios:
+  - "경쟁 이니셔티브 15개가 있는데 Q2 로드맵 만들어줘"
+  - "6개월 제품 로드맵을 세 팀 걸쳐 계획해야 해"
+  - "Help me build a roadmap that execs will actually approve"
+  - "feature list를 outcome 중심 로드맵으로 바꿔줘"
+  - "분기 계획 수립 어떻게 해야 해?"
+  - "We need to sequence work across multiple teams"
 type: workflow
 theme: strategy-positioning
-best_for:
-  - "Building a strategic roadmap that survives exec review"
-  - "Prioritizing competing initiatives across multiple teams"
-  - "Planning and sequencing work for the next quarter or half-year"
-scenarios:
-  - "I have 15 competing initiatives and need to build a Q2 roadmap my exec team will actually approve"
-  - "I'm planning our 6-month product roadmap and need to sequence work across 3 teams"
 estimated_time: "1-2 weeks (active facilitation: 45-90 min/day)"
+compatibility:
+  recommended:
+    - sequential-thinking  # dependency mapping for 8+ epics, topological ordering
+  optional:
+    - think-tool           # strategic override reasoning during prioritization
+  remote_mcp_note: >-
+    sequential-thinking이 있으면 에픽 의존성 그래프를 체계적으로 열거하고 위상 정렬할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 ## Key Concepts

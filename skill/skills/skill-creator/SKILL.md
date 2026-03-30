@@ -1,6 +1,24 @@
 ---
 name: skill-creator
-description: 'Builds, iterates, and evaluates Claude skills from scratch or from an existing draft. Use when someone wants to create a reusable skill, improve a skill that isn''t working well, or run tests to measure skill quality. Also triggers when a user wants to capture a repeatable workflow as a skill.'
+description: >-
+  Use when creating a new Claude skill from scratch or iterating on an existing draft.
+  Triggers on: "skill 만들어줘", "새 스킬 작성", "create a skill", "이 워크플로우 skill로 만들어줘",
+  "skill 개선해줘", "스킬 테스트해줘", "스킬 퀄리티 측정", "skill isn't working well".
+  Best for: building reusable skills, iterating on quality with evals, capturing repeatable workflows.
+  Not for: writing one-off instructions or project-specific conventions (put those in CLAUDE.md).
+scenarios:
+  - "이 반복 워크플로우를 재사용 가능한 skill로 만들어줘"
+  - "새 스킬 처음부터 만들어줘"
+  - "Create a skill for this pattern I keep using"
+  - "이 skill 개선하고 테스트해줘"
+  - "Skill이 잘 안 트리거돼서 개선해줘"
+  - "스킬 퀄리티 eval 돌려줘"
+compatibility:
+  optional:
+    - think-tool           # reasoning before finalizing improvements to avoid overfitting
+  remote_mcp_note: >-
+    think-tool이 있으면 스킬 개선 전 변경이 특정 예시에 과적합되지 않는지 검토할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Skill Creator

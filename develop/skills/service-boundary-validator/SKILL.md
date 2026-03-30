@@ -1,150 +1,48 @@
 ---
 name: service-boundary-validator
-description: 'Evaluates microservice decomposition — identifies distributed monolith patterns, shared database anti-patterns, excessive synchronous coupling, and unclear data ownership. Use when someone is deciding whether to split a service, suspects their services are too tightly coupled to deploy independently, wants to validate a proposed service boundary, or is decomposing a monolith.'
+description: >-
+  Use when someone is deciding whether to split a service, suspects their services are
+  too tightly coupled to deploy independently, wants to validate a proposed service
+  boundary, or is decomposing a monolith and needs to know where to cut.
+  Triggers on: "validate service boundary", "are we a distributed monolith",
+  "too tightly coupled", "should I split this service", "shared database anti-pattern",
+  "서비스 경계 검증", "분산 모놀리스", "서비스 분리", "데이터 소유권 분석".
+  Best for: coupling analysis, data ownership audit, split vs. merge decisions.
+  Not for: designing new service boundaries from scratch (use microservices-architect or event-storming).
+compatibility:
+  recommended:
+    - think-tool
+    - sequential-thinking
+  optional: []
+  remote_mcp_note: >-
+    think-tool이 있으면 커플링 패턴과 팀 토폴로지 정렬을 더 깊이 분석합니다.
+    sequential-thinking은 커플링 분석 → 데이터 소유권 → 팀 정렬 → 권고 순서를 강제합니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Service Boundary Validator
 
-The hardest problem in microservices is not building individual services — it is deciding where to cut them. A boundary drawn in the wrong place creates a distributed monolith: you have the operational complexity of microservices and none of the independence benefits. This skill applies DDD bounded context analysis and Team Topology principles to evaluate whether a service boundary is well-placed.
+## When to Use / When Not to Use
 
-If `sequential-thinking` is available, use it — skipping data ownership analysis before issuing a split recommendation is a high-probability, high-consequence failure. Work through: (1) coupling analysis → (2) data ownership → (3) team alignment → (4) recommendation.
+**Use when:**
+- Evaluating whether services can actually deploy independently
+- Suspecting a distributed monolith (coupled services with shared database or chatty sync calls)
+- Deciding whether to split or merge services
+- Auditing data ownership before a migration
 
-## The Test for a Well-Placed Boundary
+**Do not use when:**
+- Designing new boundaries from scratch — run `event-storming` first, then use `microservices-architect`
 
-A service boundary is correct if, and only if:
+## Process
 
-1. **The service can be deployed independently** without coordinating with other services.
-2. **A single team can own it** without requiring ongoing negotiation with other teams.
-3. **Its data is owned exclusively** — no other service writes to its database tables.
-4. **Its domain language is consistent** — terms do not shift meaning at the boundary.
-5. **Failure of this service degrades, but does not break, other services.**
+1. **Coupling analysis** — Map synchronous call graphs, shared databases, and bidirectional dependencies
+2. **Data ownership audit** — For each entity: which service creates, reads, updates, and deletes it?
+3. **Team alignment check** — Does each service map to one team? Apply the cognitive load test.
+4. **Recommendation** — Merge / split / convert to async / fix ownership
 
-If any of these five conditions fails, the boundary is suspect.
+If `sequential-thinking` is available, use it to work through these four steps in order — skipping data ownership analysis before issuing a split recommendation is a high-probability, high-consequence failure.
 
-## Red Flags: Distributed Monolith Patterns
-
-### 1. Shared Database
-
-**What it looks like:** Service A and Service B both write to the same database schema, or Service A reads Service B's tables directly via SQL.
-
-**Why it is fatal:** The database becomes the integration point. You cannot deploy Service A without verifying Service B is compatible with the schema change. You cannot optimize Service B's data model without auditing all of Service A's queries. The services are logically coupled at the data layer despite being "separate" services.
-
-**Fix:** Each service owns its data exclusively. Other services access it only through the owning service's API. If two services share a database because they need to join tables, that is a signal they may belong in the same service.
-
-```
-# Wrong
-OrderService ──reads──→ ┐
-                        ├── shared_db (orders, inventory, payments tables)
-InventoryService ────→  ┘
-
-# Right
-OrderService ──HTTP──→ InventoryService (owns inventory data)
-OrderService ──HTTP──→ PaymentService (owns payment data)
-```
-
-### 2. Chatty APIs (Temporal Coupling)
-
-**What it looks like:** To complete one user-facing operation, Service A makes 5+ synchronous HTTP calls to Services B, C, D in sequence before responding.
-
-**Why it is dangerous:** The P99 latency of the entire chain is the sum of each service's latency plus network overhead. Availability compounds: if each service is 99.9% available, three synchronous calls produce 99.7% availability. Every service in the chain must be healthy for any operation to succeed.
-
-**Diagnosis:**
-- Map the call graph for your top 10 operations
-- Count synchronous cross-service calls per operation
-- More than 3 synchronous hops in a user-facing request path is a warning sign
-
-**Fix options:**
-- **Merge services** if they are always called together and owned by the same team
-- **Async event-driven integration** for non-blocking workflows
-- **API composition / BFF** pattern at the edge to aggregate, not buried in service-to-service calls
-- **Data denormalization** — replicate the data you need locally (eventual consistency)
-
-### 3. Bidirectional Dependencies
-
-**What it looks like:** Service A calls Service B, and Service B also calls Service A.
-
-**Why it is a design smell:** Bidirectional dependencies make deployment order undefined and make it impossible to reason about which service is the source of truth. In practice, this means the services belong in one service or one of them is doing the wrong thing.
-
-**Fix:** Identify which direction is the natural authority relationship. The service that owns the data should not call the service that consumes it. Introduce an event or callback pattern if the consumer needs to communicate back.
-
-### 4. Distributed Monolith Deployment
-
-**What it looks like:** All services must be deployed simultaneously, or deployment of one service always requires deploying others.
-
-**Why it reveals the problem:** This means the services have implicit shared contracts (API versions, database schemas, message formats) that change together. The microservice architecture provides no deployment independence.
-
-**Diagnosis question:** "Can we deploy Service A on Monday and Service B the following Friday?" If no, the boundary is wrong or the API versioning strategy is broken.
-
-## Bounded Context Alignment
-
-A bounded context is the DDD unit that maps most naturally to a microservice. Each context has its own ubiquitous language — the same word may mean different things in different contexts, and that is correct.
-
-**Alignment signals (boundary is correct):**
-- Domain experts for this context form a coherent group who share vocabulary
-- The context's model does not leak into adjacent contexts
-- Events crossing the boundary are integration events, not internal domain events
-- A new team member can understand this context without understanding adjacent contexts
-
-**Misalignment signals (boundary is wrong):**
-- You constantly need to explain "in this service, 'customer' means X, but in that service it means Y for the same actual customer"
-- Domain experts cannot agree on service ownership — multiple teams claim the same concept
-- The service's core entity (e.g., `Order`) appears in many other services' databases
-
-## Team Topology Alignment
-
-Conways' Law states that system architecture mirrors the communication structure of the teams that build it. Use this deliberately.
-
-| Team Type | Service Type | Boundary Principle |
-|-----------|-------------|-------------------|
-| Stream-aligned | Business capability service | Owns a bounded context end-to-end |
-| Platform | Shared infrastructure service | Provides capabilities with well-defined APIs |
-| Enabling | Temporary accelerator | Not a permanent runtime service |
-| Complicated-subsystem | Specialist service (ML, codec) | Justified by rare expertise requirement |
-
-**Cognitive load test:** A stream-aligned team should be able to understand, test, deploy, and operate their services without requiring help from other teams more than a few times per quarter. If they need daily coordination, the boundary is wrong.
-
-## Data Ownership Analysis
-
-For each piece of data, ask: "Which service is the single source of truth?"
-
-```
-For each entity E:
-  1. Which service creates E? → That service owns E.
-  2. Which services read E? → They should call the owning service's API or receive events.
-  3. Which services update E? → Any service other than the owner is a violation.
-  4. Which services delete E? → Same as update — only the owner should delete.
-```
-
-If multiple services create or update the same logical entity, you have a data ownership conflict. Resolve by:
-- Assigning clear ownership to one service
-- Splitting the entity into two distinct entities owned by different services
-- Merging the services if they are inseparable
-
-## Splitting Decision Framework
-
-Use this when evaluating whether to split a service or keep it together:
-
-```
-Should service X be split into A and B?
-
-Yes, split if:
-  - A and B are owned by different teams
-  - A and B have different deployment frequencies
-  - A and B have different scaling requirements
-  - A and B have clearly distinct domains with different ubiquitous language
-  - A and B can fail independently
-
-No, keep together if:
-  - A and B always change together
-  - A and B are always called together in every operation
-  - A and B are owned by the same team with no plans to split
-  - Splitting would create a shared database problem
-  - The split introduces a distributed transaction requirement
-```
-
-## Coupling Analysis Output Template
-
-When reviewing a service architecture, produce:
+## Output Template
 
 ```
 Service: [Name]
@@ -162,13 +60,99 @@ Recommendation:
 - [Concrete action: merge / split / convert to async / fix ownership]
 ```
 
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Analyzes service call graph for chatty patterns | Provide the service dependency diagram or description |
+| Identifies shared database anti-patterns | Confirm which services access which tables |
+| Applies the 5 boundary tests | Validate against your team structure |
+| Runs the split decision framework | Make the final split or merge decision |
+| Drafts the coupling analysis report | Fill in actual data ownership from your codebase |
+
+## The 5 Tests for a Well-Placed Boundary
+
+A service boundary is correct only if all five hold:
+
+1. The service can be deployed independently without coordinating with other services
+2. A single team can own it without ongoing negotiation with other teams
+3. Its data is owned exclusively — no other service writes to its database tables
+4. Its domain language is consistent — terms do not shift meaning at the boundary
+5. Failure of this service degrades, but does not break, other services
+
+If any fails, the boundary is suspect.
+
+## Red Flags: Distributed Monolith Patterns
+
+### Shared Database
+
+Services A and B both write to the same schema, or A reads B's tables directly via SQL. The database becomes the integration point — schema changes require coordinating both services.
+
+**Fix:** Each service owns its data exclusively. Other services access it only through the owning service's API.
+
+### Chatty APIs (Temporal Coupling)
+
+To complete one user-facing operation, Service A makes 5+ synchronous calls to B, C, D in sequence.
+
+**Threshold:** More than 3 synchronous hops in a user-facing request path is a warning sign.
+
+**Fix options:** Merge if always called together; use async events for non-blocking workflows; BFF/API composition at the edge.
+
+### Bidirectional Dependencies
+
+Service A calls B, and B also calls A. This means deployment order is undefined and neither service is the source of truth.
+
+**Fix:** Identify the natural authority direction. Introduce an event or callback pattern if the consumer needs to communicate back.
+
+### Deployment Coupling
+
+All services must be deployed simultaneously. This reveals implicit shared contracts that change together — no deployment independence exists.
+
+**Diagnosis question:** "Can we deploy Service A on Monday and Service B the following Friday?"
+
+## Split Decision Framework
+
+```
+Should service X be split into A and B?
+
+Yes, split if:
+  - A and B are owned by different teams
+  - A and B have different deployment frequencies
+  - A and B have different scaling requirements
+  - A and B have clearly distinct ubiquitous language
+
+No, keep together if:
+  - A and B always change together
+  - A and B are always called together in every operation
+  - A and B are owned by the same team with no plans to split
+  - Splitting would create a shared database problem
+  - The split introduces a distributed transaction requirement
+```
+
+## Data Ownership Analysis
+
+```
+For each entity E:
+  1. Which service creates E? → That service owns E.
+  2. Which services read E? → They call the owning service's API or receive events.
+  3. Which services update E? → Any service other than the owner is a violation.
+  4. Which services delete E? → Same — only the owner deletes.
+```
+
 ## Quick Checklist
 
 - [ ] Each service has exactly one owning team
 - [ ] No service reads another service's database directly
 - [ ] Synchronous call chains are ≤ 3 hops for user-facing requests
-- [ ] No bidirectional synchronous dependencies between services
-- [ ] Services can be deployed independently (test: deploy one without the other)
+- [ ] No bidirectional synchronous dependencies
+- [ ] Services can be deployed independently
 - [ ] Each service's ubiquitous language is internally consistent
 - [ ] Data ownership is unambiguous for every entity
 - [ ] Cross-service writes use events + outbox, not shared transactions
+
+## Related Skills
+
+- `microservices-architect` — design new service boundaries after validation
+- `event-storming` — discover bounded contexts to inform boundary decisions
+- `transaction-boundary-reviewer` — fix cross-service transaction anti-patterns
+- `adr-writer` — document the split or merge decision

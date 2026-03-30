@@ -1,11 +1,66 @@
 ---
 name: portfolio-company
-description: 'Use when someone wants to know which companies or company types their portfolio would appeal to — without a specific JD in hand. Covers fit against large platforms (네이버, 카카오, 쿠팡), growth-stage startups, fintech/enterprise, and global tech. Triggers on "어느 회사에 잘 맞아?", "네이버 지원하려는데 어때?", "어디 써볼 만해?". Prefer portfolio-jd when the user has an actual job posting.'
+description: >-
+  Use when someone wants to know which companies or company types their portfolio would appeal to — without a specific JD in hand.
+  Triggers on: "which companies fit my portfolio", "where should I apply", "어느 회사에 잘 맞아?", "네이버 지원하려는데 어때?", "어디 써볼 만해?", "어떤 회사 유형이 맞아?".
+  Best for: candidates without a target company yet; fit scores across company types (large platform, startup, fintech, global tech); portfolio positioning advice.
+  Not for: JD-specific matching (use portfolio-jd), resume tailoring (use resume-tailorer), or live interview practice.
+scenarios:
+  - "Which Korean tech companies would my portfolio appeal to?"
+  - "Is my portfolio a good fit for Naver or Kakao?"
+  - "Tell me where I should be applying based on my portfolio"
+  - "어느 회사 유형에 내 포트폴리오가 잘 맞는지 분석해줘"
+  - "네이버 지원하려는데 내 포트폴리오 핏이 어때?"
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - sequential-thinking
+  remote_mcp_note: >-
+    think-tool이 있으면 회사 유형별 핏 점수 판단 품질이 높아집니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Portfolio × Company Fit Analyzer
 
-You are an experienced engineering recruiter and ex-interviewer who knows how different companies read the same portfolio very differently. Your job is to tell the candidate honestly: where will this portfolio open doors, and where will it close them?
+## When to Use / When Not to Use
+
+**Use when:**
+- Deciding where to apply without a specific JD in hand
+- Wanting a fit score across multiple company types at once
+- Needing honest feedback on where this portfolio would struggle
+
+**Not for:**
+- You have a specific job posting (use portfolio-jd)
+- You want to rewrite portfolio sections (use portfolio-rewrite)
+- You want overall feedback on portfolio quality (use portfolio-feedback)
+
+## Process
+
+1. **Characterize the portfolio** — what type of engineer does it most clearly represent? what are the strongest and weakest signals?
+2. **Plan analysis across company types** — identify which types are relevant; what each actually looks for vs. states
+3. **Score each company type** — fit score (X/10) + green flags + red flags + one concrete improvement action
+4. **Name Top 2 fits and worst fits** — where this portfolio is most and least competitive
+5. **Produce positioning suggestions** — if the target isn't the natural fit, what 2-3 changes would move the needle?
+
+## Standalone Inputs
+
+Provide: your portfolio (paste or describe key sections), and optionally any specific company names you're considering.
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Characterizes your portfolio type (platform builder, product engineer, etc.) | Decides which companies to target |
+| Scores fit across 5 company types with specific evidence | Validates fit signals with network contacts at target companies |
+| Names Top 2 best-fit and worst-fit company types | Makes final application decisions |
+| Recommends 2-3 portfolio changes to improve fit for a target type | Does the actual relationship building and applying |
+
+## Related Skills
+
+- `../portfolio-jd/SKILL.md` — once you've chosen a target, do JD-specific gap analysis
+- `../portfolio-rewrite/SKILL.md` — improve weak sections after identifying positioning gaps
+- `../portfolio-feedback/SKILL.md` — overall assessment before company fit analysis
 
 ---
 

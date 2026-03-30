@@ -1,56 +1,94 @@
 ---
 name: flaky-test-analyzer
-description: 'Diagnoses intermittent, non-deterministic test failures — root-causes flakiness from timing races, shared state pollution, external dependencies, test ordering, or CI environment differences, then provides concrete fixes. Use when tests pass locally but fail in CI, pass some runs and fail others, or someone suspects a test is unreliable but cannot reproduce the failure consistently.'
+description: >-
+  Use when tests pass locally but fail in CI, pass some runs and fail others, or someone
+  suspects a test is unreliable but cannot reproduce the failure consistently. Diagnoses
+  root causes and provides concrete fixes.
+  Triggers on: "flaky test", "intermittent test failure", "passes locally fails in CI",
+  "test is non-deterministic", "random test failure", "테스트가 가끔 실패", "간헐적 테스트 오류",
+  "CI에서만 실패하는 테스트", "flaky".
+  Best for: timing races, shared state pollution, ordering dependencies, CI environment differences.
+  Not for: consistently failing tests with a known error (those are bugs, not flakiness).
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - sequential-thinking
+  remote_mcp_note: >-
+    think-tool이 있으면 간헐적 실패의 근본 원인을 더 체계적으로 추론합니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Flaky Test Analyzer
 
-A flaky test is a test that fails intermittently without any change to the code under test. Flaky tests are actively harmful: they erode trust in the test suite, slow CI pipelines with re-runs, and mask real failures. The standard response — "just re-run it" — is the worst response because it normalizes unreliability and hides the root cause.
+## When to Use / When Not to Use
 
-Every flaky test has a deterministic root cause. This skill provides a systematic process to find it.
+**Use when:**
+- A test fails intermittently without code changes
+- Tests pass locally but fail in CI
+- Re-runs are being used as a workaround (treating symptoms, not the cause)
 
-If `sequential-thinking` is available, use it to work through Steps 1–5 in order — skipping triage before fixing is the primary failure mode.
+**Do not use when:**
+- The test fails consistently — that is a bug, not flakiness
+- You need to write new tests (use `test-master` or `test-driven-development`)
+
+## Process
+
+1. **Triage first** — identify the failure category before attempting a fix
+2. **Reproduce in isolation** — run only the failing test 20 times
+3. **Reproduce with ordering** — run the failing test after each other test in the suite
+4. **Add logging** — capture timestamps, thread names, and state snapshots at failure time
+5. **Check nondeterministic inputs** — search for `new Date()`, `Math.random()`, `UUID.randomUUID()`, `System.currentTimeMillis()`
+6. **Check resource cleanup** — verify `@AfterEach` teardown, unclosed streams, un-stubbed mocks
+
+If `sequential-thinking` is available, use it to work through steps 1–5 in order — skipping triage before fixing is the primary failure mode.
+
+## Output Template
+
+For each flaky test analysis, provide:
+1. Failure category (from the triage table below)
+2. Root cause diagnosis with evidence
+3. Concrete fix (code snippet)
+4. Prevention rule for the test suite
+5. Recommended CI configuration to catch this class of flakiness earlier
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Identifies failure category from symptom description | Provide the test code and failure log |
+| Explains why the root cause causes intermittent failure | Run the test 20 times in isolation to confirm |
+| Provides the specific fix pattern (waitFor, Clock injection, etc.) | Implement and verify the fix |
+| Suggests `@BeforeEach` / `@AfterEach` cleanup patterns | Apply to the full test suite |
+| Recommends CI flags (random ordering, etc.) | Configure CI pipeline |
 
 ## Triage: Find the Category First
-
-Before debugging, identify the failure category. Run the test in isolation, in parallel, in different orders, and on CI. The conditions under which it fails tell you the category.
 
 | Fails When | Category |
 |-----------|----------|
 | Run repeatedly in isolation | Timing dependency or resource leak |
 | Run after specific other tests | Ordering / shared state dependency |
 | Run in parallel | Concurrency or shared resource conflict |
-| Run on CI but not locally | Environment dependency (clock, timezone, file path, env var) |
+| Run on CI but not locally | Environment dependency (clock, timezone, path, env var) |
 | Run with real external systems | External dependency (network, DB, third-party API) |
-| Passes consistently after a sleep/wait | Timing / async race condition |
+| Passes after a sleep/wait | Timing / async race condition |
 
 ## The 5 Flakiness Categories
 
-For category-specific fix patterns and code examples, read `references/flaky-fix-patterns.md`.
+**1. Timing Dependencies** — Asserts on async work before it completes.
+Fix: use `waitFor`/`awaitility`, event-driven signals, or inject a controllable `Clock`. Never use `Thread.sleep`.
 
-**Category 1: Timing Dependencies** — Test asserts on async work before it completes. Fix: use `waitFor`/`awaitility`, event-driven signals, or inject a controllable `Clock`. Never use `Thread.sleep`.
+**2. Shared State Between Tests** — Tests pollute database, static variables, in-memory caches, or file system.
+Fix: reset state in `@BeforeEach`/`@AfterEach`; use `@Transactional` rollback or explicit truncate; prefer instance injection over singletons.
 
-**Category 2: Shared State Between Tests** — Tests pollute database, static variables, in-memory caches, or file system. Fix: reset state in `@BeforeEach`/`@AfterEach`; use `@Transactional` rollback or explicit truncate; prefer instance injection over singletons.
+**3. External Dependencies** — Tests call real HTTP APIs, databases, or message queues.
+Fix: mock at the boundary (WireMock, Mockito); use Testcontainers for integration tests needing a real DB.
 
-**Category 3: External Dependencies** — Tests call real HTTP APIs, databases, or message queues. Fix: mock at the boundary (WireMock, Mockito); use Testcontainers for integration tests needing a real DB.
+**4. Test Ordering Dependencies** — Test B implicitly relies on state created by Test A.
+Fix: self-contained setup per test; run tests in random order (`--randomly-seed=random`).
 
-**Category 4: Test Ordering Dependencies** — Test B implicitly relies on state created by Test A. Fix: each test owns its own setup; run tests in random order to detect (`--randomly-seed=random`).
-
-**Category 5: Concurrency and Parallelism** — Parallel tests share ports, files, or singletons. Fix: use port 0 (OS-assigned); inject resources so each test gets its own instance.
-
-## Debugging Process
-
-Follow these steps in order — stop when you find the cause:
-
-1. **Reproduce in isolation.** Run only the failing test 20 times: `mvn -Dtest=MyTest#myMethod test -count=20`. If it flakes in isolation, the cause is internal (timing, nondeterminism, resource leak).
-
-2. **Reproduce with ordering.** Run the failing test after each other test in the suite. When you find the pair that fails, you have the ordering dependency.
-
-3. **Add logging to the failure.** Print timestamps, thread names, and state snapshots at key points. Intermittent failures have intermittent states — the log captures the state at failure time.
-
-4. **Check for nondeterministic inputs.** Search for `new Date()`, `Math.random()`, `UUID.randomUUID()`, or `System.currentTimeMillis()` in the test or code under test. Replace with injected, controllable versions.
-
-5. **Check resource cleanup.** Does each test have a corresponding cleanup? Look for missing `@AfterEach` teardown, unclosed streams, or un-stubbed mocks leaking behavior.
+**5. Concurrency and Parallelism** — Parallel tests share ports, files, or singletons.
+Fix: use port 0 (OS-assigned); inject resources so each test gets its own instance.
 
 ## Fix Patterns Quick Reference
 
@@ -58,17 +96,25 @@ Follow these steps in order — stop when you find the cause:
 |-----------|-----|
 | Async race condition | Use `waitFor` / `awaitility`; never `Thread.sleep` |
 | System clock dependency | Inject `Clock`; use fixed clock in tests |
-| Database pollution | `@Transactional` rollback or explicit truncate in `@BeforeEach` |
+| Database pollution | `@Transactional` rollback or truncate in `@BeforeEach` |
 | Static/singleton state | Reset in `@BeforeEach`/`@AfterEach`; prefer instance injection |
 | Real HTTP/DB calls | Mock with WireMock, Mockito, or Testcontainers |
-| Ordering dependency | Self-contained setup; run tests in random order to detect |
-| Port conflict | Use port 0 (OS-assigned); never hardcode test ports |
+| Ordering dependency | Self-contained setup; run tests in random order |
+| Port conflict | Use port 0; never hardcode test ports |
 | Timezone sensitivity | Set `TZ=UTC` in CI; use `ZonedDateTime` not `Date` |
-| Random data collisions | Use unique test data per run (e.g., UUID prefix) |
+| Random data collisions | Use unique test data per run (UUID prefix) |
+
+For category-specific fix code examples, see `references/flaky-fix-patterns.md`.
 
 ## Prevention
 
 - Run tests in random order in CI by default
-- Fail the build on any test that is annotated `@Disabled` or `@Ignore` without a linked issue
-- Track flakiness rate per test over time; quarantine any test that flakes more than 1% of runs
-- Never commit a "re-run on failure" workaround without simultaneously creating a ticket to fix the root cause
+- Quarantine any test that flakes more than 1% of runs
+- Never commit a "re-run on failure" workaround without a ticket to fix the root cause
+- Fail the build on any `@Disabled` / `@Ignore` without a linked issue
+
+## Related Skills
+
+- `test-master` — writing new tests with built-in flakiness prevention
+- `test-driven-development` — TDD patterns that reduce flakiness by design
+- `chaos-engineer` — when you want to intentionally test failure behavior

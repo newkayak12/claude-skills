@@ -1,13 +1,67 @@
 ---
 name: portfolio-feedback
-description: 'Use when someone shares a portfolio and wants an overall assessment from an interviewer''s perspective — overall impression, scoring across dimensions (technical depth, ownership, impact narrative), and prioritized improvement areas. The user is asking how this looks overall, not asking to fix a specific section, compare to a JD, or practice for interviews. Triggers when a portfolio PDF is attached without a more specific request.'
+description: >-
+  Use when someone shares a portfolio and wants an overall assessment from an interviewer's perspective — overall impression, scoring across dimensions, and prioritized improvement areas.
+  Triggers on: "포트폴리오 피드백 해줘", "내 포트폴리오 어때?", "portfolio review", "how does my portfolio look", "review my portfolio", or when a portfolio is shared without a more specific request.
+  Best for: 5+ year backend engineers wanting an honest overall read; identifying which dimensions (technical depth, ownership, impact narrative) are strongest/weakest.
+  Not for: rewriting specific sections (use portfolio-rewrite), JD matching (use portfolio-jd), live interview practice (use portfolio-interview).
+scenarios:
+  - "Review my backend developer portfolio and give me honest feedback"
+  - "How would a senior engineer interviewer read my portfolio?"
+  - "Score my portfolio across technical depth, ownership, and impact narrative"
+  - "내 포트폴리오 인터뷰어 관점에서 평가해줘"
+  - "포트폴리오 강점과 약점 솔직하게 피드백 해줘"
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - sequential-thinking
+  remote_mcp_note: >-
+    think-tool이 있으면 각 차원의 점수 판단 품질이 높아집니다(예: "high traffic system"이 실제 스케일 경험인지
+    패턴 매칭인지 구분). Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Backend Developer Portfolio Feedback
 
-You are an experienced interviewer reviewing a portfolio for a senior (5+ year) backend developer. Your job is not to be nice — it is to give the candidate the honest, specific feedback they need to make their portfolio genuinely stronger.
+## When to Use / When Not to Use
 
-Before writing a single word of feedback, work through the three stages below.
+**Use when:**
+- Sharing a portfolio and wanting an overall honest read from an interviewer perspective
+- Getting a score across technical depth, system design, impact narrative, ownership, and storytelling
+- Understanding which areas to prioritize for improvement
+
+**Not for:**
+- Rewriting specific weak sentences (use portfolio-rewrite)
+- Comparing against a specific JD (use portfolio-jd)
+- Live interview simulation (use portfolio-interview)
+
+## Process
+
+1. **Plan the analysis** — overall shape of portfolio; what 2-3 things most determine senior bar; visible gaps at first glance
+2. **Select interviewer persona** — Staff Engineer / EM Startup / Enterprise Tech Lead / OSS DevTools Lead
+3. **Score 5 dimensions** — Technical Depth, System Design, Impact and Results, Leadership/Ownership, Portfolio Narrative
+4. **Write feedback** — first impression, dimension scores with evidence, impressive points, probe areas, 5 expected questions
+5. **Prioritize improvements** — Top 3 specific, actionable rewrites (not "add more detail" — name exactly what to change)
+
+## Standalone Inputs
+
+Provide: your portfolio (paste or upload). Optionally specify the target role level and company type for a calibrated review.
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Reviews portfolio as selected interviewer persona | Chooses which interviewer persona fits your target company |
+| Scores 5 dimensions with specific evidence | Provides missing facts (numbers, your actual role) when requested |
+| Lists top 3 improvement priorities — concrete, not generic | Decides which improvements to make before applying |
+| Generates 5 expected interview questions from this portfolio | Does the actual interviews and relationship building |
+
+## Related Skills
+
+- `../portfolio-rewrite/SKILL.md` — act on specific improvement areas after receiving feedback
+- `../portfolio-pattern/SKILL.md` — understand writing patterns (passive voice, subject audit) that affect perception
+- `../portfolio-interview/SKILL.md` — practice answering the expected interview questions
+- `../portfolio-company/SKILL.md` — identify which companies to target after improvement
 
 ---
 

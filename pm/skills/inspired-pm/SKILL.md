@@ -1,10 +1,32 @@
 ---
 name: inspired-pm
-description: "Use when someone wants to apply Marty Cagan's empowered product team model — building continuous discovery habits, shifting a team from output to outcome thinking, structuring weekly customer interviews, or assessing whether a product initiative has addressed all four product risks before committing to delivery."
+description: >-
+  Use when applying Marty Cagan's empowered product team model — continuous discovery,
+  outcome ownership, four-risk validation before delivery. Triggers on: "Marty Cagan",
+  "empowered team", "continuous discovery", "discovery vs delivery", "outcome not output",
+  "four product risks", "팀이 피처 공장이 된 것 같아", "고객 인터뷰를 정례화하고 싶어".
+  Best for: assessing a team's discovery practice; shifting from feature roadmap to
+  outcome roadmap; structuring weekly customer interviews. Not for: writing individual
+  user stories (use user-story); sprint execution (use shape-up or user-story-splitting).
 license: MIT
 metadata:
   author: wondelai
   version: "1.0.0"
+scenarios:
+  - "Our team is a feature factory — how do we shift to outcome thinking?"
+  - "팀에 continuous discovery 습관을 만들려면 어떻게 시작해야 할까?"
+  - "Assess our product team's discovery practice and score it."
+  - "출시 전에 네 가지 제품 리스크를 검토해줘."
+  - "How do I run weekly customer interviews as a product trio?"
+  - "엔지니어도 고객 인터뷰에 참여해야 하는 이유를 설명해줘."
+compatibility:
+  recommended: []
+  optional:
+    - think-tool
+    - mcp-reasoner
+  remote_mcp_note: >-
+    think-tool이 있으면 네 가지 제품 리스크 평가와 아웃컴 지표 설계에 도움이 됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Inspired Product Management Framework

@@ -1,12 +1,29 @@
 ---
 name: code-documenter
-description: 'Use when code, an API, or a project lacks documentation and needs it created or improved — adding docstrings or JSDoc to functions and classes, generating OpenAPI/Swagger specs from an existing API, building a documentation site, or writing tutorials and user guides. Applies regardless of language or framework; covers both inline code comments and full developer-facing documentation portals.'
+description: >-
+  Use when code, an API, or a project lacks documentation and needs it created or
+  improved — adding docstrings or JSDoc to functions and classes, generating OpenAPI/
+  Swagger specs from an existing API, building a documentation site, or writing tutorials
+  and user guides.
+  Triggers on: "add docstrings", "generate OpenAPI spec", "document this API",
+  "write JSDoc", "create a doc site", "문서 작성", "API 문서화", "코드 주석 추가",
+  "missing documentation", "undocumented code".
+  Best for: inline code documentation, OpenAPI spec generation, doc site setup.
+  Not for: architecture documentation (use adr-writer) or documentation strategy planning
+  (use documentation-strategy).
+compatibility:
+  recommended: []
+  optional:
+    - think-tool
+  remote_mcp_note: >-
+    think-tool이 있으면 문서 커버리지 전략과 정보 구조 설계를 더 체계적으로 검토합니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 license: MIT
 metadata:
   author: https://github.com/Jeffallan
   version: "1.1.0"
   domain: quality
-  triggers: documentation, docstrings, OpenAPI, Swagger, JSDoc, comments, API docs, tutorials, user guides, doc site, README, changelog, CHANGELOG, ADR, architecture decision record
+  triggers: documentation, docstrings, OpenAPI, Swagger, JSDoc, comments, API docs, tutorials, user guides, doc site, README, changelog
   role: specialist
   scope: implementation
   output-format: code
@@ -15,24 +32,48 @@ metadata:
 
 # Code Documenter
 
-Documentation specialist for inline documentation, API specs, documentation sites, and developer guides.
+## When to Use / When Not to Use
 
-## When to Use This Skill
+**Use when:**
+- Functions and classes lack docstrings, JSDoc, or KDoc
+- An existing API needs an OpenAPI/Swagger spec
+- The project needs a documentation site (Docusaurus, MkDocs, VitePress)
+- Writing tutorials, user guides, or troubleshooting docs
 
-Applies to any task involving code documentation, API specs, or developer-facing guides. See the reference table below for specific sub-topics.
+**Do not use when:**
+- You need architectural decision documentation (use `adr-writer`)
+- You need a documentation strategy plan (use `documentation-strategy`)
 
-## Core Workflow
+## Process
 
-1. **Discover** - Ask for format preference and exclusions. _Fallback: if the user does not specify a format preference, inspect the existing codebase for docstring or JSDoc style patterns first. If an existing convention is found, match it. If none is found, default to Google style for Python and JSDoc for TypeScript/JavaScript. State the chosen default explicitly before proceeding._
-2. **Detect** - Identify language and framework
-3. **Analyze** - Find undocumented code
-4. **Document** - Apply consistent format
-5. **Validate** - Test all code examples compile/run:
-   - Python: `python -m doctest file.py` for doctest blocks; `pytest --doctest-modules` for module-wide checks
-   - TypeScript/JavaScript: `tsc --noEmit` to confirm typed examples compile
-   - OpenAPI: validate spec with `npx @redocly/cli lint openapi.yaml`
-   - If validation fails: fix examples and re-validate before proceeding to the Report step
-6. **Report** - Generate coverage summary. _Coverage gate: flag any file below 70% function coverage or any API endpoint below 100% coverage as requiring follow-up documentation work — do not silently complete on low-coverage codebases._
+1. **Discover** — Ask for format preference and exclusions. If unspecified, inspect the codebase for existing conventions first; default to Google style (Python) or JSDoc (TypeScript/JS) if none found.
+2. **Detect** — Identify language and framework
+3. **Analyze** — Find undocumented public functions, classes, and API endpoints
+4. **Document** — Apply consistent format across all targets
+5. **Validate** — Test all code examples compile/run:
+   - Python: `python -m doctest file.py` or `pytest --doctest-modules`
+   - TypeScript/JavaScript: `tsc --noEmit`
+   - OpenAPI: `npx @redocly/cli lint openapi.yaml`
+6. **Report** — Generate coverage summary. Flag any file below 70% function coverage or any API endpoint below 100% coverage.
+
+## Output Template
+
+| Task | Output |
+|------|--------|
+| Code documentation | Documented files + coverage report |
+| API docs | OpenAPI spec + portal configuration |
+| Doc site | Site config + content structure + build instructions |
+| Guides/Tutorials | Structured markdown with examples |
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Detects existing docstring conventions | Confirm the format preference |
+| Generates docstrings/JSDoc from function signatures | Review for accuracy against real behavior |
+| Drafts OpenAPI spec from route handlers | Validate request/response examples against live API |
+| Configures doc site structure | Provide content for tutorials and guides |
+| Runs validation commands and reports coverage | Address files below the 70% coverage gate |
 
 ## Quick-Reference Examples
 
@@ -54,30 +95,6 @@ def fetch_user(user_id: int, active_only: bool = True) -> dict:
     """
 ```
 
-### NumPy-style Docstring (Python)
-```python
-def compute_similarity(vec_a: np.ndarray, vec_b: np.ndarray) -> float:
-    """Compute cosine similarity between two vectors.
-
-    Parameters
-    ----------
-    vec_a : np.ndarray
-        First input vector, shape (n,).
-    vec_b : np.ndarray
-        Second input vector, shape (n,).
-
-    Returns
-    -------
-    float
-        Cosine similarity in the range [-1, 1].
-
-    Raises
-    ------
-    ValueError
-        If vectors have different lengths.
-    """
-```
-
 ### JSDoc (TypeScript)
 ```typescript
 /**
@@ -85,24 +102,13 @@ def compute_similarity(vec_a: np.ndarray, vec_b: np.ndarray) -> float:
  *
  * @param {string} categoryId - The category to filter by.
  * @param {number} [page=1] - Page number (1-indexed).
- * @param {number} [limit=20] - Maximum items per page.
  * @returns {Promise<ProductPage>} Resolves to a page of product records.
  * @throws {NotFoundError} If the category does not exist.
- *
- * @example
- * const page = await fetchProducts('electronics', 2, 10);
- * console.log(page.items);
  */
-async function fetchProducts(
-  categoryId: string,
-  page = 1,
-  limit = 20
-): Promise<ProductPage> { ... }
+async function fetchProducts(categoryId: string, page = 1): Promise<ProductPage> { ... }
 ```
 
 ## Reference Guide
-
-Load detailed guidance based on context:
 
 | Topic | Reference | Load When |
 |-------|-----------|-----------|
@@ -112,41 +118,26 @@ Load detailed guidance based on context:
 | NestJS/Express API | `references/api-docs-nestjs-express.md` | Node.js API documentation |
 | Coverage Reports | `references/coverage-reports.md` | Generating documentation reports |
 | Doc Site Generators | `references/doc-site-generators.md` | Docusaurus, MkDocs, VitePress config |
-| Doc Site Infrastructure | `references/doc-site-infrastructure.md` | Search, versioning, testing, performance, analytics |
-| OpenAPI Advanced | `references/openapi-advanced.md` | OpenAPI 3.1 reusable components, security schemes |
-| API Portals | `references/api-portals.md` | Swagger UI customization, Redoc, Stoplight |
-| Multi-Protocol Docs | `references/multi-protocol-docs.md` | GraphQL, AsyncAPI/WebSocket, gRPC, SDK multi-language examples |
-| Tutorial Structure | `references/tutorial-structure.md` | Progressive learning paths, step-by-step format, checkpoints |
-| Information Architecture | `references/information-architecture.md` | Content hierarchy, navigation, progressive disclosure |
-| Troubleshooting & FAQs | `references/troubleshooting-faqs.md` | Problem-solution format, FAQ structure |
+| OpenAPI Advanced | `references/openapi-advanced.md` | Reusable components, security schemes |
+| Tutorial Structure | `references/tutorial-structure.md` | Progressive learning paths |
 
 ## Constraints
 
-### MUST DO
-- Ask for format preference before starting
-- Detect framework for correct API doc strategy
-- Document all public functions/classes
-- Include parameter types and descriptions
-- Document exceptions/errors
-- Test code examples in documentation
-- Generate coverage report
+**MUST DO:**
+- Ask for format preference before starting (or detect from existing code)
+- Document all public functions and classes
+- Include parameter types, descriptions, and exception docs
+- Test all code examples in documentation
+- Generate a coverage report
 
-### MUST NOT DO
-- Assume docstring format without asking
-- Apply wrong API doc strategy for framework
-- Write inaccurate or untested documentation
-- Skip error documentation
+**MUST NOT DO:**
+- Assume docstring format without asking or detecting
+- Write inaccurate or untested documentation examples
+- Skip exception/error documentation
 - Document obvious getters/setters verbosely
-- Create documentation that's hard to maintain
 
-## Output Formats
+## Related Skills
 
-Depending on the task, provide:
-1. **Code Documentation:** Documented files + coverage report
-2. **API Docs:** OpenAPI specs + portal configuration
-3. **Doc Sites:** Site configuration + content structure + build instructions
-4. **Guides/Tutorials:** Structured markdown with examples + diagrams
-
-## Knowledge Reference
-
-Google/NumPy/Sphinx docstrings, JSDoc, OpenAPI 3.0/3.1, AsyncAPI, gRPC/protobuf, FastAPI, Django, NestJS, Express, GraphQL, Docusaurus, MkDocs, VitePress, Swagger UI, Redoc, Stoplight
+- `adr-writer` — for documenting architectural decisions
+- `documentation-strategy` — for planning a documentation system
+- `code-documenter` + `frontend-developer` — generate JSDoc alongside React component builds

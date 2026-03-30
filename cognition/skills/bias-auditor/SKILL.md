@@ -1,69 +1,76 @@
 ---
 name: bias-auditor
-description: 'Use when someone is evaluating a person, explaining why someone behaved a certain way, or making a decision with expressed high confidence. Covers three bias layers: how we judge information (confirmation bias, anchoring, sunk cost), how we explain behavior (fundamental attribution error), and how well we know what we know (Dunning-Kruger, overconfidence). Distinct from fallacy-detector (logic structure) and epistemic-reasoner (calibration to evidence).'
+description: >-
+  Use when someone is evaluating a person, explaining behavior, or making a decision with
+  expressed high confidence — auditing three layers: how information is judged (confirmation bias,
+  anchoring, sunk cost), how behavior is explained (attribution errors), and how well someone
+  knows what they know (overconfidence, Dunning-Kruger).
+  Triggers on: "am I being biased", "why did they do that", "I'm sure about this", "편향 점검",
+  "확증 편향", "왜 이렇게 생각하는 걸까", "내 판단이 맞나".
+  Best for: high-stakes decisions, evaluating people, diagnosing why a conclusion feels certain.
+  Not for: logical fallacy detection (use fallacy-detector), evidence calibration (use epistemic-reasoner).
+
+scenarios:
+  - "Am I being biased in how I see this situation?"
+  - "Why do I keep jumping to this conclusion?"
+  - "Audit my reasoning for blind spots"
+  - "내 판단에 편향이 있는지 봐줘"
+  - "왜 나는 이 사람을 이렇게 평가하게 됐을까?"
+  - "내가 너무 확신하는 것 같아, 점검해줘"
+
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - sequential-thinking
+  remote_mcp_note: >-
+    think-tool이 있으면 세 가지 편향 레이어(판단·귀인·메타인지)를 순서대로 스캔하고
+    핵심 편향을 정밀하게 식별할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
+
 ---
 
 # Bias Auditor
 
-Biases are not signs of stupidity — they are the predictable output of cognitive machinery that evolved for a different environment. The problem is that this machinery runs automatically, without announcing itself, and systematically skews judgment in specific directions. The goal of this skill is to make the invisible machinery visible.
+## When to Use / When Not to Use
 
-This skill covers three layers of bias that compound each other:
+**Use when:**
+- Someone is evaluating a person and the framing feels dispositional rather than situational
+- A decision is being made with high expressed confidence
+- Explaining why something happened and a single clean narrative is dominating
 
-1. **Judgment biases** — systematic errors in how we evaluate information and make decisions
-2. **Attribution errors** — systematic errors in how we explain behavior (our own and others')
-3. **Metacognitive accuracy errors** — systematic errors in how well we know what we know
+**Not for:**
+- Structural errors in reasoning (use fallacy-detector)
+- Calibrating confidence to evidence (use epistemic-reasoner)
 
-## Step 1: Get the Judgment or Decision
+## Process
 
-Ask the user to describe the decision, belief, or situation as specifically as possible. The more concrete the case, the more precise the audit. Vague audits produce vague findings.
+**Step 1 — Gather the judgment.** Get the specific decision, belief, or evaluation as concretely as possible.
 
-If the situation is already described in context, state back the core judgment being made before proceeding.
+**Step 2 — Scan Layer 1: Judgment biases.**
 
-## Step 2: Scan for Judgment Biases
+| Bias | Signal |
+|------|--------|
+| Confirmation bias | Sought confirming info, avoided disconfirming |
+| Availability heuristic | Recent/vivid events overweighted |
+| Anchoring | First piece of info dominating subsequent estimates |
+| Sunk cost | Past investment justifying continued action |
+| Optimism/planning fallacy | Timelines or outcomes overestimated |
+| Framing effect | Conclusion changes with presentation format |
 
-Work through systematically. Flag only patterns actually present in this specific case.
+**Step 3 — Scan Layer 2: Attribution errors.**
+- Fundamental attribution error: blaming character vs. situation
+- Self-serving attribution: success = skill, failure = circumstances
+- Actor-observer asymmetry: lenient on self, strict on others
 
-### Information Selection Biases
+**Step 4 — Scan Layer 3: Metacognitive accuracy.**
+- Overconfidence / Dunning-Kruger pattern
+- Underconfidence / imposter pattern
+- Illusion of explanatory depth
 
-**Confirmation bias (확증 편향):** The tendency to seek, interpret, and remember information that confirms existing beliefs, and to discount or ignore disconfirming information. This is the most pervasive bias in complex decisions. Ask: what information would challenge this conclusion? Has the user looked for it?
+**Step 5 — Deliver the audit.** Flag only what's actually present.
 
-**Availability heuristic (가용성 휴리스틱):** Overweighting information that comes easily to mind — typically recent, vivid, or emotionally significant events. Example: overestimating plane crash risk after seeing news coverage. The question is always: is the ease of recall actually correlated with frequency or importance?
-
-**Anchoring (기준점 편향):** Over-relying on the first piece of information encountered. A salary negotiation anchored to an initial offer, a product anchored to its original price. The anchor shapes subsequent adjustments even when it was arbitrary.
-
-### Evaluation Biases
-
-**Sunk cost fallacy (매몰 비용 오류):** Continuing a course of action because of past investment (time, money, effort) rather than future expected value. The past investment is gone regardless of what you do next — the decision should be made entirely on forward-looking factors.
-
-**Status quo bias (현상유지 편향):** Preferring the current state over change, independent of whether the current state is actually better. Loss aversion and familiarity amplify this.
-
-**Optimism bias / Planning fallacy (낙관 편향):** Overestimating the likelihood of positive outcomes and underestimating time, costs, and obstacles in plans. This is near-universal in project planning.
-
-**Framing effects (프레이밍 효과):** The same information presented differently produces different judgments. "90% survival rate" and "10% mortality rate" are identical — but they are processed differently. If the framing of a choice is driving the conclusion, that's a bias.
-
-## Step 3: Scan for Attribution Errors
-
-These are distinct from judgment biases — they specifically concern how we explain *why* people (including ourselves) behave as they do.
-
-**Fundamental attribution error (근본적 귀인 오류):** Overattributing others' behavior to their character/personality and underattributing it to their situation or circumstances. Example: "She's always late — she's disrespectful" vs. "She's always late — her commute is brutal and her childcare situation is chaotic." We explain our own behavior situationally ("I was late because the train was delayed") but explain others' behavior dispositionally ("he's just unreliable").
-
-**Self-serving attribution (자기 위주 편향):** Taking credit for successes (attributing them to skill/character) while attributing failures to external factors. Example: "I succeeded because I'm smart; I failed because the market timing was bad." This is partly defensive and partly motivated reasoning.
-
-**Actor-observer asymmetry (행위자-관찰자 비대칭):** We know the full context of our own behavior but only see others' behavior from the outside. This makes us generous in interpreting our own actions and stringent in interpreting others'. We see our nuance; we see their pattern.
-
-When attribution errors are present, name the specific misattribution: "The explanation focuses on X's personality, but what situational factors might explain the same behavior?"
-
-## Step 4: Scan for Metacognitive Accuracy
-
-This layer asks: how well does the user know what they know?
-
-**Overconfidence / Dunning-Kruger pattern (과신 / 더닝-크루거):** In the classic Dunning-Kruger pattern, novices in a domain lack the metacognitive skill to recognize their incompetence — they don't know enough to know what they don't know. The result is unwarranted confidence at low skill levels, followed by a confidence dip as competence grows and the learner begins to see the full complexity of the domain, followed by calibrated confidence at high expertise. The audit question: where does the user's confidence level actually sit relative to their evident knowledge of the domain? Warning signs of overconfidence include: dismissing the need for expert input, assuming edge cases won't apply, and treating domain-specific questions as obvious.
-
-**Underconfidence / Imposter syndrome:** The mirror pattern — persistent underestimation of one's actual competence, often in high-achievers. Relevant when the user defers excessively to others on questions within their clear expertise, or disqualifies their own judgment reflexively.
-
-**Illusion of explanatory depth (설명 깊이의 착각):** People believe they understand how complex systems work (how a toilet flushes, how a law gets passed, how the economy works) until asked to explain it step by step. Confidence collapses upon articulation. This is relevant when a user expresses high confidence in understanding a complex mechanism they haven't actually had to explain in detail.
-
-## Step 5: Deliver the Audit
+## Output Template
 
 ```
 편향 감사 결과 / Bias Audit Results:
@@ -74,18 +81,27 @@ Impact: [What this likely distorts in the conclusion]
 
 귀인 오류 / Attribution Errors:
 [Error type]: [Where it appears]
-Alternative explanation: [What situational factors the current explanation ignores]
+Alternative explanation: [Situational factors the current explanation ignores]
 
 메타인지 정확도 / Metacognitive Accuracy:
-[Confidence level appears: calibrated / overconfident / underconfident]
+Confidence level: [calibrated / overconfident / underconfident]
 [Specific evidence for this assessment]
 
 핵심 편향 / Primary Bias:
-[The single most consequential bias in this case — the one most likely to be leading to a wrong conclusion]
+[The single most consequential bias — the one most likely driving a wrong conclusion]
 ```
 
-## What Changes After This Audit
+## What Claude Does / What You Do
 
-The audit should not just name biases — it should shift how the user is thinking about the decision. For each significant bias found, the question to leave the user with is: "Given this bias, what would you need to check or do differently before acting on this judgment?"
+| Claude | You |
+|--------|-----|
+| Scans all three bias layers systematically | Describe the decision or judgment concretely |
+| Names only biases that are actually present | Confirm whether the named pattern resonates |
+| Connects each bias to a concrete implication | Decide what to check or do differently before acting |
+| Identifies the single most consequential bias | Apply the corrective to the actual decision |
 
-Naming a bias without connecting it to a concrete implication is taxonomy, not thinking. Make it practical.
+## Related Skills
+
+- `fallacy-detector` — when the issue is argument structure, not cognitive bias
+- `epistemic-reasoner` — when the issue is calibrating confidence to evidence
+- `assumption-extractor` — when the issue is hidden premises rather than cognitive distortion

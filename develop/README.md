@@ -33,3 +33,5 @@ Engineering skills for software development workflows.
 | `performance-profiling-optimization` | Systematic bottleneck identification and CPU/memory/IO optimization |
 | `incident-response-playbook` | Developer-side incident lifecycle — triage, communication, mitigation, and RCA |
 | `documentation-strategy` | Plan and maintain architecture docs, API references, runbooks, and onboarding guides |
+
+| `dev-quality-workflow` | End-to-end dev quality workflow — architecture through incident readiness |

@@ -1,15 +1,84 @@
 ---
 name: 1-on-1-manager
-description: 'Helps managers run high-impact 1-on-1s that build trust, surface blockers, and accelerate growth. Use when a manager wants better 1-on-1s, feels like check-ins are just status updates, or needs to have a growth or feedback conversation with a direct report.'
+description: >-
+  Use when a manager wants to run better 1-on-1s — moving from status-update check-ins to growth and feedback conversations that build real trust with direct reports.
+  Triggers on: "improve my 1-on-1s", "1-on-1 feels like a status update", "how to have a growth conversation", "1on1 개선하고 싶어", "성장 대화 어떻게 해", "직원이랑 1on1을 잘 하는 법", "피드백 대화 어떻게 해".
+  Best for: managers whose 1-on-1s have become project status reports; preparing agenda for a specific growth or feedback conversation; setting up employee-led 1-on-1 structure.
+  Not for: IC prep for their own 1-on-1s (use 1-on-1-ic), promotion case writing (use leveling-manager), or team-wide performance issues.
 license: MIT
 metadata:
   author: wondelai
   version: "1.0.0"
+scenarios:
+  - "My 1-on-1s feel like status updates — help me run them better"
+  - "I need to have a growth conversation with a direct report who seems stuck"
+  - "Help me prepare coaching questions for my 1-on-1 with an engineer who wants to go to Staff"
+  - "1on1이 매번 프로젝트 상태 보고가 되고 있어 — 어떻게 개선해?"
+  - "직원 성장 대화를 1on1에서 어떻게 이끌어야 해?"
+compatibility:
+  recommended:
+    - think-tool
+  optional: []
+  remote_mcp_note: >-
+    think-tool이 있으면 특정 직원 상황에 맞는 코칭 질문 생성 품질이 높아집니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # 1-on-1 Manager Framework
 
-A framework for engineering managers and tech leads to run 1-on-1 meetings that actually matter. Most 1-on-1s fail because they become status updates — the manager asks "how's the project going?" and gets a project update. High-impact 1-on-1s are fundamentally different: they are the employee's meeting, focused on their growth, their blockers, and their relationship with their work.
+## When to Use / When Not to Use
+
+**Use when:**
+- 1-on-1s have become project status meetings
+- You want to run a specific growth, feedback, or career conversation
+- An employee is passive in meetings and you want to change the dynamic
+
+**Not for:**
+- IC prep for their own 1-on-1 (use 1-on-1-ic)
+- Writing a promotion case (use leveling-manager)
+- Team-wide process or performance issues
+
+## Process
+
+1. **Set cadence** — weekly, fixed time; never cancel, always reschedule
+2. **Create shared doc** — employee adds topics; manager adds at the bottom; both review before the meeting
+3. **Start with employee's agenda** — redirect project status to async channels
+4. **Coach, don't tell** — lead with "What do you think?" before offering perspective
+5. **Track growth** — document each employee's growth direction; revisit quarterly
+6. **Close the loop** — review last meeting's action items at the start of every meeting
+7. **Solicit upward feedback** — "What's one thing I could do differently?" at least monthly
+
+## Output Template
+
+When asked to help with a specific meeting:
+```
+Suggested agenda for 1-on-1 with [name]:
+
+1. Follow-through check: [commitments from last meeting]
+2. Employee topics (their priority order)
+3. Coaching questions for this situation:
+   - [Question 1 — open, employee-led]
+   - [Question 2 — growth-focused]
+   - [Question 3 — feedback invitation]
+4. One manager item (if time allows): [topic]
+
+Commitment to document: [specific follow-through item]
+```
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Generates coaching questions tailored to the employee's situation | Has the actual conversation; coaching requires human presence |
+| Scores current 1-on-1 practice (0-10) with highest-leverage improvement | Makes judgment calls about what the employee actually needs |
+| Suggests agenda structure for specific meeting types (growth, feedback, returning from leave) | Builds trust through consistency, follow-through, and honesty |
+| Drafts SBI-model feedback statements | Delivers feedback in person with appropriate tone |
+| Identifies if the "empty agenda" pattern is a signal worth investigating | Decides how to respond to what the employee actually brings |
+
+## Related Skills
+
+- `../1-on-1-ic/SKILL.md` — understand what your ICs are trying to do in the meeting
+- `../leveling-manager/SKILL.md` — 1-on-1 growth tracking feeds the promotion evidence log
 
 ## Core Principle
 

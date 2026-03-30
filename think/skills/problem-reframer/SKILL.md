@@ -1,6 +1,26 @@
 ---
 name: problem-reframer
-description: Finds a better question when all solutions feel wrong. Use when someone has already tried multiple approaches and none of them feel right — the problem keeps resisting, solutions feel shallow, or there's a nagging sense that the wrong thing is being solved. Routing: use this when solutions have been tried; use brainstorming when none have been tried yet.
+description: >-
+  Use when solutions keep feeling wrong or shallow — when the problem itself may be mis-defined.
+  Triggers on: "뭔가 잘못된 것 같아", "해결이 안 돼", "계속 이 문제가 반복돼", "다른 각도로 봐야 할 것 같아",
+  "wrong problem", "뭘 풀어야 하는지 모르겠어", "solutions feel off", "이 문제 자체가 맞는 건지".
+  Best for: stuck problems, recurring issues, situations where prior solutions all felt hollow.
+  Not for: generating new ideas when no solution has been tried yet (use brainstorming instead).
+scenarios:
+  - "계속 해결하려는데 같은 문제가 반복돼"
+  - "이 해결책들이 다 뭔가 어색한데, 내가 잘못된 걸 풀고 있는 건 아닐까?"
+  - "We keep shipping features but the metric doesn't move"
+  - "뭔가 근본적으로 잘못된 것 같은 느낌이 드는데"
+  - "I've tried three approaches and none of them feel right"
+  - "이 문제 자체를 다시 정의해야 할 것 같아"
+compatibility:
+  recommended:
+    - think-tool        # required gate: assumption enumeration before reframing begins
+  optional:
+    - sequential-thinking  # for multi-step reframe sequences
+  remote_mcp_note: >-
+    think-tool이 있으면 숨겨진 가정을 체계적으로 열거하는 필수 게이트 단계를 수행할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Problem Reframer

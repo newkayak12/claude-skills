@@ -1,13 +1,70 @@
 ---
 name: portfolio-interview
-description: Runs a realistic mock interview based on a backend developer's portfolio — the interviewer asks questions in character, evaluates answers, and gives coaching feedback in Korean. Use when the user says "모의 면접 해줘", "인터뷰 연습", "면접 준비 같이 해줘", "질문 던져줘", "포트폴리오 기반으로 면접 봐줘", or after portfolio-feedback when they want to practice defending their work. Always use this skill for interview simulation and practice.
+description: >-
+  Use when someone wants to practice defending their work in a realistic mock interview — the interviewer asks questions grounded in the actual portfolio, evaluates answers, and gives coaching feedback.
+  Triggers on: "모의 면접 해줘", "인터뷰 연습", "면접 준비 같이 해줘", "질문 던져줘", "포트폴리오 기반으로 면접 봐줘", "mock interview", "interview simulation", "practice interview".
+  Best for: 5+ year backend engineers preparing to defend their portfolio work; practicing technical depth probes, gap questions, and failure/recovery scenarios.
+  Not for: study planning (use interview-prep), portfolio review (use portfolio-feedback), JD gap analysis (use portfolio-jd).
+scenarios:
+  - "Run a mock interview with me based on my portfolio — use a staff engineer persona"
+  - "Ask me tough questions about my system design experience from my portfolio"
+  - "I want to practice answering interview questions about my work"
+  - "포트폴리오 기반으로 모의 면접 해줘"
+  - "내 포트폴리오 보고 어려운 질문 던져줘"
+compatibility:
+  recommended: []
+  optional:
+    - think-tool
+    - sequential-thinking
+  remote_mcp_note: >-
+    think-tool이 있으면 애매한 답변의 품질 판단 정확도가 높아지고,
+    sequential-thinking이 있으면 인터뷰 흐름(기술 → 리더십 → 행동)의 구조를 유지합니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Portfolio-Based Mock Interview
 
-You are running a realistic mock interview for a senior (5+ year) backend developer. The interview is grounded in the candidate's actual portfolio — you ask about what's in it, probe the gaps you see, and give honest evaluation after each answer.
+## When to Use / When Not to Use
 
-This is not a friendly Q&A. It is a simulation of what a real technical interview feels like: follow-up questions, pushback on vague answers, silence when something doesn't land.
+**Use when:**
+- Practicing how to defend your work under a realistic interview format
+- Wanting questions grounded in your actual portfolio (anchored, gap-probe, depth-drill)
+- After receiving portfolio-feedback and wanting to rehearse difficult questions
+
+**Not for:**
+- Building a prep plan from scratch (use interview-prep)
+- Overall portfolio quality assessment (use portfolio-feedback)
+- Resume tailoring to a JD (use resume-tailorer)
+
+## Process
+
+1. **Prepare interview plan** — identify 3-4 areas to probe; locate claims needing verification; plan question flow
+2. **Select persona** — Staff Engineer / EM Startup / Enterprise Tech Lead / OSS DevTools Lead
+3. **Run interview** — one question at a time; anchored questions, gap probes, depth drills, failure/recovery, hypotheticals
+4. **Give coaching notes** — after each answer: what landed, what didn't, what to add or cut
+5. **Closing feedback** — overall impression, strongest/weakest answers, one thing to work on most
+
+## Standalone Inputs
+
+If arriving here without prior portfolio-feedback, provide:
+- Your portfolio (paste or describe key projects)
+- Target company type or specific company
+- Desired interviewer persona (staff engineer / EM startup / enterprise tech lead / OSS/devtools)
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Plans interview flow: technical depth, gap probes, failure/recovery | Provides honest answers — this works only if you treat it as real |
+| Stays in chosen interviewer persona throughout | Requests persona change if it doesn't match your target company |
+| Gives coaching notes after each answer | Reflects on coaching notes and adjusts for the real interview |
+| Delivers closing feedback: overall impression, strongest/weakest answers | Decides which areas to practice more |
+
+## Related Skills
+
+- `../portfolio-feedback/SKILL.md` — get overall assessment before mock interview
+- `../interview-prep/SKILL.md` — build study plan covering topics exposed in this mock
+- `../portfolio-rewrite/SKILL.md` — improve weak portfolio sections that came up in the interview
 
 ---
 

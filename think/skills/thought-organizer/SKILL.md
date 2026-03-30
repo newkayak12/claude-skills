@@ -1,6 +1,26 @@
 ---
 name: thought-organizer
-description: "Use when someone has raw, unordered thoughts, notes, or ideas they need to make sense of before writing, presenting, or deciding. The input exists but lacks structure — there's no design question (that's brainstorming), just a need to see what's there and how the pieces relate. Produces outlines, mind maps, or concept maps depending on the goal."
+description: >-
+  Use when raw, scattered ideas or notes need structure before writing, presenting, or deciding.
+  Triggers on: "생각 정리해줘", "노트 정리", "머릿속이 복잡해", "아이디어 구조화", "outline 만들어줘",
+  "mind map", "이거 어떻게 엮어야 해?", "글 쓰기 전에 구조 잡아줘", "산만한 생각 정리".
+  Best for: pre-writing structure, mind-map creation, making sense of dumped notes.
+  Not for: designing something new (use brainstorming) or reframing a stubborn problem (use problem-reframer).
+scenarios:
+  - "머릿속에 있는 것들 정리 좀 해줘"
+  - "이 노트들 구조화해서 아웃라인 만들어줘"
+  - "I have a bunch of ideas — help me see how they relate"
+  - "발표 전에 내용 구조 잡아야 해"
+  - "앱 만들고 싶은데 생각이 너무 산만해"
+  - "복잡한 개념들 연결해서 정리해줘"
+compatibility:
+  recommended:
+    - think-tool        # surfaces gaps and unresolved tensions before delivering output
+  optional:
+    - sequential-thinking  # for clustering and ranking when input has 5+ distinct ideas
+  remote_mcp_note: >-
+    think-tool이 있으면 구조화 후 모순·누락·미해결 긴장을 체계적으로 검토할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Thought Organizer

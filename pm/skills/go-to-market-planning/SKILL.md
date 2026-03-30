@@ -1,13 +1,14 @@
 ---
 name: go-to-market-planning
 description: >-
-  GTM strategy — launch timing, channel selection, messaging, and rollout plan.
-  Trigger on: "GTM", "출시 전략", "런칭 계획", "go-to-market", "launch plan", "how do we launch",
-  "릴리즈 전략", "product launch", "launch readiness", "채널 전략", "who do we target first",
-  "launch messaging", "launch timeline", "beta launch", "soft launch", "launch checklist".
-  Also trigger when someone has a finished or near-finished product and is asking "what now?"
-  or when a PRD is complete and the conversation shifts to how to get it to market — even without
-  the words "GTM" or "launch plan."
+  Use when a product or feature is near-complete and the team needs to answer: who do
+  we target first, what do we say, where do we reach them, and how do we know the
+  launch succeeded? Triggers on: "GTM plan", "launch strategy", "출시 전략",
+  "론칭 계획", "how do we launch this", "launch phases", "beachhead segment".
+  Best for: planning a major product or feature launch end-to-end; defining phased
+  rollout (beta → limited → full); aligning sales, marketing, and product on launch
+  narrative. Not for: minor releases needing only a release note; pre-PMF products
+  where broad launch is premature; messaging strategy creation from scratch.
 type: workflow
 theme: pm-strategy
 best_for:
@@ -18,7 +19,19 @@ scenarios:
   - "We're shipping in 6 weeks — help me build a GTM plan."
   - "출시 전략을 짜야 하는데, 어디서부터 시작해야 할지 모르겠어."
   - "We have the PRD and we're building — now I need to figure out how to launch this."
+  - "Who should we target first for this launch, and what do we say to them?"
+  - "론칭 단계(베타→제한→전체)를 어떻게 나눌지 정해줘."
+  - "Help me define success metrics specifically for the launch, not the product."
 estimated_time: "90-180 min"
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - sequential-thinking
+    - mcp-reasoner
+  remote_mcp_note: >-
+    think-tool이 있으면 비치헤드 세그먼트 선정과 채널 선택의 트레이드오프 논리를 검증하는 데 도움이 됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 ## Purpose
@@ -246,6 +259,23 @@ Launch metrics are different from product health metrics. They measure the quali
 
 ---
 
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Builds beachhead segment scoring grid and channel selection matrix | Validates segment choice with actual customer knowledge |
+| Drafts message framework (tagline, elevator pitch, full value prop) | Tests messaging with target customers before launch |
+| Generates phased rollout template with success gates | Confirms timeline feasibility with engineering and marketing |
+| Writes pre-launch and launch-day checklists | Coordinates cross-functional execution (ops, sales, support) |
+| Defines launch success metrics separated from product health metrics | Owns the post-launch retrospective and metric tracking |
+
+## Standalone Inputs
+
+If no PRD or prior research exists, provide:
+- One-sentence product description and target segment
+- Top 1-2 competitors (for differentiation messaging)
+- Rough target launch date and rollout constraints
+
 ## Common GTM Anti-Patterns
 
 | Anti-Pattern | Symptom | Fix |
@@ -256,3 +286,11 @@ Launch metrics are different from product health metrics. They measure the quali
 | Launch metrics = product metrics | Team declares launch success because DAU went up marginally | Separate launch KPIs (acquisition, activation) from steady-state KPIs |
 | Messaging written by the PM alone | Copy is technical, feature-focused, not user-outcome-focused | Involve a marketer or conduct message testing before launch |
 | No rollback plan | Launch goes wrong; team scrambles to decide what to do | Write the rollback plan before launch day — decision-making under pressure is hard |
+
+## Related Skills
+
+- `../prd-development/SKILL.md` — PRD completion is the primary input for GTM planning
+- `../competitive-analysis/SKILL.md` — "Only We" statement and differentiators feed GTM core messaging
+- `../pricing-monetization-strategy/SKILL.md` — pricing tier and entry point are required GTM Canvas inputs
+- `../roadmap-communication/SKILL.md` — communicating the launch plan internally to stakeholders
+- `../post-launch-retrospective/SKILL.md` — receives the GTM success metrics as retrospective baseline

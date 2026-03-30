@@ -1,6 +1,11 @@
 ---
 name: roadmap-communication
-description: 'Focuses on ARTIFACTS and MESSAGES: turning a prioritized plan into clear audience-specific communication. Trigger on: "로드맵 공유", "왜 이 순서야", "로드맵 설명", "우선순위 설명", "이건 언제 해요", "roadmap communication", "how do I explain the roadmap", "how do I tell customers their feature is delayed", or whenever someone needs to present, document, or defend a roadmap to engineering, executives, customers, or sales. Use this skill when the challenge is WHAT TO SAY — crafting the message and format. For managing the actual person blocking or disagreeing, use stakeholder-management instead.'
+description: >-
+  Focuses on ARTIFACTS and MESSAGES: turning a prioritized plan into clear, audience-specific
+  communication that lands with engineering, executives, customers, or sales.
+  Use when the challenge is WHAT TO SAY — how to explain ordering decisions, respond to
+  "why not this feature," or communicate a delay without damaging trust.
+  For managing the actual person blocking or disagreeing, use stakeholder-management instead.
 license: MIT
 metadata:
   author: wondelai

@@ -1,11 +1,27 @@
 ---
 name: brainstorming
-description: "Use when someone wants to design or build something that doesn't have a clear spec yet — a new feature, product, tool, or system where the shape of the solution still needs to be worked out. Not for bug fixes or changes to already-designed things. Routing: use problem-reframer if the problem itself keeps resisting, and thought-organizer if the user has scattered ideas to sort rather than something to design."
+description: >-
+  Use when something needs to be designed or built and the shape of the solution isn't clear yet.
+  Triggers on: "어떻게 만들지?", "기능 설계해줘", "아키텍처 잡아줘", "뭘 어떻게 구현해야 해?",
+  "design this feature", "how should we build X?", "새 서비스 어떻게 시작하지?".
+  Best for: new features, tools, systems, or products without a spec yet.
+  Not for: bug fixes, changes to already-designed things, or when the problem itself keeps resisting
+  (use problem-reframer) — or when scattered ideas need organizing (use thought-organizer).
+scenarios:
+  - "OAuth 로그인 기능 어떻게 설계해?"
+  - "알림 시스템 새로 만들어야 하는데 어떻게 접근해?"
+  - "We need to design a rate limiting system"
+  - "새 CLI 툴 어떻게 구조 잡으면 좋을까?"
+  - "How should I architect this new microservice?"
+  - "대시보드 기능 추가하려는데 어디서부터 시작해?"
 compatibility:
   optional:
-    - think-tool
-    - sequential-thinking
-    - mcp-reasoner
+    - think-tool        # surfaces trade-offs before presenting approaches
+    - sequential-thinking  # for multi-step design sequences
+    - mcp-reasoner      # for evaluating complex architectural alternatives
+  remote_mcp_note: >-
+    think-tool이 있으면 설계 옵션을 제시하기 전에 trade-off를 체계적으로 검토할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Brainstorming Ideas Into Designs
