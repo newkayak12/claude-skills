@@ -1,6 +1,6 @@
 ---
 name: devils-advocate
-description: 'Use only when someone deliberately asks for adversarial critique — they want objections, counterarguments, weaknesses, or stress-testing of an idea they already hold. Do not trigger for design questions, general reviews, or clarification requests. The distinguishing signal is that the user is explicitly inviting pushback, not just asking for analysis.'
+description: 'Use when someone wants an idea, design, plan, or decision stress-tested through the strongest possible objections — not balanced feedback, but adversarial pushback. Trigger on: "반론 들어봐", "허점 찾아줘", "약점이 뭐야", "비판해줘", "반대 입장에서 봐줘", "문제점이 뭔지", "왜 안되는지", "devil''s advocate", "poke holes in", "tear this apart", "what''s wrong with this", "stress test", "worst case", "steelman the objection". Also trigger when someone shares a proposal and asks for counterarguments, objections, or explicitly wants pushback rather than help improving it.'
 compatibility:
   optional:
     - think-tool
