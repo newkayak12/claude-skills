@@ -1,0 +1,11 @@
+{
+  "name": "agents",
+  "description": "Agent orchestration skills: dispatching parallel agents, subagent-driven development, and task decomposition.",
+  "version": "1.1.0",
+  "author": {
+    "name": "newkayak12"
+  },
+  "category": "productivity",
+  "repository": "https://github.com/newkayak12/claude-skills",
+  "license": "MIT"
+}

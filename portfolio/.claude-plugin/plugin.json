@@ -1,0 +1,11 @@
+{
+  "name": "portfolio",
+  "description": "Portfolio and career skills: JD analysis, portfolio rewriting, company research, feedback, pattern extraction, interview prep, resume tailoring, and job-application-workflow.",
+  "version": "1.1.0",
+  "author": {
+    "name": "newkayak12"
+  },
+  "category": "productivity",
+  "repository": "https://github.com/newkayak12/claude-skills",
+  "license": "MIT"
+}
