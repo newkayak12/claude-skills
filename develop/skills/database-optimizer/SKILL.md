@@ -1,6 +1,25 @@
 ---
 name: database-optimizer
-description: 'Use when database slowness stems from infrastructure concerns rather than query authoring: server memory and I/O configuration, connection pooling, lock contention, VACUUM and statistics maintenance, partitioning design, or cloud-managed database parameter tuning. Also applies when an EXPLAIN plan is in hand but the next step is tuning the server or schema structure rather than rewriting the SQL.'
+description: >-
+  Use when database slowness stems from infrastructure concerns rather than query
+  authoring: server memory and I/O configuration, connection pooling, lock contention,
+  VACUUM and statistics maintenance, partitioning design, or cloud-managed database
+  parameter tuning. Also applies when an EXPLAIN plan is in hand but the next step
+  is tuning the server or schema structure rather than rewriting the SQL.
+  Triggers on: "database slow after indexing", "EXPLAIN plan shows sequential scan",
+  "shared_buffers tuning", "VACUUM not running", "PostgreSQL parameter tuning",
+  "RDS parameter group", "데이터베이스 성능 튜닝", "쿼리 실행 계획 분석".
+  Best for: PostgreSQL/MySQL server tuning, EXPLAIN plan interpretation, index strategy.
+  Not for: SQL query rewriting (use sql-pro) or connection pool sizing (use connection-pool-tuner).
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - sequential-thinking
+  remote_mcp_note: >-
+    think-tool이 있으면 병목 원인 분석과 최적화 우선순위 결정을 더 체계적으로 수행합니다.
+    sequential-thinking은 베이스라인 캡처 → 변경 → 검증 순서를 강제합니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 license: MIT
 metadata:
   author: https://github.com/Jeffallan
@@ -15,75 +34,75 @@ metadata:
 
 # Database Optimizer
 
-Senior database optimizer with expertise in performance tuning, query optimization, and scalability across multiple database systems.
+## When to Use / When Not to Use
 
-## When to Use This Skill
+**Use when:**
+- EXPLAIN plan is in hand but the fix is server config, not query rewriting
+- Investigating lock contention, VACUUM lag, or statistics staleness
+- Tuning `shared_buffers`, `work_mem`, or InnoDB buffer pool
+- Designing partitioning strategy or index structure
 
-- Analyzing slow queries and execution plans
-- Designing optimal index strategies
-- Tuning database configuration parameters
-- Optimizing schema design and partitioning
-- Reducing lock contention and deadlocks
-- Improving cache hit rates and memory usage
+**Do not use when:**
+- The fix is rewriting a slow SQL query (use `sql-pro`)
+- The bottleneck is connection pool exhaustion (use `connection-pool-tuner`)
 
-## Initial Triage
+## Process
 
-Before loading any reference or generating SQL, confirm:
+1. **Initial triage** — Confirm: database engine + version, deployment type (self-managed vs. cloud-managed), and whether direct connection is available
+2. **Capture baseline** — Run `EXPLAIN (ANALYZE, BUFFERS)` before any changes
+3. **Identify bottlenecks** — Find inefficient queries, missing indexes, config issues from the plan
+4. **Design solutions** — Index strategy, query rewrites, schema or config improvements
+5. **Implement incrementally** — One change at a time; validate each before proceeding
+6. **Validate results** — Re-run `EXPLAIN ANALYZE`, compare costs, measure wall-clock improvement
 
-1. **Database engine and version** — PostgreSQL vs. MySQL; minimum version matters for `CONCURRENTLY`, `INCLUDE`, `EXPLAIN ANALYZE`, and parallel workers
-2. **Deployment type** — self-managed server, Docker/VM, or cloud-managed (RDS, Cloud SQL, Aurora, PlanetScale, Neon, etc.)
-   - On cloud-managed: `ALTER SYSTEM` and `my.cnf` edits are unavailable; use parameter groups / console settings instead
-3. **Access mode** — direct connection available, or user will paste EXPLAIN output manually
+> On cloud-managed databases (RDS, Cloud SQL, Aurora): `ALTER SYSTEM` and `my.cnf` edits are unavailable. Use parameter groups or the console instead.
 
-> Generating `CONCURRENTLY` DDL for MySQL, recommending `ALTER SYSTEM` on Amazon RDS, or asking for `pg_stat_statements` data from a MySQL 5.7 user are the most common incorrect-advice failure modes — triage prevents them.
+Use `sequential-thinking` if available — it enforces the baseline-capture step and prevents skipping directly to index creation.
 
-## Core Workflow
+## Output Template
 
-> Use `mcp__claude_ai_sequential-thinking__sequentialthinking` for this workflow when available — it creates enforced checkpoints and prevents skipping the baseline-capture step. Each step becomes a committed phase with a visible summary before the next begins.
+For each optimization task, provide:
+1. Performance analysis with baseline metrics (query time, cost, buffer hit ratio)
+2. Identified bottlenecks with EXPLAIN evidence
+3. Optimization strategy with specific changes
+4. Implementation SQL / config changes
+5. Validation queries to measure improvement
+6. Monitoring recommendations
 
-1. **Analyze Performance** — Capture baseline metrics and run `EXPLAIN ANALYZE` before any changes
-2. **Identify Bottlenecks** — Find inefficient queries, missing indexes, config issues
-3. **Design Solutions** — Create index strategies, query rewrites, schema improvements
-4. **Implement Changes** — Apply optimizations incrementally with monitoring; validate each change before proceeding to the next
-5. **Validate Results** — Re-run `EXPLAIN ANALYZE`, compare costs, measure wall-clock improvement, document changes
+## What Claude Does / What You Do
 
-> ⚠️ Always test changes in non-production first. Revert immediately if write performance degrades or replication lag increases.
+| Claude | You |
+|--------|-----|
+| Reads EXPLAIN output and identifies plan patterns | Provide the actual EXPLAIN output |
+| Recommends index type (B-tree, covering, partial, expression) | Run `CREATE INDEX CONCURRENTLY` in your environment |
+| Generates parameter tuning recommendations | Apply via parameter group or `ALTER SYSTEM` |
+| Writes validation queries to measure improvement | Confirm improvement in production-scale data |
+| Flags cloud-managed platform constraints | Verify access level (console vs. direct connection) |
 
 ## Reference Guide
 
-Load detailed guidance based on context:
-
 | Topic | Reference | Load When |
 |-------|-----------|-----------|
-| Query Optimization | `references/query-optimization.md` | Analyzing slow queries, execution plans |
-| Index Design | `references/index-design-patterns.md` | B-tree, covering, partial, expression, specialized index types |
-| Index Maintenance | `references/index-maintenance-types.md` | Maintenance, anti-patterns, design checklist |
-| PostgreSQL Memory & WAL | `references/postgresql-memory-wal.md` | Memory config, query planner, WAL, write performance |
-| PostgreSQL VACUUM & Locking | `references/postgresql-vacuum-locking.md` | VACUUM, connection pooling, lock management, partitioning |
-| MySQL Memory & I/O | `references/mysql-memory-io.md` | InnoDB memory, I/O config, query optimization, indexes |
-| MySQL Replication | `references/mysql-replication-partitioning.md` | Replication, partitioning, table maintenance, config file |
-| PostgreSQL Monitoring | `references/monitoring-postgresql.md` | pg_stat_statements, connections, locks, alerts |
-| MySQL Monitoring | `references/monitoring-mysql.md` | Performance schema, InnoDB status, alerts |
+| Query Optimization | `references/query-optimization.md` | Slow queries, execution plan analysis |
+| Index Design | `references/index-design-patterns.md` | B-tree, covering, partial, expression indexes |
+| PostgreSQL Memory & WAL | `references/postgresql-memory-wal.md` | shared_buffers, work_mem, WAL config |
+| PostgreSQL VACUUM & Locking | `references/postgresql-vacuum-locking.md` | VACUUM, connection pooling, lock management |
+| MySQL Memory & I/O | `references/mysql-memory-io.md` | InnoDB memory, I/O config |
+| PostgreSQL Monitoring | `references/monitoring-postgresql.md` | pg_stat_statements, connections, locks |
+| MySQL Monitoring | `references/monitoring-mysql.md` | Performance schema, InnoDB status |
 
-## Common Operations & Examples
+## EXPLAIN Output — Key Patterns
 
-### Identify Top Slow Queries (PostgreSQL)
+| Pattern | Symptom | Typical Remedy |
+|---------|---------|----------------|
+| `Seq Scan` on large table | No filter selectivity | Add B-tree index on filter column |
+| `Nested Loop` with large outer set | Exponential row growth | Consider Hash Join; index inner join key |
+| `cost=... rows=1` but actual rows=50000 | Stale statistics | Run `ANALYZE <table>` |
+| `Buffers: hit=10 read=90000` | Low cache hit rate | Increase `shared_buffers`; add covering index |
+| `Sort Method: external merge` | Sort spilling to disk | Increase `work_mem` for the session |
+
 ```sql
--- Requires pg_stat_statements extension
-SELECT query,
-       calls,
-       round(total_exec_time::numeric, 2)  AS total_ms,
-       round(mean_exec_time::numeric, 2)   AS mean_ms,
-       round(stddev_exec_time::numeric, 2) AS stddev_ms,
-       rows
-FROM   pg_stat_statements
-ORDER  BY mean_exec_time DESC
-LIMIT  20;
-```
-
-### Capture an Execution Plan
-```sql
--- Use BUFFERS to expose cache hit vs. disk read ratio
+-- Always use BUFFERS to see cache hit vs. disk read ratio
 EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
 SELECT o.id, c.name
 FROM   orders o
@@ -92,73 +111,22 @@ WHERE  o.status = 'pending'
   AND  o.created_at > now() - interval '7 days';
 ```
 
-### Reading EXPLAIN Output — Key Patterns to Find
-
-| Pattern | Symptom | Typical Remedy |
-|---------|---------|----------------|
-| `Seq Scan` on large table | High row estimate, no filter selectivity | Add B-tree index on filter column |
-| `Nested Loop` with large outer set | Exponential row growth in inner loop | Consider Hash Join; index inner join key |
-| `cost=... rows=1` but actual rows=50000 | Stale statistics | Run `ANALYZE <table>;` |
-| `Buffers: hit=10 read=90000` | Low buffer cache hit rate | Increase `shared_buffers`; add covering index |
-| `Sort Method: external merge` | Sort spilling to disk | Increase `work_mem` for the session |
-
-### Create a Covering Index
-```sql
--- Covers the filter AND the projected columns, eliminating a heap fetch
-CREATE INDEX CONCURRENTLY idx_orders_status_created_covering
-    ON orders (status, created_at)
-    INCLUDE (customer_id, total_amount);
-```
-
-### Validate Improvement
-```sql
--- Before optimization: save plan & timing
-EXPLAIN (ANALYZE, BUFFERS) <query>;   -- note "Execution Time: X ms"
-
--- After optimization: compare
-EXPLAIN (ANALYZE, BUFFERS) <query>;   -- target meaningful reduction in cost & time
-
--- Confirm index is actually used
-SELECT indexname, idx_scan, idx_tup_read, idx_tup_fetch
-FROM   pg_stat_user_indexes
-WHERE  relname = 'orders';
-```
-
-### MySQL: Find Slow Queries
-```sql
--- Inspect slow query log candidates
-SELECT * FROM performance_schema.events_statements_summary_by_digest
-ORDER  BY SUM_TIMER_WAIT DESC
-LIMIT  20;
-
--- Execution plan
-EXPLAIN FORMAT=JSON
-SELECT * FROM orders WHERE status = 'pending' AND created_at > NOW() - INTERVAL 7 DAY;
-```
-
 ## Constraints
 
-### MUST DO
-- Capture `EXPLAIN (ANALYZE, BUFFERS)` output **before** optimizing — this is the baseline
-- Measure performance before and after every change
-- Create indexes with `CONCURRENTLY` (PostgreSQL) to avoid table locks
+**MUST DO:**
+- Capture `EXPLAIN (ANALYZE, BUFFERS)` before any changes — this is the baseline
+- Create PostgreSQL indexes with `CONCURRENTLY` to avoid table locks
 - Test in non-production; roll back if write performance or replication lag worsens
-- Document all optimization decisions with before/after metrics
-- Run `ANALYZE` after bulk data changes to refresh statistics
+- Make one change at a time — measure before making the next change
 
-### MUST NOT DO
+**MUST NOT DO:**
 - Apply optimizations without a measured baseline
 - Create redundant or unused indexes
-- Make multiple changes simultaneously (impossible to attribute impact)
-- Ignore write amplification caused by new indexes
-- Neglect `VACUUM` / statistics maintenance
+- Make multiple changes simultaneously
+- Use `ALTER SYSTEM` on Amazon RDS or other cloud-managed databases
 
-## Output Templates
+## Related Skills
 
-When optimizing database performance, provide:
-1. Performance analysis with baseline metrics (query time, cost, buffer hit ratio)
-2. Identified bottlenecks and root causes (with EXPLAIN evidence)
-3. Optimization strategy with specific changes
-4. Implementation SQL / config changes
-5. Validation queries to measure improvement
-6. Monitoring recommendations
+- `sql-pro` — rewriting slow queries when the server is correctly configured
+- `connection-pool-tuner` — pool sizing after server config is validated
+- `sre-engineer` — monitoring and alerting on database golden signals

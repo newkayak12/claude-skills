@@ -1,11 +1,12 @@
 ---
 name: performance-profiling-optimization
 description: >
-  Use this skill when the user mentions any performance problem, slowness, or resource issue.
-  TRIGGER on: "느려", "성능 문제", "latency 높아", "메모리 많이 써", "CPU 100%",
-  "performance issue", "profiling", "병목 찾기", "응답 시간 개선", "OOM", "GC pause",
-  "slow API", "timeout 발생", "응답 느림", "튜닝", "throughput 낮아", "memory leak".
-  이 스킬은 성능 문제가 언급되면 즉시 활성화된다. 병목을 찾기 전에 추측하지 말 것.
+  Guides systematic performance investigation from symptom to fix — establishing a baseline, profiling the bottleneck,
+  identifying root cause, applying a targeted change, and verifying the improvement with data.
+  Use when someone has a concrete performance problem such as slow response times, high memory usage, CPU saturation,
+  or GC pressure, and needs a methodical approach rather than guessing at fixes.
+  Not a substitute for sre-engineer when the issue is about SLO design or production reliability posture;
+  this skill focuses on code-level and runtime profiling and optimization.
 ---
 
 # Performance Profiling & Optimization

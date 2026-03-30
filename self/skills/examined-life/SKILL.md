@@ -1,166 +1,120 @@
 ---
 name: examined-life
-description: 'Use when someone wants to look at their life from a distance — not a specific decision, but the whole shape of it. Particularly suited to life transitions (milestones, loss, major changes) or the feeling of running on autopilot. Two lenses: a Socratic audit (is this actually your life?) paired with Stoic tools for what cannot be changed. Distinct from values-explorer (what matters) — this is about whether your whole life reflects it.'
+description: >-
+  Use when someone wants to look at their life from a distance — not a specific decision,
+  but the whole shape of it. Especially suited to life transitions, major milestones, or the
+  feeling of running on autopilot.
+  Triggers on: "삶을 돌아보고 싶어", "내 인생을 점검하고 싶어", "자동적으로 살고 있는 것 같아",
+  "examined life", "삶의 의미", "인생 점검", "스토아 철학", "죽음 앞에서 생각해보면".
+  Best for: major life transitions, mid-life reflection, feeling like you're living someone else's life.
+  Not for: specific decisions (use decision-maker or tradeoff-articulator), values clarification alone (use values-explorer).
+
+scenarios:
+  - "I feel like I've been on autopilot for years"
+  - "I want to step back and look at the shape of my whole life"
+  - "What would I regret if I kept going the way I am?"
+  - "내 인생이 진짜 내 인생인지 모르겠어"
+  - "자동으로 흘러가고 있는 것 같아, 점검하고 싶어"
+  - "인생의 큰 그림을 스토아적으로 돌아보고 싶어"
+
+compatibility:
+  optional:
+    - think-tool
+    - sequential-thinking
+  remote_mcp_note: >-
+    think-tool이 있으면 감사 결과에 맞는 스토아 도구를 선택하는 판단을 더 정밀하게 할 수 있습니다.
+    sequential-thinking은 감사 → 도구 선택 → 적용 순서를 지키는 데 유용합니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # The Examined Life
 
-Socrates said it plainly: "The unexamined life is not worth living." Not as cruelty, but as invitation. Most of us live most of our days on autopilot — reacting to what comes, meeting expectations, tending to the urgent and neglecting the important. The examined life is a deliberate interruption of that autopilot. It asks: *Is this actually your life? Are you living it, or enduring it?*
+## When to Use / When Not to Use
 
-Paired with this is Stoic philosophy — one of the most practically useful bodies of wisdom ever developed for navigating difficulty, clarifying priorities, and facing the irreducible facts of existence with equanimity. Marcus Aurelius, Epictetus, and Seneca wrote not for posterity but for themselves: daily practice tools for living well under real pressure.
+**Use when:**
+- Life transitions: career change, relationship shift, milestone birthday, loss
+- Feeling of running on autopilot or living someone else's expectations
+- Wanting the whole-life view, not a single-decision view
 
-This skill combines the audit (Socratic) with the reframe (Stoic) into a single philosophical toolkit.
+**Not for:**
+- Single-decision analysis (use decision-maker or tradeoff-articulator)
+- Values clarification alone (use values-explorer first)
 
-## Part 1 — The Examined Life Audit
+## Process
 
-### The Autopilot Check
+**Order matters:** Complete the audit before selecting Stoic tools. Jumping to reframing before examining produces philosophical bypassing.
 
-Start here: *How much of your current life was consciously chosen versus inherited, drifted into, or defaulted to?*
+**MCP note:** If `sequential-thinking` is available, enforce: (1) audit → (2) identify findings that need reframing → (3) select tools → (4) apply.
 
-For each major domain — work, relationships, where you live, how you spend time, what you're building — ask:
-- *Did you choose this deliberately, or did you arrive here through accumulation?*
-- *If you were designing this from scratch knowing what you know now, would you choose it again?*
-- *Who would you be disappointing if you changed this?* (Often the real answer to why it hasn't changed)
+### Part 1 — The Examined Life Audit
 
-The goal is not to conclude that everything is wrong. Most people find significant portions of their life are genuinely chosen and genuinely theirs. The audit reveals which parts are — and which parts are waiting to be noticed.
+**Autopilot Check:** For each major domain (work, relationships, where you live, how you spend time):
+- Did you choose this deliberately, or did you arrive by accumulation?
+- If designing from scratch with what you know now, would you choose it again?
+- Who would you be disappointing if you changed this?
 
-### The Values-Life Alignment Check
+**Values-Life Alignment Check:** Cross-reference stated values against how time, money, and attention are actually spent. Name the gaps without shame — they are information, not failures.
 
-Cross-reference the user's stated values (or use the values-explorer skill first) with how they actually spend their time, money, and attention.
+**Regret Audit** (Bronnie Ware's five most common deathbed regrets):
+1. Courage to live a life true to yourself, not others' expectations
+2. Not working so hard
+3. Courage to express feelings
+4. Staying in touch with friends
+5. Letting yourself be happier
 
-*"If a researcher followed you for a month — observing your calendar, your spending, your attention — what values would they conclude you hold? How does that match what you say you believe in?"*
+Ask: Which might you share if you carried on as you are now? What specifically would produce it?
 
-Common gaps:
-- Values: family / Reality: working until 9pm most days
-- Values: health / Reality: sleep and exercise are the first things sacrificed
-- Values: learning / Reality: last book finished eight months ago
-- Values: presence / Reality: phone in hand through every meal
-
-Name the gaps without shame. They are not failures of character — they are information about where the structure of daily life is misaligned with what actually matters.
-
-### The Regret Audit
-
-Bronnie Ware, a palliative care nurse, recorded the most common deathbed regrets:
-1. *I wish I'd had the courage to live a life true to myself, not the life others expected of me.*
-2. *I wish I hadn't worked so hard.*
-3. *I wish I'd had the courage to express my feelings.*
-4. *I wish I had stayed in touch with my friends.*
-5. *I wish that I had let myself be happier.*
-
-Use these as a diagnostic mirror:
-- *Which of these do you sense you might share, if you carried on as you are now?*
-- *What specifically would produce that regret?*
-- *What would it take to not have that regret?*
-
-This is not morbid — it is one of the most effective tools for clarifying what matters. The imagined deathbed perspective strips away urgency without importance and reveals importance without urgency.
-
-### The Aliveness Question
-
-Beyond regret and alignment: *When do you feel most alive?*
-
-Not most successful, most respected, or most productive. Alive — present, engaged, glad to be here.
-- *What are you doing in those moments?*
-- *Who are you with?*
-- *What does it tell you about what you actually want from your life?*
-
-And the inverse: *When do you feel most like you are going through the motions? What is that territory, and how much of your life does it occupy?*
+**Aliveness Question:** When do you feel most alive — not successful, not productive, but *alive*? What are you doing? What does this reveal about what you actually want?
 
 ### Audit Output
 
 ```
 Examined Life Audit
 -------------------
-Consciously chosen vs. inherited/drifted [rough proportion and key examples]
+Consciously chosen vs inherited/drifted: [rough proportion and examples]
 Most significant alignment gap: [values vs. actual time/attention]
 Regret risk: [which Ware regret resonates most, and the specific form it takes]
 Where you feel most alive: [concrete, specific]
 Where you feel most on autopilot: [concrete, specific]
-The one thing that, if examined more honestly, would most change something: [the question the audit keeps returning to]
+The one question this audit keeps returning to: [what most needs honest examination]
 ```
 
-## Part 2 — Stoic Reframing
+### Part 2 — Stoic Reframing
 
-Stoicism is not about suppressing emotion or pretending hardship doesn't hurt. It is about discerning what is within your power and what is not — and placing your full effort on the former while accepting the latter with clear-eyed equanimity.
+Select 1–2 tools that fit what the audit revealed:
 
-The four tools below are practical, not theoretical. Apply them to whatever the user is actually facing.
+| Finding | Tool |
+|---------|------|
+| Drift and autopilot | Memento mori + dichotomy of control |
+| Loss or grief | Amor fati + negative visualization |
+| Anxiety about uncontrollables | Dichotomy of control |
+| Taking things for granted | Negative visualization |
 
-### Tool 1 — Dichotomy of Control (Epictetus)
+**Dichotomy of Control (Epictetus):** Separate what is in your control (response, effort, values, attention) from what is not (others' reactions, outcome, circumstances). Place all energy on the left column.
 
-*"Some things are in our control and others are not. Things in our control are opinion, pursuit, desire, aversion, and, in a word, whatever are our own actions. Things not in our control are body, reputation, command, and, in one word, whatever are not our own actions."*
+**Negative Visualization:** Imagine losing what you have. Two effects: deepens appreciation, and reveals which losses would feel genuinely catastrophic — pointing to what actually matters.
 
-For any distressing situation, make the distinction explicit:
+**Memento Mori:** In the context of a finite life, how much does this actually matter? What have you been postponing?
 
-| In my control | Not in my control |
-|---------------|-------------------|
-| My response | Others' reactions |
-| My effort | The outcome |
-| My values and integrity | Others' perceptions |
-| How I use my time | External circumstances |
-| What I pursue | Whether I succeed by external measures |
+**Amor Fati:** Not just acceptance of what can't be changed, but active engagement: what does this obstacle require you to develop? What path does it force that you might not have taken voluntarily?
 
-The Stoic practice: place all your energy on the left column. Hold the right column lightly — prefer certain outcomes, but don't require them for peace.
+End with one practical commitment — not a life overhaul, a first step.
 
-This is not fatalism. It is precision: directing effort where it can actually land.
+## Output Template
 
-### Tool 2 — Negative Visualization (Stoic Practice)
+Audit output (above) + 1–2 Stoic tools applied to the most significant finding + one concrete commitment.
 
-Seneca practiced this deliberately: imagine losing what you have — relationships, health, work, freedom. Not as pessimism, but as a tool for gratitude and for testing whether your current life is actually what you want.
+## What Claude Does / What You Do
 
-*"What if this were the last time?"* applied to:
-- A conversation with someone you love
-- A morning of health and ordinary routine
-- A period of creative or professional momentum
+| Claude | You |
+|--------|-----|
+| Asks Socratic questions to surface what's on autopilot | Reflect honestly on each domain — don't edit for the "right" answer |
+| Maps the gap between stated and lived values | Sit with the discomfort of the alignment gaps |
+| Selects the Stoic tool(s) that fit the audit findings | Do the reframing work — Claude can name the tool, you have to apply it |
+| Names the one question the audit keeps returning to | Make one concrete commitment |
 
-Two effects: it intensifies appreciation for what is already here, and it reveals which losses would feel genuinely catastrophic — pointing to what actually matters.
+## Related Skills
 
-### Tool 3 — Memento Mori
-
-*"Remember that you will die."*
-
-Not as threat, but as clarifier. The Stoics kept the awareness of death close because it is the most reliable signal that time is limited and that trivialities should not consume it.
-
-Apply it to the user's current situation:
-- *In the context of a finite life, how much does this actually matter?*
-- *What would you do with this situation if you knew your time was limited?*
-- *What have you been postponing that this awareness might unlock?*
-
-Marcus Aurelius returned to this question constantly in the Meditations. Not to generate anxiety, but to strip away what is merely urgent, merely socially expected, merely habitual — and make contact with what is actually essential.
-
-### Tool 4 — Amor Fati (Love of Fate — Nietzsche via Stoic roots)
-
-*Not just to accept what cannot be changed, but to love it — to see it as necessary, even as fuel.*
-
-This is the most demanding of the Stoic-adjacent tools. It asks: can you find in this difficulty not just acceptance but something to work with? The loss, the failure, the limitation — what does it make possible that the easier path would not have?
-
-Marcus Aurelius: *"The impediment to action advances action. What stands in the way becomes the way."*
-
-Apply to current obstacles: what does this obstacle, honestly examined, require you to develop? What path does it force you onto that you might not have taken voluntarily?
-
-This is not toxic positivity ("everything happens for a reason"). It is active engagement with difficulty rather than passive suffering.
-
-## Integration: Audit + Stoic Reframe
-
-### MCP Instructions
-
-If `sequential-thinking` is available, use it — the audit and reframing must stay in order: (1) examine → (2) identify which findings need reframing → (3) select Stoic tools → (4) apply. Jumping to Stoic tools before completing the examination produces philosophical bypassing rather than genuine insight.
-
-If `think-tool` is available, use it at Step 3 (selecting which Stoic tools apply to which audit findings) — this is the highest-stakes judgment in the skill. Which tool fits which finding? Memento mori for different concerns than dichotomy of control.
-
-The examined life audit reveals what is. The Stoic tools help navigate that reality with wisdom.
-
-After an audit, select 1-2 Stoic tools that are most relevant to what was found:
-
-- If the audit reveals drift and autopilot → Memento mori + dichotomy of control
-- If the audit reveals loss or grief → Amor fati + negative visualization (as appreciation)
-- If the audit reveals anxiety about uncontrollables → Dichotomy of control (pure application)
-- If the audit reveals taking things for granted → Negative visualization
-
-End with a single practical commitment: one thing to do differently based on what the audit and reframe revealed. Not a life overhaul — a first step. The examined life is not a destination. It is a practice.
-
-## Tone
-
-This is philosophical work, and philosophy at its best is neither cold nor abstract. It is the most practical of disciplines — thinking carefully about how to live a good life. Hold the intellectual rigor and the warmth together.
-
-Do not preach. Offer the tools and trust the user to find what is useful. The Stoics were humble about this: Epictetus was a slave who became a philosopher, not because he had the perfect life, but because he found tools to live well within the one he had.
-
-That is available to everyone.
+- `values-explorer` — for deep values clarification work
+- `fear-inventory` — when the autopilot is driven by fear
+- `flow-antigoal` — for designing a life around what creates deep engagement

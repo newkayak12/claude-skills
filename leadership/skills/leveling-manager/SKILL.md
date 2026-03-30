@@ -1,15 +1,92 @@
 ---
 name: leveling-manager
-description: 'Helps engineering managers design leveling rubrics, write promotion cases, and run calibration conversations. Use when a manager needs to evaluate an engineer''s level fairly, build the case for a promotion, or align with peers on what each level actually means at their company.'
+description: >-
+  Use when an engineering manager needs to evaluate an engineer's level fairly, build a promotion case with evidence, or align with peers in a calibration conversation.
+  Triggers on: "write a promotion case", "calibration prep", "level rubric design", "승진 케이스 작성", "캘리브레이션 준비", "레벨 루브릭 만들기", "how to evaluate engineer level", "엔지니어 레벨 평가 어떻게 해".
+  Best for: writing evidence-based promotion cases; designing or sharing level rubrics; preparing for calibration with specific examples per rubric dimension.
+  Not for: IC promotion planning (use leveling-ic), 1-on-1 coaching (use 1-on-1-manager), performance improvement plans.
 license: MIT
 metadata:
   author: wondelai
   version: "1.0.0"
+scenarios:
+  - "Help me write a promotion case for a Senior to Staff engineer with specific evidence"
+  - "I need to prepare for calibration — how do I present my engineer's case against skepticism?"
+  - "Design a level rubric for Senior and Staff engineers on my team"
+  - "승진 케이스 어떻게 써야 해? 구체적인 증거 기반으로"
+  - "캘리브레이션에서 내 엔지니어 승진 제안 어떻게 방어해?"
+compatibility:
+  recommended:
+    - think-tool
+  optional: []
+  remote_mcp_note: >-
+    think-tool이 있으면 승진 케이스 작성 시 증거가 실제 해당 레벨의 기준을 충족하는지,
+    아니면 현재 레벨의 강한 성과인지 구분하는 판단 품질이 높아집니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Engineering Leveling — Manager Framework
 
-A framework for engineering managers to evaluate engineer performance fairly, write compelling promotion cases, and navigate calibration conversations. Leveling is one of the highest-stakes managerial responsibilities: done well, it retains top talent and creates a culture of clear, fair expectations. Done poorly, it drives away high performers and creates a culture of politics and opacity.
+## When to Use / When Not to Use
+
+**Use when:**
+- Writing or reviewing a promotion case before a calibration cycle
+- Designing or sharing level rubrics with your engineers
+- Preparing to advocate for a promotion in a calibration session
+
+**Not for:**
+- IC promotion planning (use leveling-ic)
+- Coaching 1-on-1 conversations (use 1-on-1-manager)
+- Performance improvement plans (different from leveling)
+
+## Process
+
+1. **Define rubric** — ensure rubric exists and is shared with the engineer
+2. **Collect evidence continuously** — running doc per engineer; STAR format; tag by rubric dimension
+3. **Write the promotion case** — structure: executive summary + evidence by dimension (2-3 examples each) + developmental areas
+4. **Apply the skeptic test** — read the case as someone who doesn't know this engineer; find the weak spots
+5. **Calibration** — present evidence, not opinions; have additional examples ready; know when to yield vs. push back
+6. **Communicate** — promotions: name what demonstrated readiness; not-yet: specific gap + path + timeline
+
+## Output Template
+
+Promotion case structure:
+```
+## Promotion Case: [Name] — [Current Level] → [Target Level]
+
+### Executive Summary
+[1 paragraph: specific claim with named evidence. Not "she's great" — "here are three initiatives that demonstrate Staff-level behavior."]
+
+### Evidence by Dimension
+
+**[Dimension 1 — e.g., System Design]**
+- Example 1: [STAR format]
+- Example 2: [STAR format]
+
+**[Dimension 2 — e.g., Cross-team Influence]**
+- Example 1: [STAR format]
+- Example 2: [STAR format]
+
+[Repeat for each rubric dimension]
+
+### Developmental Areas
+[Honest gap statement + why it is not a blocker, or what the plan is]
+```
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Generates promotion case draft from described evidence | Collects and validates actual evidence with direct observation |
+| Writes rubric dimension definitions with observable behaviors | Makes the final call on readiness and timing |
+| Prepares calibration arguments and backup examples | Advocates for the engineer in the actual calibration room |
+| Drafts "not-yet" communication with specific gap + path | Has the promotion or not-yet conversation with the engineer |
+| Scores your current leveling practice (0-10) | Builds the trust that makes these conversations land |
+
+## Related Skills
+
+- `../leveling-ic/SKILL.md` — understand what your ICs are working toward
+- `../1-on-1-manager/SKILL.md` — 1-on-1 growth tracking is the source of continuous evidence
 
 ## Core Principle
 

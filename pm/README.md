@@ -37,3 +37,5 @@ Product management skills for backlog and delivery workflows.
 | `roadmap-communication` | Communicate roadmap decisions clearly to engineering, executives, customers, and sales |
 | `post-launch-retrospective` | Structured post-launch evaluation — hypothesis validation, metric analysis, and learning documentation |
 | `technical-feasibility-assessment` | Rapid PM-level technical feasibility signal without full engineering involvement |
+
+| `pm-strategy-workflow` | End-to-end PM strategy workflow — competitive analysis through stakeholder alignment |

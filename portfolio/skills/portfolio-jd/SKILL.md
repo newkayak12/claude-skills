@@ -1,13 +1,72 @@
 ---
 name: portfolio-jd
-description: 'Use when the user provides both a portfolio and a specific job description (JD) and wants to know how well they match — gap analysis, fit score across dimensions, and positioning advice for that role. The key signal is the presence of an actual JD, not just a named company. Triggers on "이 공고에 맞아?", "JD랑 비교해줘", "이 포지션 지원해도 돼?".'
+description: >-
+  Use when someone provides both a portfolio and a specific job description and wants to know how well they match — gap analysis, fit score, and positioning advice for that exact role.
+  Triggers on: "이 공고에 맞아?", "JD랑 비교해줘", "이 포지션 지원해도 돼?", "match my portfolio to this JD", "gap analysis for this role", "should I apply to this job posting".
+  Best for: analyzing a specific JD vs. portfolio before applying; understanding must-have gaps vs. nice-to-have gaps; getting concrete positioning advice.
+  Not for: choosing which companies to apply to without a JD (use portfolio-company), resume tailoring for a JD (use resume-tailorer), or general portfolio feedback (use portfolio-feedback).
+scenarios:
+  - "Compare my portfolio to this job description — where are the gaps?"
+  - "I want to apply to this JD — how well does my portfolio match and what should I fix?"
+  - "Score my portfolio against this job posting across tech stack, scale, and role scope"
+  - "이 공고에 내 포트폴리오가 맞는지 갭 분석해줘"
+  - "이 JD랑 포트폴리오 비교해서 서류 통과 가능성 알려줘"
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - sequential-thinking
+  remote_mcp_note: >-
+    think-tool이 있으면 JD 해석(실제 요건 vs. 희망 요건)과 포트폴리오 분석의 품질이 높아집니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Portfolio × JD Gap Analyzer
 
-You are a senior hiring manager who has written and reviewed hundreds of job descriptions, and has read the portfolios that came in response to them. You know the gap between what a JD says and what a team is actually looking for — and you know how to read a portfolio to see whether it speaks the right language for a given role.
+## When to Use / When Not to Use
 
-Your job: take the candidate's portfolio and the target JD, compare them honestly, and tell the candidate exactly where they stand and what to do about it.
+**Use when:**
+- You have both a portfolio and a specific JD and want an honest match assessment
+- You need to understand which gaps are critical vs. recoverable before applying
+- You want concrete advice on how to position your portfolio for this specific role
+
+**Not for:**
+- Company type matching without a specific JD (use portfolio-company)
+- Resume keyword tailoring (use resume-tailorer)
+- General portfolio improvement not tied to a specific role (use portfolio-feedback)
+
+## Process
+
+1. **Parse the JD** — real requirements vs. aspirational; must-haves; actual role behind the title; team pain point
+2. **Parse the portfolio** — 3 clearest strengths; 2-3 significant gaps; what it communicates well vs. fails to communicate
+3. **Structured comparison** — map portfolio signals to JD requirements; weight must-haves vs. nice-to-haves
+4. **Score 5 fit dimensions** — tech stack, experience scale, role scope, domain, soft signals
+5. **Gap analysis** — each gap classified: critical / recoverable / minor + how to address
+6. **Positioning advice** — what to emphasize, downplay, or add before applying to this specific role
+7. **Pass/borderline/screen-out assessment** — honest probability judgment with what it hinges on
+
+## Standalone Inputs
+
+Provide:
+1. Your portfolio (paste, upload, or describe key sections)
+2. The full JD text (the more complete, the better)
+3. Optionally: company name/stage and target role level
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Decodes JD: real requirements vs. aspirational nice-to-haves | Provides the actual portfolio content |
+| Scores fit across 5 dimensions with evidence | Validates gap assessment with network contacts if possible |
+| Classifies each gap: critical / recoverable / minor | Decides whether to apply and what to change |
+| Gives concrete portfolio positioning advice for this specific role | Makes actual application decision |
+| Gives honest pass/borderline/screen-out assessment | Does the relationship building to get referrals |
+
+## Related Skills
+
+- `../portfolio-rewrite/SKILL.md` — act on specific gap areas identified here
+- `../resume-tailorer/SKILL.md` — keyword-align the resume after positioning advice
+- `../portfolio-company/SKILL.md` — company type fit analysis if no specific JD yet
 
 ---
 

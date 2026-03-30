@@ -1,10 +1,53 @@
 ---
 name: user-story-mapping
-description: 'Use when someone wants to generate a structured user story map directly — outputting a two-dimensional artifact with backbone activities, steps, tasks, and release slices from provided context. Best when the user has their product, persona, and workflow in hand and wants a map produced, not a facilitated conversation to discover them.'
-intent: >-
-  Visualize the user journey by creating a hierarchical map that breaks down high-level activities into steps and tasks, organized left-to-right as a narrative flow. Use this to build shared understanding across product, design, and engineering, prioritize features based on user workflows, and identify gaps or opportunities in the user experience.
+description: >-
+  Use when someone wants to generate a structured user story map directly from existing context — outputting a two-dimensional artifact with backbone activities, steps, tasks, and release slices.
+  Triggers on: "user story map", "story map", "backbone activities", "release slices", "유저 스토리 맵 만들어줘", "스토리 매핑".
+  Best for: teams that already know their persona and workflow and want a map produced (not facilitated); release planning with MVP/R2/R3 slices; backlog visualization.
+  Not for: interactive discovery of personas and scope (use user-story-mapping-workshop instead); single-story authoring; technical backlog grooming.
 type: component
+scenarios:
+  - "Generate a user story map for our onboarding flow — we have a persona and the workflow defined"
+  - "Build a story map with backbone activities and release slices for our checkout product"
+  - "Create a two-dimensional story map with MVP and future release tiers"
+  - "우리 서비스의 유저 스토리 맵 만들어줘"
+  - "백본 활동과 릴리스 슬라이스를 포함한 스토리 맵 생성해줘"
+compatibility:
+  recommended: []
+  optional:
+    - think-tool
+    - sequential-thinking
+  remote_mcp_note: >-
+    think-tool이 있으면 MVP vs. 미래 릴리스 범위 우선순위 판단 품질이 높아집니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+
+## When to Use / When Not to Use
+
+**Use when:**
+- You have persona, workflow, and product context in hand and want a map generated
+- Planning MVP vs. future release scope with horizontal release slices
+- Visualizing an existing flat backlog as a two-dimensional narrative
+
+**Not for:**
+- Interactive discovery of personas and scope (use user-story-mapping-workshop)
+- Authoring individual user stories (use user-story)
+- Technical backlog grooming or task breakdown
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Generates backbone activities from provided context | Validates activities match actual user workflow |
+| Produces tasks per activity with vertical priority | Confirms priority with the team |
+| Proposes MVP / Release 2 / Future release slices | Approves release scope with stakeholders |
+| Identifies gaps or missing steps in the map | Validates map accuracy with design and engineering |
+
+## Related Skills
+
+- `../user-story-mapping-workshop/SKILL.md` — use when you need facilitation to discover scope and personas
+- `../user-story/SKILL.md` — tasks from the map become individual user stories
+- `../user-story-splitting/SKILL.md` — large tasks from the map may need splitting before authoring
 
 ## Framework Background
 

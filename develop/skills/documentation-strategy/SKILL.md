@@ -1,12 +1,12 @@
 ---
 name: documentation-strategy
 description: >
-  Use this skill when the user wants to plan, write, organize, or improve technical documentation.
-  TRIGGER on: "문서화", "문서 어떻게 써", "API 문서", "runbook", "architecture doc",
-  "온보딩 문서", "위키 정리", "docs strategy", "README 작성", "개발 문서",
-  "ADR", "decision log", "wiki 만들어", "문서 관리", "docs as code",
-  "기술 문서", "technical writing", "문서 업데이트", "onboarding guide".
-  문서 작업이 언급되면 이 스킬을 즉시 사용한다. 좋은 문서는 팀의 속도를 높인다.
+  Plans and maintains a documentation system across architecture docs, API references, runbooks,
+  and onboarding guides — producing a doc coverage map and writing or improving the
+  highest-leverage missing content.
+  Use when a codebase, API, or team process lacks documentation that slows onboarding or causes
+  repeated questions, or when documentation exists but is scattered, outdated, or missing key gaps.
+  Not a substitute for code-documenter (inline docs and docstrings) or adr-writer (individual decisions).
 ---
 
 # Documentation Strategy

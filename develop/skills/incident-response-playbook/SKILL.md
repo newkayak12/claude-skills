@@ -1,11 +1,11 @@
 ---
 name: incident-response-playbook
 description: >
-  Use this skill when a production issue, outage, or service degradation is happening or being discussed.
-  TRIGGER on: "장애 났어", "서비스 다운", "production issue", "incident", "배포 후 이상해",
-  "고객 장애 신고", "긴급", "RCA 작성", "post-mortem", "site down", "alert 울렸어",
-  "배포 롤백", "응급 상황", "고객 영향", "SLA 위반", "서비스 불안정".
-  장애 상황에서는 즉시 이 스킬을 사용한다. 혼자 해결하려 하지 말고 절차를 따를 것.
+  Guides the developer-side incident lifecycle from triage through mitigation to blameless RCA —
+  with severity classification, Slack update templates, escalation paths, and a structured post-mortem format.
+  Use when a production issue is active or recently resolved and you need a fast, structured response
+  rather than ad-hoc troubleshooting, or when writing a post-mortem after the fact.
+  Not for designing SLOs, alerting rules, or reliability posture — use sre-engineer for that.
 ---
 
 # Incident Response Playbook

@@ -7,4 +7,5 @@ Thumbs.db
 tmp/
 temp/
 *.tmp
-./INSTRUCT.md
+INSTRUCT.md
+plan.md

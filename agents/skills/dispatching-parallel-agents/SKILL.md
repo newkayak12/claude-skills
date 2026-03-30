@@ -1,6 +1,27 @@
 ---
 name: dispatching-parallel-agents
-description: Use when facing 2+ independent tasks that can be worked on without shared state or sequential dependencies
+description: >-
+  Use when facing 2+ independent tasks that can run concurrently without shared state.
+  Triggers on: "병렬로 처리해줘", "동시에 여러 작업", "parallel agents", "여러 에이전트 동시 실행",
+  "독립적인 작업들 한번에", "multiple independent failures", "파일이 서로 겹치지 않아".
+  Best for: multiple failing test files with different root causes, parallel code reviews,
+  independent module fixes, simultaneous report generation.
+  Not for: related failures (fixing one may fix others), tasks with shared state or file overlap.
+scenarios:
+  - "세 개 테스트 파일이 각각 다른 이유로 실패해 — 병렬로 고쳐줘"
+  - "두 서브시스템 각각 독립적으로 리팩토링해줘"
+  - "Run code reviews on these three separate modules in parallel"
+  - "독립적인 버그 세 개를 동시에 처리해줘"
+  - "Generate these two reports simultaneously"
+  - "각 팀의 독립적인 작업 동시에 진행해줘"
+compatibility:
+  recommended:
+    - sequential-thinking  # pre-dispatch independence check — confirms no shared files or causal links
+  optional:
+    - think-tool           # verify true independence before dispatching
+  remote_mcp_note: >-
+    think-tool이 있으면 병렬 실행 전 에이전트 간 파일 충돌이나 인과 관계가 없는지 확인할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Dispatching Parallel Agents

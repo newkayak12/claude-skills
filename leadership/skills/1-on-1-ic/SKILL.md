@@ -1,15 +1,84 @@
 ---
 name: 1-on-1-ic
-description: 'Helps individual contributors get more value from 1-on-1s — preparing agendas, driving career conversations, and giving upward feedback. Use when an IC wants to stop wasting 1-on-1 time, needs to raise something difficult with their manager, or wants to steer their own growth instead of waiting to be managed.'
+description: >-
+  Use when an individual contributor wants to get more value from 1-on-1s with their manager — preparing agendas, driving career conversations, surfacing blockers, and giving upward feedback.
+  Triggers on: "1-on-1 prep", "how to use my 1-on-1 better", "raise something with my manager", "career conversation with manager", "1on1 어떻게 활용해", "매니저랑 커리어 대화 어떻게 해", "상향 피드백 주는 법".
+  Best for: ICs who want to own their growth instead of waiting to be managed; preparing for difficult upward conversations; asking for feedback more effectively.
+  Not for: running 1-on-1s as a manager (use 1-on-1-manager), promotion planning (use leveling-ic), or team-level performance issues.
 license: MIT
 metadata:
   author: wondelai
   version: "1.0.0"
+scenarios:
+  - "Help me prepare for my 1-on-1 with my manager — I want to raise a career question"
+  - "I need to give my manager feedback about how they run meetings — how do I do that well?"
+  - "How should I ask for specific feedback after a design review?"
+  - "1on1에서 커리어 방향 이야기 어떻게 꺼내야 해?"
+  - "매니저에게 상향 피드백 주는 방법 알려줘"
+compatibility:
+  recommended:
+    - think-tool
+  optional: []
+  remote_mcp_note: >-
+    think-tool이 있으면 어떤 피드백이 적절한 타이밍인지, 어떤 어려운 주제를 먼저 꺼내야 하는지
+    판단하는 품질이 높아집니다. Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # 1-on-1 IC Framework
 
-A framework for individual contributors to own and maximize their 1-on-1 meetings with their manager. Most ICs show up to 1-on-1s and answer questions — the manager leads, the IC responds. The alternative: come prepared with an agenda, drive career conversations proactively, give honest upward feedback, and use the time to get what you actually need.
+## When to Use / When Not to Use
+
+**Use when:**
+- 1-on-1s feel like status updates driven by your manager
+- You want to raise something difficult: a career ask, upward feedback, a blocker
+- You're not getting specific feedback or growth conversations from your manager
+
+**Not for:**
+- Running 1-on-1s as a manager (use 1-on-1-manager)
+- Promotion evidence building (use leveling-ic)
+- Team performance or conflict issues
+
+## Process
+
+1. **Accumulate topics** — keep a running note all week (blockers, decisions, career questions, feedback you want to give or receive)
+2. **Prioritize before the meeting** — rank topics; blockers go first
+3. **Drive career conversations** — bring up growth direction explicitly at least monthly; don't wait to be asked
+4. **Give upward feedback** — start with positive, specific feedback; build the habit before addressing harder things
+5. **Ask for specific feedback** — target a specific event, not "how am I doing?"
+6. **Follow through** — close any commitments before the next meeting
+
+## Output Template
+
+Use for agenda preparation:
+```
+## 1-on-1 Agenda [Date]
+
+### Must cover (blockers / decisions):
+- [Topic + what I need from my manager]
+
+### Want to cover (growth / feedback):
+- [Career direction: what I want to say]
+- [Feedback I want to give]
+- [Feedback I want to ask for — about specific event]
+
+### Follow-through from last meeting:
+- [My commitments I've closed / updating status on]
+```
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Generates agenda topics from your described situation | Has the actual conversation with your manager |
+| Drafts specific upward feedback using SBI model | Delivers feedback in person — Claude's draft is a starting point |
+| Suggests how to frame career asks | Builds the relationship through consistent follow-through |
+| Proposes specific feedback requests tied to events | Makes judgment calls about timing and safety |
+| Scores your current 1-on-1 practice (0-10) with improvements | Decides what to change in your actual meetings |
+
+## Related Skills
+
+- `../1-on-1-manager/SKILL.md` — understand what your manager is trying to do in the meeting
+- `../leveling-ic/SKILL.md` — career conversations that belong in your 1-on-1s
 
 ## Core Principle
 

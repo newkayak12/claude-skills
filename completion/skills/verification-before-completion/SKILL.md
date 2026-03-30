@@ -1,6 +1,24 @@
 ---
 name: verification-before-completion
-description: 'Use before making any claim that work is complete, a bug is fixed, tests are passing, or a build succeeds — and before committing, pushing, or creating a PR. Also applies before expressing satisfaction or moving to the next task. The trigger is any moment where a success claim is about to be made without fresh evidence.'
+description: >-
+  Use before claiming work is done, tests pass, or a bug is fixed — without fresh evidence.
+  Triggers on: any moment a success claim is about to be made, "완료했어", "됐어", "테스트 통과",
+  "it should work now", "done", "커밋할게", "PR 올릴게", "bug is fixed", "빌드 성공".
+  Best for: pre-commit gates, pre-PR gates, any "it works now" claim requiring evidence.
+  Not for: planning or design work — this applies only at completion/claim moments.
+scenarios:
+  - "테스트 다 통과했어 → 커밋할게"
+  - "버그 고쳤어"
+  - "Build should be green now"
+  - "PR 올려도 될 것 같아"
+  - "The feature is complete"
+  - "요구사항 다 구현됐어"
+compatibility:
+  optional:
+    - think-tool           # reasoning about which verification command constitutes sufficient proof
+  remote_mcp_note: >-
+    think-tool이 있으면 어떤 커맨드가 충분한 증거가 되는지 실행 전에 명확히 식별할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Verification Before Completion

@@ -1,7 +1,13 @@
 ---
 name: feature-prioritization
 description: >-
-  Scores and ranks features from a large backlog using frameworks like RICE, MoSCoW, and Value-Risk-Effort. Trigger on any of: "우선순위", "뭐부터 해야 해", "backlog 정리", "feature prioritization", "RICE", "what should we build first", "로드맵 우선순위", "P1이 너무 많아", or whenever someone has more to build than capacity to build it. Also trigger when a roadmap is being debated, stakeholders are pushing for different features, a backlog needs trimming, or someone is trying to decide between competing initiatives.
+  Use when there are more things to build than capacity allows and the team needs a
+  defensible, data-backed order. Triggers on: "backlog 정리", "우선순위 정해줘",
+  "P1이 너무 많아", "what to build next", "how do we decide", "backlog grooming",
+  "피처 순위 매겨줘". Best for: scoring a large backlog with RICE or MoSCoW; resolving
+  stakeholder disagreements about priority; trimming scope for a specific cycle.
+  Not for: communicating the roadmap to an audience (use roadmap-communication);
+  setting goals or OKRs (use okr-planning).
 type: workflow
 theme: pm-strategy
 best_for:
@@ -12,12 +18,33 @@ scenarios:
   - "P1이 너무 많아. 이번 분기에 뭐부터 해야 할지 모르겠어."
   - "We have 50 items in the backlog. Help me figure out what to cut."
   - "두 팀이 서로 다른 기능을 원해. 우선순위 기준을 만들어줘."
+  - "Score these features using RICE and give me a ranked list."
+  - "백로그에서 이번 분기 스코프를 잘라줘."
+  - "How do I explain to my VP why we're not building feature X?"
 estimated_time: "45-90 min"
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - sequential-thinking
+    - mcp-reasoner
+  remote_mcp_note: >-
+    think-tool이 있으면 RICE 점수의 근거와 트레이드오프 논리를 검증하는 데 도움이 됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Feature Prioritization
 
 Deciding what to build first — with a process that's defensible, data-informed, and repeatable.
+
+## When to Use / When Not to Use
+
+| Use | Do Not Use |
+|-----|-----------|
+| Backlog has more items than team capacity | Deciding what goals to set (use okr-planning) |
+| Stakeholders disagree on feature priority | Communicating the resulting roadmap (use roadmap-communication) |
+| Trimming scope for a specific cycle | Writing a PRD for a single feature (use prd-development) |
+| Need scoring rubric stakeholders can agree on | One-off small feature that needs no justification |
 
 ## Core Principle
 
@@ -183,6 +210,16 @@ Deferred | Third-party integrations | — | Dependency on vendor API not ready; 
 
 ---
 
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Applies RICE, MoSCoW, or Value-Risk-Effort to provided items | Supplies the reach, impact, and confidence inputs |
+| Generates scored, ranked backlog table with rationale | Validates effort estimates with engineering |
+| Drafts "why not this" explanations for deprioritized items | Makes final priority call and owns stakeholder conversations |
+| Surfaces anti-patterns (everything is P1, no OKR alignment) | Aligns cross-functional team on the final ordering |
+| Connects items to OKRs and evidence sources | Provides the customer research evidence and business context |
+
 ## Quick Diagnostic
 
 | Signal | Problem | Action |
@@ -193,3 +230,12 @@ Deferred | Third-party integrations | — | Dependency on vendor API not ready; 
 | High-RICE items keep getting bumped | Political pressure overriding data | Document each override; make the pattern visible to leadership |
 | Team disagrees on effort estimates | Estimation variance is high | Run planning poker; break large items into smaller ones |
 | Nothing in the backlog maps to a current OKR | Backlog is reactive, not strategic | Audit backlog against current OKRs; anything that doesn't map needs explicit justification |
+
+## Related Skills
+
+- `../competitive-analysis/SKILL.md` — competitive pressure data for RICE impact scoring
+- `../customer-research-synthesis/SKILL.md` — insight cards as customer demand evidence
+- `../metrics-interpretation/SKILL.md` — metric data to validate problem size
+- `../okr-planning/SKILL.md` — OKR alignment check for each backlog item
+- `../roadmap-communication/SKILL.md` — communicate the prioritized list to stakeholders
+- `../stakeholder-management/SKILL.md` — resolve political conflicts when "everything is P1"

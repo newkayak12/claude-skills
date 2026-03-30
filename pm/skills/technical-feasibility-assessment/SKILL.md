@@ -1,15 +1,82 @@
 ---
 name: technical-feasibility-assessment
-description: 'Rapid PM-level technical feasibility signal — assessing implementation risk, complexity, and make-vs-buy tradeoffs without full engineering involvement. Use when someone says "기술 가능성", "구현 가능한지", "개발 얼마나 걸려", "기술적 리스크", "엔지니어 없이 판단", "technical feasibility", "is this buildable", "how hard is this to build", "should we build or buy this", or needs to stress-test a product idea before investing in discovery or shaping. Also use during appetite-setting (Shape Up) when a bet needs a reality check before the betting table, or when writing the Constraints section of a PRD.'
+description: >-
+  Use when a PM or product team needs a rapid feasibility signal on a feature idea before committing engineering time — assessing implementation risk, complexity, and make-vs-buy tradeoffs without full engineering involvement.
+  Triggers on: "technical feasibility", "is this buildable", "how hard is this to build", "should we build or buy", "기술 가능성", "구현 가능한지", "개발 얼마나 걸려", "기술적 리스크", "엔지니어 없이 판단".
+  Best for: pre-betting-table reality checks (Shape Up), PRD constraints section, appetite-setting, roadmap timeline validation.
+  Not for: engineering estimation, architecture design, sprint planning, or make-vs-buy contract negotiation.
 license: MIT
 metadata:
   author: wondelai
   version: "1.0.0"
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - sequential-thinking
+  remote_mcp_note: >-
+    think-tool이 있으면 5개 가능성 차원(데이터, 인프라, 통합, 팀 역량, 시간)에 대한 판단의 품질이 높아집니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Technical Feasibility Assessment Framework
 
-A PM-level rapid assessment of whether a product idea is technically feasible — identifying risks, complexity signals, and make-vs-buy tradeoffs before investing engineering time in discovery or scoping.
+## When to Use / When Not to Use
+
+**Use when:**
+- Deciding whether to include a feature in the roadmap before engineering is consulted
+- Running a reality check at a Shape Up betting table
+- Writing the Constraints / Technical Dependencies section of a PRD
+- Evaluating build vs. buy vs. partner for a new capability
+
+**Not for:**
+- Engineering sprint estimation or story pointing
+- Detailed architecture design decisions
+- Contract negotiation with vendors
+
+## Process
+
+1. **Describe the feature** — what it does, who it's for, any known constraints or deadlines
+2. **Score 5 dimensions** — Data, Infrastructure, Integrations, Team Skill, Time (each: Low / Medium / High risk)
+3. **Identify red flags** — any dimension flagging "escalate to engineering immediately"
+4. **Make vs. buy recommendation** — based on differentiation, time-to-value, and team capability
+5. **Document risks** — produce the PRD technical constraints section format
+
+## Output Template
+
+```
+Feasibility Signal: [High / Medium / Low / Unknown]
+
+Dimension scores:
+- Data: [Low / Medium / High risk] — [one sentence rationale]
+- Infrastructure: [Low / Medium / High risk] — [one sentence rationale]
+- Integrations: [Low / Medium / High risk] — [one sentence rationale]
+- Team Skill: [Low / Medium / High risk] — [one sentence rationale]
+- Time: [Low / Medium / High risk] — [one sentence rationale]
+
+Make vs. Buy recommendation: [Build / Buy / Partner] — [reasoning]
+
+Red flags requiring engineering consultation before any commitment:
+- [if any]
+
+Recommended next step: [what to investigate before treating this as feasible]
+```
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Scores 5 feasibility dimensions with rationale | Validates signals with engineering before committing |
+| Identifies red flags that require engineering consultation | Makes the final make-vs-buy decision |
+| Recommends make vs. buy vs. partner | Signs off on timeline commitments |
+| Produces PRD technical constraints section content | Negotiates vendor contracts if buying |
+| Surfaces PM-observable complexity signals | Owns engineering relationship and escalation |
+
+## Related Skills
+
+- `../shape-up/SKILL.md` — use this before the betting table to set realistic appetite
+- `../prd-development/SKILL.md` — output feeds directly into PRD constraints section
+- `../feature-prioritization/SKILL.md` — effort signal informs prioritization scoring
 
 ## Core Principle
 

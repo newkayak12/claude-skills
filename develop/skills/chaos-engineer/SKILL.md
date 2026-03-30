@@ -1,6 +1,23 @@
 ---
 name: chaos-engineer
-description: "Use when someone wants to proactively test whether a distributed system will survive real failures — by designing controlled chaos experiments, injecting faults (network latency, pod deletion, zone outages), planning a game day exercise, or building rollback-safe automation for continuous resilience testing. Distinct from sre-engineer, which focuses on SLOs and incident response; this skill focuses on the experiment design and execution layer."
+description: >-
+  Use when someone wants to proactively test whether a distributed system will survive
+  real failures — by designing controlled chaos experiments, injecting faults (network
+  latency, pod deletion, zone outages), planning a game day exercise, or building
+  rollback-safe automation for continuous resilience testing.
+  Triggers on: "chaos experiment", "failure injection", "game day", "blast radius",
+  "resilience testing", "Chaos Monkey", "Litmus Chaos", "fault injection", "카오스 테스트",
+  "장애 주입", "게임 데이".
+  Best for: pre-production resilience validation, game day planning, CI/CD chaos pipelines.
+  Not for: SLO definition, incident response, or production monitoring setup — use sre-engineer.
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - sequential-thinking
+  remote_mcp_note: >-
+    think-tool이 있으면 실험 설계 시 블라스트 반경과 안전 제어를 더 체계적으로 평가합니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 license: MIT
 metadata:
   author: https://github.com/Jeffallan
@@ -15,26 +32,57 @@ metadata:
 
 # Chaos Engineer
 
-## When to Use This Skill
+## When to Use / When Not to Use
 
-- Designing and executing chaos experiments
-- Implementing failure injection frameworks (Chaos Monkey, Litmus, etc.)
-- Planning and conducting game day exercises
-- Building blast radius controls and safety mechanisms
-- Setting up continuous chaos testing in CI/CD
-- Improving system resilience based on experiment findings
+**Use when:**
+- Designing and running controlled failure experiments before production incidents happen
+- Planning game day exercises for the team
+- Building blast radius controls and CI/CD chaos pipelines
+- Improving resilience based on experiment findings
 
-## Core Workflow
+**Do not use when:**
+- Responding to an active incident (use `sre-engineer` or `incident-response-playbook`)
+- No monitoring stack exists — steady state cannot be verified without metrics
 
-1. **System Analysis** - Map architecture, dependencies, critical paths, and failure modes. _Pre-condition: confirm a monitoring stack (Prometheus, Datadog, or equivalent) exists and can emit metric thresholds — if none is available, halt and recommend setting up observability before proceeding with chaos experiments._
-2. **Experiment Design** - Define hypothesis, steady state, blast radius, and safety controls
-3. **Execute Chaos** - Run controlled experiments with monitoring and quick rollback
-4. **Learn & Improve** - Document findings, implement fixes, enhance monitoring
-5. **Automate** - Integrate chaos testing into CI/CD for continuous resilience
+## Process
+
+1. **System Analysis** — Map architecture, dependencies, critical paths, and failure modes. Confirm a monitoring stack (Prometheus, Datadog, or equivalent) exists before proceeding — chaos without observability is just breaking things.
+2. **Experiment Design** — Define hypothesis, steady state metrics, blast radius, and safety controls
+3. **Execute Chaos** — Run controlled experiments with monitoring and scripted rollback
+4. **Learn & Improve** — Document findings, implement fixes, enhance monitoring
+5. **Automate** — Integrate chaos testing into CI/CD for continuous resilience
+
+## Safety Checklist
+
+Enforce on every experiment:
+
+- **Steady state first** — define and verify baseline metrics before injecting any failure
+- **Blast radius cap** — start with the smallest possible impact scope; expand only after validation
+- **Automated rollback ≤ 30 seconds** — abort path must be scripted and tested before the experiment begins
+- **Single variable** — change only one failure condition at a time
+- **No production without safety nets** — customer-facing environments require circuit breakers, feature flags, or canary isolation
+- **Close the loop** — every experiment must produce a written learning summary and at least one tracked improvement
+
+## Output Template
+
+For each experiment, provide:
+1. Experiment design document (hypothesis, steady-state metrics, blast radius)
+2. Implementation code (failure injection scripts or manifests)
+3. Monitoring setup and alert configuration
+4. Rollback procedure (scripted, ≤ 30s)
+5. Learning summary and improvement recommendations
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Drafts hypothesis and steady-state definition | Confirm the hypothesis reflects real business risk |
+| Generates Litmus, toxiproxy, or Chaos Monkey config | Run experiments in your environment |
+| Designs blast radius controls | Verify blast radius is acceptable before starting |
+| Writes rollback scripts | Test rollback works before the experiment begins |
+| Templates the learning summary | Fill in actual findings and assign follow-up tickets |
 
 ## Reference Guide
-
-Load detailed guidance based on context:
 
 | Topic | Reference | Load When |
 |-------|-----------|-----------|
@@ -45,39 +93,7 @@ Load detailed guidance based on context:
 | Game Days | `references/game-days.md` | Planning, executing, learning from game days |
 | Post-Mortems | `references/post-mortem.md` | Post-mortem template for game days and unplanned production incidents |
 
-## Safety Checklist
-
-Non-obvious constraints that must be enforced on every experiment:
-
-- **Steady state first** — define and verify baseline metrics before injecting any failure
-- **Blast radius cap** — start with the smallest possible impact scope; expand only after validation
-- **Automated rollback ≤ 30 seconds** — abort path must be scripted and tested before the experiment begins
-- **Single variable** — change only one failure condition at a time until behaviour is well understood
-- **No production without safety nets** — customer-facing environments require circuit breakers, feature flags, or canary isolation
-- **Close the loop** — every experiment must produce a written learning summary and at least one tracked improvement
-
-## Output Templates
-
-When implementing chaos engineering, provide:
-1. Experiment design document (hypothesis, metrics, blast radius)
-2. Implementation code (failure injection scripts/manifests)
-3. Monitoring setup and alert configuration
-4. Rollback procedures and safety controls
-5. Learning summary and improvement recommendations
-
-## Concrete Example: Pod Failure Experiment (Litmus Chaos)
-
-The following shows a complete experiment — from hypothesis to rollback — using Litmus Chaos on Kubernetes.
-
-### Step 1 — Define steady state and apply the experiment
-
-```bash
-# Verify baseline: p99 latency < 200ms, error rate < 0.1%
-kubectl get deploy my-service -n production
-kubectl top pods -n production -l app=my-service
-```
-
-### Step 2 — Create and apply a Litmus ChaosEngine manifest
+## Example: Pod Failure Experiment (Litmus Chaos)
 
 ```yaml
 # chaos-pod-delete.yaml
@@ -91,7 +107,6 @@ spec:
     appns: production
     applabel: "app=my-service"
     appkind: deployment
-  # Limit blast radius: only 1 replica at a time
   engineState: active
   chaosServiceAccount: litmus-admin
   experiments:
@@ -100,84 +115,17 @@ spec:
         components:
           env:
             - name: TOTAL_CHAOS_DURATION
-              value: "60"          # seconds
+              value: "60"
             - name: CHAOS_INTERVAL
-              value: "20"          # delete one pod every 20s
-            - name: FORCE
-              value: "false"
+              value: "20"
             - name: PODS_AFFECTED_PERC
-              value: "33"          # max 33% of replicas affected
+              value: "33"   # max 33% of replicas affected
 ```
 
-```bash
-# Apply the experiment
-kubectl apply -f chaos-pod-delete.yaml
+For network latency (toxiproxy) and Chaos Monkey examples, see `references/chaos-tools.md`.
 
-# Watch experiment status
-kubectl describe chaosengine my-service-pod-delete -n production
-kubectl get chaosresult my-service-pod-delete-pod-delete -n production -w
-```
+## Related Skills
 
-### Step 3 — Monitor during the experiment
-
-```bash
-# Tail application logs for errors
-kubectl logs -l app=my-service -n production --since=2m -f
-
-# Check ChaosResult verdict when complete
-kubectl get chaosresult my-service-pod-delete-pod-delete \
-  -n production -o jsonpath='{.status.experimentStatus.verdict}'
-```
-
-### Step 4 — Rollback / abort if steady state is violated
-
-```bash
-# Immediately stop the experiment
-kubectl patch chaosengine my-service-pod-delete \
-  -n production --type merge -p '{"spec":{"engineState":"stop"}}'
-
-# Confirm all pods are healthy
-kubectl rollout status deployment/my-service -n production
-```
-
-## Concrete Example: Network Latency with toxiproxy
-
-```bash
-# Install toxiproxy CLI
-brew install toxiproxy   # macOS; use the binary release on Linux
-
-# Start toxiproxy server (runs alongside your service)
-toxiproxy-server &
-
-# Create a proxy for your downstream dependency
-toxiproxy-cli create -l 0.0.0.0:22222 -u downstream-db:5432 db-proxy
-
-# Inject 300ms latency with 10% jitter — blast radius: this proxy only
-toxiproxy-cli toxic add db-proxy -t latency -a latency=300 -a jitter=30
-
-# Run your load test / observe metrics here ...
-
-# Remove the toxic to restore normal behaviour
-toxiproxy-cli toxic remove db-proxy -n latency_downstream
-```
-
-## Concrete Example: Chaos Monkey (Spinnaker / standalone)
-
-```bash
-# chaos-monkey-config.yml — restrict to a single ASG
-deployment:
-  enabled: true
-  regionIndependence: false
-chaos:
-  enabled: true
-  meanTimeBetweenKillsInWorkDays: 2
-  minTimeBetweenKillsInWorkDays: 1
-  grouping: APP           # kill one instance per app, not per cluster
-  exceptions:
-    - account: production
-      region: us-east-1
-      detail: "*-canary"  # never kill canary instances
-
-# Apply and trigger a manual kill for testing
-chaos-monkey --app my-service --account staging --dry-run false
-```
+- `sre-engineer` — SLO definition, error budgets, incident response
+- `microservices-architect` — resilience pattern design for distributed systems
+- `circuit-breaker-tuner` — configure failure thresholds before running chaos experiments

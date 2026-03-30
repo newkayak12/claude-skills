@@ -1,10 +1,33 @@
 ---
 name: okr-planning
-description: 'Sets and aligns goals using OKRs with CFRs for ongoing accountability. Use when defining team or company goals for a quarter, aligning cross-team efforts around shared outcomes, or when goals exist but progress is unclear or teams are pulling in different directions. Covers OKR design, grading, and organizational cascading.'
+description: >-
+  Use when defining team or company goals for a quarter, aligning cross-team efforts,
+  or when goals exist but progress is unclear and teams are pulling in different
+  directions. Triggers on: "OKR 설정", "분기 목표", "quarterly goals", "key results",
+  "목표 정렬", "KR 작성", "how do we set OKRs", "team is not aligned on priorities".
+  Best for: writing well-formed OKRs (outcome KRs, not output KRs); cascading from
+  company to team level; grading OKRs honestly with CFRs. Not for: tactical backlog
+  prioritization within an OKR cycle (use feature-prioritization); tracking sprint
+  tasks (use user-story or shape-up).
 license: MIT
 metadata:
   author: wondelai
   version: "1.0.0"
+scenarios:
+  - "Help me write OKRs for our team this quarter."
+  - "우리 팀 OKR을 회사 목표에 연결되게 설계해줘."
+  - "Our key results are all outputs (features shipped) — help me rewrite them as outcomes."
+  - "이번 분기 OKR 그레이딩을 어떻게 해야 할지 모르겠어."
+  - "How do we cascade company OKRs down to individual team OKRs?"
+  - "팀이 OKR을 형식적으로만 쓰고 실제로 활용을 안 해. 어떻게 바꿀까?"
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - mcp-reasoner
+  remote_mcp_note: >-
+    think-tool이 있으면 OKR 간 정렬 논리와 stretch vs. committed 구분의 일관성을 검토하는 데 도움이 됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # OKR Planning Framework
@@ -172,6 +195,23 @@ A goal-setting framework that connects ambitious objectives to measurable key re
 | Are OKRs graded honestly, including misses? | Grading is always 0.7-0.9 regardless of reality | Grade 0.0-1.0 honestly; examine both high and low scores |
 | Do weekly conversations reference OKRs? | OKRs are set and forgotten until next quarter | Make OKRs the agenda for weekly 1-on-1s and team check-ins |
 | Are CFRs happening alongside OKR tracking? | OKRs are a spreadsheet, not a culture | Add recognition, feedback, and coaching conversations as a regular practice |
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Rewrites output KRs as outcome KRs with measurable targets | Sets the actual ambition level based on business context |
+| Scores OKR practice (0-10) with specific improvement steps | Conducts the CFR conversations with direct reports |
+| Cascades company OKRs into team-level translations | Negotiates with leadership on stretch vs. committed labeling |
+| Identifies orphan OKRs not connected to company objectives | Owns cross-team alignment and horizontal coordination |
+| Provides CFR conversation starters for weekly check-ins | Makes final grading decisions and communicates them |
+
+## Related Skills
+
+- `../feature-prioritization/SKILL.md` — OKR alignment check for each backlog item
+- `../roadmap-communication/SKILL.md` — link each roadmap item to an OKR narrative for stakeholders
+- `../metrics-interpretation/SKILL.md` — check whether a metric change affects a current Key Result
+- `../stakeholder-management/SKILL.md` — align stakeholders when cross-team OKRs conflict
 
 ## Further Reading
 

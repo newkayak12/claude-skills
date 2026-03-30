@@ -1,9 +1,69 @@
 ---
 name: resume-tailorer
-description: 'Use when the user has a resume and a specific job description and wants the resume rewritten to match that JD — keyword alignment, achievement reframing, and skills reordering for the target company. Not general improvement (that is portfolio-rewrite) and not fit assessment (that is portfolio-jd). Triggers on "이력서 맞춰줘", "공고에 맞게 고쳐줘", "이력서 최적화".'
+description: >-
+  Use when someone has a resume and a specific job description and wants the resume rewritten to match that JD — keyword alignment, achievement reframing, and skills reordering.
+  Triggers on: "이력서 맞춰줘", "공고에 맞게 고쳐줘", "이력서 최적화", "tailor my resume to this JD", "optimize resume for this job", "keyword align my resume".
+  Best for: matching a resume to a specific role's vocabulary; surfacing hidden strengths with the wrong terminology; reordering skills/achievements for maximum relevance to a JD.
+  Not for: general resume improvement without a JD (use portfolio-rewrite), overall portfolio assessment (use portfolio-feedback), JD fit scoring (use portfolio-jd).
+scenarios:
+  - "Tailor my resume to match this job description — keyword alignment and achievement reframing"
+  - "Rewrite my resume summary and experience bullets to fit this JD"
+  - "Reorder my skills section to match what this company is looking for"
+  - "이 공고에 맞게 이력서 최적화해줘"
+  - "JD 키워드에 맞게 이력서 고쳐줘"
+compatibility:
+  recommended: []
+  optional:
+    - sequential-thinking
+  remote_mcp_note: >-
+    sequential-thinking이 있으면 JD 분석 → 갭 분석 → 섹션 리라이팅 순서를 강제하여
+    갭 분석 전에 리라이팅이 발생하는 문제를 방지합니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Resume Tailorer
+
+## When to Use / When Not to Use
+
+**Use when:**
+- You have a specific JD and want the resume vocabulary to match it
+- Hidden strengths are described with different terms than the JD uses
+- You need to reorder skills and achievements to front-load what this company cares about
+
+**Not for:**
+- General resume improvement without a JD (use portfolio-rewrite)
+- Assessing how well you fit a role (use portfolio-jd)
+- Understanding which companies to target (use portfolio-company)
+
+## Process
+
+1. **Gather inputs** — current resume + full JD; company name/stage and role level useful
+2. **Analyze the JD** — required tech skills (frequency = emphasis), soft skill signals, responsibility keywords, implicit culture signals
+3. **Gap analysis** — JD requirements vs. resume coverage in a table: Missing / Weak / Strong
+4. **Produce section rewrites** — Before/After for every section needing change; keyword alignment, achievement reframing, skills reordering
+5. **Name what NOT to change** — sections already well-aligned; don't touch them
+
+## Standalone Inputs
+
+Provide both:
+1. Current resume (paste or describe key sections)
+2. Full JD text
+
+Also useful: company name/stage, role level, why you want this specific role.
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Decodes JD: required vs. aspirational; vocabulary signals; cultural cues | Validates that rewrites accurately reflect your real experience |
+| Gap analysis: JD requirements vs. resume coverage (table format) | Provides missing context (actual numbers, role scope) |
+| Produces Before/After rewrites for each section needing change | Decides which rewrites to use |
+| Identifies sections to deemphasize or move for this JD | Applies changes to the actual document |
+
+## Related Skills
+
+- `../portfolio-jd/SKILL.md` — fit assessment before deciding to tailor
+- `../portfolio-rewrite/SKILL.md` — general improvement not tied to a specific JD
 
 ## Why Generic Resumes Fail
 

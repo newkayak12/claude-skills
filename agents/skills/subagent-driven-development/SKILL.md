@@ -1,6 +1,26 @@
 ---
 name: subagent-driven-development
-description: Use when executing implementation plans with independent tasks in the current session
+description: >-
+  Use when executing an implementation plan with independent tasks using fresh subagents per task.
+  Triggers on: "계획 실행해줘", "서브에이전트로 구현해줘", "subagent-driven", "plan 실행",
+  "태스크별로 에이전트 배포해줘", "두 단계 리뷰로 구현", "현재 세션에서 계획 실행".
+  Best for: executing written plans in the current session with spec + quality review after each task.
+  Not for: parallel session execution (use executing-plans) or tightly coupled tasks.
+scenarios:
+  - "이 구현 계획 서브에이전트로 실행해줘"
+  - "각 태스크마다 새 에이전트로 구현하고 리뷰해줘"
+  - "Execute this plan with fresh subagents per task"
+  - "두 단계 리뷰(spec + 품질)로 구현해줘"
+  - "계획 있는데 현재 세션에서 에이전트로 실행해줘"
+  - "Implement each task with subagent + review cycle"
+compatibility:
+  recommended:
+    - sequential-thinking  # orchestration planning, per-task model selection reasoning
+  optional:
+    - think-tool           # per-task complexity assessment and BLOCKED status diagnosis
+  remote_mcp_note: >-
+    think-tool이 있으면 각 태스크 실행 전 복잡도와 숨겨진 의존성을 평가할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Subagent-Driven Development

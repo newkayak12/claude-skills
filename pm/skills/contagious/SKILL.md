@@ -1,10 +1,31 @@
 ---
 name: contagious
-description: 'Use when someone wants to make a product, feature, campaign, or idea spread through word-of-mouth or organic sharing. Applies the STEPPS framework (Social Currency, Triggers, Emotion, Public, Practical Value, Stories) to diagnose what makes things contagious and how to engineer shareability into any offering.'
+description: >-
+  Use when someone wants to make a product, feature, campaign, or idea spread through
+  word-of-mouth or organic sharing. Triggers on: "word of mouth", "virality", "how to
+  make this spread", "shareability", "바이럴", "입소문", "공유되게 하고 싶어", "제품이 퍼지게".
+  Best for: diagnosing why something isn't spreading; engineering shareability into a
+  launch or feature; scoring a campaign against the STEPPS framework. Not for:
+  paid acquisition strategy; SEO or performance marketing; viral coefficient math.
 license: MIT
 metadata:
   author: wondelai
   version: "1.0.1"
+scenarios:
+  - "How do we make this feature spread organically?"
+  - "우리 제품이 왜 입소문이 안 나는지 분석해줘."
+  - "Score this launch campaign for shareability."
+  - "바이럴 요소를 제품에 어떻게 추가할 수 있을까?"
+  - "Engineer word-of-mouth into our onboarding flow."
+  - "이 캠페인 STEPPS 기준으로 평가해줘."
+compatibility:
+  recommended: []
+  optional:
+    - think-tool
+    - mcp-reasoner
+  remote_mcp_note: >-
+    think-tool이 있으면 STEPPS 점수 분석과 개선 우선순위 판단에 도움이 됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Word-of-Mouth & Virality Framework

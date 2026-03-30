@@ -1,6 +1,25 @@
 ---
 name: microinteractions
-description: 'Designs small interactive details — triggers, rules, feedback, and loops — that make products feel polished and human. Use when a UI element feels off, robotic, or incomplete; when adding delight or personality to interactions; or when refining buttons, toggles, loading states, animations, or any moment-to-moment user feedback.'
+description: >-
+  Use when a UI element feels off, robotic, or incomplete — or when adding polish
+  and delight to moment-to-moment interactions.
+  Triggers on: "버튼 느낌이 어색해", "로딩 애니메이션", "toggle 디자인", "UI 디테일", "인터랙션 개선",
+  "loading state", "feedback animation", "이 버튼 어떻게 하면 나아질까", "마이크로인터랙션".
+  Best for: button/toggle refinement, loading states, form feedback, signature moments.
+  Not for: overall UX flows or page-level architecture — this covers contained single-use moments.
+scenarios:
+  - "이 좋아요 버튼이 너무 밋밋한데 어떻게 개선해?"
+  - "로딩 스피너 대신 뭔가 더 나은 피드백을 보여주고 싶어"
+  - "How should the submit button behave after the form is sent?"
+  - "toggle 상태 변화를 어떻게 표현하면 좋을까?"
+  - "We want the empty state to feel more human"
+  - "pull-to-refresh 어떻게 디자인해야 해?"
+compatibility:
+  optional:
+    - think-tool        # useful when evaluating whether a signature moment earns its complexity
+  remote_mcp_note: >-
+    think-tool이 있으면 마이크로인터랙션의 complexity가 UX 가치와 균형을 이루는지 체계적으로 평가할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 license: MIT
 metadata:
   author: wondelai

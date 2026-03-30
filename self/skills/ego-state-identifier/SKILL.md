@@ -1,108 +1,99 @@
 ---
 name: ego-state-identifier
-description: 'Use when someone is confused about why they reacted the way they did — especially when it felt automatic, disproportionate, childlike, or like they heard a parental voice in their head. Also triggers when someone describes feeling like two conflicting inner voices or a pattern in relationships that keeps repeating. Maps three internal states (Parent, Adult, Child) to explain where behavior is coming from.'
+description: >-
+  Use when someone is confused about why they reacted the way they did — especially when it
+  felt automatic, disproportionate, childlike, or like they heard a parental voice in their head.
+  Triggers on: "왜 이렇게 반응했지", "자동으로 나왔어", "어린애처럼 굴었어", "부모님 목소리 같은",
+  "inner child", "두 가지 목소리", "관계에서 같은 패턴이 반복돼", "ego state".
+  Best for: understanding automatic reactions, mapping relational transaction patterns, finding the Adult response.
+  Not for: general therapy or trauma processing — refer to a professional when responses involve deep distress.
+
+scenarios:
+  - "Why did I react so disproportionately to that feedback?"
+  - "I heard my mother's voice in my head criticizing me — what's happening?"
+  - "I keep playing the same role in every team I join"
+  - "왜 이렇게 과민하게 반응했는지 모르겠어"
+  - "내 안에 두 가지 목소리가 싸우는 것 같아"
+  - "직장에서 자꾸 어린아이처럼 행동하게 돼"
+
+compatibility:
+  optional:
+    - think-tool
+  remote_mcp_note: >-
+    think-tool이 있으면 세 가지 자아 상태(부모·성인·어린이)를 정밀하게 구분하고
+    거래 패턴을 체계적으로 분석할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Ego State Identifier
 
-Every person operates from three distinct ego states, each with its own voice, logic, and emotional signature. When you understand which state you're in — and which state others are speaking from — patterns that felt confusing become readable. Reactions that felt shameful become understandable. And change becomes possible because you can see the mechanism.
+## When to Use / When Not to Use
 
-The framework is Eric Berne's Transactional Analysis (TA), developed in the 1950s-60s and still one of the most practically useful tools in relational psychology. It is not a metaphor — it is a structural map of how we function.
+**Use when:**
+- A reaction felt automatic, disproportionate, or strangely familiar
+- Someone describes hearing an internal critical or nurturing voice
+- A relational pattern keeps repeating across different people or contexts
 
-## The Three Ego States
+**Not for:**
+- General therapy or trauma processing — refer professionally when responses involve deep distress
+- Simple relationship advice without a pattern-level question
 
-### Parent (P)
+## The Three Ego States (Transactional Analysis, Eric Berne)
 
-The Parent ego state contains internalized voices, rules, values, and behaviors learned from authority figures — primarily parents, but also teachers, culture, and religion. It operates as a recording: "this is how things are done", "this is what you should be", "this is wrong."
+| State | What it contains | Signs |
+|-------|-----------------|-------|
+| **Parent (P)** | Internalized voices and rules from authority figures | Moralizing, "should/must", giving unsolicited advice, feeling righteous |
+| — Nurturing Parent | Caring, supportive | "You did your best", "Let me help you" |
+| — Critical Parent | Rule-enforcing, judging | "You should know better", harsh self-criticism |
+| **Adult (A)** | Here-and-now processor — facts, options, current reality | Asking clarifying questions, "I noticed that...", genuinely curious |
+| **Child (C)** | Emotional responses and relational strategies from childhood | Feeling small, disproportionate emotion, wanting to please or rebel |
+| — Free Child | Spontaneous, creative, playful | Joy, curiosity, creative flow states |
+| — Adapted Child | Developed to survive original family system | People-pleasing, sulking, compliance, rebellion |
 
-Parent has two modes:
+**Contamination:** Parent or Child "bleeds into" Adult thinking (prejudice, magical thinking).
 
-**Nurturing Parent (NP):** Caring, protective, supportive. "You did your best." "Let me help you." Healthy NP is genuinely supportive. Overused NP becomes smothering or enables helplessness.
+**Exclusion:** One state chronically dominant, others suppressed.
 
-**Critical Parent (CP):** Rule-enforcing, judging, controlling. "You should know better." "That's not good enough." Healthy CP sets important limits. Overused CP becomes harsh inner criticism or controlling behavior toward others.
+## Process
 
-Signs you're in Parent: moralizing, giving unsolicited advice, using "should" and "must" frequently, feeling righteous, taking care of others from a place of superiority or pity.
+**Step 1 — Identify the event.** What happened? What was the internal experience (thought, feeling, body, impulse)?
 
-### Adult (A)
+**Step 2 — Map the ego state.** Language is a strong indicator. Did it feel familiar — like something from childhood? Was it rational and present-focused, or patterned and past-loaded?
 
-The Adult ego state is the here-and-now processor. It gathers data, thinks rationally, estimates probabilities, and makes decisions based on current reality — not past recordings (Parent) or childhood feelings (Child). The Adult asks: "What is actually happening? What are the facts? What are my options?"
+**Step 3 — Identify the transaction (if relational).** Which state was the user speaking from? Which state was the other person speaking from? Was the transaction complementary, crossed, or covert (ulterior)?
 
-A healthy Adult is not cold — it is clear. It can feel emotions and still think accurately about them.
+**Step 4 — Identify patterns.** Do certain people or situations reliably trigger this state?
 
-Signs you're in Adult: asking clarifying questions, pausing before responding, weighing options, speaking from observation ("I noticed that…") rather than judgment ("you always…"), being genuinely curious rather than rhetorically so.
+**Step 5 — Name the growth move.** What would the Adult response look like? What would Free Child offer instead of Adapted Child?
 
-### Child (C)
-
-The Child ego state contains emotional responses, impulses, creativity, and relational strategies learned in childhood. Like Parent, it has two primary modes:
-
-**Free Child (FC):** Spontaneous, joyful, creative, playful, sensual, authentic. The source of genuine delight, curiosity, and aliveness. Healthy FC is what makes someone fun to be with.
-
-**Adapted Child (AC):** Behavior developed to survive in the original family system — compliance, rebellion, withdrawal, people-pleasing, sulking. AC is not weakness; it was once smart adaptation. But it tends to re-activate in adult situations that feel like the original environment, even when they are not.
-
-Signs you're in Child: feeling suddenly small or helpless, reacting with disproportionate emotion, strong "I don't want to", wanting to please or appease, feeling like you need permission, acting out or withdrawing, creative flow states.
-
-## Contamination and Exclusion
-
-Two structural distortions matter most:
-
-**Contamination:** One ego state "bleeds into" the Adult, distorting its thinking.
-- Parent contamination: prejudice, rigid beliefs held as fact ("that's just how it is")
-- Child contamination: delusions, magical thinking, excessive fearfulness treated as realistic
-
-**Exclusion:** One ego state is chronically suppressed, and another dominates.
-- Constant Parent, no Child: driven, rule-bound, cannot play or rest
-- Constant Child, no Parent: impulsive, can't self-regulate, looks for external authority
-- Constant Adult, no Child: efficient but affectively flat, disconnected from joy and relationships
-
-## Analysis Workflow
-
-When the user describes a reaction, interaction, or internal conflict, work through these steps:
-
-**Step 1 — Identify the presenting event**
-What happened? What was said or done? What was the internal experience (thought, feeling, bodily sensation, impulse)?
-
-**Step 2 — Map the ego state**
-Based on the description, which ego state was dominant?
-- What were the exact words used internally or externally? (language is a strong indicator)
-- What emotion was present?
-- Did it feel familiar — like something from childhood or family of origin?
-- Was it rational and present-focused, or patterned and past-loaded?
-
-**Step 3 — Identify the transaction (if relational)**
-In interactions, ego states communicate with each other. Map:
-- Which ego state was the user speaking from?
-- Which ego state was the other person speaking from?
-- Was the transaction complementary (predictable), crossed (disruptive), or covert (ulterior motive beneath the surface)?
-
-**Step 4 — Identify patterns**
-Is this a recurring state switch? Do certain people or situations reliably trigger a particular ego state? This is often where the real insight lives.
-
-**Step 5 — Identify the growth move**
-What would the Adult response look like in this situation? What would it mean to activate Free Child instead of Adapted Child? Where is Critical Parent showing up as inner saboteur?
-
-## Output Format
-
-Deliver analysis in plain language, not jargon-heavy TA terminology. Name the state clearly, then translate it:
+## Output Template
 
 ```
 Ego State Analysis
 ------------------
-Dominant state in this situation: [Parent / Adult / Child — and which variant]
-Key signal that identified it: [specific language, emotion, or behavior]
-What this state was trying to do: [its positive intent — always name this]
+Dominant state: [Parent / Adult / Child — and which variant]
+Key signal: [specific language, emotion, or behavior that identified it]
+Positive intent of this state: [what it was trying to do — always name this]
 Cost in this situation: [what it produced that wasn't serving the person]
-Relational dynamic (if applicable): [who was speaking from where, what got crossed or covert]
+Relational dynamic (if applicable): [who was speaking from where, what got crossed]
 Pattern: [does this repeat? in what contexts?]
-Adult-state alternative: [what a grounded, present-focused response would have looked like]
+Adult-state alternative: [what a grounded, present-focused response would look like]
 Free Child alternative (if relevant): [what authentic, undefended response might look like]
 ```
 
-## Key Insight to Deliver
+## What Claude Does / What You Do
 
-Every ego state — including Critical Parent and Adapted Child — had a positive original intent. CP was trying to protect from harm. AC was trying to secure love and safety. Do not pathologize. Instead, ask: *this strategy made sense once — does it still make sense now?*
+| Claude | You |
+|--------|-----|
+| Maps the reaction to a specific ego state | Share the specific situation and internal experience |
+| Names the positive intent of even Critical Parent or Adapted Child | Sit with whether the pattern resonates |
+| Identifies where transactions crossed or went covert | Notice which state you're in the next time it triggers |
+| Offers the Adult and Free Child alternatives | Practice pausing before the automatic state takes over |
 
-That question is the door out of automatic behavior and into choice.
+**Key insight to deliver:** Every ego state had a positive original intent. The question is not "why am I broken" but "does this strategy still make sense now?"
 
-## Tone
+## Related Skills
 
-Curious, precise, non-shaming. The user is not broken — they are running old software in new situations. The goal is to make the software visible so they can choose whether to run it.
+- `attachment-style-mirror` — for relational patterns at the attachment level
+- `shadow-persona` — for what is being suppressed or performed at a deeper level
+- `identity-explorer` — when ego state patterns feel tied to core self-concept

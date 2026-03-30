@@ -1,10 +1,33 @@
 ---
 name: post-launch-retrospective
-description: 'Runs a structured post-launch evaluation of a feature or product release — checking whether the original hypothesis was right, which metrics moved, what was learned, and what to do next. Use when someone says "출시 후 회고", "런칭 결과 분석", "피처 성과 리뷰", "기능 효과 분석", "우리가 맞았나", "post-launch", "did it work", "launch retrospective", "we shipped it, now what?", or wants to analyze results after a release. Also triggers when a PM wants to formally close a feature cycle and document learnings for the next one.'
+description: >-
+  Use after a feature or product launch to formally close the cycle: validate the
+  original hypothesis, analyze which metrics moved, document learnings, and decide
+  what to do next. Triggers on: "출시 후 회고", "런칭 결과 분석", "피처 성과 리뷰",
+  "post-launch review", "did it work", "we shipped it, now what", "launch retrospective",
+  "기능 효과 분석". Best for: hypothesis validation against pre-launch success criteria;
+  distinguishing launch failure from hypothesis failure; writing portable learning cards
+  for the team wiki. Not for: diagnosing a metric drop unrelated to a specific launch
+  (use metrics-interpretation); planning the next feature cycle (use feature-prioritization).
 license: MIT
 metadata:
   author: wondelai
   version: "1.0.0"
+scenarios:
+  - "We shipped the feature 3 weeks ago — help me run a post-launch retro."
+  - "출시 후 회고를 어떻게 체계적으로 진행하면 될까?"
+  - "Our activation metric didn't move after the launch — which type of failure is this?"
+  - "런칭 결과를 분석해서 다음 사이클에 반영할 러닝카드를 만들어줘."
+  - "How do I tell if poor metrics are a launch problem vs. a product problem?"
+  - "피처 가설이 맞았는지 틀렸는지 정리해줘."
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - mcp-reasoner
+  remote_mcp_note: >-
+    think-tool이 있으면 런치 실패 유형(론치 실패 vs. 가설 실패 vs. 측정 실패)을 구분하는 데 도움이 됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Post-Launch Retrospective Framework
@@ -206,6 +229,16 @@ Original PRD: [link — references ../prd-development/SKILL.md success metrics]
 - **Feeds into:** `../customer-research-synthesis/SKILL.md` — unexpected user behavior signals that need follow-up research
 - **Dev cross-reference:** For product incidents discovered post-launch, run `develop:incident-response-playbook` in parallel — that skill owns the technical RCA; this skill owns the product hypothesis retrospective
 
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Structures the 4-section retro document template | Pulls the actual metric data and baseline comparisons |
+| Diagnoses failure type (launch / PMF / hypothesis / measurement) | Confirms context: what actually shipped vs. what was planned |
+| Writes learning card in portable format for team wiki | Validates learning interpretations with engineering and design |
+| Generates hypothesis validation checklist | Makes the call on next steps: iterate, pivot, or move on |
+| Drafts "what we'd do differently" section prompts | Owns the cross-team communication of learnings |
+
 ## Common Mistakes
 
 | Mistake | Why It Fails | Fix |
@@ -216,3 +249,11 @@ Original PRD: [link — references ../prd-development/SKILL.md success metrics]
 | Learning written as process complaints | "We should communicate better" changes nothing | Every learning must be specific, falsifiable, and imply a concrete change |
 | No learning card | Knowledge dies when the PM moves on | Write the portable card every time; link it from the PRD |
 | Moving on in < 2 weeks | Behavioral metrics need time to stabilize | Set a calendar event for the retro at launch time, not retroactively |
+
+## Related Skills
+
+- `../go-to-market-planning/SKILL.md` — the launch goals and success metrics that anchor the retro
+- `../metrics-interpretation/SKILL.md` — reading and interpreting post-launch data correctly
+- `../hypothesis-driven-dev/SKILL.md` — the original hypothesis the retro is validating
+- `../feature-prioritization/SKILL.md` — learning cards as updated evidence in the next prioritization cycle
+- `../customer-research-synthesis/SKILL.md` — unexpected user behavior signals that need follow-up research

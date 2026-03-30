@@ -1,10 +1,56 @@
 ---
 name: user-story-mapping-workshop
-description: 'Use when someone wants to be guided through building a story map interactively — step by step through scope, personas, backbone activities, tasks, and release slices via adaptive questions. Best when the user does not yet have clear answers and needs facilitation to discover and structure them, rather than wanting a map generated from existing context.'
-intent: >-
-  Guide product managers through creating a user story map by asking adaptive questions about the system, users, workflow, and priorities—then generating a two-dimensional map with backbone (activities), user tasks, and release slices. Use this to move from flat backlogs to visual story maps that communicate the big picture, identify missing functionality, and enable meaningful release planning—avoiding "context-free mulch" where stories lose connection to the overall system narrative.
+description: >-
+  Use when someone wants to be guided interactively through building a story map — step by step through scope, personas, backbone activities, tasks, and release slices via adaptive questions.
+  Triggers on: "walk me through story mapping", "help me build a story map", "story mapping workshop", "I don't know where to start with my backlog", "스토리 맵 같이 만들어줘", "스토리 매핑 워크숍".
+  Best for: teams starting a new product or feature without clear scope; PMs transitioning from a flat backlog to visual story maps; facilitated planning sessions.
+  Not for: generating a map from existing context (use user-story-mapping); single-story authoring; technical refactoring work.
 type: interactive
+scenarios:
+  - "Walk me through creating a story map for our new mobile app — I'm not sure where to start"
+  - "Help me run a story mapping workshop for our team's Q3 feature set"
+  - "I have a flat backlog and want to convert it to a story map with release slices"
+  - "스토리 맵 처음 만드는데 같이 도와줘"
+  - "유저 스토리 맵 워크숍 진행해줘"
+compatibility:
+  recommended:
+    - think-tool
+    - sequential-thinking
+  optional: []
+  remote_mcp_note: >-
+    think-tool이 있으면 백본 활동이 기술 레이어가 아닌 사용자 워크플로우를 반영하는지 검증할 수 있고,
+    sequential-thinking이 있으면 질문 간 상태를 유지하며 수정 사항이 후속 출력에 정확히 반영됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+
+## When to Use / When Not to Use
+
+**Use when:**
+- Starting a new product or major feature and scope is not yet clear
+- Reframing an existing flat backlog into a visual, narrative map
+- Aligning stakeholders on scope, MVP, and release slices
+- Running a facilitated planning session with a team
+
+**Not for:**
+- Generating a map when context is already defined (use user-story-mapping)
+- Single-feature or single-story scoping
+- Technical refactoring work with no user workflow
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Asks 5 adaptive questions to discover scope, personas, and activities | Provides context and makes judgment calls |
+| Generates backbone activities from answers | Approves or modifies the backbone |
+| Proposes tasks per activity with priority ordering | Confirms priorities reflect real user needs |
+| Draws release slices (Walking Skeleton, R2, R3) | Validates scope feasibility with engineering |
+| Flags anti-patterns (technical layers vs. user workflow) | Presents the final map to the team |
+
+## Related Skills
+
+- `../user-story-mapping/SKILL.md` — use this when context is already defined and you want a map produced directly
+- `../user-story/SKILL.md` — tasks from the map become individual user stories
+- `../user-story-splitting/SKILL.md` — large tasks need splitting before authoring stories
 
 ## Key Concepts
 

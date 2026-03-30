@@ -1,13 +1,14 @@
 ---
 name: pricing-monetization-strategy
 description: >-
-  Pricing model design, value-based pricing, packaging strategy, and monetization mechanics.
-  Trigger on: "가격 전략", "수익 모델", "프라이싱", "pricing strategy", "monetization", "how should we charge",
-  "freemium vs paid", "패키징", "pricing model", "what should we charge", "pricing tiers",
-  "value metric", "packaging", "willingness to pay", "WTP", "요금제", "구독 모델", "과금 방식".
-  Also trigger when someone is building a GTM plan or PRD and pricing hasn't been addressed,
-  or when a team is debating "freemium vs trial vs paid" or "seat-based vs usage-based" —
-  even if they don't say "pricing strategy" explicitly.
+  Use when deciding how to charge for a product, evaluating a shift from one pricing
+  model to another, or when a GTM plan needs pricing addressed before launch.
+  Triggers on: "가격 전략", "요금제 설계", "pricing model", "freemium vs free trial",
+  "usage-based pricing", "how much should we charge", "tier packaging", "monetization".
+  Best for: designing a new pricing model from scratch; evaluating seat-based vs.
+  usage-based shifts; structuring tier packaging decisions. Not for: pricing a services
+  engagement; decisions where pricing is locked by legal contract; actual WTP research
+  (this gives the framework; you still need to talk to customers).
 type: workflow
 theme: pm-strategy
 best_for:
@@ -18,7 +19,18 @@ scenarios:
   - "We need to decide between freemium and a free trial — help me think through this."
   - "가격 전략을 세워야 해. 어떤 요금제 구조가 맞는지 모르겠어."
   - "We're adding a new feature — should it go in the current tier or create a new tier?"
+  - "Help me design a 3-tier SaaS pricing structure for our B2B product."
+  - "seat 기반에서 usage 기반으로 전환하는 게 맞는지 판단해줘."
+  - "What's the right value metric for our AI product?"
 estimated_time: "60-120 min"
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - mcp-reasoner
+  remote_mcp_note: >-
+    think-tool이 있으면 가격 모델 선택의 트레이드오프와 패키징 설계 논리를 체계적으로 검토하는 데 도움이 됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 ## Purpose
@@ -253,9 +265,26 @@ Rationale: [Why this metric scales with customer value]
 
 ---
 
-## Connecting to Other Skills
+## What Claude Does / What You Do
 
-- **GTM plan:** Feeds `../go-to-market-planning/SKILL.md` — pricing tier and entry point are required GTM Canvas inputs
-- **Competitive benchmarking:** Pull competitor pricing from `../competitive-analysis/SKILL.md` to anchor price points
-- **PRD:** Document pricing model in Phase 4 of `../prd-development/SKILL.md` when it is a core product decision
-- **Customer research:** Triangulate WTP findings with `../customer-research-synthesis/SKILL.md`
+| Claude | You |
+|--------|-----|
+| Maps value delivery questions to pricing model options | Conducts actual WTP research with target customers |
+| Applies Van Westendorp or conjoint framing to existing data | Validates price points against competitive benchmarks |
+| Designs tier structure and packaging template | Makes the final pricing decision (business, finance, legal input) |
+| Identifies anti-patterns in existing pricing (cost-plus, wrong value metric) | Runs internal approval process for pricing changes |
+| Connects pricing to GTM Canvas and PRD constraints section | Monitors conversion and churn after pricing changes |
+
+## Standalone Inputs
+
+If no customer research exists, provide:
+- Target customer segment and job-to-be-done
+- 3 WTP interview responses structured as: "I'd pay $X for this because..."
+- Top 2-3 competitor price points and tier names
+
+## Related Skills
+
+- `../go-to-market-planning/SKILL.md` — pricing tier and entry point are required GTM Canvas inputs
+- `../competitive-analysis/SKILL.md` — competitor pricing tiers anchor price point benchmarking
+- `../prd-development/SKILL.md` — document pricing model in Phase 4 when it is a core product decision
+- `../customer-research-synthesis/SKILL.md` — WTP signals extracted from research feed this skill

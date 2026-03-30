@@ -1,6 +1,22 @@
 ---
 name: sql-pro
-description: 'Use when someone needs help writing or rewriting SQL — authoring complex joins, CTEs, window functions, or recursive queries — or designing a schema from scratch, normalizing an existing one, or migrating queries between database dialects. Also applies when a user shares a slow query and wants it rewritten or an EXPLAIN plan interpreted. Focuses on the SQL layer itself, not server-level configuration.'
+description: >-
+  Use when someone needs help writing or rewriting SQL — authoring complex joins, CTEs,
+  window functions, or recursive queries — or designing a schema from scratch, normalizing
+  an existing one, or migrating queries between database dialects. Also applies when a
+  user shares a slow query and wants it rewritten or an EXPLAIN plan interpreted.
+  Triggers on: "write this SQL query", "optimize this query", "window function",
+  "CTE", "rewrite SQL", "EXPLAIN plan", "SQL schema design", "dialect migration",
+  "SQL 쿼리 작성", "쿼리 최적화", "윈도우 함수", "실행 계획 분석".
+  Best for: query authoring, window functions, CTEs, EXPLAIN plan interpretation, schema normalization.
+  Not for: server-level DB config (use database-optimizer) or connection pool sizing (use connection-pool-tuner).
+compatibility:
+  recommended: []
+  optional:
+    - think-tool
+  remote_mcp_note: >-
+    think-tool이 있으면 쿼리 실행 계획 해석과 인덱스 전략 결정을 더 체계적으로 검토합니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 license: MIT
 metadata:
   author: https://github.com/Jeffallan
@@ -15,32 +31,61 @@ metadata:
 
 # SQL Pro
 
-## Core Workflow
+## When to Use / When Not to Use
 
-1. **Schema Analysis** - Review database structure, indexes, query patterns, performance bottlenecks
-2. **Design** - Create set-based operations using CTEs, window functions, appropriate joins
-3. **Version Check** - Confirm the target engine and version. Flag any syntax or feature in the proposed solution that requires a minimum version (e.g., `GENERATED ALWAYS AS IDENTITY` requires PostgreSQL 10+, `WITH RECURSIVE` requires MySQL 8.0+)
-4. **Optimize** - Analyze execution plans, implement covering indexes, eliminate table scans
-5. **Verify** - Run `EXPLAIN ANALYZE` and confirm no sequential scans on large tables; if query does not meet sub-100ms target, iterate on index selection or query rewrite before proceeding
-6. **Document** - Provide query explanations, index rationale, performance metrics
+**Use when:**
+- Writing or rewriting SQL queries: joins, CTEs, window functions, recursive queries
+- Designing or normalizing a schema
+- Interpreting an EXPLAIN plan for a slow query
+- Migrating SQL between PostgreSQL, MySQL, and SQL Server dialects
+
+**Do not use when:**
+- The bottleneck is server-level config (use `database-optimizer`)
+- The issue is connection pool exhaustion (use `connection-pool-tuner`)
+
+## Process
+
+1. **Schema Analysis** — Review table structure, existing indexes, query patterns
+2. **Design** — Draft set-based operations using CTEs, window functions, appropriate joins
+3. **Version Check** — Confirm target engine and version; flag any feature requiring a minimum version
+4. **Optimize** — Analyze execution plans; implement covering indexes; eliminate table scans
+5. **Verify** — Run `EXPLAIN ANALYZE` and confirm no sequential scans on large tables; iterate until sub-100ms target is met
+6. **Document** — Provide query explanation, index rationale, performance metrics, and minimum version requirements
+
+## Output Template
+
+For each SQL task, provide:
+1. Optimized query with inline comments
+2. Required indexes with rationale
+3. Execution plan analysis (key patterns found)
+4. Performance metrics (before/after)
+5. Platform-specific notes if applicable
+6. Minimum version requirements (e.g., `PostgreSQL >= 10`, `MySQL >= 8.0`)
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Writes set-based query using CTEs or window functions | Provide sample data or schema DDL |
+| Recommends covering index strategy | Run `CREATE INDEX CONCURRENTLY` in your environment |
+| Reads EXPLAIN output and identifies plan patterns | Provide actual EXPLAIN ANALYZE output |
+| Flags dialect-specific syntax differences | Test against your actual database version |
+| Documents the before/after performance comparison | Validate with production-scale data volumes |
 
 ## Reference Guide
-
-Load detailed guidance based on context:
 
 | Topic | Reference | Load When |
 |-------|-----------|-----------|
 | Query Patterns | `references/query-patterns.md` | JOINs, CTEs, subqueries, recursive queries |
 | Window Functions | `references/window-functions.md` | ROW_NUMBER, RANK, LAG/LEAD, analytics |
-| Optimization | `references/optimization.md` | EXPLAIN plans, indexes, statistics, tuning |
-| Database Design | `references/database-design.md` | Normalization, keys, constraints, schemas |
-| Dialect Differences | `references/dialect-differences.md` | PostgreSQL vs MySQL vs SQL Server specifics |
+| Optimization | `references/optimization.md` | EXPLAIN plans, indexes, statistics |
+| Database Design | `references/database-design.md` | Normalization, keys, constraints |
+| Dialect Differences | `references/dialect-differences.md` | PostgreSQL vs MySQL vs SQL Server |
 
 ## Quick-Reference Examples
 
 ### CTE Pattern
 ```sql
--- Isolate expensive subquery logic for reuse and readability
 WITH ranked_orders AS (
     SELECT
         customer_id,
@@ -48,40 +93,25 @@ WITH ranked_orders AS (
         total_amount,
         ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY order_date DESC) AS rn
     FROM orders
-    WHERE status = 'completed'          -- filter early, before the join
+    WHERE status = 'completed'
 )
 SELECT customer_id, order_id, total_amount
 FROM ranked_orders
-WHERE rn = 1;                           -- latest completed order per customer
+WHERE rn = 1;  -- latest completed order per customer
 ```
 
 ### Window Function Pattern
 ```sql
--- Running total and rank within partition — no self-join required
 SELECT
     department_id,
     employee_id,
     salary,
-    SUM(salary)  OVER (PARTITION BY department_id ORDER BY hire_date) AS running_payroll,
-    RANK()       OVER (PARTITION BY department_id ORDER BY salary DESC) AS salary_rank
+    SUM(salary) OVER (PARTITION BY department_id ORDER BY hire_date) AS running_payroll,
+    RANK()      OVER (PARTITION BY department_id ORDER BY salary DESC) AS salary_rank
 FROM employees;
 ```
 
-### EXPLAIN ANALYZE Interpretation
-```sql
--- PostgreSQL: always use ANALYZE to see actual row counts vs. estimates
-EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
-SELECT *
-FROM orders o
-JOIN customers c ON c.id = o.customer_id
-WHERE o.created_at > NOW() - INTERVAL '30 days';
-```
-Key things to check in the output:
-- **Seq Scan on large table** → add or fix an index
-- **actual rows ≫ estimated rows** → run `ANALYZE <table>` to refresh statistics
-- **Buffers: shared hit** vs **read** → high `read` count signals missing cache / index
-
-### Before / After Optimization Example
+### Before / After Optimization
 ```sql
 -- BEFORE: correlated subquery, one execution per row (slow)
 SELECT order_id,
@@ -96,36 +126,24 @@ LEFT JOIN (
     FROM order_items
     GROUP BY order_id
 ) agg ON agg.order_id = o.id;
-
--- Supporting covering index (includes all columns touched by the query)
-CREATE INDEX idx_order_items_order_qty
-    ON order_items (order_id)
-    INCLUDE (quantity);
 ```
 
 ## Constraints
 
-### MUST DO
+**MUST DO:**
 - Analyze execution plans before recommending optimizations
 - Use set-based operations over row-by-row processing
-- Apply filtering early in query execution (before joins where possible)
+- Apply filtering early (before joins where possible)
 - Use EXISTS over COUNT for existence checks
-- Handle NULLs explicitly in comparisons and aggregations
-- Create covering indexes for frequent queries
-- Test with production-scale data volumes
+- Handle NULLs explicitly
 
-### MUST NOT DO
-- Use SELECT * in production queries
+**MUST NOT DO:**
+- Use `SELECT *` in production queries
 - Use cursors when set-based operations work
-- Ignore platform-specific optimizations when targeting a specific dialect
 - Implement solutions without considering data volume and cardinality
 
-## Output Templates
+## Related Skills
 
-When implementing SQL solutions, provide:
-1. Optimized query with inline comments
-2. Required indexes with rationale
-3. Execution plan analysis
-4. Performance metrics (before/after)
-5. Platform-specific notes if applicable
-6. Minimum version requirements (if any) — e.g., `PostgreSQL >= 10 (GENERATED ALWAYS AS IDENTITY)`, `MySQL >= 8.0 (WITH RECURSIVE, JSON type)`
+- `database-optimizer` — server-level tuning after the query is optimized
+- `connection-pool-tuner` — pool sizing if slow queries are exhausting connections
+- `spring-boot-engineer` — for JPA query methods and `@Query` annotations

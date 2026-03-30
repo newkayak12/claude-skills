@@ -1,6 +1,27 @@
 ---
 name: retrospective
-description: 'Use when someone wants to reflect on a completed period — a sprint, project, week, or personal milestone — in order to extract lessons and commit to improvements. Covers solo and team retrospectives. Captures what went well, what did not, and what to change next, using KPT, 5 Whys, or timeline formats depending on scope.'
+description: >-
+  Use when someone wants to reflect on a completed period to extract lessons and commit to improvements.
+  Triggers on: "회고해줘", "스프린트 회고", "retrospective", "KPT", "잘된 것 못된 것 정리",
+  "이번 프로젝트 돌아보기", "팀 회고", "무엇을 개선할 수 있을까", "5 whys", "근본 원인 분석".
+  Best for: sprint/project retrospectives, solo reflections, post-mortems, recurring problem diagnosis.
+  Not for: planning future work (use roadmap-planning) or evaluating product launches (use post-launch-retrospective).
+scenarios:
+  - "이번 스프린트 회고 해야 해"
+  - "프로젝트 끝났는데 뭘 배웠는지 정리해줘"
+  - "We keep having the same problems — let's do a 5 Whys"
+  - "이번 장애 근본 원인 파악해야 해"
+  - "팀 회고 어떻게 진행해야 할지 도와줘"
+  - "지난 분기 혼자 회고하고 싶어"
+compatibility:
+  recommended:
+    - think-tool        # verifies Problem→Try completeness before final output
+  optional:
+    - sequential-thinking  # for 5 Whys causal chain — each step explicitly builds on the previous
+  remote_mcp_note: >-
+    think-tool이 있으면 최종 출력 전에 모든 Problem이 Try와 연결되었는지 검증합니다.
+    sequential-thinking이 있으면 5 Whys 인과 체인을 단계별로 추적할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Retrospective

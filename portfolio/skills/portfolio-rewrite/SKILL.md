@@ -1,13 +1,64 @@
 ---
 name: portfolio-rewrite
-description: Rewrites weak portfolio sections into strong, senior-level statements — showing Before/After in Korean. Use when the user wants to improve specific portfolio sentences, says "이 문장 고쳐줘", "이 부분 어떻게 쓰면 좋아", "더 잘 쓰는 법", "임팩트 있게 바꿔줘", or after receiving portfolio-feedback and wanting to act on it. Always use this skill when a user wants to rewrite or improve a specific portfolio passage.
+description: >-
+  Use when someone wants to rewrite specific portfolio sections into stronger, senior-level statements — showing Before/After with explanations.
+  Triggers on: "이 문장 고쳐줘", "이 부분 어떻게 쓰면 좋아", "더 잘 쓰는 법", "임팩트 있게 바꿔줘", "rewrite this portfolio section", "make this stronger", "improve this bullet point".
+  Best for: acting on portfolio-feedback improvement areas; rewriting specific vague, passive, or junior-sounding sentences into specific, ownership-clear, impact-driven statements.
+  Not for: general portfolio quality scoring (use portfolio-feedback), writing pattern analysis (use portfolio-pattern), JD-specific keyword alignment (use resume-tailorer).
+scenarios:
+  - "Rewrite this portfolio bullet point to sound more senior"
+  - "Make this section show more ownership and impact"
+  - "I have vague impact claims — help me rewrite them with stronger language"
+  - "이 문장 더 임팩트 있게 고쳐줘"
+  - "이 포트폴리오 섹션 시니어 수준으로 리라이팅 해줘"
+compatibility:
+  recommended: []
+  optional:
+    - think-tool
+  remote_mcp_note: >-
+    think-tool이 있으면 리라이팅 전 원본 문장의 실제 약점을 진단하는 품질이 높아집니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Portfolio Section Rewriter
 
-You are a senior technical writer and ex-interviewer who knows exactly what makes a backend engineer's portfolio sentence land — or fall flat. Your job is to take weak, vague, or junior-sounding portfolio text and rewrite it into something that reads like a 5+ year engineer who owns their work.
+## When to Use / When Not to Use
 
-The user will paste one or more sections. You rewrite them. You show the Before and After side by side. You explain *why* the rewrite is stronger — not generically, but specifically tied to what changed.
+**Use when:**
+- Acting on specific improvement areas from portfolio-feedback
+- Rewriting sentences that are vague, passive, or junior-sounding
+- Turning impact claims without numbers into specific, measurable statements
+
+**Not for:**
+- Overall portfolio scoring (use portfolio-feedback)
+- Understanding writing patterns holistically (use portfolio-pattern)
+- Keyword matching to a JD (use resume-tailorer)
+
+## Process
+
+1. **Diagnose what's weak** — not just "vague" but specifically: missing numbers, passive ownership, no context, no tradeoff, no outcome
+2. **Ask for missing facts** — if numbers or role scope are absent, request them before rewriting
+3. **Produce Before/After** — verbatim original + rewritten version + 2-4 sentence explanation of what changed and why
+4. **Apply techniques** — specificity, ownership language (저는 → 제가 설계했습니다), decision visibility, outcome framing, conflict-and-resolution
+5. **Offer continuation** — invite the user to paste additional sections
+
+## Standalone Inputs
+
+Paste the specific portfolio passage(s) you want rewritten. If numbers or role context are missing, Claude will ask before rewriting.
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Diagnoses what is actually weak in the original (not just "it's vague") | Provides missing facts: actual numbers, your specific role, what changed |
+| Produces Before/After with explanation of what changed and why | Validates the rewrite is factually accurate |
+| Applies techniques: specificity, ownership language, decision visibility, outcome framing | Decides which version to use |
+| Flags when a rewrite needs facts you haven't provided yet | Supplies those facts so rewrites are honest, not fabricated |
+
+## Related Skills
+
+- `../portfolio-pattern/SKILL.md` — diagnose patterns before targeted rewriting
+- `../portfolio-feedback/SKILL.md` — understand which sections to prioritize for rewriting
 
 ---
 

@@ -1,7 +1,13 @@
 ---
 name: metrics-interpretation
 description: >-
-  Reads dashboards, diagnoses metric changes, distinguishes signal from noise, and drives data-informed decisions. Trigger on any of: "지표 분석", "숫자가 왜 떨어졌지", "DAU 분석", "metrics dropped", "why did X change", "데이터 해석", "대시보드 읽기", "conversion drop", "retention 하락", or whenever someone shares numbers and needs to understand what happened and what to do. Also trigger when someone asks about A/B test results, KPI reviews, weekly metric reviews, or says "our numbers are off."
+  Use when a number moved unexpectedly and you need to understand why before deciding
+  what to do. Triggers on: "지표가 떨어졌어", "retention 하락", "conversion drop",
+  "A/B test 결과 해석", "KPI 이상", "metrics dropped", "why did this metric change",
+  "dashboard 분석해줘". Best for: diagnosing an unexpected metric drop or spike;
+  interpreting A/B test results and making a ship decision; turning a weekly metrics
+  review into action items. Not for: defining which metrics to track (use okr-planning
+  or prd-development); post-launch feature evaluation (use post-launch-retrospective).
 type: workflow
 theme: pm-data
 best_for:
@@ -12,7 +18,18 @@ scenarios:
   - "우리 retention이 갑자기 떨어졌어. 뭐가 문제인지 분석해줘."
   - "Our conversion dropped 15% last week. How do I figure out why?"
   - "A/B test results are in — how do I interpret them and decide?"
+  - "Weekly 지표 리뷰에서 이상한 숫자가 나왔어. 분석해줘."
+  - "How do I know if this metric change is real or just noise?"
+  - "DAU 급락 원인을 체계적으로 찾는 방법 알려줘."
 estimated_time: "30-60 min"
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - mcp-reasoner
+  remote_mcp_note: >-
+    think-tool이 있으면 세그멘테이션 가설을 체계적으로 검토하고 인과관계와 상관관계를 구분하는 데 도움이 됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Metrics Interpretation
@@ -150,6 +167,23 @@ Caveats: [What could invalidate this result?]
 ```
 
 ---
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Structures the investigation sequence (What/Why/What to do) | Pulls actual dashboard data and segment breakdowns |
+| Generates segmentation hypotheses to test | Validates hypotheses against internal context (releases, campaigns) |
+| Identifies common metric traps and anti-patterns | Confirms with the data team whether tracking code changed |
+| Drafts stakeholder memo and A/B test result summary | Makes the final decision on what action to take |
+| Connects metric findings to OKRs and next steps | Owns the communication to leadership |
+
+## Related Skills
+
+- `../okr-planning/SKILL.md` — check whether the metric is a current Key Result
+- `../post-launch-retrospective/SKILL.md` — if the change is post-launch, use the retro format
+- `../feature-prioritization/SKILL.md` — metric evidence feeds prioritization decisions
+- `../hypothesis-driven-dev/SKILL.md` — if the change is an experiment result, validate against original hypothesis
 
 ## Quick Diagnostic
 

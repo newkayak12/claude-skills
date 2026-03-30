@@ -1,15 +1,80 @@
 ---
 name: leveling-ic
-description: 'Helps ICs understand their current level, close gaps to the next level, and build a promotion-ready evidence portfolio. Use when an engineer wants to understand what senior actually means in practice, feels stuck at their current level, or is preparing a promotion conversation with their manager.'
+description: >-
+  Use when an IC wants to understand their current level, close gaps to the next level, and build a promotion-ready evidence portfolio.
+  Triggers on: "what does senior mean in practice", "how do I get to staff", "promotion conversation with manager", "느낌상 시니어인데 인정 안 받아", "승진 준비 어떻게 해", "레벨업 어떻게 해", "promotion evidence", "career ladder gaps".
+  Best for: engineers unclear on what the next level requires; building a STAR-format evidence log; preparing explicit promotion timing conversations.
+  Not for: managers writing promotion cases (use leveling-manager), general career advice, or 1-on-1 meeting prep.
 license: MIT
 metadata:
   author: wondelai
   version: "1.0.0"
+scenarios:
+  - "What does operating at Staff level actually look like — and how far am I from it?"
+  - "Help me build an evidence log for my Senior to Staff promotion"
+  - "I want to have a promotion conversation with my manager — help me prepare"
+  - "시니어 → 스태프 레벨업 어떻게 준비해야 해?"
+  - "승진 근거 자료 만드는 법 알려줘"
+compatibility:
+  recommended:
+    - think-tool
+  optional: []
+  remote_mcp_note: >-
+    think-tool이 있으면 경험 사례가 실제로 해당 레벨의 증거인지 아니면 현재 레벨의 우수 성과인지
+    구분하는 판단 품질이 높아집니다. Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Engineering Leveling — IC Framework
 
-A framework for individual contributors to understand what their current level actually means, identify what the next level requires, and build a credible evidence portfolio for promotion. Most engineers don't get promoted because they didn't know what evidence was needed — not because they weren't doing great work.
+## When to Use / When Not to Use
+
+**Use when:**
+- Unclear on what the next level (Senior, Staff, Principal) actually requires
+- Building a STAR-format evidence log for a promotion cycle
+- Preparing an explicit promotion conversation with your manager
+
+**Not for:**
+- Managers writing promotion cases (use leveling-manager)
+- IC → management track transitions
+- Performance improvement (distinct from leveling)
+
+## Process
+
+1. **Establish context** — current level, target level, timeline, rubric availability
+2. **Quick diagnostic** — identify which of the 5 phases needs most attention
+3. **Understand current level** — are you performing at it or fully operating at it?
+4. **Map next-level criteria** — by dimension: Technical Execution, System Design, Project Leadership, Collaboration, Impact
+5. **Start evidence log** — STAR format, tagged by rubric dimension; proactive work flagged separately
+6. **Close gaps** — volunteer for specific opportunities that address the weakest dimension
+7. **Promotion conversation** — open it explicitly; ask whether you're being submitted; get specifics on gaps
+
+## Output Template
+
+Evidence log entry format:
+```
+Date: [YYYY-MM-DD]
+Situation: [context — what was happening, what was the problem?]
+Task: [what was your specific responsibility?]
+Action: [what did YOU do? — first person, specific decisions]
+Result: [measurable outcome — numbers preferred]
+Dimension: [Technical Execution / System Design / Project Leadership / Collaboration / Impact]
+Proactive: [Yes / No — did someone ask you to do this, or did you identify it yourself?]
+```
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Explains what each level looks like in practice per dimension | Has the actual conversations with your manager |
+| Writes STAR-format evidence entries from examples you describe | Identifies and pursues opportunities to close gaps |
+| Diagnoses which evidence dimension is thinnest | Decides when to push for promotion vs. wait for more evidence |
+| Drafts promotion conversation talking points | Builds the relationship that makes advocacy possible |
+| Scores your current 5-phase readiness | Makes the final call on timing |
+
+## Related Skills
+
+- `../1-on-1-ic/SKILL.md` — drive career and promotion conversations in your 1-on-1s
+- `../leveling-manager/SKILL.md` — understand what your manager is building the case with
 
 ## Core Principle
 

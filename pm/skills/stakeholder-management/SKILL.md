@@ -1,7 +1,11 @@
 ---
 name: stakeholder-management
 description: >-
-  Focuses on PEOPLE and RELATIONSHIPS: mapping influence, managing resistance, building trust, and getting decisions approved. Trigger on: "이해관계자 관리", "CEO 설득", "임원 보고", "stakeholder", "exec buy-in", "how do I get approval", "팀 설득", "경영진 동의", "반대하는 사람 설득", or whenever someone needs to align a specific person, navigate a difficult relationship, or overcome interpersonal resistance. Use this skill when the challenge is WHO — managing a person blocking progress. For HOW TO PRESENT a plan or roadmap to an audience, use roadmap-communication instead.
+  Focuses on PEOPLE and RELATIONSHIPS: mapping influence, building trust, and overcoming
+  interpersonal resistance to get decisions approved and initiatives unblocked.
+  Use when the challenge is WHO — a specific person blocking progress, an exec who needs convincing,
+  or a team that won't align regardless of the logical argument.
+  For crafting the message or format of a roadmap presentation, use roadmap-communication instead.
 type: workflow
 theme: pm-strategy
 best_for:

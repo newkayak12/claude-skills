@@ -1,6 +1,24 @@
 ---
 name: technical-blog-writer
-description: 'Use when someone wants to write a technical blog post about something they built, fixed, or learned — especially when they have the content but do not know how to start, structure it, or make it engaging for developer readers. Applies to posts about engineering experiences, lessons from production incidents, project retrospectives, and tutorials.'
+description: >-
+  Use when writing a technical blog post about something built, fixed, or learned.
+  Triggers on: "기술 블로그 써줘", "개발 블로그", "technical blog", "글 쓰고 싶은데 어떻게 시작해?",
+  "이 경험 블로그로 쓰고 싶어", "engineering post", "회고 글", "튜토리얼 써줘", "개발 경험 공유".
+  Best for: incident post-mortems, feature deep dives, lessons from production, tutorials.
+  Not for: marketing copy, non-technical writing, or documentation (use doc-coauthoring).
+scenarios:
+  - "DB 장애 대응 경험 블로그로 쓰고 싶어"
+  - "Kafka 도입 과정을 기술 블로그로 써줘"
+  - "I want to write about how we cut latency by 40ms"
+  - "React 마이그레이션 경험 공유하고 싶어"
+  - "이 기술 결정 이유를 포스트로 정리해줘"
+  - "Tutorial for the library I built"
+compatibility:
+  optional:
+    - think-tool        # clarifying the core story and angle before drafting
+  remote_mcp_note: >-
+    think-tool이 있으면 작성 전에 블로그의 핵심 스토리와 각도를 명확히 정의할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Technical Blog Writer

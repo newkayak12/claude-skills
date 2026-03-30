@@ -1,153 +1,130 @@
 ---
 name: motivation-explorer
-description: 'Use when someone has lost motivation, is doing something but does not know why, or suspects their stated reason is not the real one. Also triggers when someone knows what they want but cannot seem to pursue it — ambivalence almost always has a motivation structure underneath. Two moves: locate where on the intrinsic-extrinsic spectrum the motivation sits, and peel back to find the root driver. Distinct from values-explorer (what matters).'
+description: >-
+  Use when someone has lost motivation, is doing something but doesn't know why, or suspects
+  their stated reason isn't the real one. Also triggers when someone knows what they want but
+  can't seem to pursue it — ambivalence almost always has a motivation structure underneath.
+  Triggers on: "동기 부여", "motivation", "왜 하는지 모르겠어", "하기 싫은데 해야 해",
+  "진짜 이유가 뭔지", "의욕이 없어", "알면서도 못 하겠어", "왜 안 되는 건지".
+  Best for: diagnosing hollow achievement, blocked goals, ambivalence mapping.
+  Not for: general productivity or habit formation without an underlying motivation question.
+
+scenarios:
+  - "I achieved what I wanted but it feels hollow — why?"
+  - "I know I want to do this but I can't seem to start"
+  - "What's my real motivation behind this goal?"
+  - "왜 하는지 모르면서 계속 하고 있어"
+  - "원하는 게 있는데 왜 행동이 안 되는 건지 모르겠어"
+  - "진짜 동기가 뭔지 파악하고 싶어"
+
+compatibility:
+  optional:
+    - think-tool
+  remote_mcp_note: >-
+    think-tool이 있으면 동기 레이어를 더 정밀하게 탐구하고
+    표면 동기와 핵심 동기의 차이를 명확하게 구분할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Motivation Explorer
 
-Why do you do what you do? The surface answer is rarely the real one. People pursue goals for layered, often contradictory reasons — and when the layers are unexamined, those goals feel either hollow (even when achieved) or mysteriously blocked (even when genuinely wanted). This skill is motivation archaeology: digging down to the real bedrock.
+## When to Use / When Not to Use
 
-Two theoretical pillars work in combination here:
+**Use when:**
+- Achievement feels hollow or meaningless despite external success
+- A goal is genuinely wanted but pursuit is blocked
+- "I should want this" is doing a lot of work in the person's reasoning
 
-**Self-Determination Theory (SDT)** by Deci and Ryan: human motivation exists on a spectrum from external (doing it for reward or to avoid punishment) to internal (doing it because it is intrinsically meaningful). The degree of internalization determines the sustainability and quality of motivation. SDT also identifies three core psychological needs whose fulfillment predicts wellbeing: autonomy (I chose this), competence (I'm growing at this), and relatedness (this connects me to others).
+**Not for:**
+- General productivity hacks without a motivation question
+- Motivation that is clearly external and the person is fine with that
 
-**Motivational Interviewing (MI)** by Miller and Rollnick: ambivalence about change is normal and contains information. Exploring "change talk" vs "sustain talk" — the reasons to change vs reasons to stay — reveals what's really holding behavior in place.
+## Process
 
-## Part 1 — Intrinsic/Extrinsic Separation
+### Part 1 — Intrinsic/Extrinsic Location
 
-### The Spectrum
+| Type | Signal | Sustainability |
+|------|--------|---------------|
+| External regulation | For reward or to avoid punishment | Depletes over time |
+| Introjected | To avoid guilt/shame or protect self-esteem | Effort with chronic anxiety |
+| Identified | Agree it's important, even if not always pleasant | More stable |
+| Integrated | Part of who I am | Stable and energizing |
+| Intrinsic | The activity itself is rewarding | Self-sustaining |
 
-External regulation → Introjected regulation → Identified regulation → Integrated regulation → Intrinsic motivation
+**Diagnostic questions:**
+1. If no external reward or consequence — would you still do this? Why?
+2. When you imagine achieving this, what's the primary feeling? (Relief/safety = likely introjected; joy in process = likely intrinsic; validation = likely external)
+3. More energized or depleted when working on this, with no deadline?
 
-Not all external motivation is bad, and not all motivation needs to be intrinsic. The question is: where on this spectrum does the user's current motivation sit, and is that enough to sustain what they're trying to do?
+**SDT Needs Assessment** (which need is nourished vs starved?):
 
-**External regulation:** "I do this for the money / because I'm afraid of what happens if I don't / because others expect it." Depletes over time. Produces compliance without engagement.
+| Need | Nourishing | Starving |
+|------|-----------|---------|
+| Autonomy | "I chose this" | "I have to" |
+| Competence | Growth and mastery | Chronic overwhelm or boredom |
+| Relatedness | Connects to people/purpose | Isolated, disconnected |
 
-**Introjected regulation:** "I do this because I'll feel guilty or ashamed if I don't / to protect my self-esteem." Internal, but contingent — driven by avoiding a bad feeling rather than moving toward something meaningful. Produces effort but often chronic anxiety and resentment.
+A goal that starves all three will not be sustained by willpower.
 
-**Identified regulation:** "I do this because I agree it's important, even if it's not always pleasant." More stable. The person has genuinely accepted the goal's value.
+### Part 2 — Motivation Layer Peeling
 
-**Integrated regulation:** "This is part of who I am." Most stable and energizing of the external-origin types.
-
-**Intrinsic motivation:** "I do this because the activity itself is rewarding — for curiosity, joy, flow, expression." Self-sustaining. Produces the deepest engagement.
-
-### Diagnostic Questions
-
-Ask the user to apply these questions to the specific goal or activity in question:
-
-1. *If there were no external reward (money, status, approval) and no external consequence for stopping — would you still do this? Why?*
-
-2. *When you imagine achieving this goal, what is the primary feeling you expect? Relief? Pride? Joy? Validation from others? Safety?*
-   - Relief/Safety → likely introjected or external
-   - Pride → could be identified or introjected (pride for self vs pride for others' eyes)
-   - Joy in the process → likely intrinsic
-   - Validation → likely external
-
-3. *Do you feel more energized or more depleted by working on this, on a day when no one is watching and there's no immediate deadline?*
-
-4. *Which of these three feels most violated when you think about this goal?*
-   - Autonomy: "I don't feel like I actually chose this"
-   - Competence: "I don't believe I can actually do this"
-   - Relatedness: "This doesn't connect me to anyone or anything I care about"
-
-### SDT Needs Assessment
-
-For each need, assess: nourished or starved by this goal/path?
-
-| Need | Nourishing signals | Starving signals |
-|------|--------------------|-----------------|
-| Autonomy | "I chose this" / feels like expression | "I have to" / feels like obligation |
-| Competence | Growth, challenge, mastery | Chronic overwhelm or boredom |
-| Relatedness | Connects to people/purpose | Isolated, meaningless, disconnected |
-
-A goal that starves all three psychological needs will not be sustained regardless of willpower.
-
-## Part 2 — Motivation Layer Peeling
-
-Surface motivations are often proxies for deeper ones. The deeper you go, the more useful (and sometimes more surprising) the motivations become.
-
-### The Peeling Protocol
-
-Take the stated motivation and ask "why does that matter to me?" or "what would that give me?" repeatedly, going deeper each time. Usually 3-5 layers reveal the root.
+Take the stated motivation and ask "why does that matter?" or "what would that give me?" 3–5 times.
 
 **Example:**
-- Layer 1: "I want to be successful"
-- Layer 2: "Because success means financial security"
-- Layer 3: "Because financial insecurity is terrifying to me"
-- Layer 4: "Because as a kid, money stress meant the adults were unavailable and angry"
+- L1: "I want to be successful"
+- L2: "Success means financial security"
+- L3: "Financial insecurity is terrifying"
+- L4: "As a kid, money stress meant adults were unavailable and angry"
 - Root: "I want to feel safe and not be a burden"
 
-The root motivation changes everything about how to approach the goal and what would actually satisfy it.
+**Common root motivations:** Worthiness, Belonging, Safety, Autonomy, Meaning/Purpose, Recognition.
+Full taxonomy: see `../references/root-motivations-and-fears.md`
 
-### Common Root Motivations
+### Ambivalence Mapping (when stuck)
 
-For the root motivation taxonomy, read `../references/root-motivations-and-fears.md`
+| Change talk | Sustain talk |
+|-------------|-------------|
+| What would be good about doing this? | What's working about staying? |
+| What are you gaining? | What would you lose? |
+| What is it costing you not to? | What's scary about changing? |
 
-Beneath most complex motivations, a small set of roots tend to appear:
+Both are real. The goal is to see whether the cost of staying exceeds the cost of changing — and what the sustain talk is actually protecting.
 
-**Worthiness:** "I want to prove I'm enough / smart enough / good enough."
-Often drives high achievement, perfectionism, overwork. The problem: external achievement doesn't resolve the underlying belief. A worthiness root never gets satisfied by more results.
-
-**Belonging:** "I want to be accepted, included, loved — not rejected."
-Drives people-pleasing, conformity, suppression of authentic preferences. The goal is never fully satisfied because belonging that's conditional on performance feels precarious.
-
-**Safety:** "I want to be protected from loss, instability, or uncertainty."
-Drives risk-aversion, control behaviors, accumulation of resources or credentials beyond what's needed.
-
-**Autonomy:** "I want to be free — to not be controlled, constrained, or obligated."
-Drives resistance to commitment, difficulty with authority, high creative productivity when free.
-
-**Meaning/Purpose:** "I want my existence to matter — to contribute to something larger than myself."
-When this is the actual root, work feels alive even when hard; when it's not present, even prestigious work feels empty.
-
-**Recognition:** "I want to be seen, acknowledged, admired."
-Not inherently problematic — but when unexamined, drives choices that optimize for visibility over substance.
-
-### Ambivalence Mapping (MI-derived)
-
-When someone is stuck — both wanting something and not pursuing it — there is ambivalence. Map it explicitly:
-
-**Change talk** (reasons to pursue this):
-- What would be good about doing this?
-- What would you gain?
-- What is it costing you not to?
-
-**Sustain talk** (reasons to stay put):
-- What's working about the current situation?
-- What would you lose if you changed?
-- What's risky or scary about this?
-
-Both are real. Both deserve respect. The goal is not to eliminate sustain talk but to understand its source — and to see whether the cost of staying exceeds the cost of changing.
-
-## Output Format
+## Output Template
 
 ```
 Motivation Analysis
 -------------------
 Stated motivation: [what they say they want / why they say they're doing it]
-Intrinsic/extrinsic read: [where on the spectrum, with reasoning]
-SDT needs assessment:
-  Autonomy: [nourished / starved — specific evidence]
-  Competence: [nourished / starved]
-  Relatedness: [nourished / starved]
+Intrinsic/extrinsic read: [where on spectrum, with reasoning]
+SDT needs: Autonomy [nourished/starved], Competence [nourished/starved], Relatedness [nourished/starved]
 
 Motivation layers:
-  Layer 1 (surface): [stated reason]
+  Surface: [stated reason]
   Layer 2: [what that gives]
-  Layer 3: [what that protects or provides]
-  Root: [the underlying driver — name it plainly]
+  Layer 3: [what that protects]
+  Root: [underlying driver — named plainly]
 
-Ambivalence map (if relevant):
+Ambivalence (if relevant):
   Change talk: [reasons to pursue]
   Sustain talk: [reasons to stay]
-  The real blocker: [what the sustain talk is actually protecting]
+  Real blocker: [what sustain talk is protecting]
 
-Insight: [the single most important thing this analysis reveals]
-Practical implication: [what this means for how to approach this goal or decision]
+Insight: [single most important thing this analysis reveals]
+Practical implication: [what this means for how to approach the goal]
 ```
 
-## The Key Insight to Deliver
+## What Claude Does / What You Do
 
-Motivation problems are rarely about laziness or lack of discipline. They are usually about misalignment: between the goal and the real root driver, between the path and the psychological needs, or between what the person says they want and what they have actually chosen.
+| Claude | You |
+|--------|-----|
+| Locates motivation on the intrinsic/extrinsic spectrum | Reflect honestly on the diagnostic questions |
+| Peels through layers to find the root driver | Sit with whether the root resonates — don't rush past it |
+| Maps the SDT need that is being starved | Notice which need is most depleted |
+| Names the ambivalence clearly, without resolving it | Decide what the sustain talk is actually protecting |
 
-Name the misalignment plainly. That clarity is the most useful thing this skill can provide.
+## Related Skills
+
+- `values-explorer` — when the root driver is a values question
+- `fear-inventory` — when the sustain talk is driven by fear
+- `identity-explorer` — when motivation is tied to who you are or want to be

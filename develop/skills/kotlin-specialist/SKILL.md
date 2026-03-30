@@ -1,6 +1,21 @@
 ---
 name: kotlin-specialist
-description: 'Use when someone is writing Kotlin code and needs idiomatic guidance — coroutine and Flow patterns, multiplatform (KMP) structure, Android with Jetpack Compose, Ktor server setup, or type-safe DSL authoring. For Kotlin used within a Spring Boot service, consider spring-boot-engineer alongside this skill. Not for general Java or Android XML layouts.'
+description: >-
+  Use when someone is writing Kotlin code and needs idiomatic guidance — coroutine and
+  Flow patterns, Kotlin Multiplatform (KMP) structure, Android with Jetpack Compose,
+  Ktor server setup, or type-safe DSL authoring.
+  Triggers on: "Kotlin coroutines", "KMP", "Kotlin Multiplatform", "Jetpack Compose",
+  "Ktor server", "Flow", "suspend function", "코틀린", "코루틴", "안드로이드 Compose",
+  "KMP 설정".
+  Best for: idiomatic coroutine patterns, multiplatform source-set structure, Compose UI.
+  Not for: general Java backend (use spring-boot-engineer), Android XML layouts.
+compatibility:
+  recommended: []
+  optional:
+    - think-tool
+  remote_mcp_note: >-
+    think-tool이 있으면 코루틴 스코프 설계와 취소 전파 전략을 더 체계적으로 검토합니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 license: MIT
 metadata:
   author: https://github.com/Jeffallan
@@ -15,25 +30,48 @@ metadata:
 
 # Kotlin Specialist
 
-Senior Kotlin developer with deep expertise in coroutines, Kotlin Multiplatform (KMP), and modern Kotlin 1.9+ patterns.
+Senior Kotlin developer with deep expertise in coroutines, Kotlin Multiplatform (KMP), and Kotlin 1.9+ patterns.
 
-## Core Workflow
+## When to Use / When Not to Use
 
-1. **Analyze architecture** - Identify platform targets, coroutine patterns, shared code strategy
-   - *For cross-platform or multi-scope architectural decisions,* invoke `sequential-thinking` to enumerate constraints before committing to a source-set or concurrency design
-2. **Design models** - Create sealed classes, data classes, type hierarchies
-3. **Implement** - Write idiomatic Kotlin with coroutines, Flow, extension functions
-   - *Checkpoint:* Verify coroutine cancellation is handled (parent scope cancelled on teardown) and null safety is enforced before proceeding
-   - *If cancellation behavior is ambiguous,* use `think-tool` to reason through scope propagation (coroutineScope vs. supervisorScope, flowOn placement, CancellationException propagation) before proceeding
-4. **Validate** - Invoke `agents/lint-qa.md` (lint-qa agent) on all source files; it runs `detekt` and `ktlint` in parallel and returns PASS or a structured violation list
-   - *If lint-qa returns FAIL:* Fix all reported violations and re-invoke the agent before proceeding to step 5
-5. **Optimize** - Apply inline classes, sequence operations, compilation strategies
-6. **Test** - Write multiplatform tests with coroutine test support (`runTest`, Turbine)
-   - Provide: data models (sealed classes, data classes), implementation file, test file, and brief explanation of Kotlin-specific patterns used
+**Use when:**
+- Writing idiomatic Kotlin with coroutines, Flow, or sealed class state models
+- Building Kotlin Multiplatform (KMP) shared modules
+- Implementing Android UI with Jetpack Compose
+- Setting up a Ktor server or writing a type-safe DSL
+
+**Do not use when:**
+- Building a Spring Boot Java backend (use `spring-boot-engineer`)
+- Working with Android XML layouts — this skill focuses on Compose
+
+## Process
+
+1. **Analyze architecture** — Identify platform targets, coroutine patterns, shared code strategy
+2. **Design models** — Create sealed classes, data classes, type hierarchies
+3. **Implement** — Write idiomatic Kotlin with coroutines, Flow, extension functions. Verify coroutine cancellation is handled (parent scope cancelled on teardown) and null safety is enforced.
+4. **Lint** — Run `detekt` and `ktlint`; fix all violations before proceeding
+5. **Optimize** — Apply inline classes, sequence operations, compilation strategies
+6. **Test** — Write multiplatform tests with `runTest` and Turbine for Flow assertions
+
+## Output Template
+
+For each implementation task, provide:
+1. Data models (sealed classes, data classes)
+2. Implementation file with coroutine/Flow patterns
+3. Test file using `runTest` + Turbine
+4. Brief explanation of Kotlin-specific patterns used
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Generates idiomatic coroutine and Flow scaffolding | Provide business logic and domain requirements |
+| Designs sealed class state hierarchies | Confirm the state model matches actual UI states |
+| Implements KMP expect/actual structure | Verify platform-specific implementations on each target |
+| Writes `runTest` + Turbine test patterns | Run tests on all platform targets |
+| Flags `!!` usage and GlobalScope anti-patterns | Address domain-specific null contract decisions |
 
 ## Reference Guide
-
-Load detailed guidance based on context:
 
 | Topic | Reference | Load When |
 |-------|-----------|-----------|
@@ -45,7 +83,7 @@ Load detailed guidance based on context:
 
 ## Key Patterns
 
-### Sealed Classes for State Modeling
+### Sealed Class State Modeling
 
 ```kotlin
 sealed class UiState<out T> {
@@ -53,16 +91,9 @@ sealed class UiState<out T> {
     data class Success<T>(val data: T) : UiState<T>()
     data class Error(val message: String, val cause: Throwable? = null) : UiState<Nothing>()
 }
-
-// Consume exhaustively — compiler enforces all branches
-fun render(state: UiState<User>) = when (state) {
-    is UiState.Loading  -> showSpinner()
-    is UiState.Success  -> showUser(state.data)
-    is UiState.Error    -> showError(state.message)
-}
 ```
 
-### Coroutines & Flow
+### Coroutines & Flow (Structured Concurrency)
 
 ```kotlin
 // Use structured concurrency — never GlobalScope
@@ -76,13 +107,7 @@ class UserRepository(private val api: UserApi, private val scope: CoroutineScope
             emit(UiState.Error("Network error", e))
         }
     }.flowOn(Dispatchers.IO)
-
-    private val _user = MutableStateFlow<UiState<User>>(UiState.Loading)
-    val user: StateFlow<UiState<User>> = _user.asStateFlow()
 }
-
-// Anti-pattern — blocks the calling thread; avoid in production
-// runBlocking { api.fetchUser(id) }
 ```
 
 ### Null Safety
@@ -91,49 +116,29 @@ class UserRepository(private val api: UserApi, private val scope: CoroutineScope
 // Prefer safe calls and elvis operator
 val displayName = user?.profile?.name ?: "Anonymous"
 
-// Use let to scope nullable operations
-user?.email?.let { email -> sendNotification(email) }
-
-// !! only when the null case is a true contract violation and documented
+// !! only when null is a true contract violation and documented
 val config = requireNotNull(System.getenv("APP_CONFIG")) { "APP_CONFIG must be set" }
-```
-
-### Scope Functions
-
-```kotlin
-// apply — configure an object, returns receiver
-val request = HttpRequest().apply {
-    url = "https://api.example.com/users"
-    headers["Authorization"] = "Bearer $token"
-}
-
-// let — transform nullable / introduce a local scope
-val length = name?.let { it.trim().length } ?: 0
-
-// also — side-effects without changing the chain
-val user = createUser(form).also { logger.info("Created user ${it.id}") }
 ```
 
 ## Constraints
 
-### MUST DO
-- Use null safety (`?`, `?.`, `?:`, `!!` only when contract guarantees non-null)
+**MUST DO:**
+- Use null safety (`?`, `?.`, `?:`) — use `!!` only with documented justification
 - Prefer `sealed class` for state modeling
 - Use `suspend` functions for async operations
-- Leverage type inference but be explicit when needed
 - Use `Flow` for reactive streams
-- Apply scope functions appropriately (`let`, `run`, `apply`, `also`, `with`)
-- Document public APIs with KDoc
-- Use explicit API mode for libraries
+- Verify coroutine cancellation on teardown
 - Run `detekt` and `ktlint` before committing
-- Verify coroutine cancellation is handled (cancel parent scope on teardown)
 
-### MUST NOT DO
-- Block coroutines with `runBlocking` in production code
-- Use `!!` without documented justification
-- Mix platform-specific code in common modules
-- Skip null safety checks
+**MUST NOT DO:**
+- Use `runBlocking` in production code
+- Use `!!` without documented contract
+- Mix platform-specific code in common KMP modules
 - Use `GlobalScope.launch` (use structured concurrency)
-- Ignore coroutine cancellation
 - Create memory leaks with coroutine scopes
 
+## Related Skills
+
+- `spring-boot-engineer` — for Kotlin used within a Spring Boot service
+- `test-master` — comprehensive test coverage for Kotlin/KMP modules
+- `android-developer` — for deeper Android-specific concerns beyond Compose basics

@@ -1,6 +1,24 @@
 ---
 name: sbi-writer
-description: 'Use when someone wants to give feedback to a colleague but is unsure how to phrase it — whether the feedback is positive, constructive, or a peer review. Also use when the user has a rough idea of what to say but the wording feels judgmental, vague, or accusatory. Produces a finished SBI statement, not just advice.'
+description: >-
+  Use when giving feedback to a colleague and the wording feels judgmental, vague, or accusatory.
+  Triggers on: "피드백 어떻게 말해?", "feedback 써줘", "SBI", "동료한테 어떻게 말해야 해?",
+  "칭찬 어떻게 해?", "건설적 피드백", "peer review 써야 해", "이 말이 너무 공격적인 것 같아".
+  Best for: constructive feedback, peer reviews, positive recognition, upward feedback.
+  Not for: general performance reviews or disciplinary documentation.
+scenarios:
+  - "동료가 발표를 엉망으로 했는데 어떻게 말해야 해?"
+  - "팀원 칭찬을 구체적으로 하고 싶어"
+  - "I need to give feedback but don't want it to sound mean"
+  - "피드백이 너무 모호하게 느껴져서 다시 써줘"
+  - "동료한테 솔직한 피드백 어떻게 전달해?"
+  - "Peer review 어떻게 쓰면 좋을까?"
+compatibility:
+  optional:
+    - think-tool        # useful when separating observation from judgment is ambiguous
+  remote_mcp_note: >-
+    think-tool이 있으면 관찰과 판단을 명확히 분리하는 과정에서 애매한 케이스를 체계적으로 검토할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # SBI Feedback Writer

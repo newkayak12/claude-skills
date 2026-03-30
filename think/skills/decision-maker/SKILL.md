@@ -1,6 +1,27 @@
 ---
 name: decision-maker
-description: Structured framework for technology and architecture choices. Use when facing a decision between options where the trade-offs aren't obvious — choosing a database, framework, or architecture pattern; deciding whether to build or buy; or any situation where committing to one direction means ruling out another.
+description: >-
+  Use when facing a choice between options where the trade-offs aren't obvious.
+  Triggers on: "A vs B 뭐가 나아?", "어떤 걸 써야 해?", "build vs buy", "이 아키텍처 괜찮아?",
+  "Redis vs Postgres", "어떤 DB 골라야 해?", or any "should we adopt X?" question.
+  Best for: technology selection, architecture decisions, irreversible investments.
+  Not for: decisions already made (post-hoc justification), or trivially obvious choices.
+scenarios:
+  - "PostgreSQL vs MySQL, 어떤 걸 써야 해?"
+  - "Should we build or buy this feature?"
+  - "마이크로서비스로 전환해야 할까, 모놀리스 유지해야 할까?"
+  - "We need to choose between REST and GraphQL"
+  - "Redis 캐싱 쓸까, 아니면 in-process 캐싱 쓸까?"
+  - "Should we go with AWS or GCP?"
+compatibility:
+  recommended:
+    - think-tool        # forces explicit reasoning before scoring begins
+  optional:
+    - mcp-reasoner      # systematic multi-option evaluation, prevents anchoring
+    - sequential-thinking  # for decisions with complex dependency chains
+  remote_mcp_note: >-
+    think-tool이 있으면 one-way-door 결정 전에 sunk-cost bias와 hidden assumption을 체계적으로 검토할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Decision Maker

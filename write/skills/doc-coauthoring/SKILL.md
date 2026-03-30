@@ -1,6 +1,24 @@
 ---
 name: doc-coauthoring
-description: 'Use when someone is starting a substantial written artifact — documentation, a proposal, a decision doc, a technical spec, an RFC — and wants structured help building it from context-gathering through drafting to reader-testing. Especially relevant when the document will be read by others or needs to survive without the author present to explain it.'
+description: >-
+  Use when starting a substantial written artifact that will be read by others.
+  Triggers on: "문서 같이 써줘", "PRD 작성", "design doc", "RFC 초안", "제안서 써야 해",
+  "technical spec", "decision doc", "write a doc", "문서 작성 도와줘", "spec 써줘".
+  Best for: PRDs, design docs, decision docs, technical specs, RFCs, proposals.
+  Not for: short single-paragraph writes or casual emails — use writer-verification for existing drafts.
+scenarios:
+  - "API 설계 문서 같이 써줘"
+  - "이 기능에 대한 PRD 작성해야 해"
+  - "Help me write a design doc for this new service"
+  - "RFC 초안 작성 도와줘"
+  - "팀에 공유할 제안서 써야 해"
+  - "Write up a decision doc about our database choice"
+compatibility:
+  optional:
+    - think-tool        # reasoning about section ordering and which section has most unknowns
+  remote_mcp_note: >-
+    think-tool이 있으면 어떤 섹션부터 시작할지, 어떤 섹션이 가장 불확실한지 체계적으로 판단할 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Doc Co-Authoring Workflow

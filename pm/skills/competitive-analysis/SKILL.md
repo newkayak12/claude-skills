@@ -1,12 +1,13 @@
 ---
 name: competitive-analysis
 description: >-
-  Structured competitive intelligence — analyzing competitors, positioning gaps, and differentiation strategy.
-  Trigger on: "경쟁사 분석", "경쟁 현황", "시장 포지셔닝", "competitor analysis", "how do we compare",
-  "what are competitors doing", "differentiation", "competitive landscape", "who else is doing this",
-  "how do we stand out", "market positioning", "경쟁자", "차별화 전략", "포지셔닝".
-  Also trigger when someone asks about market context before a product launch, GTM planning, or PRD
-  strategic context — even if they don't use the word "competitor" explicitly.
+  Use when making a product or business decision where knowing the competitive context
+  changes the answer — before a launch, when writing strategy, or when articulating
+  differentiation. Triggers on: "competitor analysis", "competitive landscape",
+  "how do we differentiate", "who are our competitors", "경쟁사 분석", "시장 분석",
+  "차별화 전략". Best for: pre-launch competitive positioning, PRD strategic context,
+  GTM messaging differentiation. Not for: internal tools with no external competitors;
+  user research on what customers want (shows what competitors built, not what users need).
 type: workflow
 theme: pm-strategy
 best_for:
@@ -17,7 +18,19 @@ scenarios:
   - "We're about to launch — who are the main competitors and how do we differentiate?"
   - "경쟁사 분석 해줘. 우리 제품이 어떻게 차별화될 수 있는지 알고 싶어."
   - "I need to understand the competitive landscape before writing the PRD strategic context."
+  - "Help me build the competitive section for our GTM plan."
+  - "경쟁사 대비 우리 포지셔닝을 정리해줘."
+  - "Which whitespace can we own in this market?"
 estimated_time: "60-120 min"
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - sequential-thinking
+    - mcp-reasoner
+  remote_mcp_note: >-
+    think-tool이 있으면 포지셔닝 맵과 차별화 전략의 논리적 일관성을 검증하는 데 도움이 됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 ## Purpose
@@ -248,6 +261,23 @@ Only [Company] can [capability] for [user] because [reason].
 
 ---
 
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Builds competitor profile templates and feature matrix | Performs actual product trials and gathers pricing data |
+| Drafts positioning map axes and whitespace analysis | Validates positioning with real customer interviews |
+| Generates "Only We" statement drafts | Makes the final differentiation call based on business context |
+| Identifies anti-patterns and strategic blind spots | Decides which competitive gaps are worth pursuing |
+| Connects findings to PRD, GTM, and pricing frameworks | Synthesizes with internal knowledge not available to Claude |
+
+## Standalone Inputs
+
+If no prior competitive research exists, provide:
+- List 3 direct competitors by name (Claude will structure the analysis from there)
+- Your target user segment (one sentence)
+- Your product's core job-to-be-done
+
 ## Common Anti-Patterns
 
 | Anti-Pattern | Symptom | Fix |
@@ -257,3 +287,10 @@ Only [Company] can [capability] for [user] because [reason].
 | Positioning on hygiene factors | "We're the most secure / most reliable" | Security and reliability are expected, not differentiating — find the real trade-off |
 | Stale analysis | Competitive landscape from 18 months ago | Set a calendar reminder to refresh quarterly; check changelogs monthly |
 | Ignoring negative reviews | Only reading what competitors say about themselves | G2 1-star reviews are your best market research |
+
+## Related Skills
+
+- `../prd-development/SKILL.md` — Paste the Positioning Gap Summary into Phase 4 (Strategic Context)
+- `../go-to-market-planning/SKILL.md` — "Only We" statement and differentiators become GTM core messaging
+- `../pricing-monetization-strategy/SKILL.md` — Competitor pricing tiers feed the pricing model analysis
+- `../product-discovery/SKILL.md` — Validate competitive gaps as real user needs
