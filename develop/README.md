@@ -30,3 +30,6 @@ Engineering skills for software development workflows.
 | `sre-engineer` | SLOs, error budgets, incident response, capacity planning |
 | `test-driven-development` | TDD workflow before writing implementation code |
 | `test-master` | Unit, integration, E2E, performance, and security tests |
+| `performance-profiling-optimization` | Systematic bottleneck identification and CPU/memory/IO optimization |
+| `incident-response-playbook` | Developer-side incident lifecycle — triage, communication, mitigation, and RCA |
+| `documentation-strategy` | Plan and maintain architecture docs, API references, runbooks, and onboarding guides |
