@@ -1,6 +1,6 @@
 ---
 name: architecture-designer
-description: |
+description: >-
   Use when someone needs to make or document architectural decisions from scratch — choosing between system topologies (monolith vs. microservices), writing ADRs, evaluating scalability trade-offs, or selecting database and infrastructure patterns.
   Triggers on: "시스템 설계", "아키텍처 결정", "architecture design", "system design", "ADR", "monolith vs microservices", "scalability", "기술 스택 선택", "아키텍처 리뷰", "infrastructure pattern".
   Best for: new system architecture design, major technology decisions, architectural review with ADRs.

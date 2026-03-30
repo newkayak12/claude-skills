@@ -1,6 +1,6 @@
 ---
 name: performance-profiling-optimization
-description: >
+description: >-
   Guides systematic performance investigation from symptom to fix — establishing a baseline, profiling the bottleneck,
   identifying root cause, applying a targeted change, and verifying the improvement with data.
   Use when someone has a concrete performance problem such as slow response times, high memory usage, CPU saturation,

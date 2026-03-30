@@ -1,6 +1,6 @@
 ---
 name: dockerfile-optimizer
-description: |
+description: >-
   Use when someone shares a Dockerfile and needs it improved for build speed, image size, or security.
   Triggers on: "도커 최적화", "이미지 크기", "빌드 시간", "컨테이너 최적화", "Dockerfile", "docker optimize", "이거 좀 봐줘" (when a Dockerfile is pasted), "can you review this?" (when a Dockerfile is present), "docker build slow", "image too large", "harden container".
   Best for: reducing image size with multi-stage builds, speeding up CI builds via layer caching, hardening containers for production.
