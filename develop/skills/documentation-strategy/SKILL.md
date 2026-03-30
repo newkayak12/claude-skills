@@ -1,6 +1,6 @@
 ---
 name: documentation-strategy
-description: >
+description: >-
   Plans and maintains a documentation system across architecture docs, API references, runbooks,
   and onboarding guides — producing a doc coverage map and writing or improving the
   highest-leverage missing content.

@@ -1,6 +1,6 @@
 ---
 name: incident-response-playbook
-description: >
+description: >-
   Guides the developer-side incident lifecycle from triage through mitigation to blameless RCA —
   with severity classification, Slack update templates, escalation paths, and a structured post-mortem format.
   Use when a production issue is active or recently resolved and you need a fast, structured response

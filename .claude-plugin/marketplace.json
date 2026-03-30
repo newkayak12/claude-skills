@@ -105,6 +105,26 @@
       },
       "source": "./leadership",
       "category": "productivity"
+    },
+    {
+      "name": "cognition",
+      "description": "Thinking quality skills: assumption extraction, bias auditing, fallacy detection, mental models, epistemic reasoning, tradeoff articulation, question upgrading, second-order thinking, and thinking style profiling.",
+      "version": "1.1.0",
+      "author": {
+        "name": "newkayak12"
+      },
+      "source": "./cognition",
+      "category": "productivity"
+    },
+    {
+      "name": "self",
+      "description": "Self-reflection and personal growth skills: attachment style, ego states, examined life, fear inventory, flow and anti-goals, identity exploration, and motivation discovery.",
+      "version": "1.1.0",
+      "author": {
+        "name": "newkayak12"
+      },
+      "source": "./self",
+      "category": "productivity"
     }
   ]
 }
