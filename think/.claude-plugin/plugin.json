@@ -1,0 +1,11 @@
+{
+  "name": "think",
+  "description": "Thinking and ideation skills: brainstorming, decision making, devil's advocate, problem reframing, retrospective, thought organizing, microinteractions design, negotiation, first-principles thinking, and deep-thinking-workflow.",
+  "version": "1.1.0",
+  "author": {
+    "name": "newkayak12"
+  },
+  "category": "productivity",
+  "repository": "https://github.com/newkayak12/claude-skills",
+  "license": "MIT"
+}
