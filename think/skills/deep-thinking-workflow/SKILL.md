@@ -25,6 +25,12 @@ compatibility:
   remote_mcp_note: >-
     think-tool + sequential-thinking 조합이 이 워크플로의 핵심입니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
+related:
+  - thought-organizer
+  - brainstorming
+  - first-principles
+  - devils-advocate
+  - decision-maker
 ---
 
 # Deep Thinking Workflow
@@ -126,3 +132,6 @@ compatibility:
 - `think:brainstorming`, `think:first-principles`, `think:devils-advocate`, `think:decision-maker`
 - Before: Use `think:problem-reframer` if the question itself feels wrong
 - After: Feed decision output into `pm:pm-strategy-workflow` or `develop:dev-quality-workflow`
+- `thought-organizer` — 워크플로 시작 전에 산발적 입력 재료를 구조화할 때
+- `problem-reframer` — Step 1 발산 전에 문제 정의 자체가 올바른지 점검하고 싶을 때
+- `retrospective` — 워크플로로 내린 결정을 일정 기간 후 돌아보고 교훈을 추출할 때

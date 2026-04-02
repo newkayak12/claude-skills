@@ -1,11 +1,12 @@
 {
   "name": "pm",
   "description": "Product management skills: user stories, story mapping, story splitting, PRD development, contagious (STEPPS), product discovery, OKR planning, hypothesis-driven development, competitive analysis, go-to-market planning, pricing & monetization, stakeholder management, metrics interpretation, feature prioritization, customer research synthesis, roadmap communication, post-launch retrospective, technical feasibility assessment, and pm-strategy-workflow.",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "author": {
     "name": "newkayak12"
   },
   "category": "product-management",
   "repository": "https://github.com/newkayak12/claude-skills",
-  "license": "MIT"
+  "license": "MIT",
+  "skills": ["competitive-analysis", "contagious", "customer-research-synthesis", "feature-prioritization", "go-to-market-planning", "hypothesis-driven-dev", "inspired-pm", "metrics-interpretation", "okr-planning", "pm-strategy-workflow", "post-launch-retrospective", "prd-development", "pricing-monetization-strategy", "product-discovery", "roadmap-communication", "shape-up", "stakeholder-management", "technical-feasibility-assessment", "user-story", "user-story-mapping", "user-story-mapping-workshop", "user-story-splitting"]
 }

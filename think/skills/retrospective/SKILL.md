@@ -22,6 +22,10 @@ compatibility:
     think-tool이 있으면 최종 출력 전에 모든 Problem이 Try와 연결되었는지 검증합니다.
     sequential-thinking이 있으면 5 Whys 인과 체인을 단계별로 추적할 수 있습니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
+related:
+  - thought-organizer
+  - decision-maker
+  - first-principles
 ---
 
 # Retrospective
@@ -219,3 +223,9 @@ End with:
 3. **Date of the next retrospective** — close the loop explicitly
 
 After the session, send a written summary within 24 hours: action items, owners, due dates. Memory fades fast. The summary is the contract.
+
+## Related Skills
+
+- `thought-organizer` — 회고에서 나온 산발적 인사이트를 구조화하고 문서화할 때
+- `decision-maker` — 회고에서 도출된 개선 방향 중 무엇을 먼저 실행할지 결정해야 할 때
+- `first-principles` — 같은 문제가 반복될 때, 근본 가정부터 다시 분해해 근본 원인을 찾고 싶을 때

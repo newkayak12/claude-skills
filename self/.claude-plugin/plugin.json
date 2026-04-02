@@ -1,11 +1,12 @@
 {
   "name": "self",
   "description": "Self-reflection and personal growth skills: attachment style, ego states, examined life, fear inventory, flow and anti-goals, identity exploration, and motivation discovery.",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "author": {
     "name": "newkayak12"
   },
   "category": "productivity",
   "repository": "https://github.com/newkayak12/claude-skills",
-  "license": "MIT"
+  "license": "MIT",
+  "skills": ["attachment-style-mirror", "ego-state-identifier", "examined-life", "fear-inventory", "flow-antigoal", "identity-explorer", "motivation-explorer", "shadow-persona", "strength-growth-mapper", "values-explorer"]
 }

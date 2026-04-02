@@ -332,6 +332,14 @@ Announce document completion. Provide a few final tips:
 - Use appendices to provide depth without bloating the main doc
 - Update the doc as feedback is received from real readers
 
+## Output Template
+
+For each document, Claude produces:
+1. **Document structure** — outline with section headings and logical flow
+2. **Draft content** — full prose for each section, calibrated to audience and tone
+3. **Review comments** — suggestions for clarity, gaps, and factual accuracy
+4. **Revision log** — summary of changes made in each iteration
+
 ## Tips for Effective Guidance
 
 See `references/guidance-tips.md` for tone, deviation handling, context management, artifact management, and quality guidance.

@@ -9,6 +9,12 @@ description: >-
   "MCP tool schema", "FastMCP", "MCP SDK".
   Best for: TypeScript MCP SDK, Python FastMCP, tool schema design, evaluation creation.
   Not for: CLI wrappers without MCP protocol (use cli-developer); general API integrations.
+scenarios:
+  - "I want to expose our internal API as an MCP server for Claude to use"
+  - "Build an MCP tool that lets Claude query our database directly"
+  - "Help me create an MCP server with tools for our development workflow"
+  - "사내 API를 Claude가 쓸 수 있는 MCP 서버로 만들어줘"
+  - "MCP 서버를 만들어서 Claude가 DB를 직접 조회하게 하고 싶어"
 compatibility:
   recommended: []
   optional:

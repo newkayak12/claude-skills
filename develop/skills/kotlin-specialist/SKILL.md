@@ -9,6 +9,12 @@ description: >-
   "KMP 설정".
   Best for: idiomatic coroutine patterns, multiplatform source-set structure, Compose UI.
   Not for: general Java backend (use spring-boot-engineer), Android XML layouts.
+scenarios:
+  - "Help me write idiomatic Kotlin code using coroutines for async processing"
+  - "Convert this Java class to Kotlin and apply Kotlin best practices"
+  - "Design a Kotlin DSL for our configuration system"
+  - "코틀린으로 코루틴 기반 비동기 처리를 구현해줘"
+  - "자바 코드를 코틀린으로 전환하고 관용구를 적용해줘"
 compatibility:
   recommended: []
   optional:

@@ -10,6 +10,12 @@ description: >-
   "장애 주입", "게임 데이".
   Best for: pre-production resilience validation, game day planning, CI/CD chaos pipelines.
   Not for: SLO definition, incident response, or production monitoring setup — use sre-engineer.
+scenarios:
+  - "I want to run a chaos experiment on our Kubernetes cluster to test pod failure resilience"
+  - "Help me plan a game day exercise to test our system's failure tolerance"
+  - "Design a blast radius controlled fault injection for our microservices"
+  - "카오스 테스트로 시스템 복원력을 검증하고 싶어"
+  - "게임 데이 실험 설계를 도와줘"
 compatibility:
   recommended:
     - think-tool

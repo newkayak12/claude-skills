@@ -9,6 +9,12 @@ description: >-
   "마이크로서비스 설계", "모놀리스 분해", "서비스 경계 설계", "분산 시스템".
   Best for: architecture decisions, service decomposition, resilience pattern selection.
   Not for: implementation code — use spring-boot-engineer for coding microservices.
+scenarios:
+  - "Design a microservices architecture for our e-commerce monolith migration"
+  - "Help me decide service boundaries and communication patterns for this system"
+  - "Our microservices have too many dependencies — review and restructure the design"
+  - "모놀리스를 마이크로서비스로 전환하는 아키텍처를 설계해줘"
+  - "서비스 경계와 통신 패턴을 어떻게 나눌지 도와줘"
 compatibility:
   recommended:
     - think-tool

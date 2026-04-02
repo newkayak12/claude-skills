@@ -7,6 +7,12 @@ description: >-
   or GC pressure, and needs a methodical approach rather than guessing at fixes.
   Not a substitute for sre-engineer when the issue is about SLO design or production reliability posture;
   this skill focuses on code-level and runtime profiling and optimization.
+scenarios:
+  - "Our API response times degraded after the last deploy — help me profile and fix it"
+  - "Profile this Java service to find memory leaks and CPU hotspots"
+  - "Application throughput dropped by 40% — systematic performance investigation needed"
+  - "배포 후 API 응답 시간이 느려졌는데 원인을 찾아줘"
+  - "메모리 누수와 CPU 병목을 프로파일링해줘"
 ---
 
 # Performance Profiling & Optimization

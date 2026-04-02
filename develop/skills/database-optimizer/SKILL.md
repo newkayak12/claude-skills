@@ -11,6 +11,12 @@ description: >-
   "RDS parameter group", "데이터베이스 성능 튜닝", "쿼리 실행 계획 분석".
   Best for: PostgreSQL/MySQL server tuning, EXPLAIN plan interpretation, index strategy.
   Not for: SQL query rewriting (use sql-pro) or connection pool sizing (use connection-pool-tuner).
+scenarios:
+  - "Our database queries are slow and we're hitting performance bottlenecks"
+  - "Help me optimize this SQL query that takes 30 seconds on a 10M row table"
+  - "Need to scale our PostgreSQL database — it can't handle current load"
+  - "DB 쿼리가 너무 느려서 서비스 응답시간이 30초야"
+  - "PostgreSQL 성능 최적화 방법을 알려줘"
 compatibility:
   recommended:
     - think-tool

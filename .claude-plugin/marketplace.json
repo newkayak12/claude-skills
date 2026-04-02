@@ -9,7 +9,7 @@
     {
       "name": "develop",
       "description": "Engineering skills: CLI, SQL, clean architecture, clean code, DDD, pragmatic programming, database optimization, chaos engineering, Spring Boot, microservices, Kotlin, TDD, frontend, code documentation, testing, MCP builder, SRE, performance profiling & optimization, incident response, documentation strategy, and dev-quality-workflow (full dev cycle entry point).",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": {
         "name": "newkayak12"
       },
@@ -19,7 +19,7 @@
     {
       "name": "pm",
       "description": "Product management skills: user stories, story mapping, story splitting, PRD development, contagious (STEPPS), product discovery (Inspired/Shape Up), OKR planning, hypothesis-driven development, competitive analysis, go-to-market planning, pricing & monetization, stakeholder management, metrics interpretation, feature prioritization, customer research synthesis, roadmap communication, post-launch retrospective, technical feasibility assessment, and pm-strategy-workflow (full PM cycle entry point).",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": {
         "name": "newkayak12"
       },
@@ -29,7 +29,7 @@
     {
       "name": "think",
       "description": "Thinking and ideation skills: brainstorming, decision making, devil's advocate, problem reframing, retrospective, thought organizing, microinteractions design, negotiation, first-principles thinking, and deep-thinking-workflow (diverge→decompose→challenge→converge entry point).",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": {
         "name": "newkayak12"
       },
@@ -39,7 +39,7 @@
     {
       "name": "write",
       "description": "Writing skills: doc co-authoring, writing plans, skill writing, writer verification, SBI feedback writing, and technical blog writing.",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": {
         "name": "newkayak12"
       },
@@ -49,7 +49,7 @@
     {
       "name": "agents",
       "description": "Agent orchestration skills: dispatching parallel agents, subagent-driven development, and task decomposition.",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": {
         "name": "newkayak12"
       },
@@ -59,7 +59,7 @@
     {
       "name": "planning",
       "description": "Planning skills: executing implementation plans and roadmap planning.",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": {
         "name": "newkayak12"
       },
@@ -69,7 +69,7 @@
     {
       "name": "skill",
       "description": "Skill management: create new skills, improve existing ones, validate skill quality, and audit trigger coverage.",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": {
         "name": "newkayak12"
       },
@@ -79,7 +79,7 @@
     {
       "name": "completion",
       "description": "Verification before completion: evidence-based workflow to confirm work is done before claiming success.",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": {
         "name": "newkayak12"
       },
@@ -89,7 +89,7 @@
     {
       "name": "portfolio",
       "description": "Portfolio and career skills: JD analysis, portfolio rewriting, company research, feedback, pattern extraction, interview prep, resume tailoring, and job-application-workflow (full job search cycle entry point).",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": {
         "name": "newkayak12"
       },
@@ -99,7 +99,7 @@
     {
       "name": "leadership",
       "description": "Engineering leadership skills: 1-on-1 meetings for managers and ICs, engineer leveling and promotion cases, calibration conversations.",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": {
         "name": "newkayak12"
       },
@@ -109,7 +109,7 @@
     {
       "name": "cognition",
       "description": "Thinking quality skills: assumption extraction, bias auditing, fallacy detection, mental models, epistemic reasoning, tradeoff articulation, question upgrading, second-order thinking, and thinking style profiling.",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": {
         "name": "newkayak12"
       },
@@ -119,7 +119,7 @@
     {
       "name": "self",
       "description": "Self-reflection and personal growth skills: attachment style, ego states, examined life, fear inventory, flow and anti-goals, identity exploration, and motivation discovery.",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": {
         "name": "newkayak12"
       },

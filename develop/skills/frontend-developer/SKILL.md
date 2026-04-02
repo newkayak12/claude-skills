@@ -9,6 +9,12 @@ description: >-
   "UI 구현", "Next.js App Router".
   Best for: React/Next.js components, custom hooks, TanStack Query integration, Zod form validation.
   Not for: Vue, Svelte, or non-React frontends; backend APIs (use spring-boot-engineer or relevant server skill).
+scenarios:
+  - "Build a React dashboard with data fetching, state management, and responsive layout"
+  - "Help me fix this UI bug where the modal doesn't close properly on mobile"
+  - "Implement a form with validation and error handling in our Next.js app"
+  - "React 대시보드를 만들어줘 — 데이터 패칭과 상태 관리 포함"
+  - "Next.js 폼 유효성 검사 구현을 도와줘"
 compatibility:
   recommended: []
   optional:

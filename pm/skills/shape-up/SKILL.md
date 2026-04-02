@@ -9,6 +9,12 @@ license: MIT
 metadata:
   author: wondelai
   version: "1.0.0"
+scenarios:
+  - "We're stuck in sprint planning hell and want to try Shape Up methodology"
+  - "Help me write a pitch for a new feature using Shape Up format"
+  - "How do I run a betting table and set appetite for this project?"
+  - "스프린트가 계속 밀려서 Shape Up 방식을 도입하고 싶어"
+  - "Shape Up 피치 문서를 작성해줘"
 compatibility:
   recommended: []
   optional:

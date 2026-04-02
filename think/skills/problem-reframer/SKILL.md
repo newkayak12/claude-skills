@@ -21,6 +21,10 @@ compatibility:
   remote_mcp_note: >-
     think-tool이 있으면 숨겨진 가정을 체계적으로 열거하는 필수 게이트 단계를 수행할 수 있습니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
+related:
+  - first-principles
+  - decision-maker
+  - devils-advocate
 ---
 
 # Problem Reframer
@@ -99,3 +103,9 @@ Keep the output conversational, not academic. Reframes should feel like insight,
 - Produce reframes that are just the same problem with different words
 - Treat constraints as fixed until they have been explicitly questioned
 - Conflate "more ideas" with "better problem definition"
+
+## Related Skills
+
+- `first-principles` — 재프레이밍 후 근본 가정을 더 깊이 분해하고 바닥부터 재구성하고 싶을 때
+- `decision-maker` — 새로운 문제 프레임이 나왔고 이제 옵션 간 선택이 필요할 때
+- `devils-advocate` — 재프레이밍한 새 방향에 대해 강한 반론으로 검증하고 싶을 때

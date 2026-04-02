@@ -9,6 +9,12 @@ description: >-
   "데이터베이스 연결 오류", "connection leak".
   Best for: HikariCP tuning, pgBouncer sizing, diagnosing pool exhaustion vs. slow queries.
   Not for: slow query rewriting (use sql-pro) or server-level DB parameter tuning (use database-optimizer).
+scenarios:
+  - "Our application is getting 'connection pool exhausted' errors under load"
+  - "Help me tune HikariCP settings for a Spring Boot service with 500 concurrent users"
+  - "Database connections are timing out — need to optimize pool configuration"
+  - "커넥션 풀이 고갈되면서 DB 연결 오류가 나"
+  - "HikariCP 설정을 최적화해줘"
 compatibility:
   recommended:
     - think-tool

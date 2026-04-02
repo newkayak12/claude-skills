@@ -10,6 +10,12 @@ description: >-
   "락 경합", "데이터 정합성 문제", "분산 트랜잭션 설계".
   Best for: Spring @Transactional review, isolation level selection, Outbox/Saga pattern guidance.
   Not for: general query performance (use sql-pro) or connection pool sizing (use connection-pool-tuner).
+scenarios:
+  - "Data is inconsistent after failures — review our transaction boundaries"
+  - "Help me identify where distributed transactions are causing data integrity issues"
+  - "Our service has partial failure scenarios where some data commits but some doesn't"
+  - "장애 후 데이터가 불일치해 — 트랜잭션 경계를 검토해줘"
+  - "분산 트랜잭션으로 인한 데이터 정합성 문제를 해결해줘"
 compatibility:
   recommended:
     - think-tool

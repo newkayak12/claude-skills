@@ -22,6 +22,10 @@ compatibility:
   remote_mcp_note: >-
     think-tool이 있으면 one-way-door 결정 전에 sunk-cost bias와 hidden assumption을 체계적으로 검토할 수 있습니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
+related:
+  - devils-advocate
+  - retrospective
+  - problem-reframer
 ---
 
 # Decision Maker
@@ -148,3 +152,9 @@ Is the decision reversible at low cost?
          Multiple teams, unclear owner → DACI first, then Matrix
          Not enough info → Define spike/experiment
 ```
+
+## Related Skills
+
+- `devils-advocate` — 결정을 내리기 전에 선택지의 치명적 약점을 먼저 검증하고 싶을 때
+- `retrospective` — 결정을 내린 후 일정 기간이 지나 그 결정의 결과를 돌아볼 때
+- `problem-reframer` — 어떤 옵션도 마음에 들지 않을 때, 결정 프레임 자체가 잘못됐는지 점검할 때
