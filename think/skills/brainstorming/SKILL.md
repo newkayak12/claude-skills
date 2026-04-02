@@ -22,6 +22,10 @@ compatibility:
   remote_mcp_note: >-
     think-tool이 있으면 설계 옵션을 제시하기 전에 trade-off를 체계적으로 검토할 수 있습니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
+related:
+  - decision-maker
+  - problem-reframer
+  - thought-organizer
 ---
 
 # Brainstorming Ideas Into Designs
@@ -157,3 +161,9 @@ A question about a UI topic is not automatically a visual question. "What does p
 
 If they agree to the companion, read the detailed guide before proceeding:
 `skills/brainstorming/visual-companion.md`
+
+## Related Skills
+
+- `decision-maker` — 여러 설계 옵션이 나왔고 최종 선택이 필요할 때
+- `problem-reframer` — 아이디어를 내려 해도 계속 막힐 때, 문제 정의 자체를 다시 점검할 때
+- `thought-organizer` — 발산된 아이디어가 많아 구조화하고 우선순위를 잡아야 할 때

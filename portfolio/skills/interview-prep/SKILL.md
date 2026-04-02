@@ -53,6 +53,14 @@ If following portfolio-feedback, portfolio-jd, or portfolio-company, you can sta
 - Known format (e.g., 2 coding rounds + system design + behavioral)
 - Your biggest area of concern
 
+## Output Template
+
+For each prep session, Claude delivers:
+1. **Question bank** — 10-15 likely questions tailored to the role and company
+2. **STAR responses** — structured answers for behavioral questions with specific examples
+3. **Feedback** — scoring on clarity, specificity, and impact; suggestions for improvement
+4. **Improvement plan** — 3 targeted areas to practice before the interview
+
 ## What Claude Does / What You Do
 
 | Claude | You |

@@ -1,11 +1,12 @@
 {
   "name": "develop",
   "description": "Engineering skills: CLI, SQL, clean architecture, clean code, DDD, pragmatic programming, database optimization, chaos engineering, Spring Boot, microservices, Kotlin, TDD, frontend, code documentation, testing, MCP builder, SRE, performance profiling & optimization, incident response, documentation strategy, and dev-quality-workflow.",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "author": {
     "name": "newkayak12"
   },
   "category": "engineering",
   "repository": "https://github.com/newkayak12/claude-skills",
-  "license": "MIT"
+  "license": "MIT",
+  "skills": ["adr-writer", "architecture-designer", "chaos-engineer", "circuit-breaker-tuner", "clean-architecture", "clean-code", "cli-developer", "code-documenter", "connection-pool-tuner", "database-optimizer", "dev-quality-workflow", "dockerfile-optimizer", "documentation-strategy", "domain-driven-design", "event-storming", "flaky-test-analyzer", "frontend-developer", "incident-response-playbook", "kotlin-specialist", "mcp-builder", "microservices-architect", "performance-profiling-optimization", "pragmatic-programmer", "service-boundary-validator", "spring-boot-engineer", "sql-pro", "sre-engineer", "test-driven-development", "test-master", "transaction-boundary-reviewer"]
 }

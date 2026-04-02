@@ -11,6 +11,12 @@ description: >-
   Best for: inline code documentation, OpenAPI spec generation, doc site setup.
   Not for: architecture documentation (use adr-writer) or documentation strategy planning
   (use documentation-strategy).
+scenarios:
+  - "Our codebase has no documentation and new engineers can't understand it"
+  - "Generate API documentation from this undocumented codebase"
+  - "Write inline comments and a README for this legacy module"
+  - "코드베이스에 문서가 없어서 신규 입사자들이 이해를 못 해"
+  - "이 모듈에 대한 API 문서를 생성해줘"
 compatibility:
   recommended: []
   optional:

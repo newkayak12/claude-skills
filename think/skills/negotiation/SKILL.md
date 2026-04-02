@@ -21,6 +21,10 @@ compatibility:
   remote_mcp_note: >-
     think-tool이 있으면 협상 전 상대방 입장 분석과 Black Swan 탐색을 체계적으로 수행할 수 있습니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
+related:
+  - decision-maker
+  - devils-advocate
+  - first-principles
 license: MIT
 metadata:
   author: wondelai
@@ -381,6 +385,12 @@ Audit any negotiation preparation or live interaction:
 ## Reference Files
 
 - [techniques.md](references/techniques.md): Complete technique breakdowns including mirroring, labeling, tactical empathy, voice control, accusation audit, calibrated questions, no-oriented questions, "That's right", Ackerman method, Black Swans, counterpart styles, body language, and pronoun analysis with examples and psychological triggers
+
+## Related Skills
+
+- `decision-maker` — 협상 전 수용 가능한 조건의 범위와 BATNA를 구조적으로 결정해야 할 때
+- `devils-advocate` — 내 협상 전략의 약점과 상대방이 제기할 수 있는 반론을 미리 검증할 때
+- `first-principles` — 협상 관행이나 업계 관례를 당연시하지 않고 근본부터 나의 포지션을 재검토할 때
 
 ## Further Reading
 

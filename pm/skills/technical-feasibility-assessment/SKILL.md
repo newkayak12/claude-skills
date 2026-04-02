@@ -9,6 +9,12 @@ license: MIT
 metadata:
   author: wondelai
   version: "1.0.0"
+scenarios:
+  - "Product wants to build X — can you give me a quick technical feasibility read?"
+  - "Help me assess whether this feature can be built in 2 sprints with our current stack"
+  - "Run a feasibility check on this AI integration before we commit to the roadmap"
+  - "이 기능이 우리 현재 스택으로 2스프린트 안에 가능한지 빠르게 평가해줘"
+  - "로드맵 확정 전에 기술 타당성 검토를 도와줘"
 compatibility:
   recommended:
     - think-tool

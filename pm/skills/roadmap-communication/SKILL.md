@@ -7,6 +7,12 @@ description: >-
   "why not this feature," or communicate a delay without damaging trust.
   For managing the actual person blocking or disagreeing, use stakeholder-management instead.
 license: MIT
+scenarios:
+  - "I need to communicate our product roadmap to stakeholders without committing to dates"
+  - "Help me create a roadmap presentation that balances transparency with flexibility"
+  - "Write a roadmap update email explaining why priorities shifted"
+  - "이해관계자에게 로드맵을 공유해야 하는데 일정 약속 없이 전달하고 싶어"
+  - "우선순위가 바뀐 이유를 로드맵 업데이트로 설명해줘"
 metadata:
   author: wondelai
   version: "1.0.0"

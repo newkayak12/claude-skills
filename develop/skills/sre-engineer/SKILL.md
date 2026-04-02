@@ -10,6 +10,12 @@ description: >-
   "SLO 설정", "에러 버짓", "온콜 런북", "골든 시그널 모니터링", "운영 자동화".
   Best for: SLO definition, Prometheus alerting, toil automation, postmortems.
   Not for: chaos experiment design (use chaos-engineer); infrastructure provisioning.
+scenarios:
+  - "Define SLOs and error budgets for our user-facing API services"
+  - "Help me set up observability with metrics, logs, and distributed tracing"
+  - "Design an on-call rotation and alerting strategy for our platform team"
+  - "SLO와 에러 버짓을 정의하고 싶어"
+  - "모니터링과 분산 트레이싱 전략을 수립해줘"
 compatibility:
   recommended:
     - think-tool

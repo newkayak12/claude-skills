@@ -9,6 +9,12 @@ description: >-
   "CLI 개발", "커맨드라인 툴 만들기".
   Best for: Node.js (commander), Python (typer/click), Go (cobra) CLIs.
   Not for: web UI, REST API servers, or SRE pipeline tooling (use sre-engineer for the latter).
+scenarios:
+  - "Build a CLI tool that manages deployment configurations across environments"
+  - "I need to create a command-line interface for our internal developer tools"
+  - "Help me design a CLI with subcommands, flags, and interactive prompts"
+  - "CLI 도구를 만들어줘 — 배포 설정을 관리하는 커맨드라인 앱"
+  - "개발자용 내부 CLI 툴 설계를 도와줘"
 compatibility:
   recommended: []
   optional:

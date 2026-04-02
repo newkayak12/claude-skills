@@ -9,6 +9,12 @@ description: >-
   "도메인 모델링", "이벤트 스토밍", "바운디드 컨텍스트 찾기", "비즈니스 프로세스 정리".
   Best for: Big Picture exploration, Process Level modeling, Design Level aggregate discovery.
   Not for: generating implementation code — use microservices-architect or spring-boot-engineer after the workshop.
+scenarios:
+  - "We're starting a new product and need to model the domain before writing code"
+  - "Help me run an event storming workshop to discover bounded contexts"
+  - "We need to understand our business domain events before designing the system"
+  - "새 프로덕트 개발 전에 도메인 모델링을 해야 해"
+  - "이벤트 스토밍 워크샵을 진행해줘"
 compatibility:
   recommended:
     - think-tool

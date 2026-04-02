@@ -10,6 +10,12 @@ description: >-
   "SQL 쿼리 작성", "쿼리 최적화", "윈도우 함수", "실행 계획 분석".
   Best for: query authoring, window functions, CTEs, EXPLAIN plan interpretation, schema normalization.
   Not for: server-level DB config (use database-optimizer) or connection pool sizing (use connection-pool-tuner).
+scenarios:
+  - "Rewrite this slow SQL query that's doing full table scans on a 50M row table"
+  - "Help me write a complex analytics query with CTEs, window functions, and aggregations"
+  - "Our report query takes 5 minutes — optimize it with proper indexing strategy"
+  - "풀 테이블 스캔을 하는 느린 쿼리를 최적화해줘"
+  - "윈도우 함수와 CTE를 활용한 복잡한 분석 쿼리를 작성해줘"
 compatibility:
   recommended: []
   optional:

@@ -9,6 +9,12 @@ description: >-
   "CI에서만 실패하는 테스트", "flaky".
   Best for: timing races, shared state pollution, ordering dependencies, CI environment differences.
   Not for: consistently failing tests with a known error (those are bugs, not flakiness).
+scenarios:
+  - "Our tests pass locally but randomly fail in CI — I need to fix these flaky tests"
+  - "Help me diagnose why this test fails intermittently with a race condition"
+  - "CI pipeline keeps red because of non-deterministic test failures"
+  - "로컬에선 통과하는 테스트가 CI에서 랜덤으로 실패해"
+  - "간헐적으로 실패하는 테스트 원인을 찾아줘"
 compatibility:
   recommended:
     - think-tool

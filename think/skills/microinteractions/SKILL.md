@@ -20,6 +20,9 @@ compatibility:
   remote_mcp_note: >-
     think-tool이 있으면 마이크로인터랙션의 complexity가 UX 가치와 균형을 이루는지 체계적으로 평가할 수 있습니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
+related:
+  - brainstorming
+  - problem-reframer
 license: MIT
 metadata:
   author: wondelai
@@ -246,6 +249,11 @@ Audit any microinteraction:
 - [loops-modes.md](references/loops-modes.md): Open and closed loops, long loops, modes, mode errors, progressive complexity
 - [signature-moments.md](references/signature-moments.md): Brand-defining microinteractions, examples, when to invest, making mundane interactions delightful
 - [case-studies.md](references/case-studies.md): Detailed design breakdowns of form submission, toggle/switch, pull-to-refresh, loading states, and notifications
+
+## Related Skills
+
+- `brainstorming` — 마이크로인터랙션 개선 방향이 나왔고 구체적인 설계 아이디어를 발산하고 싶을 때
+- `problem-reframer` — 인터랙션이 계속 어색할 때, 해결하려는 UX 문제 자체가 올바르게 정의됐는지 점검할 때
 
 ## Further Reading
 

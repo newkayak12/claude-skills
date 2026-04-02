@@ -6,6 +6,12 @@ description: >-
   Use when a production issue is active or recently resolved and you need a fast, structured response
   rather than ad-hoc troubleshooting, or when writing a post-mortem after the fact.
   Not for designing SLOs, alerting rules, or reliability posture — use sre-engineer for that.
+scenarios:
+  - "We just had a production outage and need a structured incident response process"
+  - "Help me create an on-call runbook for database failures"
+  - "Design an incident response playbook for our SRE team"
+  - "프로덕션 장애가 발생했는데 대응 프로세스가 없어"
+  - "온콜 런북과 인시던트 대응 플레이북을 만들어줘"
 ---
 
 # Incident Response Playbook

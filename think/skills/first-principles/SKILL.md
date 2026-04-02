@@ -22,6 +22,10 @@ compatibility:
   remote_mcp_note: >-
     think-tool이 있으면 Lens A 분해(가정 열거)와 Lens C 합성(반론 테스트)을 체계적으로 수행할 수 있습니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
+related:
+  - brainstorming
+  - problem-reframer
+  - decision-maker
 license: MIT
 metadata:
   author: wondelai
@@ -151,6 +155,12 @@ This skill synthesizes insights from several foundational sources:
 - [*"Poor Charlie's Almanack"*](https://www.amazon.com/Poor-Charlies-Almanack-Charles-Expanded/dp/1578645018) by Charlie Munger — mental models, inversion, and latticework thinking
 - [*"The Great Mental Models Vol. 1"*](https://www.amazon.com/Great-Mental-Models-Thinking-Concepts/dp/1999449002) by Shane Parrish (Farnam Street) — practical synthesis of first principles models
 - Elon Musk interviews on first principles reasoning (widely available; no single text)
+
+## Related Skills
+
+- `brainstorming` — 가정을 분해한 후 바닥부터 새 아이디어를 발산하며 설계하고 싶을 때
+- `problem-reframer` — 분해 과정에서 문제 자체가 잘못 정의됐음을 발견했을 때
+- `decision-maker` — 재구성한 대안들 중 하나를 구조적으로 선택해야 할 때
 
 ## About the Tradition
 

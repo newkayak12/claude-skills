@@ -9,6 +9,12 @@ description: >-
   "Spring Cloud Gateway".
   Best for: REST controllers, JPA data access, Spring Security 6, Actuator/observability.
   Not for: architecture-level service decomposition (use microservices-architect); Kotlin-idiomatic patterns (pair with kotlin-specialist).
+scenarios:
+  - "Build a REST API with Spring Boot including security, JPA, and error handling"
+  - "Help me configure Spring Security for JWT-based authentication"
+  - "Add caching, transaction management, and validation to our Spring Boot service"
+  - "Spring Boot로 REST API를 만들어줘 — 시큐리티와 JPA 포함"
+  - "JWT 인증을 위한 Spring Security 설정을 도와줘"
 compatibility:
   recommended: []
   optional:

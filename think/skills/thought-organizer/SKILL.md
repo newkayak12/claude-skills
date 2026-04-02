@@ -21,6 +21,10 @@ compatibility:
   remote_mcp_note: >-
     think-tool이 있으면 구조화 후 모순·누락·미해결 긴장을 체계적으로 검토할 수 있습니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
+related:
+  - brainstorming
+  - first-principles
+  - retrospective
 ---
 
 # Thought Organizer
@@ -161,3 +165,9 @@ See `references/examples.md` for more examples: essay framing and philosophical 
 - Do not add ideas the user did not express
 - Do not pick a structure type without considering what serves the content best
 - Do not skip the "gaps" step — unresolved tensions are valuable
+
+## Related Skills
+
+- `brainstorming` — 구조화 후 새로운 아이디어나 설계 방향이 필요할 때
+- `first-principles` — 정리된 아이디어 중 근본 가정을 검증하고 싶을 때
+- `retrospective` — 정리한 생각을 기반으로 과거 경험을 돌아보고 교훈을 추출할 때

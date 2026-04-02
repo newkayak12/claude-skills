@@ -10,6 +10,12 @@ description: >-
   Best for: tuning failureRateThreshold and waitDuration, adding fallbacks, configuring
   bulkheads alongside circuit breakers.
   Not for: slow queries caused by missing indexes (use database-optimizer or sql-pro).
+scenarios:
+  - "Our circuit breaker is tripping too often and causing unnecessary service disruptions"
+  - "Help me tune the circuit breaker thresholds for our payment service"
+  - "Circuit breaker keeps opening on false positives, need to configure proper settings"
+  - "서킷 브레이커가 너무 자주 열려서 서비스 장애가 발생해"
+  - "서킷 브레이커 임계값 설정을 도와줘"
 compatibility:
   recommended:
     - think-tool

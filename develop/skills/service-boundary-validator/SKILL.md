@@ -9,6 +9,12 @@ description: >-
   "서비스 경계 검증", "분산 모놀리스", "서비스 분리", "데이터 소유권 분석".
   Best for: coupling analysis, data ownership audit, split vs. merge decisions.
   Not for: designing new service boundaries from scratch (use microservices-architect or event-storming).
+scenarios:
+  - "Should this feature be a new microservice or stay in the existing service?"
+  - "Validate whether our proposed service split makes sense or creates too much coupling"
+  - "Help me decide if this domain logic belongs in service A or service B"
+  - "이 기능을 새 서비스로 분리해야 할지 기존 서비스에 넣어야 할지 모르겠어"
+  - "서비스 경계가 맞게 나뉘어져 있는지 검토해줘"
 compatibility:
   recommended:
     - think-tool
