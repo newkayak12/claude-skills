@@ -1,12 +1,11 @@
 {
   "name": "skill",
   "description": "Skill management: create new skills, improve existing ones, validate skill quality, and audit trigger coverage.",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "author": {
     "name": "newkayak12"
   },
   "category": "productivity",
   "repository": "https://github.com/newkayak12/claude-skills",
-  "license": "MIT",
-  "skills": ["skill-creator", "skill-trigger-validator", "skill-validator"]
+  "license": "MIT"
 }

@@ -1,12 +1,11 @@
 {
   "name": "cognition",
   "description": "Thinking quality skills: assumption extraction, bias auditing, fallacy detection, mental models, epistemic reasoning, tradeoff articulation, question upgrading, second-order thinking, and thinking style profiling.",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "author": {
     "name": "newkayak12"
   },
   "category": "productivity",
   "repository": "https://github.com/newkayak12/claude-skills",
-  "license": "MIT",
-  "skills": ["assumption-extractor", "bias-auditor", "clarity-toolkit", "epistemic-reasoner", "fallacy-detector", "mental-model-toolkit", "question-upgrader", "second-order-thinker", "thinking-style-profiler", "tradeoff-articulator"]
+  "license": "MIT"
 }

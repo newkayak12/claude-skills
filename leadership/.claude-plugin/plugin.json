@@ -1,12 +1,11 @@
 {
   "name": "leadership",
   "description": "Engineering leadership skills: 1-on-1 meetings for managers and ICs, engineer leveling and promotion cases, calibration conversations.",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "author": {
     "name": "newkayak12"
   },
   "category": "productivity",
   "repository": "https://github.com/newkayak12/claude-skills",
-  "license": "MIT",
-  "skills": ["1-on-1-ic", "1-on-1-manager", "leveling-ic", "leveling-manager"]
+  "license": "MIT"
 }

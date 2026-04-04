@@ -1,12 +1,11 @@
 {
   "name": "planning",
   "description": "Planning skills: executing implementation plans and roadmap planning.",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "author": {
     "name": "newkayak12"
   },
   "category": "productivity",
   "repository": "https://github.com/newkayak12/claude-skills",
-  "license": "MIT",
-  "skills": ["executing-plans", "roadmap-planning"]
+  "license": "MIT"
 }

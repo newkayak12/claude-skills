@@ -1,12 +1,11 @@
 {
   "name": "completion",
   "description": "Verification before completion: evidence-based workflow to confirm work is done before claiming success.",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "author": {
     "name": "newkayak12"
   },
   "category": "productivity",
   "repository": "https://github.com/newkayak12/claude-skills",
-  "license": "MIT",
-  "skills": ["verification-before-completion"]
+  "license": "MIT"
 }
