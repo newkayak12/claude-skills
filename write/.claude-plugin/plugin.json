@@ -1,12 +1,11 @@
 {
   "name": "write",
   "description": "Writing skills: doc co-authoring, writing plans, skill writing, writer verification, SBI feedback writing, and technical blog writing.",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "author": {
     "name": "newkayak12"
   },
   "category": "productivity",
   "repository": "https://github.com/newkayak12/claude-skills",
-  "license": "MIT",
-  "skills": ["doc-coauthoring", "sbi-writer", "technical-blog-writer", "writer-verification", "writing-plans", "writing-skills"]
+  "license": "MIT"
 }
