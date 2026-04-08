@@ -1,6 +1,20 @@
 ---
 name: skill-validator
 description: 'Audits an existing skill across five quality dimensions: usefulness, agent structure, MCP fit, and SKILL.md weight. Use when someone wants a design review of a skill they have already written or partially built — is this skill well-designed, review my skill, is the SKILL.md too heavy, should this use agents or MCP. Also invoked automatically after skill-creator finishes a new skill.'
+scenarios:
+  - "Review my skill — is it well-designed?"
+  - "Is this SKILL.md too heavy or should I split it?"
+  - "Should this skill use agents or MCP tools?"
+  - "내 스킬 설계 검토해줘"
+  - "스킬이 너무 길어, 나눠야 할까?"
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - mcp-reasoner
+  remote_mcp_note: >-
+    think-tool은 각 품질 차원 분석 전에 깊이 있는 판단을 위해 활용됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Skill Validator
