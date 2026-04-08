@@ -13,6 +13,14 @@ scenarios:
   - "Write a roadmap update email explaining why priorities shifted"
   - "이해관계자에게 로드맵을 공유해야 하는데 일정 약속 없이 전달하고 싶어"
   - "우선순위가 바뀐 이유를 로드맵 업데이트로 설명해줘"
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - sequential-thinking
+  remote_mcp_note: >-
+    think-tool은 청중별 메시지 프레이밍과 민감한 우선순위 설명 방식을 고민할 때 유용합니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 metadata:
   author: wondelai
   version: "1.0.0"

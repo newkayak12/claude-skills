@@ -17,6 +17,15 @@ scenarios:
   - "My VP keeps pushing back on this feature. How do I handle it?"
   - "I need to map all the stakeholders for this initiative before kickoff."
 estimated_time: "30-90 min"
+compatibility:
+  recommended:
+    - think-tool
+  optional:
+    - sequential-thinking
+  remote_mcp_note: >-
+    think-tool은 이해관계자의 동기와 저항 이유를 깊이 분석할 때 유용합니다.
+    sequential-thinking은 영향력 매핑 → 관계 구축 → 설득 전략 단계를 순서대로 진행할 때 활용됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Stakeholder Management
