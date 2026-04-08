@@ -7,6 +7,21 @@ description: >-
   Use when a codebase, API, or team process lacks documentation that slows onboarding or causes
   repeated questions, or when documentation exists but is scattered, outdated, or missing key gaps.
   Not a substitute for code-documenter (inline docs and docstrings) or adr-writer (individual decisions).
+scenarios:
+  - "Our codebase has no docs and new engineers keep asking the same questions repeatedly"
+  - "We have documentation but it's scattered across three wikis and no one knows what's current"
+  - "Help me build a documentation strategy for our microservices platform"
+  - "신규 엔지니어 온보딩이 너무 오래 걸려, 문서화 전략이 필요해"
+  - "문서가 분산되어 있고 오래됐어, 체계를 잡아줘"
+compatibility:
+  recommended:
+    - think-tool
+    - sequential-thinking
+  optional: []
+  remote_mcp_note: >-
+    think-tool은 문서 우선순위 결정과 coverage gap 분석에 활용됩니다.
+    sequential-thinking은 감사 → 우선순위 → 작성 → 검토 흐름을 단계별로 구조화합니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Documentation Strategy

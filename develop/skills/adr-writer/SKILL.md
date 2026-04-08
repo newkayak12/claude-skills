@@ -11,6 +11,12 @@ description: >-
   decisions that will surprise future maintainers.
   Not for: trivial implementation details, decisions with only one reasonable option,
   or choices that will be revisited within weeks.
+scenarios:
+  - "Help me write an ADR for our decision to use PostgreSQL over MySQL"
+  - "We chose Kafka over RabbitMQ — document this architectural decision with tradeoffs"
+  - "Write an ADR explaining why we're migrating from REST to GraphQL"
+  - "PostgreSQL 선택 이유를 ADR로 문서화해줘"
+  - "마이크로서비스 분리 결정을 아키텍처 결정 기록으로 남겨야 해"
 compatibility:
   recommended:
     - think-tool

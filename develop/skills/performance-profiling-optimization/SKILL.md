@@ -13,6 +13,15 @@ scenarios:
   - "Application throughput dropped by 40% — systematic performance investigation needed"
   - "배포 후 API 응답 시간이 느려졌는데 원인을 찾아줘"
   - "메모리 누수와 CPU 병목을 프로파일링해줘"
+compatibility:
+  recommended:
+    - sequential-thinking
+    - think-tool
+  optional: []
+  remote_mcp_note: >-
+    sequential-thinking은 베이스라인 측정 → 프로파일링 → 원인 분석 → 수정 → 검증 흐름을 강제합니다.
+    think-tool은 여러 병목 후보 중 우선순위를 결정하는 데 활용됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Performance Profiling & Optimization

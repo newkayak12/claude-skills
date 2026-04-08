@@ -12,6 +12,15 @@ scenarios:
   - "Design an incident response playbook for our SRE team"
   - "프로덕션 장애가 발생했는데 대응 프로세스가 없어"
   - "온콜 런북과 인시던트 대응 플레이북을 만들어줘"
+compatibility:
+  recommended:
+    - sequential-thinking
+    - think-tool
+  optional: []
+  remote_mcp_note: >-
+    sequential-thinking은 탐지 → 트리아지 → 완화 → RCA 단계를 순서대로 진행할 때 유용합니다.
+    think-tool은 장애 원인 분석과 우선순위 판단에 활용됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Incident Response Playbook
