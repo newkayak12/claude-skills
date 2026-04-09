@@ -1,6 +1,6 @@
 ---
 name: skill-validator
-description: 'Audits an existing skill across five quality dimensions: usefulness, agent structure, MCP fit, and SKILL.md weight. Use when someone wants a design review of a skill they have already written or partially built — is this skill well-designed, review my skill, is the SKILL.md too heavy, should this use agents or MCP. Also invoked automatically after skill-creator finishes a new skill.'
+description: 'Audits an existing skill across five quality dimensions: usefulness, agent structure, MCP fit, SKILL.md weight, and output quality (with-skill vs without-skill eval). Use when someone wants a design review of a skill they have already written or partially built — is this skill well-designed, review my skill, is the SKILL.md too heavy, should this use agents or MCP. Also invoked automatically after skill-creator finishes a new skill.'
 scenarios:
   - "Review my skill — is it well-designed?"
   - "Is this SKILL.md too heavy or should I split it?"
@@ -21,6 +21,8 @@ compatibility:
 
 Analyze a skill's design quality across five dimensions and produce an actionable improvement report that skill-creator can act on.
 
+The fifth check — output quality eval — runs the skill against its own scenarios and measures whether it produces better output than Claude would without guidance. This is the only check that tests actual runtime behavior, not just design.
+
 ## Input
 
 If the skill path wasn't provided, ask for it — you need the root directory containing SKILL.md.
@@ -33,7 +35,9 @@ Read all skill files before dispatching agents:
 
 If no `agents/` directory exists, note "no subagents present" in the Agent Structure section rather than skipping it. If no `references/` directory exists, skip the references check in the Weight section. This ensures the report is complete and consistent even for minimal skills that only have a SKILL.md.
 
-## Execution — run all five checks in parallel
+## Execution
+
+Run checks 1–4 in parallel. Run check 5 after — it depends on understanding the skill's promises first.
 
 | # | Check | Agent | What it examines |
 |---|-------|-------|-----------------|
@@ -41,6 +45,7 @@ If no `agents/` directory exists, note "no subagents present" in the Agent Struc
 | 2 | Agent Structure + Parallelism | `agents/structure-reviewer.md` | Should personas be split into subagents? Which steps are truly independent and could run concurrently? |
 | 3 | MCP Fit | `agents/mcp-advisor.md` | Which MCPs would help? (load `references/mcp-catalog.md`) |
 | 4 | SKILL.md Weight | `agents/weight-analyzer.md` | Can it be split and lightened for progressive loading? |
+| 5 | Output Quality | `agents/eval-agent.md` | Does the skill actually improve Claude's output vs no skill? Runs with-skill / without-skill eval on 2 scenarios. |
 
 Pass the **full content of all skill files** to each agent as context.
 
@@ -63,6 +68,13 @@ Produce a self-contained report in this format:
 
 ### 4. SKILL.md Weight — [LIGHT / OK / HEAVY / CRITICAL]
 [line count, what's heavy, concrete split suggestions with file names]
+
+### 5. Output Quality — [PASS / MARGINAL / FAIL]
+**With-skill pass rate:** X/N assertions
+**Without-skill pass rate:** X/N assertions
+**Delta:** +X
+**Discriminating assertions:** [what the skill enforces that baseline misses]
+**Skill gaps:** [what the skill promises but doesn't deliver]
 
 ---
 ## Top Improvements for [skill-name]
