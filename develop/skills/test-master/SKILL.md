@@ -1,10 +1,10 @@
 ---
 name: test-master
 description: >-
-  Use when someone needs to write, improve, or audit tests — generating unit, integration, E2E, performance, or security tests, analyzing coverage gaps, or producing a test plan or defect report.
-  Triggers on: "테스트 작성", "단위 테스트", "커버리지 분석", "test coverage", "write tests", "add tests", "test plan", "QA", "flaky test", "test strategy", "regression test", "shift-left".
-  Best for: greenfield test suites, test plan creation, coverage gap analysis.
-  Not for: diagnosing non-deterministic flakiness (use flaky-test-analyzer); TDD workflow (use test-driven-development).
+  Use when someone needs to write, improve, or audit tests — generating unit,
+  integration, E2E, performance, or security tests, analyzing coverage gaps, or
+  producing a test plan or defect report. Triggers on: "테스트 작성", "단위 테스트", "커버리지
+  분석", "test
 license: MIT
 metadata:
   author: https://github.com/Jeffallan

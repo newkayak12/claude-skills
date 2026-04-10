@@ -1,10 +1,10 @@
 ---
 name: leveling-ic
 description: >-
-  Use when an IC wants to understand their current level, close gaps to the next level, and build a promotion-ready evidence portfolio.
-  Triggers on: "what does senior mean in practice", "how do I get to staff", "promotion conversation with manager", "느낌상 시니어인데 인정 안 받아", "승진 준비 어떻게 해", "레벨업 어떻게 해", "promotion evidence", "career ladder gaps".
-  Best for: engineers unclear on what the next level requires; building a STAR-format evidence log; preparing explicit promotion timing conversations.
-  Not for: managers writing promotion cases (use leveling-manager), general career advice, or 1-on-1 meeting prep.
+  Use when an IC wants to understand their current level, close gaps to the next
+  level, and build a promotion-ready evidence portfolio. Triggers on: "what does
+  senior mean in practice", "how do I get to staff", "promotion conversation
+  with manager",
 license: MIT
 metadata:
   author: wondelai

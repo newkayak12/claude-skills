@@ -1,14 +1,10 @@
 ---
 name: values-explorer
 description: >-
-  Use when someone is unclear about what actually matters to them, feeling torn between
-  competing priorities, or agonizing over a choice where something important has to be sacrificed.
-  Two moves: extract genuinely held values from behavioral evidence, and navigate collisions
-  between values that cannot both be fully honored.
-  Triggers on: "가치관", "values", "뭐가 중요한지", "우선순위", "가치 충돌", "선택이 힘들어",
-  "진짜 원하는 게 뭔지", "무엇을 희생해야 하나", "삶에서 중요한 것".
-  Best for: major life decisions, chronic dissatisfaction despite external success, values conflicts between career and life.
-  Not for: information overload without a values question (use clarity-toolkit), whole-life audit (use examined-life).
+  Use when someone is unclear about what actually matters to them, feeling torn
+  between competing priorities, or agonizing over a choice where something
+  important has to be sacrificed. Two moves: extract genuinely held values from
+  behavioral...
 
 scenarios:
   - "I keep making choices that feel wrong but I can't name why"

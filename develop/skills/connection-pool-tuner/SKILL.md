@@ -1,14 +1,10 @@
 ---
 name: connection-pool-tuner
 description: >-
-  Use when an application shows intermittent database connection failures, API latency
-  that spikes under traffic, or pool exhaustion errors — and you need to diagnose and
-  tune connection pool settings (HikariCP, pgBouncer, or similar).
-  Triggers on: "connection pool exhausted", "HikariCP timeout", "too many connections",
-  "pool size tuning", "pgBouncer config", "DB connection timeout", "커넥션 풀 설정",
-  "데이터베이스 연결 오류", "connection leak".
-  Best for: HikariCP tuning, pgBouncer sizing, diagnosing pool exhaustion vs. slow queries.
-  Not for: slow query rewriting (use sql-pro) or server-level DB parameter tuning (use database-optimizer).
+  Use when an application shows intermittent database connection failures, API
+  latency that spikes under traffic, or pool exhaustion errors — and you need to
+  diagnose and tune connection pool settings (HikariCP, pgBouncer, or similar).
+  Triggers on:
 scenarios:
   - "Our application is getting 'connection pool exhausted' errors under load"
   - "Help me tune HikariCP settings for a Spring Boot service with 500 concurrent users"

@@ -1,10 +1,10 @@
 ---
 name: portfolio-rewrite
 description: >-
-  Use when someone wants to rewrite specific portfolio sections into stronger, senior-level statements — showing Before/After with explanations.
-  Triggers on: "이 문장 고쳐줘", "이 부분 어떻게 쓰면 좋아", "더 잘 쓰는 법", "임팩트 있게 바꿔줘", "rewrite this portfolio section", "make this stronger", "improve this bullet point".
-  Best for: acting on portfolio-feedback improvement areas; rewriting specific vague, passive, or junior-sounding sentences into specific, ownership-clear, impact-driven statements.
-  Not for: general portfolio quality scoring (use portfolio-feedback), writing pattern analysis (use portfolio-pattern), JD-specific keyword alignment (use resume-tailorer).
+  Use when someone wants to rewrite specific portfolio sections into stronger,
+  senior-level statements — showing Before/After with explanations. Triggers on:
+  "이 문장 고쳐줘", "이 부분 어떻게 쓰면 좋아", "더 잘 쓰는 법", "임팩트 있게 바꿔줘", "rewrite this
+  portfolio section",
 scenarios:
   - "Rewrite this portfolio bullet point to sound more senior"
   - "Make this section show more ownership and impact"

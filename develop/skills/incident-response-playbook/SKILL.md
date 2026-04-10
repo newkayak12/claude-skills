@@ -1,11 +1,10 @@
 ---
 name: incident-response-playbook
 description: >-
-  Guides the developer-side incident lifecycle from triage through mitigation to blameless RCA —
-  with severity classification, Slack update templates, escalation paths, and a structured post-mortem format.
-  Use when a production issue is active or recently resolved and you need a fast, structured response
-  rather than ad-hoc troubleshooting, or when writing a post-mortem after the fact.
-  Not for designing SLOs, alerting rules, or reliability posture — use sre-engineer for that.
+  Guides the developer-side incident lifecycle from triage through mitigation to
+  blameless RCA — with severity classification, Slack update templates,
+  escalation paths, and a structured post-mortem format. Use when a production
+  issue is active or...
 scenarios:
   - "We just had a production outage and need a structured incident response process"
   - "Help me create an on-call runbook for database failures"

@@ -1,14 +1,10 @@
 ---
 name: service-boundary-validator
 description: >-
-  Use when someone is deciding whether to split a service, suspects their services are
-  too tightly coupled to deploy independently, wants to validate a proposed service
-  boundary, or is decomposing a monolith and needs to know where to cut.
-  Triggers on: "validate service boundary", "are we a distributed monolith",
-  "too tightly coupled", "should I split this service", "shared database anti-pattern",
-  "서비스 경계 검증", "분산 모놀리스", "서비스 분리", "데이터 소유권 분석".
-  Best for: coupling analysis, data ownership audit, split vs. merge decisions.
-  Not for: designing new service boundaries from scratch (use microservices-architect or event-storming).
+  Use when someone is deciding whether to split a service, suspects their
+  services are too tightly coupled to deploy independently, wants to validate a
+  proposed service boundary, or is decomposing a monolith and needs to know
+  where to cut.
 scenarios:
   - "Should this feature be a new microservice or stay in the existing service?"
   - "Validate whether our proposed service split makes sense or creates too much coupling"

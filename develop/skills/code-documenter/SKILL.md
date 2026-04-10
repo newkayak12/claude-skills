@@ -1,16 +1,10 @@
 ---
 name: code-documenter
 description: >-
-  Use when code, an API, or a project lacks documentation and needs it created or
-  improved — adding docstrings or JSDoc to functions and classes, generating OpenAPI/
-  Swagger specs from an existing API, building a documentation site, or writing tutorials
-  and user guides.
-  Triggers on: "add docstrings", "generate OpenAPI spec", "document this API",
-  "write JSDoc", "create a doc site", "문서 작성", "API 문서화", "코드 주석 추가",
-  "missing documentation", "undocumented code".
-  Best for: inline code documentation, OpenAPI spec generation, doc site setup.
-  Not for: architecture documentation (use adr-writer) or documentation strategy planning
-  (use documentation-strategy).
+  Use when code, an API, or a project lacks documentation and needs it created
+  or improved — adding docstrings or JSDoc to functions and classes, generating
+  OpenAPI/ Swagger specs from an existing API, building a documentation site, or
+  writing...
 scenarios:
   - "Our codebase has no documentation and new engineers can't understand it"
   - "Generate API documentation from this undocumented codebase"

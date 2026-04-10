@@ -1,6 +1,6 @@
 ---
 name: skill-validator
-description: 'Audits an existing skill across five quality dimensions: usefulness, agent structure, MCP fit, SKILL.md weight, and output quality (with-skill vs without-skill eval). Use when someone wants a design review of a skill they have already written or partially built — is this skill well-designed, review my skill, is the SKILL.md too heavy, should this use agents or MCP. Also invoked automatically after skill-creator finishes a new skill.'
+description: Audits an existing skill across five quality dimensions: usefulness, agent structure, MCP fit, SKILL.md weight, and output quality (with-skill vs without-skill eval). Use when someone wants a design review of a skill they have already written or...
 scenarios:
   - "Review my skill — is it well-designed?"
   - "Is this SKILL.md too heavy or should I split it?"

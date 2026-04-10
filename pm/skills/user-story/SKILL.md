@@ -1,10 +1,10 @@
 ---
 name: user-story
 description: >-
-  Use when someone needs to write a single user story or a small set of stories — translating a known user need into a structured, development-ready format with acceptance criteria.
-  Triggers on: "write a user story", "user story format", "acceptance criteria", "As a user I want", "Gherkin criteria", "유저 스토리 써줘", "인수 조건 작성".
-  Best for: authoring individual story artifacts, converting PRD requirements to stories, establishing story quality standards.
-  Not for: splitting large epics (use user-story-splitting), mapping full workflows (use user-story-mapping), or writing problem statements before understanding the user need.
+  Use when someone needs to write a single user story or a small set of stories
+  — translating a known user need into a structured, development-ready format
+  with acceptance criteria. Triggers on: "write a user story", "user story
+  format", "acceptance
 type: component
 theme: pm-artifacts
 scenarios:

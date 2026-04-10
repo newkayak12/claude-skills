@@ -1,11 +1,9 @@
 ---
 name: writing-skills
 description: >-
-  Use when creating new skills, editing existing skills, or writing SKILL.md content.
-  Triggers on: "스킬 만들어줘", "새 skill 작성", "SKILL.md 써줘", "skill 개선해줘",
-  "create a skill", "skill documentation", "스킬 문서 작성", "workflow skill로 만들어줘".
-  Best for: building new reusable skills, iterating on existing skill quality, capturing workflows as skills.
-  Not for: project-specific documentation or one-off process notes.
+  Use when creating new skills, editing existing skills, or writing SKILL.md
+  content. Triggers on: "스킬 만들어줘", "새 skill 작성", "SKILL.md 써줘", "skill 개선해줘",
+  create a skill", "skill documentation", "스킬 문서 작성", "workflow skill로 만들어줘".
 scenarios:
   - "이 워크플로우를 skill로 만들어줘"
   - "새 skill SKILL.md 작성해줘"

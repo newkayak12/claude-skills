@@ -1,10 +1,10 @@
 ---
 name: clean-code
 description: >-
-  Use when reviewing, refactoring, or writing code that others need to read and maintain — any code that is hard to understand, has grown too long, or whose intent is not immediately clear.
-  Triggers on: "리팩토링", "코드 가독성", "clean code", "code review", "코드 품질", "refactor", "hard to read", "code smell", "technical debt", "네이밍", "함수가 너무 길어".
-  Best for: PR code reviews, refactoring legacy code, naming and function design guidance.
-  Not for: system architecture decisions (use clean-architecture); domain modeling (use domain-driven-design).
+  Use when reviewing, refactoring, or writing code that others need to read and
+  maintain — any code that is hard to understand, has grown too long, or whose
+  intent is not immediately clear. Triggers on: "리팩토링", "코드 가독성", "clean code",
+  "code review",
 license: MIT
 metadata:
   author: wondelai

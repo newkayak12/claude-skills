@@ -1,16 +1,10 @@
 ---
 name: database-optimizer
 description: >-
-  Use when database slowness stems from infrastructure concerns rather than query
-  authoring: server memory and I/O configuration, connection pooling, lock contention,
-  VACUUM and statistics maintenance, partitioning design, or cloud-managed database
-  parameter tuning. Also applies when an EXPLAIN plan is in hand but the next step
-  is tuning the server or schema structure rather than rewriting the SQL.
-  Triggers on: "database slow after indexing", "EXPLAIN plan shows sequential scan",
-  "shared_buffers tuning", "VACUUM not running", "PostgreSQL parameter tuning",
-  "RDS parameter group", "데이터베이스 성능 튜닝", "쿼리 실행 계획 분석".
-  Best for: PostgreSQL/MySQL server tuning, EXPLAIN plan interpretation, index strategy.
-  Not for: SQL query rewriting (use sql-pro) or connection pool sizing (use connection-pool-tuner).
+  Use when database slowness stems from infrastructure concerns rather than
+  query authoring: server memory and I/O configuration, connection pooling, lock
+  contention, VACUUM and statistics maintenance, partitioning design, or
+  cloud-managed database...
 scenarios:
   - "Our database queries are slow and we're hitting performance bottlenecks"
   - "Help me optimize this SQL query that takes 30 seconds on a 10M row table"

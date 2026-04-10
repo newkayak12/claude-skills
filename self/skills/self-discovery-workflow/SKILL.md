@@ -1,15 +1,10 @@
 ---
 name: self-discovery-workflow
 description: >-
-  Use when someone wants to understand themselves more deeply — not just answer a single
-  question, but explore the full landscape of who they are. Especially suited to life
-  transitions, career crossroads, burnout recovery, and wanting to know yourself better
-  before making a major decision.
-  Triggers on: "자기 탐색", "나 자신 이해", "self-discovery", "내가 누군지 알고 싶어",
-  "번아웃 회복", "삶의 전환점", "큰 결정 전 나를 먼저 알고 싶어", "self-awareness",
-  "전체적으로 나를 돌아보고 싶어".
-  Best for: life transitions, career crossroads, burnout recovery, pre-decision self-understanding.
-  Not for: a single specific question — use the individual self skills directly for those.
+  Use when someone wants to understand themselves more deeply — not just answer
+  a single question, but explore the full landscape of who they are. Especially
+  suited to life transitions, career crossroads, burnout recovery, and wanting
+  to know...
 type: workflow
 theme: self-understanding
 scenarios:

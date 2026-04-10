@@ -1,14 +1,10 @@
 ---
 name: shadow-persona
 description: >-
-  Use when someone is exploring the gap between who they present and who they actually are,
-  or when strong reactions — disgust, envy, contempt toward others — might say something about
-  themselves. Applies Jungian Persona and Shadow concepts.
-  Triggers on: "그림자", "shadow work", "페르소나", "가면", "내가 싫어하는 사람의 특징",
-  "숨기는 모습", "dark side", "shadow self", "내가 억누르는 것", "가면 쓰는 것 같아",
-  "진짜 나", "이중적인 것 같아".
-  Best for: strong negative reactions to others, exhaustion from performing a role, curiosity about disowned traits.
-  Not for: straightforward relationship conflict — this is for pattern-level self-exploration.
+  Use when someone is exploring the gap between who they present and who they
+  actually are, or when strong reactions — disgust, envy, contempt toward others
+  — might say something about themselves. Applies Jungian Persona and Shadow
+  concepts.
 
 scenarios:
   - "I get intensely irritated by arrogant people — what does that say about me?"

@@ -1,10 +1,10 @@
 ---
 name: user-story-mapping-workshop
 description: >-
-  Use when someone wants to be guided interactively through building a story map — step by step through scope, personas, backbone activities, tasks, and release slices via adaptive questions.
-  Triggers on: "walk me through story mapping", "help me build a story map", "story mapping workshop", "I don't know where to start with my backlog", "스토리 맵 같이 만들어줘", "스토리 매핑 워크숍".
-  Best for: teams starting a new product or feature without clear scope; PMs transitioning from a flat backlog to visual story maps; facilitated planning sessions.
-  Not for: generating a map from existing context (use user-story-mapping); single-story authoring; technical refactoring work.
+  Use when someone wants to be guided interactively through building a story map
+  — step by step through scope, personas, backbone activities, tasks, and
+  release slices via adaptive questions. Triggers on: "walk me through story
+  mapping", "help me
 type: interactive
 scenarios:
   - "Walk me through creating a story map for our new mobile app — I'm not sure where to start"

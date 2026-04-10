@@ -1,10 +1,10 @@
 ---
 name: portfolio-feedback
 description: >-
-  Use when someone shares a portfolio and wants an overall assessment from an interviewer's perspective — overall impression, scoring across dimensions, and prioritized improvement areas.
-  Triggers on: "포트폴리오 피드백 해줘", "내 포트폴리오 어때?", "portfolio review", "how does my portfolio look", "review my portfolio", or when a portfolio is shared without a more specific request.
-  Best for: 5+ year backend engineers wanting an honest overall read; identifying which dimensions (technical depth, ownership, impact narrative) are strongest/weakest.
-  Not for: rewriting specific sections (use portfolio-rewrite), JD matching (use portfolio-jd), live interview practice (use portfolio-interview).
+  Use when someone shares a portfolio and wants an overall assessment from an
+  interviewer's perspective — overall impression, scoring across dimensions, and
+  prioritized improvement areas. Triggers on: "포트폴리오 피드백 해줘", "내 포트폴리오 어때?",
+  "portfolio review",
 scenarios:
   - "Review my backend developer portfolio and give me honest feedback"
   - "How would a senior engineer interviewer read my portfolio?"

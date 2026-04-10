@@ -1,14 +1,10 @@
 ---
 name: okr-planning
 description: >-
-  Use when defining team or company goals for a quarter, aligning cross-team efforts,
-  or when goals exist but progress is unclear and teams are pulling in different
-  directions. Triggers on: "OKR 설정", "분기 목표", "quarterly goals", "key results",
-  "목표 정렬", "KR 작성", "how do we set OKRs", "team is not aligned on priorities".
-  Best for: writing well-formed OKRs (outcome KRs, not output KRs); cascading from
-  company to team level; grading OKRs honestly with CFRs. Not for: tactical backlog
-  prioritization within an OKR cycle (use feature-prioritization); tracking sprint
-  tasks (use user-story or shape-up).
+  Use when defining team or company goals for a quarter, aligning cross-team
+  efforts, or when goals exist but progress is unclear and teams are pulling in
+  different directions. Triggers on: "OKR 설정", "분기 목표", "quarterly goals", "key
+  results", 목표 정렬",
 license: MIT
 metadata:
   author: wondelai

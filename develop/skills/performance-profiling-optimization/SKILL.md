@@ -1,12 +1,10 @@
 ---
 name: performance-profiling-optimization
 description: >-
-  Guides systematic performance investigation from symptom to fix — establishing a baseline, profiling the bottleneck,
-  identifying root cause, applying a targeted change, and verifying the improvement with data.
-  Use when someone has a concrete performance problem such as slow response times, high memory usage, CPU saturation,
-  or GC pressure, and needs a methodical approach rather than guessing at fixes.
-  Not a substitute for sre-engineer when the issue is about SLO design or production reliability posture;
-  this skill focuses on code-level and runtime profiling and optimization.
+  Guides systematic performance investigation from symptom to fix — establishing
+  a baseline, profiling the bottleneck, identifying root cause, applying a
+  targeted change, and verifying the improvement with data. Use when someone has
+  a concrete...
 scenarios:
   - "Our API response times degraded after the last deploy — help me profile and fix it"
   - "Profile this Java service to find memory leaks and CPU hotspots"

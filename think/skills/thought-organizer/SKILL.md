@@ -1,11 +1,10 @@
 ---
 name: thought-organizer
 description: >-
-  Use when raw, scattered ideas or notes need structure before writing, presenting, or deciding.
-  Triggers on: "생각 정리해줘", "노트 정리", "머릿속이 복잡해", "아이디어 구조화", "outline 만들어줘",
-  "mind map", "이거 어떻게 엮어야 해?", "글 쓰기 전에 구조 잡아줘", "산만한 생각 정리".
-  Best for: pre-writing structure, mind-map creation, making sense of dumped notes.
-  Not for: designing something new (use brainstorming) or reframing a stubborn problem (use problem-reframer).
+  Use when raw, scattered ideas or notes need structure before writing,
+  presenting, or deciding. Triggers on: "생각 정리해줘", "노트 정리", "머릿속이 복잡해", "아이디어
+  구조화", "outline 만들어줘", mind map", "이거 어떻게 엮어야 해?", "글 쓰기 전에 구조 잡아줘", "산만한 생각
+  정리".
 scenarios:
   - "머릿속에 있는 것들 정리 좀 해줘"
   - "이 노트들 구조화해서 아웃라인 만들어줘"

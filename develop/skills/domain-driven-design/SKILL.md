@@ -1,10 +1,10 @@
 ---
 name: domain-driven-design
 description: >-
-  Use when aligning code structure with business concepts, designing service boundaries, or when domain experts and developers cannot agree on what things mean.
-  Triggers on: "도메인 모델링", "바운디드 컨텍스트", "DDD", "domain-driven design", "bounded context", "aggregate", "ubiquitous language", "value object", "domain event", "서비스 경계 설계", "ubiquitous language".
-  Best for: modeling a complex business domain, designing service boundaries, aligning developer and domain-expert vocabulary.
-  Not for: architecture layering and dependency rules (use clean-architecture); service decomposition validation (use service-boundary-validator).
+  Use when aligning code structure with business concepts, designing service
+  boundaries, or when domain experts and developers cannot agree on what things
+  mean. Triggers on: "도메인 모델링", "바운디드 컨텍스트", "DDD", "domain-driven design",
+  "bounded context",
 license: MIT
 metadata:
   author: wondelai

@@ -1,10 +1,10 @@
 ---
 name: test-driven-development
 description: >-
-  Use when someone wants to drive implementation through tests rather than write tests after the fact — new features, bug fixes, or refactors where design confidence matters.
-  Triggers on: "TDD", "테스트 먼저 작성", "test-first", "red-green-refactor", "failing test first", "테스트 주도 개발", "write test before code", "TDD 사이클".
-  Best for: new features with uncertain API design, bug fixes that need a regression test, refactoring with safety net.
-  Not for: test generation for existing untested code (use test-master); diagnosing flaky tests (use flaky-test-analyzer).
+  Use when someone wants to drive implementation through tests rather than write
+  tests after the fact — new features, bug fixes, or refactors where design
+  confidence matters. Triggers on: "TDD", "테스트 먼저 작성", "test-first",
+  "red-green-refactor",
 references:
   - references/testing-anti-patterns.md
 scenarios:

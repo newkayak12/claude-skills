@@ -1,13 +1,10 @@
 ---
 name: clarity-toolkit
 description: >-
-  Use when someone is overwhelmed by information, stuck in vague thinking, or spinning in
-  analysis without moving forward. Three modes: cut signal from noise, eliminate vague language,
-  and break overthinking loops.
-  Triggers on: "overwhelmed", "too much information", "뭐가 중요한지 모르겠어", "너무 모호해",
-  "과잉사고", "분석 마비", "뭘 해야 할지", "계속 생각만 해", "결정을 못하겠어", "더 명확하게".
-  Best for: information overload, fuzzy goals that can't be acted on, decisions stuck in endless analysis.
-  Not for: choosing between well-defined options (use tradeoff-articulator or decision-maker).
+  Use when someone is overwhelmed by information, stuck in vague thinking, or
+  spinning in analysis without moving forward. Three modes: cut signal from
+  noise, eliminate vague language, and break overthinking loops. Triggers on:
+  "overwhelmed", "too
 
 scenarios:
   - "I have too much data and can't figure out what matters"

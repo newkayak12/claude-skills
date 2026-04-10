@@ -1,12 +1,10 @@
 ---
 name: tradeoff-articulator
 description: >-
-  Use when someone is weighing options or making a decision where something is being given up.
-  Makes the cost structure of each option explicit — including hidden axes — without picking a winner.
-  Triggers on: "tradeoff", "트레이드오프", "장단점", "pros and cons", "무엇을 포기해야",
-  "이 선택의 비용", "득실", "균형점". Also triggers when someone frames a decision as "obviously better."
-  Best for: architectural decisions, career choices, product tradeoffs where costs are invisible.
-  Not for: choosing between options (use decision-maker) — this skill clarifies what you're choosing between.
+  Use when someone is weighing options or making a decision where something is
+  being given up. Makes the cost structure of each option explicit — including
+  hidden axes — without picking a winner. Triggers on: "tradeoff", "트레이드오프",
+  "장단점", "pros and
 
 scenarios:
   - "Map out the tradeoffs between these two approaches"

@@ -1,11 +1,10 @@
 ---
 name: roadmap-communication
 description: >-
-  Focuses on ARTIFACTS and MESSAGES: turning a prioritized plan into clear, audience-specific
-  communication that lands with engineering, executives, customers, or sales.
-  Use when the challenge is WHAT TO SAY — how to explain ordering decisions, respond to
-  "why not this feature," or communicate a delay without damaging trust.
-  For managing the actual person blocking or disagreeing, use stakeholder-management instead.
+  Focuses on ARTIFACTS and MESSAGES: turning a prioritized plan into clear,
+  audience-specific communication that lands with engineering, executives,
+  customers, or sales. Use when the challenge is WHAT TO SAY — how to explain
+  ordering decisions,...
 license: MIT
 scenarios:
   - "I need to communicate our product roadmap to stakeholders without committing to dates"

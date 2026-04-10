@@ -1,11 +1,10 @@
 ---
 name: roadmap-planning
 description: >-
-  Use when product goals or competing initiatives need to become a sequenced, stakeholder-ready roadmap.
-  Triggers on: "로드맵 만들어줘", "분기 계획", "roadmap planning", "이니셔티브 우선순위 정해줘",
-  "feature list를 outcome 기반으로 바꿔줘", "Q2 로드맵", "분기별 계획 세워줘", "이해관계자 정렬".
-  Best for: quarterly/half-year roadmaps, shifting from feature lists to outcome-driven plans.
-  Not for: sprint-level backlog planning or when strategy is still unclear.
+  Use when product goals or competing initiatives need to become a sequenced,
+  stakeholder-ready roadmap. Triggers on: "로드맵 만들어줘", "분기 계획", "roadmap
+  planning", "이니셔티브 우선순위 정해줘", feature list를 outcome 기반으로 바꿔줘", "Q2 로드맵", "분기별
+  계획 세워줘", "이해관계자 정렬".
 scenarios:
   - "경쟁 이니셔티브 15개가 있는데 Q2 로드맵 만들어줘"
   - "6개월 제품 로드맵을 세 팀 걸쳐 계획해야 해"

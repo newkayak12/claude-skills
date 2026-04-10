@@ -1,12 +1,10 @@
 ---
 name: dev-quality-workflow
 description: >-
-  Use when starting a new feature or system from scratch and wanting to follow
-  a full quality engineering process — from architecture through to incident readiness.
-  Triggers on: "dev quality process", "새 기능 처음부터 제대로", "개발 품질 전체", "full dev cycle",
-  "engineering workflow", "처음부터 끝까지 개발".
-  Best for: greenfield features, major refactors, or onboarding a new system.
-  Not for: quick bug fixes, single-file changes, or already-running systems.
+  Use when starting a new feature or system from scratch and wanting to follow a
+  full quality engineering process — from architecture through to incident
+  readiness. Triggers on: "dev quality process", "새 기능 처음부터 제대로", "개발 품질 전체",
+  "full dev cycle",
 type: workflow
 theme: engineering
 scenarios:

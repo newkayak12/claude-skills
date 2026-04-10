@@ -1,13 +1,10 @@
 ---
 name: epistemic-reasoner
 description: >-
-  Use when someone states something with more certainty than the evidence supports, or when
-  an analogy is doing the main argumentative work. Two instruments: calibrate what confidence
-  level the evidence actually warrants, and stress-test whether the comparison holds where it matters.
-  Triggers on: "how sure should I be", "is this analogy valid", "am I overstating this",
-  "근거가 충분한가", "이 비유가 맞나", "확신의 정도", "이 비교가 적절한가".
-  Best for: claims stated with absolute language, analogical arguments, forecasting confidence.
-  Not for: diagnosing why someone is overconfident (use bias-auditor).
+  Use when someone states something with more certainty than the evidence
+  supports, or when an analogy is doing the main argumentative work. Two
+  instruments: calibrate what confidence level the evidence actually warrants,
+  and stress-test whether...
 
 scenarios:
   - "How confident should I actually be about this claim?"

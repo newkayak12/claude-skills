@@ -1,13 +1,10 @@
 ---
 name: attachment-style-mirror
 description: >-
-  Use when someone is confused about a recurring relationship pattern, struggling with closeness
-  or distance, or asking why certain dynamics keep repeating across relationships.
-  Triggers on: "애착 유형", "attachment style", "불안 애착", "회피 애착", "관계 패턴",
-  "왜 이런 관계가 반복되나", "친밀감이 무서워", "자꾸 버림받는 것 같아", "너무 의존적인 것 같아",
-  "혼자 있는 게 편해", "관계에서 불안해".
-  Best for: recurring relational difficulties, understanding why intimacy is hard, diagnosing pursuer-distancer cycles.
-  Not for: specific conflict resolution or communication advice — this is pattern-level analysis.
+  Use when someone is confused about a recurring relationship pattern,
+  struggling with closeness or distance, or asking why certain dynamics keep
+  repeating across relationships. Triggers on: "애착 유형", "attachment style", "불안
+  애착", "회피 애착", "관계 패턴", 왜 이런
 
 scenarios:
   - "Why do I keep ending up in the same relationship dynamic?"

@@ -1,11 +1,10 @@
 ---
 name: verification-before-completion
 description: >-
-  Use before claiming work is done, tests pass, or a bug is fixed — without fresh evidence.
-  Triggers on: any moment a success claim is about to be made, "완료했어", "됐어", "테스트 통과",
-  "it should work now", "done", "커밋할게", "PR 올릴게", "bug is fixed", "빌드 성공".
-  Best for: pre-commit gates, pre-PR gates, any "it works now" claim requiring evidence.
-  Not for: planning or design work — this applies only at completion/claim moments.
+  Use before claiming work is done, tests pass, or a bug is fixed — without
+  fresh evidence. Triggers on: any moment a success claim is about to be made,
+  "완료했어", "됐어", "테스트 통과", it should work now", "done", "커밋할게", "PR 올릴게", "bug is
+  fixed", "빌드 성공".
 scenarios:
   - "테스트 다 통과했어 → 커밋할게"
   - "버그 고쳤어"

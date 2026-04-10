@@ -1,13 +1,10 @@
 ---
 name: database-workflow
 description: >-
-  Use when investigating database performance degradation end-to-end — from query quality
-  through server tuning, connection layer, and transaction safety. Also applies when
-  designing a new database-heavy feature and wanting to get all layers right upfront.
-  Triggers on: "database workflow", "DB 성능 전체", "database performance investigation",
-  "DB 전체 점검", "database-heavy feature 설계", "production DB slowness", "DB 풀 설계부터 트랜잭션까지".
-  Best for: production slowness investigations, new feature DB design, DB-layer onboarding.
-  Not for: a single isolated query fix — use sql-pro directly.
+  Use when investigating database performance degradation end-to-end — from
+  query quality through server tuning, connection layer, and transaction safety.
+  Triggers on: "database workflow", "DB 성능 전체", "database performance
+  investigation", DB 전체 점검",
 type: workflow
 theme: engineering
 scenarios:

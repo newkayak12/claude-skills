@@ -1,10 +1,10 @@
 ---
 name: portfolio-interview
 description: >-
-  Use when someone wants to practice defending their work in a realistic mock interview — the interviewer asks questions grounded in the actual portfolio, evaluates answers, and gives coaching feedback.
-  Triggers on: "모의 면접 해줘", "인터뷰 연습", "면접 준비 같이 해줘", "질문 던져줘", "포트폴리오 기반으로 면접 봐줘", "mock interview", "interview simulation", "practice interview".
-  Best for: 5+ year backend engineers preparing to defend their portfolio work; practicing technical depth probes, gap questions, and failure/recovery scenarios.
-  Not for: study planning (use interview-prep), portfolio review (use portfolio-feedback), JD gap analysis (use portfolio-jd).
+  Use when someone wants to practice defending their work in a realistic mock
+  interview — the interviewer asks questions grounded in the actual portfolio,
+  evaluates answers, and gives coaching feedback. Triggers on: "모의 면접 해줘", "인터뷰
+  연습", "면접 준비 같이
 scenarios:
   - "Run a mock interview with me based on my portfolio — use a staff engineer persona"
   - "Ask me tough questions about my system design experience from my portfolio"

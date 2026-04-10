@@ -1,13 +1,10 @@
 ---
 name: assumption-extractor
 description: >-
-  Use when someone presents a plan, argument, or belief with confidence and its hidden
-  dependencies have not been examined — surfacing factual, causal, value, and definitional
-  assumptions, then ranking which ones would collapse everything if wrong.
-  Triggers on: "what am I assuming", "hidden assumptions", "what could go wrong", "take for granted",
-  "숨겨진 전제", "내가 놓친 것", "가정 점검", "전제 확인".
-  Best for: stress-testing plans before commitment, auditing confident arguments, pre-mortem preparation.
-  Not for: logical fallacy analysis (use fallacy-detector), bias diagnosis (use bias-auditor).
+  Use when someone presents a plan, argument, or belief with confidence and its
+  hidden dependencies have not been examined — surfacing factual, causal, value,
+  and definitional assumptions, then ranking which ones would collapse
+  everything if wrong.
 
 scenarios:
   - "Walk me through the assumptions behind this strategy"

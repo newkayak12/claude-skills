@@ -1,14 +1,10 @@
 ---
 name: frontend-developer
 description: >-
-  Use when someone needs to build or fix UI — React components, page layouts, client-side
-  interactivity, data-fetching hooks, styling, or form handling. Defaults to Next.js
-  App Router, TypeScript, and Tailwind.
-  Triggers on: "build a React component", "Next.js page", "Tailwind styling", "fix this UI",
-  "data fetching hook", "form validation", "React 컴포넌트 만들기", "프론트엔드 개발",
-  "UI 구현", "Next.js App Router".
-  Best for: React/Next.js components, custom hooks, TanStack Query integration, Zod form validation.
-  Not for: Vue, Svelte, or non-React frontends; backend APIs (use spring-boot-engineer or relevant server skill).
+  Use when someone needs to build or fix UI — React components, page layouts,
+  client-side interactivity, data-fetching hooks, styling, or form handling.
+  Defaults to Next.js App Router, TypeScript, and Tailwind. Triggers on: "build
+  a React component",
 scenarios:
   - "Build a React dashboard with data fetching, state management, and responsive layout"
   - "Help me fix this UI bug where the modal doesn't close properly on mobile"

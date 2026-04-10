@@ -1,10 +1,10 @@
 ---
 name: 1-on-1-ic
 description: >-
-  Use when an individual contributor wants to get more value from 1-on-1s with their manager — preparing agendas, driving career conversations, surfacing blockers, and giving upward feedback.
-  Triggers on: "1-on-1 prep", "how to use my 1-on-1 better", "raise something with my manager", "career conversation with manager", "1on1 어떻게 활용해", "매니저랑 커리어 대화 어떻게 해", "상향 피드백 주는 법".
-  Best for: ICs who want to own their growth instead of waiting to be managed; preparing for difficult upward conversations; asking for feedback more effectively.
-  Not for: running 1-on-1s as a manager (use 1-on-1-manager), promotion planning (use leveling-ic), or team-level performance issues.
+  Use when an individual contributor wants to get more value from 1-on-1s with
+  their manager — preparing agendas, driving career conversations, surfacing
+  blockers, and giving upward feedback. Triggers on: "1-on-1 prep", "how to use
+  my 1-on-1 better",
 license: MIT
 metadata:
   author: wondelai

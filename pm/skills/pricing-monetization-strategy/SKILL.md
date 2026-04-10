@@ -1,14 +1,10 @@
 ---
 name: pricing-monetization-strategy
 description: >-
-  Use when deciding how to charge for a product, evaluating a shift from one pricing
-  model to another, or when a GTM plan needs pricing addressed before launch.
-  Triggers on: "가격 전략", "요금제 설계", "pricing model", "freemium vs free trial",
-  "usage-based pricing", "how much should we charge", "tier packaging", "monetization".
-  Best for: designing a new pricing model from scratch; evaluating seat-based vs.
-  usage-based shifts; structuring tier packaging decisions. Not for: pricing a services
-  engagement; decisions where pricing is locked by legal contract; actual WTP research
-  (this gives the framework; you still need to talk to customers).
+  Use when deciding how to charge for a product, evaluating a shift from one
+  pricing model to another, or when a GTM plan needs pricing addressed before
+  launch. Triggers on: "가격 전략", "요금제 설계", "pricing model", "freemium vs free
+  trial", usage-based
 type: workflow
 theme: pm-strategy
 best_for:

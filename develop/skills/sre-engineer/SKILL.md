@@ -1,15 +1,10 @@
 ---
 name: sre-engineer
 description: >-
-  Use when someone needs to establish or improve production reliability practices:
-  defining SLOs and error budgets, setting up golden-signal alerting and dashboards,
-  building incident response runbooks, reducing operational toil through automation,
-  or planning capacity.
-  Triggers on: "define SLOs", "error budget", "golden signals", "on-call runbook",
-  "reduce toil", "capacity planning", "SRE practices", "SLI SLO SLA",
-  "SLO 설정", "에러 버짓", "온콜 런북", "골든 시그널 모니터링", "운영 자동화".
-  Best for: SLO definition, Prometheus alerting, toil automation, postmortems.
-  Not for: chaos experiment design (use chaos-engineer); infrastructure provisioning.
+  Use when someone needs to establish or improve production reliability
+  practices: defining SLOs and error budgets, setting up golden-signal alerting
+  and dashboards, building incident response runbooks, reducing operational toil
+  through automation,...
 scenarios:
   - "Define SLOs and error budgets for our user-facing API services"
   - "Help me set up observability with metrics, logs, and distributed tracing"

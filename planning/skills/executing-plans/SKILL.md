@@ -1,11 +1,9 @@
 ---
 name: executing-plans
 description: >-
-  Use when there is a written implementation plan to execute step by step with review checkpoints.
-  Triggers on: "계획 실행해줘", "plan 따라 구현해줘", "execute this plan", "implementation plan 실행",
-  "plan 파일 있는데 실행해줘", "서브에이전트 없이 계획 실행".
-  Best for: executing plans in a separate session without subagents, with checkpoint reviews.
-  Not for: creating plans (use writing-plans) or subagent-based execution (use subagent-driven-development).
+  Use when there is a written implementation plan to execute step by step with
+  review checkpoints. Triggers on: "계획 실행해줘", "plan 따라 구현해줘", "execute this
+  plan", "implementation plan 실행", plan 파일 있는데 실행해줘", "서브에이전트 없이 계획 실행".
 scenarios:
   - "이 구현 계획 실행해줘"
   - "Plan 파일 있는데 그대로 따라 실행해줘"

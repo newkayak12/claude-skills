@@ -1,14 +1,10 @@
 ---
 name: mcp-builder
 description: >-
-  Use when someone wants to expose an external service or API as a tool an LLM can call —
-  building an MCP server from scratch, designing tool schemas, handling auth, or structuring
-  resources and prompts.
-  Triggers on: "build an MCP server", "MCP tool", "expose this API to Claude",
-  "Model Context Protocol server", "MCP 서버 만들기", "외부 API를 LLM 도구로 노출",
-  "MCP tool schema", "FastMCP", "MCP SDK".
-  Best for: TypeScript MCP SDK, Python FastMCP, tool schema design, evaluation creation.
-  Not for: CLI wrappers without MCP protocol (use cli-developer); general API integrations.
+  Use when someone wants to expose an external service or API as a tool an LLM
+  can call — building an MCP server from scratch, designing tool schemas,
+  handling auth, or structuring resources and prompts. Triggers on: "build an
+  MCP server", "MCP tool",
 scenarios:
   - "I want to expose our internal API as an MCP server for Claude to use"
   - "Build an MCP tool that lets Claude query our database directly"

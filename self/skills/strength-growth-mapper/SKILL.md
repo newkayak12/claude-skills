@@ -1,14 +1,10 @@
 ---
 name: strength-growth-mapper
 description: >-
-  Use when someone wants to understand what they are genuinely good at, is processing feedback,
-  or deciding where to invest development effort. Maps the underlying strength pattern, the
-  shadow it casts when overused, whether a weakness is a misapplied strength, and the specific
-  growth edge for the next challenge.
-  Triggers on: "강점", "약점", "strengths", "growth edge", "내가 잘하는 것", "개발 포인트",
-  "성장 방향", "피드백 이해", "어디에 투자해야 할지", "다음 레벨로 가려면".
-  Best for: career development conversations, feedback processing, transitions to new roles.
-  Not for: thinking style analysis (use thinking-style-profiler), identity questions (use identity-explorer).
+  Use when someone wants to understand what they are genuinely good at, is
+  processing feedback, or deciding where to invest development effort. Maps the
+  underlying strength pattern, the shadow it casts when overused, whether a
+  weakness is a...
 
 scenarios:
   - "What am I actually good at — not just on paper?"

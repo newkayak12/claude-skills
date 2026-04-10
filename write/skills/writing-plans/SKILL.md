@@ -2,10 +2,8 @@
 name: writing-plans
 description: >-
   Use when a task is large enough that diving in without a plan leads to rework.
-  Triggers on: "구현 계획 써줘", "implementation plan", "코딩 전에 계획 잡아줘", "migration plan",
-  "이 기능 어떻게 나눠서 구현해?", "plan before coding", "스텝별로 정리해줘", "리팩토링 계획".
-  Best for: multi-part features, migrations, refactors with dependencies, anything with 3+ moving parts.
-  Not for: single-step tasks or already-planned work ready to execute (use executing-plans).
+  Triggers on: "구현 계획 써줘", "implementation plan", "코딩 전에 계획 잡아줘", "migration
+  plan", 이 기능 어떻게 나눠서 구현해?", "plan before coding", "스텝별로 정리해줘", "리팩토링 계획".
 scenarios:
   - "이 기능 구현 계획 작성해줘"
   - "DB 마이그레이션 단계별로 계획 잡아줘"

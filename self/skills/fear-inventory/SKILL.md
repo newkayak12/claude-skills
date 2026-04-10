@@ -1,13 +1,10 @@
 ---
 name: fear-inventory
 description: >-
-  Use when the user is blocked by fear, avoiding something important, catastrophizing, or wants
-  to understand what's really holding them back. Suitable when someone has insight about what
-  they want but stays stuck — this almost always has a fear structure underneath.
-  Triggers on: "두려움", "fear", "무서운 것", "걱정", "못 하는 이유", "두려움 직면",
-  "시작이 무서워", "실패가 두려워", "거절이 두려워", "판단받는 게 무서워", "최악의 경우".
-  Best for: naming fears precisely, distinguishing protective from limiting fears, designing the smallest experiment.
-  Not for: anxiety disorders or phobias requiring clinical support — recognize the limit and refer when needed.
+  Use when the user is blocked by fear, avoiding something important,
+  catastrophizing, or wants to understand what's really holding them back.
+  Suitable when someone has insight about what they want but stays stuck — this
+  almost always has a fear...
 
 scenarios:
   - "I know I want this but I keep finding reasons not to start"

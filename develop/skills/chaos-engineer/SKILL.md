@@ -1,15 +1,10 @@
 ---
 name: chaos-engineer
 description: >-
-  Use when someone wants to proactively test whether a distributed system will survive
-  real failures — by designing controlled chaos experiments, injecting faults (network
-  latency, pod deletion, zone outages), planning a game day exercise, or building
-  rollback-safe automation for continuous resilience testing.
-  Triggers on: "chaos experiment", "failure injection", "game day", "blast radius",
-  "resilience testing", "Chaos Monkey", "Litmus Chaos", "fault injection", "카오스 테스트",
-  "장애 주입", "게임 데이".
-  Best for: pre-production resilience validation, game day planning, CI/CD chaos pipelines.
-  Not for: SLO definition, incident response, or production monitoring setup — use sre-engineer.
+  Use when someone wants to proactively test whether a distributed system will
+  survive real failures — by designing controlled chaos experiments, injecting
+  faults (network latency, pod deletion, zone outages), planning a game day
+  exercise, or...
 scenarios:
   - "I want to run a chaos experiment on our Kubernetes cluster to test pod failure resilience"
   - "Help me plan a game day exercise to test our system's failure tolerance"

@@ -1,14 +1,10 @@
 ---
 name: leadership-workflow
 description: >-
-  Use when someone wants to run the full IC growth cycle or the full manager development
-  cycle — from understanding level expectations through to high-quality growth conversations.
-  Triggers on: "IC growth cycle", "manager development cycle", "performance review prep",
-  "promotion conversation prep", "팀원 성장 전체 프로세스", "IC 레벨업 전체 과정",
-  "매니저로 처음 시작", "팀원 1on1 제대로 해보고 싶어", "승진 대화 준비", "performance review cycle".
-  Best for: performance review cycles, newly promoted managers, ICs preparing for promotion,
-  managers building systematic development practice for their team.
-  Not for: single-step tasks — use individual leadership skills directly for those.
+  Use when someone wants to run the full IC growth cycle or the full manager
+  development cycle — from understanding level expectations through to
+  high-quality growth conversations. Triggers on: "IC growth cycle", "manager
+  development cycle",
 type: workflow
 theme: engineering-leadership
 scenarios:

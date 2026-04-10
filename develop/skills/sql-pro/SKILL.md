@@ -1,15 +1,10 @@
 ---
 name: sql-pro
 description: >-
-  Use when someone needs help writing or rewriting SQL — authoring complex joins, CTEs,
-  window functions, or recursive queries — or designing a schema from scratch, normalizing
-  an existing one, or migrating queries between database dialects. Also applies when a
-  user shares a slow query and wants it rewritten or an EXPLAIN plan interpreted.
-  Triggers on: "write this SQL query", "optimize this query", "window function",
-  "CTE", "rewrite SQL", "EXPLAIN plan", "SQL schema design", "dialect migration",
-  "SQL 쿼리 작성", "쿼리 최적화", "윈도우 함수", "실행 계획 분석".
-  Best for: query authoring, window functions, CTEs, EXPLAIN plan interpretation, schema normalization.
-  Not for: server-level DB config (use database-optimizer) or connection pool sizing (use connection-pool-tuner).
+  Use when someone needs help writing or rewriting SQL — authoring complex
+  joins, CTEs, window functions, or recursive queries — or designing a schema
+  from scratch, normalizing an existing one, or migrating queries between
+  database dialects.
 scenarios:
   - "Rewrite this slow SQL query that's doing full table scans on a 50M row table"
   - "Help me write a complex analytics query with CTEs, window functions, and aggregations"

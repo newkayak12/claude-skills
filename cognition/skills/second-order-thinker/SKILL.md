@@ -1,14 +1,10 @@
 ---
 name: second-order-thinker
 description: >-
-  Use when someone is evaluating a decision, policy, or action and the analysis focuses only
-  on the immediate intended outcome. Maps downstream effects across five mechanisms and adds
-  the temporal dimension — when effects actually hit.
-  Triggers on: "second order", "2차 효과", "그 다음엔?", "장기적 영향", "부작용",
-  "의도치 않은 결과", "downstream effect", "타이밍". Also triggers when someone is excited
-  about an intervention, or asks "should we do X?" without considering systemic ripple effects.
-  Best for: policy analysis, high-stakes decisions, interventions in complex systems.
-  Not for: surfacing hidden assumptions (use assumption-extractor), identifying cognitive biases (use bias-auditor).
+  Use when someone is evaluating a decision, policy, or action and the analysis
+  focuses only on the immediate intended outcome. Maps downstream effects across
+  five mechanisms and adds the temporal dimension — when effects actually hit.
+  Triggers on:
 
 scenarios:
   - "What are the second-order effects of this decision?"

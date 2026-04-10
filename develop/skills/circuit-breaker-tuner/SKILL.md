@@ -1,15 +1,10 @@
 ---
 name: circuit-breaker-tuner
 description: >-
-  Use when a slow or failing downstream service is causing upstream latency, thread
-  exhaustion, or outages — and you need to configure or tune circuit breakers, bulkheads,
-  timeouts, and fallbacks to prevent cascading failures.
-  Triggers on: "circuit breaker", "cascading failure", "downstream service slow",
-  "Resilience4j config", "bulkhead", "fallback", "서킷 브레이커", "장애 전파 방지",
-  "connection timeout under load".
-  Best for: tuning failureRateThreshold and waitDuration, adding fallbacks, configuring
-  bulkheads alongside circuit breakers.
-  Not for: slow queries caused by missing indexes (use database-optimizer or sql-pro).
+  Use when a slow or failing downstream service is causing upstream latency,
+  thread exhaustion, or outages — and you need to configure or tune circuit
+  breakers, bulkheads, timeouts, and fallbacks to prevent cascading failures.
+  Triggers on: "circuit
 scenarios:
   - "Our circuit breaker is tripping too often and causing unnecessary service disruptions"
   - "Help me tune the circuit breaker thresholds for our payment service"

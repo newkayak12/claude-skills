@@ -1,15 +1,10 @@
 ---
 name: product-discovery
 description: >-
-  Use when uncertain which discovery approach fits the situation, or when evaluating
-  whether continuous discovery vs. fixed-cycle planning better suits the team.
-  Triggers on: "discovery process", "product discovery", "우리 팀에 맞는 프로세스가 뭘까",
-  "continuous discovery vs Shape Up", "how do we improve discovery", "sprint이 지옥 같아",
-  "백로그가 너무 많아서 뭐부터 해야 할지 모르겠어". Best for: diagnosing which framework
-  (Cagan or Shape Up) fits organizational context; combining both at different timescales;
-  improving a team's discovery-to-delivery pipeline. Not for: writing individual
-  hypotheses (use hypothesis-driven-dev); running a specific workshop (use
-  user-story-mapping-workshop or product-discovery session directly).
+  Use when uncertain which discovery approach fits the situation, or when
+  evaluating whether continuous discovery vs. fixed-cycle planning better suits
+  the team. Triggers on: "discovery process", "product discovery", "우리 팀에 맞는
+  프로세스가 뭘까", continuous
 license: MIT
 metadata:
   author: wondelai

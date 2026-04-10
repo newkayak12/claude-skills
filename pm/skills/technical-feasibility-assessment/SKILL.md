@@ -1,10 +1,10 @@
 ---
 name: technical-feasibility-assessment
 description: >-
-  Use when a PM or product team needs a rapid feasibility signal on a feature idea before committing engineering time — assessing implementation risk, complexity, and make-vs-buy tradeoffs without full engineering involvement.
-  Triggers on: "technical feasibility", "is this buildable", "how hard is this to build", "should we build or buy", "기술 가능성", "구현 가능한지", "개발 얼마나 걸려", "기술적 리스크", "엔지니어 없이 판단".
-  Best for: pre-betting-table reality checks (Shape Up), PRD constraints section, appetite-setting, roadmap timeline validation.
-  Not for: engineering estimation, architecture design, sprint planning, or make-vs-buy contract negotiation.
+  Use when a PM or product team needs a rapid feasibility signal on a feature
+  idea before committing engineering time — assessing implementation risk,
+  complexity, and make-vs-buy tradeoffs without full engineering involvement.
+  Triggers on: "technical
 license: MIT
 metadata:
   author: wondelai

@@ -1,12 +1,10 @@
 ---
 name: microinteractions
 description: >-
-  Use when a UI element feels off, robotic, or incomplete — or when adding polish
-  and delight to moment-to-moment interactions.
-  Triggers on: "버튼 느낌이 어색해", "로딩 애니메이션", "toggle 디자인", "UI 디테일", "인터랙션 개선",
-  "loading state", "feedback animation", "이 버튼 어떻게 하면 나아질까", "마이크로인터랙션".
-  Best for: button/toggle refinement, loading states, form feedback, signature moments.
-  Not for: overall UX flows or page-level architecture — this covers contained single-use moments.
+  Use when a UI element feels off, robotic, or incomplete — or when adding
+  polish and delight to moment-to-moment interactions. Triggers on: "버튼 느낌이
+  어색해", "로딩 애니메이션", "toggle 디자인", "UI 디테일", "인터랙션 개선", loading state", "feedback
+  animation", "이 버튼 어떻게
 scenarios:
   - "이 좋아요 버튼이 너무 밋밋한데 어떻게 개선해?"
   - "로딩 스피너 대신 뭔가 더 나은 피드백을 보여주고 싶어"

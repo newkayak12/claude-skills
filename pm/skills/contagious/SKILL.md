@@ -1,12 +1,10 @@
 ---
 name: contagious
 description: >-
-  Use when someone wants to make a product, feature, campaign, or idea spread through
-  word-of-mouth or organic sharing. Triggers on: "word of mouth", "virality", "how to
-  make this spread", "shareability", "바이럴", "입소문", "공유되게 하고 싶어", "제품이 퍼지게".
-  Best for: diagnosing why something isn't spreading; engineering shareability into a
-  launch or feature; scoring a campaign against the STEPPS framework. Not for:
-  paid acquisition strategy; SEO or performance marketing; viral coefficient math.
+  Use when someone wants to make a product, feature, campaign, or idea spread
+  through word-of-mouth or organic sharing. Triggers on: "word of mouth",
+  "virality", "how to make this spread", "shareability", "바이럴", "입소문", "공유되게 하고
+  싶어", "제품이 퍼지게".
 license: MIT
 metadata:
   author: wondelai

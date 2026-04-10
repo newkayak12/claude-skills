@@ -1,14 +1,10 @@
 ---
 name: go-to-market-planning
 description: >-
-  Use when a product or feature is near-complete and the team needs to answer: who do
-  we target first, what do we say, where do we reach them, and how do we know the
-  launch succeeded? Triggers on: "GTM plan", "launch strategy", "출시 전략",
-  "론칭 계획", "how do we launch this", "launch phases", "beachhead segment".
-  Best for: planning a major product or feature launch end-to-end; defining phased
-  rollout (beta → limited → full); aligning sales, marketing, and product on launch
-  narrative. Not for: minor releases needing only a release note; pre-PMF products
-  where broad launch is premature; messaging strategy creation from scratch.
+  Use when a product or feature is near-complete and the team needs to answer:
+  who do we target first, what do we say, where do we reach them, and how do we
+  know the launch succeeded? Triggers on: "GTM plan", "launch strategy", "출시
+  전략", 론칭 계획", "how
 type: workflow
 theme: pm-strategy
 best_for:

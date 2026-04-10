@@ -1,16 +1,10 @@
 ---
 name: adr-writer
 description: >-
-  Use when someone needs to document a significant architectural decision — capturing
-  why a technical choice was made, what tradeoffs were accepted, and what alternatives
-  were rejected. Also applies when explaining a past architectural choice to the team
-  or recording that a decision supersedes a previous one.
-  Triggers on: "write an ADR", "document this decision", "architecture decision record",
-  "why did we choose X", "record this tradeoff", "아키텍처 결정 기록", "의사결정 문서화".
-  Best for: hard-to-reverse decisions, contested choices needing documented rationale,
-  decisions that will surprise future maintainers.
-  Not for: trivial implementation details, decisions with only one reasonable option,
-  or choices that will be revisited within weeks.
+  Use when someone needs to document a significant architectural decision —
+  capturing why a technical choice was made, what tradeoffs were accepted, and
+  what alternatives were rejected. Triggers on: "write an ADR", "document this
+  decision",
 scenarios:
   - "Help me write an ADR for our decision to use PostgreSQL over MySQL"
   - "We chose Kafka over RabbitMQ — document this architectural decision with tradeoffs"

@@ -1,13 +1,10 @@
 ---
 name: operations-workflow
 description: >-
-  Use when preparing a service for production, hardening a flaky system, or building
-  lasting operational improvements after an incident.
-  Triggers on: "production readiness review", "going to prod", "pre-launch ops check",
-  "system hardening", "운영 준비", "프로덕션 준비", "서비스 안정화 전체", "첫 배포 전 점검".
-  Best for: pre-launch readiness sweeps, new services going to production for the first time,
-  post-incident systemic hardening.
-  Not for: single-step tasks or active incidents in progress (use incident-response-playbook).
+  Use when preparing a service for production, hardening a flaky system, or
+  building lasting operational improvements after an incident. Triggers on:
+  "production readiness review", "going to prod", "pre-launch ops check", system
+  hardening", "운영 준비",
 type: workflow
 theme: operations
 scenarios:
