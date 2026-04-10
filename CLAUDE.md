@@ -22,6 +22,13 @@ For complex multi-step tasks, use these workflow skills as entry points:
 | Deep thinking, structured ideation, decision | `think:deep-thinking-workflow` |
 | New feature, full dev cycle, quality process | `develop:dev-quality-workflow` |
 | Job application, career transition, interview prep | `portfolio:job-application-workflow` |
+| TDD, test coverage strategy, flaky CI | `develop:testing-workflow` |
+| DB performance, slow query, connection pool, transactions | `develop:database-workflow` |
+| System architecture, DDD, service boundaries, MSA | `develop:architecture-workflow` |
+| Production readiness, SRE, chaos testing, incident response | `develop:operations-workflow` |
+| Critical thinking, stress-test a plan or argument | `cognition:critical-thinking-workflow` |
+| Self-reflection, life transition, understanding myself | `self:self-discovery-workflow` |
+| Career leveling, 1-on-1 prep, manager/IC growth | `leadership:leadership-workflow` |
 
 Each workflow skill guides through sub-skills step by step. Ask the user which step to start from if they're mid-process.
 
