@@ -14,6 +14,11 @@ Checks:
   9. Per skill  — SKILL.md line count warning if > 250 lines (HEAVY)
  10. Per skill  — compatibility: field present (MCP tool guidance)
  11. Per skill  — workflow skills have type: workflow field
+ 12. Per skill  — description length ≤ 250 chars (Claude Code truncation limit)
+ 13. Per skill  — heavy skills (>200 lines) should declare effort: field
+ 14. Per skill  — heavy skills (>200 lines) should have a Standing Mandates section
+
+Authoring principles: skill/skills/skill-validator/references/authoring-principles.md
 """
 
 import json
@@ -166,6 +171,10 @@ def check_plugin(plugin_entry):
                     f"    {skill_name}: description missing trigger pattern "
                     "(expected 'Use when', 'Use before', 'Use after', or 'Apply when')"
                 )
+            # 12. description length ≤ 250 chars (Claude Code truncation limit)
+            if len(fm["description"]) > 250:
+                warn(f"{prefix}/{skill_name}: description is {len(fm['description'])} chars "
+                     f"(truncated at 250 in skill listing — front-load trigger keywords)")
 
         # 7. scenarios field
         if "scenarios" not in fm:
@@ -175,11 +184,29 @@ def check_plugin(plugin_entry):
         if "compatibility" not in fm:
             skill_errors.append(f"    {skill_name}: SKILL.md missing 'compatibility' field (needed for MCP tool guidance)")
 
-        # 9. line count — warn if heavy
+        # 9. line count — warn if heavy; read content for checks 13-14
         with open(skill_md, encoding="utf-8") as f:
-            line_count = sum(1 for _ in f)
+            skill_content = f.read()
+        line_count = skill_content.count("\n") + 1
         if line_count > 250:
-            warn(f"{prefix}/{skill_name}: SKILL.md is {line_count} lines (HEAVY — consider splitting via references/)")
+            warn(f"{prefix}/{skill_name}: SKILL.md is {line_count} lines "
+                 f"(HEAVY — split background content into references/; "
+                 f"see authoring-principles.md)")
+
+        # 13. heavy skills should declare effort field
+        if line_count > 200 and "effort" not in fm:
+            warn(f"{prefix}/{skill_name}: {line_count}-line skill has no 'effort' field "
+                 f"(consider effort: high for judgment-heavy skills)")
+
+        # 14. heavy skills should have a Standing Mandates section
+        if line_count > 200:
+            has_mandates = (
+                "## Standing Mandates" in skill_content
+                or "## Mandates" in skill_content
+            )
+            if not has_mandates:
+                warn(f"{prefix}/{skill_name}: {line_count}-line skill has no '## Standing Mandates' section "
+                     f"(discriminating behaviors should be front-loaded as standing instructions)")
 
         # 10. workflow skills must declare type: workflow
         if "workflow" in skill_name and fm.get("type", "") != "workflow":
