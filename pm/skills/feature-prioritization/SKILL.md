@@ -1,13 +1,10 @@
 ---
 name: feature-prioritization
 description: >-
-  Use when there are more things to build than capacity allows and the team needs a
-  defensible, data-backed order. Triggers on: "backlog 정리", "우선순위 정해줘",
-  "P1이 너무 많아", "what to build next", "how do we decide", "backlog grooming",
-  "피처 순위 매겨줘". Best for: scoring a large backlog with RICE or MoSCoW; resolving
-  stakeholder disagreements about priority; trimming scope for a specific cycle.
-  Not for: communicating the roadmap to an audience (use roadmap-communication);
-  setting goals or OKRs (use okr-planning).
+  Use when there are more things to build than capacity allows and the team
+  needs a defensible, data-backed order. Triggers on: "backlog 정리", "우선순위 정해줘",
+  P1이 너무 많아", "what to build next", "how do we decide", "backlog grooming", 피처
+  순위 매겨줘".
 type: workflow
 theme: pm-strategy
 best_for:

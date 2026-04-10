@@ -1,11 +1,10 @@
 ---
 name: retrospective
 description: >-
-  Use when someone wants to reflect on a completed period to extract lessons and commit to improvements.
-  Triggers on: "회고해줘", "스프린트 회고", "retrospective", "KPT", "잘된 것 못된 것 정리",
-  "이번 프로젝트 돌아보기", "팀 회고", "무엇을 개선할 수 있을까", "5 whys", "근본 원인 분석".
-  Best for: sprint/project retrospectives, solo reflections, post-mortems, recurring problem diagnosis.
-  Not for: planning future work (use roadmap-planning) or evaluating product launches (use post-launch-retrospective).
+  Use when someone wants to reflect on a completed period to extract lessons and
+  commit to improvements. Triggers on: "회고해줘", "스프린트 회고", "retrospective",
+  "KPT", "잘된 것 못된 것 정리", 이번 프로젝트 돌아보기", "팀 회고", "무엇을 개선할 수 있을까", "5 whys", "근본
+  원인 분석".
 scenarios:
   - "이번 스프린트 회고 해야 해"
   - "프로젝트 끝났는데 뭘 배웠는지 정리해줘"

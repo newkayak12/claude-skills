@@ -1,10 +1,10 @@
 ---
 name: portfolio-pattern
 description: >-
-  Use when someone wants to understand the writing patterns in their portfolio — not what it says but how it reads: passive voice ratio, subject audit, number density, and decision visibility.
-  Triggers on: "패턴 분석해줘", "오너십이 잘 드러나나", "피동형 많이 썼나", "주어 분석", "writing pattern analysis", "ownership signal audit", "how does my writing come across".
-  Best for: understanding narrative habits that hurt ownership perception; diagnosing passive voice, vague agency, and number-free impact claims before rewriting.
-  Not for: rewriting specific sentences (use portfolio-rewrite), overall quality scoring (use portfolio-feedback), JD-specific positioning (use portfolio-jd).
+  Use when someone wants to understand the writing patterns in their portfolio —
+  not what it says but how it reads: passive voice ratio, subject audit, number
+  density, and decision visibility. Triggers on: "패턴 분석해줘", "오너십이 잘 드러나나", "피동형
+  많이 썼나", "주어
 scenarios:
   - "Analyze the writing patterns in my portfolio — do I show ownership clearly?"
   - "How much passive voice am I using and how does it affect my portfolio?"

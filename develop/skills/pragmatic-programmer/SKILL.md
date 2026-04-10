@@ -1,10 +1,10 @@
 ---
 name: pragmatic-programmer
 description: >-
-  Use when reflecting on engineering practices, identifying systemic problems in a codebase, deciding how to approach technical debt, or asking what a pragmatic engineer would do in a given situation.
-  Triggers on: "DRY 원칙", "기술 부채", "pragmatic programmer", "engineering practices", "technical debt", "tracer bullet", "orthogonality", "broken window", "코드베이스 전반적인 문제", "estimation", "설계 원칙".
-  Best for: engineering practice retrospectives, architectural principle violations, codebase health assessments.
-  Not for: code-level naming and function design (use clean-code); system architecture decisions (use architecture-designer).
+  Use when reflecting on engineering practices, identifying systemic problems in
+  a codebase, deciding how to approach technical debt, or asking what a
+  pragmatic engineer would do in a given situation. Triggers on: "DRY 원칙", "기술
+  부채", "pragmatic
 license: MIT
 metadata:
   author: wondelai

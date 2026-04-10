@@ -1,10 +1,10 @@
 ---
 name: resume-tailorer
 description: >-
-  Use when someone has a resume and a specific job description and wants the resume rewritten to match that JD — keyword alignment, achievement reframing, and skills reordering.
-  Triggers on: "이력서 맞춰줘", "공고에 맞게 고쳐줘", "이력서 최적화", "tailor my resume to this JD", "optimize resume for this job", "keyword align my resume".
-  Best for: matching a resume to a specific role's vocabulary; surfacing hidden strengths with the wrong terminology; reordering skills/achievements for maximum relevance to a JD.
-  Not for: general resume improvement without a JD (use portfolio-rewrite), overall portfolio assessment (use portfolio-feedback), JD fit scoring (use portfolio-jd).
+  Use when someone has a resume and a specific job description and wants the
+  resume rewritten to match that JD — keyword alignment, achievement reframing,
+  and skills reordering. Triggers on: "이력서 맞춰줘", "공고에 맞게 고쳐줘", "이력서 최적화",
+  "tailor my resume to
 scenarios:
   - "Tailor my resume to match this job description — keyword alignment and achievement reframing"
   - "Rewrite my resume summary and experience bullets to fit this JD"

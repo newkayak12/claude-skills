@@ -1,14 +1,10 @@
 ---
 name: event-storming
 description: >-
-  Use when someone is starting a new product, untangling a legacy system, mapping how
-  a business process actually works, or asking where to begin domain modeling — even
-  if they do not name Event Storming explicitly.
-  Triggers on: "domain modeling", "bounded context discovery", "how does this business
-  process work", "event storming", "map our domain", "legacy system audit",
-  "도메인 모델링", "이벤트 스토밍", "바운디드 컨텍스트 찾기", "비즈니스 프로세스 정리".
-  Best for: Big Picture exploration, Process Level modeling, Design Level aggregate discovery.
-  Not for: generating implementation code — use microservices-architect or spring-boot-engineer after the workshop.
+  Use when someone is starting a new product, untangling a legacy system,
+  mapping how a business process actually works, or asking where to begin domain
+  modeling — even if they do not name Event Storming explicitly. Triggers on:
+  "domain modeling",
 scenarios:
   - "We're starting a new product and need to model the domain before writing code"
   - "Help me run an event storming workshop to discover bounded contexts"

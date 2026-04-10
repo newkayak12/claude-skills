@@ -1,14 +1,10 @@
 ---
 name: microservices-architect
 description: >-
-  Use when someone needs to design or evaluate a distributed system — decomposing a
-  monolith, defining service boundaries with DDD, choosing between sync and async
-  communication, or planning resilience and observability.
-  Triggers on: "microservices design", "decompose the monolith", "service boundaries",
-  "distributed system architecture", "saga pattern", "CQRS", "event sourcing",
-  "마이크로서비스 설계", "모놀리스 분해", "서비스 경계 설계", "분산 시스템".
-  Best for: architecture decisions, service decomposition, resilience pattern selection.
-  Not for: implementation code — use spring-boot-engineer for coding microservices.
+  Use when someone needs to design or evaluate a distributed system —
+  decomposing a monolith, defining service boundaries with DDD, choosing between
+  sync and async communication, or planning resilience and observability.
+  Triggers on: "microservices
 scenarios:
   - "Design a microservices architecture for our e-commerce monolith migration"
   - "Help me decide service boundaries and communication patterns for this system"

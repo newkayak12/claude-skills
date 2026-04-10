@@ -1,14 +1,10 @@
 ---
 name: fallacy-detector
 description: >-
-  Use when someone presents a chain of reasoning or a story explaining why something happened,
-  and the logic may have a structural flaw or the narrative may be too tidy. Covers logical
-  fallacies (false dichotomy, post hoc, straw man) and narrative fallacy — the tendency to
-  construct a coherent story over random events.
-  Triggers on: "is this argument valid", "check my logic", "논리 오류", "이 주장이 맞나",
-  "왜 이렇게 됐는지 설명해줘", "이 논리에 문제가 있나".
-  Best for: evaluating arguments before acting on them, auditing explanatory narratives, debate preparation.
-  Not for: cognitive bias diagnosis (use bias-auditor), confidence calibration (use epistemic-reasoner).
+  Use when someone presents a chain of reasoning or a story explaining why
+  something happened, and the logic may have a structural flaw or the narrative
+  may be too tidy. Covers logical fallacies (false dichotomy, post hoc, straw
+  man) and narrative...
 
 scenarios:
   - "Check my reasoning for logical holes"

@@ -2,11 +2,9 @@
 name: job-application-workflow
 description: >-
   Use when preparing for a job application or career transition end-to-end —
-  from analyzing a JD through to interview preparation.
-  Triggers on: "job application workflow", "이직 준비 전체", "취업 프로세스 시작", "career transition",
-  "job search process", "이직 프로세스 처음부터".
-  Best for: active job searches, targeting a specific role, or preparing for a company.
-  Not for: general career advice, salary negotiation only, or passive networking.
+  from analyzing a JD through to interview preparation. Triggers on: "job
+  application workflow", "이직 준비 전체", "취업 프로세스 시작", "career transition", job
+  search process", "이직 프로세스
 type: workflow
 theme: career
 scenarios:

@@ -1,12 +1,10 @@
 ---
 name: flow-antigoal
 description: >-
-  Use when someone wants to design their life or work more intentionally — by finding what
-  creates deep engagement (flow) or getting clearer on what to eliminate (anti-goals).
-  Triggers on: "몰입", "flow", "하기 싫은 것", "anti-goal", "원하지 않는 것", "몰입 조건",
-  "삶 설계", "인생 설계", "이상적인 하루", "최악의 하루", "워크 디자인", "어떤 삶을 원하는지".
-  Best for: career move design, chronically under-engaged or over-drained work, articulating what you want via inversion.
-  Not for: specific skill development (use strength-growth-mapper), values conflicts (use values-explorer).
+  Use when someone wants to design their life or work more intentionally — by
+  finding what creates deep engagement (flow) or getting clearer on what to
+  eliminate (anti-goals). Triggers on: "몰입", "flow", "하기 싫은 것", "anti-goal",
+  "원하지 않는 것", "몰입 조건", 삶
 
 scenarios:
   - "Design my ideal work conditions"

@@ -3,9 +3,7 @@ name: decision-maker
 description: >-
   Use when facing a choice between options where the trade-offs aren't obvious.
   Triggers on: "A vs B 뭐가 나아?", "어떤 걸 써야 해?", "build vs buy", "이 아키텍처 괜찮아?",
-  "Redis vs Postgres", "어떤 DB 골라야 해?", or any "should we adopt X?" question.
-  Best for: technology selection, architecture decisions, irreversible investments.
-  Not for: decisions already made (post-hoc justification), or trivially obvious choices.
+  Redis vs Postgres", "어떤 DB 골라야 해?", or any "should we adopt X?" question.
 scenarios:
   - "PostgreSQL vs MySQL, 어떤 걸 써야 해?"
   - "Should we build or buy this feature?"

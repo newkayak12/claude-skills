@@ -1,13 +1,10 @@
 ---
 name: examined-life
 description: >-
-  Use when someone wants to look at their life from a distance — not a specific decision,
-  but the whole shape of it. Especially suited to life transitions, major milestones, or the
-  feeling of running on autopilot.
-  Triggers on: "삶을 돌아보고 싶어", "내 인생을 점검하고 싶어", "자동적으로 살고 있는 것 같아",
-  "examined life", "삶의 의미", "인생 점검", "스토아 철학", "죽음 앞에서 생각해보면".
-  Best for: major life transitions, mid-life reflection, feeling like you're living someone else's life.
-  Not for: specific decisions (use decision-maker or tradeoff-articulator), values clarification alone (use values-explorer).
+  Use when someone wants to look at their life from a distance — not a specific
+  decision, but the whole shape of it. Especially suited to life transitions,
+  major milestones, or the feeling of running on autopilot. Triggers on: "삶을
+  돌아보고 싶어", "내 인생을
 
 scenarios:
   - "I feel like I've been on autopilot for years"

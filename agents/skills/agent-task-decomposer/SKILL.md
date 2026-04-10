@@ -1,12 +1,10 @@
 ---
 name: agent-task-decomposer
 description: >-
-  Use when a task is too large or ambiguous to hand to a single agent without first defining
-  clear subtask boundaries.
-  Triggers on: "큰 작업 분해해줘", "에이전트 분리해줘", "subtask로 나눠줘", "task decomposition",
-  "이 작업 어떻게 나눠야 해?", "agent에게 어떻게 전달해?", "병렬 작업 계획 잡아줘".
-  Best for: multi-agent orchestration planning, producing subtask definitions with prompts.
-  Not for: executing already-defined tasks (use dispatching-parallel-agents for that).
+  Use when a task is too large or ambiguous to hand to a single agent without
+  first defining clear subtask boundaries. Triggers on: "큰 작업 분해해줘", "에이전트
+  분리해줘", "subtask로 나눠줘", "task decomposition", 이 작업 어떻게 나눠야 해?", "agent에게 어떻게
+  전달해?", "병렬 작업 계획 잡아줘".
 scenarios:
   - "이 큰 기능 여러 에이전트로 나눠서 처리해줘"
   - "작업이 너무 크고 모호해서 subtask로 분해해줘"

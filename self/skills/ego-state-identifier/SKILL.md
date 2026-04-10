@@ -1,12 +1,10 @@
 ---
 name: ego-state-identifier
 description: >-
-  Use when someone is confused about why they reacted the way they did — especially when it
-  felt automatic, disproportionate, childlike, or like they heard a parental voice in their head.
-  Triggers on: "왜 이렇게 반응했지", "자동으로 나왔어", "어린애처럼 굴었어", "부모님 목소리 같은",
-  "inner child", "두 가지 목소리", "관계에서 같은 패턴이 반복돼", "ego state".
-  Best for: understanding automatic reactions, mapping relational transaction patterns, finding the Adult response.
-  Not for: general therapy or trauma processing — refer to a professional when responses involve deep distress.
+  Use when someone is confused about why they reacted the way they did —
+  especially when it felt automatic, disproportionate, childlike, or like they
+  heard a parental voice in their head. Triggers on: "왜 이렇게 반응했지", "자동으로 나왔어",
+  "어린애처럼 굴었어", "부모님 목소리
 
 scenarios:
   - "Why did I react so disproportionately to that feedback?"

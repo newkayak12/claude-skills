@@ -1,12 +1,9 @@
 ---
 name: brainstorming
 description: >-
-  Use when something needs to be designed or built and the shape of the solution isn't clear yet.
-  Triggers on: "어떻게 만들지?", "기능 설계해줘", "아키텍처 잡아줘", "뭘 어떻게 구현해야 해?",
-  "design this feature", "how should we build X?", "새 서비스 어떻게 시작하지?".
-  Best for: new features, tools, systems, or products without a spec yet.
-  Not for: bug fixes, changes to already-designed things, or when the problem itself keeps resisting
-  (use problem-reframer) — or when scattered ideas need organizing (use thought-organizer).
+  Use when something needs to be designed or built and the shape of the solution
+  isn't clear yet. Triggers on: "어떻게 만들지?", "기능 설계해줘", "아키텍처 잡아줘", "뭘 어떻게 구현해야
+  해?", design this feature", "how should we build X?", "새 서비스 어떻게 시작하지?".
 scenarios:
   - "OAuth 로그인 기능 어떻게 설계해?"
   - "알림 시스템 새로 만들어야 하는데 어떻게 접근해?"

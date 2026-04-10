@@ -1,11 +1,9 @@
 ---
 name: subagent-driven-development
 description: >-
-  Use when executing an implementation plan with independent tasks using fresh subagents per task.
-  Triggers on: "계획 실행해줘", "서브에이전트로 구현해줘", "subagent-driven", "plan 실행",
-  "태스크별로 에이전트 배포해줘", "두 단계 리뷰로 구현", "현재 세션에서 계획 실행".
-  Best for: executing written plans in the current session with spec + quality review after each task.
-  Not for: parallel session execution (use executing-plans) or tightly coupled tasks.
+  Use when executing an implementation plan with independent tasks using fresh
+  subagents per task. Triggers on: "계획 실행해줘", "서브에이전트로 구현해줘", "subagent-driven",
+  "plan 실행", 태스크별로 에이전트 배포해줘", "두 단계 리뷰로 구현", "현재 세션에서 계획 실행".
 scenarios:
   - "이 구현 계획 서브에이전트로 실행해줘"
   - "각 태스크마다 새 에이전트로 구현하고 리뷰해줘"

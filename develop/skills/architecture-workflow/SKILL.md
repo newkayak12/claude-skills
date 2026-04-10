@@ -1,12 +1,10 @@
 ---
 name: architecture-workflow
 description: >-
-  Use when designing a system from scratch, evaluating a monolith-to-MSA migration,
-  or needing a structured end-to-end architecture process from domain discovery to documentation.
-  Triggers on: "system architecture from scratch", "architecture workflow", "monolith to microservices plan",
-  "greenfield system design", "아키텍처 전체 프로세스", "시스템 설계 처음부터", "모놀리스 분해 계획", "아키텍처 워크플로우".
-  Best for: system redesign, new product architecture, monolith-to-MSA evaluation, greenfield system design.
-  Not for: single-skill tasks (use individual skills directly); quick refactors within an existing service.
+  Use when designing a system from scratch, evaluating a monolith-to-MSA
+  migration, or needing a structured end-to-end architecture process from domain
+  discovery to documentation. Triggers on: "system architecture from scratch",
+  "architecture
 type: workflow
 theme: architecture
 scenarios:

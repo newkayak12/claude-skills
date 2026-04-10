@@ -1,10 +1,10 @@
 ---
 name: user-story-mapping
 description: >-
-  Use when someone wants to generate a structured user story map directly from existing context — outputting a two-dimensional artifact with backbone activities, steps, tasks, and release slices.
-  Triggers on: "user story map", "story map", "backbone activities", "release slices", "유저 스토리 맵 만들어줘", "스토리 매핑".
-  Best for: teams that already know their persona and workflow and want a map produced (not facilitated); release planning with MVP/R2/R3 slices; backlog visualization.
-  Not for: interactive discovery of personas and scope (use user-story-mapping-workshop instead); single-story authoring; technical backlog grooming.
+  Use when someone wants to generate a structured user story map directly from
+  existing context — outputting a two-dimensional artifact with backbone
+  activities, steps, tasks, and release slices. Triggers on: "user story map",
+  "story map", "backbone
 type: component
 scenarios:
   - "Generate a user story map for our onboarding flow — we have a persona and the workflow defined"

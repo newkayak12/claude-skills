@@ -1,14 +1,10 @@
 ---
 name: hypothesis-driven-dev
 description: >-
-  Use when testing a product idea before committing to building it, or when a team
-  needs to validate a key assumption with the smallest possible experiment.
-  Triggers on: "hypothesis", "experiment design", "가설 검증", "실험 설계",
-  "최소 테스트", "fake door test", "Build-Measure-Learn", "assumption mapping",
-  "should we build this first". Best for: writing falsifiable hypotheses; choosing
-  the right MVE type (concierge, fake door, prototype); mapping risky assumptions
-  before engineering begins. Not for: post-launch metric analysis (use
-  metrics-interpretation); deciding what to build (use feature-prioritization).
+  Use when testing a product idea before committing to building it, or when a
+  team needs to validate a key assumption with the smallest possible experiment.
+  Triggers on: "hypothesis", "experiment design", "가설 검증", "실험 설계", 최소 테스트",
+  "fake door test",
 license: MIT
 metadata:
   author: wondelai

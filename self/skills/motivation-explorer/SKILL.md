@@ -1,13 +1,10 @@
 ---
 name: motivation-explorer
 description: >-
-  Use when someone has lost motivation, is doing something but doesn't know why, or suspects
-  their stated reason isn't the real one. Also triggers when someone knows what they want but
-  can't seem to pursue it — ambivalence almost always has a motivation structure underneath.
-  Triggers on: "동기 부여", "motivation", "왜 하는지 모르겠어", "하기 싫은데 해야 해",
-  "진짜 이유가 뭔지", "의욕이 없어", "알면서도 못 하겠어", "왜 안 되는 건지".
-  Best for: diagnosing hollow achievement, blocked goals, ambivalence mapping.
-  Not for: general productivity or habit formation without an underlying motivation question.
+  Use when someone has lost motivation, is doing something but doesn't know why,
+  or suspects their stated reason isn't the real one. Also triggers when someone
+  knows what they want but can't seem to pursue it — ambivalence almost always
+  has a...
 
 scenarios:
   - "I achieved what I wanted but it feels hollow — why?"

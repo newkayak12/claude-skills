@@ -1,10 +1,10 @@
 ---
 name: shape-up
 description: >-
-  Use when a team is stuck in an infinite backlog, cannot ship complete features, or needs a planning process with real tradeoffs and hard commitments. Also use when setting up 6-week cycles, writing pitches, running a betting table, or replacing sprint estimates with appetite-based scoping.
-  Triggers on: "shape up", "6-week cycle", "appetite vs estimate", "pitch writing", "betting table", "scope hammering", "hill chart", "백로그 없애기", "6주 사이클", "피치 작성", "베팅 테이블".
-  Best for: teams replacing Scrum/sprints, PMs writing shaped pitches, leaders setting up betting table decisions.
-  Not for: single-story estimation, daily standups, bug triage prioritization, or OKR goal-setting.
+  Use when a team is stuck in an infinite backlog, cannot ship complete
+  features, or needs a planning process with real tradeoffs and hard
+  commitments. Also use when setting up 6-week cycles, writing pitches, running
+  a betting table, or replacing...
 license: MIT
 metadata:
   author: wondelai

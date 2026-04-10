@@ -1,14 +1,10 @@
 ---
 name: question-upgrader
 description: >-
-  Use when someone is asking a question that is too narrow, too closed, or based on a hidden
-  assumption that may be wrong. Upgrades weak questions and generates meta-questions to check
-  whether the right question is even being asked.
-  Triggers on: "better question", "좋은 질문", "질문 개선", "더 나은 질문", "어떤 질문을 해야",
-  "질문이 맞는지 모르겠어", "뭘 물어봐야 할지". Also triggers on yes/no questions about
-  complex topics, or solution-embedded questions.
-  Best for: reframing stuck problems, improving research or interview questions, finding the real question.
-  Not for: answering questions directly — this skill upgrades the question first.
+  Use when someone is asking a question that is too narrow, too closed, or based
+  on a hidden assumption that may be wrong. Upgrades weak questions and
+  generates meta-questions to check whether the right question is even being
+  asked. Triggers on:
 
 scenarios:
   - "Is this even the right question to be asking?"

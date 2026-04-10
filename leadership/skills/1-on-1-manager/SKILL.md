@@ -1,10 +1,10 @@
 ---
 name: 1-on-1-manager
 description: >-
-  Use when a manager wants to run better 1-on-1s — moving from status-update check-ins to growth and feedback conversations that build real trust with direct reports.
-  Triggers on: "improve my 1-on-1s", "1-on-1 feels like a status update", "how to have a growth conversation", "1on1 개선하고 싶어", "성장 대화 어떻게 해", "직원이랑 1on1을 잘 하는 법", "피드백 대화 어떻게 해".
-  Best for: managers whose 1-on-1s have become project status reports; preparing agenda for a specific growth or feedback conversation; setting up employee-led 1-on-1 structure.
-  Not for: IC prep for their own 1-on-1s (use 1-on-1-ic), promotion case writing (use leveling-manager), or team-wide performance issues.
+  Use when a manager wants to run better 1-on-1s — moving from status-update
+  check-ins to growth and feedback conversations that build real trust with
+  direct reports. Triggers on: "improve my 1-on-1s", "1-on-1 feels like a status
+  update", "how to have
 license: MIT
 metadata:
   author: wondelai

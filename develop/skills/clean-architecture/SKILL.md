@@ -1,10 +1,10 @@
 ---
 name: clean-architecture
 description: >-
-  Use when designing layered architectures, separating concerns across boundaries, implementing ports and adapters, or when business logic is leaking into frameworks and the codebase feels tangled.
-  Triggers on: "의존성 규칙", "레이어 아키텍처", "clean architecture", "dependency rule", "ports and adapters", "hexagonal architecture", "use case", "비즈니스 로직이 프레임워크에 섞여", "layered architecture", "SOLID".
-  Best for: designing new system layers, fixing dependency inversion violations, separating domain from infrastructure.
-  Not for: code-level naming and function design (use clean-code); domain modeling and bounded contexts (use domain-driven-design).
+  Use when designing layered architectures, separating concerns across
+  boundaries, implementing ports and adapters, or when business logic is leaking
+  into frameworks and the codebase feels tangled. Triggers on: "의존성 규칙", "레이어
+  아키텍처", "clean
 license: MIT
 metadata:
   author: wondelai

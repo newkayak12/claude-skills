@@ -1,13 +1,10 @@
 ---
 name: competitive-analysis
 description: >-
-  Use when making a product or business decision where knowing the competitive context
-  changes the answer — before a launch, when writing strategy, or when articulating
-  differentiation. Triggers on: "competitor analysis", "competitive landscape",
-  "how do we differentiate", "who are our competitors", "경쟁사 분석", "시장 분석",
-  "차별화 전략". Best for: pre-launch competitive positioning, PRD strategic context,
-  GTM messaging differentiation. Not for: internal tools with no external competitors;
-  user research on what customers want (shows what competitors built, not what users need).
+  Use when making a product or business decision where knowing the competitive
+  context changes the answer — before a launch, when writing strategy, or when
+  articulating differentiation. Triggers on: "competitor analysis", "competitive
+  landscape", how
 type: workflow
 theme: pm-strategy
 best_for:

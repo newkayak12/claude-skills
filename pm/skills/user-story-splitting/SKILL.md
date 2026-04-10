@@ -1,10 +1,10 @@
 ---
 name: user-story-splitting
 description: >-
-  Use when a user story, epic, or feature is too large to estimate, sequence, or release independently — breaking it into smaller, independently deliverable stories using proven split patterns.
-  Triggers on: "split this story", "story is too big", "break down this epic", "this won't fit in a sprint", "story splitting", "스토리 분리", "에픽 분해", "너무 큰 스토리 나눠줘".
-  Best for: oversized backlog items, epics with multiple personas or workflows bundled together, stories with multiple When/Then conditions.
-  Not for: technical task decomposition, stories that are already small and well-scoped, architectural planning.
+  Use when a user story, epic, or feature is too large to estimate, sequence, or
+  release independently — breaking it into smaller, independently deliverable
+  stories using proven split patterns. Triggers on: "split this story", "story
+  is too big",
 type: component
 scenarios:
   - "This user story is too big for one sprint — help me split it using splitting patterns"

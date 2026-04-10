@@ -1,11 +1,10 @@
 ---
 name: negotiation
 description: >-
-  Use when someone needs to negotiate, persuade, or navigate a hard conversation.
-  Triggers on: "연봉 협상", "salary negotiation", "계약 협상", "거절당했어", "설득해야 해",
-  "협상 준비", "ask for a raise", "contract terms", "클라이언트 설득", "상사한테 어떻게 말해".
-  Best for: salary/raise asks, contract discussions, convincing a skeptical stakeholder.
-  Not for: pure conflict resolution without a desired outcome, or technical trade-off decisions.
+  Use when someone needs to negotiate, persuade, or navigate a hard
+  conversation. Triggers on: "연봉 협상", "salary negotiation", "계약 협상", "거절당했어",
+  "설득해야 해", 협상 준비", "ask for a raise", "contract terms", "클라이언트 설득", "상사한테 어떻게
+  말해".
 scenarios:
   - "연봉 협상을 해야 하는데 어떻게 접근해야 해?"
   - "클라이언트가 가격을 너무 낮게 제시했어, 어떻게 대응하지?"

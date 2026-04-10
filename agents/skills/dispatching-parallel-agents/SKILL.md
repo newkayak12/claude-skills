@@ -1,12 +1,9 @@
 ---
 name: dispatching-parallel-agents
 description: >-
-  Use when facing 2+ independent tasks that can run concurrently without shared state.
-  Triggers on: "병렬로 처리해줘", "동시에 여러 작업", "parallel agents", "여러 에이전트 동시 실행",
-  "독립적인 작업들 한번에", "multiple independent failures", "파일이 서로 겹치지 않아".
-  Best for: multiple failing test files with different root causes, parallel code reviews,
-  independent module fixes, simultaneous report generation.
-  Not for: related failures (fixing one may fix others), tasks with shared state or file overlap.
+  Use when facing 2+ independent tasks that can run concurrently without shared
+  state. Triggers on: "병렬로 처리해줘", "동시에 여러 작업", "parallel agents", "여러 에이전트 동시
+  실행", 독립적인 작업들 한번에", "multiple independent failures", "파일이 서로 겹치지 않아".
 scenarios:
   - "세 개 테스트 파일이 각각 다른 이유로 실패해 — 병렬로 고쳐줘"
   - "두 서브시스템 각각 독립적으로 리팩토링해줘"

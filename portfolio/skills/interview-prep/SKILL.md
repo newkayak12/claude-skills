@@ -1,10 +1,10 @@
 ---
 name: interview-prep
 description: >-
-  Use when someone needs a structured interview preparation plan before their interview process begins — a study schedule, gap analysis by topic area, and STAR story bank. This is planning, not practice.
-  Triggers on: "interview prep plan", "how to prepare for FAANG", "coding test study plan", "면접 준비 계획", "코딩테스트 어떻게 준비해", "기술 면접 공부법", "FAANG 준비".
-  Best for: engineers 2-12 weeks out from interviews who need a structured plan; gap analysis by coding/system design/behavioral topics; calibrating study to a specific company type.
-  Not for: live interview practice (use portfolio-interview), portfolio review (use portfolio-feedback), or resume tailoring (use resume-tailorer).
+  Use when someone needs a structured interview preparation plan before their
+  interview process begins — a study schedule, gap analysis by topic area, and
+  STAR story bank. This is planning, not practice. Triggers on: "interview prep
+  plan", "how to
 scenarios:
   - "I have 8 weeks until my Google interview — give me a structured prep plan"
   - "I'm preparing for Kakao backend engineer interviews — what should I study?"

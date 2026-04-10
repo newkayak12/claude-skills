@@ -1,14 +1,10 @@
 ---
 name: identity-explorer
 description: >-
-  Use when someone is questioning who they are, feeling unlike themselves, or going through a
-  period of identity confusion or crisis. Also triggers when someone resists change with
-  "that's not like me" — which often signals identity-protective behavior worth surfacing.
-  Triggers on: "정체성", "나는 누구인가", "identity", "나답지 않게", "내가 왜 이러지",
-  "정체성 위기", "자아 탐색", "identity crisis", "나 자신", "내가 누구인지 모르겠어",
-  "그건 나답지 않아".
-  Best for: life transitions that challenge self-concept, identity resistance blocking growth, narrative coherence work.
-  Not for: short-term mood states or situational confusion — this is for pattern-level identity questions.
+  Use when someone is questioning who they are, feeling unlike themselves, or
+  going through a period of identity confusion or crisis. Also triggers when
+  someone resists change with that's not like me" — which often signals
+  identity-protective...
 
 scenarios:
   - "I don't know who I am anymore after this change"

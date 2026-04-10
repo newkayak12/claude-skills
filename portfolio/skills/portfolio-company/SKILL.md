@@ -1,10 +1,10 @@
 ---
 name: portfolio-company
 description: >-
-  Use when someone wants to know which companies or company types their portfolio would appeal to — without a specific JD in hand.
-  Triggers on: "which companies fit my portfolio", "where should I apply", "어느 회사에 잘 맞아?", "네이버 지원하려는데 어때?", "어디 써볼 만해?", "어떤 회사 유형이 맞아?".
-  Best for: candidates without a target company yet; fit scores across company types (large platform, startup, fintech, global tech); portfolio positioning advice.
-  Not for: JD-specific matching (use portfolio-jd), resume tailoring (use resume-tailorer), or live interview practice.
+  Use when someone wants to know which companies or company types their
+  portfolio would appeal to — without a specific JD in hand. Triggers on: "which
+  companies fit my portfolio", "where should I apply", "어느 회사에 잘 맞아?", "네이버
+  지원하려는데 어때?", "어디 써볼 만해?",
 scenarios:
   - "Which Korean tech companies would my portfolio appeal to?"
   - "Is my portfolio a good fit for Naver or Kakao?"

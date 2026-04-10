@@ -1,12 +1,10 @@
 ---
 name: documentation-strategy
 description: >-
-  Plans and maintains a documentation system across architecture docs, API references, runbooks,
-  and onboarding guides — producing a doc coverage map and writing or improving the
-  highest-leverage missing content.
-  Use when a codebase, API, or team process lacks documentation that slows onboarding or causes
-  repeated questions, or when documentation exists but is scattered, outdated, or missing key gaps.
-  Not a substitute for code-documenter (inline docs and docstrings) or adr-writer (individual decisions).
+  Plans and maintains a documentation system across architecture docs, API
+  references, runbooks, and onboarding guides — producing a doc coverage map and
+  writing or improving the highest-leverage missing content. Use when a
+  codebase, API, or team...
 scenarios:
   - "Our codebase has no docs and new engineers keep asking the same questions repeatedly"
   - "We have documentation but it's scattered across three wikis and no one knows what's current"

@@ -1,14 +1,10 @@
 ---
 name: prd-development
 description: >-
-  Use when turning scattered discovery notes, Slack threads, or stakeholder requests
-  into a structured PRD that engineers can act on. Triggers on: "PRD 작성", "기획서",
-  "제품 요구사항 문서", "write a PRD", "product requirements document", "engineering
-  handoff", "I need to document this feature". Best for: writing a complete PRD from
-  scratch across 8 structured phases; creating problem statement, personas, success
-  metrics, and user stories in one session; aligning cross-functional teams on scope
-  before engineering begins. Not for: small bug fixes or trivial features (overkill);
-  continuous discovery experiments (use hypothesis-driven-dev instead).
+  Use when turning scattered discovery notes, Slack threads, or stakeholder
+  requests into a structured PRD that engineers can act on. Triggers on: "PRD
+  작성", "기획서", 제품 요구사항 문서", "write a PRD", "product requirements document",
+  "engineering handoff", "I
 intent: >-
   Guide product managers through structured PRD creation by orchestrating problem
   framing, user research synthesis, solution definition, and success criteria into a

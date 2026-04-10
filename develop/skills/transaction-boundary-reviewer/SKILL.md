@@ -1,15 +1,10 @@
 ---
 name: transaction-boundary-reviewer
 description: >-
-  Use when data appears inconsistent after failures, when two writes need to succeed
-  or fail together, or when transactions are causing lock contention or timeout errors
-  under load. Reviews isolation levels, atomicity gaps, overly wide transactions,
-  missing rollback declarations, and cross-service consistency patterns.
-  Triggers on: "transaction boundary", "data inconsistency after failure", "lock contention",
-  "@Transactional too wide", "Outbox pattern", "Saga rollback", "트랜잭션 경계",
-  "락 경합", "데이터 정합성 문제", "분산 트랜잭션 설계".
-  Best for: Spring @Transactional review, isolation level selection, Outbox/Saga pattern guidance.
-  Not for: general query performance (use sql-pro) or connection pool sizing (use connection-pool-tuner).
+  Use when data appears inconsistent after failures, when two writes need to
+  succeed or fail together, or when transactions are causing lock contention or
+  timeout errors under load. Reviews isolation levels, atomicity gaps, overly
+  wide...
 scenarios:
   - "Data is inconsistent after failures — review our transaction boundaries"
   - "Help me identify where distributed transactions are causing data integrity issues"

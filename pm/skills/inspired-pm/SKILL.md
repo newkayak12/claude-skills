@@ -1,13 +1,10 @@
 ---
 name: inspired-pm
 description: >-
-  Use when applying Marty Cagan's empowered product team model — continuous discovery,
-  outcome ownership, four-risk validation before delivery. Triggers on: "Marty Cagan",
-  "empowered team", "continuous discovery", "discovery vs delivery", "outcome not output",
-  "four product risks", "팀이 피처 공장이 된 것 같아", "고객 인터뷰를 정례화하고 싶어".
-  Best for: assessing a team's discovery practice; shifting from feature roadmap to
-  outcome roadmap; structuring weekly customer interviews. Not for: writing individual
-  user stories (use user-story); sprint execution (use shape-up or user-story-splitting).
+  Use when applying Marty Cagan's empowered product team model — continuous
+  discovery, outcome ownership, four-risk validation before delivery. Triggers
+  on: "Marty Cagan", empowered team", "continuous discovery", "discovery vs
+  delivery", "outcome not
 license: MIT
 metadata:
   author: wondelai

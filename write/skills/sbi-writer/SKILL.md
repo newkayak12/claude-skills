@@ -1,11 +1,9 @@
 ---
 name: sbi-writer
 description: >-
-  Use when giving feedback to a colleague and the wording feels judgmental, vague, or accusatory.
-  Triggers on: "피드백 어떻게 말해?", "feedback 써줘", "SBI", "동료한테 어떻게 말해야 해?",
-  "칭찬 어떻게 해?", "건설적 피드백", "peer review 써야 해", "이 말이 너무 공격적인 것 같아".
-  Best for: constructive feedback, peer reviews, positive recognition, upward feedback.
-  Not for: general performance reviews or disciplinary documentation.
+  Use when giving feedback to a colleague and the wording feels judgmental,
+  vague, or accusatory. Triggers on: "피드백 어떻게 말해?", "feedback 써줘", "SBI", "동료한테
+  어떻게 말해야 해?", 칭찬 어떻게 해?", "건설적 피드백", "peer review 써야 해", "이 말이 너무 공격적인 것 같아".
 scenarios:
   - "동료가 발표를 엉망으로 했는데 어떻게 말해야 해?"
   - "팀원 칭찬을 구체적으로 하고 싶어"

@@ -1,14 +1,10 @@
 ---
 name: spring-boot-engineer
 description: >-
-  Use when someone needs to build or extend a Java backend using the Spring ecosystem —
-  wiring up a new REST API, configuring security and authentication, connecting to a
-  database via JPA, or setting up reactive endpoints with Spring Boot 3.x.
-  Triggers on: "Spring Boot", "Spring Security", "JPA repository", "Spring REST API",
-  "Spring WebFlux", "OAuth2 Spring", "스프링 부트", "스프링 시큐리티", "JPA 설정",
-  "Spring Cloud Gateway".
-  Best for: REST controllers, JPA data access, Spring Security 6, Actuator/observability.
-  Not for: architecture-level service decomposition (use microservices-architect); Kotlin-idiomatic patterns (pair with kotlin-specialist).
+  Use when someone needs to build or extend a Java backend using the Spring
+  ecosystem — wiring up a new REST API, configuring security and authentication,
+  connecting to a database via JPA, or setting up reactive endpoints with Spring
+  Boot 3.x.
 scenarios:
   - "Build a REST API with Spring Boot including security, JPA, and error handling"
   - "Help me configure Spring Security for JWT-based authentication"

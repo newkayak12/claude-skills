@@ -1,14 +1,10 @@
 ---
 name: flaky-test-analyzer
 description: >-
-  Use when tests pass locally but fail in CI, pass some runs and fail others, or someone
-  suspects a test is unreliable but cannot reproduce the failure consistently. Diagnoses
-  root causes and provides concrete fixes.
-  Triggers on: "flaky test", "intermittent test failure", "passes locally fails in CI",
-  "test is non-deterministic", "random test failure", "테스트가 가끔 실패", "간헐적 테스트 오류",
-  "CI에서만 실패하는 테스트", "flaky".
-  Best for: timing races, shared state pollution, ordering dependencies, CI environment differences.
-  Not for: consistently failing tests with a known error (those are bugs, not flakiness).
+  Use when tests pass locally but fail in CI, pass some runs and fail others, or
+  someone suspects a test is unreliable but cannot reproduce the failure
+  consistently. Diagnoses root causes and provides concrete fixes. Triggers on:
+  "flaky test",
 scenarios:
   - "Our tests pass locally but randomly fail in CI — I need to fix these flaky tests"
   - "Help me diagnose why this test fails intermittently with a race condition"

@@ -1,14 +1,10 @@
 ---
 name: mental-model-toolkit
 description: >-
-  Use when someone is stuck on a problem and needs a different frame entirely, suspects they
-  have blind spots, or has exhausted obvious solutions. Three instruments: choose the right
-  mental model, systematically surface unknown unknowns, and break out of conventional solution
-  gravity with lateral thinking.
-  Triggers on: "different perspective", "stuck on this", "blind spots", "creative solution",
-  "다른 관점", "막혀 있어", "뭘 놓치고 있는 건지", "새로운 접근법", "창의적 해결책".
-  Best for: reframing stuck problems, stress-testing plans via pre-mortem, generating non-obvious options.
-  Not for: downstream consequence analysis (use second-order-thinker), assumption audits (use assumption-extractor).
+  Use when someone is stuck on a problem and needs a different frame entirely,
+  suspects they have blind spots, or has exhausted obvious solutions. Three
+  instruments: choose the right mental model, systematically surface unknown
+  unknowns, and break...
 
 scenarios:
   - "I've tried everything obvious — what am I missing?"

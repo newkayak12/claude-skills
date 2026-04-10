@@ -1,12 +1,10 @@
 ---
 name: devils-advocate
 description: >-
-  Use when someone wants their idea, plan, or decision stress-tested with the strongest possible objections.
-  Triggers on: "반론 던져줘", "약점 찾아줘", "이 계획 문제점이 뭐야?", "devil's advocate 해줘",
-  "결함 찾아줘", "비판해줘", "이 아이디어 왜 틀렸어?", "steel-man the opposite view",
-  "반대 의견 강하게 말해줘", "치명적 약점이 뭔지 알고 싶어".
-  Best for: pre-commitment stress testing, finding fatal flaws, adversarial design review.
-  Not for: balanced pro/con analysis or improvement help — this is adversarial critique only.
+  Use when someone wants their idea, plan, or decision stress-tested with the
+  strongest possible objections. Triggers on: "반론 던져줘", "약점 찾아줘", "이 계획 문제점이
+  뭐야?", "devil's advocate 해줘", 결함 찾아줘", "비판해줘", "이 아이디어 왜 틀렸어?", "steel-man the
+  opposite view", 반대
 scenarios:
   - "MSA로 전환하자는 계획, 반론 세 가지 던져줘"
   - "이 설계의 약점이 뭔지 공격적으로 말해줘"

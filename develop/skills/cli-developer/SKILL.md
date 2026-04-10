@@ -1,14 +1,10 @@
 ---
 name: cli-developer
 description: >-
-  Use when someone needs to build a command-line tool — defining subcommands, flags,
-  and argument parsing; adding interactive prompts, progress bars, or shell completions;
-  or distributing a cross-platform terminal application.
-  Triggers on: "build a CLI", "command-line tool", "terminal app", "argument parsing",
-  "shell completion", "interactive prompt", "commander", "click", "typer", "cobra",
-  "CLI 개발", "커맨드라인 툴 만들기".
-  Best for: Node.js (commander), Python (typer/click), Go (cobra) CLIs.
-  Not for: web UI, REST API servers, or SRE pipeline tooling (use sre-engineer for the latter).
+  Use when someone needs to build a command-line tool — defining subcommands,
+  flags, and argument parsing; adding interactive prompts, progress bars, or
+  shell completions; or distributing a cross-platform terminal application.
+  Triggers on: "build a
 scenarios:
   - "Build a CLI tool that manages deployment configurations across environments"
   - "I need to create a command-line interface for our internal developer tools"

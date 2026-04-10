@@ -1,13 +1,10 @@
 ---
 name: testing-workflow
 description: >-
-  Use when someone wants to build a complete, stable test suite from scratch — starting
-  with TDD discipline, moving into coverage strategy, and ending with flaky test elimination.
-  Triggers on: "testing workflow", "테스트 전체 프로세스", "TDD부터 커버리지까지", "full test cycle",
-  "테스트 체계 잡기", "test suite from scratch", "CI 테스트 안정화".
-  Best for: new codebases starting TDD, growing test suites that lack strategy, CI pipelines
-  broken by flaky tests.
-  Not for: adding a single test to existing passing code — use test-master directly.
+  Use when someone wants to build a complete, stable test suite from scratch —
+  starting with TDD discipline, moving into coverage strategy, and ending with
+  flaky test elimination. Triggers on: "testing workflow", "테스트 전체 프로세스", "TDD부터
+  커버리지까지", "full
 type: workflow
 theme: engineering
 scenarios:

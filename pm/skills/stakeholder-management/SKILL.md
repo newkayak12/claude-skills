@@ -1,11 +1,10 @@
 ---
 name: stakeholder-management
 description: >-
-  Focuses on PEOPLE and RELATIONSHIPS: mapping influence, building trust, and overcoming
-  interpersonal resistance to get decisions approved and initiatives unblocked.
-  Use when the challenge is WHO — a specific person blocking progress, an exec who needs convincing,
-  or a team that won't align regardless of the logical argument.
-  For crafting the message or format of a roadmap presentation, use roadmap-communication instead.
+  Focuses on PEOPLE and RELATIONSHIPS: mapping influence, building trust, and
+  overcoming interpersonal resistance to get decisions approved and initiatives
+  unblocked. Use when the challenge is WHO — a specific person blocking
+  progress, an exec who...
 type: workflow
 theme: pm-strategy
 best_for:

@@ -1,14 +1,10 @@
 ---
 name: kotlin-specialist
 description: >-
-  Use when someone is writing Kotlin code and needs idiomatic guidance — coroutine and
-  Flow patterns, Kotlin Multiplatform (KMP) structure, Android with Jetpack Compose,
-  Ktor server setup, or type-safe DSL authoring.
-  Triggers on: "Kotlin coroutines", "KMP", "Kotlin Multiplatform", "Jetpack Compose",
-  "Ktor server", "Flow", "suspend function", "코틀린", "코루틴", "안드로이드 Compose",
-  "KMP 설정".
-  Best for: idiomatic coroutine patterns, multiplatform source-set structure, Compose UI.
-  Not for: general Java backend (use spring-boot-engineer), Android XML layouts.
+  Use when someone is writing Kotlin code and needs idiomatic guidance —
+  coroutine and Flow patterns, Kotlin Multiplatform (KMP) structure, Android
+  with Jetpack Compose, Ktor server setup, or type-safe DSL authoring. Triggers
+  on: "Kotlin coroutines",
 scenarios:
   - "Help me write idiomatic Kotlin code using coroutines for async processing"
   - "Convert this Java class to Kotlin and apply Kotlin best practices"

@@ -1,14 +1,10 @@
 ---
 name: bias-auditor
 description: >-
-  Use when someone is evaluating a person, explaining behavior, or making a decision with
-  expressed high confidence — auditing three layers: how information is judged (confirmation bias,
-  anchoring, sunk cost), how behavior is explained (attribution errors), and how well someone
-  knows what they know (overconfidence, Dunning-Kruger).
-  Triggers on: "am I being biased", "why did they do that", "I'm sure about this", "편향 점검",
-  "확증 편향", "왜 이렇게 생각하는 걸까", "내 판단이 맞나".
-  Best for: high-stakes decisions, evaluating people, diagnosing why a conclusion feels certain.
-  Not for: logical fallacy detection (use fallacy-detector), evidence calibration (use epistemic-reasoner).
+  Use when someone is evaluating a person, explaining behavior, or making a
+  decision with expressed high confidence — auditing three layers: how
+  information is judged (confirmation bias, anchoring, sunk cost), how behavior
+  is explained (attribution...
 
 scenarios:
   - "Am I being biased in how I see this situation?"

@@ -1,10 +1,10 @@
 ---
 name: portfolio-jd
 description: >-
-  Use when someone provides both a portfolio and a specific job description and wants to know how well they match — gap analysis, fit score, and positioning advice for that exact role.
-  Triggers on: "이 공고에 맞아?", "JD랑 비교해줘", "이 포지션 지원해도 돼?", "match my portfolio to this JD", "gap analysis for this role", "should I apply to this job posting".
-  Best for: analyzing a specific JD vs. portfolio before applying; understanding must-have gaps vs. nice-to-have gaps; getting concrete positioning advice.
-  Not for: choosing which companies to apply to without a JD (use portfolio-company), resume tailoring for a JD (use resume-tailorer), or general portfolio feedback (use portfolio-feedback).
+  Use when someone provides both a portfolio and a specific job description and
+  wants to know how well they match — gap analysis, fit score, and positioning
+  advice for that exact role. Triggers on: "이 공고에 맞아?", "JD랑 비교해줘", "이 포지션 지원해도
+  돼?", "match my
 scenarios:
   - "Compare my portfolio to this job description — where are the gaps?"
   - "I want to apply to this JD — how well does my portfolio match and what should I fix?"

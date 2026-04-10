@@ -1,13 +1,10 @@
 ---
 name: thinking-style-profiler
 description: >-
-  Use when someone wants to understand their characteristic thinking style or why they think
-  the way they do — mapping tendencies to actionable learning and working strategies.
-  Triggers on: "thinking style", "내 사고 방식이 어떤지", "사고 패턴 파악", "왜 나는 이런 방식으로만 생각하나",
-  "내 약점이 뭔지 알고 싶어", "왜 이 방식이 안 맞지". Also triggers when someone is stuck in
-  a pattern they cannot identify.
-  Best for: improving learning strategies, understanding why certain work contexts feel effortful, career fit.
-  Not for: simple study method questions ("어떻게 공부해야") — those get a direct answer, not a full profile.
+  Use when someone wants to understand their characteristic thinking style or
+  why they think the way they do — mapping tendencies to actionable learning and
+  working strategies. Triggers on: "thinking style", "내 사고 방식이 어떤지", "사고 패턴 파악",
+  "왜 나는 이런 방식으로만
 
 scenarios:
   - "Why do I always get stuck when problems are too abstract?"
