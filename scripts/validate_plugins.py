@@ -11,6 +11,9 @@ Checks:
   6. Per skill  — description contains "Use when" (authoring rule)
   7. Per skill  — scenarios: field is present (required for trigger matching)
   8. Version consistency — plugin.json version matches marketplace.json
+  9. Per skill  — SKILL.md line count warning if > 250 lines (HEAVY)
+ 10. Per skill  — compatibility: field present (MCP tool guidance)
+ 11. Per skill  — workflow skills have type: workflow field
 """
 
 import json
@@ -167,6 +170,20 @@ def check_plugin(plugin_entry):
         # 7. scenarios field
         if "scenarios" not in fm:
             skill_errors.append(f"    {skill_name}: SKILL.md missing 'scenarios' field")
+
+        # 8. compatibility field
+        if "compatibility" not in fm:
+            skill_errors.append(f"    {skill_name}: SKILL.md missing 'compatibility' field (needed for MCP tool guidance)")
+
+        # 9. line count — warn if heavy
+        with open(skill_md, encoding="utf-8") as f:
+            line_count = sum(1 for _ in f)
+        if line_count > 250:
+            warn(f"{prefix}/{skill_name}: SKILL.md is {line_count} lines (HEAVY — consider splitting via references/)")
+
+        # 10. workflow skills must declare type: workflow
+        if "workflow" in skill_name and fm.get("type", "") != "workflow":
+            skill_errors.append(f"    {skill_name}: skill name contains 'workflow' but frontmatter missing 'type: workflow'")
 
     if skill_errors:
         for e in skill_errors:
