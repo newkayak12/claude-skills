@@ -86,24 +86,6 @@ S - Stories             → Is it wrapped in a narrative people want to tell?
 - **Exclusivity and scarcity** — secret menus, invite-only access, members-only content — making people feel like insiders gives them social currency when they share "insider knowledge" with their circle
 - **Inner remarkability** — even mundane products can find their remarkable angle. The key is framing, not the product itself
 
-**Product applications:**
-
-| Context | Application | Example |
-|---------|------------|---------|
-| SaaS onboarding | Achievement milestones users can share | "I just hit 1,000 tasks completed on Todoist" |
-| E-commerce | Exclusive early access for loyal customers | Amazon Prime early deals |
-| Content platform | Insider statistics or year-in-review | Spotify Wrapped |
-| B2B product | Industry benchmarking data users want to cite | HubSpot State of Marketing report |
-| Mobile app | Shareable accomplishment cards | Duolingo streak badges |
-| Community | Tiered status with visible badges | Stack Overflow reputation system |
-
-**Copy patterns:**
-- "Most people don't know that..."
-- "You're one of the first to try..."
-- "Only available to [exclusive group]..."
-- "Here's what [X] insiders know..."
-- "You've unlocked [achievement]..."
-- "Share your [impressive metric]..."
 
 **Ethical boundary:** Social currency should make people genuinely feel good, not manipulate through false scarcity or manufactured exclusivity that breeds toxicity. Create real insider value, not artificial gatekeeping.
 
@@ -122,23 +104,6 @@ See: [references/social-currency.md](references/social-currency.md) for remarkab
 - **Ongoing vs. temporary** — triggers that persist in the environment (a desk item, a daily routine) generate sustained word-of-mouth, while event-based triggers create spikes
 - **Context linking** — pair your product with an existing, frequent behavior or environment
 
-**Product applications:**
-
-| Context | Application | Example |
-|---------|------------|---------|
-| Food/Beverage | Link to daily routine or habit | Kit Kat + coffee break |
-| Productivity tool | Tie to a recurring workflow moment | "Every Monday standup..." |
-| Health app | Connect to a physiological cue | "When you feel stressed..." |
-| Financial product | Link to payday or spending moment | "Every time you get paid..." |
-| Content/Media | Tie to a day of the week | "Taco Tuesday" driving taco talk |
-| E-commerce | Connect to seasonal or weather triggers | "When it rains..." campaigns |
-
-**Copy patterns:**
-- "Every time you [frequent activity], think of..."
-- "Next time you [daily habit]..."
-- "When you see [environmental cue]..."
-- "It's [day/time] — time for..."
-- "Whenever you [routine behavior]..."
 
 **Ethical boundary:** Triggers should create genuine, helpful associations. Hijacking sensitive contexts (grief, health scares) as triggers is manipulative and will backfire.
 
@@ -158,24 +123,6 @@ See: [references/triggers.md](references/triggers.md) for habitat analysis and t
 - **Awe is the most powerful sharing emotion** — content that makes people feel small in the face of something vast, beautiful, or surprising spreads the furthest
 - **Emotional framing** — the same information can be framed to evoke different arousal levels. Facts inform; emotional framing motivates sharing
 
-**Product applications:**
-
-| Context | Application | Example |
-|---------|------------|---------|
-| Launch content | Engineer awe through unexpected scale or beauty | Apple keynote reveals |
-| Social campaigns | Tap righteous anger at an injustice | Dove "Real Beauty" challenging beauty standards |
-| Product demos | Create amusement through unexpected use cases | Blendtec "Will It Blend?" |
-| User milestones | Spark excitement at personal achievement | Fitness apps celebrating PRs |
-| Brand storytelling | Inspire through human triumph narratives | Nike "Just Do It" athlete stories |
-| Feature announcements | Generate curiosity and anticipation | "Something big is coming..." teasers |
-
-**Copy patterns:**
-- "This will change how you think about..."
-- "I can't believe [surprising fact]..."
-- "Watch what happens when..."
-- "This is why we fight for..."
-- "You won't believe what [person] did..."
-- "[Powerful statistic] — here's what we're doing about it"
 
 **Ethical boundary:** Anger and outrage are high-arousal and highly shareable, but engineering outrage for clicks corrodes trust. Use high-arousal negative emotion sparingly and only when the underlying cause genuinely warrants it.
 
@@ -194,23 +141,6 @@ See: [references/emotion.md](references/emotion.md) for emotional arousal mappin
 - **Private behaviors stay private** — if no one can see you using the product, you can't benefit from social proof. Find ways to make invisible usage visible
 - **Public = imitable** — people can only copy what they can observe. Making your product publicly visible makes it easier for others to adopt
 
-**Product applications:**
-
-| Context | Application | Example |
-|---------|------------|---------|
-| Email/Messaging | Branded signatures or footers | "Sent from my iPhone" |
-| Physical products | Visible branding during use | Apple logo on laptops, Beats headphones |
-| Digital products | Shareable output with branding | Canva designs with watermark, Spotify "Now Playing" |
-| Communities | Wearable or displayable membership signals | Livestrong wristbands, conference badges |
-| SaaS tools | Public-facing outputs that credit the tool | "Powered by [tool]" on websites |
-| Content platforms | Share cards with platform branding | Twitter/X quote cards, Instagram story frames |
-
-**Copy patterns:**
-- "Show the world you [achievement/identity]..."
-- "Let others know you..."
-- "Wear your [accomplishment]..."
-- "Share your [output] — powered by [brand]..."
-- "Join [number] others who..."
 
 **Ethical boundary:** Public visibility should empower users, not shame them. Never make private information (failures, health data, financial struggles) involuntarily public. The user should always control what is visible.
 
@@ -229,24 +159,6 @@ See: [references/public-visibility.md](references/public-visibility.md) for obse
 - **Knowledge packaging** — useful information needs to be packaged for easy sharing. Lists, how-tos, infographics, and tip collections are inherently more shareable than long-form essays
 - **Narrow audience = wider sharing** — counterintuitively, content targeting a specific niche gets shared more because people forward it to "the person who needs this"
 
-**Product applications:**
-
-| Context | Application | Example |
-|---------|------------|---------|
-| Pricing/Promotions | Frame deals using Rule of 100 | "Save 40%" (under $100) vs. "Save $500" (over $100) |
-| Content marketing | Package expertise as numbered lists | "7 ways to reduce your electricity bill" |
-| Product features | Build in shareable utility outputs | Calorie tracker generating weekly health summaries |
-| Email campaigns | Include "forward-worthy" tips | Useful tips the recipient would forward to a friend |
-| B2B content | Create industry benchmarks and tools | Free ROI calculator with shareable results |
-| Customer success | Package how-to guides for common tasks | Quick-start guides users share with teammates |
-
-**Copy patterns:**
-- "Save [amount] with this one trick..."
-- "The [number]-step guide to..."
-- "Here's something you'll want to send to [specific person]..."
-- "[Number] things I wish I knew about..."
-- "Quick tip: [immediately useful advice]..."
-- "Share this with someone who needs to hear it"
 
 **Ethical boundary:** Practical value must be genuine. Fake savings (inflated "original" prices), misleading tips, or clickbait "life hacks" that don't actually work will destroy trust faster than they generate shares.
 
@@ -265,101 +177,7 @@ See: [references/practical-value.md](references/practical-value.md) for Prospect
 - **Retellability** — the story must be simple enough to retell in a conversation. If it requires a 10-minute setup, it won't spread
 - **Valuable virality** — the story must not just be shareable but must carry the brand message. A hilarious ad that people can't remember the brand of is a failure
 
-**Product applications:**
-
-| Context | Application | Example |
-|---------|------------|---------|
-| Brand marketing | Create a narrative inseparable from the product | Blendtec "Will It Blend?" (can't retell without mentioning Blendtec) |
-| Product launch | Build origin story around a customer problem | "We built this because our founder couldn't find..." |
-| Content marketing | Wrap data and insights inside human stories | Customer success stories as narratives, not testimonials |
-| PR/Earned media | Create stunts that are inherently story-worthy | Barclay Prime's $100 cheesesteak |
-| User onboarding | Frame the user as the hero of a journey | "Your story starts here..." |
-| Customer advocacy | Give customers a story to tell about their experience | "You won't believe what happened when I called support..." |
-
-**Copy patterns:**
-- "Here's the story of how..."
-- "It all started when [founder/customer] realized..."
-- "Nobody believed [audacious claim] — until..."
-- "What would you do if [relatable dilemma]?"
-- "The [person/company] who [did something remarkable]..."
 
 **Ethical boundary:** Stories must be true or clearly fictional. Fabricating testimonials, inventing origin stories, or creating misleading narratives will eventually be exposed, destroying the brand's credibility and making future word-of-mouth toxic.
 
 See: [references/stories-trojan-horse.md](references/stories-trojan-horse.md) for narrative templates and the Trojan Horse integration test.
-
-## Engineering Word of Mouth
-
-The STEPPS principles are most powerful when combined. Here are applied combinations for common scenarios:
-
-### Product Launch
-
-| Phase | STEPPS Combination | Tactics |
-|-------|-------------------|---------|
-| Pre-launch | Social Currency + Public | Invite-only beta with visible waitlist counters |
-| Launch day | Emotion + Stories | Founder narrative + awe-inducing demo |
-| First week | Triggers + Practical Value | Tie product to daily workflow + "share to unlock" features |
-| Sustained growth | Public + Social Currency | Visible usage signals + achievement sharing |
-
-### Content Strategy
-
-| Content Type | Primary STEPPS | Secondary STEPPS | Example |
-|-------------|---------------|-----------------|---------|
-| Thought leadership | Social Currency | Stories | Insider knowledge wrapped in narrative |
-| How-to guides | Practical Value | Triggers | Useful tips tied to recurring situations |
-| Brand films | Emotion | Stories | Awe-inspiring narrative with brand at center |
-| Interactive tools | Practical Value | Public | Calculator/quiz with shareable results |
-| User spotlights | Stories | Social Currency | Customer heroes whose stories feature your product |
-
-### Feature Design
-
-| Feature Goal | STEPPS to Apply | Implementation |
-|-------------|----------------|----------------|
-| Drive referrals | Social Currency + Public | Shareable achievement cards with branding |
-| Increase retention | Triggers + Practical Value | Daily-routine integrations with useful outputs |
-| Build community | Public + Social Currency | Visible membership tiers and contribution badges |
-| Launch virally | Emotion + Stories | Remarkable origin story + emotionally charged demo |
-
-## Common Mistakes
-
-| Mistake | Why It Fails | Fix |
-|---------|-------------|-----|
-| Focusing only on online sharing | 93% of WOM is offline — you're ignoring the dominant channel | Design for conversation triggers, not just social media shares |
-| Making content shareable but not brand-linked | People share the joke but forget who made it | Apply the Trojan Horse test — brand must be integral to the story |
-| Using low-arousal emotions | Sadness and contentment don't activate sharing behavior | Reframe content for high-arousal emotions: awe, excitement, amusement, anger |
-| Making product usage invisible | No one can imitate what they can't see | Add behavioral residue and observable usage signals |
-| Relying on product quality alone | Great products with no STEPPS integration spread slowly | Deliberately engineer at least 2-3 STEPPS into the product experience |
-| Creating rare, powerful triggers | A strong but infrequent trigger generates less WOM than a weak but daily one | Prioritize frequency over strength when selecting environmental triggers |
-
-## Quick Diagnostic
-
-Run this diagnostic on any product, campaign, or content piece:
-
-| Question | If No... | Action |
-|----------|----------|--------|
-| Does sharing this make people look good? | No social currency | Add remarkability, exclusivity, or achievement mechanics |
-| Is there an everyday cue that triggers thoughts of it? | No trigger | Link product to a frequent environmental cue or daily routine |
-| Does it evoke high-arousal emotion? | Low emotional activation | Reframe for awe, excitement, humor, or righteous anger |
-| Can others see people using or engaging with it? | Invisible usage | Add observable signals, branded outputs, or public indicators |
-| Is the information useful enough to forward? | Low practical value | Package insights as tips, lists, or tools people would send to a friend |
-| Is the brand embedded in a retellable story? | No narrative vehicle | Create a Trojan Horse story that requires your brand to retell |
-
-## Reference Files
-
-- [references/social-currency.md](references/social-currency.md) — Remarkability techniques, game mechanics, exclusivity design, and identity signaling strategies
-- [references/triggers.md](references/triggers.md) — Habitat analysis, trigger frequency matrix, competitive triggers, and the Kit Kat case study
-- [references/emotion.md](references/emotion.md) — High-arousal vs. low-arousal emotion mapping, awe engineering, humor design, and emotional audit tools
-- [references/public-visibility.md](references/public-visibility.md) — Behavioral residue, observable consumption design, self-advertising products, and the Apple logo story
-- [references/practical-value.md](references/practical-value.md) — Prospect Theory for marketers, Rule of 100, knowledge packaging formats, and deal framing
-- [references/stories-trojan-horse.md](references/stories-trojan-horse.md) — Trojan Horse narrative design, brand integration testing, and story templates
-- [references/word-of-mouth.md](references/word-of-mouth.md) — Offline vs. online WOM, conversation triggers, measurement approaches, and WOM audit
-- [references/viral-content-patterns.md](references/viral-content-patterns.md) — Content formats that spread, platform-specific patterns, viral coefficient, and shareability audit
-- [references/case-studies.md](references/case-studies.md) — Detailed breakdowns of Blendtec, Barclay Prime, Kit Kat, Livestrong, Dove, and Hotmail
-
-## Further Reading
-
-- [Contagious: Why Things Catch On](https://www.amazon.com/Contagious-Things-Catch-Jonah-Berger/dp/1451686579?tag=wondelai00-20) by Jonah Berger
-- [The Catalyst: How to Change Anyone's Mind](https://www.amazon.com/Catalyst-How-Change-Anyones-Mind/dp/1982108606?tag=wondelai00-20) by Jonah Berger
-
-## About the Author
-
-**Jonah Berger** is a marketing professor at the Wharton School at the University of Pennsylvania. His research focuses on social influence, word-of-mouth, and why products, ideas, and behaviors catch on. He has published dozens of articles in top-tier academic journals and his work has been featured in the New York Times, Wall Street Journal, and Harvard Business Review. "Contagious" distills his years of research into a practical framework for understanding and engineering virality. He has also authored "Invisible Influence" (on how hidden forces shape behavior) and "The Catalyst" (on how to change minds), and consults with companies ranging from startups to Fortune 500 firms on how to make their products and ideas spread.

@@ -246,10 +246,3 @@ Then use the Quick Diagnostic (at the bottom of this skill) to identify which of
 | Have you discussed your promotion timeline with your manager explicitly? | Promotion timing is vague and assumed | Ask in next 1-on-1: "I want to work toward [level] — what timeline is realistic, and what do I need to demonstrate?" |
 | Are you actively seeking opportunities that close your specific gaps? | You're doing good work, but not the right work for next-level evidence | Identify one opportunity in the next sprint that directly addresses your weakest dimension |
 | Do you know whether you're being submitted this promotion cycle? | You're uncertain and hoping | Ask directly: "Are you planning to submit me this cycle? If not, what's the gap?" |
-
-## Further Reading
-
-- [*"The Manager's Path"*](https://www.amazon.com/Managers-Path-Leaders-Navigating-Growth/dp/1491973897) by Camille Fournier — the engineering career arc from IC to CTO
-- [Gergely Orosz's Engineering Career Ladders](https://blog.pragmaticengineer.com/the-software-engineer-career-ladder/) — how real companies structure levels; Staff+ criteria
-- [*"Staff Engineer: Leadership Beyond the Management Track"*](https://www.amazon.com/Staff-Engineer-Leadership-beyond-management/dp/1736417916) by Will Larson — what Staff+ actually looks like in practice
-- [*"The Software Engineer's Guidebook"*](https://www.amazon.com/Software-Engineers-Guidebook-Navigating-positions/dp/908338182X) by Gergely Orosz — navigating the IC career from junior to senior to Staff

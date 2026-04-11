@@ -83,23 +83,6 @@ Answer these questions fast:
 
 **Triage output**: severity classification + incident commander assigned.
 
-### Triage Commands (get data fast)
-
-```bash
-# Recent deployments (Git)
-git log --oneline --since="2 hours ago"
-
-# Check error rate (example: CloudWatch / Datadog query)
-# Sum of 5xx responses / total responses over last 15 min
-
-# Pod/container status (Kubernetes)
-kubectl get pods -n <namespace> | grep -v Running
-kubectl describe pod <pod-name> -n <namespace>
-kubectl logs <pod-name> -n <namespace> --tail=100 --previous
-
-# Quick health check
-curl -o /dev/null -w "%{http_code}" https://api.example.com/health
-```
 
 ---
 

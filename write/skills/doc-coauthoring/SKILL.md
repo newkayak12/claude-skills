@@ -77,53 +77,15 @@ Inform them they can answer in shorthand or dump information however works best 
 
 ### Info Dumping
 
-Once initial questions are answered, encourage the user to dump all the context they have. Request information such as:
-- Background on the project/problem
-- Related team discussions or shared documents
-- Why alternative solutions aren't being used
-- Organizational context (team dynamics, past incidents, politics)
-- Timeline pressures or constraints
-- Technical architecture or dependencies
-- Stakeholder concerns
+Encourage a full context dump: background, related discussions, why alternatives aren't used, org context, timeline, tech dependencies, stakeholder concerns. They don't need to organize it — just get it all out. Accept stream-of-consciousness, links, or channel pointers.
 
-Advise them not to worry about organizing it - just get it all out. Offer multiple ways to provide context:
-- Info dump stream-of-consciousness
-- Point to team channels or threads to read
-- Link to shared documents
+Use integrations (Slack, Drive, etc.) if available to pull context directly. If not, suggest enabling connectors in Claude settings or pasting content manually. Track what's learned and what remains unclear.
 
-**If integrations are available** (e.g., Slack, Teams, Google Drive, SharePoint, or other MCP servers), mention that these can be used to pull in context directly.
+When the dump is substantially done, generate 5–10 numbered clarifying questions. Accept shorthand answers (e.g., "1: yes, 2: see #channel"). See `references/context-gathering-tips.md` for detailed guidance on integration handling and context tracking.
 
-**If no integrations are detected and in Claude.ai or Claude app:** Suggest they can enable connectors in their Claude settings to allow pulling context from messaging apps and document storage directly.
+**Exit condition:** Sufficient context when edge cases and trade-offs can be asked about without needing basics explained.
 
-Inform them clarifying questions will be asked once they've done their initial dump.
-
-**During context gathering:**
-
-- If user mentions team channels or shared documents:
-  - If integrations available: Inform them the content will be read now, then use the appropriate integration
-  - If integrations not available: Explain lack of access. Suggest they enable connectors in Claude settings, or paste the relevant content directly.
-
-- If user mentions entities/projects that are unknown:
-  - Ask if connected tools should be searched to learn more
-  - Wait for user confirmation before searching
-
-- As user provides context, track what's being learned and what's still unclear
-
-**Asking clarifying questions:**
-
-When user signals they've done their initial dump (or after substantial context provided), ask clarifying questions to ensure understanding:
-
-Generate 5-10 numbered questions based on gaps in the context.
-
-Inform them they can use shorthand to answer (e.g., "1: yes, 2: see #channel, 3: no because backwards compat"), link to more docs, point to channels to read, or just keep info-dumping. Whatever's most efficient for them.
-
-**Exit condition:**
-Sufficient context has been gathered when questions show understanding - when edge cases and trade-offs can be asked about without needing basics explained.
-
-**Transition:**
-Ask if there's any more context they want to provide at this stage, or if it's time to move on to drafting the document.
-
-If user wants to add more, let them. When ready, proceed to Stage 2.
+When ready, proceed to Stage 2.
 
 ## Stage 2: Refinement & Structure
 
@@ -265,78 +227,14 @@ Ask if ready to move to Reader Testing, or if they want to refine anything else.
 
 ## Stage 3: Reader Testing
 
-**Goal:** Test the document with a fresh Claude (no context bleed) to verify it works for readers.
+**Goal:** Verify the document works for readers without authoring context.
 
-**Instructions to user:**
-Explain that testing will now occur to see if the document actually works for readers. This catches blind spots - things that make sense to the authors but might confuse others.
+**If sub-agents available (Claude Code):** Predict 5-10 reader questions, test each with a fresh Claude instance (ReaderAgent in `agents/reader-agent.md`), report gaps, loop back to refinement.
 
-### Testing Approach
+**If no sub-agents (claude.ai):** Follow `references/manual-reader-testing.md`.
 
-**If access to sub-agents is available (e.g., in Claude Code):**
+**Exit condition:** Reader Claude consistently answers questions correctly without surfacing new gaps.
 
-Perform the testing directly without user involvement.
-
-### Step 1: Predict Reader Questions
-
-Announce intention to predict what questions readers might ask when trying to discover this document.
-
-Generate 5-10 questions that readers would realistically ask.
-
-### Step 2: Test with ReaderAgent
-
-Announce that these questions will be tested with a fresh Claude instance (no context from this conversation).
-
-For each question, invoke `agents/reader-agent.md` (ReaderAgent) with just the document content and the question. Dispatch all questions in parallel — each is a fully independent call.
-
-Summarize what ReaderAgent got right/wrong for each question.
-
-### Step 3: Run Additional Checks
-
-Announce additional checks will be performed.
-
-Invoke ReaderAgent to check for ambiguity, false assumptions, contradictions.
-
-Summarize any issues found.
-
-### Step 4: Report and Fix
-
-If issues found:
-Report that Reader Claude struggled with specific issues.
-
-List the specific issues.
-
-Indicate intention to fix these gaps.
-
-Loop back to refinement for problematic sections.
-
----
-
-**If no access to sub-agents (e.g., claude.ai web interface):**
-
-The user will need to do the testing manually. Follow the protocol in `references/manual-reader-testing.md`.
-
----
-
-### Exit Condition (Both Approaches)
-
-When Reader Claude consistently answers questions correctly and doesn't surface new gaps or ambiguities, the doc is ready.
-
-## Final Review
-
-When Reader Testing passes:
-Announce the doc has passed Reader Claude testing. Before completion:
-
-1. Recommend they do a final read-through themselves - they own this document and are responsible for its quality
-2. Suggest double-checking any facts, links, or technical details
-3. Ask them to verify it achieves the impact they wanted
-
-Ask if they want one more review, or if the work is done.
-
-**If user wants final review, provide it. Otherwise:**
-Announce document completion. Provide a few final tips:
-- Consider linking this conversation in an appendix so readers can see how the doc was developed
-- Use appendices to provide depth without bloating the main doc
-- Update the doc as feedback is received from real readers
 
 ## Output Template
 
