@@ -1,5 +1,6 @@
 ---
 name: skill-creator
+effort: high
 description: >-
   Use when creating a new Claude skill from scratch or iterating on an existing
   draft. Triggers on: "skill 만들어줘", "새 스킬 작성", "create a skill", "이 워크플로우 skill로
@@ -18,6 +19,13 @@ compatibility:
     think-tool이 있으면 스킬 개선 전 변경이 특정 예시에 과적합되지 않는지 검토할 수 있습니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS run the skill validator after creating or modifying a skill.
+- ALWAYS include both EN and KR scenario variants.
+- NEVER write a description that does not start with 'Use when'.
+- NEVER publish a skill without testing it against at least three distinct trigger scenarios.
+
 
 # Skill Creator
 

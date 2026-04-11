@@ -1,5 +1,6 @@
 ---
 name: interview-prep
+effort: high
 description: >-
   Use when someone needs a structured interview preparation plan before their
   interview process begins — a study schedule, gap analysis by topic area, and
@@ -20,6 +21,13 @@ compatibility:
     갭 분석 전에 플랜부터 생성하는 흔한 오류를 방지합니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS run gap analysis against the target role before generating the study plan.
+- ALWAYS calibrate the plan to the specific company, role, and timeline.
+- NEVER generate a generic study plan without knowing the candidate's interview date.
+- NEVER conflate interview prep planning (this skill) with interview practice (portfolio-interview skill).
+
 
 # Interview Prep Planner
 

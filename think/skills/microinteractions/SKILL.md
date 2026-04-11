@@ -1,5 +1,6 @@
 ---
 name: microinteractions
+effort: high
 description: >-
   Use when a UI element feels off, robotic, or incomplete — or when adding
   polish and delight to moment-to-moment interactions. Triggers on: "버튼 느낌이
@@ -26,6 +27,13 @@ metadata:
   author: wondelai
   version: "1.0.0"
 ---
+## Standing Mandates
+
+- ALWAYS define trigger → feedback → rules for every microinteraction before designing motion.
+- ALWAYS match animation duration to the perceived weight of the action — heavier actions warrant longer feedback.
+- NEVER add animation for decoration; every motion must communicate a state change.
+- NEVER design a microinteraction in isolation from the surrounding flow and context.
+
 
 # Microinteractions Framework
 

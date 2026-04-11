@@ -1,5 +1,6 @@
 ---
 name: technical-feasibility-assessment
+effort: high
 description: >-
   Use when a PM or product team needs a rapid feasibility signal on a feature
   idea before committing engineering time — assessing implementation risk,
@@ -24,6 +25,13 @@ compatibility:
     think-tool이 있으면 5개 가능성 차원(데이터, 인프라, 통합, 팀 역량, 시간)에 대한 판단의 품질이 높아집니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS assess all five feasibility dimensions: data, infrastructure, integration, team capability, and timeline.
+- ALWAYS surface the single highest-risk assumption explicitly.
+- NEVER give a binary feasible/not-feasible answer without a confidence level.
+- NEVER assess feasibility without knowing the team's current stack and capacity constraints.
+
 
 # Technical Feasibility Assessment Framework
 

@@ -1,5 +1,6 @@
 ---
 name: portfolio-company
+effort: high
 description: >-
   Use when someone wants to know which companies or company types their
   portfolio would appeal to — without a specific JD in hand. Triggers on: "which
@@ -20,6 +21,13 @@ compatibility:
     think-tool이 있으면 회사 유형별 핏 점수 판단 품질이 높아집니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS read company signals (engineering blog, job postings, tech stack) before scoring fit.
+- ALWAYS distinguish 'can apply here' from 'strong mutual fit here'.
+- NEVER recommend applying to a company based solely on name recognition.
+- NEVER score fit without knowing the candidate's non-negotiables (location, domain, stack).
+
 
 # Portfolio × Company Fit Analyzer
 

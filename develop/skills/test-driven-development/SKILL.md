@@ -1,5 +1,6 @@
 ---
 name: test-driven-development
+effort: high
 description: >-
   Use when someone wants to drive implementation through tests rather than write
   tests after the fact — new features, bug fixes, or refactors where design
@@ -23,6 +24,13 @@ compatibility:
     think-tool이 있으면 RED 단계에서 실패 이유 검증과 REFACTOR 단계에서 동작 변경 여부 판단이 더 정확해집니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS write a failing test before writing any implementation code.
+- ALWAYS make the smallest possible change to turn RED to GREEN before refactoring.
+- NEVER write implementation first and retrofit tests — that is not TDD.
+- NEVER skip the REFACTOR step after GREEN; green without refactor accumulates design debt.
+
 
 # Test-Driven Development (TDD)
 

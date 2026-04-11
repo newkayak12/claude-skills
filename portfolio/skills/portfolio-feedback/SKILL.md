@@ -1,5 +1,6 @@
 ---
 name: portfolio-feedback
+effort: high
 description: >-
   Use when someone shares a portfolio and wants an overall assessment from an
   interviewer's perspective — overall impression, scoring across dimensions, and
@@ -20,6 +21,13 @@ compatibility:
     think-tool이 있으면 각 차원의 점수 판단 품질이 높아집니다(예: "high traffic system"이 실제 스케일 경험인지
     패턴 매칭인지 구분). Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS read the portfolio as an interviewer would, not as the candidate wrote it.
+- ALWAYS score each dimension before synthesizing overall feedback.
+- NEVER give vague improvement advice — every suggestion must be specific and rewritable.
+- NEVER score technical depth high based solely on technologies listed without evidence of depth.
+
 
 # Backend Developer Portfolio Feedback
 

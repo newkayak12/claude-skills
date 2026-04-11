@@ -1,5 +1,6 @@
 ---
 name: shape-up
+effort: high
 description: >-
   Use when a team is stuck in an infinite backlog, cannot ship complete
   features, or needs a planning process with real tradeoffs and hard
@@ -24,6 +25,13 @@ compatibility:
     think-tool이 있으면 피치 작성 시 토끼굴(rabbit hole)과 no-go 판단의 품질이 높아집니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS define appetite (time budget) before scoping the solution.
+- ALWAYS identify rabbit holes and explicit no-gos in every pitch.
+- NEVER estimate in story points — appetite is the only sizing unit in Shape Up.
+- NEVER let a project roll over past its cycle boundary without a conscious betting table decision.
+
 
 # Shape Up Framework
 

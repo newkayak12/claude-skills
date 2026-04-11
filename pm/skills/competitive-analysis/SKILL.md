@@ -1,5 +1,6 @@
 ---
 name: competitive-analysis
+effort: high
 description: >-
   Use when making a product or business decision where knowing the competitive
   context changes the answer — before a launch, when writing strategy, or when
@@ -29,6 +30,13 @@ compatibility:
     think-tool이 있으면 포지셔닝 맵과 차별화 전략의 논리적 일관성을 검증하는 데 도움이 됩니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS distinguish current state from trajectory — a competitor's momentum matters as much as today's position.
+- ALWAYS identify the primary differentiation axis before listing feature comparisons.
+- NEVER treat feature parity as the goal — parity is table stakes, not differentiation.
+- NEVER present analysis without a 'so what' recommendation the team can act on.
+
 
 ## Purpose
 

@@ -1,5 +1,6 @@
 ---
 name: pricing-monetization-strategy
+effort: max
 description: >-
   Use when deciding how to charge for a product, evaluating a shift from one
   pricing model to another, or when a GTM plan needs pricing addressed before
@@ -28,6 +29,13 @@ compatibility:
     think-tool이 있으면 가격 모델 선택의 트레이드오프와 패키징 설계 논리를 체계적으로 검토하는 데 도움이 됩니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS identify the value metric before designing tiers or pricing levels.
+- ALWAYS validate willingness-to-pay signals before committing to a pricing model.
+- NEVER design pricing without understanding the customer's buying process and budget cycle.
+- NEVER recommend a pricing model change without analyzing impact on churn and expansion revenue.
+
 
 ## Purpose
 

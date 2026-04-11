@@ -1,5 +1,6 @@
 ---
 name: go-to-market-planning
+effort: high
 description: >-
   Use when a product or feature is near-complete and the team needs to answer:
   who do we target first, what do we say, where do we reach them, and how do we
@@ -29,6 +30,13 @@ compatibility:
     think-tool이 있으면 비치헤드 세그먼트 선정과 채널 선택의 트레이드오프 논리를 검증하는 데 도움이 됩니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS define the beachhead segment before setting messaging or channel strategy.
+- ALWAYS separate launch success metrics from product success metrics.
+- NEVER write a GTM plan without defining what success looks like at 30, 60, and 90 days.
+- NEVER conflate channel selection with message design — these are independent decisions.
+
 
 ## Purpose
 

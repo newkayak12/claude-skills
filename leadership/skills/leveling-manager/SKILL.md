@@ -1,5 +1,6 @@
 ---
 name: leveling-manager
+effort: high
 description: >-
   Use when an engineering manager needs to evaluate an engineer's level fairly,
   build a promotion case with evidence, or align with peers in a calibration
@@ -24,6 +25,13 @@ compatibility:
     아니면 현재 레벨의 강한 성과인지 구분하는 판단 품질이 높아집니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS distinguish level evidence from performance evidence — strong performance is not level evidence.
+- ALWAYS prepare counter-arguments to anticipated calibration objections before the meeting.
+- NEVER write a promotion case with general claims — every assertion needs a specific example.
+- NEVER evaluate level by comparing to a single highlight; evaluate against the full rubric.
+
 
 # Engineering Leveling — Manager Framework
 

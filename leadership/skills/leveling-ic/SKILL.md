@@ -1,5 +1,6 @@
 ---
 name: leveling-ic
+effort: high
 description: >-
   Use when an IC wants to understand their current level, close gaps to the next
   level, and build a promotion-ready evidence portfolio. Triggers on: "what does
@@ -23,6 +24,13 @@ compatibility:
     think-tool이 있으면 경험 사례가 실제로 해당 레벨의 증거인지 아니면 현재 레벨의 우수 성과인지
     구분하는 판단 품질이 높아집니다. Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS map each evidence item to a specific level criterion, not to effort or tenure.
+- ALWAYS distinguish 'strong at current level' from 'demonstrating next level behaviors'.
+- NEVER conflate impact (outcomes) with output (tickets closed, lines written).
+- NEVER build a promotion case that only lists strengths — gaps must be named and addressed.
+
 
 # Engineering Leveling — IC Framework
 

@@ -1,5 +1,6 @@
 ---
 name: incident-response-playbook
+effort: high
 description: >-
   Guides the developer-side incident lifecycle from triage through mitigation to
   blameless RCA — with severity classification, Slack update templates,
@@ -21,6 +22,13 @@ compatibility:
     think-tool은 장애 원인 분석과 우선순위 판단에 활용됩니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS classify severity before any other action — severity drives escalation and communication cadence.
+- ALWAYS separate mitigation (restore service) from investigation (find root cause) — do not block one on the other.
+- NEVER assign blame to individuals in post-mortems — focus on systemic factors.
+- NEVER skip the timeline reconstruction step in RCA; gaps in the timeline are often the cause.
+
 
 # Incident Response Playbook
 

@@ -1,5 +1,6 @@
 ---
 name: resume-tailorer
+effort: high
 description: >-
   Use when someone has a resume and a specific job description and wants the
   resume rewritten to match that JD — keyword alignment, achievement reframing,
@@ -20,6 +21,13 @@ compatibility:
     갭 분석 전에 리라이팅이 발생하는 문제를 방지합니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS run JD keyword analysis before rewriting any section.
+- ALWAYS preserve factual accuracy — never invent or inflate achievements.
+- NEVER rewrite without a gap analysis between the current resume and JD requirements.
+- NEVER alter achievement numbers, scope claims, or timeline facts.
+
 
 # Resume Tailorer
 

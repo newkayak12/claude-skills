@@ -1,5 +1,6 @@
 ---
 name: post-launch-retrospective
+effort: high
 description: >-
   Use after a feature or product launch to formally close the cycle: validate
   the original hypothesis, analyze which metrics moved, document learnings, and
@@ -25,6 +26,13 @@ compatibility:
     think-tool이 있으면 런치 실패 유형(론치 실패 vs. 가설 실패 vs. 측정 실패)을 구분하는 데 도움이 됩니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS have the original hypothesis and pre-launch success criteria in hand before starting.
+- ALWAYS distinguish between launch failure, hypothesis failure, and measurement failure before drawing conclusions.
+- NEVER attribute poor metrics to a single cause without ruling out alternatives.
+- NEVER run the retro without a clear decision on what to do next — iterate, pivot, or stop.
+
 
 # Post-Launch Retrospective Framework
 

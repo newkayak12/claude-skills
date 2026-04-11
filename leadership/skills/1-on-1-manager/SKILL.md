@@ -1,5 +1,6 @@
 ---
 name: 1-on-1-manager
+effort: max
 description: >-
   Use when a manager wants to run better 1-on-1s — moving from status-update
   check-ins to growth and feedback conversations that build real trust with
@@ -23,6 +24,13 @@ compatibility:
     think-tool이 있으면 특정 직원 상황에 맞는 코칭 질문 생성 품질이 높아집니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS start with what is on the direct report's mind before the manager's agenda.
+- ALWAYS separate performance feedback from growth coaching within the same conversation.
+- NEVER let 1-on-1s default to project status — redirect with open-ended questions.
+- NEVER give feedback without naming the specific behavior, the impact observed, and an alternative.
+
 
 # 1-on-1 Manager Framework
 
