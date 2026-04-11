@@ -68,21 +68,6 @@ Tactical empathy-based negotiation framework from FBI hostage negotiator Chris V
 - Unconditional positive regard: respect them as a person regardless of disagreement
 - Stay calm and positive -- emotions are contagious; slow pace enables clear thinking
 
-**Product applications:**
-
-| Context | Application | Example |
-|---------|-------------|---------|
-| **Customer support** | Acknowledge frustration before offering solutions | "I understand this outage is affecting your team's ability to deliver on deadline" |
-| **Sales calls** | Demonstrate understanding of prospect's challenges | "It sounds like you're under pressure to show results this quarter" |
-| **Pricing conversations** | Acknowledge budget constraints upfront | "I know that adding another tool to the stack feels risky right now" |
-| **Partnership negotiations** | Show understanding of partner's internal pressures | "Your team probably needs to justify this to leadership" |
-| **Contract renewals** | Recognize changing needs | "It seems like your priorities have shifted since we last spoke" |
-
-**Copy patterns:**
-- "I understand you're dealing with..."
-- "It seems like this is creating pressure for your team..."
-- "I can see why this feels risky..."
-- "Before we talk about next steps, I want to make sure I understand where you're coming from..."
 
 **Ethical boundary:** Use empathy to genuinely understand, not to manipulate emotions. Tactical empathy builds real relationships, not exploitative ones.
 
@@ -102,21 +87,6 @@ See: [references/techniques.md](references/techniques.md)
 - Combines powerfully with labeling and tactical silence
 - The simplest technique but often the most effective for information gathering
 
-**Product applications:**
-
-| Context | Application | Example |
-|---------|-------------|---------|
-| **Discovery calls** | Mirror key concerns to get elaboration | Client: "The timeline is tight." You: "The timeline is tight?" |
-| **User interviews** | Encourage deeper explanation of pain points | User: "It's just frustrating." You: "Frustrating?" |
-| **Objection handling** | Reflect objection to understand root cause | "Doesn't fit your budget?" |
-| **Negotiation emails** | Mirror key phrases in written responses | "You mentioned the partnership 'doesn't make sense'..." |
-| **Feedback sessions** | Encourage elaboration on vague feedback | "Not quite what you expected?" |
-
-**Copy patterns:**
-- "[Key phrase they used]?" (with question mark)
-- "You mentioned [their exact words]..."
-- "When you say [mirror], what does that look like?"
-- "Not quite right?" (after they hesitate)
 
 **Ethical boundary:** Mirror to understand, not to manipulate people into revealing information they want to keep private.
 
@@ -136,21 +106,6 @@ See: [references/techniques.md](references/techniques.md)
 - Combine labels with tactical silence for maximum effect
 - Watch for emotional shifts that signal you've hit the mark
 
-**Product applications:**
-
-| Context | Application | Example |
-|---------|-------------|---------|
-| **Customer complaints** | Name the frustration before solving | "It sounds like you feel let down by our response time" |
-| **Sales objections** | Label the underlying concern | "It seems like there's a concern about implementation risk" |
-| **Team conflicts** | Surface unspoken tensions | "It looks like there's frustration about how decisions are being made" |
-| **Pricing pushback** | Acknowledge the emotional reaction | "It seems like the price feels disconnected from the value you've seen so far" |
-| **Churn prevention** | Identify the real reason for leaving | "It sounds like something changed since you first signed up" |
-
-**Copy patterns:**
-- "It seems like..."
-- "It sounds like you're feeling..."
-- "It looks like this is creating..."
-- "If I'm reading this right, it feels like..."
 
 **Ethical boundary:** Label emotions to show understanding, not to weaponize someone's feelings against them.
 
@@ -170,22 +125,6 @@ See: [references/techniques.md](references/techniques.md)
 - Exception for "Why": use only when you want them to defend something favorable to you ("Why would you ever choose our company?")
 - Follow every "yes" with "How...?" to ensure implementation commitment
 
-**Product applications:**
-
-| Context | Application | Example |
-|---------|-------------|---------|
-| **Price negotiation** | Push back without refusing | "How am I supposed to do that at that price point?" |
-| **Scope creep** | Make them own the constraint | "What happens to the timeline if we add this?" |
-| **Stakeholder alignment** | Uncover hidden decision-makers | "How does your team typically make decisions like this?" |
-| **Contract terms** | Surface implementation concerns | "What does the approval process look like on your end?" |
-| **Feature requests** | Redirect to real needs | "What's the biggest challenge you're trying to solve?" |
-
-**Copy patterns:**
-- "How am I supposed to do that?"
-- "What's the biggest challenge you're facing?"
-- "How can we make this work for both of us?"
-- "What would it take to make this happen?"
-- "How does this affect your team?"
 
 **Ethical boundary:** Use calibrated questions to create genuine collaboration, not to trap people into commitments they don't want to make.
 
@@ -205,21 +144,6 @@ See: [references/techniques.md](references/techniques.md)
 - Particularly powerful when you're the party with less leverage
 - Combine with tactical empathy for maximum disarming effect
 
-**Product applications:**
-
-| Context | Application | Example |
-|---------|-------------|---------|
-| **Price increase announcement** | Preempt anger before explaining | "You're probably thinking we don't value your loyalty..." |
-| **Sales cold outreach** | Acknowledge the intrusion | "I know you're busy and the last thing you want is another sales pitch..." |
-| **Difficult product feedback** | Disarm defensiveness | "You might think we haven't been listening to your feedback..." |
-| **Contract renegotiation** | Address power imbalance | "You probably feel like we're trying to squeeze more out of this..." |
-| **Service failure recovery** | Own the failure fully | "You're probably furious, and you have every right to be..." |
-
-**Copy patterns:**
-- "You probably think..."
-- "You may feel like..."
-- "I know this might seem like..."
-- "You might be wondering why you should even listen to..."
 
 **Ethical boundary:** Use accusation audits to build trust through transparency, not to preemptively shut down legitimate concerns.
 
@@ -240,21 +164,6 @@ See: [references/techniques.md](references/techniques.md)
 - Use the Rule of Three: confirm agreement 3 times in 3 different ways to ensure commitment
 - Apply the "No" technique first -- let them say "No" to feel safe, then work toward "That's right"
 
-**Product applications:**
-
-| Context | Application | Example |
-|---------|-------------|---------|
-| **Sales closing** | Summarize their needs before proposing | "So your team needs X, you're worried about Y, and Z is the deal-breaker..." |
-| **Customer retention** | Show you understand why they're leaving | "Let me make sure I have this: the product isn't delivering on the promise we made..." |
-| **Stakeholder buy-in** | Summarize concerns before pitching | "What I'm hearing is that the risk feels too high given the current roadmap..." |
-| **Team alignment** | Validate before redirecting | "So the concern is that this initiative will stretch the team too thin..." |
-| **Negotiation closure** | Confirm understanding before terms | "Let me make sure I understand: you need [X], by [date], and [constraint]..." |
-
-**Copy patterns:**
-- "Let me make sure I understand..."
-- "So what you're saying is..."
-- "If I'm hearing you correctly..."
-- "It sounds like [complete summary of their position including emotions]..."
 
 **Ethical boundary:** Seek "That's right" through genuine understanding, not through manipulative reframing of their position.
 
@@ -275,21 +184,6 @@ See: [references/techniques.md](references/techniques.md)
 - Never make concessions without getting something in return
 - If they anchor with an extreme number, don't counter -- use calibrated questions: "How did you arrive at that figure?"
 
-**Product applications:**
-
-| Context | Application | Example |
-|---------|-------------|---------|
-| **Salary negotiation** | Structure counter-offers systematically | Target $120K: open discussion at $78K, move to $102K, $114K, final $120,350 + extra PTO |
-| **Vendor pricing** | Methodical price reduction | Target $50K: start at $32.5K, move to $42.5K, $47.5K, final $49,850 + extended payment terms |
-| **Contract value** | Anchor and increment strategically | Set target, open low, concede in shrinking amounts with precise figures |
-| **SaaS enterprise deals** | Multi-year pricing negotiations | Use decreasing discount increments across contract years |
-| **Freelance rates** | Project-based negotiation | Anchor with lower scope, expand incrementally with precise totals |
-
-**Copy patterns:**
-- "Based on our analysis, we can offer $[precise number]..."
-- "We've stretched as far as we can -- $[precise number], and we'll include [non-monetary bonus]"
-- "I've gone back to my team and the absolute best we can do is $[precise number]"
-- "To make this work, how about $[precise number] with [non-monetary addition]?"
 
 **Ethical boundary:** Use the Ackerman method for fair negotiations, not to lowball or exploit people who lack negotiation skills.
 
@@ -310,21 +204,6 @@ See: [references/techniques.md](references/techniques.md)
 - If they seem irrational, diagnose: are they (1) ill-informed, (2) constrained, or (3) hiding something?
 - Use three types of leverage -- positive (what they want), negative (what they fear), and normative (their own stated values) -- to surface hidden information
 
-**Product applications:**
-
-| Context | Application | Example |
-|---------|-------------|---------|
-| **Enterprise sales** | Discover hidden budget or timeline constraints | "What happens internally if this doesn't get resolved by Q3?" |
-| **Churn analysis** | Uncover the real reason behind cancellation | "It seems like something changed -- what happened?" |
-| **Partnership deals** | Surface unstated strategic motivations | "How does this fit into your bigger picture for next year?" |
-| **Hiring negotiations** | Discover candidate's true priorities | "What would make you regret not taking this offer?" |
-| **Competitive situations** | Reveal information about competing offers | "It sounds like you're weighing other options -- what would help you decide?" |
-
-**Copy patterns:**
-- "What's the biggest thing I'm missing here?"
-- "What would change everything about this situation?"
-- "Help me understand -- what's really driving this?"
-- "If there's something I should know that would make this work better for both of us..."
 
 **Ethical boundary:** Hunt for Black Swans to create better outcomes for both sides, not to exploit private or sensitive information.
 
@@ -344,68 +223,3 @@ See: [references/techniques.md](references/techniques.md)
 **They seem irrational:**
 - Diagnose: Are they (1) ill-informed, (2) constrained, or (3) hiding something?
 - Use calibrated questions to uncover which
-
-## Counterpart Styles
-
-Adapt your approach based on their negotiation style:
-
-| Style | Signs | Adapt by... |
-|-------|-------|-------------|
-| **Analyst** | Methodical, data-driven, hates surprises | Use facts, be patient, don't rush |
-| **Accommodator** | Friendly, relationship-focused, avoids conflict | Build rapport, but pin down specifics |
-| **Assertive** | Direct, time-conscious, wants to win | Be efficient, stand firm, acknowledge their points |
-
-**Insight:** Great negotiators borrow from all three styles as needed.
-
-## Voice and Delivery
-
-- **Default voice**: Positive, warm, light-hearted (with a smile)
-- **Critical moments**: Late-Night DJ Voice -- slow, calm, downward inflection
-- **After key statements**: Pause 4+ seconds (tactical silence)
-- **Watch their nonverbals**: 7% words, 38% tone, 55% body language
-
-## Common Mistakes
-
-| Mistake | Why It Fails | Fix |
-|---------|-------------|------|
-| **Splitting the difference** | Creates lukewarm outcomes nobody is happy with | Hold firm; no deal is better than a bad deal |
-| **Pushing for "yes"** | Makes people defensive and produces counterfeit agreement | Pursue "That's right" instead; let them say "No" first |
-| **Arguing your position** | Triggers resistance and shuts down listening | Use calibrated questions and labels to let them talk |
-| **Skipping the accusation audit** | Unaddressed objections fester and derail later | List every negative they might think; address them early |
-| **Countering an extreme anchor immediately** | Validates their anchor as the starting point | Mirror, label, ask "How did you arrive at that?" |
-| **Using "Why?"** | Sounds accusatory and triggers defensiveness | Replace with "What" and "How" questions |
-| **Treating "You're right" as success** | It means they want you to go away, not that they agree | Keep working toward "That's right" |
-
-## Quick Diagnostic
-
-Audit any negotiation preparation or live interaction:
-
-| Question | If No | Action |
-|----------|-------|--------|
-| Have I prepared an accusation audit? | Objections will blindside you | List every negative they might think; address early |
-| Do I have 3-5 calibrated questions ready? | You'll default to arguing | Draft "How" and "What" questions targeting their needs |
-| Have I identified my BATNA? | You'll accept a bad deal under pressure | Define your walk-away point before negotiating |
-| Am I aiming for "That's right"? | You'll chase counterfeit "yes" | Summarize their position until they affirm genuinely |
-| Have I considered their negotiation style? | One-size-fits-all approach will misfire | Assess if they're Analyst, Accommodator, or Assertive |
-| Am I hunting for Black Swans? | You'll miss game-changing information | Stay curious; watch for anomalies; ask about the unexpected |
-
-## Reference Files
-
-- [techniques.md](references/techniques.md): Complete technique breakdowns including mirroring, labeling, tactical empathy, voice control, accusation audit, calibrated questions, no-oriented questions, "That's right", Ackerman method, Black Swans, counterpart styles, body language, and pronoun analysis with examples and psychological triggers
-
-## Related Skills
-
-- `decision-maker` — 협상 전 수용 가능한 조건의 범위와 BATNA를 구조적으로 결정해야 할 때
-- `devils-advocate` — 내 협상 전략의 약점과 상대방이 제기할 수 있는 반론을 미리 검증할 때
-- `first-principles` — 협상 관행이나 업계 관례를 당연시하지 않고 근본부터 나의 포지션을 재검토할 때
-
-## Further Reading
-
-This skill is based on Chris Voss's research and experience as an FBI hostage negotiator. For the complete methodology, case studies, and advanced techniques:
-
-- [*"Never Split the Difference: Negotiating As If Your Life Depended On It"*](https://www.amazon.com/Never-Split-Difference-Negotiating-Depended/dp/0062407805?tag=wondelai00-20) by Chris Voss with Tahl Raz
-- [*"The Full Fee Agent: How to Stack the Odds in Your Favor as a Real Estate Professional"*](https://www.amazon.com/Full-Fee-Agent-Stack-Professional/dp/1544534655?tag=wondelai00-20) by Chris Voss and Steve Shull (applying Voss's negotiation principles to real estate and professional services)
-
-## About the Author
-
-**Chris Voss** is a former FBI lead international kidnapping negotiator and the founder of the Black Swan Group, a consulting firm that trains businesses in tactical negotiation. During his 24-year career at the FBI, Voss was the Bureau's lead negotiator for international kidnapping cases and worked more than 150 hostage situations worldwide. He has taught negotiation at Harvard Law School, Georgetown University's McDonough School of Business, and MIT's Sloan School of Management. *Never Split the Difference* has become one of the most widely recommended business books in the world and has been translated into dozens of languages. Voss's methods are now used by Fortune 500 companies, law enforcement agencies, and professionals across every industry.

@@ -237,33 +237,3 @@ When a manager asks for help **running a specific meeting**, produce:
 | Upward feedback request | Regular, specific | "I want your honest take: is there something I do in our 1-on-1s that makes it harder for you to raise hard things?" |
 | Trust repair | Name the gap directly | "I realize I cancelled our last two 1-on-1s — that sent a bad signal. I want to change that." |
 | Safety check | Test psychological safety | "If something was really bothering you about how the team operates, would you feel comfortable bringing it to me?" |
-
-## Common Mistakes
-
-| Mistake | Why It Fails | Fix |
-|---------|-------------|-----|
-| Status update meetings | Project status belongs in async channels; 1-on-1 is for the person | Redirect: "Post that in Slack. What do you want to talk about?" |
-| Manager-set agenda | Employee becomes passive; real issues don't surface | Employee owns the agenda doc; manager adds topics only at the bottom |
-| Frequent cancellations | Signal: "your development is not a priority" | Never cancel; always reschedule with same urgency |
-| Advice instead of coaching | Employee doesn't develop judgment; manager creates dependency | Lead with questions: "What do you think?" before offering perspective |
-| No follow-through | Commitments made but not kept; trust erodes | Document action items in the shared doc; review at the start of every meeting |
-| Annual-only feedback | Issues compound; growth is too slow | Build feedback into every 1-on-1 — positive and developmental |
-| Skipping growth conversations | Employee feels like a resource, not a person | Ask about growth goals in early 1-on-1s; revisit quarterly |
-
-## Quick Diagnostic
-
-| Question | If No | Action |
-|----------|-------|--------|
-| Are 1-on-1s happening weekly at a fixed time? | Meetings are irregular or frequently cancelled | Block weekly time; treat as non-negotiable |
-| Does the employee set the agenda? | Manager drives the topics | Create shared doc; employee adds topics throughout the week |
-| Do conversations focus on the person, not the project? | Most time is status updates | Redirect project status to async; save 1-on-1 time for growth, blockers, and feedback |
-| Do you know each employee's growth goals? | Growth isn't discussed or tracked | Ask "where do you want to grow?" in next 1-on-1; document in shared doc |
-| Are follow-through items reviewed at the start of each meeting? | Commitments are made but not tracked | Add "last time's follow-through" as first item in shared doc |
-| Do you regularly solicit upward feedback? | You learn about problems from other managers, not your reports | Ask "what's one thing I could do differently?" at least monthly |
-
-## Further Reading
-
-- [*"The Manager's Path"*](https://www.amazon.com/Managers-Path-Leaders-Navigating-Growth/dp/1491973897) by Camille Fournier — engineering management from tech lead to CTO
-- [*"An Elegant Puzzle: Systems of Engineering Management"*](https://www.amazon.com/Elegant-Puzzle-Systems-Engineering-Management/dp/1732265186) by Will Larson — structured approach to engineering leadership
-- [*"The Coaching Habit"*](https://www.amazon.com/Coaching-Habit-Less-Change-Forever/dp/0978440749) by Michael Bungay Stanier — seven essential coaching questions for managers
-- [*"Radical Candor"*](https://www.amazon.com/Radical-Candor-Revised-Kick-Ass-Humanity/dp/1250235375) by Kim Scott — feedback and care in management relationships

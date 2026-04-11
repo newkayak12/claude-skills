@@ -237,29 +237,3 @@ The four input-gathering activities below are fully independent — collect them
 See `examples/sample.md` for full roadmap examples including good vs. bad roadmap comparison, epic hypotheses, RICE scoring, and quarterly sequencing.
 
 ---
-
-## References
-
-### Related Skills (Orchestrated by This Workflow)
-
-**Phase 2:**
-- `skills/epic-hypothesis/SKILL.md` (component)
-
-**Phase 3:**
-- `skills/prioritization-advisor/SKILL.md` (interactive)
-
-**Optional/Related:**
-- `skills/product-strategy-session/SKILL.md` (workflow) — Run before roadmap planning to establish strategy
-- `skills/discovery-process/SKILL.md` (workflow) — Provides customer problem inputs for Phase 1
-- `skills/user-story-mapping-workshop/SKILL.md` (interactive) — For complex epics requiring release planning
-
-### Anti-Patterns
-See `references/anti-patterns.md` for symptom/consequence/fix detail on each roadmap pitfall.
-
-### Roadmap Types
-See `references/roadmap-types.md` for descriptions of Now/Next/Later, Theme-Based, Timeline, and Feature-Based roadmap formats.
-
-### External Frameworks
-- Bruce McCarthy, *Product Roadmaps Relaunched* (2017) — Outcome-driven roadmaps
-- C. Todd Lombardo, *Product Roadmaps Relaunched* (2017) — Now/Next/Later framework
-- Intercom, "RICE Prioritization" (2016) — Prioritization framework

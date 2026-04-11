@@ -237,21 +237,3 @@ Use for agenda preparation:
 | Dropping follow-through | Trust erodes; manager updates their model of your reliability | Track your own commitments; close loops proactively |
 | Vague career aspirations | Manager can't help without knowing what you want | Spend 15 minutes writing: "In 2 years, I want to be able to do X. I want to be known for Y." |
 | Treating 1-on-1 as performance review | You perform, they grade; no real dialogue | Ask questions; bring your real thoughts; disagree respectfully when you do |
-
-## Quick Diagnostic
-
-| Question | If No | Action |
-|----------|-------|--------|
-| Do you come with a prepared agenda every week? | You show up and react to your manager's questions | Start a running list; add topics throughout the week; review and prioritize before the meeting |
-| Have you told your manager what you want from your career? | Your manager doesn't know what to help you with | Write it down first, then share: "I want to grow toward X — here's my thinking" |
-| Do you ask for specific feedback after specific events? | Feedback is vague or absent | After a presentation, design review, or incident: "Can I get your quick feedback on how I handled that?" |
-| Have you given your manager honest upward feedback in the last month? | Problems persist because they're unnamed | Start with positive feedback; build the habit; then address the harder things |
-| Do you follow through on 1-on-1 commitments reliably? | Trust is lower than it could be | Track your own commitments in a note; close loops before the next meeting |
-| Do you understand what your manager's biggest current pressures are? | Relationship is one-directional | Ask: "What's most on your mind this quarter? Where are you under pressure?" |
-
-## Further Reading
-
-- [*"The Manager's Path"*](https://www.amazon.com/Managers-Path-Leaders-Navigating-Growth/dp/1491973897) by Camille Fournier — also written for ICs who want to understand the management perspective
-- [*"The Coaching Habit"*](https://www.amazon.com/Coaching-Habit-Less-Change-Forever/dp/0978440749) by Michael Bungay Stanier — how to ask better questions (useful for ICs too)
-- [*"Radical Candor"*](https://www.amazon.com/Radical-Candor-Revised-Kick-Ass-Humanity/dp/1250235375) by Kim Scott — feedback frameworks applicable to ICs giving upward feedback
-- [*"The Making of a Manager"*](https://www.amazon.com/Making-Manager-What-Everyone-Looks/dp/0735219567) by Julie Zhuo — IC to manager transition, useful for understanding what managers are thinking

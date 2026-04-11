@@ -243,12 +243,3 @@ No-gos: [Explicit exclusions — what is OUT of this pitch]
 | Are cycles ending without extensions? | Circuit breaker is theoretical, not practiced | Hard stop at cycle end; ship what's ready; re-pitch unfinished work |
 | Is cool-down protected from overflow work? | Cool-down is used to finish last cycle's work | Enforce cool-down as free time; shape-only activities |
 | Are hill charts used instead of burndown? | Team has no visibility into "figuring it out" vs "executing" | Introduce hill charts for each scope in the cycle |
-
-## Further Reading
-
-- [*"Shape Up: Stop Running in Circles and Ship Work That Matters"*](https://basecamp.com/shapeup) by Ryan Singer — free to read online at basecamp.com/shapeup
-- [*"It Doesn't Have to Be Crazy at Work"*](https://www.amazon.com/Doesnt-Have-Be-Crazy-Work/dp/0062874780) by Jason Fried & David Heinemeier Hansson — the philosophy behind Shape Up
-
-## About the Author
-
-**Ryan Singer** led product strategy at Basecamp for over 15 years and developed Shape Up as the internal method Basecamp used to build and ship products including Basecamp itself, HEY (email), and other tools. Shape Up was published online for free in 2019 after being practiced internally for over a decade. Singer developed the methodology in response to the specific failures of Scrum and Agile sprints as practiced in most organizations: estimation theater, infinite backlogs, and the loss of creative problem-solving in favor of task execution. Basecamp (now 37signals) continues to use Shape Up and has become a case study in calm, sustainable, high-quality product development.

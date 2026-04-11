@@ -245,21 +245,3 @@ Promotion case structure:
 | Not sharing rubrics with engineers | Engineers can't develop toward unknown criteria | Share rubrics in 1-on-1s; review them together; let engineers self-assess |
 | Sugarcoating a not-yet decision | Engineer doesn't change behavior; repeat cycles of disappointment | Be specific and honest about the gap; provide a concrete path forward |
 | Conflating performance and level | High performer at L4 gets L5 promotion before demonstrating L5 scope | Keep performance and leveling discussions separate; both matter, neither substitutes for the other |
-
-## Quick Diagnostic
-
-| Question | If No | Action |
-|----------|-------|--------|
-| Do you have a documented level rubric for each engineer you manage? | Leveling is intuition-based | Find or create the rubric; share it with engineers in next 1-on-1 |
-| Do you keep running evidence notes throughout the year? | Promotion cases rely on recent memory | Start a per-engineer doc today; write the first entry about something that happened this week |
-| Do your promotion cases include 2-3 examples per rubric dimension? | Cases are thin and rely on narrative | Audit your last promotion case; count the examples per dimension; strengthen any that have fewer than 2 |
-| Do engineers know the specific gap between their current and next level? | Engineers are developing toward an unknown target | Share the rubric; discuss where they are on each dimension; name the gap specifically |
-| Are you soliciting input from engineers and managers outside your team? | Evidence is one-dimensional | Ask 2-3 stakeholders for specific examples before writing the promotion case |
-| Do you communicate not-yet decisions with a specific gap and path? | Engineers leave or disengage after declined promotions | Define the gap in observable terms; set a timeline; create opportunities to close it |
-
-## Further Reading
-
-- [*"An Elegant Puzzle: Systems of Engineering Management"*](https://www.amazon.com/Elegant-Puzzle-Systems-Engineering-Management/dp/1732265186) by Will Larson — engineering career ladders and calibration systems
-- [*"The Manager's Path"*](https://www.amazon.com/Managers-Path-Leaders-Navigating-Growth/dp/1491973897) by Camille Fournier — leveling across the engineering career arc
-- [*"High Output Management"*](https://www.amazon.com/High-Output-Management-Andrew-Grove/dp/0679762884) by Andy Grove — performance assessment and output thinking for managers
-- [Gergely Orosz's Engineering Career Ladders](https://blog.pragmaticengineer.com/the-software-engineer-career-ladder/) — practical analysis of how real companies structure levels
