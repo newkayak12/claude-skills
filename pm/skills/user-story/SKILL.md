@@ -1,5 +1,6 @@
 ---
 name: user-story
+effort: high
 description: >-
   Use when someone needs to write a single user story or a small set of stories
   — translating a known user need into a structured, development-ready format
@@ -22,6 +23,13 @@ compatibility:
     think-tool이 있으면 완성된 스토리의 INVEST 기준 검증 품질이 높아집니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS include acceptance criteria with every story.
+- ALWAYS write from the user's perspective using the 'As a [role]...' format.
+- NEVER combine multiple distinct user goals in a single story.
+- NEVER write acceptance criteria as implementation instructions — they describe behavior, not code.
+
 
 ## When to Use / When Not to Use
 

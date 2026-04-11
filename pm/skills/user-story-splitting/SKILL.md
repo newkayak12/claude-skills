@@ -1,5 +1,6 @@
 ---
 name: user-story-splitting
+effort: high
 description: >-
   Use when a user story, epic, or feature is too large to estimate, sequence, or
   release independently — breaking it into smaller, independently deliverable
@@ -20,6 +21,13 @@ compatibility:
     think-tool이 있으면 분리된 스토리가 독립적으로 배포 가능하고 사용자 가치를 전달하는지 검증 품질이 높아집니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS verify each split story delivers independent, standalone user value.
+- ALWAYS check that split stories can be deployed and tested independently.
+- NEVER split by technical layer (frontend/backend) — splits must follow user value boundaries.
+- NEVER split by UI component unless each component delivers value without the others.
+
 
 ## When to Use / When Not to Use
 

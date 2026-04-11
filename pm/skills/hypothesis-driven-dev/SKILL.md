@@ -1,5 +1,6 @@
 ---
 name: hypothesis-driven-dev
+effort: high
 description: >-
   Use when testing a product idea before committing to building it, or when a
   team needs to validate a key assumption with the smallest possible experiment.
@@ -26,6 +27,13 @@ compatibility:
     think-tool이 있으면 가설의 반증 가능성과 가장 위험한 가정을 체계적으로 검토하는 데 도움이 됩니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS state the falsifiable condition before designing the experiment.
+- ALWAYS identify the riskiest assumption first and test it before secondary assumptions.
+- NEVER design an experiment that cannot disprove the hypothesis.
+- NEVER start building before the hypothesis is written and the success threshold is defined.
+
 
 # Hypothesis-Driven Development Framework
 

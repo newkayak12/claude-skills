@@ -1,5 +1,6 @@
 ---
 name: okr-planning
+effort: high
 description: >-
   Use when defining team or company goals for a quarter, aligning cross-team
   efforts, or when goals exist but progress is unclear and teams are pulling in
@@ -25,6 +26,13 @@ compatibility:
     think-tool이 있으면 OKR 간 정렬 논리와 stretch vs. committed 구분의 일관성을 검토하는 데 도움이 됩니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS distinguish outcome Key Results from output Key Results — outputs are not OKRs.
+- ALWAYS verify alignment to the parent company or team OKR before finalizing.
+- NEVER accept 'ship feature X' as a Key Result.
+- NEVER set OKRs without agreeing upfront on how they will be graded at cycle end.
+
 
 # OKR Planning Framework
 

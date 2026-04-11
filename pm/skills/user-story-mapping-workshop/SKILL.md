@@ -1,5 +1,6 @@
 ---
 name: user-story-mapping-workshop
+effort: high
 description: >-
   Use when someone wants to be guided interactively through building a story map
   — step by step through scope, personas, backbone activities, tasks, and
@@ -22,6 +23,13 @@ compatibility:
     sequential-thinking이 있으면 질문 간 상태를 유지하며 수정 사항이 후속 출력에 정확히 반영됩니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS start with user goals before moving to activities and tasks — goal-first, task-second.
+- ALWAYS make release decisions as explicit horizontal slices, not vague 'MVP' labels.
+- NEVER let technical layer thinking dominate the backbone structure.
+- NEVER proceed to task decomposition without participants validating the backbone.
+
 
 ## When to Use / When Not to Use
 

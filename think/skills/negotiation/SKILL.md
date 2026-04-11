@@ -1,5 +1,6 @@
 ---
 name: negotiation
+effort: max
 description: >-
   Use when someone needs to negotiate, persuade, or navigate a hard
   conversation. Triggers on: "연봉 협상", "salary negotiation", "계약 협상", "거절당했어",
@@ -29,6 +30,13 @@ metadata:
   author: wondelai
   version: "1.1.1"
 ---
+## Standing Mandates
+
+- ALWAYS identify your BATNA before entering any negotiation.
+- ALWAYS prepare at least two black swans — unknown drivers that could shift the counterpart's position.
+- NEVER anchor on position; anchor on interests and let the counterpart fill in the position.
+- NEVER treat the first offer as the floor — the real negotiation space is rarely visible at the start.
+
 
 # Negotiation
 

@@ -1,5 +1,6 @@
 ---
 name: contagious
+effort: max
 description: >-
   Use when someone wants to make a product, feature, campaign, or idea spread
   through word-of-mouth or organic sharing. Triggers on: "word of mouth",
@@ -25,6 +26,13 @@ compatibility:
     think-tool이 있으면 STEPPS 점수 분석과 개선 우선순위 판단에 도움이 됩니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS score the idea against STEPPS before recommending virality changes.
+- ALWAYS identify the trigger mechanism — what cue prompts sharing in real life.
+- NEVER recommend a viral mechanic without identifying the social currency it creates.
+- NEVER treat virality as a feature to add at the end; it must be designed in from the start.
+
 
 # Word-of-Mouth & Virality Framework
 

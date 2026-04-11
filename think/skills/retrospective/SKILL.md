@@ -1,5 +1,6 @@
 ---
 name: retrospective
+effort: high
 description: >-
   Use when someone wants to reflect on a completed period to extract lessons and
   commit to improvements. Triggers on: "회고해줘", "스프린트 회고", "retrospective",
@@ -26,6 +27,13 @@ related:
   - decision-maker
   - first-principles
 ---
+## Standing Mandates
+
+- ALWAYS ensure every Problem item maps to at least one Try action before closing.
+- ALWAYS distinguish systemic issues from one-time events — they require different responses.
+- NEVER let the retro end without specific owners and due dates on every action item.
+- NEVER run 5 Whys past the point where a systemic root cause is identified — deeper is not always better.
+
 
 # Retrospective
 

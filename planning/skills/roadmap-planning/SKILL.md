@@ -1,5 +1,6 @@
 ---
 name: roadmap-planning
+effort: high
 description: >-
   Use when product goals or competing initiatives need to become a sequenced,
   stakeholder-ready roadmap. Triggers on: "로드맵 만들어줘", "분기 계획", "roadmap
@@ -24,6 +25,13 @@ compatibility:
     sequential-thinking이 있으면 에픽 의존성 그래프를 체계적으로 열거하고 위상 정렬할 수 있습니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS map dependencies between epics before sequencing — unresolved dependencies invalidate the order.
+- ALWAYS distinguish committed items from aspirational items explicitly.
+- NEVER build a roadmap without real capacity constraints from the team.
+- NEVER sequence work without stakeholder alignment on the top-level outcome priorities.
+
 
 ## Key Concepts
 

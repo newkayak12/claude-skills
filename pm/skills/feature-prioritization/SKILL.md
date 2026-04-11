@@ -1,5 +1,6 @@
 ---
 name: feature-prioritization
+effort: high
 description: >-
   Use when there are more things to build than capacity allows and the team
   needs a defensible, data-backed order. Triggers on: "backlog 정리", "우선순위 정해줘",
@@ -29,6 +30,13 @@ compatibility:
     think-tool이 있으면 RICE 점수의 근거와 트레이드오프 논리를 검증하는 데 도움이 됩니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS make scoring criteria explicit and agreed-upon before scoring anything.
+- ALWAYS separate impact estimation from effort estimation to avoid anchoring bias.
+- NEVER let stakeholder volume or seniority substitute for data in prioritization decisions.
+- NEVER prioritize a backlog without first defining 'priority toward which goal this cycle'.
+
 
 # Feature Prioritization
 

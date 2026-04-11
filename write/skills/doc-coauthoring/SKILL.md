@@ -1,5 +1,6 @@
 ---
 name: doc-coauthoring
+effort: max
 description: >-
   Use when starting a substantial written artifact that will be read by others.
   Triggers on: "문서 같이 써줘", "PRD 작성", "design doc", "RFC 초안", "제안서 써야 해",
@@ -18,6 +19,13 @@ compatibility:
     think-tool이 있으면 어떤 섹션부터 시작할지, 어떤 섹션이 가장 불확실한지 체계적으로 판단할 수 있습니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS detect available output format (artifacts vs markdown) in Stage 1 before drafting.
+- ALWAYS ask who the primary reader is before drafting any section.
+- NEVER draft all sections upfront — complete and validate one section before moving to the next.
+- NEVER start writing without knowing the single most important question the document must answer.
+
 
 # Doc Co-Authoring Workflow
 

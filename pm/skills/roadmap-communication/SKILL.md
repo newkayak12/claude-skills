@@ -1,5 +1,6 @@
 ---
 name: roadmap-communication
+effort: high
 description: >-
   Focuses on ARTIFACTS and MESSAGES: turning a prioritized plan into clear,
   audience-specific communication that lands with engineering, executives,
@@ -24,6 +25,13 @@ metadata:
   author: wondelai
   version: "1.0.0"
 ---
+## Standing Mandates
+
+- ALWAYS tailor format and level of detail to the specific audience — exec decks ≠ engineering briefs.
+- ALWAYS explain the sequencing rationale, not just the sequence.
+- NEVER show dates without explicit confidence levels attached.
+- NEVER present a roadmap without flagging significant items that are NOT on it and why.
+
 
 # Roadmap Communication Framework
 

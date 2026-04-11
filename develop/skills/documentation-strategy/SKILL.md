@@ -1,5 +1,6 @@
 ---
 name: documentation-strategy
+effort: high
 description: >-
   Plans and maintains a documentation system across architecture docs, API
   references, runbooks, and onboarding guides — producing a doc coverage map and
@@ -21,6 +22,13 @@ compatibility:
     sequential-thinking은 감사 → 우선순위 → 작성 → 검토 흐름을 단계별로 구조화합니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS audit existing docs before recommending new ones — redundant docs are worse than none.
+- ALWAYS specify audience and maintenance owner for every doc type recommended.
+- NEVER treat all doc types the same — ADRs, runbooks, and onboarding guides serve different readers.
+- NEVER recommend creating documentation without a plan for keeping it current.
+
 
 # Documentation Strategy
 

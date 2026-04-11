@@ -1,5 +1,6 @@
 ---
 name: prd-development
+effort: high
 description: >-
   Use when turning scattered discovery notes, Slack threads, or stakeholder
   requests into a structured PRD that engineers can act on. Triggers on: "PRD
@@ -33,6 +34,13 @@ compatibility:
     think-tool이 있으면 문제 정의와 성공 지표 간 일관성, 스코프 경계의 논리를 검증하는 데 도움이 됩니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS state the problem and user persona before writing any requirements.
+- ALWAYS define success metrics before listing solution requirements.
+- NEVER write requirements without a clear user scenario that motivates them.
+- NEVER conflate 'what we are building' with 'why we are building it' — keep problem and solution sections separate.
+
 
 ## Key Concepts
 

@@ -1,5 +1,6 @@
 ---
 name: 1-on-1-ic
+effort: max
 description: >-
   Use when an individual contributor wants to get more value from 1-on-1s with
   their manager — preparing agendas, driving career conversations, surfacing
@@ -23,6 +24,13 @@ compatibility:
     think-tool이 있으면 어떤 피드백이 적절한 타이밍인지, 어떤 어려운 주제를 먼저 꺼내야 하는지
     판단하는 품질이 높아집니다. Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS prepare a specific agenda item — arriving with no plan wastes the time.
+- ALWAYS support career conversations with concrete evidence, not just intent or feeling.
+- NEVER use 1-on-1 time for status updates that could be shared async.
+- NEVER raise feedback without a specific behavior example and its observed impact.
+
 
 # 1-on-1 IC Framework
 

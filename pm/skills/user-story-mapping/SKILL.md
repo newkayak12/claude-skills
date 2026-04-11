@@ -1,5 +1,6 @@
 ---
 name: user-story-mapping
+effort: high
 description: >-
   Use when someone wants to generate a structured user story map directly from
   existing context — outputting a two-dimensional artifact with backbone
@@ -21,6 +22,13 @@ compatibility:
     think-tool이 있으면 MVP vs. 미래 릴리스 범위 우선순위 판단 품질이 높아집니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS organize backbone activities by user workflow, not by system or technical layers.
+- ALWAYS validate that the backbone represents real user goals before adding tasks.
+- NEVER create a story map without a persona anchoring the user perspective.
+- NEVER leave all tasks at equal priority — release slices must cut horizontally across the map.
+
 
 ## When to Use / When Not to Use
 

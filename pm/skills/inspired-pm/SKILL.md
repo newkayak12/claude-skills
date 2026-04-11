@@ -1,5 +1,6 @@
 ---
 name: inspired-pm
+effort: high
 description: >-
   Use when applying Marty Cagan's empowered product team model — continuous
   discovery, outcome ownership, four-risk validation before delivery. Triggers
@@ -25,6 +26,13 @@ compatibility:
     think-tool이 있으면 네 가지 제품 리스크 평가와 아웃컴 지표 설계에 도움이 됩니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS separate discovery work from delivery work — do not let delivery crowd out discovery.
+- ALWAYS validate all four risks (value, usability, feasibility, viability) before committing to build.
+- NEVER treat a feature request as a solution — reframe every request as a problem to solve.
+- NEVER ship without knowing which outcome metric the team expects to move.
+
 
 # Inspired Product Management Framework
 
