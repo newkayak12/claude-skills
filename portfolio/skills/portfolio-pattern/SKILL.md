@@ -14,11 +14,13 @@ scenarios:
 compatibility:
   recommended:
     - think-tool
+    - mcp-reasoner
   optional:
     - sequential-thinking
   remote_mcp_note: >-
-    think-tool이 있으면 "우리 팀이 구축했습니다"가 적절한 팀 크레딧인지 수동적 소유권 회피인지
-    구분하는 판단 품질이 높아집니다. Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
+    think-tool은 각 차원 분석 전 필수 체크포인트로 사용됩니다 — 애매한 경우에만 쓰는 것이 아니라 모든 차원에서 사전 호출합니다.
+    mcp-reasoner는 소유권 분류(개인 오너십 / 팀 크레딧 / 소유권 회피)가 경합할 때 판단에 사용됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Portfolio Writing Pattern Analyzer
@@ -76,14 +78,24 @@ Think through:
 
 ---
 
-## Stage 2 — Pattern Detection (Think Tool at Key Moments)
+## Stage 2 — Pattern Detection (Think Tool — Required per Dimension)
 
-Call `think` when you encounter:
-- An ambiguous case: Is "우리 팀이 구축했습니다" passive ownership or appropriate team credit?
-- A pattern that seems intentional (every project description uses "저는" — is that overcompensation?)
-- Something you can't categorize cleanly
+Call `think` **before analyzing each of the 6 dimensions** — not only when something is ambiguous. The proactive question for every dimension:
 
-> 🧠 **Pattern note**: Record non-obvious judgments inline.
+```
+think: "What would this dimension look like if the candidate had strong ownership?
+What does this portfolio actually show?
+Am I seeing a real pattern or a single salient example?"
+```
+
+Additionally, call `mcp-reasoner` (beam_search, beamWidth=3) when a passage has competing ownership signals:
+- Beam A: 개인 오너십 — the candidate is clearly the decision-maker and actor
+- Beam B: 팀 크레딧 — appropriate acknowledgment of collaborative work
+- Beam C: 소유권 회피 — collective language used to obscure weak personal contribution
+
+This judgment matters most for Subject Audit and Agency Language dimensions, where a single sentence can read differently depending on context.
+
+> 🧠 **Pattern note**: Record non-obvious judgments inline — especially when mcp-reasoner changed the classification.
 
 ---
 

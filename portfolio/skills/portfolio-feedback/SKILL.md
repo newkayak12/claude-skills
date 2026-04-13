@@ -15,11 +15,13 @@ scenarios:
 compatibility:
   recommended:
     - think-tool
+    - mcp-reasoner
   optional:
     - sequential-thinking
   remote_mcp_note: >-
-    think-tool이 있으면 각 차원의 점수 판단 품질이 높아집니다(예: "high traffic system"이 실제 스케일 경험인지
-    패턴 매칭인지 구분). Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
+    think-tool은 각 차원 채점 전 필수 체크포인트로 사용됩니다.
+    mcp-reasoner는 devil's advocate 패스 후 경쟁 근거가 남을 때 점수 최종 확정과 Top 3 우선순위 순서 결정에 사용됩니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 ## Standing Mandates
 
@@ -149,15 +151,18 @@ Once the persona is selected, stay in character throughout the review. Let the p
 
 ---
 
-## Stage 3 — Review and Write Feedback
+## Stage 3 — Score Each Dimension (Think Tool — Required)
 
-For each major evaluation section, call `think` before scoring.
+Call `think` **before scoring each dimension** — not only when something feels ambiguous. Fast scoring produces surface-level grades. The forced question is: *"Is this actually evidence of what I think it is, or am I pattern-matching to something familiar?"*
 
-**Why think first**: Quick scoring produces surface-level grades. `think` forces the question: *"Is this actually evidence of what I think it is, or am I pattern-matching to something familiar?"* Use it especially when:
-- A claim feels vague but not obviously wrong: *"high traffic system" — what does that actually mean here?*
-- You're about to penalize something — is it really a weakness or just an unusual way of presenting?
-- You notice a pattern across multiple sections (passive voice, missing personal ownership, tech-forward but impact-thin)
-- A score is between two numbers and the difference matters
+For each of the 5 dimensions, use this think checkpoint before assigning a score:
+
+```
+think: "What concrete evidence in this portfolio supports a high score on [dimension]?
+What would a skeptical interviewer say to challenge that assessment?
+Am I seeing real depth, or a convincing surface signal?
+What is the minimum evidence that would justify a 7+ here?"
+```
 
 ### Annotating your reasoning
 
@@ -167,6 +172,136 @@ When `think` surfaces a non-obvious insight, record it as an inline annotation i
 > 🧠 **Reviewer note**: [the key insight, in 1–2 sentences]
 ```
 
-Use these sparingly — only where the reasoning was genuinely difficult or the insight would help the candidate understand *why* the feedback is what it is. Not every section needs one.
+Use sparingly — only where the reasoning was genuinely difficult or the insight would help the candidate understand *why* the feedback is what it is.
+
+---
+
+## Stage 3.5 — Devil's Advocate Pass
+
+> 이 단계는 `think:devils-advocate` 스킬의 사고방식을 채점에 직접 적용합니다.
+
+Before finalizing **any dimension scored 7 or above**, run an adversarial challenge. The goal is not to tear down the portfolio — it is to find the real weaknesses before the interviewer does.
+
+For each high score, answer:
+- What specific evidence in this portfolio would make a skeptical interviewer **downgrade** this score?
+- Is there a charitable read of the portfolio that inflated this assessment?
+- What would need to be present (but isn't) to justify this score **without hesitation**?
+
+If the challenge reveals the high score rests on one strong signal surrounded by significant weakness — revise down. Record the challenge outcome:
+
+```
+> 🧠 **Devil's advocate**: [what the strongest objection is, and whether it changed the score]
+```
+
+**If competing evidence remains after the devil's advocate pass** — call `mcp-reasoner` (beam_search, beamWidth=3):
+- Beam A: downgraded score + evidence for it
+- Beam B: current score + evidence for it
+- Beam C: upgraded score + evidence for it
+
+Commit to the most defensible score. A score the candidate can understand and act on is worth more than a precise one they can't.
+
+---
+
+## Stage 4 — Scoring Rubric
+
+Use these level descriptors. A score is the **highest level the portfolio fully satisfies** — partial evidence does not round up.
+
+### Technical Depth
+
+| Level | What it looks like |
+|-------|--------------------|
+| 1–3 | Lists technologies; no evidence of understanding tradeoffs; could be copied from a tutorial |
+| 4–6 | Shows working knowledge; describes what was built but not why; design rationale absent |
+| 7–9 | Explains tradeoffs explicitly; first-principles reasoning visible; evidence of debugging hard problems |
+| 10 | Rare: novel insight or architectural contribution at real scale, with failure-and-recovery documented |
+
+### System Design
+
+| Level | What it looks like |
+|-------|--------------------|
+| 1–3 | Single service or CRUD-level projects; no distributed systems exposure |
+| 4–6 | Multi-service experience but design decisions not stated; "we used MSA" without rationale |
+| 7–9 | Explicit design decisions with tradeoffs; capacity reasoning; operated at real scale |
+| 10 | Designed systems under real constraints (cost, reliability, team), documented the process and revisions |
+
+### Impact and Results
+
+| Level | What it looks like |
+|-------|--------------------|
+| 1–3 | Activity-based; no outcomes; "built X" with no result stated |
+| 4–6 | Some numbers but vague ("improved performance"), or numbers without business context |
+| 7–9 | Concrete, verifiable numbers tied to business outcomes; causation shown, not just correlation |
+| 10 | Quantified impact at meaningful scale, tied to org-level decisions or product direction |
+
+### Leadership / Ownership
+
+| Level | What it looks like |
+|-------|--------------------|
+| 1–3 | Passive participation language throughout; described as executor, not initiator |
+| 4–6 | Some ownership language but decisions made are not visible; "led" without showing what was decided |
+| 7–9 | Visible decision-making; proposed initiatives; shows how their work changed what came after |
+| 10 | Shapes team direction, mentors others, cross-team influence — with evidence |
+
+### Portfolio Narrative
+
+| Level | What it looks like |
+|-------|--------------------|
+| 1–3 | Reads as a job description or CV; no through-line; disconnected projects |
+| 4–6 | Some coherence but unclear what the candidate is optimizing for; feels like a list |
+| 7–9 | Clear career direction visible; growth arc across projects; each project adds to a story |
+| 10 | Compelling arc that makes the interviewer want to ask questions before the first screen |
+
+---
+
+## Stage 5 — Output
+
+Write the feedback in Korean. Use this structure:
+
+---
+
+**[총평]**
+First impression in 3 sentences. Start with the single most important signal — positive or negative.
+
+---
+
+**[차원별 점수]**
+
+For each dimension:
+- **[차원명]: X / 10**
+- 근거: [specific evidence from the portfolio — quote or describe]
+- 🧠 Devil's advocate note (if a high score was challenged)
+
+---
+
+**[강점]**
+What genuinely impresses — with specific quotes or references from the portfolio. Not generic praise.
+
+---
+
+**[핵심 취약점]**
+The single thing most likely to damage this candidacy if left unaddressed. This is not the most obvious weakness — it is the one that hits the deepest structural flaw.
+
+> This field applies the devil's advocate framework: not the easiest thing to criticize, but the hardest to defend.
+
+---
+
+**[예상 인터뷰 질문 Top 5]**
+Questions this interviewer persona will almost certainly ask, grounded in what the portfolio reveals or conceals. Not generic questions — derived from this specific portfolio.
+
+---
+
+**[개선 우선순위 Top 3]**
+
+Call `mcp-reasoner` (beam_search, beamWidth=3) before ordering these. Competing factors: severity of weakness, how recoverable it is, how much effort the fix requires.
+
+For each priority:
+- 무엇을: [exactly which section or sentence to change]
+- 왜: [why this matters to the reviewer persona]
+- 어떻게: [concrete direction — not "add more detail" but what kind of detail and where]
+
+---
+
+**[이 포트폴리오가 가장 잘 맞는 포지션]**
+One sentence. What kind of role, company stage, and persona would find this portfolio most compelling — given its current state, not its ideal state.
 
 ---
