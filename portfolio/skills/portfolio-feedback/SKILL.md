@@ -91,61 +91,14 @@ This step exists because rushed reviews tend to latch onto the first interesting
 
 ## Stage 2 — Choose an Interviewer Persona
 
-After planning, **present the following personas to the user and ask them to pick one** (or let Claude choose if the user says "you decide"):
+Present the 4 personas to the user and ask them to pick one (or choose if the user says "you decide"). Full persona descriptions: [`references/personas.md`](references/personas.md)
 
----
-
-### Persona A — Staff Engineer at a Large-Scale Platform
-*"I've seen a thousand portfolios. I'm looking for depth, not breadth. Show me one hard problem you actually owned."*
-
-Emphasizes:
-- Depth of technical reasoning (tradeoffs, not just tech choices)
-- Experience at scale: traffic, data volume, distributed systems
-- Evidence of first-principles thinking
-- Code quality signals (GitHub, PR culture, design docs)
-
-Skeptical of: vague impact claims, "participated in" language, stacks that change every project
-
----
-
-### Persona B — Engineering Manager at a Growth-Stage Startup
-*"I need someone who can lead a team, ship fast, and make good-enough decisions under pressure."*
-
-Emphasizes:
-- Ownership and initiative (did they propose it or execute someone else's idea?)
-- Cross-functional impact: did their work unblock others or change how the team operates?
-- Leadership signals: mentoring, tech decisions, incident response
-- Concrete outcomes tied to business metrics
-
-Skeptical of: deep specialization with no evidence of breadth, no mention of teammates or collaboration
-
----
-
-### Persona C — Tech Lead at a Traditional Enterprise / Fintech
-*"Reliability, process maturity, and long-term maintainability are what matter here."*
-
-Emphasizes:
-- System reliability: SLAs, error handling, observability, runbooks
-- Documentation discipline and communication quality
-- Security and compliance awareness
-- Consistency over time (not just one flashy project)
-
-Skeptical of: hype-driven stacks with no rationale, missing operational context, no mention of failure or incident handling
-
----
-
-### Persona D — Open Source / Developer Tools Team Lead
-*"Can you write something other engineers will actually want to use and maintain?"*
-
-Emphasizes:
-- API design intuition and ergonomics
-- Documentation quality and developer experience thinking
-- Community contribution or public technical writing
-- Abstraction and interface design over implementation details
-
-Skeptical of: closed-source-only work, no external technical communication, overly internal focus
-
----
+| Persona | Focus | Skeptical of |
+|---------|-------|--------------|
+| A — Staff Engineer (Large Platform) | Depth, scale, first-principles | Vague impact, "participated in" |
+| B — EM (Growth Startup) | Ownership, cross-functional impact, outcomes | Deep specialist with no breadth |
+| C — Tech Lead (Enterprise/Fintech) | Reliability, process maturity, docs | Hype stacks, no ops context |
+| D — OSS / DevTools Lead | API design, DX, public communication | Closed-source only, no external writing |
 
 Once the persona is selected, stay in character throughout the review. Let the persona's priorities shape what you praise, what you probe, and what questions you ask.
 
@@ -204,52 +157,9 @@ Commit to the most defensible score. A score the candidate can understand and ac
 
 ## Stage 4 — Scoring Rubric
 
-Use these level descriptors. A score is the **highest level the portfolio fully satisfies** — partial evidence does not round up.
+Full rubric: [`references/scoring-rubric.md`](references/scoring-rubric.md)
 
-### Technical Depth
-
-| Level | What it looks like |
-|-------|--------------------|
-| 1–3 | Lists technologies; no evidence of understanding tradeoffs; could be copied from a tutorial |
-| 4–6 | Shows working knowledge; describes what was built but not why; design rationale absent |
-| 7–9 | Explains tradeoffs explicitly; first-principles reasoning visible; evidence of debugging hard problems |
-| 10 | Rare: novel insight or architectural contribution at real scale, with failure-and-recovery documented |
-
-### System Design
-
-| Level | What it looks like |
-|-------|--------------------|
-| 1–3 | Single service or CRUD-level projects; no distributed systems exposure |
-| 4–6 | Multi-service experience but design decisions not stated; "we used MSA" without rationale |
-| 7–9 | Explicit design decisions with tradeoffs; capacity reasoning; operated at real scale |
-| 10 | Designed systems under real constraints (cost, reliability, team), documented the process and revisions |
-
-### Impact and Results
-
-| Level | What it looks like |
-|-------|--------------------|
-| 1–3 | Activity-based; no outcomes; "built X" with no result stated |
-| 4–6 | Some numbers but vague ("improved performance"), or numbers without business context |
-| 7–9 | Concrete, verifiable numbers tied to business outcomes; causation shown, not just correlation |
-| 10 | Quantified impact at meaningful scale, tied to org-level decisions or product direction |
-
-### Leadership / Ownership
-
-| Level | What it looks like |
-|-------|--------------------|
-| 1–3 | Passive participation language throughout; described as executor, not initiator |
-| 4–6 | Some ownership language but decisions made are not visible; "led" without showing what was decided |
-| 7–9 | Visible decision-making; proposed initiatives; shows how their work changed what came after |
-| 10 | Shapes team direction, mentors others, cross-team influence — with evidence |
-
-### Portfolio Narrative
-
-| Level | What it looks like |
-|-------|--------------------|
-| 1–3 | Reads as a job description or CV; no through-line; disconnected projects |
-| 4–6 | Some coherence but unclear what the candidate is optimizing for; feels like a list |
-| 7–9 | Clear career direction visible; growth arc across projects; each project adds to a story |
-| 10 | Compelling arc that makes the interviewer want to ask questions before the first screen |
+Score = **highest level the portfolio fully satisfies** — partial evidence does not round up. 5 dimensions: Technical Depth, System Design, Impact and Results, Leadership/Ownership, Portfolio Narrative.
 
 ---
 
