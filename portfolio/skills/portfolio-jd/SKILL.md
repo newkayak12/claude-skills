@@ -14,10 +14,12 @@ scenarios:
 compatibility:
   recommended:
     - think-tool
+    - mcp-reasoner
   optional:
     - sequential-thinking
   remote_mcp_note: >-
-    think-tool이 있으면 JD 해석(실제 요건 vs. 희망 요건)과 포트폴리오 분석의 품질이 높아집니다.
+    think-tool은 JD 파싱(Stage 1)과 포트폴리오 파싱(Stage 2)에서 필수 체크포인트로 사용됩니다.
+    mcp-reasoner는 갭 심각도 분류(치명/보완 가능/마이너)와 서류 통과 가능성 판단에 사용됩니다 — 이 두 가지가 이 스킬의 가장 중요한 판단입니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
@@ -70,29 +72,32 @@ Provide:
 
 ---
 
-## Stage 1 — Parse the JD (Think Tool)
+## Stage 1 — Parse the JD (Think Tool — Required)
 
-Before comparing anything, call `think` to decode the JD:
+Call `think` before reading the portfolio. Build the JD profile independently first — comparing too early biases the analysis toward the portfolio's framing.
 
-- What are the **real** requirements vs. the aspirational ones? (JDs often list every possible nice-to-have)
-- What are the **must-haves** that would cause immediate rejection?
-- What is the **actual role** behind the title? (A "backend engineer" JD at a Series A means something very different than at a large platform company)
-- What signals is this team looking for that aren't explicitly stated? (e.g., "strong communication skills" in a JD usually means they've had problems with engineers who don't communicate)
-- What is the team's likely pain point that this hire is meant to solve?
+Required questions:
+- What are the **real** requirements vs. aspirational? (JDs inflate nice-to-haves into requirements constantly)
+- What are the **must-haves** — what would cause immediate rejection?
+- What is the **actual role** behind the title? ("Senior backend engineer" at a 15-person Series A ≠ the same at a 500-person platform team)
+- What signals is this team encoding that aren't stated explicitly? ("Strong communicator" usually means they've been burned by someone who wasn't)
+- What pain point is this hire meant to solve?
 
-> 🧠 **JD note**: Record the decoded JD profile here. "The role is actually looking for X, not just Y as stated."
+> 🧠 **JD note**: Record decoded profile here. "The role is actually looking for X, not just Y as stated."
 
 ---
 
-## Stage 2 — Parse the Portfolio (Think Tool)
+## Stage 2 — Parse the Portfolio (Think Tool — Required)
 
-Call `think` again to build the candidate profile independently of the JD:
+Call `think` to build the candidate profile independently of the JD. Do not reference the JD yet.
 
+Required questions:
 - What are the candidate's 3 clearest strengths?
 - What are the 2–3 most significant gaps or weaknesses?
-- What does this portfolio communicate well, and what does it fail to communicate?
+- What does this portfolio communicate well — and what does it fail to communicate?
+- What level and type of role does this portfolio naturally speak to?
 
-> 🧠 **Portfolio note**: Record the candidate profile here.
+> 🧠 **Portfolio note**: Record candidate profile here. This is your independent read before the comparison.
 
 ---
 
@@ -157,9 +162,17 @@ What in the portfolio directly speaks to this JD. Quote or reference specific po
 ---
 
 **[갭 분석]**
-Where the portfolio falls short for this specific role. For each gap:
-- 갭: [what's missing]
+Where the portfolio falls short for this specific role.
+
+For each gap, call `mcp-reasoner` (beam_search, beamWidth=3) before assigning severity:
+- Beam A: 치명적 — missing a must-have; rejection likely regardless of other strengths
+- Beam B: 보완 가능 — real gap but addressable in the cover letter, portfolio framing, or interview
+- Beam C: 마이너 — nice-to-have miss; unlikely to affect screening
+
+For each gap:
+- 갭: [what's missing or underrepresented]
 - 심각도: 치명적 / 보완 가능 / 마이너
+- 근거: [why this severity — what makes it critical vs. recoverable]
 - 대응 방법: [how to address in the portfolio, cover letter, or interview]
 
 ---
@@ -172,7 +185,12 @@ Concrete: "이 JD는 데이터 파이프라인 경험을 중요하게 보는데,
 ---
 
 **[서류 통과 가능성 평가]**
+
+Call `mcp-reasoner` (mcts, numSimulations=50) for this judgment — it is the highest-stakes single output of this skill and the one most likely to have competing evidence.
+
 Honest assessment: likely pass / borderline / likely screen out — and what that hinges on.
+
+State the one factor that, if changed, would most shift this assessment in either direction.
 
 ---
 
