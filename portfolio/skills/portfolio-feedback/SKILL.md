@@ -4,8 +4,7 @@ effort: high
 description: >-
   Use when someone shares a developer portfolio and wants honest, interviewer-perspective feedback.
   Triggers on: "포트폴리오 피드백 해줘", "내 포트폴리오 어때?", "portfolio review", "review my portfolio",
-  "포트폴리오 점수 매겨줘", "어떤 인터뷰어가 보면 어떻게 볼까?", "portfolio critique",
-  "Score my portfolio", "인터뷰어 관점에서 평가해줘".
+  "포트폴리오 점수 매겨줘", "어떤 인터뷰어가 보면 어떻게 볼까?", "portfolio critique".
 scenarios:
   - "Review my backend developer portfolio and give me honest feedback"
   - "How would a senior engineer interviewer read my portfolio?"
