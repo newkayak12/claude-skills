@@ -9,3 +9,5 @@ temp/
 *.tmp
 INSTRUCT.md
 plan/
+report/
+*-workspace/
