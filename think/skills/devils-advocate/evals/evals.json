@@ -11,7 +11,8 @@
         "Each counterargument is specific to TypeScript migration, not generic change-resistance arguments",
         "A 'core vulnerability' or '핵심 취약점' section is present",
         "The arguments are stated directly without excessive hedging ('some might argue...')",
-        "The response does NOT include a balanced 'but here are the benefits' section that undermines the adversarial framing"
+        "The response does NOT include a balanced 'but here are the benefits' section that undermines the adversarial framing",
+        "Each counterargument includes a type label ([structural], [assumption], [execution], or [timing]) and a severity level (low/medium/high/critical)"
       ]
     },
     {
@@ -24,7 +25,8 @@
         "Arguments are steel-manned — they represent the strongest possible case against web-only",
         "A core vulnerability section is present identifying the deepest structural flaw",
         "Arguments are specific to mobile-vs-web tradeoffs, not generic product strategy platitudes",
-        "Response is in English (matching the prompt language)"
+        "Response is in English (matching the prompt language)",
+        "Each counterargument includes a type label ([structural], [assumption], [execution], or [timing]) and a severity level (low/medium/high/critical)"
       ]
     },
     {
@@ -37,7 +39,8 @@
         "Arguments address the specific startup context — not just 'multi-tenancy is complex' in the abstract",
         "The '핵심 취약점' section is present",
         "At least one argument challenges the 'premature optimization' nature of the claim",
-        "No section that softens the critique by restating the benefits of multi-tenancy"
+        "No section that softens the critique by restating the benefits of multi-tenancy",
+        "Each counterargument includes a type label ([structural], [assumption], [execution], or [timing]) and a severity level (low/medium/high/critical)"
       ]
     }
   ]

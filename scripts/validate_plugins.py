@@ -139,6 +139,7 @@ def check_plugin(plugin_entry):
     skill_dirs = [
         d for d in os.listdir(skills_dir)
         if os.path.isdir(os.path.join(skills_dir, d))
+        and not d.endswith("-workspace")
     ]
 
     if not skill_dirs:
