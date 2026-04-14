@@ -4,7 +4,7 @@ description: >-
   Use when someone wants their idea, plan, or decision stress-tested with the
   strongest possible objections. Triggers on: "반론 던져줘", "약점 찾아줘", "이 계획 문제점이
   뭐야?", "devil's advocate 해줘", "결함 찾아줘", "비판해줘", "이 아이디어 왜 틀렸어?", "steel-man the
-  opposite view", "반대".
+  opposite view".
 scenarios:
   - "MSA로 전환하자는 계획, 반론 세 가지 던져줘"
   - "이 설계의 약점이 뭔지 공격적으로 말해줘"
