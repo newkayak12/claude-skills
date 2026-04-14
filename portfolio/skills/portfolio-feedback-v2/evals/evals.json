@@ -1,0 +1,119 @@
+{
+  "skill_name": "portfolio-feedback",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "내 포트폴리오 인터뷰어 관점에서 솔직하게 피드백 해줘. 성장 스타트업 EM 페르소나로 봐줘.\n\n[Portfolio file: portfolio-underseller.md]",
+      "expected_output": "5차원 점수 + 구체적 근거 + 개선 우선순위 Top 3. 쿠팡 주문 처리 시스템의 구체적 수치/임팩트 부재, '참여'/'기여' 언어의 소유권 모호함, 기술 스택 나열 대비 실제 깊이 증거 부족을 지적해야 함.",
+      "files": ["evals/files/portfolio-underseller.md"],
+      "assertions": [
+        {
+          "name": "scores-all-5-dimensions",
+          "description": "Technical Depth, System Design, Impact/Results, Leadership/Ownership, Portfolio Narrative 5개 차원 모두 점수 부여",
+          "type": "contains_all",
+          "values": ["Technical Depth", "System Design", "Impact", "Leadership", "Narrative"]
+        },
+        {
+          "name": "identifies-passive-language",
+          "description": "'참여', '기여', '수행' 등 소유권 모호 언어 문제를 구체적으로 지적",
+          "type": "contains_any",
+          "values": ["참여", "기여", "ownership", "소유권", "주도"]
+        },
+        {
+          "name": "improvement-priorities-specific",
+          "description": "개선 우선순위가 'add more detail' 수준이 아닌 구체적 내용 포함 (수치/임팩트 명시)",
+          "type": "contains_any",
+          "values": ["수치", "숫자", "임팩트", "impact", "metrics", "metric"]
+        },
+        {
+          "name": "core-vulnerability-present",
+          "description": "핵심 취약점 또는 Core Vulnerability 섹션이 존재",
+          "type": "contains_any",
+          "values": ["핵심 취약점", "Core Vulnerability", "핵심취약점"]
+        },
+        {
+          "name": "interview-questions-present",
+          "description": "예상 인터뷰 질문 섹션이 존재하고 이 포트폴리오에 특화된 질문 포함",
+          "type": "contains_any",
+          "values": ["예상 인터뷰", "Interview Question", "인터뷰 질문"]
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Review my portfolio as a Staff Engineer at a large-scale platform. Be honest about both strengths and blind spots.\n\n[Portfolio file: portfolio-impressive-surface.md]",
+      "expected_output": "Balanced review: acknowledge real strengths (12M events/sec claim, MTTR reduction, open source presence) but probe missing evidence: no failure stories, impact metrics owned by data science team, no public technical writing, design doc rationale not visible. Core vulnerability: impressive numbers without the reasoning behind them.",
+      "files": ["evals/files/portfolio-impressive-surface.md"],
+      "assertions": [
+        {
+          "name": "scores-all-5-dimensions",
+          "description": "All 5 dimensions scored with numeric scores",
+          "type": "regex",
+          "pattern": "\\d+\\s*/\\s*10"
+        },
+        {
+          "name": "challenges-high-scores",
+          "description": "At least one devil's advocate or challenge to a high score",
+          "type": "contains_any",
+          "values": ["devil's advocate", "challenge", "skeptic", "however", "but"]
+        },
+        {
+          "name": "identifies-missing-reasoning",
+          "description": "Identifies that impact numbers are claimed without showing the reasoning/tradeoffs behind decisions",
+          "type": "contains_any",
+          "values": ["reasoning", "tradeoff", "trade-off", "why", "rationale", "design decision"]
+        },
+        {
+          "name": "core-vulnerability-present",
+          "description": "Core Vulnerability section present",
+          "type": "contains_any",
+          "values": ["Core Vulnerability", "핵심 취약점", "core weakness", "Core weakness"]
+        },
+        {
+          "name": "improvement-priorities-actionable",
+          "description": "Improvement priorities include specific, rewritable suggestions",
+          "type": "contains_any",
+          "values": ["public", "write", "document", "publish", "blog", "design doc"]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "이 포트폴리오 솔직하게 피드백 해줘. 나는 핀테크 스타트업 EM 페르소나로 보고 싶어. 약점도 있지만 강점도 있을 것 같아서.\n\n[Portfolio file: portfolio-career-switcher.md]",
+      "expected_output": "전직 배경에 대한 공정한 평가. 강점: 구체적 수치(처리 시간 2.1h→45min, 메모리 8GB→600MB), 멱등성 설계 문서화, 솔직한 약점 자기 인식. 약점: 스케일 경험 없음, 시스템 디자인 미성숙, 오픈소스 없음. 전직 배경이 EM에게 오히려 강점이 될 수 있는 측면 포착.",
+      "files": ["evals/files/portfolio-career-switcher.md"],
+      "assertions": [
+        {
+          "name": "acknowledges-concrete-metrics",
+          "description": "구체적 수치(처리 시간, 메모리 수치)를 강점으로 언급",
+          "type": "contains_any",
+          "values": ["45분", "600MB", "처리 시간", "메모리", "2.1시간", "청크"]
+        },
+        {
+          "name": "addresses-scale-gap",
+          "description": "스케일 경험 부족을 리스크로 언급",
+          "type": "contains_any",
+          "values": ["스케일", "scale", "TPS", "규모", "distributed"]
+        },
+        {
+          "name": "scores-all-5-dimensions",
+          "description": "5개 차원 모두 점수 부여",
+          "type": "regex",
+          "pattern": "\\d+\\s*/\\s*10"
+        },
+        {
+          "name": "career-switch-context-acknowledged",
+          "description": "전직(프론트→백엔드) 배경을 피드백 맥락으로 반영",
+          "type": "contains_any",
+          "values": ["전환", "전직", "frontend", "프론트엔드", "career switch", "transition"]
+        },
+        {
+          "name": "best-fit-position-present",
+          "description": "가장 잘 맞는 포지션 섹션 존재",
+          "type": "contains_any",
+          "values": ["가장 잘 맞는", "Best-fit", "best fit", "포지션", "position"]
+        }
+      ]
+    }
+  ]
+}
