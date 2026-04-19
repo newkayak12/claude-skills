@@ -1,7 +1,7 @@
 {
   "name": "portfolio",
-  "description": "Portfolio and career skills: JD analysis, portfolio rewriting, company research, feedback, pattern extraction, interview prep, resume tailoring, and job-application-workflow.",
-  "version": "1.1.4",
+  "description": "Portfolio and career skills: JD analysis, portfolio rewriting, company research, feedback, pattern extraction, interview prep, resume tailoring, job-application-workflow, and ppt-keycolor-changer.",
+  "version": "1.1.5",
   "author": {
     "name": "newkayak12"
   },
