@@ -1,12 +1,9 @@
 ---
 name: ppt-keycolor-changer
 description: >-
-  Use when someone wants to change key colors in a PowerPoint file. Triggers on:
-  "PPT 색상 바꿔줘", "ppt keycolor 변경", "슬라이드 색상 교체", "change ppt colors",
-  "PPT에서 이 색깔 저걸로 바꿔줘", "ppt 브랜드 컬러로 교체", "색상 일괄 변경",
-  "replace colors in presentation", "ppt color palette swap".
-  Always invoke this skill when the user mentions PPT/PPTX files and color changes together,
-  even if they phrase it casually like "파란색 부분 다 바꿔줘" or "brand color로 통일해줘".
+  Use when the user wants to change, swap, or replace colors in a PPTX/PPT file.
+  Triggers on: "PPT 색상 바꿔줘", "키컬러 변경", "슬라이드 색상 교체", "change ppt colors",
+  "ppt keycolor", "색상 일괄 변경", "브랜드 컬러로 교체", "replace colors in presentation".
 scenarios:
   - "이 PPT에서 #003087을 토스 파란색으로 바꿔줘"
   - "presentation.pptx의 배경색 (0, 56, 135)를 전부 #FF5733으로 교체해줘"
