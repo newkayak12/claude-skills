@@ -1,4 +1,4 @@
-# portfolio (v1.1.4)
+# portfolio (v1.1.5)
 
 Portfolio and career skills for job search and interview preparation.
 
@@ -24,3 +24,4 @@ Portfolio and career skills for job search and interview preparation.
 | `portfolio-rewrite` | Rewrite portfolio content for clarity and impact |
 
 | `job-application-workflow` | End-to-end job application workflow — JD analysis through interview prep |
+| `ppt-keycolor-changer` | Replace key colors in a PPTX file across all slides at once |
