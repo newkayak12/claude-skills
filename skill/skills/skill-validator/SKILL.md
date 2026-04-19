@@ -1,6 +1,9 @@
 ---
 name: skill-validator
-description: Audits an existing skill across five quality dimensions: usefulness, agent structure, MCP fit, SKILL.md weight, and output quality (with-skill vs without-skill eval). Use when someone wants a design review of a skill they have already written or...
+description: >-
+  Use when validating a skill (deprecated — prefer skill-quality-assurance
+  which adds authoring principles check). Audits usefulness, agent structure,
+  MCP fit, SKILL.md weight, and output quality.
 scenarios:
   - "Review my skill — is it well-designed?"
   - "Is this SKILL.md too heavy or should I split it?"
@@ -17,7 +20,9 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
-# Skill Validator
+> **Deprecated.** Use `skill-quality-assurance` instead — it adds an Authoring Principles check (description ≤250 chars, Standing Mandates, compaction awareness, effort field) and integrates more tightly with the skill-creator iteration loop.
+
+# Skill Validator (Deprecated)
 
 Analyze a skill's design quality across five dimensions and produce an actionable improvement report that skill-creator can act on.
 
