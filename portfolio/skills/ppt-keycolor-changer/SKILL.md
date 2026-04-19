@@ -2,8 +2,8 @@
 name: ppt-keycolor-changer
 description: >-
   Use when the user wants to change, swap, or replace colors in a PPTX/PPT file.
-  Triggers on: "PPT 색상 바꿔줘", "키컬러 변경", "슬라이드 색상 교체", "change ppt colors",
-  "ppt keycolor", "색상 일괄 변경", "브랜드 컬러로 교체", "replace colors in presentation".
+  Also triggers on: PPT 키컬러 변경, 슬라이드 색상 교체, 브랜드 컬러로 교체, 색상 일괄 변경, ppt keycolor.
+effort: medium
 scenarios:
   - "이 PPT에서 #003087을 토스 파란색으로 바꿔줘"
   - "presentation.pptx의 배경색 (0, 56, 135)를 전부 #FF5733으로 교체해줘"
@@ -18,6 +18,13 @@ compatibility:
 ## What this skill does
 
 Finds every element in a PPTX file that uses a specified color (fill, text, line, background, chart) and replaces it with a new color — across all slides at once. Saves as a new file.
+
+---
+
+## Standing Mandates
+
+- **Brand color confirmation required**: When the user specifies a brand or named color (e.g., "토스 파란색", "Apple blue"), always state the hex you intend to use and get explicit confirmation before running the script.
+- **Tolerance default is 0**: Only raise tolerance (5–10) when the user says "이 색 계열 전부" or when exact matches return 0 replacements.
 
 ---
 
@@ -51,10 +58,10 @@ Build a JSON map: `{"OLD_HEX": "NEW_HEX", ...}` (all uppercase, no `#` prefix).
 
 ## Step 3: Run the script
 
-Use the bundled script `scripts/ppt_keycolor_changer.py`.
+Use the bundled script at `scripts/ppt_keycolor_changer.py` (path is relative to the skill's root directory — use an absolute path if running from a different working directory).
 
 ```bash
-python scripts/ppt_keycolor_changer.py \
+python /path/to/skill/scripts/ppt_keycolor_changer.py \
   --input "path/to/file.pptx" \
   --mapping '{"003087": "0064FF", "1A1A1A": "111111"}' \
   --tolerance 5
