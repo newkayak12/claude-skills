@@ -25,6 +25,15 @@ and schemeClr mappings that python-pptx's API misses.
 
 ---
 
+## Standing Mandates
+
+- **Always run discovery first**: Never skip Step 1. Even when the user provides exact hex values, the frequency scan confirms the color is actually in the file and reveals tonal variants they may have missed.
+- **Confirm before executing**: Show the full mapping table (Step 4) and get explicit user sign-off before calling the replace subcommand. Don't run it speculatively.
+- **Name-to-hex confirmation required**: When the user says a brand or named color ("토스 파란색", "Apple blue"), always state the hex you intend to use and wait for confirmation.
+- **Always include the image caveat**: Every report (Step 7) must note that PNG/JPEG embedded image colors cannot be changed via XML, regardless of residual count.
+
+---
+
 ## 7-Step Workflow
 
 ### Step 0 · Validate Input
