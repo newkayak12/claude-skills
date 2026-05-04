@@ -1,208 +1,320 @@
 """
-PPT Key Color Changer
-Replace specific colors across all slides in a PPTX file.
+PPT Key Color Changer v2
+Raw XML engine — replaces colors by directly editing PPTX XML files.
+
+Subcommands:
+  discover   Scan PPTX for all srgbClr values + frequency table
+  replace    Replace source colors with target colors
 
 Usage:
-    python ppt_keycolor_changer.py \
-        --input file.pptx \
-        --mapping '{"003087": "0064FF"}' \
-        --tolerance 5 \
-        --output file_recolored.pptx
+  python ppt_keycolor_changer.py discover --input file.pptx
+  python ppt_keycolor_changer.py replace --input file.pptx \\
+      --mapping '{"E85E3A":"0064FF","FF8060":"4D96FF"}' \\
+      [--exclude "336699,AABBCC"] \\
+      [--suffix tossblue] \\
+      [--output out.pptx]
+
+No external dependencies — uses Python stdlib only (zipfile, re, colorsys).
 """
 
 import argparse
+import colorsys
 import json
+import re
+import shutil
 import sys
-from collections import defaultdict
+import tempfile
+import zipfile
+from collections import Counter
 from pathlib import Path
 
-try:
-    from pptx import Presentation
-    from pptx.dml.color import RGBColor
-    from pptx.enum.dml import MSO_THEME_COLOR
-    from pptx.util import Pt
-except ImportError:
-    print("ERROR: python-pptx is required. Run: pip install python-pptx")
-    sys.exit(1)
 
+# ── Color utilities ──────────────────────────────────────────────────────────
 
-def hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
-    h = hex_str.lstrip("#").upper()
+def hex_to_rgb(h: str) -> tuple[int, int, int]:
+    h = h.lstrip("#").upper()
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
 
-def color_distance(c1: tuple, c2: tuple) -> float:
-    return sum((a - b) ** 2 for a, b in zip(c1, c2)) ** 0.5
+def rgb_to_hex(r: int, g: int, b: int) -> str:
+    return f"{r:02X}{g:02X}{b:02X}"
 
 
-def find_target(rgb: tuple, mapping_rgb: dict, tolerance: int) -> str | None:
-    """Return new hex if rgb matches any source color within tolerance."""
-    for src_rgb, dst_hex in mapping_rgb.items():
-        if color_distance(rgb, src_rgb) <= tolerance:
-            return dst_hex
-    return None
+def hex_to_hls(h: str) -> tuple[float, float, float]:
+    """Returns (hue 0-1, lightness 0-1, saturation 0-1)."""
+    r, g, b = hex_to_rgb(h)
+    return colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
 
 
-def try_replace_color(color_obj, mapping_rgb: dict, tolerance: int) -> str | None:
-    """Try to read and replace a color object. Returns dst_hex if replaced, else None."""
-    try:
-        if color_obj.type is None:
-            return None
-        rgb = color_obj.rgb
-        current = (rgb.r, rgb.g, rgb.b)
-        dst_hex = find_target(current, mapping_rgb, tolerance)
-        if dst_hex:
-            r, g, b = hex_to_rgb(dst_hex)
-            color_obj.rgb = RGBColor(r, g, b)
-            return dst_hex
-    except Exception:
-        pass
-    return None
+def is_grayscale(hex_color: str, threshold: int = 20) -> bool:
+    r, g, b = hex_to_rgb(hex_color)
+    return max(r, g, b) - min(r, g, b) <= threshold
 
 
-def process_fill(fill, mapping_rgb, tolerance):
-    """Returns dst_hex if replaced."""
-    try:
-        return try_replace_color(fill.fore_color, mapping_rgb, tolerance)
-    except Exception:
-        return None
+# Always-excluded colors (black, white, near-white)
+DEFAULT_EXCLUDE = {"000000", "FFFFFF", "F9F9F9", "FEFEFE", "FDFDFD"}
+
+# ── XML discovery ─────────────────────────────────────────────────────────────
+
+# Matches val="XXXXXX" where XXXXXX is a 6-hex-digit color value in OOXML
+COLOR_ATTR_PATTERN = re.compile(r'val="([0-9A-Fa-f]{6})"', re.IGNORECASE)
 
 
-def process_shape(shape, mapping_rgb, tolerance, counts):
-    # Fill
-    try:
-        result = process_fill(shape.fill, mapping_rgb, tolerance)
-        if result:
-            counts[("fill", result)] += 1
-    except Exception:
-        pass
-
-    # Line color
-    try:
-        result = try_replace_color(shape.line.color, mapping_rgb, tolerance)
-        if result:
-            counts[("line", result)] += 1
-    except Exception:
-        pass
-
-    # Text
-    try:
-        if shape.has_text_frame:
-            for para in shape.text_frame.paragraphs:
-                for run in para.runs:
-                    result = try_replace_color(run.font.color, mapping_rgb, tolerance)
-                    if result:
-                        counts[("text", result)] += 1
-    except Exception:
-        pass
-
-    # Table cells
-    try:
-        if shape.has_table:
-            for row in shape.table.rows:
-                for cell in row.cells:
-                    result = process_fill(cell.fill, mapping_rgb, tolerance)
-                    if result:
-                        counts[("table_fill", result)] += 1
-                    for para in cell.text_frame.paragraphs:
-                        for run in para.runs:
-                            result = try_replace_color(run.font.color, mapping_rgb, tolerance)
-                            if result:
-                                counts[("table_text", result)] += 1
-    except Exception:
-        pass
-
-    # Chart series
-    try:
-        if shape.has_chart:
-            chart = shape.chart
-            for series in chart.series:
-                try:
-                    result = process_fill(series.format.fill, mapping_rgb, tolerance)
-                    if result:
-                        counts[("chart_series", result)] += 1
-                except Exception:
-                    pass
-    except Exception:
-        pass
-
-    # Group shapes (recursive)
-    try:
-        if shape.shape_type == 6:  # MSO_SHAPE_TYPE.GROUP
-            for child in shape.shapes:
-                process_shape(child, mapping_rgb, tolerance, counts)
-    except Exception:
-        pass
+def scan_xml_colors(zip_path: str) -> Counter:
+    """Scan all XML/RELS files in a PPTX and return Counter of hex color values."""
+    counts: Counter = Counter()
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        for name in zf.namelist():
+            if not (name.endswith(".xml") or name.endswith(".rels")):
+                continue
+            try:
+                content = zf.read(name).decode("utf-8", errors="ignore")
+                for m in COLOR_ATTR_PATTERN.finditer(content):
+                    counts[m.group(1).upper()] += 1
+            except Exception:
+                pass
+    return counts
 
 
-def process_slide_background(slide, mapping_rgb, tolerance, counts):
-    try:
-        bg = slide.background
-        result = process_fill(bg.fill, mapping_rgb, tolerance)
-        if result:
-            counts[("background", result)] += 1
-    except Exception:
-        pass
-
-
-def run(input_path: str, mapping: dict, tolerance: int, output_path: str | None):
-    prs = Presentation(input_path)
-
-    # Normalize mapping to uppercase hex without #
-    mapping_clean = {k.lstrip("#").upper(): v.lstrip("#").upper() for k, v in mapping.items()}
-    mapping_rgb = {hex_to_rgb(src): dst for src, dst in mapping_clean.items()}
-
-    total_counts: dict[tuple, int] = defaultdict(int)
-
-    for slide_idx, slide in enumerate(prs.slides, 1):
-        process_slide_background(slide, mapping_rgb, tolerance, total_counts)
-        for shape in slide.shapes:
-            process_shape(shape, mapping_rgb, tolerance, total_counts)
-
-    if output_path is None:
-        p = Path(input_path)
-        output_path = str(p.parent / f"{p.stem}_recolored{p.suffix}")
-
-    prs.save(output_path)
-
-    # Print summary
-    print(f"\nSaved: {output_path}\n")
-    if not total_counts:
-        print("WARNING: No colors were replaced.")
-        print("  → The specified colors may not exist in the file, or may be theme colors.")
-        print("  → Try increasing --tolerance (e.g. --tolerance 10).")
+def discover(input_path: str) -> None:
+    counts = scan_xml_colors(input_path)
+    if not counts:
+        print("No srgbClr color values found in the PPTX.")
         return
 
-    # Group by dst color
-    by_dst: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    for (elem_type, dst_hex), count in total_counts.items():
-        by_dst[dst_hex][elem_type] += count
+    total_unique = len(counts)
+    print(f"\nDiscovered colors in: {Path(input_path).name}")
+    print(f"Total unique colors: {total_unique}\n")
+    print(f"{'Rank':<5} {'Hex':<9} {'Count':<8} {'Notes'}")
+    print("-" * 45)
 
-    for dst_hex, elem_counts in by_dst.items():
-        total = sum(elem_counts.values())
-        detail = ", ".join(f"{k}: {v}" for k, v in sorted(elem_counts.items()))
-        # Find which src mapped to this dst
-        src_hex = next((s for s, d in mapping_clean.items() if d == dst_hex), "?")
-        print(f"  #{src_hex} → #{dst_hex}: {total} replacements ({detail})")
+    for i, (hex_val, count) in enumerate(counts.most_common(40), 1):
+        tags = []
+        if hex_val in DEFAULT_EXCLUDE:
+            tags.append("always-exclude")
+        elif is_grayscale(hex_val):
+            tags.append("grayscale")
+        note = f"  [{', '.join(tags)}]" if tags else ""
+        print(f"{i:<5} #{hex_val:<8} {count:<8}{note}")
 
-    print()
+    if total_unique > 40:
+        print(f"  ... and {total_unique - 40} more (showing top 40)")
+
+    print("\nTo replace, use:")
+    print('  replace --input file.pptx --mapping \'{"SRC_HEX": "DST_HEX", ...}\'')
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Replace colors in a PPTX file.")
-    parser.add_argument("--input", required=True, help="Path to source .pptx file")
-    parser.add_argument("--mapping", required=True, help='JSON: {"OLD_HEX": "NEW_HEX", ...}')
-    parser.add_argument("--tolerance", type=int, default=0, help="Color match tolerance 0–30 (default: 0)")
-    parser.add_argument("--output", default=None, help="Output path (default: <name>_recolored.pptx)")
-    args = parser.parse_args()
+# ── XML replacement ───────────────────────────────────────────────────────────
+
+def replace_in_content(content: str, src_upper: str, dst_upper: str) -> tuple[str, int]:
+    """Case-insensitive replace of val="SRC" → val="DST" in XML content."""
+    pattern = re.compile(r'val="' + re.escape(src_upper) + '"', re.IGNORECASE)
+    new_content, n = pattern.subn(f'val="{dst_upper}"', content)
+    return new_content, n
+
+
+def safe_output_path(input_path: str, suffix: str | None, mapping: dict) -> str:
+    """Generate a non-colliding output path with the target color or suffix in the name."""
+    p = Path(input_path)
+    if suffix:
+        label = suffix
+    else:
+        # Use first target hex as label
+        label = next(iter(mapping.values()), "recolored").lower()
+
+    base_name = f"{p.stem}_{label}{p.suffix}"
+    candidate = p.parent / base_name
+    if not candidate.exists():
+        return str(candidate)
+
+    # Auto-increment _v2, _v3, ...
+    for v in range(2, 100):
+        versioned = p.parent / f"{p.stem}_{label}_v{v}{p.suffix}"
+        if not versioned.exists():
+            return str(versioned)
+
+    return str(p.parent / f"{p.stem}_recolored{p.suffix}")
+
+
+def replace_colors(
+    input_path: str,
+    mapping: dict,
+    exclude: set[str],
+    output_path: str,
+) -> dict[str, int]:
+    """
+    Replace all val="SRC" occurrences with val="DST" across every XML/RELS
+    file inside the PPTX, preserving all non-XML entries (images, etc.) unchanged.
+
+    mapping: {SRC_HEX_UPPER: DST_HEX_UPPER}
+    Returns per-source replacement counts.
+    """
+    # Skip any source that's in the explicit exclude list
+    active_mapping: dict[str, str] = {}
+    for src, dst in mapping.items():
+        if src in exclude:
+            print(f"  [skip] #{src} is in --exclude list, skipping.")
+            continue
+        active_mapping[src] = dst
+
+    counts = {src: 0 for src in active_mapping}
+
+    # Write to a temp file first, then move to output
+    tmp = tempfile.NamedTemporaryFile(suffix=".pptx", delete=False)
+    tmp.close()
 
     try:
-        mapping = json.loads(args.mapping)
+        with zipfile.ZipFile(input_path, "r") as zin, \
+             zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                data = zin.read(item.filename)
+                if item.filename.endswith(".xml") or item.filename.endswith(".rels"):
+                    try:
+                        content = data.decode("utf-8")
+                        for src, dst in active_mapping.items():
+                            content, n = replace_in_content(content, src, dst)
+                            counts[src] += n
+                        data = content.encode("utf-8")
+                    except Exception:
+                        pass  # Binary or undecodable — keep original
+                zout.writestr(item, data)
+
+        shutil.move(tmp.name, output_path)
+    except Exception:
+        Path(tmp.name).unlink(missing_ok=True)
+        raise
+
+    return counts
+
+
+# ── Verification ──────────────────────────────────────────────────────────────
+
+def verify_residuals(output_path: str, source_hexes: list[str]) -> dict[str, int]:
+    """Return a dict of source hex → remaining count for any that still appear."""
+    counts = scan_xml_colors(output_path)
+    return {
+        src.upper(): counts[src.upper()]
+        for src in source_hexes
+        if counts.get(src.upper(), 0) > 0
+    }
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+def validate_input(path: Path) -> None:
+    if not path.exists():
+        print(f"ERROR: File not found: {path}")
+        sys.exit(1)
+    if path.suffix.lower() not in (".pptx", ".pptm"):
+        print(f"ERROR: Only .pptx / .pptm files are supported. Got: {path.suffix}")
+        sys.exit(1)
+    # Warn if same-name PDF sits alongside
+    pdf_sibling = path.with_suffix(".pdf")
+    if pdf_sibling.exists():
+        print(f"NOTE: Found {pdf_sibling.name} in same folder — proceeding with PPTX only.\n")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="PPT Key Color Changer v2 — raw XML engine",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    sub = parser.add_subparsers(dest="cmd")
+
+    # ── discover ──
+    d = sub.add_parser("discover", help="Scan PPTX and show all colors + frequency")
+    d.add_argument("--input", required=True, help="Path to .pptx file")
+
+    # ── replace ──
+    r = sub.add_parser("replace", help="Replace colors via raw XML substitution")
+    r.add_argument("--input", required=True, help="Path to source .pptx file")
+    r.add_argument(
+        "--mapping", required=True,
+        help='JSON map: {"SRC_HEX": "DST_HEX", ...} (uppercase, no #)',
+    )
+    r.add_argument(
+        "--exclude", default="",
+        help="Comma-separated hex colors to never replace (in addition to built-in defaults)",
+    )
+    r.add_argument(
+        "--suffix", default=None,
+        help="Label for output filename, e.g. --suffix tossblue → file_tossblue.pptx",
+    )
+    r.add_argument(
+        "--output", default=None,
+        help="Full output path (overrides auto-naming)",
+    )
+
+    args = parser.parse_args()
+
+    if args.cmd is None:
+        parser.print_help()
+        sys.exit(1)
+
+    input_path = Path(args.input)
+    validate_input(input_path)
+
+    if args.cmd == "discover":
+        discover(str(input_path))
+        return
+
+    # ── replace flow ──
+    try:
+        raw_mapping: dict = json.loads(args.mapping)
     except json.JSONDecodeError as e:
         print(f"ERROR: Invalid --mapping JSON: {e}")
         sys.exit(1)
 
-    run(args.input, mapping, args.tolerance, args.output)
+    # Normalize: uppercase, strip #
+    mapping = {
+        k.lstrip("#").upper(): v.lstrip("#").upper()
+        for k, v in raw_mapping.items()
+    }
+
+    # Build exclude set (defaults + user-provided)
+    exclude = set(DEFAULT_EXCLUDE)
+    if args.exclude:
+        for ex in args.exclude.split(","):
+            ex = ex.strip().lstrip("#").upper()
+            if ex:
+                exclude.add(ex)
+
+    out_path = args.output or safe_output_path(str(input_path), args.suffix, mapping)
+
+    print(f"Input : {input_path.name}")
+    print(f"Output: {Path(out_path).name}")
+    print(f"\nMapping ({len(mapping)} colors):")
+    for src, dst in mapping.items():
+        skip = " [SKIPPED — in exclude list]" if src in exclude else ""
+        print(f"  #{src} → #{dst}{skip}")
+
+    print("\nApplying raw XML replacement...")
+    counts = replace_colors(str(input_path), mapping, exclude, out_path)
+
+    print("\nReplacement results:")
+    total = sum(counts.values())
+    for src, n in counts.items():
+        dst = mapping[src]
+        status = f"{n} occurrence{'s' if n != 1 else ''}"
+        print(f"  #{src} → #{dst}: {status}")
+    print(f"  Total: {total} replacements")
+
+    print("\nVerifying residuals...")
+    residuals = verify_residuals(out_path, list(mapping.keys()))
+    if residuals:
+        print("  WARNING — residual source colors remain in the output:")
+        for src, count in residuals.items():
+            print(f"    #{src}: {count} occurrence(s) still present")
+        print(
+            "\n  Likely causes:\n"
+            "  • Embedded images (PNG/JPEG) — colors inside images cannot be changed via XML.\n"
+            "  • External Excel charts — some series colors may live in a linked .xlsx file.\n"
+            "  These must be edited manually."
+        )
+    else:
+        print("  OK — no residual source colors found.")
+
+    print(f"\nSaved: {out_path}")
 
 
 if __name__ == "__main__":
