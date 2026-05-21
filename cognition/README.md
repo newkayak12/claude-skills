@@ -17,7 +17,7 @@ Thinking quality and epistemic skills for clearer reasoning.
 | Skill | Description |
 |-------|-------------|
 | `assumption-extractor` | Surface hidden assumptions in plans, arguments, or decisions |
-| `bias-auditor` | Identify cognitive biases affecting a decision or analysis |
+| `bias-auditor` | Audit cognitive biases with context probe, per-bias remedies, and calibration self-check (v2) |
 | `clarity-toolkit` | Sharpen vague ideas, fuzzy goals, or unclear thinking |
 | `epistemic-reasoner` | Reason about what you know, don't know, and can't know |
 | `fallacy-detector` | Detect logical fallacies in arguments or reasoning chains |
