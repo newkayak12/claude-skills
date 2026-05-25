@@ -19,7 +19,7 @@
     {
       "name": "technique-write",
       "description": "Technical writing techniques with strict templates: design-review-writer (interactive discovery → fixed-template Design Review) and adr-writer (declarative Architecture Decision Record derived from a Design Review or raw context).",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": {
         "name": "newkayak12"
       },

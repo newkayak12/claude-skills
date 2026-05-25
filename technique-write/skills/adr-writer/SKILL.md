@@ -1,14 +1,11 @@
 ---
 name: adr-writer
+effort: high
 description: >-
-  Use when an architectural or technical decision needs to be captured as an
-  Architecture Decision Record — typically right after a Design Review is
-  approved, or when a debated choice (database, protocol, framework, boundary)
-  needs to outlive the people who made it. Triggers on: "ADR 써줘",
-  "이 결정 ADR로 남기자", "design review 기반으로 ADR 생성", "아키텍처 결정 기록",
-  "write an ADR", "document this decision as an ADR", "ADR for the database choice".
-  Always invoke this skill instead of free-form drafting — the team's ADR
-  template is fixed and the Decision section must be declarative.
+  Use when capturing an architectural decision as an ADR — after a Design Review
+  or from raw context. Triggers: "ADR 써줘", "이 결정 ADR로", "write an ADR",
+  "document this decision". Fixed template; Decision must be declarative
+  ("~를 채택한다").
 scenarios:
   - "Postgres vs MySQL 결정 ADR로 남겨줘"
   - "방금 끝낸 design review 기반으로 ADR 만들어줘"
@@ -41,14 +38,14 @@ related:
 
 ## Standing Mandates
 
-- ALWAYS write the Decision section in declarative active voice (`~를 채택한다`, `~로 한다`, `We will use X`). Reject hedging like `~를 고려한다`, `~가 적합할 것 같다`, `We might use X`.
-- ALWAYS fill Negative consequences. An ADR with empty Negative is not honest; reject it and ask the user what they're paying for the decision.
-- NEVER edit or delete a previously accepted ADR. To reverse a decision, write a new ADR with `Status: Superseded by ADR-XXXX` set on the old one and `Status: Accepted` on the new one, with the prior number in `Related:`.
-- NEVER fabricate a Design Review reference. If no Design Review exists, write `Related: (none — captured post-hoc)` rather than inventing a doc.
+- ALWAYS write the Decision in declarative active voice (`~를 채택한다`, `~로 한다`). Reject hedging like `~를 고려한다`, `~가 적합할 것 같다`.
+- ALWAYS fill Negative consequences. Empty Negative is not honest — ask the user what they're paying.
+- NEVER edit or delete a previously accepted ADR. Reverse with a new ADR; mark the old one `Superseded by ADR-XXXX`.
+- NEVER fabricate a Design Review reference. If none exists, write `Related: (none — captured post-hoc)`.
 
 # ADR Writer
 
-Produce an Architecture Decision Record in the team's fixed template. Input is either an approved Design Review or raw decision context. Output is declarative, numbered, and stored at `docs/adr/`.
+Produce an Architecture Decision Record in the team's fixed template. Input is either an approved Design Review or raw decision context. Output is declarative, sequentially numbered, and stored at `docs/adr/`.
 
 ## When to Use / When Not to Use
 
@@ -57,92 +54,20 @@ Produce an Architecture Decision Record in the team's fixed template. Input is e
 | Decision is hard to reverse (DB, protocol, schema, boundary) | Trivial implementation detail |
 | Multiple reasonable alternatives existed | Only one viable option |
 | Team will turn over before the decision is revisited | Decision will be revisited within weeks |
-| Design Review is approved and needs to be locked in | Design Review still in `Draft`/`In Review` — use `design-review-writer` to finish it first |
+| Design Review is approved and needs to be locked in | Design Review still `Draft`/`In Review` — finish it with `design-review-writer` first |
 
 ## Process
 
-### Step 1 — Locate the source
+1. **Locate the source** — Design Review path, or raw 3-5 line context. If DR exists, read it and map §2/§5/§6/§7/§8 → ADR slots.
+2. **Assign number + status** — scan `docs/adr/` for highest `NNNN-*.md`, take +1; set `Proposed`/`Accepted`/`Deprecated`/`Superseded`.
+3. **Write `Context`** — quantified, for a smart engineer who joined today.
+4. **Write `Decision`** — declarative, active voice, 1-3 sentences. If available, invoke `writer-verification` to catch hedging.
+5. **Write `Rationale`** — chosen-option reasons referencing Context constraints + one line per rejected alternative.
+6. **Write `Consequences`** — Positive / Negative / Neutral, all three buckets. If Negative is empty, invoke `bias-auditor`.
+7. **Write `References`** — Design Review, RFCs, prior ADRs, vendor docs; or explicit `(none)`.
+8. **Set metadata + save** — Date today, real Deciders, `docs/adr/NNNN-<slug>.md`.
 
-Ask the user:
-1. design review 문서가 있나요? (있다면 경로/링크)
-2. 없다면 결정 배경을 3-5줄로 요약해 주세요.
-
-If a Design Review exists, **read it fully** before drafting. Pull:
-- §2 Background & Context → ADR `Context`
-- §5 Proposed Design → ADR `Decision` (rewritten in declarative form)
-- §6 Alternatives Considered → ADR `Rationale` (rejection reasons summarized)
-- §7 Trade-offs → ADR `Consequences.Negative`
-- §8 Impact Analysis → ADR `Consequences.Positive` and `Consequences.Neutral`
-
-If no Design Review exists, gather equivalent context interactively. Consider invoking `decision-maker` to clarify the actual decision boundary before drafting.
-
-### Step 2 — Assign the number and status
-
-Scan `docs/adr/` for the highest existing `NNNN-*.md`, then take `NNNN+1`. Pad to 4 digits.
-
-Set status:
-- `Proposed` — drafted but not yet approved
-- `Accepted` — approved and in effect
-- `Deprecated` — no longer in effect but not replaced
-- `Superseded by ADR-XXXX` — replaced by a newer ADR
-
-If this ADR supersedes an older one, **also update the old ADR's Status** to `Superseded by ADR-NNNN` in the same change.
-
-### Step 3 — Write `Context`
-
-Describe the situation that forced the decision: system state, constraints, prior failures, deadlines. Write for a smart engineer who joined today and has read the codebase but knows nothing about past discussions. Quantify where possible.
-
-### Step 4 — Write `Decision` in declarative voice
-
-One to three sentences. Active voice. Present tense.
-
-| Reject | Accept |
-|--------|--------|
-| Postgres가 좋을 것 같다 | Postgres를 주 데이터 저장소로 채택한다 |
-| We are thinking about using Kafka | We will use Kafka for inter-service events |
-| 모놀리스를 분리하는 방향을 검토한다 | 결제 도메인을 별도 서비스로 분리한다 |
-
-If the user pushes back asking for softer language, hold the line and explain: an ADR is the *commitment artifact*. Softness here causes future readers to re-litigate the decision.
-
-If you have `writer-verification`, invoke it on the Decision section to catch hedging that slipped through.
-
-### Step 5 — Write `Rationale`
-
-Two parts:
-1. The core reasons this option was chosen (reference Context constraints by name).
-2. A one-line-per-alternative summary of why each was rejected.
-
-Use `tradeoff-articulator` framing for the core reasons: "We accept X cost in order to gain Y benefit."
-
-### Step 6 — Write `Consequences` in three buckets
-
-| Bucket | Meaning | Example |
-|--------|---------|---------|
-| **Positive** | Benefits we gain from this decision | "Latency budget for writes drops from 200ms to 50ms" |
-| **Negative** | Costs/risks we accept | "Operational footprint adds a new HA cluster to maintain" |
-| **Neutral** | Changes that aren't clearly good or bad | "All new services must register schemas with the central registry" |
-
-If `Negative` is empty after a first pass, invoke `bias-auditor` to force surface the costs. Then ask the user directly: "이 결정으로 우리가 *치르는* 비용이 정말 없나요?"
-
-Neutral is the most-skipped bucket. Use it for changes that are simply *true now* — process changes, new conventions, mandatory registrations — that don't lean positive or negative.
-
-### Step 7 — Write `References`
-
-Link, in order:
-- Design Review document (path + title)
-- RFCs or external standards consulted
-- Prior ADRs (especially if superseded)
-- Vendor docs / benchmark reports that informed the decision
-
-If nothing applies, write `(none)` — do not invent.
-
-### Step 8 — Set metadata and save
-
-- **Date**: today (YYYY-MM-DD)
-- **Deciders**: names of people who actually decided, not just attendees
-- **Related**: Design Review #, RFC #, prior ADR #
-
-Save to `docs/adr/NNNN-<short-slug>.md`. Slug should mirror the decision: `0007-adopt-postgres-as-primary-store.md`.
+Full per-step playbook — including the Design Review → ADR section mapping, declarative-voice examples, and Consequences bucket definitions — in `references/process-detail.md`. Read it when you reach the matching step.
 
 ## Output Template
 
@@ -187,11 +112,11 @@ Produce the document in this **exact** structure. Section names and order are fi
 
 | Claude | You |
 |--------|-----|
-| Reads the Design Review and maps sections → ADR slots | Provide the Design Review path, or raw context if none |
-| Rewrites the chosen design in declarative voice | Approve the final wording or push back with concrete edits |
-| Forces 3-bucket Consequences (Positive/Negative/Neutral) | Confirm the Negative bucket reflects real cost, not boilerplate |
+| Reads the Design Review and maps sections → ADR slots | Provide the Design Review path, or raw context |
+| Rewrites the chosen design in declarative voice | Approve final wording or push back with concrete edits |
+| Forces 3-bucket Consequences (Positive/Negative/Neutral) | Confirm Negative reflects real cost, not boilerplate |
 | Assigns the next sequential number | Verify the number doesn't collide with an unmerged ADR |
-| Updates the superseded ADR's Status in the same change | Confirm the old ADR is in the same repo and accessible |
+| Updates the superseded ADR's Status in the same change | Confirm the old ADR is in the same repo |
 | Auto-fills Date with today | Set Deciders to the actual decision-makers |
 
 ## Storage Convention
@@ -224,17 +149,7 @@ Sequential numbering. Never delete or rewrite an accepted ADR — supersede inst
 - `doc-coauthoring` — section-by-section co-write mechanics for long Context
 - `writer-verification` — final pass to catch hedging in Decision
 - `tradeoff-articulator` — frame Rationale as "accept X to gain Y"
-- `decision-maker` — when the actual decision boundary is unclear before Step 1
-- `bias-auditor` — force-surface costs when Negative is empty
+- `decision-maker`, `bias-auditor` — when the decision boundary is unclear or Negative is empty
 - `architecture-designer` / `domain-driven-design` / `microservices-architect` — domain context for the decision being captured
 
-## If a related skill is not installed
-
-If a referenced skill above is not available in the user's marketplace install, tell the user:
-
-> "이 단계는 `[skill-name]` 스킬과 함께 쓰면 품질이 올라갑니다. 두 가지 선택지가 있습니다:
-> 1. 마켓플레이스(`https://github.com/newkayak12/claude-skills`)에서 해당 플러그인을 설치 → 다시 진행
-> 2. 설치 없이 진행 — 제가 스킬 이름에서 유추해 유사한 흐름으로 대신 수행 (품질은 다소 낮을 수 있음)
-> 어느 쪽으로 진행할까요?"
-
-Default to option 2 if the user says "그냥 진행" or doesn't respond after one ask.
+Fallback if any related skill is not installed: see `references/process-detail.md`.
