@@ -1,13 +1,10 @@
 ---
 name: design-review-writer
+effort: high
 description: >-
-  Use when someone wants to draft a Design Review document for a new feature or
-  system — the kind that captures background, goals, alternatives, trade-offs,
-  and impact before code is written. Triggers on: "design review 써줘",
-  "디자인 리뷰 문서 작성", "RFC 초안", "이 기능 설계 같이 잡자", "write a design review",
-  "draft a design doc for this feature", "we need a design doc before building".
-  Always invoke this skill instead of free-form drafting when the user asks for
-  a Design Review — improvising the structure breaks the team's review workflow.
+  Use when drafting a Design Review for a new feature or system. Triggers:
+  "design review 써줘", "디자인 리뷰 문서", "RFC 초안", "write a design review",
+  "이 기능 설계 같이 잡자". Fixed 8-section template.
 scenarios:
   - "결제 모듈 새로 만드는데 design review 같이 작성하자"
   - "알림 시스템 디자인 리뷰 초안 잡아줘"
@@ -43,90 +40,37 @@ related:
 
 ## Standing Mandates
 
-- NEVER draft all 8 sections in one shot — finish and confirm a section before moving on. Top-down drafts hide unresolved questions.
-- ALWAYS produce at least 2 Alternatives in §6. A Design Review with one option is a proposal, not a review.
-- ALWAYS run a devil's-advocate pass on the Proposed Design before writing §7 (Trade-offs). Trade-offs written without adversarial review default to marketing.
-- NEVER fill optional sections (Migration, Rollback, Observability, Testing, Security, Operational, Open Questions, Timeline) unless the user confirms they apply. Empty optional sections train reviewers to skim.
+- NEVER draft all 8 sections in one shot — finish and confirm a section before moving on.
+- ALWAYS produce at least 2 Alternatives in §6. One option is a proposal, not a review.
+- ALWAYS run `devils-advocate` against the Proposed Design before writing §7.
+- NEVER fill optional sections unless the user confirms they apply. Empty optional sections train reviewers to skim.
 
 # Design Review Writer
 
-Interactive guide for producing a Design Review document in the team's fixed template. The user brings the topic; this skill drives discovery and writes the artifact.
+Interactive guide that drives section-by-section discovery and writes the document in the team's fixed 8-section template. The user brings the topic; this skill drives questions, invokes the right collaborator skills, and assembles the artifact.
 
 ## When to Use / When Not to Use
 
 | Use | Skip |
 |-----|------|
-| New feature/system, multiple reasonable designs exist | One-line bug fix or refactor — overkill |
+| New feature/system, multiple reasonable designs exist | One-line bug fix or refactor |
 | Cross-team impact or hard-to-reverse choices | Internal-only tweak with no reviewers |
-| Reviewers will use the doc as the decision artifact | The decision is already made — use `adr-writer` directly |
+| Reviewers will use the doc as the decision artifact | Decision is already made — use `adr-writer` directly |
 
 If the user already knows the decision, **stop and invoke `adr-writer`**. Design Reviews are for exploration; ADRs are for capture.
 
 ## Process
 
-### Step 1 — Frame the topic (5 min)
-Ask the user:
-1. 한 문장으로, 무엇을 만들/바꾸려고 하나요?
-2. 왜 지금인가요? (트리거 이벤트, 데드라인, 장애)
-3. 이 문서를 누가 읽고 무엇을 결정해야 하나요?
+1. **Frame the topic** — get one-sentence intent, trigger, audience. If symptomatic, invoke `problem-reframer`.
+2. **Fill §2 Background + §3 Goals/Non-Goals** — pull constraints; force Non-Goals.
+3. **Fill §4 Requirements** — split functional/non-functional, quantify NFRs.
+4. **Diverge** — invoke `brainstorming` for 3-5 alternatives; write §6 **before** §5 to avoid anchoring.
+5. **Converge** — pick one as §5 Proposed Design (diagrams + flows; prefer Mermaid).
+6. **Stress test** — `devils-advocate` → `bias-auditor` → `assumption-extractor`; then write §7 Trade-offs and §8 Impact Analysis.
+7. **Decide optional sections** — only fill the ones the user confirms apply.
+8. **Assemble + metadata** — Author, Reviewers, Status=Draft, Created today. Write **§1 Summary last**.
 
-If the answer to (1) is vague or symptomatic (`"속도가 느려서…"`, `"확장이 안 되어서…"`), invoke `problem-reframer` before continuing. A blurry topic produces a blurry §2.
-
-### Step 2 — Fill §2 Background & Context and §3 Goals/Non-Goals
-Pull current state from the user: system state, prior attempts, business pressure, constraints. Then split:
-- **Goals** — measurable outcomes for *this* scope
-- **Non-Goals** — things reviewers will ask about that you are deliberately excluding
-
-Non-Goals are the most-skipped section and the most-valuable. If the user can't name any, ask: "What would a reviewer probably assume is in scope that isn't?"
-
-### Step 3 — Fill §4 Requirements
-Split functional vs. non-functional. Quantify NFRs (latency p99, RPS, RPO/RTO, concurrent users). Replace adjectives with numbers — "fast" becomes "<200ms p99".
-
-### Step 4 — Diverge on alternatives (§6 first, before §5)
-**Invoke `brainstorming`** to produce 3-5 candidate designs. Capture each with:
-- Name
-- One-paragraph sketch
-- Strongest reason to adopt
-- Strongest reason to reject
-
-Writing §6 before §5 prevents the most common failure: anchoring on the first design that came to mind and back-rationalizing.
-
-If the design space touches domain modeling, invoke `domain-driven-design`. If it touches service decomposition, invoke `microservices-architect`. If it's a topology/database/infrastructure choice, invoke `architecture-designer`.
-
-### Step 5 — Converge and write §5 Proposed Design
-Pick one alternative as the proposal. Document:
-- **High-Level Architecture** — Mermaid/ASCII diagram or component list
-- **Sequence / Flow** — the 1-2 most important runtime scenarios
-
-For diagrams, prefer Mermaid (`sequenceDiagram`, `flowchart LR`) so the doc renders in GitHub/Confluence. Plain ASCII is fine as fallback.
-
-### Step 6 — Stress test, then write §7 Trade-offs and §8 Impact Analysis
-**Invoke `devils-advocate`** against the Proposed Design. Then **invoke `bias-auditor`** to check for confirmation bias and `assumption-extractor` to surface hidden assumptions in §2-5. Write trade-offs from what survives.
-
-For §7, use `tradeoff-articulator` framing: "We accept X cost in order to gain Y benefit." Avoid one-sided bullet lists.
-
-For §8 (Impact Analysis), invoke `second-order-thinker` to push past first-order ("Service A calls Service B") to second-order ("On-call rotation for Team C now covers a critical path").
-
-### Step 7 — Decide optional sections
-Ask the user which apply. Suggest based on signals:
-| Signal in §2-§5 | Suggest |
-|-----------------|---------|
-| Migration from existing system | Migration / Rollout, Rollback |
-| SLO mentioned in §4 | Observability |
-| Touches PII, auth, payments | Security & Compliance |
-| Multiple teams, on-call change | Operational Concerns |
-| Unresolved questions remain | Open Questions |
-| Has a deadline | Timeline & Milestones |
-
-Empty optional sections train reviewers to skim. Either fill it meaningfully or omit it.
-
-### Step 8 — Assemble the document and set metadata
-Set:
-- **Author** — the user (ask if unknown)
-- **Reviewers** — ask who must sign off
-- **Status** — `Draft` initially; flip to `In Review` when shared
-- **Created** — today's date (YYYY-MM-DD)
-- **Last Updated** — same as Created on first write
+Full per-step playbook — including domain skill routing, optional-section signal table, and fallback when a related skill is missing — in `references/process-detail.md`. Read it when you reach the matching step.
 
 ## Output Template
 
@@ -213,17 +157,15 @@ Produce the document in this **exact** structure. Section numbering and headers 
 - 리뷰어별 코멘트 / 결정 요약 형태로 정리
 ```
 
-Write §1 *last* — a Summary written before the body is a wish, not a summary.
-
 ## What Claude Does / What You Do
 
 | Claude | You |
 |--------|-----|
-| Drives the section-by-section interview | Provide real context, constraints, and numbers |
+| Drives the section-by-section interview | Provide real context, constraints, numbers |
 | Invokes `brainstorming` / `devils-advocate` / `bias-auditor` at the right moment | Veto an invocation if you've already done that thinking |
-| Quantifies vague requirements ("fast" → "<200ms p99") | Confirm the numbers reflect actual SLOs |
+| Quantifies vague requirements ("fast" → "<200ms p99") | Confirm numbers reflect actual SLOs |
 | Names Non-Goals reviewers might assume are in scope | Confirm what's excluded |
-| Drafts at least 2 alternatives in §6 with rejection reasons | Add any alternative the team already discussed |
+| Drafts ≥ 2 alternatives in §6 with rejection reasons | Add any alternative the team already discussed |
 | Auto-fills Created/Last Updated with today's date | Set Author and Reviewers |
 | Flags one-sided trade-offs and forces honest §7 | Approve only when costs are stated, not hidden |
 
@@ -234,7 +176,7 @@ docs/design-reviews/
   YYYY-MM-DD-<short-slug>.md
 ```
 
-When a Design Review is Approved, **invoke `adr-writer`** to produce the matching ADR. Cross-link both documents in their `Related:` metadata.
+When the Design Review is Approved, invoke `adr-writer` to produce the matching ADR. Cross-link both documents in their `Related:` metadata.
 
 ## Quick Checklist
 
@@ -250,24 +192,10 @@ When a Design Review is Approved, **invoke `adr-writer`** to produce the matchin
 
 ## Related Skills
 
-- `brainstorming` — diverge on alternatives for §6
-- `devils-advocate` — stress-test the Proposed Design before §7
-- `problem-reframer` — when the topic is symptomatic in Step 1
+- `brainstorming`, `devils-advocate`, `problem-reframer` — divergence and stress testing
 - `architecture-designer` / `domain-driven-design` / `microservices-architect` — produce §5 diagrams
-- `bias-auditor` — confirmation-bias check before §7
-- `tradeoff-articulator` — frame §7 as "accept X to gain Y"
-- `assumption-extractor` — surface hidden assumptions in §2-§5
-- `second-order-thinker` — push §8 past first-order impact
+- `bias-auditor`, `tradeoff-articulator`, `assumption-extractor`, `second-order-thinker` — honest §7-§8
 - `doc-coauthoring` — section-by-section co-write mechanics
-- `adr-writer` — once the Design Review is Approved, convert to ADR
+- `adr-writer` — once Approved, convert to ADR
 
-## If a related skill is not installed
-
-If a referenced skill above is not available in the user's marketplace install, tell the user:
-
-> "이 단계는 `[skill-name]` 스킬과 함께 쓰면 품질이 올라갑니다. 두 가지 선택지가 있습니다:
-> 1. 마켓플레이스(`https://github.com/newkayak12/claude-skills`)에서 해당 플러그인을 설치 → 다시 진행
-> 2. 설치 없이 진행 — 제가 스킬 이름에서 유추해 유사한 흐름으로 대신 수행 (품질은 다소 낮을 수 있음)
-> 어느 쪽으로 진행할까요?"
-
-Default to option 2 if the user says "그냥 진행" or doesn't respond after one ask.
+Fallback if any related skill is not installed: see `references/process-detail.md`.
