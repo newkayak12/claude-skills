@@ -124,7 +124,7 @@ compatibility:
 ---
 
 ### Step 7 — ADR Documentation
-**Skill:** `adr-writer`
+**Skill:** `technique-write:adr-writer`
 **Goal:** Record all significant decisions with context, alternatives considered, and honest trade-offs
 **Input:** Decisions from Steps 1–6 (boundaries, tech choices, communication patterns, layer design)
 **Output:** One ADR per decision in `docs/adr/`, numbered sequentially, status set

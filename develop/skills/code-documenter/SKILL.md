@@ -41,7 +41,7 @@ metadata:
 - Writing tutorials, user guides, or troubleshooting docs
 
 **Do not use when:**
-- You need architectural decision documentation (use `adr-writer`)
+- You need architectural decision documentation (use `technique-write:adr-writer`)
 - You need a documentation strategy plan (use `documentation-strategy`)
 
 ## Process
@@ -138,6 +138,6 @@ async function fetchProducts(categoryId: string, page = 1): Promise<ProductPage>
 
 ## Related Skills
 
-- `adr-writer` — for documenting architectural decisions
+- `technique-write:adr-writer` — for documenting architectural decisions
 - `documentation-strategy` — for planning a documentation system
 - `code-documenter` + `frontend-developer` — generate JSDoc alongside React component builds

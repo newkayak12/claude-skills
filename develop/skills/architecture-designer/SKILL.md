@@ -116,4 +116,4 @@ For a worked ADR example and full template, see `references/adr-template.md`.
 - `develop:clean-architecture` — internal layer dependencies and dependency rule
 - `develop:domain-driven-design` — domain modeling and bounded contexts
 - `develop:microservices-architect` — distributed system decomposition
-- `develop:adr-writer` — writing individual Architecture Decision Records
+- `technique-write:adr-writer` — writing individual Architecture Decision Records

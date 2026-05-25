@@ -145,7 +145,7 @@ Add to your team's PR template:
 
 | Need | Go To |
 |------|-------|
-| Architectural decisions to document | [`../adr-writer/SKILL.md`](../adr-writer/SKILL.md) |
+| Architectural decisions to document | `technique-write:adr-writer` (sibling plugin) |
 | System design → architecture docs | [`../architecture-designer/SKILL.md`](../architecture-designer/SKILL.md) |
 | Inline code documentation | [`../code-documenter/SKILL.md`](../code-documenter/SKILL.md) |
 | Incident RCA to store and maintain | [`../incident-response-playbook/SKILL.md`](../incident-response-playbook/SKILL.md) |

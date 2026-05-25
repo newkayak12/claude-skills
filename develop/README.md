@@ -16,7 +16,7 @@ Engineering skills for software development workflows.
 
 | Skill | Description |
 |-------|-------------|
-| `architecture-designer` | Design system architecture, write ADRs, evaluate trade-offs |
+| `architecture-designer` | Design system architecture and evaluate trade-offs (ADR drafting lives in `technique-write:adr-writer`) |
 | `chaos-engineer` | Design chaos experiments and failure injection frameworks |
 | `cli-developer` | Build CLI tools with argument parsing and shell completions |
 | `code-documenter` | Generate docstrings, OpenAPI specs, JSDoc, and doc sites |
