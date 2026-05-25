@@ -157,4 +157,4 @@ For each entity E:
 - `microservices-architect` — design new service boundaries after validation
 - `event-storming` — discover bounded contexts to inform boundary decisions
 - `transaction-boundary-reviewer` — fix cross-service transaction anti-patterns
-- `adr-writer` — document the split or merge decision
+- `technique-write:adr-writer` — document the split or merge decision

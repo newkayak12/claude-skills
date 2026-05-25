@@ -132,5 +132,5 @@ Hotspots Remaining: [open questions]
 
 - `microservices-architect` — design service boundaries after bounded contexts are discovered
 - `service-boundary-validator` — validate the boundaries against DDD and team topology principles
-- `adr-writer` — document key decisions that emerge from the workshop
+- `technique-write:adr-writer` — document key decisions that emerge from the workshop
 - `domain-driven-design` — deeper DDD concepts for aggregates and context mapping

@@ -135,4 +135,4 @@ Structure output as an Architecture Decision Record (ADR):
 - `service-boundary-validator` — validate proposed boundaries for distributed monolith patterns
 - `event-storming` — discover bounded contexts before designing services
 - `spring-boot-engineer` — implement the services after architecture is defined
-- `adr-writer` — document the architectural decisions
+- `technique-write:adr-writer` — document the architectural decisions

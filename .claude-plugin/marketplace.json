@@ -8,13 +8,23 @@
   "plugins": [
     {
       "name": "develop",
-      "description": "Engineering skills: CLI, SQL, clean architecture, clean code, DDD, pragmatic programming, database optimization, chaos engineering, Spring Boot, microservices, Kotlin, TDD, frontend, code documentation, testing, MCP builder, SRE, performance profiling & optimization, incident response, documentation strategy, and dev-quality-workflow (full dev cycle entry point).",
-      "version": "1.1.2",
+      "description": "Engineering skills: CLI, SQL, clean architecture, clean code, DDD, pragmatic programming, database optimization, chaos engineering, Spring Boot, microservices, Kotlin, TDD, frontend, code documentation, testing, MCP builder, SRE, performance profiling & optimization, incident response, documentation strategy, and dev-quality-workflow (full dev cycle entry point). ADR drafting moved to the technique-write plugin.",
+      "version": "1.1.3",
       "author": {
         "name": "newkayak12"
       },
       "source": "./develop",
       "category": "engineering"
+    },
+    {
+      "name": "technique-write",
+      "description": "Technical writing techniques with strict templates: design-review-writer (interactive discovery → fixed-template Design Review) and adr-writer (declarative Architecture Decision Record derived from a Design Review or raw context).",
+      "version": "1.0.0",
+      "author": {
+        "name": "newkayak12"
+      },
+      "source": "./technique-write",
+      "category": "productivity"
     },
     {
       "name": "pm",
