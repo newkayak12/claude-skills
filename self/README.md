@@ -25,4 +25,5 @@ Self-reflection and personal growth skills for deeper self-understanding.
 | `motivation-explorer` | Uncover intrinsic motivations and energy sources |
 | `shadow-persona` | Explore shadow aspects and disowned parts of personality |
 | `strength-growth-mapper` | Map strengths and growth edges for development |
+| `talk` | Psychological counseling session — listen, explore, recognize patterns |
 | `values-explorer` | Clarify personal values and their hierarchy |
