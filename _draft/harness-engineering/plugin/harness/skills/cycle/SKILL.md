@@ -1,0 +1,146 @@
+---
+name: cycle
+description: >-
+  Use when starting a new product/dev cycle and you need the pre-cycle entry
+  gate before committing time. Triggers on: "새 사이클 시작", "이거 만들어도 될까",
+  "사이클 시작해줘", "pre-cycle 게이트", "start a cycle", "should I build this",
+  "cycle 돌리자", "하네스 사이클". Runs problem-first gate, declares cycle type,
+  scaffolds artifacts, enforces WIP=1.
+scenarios:
+  - "이 아이디어로 새 사이클 시작해도 될까?"
+  - "사이클 하나 돌려보자"
+  - "Should I commit to building this? Run the gate"
+  - "새 프로젝트 시작 전에 점검해줘"
+  - "harness 사이클 시작"
+compatibility:
+  optional:
+    - think-tool          # surfaces hidden motives / second-order effects in self-check
+    - sequential-thinking # for stepping through the 5 gate groups
+  remote_mcp_note: >-
+    think-tool이 있으면 E 자기 점검(진짜 동기·6개월 후 후회)을 더 체계적으로 캘 수 있습니다.
+    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
+related:
+  - hypothesis-driven-dev
+  - decision-maker
+  - bias-auditor
+---
+
+# Harness Cycle — Pre-cycle Entry Gate
+
+새 사이클을 *시작할 자격*이 있는지 대화로 점검하고, 통과하면 산출물을 scaffold한다. **잘못 시작된 사이클은 잘 끝낼 수 없다.**
+
+이 스킬은 `09-pre-cycle.md` 게이트를 *실행 가능*하게 만든 것이다. 마크다운 5개를 직접 읽는 대신, 이 스킬이 한 군씩 묻고 판정한다.
+
+## The Gate
+
+**산출물 scaffold 전에 게이트를 통과해야 한다.** "간단한" 아이디어도. 게이트 비용은 낮고, 잘못 시작한 사이클의 비용(매몰비용 + 완주 압박)은 크다.
+
+## Step 0: WIP=1 확인 (먼저)
+
+`cycles/active`가 이미 있으면 **STOP**. 새 사이클을 시작하기 전에 현재 사이클을 *명시적으로 종료*해야 한다 (SD-03, AP-12).
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/cycle-init.py --check-wip
+```
+
+active가 있으면 그 사이클을 보여주고, 사용자에게 "지금 사이클을 종료할지 / 이번 시작을 보류할지" 묻는다. 강행은 escape-cycle anti-pattern일 수 있으니 한 번 더 확인.
+
+## Step 1: 사이클 타입 선언
+
+먼저 타입을 정한다 — 게이트가 타입에 따라 적응한다 (`09 §9.1b`).
+
+| 타입 | 정의 | 게이트 적응 |
+|---|---|---|
+| **Product** | 외부 사용자를 위한 제품/기능 | 전체 게이트 그대로. 인터뷰 5명·Gate 1 제품 가설 유효 |
+| **Dev-tool / Self** | 본인이 쓰는 도구·자동화 | "인터뷰 5명" → self-dogfooding. Gate 1 → "도구 유용성" |
+| **Exploration / Spike** | 학습·검증이 목적 | "문제 진술" → 학습 질문. 시간 Kill 짧게 |
+
+한 질문으로 묻는다. 기본은 Product (가장 빡빡).
+
+## Step 2: 게이트 5군 — 한 군씩 대화로
+
+각 군을 *한 번에 하나씩* 묻는다. 답을 받고 다음으로. 모든 체크를 한꺼번에 쏟지 마라.
+
+### A. 아이디어 — 문제부터, 해결책 나중
+- 문제 진술이 있는가? *("사용자가 X를 못 한다" 형식 — "Y를 만들고 싶다"가 아님)*
+- 누구의 문제인가? 구체적 Persona 1개 이상
+- 빈도 × 강도?
+- 현재 대안은?
+- 해결책에 과몰입하고 있지 않은가? (bias 자기 점검)
+
+> **"Y를 만들고 싶다"로 시작하면 멈춘다** — solution-shopping. 문제 진술로 되돌린다.
+
+### B. 전략적 적합도
+- 이전 사이클 학습과 정렬되는가?
+- 현재 강점을 활용하나? (또는 의도적 새 영역인가)
+- 운영 중 제품과 충돌하지 않는가? (WIP=1)
+
+### C. 비용·시간 — *STOP 위험 지점*
+- 시간 예산이 잡혀 있는가?
+- 금전 예산이 잡혀 있는가?
+- 현재 capacity로 완주 가능한가?
+- Kill 기준이 사전 정의되어 있는가?
+
+### D. 검증 가능성 (타입별 적응)
+- Gate 1 통과 가능성이 있는가?
+- 검증 대상 접근 가능? (Product: 인터뷰 5명 / Dev-tool: self / Exploration: 학습 가능)
+- 가설이 반증 가능한 형태인가?
+
+### E. 자기 점검
+- 이 사이클의 진짜 동기는? (호기심? 도피? 외부 압력? 시장 기회?)
+- 6개월 뒤 후회 시나리오는?
+- 이 사이클을 *안 하면* 무엇이 나빠지나? (약하면 자격 약함)
+
+`think-tool`이 있으면 E에서 호출 — 숨은 동기를 캔다.
+
+## Step 3: 결정 매트릭스
+
+| 조건 | 결정 |
+|---|---|
+| A + D 모두 yes | 진행 가능 |
+| C에 1개 이상 no | **STOP** — 예산 부족 (시간/Kill 미정이면 지금 정하고 재판정) |
+| B 모두 no | 재검토 — *왜* 지금 이걸 하는가 |
+| E 진짜 동기가 도피/외부 압력 | **STOP** — 다른 해결책 모색 |
+
+결정을 *기록 없이* 통과시키지 않는다:
+- **Go** → Step 4 scaffold
+- **No-go** → 사유 1줄 + 큐 어디로 (재검토/폐기/인계)
+- **Defer** → 보류 조건 명시 (어떤 신호가 보이면 재시작)
+
+## Step 4: Go면 — scaffold
+
+게이트 통과 시에만 실행:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/cycle-init.py "<사이클 이름>" --type <product|dev-tool|exploration>
+```
+
+생성물: `cycles/<id>/`에 cycle-card · pre-mortem · gate-criteria · retro · findings · hypotheses.jsonl · blackbox.jsonl · metrics.json. `cycles/active` symlink 연결.
+
+그 다음 *대화로 채운다* (빈 칸을 사용자와 함께):
+1. cycle-card — 가설(반증조건 포함) · Persona · Kill 기준
+2. pre-mortem — 실패 5 + 상위 2개 완화책
+3. 각 가설을 tamper-evident 등록 (반증·통과 라인을 *등록 시점에* 고정):
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/hypothesis-register.py register \
+     --cycle <id> --id H1 \
+     --hypothesis "..." \
+     --kill-line "이 조건이면 기각" \
+     --pass-line "이 조건이면 통과"
+   ```
+
+## What Claude Does
+- 게이트를 한 군씩 대화로 진행 — 항목을 한꺼번에 쏟지 않음
+- "Y를 만들고 싶다"형 진입을 잡아 문제 진술로 되돌림
+- 결정을 매트릭스로 판정하고 *기록*
+- Go일 때만 scaffold 실행, 그 후 산출물을 사용자와 함께 채움
+
+## What You Do
+- 각 군 질문에 정직하게 답 (특히 E 진짜 동기)
+- 시간·Kill 예산을 *지금* 확정
+- 산출물 빈 칸을 함께 채움
+
+## Related Skills
+- `pm:hypothesis-driven-dev` — 가설 사전 등록
+- `think:decision-maker` — Go/No-go/Defer
+- `cognition:bias-auditor` — E 자기 점검

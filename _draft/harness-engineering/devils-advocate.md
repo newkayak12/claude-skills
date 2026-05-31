@@ -1,0 +1,253 @@
+# Harness Engineering — Devil's Advocate Log
+
+이 문서는 `_draft/harness-engineering/`에 대한 **누적 취약점 분석 로그**다. Goal([`GOAL.md`](./GOAL.md))을 향한 진행 과정에서 발견된 반론·약점·해소 경로를 *append-only*로 쌓는다.
+
+## 로그 운영 규칙
+
+- **ID는 전역 유일**: `HA-N` (Hidden Assumption) / `CA-N` (Counterargument) / `CV-N` (Core Vulnerability) / `PF-N` (Path Forward). 새 review에서도 이전 번호 이어서 매긴다 (예: Review #2의 첫 반론은 `CA-8`).
+- **Review는 append**: 기존 review를 *수정하지 않는다*. 입장이 바뀌었으면 새 review에 reason과 함께 기록.
+- **Resolution은 별도 절**: PF-N이 충족되면 본문 수정이 아니라 §Resolution log에 한 줄 추가.
+- **Severity 갱신**: 기존 CA의 severity가 바뀌면 본문은 두고 §Severity revision에 `CA-N: high → medium (review #2에서 PF-N 충족으로)` 한 줄.
+- **참조 방법**: 대화 중 "`CA-2` 보강" "`PF-3` 진행 중" "`CV-1` 해결 시도" 형태로.
+
+## Review Index
+
+| # | Date | Target state | IDs |
+|---|---|---|---|
+| 1 | 2026-05-28 | Concept stage (12 docs + scripts + hooks + templates + 4-layer rules) | HA-1..7, CA-1..7, CV-1, PF-1..7 |
+
+---
+
+# Review #1 — 2026-05-28 (Concept stage)
+
+**대상**: `_draft/harness-engineering/` 전체 — 12 markdown docs + scripts/(4) + hooks/(16 spec-only) + templates/(5) + situational-rules/(5) + 4-layer rule system
+**단계**: 컨셉 stage 중간 평가. 다음 단계는 token optimization 예정.
+**Goal 기준**: [`GOAL.md`](./GOAL.md) §1 (marketplace 설치 → `harness:install` → interactive user-rule → 사이클 실행)
+
+---
+
+## Position
+
+> Solo dev가 *install된 harness*를 AI와의 Q&A를 통해 환경 조성에 활용한다. 한 사이클(기획 → 개발 → 테스트 → 부하)을 빠뜨림 없이 끌고 가고, 다음 단계에서 token optimization으로 무게를 줄인다.
+
+## Steel-man
+
+이 제안이 작동할 수 있는 최선의 조건: *솔로 dev가 (a) 외부 PM/아키텍트 없이도 검증 단계를 강제하고 싶은 강한 동기를 가지고 있고, (b) AI가 정확한 시점에 정확한 룰만 로드하는 selective loading이 토큰 비용을 흡수할 정도로 효율적이며, (c) 12+ 문서의 룰이 코드/도구로 enforce되는 부분과 narrative로만 존재하는 부분이 명확히 분리되어 있을 때.*
+
+---
+
+## 숨은 가정 (Hidden Assumptions)
+
+### HA-1: 솔로 dev가 *불편할 때* 하네스를 지킨다
+하네스의 존재 이유 = 외부 규율 부재. 그러나 enforcer도 본인. 피곤·마감·흥분 상태에서 게이트를 건너뛰지 않을 거라는 가정은 외부 stakeholder가 없는 환경에서 입증된 적 없다.
+
+### HA-2: AI가 12+ 문서를 *드리프트 없이* 일관 해석한다
+같은 룰을 다른 세션에서 다르게 해석하지 않는다는 가정. 토큰 예산 안에서 selective loading해도 attention dilution은 남는다.
+
+### HA-3: 솔로 dev에게 검증 루프를 채울 *피드백 소스*가 있다
+페르소나/Pre-mortem/가설 사전 등록은 외부 사용자·동료 접근을 전제한다. 주말 프로젝트엔 5명의 인터뷰 대상이 없을 수 있다.
+
+### HA-4: 하네스 오버헤드 < 막아주는 실패 비용
+2주짜리 사이드 프로젝트에 12 docs of process를 적용할 가치가 있는 *최소 규모* 임계가 정의되지 않았다.
+
+### HA-5: L0 Core invariant를 *사전에* 올바르게 분류할 수 있다
+`12-rule-layering.md §7`은 도입 1단계에서 invariant 분류를 요구한다. 그러나 첫 사이클 *전*이라 데이터가 없는 상태에서의 분류다.
+
+### HA-6: Token optimization이 *나중에* 구원해준다
+이미 50KB+ markdown. 최적화로 lookup은 줄여도 *철학 자체*가 "many rules를 carry한다"는 모양이라 줄일 한계가 있다.
+
+### HA-7: AI의 anti-pattern 탐지가 신뢰할 만한 false positive 비율을 가진다
+25-30개 AP를 AI가 watching → 알람 빈도 증가 → 알람 피로 → muting. 검증 안 됨.
+
+---
+
+## 반론 (Counterarguments)
+
+### CA-1: AI 환경에서 *작동 메커니즘*이 정의되지 않았다 `[structural]` · severity: **critical**
+
+설치 후 AI가 정확히 *무엇*을 다르게 하는지 명시되어 있지 않다. 매 턴 12 docs를 읽는가? Stage 태그로 selective load? Hook이 트리거할 때만? 현재 README는 "문서가 있다"와 "AI가 적용한다" 사이에 *operational layer*가 비어 있다. 이 빈칸 없이는 토큰 최적화도 *무엇을 최적화할지*가 정의되지 않는다 — 즉 다음 단계의 작업 정의가 현재 단계에서 빠져 있다.
+
+**선례**: CLAUDE.md 시스템 — 사용자가 룰을 작성해도 모델이 일관 적용하지 않는 잘 알려진 패턴. Cursor `.cursorrules`도 같은 문제. 룰 파일은 *존재 증명*이지 *적용 증명*이 아니다.
+
+### CA-2: Self-enforcement 패러독스 — 외부 규율 없이 외부 규율을 흉내낸다 `[structural]` · severity: **critical**
+
+하네스는 "PM/아키텍트가 따로 없을 때"를 위해 만들어졌다. 그런데 PM/아키텍트의 *진짜 가치*는 그들이 **너의 결정을 거부할 수 있다**는 점이다. 본인이 작성·운영·target인 시스템에선 그 거부권이 작동할 수 없다. AI는 거부할 수 있다고 가정해도 sycophancy bias + override 가능 → "이번 한 번만 game 통과시켜줘"가 통한다. Hook이 hard block을 걸 수는 있지만 현재 hook은 **모두 spec-only**다.
+
+**선례**: 개인 생산성 시스템 (GTD full implementation, Zettelkasten 완성형, Personal Kanban)이 일관되게 수주 후 폐기되는 패턴. 살아남는 건 *minimum viable version*이지 rich version이 아니다.
+
+### CA-3: Token optimization 타겟이 잘못 잡혀 있다 — *모양* 자체가 무거움 `[assumption]` · severity: **high**
+
+"다음 단계는 token optimization"이지만, 최적화 후에도 *철학상* 사이클마다 (06-rules + 12-rule-layering + situational 트리거 + AP 카탈로그 + cycle-card)를 봐야 한다. 30-50KB는 압축으로 떨굴 수 있어도, 매 Q&A 턴 컨텍스트에 들어가는 *모양*은 그대로다. 압축으로 풀 문제가 아니라 *processing pipeline 설계* 문제 — 무엇을 *항상* 로드하고 무엇을 *호출 시* 가져올지, 어떤 룰을 코드/스키마로 옮길지의 결정이 누락됐다. 압축은 *결정 후*의 마무리 작업이지 *결정 자체*가 아니다.
+
+**선례**: 거대 wiki/Notion 워크스페이스가 검색 불가 상태로 자라는 패턴. Org-mode 수천 파일 KB가 본인에게도 indexable하지 않게 되는 경우. 두 경우 모두 *압축*이 아니라 *구조*가 문제였다.
+
+### CA-4: 가설 SHA-256 해시 체인은 *연극(theater)* — 솔로 dev에겐 막을 게 다른 곳에 있다 `[execution]` · severity: **high**
+
+해시 체인은 *post-hoc tampering*을 막는다. 그런데 솔로 dev에게 tampering의 *동기*는 "외부 감사 통과"가 아니라 "**자기 자신을 설득**"이다. 자기 설득은 파일 수정이 아니라 *내러티브 재구성*으로 이뤄진다 — "가설은 안 바꿨는데 *내가 정말 측정하려던 건* 좀 다른 거였어"가 통한다. `chmod -w`나 git commit으로도 같은 결과. 암호학적 게이트가 *진지함을 시그널링*하지만 *실제 실패 모드*(AP-06)는 *narrative 층*에서 일어난다.
+
+**선례**: 명확한 단일 선례 없음 — speculative concern. 단, decision journals 연구에서 자기 평가가 사후에 *재해석*되는 패턴은 일반적.
+
+### CA-5: Pre-cycle gate는 *이미 결심한 아이디어*를 위한 확인 의식이다 `[execution]` · severity: **high**
+
+Pre-mortem + Cycle Card를 쓸 정도의 정신적 에너지를 투자했다면, 게이트는 **확인 편향의 기록**이 된다. 솔로 dev가 자기 점수를 매기는 5-group 매트릭스에서 0.3을 주는 경우는 거의 없다. 결국 *내가 통과시킬 수 있는 점수*가 나온다. 게이트가 진짜 잡고 싶은 건 motivated reasoning인데, 자기 채점은 정의상 그걸 우회한다.
+
+**선례**: OKR self-rating 분포 — 자기 채점은 0.7~1.0에 몰린다. 외부 calibrator가 없는 채점 시스템은 시스템적으로 후하다.
+
+### CA-6: 4-layer 룰은 *조직용 도구*를 솔로 dev에 강제한다 `[structural]` · severity: **medium**
+
+L0/L1/L2/L3은 다수 작성자 간 priority 충돌 해소를 위한 구조다. 솔로 dev는 4개 layer의 *모든 작성자가 본인*이다. 진짜 충돌은 *과거-나 vs 현재-나*뿐이고 이건 layer 계층으로 풀 일이 아니라 *시간 메타데이터*(`set_at`, `last_reviewed`)로 풀 일에 가깝다. 현재 구조는 메타-오버헤드를 만든다: "이 룰을 L1에 둘까 L2에 둘까? 다른 프로젝트도 있을 거면..." → 결정에 대한 결정.
+
+**선례**: npm의 5+ config 소스, Spring Boot profile inheritance — *팀이 쓰는* 다층 config도 사용자를 자주 혼란시킨다. 단일 작성자 다층은 더 과한 도구.
+
+### CA-7: Anti-pattern 25-30개는 *재인식 가능 수*를 넘었다 `[execution]` · severity: **medium**
+
+심리 연구의 working memory 상한(7±2)은 *동시 보유*에 대한 것이지만, *재인식*에도 비슷한 한계가 있다. 25-30개 AP는 "내가 지금 어느 AP에 가까운가"를 본인이 *느끼지* 못한다. AI가 탐지해야 하는데 (CA-1로 회귀) 그 탐지 메커니즘이 명시 안 됨. 카탈로그가 가치 있으려면 *분기별 회고에서 5개씩 골라 검토*하는 외부 cadence가 강제돼야 한다.
+
+**선례**: Code smell 카탈로그(Fowler) 22개도 실무자가 *체크리스트*로 못 쓰고 결국 3-4개만 활성 사용. 압축 없이 카탈로그만 늘리는 건 자기만족.
+
+---
+
+## 다중 페르소나 공격
+
+솔로 dev의 진짜 stakeholder는 *시간을 가로지른 본인*이다.
+
+### 페르소나 1 — 3개월 후의 cold-context 본인
+
+"이 프로젝트 다시 잡았는데 어디서부터 다시 봐야 하지? `cycles/2026-03-15/` 폴더 열어보니 `cycle-card.md`, `pre-mortem.md`, `gate-criteria.md`, `retro.md`, `metrics.json`, `exemptions.md` — 6개 파일. 내가 멈춘 *이유*가 어디 있는지 모르겠다. 4-layer 룰은 그때 L2가 뭐였는지 가물가물. Sunset 지난 L3 면제가 만료됐는지 확인해야 하는데 자동인지 수동인지 기억 안 남. 결과: 그냥 새로 만들고 옛 폴더 무시." → 하네스의 *재진입 비용*이 높다는 신호.
+
+### 페르소나 2 — 마감 압박 받는 현재의 본인
+
+"버그 픽스 하나 푸시하려는데 hook이 'L0 Default WIP=1을 위반합니다, L3 exemption 작성하시겠습니까?'라고 묻는다. 4분 안에 배포해야 함. `exemptions.md`를 새로 만들고 sunset 적고 reason 적고 cycle-card도 업데이트. 이게 5번째 발생하면 hook을 끈다. 끈 hook은 다시 안 켜진다." → AP-05 (Harness ceremony)가 *자기 자신에 의해* 트리거된다.
+
+---
+
+## 핵심 취약점 (Core Vulnerability)
+
+### CV-1: *Author = Enforcer = Target* 삼위일체가 process의 작동 전제를 무너뜨린다
+
+조직의 process가 작동하는 이유는 세 역할이 *분리*되어 있기 때문 — 룰을 만든 사람, 강제하는 사람, 적용받는 사람이 다르다. 분리가 없으면 룰은 *suggestion*이 된다. Harness는 분리 없이 *분리된 척*하는 시스템이다. AI가 enforcer 역할을 일부 흉내내지만, sycophancy + override 가능성 + spec-only hooks가 그 흉내를 신뢰 못 할 수준으로 약화시킨다.
+
+이 결함은 HA-1(불편할 때도 지킨다)을 정면으로 부수고, CA-2(self-enforcement paradox)와 CA-5(self-rating bias)의 공통 뿌리다. 다른 모든 비판은 이 약점의 *증상*이다.
+
+**무엇이 진짜 enforcer가 될 수 있는가**: (a) 코드가 실패를 *물리적으로* 막는 곳 (CI fail, pre-commit reject, hook hard block — 그러나 현재 spec-only), (b) 외부 사람의 시선 (오픈소스 PR, 사용자 인터뷰 약속, 공개 changelog). 둘 다 현재 하네스에서 약하거나 부재.
+
+---
+
+## 가역성 (Reversibility)
+
+**reversible** — 컨셉 단계라 가지치기 자유롭다.
+
+다만 *시간 경과에 따라 reversibility가 감소*한다: 매주 추가되는 문서는 *sunk-cost bias*를 만들어 prune을 어렵게 한다. 지금이 *가장 싸게* 줄일 수 있는 시점. 첫 사이클 1회 회고 후 prune이 두 번째로 싼 시점. 그 이후는 점점 비싸진다.
+
+---
+
+## 개선 경로 (Path Forward)
+
+각 critical/high 반론에 대해 *해소되려면 무엇이 참이어야 하는가*.
+
+### PF-1 (CA-1 해소 조건) — Operational layer 명시
+
+다음 산출물이 추가되어야 함:
+- *Loading policy*: 매 세션 시작 시 *항상* 로드되는 minimal core + *trigger-based* 추가 로드 룰 — 명시적 표로
+- *Skill ↔ harness 진입 매핑*: 어떤 사용자 발화/skill 호출이 harness의 어느 부분을 활성화하는가 — `05-plugin-mapping.md`보다 한 단계 더 구체적인 *trigger → load → apply* 파이프라인
+- *Token budget per turn*: 매 턴 harness 컨텍스트에 쓰는 토큰 상한 예산 (예: 3K)
+
+### PF-2 (CA-2 해소 조건) — 진짜 enforcer 식별 + 구현
+
+- 16개 hook spec 중 *coded enforcement가 가능한 4-5개*를 식별하고 *실제 구현*. Top 후보: `hook-hypothesis-immutability` (파일 + git pre-commit), `hook-cycle-wip` (active symlink check), `hook-deploy-kill-check`, `hook-l3-sunset-check`
+- 나머지 12개는 *narrative reminder*임을 명시 — enforcer가 아니라 prompt임을 정직하게 라벨링
+- 사용자에게 *외부 enforcer 채택 권유* 섹션: 공개 changelog, 사용자 인터뷰 약속, 학습공동체 — harness 밖이지만 work-around로
+
+### PF-3 (CA-3 해소 조건) — Optimization이 아니라 *구조 재설계*
+
+- Token "optimization" 대신 *3-tier 분리*:
+  - Tier A — *항상 로드* (≤2K 토큰): minimal core invariants + 현재 stage 정보
+  - Tier B — *trigger 로드* (≤5K 토큰): situational rules + 해당 stage rules
+  - Tier C — *명시 요청 시* (∞): AP 카탈로그 전체, templates, 과거 사이클 retro
+- 압축은 *그 다음* 작업. 지금 압축 시작하면 잘못된 모양을 압축하게 된다.
+
+### PF-4 (CA-4 해소 조건) — 해시 체인을 narrative 가드로 보강
+
+- 해시 체인은 *유지하되* (저렴함), 그 옆에 *가설 재해석 감지*를 둠: 회고 시 "원 가설 문구"와 "측정한 것 문구"를 *나란히* 표시하는 retro 템플릿 항목. *기억상*의 가설이 아니라 *원문*을 강제로 보게 만든다.
+
+### PF-5 (CA-5 해소 조건) — 자기 채점에 *마찰* 추가
+
+- Pre-cycle gate에 *48시간 대기*: Cycle Card 첫 작성 → 48시간 → 재읽기 → 채점. *현재의 흥분*과 *48시간 후 흥분*이 일치하면 통과.
+- 또는 *AI를 calibrator로 등록*: 사용자 점수와 AI 점수가 0.3 이상 벌어지면 reconcile 강제. AI 점수에 *낮게 주는 기본 bias* 명시.
+
+### PF-6 (CA-6 해소 조건) — Layer 단순화 검토
+
+- 첫 사이클 *전까지* L1 User layer 도입 보류. L0 + L2 + L3로 시작. 두 사이클 후 L1 필요성 평가.
+- Layer 결정에 *시간 메타데이터* 보강: 룰 frontmatter에 `set_at` + `last_reviewed` 추가. 6개월 미리뷰면 expire 후보로 표시.
+
+### PF-7 (CA-7 해소 조건) — AP 카탈로그를 *체크리스트 30개*가 아니라 *분기 5개 rotation*으로
+
+- 25-30개 AP를 *6개 카테고리 × 4-5개*로 유지하되, *분기마다 1개 카테고리만 active*. 분기 회고 시 그 5개만 점검.
+- 나머지는 *trigger 발생 시*에만 활성화 (`situational-rules`와 동일 패턴).
+
+---
+
+## 다음 사이클을 위한 우선순위 (PF 순서)
+
+| 순위 | 작업 | 차단 효과 |
+|---|---|---|
+| 1 | PF-1 Operational layer 명시 | 토큰 최적화의 *전제 조건* — 이게 없으면 다음 단계가 정의 안 됨 |
+| 2 | PF-3 3-tier 구조 결정 | PF-1과 같이 진행. 압축 *전에* 구조 |
+| 3 | PF-2 Hook 4-5개 실제 구현 | CA-2를 *물리적*으로 해결 — narrative만으로는 self-enforcement 안 됨 |
+| 4 | PF-6 Layer 단순화 (L1 보류) | 첫 사이클 *전*에 가지치기. 늦으면 sunk cost |
+| 5 | PF-5 48-hour gate 또는 AI calibrator | 실전 도입 시점에 |
+| 6 | PF-7 AP rotation | 첫 회고 후 |
+| 7 | PF-4 회고 narrative 가드 | 첫 회고 시 |
+
+---
+
+---
+
+# Resolution log
+
+PF-N이 충족되면 한 줄씩 append. 형식: `날짜 — PF-N — 증거 (commit / 파일 / decision)`.
+
+- 2026-05-31 — **PF-1 (spec 충족)** — `13-operational-layer.md` 작성. §2 trigger→load→apply 파이프라인이 CA-1 빈칸을 닫음. *구현*은 §7 작업 목록으로 이연 (실전 1사이클 후).
+- 2026-05-31 — **PF-3 (구조 결정 충족)** — `13 §1` 3-tier loading + `§5` prompt caching 정렬. CA-3의 "압축이 아니라 구조" 지적 반영 — 압축은 §7-1로 한정.
+- 2026-05-31 — **CV-1 부분 대응** — `13 §4` Black box. 차단 대신 *기록 후 retro 대면*으로 author=enforcer=target 우회. invariant만 차단(§3), 나머지는 기록. *완전 해소 아님* — retro 대면을 실제로 하는지가 관건(신규 AP-31).
+- 2026-05-31 — **PF-2 (경계 정의 충족, 구현 미정)** — `13 §3` rules-as-code 경계로 코드 강제 5개 식별. hook 실제 구현은 미정.
+- 2026-05-31 — **CV-1 외부 grounding** — Böckeler "Harness Engineering for Coding Agents"가 우리 해법을 검증·정당화. 그녀 曰 *"인간은 harness가 대체 못 하는 organisational alignment를 제공하되, harness가 supervision toil을 줄인다."* → enforcer를 *사람→코드(Computational)*로 옮기되 판단(Inferential)은 사람. 우리 13 §3 경계가 정확히 이것. `00 §0.2b` 참조. **단 완전 해소 아님** — 차단하는 Computational Sensor가 *실제 wiring*돼야 효력 (현재 hash 등록만, cycle-001 F10). 다음 사이클 우선순위.
+- 2026-05-31 — **사이클 #001 dogfood 완주** — `cycles/001-harness-plugin-mve/` 9개 산출물 + retro. 가설 H2(대화형 게이트) 부분 지지, H1(실사용)은 다음 프로젝트에서 측정 예약. 게이트가 solution-shopping(F1)·타입 편향(F2)·CLI 버그(F7)를 잡음 — 하네스가 *자기 자신에* 작동함을 실증.
+- 2026-05-31 — **F6 SSOT 정리** — scripts가 `scripts/`(프로토타입) + `plugin/harness/scripts/`(복사본) 두 곳에 존재 → drift 위험. **결정: 플러그인이 canonical** (GOAL=설치형). draft `scripts/*.py` 4개 삭제, `scripts/README.md`는 포인터로 전환. 개념 문서의 `scripts/X.py` 참조는 *개념적 이름*으로 유지(실행본은 `${CLAUDE_PLUGIN_ROOT}/scripts/`). 근거: 단일 코드 SSOT > 참조 18개 재작성 churn.
+
+---
+
+# Severity revision
+
+기존 CA의 severity 변경 기록. 형식: `날짜 — CA-N: old → new (사유)`.
+
+*(아직 비어 있음)*
+
+---
+
+# Review #2 — *(템플릿, 사용 시 복사)*
+
+```
+## Review #N — YYYY-MM-DD (target state)
+
+**대상**: [무엇을 평가하는가 — 구체적 파일/구조 명시]
+**단계**: [현재 진행 단계]
+**Goal 기준**: GOAL.md §N (이번 review가 비추는 Goal 절)
+**이전 review와의 관계**: [무엇이 바뀌었나 / 어떤 PF-N 해소를 검증하나]
+
+## 숨은 가정 (HA-N부터 이어서)
+...
+
+## 반론 (CA-N부터 이어서)
+...
+
+## 핵심 취약점 (CV-N부터 이어서, 있다면)
+...
+
+## 가역성
+...
+
+## 개선 경로 (PF-N부터 이어서)
+...
+```
+

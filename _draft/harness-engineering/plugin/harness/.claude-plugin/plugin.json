@@ -1,0 +1,11 @@
+{
+  "name": "harness",
+  "description": "Harness Engineering — solo-dev product scaffolding. Runs the pre-cycle entry gate interactively (problem-first, cycle-type aware), scaffolds cycle artifacts (cycle-card, pre-mortem, gate-criteria, hypotheses, black box, findings), and enforces WIP=1. MVE: the cycle skill. Concept docs in _draft/harness-engineering.",
+  "version": "0.1.0",
+  "author": {
+    "name": "newkayak12"
+  },
+  "category": "productivity",
+  "repository": "https://github.com/newkayak12/claude-skills",
+  "license": "MIT"
+}
