@@ -215,6 +215,7 @@ PF-N이 충족되면 한 줄씩 append. 형식: `날짜 — PF-N — 증거 (com
 - 2026-05-31 — **사이클 #001 dogfood 완주** — `cycles/001-harness-plugin-mve/` 9개 산출물 + retro. 가설 H2(대화형 게이트) 부분 지지, H1(실사용)은 다음 프로젝트에서 측정 예약. 게이트가 solution-shopping(F1)·타입 편향(F2)·CLI 버그(F7)를 잡음 — 하네스가 *자기 자신에* 작동함을 실증.
 - 2026-05-31 — **F6 SSOT 정리** — scripts가 `scripts/`(프로토타입) + `plugin/harness/scripts/`(복사본) 두 곳에 존재 → drift 위험. **결정: 플러그인이 canonical** (GOAL=설치형). draft `scripts/*.py` 4개 삭제, `scripts/README.md`는 포인터로 전환. 개념 문서의 `scripts/X.py` 참조는 *개념적 이름*으로 유지(실행본은 `${CLAUDE_PLUGIN_ROOT}/scripts/`). 근거: 단일 코드 SSOT > 참조 18개 재작성 churn.
 - 2026-05-31 — **PF-2 첫 구현 + CV-1 물리 방어 첫 조각 (사이클 #002)** — `plugin/harness/hooks/hypothesis-immutability.py` — PreToolUse hook이 hypotheses.jsonl 직접 편집을 차단(exit2). Böckeler *Computational Sensor*의 첫 실제 wiring. self-test 5/5, false-positive 0, chain intact. **단 부분적** — PreToolUse는 *도구 호출*만 가로채므로 *세션 밖 편집*은 못 막음(cycle-002 F2). CV-1 완전 해소 아님 → SessionStart verify 짝 Sensor 필요. `cycles/20260531-hypothesis-immutability-sensor/` 참조.
+- 2026-05-31 — **CV-1 짝 Sensor 완성 (사이클 #003)** — `plugin/harness/hooks/active-cycle-verify.py` — SessionStart hook이 active 사이클 chain을 verify해 *세션 밖 변조*를 탐지·경고. cycle-002 F2(PreToolUse 사각) 해소. self-test 3/3(intact/no-active/tampered). 이제 **차단(PreToolUse) + 탐지(SessionStart)** 짝으로 CV-1의 더 넓은 면 방어. *잔여*: 탐지는 하나 자동 복구 없음 → black box 대면에 의존. `cycles/20260531-sessionstart-verify-sensor/` 참조.
 
 ---
 
