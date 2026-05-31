@@ -4,13 +4,12 @@
 > 우선순위 정렬. 사이클 종료 시 여기 갱신. SSOT는 각 `cycles/<id>/retro.md`이고, 이 파일은 *집계 뷰*.
 > 관련: [GOAL.md](./GOAL.md) · [devils-advocate.md](./devils-advocate.md) (취약점 누적 로그)
 
-마지막 갱신: 2026-05-31 (사이클 #004 종료 직후)
+마지막 갱신: 2026-05-31 (사이클 #005 종료 직후)
 
 ---
 
-## 🔜 Now — 다음 사이클 후보 (선행조건 해소됨)
+## 🔜 Now — 다음 사이클 후보
 
-- [ ] **#005 deploy kill-check Sensor wiring** — `UserPromptSubmit`('배포/deploy' 키워드) → `kill-check.py` exit 2면 차단. *#004로 metrics 정직화돼 선행조건 해소(unblocked)*. → `13 §3`, devils CA-1 계열.
 - [ ] **GOAL 앞단 — 설치/온보딩 경로** (GOAL.md §2 1~4단계, *아직 미착수*)
   - [ ] marketplace.json에 `harness` 플러그인 등록 + `<plugin>/README.md`
   - [ ] `harness:install` 온보딩 skill — interactive
@@ -23,6 +22,7 @@
 - [ ] **pivot-triggers 위치 결정** (#001 F8) — cycle-card 인라인 vs 별도 파일.
 - [ ] **tampered 후 자동 복구/롤백** (#003 의심) — 현재 *탐지*만, 복구 수동. black box 대면에 의존. (자동 롤백은 과할 수 있음 — 판단 필요)
 - [ ] **13 §7 나머지 최적화** — tier-A 압축, prompt 캐싱 정렬 실측, 미구현 hook들 (16개 spec 중 일부).
+- [ ] **hook 통합 테스트** (#005 의심) — 실제 `claude` 플러그인 설치 환경에서 Sensor 3종 end-to-end. 현재는 스키마 self-test만.
 
 ## 🔬 측정 대기 — 외부 트리거 필요 (지금 빌드 불가)
 
@@ -41,5 +41,6 @@
 - [x] **#002** hypothesis-immutability Sensor — PreToolUse 차단(세션 내). `cycles/20260531-hypothesis-immutability-sensor/`
 - [x] **#003** active-cycle-verify Sensor — SessionStart 탐지(세션 밖). #002 F2 해소. `cycles/20260531-sessionstart-verify-sensor/`
 - [x] **#004** metrics 정직화 — session-count kill-check + session-counter hook. budget$ 드롭. "측정 가능성=강제 가능성". `cycles/20260531-metrics-honesty-session-count/`
+- [x] **#005** deploy kill-check Sensor — UserPromptSubmit hook, Hard kill이면 배포 차단(exit2). 3 이벤트 Sensor 완성. `cycles/20260531-deploy-kill-check-sensor/`
 - [x] SSOT 정리 (#001 F6) — 플러그인이 canonical, draft scripts 삭제.
 - [x] Böckeler "Harness Engineering" grounding (`00 §0.2b`) — CV-1 외부 검증.
