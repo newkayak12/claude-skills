@@ -30,6 +30,18 @@
 
 → 두 Sensor 가 *짝*: PreToolUse(세션 내 차단) + SessionStart(세션 밖 탐지). 하나로 완전하지 않다 (cycle-002 retro 교훈).
 
+### `session-counter.py` — SessionStart
+
+| | |
+|---|---|
+| **이벤트** | `SessionStart` (source `startup` 만 카운트 — resume/compact/clear 는 연속 세션, 미증가) |
+| **역할** | active 사이클의 `metrics.json:session_count` 를 새 세션마다 +1 → kill-check 시간 지표를 *관측 가능*하게 |
+| **왜** | 솔로 개발자 단위는 *달력 시간*이 아니라 *작업 세션*. wall-clock 은 사이클 방치 시 오탐("시간 200%")하지만 세션 수는 안 함 (cycle-004) |
+| **차단 아님** | metrics 갱신만. exit 0. metrics.json 은 hypothesis-immutability 보호 대상 아님(그 hook 은 hypotheses.jsonl 만) → 자유 갱신 |
+| **fail-open** | active 없음/source 미카운트/깨진 metrics → 조용히 통과 |
+
+→ 이것으로 `kill-check.py` 가 *항상-0(거짓 OK)* 없이 실제 데이터로 판정 가능 (cycle-004). budget$ 는 *관측 불가* → kill 지표에서 드롭. "측정 가능한 것만 강제한다".
+
 ## Wiring
 
 플러그인은 [`hooks.json`](./hooks.json) 으로 위 hook 을 선언한다. 플러그인 설치 시 Claude Code 가

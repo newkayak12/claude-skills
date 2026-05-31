@@ -2,10 +2,18 @@
 """
 kill-check.py — Evaluate kill criteria for a cycle.
 
-cycles/<id>/cycle-card.md 임계값 + metrics.json 현재 상태 비교 →
-07 §7.5의 Hard/Soft kill 트리거 발동 여부 판정.
+metrics.json 의 *관측 가능한* 지표만으로 07 §7.5 의 Hard/Soft kill 트리거를 판정한다.
 
-설계 의도: *자동 알람*. 수동 점검은 AP-10 Sunk-cost rescue로 회피됨.
+설계 의도: *자동 알람*. 수동 점검은 AP-10 Sunk-cost rescue 로 회피됨.
+
+지표 (cycle-004 — *관측 가능성* 기준으로 정리):
+  - session_count   : Computational. SessionStart hook(session-counter.py)이 자동 증가.
+                      솔로 개발자 단위 = 작업 세션 (wall-clock 아님 — 방치해도 오탐 없음).
+  - reentry_count   : Inferential. 같은 단계 재진입을 게이트/사람이 기록 (의미 판단 필요).
+  - ~~time_spent_hours~~ : 제거 — session_count 로 대체.
+  - ~~budget_spent_pct~~ : 제거 — 하네스가 *돈 신호를 관측 못 함*. 측정 불가 지표로
+                           kill 을 판정하면 *항상-0(거짓 OK)* 의 거짓말 Sensor 가 된다.
+                           예산은 사람이 별도 판단 (black box 회고 대상).
 
 Exit codes:
   0 = OK
@@ -19,19 +27,17 @@ Usage:
 """
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
 CYCLES_DIR = Path("cycles")
 
-# Default thresholds (07 §7.5 — Hard kill)
-HARD_REENTRY = 3
-HARD_TIME_PCT = 200
-HARD_BUDGET_PCT = 100
+# Hard kill (07 §7.5) — 관측 가능 지표만
+HARD_REENTRY = 3            # 같은 단계 재진입 3회 (Inferential 입력)
+HARD_SESSION_MULT = 2      # appetite_sessions 의 2배 초과 (= "박스를 두 배 넘김")
 
 # Soft kill (07 §7.5)
-SOFT_TIME_PCT = 150
+SOFT_SESSION_MULT = 1      # appetite_sessions 초과 (= "박스를 넘김")
 
 
 def resolve_cycle(cycle_arg: str) -> str:
@@ -52,41 +58,29 @@ def load_metrics(cycle_id: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def parse_time_budget_weeks(cycle_id: str):
-    path = CYCLES_DIR / cycle_id / "cycle-card.md"
-    if not path.exists():
-        return None
-    text = path.read_text(encoding="utf-8")
-    m = re.search(r"Time budget\s*\|\s*(\d+(?:\.\d+)?)\s*weeks?", text)
-    return float(m.group(1)) if m else None
-
-
 def evaluate(cycle_id: str):
     metrics = load_metrics(cycle_id)
     alarms = []   # hard
     warnings = []  # soft
 
-    # 1) 재진입 — Hard
+    # 1) 재진입 — Hard (Inferential 입력: 게이트/사람이 기록)
     reentry = metrics.get("reentry_count", 0)
     if reentry >= HARD_REENTRY:
         alarms.append(f"재진입 {reentry}회 ≥ {HARD_REENTRY} (한도 초과)")
 
-    # 2) 시간 — Hard / Soft
-    budget_weeks = parse_time_budget_weeks(cycle_id)
-    if budget_weeks and budget_weeks > 0:
-        # 8h/day, 5d/week 가정 — 1인 개발자
-        budget_hours = budget_weeks * 5 * 8
-        spent = metrics.get("time_spent_hours", 0)
-        pct = (spent / budget_hours) * 100
-        if pct >= HARD_TIME_PCT:
-            alarms.append(f"시간 {pct:.0f}% ≥ {HARD_TIME_PCT}% ({spent:.0f}/{budget_hours:.0f}h)")
-        elif pct >= SOFT_TIME_PCT:
-            warnings.append(f"시간 {pct:.0f}% ≥ {SOFT_TIME_PCT}% — 재평가 트리거")
-
-    # 3) 예산 — Hard
-    budget_pct = metrics.get("budget_spent_pct", 0)
-    if budget_pct >= HARD_BUDGET_PCT:
-        alarms.append(f"예산 {budget_pct}% ≥ {HARD_BUDGET_PCT}%")
+    # 2) 세션 카운트 — Hard / Soft (Computational: session-counter.py 가 자동 증가)
+    appetite = metrics.get("appetite_sessions")
+    sessions = metrics.get("session_count", 0)
+    if appetite and appetite > 0:
+        if sessions > appetite * HARD_SESSION_MULT:
+            alarms.append(
+                f"세션 {sessions} > appetite {appetite}×{HARD_SESSION_MULT} "
+                f"(박스를 두 배 넘김)"
+            )
+        elif sessions > appetite * SOFT_SESSION_MULT:
+            warnings.append(
+                f"세션 {sessions} > appetite {appetite} (박스 초과) — 재평가 트리거"
+            )
 
     return alarms, warnings
 
