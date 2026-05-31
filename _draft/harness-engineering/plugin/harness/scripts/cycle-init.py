@@ -49,8 +49,9 @@ CYCLE_CARD = """# Cycle Card — {name}
 
 ## Kill 기준
 
-- **Hard**: 재진입 3회 / 시간 200% / 예산 100%
-- **Soft**: 시간 150% → 재평가 트리거
+- **Hard**: 재진입 3회 / 세션 > appetite_sessions × 2 (박스를 두 배 넘김)
+- **Soft**: 세션 > appetite_sessions (박스 초과) → 재평가 트리거
+- 시간=*작업 세션* 단위 (wall-clock 아님 — 방치 오탐 방지, cycle-004). 예산$은 관측 불가로 kill 제외.
 - (사이클별 조정 시 ADR 필요)
 
 ## 이전 사이클 인계 (살림 / 의심 / 버림)
@@ -185,9 +186,9 @@ RETRO = """# Retrospective — {name}
 METRICS_SKELETON = {
     "cycle_id": "",
     "started_at": "",
-    "time_spent_hours": 0,
-    "budget_spent_pct": 0,
-    "reentry_count": 0,
+    "appetite_sessions": 1,   # 작업 세션 단위 (cycle-004). kill-check 가 session_count 와 비교.
+    "session_count": 1,       # 사이클 생성 세션 = 1. 이후 SessionStart hook 이 자동 증가.
+    "reentry_count": 0,       # Inferential — 게이트/사람이 단계 재진입 시 증가.
     "gate1_status": "pending",
     "gate2_status": "pending",
     "kill_check": "ok",
