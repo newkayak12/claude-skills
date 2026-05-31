@@ -52,3 +52,13 @@
 - [x] **#006** 바-잠금 — `chainlog.py` 추출 + `bar-register.py`(품질 바 hash chain) + hook이 `bar.jsonl` 보호. 품질저하방지 ①층. dogfood가 독립 리뷰 효과 입증(plan 버그·latent KeyError 잡힘). `cycles/20260531-bar-lock/`
 - [x] SSOT 정리 (#001 F6) — 플러그인이 canonical, draft scripts 삭제.
 - [x] Böckeler "Harness Engineering" grounding (`00 §0.2b`) — CV-1 외부 검증.
+
+---
+
+## 💰 토큰 최적화 (맨 마지막 — 구조 안정화 후)
+
+- [ ] **토큰 최적화 패스** — 품질저하방지 3층(#006~#008) 완성 후 착수. *구조가 굳기 전에 최적화하면 잘못된 타깃을 깎는다* (CA-3: "압축이 아니라 *모양* 자체가 무거움").
+  - [ ] **tier-A 룰 압축** — SessionStart 주입분(effective rules) 최소화. `13 §7-1`.
+  - [ ] **prompt 캐싱 정렬 실측** — 정적/동적 경계로 캐시 히트율 측정 (`13 §5`). 5분 TTL 고려.
+  - [ ] **컨텍스트 윈도 예산** — 사이클당 주입되는 문서/메트릭/룰의 토큰 측정 → 임계 초과 시 경고 Sensor 검토.
+  - [ ] **측정 먼저, 압축 나중** — 추측 압축 금지. 실측 토큰 프로파일 없이는 손대지 않는다 ("측정 가능성=강제 가능성" #004의 연장).
