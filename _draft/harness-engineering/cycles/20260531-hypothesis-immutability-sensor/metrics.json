@@ -1,0 +1,13 @@
+{
+  "cycle_id": "20260531-hypothesis-immutability-sensor",
+  "cycle_type": "dev-tool",
+  "started_at": "20260531",
+  "appetite": "1 session",
+  "reentry_count": 0,
+  "gate1_status": "pass (block self-test 5/5, false-positive 0)",
+  "gate2_status": "pass (PreToolUse JSON 파싱 + exit2 차단 + fail-open 확인)",
+  "kill_check": "ok",
+  "status": "closed",
+  "h1_status": "supported",
+  "h2_status": "supported"
+}

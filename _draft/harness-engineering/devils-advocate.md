@@ -214,6 +214,7 @@ PF-N이 충족되면 한 줄씩 append. 형식: `날짜 — PF-N — 증거 (com
 - 2026-05-31 — **CV-1 외부 grounding** — Böckeler "Harness Engineering for Coding Agents"가 우리 해법을 검증·정당화. 그녀 曰 *"인간은 harness가 대체 못 하는 organisational alignment를 제공하되, harness가 supervision toil을 줄인다."* → enforcer를 *사람→코드(Computational)*로 옮기되 판단(Inferential)은 사람. 우리 13 §3 경계가 정확히 이것. `00 §0.2b` 참조. **단 완전 해소 아님** — 차단하는 Computational Sensor가 *실제 wiring*돼야 효력 (현재 hash 등록만, cycle-001 F10). 다음 사이클 우선순위.
 - 2026-05-31 — **사이클 #001 dogfood 완주** — `cycles/001-harness-plugin-mve/` 9개 산출물 + retro. 가설 H2(대화형 게이트) 부분 지지, H1(실사용)은 다음 프로젝트에서 측정 예약. 게이트가 solution-shopping(F1)·타입 편향(F2)·CLI 버그(F7)를 잡음 — 하네스가 *자기 자신에* 작동함을 실증.
 - 2026-05-31 — **F6 SSOT 정리** — scripts가 `scripts/`(프로토타입) + `plugin/harness/scripts/`(복사본) 두 곳에 존재 → drift 위험. **결정: 플러그인이 canonical** (GOAL=설치형). draft `scripts/*.py` 4개 삭제, `scripts/README.md`는 포인터로 전환. 개념 문서의 `scripts/X.py` 참조는 *개념적 이름*으로 유지(실행본은 `${CLAUDE_PLUGIN_ROOT}/scripts/`). 근거: 단일 코드 SSOT > 참조 18개 재작성 churn.
+- 2026-05-31 — **PF-2 첫 구현 + CV-1 물리 방어 첫 조각 (사이클 #002)** — `plugin/harness/hooks/hypothesis-immutability.py` — PreToolUse hook이 hypotheses.jsonl 직접 편집을 차단(exit2). Böckeler *Computational Sensor*의 첫 실제 wiring. self-test 5/5, false-positive 0, chain intact. **단 부분적** — PreToolUse는 *도구 호출*만 가로채므로 *세션 밖 편집*은 못 막음(cycle-002 F2). CV-1 완전 해소 아님 → SessionStart verify 짝 Sensor 필요. `cycles/20260531-hypothesis-immutability-sensor/` 참조.
 
 ---
 
