@@ -18,6 +18,18 @@
 이것이 `13-operational-layer.md §3·§4` 의 *"코드로 강제 (Computational)"* 의 첫 실제 wiring 이다.
 `CV-1`(author=enforcer=target)을 *narrative* 가 아니라 *물리적*으로 방어한다.
 
+### `active-cycle-verify.py` — SessionStart
+
+| | |
+|---|---|
+| **이벤트** | `SessionStart` |
+| **역할** | active 사이클의 가설 chain 을 verify → 변조 탐지 시 **경고**(stdout=컨텍스트 주입) |
+| **메우는 것** | PreToolUse 의 사각 — *세션 밖*(에디터 직접) 편집은 도구 호출이 아니라 못 막음. 다음 세션 시작 시 *탐지*로 보강 (cycle-002 F2) |
+| **차단 아님** | SessionStart 는 차단 개념이 없음. intact→짧은 확인, tampered→경고. 둘 다 exit 0 (세션 막지 않음) |
+| **fail-open** | active 없음/스크립트 못 찾음 → 조용히 통과 |
+
+→ 두 Sensor 가 *짝*: PreToolUse(세션 내 차단) + SessionStart(세션 밖 탐지). 하나로 완전하지 않다 (cycle-002 retro 교훈).
+
 ## Wiring
 
 플러그인은 [`hooks.json`](./hooks.json) 으로 위 hook 을 선언한다. 플러그인 설치 시 Claude Code 가
@@ -48,6 +60,5 @@ echo '{"tool_name":"Edit","tool_input":{"file_path":"x/cycle-card.md"}}' \
 
 ## 백로그 (다음 Sensor 후보)
 
-- **SessionStart verify** — 세션 *밖*(에디터 직접) 편집은 PreToolUse 로 못 막음. SessionStart 에서 active 사이클의 `verify` 를 돌려 *경고* (탐지 보강).
 - **deploy kill-check** — 배포 시점 `kill-check.py` exit 2 면 차단 (metrics 자동 갱신 선행 필요).
 - 컨셉 카탈로그(spec): `../../../hooks/README.md` (16개 hook 설계, 대부분 미구현).
