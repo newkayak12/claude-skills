@@ -14,11 +14,13 @@ Usage:
   hypothesis-register.py list   --cycle <id>
 """
 import argparse
-import hashlib
 import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import chainlog
 
 CYCLES_DIR = Path("cycles")
 
@@ -31,25 +33,6 @@ def hypotheses_file(cycle_id: str) -> Path:
     return cycle_path(cycle_id) / "hypotheses.jsonl"
 
 
-def compute_hash(entry: dict, prev_hash: str) -> str:
-    payload = json.dumps(
-        {k: v for k, v in entry.items() if k != "hash"},
-        sort_keys=True,
-        ensure_ascii=False,
-    )
-    return hashlib.sha256((prev_hash + payload).encode("utf-8")).hexdigest()
-
-
-def last_hash(path: Path) -> str:
-    if not path.exists():
-        return "0" * 64
-    last = None
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            last = json.loads(line)
-    return last["hash"] if last else "0" * 64
-
-
 def cmd_register(args):
     cdir = cycle_path(args.cycle)
     if not cdir.exists():
@@ -57,20 +40,13 @@ def cmd_register(args):
         sys.exit(1)
 
     path = hypotheses_file(args.cycle)
-    prev = last_hash(path)
-
-    entry = {
+    entry = chainlog.append_entry(path, {
         "id": args.id,
         "hypothesis": args.hypothesis,
         "kill_line": args.kill_line,
         "pass_line": args.pass_line,
         "registered_at": datetime.now(timezone.utc).isoformat(),
-        "prev_hash": prev,
-    }
-    entry["hash"] = compute_hash(entry, prev)
-
-    with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    })
 
     print(f"REGISTERED [{args.id}] in cycle {args.cycle}")
     print(f"  hypothesis: {args.hypothesis}")
@@ -88,35 +64,13 @@ def cmd_verify(args):
         print(f"ERROR: hypotheses file not found at {path}", file=sys.stderr)
         sys.exit(1)
 
-    prev = "0" * 64
-    count = 0
-    for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        if not line.strip():
-            continue
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError as e:
-            print(f"FAIL line {i}: malformed JSON ({e})")
-            sys.exit(2)
-
-        if entry.get("prev_hash") != prev:
-            print(f"FAIL line {i} [{entry.get('id')}]: prev_hash mismatch — chain broken")
-            print(f"  expected prev: {prev[:16]}...")
-            print(f"  found    prev: {entry.get('prev_hash', '?')[:16]}...")
-            sys.exit(2)
-
-        expected = compute_hash(entry, prev)
-        if entry.get("hash") != expected:
-            print(f"FAIL line {i} [{entry.get('id')}]: hash mismatch — TAMPERED")
-            print(f"  expected: {expected[:16]}...")
-            print(f"  found:    {entry.get('hash', '?')[:16]}...")
-            sys.exit(2)
-
-        prev = entry["hash"]
-        count += 1
-
-    print(f"OK — {count} hypotheses verified, chain intact")
-    sys.exit(0)
+    ok, count, err = chainlog.verify_chain(path)
+    if ok:
+        print(f"OK — {count} hypotheses verified, chain intact")
+        sys.exit(0)
+    else:
+        print(f"FAIL: {err}", file=sys.stderr)
+        sys.exit(2)
 
 
 def cmd_list(args):

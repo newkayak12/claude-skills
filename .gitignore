@@ -7,6 +7,8 @@ Thumbs.db
 tmp/
 temp/
 *.tmp
+__pycache__/
+*.pyc
 INSTRUCT.md
 plan/
 report/

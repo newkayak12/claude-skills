@@ -4,18 +4,25 @@
 > 우선순위 정렬. 사이클 종료 시 여기 갱신. SSOT는 각 `cycles/<id>/retro.md`이고, 이 파일은 *집계 뷰*.
 > 관련: [GOAL.md](./GOAL.md) · [devils-advocate.md](./devils-advocate.md) (취약점 누적 로그)
 
-마지막 갱신: 2026-05-31 (사이클 #005 종료 직후)
+마지막 갱신: 2026-05-31 (사이클 #006 종료 직후)
+
+> **북극성 재정의**: Claude 품질의 *사이클별 저하*를 **구조적으로** 막는다. 3층 = ①바-잠금(#006 ✅) ②독립 리뷰 게이트(#007) ③ratchet(#008). 그 다음에 ④install/룰엔진(packaging).
 
 ---
 
-## 🔜 Now — 다음 사이클 후보
+## 🔜 Now — 다음 사이클 후보 (품질저하방지 우선)
 
-- [ ] **GOAL 앞단 — 설치/온보딩 경로** (GOAL.md §2 1~4단계, *아직 미착수*)
+- [ ] **#007 독립 리뷰 게이트** (품질저하방지 ②층 — 키스톤) — "done/close" 전 *fresh subagent*가 잠긴 바(`bar.jsonl`의 `measure`)에 대고 채점, `review.jsonl`에 기록. close-cycle 게이트가 **bar-hash 참조 + verdict=pass 없으면 close 차단**. doer≠reviewer로 자기 관대 채점을 구조적으로 깸. *#006 dogfood가 이 효과를 이미 입증*(독립 implementer가 plan 버그 잡음).
+- [ ] **#008 ratchet** (품질저하방지 ③층) — 품질 지표 사이클 간 단조증가, 공통 축 회귀 시 차단.
+
+## 🧱 Backlog — 구조/계측 (별도 사이클 필요)
+
+- [ ] **GOAL 앞단 — 설치/온보딩 경로** (GOAL.md §2 1~4단계) — packaging. 품질저하방지 3층 후로 이연.
   - [ ] marketplace.json에 `harness` 플러그인 등록 + `<plugin>/README.md`
   - [ ] `harness:install` 온보딩 skill — interactive
   - [ ] interactive **L1 user-rule** 설정 (`~/.harness/user-rules.md`) → `12-rule-layering.md`
-
-## 🧱 Backlog — 구조/계측 (별도 사이클 필요)
+- [ ] **hook 파일명 rename** (#006 F3) — `hypothesis-immutability.py`가 이제 `bar.jsonl`도 보호 → 이름 좁음. hooks.json wired라 신중히.
+- [ ] **`active-cycle-verify`에 bar.jsonl verify 추가** (#006 F5) — SessionStart 탐지가 가설만 보고 바는 안 봄(세션 밖 변조 대칭 갭). #007 close 게이트에서 함께 처리.
 
 - [ ] **reentry 자동화** (#004 F3) — `reentry_count`는 아직 Inferential·수동. 게이트 단계 재진입을 *계측*해야 자동화 (SessionStart로는 못 잡음).
 - [ ] **08-pass-criteria 타입별 Gate 변형** (#001 F9) — Product/Dev-tool/Exploration 별 Gate 기준. `09 §9.1b`는 했고 `08`은 미반영.
@@ -42,5 +49,6 @@
 - [x] **#003** active-cycle-verify Sensor — SessionStart 탐지(세션 밖). #002 F2 해소. `cycles/20260531-sessionstart-verify-sensor/`
 - [x] **#004** metrics 정직화 — session-count kill-check + session-counter hook. budget$ 드롭. "측정 가능성=강제 가능성". `cycles/20260531-metrics-honesty-session-count/`
 - [x] **#005** deploy kill-check Sensor — UserPromptSubmit hook, Hard kill이면 배포 차단(exit2). 3 이벤트 Sensor 완성. `cycles/20260531-deploy-kill-check-sensor/`
+- [x] **#006** 바-잠금 — `chainlog.py` 추출 + `bar-register.py`(품질 바 hash chain) + hook이 `bar.jsonl` 보호. 품질저하방지 ①층. dogfood가 독립 리뷰 효과 입증(plan 버그·latent KeyError 잡힘). `cycles/20260531-bar-lock/`
 - [x] SSOT 정리 (#001 F6) — 플러그인이 canonical, draft scripts 삭제.
 - [x] Böckeler "Harness Engineering" grounding (`00 §0.2b`) — CV-1 외부 검증.

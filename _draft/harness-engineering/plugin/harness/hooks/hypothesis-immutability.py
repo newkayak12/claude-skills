@@ -2,9 +2,9 @@
 """
 hypothesis-immutability.py — PreToolUse hook (Böckeler *Sensor*, Computational).
 
-등록된 가설 파일(hypotheses.jsonl)을 *손으로 수정*하려는 도구 호출을 차단한다.
-가설은 오직 hypothesis-register.py 로만 append 되어야 하며 (tamper-evident hash chain),
-직접 Edit/Write 는 AP-06 Gate fudging 의 통로다.
+append-only chain 파일(hypotheses.jsonl, bar.jsonl)을 *손으로 수정*하려는 도구 호출을 차단한다.
+각 파일은 오직 전용 등록 스크립트로만 append 되어야 하며 (tamper-evident hash chain),
+직접 Edit/Write 는 AP-06 Gate fudging / #006 바 낮추기의 통로다.
 
 이 hook 은 *탐지*(verify)를 *차단*으로 승격시킨다 — 사람이 verify 를 안 불러도 작동.
 
@@ -26,7 +26,11 @@ import json
 import sys
 from pathlib import Path
 
-PROTECTED = "hypotheses.jsonl"
+# 보호 대상 append-only 체인 → 정당 등록 스크립트 안내
+PROTECTED = {
+    "hypotheses.jsonl": "hypothesis-register.py",
+    "bar.jsonl": "bar-register.py",
+}
 
 
 def target_paths(tool_input: dict):
@@ -52,14 +56,14 @@ def main():
 
     tool_input = event.get("tool_input") or {}
     for p in target_paths(tool_input):
-        if Path(p).name == PROTECTED:
+        name = Path(p).name
+        if name in PROTECTED:
+            register = PROTECTED[name]
             sys.stderr.write(
-                "BLOCKED: hypotheses.jsonl 직접 편집 금지 (AP-06 Gate fudging 방지).\n"
-                "  등록된 가설은 tamper-evident hash chain 으로 보호된다.\n"
-                "  가설을 추가하려면:\n"
-                "    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/hypothesis-register.py register \\\n"
-                "      --cycle <id> --id <Hn> --hypothesis ... --kill-line ... --pass-line ...\n"
-                "  기존 가설 변경이 필요하면 *새 ID* 로 재등록 + ADR 작성.\n"
+                f"BLOCKED: {name} 직접 편집 금지 (AP-06 Gate fudging / #006 바 낮추기 방지).\n"
+                f"  이 파일은 tamper-evident hash chain 으로 보호된다.\n"
+                f"  항목 추가는: python3 ${{CLAUDE_PLUGIN_ROOT}}/scripts/{register} register ...\n"
+                f"  기존 항목 변경이 필요하면 *새 ID* 로 재등록 + ADR.\n"
             )
             sys.exit(2)
 
