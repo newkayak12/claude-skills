@@ -42,6 +42,19 @@
 
 → 이것으로 `kill-check.py` 가 *항상-0(거짓 OK)* 없이 실제 데이터로 판정 가능 (cycle-004). budget$ 는 *관측 불가* → kill 지표에서 드롭. "측정 가능한 것만 강제한다".
 
+### `deploy-kill-check.py` — UserPromptSubmit
+
+| | |
+|---|---|
+| **이벤트** | `UserPromptSubmit` (deploy 키워드: 배포/출시/릴리즈/deploy/release/ship it/go live/프로덕션) |
+| **역할** | 배포 의도 표명 시 active 사이클에 `kill-check.py` 실행 → **Hard kill이면 배포 프롬프트 차단**(exit 2) |
+| **막는 것** | C-06 Sunk-cost / AP-10 — *죽었어야 할 사이클*을 배포로 밀어붙이기 |
+| **매핑** | kill-check 0(ok)→통과 · 1(soft)→경고만(차단 아님, 재평가는 사람) · 2(hard)→exit2 차단 · 3(err)→fail-open |
+| **선행** | cycle-004 의 metrics 정직화(session_count 자동)가 있어야 실데이터 판정 — 없으면 항상-ok 거짓 통과 |
+| **fail-open** | deploy 키워드 없음/active 없음/스크립트 못 찾음/JSON 실패 → 통과 |
+
+→ 이제 **3 이벤트 Sensor**: PreToolUse(가설 차단) · SessionStart(탐지+세션 측정) · UserPromptSubmit(배포 차단). 이벤트 성격이 차단 권한을 정함 (PreToolUse·UserPromptSubmit=차단 가능, SessionStart=경고만).
+
 ## Wiring
 
 플러그인은 [`hooks.json`](./hooks.json) 으로 위 hook 을 선언한다. 플러그인 설치 시 Claude Code 가
