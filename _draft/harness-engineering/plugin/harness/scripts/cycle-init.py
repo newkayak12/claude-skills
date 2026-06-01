@@ -74,6 +74,7 @@ CYCLE_CARD = """# Cycle Card — {name}
 - Activity log: ./activity.log
 - Black box (어긴 것 기록): ./blackbox.jsonl  → [13 §4](../../13-operational-layer.md#4-black-box--막지-말고-기록)
 - Quality bar (잠금): ./bar.jsonl  → bar-register.py 로 등록 (#006)
+- Reviews (독립 채점): ./review.jsonl  → review-register.py 로 등록 (#007)
 - Dogfood findings: ./findings.md
 """
 
@@ -289,6 +290,7 @@ def main():
     (cdir / "hypotheses.jsonl").touch()
     (cdir / "blackbox.jsonl").touch()
     (cdir / "bar.jsonl").touch()
+    (cdir / "review.jsonl").touch()
     (cdir / "activity.log").touch()
 
     metrics = METRICS_SKELETON.copy()
@@ -309,6 +311,7 @@ def main():
     print(f"  3. {cdir}/gate-criteria.md — Gate 1·2 수치 고정")
     print(f"  4. scripts/hypothesis-register.py register --cycle {cid} --id H1 ... (각 가설)")
     print(f"  5. scripts/bar-register.py register --cycle {cid} --id B1 --stage test --criterion ... --measure ... (품질 바 잠금)")
+    print(f"  6. (종료 시) scripts/review-register.py 로 각 바 기준 독립 채점 → scripts/close-cycle.py 로 종료 (#007)")
 
 
 if __name__ == "__main__":

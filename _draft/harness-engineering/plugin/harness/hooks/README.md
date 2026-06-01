@@ -10,20 +10,34 @@
 | | |
 |---|---|
 | **이벤트** | `PreToolUse` (matcher: `Edit\|Write\|MultiEdit\|NotebookEdit`) |
-| **역할** | `hypotheses.jsonl`·`bar.jsonl` 직접 편집 시도를 **차단** (exit 2) |
-| **막는 것** | `hypotheses.jsonl`·`bar.jsonl` 직접 편집 차단 (AP-06 Gate fudging + #006 바 낮추기) |
-| **정당 경로** | `scripts/hypothesis-register.py` / `scripts/bar-register.py` (append + hash chain) 는 막지 않음 |
+| **역할** | `hypotheses.jsonl`·`bar.jsonl`·`review.jsonl` 직접 편집 시도를 **차단** (exit 2) |
+| **막는 것** | `hypotheses.jsonl`·`bar.jsonl`·`review.jsonl` 직접 편집 차단 (AP-06 Gate fudging + #006 바 낮추기 + #007 리뷰 위조) |
+| **정당 경로** | `scripts/hypothesis-register.py` / `scripts/bar-register.py` / `scripts/review-register.py` (append + hash chain) 는 막지 않음 |
 | **fail-open** | 입력 JSON 파싱 실패 시 *통과* — hook 이 정당한 작업을 막지 않도록 |
 
 이것이 `13-operational-layer.md §3·§4` 의 *"코드로 강제 (Computational)"* 의 첫 실제 wiring 이다.
 `CV-1`(author=enforcer=target)을 *narrative* 가 아니라 *물리적*으로 방어한다.
+
+### `active-symlink-guard.py` — PreToolUse
+
+| | |
+|---|---|
+| **이벤트** | `PreToolUse` (matcher: `Bash`) |
+| **역할** | `cycles/active` symlink 를 Bash 로 직접 제거(`rm`/`unlink`)하려는 시도를 **차단** (exit 2) |
+| **막는 것** | 수동 `rm cycles/active` 로 품질 게이트를 우회하는 종료 (#007 Full Computational) |
+| **정당 경로** | `scripts/close-cycle.py` — 게이트(모든 바 기준에 잠긴 hash 결박 pass 리뷰) 통과 시 *in-process* 로 unlink 하므로 이 hook 대상 아님 |
+| **대칭** | `hypothesis-immutability` 가 *데이터*(바·리뷰)를 보호하듯, 이 hook 은 *종료 행위*(symlink 제거)를 정당 스크립트로만 강제 |
+| **정직한 한계** | Bash 의 `rm`/`unlink` 만, `cycles/active` *그 자체*(하위 경로 아님)만. `mv`·python `os.unlink`·`find -delete`·후행 슬래시는 못 잡음 |
+| **fail-open** | non-Bash 도구 / JSON 파싱 실패 → 통과 |
+
+→ `close-cycle.py`(게이트 내장 종료) + `active-symlink-guard`(수동 우회 차단) 가 *짝*: 종료의 유일 정당 경로를 코드로 못박는다 (#007 ②).
 
 ### `active-cycle-verify.py` — SessionStart
 
 | | |
 |---|---|
 | **이벤트** | `SessionStart` |
-| **역할** | active 사이클의 가설 chain 을 verify → 변조 탐지 시 **경고**(stdout=컨텍스트 주입) |
+| **역할** | active 사이클의 가설·바·리뷰 chain 을 verify → 변조 탐지 시 **경고**(stdout=컨텍스트 주입) (#007 F5: bar·review 확장) |
 | **메우는 것** | PreToolUse 의 사각 — *세션 밖*(에디터 직접) 편집은 도구 호출이 아니라 못 막음. 다음 세션 시작 시 *탐지*로 보강 (cycle-002 F2) |
 | **차단 아님** | SessionStart 는 차단 개념이 없음. intact→짧은 확인, tampered→경고. 둘 다 exit 0 (세션 막지 않음) |
 | **fail-open** | active 없음/스크립트 못 찾음 → 조용히 통과 |
@@ -81,9 +95,15 @@ echo '{"tool_name":"Edit","tool_input":{"file_path":"x/hypotheses.jsonl"}}' \
 # bar.jsonl 도 차단 기대 (exit 2)
 echo '{"tool_name":"Edit","tool_input":{"file_path":"x/bar.jsonl"}}' \
   | python3 hooks/hypothesis-immutability.py; echo $?
+# review.jsonl 도 차단 기대 (exit 2)
+echo '{"tool_name":"Edit","tool_input":{"file_path":"x/review.jsonl"}}' \
+  | python3 hooks/hypothesis-immutability.py; echo $?
 # 통과 기대 (exit 0)
 echo '{"tool_name":"Edit","tool_input":{"file_path":"x/cycle-card.md"}}' \
   | python3 hooks/hypothesis-immutability.py; echo $?
+# active-symlink-guard: rm cycles/active 차단 기대 (exit 2)
+echo '{"tool_name":"Bash","tool_input":{"command":"rm cycles/active"}}' \
+  | python3 hooks/active-symlink-guard.py; echo $?
 ```
 
 ## 백로그 (다음 Sensor 후보)
