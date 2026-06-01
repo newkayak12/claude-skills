@@ -117,11 +117,12 @@
 |---|---|---|---|
 | 가설 immutability | SHA-256 hash chain + `PreToolUse` 차단 | `hypothesis-register.py` + `hook-hypothesis-immutability` | **Sensor** (변조 사후 감지·차단) |
 | WIP = 1 | `cycles/active` symlink 단일성 검사 | `hook-cycle-wip` | **Guide** (행동 전 차단) |
+| Close 게이트 | bar 전 기준에 pass 리뷰(잠긴 hash 결박) 없으면 종료 차단 | `close-cycle.py` + `active-symlink-guard` | **Sensor→Guard** (종료 전 차단) |
 | Kill criteria (배포 게이트) | 임계값 비교 → exit 2면 차단 | `kill-check.py` + `hook-deploy-kill-check` | **Sensor** (지표 관측 후 차단) |
 | L3 sunset 만료 | 날짜 비교 → 만료 면제 무효화 | `hook-l3-sunset-check` | **Guide** (적용 전 유효성) |
 | 스타일/포맷 | toolchain 위임 (설정 존재만 검사) | `hook-formatter-config-exists` | **Guide** (설정 강제) |
 
-이 5개는 모두 **Computational**(결정론적)이고 *narrative에서 빠진다*. AI가 컨텍스트로 캐리하지 않는다 — 코드가 한다.
+이 6개는 모두 **Computational**(결정론적)이고 *narrative에서 빠진다*. AI가 컨텍스트로 캐리하지 않는다 — 코드가 한다.
 
 ### Narrative로 유지 (AI 판단)
 

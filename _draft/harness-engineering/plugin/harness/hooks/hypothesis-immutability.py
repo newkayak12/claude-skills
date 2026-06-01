@@ -30,6 +30,7 @@ from pathlib import Path
 PROTECTED = {
     "hypotheses.jsonl": "hypothesis-register.py",
     "bar.jsonl": "bar-register.py",
+    "review.jsonl": "review-register.py",
 }
 
 

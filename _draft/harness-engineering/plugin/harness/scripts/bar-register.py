@@ -35,6 +35,18 @@ def cmd_register(args):
     if not cdir.exists():
         print(f"ERROR: cycle directory not found: {cdir}", file=sys.stderr)
         sys.exit(1)
+    # 중복 id 거부 — 같은 cycle 에서 한 기준을 두 번 등록(바 낮추기 통로) 차단.
+    # 기준 변경은 *새 ID*로만 (silent lowering 방지, #007). 추가는 바를 높이는 방향.
+    existing = bar_file(args.cycle)
+    if existing.exists():
+        for line in existing.read_text(encoding="utf-8").splitlines():
+            if line.strip() and json.loads(line).get("id") == args.id:
+                print(
+                    f"ERROR: bar id '{args.id}' 이미 등록됨 (cycle {args.cycle}). "
+                    f"기준 변경은 *새 ID*로 — 같은 id 재등록은 바 낮추기 통로라 거부됩니다.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
     entry = chainlog.append_entry(
         bar_file(args.cycle),
         {
