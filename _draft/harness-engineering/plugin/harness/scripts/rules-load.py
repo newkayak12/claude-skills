@@ -19,31 +19,45 @@ from pathlib import Path
 
 RULES_FILE = Path(__file__).resolve().parent.parent / "06-rules.md"
 
-HEADER_RE = re.compile(r"^##\s+(R-[A-Z0-9]+|[A-Z]+-\d+):\s*(.+)$")
-STAGE_RE = re.compile(r"^\s*[*\-]?\s*\*{0,2}Stage\*{0,2}\s*:\s*(.+)$", re.IGNORECASE)
+# 06-rules.md 실제 구조: H2 섹션(`## N. 제목`) 아래 `**로딩 시점**: `stageA`, `stageB``,
+# 그 섹션의 H3 룰(`### R-XX: 제목`)들이 섹션 stage를 *상속*한다. per-rule Stage 태그는 없다.
+SECTION_RE = re.compile(r"^##\s+\S")                       # 모든 H2 → 섹션 경계(stage 리셋)
+LOAD_RE = re.compile(r"^\s*\*\*로딩 시점\*\*\s*:\s*(.+)$")    # 섹션 stage 선언
+RULE_RE = re.compile(r"^###\s+([A-Za-z][\w-]*):\s*(.+)$")  # H3 룰 헤더
+_BACKTICK = re.compile(r"`([^`]+)`")
 
 
 def parse_rules(text: str):
+    """섹션 단위 `로딩 시점`을 그 섹션의 H3 룰들에 상속시켜 파싱."""
     rules = []
     current = None
+    section_stages: set[str] = set()
     for line in text.splitlines():
-        m = HEADER_RE.match(line)
-        if m:
+        rm = RULE_RE.match(line)
+        if rm:
             if current:
                 rules.append(current)
             current = {
-                "id": m.group(1),
-                "title": m.group(2),
-                "stages": set(),
+                "id": rm.group(1),
+                "title": rm.group(2),
+                "stages": set(section_stages),  # 섹션 stage 상속
                 "body": [line],
             }
             continue
-        if current is None:
+        if SECTION_RE.match(line):
+            # 새 H2 섹션 진입 — 직전 룰 마감 + stage 리셋(다음 로딩시점 줄까지 비움)
+            if current:
+                rules.append(current)
+                current = None
+            section_stages = set()
             continue
-        sm = STAGE_RE.match(line)
-        if sm:
-            current["stages"].update(s.strip().lower() for s in sm.group(1).split(","))
-        current["body"].append(line)
+        lm = LOAD_RE.match(line)
+        if lm:
+            stages = {t.strip().lower() for t in _BACKTICK.findall(lm.group(1))}
+            section_stages = stages
+            continue
+        if current is not None:
+            current["body"].append(line)
     if current:
         rules.append(current)
     return rules
@@ -61,10 +75,8 @@ def print_rule(r):
     if r["stages"]:
         print(f"_Stages: {', '.join(sorted(r['stages']))}_")
     print()
-    # body[0]은 header — 이미 출력했으므로 skip
+    # body[0]은 header — 이미 출력했으므로 skip. stage는 섹션 단위라 body에 없음.
     for line in r["body"][1:]:
-        if STAGE_RE.match(line):
-            continue
         print(line)
     print()
 
