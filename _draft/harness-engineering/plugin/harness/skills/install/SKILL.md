@@ -73,7 +73,8 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/user-rules-init.py add \
 | 시점 | 로드/발동 | 무엇 |
 |---|---|---|
 | 새 사이클 시작 | `harness:cycle` | pre-cycle 진입 게이트 → 통과 시 `cycle-init.py` scaffold |
-| 작업 단계별 | `rules-load.py <stage>` | 해당 stage의 **L0 룰**(06-rules.md)만 선택 로드 (인지부하 ↓). L1/L2/L3 머지는 rule-layering 엔진 — 아직 별도(backlog) |
+| 작업 단계별 (L0만) | `rules-load.py <stage>` | 해당 stage의 **L0 룰**(06-rules.md)만 선택 로드 (인지부하 ↓) |
+| 작업 단계별 (L0+L1 머지) | `rules-merge.py effective --stage <stage>` | L0 + **방금 만든 L1 user-rules**를 우선순위(L1>L0)로 머지한 *effective* 룰 + provenance. invariant 보호, 충돌은 `conflicts`. (L2/L3는 후속) |
 | 가설/품질-바 등록 | hook `hypothesis-immutability` | `hypotheses.jsonl`/`bar.jsonl` tamper-evident 잠금 (#006) |
 | 사이클 종료 | `close-cycle.py` | 바별 독립 리뷰(#007) + cross-cycle ratchet(#008) 게이트 |
 | 세션 시작 | hook `active-cycle-verify` | 진행 중 사이클 무결성 점검 |
