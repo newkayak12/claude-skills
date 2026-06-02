@@ -4,18 +4,17 @@
 > 우선순위 정렬. 사이클 종료 시 여기 갱신. SSOT는 각 `cycles/<id>/retro.md`이고, 이 파일은 *집계 뷰*.
 > 관련: [GOAL.md](./GOAL.md) · [devils-advocate.md](./devils-advocate.md) (취약점 누적 로그)
 
-마지막 갱신: 2026-06-02 (사이클 #008 종료 직후)
+마지막 갱신: 2026-06-02 (사이클 #009 종료 직후)
 
-> **북극성 재정의**: Claude 품질의 *사이클별 저하*를 **구조적으로** 막는다. 3층 = ①바-잠금(#006 ✅) ②독립 리뷰 게이트(#007 ✅) ③ratchet(#008 ✅). **품질저하방지 3층 완성** → 다음은 ④install/룰엔진(packaging).
+> **북극성 재정의**: Claude 품질의 *사이클별 저하*를 **구조적으로** 막는다. 3층 = ①바-잠금(#006 ✅) ②독립 리뷰 게이트(#007 ✅) ③ratchet(#008 ✅). **품질저하방지 3층 완성**. ④ packaging/install — #009로 설치 경로 개통(marketplace peer `./harness` + `harness:install` + L1 생성). 다음은 ④-b 룰-레이어링 엔진(L1/L2/L3 로딩·머지) + L2 project-rules.
 
 ---
 
-## 🔜 Now — 다음 사이클 후보 (품질저하방지 3층 완성 → packaging)
+## 🔜 Now — 다음 사이클 후보 (설치 경로 개통 → 룰 엔진 + L2)
 
-- [ ] **GOAL 앞단 — 설치/온보딩 경로** (GOAL.md §2 1~4단계 · 키스톤) — packaging. 품질저하방지 3층 완성으로 차단 해제됨.
-  - [ ] marketplace.json에 `harness` 플러그인 등록 + `<plugin>/README.md` + 버전 bump (현재 `_draft/`라 미등록)
-  - [ ] `harness:install` 온보딩 skill — interactive
-  - [ ] interactive **L1 user-rule** 설정 (`~/.harness/user-rules.md`) → `12-rule-layering.md`
+- [ ] **룰-레이어링 로딩/머지 엔진** (#009 F4/F6 · 키스톤) — `rules-load.py`는 지금 L0(06-rules.md)만 로드. L1(`~/.harness/user-rules.md`)·L2·L3를 *읽어 우선순위(L3>L2>L1>L0)로 머지*하는 엔진 필요. 포맷 SSOT 1개로 수렴(3종 불일치 해소). install이 파일은 만들지만 *적용*이 미배선 — 이게 가치 완성.
+- [ ] **L2 project-rules 합의 흐름** (GOAL §2 step 4) — `cycle-init.py` 첫 실행 시 `<project>/.harness/project-rules.md` scaffold + 합의 절차.
+- [ ] **export drift 자동 탐지** (#009 F5) — 컨셉 문서가 draft(source)+`./harness`(산출물) 두 곳. draft↔export 해시 비교 hook/CI로 drift 차단. 지금은 README/마커 경고뿐.
 
 ## 🧱 Backlog — 구조/계측 (별도 사이클 필요)
 
@@ -52,6 +51,7 @@
 - [x] **#006** 바-잠금 — `chainlog.py` 추출 + `bar-register.py`(품질 바 hash chain) + hook이 `bar.jsonl` 보호. 품질저하방지 ①층. dogfood가 독립 리뷰 효과 입증(plan 버그·latent KeyError 잡힘). `cycles/20260531-bar-lock/`
 - [x] **#007** 독립 리뷰 게이트 — `review-register.py`(review.jsonl chain, bar-hash 결박) + `close-cycle.py`(유일 종료 경로, 바 전 기준 pass 리뷰 없으면 차단) + `active-symlink-guard.py`(수동 rm 차단) + bar dup-id 거부 + F5(bar·review verify). 품질저하방지 ②층. **원칙3(생성/평가 분리) 코드 강제**. dogfood가 게이트 작동 재귀 증명. `cycles/20260601-independent-review-gate/`
 - [x] **#008** cross-cycle ratchet — `ratchetlib.py`(공유 lib)+`ratchet-check.py`(CLI)+`bar-register` 선택적 축(axis/value/direction, 하위호환)+`close-cycle` 게이트 2.5(선언 축이 이전 닫힌 cycle watermark 회귀 시 차단). 품질저하방지 ③층 = **3층 완성**. 오탐 0(선언 축만 검사). hermetic 합성 fixture가 작동 증명 + close SKIP 사각 우회. 독립 리뷰가 footgun 1건 포착. `cycles/20260602-cross-cycle-ratchet/`
+- [x] **#009** packaging install onboarding — `harness-export.py`(draft→top-level `./harness` self-contained 빌드, 컨셉문서 평탄화, 안전거부+마커 멱등) + marketplace.json `harness` peer 등록(source `./harness`, v0.2.0) + `harness:install` 스킬(대화→L1 user-rules) + `user-rules-init.py`(12-layering frontmatter, 멱등). **설치 경로 개통**. 게이트가 빌드 전 self-containment 블로커 포착. 독립 리뷰가 잠복 버그 2건 포착(rules-load 0룰 파싱 vacuous→파서 재작성, 빌더 export 혼입→제외). `cycles/20260602-packaging-install-onboarding/`
 - [x] SSOT 정리 (#001 F6) — 플러그인이 canonical, draft scripts 삭제.
 - [x] Böckeler "Harness Engineering" grounding (`00 §0.2b`) — CV-1 외부 검증.
 

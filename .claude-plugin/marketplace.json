@@ -135,6 +135,16 @@
       },
       "source": "./self",
       "category": "productivity"
+    },
+    {
+      "name": "harness",
+      "description": "Harness Engineering — solo-dev product scaffolding. First run: harness:install onboards interactively and writes L1 user-rules (~/.harness/user-rules.md). harness:cycle runs the problem-first pre-cycle gate, scaffolds cycle artifacts, and enforces WIP=1. Quality-floor (structural anti-degradation): bar-lock + independent review gate + cross-cycle ratchet. Self-contained — concept docs bundled.",
+      "version": "0.2.0",
+      "author": {
+        "name": "newkayak12"
+      },
+      "source": "./harness",
+      "category": "productivity"
     }
   ]
 }
