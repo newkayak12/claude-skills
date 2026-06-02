@@ -10,6 +10,9 @@ fresh subagent 채점(doer≠reviewer)은 *프로토콜*이며, 이 게이트는
 *존재 + 잠긴 바 결박 + pass*를 강제한다. 종료는 in-process(파이썬)로 active symlink 를
 unlink 하므로, Bash 를 가로채는 active-symlink-guard hook 의 대상이 아니다 (정당 경로).
 
+#008(ratchet): pass-review 체크를 통과해도, 이 cycle 이 *선언한 축*이 이전 닫힌 cycle 의
+watermark 보다 회귀하면 종료를 거부한다(cross-cycle 단조 비감소). 축 미선언 cycle 은 무영향.
+
 Usage:
   close-cycle.py            # cycles/active 를 닫는다 (게이트 통과 시)
   close-cycle.py --force    # 게이트 무시 강제 종료 (ADR 필수 — 위험)
@@ -28,6 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import chainlog  # noqa: E402
+import ratchetlib  # noqa: E402  (#008 cross-cycle ratchet)
 
 CYCLES = Path("cycles")
 ACTIVE = CYCLES / "active"
@@ -106,6 +110,23 @@ def main():
                 + "".join(f"  - {m}\n" for m in missing)
                 + "  독립 리뷰어(fresh subagent)가 review-register.py 로 각 기준을 채점해야 합니다.\n"
                 "  (doer≠reviewer — 자기 채점 회피). 바를 낮추면 bar-hash 불일치로 여전히 차단됨.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
+        # 2.5) ratchet (#008): 선언한 축이 이전 닫힌 cycle watermark 보다 회귀?
+        #      축을 선언 안 한 cycle 은 regs=[] → 통과(오탐 0). doer≠reviewer 와 직교.
+        regs = ratchetlib.find_regressions(cid)
+        if regs:
+            print(
+                "🛑 CLOSE 차단 — cross-cycle 품질 ratchet 회귀 (#008):\n"
+                + "".join(
+                    f"  - axis '{r['axis']}': 현재 {r['current']} vs floor {r['floor']} "
+                    f"({r['direction']}, ←{r['source']}) — {r['reason']}\n"
+                    for r in regs
+                )
+                + "  같은 축을 *더 나은 값*으로 잠가 올리거나, 의도된 회귀면 --force + ADR.\n"
+                "  (축 미선언 바는 ratchet 대상 아님 — 무관 영역 cycle 은 차단되지 않음)",
                 file=sys.stderr,
             )
             sys.exit(2)
