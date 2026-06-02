@@ -309,9 +309,16 @@ def main():
     print(f"  1. {cdir}/cycle-card.md — hypotheses/persona/kill criteria 채우기")
     print(f"  2. {cdir}/pre-mortem.md — 6개월 뒤 실패 시나리오 5개")
     print(f"  3. {cdir}/gate-criteria.md — Gate 1·2 수치 고정")
-    print(f"  4. scripts/hypothesis-register.py register --cycle {cid} --id H1 ... (각 가설)")
-    print(f"  5. scripts/bar-register.py register --cycle {cid} --id B1 --stage test --criterion ... --measure ... (품질 바 잠금)")
-    print(f"  6. (종료 시) scripts/review-register.py 로 각 바 기준 독립 채점 → scripts/close-cycle.py 로 종료 (#007)")
+    print(f"  4. 각 가설 등록 (tamper-evident):")
+    print(f"       scripts/hypothesis-register.py register --cycle {cid} --id H1 \\")
+    print(f"         --hypothesis '...' --kill-line '...' --pass-line '...'")
+    print(f"  5. 각 품질 바 잠금:")
+    print(f"       scripts/bar-register.py register --cycle {cid} --id B1 --stage test \\")
+    print(f"         --criterion '...' --measure '...'")
+    print(f"  6. (종료 시) 독립 리뷰어(fresh subagent)가 각 바를 채점 → 종료:")
+    print(f"       scripts/review-register.py register --cycle {cid} --id R1 --criterion-id B1 \\")
+    print(f"         --verdict pass --evidence '...' --reviewer 'subagent:...'")
+    print(f"       scripts/close-cycle.py            # active 기준 — --cycle 인자 없음 (#007)")
 
 
 if __name__ == "__main__":

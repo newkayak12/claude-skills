@@ -128,6 +128,25 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/cycle-init.py "<사이클 이름>" --type 
      --kill-line "이 조건이면 기각" \
      --pass-line "이 조건이면 통과"
    ```
+4. 각 품질 바를 *잠근다* (낮추면 verify에서 hash 불일치로 탐지):
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/bar-register.py register \
+     --cycle <id> --id B1 --stage test \
+     --criterion "통과 기준" --measure "어떻게 측정하는가"
+   ```
+
+## 종료 (close 게이트)
+
+빌드 후 종료할 때. **자기 채점 금지** — 독립 리뷰어(fresh subagent, doer≠reviewer)가 각 바를 채점해야 close가 열린다.
+```bash
+# 1) 각 바를 독립 채점 (리뷰 없으면 close 차단)
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/review-register.py register \
+  --cycle <id> --id R1 --criterion-id B1 \
+  --verdict pass --evidence "바의 measure에 대고 관측한 근거" --reviewer "subagent:..."
+# 2) 종료 — active 기준이라 --cycle 인자 없음
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/close-cycle.py
+```
+> `cycles/`는 *프로젝트 CWD*에 생성된다. 작업 repo에 산출물을 함께 커밋하거나, 원치 않으면 `.gitignore`에 `cycles/` 추가.
 
 ## What Claude Does
 - 게이트를 한 군씩 대화로 진행 — 항목을 한꺼번에 쏟지 않음
