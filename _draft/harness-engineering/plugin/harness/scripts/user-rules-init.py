@@ -49,21 +49,25 @@ HEADER = """# L1 User Rules
 생성일: {created}
 """
 
+# Stage 는 L0(06-rules.md §0.1) 어휘를 쓴다 — 그래야 rules-merge 가 L0+L1 을 *같은 stage 로*
+# 필터·머지한다. `*` = 모든 stage(wildcard). (12-layering §3 의 Macro/Micro 어휘는 L0 와
+# 불일치해 stage-filtered load 에서 룰이 죽음 — #010 리뷰 F1.)
 RULE_TMPL = """## {id}: {title}
 Layer: {layer}
 Scope: {scope}
 Stage: {stage}
-{pointer_line}Why: {why}
+{pointer_line}{overrides_line}Why: {why}
 """
 
 ID_RE = re.compile(r"^##\s+(R-[A-Z0-9-]+):", re.MULTILINE)
 
 
-def _rule_block(rid, title, layer, scope, stage, pointer, why) -> str:
+def _rule_block(rid, title, layer, scope, stage, pointer, why, overrides=None) -> str:
     pointer_line = f"Pointer: {pointer}\n" if pointer else ""
+    overrides_line = f"Overrides: {overrides}\n" if overrides else ""
     return RULE_TMPL.format(
         id=rid, title=title, layer=layer, scope=scope, stage=stage,
-        pointer_line=pointer_line, why=why,
+        pointer_line=pointer_line, overrides_line=overrides_line, why=why,
     )
 
 
@@ -95,16 +99,19 @@ def cmd_init(args) -> None:
             None, "프로젝트 기본 스택. L2에서 override 가능."))
     if args.pointer_python:
         parts.append(_rule_block(
-            "R-USER-FMT-PY", "Python 포맷터/린터", "L1", "default", "Micro",
+            "R-USER-FMT-PY", "Python 포맷터/린터", "L1", "default", "code-writing",
             args.pointer_python, "스타일 enforcement는 toolchain. 하네스는 설정 존재만 검증(§5)."))
     if args.pointer_js:
         parts.append(_rule_block(
-            "R-USER-FMT-JS", "JS/TS 포맷터/린터", "L1", "default", "Micro",
+            "R-USER-FMT-JS", "JS/TS 포맷터/린터", "L1", "default", "code-writing",
             args.pointer_js, "스타일 enforcement는 toolchain. 하네스는 설정 존재만 검증(§5)."))
     if args.wip:
+        # WIP=1 은 스펙(12-layering §1)상 L0 Default 라지만 06-rules.md 에 *룰로 코드화돼 있지
+        # 않다* → override 대상이 없다. 따라서 이건 additive L1 선언(거짓 Overrides 금지).
+        # 사이클별 일시 변경은 L3 exemption.
         parts.append(_rule_block(
-            "R-USER-WIP01", f"기본 WIP override: {args.wip}", "L1", "default", "Macro",
-            None, "L0 Default(WIP=1)를 이 사용자 기본값으로 조정. 사이클별은 L3."))
+            "R-USER-WIP01", f"기본 WIP: {args.wip}", "L1", "default", "*",
+            None, "사용자 기본 WIP 선언 (additive — L0엔 WIP가 룰로 코드화돼 있지 않아 override 대상 없음). 사이클별 변경은 L3."))
 
     rf.write_text("\n".join(parts).rstrip() + "\n", encoding="utf-8")
     print(f"GENERATED → {rf}")

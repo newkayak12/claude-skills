@@ -41,6 +41,13 @@ NRULES="$(printf '%s\n' "$ALLOUT" | grep -cE '^## R-')"
 # stage 필터 경로(install 스킬이 광고)도 끝까지 동작해야
 python3 "$DEST/scripts/rules-load.py" code-writing >/dev/null 2>&1 \
   || fail "rules-load.py <stage> 필터가 끝까지 동작 안 함"
+# #010: rule-merge 엔진도 export 안에서 self-contained 동작 (L0 번들 + 생성 L1 머지)
+MH="$TMP/mh/.harness"; HARNESS_HOME="$MH" python3 "$DEST/scripts/user-rules-init.py" \
+  init --lang "Py" >/dev/null 2>&1 || fail "export user-rules-init 동작 안 함"
+HARNESS_HOME="$MH" python3 "$DEST/scripts/rules-merge.py" effective --stage code-writing >/tmp/mrg 2>&1 \
+  || fail "rules-merge.py 가 export dir 안에서 동작 안 함 (self-containment)"
+grep -q "R-USER-LANG01" /tmp/mrg || fail "export 머지 결과에 L1 룰 없음 (L1 미적용)"
+grep -qE "layer: L1" /tmp/mrg || fail "export 머지 provenance 누락"
 
 # --- 멱등: 같은 dest 재-export (마커 있으니 허용) ---
 python3 "$EXPORT" --dest "$DEST" >/dev/null 2>&1 || fail "재-export(멱등) exit != 0"
