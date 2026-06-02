@@ -4,22 +4,23 @@
 > 우선순위 정렬. 사이클 종료 시 여기 갱신. SSOT는 각 `cycles/<id>/retro.md`이고, 이 파일은 *집계 뷰*.
 > 관련: [GOAL.md](./GOAL.md) · [devils-advocate.md](./devils-advocate.md) (취약점 누적 로그)
 
-마지막 갱신: 2026-06-01 (사이클 #007 종료 직후)
+마지막 갱신: 2026-06-02 (사이클 #008 종료 직후)
 
-> **북극성 재정의**: Claude 품질의 *사이클별 저하*를 **구조적으로** 막는다. 3층 = ①바-잠금(#006 ✅) ②독립 리뷰 게이트(#007 ✅) ③ratchet(#008). 그 다음에 ④install/룰엔진(packaging).
+> **북극성 재정의**: Claude 품질의 *사이클별 저하*를 **구조적으로** 막는다. 3층 = ①바-잠금(#006 ✅) ②독립 리뷰 게이트(#007 ✅) ③ratchet(#008 ✅). **품질저하방지 3층 완성** → 다음은 ④install/룰엔진(packaging).
 
 ---
 
-## 🔜 Now — 다음 사이클 후보 (품질저하방지 우선)
+## 🔜 Now — 다음 사이클 후보 (품질저하방지 3층 완성 → packaging)
 
-- [ ] **#008 ratchet** (품질저하방지 ③층 — 키스톤) — 품질 지표 사이클 간 단조증가, 공통 축 회귀 시 차단. #007이 *바 충족*을 강제했다면 #008은 *바가 사이클을 넘어 낮아지지 않음*을 강제(cross-cycle 회귀 게이트). `bar.jsonl`의 `measure` + `review.jsonl` verdict를 이전 사이클과 비교.
+- [ ] **GOAL 앞단 — 설치/온보딩 경로** (GOAL.md §2 1~4단계 · 키스톤) — packaging. 품질저하방지 3층 완성으로 차단 해제됨.
+  - [ ] marketplace.json에 `harness` 플러그인 등록 + `<plugin>/README.md` + 버전 bump (현재 `_draft/`라 미등록)
+  - [ ] `harness:install` 온보딩 skill — interactive
+  - [ ] interactive **L1 user-rule** 설정 (`~/.harness/user-rules.md`) → `12-rule-layering.md`
 
 ## 🧱 Backlog — 구조/계측 (별도 사이클 필요)
 
-- [ ] **GOAL 앞단 — 설치/온보딩 경로** (GOAL.md §2 1~4단계) — packaging. 품질저하방지 3층 후로 이연.
-  - [ ] marketplace.json에 `harness` 플러그인 등록 + `<plugin>/README.md`
-  - [ ] `harness:install` 온보딩 skill — interactive
-  - [ ] interactive **L1 user-rule** 설정 (`~/.harness/user-rules.md`) → `12-rule-layering.md`
+- [ ] **ratchet `best_declared` review-blind footgun** (#008 의심) — `best_declared`는 리뷰 무관(타깃만). standalone `ratchet-check check` preview에선 미달성 high-value 바가 통과 가능. *통합 close*에선 #007이 메우나, `best_declared`를 미래 코드가 "achieved" SSOT로 재사용 시 위험. → devils-advocate 등재.
+- [ ] **cycle-init cwd 강건성** (#008 F1) — `plugin/harness/`에서 돌리면 엉뚱한 위치에 cycles/ 생성. repo 루트 마커 탐색으로 보강.
 - [ ] **hook 파일명 rename** (#006 F3) — `hypothesis-immutability.py`가 이제 `bar.jsonl`·`review.jsonl`도 보호 → 이름 좁음. hooks.json wired라 신중히.
 
 - [ ] **reentry 자동화** (#004 F3) — `reentry_count`는 아직 Inferential·수동. 게이트 단계 재진입을 *계측*해야 자동화 (SessionStart로는 못 잡음).
@@ -50,6 +51,7 @@
 - [x] **#005** deploy kill-check Sensor — UserPromptSubmit hook, Hard kill이면 배포 차단(exit2). 3 이벤트 Sensor 완성. `cycles/20260531-deploy-kill-check-sensor/`
 - [x] **#006** 바-잠금 — `chainlog.py` 추출 + `bar-register.py`(품질 바 hash chain) + hook이 `bar.jsonl` 보호. 품질저하방지 ①층. dogfood가 독립 리뷰 효과 입증(plan 버그·latent KeyError 잡힘). `cycles/20260531-bar-lock/`
 - [x] **#007** 독립 리뷰 게이트 — `review-register.py`(review.jsonl chain, bar-hash 결박) + `close-cycle.py`(유일 종료 경로, 바 전 기준 pass 리뷰 없으면 차단) + `active-symlink-guard.py`(수동 rm 차단) + bar dup-id 거부 + F5(bar·review verify). 품질저하방지 ②층. **원칙3(생성/평가 분리) 코드 강제**. dogfood가 게이트 작동 재귀 증명. `cycles/20260601-independent-review-gate/`
+- [x] **#008** cross-cycle ratchet — `ratchetlib.py`(공유 lib)+`ratchet-check.py`(CLI)+`bar-register` 선택적 축(axis/value/direction, 하위호환)+`close-cycle` 게이트 2.5(선언 축이 이전 닫힌 cycle watermark 회귀 시 차단). 품질저하방지 ③층 = **3층 완성**. 오탐 0(선언 축만 검사). hermetic 합성 fixture가 작동 증명 + close SKIP 사각 우회. 독립 리뷰가 footgun 1건 포착. `cycles/20260602-cross-cycle-ratchet/`
 - [x] SSOT 정리 (#001 F6) — 플러그인이 canonical, draft scripts 삭제.
 - [x] Böckeler "Harness Engineering" grounding (`00 §0.2b`) — CV-1 외부 검증.
 

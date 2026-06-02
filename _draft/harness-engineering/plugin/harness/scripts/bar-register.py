@@ -9,9 +9,13 @@ bar-register.py — Pre-registration of the *quality bar* with a tamper-evident 
 
 Usage:
   bar-register.py register --cycle <id> --id <Bn> \\
-      --criterion "..." --stage <plan|build|test|close|*> --measure "..."
+      --criterion "..." --stage <plan|build|test|close|*> --measure "..." \\
+      [--axis <name> --value <num> --direction <higher_better|lower_better>]
   bar-register.py verify --cycle <id>
   bar-register.py list   --cycle <id>
+
+축 메타(--axis/--value/--direction)는 *선택적*. 주면 #008 ratchet 이 그 축을 사이클을
+넘어 비교(단조 비감소 강제). 안 주면 자유텍스트 바로 남아 cross-cycle 비교 대상 아님.
 """
 import argparse
 import json
@@ -24,6 +28,7 @@ import chainlog  # noqa: E402
 
 CYCLES_DIR = Path("cycles")
 STAGES = ("plan", "build", "test", "close", "*")
+DIRECTIONS = ("higher_better", "lower_better")  # #008 ratchet 축 방향
 
 
 def bar_file(cycle_id: str) -> Path:
@@ -47,19 +52,29 @@ def cmd_register(args):
                     file=sys.stderr,
                 )
                 sys.exit(1)
-    entry = chainlog.append_entry(
-        bar_file(args.cycle),
-        {
-            "id": args.id,
-            "criterion": args.criterion,
-            "stage": args.stage,
-            "measure": args.measure,
-            "registered_at": datetime.now(timezone.utc).isoformat(),
-        },
-    )
+    fields = {
+        "id": args.id,
+        "criterion": args.criterion,
+        "stage": args.stage,
+        "measure": args.measure,
+        "registered_at": datetime.now(timezone.utc).isoformat(),
+    }
+    # 축 메타(#008 ratchet)는 *선택적* — all-or-nothing. 없으면 키 자체를 안 넣어
+    # 축 없는 바의 엔트리 모양/해시를 #008 이전과 동일하게 유지(하위호환).
+    if args.axis is not None or args.value is not None or args.direction is not None:
+        if args.axis is None or args.value is None or args.direction is None:
+            print("ERROR: 축 메타는 --axis/--value/--direction 을 *모두* 줘야 합니다 "
+                  "(ratchet 비교의 안정 축).", file=sys.stderr)
+            sys.exit(1)
+        fields["axis"] = args.axis
+        fields["value"] = args.value
+        fields["direction"] = args.direction
+    entry = chainlog.append_entry(bar_file(args.cycle), fields)
     print(f"REGISTERED bar [{args.id}] stage={args.stage} in cycle {args.cycle}")
     print(f"  criterion: {args.criterion}")
     print(f"  measure:   {args.measure}")
+    if "axis" in fields:
+        print(f"  axis:      {args.axis} = {args.value} ({args.direction})  [#008 ratchet]")
     print(f"  hash: {entry['hash'][:16]}...")
     print()
     print("주의: 이 항목을 *수정*(바 낮추기)하면 verify에서 탐지됨.")
@@ -86,6 +101,8 @@ def cmd_list(args):
         e = json.loads(line)
         print(f"[{e['id']}] ({e['stage']}) {e['criterion']}")
         print(f"  measure: {e['measure']}")
+        if "axis" in e:
+            print(f"  axis:    {e['axis']} = {e['value']} ({e['direction']})  [#008 ratchet]")
         print()
 
 
@@ -101,6 +118,10 @@ def main():
     p_reg.add_argument("--criterion", required=True)
     p_reg.add_argument("--stage", required=True, choices=STAGES)
     p_reg.add_argument("--measure", required=True)
+    # #008 ratchet — 선택적 측정 가능 축(없으면 cross-cycle 비교 대상 아님)
+    p_reg.add_argument("--axis", help="사이클을 넘어 안정적인 축 이름 (예: test-coverage)")
+    p_reg.add_argument("--value", type=float, help="이 바의 수치 값 (ratchet 비교 대상)")
+    p_reg.add_argument("--direction", choices=DIRECTIONS, help="higher_better | lower_better")
     p_reg.set_defaults(func=cmd_register)
 
     p_ver = sub.add_parser("verify", help="Verify bar chain integrity")
