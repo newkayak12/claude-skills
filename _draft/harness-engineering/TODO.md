@@ -10,15 +10,22 @@
 
 ---
 
-## 🔜 Now — 다음 사이클 후보 (룰 엔진 L0+L1 개통 → L2 + L0 코드화)
+## 🔜 Now — 다음 사이클 후보 (룰 자동주입 → 경량화 → L2)
 
-- [ ] **L2 project-rules 합의 흐름** (GOAL §2 step 4 · 키스톤) — `cycle-init.py` 첫 실행 시 `<project>/.harness/project-rules.md` scaffold + 합의 절차. ruleslib에 L2 로드 추가(우선순위 L2>L1>L0), cross-file dup 탐지(#010 F6).
+- [ ] **룰 자동 injection** (#010 잔여 · **키스톤**) — `rules-merge`가 effective 룰(L0+L1 머지)을 *출력*만 한다. SessionStart(또는 stage 진입) hook이 그 effective 룰을 Claude 컨텍스트에 **자동 주입**해야 "내 룰을 Claude가 알아서 지킨다"가 완성됨. 지금은 사람이 돌려 읽는 *반자동* — install 가치의 마지막 한 칸. → 주입분이 곧 토큰 비용이라 아래 경량화의 직접 선행.
+- [ ] **경량화(토큰) 패스** — 룰 자동주입 *직후*. 사용자도 "무겁다" 동의. 상세는 아래 💰 섹션. *측정 먼저, 압축 나중*(주입 토큰 프로파일 실측 후 압축).
+- [ ] **L2 project-rules 합의 흐름** (GOAL §2 step 4) — `cycle-init.py` 첫 실행 시 `<project>/.harness/project-rules.md` scaffold + 합의 절차. ruleslib에 L2 로드 추가(우선순위 L2>L1>L0), cross-file dup 탐지(#010 F6).
 - [ ] **L0 Default 룰 코드화** (#010 F4) — 스펙(12-layering §1)이 L0 Default라는 WIP=1·14일 상한이 06-rules.md에 *룰로 없음*. 코드화해야 L1 override가 대상을 갖는다. + per-rule scope 태깅(#010 F3, §4의 5개 Core를 id로 고정).
 - [ ] **stage 어휘 SSOT** (#010 F1 잔여) — 12-layering §3(Macro/Micro) vs 06-rules §0.1(code-writing/...) 이원화. 한 어휘로 수렴 또는 매핑표. 지금은 user-rules-init을 §0.1로 정렬해 증상만 막음.
 - [ ] **export drift 자동 탐지** (#009 F5) — draft(source)↔`./harness`(산출물) 해시 비교 hook/CI. 지금은 README/마커 경고뿐.
 
 ## 🧱 Backlog — 구조/계측 (별도 사이클 필요)
 
+### 미구현 원칙 (Anthropic/OpenAI 7원칙)
+- [ ] **엔트로피 GC** (원칙6) — 에이전트 생성 코드는 드리프트한다. "golden principles" 정의 → 정기 스캔(죽은 코드·미사용 의존성·미참조 파일) → 리팩토링 PR을 여는 백그라운드 프로세스. 월 1회 스캔이 시작점. 지금은 *전무*.
+- [ ] **앱을 보여줘라 + 관측성** (원칙4) — 에이전트가 *실행 중인 앱을 직접 구동·검증*하는 경로가 없음. 하네스가 BE 지향이라 빠졌으나 추가 필요(사용자 확인). BE판: 로그/메트릭/트레이스 관측 스택 연결(에이전트가 실행→관측→검증). FE판 CDP/Playwright MCP는 그 다음. "기능 구현 전 현재 동작을 먼저 관측"이 시작점.
+
+### 기타
 - [ ] **ratchet `best_declared` review-blind footgun** (#008 의심) — `best_declared`는 리뷰 무관(타깃만). standalone `ratchet-check check` preview에선 미달성 high-value 바가 통과 가능. *통합 close*에선 #007이 메우나, `best_declared`를 미래 코드가 "achieved" SSOT로 재사용 시 위험. → devils-advocate 등재.
 - [ ] **cycle-init cwd 강건성** (#008 F1) — `plugin/harness/`에서 돌리면 엉뚱한 위치에 cycles/ 생성. repo 루트 마커 탐색으로 보강.
 - [ ] **hook 파일명 rename** (#006 F3) — `hypothesis-immutability.py`가 이제 `bar.jsonl`·`review.jsonl`도 보호 → 이름 좁음. hooks.json wired라 신중히.
@@ -59,9 +66,11 @@
 
 ---
 
-## 💰 토큰 최적화 (맨 마지막 — 구조 안정화 후)
+## 💰 토큰 최적화 (선행조건 충족 — 룰 자동주입 직후 착수)
 
-- [ ] **토큰 최적화 패스** — 품질저하방지 3층(#006~#008) 완성 후 착수. *구조가 굳기 전에 최적화하면 잘못된 타깃을 깎는다* (CA-3: "압축이 아니라 *모양* 자체가 무거움").
+> **상태 갱신(2026-06-02)**: 품질저하방지 3층(#006~#008) + 설치/룰엔진(#009/#010) 완성으로 *구조 안정화 선행조건 충족*. 사용자도 "무겁다" 동의. 순서: **룰 자동주입(Now 키스톤) → 이 패스**. 자동주입분이 곧 토큰 비용이라 주입 hook이 생긴 뒤 그 프로파일을 실측해 깎는다.
+
+- [ ] **토큰 최적화 패스** — *구조가 굳기 전에 최적화하면 잘못된 타깃을 깎는다* (CA-3: "압축이 아니라 *모양* 자체가 무거움"). 이제 구조는 굳음 → 실측 기반 착수.
   - [ ] **tier-A 룰 압축** — SessionStart 주입분(effective rules) 최소화. `13 §7-1`.
   - [ ] **prompt 캐싱 정렬 실측** — 정적/동적 경계로 캐시 히트율 측정 (`13 §5`). 5분 TTL 고려.
   - [ ] **컨텍스트 윈도 예산** — 사이클당 주입되는 문서/메트릭/룰의 토큰 측정 → 임계 초과 시 경고 Sensor 검토.
