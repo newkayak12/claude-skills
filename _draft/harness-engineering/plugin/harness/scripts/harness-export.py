@@ -46,6 +46,8 @@ DOC_DIRS = ["situational-rules"]
 EXCLUDE_NAMES = {
     "__pycache__", ".harness-export",
     "harness-export.py", "test-harness-export.sh",
+    # dev/maintainer 전용 — 하네스 *자신*의 소스를 스캔(설치 플러그인엔 무의미, #011)
+    "gc-scan.py", "test-gc-scan.sh",
 }
 
 
