@@ -249,11 +249,17 @@ Hook이 늘면 *모든 prompt가 hook 출력으로 도배* → context 오염 + 
 
 ## 구현 상태
 
-모든 hook은 *spec*만 정의된 상태 — 실제 스크립트는 미구현. 실전 사이클 1회 후 *진짜 필요한 것*만 구현 권장.
+> **이 문서는 *설계 카탈로그*(계획된 16 hook의 spec)다.** *실제 구현된* hook의
+> 정확한 목록·wiring·self-test는 canonical [`../plugin/harness/hooks/README.md`](../plugin/harness/hooks/README.md)가
+> SSOT. 아래 체크박스는 그 canonical과 동기화한다 (#011 entropy-gc에서 정정 — 이전엔 "전부 미구현"으로 stale).
 
-- [ ] hook-hypothesis-immutability (1순위)
-- [ ] hook-cycle-context (2순위)
-- [ ] hook-deploy-kill-check (3순위)
+실전 사이클 1회 후 *진짜 필요한 것*만 구현 권장. #002~#008에서 5개 Computational Sensor 구현됨.
+
+- [x] hook-hypothesis-immutability (1순위) → `hypothesis-immutability.py` (#002, 바·리뷰 데이터 보호로 확장)
+- [x] hook-cycle-context (2순위) → `active-cycle-verify.py` (#003, SessionStart)
+- [x] hook-deploy-kill-check (3순위) → `deploy-kill-check.py` (#005, UserPromptSubmit)
+- [x] (신규) active-symlink-guard → `active-symlink-guard.py` (#007, 종료 경로 강제)
+- [x] (신규) session-counter → `session-counter.py` (#004, metrics 갱신)
 - [ ] hook-cycle-wip (4순위)
 - [ ] hook-adr-immutability (5순위)
 - [ ] hook-activity-log
