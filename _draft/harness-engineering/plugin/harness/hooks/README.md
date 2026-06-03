@@ -18,6 +18,21 @@
 이것이 `13-operational-layer.md §3·§4` 의 *"코드로 강제 (Computational)"* 의 첫 실제 wiring 이다.
 `CV-1`(author=enforcer=target)을 *narrative* 가 아니라 *물리적*으로 방어한다.
 
+### `stage-inject.py` — PreToolUse
+
+| | |
+|---|---|
+| **이벤트** | `PreToolUse` (matcher: `Edit\|Write\|MultiEdit\|NotebookEdit`) — 코드 작성 시작 = `code-writing` 단계 진입 |
+| **역할** | 단계 진입 순간 그 단계 룰(`rules-merge effective --stage code-writing` = R-CD 코딩 룰 등)을 **컨텍스트 주입** |
+| **주입 방법** | stdout JSON `hookSpecificOutput.additionalContext` (+ `permissionDecision: allow`). PreToolUse 의 plain stdout 은 모델에 안 보이므로 JSON 이 *유일한* 주입 경로(공식 docs 확인). additionalContext 는 *도구 결과 옆*(=도구 호출 시점)에 주입됨 |
+| **메우는 것** | CA-10 (review/2026-06-03): rule-inject(SessionStart)는 *경계*에서만 1회 쏨 → 긴 플로우 중간 스크롤아웃·compaction 으로 룰 소실. 이 hook 이 방어를 *플로우 내부*로 확장 — 코딩이 *실제 시작될 때* 코딩 룰 재도달 |
+| **기능 보존** | rule-inject 가 `--dynamic`(invariant+L1)로 슬림해질 수 있는 근거. 빠진 정적 default(R-CD 등)를 이 hook 이 단계에서 재주입 → 모든 코딩 룰이 여전히 모델에 도달 |
+| **de-dup** | 세션·단계당 1회. 마커 `$HARNESS_HOME/stage-inject/<sid>/code-writing.injected`. 마커 있으면 plain allow(무주입) — 매 Edit 스팸 방지 |
+| **차단 아님** | `permissionDecision=allow` — 도구를 막지 않음. *주입 ≠ 강제*(원칙1, rule-inject 와 동일 경계) |
+| **fail-open** | 머지 엔진 부재 / effective 0 / JSON 파싱 실패 / 마커 IO 실패 → 무주입 plain allow, 도구 막지 않음 |
+
+→ rule-inject(SessionStart, 항상-켜둘 invariant+L1) + stage-inject(단계 진입, 단계별 정적 default) 가 *짝*: 자동주입을 *두 시점*으로 나눠 세션시작 토큰 ↓ AND 방어를 경계→플로우 내부로 확장 (#012 후속, PF-10).
+
 ### `active-symlink-guard.py` — PreToolUse
 
 | | |
@@ -108,5 +123,9 @@ echo '{"tool_name":"Bash","tool_input":{"command":"rm cycles/active"}}' \
 
 ## 백로그 (다음 Sensor 후보)
 
-- **deploy kill-check** — 배포 시점 `kill-check.py` exit 2 면 차단 (metrics 자동 갱신 선행 필요).
+> `deploy kill-check` 는 이전에 여기 *후보*로 남아 있었으나 #005 에서 *구현됐다*(위 `deploy-kill-check.py`
+> 참조). #011 entropy-gc GP-4(의미적 stale) 검토에서 정정 — 구현된 항목이 '후보'로 남는 건 역방향 stale.
+
 - 컨셉 카탈로그(spec): `../../../hooks/README.md` (16개 hook 설계, 대부분 미구현).
+- `rule-inject`(SessionStart, 항상-켜둘 룰)·`stage-inject`(PreToolUse, 단계별 룰) — 자동주입 2시점.
+  카탈로그엔 없던 신규(#012 rule-auto-injection + stage-injection 후속). 위 "현재 구현" 섹션에 수록(rule-inject 는 별도 Sensor 섹션, stage-inject 는 위 PreToolUse 블록).

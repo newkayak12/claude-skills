@@ -27,7 +27,11 @@
 ## 🧱 Backlog — 구조/계측 (별도 사이클 필요)
 
 ### 미구현 원칙 (Anthropic/OpenAI 7원칙)
-- [x] **엔트로피 GC** (원칙6) — **#011 완료**. `gc-scan.py`+`GOLDEN-PRINCIPLES.md`+ratchet 축 2개. *표면* GC(죽은 링크·stale 문서·relic). 잔여: 토큰판(위 Now)·의미적 stale(F2).
+- [x] **엔트로피 GC** (원칙6) — **#011 완료 + 2026-06-03 재검토**. `gc-scan.py`+`GOLDEN-PRINCIPLES.md`+ratchet 축 2개. *표면* GC(죽은 링크·stale 문서·relic).
+  - **재검토 결과**(`review/2026-06-03-entropy-gc.md`): GP-2(dead-link) 유일한 high-confidence → `plugin/` 트리까지 스캔 확장(FP 0). GP-1(relic-dir) **probation**(0/2 정밀도, 구조신호로는 signpost↔relic 원리적 구분 불가 → 1사이클 더 못 잡으면 삭제 명문화, `[probation]` 자가의심 태그). **GP-4 신설**(의미적 stale = 문서주장 vs 코드현실, watch — 결정론 스캔 불가라 mandatory 사람/LLM 내용검토 의식, gc.md §6.5+GOLDEN §내용검토). **GP-5 신설**(complexity ratchet = script/hook 수, 현재 **23**, `--complexity-axis`) — CA-11/PF-11 "빼기 없는 더하기"를 축으로 강제 준비.
+  - [ ] **잔여: GP-5 축 등재** — `harness-mechanism-count`(lower_better) bar 축 lock — *Sensor 은퇴와 짝지어* 첫 lock값이 *감소*하도록(active 사이클 필요).
+  - [ ] **잔여: 원칙5 실행** — 트리거 이미 발생(Opus 4.8). 은퇴 후보: `active-cycle-verify`(탐지율→0 관측 후), 약: `deploy-kill-check`(효과측정 후). 물리잠금(hypothesis-immutability·active-symlink-guard)·session-counter는 모델무관 유지. 3-task A/B 재검증 필요.
+  - [ ] 잔여: 토큰판(위 Now)·GP-1 probation 판정.
 - [ ] **앱을 보여줘라 + 관측성** (원칙4) — 에이전트가 *실행 중인 앱을 직접 구동·검증*하는 경로가 없음. 하네스가 BE 지향이라 빠졌으나 추가 필요(사용자 확인). BE판: 로그/메트릭/트레이스 관측 스택 연결(에이전트가 실행→관측→검증). FE판 CDP/Playwright MCP는 그 다음. "기능 구현 전 현재 동작을 먼저 관측"이 시작점.
 
 ### 기타
@@ -94,8 +98,10 @@
   - [ ] **profiler rule-count 라벨 수정** (리뷰 [LOW]) — 헤더가 주입 슬라이스 토큰에 전량(45) rule-count를 붙여 오해 소지. 주입된 룰 수로 정렬.
   - [ ] prompt 캐싱 정렬 실측(`13 §5`, 5분 TTL) — 정적(L0)/동적(L1) 경계 분리가 캐시 히트에 유리한지. (별도, 외부 측정)
 
-### 🎯 stage-injection (= 슬라이싱의 *기능보존* 버전 · 더 큰 토큰 win, 별도 사이클)
-- [ ] **stage-entry 자동 재주입** — 슬라이싱(정적 L0 default 빼기)이 기능저해인 *유일한* 이유는 "단계에서 다시 안 들어옴". stage 진입(예: code-writing 시작) 시 그 stage 룰을 자동 주입하는 hook/훅킹을 만들면, 세션주입을 invariant+L1로 줄여도 코딩 룰이 코딩 때 들어와 *기능보존*. 그때 620→~365 추가 win 회수. SessionStart는 stage 모름 → stage 신호원(skill 진입?) 설계 필요. 06-rules의 `**로딩 시점**`(stage 태그)이 이미 SSOT.
+### 🎯 stage-injection (= 슬라이싱의 *기능보존* 버전 · 더 큰 토큰 win) — **✅ 완료 2026-06-03**
+- [x] **stage-entry 자동 재주입** — `hooks/stage-inject.py`(PreToolUse `Edit|Write|MultiEdit|NotebookEdit`) 가 code-writing 단계 진입 시 그 단계 룰(R-CD* 7개)을 **JSON `hookSpecificOutput.additionalContext`** 로 주입(공식 docs 확인: PreToolUse plain stdout은 모델에 안 보임 → additionalContext가 유일 경로, `permissionDecision: allow`=비차단). 세션·단계당 1회 de-dup(마커 `$HARNESS_HOME/stage-inject/<sid>/<stage>.injected`). → **rule-inject(SessionStart)를 `effective --dynamic`(invariant+L1)로 슬림: 620→384 토큰** (766 기준 ≈50%↓), R-CD 코딩룰은 코딩 진입 시 도착 → **기능보존**(테스트가 "SessionStart엔 R-CD 없음 + stage-inject로 도달" 단언). 방어를 *경계→플로우 내부*로 확장(CA-10/PF-10). self-test: test-stage-inject 6케이스 + test-rule-inject 새 계약. 드래프트 12 self-test ALL GREEN.
+  - [ ] **잔여: 다른 단계 신호** — 지금은 code-writing(Edit/Write 결정적 신호)만. architecture/decision 등은 결정적 도구 신호가 없어 미커버(invariant는 SessionStart 상시, 나머진 수동 `--stage`). STAGE 상수 + 확장점만 남김.
+  - [ ] **잔여: 마커 granularity** — de-dup이 세션당 1회라, *세션 내 compaction으로 룰이 evict된 뒤* 추가 Edit엔 재주입 안 됨(CA-10을 부분만 닫음). compaction 후 재주입(또는 N-Edit마다)은 후속.
 
 > ⚠ **자동주입 사이클(`cycles/20260602-rule-auto-injection`) 미종료** — 종료 전 **review-register(아래 독립 리뷰 결과) → close-cycle 게이트** 필요(원칙3). B2(최소주입) 바는 "lossless 포맷 압축"으로 재해석해 충족(슬라이싱은 후속). 독립 리뷰가 슬라이싱=기능저해를 포착해 **반려→lossless로 정정**(게이트 작동 실증).
 > ⚠ **설계 판단**: 빈 L1 신규유저도 전량 L0(45) compact 주입(620tok) — 원래 동작의 lossless 압축판. 코딩 룰을 코딩 단계에만 주입하는 진짜 최소화는 stage-injection 후속.
