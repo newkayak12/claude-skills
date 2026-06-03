@@ -62,8 +62,9 @@ MD
 EFF="$($M effective --stage code-writing --l1 "$L1" 2>&1)" || fail "effective exit != 0"
 echo "$EFF" | grep -q "R-CD01" || fail "R-CD01 effective 누락"
 # R-CD01 의 provenance 가 L1 이어야 (L1>L0 승) — 비-vacuous: L0 버전이 아닌 L1 버전
-echo "$EFF" | grep -A1 "^## R-CD01:" | grep -q "layer: L1" || fail "R-CD01 provenance 가 L1 아님 (override 안 됨 = vacuous)"
-echo "$EFF" | grep -q "## R-CD01: SOLID 내스타일" || fail "effective 가 L0 R-CD01 을 그대로 둠 (override 실패)"
+# (포맷: 한 줄 '## R-CD01 (L1): title' — provenance 가 인라인 paren)
+echo "$EFF" | grep -q "^## R-CD01 (L1):" || fail "R-CD01 provenance 가 L1 아님 (override 안 됨 = vacuous)"
+echo "$EFF" | grep -q "^## R-CD01 (L1): SOLID 내스타일" || fail "effective 가 L0 R-CD01 을 그대로 둠 (override 실패)"
 # 신규 L1 룰 provenance
 echo "$EFF" | grep -q "R-USER-LANG" || fail "L1 신규 룰(wildcard) 머지 누락"
 # stage 필터: architecture 전용 R-AR01 은 code-writing effective 에 없어야
@@ -74,7 +75,8 @@ $M conflicts --l1 "$L1" 2>&1 | grep -q "overridden: R-CD01@L0" || fail "override
 # ========== B2: invariant 보호 ==========
 # R-USER-WIP 가 R-PG01(invariant) override 시도 → 보호. effective 에 R-PG01 유지, R-USER-WIP 거부
 EFFALL="$($M effective --l1 "$L1" 2>&1)" || fail "effective(all) exit != 0"
-echo "$EFFALL" | grep -A1 "^## R-PG01:" | grep -q "invariant" || fail "invariant R-PG01 effective 누락/태그 없음"
+# 포맷: invariant 는 한 줄 '## R-PG01 (L0!): ...' 의 '!' 마커
+echo "$EFFALL" | grep -q "^## R-PG01 (L0!):" || fail "invariant R-PG01 effective 누락/태그 없음"
 echo "$EFFALL" | grep -q "R-USER-WIP" && fail "invariant override 시도(R-USER-WIP)가 거부 안 되고 살아있음"
 $M conflicts --l1 "$L1" 2>&1 | grep -q "invariant_protected: R-PG01" || fail "invariant_protected 충돌 리포트 누락"
 
@@ -104,7 +106,7 @@ python3 "$INIT" init --lang "Python 3.12 / FastAPI" --pointer-python "pyproject.
 RT="$($M effective --l1 "$UR" 2>&1)" || fail "라운드트립 effective exit != 0"
 echo "$RT" | grep -q "R-USER-LANG01" || fail "init 생성 lang 룰을 엔진이 파싱 못함 (포맷 SSOT 깨짐)"
 echo "$RT" | grep -q "R-USER-FMT-PY"  || fail "init 생성 pointer 룰 파싱 누락"
-echo "$RT" | grep -A1 "R-USER-LANG01" | grep -q "layer: L1" || fail "라운드트립 provenance L1 아님"
+echo "$RT" | grep -q "R-USER-LANG01 (L1)" || fail "라운드트립 provenance L1 아님"
 # F1: 생성 FMT 룰은 code-writing 어휘(L0 vocab) → stage-filtered load 에서 *살아야* 한다 (Micro 죽음 회귀 방지)
 $M effective --stage code-writing --l1 "$UR" 2>&1 | grep -q "R-USER-FMT-PY" \
   || fail "init 생성 FMT 룰이 --stage code-writing 에서 안 잡힘 (stage 어휘 불일치 = 죽은 룰)"

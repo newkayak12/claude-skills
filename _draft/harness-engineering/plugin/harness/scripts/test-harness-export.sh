@@ -47,7 +47,7 @@ MH="$TMP/mh/.harness"; HARNESS_HOME="$MH" python3 "$DEST/scripts/user-rules-init
 HARNESS_HOME="$MH" python3 "$DEST/scripts/rules-merge.py" effective --stage code-writing >/tmp/mrg 2>&1 \
   || fail "rules-merge.py 가 export dir 안에서 동작 안 함 (self-containment)"
 grep -q "R-USER-LANG01" /tmp/mrg || fail "export 머지 결과에 L1 룰 없음 (L1 미적용)"
-grep -qE "layer: L1" /tmp/mrg || fail "export 머지 provenance 누락"
+grep -qE "R-USER-LANG01 \(L1\)" /tmp/mrg || fail "export 머지 provenance 누락"
 
 # --- 멱등: 같은 dest 재-export (마커 있으니 허용) ---
 python3 "$EXPORT" --dest "$DEST" >/dev/null 2>&1 || fail "재-export(멱등) exit != 0"

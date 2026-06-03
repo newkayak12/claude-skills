@@ -16,7 +16,7 @@
 
 - [ ] **룰 자동 injection** (#010 잔여 · **키스톤**) — `rules-merge` effective 룰을 SessionStart(또는 stage 진입) hook이 컨텍스트에 **자동 주입**. 단 **stage-aware·최소로**(전부 주입은 토큰 폭증 — 그래서 경량화가 *뒤*에 붙어 실측 깎기). 주의: *주입 ≠ 강제* — soft/Inferential 끝이고, 진짜 강제는 게이트·hook(원칙2). 지금은 사람이 `rules-merge` 돌려 읽는 반자동.
   - [ ] 이 사이클에서 **`install` SKILL.md Step3 갱신** — "작업 단계별" 행을 *수동 명령 → hook 자동 주입*으로. (install 변경은 자동주입의 다운스트림 — 지금 install은 반자동을 정직히 기술해 일관됨)
-- [ ] **토큰 경량화** (💰 상세 아래) — 자동주입 *직후*. #011에서 *표면* 엔트로피(죽은 링크·stale 문서·relic 오탐)는 줄였다. 이제 *토큰* 표면 = 자동주입이 실제로 꽂는 effective rules + 문서 비대 실측 → 압축. #011 GC가 "측정 먼저"의 표면판, 이건 토큰판.
+- [~] **토큰 경량화** (💰 상세 아래 — **2026-06-03: lossless 압축분 완료, 슬라이싱은 stage-injection 후속으로 분리**) — 실측 rule-inject 매 세션 766토큰(45룰). **달성: 포맷 1줄/룰 압축 766→620(≈19%↓), 룰 누락 0(lossless)**. 더 큰 win(코딩 룰을 코딩 단계에만)은 정적 default 슬라이싱이 필요한데, 독립 리뷰가 "단계 자동 재주입 없으면 코딩 세션에 코딩 룰 누락 = 기능저해"로 반려 → **🎯 stage-injection 별도 사이클**(💰 하단). **제약(사용자): 기능 저해 금지** 준수.
   - [ ] **GC 표면 확장** (#011 F4 — GC 첫 패스가 얕음, high 4건=1 root cause) — `gc-scan`을 plugin SKILL.md 링크·문서 토큰 비대·미사용 hook spec(hooks/README의 11개 unbuilt)까지 확장. GP-2 스캔 범위에 plugin/ 포함 검토(해석 맥락 차이 주의).
   - [ ] **의미적 stale 탐지** (#011 F1·F2) — "문서 주장 vs 코드 현실"(hooks/README "전부 미구현"인데 5개 구현 류)은 결정론 스캔이 못 잡음. GC 의식의 *mandatory 사람/LLM 내용검토* 단계로 명문화(gc.md §6.4 표면판). GP-1 watch의 실용가치도 이때 검증(0/2 정밀도였으니).
 - [ ] **L2 project-rules 합의 흐름** (GOAL §2 step 4) — `cycle-init.py` 첫 실행 시 `<project>/.harness/project-rules.md` scaffold + 합의 절차. ruleslib에 L2 로드 추가(우선순위 L2>L1>L0), cross-file dup 탐지(#010 F6).
@@ -72,15 +72,33 @@
 
 ---
 
-## 💰 토큰 최적화 (= Now 키스톤 "토큰 경량화"의 상세)
+## 💰 토큰 최적화 (= Now 키스톤 "토큰 경량화"의 상세 · **측정 완료 2026-06-03**)
 
-> **상태 갱신(2026-06-02)**: #011이 *표면* 엔트로피(죽은 링크·stale·relic)를 줄였다. 이제 *토큰* 표면 = 이 섹션. **순서: 룰 자동주입 *뒤*** (사용자 "룰 자동주입 후에 토큰 최적화") — 자동주입이 꽂는 effective rules가 실측 대상이 되어야 맞는 타깃을 깎는다. 측정 먼저, 압축 나중. `gc-scan` 확장(F4)으로 문서 토큰 비대도 같은 도구로 실측.
+> **실측 (export = 실제 설치 컨텍스트)**:
+> - rule-inject SessionStart → **매 세션 L0 45룰 ≈ 766 토큰 (3065 chars)**, 빈 L1 신규유저도 동일. body(rules-merge) 2938 chars/734 tok + BOUNDARY.
+> - 포맷: 룰당 3줄, `_layer:_` 줄은 ×45 거의 순수 오버헤드.
+> - **draft↔export 발산**: draft엔 `plugin/harness/06-rules.md`가 없어 L0=0 → self-test의 "최소주입"(B2)이 *vacuous로 통과*(0<45 자명). export(=현실)에선 inj=catalog=45 → **B2 실제 실패**. test-rule-inject.sh가 populated L0를 한 번도 안 쳤다(테스트 사각).
+> - 근본: L0는 *정적*(매 세션 불변). 정적 참조 통째 재주입 = 원칙1 위반. 동적·세션관련 = L1/L2/L3 + invariant + override분뿐.
+>
+> **제약(사용자 2026-06-03): 기능 저해 금지.** 압축이 아니라 *재주입 안 함*. 전량 카탈로그는 06-rules.md + `rules-merge effective --stage`로 *on-demand 조회 유지*. invariant는 항상 주입. 단계 진입 시 그 stage 룰 도달 보장.
 
-- [ ] **토큰 최적화 패스** — *구조가 굳기 전에 최적화하면 잘못된 타깃을 깎는다* (CA-3: "압축이 아니라 *모양* 자체가 무거움"). 이제 구조는 굳음 → 실측 기반 착수.
-  - [ ] **tier-A 룰 압축** — SessionStart 주입분(effective rules) 최소화. `13 §7-1`.
-  - [ ] **prompt 캐싱 정렬 실측** — 정적/동적 경계로 캐시 히트율 측정 (`13 §5`). 5분 TTL 고려.
-  - [ ] **컨텍스트 윈도 예산** — 사이클당 주입되는 문서/메트릭/룰의 토큰 측정 → 임계 초과 시 경고 Sensor 검토.
-  - [ ] **측정 먼저, 압축 나중** — 추측 압축 금지. 실측 토큰 프로파일 없이는 손대지 않는다 ("측정 가능성=강제 가능성" #004의 연장).
+**파일-분리 3파트 (병렬 진행 완료 2026-06-03):**
+
+- [x] **P1 — 주입 토큰 경량화 (핵심 레버)** — **lossless 포맷 압축만: 766→620 토큰 (≈19%↓), 룰 누락 0**. 파일: `rules-merge.py`·`rule-inject.py`·`test-rule-inject.sh`(+`test-rules-merge.sh`·`test-harness-export.sh` 포맷 consumer 갱신)
+  - [x] 포맷 1줄/룰: `## R-AI01 (L0!): title` (invariant=`!`, layer 인라인). `_layer:_` 줄+공백 제거 → 766→620, **전량 effective 그대로 주입(룰 안 뺌)**. `^## R-` grep 호환 유지.
+  - [~] ~~슬라이싱(정적 L0 default 빼기)으로 365까지~~ → **독립 리뷰(2026-06-03)가 기능저해로 반려**. 뺀 25룰이 곧 *코딩 룰*(SOLID/KISS/YAGNI/DRY/SoC/tech-debt)이고, 작업 단계에서 자동 재주입하는 메커니즘이 없어("--stage 조회"는 자동 호출자 부재로 실효 없음) 코딩 세션에 코딩 룰이 사라짐. → **stage-injection 후속까지 보류**. `--dynamic` 플래그는 그 빌딩블록으로 남김(세션주입 미사용, help에 ⚠ 명시).
+  - [x] **test-rule-inject.sh 비-vacuous 재작성** — export(populated L0 45룰)로 빌드해 검증: inj==full(룰 누락 0=기능보존), 포맷 인라인 layer 압축(verbose `_layer:` 부재), R-CD* 코딩 룰 잔존, 빈 L1도 전량 compact·L1 누출 0. 4 self-test PASS.
+- [x] **P2 — 문서/SKILL 비대 (원칙1)** — **감사 결과: 문서는 이미 lean**. SKILL.md 2개는 거의 100% operative(frontmatter/Step/명령/표) → 안전 삭감분 ~13토큰뿐(13 §3 malformed 테이블 헤더 수정). 개념문서 00~13은 *정직한 detail 티어*(원칙1이 허용하는 "백과사전" 절반, 자동주입 아님·heading은 inter-doc 앵커) → 건드리면 기능저해. PROPOSE-ONLY 후보 ~400토큰 남김(11-anti-patterns 압축 등, 사람 판단). **결론: 토큰 표면은 문서가 아니라 주입(P1)이었다 — 가설 검증됨.**
+- [x] **P3 — 토큰 계측 (순수 추가)** — `token-profile.py` 신설(stdlib, ruleslib 재사용, hermetic temp export). `--baseline`=주입 ~토큰(현재 620). 파일 분리.
+  - [ ] **ratchet 축 `inject-tokens`↓ 등재** (잔여) — 현재값 **620** watermark로 lock → 회귀(누가 verbose 포맷 복귀) 차단. "측정 가능성=강제 가능성"(#004). *다음 close에서 bar-register 축으로 결박.* (주의: watermark는 실측 정수와 일치시킬 것 — 리뷰 [MED] 365≠366 교훈)
+  - [ ] **profiler rule-count 라벨 수정** (리뷰 [LOW]) — 헤더가 주입 슬라이스 토큰에 전량(45) rule-count를 붙여 오해 소지. 주입된 룰 수로 정렬.
+  - [ ] prompt 캐싱 정렬 실측(`13 §5`, 5분 TTL) — 정적(L0)/동적(L1) 경계 분리가 캐시 히트에 유리한지. (별도, 외부 측정)
+
+### 🎯 stage-injection (= 슬라이싱의 *기능보존* 버전 · 더 큰 토큰 win, 별도 사이클)
+- [ ] **stage-entry 자동 재주입** — 슬라이싱(정적 L0 default 빼기)이 기능저해인 *유일한* 이유는 "단계에서 다시 안 들어옴". stage 진입(예: code-writing 시작) 시 그 stage 룰을 자동 주입하는 hook/훅킹을 만들면, 세션주입을 invariant+L1로 줄여도 코딩 룰이 코딩 때 들어와 *기능보존*. 그때 620→~365 추가 win 회수. SessionStart는 stage 모름 → stage 신호원(skill 진입?) 설계 필요. 06-rules의 `**로딩 시점**`(stage 태그)이 이미 SSOT.
+
+> ⚠ **자동주입 사이클(`cycles/20260602-rule-auto-injection`) 미종료** — 종료 전 **review-register(아래 독립 리뷰 결과) → close-cycle 게이트** 필요(원칙3). B2(최소주입) 바는 "lossless 포맷 압축"으로 재해석해 충족(슬라이싱은 후속). 독립 리뷰가 슬라이싱=기능저해를 포착해 **반려→lossless로 정정**(게이트 작동 실증).
+> ⚠ **설계 판단**: 빈 L1 신규유저도 전량 L0(45) compact 주입(620tok) — 원래 동작의 lossless 압축판. 코딩 룰을 코딩 단계에만 주입하는 진짜 최소화는 stage-injection 후속.
 
 
 
