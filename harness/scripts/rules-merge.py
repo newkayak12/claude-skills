@@ -48,14 +48,24 @@ def cmd_effective(args):
         print("🛑 차단성 충돌(같은 layer 같은 id) — 사람 개입 필요. `conflicts` 로 확인.",
               file=sys.stderr)
         sys.exit(2)
-    head = f"# Effective rules" + (f" — stage: {args.stage}" if args.stage else " (all stages)")
+    # --dynamic: 정적 L0 default(매 세션 불변·overridable)는 빼고, *세션 관련* 슬라이스만 —
+    # invariant L0(필수, 항상 적용) + L1/L2/L3(사용자/프로젝트/사이클). 토큰 경량화용
+    # (rule-inject SessionStart 주입). 전량 카탈로그는 기본 effective / `--stage` 로 조회 유지.
+    omitted = 0
+    if args.dynamic:
+        kept = [r for r in effective if r["layer"] != "L0" or r["scope"] == "invariant"]
+        omitted = len(effective) - len(kept)
+        effective = kept
+    head = "# Effective rules" + (f" — stage: {args.stage}" if args.stage else " (all stages)")
+    mode = " · dynamic(invariant+L1↑)" if args.dynamic else ""
     print(head)
-    print(f"({len(effective)} effective · L1>L0 머지 · invariant 보호)\n")
+    print(f"({len(effective)} effective{mode} · L1>L0 · invariant always-on)")
     for r in effective:
-        inv = " [invariant]" if r["scope"] == "invariant" else ""
-        print(f"## {r['id']}: {r['title']}")
-        print(f"_layer: {r['layer']}{inv}_")
-        print()
+        inv = "!" if r["scope"] == "invariant" else ""   # ! = invariant(override 불가)
+        print(f"## {r['id']} ({r['layer']}{inv}): {r['title']}")
+    if args.dynamic and omitted:
+        print(f"\n› 정적 L0 default {omitted}개 생략(매 세션 불변) — 전량은 06-rules.md, "
+              f"단계별은 `rules-merge effective --stage <stage>` 로 조회(기능 유지).")
 
 
 def cmd_conflicts(args):
@@ -88,6 +98,11 @@ def main():
         p = sub.add_parser(name)
         p.add_argument("--stage", help="이 stage 의 effective 룰만")
         p.add_argument("--l1", help="L1 user-rules 경로 (기본 $HARNESS_HOME/user-rules.md)")
+        if name == "effective":
+            p.add_argument("--dynamic", action="store_true",
+                           help="부분 뷰: invariant L0 + L1/L2/L3 만(정적 L0 default 생략). "
+                                "⚠ 세션 자동주입엔 미사용 — 생략 룰을 stage에서 재주입하는 메커니즘이 "
+                                "아직 없어 그대로 쓰면 코딩 룰 누락(기능저해). stage-injection 후속의 빌딩블록.")
     pl = sub.add_parser("layers")
     pl.add_argument("--l1")
     args = ap.parse_args()

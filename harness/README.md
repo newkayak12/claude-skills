@@ -4,6 +4,10 @@
 
 Harness Engineering — 솔로 dev 제품 개발 scaffolding. 사이클 진입 게이트, 가설/품질-바 tamper-evident 잠금, 독립 리뷰 게이트, cross-cycle ratchet으로 *사이클별 품질 저하를 구조적으로* 막습니다.
 
+## 전제(필수): `python3`
+
+모든 hook·스크립트가 `python3` 인터프리터에 의존합니다. **PATH에 `python3`가 없으면 매 세션 SessionStart hook이 실패하고 모든 스킬 명령이 깨집니다.** `harness:install`의 Step 0가 순수 셸로 이를 먼저 확인합니다. (Windows는 `python`만 있고 `python3`가 없을 수 있으니 확인하세요.)
+
 ## 설치 후 시작
 
 ```

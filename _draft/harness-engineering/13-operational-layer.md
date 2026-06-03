@@ -111,8 +111,6 @@
 
 *객관적으로 판정 가능*하고 *위반이 치명적*인 것만:
 
-| 룰 | 메커니즘 | Hook/Script |
-|---|---|---|
 | 룰 | 메커니즘 | Hook/Script | Guide/Sensor |
 |---|---|---|---|
 | 가설 immutability | SHA-256 hash chain + `PreToolUse` 차단 | `hypothesis-register.py` + `hook-hypothesis-immutability` | **Sensor** (변조 사후 감지·차단) |
