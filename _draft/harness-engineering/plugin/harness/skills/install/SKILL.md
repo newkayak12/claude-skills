@@ -86,14 +86,15 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/user-rules-init.py add \
 
 | 시점 | 로드/발동 | 무엇 |
 |---|---|---|
-| **세션 시작 (자동)** | hook `rule-inject` | **effective 룰(L1>L0 머지) 전량을 컨텍스트에 *자동 주입*** — 방금 만든 L1 user-rules가 매 세션 모델 눈에 들어온다. 포맷은 1줄/룰로 압축(**lossless**, 766→620 ≈19%↓, 룰 누락 0). *주입 ≠ 강제*(강제는 게이트/hook). effective 0이면 무출력. |
+| **세션 시작 (자동)** | hook `rule-inject` | **항상-켜둘 룰(invariant L0 + L1)을 컨텍스트에 *자동 주입*** — 단계와 무관하게 세션 내내 유효한 룰(R-PG 프로세스 게이트·R-DoD·R-DD·R-AI + 방금 만든 L1 user-rules)만. 단계별 코딩/아키텍처 룰은 빠진다(↓ stage 진입 hook이 커버). 1줄/룰 압축(**lossless** 슬라이스 내 룰 누락 0). ≈**385 tokens**(전량 620 대비, 정적 default를 단계로 이관). *주입 ≠ 강제*. |
+| **단계 진입 (자동)** | hook `stage-inject` (PreToolUse) | **그 단계의 룰을 *단계가 시작되는 순간* 자동 주입.** 코드 작성 시작(Edit/Write 도구 호출) = `code-writing` 진입 → R-CD 코딩 룰(SOLID/KISS/YAGNI/…)이 *바로 그때* 주입(~309 tokens). 세션·단계당 1회(de-dup). 방어를 세션 *경계*에서 플로우 *내부*로 확장(CA-10). `permissionDecision=allow` — 도구 안 막음, *주입 ≠ 강제*. |
 | 세션 시작 | hook `active-cycle-verify` | 진행 중 사이클 무결성 점검 |
 | 새 사이클 시작 | `harness:cycle` | pre-cycle 진입 게이트 → 통과 시 `cycle-init.py` scaffold |
-| 작업 단계별 (수동, 세분) | `rules-merge.py effective --stage <stage>` | 특정 stage의 effective 룰만 좁혀 보고 싶을 때. invariant 보호, 충돌은 `conflicts`. (stage 진입 시 *자동 재주입*되면 세션주입을 단계별로 더 줄일 수 있음 = 후속. L2/L3도 후속) |
+| 작업 단계별 (수동, 세분) | `rules-merge.py effective --stage <stage>` | 특정 stage의 effective 룰만 좁혀 보고 싶을 때(자동주입 외 수동 조회). invariant 보호, 충돌은 `conflicts`. (L2/L3는 후속) |
 | 가설/품질-바 등록 | hook `hypothesis-immutability` | `hypotheses.jsonl`/`bar.jsonl` tamper-evident 잠금 (#006) |
 | 사이클 종료 | `close-cycle.py` | 바별 독립 리뷰(#007) + cross-cycle ratchet(#008) 게이트 |
 
-> 자동주입(SessionStart)은 *전량 effective*(머지된 L0+L1)를 1줄/룰 압축으로 흘린다 — **lossless** 766→620(≈19%↓), 룰 누락 0. 더 줄이려면(코딩 룰을 코딩 단계에만 주입) stage-entry 자동 재주입이 필요 = 후속. 정적 default를 그냥 빼면 코딩 룰(SOLID/KISS/…)이 사라져 *기능저해*라 보류(독립 리뷰 판정).
+> 자동주입은 이제 *두 시점*으로 나뉜다(독립 리뷰 CA-10 해소). **SessionStart**(`rule-inject`)는 *항상-켜둘* 룰(invariant L0 + L1)만 — ≈385 tokens(전량 620 대비). **단계 진입**(`stage-inject`, PreToolUse)이 코드 작성 시작 시점(Edit/Write)에 그 단계 룰(R-CD 코딩 룰 등 ~309 tokens)을 *바로 그때* 재주입한다. **기능 저해 없음**: 예전 전량주입에 있던 코딩 룰은 *전부 그대로 모델에 도달*한다 — 다만 세션 시작이 아니라 *코딩이 실제 시작되는 순간*에. 순효과: 세션시작 토큰 ↓ **AND** 방어가 경계→플로우 *내부*로 확장(긴 세션에서 룰이 스크롤아웃돼도 단계 진입마다 재도달). 둘 다 *주입 ≠ 강제*(강제는 게이트/차단성 hook).
 
 ## Step 5: 다음 행동 제시
 
