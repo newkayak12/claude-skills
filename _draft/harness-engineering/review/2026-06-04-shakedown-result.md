@@ -71,7 +71,10 @@
 ### 런타임 발견 (RT-FINDINGS)
 
 - **RT-1 — F1 CLOSED**: hook 3종(SessionStart)·PreToolUse 차단·스킬 2종 자동트리거가 *런타임*에 전부 확인. **하네스는 실제 claude 세션에서 작동한다.** H1·#005 본체 닫힘.
-- **RT-2 — `--plugin-dir`는 재사용 가능한 시운전 하니스**: `/plugin install` 인터랙션 없이 헤드리스로 런타임 발화를 측정하는 표준 경로. CI 회귀 게이트로 승격 가능(회귀 시 hook 미발화 즉시 탐지).
+- **RT-2 — `--plugin-dir`는 재사용 가능한 시운전 하니스**: `/plugin install` 인터랙션 없이 헤드리스로 런타임 발화를 측정하는 표준 경로. CI 회귀 게이트로 승격 가능(회귀 시 hook 미발화 즉시 탐지). → **2026-06-04 DONE**: 2티어 게이트로 굳힘.
+  - **티어1 `scripts/test-runtime-wiring.sh`** (hermetic, no-claude, 글로브 합류 12→13): 개별 hook 테스트가 놓치는 *배선 계약* 잠금 — hooks.json↔파일시스템 정합(W2), 필수배선 3종(W3: SessionStart⊇rule-inject·PreToolUse(Edit)⊇{immutability,stage-inject}·Bash⊇symlink-guard), 스킬 2종 discoverability(W5: frontmatter name/desc), 런타임-등가 주입(W6). 음성테스트 2건(hooks.json 깨진참조·스킬 frontmatter 제거) 정확히 FAIL → 비-vacuous.
+  - **티어2 `scripts/runtime-smoke.sh`** (라이브 `claude -p --plugin-dir`, opt-in, glob 제외): L1(auth 불필요 — 모델 호출 *전* 발화: 플러그인 로드·스킬 등록·rule-inject 주입) PASS, L2(`--full`, auth 필요 — immutability 런타임 차단: 파일 unchanged+모델 차단보고) PASS. 종료코드 0/1/2(SKIP=claude 부재).
+  - 효과: 오늘 1회 관측한 7/7 런타임 발화가 *매 회귀마다* 무비용으로 잠긴다. hook rename·export drift·스킬 깨짐 같은 침묵 퇴행을 hermetic 티어1이, 진짜 런타임 발화를 라이브 티어2가 본다.
 - **RT-3 — 계측 함정(중요)**: stream-json은 **SessionStart hook 이벤트는 내보내지만 PreToolUse hook 이벤트는 안 내보낸다.** PreToolUse는 *이벤트 부재로 미발화를 추론하면 오판* — 반드시 **부작용(마커)·행동(차단 보고)** 으로 측정할 것. (실제로 3a에서 한 번 오판했다 정정.)
 - **RT-4 — 미소진**: Go 경로 scaffold·close 게이트는 런타임에서 *대화 다턴*이라 단일 `-p`로 안 닿음 — 스크립트층에선 이미 BLOCKED-OK 확인됨(위 §BLACKBOX). 잔여 위험 낮음.
 
