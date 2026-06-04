@@ -200,3 +200,21 @@ GP-4/5로 *구조화*해 결정론↔사람 경계를 GP 등급으로 못박았�
 *빼기를 강제하지 않는다*(ratchet 등록이 별도 필요). 그리고 가장 깊은 갭(CA-8: 품질 자체를 외부 측정한 적
 없음)은 *이 재검토로도 안 닫힌다* — 표면을 아무리 깨끗이 GC해도 "하네스가 품질 저하를 막는다"의 외부
 증거는 여전히 0이다. GP-5의 메커니즘 수 23이 *내려가기 시작할 때* 비로소 "빼기"가 설계의도에서 사실이 된다.
+
+---
+
+## 처리 로그 — 2026-06-03 (사람/LLM 내용검토 1회, GP-4 의식 실행)
+
+gc-scan 실행 → high-confidence **0 (fixpoint, 자동정리 대상 없음)** + watch 8건. watch는 사람 판정이라 아래 직접 처리:
+
+| GP | 항목 | 판정 | 행동 |
+|---|---|---|---|
+| GP-4 | `hooks/README.md` 구현상태 | **stale 실재** — "#002~#008 5개 Sensor"인데 실제 7개(rule-inject·stage-inject 누락), `hook-stage-rules`가 `[ ]`인데 stage-inject.py로 이미 구현 | **수정**: "7개(Sensor 5+주입 2)", rule-inject·stage-inject `[x]` 추가, hook-stage-rules→stage-inject.py 체크오프 + 미구현목록 중복 제거 |
+| GP-4 | `SKILL.md` 명령/플래그 | 검토함 — install SKILL Step4 표가 stage-inject 두 시점 반영(병렬 작업서 갱신됨). 일치 | 무행동 |
+| GP-4 | `README.md`·`13` 수치주장 | 검토함 — "N층/X개" 수치 grep 0건(서술형만). stale 없음 | 무행동 |
+| GP-1 | `hooks/` `scripts/` relic 후보 | **여전히 signpost** (canonical plugin 위치 안내 + 살아있는 가이드, #011 판정 유지). probation 계속 | 유지(삭제 안 함) |
+| GP-2 | `templates/adr.md` dead link | placeholder/whitelist(역사적) | 무행동 |
+| GP-3 | `l0-parser` dup 2멤버 | R-CD04 Rule-of-Three 전 — watch 허용 | 무행동 |
+| GP-5 | mechanism-count **23** | 복잡도 워터마크. *빼기*는 원칙5 증거(detection-rate→0) 필요 — 증거 없이 작동 Sensor 삭제는 무모(CV-2식 미측정 행동). 축 lock은 bar-register(active 사이클)로 | **defer**: 23을 watermark로 잠그는 `harness-mechanism-count`(lower_better) 축 등재는 다음 close에. 은퇴 후보(active-cycle-verify, deploy-kill-check)는 측정 후 |
+
+**결론**: 표면 엔트로피 *처리 가능분*은 정리됨(GP-4 stale 1건 수정, high-confidence fixpoint 0 유지). 구조 엔트로피(GP-5 23)는 *측정 없는 빼기를 거부* — 잠금/은퇴는 증거를 갖춘 사이클로. 가장 깊은 CA-8(외부 품질 측정)은 GC 범위 밖, 여전히 0.

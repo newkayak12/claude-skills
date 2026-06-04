@@ -253,13 +253,15 @@ Hook이 늘면 *모든 prompt가 hook 출력으로 도배* → context 오염 + 
 > 정확한 목록·wiring·self-test는 canonical [`../plugin/harness/hooks/README.md`](../plugin/harness/hooks/README.md)가
 > SSOT. 아래 체크박스는 그 canonical과 동기화한다 (#011 entropy-gc에서 정정 — 이전엔 "전부 미구현"으로 stale).
 
-실전 사이클 1회 후 *진짜 필요한 것*만 구현 권장. #002~#008에서 5개 Computational Sensor 구현됨.
+실전 사이클 1회 후 *진짜 필요한 것*만 구현 권장. #002~이번까지 **7개** Computational/주입 hook 구현됨 (Sensor 5 + 주입 2).
 
 - [x] hook-hypothesis-immutability (1순위) → `hypothesis-immutability.py` (#002, 바·리뷰 데이터 보호로 확장)
 - [x] hook-cycle-context (2순위) → `active-cycle-verify.py` (#003, SessionStart)
 - [x] hook-deploy-kill-check (3순위) → `deploy-kill-check.py` (#005, UserPromptSubmit)
 - [x] (신규) active-symlink-guard → `active-symlink-guard.py` (#007, 종료 경로 강제)
 - [x] (신규) session-counter → `session-counter.py` (#004, metrics 갱신)
+- [x] (신규) rule-inject → `rule-inject.py` (#012, SessionStart effective 룰 자동주입)
+- [x] hook-stage-rules → `stage-inject.py` (이번 사이클, PreToolUse 단계진입 룰 주입 — 카탈로그의 hook-stage-rules가 이걸로 실현)
 - [ ] hook-cycle-wip (4순위)
 - [ ] hook-adr-immutability (5순위)
 - [ ] hook-activity-log
@@ -268,7 +270,6 @@ Hook이 늘면 *모든 prompt가 hook 출력으로 도배* → context 오염 + 
 - [ ] hook-ship-paralysis
 - [ ] hook-rule-exemption
 - [ ] hook-discovery-escape
-- [ ] hook-stage-rules
 - [ ] hook-reversibility-reminder
 - [ ] hook-retro-on-stop
 - [ ] hook-periodic-kill-check
