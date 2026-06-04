@@ -4,18 +4,13 @@
 > 우선순위 정렬. 사이클 종료 시 여기 갱신. SSOT는 각 `cycles/<id>/retro.md`이고, 이 파일은 *집계 뷰*.
 > 관련: [GOAL.md](./GOAL.md) · [devils-advocate.md](./devils-advocate.md) (취약점 누적 로그)
 
-마지막 갱신: 2026-06-02 (#011 종료 + dry-run 마찰수정 + Now 순서 반전: 룰 자동주입 → 토큰 경량화)
+마지막 갱신: 2026-06-04 (#012 종료 — rule-auto-injection + stage-injection 완료 · 북성 N=1 측정 · 시운전 7/7 런타임 발화 확인)
 
-> **북극성 재정의**: Claude 품질의 *사이클별 저하*를 **구조적으로** 막는다. 3층 = ①바-잠금(#006 ✅) ②독립 리뷰 게이트(#007 ✅) ③ratchet(#008 ✅). **품질저하방지 3층 완성**. ④ packaging/install — #009 설치 경로 개통 + #010 룰-레이어링 엔진(L0+L1 머지·provenance·invariant 보호). install이 만든 L1이 *실제 적용*됨. 다음은 ④-c L2 project-rules + L0 Default 룰 코드화(#010 F4).
+> **북극성 재정의**: Claude 품질의 *사이클별 저하*를 **구조적으로** 막는다. 3층 = ①바-잠금(#006 ✅) ②독립 리뷰 게이트(#007 ✅) ③ratchet(#008 ✅). **품질저하방지 3층 완성**. ④ packaging/install — #009 설치 경로 개통 + #010 룰-레이어링 엔진(L0+L1 머지·provenance·invariant 보호). ⑤ 룰 자동주입 — #012 SessionStart(invariant+L1) + stage-inject(PreToolUse 코딩 단계). install이 만든 L1이 *실제 자동 주입*됨. 다음은 GC 표면 확장 + L2 project-rules.
 
 ---
 
-## 🔜 Now — 다음 사이클 후보 (룰 자동주입 → 토큰 경량화 → L2)
-
-> **순서 갱신(2026-06-02, 사용자 "룰 자동주입 후에 토큰 최적화하자")**: 경량화↔자동주입 순서 *반전*. 이유: 자동주입을 먼저 깔아야 *실제 컨텍스트에 들어가는 토큰*이 생긴다 → 그 **실측치**를 깎는 게 맞는 타깃("측정 먼저, 압축 나중" #004 연장). 미주입 상태의 추정 토큰을 미리 깎는 건 잘못된 타깃. 부수효과: 자동주입은 H1(하네스가 *실제로* 작동·룰이 컨텍스트 도달)을 처음 건드리는 층 — 시뮬이 못 닿은 호출/주입 규율층.
-
-- [ ] **룰 자동 injection** (#010 잔여 · **키스톤**) — `rules-merge` effective 룰을 SessionStart(또는 stage 진입) hook이 컨텍스트에 **자동 주입**. 단 **stage-aware·최소로**(전부 주입은 토큰 폭증 — 그래서 경량화가 *뒤*에 붙어 실측 깎기). 주의: *주입 ≠ 강제* — soft/Inferential 끝이고, 진짜 강제는 게이트·hook(원칙2). 지금은 사람이 `rules-merge` 돌려 읽는 반자동.
-  - [ ] 이 사이클에서 **`install` SKILL.md Step3 갱신** — "작업 단계별" 행을 *수동 명령 → hook 자동 주입*으로. (install 변경은 자동주입의 다운스트림 — 지금 install은 반자동을 정직히 기술해 일관됨)
+## 🔜 Now — 다음 사이클 후보 (GC 표면 확장 → L2 → L0 코드화)
 - [~] **토큰 경량화** (💰 상세 아래 — **2026-06-03: lossless 압축분 완료, 슬라이싱은 stage-injection 후속으로 분리**) — 실측 rule-inject 매 세션 766토큰(45룰). **달성: 포맷 1줄/룰 압축 766→620(≈19%↓), 룰 누락 0(lossless)**. 더 큰 win(코딩 룰을 코딩 단계에만)은 정적 default 슬라이싱이 필요한데, 독립 리뷰가 "단계 자동 재주입 없으면 코딩 세션에 코딩 룰 누락 = 기능저해"로 반려 → **🎯 stage-injection 별도 사이클**(💰 하단). **제약(사용자): 기능 저해 금지** 준수.
   - [ ] **GC 표면 확장** (#011 F4 — GC 첫 패스가 얕음, high 4건=1 root cause) — `gc-scan`을 plugin SKILL.md 링크·문서 토큰 비대·미사용 hook spec(hooks/README의 11개 unbuilt)까지 확장. GP-2 스캔 범위에 plugin/ 포함 검토(해석 맥락 차이 주의).
   - [ ] **의미적 stale 탐지** (#011 F1·F2) — "문서 주장 vs 코드 현실"(hooks/README "전부 미구현"인데 5개 구현 류)은 결정론 스캔이 못 잡음. GC 의식의 *mandatory 사람/LLM 내용검토* 단계로 명문화(gc.md §6.4 표면판). GP-1 watch의 실용가치도 이때 검증(0/2 정밀도였으니).
@@ -70,6 +65,7 @@
 - [x] **#008** cross-cycle ratchet — `ratchetlib.py`(공유 lib)+`ratchet-check.py`(CLI)+`bar-register` 선택적 축(axis/value/direction, 하위호환)+`close-cycle` 게이트 2.5(선언 축이 이전 닫힌 cycle watermark 회귀 시 차단). 품질저하방지 ③층 = **3층 완성**. 오탐 0(선언 축만 검사). hermetic 합성 fixture가 작동 증명 + close SKIP 사각 우회. 독립 리뷰가 footgun 1건 포착. `cycles/20260602-cross-cycle-ratchet/`
 - [x] **#009** packaging install onboarding — `harness-export.py`(draft→top-level `./harness` self-contained 빌드, 컨셉문서 평탄화, 안전거부+마커 멱등) + marketplace.json `harness` peer 등록(source `./harness`, v0.2.0) + `harness:install` 스킬(대화→L1 user-rules) + `user-rules-init.py`(12-layering frontmatter, 멱등). **설치 경로 개통**. 게이트가 빌드 전 self-containment 블로커 포착. 독립 리뷰가 잠복 버그 2건 포착(rules-load 0룰 파싱 vacuous→파서 재작성, 빌더 export 혼입→제외). `cycles/20260602-packaging-install-onboarding/`
 - [x] **#010** rule layering engine — `ruleslib.py`(L0 카탈로그+L1 per-rule 파서, 머지 순수함수)+`rules-merge.py`(CLI effective/conflicts/layers)가 L0+L1을 stage별 우선순위(L1>L0) 머지 + provenance + invariant 보호("(필수)" 섹션 마커) + 충돌 비해석(같은-layer 중복 exit2, AP-26). **install이 만든 L1이 실제 적용됨**(#009 F4 해소). MVE=L0+L1, 포맷 SSOT=L1/L2/L3 1개 통일·L0 카탈로그 유지(churn 0). 독립 리뷰가 stage 어휘 죽음(F1)·WIP 기만 no-op(F2) 포착→user-rules-init stage를 L0 어휘로 정렬+WIP additive화. **머지 실행이 "WIP=1이 06-rules.md에 룰로 없음"(F4) 노출**. self-test 9/9. `cycles/20260602-rule-layering-engine/`
+- [x] **#012** rule auto injection + stage-injection — `rule-inject`(SessionStart, invariant+L1, ≈384 tok) + `stage-inject`(PreToolUse code-writing, R-CD ≈309 tok). lossless 포맷 압축 766→620. test-runtime-wiring.sh 2티어. install SKILL Step3 자동주입 기술. 북성 NS-2 N=1(게이트 무결성 유지·force 책임추적 확인). 시운전 7/7 런타임 발화 확인. B1~B6 독립 리뷰 pass. `cycles/20260602-rule-auto-injection/`
 - [x] **#011** entropy gc — `gc-scan.py`(결정론적 표면 스캐너: GP-1 relic-dir watch·GP-2 dead-link high·GP-3 dup-parser Rule-of-Three watch)+`GOLDEN-PRINCIPLES.md`(선언, 비해석)+hermetic self-test(3-sabotage 검증)+ratchet 축 2개(`harness-entropy-found`↑·`harness-entropy-remaining`↓). **원칙6를 우리 코드에 처음 적용**. 정리: dead link 4개(→`templates/retro.md` 생성)·hooks/README 역방향 stale 정정(5개 구현 반영). **핵심 발견(F1)**: 구조 휴리스틱이 signpost↔relic 못 가름(GP-1 0/2 정밀도)→watch 강등; "내용판단 필요=high-confidence 아님". 독립 리뷰가 self-test 비-vacuous 입증+low 2건 포착. fixpoint exit0. `cycles/20260602-entropy-gc/`
 - [x] SSOT 정리 (#001 F6) — 플러그인이 canonical, draft scripts 삭제.
 - [x] Böckeler "Harness Engineering" grounding (`00 §0.2b`) — CV-1 외부 검증.
