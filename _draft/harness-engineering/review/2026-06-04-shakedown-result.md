@@ -42,7 +42,7 @@
 ## 다음 (Phase 3 적재)
 
 - [x] ~~TODO 🔬: "H1·#005 — hook *런타임* 발화·스킬 호출 관측" (F1)~~ → **아래 §런타임 측정에서 CLOSED**
-- [ ] metascript 갱신: tamper 테스트 ↔ gate 테스트 별 사이클 분리 + active-symlink-guard rm 케이스 추가 (F2·F4)
+- [x] ~~metascript 갱신: tamper 테스트 ↔ gate 테스트 별 사이클 분리 + active-symlink-guard rm 케이스 추가 (F2·F4)~~ → **DONE 2026-06-04**: Phase 2를 사이클 A(정상 close)/B(변조·rm 우회 차단, 닫지않고 폐기)로 분리
 - [ ] 라이브 Phase 2는 `pytest` 설치 환경에서 — 토이 과제 실행 로그를 증거로 (F3)
 
 ---
