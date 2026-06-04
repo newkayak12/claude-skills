@@ -7,6 +7,7 @@ GOLDEN-PRINCIPLES.md 의 각 GP-id 를 1:1 로 검사한다 (선언이지 추론
   GP-3  중복 파서 Rule-of-Three watch (선언 레지스트리, 2=watch ≥3=escalate) [watch]
   GP-4  의미적 stale (문서가 *주장*하는 상태 vs 코드 현실) — 결정론 불가, 사람검토 [watch]
   GP-5  아키텍처 복잡도 래칫 (script+hook 수를 축으로 노출, 빼기 없는 더하기 감시) [watch]
+  GP-6  orphan hook 파일 (hooks/ 에 존재, hooks.json 미배선) — dead hook 또는 배선 누락 [high]
 
 GP-4 는 *결정론적으로 자동탐지 불가*다(문서 의미 ≠ 코드 의미). 스캐너는 그걸 *대신* 검사하지
 않고, GC 의식의 **mandatory 사람/LLM 내용검토** 체크리스트를 리포트에 *상기*시킨다(#011 F1·F2 교훈).
@@ -19,6 +20,7 @@ GP-5 는 *측정만* 한다(빼기 강제는 ratchet 축이 함). 둘 다 high-c
   gc-scan.py --complexity-axis     # GP-5 복잡도 수치 한 줄(ratchet 축 값) — exit 0
 """
 import argparse
+import json as _json
 import os
 import re
 import sys
@@ -225,12 +227,59 @@ def gp4_review_reminders():
             for tgt, why in GP4_REVIEW_TARGETS]
 
 
+def scan_gp6_orphan_hooks(root: Path):
+    """GP-6: hooks/ 에 존재하지만 hooks.json 에 미배선된 .py 파일 탐지 (결정론, high).
+
+    배선 = hooks.json "command" 값에서 `/hooks/<name>.py` 패턴으로 파일명 추출.
+    test-*.py 는 제외 (직접 배선 대상 아님).
+    """
+    hooks_dir = root / PLUGIN_HARNESS / "hooks"
+    hooks_json_path = hooks_dir / "hooks.json"
+    if not hooks_dir.is_dir() or not hooks_json_path.is_file():
+        return []
+
+    try:
+        data = _json.loads(hooks_json_path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return []
+
+    wired: set = set()
+
+    def _collect(obj):
+        if isinstance(obj, dict):
+            cmd = obj.get("command", "")
+            if isinstance(cmd, str):
+                m = re.search(r"/hooks/(\S+\.py)", cmd)
+                if m:
+                    wired.add(m.group(1))
+            for v in obj.values():
+                _collect(v)
+        elif isinstance(obj, list):
+            for item in obj:
+                _collect(item)
+
+    _collect(data)
+
+    out = []
+    for p in sorted(hooks_dir.iterdir()):
+        if not p.is_file() or p.suffix != ".py":
+            continue
+        if p.name.startswith("test-"):
+            continue
+        if p.name not in wired:
+            out.append(Finding(
+                "GP-6", "high", str(p.relative_to(root)),
+                "hooks/ 존재, hooks.json 미배선 — dead hook 또는 배선 누락 (orphan)"))
+    return out
+
+
 def scan_all(root: Path):
     return (scan_gp1_relic_dirs(root)
             + scan_gp2_dead_links(root)
             + scan_gp3_dup_parsers(root)
             + gp4_review_reminders()
-            + scan_gp5_complexity(root))
+            + scan_gp5_complexity(root)
+            + scan_gp6_orphan_hooks(root))
 
 
 def main():

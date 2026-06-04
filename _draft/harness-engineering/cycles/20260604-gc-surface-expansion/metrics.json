@@ -1,0 +1,12 @@
+{
+  "cycle_id": "20260604-gc-surface-expansion",
+  "started_at": "20260604",
+  "appetite_sessions": 1,
+  "session_count": 1,
+  "reentry_count": 0,
+  "gate1_status": "pending",
+  "gate2_status": "pending",
+  "kill_check": "ok",
+  "status": "closed",
+  "closed_at": "2026-06-04T12:50:35.479802+00:00"
+}
