@@ -80,6 +80,8 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/user-rules-init.py add \
 
 `init`은 파일이 있으면 거부(멱등), 재생성은 `--force`(`.bak` 백업 후)만. 중복 id `add`도 거부.
 
+생성된 L1 룰은 **세션 시작마다 `rule-inject` hook이 자동 주입**한다 — 수동 명령 불필요. (자동주입 메커니즘은 Step 4 표 참조)
+
 ## Step 4: "언제 무엇이 로드되나" 안내 (GOAL §3.3 / CA-1)
 
 사용자에게 *명시*한다 — 설치 후 AI 작동 메커니즘:
