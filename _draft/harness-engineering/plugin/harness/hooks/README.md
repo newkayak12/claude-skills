@@ -71,6 +71,19 @@
 
 → 이것으로 `kill-check.py` 가 *항상-0(거짓 OK)* 없이 실제 데이터로 판정 가능 (cycle-004). budget$ 는 *관측 불가* → kill 지표에서 드롭. "측정 가능한 것만 강제한다".
 
+### `rule-inject.py` — SessionStart
+
+| | |
+|---|---|
+| **이벤트** | `SessionStart` |
+| **역할** | `rules-merge effective --dynamic`(invariant L0 + L1 user-rules)를 **컨텍스트에 자동 주입** — 사람이 수동으로 `rules-merge` 실행 없이 세션마다 항상-켜둘 룰이 도달 |
+| **주입 범위** | invariant(R-PG·R-DoD·R-DD·R-AI 등) + L1 override. 정적 default(R-CD 코딩 룰) 제외(stage-inject 가 커버) |
+| **압축** | 1줄/룰 lossless 포맷 (766토큰→384 기준; `_layer:` 오버헤드 제거) |
+| **주입 ≠ 강제** | soft 안내(원칙1 "지도"). 진짜 강제는 게이트·차단성 PreToolUse hook (원칙2) |
+| **fail-open** | HARNESS_HOME 부재·rules-merge 실패·effective 0 → exit 0, 무스팸 |
+
+→ `stage-inject`(PreToolUse, 코딩 단계 룰)와 *짝*: 자동주입을 두 시점으로 나눠 세션시작 토큰 ↓ AND 방어를 경계→플로우 내부로 확장 (#012).
+
 ### `deploy-kill-check.py` — UserPromptSubmit
 
 | | |

@@ -362,6 +362,16 @@ GP-4의 전형: `hooks/README.md`가 "모든 hook 미구현"이라 주장하나 
 포함한다: 스캔(결정론) → high-confidence fixpoint(자동) → **GP-4 체크리스트 전수 검토(사람/LLM)**.
 "구현 상태"·"N개 구현"·"전부 미구현" 류 문장은 코드와 1:1 대조. 절차는 `GOLDEN-PRINCIPLES.md` §내용검토 의식.
 
+### GC 실행 mandatory 체크리스트
+
+GC 실행 시 스캔(결정론) → high-confidence fixpoint 다음, 아래 항목을 **전수 검토**한다.
+자동탐지가 닿지 않는 의미적 stale(GP-4)·signpost↔relic 판별(GP-1)을 사람/LLM이 직접 확인.
+
+- [ ] **hooks/README.md "현재 구현" 섹션**: 기술된 hook 파일명이 hooks.json 배선 목록과 1:1 일치하는가 ("전부 미구현" 역방향 stale 전례 — #011 F2)
+- [ ] **plugin/harness/skills/\*/SKILL.md**: 안내하는 명령·플래그·로드 시점이 현재 스크립트 인터페이스와 일치하는가 (스킬 문서가 삭제된 flag를 참조하거나 변경된 UX를 오안내하지 않는가)
+- [ ] **README.md · 13-operational-layer.md "N개 구현"·"N층 완성" 류 주장**: 현재 코드와 카운트가 일치하는가 (PF-9: 검증≠설계 언어 — 설계 시점 숫자가 구현 완료 후 맞는지 재확인)
+- [ ] **GP-1 relic 후보 각각**: 구조 신호(코드 0+README만)가 뜨더라도 *내용* 읽어 signpost인지 relic인지 판별 (구조 휴리스틱 정밀도 0/2 전례 — 삭제 전 반드시 사람 판정)
+
 ### 교훈: GC조차 자기 검증이 필요하다 (#011 F1)
 
 relic 자동삭제기(GP-1)는 첫 적용에서 0/2 정밀도였다 — *구조 신호로 signpost↔relic을 원리적으로 못

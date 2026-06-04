@@ -83,6 +83,32 @@ open(p, "w", encoding="utf-8").write(t)
 PY
 python3 "$SCAN" --root "$P" --high-confidence-only >/dev/null 2>&1 || fail "수선 후에도 fixpoint(exit 0) 미도달"
 
+# ========== GP-6 orphan hook 탐지 ==========
+GPHOOKS="$TMP/gphooks"; mkdir -p "$GPHOOKS/plugin/harness/hooks" "$GPHOOKS/plugin/harness/scripts"
+# hooks.json: wired-hook.py 만 배선
+cat > "$GPHOOKS/plugin/harness/hooks/hooks.json" <<'JSON'
+{
+  "hooks": {
+    "SessionStart": [
+      {"hooks": [{"type": "command", "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/wired-hook.py"}]}
+    ]
+  }
+}
+JSON
+echo "# wired" > "$GPHOOKS/plugin/harness/hooks/wired-hook.py"
+echo "# orphan" > "$GPHOOKS/plugin/harness/hooks/orphan-hook.py"
+echo "# test (제외돼야)" > "$GPHOOKS/plugin/harness/hooks/test-foo.py"
+GP6OUT="$(python3 "$SCAN" --root "$GPHOOKS" 2>&1)"
+# 거짓음성 0: orphan 탐지
+echo "$GP6OUT" | grep -q "GP-6/high.*orphan-hook.py" || fail "GP-6 orphan-hook.py 미탐지(거짓음성)"
+# 거짓양성 0: 배선된 hook 은 안 잡혀야
+echo "$GP6OUT" | grep -q "GP-6.*wired-hook.py" && fail "배선된 wired-hook.py 가 GP-6 로 잡힘(거짓양성)"
+# 거짓양성 0: test-*.py 는 안 잡혀야
+echo "$GP6OUT" | grep -q "GP-6.*test-foo.py" && fail "test-*.py 가 GP-6 로 잡힘(거짓양성)"
+# fixpoint: orphan 제거 후 --high-confidence-only exit 0
+rm "$GPHOOKS/plugin/harness/hooks/orphan-hook.py"
+python3 "$SCAN" --root "$GPHOOKS" --high-confidence-only >/dev/null 2>&1 || fail "GP-6 orphan 제거 후 fixpoint(exit 0) 미도달"
+
 # ========== clean fixture: 엔트로피 0 ==========
 C="$TMP/clean"; mkdir -p "$C/docs"; echo "ok" > "$C/docs/a.md"; echo "- [x](./a.md)" > "$C/docs/b.md"
 CO="$(python3 "$SCAN" --root "$C" 2>&1)"
