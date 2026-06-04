@@ -87,14 +87,30 @@ grep -q 'R-CD' "$TMP/stage.txt" && echo "✓ S3b R-CD 코딩 진입 시 도착" 
 
 권장 토이: `GET /health` 1개 FastAPI 엔드포인트 + 테스트 1개. (인터페이스 명확, 검증 즉시, boring=원칙7)
 
-순서 (각 단계 뒤 **black box**에 발화/침묵 기록):
-1. 새 빈 디렉터리에서 claude 실행 → harness 플러그인 로드. **세션 시작 시 `rule-inject` 출력 보이나?**
-2. `harness:install` → 대화로 user-rules 설정. **수동 파일작성 아닌 대화 흐름인가? (S2)**
-3. `harness:cycle` → pre-cycle 게이트 → `cycle-init` scaffold. **`cycles/<id>/` 생겼나?**
-4. 가설 등록 → 첫 Edit 시 **`stage-inject` R-CD 도착하나? (S3b 라이브)**
-5. 가설 파일 *수동 변조 시도* → **`hypothesis-immutability`가 막나? (S4)**
-6. 구현 → 테스트 → `close-cycle`. 리뷰 없이 닫기 시도 → **차단되나? ratchet 회귀 시도 → 차단되나?**
-7. 독립 리뷰(doer≠reviewer) 통과 후 close → retro.
+> **F2 교훈(2026-06-04 run1) — tamper와 gate는 *별 사이클*로 본다.** 한 사이클 안에서 가설을 변조해두고
+> 그대로 close로 진입하면, close의 *무결성 게이트*가 먼저 트립해 *리뷰 게이트·happy-path가 가려진다*(confound).
+> 그래서 아래를 **두 micro-cycle**로 쪼갠다 — A=정상 close 경로(tamper 없음, 게이트가 막을 때만 막는지),
+> B=변조 격리(차단만 확인하고 *닫지 않고 폐기*). 각 단계 뒤 **black box**에 발화/침묵 기록.
+
+**선행(둘 공통)**: 새 빈 디렉터리에서 claude 실행 → harness 플러그인 로드.
+- **0a.** 세션 시작 시 `rule-inject` 출력(invariant+L1, R-CD 부재) 보이나?
+- **0b.** `harness:install` → 대화로 user-rules 설정. **수동 파일작성 아닌 대화 흐름인가? (S2)**
+
+**사이클 A — 정상 close 경로 (tamper 없음)**:
+1. `harness:cycle` → pre-cycle 게이트 → `cycle-init` scaffold. **`cycles/<id>/` 생겼나?**
+2. 가설 등록 → 첫 Edit 시 **`stage-inject` R-CD 도착하나? (S3b 라이브)**
+3. 구현 → 테스트(green) → `close-cycle`. **리뷰 없이 닫기 시도 → 무리뷰 차단되나?**
+4. 독립 리뷰(doer≠reviewer) 통과 후 close → 정상 해제(active 사라짐). **happy-path 닿나?**
+
+**사이클 B — 변조·우회 차단 격리 (닫지 않고 폐기)**:
+5. 새 사이클 + 가설 등록(잠금). 이 사이클은 *차단 확인 전용* — 정상 close 안 함.
+6. 가설 파일 *수동 변조 시도*(Edit) → **`hypothesis-immutability`가 막나(exit2)? (S4)**
+7. `rm cycles/active` *또는* 활성 심링크 우회 시도 → **`active-symlink-guard`가 막나? (F4 — run1 미소진)**
+8. 사이클 B는 닫지 않고 폐기(`rm -rf cycles/<B>`). tamper 잔재가 다음 측정 오염 안 하게.
+
+> (ratchet 회귀 축 차단은 2-사이클 history가 필요 — 라이브 단일 세션에선 생략 가능. 격리구동
+> `runtime-smoke`/runner2에서 이미 BLOCKED-OK 확인. 라이브에서 보려면 사이클 A를 축 watermark와 함께
+> 닫은 뒤, 사이클 B 대신 같은 축을 낮춰 등록해 close가 막히는지 본다.)
 
 **Black box 기록표** (Phase 3 입력):
 
