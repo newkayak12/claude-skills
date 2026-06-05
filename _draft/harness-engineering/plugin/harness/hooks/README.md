@@ -33,6 +33,21 @@
 
 → rule-inject(SessionStart, 항상-켜둘 invariant+L1) + stage-inject(단계 진입, 단계별 정적 default) 가 *짝*: 자동주입을 *두 시점*으로 나눠 세션시작 토큰 ↓ AND 방어를 경계→플로우 내부로 확장 (#012 후속, PF-10).
 
+### `phase-guard.py` — PreToolUse
+
+| | |
+|---|---|
+| **이벤트** | `PreToolUse` (matcher: `Edit\|Write\|MultiEdit\|NotebookEdit`) |
+| **역할** | active 사이클 `current_phase` ∈ {design,planning} 인데 *코드 파일*(.py/.kt/.js/… 소스 확장자) 편집 시도 → **차단**(exit 2) |
+| **막는 것** | R-PG01 "No code before design" 위반 — 설계/계획 단계에서 코드부터 써버리는 속도 우선 행동. rule-inject 가 R-PG01 을 *주입*해도 모델이 어긴다(실사용 피드백) → 차단성 hook 으로 *물리 게이트*화 (주입≠강제, 원칙2) |
+| **통과** | 비코드(.md 설계문서·ADR·.json/.yaml 설정) / implementation·validation phase / active 없음 → exit 0. 설계문서 작성을 막지 않음 |
+| **마찰 기록** | 차단 시 `feedbacklib` 로 `.claude/.feedback/feedback.jsonl` 에 이벤트 기록(beta report 원료). 기록 실패해도 차단 exit2 불변(fail-soft) |
+| **정당 경로** | phase 전진은 `scripts/phase-advance.py`(인접 순서 강제, --force=blackbox). 코딩은 implementation 부터 |
+| **정직한 한계** | metrics.json `current_phase` 직접편집 우회는 못 막음(active-symlink-guard 가 mv 못 막듯). 전환 무결성 강화는 후속 사이클 |
+| **fail-open** | active 없음·metrics 없음·phase 비대상·비코드·JSON 파싱 실패 → exit 0 |
+
+→ `hypothesis-immutability`(데이터)·`active-symlink-guard`(종료)에 이어 *단계 순서*를 물리로 못박는 세 번째 차단성 Sensor. `phase-advance.py`(정당 전환) + `phase-guard`(위반 차단) 가 *짝* (#013b).
+
 ### `active-symlink-guard.py` — PreToolUse
 
 | | |
