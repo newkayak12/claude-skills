@@ -53,6 +53,25 @@ CYCLE_CARD = """# Cycle Card — {name}
 - **Soft**: 세션 > appetite_sessions (박스 초과) → 재평가 트리거
 - 시간=*작업 세션* 단위 (wall-clock 아님 — 방치 오탐 방지, cycle-004). 예산$은 관측 불가로 kill 제외.
 - (사이클별 조정 시 ADR 필요)
+- **Exploration 타입 defer 허용**: 학습형 사이클은 Kill 기준이 사이클 중 구체화되는 경우가 많다.
+  초기엔 위 세션 기반 Hard/Soft만 두고, 도메인 Kill은 `TBD (사이클 중 확정)`로 남길 수 있다.
+  단 **종료 게이트 전까지는 반드시 확정** — TBD인 채로 close 불가.
+
+## Phase 진행 (현재 단계 추적 — SSOT는 metrics.json `current_phase`)
+
+> 사이클 내 작업은 단계로 진행된다. AI는 *행동 전에 현재 phase를 확인*하고, 단계를 건너뛰거나 섞지 않는다.
+> 산출물은 *채팅이 아니라 아래 저장 위치의 파일*로 남긴다 — 채팅은 휘발성(다음 세션 유실).
+> collaborative 산출물은 **사용자 확인 게이트** 통과 전엔 다음 phase로 못 넘어간다 (R-PG01 "No code before design").
+
+| Phase | 산출물 (저장 위치) | 유형 | 상태 |
+|---|---|---|---|
+| Analysis | 분석 노트 → `docs/**` 또는 `./findings.md` | solo | ☐ todo |
+| Design | Design Doc·ADR → `docs/**` | **collaborative** (draft→review→finalize) | ☐ todo |
+| Planning | 로드맵·플랜 → `docs/**` | **collaborative** | ☐ todo |
+| Implementation | 코드·테스트 → repo | solo | ☐ todo |
+| Validation | 독립 리뷰 → `./review.jsonl`, 회고 → `./retro.md` | solo + 독립리뷰 | ☐ todo |
+
+> 상태 표기: `☐ todo` → `▶ in-progress` → `✅ done`. Phase 완료 시 "산출물이 지정 위치 파일로 존재하는가" 검증 후 다음으로.
 
 ## 이전 사이클 인계 (살림 / 의심 / 버림)
 
@@ -188,6 +207,7 @@ RETRO = """# Retrospective — {name}
 METRICS_SKELETON = {
     "cycle_id": "",
     "started_at": "",
+    "current_phase": "analysis",  # analysis→design→planning→implementation→validation. AI가 행동 전 확인 (P6/P9).
     "appetite_sessions": 1,   # 작업 세션 단위 (cycle-004). kill-check 가 session_count 와 비교.
     "session_count": 1,       # 사이클 생성 세션 = 1. 이후 SessionStart hook 이 자동 증가.
     "reentry_count": 0,       # Inferential — 게이트/사람이 단계 재진입 시 증가.

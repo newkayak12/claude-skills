@@ -57,9 +57,14 @@ active가 있으면 그 사이클을 보여주고, 사용자에게 "지금 사�
 
 한 질문으로 묻는다. 기본은 Product (가장 빡빡).
 
-## Step 2: 게이트 5군 — 한 군씩 대화로
+## Step 2: 게이트 5군 — 대화로 (한 군씩 OR 한방에)
 
-각 군을 *한 번에 하나씩* 묻는다. 답을 받고 다음으로. 모든 체크를 한꺼번에 쏟지 마라.
+진입 방식은 사용자 상태에 따라 둘 중 하나:
+
+- **계획이 머릿속에 없는 사용자** → 각 군을 *한 번에 하나씩* 묻는다. 답을 받고 다음으로. 한꺼번에 쏟지 마라.
+- **계획이 이미 선 사용자 (context-dump shortcut)** → 사용자가 컨텍스트를 한 번에 쏟으면, AI가 그 내용을 A~E 항목에 **자동 매핑**하고 *빠진 항목만* 추가로 묻는다. 채워진 걸 다시 묻지 마라 — 숙련 사용자에게 한 군씩 캐묻는 건 마찰이다(실사용 피드백).
+  - 매핑 결과를 짧게 보여주고("A 문제진술 ✓ / C Kill 기준 ✗ 누락") 누락분만 질문.
+  - "메타 입력" 환영: 사용자가 5군을 한 문단으로 줘도 받아서 분해한다.
 
 ### A. 아이디어 — 문제부터, 해결책 나중
 - 문제 진술이 있는가? *("사용자가 X를 못 한다" 형식 — "Y를 만들고 싶다"가 아님)*
@@ -80,6 +85,8 @@ active가 있으면 그 사이클을 보여주고, 사용자에게 "지금 사�
 - 금전 예산이 잡혀 있는가?
 - 현재 capacity로 완주 가능한가?
 - Kill 기준이 사전 정의되어 있는가?
+  - **Exploration 타입은 defer 허용**: 도메인 Kill은 사이클 중 구체화되는 경우가 많다. 사용자가 "Kill은 내가 사이클 중 정리하겠다"고 하면 억지로 확정시키지 마라(형식주의). 세션 기반 Hard/Soft Kill(템플릿 기본값)만 두고 도메인 Kill은 `TBD`로 cycle-card에 TODO 마킹. **단 종료 게이트 전까지는 확정 필수.**
+  - Product/Dev-tool은 defer 불가 — 지금 확정.
 
 ### D. 검증 가능성 (타입별 적응)
 - Gate 1 통과 가능성이 있는가?
@@ -99,6 +106,7 @@ active가 있으면 그 사이클을 보여주고, 사용자에게 "지금 사�
 |---|---|
 | A + D 모두 yes | 진행 가능 |
 | C에 1개 이상 no | **STOP** — 예산 부족 (시간/Kill 미정이면 지금 정하고 재판정) |
+| C에서 *Kill만* no + 타입=Exploration | 진행 가능 — 도메인 Kill은 `TBD`로 defer, cycle-card에 TODO. 종료 전 확정 (시간 예산은 여전히 필수) |
 | B 모두 no | 재검토 — *왜* 지금 이걸 하는가 |
 | E 진짜 동기가 도피/외부 압력 | **STOP** — 다른 해결책 모색 |
 
@@ -135,6 +143,43 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/cycle-init.py "<사이클 이름>" --type 
      --criterion "통과 기준" --measure "어떻게 측정하는가"
    ```
 
+## Step 5: 로드맵은 AI가 구조화한다 — 사용자에게 떠넘기지 마라
+
+사용자가 단계를 raw하게 나열하면, 그걸 *그대로 표로 옮기는 건 AI 실패*다(실사용 피드백). AI의 역할은 구조화다:
+
+- raw input → **의존성 분석**으로 순서 최적화
+- **병렬 가능 단계** 식별
+- **빠진 단계 제안** (예: 이벤트 스토밍, 프로토타이핑, 부하 테스트)
+- **리스크 높은 단계를 앞으로** (fail-fast)
+- **마일스톤·체크포인트** 설정
+- **시간 예산 대비 페이징** (예: 3개월이면 월별 배분)
+
+순서는: 사용자가 *방향·컨텍스트*를 주면 → **AI가 구조화된 로드맵 초안 제시** → 사용자가 조정. 반대가 아니다.
+로드맵은 cycle-card Phase 표를 기반으로 `docs/**`에 *파일로* 남긴다 (채팅 표만으로 끝내지 마라 — P8).
+
+## Step 6: 사이클 내 Phase 진행 — 추적·전환·산출물 검증
+
+사이클을 시작만 해놓고 실제 작업을 하네스 *밖에서* 수동 진행하면 안 된다. Phase를 추적한다 (cycle-card Phase 표 + metrics.json `current_phase` = SSOT).
+
+**Phase: Analysis → Design → Planning → Implementation → Validation**
+
+각 phase마다 AI가 지켜야 할 것:
+1. **행동 전 현재 phase 확인** — `current_phase` 읽고, 그 단계 작업만. 단계 건너뛰기/섞기 금지(P9).
+2. **산출물은 파일로** — 지정 저장 위치(cycle-card Phase 표)에 *파일*로 남긴다. 채팅 표 = 산출물 아님(P8).
+3. **Phase 완료 검증** — "산출물이 지정 위치에 파일로 존재하는가" 확인 후에만 다음 phase로. cycle-card 상태를 `✅ done`으로, metrics.json `current_phase` 갱신.
+4. **다음 단계 자동 제안** — 완료 시 "다음은 Design phase입니다. 넘어갈까요?"로 전환을 *AI가 제안*. 사용자가 "쭉 넘어가자" 해야만 진행하는 구조는 AI 실패.
+
+### Collaborative 산출물 게이트 (R-PG01 강제)
+
+Design Doc·ADR·로드맵 같은 **collaborative 산출물은 "주입 ≠ 강제"의 사각지대**다. 룰이 컨텍스트에 있어도 AI가 속도 우선으로 혼자 써버린다. 그래서 *명시적 STOP*을 건다:
+
+- **collaborative 산출물은 `draft → review → finalize` 강제.** AI 혼자 완성본을 쓰지 않는다.
+- **"쭉 넘어가자" ≠ "확인 없이 다 써라".** 흐름은 끊지 말되, *결정이 필요한 지점에서는 멈춘다.*
+- **순서 의존성 강제**: Design Doc이 사용자와 iteration으로 합의되기 *전에* ADR을 쓰지 마라. ADR은 Design Doc 합의를 바탕으로.
+- collaborative phase는 사용자 확인 게이트를 통과하기 전엔 `current_phase`를 다음으로 넘기지 않는다.
+
+> 산출물 유형: **solo**(Analysis·Implementation — AI가 진행 후 보고) vs **collaborative**(Design·Planning — draft→review→finalize 필수). cycle-card Phase 표의 "유형" 열 참조.
+
 ## 종료 (close 게이트)
 
 빌드 후 종료할 때. **자기 채점 금지** — 독립 리뷰어(fresh subagent, doer≠reviewer)가 각 바를 채점해야 close가 열린다.
@@ -149,15 +194,21 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/close-cycle.py
 > `cycles/`는 *프로젝트 CWD*에 생성된다. 작업 repo에 산출물을 함께 커밋하거나, 원치 않으면 `.gitignore`에 `cycles/` 추가.
 
 ## What Claude Does
-- 게이트를 한 군씩 대화로 진행 — 항목을 한꺼번에 쏟지 않음
+- 게이트를 대화로 진행 — 계획 없는 사용자는 한 군씩, 계획 선 사용자는 context-dump를 A~E에 자동 매핑하고 *빠진 것만* 질문
 - "Y를 만들고 싶다"형 진입을 잡아 문제 진술로 되돌림
+- Exploration 타입은 도메인 Kill 기준 defer 허용 (TBD TODO), 종료 전 확정 요구
 - 결정을 매트릭스로 판정하고 *기록*
 - Go일 때만 scaffold 실행, 그 후 산출물을 사용자와 함께 채움
+- **로드맵을 AI가 구조화** (의존성·병렬화·fail-fast·마일스톤) — raw 나열을 그대로 옮기지 않음
+- **Phase를 추적** (current_phase 확인 → 산출물 파일 검증 → 다음 단계 자동 제안)
+- **collaborative 산출물(Design Doc·ADR·로드맵)은 draft→review→finalize 강제** — 혼자 완성하지 않음
 
 ## What You Do
 - 각 군 질문에 정직하게 답 (특히 E 진짜 동기)
-- 시간·Kill 예산을 *지금* 확정
-- 산출물 빈 칸을 함께 채움
+- 계획이 섰으면 한방에 쏟아도 됨 (AI가 분해)
+- 시간 예산은 *지금* 확정 (Exploration이면 도메인 Kill은 사이클 중 가능)
+- 방향·컨텍스트를 주면 AI 로드맵 초안을 받아 조정
+- collaborative 산출물은 AI 초안을 review하며 iteration
 
 ## Related Skills
 - `pm:hypothesis-driven-dev` — 가설 사전 등록
