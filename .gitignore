@@ -13,3 +13,4 @@ INSTRUCT.md
 plan/
 report/
 *-workspace/
+.claude/.feedback/
