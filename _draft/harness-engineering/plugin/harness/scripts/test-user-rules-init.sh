@@ -21,6 +21,21 @@ grep -q "Pointer: pyproject.toml" "$RF" || fail "pointer(스타일=설정파일�
 grep -q "^Layer: L1" "$RF"             || fail "frontmatter Layer 누락"
 grep -q "^Scope: default" "$RF"        || fail "frontmatter Scope 누락"
 
+# --- JVM 계열 + 범용 포인터 플래그 (Kotlin/Java/--pointer) ---
+TMP2="$(mktemp -d)"; export HARNESS_HOME="$TMP2/.harness"; RF2="$HARNESS_HOME/user-rules.md"
+python3 "$INIT" init --lang "Kotlin 2.0 / Spring Boot" \
+  --pointer-kotlin "detekt.yml" --pointer-java "checkstyle.xml" \
+  --pointer go ".golangci.yml" --pointer rust "rustfmt.toml" \
+  >/dev/null 2>&1 || fail "JVM/범용 포인터 init exit != 0"
+grep -q "R-USER-FMT-KT" "$RF2"             || fail "kotlin 룰 누락"
+grep -q "Pointer: detekt.yml" "$RF2"       || fail "kotlin pointer 누락"
+grep -q "R-USER-FMT-JV" "$RF2"             || fail "java 룰 누락"
+grep -q "Pointer: checkstyle.xml" "$RF2"   || fail "java pointer 누락"
+grep -q "R-USER-FMT-GO" "$RF2"             || fail "범용(go) 룰 누락"
+grep -q "Pointer: .golangci.yml" "$RF2"    || fail "범용(go) pointer 누락"
+grep -q "R-USER-FMT-RUST" "$RF2"           || fail "범용(rust) 룰 누락"
+export HARNESS_HOME="$TMP/.harness"  # 이후 테스트는 원래 hermetic dir 로 복귀
+
 # --- 멱등: 재-init 은 거부(덮어쓰기 금지) ---
 BEFORE="$(cat "$RF")"
 if python3 "$INIT" init --lang "다른값" >/dev/null 2>&1; then

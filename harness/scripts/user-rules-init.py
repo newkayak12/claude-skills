@@ -105,6 +105,20 @@ def cmd_init(args) -> None:
         parts.append(_rule_block(
             "R-USER-FMT-JS", "JS/TS 포맷터/린터", "L1", "default", "code-writing",
             args.pointer_js, "스타일 enforcement는 toolchain. 하네스는 설정 존재만 검증(§5)."))
+    if args.pointer_kotlin:
+        parts.append(_rule_block(
+            "R-USER-FMT-KT", "Kotlin 린터/정적분석", "L1", "default", "code-writing",
+            args.pointer_kotlin, "스타일 enforcement는 toolchain. 하네스는 설정 존재만 검증(§5)."))
+    if args.pointer_java:
+        parts.append(_rule_block(
+            "R-USER-FMT-JV", "Java 린터/정적분석", "L1", "default", "code-writing",
+            args.pointer_java, "스타일 enforcement는 toolchain. 하네스는 설정 존재만 검증(§5)."))
+    for name, path in (args.pointer or []):
+        slug = re.sub(r"[^A-Z0-9]", "", name.upper()) or "X"
+        rid = f"R-USER-FMT-{slug}"
+        parts.append(_rule_block(
+            rid, f"{name} 포맷터/린터", "L1", "default", "code-writing",
+            path, "스타일 enforcement는 toolchain. 하네스는 설정 존재만 검증(§5)."))
     if args.wip:
         # WIP=1 은 스펙(12-layering §1)상 L0 Default 라지만 06-rules.md 에 *룰로 코드화돼 있지
         # 않다* → override 대상이 없다. 따라서 이건 additive L1 선언(거짓 Overrides 금지).
@@ -154,6 +168,11 @@ def main() -> None:
     p_init.add_argument("--lang", help="선호 언어/스택 (예: 'Python 3.12 / FastAPI')")
     p_init.add_argument("--pointer-python", help="Python 포맷터 설정 파일 (예: pyproject.toml)")
     p_init.add_argument("--pointer-js", help="JS/TS 포맷터 설정 파일 (예: biome.json)")
+    p_init.add_argument("--pointer-kotlin", help="Kotlin 정적분석 설정 파일 (예: detekt.yml)")
+    p_init.add_argument("--pointer-java", help="Java 정적분석 설정 파일 (예: checkstyle.xml)")
+    p_init.add_argument(
+        "--pointer", nargs=2, action="append", metavar=("NAME", "PATH"),
+        help="범용 포인터: <언어/툴 이름> <설정파일 경로> (반복 가능, 예: --pointer go .golangci.yml)")
     p_init.add_argument("--wip", help="기본 WIP override (예: 1)")
     p_init.add_argument("--force", action="store_true", help="기존을 .bak 백업 후 재생성")
     p_init.set_defaults(func=cmd_init)

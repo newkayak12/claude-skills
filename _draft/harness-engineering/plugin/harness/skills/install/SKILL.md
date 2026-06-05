@@ -53,11 +53,20 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/user-rules-init.py show   # 있으면 내�
 
 전부 *선택적*. 한꺼번에 쏟지 말고 하나씩. 모르면 건너뛴다(나중에 `add`).
 
-1. **선호 언어/스택?** (예: "Python 3.12 / FastAPI", "TypeScript / Next.js")
-2. **코드 스타일** — *내용 말고 설정 파일 경로*만 (§5, AP-29). Python이면 `pyproject.toml`? JS면 `biome.json`?
+1. **선호 언어/스택?** (예: "Python 3.12 / FastAPI", "TypeScript / Next.js", "Kotlin 2.0 / Spring Boot")
+2. **코드 스타일** — *내용 말고 설정 파일 경로*만 (§5, AP-29). Python이면 `pyproject.toml`? JS면 `biome.json`? Kotlin이면 `detekt.yml`? Java면 `checkstyle.xml`? 그 외 언어면 범용 `--pointer <name> <path>`.
 3. **기본 WIP** — L0 Default는 WIP=1. 그대로? 조정?
 
 > 코드 스타일을 *말로* 받지 마라("4 spaces"). drift한다. **toolchain 설정 파일 위치**만 받는다 — 하네스는 *설정 존재*만 검증한다.
+
+## Step 2.5: 파일이 *어디에* 생기는지 먼저 안내 (생성 전, 필수)
+
+다음 Step에서 파일을 쓰기 *전에*, 어디에 생기는지 명시한다 — 그러지 않으면 "프로젝트 안에 생길 줄 알았다"는 혼란이 생긴다(실사용 피드백).
+
+- **L1 user-rules → `~/.harness/user-rules.md` (홈 디렉토리, 전역)**: 이 사용자의 *모든 프로젝트*에 적용. 지금 만드는 게 이것.
+- **L2 project-rules → 프로젝트 내부**: *첫 사이클 진입 시* 그 프로젝트에서만 합의·생성 (GOAL §2 step 4). 지금이 아님.
+
+CWD가 프로젝트 디렉토리여도 L1은 홈에 생긴다는 점을 한 줄로 못 박는다. `path` 명령으로 실제 경로를 *보여준 뒤* 진행한다.
 
 ## Step 3: user-rules 생성
 
@@ -65,9 +74,17 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/user-rules-init.py show   # 있으면 내�
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/user-rules-init.py init \
-  --lang "Python 3.12 / FastAPI" \
-  --pointer-python "pyproject.toml" \
+  --lang "Kotlin 2.0 / Spring Boot" \
+  --pointer-kotlin "detekt.yml" \
+  --pointer-java "checkstyle.xml" \
   --wip "1"
+```
+
+포인터 플래그: `--pointer-python` · `--pointer-js` · `--pointer-kotlin` · `--pointer-java`. 그 외 언어/툴은 범용 `--pointer <name> <path>`(반복 가능):
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/user-rules-init.py init \
+  --lang "Go 1.22" --pointer go ".golangci.yml" --pointer sql "sqlfluff.cfg"
 ```
 
 → `~/.harness/user-rules.md` 생성 (12-rule-layering frontmatter). 나중에 룰 1개 추가:
@@ -106,7 +123,8 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/user-rules-init.py add \
 - Step 0에서 `python3` pure-shell preflight — 없으면 STOP하고 설치 안내 (hook이 죽지 않게)
 - Step 1에서 기존 user-rules 확인 — 있으면 덮어쓰지 않고 add 여부만 물음
 - 한 질문씩 L1 기본값 수집 (한꺼번에 쏟지 않음)
-- 코드 스타일은 *설정 파일 경로*로만 받음 (내용 거부 — AP-29)
+- 코드 스타일은 *설정 파일 경로*로만 받음 (내용 거부 — AP-29). JVM 계열은 `--pointer-kotlin/--pointer-java`, 그 외는 범용 `--pointer <name> <path>`
+- **파일 생성 *전에* L1(전역 `~/.harness/`) vs L2(프로젝트 내부) 차이를 명시** (Step 2.5)
 - `user-rules-init.py`로 멱등 생성, "언제 무엇이 로드되는지" 표로 명시
 
 ## What You Do
