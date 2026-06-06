@@ -77,8 +77,6 @@
 세션 시작              SessionStart hook      Tier A 코어 주입        현재 위치 인식
 "persona 작업할게"      UserPromptSubmit       Tier B: persona 룰      그 단계 룰로 응답
                        키워드 매칭             + 01-product-track 해당절
-"이거 배포하자"         UserPromptSubmit       kill-check.py 실행      Hard면 차단(§3)
-                       deploy 키워드           + deploy 룰
 파일 수정 (가설 파일)   PreToolUse             hash 검증               변조면 차단(§3)
 도구 호출 (WIP 위반)    PreToolUse             active symlink 확인     WIP>1이면 경고+기록
 사이클 종료            Stop                   retro 템플릿 제시        carryover 분류 유도
@@ -117,11 +115,11 @@
 | WIP = 1 | `cycles/active` symlink 단일성 검사 | `hook-cycle-wip` | **Guide** (행동 전 차단) |
 | Close 게이트 | bar 전 기준에 pass 리뷰(잠긴 hash 결박) 없으면 종료 차단 | `close-cycle.py` + `active-symlink-guard` | **Sensor→Guard** (종료 전 차단) |
 | Cross-cycle ratchet | 선언 축이 이전 닫힌 cycle watermark보다 회귀하면 종료 차단 (단조 비감소) | `ratchet-check.py`/`ratchetlib.py` + `close-cycle.py` | **Sensor→Guard** (종료 전 차단) |
-| Kill criteria (배포 게이트) | 임계값 비교 → exit 2면 차단 | `kill-check.py` + `hook-deploy-kill-check` | **Sensor** (지표 관측 후 차단) |
 | L3 sunset 만료 | 날짜 비교 → 만료 면제 무효화 | `hook-l3-sunset-check` | **Guide** (적용 전 유효성) |
 | 스타일/포맷 | toolchain 위임 (설정 존재만 검사) | `hook-formatter-config-exists` | **Guide** (설정 강제) |
 
-이 7개는 모두 **Computational**(결정론적)이고 *narrative에서 빠진다*. AI가 컨텍스트로 캐리하지 않는다 — 코드가 한다.
+이 6개는 모두 **Computational**(결정론적)이고 *narrative에서 빠진다*. AI가 컨텍스트로 캐리하지 않는다 — 코드가 한다.
+(과거 `kill-check.py`+`hook-deploy-kill-check` 의 *Kill criteria 배포 게이트* 가 여기 있었으나 **#015 에서 은퇴** — 발화 0·효과 최약·3단 의존 부채. C-06 Sunk-cost 방어는 narrative(retro kill 사유)로 남는다.)
 
 ### Narrative로 유지 (AI 판단)
 

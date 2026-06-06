@@ -79,12 +79,15 @@
 | | |
 |---|---|
 | **이벤트** | `SessionStart` (source `startup` 만 카운트 — resume/compact/clear 는 연속 세션, 미증가) |
-| **역할** | active 사이클의 `metrics.json:session_count` 를 새 세션마다 +1 → kill-check 시간 지표를 *관측 가능*하게 |
+| **역할** | active 사이클의 `metrics.json:session_count` 를 새 세션마다 +1 (사이클 경과 *작업 세션* 계측) |
 | **왜** | 솔로 개발자 단위는 *달력 시간*이 아니라 *작업 세션*. wall-clock 은 사이클 방치 시 오탐("시간 200%")하지만 세션 수는 안 함 (cycle-004) |
 | **차단 아님** | metrics 갱신만. exit 0. metrics.json 은 hypothesis-immutability 보호 대상 아님(그 hook 은 hypotheses.jsonl·bar.jsonl 만) → 자유 갱신 |
 | **fail-open** | active 없음/source 미카운트/깨진 metrics → 조용히 통과 |
 
-→ 이것으로 `kill-check.py` 가 *항상-0(거짓 OK)* 없이 실제 데이터로 판정 가능 (cycle-004). budget$ 는 *관측 불가* → kill 지표에서 드롭. "측정 가능한 것만 강제한다".
+→ 원래 `kill-check.py` 의 시간 지표를 *관측 가능*하게 만든 계기(cycle-004)였으나, **#015 에서 kill-check
+계열이 은퇴**(발화 0)하면서 `session_count` 의 자동 소비자는 사라졌다 — 현재는 retro·진단용 *계측치*로만
+남는다. budget$ 는 *관측 불가* → 애초에 드롭됨. "측정 가능한 것만 강제한다"(역으로: 측정만 하고 강제
+않는 지표는 비용 — session_count 자체의 은퇴 여부는 후속 검토, metrics SPOF rank4 와 교차).
 
 ### `rule-inject.py` — SessionStart
 
@@ -99,18 +102,14 @@
 
 → `stage-inject`(PreToolUse, 코딩 단계 룰)와 *짝*: 자동주입을 두 시점으로 나눠 세션시작 토큰 ↓ AND 방어를 경계→플로우 내부로 확장 (#012).
 
-### `deploy-kill-check.py` — UserPromptSubmit
+> **은퇴됨 (#015, 2026-06-06)**: `deploy-kill-check.py`(UserPromptSubmit 배포차단)와 그 엔진
+> `kill-check.py` 를 함께 은퇴했다. 사유: 실사용 **발화 0 · 효과 최약**(roadmap rank6)에 더해
+> deploy-kill-check→kill-check→metrics 의 **3단 의존**이 mechanism-count 부채만 키웠다(ADR-0001
+> standing 부채). 은퇴로 count 28→26, ratchet floor 27→26 단조 개선. C-06 Sunk-cost 방어는
+> 이제 narrative(retro 의 kill 사유 서술)로 남는다 — *측정 가능한 것만 강제한다* 원칙상, 발화 0 의
+> Sensor 는 강제가 아니라 비용이었다.
 
-| | |
-|---|---|
-| **이벤트** | `UserPromptSubmit` (deploy 키워드: 배포/출시/릴리즈/deploy/release/ship it/go live/프로덕션) |
-| **역할** | 배포 의도 표명 시 active 사이클에 `kill-check.py` 실행 → **Hard kill이면 배포 프롬프트 차단**(exit 2) |
-| **막는 것** | C-06 Sunk-cost / AP-10 — *죽었어야 할 사이클*을 배포로 밀어붙이기 |
-| **매핑** | kill-check 0(ok)→통과 · 1(soft)→경고만(차단 아님, 재평가는 사람) · 2(hard)→exit2 차단 · 3(err)→fail-open |
-| **선행** | cycle-004 의 metrics 정직화(session_count 자동)가 있어야 실데이터 판정 — 없으면 항상-ok 거짓 통과 |
-| **fail-open** | deploy 키워드 없음/active 없음/스크립트 못 찾음/JSON 실패 → 통과 |
-
-→ 이제 **3 이벤트 Sensor**: PreToolUse(가설 차단) · SessionStart(탐지+세션 측정) · UserPromptSubmit(배포 차단). 이벤트 성격이 차단 권한을 정함 (PreToolUse·UserPromptSubmit=차단 가능, SessionStart=경고만).
+→ 현재 **2 이벤트 Sensor**: PreToolUse(가설/WIP/phase/stage 차단) · SessionStart(탐지+세션 측정+룰주입). 이벤트 성격이 차단 권한을 정함 (PreToolUse=차단 가능, SessionStart=경고만).
 
 ## Wiring
 
@@ -151,8 +150,9 @@ echo '{"tool_name":"Bash","tool_input":{"command":"rm cycles/active"}}' \
 
 ## 백로그 (다음 Sensor 후보)
 
-> `deploy kill-check` 는 이전에 여기 *후보*로 남아 있었으나 #005 에서 *구현됐다*(위 `deploy-kill-check.py`
-> 참조). #011 entropy-gc GP-4(의미적 stale) 검토에서 정정 — 구현된 항목이 '후보'로 남는 건 역방향 stale.
+> `deploy kill-check` 는 후보(스펙)→#005 구현→**#015 은퇴**의 전 생애를 거쳤다. 발화 0·효과 최약 +
+> 3단 의존 부채로 은퇴(위 은퇴 노트 참조). 교훈: Sensor 를 *구현*했다고 효과가 보장되지 않는다 —
+> 실발화로 검증 안 되면 mechanism-count 부채만 남는다(CA-11/PF-11 "빼기 없는 더하기"의 반례 회수).
 
 - 컨셉 카탈로그(spec): `../../../hooks/README.md` (16개 hook 설계, 대부분 미구현).
 - `rule-inject`(SessionStart, 항상-켜둘 룰)·`stage-inject`(PreToolUse, 단계별 룰) — 자동주입 2시점.
