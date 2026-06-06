@@ -10,6 +10,17 @@
 
 ---
 
+## 🔴 P0 — 최상위 (delivery 모델 재설계, 다른 모든 것에 선행)
+
+> 기록: [`.claude/.feedback/delivery-model-failure-20260606.md`](../../.claude/.feedback/delivery-model-failure-20260606.md) (로컬·gitignore)
+> 발견: "#013c를 기존 프로젝트에 어떻게 적용? install?" → 전달 모델이 GOAL 정신과 어긋남이 드러남.
+
+- [ ] **install = 프로젝트 `.claude/` scaffold = ambient governance** — 현재는 전역 플러그인 + 사용자-전역 `~/.harness/user-rules.md` + *명시적* `harness:cycle` 호출에 갇혀, (1) per-project 타겟팅 불가(전역 한 버전), (2) "그냥 쓰면 그 레포에선 자동으로 하네스 아래서 AI 동작"이 안 됨(사이클이 opt-in). **올바른 모델(revfactory/harness 패턴 + 이 레포 자신이 그렇게 동작): install이 대상 프로젝트 `.claude/`에 hooks(settings.json 등록)+CLAUDE.md(사이클 규율 박기)를 scaffold → `.claude/` 자동로드로 타겟팅+ambient 동시 해결.** `cycles/`는 이미 프로젝트 로컬. 전역 플러그인은 *설치기/생성기*로 축소. **재배선이지 재작성 아님 — hooks·게이트·ratchet 페이로드는 그대로.**
+  - [ ] **ⓐ delivery 재설계** — install이 `.claude/settings.json`(hooks)+`.claude/CLAUDE.md`(또는 rules) scaffold. 멱등(기존 `.claude/` 존중·add 여부 확인).
+  - [ ] **ⓑ ceremony-free 사이클** — 프로젝트 CLAUDE.md/hook이 AI를 디폴트로 사이클 규율에 묶기. "의식 없이 자동" 의 마지막 한 칸.
+  - [ ] **ⓒ GOAL.md 명시화** — "install = 프로젝트 `.claude/` scaffold = ambient governance"를 §7~9에 박아 같은 드리프트 재발 방지.
+  - [ ] **ⓓ 버전 1.0.0 bump 보류 재검토** — 전역 릴리스=모든 프로젝트 적용. delivery 모델 바뀌면 1.0.0 의미 자체가 달라짐 → 재설계 후 결정.
+
 ## 🔜 Now — 다음 사이클 후보 (GC 표면 확장 → L2 → L0 코드화)
 - [~] **토큰 경량화** (💰 상세 아래 — **2026-06-03: lossless 압축분 완료, 슬라이싱은 stage-injection 후속으로 분리**) — 실측 rule-inject 매 세션 766토큰(45룰). **달성: 포맷 1줄/룰 압축 766→620(≈19%↓), 룰 누락 0(lossless)**. 더 큰 win(코딩 룰을 코딩 단계에만)은 정적 default 슬라이싱이 필요한데, 독립 리뷰가 "단계 자동 재주입 없으면 코딩 세션에 코딩 룰 누락 = 기능저해"로 반려 → **🎯 stage-injection 별도 사이클**(💰 하단). **제약(사용자): 기능 저해 금지** 준수.
   - [x] **GC 표면 확장 + 의미적 stale 탐지** (#013 종료) — GP-6 orphan hook 탐지(hooks/ .py vs hooks.json 배선, high·결정론). hooks/README 7개 hook 동기화(rule-inject 섹션 추가). gc.md §6.5 mandatory 체크리스트 4항목. test-gc-scan.sh GP-6 케이스. B1~B4 독립 리뷰 pass.
