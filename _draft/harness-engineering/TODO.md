@@ -4,7 +4,7 @@
 > 우선순위 정렬. 사이클 종료 시 여기 갱신. SSOT는 각 `cycles/<id>/retro.md`이고, 이 파일은 *집계 뷰*.
 > 관련: [GOAL.md](./GOAL.md) · [devils-advocate.md](./devils-advocate.md) (취약점 누적 로그)
 
-마지막 갱신: 2026-06-05 (#013b 종료 — phase-guard hook(design/planning 코드차단=R-PG01 물리게이트) + phase-advance(인접전환) + feedbacklib(.claude/.feedback beta report))
+마지막 갱신: 2026-06-06 (#013c 종료 — ratchet 축 lock: mechanism-count(27)·inject-tokens(385) floor 등재 → 의미있는 stable 축 0→2. token-profile docstring에 상대축·단조성·실토크나이저 비채택 근거 명시(rank0). roadmap rank0→1 적용)
 
 > **북극성 재정의**: Claude 품질의 *사이클별 저하*를 **구조적으로** 막는다. 3층 = ①바-잠금(#006 ✅) ②독립 리뷰 게이트(#007 ✅) ③ratchet(#008 ✅). **품질저하방지 3층 완성**. ④ packaging/install — #009 설치 경로 개통 + #010 룰-레이어링 엔진(L0+L1 머지·provenance·invariant 보호). ⑤ 룰 자동주입 — #012 SessionStart(invariant+L1) + stage-inject(PreToolUse 코딩 단계). install이 만든 L1이 *실제 자동 주입*됨. 다음은 GC 표면 확장 + L2 project-rules.
 
@@ -23,8 +23,9 @@
 
 ### 미구현 원칙 (Anthropic/OpenAI 7원칙)
 - [x] **엔트로피 GC** (원칙6) — **#011 완료 + 2026-06-03 재검토**. `gc-scan.py`+`GOLDEN-PRINCIPLES.md`+ratchet 축 2개. *표면* GC(죽은 링크·stale 문서·relic).
-  - **재검토 결과**(`review/2026-06-03-entropy-gc.md`): GP-2(dead-link) 유일한 high-confidence → `plugin/` 트리까지 스캔 확장(FP 0). GP-1(relic-dir) **probation**(0/2 정밀도, 구조신호로는 signpost↔relic 원리적 구분 불가 → 1사이클 더 못 잡으면 삭제 명문화, `[probation]` 자가의심 태그). **GP-4 신설**(의미적 stale = 문서주장 vs 코드현실, watch — 결정론 스캔 불가라 mandatory 사람/LLM 내용검토 의식, gc.md §6.5+GOLDEN §내용검토). **GP-5 신설**(complexity ratchet = script/hook 수, 현재 **23**, `--complexity-axis`) — CA-11/PF-11 "빼기 없는 더하기"를 축으로 강제 준비.
-  - [ ] **잔여: GP-5 축 등재** — `harness-mechanism-count`(lower_better) bar 축 lock — *Sensor 은퇴와 짝지어* 첫 lock값이 *감소*하도록(active 사이클 필요).
+  - **재검토 결과**(`review/2026-06-03-entropy-gc.md`): GP-2(dead-link) 유일한 high-confidence → `plugin/` 트리까지 스캔 확장(FP 0). GP-1(relic-dir) **probation**(0/2 정밀도, 구조신호로는 signpost↔relic 원리적 구분 불가 → 1사이클 더 못 잡으면 삭제 명문화, `[probation]` 자가의심 태그). **GP-4 신설**(의미적 stale = 문서주장 vs 코드현실, watch — 결정론 스캔 불가라 mandatory 사람/LLM 내용검토 의식, gc.md §6.5+GOLDEN §내용검토). **GP-5 신설**(complexity ratchet = script/hook 수, #011 시점 **23** → 2026-06-06 현재 **27** lock(#013c), `--complexity-axis`) — CA-11/PF-11 "빼기 없는 더하기"를 축으로 강제 준비.
+  - [x] **잔여: GP-5 축 등재** (#013c 종료) — `harness-mechanism-count`(lower_better, 27)+`inject-tokens`(lower_better, 385) bar 축 lock → floor 의미있는 축 0→2. **단 첫 lock값은 *감소* 아닌 *현재 박제*** — 은퇴와 짝짓는 건 다음 "빼기" 사이클 몫(27→26 이하). roadmap rank0(측정 신뢰성 검증: docstring 명시 + 결정론 test) 선행 완료.
+  - [ ] **rank2: bar-register `--axis` 강제화** (#013c 인계, roadmap rank2 분리) — 축 메타가 선택적이라 수치 measure가 free-text로 새는 root cause. 강제화하면 하위호환(boolean/축없는 바) 깨지므로 별도 사이클. mandatory 대상 stage 범위 설계 필요(전부 강제 vs close/test만).
   - [ ] **잔여: 원칙5 실행** — 트리거 이미 발생(Opus 4.8). 은퇴 후보: `active-cycle-verify`(탐지율→0 관측 후), 약: `deploy-kill-check`(효과측정 후). 물리잠금(hypothesis-immutability·active-symlink-guard)·session-counter는 모델무관 유지. 3-task A/B 재검증 필요.
   - [ ] 잔여: 토큰판(위 Now)·GP-1 probation 판정.
 - [ ] **앱을 보여줘라 + 관측성** (원칙4) — 에이전트가 *실행 중인 앱을 직접 구동·검증*하는 경로가 없음. 하네스가 BE 지향이라 빠졌으나 추가 필요(사용자 확인). BE판: 로그/메트릭/트레이스 관측 스택 연결(에이전트가 실행→관측→검증). FE판 CDP/Playwright MCP는 그 다음. "기능 구현 전 현재 동작을 먼저 관측"이 시작점.

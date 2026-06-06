@@ -16,6 +16,15 @@ export한 뒤 그 안에서 측정한다 — 진짜 설치 표면을 본다.
 "chars"는 UTF-8 *바이트* 길이로 센다 — CJK는 char당 3바이트라 byte≈tokenizer 입력에 더 가깝고,
 경량화 노력의 합의된 baseline(766 ~tokens = 3065 chars)과 같은 축이 된다.
 
+축 신뢰성 (#008 ratchet lock 의 전제 — 왜 실토크나이저를 쓰지 *않는가*):
+  이 값은 inject-tokens *상대 ratchet 축*이다. ratchet 이 필요로 하는 건 절대 토큰 정확도가
+  아니라 *같은-방법의 cross-cycle 일관성*이다. bytes/4 는 (1) 결정론적(같은 입력→같은 값)이고
+  (2) 콘텐츠에 단조 증가(텍스트가 늘면 byte 가 늘고 값이 큰다) → 이 축의 회귀는 실제 주입
+  표면 회귀를 신뢰성 있게 가리킨다. 정확도가 아니라 단조성이 lock 의 근거다.
+  실토크나이저는 의도적으로 *안 쓴다*: Claude 토크나이저는 의존성-경량 공개 패키지가 없고,
+  tiktoken(OpenAI) 을 써도 *다른 모델의 근사*일 뿐 + 무의존성 설계를 깬다. ratchet 은 상대
+  일관성만 필요하므로 절대 토크나이저는 lock 에 아무 이득이 없다(분석: 20260606-ratchet-axis-lock).
+
 사용:
   token-profile.py              # 전체 프로파일 리포트 (exit 0)
   token-profile.py --baseline   # 헤드라인 한 줄(주입 ~tokens) — ratchet 축 값
