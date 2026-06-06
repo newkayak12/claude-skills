@@ -48,6 +48,12 @@ EXCLUDE_NAMES = {
     "harness-export.py", "test-harness-export.sh",
     # dev/maintainer 전용 — 하네스 *자신*의 소스를 스캔(설치 플러그인엔 무의미, #011)
     "gc-scan.py", "test-gc-scan.sh",
+    # NOTE(#014b): project-install.py 는 *일부러 포함*한다. 글로벌 플러그인(`harness/scripts/`)에
+    # installer 가 있어야 skill Step A 가 `${CLAUDE_PLUGIN_ROOT}/scripts/project-install.py` 를
+    # 해결한다. #014 에서 이를 제외했다가 프로덕션 install 이 file-not-found 로 깨졌다(F5).
+    # installer 는 harness-export 에 더 이상 의존하지 않고 *평탄화 페이로드를 직접 재귀복사*하므로
+    # 빌드 산출물 안에서 자급 동작한다. test-project-install.sh 는 빌드도구라 페이로드에선 뺀다.
+    "test-project-install.sh",
 }
 
 

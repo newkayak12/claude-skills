@@ -4,7 +4,7 @@
 > 우선순위 정렬. 사이클 종료 시 여기 갱신. SSOT는 각 `cycles/<id>/retro.md`이고, 이 파일은 *집계 뷰*.
 > 관련: [GOAL.md](./GOAL.md) · [devils-advocate.md](./devils-advocate.md) (취약점 누적 로그)
 
-마지막 갱신: 2026-06-06 (#013c 종료 — ratchet 축 lock: mechanism-count(27)·inject-tokens(385) floor 등재 → 의미있는 stable 축 0→2. token-profile docstring에 상대축·단조성·실토크나이저 비채택 근거 명시(rank0). roadmap rank0→1 적용)
+마지막 갱신: 2026-06-06 (**#014b project-install-prod-fix 종료** — #014가 게이트 통과하고도 프로덕션-broken(F5: installer가 _draft 전용 harness-export subprocess 의존+글로벌 플러그인서 제외→file-not-found). 1·2·3 함께 수정: ①project-install 직접 재귀복사(harness-export 의존 0, `--from`), ②harness-export가 installer를 글로벌 플러그인에 포함, ③프로덕션 경로 테스트(빌드된 harness/서 벤더링). 독립 리뷰어 자체 프로덕션 프로브로 검증. **clean close(--force 없음, 파일추가 0→count 28 유지)**. / 직전 #014 종료: P0 delivery ⓐ scaffold, ratchet 첫 차단→force+ADR-0001, gap F2·F3)
 
 > **북극성 재정의**: Claude 품질의 *사이클별 저하*를 **구조적으로** 막는다. 3층 = ①바-잠금(#006 ✅) ②독립 리뷰 게이트(#007 ✅) ③ratchet(#008 ✅). **품질저하방지 3층 완성**. ④ packaging/install — #009 설치 경로 개통 + #010 룰-레이어링 엔진(L0+L1 머지·provenance·invariant 보호). ⑤ 룰 자동주입 — #012 SessionStart(invariant+L1) + stage-inject(PreToolUse 코딩 단계). install이 만든 L1이 *실제 자동 주입*됨. 다음은 GC 표면 확장 + L2 project-rules.
 
@@ -16,10 +16,12 @@
 > 발견: "#013c를 기존 프로젝트에 어떻게 적용? install?" → 전달 모델이 GOAL 정신과 어긋남이 드러남.
 
 - [ ] **install = 프로젝트 `.claude/` scaffold = ambient governance** — 현재는 전역 플러그인 + 사용자-전역 `~/.harness/user-rules.md` + *명시적* `harness:cycle` 호출에 갇혀, (1) per-project 타겟팅 불가(전역 한 버전), (2) "그냥 쓰면 그 레포에선 자동으로 하네스 아래서 AI 동작"이 안 됨(사이클이 opt-in). **올바른 모델(revfactory/harness 패턴 + 이 레포 자신이 그렇게 동작): install이 대상 프로젝트 `.claude/`에 hooks(settings.json 등록)+CLAUDE.md(사이클 규율 박기)를 scaffold → `.claude/` 자동로드로 타겟팅+ambient 동시 해결.** `cycles/`는 이미 프로젝트 로컬. 전역 플러그인은 *설치기/생성기*로 축소. **재배선이지 재작성 아님 — hooks·게이트·ratchet 페이로드는 그대로.**
-  - [ ] **ⓐ delivery 재설계** — install이 `.claude/settings.json`(hooks)+`.claude/CLAUDE.md`(또는 rules) scaffold. 멱등(기존 `.claude/` 존중·add 여부 확인).
-  - [ ] **ⓑ ceremony-free 사이클** — 프로젝트 CLAUDE.md/hook이 AI를 디폴트로 사이클 규율에 묶기. "의식 없이 자동" 의 마지막 한 칸.
+  - [x] **ⓐ delivery 재설계** (#014 종료 + **#014b 프로덕션 수정 종료**) — `project-install.py`가 대상 프로젝트 `.claude/`에 페이로드 vendoring + `settings.json`(hooks→`$CLAUDE_PROJECT_DIR/.claude/harness`) + `CLAUDE.md`(governance) scaffold. 멱등·기존 보존. install SKILL Step A 추가. 벤더링 hook은 상대 fallback으로 CLAUDE_PLUGIN_ROOT 없이 자급. **#014b: #014의 F5(installer가 harness-export subprocess 의존→프로덕션 file-not-found) 교정 — installer 직접 재귀복사로 자급화 + 글로벌 플러그인에 installer 포함 + 프로덕션 경로 테스트(빌드된 harness/서 벤더링, dogfood-cheat 차단). 독립 리뷰어 R1~R3 pass + 자체 프로덕션 프로브. clean close.**
+  - [ ] **ⓑ ceremony-free 사이클** — 프로젝트 CLAUDE.md/hook이 AI를 디폴트로 사이클 규율에 묶기. "의식 없이 자동" 의 마지막 한 칸. (scaffold된 CLAUDE.md governance가 1차 — 실제 AI 행동 입증은 post-delivery N=0)
   - [ ] **ⓒ GOAL.md 명시화** — "install = 프로젝트 `.claude/` scaffold = ambient governance"를 §7~9에 박아 같은 드리프트 재발 방지.
   - [ ] **ⓓ 버전 1.0.0 bump 보류 재검토** — 전역 릴리스=모든 프로젝트 적용. delivery 모델 바뀌면 1.0.0 의미 자체가 달라짐 → 재설계 후 결정.
+  - [ ] **ⓔ close `--force` blackbox 기록(F2, high)** — `close-cycle.py --force`가 stderr WARN만 하고 blackbox에 안 남김(phase-advance --force는 남기는데). ratchet override가 사이클 감사 흔적에 불가시 → `{kind:"force-close",regressions,ts}` append + `--adr <path>` 결박(존재 검사). **게이트 우회 기록은 게이트만큼 중요.**
+  - [ ] **ⓕ deploy-kill-check 은퇴 → mechanism-count 27 복원** (ADR-0001 인계) — 안 하면 이 축 --force 상시화. roadmap rank6과 동일. + ratchetlib lower_better "accept-new-baseline" 부재(F3) 동반 검토.
 
 ## 🔜 Now — 다음 사이클 후보 (GC 표면 확장 → L2 → L0 코드화)
 - [~] **토큰 경량화** (💰 상세 아래 — **2026-06-03: lossless 압축분 완료, 슬라이싱은 stage-injection 후속으로 분리**) — 실측 rule-inject 매 세션 766토큰(45룰). **달성: 포맷 1줄/룰 압축 766→620(≈19%↓), 룰 누락 0(lossless)**. 더 큰 win(코딩 룰을 코딩 단계에만)은 정적 default 슬라이싱이 필요한데, 독립 리뷰가 "단계 자동 재주입 없으면 코딩 세션에 코딩 룰 누락 = 기능저해"로 반려 → **🎯 stage-injection 별도 사이클**(💰 하단). **제약(사용자): 기능 저해 금지** 준수.
@@ -34,7 +36,7 @@
 
 ### 미구현 원칙 (Anthropic/OpenAI 7원칙)
 - [x] **엔트로피 GC** (원칙6) — **#011 완료 + 2026-06-03 재검토**. `gc-scan.py`+`GOLDEN-PRINCIPLES.md`+ratchet 축 2개. *표면* GC(죽은 링크·stale 문서·relic).
-  - **재검토 결과**(`review/2026-06-03-entropy-gc.md`): GP-2(dead-link) 유일한 high-confidence → `plugin/` 트리까지 스캔 확장(FP 0). GP-1(relic-dir) **probation**(0/2 정밀도, 구조신호로는 signpost↔relic 원리적 구분 불가 → 1사이클 더 못 잡으면 삭제 명문화, `[probation]` 자가의심 태그). **GP-4 신설**(의미적 stale = 문서주장 vs 코드현실, watch — 결정론 스캔 불가라 mandatory 사람/LLM 내용검토 의식, gc.md §6.5+GOLDEN §내용검토). **GP-5 신설**(complexity ratchet = script/hook 수, #011 시점 **23** → 2026-06-06 현재 **27** lock(#013c), `--complexity-axis`) — CA-11/PF-11 "빼기 없는 더하기"를 축으로 강제 준비.
+  - **재검토 결과**(`review/2026-06-03-entropy-gc.md`): GP-2(dead-link) 유일한 high-confidence → `plugin/` 트리까지 스캔 확장(FP 0). GP-1(relic-dir) **probation**(0/2 정밀도, 구조신호로는 signpost↔relic 원리적 구분 불가 → 1사이클 더 못 잡으면 삭제 명문화, `[probation]` 자가의심 태그). **GP-4 신설**(의미적 stale = 문서주장 vs 코드현실, watch — 결정론 스캔 불가라 mandatory 사람/LLM 내용검토 의식, gc.md §6.5+GOLDEN §내용검토). **GP-5 신설**(complexity ratchet = script/hook 수, #011 시점 **23** → #013c **27** lock → #014 **28** actual(project-install.py, force+ADR-0001; floor는 여전히 27), `--complexity-axis`) — CA-11/PF-11 "빼기 없는 더하기"를 축으로 강제 준비.
   - [x] **잔여: GP-5 축 등재** (#013c 종료) — `harness-mechanism-count`(lower_better, 27)+`inject-tokens`(lower_better, 385) bar 축 lock → floor 의미있는 축 0→2. **단 첫 lock값은 *감소* 아닌 *현재 박제*** — 은퇴와 짝짓는 건 다음 "빼기" 사이클 몫(27→26 이하). roadmap rank0(측정 신뢰성 검증: docstring 명시 + 결정론 test) 선행 완료.
   - [ ] **rank2: bar-register `--axis` 강제화** (#013c 인계, roadmap rank2 분리) — 축 메타가 선택적이라 수치 measure가 free-text로 새는 root cause. 강제화하면 하위호환(boolean/축없는 바) 깨지므로 별도 사이클. mandatory 대상 stage 범위 설계 필요(전부 강제 vs close/test만).
   - [ ] **잔여: 원칙5 실행** — 트리거 이미 발생(Opus 4.8). 은퇴 후보: `active-cycle-verify`(탐지율→0 관측 후), 약: `deploy-kill-check`(효과측정 후). 물리잠금(hypothesis-immutability·active-symlink-guard)·session-counter는 모델무관 유지. 3-task A/B 재검증 필요.

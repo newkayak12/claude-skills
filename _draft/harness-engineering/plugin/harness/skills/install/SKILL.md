@@ -23,7 +23,8 @@ related:
 
 # Harness Install — 첫 실행 온보딩
 
-설치 직후 *대화로* L1 user-rules를 만들고, 하네스가 *언제 무엇을 로드하는지* 알려준다.
+두 가지를 한다: **(A) 현재 프로젝트를 harness 아래로 scaffold** (`.claude/` 에 벤더링 — per-project·ambient),
+**(B) L1 user-rules 를 대화로** 만든다(사용자-전역 기본값). 하네스가 *언제 무엇을 로드하는지*도 알려준다.
 **수동으로 파일을 작성하는 게 기본 경로가 아니다** (GOAL §3.2) — 이 스킬이 묻고, 스크립트가 쓴다.
 
 ## Step 0: 사전 점검 — `python3` (가장 먼저, pure-shell)
@@ -39,6 +40,23 @@ command -v python3 >/dev/null 2>&1 \
 ```
 
 `python3 없음`이 뜨면 **STOP** — 사용자에게 python3 설치를 안내하고 온보딩을 멈춘다. 이걸 통과해야 아래가 의미 있다.
+
+## Step A: 프로젝트를 harness 아래로 scaffold (핵심 delivery)
+
+> 이게 "그냥 쓰면 자동으로 하네스 아래서 동작"의 실체다. 전역 플러그인이 아니라 *이 프로젝트의
+> `.claude/`* 에 하네스를 vendoring 해서, `.claude/` 자동로드로 per-project + ambient governance 를 얻는다.
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/project-install.py --project "$CLAUDE_PROJECT_DIR" --dry-run  # 계획 확인
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/project-install.py --project "$CLAUDE_PROJECT_DIR"            # 실행
+```
+
+이 스크립트는 멱등이다 — `.claude/harness/`(벤더링 페이로드) + `.claude/settings.json`(hooks, `$CLAUDE_PROJECT_DIR`
+기준) + `.claude/CLAUDE.md`(사이클 규율 계약)를 만들거나 *기존을 보존하며 병합*한다. 기존 `settings.json`/`CLAUDE.md`
+가 있으면 사용자 내용을 지우지 않는다. 설치 후 **그 프로젝트의 새 세션부터** hook이 자동 발화하고 AI가 사이클 규율 아래서 동작한다.
+
+> vendoring = 레포에 커밋되어 따라다니는 *고정 버전*. 전역 플러그인을 갱신해도 이 프로젝트는 영향받지 않는다
+> (프로젝트마다 다른 버전 가능). 갱신하려면 그 프로젝트에서 `harness:install` 재실행(re-vendor).
 
 ## Step 1: 이미 설정됐는지 확인
 
