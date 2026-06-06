@@ -68,5 +68,24 @@ $RR register --cycle _close --id R2 --criterion-id B2 --verdict pass --evidence 
 $CC >/dev/null 2>&1 || { echo "FAIL 7: 80 으로 올렸는데 close 안 됨"; fail=1; }
 [ -L cycles/active ] && { echo "FAIL 7: 통과인데 symlink 남음"; fail=1; }
 
+# 8) lower_better 회귀 (#013c rank1 — mechanism-count/inject-tokens 축의 실효 teeth)
+#    floor: mechcount=27 (lower_better, pass+closed). 값이 *오르면* 회귀여야 한다.
+mk_axis_cycle 20260102-lb mechcount 27 lower_better
+$RR register --cycle 20260102-lb --id R1 --criterion-id B1 --verdict pass \
+    --evidence e --reviewer t >/dev/null
+printf '{"cycle_id":"20260102-lb","status":"closed"}\n' > cycles/20260102-lb/metrics.json
+$RC floor 2>/dev/null | grep -q 'mechcount.*27.*lower_better' || { echo "FAIL 8a: mechcount floor 미노출"; fail=1; }
+
+mk_axis_cycle _cur mechcount 28 lower_better   # 28>27 = 빼기없는 더하기 → 차단
+if $RC check --cycle _cur >/dev/null 2>&1; then echo "FAIL 8b: lower_better 회귀(28>27) 통과됨"; fail=1; fi
+
+# 9) lower_better 동률(27) → 단조 비감소 허용 → exit 0
+mk_axis_cycle _cur mechcount 27 lower_better
+$RC check --cycle _cur >/dev/null 2>&1 || { echo "FAIL 9: lower_better 동률(27) 차단됨"; fail=1; }
+
+# 10) lower_better 개선(26<27) → exit 0 (은퇴/경량화 방향)
+mk_axis_cycle _cur mechcount 26 lower_better
+$RC check --cycle _cur >/dev/null 2>&1 || { echo "FAIL 10: lower_better 개선(26) 차단됨"; fail=1; }
+
 [ $fail -eq 0 ] && echo "ratchet-check self-test: PASS"
 exit $fail
