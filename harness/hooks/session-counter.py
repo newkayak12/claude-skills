@@ -3,7 +3,9 @@
 session-counter.py — SessionStart hook (Computational Sensor, *측정*).
 
 active 사이클의 `metrics.json:session_count` 를 *새 세션이 시작될 때마다* 1 증가시킨다.
-이것이 kill-check 의 시간 지표를 *관측 가능*하게 만든다 (cycle-004).
+원래 kill-check 의 시간 지표를 *관측 가능*하게 만든 계기(cycle-004)였으나, kill-check 계열은
+#015 에서 은퇴했다(발화 0). 현재 session_count 는 retro·진단용 *계측치*로만 남는다 — 자동 소비자
+없음. (session_count 자체의 존속 여부는 metrics SPOF rank4 와 함께 후속 검토.)
 
 설계 결정 (cycle-004):
   - 솔로 개발자의 작업 단위는 *달력 시간*이 아니라 *작업 세션*이다.

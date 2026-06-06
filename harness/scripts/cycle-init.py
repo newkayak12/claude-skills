@@ -208,12 +208,12 @@ METRICS_SKELETON = {
     "cycle_id": "",
     "started_at": "",
     "current_phase": "analysis",  # analysis→design→planning→implementation→validation. AI가 행동 전 확인 (P6/P9).
-    "appetite_sessions": 1,   # 작업 세션 단위 (cycle-004). kill-check 가 session_count 와 비교.
+    "appetite_sessions": 1,   # 작업 세션 단위 (cycle-004). retro 시 session_count 와 수동 대조(kill-check 은퇴 #015).
     "session_count": 1,       # 사이클 생성 세션 = 1. 이후 SessionStart hook 이 자동 증가.
     "reentry_count": 0,       # Inferential — 게이트/사람이 단계 재진입 시 증가.
     "gate1_status": "pending",
     "gate2_status": "pending",
-    "kill_check": "ok",
+    # kill_check 필드 제거 (#015): kill-check.py 은퇴 + 읽는 코드 0 → vestigial.
 }
 
 
