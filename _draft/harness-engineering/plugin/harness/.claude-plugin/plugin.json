@@ -1,7 +1,7 @@
 {
   "name": "harness",
   "description": "Harness Engineering — solo-dev execution loop. First run: harness:install onboards L1 user-rules. harness:cycle starts an active cycle and drives its phases (analysis→design→planning→implementation→validation); harness:work → harness:review keep implementation inside the approved plan slices. The phase-guard hook (not a skill) blocks code outside active implementation/validation — plan-before-code is enforced deterministically. Quality-floor: bar-lock + independent review gate + cross-cycle ratchet.",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "author": {
     "name": "newkayak12"
   },

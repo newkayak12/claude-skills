@@ -57,10 +57,7 @@ from pathlib import Path
 # (후속: architecture/decision 등 다른 단계 신호가 생기면 매핑 확장.)
 STAGE = "code-writing"
 
-BOUNDARY = (
-    "[harness] 단계 진입 룰 자동 주입 (stage: code-writing · L1>L0 effective · "
-    "안내일 뿐 — 진짜 강제는 게이트/차단성 hook, 원칙2):"
-)
+BOUNDARY = "[harness] 단계 진입 룰 자동 주입 (stage: code-writing · 안내일 뿐 — 진짜 강제는 게이트/차단성 hook):"
 
 
 def find_script(name: str):

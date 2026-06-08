@@ -45,10 +45,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-BOUNDARY = (
-    "[harness] 항상-켜둘 룰 자동 주입 (invariant L0 + L1 · 단계별 코딩 룰은 진입 시 "
-    "stage-inject 가 별도 주입 · 안내일 뿐 — 진짜 강제는 게이트/차단성 hook, 원칙2):"
-)
+BOUNDARY = "[harness] 항상-켜둘 룰 자동 주입 (안내일 뿐 — 진짜 강제는 게이트/차단성 hook):"
 
 
 def find_script(name: str):
