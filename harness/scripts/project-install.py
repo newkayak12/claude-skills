@@ -23,8 +23,11 @@ project-install.py — 하네스를 *대상 프로젝트의 `.claude/`로 vendor
   3. `<proj>/.claude/CLAUDE.md` 에 하네스 사이클 규율 계약을 marker 블록으로 scaffold.
      → AI가 의식 없이 그 프로젝트에서 사이클 규율 아래 동작(ambient).
 
-멱등:
+멱등 + 버전 인식 (update UX):
   - 페이로드는 `.harness-vendored` 마커로 안전 재빌드(마커 없는 비어있지-않은 dest 는 거부).
+  - 마커에 *벤더링한 버전*을 박아, 재실행 시 소스 버전과 비교해 `신규 설치`/`이미 최신`/
+    `업그레이드 vX→vY` 를 *보고*한다 — 거부가 아니라 정보성. marketplace update 후 이 스크립트
+    재실행이 새 버전을 프로젝트로 당기는 *유일* 경로(벤더링=고정복사본이라 전역 갱신은 안 닿음).
   - settings.json hooks 는 command 문자열 기준 dedup(재실행해도 중복 추가 0, 사용자 hook 보존).
   - CLAUDE.md 는 `<!-- harness:* -->` 마커 블록만 교체(나머지 사용자 내용 보존).
 
@@ -37,6 +40,7 @@ import argparse
 import json
 import shutil
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 _HERE = Path(__file__).resolve()
@@ -117,11 +121,44 @@ def _safe_dest(dest: Path) -> bool:
     return not any(dest.iterdir())
 
 
+def _read_source_version(source: Path) -> str:
+    try:
+        return json.loads(
+            (source / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+        ).get("version", "?")
+    except Exception:
+        return "?"
+
+
+def _read_vendored_version(dest: Path):
+    """기존 벤더 마커의 버전. 없거나 구형 plain-text 마커면 None(=버전 미상)."""
+    marker = dest / VENDOR_MARKER
+    if not marker.exists():
+        return None
+    try:
+        return json.loads(marker.read_text(encoding="utf-8")).get("version")
+    except Exception:
+        return None
+
+
+def _upgrade_label(old_ver, src_ver: str, existed: bool) -> str:
+    if not existed:
+        return f"신규 설치 v{src_ver}"
+    if old_ver == src_ver:
+        return f"이미 최신 v{src_ver} (재-벤더 새로고침)"
+    if old_ver is None:
+        return f"이전(버전 미상) → v{src_ver} 재-벤더"
+    return f"업그레이드 v{old_ver} → v{src_ver}"
+
+
 def _vendor_payload(claude_dir: Path, source: Path, dry: bool) -> Path:
-    """평탄화 페이로드(source)를 <proj>/.claude/harness 로 *직접 재귀복사*."""
+    """평탄화 페이로드(source)를 <proj>/.claude/harness 로 *직접 재귀복사* (버전 인식)."""
     dest = claude_dir / "harness"
+    src_ver = _read_source_version(source)
+    existed = dest.exists()
+    label = _upgrade_label(_read_vendored_version(dest), src_ver, existed)
     if dry:
-        print(f"  [dry] vendor payload (직접 재귀복사) {source} → {dest}")
+        print(f"  [dry] vendor payload — {label}: {source} → {dest}")
         return dest
     if not _safe_dest(dest):
         print(
@@ -130,14 +167,18 @@ def _vendor_payload(claude_dir: Path, source: Path, dry: bool) -> Path:
             file=sys.stderr,
         )
         sys.exit(1)
-    if dest.exists():
+    if existed:
         shutil.rmtree(dest)
     shutil.copytree(source, dest, ignore=_ignore)
     (dest / VENDOR_MARKER).write_text(
-        "VENDORED by project-install.py (평탄화 페이로드 직접복사).\n직접 편집 금지.\n",
+        json.dumps({
+            "version": src_ver,
+            "vendored_at": datetime.now(timezone.utc).isoformat(),
+            "note": "VENDORED by project-install.py (평탄화 페이로드 직접복사). 직접 편집 금지.",
+        }, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    print(f"  ✓ payload vendored (직접복사) → {dest}")
+    print(f"  ✓ payload vendored — {label} → {dest}")
     return dest
 
 
