@@ -102,6 +102,21 @@ grep -q "harness:begin" "$P2/.claude/CLAUDE.md"          || { echo "FAIL 6b: gov
 [ "$(grep -c 'harness:begin' "$P2/.claude/CLAUDE.md")" = "1" ] || { echo "FAIL 6c: governance 블록 중복 누적"; fail=1; }
 rm -rf "$P2"
 
+# ── 8) 버전 인식 재-벤더 (update UX, N=0 fix) — 거부 아닌 정보성 ───────────────
+P4="$(mktemp -d)"
+$PI --project "$P4" 2>&1 | grep -q "신규 설치 v" || { echo "FAIL 8a: 신규 설치 버전 라벨 없음"; fail=1; }
+python3 -c "import json;v=json.load(open('$P4/.claude/harness/.harness-vendored'));assert v.get('version'),'no version'" 2>/dev/null \
+  || { echo "FAIL 8b: 벤더 마커에 version 미기록"; fail=1; }
+# 같은 버전 재실행 → '이미 최신'(거부 아님)
+$PI --project "$P4" 2>&1 | grep -q "이미 최신 v" || { echo "FAIL 8c: 동일버전 재-벤더가 '이미 최신' 아님"; fail=1; }
+# 구형 plain-text 마커 → '버전 미상' 으로 재-벤더(하위호환, 거부 아님)
+printf 'old plain marker\n' > "$P4/.claude/harness/.harness-vendored"
+$PI --project "$P4" 2>&1 | grep -q "버전 미상" || { echo "FAIL 8d: 구형 마커가 '버전 미상' 재-벤더 아님"; fail=1; }
+# 옛 버전 마커 → '업그레이드' 라벨
+python3 -c "import json;open('$P4/.claude/harness/.harness-vendored','w').write(json.dumps({'version':'0.0.1'}))"
+$PI --project "$P4" 2>&1 | grep -q "업그레이드 v0.0.1 →" || { echo "FAIL 8e: 옛 버전 마커가 '업그레이드' 라벨 아님"; fail=1; }
+rm -rf "$P4"
+
 # ── 7) 평탄화 안 된 소스 거부 — dogfood(plugin/harness)는 06-rules.md 없어 즉시 거부 ──
 P3="$(mktemp -d)"
 if python3 "$HERE/project-install.py" --project "$P3" >/dev/null 2>&1; then

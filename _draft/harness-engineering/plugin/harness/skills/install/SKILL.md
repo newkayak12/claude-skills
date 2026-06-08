@@ -41,31 +41,37 @@ command -v python3 >/dev/null 2>&1 \
 
 `python3 없음`이 뜨면 **STOP** — 사용자에게 python3 설치를 안내하고 온보딩을 멈춘다. 이걸 통과해야 아래가 의미 있다.
 
-## Step A: 프로젝트를 harness 아래로 scaffold (핵심 delivery)
+## Step A: 프로젝트를 harness 아래로 scaffold/갱신 (핵심 delivery — 첫 설치 *그리고* update)
 
 > 이게 "그냥 쓰면 자동으로 하네스 아래서 동작"의 실체다. 전역 플러그인이 아니라 *이 프로젝트의
 > `.claude/`* 에 하네스를 vendoring 해서, `.claude/` 자동로드로 per-project + ambient governance 를 얻는다.
 
+**이 단계는 첫 설치든 update든 *항상 먼저* 돈다.** marketplace 에서 플러그인을 `update` 했으면
+*전역* 버전만 새것이고 이 프로젝트의 벤더링은 *옛 버전 그대로*다 — 재-벤더해야 새 버전이 프로젝트에 닿는다.
+
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/project-install.py --project "$CLAUDE_PROJECT_DIR" --dry-run  # 계획 확인
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/project-install.py --project "$CLAUDE_PROJECT_DIR" --dry-run  # 계획/버전 확인
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/project-install.py --project "$CLAUDE_PROJECT_DIR"            # 실행
 ```
 
-이 스크립트는 멱등이다 — `.claude/harness/`(벤더링 페이로드) + `.claude/settings.json`(hooks, `$CLAUDE_PROJECT_DIR`
-기준) + `.claude/CLAUDE.md`(사이클 규율 계약)를 만들거나 *기존을 보존하며 병합*한다. 기존 `settings.json`/`CLAUDE.md`
-가 있으면 사용자 내용을 지우지 않는다. 설치 후 **그 프로젝트의 새 세션부터** hook이 자동 발화하고 AI가 사이클 규율 아래서 동작한다.
+멱등 + **버전 인식**이다 — 벤더 마커 버전과 소스 버전을 비교해 `신규 설치 vX` / `이미 최신 vX` /
+`업그레이드 vX→vY` 를 *보고*한다(거부가 아니라 정보성 — 같은 버전이어도 새로고침 재-벤더). `.claude/harness/`
+(페이로드) + `.claude/settings.json`(hooks, `$CLAUDE_PROJECT_DIR` 기준) + `.claude/CLAUDE.md`(사이클 규율)를
+만들거나 *기존을 보존하며 병합*한다. 기존 사용자 내용은 지우지 않는다. 설치/갱신 후 **그 프로젝트의 새 세션부터** 반영된다.
 
-> vendoring = 레포에 커밋되어 따라다니는 *고정 버전*. 전역 플러그인을 갱신해도 이 프로젝트는 영향받지 않는다
-> (프로젝트마다 다른 버전 가능). 갱신하려면 그 프로젝트에서 `harness:install` 재실행(re-vendor).
+> vendoring = 레포에 커밋되어 따라다니는 *고정 버전*. **update 반영 = 그 프로젝트에서 `harness:install`
+> 재실행(이 Step A 재-벤더)** 이 유일 경로 — 전역 플러그인 갱신만으론 프로젝트에 안 닿는다.
 
-## Step 1: 이미 설정됐는지 확인
+## Step 1: L1 user-rules — 이미 있으면 *이 단계만* 건너뛴다 (전체 STOP 아님)
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/user-rules-init.py path   # 경로 확인
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/user-rules-init.py show   # 있으면 내용 출력
 ```
 
-이미 있으면 **STOP** — 내용을 보여주고 "룰 *추가*(add)할지 / 둘지" 묻는다. 덮어쓰지 않는다(멱등).
+이미 있으면 **user-rules 단계(Step 2~3)만 건너뛴다** — 내용을 보여주고 "룰 *추가*(add)할지" 묻고
+넘어간다. 덮어쓰지 않는다(멱등). **온보딩 전체를 멈추지 말 것** — Step A(프로젝트 재-벤더)는 이미 돌았고
+update 시엔 그게 핵심이다. 여기서 "이미 설치됨"으로 끝내면 *새 버전이 프로젝트에 반영 안 된 채* 종료된다(실사용 결함).
 
 ## Step 2: 한 질문씩 — L1 기본값 수집
 
@@ -139,7 +145,8 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/user-rules-init.py add \
 
 ## What Claude Does
 - Step 0에서 `python3` pure-shell preflight — 없으면 STOP하고 설치 안내 (hook이 죽지 않게)
-- Step 1에서 기존 user-rules 확인 — 있으면 덮어쓰지 않고 add 여부만 물음
+- Step A(프로젝트 재-벤더)는 첫 설치든 update든 *항상 먼저* 실행 — "이미 설치됨"으로 STOP하지 않음(update 핵심)
+- Step 1에서 기존 user-rules 확인 — 있으면 *user-rules 단계만* 건너뛰고(add 여부만 물음) 온보딩은 계속
 - 한 질문씩 L1 기본값 수집 (한꺼번에 쏟지 않음)
 - 코드 스타일은 *설정 파일 경로*로만 받음 (내용 거부 — AP-29). JVM 계열은 `--pointer-kotlin/--pointer-java`, 그 외는 범용 `--pointer <name> <path>`
 - **파일 생성 *전에* L1(전역 `~/.harness/`) vs L2(프로젝트 내부) 차이를 명시** (Step 2.5)
