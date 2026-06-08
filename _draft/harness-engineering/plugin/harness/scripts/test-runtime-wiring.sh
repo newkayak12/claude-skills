@@ -15,7 +15,7 @@
 #   W3 필수 배선 존재: SessionStart⊇rule-inject · PreToolUse(Edit매처)⊇{hypothesis-immutability,stage-inject,phase-guard}
 #      · PreToolUse(Bash매처)⊇{phase-guard,active-symlink-guard}
 #   W4 plugin.json valid + name==harness
-#   W5 스킬 discoverable: skills/{cycle,install,plan,work,review}/SKILL.md 에 name·description frontmatter 존재
+#   W5 스킬 discoverable: skills/{cycle,install,work,review}/SKILL.md 에 name·description frontmatter 존재
 #      (런타임 harness:* 자동트리거의 전제 — 깨지면 스킬이 조용히 사라짐)
 #   W6 런타임-등가 주입(hermetic mirror): export 의 rule-inject 가 경계+invariant L0 주입·R-CD 부재
 # populated L0(export 컨텍스트)로 빌드해 친다 — draft 는 L0=0이라 vacuous.
@@ -95,7 +95,7 @@ except Exception as e:
     bad(f"plugin.json 파싱 불가 — {e}")
 
 # W5 스킬 discoverability
-for skill in ("cycle", "install", "plan", "work", "review"):
+for skill in ("cycle", "install", "work", "review"):
     sk = os.path.join(exp, "skills", skill, "SKILL.md")
     if not os.path.isfile(sk):
         bad(f"스킬 {skill}/SKILL.md 부재 — harness:{skill} 런타임 트리거 불가"); continue

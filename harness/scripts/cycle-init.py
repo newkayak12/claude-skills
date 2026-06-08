@@ -327,6 +327,7 @@ def main():
     (cdir / "blackbox.jsonl").touch()
     (cdir / "bar.jsonl").touch()
     (cdir / "review.jsonl").touch()
+    (cdir / "phase.jsonl").touch()  # H1: tamper-evident phase 전환 chain — phase-guard 의 권위 소스
     (cdir / "activity.log").touch()
 
     metrics = METRICS_SKELETON.copy()

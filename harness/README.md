@@ -19,8 +19,7 @@ Harness Engineering — 솔로 dev 제품 개발 scaffolding. 사이클 진입 �
 ## 핵심 스킬
 
 - `harness:install` — 첫 실행 온보딩 (L1 user-rule 대화 생성)
-- `harness:cycle` — pre-cycle 진입 게이트 + 산출물 scaffold
-- `harness:plan` — intent → spec/design/plan 실행 계약
+- `harness:cycle` — pre-cycle 진입 게이트 + 산출물 scaffold + phase 진행(analysis→design→planning→implementation→validation; planning 대화가 여기 포함)
 - `harness:work` — 승인된 plan slice 구현 + 검증
 - `harness:review` — spec/design/plan 기준 독립 리뷰
 

@@ -10,9 +10,9 @@
 | | |
 |---|---|
 | **이벤트** | `PreToolUse` (matcher: `Edit\|Write\|MultiEdit\|NotebookEdit`) |
-| **역할** | `hypotheses.jsonl`·`bar.jsonl`·`review.jsonl` 직접 편집 시도를 **차단** (exit 2) |
-| **막는 것** | `hypotheses.jsonl`·`bar.jsonl`·`review.jsonl` 직접 편집 차단 (AP-06 Gate fudging + #006 바 낮추기 + #007 리뷰 위조) |
-| **정당 경로** | `scripts/hypothesis-register.py` / `scripts/bar-register.py` / `scripts/review-register.py` (append + hash chain) 는 막지 않음 |
+| **역할** | `hypotheses.jsonl`·`bar.jsonl`·`review.jsonl`·`phase.jsonl` 직접 편집 시도를 **차단** (exit 2) |
+| **막는 것** | 위 append-only chain 직접 편집 차단 (AP-06 Gate fudging + #006 바 낮추기 + #007 리뷰 위조 + **H1 phase 전환 위조**) |
+| **정당 경로** | `scripts/hypothesis-register.py` / `bar-register.py` / `review-register.py` / `phase-advance.py` (append + hash chain) 는 막지 않음 |
 | **fail-open** | 입력 JSON 파싱 실패 시 *통과* — hook 이 정당한 작업을 막지 않도록 |
 
 이것이 `13-operational-layer.md §3·§4` 의 *"코드로 강제 (Computational)"* 의 첫 실제 wiring 이다.
@@ -38,13 +38,14 @@
 | | |
 |---|---|
 | **이벤트** | `PreToolUse` (matcher: `Edit\|Write\|MultiEdit\|NotebookEdit`) |
-| **역할** | active 사이클이 없거나 `current_phase` ∉ {implementation,validation} 이거나 pre-code `phase_gates` evidence/confirm이 미충족인데 *코드 파일*(.py/.kt/.js/… 소스 확장자) 편집/생성 시도 → **차단**(exit 2) |
+| **역할** | active 사이클이 없거나 (검증된 `phase.jsonl` chain 기준) `current_phase` ∉ {implementation,validation} 이거나 pre-code 게이트 evidence/confirm이 미충족인데 *코드 파일*(.py/.kt/.js/… 소스 확장자) 편집/생성 시도 → **차단**(exit 2). 체인 손상/위조 시 코드·tech-doc 전면 차단 |
 | **막는 것** | 하네스 밖 코드 작업 + R-PG01 "No code before design" 위반 — cycle/phase 전진 없이 코드부터 써버리는 속도 우선 행동. rule-inject 가 R-PG01 을 *주입*해도 모델이 어긴다(실사용 피드백) → 차단성 hook 으로 *물리 게이트*화 (주입≠강제, 원칙2) |
 | **통과** | 비코드(.md 분석노트·설계문서·ADR·.json/.yaml 설정) / implementation·validation phase → exit 0. 분석·설계문서 작성을 막지 않음 |
 | **마찰 기록** | 차단 시 `feedbacklib` 로 `.claude/.feedback/feedback.jsonl` 에 이벤트 기록(beta report 원료). 기록 실패해도 차단 exit2 불변(fail-soft) |
-| **정당 경로** | phase 전진은 `scripts/phase-advance.py`(인접 순서 + 산출물 evidence + collaborative 사용자 확인 강제, --force=blackbox). 코딩은 implementation 부터이며, hook도 `phase_gates`를 재검증한다 |
-| **정직한 한계** | metrics.json `current_phase` 직접편집 우회는 못 막음(active-symlink-guard 가 mv 못 막듯). Bash 는 흔한 파일 생성 패턴(`>`, `tee`, `touch`, `cp`, `mv`, `sed -i`)만 잡는다 |
-| **fail-open** | active 없음·metrics 없음·phase 비대상·비코드·JSON 파싱 실패 → exit 0 |
+| **정당 경로** | phase 전진은 `scripts/phase-advance.py`(인접 순서 + evidence + collaborative `--confirm-user`+`--confirmation-note`(H2) 강제, --force=blackbox). 전진은 `phase.jsonl` hash-chain 에 기록되고 hook 은 *이 체인*을 권위 소스로 재검증한다 |
+| **신뢰 앵커(H1)** | phase-guard 는 metrics.json 이 아니라 tamper-evident `phase.jsonl` chain 에서 phase·게이트를 도출 → **metrics.json `current_phase`/`phase_gates` 직접편집 위조로는 게이트 우회 불가**(이전 #013b H3 한계 해소). 체인 직접편집은 immutability(Edit)+verify_chain(Bash)+부재→차단(삭제)이 방어 |
+| **정직한 한계** | bars·hypotheses 와 동일: Bash 로 *유효 해시 체인을 통째로 위조*하는 결정형 공격까지는 못 막음(솔로-dev 위협모델 밖). Bash 파일생성은 흔한 패턴(`>`,`tee`,`touch`,`cp`,`mv`,`sed -i`)만 잡는다 |
+| **fail-open / 차단** | 비코드 타깃·stdin JSON 파싱 실패 → exit 0(도구 안 막음). active 없음·체인 손상·pre-code 게이트 미충족 + 코드/tech-doc → 차단(exit 2) |
 
 → `hypothesis-immutability`(데이터)·`active-symlink-guard`(종료)에 이어 *단계 순서*를 물리로 못박는 세 번째 차단성 Sensor. `phase-advance.py`(산출물 evidence + 사용자 확인 게이트) + `phase-guard`(implementation 전 코드 차단) 가 *짝* (#013b).
 
@@ -81,7 +82,7 @@
 | **이벤트** | `SessionStart` (source `startup` 만 카운트 — resume/compact/clear 는 연속 세션, 미증가) |
 | **역할** | active 사이클의 `metrics.json:session_count` 를 새 세션마다 +1 (사이클 경과 *작업 세션* 계측) |
 | **왜** | 솔로 개발자 단위는 *달력 시간*이 아니라 *작업 세션*. wall-clock 은 사이클 방치 시 오탐("시간 200%")하지만 세션 수는 안 함 (cycle-004) |
-| **차단 아님** | metrics 갱신만. exit 0. metrics.json 은 hypothesis-immutability 보호 대상 아님(그 hook 은 hypotheses.jsonl·bar.jsonl 만) → 자유 갱신 |
+| **차단 아님** | metrics 갱신만. exit 0. metrics.json 은 hypothesis-immutability 보호 대상 아님(보호는 `hypotheses/bar/review/phase.jsonl` chain 4종) → 자유 갱신. 단 phase 권위 SSOT 는 metrics 가 아니라 보호되는 `phase.jsonl`(H1)이라 metrics 자유갱신이 게이트를 흔들지 못함 |
 | **fail-open** | active 없음/source 미카운트/깨진 metrics → 조용히 통과 |
 
 → 원래 `kill-check.py` 의 시간 지표를 *관측 가능*하게 만든 계기(cycle-004)였으나, **#015 에서 kill-check

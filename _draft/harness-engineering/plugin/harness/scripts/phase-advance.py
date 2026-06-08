@@ -32,6 +32,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import chainlog  # 같은 scripts/ 디렉토리 — phase.jsonl tamper-evident chain (H1)
+
 CYCLES = Path("cycles")
 ACTIVE = CYCLES / "active"
 PHASES = ["analysis", "design", "planning", "implementation", "validation"]
@@ -139,6 +141,12 @@ def main():
         action="store_true",
         help="collaborative phase(draft→review→finalize)에 대해 사용자 확인 완료 표시",
     )
+    ap.add_argument(
+        "--confirmation-note",
+        default="",
+        help="collaborative phase confirm 시 *필수*(H2). 사용자가 무엇에 합의했는지 한 줄 — "
+             "tamper-evident chain 에 박혀 retro/review 가 위조 confirm 을 대면한다.",
+    )
     args = ap.parse_args()
 
     cdir = _active_dir()
@@ -184,6 +192,21 @@ def main():
         )
         sys.exit(2)
 
+    cur_gate = (metrics.get("phase_gates") or {}).get(cur) or {}
+    cur_collaborative = cur_gate.get("type") == "collaborative"
+
+    # H2: collaborative phase 의 사용자 confirm 은 *무엇에 합의했는지* 감사 기록을 강제한다.
+    # 플래그만으로 confirm 을 주장하던 허니시스템을 닫는다(완전 방지는 불가 — 하지만 tamper-evident
+    # chain 에 note 가 박혀 retro/review 가 위조 confirm 을 대면할 수 있다).
+    if adjacent and cur_collaborative and args.confirm_user and not args.confirmation_note.strip():
+        print(
+            f"🛑 거부: collaborative phase '{cur}' 의 --confirm-user 에는 --confirmation-note 가 필수다(H2).\n"
+            "   사용자가 무엇에 합의했는지 한 줄로 명시하세요 — chain 에 감사 기록으로 박힙니다.\n"
+            "   예: --confirm-user --confirmation-note \"design-doc v2 §3 API 계약 사용자 승인\"",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
     if adjacent:
         if not _verify_phase_gate(cdir, metrics, cur, args.evidence, args.confirm_user, args.force):
             sys.exit(2)
@@ -195,6 +218,22 @@ def main():
         status[target] = "in-progress"
         metrics["phase_status"] = status
     mp.write_text(json.dumps(metrics, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    # H1: 전환을 tamper-evident chain 에 append. phase-guard 는 metrics 가 아니라 *이 체인*을
+    # 권위 소스로 읽으므로, metrics.json 직접편집으로는 게이트를 우회할 수 없다.
+    completed_gate = (metrics.get("phase_gates") or {}).get(cur) or {}
+    chainlog.append_entry(cdir / "phase.jsonl", {
+        "id": f"{cur}->{target}",
+        "from": cur,
+        "to": target,
+        "completed_phase": cur,
+        "evidence": list(completed_gate.get("evidence") or []),
+        "user_confirmed": bool(completed_gate.get("user_confirmed")),
+        "collaborative": cur_collaborative,
+        "confirmation_note": args.confirmation_note.strip() or None,
+        "gate_forced": bool(args.force),
+        "ts": datetime.now(timezone.utc).isoformat(),
+    })
 
     if not adjacent and args.force:
         _append_blackbox(cdir, {
