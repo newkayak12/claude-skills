@@ -51,7 +51,8 @@ def cmd_floor(args):
         print("(닫힌 사이클에 축 watermark 없음 — ratchet 비활성)")
         return
     for axis, v in sorted(floor.items()):
-        print(f"[{axis}] {v['value']} ({v['direction']}) ← {v['source']}")
+        tag = "  [baseline-reset]" if v.get("baseline_reset") else ""
+        print(f"[{axis}] {v['value']} ({v['direction']}) ← {v['source']}{tag}")
 
 
 def cmd_axes(args):

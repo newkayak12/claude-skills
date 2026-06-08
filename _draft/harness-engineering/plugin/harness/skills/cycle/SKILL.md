@@ -205,6 +205,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/review-register.py register \
 # 2) 종료 — active 기준이라 --cycle 인자 없음
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/close-cycle.py
 ```
+> **게이트 우회**: 리뷰/ratchet을 무시하고 닫아야 하면 `close-cycle.py --force --adr <존재하는 문서>` — ADR 결박 + blackbox에 `force-close` 기록(우회는 흔적을 남긴다). 정당하게 *ratchet 축을 상향*(빼기 불가능한 +1, 예: mechanism-count)해야 하면 force가 아니라 `bar-register --baseline-reset`으로 — 리뷰되는 1급 baseline 선언(accept-new-baseline).
 > `cycles/`는 *프로젝트 CWD*에 생성된다. 작업 repo에 산출물을 함께 커밋하거나, 원치 않으면 `.gitignore`에 `cycles/` 추가.
 
 ## What Claude Does

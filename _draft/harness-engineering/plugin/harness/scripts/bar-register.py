@@ -10,12 +10,14 @@ bar-register.py — Pre-registration of the *quality bar* with a tamper-evident 
 Usage:
   bar-register.py register --cycle <id> --id <Bn> \\
       --criterion "..." --stage <plan|build|test|close|*> --measure "..." \\
-      [--axis <name> --value <num> --direction <higher_better|lower_better>]
+      [--axis <name> --value <num> --direction <higher_better|lower_better> [--baseline-reset]]
   bar-register.py verify --cycle <id>
   bar-register.py list   --cycle <id>
 
 축 메타(--axis/--value/--direction)는 *선택적*. 주면 #008 ratchet 이 그 축을 사이클을
 넘어 비교(단조 비감소 강제). 안 주면 자유텍스트 바로 남아 cross-cycle 비교 대상 아님.
+--baseline-reset 는 그 축의 이전 watermark 를 *대체*(accept-new-baseline, F3) — 빼기
+불가능한데 정당하게 회귀해야 하는 축을 표현. 명시·immutable·pass 리뷰가 게이트.
 """
 import argparse
 import json
@@ -69,12 +71,21 @@ def cmd_register(args):
         fields["axis"] = args.axis
         fields["value"] = args.value
         fields["direction"] = args.direction
+        # accept-new-baseline (F3): 이 축 바가 이전 watermark 를 *대체*함을 선언.
+        # 빼기 불가능한데 정당하게 회귀(예: mechanism-count +1)할 때만. 명시·리뷰·체인이 게이트.
+        if args.baseline_reset:
+            fields["baseline_reset"] = True
+    elif args.baseline_reset:
+        print("ERROR: --baseline-reset 는 축 메타(--axis/--value/--direction)와 함께만 의미 있음 "
+              "(ratchet 축이 없는 바는 cross-cycle 비교 대상이 아님).", file=sys.stderr)
+        sys.exit(1)
     entry = chainlog.append_entry(bar_file(args.cycle), fields)
     print(f"REGISTERED bar [{args.id}] stage={args.stage} in cycle {args.cycle}")
     print(f"  criterion: {args.criterion}")
     print(f"  measure:   {args.measure}")
     if "axis" in fields:
-        print(f"  axis:      {args.axis} = {args.value} ({args.direction})  [#008 ratchet]")
+        tag = " baseline-reset" if fields.get("baseline_reset") else ""
+        print(f"  axis:      {args.axis} = {args.value} ({args.direction})  [#008 ratchet{tag}]")
     print(f"  hash: {entry['hash'][:16]}...")
     print()
     print("주의: 이 항목을 *수정*(바 낮추기)하면 verify에서 탐지됨.")
@@ -102,7 +113,8 @@ def cmd_list(args):
         print(f"[{e['id']}] ({e['stage']}) {e['criterion']}")
         print(f"  measure: {e['measure']}")
         if "axis" in e:
-            print(f"  axis:    {e['axis']} = {e['value']} ({e['direction']})  [#008 ratchet]")
+            tag = " baseline-reset" if e.get("baseline_reset") else ""
+            print(f"  axis:    {e['axis']} = {e['value']} ({e['direction']})  [#008 ratchet{tag}]")
         print()
 
 
@@ -122,6 +134,9 @@ def main():
     p_reg.add_argument("--axis", help="사이클을 넘어 안정적인 축 이름 (예: test-coverage)")
     p_reg.add_argument("--value", type=float, help="이 바의 수치 값 (ratchet 비교 대상)")
     p_reg.add_argument("--direction", choices=DIRECTIONS, help="higher_better | lower_better")
+    p_reg.add_argument("--baseline-reset", action="store_true",
+                       help="이 축 바로 이전 watermark 를 *대체*(accept-new-baseline, F3). "
+                            "빼기 불가능한 정당 회귀용 — 축 메타 필수.")
     p_reg.set_defaults(func=cmd_register)
 
     p_ver = sub.add_parser("verify", help="Verify bar chain integrity")
