@@ -20,5 +20,8 @@ Harness Engineering — 솔로 dev 제품 개발 scaffolding. 사이클 진입 �
 
 - `harness:install` — 첫 실행 온보딩 (L1 user-rule 대화 생성)
 - `harness:cycle` — pre-cycle 진입 게이트 + 산출물 scaffold
+- `harness:plan` — intent → spec/design/plan 실행 계약
+- `harness:work` — 승인된 plan slice 구현 + 검증
+- `harness:review` — spec/design/plan 기준 독립 리뷰
 
 개념 문서는 `00-overview.md` ~ `13-operational-layer.md`, 규칙 레이어링은 `12-rule-layering.md`를 참고하세요.

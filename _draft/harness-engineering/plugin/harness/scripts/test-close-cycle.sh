@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
 set -u
-cd "$(dirname "$0")/../../.." || exit 1   # harness-engineering 루트로
+HERE="$(cd "$(dirname "$0")" && pwd)"
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+cd "$TMP" || exit 1
 CID=_tmp-close
 ROOT="cycles/$CID"
-BR="python3 plugin/harness/scripts/bar-register.py"
-RR="python3 plugin/harness/scripts/review-register.py"
-CC="python3 plugin/harness/scripts/close-cycle.py"
-
-# 실제 active 사이클이 있으면 clobber 위험 — 생략
-if [ -L cycles/active ] && [ "$(readlink cycles/active)" != "$CID" ]; then
-  echo "SKIP: 실제 active 사이클 존재 — close self-test 생략"; exit 0
-fi
+BR="python3 $HERE/bar-register.py"
+RR="python3 $HERE/review-register.py"
+CC="python3 $HERE/close-cycle.py"
 
 setup() {
   rm -rf "$ROOT"; mkdir -p "$ROOT"

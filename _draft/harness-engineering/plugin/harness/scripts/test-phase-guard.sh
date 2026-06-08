@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # test-phase-guard.sh — phase-guard hook + phase-advance + feedback 기록 hermetic self-test (#013b).
-#   B1: design/planning + 코드파일 → 차단(exit2); implementation·.md·active없음 → 통과(exit0)
+#   B1: active 없음/analysis/design/planning + 코드파일 → 차단(exit2); tech decision doc은 active 없음에서 차단
 #   B2: phase-advance 인접 전진 허용 + metrics 갱신; 스킵·역행 거부
 #   B3: 차단 시 .claude/.feedback/feedback.jsonl 에 구조화 1줄; 기록 실패해도 차단 exit2 불변
 set -u
@@ -22,22 +22,53 @@ run_guard() { # $1=tool $2=file ; stdin JSON 으로 phase-guard 호출, exit cod
     echo "{\"tool_name\":\"$1\",\"tool_input\":{\"file_path\":\"$2\"}}" \
     | CLAUDE_PROJECT_DIR="$P" python3 "$GUARD" >/dev/null 2>&1 ); echo $?
 }
+run_bash_guard() { # $1=command ; stdin JSON 으로 phase-guard 호출, exit code 반환
+  ( cd "$P" && CLAUDE_PROJECT_DIR="$P" \
+    python3 -c 'import json,sys; print(json.dumps({"tool_name":"Bash","tool_input":{"command":sys.argv[1]}}))' "$1" \
+    | CLAUDE_PROJECT_DIR="$P" python3 "$GUARD" >/dev/null 2>&1 ); echo $?
+}
 
 # ========== B1: 차단/통과 매트릭스 ==========
+write_phase analysis
+[ "$(run_guard Edit src/app.py)" = "2" ]   || fail "analysis + .py Edit 가 차단(exit2) 안 됨"
 write_phase design
 [ "$(run_guard Edit src/app.py)" = "2" ]   || fail "design + .py Edit 가 차단(exit2) 안 됨"
 write_phase planning
 [ "$(run_guard Write lib/x.kt)" = "2" ]     || fail "planning + .kt Write 가 차단 안 됨"
+write_phase planning
+[ "$(run_bash_guard "cat > src/app.py")" = "2" ] || fail "planning + Bash redirection .py 가 차단 안 됨"
+write_phase planning
+[ "$(run_bash_guard "pytest src/app.py")" = "0" ] || fail "planning + Bash read/test 명령이 오탐 차단됨"
 write_phase design
 [ "$(run_guard Edit docs/design.md)" = "0" ] || fail "design + .md 가 통과(exit0) 안 됨(설계문서 차단=거짓양성)"
 write_phase implementation
-[ "$(run_guard Edit src/app.py)" = "0" ]    || fail "implementation + .py 가 통과 안 됨(거짓양성)"
+[ "$(run_guard Edit src/app.py)" = "2" ]    || fail "implementation 이지만 phase_gates 없음인데 .py 가 허용됨"
+python3 - "$P/cycles/$CY/metrics.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+m = json.load(open(p))
+m["current_phase"] = "implementation"
+m["phase_gates"] = {
+    "analysis": {"type": "solo", "evidence": ["docs/analysis.md"], "user_confirmed": True},
+    "design": {"type": "collaborative", "evidence": ["docs/design.md"], "user_confirmed": True},
+    "planning": {"type": "collaborative", "evidence": ["docs/plan.md"], "user_confirmed": True},
+}
+json.dump(m, open(p, "w"), ensure_ascii=False)
+PY
+mkdir -p "$P/docs"; echo a > "$P/docs/analysis.md"; echo d > "$P/docs/design.md"; echo p > "$P/docs/plan.md"
+[ "$(run_guard Edit src/app.py)" = "0" ]    || fail "implementation + phase_gates 충족인데 .py 가 통과 안 됨"
 write_phase design
 [ "$(run_guard Read src/app.py)" = "0" ]    || fail "Read(비편집 도구) 가 통과 안 됨"
-# active 없음 → 통과
+# active 없음 → 차단. 하네스 밖 코드 변경을 허용하면 품질 게이트가 무력화됨.
 rm "$P/cycles/active"
-[ "$(run_guard Edit src/app.py)" = "0" ]    || fail "active 없음인데 차단됨(fail-open 위반)"
+[ "$(run_guard Edit src/app.py)" = "2" ]    || fail "active 없음인데 코드 변경이 허용됨"
+[ "$(run_guard Edit notes/todo.md)" = "0" ] || fail "active 없음 + 일반 .md 문서 작업이 오탐 차단됨"
+[ "$(run_guard Edit docs/architecture.md)" = "2" ] || fail "active 없음 + architecture 문서가 허용됨"
+[ "$(run_guard Edit docs/adr/0001-choice.md)" = "2" ] || fail "active 없음 + ADR 문서가 허용됨"
+[ "$(run_bash_guard "cat > docs/design-doc.md")" = "2" ] || fail "active 없음 + Bash design-doc 생성이 허용됨"
 ln -s "$CY" "$P/cycles/active"
+write_phase design
+[ "$(run_guard Edit docs/architecture.md)" = "0" ] || fail "active cycle 내부 tech decision doc 이 오탐 차단됨"
 
 # ========== B3: feedback 기록 ==========
 rm -rf "$P/.claude/.feedback"
@@ -76,5 +107,30 @@ write_phase analysis
 [ "$(adv implementation --force)" = "0" ] || fail "--force 스킵이 거부됨"
 [ "$(cur_phase)" = "implementation" ]     || fail "--force 후 phase 갱신 실패"
 grep -q '"kind": "phase-force"' "$P/cycles/$CY/blackbox.jsonl" || fail "--force 가 blackbox 에 기록 안 됨"
+
+# ========== B4: 새 metrics phase_gates 는 evidence/user-confirm 없이는 전진 차단 ==========
+write_phase analysis
+python3 - "$P/cycles/$CY/metrics.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+m = json.load(open(p))
+m["current_phase"] = "analysis"
+m["phase_status"] = {"analysis": "in-progress", "design": "todo", "planning": "todo", "implementation": "todo", "validation": "todo"}
+m["phase_gates"] = {
+    "analysis": {"type": "solo", "evidence": [], "user_confirmed": True},
+    "design": {"type": "collaborative", "evidence": [], "user_confirmed": False},
+    "planning": {"type": "collaborative", "evidence": [], "user_confirmed": False},
+    "implementation": {"type": "solo", "evidence": [], "user_confirmed": True},
+    "validation": {"type": "solo", "evidence": [], "user_confirmed": True},
+}
+json.dump(m, open(p, "w"), ensure_ascii=False)
+PY
+[ "$(adv design)" != "0" ] || fail "phase_gates 있는데 evidence 없이 analysis→design 이 허용됨"
+mkdir -p "$P/docs"; echo "# analysis" > "$P/docs/analysis.md"
+[ "$(adv design --evidence docs/analysis.md)" = "0" ] || fail "evidence 있는 analysis→design 이 거부됨"
+[ "$(cur_phase)" = "design" ] || fail "evidence 전진 후 current_phase 가 design 아님"
+echo "# design" > "$P/docs/design.md"
+[ "$(adv planning --evidence docs/design.md)" != "0" ] || fail "collaborative design 이 confirm 없이 전진 허용됨"
+[ "$(adv planning --evidence docs/design.md --confirm-user)" = "0" ] || fail "confirm 있는 design→planning 이 거부됨"
 
 echo "phase-guard self-test: PASS"

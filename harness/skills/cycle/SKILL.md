@@ -166,7 +166,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/cycle-init.py "<사이클 이름>" --type 
 각 phase마다 AI가 지켜야 할 것:
 1. **행동 전 현재 phase 확인** — `current_phase` 읽고, 그 단계 작업만. 단계 건너뛰기/섞기 금지(P9).
 2. **산출물은 파일로** — 지정 저장 위치(cycle-card Phase 표)에 *파일*로 남긴다. 채팅 표 = 산출물 아님(P8).
-3. **Phase 완료 검증** — "산출물이 지정 위치에 파일로 존재하는가" 확인 후에만 다음 phase로. cycle-card 상태를 `✅ done`으로, metrics.json `current_phase` 갱신.
+3. **Phase 완료 검증** — "산출물이 지정 위치에 파일로 존재하는가" 확인 후에만 다음 phase로. `phase-advance.py`에 `--evidence <path>`를 넘긴다. collaborative phase는 사용자 확인 후 `--confirm-user`도 필요하다. cycle-card 상태를 `✅ done`으로, metrics.json `current_phase` 갱신.
 4. **다음 단계 자동 제안** — 완료 시 "다음은 Design phase입니다. 넘어갈까요?"로 전환을 *AI가 제안*. 사용자가 "쭉 넘어가자" 해야만 진행하는 구조는 AI 실패.
 
 ### Collaborative 산출물 게이트 (R-PG01 강제)
@@ -179,6 +179,19 @@ Design Doc·ADR·로드맵 같은 **collaborative 산출물은 "주입 ≠ 강�
 - collaborative phase는 사용자 확인 게이트를 통과하기 전엔 `current_phase`를 다음으로 넘기지 않는다.
 
 > 산출물 유형: **solo**(Analysis·Implementation — AI가 진행 후 보고) vs **collaborative**(Design·Planning — draft→review→finalize 필수). cycle-card Phase 표의 "유형" 열 참조.
+
+정당한 phase 전진 예:
+
+```bash
+# Analysis 산출물 파일이 있어야 Design 으로 전진
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/phase-advance.py design \
+  --evidence docs/v2/analysis.md
+
+# Design Doc 이 사용자 review/finalize 를 거친 뒤에만 Planning 으로 전진
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/phase-advance.py planning \
+  --evidence docs/v2/design-doc.md \
+  --confirm-user
+```
 
 ## 종료 (close 게이트)
 

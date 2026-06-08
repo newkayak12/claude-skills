@@ -4,8 +4,9 @@ token-profile.py — SessionStart 주입 표면의 토큰 프로파일러 (토�
 
 rule-inject.py(SessionStart hook)는 매 세션 `rules-merge effective`를 컨텍스트로 흘린다.
 draft 레이아웃은 L0(06-rules.md)을 *플러그인 밖*에 두므로 draft에서 직접 재면 L0=0 →
-실제 설치(EXPORT) 컨텍스트와 다르다(#007형 사각). 그래서 이 도구는 *항상* hermetic tmp로
-export한 뒤 그 안에서 측정한다 — 진짜 설치 표면을 본다.
+실제 설치(EXPORT) 컨텍스트와 다르다(#007형 사각). 그래서 draft에서는 hermetic tmp로
+export한 뒤 그 안에서 측정한다. 이미 평탄화된 설치 payload 안에서는 현재 payload를 직접
+측정한다 — 둘 다 진짜 설치 표면을 본다.
 
 측정 대상(빈 L1 기준):
   - rule-inject.py 전체 출력 (chars + ~tokens=chars/4)  ← 세션당 실제 주입량
@@ -39,6 +40,7 @@ from pathlib import Path
 
 _HERE = Path(__file__).resolve()
 EXPORT_SCRIPT = _HERE.parent / "harness-export.py"
+PAYLOAD_ROOT = _HERE.parents[1]
 
 CHARS_PER_TOKEN = 4  # 거친 근사 — 절대 토큰이 아니라 축(axis)으로 사용
 
@@ -110,13 +112,19 @@ def _breakdown(rules_merge: Path, env, stage=None) -> dict:
 
 
 def _measure(stage=None):
-    """hermetic export + 빈 L1 환경에서 주입 표면을 측정 → dict."""
+    """hermetic 빈 L1 환경에서 설치 주입 표면을 측정 → dict."""
     tmp = Path(tempfile.mkdtemp())
-    dest = tmp / "harness"
-    rc, _out = _run([sys.executable, str(EXPORT_SCRIPT), "--dest", str(dest)], os.environ.copy())
-    if rc != 0:
-        print(f"ERROR: export 실패 (rc={rc})", file=sys.stderr)
-        sys.exit(1)
+    if EXPORT_SCRIPT.exists():
+        dest = tmp / "harness"
+        rc, _out = _run([sys.executable, str(EXPORT_SCRIPT), "--dest", str(dest)], os.environ.copy())
+        if rc != 0:
+            print(f"ERROR: export 실패 (rc={rc})", file=sys.stderr)
+            sys.exit(1)
+    else:
+        dest = PAYLOAD_ROOT
+        if not (dest / "06-rules.md").exists():
+            print(f"ERROR: 평탄화 payload 아님: {dest}", file=sys.stderr)
+            sys.exit(1)
 
     inject = dest / "hooks" / "rule-inject.py"
     merge = dest / "scripts" / "rules-merge.py"

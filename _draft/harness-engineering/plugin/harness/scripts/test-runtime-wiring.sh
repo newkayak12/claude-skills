@@ -12,11 +12,11 @@
 # 검증(배선 계약):
 #   W1 hooks.json valid JSON
 #   W2 hooks.json 이 참조하는 모든 command 스크립트가 export 에 *실재*(참조↔파일 정합)
-#   W3 필수 배선 존재: SessionStart⊇rule-inject · PreToolUse(Edit매처)⊇{hypothesis-immutability,stage-inject}
-#      · PreToolUse(Bash매처)⊇active-symlink-guard
+#   W3 필수 배선 존재: SessionStart⊇rule-inject · PreToolUse(Edit매처)⊇{hypothesis-immutability,stage-inject,phase-guard}
+#      · PreToolUse(Bash매처)⊇{phase-guard,active-symlink-guard}
 #   W4 plugin.json valid + name==harness
-#   W5 스킬 discoverable: skills/{cycle,install}/SKILL.md 에 name·description frontmatter 존재
-#      (런타임 harness:cycle/harness:install 자동트리거의 전제 — 깨지면 스킬이 조용히 사라짐)
+#   W5 스킬 discoverable: skills/{cycle,install,plan,work,review}/SKILL.md 에 name·description frontmatter 존재
+#      (런타임 harness:* 자동트리거의 전제 — 깨지면 스킬이 조용히 사라짐)
 #   W6 런타임-등가 주입(hermetic mirror): export 의 rule-inject 가 경계+invariant L0 주입·R-CD 부재
 # populated L0(export 컨텍스트)로 빌드해 친다 — draft 는 L0=0이라 vacuous.
 set -u
@@ -76,10 +76,12 @@ ss = scripts_in(cmds("SessionStart"))
 if not any(p.endswith("rule-inject.py") for p in ss):
     bad("SessionStart 에 rule-inject.py 미배선 — 룰 자동주입 런타임 사라짐")
 edit = scripts_in(cmds("PreToolUse", "Edit"))
-for need in ("hypothesis-immutability.py", "stage-inject.py"):
+for need in ("hypothesis-immutability.py", "stage-inject.py", "phase-guard.py"):
     if not any(p.endswith(need) for p in edit):
         bad(f"PreToolUse(Edit 매처)에 {need} 미배선 — 차단/단계주입 런타임 사라짐")
 bash = scripts_in(cmds("PreToolUse", "Bash"))
+if not any(p.endswith("phase-guard.py") for p in bash):
+    bad("PreToolUse(Bash 매처)에 phase-guard.py 미배선 — Bash 코드생성 우회 차단 사라짐")
 if not any(p.endswith("active-symlink-guard.py") for p in bash):
     bad("PreToolUse(Bash 매처)에 active-symlink-guard.py 미배선 — 수동우회 차단 사라짐")
 
@@ -93,7 +95,7 @@ except Exception as e:
     bad(f"plugin.json 파싱 불가 — {e}")
 
 # W5 스킬 discoverability
-for skill in ("cycle", "install"):
+for skill in ("cycle", "install", "plan", "work", "review"):
     sk = os.path.join(exp, "skills", skill, "SKILL.md")
     if not os.path.isfile(sk):
         bad(f"스킬 {skill}/SKILL.md 부재 — harness:{skill} 런타임 트리거 불가"); continue
@@ -120,5 +122,5 @@ echo "$out" | grep -qE "^## R-PG01 \(L0!\): " \
 echo "$out" | grep -qE "^## R-CD0" \
   && { note "FAIL: R-CD 코딩룰이 SessionStart 에 누출 — 계약 위반(stage-inject 몫)"; fail=1; }
 
-[ $fail -eq 0 ] && echo "runtime-wiring self-test: PASS (hooks.json↔파일 정합 · 필수배선 3종 · 스킬 2종 discoverable · 주입계약)"
+[ $fail -eq 0 ] && echo "runtime-wiring self-test: PASS (hooks.json↔파일 정합 · 필수배선 3종 · 스킬 5종 discoverable · 주입계약)"
 exit $fail

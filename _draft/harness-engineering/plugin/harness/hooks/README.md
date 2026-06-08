@@ -38,15 +38,15 @@
 | | |
 |---|---|
 | **이벤트** | `PreToolUse` (matcher: `Edit\|Write\|MultiEdit\|NotebookEdit`) |
-| **역할** | active 사이클 `current_phase` ∈ {design,planning} 인데 *코드 파일*(.py/.kt/.js/… 소스 확장자) 편집 시도 → **차단**(exit 2) |
-| **막는 것** | R-PG01 "No code before design" 위반 — 설계/계획 단계에서 코드부터 써버리는 속도 우선 행동. rule-inject 가 R-PG01 을 *주입*해도 모델이 어긴다(실사용 피드백) → 차단성 hook 으로 *물리 게이트*화 (주입≠강제, 원칙2) |
-| **통과** | 비코드(.md 설계문서·ADR·.json/.yaml 설정) / implementation·validation phase / active 없음 → exit 0. 설계문서 작성을 막지 않음 |
+| **역할** | active 사이클이 없거나 `current_phase` ∉ {implementation,validation} 이거나 pre-code `phase_gates` evidence/confirm이 미충족인데 *코드 파일*(.py/.kt/.js/… 소스 확장자) 편집/생성 시도 → **차단**(exit 2) |
+| **막는 것** | 하네스 밖 코드 작업 + R-PG01 "No code before design" 위반 — cycle/phase 전진 없이 코드부터 써버리는 속도 우선 행동. rule-inject 가 R-PG01 을 *주입*해도 모델이 어긴다(실사용 피드백) → 차단성 hook 으로 *물리 게이트*화 (주입≠강제, 원칙2) |
+| **통과** | 비코드(.md 분석노트·설계문서·ADR·.json/.yaml 설정) / implementation·validation phase → exit 0. 분석·설계문서 작성을 막지 않음 |
 | **마찰 기록** | 차단 시 `feedbacklib` 로 `.claude/.feedback/feedback.jsonl` 에 이벤트 기록(beta report 원료). 기록 실패해도 차단 exit2 불변(fail-soft) |
-| **정당 경로** | phase 전진은 `scripts/phase-advance.py`(인접 순서 강제, --force=blackbox). 코딩은 implementation 부터 |
-| **정직한 한계** | metrics.json `current_phase` 직접편집 우회는 못 막음(active-symlink-guard 가 mv 못 막듯). 전환 무결성 강화는 후속 사이클 |
+| **정당 경로** | phase 전진은 `scripts/phase-advance.py`(인접 순서 + 산출물 evidence + collaborative 사용자 확인 강제, --force=blackbox). 코딩은 implementation 부터이며, hook도 `phase_gates`를 재검증한다 |
+| **정직한 한계** | metrics.json `current_phase` 직접편집 우회는 못 막음(active-symlink-guard 가 mv 못 막듯). Bash 는 흔한 파일 생성 패턴(`>`, `tee`, `touch`, `cp`, `mv`, `sed -i`)만 잡는다 |
 | **fail-open** | active 없음·metrics 없음·phase 비대상·비코드·JSON 파싱 실패 → exit 0 |
 
-→ `hypothesis-immutability`(데이터)·`active-symlink-guard`(종료)에 이어 *단계 순서*를 물리로 못박는 세 번째 차단성 Sensor. `phase-advance.py`(정당 전환) + `phase-guard`(위반 차단) 가 *짝* (#013b).
+→ `hypothesis-immutability`(데이터)·`active-symlink-guard`(종료)에 이어 *단계 순서*를 물리로 못박는 세 번째 차단성 Sensor. `phase-advance.py`(산출물 evidence + 사용자 확인 게이트) + `phase-guard`(implementation 전 코드 차단) 가 *짝* (#013b).
 
 ### `active-symlink-guard.py` — PreToolUse
 

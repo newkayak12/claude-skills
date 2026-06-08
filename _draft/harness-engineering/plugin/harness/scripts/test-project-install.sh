@@ -60,8 +60,12 @@ VH="$P1/.claude/harness"
   echo '{}' | python3 "$P1/.claude/harness/hooks/rule-inject.py" >/dev/null 2>&1 \
     || { echo "FAIL 2c: rule-inject 비정상(06-rules.md 자급 해석 실패?)"; exit 3; }
   echo '{"tool_name":"Edit","tool_input":{"file_path":"x.py"}}' \
+    | python3 "$P1/.claude/harness/hooks/phase-guard.py" >/dev/null 2>&1
+  rc=$?
+  [ "$rc" = "2" ] || { echo "FAIL 2b: phase-guard no active 코드 차단 실패(exit=$rc, 기대 2)"; exit 3; }
+  echo '{"tool_name":"Edit","tool_input":{"file_path":"notes/todo.md"}}' \
     | python3 "$P1/.claude/harness/hooks/phase-guard.py" >/dev/null 2>&1 \
-    || { echo "FAIL 2b: phase-guard 비정상(no active → fail-open 기대)"; exit 3; }
+    || { echo "FAIL 2c: phase-guard no active 일반 문서 오탐 차단"; exit 3; }
 ) || fail=1
 
 # ── 3) ambient governance — CLAUDE.md 계약 (B3) ──────────────────────────────
