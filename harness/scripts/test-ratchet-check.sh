@@ -87,5 +87,27 @@ $RC check --cycle _cur >/dev/null 2>&1 || { echo "FAIL 9: lower_better 동률(27
 mk_axis_cycle _cur mechcount 26 lower_better
 $RC check --cycle _cur >/dev/null 2>&1 || { echo "FAIL 10: lower_better 개선(26) 차단됨"; fail=1; }
 
+# 11) accept-new-baseline (F3): floor mechcount=27. 일반 28 은 회귀 차단(8b)이지만
+#     --baseline-reset 선언은 *의도된 신규 baseline* → 회귀로 막지 않음(exit 0).
+rm -rf cycles/_cur; mkdir -p cycles/_cur
+: > cycles/_cur/bar.jsonl; : > cycles/_cur/review.jsonl
+$BR register --cycle _cur --id B1 --stage test --criterion c --measure m \
+    --axis mechcount --value 28 --direction lower_better --baseline-reset >/dev/null
+$RC check --cycle _cur >/dev/null 2>&1 || { echo "FAIL 11: baseline-reset(28) 가 회귀로 차단됨"; fail=1; }
+
+# 12) reset 바가 *closed+pass* 면 floor 가 신규 baseline(28)으로 *대체*(27 watermark 무시)
+$RR register --cycle _cur --id R1 --criterion-id B1 --verdict pass --evidence e --reviewer t >/dev/null
+printf '{"cycle_id":"_cur","status":"closed","closed_at":"2026-02-01T00:00:00+00:00"}\n' > cycles/_cur/metrics.json
+$RC floor 2>/dev/null | grep -q 'mechcount.*28.*baseline-reset' || { echo "FAIL 12: reset 후 floor 가 28[baseline-reset]로 대체 안 됨"; fail=1; }
+
+# 13) reset 후 floor=28 가 권위 → 일반(비-reset) 28 은 이제 통과(case 8b 와 대조:
+#     reset 전엔 같은 28 이 차단됐다 → floor 가 27→28 로 *옮겨졌음*을 입증)
+mk_axis_cycle _cur2 mechcount 28 lower_better
+$RC check --cycle _cur2 >/dev/null 2>&1 || { echo "FAIL 13: reset 후 floor(28)인데 일반 28 이 차단됨"; fail=1; }
+
+# 14) 그래도 29 는 차단 — reset 은 ratchet 을 끄는 게 아니라 baseline 만 옮긴다
+mk_axis_cycle _cur3 mechcount 29 lower_better
+if $RC check --cycle _cur3 >/dev/null 2>&1; then echo "FAIL 14: reset 후 29 가 통과됨(baseline 만 옮겨야)"; fail=1; fi
+
 [ $fail -eq 0 ] && echo "ratchet-check self-test: PASS"
 exit $fail

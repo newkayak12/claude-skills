@@ -15,7 +15,8 @@
         │
         ▼
 [2] harness:install  (또는 동등 명령)
-        │
+        │  - 대상 프로젝트 .claude/ 에 hooks + settings.json + CLAUDE.md scaffold (§2.1)
+        │  - 전역 플러그인은 *설치기/생성기*로만 동작
         ▼
 [3] Interactive user-rule 정의       ← 첫 실행 시 1회
         │  - 코드 스타일 (tool pointer)
@@ -40,6 +41,27 @@
 [7] 회고 → carryover → 다음 사이클
 ```
 
+### §2.1 Delivery model — install = 프로젝트 `.claude/` scaffold = ambient governance
+
+하네스의 전달 단위는 *전역 플러그인 한 벌*이 아니라 **대상 프로젝트의 `.claude/`** 다.
+`harness:install`(`project-install.py`)이 대상 레포의 `.claude/` 에 hook 페이로드 +
+`settings.json`(hook 배선, `$CLAUDE_PROJECT_DIR/.claude/harness` 참조) + `CLAUDE.md`
+(사이클 규율 governance)를 vendoring·scaffold 한다(멱등·기존 보존). `.claude/` 자동 로드가
+두 가지를 동시에 푼다:
+
+- **Per-project 타겟팅** — 레포마다 자기 버전(전역 한 버전에 갇히지 않음).
+- **Ambient governance** — "그 레포에선 자동으로 하네스 아래서 AI 가 동작"(사이클이 opt-in 호출에 갇히지 않음).
+
+역할 분담(드리프트 방지 원칙):
+- **강제**(invariant·plan-before-code)는 **hook** 이 결정론으로 — 스킬(AI 재량)이 아니다.
+- **안내**는 scaffold 된 **CLAUDE.md** 가 ambient 로.
+- **스킬**은 대화형 진입점(`install`/`cycle`)일 뿐.
+- `cycles/`·`.harness/` 는 이미 프로젝트 로컬.
+
+전역 플러그인은 *설치기/생성기*로 축소되고, 실제 규율은 프로젝트 로컬에 산다. 이 모델을 벗어나
+(전역 단일 버전·명시 호출-only 사이클로) 회귀하지 않는다 — delivery 가 §1 의 "install → 적용"
+정신을 만족시키는 *유일* 경로다.
+
 ## §3. 이 Goal이 설계에 부과하는 제약
 
 이 목표가 결정된 이상 다음이 *반드시 충족*되어야 한다:
@@ -49,6 +71,7 @@
 3. **AI 작동 메커니즘 명시** — 설치 후 AI가 *언제 무엇을 로드*하는지 정의돼 있어야 한다 (devils-advocate `CA-1`).
 4. **단계별 적용 지점** — 기획/개발/테스트 각 단계에서 *어떤 hook·skill·문서가 활성화*되는지 매핑이 있어야 한다.
 5. **사이클 단위 가치 증명** — 첫 사이클 1회를 끝낸 사용자가 "이 하네스가 도움이 됐다"고 말할 수 있어야 한다. 둘째 사이클까지 가치를 미루지 않는다.
+6. **Per-project ambient delivery** — install 은 대상 프로젝트 `.claude/` 에 scaffold 하여 그 레포 안에서 *자동으로* 적용된다(§2.1). 전역 한 버전·명시 호출-only 로 회귀하지 않는다.
 
 ## §4. *Goal이 아닌* 것 (Boundaries)
 
@@ -69,6 +92,7 @@
 ## §6. Change log
 
 - 2026-05-28 — 최초 작성. 출처: 사용자 명시적 statement ("marketplace 설치 → harness:~ install → interactive user-rule → 기획-개발-테스트 사이클").
+- 2026-06-08 — §2.1 추가: delivery 모델("install = 프로젝트 `.claude/` scaffold = ambient governance") 명문화 + §2 step [2]·§3.6 반영. 사유: delivery 모델 재설계(P0 #014/#014b)가 GOAL 본문에 미반영이라 같은 드리프트 재발 위험(TODO P0 ⓒ).
 
 ## §7. 관련 문서
 

@@ -13,9 +13,14 @@ unlink 하므로, Bash 를 가로채는 active-symlink-guard hook 의 대상이 
 #008(ratchet): pass-review 체크를 통과해도, 이 cycle 이 *선언한 축*이 이전 닫힌 cycle 의
 watermark 보다 회귀하면 종료를 거부한다(cross-cycle 단조 비감소). 축 미선언 cycle 은 무영향.
 
+--force 는 게이트(리뷰/ratchet)를 무시하고 닫되 *흔적을 남긴다*: `--adr <존재하는 파일>` 결박
+(없으면 거부) + blackbox.jsonl 에 `{kind:"force-close", adr, regressions, ...}` append.
+게이트 우회 기록은 게이트만큼 중요하다(phase-advance --force 와 대칭, F2). 정당한 신규 baseline
+상향은 force 가 아니라 bar-register --baseline-reset 으로(리뷰되는 1급 선언, F3).
+
 Usage:
-  close-cycle.py            # cycles/active 를 닫는다 (게이트 통과 시)
-  close-cycle.py --force    # 게이트 무시 강제 종료 (ADR 필수 — 위험)
+  close-cycle.py                       # cycles/active 를 닫는다 (게이트 통과 시)
+  close-cycle.py --force --adr <path>  # 게이트 무시 강제 종료 (ADR 결박 + blackbox 기록)
 
 Exit:
   0 = 닫힘
@@ -61,9 +66,20 @@ def verify_or_block(path: Path, label: str):
         sys.exit(2)
 
 
+def _append_blackbox(cdir: Path, entry: dict) -> None:
+    """게이트 우회 흔적을 blackbox.jsonl 에 append (phase-advance 와 동일 규약, fail-soft)."""
+    entry.setdefault("ts", datetime.now(timezone.utc).isoformat())
+    try:
+        with (cdir / "blackbox.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 def main():
     parser = argparse.ArgumentParser(description="Close the active harness cycle (gated).")
-    parser.add_argument("--force", action="store_true", help="게이트 무시 강제 종료 (ADR 필수)")
+    parser.add_argument("--force", action="store_true", help="게이트 무시 강제 종료 (--adr 결박 + blackbox 기록)")
+    parser.add_argument("--adr", help="--force 시 *필수* — 우회 사유를 담은 존재하는 ADR/문서 경로")
     args = parser.parse_args()
 
     cid = resolve_active()
@@ -75,7 +91,26 @@ def main():
     metrics_path = cdir / "metrics.json"
 
     if args.force:
-        print(f"[WARN] --force: 게이트 무시하고 '{cid}' 강제 종료. ADR 작성 필수.", file=sys.stderr)
+        # ADR 결박 — 우회를 사유 문서에 묶는다(존재 검사). 없으면 force 자체를 거부.
+        if not args.adr or not Path(args.adr).exists():
+            print(
+                f"🛑 CLOSE 차단 — --force 종료에는 --adr <존재하는 파일> 이 필수다.\n"
+                f"   우회 사유를 ADR/문서로 남기고 그 경로를 결박하세요: "
+                f"close-cycle.py --force --adr docs/adr/00XX-....md\n"
+                f"   (게이트 우회 기록은 게이트만큼 중요 — F2)",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        # 무엇을 우회했는지 기록: ratchet 회귀를 record-only 로 산출(차단 아님).
+        regs = ratchetlib.find_regressions(cid)
+        _append_blackbox(cdir, {
+            "kind": "force-close",
+            "cycle": cid,
+            "adr": args.adr,
+            "regressions": regs,
+            "note": "close-cycle 게이트(리뷰/ratchet)를 --force 로 우회",
+        })
+        print(f"[WARN] --force: 게이트 무시하고 '{cid}' 강제 종료. ADR={args.adr} · blackbox 기록됨.", file=sys.stderr)
     else:
         # 1) 체인 무결성 (있는 것만)
         if hyp_path.exists() and hyp_path.stat().st_size > 0:
