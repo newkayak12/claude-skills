@@ -4,7 +4,7 @@ phase-guard.py — PreToolUse hook (Böckeler *Sensor*, 차단).
 
 active 사이클이 없거나 `current_phase` 가 implementation/validation 이 아닐 때 *코드 파일* 편집을 차단한다.
 implementation/validation 이어도 analysis/design/planning evidence와 collaborative user confirmation이
-metrics.json `phase_gates`에 없으면 코드 파일 편집을 차단한다.
+검증된 `phase.jsonl` chain 에 없으면 코드 파일 편집을 차단한다.
 아키텍처/모델/ADR/Design Doc 같은 tech decision 문서는 코드가 아니어도 active cycle 없이는 차단한다.
 R-PG01 "No code before design" 을 soft 권고(rule-inject)에서 *물리 게이트*로 끌어올린다.
 
@@ -22,10 +22,13 @@ R-PG01 "No code before design" 을 soft 권고(rule-inject)에서 *물리 게이
 
 차단 시 feedbacklib 로 `.claude/.feedback` 에 마찰 기록(beta report 원료).
 
-정직한 한계 (#013b H3 kill-line):
-  current_phase 의 정당 전환은 `phase-advance.py`. active cycle 이 없으면 코드 변경을 막아
-  하네스 밖 작업을 차단한다. metrics.json 직접편집으로 phase만 바꿔도 phase_gates evidence가
-  없으면 코드 변경은 계속 차단한다.
+신뢰 앵커 (H1 — #013b H3 kill-line 해소):
+  phase-guard 는 metrics.json 이 아니라 tamper-evident `phase.jsonl` chain 에서 current_phase·
+  게이트를 도출한다. 이 체인의 유일 기록자는 phase-advance.py 이고, hypothesis-immutability 가
+  직접 Edit 을, verify_chain 이 Bash append 를, "부재→차단" 이 삭제를 막는다. 따라서
+  metrics.json 직접편집·체인 손상으로는 게이트를 열 수 없다(체인 깨짐 → 전면 차단).
+  한계(bars·hypotheses 와 동일): Bash 로 유효 해시 체인을 통째로 위조하는 결정형 공격까지는
+  막지 못한다 — 솔로-dev 위협모델 밖(tamper-evident ≠ 암호서명).
 
 Wiring (hooks.json):
   "PreToolUse": matcher "Edit|Write|MultiEdit|NotebookEdit|Bash" → phase-guard.py
@@ -101,47 +104,80 @@ def _read_input():
         return None
 
 
-def _active_metrics():
-    if not ACTIVE.exists():
-        return None
-    cid = Path(os.readlink(ACTIVE) if ACTIVE.is_symlink() else ACTIVE.name).name
-    mp = CYCLES / cid / "metrics.json"
-    if not mp.exists():
-        return None
+def _import_chainlog():
+    """scripts/chainlog 를 sys.path 에 얹어 import. 실패 시 None (fail-soft)."""
+    root = os.environ.get("CLAUDE_PLUGIN_ROOT")
+    bases = []
+    if root:
+        bases.append(Path(root) / "scripts")
+    bases.append(Path(__file__).resolve().parent.parent / "scripts")
+    for base in bases:
+        if base.is_dir():
+            sys.path.insert(0, str(base))
+            break
     try:
-        metrics = json.loads(mp.read_text(encoding="utf-8"))
-        return metrics if isinstance(metrics, dict) else None
+        import chainlog
+        return chainlog
     except Exception:
         return None
 
 
-def _active_phase():
-    metrics = _active_metrics()
-    if metrics is None:
+def _active_cycle_dir():
+    if not ACTIVE.exists():
         return None
-    return metrics.get("current_phase")
+    cid = Path(os.readlink(ACTIVE) if ACTIVE.is_symlink() else ACTIVE.name).name
+    d = CYCLES / cid
+    return d if d.exists() else None
 
 
-def _phase_gate_problems(metrics: dict | None) -> list[str]:
-    if not isinstance(metrics, dict):
-        return ["metrics.json 없음/파싱 실패"]
-    gates = metrics.get("phase_gates")
-    if not isinstance(gates, dict):
-        return ["phase_gates 없음 — phase-advance evidence/user-confirm 검증 불가"]
+def _phase_state():
+    """검증된 phase.jsonl chain 에서 (current_phase, pre_code_problems, tampered) 도출 (H1).
 
+    phase-guard 의 신뢰 앵커를 *자유 편집 가능한 metrics.json* 에서 *tamper-evident chain* 으로
+    옮긴다. metrics.current_phase/phase_gates 직접편집은 더 이상 게이트를 못 연다 — 여기서
+    metrics 를 읽지 않기 때문.
+      - active cycle 없음 → (None, [], False)
+      - phase.jsonl 부재/삭제 → analysis 취급(코드 차단), 안내만
+      - chain 깨짐/위조/파싱실패 → (None, problems, tampered=True) → 코드·tech-doc 전부 차단
+      - 정상 → chain head 의 to = current_phase, completed_phase 별 evidence/confirm 재생
+    """
+    cdir = _active_cycle_dir()
+    if cdir is None:
+        return None, [], False
+    chain = cdir / "phase.jsonl"
+    cl = _import_chainlog()
+    if cl is None:
+        return "analysis", ["chainlog 로드 실패 — 체인 검증 불가(코드 차단)"], False
+    ok, _count, err = cl.verify_chain(chain)
+    if not ok:
+        if err and "file not found" in err:
+            return "analysis", ["phase.jsonl 없음 — phase-advance 로 단계를 기록해야 한다"], False
+        return None, [f"phase chain 무결성 실패({err}) — 위조 의심"], True
+    cur = "analysis"
+    completed = {}
+    for line in chain.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            e = json.loads(line)
+        except Exception:
+            return None, ["phase chain JSON 파싱 실패 — 위조 의심"], True
+        cur = e.get("to", cur)
+        cp = e.get("completed_phase")
+        if cp:
+            completed[cp] = e
     problems = []
     for phase in REQUIRED_PRE_CODE_PHASES:
-        gate = gates.get(phase)
-        if not isinstance(gate, dict):
-            problems.append(f"{phase}: gate 없음")
+        e = completed.get(phase)
+        if not isinstance(e, dict):
+            problems.append(f"{phase}: 완료 기록 없음(phase-advance 미경유)")
             continue
-        evidence = gate.get("evidence") or []
-        existing = [p for p in evidence if isinstance(p, str) and Path(p).exists()]
-        if not existing:
+        evidence = [p for p in (e.get("evidence") or []) if isinstance(p, str) and Path(p).exists()]
+        if not evidence:
             problems.append(f"{phase}: evidence 파일 없음")
-        if gate.get("type") == "collaborative" and not gate.get("user_confirmed"):
+        if e.get("collaborative") and not e.get("user_confirmed"):
             problems.append(f"{phase}: 사용자 confirm 없음")
-    return problems
+    return cur, problems, False
 
 
 def _code_target_from_event(tool: str, tool_input: dict) -> str | None:
@@ -190,16 +226,22 @@ def main():
     doc_target = _doc_target_from_event(tool, tool_input)
     if not code_target and not doc_target:
         sys.exit(0)  # 일반 비코드(노트·설정) → 통과
-    metrics = _active_metrics()
-    phase = metrics.get("current_phase") if isinstance(metrics, dict) else None
-    if doc_target and phase is not None and not code_target:
-        sys.exit(0)  # tech decision 문서도 active cycle 내부면 허용
+
+    phase, pre_code_problems, tampered = _phase_state()
+    active = _active_cycle_dir() is not None
+
+    # tech decision 문서: *무결한* active cycle 안에서만 허용 (위조 체인이면 차단)
+    if doc_target and not code_target:
+        if active and not tampered:
+            sys.exit(0)
+
     gate_problems = []
-    if code_target and phase in CODE_ALLOWED_PHASES:
-        gate_problems = _phase_gate_problems(metrics)
+    if code_target and not tampered and phase in CODE_ALLOWED_PHASES:
+        gate_problems = pre_code_problems
         if not gate_problems:
             sys.exit(0)
-    phase_label = phase or "no-active-cycle"
+
+    phase_label = "tampered" if tampered else (phase or "no-active-cycle")
     target = code_target or doc_target
     kind = "code" if code_target else "tech-decision-doc"
 
@@ -209,7 +251,13 @@ def main():
         fb.record("phase-guard", f"blocked-{kind}-outside-harness",
                   f"phase={phase_label} tool={tool} target={target}",
                   phase=phase_label, tool=tool, target=target, kind=kind)
-    if phase is None:
+    if tampered:
+        guidance = (
+            "   phase.jsonl 체인 무결성 검증 실패(위조/손상) — 코드·tech-doc 변경을 모두 차단한다.\n"
+            + "".join(f"     - {p}\n" for p in pre_code_problems)
+            + "   단계는 phase-advance.py 로만 기록돼야 한다. metrics.json 직접편집·체인 손상은 게이트를 열지 못한다(H1).\n"
+        )
+    elif phase is None:
         guidance = (
             "   active cycle 이 없습니다. 코드/tech decision 작업 전에 하네스 사이클을 시작하세요:\n"
             "     python3 <plugin>/scripts/cycle-init.py \"<cycle-name>\" --type <product|dev-tool|exploration>\n"
@@ -225,8 +273,8 @@ def main():
             f"{gate_guidance}"
             "   각 phase 산출물을 파일로 남기고 정당 경로로 implementation 까지 전진해야 한다:\n"
             "     python3 <plugin>/scripts/phase-advance.py design --evidence docs/analysis.md\n"
-            "     python3 <plugin>/scripts/phase-advance.py planning --evidence docs/design.md --confirm-user\n"
-            "     python3 <plugin>/scripts/phase-advance.py implementation --evidence docs/plan.md --confirm-user\n"
+            "     python3 <plugin>/scripts/phase-advance.py planning --evidence docs/design.md --confirm-user --confirmation-note \"<합의 내용>\"\n"
+            "     python3 <plugin>/scripts/phase-advance.py implementation --evidence docs/plan.md --confirm-user --confirmation-note \"<합의 내용>\"\n"
         )
     print(
         f"🛑 [phase-guard] phase='{phase_label}' — 하네스 밖 {kind} 변경 차단: {target}\n"

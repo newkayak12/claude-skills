@@ -12,7 +12,7 @@ scenarios:
 
 # Harness Work — Approved Slice → Verified Change
 
-목표: `cycles/active/plan.md`에 승인된 slice 하나만 구현한다. 계획 밖 작업, opportunistic refactor, 관련 없는 파일 수정은 하지 않는다.
+목표: planning phase에서 승인된 plan 산출물의 slice 하나만 구현한다. 계획 밖 작업, opportunistic refactor, 관련 없는 파일 수정은 하지 않는다.
 
 ## Preconditions
 
@@ -21,8 +21,8 @@ scenarios:
    ```bash
    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/phase-advance.py --show
    ```
-3. `cycles/active/spec.md`, `cycles/active/design.md`, `cycles/active/plan.md`를 읽는다.
-4. 사용자가 지정한 slice ID가 plan에 있어야 한다. 없으면 STOP하고 `harness:plan`으로 돌아간다.
+3. design/planning phase의 산출물을 읽는다 — `cycles/active/metrics.json`의 `phase_gates`(design·planning)에 evidence로 등록된 파일들이 SSOT다. 고정 파일명은 없다(phase-advance 시 지정된 경로).
+4. 사용자가 지정한 slice ID가 plan 산출물에 있어야 한다. 없으면 STOP — planning phase로 돌아가 plan을 갱신한다 (`harness:cycle` Step 6 / `phase-advance.py planning`).
 
 ## Flow
 
@@ -36,7 +36,7 @@ scenarios:
 ## Guardrails
 
 - plan 밖 파일을 만져야 하면 STOP하고 plan update를 제안한다.
-- architecture/model/API decision이 새로 발견되면 STOP하고 `harness:plan`으로 돌아가 design/plan을 갱신한다.
+- architecture/model/API decision이 새로 발견되면 STOP — planning phase로 돌아가 design/plan 산출물을 갱신한다 (`harness:cycle` Step 6 / `phase-advance.py planning`).
 - 테스트 실패를 남긴 채 완료라고 하지 않는다. 실패가 의도적이면 plan/review에 명시한다.
 
 ## What Claude Does

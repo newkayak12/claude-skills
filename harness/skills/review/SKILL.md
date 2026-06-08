@@ -17,7 +17,7 @@ scenarios:
 ## Preconditions
 
 1. active cycle이 있어야 한다.
-2. `cycles/active/spec.md`, `cycles/active/design.md`, `cycles/active/plan.md`, `cycles/active/activity.log`를 읽는다.
+2. design/planning phase 산출물(`cycles/active/metrics.json`의 `phase_gates` evidence로 등록된 파일들 = SSOT)과 `cycles/active/activity.log`를 읽는다.
 3. 현재 diff와 검증 결과를 확인한다.
 
 ## Review Axes
