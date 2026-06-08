@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -u
-cd "$(dirname "$0")/../../.." || exit 1   # harness-engineering 루트로
+HERE="$(cd "$(dirname "$0")" && pwd)"
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+cd "$TMP" || exit 1
 CID=_tmp-reviewreg
 rm -rf "cycles/$CID"; mkdir -p "cycles/$CID"; : > "cycles/$CID/bar.jsonl"
-BR="python3 plugin/harness/scripts/bar-register.py"
-RR="python3 plugin/harness/scripts/review-register.py"
+BR="python3 $HERE/bar-register.py"
+RR="python3 $HERE/review-register.py"
 fail=0
 
 # 바 2개 등록 (리뷰 대상)

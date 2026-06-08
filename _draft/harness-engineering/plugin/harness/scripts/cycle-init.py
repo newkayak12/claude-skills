@@ -208,6 +208,22 @@ METRICS_SKELETON = {
     "cycle_id": "",
     "started_at": "",
     "current_phase": "analysis",  # analysis→design→planning→implementation→validation. AI가 행동 전 확인 (P6/P9).
+    "phase_status": {
+        "analysis": "in-progress",
+        "design": "todo",
+        "planning": "todo",
+        "implementation": "todo",
+        "validation": "todo",
+    },
+    "phase_gates": {
+        # phase-advance.py 가 소비하는 최소 운영 계약. evidence 는 전진 시 --evidence 로 채운다.
+        # docs/** 같은 넓은 위치는 cycle-card 에 사람이 읽는 안내로 두고, 실제 게이트는 파일 존재로 검증한다.
+        "analysis": {"type": "solo", "evidence": [], "user_confirmed": True},
+        "design": {"type": "collaborative", "evidence": [], "user_confirmed": False},
+        "planning": {"type": "collaborative", "evidence": [], "user_confirmed": False},
+        "implementation": {"type": "solo", "evidence": [], "user_confirmed": True},
+        "validation": {"type": "solo", "evidence": [], "user_confirmed": True},
+    },
     "appetite_sessions": 1,   # 작업 세션 단위 (cycle-004). retro 시 session_count 와 수동 대조(kill-check 은퇴 #015).
     "session_count": 1,       # 사이클 생성 세션 = 1. 이후 SessionStart hook 이 자동 증가.
     "reentry_count": 0,       # Inferential — 게이트/사람이 단계 재진입 시 증가.

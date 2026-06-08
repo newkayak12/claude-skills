@@ -54,6 +54,9 @@ EXCLUDE_NAMES = {
     # installer 는 harness-export 에 더 이상 의존하지 않고 *평탄화 페이로드를 직접 재귀복사*하므로
     # 빌드 산출물 안에서 자급 동작한다. test-project-install.sh 는 빌드도구라 페이로드에선 뺀다.
     "test-project-install.sh",
+    # export 산출물을 다시 export 해 배선 계약을 확인하는 maintainer 전용 테스트. export 안에는
+    # harness-export.py 가 없으므로 포함하면 self-test 가 구조적으로 실패한다.
+    "test-runtime-wiring.sh",
 }
 
 
@@ -152,7 +155,10 @@ def _write_readme(dest: Path) -> None:
         "첫 사이클 진입 게이트를 실행하세요.\n\n"
         "## 핵심 스킬\n\n"
         "- `harness:install` — 첫 실행 온보딩 (L1 user-rule 대화 생성)\n"
-        "- `harness:cycle` — pre-cycle 진입 게이트 + 산출물 scaffold\n\n"
+        "- `harness:cycle` — pre-cycle 진입 게이트 + 산출물 scaffold\n"
+        "- `harness:plan` — intent → spec/design/plan 실행 계약\n"
+        "- `harness:work` — 승인된 plan slice 구현 + 검증\n"
+        "- `harness:review` — spec/design/plan 기준 독립 리뷰\n\n"
         "개념 문서는 `00-overview.md` ~ `13-operational-layer.md`, 규칙 레이어링은 "
         "`12-rule-layering.md`를 참고하세요.\n",
         encoding="utf-8",
