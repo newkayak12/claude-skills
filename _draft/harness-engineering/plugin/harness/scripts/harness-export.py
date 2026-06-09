@@ -9,7 +9,7 @@ GOAL §3.1: 하네스는 marketplace 배포 가능한 *self-contained* plugin이
 
 왜 export가 필요한가:
   draft 레이아웃은 컨셉 문서(00~13.md, situational-rules/)를 *플러그인 밖*(draft 루트)에 둔다.
-  그러나 `rules-load.py`는 `parent.parent/06-rules.md`(= 플러그인 루트)를 읽는다.
+  그러나 L0 파서(`ruleslib.parse_l0`, `rules-merge.py`)는 `parent.parent/06-rules.md`(= 플러그인 루트)를 읽는다.
   설치 환경엔 draft 루트가 없으므로, export가 컨셉 문서를 플러그인 루트로 *평탄화*해 담아야
   self-contained가 된다. (이 사각은 로컬 cwd가 가려 #007 close-test SKIP처럼 놓치기 쉽다 →
   test-harness-export.sh가 hermetic tmp dest로 강제 검증.)
@@ -57,6 +57,11 @@ EXCLUDE_NAMES = {
     # export 산출물을 다시 export 해 배선 계약을 확인하는 maintainer 전용 테스트. export 안에는
     # harness-export.py 가 없으므로 포함하면 self-test 가 구조적으로 실패한다.
     "test-runtime-wiring.sh",
+    # hooks/ 의 자동주입 테스트는 populated L0 를 만들려고 `../scripts/harness-export.py` 를
+    # 직접 호출한다(draft 는 L0=0 이라 vacuous → 빌더로 export 컨텍스트를 만든다). export 안에는
+    # harness-export.py 가 빠지므로(위 제외), 포함하면 설치 환경에서 "populated L0 불가"로 깨진다.
+    # 빌드도구 의존 테스트라 페이로드에선 뺀다(test-project-install.sh 와 동형).
+    "test-rule-inject.sh", "test-stage-inject.sh",
 }
 
 
@@ -70,7 +75,7 @@ def check_source() -> list[str]:
     if not (SRC_PLUGIN / ".claude-plugin" / "plugin.json").exists():
         problems.append(f"plugin.json 없음: {SRC_PLUGIN/'.claude-plugin'/'plugin.json'}")
     if not (DRAFT_ROOT / "06-rules.md").exists():
-        problems.append("06-rules.md 없음 (rules-load.py 런타임 의존)")
+        problems.append("06-rules.md 없음 (ruleslib L0 / rules-merge 런타임 의존)")
     for d in PLUGIN_DIRS:
         if not (SRC_PLUGIN / d).exists():
             problems.append(f"플러그인 디렉토리 없음: plugin/harness/{d}")
@@ -131,7 +136,7 @@ def export(dest: Path) -> None:
 
     print(f"EXPORT OK → {dest}")
     print(f"  플러그인 디렉토리: {len(PLUGIN_DIRS)} · 컨셉 문서: {copied_docs} · situational-rules 포함")
-    print(f"  설치 단위 self-contained: rules-load.py → {dest/'06-rules.md'} (존재: {(dest/'06-rules.md').exists()})")
+    print(f"  설치 단위 self-contained: ruleslib L0 / rules-merge → {dest/'06-rules.md'} (존재: {(dest/'06-rules.md').exists()})")
 
 
 def _write_readme(dest: Path) -> None:

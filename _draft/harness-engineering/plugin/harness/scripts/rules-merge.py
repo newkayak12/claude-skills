@@ -11,7 +11,7 @@ Usage:
   rules-merge.py layers   [--l1 PATH]                  # 어떤 layer 파일을 읽는지
 
 기본 경로:
-  L0 = <plugin>/06-rules.md  (rules-load.py 와 동일 규약: parent.parent)
+  L0 = <plugin>/06-rules.md  (ruleslib L0 파서와 동일 규약: parent.parent)
   L1 = $HARNESS_HOME/user-rules.md  (기본 ~/.harness — user-rules-init.py 와 동일)
 """
 import argparse
@@ -100,9 +100,10 @@ def main():
         p.add_argument("--l1", help="L1 user-rules 경로 (기본 $HARNESS_HOME/user-rules.md)")
         if name == "effective":
             p.add_argument("--dynamic", action="store_true",
-                           help="부분 뷰: invariant L0 + L1/L2/L3 만(정적 L0 default 생략). "
-                                "⚠ 세션 자동주입엔 미사용 — 생략 룰을 stage에서 재주입하는 메커니즘이 "
-                                "아직 없어 그대로 쓰면 코딩 룰 누락(기능저해). stage-injection 후속의 빌딩블록.")
+                           help="SessionStart 주입 슬라이스: invariant L0 + L1/L2/L3 만(정적 L0 default 생략). "
+                                "rule-inject(SessionStart) hook 이 이 뷰를 자동주입한다. 생략된 정적 L0 default"
+                                "(R-CD 코딩 룰 등)는 stage-inject(PreToolUse) 가 단계 진입 시 재주입 → 기능 보존. "
+                                "전량 카탈로그는 기본 effective / `--stage <s>` 로 조회.")
     pl = sub.add_parser("layers")
     pl.add_argument("--l1")
     args = ap.parse_args()

@@ -41,10 +41,12 @@ CODE_EXTS = {".py", ".sh", ".kt", ".kts", ".js", ".ts"}
 LINK_WHITELIST_DIRS = {"plans", "templates"}
 
 # GP-3 선언 레지스트리 — GOLDEN-PRINCIPLES.md GP-3 와 동기화. 중복-우려 그룹.
+#  l0-parser: 한때 ruleslib.parse_l0 와 rules-load.py::parse_rules 두 멤버였으나(2=watch),
+#  rules-load.py 가 런타임 미사용 데드 중복으로 판명돼 제거됨 → canonical 은 ruleslib 1개.
+#  단일 멤버라 GP-3 finding 미발생(n>=2 에서만 emit). 두 번째 L0 파서가 재등장하면 다시 watch 트립.
 DUP_REGISTRY = {
     "l0-parser": [
         (f"{PLUGIN_HARNESS}/scripts/ruleslib.py", "parse_l0"),
-        (f"{PLUGIN_HARNESS}/scripts/rules-load.py", "parse_rules"),
     ],
 }
 
@@ -145,10 +147,14 @@ def _func_exists(file: Path, func: str) -> bool:
     return bool(pat.search(file.read_text(encoding="utf-8")))
 
 
-def scan_gp3_dup_parsers(root: Path):
-    """GP-3: 선언 레지스트리 그룹별 멤버 수. 2=watch, ≥3=escalate(high)."""
+def scan_gp3_dup_parsers(root: Path, registry: dict | None = None):
+    """GP-3: 선언 레지스트리 그룹별 멤버 수. 2=watch, ≥3=escalate(high).
+
+    registry 미지정 시 프로덕션 DUP_REGISTRY. 테스트는 합성 레지스트리를 주입해
+    탐지 로직(2=watch/≥3=escalate)을 *프로덕션 멤버십과 무관하게* hermetic 검증한다.
+    """
     out = []
-    for group, members in DUP_REGISTRY.items():
+    for group, members in (registry or DUP_REGISTRY).items():
         present = [(f, fn) for f, fn in members if _func_exists(root / f, fn)]
         n = len(present)
         if n >= 3:
@@ -273,10 +279,10 @@ def scan_gp6_orphan_hooks(root: Path):
     return out
 
 
-def scan_all(root: Path):
+def scan_all(root: Path, dup_registry: dict | None = None):
     return (scan_gp1_relic_dirs(root)
             + scan_gp2_dead_links(root)
-            + scan_gp3_dup_parsers(root)
+            + scan_gp3_dup_parsers(root, dup_registry)
             + gp4_review_reminders()
             + scan_gp5_complexity(root)
             + scan_gp6_orphan_hooks(root))
@@ -289,6 +295,9 @@ def main():
                     help="HC 항목만; 남아있으면 exit 2 (fixpoint 게이트)")
     ap.add_argument("--complexity-axis", action="store_true",
                     help="GP-5 복잡도 수치 한 줄(ratchet 축 harness-mechanism-count 값)")
+    ap.add_argument("--dup-registry-json",
+                    help="(테스트 전용) GP-3 dup-registry 를 합성 JSON 으로 override — "
+                         "{group: [[path, func], ...]}. 탐지 로직을 프로덕션 멤버십과 무관히 검증.")
     args = ap.parse_args()
 
     root = Path(args.root).resolve()
@@ -296,11 +305,16 @@ def main():
         print(f"ERROR: 스캔 루트가 디렉토리가 아님: {root}", file=sys.stderr)
         sys.exit(1)
 
+    dup_registry = None
+    if args.dup_registry_json:
+        raw = _json.loads(args.dup_registry_json)
+        dup_registry = {g: [tuple(m) for m in members] for g, members in raw.items()}
+
     if args.complexity_axis:
         n, _ = count_complexity(root)
         print(n)
         sys.exit(0)
-    findings = scan_all(root)
+    findings = scan_all(root, dup_registry)
     high = [f for f in findings if f.severity == "high"]
     watch = [f for f in findings if f.severity == "watch"]
 

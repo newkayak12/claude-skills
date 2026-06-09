@@ -45,17 +45,40 @@ import re
 import sys
 from pathlib import Path
 
-CYCLES = Path("cycles")
+
+def _project_root() -> Path:
+    """프로젝트 루트. CLAUDE_PROJECT_DIR(Claude Code 가 hook 에 주입) 우선, 없으면 CWD.
+
+    hook 은 임의 CWD(서브디렉토리 포함)에서 호출될 수 있다. cycles/·evidence 경로를
+    CWD 상대로 풀면 ① 하위디렉토리에서 active cycle 을 못 찾아 *과차단*, ② chain 에
+    기록된 상대 evidence 경로(`docs/analysis.md`)를 못 찾아 게이트를 잘못 닫는 *간헐 실패*
+    가 난다. 둘 다 루트를 프로젝트 기준으로 절대화하면 동시에 해소된다(feedbacklib·
+    project-install 의 CLAUDE_PROJECT_DIR 패턴과 동형).
+    """
+    root = os.environ.get("CLAUDE_PROJECT_DIR")
+    if root:
+        try:
+            return Path(root)
+        except Exception:
+            pass
+    return Path.cwd()
+
+
+PROJECT_ROOT = _project_root()
+CYCLES = PROJECT_ROOT / "cycles"
 ACTIVE = CYCLES / "active"
 
 CODE_ALLOWED_PHASES = {"implementation", "validation"}
 REQUIRED_PRE_CODE_PHASES = ("analysis", "design", "planning")
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 # 코드 = 소스 확장자. .md/.txt/.json/.yaml/.toml/.cfg 등 설계·설정·문서는 통과.
+# .ipynb 는 코드로 간주(NotebookEdit). 확장자 매칭은 모두 대소문자 무시(.PY 우회 차단).
 CODE_EXTS = {
     ".py", ".sh", ".kt", ".kts", ".js", ".ts", ".jsx", ".tsx",
     ".java", ".go", ".rs", ".rb", ".c", ".cc", ".cpp", ".h", ".hpp",
     ".cs", ".php", ".swift", ".scala", ".clj", ".ex", ".exs", ".sql",
+    ".ipynb", ".mjs", ".cjs", ".pyi", ".pyx", ".lua", ".dart",
+    ".vue", ".svelte", ".m", ".r", ".jl", ".hs",
 }
 TECH_DECISION_DOC_RE = re.compile(
     r"(^|[/_.-])(adr|rfc|srs|design[-_ ]?doc|architecture|arch|model|schema|data[-_ ]?model)([/_.-]|$)",
@@ -66,11 +89,41 @@ TECH_DECISION_DOC_RE = re.compile(
 CODE_EXT_PATTERN = r"(?:{})(?:\s|$|['\"])?".format(
     "|".join(re.escape(ext) for ext in sorted(CODE_EXTS, key=len, reverse=True))
 )
+# 인터프리터 인라인 코드작성 탐지: 코드를 *문자열로 받아 즉시 실행* 하면서 파일에 쓰는 패턴.
+#   python3 -c "open('app.py','w')...", perl -i, node -e "...writeFileSync...", ruby/php -e ...
+# 두 조각이 모두 한 명령에 있어야 차단: ① 인터프리터+코드주입/인플레이스 플래그, ② 쓰기 시그널.
+# 쓰기 시그널 = 코드확장자 경로 토큰 | open(...,'w'/'a') | writeFileSync/File.write | -i/-p -i.
+# python3 -c "print(1)" 처럼 쓰기 시그널이 없으면 통과(allow-case 보존).
+_INTERP = r"(?:python[0-9.]*|perl|node|ruby|php)"
+_WRITE_SIGNAL = (
+    r"(?:"
+    + CODE_EXT_PATTERN  # app.py / x.kt / a.PY(IGNORECASE) ...
+    + r"|open\s*\([^)]*['\"][wa]"  # open('app.py','w'/'a')
+    + r"|writeFileSync|appendFileSync|createWriteStream"  # node fs
+    + r"|File\.(?:write|open|new)"  # ruby File.write / File.open(...,'w')
+    + r"|file_put_contents|fopen\s*\([^)]*['\"][wa]"  # php
+    + r")"
+)
 BASH_WRITE_PATTERNS = [
-    re.compile(r"(?:^|\s)(?:>|>>)\s*\S+" + CODE_EXT_PATTERN),
-    re.compile(r"(?:^|\s)tee(?:\s+-a)?\s+\S+" + CODE_EXT_PATTERN),
-    re.compile(r"(?:^|\s)(?:touch|cp|mv|install)\b[^\n;|&]*\S+" + CODE_EXT_PATTERN),
-    re.compile(r"(?:^|\s)sed\s+-i\b[^\n;|&]*\S+" + CODE_EXT_PATTERN),
+    # 모든 리다이렉트(평문 >, fd-prefix 2>, &>, >|, >>)가 코드확장자 파일을 대상으로 할 때.
+    #   echo x 1> app.py / cat > app.PY / : > f.py 등. \d* 로 fd-prefix, [|]? 로 >| 흡수.
+    re.compile(r"(?:^|\s|;)\d*(?:&)?>{1,2}[|]?\s*\S*" + CODE_EXT_PATTERN, re.IGNORECASE),
+    re.compile(r"(?:^|\s)tee(?:\s+-a)?\s+\S+" + CODE_EXT_PATTERN, re.IGNORECASE),
+    re.compile(r"(?:^|\s)(?:touch|cp|mv|install)\b[^\n;|&]*\S+" + CODE_EXT_PATTERN, re.IGNORECASE),
+    re.compile(r"(?:^|\s)sed\s+-i\b[^\n;|&]*\S+" + CODE_EXT_PATTERN, re.IGNORECASE),
+    # dd of=app.py
+    re.compile(r"(?:^|\s)dd\b[^\n;|&]*\bof=\S*" + CODE_EXT_PATTERN, re.IGNORECASE),
+    # git apply / patch (코드 확장자 파일을 패치로 생성·변경)
+    re.compile(r"(?:^|\s)git\s+apply\b", re.IGNORECASE),
+    re.compile(r"(?:^|\s)patch\b[^\n;|&]*(?:-p\d|<|\S+" + CODE_EXT_PATTERN + r")", re.IGNORECASE),
+    # 인터프리터 인라인 실행 + 쓰기 시그널 (순서 무관: 코드 안에서 플래그/경로가 뒤따름)
+    # 플래그 char class: python -c, node/ruby/perl -e, perl -i/-p, php -r/-R.
+    #   php 의 인라인 코드 플래그는 -r/-R 뿐이라 r 가 빠지면 php 가 _INTERP 에 있어도
+    #   file_put_contents/fopen 쓰기를 전혀 못 잡는다(미차단 갭). 쓰기 시그널이 여전히
+    #   필수라 `php -r "echo 1;"` 같은 비쓰기 인라인은 통과(allow 보존).
+    re.compile(_INTERP + r"\b[^\n;|&]*\s-[a-z]*[ceipr][^\n]*" + _WRITE_SIGNAL, re.IGNORECASE),
+    # perl/ruby/sed 류 in-place: `perl -i`, `perl -pi -e`, `ruby -i` + 코드확장자 인자
+    re.compile(_INTERP + r"\b[^\n;|&]*\s-[a-z]*i[a-z]*\b[^\n;|&]*\S*" + CODE_EXT_PATTERN, re.IGNORECASE),
 ]
 BASH_DOC_WRITE_PATTERNS = [
     re.compile(r"(?:^|\s)(?:>|>>)\s*(\S+\.md)(?:\s|$|['\"])?", re.IGNORECASE),
@@ -130,6 +183,19 @@ def _active_cycle_dir():
     return d if d.exists() else None
 
 
+def _evidence_exists(p: str) -> bool:
+    """chain 에 기록된 evidence 경로 존재 확인. 상대경로는 PROJECT_ROOT 기준으로 푼다.
+
+    phase-advance 는 사용자가 넘긴 경로(보통 `docs/analysis.md` 같은 프로젝트 루트 상대)를
+    그대로 chain 에 기록한다. hook 이 임의 CWD 에서 호출되면 CWD 상대 해석은 존재하는
+    evidence 를 놓쳐 게이트를 잘못 닫는다(간헐 실패). 절대경로는 그대로, 상대경로만 루트 기준.
+    """
+    path = Path(p)
+    if path.is_absolute():
+        return path.exists()
+    return (PROJECT_ROOT / path).exists() or path.exists()
+
+
 def _phase_state():
     """검증된 phase.jsonl chain 에서 (current_phase, pre_code_problems, tampered) 도출 (H1).
 
@@ -172,7 +238,7 @@ def _phase_state():
         if not isinstance(e, dict):
             problems.append(f"{phase}: 완료 기록 없음(phase-advance 미경유)")
             continue
-        evidence = [p for p in (e.get("evidence") or []) if isinstance(p, str) and Path(p).exists()]
+        evidence = [p for p in (e.get("evidence") or []) if isinstance(p, str) and _evidence_exists(p)]
         if not evidence:
             problems.append(f"{phase}: evidence 파일 없음")
         if e.get("collaborative") and not e.get("user_confirmed"):
