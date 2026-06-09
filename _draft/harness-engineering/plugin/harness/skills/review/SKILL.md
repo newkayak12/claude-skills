@@ -12,28 +12,28 @@ scenarios:
 
 # Harness Review — Change → Independent Verdict
 
-목표: 구현자 관점이 아니라 reviewer 관점으로 변경을 검토한다. major finding은 blocker다. 자기 채점으로 close하지 않는다.
+Goal: review the change from a reviewer's perspective, not the implementer's. A major finding is a blocker. Do not close via self-grading.
 
 ## Preconditions
 
-1. active cycle이 있어야 한다.
-2. design/planning phase 산출물(`cycles/active/metrics.json`의 `phase_gates` evidence로 등록된 파일들 = SSOT)과 `cycles/active/activity.log`를 읽는다.
-3. 현재 diff와 검증 결과를 확인한다.
+1. There must be an active cycle.
+2. Read the design/planning phase artifacts (the files registered as `phase_gates` evidence in `cycles/active/metrics.json` = SSOT) and `cycles/active/activity.log`.
+3. Check the current diff and verification results.
 
 ## Review Axes
 
-- Spec alignment: outcome, scope, non-goals, acceptance criteria를 만족하는가?
-- Plan alignment: 승인된 slice 밖 변경이 있는가?
-- Design alignment: architecture/model/API 결정과 충돌하는가?
-- Test quality: 실패해야 할 경우 실패하고, 통과해야 할 경우 통과하는가?
-- Regression risk: 기존 동작, migration, observability, rollback 위험은 없는가?
+- Spec alignment: does it satisfy outcome, scope, non-goals, and acceptance criteria?
+- Plan alignment: are there changes outside the approved slice?
+- Design alignment: does it conflict with architecture/model/API decisions?
+- Test quality: does it fail when it should fail and pass when it should pass?
+- Regression risk: any risk to existing behavior, migration, observability, or rollback?
 
 ## Flow
 
-1. findings first 형식으로 리뷰한다. blocker를 먼저 쓴다.
-2. blocker가 있으면 implementation으로 돌려보낸다.
-3. pass 가능한 경우 evidence를 명시한다.
-4. bar가 등록되어 있으면 `review-register.py`로 pass/fail verdict를 기록한다.
+1. Review in findings-first format. Write blockers first.
+2. If there is a blocker, send it back to implementation.
+3. When a pass is possible, state the evidence explicitly.
+4. If a bar is registered, record the pass/fail verdict with `review-register.py`.
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/review-register.py register \
@@ -43,7 +43,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/review-register.py register \
 
 ## What Claude Does
 
-- 구현 요약보다 findings를 먼저 낸다.
-- 확인하지 않은 것은 확인했다고 쓰지 않는다.
-- pass/fail 근거를 active cycle 산출물과 검증 출력에 묶는다.
+- Lead with findings rather than an implementation summary.
+- Do not claim something was verified if it was not.
+- Tie the pass/fail rationale to active cycle artifacts and verification output.
 
