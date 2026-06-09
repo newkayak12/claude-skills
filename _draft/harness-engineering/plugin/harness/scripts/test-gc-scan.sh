@@ -24,9 +24,11 @@ cat > "$P/docs/doc.md" <<'MD'
 - 코드스팬(무시돼야): `[x](./alsobad.md)` 는 네비 링크 아님
 - 외부(무시): [site](https://example.com)
 MD
-# GP-3 dup-registry: l0-parser 두 멤버 존재 → watch
+# GP-3: 합성 dup-registry 를 --dup-registry-json 으로 주입해 탐지 로직을 검증한다(아래).
+#   프로덕션 DUP_REGISTRY 는 rules-load.py 데드 제거 후 단일 멤버라, 탐지 로직(2=watch/≥3=escalate)은
+#   프로덕션 멤버십과 분리해 hermetic 으로 검증한다. 여기선 그 fixture 파일 2개만 깔아둔다.
 echo "def parse_l0(): pass" > "$P/plugin/harness/scripts/ruleslib.py"
-echo "def parse_rules(): pass" > "$P/plugin/harness/scripts/rules-load.py"
+echo "def parse_b(): pass"  > "$P/plugin/harness/scripts/parser-b.py"
 # GP-2 확장(#011 F4): plugin/ 트리 안의 dead link 도 high 로 잡혀야 (이전엔 plugin 전체 skip)
 mkdir -p "$P/plugin/harness/skills"
 cat > "$P/plugin/harness/skills/SKILL.md" <<'MD'
@@ -35,7 +37,7 @@ cat > "$P/plugin/harness/skills/SKILL.md" <<'MD'
 - 죽은(plugin 내부): [gone](./missing-skill.md)
 MD
 echo "real" > "$P/plugin/harness/skills/skill_real.md"
-# GP-5 복잡도: 위에서 만든 scripts/{ruleslib,rules-load}.py 2개 + test-*.sh 1개(제외돼야)
+# GP-5 복잡도: 위에서 만든 scripts/{ruleslib,parser-b}.py 2개 + test-*.sh 1개(제외돼야)
 echo "echo test" > "$P/plugin/harness/scripts/test-foo.sh"
 
 # ========== 전체 리포트 ==========
@@ -49,8 +51,19 @@ echo "$OUT" | grep -q "target.md" && fail "실존 링크 target.md 가 dead 로 
 # GP-1 은 watch 여야 (high 아님 — #011 강등 회귀 방지)
 echo "$OUT" | grep -q "GP-1/watch.*foo/" || fail "relic 후보 foo/ 가 GP-1/watch 로 안 잡힘"
 echo "$OUT" | grep -q "GP-1/high" && fail "GP-1 이 high 로 잡힘(#011 강등 회귀)"
-# GP-3 dup-group watch (2 멤버)
-echo "$OUT" | grep -q "GP-3/watch.*l0-parser" || fail "dup-group l0-parser watch 미탐지"
+# GP-3 거짓양성 0: 프로덕션 레지스트리(rules-load.py 제거 후 단일 멤버)는 finding 미발생.
+#   (위 OUT 은 합성 레지스트리 주입 없이 = 프로덕션 DUP_REGISTRY 로 스캔.)
+echo "$OUT" | grep -q "GP-3" && fail "단일-멤버 dup-group 이 GP-3 로 잡힘(거짓양성 — rules-load 제거 후 회귀)"
+# GP-3 탐지 로직 hermetic 검증: 합성 레지스트리 주입 → 2멤버=watch, 3멤버=escalate(high).
+REG2='{"synthgrp":[["plugin/harness/scripts/ruleslib.py","parse_l0"],["plugin/harness/scripts/parser-b.py","parse_b"]]}'
+OUT3="$(python3 "$SCAN" --root "$P" --dup-registry-json "$REG2" 2>&1)" || fail "dup-registry-json 주입 스캔 exit != 0"
+echo "$OUT3" | grep -q "GP-3/watch.*synthgrp" || fail "합성 2-멤버 dup-group watch 미탐지(탐지 로직 회귀)"
+echo "$OUT3" | grep -q "GP-3/high" && fail "2-멤버인데 escalate(high) 로 잡힘(임계값 회귀)"
+echo "def parse_c(): pass" > "$P/plugin/harness/scripts/parser-c.py"
+REG3='{"synthgrp":[["plugin/harness/scripts/ruleslib.py","parse_l0"],["plugin/harness/scripts/parser-b.py","parse_b"],["plugin/harness/scripts/parser-c.py","parse_c"]]}'
+OUT4="$(python3 "$SCAN" --root "$P" --dup-registry-json "$REG3" 2>&1)" || fail "3-멤버 dup-registry-json 스캔 exit != 0"
+echo "$OUT4" | grep -q "GP-3/high.*synthgrp" || fail "합성 3-멤버 dup-group escalate(high) 미탐지(임계값 회귀)"
+rm "$P/plugin/harness/scripts/parser-c.py"
 # GP-2 확장 거짓음성 0: plugin/ 트리 안 dead link 도 high 로 잡혀야 (#011 F4 — 이전엔 plugin skip)
 echo "$OUT" | grep -q "GP-2/high.*missing-skill.md" || fail "plugin/ 내부 dead link 미탐지(확장 회귀)"
 # GP-2 확장 거짓양성 0: plugin/ 안 실존 링크는 안 잡혀야
@@ -60,7 +73,7 @@ echo "$OUT" | grep -q "GP-4/watch.*semantic-review" || fail "GP-4 의미적-검�
 echo "$OUT" | grep -q "GP-4/high" && fail "GP-4 가 high 로 분류됨(의미적 stale 은 결정론 불가 → watch 여야)"
 # GP-5: 복잡도 카운트 watch + test-*.sh 제외 검증
 echo "$OUT" | grep -q "GP-5/watch.*mechanism-count" || fail "GP-5 복잡도 카운트 미출력"
-# --complexity-axis: scripts 2개(ruleslib,rules-load) + hooks 0개 = 2, test-foo.sh 제외돼야
+# --complexity-axis: scripts 2개(ruleslib,parser-b) + hooks 0개 = 2, test-foo.sh 제외돼야
 NAX="$(python3 "$SCAN" --root "$P" --complexity-axis 2>&1)"
 [ "$NAX" = "2" ] || fail "복잡도 축 값 기대 2(test-*.sh 제외), 실제 '$NAX'"
 

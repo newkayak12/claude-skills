@@ -43,7 +43,7 @@ assert not any('CLAUDE_PLUGIN_ROOT' in c for c in cmds), 'PLUGIN_ROOT 잔존'
 # ── 1.5) 벤더링 페이로드 self-containment (B2 핵심) ───────────────────────────
 #   런타임 필수는 있고, build/maintainer/installer 도구는 *대상 프로젝트엔* 없어야.
 VH="$P1/.claude/harness"
-[ -f "$VH/06-rules.md" ]                 || { echo "FAIL 1.5a: 벤더링에 06-rules.md 없음(rules-load 깨짐)"; fail=1; }
+[ -f "$VH/06-rules.md" ]                 || { echo "FAIL 1.5a: 벤더링에 06-rules.md 없음(ruleslib L0/rules-merge 깨짐)"; fail=1; }
 [ -f "$VH/hooks/hooks.json" ]            || { echo "FAIL 1.5b: 벤더링에 hooks.json 없음"; fail=1; }
 [ -f "$VH/scripts/cycle-init.py" ]      || { echo "FAIL 1.5c: 벤더링에 cycle-init.py 없음"; fail=1; }
 [ ! -f "$VH/scripts/project-install.py" ]   || { echo "FAIL 1.5d: 벤더링에 installer 잔존(불필요)"; fail=1; }

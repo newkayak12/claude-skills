@@ -13,7 +13,12 @@ close-cycle.py(게이트)와 ratchet-check.py(CLI)가 이 모듈을 공유 — �
 하이픈 없는 파일명 = chainlog.py 와 동일하게 import 가능(공유 lib 규약).
 """
 import json
+import sys
+from datetime import datetime, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import chainlog  # noqa: E402  H7: 닫힌 사이클의 bar/review 체인을 floor 계산 전에 검증
 
 CYCLES = Path("cycles")
 DIRECTIONS = ("higher_better", "lower_better")
@@ -70,7 +75,61 @@ def _not_worse(direction: str, a: float, b: float) -> bool:
     return a >= b if direction == "higher_better" else a <= b
 
 
-def compute_floor(cycles_root: Path = CYCLES, exclude=None):
+def _was_force_closed(cdir: Path) -> bool:
+    """force-close 흔적(blackbox kind=force-close)이 있으면 True.
+
+    force-close 는 리뷰/ratchet 게이트를 *정당하게 흔적 남기고* 우회한 경로라, 그 사이클의
+    축 바가 pass 결박을 안 가질 수 있다(미달인 채 닫음). 이를 review 위변조로 오인하면 안 됨.
+    단, force-close 된 사이클의 축 바는 어차피 pass-결박이 없어 floor 값엔 기여하지 않는다.
+    """
+    for e in _load_jsonl(cdir / "blackbox.jsonl"):
+        if e.get("kind") == "force-close":
+            return True
+    return False
+
+
+def _verify_closed_chains(cdir: Path):
+    """H7: 닫힌 사이클의 watermark 소스(bar.jsonl + review.jsonl pass 결박)를 검증.
+
+    이 둘은 비보호 평문이라, 닫힌 사이클의 status 편집·review 비우기·바 값 위조로 floor 를
+    흔적 없이 리셋할 수 있다. 두 층위로 막는다:
+      (1) 체인 무결성 — bar/review 를 chainlog 로 verify. 값 위조나 *일부* 삭제는 prev_hash/
+          hash 불일치로 잡힌다.
+      (2) close-time 불변식 재확인 — 닫힌 사이클이 *축 바를 가졌다면*, close 게이트가 그때
+          모든 바에 pass 리뷰를 강제했으므로 *지금도* 각 축 바가 pass-결박돼야 한다.
+          review.jsonl 을 통째로 비우면 체인은 (공백=유효) 통과하지만 이 불변식이 깨진다 →
+          review 위변조로 탐지. (force-close 사이클은 정당하게 미결박일 수 있어 예외.)
+
+    깨진 사이클은 *신뢰 불가* — floor 값에 채택하지 않고(낮추지도 올리지도 못함) tamper 신호를
+    남겨 상위(find_regressions/close 게이트)가 *차단*하게 한다.
+
+    반환: 검증 실패 사유 문자열(통과면 None). bar.jsonl 이 없거나 빈 사이클은 축 바도 없어
+    floor 기여가 없으므로 검증 대상 아님(None) — 빈≠위변조.
+    """
+    bar = cdir / "bar.jsonl"
+    if not bar.exists() or bar.stat().st_size == 0:
+        return None  # 축 바 없음 → floor 기여 없음 → 검증 무의미(빈≠위변조)
+    ok, _c, err = chainlog.verify_chain(bar)
+    if not ok:
+        return f"bar chain: {err}"
+    review = cdir / "review.jsonl"
+    if review.exists() and review.stat().st_size > 0:
+        ok, _c, err = chainlog.verify_chain(review)
+        if not ok:
+            return f"review chain: {err}"
+    # (2) 축 바가 있으면 pass-결박 불변식 재확인 (review 통째 비우기/축 바 pass 제거 탐지).
+    #     force-close 사이클은 미결박이 정당 → 예외(어차피 floor 값에 기여 안 함).
+    axis_bars = _axis_bars(cdir)
+    if axis_bars and not _was_force_closed(cdir):
+        passed = _passed_hashes(cdir)
+        unbound = [e.get("id") for e in axis_bars if e.get("hash") not in passed]
+        if unbound:
+            return ("review pass-binding 소실 — 닫힌 사이클의 축 바 "
+                    f"{unbound} 가 pass 리뷰 결박을 잃음(review 위변조/비우기 의심)")
+    return None
+
+
+def compute_floor(cycles_root: Path = CYCLES, exclude=None, tamper_out=None):
     """이전 *닫힌* 사이클들의 축별 watermark.
 
     반환: {axis: {"value": float, "direction": str, "source": cycle_id, "baseline_reset": bool}}
@@ -80,6 +139,11 @@ def compute_floor(cycles_root: Path = CYCLES, exclude=None):
     이전 watermark 를 *대체*한다 — 빼기 불가능한데 정당하게 +1 해야 하는(예: mechanism-count)
     경우를 표현. 일반 바는 종전처럼 *개선* 시에만 floor 를 움직인다. reset 의 대체 의미상
     사이클을 closed_at 시간순으로 처리해 가장 최근의 의도된 baseline 이 권위를 갖게 한다.
+
+    H7 (tamper-evidence): 각 닫힌 사이클의 bar/review 체인을 검증한다. 깨진(위변조/삭제)
+    사이클은 floor 값에 기여하지 않으며(낮추지 못함), tamper_out(리스트가 주어지면)에
+    {"cycle","reason"} 를 적재한다. 상위(find_regressions)가 이를 *차단 신호*로 승격해
+    "닫힌 사이클 손상 → floor 안 내려감(차단)" 을 보장한다.
     """
     floor = {}
     if not cycles_root.exists():
@@ -89,6 +153,11 @@ def compute_floor(cycles_root: Path = CYCLES, exclude=None):
               and not (exclude and c.name == exclude) and _is_closed(c)]
     closed.sort(key=lambda c: (_closed_at(c), c.name))
     for cdir in closed:
+        tamper = _verify_closed_chains(cdir)
+        if tamper is not None:
+            if tamper_out is not None:
+                tamper_out.append({"cycle": cdir.name, "reason": tamper})
+            continue  # 신뢰 불가 — floor 값에 채택 안 함(차단은 find_regressions 가)
         passed = _passed_hashes(cdir)
         # 사이클 단위 축 기여 reduce — reset 바가 있으면 그 값이 우선(파일 순서 무관).
         contrib = {}  # axis -> {value, direction, reset}
@@ -137,9 +206,18 @@ def find_regressions(cycle_id: str, cycles_root: Path = CYCLES):
     """현재 사이클의 선언 축이 이전 watermark 를 회귀하는지.
 
     반환: 회귀 dict 리스트(빈=정상). 각 dict: axis/current/floor/direction/source/reason.
+
+    H7: 이전 닫힌 사이클의 bar/review 체인이 깨졌으면(위변조·일부 삭제로 floor 리셋 시도)
+    그 사이클을 *차단 신호*로 승격해 회귀 리스트에 포함한다(axis="<chain-tamper>"). 손상된
+    floor 위에서 조용히 닫히는 것을 막는다 — 복구(재기록/체인 정정)하거나 --force + ADR 만 우회.
     """
-    floor = compute_floor(cycles_root, exclude=cycle_id)
+    tamper = []
+    floor = compute_floor(cycles_root, exclude=cycle_id, tamper_out=tamper)
     regs = []
+    for t in tamper:
+        regs.append({"axis": "<chain-tamper>", "current": "—", "floor": "—",
+                     "direction": "—", "source": t["cycle"],
+                     "reason": f"닫힌 사이클 체인 검증 실패(위변조/삭제) — {t['reason']}"})
     for axis, d in best_declared(cycles_root / cycle_id).items():
         base = floor.get(axis)
         if base is None:
@@ -156,3 +234,41 @@ def find_regressions(cycle_id: str, cycles_root: Path = CYCLES):
                          "direction": d["direction"], "source": base["source"],
                          "reason": "watermark 회귀"})
     return regs
+
+
+def _has_opt_out(cdir: Path, cycle_id: str) -> bool:
+    """이미 이 사이클의 ratchet-opt-out 이 blackbox 에 있으면 True (멱등 보장)."""
+    for e in _load_jsonl(cdir / "blackbox.jsonl"):
+        if e.get("kind") == "ratchet-opt-out" and e.get("cycle") == cycle_id:
+            return True
+    return False
+
+
+def record_opt_out_if_no_axes(cdir: Path, cycle_id: str, reason=None) -> bool:
+    """H6: 사이클이 측정축 0개로 닫힐 때 opt-out 을 *가시화*한다.
+
+    ratchet 축은 (정당하게) 선택적이라 강제하지 않는다. 다만 축 0개로 닫는 사이클은
+    cross-cycle 품질 floor 를 *흔적 없이* 비껴가므로, blackbox.jsonl 에
+    {kind:"ratchet-opt-out", cycle, reason?} 를 남겨 사후 감사 가능하게 한다.
+    close-cycle.py 의 blackbox append 경로/모양과 일관(kind+ts+cycle).
+
+    멱등: 이미 같은 사이클의 opt-out 이 있으면 재기록하지 않는다.
+    축이 하나라도 선언돼 있으면(= ratchet 대상) 아무것도 하지 않고 False.
+    반환: opt-out 을 (이번에) 기록했으면 True.
+    """
+    if best_declared(cdir):
+        return False  # 측정축 있음 → ratchet 대상 → opt-out 아님
+    if _has_opt_out(cdir, cycle_id):
+        return False  # 이미 기록됨(멱등)
+    entry = {"kind": "ratchet-opt-out", "cycle": cycle_id,
+             "ts": datetime.now(timezone.utc).isoformat(),
+             "note": "측정 ratchet 축 0개로 닫힘 — cross-cycle floor 비교 대상 아님(opt-out)"}
+    if reason:
+        entry["reason"] = reason
+    # 정보성 흔적(우회 아님) — append 실패해도 정당한 close 를 막지 않는다(best-effort).
+    try:
+        with (cdir / "blackbox.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        return True
+    except Exception:
+        return False

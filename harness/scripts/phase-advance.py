@@ -56,13 +56,33 @@ def _append_blackbox(cdir: Path, entry: dict) -> None:
         pass
 
 
+def _nonempty_evidence(path: Path) -> bool:
+    """evidence 파일이 *내용을 가진* 산출물인지 검증.
+
+    파일 존재만으로는 부족하다 — 0바이트/공백 stub 하나로 게이트를 통과시키면
+    "산출물을 채팅에만 남김" 과 동급의 허니시스템이 된다(빈 파일 = 빈 채팅).
+    최소 기준은 "비어있지 않음" 이지 임의 길이 임계가 아니다: 한 줄 ADR 포인터 같은
+    정당한 짧은 evidence 는 통과해야 한다. size>0 으로 큰 파일을 빠르게 통과시키고,
+    공백만인 경우만 내용을 읽어 strip 후 비어있는지 확인한다.
+    """
+    try:
+        if not path.is_file():
+            return False
+        if path.stat().st_size <= 0:
+            return False
+        # 공백/개행만으로 채운 stub 도 빈 산출물로 간주(strip 후 비어있으면 거부).
+        return bool(path.read_text(encoding="utf-8", errors="ignore").strip())
+    except OSError:
+        return False
+
+
 def _existing_evidence(paths: list[str]) -> list[str]:
     out = []
     for p in paths:
         if not p:
             continue
         path = Path(p)
-        if path.exists():
+        if _nonempty_evidence(path):
             out.append(p)
     return out
 
@@ -106,8 +126,8 @@ def _verify_phase_gate(cdir: Path, metrics: dict, phase: str, evidence: list[str
     problems = []
     if not evidence_ok:
         problems.append(
-            "산출물 evidence 파일 없음. 채팅 표는 산출물이 아니므로 "
-            "`--evidence <path>` 로 실제 파일을 지정하세요."
+            "산출물 evidence 파일 없음/비어있음(0바이트·공백 stub). 채팅 표도 빈 파일도 "
+            "산출물이 아니므로 `--evidence <path>` 로 내용 있는 실제 파일을 지정하세요."
         )
     if not confirm_ok:
         problems.append(

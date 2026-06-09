@@ -109,5 +109,81 @@ $RC check --cycle _cur2 >/dev/null 2>&1 || { echo "FAIL 13: reset 후 floor(28)�
 mk_axis_cycle _cur3 mechcount 29 lower_better
 if $RC check --cycle _cur3 >/dev/null 2>&1; then echo "FAIL 14: reset 후 29 가 통과됨(baseline 만 옮겨야)"; fail=1; fi
 
+# ── H7: watermark tamper-evidence (닫힌 사이클 손상 → floor 안 내려감/차단) ────────────
+# 청정 prior(coverage=80, closed+pass)와 회귀하는 현재(70)를 새로 세팅.
+rm -rf cycles/20260101-prior cycles/_cur cycles/_cur2 cycles/_cur3 cycles/_close
+mk_axis_cycle 20260101-prior coverage 80 higher_better
+$RR register --cycle 20260101-prior --id R1 --criterion-id B1 --verdict pass --evidence e --reviewer t >/dev/null
+printf '{"cycle_id":"20260101-prior","status":"closed","closed_at":"2026-01-01T00:00:00+00:00"}\n' > cycles/20260101-prior/metrics.json
+mk_axis_cycle _cur coverage 70 higher_better   # 70<80 = 회귀
+
+# H7a) review.jsonl 통째 비우기 → pass-결박 소실. 체인은 (공백=유효) 통과하지만 close-time
+#      불변식이 깨져 tamper 탐지 → floor 가 *조용히* 안 내려가고 현재(70)는 여전히 차단.
+: > cycles/20260101-prior/review.jsonl
+if $RC check --cycle _cur >/dev/null 2>&1; then echo "FAIL H7a: review 비우기로 floor 리셋되어 회귀(70) 통과됨"; fail=1; fi
+
+# H7b) bar.jsonl 값 위조(80→999) → 체인 깨짐 → 위조 floor 채택 안 함 + 차단 유지.
+mk_axis_cycle 20260101-prior coverage 80 higher_better
+$RR register --cycle 20260101-prior --id R1 --criterion-id B1 --verdict pass --evidence e --reviewer t >/dev/null
+printf '{"cycle_id":"20260101-prior","status":"closed","closed_at":"2026-01-01T00:00:00+00:00"}\n' > cycles/20260101-prior/metrics.json
+python3 - <<'PY'
+import json
+p="cycles/20260101-prior/bar.jsonl"
+L=[json.loads(x) for x in open(p) if x.strip()]; L[0]["value"]=999.0
+open(p,"w").write("\n".join(json.dumps(x,ensure_ascii=False) for x in L)+"\n")
+PY
+if $RC check --cycle _cur >/dev/null 2>&1; then echo "FAIL H7b: bar 값 위조(999)가 floor 로 채택되어 70 통과됨"; fail=1; fi
+
+# H7c) close 통합 — 청정한 active(coverage 85)인데 prior 가 손상됨 → close 차단 + symlink 보존.
+rm -rf cycles/_close; mk_axis_cycle _close coverage 85 higher_better
+$RR register --cycle _close --id R1 --criterion-id B1 --verdict pass --evidence e --reviewer t >/dev/null
+printf '{"cycle_id":"_close","status":"active"}\n' > cycles/_close/metrics.json
+: > cycles/_close/blackbox.jsonl
+ln -sfn _close cycles/active
+if $CC >/dev/null 2>&1; then echo "FAIL H7c: prior 손상인데 close 됨"; fail=1; fi
+[ -L cycles/active ] || { echo "FAIL H7c: 차단인데 symlink 사라짐"; fail=1; }
+rm -f cycles/active
+
+# H7d) 손상 복구(정상 재기록) 시 false-positive 없음 — 정직한 개선(90)은 통과해야.
+mk_axis_cycle 20260101-prior coverage 80 higher_better
+$RR register --cycle 20260101-prior --id R1 --criterion-id B1 --verdict pass --evidence e --reviewer t >/dev/null
+printf '{"cycle_id":"20260101-prior","status":"closed","closed_at":"2026-01-01T00:00:00+00:00"}\n' > cycles/20260101-prior/metrics.json
+mk_axis_cycle _cur coverage 90 higher_better
+$RC check --cycle _cur >/dev/null 2>&1 || { echo "FAIL H7d: 복구 후 정직한 개선(90)이 false block"; fail=1; }
+
+# ── H6: ratchet opt-out 가시화 (측정축 0개로 닫히면 blackbox 에 흔적) ──────────────────
+# 축 메타 없는 바(자유텍스트) → 측정축 0개 → close 시 ratchet-opt-out 기록(축 강제 X).
+rm -rf cycles/_optout; mkdir -p cycles/_optout
+: > cycles/_optout/bar.jsonl; : > cycles/_optout/review.jsonl; : > cycles/_optout/blackbox.jsonl
+printf '{"cycle_id":"_optout","status":"active"}\n' > cycles/_optout/metrics.json
+$BR register --cycle _optout --id B1 --stage test --criterion c --measure m >/dev/null   # --axis 없음
+$RR register --cycle _optout --id R1 --criterion-id B1 --verdict pass --evidence e --reviewer t >/dev/null
+ln -sfn _optout cycles/active
+$CC >/dev/null 2>&1 || { echo "FAIL H6a: 축 없는 사이클 close 실패"; fail=1; }
+grep -q '"kind": "ratchet-opt-out"' cycles/_optout/blackbox.jsonl || { echo "FAIL H6a: opt-out 미기록"; fail=1; }
+grep -q '"cycle": "_optout"' cycles/_optout/blackbox.jsonl || { echo "FAIL H6a: opt-out cycle 필드 누락"; fail=1; }
+rm -f cycles/active
+
+# H6b) 멱등 — 헬퍼를 다시 호출해도(close 재시도 모사) opt-out 은 1건 유지.
+HERE_PY="$HERE" python3 - <<'PY'
+import os, sys
+sys.path.insert(0, os.environ["HERE_PY"])
+import ratchetlib
+from pathlib import Path
+ratchetlib.record_opt_out_if_no_axes(Path("cycles/_optout"), "_optout")  # 2회차
+PY
+n=$(grep -c '"kind": "ratchet-opt-out"' cycles/_optout/blackbox.jsonl)
+[ "$n" = "1" ] || { echo "FAIL H6b: opt-out 중복 기록 (n=$n, want 1)"; fail=1; }
+
+# H6c) 축이 *있는* 사이클은 opt-out 안 남김(=ratchet 대상이라 흔적 불필요).
+rm -rf cycles/_withaxis; mk_axis_cycle _withaxis coverage 95 higher_better
+$RR register --cycle _withaxis --id R1 --criterion-id B1 --verdict pass --evidence e --reviewer t >/dev/null
+: > cycles/_withaxis/blackbox.jsonl
+printf '{"cycle_id":"_withaxis","status":"active"}\n' > cycles/_withaxis/metrics.json
+ln -sfn _withaxis cycles/active
+$CC >/dev/null 2>&1 || { echo "FAIL H6c: 축 있는 사이클 close 실패"; fail=1; }
+if grep -q '"kind": "ratchet-opt-out"' cycles/_withaxis/blackbox.jsonl; then echo "FAIL H6c: 축 있는데 opt-out 기록됨"; fail=1; fi
+rm -f cycles/active
+
 [ $fail -eq 0 ] && echo "ratchet-check self-test: PASS"
 exit $fail

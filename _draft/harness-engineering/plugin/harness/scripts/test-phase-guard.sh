@@ -181,6 +181,24 @@ json.dump({
 }, open(p, "w"), ensure_ascii=False)
 PY
 [ "$(adv design)" != "0" ] || fail "phase_gates 있는데 evidence 없이 analysis→design 이 허용됨"
+# B4-empty: 0바이트 stub evidence 는 전진 거부(파일 존재만으로는 부족 — 빈 파일 = 빈 채팅)
+: > "$P/docs/analysis.md"  # 0바이트
+[ "$(adv design --evidence docs/analysis.md)" != "0" ] || fail "0바이트 evidence stub 으로 analysis→design 이 허용됨"
+# B4-blank: 공백/개행만인 evidence 도 거부(strip 후 비어있음)
+printf '   \n\t\n' > "$P/docs/analysis.md"
+[ "$(adv design --evidence docs/analysis.md)" != "0" ] || fail "공백만인 evidence stub 으로 analysis→design 이 허용됨"
+# B4-minimal: 한 줄짜리 정당한 짧은 evidence(ADR 포인터)는 통과해야 함(임의 길이 임계 금지)
+printf 'see docs/adr/0007.md' > "$P/docs/analysis.md"  # 개행도 없는 한 줄
+[ "$(adv design --evidence docs/analysis.md)" = "0" ] || fail "한 줄짜리 정당한 evidence 가 거부됨(over-engineering)"
+[ "$(cur_phase)" = "design" ] || fail "한 줄 evidence 전진 후 current_phase 가 design 아님"
+# 정상 multi-line evidence 도 계속 통과
+python3 - "$META" <<'PY'
+import json, sys
+p = sys.argv[1]; m = json.load(open(p))
+m["current_phase"] = "analysis"
+json.dump(m, open(p, "w"), ensure_ascii=False)
+PY
+: > "$CHAIN"
 echo "# analysis" > "$P/docs/analysis.md"
 [ "$(adv design --evidence docs/analysis.md)" = "0" ] || fail "evidence 있는 analysis→design 이 거부됨"
 [ "$(cur_phase)" = "design" ] || fail "evidence 전진 후 current_phase 가 design 아님"

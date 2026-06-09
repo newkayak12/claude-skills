@@ -46,13 +46,20 @@ def cmd_check(args):
 
 
 def cmd_floor(args):
-    floor = ratchetlib.compute_floor()
-    if not floor:
+    tamper = []
+    floor = ratchetlib.compute_floor(tamper_out=tamper)
+    if not floor and not tamper:
         print("(닫힌 사이클에 축 watermark 없음 — ratchet 비활성)")
         return
     for axis, v in sorted(floor.items()):
         tag = "  [baseline-reset]" if v.get("baseline_reset") else ""
         print(f"[{axis}] {v['value']} ({v['direction']}) ← {v['source']}{tag}")
+    if tamper:
+        # H7: 손상된 닫힌 사이클은 floor 값에 채택되지 않았다(낮추지 못함). 가시화 + 차단 경고.
+        print("🛑 닫힌 사이클 체인 검증 실패(위변조/삭제) — floor 에 미반영, close 게이트는 차단:",
+              file=sys.stderr)
+        for t in tamper:
+            print(f"  - {t['cycle']}: {t['reason']}", file=sys.stderr)
 
 
 def cmd_axes(args):

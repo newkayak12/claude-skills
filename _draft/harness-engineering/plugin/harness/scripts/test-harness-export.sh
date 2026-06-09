@@ -18,7 +18,7 @@ DEST="$TMP/harness"
 python3 "$EXPORT" --dest "$DEST" >/dev/null 2>&1 || fail "export exit != 0"
 
 [ -f "$DEST/.claude-plugin/plugin.json" ] || fail "plugin.json 누락"
-[ -f "$DEST/06-rules.md" ]               || fail "06-rules.md 평탄화 누락 (rules-load 런타임 의존)"
+[ -f "$DEST/06-rules.md" ]               || fail "06-rules.md 평탄화 누락 (ruleslib L0 런타임 의존)"
 [ -f "$DEST/skills/install/SKILL.md" ]   || fail "install skill 누락"
 [ -f "$DEST/skills/cycle/SKILL.md" ]     || fail "cycle skill 누락"
 [ -d "$DEST/situational-rules" ]         || fail "situational-rules 누락"
@@ -29,18 +29,21 @@ grep -q "GENERATED" "$DEST/README.md"    || fail "README에 GENERATED 표기 없
 [ ! -e "$DEST/TODO.md" ]                 || fail "TODO.md 가 export됨 (dev 전용)"
 [ ! -e "$DEST/devils-advocate.md" ]      || fail "devils-advocate.md 가 export됨 (dev 전용)"
 
-# 핵심: 설치 환경처럼 dest 안의 rules-load.py 가 dest/06-rules.md 를 찾는가
-python3 "$DEST/scripts/rules-load.py" --list-stages >/dev/null 2>&1 \
-  || fail "rules-load.py 가 export dir 안에서 06-rules.md 를 못 찾음 (self-containment 깨짐)"
-# non-vacuous: 파일을 찾는 것만으론 부족 — 실제 룰을 파싱하고 *끝까지 출력*해야 함.
-# (스트리밍 grep은 print_rule 도중 크래시를 못 잡음 → exit code 를 직접 본다)
-ALLOUT="$(python3 "$DEST/scripts/rules-load.py" --all 2>&1)"; RC=$?
-[ $RC -eq 0 ] || { echo "$ALLOUT" | tail -4; fail "rules-load.py --all 비정상 종료(exit $RC) — print_rule 등 런타임 깨짐"; }
-NRULES="$(printf '%s\n' "$ALLOUT" | grep -cE '^## R-')"
-[ "${NRULES:-0}" -gt 5 ] || fail "rules-load.py 파싱 룰 $NRULES 개 (<=5, vacuous/크래시 의심)"
-# stage 필터 경로(install 스킬이 광고)도 끝까지 동작해야
-python3 "$DEST/scripts/rules-load.py" code-writing >/dev/null 2>&1 \
-  || fail "rules-load.py <stage> 필터가 끝까지 동작 안 함"
+# 핵심: 설치 환경처럼 dest 안의 L0 파서(ruleslib)가 dest/06-rules.md 를 찾고 *끝까지 파싱*하는가.
+# (옛 rules-load.py 데드 중복은 제거됨 — L0 self-containment 의 SSOT 는 이제 ruleslib/rules-merge.)
+# non-vacuous: 파일을 찾는 것만으론 부족 — 실제 L0 룰을 5개 초과 파싱해야(vacuous/크래시 방어).
+NRULES="$(python3 - "$DEST" <<'PY'
+import sys
+from pathlib import Path
+dest = Path(sys.argv[1])
+sys.path.insert(0, str(dest / "scripts"))
+import ruleslib
+rules = ruleslib.parse_l0((dest / "06-rules.md").read_text(encoding="utf-8"))
+print(len([r for r in rules if r["id"].startswith("R-")]))
+PY
+)" || fail "ruleslib 가 export dir 안에서 06-rules.md 를 파싱 못 함 (self-containment 깨짐)"
+[ "${NRULES:-0}" -gt 5 ] || fail "ruleslib L0 파싱 룰 $NRULES 개 (<=5, vacuous/크래시 의심)"
+# stage 필터 경로(install 스킬이 광고: rules-merge effective --stage)도 끝까지 동작해야 — 아래 #010 블록이 검증.
 # #010: rule-merge 엔진도 export 안에서 self-contained 동작 (L0 번들 + 생성 L1 머지)
 MH="$TMP/mh/.harness"; HARNESS_HOME="$MH" python3 "$DEST/scripts/user-rules-init.py" \
   init --lang "Py" >/dev/null 2>&1 || fail "export user-rules-init 동작 안 함"

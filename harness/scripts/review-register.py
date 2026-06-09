@@ -63,6 +63,15 @@ def cmd_register(args):
     if not cdir.exists():
         print(f"ERROR: cycle directory not found: {cdir}", file=sys.stderr)
         sys.exit(1)
+    # H3: reviewer 식별자는 *비어있지 않아야* 한다. argparse required 는 플래그 존재만 보장하므로
+    # 빈 문자열/공백을 명시적으로 거부 — doer≠reviewer 강제(close-cycle)의 입력 무결성.
+    if not args.reviewer or not args.reviewer.strip():
+        print(
+            "ERROR: --reviewer 가 비어 있습니다. 채점자 식별자를 명시하세요 (예: subagent:spec-reviewer).\n"
+            "  (close-cycle 이 doer≠reviewer 를 강제 — 익명/공백 reviewer 는 자기 채점 회피를 무력화)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     bar_hash = resolve_bar_hash(args.cycle, args.criterion_id)
     entry = chainlog.append_entry(review_file(args.cycle), {
         "id": args.id,
@@ -70,7 +79,7 @@ def cmd_register(args):
         "bar_hash": bar_hash,
         "verdict": args.verdict,
         "evidence": args.evidence,
-        "reviewer": args.reviewer,
+        "reviewer": args.reviewer.strip(),
         "reviewed_at": datetime.now(timezone.utc).isoformat(),
     })
     print(f"REGISTERED review [{args.id}] {args.criterion_id} -> {args.verdict} (cycle {args.cycle})")

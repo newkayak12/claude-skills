@@ -6,12 +6,13 @@ WIP=1 (SD-03) 자동 확인 — 이미 active 사이클이 있으면 거부.
 
 Usage:
   cycle-init.py <name>
-  cycle-init.py <name> --force   # 기존 active 사이클 무시 (위험 — ADR 권장)
+  cycle-init.py <name> --force --adr <path>   # 기존 active 사이클 무시 (ADR 결박 + blackbox 기록)
 """
 import argparse
 import json
+import os
 import sys
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 CYCLES_DIR = Path("cycles")
@@ -207,6 +208,7 @@ RETRO = """# Retrospective — {name}
 METRICS_SKELETON = {
     "cycle_id": "",
     "started_at": "",
+    "author": "",  # H3: 사이클 작성자(doer) 식별자 — close-cycle 이 doer≠reviewer 강제에 사용. 기본 $USER 또는 --author.
     "current_phase": "analysis",  # analysis→design→planning→implementation→validation. AI가 행동 전 확인 (P6/P9).
     "phase_status": {
         "analysis": "in-progress",
@@ -240,18 +242,67 @@ def slugify(name: str) -> str:
     return out.strip("-") or "unnamed"
 
 
-def check_wip(force: bool) -> None:
-    if not ACTIVE_LINK.exists():
+def _require_adr(adr: str | None) -> None:
+    """--force 결박: ADR 파일이 존재 + 비어있지 않아야(size>0) 한다 (close-cycle --force 와 동형, M).
+    0바이트 빈 파일은 사유 미작성으로 간주해 거부."""
+    p = Path(adr) if adr else None
+    if not adr or not p.exists() or p.stat().st_size == 0:
+        print(
+            "🛑 INIT 차단 — --force(WIP=1 무시) 에는 --adr <존재+비어있지않은 파일> 이 필수다.\n"
+            "   기존 active 사이클을 폐기하는 사유를 ADR/문서로 남기고 그 경로를 결박하세요:\n"
+            "     cycle-init.py <name> --force --adr docs/adr/00XX-....md\n"
+            "   (게이트 우회 기록은 게이트만큼 중요 — close-cycle --force 와 대칭, H5)",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+
+def _append_blackbox(cdir: Path, entry: dict) -> None:
+    """force-init 흔적을 폐기되는 사이클의 blackbox.jsonl 에 append.
+    fail-CLOSED: 감사 기록에 실패하면 우회를 허용하지 않는다(close 하지 말고 에러). 흔적 없는 우회 불허."""
+    entry.setdefault("ts", datetime.now(timezone.utc).isoformat())
+    try:
+        with (cdir / "blackbox.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception as e:
+        print(
+            f"🛑 INIT 차단 — force-init 감사 기록(blackbox append) 실패: {e}\n"
+            f"   감사를 못 남기면 우회를 허용하지 않는다(fail-CLOSED). 경로/권한 확인 후 재시도.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+
+def _active_dir() -> Path | None:
+    """현재 active 사이클 디렉터리(있으면). force-init 시 blackbox 결박 대상."""
+    if not ACTIVE_LINK.exists() and not ACTIVE_LINK.is_symlink():
+        return None
+    name = os.readlink(ACTIVE_LINK) if ACTIVE_LINK.is_symlink() else ACTIVE_LINK.name
+    return CYCLES_DIR / Path(name).name
+
+
+def check_wip(force: bool, adr: str | None) -> None:
+    if not ACTIVE_LINK.exists() and not ACTIVE_LINK.is_symlink():
         return
     target = ACTIVE_LINK.resolve() if ACTIVE_LINK.is_symlink() else ACTIVE_LINK
     msg = (
         f"WIP=1 위반: 이미 active 사이클이 있습니다 — {target.name}\n"
         f"  현재 사이클을 *명시적으로 종료*한 뒤 새 사이클 시작.\n"
         f"  관련: SD-03, AP-12 WIP explosion.\n"
-        f"  강행 시: --force (ADR 작성 권장)"
+        f"  강행 시: --force --adr <존재+비어있지않은 파일>"
     )
     if force:
-        print(f"[WARN] {msg}\n[--force 지정으로 진행]", file=sys.stderr)
+        # close-cycle --force 와 동형 — ADR 결박 필수 + blackbox 감사 기록(fail-CLOSED).
+        _require_adr(adr)
+        adir = _active_dir()
+        if adir is not None and adir.exists():
+            _append_blackbox(adir, {
+                "kind": "force-init",
+                "discarded_cycle": adir.name,
+                "adr": adr,
+                "note": "cycle-init --force 로 WIP=1(미종료 active 사이클) 무시·폐기",
+            })
+        print(f"[WARN] {msg}\n[--force --adr={adr} 지정으로 진행 · blackbox 기록됨]", file=sys.stderr)
         return
     print(f"ERROR:\n{msg}", file=sys.stderr)
     sys.exit(1)
@@ -292,7 +343,16 @@ def main():
         default="product",
         help="Cycle type — gate adapts per type (09 §9.1b). Default: product",
     )
-    parser.add_argument("--force", action="store_true", help="Bypass WIP=1 check")
+    parser.add_argument("--force", action="store_true", help="Bypass WIP=1 check (--adr 결박 필수)")
+    parser.add_argument(
+        "--adr",
+        help="--force 시 *필수* — 기존 active 사이클 폐기 사유를 담은 존재+비어있지않은 파일",
+    )
+    parser.add_argument(
+        "--author",
+        default=os.environ.get("USER", "doer"),
+        help="사이클 작성자(doer) 식별자. close-cycle 의 doer≠reviewer 강제에 사용. 기본 $USER.",
+    )
     args = parser.parse_args()
 
     if args.check_wip:
@@ -303,7 +363,7 @@ def main():
         parser.error("name is required unless --check-wip is given")
 
     CYCLES_DIR.mkdir(exist_ok=True)
-    check_wip(args.force)
+    check_wip(args.force, args.adr)
 
     today = date.today().strftime("%Y%m%d")
     slug = slugify(args.name)
@@ -333,6 +393,7 @@ def main():
     metrics = METRICS_SKELETON.copy()
     metrics["cycle_id"] = cid
     metrics["started_at"] = today
+    metrics["author"] = args.author  # H3: doer 식별자 기록 — close-cycle 이 self-review 차단에 사용
     (cdir / "metrics.json").write_text(
         json.dumps(metrics, indent=2, ensure_ascii=False), encoding="utf-8"
     )
