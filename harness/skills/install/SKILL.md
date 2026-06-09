@@ -41,6 +41,29 @@ command -v python3 >/dev/null 2>&1 \
 
 `python3 없음`이 뜨면 **STOP** — 사용자에게 python3 설치를 안내하고 온보딩을 멈춘다. 이걸 통과해야 아래가 의미 있다.
 
+## Step 0.5: 버전 드리프트 점검 (재-벤더 *전에*, 필수)
+
+플러그인은 `git push` 로 자동 갱신되지 *않는다* — 설치된 버전은 명시적 update 전까지 동결된다.
+"이미 설치됨"만 보고하고 끝내면 사용자가 *옛 버전(게이트·보안 수정 누락)으로 계속 작업*하는 실사용
+결함이 생긴다(#015). 그래서 *세 지점*의 버전을 먼저 비교해 표면화한다 — **거부가 아니라 정보성**.
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/version-doctor.py --project "$CLAUDE_PROJECT_DIR"
+```
+
+읽는 세 지점: **실행 중 플러그인**(이 스킬이 도는 cache 버전) · **마켓플레이스 등재**(로컬 클론이 아는
+최신) · **프로젝트 벤더링**(`.claude/harness/`). 판정과 **그대로 사용자에게 보고**한다:
+
+- **전역 플러그인 stale** (실행 < 마켓): `/plugin` 메뉴 → harness **update** 가 *먼저*다. 그래야
+  Step A 재-벤더가 새 버전을 프로젝트에 넣을 수 있다(전역이 옛 버전이면 재-벤더해도 옛 버전).
+- **마켓플레이스 미등재/미상**: 로컬 클론이 harness 추가 이전 시점 → `/plugin marketplace update <mp>` 후 재확인.
+- **벤더링 stale** (벤더 < 실행): Step A 재-벤더로 해소(아래에서 바로 실행).
+- 마켓플레이스 클론은 origin 보다 뒤처질 수 있어(offline 비교 한계) **항상 `/plugin marketplace update`
+  로 클론 새로고침 후** 진짜 최신을 확인하라고 곁들인다.
+
+전역 플러그인이 stale 면 *그 사실을 명시*하고 — update 경로를 안내한 뒤 — Step A(재-벤더)는 계속
+진행한다(현재 실행 버전 기준으로라도 프로젝트를 정렬). fail-open이라 점검이 실패해도 온보딩을 막지 않는다.
+
 ## Step A: 프로젝트를 harness 아래로 scaffold/갱신 (핵심 delivery — 첫 설치 *그리고* update)
 
 > 이게 "그냥 쓰면 자동으로 하네스 아래서 동작"의 실체다. 전역 플러그인이 아니라 *이 프로젝트의
@@ -145,6 +168,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/user-rules-init.py add \
 
 ## What Claude Does
 - Step 0에서 `python3` pure-shell preflight — 없으면 STOP하고 설치 안내 (hook이 죽지 않게)
+- **Step 0.5에서 `version-doctor.py`로 버전 드리프트 점검** — 실행 플러그인/마켓플레이스 등재/벤더링 3지점 비교, stale 면 명시하고 update 경로 안내(거부 아님). "이미 설치됨"으로 *조용히 끝내지 않음*
 - Step A(프로젝트 재-벤더)는 첫 설치든 update든 *항상 먼저* 실행 — "이미 설치됨"으로 STOP하지 않음(update 핵심)
 - Step 1에서 기존 user-rules 확인 — 있으면 *user-rules 단계만* 건너뛰고(add 여부만 물음) 온보딩은 계속
 - 한 질문씩 L1 기본값 수집 (한꺼번에 쏟지 않음)
