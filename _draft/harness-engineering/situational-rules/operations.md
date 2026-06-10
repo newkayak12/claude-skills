@@ -1,109 +1,109 @@
-# Situational — 운영·관측 Baseline
+# Situational — Operations & Observability Baseline
 
-**트리거**: 출시 직전 / 운영 중 / Performance budget·Observability 설정·SLO 합의 시
+**Trigger**: just before release / while operating / when setting Performance budget, Observability, or agreeing on SLO
 
-`06-rules.md`의 DoD에서 *분리한* Performance budget·Observability 항목이 이 문서에 있다. *출시 직전*에 한 번 통과하는 베이스라인.
+The Performance budget and Observability items split out from the DoD in `06-rules.md` live here. This is the baseline to pass *once, just before release*.
 
-## O-01: Three Pillars — 출시 전 필수
+## O-01: Three Pillars — required before release
 
-세 가지 *모두* 있어야 사고 시 추적 가능.
+All three must be in place to trace incidents.
 
-- **Logs**: 구조화(JSON) + correlation ID 전파 + level 분류
-- **Metrics**: RED(Rate, Errors, Duration) 또는 USE(Utilization, Saturation, Errors) 모델
-- **Traces**: 분산 트레이싱. OpenTelemetry 권장 (vendor-neutral)
+- **Logs**: structured (JSON) + correlation ID propagation + level classification
+- **Metrics**: RED (Rate, Errors, Duration) or USE (Utilization, Saturation, Errors) model
+- **Traces**: distributed tracing. OpenTelemetry recommended (vendor-neutral)
 
 **How**:
-- 세 항목 *각각*에 대해 "어디서 보나" 답할 수 있어야 함
-- 한 종류만 있으면 *어떤 사고*는 절대 못 푼다
+- For each of the three, you must be able to answer "where do I look for this?"
+- Having only one type means *some incidents will be permanently unsolvable*
 
-## O-02: Performance budget — 수치를 사전에 박는다
+## O-02: Performance budget — set numbers in advance
 
-- **Why**: "빠르다"는 합의 아님. 수치 없는 NFR은 합의되지 않은 것.
+- **Why**: "Fast" is not a shared agreement. NFRs without numbers are unagreed NFRs.
 - **How**:
-  - 핵심 경로별 P95/P99 응답시간 목표 (예: 로그인 P95 < 300ms, 검색 P95 < 500ms)
+  - P95/P99 response time targets per critical path (e.g. login P95 < 300ms, search P95 < 500ms)
   - Page load: FCP < 1.5s, LCP < 2.5s, INP < 200ms (Web Vitals)
-  - 백엔드 처리량: ___ rps (특정 시나리오)
-  - 자원 한도: 메모리 < ___MB, CPU < ___% (단일 인스턴스)
+  - Backend throughput: ___ rps (specific scenario)
+  - Resource limits: memory < ___MB, CPU < ___% (single instance)
 
 ## O-03: SLO + Error Budget
 
-- **Why**: 100% 가용성은 *불가능*하고 *비효율적*. 어디까지 허용할지를 사전에 정함.
+- **Why**: 100% availability is *impossible* and *inefficient*. Decide in advance how much downtime is acceptable.
 - **How**:
-  - SLO 예: "월간 가용성 99.9% (= 약 43분 다운타임 허용)"
-  - Error budget = 100% - SLO. 이 예산을 *다 쓸 때까지* 새 기능 출시 가능. 다 쓰면 *안정화에 집중*.
-  - 1인 개발자는 단순화: *주간 다운타임 X분 허용*
+  - Example SLO: "99.9% monthly availability (≈ 43 minutes of downtime permitted)"
+  - Error budget = 100% − SLO. New features can ship while this budget is unspent. Once exhausted, *focus on stability*.
+  - Simplified for solo developers: *X minutes of downtime permitted per week*
 
-## O-04: Alarms with thresholds — 임계값 없는 메트릭은 무용
+## O-04: Alarms with thresholds — metrics without alarms are useless
 
-- **Why**: 대시보드만 두고 *알람*이 없으면 사고가 *사용자 신고*로 들어옴.
+- **Why**: A dashboard without *alarms* means incidents arrive as *user reports*.
 - **How**:
-  - 각 핵심 메트릭에 임계값 (예: 5xx 비율 > 1% / 5분, P95 > 1s / 5분, DB connection > 80% / 1분)
-  - **알람 = 행동 가능**해야 함. "FYI 알람"은 *알람 피로*만 부름 → 제거.
-  - On-call rotation 또는 단일 운영자 채널
+  - Set thresholds for each key metric (e.g. 5xx rate > 1% / 5 min, P95 > 1s / 5 min, DB connections > 80% / 1 min)
+  - **An alarm must be actionable**. "FYI alarms" cause *alarm fatigue* only → remove them.
+  - On-call rotation or solo operator channel
 
 ## O-05: Runbook for top-5 failure modes
 
-- **Why**: 사고 한가운데서 *공식 문서* 찾을 시간 없음. 사전에 정리되지 않은 절차는 *없는 절차*.
+- **Why**: There is no time to search official documentation in the middle of an incident. Procedures not prepared in advance are non-existent procedures.
 - **How**:
-  - Top 5: DB 다운 / 외부 API 장애 / OOM / 디스크 풀 / 부하 폭증
-  - 각각: *증상 → 진단 명령 → 1차 대응 → 에스컬레이션*
-  - 분기별 *읽고 갱신* (drift 방지)
+  - Top 5: DB down / external API failure / OOM / disk full / traffic spike
+  - For each: *symptom → diagnostic commands → first response → escalation*
+  - *Read and update* quarterly (prevent drift)
 
 ## O-06: Feature flag for risky changes
 
-- **Why**: 끄지 못하는 변경은 *되돌릴 수 없는* 변경. 큰 변경에는 안전망이 필요.
+- **Why**: A change that cannot be turned off is an *irreversible* change. Large changes require a safety net.
 - **How**:
-  - DB 마이그레이션 외 *행동 변경*은 feature flag 뒤에 배포
-  - Flag별: *기본값, 점진 ramp 비율, 종료(cleanup) 트리거*
-  - Flag 정리도 부채 — debt register에 등재 [`R-TD01`](../06-rules.md#r-td01-debt-register--의식적으로-목록화)
+  - Deploy behavior changes (other than DB migrations) behind a feature flag
+  - Per flag: *default value, progressive ramp ratio, cleanup trigger*
+  - Flag cleanup is also debt — register it in the debt register [`R-TD01`](../06-rules.md#r-td01-debt-register--consciously-catalog-it)
 
-## O-07: Blameless postmortem — 사람이 아니라 시스템
+## O-07: Blameless postmortem — the system, not the person
 
-- **Why**: 사람을 비난하면 *다음 사고 보고가 숨김*. 시스템 결함이 누적.
+- **Why**: Blaming people causes *the next incident to be hidden*. System defects accumulate.
 - **How**:
-  - 사고 후 24-72h 내 postmortem 작성
-  - 형식: *timeline / impact / root cause / 5 whys / action items*
-  - 책임 명시는 *역할*(Service Owner) 단위. *이름* 단위 금지.
-  - Action items는 *오너 + 마감일* 명시
+  - Write a postmortem within 24–72h after an incident
+  - Format: *timeline / impact / root cause / 5 whys / action items*
+  - Assign responsibility at the *role* level (Service Owner), not at the *individual name* level.
+  - Action items must have an *owner + deadline*
 
-## O-08: 점진 rollout — 0% → 10% → 100%
+## O-08: Gradual rollout — 0% → 10% → 100%
 
-- **Why**: 한 번에 100% 켜면 한 번에 100% 망함.
+- **Why**: Turning on 100% at once means 100% failure at once.
 - **How**:
-  - Feature flag 또는 LB 가중치
-  - 단계별 *메트릭 게이트* (에러율 / latency / 비즈니스 metric)
-  - 게이트 통과 못하면 *자동 rollback*
+  - Feature flag or load balancer weighting
+  - Per-stage *metric gate* (error rate / latency / business metric)
+  - If the gate fails — *auto rollback*
 
-## O-09: Capacity planning — 명시적으로
+## O-09: Capacity planning — explicitly
 
-- **Why**: 트래픽 증가는 *연속*이지만, 자원은 *점프*로 증가. 사전 계획 없으면 사고.
+- **Why**: Traffic growth is *continuous* but resources scale in *jumps*. Without planning, incidents happen.
 - **How**:
-  - 사이클당 1회 capacity 점검: *현재 사용 vs 한계 vs 예상 증가*
-  - 한계의 60-70% 도달 시 *확장 계획 발동*
+  - One capacity review per cycle: *current usage vs limit vs projected growth*
+  - When usage reaches 60–70% of limit, *trigger an expansion plan*
 
-## O-10: 운영 도구의 secret도 secret이다
+## O-10: Operations tooling secrets are secrets too
 
-- **Why**: 모니터링·로그·알람 시스템의 자격증명·webhook URL이 새면 *통제 위에 통제*가 무너짐.
+- **Why**: Leaked credentials or webhook URLs from monitoring, logging, and alerting systems break *control above control*.
 - **How**:
-  - 운영 도구 secret도 vault·KMS에 보관 ([`security.md#s-01`](./security.md))
-  - 알람 webhook URL은 *공개 채널 금지*
-  - 모니터링 dashboard 접근권은 least privilege
+  - Store operations tool secrets in vault / KMS ([`security.md#s-01`](./security.md))
+  - Alert webhook URLs must not appear in public channels
+  - Monitoring dashboard access follows least privilege
 
-## O-11: Cost monitoring — 비용도 메트릭
+## O-11: Cost monitoring — cost is a metric
 
-- **Why**: 자원 사용량과 *비용*은 다르다. 비용을 안 보면 *조용한 부채*.
+- **Why**: Resource usage and *cost* are different. Ignoring cost creates *silent debt*.
 - **How**:
-  - 일/주/월 단위 비용 추적
-  - *비용 알람* — 예산 80%, 100%, 120% 임계값
-  - 1인 개발자는 특히 무료 tier 한도 초과 알람 필수
+  - Track cost daily / weekly / monthly
+  - *Cost alarms* — thresholds at 80%, 100%, 120% of budget
+  - For solo developers, an alert for exceeding the free tier limit is essential
 
-## 관련 skill
+## Related skills
 
-- `develop:operations-workflow` — 운영 준비 entry point
-- `develop:sre-engineer` — SRE 사고방식
-- `develop:incident-response-playbook` — 사고 대응 절차
-- `develop:chaos-engineer` — 사전 장애 주입 검증
-- `develop:performance-profiling-optimization` — 성능 병목 분석
-- `develop:circuit-breaker-tuner` — 외부 의존 장애 격리
-- `develop:connection-pool-tuner` — DB 커넥션 풀
-- `develop:dockerfile-optimizer` — 컨테이너 운영 효율
+- `develop:operations-workflow` — operations readiness entry point
+- `develop:sre-engineer` — SRE mindset
+- `develop:incident-response-playbook` — incident response procedures
+- `develop:chaos-engineer` — pre-failure injection validation
+- `develop:performance-profiling-optimization` — performance bottleneck analysis
+- `develop:circuit-breaker-tuner` — external dependency failure isolation
+- `develop:connection-pool-tuner` — DB connection pool
+- `develop:dockerfile-optimizer` — container operation efficiency

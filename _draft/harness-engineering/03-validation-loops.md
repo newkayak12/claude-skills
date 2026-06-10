@@ -1,146 +1,146 @@
-# 03. Validation Loops — 검증 루프
+# 03. Validation Loops
 
-검증의 목적은 *결정을 미루지 않는 것*. 가설을 적고, 가장 *싼 방법*으로 참/거짓을 확인하고, 그 결과에 따라 다음 트랙으로 넘어갈지 / pivot할지를 정한다.
+The purpose of validation is *not to defer decisions*. Write down hypotheses, confirm them true/false in the *cheapest possible way*, and based on results, decide whether to proceed to the next track or pivot.
 
-## 3.1 두 루프의 위치
+## 3.1 Where the Two Loops Sit
 
-- **Loop 1 — Product Hypothesis**: 제품 트랙 끝, 기술 트랙 시작 전.
-  - 검증 대상: "이게 진짜 문제인가? 이 해법이 이 사람들에게 가치를 만드는가?"
-- **Loop 2 — Tech Hypothesis**: 기술 트랙 끝, 본격 빌드 시작 전.
-  - 검증 대상: "기술적으로 실현 가능한가? NFR을 만족할 수 있는가? 운영 가능한가?"
+- **Loop 1 — Product Hypothesis**: End of Product Track, before Tech Track begins.
+  - Validates: "Is this a real problem? Does this solution create value for these people?"
+- **Loop 2 — Tech Hypothesis**: End of Tech Track, before full build begins.
+  - Validates: "Is it technically feasible? Can we meet the NFRs? Can it be operated?"
 
-## 3.2 가설 작성법 — *Falsifiable*
+## 3.2 Writing Hypotheses — *Falsifiable*
 
-좋은 가설은 **반증 가능**해야 한다. "유저가 좋아할 것이다"는 가설이 아니다.
+A good hypothesis must be **falsifiable**. "Users will like it" is not a hypothesis.
 
-### 템플릿
+### Template
 
 > **We believe** that [persona] doing [behavior]
 > will result in [outcome].
 > **We'll know we're right** when we see [signal/metric ≥ threshold]
 > within [time window].
 
-### 예시
+### Examples
 
-**나쁜 가설**: "우리 제품이 유용할 것이다."
+**Bad hypothesis**: "Our product will be useful."
 
-**좋은 가설**: "우리는 *주말에 사이드 프로젝트를 하는 백엔드 개발자*가 *PR 리뷰 요청 페이지에서 '구조 변경만 먼저 보기' 버튼을 클릭*하면 *전체 리뷰 시간이 30% 줄어들 것*이라 믿는다. *베타 사용자 20명 중 12명 이상이 일주일에 2회 이상 이 버튼을 누른다*면 가설이 입증된 것으로 본다."
+**Good hypothesis**: "We believe that *backend developers working on side projects on weekends* who *click the 'show structural changes first' button on the PR review request page* will see *overall review time reduced by 30%*. We'll consider the hypothesis confirmed if *12 or more out of 20 beta users click this button at least twice per week*."
 
-→ Threshold가 *사전에* 정해져 있어야 사후 합리화를 막을 수 있다.
+→ The threshold must be defined *in advance* to prevent post-hoc rationalization.
 
-## 3.3 Loop 1 — Product Validation 기법
+## 3.3 Loop 1 — Product Validation Techniques
 
-### 비용 오름차순으로 정렬
+### Sorted by Cost (Ascending)
 
-| 기법 | 무엇 | 비용 | 검증하는 것 |
+| Technique | What | Cost | Validates |
 |---|---|---|---|
-| Customer Interview | 5-7명에게 *과거 행동* 인터뷰 (The Mom Test) | 매우 낮음 | 문제 존재성, 우회 행동 |
-| Fake Door / Smoke Test | "이런 기능이 있다"고 광고 → 클릭률 측정 | 낮음 | 표면적 관심도 |
-| Landing Page Test | 가입 페이지만 만들고 가입률 측정 | 낮음 | 가치 제안의 매력도 |
-| Wizard of Oz | 사용자에게는 자동화처럼 보이지만 뒤에서 사람이 처리 | 중간 | 행동 가치 (실제로 쓰는가) |
-| Concierge MVP | 소수 고객에게 수동 서비스 제공 | 중간-높음 | 풀 가치 사슬 검증 |
-| Prototype | clickable mockup으로 사용성 평가 | 중간 | 사용성, 흐름 이해 |
+| Customer Interview | Interview 5–7 people about *past behavior* (The Mom Test) | Very low | Problem existence, workaround behavior |
+| Fake Door / Smoke Test | Advertise "this feature exists" → measure click-through | Low | Surface-level interest |
+| Landing Page Test | Build only a signup page → measure signup rate | Low | Attractiveness of the value proposition |
+| Wizard of Oz | Appears automated to the user, but humans process it behind the scenes | Medium | Behavioral value (do they actually use it?) |
+| Concierge MVP | Provide the service manually to a small number of customers | Medium–high | Full value chain validation |
+| Prototype | Evaluate usability with a clickable mockup | Medium | Usability, flow comprehension |
 
-### Build–Measure–Learn — Lean Startup 루프
+### Build–Measure–Learn — Lean Startup Loop
 
-1. **Build**: 가설을 검증할 *최소 산출물*. 진짜 제품 아님 — fake door, mockup, concierge 등.
-2. **Measure**: 사전 정의한 metric 수집. *분석 가능한 형태*로 (이벤트 로그, 인터뷰 노트).
-3. **Learn**: 가설 입증/기각 판단. 다음 사이클 진입 또는 pivot.
+1. **Build**: The *minimum artifact* to test the hypothesis. Not a real product — fake door, mockup, concierge, etc.
+2. **Measure**: Collect the pre-defined metric. In *analyzable form* (event logs, interview notes).
+3. **Learn**: Confirm or reject the hypothesis. Enter next cycle or pivot.
 
-### Pivot의 유형 (Eric Ries)
+### Pivot Types (Eric Ries)
 
-- **Zoom-in**: 기능 하나가 핵심 — 그것을 제품으로
-- **Zoom-out**: 한 기능으로는 부족 — 더 큰 묶음으로
-- **Customer segment**: 같은 문제, 다른 고객군
-- **Customer need**: 같은 고객, 다른 문제
-- **Platform**: 앱 ↔ 플랫폼 전환
+- **Zoom-in**: One feature is the core — make that the product
+- **Zoom-out**: One feature isn't enough — expand to a larger bundle
+- **Customer segment**: Same problem, different customer group
+- **Customer need**: Same customer, different problem
+- **Platform**: App ↔ platform switch
 - **Business architecture**: B2B ↔ B2C
-- **Value capture**: 수익화 방식 변경
-- **Engine of growth**: 바이럴 vs 유료 vs sticky
-- **Channel**: 유통 채널 전환
-- **Technology**: 같은 가치, 다른 기술 (드물게 product pivot)
+- **Value capture**: Change monetization model
+- **Engine of growth**: Viral vs paid vs sticky
+- **Channel**: Switch distribution channel
+- **Technology**: Same value, different technology (rare as a product pivot)
 
-### Loop 1의 산출물
+### Loop 1 Artifacts
 
-- 가설 정의서 (3-5개)
-- 검증 방법 + 비용 + 기간
-- 결과 데이터 (수치 + 인용)
-- 의사결정: 다음 트랙 진입 / pivot / 종료
+- Hypothesis definition (3–5 items)
+- Validation method + cost + duration
+- Result data (numbers + quotes)
+- Decision: proceed to next track / pivot / stop
 
-## 3.4 Loop 2 — Tech Validation 기법
+## 3.4 Loop 2 — Tech Validation Techniques
 
-### 무엇을 검증하는가 — 4 Product Risks (Marty Cagan)
+### What to Validate — 4 Product Risks (Marty Cagan)
 
-Cagan은 모든 제품에 4가지 리스크가 있다고 본다:
-- **Value risk** (가치): 사용자가 이걸 살 것인가? → Loop 1에서 검증
-- **Usability risk** (사용성): 사용자가 쓸 수 있는가? → Loop 1에서 prototype으로
-- **Feasibility risk** (실현가능성): 우리가 만들 수 있는가? → **Loop 2의 핵심**
-- **Viability risk** (사업성): 우리 비즈니스가 견딜 수 있는가? → Loop 2에서 운영비/규제 측면
+Cagan holds that every product has 4 types of risk:
+- **Value risk**: Will users buy/use this? → Validated in Loop 1
+- **Usability risk**: Can users use it? → Via prototype in Loop 1
+- **Feasibility risk**: Can we build it? → **Core of Loop 2**
+- **Viability risk**: Can our business sustain it? (legal, marketing, sales, finance) → Operational cost / regulatory aspects in Loop 2
 
-### Loop 2 기법
+### Loop 2 Techniques
 
-| 기법 | 무엇 | 검증하는 것 |
+| Technique | What | Validates |
 |---|---|---|
-| **Spike** | 시간 박스 (1-3일) 안의 탐색 코드 | "이 기술로 이게 되긴 되나?" |
-| **POC (Proof of Concept)** | 핵심 경로 1개의 end-to-end 동작 | feasibility 전반 |
-| **Prototype** (tech prototype) | 실제와 비슷한 환경에서 동작 | 통합·운영성 |
-| **Performance benchmark** | 부하 시나리오 정의 + 측정 | NFR 충족 여부 |
-| **Threat model** (STRIDE) | 보안 위협 시나리오별 점검 | 보안 리스크 |
-| **Chaos test** | 의도적 장애 주입 | 회복성·운영 가능성 |
-| **Architecture review** | 동료/외부 리뷰어 피드백 | 맹점 보완 |
+| **Spike** | Exploratory code within a time box (1–3 days) | "Can this technology even do this?" |
+| **POC (Proof of Concept)** | End-to-end working of one core path | Overall feasibility |
+| **Prototype** (tech prototype) | Operates in a realistic environment | Integration, operability |
+| **Performance benchmark** | Define load scenario + measure | NFR compliance |
+| **Threat model** (STRIDE) | Check per security threat scenario | Security risk |
+| **Chaos test** | Intentional fault injection | Resilience, operability |
+| **Architecture review** | Peer/external reviewer feedback | Blind spot coverage |
 
 ### STRIDE — Threat Modeling
 
-Microsoft의 위협 분류:
-- **Spoofing** (위장)
-- **Tampering** (변조)
-- **Repudiation** (부인)
-- **Information disclosure** (정보 유출)
-- **Denial of service** (서비스 거부)
-- **Elevation of privilege** (권한 상승)
+Microsoft's threat classification:
+- **Spoofing**
+- **Tampering**
+- **Repudiation**
+- **Information disclosure**
+- **Denial of service**
+- **Elevation of privilege**
 
-각 컴포넌트 / 데이터 흐름 / trust boundary마다 STRIDE 6개를 점검. 1인 개발자라도 **인증 경계와 데이터 저장 경계**는 반드시 짚어야 함.
+Check all 6 for each component / data flow / trust boundary. Even a solo developer **must cover authentication boundaries and data storage boundaries**.
 
-### Spike vs POC — 차이
+### Spike vs POC — Difference
 
-- **Spike**: *알아보기* 위한 코드. 버려진다. "Redis Streams가 우리 use case에 맞나?"
-- **POC**: *증명*하기 위한 코드. 핵심 경로가 도는 것을 보여줌. "사용자 1만 명 동시 접속에서 P95 200ms 가능?"
+- **Spike**: Code *to explore*. Thrown away. "Does Redis Streams fit our use case?"
+- **POC**: Code *to prove*. Shows the core path actually runs. "Can we achieve P95 200ms under 10K concurrent users?"
 
-Spike의 결과는 ADR로 들어가야 한다 — 그래야 *왜 그 기술을 안 골랐는가*가 기록됨.
+Spike results must feed into an ADR — that's how *why we didn't choose that technology* gets recorded.
 
-### 위험 평가 — Risk Register
+### Risk Assessment — Risk Register
 
-| ID | 리스크 | 가능성 | 영향 | 대응 (Avoid/Reduce/Transfer/Accept) | 트리거 |
+| ID | Risk | Likelihood | Impact | Response (Avoid/Reduce/Transfer/Accept) | Trigger |
 |---|---|---|---|---|---|
-| R1 | DB 쓰기 폭주 시 락 | M | H | Reduce: 비동기 큐 도입 | 동시 사용자 1k 도달 |
-| R2 | 외부 API rate limit | H | M | Accept: 캐시·재시도 | 첫 베타 |
+| R1 | DB write spike causing lock contention | M | H | Reduce: introduce async queue | 1K concurrent users reached |
+| R2 | External API rate limit | H | M | Accept: caching + retry | First beta |
 
-→ Top 5 리스크는 *대응 행동이 명시*되어야 함. 행동이 없으면 그건 리스크가 아니라 걱정이다.
+→ The top 5 risks must have *explicit response actions*. No action means it's a worry, not a managed risk.
 
-### Loop 2의 산출물
+### Loop 2 Artifacts
 
-- 기술 가설 정의서 (3-5개)
-- Spike/POC 결과 (코드 + 측정치)
-- NFR benchmark 결과
-- Threat model 결과
+- Tech hypothesis definition (3–5 items)
+- Spike/POC results (code + measurements)
+- NFR benchmark results
+- Threat model results
 - Risk register
-- 의사결정: 빌드 진행 / 아키텍처 조정 / 스택 변경 / scope 축소
+- Decision: proceed with build / adjust architecture / change stack / reduce scope
 
-## 3.5 루프를 짧게 유지하는 법
+## 3.5 How to Keep Loops Short
 
-**증상**: 검증 루프가 *몇 주*로 늘어진다 → 회피된다.
+**Symptom**: Validation loop stretches to *several weeks* → it gets avoided.
 
-**대책**:
-- **Time-box**: 각 루프는 *기한 명시*. 7-14일이 보통. 결과가 부족해도 그 시점에서 결론 내림.
-- **Hypothesis는 *최대 5개*** — 더 많아지면 우선순위가 흐려짐.
-- **검증 방법의 비용을 보수적으로 추정** — 인터뷰 5명도 *섭외 + 진행 + 정리*로 보통 2주 소요.
-- **결과 *없음*도 결론**: "데이터 부족"이 결론이면 다음 사이클의 첫 액션은 *데이터 수집 자체*가 됨.
+**Countermeasures**:
+- **Time-box**: each loop has an *explicit deadline*. 7–14 days is typical. Conclude at that point even if data is sparse.
+- **Maximum 5 hypotheses** — more than that blurs priorities.
+- **Estimate validation cost conservatively** — even 5 interviews typically takes 2 weeks including recruiting, running, and synthesis.
+- **No data is also a conclusion**: if "insufficient data" is the result, the first action of the next cycle is *data collection itself*.
 
-## 3.6 검증 게이트 통과 기준 (자기점검)
+## 3.6 Validation Gate Pass Criteria (Self-check)
 
-다음 트랙으로 넘어가기 전에 다음 4가지를 *글로* 답할 수 있어야 한다:
+Before moving to the next track, you must be able to answer all four in writing:
 
-1. **검증된 것**: 어떤 가설이 *증거로* 입증되었는가? (수치 + 인용)
-2. **기각된 것**: 어떤 가설이 *기각*되었는가? 무엇이 바뀌어야 했는가?
-3. **미해결**: 검증 못한 가설은 무엇이고, *왜 미루기로 했는가*? (위험 수용 기록)
-4. **다음 사이클의 가장 큰 리스크**: 그래서 무엇이 다음에 가장 위험한가?
+1. **Confirmed**: Which hypotheses were proven *with evidence*? (numbers + quotes)
+2. **Rejected**: Which hypotheses were *rejected*? What needed to change?
+3. **Unresolved**: Which hypotheses weren't validated, and *why was deferral accepted*? (risk acceptance record)
+4. **Biggest risk in the next cycle**: So what is most dangerous going forward?

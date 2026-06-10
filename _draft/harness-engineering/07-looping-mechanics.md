@@ -1,190 +1,190 @@
 # 07. Looping Mechanics
 
-지금까지 문서들은 *루프의 존재*만 다뤘다. 이 문서는 4종 루프의 구분, 진입/종료/재진입 규칙, 종료(kill) 기준, pivot 트리거 매핑을 정리한다.
+Previous documents only established the *existence* of loops. This document defines the four loop types, their entry/exit/re-entry rules, kill criteria, and pivot trigger mappings.
 
-## 7.1 네 가지 루프
+## 7.1 The four loops
 
-같은 단어("loop")가 4가지 다른 활동을 가리킨다. 명시적 구분 없이 섞으면 *비용·결정 단위*가 흐려진다.
+The same word ("loop") refers to four distinct activities. Mixing them without explicit distinction blurs *cost and decision units*.
 
-| 루프 | 주기 | 비용 단위 | 핵심 산출물 |
+| Loop | Cadence | Cost unit | Key output |
 |---|---|---|---|
-| **Macro** | 사이클 1회 (수주~수개월) | 사이클 전체 | 출시된 제품 + 회고 |
-| **Meso** | 한 단계 재실행 (수일~수주) | 단계 + 게이트 시간 | 수정된 단계 산출물 |
-| **Micro** | TDD red-green-refactor (분~시간) | 한 함수/기능 | 통과 테스트 + 코드 |
-| **Post-launch** | 출시 후 지속 (영구) | 운영 비용 | 메트릭 + 다음 사이클 후보 |
+| **Macro** | One cycle (weeks to months) | Entire cycle | Shipped product + retrospective |
+| **Meso** | One phase re-run (days to weeks) | Phase + gate time | Revised phase deliverable |
+| **Micro** | TDD red-green-refactor (minutes to hours) | One function/feature | Passing tests + code |
+| **Post-launch** | Continuous after launch (permanent) | Operational cost | Metrics + next cycle candidates |
 
 ### Macro
-- **시작**: Pre-cycle 게이트 통과 ([09-pre-cycle.md](./09-pre-cycle.md))
-- **종료**: 출시 또는 kill 결정
-- **회고**: 사이클 종료 시 `think:retrospective` ([R-KP01](./06-rules.md))
+- **Start**: Pre-cycle gate passed ([09-pre-cycle.md](./09-pre-cycle.md))
+- **End**: Launch or kill decision
+- **Retrospective**: Call `think:retrospective` at cycle end ([R-KP01](./06-rules.md))
 
 ### Meso
-- **시작**: Gate 실패 또는 단계 산출물의 명백한 결함
-- **종료**: 갱신된 산출물이 다음 게이트 통과 가능
-- **회고**: 단계 종료 시 *짧은* 회고 — "무엇을 놓쳤나"
+- **Start**: Gate failure or obvious defect in a phase deliverable
+- **End**: Updated deliverable can pass the next gate
+- **Retrospective**: Short retro at phase end — "what did we miss?"
 
 ### Micro
-- **시작**: 작은 단위(1~3h) 작업 시작
-- **종료**: red → green → refactor + DoD 충족
-- **회고**: 별도 없음 (코드 자체가 산출물)
+- **Start**: Begin a small unit of work (1-3h)
+- **End**: red → green → refactor + DoD met
+- **Retrospective**: None (the code itself is the deliverable)
 
 ### Post-launch
-- **시작**: 출시 직후
-- **종료**: 제품 종료(sunset)까지 *영구* ([10-post-launch.md](./10-post-launch.md))
-- **회고**: 분기별 메타-회고 + 트리거 발생 시 새 Macro loop 발동
+- **Start**: Immediately after launch
+- **End**: Permanent until product sunset ([10-post-launch.md](./10-post-launch.md))
+- **Retrospective**: Quarterly meta-retro + new Macro loop triggered on specific events
 
-## 7.2 Loop 진입 / 종료 / 재진입 규칙
+## 7.2 Loop entry / exit / re-entry rules
 
 ### Macro
-- **재진입 없음**. 사이클은 *한 번 살고 한 번 죽는다*. 다음은 새 사이클.
+- **No re-entry**. A cycle lives once and dies once. The next is a new cycle.
 
-### Meso — 가장 중요
-Gate 실패 시 4갈래 결정:
+### Meso — most important
+Four-way decision on gate failure:
 
 ```
-Gate 실패
+Gate failure
   │
-  ├─ 가설이 *반증*됨 (negative evidence)
-  │    └─ Pivot (§7.6) — 같은 사이클 내 재실행
+  ├─ Hypothesis *disproved* (negative evidence)
+  │    └─ Pivot (§7.6) — re-enter within the same cycle
   │
-  ├─ 가설이 *미입증*임 (insufficient evidence)
-  │    └─ 현재 단계 재실행 (데이터 보강)
+  ├─ Hypothesis *unconfirmed* (insufficient evidence)
+  │    └─ Re-run current phase (gather more data)
   │
-  ├─ 산출물의 *전제*가 틀림
-  │    └─ 직전 단계로 복귀
+  ├─ *Premise* of the deliverable is wrong
+  │    └─ Return to previous phase
   │
-  └─ 누적 재진입 N회 초과 → Kill (§7.5)
+  └─ Cumulative re-entries exceed N → Kill (§7.5)
 ```
 
 ### Micro
-- **재진입**: 다음 작업 단위로 *자동*. 의식적 결정 불필요.
+- **Re-entry**: *Automatic* with the next work unit. No conscious decision needed.
 
 ### Post-launch
-- **종료 없음**. 운영 중인 한 영구.
-- *새 Macro loop 발동 트리거*:
-  - 핵심 메트릭 X% 하락
-  - 인터뷰에서 반복되는 새 신호
-  - 운영 사고로 드러난 구조적 결함
-  - 분기 메타-회고의 기회 식별
+- **No end**. Permanent while the product is live.
+- *New Macro loop trigger conditions*:
+  - Core metric drops by X%
+  - Repeating new signal from interviews
+  - Structural defect exposed by an operational incident
+  - Opportunity identified in quarterly meta-retrospective
 
-## 7.3 Loop 재진입 결정 표
+## 7.3 Loop re-entry decision table
 
-| 신호 | 결정 | 추가 비용 |
+| Signal | Decision | Added cost |
 |---|---|---|
-| 가설 반증 (Loop 1) | Pivot, 같은 사이클 내 재실행 | 사이클 30~50% 추가 |
-| 가설 미입증 (데이터 부족) | 현재 단계 재실행 (인터뷰·실험 보강) | 단계 시간 × 1.5 |
-| 산출물의 전제 오류 | 직전 단계 복귀 | 직전 단계 시간 × 1.2 |
-| 산출물의 *형식적* 결함 | 같은 단계 부분 수정 (재진입 아님) | 단계 시간 × 0.3 |
-| 누적 재진입 3회 | Kill | 사이클 종료 |
+| Hypothesis disproved (Loop 1) | Pivot, re-enter within same cycle | +30-50% of cycle |
+| Hypothesis unconfirmed (insufficient data) | Re-run current phase (supplement interviews/experiments) | Phase time × 1.5 |
+| Deliverable premise error | Return to previous phase | Previous phase time × 1.2 |
+| *Formal* defect in deliverable | Partial fix in same phase (not a re-entry) | Phase time × 0.3 |
+| 3 cumulative re-entries | Kill | Cycle ends |
 
-## 7.4 Inter-loop carryover — 무엇이 살고 무엇이 버려지나
+## 7.4 Inter-loop carryover — what survives and what gets discarded
 
-재진입 시 *모든 걸 버리지 않음*. **학습은 살리고, 결론은 의심하고, 코드는 버린다.**
+Re-entry does not mean discarding everything. **Preserve learning, question conclusions, discard code.**
 
-### 살림
-- 인터뷰 raw note (재해석 가능)
-- 기각된 가설 + 기각 이유 (다음 사이클 출발점)
-- 측정 메트릭과 임계값 근거
-- 기술적 학습 (벤치마크 수치, 의존성 한계)
+### Preserve
+- Interview raw notes (can be reinterpreted)
+- Rejected hypotheses + reasons for rejection (starting point for the next cycle)
+- Measurement metrics and threshold rationale
+- Technical learnings (benchmark numbers, dependency limits)
 
-### 의심
-- 가설의 *결론* — 데이터 재해석 시 바뀔 수 있음
-- Persona 우선순위 — 인터뷰 누적되면 재정렬
-- MVP 스코프 — pivot 시 통째로 재설계
+### Question
+- Hypothesis *conclusions* — can change with data reinterpretation
+- Persona priorities — reorder as interviews accumulate
+- MVP scope — redesign wholesale on a pivot
 
-### 버림
-- 출시되지 않은 *프로토타입 코드* (학습은 살리되 코드는 버림)
-- 비검증 가정에 기반한 산출물 (예: 검증 안 된 페르소나로 만든 UJM)
+### Discard
+- *Prototype code* that was never shipped (preserve learning, discard code)
+- Deliverables based on unvalidated assumptions (e.g., a UJM built on an unverified persona)
 
-→ 회고 시 `살림 / 의심 / 버림`을 *명시적으로 분류*해 [`templates/retro.md`](./templates/retro.md)에 기록.
+→ At retrospective, *explicitly classify* items as preserve / question / discard and record them in [`templates/retro.md`](./templates/retro.md).
 
-## 7.5 Loop 종료 (Kill Criteria) — 사이클을 *죽이는* 기준
+## 7.5 Loop kill criteria — when to *kill* a cycle
 
-[`C-06 Sunk cost`](./situational-rules/cognitive.md#c-06-sunk-cost--과거-투입은-결정에-영향-주지-않는다)를 코드화한다. *사전*에 kill 기준을 박아둔다.
+Codifies [`C-06 Sunk cost`](./situational-rules/cognitive.md#c-06-sunk-cost--과거-투입은-결정에-영향-주지-않는다). Set kill criteria *in advance*.
 
-### Hard kill (자동 종료)
-- **누적 재진입 3회**: 같은 단계를 3번 재실행해도 게이트 통과 못함
-- **시간 200% 초과**: 사이클 예산 시간의 2배 초과
-- **예산 100% 초과**: 정해진 비용 한도 초과
+### Hard kill (automatic termination)
+- **3 cumulative re-entries**: Same phase re-run 3 times without passing the gate
+- **Time exceeds 200%**: More than double the cycle budget
+- **Budget exceeds 100%**: Defined cost limit exceeded
 
-### Soft kill (재평가 트리거)
-- 사이클 시간 150% 도달 → *계속 vs 종료 vs pivot* 의식적 결정
-- 핵심 가설이 모두 미입증 + 재실험 비용 > 새 가설 비용
+### Soft kill (re-evaluation trigger)
+- Cycle time reaches 150% → conscious decision: *continue vs end vs pivot*
+- All core hypotheses unconfirmed + cost of re-experimentation > cost of a new hypothesis
 
-### Kill 시 산출물
-- *Kill 이유* 1장 ([`templates/retro.md`](./templates/retro.md) 형식)
-- 살릴 학습 별도 보존
-- 다음 사이클 후보에 *회피 패턴*으로 등록
+### Kill outputs
+- One-page *kill reason* (using [`templates/retro.md`](./templates/retro.md) format)
+- Preserved learnings stored separately
+- *Avoidance patterns* registered as candidates for the next cycle
 
-## 7.6 Pivot 트리거 → Pivot 타입 매핑
+## 7.6 Pivot trigger → Pivot type mapping
 
-[`03-validation-loops.md`](./03-validation-loops.md)의 10개 pivot 타입에 *발동 신호*를 붙인다.
+Attaches *trigger signals* to the 10 pivot types from [`03-validation-loops.md`](./03-validation-loops.md).
 
-| 트리거 신호 | Pivot 타입 | 비고 |
+| Trigger signal | Pivot type | Note |
 |---|---|---|
-| Persona는 맞으나 *제안한 해결*이 외면 | Zoom-in / Zoom-out | 한 기능만 살림 / 더 큰 문제로 확장 |
-| *다른* Persona가 같은 기능에 강한 관심 | Customer Segment | 타겟 자체 교체 |
-| Customer는 맞으나 *문제*가 약함 | Customer Need | 같은 고객의 다른 문제로 |
-| 가치는 인정하나 *지불 의사*가 약함 | Business Architecture / Value Capture | B2C↔B2B 또는 수익 모델 변경 |
-| 기술적 *실현 비용* >> 가치 | Technology / Channel | 다른 구현 또는 다른 채널 |
-| 성장 *루프*가 작동 안함 | Engine of Growth | viral/paid/sticky 전환 |
-| 모든 게 작동하나 *너무 작음* | Platform | 단일 제품 → 플랫폼 |
+| Persona is right but *proposed solution* is ignored | Zoom-in / Zoom-out | Keep one feature only / expand to a larger problem |
+| *Different* Persona shows strong interest in the same feature | Customer Segment | Replace the target segment |
+| Customer is right but *problem* is weak | Customer Need | Switch to a different problem for the same customer |
+| Value is recognized but *willingness to pay* is weak | Business Architecture / Value Capture | B2C↔B2B or monetization model change |
+| Technical *implementation cost* >> value | Technology / Channel | Different implementation or different channel |
+| Growth *loop* isn't working | Engine of Growth | Switch between viral/paid/sticky |
+| Everything works but *too small* | Platform | Single product → platform |
 
-→ Pivot은 *Macro loop 종료가 아님*. 같은 사이클 내 재진입.
+→ A pivot is *not the end of the Macro loop*. It is a re-entry within the same cycle.
 
-## 7.7 Loop 시각화 — Hill Chart
+## 7.7 Loop visualization — Hill Chart
 
-Shape Up의 Hill Chart는 작업의 *현재 위치*를 두 단계로 표시한다.
+Shape Up's Hill Chart shows a task's *current position* in two stages.
 
 ```
                     ⛰
        Uphill              Downhill
-   (탐색·발산)           (실행·수렴)
-   알 수 없음 ↑          남은 일 ↓
+   (explore/diverge)   (execute/converge)
+   unknown ↑            remaining work ↓
 ```
 
-- **Uphill**: 문제·가설·옵션 탐색. *알 수 없음*이 크다.
-- **Downhill**: 선택된 방향 실행. *남은 일*이 명확하다.
+- **Uphill**: Exploring problems, hypotheses, and options. High *unknowns*.
+- **Downhill**: Executing the chosen direction. *Remaining work* is clear.
 
-### 활용
-- 현재 단계의 작업을 hill 위 *점*으로 그림
-- 매주 점 위치 업데이트
-- *uphill에 정체*된 점은 신호 → 재진입 또는 kill 후보
-- 1인 개발자도 *3개 이상의 점*이 동시 uphill이면 WIP 초과 ([`SD-03`](./situational-rules/self-discipline.md#sd-03-wip--1-work-in-progress-한도))
+### Usage
+- Plot current-phase work as *points* on the hill
+- Update point positions weekly
+- A point *stalled on uphill* is a signal → re-entry or kill candidate
+- Even for solo developers, *3+ points simultaneously on uphill* means WIP is over limit ([`SD-03`](./situational-rules/self-discipline.md#sd-03-wip--1-work-in-progress-한도))
 
-## 7.8 대안 루프 패턴 — 언제 쓰나
+## 7.8 Alternate loop patterns — when to use them
 
-| 패턴 | 적합한 상황 | Harness에서의 역할 |
+| Pattern | Best fit | Role in the harness |
 |---|---|---|
-| **Build-Measure-Learn** (Ries) | 가설 검증 중심 | Loop 1·2의 기본 |
-| **PDCA** (Deming) | 점진 품질 개선 | Post-launch loop |
-| **OODA** (Boyd) | 고속·고불확실 대응 | 운영 사고 / pivot 의사결정 |
-| **DMAIC** (Six Sigma) | 정량 품질 관리 | Performance budget 미달 시 |
-| **Continuous Discovery** (Torres) | 지속 인터뷰 cadence | Post-launch + 다음 사이클 후보 발굴 |
+| **Build-Measure-Learn** (Ries) | Hypothesis-centric validation | Default for Loop 1 and Loop 2 |
+| **PDCA** (Deming) | Incremental quality improvement | Post-launch loop |
+| **OODA** (Boyd) | High-speed, high-uncertainty response | Operational incidents / pivot decisions |
+| **DMAIC** (Six Sigma) | Quantitative quality management | When performance budget is missed |
+| **Continuous Discovery** (Torres) | Sustained interview cadence | Post-launch + next cycle candidate discovery |
 
-→ 기본은 BML, 다른 패턴은 *명시적으로* 도입.
+→ BML is the default. Other patterns are adopted *explicitly*.
 
-## 7.9 사이클 시작 시 Loop 적용 체크리스트
+## 7.9 Loop setup checklist at cycle start
 
-사이클 진입 시 각 루프의 운영 방식을 *고정*한다.
+Fix the operating parameters for each loop when entering a cycle.
 
-- [ ] Macro loop 시간 예산 ___주
-- [ ] Meso loop 재진입 한도 ___회
+- [ ] Macro loop time budget ___ weeks
+- [ ] Meso loop re-entry limit ___ times
 - [ ] Micro loop DoD ([R-DoD01~04](./06-rules.md))
-- [ ] Post-launch loop 메트릭 ___ + 트리거 임계값 ___
-- [ ] Kill 기준 명시 (Hard + Soft, §7.5)
-- [ ] Pivot 트리거 신호 *사전 정의* (§7.6)
+- [ ] Post-launch loop metric ___ + trigger threshold ___
+- [ ] Kill criteria defined (Hard + Soft, §7.5)
+- [ ] Pivot trigger signals *pre-defined* (§7.6)
 
-## 관련 룰
+## Related rules
 - [`R-PG01~05`](./06-rules.md) — Process Gates
-- [`R-SC01~04`](./06-rules.md) — Scope 관리
+- [`R-SC01~04`](./06-rules.md) — Scope management
 - [`SD-01`](./situational-rules/self-discipline.md#sd-01-time-box-validation-loops--7-14일) — Time-box
 - [`C-06`](./situational-rules/cognitive.md#c-06-sunk-cost--과거-투입은-결정에-영향-주지-않는다) — Sunk cost
 - [`C-09`](./situational-rules/cognitive.md#c-09-decision의-reversibility-등급) — Reversibility
 
-## 관련 skill
-- `think:retrospective` — 사이클·루프 회고
-- `think:decision-maker` — pivot / kill 결정
-- `pm:hypothesis-driven-dev` — 가설 재설계
+## Related skills
+- `think:retrospective` — cycle/loop retrospective
+- `think:decision-maker` — pivot / kill decision
+- `pm:hypothesis-driven-dev` — hypothesis redesign
 - `pm:shape-up` — appetite + hill chart
-- `cognition:second-order-thinker` — pivot의 2차 결과
+- `cognition:second-order-thinker` — second-order consequences of a pivot

@@ -1,25 +1,25 @@
 # Situational Rules
 
-`06-rules.md`의 항상 적용 룰과 달리, 이 폴더의 룰은 **상황이 발생할 때만** 참조한다. 사이클 내내 펼쳐놓을 필요는 없고, 트리거가 발생하면 그 영역만 열어 본다.
+Unlike the always-on rules in `06-rules.md`, the rules in this folder are referenced **only when the relevant situation arises**. There is no need to keep all of them open throughout a cycle — when a trigger occurs, open only the relevant area.
 
-## 파일별 트리거
+## Triggers per file
 
-| 파일 | 트리거 — *이때 참조* |
+| File | Trigger — *reference when* |
 |---|---|
-| [`security.md`](./security.md) | 인증·권한·PII·토큰·암호화·외부 통신·secret을 다룰 때 |
-| [`data.md`](./data.md) | DB 스키마 설계·마이그레이션·백업·보존기간 결정·민감정보 컬럼 추가 시 |
-| [`operations.md`](./operations.md) | 출시 직전 / 운영 중 / Performance budget·Observability 설정·SLO/SLA 합의 시 |
-| [`cognitive.md`](./cognitive.md) | 결정 마비 / 한 옵션에 강한 끌림 / 큰 베팅·되돌릴 수 없는 결정 직전 |
-| [`self-discipline.md`](./self-discipline.md) | 사이클이 늘어짐 / WIP가 1을 초과 / 출시를 계속 미룸 / 검증 대신 코드를 짜고 있음 |
+| [`security.md`](./security.md) | Working with authentication, authorization, PII, tokens, encryption, external communication, or secrets |
+| [`data.md`](./data.md) | DB schema design, migration, backup, retention-period decisions, or adding a sensitive column |
+| [`operations.md`](./operations.md) | Just before release / while operating / when setting Performance budget, Observability, or agreeing on SLO/SLA |
+| [`cognitive.md`](./cognitive.md) | Decision paralysis / strong pull toward one option / just before a big bet or irreversible decision |
+| [`self-discipline.md`](./self-discipline.md) | Cycle is stretching / WIP exceeds 1 / release keeps being postponed / writing code instead of validating |
 
-## 핵심 원칙은 `06-rules.md`로
+## Core principles go in `06-rules.md`
 
-이 폴더 룰을 적용한 *결과*가 ADR/Design Doc에 영향을 주면, 그 결정은 `06-rules.md`의 `R-DD01`(ADR 작성) 룰에 따라 정식 기록된다. 즉 situational 룰은 *항상 적용 룰과 충돌하지 않고 보완*한다.
+If applying a rule from this folder influences an ADR or Design Doc, that decision is formally recorded under the `R-DD01` (write ADR) rule in `06-rules.md`. Situational rules *complement the always-on rules without conflicting with them*.
 
-## 점진 채택 (Progressive Adoption)
+## Progressive Adoption
 
-5개 영역을 한 번에 적용하지 않는다. 사이클을 돌면서 *가장 자주 부딪히는 영역*부터 1-2개 채택. 채택 시 다음을 적는다:
+Do not adopt all 5 areas at once. As you run cycles, adopt 1–2 areas that you encounter most often first. When adopting, record:
 
-- 어느 영역을 채택했나
-- 왜 지금인가 (어떤 사건이 트리거였나)
-- 다음 사이클에서도 유지할 것인가
+- Which area was adopted
+- Why now (what event was the trigger)
+- Whether to maintain it in the next cycle

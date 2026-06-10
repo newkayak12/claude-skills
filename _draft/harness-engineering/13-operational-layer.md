@@ -1,257 +1,259 @@
 # 13. Operational Layer
 
-지금까지의 문서는 *무엇이 룰인가*를 정의했다. 이 문서는 **설치된 하네스가 AI 세션에서 실제로 어떻게 작동하는가**를 정의한다 — 무엇을 언제 로드하고, 무엇을 코드로 강제하고, 어긴 것을 어떻게 기록하고, 매 턴 토큰을 얼마나 쓰는가.
+The preceding documents defined *what the rules are*. This document defines **how an installed harness actually operates in an AI session** — what it loads when, what it enforces in code, how violations are recorded, and how many tokens it consumes per turn.
 
-`devils-advocate.md`의 `CA-1`(작동 메커니즘 부재)을 닫는 문서이며, [`GOAL.md`](./GOAL.md) §3.3(AI 작동 메커니즘 명시)의 충족 조건이다. 동시에 *다음 단계인 토큰 최적화의 작업 정의*다 — 무엇을 최적화할지가 여기서 정해진다.
+This document closes `CA-1` (missing operating mechanism) from `devils-advocate.md` and satisfies [`GOAL.md`](./GOAL.md) §3.3 (AI operating mechanism must be specified). It is also *the work definition for the next step — token optimization* — this document establishes what needs to be optimized.
 
-## §0. 핵심 원칙: 룰을 들고 다니지 마라
+## §0. Core Principle: Don't Carry Rules Around
 
-하네스의 룰을 *매 턴 컨텍스트에 싣는* 순간 두 가지가 동시에 망가진다:
+The moment harness rules are *loaded into context every turn*, two things break simultaneously:
 
-1. **토큰** — 30~50KB 룰을 사이클 내내 캐리하면 사이클당 비용이 폭증
-2. **신뢰** — 룰이 *narrative*로만 존재하면 AI가 일관 해석하지 못하고(`CA-1`), 사용자가 override하면 막을 길이 없다(`CV-1`)
+1. **Tokens** — carrying 30–50 KB of rules throughout a cycle causes cost to explode per cycle
+2. **Trust** — if rules exist only as *narrative*, the AI cannot interpret them consistently (`CA-1`), and there is no way to prevent user overrides (`CV-1`)
 
-→ **해법은 하나의 화살이다: 룰을 코드/스키마/트리거로 옮긴다.** 그러면 (a) AI가 안 들고 다니고, (b) 코드가 물리적으로 강제하고, (c) 어긴 것이 기록된다. 토큰과 self-enforcement를 *같은 전환*으로 산다.
+→ **The solution is a single arrow: move rules into code / schema / triggers.** This means (a) the AI doesn't carry them, (b) code physically enforces them, and (c) violations are recorded. Tokens and self-enforcement are purchased by *the same transition*.
 
 ```
-나쁨:  매 턴 컨텍스트 = [12개 문서 전체]           → 비쌈 + 표류
-좋음:  매 턴 컨텍스트 = [tier A 최소 코어]
-              + 코드가 강제하는 게이트(들고 다닐 필요 없음)
-              + 트리거 시에만 로드되는 tier B/C
+Bad:   Per-turn context = [all 12 documents]           → expensive + drift
+Good:  Per-turn context = [Tier A minimal core]
+              + gates enforced by code (no need to carry)
+              + Tier B/C loaded only when triggered
 ```
 
 ---
 
 ## §1. Loading Policy — 3-Tier
 
-매 턴 컨텍스트에 들어가는 것을 세 단계로 나눈다. 토큰 예산은 *상한*이며 초과 시 §6 eviction.
+What enters per-turn context is divided into three tiers. Token budgets are *caps*; when exceeded, apply §6 eviction.
 
-### Tier A — 항상 로드 (≤ 2K 토큰)
+### Tier A — Always Loaded (≤ 2K tokens)
 
-세션 내내 컨텍스트에 상주. *최소한의 불변 코어 + 현재 위치*만.
+Resident in context throughout the session. *Only the minimal invariant core + current position*.
 
-| 내용 | 출처 | 형태 |
+| Content | Source | Form |
 |---|---|---|
-| L0 Core invariant 5개 (요약) | `12 §4` | 1줄씩 압축 |
-| 현재 사이클 ID + 단계 | `cycles/active/cycle-card.md` | 헤더만 |
-| 활성 가설 1줄 + Kill 임계값 | `cycle-card.md` | snapshot |
-| 활성 L2/L3 룰 *목록* (본문 아님) | `project-rules.md`, `exemptions.md` | ID + 한 줄 |
+| L0 Core invariant 5 items (summarized) | `12 §4` | 1 line each, compressed |
+| Current cycle ID + phase | `cycles/active/cycle-card.md` | Header only |
+| Active hypothesis 1 line + Kill threshold | `cycle-card.md` | Snapshot |
+| Active L2/L3 rule *list* (not body) | `project-rules.md`, `exemptions.md` | ID + one line |
 
-주입 방법: `SessionStart` hook (`hook-cycle-context`)이 컴파일해서 주입. AI가 문서를 *읽지* 않는다 — hook이 *압축본*을 준다.
+Injection method: `SessionStart` hook (`hook-cycle-context`) compiles and injects. The AI does *not read* documents — the hook delivers a *compressed version*.
 
-### Tier B — 트리거 시 로드 (≤ 5K 토큰)
+### Tier B — Loaded on Trigger (≤ 5K tokens)
 
-특정 *단계* 또는 *상황*에 진입할 때만.
+Only when entering a specific *phase* or *situation*.
 
-| 트리거 | 로드 | Hook |
+| Trigger | Load | Hook |
 |---|---|---|
-| 단계 키워드 (`persona`/`srs`/`architecture`/`stack`/`db`/`deploy`) | 그 stage의 룰 (`rules-load.py <stage>`) | `hook-stage-rules` |
-| situational 키워드 (`auth`/`PII`/`migration`/`SLO`) | 해당 `situational-rules/*.md` | `hook-stage-rules` 확장 |
-| 게이트 도달 (`gate`/`검증`/`pass`) | `08-pass-criteria.md` 해당 절 | on-demand |
-| 활성 분기 카테고리 AP 5개 | `11-anti-patterns.md` 1개 카테고리 | `PF-7` rotation |
+| Phase keyword (`persona`/`srs`/`architecture`/`stack`/`db`/`deploy`) | Rules for that stage (`rules-load.py <stage>`) | `hook-stage-rules` |
+| Situational keyword (`auth`/`PII`/`migration`/`SLO`) | Corresponding `situational-rules/*.md` | `hook-stage-rules` extension |
+| Gate reached (`gate`/`validation`/`pass`) | Relevant section of `08-pass-criteria.md` | On-demand |
+| 5 active AP categories | 1 category from `11-anti-patterns.md` | `PF-7` rotation |
 
-### Tier C — 명시 요청 시만 (∞)
+### Tier C — Explicit Request Only (∞)
 
-사용자나 AI가 *명시적으로* 부를 때만 전체 로드.
+Full load only when *explicitly* called by user or AI.
 
-- AP 카탈로그 전체 (25~30개)
-- `templates/*` 전체
-- 과거 사이클 retro
-- `04-unknowns.md` 프레임워크 설명
+- Full AP catalog (25–30 items)
+- All `templates/*`
+- Past cycle retros
+- `04-unknowns.md` framework explanation
 
-### Tier 결정 규칙
+### Tier Assignment Rule
 
-> **"항상 필요한가?"** → Tier A. **"이 상황에서만 필요한가?"** → Tier B. **"드물게, 의도적으로 부를 때만인가?"** → Tier C.
+> **"Always needed?"** → Tier A. **"Needed only in this situation?"** → Tier B. **"Rare, called only intentionally?"** → Tier C.
 
-새 룰/문서를 추가할 때 *반드시 tier를 선언*한다. tier 없는 콘텐츠는 기본 Tier C (즉 자동 로드 안 됨).
+When adding new rules/documents, *a tier must be declared*. Content without a tier defaults to Tier C (not auto-loaded).
 
 ---
 
-## §2. Trigger → Load → Apply 파이프라인
+## §2. Trigger → Load → Apply Pipeline
 
-`CA-1`의 핵심 빈칸 — *설치 후 AI가 무엇을 다르게 하는가*. 사용자 발화/사건이 하네스의 어느 부분을 활성화하는지의 명시적 매핑.
+The core gap in `CA-1` — *what does the AI do differently after installation?* An explicit mapping of which part of the harness a user utterance/event activates.
 
 ```
-[사건]                    [Trigger]              [Load]                  [Apply]
+[Event]                    [Trigger]              [Load]                  [Apply]
 ────────────────────────────────────────────────────────────────────────────────
-세션 시작              SessionStart hook      Tier A 코어 주입        현재 위치 인식
-"persona 작업할게"      UserPromptSubmit       Tier B: persona 룰      그 단계 룰로 응답
-                       키워드 매칭             + 01-product-track 해당절
-파일 수정 (가설 파일)   PreToolUse             hash 검증               변조면 차단(§3)
-도구 호출 (WIP 위반)    PreToolUse             active symlink 확인     WIP>1이면 경고+기록
-사이클 종료            Stop                   retro 템플릿 제시        carryover 분류 유도
-룰 어김 발생           PostToolUse            black box append(§4)    막지 않음, 기록만
+Session start          SessionStart hook      Inject Tier A core      Recognize current position
+"I'll work on persona"  UserPromptSubmit       Tier B: persona rules   Respond with that phase's rules
+                        keyword match          + relevant section of 01-product-track
+File modified           PreToolUse             Hash verification       Block if tampered (§3)
+(hypothesis file)
+Tool call (WIP         PreToolUse             Check active symlink    Warn + record if WIP > 1
+violation)
+Cycle ends             Stop                   Present retro template  Guide carryover classification
+Rule violation         PostToolUse            Black box append (§4)  Don't block, only record
 ```
 
-### 적용 우선순위 (충돌 시)
+### Application Priority (on conflict)
 
-1. **L0 Core invariant 위반** → 무조건 차단 (override 불가)
-2. **L3 > L2 > L1 > L0 Default** → `12 §2` layer 우선순위
-3. **같은 layer 충돌** → 사용자에게 결정 요청 (자동 해석 금지 = AP-26)
+1. **L0 Core invariant violation** → block unconditionally (cannot be overridden)
+2. **L3 > L2 > L1 > L0 Default** → `12 §2` layer priority
+3. **Same-layer conflict** → ask user to decide (no auto-interpretation = AP-26)
 
-### AI의 행동 계약
+### AI Behavior Contract
 
-- 적용한 룰의 *출처를 명시*: "L2 `R-PROJ-FMT01`에 따라 tab 적용"
-- Tier A에 없는 룰이 필요하면 *로드를 선언*하고 가져옴: "이 단계는 DB 룰이 필요 — `rules-load.py db` 로드"
-- 룰을 *기억에서* 적용하지 않는다. 항상 *현재 로드된 것*에서.
+- *Cite the source* of the applied rule: "Applying tab per L2 `R-PROJ-FMT01`"
+- If a rule not in Tier A is needed, *declare the load* and fetch it: "This phase requires DB rules — loading `rules-load.py db`"
+- Do not apply rules *from memory*. Always apply from *currently loaded content*.
 
 ---
 
-## §3. Rules-as-Code 경계 (= Computational vs Inferential)
+## §3. Rules-as-Code Boundary (= Computational vs Inferential)
 
-무엇을 *코드(hook/script)가 강제*하고, 무엇을 *narrative(AI 판단)*로 두는가. 이 경계가 토큰과 신뢰를 동시에 결정한다.
+What *code (hook/script) enforces* vs. what is left to *narrative (AI judgment)*. This boundary determines both tokens and trust simultaneously.
 
-> **어휘 정렬 (Böckeler)**: 이 §3의 두 구분은 그녀의 *실행 모드*와 정확히 같다 — "코드로 강제" = **Computational**(결정론적, ms, 차단 가능), "narrative 판단" = **Inferential**(의미론적, 비결정론적, 풍부). 우리는 이 분류를 독립적으로 도달했고, 그녀의 프레임워크가 그것을 검증한다. (`00 §0.2b` 참조)
+> **Vocabulary alignment (Böckeler)**: The two categories in this §3 are exactly her *execution modes* — "enforce with code" = **Computational** (deterministic, ms-latency, blockable), "narrative judgment" = **Inferential** (semantic, non-deterministic, rich). We arrived at this classification independently; her framework validates it. (See `00 §0.2b`)
 >
-> **제어 방향 (Guide/Sensor)도 태그한다**: 각 메커니즘이 행동 *전* 조종이면 **Guide**, 행동 *후* 관측·교정이면 **Sensor**. harness가 *제대로* 작동하려면 둘 다 필요하다 — Guide만 있으면 사후 교정이 없고, Sensor만 있으면 사전 예방이 없다.
+> **Control direction (Guide/Sensor) is also tagged**: If a mechanism steers behavior *before* it happens → **Guide**; if it observes and corrects *after* → **Sensor**. For the harness to work *correctly*, both are required — Guide alone has no post-hoc correction; Sensor alone has no pre-emptive prevention.
 
-### 코드로 강제 (AI가 안 들고 다님)
+### Enforced in Code (AI does not carry)
 
-*객관적으로 판정 가능*하고 *위반이 치명적*인 것만:
+Only what is *objectively decidable* and *critical if violated*:
 
-| 룰 | 메커니즘 | Hook/Script | Guide/Sensor |
+| Rule | Mechanism | Hook/Script | Guide/Sensor |
 |---|---|---|---|
-| 가설 immutability | SHA-256 hash chain + `PreToolUse` 차단 | `hypothesis-register.py` + `hook-hypothesis-immutability` | **Sensor** (변조 사후 감지·차단) |
-| WIP = 1 | `cycles/active` symlink 단일성 검사 | `hook-cycle-wip` | **Guide** (행동 전 차단) |
-| Close 게이트 | bar 전 기준에 pass 리뷰(잠긴 hash 결박) 없으면 종료 차단 | `close-cycle.py` + `active-symlink-guard` | **Sensor→Guard** (종료 전 차단) |
-| Cross-cycle ratchet | 선언 축이 이전 닫힌 cycle watermark보다 회귀하면 종료 차단 (단조 비감소) | `ratchet-check.py`/`ratchetlib.py` + `close-cycle.py` | **Sensor→Guard** (종료 전 차단) |
-| L3 sunset 만료 | 날짜 비교 → 만료 면제 무효화 | `hook-l3-sunset-check` | **Guide** (적용 전 유효성) |
-| 스타일/포맷 | toolchain 위임 (설정 존재만 검사) | `hook-formatter-config-exists` | **Guide** (설정 강제) |
+| Hypothesis immutability | SHA-256 hash chain + `PreToolUse` block | `hypothesis-register.py` + `hook-hypothesis-immutability` | **Sensor** (post-mutation detect + block) |
+| WIP = 1 | Single-symlink check on `cycles/active` | `hook-cycle-wip` | **Guide** (pre-action block) |
+| Close gate | Block cycle close if no reviewed, hash-bound pass exists | `close-cycle.py` + `active-symlink-guard` | **Sensor→Guard** (pre-close block) |
+| Cross-cycle ratchet | Block cycle close if declared axis regresses below previous closed cycle watermark (monotonically non-decreasing) | `ratchet-check.py`/`ratchetlib.py` + `close-cycle.py` | **Sensor→Guard** (pre-close block) |
+| L3 sunset expiry | Date comparison → invalidate expired exemption | `hook-l3-sunset-check` | **Guide** (validity before application) |
+| Style / format | Delegated to toolchain (only checks config existence) | `hook-formatter-config-exists` | **Guide** (config enforcement) |
 
-이 6개는 모두 **Computational**(결정론적)이고 *narrative에서 빠진다*. AI가 컨텍스트로 캐리하지 않는다 — 코드가 한다.
-(과거 `kill-check.py`+`hook-deploy-kill-check` 의 *Kill criteria 배포 게이트* 가 여기 있었으나 **#015 에서 은퇴** — 발화 0·효과 최약·3단 의존 부채. C-06 Sunk-cost 방어는 narrative(retro kill 사유)로 남는다.)
+All 6 are **Computational** (deterministic) and *absent from narrative*. The AI does not carry them in context — code handles them.
+(The *Kill criteria deploy gate* from `kill-check.py`+`hook-deploy-kill-check` previously appeared here but was **retired in #015** — zero activations, weakest effect, 3-layer dependency debt. C-06 Sunk-cost defense remains in narrative via retro kill rationale.)
 
-### Narrative로 유지 (AI 판단)
+### Kept in Narrative (AI judgment)
 
-*맥락 의존적*이고 *판정에 해석이 필요*한 것:
+What is *context-dependent* and *requires interpretation to decide*:
 
-- 페르소나 품질, SRS 완전성, 가설의 falsifiability
-- Design Doc/ADR의 논리, trade-off의 공정성
-- "이 단계를 건너뛰어도 되는가" 류의 판단
+- Persona quality, SRS completeness, hypothesis falsifiability
+- Design Doc/ADR logic, fairness of trade-offs
+- Judgments like "can this phase be skipped?"
 
-이들은 Tier B로 *트리거 시 로드*되어 AI가 판단한다. 코드로 강제 불가.
+These are in Tier B — *loaded on trigger* for AI judgment. Cannot be enforced in code.
 
-### 경계 결정 규칙
+### Boundary Decision Rule
 
-> **기계가 yes/no로 판정 가능 + 위반이 치명적** → 코드. **해석이 필요 + 맥락 의존** → narrative.
+> **Machine can decide yes/no + violation is critical** → code. **Requires interpretation + context-dependent** → narrative.
 
-애매하면 narrative. 코드 게이트를 늘리는 것 자체가 `AP-05`(harness ceremony) 위험.
+When in doubt, narrative. Expanding code gates itself risks `AP-05` (harness ceremony).
 
 ---
 
-## §4. Black Box — 막지 말고 기록
+## §4. Black Box — Record, Don't Block
 
-`CV-1`(author=enforcer=target)에 대한 가장 강건한 대응. 차단(hook block)은 *hook을 끄면* 무력화된다. 그러나 *기록*은 끄기 어렵고, 사후에 자기기만을 깬다.
+The most robust response to `CV-1` (author = enforcer = target). Blocking (hook block) is neutralized *if the hook is disabled*. But *recording* is hard to disable, and confronting the record retrospectively breaks self-deception.
 
-### 원리
+### Principle
 
-> 솔로 dev가 룰을 어기는 *동기*는 외부 감사 통과가 아니라 **자기 설득**이다. 자기 설득은 retro에서 *원문 기록*을 마주하면 깨진다. flight recorder처럼.
+> A solo dev's motivation for breaking rules is not to pass an external audit — it is **self-persuasion**. Self-persuasion breaks when confronted with the *original record* in a retro. Like a flight recorder.
 
-### 무엇을 기록하나
+### What Is Recorded
 
 `cycles/active/blackbox.jsonl` — append-only:
 
 ```jsonl
-{"ts":"2026-05-31T14:02Z","event":"rule_override","rule":"R-LP01","layer":"L0-default","reason":"긴급 픽스","via":"L3 exemption"}
-{"ts":"2026-05-31T15:40Z","event":"gate_soft_fail","gate":"kill-check","detail":"시간 160% — soft","action":"계속 진행 선택"}
-{"ts":"2026-05-31T16:20Z","event":"stage_skip","stage":"design-doc","reason":"이번엔 작아서 생략"}
+{"ts":"2026-05-31T14:02Z","event":"rule_override","rule":"R-LP01","layer":"L0-default","reason":"emergency fix","via":"L3 exemption"}
+{"ts":"2026-05-31T15:40Z","event":"gate_soft_fail","gate":"kill-check","detail":"time 160% — soft","action":"chose to continue"}
+{"ts":"2026-05-31T16:20Z","event":"stage_skip","stage":"design-doc","reason":"small scope, skipped this time"}
 ```
 
-기록 대상: 룰 override, soft-fail 후 강행, 단계 생략, 가설 재해석 시도, WIP 초과.
+What gets recorded: rule overrides, continuing after soft-fail, phase skips, hypothesis reinterpretation attempts, WIP exceeded.
 
-### 차단 vs 기록 구분
+### Block vs. Record Distinction
 
-| 사건 | 처리 |
+| Event | Handling |
 |---|---|
-| L0 Core invariant 위반 | **차단** (§3) — 기록도 함께 |
-| L0 Default / L1 / L2 override | **기록만** — 진행은 허용 |
-| Soft kill 후 강행 | **기록만** |
-| 단계 생략 | **기록만** |
+| L0 Core invariant violation | **Block** (§3) — also recorded |
+| L0 Default / L1 / L2 override | **Record only** — proceed allowed |
+| Continuing after soft kill | **Record only** |
+| Phase skip | **Record only** |
 
-즉 *invariant만 막고, 나머지는 자유롭게 어기되 black box에 남긴다*. 자유가 self-enforcement를 죽이지 않는 이유는 §4.4.
+Specifically: *only invariants are blocked; everything else is freely violated but recorded in the black box*. The reason freedom doesn't kill self-enforcement is in §4.4.
 
-### Retro에서의 대면 (강제 루프)
+### Confrontation in Retro (Forced Loop)
 
-`Stop` hook(`hook-retro-on-stop`)이 사이클 종료 시 `blackbox.jsonl`을 *통째로 retro 앞에 제시*한다:
+The `Stop` hook (`hook-retro-on-stop`) presents the *entire* `blackbox.jsonl` at the front of the retro when the cycle closes:
 
-> "이번 사이클에서 7건의 override/skip이 있었다. 각각이 정당했는가? 패턴이 보이는가?"
+> "There were 7 overrides/skips this cycle. Was each justified? Is there a pattern?"
 
-이 대면이 *다음 사이클*의 행동을 바꾼다. black box는 처벌이 아니라 *학습 carryover*의 원료다 (`07` 살림/의심/버림과 연결).
+This confrontation changes behavior in *the next cycle*. The black box is not punishment — it is raw material for *learning carryover* (connected to the keep/suspect/discard framework in `07`).
 
 ---
 
-## §5. Prompt Caching 정렬
+## §5. Prompt Caching Alignment
 
-거의 공짜로 토큰을 산다. Opus의 프롬프트 캐싱은 *stable prefix*를 재사용한다 — 매 턴 같은 콘텐츠는 캐시 히트.
+Buying tokens for nearly free. Opus's prompt caching reuses *stable prefixes* — same content on every turn gets a cache hit.
 
-### 설계
+### Design
 
 ```
-[캐시되는 안정 prefix]  ← 거의 안 변함 → cache hit
-├─ 하네스 Tier A 코어 (L0 Core 5개 + AI 행동 계약)
-├─ 현재 사이클 cycle-card snapshot (사이클 내내 안정)
-└─ 활성 L2 project-rules 목록
+[Cached stable prefix]  ← changes rarely → cache hit
+├─ Harness Tier A core (L0 Core 5 + AI behavior contract)
+├─ Current cycle cycle-card snapshot (stable within a cycle)
+└─ Active L2 project-rules list
 
-[캐시 안 되는 가변 suffix]  ← 매 턴 변함
-├─ 사용자 발화
-├─ Tier B 트리거 로드 (단계마다 다름)
-└─ 작업 중 파일 내용
+[Uncached variable suffix]  ← changes every turn
+├─ User utterance
+├─ Tier B trigger loads (different per phase)
+└─ Currently edited file contents
 ```
 
-### 규칙
+### Rules
 
-- Tier A는 *prefix에* 둔다 — 사이클 중 거의 안 변하므로 캐시 히트 극대화
-- cycle-card snapshot이 바뀌면(단계 전환) 캐시 1회 무효화는 감수 — 단계 전환은 드묾
-- Tier B/C는 *suffix*에 — 어차피 가변이라 캐시 대상 아님
-- black box append는 *파일*이지 컨텍스트가 아니므로 캐시에 영향 없음
+- Tier A goes in the *prefix* — changes rarely within a cycle, maximizing cache hits
+- When the cycle-card snapshot changes (phase transition), accept 1 cache invalidation — phase transitions are infrequent
+- Tier B/C goes in the *suffix* — inherently variable, not a caching target
+- Black box appends are *file writes*, not context, so they don't affect the cache
 
-### 효과
+### Effect
 
-사이클 내내 Tier A(~2K)가 캐시되면 매 턴 *그만큼*을 재처리하지 않는다. 단계가 5~6개, 턴이 수십~수백이면 누적 절감이 크다.
+When Tier A (~2K) is cached throughout the cycle, that much is not reprocessed every turn. With 5–6 phases and tens to hundreds of turns, cumulative savings are significant.
 
 ---
 
 ## §6. Token Budget per Turn
 
-매 턴 하네스가 쓰는 컨텍스트의 *상한*과 초과 시 정책.
+The *cap* on harness context per turn and the policy when exceeded.
 
-### 예산
+### Budget
 
-| Tier | 상한 | 초과 시 |
+| Tier | Cap | If exceeded |
 |---|---|---|
-| A (always) | 2K | 압축 강화 — 룰 본문 제거, ID+1줄만 |
-| B (trigger) | 5K | 가장 안 쓰는 stage 룰부터 evict |
-| C (on-demand) | 무제한 | 사용 후 즉시 drop (다음 턴 캐리 X) |
-| **합계/턴** | **~7K** | 초과 시 아래 eviction |
+| A (always) | 2K | Compress harder — remove rule body, keep ID+1 line only |
+| B (trigger) | 5K | Evict least-used stage rules first |
+| C (on-demand) | Unlimited | Drop immediately after use (not carried to next turn) |
+| **Total / turn** | **~7K** | Eviction below |
 
-### Eviction 정책 (LRU 변형)
+### Eviction Policy (LRU variant)
 
-예산 초과 시 버리는 순서:
+Eviction order when budget is exceeded:
 
-1. **Tier C 먼저** — 명시 요청분은 *그 턴만* 살고 버려짐
-2. **안 쓰는 Tier B** — 현재 단계와 무관한 stage 룰
-3. **Tier A는 마지막** — 절대 통째로 안 버림. 초과 시 *압축*(본문→ID)으로 대응
+1. **Tier C first** — on-demand content lives for *that turn only* and is discarded
+2. **Unused Tier B** — stage rules unrelated to the current phase
+3. **Tier A last** — never discarded wholesale. When budget is exceeded, *compress* (body → ID)
 
-### 측정
+### Measurement
 
-`scripts/`에 `context-budget.py`(신규 예정) — 현재 로드된 tier별 토큰을 추정해 예산 초과를 경고. 구현은 실전 1사이클 후.
+`scripts/` will include `context-budget.py` (planned) — estimates per-tier token count for currently loaded tiers and warns on budget overrun. Implementation after the first live cycle.
 
 ---
 
-## §7. 토큰 최적화 다음 단계 (이 문서가 정의하는 작업)
+## §7. Next Steps for Token Optimization (Work Defined by This Document)
 
-`CA-3`의 지적 — *"압축이 아니라 구조가 문제"*. 이 문서로 구조가 정해졌으니, *그 다음* 최적화 작업이 비로소 정의된다:
+`CA-3`'s observation — *"the problem is structure, not compression"*. Now that structure is established by this document, the *subsequent* optimization work can finally be defined:
 
-| 순서 | 작업 | 이 문서의 근거 |
+| Order | Task | Basis in this document |
 |---|---|---|
-| 1 | Tier A 코어를 ≤2K로 압축한 *컴파일 산출물* 생성 | §1 Tier A |
-| 2 | `rules-load.py`를 Stage+Layer+Tier 필터로 확장 | §1 Tier B |
-| 3 | 코드 강제 5개 hook 실제 구현 | §3 |
-| 4 | `blackbox.jsonl` + `hook-retro-on-stop` 구현 | §4 |
-| 5 | prefix/suffix 분리로 캐싱 정렬 | §5 |
-| 6 | `context-budget.py` 측정 도구 | §6 |
+| 1 | Produce a *compiled artifact* compressing Tier A core to ≤2K | §1 Tier A |
+| 2 | Extend `rules-load.py` to filter by Stage + Layer + Tier | §1 Tier B |
+| 3 | Actually implement the 5 code-enforcement hooks | §3 |
+| 4 | Implement `blackbox.jsonl` + `hook-retro-on-stop` | §4 |
+| 5 | Align caching with prefix/suffix separation | §5 |
+| 6 | `context-budget.py` measurement tool | §6 |
 
-*압축은 1번 안에서만* 일어난다 — 잘못된 구조를 압축하지 않기 위해 §1~6이 먼저다.
+*Compression happens only inside step 1* — §1–6 come first so we do not compress a broken structure.
 
 ---
 
@@ -259,35 +261,35 @@
 
 ### Claude
 
-- 세션 시작 시 Tier A만 로드된 상태로 작동 — 전체 문서를 읽지 않음
-- 단계/상황 진입 시 *Tier B 로드를 선언*하고 가져옴
-- 룰 적용 시 *출처(layer + ID)* 명시
-- invariant 위반은 차단, 나머지 위반은 *black box에 기록하고 진행 허용*
-- 사이클 종료 시 black box 전체를 retro 앞에 제시
+- Operates with only Tier A loaded at session start — does not read full documents
+- *Declares Tier B load* and fetches when entering a phase/situation
+- *States source (layer + ID)* when applying a rule
+- Blocks invariant violations; for all other violations, *records in the black box and allows continuation*
+- Presents the full black box at the front of the retro when the cycle closes
 
 ### You
 
-- 새 룰/문서 추가 시 *tier 선언* 필수 (없으면 Tier C = 자동 로드 안 됨)
-- 코드 강제 5개의 hook을 실제 구현 (실전 1사이클 후 우선순위대로)
-- retro에서 black box를 *실제로 대면* — 건너뛰면 §4 전체가 무력
-- override는 자유롭되, 그것이 기록됨을 인지
+- *Declare a tier* when adding new rules/documents (absent = Tier C = not auto-loaded)
+- Actually implement the 5 code-enforcement hooks (in priority order after the first live cycle)
+- *Actually confront* the black box in the retro — skipping it renders all of §4 inert
+- Overrides are free, but be aware they are recorded
 
-## §9. Anti-patterns 연결
+## §9. Anti-pattern Connections
 
-| 이 문서가 막는 것 | AP |
+| What this document prevents | AP |
 |---|---|
-| 룰을 매 턴 캐리해서 토큰 폭증 | `AP-05` Harness ceremony |
-| 룰을 기억에서 적용(표류) | `CA-1` (DA log) |
-| invariant override 시도 | `AP-27` |
-| black box 대면 회피 | 신규 — `AP-31` Black box 외면 (`11`에 추가 필요) |
+| Carrying rules every turn → token explosion | `AP-05` Harness ceremony |
+| Applying rules from memory (drift) | `CA-1` (DA log) |
+| Invariant override attempts | `AP-27` |
+| Avoiding black box confrontation | New — `AP-31` Black box avoidance (needs to be added to `11`) |
 
-## §10. 관련 문서·도구
+## §10. Related Documents and Tools
 
-- `GOAL.md` §3.3 — 이 문서가 충족하는 조건
-- `devils-advocate.md` `CA-1`/`CA-3`/`CV-1`/`PF-1`/`PF-3` — 이 문서가 닫는 항목
-- `12-rule-layering.md` — layer 우선순위(§2 적용 우선순위의 근거), tool-pointer(§3)
-- `06-rules.md` — Tier/Scope/Layer 메타 부착 필요
-- `07-looping-mechanics.md` — black box → carryover 연결(§4.4)
-- `hooks/README.md` — §2~§4의 hook 실제 카탈로그
-- `scripts/rules-load.py` — Tier 필터 확장 대상(§7-2)
-- `scripts/` — `context-budget.py` 신규(§6)
+- `GOAL.md` §3.3 — the condition this document satisfies
+- `devils-advocate.md` `CA-1`/`CA-3`/`CV-1`/`PF-1`/`PF-3` — items this document closes
+- `12-rule-layering.md` — layer priority (basis for §2 application priority), tool-pointer (§3)
+- `06-rules.md` — needs Tier/Scope/Layer metadata attached
+- `07-looping-mechanics.md` — black box → carryover connection (§4.4)
+- `hooks/README.md` — actual hook catalog for §2–§4
+- `scripts/rules-load.py` — Tier filter extension target (§7-2)
+- `scripts/` — `context-budget.py` (new, §6)

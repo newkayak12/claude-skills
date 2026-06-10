@@ -1,201 +1,201 @@
-# 01. Product Track — 제품 트랙
+# 01. Product Track
 
-목적: **"왜·누구를 위해·무엇을 만드는가"**를 글로 확정한다. 코드를 짜기 전에 *글이 안 써진다면* 머릿속에서도 정리가 안 된 것이다.
+Purpose: **Confirm in writing "why / for whom / what to build."** If you can't write it down before coding, it isn't clear in your head either.
 
-## 1.1 Persona 정의
+## 1.1 Persona Definition
 
-### 무엇
+### What
 
-대상 고객의 *구체적 한 사람*을 만들어내는 작업. 추상적인 "20대 직장인"이 아니라 "**김OO, 27세, 4년차 백엔드 개발자, 매주 토요일 사이드 프로젝트 2-3시간**" 수준으로 좁힌다.
+Create a *concrete individual* representing the target customer. Not an abstract "20-something office worker" but a specific person: "**Kim OO, 27, 4-year backend developer, 2–3 hours on side projects every Saturday.**"
 
-### 흔한 실수
+### Common Mistakes
 
-- **Persona가 너무 넓다**: "개발자". 너무 추상적이면 어떤 결정도 못 내림.
-- **Persona가 인구통계뿐이다**: 나이/성별/직업만 있고 *행동·동기·맥락*이 없음.
-- **Persona가 자기 자신이다**: 1인 개발자가 가장 자주 빠지는 함정. "내가 쓸 거니까"는 검증이 아니다.
+- **Persona is too broad**: "developers." Too abstract to make any decision from.
+- **Persona is demographics only**: age/gender/job with no *behavior, motivation, or context*.
+- **Persona is yourself**: The trap solo developers fall into most often. "I'll use it myself" is not validation.
 
-### 더 강한 대안: Jobs-to-be-Done (JTBD)
+### Stronger Alternative: Jobs-to-be-Done (JTBD)
 
-Persona가 *누구인가*에 답한다면, JTBD는 *그 사람이 어떤 일을 끝내려고 우리 제품을 고용하는가*에 답한다. Clay Christensen의 framing:
+If Persona answers *who*, JTBD answers *what job that person hires our product to finish*. Clay Christensen's framing:
 
-> "사람들은 제품을 사는 게 아니다. **자기 삶에서 진전(progress)을 만들기 위해 제품을 고용한다(hire)**."
+> "People don't buy products. **They hire products to make progress in their lives.**"
 
-JTBD 문장 템플릿:
+JTBD sentence template:
 
-> When **[상황]**, I want to **[motivation]**, so I can **[expected outcome]**.
+> When **[situation]**, I want to **[motivation]**, so I can **[expected outcome]**.
 
-예시: *When I'm reviewing a long PR at the end of the day, I want to surface only the structural changes first, so I can decide whether to block or skim the rest.*
+Example: *When I'm reviewing a long PR at the end of the day, I want to surface only the structural changes first, so I can decide whether to block or skim the rest.*
 
-JTBD가 좋은 이유: Persona보다 **변경에 강하다**. 사람의 나이는 변해도, 끝내려는 일(progress)은 안정적이다.
+Why JTBD is better: **More stable under change than Persona.** A person's age changes; the job they want done (progress) stays stable.
 
-### 산출물 형식
+### Artifact Format
 
-- Persona 카드 1-3장 (이름, 사진/이모지, 한 줄 정의, 주간 일과, 좌절 포인트 3개, 도구/대안, JTBD 문장 1-2개)
-- JTBD 문장 5-10개 (우선순위 표시)
+- Persona cards × 1–3 (name, photo/emoji, one-line definition, weekly routine, 3 frustration points, tools/alternatives, 1–2 JTBD sentences)
+- JTBD sentences × 5–10 (prioritized)
 
-## 1.2 Service Concept 정의
+## 1.2 Service Concept Definition
 
-### 무엇
+### What
 
-"우리는 [누구]에게 [무엇]을 [어떻게]로 제공한다"를 **한 문장**으로 못 적으면 컨셉이 안 잡힌 것이다.
+If you cannot write in **one sentence** "we provide [what] to [whom] via [how]," the concept is not settled.
 
-### 도구
+### Tools
 
 **Value Proposition Canvas** (Strategyzer)
-- 좌측 (Customer Profile): Jobs / Pains / Gains
-- 우측 (Value Map): Products & Services / Pain Relievers / Gain Creators
-- 좌·우가 *맞물려야* 가치 제안이 성립.
+- Left side (Customer Profile): Jobs / Pains / Gains
+- Right side (Value Map): Products & Services / Pain Relievers / Gain Creators
+- Both sides must *interlock* for the value proposition to hold.
 
-**Lean Canvas** (Ash Maurya — Business Model Canvas의 스타트업 변종)
-- 9칸: Problem / Customer Segments / UVP / Solution / Channels / Revenue / Cost / Key Metrics / Unfair Advantage
-- 1인 개발자에게 가장 유용한 항목: **Problem**, **UVP**, **Key Metrics**.
+**Lean Canvas** (Ash Maurya — startup variant of Business Model Canvas)
+- 9 boxes: Problem / Customer Segments / UVP / Solution / Channels / Revenue / Cost / Key Metrics / Unfair Advantage
+- Most useful boxes for a solo developer: **Problem**, **UVP**, **Key Metrics**.
 
-### Unique Value Proposition 검증
+### Unique Value Proposition Check
 
-UVP 한 줄을 적은 뒤 스스로 묻기:
-1. 이 문장에서 우리 제품 이름을 경쟁사 이름으로 바꿔도 말이 되는가? → 그러면 *unique*하지 않음.
-2. 이 문장이 누군가의 *deal-breaker*인 통점을 직접 짚고 있는가? → 아니면 "nice to have"임.
+After writing the UVP one-liner, ask yourself:
+1. Does this sentence still make sense if you swap your product name for a competitor's? → If so, it's not *unique*.
+2. Does this sentence directly address someone's *deal-breaker* pain? → If not, it's a "nice to have."
 
-## 1.3 Requirements 수집
+## 1.3 Requirements Gathering
 
-### 채널
+### Channels
 
-| 채널 | 얻는 것 | 한계 |
+| Channel | What you get | Limitation |
 |---|---|---|
-| 1:1 인터뷰 (5-7명) | 동기·맥락·언어 | 일반화 위험 |
-| 설문 | 빈도·비율 | 동기 파악 약함 |
-| 관찰 (사용자가 실제 일하는 모습) | 무의식 행동·우회 패턴 | 시간 소요 |
-| 분석 데이터 (있는 경우) | 실제 행동 | "왜"가 빠짐 |
-| 경쟁 제품/대안 분석 | 갭·차별점 | 베껴쓰기 위험 |
+| 1:1 interviews (5–7 people) | Motivation, context, language | Risk of over-generalization |
+| Survey | Frequency, ratios | Weak at capturing motivation |
+| Observation (watching users work) | Unconscious behavior, workarounds | Time-consuming |
+| Analytics data (if available) | Actual behavior | Missing the "why" |
+| Competitive / alternative analysis | Gaps, differentiators | Risk of copying |
 
-### 인터뷰 질문 패턴
+### Interview Question Patterns
 
-**나쁜 질문**: "이런 기능이 있으면 쓰시겠어요?" → 미래 가정 질문은 거의 모든 사람이 "네"라고 답함. 무용.
+**Bad question**: "Would you use this feature if it existed?" → Future-assumption questions get "yes" from almost everyone. Useless.
 
-**좋은 질문**:
-- "마지막으로 X 했던 게 언제였나요? 그때 정확히 어떻게 하셨어요?" (과거 행동)
-- "그게 잘 안 풀린 적이 있나요? 어떻게 우회하셨어요?" (workaround → 진짜 통점의 신호)
-- "오늘 그 일을 하기 직전에 무슨 일이 있었나요?" (trigger 파악)
+**Good questions**:
+- "When was the last time you did X? Walk me through exactly what you did." (past behavior)
+- "Was there ever a time that didn't work out? How did you get around it?" (workaround → signal of a real pain point)
+- "What was happening right before you started doing that today?" (trigger identification)
 
-→ **The Mom Test** (Rob Fitzpatrick) 원칙: 미래 의견이 아니라 **과거 행동**을 묻는다.
+→ **The Mom Test** (Rob Fitzpatrick) principle: ask about **past behavior**, not future opinions.
 
-### 산출물
+### Artifacts
 
-- 인터뷰 노트 (raw)
-- Affinity diagram 또는 코딩 결과 (insight n=X 형식)
-- "들은 가설" 목록 (검증 게이트로 넘길 후보들)
+- Interview notes (raw)
+- Affinity diagram or coding results (insight n=X format)
+- List of "heard hypotheses" (candidates to pass to the validation gate)
 
-## 1.4 SRS / RFP — 요구사항 정의서
+## 1.4 SRS / RFP — Requirements Definition
 
-### 용어 정리
+### Term Clarification
 
-- **RFP** (Request for Proposal): 발주측이 외주에 요청할 때 쓰는 문서. "이런 걸 만들어달라"의 형식.
-- **SRS** (Software Requirements Specification): 시스템이 *무엇을 해야 하는지*를 명세하는 문서. IEEE 830 또는 후속인 ISO/IEC/IEEE 29148:2018이 표준.
+- **RFP** (Request for Proposal): Document the client sends to an outsourcer. "Please build this."
+- **SRS** (Software Requirements Specification): Specifies *what the system must do*. Standard: IEEE 830 or its successor ISO/IEC/IEEE 29148:2018.
 
-1인 개발자라면 RFP는 보통 불필요. SRS만 작성한다.
+For a solo developer, RFP is usually unnecessary. Write SRS only.
 
-### SRS 구조 (lean version)
+### SRS Structure (lean version)
 
-1. **서론** — 목적, 범위, 정의·약어, 참고자료
-2. **전체 설명** — 제품 컨텍스트, Persona, 가정·제약
-3. **기능 요구사항 (FR)** — 시스템이 해야 하는 행동. 보통 use case 또는 user story로 표현.
-4. **비기능 요구사항 (NFR)** — 시스템이 *어떻게* 해야 하는지의 품질 속성.
-5. **외부 인터페이스** — 외부 시스템, API, UI 윤곽.
-6. **데이터 요구사항** — 핵심 엔티티, 보유 기간, 정합성 요구.
+1. **Introduction** — purpose, scope, definitions/abbreviations, references
+2. **Overall description** — product context, personas, assumptions/constraints
+3. **Functional requirements (FR)** — behaviors the system must perform. Usually expressed as use cases or user stories.
+4. **Non-functional requirements (NFR)** — quality attributes describing *how* the system must behave.
+5. **External interfaces** — external systems, APIs, UI outlines.
+6. **Data requirements** — core entities, retention periods, consistency requirements.
 
-→ 슬림 템플릿: [`templates/srs.md`](./templates/srs.md)
+→ Slim template: [`templates/srs.md`](./templates/srs.md)
 
-### NFR이 가장 자주 빠진다
+### NFRs Are the Most Often Missing
 
-FR은 자연스럽게 적게 되지만, NFR을 명시하지 않으면 나중에 "왜 이게 느리지?"가 *버그*가 아니라 *합의되지 않은 기준*의 문제가 된다.
+FRs get written naturally, but leaving NFRs unspecified means "why is this slow?" becomes a problem of *unresolved standards*, not a bug.
 
-**NFR 7가지 카테고리** (FURPS+):
-- **Functionality** (Func 외 보안·상호운용)
-- **Usability** (학습 시간, 접근성)
-- **Reliability** (가용성 %, MTBF, fault tolerance)
-- **Performance** (응답시간, throughput, 자원)
-- **Supportability** (테스트성, 유지보수성, 국제화, 설치)
+**7 NFR categories (FURPS+)**:
+- **Functionality** (security, interoperability beyond core function)
+- **Usability** (learning time, accessibility)
+- **Reliability** (availability %, MTBF, fault tolerance)
+- **Performance** (response time, throughput, resources)
+- **Supportability** (testability, maintainability, i18n, installation)
 - "+": Implementation / Interface / Operations / Packaging / Legal
 
-ISO/IEC 25010이 더 정밀하지만, FURPS+로 1차 점검 가능. → 상세는 [`04-unknowns.md`](./04-unknowns.md#nfr-taxonomy).
+ISO/IEC 25010 is more precise, but FURPS+ works for a first pass. → Details at [`04-unknowns.md`](./04-unknowns.md#nfr-taxonomy).
 
-### FR 작성 단위
+### FR Writing Unit
 
-**User Story** 형식:
+**User Story** format:
 > As a [persona], I want [capability], so that [outcome].
 
 **Acceptance Criteria** — Gherkin:
 > Given [precondition], When [action], Then [observable outcome].
 
-acceptance criteria가 명확하지 않으면 그 스토리는 *불완전*하다 — 완료를 판정할 수 없기 때문.
+A story without clear acceptance criteria is *incomplete* — there's no way to judge whether it's done.
 
 ## 1.5 User Journey Map (UJM)
 
-### 무엇
+### What
 
-페르소나가 *시작 트리거*부터 *목표 달성*까지 거치는 단계를 시간 축으로 펼치고, 각 단계에서의 **행동·접점·생각·감정·통점**을 표시한 다이어그램.
+A diagram that lays out the steps a persona takes from *starting trigger* to *goal achieved* on a time axis, marking **actions, touchpoints, thoughts, emotions, and pain points** at each step.
 
-### 비슷한 것과의 구분
+### Distinctions from Similar Tools
 
-| 도구 | 시점 | 시각 | 포함 범위 |
+| Tool | Perspective | View | Scope |
 |---|---|---|---|
-| User Journey Map | 사용자 중심 | 외부 (사용자가 보는 것) | 1명의 여정 |
-| Service Blueprint | 서비스 제공자 중심 | 외부 + 내부 (백오피스/시스템 포함) | front-stage + back-stage |
-| Experience Map | 사용자 중심 (제품 무관) | 외부 | 더 광범위, 제품 *이전*의 삶 포함 |
+| User Journey Map | User-centered | External (what the user sees) | One person's journey |
+| Service Blueprint | Service-provider-centered | External + Internal (back-office/systems) | front-stage + back-stage |
+| Experience Map | User-centered (product-agnostic) | External | Broader, includes life *before* the product |
 
-→ MVP 단계에서는 **UJM 한 장**이면 충분. 운영 단계 진입 후 Service Blueprint로 확장 고려.
+→ At MVP stage, **one UJM** is sufficient. Consider expanding to a Service Blueprint after entering operations.
 
-### 작성 방법
+### How to Create
 
-1. **단계(phase) 정의**: Awareness → Consideration → Onboarding → Usage → Renewal/Churn 같은 큰 줄기
-2. **각 단계에서의 행동**: 사용자가 *실제로* 하는 일
-3. **접점(touchpoint)**: 사용자가 만나는 화면·메일·콜·물리적 사물
-4. **생각·감정**: 인용구 또는 ↑↓ 표시
-5. **통점(pain point)**: 단계마다 *최소 1개*. 통점이 없는 단계는 의심하라 — 진짜 없는 건지, 못 본 건지.
-6. **기회(opportunity)**: 통점마다 우리가 개입할 수 있는 지점
+1. **Define phases**: Awareness → Consideration → Onboarding → Usage → Renewal/Churn
+2. **Actions per phase**: what the user *actually* does
+3. **Touchpoints**: screens, emails, calls, physical objects the user encounters
+4. **Thoughts and emotions**: direct quotes or ↑↓ indicators
+5. **Pain points**: *at least one* per phase. If a phase has none, be suspicious — is it truly painless, or did you miss something?
+6. **Opportunities**: where we can intervene at each pain point
 
-### 산출물
+### Artifacts
 
-- 현재 상태 UJM (As-is) — 우회 도구로 일을 끝내고 있는 모습
-- 목표 상태 UJM (To-be) — 우리 제품이 들어간 모습
-- 두 맵의 *차이*가 곧 우리가 만들어야 할 변화.
+- As-is UJM — how the user currently gets things done with workaround tools
+- To-be UJM — how the user experience looks with our product
+- The *difference* between the two maps is exactly what we need to build.
 
-## 1.6 MVP 범위 정의
+## 1.6 MVP Scope Definition
 
-### MVP의 본래 의미
+### Original Meaning of MVP
 
-Eric Ries의 정의: **"최소한의 노력으로 검증된 학습을 얻을 수 있는 제품 버전."**
+Eric Ries's definition: **"The version of a product that enables a full turn of the Build–Measure–Learn loop with minimum effort."**
 
-→ "minimum viable"의 *viable*은 "고객이 가치를 인지할 수 있는"의 의미이지, "기능이 거의 없는"이 아니다. 기능이 적어도 *어떤 가치를 분명히 제공*해야 MVP다.
+→ *Viable* in "minimum viable" means "the customer can perceive value," not "barely any features." Even with few features, an MVP must *clearly deliver some value*.
 
-### 두 가지 흔한 함정
+### Two Common Traps
 
-- **MMP (Minimum Marketable Product)와 혼동**: MMP는 *판매 가능한* 최소 제품. MVP는 *학습 가능한* 최소 제품. 둘은 다르다. MVP가 MMP보다 더 작다.
-- **'얇은 모든 것' vs '두꺼운 일부'**: Spotify가 자전거·스쿠터·자동차 비유로 설명. *전체 가치를 한 번에* 제공하는 가장 단순한 형태를 골라야 한다 — 자동차 부품을 따로 주면 사용자는 못 굴림.
+- **Confusing MVP with MMP (Minimum Marketable Product)**: MMP is the minimum *sellable* product. MVP is the minimum *learnable* product. They are different. MVP is smaller than MMP.
+- **"Thin everything" vs "thick some"**: Spotify's bicycle–scooter–car analogy. Choose the simplest form that delivers *the full value in one go* — giving users car parts separately leaves them unable to drive.
 
-### Scope 결정 도구
+### Scope Decision Tools
 
-**MoSCoW**: Must / Should / Could / Won't (이번 release에는). 가장 빠른 방법.
+**MoSCoW**: Must / Should / Could / Won't (this release). Fastest method.
 
-**RICE 스코어**: Reach × Impact × Confidence ÷ Effort. 정량 비교가 필요할 때.
+**RICE score**: Reach × Impact × Confidence ÷ Effort. Use when you need quantitative comparison.
 
 **Story Mapping** (Jeff Patton):
-- 가로축: 사용자 여정 (backbone activities)
-- 세로축: 우선순위 (각 활동 안에서)
-- *수평으로 자른 띠* = release slice. R1(MVP), R2, R3 순서로 펼친다.
+- Horizontal axis: user journey (backbone activities)
+- Vertical axis: priority (within each activity)
+- *Horizontal slice* = release slice. Lay out R1 (MVP), R2, R3 in order.
 
-→ 1인 개발자에게는 **Story Mapping이 가장 잘 맞는다**. UJM과 자연스럽게 이어지고, "자전거 → 자동차"의 점진성을 강제하기 때문.
+→ **Story Mapping fits a solo developer best.** It connects naturally to UJM and forces the bicycle-to-car progression.
 
-### MVP 종료 기준
+### MVP Exit Criterion
 
-"몇 개 만들었는가"가 아니라 **"어떤 학습이 끝났는가"**로 종료. 검증 루프 1의 결과로 다음 사이클 진입 또는 pivot 결정.
+Exit is defined by **"what learning is complete"**, not "how many features are done." The result of Validation Loop 1 determines: enter the next cycle or pivot.
 
-## 1.7 트랙 산출물 체크리스트
+## 1.7 Track Artifact Checklist
 
-- [ ] Persona 카드 1-3장 (JTBD 문장 포함)
-- [ ] Service Concept 1줄 + Value Proposition Canvas 또는 Lean Canvas
-- [ ] 인터뷰 노트 (5-7명 분량)
-- [ ] SRS — FR(user stories + AC) + NFR(FURPS+ 7카테고리 점검)
-- [ ] User Journey Map (As-is + To-be)
-- [ ] MVP scope — Story Map의 첫 슬라이스 또는 MoSCoW의 Must 묶음
-- [ ] 검증 게이트 1로 넘길 *가설 목록* (3-5개)
+- [ ] Persona cards × 1–3 (with JTBD sentences)
+- [ ] Service Concept one-liner + Value Proposition Canvas or Lean Canvas
+- [ ] Interview notes (5–7 people)
+- [ ] SRS — FR (user stories + AC) + NFR (FURPS+ 7-category check)
+- [ ] User Journey Map (as-is + to-be)
+- [ ] MVP scope — first slice of Story Map or MoSCoW Must bundle
+- [ ] *Hypothesis list* to pass to Validation Gate 1 (3–5 items)
