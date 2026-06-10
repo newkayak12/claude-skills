@@ -1,212 +1,212 @@
-# 10. Post-launch — 출시 후 *영구* 루프
+# 10. Post-launch — The *Permanent* Post-launch Loop
 
-Macro/Meso/Micro loop이 *출시*에서 끝나는 것이 아니다. [`07 §7.1`](./07-looping-mechanics.md#71-네-가지-루프)의 네 번째 루프인 **Post-launch loop**는 *제품이 살아있는 한 영구*다. 이 문서는 출시 후의 운영·발견·종료(sunset)를 다룬다.
+The Macro/Meso/Micro loops do not end at *launch*. The fourth loop defined in [`07 §7.1`](./07-looping-mechanics.md#71-the-four-loops) — the **Post-launch loop** — runs *permanently as long as the product is alive*. This document covers post-launch operations, discovery, and sunset.
 
-## 10.1 Post-launch loop의 4가지 부담
+## 10.1 Four Burdens of the Post-launch Loop
 
-출시는 *끝*이 아니라 *새로운 부담의 시작*이다.
+Launch is not an *end* — it is the *beginning of new burdens*.
 
-1. **운영 부담** — 사고 대응, 사용자 지원, 인프라 비용
-2. **발견 부담** — Continuous Discovery, 다음 사이클 후보 발굴
-3. **개선 부담** — 부채 상환, 점진 품질 개선
-4. **종료 부담** — 언제 *그만둘지* 결정 (sunset 시점)
+1. **Operational burden** — incident response, user support, infrastructure cost
+2. **Discovery burden** — Continuous Discovery, finding candidates for the next cycle
+3. **Improvement burden** — paying down debt, incremental quality improvement
+4. **Sunset burden** — deciding *when to stop* (the sunset point)
 
-→ 출시 전부터 *4가지 부담의 capacity*를 확보하지 않으면 Post-launch는 *모든 다음 사이클을 잠식*.
+→ If you do not secure *capacity for these four burdens* before launch, the Post-launch loop will *cannibalize every subsequent cycle*.
 
-## 10.2 Cadence — 주기와 산출물
+## 10.2 Cadence — Rhythm and Deliverables
 
-### 일간 (자동화로 처리)
-- 핵심 메트릭 dashboard 점검 ([`O-04`](./situational-rules/operations.md#o-04-alarms-with-thresholds--임계값-없는-메트릭은-무용))
-- 알람 처리 (있을 때만)
-- 비용 추적 ([`O-11`](./situational-rules/operations.md#o-11-cost-monitoring--비용도-메트릭))
+### Daily (handled via automation)
+- Core metrics dashboard check ([`O-04`](./situational-rules/operations.md#o-04-alarms-with-thresholds--metrics-without-alarms-are-useless))
+- Alarm handling (only when triggered)
+- Cost tracking ([`O-11`](./situational-rules/operations.md#o-11-cost-monitoring--cost-is-a-metric))
 
-### 주간
-- Continuous Discovery 인터뷰 — *최소 1건* (Teresa Torres)
-- 사용자 피드백 triage (어떤 신호가 의미 있는가)
-- 메트릭 추세 검토 (전주 대비)
+### Weekly
+- Continuous Discovery interviews — *at least 1* (Teresa Torres)
+- User feedback triage (which signals matter)
+- Metrics trend review (vs. previous week)
 
-### 월간
-- 운영 사고 회고 (있었을 경우, blameless — [`O-07`](./situational-rules/operations.md#o-07-blameless-postmortem--사람이-아니라-시스템))
-- 부채 register 점검 ([`R-TD01`](./06-rules.md))
+### Monthly
+- Operational incident retrospective (blameless, when applicable — [`O-07`](./situational-rules/operations.md#o-07-blameless-postmortem--the-system-not-the-person))
+- Debt register review ([`R-TD01`](./06-rules.md))
 - Feature flag cleanup ([`O-06`](./situational-rules/operations.md#o-06-feature-flag-for-risky-changes))
 
-### 분기별
-- **메타 회고** — 지난 분기의 *학습 응축*
-- 다음 사이클 후보 큐 *재정렬*
-- Sunset 조건 *재평가* (§10.6)
-- 룰 자체 점검 — *어긴 룰* 패턴 ([`SD-10`](./situational-rules/self-discipline.md#sd-10-분기별-자기-회고--내가-어기는-룰))
+### Quarterly
+- **Meta-retrospective** — *condensing the learnings* of the past quarter
+- Re-prioritize the next-cycle candidate queue
+- Re-evaluate sunset conditions (§10.6)
+- Rule self-audit — patterns of *violated rules* ([`SD-10`](./situational-rules/self-discipline.md#sd-10-quarterly-self-retrospective--rules-i-break))
 
-## 10.3 Continuous Discovery — 출시 후에도 인터뷰
+## 10.3 Continuous Discovery — Interviews Continue After Launch
 
-> *출시했다고 인터뷰가 끝나는 것이 아니다.* — Teresa Torres
+> *Launching does not mean interviews are over.* — Teresa Torres
 
-### 원칙
-- **주간 cadence** — 빈도가 중요. 한 달에 5명 몰아 하는 것보다 *주 1명 8주 지속*이 신호 누적에 강함.
-- **현재 사용자 + 이탈 사용자 + 미사용자** — 3개 세그먼트 모두.
-- **Opportunity Solution Tree 업데이트** — 새 opportunity가 발견되면 트리에 등재. 모든 opportunity가 사이클이 되진 않음.
+### Principles
+- **Weekly cadence** — frequency matters. Interviewing 5 people in one month is weaker for signal accumulation than *1 person per week for 8 weeks*.
+- **Current users + churned users + non-users** — all three segments.
+- **Update the Opportunity Solution Tree** — when a new opportunity is discovered, add it to the tree. Not every opportunity becomes a cycle.
 
-### 결과물
-- 인터뷰 raw note (다음 사이클의 *살림* 자원)
-- Opportunity 트리 갱신
-- *반복되는 신호* 식별 → 다음 Macro loop 트리거 후보
+### Outputs
+- Raw interview notes (a *living resource* for the next cycle)
+- Updated Opportunity tree
+- Identification of *recurring signals* → candidates to trigger the next Macro loop
 
-## 10.4 새 Macro loop 발동 트리거
+## 10.4 Triggers for a New Macro Loop
 
-Post-launch loop은 *자체로* 다음 Macro loop을 만들어내야 한다.
+The Post-launch loop must *itself* generate the next Macro loop.
 
-### 정량 트리거
-- 핵심 메트릭 X% 하락 (예: WAU 20% 감소)
-- 비용 메트릭 임계 초과 (예: 사용자당 인프라 비용 > $Y)
-- SLO error budget *반복* 소진
+### Quantitative triggers
+- Core metric drops by X% (e.g., WAU down 20%)
+- Cost metric exceeds threshold (e.g., infrastructure cost per user > $Y)
+- SLO error budget *repeatedly* exhausted
 
-### 정성 트리거
-- Continuous Discovery에서 *반복 신호* (서로 다른 인터뷰 3명+에서 같은 opportunity)
-- 운영 사고가 *구조적 결함*을 드러냄
-- 경쟁/시장 환경 변화 — 외부 신호
+### Qualitative triggers
+- *Recurring signal* in Continuous Discovery (same opportunity surfaced by 3+ different interviews)
+- Operational incident reveals a *structural flaw*
+- Competitive or market shift — external signal
 
-### 자기-트리거 (위험)
-- "지루해서 새 기능을 만들고 싶다" — 자기 점검 필요 ([`SD-06`](./situational-rules/self-discipline.md#sd-06-검증-대신-코드를-짜고-있나--자기-점검), [`C-01`](./situational-rules/cognitive.md#c-01-bias-check-before-strong-commit))
-- "기술이 더 좋은 게 나왔다" — Solution-shopping anti-pattern ([`09 §9.5`](./09-pre-cycle.md#95-pre-cycle-anti-patterns))
+### Self-triggered (danger)
+- "I'm bored and want to build a new feature" — requires self-audit ([`SD-06`](./situational-rules/self-discipline.md#sd-06-writing-code-instead-of-validating--self-check), [`C-01`](./situational-rules/cognitive.md#c-01-bias-check-before-strong-commit))
+- "A better technology came out" — Solution-shopping anti-pattern ([`09 §9.5`](./09-pre-cycle.md#95-pre-cycle-anti-patterns))
 
-→ 트리거 발생 시 → [`09-pre-cycle.md`](./09-pre-cycle.md) 게이트 거쳐 새 Macro loop 진입.
+→ When a trigger fires → pass through [`09-pre-cycle.md`](./09-pre-cycle.md) gate → enter new Macro loop.
 
-## 10.5 부채 vs 새 기능 — Pay-down Ratio
+## 10.5 Debt vs. New Features — Pay-down Ratio
 
-Post-launch 시기는 *부채 상환*과 *새 기능*의 줄다리기.
+The post-launch period is a tug-of-war between *debt repayment* and *new features*.
 
-### Ratio 권장값 (1인 개발자 baseline)
-- **신규 사이클**: 새 기능 70% / 부채 30%
-- **성숙 사이클**: 새 기능 50% / 부채 50%
-- **출시 직후 1-3 사이클**: 새 기능 50% / 부채·관찰 50% (안정화 중심)
-- **운영 사고 후**: 새 기능 30% / 부채 70% (구조적 원인 해소)
+### Recommended Ratios (solo developer baseline)
+- **New cycle**: new features 70% / debt 30%
+- **Mature cycle**: new features 50% / debt 50%
+- **First 1–3 cycles after launch**: new features 50% / debt + observation 50% (stabilization focus)
+- **After an operational incident**: new features 30% / debt 70% (resolve structural causes)
 
-### 부채 register
-- [`R-TD01`](./06-rules.md) — *의식적으로* 목록화
-- 항목별: 발생 시점 / 원인 / 영향 / 상환 비용 / 상환 트리거
-- 분기별 *재평가* — 일부 부채는 *상환 불필요* (제품 방향 바뀌면)
+### Debt Register
+- [`R-TD01`](./06-rules.md) — maintain a *conscious* list
+- Per item: date incurred / cause / impact / repayment cost / repayment trigger
+- *Re-evaluate quarterly* — some debt does not need to be repaid (if product direction changes)
 
-## 10.6 Sunset — 언제 *그만둘지*
+## 10.6 Sunset — Deciding *When to Stop*
 
-종료는 *실패*가 아니다. 종료를 미루는 것이 *실패*다.
+Stopping is not *failure*. Delaying the stop is *failure*.
 
-### Sunset 트리거
-- **사용자**: WAU/MAU가 N개월 연속 임계 이하
-- **비즈니스**: 운영 비용 > 수익 (또는 수익 가능성)
-- **전략**: 다른 사이클로 *capacity 이전*이 더 가치 있음
-- **유지 비용**: 부채 상환만으로 매 사이클이 소비됨
+### Sunset Triggers
+- **Users**: WAU/MAU below threshold for N consecutive months
+- **Business**: operating cost > revenue (or revenue potential)
+- **Strategy**: transferring *capacity* to another cycle yields more value
+- **Maintenance cost**: each cycle consumed only by debt repayment
 
-### Sunset 결정 매트릭스
-- 종료 비용 (마이그레이션 / 사용자 통보 / 데이터 보존) < 유지 비용 → 종료 진행
-- 핵심 사용자 N명이 있고 *이동시킬 곳이 있나* → 마이그레이션 계획
-- *이동시킬 곳이 없나* → 충분한 사전 공지 + 데이터 export 제공
+### Sunset Decision Matrix
+- Shutdown cost (migration / user notification / data retention) < maintenance cost → proceed with shutdown
+- Are there N core users and *somewhere to migrate them to*? → migration plan
+- *No destination for migration*? → sufficient advance notice + data export
 
-### Sunset 산출물
-- 종료 일정 (T-90d 공지 → T-30d 신규 가입 종료 → T-0 서비스 종료 → T+30d 데이터 보존 종료)
-- 마이그레이션 가이드 (있을 경우)
-- 데이터 export / 삭제 절차
-- *Sunset 회고* — 무엇을 배웠나, 무엇을 다음 사이클로 carry-over
+### Sunset Deliverables
+- Shutdown timeline (T-90d notice → T-30d new signups closed → T-0 service shutdown → T+30d data retention ends)
+- Migration guide (if applicable)
+- Data export / deletion procedure
+- *Sunset retrospective* — what was learned, what to carry over to the next cycle
 
-→ Sunset 회고는 *제품의 마지막 학습 자원*. 다음 Macro loop의 출발점.
+→ The sunset retrospective is *the product's final learning resource*. It is the starting point of the next Macro loop.
 
-## 10.7 Post-launch 메트릭 baseline
+## 10.7 Post-launch Metrics Baseline
 
-출시 *전*에 미리 정해야 할 메트릭들. 출시 후 정하면 *해석 오염* ([`C-01`](./situational-rules/cognitive.md#c-01-bias-check-before-strong-commit)).
+Metrics to define *before* launch. Defining them after launch causes *interpretation contamination* ([`C-01`](./situational-rules/cognitive.md#c-01-bias-check-before-strong-commit)).
 
-### 제품 메트릭
+### Product Metrics
 - DAU / WAU / MAU
 - Retention curve (D1 / D7 / D30)
-- Activation rate (정의한 핵심 이벤트 달성 비율)
-- 핵심 task 완료율
-- NPS 또는 대체 만족도 지표
+- Activation rate (percentage achieving the defined core event)
+- Core task completion rate
+- NPS or equivalent satisfaction indicator
 
-### 운영 메트릭 (RED + USE — [`O-01`](./situational-rules/operations.md#o-01-three-pillars--출시-전-필수))
+### Operational Metrics (RED + USE — [`O-01`](./situational-rules/operations.md#o-01-three-pillars--required-before-release))
 - P95/P99 latency
 - Error rate
 - Throughput
 - Utilization / Saturation
 
-### 비즈니스 메트릭
-- Revenue / 사용자당 비용
-- CAC / LTV (해당 시)
+### Business Metrics
+- Revenue / cost per user
+- CAC / LTV (where applicable)
 - Churn rate
 
-### Sunset 트리거 메트릭 (사전 정의 필수)
-- N개월 연속 WAU < ___
-- 사용자당 비용 > $___
-- 부채 상환만으로 N 사이클 소비
+### Sunset Trigger Metrics (must be pre-defined)
+- WAU < ___ for N consecutive months
+- Cost per user > $___
+- N cycles consumed by debt repayment alone
 
-## 10.8 Post-launch 안티패턴
+## 10.8 Post-launch Anti-patterns
 
 ### Endless polish
-- 증상: 출시 후 *6개월간 같은 제품* 다듬기만
-- 위험: 학습 멈춤 — 새 가설 검증 없음
-- 대응: [`SD-04 80% ship rule`](./situational-rules/self-discipline.md#sd-04-80-ship-rule)을 *post-launch에도* 적용
+- Symptom: *polishing the same product for 6 months* after launch
+- Risk: learning stops — no new hypothesis validation
+- Response: apply [`SD-04 80% ship rule`](./situational-rules/self-discipline.md#sd-04-80-ship-rule) *post-launch too*
 
 ### Feature creep without hypothesis
-- 증상: "사용자가 X 달라고 했다" → 가설 없이 바로 구현
-- 위험: 한 명의 요청을 *모두의 요구*로 착각
-- 대응: 새 기능도 *가설 사전 등록* ([`08 §8.4`](./08-pass-criteria.md#84-가설-사전-등록-pre-registration))
+- Symptom: "a user asked for X" → implemented immediately without a hypothesis
+- Risk: mistaking one person's request for *universal demand*
+- Response: new features also require *pre-registration of a hypothesis* ([`08 §8.4`](./08-pass-criteria.md#84-hypothesis-pre-registration))
 
 ### Sunset avoidance
-- 증상: 명백히 죽어가는 제품을 *살릴 수 있다*고 함
-- 위험: 매몰비용 ([`C-06`](./situational-rules/cognitive.md#c-06-sunk-cost--과거-투입은-결정에-영향-주지-않는다))
-- 대응: 사전 정의 sunset 트리거 발동 → 자동 재평가
+- Symptom: claiming *"it can be saved"* for a product that is clearly dying
+- Risk: sunk cost ([`C-06`](./situational-rules/cognitive.md#c-06-sunk-cost--past-investment-does-not-affect-the-decision))
+- Response: pre-defined sunset trigger fires → automatic re-evaluation
 
 ### Discovery skip
-- 증상: 출시 후 인터뷰 *0건* 상태로 새 기능 결정
-- 위험: 현재 사용자의 *진짜 패턴* 모름
-- 대응: 주간 인터뷰 cadence를 *시간표에* 박기
+- Symptom: making new feature decisions with *0 interviews* after launch
+- Risk: not knowing the *real patterns* of current users
+- Response: lock a weekly interview cadence *in the calendar*
 
 ### Operational drowning
-- 증상: 운영 사고·지원 응대로 *다음 사이클* 시작 못함
-- 위험: 영구 운영 모드 — 발견·개선 없음
-- 대응: 운영 자동화 사이클을 명시적 Macro loop로 분리
+- Symptom: can't start the *next cycle* because of incident response and support load
+- Risk: permanent operations mode — no discovery, no improvement
+- Response: separate the operations automation cycle as an explicit Macro loop
 
-## 10.9 Sunset → 다음 Macro loop carryover
+## 10.9 Sunset → Next Macro Loop Carryover
 
-[`07 §7.4`](./07-looping-mechanics.md#74-inter-loop-carryover--무엇이-살고-무엇이-버려지나)의 살림/의심/버림을 sunset에도 적용.
+Apply the keep / suspect / discard framework from [`07 §7.4`](./07-looping-mechanics.md#74-inter-loop-carryover--what-survives-and-what-gets-discarded) to sunset as well.
 
-### 살림 (다음 제품으로)
-- 인터뷰 raw note 누적
-- 사용자 세그먼트 학습 — *누가* 가치를 느꼈나
-- 운영 학습 — *어떤 결정*이 어떤 비용을 만들었나
-- 기술 학습 — 어떤 의존이 어떤 한계를 보였나
+### Keep (carry to the next product)
+- Accumulated raw interview notes
+- User segment learning — *who* found value
+- Operational learning — *which decisions* created which costs
+- Technical learning — which dependencies revealed which constraints
 
-### 의심 (재해석 필요)
-- *왜* 이 제품이 죽었는가 — 즉답 금지, 데이터 다시 보기
-- "다음에 더 잘하면 된다" 같은 모호한 학습
+### Suspect (needs reinterpretation)
+- *Why* did this product die — no quick answer; look at the data again
+- Vague learnings like "we'll do better next time"
 
-### 버림
-- 죽은 제품의 *코드*
-- 검증 안 된 *추측성 해석*
-- "우리만의 특수성" 식의 inside view ([`C-11`](./situational-rules/cognitive.md#c-11-outside-view--비슷한-시도들의-base-rate))
+### Discard
+- *Code* from the dead product
+- Unvalidated speculative interpretations
+- Inside-view narratives like "our case was special" ([`C-11`](./situational-rules/cognitive.md#c-11-outside-view--base-rate-of-similar-attempts))
 
-## 10.10 Post-launch 체크리스트
+## 10.10 Post-launch Checklist
 
-### 출시 *직전*
-- [ ] Post-launch 메트릭 baseline 사전 정의 (§10.7)
-- [ ] Continuous Discovery cadence 일정 잡기 (§10.3)
-- [ ] Sunset 트리거 사전 정의 (§10.6)
-- [ ] 부채 register 초기화 (§10.5)
-- [ ] 운영 baseline 통과 ([`operations.md`](./situational-rules/operations.md))
+### Immediately *before* launch
+- [ ] Pre-define post-launch metrics baseline (§10.7)
+- [ ] Schedule Continuous Discovery cadence (§10.3)
+- [ ] Pre-define sunset triggers (§10.6)
+- [ ] Initialize debt register (§10.5)
+- [ ] Pass operational baseline ([`operations.md`](./situational-rules/operations.md))
 
-### 출시 *후 매 분기*
-- [ ] 메트릭 추세 종합 (§10.7)
-- [ ] Discovery 신호 회고 (§10.3)
-- [ ] Sunset 조건 재평가 (§10.6)
-- [ ] 부채 ratio 점검 (§10.5)
-- [ ] 다음 Macro loop 트리거 점검 (§10.4)
+### *Every quarter* after launch
+- [ ] Synthesize metrics trends (§10.7)
+- [ ] Discovery signal retrospective (§10.3)
+- [ ] Re-evaluate sunset conditions (§10.6)
+- [ ] Debt ratio check (§10.5)
+- [ ] Next Macro loop trigger check (§10.4)
 
-## 관련 룰
-- [`R-TD01`](./06-rules.md) — 부채 register
-- [`SD-04`](./situational-rules/self-discipline.md#sd-04-80-ship-rule), [`SD-10`](./situational-rules/self-discipline.md#sd-10-분기별-자기-회고--내가-어기는-룰) — 출시·자기 회고
+## Related Rules
+- [`R-TD01`](./06-rules.md) — debt register
+- [`SD-04`](./situational-rules/self-discipline.md#sd-04-80-ship-rule), [`SD-10`](./situational-rules/self-discipline.md#sd-10-quarterly-self-retrospective--rules-i-break) — launch / self-retrospective
 - [`C-06`, `C-11`](./situational-rules/cognitive.md) — Sunk cost / Outside view
-- [`O-01~11`](./situational-rules/operations.md) — 운영 baseline 전체
+- [`O-01~11`](./situational-rules/operations.md) — full operational baseline
 
-## 관련 skill
-- `pm:hypothesis-driven-dev` — 출시 후에도 가설 등록
-- `develop:operations-workflow` — 운영 cadence
-- `develop:sre-engineer` — SLO / error budget 운영
-- `think:retrospective` — 분기 메타 회고
-- `cognition:second-order-thinker` — sunset의 2차 결과
-- `pm:shape-up` — 다음 사이클의 appetite
+## Related Skills
+- `pm:hypothesis-driven-dev` — register hypotheses post-launch too
+- `develop:operations-workflow` — operations cadence
+- `develop:sre-engineer` — SLO / error budget operations
+- `think:retrospective` — quarterly meta-retrospective
+- `cognition:second-order-thinker` — second-order effects of sunset
+- `pm:shape-up` — appetite for the next cycle

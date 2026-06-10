@@ -28,7 +28,7 @@ WILDCARD_STAGES = {"always", "*"}
 
 # --- L0 (06-rules.md 카탈로그) 파서: H2 섹션 + 로딩시점 + H3 룰 ---
 _L0_SECTION = re.compile(r"^##\s+(\S.*)$")                 # H2 섹션 헤더
-_L0_LOAD = re.compile(r"^\s*\*\*로딩 시점\*\*\s*:\s*(.+)$")  # 섹션 stage
+_L0_LOAD = re.compile(r"^\s*\*\*Loading point\*\*\s*:\s*(.+)$")  # section stage
 _L0_RULE = re.compile(r"^###\s+([A-Za-z][\w-]*):\s*(.+)$")  # H3 룰
 _BACKTICK = re.compile(r"`([^`]+)`")
 
@@ -63,8 +63,8 @@ def parse_l0(text: str, source: str = "L0") -> list:
                 rules.append(current)
                 current = None
             sec_stages = set()
-            # '(필수)' 마커 = invariant (선언된 마커, 추론 아님)
-            sec_scope = "invariant" if "(필수)" in sm.group(1) else "default"
+            # '(mandatory)' marker = invariant (declared, not inferred)
+            sec_scope = "invariant" if "(mandatory)" in sm.group(1) else "default"
             continue
         lm = _L0_LOAD.match(line)
         if lm:

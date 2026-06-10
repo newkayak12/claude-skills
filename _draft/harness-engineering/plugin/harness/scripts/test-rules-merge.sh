@@ -12,20 +12,20 @@ fail() { echo "FAIL: $1"; exit 1; }
 # --- 합성 L0 (06-rules.md 카탈로그 구조: 섹션 로딩시점 + (필수) invariant + H3 룰) ---
 L0="$TMP/06-rules.md"
 cat > "$L0" <<'MD'
-## 1. 코드 원칙
-**로딩 시점**: `code-writing`
+## 1. Code principles
+**Loading point**: `code-writing`
 ### R-CD01: SOLID (L0)
 - body
 ### R-CD02: KISS (L0)
 - body
 
-## 2. 아키텍처
-**로딩 시점**: `architecture`
+## 2. Architecture
+**Loading point**: `architecture`
 ### R-AR01: SoC (L0)
 - body
 
-## 3. 프로세스 게이트 (필수)
-**로딩 시점**: `always`
+## 3. Process gates (mandatory)
+**Loading point**: `always`
 ### R-PG01: WIP=1 (L0 invariant)
 - body
 MD

@@ -1,98 +1,98 @@
-# Situational — 자기 통제 (Self-discipline)
+# Situational — Self-discipline
 
-**트리거**: 사이클이 늘어짐 / WIP가 1을 초과 / 출시를 계속 미룸 / 검증 대신 코드를 짜고 있음
+**Trigger**: cycle is stretching / WIP exceeds 1 / release keeps being postponed / writing code instead of validating
 
-1인 개발자에게 *적*은 외부에 없다. 자기 자신과의 합의를 지키는 룰이다.
+For a solo developer, the *enemy* is not external. These are rules for keeping agreements with yourself.
 
-## SD-01: Time-box validation loops — 7-14일
+## SD-01: Time-box validation loops — 7–14 days
 
-- **Why**: 검증 루프가 *몇 주*로 늘어지면 회피된다. 시간이 정해져 있어야 *어떻게든* 결론을 낸다.
+- **Why**: When validation loops stretch to *weeks*, they get avoided. A fixed deadline forces a conclusion *one way or another*.
 - **How**:
-  - 사이클 시작 시 *각 게이트의 deadline* 명시 (예: Loop 1 = 2주, Loop 2 = 1주)
-  - 데이터가 부족해도 *그 시점*에서 결론 — "데이터 부족"도 결론
-  - Deadline 미준수 시 *다음 사이클*로 강제 종료. 무한 연장 금지.
+  - At cycle start, explicitly state *deadlines for each gate* (e.g. Loop 1 = 2 weeks, Loop 2 = 1 week)
+  - Even with insufficient data, reach a conclusion *at that point* — "insufficient data" is also a conclusion
+  - On deadline miss, *force-close to the next cycle*. Unlimited extension is not permitted.
 
 ## SD-02: Max 5 hypotheses per cycle
 
-- **Why**: 가설이 많으면 우선순위가 와해. 검증의 *깊이*가 사라짐.
+- **Why**: Too many hypotheses dissolve prioritization. The *depth* of validation disappears.
 - **How**:
-  - 사이클 시작 시 가설 *명시적 5개 이하*
-  - 6번째가 생기면 *기존 1개를 제거*
-  - 제거된 가설은 *다음 사이클 후보 큐*로
+  - At cycle start, state hypotheses *explicitly at 5 or fewer*
+  - When a 6th appears, *remove one existing hypothesis*
+  - Removed hypotheses go into the *candidate queue for the next cycle*
 
-## SD-03: WIP = 1 (Work In Progress 한도)
+## SD-03: WIP = 1 (Work In Progress limit)
 
-- **Why**: 동시 진행 사이클·기능이 많으면 *어느 것도 끝나지 않음*. 컨텍스트 스위칭 비용 폭증.
+- **Why**: Too many concurrent cycles or features means *none of them finish*. Context-switching cost explodes.
 - **How**:
-  - 동시 *진행 중* 사이클 1개
-  - 새 사이클 시작 전 *현재 사이클 종료*
-  - 예외: 운영 사고 대응 (이건 WIP 산정에서 제외)
+  - At most 1 cycle *in progress* simultaneously
+  - *Close the current cycle* before starting a new one
+  - Exception: responding to a production incident (excluded from WIP count)
 
 ## SD-04: 80% ship rule
 
-- **Why**: 마지막 20%의 완성도 향상은 *처음 80%만큼 시간*. 그동안 시장 피드백을 못 받음. *불완전한 출시*가 종종 더 빠른 학습.
+- **Why**: The last 20% of polish takes *as long as the first 80%*. During that time, no market feedback is received. *Incomplete shipping* is often faster learning.
 - **How**:
-  - "더 다듬으면" 욕구 발생 시: *지금 출시 시 학습할 수 있는 것* vs *완성 후 학습할 수 있는 것* 비교
-  - DoD 충족 + 핵심 가설 검증 가능하면 출시
-  - 다듬기는 *다음 사이클*
+  - When the urge to refine appears: compare *what can be learned by shipping now* vs *what can be learned after finishing*
+  - If DoD is met and the core hypothesis can be validated — ship
+  - Polish goes into the *next cycle*
 
-## SD-05: Polish는 사이클 종료 후, 다음 사이클 시작 전이 아님
+## SD-05: Polish is after cycle end, not before the next cycle begins
 
-- **Why**: 다음 사이클을 *polish로 시작*하면 새 학습은 영영 없음.
+- **Why**: *Starting the next cycle with polish* means new learning never happens.
 - **How**:
-  - Polish 욕구가 강하면 *별도 사이클*로 분리 ("polish sprint" — 시간 제한)
-  - 또는 *부채로 등록*해 다음 사이클의 pay-down ratio에서 처리
+  - When the urge to polish is strong, split it into a *separate cycle* ("polish sprint" — time-limited)
+  - Or *register it as debt* and handle it in the pay-down ratio of the next cycle
 
-## SD-06: 검증 대신 코드를 짜고 있나? — 자기 점검
+## SD-06: Writing code instead of validating? — self-check
 
-- **Why**: 검증은 *불확실성*을 마주하는 일이라 *불편*. 코드 짜는 건 *확실*하고 *진전이 보임* — 회피 메커니즘으로 작동.
+- **Why**: Validation means *facing uncertainty*, which is *uncomfortable*. Writing code is *certain* and *shows progress* — it operates as an avoidance mechanism.
 - **How**:
-  - 코드 작성 시간 > 인터뷰·검증 시간일 때 자기 점검
-  - 질문: "지금 코드를 짜는 게 *가장 큰 리스크*를 줄이는가?"
-  - 답이 *No*면 검증으로 돌아가기
+  - Self-check when coding time > interview/validation time
+  - Ask: "Does writing code right now reduce *the biggest risk*?"
+  - If *No* — return to validation
 
-## SD-07: 사이클 종료는 *명시적*으로
+## SD-07: Cycle end is *explicit*
 
-- **Why**: 사이클이 *자연 종료*되면 회고 없음, 학습 없음. 종료를 *행사*로 만들어야 학습이 박힘.
+- **Why**: A *naturally concluded* cycle has no retrospective and no learning. Making closure an *event* is what makes learning stick.
 - **How**:
-  - 사이클 종료 트리거 정의 (검증 완료 / Deadline 도달 / Pivot 결정)
-  - 종료 시 *항상* `think:retrospective` 호출 ([`R-KP01`](../06-rules.md#r-kp01-retro-after-every-cycle))
-  - 회고 산출물(*놀란 것, 다음에 바꿀 것*)을 별도 파일로 보존
+  - Define cycle-end triggers (validation complete / deadline reached / pivot decided)
+  - At close, *always* invoke `think:retrospective` ([`R-KP01`](../06-rules.md#r-kp01-retro-after-every-cycle))
+  - Preserve retrospective outputs (*what was surprising, what to change next*) in a separate file
 
-## SD-08: 출시 미루기의 *진짜 이유* 점검
+## SD-08: Check the *real reason* for postponing release
 
-- **Why**: "조금 더 다듬으면"의 진짜 이유는 종종 *비판이 두려움*. 인지 안 하면 영영 못 출시.
+- **Why**: The real reason behind "just a little more polish" is often *fear of criticism*. Without recognizing it, release never happens.
 - **How**:
-  - 출시 미루는 *3번째* 발생 시 자기 점검
-  - 질문: 미루는 *기술적* 이유 vs *심리적* 이유?
-  - 심리적이면 *베타 사용자 수 제한*([`R-SC04`](../06-rules.md#r-sc04-beta-사용자-수-의도적-제한))으로 노출 줄여 출시
+  - Self-check on the *3rd occurrence* of postponing release
+  - Ask: what are the *technical* reasons vs *psychological* reasons for postponing?
+  - If psychological — limit exposure and ship via *restricted beta user count* ([`R-SC04`](../06-rules.md#r-sc04-intentionally-limit-beta-user-count))
 
-## SD-09: 한 사이클 내 skill 호출 5개 이상이면 의심
+## SD-09: More than 5 skill invocations in one cycle — suspect something
 
-- **Why**: skill 호출이 늘면 *의사결정 마비* 또는 *작은 결정의 과잉 분석*. ([`R-AI05`](../06-rules.md#r-ai05-한-사이클에-5개-이상의-skill-호출은-의심))
+- **Why**: When skill invocations increase, it signals *decision paralysis* or *over-analysis of small decisions*. ([`R-AI05`](../06-rules.md#r-ai05-more-than-5-skill-calls-in-one-cycle-is-a-warning-sign))
 - **How**:
-  - 호출 카운트가 5 초과 시 점검 — 어느 단계가 과도한가
-  - "이 결정이 정말 skill까지 호출할 가치인가?" 질문
+  - When invocation count exceeds 5, examine — which stage is excessive?
+  - Ask: "Is this decision actually worth invoking a skill for?"
 
-## SD-10: 분기별 자기 회고 — "내가 어기는 룰"
+## SD-10: Quarterly self-retrospective — "rules I break"
 
-- **Why**: 룰을 모아두는 것보다 *어기는 패턴*을 보는 게 더 유익.
+- **Why**: Observing the *pattern of rules you break* is more useful than just maintaining a list of rules.
 - **How**:
-  - 분기마다 *최근 3사이클*에서 어긴 룰 목록화
-  - 가장 자주 어긴 1-2개 — *왜* 어겼나? (룰이 비현실적인가 / 본인이 미숙한가)
-  - 룰을 *수정*하거나 *수용 도구*(time-box, alarm 등)를 추가
+  - Each quarter, list the rules broken across the *last 3 cycles*
+  - For the 1–2 most frequently broken — *why* were they broken? (Is the rule unrealistic? Am I still maturing?)
+  - Either *revise the rule* or add an *enforcement tool* (time-box, alarm, etc.)
 
-## SD-11: "나는 다르다"의 점검
+## SD-11: Check "I'm different"
 
-- **Why**: 일반적인 룰을 *내 케이스에선 예외*라고 보는 빈도가 *과도하면* 패턴이 됨.
+- **Why**: Treating general rules as *exceptions for my case* too frequently becomes a pattern.
 - **How**:
-  - "이건 우리 경우는 다르다"가 떠오를 때 *outside view* ([`cognitive.md#c-11`](./cognitive.md))로 검증
-  - 3번 연속 "다르다"는 *룰 무시 패턴*의 신호
+  - When "our case is different" comes to mind, validate with the *outside view* ([`cognitive.md#c-11`](./cognitive.md))
+  - Three consecutive "we're different" is a signal of a *rule-ignoring pattern*
 
-## 관련 skill
+## Related skills
 
-- `think:retrospective` — 사이클 회고
-- `cognition:bias-auditor` — 자기 인식 편향
-- `pm:shape-up` — Appetite-based 사이클
-- `self:examined-life` — 더 깊은 자기 점검 (사이클 외)
-- `cognition:second-order-thinker` — "출시 미루기"의 2차 결과
+- `think:retrospective` — cycle retrospective
+- `cognition:bias-auditor` — self-awareness bias
+- `pm:shape-up` — appetite-based cycles
+- `self:examined-life` — deeper self-examination (outside of cycles)
+- `cognition:second-order-thinker` — second-order consequences of "postponing release"
