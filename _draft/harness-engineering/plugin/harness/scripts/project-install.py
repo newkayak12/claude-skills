@@ -38,6 +38,7 @@ Usage:
 """
 import argparse
 import json
+import re
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -49,7 +50,14 @@ _HERE = Path(__file__).resolve()
 DEFAULT_SOURCE = _HERE.parents[1]
 
 PLUGIN_ROOT_VAR = "${CLAUDE_PLUGIN_ROOT}"
-PROJECT_HARNESS = "$CLAUDE_PROJECT_DIR/.claude/harness"   # 벤더링 위치(프로젝트 기준)
+DEST_SUBDIR_DEFAULT = "harness"                  # .claude/ 하위 벤더링 서브디렉토리(기본)
+
+# 벤더 위치(dest)와 hook 치환 경로는 *반드시 같은 subdir 에서 파생*되어야 한다.
+# 이 둘이 갈라지면(예: payload→.claude/v1/harness, hook→.claude/harness) PreToolUse hook 이
+# 없는 파일을 가리켜 python 이 exit 2(파일없음)로 종료 → 모든 도구가 차단되는 *복구불가 데드락*
+# (실사용 피드백 high). subdir 하나를 SSOT 로 두고 dest·치환·검증을 전부 여기서 파생한다.
+def _project_harness(subdir: str) -> str:
+    return f"$CLAUDE_PROJECT_DIR/.claude/{subdir}"
 
 CLAUDE_MD_BEGIN = "<!-- harness:begin -->"
 CLAUDE_MD_END = "<!-- harness:end -->"
@@ -148,9 +156,30 @@ def _upgrade_label(old_ver, src_ver: str, existed: bool) -> str:
     return f"업그레이드 v{old_ver} → v{src_ver}"
 
 
-def _vendor_payload(claude_dir: Path, source: Path, dry: bool) -> Path:
-    """평탄화 페이로드(source)를 <proj>/.claude/harness 로 *직접 재귀복사* (버전 인식)."""
-    dest = claude_dir / "harness"
+def _detect_existing_subdir(claude_dir: Path, default: str) -> str:
+    """기존 벤더링 레이아웃 자동감지 — `.claude/**/.harness-vendored` 마커 위치를 찾는다.
+
+    왜: 사용자가 `.claude/v1/harness` 같은 비-기본 레이아웃에 이미 벤더링했다면, update 재실행이
+    기본 `.claude/harness` 로 *다시* 깔아 hook 경로가 둘로 갈라지는(=데드락) 원인이 된다(피드백 #4).
+    기존 마커가 한 곳이면 그 subdir 을 재사용해 같은 자리에 재-벤더한다. 명시 --dest-subdir 이 우선.
+    """
+    if not claude_dir.is_dir():
+        return default
+    found = []
+    for marker in claude_dir.rglob(VENDOR_MARKER):
+        rel = marker.parent.relative_to(claude_dir).as_posix()
+        if rel and rel != ".":
+            found.append(rel)
+    if default in found:
+        return default
+    if len(found) == 1:
+        return found[0]
+    return default
+
+
+def _vendor_payload(claude_dir: Path, source: Path, dry: bool, subdir: str) -> Path:
+    """평탄화 페이로드(source)를 <proj>/.claude/<subdir> 로 *직접 재귀복사* (버전 인식)."""
+    dest = claude_dir / subdir
     src_ver = _read_source_version(source)
     existed = dest.exists()
     label = _upgrade_label(_read_vendored_version(dest), src_ver, existed)
@@ -187,15 +216,15 @@ def _load_hooks_json(payload_or_source: Path) -> dict:
     return json.loads(hj.read_text(encoding="utf-8")).get("hooks", {})
 
 
-def _translate(hooks: dict) -> dict:
-    """command 의 ${CLAUDE_PLUGIN_ROOT} → $CLAUDE_PROJECT_DIR/.claude/harness."""
+def _translate(hooks: dict, project_harness: str) -> dict:
+    """command 의 ${CLAUDE_PLUGIN_ROOT} → $CLAUDE_PROJECT_DIR/.claude/<subdir> (벤더 dest 와 동일 subdir)."""
     out = {}
     for event, blocks in hooks.items():
         new_blocks = []
         for block in blocks:
             nb = {k: v for k, v in block.items() if k != "hooks"}
             nb["hooks"] = [
-                {**h, "command": h["command"].replace(PLUGIN_ROOT_VAR, PROJECT_HARNESS)}
+                {**h, "command": h["command"].replace(PLUGIN_ROOT_VAR, project_harness)}
                 for h in block.get("hooks", [])
             ]
             new_blocks.append(nb)
@@ -238,6 +267,81 @@ def _write_settings(claude_dir: Path, harness_hooks: dict, dry: bool) -> None:
     print(f"  ✓ settings.json hooks 병합 (+{added} command{', 이미 최신' if added == 0 else ''})")
 
 
+_HOOK_PATH_RE = re.compile(r"\$CLAUDE_PROJECT_DIR/\.claude/(\S+?\.(?:py|sh))")
+
+
+def _payload_script_names(dest: Path) -> set:
+    """벤더링된 페이로드가 실제로 담고 있는 hook/script 파일명 집합 (harness 소유 식별용)."""
+    names = set()
+    for sub in ("hooks", "scripts"):
+        d = dest / sub
+        if d.is_dir():
+            names |= {p.name for p in d.iterdir() if p.suffix in (".py", ".sh")}
+    return names
+
+
+def _verify_and_heal_hooks(proj: Path, claude_dir: Path, dest: Path, dry: bool) -> None:
+    """settings.json 의 모든 hook command 가 *존재하는 파일*을 가리키는지 검증 — 데드락 방지(피드백 #3).
+
+    PreToolUse hook 이 없는 파일을 가리키면 python 이 exit 2(파일없음)로 죽어 *모든 도구가 차단*되는
+    복구불가 데드락이 된다(정상 도구로 settings.json 을 못 고침). 그래서 설치 시점에 *런타임 침묵
+    데드락을 가시적 설치 검증으로* 끌어올린다:
+      - harness 소유(파일명이 벤더 페이로드에 있음)인데 경로가 없는 stale command → *프룬* + 보고
+        (예: 옛 .claude/harness/... command 가 남았는데 이번엔 .claude/v1/harness 로 벤더한 경우).
+      - harness 소유가 아닌(사용자) broken command → 건드리지 않고 *경고만* (사용자 hook 보존).
+    """
+    if dry:
+        print("  [dry] hook 경로 검증 생략 (실설치 후 settings·payload 기준으로 수행)")
+        return
+    path = claude_dir / "settings.json"
+    if not path.exists():
+        return
+    try:
+        settings = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return
+    harness_names = _payload_script_names(dest)
+    pruned, user_broken = [], []
+
+    def _broken(cmd: str):
+        """command 가 가리키는 .claude 내부 스크립트 경로 중 존재하지 않는 첫 항목 (rel, is_harness)."""
+        for m in _HOOK_PATH_RE.finditer(cmd or ""):
+            rel = m.group(1)
+            if not (proj / ".claude" / rel).exists():
+                return rel, (Path(rel).name in harness_names)
+        return None
+
+    changed = False
+    for event, blocks in (settings.get("hooks") or {}).items():
+        for block in blocks:
+            kept = []
+            for h in block.get("hooks", []):
+                b = _broken(h.get("command", ""))
+                if b is None:
+                    kept.append(h); continue
+                rel, is_harness = b
+                if is_harness:
+                    pruned.append((event, h.get("command", ""), rel)); changed = True
+                else:
+                    user_broken.append((event, h.get("command", ""), rel))
+                    kept.append(h)  # 사용자 hook 은 보존
+            block["hooks"] = kept
+
+    if pruned:
+        print(f"  ⚠ stale harness hook {len(pruned)}개 발견 — 존재하지 않는 파일을 가리켜 데드락 위험, 프룬:")
+        for event, cmd, rel in pruned:
+            print(f"      [{event}] 없음:.claude/{rel}  ←  {cmd}")
+        if not dry:
+            path.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            print("  ✓ settings.json 에서 stale harness hook 제거 (정상 경로만 남김)")
+    if user_broken:
+        print(f"  ⚠ 사용자 hook {len(user_broken)}개가 없는 파일을 가리킴(보존, 직접 확인 필요):")
+        for event, cmd, rel in user_broken:
+            print(f"      [{event}] 없음:.claude/{rel}  ←  {cmd}")
+    if not pruned and not user_broken:
+        print(f"  ✓ hook 경로 검증 — 모든 command 가 존재하는 파일을 가리킴 (데드락 없음)")
+
+
 def _write_claude_md(claude_dir: Path, dry: bool) -> None:
     path = claude_dir / "CLAUDE.md"
     block = _governance_block()
@@ -265,6 +369,9 @@ def main() -> None:
     ap.add_argument("--project", required=True, type=Path, help="대상 프로젝트 루트")
     ap.add_argument("--from", dest="source", type=Path, default=DEFAULT_SOURCE,
                     help="복사할 평탄화 페이로드 루트 (기본: 설치기 자신의 페이로드 = 글로벌 harness/)")
+    ap.add_argument("--dest-subdir", default=None,
+                    help="`.claude/` 하위 벤더링 서브디렉토리 (기본: 자동감지된 기존 레이아웃, 없으면 'harness'). "
+                         "벤더 위치와 hook 경로가 *함께* 이 값으로 파생돼 둘이 갈라지지 않는다.")
     ap.add_argument("--dry-run", action="store_true", help="쓰지 않고 계획만 출력")
     args = ap.parse_args()
 
@@ -277,15 +384,21 @@ def main() -> None:
     _check_source(source)
 
     claude_dir = proj / ".claude"
+    # subdir SSOT: 명시 플래그 > 기존 레이아웃 자동감지 > 기본 'harness'.
+    subdir = args.dest_subdir or _detect_existing_subdir(claude_dir, DEST_SUBDIR_DEFAULT)
+    project_harness = _project_harness(subdir)
     if not args.dry_run:
         claude_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"=== harness project-install → {proj} {'(dry-run)' if args.dry_run else ''} ===")
     print(f"  source(평탄화 페이로드): {source}")
-    _vendor_payload(claude_dir, source, args.dry_run)
+    print(f"  벤더 위치: .claude/{subdir}  (hook 경로도 동일 subdir 에서 파생)")
+    dest = _vendor_payload(claude_dir, source, args.dry_run, subdir)
     # hooks 는 source 에서 직접 읽어 치환(설치 결과와 동형) — dry/실설치 동일 경로.
-    harness_hooks = _translate(_load_hooks_json(source))
+    harness_hooks = _translate(_load_hooks_json(source), project_harness)
     _write_settings(claude_dir, harness_hooks, args.dry_run)
+    # 치환 직후 검증 — 어떤 hook command 도 없는 파일을 가리키지 않게(데드락 방지, 피드백 #3).
+    _verify_and_heal_hooks(proj, claude_dir, dest, args.dry_run)
     _write_claude_md(claude_dir, args.dry_run)
 
     print()

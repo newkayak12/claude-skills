@@ -73,6 +73,20 @@ seed_chain planning
 [ "$(run_bash_guard "cat > src/app.py")" = "2" ] || fail "planning + Bash redirection .py 가 차단 안 됨"
 seed_chain planning
 [ "$(run_bash_guard "pytest src/app.py")" = "0" ] || fail "planning + Bash read/test 명령이 오탐 차단됨"
+# B1-ext-boundary: 짧은 코드확장자가 더 긴 비-코드 확장자의 *접두*일 때 오탐 금지 (실사용 피드백 3건)
+#   .js ⊂ .json/.jsonl, .m ⊂ .md, .h ⊂ .html. 확장자 경계 lookahead 회귀 가드.
+seed_chain design
+[ "$(run_bash_guard "python3 -c \"import json;print(json.load(open('cycles/active/metrics.json')))\"")" = "0" ] \
+  || fail "ext-boundary: .json 읽기(python -c)가 .js 접두 오탐으로 차단됨"
+[ "$(run_bash_guard "mv rfc/RFC-010-x.md rfc/RFC-014-x.md")" = "0" ] \
+  || fail "ext-boundary: .md mv 가 .m 접두 오탐으로 코드차단됨"
+[ "$(run_bash_guard "echo x >> .claude/.feedback/feedback.jsonl")" = "0" ] \
+  || fail "ext-boundary: .jsonl append 가 .js 접두 오탐으로 차단됨"
+[ "$(run_bash_guard "echo x > index.html")" = "0" ] \
+  || fail "ext-boundary: .html 작성이 .h 접두 오탐으로 차단됨"
+# 접두 충돌이 있어도 진짜 코드확장자는 계속 차단(.c ⊂ .css 이지만 .c 자체는 코드)
+[ "$(run_bash_guard "echo x > a.cpp")" = "2" ] || fail "ext-boundary: .cpp 작성이 차단 안 됨"
+[ "$(run_bash_guard "echo x > a.c")" = "2" ]   || fail "ext-boundary: .c 작성이 차단 안 됨"
 seed_chain design
 [ "$(run_guard Edit docs/design.md)" = "0" ] || fail "design + 평문 .md 가 통과 안 됨(설계문서 차단=거짓양성)"
 seed_chain implementation empty

@@ -117,6 +117,43 @@ python3 -c "import json;open('$P4/.claude/harness/.harness-vendored','w').write(
 $PI --project "$P4" 2>&1 | grep -q "업그레이드 v0.0.1 →" || { echo "FAIL 8e: 옛 버전 마커가 '업그레이드' 라벨 아님"; fail=1; }
 rm -rf "$P4"
 
+# ── 9) 데드락 방지 — settings hook 이 없는 파일 가리키면 검증/치유 (피드백 #3 HIGH) ─────
+# (a) 비-기본 subdir 로 벤더 → 벤더 위치와 hook 경로가 *함께* 그 subdir 에서 파생(갈라지지 않음)
+P5="$(mktemp -d)"
+$PI --project "$P5" --dest-subdir "v1/harness" >/dev/null 2>&1 || { echo "FAIL 9a: --dest-subdir 설치 실패"; fail=1; }
+[ -d "$P5/.claude/v1/harness/hooks" ] || { echo "FAIL 9b: 커스텀 subdir 에 벤더 안 됨"; fail=1; }
+python3 -c "
+import json;s=json.load(open('$P5/.claude/settings.json'))['hooks']
+cmds=[h['command'] for blocks in s.values() for b in blocks for h in b['hooks']]
+assert all('\$CLAUDE_PROJECT_DIR/.claude/v1/harness' in c for c in cmds), 'hook 이 커스텀 subdir 로 치환 안 됨'
+" 2>/dev/null || { echo "FAIL 9c: hook 경로가 커스텀 subdir 와 불일치(데드락 위험)"; fail=1; }
+# (b) 재실행 시 기존 v1/harness 레이아웃을 *자동감지*해 같은 자리에 재-벤더(기본 harness 로 안 갈라짐)
+$PI --project "$P5" >/dev/null 2>&1
+[ ! -d "$P5/.claude/harness" ] || { echo "FAIL 9d: 자동감지 실패 — 기본 harness 로 갈라져 벤더됨(데드락 재발)"; fail=1; }
+[ -f "$P5/.claude/v1/harness/.harness-vendored" ] || { echo "FAIL 9e: 자동감지된 v1/harness 에 재-벤더 안 됨"; fail=1; }
+rm -rf "$P5"
+# (c) stale harness hook(없는 파일 가리킴) 주입 후 재설치 → 검증이 프룬 + 사용자 hook 보존
+P6="$(mktemp -d)"; $PI --project "$P6" >/dev/null 2>&1
+python3 - "$P6/.claude/settings.json" <<'PY'
+import json, sys
+p = sys.argv[1]; s = json.load(open(p))
+# 옛 레이아웃을 가리키는 stale harness hook(파일 부재) + 사용자 hook(부재여도 보존돼야)
+s["hooks"].setdefault("PreToolUse", []).append({"matcher": "Bash", "hooks": [
+  {"type": "command", "command": "python3 $CLAUDE_PROJECT_DIR/.claude/harness-OLD/hooks/phase-guard.py"},
+  {"type": "command", "command": "python3 $CLAUDE_PROJECT_DIR/.claude/my/user-hook.py"},
+]})
+json.dump(s, open(p, "w"), ensure_ascii=False)
+PY
+$PI --project "$P6" >/dev/null 2>&1
+python3 -c "
+import json;s=json.load(open('$P6/.claude/settings.json'))
+cmds=[h['command'] for blocks in s['hooks'].values() for b in blocks for h in b['hooks']]
+assert not any('harness-OLD' in c for c in cmds), 'stale harness hook 이 프룬 안 됨(데드락 잔존)'
+assert any('my/user-hook.py' in c for c in cmds), '사용자 broken hook 이 잘못 제거됨(보존 위반)'
+assert any('.claude/harness/hooks/phase-guard.py' in c for c in cmds), '정상 harness hook 소실'
+" 2>/dev/null || { echo "FAIL 9f: stale-hook 검증/치유 실패"; fail=1; }
+rm -rf "$P6"
+
 # ── 7) 평탄화 안 된 소스 거부 — dogfood(plugin/harness)는 06-rules.md 없어 즉시 거부 ──
 P3="$(mktemp -d)"
 if python3 "$HERE/project-install.py" --project "$P3" >/dev/null 2>&1; then

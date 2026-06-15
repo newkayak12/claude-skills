@@ -65,6 +65,18 @@ Rules define *what to do*. Anti-patterns show *the shape of what not to do*.
 - **Alarm**: During the quarterly retrospective, an ADR is found to be *false*.
 - **Response**: *Audit Accepted ADRs* quarterly → mark items that differ from reality as Superseded.
 
+### AP-32: Decision stamping (RFC as checklist)
+- **Symptom**: Open questions are *auto-harvested* into a checklist and each item is mechanically stamped recommend → "ok" → *decided*. The RFC grows item-count (e.g. an RFC bloated to 12 Q-items), context ignored.
+- **What broke**: A decision is treated as a *stamp* instead of the *product of discussion*. An RFC is a **coherent reasoning narrative on one narrow topic** — what to address emerges *from* discussing it, and Design *verifies* it. Harvest-and-stamp skips the reasoning.
+- **Alarm**: An RFC is a list of `Q1…Qn` with a verdict pinned per line; decisions appear with no surrounding prose argument; one RFC spans many unrelated topics.
+- **Response**: Write RFCs as **prose** on **one topic**. No question-harvesting into checklists. Discuss → let the decisions-to-make emerge → settle them in the prose, then verify in Design. One RFC = one narrow topic; if it widens, split (→ AP-33).
+
+### AP-33: Deferred grab-bag
+- **Symptom**: Unresolved items from a too-broad RFC are swept into a single `deferred-decisions` parking dump scattered across documents.
+- **What broke**: A wide RFC spawns dozens of loose ends; instead of being **re-framed as a decision queue and split into topic-RFCs**, they are parked in a grab-bag that no flow ever drives to closure.
+- **Alarm**: A document named `deferred`/`parking`/`misc` accumulates decisions; >1 topic's open items live in one file; the count grows cycle over cycle.
+- **Response**: Re-frame deferred items as an **index/queue** (pointer, not parking), then spin each cluster into its own narrow topic-RFC. Decisions close *inside* a topic-RFC, never in a grab-bag.
+
 ## 11.4 Anti-patterns in the Loop / Progress Phase
 
 ### AP-09: Cycle chaining
