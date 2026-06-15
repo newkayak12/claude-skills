@@ -85,6 +85,8 @@ or *merges while preserving existing content*. It never erases existing user con
 > vendoring = a *pinned version* committed into and traveling with the repo. **Applying an update = re-running `harness:install`
 > in that project (this Step A re-vendor)** is the only path — updating the global plugin alone never reaches the project.
 
+The vendor location and the hook paths are **derived from one subdir (SSOT)** so they can't diverge — a divergence (payload in one place, hooks pointing at another) made *every* PreToolUse hook fire on a missing file and `exit 2`, blocking **all** tools into an unrecoverable deadlock (real-world defect). The installer now (a) **auto-detects an existing vendored layout** (e.g. `.claude/v1/harness`) and re-vendors *there* instead of forking a second `.claude/harness`, overridable with `--dest-subdir`, and (b) **verifies every hook command points at a file that exists** after writing settings — pruning stale harness hooks (and warning on broken user hooks) so a divergence surfaces as a loud install message, not a runtime brick.
+
 ## Step 1: L1 user-rules — if already present, skip *only this step* (not a full STOP)
 
 ```bash

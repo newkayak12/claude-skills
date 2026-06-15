@@ -180,6 +180,18 @@ What the AI must observe at each phase:
 
 > Artifact types: **solo** (Analysis · Implementation — AI proceeds then reports) vs **collaborative** (Design · Planning — draft→review→finalize required). See the "type" column of the cycle-card Phase table.
 
+### Design-phase doc-flow: RFC → Design Doc → ADR (drive it, don't make the user)
+
+When the design phase produces decision docs, **the AI runs this flow** — the user shouldn't have to micromanage RFC structure (real-use failure: the AI dumped a too-wide RFC, stamped decisions, and parked the rest in a grab-bag until the user hand-corrected all of it).
+
+- **One RFC = one narrow topic.** An RFC is a **coherent prose argument**, not a checklist. What needs deciding *emerges from discussing the topic*; you don't pre-harvest open questions into `Q1…Qn` and stamp a verdict per line. If a topic keeps widening, **split it into more topic-RFCs** — never grow one RFC's item count. (AP-32)
+- **Decisions are the product of discussion, not stamps.** Discuss the topic in prose → the decision falls out of the reasoning → *then* it's recorded. Don't insert decisions the discussion didn't earn ("박는다"). Design *verifies* what the RFC reasoned to.
+- **No deferred grab-bag.** Unresolved items are **re-framed as a decision queue/index** (a pointer), then each cluster spun into its own narrow topic-RFC. They never get parked in a `deferred`/`misc` dump. (AP-33)
+- **Cadence, one RFC at a time**: discuss the topic (prose) → modify the files that RFC touches → derive Design Doc / ADR for what the discussion settled → next RFC. Don't open the next RFC until the current one's loop closes.
+- **Document weight ≠ decision weight** (AP-07): a one-line decision ends in a one-line ADR, not a 10-page doc. Don't emit Design Doc + ADR with identical content.
+
+The AI states this flow when the design phase starts (so the gate rule surfaces *at entry*, not only when a write is blocked).
+
 Example of a legitimate phase advance:
 
 ```bash
@@ -217,6 +229,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/close-cycle.py
 - **Has the AI structure the roadmap** (dependencies · parallelization · fail-fast · milestones) — doesn't copy a raw list verbatim
 - **Tracks the Phase** (confirm current_phase → verify artifact file → auto-propose next phase)
 - **Enforces draft→review→finalize for collaborative artifacts (Design Doc · ADR · roadmap)** — doesn't finish them alone
+- **Drives the design-phase doc-flow** (RFC→Design Doc→ADR): one narrow topic per RFC written as prose, decisions emerge from discussion (no question-harvesting / decision-stamping — AP-32), no deferred grab-bag (re-frame as a decision queue, split into topic-RFCs — AP-33). States the flow at design entry
 
 ## What You Do
 - Answer each group's questions honestly (especially E, the real motive)

@@ -86,7 +86,15 @@ TECH_DECISION_DOC_RE = re.compile(
 )
 
 
-CODE_EXT_PATTERN = r"(?:{})(?:\s|$|['\"])?".format(
+# 확장자 뒤 경계는 *비-영숫자 lookahead* (소비하지 않는 assertion).
+#   예전엔 `(?:\s|$|['"])?` 로 trailing 을 *선택적* 소비했는데 `?` 때문에 0글자도 매칭돼,
+#   짧은 코드확장자가 더 긴 비-코드 확장자의 *접두*일 때 오탐했다:
+#     .js ⊂ .json/.jsonl, .m ⊂ .md, .h ⊂ .html, .c ⊂ .css/.cfg.
+#   → `python3 ...open('metrics.json')` 읽기, `mv a.md b.md`, `>> feedback.jsonl` 가 전부
+#     "코드 변경"으로 차단되는 거짓양성(실사용 피드백 3건). lookahead 로 확장자 직후가
+#     영숫자면 매칭을 거부해 .json/.md/.html 오탐을 없애고 .py/.kt 등 실제 코드만 잡는다.
+#   sorted(len desc) + 이 lookahead 면 .cpp⊃.c 같은 접두 충돌도 backtrack 으로 정확 해소.
+CODE_EXT_PATTERN = r"(?:{})(?![A-Za-z0-9])".format(
     "|".join(re.escape(ext) for ext in sorted(CODE_EXTS, key=len, reverse=True))
 )
 # 인터프리터 인라인 코드작성 탐지: 코드를 *문자열로 받아 즉시 실행* 하면서 파일에 쓰는 패턴.
