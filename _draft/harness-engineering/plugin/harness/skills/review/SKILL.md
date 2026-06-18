@@ -8,6 +8,12 @@ scenarios:
   - "harness-review W1"
   - "방금 work 독립 리뷰해줘"
   - "plan/spec 기준으로 변경 검토해줘"
+compatibility:
+  optional:
+    - think-tool # 구현자 관점에 안 갇히고 독립적으로 의문을 제기할 때 유용
+related:
+  - work
+  - cycle
 ---
 
 # Harness Review — Change → Independent Verdict

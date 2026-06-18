@@ -1,13 +1,19 @@
 ---
 name: work
 description: >-
-  Use to implement one approved harness plan slice. Triggers on: "harness work",
-  "하네스 work", "승인된 slice 구현", "work 1.1", "plan대로 구현".
+  Use when implementing one approved harness plan slice. Triggers on: "harness
+  work", "하네스 work", "승인된 slice 구현", "work 1.1", "plan대로 구현".
   Requires active cycle current_phase=implementation and a plan slice.
 scenarios:
   - "harness-work W1"
   - "승인된 첫 slice 구현해줘"
   - "plan.md 기준으로 W2만 작업해줘"
+compatibility:
+  optional:
+    - sequential-thinking # 한 slice 안의 구현 순서를 단계별로 추적할 때 유용
+related:
+  - plan
+  - review
 ---
 
 # Harness Work — Approved Slice → Verified Change
