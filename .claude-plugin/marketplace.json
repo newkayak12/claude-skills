@@ -138,8 +138,8 @@
     },
     {
       "name": "harness",
-      "description": "Harness Engineering — solo-dev product scaffolding. First run: harness:install onboards interactively and writes L1 user-rules (~/.harness/user-rules.md). harness:cycle runs the problem-first pre-cycle gate, scaffolds cycle artifacts, and enforces WIP=1. Quality-floor (structural anti-degradation): bar-lock + independent review gate + cross-cycle ratchet. Self-contained — concept docs bundled.",
-      "version": "0.3.9",
+      "description": "Harness Engineering — solo-dev product scaffolding. First run: harness:install onboards interactively and writes L1 user-rules (~/.harness/user-rules.md). harness:cycle runs the problem-first pre-cycle gate, scaffolds cycle artifacts, and enforces WIP=1. Quality-floor (structural anti-degradation): bar-lock + independent review gate + cross-cycle ratchet. Self-contained — concept docs bundled. Design checkpoint in progress: gajae-code-style goal decomposition + persona team + independent verification layer (see docs/superpowers/specs/2026-06-17-gajae-style-team-ledger-design.md, todo/gajae.md) — not yet implemented.",
+      "version": "0.3.10",
       "author": {
         "name": "newkayak12"
       },
