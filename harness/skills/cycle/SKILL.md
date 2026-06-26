@@ -63,7 +63,12 @@ Two entry modes depending on the user's state:
 
 - **User without a plan in mind** → ask each group *one at a time*. Get an answer, then move on. Don't dump everything at once.
 - **User who already has a plan (context-dump shortcut)** → when the user dumps context all at once, the AI **auto-maps** it onto items A~E and asks only for the *missing items*. Don't re-ask what's already filled — interrogating an experienced user group-by-group is friction (real-use feedback).
-  - Show the mapping result briefly ("A problem statement ✓ / C Kill criteria ✗ missing") and ask only for what's missing.
+  - **Harden the auto-map with `gate-map.py`** (don't rely on memory — real-use #1 recurred because this was prose-only). After mapping the dump, run it so the missing-list and the Kill-defer rule are a *deterministic* output, not a judgment call:
+    ```bash
+    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/gate-map.py --type <product|dev-tool|exploration> \
+      --a "<problem statement…>" --b "…" --c "…(kill…)" --d "…" --e "…"
+    ```
+    It prints `MISSING: …`, an "ASK ONLY THESE" list, and a matrix pre-verdict (incl. the Exploration Kill-defer rule). Ask only what it reports missing.
   - "Meta input" welcome: if the user gives all 5 groups in one paragraph, accept it and decompose.
 
 ### A. Idea — problem first, solution later
@@ -162,6 +167,8 @@ Leave the roadmap as a *file* under `docs/**`, based on the cycle-card Phase tab
 Don't just start a cycle and then progress the actual work manually *outside* the harness. Track the Phase (cycle-card Phase table + metrics.json `current_phase` = SSOT).
 
 **Phase: Analysis → Design → Planning → Implementation → Validation**
+
+> When an active cycle exists, the `phase-echo` hook (UserPromptSubmit) re-injects the current phase, its gate type, and the "propose the next phase yourself" nudge **at each phase transition** — so phase-awareness reaches you *in-flow* rather than relying on this skill staying in context. It's a soft reminder; the real gate is still `phase-advance.py`.
 
 What the AI must observe at each phase:
 1. **Confirm the current phase before acting** — read `current_phase`, work only on that phase. No skipping/mixing phases (P9).
