@@ -23,7 +23,7 @@ related:
 
 # Harness Run — Workflow Goal Execution + Failure Reporting
 
-목표: `.claude/harness/goals.json`의 pending goal을 **Planner/Critic/Executor/Verifier** 페르소나 팀 파이프라인으로 실행하고, 결과를 `goals-state.py`에 기록한다. 실패가 하나라도 있으면 사용자에게 즉시 보고하고 멈춘다 — 절대 silent 진행하지 않는다.
+목표: `.claude/harness/goals.json`의 pending goal을 **Planner/Critic/Executor/Verifier** 페르소나 팀 파이프라인으로 **배치(batch) 실행**하고, 결과를 `goals-state.py`에 기록한다. 파이프라인은 모든 pending goal을 실행한 뒤 results 배열을 반환한다. 반환 후 `passed=false`인 goal이 하나라도 있으면 blocker를 사용자에게 명시적으로 보고하고 다음 액션으로 진행하지 않는다 — 절대 silent 진행하지 않는다.
 
 ## Preconditions
 
@@ -41,6 +41,8 @@ related:
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/goals-state.py show
 ```
 
+(`${CLAUDE_PLUGIN_ROOT}` = 이 플러그인 루트, Claude Code가 주입)
+
 `status: "pending"`인 goal 목록을 추출한다. pending이 없으면 사용자에게 알리고 종료한다.
 
 ### Step 2 — Workflow 실행
@@ -51,11 +53,22 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/goals-state.py show
 {
   "scriptPath": "harness/scripts/workflow-templates/gajae-pipeline.js",
   "args": {
-    "goals": "<pending goal 목록>",
+    "goals": [
+      {
+        "id": "G001",
+        "title": "...",
+        "acceptance_criteria": ["..."],
+        "skill_hints": ["develop:clean-code"]
+      }
+    ],
     "root": ".claude/harness"
   }
 }
 ```
+
+`goals`는 `.claude/harness/goals.json`의 pending goal 목록에서 추출한 **객체 배열**이다. 각 객체는 반드시 `id`, `title`, `acceptance_criteria`, `skill_hints` 네 필드를 포함해야 한다. **`acceptance_criteria`는 필수** — Verifier가 이 기준 없이는 layer (a) pass/fail 판정을 내릴 수 없다.
+
+파이프라인은 `for (const goal of args.goals)` 루프로 **모든** pending goal을 순차 실행하고, 각 goal의 결과를 `[{id, passed, attempts, blocker}]` 형태의 results 배열로 반환한다. 단일 goal의 실패는 그 goal의 재시도 루프만 종료하며, 다음 goal 실행은 계속된다.
 
 **파이프라인 구조 (goal당 1회 루프, 최대 3회 재시도):**
 
@@ -86,17 +99,23 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/goals-state.py set-status \
   --id <goal_id> --status failed --reason "<blocker summary>"
 ```
 
-아티팩트는 `scaffold-cycle`을 통해 `.claude/harness/cycles/<goal_id>/`에 기록한다.
+아티팩트는 `goals-state.py scaffold-cycle`을 통해 `.claude/harness/cycles/<goal_id>/`에 기록한다.
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/goals-state.py scaffold-cycle \
+  --root .claude/harness --id <goal-id>
+```
 
 ### Step 4 — 실패 보고 (필수)
 
-`passed=false` 결과가 하나라도 있으면:
+Workflow는 모든 pending goal을 실행한 뒤 results 배열 `[{id, passed, attempts, blocker}]`을 반환한다. 반환 후:
 
-1. **즉시 STOP** — 다음 goal로 넘어가지 않는다.
-2. 사용자에게 해당 goal의 **blocker**를 명시적으로 보고한다.
-3. 재시도·수정 방향을 제안하고 사용자 확인을 받는다.
+1. results를 순회하여 `passed=false`인 goal을 **모두** 찾는다.
+2. `passed=false` goal이 하나라도 있으면 — **각 goal의 `blocker`를 사용자에게 명시적으로 보고한다.** (아래 Output Template 참조)
+3. 보고 후 **다음 액션/페이즈로 진행하지 않는다** — 성공 선언, run 완료 처리, 후속 단계 제안 등을 하지 않는다. 사용자로부터 재시도·수정·skip 지시를 받는다.
+4. `passed=false`가 없을 때에만 run 완료를 선언하고 다음 단계를 제안한다.
 
-> **규칙**: 실패를 silent하게 넘기는 것은 금지다 (spec §6). 실패 없이 모든 goal이 완료된 경우에만 다음 단계를 제안한다.
+> **규칙**: 실패를 **silent**하게 넘기는 것은 금지다 (spec §6). "silent continue 금지"는 배치 실행 중 개별 goal 실패로 다음 goal로 넘어가지 말라는 뜻이 아니라, 파이프라인이 반환된 뒤 실패 결과를 감추고 다음 액션으로 나아가는 것을 금지하는 규칙이다.
 
 ## Output Template
 
@@ -124,7 +143,7 @@ Next: <suggested fix or clarification needed>
 - Planner → Critic → Executor → Verifier 루프를 goal당 최대 3회 시도한다.
 - 3-layer verification (Critic / Verifier / goals-state 기록)을 모두 통과해야 `passed`로 기록한다.
 - `set-status`로 결과를 저장하고 `scaffold-cycle`로 아티팩트를 기록한다.
-- `passed=false` goal이 있으면 즉시 STOP하고 blocker를 사용자에게 보고한다 — silent 진행은 없다.
+- Workflow 반환 후 results를 검사하여 `passed=false` goal 전체의 blocker를 사용자에게 보고한다 — silent 진행은 없다.
 
 ## What You Do
 
