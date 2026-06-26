@@ -96,10 +96,12 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/goals-state.py set-status \
 
 # 실패
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/goals-state.py set-status \
-  --id <goal_id> --status failed --reason "<blocker summary>"
+  --id <goal_id> --status failed --attempts <n> --blocker "<blocker summary>"
 ```
 
-아티팩트는 `goals-state.py scaffold-cycle`을 통해 `.claude/harness/cycles/<goal_id>/`에 기록한다.
+아티팩트는 `goals-state.py scaffold-cycle`을 통해 `.claude/harness/goal-cycles/<goal_id>/`에 기록한다.
+
+run 완료 후 `goals.json`은 각 goal의 최종 `status`와 `attempts`를 권위 있는 값으로 보관한다(`set-status --attempts`로 퍼시스트됨). per-goal `status.json`은 `blocker`를 보관한다.
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/goals-state.py scaffold-cycle \

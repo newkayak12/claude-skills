@@ -61,13 +61,14 @@ Verifier skill_hints: `completion:verification-before-completion`, `write:writer
 ### Step 2 — goals-state.py 실행
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/goals-state.py init --spec .claude/harness/specs/<slug>.md
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/goals-state.py init \
+  --final-goal "<최종 goal 한 문장>" --spec .claude/harness/specs/<slug>.md
 
 # 각 sub-goal마다 반복
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/goals-state.py add-goal \
-  --title "<goal title>" \
-  --accept "<acceptance_criteria>" \
-  --hint "<skill_hints comma-separated>"
+  --id G001 --title "<goal 제목>" \
+  --accept "<acceptance criterion>" \
+  --hint "develop:clean-code"
 ```
 
 ### Step 3 — Critic Loop (cap = 3)
@@ -90,17 +91,18 @@ Critic 페르소나(`think:devils-advocate`)로 분해를 검토한다. **루프
 
 ```json
 {
+  "final_goal": "<최종 goal 한 문장>",
   "spec": ".claude/harness/specs/<slug>.md",
   "goals": [
     {
       "id": "G1",
       "title": "<sub-goal title>",
-      "acceptance_criteria": "<verifiable, pre-defined criterion>",
+      "acceptance_criteria": ["<verifiable, pre-defined criterion>"],
       "skill_hints": ["develop:clean-code", "develop:test-driven-development"],
-      "status": "pending"
+      "status": "pending",
+      "attempts": 0
     }
-  ],
-  "critic_rounds": 0
+  ]
 }
 ```
 

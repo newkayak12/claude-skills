@@ -15,6 +15,12 @@ for f in plan.md critic-review.md work-evidence.md verification.md rationale.md 
 done
 grep -q '"status": "running"' "$R/goals.json" || { echo "FAIL: status not persisted"; fail=1; }
 
+$S set-status --root "$R" --id G001 --status failed --attempts 3 --blocker "ran out of attempts" >/dev/null || { echo "FAIL: set-status failed+blocker"; fail=1; }
+grep -q '"status": "failed"' "$R/goals.json" || { echo "FAIL: failed status not persisted"; fail=1; }
+grep -q '"attempts": 3' "$R/goals.json" || { echo "FAIL: attempts not persisted to goals.json"; fail=1; }
+grep -q '"blocker": "ran out of attempts"' "$R/goal-cycles/G001/status.json" || { echo "FAIL: blocker not in status.json"; fail=1; }
+grep -q '"attempts": 3' "$R/goal-cycles/G001/status.json" || { echo "FAIL: attempts not in status.json"; fail=1; }
+
 rm -rf "$R"
 [ $fail -eq 0 ] && echo "goals-state self-test: PASS"
 exit $fail
