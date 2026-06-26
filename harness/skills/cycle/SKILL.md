@@ -197,6 +197,14 @@ When the design phase produces decision docs, **the AI runs this flow** — the 
 - **Cadence, one RFC at a time**: discuss the topic (prose) → modify the files that RFC touches → derive Design Doc / ADR for what the discussion settled → next RFC. Don't open the next RFC until the current one's loop closes.
 - **Document weight ≠ decision weight** (AP-07): a one-line decision ends in a one-line ADR, not a 10-page doc. Don't emit Design Doc + ADR with identical content.
 
+**Independent Critic pass before the user gate (gajae Decision #10):**
+Before the `--confirm-user` gate, dispatch a fresh Critic subagent (devils-advocate
+stance, `think:devils-advocate`) to review the RFC / Design Doc / ADR draft
+independently. Attach its critique to the draft. The user gate is unchanged — but the
+user now reviews a draft that already carries an independent critique, not a raw one.
+This is the only point the gajae layer touches `harness:cycle`; the rest of
+cycle/plan/work/review is untouched.
+
 The AI states this flow when the design phase starts (so the gate rule surfaces *at entry*, not only when a write is blocked).
 
 Example of a legitimate phase advance:
