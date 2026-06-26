@@ -22,6 +22,9 @@ Harness Engineering — 솔로 dev 제품 개발 scaffolding. 사이클 진입 �
 - `harness:cycle` — pre-cycle 진입 게이트 + 산출물 scaffold + phase 진행(analysis→design→planning→implementation→validation; planning 대화가 여기 포함)
 - `harness:work` — 승인된 plan slice 구현 + 검증
 - `harness:review` — spec/design/plan 기준 독립 리뷰
+- `harness:interview` — Socratic 인터뷰로 spec 명료화 (→ `.claude/harness/specs/`)
+- `harness:goals` — 최종 goal → sub-goal 분해 + Critic 검토 (→ `.claude/harness/goals.json`)
+- `harness:run` — Workflow 팀(Planner/Critic/Executor/Verifier)으로 goal 실행 + 3층 검증
 
 강제 표면(hooks/scripts)은 `hooks/README.md`를 참고하세요. v0.3.11에서 강제 갭 보완 2종 추가:
 - `scripts/gate-map.py` — pre-cycle 게이트 배치입력 매퍼(컨텍스트 dump → A~E 매핑·누락만 질문·Kill defer 규칙 결정적 산출)
