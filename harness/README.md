@@ -23,4 +23,8 @@ Harness Engineering — 솔로 dev 제품 개발 scaffolding. 사이클 진입 �
 - `harness:work` — 승인된 plan slice 구현 + 검증
 - `harness:review` — spec/design/plan 기준 독립 리뷰
 
+강제 표면(hooks/scripts)은 `hooks/README.md`를 참고하세요. v0.3.11에서 강제 갭 보완 2종 추가:
+- `scripts/gate-map.py` — pre-cycle 게이트 배치입력 매퍼(컨텍스트 dump → A~E 매핑·누락만 질문·Kill defer 규칙 결정적 산출)
+- `hooks/phase-echo.py` — active 사이클에서 phase 전환 시점마다 현재 phase·게이트·다음 단계를 in-flow 환기(UserPromptSubmit, soft)
+
 개념 문서는 `00-overview.md` ~ `13-operational-layer.md`, 규칙 레이어링은 `12-rule-layering.md`를 참고하세요.

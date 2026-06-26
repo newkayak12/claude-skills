@@ -33,6 +33,20 @@ It defends against `CV-1` (author=enforcer=target) *physically*, not just throug
 
 → rule-inject(SessionStart, always-on invariant+L1) + stage-inject(stage entry, per-stage static defaults) are *paired*: auto-injection is split into two time points to reduce session-start tokens AND extend defense from boundary into flow interior (#012 follow-up, PF-10).
 
+### `phase-echo.py` — UserPromptSubmit
+
+| | |
+|---|---|
+| **Event** | `UserPromptSubmit` (no matcher) — fires before each user turn |
+| **Role** | When an active cycle exists, re-injects the current phase (`metrics.json current_phase`), its gate type (solo/collaborative), what's required to leave it (evidence file / collaborative `--confirm-user`+note), the next phase, and the "**propose the next phase yourself**" nudge |
+| **Injection method** | Plain stdout (exit 0) — UserPromptSubmit/SessionStart plain stdout *is* injected as context (unlike PreToolUse, which needs JSON) |
+| **What it fills** | real-use #4·#7 (feedback 2026-06-23): phase-tracking/transition machinery existed (`phase-advance.py`, `phase_gates`) but the AI lost phase-awareness mid-flow and advanced only when the user said "just keep going". The SKILL body scrolls out of context on long flows; this re-reaches phase-awareness *in-flow* |
+| **de-dup** | **Fires only when the phase changed** since last injection. Marker at `$HARNESS_HOME/phase-echo/<sid>/last-phase` stores the *phase value* (not mere existence) — same value → no-op. One echo per transition, not per turn |
+| **Not a blocker** | Plain reminder. *Injection ≠ enforcement* — the real evidence/confirm gate is `phase-advance.py` |
+| **fail-open** | No active cycle / no metrics / same phase / JSON parse failure / marker IO failure → no output, exit 0 |
+
+→ Pairs with `phase-advance.py`(the enforcing gate) the way stage-inject pairs with the coding gates: the gate enforces, the echo keeps the *human-loop behavior* (track phase, propose next) from silently degrading mid-flow.
+
 ### `phase-guard.py` — PreToolUse
 
 | | |
@@ -139,6 +153,9 @@ echo '{"tool_name":"Edit","tool_input":{"file_path":"x/cycle-card.md"}}' \
 # active-symlink-guard: expect block on rm cycles/active (exit 2)
 echo '{"tool_name":"Bash","tool_input":{"command":"rm cycles/active"}}' \
   | python3 hooks/active-symlink-guard.py; echo $?
+# phase-echo + gate-map self-tests (run from repo root)
+bash hooks/test-phase-echo.sh
+bash scripts/test-gate-map.sh
 ```
 
 ## Backlog (next Sensor candidates)
