@@ -49,7 +49,29 @@ def cmd_set_status(args):
     root = _root(args)
     data = goalslib.load(root)
     goalslib.set_status(data, args.id, args.status)
+    if args.attempts is not None:
+        for g in data.get("goals", []):
+            if g.get("id") == args.id:
+                g["attempts"] = args.attempts
+                break
     goalslib.save(root, data)
+    if args.attempts is not None or args.blocker is not None:
+        cdir = root / "goal-cycles" / args.id
+        cdir.mkdir(parents=True, exist_ok=True)
+        # resolve attempts: use provided value or fall back to current goal attempts
+        current_attempts = args.attempts
+        if current_attempts is None:
+            for g in data.get("goals", []):
+                if g.get("id") == args.id:
+                    current_attempts = g.get("attempts", 0)
+                    break
+        status_data = {
+            "status": args.status,
+            "attempts": current_attempts,
+            "blocker": args.blocker,
+        }
+        (cdir / "status.json").write_text(
+            json.dumps(status_data, indent=2, ensure_ascii=False), encoding="utf-8")
     print(args.status)
 
 
@@ -101,6 +123,8 @@ def main():
     ps = sub.add_parser("set-status"); ps.add_argument("--root", default=str(DEFAULT_ROOT))
     ps.add_argument("--id", required=True)
     ps.add_argument("--status", required=True, choices=goalslib.STATUSES)
+    ps.add_argument("--attempts", type=int, default=None)
+    ps.add_argument("--blocker", default=None)
     ps.set_defaults(func=cmd_set_status)
 
     pb = sub.add_parser("bump-attempt"); pb.add_argument("--root", default=str(DEFAULT_ROOT))
