@@ -1,33 +1,31 @@
 # harness
 
-> ⚠️ **GENERATED** — 이 디렉토리는 `_draft/harness-engineering/`에서 `harness-export.py`로 빌드된 산출물입니다. **직접 편집하지 마세요.** 변경은 draft(source-of-truth)에서 하고 재-export 하세요.
-
-Harness Engineering — 솔로 dev 제품 개발 scaffolding. 사이클 진입 게이트, 가설/품질-바 tamper-evident 잠금, 독립 리뷰 게이트, cross-cycle ratchet으로 *사이클별 품질 저하를 구조적으로* 막습니다.
-
-## 전제(필수): `python3`
-
-모든 hook·스크립트가 `python3` 인터프리터에 의존합니다. **PATH에 `python3`가 없으면 매 세션 SessionStart hook이 실패하고 모든 스킬 명령이 깨집니다.** `harness:install`의 Step 0가 순수 셸로 이를 먼저 확인합니다. (Windows는 `python`만 있고 `python3`가 없을 수 있으니 확인하세요.)
-
-## 설치 후 시작
+A lightweight reasoning floor. Not a quality maximizer — a filter that removes **repetition**
+and **below-threshold answers** by forcing every substantial request through:
 
 ```
-/harness:install
+decompose → act → independent check → loop
 ```
 
-설치 직후 `harness:install` 스킬이 대화로 L1 user-rules(`~/.harness/user-rules.md`)를 만들고, 설치 후 *언제 무엇이 로드되는지* 안내합니다. 그 다음 `harness:cycle`로 첫 사이클 진입 게이트를 실행하세요.
+## How it works
 
-## 핵심 스킬
+1. **You author a goal-spec** (declarative data) — the goal, per-subgoal acceptance criteria,
+   and dependencies. See [`goal-spec.md`](goal-spec.md). This is the only place real thinking goes.
+2. **A fixed engine replays it** ([`engine/pipeline.js`](engine/pipeline.js)) — each subgoal is
+   executed by one subagent and judged by a **separate** subagent (never self-eval), with bounded
+   retry, running independent subgoals in parallel.
+3. **You get a report.** Eval and retry happen inside the engine; you step back from them.
 
-- `harness:install` — 첫 실행 온보딩 (L1 user-rule 대화 생성)
-- `harness:cycle` — pre-cycle 진입 게이트 + 산출물 scaffold + phase 진행(analysis→design→planning→implementation→validation; planning 대화가 여기 포함)
-- `harness:work` — 승인된 plan slice 구현 + 검증
-- `harness:review` — spec/design/plan 기준 독립 리뷰
-- `harness:interview` — Socratic 인터뷰로 spec 명료화 (→ `.claude/harness/specs/`)
-- `harness:goals` — 최종 goal → sub-goal 분해 + Critic 검토 (→ `.claude/harness/goals.json`)
-- `harness:run` — Workflow 팀(Planner/Critic/Executor/Verifier)으로 goal 실행 + 3층 검증
+Two layers: the **baked flow** is model-independent (holds at low effort / weaker models); the
+**authoring** captures strong reasoning once and replays it cheaply. Quality ceiling still follows
+the model — by design.
 
-강제 표면(hooks/scripts)은 `hooks/README.md`를 참고하세요. v0.3.11에서 강제 갭 보완 2종 추가:
-- `scripts/gate-map.py` — pre-cycle 게이트 배치입력 매퍼(컨텍스트 dump → A~E 매핑·누락만 질문·Kill defer 규칙 결정적 산출)
-- `hooks/phase-echo.py` — active 사이클에서 phase 전환 시점마다 현재 phase·게이트·다음 단계를 in-flow 환기(UserPromptSubmit, soft)
+## B vs A
+- **B (default):** goal-spec + the fixed engine. `Workflow({ scriptPath: "harness/engine/pipeline.js", args: <goal-spec> })`
+- **A (special):** bespoke Workflow for custom control flow — see [`templates/`](templates/).
 
-개념 문서는 `00-overview.md` ~ `13-operational-layer.md`, 규칙 레이어링은 `12-rule-layering.md`를 참고하세요.
+## Status
+- v1.0.0 — rebuilt lightweight (5 files) from the v0 harness (~60 files, archived at `_deprecated/harness-v0`, tag `harness-v0`).
+- Enforcement (making the harness fire deterministically via hook/skill) is **deferred** — v0's hook experiments had adverse effects.
+
+Entry point: [`SKILL.md`](SKILL.md).

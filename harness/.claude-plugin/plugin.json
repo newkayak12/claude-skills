@@ -1,7 +1,7 @@
 {
   "name": "harness",
-  "description": "Harness Engineering — solo-dev execution loop. First run: harness:install onboards L1 user-rules. harness:cycle starts an active cycle and drives its phases (analysis→design→planning→implementation→validation); harness:work → harness:review keep implementation inside the approved plan slices. The phase-guard hook (not a skill) blocks code outside active implementation/validation — plan-before-code is enforced deterministically. Quality-floor: bar-lock + independent review gate + cross-cycle ratchet.",
-  "version": "0.4.0",
+  "description": "Harness — a lightweight reasoning floor. Author a declarative goal-spec, then a fixed engine runs decompose→act→independent-check→loop: each subgoal is executed by one subagent and judged by a SEPARATE subagent (no self-eval), with bounded retry. Purpose is to filter out repetition and below-threshold answers, holding the flow even at low effort / weaker models. B (goal-spec + engine) is the default; A (bespoke Workflow) covers custom control flow. Enforcement (hook/skill) deferred.",
+  "version": "1.0.0",
   "author": {
     "name": "newkayak12"
   },
