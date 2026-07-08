@@ -127,17 +127,6 @@ When a related skill is not installed, apply the framework below directly. These
 
 ---
 
-## decision-maker
-
-**Core model**: Clarify → Generate options → Evaluate → Commit.
-
-**In session**:
-1. "결정 못 하는 이유가 정보 부족이야, 감정 때문이야?"
-2. "각 선택지를 살았다고 상상해봐 — 1년 뒤 어떤 기분일까?"
-3. "10-10-10: 10분 뒤, 10달 뒤, 10년 뒤 이 결정을 어떻게 생각할까?"
-
----
-
 ## bias-auditor
 
 **Core model**: Confirmation bias, Sunk cost, Anchoring, Status quo bias, Availability heuristic.

@@ -131,5 +131,4 @@ Cost asymmetry / ACT commitment frame
 
 - `examined-life` — for using values as input to a whole-life audit
 - `motivation-explorer` — when values gaps show up as hollow motivation
-- `decision-maker` — when values are clear and a structured decision framework is needed
 - `flow-antigoal` — for designing work and life conditions around lived values

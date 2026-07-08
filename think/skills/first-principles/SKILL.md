@@ -23,7 +23,6 @@ compatibility:
 related:
   - brainstorming
   - problem-reframer
-  - decision-maker
 license: MIT
 metadata:
   author: wondelai
@@ -158,7 +157,6 @@ This skill synthesizes insights from several foundational sources:
 
 - `brainstorming` — 가정을 분해한 후 바닥부터 새 아이디어를 발산하며 설계하고 싶을 때
 - `problem-reframer` — 분해 과정에서 문제 자체가 잘못 정의됐음을 발견했을 때
-- `decision-maker` — 재구성한 대안들 중 하나를 구조적으로 선택해야 할 때
 
 ## About the Tradition
 

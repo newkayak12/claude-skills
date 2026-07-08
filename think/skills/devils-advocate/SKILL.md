@@ -22,7 +22,6 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 related:
   - problem-reframer
-  - decision-maker
   - brainstorming
 ---
 
@@ -183,5 +182,4 @@ MSA는 특정 규모와 팀 구조에서 효과적인 수단이지 목표가 아
 ## Related Skills
 
 - `problem-reframer` — 반론이 모두 표면적 문제만 지적한다면, 문제 정의 자체가 틀렸을 수 있을 때
-- `decision-maker` — 반론을 검토한 후 최종 옵션 중 하나를 골라야 할 때
 - `brainstorming` — 반론으로 기존 방향이 무너졌고 새 아이디어를 처음부터 탐색해야 할 때

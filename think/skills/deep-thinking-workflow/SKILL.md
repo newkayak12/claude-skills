@@ -27,7 +27,6 @@ related:
   - brainstorming
   - first-principles
   - devils-advocate
-  - decision-maker
 ---
 
 # Deep Thinking Workflow
@@ -92,14 +91,18 @@ related:
 
 ---
 
-### Step 4 — Decision Framework
-**Skill:** `decision-maker`
-**Goal:** Converge — evaluate options with criteria, make a recommendation
+### Step 4 — Converge (Decision Framework)
+**Goal:** Evaluate the surviving options against explicit criteria, make a recommendation
 **Input:** Ideas, decomposition, and counterarguments from Steps 1-3
+**How:**
+1. List the 2-4 options still standing after Step 3.
+2. Name 3-5 decision criteria and weight them (must-have vs. nice-to-have).
+3. Score each option per criterion; tally weighted scores.
+4. State the recommendation, the confidence level, and what would change the call.
 **Output:** Decision matrix, weighted recommendation, confidence level
 **Skip if:** Only one viable option remains after Step 3
 
-> "Step 4 시작" 또는 "decision framework으로 정리해줘"
+> "Step 4 시작" 또는 "옵션 비교해서 정리해줘"
 
 ---
 
@@ -126,9 +129,8 @@ related:
 
 ## Related Skills
 
-- `think:brainstorming`, `think:first-principles`, `think:devils-advocate`, `think:decision-maker`
+- `think:brainstorming`, `think:first-principles`, `think:devils-advocate`
 - Before: Use `think:problem-reframer` if the question itself feels wrong
 - After: Feed decision output into `pm:pm-strategy-workflow` or `develop:dev-quality-workflow`
 - `thought-organizer` — 워크플로 시작 전에 산발적 입력 재료를 구조화할 때
 - `problem-reframer` — Step 1 발산 전에 문제 정의 자체가 올바른지 점검하고 싶을 때
-- `retrospective` — 워크플로로 내린 결정을 일정 기간 후 돌아보고 교훈을 추출할 때

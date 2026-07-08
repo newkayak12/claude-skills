@@ -22,7 +22,6 @@ compatibility:
     think-tool이 있으면 협상 전 상대방 입장 분석과 Black Swan 탐색을 체계적으로 수행할 수 있습니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 related:
-  - decision-maker
   - devils-advocate
   - first-principles
 license: MIT

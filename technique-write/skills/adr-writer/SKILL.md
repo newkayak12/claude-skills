@@ -29,7 +29,6 @@ related:
   - doc-coauthoring
   - writer-verification
   - tradeoff-articulator
-  - decision-maker
   - bias-auditor
   - architecture-designer
   - domain-driven-design
@@ -149,7 +148,7 @@ Sequential numbering. Never delete or rewrite an accepted ADR — supersede inst
 - `doc-coauthoring` — section-by-section co-write mechanics for long Context
 - `writer-verification` — final pass to catch hedging in Decision
 - `tradeoff-articulator` — frame Rationale as "accept X to gain Y"
-- `decision-maker`, `bias-auditor` — when the decision boundary is unclear or Negative is empty
+- `bias-auditor` — when the decision boundary is unclear or Negative is empty
 - `architecture-designer` / `domain-driven-design` / `microservices-architect` — domain context for the decision being captured
 
 Fallback if any related skill is not installed: see `references/process-detail.md`.

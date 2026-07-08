@@ -33,7 +33,6 @@ related:
   - values-explorer
   - brainstorming
   - problem-reframer
-  - decision-maker
   - bias-auditor
   - assumption-extractor
   - second-order-thinker
@@ -94,7 +93,6 @@ related:
 | 강점/약점 점검, 피드백 소화 | `strength-growth-mapper` | 강점 지도 |
 | 가치관 충돌, 우선순위 혼란 | `values-explorer` | 가치 명확화 |
 | 막혀서 새 관점이 필요해 | `problem-reframer` | 문제 재구성 |
-| 결정을 못 내리겠어, 선택지 비교 | `decision-maker` | 의사결정 구조화 |
 | 한쪽으로 치우친 사고 | `bias-auditor` | 인지 편향 점검 |
 | "당연하지 않아?" 묻지 않는 전제 | `assumption-extractor` | 전제 추출 |
 | 이 결정의 파급은? 연쇄 효과 | `second-order-thinker` | 2차 효과 탐색 |

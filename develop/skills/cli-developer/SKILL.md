@@ -127,6 +127,5 @@ For Python (click/typer) and Go (cobra) examples, see `references/python-cli.md`
 
 ## Related Skills
 
-- `mcp-builder` — if the CLI wraps an MCP tool
 - `sre-engineer` — for integrating CLI tools into SRE pipelines
 - `code-documenter` — for documenting CLI commands and flags

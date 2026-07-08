@@ -18,7 +18,7 @@ If a Design Review exists, **read it fully** before drafting. Pull:
 | §7 Trade-offs | `Consequences.Negative` |
 | §8 Impact Analysis | `Consequences.Positive` and `Consequences.Neutral` |
 
-If no Design Review exists, gather equivalent context interactively. Consider invoking `decision-maker` to clarify the actual decision boundary before drafting.
+If no Design Review exists, gather equivalent context interactively, clarifying the actual decision boundary before drafting.
 
 ## Step 2 — Assign the number and status
 
@@ -90,7 +90,7 @@ Save to `docs/adr/NNNN-<short-slug>.md`. Slug should mirror the decision: `0007-
 
 ## Fallback when a related skill is not installed
 
-If `doc-coauthoring` / `writer-verification` / `tradeoff-articulator` / `bias-auditor` / `decision-maker` is not available in the user's marketplace install, tell the user:
+If `doc-coauthoring` / `writer-verification` / `tradeoff-articulator` / `bias-auditor` is not available in the user's marketplace install, tell the user:
 
 > "이 단계는 `[skill-name]` 스킬과 함께 쓰면 품질이 올라갑니다. 두 가지 선택지가 있습니다:
 > 1. 마켓플레이스(`https://github.com/newkayak12/claude-skills`)에서 해당 플러그인을 설치 → 다시 진행
