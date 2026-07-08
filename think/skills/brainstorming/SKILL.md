@@ -21,7 +21,6 @@ compatibility:
     think-tool이 있으면 설계 옵션을 제시하기 전에 trade-off를 체계적으로 검토할 수 있습니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 related:
-  - decision-maker
   - problem-reframer
   - thought-organizer
   - bias-auditor
@@ -97,7 +96,7 @@ If `think-tool` is available, 발산 끝에 호출 — 놓친 trade-off를 surfa
 
 ### 5. After Approval
 
-디자인 승인 후 `writing-plans` invoke해서 구현 계획 작성. 다른 스킬(frontend-developer, mcp-builder 등) 호출하지 마라 — brainstorming의 산출물은 plan이지 동작 코드가 아니다.
+디자인 승인 후 `writing-plans` invoke해서 구현 계획 작성. 다른 스킬(frontend-developer, spring-boot-engineer 등) 호출하지 마라 — brainstorming의 산출물은 plan이지 동작 코드가 아니다.
 
 ## When Approaches All Feel Off
 
@@ -125,7 +124,6 @@ If `think-tool` is available, 발산 끝에 호출 — 놓친 trade-off를 surfa
 
 ## Related Skills
 
-- `decision-maker` — 여러 설계 옵션이 나왔고 최종 선택이 필요할 때
 - `problem-reframer` — 모든 옵션이 어색하면 문제 정의 자체 점검. 제약을 *제거*해 문제를 재정의하려면 그쪽
 - `thought-organizer` — 발산된 아이디어가 많아 구조화·우선순위가 필요할 때
 - `bias-auditor` — 한 옵션에 강한 끌림이 있으면 confirmation bias 점검

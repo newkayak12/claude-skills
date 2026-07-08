@@ -34,7 +34,7 @@ compatibility:
 - Wanting the whole-life view, not a single-decision view
 
 **Not for:**
-- Single-decision analysis (use decision-maker or tradeoff-articulator)
+- Single-decision analysis (use tradeoff-articulator)
 - Values clarification alone (use values-explorer first)
 
 ## Process

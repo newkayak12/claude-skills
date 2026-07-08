@@ -145,4 +145,4 @@ Tell me which step you're on and I'll pick up from there:
 
 - Individual skills: `cognition:question-upgrader`, `cognition:assumption-extractor`, `cognition:fallacy-detector`, `cognition:bias-auditor`, `cognition:second-order-thinker`, `cognition:epistemic-reasoner`, `cognition:tradeoff-articulator`
 - Before: `think:deep-thinking-workflow` (open-ended ideation before stress-testing)
-- After: `think:decision-maker` (when ready to choose), `pm:pm-strategy-workflow` (when findings inform product strategy)
+- After: `pm:pm-strategy-workflow` (when findings inform product strategy)

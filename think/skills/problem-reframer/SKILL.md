@@ -21,7 +21,6 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 related:
   - first-principles
-  - decision-maker
   - devils-advocate
   - brainstorming
 ---
@@ -159,7 +158,6 @@ See `references/examples.md` for worked examples across software and non-softwar
 ## Related Skills
 
 - `first-principles` — 재프레이밍 후 근본 가정을 더 깊이 분해하고 바닥부터 재구성하고 싶을 때
-- `decision-maker` — 새 문제 프레임이 나왔고 옵션 간 선택이 필요할 때
 - `devils-advocate` — 재프레이밍한 새 방향에 강한 반론으로 검증하고 싶을 때. multi-persona *공격*이 필요하면 그쪽
 - `brainstorming` — 문제 정의가 분명해진 뒤 해법을 발산해야 할 때. 제약 *완화*로 해법을 찾고 싶다면 그쪽의 constraint relaxation
 - `bias-auditor` — reframing 결과 confidence가 높다면 점검

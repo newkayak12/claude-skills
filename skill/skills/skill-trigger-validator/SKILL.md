@@ -137,7 +137,6 @@ Start with a summary table:
 | Skill | Score | Primary Gap |
 |-------|-------|-------------|
 | clean-code | 4/10 | No Korean triggers |
-| decision-maker | 7/10 | Colloquial English weak |
 ...
 ```
 

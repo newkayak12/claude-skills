@@ -35,7 +35,7 @@ compatibility:
 - The costs of each option need to be visible before deciding
 
 **Not for:**
-- Making the actual choice (use decision-maker)
+- Making the actual choice once trade-offs are on the table
 - Consequence chains after a decision (use second-order-thinker)
 
 ## Process
@@ -90,6 +90,5 @@ Option B      |   +   |  +   |     low       |      high      | high upside
 
 ## Related Skills
 
-- `decision-maker` — for structured frameworks when you're ready to choose
 - `second-order-thinker` — for downstream consequences of each option
 - `assumption-extractor` — for surfacing premises that predetermine which tradeoffs appear

@@ -19,7 +19,7 @@ The Design Review captures exploration. The ADR captures the final decision in a
 
 Both skills reference other marketplace skills as collaborators. All exist already:
 
-- `think:brainstorming`, `think:devils-advocate`, `think:problem-reframer`, `think:decision-maker`
+- `think:brainstorming`, `think:devils-advocate`, `think:problem-reframer`
 - `develop:architecture-designer`, `develop:domain-driven-design`, `develop:microservices-architect`
 - `cognition:bias-auditor`, `cognition:assumption-extractor`, `cognition:tradeoff-articulator`, `cognition:second-order-thinker`
 - `write:doc-coauthoring`, `write:writer-verification`

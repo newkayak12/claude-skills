@@ -33,5 +33,5 @@ A Claude Code plugin marketplace with 25 skills for software engineering.
 | [pm](./pm/README.md) | Product management: user stories, story mapping, PRD |
 | [portfolio](./portfolio/README.md) | Portfolio and career: feedback, JD analysis, interview prep |
 | [skill](./skill/README.md) | Skill creation, improvement, and validation |
-| [think](./think/README.md) | Brainstorming, decision making, retrospective, and more |
+| [think](./think/README.md) | Brainstorming, devil's advocate, problem reframing, and more |
 | [write](./write/README.md) | Documentation, writing plans, and content review |

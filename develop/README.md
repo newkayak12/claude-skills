@@ -23,7 +23,6 @@ Engineering skills for software development workflows.
 | `database-optimizer` | Optimize queries and improve PostgreSQL/MySQL performance |
 | `frontend-developer` | React, Next.js, Tailwind CSS, TypeScript UI implementation |
 | `kotlin-specialist` | Kotlin coroutines, Flow, KMP, Compose, Ktor |
-| `mcp-builder` | Build MCP servers in Python or TypeScript |
 | `microservices-architect` | Design distributed systems, decompose monoliths |
 | `spring-boot-engineer` | Spring Boot 3.x, Security 6, JPA, WebFlux |
 | `sql-pro` | Complex queries, window functions, indexing, query plans |

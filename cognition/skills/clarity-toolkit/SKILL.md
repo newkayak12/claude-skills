@@ -35,7 +35,7 @@ compatibility:
 - Analysis is cycling without converging
 
 **Not for:**
-- Choosing between well-defined options (use tradeoff-articulator or decision-maker)
+- Choosing between well-defined options (use tradeoff-articulator)
 - Identifying cognitive biases (use bias-auditor)
 
 ## Process
@@ -123,5 +123,4 @@ Always end with one concrete next step the user can take in the next hour.
 ## Related Skills
 
 - `tradeoff-articulator` — when options are defined but costs need mapping
-- `decision-maker` — when it's a structured choice between alternatives
 - `assumption-extractor` — when the vagueness is rooted in unexamined premises
