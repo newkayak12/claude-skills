@@ -38,6 +38,11 @@ non-destructive** — existing files are never overwritten.
    - Copy each of `templates/conventions/{coding,verification,boundaries}.md` **only if
      that filename is missing**. Existing convention files are kept as-is (even if they
      cover the same topic under a different name — do not dedupe for the user).
+   - **Optional rulesets** (`templates/conventions/optional/`): copy only when the
+     project matches the trigger stated at the top of each file — `security.md`
+     (auth/PII/tokens/secrets), `data.md` (DB schema/migrations/retention),
+     `operations.md` (release/SLO/observability). Ask the user when unsure; skip
+     silently when clearly irrelevant.
    - Fill the `<!-- fill -->` placeholders you can derive from the project (build/test
      commands, source layout); leave the rest for the user and say which ones remain.
 3. **CLAUDE.md — ambient instruction**
