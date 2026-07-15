@@ -147,4 +147,8 @@ function main() {
   process.exit(0);
 }
 
-main();
+try {
+  main();
+} catch {
+  process.exit(0); // fail-open: never let an uncaught throw block the tool call
+}
