@@ -1,8 +1,9 @@
 # templates — A (bespoke Workflow) starting points
 
-**B is the default** (declarative goal-spec + `../engine/pipeline.js`). Reach for A only when
-the control flow itself is the problem — something the generic decompose→act→check→loop engine
-can't express.
+**B is the default** (raw request + the fixed engine, `../engine/pipeline.js`: Plan→SetGoal→
+Implement→Test→QualityGate→Report — the engine plans and authors the goal-spec itself, you
+don't). Reach for A only when the control flow itself is the problem — something the six
+fixed stages can't express.
 
 ## When A earns its cost
 - **Tournament / judge-panel:** generate N competing attempts, score, synthesize the winner.
@@ -15,5 +16,6 @@ same spirit as B: **the judge is always a separate agent from the actor** — ne
 
 ## Reference (do not follow — read for ideas only)
 - `../../_deprecated/harness-v0/scripts/workflow-templates/gajae-pipeline.js`
-  Per-goal Planner→Critic→[Executor↔Verifier]×3. Useful as a shape reference; we deliberately
-  dropped its fixed 3-boolean verdict and hardcoded phases in favor of goal-derived acceptance.
+  Per-goal Planner→Critic→[Executor↔Verifier]×3. Useful as a shape reference; B now runs a
+  fixed 6-stage pipeline too, but with a different verdict model: per-subgoal boolean `pass`
+  plus a goal-level `match_pct` gate (>= 90 to pass), not this file's fixed 3-boolean verdict.
