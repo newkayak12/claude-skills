@@ -138,8 +138,8 @@
     },
     {
       "name": "harness",
-      "description": "Harness — a lightweight reasoning floor. Author a declarative goal-spec, then a fixed engine runs decompose→act→independent-check→loop: each subgoal is executed by one subagent and judged by a SEPARATE subagent (no self-eval), with bounded retry. Purpose is to filter out repetition and below-threshold answers, holding the flow even at low effort / weaker models. B (goal-spec + engine) is the default; A (bespoke Workflow) covers custom control flow. Enforcement (hook/skill) deferred.",
-      "version": "1.0.0",
+      "description": "Harness — a lightweight reasoning floor. Pass a raw request; a fixed six-stage engine runs Plan(opus) → SetGoal(opus, adversarial critic) → Implement(sonnet, repo-skill executors) → Test(sonnet, deterministic evidence) → QualityGate(opus, bounded loop + goal-level gate) → Report(sonnet). Filters repetition and below-threshold answers regardless of main-session model. B (request + engine) default; A (bespoke Workflow) for custom control flow. Enforcement: opt-in PreToolUse gate — projects list gated paths in .claude/harness-gate.json; edits there require harness engagement (fail-open).",
+      "version": "1.1.0",
       "author": {
         "name": "newkayak12"
       },
