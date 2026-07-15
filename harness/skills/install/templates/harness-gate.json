@@ -1,0 +1,4 @@
+{
+  "patterns": ["<!-- fill: JS regexes matched against /-normalized file_path, e.g. \"src/.*\\\\.kt$\" -->"],
+  "window_hours": 2
+}
