@@ -1,11 +1,9 @@
-# goal-spec — the declarative data the engine runs (B)
+# goal-spec — the data SetGoal authors and the engine runs
 
-The harness is **one fixed engine** (`engine/pipeline.js`) driven by **one piece of data
-you author at planning time**: the goal-spec. Intelligence lives in *authoring the spec once*
-(strong orchestrator); the engine *replays* it cheaply, so the flow holds even at low
-effort / weaker models. Quality ceiling still follows the model — that is unavoidable and
-not the harness's job. The harness's job: filter out **repetition** and **below-threshold
-answers** by forcing decompose → act → independent-check → loop.
+In v1.1 the goal-spec is **authored inside the engine** by the SetGoal stage (pinned Opus),
+then adversarially critiqued and revised once, before execution. You normally pass a raw
+request — not a spec. This document defines the schema (for reading run outputs, and for
+A-mode/manual authoring) and the authoring rules the SetGoal stage follows.
 
 ## Schema
 
@@ -13,48 +11,54 @@ answers** by forcing decompose → act → independent-check → loop.
 {
   "goal": "the north star for this request — one sentence",
   "acceptance": [
-    "goal-level criteria the whole result is judged against"
+    "goal-level criteria — judged by the final QualityGate over the assembled whole"
   ],
   "subgoals": [
     {
       "id": "s1",                      // stable id, referenced by deps
       "title": "what this unit produces",
-      "persona": "optional role for the executor (e.g. 'kotlin-specialist')",
-      "acceptance": [                  // what the INDEPENDENT judge checks — derived from the goal
-        "concrete, checkable criterion",
-        "another criterion"
+      "persona": "optional executor role (e.g. 'senior Kotlin engineer')",
+      "skills": ["develop:kotlin-specialist"],  // repo skills the executor MUST invoke
+      "acceptance": [                  // what the QualityGate judge checks
+        "concrete, checkable criterion"
+      ],
+      "test": [                        // what the Test agent EXECUTES (commands / concrete checks)
+        "./gradlew test --tests SomeTest"
       ],
       "deps": []                       // ids that must finish first (omit/[] = no deps)
     }
   ],
-  "max_retries": 2                     // per-subgoal act↔check loop cap (default 2)
+  "max_retries": 2                     // per-subgoal Implement↔Test↔QualityGate loop cap
 }
 ```
 
-## Rules for authoring (this is the lever — get it right)
+## Authoring rules (what SetGoal is held to)
 
-1. **acceptance is derived from the goal, per request.** No fixed rubric. The judge only
-   knows what you write here — vague acceptance = worthless check.
-2. **subgoals are divide-and-conquer of the goal.** Independent units. Use `deps` only for
-   real ordering; independent subgoals run in parallel.
-3. **Keep it small.** If a request is trivial, one subgoal is fine. Don't manufacture phases.
-4. **check ≠ act.** The engine always sends work to a *separate* judge subagent — never let
-   the executor grade itself.
+1. **acceptance is derived from the goal, per request.** No fixed rubric; vague acceptance
+   = worthless gate.
+2. **test[] must be executable without trusting the executor** — commands to run, files to
+   inspect. This is what makes the Test stage deterministic evidence, not narrative review.
+3. **skills[] maps repository skills** (develop:*, think:*, write:*, pm:*, …) the executor
+   invokes before working. 1–3 per subgoal; none is acceptable for generic work.
+4. **subgoals are divide-and-conquer.** deps only for real ordering; independent subgoals
+   run in parallel. Trivial request = one subgoal.
+5. **check ≠ act.** Test and QualityGate agents are always separate from the executor.
 
 ## How it runs
 
-`harness/SKILL.md` tells the assistant to author a spec, then invoke the engine with it:
-
 ```
-Workflow({ scriptPath: "harness/engine/pipeline.js", args: <goal-spec> })
+Workflow({ scriptPath: "harness/engine/pipeline.js",
+           args: { request: "<raw request>", context: "<optional>", max_retries: 2 } })
 ```
 
-The engine runs dependency waves (parallel where possible), loops each subgoal act↔check up
-to `max_retries`, and returns a report: `all_passed`, `failed[]`, and per-subgoal results.
-You relay the report to the user — they step back from eval/retry.
+Stages (model-pinned): Plan(opus) → SetGoal(opus, +critic) → per subgoal
+Implement(sonnet) → Test(sonnet) → QualityGate(opus) looped up to max_retries →
+goal-level QualityGate(opus, quantified `match_pct`, pass requires >= 90%, repair-and-regate
+loop up to max_retries) → Report(sonnet). Returns `{ goal, spec, all_passed,
+failed[], goal_gate, results[], report }`.
 
 ## When to use A instead
 
-B (this spec + fixed engine) is the default. When a request needs **custom control flow**
-the generic engine can't express (tournaments, staged escalation, bespoke verification
-topology), author a one-off Workflow script instead — see `templates/`.
+B (raw request + fixed engine) is the default. When a request needs **custom control flow**
+the engine can't express (tournaments, staged escalation, bespoke verification topology),
+author a one-off Workflow script instead — see `templates/`.
