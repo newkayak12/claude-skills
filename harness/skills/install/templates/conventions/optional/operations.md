@@ -2,7 +2,7 @@
 
 **Trigger**: just before release / while operating / when setting Performance budget, Observability, or agreeing on SLO
 
-The Performance budget and Observability items split out from the DoD in `06-rules.md` live here. This is the baseline to pass *once, just before release*.
+This is the baseline to pass *once, just before release*.
 
 ## O-01: Three Pillars — required before release
 

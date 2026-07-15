@@ -42,7 +42,8 @@ The project owns the copies afterward; the plugin never manages them again.
 - v1.2.0 — `install` skill: per-project scaffolding (gate + conventions + CLAUDE.md section).
 - v1.1.0 — six-stage engine; restores separate Plan/SetGoal/Test stages, spec critic,
   goal-level gate, and structured handoffs on top of the v1.0.0 lightweight rebuild
-  (v0 archived at `_deprecated/harness-v0`, tag `harness-v0`).
+  (v0 preserved in git history at tag `harness-v0`; its situational rulesets were
+  recycled into the install skill's optional conventions).
 - Enforcement: **opt-in PreToolUse gate** ([`hooks/`](hooks/)) — a project lists gated
   paths in `.claude/harness-gate.json`; edits there require harness engagement.
   Fail-open everywhere (v0 lesson); a nudge, not security.

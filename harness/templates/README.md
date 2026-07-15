@@ -15,7 +15,8 @@ Author a self-contained Workflow script (see the Workflow tool contract), then r
 same spirit as B: **the judge is always a separate agent from the actor** — never self-eval.
 
 ## Reference (do not follow — read for ideas only)
-- `../../_deprecated/harness-v0/scripts/workflow-templates/gajae-pipeline.js`
-  Per-goal Planner→Critic→[Executor↔Verifier]×3. Useful as a shape reference; B now runs a
-  fixed 6-stage pipeline too, but with a different verdict model: per-subgoal boolean `pass`
-  plus a goal-level `match_pct` gate (>= 90 to pass), not this file's fixed 3-boolean verdict.
+- `gajae-pipeline.js` from v0 (git tag `harness-v0`, at
+  `harness/scripts/workflow-templates/`): per-goal Planner→Critic→[Executor↔Verifier]×3.
+  Useful as a shape reference; B now runs a fixed 6-stage pipeline too, but with a
+  different verdict model: per-subgoal boolean `pass` plus a goal-level `match_pct`
+  gate (>= 90 to pass), not this file's fixed 3-boolean verdict.
