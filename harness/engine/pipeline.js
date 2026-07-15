@@ -101,6 +101,15 @@ const GOAL_VERDICT = {
 
 // ---- Stage 1: Plan (opus) ----
 phase('Plan')
+// Stage-mounted repo skills / MCP tools. Skills load via the Skill tool (SKILL.md Read
+// as fallback); MCP tools resolve via ToolSearch and are skipped silently if absent.
+const mountSkill = (name, why) =>
+  `\nFirst invoke the skill "${name}" with the Skill tool and follow it — ${why}. ` +
+  `If the Skill tool is unavailable, Read that skill's SKILL.md instead.`
+const mountMcp = (tool, why) =>
+  `\nIf the ${tool} MCP tool is available (locate via ToolSearch), use it to ${why}; ` +
+  `if unavailable, proceed without it.`
+
 const plan = await agent(
   `You are planning how to fulfil this request. Do NOT do the work.\n` +
   `Request: ${req.request}${ctxNote}\n\n` +
@@ -110,7 +119,8 @@ const plan = await agent(
   `and what executor persona fits, (4) how each unit can be deterministically verified ` +
   `(commands to run, files to inspect), (5) if the project defines .claude/conventions/**, ` +
   `Read the relevant ones and list the rules that must constrain this work. ` +
-  `Be concrete; this plan feeds spec authoring.`,
+  `Be concrete; this plan feeds spec authoring.` +
+  mountMcp('sequential-thinking', 'work through the decomposition step by step'),
   { label: 'plan', phase: 'Plan', model: 'opus' })
 
 // ---- Stage 2: SetGoal (opus) — author spec, then adversarial critic, then one revision ----
@@ -122,11 +132,13 @@ const specPrompt =
   `skills[] lists 1-3 repository skill names the executor must invoke. test[] lists shell ` +
   `commands or concrete checks a verifier can execute without trusting the executor. ` +
   `Fold any project convention rules the plan surfaced into subgoal acceptance and test entries. ` +
-  `Keep it small — a trivial request is one subgoal.`
+  `Keep it small — a trivial request is one subgoal.` +
+  mountMcp('think-tool', 'refine each acceptance criterion until it is concretely checkable')
 let spec = await agent(specPrompt, { label: 'setgoal', phase: 'SetGoal', model: 'opus', schema: SPEC })
 
 const critique = await agent(
-  `Adversarially critique this goal-spec. You did NOT write it. Refute: wrong decomposition, ` +
+  mountSkill('think:devils-advocate', 'it structures the strongest objections') +
+  `\nAdversarially critique this goal-spec. You did NOT write it. Refute: wrong decomposition, ` +
   `vague/unfalsifiable acceptance, missing subgoal the goal needs, fake dependencies, ` +
   `unverifiable test[] entries, skill mappings that don't fit.\n` +
   `Request: ${req.request}\n\nSpec:\n${JSON.stringify(spec, null, 2)}\n\n` +
@@ -201,7 +213,8 @@ async function runSubgoal(sg, upstream) {
       { label: `impl:${sg.id}:${attempt}`, phase: 'Implement', model: 'sonnet' })
 
     evidence = await agent(
-      `Independently verify subgoal "${sg.title}". Do NOT trust the executor's narrative — ` +
+      mountSkill('completion:verification-before-completion', 'evidence before assertions, always') +
+      `\nIndependently verify subgoal "${sg.title}". Do NOT trust the executor's narrative — ` +
       `verify deterministically: run the checks below with Bash, Read the files the executor ` +
       `claims to have produced or changed, and record what you actually observed.\n` +
       `Checks:\n${tests || '- (none specified) inspect the claimed artifacts directly'}\n\n` +
@@ -210,7 +223,8 @@ async function runSubgoal(sg, upstream) {
       { label: `test:${sg.id}:${attempt}`, phase: 'Test', model: 'sonnet', schema: EVIDENCE })
 
     verdict = await agent(
-      `Judge subgoal "${sg.title}" against its acceptance criteria. You did NOT produce it — ` +
+      mountSkill('think:devils-advocate', 'it structures the strongest objections') +
+      `\nJudge subgoal "${sg.title}" against its acceptance criteria. You did NOT produce it — ` +
       `be adversarial. Weigh the independent test evidence over the executor's account.\n` +
       `Acceptance:\n${accept}\n\nIndependent test evidence (verified=${evidence && evidence.verified}):\n` +
       `${evidence ? evidence.evidence : 'none'}\n\nExecutor's account:\n${work}\n\n` +
@@ -260,7 +274,9 @@ log(`${results.length - failed.length}/${results.length} subgoals passed`)
 // ---- Stage 5b: goal-level QualityGate (opus) — quantified match_pct, threshold 90%, ----
 // ---- looped: below-threshold gaps get one repair pass per remaining retry ----
 function goalPrompt(extra) {
-  return `All subgoals have been judged individually. Now judge the ASSEMBLED WHOLE against the ` +
+  return mountSkill('think:devils-advocate', 'it structures the strongest objections') +
+    mountMcp('mcp-reasoner', 'weigh the competing pass/fail readings before scoring') +
+    `\nAll subgoals have been judged individually. Now judge the ASSEMBLED WHOLE against the ` +
     `goal-level acceptance criteria. Be adversarial: subgoals passing individually does not ` +
     `mean the goal is met. Score match_pct = your honest estimate (0-100) of how fully the ` +
     `assembled result satisfies every goal-level acceptance criterion — not an average of ` +
