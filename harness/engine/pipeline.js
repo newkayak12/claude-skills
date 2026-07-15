@@ -16,7 +16,11 @@ export const meta = {
 //   Plan(opus) → SetGoal(opus, +critic) → per subgoal [Implement(sonnet) → Test(sonnet)
 //   → QualityGate(opus)] looped up to max_retries → goal-level QualityGate(opus) → Report(sonnet).
 
-const req = args || {}
+let req = args
+if (typeof req === 'string') {
+  try { req = JSON.parse(req) } catch { req = {} }
+}
+req = req || {}
 if (!req.request) throw new Error('harness-engine: args.request (raw request string) is required')
 const MAX = Number.isInteger(req.max_retries) ? req.max_retries : 2
 const ctxNote = req.context ? `\nContext from the requester:\n${req.context}` : ''
