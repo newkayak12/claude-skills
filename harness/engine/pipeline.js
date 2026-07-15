@@ -29,7 +29,11 @@ const SPEC = {
   type: 'object',
   properties: {
     goal: { type: 'string' },
-    acceptance: { type: 'array', items: { type: 'string' } },
+    acceptance: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'GOAL-LEVEL criteria for the whole assembled result — required at the top level, distinct from each subgoal\'s own acceptance array below. Do not omit this even when every subgoal already has its own acceptance[].',
+    },
     subgoals: {
       type: 'array',
       items: {
@@ -39,7 +43,11 @@ const SPEC = {
           title: { type: 'string' },
           persona: { type: 'string' },
           skills: { type: 'array', items: { type: 'string' } },
-          acceptance: { type: 'array', items: { type: 'string' } },
+          acceptance: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'SUBGOAL-LEVEL criteria for this one unit of work only — distinct from the goal-level acceptance array at the root.',
+          },
           test: { type: 'array', items: { type: 'string' } },
           deps: { type: 'array', items: { type: 'string' } },
         },
@@ -132,6 +140,28 @@ if (critique && !critique.sound) {
     (critique.problems || []).map(p => `- ${p}`).join('\n') +
     `\n\nPrevious draft:\n${JSON.stringify(spec, null, 2)}`,
     { label: 'setgoal:rev', phase: 'SetGoal', model: 'opus', schema: SPEC })
+}
+
+function isDegenerateSpec(s) {
+  if (!s || !Array.isArray(s.subgoals) || s.subgoals.length === 0) return true
+  if (!Array.isArray(s.acceptance) || s.acceptance.length === 0) return true
+  if (String(s.goal || '').trim().length < 8) return true
+  return s.subgoals.some(sg => String(sg.title || '').trim().length < 4 || !((sg.acceptance || []).length))
+}
+
+if (isDegenerateSpec(spec)) {
+  log('SetGoal produced a degenerate/placeholder spec — one corrective re-author pass')
+  spec = await agent(
+    specPrompt +
+    `\n\nA previous attempt collapsed into a placeholder/degenerate spec (minimal goal text, a ` +
+    `trivial single subgoal, or missing/empty top-level acceptance). This typically happens when ` +
+    `StructuredOutput validation fails on a large, substantively correct draft — commonly because the ` +
+    `top-level "acceptance" field (GOAL-LEVEL criteria, distinct from each subgoal's own "acceptance" ` +
+    `array) was omitted — and the response shrinks the payload to "isolate the issue" instead of fixing ` +
+    `the one missing/invalid field. Do not shrink scope to recover from a validation error: identify ` +
+    `exactly which field the schema is complaining about and resubmit the FULL substantive spec with ` +
+    `only that field corrected. The spec must actually address the original request, not be a placeholder.`,
+    { label: 'setgoal:degenerate-retry', phase: 'SetGoal', model: 'opus', schema: SPEC })
 }
 
 const subgoals = spec.subgoals || []
