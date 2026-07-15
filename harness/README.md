@@ -24,7 +24,22 @@ Plan(opus) → SetGoal(opus) → Implement(sonnet) → Test(sonnet) → QualityG
 - **B (default):** raw request + the fixed engine.
 - **A (special):** bespoke Workflow for custom control flow — see [`templates/`](templates/).
 
+## Installing into a project
+
+Marketplace install alone enforces nothing. Run the **`install` skill**
+([`skills/install/SKILL.md`](skills/install/SKILL.md)) from the target project to make
+governance ambient — it scaffolds project-owned copies (never overwrites existing files):
+
+- `.claude/harness-gate.json` — activates the edit gate on confirmed path patterns
+- `.claude/conventions/{coding,verification,boundaries}.md` — default ruleset the engine
+  reads (SetGoal → acceptance/test, Implement → follows)
+- a fenced `## Harness` section appended to the project's `CLAUDE.md`
+- `.claude/.harness-markers/` in `.gitignore`
+
+The project owns the copies afterward; the plugin never manages them again.
+
 ## Status
+- v1.2.0 — `install` skill: per-project scaffolding (gate + conventions + CLAUDE.md section).
 - v1.1.0 — six-stage engine; restores separate Plan/SetGoal/Test stages, spec critic,
   goal-level gate, and structured handoffs on top of the v1.0.0 lightweight rebuild
   (v0 archived at `_deprecated/harness-v0`, tag `harness-v0`).
