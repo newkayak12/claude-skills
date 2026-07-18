@@ -20,9 +20,14 @@ Plan(opus) → SetGoal(opus) → Implement(sonnet) → Test(sonnet) → QualityG
    pass requires >= 90%; below threshold triggers a repair pass and re-gate), then a
    Report stage synthesizes.
 
-## B vs A
+## Modes
 - **B (default):** raw request + the fixed engine.
-- **A (special):** bespoke Workflow for custom control flow — see [`templates/`](templates/).
+- **M (meta):** the harness *generates* a bespoke Workflow when the request needs control
+  flow the fixed stages can't express (tournament, escalation, loop-until-dry) — it copies
+  [`templates/meta-skeleton.js`](templates/meta-skeleton.js), rewrites only the `[META]`
+  Work block, and runs it. The skeleton's contract (judge ≠ actor, model pins, bounded
+  loops, deterministic Test, goal-level gate) stays verbatim.
+- **A (manual):** you author the bespoke Workflow yourself — see [`templates/`](templates/).
 
 ## Installing into a project
 
@@ -39,6 +44,8 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
 The project owns the copies afterward; the plugin never manages them again.
 
 ## Status
+- v1.4.0 — Mode M: the harness generates request-shaped bespoke Workflows from
+  `templates/meta-skeleton.js` (contract-preserving meta-scripts).
 - v1.2.0 — `install` skill: per-project scaffolding (gate + conventions + CLAUDE.md section).
 - v1.1.0 — six-stage engine; restores separate Plan/SetGoal/Test stages, spec critic,
   goal-level gate, and structured handoffs on top of the v1.0.0 lightweight rebuild

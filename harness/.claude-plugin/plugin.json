@@ -1,7 +1,7 @@
 {
   "name": "harness",
-  "description": "Harness — a lightweight reasoning floor. Pass a raw request; a fixed six-stage engine runs Plan(opus) → SetGoal(opus, adversarial critic) → Implement(sonnet, repo-skill executors) → Test(sonnet, deterministic evidence) → QualityGate(opus, bounded loop + goal-level gate) → Report(sonnet). Filters repetition and below-threshold answers regardless of main-session model. B (request + engine) default; A (bespoke Workflow) for custom control flow. Enforcement: opt-in PreToolUse gate — projects list gated paths in .claude/harness-gate.json; edits there require harness engagement (fail-open). The install skill scaffolds a project: gate config, default conventions (coding/verification/boundaries), and an ambient CLAUDE.md section — project-owned copies, never overwritten.",
-  "version": "1.3.0",
+  "description": "Harness — a lightweight reasoning floor. Pass a raw request; a fixed six-stage engine runs Plan(opus) → SetGoal(opus, adversarial critic) → Implement(sonnet, repo-skill executors) → Test(sonnet, deterministic evidence) → QualityGate(opus, bounded loop + goal-level gate) → Report(sonnet). Filters repetition and below-threshold answers regardless of main-session model. B (request + engine) default; A (bespoke Workflow) for custom control flow. Enforcement: opt-in PreToolUse gate — projects list gated paths in .claude/harness-gate.json; edits there require harness engagement (fail-open). The install skill scaffolds a project: gate config, default conventions (coding/verification/boundaries), and an ambient CLAUDE.md section — project-owned copies, never overwritten. Mode M: for control flow the fixed stages can't express, the harness generates a bespoke Workflow from templates/meta-skeleton.js (contract preserved: judge≠actor, model pins, bounded loops, deterministic Test, goal-level gate).",
+  "version": "1.4.0",
   "author": {
     "name": "newkayak12"
   },
