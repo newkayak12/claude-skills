@@ -1,0 +1,197 @@
+#!/usr/bin/env node
+// Deterministic file ops for the harness `install` skill. The SKILL (agent) keeps the
+// judgment/dialogue — proposing gate patterns, asking about embedding, resolving skill
+// source dirs — then hands the CONFIRMED values here so the mechanical, error-prone parts
+// (JSON merge, idempotent copies, path rewrites) run the same way every time.
+//
+// Usage:  node install.mjs '<json>'
+// Input (all fields optional except as noted):
+//   {
+//     "projectDir": "/abs/path",          // default: process.cwd()
+//     "gate": { "patterns": ["src/.*\\.kt$"], "window_hours": 2 },  // omit → skip gate write
+//     "embed": {                          // omit → skip standalone embedding
+//       "runtime": true,                  // copy engine + meta-skeleton + goal-spec
+//       "skills": [ { "name": "devils-advocate", "src": "/abs/think/skills/devils-advocate" } ]
+//     }
+//   }
+// Always installs the hook (script + settings.json merge) and the .gitignore line — those
+// are the enforcement core. Everything is idempotent and non-destructive: an existing file
+// is never overwritten. Prints a JSON report to stdout; exits non-zero only on bad input.
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  cpSync,
+} from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = dirname(fileURLToPath(import.meta.url)); // <plugin>/skills/install
+const PLUGIN_ROOT = resolve(HERE, '..', '..'); // <plugin> (harness/)
+
+function parseArgs() {
+  const raw = process.argv[2];
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    process.stderr.write(`install.mjs: argv[1] is not valid JSON: ${e.message}\n`);
+    process.exit(2);
+  }
+}
+
+function ensureDir(d) {
+  mkdirSync(d, { recursive: true });
+}
+
+// Copy a single file only if the destination is missing. Returns 'created' | 'kept' | 'missing-src'.
+function copyFileIfMissing(src, dest) {
+  if (existsSync(dest)) return 'kept';
+  if (!existsSync(src)) return 'missing-src';
+  ensureDir(dirname(dest));
+  cpSync(src, dest);
+  return 'created';
+}
+
+// Copy a directory tree only if the destination is missing. Same return contract.
+function copyDirIfMissing(src, dest) {
+  if (existsSync(dest)) return 'kept';
+  if (!existsSync(src)) return 'missing-src';
+  ensureDir(dirname(dest));
+  cpSync(src, dest, { recursive: true });
+  return 'created';
+}
+
+function main() {
+  const args = parseArgs();
+  const projectDir = args.projectDir ? resolve(args.projectDir) : process.cwd();
+  const claudeDir = join(projectDir, '.claude');
+  const report = { projectDir, actions: {}, notes: [] };
+
+  // ---- Gate (optional): .claude/harness-gate.json ----
+  if (args.gate && Array.isArray(args.gate.patterns) && args.gate.patterns.length) {
+    const gatePath = join(claudeDir, 'harness-gate.json');
+    if (existsSync(gatePath)) {
+      report.actions.gate = 'kept';
+    } else {
+      const cfg = { patterns: args.gate.patterns };
+      if (Number(args.gate.window_hours) > 0) cfg.window_hours = Number(args.gate.window_hours);
+      ensureDir(claudeDir);
+      writeFileSync(gatePath, JSON.stringify(cfg, null, 2) + '\n');
+      report.actions.gate = 'created';
+    }
+  } else {
+    report.actions.gate = 'skipped';
+    report.notes.push('gate: no patterns provided — .claude/harness-gate.json not written (gate stays inactive)');
+  }
+
+  // ---- Hook script: copy the self-contained goal-gate.mjs into the project ----
+  report.actions.hookScript = copyFileIfMissing(
+    join(PLUGIN_ROOT, 'hooks', 'goal-gate.mjs'),
+    join(claudeDir, 'hooks', 'goal-gate.mjs'),
+  );
+
+  // ---- Hook registration: merge a PreToolUse entry into committed .claude/settings.json ----
+  {
+    const settingsPath = join(claudeDir, 'settings.json');
+    const tmpl = JSON.parse(
+      readFileSync(join(HERE, 'templates', 'settings-hook.json'), 'utf8'),
+    );
+    const entries = (tmpl.hooks && tmpl.hooks.PreToolUse) || [];
+    const existed = existsSync(settingsPath);
+    let settings = {};
+    let parseFailed = false;
+    if (existed) {
+      try {
+        settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
+      } catch {
+        parseFailed = true;
+      }
+    }
+    if (parseFailed) {
+      // Never rewrite an unparseable settings file — leave it for the user.
+      report.actions.settings = 'parse-error';
+      report.notes.push(
+        'settings.json exists but is not valid JSON — left untouched. Add the PreToolUse ' +
+          'entry from templates/settings-hook.json by hand.',
+      );
+    } else {
+      settings.hooks = settings.hooks || {};
+      const arr = (settings.hooks.PreToolUse = settings.hooks.PreToolUse || []);
+      const alreadyRegistered = arr.some(
+        (g) => (g.hooks || []).some((h) => String(h.command || '').includes('goal-gate.mjs')),
+      );
+      if (alreadyRegistered) {
+        report.actions.settings = 'already';
+      } else {
+        arr.push(...entries);
+        ensureDir(claudeDir);
+        writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
+        report.actions.settings = existed ? 'registered' : 'created';
+      }
+    }
+  }
+
+  // ---- Standalone embedding (optional): .claude/harness/ ----
+  if (args.embed && (args.embed.runtime || (args.embed.skills || []).length)) {
+    const embedRoot = join(claudeDir, 'harness');
+    const embed = { runtime: {}, skills: [] };
+    if (args.embed.runtime) {
+      embed.runtime['engine/pipeline.js'] = copyFileIfMissing(
+        join(PLUGIN_ROOT, 'engine', 'pipeline.js'),
+        join(embedRoot, 'engine', 'pipeline.js'),
+      );
+      embed.runtime['templates/meta-skeleton.js'] = copyFileIfMissing(
+        join(PLUGIN_ROOT, 'templates', 'meta-skeleton.js'),
+        join(embedRoot, 'templates', 'meta-skeleton.js'),
+      );
+      embed.runtime['goal-spec.md'] = copyFileIfMissing(
+        join(PLUGIN_ROOT, 'goal-spec.md'),
+        join(embedRoot, 'goal-spec.md'),
+      );
+    }
+    for (const s of args.embed.skills || []) {
+      if (!s || !s.name || !s.src) {
+        report.notes.push(`embed.skills: skipped an entry missing name/src`);
+        continue;
+      }
+      const result = copyDirIfMissing(resolve(s.src), join(embedRoot, 'skills', s.name));
+      embed.skills.push({ name: s.name, result });
+      if (result === 'missing-src') {
+        report.notes.push(`embed.skills: source not found for "${s.name}" at ${s.src}`);
+      }
+    }
+    report.actions.embed = embed;
+    report.notes.push(
+      'embedding covers runtime + the skills you passed only; subgoal skills[] are chosen ' +
+        'dynamically by SetGoal and cannot be pre-enumerated — unembedded picks are absent ' +
+        'in a plugin-less environment. If embedded, rewrite the Workflow scriptPath in the ' +
+        "CLAUDE.md block to .claude/harness/engine/pipeline.js (engagement regex still matches).",
+    );
+  } else {
+    report.actions.embed = 'skipped';
+  }
+
+  // ---- .gitignore: ensure the markers dir is ignored ----
+  {
+    const giPath = join(projectDir, '.gitignore');
+    const line = '.claude/.harness-markers/';
+    if (!existsSync(giPath)) {
+      writeFileSync(giPath, line + '\n');
+      report.actions.gitignore = 'created';
+    } else {
+      const cur = readFileSync(giPath, 'utf8');
+      if (cur.split(/\r?\n/).some((l) => l.trim() === line)) {
+        report.actions.gitignore = 'present';
+      } else {
+        writeFileSync(giPath, cur + (cur.endsWith('\n') ? '' : '\n') + line + '\n');
+        report.actions.gitignore = 'appended';
+      }
+    }
+  }
+
+  process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+}
+
+main();

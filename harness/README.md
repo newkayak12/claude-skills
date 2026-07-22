@@ -47,6 +47,11 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
 The project owns the copies afterward; the plugin never manages them again.
 
 ## Status
+- v1.6.0 — `install` delegates its deterministic file work (gate write, hook copy +
+  `.claude/settings.json` merge, standalone embedding, `.gitignore`) to
+  [`skills/install/install.mjs`](skills/install/install.mjs); the skill keeps only
+  judgment/dialogue. Idempotent JSON merge (never clobbers existing hooks, leaves
+  unparseable settings untouched). Skill descriptions front-loaded for trigger matching.
 - v1.5.0 — `install` now embeds the gate hook into the project: copies the self-contained
   `goal-gate.mjs` to `.claude/hooks/` and merges a PreToolUse entry into committed
   `.claude/settings.json`, so enforcement is project-owned (no plugin dependency for the
