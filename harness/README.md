@@ -36,6 +36,9 @@ Marketplace install alone enforces nothing. Run the **`install` skill**
 governance ambient — it scaffolds project-owned copies (never overwrites existing files):
 
 - `.claude/harness-gate.json` — activates the edit gate on confirmed path patterns
+- `.claude/hooks/goal-gate.mjs` + a merged `.claude/settings.json` PreToolUse entry —
+  the self-contained gate hook, committed so it enforces team-wide without depending on
+  the plugin install (engine still lives in the plugin — see the install skill's gap note)
 - `.claude/conventions/{coding,verification,boundaries}.md` — default ruleset the engine
   reads (SetGoal → acceptance/test, Implement → follows)
 - a fenced `## Harness` section appended to the project's `CLAUDE.md`
@@ -44,6 +47,13 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
 The project owns the copies afterward; the plugin never manages them again.
 
 ## Status
+- v1.5.0 — `install` now embeds the gate hook into the project: copies the self-contained
+  `goal-gate.mjs` to `.claude/hooks/` and merges a PreToolUse entry into committed
+  `.claude/settings.json`, so enforcement is project-owned (no plugin dependency for the
+  gate). Idempotent merge. It also **asks whether to embed the engine + statically-referenced
+  skills into `.claude/harness/`** for plugin-less environments (air-gapped/CI) — opt-in,
+  with the dynamic-`skills[]` boundary called out (SetGoal picks those from the whole
+  catalogue and they can't be pre-enumerated).
 - v1.4.0 — Mode M: the harness generates request-shaped bespoke Workflows from
   `templates/meta-skeleton.js` (contract-preserving meta-scripts).
 - v1.2.0 — `install` skill: per-project scaffolding (gate + conventions + CLAUDE.md section).
