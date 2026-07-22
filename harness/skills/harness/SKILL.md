@@ -2,11 +2,9 @@
 name: harness
 description: >-
   Use when a substantial request needs verified, non-repetitive output.
-  Triggers on: "이거 제대로 해줘", "검증까지 해서", "하네스 돌려줘", "run the
-  harness", "do this properly with verification", "6단계로 처리해줘", "메타스크립트로".
-  Runs the fixed six-stage engine (Plan→SetGoal→Implement→Test→QualityGate→Report,
-  model-pinned) with repo-skill executors and independent verification; Mode M generates
-  a bespoke Workflow when control flow needs it. Not for trivial edits or Q&A.
+  Triggers on: "이거 제대로 해줘", "검증까지 해서", "하네스 돌려줘", "run the harness",
+  "do this properly with verification", "6단계로 처리해줘", "메타스크립트로".
+  Not for trivial edits or Q&A.
 scenarios:
   - "이거 대충 말고 제대로, 검증까지 해서 처리해줘"
   - "하네스 돌려서 단계별로 검증하고 결과만 보고해줘"
