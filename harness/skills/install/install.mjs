@@ -11,7 +11,10 @@
 //     "gate": { "patterns": ["src/.*\\.kt$"], "window_hours": 2 },  // omit → skip gate write
 //     "embed": {                          // omit → skip standalone embedding
 //       "runtime": true,                  // copy engine + meta-skeleton + goal-spec
-//       "skills": [ { "name": "devils-advocate", "src": "/abs/think/skills/devils-advocate" } ]
+//       "skills": [                        // the engine's statically-mounted skills:
+//         { "name": "agent-task-decomposer", "src": "/abs/agents/skills/agent-task-decomposer" },
+//         { "name": "devils-advocate", "src": "/abs/think/skills/devils-advocate" },
+//         { "name": "verification-before-completion", "src": "/abs/completion/skills/verification-before-completion" } ]
 //     }
 //   }
 // Always installs the hook (script + settings.json merge) and the .gitignore line — those
