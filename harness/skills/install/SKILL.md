@@ -39,8 +39,9 @@ idempotent and non-destructive: existing files are never overwritten.
        plugin**. Without embedding, a plugin-less project's gate blocks with no local way to
        satisfy it — say so.
      - If **Yes**: locate the source dirs of the skills the engine **statically** mounts —
-       `think:devils-advocate` and `completion:verification-before-completion` — and pass them
-       as `{name, src}`. Offer to add a broader skill set the project expects to use.
+       `agents:agent-task-decomposer` (Planner), `think:devils-advocate` (critic + judges),
+       and `completion:verification-before-completion` (tester) — and pass them as `{name, src}`.
+       Offer to add a broader skill set the project expects to use.
      - **Hard caveat, say it out loud:** subgoal `skills[]` are chosen **dynamically by
        SetGoal from the whole catalogue** and can't be pre-enumerated; embedding guarantees
        only what you pass. MCP tools (sequential-thinking, think-tool, mcp-reasoner) can't be
@@ -53,6 +54,7 @@ idempotent and non-destructive: existing files are never overwritten.
      "projectDir": "<abs project root>",
      "gate": { "patterns": ["src/.*\\.kt$"], "window_hours": 2 },
      "embed": { "runtime": true, "skills": [
+       { "name": "agent-task-decomposer", "src": "<abs>/agents/skills/agent-task-decomposer" },
        { "name": "devils-advocate", "src": "<abs>/think/skills/devils-advocate" },
        { "name": "verification-before-completion", "src": "<abs>/completion/skills/verification-before-completion" } ] }
    }'

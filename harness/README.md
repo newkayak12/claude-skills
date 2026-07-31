@@ -47,6 +47,10 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
 The project owns the copies afterward; the plugin never manages them again.
 
 ## Status
+- v1.7.0 — Planner now mounts `agents:agent-task-decomposer` with a systems-analyst persona
+  (crisp, dependency-mapped, independently-verifiable units); Report gains an honest
+  status-reporter persona (sonnet unchanged). Standalone embedding's static-skill set updated
+  to three (decomposer + devils-advocate + verification-before-completion).
 - v1.6.0 — `install` delegates its deterministic file work (gate write, hook copy +
   `.claude/settings.json` merge, standalone embedding, `.gitignore`) to
   [`skills/install/install.mjs`](skills/install/install.mjs); the skill keeps only

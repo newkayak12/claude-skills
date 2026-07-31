@@ -111,7 +111,10 @@ const mountMcp = (tool, why) =>
   `if unavailable, proceed without it.`
 
 const plan = await agent(
-  `You are planning how to fulfil this request. Do NOT do the work.\n` +
+  mountSkill('agents:agent-task-decomposer', 'it enforces crisp subtask boundaries, ' +
+    'dependency mapping, and context-isolated agent-ready units — exactly what this plan needs') +
+  `\nAct as a systems analyst decomposing work into crisp, independently-verifiable, ` +
+  `dependency-mapped units. You are planning how to fulfil this request. Do NOT do the work.\n` +
   `Request: ${req.request}${ctxNote}\n\n` +
   `Produce a short plan: (1) decomposition into independent units of work, ` +
   `(2) real ordering dependencies only, (3) for each unit, which of this repository's ` +
@@ -311,6 +314,8 @@ goalGate = { ...goalGate, pass: !!(goalGate && goalGate.match_pct >= GOAL_MATCH_
 // ---- Stage 6: Report (sonnet) ----
 phase('Report')
 const report = await agent(
+  `Act as an engineering status reporter: outcome-first, honest about failures, no invented ` +
+  `claims — report only what the stages actually produced.\n` +
   `Write the final report for this harness run, for the requester. Be honest about failures.\n` +
   `Request: ${req.request}\nGoal: ${spec.goal}\n` +
   `Goal-level gate: ${goalGate && goalGate.pass ? 'PASS' : 'FAIL'} (match ${goalGate ? goalGate.match_pct : 0}%, threshold ${GOAL_MATCH_THRESHOLD}%) — ${goalGate ? goalGate.reason : 'no verdict'}\n` +
