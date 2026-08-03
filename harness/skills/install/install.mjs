@@ -8,6 +8,11 @@
 // Input (all fields optional except as noted):
 //   {
 //     "projectDir": "/abs/path",          // default: process.cwd()
+//     "refresh": false,                   // true → re-copy plugin-owned files after a version
+//                                         //   bump (goal-gate.mjs, embedded engine/templates/
+//                                         //   goal-spec + embedded skills). NEVER touches
+//                                         //   user-owned files (gate, conventions, CLAUDE.md,
+//                                         //   settings.json) even when true.
 //     "gate": { "patterns": ["src/.*\\.kt$"], "window_hours": 2 },  // omit → skip gate write
 //     "embed": {                          // omit → skip standalone embedding
 //       "runtime": true,                  // copy engine + meta-skeleton + goal-spec
@@ -18,8 +23,10 @@
 //     }
 //   }
 // Always installs the hook (script + settings.json merge) and the .gitignore line — those
-// are the enforcement core. Everything is idempotent and non-destructive: an existing file
-// is never overwritten. Prints a JSON report to stdout; exits non-zero only on bad input.
+// are the enforcement core. Default is idempotent and non-destructive: an existing file is
+// never overwritten (reported 'kept'). With "refresh": true, plugin-owned copies are
+// re-copied ('refreshed'/'unchanged') to pull a newer plugin version; user-owned files are
+// still never overwritten. Prints a JSON report to stdout; exits non-zero only on bad input.
 import {
   existsSync,
   readFileSync,
@@ -48,19 +55,34 @@ function ensureDir(d) {
   mkdirSync(d, { recursive: true });
 }
 
-// Copy a single file only if the destination is missing. Returns 'created' | 'kept' | 'missing-src'.
-function copyFileIfMissing(src, dest) {
-  if (existsSync(dest)) return 'kept';
+// Plugin-owned copies (verbatim of a plugin file) — safe to overwrite on refresh. When
+// `refresh` is true and the destination already exists, it is re-copied and reported as
+// 'refreshed' (or 'unchanged' if byte-identical). Otherwise the copy is non-destructive:
+// an existing destination is 'kept'. NEVER call these for user-owned files (gate config,
+// conventions, CLAUDE.md, settings.json) — refresh must not clobber those.
+// Returns 'created' | 'kept' | 'refreshed' | 'unchanged' | 'missing-src'.
+function copyFile(src, dest, refresh) {
   if (!existsSync(src)) return 'missing-src';
+  if (existsSync(dest)) {
+    if (!refresh) return 'kept';
+    if (readFileSync(src).equals(readFileSync(dest))) return 'unchanged';
+    cpSync(src, dest);
+    return 'refreshed';
+  }
   ensureDir(dirname(dest));
   cpSync(src, dest);
   return 'created';
 }
 
-// Copy a directory tree only if the destination is missing. Same return contract.
-function copyDirIfMissing(src, dest) {
-  if (existsSync(dest)) return 'kept';
+// Directory-tree variant. On refresh, cpSync overwrites files present in src but leaves any
+// extra files the destination already has; report 'refreshed' whenever the dir pre-existed.
+function copyDir(src, dest, refresh) {
   if (!existsSync(src)) return 'missing-src';
+  if (existsSync(dest)) {
+    if (!refresh) return 'kept';
+    cpSync(src, dest, { recursive: true, force: true });
+    return 'refreshed';
+  }
   ensureDir(dirname(dest));
   cpSync(src, dest, { recursive: true });
   return 'created';
@@ -70,7 +92,8 @@ function main() {
   const args = parseArgs();
   const projectDir = args.projectDir ? resolve(args.projectDir) : process.cwd();
   const claudeDir = join(projectDir, '.claude');
-  const report = { projectDir, actions: {}, notes: [] };
+  const refresh = args.refresh === true; // re-copy plugin-owned files; user-owned files stay untouched
+  const report = { projectDir, refresh, actions: {}, notes: [] };
 
   // ---- Gate (optional): .claude/harness-gate.json ----
   if (args.gate && Array.isArray(args.gate.patterns) && args.gate.patterns.length) {
@@ -89,10 +112,11 @@ function main() {
     report.notes.push('gate: no patterns provided — .claude/harness-gate.json not written (gate stays inactive)');
   }
 
-  // ---- Hook script: copy the self-contained goal-gate.mjs into the project ----
-  report.actions.hookScript = copyFileIfMissing(
+  // ---- Hook script: copy the self-contained goal-gate.mjs into the project (plugin-owned) ----
+  report.actions.hookScript = copyFile(
     join(PLUGIN_ROOT, 'hooks', 'goal-gate.mjs'),
     join(claudeDir, 'hooks', 'goal-gate.mjs'),
+    refresh,
   );
 
   // ---- Hook registration: merge a PreToolUse entry into committed .claude/settings.json ----
@@ -141,17 +165,20 @@ function main() {
     const embedRoot = join(claudeDir, 'harness');
     const embed = { runtime: {}, skills: [] };
     if (args.embed.runtime) {
-      embed.runtime['engine/pipeline.js'] = copyFileIfMissing(
+      embed.runtime['engine/pipeline.js'] = copyFile(
         join(PLUGIN_ROOT, 'engine', 'pipeline.js'),
         join(embedRoot, 'engine', 'pipeline.js'),
+        refresh,
       );
-      embed.runtime['templates/meta-skeleton.js'] = copyFileIfMissing(
+      embed.runtime['templates/meta-skeleton.js'] = copyFile(
         join(PLUGIN_ROOT, 'templates', 'meta-skeleton.js'),
         join(embedRoot, 'templates', 'meta-skeleton.js'),
+        refresh,
       );
-      embed.runtime['goal-spec.md'] = copyFileIfMissing(
+      embed.runtime['goal-spec.md'] = copyFile(
         join(PLUGIN_ROOT, 'goal-spec.md'),
         join(embedRoot, 'goal-spec.md'),
+        refresh,
       );
     }
     for (const s of args.embed.skills || []) {
@@ -159,7 +186,7 @@ function main() {
         report.notes.push(`embed.skills: skipped an entry missing name/src`);
         continue;
       }
-      const result = copyDirIfMissing(resolve(s.src), join(embedRoot, 'skills', s.name));
+      const result = copyDir(resolve(s.src), join(embedRoot, 'skills', s.name), refresh);
       embed.skills.push({ name: s.name, result });
       if (result === 'missing-src') {
         report.notes.push(`embed.skills: source not found for "${s.name}" at ${s.src}`);
