@@ -47,6 +47,11 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
 The project owns the copies afterward; the plugin never manages them again.
 
 ## Status
+- v1.8.0 — `install.mjs` gains a `refresh: true` mode: after a plugin version bump it
+  re-copies only the plugin-owned files (`goal-gate.mjs`, embedded `.claude/harness/**`),
+  reporting `refreshed`/`unchanged`, and never touches user-owned files (gate, conventions,
+  CLAUDE.md, settings.json). Default stays non-destructive. Corrects the earlier inaccurate
+  "re-run to refresh" note (a plain re-run keeps everything).
 - v1.7.0 — Planner now mounts `agents:agent-task-decomposer` with a systems-analyst persona
   (crisp, dependency-mapped, independently-verifiable units); Report gains an honest
   status-reporter persona (sonnet unchanged). Standalone embedding's static-skill set updated

@@ -88,6 +88,23 @@ idempotent and non-destructive: existing files are never overwritten.
    absent, flag the engine gap; if accepted, list what was embedded and the dynamic-`skills[]`
    boundary.
 
+## Updating after a plugin version bump
+
+`install.mjs` is **non-destructive by default** — a plain re-run reports every existing file
+as `kept` and changes nothing, so it will NOT pull a newer engine/hook on its own. The files
+split into two classes:
+- **plugin-owned copies** (verbatim of a plugin file): `.claude/hooks/goal-gate.mjs` and, if
+  embedded, `.claude/harness/**` (engine, meta-skeleton, goal-spec, static skills). These
+  drift from the plugin on a version bump.
+- **user-owned** (the project evolves them): `harness-gate.json`, `conventions/**`, the
+  CLAUDE.md block, `settings.json`.
+
+To update: bump the plugin (marketplace), then re-run `install.mjs` with **`"refresh": true`**
+and the same `embed` config. It re-copies only the plugin-owned files (reported `refreshed`
+or `unchanged`) and never touches user-owned files even with refresh on. Then `git diff` the
+plugin-owned copies and commit. In **plugin mode** (no embedding) the only drift-prone file is
+`goal-gate.mjs`; in **embedded mode** it also refreshes `.claude/harness/**`.
+
 ## What Claude does
 - Proposes gate patterns, asks about embedding + resolves skill sources, runs `install.mjs`
   for every deterministic file op, then does conventions + the CLAUDE.md block (judgment), and
@@ -96,8 +113,9 @@ idempotent and non-destructive: existing files are never overwritten.
 ## What you do
 - Confirm the gate patterns and the embedding choice. Commit `.claude/settings.json`,
   `.claude/hooks/goal-gate.mjs`, any `.claude/harness/` copies, and the conventions so the
-  gate applies team-wide. Fill remaining placeholders. Own the copies afterward — re-run
-  install to refresh the hook/runtime, or diff against the plugin yourself.
+  gate applies team-wide. Fill remaining placeholders. Own the copies afterward — after a
+  plugin version bump, re-run with `"refresh": true` to pull the newer plugin-owned files
+  (see "Updating after a plugin version bump"); your gate/conventions/CLAUDE.md stay put.
 
 ## Related
 - `install.mjs` — deterministic file ops (gate/hook/embed/gitignore) this skill invokes
