@@ -49,7 +49,7 @@ If MCP tools are not available, prompt the user to connect them:
 
 ## Skill Authoring Rules (for maintainers)
 
-See `skill/skills/writing-skills/SKILL.md` for the full authoring guide.
+See `write/skills/writing-skills/SKILL.md` for the full authoring guide.
 
 Quick rules:
 - `description` must start with `Use when` — this is the trigger

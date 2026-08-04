@@ -10,8 +10,8 @@ temp/
 __pycache__/
 *.pyc
 INSTRUCT.md
-plan/
-report/
+/plan/
+/report/
 *-workspace/
 .claude/.feedback/
 .claude/.harness-markers/

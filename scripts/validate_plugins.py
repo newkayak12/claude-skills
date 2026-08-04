@@ -18,7 +18,7 @@ Checks:
  13. Per skill  — heavy skills (>200 lines) should declare effort: field
  14. Per skill  — heavy skills (>200 lines) should have a Standing Mandates section
 
-Authoring principles: skill/skills/skill-validator/references/authoring-principles.md
+Authoring principles: skill/skills/skill-quality-assurance/references/authoring-principles.md
 """
 
 import json
@@ -129,6 +129,16 @@ def check_plugin(plugin_entry):
     plugin_version = plugin_data.get("version", "")
     if marketplace_version and plugin_version and marketplace_version != plugin_version:
         warn(f"{prefix} version mismatch — marketplace.json: {marketplace_version}, plugin.json: {plugin_version}")
+
+    # 3a. README title version (only when README embeds one, e.g. "# portfolio (v1.1.8)")
+    readme_path = os.path.join(plugin_dir, "README.md")
+    if plugin_version and os.path.exists(readme_path):
+        with open(readme_path, encoding="utf-8") as f:
+            first_line = f.readline()
+        m = re.search(r"\(v(\d+\.\d+\.\d+)\)", first_line)
+        if m and m.group(1) != plugin_version:
+            warn(f"{prefix} README title version v{m.group(1)} != plugin.json {plugin_version} "
+                 f"(update the '# {name} (vX.Y.Z)' title)")
 
     # 4. skills/ directory
     skills_dir = os.path.join(plugin_dir, "skills")
