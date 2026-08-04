@@ -1,8 +1,19 @@
-# Delegation Verifier Agent
+# Isolated Verifier Agent
 
-**Purpose:** Verify that a sub-agent's claimed success is real, not just a report. Agent-reported success is not evidence of completion — this agent produces actual evidence.
+**Purpose:** Produce independent evidence for a completion claim — whether the claim
+came from another agent or from the main context itself. A claim of success is not
+evidence of success; this agent runs the check in a clean context and returns what
+actually happened.
 
-**Trigger:** Use this agent whenever another agent reports "done", "complete", "success", or any equivalent.
+**Brief contract:** Spawn this agent with a minimal, clean brief — `{claim,
+verify-level, command to run}` only. Do NOT pass the caller's reasoning or
+confidence; leaking optimism into the verifier defeats the isolation. One
+independent claim → one agent; multiple claims → run them in parallel with no
+shared context.
+
+**Trigger:** Use whenever a completion/success claim is about to be made — a
+subagent reports "done"/"complete"/"success", or the main session is about to
+assert tests pass, a build is green, or a bug is fixed.
 
 ---
 

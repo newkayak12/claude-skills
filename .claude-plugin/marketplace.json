@@ -88,8 +88,8 @@
     },
     {
       "name": "completion",
-      "description": "Verification before completion: evidence-based workflow to confirm work is done before claiming success.",
-      "version": "1.1.2",
+      "description": "Verification before completion: stand up a verify-level (pass bar), then confirm it with an isolated subagent so the check is independent of the context that did the work.",
+      "version": "1.1.3",
       "author": {
         "name": "newkayak12"
       },
