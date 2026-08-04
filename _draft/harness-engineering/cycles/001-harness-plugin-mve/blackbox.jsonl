@@ -1,2 +1,0 @@
-{"ts":"2026-05-31","event":"stage_skip","stage":"srs-design-doc","reason":"dev-tool MVE — 정식 SRS/Design Doc 대체(brainstorm 결과 사용)","justified":true}
-{"ts":"2026-05-31","event":"gate_adapt","gate":"08-gate1-gate2","detail":"제품 Gate를 dev-tool self-test/scaffold-동작으로 즉석 적응(F9)","justified":true,"followup":"08 타입별 Gate 백로그"}
