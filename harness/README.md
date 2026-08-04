@@ -46,7 +46,27 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
 
 The project owns the copies afterward; the plugin never manages them again.
 
+## Workflow-less fallback
+The engine needs the Workflow runtime (`agent()`/`parallel()`/`pipeline()`). Where that tool
+is absent (plain Agent SDK, some harnesses, CI), the `harness` skill follows
+[`engine/fallback.md`](engine/fallback.md) instead: the **identical six stages** driven by the
+Agent tool, executed as a **strictly-ordered subgoal checklist** (topological sort → single
+linear order; no parallel waves). It emits a `[HARNESS-FALLBACK-ORCHESTRATOR]` sentinel first,
+which switches the gate into actor-boundary mode — the orchestrator's own gated edits are
+denied, so edits must come from Implement subagents (closes the invoke-then-edit-directly
+bypass). When the Workflow tool **is** present, fallback.md is ignored and `pipeline.js` runs
+byte-for-byte as before. The contract (judge ≠ actor, model pins, bounded loops, deterministic
+Test, goal-level gate) holds on both paths.
+
 ## Status
+- v1.9.0 — Workflow-less fallback ([`engine/fallback.md`](engine/fallback.md)): the six stages
+  via the Agent tool as a strictly-ordered checklist, selected only when the Workflow tool is
+  absent (Workflow path unchanged). Enforcement: the orchestrator emits a
+  `[HARNESS-FALLBACK-ORCHESTRATOR]` sentinel; `goal-gate.mjs` then denies the orchestrator's
+  direct gated edits, forcing them through Implement subagents. `install.mjs` embeds
+  `engine/fallback.md` alongside the engine (it matters most in plugin-less = Workflow-less
+  environments). Honest ceiling: fail-open; closes the lazy bypass, not active ones (Bash /
+  fake subagent) in the same trust domain.
 - v1.8.0 — `install.mjs` gains a `refresh: true` mode: after a plugin version bump it
   re-copies only the plugin-owned files (`goal-gate.mjs`, embedded `.claude/harness/**`),
   reporting `refreshed`/`unchanged`, and never touches user-owned files (gate, conventions,

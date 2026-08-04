@@ -63,3 +63,21 @@ Quick rules:
 After any change: bump version in `.claude-plugin/marketplace.json` → update `<plugin>/README.md` → commit → `git push skills main`.
 
 See `INSTRUCT.md` for full details.
+
+<!-- harness:begin v1 -->
+## Harness
+
+This project uses the harness plugin for substantial changes (dogfooded here — this is the
+harness's own source repo, so the engine path is repo-relative).
+
+- **Substantial or risky changes** (multi-file, gated paths, anything with a quality
+  bar) go through the six-stage engine — do not hand-roll the flow:
+  `Workflow({ scriptPath: "harness/engine/pipeline.js", args: { request: "<the request>" } })`
+- **Conventions are law:** read `.claude/conventions/**` before implementing; they feed
+  the engine's acceptance criteria and verification commands.
+- **Gate:** edits matching the patterns in `.claude/harness-gate.json` (currently the
+  harness engine/hooks `.mjs`/`.js`) are blocked by a PreToolUse hook unless the harness is
+  engaged this session (fail-open on errors). If blocked, run the harness instead of retrying.
+- Trivial edits (typos, single-line fixes, docs, skill markdown) do not need the engine.
+<!-- harness:end -->
+

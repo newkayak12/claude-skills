@@ -23,6 +23,12 @@ import { join } from 'node:path';
 
 const ENGAGE_RE =
   /harness\/engine\/pipeline\.js|"skill"\s*:\s*"harness"|<command-name>\/?harness<\/command-name>/;
+// Workflow-less fallback (engine/fallback.md): the orchestrator session emits this sentinel
+// in its own transcript. In that mode gated edits must come from an Implement SUBAGENT, not
+// the orchestrator — so a gated edit whose transcript carries the sentinel is denied even
+// though the harness is "engaged". Subagent transcripts don't carry it, so they still pass.
+// Workflow runs never emit it, so the pipeline.js path is unaffected.
+const FALLBACK_ORCH_RE = /\[HARNESS-FALLBACK-ORCHESTRATOR\]/;
 const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 const CLEAN_MS = 24 * 60 * 60 * 1000;
 
@@ -106,12 +112,14 @@ function main() {
 
   // Engagement = harness skill/engine appears anywhere in this transcript.
   let engaged = false;
+  let fallbackOrchestrator = false;
   let transcriptReadable = false;
   if (input.transcript_path) {
     try {
       const t = readFileSync(input.transcript_path, 'utf8');
       transcriptReadable = true;
       engaged = ENGAGE_RE.test(t);
+      fallbackOrchestrator = FALLBACK_ORCH_RE.test(t);
     } catch {
       /* fail-open below */
     }
@@ -125,6 +133,27 @@ function main() {
   const fp = (input.tool_input && (input.tool_input.file_path || input.tool_input.notebook_path)) || '';
   const norm = String(fp).replace(/\\/g, '/');
   if (!patterns.some((re) => re.test(norm))) process.exit(0);
+
+  // Fallback actor-boundary: in Workflow-less mode the orchestrator must delegate gated edits
+  // to an Implement subagent. This overrides `engaged` (the sentinel implies engagement) and
+  // closes the invoke-then-edit-directly bypass. Only the orchestrator's transcript carries
+  // the sentinel; dispatched subagents pass through the normal engaged/marker checks below.
+  if (fallbackOrchestrator) {
+    process.stdout.write(
+      JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason:
+            'Harness fallback (Workflow-less) mode is engaged in this session, and this path ' +
+            'is gated. The orchestrator must NOT edit gated files directly — dispatch the ' +
+            'Implement stage as a subagent (Agent/Task tool) and let it make the edit, per ' +
+            'engine/fallback.md §4. Retry the edit from inside that subagent.',
+        },
+      }),
+    );
+    process.exit(0);
+  }
 
   if (engaged) process.exit(0);
   if (!transcriptReadable) process.exit(0); // fail-open
