@@ -1,6 +1,6 @@
 # Skill Authoring Principles
 
-> Evaluation criteria for skill-validator and authoring guidance for writing-skills.
+> Evaluation criteria for skill-quality-assurance and authoring guidance for writing-skills.
 > Source: Claude Code official docs + eval measurement findings (2026-04-10).
 
 ---
@@ -194,7 +194,7 @@ Claude reads references/ only when needed. Inline content loads on every invocat
 
 ## Evaluation Checklist
 
-skill-validator uses these principles as evaluation criteria:
+skill-quality-assurance uses these principles as evaluation criteria:
 
 | # | Item | Criterion |
 |---|------|-----------|

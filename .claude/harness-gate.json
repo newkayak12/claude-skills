@@ -1,6 +1,6 @@
 {
   "patterns": [
-    "(?<!\\.claude/)harness/(engine|hooks)/.*\\.(m?js)$",
+    "(?<!\\.claude/)harness/(engine|hooks|templates)/.*\\.(m?js)$",
     "(?<!\\.claude/)harness/.*\\.md$"
   ],
   "window_hours": 2

@@ -1,7 +1,7 @@
 {
   "name": "skill",
   "description": "Skill management: create new skills, improve existing ones, validate skill quality, and audit trigger coverage.",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "author": {
     "name": "newkayak12"
   },

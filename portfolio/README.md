@@ -1,4 +1,4 @@
-# portfolio (v1.1.5)
+# portfolio (v1.1.8)
 
 Portfolio and career skills for job search and interview preparation.
 

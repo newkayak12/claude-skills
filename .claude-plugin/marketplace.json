@@ -79,7 +79,7 @@
     {
       "name": "skill",
       "description": "Skill management: quality-assure skills (6-dimension QA) and audit trigger coverage.",
-      "version": "1.1.4",
+      "version": "1.1.5",
       "author": {
         "name": "newkayak12"
       },
@@ -99,7 +99,7 @@
     {
       "name": "portfolio",
       "description": "Portfolio and career skills: JD analysis, portfolio rewriting, company research, feedback, pattern extraction, interview prep, resume tailoring, job-application-workflow, and ppt-keycolor-changer.",
-      "version": "1.1.7",
+      "version": "1.1.8",
       "author": {
         "name": "newkayak12"
       },
