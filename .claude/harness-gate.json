@@ -1,0 +1,6 @@
+{
+  "patterns": [
+    "harness/(engine|hooks)/.*\\.(m?js)$"
+  ],
+  "window_hours": 2
+}
