@@ -16,5 +16,5 @@ Agent orchestration skills for multi-agent workflows.
 
 | Skill | Description |
 |-------|-------------|
-| `dispatching-parallel-agents` | Dispatch 2+ independent tasks to parallel agents |
+| `dispatching-parallel-agents` | Fan out 2+ independent jobs in parallel, each mounted on its best-fit persona |
 | `subagent-driven-development` | Execute implementation plans using subagents with review checkpoints |

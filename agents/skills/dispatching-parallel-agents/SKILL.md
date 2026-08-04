@@ -1,194 +1,199 @@
 ---
 name: dispatching-parallel-agents
 description: >-
-  Use when facing 2+ independent tasks that can run concurrently without shared
-  state. Triggers on: "병렬로 처리해줘", "동시에 여러 작업", "parallel agents", "여러 에이전트 동시
-  실행", 독립적인 작업들 한번에", "multiple independent failures", "파일이 서로 겹치지 않아".
+  Use when facing 2+ independent jobs that can run concurrently — fan out in
+  parallel, each on its best-fit persona. Triggers: "병렬로 처리해줘", "동시에 여러 작업",
+  "parallel agents", "독립적인 작업들 한번에", "각자 전문가한테 맡겨줘", "multiple independent
+  failures".
 scenarios:
   - "세 개 테스트 파일이 각각 다른 이유로 실패해 — 병렬로 고쳐줘"
   - "두 서브시스템 각각 독립적으로 리팩토링해줘"
   - "Run code reviews on these three separate modules in parallel"
-  - "독립적인 버그 세 개를 동시에 처리해줘"
+  - "느린 쿼리랑 프론트 버그랑 flaky 테스트 — 각자 맞는 전문가한테 동시에"
   - "Generate these two reports simultaneously"
   - "각 팀의 독립적인 작업 동시에 진행해줘"
 compatibility:
   recommended:
     - sequential-thinking  # pre-dispatch independence check — confirms no shared files or causal links
   optional:
-    - think-tool           # verify true independence before dispatching
+    - think-tool           # reason about persona fit and true independence before dispatching
   remote_mcp_note: >-
-    think-tool이 있으면 병렬 실행 전 에이전트 간 파일 충돌이나 인과 관계가 없는지 확인할 수 있습니다.
-    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
+    think-tool이 있으면 병렬 실행 전 에이전트 간 파일 충돌·인과 관계가 없는지, 각 job에 어떤 persona가
+    맞는지 확인할 수 있습니다. Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Dispatching Parallel Agents
 
 ## Overview
 
-When you have multiple independent work streams — different failing test files, separate code reviews, independent reports to generate, isolated module refactors — working on them sequentially wastes time. Each task is independent and can happen in parallel.
+You have several independent jobs — different failing test files, a slow query,
+a frontend bug, separate code reviews. Doing them one at a time wastes wall-clock,
+and handing them all to one generalist wastes expertise. This skill is a **job
+allocator**: it fans the jobs out **in parallel** (the core capability) and mounts
+the **best-fit persona** on each one.
 
-**Core principle:** Dispatch one agent per independent problem domain. Let them work concurrently.
+**Core principle:** one isolated agent per independent job, running concurrently —
+and each agent wears the persona that job actually calls for.
+
+**Allocator, not pipeline.** The harness (`harness:harness`) runs *fixed vertical
+stages* over a single goal (Plan→Implement→Test→…). This skill is the opposite
+axis: *horizontal fan-out* of unrelated jobs, no stages, no ordering. You are not
+advancing one goal through phases — you are throwing N jobs at N specialists at
+once and collecting what comes back.
 
 ## When to Use
 
 ```
-Multiple tasks or failures?
+Multiple jobs or failures?
   No  → Single agent handles it
   Yes → Are they independent? (no shared files, no causal relationship)
-          No  → Single agent investigates all (related — fix one may fix others)
-          Yes → Can they work in parallel? (no shared state)
+          No  → Single agent investigates all (related — fixing one may fix others)
+          Yes → Can they run concurrently? (no shared state)
                   No  → Sequential agents
-                  Yes → Parallel dispatch
+                  Yes → Parallel dispatch, one persona-matched agent per job
 ```
 
 **Use when:**
 - 3+ test files failing with different root causes
-- Multiple subsystems broken independently
+- A batch of unrelated jobs each needing a *different* specialty (SQL vs frontend vs infra)
 - Parallel code reviews across separate modules
-- Generating multiple independent reports simultaneously
-- Running independent linters or audits on separate subsystems
-- Each problem can be understood without context from others
-- No shared state between investigations
+- Multiple independent reports or audits to produce at once
+- Each job can be understood without context from the others, no shared state
 
 **Don't use when:**
-- Failures are related (fix one might fix others)
-- Need to understand full system state
-- Agents would interfere with each other
+- Jobs are related (fixing one might fix others) — investigate together first
+- You need full system state to understand any of them
+- Agents would edit the same files or contend for the same resource
 
-## The Pattern
+## The Gate
 
-### 1. Identify Independent Domains
-
-Group failures by what's broken:
-- File A tests: Tool approval flow
-- File B tests: Batch completion behavior
-- File C tests: Abort functionality
-
-Each domain is independent - fixing tool approval doesn't affect abort tests.
-
-### 2. Create Focused Agent Tasks
-
-Each agent gets:
-- **Specific scope:** One test file or subsystem
-- **Clear goal:** Make these tests pass
-- **Constraints:** Don't change other code
-- **Expected output:** Summary of what you found and fixed
-
-### 2.5. Verify Independence (think-tool)
-
-Before dispatching, use think-tool to confirm true independence. Check:
-1. No two agents will edit the same files
-2. Failures have no causal relationship (fixing one won't fix others)
-3. Each domain can be fully understood without context from the others
-
-Only proceed to parallel dispatch after this check passes. A bad parallelism decision — dispatching agents that turn out to be coupled — wastes more time than sequential investigation would have.
-
-### 3. Dispatch in Parallel
-
-```typescript
-// In Claude Code / AI environment
-Task("Fix agent-tool-abort.test.ts failures")
-Task("Fix batch-completion-behavior.test.ts failures")
-Task("Fix tool-approval-race-conditions.test.ts failures")
-// All three run concurrently
+```
+0. INDEPENDENCE  Confirm the jobs are truly independent BEFORE fanning out.
+                 → No two agents will touch the same files.
+                 → No causal link (fixing one won't fix/break another).
+                 → Each job is fully understandable without the others' context.
+                 A wrong parallelism call costs more than sequential would have.
+                 (Use sequential-thinking / think-tool for this check.)
+1. ALLOCATE      Match each job to its best-fit persona by what the job IS,
+                 not by a fixed registry. See the matching method below.
+                 No clear fit → general-purpose.
+2. DISPATCH      One isolated subagent per job, in parallel. Mount the persona,
+                 give a focused self-contained brief, no shared context between
+                 agents. This is the parallel-agent core — it always stays.
+3. GATHER        Collect summaries. Verify fixes don't conflict, run the whole
+                 thing, and settle "done" through verification-before-completion.
 ```
 
-### 4. Review and Integrate
+## 1. ALLOCATE — match each job to a persona
 
-When agents return:
-- Read each summary
-- Verify fixes don't conflict
-- Run full test suite
-- Integrate all changes
+Read the job, extract its dominant signal (language, layer, failure type, artifact),
+and pick the persona whose specialty covers it. Match *dynamically* on the signal —
+the table below is illustration, not a closed list. Whatever specialist agents your
+environment exposes, route to the closest one; when nothing fits, use
+`general-purpose`.
 
-## Agent Prompt Structure
+| Job signal | Persona to mount |
+|------------|------------------|
+| Kotlin / JVM code change | kotlin-specialist |
+| Slow query, index, N+1, connection pool | sql-pro / database-optimizer |
+| Frontend UI / component / styling bug | frontend-developer |
+| Flaky / intermittently failing test | flaky-test-analyzer |
+| Code quality / readability review | clean-code reviewer |
+| Infra / deploy / SRE incident | sre / operations specialist |
+| No clean specialty match | general-purpose |
 
-Good agent prompts are:
-1. **Focused** - One clear problem domain
-2. **Self-contained** - All context needed to understand the problem
-3. **Specific about output** - What should the agent return?
+The value is the **method**: signal → specialist. A generalist can do any one job,
+but the persona-matched agent brings the right defaults, vocabulary, and failure
+instincts, so its output needs less correction on gather.
+
+## 2. DISPATCH — parallel, isolated, persona-mounted
+
+Fan out concurrently. Each brief is:
+
+1. **Persona** — who the agent is ("You are a database-optimizer…")
+2. **Focused scope** — one job, one boundary ("only src/agents/agent-tool-abort.test.ts")
+3. **Self-contained context** — the errors, test names, constraints it needs
+4. **Constraints** — what it must NOT touch ("do not change production code")
+5. **Expected output** — the summary/verdict shape you want back
+
+```
+# All run at once — one persona-matched agent per independent job
+Task(persona=flaky-test-analyzer,  "Fix agent-tool-abort.test.ts — 3 timing failures …")
+Task(persona=database-optimizer,   "Cut p99 on GET /orders — slow query, see EXPLAIN …")
+Task(persona=frontend-developer,   "Fix cart badge not updating after remove …")
+```
+
+Each agent runs in its **own context** — it never sees your reasoning or the other
+agents' work. That isolation is deliberate: it keeps jobs from cross-contaminating
+and keeps each verdict independent (same isolation principle as
+`completion:verification-before-completion`).
+
+Example brief:
 
 ```markdown
-Fix the 3 failing tests in src/agents/agent-tool-abort.test.ts:
+You are a flaky-test-analyzer. Fix the 3 failing tests in
+src/agents/agent-tool-abort.test.ts:
 
-1. "should abort tool with partial output capture" - expects 'interrupted at' in message
-2. "should handle mixed completed and aborted tools" - fast tool aborted instead of completed
-3. "should properly track pendingToolCount" - expects 3 results but gets 0
+1. "should abort tool with partial output capture" — expects 'interrupted at' in message
+2. "should handle mixed completed and aborted tools" — fast tool aborted instead of completed
+3. "should properly track pendingToolCount" — expects 3 results but gets 0
 
-These are timing/race condition issues. Your task:
+These look like timing/race issues. Your task:
+1. Read the test file; understand what each test verifies.
+2. Find the root cause — timing vs a real bug.
+3. Fix by replacing arbitrary timeouts with event-based waiting; fix the abort
+   implementation if it's a real bug; adjust expectations only if behavior changed.
 
-1. Read the test file and understand what each test verifies
-2. Identify root cause - timing issues or actual bugs?
-3. Fix by:
-   - Replacing arbitrary timeouts with event-based waiting
-   - Fixing bugs in abort implementation if found
-   - Adjusting test expectations if testing changed behavior
-
-Do NOT just increase timeouts - find the real issue.
-
-Return: Summary of what you found and what you fixed.
+Do NOT just increase timeouts, and do NOT touch other test files.
+Return: root cause + exactly what you changed.
 ```
+
+## 3. GATHER — integrate and settle "done"
+
+When agents return:
+1. **Read each summary** — understand what each persona changed.
+2. **Check for conflicts** — did any two agents touch the same code despite step 0?
+3. **Run the whole thing** — the full suite / build, not just the touched parts.
+4. **Settle the claim** — route "it passes now" through
+   `completion:verification-before-completion` (isolated fresh evidence), not the
+   agents' own success messages.
 
 ## Common Mistakes
 
-**❌ Too broad:** "Fix all the tests" - agent gets lost
-**✅ Specific:** "Fix agent-tool-abort.test.ts" - focused scope
+| ❌ | ✅ |
+|----|----|
+| "Fix all the tests" — agent gets lost | "Fix agent-tool-abort.test.ts" — focused scope |
+| One generalist for every job | Persona per job — right defaults, less rework |
+| Skipping the independence check | Confirm no shared files / causal link first |
+| Pasting your own reasoning into each brief | Clean self-contained brief — keep contexts isolated |
+| Trusting an agent's "done" message | Gather + verify the whole through fresh evidence |
+| Fixed persona registry that rots | Match on the job's signal dynamically |
 
-**❌ No context:** "Fix the race condition" - agent doesn't know where
-**✅ Context:** Paste the error messages and test names
+## Red flags — stop
 
-**❌ No constraints:** Agent might refactor everything
-**✅ Constraints:** "Do NOT change production code" or "Fix tests only"
+- About to fan out without confirming the jobs are independent.
+- Handing a SQL job and a frontend job to the same generalist "to save agents".
+- Leaking one job's context into another agent's brief.
+- Declaring the batch done off the agents' summaries instead of a full re-run.
 
-**❌ Vague output:** "Fix it" - you don't know what changed
-**✅ Specific:** "Return summary of root cause and changes"
+## What Claude does / What you do
 
-## When NOT to Use
+- **Claude:** verifies independence, allocates each job to its best-fit persona,
+  dispatches isolated agents in parallel, then gathers and verifies the whole.
+- **You:** confirm the jobs really are independent if it's ambiguous, and name any
+  specialist personas your environment exposes that Claude should prefer.
 
-**Related failures:** Fixing one might fix others - investigate together first
-**Need full context:** Understanding requires seeing entire system
-**Exploratory debugging:** You don't know what's broken yet
-**Shared state:** Agents would interfere (editing same files, using same resources)
+## Related
 
-## Real Example from Session
+- `agents:task-decomposition` — split one big job into the independent pieces this
+  skill then fans out.
+- `completion:verification-before-completion` — the gather-step gate: settle "done"
+  with isolated fresh evidence, not agent self-reports.
+- `harness:harness` — the other axis: fixed vertical stages over one goal, where
+  this skill is horizontal fan-out of many jobs.
 
-**Scenario:** 6 test failures across 3 files after major refactoring
+## Bottom line
 
-**Failures:**
-- agent-tool-abort.test.ts: 3 failures (timing issues)
-- batch-completion-behavior.test.ts: 2 failures (tools not executing)
-- tool-approval-race-conditions.test.ts: 1 failure (execution count = 0)
-
-**Decision:** Independent domains - abort logic separate from batch completion separate from race conditions
-
-**Dispatch:**
-```
-Agent 1 → Fix agent-tool-abort.test.ts
-Agent 2 → Fix batch-completion-behavior.test.ts
-Agent 3 → Fix tool-approval-race-conditions.test.ts
-```
-
-**Results:**
-- Agent 1: Replaced timeouts with event-based waiting
-- Agent 2: Fixed event structure bug (threadId in wrong place)
-- Agent 3: Added wait for async tool execution to complete
-
-**Integration:** All fixes independent, no conflicts, full suite green
-
-**Time saved:** 3 problems solved in parallel vs sequentially
-
-## Key Benefits
-
-1. **Parallelization** - Multiple investigations happen simultaneously
-2. **Focus** - Each agent has narrow scope, less context to track
-3. **Independence** - Agents don't interfere with each other
-4. **Speed** - 3 problems solved in time of 1
-
-## Verification
-
-After agents return:
-1. **Review each summary** - Understand what changed
-2. **Check for conflicts** - Did agents edit same code?
-3. **Run full suite** - Verify all fixes work together
-4. **Spot check** - Agents can make systematic errors
-
+Independent jobs, fanned out in parallel, each on the persona it calls for, then
+gathered and verified as a whole. Parallelism is the engine; persona-matching is
+the multiplier.

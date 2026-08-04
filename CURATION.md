@@ -17,25 +17,24 @@
 
 ---
 
-## 🔲 B. superpowers 중복 클러스터 — **유저 결정 대기**
+## 🔄 B. superpowers 중복 클러스터 — **개량하여 우리 것으로 (진행 중)**
 
-이 세션에 `superpowers` 플러그인이 설치돼 있고, repo가 같은 이름으로 재구현한 게 8개.
-설치자가 superpowers를 함께 쓰면 이름 충돌 + 트리거 경합. repo판 차별점은 한국어 트리거/시나리오뿐.
+repo가 superpowers와 같은 이름으로 둔 8개. **결정: KILL 아님 — 각 스킬을 개량해 독자
+스킬로 재작성**(이름·슬롯 유지, 내용만 우리 관점으로). 부수 효과로 MIT "substantial
+portions" 귀속 의무가 소멸(프로즈 중복 <30% 목표). 스킬은 하나도 사라지지 않음.
 
-| repo 스킬 | superpowers 빌트인 |
-|---|---|
-| `think:brainstorming` | `superpowers:brainstorming` |
-| `agents:dispatching-parallel-agents` | `superpowers:dispatching-parallel-agents` |
-| `agents:subagent-driven-development` | `superpowers:subagent-driven-development` |
-| `planning:executing-plans` | `superpowers:executing-plans` |
-| `develop:test-driven-development` | `superpowers:test-driven-development` |
-| `completion:verification-before-completion` | `superpowers:verification-before-completion` |
-| `write:writing-plans` | `superpowers:writing-plans` |
-| `write:writing-skills` | `superpowers:writing-skills` |
+per-skill 흐름: brainstorm 방향 → 유저 확정 → 재작성 → overlap 측정 → 버전/README/마켓 갱신.
 
-**결정지점**: superpowers 표준화 → 8개 KILL (agents·planning·completion 플러그인 사실상 소멸)
-**반대 논거**: superpowers 없이 이 마켓플레이스만 설치하는 사용자 대상이면 유지.
-→ **유저가 "superpowers 전제 여부"를 정해야 진행 가능.**
+| # | repo 스킬 | 초기 overlap | 상태 |
+|---|---|---|---|
+| 1 | `completion:verification-before-completion` | 81% | ✅ 재작성 (verify-level + isolated subagent, prose 4%) |
+| 2 | `agents:dispatching-parallel-agents` | 75% | ✅ 재작성 (persona allocator, parallel 코어 유지, prose 4%) |
+| 3 | `planning:executing-plans` | 64% | 🔲 대기 |
+| 4 | `develop:test-driven-development` | 62% | 🔲 대기 |
+| 5 | `write:writing-skills` | 61% | 🔲 대기 |
+| 6 | `write:writing-plans` | 52% | 🔲 대기 |
+| 7 | `agents:subagent-driven-development` | 22% | 🔲 잔여 정리만 |
+| 8 | `think:brainstorming` | 5% | 🔲 잔여 정리만 |
 
 ---
 
