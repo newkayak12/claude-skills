@@ -15,7 +15,7 @@
 //                                         //   settings.json) even when true.
 //     "gate": { "patterns": ["src/.*\\.kt$"], "window_hours": 2 },  // omit → skip gate write
 //     "embed": {                          // omit → skip standalone embedding
-//       "runtime": true,                  // copy engine (pipeline.js + fallback.md) + meta-skeleton + goal-spec
+//       "runtime": true,                  // copy engine (pipeline.js) + meta-skeleton + goal-spec
 //       "skills": [                        // the engine's statically-mounted skills:
 //         { "name": "agent-task-decomposer", "src": "/abs/agents/skills/agent-task-decomposer" },
 //         { "name": "devils-advocate", "src": "/abs/think/skills/devils-advocate" },
@@ -168,12 +168,6 @@ function main() {
       embed.runtime['engine/pipeline.js'] = copyFile(
         join(PLUGIN_ROOT, 'engine', 'pipeline.js'),
         join(embedRoot, 'engine', 'pipeline.js'),
-        refresh,
-      );
-      // fallback.md matters most in embedded (plugin-less = often Workflow-less) environments.
-      embed.runtime['engine/fallback.md'] = copyFile(
-        join(PLUGIN_ROOT, 'engine', 'fallback.md'),
-        join(embedRoot, 'engine', 'fallback.md'),
         refresh,
       );
       embed.runtime['templates/meta-skeleton.js'] = copyFile(

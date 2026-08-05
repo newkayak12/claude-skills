@@ -33,12 +33,9 @@ reporting to Sonnet.
    The engine itself plans, authors + critiques the goal-spec, executes subgoals with
    repo-skill-equipped executors, verifies each deterministically, gates each and the
    assembled whole, and writes the report.
-   - **If the Workflow tool is unavailable** (plain Agent SDK, some harnesses, CI): do NOT
-     skip the engine — follow [`engine/fallback.md`](../../engine/fallback.md) instead. It
-     runs the identical six stages via the Agent tool as a **strictly-ordered subgoal
-     checklist**, emitting the `[HARNESS-FALLBACK-ORCHESTRATOR]` sentinel first so gated
-     edits are forced through Implement subagents. When Workflow IS available, ignore
-     fallback.md entirely — the pipeline.js path above is unchanged.
+   - **Requires the Workflow tool** (`agent()`/`parallel()`/`pipeline()`). In environments
+     without it (plain Agent SDK, some harnesses, CI), the engine cannot run — there is no
+     Agent-tool fallback.
 2. **M (meta):** when the fixed six stages can't express the control flow the request
    needs — tournament/judge-panel, staged escalation, loop-until-dry discovery,
    per-finding refuters — or the user explicitly asks ("메타스크립트로", "커스텀
@@ -66,8 +63,7 @@ reporting to Sonnet.
 
 ## Related
 - `harness/goal-spec.md` — spec schema (authored by the SetGoal stage) + authoring rules
-- `harness/engine/pipeline.js` — the fixed six-stage engine (Workflow path)
-- `harness/engine/fallback.md` — Workflow-less fallback: same six stages via the Agent tool, strictly-ordered checklist, actor-boundary enforced
+- `harness/engine/pipeline.js` — the fixed six-stage engine (requires the Workflow tool)
 - `harness/templates/meta-skeleton.js` — Mode M starting point (contract + `[META]` block)
 - `harness/templates/` — bespoke-pipeline reference
 - `harness/hooks/` — opt-in PreToolUse gate: projects list gated paths in `.claude/harness-gate.json`; editing them without engaging the harness is denied (fail-open on any ambiguity).
