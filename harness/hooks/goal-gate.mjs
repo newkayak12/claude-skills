@@ -23,48 +23,6 @@ import { join } from 'node:path';
 
 const ENGAGE_RE =
   /harness\/engine\/pipeline\.js|"skill"\s*:\s*"harness"|<command-name>\/?harness<\/command-name>/;
-// Workflow-less fallback (engine/fallback.md §0): the orchestrator emits this sentinel as
-// its OWN standalone line in its first ASSISTANT response. In that mode gated edits must come
-// from an Implement SUBAGENT, not the orchestrator — so an orchestrator's direct gated edit
-// is denied even though the harness is "engaged". Subagents don't emit it, so they still pass.
-// Workflow runs never emit it, so the pipeline.js path is unaffected.
-//
-// CRITICAL: match the GENUINE emission only. The literal string also appears as inert prose in
-// docs/marketplace.json/plugin.json and in compaction summaries — read into a transcript as
-// tool results (user role) or quoted inline by the assistant. A raw-blob substring test trips
-// on all of those, falsely flagging any Workflow-capable session that merely read the harness
-// docs as a fallback orchestrator and blocking its edits. So require BOTH: (assistant-authored
-// text block) AND (sentinel alone on its line). See assistantEmittedFallback().
-const FALLBACK_ORCH_RE = /^[ \t\r]*\[HARNESS-FALLBACK-ORCHESTRATOR\][ \t\r]*$/m;
-
-// True only when a real fallback sentinel line appears in an assistant text block. Parses the
-// transcript JSONL per line; anything unparseable is skipped (fail-open — a genuine orchestrator
-// with an unreadable transcript falls through to the engaged/marker checks, never a hard brick).
-function assistantEmittedFallback(raw) {
-  for (const line of raw.split('\n')) {
-    if (!line.trim()) continue;
-    let obj;
-    try {
-      obj = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    const msg = obj && obj.message;
-    const role = (msg && msg.role) || (obj && obj.role) || (obj && obj.type);
-    if (role !== 'assistant') continue;
-    const content = msg && msg.content;
-    if (typeof content === 'string') {
-      if (FALLBACK_ORCH_RE.test(content)) return true;
-    } else if (Array.isArray(content)) {
-      for (const b of content) {
-        if (b && b.type === 'text' && typeof b.text === 'string' && FALLBACK_ORCH_RE.test(b.text)) {
-          return true;
-        }
-      }
-    }
-  }
-  return false;
-}
 const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 const CLEAN_MS = 24 * 60 * 60 * 1000;
 
@@ -148,14 +106,12 @@ function main() {
 
   // Engagement = harness skill/engine appears anywhere in this transcript.
   let engaged = false;
-  let fallbackOrchestrator = false;
   let transcriptReadable = false;
   if (input.transcript_path) {
     try {
       const t = readFileSync(input.transcript_path, 'utf8');
       transcriptReadable = true;
       engaged = ENGAGE_RE.test(t);
-      fallbackOrchestrator = assistantEmittedFallback(t);
     } catch {
       /* fail-open below */
     }
@@ -169,27 +125,6 @@ function main() {
   const fp = (input.tool_input && (input.tool_input.file_path || input.tool_input.notebook_path)) || '';
   const norm = String(fp).replace(/\\/g, '/');
   if (!patterns.some((re) => re.test(norm))) process.exit(0);
-
-  // Fallback actor-boundary: in Workflow-less mode the orchestrator must delegate gated edits
-  // to an Implement subagent. This overrides `engaged` (the sentinel implies engagement) and
-  // closes the invoke-then-edit-directly bypass. Only the orchestrator's transcript carries
-  // the sentinel; dispatched subagents pass through the normal engaged/marker checks below.
-  if (fallbackOrchestrator) {
-    process.stdout.write(
-      JSON.stringify({
-        hookSpecificOutput: {
-          hookEventName: 'PreToolUse',
-          permissionDecision: 'deny',
-          permissionDecisionReason:
-            'Harness fallback (Workflow-less) mode is engaged in this session, and this path ' +
-            'is gated. The orchestrator must NOT edit gated files directly — dispatch the ' +
-            'Implement stage as a subagent (Agent/Task tool) and let it make the edit, per ' +
-            'engine/fallback.md §4. Retry the edit from inside that subagent.',
-        },
-      }),
-    );
-    process.exit(0);
-  }
 
   if (engaged) process.exit(0);
   if (!transcriptReadable) process.exit(0); // fail-open
