@@ -47,11 +47,18 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
 The project owns the copies afterward; the plugin never manages them again.
 
 ## Status
-- v1.10.0 — **removed** the Workflow-less fallback path (`engine/fallback.md`) and the
-  fallback-orchestrator branch in `goal-gate.mjs`. The sentinel false-positived on quoted
-  occurrences (harness docs, compaction summaries) and the mechanism proved net-negative;
-  the gate reverts to engaged/marker checks only. `pipeline.js` (Workflow path) unchanged.
-- v1.9.0 — (superseded by v1.10.0) added a Workflow-less fallback engine via the Agent tool.
+- v1.11.0 — **re-introduced** the Workflow-less fallback ([`engine/fallback.md`](engine/fallback.md)),
+  redesigned to fix what sank v1.9.0. No transcript sentinel and no edit-gate coupling (those
+  false-positived on quoted occurrences). Instead: the six stages run as **fresh per-stage Agent
+  subagents** that exchange work through files in a **run directory**, so the orchestrator stays a
+  thin dispatcher and a long run can't pollute its context; completion is an **objective, resumable
+  check** ([`engine/fallback-check.mjs`](engine/fallback-check.mjs)) that names any missing or
+  degenerate stage artifact. Selected only when the Workflow tool is absent; `pipeline.js` (Workflow
+  path) unchanged. Honest ceiling: still fail-open — the check makes a skipped stage detectable,
+  not impossible.
+- v1.10.0 — removed the original Workflow-less fallback: its sentinel was a plain documented string
+  that leaked into transcripts and false-positived Workflow-capable sessions.
+- v1.9.0 — (superseded) first Workflow-less fallback attempt via the Agent tool + a sentinel gate.
 - v1.8.0 — `install.mjs` gains a `refresh: true` mode: after a plugin version bump it
   re-copies only the plugin-owned files (`goal-gate.mjs`, embedded `.claude/harness/**`),
   reporting `refreshed`/`unchanged`, and never touches user-owned files (gate, conventions,

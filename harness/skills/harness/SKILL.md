@@ -33,9 +33,12 @@ reporting to Sonnet.
    The engine itself plans, authors + critiques the goal-spec, executes subgoals with
    repo-skill-equipped executors, verifies each deterministically, gates each and the
    assembled whole, and writes the report.
-   - **Requires the Workflow tool** (`agent()`/`parallel()`/`pipeline()`). In environments
-     without it (plain Agent SDK, some harnesses, CI), the engine cannot run — there is no
-     Agent-tool fallback.
+   - **If the Workflow tool is unavailable** (plain Agent SDK, some harnesses, CI): do NOT
+     skip the engine — follow [`engine/fallback.md`](../../engine/fallback.md) instead. It
+     reproduces the identical six stages by dispatching a **fresh subagent per stage** that
+     exchange work through files in a run directory (not your context), and closes with
+     `engine/fallback-check.mjs` as the objective done-signal. When Workflow IS available,
+     ignore fallback.md — the pipeline.js path above is unchanged.
 2. **M (meta):** when the fixed six stages can't express the control flow the request
    needs — tournament/judge-panel, staged escalation, loop-until-dry discovery,
    per-finding refuters — or the user explicitly asks ("메타스크립트로", "커스텀
@@ -63,7 +66,9 @@ reporting to Sonnet.
 
 ## Related
 - `harness/goal-spec.md` — spec schema (authored by the SetGoal stage) + authoring rules
-- `harness/engine/pipeline.js` — the fixed six-stage engine (requires the Workflow tool)
+- `harness/engine/pipeline.js` — the fixed six-stage engine (Workflow path)
+- `harness/engine/fallback.md` — Workflow-less fallback: same six stages via fresh per-stage subagents sharing state through a run directory
+- `harness/engine/fallback-check.mjs` — deterministic completion check for a fallback run (the objective done-signal)
 - `harness/templates/meta-skeleton.js` — Mode M starting point (contract + `[META]` block)
 - `harness/templates/` — bespoke-pipeline reference
 - `harness/hooks/` — opt-in PreToolUse gate: projects list gated paths in `.claude/harness-gate.json`; editing them without engaging the harness is denied (fail-open on any ambiguity).
