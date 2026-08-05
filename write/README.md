@@ -19,4 +19,4 @@ Writing skills for documentation, plans, and content review.
 | `doc-coauthoring` | Structured workflow for co-authoring documentation and specs |
 | `writer-verification` | Proofread and verify written text across four passes |
 | `writing-plans` | Write implementation plans before touching code |
-| `writing-skills` | Author and edit skill documentation and SKILL.md content |
+| `writing-skills` | Author convention-compliant SKILL.md files; delegates trigger and pre-ship QA to `skill:skill-trigger-validator` / `skill:skill-quality-assurance` |

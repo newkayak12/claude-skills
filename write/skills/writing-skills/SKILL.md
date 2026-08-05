@@ -1,9 +1,10 @@
 ---
 name: writing-skills
 description: >-
-  Use when creating new skills, editing existing skills, or writing SKILL.md
-  content. Triggers on: "스킬 만들어줘", "새 skill 작성", "SKILL.md 써줘", "skill 개선해줘",
-  create a skill", "skill documentation", "스킬 문서 작성", "workflow skill로 만들어줘".
+  Use when creating a new skill, editing an existing SKILL.md, or fixing one
+  that misfires. Triggers: "스킬 만들어줘", "새 skill 작성", "SKILL.md 써줘",
+  "skill 개선해줘", "create a skill", "skill documentation", "스킬 문서 작성",
+  "workflow skill로 만들어줘".
 scenarios:
   - "이 워크플로우를 skill로 만들어줘"
   - "새 skill SKILL.md 작성해줘"
@@ -13,165 +14,134 @@ scenarios:
   - "Skill 설명이 너무 약한 것 같아, 개선해줘"
 compatibility:
   optional:
-    - think-tool           # reasoning before finalizing description field to avoid workflow summaries
+    - think-tool           # framing the RED-phase pressure scenario before drafting
   remote_mcp_note: >-
-    think-tool이 있으면 description 필드에 workflow 요약이 포함되지 않았는지 확인하는 데 활용됩니다.
-    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
+    think-tool이 있으면 RED 단계 압박 시나리오를 설계하고 어떤 실패를 겨냥하는지 미리
+    정리하는 데 활용됩니다. Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를
+    추가하세요.
 ---
 
-# Writing Skills
+# writing-skills
 
-## Overview
+This skill produces convention-compliant `SKILL.md` files. It does not grade
+its own output — that job belongs to two gates it hands off to by name. Read
+this file when you're about to draft, edit, or repair a skill; read the gates'
+own SKILL.md files when it's time to actually run them.
 
-**Writing skills IS Test-Driven Development applied to process documentation.**
+## The Docs Cycle, Borrowed From TDD
 
-**Personal skills live in agent-specific directories (`~/.claude/skills` for Claude Code, `~/.agents/skills/` for Codex)**
+`develop:test-driven-development` treats a passing test as worthless until
+someone watched it fail for the predicted reason first. This skill borrows
+that shape for prose instead of code:
 
-You write test cases (pressure scenarios with subagents), watch them fail (baseline behavior), write the skill (documentation), watch tests pass (agents comply), and refactor (close loopholes).
+| Code TDD | Docs equivalent here |
+|---|---|
+| Failing test, written before the fix | A scenario where an agent misbehaves *without* the skill present — the gap the skill must close |
+| Watching it fail for the right reason | Confirming the miss is a real gap, not a fluke of that one prompt |
+| Minimal code to go green | The smallest SKILL.md draft that plausibly closes the gap |
+| Refactor once green | Trimming and reordering the draft without reopening the gap |
 
-**Core principle:** If you didn't watch an agent fail without the skill, you don't know if the skill teaches the right thing.
+The mechanics of running that pressure scenario — how to construct one, how
+many pressures to stack, how to read the transcript — are not re-taught here;
+see `testing-skills-with-subagents.md` for the method and
+`examples/CLAUDE_MD_TESTING.md` for worked scenario scripts. What this skill
+owns is turning a confirmed gap into a draft; what happens to that draft next
+is covered below.
 
-**REQUIRED BACKGROUND:** You MUST understand superpowers:test-driven-development before using this skill. That skill defines the fundamental RED-GREEN-REFACTOR cycle. This skill adapts TDD to documentation.
+## Dual-Mode Authoring
 
-**Official guidance:** For Anthropic's official skill authoring best practices, see anthropic-best-practices.md.
+The same four moves run whether you're drafting alone or a `harness:harness`
+run is driving.
 
-## What is a Skill?
+| Move | Solo | Harness-engaged |
+|---|---|---|
+| Scope the gap | You name the miss from memory or a quick manual probe | SetGoal's acceptance criteria already state the gap as a subgoal |
+| Draft | You write the SKILL.md directly | An Implement executor writes it against the subgoal's acceptance bar |
+| Trigger check | You invoke `skill:skill-trigger-validator` yourself before calling it done | The QualityGate stage invokes it as part of scoring the subgoal |
+| Ship gate | You invoke `skill:skill-quality-assurance` yourself and act on its report | QualityGate invokes it; a failing report blocks the subgoal, not just a suggestion |
 
-A **skill** is a reference guide for proven techniques, patterns, or tools. Skills help future Claude instances find and apply effective approaches.
+Unsure which lane you're in: if a harness pipeline handed you this task, act
+in harness-engaged mode and let its stage boundaries decide when a gate runs.
+Otherwise default to solo and run both gates yourself before calling the work
+done.
 
-**Skills are:** Reusable techniques, patterns, tools, reference guides
+## Process
 
-**Skills are NOT:** Narratives about how you solved a problem once
+1. **Confirm the gap is real.** State the situation where the current skill
+   (or the absence of one) produces the wrong outcome. No gap, no draft —
+   go find one before writing anything.
+2. **Place the file.** `<plugin>/skills/<kebab-name>/SKILL.md`, one skill per
+   directory, per `.claude/conventions/coding.md`.
+3. **Draft frontmatter.** `name` and a `description` that opens with "Use
+   when" and states triggering conditions only — never a summary of what the
+   skill does internally, that's the shortcut agents take instead of reading
+   the body. Add `scenarios` (2–3 EN, 2–3 KR) and a `compatibility` block if
+   an MCP tool genuinely changes the outcome.
+4. **Draft the body** in this relative order: `Process`, `Output Template`,
+   `What Claude Does / What You Do`, `Related Skills` — other sections may
+   sit between them, but these four stay in that sequence and nothing titled
+   Overview or Background sits ahead of `Process`.
+5. **Run the RED-phase check** from the cycle above — by hand in solo mode,
+   or read off the subgoal's acceptance criteria in harness mode.
+6. **Hand off, don't re-score.** Call `skill:skill-trigger-validator` for
+   description and trigger coverage, then `skill:skill-quality-assurance`
+   for the full pre-ship pass. Fix what they flag; don't re-derive their
+   checks inline in the draft.
+7. **Close what the gates flagged**, re-run the gate that flagged it, repeat
+   until both pass clean.
+8. **Ship housekeeping.** Per `.claude/conventions/boundaries.md`: bump the
+   plugin's version in `.claude-plugin/marketplace.json`, update that
+   plugin's `README.md`, and re-run `scripts/validate_plugins.py`.
 
-## TDD Mapping for Skills
+## Output Template
 
-| TDD Concept | Skill Creation |
-|-------------|----------------|
-| **Test case** | Pressure scenario with subagent |
-| **Production code** | Skill document (SKILL.md) |
-| **Test fails (RED)** | Agent violates rule without skill (baseline) |
-| **Test passes (GREEN)** | Agent complies with skill present |
-| **Refactor** | Close loopholes while maintaining compliance |
-| **Write test first** | Run baseline scenario BEFORE writing skill |
-| **Watch it fail** | Document exact rationalizations agent uses |
-| **Minimal code** | Write skill addressing those specific violations |
-| **Watch it pass** | Verify agent now complies |
-| **Refactor cycle** | Find new rationalizations → plug → re-verify |
+A finished unit of work from this skill is:
 
-The entire skill creation process follows RED-GREEN-REFACTOR.
+1. The `SKILL.md` file (plus any supporting files it actually points to).
+2. A one-line statement of the gap it closes (from step 1).
+3. The `skill-trigger-validator` verdict and, if it rewrote the description,
+   which wording won.
+4. The `skill-quality-assurance` report's Top Improvements section, with
+   each 🔴 item resolved before calling the skill shipped.
+5. The version-bump / README-update diff from step 8.
 
-## When to Create a Skill
+## Reference Files
 
-**Create when:**
-- Technique wasn't intuitively obvious to you
-- You'd reference this again across projects
-- Pattern applies broadly (not project-specific)
-- Others would benefit
+- `anthropic-best-practices.md` — Anthropic's own authoring guidance; read
+  this before inventing structure from scratch.
+- `references/authoring-reference.md` — the SKILL.md structure template,
+  flowchart rules, code-example rules, and file-organization patterns.
+- `references/checklist.md` — a step-by-step drafting checklist matching
+  the Process above, useful as a TodoWrite seed.
+- `testing-skills-with-subagents.md` — how to build the RED-phase pressure
+  scenario the Docs Cycle above assumes you already know how to run.
+- `examples/CLAUDE_MD_TESTING.md` — worked pressure-scenario scripts to
+  adapt rather than write from a blank page.
+- `persuasion-principles.md` — why imperative phrasing and named loopholes
+  outperform soft guidance in discipline-style skills; consult it when a
+  draft keeps getting negotiated with in testing.
+- `graphviz-conventions.dot` and `render-graphs.js` — style rules and a
+  render script for the rare skill where a small inline flowchart earns its
+  place; most skills need neither.
 
-**Don't create for:**
-- One-off solutions
-- Standard practices well-documented elsewhere
-- Project-specific conventions (put in CLAUDE.md)
-- Mechanical constraints (if enforceable with regex/validation, automate it)
+## What Claude Does / What You Do
 
-## Skill Types
+| Claude | You |
+|--------|-----|
+| Confirms the gap and drafts frontmatter + body against the Process order | Confirm the stated gap is the real one, not a proxy for it |
+| Calls `skill:skill-trigger-validator` and `skill:skill-quality-assurance` rather than self-scoring | Read both reports; call the go/no-go on anything not clearly 🔴 |
+| Applies fixes the gates flag and re-runs the gate that flagged them | Approve the final draft before it ships |
+| Performs the version/README housekeeping the boundaries convention requires | Confirm the version bump matches what actually changed |
 
-**Technique** — Concrete method with steps (condition-based-waiting, root-cause-tracing)
-**Pattern** — Way of thinking about problems (flatten-with-flags, test-invariants)
-**Reference** — API docs, syntax guides, tool documentation (office docs)
+## Related Skills
 
-## Directory Structure
-
-```
-skills/skill-name/
-    SKILL.md              # Main reference (required)
-    supporting-file.*     # Only if needed
-```
-
-Separate files for heavy reference (100+ lines) or reusable tools. Keep everything else inline.
-
-For SKILL.md structure template, flowchart guidance, code example rules, file organization patterns, and anti-patterns, see `references/authoring-reference.md`.
-
-## SKILL.md Structure
-
-**Frontmatter (YAML):** Only `name` and `description` fields. Max 1024 characters total.
-- `name`: letters, numbers, hyphens only
-- `description`: starts with "Use when...", triggering conditions only, never workflow summary, under 500 chars
-
-## Claude Search Optimization (CSO)
-
-**Critical for discovery:** Future Claude needs to FIND your skill.
-
-**Description = When to Use, NOT What the Skill Does.** Do NOT summarize the skill's process or workflow. Testing showed that workflow-summary descriptions cause Claude to follow the description instead of reading the skill body — creating a shortcut that makes the skill body irrelevant.
-
-```yaml
-# ❌ BAD: Summarizes workflow
-description: Use when executing plans - dispatches subagent per task with code review between tasks
-
-# ✅ GOOD: Just triggering conditions
-description: Use when executing implementation plans with independent tasks in the current session
-```
-
-If think-tool is available, invoke it before finalizing the description field to verify no workflow steps are present.
-
-**Keyword coverage:** Use error messages, symptoms, synonyms, and tool names Claude would search for.
-
-**Naming:** Active voice, verb-first — `condition-based-waiting` not `async-test-helpers`.
-
-**Token efficiency:** Target <500 words. Move flag docs to --help references. Use cross-references instead of repeating workflow details. One minimal example, not several verbose ones.
-
-**Cross-referencing:** Use skill name with requirement markers — `**REQUIRED:** superpowers:test-driven-development`. Never use `@` syntax — it force-loads files immediately, consuming 200k+ context before you need them.
-
-## The Iron Law (Same as TDD)
-
-```
-NO SKILL WITHOUT A FAILING TEST FIRST
-```
-
-This applies to NEW skills AND EDITS to existing skills.
-
-Write skill before testing? Delete it. Start over.
-Edit skill without testing? Same violation.
-
-**No exceptions:**
-- Not for "simple additions"
-- Not for "just adding a section"
-- Not for "documentation updates"
-- Don't keep untested changes as "reference"
-- Delete means delete
-
-**REQUIRED BACKGROUND:** superpowers:test-driven-development explains why this matters. Same principles apply to documentation.
-
-## Testing Your Skill
-
-Testing follows RED-GREEN-REFACTOR: run pressure scenarios without the skill (RED), write the minimal skill addressing those specific failures (GREEN), close loopholes until bulletproof (REFACTOR). For pressure scenario templates, rationalization tables, and the full bulletproofing methodology, see testing-skills-with-subagents.md.
-
-## STOP: Before Moving to Next Skill
-
-**After writing ANY skill, you MUST STOP and complete the deployment process.**
-
-Do NOT create multiple skills in batch without testing each. Deploying untested skills = deploying untested code.
-
-For the full deployment checklist, see `references/checklist.md`.
-
-## Discovery Workflow
-
-How future Claude finds your skill:
-
-1. **Encounters problem** ("tests are flaky")
-2. **Searches skills by keyword or category**
-3. **Finds SKILL** (description matches)
-4. **Scans overview** (is this relevant?)
-5. **Reads patterns** (quick reference table)
-6. **Loads example** (only when implementing)
-
-**Optimize for this flow** — put searchable terms early and often.
-
-## The Bottom Line
-
-**Creating skills IS TDD for process documentation.**
-
-Same Iron Law: No skill without failing test first.
-Same cycle: RED (baseline) → GREEN (write skill) → REFACTOR (close loopholes).
-
-If you follow TDD for code, follow it for skills. It's the same discipline applied to documentation.
+- `skill:skill-trigger-validator` — scores and rewrites the `description`
+  field for trigger coverage; the authority on step 6's first half.
+- `skill:skill-quality-assurance` — the six-check pre-ship gate; the
+  authority on step 6's second half and on whether a skill is worth keeping
+  at all.
+- `develop:test-driven-development` — source of the RED-GREEN-REFACTOR shape
+  this skill re-expresses for documentation instead of code.
+- `harness:harness` — the six-stage engine that drives the harness-engaged
+  column above; SetGoal, Implement, and QualityGate own the stage boundaries
+  this skill defers to in that mode.
