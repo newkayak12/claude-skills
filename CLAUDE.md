@@ -75,9 +75,13 @@ harness's own source repo, so the engine path is repo-relative).
   `Workflow({ scriptPath: "harness/engine/pipeline.js", args: { request: "<the request>" } })`
 - **Conventions are law:** read `.claude/conventions/**` before implementing; they feed
   the engine's acceptance criteria and verification commands.
-- **Gate:** edits matching the patterns in `.claude/harness-gate.json` (currently the
-  harness engine/hooks `.mjs`/`.js`) are blocked by a PreToolUse hook unless the harness is
-  engaged this session (fail-open on errors). If blocked, run the harness instead of retrying.
-- Trivial edits (typos, single-line fixes, docs, skill markdown) do not need the engine.
+- **Gate:** edits matching the patterns in `.claude/harness-gate.json` are blocked by a
+  PreToolUse hook unless the harness is engaged this session (fail-open on errors). Gated
+  here: the harness engine/hooks `.mjs`/`.js`, **and every project `*.md`** (skills, READMEs,
+  this file, docs) except those under `.claude/`. Skill/doc authoring is the substantial-change
+  surface in this repo, so it goes through the engine. If blocked, run the harness instead of
+  retrying.
+- Only trivial **non-`.md`** edits (a single-line code fix, a config value) skip the engine.
+  Any `*.md` change — even a typo — is gated; engage the harness first.
 <!-- harness:end -->
 
