@@ -1,7 +1,7 @@
 {
   "name": "agents",
   "description": "Agent orchestration skills: dispatching parallel agents as a persona allocator (fan out independent jobs, match each to a best-fit specialist), subagent-driven development, and task decomposition.",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "author": {
     "name": "newkayak12"
   },

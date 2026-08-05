@@ -34,7 +34,7 @@ Use this skill when all three conditions are met:
 - The tasks are mostly independent (not tightly coupled)
 - You want to stay in the current session (not open parallel worktrees)
 
-Use `executing-plans` instead when you need isolated parallel sessions. Use manual execution when you don't yet have a plan or tasks are tightly coupled.
+Use `planning:executing-plans` instead when you need an isolated, separately-gated session. Use manual execution when you don't yet have a plan or tasks are tightly coupled.
 
 ## The Process
 
@@ -60,7 +60,7 @@ digraph process {
     "Read plan, extract all tasks with full text, note context, create TodoWrite" [shape=box];
     "More tasks remain?" [shape=diamond];
     "Dispatch final code reviewer subagent for entire implementation" [shape=box];
-    "Use superpowers:finishing-a-development-branch" [shape=box style=filled fillcolor=lightgreen];
+    "Finalize branch: full tests + commit + PR/merge" [shape=box style=filled fillcolor=lightgreen];
 
     "Read plan, extract all tasks with full text, note context, create TodoWrite" -> "Dispatch implementer subagent (./implementer-prompt.md)";
     "Dispatch implementer subagent (./implementer-prompt.md)" -> "Implementer subagent asks questions?";
@@ -78,7 +78,7 @@ digraph process {
     "Mark task complete in TodoWrite" -> "More tasks remain?";
     "More tasks remain?" -> "Dispatch implementer subagent (./implementer-prompt.md)" [label="yes"];
     "More tasks remain?" -> "Dispatch final code reviewer subagent for entire implementation" [label="no"];
-    "Dispatch final code reviewer subagent for entire implementation" -> "Use superpowers:finishing-a-development-branch";
+    "Dispatch final code reviewer subagent for entire implementation" -> "Finalize branch: full tests + commit + PR/merge";
 }
 ```
 
@@ -165,14 +165,14 @@ See `references/example-workflow.md` for a full concrete trace. For context on w
 
 ## Integration
 
-**Required workflow skills:**
-- **superpowers:using-git-worktrees** - REQUIRED: Set up isolated workspace before starting
-- **superpowers:writing-plans** - Creates the plan this skill executes
-- **superpowers:requesting-code-review** - Code review template for reviewer subagents
-- **superpowers:finishing-a-development-branch** - Complete development after all tasks
+**Before dispatching (do these yourself):**
+- **Isolated workspace** — start on a dedicated branch or worktree, never `main`/`master`, so parallel task commits don't land on a shared branch. Set this up manually; there is no separate skill for it here.
+- **`write:writing-plans`** — produces the plan this skill executes.
 
-**Subagents should use:**
-- **superpowers:test-driven-development** - Subagents follow TDD for each task
+**During execution:**
+- **`develop:test-driven-development`** — each dispatched subagent drives its task test-first.
+- **Code review** — reviewer subagents use the bundled `./spec-reviewer-prompt.md` and `./code-quality-reviewer-prompt.md` templates; no external review skill is required.
 
-**Alternative workflow:**
-- **superpowers:executing-plans** - Use for parallel session instead of same-session execution
+**Finishing:** after the final reviewer passes, close the branch yourself — run the full test suite, commit, then open a PR or merge per the repo's flow — and settle the done-verdict with **`completion:verification-before-completion`**.
+
+**Alternative:** **`planning:executing-plans`** — a separately-gated session instead of same-session subagent execution.
