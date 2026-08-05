@@ -32,7 +32,7 @@ per-skill 흐름: brainstorm 방향 → 유저 확정 → 재작성 → overlap 
 | 3 | `planning:executing-plans` | 64% | ✅ 재작성 (pre-flight gate + persona router, prose 0%) |
 | 4 | `develop:test-driven-development` | 38.84% | ✅ 재작성 (dual-mode evidence gate, prose 0.34%) |
 | 5 | `write:writing-skills` | 61% | ✅ 재작성 (producer + 이중 위임 계약, dual-mode, prose 0.37%) |
-| 6 | `write:writing-plans` | 52% | 🔲 대기 |
+| 6 | `write:writing-plans` | 52% | ✅ 재작성 (gate-ready 플랜 생산자 + production-time gap/ambiguity 검사 + step별 pass-bar + dual-mode, prose 2.96%) |
 | 7 | `agents:subagent-driven-development` | 22% | 🔲 잔여 정리만 |
 | 8 | `think:brainstorming` | 5% | 🔲 잔여 정리만 |
 

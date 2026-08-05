@@ -1,9 +1,9 @@
 ---
 name: writing-plans
 description: >-
-  Use when a task is large enough that diving in without a plan leads to rework.
-  Triggers on: "구현 계획 써줘", "implementation plan", "코딩 전에 계획 잡아줘", "migration
-  plan", 이 기능 어떻게 나눠서 구현해?", "plan before coding", "스텝별로 정리해줘", "리팩토링 계획".
+  Use when a task is large enough that diving in without a plan leads to
+  rework. Triggers: "구현 계획 써줘", "implementation plan", "코딩 전에 계획 잡아줘",
+  "migration plan", "plan before coding", "스텝별로 정리해줘", "리팩토링 계획".
 scenarios:
   - "이 기능 구현 계획 작성해줘"
   - "DB 마이그레이션 단계별로 계획 잡아줘"
@@ -13,117 +13,125 @@ scenarios:
   - "의존성 있는 작업들 어떻게 순서 잡아?"
 compatibility:
   optional:
-    - sequential-thinking  # for planning tasks with complex dependency chains
-    - think-tool           # reasoning about file structure and task boundaries
+    - sequential-thinking  # tracking dependency chains across many tasks
+    - think-tool           # judging whether a step is genuinely unambiguous
   remote_mcp_note: >-
-    sequential-thinking이 있으면 복잡한 의존성 체인이 있는 계획을 단계별로 추적할 수 있습니다.
-    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
+    sequential-thinking이 있으면 작업 간 의존성 사슬이 복잡한 계획의 갭을 더 체계적으로
+    찾을 수 있습니다. Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Writing Plans
 
 ## Overview
 
-Write comprehensive implementation plans assuming the engineer has zero context for our codebase and questionable taste. Document everything they need to know: which files to touch for each task, code, testing, docs they might need to check, how to test it. Give them the whole plan as bite-sized tasks. DRY. YAGNI. TDD. Frequent commits.
+This skill only produces plans — it never runs them. The gap check and
+ambiguity check `planning:executing-plans` would otherwise run at hand-off
+get done here instead, at production time: every step gets an observable
+check stamped on it before the plan counts as finished, in the same
+pass-bar vocabulary that skill's QualityGate judges against. Staleness/
+drift stays out of scope on purpose — a fact about *when* execution
+happens, not how the plan was written — so `planning:executing-plans` owns
+that check at hand-off. A clean gap/ambiguity pass here claims nothing
+about drift.
 
-Assume they are a skilled developer, but know almost nothing about our toolset or problem domain. Assume they don't know good test design very well.
+**Announce at start:** "I'm using the writing-plans skill to create the
+implementation plan."
 
-**Announce at start:** "I'm using the writing-plans skill to create the implementation plan."
+**Save plans to:** `docs/plans/YYYY-MM-DD-<feature-name>.md` (a stated user
+preference overrides this default).
 
-**Context:** This should be run in a dedicated worktree (created by brainstorming skill).
+## Process
 
-**Save plans to:** `docs/superpowers/plans/YYYY-MM-DD-<feature-name>.md`
-- (User preferences for plan location override this default)
+1. **Scope check.** One plan, one subsystem — split multi-subsystem specs first.
+2. **Survey, then structure.** Read entry points, tests, and the nearest
+   analogue before inventing file paths; lock which files are touched and
+   what each owns.
+3. **Right-size the tasks.** One testable deliverable per task, 2-5 minute
+   steps: test → fail → implement → pass → commit.
+4. **Gap check, in-line.** Confirm each thing a task consumes was produced
+   by an earlier task — the defect `planning:executing-plans` screens for;
+   catch it before it ships.
+5. **Ambiguity check, in-line.** Read each step as a stranger would; if
+   they'd guess, resolve it now.
+6. **Stamp a pass bar per step.** The one observable check proving the step
+   is done ("that test now passes", "the endpoint returns 429"). No
+   statable bar means the step isn't finished — go back.
+7. **Self-review.** Scan for placeholders ("TBD", "similar to Task N") and
+   keep names/signatures consistent across tasks.
 
-## Scope Check
-
-If the spec covers multiple independent subsystems, it should have been broken into sub-project specs during brainstorming. If it wasn't, suggest breaking this into separate plans — one per subsystem. Each plan should produce working, testable software on its own.
-
-## Codebase Survey
-
-Before defining file structure, read the relevant areas of the codebase — entry points, test layout, directory conventions, and existing analogues to what you are building — and note the patterns you will follow. Inventing file paths without reading the codebase produces plans that break on first execution.
-
-## File Structure
-
-Before defining tasks, map out which files will be created or modified and what each one is responsible for. This is where decomposition decisions get locked in.
-
-- Design units with clear boundaries and well-defined interfaces. Each file should have one clear responsibility.
-- You reason best about code you can hold in context at once, and your edits are more reliable when files are focused. Prefer smaller, focused files over large ones that do too much.
-- Files that change together should live together. Split by responsibility, not by technical layer.
-- In existing codebases, follow established patterns. If the codebase uses large files, don't unilaterally restructure - but if a file you're modifying has grown unwieldy, including a split in the plan is reasonable.
-
-This structure informs the task decomposition. Each task should produce self-contained changes that make sense independently.
-
-## Bite-Sized Task Granularity
-
-**Each step is one action (2-5 minutes):**
-- "Write the failing test" - step
-- "Run it to make sure it fails" - step
-- "Implement the minimal code to make the test pass" - step
-- "Run the tests and make sure they pass" - step
-- "Commit" - step
-
-## Plan Document Header
-
-**Every plan MUST start with this header:**
+## Output Template
 
 ```markdown
 # [Feature Name] Implementation Plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Produced by write:writing-plans. Owner for execution routing:
+> planning:executing-plans. Steps use checkbox (`- [ ]`) syntax.
 
-**Goal:** [One sentence describing what this builds]
-
-**Architecture:** [2-3 sentences about approach]
-
-**Tech Stack:** [Key technologies/libraries]
-
+**Goal:** [one sentence] **Architecture:** [2-3 sentences]
+**Tech Stack:** [key libraries]
 ---
 ```
 
-## Task Structure
+**Per task:**
 
-Each task follows the five-step TDD cycle: write failing test → verify fail → implement → verify pass → commit. See `references/task-structure-template.md` for the full template with code examples.
+```markdown
+### Task N: [Component]
+**Files:** create/modify/test — exact paths.
+**Interfaces:** consumes [earlier tasks' signatures] / produces [names
+  later tasks rely on].
+**Pass bar:** [the observable check from Process step 6]
 
-## Remember
-- Exact file paths always
-- Complete code in plan (not "add validation")
-- Exact commands with expected output
-- Reference relevant skills with @ syntax
-- DRY, YAGNI, TDD, frequent commits
+- [ ] 1: failing test (full code) → 2: confirm it fails → 3: minimal
+  implementation (full code) → 4: confirm it passes → 5: commit
+```
 
-## Plan Review Loop
+No placeholders where real content belongs: no "TBD", no "similar to Task
+N" without the actual code, no reference to a type or function no earlier
+task defines.
 
-After completing each chunk of the plan:
+## Dual-Mode
 
-1. Dispatch plan-document-reviewer subagent (see `agents/plan-document-reviewer.md`) for the current chunk
-   - Provide: chunk content, path to spec document
-2. If ❌ Issues Found:
-   - Fix the issues in the chunk
-   - Re-dispatch reviewer for that chunk
-   - Repeat until ✅ Approved
-3. If ✅ Approved: proceed to next chunk (or execution handoff if last chunk)
+| Mode | Produces | Consumed by |
+|---|---|---|
+| Solo | Plan doc above, pass bar per step | `completion:verification-before-completion` |
+| Harness-engaged | SetGoal goal-spec — subgoals with `acceptance[]`/`test[]` | The harness QualityGate, subgoal then goal-level |
 
-**Chunk boundaries:** Use `## Chunk N: <name>` headings to delimit chunks. Each chunk should be ≤1000 lines and logically self-contained.
+**Compact SetGoal example** (≤3 subgoals, ≤6 acceptance criteria total):
 
-**Review loop guidance:**
-- Same agent that wrote the plan fixes it (preserves context)
-- If loop exceeds 5 iterations, surface to human for guidance
-- Reviewers are advisory - explain disagreements if you believe feedback is incorrect
+```jsonc
+{
+  "goal": "Add rate limiting to the public API",
+  "acceptance": ["All public endpoints reject over-limit requests with 429"],
+  "subgoals": [{
+    "id": "s1",
+    "title": "Token-bucket limiter middleware",
+    "skills": ["develop:spring-boot-engineer"],
+    "acceptance": [
+      "Requests over the configured rate return 429",
+      "Requests under the rate pass through unchanged"
+    ],
+    "test": ["./gradlew test --tests RateLimiterTest"],
+    "deps": []
+  }],
+  "max_retries": 2
+}
+```
 
-## Execution Handoff
+## What Claude Does / What You Do
 
-After saving the plan:
+| Claude | You |
+|---|---|
+| Surveys the codebase, locks file structure, right-sizes tasks | Confirm the subsystem boundary at scope check |
+| Runs gap/ambiguity checks in-line, stamps a pass bar per step | Flag any task that still reads ambiguous |
+| Builds the SetGoal goal-spec directly in harness mode | Route the finished plan onward |
 
-**"Plan complete and saved to `docs/superpowers/plans/<filename>.md`. Ready to execute?"**
+## Related
 
-**Execution path depends on harness capabilities:**
-
-**If harness has subagents (Claude Code, etc.):**
-- **REQUIRED:** Use superpowers:subagent-driven-development
-- Do NOT offer a choice - subagent-driven is the standard approach
-- Fresh subagent per task + two-stage review
-
-**If harness does NOT have subagents:**
-- Execute plan in current session using superpowers:executing-plans
-- Batch execution with checkpoints for review
+- `planning:executing-plans` — owns execution routing and the
+  staleness/drift check this skill leaves out on purpose (downstream).
+- `agents:subagent-driven-development` — likely executor once
+  executing-plans routes a sequential/dependent plan.
+- `completion:verification-before-completion` — settles each step's
+  done-verdict against the pass bar stamped here, in solo mode.
+- `harness:harness` — the six-stage engine this skill's harness-mode
+  output feeds directly as a goal-spec.
