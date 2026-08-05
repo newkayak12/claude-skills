@@ -27,7 +27,7 @@ Engineering skills for software development workflows.
 | `spring-boot-engineer` | Spring Boot 3.x, Security 6, JPA, WebFlux |
 | `sql-pro` | Complex queries, window functions, indexing, query plans |
 | `sre-engineer` | SLOs, error budgets, incident response, capacity planning |
-| `test-driven-development` | TDD workflow before writing implementation code |
+| `test-driven-development` | Dual-mode evidence gate — RED manufactures falsifiable evidence before code; works solo and under the harness gate |
 | `test-master` | Unit, integration, E2E, performance, and security tests |
 | `performance-profiling-optimization` | Systematic bottleneck identification and CPU/memory/IO optimization |
 | `incident-response-playbook` | Developer-side incident lifecycle — triage, communication, mitigation, and RCA |

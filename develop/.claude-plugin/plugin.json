@@ -1,7 +1,7 @@
 {
   "name": "develop",
   "description": "Engineering skills: CLI, SQL, clean architecture, clean code, DDD, pragmatic programming, database optimization, chaos engineering, Spring Boot, microservices, Kotlin, TDD, frontend, code documentation, testing, SRE, performance profiling & optimization, incident response, documentation strategy, and dev-quality-workflow. ADR drafting moved to the technique-write plugin.",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "author": {
     "name": "newkayak12"
   },
