@@ -64,6 +64,25 @@ reporting to Sonnet.
 - State the request and its bar. Receive the final report.
 - (Optional) watch progress via `/workflows` — six phase groups are visible.
 
+## Optional skill integrations
+
+The engine statically mounts three skills — `agents:agent-task-decomposer` (Plan),
+`think:devils-advocate` (SetGoal critic + QualityGate), `completion:verification-before-completion`
+(Test). Beyond those, SetGoal MAY **optionally** map the repo's harness-aware skills — each
+rewritten dual-mode to run standalone AND as a harness executor — into subgoals when the task
+fits. None is required; the harness runs without them and each also works on its own:
+
+- `write:writing-plans` — produce a gate-ready plan / goal-spec-shaped decomposition.
+- `planning:executing-plans` — pre-flight plan gate + executor routing.
+- `agents:subagent-driven-development` — fresh-subagent-per-task execution with two-stage review.
+- `develop:test-driven-development` — drive an Implement subgoal test-first (evidence gate).
+- `write:writing-skills` — author a convention-compliant skill; its pressure test can back a QualityGate.
+- `agents:dispatching-parallel-agents` — allocate independent work across best-fit personas.
+- `think:brainstorming` — diverge/converge before a spec when the request is under-specified.
+
+These are opt-in: SetGoal picks them by relevance from the whole catalogue, so they need no
+pre-wiring, and using none of them is a valid run.
+
 ## Related
 - `harness/goal-spec.md` — spec schema (authored by the SetGoal stage) + authoring rules
 - `harness/engine/pipeline.js` — the fixed six-stage engine (Workflow path)

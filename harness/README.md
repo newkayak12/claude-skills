@@ -47,6 +47,11 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
 The project owns the copies afterward; the plugin never manages them again.
 
 ## Status
+- v1.11.1 — documented the **optional** harness-aware skill integrations: SetGoal may map the
+  repo's dual-mode cluster-B skills (`writing-plans`, `executing-plans`, `subagent-driven-development`,
+  `test-driven-development`, `writing-skills`, `dispatching-parallel-agents`, `brainstorming`) as
+  subgoal executors when the task fits — none required, each also runs standalone. See the harness
+  skill's "Optional skill integrations".
 - v1.11.0 — **re-introduced** the Workflow-less fallback ([`engine/fallback.md`](engine/fallback.md)),
   redesigned to fix what sank v1.9.0. No transcript sentinel and no edit-gate coupling (those
   false-positived on quoted occurrences). Instead: the six stages run as **fresh per-stage Agent
