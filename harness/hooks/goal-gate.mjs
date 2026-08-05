@@ -23,12 +23,48 @@ import { join } from 'node:path';
 
 const ENGAGE_RE =
   /harness\/engine\/pipeline\.js|"skill"\s*:\s*"harness"|<command-name>\/?harness<\/command-name>/;
-// Workflow-less fallback (engine/fallback.md): the orchestrator session emits this sentinel
-// in its own transcript. In that mode gated edits must come from an Implement SUBAGENT, not
-// the orchestrator — so a gated edit whose transcript carries the sentinel is denied even
-// though the harness is "engaged". Subagent transcripts don't carry it, so they still pass.
+// Workflow-less fallback (engine/fallback.md §0): the orchestrator emits this sentinel as
+// its OWN standalone line in its first ASSISTANT response. In that mode gated edits must come
+// from an Implement SUBAGENT, not the orchestrator — so an orchestrator's direct gated edit
+// is denied even though the harness is "engaged". Subagents don't emit it, so they still pass.
 // Workflow runs never emit it, so the pipeline.js path is unaffected.
-const FALLBACK_ORCH_RE = /\[HARNESS-FALLBACK-ORCHESTRATOR\]/;
+//
+// CRITICAL: match the GENUINE emission only. The literal string also appears as inert prose in
+// docs/marketplace.json/plugin.json and in compaction summaries — read into a transcript as
+// tool results (user role) or quoted inline by the assistant. A raw-blob substring test trips
+// on all of those, falsely flagging any Workflow-capable session that merely read the harness
+// docs as a fallback orchestrator and blocking its edits. So require BOTH: (assistant-authored
+// text block) AND (sentinel alone on its line). See assistantEmittedFallback().
+const FALLBACK_ORCH_RE = /^[ \t\r]*\[HARNESS-FALLBACK-ORCHESTRATOR\][ \t\r]*$/m;
+
+// True only when a real fallback sentinel line appears in an assistant text block. Parses the
+// transcript JSONL per line; anything unparseable is skipped (fail-open — a genuine orchestrator
+// with an unreadable transcript falls through to the engaged/marker checks, never a hard brick).
+function assistantEmittedFallback(raw) {
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue;
+    let obj;
+    try {
+      obj = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const msg = obj && obj.message;
+    const role = (msg && msg.role) || (obj && obj.role) || (obj && obj.type);
+    if (role !== 'assistant') continue;
+    const content = msg && msg.content;
+    if (typeof content === 'string') {
+      if (FALLBACK_ORCH_RE.test(content)) return true;
+    } else if (Array.isArray(content)) {
+      for (const b of content) {
+        if (b && b.type === 'text' && typeof b.text === 'string' && FALLBACK_ORCH_RE.test(b.text)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
 const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 const CLEAN_MS = 24 * 60 * 60 * 1000;
 
@@ -119,7 +155,7 @@ function main() {
       const t = readFileSync(input.transcript_path, 'utf8');
       transcriptReadable = true;
       engaged = ENGAGE_RE.test(t);
-      fallbackOrchestrator = FALLBACK_ORCH_RE.test(t);
+      fallbackOrchestrator = assistantEmittedFallback(t);
     } catch {
       /* fail-open below */
     }
