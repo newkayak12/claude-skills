@@ -29,7 +29,7 @@ per-skill 흐름: brainstorm 방향 → 유저 확정 → 재작성 → overlap 
 |---|---|---|---|
 | 1 | `completion:verification-before-completion` | 81% | ✅ 재작성 (verify-level + isolated subagent, prose 4%) |
 | 2 | `agents:dispatching-parallel-agents` | 75% | ✅ 재작성 (persona allocator, parallel 코어 유지, prose 4%) |
-| 3 | `planning:executing-plans` | 64% | 🔲 대기 |
+| 3 | `planning:executing-plans` | 64% | ✅ 재작성 (pre-flight gate + persona router, prose 0%) |
 | 4 | `develop:test-driven-development` | 62% | 🔲 대기 |
 | 5 | `write:writing-skills` | 61% | 🔲 대기 |
 | 6 | `write:writing-plans` | 52% | 🔲 대기 |

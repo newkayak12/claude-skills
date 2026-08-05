@@ -16,5 +16,5 @@ Planning skills for structured implementation and roadmap execution.
 
 | Skill | Description |
 |-------|-------------|
-| `executing-plans` | Execute a written implementation plan with review checkpoints |
+| `executing-plans` | Pre-flight plan gate — critically review a plan, set a pass-bar per step, then route to the right executor |
 | `roadmap-planning` | Plan a strategic roadmap across prioritization, epics, and sequencing |
