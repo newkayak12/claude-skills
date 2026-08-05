@@ -1,99 +1,149 @@
 ---
 name: executing-plans
 description: >-
-  Use when there is a written implementation plan to execute step by step with
-  review checkpoints. Triggers on: "계획 실행해줘", "plan 따라 구현해줘", "execute this
-  plan", "implementation plan 실행", plan 파일 있는데 실행해줘", "서브에이전트 없이 계획 실행".
+  Use when a written implementation plan is about to be run — critically review
+  it, set each step's pass bar, then route to the right executor. Triggers:
+  "계획 실행해줘", "plan 실행", "이 계획 검토하고 진행", "execute this plan", "plan 리뷰하고 가자",
+  "실행 전에 기준 잡아줘".
 scenarios:
-  - "이 구현 계획 실행해줘"
-  - "Plan 파일 있는데 그대로 따라 실행해줘"
+  - "이 구현 계획 그대로 진행해도 될지 보고 실행 붙여줘"
+  - "Plan 파일 있는데 실행 전에 검토하고 기준 잡아줘"
   - "Execute this implementation plan step by step"
-  - "서브에이전트 없이 계획 실행해야 해"
-  - "Plan 있는데 단계별로 체크하면서 진행해줘"
-  - "Walk through this plan and execute it"
+  - "계획대로 가기 전에 갭 없는지 확인하고 각 단계 통과 기준 정해줘"
+  - "Review this plan and kick off the work"
+  - "이 plan 실행 준비 됐는지 확인하고 넘겨줘"
 compatibility:
   recommended:
-    - sequential-thinking  # plan review and coherence check before execution
+    - sequential-thinking  # plan coherence + dependency-gap review before hand-off
   optional:
-    - think-tool           # confirming step intent and verification criteria before touching files
+    - think-tool           # pin each step's pass bar (verify-level) before routing
   remote_mcp_note: >-
-    sequential-thinking이 있으면 계획의 일관성과 의존성 갭을 실행 전에 체계적으로 검토할 수 있습니다.
-    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
+    sequential-thinking이 있으면 plan의 일관성·의존성 갭을 실행자에게 넘기기 전에 체계적으로
+    검토할 수 있습니다. Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 # Executing Plans
 
 ## Overview
 
-Load plan, review critically, execute all tasks, report when complete.
+A plan is a set of intentions written against an assumed state. Handing it
+straight to an executor skips the two things that decide whether it succeeds:
+**is the plan still sound**, and **what does "done" mean for each step**. This
+skill is the pre-flight gate between a plan and its execution — it does not run
+the steps itself. It reviews the plan critically, fixes or stops on defects,
+stamps a pass bar on every step, then routes the work to the executor that fits.
 
-**Announce at start:** "I'm using the executing-plans skill to implement this plan."
+**Core principle:** nothing gets executed until the plan is proven sound and each
+step carries an explicit pass bar. This is the harness *SetGoal + QualityGate*
+brought down to a single session — where the six-stage engine derives acceptance
+criteria and gates on them automatically, here you do it by hand before dispatch.
 
-## The Process
+## The Iron Law
 
-### Step 0: Pre-condition Check
+```
+NO HAND-OFF WITHOUT A CLEAN PLAN AND A STATED PASS BAR PER STEP
+```
 
-Before reading the plan, check two things:
+If the plan has an unresolved gap, or a step has no observable "done" condition,
+it is not ready to execute — resolve it or stop and ask. Never route a broken
+plan downstream.
 
-1. **Subagent availability:** If subagents are available, stop and direct the user to `superpowers:subagent-driven-development` — it produces significantly higher quality results. If subagents are not available, continue with this skill.
+## The Gate
 
-2. **Workspace isolation:** Announce: "I'm setting up an isolated workspace using the using-git-worktrees skill."
-   - **REQUIRED:** Use superpowers:using-git-worktrees before any plan file is read or any task is executed
-   - This prevents work from landing accidentally on main/master
+```
+0. LOAD     Read the plan in full. Do not skim into execution.
+1. REVIEW   Critically review before anything runs:
+            → gaps (a step depends on something no prior step produces)
+            → ambiguity (a step you couldn't hand to someone else as-is)
+            → drift (a precondition the plan assumes no longer holds)
+            Any of these → STOP, raise it, don't hand off. (sequential-thinking)
+2. GATE     For each step, state its QualityGate level = the pass bar:
+            the observable check that proves that step is done. No bar → stand
+            one up before routing. (verify-level; see verification-before-completion)
+3. HAND-OFF Route execution — this skill does not execute:
+            → steps are independent → agents:dispatching-parallel-agents
+            → steps are sequential/dependent → agents:subagent-driven-development
+            Each step's done-verdict is settled against its step-2 bar by
+            completion:verification-before-completion, not the executor's word.
+```
 
-### Step 1: Load and Review Plan
-1. Read plan file
-2. Optionally invoke `sequential-thinking` to reason through plan coherence, dependency gaps, and ambiguous verification criteria before proceeding
-3. Review critically - identify any questions or concerns about the plan
-4. If concerns: Raise them with your human partner before starting
-5. If no concerns: Create TodoWrite and proceed
+## 1. REVIEW — what makes a plan unfit to execute
 
-### Step 2: Execute Tasks
+Read the plan as an adversary, not an implementer. Three defects block hand-off:
 
-For each task:
-1. Mark as in_progress
-2. Optionally use think-tool to confirm the step's intent and verification criteria before touching any files
-3. Follow each step exactly (plan has bite-sized steps)
-4. Run verifications as specified
-5. Mark as completed
+| Defect | Symptom | Action |
+|--------|---------|--------|
+| Gap | Step N needs an artifact/decision no earlier step yields | STOP — the plan is incomplete |
+| Ambiguity | You couldn't dispatch the step to a stranger without guessing | STOP — pin the intent first |
+| Drift | The plan assumes a state (file, API, schema) that changed | STOP — the plan is stale |
 
-### Step 3: Complete Development
+If none are present, the plan is fit. Note any assumptions you *accepted* so the
+executor inherits them.
 
-After all tasks complete and verified:
-- Announce: "I'm using the finishing-a-development-branch skill to complete this work."
-- **REQUIRED SUB-SKILL:** Use superpowers:finishing-a-development-branch
-- Follow that skill to verify tests, present options, execute choice
-- **If `finishing-a-development-branch` cannot be loaded:** Stop and notify the user with a summary of completed tasks and remaining steps.
+## 2. GATE — a pass bar per step
 
-## When to Stop and Ask for Help
+Every step gets one observable check that proves it's done — the same discipline
+as `completion:verification-before-completion`, applied ahead of time:
 
-**STOP executing immediately when:**
-- Hit a blocker (missing dependency, test fails, instruction unclear)
-- Plan has critical gaps preventing starting
-- You don't understand an instruction
-- Verification fails repeatedly
+- *"Add endpoint X"* → bar = a request to X returns the specified shape, exit 0.
+- *"Fix the failing test"* → bar = that test now passes AND fails without the change.
+- *"Refactor module Y"* → bar = full suite still green, no behavior diff.
 
-**Ask for clarification rather than guessing.**
+A step whose bar you cannot state is a step you cannot verify — treat that as a
+REVIEW defect (ambiguity) and stop. The bars travel with the plan to the executor.
 
-## When to Revisit Earlier Steps
+## 3. HAND-OFF — route, don't run
 
-**Return to Review (Step 1) when:**
-- Partner updates the plan based on your feedback
-- Fundamental approach needs rethinking
+This skill's output is a **gated plan** (reviewed, bars attached) plus a routing
+decision. It never edits code itself.
 
-**Don't force through blockers** - stop and ask.
+```
+independent steps (no shared files, no causal order)
+    → agents:dispatching-parallel-agents   (fan out, one persona-matched agent per step)
 
-## Remember
-- Review plan critically first
-- Follow plan steps exactly
-- Don't skip verifications
-- Reference skills when plan says to
-- Stop when blocked, don't guess
-- Never start implementation on main/master branch without explicit user consent
+sequential / dependent steps
+    → agents:subagent-driven-development    (one fresh subagent per step, in order)
+```
 
-## Integration
+Default when unsure: sequential. A wrong parallel call costs more than running in
+order would have. Whichever executor runs it, each step is closed out against its
+step-2 bar via `completion:verification-before-completion`.
 
-**Required workflow skills:**
-- **superpowers:using-git-worktrees** - REQUIRED: Invoked in Step 0 to set up isolated workspace
-- **superpowers:writing-plans** - Creates the plan this skill executes
-- **superpowers:finishing-a-development-branch** - REQUIRED: Complete development after all tasks
+## When to STOP and ask
+
+- The plan has a gap, ambiguity, or drift you can't resolve yourself.
+- A step has no statable pass bar.
+- The plan's assumed state no longer matches reality.
+- The partner updates the plan mid-review → return to REVIEW from the top.
+
+**Ask rather than guess. Never hand a broken plan to an executor.**
+
+## Red flags — stop
+
+- Skimming the plan and starting to route before REVIEW is done.
+- Handing off a step whose "done" you can't describe as a check.
+- Assuming the plan's preconditions still hold without looking.
+- Picking parallel execution to feel fast when the steps are actually dependent.
+
+## What Claude does / What you do
+
+- **Claude:** loads and adversarially reviews the plan, states a pass bar per step,
+  stops on any defect, and routes fit plans to the matching executor.
+- **You:** supply the plan and any missing pass bar; confirm accepted assumptions
+  when the plan is ambiguous rather than blocking.
+
+## Related
+
+- `write:writing-plans` — produces the plan this skill gates (upstream).
+- `agents:dispatching-parallel-agents` — executor for independent steps (downstream).
+- `agents:subagent-driven-development` — executor for sequential/dependent steps.
+- `completion:verification-before-completion` — settles each step's done-verdict
+  against the bar set here.
+- `harness:harness` — the six-stage engine; this skill is the solo counterpart of
+  its SetGoal + QualityGate stages.
+
+## Bottom line
+
+Review the plan until it's sound, stamp a pass bar on every step, then route it to
+the executor that fits — and never before. Gating is the whole job; execution
+belongs to someone else.
