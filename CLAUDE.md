@@ -64,24 +64,3 @@ After any change: bump version in `.claude-plugin/marketplace.json` → update `
 
 See `INSTRUCT.md` for full details.
 
-<!-- harness:begin v1 -->
-## Harness
-
-This project uses the harness plugin for substantial changes (dogfooded here — this is the
-harness's own source repo, so the engine path is repo-relative).
-
-- **Substantial or risky changes** (multi-file, gated paths, anything with a quality
-  bar) go through the six-stage engine — do not hand-roll the flow:
-  `Workflow({ scriptPath: "harness/engine/pipeline.js", args: { request: "<the request>" } })`
-- **Conventions are law:** read `.claude/conventions/**` before implementing; they feed
-  the engine's acceptance criteria and verification commands.
-- **Gate:** edits matching the patterns in `.claude/harness-gate.json` are blocked by a
-  PreToolUse hook unless the harness is engaged this session (fail-open on errors). Gated
-  here: the harness engine/hooks `.mjs`/`.js`, **and every project `*.md`** (skills, READMEs,
-  this file, docs) except those under `.claude/`. Skill/doc authoring is the substantial-change
-  surface in this repo, so it goes through the engine. If blocked, run the harness instead of
-  retrying.
-- Only trivial **non-`.md`** edits (a single-line code fix, a config value) skip the engine.
-  Any `*.md` change — even a typo — is gated; engage the harness first.
-<!-- harness:end -->
-
