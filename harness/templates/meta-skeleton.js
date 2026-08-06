@@ -38,6 +38,14 @@ const mountMcp = (tool, why) =>
   `\nIf the ${tool} MCP tool is available (locate via ToolSearch), use it to ${why}; ` +
   `if unavailable, proceed without it.`
 
+// Signature of a rejection (sorted gaps + reason). Two consecutive failing attempts with the
+// same signature mean the repair made no progress — break early instead of burning the rest of
+// the bounded budget on an identical gap. Any bespoke loop that retries should reuse this.
+const rejectionSig = v => v ? JSON.stringify([
+  (v.gaps || []).map(g => String(g).toLowerCase().replace(/\s+/g, ' ').trim()).filter(Boolean).sort(),
+  String(v.reason || '').toLowerCase().replace(/\s+/g, ' ').trim(),
+]) : null
+
 const EVIDENCE = {
   type: 'object',
   properties: {
@@ -71,7 +79,10 @@ phase('Plan')
 const plan = await agent(
   `Plan how to fulfil this request; do NOT do the work.\nRequest: ${req.request}\n` +
   `List: units of work, goal-level acceptance criteria (concretely checkable), and per-unit ` +
-  `deterministic checks (commands/files). If .claude/conventions/** exists, fold its rules in.` +
+  `deterministic checks (commands/files). If .claude/conventions/** exists, fold its rules in.\n` +
+  `Acceptance criteria must check each unit's OWN artifacts (named files/outputs/interfaces), ` +
+  `never whole-repo state (git diff/status, aggregate counts) — concurrent work makes those ` +
+  `unwinnable — and any arbitrary-% or subjective-quality target is a soft goal, not a hard bar.` +
   mountMcp('sequential-thinking', 'work through the decomposition step by step'),
   { label: 'plan', phase: 'Plan', model: 'opus' })
 
@@ -80,7 +91,7 @@ const plan = await agent(
 // The default below is a single bounded implement→test→judge loop; keep its *shape*
 // (actor, then independent evidence, then independent verdict) inside whatever flow you build.
 phase('Work')
-let work = null, evidence = null, verdict = null, feedback = '', attempt = 0
+let work = null, evidence = null, verdict = null, feedback = '', attempt = 0, prevSig = null
 while (attempt <= MAX) {
   attempt++
   work = await agent(
@@ -103,6 +114,9 @@ while (attempt <= MAX) {
     { label: `gate:${attempt}`, phase: 'QualityGate', model: 'opus', schema: VERDICT })
 
   if (verdict && verdict.pass) break
+  const sig = rejectionSig(verdict)
+  if (sig && sig === prevSig) break  // no-progress: same gaps as last attempt — stop early (still capped by MAX)
+  prevSig = sig
   feedback = (verdict && (verdict.reason + '\n' + (verdict.gaps || []).map(g => `- ${g}`).join('\n'))) || 'unspecified'
 }
 // ---- end [META] block ----

@@ -68,9 +68,17 @@ rules that constrain the work, plus per-unit deterministic checks (commands, fil
 1. Dispatch one Agent (opus), given the path `RUN/01-plan.md` to read, to author a **goal-spec**
    (schema: `goal-spec.md`): `goal`, goal-level `acceptance[]`, `subgoals[]` (`id`, `title`,
    `persona?`, `skills[]`, `acceptance[]`, `test[]`, `deps[]`), `max_retries`. It **writes
-   `RUN/02-goal-spec.json`** (valid JSON) and returns the path.
+   `RUN/02-goal-spec.json`** (valid JSON) and returns the path. Two hard rules on every
+   `acceptance`/`test` entry: (a) it checks that unit's **own artifacts** (named files, outputs,
+   interfaces) — never whole-repo state (`git diff/status` across the repo, aggregate counts),
+   which concurrent work can change and no single subgoal can satisfy deterministically; (b) an
+   aspirational or arbitrary-threshold target (a chosen % reduction, subjective quality words) is
+   a **soft goal**, not a hard pass/fail bar — the judge treats every listed entry as hard, so
+   restate it concretely or drop it.
 2. Dispatch a **separate** Agent (opus) invoking `think:devils-advocate` to refute it; it reads
-   the spec path and **writes `RUN/02-critique.json`** `{sound, problems[]}`.
+   the spec path and **writes `RUN/02-critique.json`** `{sound, problems[]}`. It must flag two
+   unwinnable-gate patterns: acceptance/test tied to global/shared repo state instead of the
+   unit's own artifacts, and arbitrary-% or subjective targets written as hard bars.
 3. If `sound:false`, dispatch **one** revision Agent (opus) to rewrite `RUN/02-goal-spec.json`
    in place. Reject a degenerate spec (empty subgoals / empty acceptance / placeholder titles)
    and re-author once.
@@ -106,7 +114,10 @@ For the current subgoal `<id>`, loop attempt `n` from 1 up to `max_retries` (def
 If `pass`, write `RUN/subgoals/<id>/result.json` `{id, passed:true, attempts:n}`, mark the task
 `completed`, move on. If not, feed the verdict's `reason`/`gaps` into the next Implement as
 `Previous attempt was rejected. Fix:` and retry until pass or retries exhaust — then write
-`{passed:false, attempts:n}` and continue.
+`{passed:false, attempts:n}` and continue. **No-progress early stop:** if attempt `n`'s
+`gate-<n>.json` has the same `gaps`/`reason` as attempt `n-1`'s, the repair achieved nothing —
+stop now, write `{passed:false, attempts:n, stalled:true}`, and continue (still capped by
+`max_retries`; this only exits sooner, never runs longer).
 
 ## 5. Goal-level QualityGate (opus) — match_pct ≥ 90, repair-and-regate
 
@@ -114,8 +125,9 @@ After all subgoals, dispatch one Agent (opus, `think:devils-advocate`) that read
 directory and judges the **assembled whole** against goal-level `acceptance[]`, scoring
 `match_pct` (0–100, holistic — not an average of subgoal pass/fail). It **writes
 `RUN/04-goal-gate.json`** `{match_pct, pass, reason}`. If `match_pct < 90`, dispatch a repair
-Implement (sonnet) addressing the gaps, then re-gate — up to `max_retries` times. `pass` is
-`match_pct >= 90`.
+Implement (sonnet) addressing the gaps, then re-gate — up to `max_retries` times. If a re-gate
+returns the same `gaps`/`reason` as the pass before it, the repair made no progress — stop early
+rather than spending the remaining repair passes on an identical gap. `pass` is `match_pct >= 90`.
 
 ## 6. Report (sonnet)
 
