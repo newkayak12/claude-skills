@@ -14,3 +14,9 @@ INSTRUCT.md
 /report/
 *-workspace/
 .claude/.feedback/
+# Local-only harness scaffold (applied to this repo as a project; kept out of version control)
+.claude/.harness-markers/
+.claude/harness-gate.json
+.claude/settings.json
+.claude/hooks/
+.claude/conventions/
