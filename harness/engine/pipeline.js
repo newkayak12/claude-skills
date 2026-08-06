@@ -135,7 +135,16 @@ const specPrompt =
   `skills[] lists 1-3 repository skill names the executor must invoke. test[] lists shell ` +
   `commands or concrete checks a verifier can execute without trusting the executor. ` +
   `Fold any project convention rules the plan surfaced into subgoal acceptance and test entries. ` +
-  `Keep it small — a trivial request is one subgoal.` +
+  `Keep it small — a trivial request is one subgoal.\n` +
+  `Two hard rules on acceptance/test criteria: (a) each criterion checks THIS unit's own ` +
+  `artifacts — named files it produces, its outputs, its interfaces — never global or shared ` +
+  `repository state (whole-repo "git diff/status shows N files", aggregate repo-wide test counts). ` +
+  `Such state is mutable by anything running concurrently, so no single subgoal can satisfy it ` +
+  `deterministically and the gate becomes unwinnable. (b) An aspirational or arbitrary-threshold ` +
+  `target (a chosen % reduction, a subjective quality word like "elegant"/"clean") is NOT a hard ` +
+  `pass/fail bar — either restate it as something concretely met-or-not, or mark it explicitly as ` +
+  `a soft goal the judge should weigh but not fail the unit on. The judge treats every listed ` +
+  `acceptance entry as hard, so do not list a target you cannot deterministically verify.` +
   mountMcp('think-tool', 'refine each acceptance criterion until it is concretely checkable')
 let spec = await agent(specPrompt, { label: 'setgoal', phase: 'SetGoal', model: 'opus', schema: SPEC })
 
@@ -143,7 +152,12 @@ const critique = await agent(
   mountSkill('think:devils-advocate', 'it structures the strongest objections') +
   `\nAdversarially critique this goal-spec. You did NOT write it. Refute: wrong decomposition, ` +
   `vague/unfalsifiable acceptance, missing subgoal the goal needs, fake dependencies, ` +
-  `unverifiable test[] entries, skill mappings that don't fit.\n` +
+  `unverifiable test[] entries, skill mappings that don't fit. Flag two unwinnable-gate patterns ` +
+  `specifically: (1) any acceptance/test criterion that hinges on global or shared repository state ` +
+  `(whole-repo git diff/status, aggregate repo-wide counts) instead of the subgoal's own artifacts — ` +
+  `concurrent work makes these non-deterministic and impossible to satisfy; (2) any aspirational or ` +
+  `arbitrary-threshold target (a chosen % reduction, subjective quality adjectives) written as a hard ` +
+  `pass/fail bar rather than a soft, judge-weighed goal — these never converge.\n` +
   `Request: ${req.request}\n\nSpec:\n${JSON.stringify(spec, null, 2)}\n\n` +
   `sound=true only if the spec would survive an independent review.`,
   { label: 'critic', phase: 'SetGoal', model: 'opus', schema: CRITIQUE })
@@ -189,6 +203,16 @@ function handoffOf(work) {
   return (m ? m[1] : s).trim().slice(0, 1500)
 }
 
+// Normalized signature of a rejection (sorted gaps + reason). Two consecutive failing attempts
+// with the same signature mean the repair made no progress — abort early instead of burning the
+// rest of the bounded RETRIES budget re-attempting an identical gap. Still capped by RETRIES.
+function rejectionSig(v) {
+  if (!v) return null
+  const norm = x => String(x || '').toLowerCase().replace(/\s+/g, ' ').trim()
+  const gaps = (v.gaps || []).map(norm).filter(Boolean).sort()
+  return JSON.stringify([gaps, norm(v.reason)])
+}
+
 // ---- Stages 3-5 per subgoal: Implement → Test → QualityGate, looped ----
 async function runSubgoal(sg, upstream) {
   const ctx = upstream.length
@@ -203,7 +227,7 @@ async function runSubgoal(sg, upstream) {
   const tests = (sg.test || []).map(t => `- ${t}`).join('\n')
 
   let work = null, evidence = null, verdict = null, attempt = 0
-  let feedback = ''
+  let feedback = '', prevSig = null, stalled = false
   while (attempt <= RETRIES) {
     attempt++
     work = await agent(
@@ -235,6 +259,13 @@ async function runSubgoal(sg, upstream) {
       { label: `gate:${sg.id}:${attempt}`, phase: 'QualityGate', model: 'opus', schema: VERDICT })
 
     if (verdict && verdict.pass) break
+    const sig = rejectionSig(verdict)
+    if (sig && sig === prevSig) {
+      stalled = true
+      log(`subgoal "${sg.title}" stalled — attempt ${attempt} repeated the previous attempt's gaps; aborting early (cap ${RETRIES})`)
+      break
+    }
+    prevSig = sig
     feedback =
       ((verdict && (verdict.reason + (verdict.gaps ? '\n' + verdict.gaps.map(g => `- ${g}`).join('\n') : ''))) || 'unspecified') +
       (evidence && !evidence.verified ? `\nTest evidence: ${evidence.evidence}` : '')
@@ -245,6 +276,7 @@ async function runSubgoal(sg, upstream) {
     title: sg.title,
     passed: !!(verdict && verdict.pass),
     attempts: attempt,
+    stalled,
     handoff: handoffOf(work),
     work,
     evidence,
@@ -293,6 +325,7 @@ function goalPrompt(extra) {
 
 let goalGate = await agent(goalPrompt(), { label: 'gate:goal:1', phase: 'QualityGate', model: 'opus', schema: GOAL_VERDICT })
 let goalAttempt = 1
+let prevGoalSig = rejectionSig(goalGate)
 while ((!goalGate || goalGate.match_pct < GOAL_MATCH_THRESHOLD) && goalAttempt <= RETRIES) {
   goalAttempt++
   log(`goal-level match ${goalGate ? goalGate.match_pct : 0}% < ${GOAL_MATCH_THRESHOLD}% — repair pass ${goalAttempt}`)
@@ -308,6 +341,12 @@ while ((!goalGate || goalGate.match_pct < GOAL_MATCH_THRESHOLD) && goalAttempt <
   goalGate = await agent(
     goalPrompt(`\n\nRepair pass applied:\n${handoffOf(repair)}`),
     { label: `gate:goal:${goalAttempt}`, phase: 'QualityGate', model: 'opus', schema: GOAL_VERDICT })
+  const sig = rejectionSig(goalGate)
+  if (goalGate && goalGate.match_pct < GOAL_MATCH_THRESHOLD && sig && sig === prevGoalSig) {
+    log(`goal-level repair stalled — repair pass ${goalAttempt} left the same gaps; aborting early (cap ${RETRIES})`)
+    break
+  }
+  prevGoalSig = sig
 }
 goalGate = { ...goalGate, pass: !!(goalGate && goalGate.match_pct >= GOAL_MATCH_THRESHOLD) }
 

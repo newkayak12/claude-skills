@@ -47,6 +47,16 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
 The project owns the copies afterward; the plugin never manages them again.
 
 ## Status
+- v1.12.0 — **loop-convergence hardening** (all three execution paths: `pipeline.js`,
+  `templates/meta-skeleton.js`, `engine/fallback.md`). SetGoal authoring + the spec critic now
+  reject two unwinnable-gate patterns that could burn the whole retry budget without ever passing:
+  (1) acceptance/test criteria keyed to **global/shared repo state** (whole-repo `git diff/status`,
+  aggregate counts) instead of the subgoal's own artifacts — concurrent work makes those
+  non-deterministic; (2) **aspirational / arbitrary-threshold** targets (a chosen % reduction,
+  subjective quality words) written as hard pass/fail bars. And both the per-subgoal and goal-level
+  QualityGate loops gain a **no-progress early stop**: if a repair attempt reproduces the previous
+  attempt's exact gaps/reason, the loop breaks early instead of spending the rest of its
+  `max_retries` on an identical gap (still hard-capped by `max_retries` — only exits sooner).
 - v1.11.1 — documented the **optional** harness-aware skill integrations: SetGoal may map the
   repo's dual-mode cluster-B skills (`writing-plans`, `executing-plans`, `subagent-driven-development`,
   `test-driven-development`, `writing-skills`, `dispatching-parallel-agents`, `brainstorming`) as
