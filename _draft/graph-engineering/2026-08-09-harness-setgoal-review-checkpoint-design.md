@@ -62,7 +62,9 @@ Both unset ⇒ current one-shot autonomous run, byte-for-byte unchanged.
 |---|---|---|
 | Six stages | graph **nodes** | exists |
 | `spec` / `handoff` | **edge state** | exists |
-| SetGoal→Implement | **interrupt / breakpoint edge** | **new** |
+| SetGoal→Implement review edge | **interrupt / breakpoint edge** | **exists** (automated handlers only) |
+| — `critic` + `isDegenerateSpec` + revision loop | edge's **automated interrupt handler** | exists (`pipeline.js:151-194`) |
+| — human review of `spec` | edge's **human interrupt handler** | **new** |
 | `max_retries` loop | bounded **cyclic subgraph** | exists |
 | `rejectionSig` early-stop (1.12.0) | cycle **convergence guard** | exists |
 | fallback `RUN/` dir | filesystem **checkpointer** (durable) | exists |
@@ -70,6 +72,16 @@ Both unset ⇒ current one-shot autonomous run, byte-for-byte unchanged.
 
 This is the canonical **static-breakpoint HITL + state-injection** pattern
 (LangGraph `interrupt_before` → human edits state → `Command(resume=…)`).
+
+**Important:** the breakpoint *edge itself already exists.* SetGoal→Implement
+already runs an automated review — the `think:devils-advocate` critic, one
+revision pass, the `isDegenerateSpec` structural guard, and a degenerate-retry
+(`pipeline.js:151-194`). What is genuinely new is (a) attaching a **human**
+interrupt handler to this same edge and (b) the **resumable split** the human
+handler forces (the Workflow runtime cannot pause for user input in-run). We are
+not carving a new edge; we are adding a handler to an existing review edge — and
+the `isDegenerateSpec` guard reused for rigor requirement #1 is already sitting on
+this edge, so the resume path adds no new validation machinery.
 
 ## Three rigor requirements (must be in the implementation)
 
