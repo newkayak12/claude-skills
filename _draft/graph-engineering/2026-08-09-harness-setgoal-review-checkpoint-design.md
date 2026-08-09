@@ -56,6 +56,64 @@ Both unset ⇒ current one-shot autonomous run, byte-for-byte unchanged.
    highest-leverage point, not a yes/no prompt.
 3. Call engine again with `approved_spec: <edited spec>` → runs the rest.
 
+## Parallel per-subgoal SetGoal (context isolation & clear ownership)
+
+Today SetGoal authors the **entire** spec — `goal`, goal-level `acceptance`, and
+*every* subgoal's `acceptance[]`/`test[]` — in a **single agent context**. Implement
+and QualityGate already run **per-subgoal in isolated contexts** (`runSubgoal` fans
+out via `parallel()` dependency waves, `pipeline.js:287-303`; each impl/gate agent
+sees only its own subgoal + its upstream dependency handoffs, never sibling
+internals). SetGoal is the one stage that is still monolithic. This makes it
+symmetric.
+
+### Two tiers
+
+```
+SetGoal-skeleton (opus, single / holistic)
+  → goal + goal-level acceptance + subgoal stubs {id, title, persona, skills, deps}
+    (deciding WHAT the subgoals are and their deps needs the whole view — not parallelizable)
+
+  ↓  if subgoals.length >= 2  → fan out
+
+SetGoal-detail (opus, one agent per subgoal, in parallel — isolated context)
+  → authors ONLY that subgoal's acceptance[] / test[]
+    context = goal + goal-level acceptance + its own stub + its dependency stubs
+              + sibling TITLES (see isolation rule)
+
+  ↓  assemble stubs + details into one spec
+
+critic (opus, holistic — unchanged) → revision → isDegenerateSpec
+```
+
+- **`subgoals.length < 2` ⇒ skip the fan-out** and author detail inline (no benefit).
+- **Critic stays holistic** — a missing subgoal or a fake dependency is only visible
+  against the whole spec, so this reduce step is not parallelized.
+- Graph shape: **reduce (skeleton) → map (per-subgoal detail) → reduce (critic)**.
+
+### Isolation rule (matches Implement, with one intentional divergence)
+
+Each detail-author sees: `goal`, goal-level `acceptance`, **its own** stub, and its
+**dependency** stubs — identical to how the impl agent is scoped. **Divergence:** it
+*also* sees **sibling subgoal titles** (titles only, never their `acceptance`
+internals), so criteria don't overlap or leave gaps between sibling units. Implement
+does not need sibling titles because deps carry the coordination; authoring criteria
+does, to keep the set collectively exhaustive.
+
+### Cost / benefit
+
+For N subgoals, SetGoal becomes `1 skeleton + N detail` opus calls instead of `1`.
+The N details run in parallel, so wall-clock ≈ skeleton + slowest-detail, not the
+sum. The payoff is the session's original goal: **sharper acceptance criteria for
+the QualityGate**, authored by a focused agent that holds one subgoal at a time
+instead of diluting attention across all of them.
+
+### Three-path consistency
+
+This applies to all three engine paths (`pipeline.js`, `templates/meta-skeleton.js`,
+`engine/fallback.md`) — same as the 1.12.0 convergence work. In the fallback path
+the detail agents are dispatched as separate Agent calls writing
+`RUN/02-subgoal-<id>-detail.json`, assembled into `RUN/02-goal-spec.json`.
+
 ## Graph-engineering mapping
 
 | Current harness | Graph-engineering concept | State |
@@ -156,3 +214,49 @@ decision on whether to align the hint list or drop the doc claims.
   id? (Leaning: short summary + id, to keep the resume prompt small.)
 - Where the user edits the spec: inline in chat, or written to a file the user
   edits then points back at? (Leaning: return JSON in chat; user edits inline.)
+
+
+## Required Design Clarifications
+
+### 1. Explicit flag exclusivity
+
+The two flags are mutually exclusive.
+
+`review_spec: true` and `approved_spec` must not be provided in the same invocation. If both are present, the engine must fail fast rather than implicitly choosing one path.
+
+### 2. `approved_spec` is authoritative
+
+The human-edited `approved_spec` is authoritative.
+
+The resume path must not regenerate, normalize, rewrite, or otherwise semantically transform the spec through an LLM.
+
+Mechanical validation is limited to:
+
+- `JSON.parse`
+- the existing `isDegenerateSpec` guard
+
+Once validated, the resulting spec is passed directly into the existing downstream execution path.
+
+### 3. Preserve lineage across the split
+
+Preserve lineage using a dedicated `correlation_id` together with the `source_run_id` of the review run.
+
+- `correlation_id` identifies the logical execution across both Workflow runs.
+- `source_run_id` identifies the Workflow run that produced the reviewed spec.
+- The resume run receives both values through `context`.
+
+A short Plan summary may also be passed for reporting/audit purposes. The full Plan text is not required.
+
+### 4. Review response contract
+
+The `review_spec` response should contain sufficient metadata for the orchestrator to resume the same logical execution without inferring or reconstructing lineage.
+
+```json
+{
+  "spec": {},
+  "stopped_for_review": true,
+  "review": {
+    "correlation_id": "...",
+    "source_run_id": "..."
+  }
+}
