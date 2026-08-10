@@ -47,6 +47,12 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
 The project owns the copies afterward; the plugin never manages them again.
 
 ## Status
+- v1.12.1 — **Plan skill-namespace hint fix**: the Plan stage's `skills fit (plugins: …)` hint
+  in `engine/pipeline.js` now includes `planning:*` and `completion:*`, so the optional executor
+  the docs recommend (`planning:executing-plans`) and the statically-mounted
+  `completion:verification-before-completion` are actually surfaced to the SetGoal author. Prompt
+  hint only — no control-flow change. (Design notes for an upcoming SetGoal review-checkpoint +
+  per-subgoal parallel authoring live in `_draft/graph-engineering/`.)
 - v1.12.0 — **loop-convergence hardening** (all three execution paths: `pipeline.js`,
   `templates/meta-skeleton.js`, `engine/fallback.md`). SetGoal authoring + the spec critic now
   reject two unwinnable-gate patterns that could burn the whole retry budget without ever passing:
