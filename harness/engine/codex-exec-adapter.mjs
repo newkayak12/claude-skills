@@ -81,12 +81,15 @@ function detectCodex() {
   if (!binary.ok) {
     writeReport({
       ok: false,
-      provider: 'codex',
-      available: false,
-      ready: false,
-      reason: 'codex CLI is not executable',
       cwd,
-      binary,
+      codex: {
+        available: false,
+        ready: false,
+        implement: false,
+        test: false,
+        reason: 'codex CLI is not executable',
+        binary,
+      },
     });
     return false;
   }
@@ -109,20 +112,21 @@ function detectCodex() {
 
   writeReport({
     ok: ready,
-    provider: 'codex',
-    available: true,
-    ready,
-    implement: ready,
-    test: ready,
     cwd,
-    binary,
-    smoke: {
-      exit_code: probe.status,
-      signal: probe.signal,
-      matched_ready_token: /\bCODEX_READY\b/.test(observed),
-      stdout: probe.stdout || '',
-      stderr: probe.stderr || '',
-      error: probe.error ? String(probe.error.message || probe.error) : '',
+    codex: {
+      available: true,
+      ready,
+      implement: ready,
+      test: ready,
+      binary,
+      smoke: {
+        exit_code: probe.status,
+        signal: probe.signal,
+        matched_ready_token: /\bCODEX_READY\b/.test(observed),
+        stdout: probe.stdout || '',
+        stderr: probe.stderr || '',
+        error: probe.error ? String(probe.error.message || probe.error) : '',
+      },
     },
   });
   return ready;
@@ -166,27 +170,30 @@ function runCodex() {
     stderrChunks.push(Buffer.from(String(error.message || error)));
   });
   child.on('close', (code, signal) => {
-    if (eventStream) eventStream.end();
-    let lastMessage = '';
-    try {
-      lastMessage = readFileSync(lastMessagePath, 'utf8');
-    } catch {
-      // Codex may fail before creating the output file; stdout/stderr below keep
-      // the failure debuggable.
-    }
-    writeReport({
-      ok: code === 0,
-      provider: 'codex',
-      exit_code: code,
-      signal,
-      cwd,
-      sandbox: opts.sandbox,
-      events_output: eventsPath,
-      last_message: lastMessage,
-      stdout: Buffer.concat(stdoutChunks).toString('utf8'),
-      stderr: Buffer.concat(stderrChunks).toString('utf8'),
-    });
-    process.exit(code === 0 ? 0 : 1);
+    const finish = () => {
+      let lastMessage = '';
+      try {
+        lastMessage = readFileSync(lastMessagePath, 'utf8');
+      } catch {
+        // Codex may fail before creating the output file; stdout/stderr below keep
+        // the failure debuggable.
+      }
+      writeReport({
+        ok: code === 0,
+        provider: 'codex',
+        exit_code: code,
+        signal,
+        cwd,
+        sandbox: opts.sandbox,
+        events_output: eventsPath,
+        last_message: lastMessage,
+        stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+        stderr: Buffer.concat(stderrChunks).toString('utf8'),
+      });
+      process.exit(code === 0 ? 0 : 1);
+    };
+    if (eventStream) eventStream.end(finish);
+    else finish();
   });
 }
 

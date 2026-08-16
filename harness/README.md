@@ -47,6 +47,12 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
 The project owns the copies afterward; the plugin never manages them again.
 
 ## Status
+- v1.14.0 — **Codex solo runner**: added `engine/codex-runner.mjs`, a Codex-only harness
+  entrypoint that reproduces the file-artifact fallback contract without touching the Claude
+  Workflow path. It runs Plan, SetGoal, Implement, Test, QualityGate, and Report as separate
+  `codex exec --json` stages, writes the same `.harness-run/<slug>/` artifacts checked by
+  `fallback-check.mjs`, and keeps `pipeline.js` unchanged. Added root `AGENTS.md` so Codex can
+  work in this repo without relying on `CLAUDE.md`.
 - v1.13.0 — **fallback Codex CLI provider spike promoted**: Workflow-less fallback runs now
   have a documented CLI straight-control path for Codex. At run open, the fallback may call
   `engine/codex-exec-adapter.mjs --detect` to write provider readiness; SetGoal can then mark

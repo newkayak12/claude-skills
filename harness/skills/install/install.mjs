@@ -187,6 +187,11 @@ function main() {
         join(embedRoot, 'engine', 'codex-exec-adapter.mjs'),
         refresh,
       );
+      embed.runtime['engine/codex-runner.mjs'] = copyFile(
+        join(PLUGIN_ROOT, 'engine', 'codex-runner.mjs'),
+        join(embedRoot, 'engine', 'codex-runner.mjs'),
+        refresh,
+      );
       embed.runtime['templates/meta-skeleton.js'] = copyFile(
         join(PLUGIN_ROOT, 'templates', 'meta-skeleton.js'),
         join(embedRoot, 'templates', 'meta-skeleton.js'),

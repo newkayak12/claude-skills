@@ -92,6 +92,7 @@ pre-wiring, and using none of them is a valid run.
 - `harness/engine/fallback.md` — Workflow-less fallback: same six stages via fresh per-stage subagents sharing state through a run directory
 - `harness/engine/fallback-check.mjs` — deterministic completion check for a fallback run (the objective done-signal)
 - `harness/engine/codex-exec-adapter.mjs` — fallback-only CLI bridge that detects Codex and captures `codex exec --json` events
+- `harness/engine/codex-runner.mjs` — Codex-only file-artifact runner; no Claude Workflow dependency
 - `harness/templates/meta-skeleton.js` — Mode M starting point (contract + `[META]` block)
 - `harness/templates/` — bespoke-pipeline reference
 - `harness/hooks/` — opt-in PreToolUse gate: projects list gated paths in `.claude/harness-gate.json`; editing them without engaging the harness is denied (fail-open on any ambiguity).
