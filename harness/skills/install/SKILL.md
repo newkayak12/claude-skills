@@ -35,7 +35,7 @@ idempotent and non-destructive: existing files are never overwritten.
      patterns.
    - **Standalone embedding — ASK:** "플러그인 없이도 하네스가 돌게 임베드할까요? (에어갭/CI용,
      용량↑·drift 관리 필요)". Default **No**.
-     - The hook is self-contained, but the **engine and the skills it invokes live in the
+     - The hook is self-contained, but the **engine, Codex CLI adapter, and the skills it invokes live in the
        plugin**. Without embedding, a plugin-less project's gate blocks with no local way to
        satisfy it — say so.
      - If **Yes**: locate the source dirs of the skills the engine **statically** mounts —
@@ -94,7 +94,7 @@ idempotent and non-destructive: existing files are never overwritten.
 as `kept` and changes nothing, so it will NOT pull a newer engine/hook on its own. The files
 split into two classes:
 - **plugin-owned copies** (verbatim of a plugin file): `.claude/hooks/goal-gate.mjs` and, if
-  embedded, `.claude/harness/**` (engine, meta-skeleton, goal-spec, static skills). These
+  embedded, `.claude/harness/**` (engine, Codex adapter, meta-skeleton, goal-spec, static skills). These
   drift from the plugin on a version bump.
 - **user-owned** (the project evolves them): `harness-gate.json`, `conventions/**`, the
   CLAUDE.md block, `settings.json`.
