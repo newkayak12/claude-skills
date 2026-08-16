@@ -182,6 +182,11 @@ function main() {
         join(embedRoot, 'engine', 'fallback-check.mjs'),
         refresh,
       );
+      embed.runtime['engine/codex-exec-adapter.mjs'] = copyFile(
+        join(PLUGIN_ROOT, 'engine', 'codex-exec-adapter.mjs'),
+        join(embedRoot, 'engine', 'codex-exec-adapter.mjs'),
+        refresh,
+      );
       embed.runtime['templates/meta-skeleton.js'] = copyFile(
         join(PLUGIN_ROOT, 'templates', 'meta-skeleton.js'),
         join(embedRoot, 'templates', 'meta-skeleton.js'),

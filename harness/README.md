@@ -47,6 +47,14 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
 The project owns the copies afterward; the plugin never manages them again.
 
 ## Status
+- v1.13.0 — **fallback Codex CLI provider spike promoted**: Workflow-less fallback runs now
+  have a documented CLI straight-control path for Codex. At run open, the fallback may call
+  `engine/codex-exec-adapter.mjs --detect` to write provider readiness; SetGoal can then mark
+  code-oriented subgoals with `implement_provider: "codex"` / `test_provider: "codex"`.
+  Implement and Test stay separate `codex exec --json` processes, with JSONL event artifacts
+  plus final summary JSON, and Claude still owns Plan, SetGoal, QualityGate, and Report.
+  `pipeline.js` remains Claude Workflow-native; this is fallback-only until Workflow has a
+  real provider abstraction.
 - v1.12.1 — **Plan skill-namespace hint fix**: the Plan stage's `skills fit (plugins: …)` hint
   in `engine/pipeline.js` now includes `planning:*` and `completion:*`, so the optional executor
   the docs recommend (`planning:executing-plans`) and the statically-mounted

@@ -19,6 +19,8 @@ A-mode/manual authoring) and the authoring rules the SetGoal stage follows.
       "title": "what this unit produces",
       "persona": "optional executor role (e.g. 'senior Kotlin engineer')",
       "skills": ["develop:kotlin-specialist"],  // repo skills the executor MUST invoke
+      "implement_provider": "codex",     // optional in Workflow-less fallback only: "codex" or omit for Claude Agent
+      "test_provider": "codex",          // optional in Workflow-less fallback only: "codex" or omit for Claude Agent
       "acceptance": [                  // what the QualityGate judge checks
         "concrete, checkable criterion"
       ],
@@ -43,6 +45,11 @@ A-mode/manual authoring) and the authoring rules the SetGoal stage follows.
 4. **subgoals are divide-and-conquer.** deps only for real ordering; independent subgoals
    run in parallel. Trivial request = one subgoal.
 5. **check ≠ act.** Test and QualityGate agents are always separate from the executor.
+6. **provider fields are fallback-only hints.** In Workflow-less runs, SetGoal may set
+   `implement_provider` / `test_provider` to `"codex"` only when `RUN/providers.json` shows
+   Codex is ready. Implement and Test still run as separate processes. The Workflow
+   `pipeline.js` path ignores provider fields because its `agent()` runtime is not a
+   provider abstraction.
 
 ## How it runs
 
