@@ -47,6 +47,12 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
 The project owns the copies afterward; the plugin never manages them again.
 
 ## Status
+- v1.15.0 — **Workflow Implement Codex bridge**: the fixed `pipeline.js` path can now keep
+  Implement as a Sonnet stage while letting that Sonnet agent call the local Codex CLI through
+  `engine/codex-exec-adapter.mjs`. SetGoal may mark code-oriented subgoals with
+  `implement_provider: "codex"` when `codex_provider` is not off; the Implement agent runs
+  detection, invokes `codex exec --json`, reads the result, and emits the normal `HANDOFF`.
+  If Codex is unavailable or fails, the same Sonnet agent falls back to direct implementation.
 - v1.14.0 — **Codex solo runner**: added `engine/codex-runner.mjs`, a Codex-only harness
   entrypoint that reproduces the file-artifact fallback contract without touching the Claude
   Workflow path. It runs Plan, SetGoal, Implement, Test, QualityGate, and Report as separate
@@ -59,8 +65,8 @@ The project owns the copies afterward; the plugin never manages them again.
   code-oriented subgoals with `implement_provider: "codex"` / `test_provider: "codex"`.
   Implement and Test stay separate `codex exec --json` processes, with JSONL event artifacts
   plus final summary JSON, and Claude still owns Plan, SetGoal, QualityGate, and Report.
-  `pipeline.js` remains Claude Workflow-native; this is fallback-only until Workflow has a
-  real provider abstraction.
+  `pipeline.js` remained Claude Workflow-native in this release; v1.15.0 adds a Sonnet-driven
+  CLI bridge for Implement, still not a native Workflow provider abstraction.
 - v1.12.1 — **Plan skill-namespace hint fix**: the Plan stage's `skills fit (plugins: …)` hint
   in `engine/pipeline.js` now includes `planning:*` and `completion:*`, so the optional executor
   the docs recommend (`planning:executing-plans`) and the statically-mounted

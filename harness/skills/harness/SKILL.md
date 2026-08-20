@@ -29,10 +29,15 @@ reporting to Sonnet.
 ## Process
 
 1. **Pass the raw request to the engine** (B, default):
-   `Workflow({ scriptPath: "harness/engine/pipeline.js", args: { request: "<the request>", context: "<optional constraints>", max_retries: 2 } })`
+   `Workflow({ scriptPath: "harness/engine/pipeline.js", args: { request: "<the request>", context: "<optional constraints>", max_retries: 2, codex_provider: "auto" } })`
    The engine itself plans, authors + critiques the goal-spec, executes subgoals with
    repo-skill-equipped executors, verifies each deterministically, gates each and the
    assembled whole, and writes the report.
+   - In the Workflow path, `codex_provider: "auto"` lets SetGoal mark code-oriented subgoals
+     with `implement_provider: "codex"`. The Sonnet Implement agent then tries the local
+     `codex` CLI through `engine/codex-exec-adapter.mjs`, receives the result, and produces
+     the normal `HANDOFF`. If the CLI is absent or fails, it falls back to implementing itself.
+     Use `codex_provider: "off"` to force plain Sonnet implementation.
    - **If the Workflow tool is unavailable** (plain Agent SDK, some harnesses, CI): do NOT
      skip the engine — follow [`engine/fallback.md`](../../engine/fallback.md) instead. It
      reproduces the identical six stages by dispatching a **fresh subagent per stage** that
@@ -91,7 +96,7 @@ pre-wiring, and using none of them is a valid run.
 - `harness/engine/pipeline.js` — the fixed six-stage engine (Workflow path)
 - `harness/engine/fallback.md` — Workflow-less fallback: same six stages via fresh per-stage subagents sharing state through a run directory
 - `harness/engine/fallback-check.mjs` — deterministic completion check for a fallback run (the objective done-signal)
-- `harness/engine/codex-exec-adapter.mjs` — fallback-only CLI bridge that detects Codex and captures `codex exec --json` events
+- `harness/engine/codex-exec-adapter.mjs` — CLI bridge that detects Codex and captures `codex exec --json` events for Workflow Implement delegation and fallback runs
 - `harness/engine/codex-runner.mjs` — Codex-only file-artifact runner; no Claude Workflow dependency
 - `harness/templates/meta-skeleton.js` — Mode M starting point (contract + `[META]` block)
 - `harness/templates/` — bespoke-pipeline reference

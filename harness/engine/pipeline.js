@@ -11,7 +11,7 @@ export const meta = {
   ],
 }
 
-// args = { request: string, context?: string, max_retries?: number }
+// args = { request: string, context?: string, max_retries?: number, codex_provider?: 'auto'|'off'|'implement' }
 // Six baked stages, model-pinned so the flow holds regardless of the main-session model:
 //   Plan(opus) → SetGoal(opus, +critic) → per subgoal [Implement(sonnet) → Test(sonnet)
 //   → QualityGate(opus)] looped up to max_retries → goal-level QualityGate(opus) → Report(sonnet).
@@ -24,6 +24,8 @@ req = req || {}
 if (!req.request) throw new Error('harness-engine: args.request (raw request string) is required')
 const MAX = Number.isInteger(req.max_retries) ? req.max_retries : 2
 const ctxNote = req.context ? `\nContext from the requester:\n${req.context}` : ''
+const codexProvider = String(req.codex_provider || req.codex_mode || 'auto').toLowerCase()
+const codexImplementEnabled = !['off', 'false', 'none', 'claude', 'sonnet'].includes(codexProvider)
 
 const SPEC = {
   type: 'object',
@@ -47,6 +49,16 @@ const SPEC = {
             type: 'array',
             items: { type: 'string' },
             description: 'SUBGOAL-LEVEL criteria for this one unit of work only — distinct from the goal-level acceptance array at the root.',
+          },
+          implement_provider: {
+            type: 'string',
+            enum: ['codex'],
+            description: 'Optional: set to "codex" for code-editing/refactor/build subgoals when the Workflow Implement agent should try the local Codex CLI bridge before doing the work itself.',
+          },
+          test_provider: {
+            type: 'string',
+            enum: ['codex'],
+            description: 'Optional fallback/runner hint. The Workflow path currently keeps Test on the normal Sonnet verifier.',
           },
           test: { type: 'array', items: { type: 'string' } },
           deps: { type: 'array', items: { type: 'string' } },
@@ -135,6 +147,12 @@ const specPrompt =
   `only knows what you write. subgoals are divide-and-conquer; deps only for real ordering. ` +
   `skills[] lists 1-3 repository skill names the executor must invoke. test[] lists shell ` +
   `commands or concrete checks a verifier can execute without trusting the executor. ` +
+  (codexImplementEnabled
+    ? `For code-editing, repository-inspection, build/test, and refactor subgoals, set ` +
+      `"implement_provider":"codex" so the Workflow Implement Sonnet agent first tries the ` +
+      `local Codex CLI bridge and then reports its result. Do not set it for writing-only, ` +
+      `planning-only, or product/strategy subgoals. `
+    : `Do not set provider fields; codex_provider is off for this run. `) +
   `Fold any project convention rules the plan surfaced into subgoal acceptance and test entries. ` +
   `Keep it small — a trivial request is one subgoal.\n` +
   `Two hard rules on acceptance/test criteria: (a) each criterion checks THIS unit's own ` +
@@ -214,6 +232,37 @@ function rejectionSig(v) {
   return JSON.stringify([gaps, norm(v.reason)])
 }
 
+function safeRunPart(value) {
+  return String(value || 'subgoal').toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'subgoal'
+}
+
+function codexBridgeInstructions(sg, attempt, accept, ctx, feedback) {
+  if (!codexImplementEnabled || sg.implement_provider !== 'codex') return ''
+  const part = `${safeRunPart(sg.id)}-${attempt}`
+  const dir = `.harness-run/workflow-codex/${part}`
+  return (
+    `\n\nCodex CLI bridge is enabled for this Implement subgoal. You are still the Sonnet ` +
+    `Implement agent, but first try to delegate the actual code/repo work to local Codex CLI:\n` +
+    `1. Use Bash to create ${dir}/.\n` +
+    `2. Locate the adapter path with Bash: prefer harness/engine/codex-exec-adapter.mjs; ` +
+    `if absent try .claude/harness/engine/codex-exec-adapter.mjs. If neither exists, skip ` +
+    `Codex and implement directly.\n` +
+    `3. Run detection with that adapter: node "$ADAPTER" --detect --cwd "$PWD" --output ${dir}/providers.json\n` +
+    `4. If detection succeeds, write ${dir}/prompt.md with the full implementation request: ` +
+    `goal, subgoal title, persona, required skills, project conventions to follow, acceptance criteria, ` +
+    `completed-dependency handoffs, and prior rejection feedback if present.\n` +
+    `5. Run: node "$ADAPTER" --cwd "$PWD" --prompt-file ${dir}/prompt.md ` +
+    `--events-output ${dir}/codex.events.jsonl --output ${dir}/codex.json --sandbox workspace-write\n` +
+    `6. Read ${dir}/codex.json. If ok=true, inspect last_message and any changed files needed to ` +
+    `understand the result, then produce your normal concise HANDOFF from that result. If Codex is ` +
+    `unavailable or exits non-zero, state that in your working notes and implement the subgoal yourself ` +
+    `with the normal tools.\n` +
+    `7. Never skip the final HANDOFF. Mention the Codex artifact paths if Codex ran.\n` +
+    `Acceptance criteria for the Codex prompt:\n${accept}${ctx}` +
+    (feedback ? `\nPrior rejection feedback for the Codex prompt:\n${feedback}` : '')
+  )
+}
+
 // ---- Stages 3-5 per subgoal: Implement → Test → QualityGate, looped ----
 async function runSubgoal(sg, upstream) {
   const ctx = upstream.length
@@ -236,6 +285,7 @@ async function runSubgoal(sg, upstream) {
       `If the project defines .claude/conventions/**, Read the ones relevant to your files and follow them.\n` +
       `Acceptance criteria:\n${accept}${ctx}` +
       (feedback ? `\n\nPrevious attempt was rejected. Fix:\n${feedback}` : '') +
+      codexBridgeInstructions(sg, attempt, accept, ctx, feedback) +
       `\n\nEnd your reply with a section starting exactly with "HANDOFF:" — max 1500 chars — ` +
       `stating what you produced (paths, names, interfaces) for dependent work to build on.`,
       { label: `impl:${sg.id}:${attempt}`, phase: 'Implement', model: 'sonnet' })
@@ -369,6 +419,7 @@ const report = await agent(
 
 return {
   goal: spec.goal,
+  codex_provider: codexImplementEnabled ? codexProvider : 'off',
   spec,
   all_passed: failed.length === 0 && !!(goalGate && goalGate.pass),
   failed: failed.map(r => ({ id: r.id, title: r.title, reason: r.verdict && r.verdict.reason })),
