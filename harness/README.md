@@ -47,6 +47,12 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
 The project owns the copies afterward; the plugin never manages them again.
 
 ## Status
+- v1.16.0 — **Workflow Implement/Test Codex delegation**: when `codex_provider` is not off,
+  the fixed `pipeline.js` path now has both Sonnet Implement and Sonnet Test agents try the
+  local Codex CLI bridge at the start of their stages. Implement uses Codex for code/repo work
+  before emitting the normal `HANDOFF`; Test uses a separate Codex call for verification-only
+  evidence before producing the normal evidence JSON. Both stages fall back to direct Sonnet
+  work if the adapter or Codex CLI is unavailable or returns non-zero.
 - v1.15.0 — **Workflow Implement Codex bridge**: the fixed `pipeline.js` path can now keep
   Implement as a Sonnet stage while letting that Sonnet agent call the local Codex CLI through
   `engine/codex-exec-adapter.mjs`. SetGoal may mark code-oriented subgoals with

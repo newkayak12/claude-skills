@@ -45,13 +45,14 @@ A-mode/manual authoring) and the authoring rules the SetGoal stage follows.
 4. **subgoals are divide-and-conquer.** deps only for real ordering; independent subgoals
    run in parallel. Trivial request = one subgoal.
 5. **check ≠ act.** Test and QualityGate agents are always separate from the executor.
-6. **provider fields are CLI-bridge hints, not Workflow provider abstraction.** In the
-   Workflow path, `implement_provider: "codex"` tells the Sonnet Implement agent to try the
-   local `codex` CLI through `engine/codex-exec-adapter.mjs`, then turn the result into the
-   normal `HANDOFF`; if Codex is unavailable or fails, the same Sonnet agent falls back to
-   implementing directly. In Workflow-less runs, `implement_provider` / `test_provider` may
-   route stages to separate `codex exec --json` processes when `RUN/providers.json` shows
-   Codex is ready.
+6. **provider fields are CLI-bridge trace hints, not Workflow provider abstraction.** In the
+   Workflow path, `codex_provider: "auto"` makes the Sonnet Implement and Sonnet Test agents
+   try the local `codex` CLI through `engine/codex-exec-adapter.mjs` at the start of their
+   stages. Implement turns the Codex result into the normal `HANDOFF`; Test turns a separate
+   verification-only Codex result into the normal evidence JSON. If Codex is unavailable or
+   fails, the same Sonnet agents fall back to direct work. In Workflow-less runs,
+   `implement_provider` / `test_provider` may route stages to separate `codex exec --json`
+   processes when `RUN/providers.json` shows Codex is ready.
 
 ## How it runs
 
@@ -65,8 +66,8 @@ Stages (model-pinned): Plan(opus) → SetGoal(opus, +critic) → per subgoal
 Implement(sonnet) → Test(sonnet) → QualityGate(opus) looped up to max_retries →
 goal-level QualityGate(opus, quantified `match_pct`, pass requires >= 90%, repair-and-regate
 loop up to max_retries) → Report(sonnet). With `codex_provider: "auto"` (the default),
-code-oriented Implement subgoals may first use the local Codex CLI bridge from inside the
-Sonnet Implement agent; use `codex_provider: "off"` to force plain Sonnet implementation.
+Implement and Test stages first try the local Codex CLI bridge from inside their Sonnet
+agents; use `codex_provider: "off"` to force plain Sonnet implementation and verification.
 Returns `{ goal, codex_provider, spec, all_passed,
 failed[], goal_gate, results[], report }`.
 
