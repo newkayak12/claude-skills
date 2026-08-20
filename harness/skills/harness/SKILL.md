@@ -33,11 +33,12 @@ reporting to Sonnet.
    The engine itself plans, authors + critiques the goal-spec, executes subgoals with
    repo-skill-equipped executors, verifies each deterministically, gates each and the
    assembled whole, and writes the report.
-   - In the Workflow path, `codex_provider: "auto"` lets SetGoal mark code-oriented subgoals
-     with `implement_provider: "codex"`. The Sonnet Implement agent then tries the local
-     `codex` CLI through `engine/codex-exec-adapter.mjs`, receives the result, and produces
-     the normal `HANDOFF`. If the CLI is absent or fails, it falls back to implementing itself.
-     Use `codex_provider: "off"` to force plain Sonnet implementation.
+   - In the Workflow path, `codex_provider: "auto"` makes the Sonnet Implement and Sonnet Test
+     agents try the local `codex` CLI through `engine/codex-exec-adapter.mjs` at the start of
+     their stages. Implement receives the Codex result and produces the normal `HANDOFF`; Test
+     uses a separate verification-only Codex call before producing the normal evidence JSON.
+     If the CLI is absent or fails, each stage falls back to direct Sonnet work. Use
+     `codex_provider: "off"` to force plain Sonnet implementation and verification.
    - **If the Workflow tool is unavailable** (plain Agent SDK, some harnesses, CI): do NOT
      skip the engine — follow [`engine/fallback.md`](../../engine/fallback.md) instead. It
      reproduces the identical six stages by dispatching a **fresh subagent per stage** that
