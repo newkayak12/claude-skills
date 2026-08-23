@@ -34,11 +34,13 @@ reporting to Sonnet.
    repo-skill-equipped executors, verifies each deterministically, gates each and the
    assembled whole, and writes the report.
    - In the Workflow path, `codex_provider: "auto"` makes the Sonnet Implement and Sonnet Test
-     agents try the local `codex` CLI through `engine/codex-exec-adapter.mjs` at the start of
-     their stages. Implement receives the Codex result and produces the normal `HANDOFF`; Test
-     uses a separate verification-only Codex call before producing the normal evidence JSON.
-     If the CLI is absent or fails, each stage falls back to direct Sonnet work. Use
-     `codex_provider: "off"` to force plain Sonnet implementation and verification.
+     agents invoke `harness:codex-control`, resolve `engine/codex-exec-adapter.mjs` from an
+     explicit `codex_adapter_path`, repo-local, embedded, or plugin-mode install, then try the
+     local `codex` CLI at the start of their stages. Implement receives the Codex result and
+     produces the normal `HANDOFF`; Test uses a separate verification-only Codex call before
+     producing the normal evidence JSON. If the adapter or CLI is absent or fails, each stage
+     falls back to direct Sonnet work. Use `codex_provider: "off"` to force plain Sonnet
+     implementation and verification.
    - **If the Workflow tool is unavailable** (plain Agent SDK, some harnesses, CI): do NOT
      skip the engine — follow [`engine/fallback.md`](../../engine/fallback.md) instead. It
      reproduces the identical six stages by dispatching a **fresh subagent per stage** that
@@ -77,7 +79,9 @@ reporting to Sonnet.
 
 The engine statically mounts three skills — `agents:agent-task-decomposer` (Plan),
 `think:devils-advocate` (SetGoal critic + QualityGate), `completion:verification-before-completion`
-(Test). Beyond those, SetGoal MAY **optionally** map the repo's harness-aware skills — each
+(Test). Codex-enabled Implement/Test stages also mount `harness:codex-control` to resolve the
+CLI adapter across plugin, repo-local, and embedded installs. Beyond those, SetGoal MAY
+**optionally** map the repo's harness-aware skills — each
 rewritten dual-mode to run standalone AND as a harness executor — into subgoals when the task
 fits. None is required; the harness runs without them and each also works on its own:
 
@@ -94,6 +98,7 @@ pre-wiring, and using none of them is a valid run.
 
 ## Related
 - `harness/goal-spec.md` — spec schema (authored by the SetGoal stage) + authoring rules
+- `harness/skills/codex-control/SKILL.md` — adapter discovery contract for Codex CLI delegation
 - `harness/engine/pipeline.js` — the fixed six-stage engine (Workflow path)
 - `harness/engine/fallback.md` — Workflow-less fallback: same six stages via fresh per-stage subagents sharing state through a run directory
 - `harness/engine/fallback-check.mjs` — deterministic completion check for a fallback run (the objective done-signal)

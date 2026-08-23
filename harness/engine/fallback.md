@@ -54,10 +54,12 @@ removed). Instead:
 
 1. Create `RUN=.harness-run/<slug>/` and write `manifest.json` with the request, `max_retries`
    (default 2), and empty `subgoals`/`stages`.
-2. Detect optional external providers. If `node harness/engine/codex-exec-adapter.mjs --detect
-   --cwd "$PWD" --output "$RUN/providers.json"` exits 0, Codex may be used for Implement/Test
-   stages. If it fails, keep the JSON report if written and continue with Claude Agent only.
-   This is a capability hint, not a requirement.
+2. Detect optional external providers. Invoke `harness:codex-control` and resolve
+   `codex-exec-adapter.mjs` from an explicit path, `harness/engine/`,
+   `.claude/harness/engine/`, or the plugin root named in the project's `CLAUDE.md` Harness
+   block. If `node "$ADAPTER" --detect --cwd "$PWD" --output "$RUN/providers.json"` exits 0,
+   Codex may be used for Implement/Test stages. If it fails, keep the JSON report if written
+   and continue with Claude Agent only. This is a capability hint, not a requirement.
 3. Create a `TaskCreate` checklist — one item per stage now, one per subgoal after SetGoal — so
    "invoked the skill but did nothing" is visibly an unfinished checklist.
 4. You may only tell the user the run is **done** after `fallback-check.mjs RUN` prints
@@ -116,7 +118,7 @@ For the current subgoal `<id>`, loop attempt `n` from 1 up to `max_retries` (def
 1. **Implement (sonnet or Codex).** If `implement_provider === "codex"` and
    `RUN/providers.json` shows Codex ready, write `RUN/subgoals/<id>/impl-<n>.prompt.md`
    with the same instructions the Agent path would receive, then run:
-   `node harness/engine/codex-exec-adapter.mjs --cwd "$PWD" --prompt-file RUN/subgoals/<id>/impl-<n>.prompt.md --events-output RUN/subgoals/<id>/impl-<n>.codex.events.jsonl --output RUN/subgoals/<id>/impl-<n>.codex.json --sandbox workspace-write`.
+   `node "$ADAPTER" --cwd "$PWD" --prompt-file RUN/subgoals/<id>/impl-<n>.prompt.md --events-output RUN/subgoals/<id>/impl-<n>.codex.events.jsonl --output RUN/subgoals/<id>/impl-<n>.codex.json --sandbox workspace-write`.
    Then copy or summarize the Codex JSON `last_message` into `RUN/subgoals/<id>/impl-<n>.md`
    as the normal handoff. If Codex is not ready or exits non-zero, record that in the
    handoff and fall back to the normal Agent path unless the failure itself satisfies the

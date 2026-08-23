@@ -47,6 +47,13 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
 The project owns the copies afterward; the plugin never manages them again.
 
 ## Status
+- v1.16.1 — **Codex plugin-mode adapter discovery**: added `harness:codex-control` and
+  mounted it in Workflow Implement/Test Codex delegation. `pipeline.js` now honors an explicit
+  `args.codex_adapter_path` before repo-local and embedded paths, then uses the skill's
+  plugin-mode fallback to derive the adapter beside the plugin-root `pipeline.js` referenced
+  from the project's Harness block. The install template now includes `codex_adapter_path` in
+  the plugin-mode Workflow example, so non-embedded projects can use Codex without symlinks or
+  copying `.claude/harness/**`.
 - v1.16.0 — **Workflow Implement/Test Codex delegation**: when `codex_provider` is not off,
   the fixed `pipeline.js` path now has both Sonnet Implement and Sonnet Test agents try the
   local Codex CLI bridge at the start of their stages. Implement uses Codex for code/repo work
