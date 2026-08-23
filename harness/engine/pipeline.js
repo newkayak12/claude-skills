@@ -26,6 +26,7 @@ const MAX = Number.isInteger(req.max_retries) ? req.max_retries : 2
 const ctxNote = req.context ? `\nContext from the requester:\n${req.context}` : ''
 const codexProvider = String(req.codex_provider || req.codex_mode || 'auto').toLowerCase()
 const codexDelegationEnabled = !['off', 'false', 'none', 'claude', 'sonnet'].includes(codexProvider)
+const codexAdapterPath = String(req.codex_adapter_path || req.codexAdapterPath || '').trim()
 
 const SPEC = {
   type: 'object',
@@ -237,13 +238,22 @@ function safeRunPart(value) {
 }
 
 function codexAdapterPrelude(dir) {
+  const explicit = codexAdapterPath
+    ? `2. First test the explicit adapter path from Workflow args: ${JSON.stringify(codexAdapterPath)}. ` +
+      `If it exists, set ADAPTER to that exact path.\n`
+    : ''
   return (
-    `1. Use Bash to create ${dir}/.\n` +
-    `2. Locate the adapter path with Bash: prefer harness/engine/codex-exec-adapter.mjs; ` +
-    `if absent try .claude/harness/engine/codex-exec-adapter.mjs. If neither exists, skip ` +
-    `Codex and continue directly. Set ADAPTER to the path that exists, for example: ` +
-    `if [ -f harness/engine/codex-exec-adapter.mjs ]; then ADAPTER=harness/engine/codex-exec-adapter.mjs; else ADAPTER=.claude/harness/engine/codex-exec-adapter.mjs; fi\n` +
-    `3. Run detection with that adapter: node "$ADAPTER" --detect --cwd "$PWD" --output ${dir}/providers.json\n`
+    mountSkill('harness:codex-control', 'resolve the Codex CLI adapter across plugin, repo-local, and embedded installs') +
+    `\n1. Use Bash to create ${dir}/.\n` +
+    explicit +
+    `${explicit ? '3' : '2'}. If ADAPTER is still unset, locate it with Bash: prefer ` +
+    `harness/engine/codex-exec-adapter.mjs; if absent try ` +
+    `.claude/harness/engine/codex-exec-adapter.mjs; if absent follow the codex-control ` +
+    `plugin-mode fallback by reading CLAUDE.md's Harness block, deriving the adapter path ` +
+    `beside its plugin-root pipeline.js, and testing that file. If no adapter exists, skip ` +
+    `Codex and continue directly.\n` +
+    `${explicit ? '4' : '3'}. Run detection with that adapter only if ADAPTER is set: ` +
+    `node "$ADAPTER" --detect --cwd "$PWD" --output ${dir}/providers.json\n`
   )
 }
 

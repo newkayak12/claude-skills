@@ -79,8 +79,9 @@ idempotent and non-destructive: existing files are never overwritten.
      leave untouched, never duplicate. Exists without markers → append; if existing content
      contradicts it (e.g. "never use hooks/subagents"), do NOT append — surface the conflict.
    - **If you embedded** (step 1), rewrite the Workflow `scriptPath` in the block to
-     `.claude/harness/engine/pipeline.js` (the gate's engagement regex still matches the
-     `harness/engine/pipeline.js` substring).
+     `.claude/harness/engine/pipeline.js` and `codex_adapter_path` to
+     `.claude/harness/engine/codex-exec-adapter.mjs` (the gate's engagement regex still
+     matches the `harness/engine/pipeline.js` substring).
 
 5. **Report** — from `install.mjs`'s JSON plus the convention/CLAUDE.md steps: list created /
    kept / needs-user-input. Remind: the gate only blocks `Write|Edit|MultiEdit|NotebookEdit`

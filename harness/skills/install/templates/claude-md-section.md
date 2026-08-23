@@ -5,7 +5,7 @@ This project uses the harness plugin for substantial changes.
 
 - **Substantial or risky changes** (multi-file, gated paths, anything with a quality
   bar) go through the six-stage engine — do not hand-roll the flow:
-  `Workflow({ scriptPath: "<harness plugin root>/engine/pipeline.js", args: { request: "<the request>" } })`
+  `Workflow({ scriptPath: "<harness plugin root>/engine/pipeline.js", args: { request: "<the request>", codex_adapter_path: "<harness plugin root>/engine/codex-exec-adapter.mjs" } })`
 - **Conventions are law:** read `.claude/conventions/**` before implementing; they feed
   the engine's acceptance criteria and verification commands.
 - **Gate:** edits matching the patterns in `.claude/harness-gate.json` are blocked by a

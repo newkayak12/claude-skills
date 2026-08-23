@@ -219,7 +219,8 @@ function main() {
       'embedding covers runtime + the skills you passed only; subgoal skills[] are chosen ' +
         'dynamically by SetGoal and cannot be pre-enumerated — unembedded picks are absent ' +
         'in a plugin-less environment. If embedded, rewrite the Workflow scriptPath in the ' +
-        "CLAUDE.md block to .claude/harness/engine/pipeline.js (engagement regex still matches).",
+        'CLAUDE.md block to .claude/harness/engine/pipeline.js and codex_adapter_path to ' +
+        '.claude/harness/engine/codex-exec-adapter.mjs (engagement regex still matches).',
     );
   } else {
     report.actions.embed = 'skipped';

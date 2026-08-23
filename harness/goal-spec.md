@@ -47,10 +47,11 @@ A-mode/manual authoring) and the authoring rules the SetGoal stage follows.
 5. **check ≠ act.** Test and QualityGate agents are always separate from the executor.
 6. **provider fields are CLI-bridge trace hints, not Workflow provider abstraction.** In the
    Workflow path, `codex_provider: "auto"` makes the Sonnet Implement and Sonnet Test agents
-   try the local `codex` CLI through `engine/codex-exec-adapter.mjs` at the start of their
-   stages. Implement turns the Codex result into the normal `HANDOFF`; Test turns a separate
-   verification-only Codex result into the normal evidence JSON. If Codex is unavailable or
-   fails, the same Sonnet agents fall back to direct work. In Workflow-less runs,
+   invoke `harness:codex-control`, resolve `engine/codex-exec-adapter.mjs` from explicit,
+   repo-local, embedded, or plugin-mode paths, then try the local `codex` CLI at the start of
+   their stages. Implement turns the Codex result into the normal `HANDOFF`; Test turns a
+   separate verification-only Codex result into the normal evidence JSON. If Codex is
+   unavailable or fails, the same Sonnet agents fall back to direct work. In Workflow-less runs,
    `implement_provider` / `test_provider` may route stages to separate `codex exec --json`
    processes when `RUN/providers.json` shows Codex is ready.
 
@@ -59,7 +60,7 @@ A-mode/manual authoring) and the authoring rules the SetGoal stage follows.
 ```
 Workflow({ scriptPath: "harness/engine/pipeline.js",
            args: { request: "<raw request>", context: "<optional>", max_retries: 2,
-                   codex_provider: "auto" } })
+                   codex_provider: "auto", codex_adapter_path: "<optional adapter path>" } })
 ```
 
 Stages (model-pinned): Plan(opus) → SetGoal(opus, +critic) → per subgoal
