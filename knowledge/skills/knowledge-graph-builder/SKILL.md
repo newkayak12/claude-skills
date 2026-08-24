@@ -20,13 +20,15 @@ compatibility:
 
 Build a source-grounded knowledge graph from documents, code, notes, tickets, chat logs, or other mixed material.
 
+For long-lived or cross-domain graphs, use `knowledge:ontology-builder` first or create a small ontology section before extraction. The ontology should define allowed node classes, relationship semantics, properties, constraints, and controlled vocabularies.
+
 Use a knowledge graph when relationships matter as first-class data: `Service DEPENDS_ON Database`, `Decision SUPERSEDES Decision`, `Person OWNS System`, `API RETURNS Entity`, or `Term ALIAS_OF Term`.
 
 ## Process
 
 1. **Define graph purpose.** Identify the expected questions the graph should answer: impact analysis, onboarding, compliance traceability, research synthesis, product taxonomy, code architecture, or support knowledge. Ask only when the graph boundary or audience materially changes the schema.
 2. **Inventory source material.** Read representative sources before designing the schema. Capture source paths, URLs, document titles, dates, and other provenance needed to verify extracted facts.
-3. **Draft the schema.** Define node labels, relationship types, key properties, uniqueness rules, and evidence fields. Keep the schema small enough to use; add labels only when they change query behavior or governance.
+3. **Draft or reuse the ontology/schema.** Define node labels/classes, relationship types, key properties, uniqueness rules, evidence fields, and constraints. Keep the schema small enough to use; add labels only when they change query behavior or governance.
 4. **Extract candidates.** Pull entities, aliases, attributes, relationships, temporal qualifiers, and source evidence. Prefer explicit statements over inference. Mark inferred edges with `confidence` and `inference_reason`.
 5. **Normalize names.** Canonicalize duplicates, aliases, acronyms, file paths, product names, people, teams, services, database objects, and domain terms. Preserve source wording as aliases when useful.
 6. **Validate relationships.** Check direction, cardinality, relation semantics, and evidence. Avoid vague edges such as `RELATED_TO` unless the user explicitly wants a loose exploration graph.
@@ -101,7 +103,9 @@ For exploratory work, Markdown tables are acceptable. For implementation work, p
 
 ## Related Skills
 
-- `write:knowledge-base-builder` - use when the output should be an Obsidian-style linked Markdown vault.
-- `write:rag-corpus-builder` - use when the goal is retrieval-ready chunks, metadata, citations, and evaluation queries.
+- `knowledge:knowledge-base-builder` - use when the output should be an Obsidian-style linked Markdown vault.
+- `knowledge:ontology-builder` - use when class hierarchy, relationship semantics, constraints, or controlled vocabularies need to be designed before graph extraction.
+- `knowledge:rag-corpus-builder` - use when the goal is retrieval-ready chunks, metadata, citations, and evaluation queries.
+- `knowledge:knowledge-query` - use when querying an existing graph, vault, RAG corpus, or mixed knowledge asset.
 - `develop:documentation-strategy` - use when the main task is planning a documentation system rather than extracting graph data.
 - `develop:architecture-designer` - use when the task is designing system architecture, not modeling extracted knowledge.

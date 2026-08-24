@@ -1,7 +1,7 @@
 {
   "name": "write",
-  "description": "Writing skills: doc co-authoring, linked knowledge-base building, knowledge-graph extraction, RAG corpus preparation, writing plans (gate-ready plan producer — production-time gap/ambiguity checks + per-step pass bars, dual-mode), skill writing, writer verification, SBI feedback writing, and technical blog writing.",
-  "version": "1.1.7",
+  "description": "Writing skills: doc co-authoring, writing plans (gate-ready plan producer — production-time gap/ambiguity checks + per-step pass bars, dual-mode), skill writing, writer verification, SBI feedback writing, and technical blog writing. Knowledge-base, graph, RAG, and query skills moved to the knowledge plugin.",
+  "version": "1.1.8",
   "author": {
     "name": "newkayak12"
   },
