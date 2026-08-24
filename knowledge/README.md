@@ -16,6 +16,7 @@ Knowledge skills for building, transforming, and querying source-grounded knowle
 
 | Skill | Description |
 |-------|-------------|
+| `knowledge-workflow` | Build a queryable knowledge system through graph-like source exploration |
 | `knowledge-base-builder` | Build an Obsidian-style linked Markdown knowledge base from code, docs, or notes |
 | `ontology-builder` | Design classes, relationship semantics, constraints, controlled vocabularies, and mappings |
 | `knowledge-graph-builder` | Extract source-grounded entities, relationships, schema, and graph-ready data |
