@@ -44,6 +44,9 @@ A useful knowledge-base delivery includes:
 |---|---|
 | `index.md` | Primary entry point with the vault map and recommended reading paths |
 | `vault-plan.md` | Audience, scope, note taxonomy, naming rules, and coverage strategy for non-trivial vaults |
+| `_rag/` when generated | Default portable RAG corpus artifacts derived from the vault |
+| `_graph/` when generated | Default graph-ready records derived from the vault |
+| `_ontology/` when generated | Default ontology package aligned with the vault taxonomy |
 | `mocs/*.md` or topic MOC notes | Topic-level navigation hubs |
 | Atomic Markdown notes | Source-grounded concept, code, decision, and workflow notes |
 | `glossary.md` when terms are numerous | Canonical names and aliases |
