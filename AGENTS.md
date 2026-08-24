@@ -14,11 +14,27 @@ work on with Codex.
 
 - Claude Workflow path: `harness/engine/pipeline.js`
 - Claude Workflow-less fallback instructions: `harness/engine/fallback.md`
-- Codex CLI adapter used by fallback: `harness/engine/codex-exec-adapter.mjs`
-- Codex-only runner: `harness/engine/codex-runner.mjs`
+- Codex CLI adapter used by Claude fallback/delegation: `harness/engine/codex-exec-adapter.mjs`
+- Legacy/external automation runner: `harness/engine/codex-runner.mjs`
 
 Keep the Claude Workflow path isolated. Do not change `pipeline.js` for Codex-only behavior
 unless the task explicitly asks for a shared provider abstraction.
+
+## Codex Harness Compatibility
+
+When you are already running inside a Codex session, do not delegate harness stages back to
+`codex`, `codex-exec-adapter.mjs`, or `codex-runner.mjs`. Run the harness contract directly
+with native Codex tools instead:
+
+1. Plan the work.
+2. Define concrete acceptance and verification checks.
+3. Implement with local edits.
+4. Verify with fresh commands or file inspection.
+5. Gate the result against the acceptance criteria.
+6. Report the outcome honestly.
+
+The Codex CLI adapter remains for Claude-orchestrated harness stages that optionally call a
+local Codex CLI process. It is not the Codex-session compatibility path.
 
 ## Validation
 

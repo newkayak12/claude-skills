@@ -47,6 +47,11 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
 The project owns the copies afterward; the plugin never manages them again.
 
 ## Status
+- v1.16.2 — **Codex session compatibility boundary**: added `AGENTS.md` guidance that an
+  active Codex session must run the harness contract directly with native Codex tools, not
+  recurse through `codex`, `codex-exec-adapter.mjs`, or `codex-runner.mjs`. The Codex CLI
+  adapter remains only for Claude-orchestrated Workflow/fallback delegation and external
+  automation. The Claude Workflow path (`engine/pipeline.js`) is unchanged.
 - v1.16.1 — **Codex plugin-mode adapter discovery**: added `harness:codex-control` and
   mounted it in Workflow Implement/Test Codex delegation. `pipeline.js` now honors an explicit
   `args.codex_adapter_path` before repo-local and embedded paths, then uses the skill's

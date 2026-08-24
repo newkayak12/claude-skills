@@ -53,7 +53,9 @@ A-mode/manual authoring) and the authoring rules the SetGoal stage follows.
    separate verification-only Codex result into the normal evidence JSON. If Codex is
    unavailable or fails, the same Sonnet agents fall back to direct work. In Workflow-less runs,
    `implement_provider` / `test_provider` may route stages to separate `codex exec --json`
-   processes when `RUN/providers.json` shows Codex is ready.
+   processes when `RUN/providers.json` shows Codex is ready. When the active orchestrator is
+   Codex itself, ignore these fields as delegation hints and run the harness contract directly;
+   do not spawn a nested `codex` process.
 
 ## How it runs
 
