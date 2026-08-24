@@ -24,6 +24,16 @@ For long-lived or cross-domain graphs, use `knowledge:ontology-builder` first or
 
 Use a knowledge graph when relationships matter as first-class data: `Service DEPENDS_ON Database`, `Decision SUPERSEDES Decision`, `Person OWNS System`, `API RETURNS Entity`, or `Term ALIAS_OF Term`.
 
+## Quick Intake
+
+Before extracting graph records, ask a lightweight "what is this?" intake when the graph purpose is unclear:
+
+- What domain or system does this material describe?
+- What relationship questions should the graph answer? impact, ownership, lineage, dependency, compliance, taxonomy?
+- Is this exploratory, or should it become a long-lived graph with ontology constraints?
+
+If the user answers roughly, proceed with a small provisional schema and mark uncertain classes or edges in `extraction-report.md`. Use `knowledge:ontology-builder` first only when class/relation semantics will materially affect correctness.
+
 ## Process
 
 1. **Define graph purpose.** Identify the expected questions the graph should answer: impact analysis, onboarding, compliance traceability, research synthesis, product taxonomy, code architecture, or support knowledge. Ask only when the graph boundary or audience materially changes the schema.

@@ -18,6 +18,16 @@ compatibility:
 
 # Knowledge Base Builder
 
+## Quick Intake
+
+Before building, ask a lightweight "what is this?" intake when the source purpose is not already obvious from the user's request or repository context. Keep it short:
+
+- What kind of material is this? codebase, docs, notes, tickets, research, mixed?
+- Who will browse the vault, and what should they be able to understand or do?
+- Should the output optimize for onboarding, architecture navigation, research synthesis, operations, or long-term knowledge maintenance?
+
+If the user gives a partial answer, proceed with reasonable defaults and record assumptions in `vault-plan.md` or `open-questions.md`. Do not block on exhaustive taxonomy decisions before reading representative sources.
+
 ## Process
 
 1. **Define the vault boundary.** Identify the source directories, document sets, or pasted materials to include. Ask only when the boundary is ambiguous or destructive file placement is possible; otherwise create a clear output folder such as `knowledge-base/` or use the user's requested vault path.

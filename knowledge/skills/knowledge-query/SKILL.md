@@ -57,6 +57,15 @@ knowledge-artifacts/graph/
 
 Ask for location only after these default paths and obvious user-provided paths are absent.
 
+## Quick Intake
+
+For vague queries, ask what kind of answer the user wants before searching broadly:
+
+- Are they asking for lookup, synthesis, impact analysis, reading path, or gap finding?
+- Should the answer be short, evidence-heavy, or exploratory?
+
+If the query is concrete, skip intake and answer from the available assets. If assets are missing, ask for location only after checking default paths.
+
 ## Process
 
 1. **Identify available assets.** Locate `index.md`, `vault-plan.md`, `mocs/`, note frontmatter, `ontology.md`, `ontology.yml`, `mapping.md`, `nodes.*`, `edges.*`, `schema.md`, `chunks.jsonl`, `sources.csv`, or `eval-queries.jsonl`.

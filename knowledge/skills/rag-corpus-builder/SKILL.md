@@ -31,6 +31,16 @@ Prepare source material for retrieval-augmented generation. This skill produces 
 
 Prefer this skill when chunk quality, metadata, citation fidelity, and retrieval evaluation matter more than human browsing structure.
 
+## Quick Intake
+
+Before chunking, ask a lightweight "what is this?" intake when the retrieval job is not already clear:
+
+- What kind of material is this? codebase docs, policies, tickets, support docs, research, mixed?
+- What questions should retrieval answer well?
+- Does retrieval need exact citations, freshness, permissions, or domain filtering?
+
+If the user gives only a rough answer, proceed with the default portable layout and capture assumptions in `rag-schema.md` and `ingestion-report.md`. Do not ask for a vector database unless the user wants deployment-specific indexing.
+
 ## Default Placement
 
 Proceed without asking for a separate output direction when the corpus boundary is clear.

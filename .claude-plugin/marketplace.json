@@ -59,7 +59,7 @@
     {
       "name": "knowledge",
       "description": "Knowledge skills: linked Markdown knowledge-base building, ontology design, knowledge-graph extraction, RAG corpus preparation, and source-grounded knowledge querying.",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "author": {
         "name": "newkayak12"
       },

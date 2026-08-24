@@ -34,6 +34,16 @@ Use this skill when the problem is not just extracting notes, chunks, or edges, 
 
 Ontology should guide graph extraction and metadata design, but it should not become an abstract taxonomy detached from the user's actual sources and questions.
 
+## Quick Intake
+
+Before designing the ontology, ask a lightweight "what is this?" intake unless the domain and use case are already explicit:
+
+- What domain does this ontology model?
+- What decisions or queries should it make more reliable?
+- Is the ontology for a local project, a team-wide knowledge system, or a reusable domain model?
+
+If the user gives only a rough answer, start with competency questions and a provisional ontology. Keep unresolved term boundaries in `open-ontology-questions.md` instead of blocking.
+
 ## Process
 
 1. **Define competency questions.** Write the concrete questions the ontology must support, such as impact analysis, lineage, ownership, compliance evidence, concept disambiguation, or support answer grounding.
