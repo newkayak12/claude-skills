@@ -1,0 +1,23 @@
+# knowledge
+
+Knowledge skills for building, transforming, and querying source-grounded knowledge assets.
+
+## Install & Uninstall
+
+```bash
+# Install
+/plugin install knowledge@newkayak12-claude-skills
+
+# Uninstall
+/plugin uninstall knowledge@newkayak12-claude-skills
+```
+
+## Skills
+
+| Skill | Description |
+|-------|-------------|
+| `knowledge-base-builder` | Build an Obsidian-style linked Markdown knowledge base from code, docs, or notes |
+| `ontology-builder` | Design classes, relationship semantics, constraints, controlled vocabularies, and mappings |
+| `knowledge-graph-builder` | Extract source-grounded entities, relationships, schema, and graph-ready data |
+| `rag-corpus-builder` | Prepare retrieval-ready chunks, metadata, citations, and eval queries for RAG |
+| `knowledge-query` | Answer questions over a linked vault, graph data, RAG corpus, or mixed knowledge assets |

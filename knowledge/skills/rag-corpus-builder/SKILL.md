@@ -24,8 +24,9 @@ Prepare source material for retrieval-augmented generation. This skill produces 
 
 | Goal | Use |
 |---|---|
-| Browse knowledge as Markdown notes with backlinks | `write:knowledge-base-builder` |
-| Model entities and relationships as graph data | `write:knowledge-graph-builder` |
+| Browse knowledge as Markdown notes with backlinks | `knowledge:knowledge-base-builder` |
+| Model entities and relationships as graph data | `knowledge:knowledge-graph-builder` |
+| Standardize classes, relation meanings, and controlled vocabularies | `knowledge:ontology-builder` |
 | Retrieve cited chunks for generation | This skill |
 
 Prefer this skill when chunk quality, metadata, citation fidelity, and retrieval evaluation matter more than human browsing structure.
@@ -35,7 +36,7 @@ Prefer this skill when chunk quality, metadata, citation fidelity, and retrieval
 1. **Define retrieval jobs.** Identify the questions users will ask, the answer style expected, and whether retrieval needs exact citations, semantic recall, keyword precision, freshness, or permission filtering.
 2. **Inventory sources.** Capture source paths, URLs, document titles, dates, owners, versions, and any access constraints. Do not lose provenance during preprocessing.
 3. **Choose chunk boundaries.** Chunk by semantic units first: headings, API endpoints, functions/classes, decisions, runbook steps, tickets, or policy clauses. Avoid fixed-size splitting unless the source lacks structure.
-4. **Design metadata.** Include fields that retrieval or filtering will actually use: `source_ref`, `title`, `section`, `doc_type`, `domain`, `owner`, `last_updated`, `version`, `permissions`, `canonical_url`, and stable IDs.
+4. **Design metadata.** Include fields that retrieval or filtering will actually use: `source_ref`, `title`, `section`, `doc_type`, `domain`, `owner`, `last_updated`, `version`, `permissions`, `canonical_url`, and stable IDs. Reuse ontology-controlled values when an ontology exists.
 5. **Preserve citations.** Each chunk should be traceable back to the exact source region. Use line ranges, heading paths, page numbers, ticket IDs, or URLs where available.
 6. **Handle duplicates and conflicts.** Keep canonical chunks for repeated content, preserve aliases, and mark conflicting or stale sources rather than blending them into one unsupported statement.
 7. **Create eval queries.** Add representative retrieval tests: direct lookup, synonym lookup, multi-document synthesis, freshness-sensitive questions, and negative queries that should not retrieve irrelevant content.
@@ -82,6 +83,8 @@ Use this as a default unless the target vector store or pipeline has a required 
 
 ## Related Skills
 
-- `write:knowledge-base-builder` - use for Obsidian-style linked Markdown notes.
-- `write:knowledge-graph-builder` - use for entity/relationship schema and graph-ready data.
+- `knowledge:knowledge-base-builder` - use for Obsidian-style linked Markdown notes.
+- `knowledge:ontology-builder` - use when metadata values, domain terms, or entity classes need shared semantic control.
+- `knowledge:knowledge-graph-builder` - use for entity/relationship schema and graph-ready data.
+- `knowledge:knowledge-query` - use when querying an existing RAG corpus, vault, graph, or mixed knowledge asset.
 - `develop:documentation-strategy` - use when the source corpus itself needs a maintenance strategy before indexing.

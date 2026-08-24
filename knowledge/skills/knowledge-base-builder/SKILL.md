@@ -177,7 +177,9 @@ Useful fields:
 ## Related Skills
 
 - `develop:code-documenter` - use when the main goal is inline/API/code documentation rather than a linked knowledge base.
-- `write:rag-corpus-builder` - use when the goal is retrieval-ready chunks, metadata, citations, and eval queries.
-- `write:knowledge-graph-builder` - use when the goal is entity/relationship schema and graph-ready records.
+- `knowledge:rag-corpus-builder` - use when the goal is retrieval-ready chunks, metadata, citations, and eval queries.
+- `knowledge:ontology-builder` - use when note types, domains, aliases, or relation meanings need shared semantic control across vault, graph, and RAG outputs.
+- `knowledge:knowledge-graph-builder` - use when the goal is entity/relationship schema and graph-ready records.
+- `knowledge:knowledge-query` - use when querying an existing vault, graph, RAG corpus, or mixed knowledge asset.
 - `develop:documentation-strategy` - use when planning a documentation system before producing notes.
 - `write:doc-coauthoring` - use when collaboratively drafting a specific document for readers.
