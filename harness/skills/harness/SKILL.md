@@ -50,6 +50,9 @@ reporting to Sonnet.
      In fallback mode only, the run auto-detects a local `codex` CLI; when ready, SetGoal may
      route Implement/Test subgoals to separate `codex exec --json` processes while Claude keeps
      Plan, SetGoal, QualityGate, and Report.
+   - **If the active orchestrator is Codex itself**: do not call `codex`, `codex-exec-adapter.mjs`,
+     or `codex-runner.mjs` recursively. Follow the repository `AGENTS.md` contract and perform
+     Plan → SetGoal → Implement → Test → QualityGate → Report directly with native Codex tools.
 2. **M (meta):** when the fixed six stages can't express the control flow the request
    needs — tournament/judge-panel, staged escalation, loop-until-dry discovery,
    per-finding refuters — or the user explicitly asks ("메타스크립트로", "커스텀
@@ -102,8 +105,8 @@ pre-wiring, and using none of them is a valid run.
 - `harness/engine/pipeline.js` — the fixed six-stage engine (Workflow path)
 - `harness/engine/fallback.md` — Workflow-less fallback: same six stages via fresh per-stage subagents sharing state through a run directory
 - `harness/engine/fallback-check.mjs` — deterministic completion check for a fallback run (the objective done-signal)
-- `harness/engine/codex-exec-adapter.mjs` — CLI bridge that detects Codex and captures `codex exec --json` events for Workflow Implement delegation and fallback runs
-- `harness/engine/codex-runner.mjs` — Codex-only file-artifact runner; no Claude Workflow dependency
+- `harness/engine/codex-exec-adapter.mjs` — CLI bridge that detects Codex and captures `codex exec --json` events for Claude-orchestrated Workflow Implement/Test delegation and fallback runs
+- `harness/engine/codex-runner.mjs` — legacy/external automation runner; active Codex sessions should not invoke it recursively
 - `harness/templates/meta-skeleton.js` — Mode M starting point (contract + `[META]` block)
 - `harness/templates/` — bespoke-pipeline reference
 - `harness/hooks/` — opt-in PreToolUse gate: projects list gated paths in `.claude/harness-gate.json`; editing them without engaging the harness is denied (fail-open on any ambiguity).

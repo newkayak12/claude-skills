@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// codex-runner - Codex-only harness runner.
+// codex-runner - external automation harness runner backed by Codex CLI.
 //
 // This is intentionally separate from pipeline.js and fallback.md. Claude's Workflow
-// path remains unchanged; this runner is for Codex environments that want the same
-// file-artifact harness contract without Claude Workflow.
+// path remains unchanged. Active Codex sessions should not invoke this recursively; they
+// should follow AGENTS.md and run the harness contract directly with native Codex tools.
 
 import {
   existsSync,
