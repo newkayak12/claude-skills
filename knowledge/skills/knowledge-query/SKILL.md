@@ -37,6 +37,26 @@ Choose the retrieval path from the asset shape and question type:
 
 When assets are mixed, use graph/vault structure to find candidates and RAG chunks or source references to ground the final answer.
 
+## Default Asset Discovery
+
+Do not ask where RAG artifacts are if the repository or vault follows the default convention. Check these locations first:
+
+1. `<vault>/_rag/chunks.jsonl`
+2. `<vault>/_rag/sources.csv`
+3. `knowledge-artifacts/rag/chunks.jsonl`
+4. `knowledge-artifacts/rag/sources.csv`
+
+Also check sibling default asset folders when present:
+
+```text
+<vault>/_ontology/
+<vault>/_graph/
+knowledge-artifacts/ontology/
+knowledge-artifacts/graph/
+```
+
+Ask for location only after these default paths and obvious user-provided paths are absent.
+
 ## Process
 
 1. **Identify available assets.** Locate `index.md`, `vault-plan.md`, `mocs/`, note frontmatter, `ontology.md`, `ontology.yml`, `mapping.md`, `nodes.*`, `edges.*`, `schema.md`, `chunks.jsonl`, `sources.csv`, or `eval-queries.jsonl`.
