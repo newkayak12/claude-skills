@@ -9,6 +9,7 @@ scenarios:
   - "자료들을 그래프 탐색하듯 읽고 지식화해줘"
   - "이 레포/문서 묶음을 knowledge system으로 쭉 빌드해줘"
   - "자료 바탕으로 knowledge base, ontology, graph, RAG까지 정리해줘"
+  - "knowledge-workflow 설치하면 자동으로 지식 변경을 체크하게 해줘"
   - "Build a queryable knowledge system from this corpus"
 compatibility:
   optional:
@@ -63,6 +64,12 @@ knowledge-system/
     chunks.jsonl
     eval-queries.jsonl
     ingestion-report.md
+  _knowledge/
+    checks/latest.json
+    jobs/embed-queue.jsonl
+    jobs/graph-update-queue.jsonl
+    jobs/ontology-review-queue.jsonl
+    reports/delta-checks.jsonl
 ```
 
 If an existing vault is present, build inside it and use `_ontology/`, `_graph/`, and `_rag/` as sibling artifact folders.
@@ -89,6 +96,20 @@ Do not crawl endlessly. Prefer a useful, inspectable knowledge system over exhau
 6. **Prepare RAG corpus.** Use `knowledge:rag-corpus-builder` behavior for retrieval chunks, metadata, citations, and eval queries.
 7. **Create query surfaces.** Use `knowledge:knowledge-query` behavior to leave recommended queries, reading paths, known gaps, and evidence-backed answer patterns.
 8. **Run a quality pass.** Check dead links, orphan notes, duplicate concepts, weak ontology terms, unsupported graph edges, RAG chunks without provenance, and unanswered competency questions.
+
+## Hook-First Automation
+
+When the `knowledge` plugin is installed, its lightweight `PostToolUse` hook can watch ordinary Markdown edits and keep the knowledge system fresh without requiring a separate user direction.
+
+The hook is intentionally a checker, not a builder:
+
+- It activates only inside an existing knowledge workspace, detected by `knowledge-system-plan.md`, `_rag/`, `_graph/`, `_ontology/`, `_knowledge/`, or a `knowledge-system/` directory.
+- It inspects changed Markdown files after `Write`, `Edit`, `MultiEdit`, or `NotebookEdit`.
+- It records the latest check at `_knowledge/checks/latest.json` and appends history to `_knowledge/reports/delta-checks.jsonl`.
+- It queues follow-up work in `_knowledge/jobs/embed-queue.jsonl`, `_knowledge/jobs/graph-update-queue.jsonl`, and `_knowledge/jobs/ontology-review-queue.jsonl` when existing RAG, graph, or ontology artifacts look stale.
+- It fails open and never blocks edits. Missing config, unreadable files, bad JSON, unsupported tools, or non-knowledge projects should produce no interruption.
+
+Use the queued jobs as portable handoff files. Embedding providers, vector databases, graph stores, or full rebuild scripts may consume them later, but the canonical knowledge artifacts remain the linked vault plus `_rag/`, `_graph/`, `_ontology/`, and `_knowledge/`.
 
 ## Prioritization
 

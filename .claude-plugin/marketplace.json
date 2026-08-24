@@ -58,8 +58,8 @@
     },
     {
       "name": "knowledge",
-      "description": "Knowledge skills: graph-like knowledge workflow, linked Markdown knowledge-base building, ontology design, knowledge-graph extraction, RAG corpus preparation, and source-grounded knowledge querying.",
-      "version": "1.1.0",
+      "description": "Knowledge skills: graph-like knowledge workflow with lightweight hook-based delta checks, linked Markdown knowledge-base building, ontology design, graph extraction, RAG corpus preparation, and source-grounded querying.",
+      "version": "1.1.1",
       "author": {
         "name": "newkayak12"
       },
