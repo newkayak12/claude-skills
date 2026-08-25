@@ -2,10 +2,10 @@
 
 A lightweight reasoning floor. Not a quality maximizer — a filter that removes
 **repetition** and **below-threshold answers** by forcing every substantial request through
-six model-pinned stages:
+six staged roles:
 
 ```
-Plan(opus) → SetGoal(opus) → Implement(sonnet) → Test(sonnet) → QualityGate(opus, loop) → Report(sonnet)
+Plan(opus) → SetGoal(opus) → Implement(Codex when delegated) → Test(Codex when delegated) → QualityGate(opus, loop) → Report(sonnet)
 ```
 
 ## How it works
@@ -25,8 +25,8 @@ Plan(opus) → SetGoal(opus) → Implement(sonnet) → Test(sonnet) → QualityG
 - **M (meta):** the harness *generates* a bespoke Workflow when the request needs control
   flow the fixed stages can't express (tournament, escalation, loop-until-dry) — it copies
   [`templates/meta-skeleton.js`](templates/meta-skeleton.js), rewrites only the `[META]`
-  Work block, and runs it. The skeleton's contract (judge ≠ actor, model pins, bounded
-  loops, deterministic Test, goal-level gate) stays verbatim.
+  Work block, and runs it. The skeleton's contract (judge ≠ actor, provider routing,
+  bounded loops, deterministic Test, goal-level gate) stays verbatim.
 - **A (manual):** you author the bespoke Workflow yourself — see [`templates/`](templates/).
 
 ## Installing into a project
@@ -47,6 +47,14 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
 The project owns the copies afterward; the plugin never manages them again.
 
 ## Status
+- v1.17.0 — **Workflow Codex provider routing semantics**: `implement_provider: "codex"` and
+  `test_provider: "codex"` now mean runtime delegation, not trace hints. The Workflow path still
+  uses a tiny Sonnet controller because Workflow scripts cannot spawn providers directly, but that
+  controller only resolves the adapter, invokes Codex, and converts Codex output into the normal
+  handoff/evidence shape. On Codex success it must not redo implementation or verification with
+  Sonnet. `codex_provider: "auto"` allows an explicit degraded Sonnet fallback; required mode
+  reports provider failure instead of silently falling back. Goal-level repairs also
+  prefer the Codex route when delegation is enabled.
 - v1.16.2 — **Codex session compatibility boundary**: added `AGENTS.md` guidance that an
   active Codex session must run the harness contract directly with native Codex tools, not
   recurse through `codex`, `codex-exec-adapter.mjs`, or `codex-runner.mjs`. The Codex CLI

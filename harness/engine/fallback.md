@@ -54,12 +54,14 @@ removed). Instead:
 
 1. Create `RUN=.harness-run/<slug>/` and write `manifest.json` with the request, `max_retries`
    (default 2), and empty `subgoals`/`stages`.
-2. Detect optional external providers. Invoke `harness:codex-control` and resolve
+2. Detect external providers. Invoke `harness:codex-control` and resolve
    `codex-exec-adapter.mjs` from an explicit path, `harness/engine/`,
    `.claude/harness/engine/`, or the plugin root named in the project's `CLAUDE.md` Harness
    block. If `node "$ADAPTER" --detect --cwd "$PWD" --output "$RUN/providers.json"` exits 0,
-   Codex may be used for Implement/Test stages. If it fails, keep the JSON report if written
-   and continue with Claude Agent only. This is a capability hint, not a requirement.
+   Codex may be selected for Implement/Test stages. If it fails, keep the JSON report if written.
+   With `codex_provider=auto`, later selected Codex routes may explicitly degrade to Claude
+   fallback; with `codex_provider=required`, a selected Codex route must fail the stage as a
+   provider failure instead of silently falling back.
 3. Create a `TaskCreate` checklist — one item per stage now, one per subgoal after SetGoal — so
    "invoked the skill but did nothing" is visibly an unfinished checklist.
 4. You may only tell the user the run is **done** after `fallback-check.mjs RUN` prints
@@ -115,25 +117,28 @@ exhaust), then start the next.
 
 For the current subgoal `<id>`, loop attempt `n` from 1 up to `max_retries` (default 2):
 
-1. **Implement (sonnet or Codex).** If `implement_provider === "codex"` and
+1. **Implement (provider-routed: Codex or Sonnet fallback).** If `implement_provider === "codex"` and
    `RUN/providers.json` shows Codex ready, write `RUN/subgoals/<id>/impl-<n>.prompt.md`
    with the same instructions the Agent path would receive, then run:
    `node "$ADAPTER" --cwd "$PWD" --prompt-file RUN/subgoals/<id>/impl-<n>.prompt.md --events-output RUN/subgoals/<id>/impl-<n>.codex.events.jsonl --output RUN/subgoals/<id>/impl-<n>.codex.json --sandbox workspace-write`.
    Then copy or summarize the Codex JSON `last_message` into `RUN/subgoals/<id>/impl-<n>.md`
-   as the normal handoff. If Codex is not ready or exits non-zero, record that in the
-   handoff and fall back to the normal Agent path unless the failure itself satisfies the
-   attempt's evidence. Otherwise dispatch an Agent as the subgoal's `persona`, told to invoke its
+   as the normal handoff. Do not redo Codex's work with Claude when Codex succeeds. If Codex is
+   not ready or exits non-zero, record that in the handoff. With `codex_provider=required`, stop
+   the attempt as provider failure; with `auto`, explicitly mark the stage degraded and only then
+   fall back to the normal Agent path. Otherwise dispatch an Agent as the subgoal's `persona`, told to invoke its
    `skills[]`, follow `.claude/conventions/**`, and read the paths of completed dependencies'
    `result.json`/`impl-*.md` for context (pass **paths**, not content). It does the work, edits
    files, and **writes its handoff to `RUN/subgoals/<id>/impl-<n>.md`** (≤1500 chars).
-2. **Test (sonnet or Codex).** If `test_provider === "codex"` and Codex is ready, write
+2. **Test (provider-routed: Codex or Sonnet fallback).** If `test_provider === "codex"` and Codex is ready, write
    `RUN/subgoals/<id>/test-<n>.prompt.md` and run a **separate** Codex process with
    `--events-output RUN/subgoals/<id>/test-<n>.codex.events.jsonl` and
    `--output RUN/subgoals/<id>/test-<n>.codex.json`. The prompt must forbid trusting the
    Implement narrative and require deterministic checks from `test[]`. Convert the final
    Codex report into the normal `RUN/subgoals/<id>/test-<n>.json` evidence shape
-   `{verified, checks[], evidence}`. If Codex is unavailable or fails, fall back to the
-   normal Test Agent. Otherwise dispatch a **separate** Agent invoking
+   `{verified, checks[], evidence}`. Do not re-run Codex's checks with Claude when Codex
+   succeeds. If Codex is unavailable or fails, `required` records `verified:false` as provider
+   failure; `auto` explicitly marks degradation and only then falls back to the normal Test
+   Agent. Otherwise dispatch a **separate** Agent invoking
    `completion:verification-before-completion`. It does NOT trust the executor's narrative — it
    runs the subgoal's `test[]` with Bash and Reads the claimed artifacts, then **writes
    `RUN/subgoals/<id>/test-<n>.json`** `{verified, checks[]}`.
@@ -155,7 +160,8 @@ After all subgoals, dispatch one Agent (opus, `think:devils-advocate`) that read
 directory and judges the **assembled whole** against goal-level `acceptance[]`, scoring
 `match_pct` (0–100, holistic — not an average of subgoal pass/fail). It **writes
 `RUN/04-goal-gate.json`** `{match_pct, pass, reason}`. If `match_pct < 90`, dispatch a repair
-Implement (sonnet) addressing the gaps, then re-gate — up to `max_retries` times. If a re-gate
+Implement using the same provider-routing rule as Implement stages, then re-gate — up to
+`max_retries` times. If a re-gate
 returns the same `gaps`/`reason` as the pass before it, the repair made no progress — stop early
 rather than spending the remaining repair passes on an identical gap. `pass` is `match_pct >= 90`.
 
@@ -178,7 +184,8 @@ the named stage — the run directory makes it resumable without redoing passed 
 ## Contract (identical to `pipeline.js` — never relax)
 
 - **judge ≠ actor** — Test and QualityGate agents are always separate from the Implement agent.
-- **model pins** — Plan/SetGoal/QualityGate = opus; Implement/Test/Report = sonnet.
+- **model/provider pins** — Plan/SetGoal/QualityGate = opus; Implement/Test =
+  provider-routed (Codex when selected, Sonnet only as explicit fallback); Report = sonnet.
 - **bounded loops** — per-subgoal and goal-level loops both capped by `max_retries`.
 - **deterministic Test** — evidence from Bash/Read, never the executor's narrative.
 - **goal-level gate** — `match_pct >= 90` before Report.
