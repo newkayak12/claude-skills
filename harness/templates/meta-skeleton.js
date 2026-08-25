@@ -3,7 +3,7 @@ export const meta = {
   description: 'CHANGEME: one line on what this bespoke pipeline does',
   phases: [
     { title: 'Plan', detail: 'CHANGEME', model: 'opus' },
-    { title: 'Work', detail: 'CHANGEME — your bespoke control flow lives here', model: 'sonnet' },
+    { title: 'Work', detail: 'CHANGEME — your bespoke provider-routed control flow lives here', model: 'provider' },
     { title: 'QualityGate', detail: 'independent adversarial judge + goal-level gate', model: 'opus' },
     { title: 'Report', detail: 'synthesize final report', model: 'sonnet' },
   ],
@@ -14,7 +14,8 @@ export const meta = {
 // THE CONTRACT (every generated script keeps all five; the control flow between
 // them is what you are free to redesign):
 //   1. judge ≠ actor        — the agent that judges work never produced it
-//   2. model pins           — planning/judging: 'opus'; execution/testing/reporting: 'sonnet'
+//   2. model/provider pins  — planning/judging: 'opus'; execution/testing: provider-routed;
+//                             reporting: 'sonnet'
 //   3. bounded loops        — every retry/discovery loop has a hard counter; no while(true)
 //   4. deterministic Test   — a separate agent verifies with Bash/Read evidence,
 //                             never by trusting the actor's narrative

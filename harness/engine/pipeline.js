@@ -4,17 +4,18 @@ export const meta = {
   phases: [
     { title: 'Plan', detail: 'decompose request, map repo skills', model: 'opus' },
     { title: 'SetGoal', detail: 'author goal-spec + adversarial critic', model: 'opus' },
-    { title: 'Implement', detail: 'executor per subgoal, invokes mapped skills', model: 'sonnet' },
-    { title: 'Test', detail: 'independent deterministic verification', model: 'sonnet' },
+    { title: 'Implement', detail: 'provider-routed executor per subgoal; Codex first when delegated', model: 'provider' },
+    { title: 'Test', detail: 'provider-routed deterministic verification; Codex first when delegated', model: 'provider' },
     { title: 'QualityGate', detail: 'adversarial judge per subgoal + goal-level gate', model: 'opus' },
-    { title: 'Report', detail: 'synthesize final report', model: 'sonnet' },
+    { title: 'Report', detail: 'synthesize final report from stage facts', model: 'sonnet' },
   ],
 }
 
-// args = { request: string, context?: string, max_retries?: number, codex_provider?: 'auto'|'off' }
+// args = { request: string, context?: string, max_retries?: number, codex_provider?: 'auto'|'required'|'off' }
 // Six baked stages, model-pinned so the flow holds regardless of the main-session model:
-//   Plan(opus) → SetGoal(opus, +critic) → per subgoal [Implement(sonnet) → Test(sonnet)
-//   → QualityGate(opus)] looped up to max_retries → goal-level QualityGate(opus) → Report(sonnet).
+//   Plan(opus) → SetGoal(opus, +critic) → per subgoal [Implement(provider-routed)
+//   → Test(provider-routed) → QualityGate(opus)] looped up to max_retries
+//   → goal-level QualityGate(opus) → Report(sonnet).
 
 let req = args
 if (typeof req === 'string') {
@@ -26,6 +27,7 @@ const MAX = Number.isInteger(req.max_retries) ? req.max_retries : 2
 const ctxNote = req.context ? `\nContext from the requester:\n${req.context}` : ''
 const codexProvider = String(req.codex_provider || req.codex_mode || 'auto').toLowerCase()
 const codexDelegationEnabled = !['off', 'false', 'none', 'claude', 'sonnet'].includes(codexProvider)
+const codexProviderRequired = ['required', 'require', 'must', 'strict'].includes(codexProvider)
 const codexAdapterPath = String(req.codex_adapter_path || req.codexAdapterPath || '').trim()
 
 const SPEC = {
@@ -54,12 +56,12 @@ const SPEC = {
           implement_provider: {
             type: 'string',
             enum: ['codex'],
-            description: 'Optional trace hint: "codex" means this subgoal is suitable for the Workflow Implement Codex CLI bridge.',
+            description: 'Optional provider route: "codex" means Workflow Implement delegates this subgoal to the local Codex CLI route first.',
           },
           test_provider: {
             type: 'string',
             enum: ['codex'],
-            description: 'Optional trace hint: "codex" means this subgoal is suitable for the Workflow Test Codex CLI bridge.',
+            description: 'Optional provider route: "codex" means Workflow Test delegates verification to the local Codex CLI route first.',
           },
           test: { type: 'array', items: { type: 'string' } },
           deps: { type: 'array', items: { type: 'string' } },
@@ -150,9 +152,11 @@ const specPrompt =
   `commands or concrete checks a verifier can execute without trusting the executor. ` +
   (codexDelegationEnabled
     ? `For code-editing, repository-inspection, build/test, and refactor subgoals, set ` +
-      `"implement_provider":"codex" and "test_provider":"codex" as trace hints; the Workflow ` +
-      `Implement and Test Sonnet agents will try the local Codex CLI bridge before falling back ` +
-      `to direct Sonnet work. Do not set them for writing-only, planning-only, or product/strategy subgoals. `
+      `"implement_provider":"codex" and "test_provider":"codex" as provider routing requests. ` +
+      `In the Workflow path this means Codex owns the Implement/Test work through a minimal ` +
+      `delegation controller; Sonnet is not the actor unless Codex routing is unavailable and ` +
+      `${codexProviderRequired ? 'this run is not allowed to fall back from Codex' : 'codex_provider permits explicit fallback'}. ` +
+      `Do not set provider routes for writing-only, planning-only, or product/strategy subgoals. `
     : `Do not set provider fields; codex_provider is off for this run. `) +
   `Fold any project convention rules the plan surfaced into subgoal acceptance and test entries. ` +
   `Keep it small — a trivial request is one subgoal.\n` +
@@ -250,43 +254,58 @@ function codexAdapterPrelude(dir) {
     `harness/engine/codex-exec-adapter.mjs; if absent try ` +
     `.claude/harness/engine/codex-exec-adapter.mjs; if absent follow the codex-control ` +
     `plugin-mode fallback by reading CLAUDE.md's Harness block, deriving the adapter path ` +
-    `beside its plugin-root pipeline.js, and testing that file. If no adapter exists, skip ` +
-    `Codex and continue directly.\n` +
+    `beside its plugin-root pipeline.js, and testing that file. If no adapter exists, treat ` +
+    `Codex routing as unavailable and follow the fallback/required rule below.\n` +
     `${explicit ? '4' : '3'}. Run detection with that adapter only if ADAPTER is set: ` +
     `node "$ADAPTER" --detect --cwd "$PWD" --output ${dir}/providers.json\n`
   )
 }
 
+function providerFor(sg, kind) {
+  if (!codexDelegationEnabled) return 'sonnet'
+  const field = kind === 'test' ? sg.test_provider : sg.implement_provider
+  return String(field || '').toLowerCase() === 'codex' ? 'codex' : 'sonnet'
+}
+
 function codexImplementBridgeInstructions(sg, attempt, accept, ctx, feedback) {
-  if (!codexDelegationEnabled) return ''
   const part = `${safeRunPart(sg.id)}-${attempt}`
   const dir = `.harness-run/workflow-codex/${part}/implement`
   return (
-    `\n\nCodex CLI bridge is enabled for this Implement subgoal. You are still the Sonnet ` +
-    `Implement agent, but first try to delegate the actual code/repo work to local Codex CLI:\n` +
+    `You are a minimal Workflow delegation controller for Implement, not the implementation actor. ` +
+    `This subgoal has implement_provider="codex", so "delegate" is a runtime routing request: ` +
+    `Codex must do the repository/code work when available.\n\n` +
     codexAdapterPrelude(dir) +
     `4. If detection succeeds, write ${dir}/prompt.md with the full implementation request: ` +
     `goal, subgoal title, persona, required skills, project conventions to follow, acceptance criteria, ` +
     `completed-dependency handoffs, and prior rejection feedback if present.\n` +
     `5. Run: node "$ADAPTER" --cwd "$PWD" --prompt-file ${dir}/prompt.md ` +
     `--events-output ${dir}/codex.events.jsonl --output ${dir}/codex.json --sandbox workspace-write\n` +
-    `6. Read ${dir}/codex.json. If ok=true, inspect last_message and any changed files needed to ` +
-    `understand the result, then produce your normal concise HANDOFF from that result. If Codex is ` +
-    `unavailable or exits non-zero, state that in your working notes and implement the subgoal yourself ` +
-    `with the normal tools.\n` +
-    `7. Never skip the final HANDOFF. Mention the Codex artifact paths if Codex ran.\n` +
+    `6. Read ${dir}/codex.json. If ok=true, do not redo the work, do not run extra verification, ` +
+    `and do not inspect or edit files except as needed to extract Codex's final result. Produce a ` +
+    `concise HANDOFF from Codex last_message and mention the artifact paths.\n` +
+    (codexProviderRequired
+      ? `7. If the adapter/Codex is unavailable or exits non-zero, do not implement the subgoal ` +
+        `yourself. Return a HANDOFF that starts with "PROVIDER_FAILURE:" and names the failed Codex route.\n`
+      : `7. If the adapter/Codex is unavailable or exits non-zero, explicitly mark ` +
+        `"DEGRADED: codex route failed; using Sonnet fallback" and only then implement the subgoal yourself ` +
+        `with normal tools. Never hide fallback.\n`) +
+    `8. Never skip the final HANDOFF.\n` +
+    `\nGoal for the Codex prompt: ${spec.goal}\n` +
+    `Subgoal for the Codex prompt: ${sg.id} — ${sg.title}\n` +
+    (sg.persona ? `Persona for the Codex prompt: ${sg.persona}\n` : '') +
+    ((sg.skills || []).length ? `Skills/conventions to mention in the Codex prompt: ${(sg.skills || []).join(', ')}\n` : '') +
     `Acceptance criteria for the Codex prompt:\n${accept}${ctx}` +
     (feedback ? `\nPrior rejection feedback for the Codex prompt:\n${feedback}` : '')
   )
 }
 
 function codexTestBridgeInstructions(sg, attempt, tests, work) {
-  if (!codexDelegationEnabled) return ''
   const part = `${safeRunPart(sg.id)}-${attempt}`
   const dir = `.harness-run/workflow-codex/${part}/test`
   return (
-    `\n\nCodex CLI bridge is enabled for this Test subgoal. You are still the independent ` +
-    `Sonnet Test agent, but first try to delegate deterministic verification to local Codex CLI:\n` +
+    `You are a minimal Workflow delegation controller for Test, not the verifier actor unless ` +
+    `fallback is explicitly allowed. This subgoal has test_provider="codex", so delegate deterministic ` +
+    `verification to a separate local Codex CLI process first.\n\n` +
     codexAdapterPrelude(dir) +
     `4. If detection succeeds, write ${dir}/prompt.md with a verification-only request. The prompt ` +
     `must forbid trusting the Implement narrative, require running or inspecting the checks below, ` +
@@ -294,13 +313,80 @@ function codexTestBridgeInstructions(sg, attempt, tests, work) {
     `Codex to modify implementation code.\n` +
     `5. Run: node "$ADAPTER" --cwd "$PWD" --prompt-file ${dir}/prompt.md ` +
     `--events-output ${dir}/codex.events.jsonl --output ${dir}/codex.json --sandbox workspace-write\n` +
-    `6. Read ${dir}/codex.json. If ok=true, use last_message plus any direct Bash/Read checks you ` +
-    `need to produce the required evidence JSON. If Codex is unavailable or exits non-zero, state ` +
-    `that in evidence and verify directly with Bash/Read.\n` +
-    `7. Never trust the executor account without independent evidence. Mention the Codex artifact ` +
-    `paths if Codex ran.\n` +
+    `6. Read ${dir}/codex.json. If ok=true, convert Codex last_message into the required evidence ` +
+    `JSON. Do not re-run the checks yourself and do not inspect implementation files except as needed ` +
+    `to summarize Codex's observed evidence.\n` +
+    (codexProviderRequired
+      ? `7. If the adapter/Codex is unavailable or exits non-zero, return verified=false with evidence ` +
+        `starting "PROVIDER_FAILURE:"; do not verify directly with Sonnet tools.\n`
+      : `7. If the adapter/Codex is unavailable or exits non-zero, explicitly mark ` +
+        `"DEGRADED: codex route failed; using Sonnet fallback" and only then verify directly with Bash/Read.\n`) +
+    `8. Never trust the executor account without independent evidence. Mention the Codex artifact paths if Codex ran.\n` +
+    `Goal for the Codex prompt: ${spec.goal}\n` +
+    `Subgoal for the Codex prompt: ${sg.id} — ${sg.title}\n` +
     `Checks for the Codex prompt:\n${tests || '- (none specified) inspect the claimed artifacts directly'}\n\n` +
     `Executor account for context only:\n${work}`
+  )
+}
+
+function sonnetImplementInstructions(sg, accept, ctx, feedback, persona, skills) {
+  return (
+    `Goal: ${spec.goal}\nSubgoal "${sg.title}".${persona}${skills}\n` +
+    `If the project defines .claude/conventions/**, Read the ones relevant to your files and follow them.\n` +
+    `Acceptance criteria:\n${accept}${ctx}` +
+    (feedback ? `\n\nPrevious attempt was rejected. Fix:\n${feedback}` : '') +
+    `\n\nEnd your reply with a section starting exactly with "HANDOFF:" — max 1500 chars — ` +
+    `stating what you produced (paths, names, interfaces) for dependent work to build on.`
+  )
+}
+
+function sonnetTestInstructions(sg, tests, work) {
+  return (
+    mountSkill('completion:verification-before-completion', 'evidence before assertions, always') +
+    `\nIndependently verify subgoal "${sg.title}". Do NOT trust the executor's narrative — ` +
+    `verify deterministically: run the checks below with Bash, Read the files the executor ` +
+    `claims to have produced or changed, and record what you actually observed.\n` +
+    `Checks:\n${tests || '- (none specified) inspect the claimed artifacts directly'}\n\n` +
+    `Executor's account:\n${work}\n\n` +
+    `verified=true only if every check you ran actually passed and claimed artifacts exist.`
+  )
+}
+
+function codexGoalRepairInstructions(goalGate, goalAttempt) {
+  const dir = `.harness-run/workflow-codex/goal-repair-${goalAttempt}/implement`
+  const gaps = goalGate && goalGate.gaps
+    ? goalGate.gaps.map(g => `- ${g}`).join('\n')
+    : goalGate ? goalGate.reason : 'no verdict'
+  return (
+    `You are a minimal Workflow delegation controller for goal-level repair. Codex routing is ` +
+    `enabled, so delegate the missing/fixed repository work to local Codex CLI first.\n\n` +
+    codexAdapterPrelude(dir) +
+    `4. If detection succeeds, write ${dir}/prompt.md with a concrete repair request containing ` +
+    `the goal, the goal-gate score/reason/gaps below, and the subgoal handoffs. Ask Codex to ` +
+    `produce the missing/fixed work, not a plan.\n` +
+    `5. Run: node "$ADAPTER" --cwd "$PWD" --prompt-file ${dir}/prompt.md ` +
+    `--events-output ${dir}/codex.events.jsonl --output ${dir}/codex.json --sandbox workspace-write\n` +
+    `6. Read ${dir}/codex.json. If ok=true, do not redo the work; return a concise HANDOFF from ` +
+    `Codex last_message and mention artifact paths.\n` +
+    (codexProviderRequired
+      ? `7. If the adapter/Codex is unavailable or exits non-zero, do not repair with Sonnet. ` +
+        `Return a HANDOFF that starts with "PROVIDER_FAILURE:" and names the failed Codex route.\n`
+      : `7. If the adapter/Codex is unavailable or exits non-zero, explicitly mark ` +
+        `"DEGRADED: codex route failed; using Sonnet fallback" and only then repair directly.\n`) +
+    `\nGoal: ${spec.goal}\nGoal-level gaps to repair:\n${gaps}\n\nSubgoal handoffs:\n` +
+    results.map(r => `- ${r.id} "${r.title}": ${r.handoff}`).join('\n') +
+    `\n\nEnd with a "HANDOFF:" section (max 1500 chars) describing what changed.`
+  )
+}
+
+function sonnetGoalRepairInstructions(goalGate) {
+  return (
+    `The assembled result scored ${goalGate ? goalGate.match_pct : 0}% against the goal (threshold ${GOAL_MATCH_THRESHOLD}%). ` +
+    `Address these gaps directly — do not restate the plan, produce the missing/fixed work:\n` +
+    (goalGate && goalGate.gaps ? goalGate.gaps.map(g => `- ${g}`).join('\n') : goalGate ? goalGate.reason : 'no verdict') +
+    `\n\nGoal: ${spec.goal}\nSubgoal outcomes so far:\n` +
+    results.map(r => `- ${r.id} "${r.title}": ${r.handoff}`).join('\n') +
+    `\n\nEnd with a "HANDOFF:" section (max 1500 chars) describing what you fixed.`
   )
 }
 
@@ -321,27 +407,34 @@ async function runSubgoal(sg, upstream) {
   let feedback = '', prevSig = null, stalled = false
   while (attempt <= RETRIES) {
     attempt++
+    const implementProvider = providerFor(sg, 'implement')
+    const implementPrompt = implementProvider === 'codex'
+      ? codexImplementBridgeInstructions(sg, attempt, accept, ctx, feedback)
+      : sonnetImplementInstructions(sg, accept, ctx, feedback, persona, skills)
     work = await agent(
-      `Goal: ${spec.goal}\nSubgoal "${sg.title}".${persona}${skills}\n` +
-      `If the project defines .claude/conventions/**, Read the ones relevant to your files and follow them.\n` +
-      `Acceptance criteria:\n${accept}${ctx}` +
-      (feedback ? `\n\nPrevious attempt was rejected. Fix:\n${feedback}` : '') +
-      codexImplementBridgeInstructions(sg, attempt, accept, ctx, feedback) +
-      `\n\nEnd your reply with a section starting exactly with "HANDOFF:" — max 1500 chars — ` +
-      `stating what you produced (paths, names, interfaces) for dependent work to build on.`,
-      { label: `impl:${sg.id}:${attempt}`, phase: 'Implement', model: 'sonnet' })
+      implementPrompt,
+      {
+        label: implementProvider === 'codex'
+          ? `impl:${sg.id}:${attempt}:codex-controller`
+          : `impl:${sg.id}:${attempt}:sonnet`,
+        phase: 'Implement',
+        model: 'sonnet',
+      })
 
+    const testProvider = providerFor(sg, 'test')
+    const testPrompt = testProvider === 'codex'
+      ? codexTestBridgeInstructions(sg, attempt, tests, work)
+      : sonnetTestInstructions(sg, tests, work)
     evidence = await agent(
-      mountSkill('completion:verification-before-completion', 'evidence before assertions, always') +
-      `\nIndependently verify subgoal "${sg.title}". Do NOT trust the executor's narrative — ` +
-      `verify deterministically: run the checks below with Bash, Read the files the executor ` +
-      `claims to have produced or changed, and record what you actually observed.\n` +
-      `Checks:\n${tests || '- (none specified) inspect the claimed artifacts directly'}\n\n` +
-      `Executor's account:\n${work}\n\n` +
-      codexTestBridgeInstructions(sg, attempt, tests, work) +
-      `\n\n` +
-      `verified=true only if every check you ran actually passed and claimed artifacts exist.`,
-      { label: `test:${sg.id}:${attempt}`, phase: 'Test', model: 'sonnet', schema: EVIDENCE })
+      testPrompt,
+      {
+        label: testProvider === 'codex'
+          ? `test:${sg.id}:${attempt}:codex-controller`
+          : `test:${sg.id}:${attempt}:sonnet`,
+        phase: 'Test',
+        model: 'sonnet',
+        schema: EVIDENCE,
+      })
 
     verdict = await agent(
       mountSkill('think:devils-advocate', 'it structures the strongest objections') +
@@ -423,14 +516,18 @@ let prevGoalSig = rejectionSig(goalGate)
 while ((!goalGate || goalGate.match_pct < GOAL_MATCH_THRESHOLD) && goalAttempt <= RETRIES) {
   goalAttempt++
   log(`goal-level match ${goalGate ? goalGate.match_pct : 0}% < ${GOAL_MATCH_THRESHOLD}% — repair pass ${goalAttempt}`)
+  const repairProvider = codexDelegationEnabled ? 'codex' : 'sonnet'
   const repair = await agent(
-    `The assembled result scored ${goalGate ? goalGate.match_pct : 0}% against the goal (threshold ${GOAL_MATCH_THRESHOLD}%). ` +
-    `Address these gaps directly — do not restate the plan, produce the missing/fixed work:\n` +
-    (goalGate && goalGate.gaps ? goalGate.gaps.map(g => `- ${g}`).join('\n') : goalGate ? goalGate.reason : 'no verdict') +
-    `\n\nGoal: ${spec.goal}\nSubgoal outcomes so far:\n` +
-    results.map(r => `- ${r.id} "${r.title}": ${r.handoff}`).join('\n') +
-    `\n\nEnd with a "HANDOFF:" section (max 1500 chars) describing what you fixed.`,
-    { label: `repair:goal:${goalAttempt}`, phase: 'Implement', model: 'sonnet' })
+    repairProvider === 'codex'
+      ? codexGoalRepairInstructions(goalGate, goalAttempt)
+      : sonnetGoalRepairInstructions(goalGate),
+    {
+      label: repairProvider === 'codex'
+        ? `repair:goal:${goalAttempt}:codex-controller`
+        : `repair:goal:${goalAttempt}:sonnet`,
+      phase: 'Implement',
+      model: 'sonnet',
+    })
   results.push({ id: `repair-${goalAttempt}`, title: 'goal-level repair', passed: null, attempts: 1, handoff: handoffOf(repair), work: repair, evidence: null, verdict: null })
   goalGate = await agent(
     goalPrompt(`\n\nRepair pass applied:\n${handoffOf(repair)}`),

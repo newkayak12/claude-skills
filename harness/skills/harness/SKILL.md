@@ -22,9 +22,11 @@ related:
 # harness — six-stage engine: Plan → SetGoal → Implement → Test → QualityGate → Report
 
 The harness raises the **floor**, not the ceiling: every substantial request goes through
-six model-pinned stages so repetition and weak answers get filtered out regardless of the
-main-session model. Planning and judging are pinned to Opus; execution, testing, and
-reporting to Sonnet.
+six staged roles so repetition and weak answers get filtered out regardless of the
+main-session model. Planning and judging are pinned to Opus. Code/repo execution and
+deterministic verification are provider-routed: when SetGoal marks a subgoal with
+`implement_provider: "codex"` / `test_provider: "codex"`, Codex is the delegated worker.
+Sonnet is then only a thin Workflow controller/fallback/report role, not the actor.
 
 ## Process
 
@@ -33,13 +35,12 @@ reporting to Sonnet.
    The engine itself plans, authors + critiques the goal-spec, executes subgoals with
    repo-skill-equipped executors, verifies each deterministically, gates each and the
    assembled whole, and writes the report.
-   - In the Workflow path, `codex_provider: "auto"` makes the Sonnet Implement and Sonnet Test
-     agents invoke `harness:codex-control`, resolve `engine/codex-exec-adapter.mjs` from an
-     explicit `codex_adapter_path`, repo-local, embedded, or plugin-mode install, then try the
-     local `codex` CLI at the start of their stages. Implement receives the Codex result and
-     produces the normal `HANDOFF`; Test uses a separate verification-only Codex call before
-     producing the normal evidence JSON. If the adapter or CLI is absent or fails, each stage
-     falls back to direct Sonnet work. Use `codex_provider: "off"` to force plain Sonnet
+   - In the Workflow path, `implement_provider: "codex"` / `test_provider: "codex"` are runtime
+     routes. A minimal Sonnet controller invokes `harness:codex-control`, resolves
+     `engine/codex-exec-adapter.mjs`, and runs a separate local Codex CLI process. On success it
+     only converts Codex output into the normal `HANDOFF` or evidence JSON. With
+     `codex_provider: "auto"` a failed route may explicitly degrade to Sonnet fallback; required
+     mode reports provider failure instead. Use `codex_provider: "off"` to force plain Sonnet
      implementation and verification.
    - **If the Workflow tool is unavailable** (plain Agent SDK, some harnesses, CI): do NOT
      skip the engine — follow [`engine/fallback.md`](../../engine/fallback.md) instead. It
@@ -59,8 +60,8 @@ reporting to Sonnet.
    파이프라인으로"), **generate the pipeline instead of using the fixed one**:
    1. Copy `templates/meta-skeleton.js` into the scratchpad and rewrite ONLY the
       `[META]` Work block (and `meta`) to the control flow the request needs.
-   2. Keep the skeleton's five contract points verbatim: judge ≠ actor; model pins
-      (plan/judge=opus, execute/test/report=sonnet); every loop bounded; deterministic
+   2. Keep the skeleton's five contract points verbatim: judge ≠ actor; model/provider pins
+      (plan/judge=opus, execute/test=provider-routed, report=sonnet); every loop bounded; deterministic
       Test agent (Bash/Read evidence, never the actor's narrative); goal-level
       `match_pct >= 90` gate before Report.
    3. Run it: `Workflow({ scriptPath: "<scratchpad>/meta-<slug>.js", args: { request, context?, max_retries? } })`.

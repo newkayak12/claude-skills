@@ -19,8 +19,8 @@ A-mode/manual authoring) and the authoring rules the SetGoal stage follows.
       "title": "what this unit produces",
       "persona": "optional executor role (e.g. 'senior Kotlin engineer')",
       "skills": ["develop:kotlin-specialist"],  // repo skills the executor MUST invoke
-      "implement_provider": "codex",     // optional: try Codex CLI bridge for Implement
-      "test_provider": "codex",          // optional fallback/runner hint
+      "implement_provider": "codex",     // optional provider route: delegate Implement to Codex
+      "test_provider": "codex",          // optional provider route: delegate Test to Codex
       "acceptance": [                  // what the QualityGate judge checks
         "concrete, checkable criterion"
       ],
@@ -45,32 +45,37 @@ A-mode/manual authoring) and the authoring rules the SetGoal stage follows.
 4. **subgoals are divide-and-conquer.** deps only for real ordering; independent subgoals
    run in parallel. Trivial request = one subgoal.
 5. **check ≠ act.** Test and QualityGate agents are always separate from the executor.
-6. **provider fields are CLI-bridge trace hints, not Workflow provider abstraction.** In the
-   Workflow path, `codex_provider: "auto"` makes the Sonnet Implement and Sonnet Test agents
-   invoke `harness:codex-control`, resolve `engine/codex-exec-adapter.mjs` from explicit,
-   repo-local, embedded, or plugin-mode paths, then try the local `codex` CLI at the start of
-   their stages. Implement turns the Codex result into the normal `HANDOFF`; Test turns a
-   separate verification-only Codex result into the normal evidence JSON. If Codex is
-   unavailable or fails, the same Sonnet agents fall back to direct work. In Workflow-less runs,
-   `implement_provider` / `test_provider` may route stages to separate `codex exec --json`
+6. **provider fields are routing requests.** In the Workflow path,
+   `implement_provider: "codex"` / `test_provider: "codex"` means the stage is delegated to
+   local Codex CLI through a minimal Workflow delegation controller. The controller exists only
+   because Workflow scripts cannot spawn providers directly; it resolves
+   `engine/codex-exec-adapter.mjs`, runs a separate `codex exec --json` process, and converts
+   Codex's final message into the normal `HANDOFF` or evidence JSON. On Codex success it must
+   not redo the work or verification with Sonnet. With `codex_provider: "auto"` a failed Codex
+   route may explicitly degrade to Sonnet fallback; with `codex_provider: "required"` it reports
+   provider failure instead of silently doing the work in Sonnet. In Workflow-less runs,
+   `implement_provider` / `test_provider` route stages to separate `codex exec --json`
    processes when `RUN/providers.json` shows Codex is ready. When the active orchestrator is
-   Codex itself, ignore these fields as delegation hints and run the harness contract directly;
-   do not spawn a nested `codex` process.
+   Codex itself, ignore these fields and run the harness contract directly; do not spawn a
+   nested `codex` process.
 
 ## How it runs
 
 ```
 Workflow({ scriptPath: "harness/engine/pipeline.js",
            args: { request: "<raw request>", context: "<optional>", max_retries: 2,
-                   codex_provider: "auto", codex_adapter_path: "<optional adapter path>" } })
+                   codex_provider: "auto|required|off",
+                   codex_adapter_path: "<optional adapter path>" } })
 ```
 
-Stages (model-pinned): Plan(opus) → SetGoal(opus, +critic) → per subgoal
-Implement(sonnet) → Test(sonnet) → QualityGate(opus) looped up to max_retries →
-goal-level QualityGate(opus, quantified `match_pct`, pass requires >= 90%, repair-and-regate
-loop up to max_retries) → Report(sonnet). With `codex_provider: "auto"` (the default),
-Implement and Test stages first try the local Codex CLI bridge from inside their Sonnet
-agents; use `codex_provider: "off"` to force plain Sonnet implementation and verification.
+Stages: Plan(opus) → SetGoal(opus, +critic) → per subgoal Implement(provider-routed) →
+Test(provider-routed) → QualityGate(opus) looped up to max_retries → goal-level
+QualityGate(opus, quantified `match_pct`, pass requires >= 90%, repair-and-regate loop up to
+max_retries) → Report(sonnet). With `codex_provider: "auto"` (the default), code/repo
+Implement and Test stages are marked for Codex and fall back only with an explicit degraded
+note. With `codex_provider: "required"`, a selected Codex route must succeed or the stage
+fails as provider failure. Use `codex_provider: "off"` to force plain Sonnet implementation
+and verification.
 Returns `{ goal, codex_provider, spec, all_passed,
 failed[], goal_gate, results[], report }`.
 
