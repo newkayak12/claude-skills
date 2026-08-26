@@ -46,7 +46,18 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
 
 The project owns the copies afterward; the plugin never manages them again.
 
+For an isolated Codex provider-node preview, use the separate
+[`codex-integration-beta-install`](skills/codex-integration-beta-install/SKILL.md) skill. It
+installs `.claude/harness-codex-beta/` beside stable harness and never modifies
+`.claude/harness/` or the plugin's stable engine.
+
 ## Status
+- v1.18.0 — **Opt-in Codex provider-node beta installer**: added
+  `harness:codex-integration-beta-install`, which installs a parallel Node-only beta runtime at
+  `.claude/harness-codex-beta/` while leaving `harness:install`, `.claude/harness/`, and the
+  stable plugin engine unchanged. The beta resolves Codex once, schedules distinct structured
+  Implement/Test provider nodes, exposes node traces, uses a separate Sonnet fallback edge in
+  `auto`, fails in `required`, and prevents QualityGate from overriding `verified=false`.
 - v1.17.0 — **Workflow Codex provider routing semantics**: `implement_provider: "codex"` and
   `test_provider: "codex"` now mean runtime delegation, not trace hints. The Workflow path still
   uses a tiny Sonnet controller because Workflow scripts cannot spawn providers directly, but that
