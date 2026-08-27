@@ -20,3 +20,6 @@ INSTRUCT.md
 .claude/settings.json
 .claude/hooks/
 .claude/conventions/
+**/.knowledge/knowledge.sqlite
+**/.knowledge/knowledge.sqlite-shm
+**/.knowledge/knowledge.sqlite-wal

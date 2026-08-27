@@ -1,6 +1,6 @@
 {
   "name": "knowledge",
-  "description": "Knowledge skills: graph-like knowledge workflow with lightweight hook-based delta checks, linked Markdown knowledge-base building, ontology design, graph extraction, RAG corpus preparation, and source-grounded querying.",
+  "description": "Knowledge skills and local MCP: graph-like knowledge workflows, linked Markdown, ontology and graph extraction, RAG preparation, and SQLite-backed source-grounded querying.",
   "version": "1.2.1",
   "author": {
     "name": "newkayak12"

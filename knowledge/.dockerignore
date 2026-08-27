@@ -1,0 +1,6 @@
+.git
+.knowledge
+**/.knowledge
+**/*.sqlite
+**/*.sqlite-shm
+**/*.sqlite-wal

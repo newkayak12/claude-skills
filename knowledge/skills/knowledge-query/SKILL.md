@@ -1,20 +1,25 @@
 ---
 name: knowledge-query
 description: >-
-  Use when answering questions over an existing linked Markdown vault,
-  ontology, knowledge graph, RAG corpus, source inventory, or mixed knowledge
-  assets while preserving citations, uncertainty, and retrieval/query
-  traceability.
+  Use when answering questions over an existing linked Markdown vault, local
+  SQLite index, ontology, knowledge graph, RAG corpus, or mixed knowledge
+  assets while preserving citations, uncertainty, and retrieval traceability.
 scenarios:
   - "이 knowledge base에서 답 찾아줘"
   - "vault랑 graph를 보고 영향 범위 알려줘"
   - "RAG chunks 기준으로 근거 달아서 답해줘"
+  - "로컬 SQLite knowledge에서 찾아서 답해줘"
   - "Query this knowledge graph and cite the sources"
 compatibility:
+  recommended:
+    - mcp__knowledge-local__knowledge_search
+    - mcp__knowledge-local__knowledge_get
+    - mcp__knowledge-local__knowledge_neighbors
   optional:
     - think-tool
   remote_mcp_note: >-
-    think-tool이 있으면 질의 의도 분해, graph/RAG/linked vault 경로 선택, 불확실성 점검에 활용할 수 있습니다.
+    knowledge-local MCP가 있으면 로컬 SQLite에서 하이브리드 검색과 그래프 조회를 수행합니다.
+    think-tool은 질의 의도 분해와 불확실성 점검에 선택적으로 활용할 수 있습니다.
 ---
 
 # Knowledge Query
@@ -27,6 +32,7 @@ Choose the retrieval path from the asset shape and question type:
 
 | Asset or question | Prefer |
 |---|---|
+| `.knowledge/knowledge.sqlite`, `knowledge-local` MCP | SQLite hybrid search first |
 | `_knowledge/catalog.jsonl`, note IDs, aliases, tags, entities | Catalog-first candidate discovery |
 | Obsidian-style Markdown notes, MOCs, backlinks | Linked-vault traversal |
 | `ontology.md`, `ontology.yml`, controlled vocabularies | Ontology-aware term/class/relation lookup |
@@ -37,6 +43,17 @@ Choose the retrieval path from the asset shape and question type:
 | "What should I read next?" | MOC and backlink traversal |
 
 When assets are mixed, use graph/vault structure to find candidates and RAG chunks or source references to ground the final answer.
+
+## Local SQLite Fast Path
+
+When the `knowledge-local` MCP tools are connected, use them before scanning JSONL or note bodies manually:
+
+1. Check index presence and freshness with `knowledge_status`.
+2. Build or refresh with `knowledge_index` when missing or stale.
+3. Retrieve candidates with `knowledge_search`; use `knowledge_get` for full evidence and `knowledge_neighbors` for relationship questions.
+4. Compose the answer yourself from the returned evidence and cite original `source_ref` or `path` values.
+
+Read [references/local-sqlite.md](references/local-sqlite.md) for exact MCP routing, embedding modes, CLI, Docker operation, and failure handling. If the MCP server is unavailable, continue with the portable asset discovery below.
 
 ## Default Asset Discovery
 
@@ -75,7 +92,7 @@ If the query is concrete, skip intake and answer from the available assets. If a
 
 ## Process
 
-1. **Identify available assets.** Locate `_knowledge/catalog.jsonl`, `index.md`, `vault-plan.md`, `mocs/`, note frontmatter, `ontology.md`, `ontology.yml`, `mapping.md`, `nodes.*`, `edges.*`, `schema.md`, `chunks.jsonl`, `sources.csv`, or `eval-queries.jsonl`.
+1. **Identify available assets.** Check the local SQLite MCP index first, then locate `_knowledge/catalog.jsonl`, `index.md`, `vault-plan.md`, `mocs/`, note frontmatter, `ontology.md`, `ontology.yml`, `mapping.md`, `nodes.*`, `edges.*`, `schema.md`, `chunks.jsonl`, `sources.csv`, or `eval-queries.jsonl`.
 2. **Restate the query intent.** Classify the request as lookup, synthesis, impact analysis, comparison, provenance check, reading path, or gap/open-question search.
 3. **Select candidates and a query path.** When a catalog exists, search its titles, aliases, tags, domains, entities, and summaries first, then open only the best-matching notes. Use links/MOCs for conceptual navigation, graph edges for relationship traversal, and RAG chunks for passage-level evidence.
 4. **Trace evidence.** Preserve source references from note `Sources`, frontmatter `sources`, graph edge evidence, or chunk `source_ref`. Prefer direct evidence over inferred relationships.
@@ -114,6 +131,7 @@ For impact analysis:
 ## Quality Bar
 
 - Answers are grounded in the knowledge asset, not general memory, unless explicitly labeled as outside context.
+- SQLite retrieval cites canonical Markdown/JSONL provenance rather than the derived database file.
 - Catalog-backed queries narrow candidates before opening note bodies and preserve stable note IDs when paths change.
 - Relationship-heavy questions inspect graph edges or note links before giving a narrative answer.
 - Citations point to stable note paths, source refs, chunk IDs, or graph records.

@@ -74,6 +74,8 @@ knowledge-system/
     jobs/graph-update-queue.jsonl
     jobs/ontology-review-queue.jsonl
     reports/delta-checks.jsonl
+  .knowledge/
+    knowledge.sqlite          # local derived index; do not commit
 ```
 
 If an existing vault is present, build inside it and use `_ontology/`, `_graph/`, and `_rag/` as sibling artifact folders.
@@ -98,7 +100,7 @@ Do not crawl endlessly. Prefer a useful, inspectable knowledge system over exhau
 4. **Stabilize ontology where needed.** Use `knowledge:ontology-builder` behavior when repeated concepts, aliases, relation meanings, or constraints start to matter.
 5. **Extract graph records.** Use `knowledge:knowledge-graph-builder` behavior for entities, edges, evidence, schema, and graph-ready JSONL/CSV.
 6. **Prepare RAG corpus.** Use `knowledge:rag-corpus-builder` behavior to derive retrieval chunks, metadata, citations, and eval queries from the vault and its catalog without replacing the source-grounded notes.
-7. **Create query surfaces.** Use `knowledge:knowledge-query` behavior to leave recommended queries, reading paths, known gaps, and evidence-backed answer patterns.
+7. **Create query surfaces.** Use `knowledge:knowledge-query` behavior to leave recommended queries, reading paths, known gaps, and evidence-backed answer patterns. When the local `knowledge-local` MCP server is available, build its derived SQLite index and verify at least one retrieval query.
 8. **Run a quality pass.** Check dead links, orphan notes, duplicate concepts, weak ontology terms, unsupported graph edges, RAG chunks without provenance, and unanswered competency questions.
 
 ## Hook-First Automation
@@ -116,6 +118,8 @@ The hook is intentionally a checker, not a builder:
 - It fails open and never blocks edits. Missing config, unreadable files, bad JSON, unsupported tools, or non-knowledge projects should produce no interruption.
 
 Use the queued jobs as portable handoff files. Embedding providers, vector databases, graph stores, or full rebuild scripts may consume them later, but the canonical knowledge artifacts remain the linked vault plus `_rag/`, `_graph/`, `_ontology/`, and `_knowledge/`.
+
+The bundled `knowledge-local` MCP server is one such consumer. It rebuilds `.knowledge/knowledge.sqlite` from the portable artifacts and exposes hybrid search, record lookup, graph-neighbor queries, and freshness status. Keep the database out of Git; synchronize the canonical Markdown and JSONL instead.
 
 ## Prioritization
 
