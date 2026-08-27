@@ -3,6 +3,8 @@
 Knowledge skills for building, transforming, and querying source-grounded knowledge assets.
 The plugin also includes a lightweight post-edit hook that detects changed Markdown inside
 knowledge workspaces and queues catalog, RAG, graph, or ontology follow-up work without blocking edits.
+Its local MCP server builds a disposable SQLite index and exposes hybrid retrieval and graph queries
+so Claude can answer from the indexed evidence.
 
 ## Install & Uninstall
 
@@ -24,6 +26,23 @@ knowledge workspaces and queues catalog, RAG, graph, or ontology follow-up work 
 | `knowledge-graph-builder` | Extract source-grounded entities, relationships, schema, and graph-ready data |
 | `rag-corpus-builder` | Prepare retrieval-ready chunks, metadata, citations, and eval queries for RAG |
 | `knowledge-query` | Answer questions over a linked vault, graph data, RAG corpus, or mixed knowledge assets |
+
+## Local SQLite + MCP
+
+Installing the plugin registers the `knowledge-local` stdio MCP server. It exposes:
+
+- `knowledge_index` — rebuild `.knowledge/knowledge.sqlite` from Markdown and JSONL
+- `knowledge_search` — hybrid FTS5 and vector retrieval
+- `knowledge_get` — fetch a complete indexed record by stable ID
+- `knowledge_neighbors` — query direct graph relationships
+- `knowledge_status` — inspect index freshness and configuration
+
+The default `hash` embedding is dependency-free and local. For semantic embeddings, run a local
+Ollama instance and index with `provider: ollama`. See
+[`knowledge-query/references/local-sqlite.md`](./skills/knowledge-query/references/local-sqlite.md)
+for CLI, Docker, and data-ownership details.
+
+Keep Markdown and JSONL in Git. The SQLite file and Ollama model volume are rebuildable local state.
 
 ## Hook
 

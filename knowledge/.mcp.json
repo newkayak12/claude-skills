@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "knowledge-local": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "--no-warnings",
+        "${CLAUDE_PLUGIN_ROOT}/servers/knowledge-mcp.mjs",
+        "--root",
+        "${CLAUDE_PROJECT_DIR}"
+      ]
+    }
+  }
+}
