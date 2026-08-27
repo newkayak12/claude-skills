@@ -5,7 +5,7 @@ A lightweight reasoning floor. Not a quality maximizer — a filter that removes
 six staged roles:
 
 ```
-Plan(opus) → SetGoal(opus) → Implement(Codex when delegated) → Test(Codex when delegated) → QualityGate(opus, loop) → Report(sonnet)
+Plan(opus) → SetGoal(opus) → Implement(Codex when enabled) → Test(Codex when enabled) → QualityGate(opus, loop) → Report(sonnet)
 ```
 
 ## How it works
@@ -47,6 +47,13 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
 The project owns the copies afterward; the plugin never manages them again.
 
 ## Status
+- v1.18.0 — **Codex-first Implement/Test routing**: `codex_provider: "auto"` / `"required"`
+  now routes every Workflow Implement/Test stage through the Codex controller by default.
+  `implement_provider: "codex"` and `test_provider: "codex"` remain optional trace hints in the
+  goal-spec, but missing fields no longer keep a subgoal on Sonnet. This makes the graph shape
+  explicit: Claude plans, sets goals, judges, and reports; Codex owns leaf implementation and
+  deterministic verification whenever the local CLI route is available. Fallback mode documents
+  the same default-provider rule when `RUN/providers.json` says Codex is ready.
 - v1.17.0 — **Workflow Codex provider routing semantics**: `implement_provider: "codex"` and
   `test_provider: "codex"` now mean runtime delegation, not trace hints. The Workflow path still
   uses a tiny Sonnet controller because Workflow scripts cannot spawn providers directly, but that
