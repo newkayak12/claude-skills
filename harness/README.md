@@ -5,7 +5,7 @@ A lightweight reasoning floor. Not a quality maximizer — a filter that removes
 six staged roles:
 
 ```
-Plan(opus) → SetGoal(opus) → Implement(Codex when delegated) → Test(Codex when delegated) → QualityGate(opus, loop) → Report(sonnet)
+Plan(opus) → SetGoal(opus) → Implement(Codex when enabled) → Test(Codex when enabled) → QualityGate(opus, loop) → Report(sonnet)
 ```
 
 ## How it works
@@ -52,12 +52,14 @@ installs `.claude/harness-codex-beta/` beside stable harness and never modifies
 `.claude/harness/` or the plugin's stable engine.
 
 ## Status
-- v1.18.0 — **Opt-in Codex provider-node beta installer**: added
-  `harness:codex-integration-beta-install`, which installs a parallel Node-only beta runtime at
-  `.claude/harness-codex-beta/` while leaving `harness:install`, `.claude/harness/`, and the
-  stable plugin engine unchanged. The beta resolves Codex once, schedules distinct structured
-  Implement/Test provider nodes, exposes node traces, uses a separate Sonnet fallback edge in
-  `auto`, fails in `required`, and prevents QualityGate from overriding `verified=false`.
+- v1.18.0 — **Codex-first routing + opt-in isolated provider-node beta**:
+  `codex_provider: "auto"` / `"required"` routes every stable Workflow Implement/Test stage
+  through the Codex controller by default; provider fields remain optional trace hints. The
+  separate `harness:codex-integration-beta-install` skill installs a parallel Node-only runtime at
+  `.claude/harness-codex-beta/` without replacing `.claude/harness/`. That beta resolves Codex
+  once, schedules distinct structured Implement/Test provider nodes, exposes traces, uses an
+  explicit Sonnet fallback edge in `auto`, fails in `required`, and prevents QualityGate from
+  overriding `verified=false`.
 - v1.17.0 — **Workflow Codex provider routing semantics**: `implement_provider: "codex"` and
   `test_provider: "codex"` now mean runtime delegation, not trace hints. The Workflow path still
   uses a tiny Sonnet controller because Workflow scripts cannot spawn providers directly, but that

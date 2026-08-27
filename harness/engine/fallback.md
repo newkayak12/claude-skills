@@ -58,10 +58,10 @@ removed). Instead:
    `codex-exec-adapter.mjs` from an explicit path, `harness/engine/`,
    `.claude/harness/engine/`, or the plugin root named in the project's `CLAUDE.md` Harness
    block. If `node "$ADAPTER" --detect --cwd "$PWD" --output "$RUN/providers.json"` exits 0,
-   Codex may be selected for Implement/Test stages. If it fails, keep the JSON report if written.
-   With `codex_provider=auto`, later selected Codex routes may explicitly degrade to Claude
-   fallback; with `codex_provider=required`, a selected Codex route must fail the stage as a
-   provider failure instead of silently falling back.
+   Codex is the default provider for Implement/Test stages. If it fails, keep the JSON report if
+   written. With `codex_provider=auto`, later Codex routes may explicitly degrade to Claude
+   fallback; with `codex_provider=required`, a Codex route must fail the stage as a provider
+   failure instead of silently falling back.
 3. Create a `TaskCreate` checklist — one item per stage now, one per subgoal after SetGoal — so
    "invoked the skill but did nothing" is visibly an unfinished checklist.
 4. You may only tell the user the run is **done** after `fallback-check.mjs RUN` prints
@@ -89,10 +89,10 @@ rules that constrain the work, plus per-unit deterministic checks (commands, fil
    aspirational or arbitrary-threshold target (a chosen % reduction, subjective quality words) is
    a **soft goal**, not a hard pass/fail bar — the judge treats every listed entry as hard, so
    restate it concretely or drop it.
-   If `RUN/providers.json` says `codex.ready=true`, prefer
-   `"implement_provider":"codex"` and `"test_provider":"codex"` for code-editing,
-   repository-inspection, build/test, and refactor subgoals. Keep Plan, SetGoal,
-   QualityGate, and Report on Claude. If Codex is absent or not ready, omit provider fields.
+   If `RUN/providers.json` says `codex.ready=true`, Implement/Test will route to Codex by
+   default for every subgoal; `"implement_provider":"codex"` and `"test_provider":"codex"` are
+   optional trace hints, not routing prerequisites. Keep Plan, SetGoal, QualityGate, and Report
+   on Claude. If Codex is absent or not ready, omit provider fields.
 2. Dispatch a **separate** Agent (opus) invoking `think:devils-advocate` to refute it; it reads
    the spec path and **writes `RUN/02-critique.json`** `{sound, problems[]}`. It must flag two
    unwinnable-gate patterns: acceptance/test tied to global/shared repo state instead of the
@@ -117,8 +117,8 @@ exhaust), then start the next.
 
 For the current subgoal `<id>`, loop attempt `n` from 1 up to `max_retries` (default 2):
 
-1. **Implement (provider-routed: Codex or Sonnet fallback).** If `implement_provider === "codex"` and
-   `RUN/providers.json` shows Codex ready, write `RUN/subgoals/<id>/impl-<n>.prompt.md`
+1. **Implement (provider-routed: Codex or Sonnet fallback).** If `RUN/providers.json` shows
+   Codex ready, write `RUN/subgoals/<id>/impl-<n>.prompt.md`
    with the same instructions the Agent path would receive, then run:
    `node "$ADAPTER" --cwd "$PWD" --prompt-file RUN/subgoals/<id>/impl-<n>.prompt.md --events-output RUN/subgoals/<id>/impl-<n>.codex.events.jsonl --output RUN/subgoals/<id>/impl-<n>.codex.json --sandbox workspace-write`.
    Then copy or summarize the Codex JSON `last_message` into `RUN/subgoals/<id>/impl-<n>.md`
@@ -129,7 +129,7 @@ For the current subgoal `<id>`, loop attempt `n` from 1 up to `max_retries` (def
    `skills[]`, follow `.claude/conventions/**`, and read the paths of completed dependencies'
    `result.json`/`impl-*.md` for context (pass **paths**, not content). It does the work, edits
    files, and **writes its handoff to `RUN/subgoals/<id>/impl-<n>.md`** (≤1500 chars).
-2. **Test (provider-routed: Codex or Sonnet fallback).** If `test_provider === "codex"` and Codex is ready, write
+2. **Test (provider-routed: Codex or Sonnet fallback).** If Codex is ready, write
    `RUN/subgoals/<id>/test-<n>.prompt.md` and run a **separate** Codex process with
    `--events-output RUN/subgoals/<id>/test-<n>.codex.events.jsonl` and
    `--output RUN/subgoals/<id>/test-<n>.codex.json`. The prompt must forbid trusting the

@@ -24,9 +24,10 @@ related:
 The harness raises the **floor**, not the ceiling: every substantial request goes through
 six staged roles so repetition and weak answers get filtered out regardless of the
 main-session model. Planning and judging are pinned to Opus. Code/repo execution and
-deterministic verification are provider-routed: when SetGoal marks a subgoal with
-`implement_provider: "codex"` / `test_provider: "codex"`, Codex is the delegated worker.
-Sonnet is then only a thin Workflow controller/fallback/report role, not the actor.
+deterministic verification are provider-routed: when `codex_provider` is enabled, every
+Implement/Test stage delegates to Codex by default. `implement_provider: "codex"` /
+`test_provider: "codex"` are trace hints, not prerequisites. Sonnet is then only a thin
+Workflow controller/fallback/report role, not the actor.
 
 ## Process
 
@@ -35,10 +36,11 @@ Sonnet is then only a thin Workflow controller/fallback/report role, not the act
    The engine itself plans, authors + critiques the goal-spec, executes subgoals with
    repo-skill-equipped executors, verifies each deterministically, gates each and the
    assembled whole, and writes the report.
-   - In the Workflow path, `implement_provider: "codex"` / `test_provider: "codex"` are runtime
-     routes. A minimal Sonnet controller invokes `harness:codex-control`, resolves
-     `engine/codex-exec-adapter.mjs`, and runs a separate local Codex CLI process. On success it
-     only converts Codex output into the normal `HANDOFF` or evidence JSON. With
+   - In the Workflow path, `codex_provider: "auto"` / `"required"` makes Codex the default
+     route for every Implement/Test stage. A minimal Sonnet controller invokes
+     `harness:codex-control`, resolves `engine/codex-exec-adapter.mjs`, and runs a separate
+     local Codex CLI process. On success it only converts Codex output into the normal
+     `HANDOFF` or evidence JSON. With
      `codex_provider: "auto"` a failed route may explicitly degrade to Sonnet fallback; required
      mode reports provider failure instead. Use `codex_provider: "off"` to force plain Sonnet
      implementation and verification.
@@ -48,9 +50,9 @@ Sonnet is then only a thin Workflow controller/fallback/report role, not the act
      exchange work through files in a run directory (not your context), and closes with
      `engine/fallback-check.mjs` as the objective done-signal. When Workflow IS available,
      ignore fallback.md — the pipeline.js path above is unchanged.
-     In fallback mode only, the run auto-detects a local `codex` CLI; when ready, SetGoal may
-     route Implement/Test subgoals to separate `codex exec --json` processes while Claude keeps
-     Plan, SetGoal, QualityGate, and Report.
+     In fallback mode only, the run auto-detects a local `codex` CLI; when ready, Implement/Test
+     subgoals route to separate `codex exec --json` processes while Claude keeps Plan, SetGoal,
+     QualityGate, and Report.
    - **If the active orchestrator is Codex itself**: do not call `codex`, `codex-exec-adapter.mjs`,
      or `codex-runner.mjs` recursively. Follow the repository `AGENTS.md` contract and perform
      Plan → SetGoal → Implement → Test → QualityGate → Report directly with native Codex tools.

@@ -4,8 +4,8 @@ export const meta = {
   phases: [
     { title: 'Plan', detail: 'decompose request, map repo skills', model: 'opus' },
     { title: 'SetGoal', detail: 'author goal-spec + adversarial critic', model: 'opus' },
-    { title: 'Implement', detail: 'provider-routed executor per subgoal; Codex first when delegated', model: 'provider' },
-    { title: 'Test', detail: 'provider-routed deterministic verification; Codex first when delegated', model: 'provider' },
+    { title: 'Implement', detail: 'provider-routed executor per subgoal; Codex first when enabled', model: 'provider' },
+    { title: 'Test', detail: 'provider-routed deterministic verification; Codex first when enabled', model: 'provider' },
     { title: 'QualityGate', detail: 'adversarial judge per subgoal + goal-level gate', model: 'opus' },
     { title: 'Report', detail: 'synthesize final report from stage facts', model: 'sonnet' },
   ],
@@ -56,12 +56,12 @@ const SPEC = {
           implement_provider: {
             type: 'string',
             enum: ['codex'],
-            description: 'Optional provider route: "codex" means Workflow Implement delegates this subgoal to the local Codex CLI route first.',
+            description: 'Optional trace hint. When codex_provider is enabled, Workflow Implement delegates to the local Codex CLI route even if this field is omitted.',
           },
           test_provider: {
             type: 'string',
             enum: ['codex'],
-            description: 'Optional provider route: "codex" means Workflow Test delegates verification to the local Codex CLI route first.',
+            description: 'Optional trace hint. When codex_provider is enabled, Workflow Test delegates verification to the local Codex CLI route even if this field is omitted.',
           },
           test: { type: 'array', items: { type: 'string' } },
           deps: { type: 'array', items: { type: 'string' } },
@@ -151,12 +151,13 @@ const specPrompt =
   `skills[] lists 1-3 repository skill names the executor must invoke. test[] lists shell ` +
   `commands or concrete checks a verifier can execute without trusting the executor. ` +
   (codexDelegationEnabled
-    ? `For code-editing, repository-inspection, build/test, and refactor subgoals, set ` +
-      `"implement_provider":"codex" and "test_provider":"codex" as provider routing requests. ` +
-      `In the Workflow path this means Codex owns the Implement/Test work through a minimal ` +
-      `delegation controller; Sonnet is not the actor unless Codex routing is unavailable and ` +
+    ? `Codex routing is enabled for this run, so every Implement/Test stage will delegate ` +
+      `to the local Codex CLI route by default, even if provider fields are omitted. You may set ` +
+      `"implement_provider":"codex" and "test_provider":"codex" as trace hints, but they are ` +
+      `not required for routing. In the Workflow path Codex owns Implement/Test work through a ` +
+      `minimal delegation controller; Sonnet is not the actor unless Codex routing is unavailable and ` +
       `${codexProviderRequired ? 'this run is not allowed to fall back from Codex' : 'codex_provider permits explicit fallback'}. ` +
-      `Do not set provider routes for writing-only, planning-only, or product/strategy subgoals. `
+      `Keep Plan, SetGoal, QualityGate, and Report on Claude. `
     : `Do not set provider fields; codex_provider is off for this run. `) +
   `Fold any project convention rules the plan surfaced into subgoal acceptance and test entries. ` +
   `Keep it small — a trivial request is one subgoal.\n` +
@@ -263,8 +264,7 @@ function codexAdapterPrelude(dir) {
 
 function providerFor(sg, kind) {
   if (!codexDelegationEnabled) return 'sonnet'
-  const field = kind === 'test' ? sg.test_provider : sg.implement_provider
-  return String(field || '').toLowerCase() === 'codex' ? 'codex' : 'sonnet'
+  return 'codex'
 }
 
 function codexImplementBridgeInstructions(sg, attempt, accept, ctx, feedback) {
@@ -272,8 +272,9 @@ function codexImplementBridgeInstructions(sg, attempt, accept, ctx, feedback) {
   const dir = `.harness-run/workflow-codex/${part}/implement`
   return (
     `You are a minimal Workflow delegation controller for Implement, not the implementation actor. ` +
-    `This subgoal has implement_provider="codex", so "delegate" is a runtime routing request: ` +
-    `Codex must do the repository/code work when available.\n\n` +
+    `codex_provider is enabled for this run, so delegate is the default runtime route: Codex ` +
+    `must do the repository/code work when available, regardless of whether the subgoal carried ` +
+    `an explicit implement_provider field.\n\n` +
     codexAdapterPrelude(dir) +
     `4. If detection succeeds, write ${dir}/prompt.md with the full implementation request: ` +
     `goal, subgoal title, persona, required skills, project conventions to follow, acceptance criteria, ` +
@@ -304,8 +305,9 @@ function codexTestBridgeInstructions(sg, attempt, tests, work) {
   const dir = `.harness-run/workflow-codex/${part}/test`
   return (
     `You are a minimal Workflow delegation controller for Test, not the verifier actor unless ` +
-    `fallback is explicitly allowed. This subgoal has test_provider="codex", so delegate deterministic ` +
-    `verification to a separate local Codex CLI process first.\n\n` +
+    `fallback is explicitly allowed. codex_provider is enabled for this run, so delegate deterministic ` +
+    `verification to a separate local Codex CLI process first, regardless of whether the subgoal carried ` +
+    `an explicit test_provider field.\n\n` +
     codexAdapterPrelude(dir) +
     `4. If detection succeeds, write ${dir}/prompt.md with a verification-only request. The prompt ` +
     `must forbid trusting the Implement narrative, require running or inspecting the checks below, ` +

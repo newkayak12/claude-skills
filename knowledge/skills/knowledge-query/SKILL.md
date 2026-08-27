@@ -27,6 +27,7 @@ Choose the retrieval path from the asset shape and question type:
 
 | Asset or question | Prefer |
 |---|---|
+| `_knowledge/catalog.jsonl`, note IDs, aliases, tags, entities | Catalog-first candidate discovery |
 | Obsidian-style Markdown notes, MOCs, backlinks | Linked-vault traversal |
 | `ontology.md`, `ontology.yml`, controlled vocabularies | Ontology-aware term/class/relation lookup |
 | `nodes` / `edges`, Cypher, RDF/Turtle, triples | Graph query or graph inspection |
@@ -39,7 +40,13 @@ When assets are mixed, use graph/vault structure to find candidates and RAG chun
 
 ## Default Asset Discovery
 
-Do not ask where RAG artifacts are if the repository or vault follows the default convention. Check these locations first:
+Do not ask where knowledge or RAG artifacts are if the repository or vault follows the default convention. Check these catalog locations before scanning note bodies:
+
+1. `<vault>/_knowledge/catalog.jsonl`
+2. `knowledge-base/_knowledge/catalog.jsonl`
+3. `knowledge-system/_knowledge/catalog.jsonl`
+
+Then check these RAG locations when chunk retrieval is needed:
 
 1. `<vault>/_rag/chunks.jsonl`
 2. `<vault>/_rag/sources.csv`
@@ -68,9 +75,9 @@ If the query is concrete, skip intake and answer from the available assets. If a
 
 ## Process
 
-1. **Identify available assets.** Locate `index.md`, `vault-plan.md`, `mocs/`, note frontmatter, `ontology.md`, `ontology.yml`, `mapping.md`, `nodes.*`, `edges.*`, `schema.md`, `chunks.jsonl`, `sources.csv`, or `eval-queries.jsonl`.
+1. **Identify available assets.** Locate `_knowledge/catalog.jsonl`, `index.md`, `vault-plan.md`, `mocs/`, note frontmatter, `ontology.md`, `ontology.yml`, `mapping.md`, `nodes.*`, `edges.*`, `schema.md`, `chunks.jsonl`, `sources.csv`, or `eval-queries.jsonl`.
 2. **Restate the query intent.** Classify the request as lookup, synthesis, impact analysis, comparison, provenance check, reading path, or gap/open-question search.
-3. **Select a query path.** Use links/MOCs for conceptual navigation, graph edges for relationship traversal, and RAG chunks for passage-level evidence.
+3. **Select candidates and a query path.** When a catalog exists, search its titles, aliases, tags, domains, entities, and summaries first, then open only the best-matching notes. Use links/MOCs for conceptual navigation, graph edges for relationship traversal, and RAG chunks for passage-level evidence.
 4. **Trace evidence.** Preserve source references from note `Sources`, frontmatter `sources`, graph edge evidence, or chunk `source_ref`. Prefer direct evidence over inferred relationships.
 5. **Answer with citations.** Cite the note, source path, chunk ID, node/edge record, or URL that supports each non-obvious claim.
 6. **Surface uncertainty.** Mark missing evidence, stale-risk sources, conflicting claims, and assumptions instead of smoothing them over.
@@ -107,6 +114,7 @@ For impact analysis:
 ## Quality Bar
 
 - Answers are grounded in the knowledge asset, not general memory, unless explicitly labeled as outside context.
+- Catalog-backed queries narrow candidates before opening note bodies and preserve stable note IDs when paths change.
 - Relationship-heavy questions inspect graph edges or note links before giving a narrative answer.
 - Citations point to stable note paths, source refs, chunk IDs, or graph records.
 - Conflicts and stale-risk evidence are visible.
