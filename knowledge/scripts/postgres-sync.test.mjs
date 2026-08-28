@@ -37,6 +37,8 @@ test('loads catalog bodies and stable retrieval metadata', () => {
         path: 'notes/billing.md',
         title: "Customer's Billing",
         tags: ['payments'],
+        user_terms: ['결제 화면'],
+        source_symbols: ['BillingService.charge'],
         source_refs: ['src/billing.ts'],
       })}\n`,
     );
@@ -45,6 +47,8 @@ test('loads catalog bodies and stable retrieval metadata', () => {
     assert.equal(rows.length, 1);
     assert.equal(rows[0].body, '# Billing\n');
     assert.deepEqual(rows[0].tags, ['payments']);
+    assert.deepEqual(rows[0].userTerms, ['결제 화면']);
+    assert.deepEqual(rows[0].sourceSymbols, ['BillingService.charge']);
     assert.match(rows[0].contentHash, /^[a-f0-9]{64}$/);
   });
 });
@@ -83,7 +87,8 @@ test('generates pgvector schema and idempotent upsert with soft deletion', () =>
     {
       catalog: [{
         noteId: 'n1', path: 'n.md', title: "It's here", summary: null, noteType: 'concept',
-        domain: null, tags: [], aliases: [], entities: [], sourceRefs: [], status: null,
+        domain: null, tags: [], aliases: [], userTerms: [], sourceSymbols: [], entities: [],
+        sourceRefs: [], status: null,
         confidence: null, body: 'body', metadata: {}, contentHash: 'hash',
       }],
       rag: null,
@@ -93,6 +98,7 @@ test('generates pgvector schema and idempotent upsert with soft deletion', () =>
     'batch-1',
   );
   assert.match(sql, /ON CONFLICT \(workspace_id, note_id\) DO UPDATE/);
+  assert.match(sql, /user_terms = EXCLUDED\.user_terms/);
   assert.match(sql, /It''s here/);
   assert.match(sql, /SET deleted_at = now\(\)/);
   assert.match(sql, /COMMIT/);

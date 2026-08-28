@@ -71,10 +71,10 @@ Treat `chunks.jsonl` plus `sources.csv` as the canonical RAG corpus. Vector data
 1. **Define retrieval jobs.** Identify the questions users will ask, the answer style expected, and whether retrieval needs exact citations, semantic recall, keyword precision, freshness, or permission filtering.
 2. **Inventory sources.** Capture source paths, URLs, document titles, dates, owners, versions, and any access constraints. When a knowledge vault includes `_knowledge/catalog.jsonl`, use it to resolve stable note IDs, current paths, aliases, tags, domains, entities, and source references; do not treat catalog summaries as a substitute for note content.
 3. **Choose chunk boundaries.** Chunk by semantic units first: headings, API endpoints, functions/classes, decisions, runbook steps, tickets, or policy clauses. Avoid fixed-size splitting unless the source lacks structure.
-4. **Design metadata.** Include fields that retrieval or filtering will actually use: `source_ref`, `note_id`, `title`, `section`, `doc_type`, `domain`, `tags`, `aliases`, `entities`, `confidence`, `owner`, `last_updated`, `version`, `permissions`, `canonical_url`, and stable IDs. Inherit consistent catalog/frontmatter values when present and reuse ontology-controlled values when an ontology exists.
+4. **Design metadata.** Include fields that retrieval or filtering will actually use: `source_ref`, `note_id`, `title`, `section`, `doc_type`, `domain`, `tags`, `aliases`, `user_terms`, `source_symbols`, `entities`, `confidence`, `owner`, `last_updated`, `version`, `permissions`, `canonical_url`, and stable IDs. Keep same-referent aliases separate from cross-layer vocabulary bridges. Inherit consistent catalog/frontmatter values when present and reuse ontology-controlled values when an ontology exists.
 5. **Preserve identity and citations.** Derive stable chunk IDs from a stable note/source ID plus a durable heading or block anchor where possible. Each chunk should be traceable back to the exact source region using heading paths, line ranges, page numbers, ticket IDs, or URLs where available.
 6. **Handle duplicates and conflicts.** Keep canonical chunks for repeated content, preserve aliases, and mark conflicting or stale sources rather than blending them into one unsupported statement.
-7. **Create eval queries.** Add representative retrieval tests: direct lookup, synonym lookup, multi-document synthesis, freshness-sensitive questions, and negative queries that should not retrieve irrelevant content.
+7. **Create eval queries.** Reuse stable question IDs from `_knowledge/questions.jsonl` when present. Add retrieval tests for direct lookup, synonym/operator-language lookup, source-symbol lookup, comparison, multi-document synthesis, freshness-sensitive questions, and negative queries that should not retrieve irrelevant content. Keep retrieval relevance results distinct from `_knowledge/question-results.jsonl`, which grades whether retrieved evidence can establish the answer.
 8. **Emit importable artifacts.** Produce the default portable layout unless the user requested a specific target. If a vector store is requested, keep the portable artifacts and add an ingestion note for that store.
 
 ## Chunk Record Shape
@@ -118,6 +118,8 @@ Optional downstream index notes can be added as `ingest-pgvector.md`, `ingest-qd
 - Chunk boundaries follow source meaning instead of arbitrary token windows where structure exists.
 - Metadata supports real filtering or ranking use cases; unused decorative fields are omitted.
 - Retrieval evals include positive, synonym, synthesis, freshness, and negative cases.
+- Cross-layer evals exercise both user-facing terms and implementation symbols without treating them as aliases of the same referent.
+- Retrieval success is not reported as answerability success; competency results still require complete evidence coverage.
 - Stale, conflicting, or permission-limited sources are visible in the output.
 
 ## Related Skills

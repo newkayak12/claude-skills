@@ -94,17 +94,21 @@ If the query is concrete, skip intake and answer from the available assets. If a
 
 1. **Identify available assets.** Check the local SQLite MCP index first, then locate `_knowledge/catalog.jsonl`, `index.md`, `vault-plan.md`, `mocs/`, note frontmatter, `ontology.md`, `ontology.yml`, `mapping.md`, `nodes.*`, `edges.*`, `schema.md`, `chunks.jsonl`, `sources.csv`, or `eval-queries.jsonl`.
 2. **Restate the query intent.** Classify the request as lookup, synthesis, impact analysis, comparison, provenance check, reading path, or gap/open-question search.
-3. **Select candidates and a query path.** When a catalog exists, search its titles, aliases, tags, domains, entities, and summaries first, then open only the best-matching notes. Use links/MOCs for conceptual navigation, graph edges for relationship traversal, and RAG chunks for passage-level evidence.
+3. **Select candidates and a query path.** When a catalog exists, search its titles, aliases, `user_terms`, `source_symbols`, tags, domains, entities, and summaries first, then open only the best-matching notes. Use links/MOCs for conceptual navigation, graph edges for relationship traversal, and RAG chunks for passage-level evidence. For comparison, equivalence, or sequence questions, prefer first-class relation notes and verify every participant's evidence instead of synthesizing from one-sided proximity.
 4. **Trace evidence.** Preserve source references from note `Sources`, frontmatter `sources`, graph edge evidence, or chunk `source_ref`. Prefer direct evidence over inferred relationships.
 5. **Answer with citations.** Cite the note, source path, chunk ID, node/edge record, or URL that supports each non-obvious claim.
-6. **Surface uncertainty.** Mark missing evidence, stale-risk sources, conflicting claims, and assumptions instead of smoothing them over.
-7. **Suggest follow-up queries only when useful.** Offer targeted next questions when they would materially improve the user's investigation.
+6. **Assign coverage before composing.** Use `complete` only when direct evidence covers every material part. Use `partial` when the answer needs material inference or has missing, stale, or conflicting parts. Use `unanswerable` when the assets cannot establish the answer. Never upgrade coverage because nearby notes make a plausible story.
+7. **Surface missing knowledge.** For `partial` or `unanswerable`, name the missing relation note, participant, source anchor, vocabulary bridge, or freshness evidence needed to resolve the question.
+8. **Record failures only when authorized.** Ordinary queries are read-only. Return an `Improvement candidate` block for partial or unanswerable results. Append it to `_knowledge/improvement-notes.md` or update `_knowledge/question-results.jsonl` only when the user requested vault maintenance, the current build is running the competency gate, or the vault plan explicitly opts into query-failure logging.
+9. **Suggest follow-up queries only when useful.** Offer targeted next questions when they would materially improve the user's investigation.
 
 ## Output Shape
 
-For ordinary answers:
+For ordinary answers, always begin with the coverage grade:
 
 ```markdown
+Coverage: complete | partial | unanswerable
+
 Answer in 2-5 concise paragraphs.
 
 Evidence:
@@ -113,6 +117,12 @@ Evidence:
 
 Uncertainty:
 - Any missing, stale, inferred, or conflicting evidence.
+
+Missing knowledge:                    # required for partial/unanswerable
+- Needed relation note, participant, anchor, bridge, or source.
+
+Improvement candidate:               # return; write only when authorized
+- Question, observed failure, required evidence, and next extraction action.
 ```
 
 For impact analysis:
@@ -134,9 +144,12 @@ For impact analysis:
 - SQLite retrieval cites canonical Markdown/JSONL provenance rather than the derived database file.
 - Catalog-backed queries narrow candidates before opening note bodies and preserve stable note IDs when paths change.
 - Relationship-heavy questions inspect graph edges or note links before giving a narrative answer.
+- Comparison, equivalence, and sequence answers verify evidence for every participant; a one-sided relation is not presented as complete.
 - Citations point to stable note paths, source refs, chunk IDs, or graph records.
 - Conflicts and stale-risk evidence are visible.
-- If the knowledge asset cannot answer the question, say what is missing and which source would likely resolve it.
+- Every answer declares `complete`, `partial`, or `unanswerable` coverage using the strict meanings above.
+- If the knowledge asset cannot answer the question, say exactly what is missing and which source would likely resolve it; do not fill the gap with an unlabeled inference.
+- Read-only queries do not mutate improvement memory or competency results without maintenance authorization or an explicit vault opt-in.
 
 ## Related Skills
 

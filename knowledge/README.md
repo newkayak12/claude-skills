@@ -1,6 +1,6 @@
 # knowledge
 
-Knowledge skills for building, transforming, and querying source-grounded knowledge assets.
+Knowledge skills for building, transforming, and querying source-grounded, answerability-gated knowledge assets.
 The plugin also includes a lightweight post-edit hook that detects changed Markdown inside
 knowledge workspaces and queues catalog, RAG, graph, or ontology follow-up work without blocking edits.
 Its local MCP server builds a disposable SQLite index and exposes hybrid retrieval and graph queries
@@ -27,6 +27,35 @@ so Claude can answer from the indexed evidence.
 | `rag-corpus-builder` | Prepare retrieval-ready chunks, metadata, citations, and eval queries for RAG |
 | `knowledge-query` | Answer questions over a linked vault, graph data, RAG corpus, or mixed knowledge assets |
 
+## Answerability Gate
+
+Version 1.3.0 treats clean structure and useful answers as separate quality dimensions.
+Non-trivial builds preserve competency questions and their evaluated results under `_knowledge/`,
+model contrasts/equivalences/sequences as first-class relation notes with evidence for every
+participant, and keep operator language separate from code and database symbols.
+
+Before declaring a build complete, run:
+
+```bash
+node knowledge/scripts/validate-knowledge.mjs --root /path/to/vault --require-answerability
+```
+
+The gate fails when a competency question is partial or unanswerable, a relation note lacks
+evidence for one side, a declared UI/code vocabulary bridge is incomplete, human confirmation
+lacks review provenance, or graph question reachability uses missing or unsupported edges.
+It is deliberately read-only and does not mistake artifact conformance for proof that cited
+source claims are true.
+
+Canonical answerability artifacts:
+
+| Artifact | Purpose |
+|---|---|
+| `_knowledge/questions.jsonl` | Stable competency questions derived from lookup jobs |
+| `_knowledge/question-results.jsonl` | Complete/partial/unanswerable results with evidence and missing knowledge |
+| `_knowledge/coverage.md` | Human-readable source and numeric answerability coverage |
+| `_knowledge/needs-human-review.md` | Intended-behavior claims awaiting a reviewer |
+| `_graph/question-reachability.jsonl` | Bounded, typed, evidence-backed paths for graph questions |
+
 ## Local SQLite + MCP
 
 Installing the plugin registers the `knowledge-local` stdio MCP server. It exposes:
@@ -43,6 +72,9 @@ Ollama instance and index with `provider: ollama`. See
 for CLI, Docker, and data-ownership details.
 
 Keep Markdown and JSONL in Git. The SQLite file and Ollama model volume are rebuildable local state.
+Catalog `user_terms` and `source_symbols` are included in local hybrid retrieval so operator
+phrasing and implementation identifiers can converge on the same candidate notes without being
+misrepresented as aliases.
 
 ## Hook
 
@@ -53,3 +85,7 @@ then writes reports under `_knowledge/`.
 Catalog refresh queuing is beta and incremental: each observed Markdown edit emits a
 single-note upsert job. It does not request a full vault reindex, and deletions or moves made
 outside the observed edit tools still need explicit catalog reconciliation.
+
+When competency results exist, the same edit also queues an answerability recheck for affected
+questions. The completion validator independently rejects stale answer-note hashes even if that
+queue has not yet been consumed.

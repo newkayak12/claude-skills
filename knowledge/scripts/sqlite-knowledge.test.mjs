@@ -43,6 +43,8 @@ function seed(root) {
       title: 'Payment Authorization',
       summary: '결제 승인 처리',
       aliases: ['payment approval'],
+      user_terms: ['결제 승인 화면'],
+      source_symbols: ['PaymentService.authorize'],
       source_refs: ['src/PaymentService.ts'],
     },
     {
@@ -119,6 +121,14 @@ test('hybrid search returns grounded results and full records by ID', async () =
   assert.equal(fetched.results.length, 1);
   assert.match(fetched.results[0].text, /PaymentService/);
   assert.equal(fetched.results[0].metadata.path, 'notes/payments.md');
+
+  const byOperatorTerm = await searchIndex(root, '결제 승인 화면', { limit: 2 });
+  assert.equal(byOperatorTerm.results[0].id, 'payments');
+  assert.equal(byOperatorTerm.results[0].lexical_match, true);
+
+  const bySourceSymbol = await searchIndex(root, 'PaymentService.authorize', { limit: 2 });
+  assert.equal(bySourceSymbol.results[0].id, 'payments');
+  assert.equal(bySourceSymbol.results[0].lexical_match, true);
 }));
 
 test('queries direct graph relationships by canonical name', async () => fixture(async (root) => {

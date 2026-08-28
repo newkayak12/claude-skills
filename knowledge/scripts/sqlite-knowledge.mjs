@@ -171,6 +171,8 @@ function collectKnowledge(root) {
       record.summary,
       ...asStrings(record.tags),
       ...asStrings(record.aliases),
+      ...asStrings(record.user_terms),
+      ...asStrings(record.source_symbols),
       ...asStrings(record.entities),
     ].filter(Boolean).join('\n');
     documents.push(normalizeDocument({
@@ -216,7 +218,12 @@ function collectKnowledge(root) {
       kind: 'node',
       id,
       title: name || id,
-      text: [record.description, ...asStrings(record.aliases)].filter(Boolean).join('\n'),
+      text: [
+        record.description,
+        ...asStrings(record.aliases),
+        ...asStrings(record.user_terms),
+        ...asStrings(record.source_symbols),
+      ].filter(Boolean).join('\n'),
       sourceRef: asStrings(record.source_refs ?? record.sources)[0] || null,
       domain: record.domain,
       metadata: record,

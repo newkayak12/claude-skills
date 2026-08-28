@@ -130,6 +130,8 @@ function catalogRows(root) {
       domain: record.domain ?? null,
       tags: asStrings(record.tags),
       aliases: asStrings(record.aliases),
+      userTerms: asStrings(record.user_terms),
+      sourceSymbols: asStrings(record.source_symbols),
       entities: asStrings(record.entities),
       sourceRefs: asStrings(record.source_refs ?? record.sources),
       status: record.status ?? null,
@@ -282,6 +284,8 @@ CREATE TABLE IF NOT EXISTS ${s}.notes (
   domain text,
   tags text[] NOT NULL DEFAULT '{}',
   aliases text[] NOT NULL DEFAULT '{}',
+  user_terms text[] NOT NULL DEFAULT '{}',
+  source_symbols text[] NOT NULL DEFAULT '{}',
   entities text[] NOT NULL DEFAULT '{}',
   source_refs text[] NOT NULL DEFAULT '{}',
   status text,
@@ -294,6 +298,9 @@ CREATE TABLE IF NOT EXISTS ${s}.notes (
   deleted_at timestamptz,
   PRIMARY KEY (workspace_id, note_id)
 );
+
+ALTER TABLE ${s}.notes ADD COLUMN IF NOT EXISTS user_terms text[] NOT NULL DEFAULT '{}';
+ALTER TABLE ${s}.notes ADD COLUMN IF NOT EXISTS source_symbols text[] NOT NULL DEFAULT '{}';
 
 CREATE TABLE IF NOT EXISTS ${s}.rag_chunks (
   workspace_id text NOT NULL,
@@ -354,6 +361,8 @@ CREATE TABLE IF NOT EXISTS ${s}.graph_edges (
 
 CREATE INDEX IF NOT EXISTS notes_workspace_path_idx ON ${s}.notes (workspace_id, path);
 CREATE INDEX IF NOT EXISTS notes_title_trgm_idx ON ${s}.notes USING gin (title gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS notes_user_terms_gin_idx ON ${s}.notes USING gin (user_terms);
+CREATE INDEX IF NOT EXISTS notes_source_symbols_gin_idx ON ${s}.notes USING gin (source_symbols);
 CREATE INDEX IF NOT EXISTS rag_chunks_workspace_note_idx ON ${s}.rag_chunks (workspace_id, note_id);
 CREATE INDEX IF NOT EXISTS rag_chunks_search_idx ON ${s}.rag_chunks USING gin (search_document);
 CREATE INDEX IF NOT EXISTS graph_nodes_workspace_name_idx
@@ -376,17 +385,21 @@ function upsertSql(config, artifacts, batch = randomUUID()) {
   if (artifacts.catalog !== null) {
     for (const row of artifacts.catalog) {
       statements.push(`INSERT INTO ${s}.notes
-  (workspace_id, note_id, path, title, summary, note_type, domain, tags, aliases, entities,
+  (workspace_id, note_id, path, title, summary, note_type, domain, tags, aliases, user_terms,
+   source_symbols, entities,
    source_refs, status, confidence, body, metadata, content_hash, sync_batch, deleted_at)
 VALUES
   (${workspace}, ${q(row.noteId)}, ${q(row.path)}, ${q(row.title)}, ${q(row.summary)},
    ${q(row.noteType)}, ${q(row.domain)}, ${qArray(row.tags)}, ${qArray(row.aliases)},
-   ${qArray(row.entities)}, ${qArray(row.sourceRefs)}, ${q(row.status)}, ${q(row.confidence)},
+   ${qArray(row.userTerms)}, ${qArray(row.sourceSymbols)}, ${qArray(row.entities)},
+   ${qArray(row.sourceRefs)}, ${q(row.status)}, ${q(row.confidence)},
    ${q(row.body)}, ${qJson(row.metadata)}, ${q(row.contentHash)}, ${q(batch)}, NULL)
 ON CONFLICT (workspace_id, note_id) DO UPDATE SET
   path = EXCLUDED.path, title = EXCLUDED.title, summary = EXCLUDED.summary,
   note_type = EXCLUDED.note_type, domain = EXCLUDED.domain, tags = EXCLUDED.tags,
-  aliases = EXCLUDED.aliases, entities = EXCLUDED.entities, source_refs = EXCLUDED.source_refs,
+  aliases = EXCLUDED.aliases, user_terms = EXCLUDED.user_terms,
+  source_symbols = EXCLUDED.source_symbols, entities = EXCLUDED.entities,
+  source_refs = EXCLUDED.source_refs,
   status = EXCLUDED.status, confidence = EXCLUDED.confidence, body = EXCLUDED.body,
   metadata = EXCLUDED.metadata, content_hash = EXCLUDED.content_hash,
   sync_batch = EXCLUDED.sync_batch, updated_at = now(), deleted_at = NULL;`);
