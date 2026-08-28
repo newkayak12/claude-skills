@@ -36,14 +36,14 @@ If the user answers roughly, proceed with a small provisional schema and mark un
 
 ## Process
 
-1. **Define graph purpose.** Identify the expected questions the graph should answer: impact analysis, onboarding, compliance traceability, research synthesis, product taxonomy, code architecture, or support knowledge. Ask only when the graph boundary or audience materially changes the schema.
+1. **Define graph purpose and competency paths.** Identify the expected questions the graph should answer: impact analysis, onboarding, comparison, compliance traceability, research synthesis, product taxonomy, code architecture, or support knowledge. Reuse `_knowledge/questions.jsonl` when present; mark relationship-heavy questions with `graph_check: true` and their required graph node IDs.
 2. **Inventory source material.** Read representative sources before designing the schema. Capture source paths, URLs, document titles, dates, and other provenance needed to verify extracted facts.
 3. **Draft or reuse the ontology/schema.** Define node labels/classes, relationship types, key properties, uniqueness rules, evidence fields, and constraints. Keep the schema small enough to use; add labels only when they change query behavior or governance.
-4. **Extract candidates.** Pull entities, aliases, attributes, relationships, temporal qualifiers, and source evidence. Prefer explicit statements over inference. Mark inferred edges with `confidence` and `inference_reason`.
+4. **Extract candidates.** Pull entities, aliases, attributes, relationships, temporal qualifiers, and source evidence. Prefer explicit statements over inference. Mark inferred edges with `confidence` and `inference_reason`. Shared anchors and co-occurrence may nominate a relation for inspection but never establish an edge by themselves.
 5. **Normalize names.** Canonicalize duplicates, aliases, acronyms, file paths, product names, people, teams, services, database objects, and domain terms. Preserve source wording as aliases when useful.
-6. **Validate relationships.** Check direction, cardinality, relation semantics, and evidence. Avoid vague edges such as `RELATED_TO` unless the user explicitly wants a loose exploration graph.
+6. **Validate relationships.** Check direction, cardinality, relation semantics, and evidence. Avoid vague edges such as `RELATED_TO` unless the user explicitly wants a loose exploration graph. Do not flag every A→B edge without B→A: validate a materialized inverse only when the ontology declares the relation symmetric or defines an inverse that must be stored.
 7. **Emit graph-ready artifacts.** Produce a schema plus machine-usable data such as CSV, JSONL, Cypher, RDF/Turtle, or Markdown tables, depending on the user's storage target.
-8. **Check graph quality.** Look for orphan nodes, duplicate canonical entities, unsupported claims, ambiguous edge types, overbroad labels, missing provenance, and extraction drift across sources.
+8. **Check graph quality and question reachability.** Look for orphan nodes, duplicate canonical entities, unsupported claims, ambiguous edge types, overbroad labels, missing provenance, and extraction drift across sources. For every `graph_check` question, verify that all required answer nodes are reachable within a declared hop bound through specific, directional, evidence-backed edges. Record the result in `_graph/question-reachability.jsonl`; unreachable questions are graph defects, not optional observations.
 
 ## Schema Shape
 
@@ -87,6 +87,7 @@ Choose the smallest useful output unless the user requested a specific graph dat
 | `schema.md` | Human-readable labels, relationships, properties, and modeling decisions |
 | `nodes.csv` / `edges.csv` | Portable graph import format |
 | `nodes.jsonl` / `edges.jsonl` | Richer nested properties and evidence fields |
+| `question-reachability.jsonl` | Per-competency-question answer nodes, bounded typed paths, evidence, and pass/fail reachability |
 | `graph.cypher` | Neo4j-ready constraints and merge statements |
 | `graph.ttl` | RDF/Turtle output for semantic-web tooling |
 | `extraction-report.md` | Coverage, assumptions, conflicts, and open questions |
@@ -101,14 +102,30 @@ For exploratory work, Markdown tables are acceptable. For implementation work, p
 - Separate direct evidence from inference. Inferred edges require `confidence` and `inference_reason`.
 - When sources disagree, keep both claims with provenance instead of silently choosing one.
 - Include temporal fields when facts can change, such as ownership, status, dependencies, prices, policy, or team structure.
+- Do not use a shared god-class file, mapper, controller, or other high-degree anchor as sufficient relation evidence. Cite the source region that establishes the relationship itself.
+- Relation edges used for competency reachability require stable edge IDs, specific relationship types, and source references. An evidence excerpt may explain an edge but does not replace provenance.
+
+## Question Reachability
+
+Follow the graph record in `knowledge-base-builder`'s
+[answerability contract](../knowledge-base-builder/references/answerability-contract.md). A path
+passes only when its edge IDs resolve, its length is within `max_hops`, every edge is typed and
+grounded, and the result includes every `required_graph_node_id`. Generic hubs, co-occurrence,
+and `RELATED_TO` shortcuts do not count.
+
+Reachability tests graph structure, not claim truth. The corresponding
+`_knowledge/question-results.jsonl` record must still establish answer coverage from cited
+content.
 
 ## Quality Bar
 
 - The graph can answer the motivating questions without returning mostly generic `RELATED_TO` edges.
 - Node labels are stable domain concepts, not one-off document section names.
 - Relationship direction is consistent and queryable.
+- Symmetric and inverse behavior follows ontology declarations; directional relations are not duplicated merely to make the graph look balanced.
 - Canonical entities preserve useful aliases and source terminology.
 - Unsupported claims are removed or marked as inference.
+- Every declared graph competency question has a passing, bounded, typed, evidence-backed record in `_graph/question-reachability.jsonl`.
 - The output can be imported, queried, or manually reviewed without re-reading the entire source corpus.
 
 ## Related Skills

@@ -90,6 +90,31 @@ test('queues catalog refresh without requiring RAG artifacts', () => {
   });
 });
 
+test('queues competency recheck when an evaluated answer note changes', () => {
+  withFixture((fixture) => {
+    const root = join(fixture, 'knowledge-system');
+    const note = join(root, 'notes', 'payment-authorization.md');
+    write(note, noteBody());
+    write(join(root, '_knowledge', 'question-results.jsonl'), '{}\n');
+
+    main({ cwd: fixture, tool_input: { file_path: note } });
+
+    const report = JSON.parse(
+      readFileSync(join(root, '_knowledge', 'checks', 'latest.json'), 'utf8'),
+    );
+    assert.equal(report.answerability_delta_needed, true);
+    const job = JSON.parse(
+      readFileSync(
+        join(root, '_knowledge', 'jobs', 'answerability-check-queue.jsonl'),
+        'utf8',
+      ),
+    );
+    assert.equal(job.note_id, 'payment-authorization');
+    assert.equal(job.operation, 'recheck-affected-questions');
+    assert.equal(job.scope, 'note-dependents');
+  });
+});
+
 test('resolves wikilinks to notes in nested domain folders', () => {
   withFixture((fixture) => {
     const root = join(fixture, 'knowledge-system');

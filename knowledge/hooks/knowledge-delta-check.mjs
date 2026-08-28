@@ -194,9 +194,11 @@ function analyze(root, file) {
   const linkIndex = markdownLinkIndex(root);
   const brokenLinks = links.filter((target) => !linkExists(target, linkIndex));
   const catalogPath = join(root, '_knowledge', 'catalog.jsonl');
+  const questionResultsPath = join(root, '_knowledge', 'question-results.jsonl');
   const nodesPath = join(root, '_graph', 'nodes.jsonl');
   const edgesPath = join(root, '_graph', 'edges.jsonl');
   const catalogPresent = existsSync(catalogPath);
+  const questionResultsPresent = existsSync(questionResultsPath);
   const ragPresent = existsSync(join(root, '_rag'));
   const graphPresent = existsSync(join(root, '_graph'));
   const ontologyPresent = existsSync(join(root, '_ontology'));
@@ -212,6 +214,8 @@ function analyze(root, file) {
   }
 
   const catalogDeltaNeeded = catalogPresent && !rel.split('/').some((part) => part.startsWith('_'));
+  const answerabilityDeltaNeeded =
+    questionResultsPresent && !rel.split('/').some((part) => part.startsWith('_'));
   const ragDeltaNeeded = ragPresent;
   const graphDeltaNeeded =
     graphPresent && (staleByMtime(file, nodesPath) || staleByMtime(file, edgesPath) || links.length > 0);
@@ -225,6 +229,7 @@ function analyze(root, file) {
     missing_frontmatter: missingFrontmatter,
     broken_links: brokenLinks,
     catalog_delta_needed: catalogDeltaNeeded,
+    answerability_delta_needed: answerabilityDeltaNeeded,
     rag_delta_needed: ragDeltaNeeded,
     graph_delta_needed: graphDeltaNeeded,
     ontology_review_suggested: ontologyReviewSuggested,
@@ -274,6 +279,14 @@ function main(input = readInput()) {
         operation: 'upsert-note',
         scope: 'single-note',
         beta: true,
+      });
+    }
+    if (report.answerability_delta_needed) {
+      appendJsonl(join(jobsDir, 'answerability-check-queue.jsonl'), {
+        ...jobBase,
+        note_id: report.note_id,
+        operation: 'recheck-affected-questions',
+        scope: 'note-dependents',
       });
     }
     if (report.rag_delta_needed) appendJsonl(join(jobsDir, 'embed-queue.jsonl'), jobBase);

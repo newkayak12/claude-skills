@@ -46,11 +46,11 @@ If the user gives only a rough answer, start with competency questions and a pro
 
 ## Process
 
-1. **Define competency questions.** Write the concrete questions the ontology must support, such as impact analysis, lineage, ownership, compliance evidence, concept disambiguation, or support answer grounding.
+1. **Define competency questions.** Write the concrete questions the ontology must support, such as comparison, impact analysis, lineage, ownership, compliance evidence, concept disambiguation, or support answer grounding. When a vault already has `_knowledge/questions.jsonl`, reuse its stable question IDs instead of creating a disconnected second question set.
 2. **Collect domain terms.** Extract candidate concepts, aliases, entity types, relationship verbs, properties, statuses, and source vocabularies from representative material.
 3. **Separate classes from instances.** `Service`, `Decision`, and `Policy` are classes; `Billing API`, `ADR-004`, and `Refund Policy v2` are instances.
 4. **Design class hierarchy.** Keep inheritance shallow. Add subclasses only when they change constraints, relationships, metadata, retrieval filtering, or query behavior.
-5. **Define relationship semantics.** Name relationships directionally and specify allowed source/target classes, cardinality, inverse relation when useful, temporal behavior, and examples.
+5. **Define relationship semantics.** Name relationships directionally and specify allowed source/target classes, cardinality, inverse relation when useful, whether the relation is symmetric, temporal behavior, and examples. Include first-class contrast, equivalence, or sequence semantics when competency questions depend on them.
 6. **Define properties and controlled vocabularies.** Specify required/optional fields, allowed values, aliases, normalization rules, and provenance fields.
 7. **Add constraints and reasoning rules.** Capture rules such as "every ProductionService must have an owner", "`SUPERSEDES` implies temporal ordering", or "`DEPENDS_ON` is transitive only for impact analysis, not ownership."
 8. **Map to assets.** Explain how ontology classes map to Markdown frontmatter, graph node labels, relationship types, RAG metadata fields, and query filters.
@@ -65,7 +65,7 @@ Produce the smallest useful ontology package:
 | `ontology.md` | Human-readable classes, relationships, properties, constraints, examples |
 | `ontology.yml` | Machine-readable class/relation/property definitions when useful |
 | `mapping.md` | Mapping to vault frontmatter, graph labels/edges, and RAG metadata |
-| `competency-questions.md` | Query requirements used to validate the ontology |
+| `competency-questions.md` | Human-readable ontology view of the canonical `_knowledge/questions.jsonl` requirements, preserving question IDs |
 | `open-ontology-questions.md` | Ambiguous terms, disputed meanings, and unresolved modeling choices |
 
 ## Definition Template
@@ -110,11 +110,12 @@ Constraints:
 - Include `dependency_type` when known.
 - Include `confidence` and `source_refs`.
 - Transitive for impact analysis; not transitive for ownership or responsibility.
+- Directional; a reverse edge is not required unless a materialized inverse is declared.
 ```
 
 ## Quality Bar
 
-- Competency questions are explicit and the ontology can support them.
+- Competency questions are explicit, preserve canonical question IDs, and have been exercised against real examples rather than judged only from schema shape.
 - Classes are domain-stable and not just document headings.
 - Relationships have clear direction, allowed domains/ranges, and examples.
 - Controlled vocabularies prevent synonym drift without erasing useful aliases.

@@ -31,14 +31,16 @@ Choose one stable primary placement axis and document it in `vault-plan.md`.
 Emit one JSON object per note in `_knowledge/catalog.jsonl`:
 
 ```json
-{"id":"payment-authorization","path":"notes/billing/payment-authorization.md","title":"Payment Authorization","summary":"결제 승인 처리의 진입점과 실패 정책","type":"concept","domain":"billing","tags":["payment","authorization"],"aliases":["결제 승인","payment approval"],"entities":["PaymentService","PaymentGateway"],"source_refs":["src/billing/PaymentService.ts"],"status":"verified","confidence":"direct"}
+{"id":"payment-authorization","path":"notes/billing/payment-authorization.md","title":"Payment Authorization","summary":"결제 승인 처리의 진입점과 실패 정책","type":"concept","domain":"billing","tags":["payment","authorization"],"aliases":["payment approval"],"user_terms":["결제 승인"],"source_symbols":["PaymentService.authorize"],"lookup_layers":["operator","code"],"entities":["PaymentService","PaymentGateway"],"source_refs":["src/billing/PaymentService.ts#authorize"],"status":"verified","confidence":"direct"}
 ```
 
 - Keep the summary short enough for candidate selection; the note body remains the authoritative explanation.
 - Keep `path` current and `id` stable across moves.
 - Include terms people actually use. Do not generate tag or alias variations that add no retrieval value.
+- Keep `aliases` for alternate names of the same referent. Store operator/UI language in `user_terms`, implementation identifiers in `source_symbols`, and the intentional bridge in `lookup_layers`.
+- For relation records, include `relation_type`, stable `participants`, and `evidence_by_participant` as defined in [answerability-contract.md](answerability-contract.md).
 - Resolve every catalog path to exactly one note. Reject duplicate IDs.
-- Search titles, aliases, tags, domain, entities, and summaries to select a small candidate set before opening note bodies.
+- Search titles, aliases, user terms, source symbols, tags, domain, entities, and summaries to select a small candidate set before opening note bodies.
 
 ## RAG Handoff
 
@@ -46,7 +48,7 @@ Use `knowledge:rag-corpus-builder` when the user requests embeddings, a vector i
 
 - Treat note bodies and their exact `sources` as corpus input. Treat the catalog as discovery and metadata input, not as a substitute for source text.
 - Prefer Markdown headings and other semantic units as chunk boundaries. Derive stable chunk IDs from the stable note ID plus a durable heading or block anchor rather than a mutable ordinal alone.
-- Propagate `type`, `domain`, `tags`, `aliases`, `entities`, `status`, `confidence`, access metadata, and source references into chunks only when they affect retrieval, ranking, filtering, or citation.
+- Propagate `type`, `domain`, `tags`, `aliases`, `user_terms`, `source_symbols`, `entities`, `status`, `confidence`, access metadata, and source references into chunks only when they affect retrieval, ranking, filtering, or citation.
 - Keep the vault canonical and write portable RAG artifacts under `<vault>/_rag/` unless the user specifies another target.
 - Carry unresolved conflicts, stale sources, missing permissions, and coverage gaps into the RAG ingestion report instead of silently indexing them as trusted facts.
 
@@ -61,6 +63,7 @@ After a meaningful knowledge-base build or update, append a dated entry to `_kno
 - Evidence observed: alias lookup missed "결제 실패" in 2 of 3 trial queries
 - Change made: added a grounded alias to `payment-failure`
 - Remaining manual step: ownership still requires opening two notes
+- Failed competency question: `payment-failure-owner` is partial because no ownership anchor exists
 - Next improvement candidate: add the owning service to `entities`
 - Reconsideration signal: catalog lookup returns more than five plausible notes for the same job
 ```

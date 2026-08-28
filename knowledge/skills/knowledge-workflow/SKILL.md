@@ -57,6 +57,7 @@ knowledge-system/
     schema.md
     nodes.jsonl
     edges.jsonl
+    question-reachability.jsonl
     extraction-report.md
   _rag/
     rag-schema.md
@@ -66,10 +67,14 @@ knowledge-system/
     ingestion-report.md
   _knowledge/
     catalog.jsonl
+    questions.jsonl
+    question-results.jsonl
     coverage.md
     improvement-notes.md
+    needs-human-review.md
     checks/latest.json
     jobs/catalog-delta-queue.jsonl
+    jobs/answerability-check-queue.jsonl
     jobs/embed-queue.jsonl
     jobs/graph-update-queue.jsonl
     jobs/ontology-review-queue.jsonl
@@ -94,14 +99,14 @@ Do not crawl endlessly. Prefer a useful, inspectable knowledge system over exhau
 
 ## Workflow
 
-1. **Plan the system.** Create `knowledge-system-plan.md` with purpose, audience, source boundary, output layout, traversal seeds, stop rules, and assumptions.
+1. **Plan the system and its competency questions.** Create `knowledge-system-plan.md` with purpose, audience, source boundary, output layout, traversal seeds, stop rules, lookup jobs, and assumptions. Materialize the lookup jobs as `_knowledge/questions.jsonl`; these questions remain stable requirements rather than disposable examples.
 2. **Map the source frontier.** Build a small inventory of seed sources and discovered neighbors. Mark each item as `queued`, `processed`, `skipped`, or `out-of-scope`.
 3. **Build the linked vault.** Use `knowledge:knowledge-base-builder` behavior for predictable folder placement, human-readable notes, MOCs, source-grounded frontmatter, and the AI lookup catalog.
 4. **Stabilize ontology where needed.** Use `knowledge:ontology-builder` behavior when repeated concepts, aliases, relation meanings, or constraints start to matter.
-5. **Extract graph records.** Use `knowledge:knowledge-graph-builder` behavior for entities, edges, evidence, schema, and graph-ready JSONL/CSV.
+5. **Extract graph records.** Use `knowledge:knowledge-graph-builder` behavior for entities, edges, evidence, schema, and graph-ready JSONL/CSV. For relationship-heavy competency questions, emit bounded typed paths in `_graph/question-reachability.jsonl`.
 6. **Prepare RAG corpus.** Use `knowledge:rag-corpus-builder` behavior to derive retrieval chunks, metadata, citations, and eval queries from the vault and its catalog without replacing the source-grounded notes.
-7. **Create query surfaces.** Use `knowledge:knowledge-query` behavior to leave recommended queries, reading paths, known gaps, and evidence-backed answer patterns. When the local `knowledge-local` MCP server is available, build its derived SQLite index and verify at least one retrieval query.
-8. **Run a quality pass.** Check dead links, orphan notes, duplicate concepts, weak ontology terms, unsupported graph edges, RAG chunks without provenance, and unanswered competency questions.
+7. **Create and exercise query surfaces.** Use `knowledge:knowledge-query` behavior to run every competency question, assign strict complete/partial/unanswerable coverage, and write `_knowledge/question-results.jsonl`. Leave recommended queries, reading paths, known gaps, and evidence-backed answer patterns. When the local `knowledge-local` MCP server is available, build its derived SQLite index and exercise the same vocabulary and source-symbol paths used by the competency set.
+8. **Run the completion gates.** Check dead links, orphan notes, duplicate concepts, weak ontology terms, unsupported graph edges, RAG chunks without provenance, relation claims without evidence for every side, and unanswered competency questions. Summarize numeric answerability in `_knowledge/coverage.md`, run `validate-knowledge.mjs --require-answerability`, and leave the system incomplete while any declared question fails.
 
 ## Hook-First Automation
 
@@ -113,6 +118,7 @@ The hook is intentionally a checker, not a builder:
 - It inspects changed Markdown files after `Write`, `Edit`, `MultiEdit`, or `NotebookEdit`.
 - It records the latest check at `_knowledge/checks/latest.json` and appends history to `_knowledge/reports/delta-checks.jsonl`.
 - **Beta:** When `_knowledge/catalog.jsonl` exists, the hook queues one `upsert-note` record per changed note in `_knowledge/jobs/catalog-delta-queue.jsonl`. Consumers should update only that note's catalog record and may coalesce repeated entries for the same path; they should not interpret the queue as a request for a full vault reindex.
+- When `_knowledge/question-results.jsonl` exists, an observed answer-note edit queues `recheck-affected-questions` in `_knowledge/jobs/answerability-check-queue.jsonl`. Existing complete results are not trusted after their recorded note hash becomes stale.
 - The beta delta queue covers Markdown writes and edits observed by the hook. Deletions or moves performed outside those tools still require explicit catalog reconciliation.
 - It also queues follow-up work in `_knowledge/jobs/embed-queue.jsonl`, `_knowledge/jobs/graph-update-queue.jsonl`, and `_knowledge/jobs/ontology-review-queue.jsonl` when existing RAG, graph, or ontology artifacts look stale.
 - It fails open and never blocks edits. Missing config, unreadable files, bad JSON, unsupported tools, or non-knowledge projects should produce no interruption.
@@ -132,13 +138,21 @@ When time or scope is limited, build in this order:
 5. `_graph/nodes.jsonl` and `_graph/edges.jsonl` for important relationships
 6. `_rag/chunks.jsonl`, `_rag/sources.csv`, and `_rag/eval-queries.jsonl`
 
+Do not interpret this prioritization as permission to omit `_knowledge/questions.jsonl` or its
+results from a completed non-trivial system. The list controls extraction depth; the
+answerability gate controls completion.
+
 ## Quality Bar
 
 - The output can be entered from `index.md` and queried through `_graph/` or `_rag/` artifacts.
 - The traversal frontier explains what was explored, skipped, or left open.
 - Notes, ontology terms, graph records, and RAG chunks share stable names and provenance.
 - `_knowledge/catalog.jsonl` resolves stable note IDs to current paths and supports fast lookup before graph or RAG traversal.
+- `_knowledge/questions.jsonl` traces real lookup jobs to required notes, terms, symbols, and graph nodes; every question has a current result.
+- All competency results are complete with direct evidence, and `coverage.md` reports the numeric pass rate.
+- Cross-layer lookup keeps same-referent aliases separate from user terms and source symbols.
 - The system improves as a graph: following links or edges reveals useful neighboring knowledge.
+- Relationship-heavy questions have bounded, typed, evidence-backed graph reachability rather than hub- or co-occurrence-based shortcuts.
 - Uncertainty is explicit; missing sources and weak inferences are not hidden.
 
 ## Related Skills

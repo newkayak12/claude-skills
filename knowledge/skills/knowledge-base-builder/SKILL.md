@@ -28,6 +28,8 @@ compatibility:
 - For non-trivial vaults, emit `_knowledge/catalog.jsonl`; keep note bodies, not catalog summaries, as the authoritative corpus.
 - Preserve a coherent existing topology unless restructuring is requested or it demonstrably blocks retrieval.
 - Preserve evidence-based lessons from meaningful build or update work in `_knowledge/improvement-notes.md` so the next builder pass can improve retrieval without rediscovering the same friction.
+- Treat answerability as a completion gate, separate from structural cleanliness. A non-trivial vault is incomplete while any declared competency question is partial or unanswerable.
+- Treat the claim, not the entity, as the atomic unit. Preserve relation claims as first-class notes when a comparison, equivalence, or sequence is the knowledge users need.
 
 ## Quick Intake
 
@@ -43,7 +45,7 @@ If the user gives a partial answer, proceed with reasonable defaults and record 
 ## Process
 
 1. **Define the vault boundary.** Identify the source directories, document sets, or pasted materials to include. Ask only when the boundary is ambiguous or destructive file placement is possible; otherwise create a clear output folder such as `knowledge-base/` or use the user's requested vault path.
-2. **Define likely lookup jobs.** Capture the names, aliases, entities, domains, and question types an AI or human reader will use to find knowledge. Optimize organization for those lookup paths instead of decorative hierarchy.
+2. **Define likely lookup jobs and competency questions.** Capture the names, aliases, operator terms, source symbols, entities, domains, and question types an AI or human reader will use. For a non-trivial vault, create `_knowledge/questions.jsonl` from these jobs before treating extraction as complete; do not replace a difficult failed question with an easier one.
 3. **Inspect existing topology and memory.** Before placing notes, inspect existing folders, naming rules, indexes, MOCs, links, and `_knowledge/improvement-notes.md` when present. Preserve a coherent existing convention unless the user requested restructuring or it demonstrably blocks retrieval.
 4. **Choose a folder strategy.** Use the shallowest hierarchy that predictably narrows candidate notes. Prefer a flat `notes/` folder for small or single-domain vaults and `notes/<domain>/` for stable multi-domain corpora. Keep cross-cutting classifications in frontmatter rather than duplicating notes across folders.
 5. **Create a vault plan for non-trivial corpora.** For multi-folder repos, mixed document sets, or long-lived vaults, write `vault-plan.md` before creating notes. Include audience, included/excluded sources, lookup jobs, folder placement rules, note types, naming rules, source coverage target, navigation surfaces, and the conditions for later RAG conversion.
@@ -53,14 +55,16 @@ If the user gives a partial answer, proceed with reasonable defaults and record 
    - Code notes for modules, APIs, services, commands, schemas, and data flows.
    - Decision notes for tradeoffs, ADR-like choices, constraints, and rejected alternatives.
    - Workflow notes for procedures, runbooks, onboarding paths, and repeated tasks.
+   - Relation notes for durable contrasts, equivalences, and sequences across multiple participants.
    - MOC notes for navigation hubs that connect related notes.
-8. **Write atomic notes.** Keep each note centered on one durable idea, component, or decision. Split notes when the title needs "and", when unrelated readers would want only half, or when backlinks would point to different concepts.
-9. **Add retrieval metadata.** Give each note a stable `id`, explicit `title`, `type`, `domain`, controlled `tags`, useful `aliases`, important `entities`, `status`, and `sources`. Treat `sources` as the canonical provenance field.
+8. **Write atomic claims.** Keep each note centered on one durable claim, idea, component, relation, or decision. Split notes when the title needs "and" only when the conjunction joins independent claims, unrelated readers would want only half, or backlinks would point to different concepts. A single note may span multiple entities when its atomic claim is the relation between them. Relation notes require all participants and evidence for every side.
+9. **Add retrieval metadata and vocabulary bridges.** Give each note a stable `id`, explicit `title`, `type`, `domain`, controlled `tags`, useful `aliases`, important `entities`, `status`, and `sources`. Keep same-referent aliases in `aliases`; use `user_terms`, `source_symbols`, and `lookup_layers` for operator/UI-to-code/database bridges. Treat `sources` as the canonical provenance field.
 10. **Link and ground deliberately.** Use Obsidian-style wikilinks (`[[Note Title]]`) for durable concepts and relative Markdown links for files that should open directly from the repository. Include exact source references and mark uncertain inferences as `Open Questions` instead of presenting them as facts.
 11. **Create navigation and lookup surfaces.** Add `index.md` for readers, focused MOCs where they improve traversal, and `_knowledge/catalog.jsonl` for fast AI candidate discovery. The catalog should map stable IDs and retrieval metadata to current paths without copying entire note bodies.
 12. **Prepare the RAG handoff when relevant.** Keep notes as the source-grounded corpus layer. Record whether headings are suitable chunk boundaries, whether metadata and permissions can propagate to chunks, and which sources are stale, conflicting, or missing before routing to `knowledge:rag-corpus-builder`.
-13. **Check retrieval quality.** Inspect folder placement, catalog coverage, alias/tag lookup, orphan notes, duplicate IDs or titles, missing source references, dead links, and oversized notes. Run a few representative lookup questions and reshape the vault when candidate discovery is noisy.
-14. **Capture improvement memory.** After meaningful build or update work, append only observed retrieval friction, structural decisions, remaining manual steps, and evidence-backed next improvements to `_knowledge/improvement-notes.md`. Use the format in [references/retrieval-layout.md](references/retrieval-layout.md); preserve prior entries and do not turn it into a generic activity log.
+13. **Run the answerability gate.** Execute every declared competency question through `knowledge:knowledge-query`, write `_knowledge/question-results.jsonl`, and summarize complete/partial/unanswerable counts in `_knowledge/coverage.md`. A question passes only when the required notes and direct evidence support every material part. Run the validator from [references/answerability-contract.md](references/answerability-contract.md); any partial or unanswerable result leaves the build incomplete and becomes the next extraction or correction task.
+14. **Check structural and claim quality.** Inspect folder placement, catalog coverage, vocabulary lookup, orphan notes, duplicate IDs or titles, missing source references, dead links, oversized notes, and unsupported synthesis. For relation notes, compare each participant against its own cited anchor before accepting the relation claim.
+15. **Capture improvement memory.** After meaningful build or update work, append only observed retrieval friction, structural decisions, failed competency questions, remaining manual steps, and evidence-backed next improvements to `_knowledge/improvement-notes.md`. Use the format in [references/retrieval-layout.md](references/retrieval-layout.md); preserve prior entries and do not turn it into a generic activity log.
 
 ## Output Template
 
@@ -72,8 +76,11 @@ A useful knowledge-base delivery includes:
 | `vault-plan.md` | Audience, scope, lookup jobs, folder rules, note taxonomy, naming rules, coverage, and RAG-readiness strategy |
 | `notes/` or `notes/<domain>/` | Atomic notes placed by the documented primary retrieval axis |
 | `_knowledge/catalog.jsonl` | Lightweight AI lookup catalog mapping IDs, terms, entities, sources, and current note paths |
-| `_knowledge/coverage.md` | Included/skipped source areas, weak retrieval paths, stale knowledge, and open gaps |
+| `_knowledge/questions.jsonl` | Canonical competency questions derived from real lookup jobs |
+| `_knowledge/question-results.jsonl` | Per-question coverage, answer notes, direct evidence, and missing knowledge |
+| `_knowledge/coverage.md` | Source coverage plus numeric complete/partial/unanswerable question coverage |
 | `_knowledge/improvement-notes.md` | Append-only operational memory for evidence-backed improvements to later builder runs |
+| `_knowledge/needs-human-review.md` | Claims awaiting intended-behavior or domain-owner confirmation |
 | `_rag/` when generated | Default portable RAG corpus artifacts derived from the vault |
 | `_graph/` when generated | Default graph-ready records derived from the vault |
 | `_ontology/` when generated | Default ontology package aligned with the vault taxonomy |
@@ -139,6 +146,7 @@ Adapt the sections by note type:
 | `code-module` | Responsibilities, key symbols, entry points, dependencies, tests |
 | `workflow` | Trigger, steps, inputs/outputs, failure modes, owner |
 | `decision` | Context, chosen option, rejected alternatives, consequences |
+| `relation` | `contrast`, `equivalence`, or `sequence`; participants, conditions/dimensions, and evidence for every side |
 | `moc` | Why the linked notes belong together and recommended reading paths |
 | `glossary-entry` | Canonical term, aliases, short definition, source of terminology |
 
@@ -184,10 +192,15 @@ Useful fields:
 | `related` | Gives graph extraction a cleaner edge seed than raw wikilinks alone |
 | `aliases` | Preserves source terminology and search variants |
 | `entities` | Supports entity lookup and later graph/RAG metadata propagation |
+| `user_terms` | Preserves operator language and UI-facing lookup terms without misclassifying them as aliases |
+| `source_symbols` | Preserves code, configuration, statement, and schema identifiers used to ground cross-layer lookup |
+| `lookup_layers` | Declares the user-facing and implementation layers a note intentionally bridges |
+| `relation_type` / `participants` | Makes contrast, equivalence, or sequence claims queryable as first-class knowledge |
+| `review_status` | Tracks review workflow separately from evidence confidence |
 
 ## AI Lookup Catalog
 
-For non-trivial vaults, emit one record per note in `_knowledge/catalog.jsonl` using the contract in [references/retrieval-layout.md](references/retrieval-layout.md). Keep summaries short enough for candidate selection, paths current, IDs stable, and terms grounded in language users actually search. `knowledge:knowledge-query` should search the catalog first and open only a small candidate set.
+For non-trivial vaults, emit one record per note in `_knowledge/catalog.jsonl` using the contracts in [references/retrieval-layout.md](references/retrieval-layout.md) and [references/answerability-contract.md](references/answerability-contract.md). Keep summaries short enough for candidate selection, paths current, IDs stable, and terms grounded in language users actually search. Include relation-side evidence and vocabulary bridge fields where applicable. `knowledge:knowledge-query` should search the catalog first and open only a small candidate set.
 
 ## RAG Handoff
 
@@ -201,6 +214,10 @@ Follow the handoff contract in [references/retrieval-layout.md](references/retri
 - Non-trivial vaults include `vault-plan.md` and follow its naming and note-type rules.
 - A reader can predict a note's folder from the documented placement rule, and cross-cutting topics do not create duplicate notes.
 - `_knowledge/catalog.jsonl` resolves every catalog entry to one current note path and enables title, alias, tag, domain, and entity lookup.
+- Operator/UI-to-code/database lookup jobs have explicit `user_terms`, `source_symbols`, and declared bridge layers; `aliases` remains same-referent vocabulary.
+- Relation notes represent contrasts, equivalences, and sequences with at least two participants and evidence for every side.
+- Every declared competency question has one current result. All results are `complete`, cite direct evidence, include the required note IDs, and report no missing parts.
+- `_knowledge/coverage.md` reports numeric answerability coverage, and the answerability validator exits successfully before completion is claimed.
 - Important components, concepts, decisions, and workflows have at least one inbound link.
 - Important notes are reachable from `index.md` or a MOC within two clicks.
 - Every non-obvious claim is traceable to a source or labeled as an inference.
