@@ -24,6 +24,7 @@ so Claude can answer from the indexed evidence.
 | `knowledge-base-builder` | Maintain a small-to-moderate Markdown knowledge base with predictable folders, AI lookup catalog, and a clean RAG handoff |
 | `ontology-builder` | Design classes, relationship semantics, constraints, controlled vocabularies, and mappings |
 | `knowledge-graph-builder` | Extract source-grounded entities, relationships, schema, and graph-ready data |
+| `render-graph-view` | Render existing nodes and edges as an offline, interactive Obsidian-inspired HTML graph view |
 | `rag-corpus-builder` | Prepare retrieval-ready chunks, metadata, citations, and eval queries for RAG |
 | `knowledge-query` | Answer questions over a linked vault, graph data, RAG corpus, or mixed knowledge assets |
 
