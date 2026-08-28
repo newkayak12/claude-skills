@@ -26,6 +26,7 @@ so Claude can answer from the indexed evidence.
 | `knowledge-graph-builder` | Extract source-grounded entities, relationships, schema, and graph-ready data |
 | `render-graph-view` | Render existing nodes and edges as an offline, interactive Obsidian-inspired HTML graph view |
 | `rag-corpus-builder` | Prepare retrieval-ready chunks, metadata, citations, and eval queries for RAG |
+| `sqlite-index-builder` | Rebuild a local SQLite index from catalog-backed Markdown, RAG chunks, and graph JSONL |
 | `knowledge-query` | Answer questions over a linked vault, graph data, RAG corpus, or mixed knowledge assets |
 
 ## Answerability Gate

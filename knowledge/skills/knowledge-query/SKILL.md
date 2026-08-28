@@ -55,6 +55,8 @@ When the `knowledge-local` MCP tools are connected, use them before scanning JSO
 
 Read [references/local-sqlite.md](references/local-sqlite.md) for exact MCP routing, embedding modes, CLI, Docker operation, and failure handling. If the MCP server is unavailable, continue with the portable asset discovery below.
 
+For a build, rebuild, refresh, or MD/JSONL-to-SQLite synchronization request whose primary outcome is the index itself, route to `knowledge:sqlite-index-builder`. Query-time refreshes may remain in this skill when they are only a prerequisite to answering the user's question.
+
 ## Default Asset Discovery
 
 Do not ask where knowledge or RAG artifacts are if the repository or vault follows the default convention. Check these catalog locations before scanning note bodies:
@@ -153,6 +155,7 @@ For impact analysis:
 
 ## Related Skills
 
+- `knowledge:sqlite-index-builder` - build or refresh the derived SQLite index from canonical Markdown and JSONL.
 - `knowledge:knowledge-base-builder` - use to create or reshape the linked Markdown vault before querying.
 - `knowledge:ontology-builder` - use to define class/relation semantics and controlled vocabularies before querying or extraction.
 - `knowledge:knowledge-graph-builder` - use to create graph-ready entities and relationships before graph queries.
