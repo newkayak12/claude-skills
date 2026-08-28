@@ -1,21 +1,42 @@
-# fallback — the six-stage engine when the Workflow tool is absent
+# fallback — the Agent Team engine when Dynamic Workflow is off
 
-The engine (`pipeline.js`) needs the **Workflow runtime** (`agent()`, `parallel()`,
-`pipeline()`). Some environments (plain Agent SDK, certain harnesses, CI) don't expose it.
-This file is the **Workflow-less fallback**: the same six stages, the same contract, driven
-by the **Agent tool** instead — you (the orchestrator) dispatch a fresh subagent per stage and
-the stages hand work to each other through **files in a run directory**, never through your
-context.
+The engine (`pipeline.js`) needs the **Dynamic Workflow (DW) runtime** (`agent()`, `parallel()`,
+`pipeline()`). Some environments disable DW or don't expose the Workflow tool. This file is the
+**DW-off/Workflow-less fallback**: the same six stages and contract, executed by a
+role-isolated **Agent Team**. You are the thin team lead; teammates hand work to one another
+through **files in a run directory**, never through the lead's context.
 
-**Selection rule (hard):** use this ONLY when the Workflow tool is unavailable in this runtime.
-If Workflow exists, run `pipeline.js` — behavior is then byte-for-byte the current engine.
-Never run both. You detect this yourself: no `Workflow` tool in your toolset → this file.
+**Selection rule (hard):** use this ONLY when DW is off or the Workflow tool is unavailable in
+this runtime. If Workflow exists and is enabled, run `pipeline.js` — behavior is then
+byte-for-byte the current engine. Never run both. No usable `Workflow` tool in your toolset →
+form the Agent Team and use this file.
+
+## Agent Team composition (hard)
+
+Form the team before Plan starts. Use the runtime's Agent Team/team primitive when available;
+otherwise explicitly compose the same logical team from role-separated agents. The required
+roles are:
+
+- **Team lead:** owns only the request, run path, manifest, sequencing, and completion check;
+  it does not perform or judge stage work.
+- **Plan teammate:** decomposes the request without implementing it.
+- **SetGoal teammate and Critic teammate:** author and independently refute the goal-spec.
+- **Implement teammate(s):** perform scoped subgoal work or provider-routed repairs.
+- **Test teammate(s):** run deterministic checks independently of Implement.
+- **QualityGate teammate(s):** judge subgoals and the assembled goal; never serve as actor.
+- **Report teammate:** reports only from run artifacts and gate outcomes.
+
+Create fresh role context where the instructions below say `separate`; one teammate must never
+serve as both Implement and Test/QualityGate for the same work. Teammates may be created lazily,
+but the lead must declare the team roles and ownership in `manifest.json` before execution. If
+the runtime cannot create role-separated agents at all, report the harness as unavailable; do
+not silently collapse the six stages into solo lead work.
 
 ## Why files, not your context (context-pollution rule)
 
-You are a **thin dispatcher**. You hold only: the request, the run-directory path, and the
-short manifest. Every stage's real output is written to a file by the subagent that produced
-it; the next stage's subagent is given **paths to read**, not pasted content. You never inline
+You are a **thin team lead**. You hold only: the request, the run-directory path, and the
+short manifest. Every stage's real output is written to a file by the teammate that produced
+it; the next teammate is given **paths to read**, not pasted content. You never inline
 a plan, a spec, a diff, or a transcript into your own context or into a prompt. This is what
 keeps a long run from polluting the orchestrator — the "team" shares state on disk, not in
 your window. If you find yourself about to paste a stage's full output forward, stop and pass
@@ -28,7 +49,7 @@ writes exactly the artifacts below; the completion check (`fallback-check.mjs`) 
 
 ```
 .harness-run/<slug>/
-  manifest.json              # {request, context?, max_retries, subgoals:[{id,order}], stages:{...}}
+  manifest.json              # {request, context?, max_retries, team:{lead,roles[]}, subgoals:[{id,order}], stages:{...}}
   providers.json             # optional provider readiness, e.g. {codex:{ready:true,implement:true,test:true}}
   01-plan.md                 # Plan stage output
   02-goal-spec.json          # SetGoal output — MUST parse, MUST match goal-spec.md schema
@@ -53,7 +74,7 @@ literal sentinel string; it leaked out of docs/descriptions and false-positived,
 removed). Instead:
 
 1. Create `RUN=.harness-run/<slug>/` and write `manifest.json` with the request, `max_retries`
-   (default 2), and empty `subgoals`/`stages`.
+   (default 2), empty `subgoals`/`stages`, and the declared Agent Team roles/ownership.
 2. Detect external providers. Invoke `harness:codex-control` and resolve
    `codex-exec-adapter.mjs` from an explicit path, `harness/engine/`,
    `.claude/harness/engine/`, or the plugin root named in the project's `CLAUDE.md` Harness
@@ -70,7 +91,7 @@ removed). Instead:
 
 ## 1. Plan (opus)
 
-Dispatch one Agent (model: opus). Prompt it to invoke `agents:agent-task-decomposer`, act as a
+Assign the Plan teammate (model: opus). Prompt it to invoke `agents:agent-task-decomposer`, act as a
 systems analyst, and decompose the request into independently-verifiable, dependency-mapped
 units — **without doing the work**. It reads `.claude/conventions/**` if present and lists the
 rules that constrain the work, plus per-unit deterministic checks (commands, files). It
@@ -78,7 +99,7 @@ rules that constrain the work, plus per-unit deterministic checks (commands, fil
 
 ## 2. SetGoal (opus) — author spec, adversarial critic, one revision
 
-1. Dispatch one Agent (opus), given the path `RUN/01-plan.md` to read, to author a **goal-spec**
+1. Assign the SetGoal teammate (opus), given the path `RUN/01-plan.md` to read, to author a **goal-spec**
    (schema: `goal-spec.md`): `goal`, goal-level `acceptance[]`, `subgoals[]` (`id`, `title`,
    `persona?`, `skills[]`, optional `implement_provider`/`test_provider`, `acceptance[]`,
    `test[]`, `deps[]`), `max_retries`. It **writes
@@ -93,11 +114,11 @@ rules that constrain the work, plus per-unit deterministic checks (commands, fil
    default for every subgoal; `"implement_provider":"codex"` and `"test_provider":"codex"` are
    optional trace hints, not routing prerequisites. Keep Plan, SetGoal, QualityGate, and Report
    on Claude. If Codex is absent or not ready, omit provider fields.
-2. Dispatch a **separate** Agent (opus) invoking `think:devils-advocate` to refute it; it reads
+2. Assign the **separate Critic teammate** (opus) invoking `think:devils-advocate` to refute it; it reads
    the spec path and **writes `RUN/02-critique.json`** `{sound, problems[]}`. It must flag two
    unwinnable-gate patterns: acceptance/test tied to global/shared repo state instead of the
    unit's own artifacts, and arbitrary-% or subjective targets written as hard bars.
-3. If `sound:false`, dispatch **one** revision Agent (opus) to rewrite `RUN/02-goal-spec.json`
+3. If `sound:false`, assign **one fresh SetGoal revision teammate** (opus) to rewrite `RUN/02-goal-spec.json`
    in place. Reject a degenerate spec (empty subgoals / empty acceptance / placeholder titles)
    and re-author once.
 
@@ -125,8 +146,9 @@ For the current subgoal `<id>`, loop attempt `n` from 1 up to `max_retries` (def
    as the normal handoff. Do not redo Codex's work with Claude when Codex succeeds. If Codex is
    not ready or exits non-zero, record that in the handoff. With `codex_provider=required`, stop
    the attempt as provider failure; with `auto`, explicitly mark the stage degraded and only then
-   fall back to the normal Agent path. Otherwise dispatch an Agent as the subgoal's `persona`, told to invoke its
-   `skills[]`, follow `.claude/conventions/**`, and read the paths of completed dependencies'
+   fall back to the normal Agent Team path. Otherwise assign an Implement teammate as the
+   subgoal's `persona`, told to invoke its `skills[]`, follow `.claude/conventions/**`, and
+   read the paths of completed dependencies'
    `result.json`/`impl-*.md` for context (pass **paths**, not content). It does the work, edits
    files, and **writes its handoff to `RUN/subgoals/<id>/impl-<n>.md`** (≤1500 chars).
 2. **Test (provider-routed: Codex or Sonnet fallback).** If Codex is ready, write
@@ -138,11 +160,11 @@ For the current subgoal `<id>`, loop attempt `n` from 1 up to `max_retries` (def
    `{verified, checks[], evidence}`. Do not re-run Codex's checks with Claude when Codex
    succeeds. If Codex is unavailable or fails, `required` records `verified:false` as provider
    failure; `auto` explicitly marks degradation and only then falls back to the normal Test
-   Agent. Otherwise dispatch a **separate** Agent invoking
+   teammate. Otherwise assign a **separate Test teammate** invoking
    `completion:verification-before-completion`. It does NOT trust the executor's narrative — it
    runs the subgoal's `test[]` with Bash and Reads the claimed artifacts, then **writes
    `RUN/subgoals/<id>/test-<n>.json`** `{verified, checks[]}`.
-3. **QualityGate (opus).** Dispatch a **separate** Agent invoking `think:devils-advocate` to
+3. **QualityGate (opus).** Assign a **separate QualityGate teammate** invoking `think:devils-advocate` to
    judge the subgoal against its `acceptance[]`, weighing the independent test evidence over
    the account. It **writes `RUN/subgoals/<id>/gate-<n>.json`** `{pass, reason, gaps[]}`.
 
@@ -156,7 +178,8 @@ stop now, write `{passed:false, attempts:n, stalled:true}`, and continue (still 
 
 ## 5. Goal-level QualityGate (opus) — match_pct ≥ 90, repair-and-regate
 
-After all subgoals, dispatch one Agent (opus, `think:devils-advocate`) that reads the run
+After all subgoals, assign a fresh goal-level QualityGate teammate (opus,
+`think:devils-advocate`) that reads the run
 directory and judges the **assembled whole** against goal-level `acceptance[]`, scoring
 `match_pct` (0–100, holistic — not an average of subgoal pass/fail). It **writes
 `RUN/04-goal-gate.json`** `{match_pct, pass, reason}`. If `match_pct < 90`, dispatch a repair
@@ -167,7 +190,7 @@ rather than spending the remaining repair passes on an identical gap. `pass` is 
 
 ## 6. Report (sonnet)
 
-Dispatch one Agent (sonnet) as an honest engineering status reporter that reads the run
+Assign the Report teammate (sonnet) as an honest engineering status reporter that reads the run
 directory: outcome first (did the goal pass, `match_pct`), then per-subgoal PASS/FAIL with
 reasons, then failures and what remains. No invented claims. It **writes `RUN/05-report.md`**.
 Relay this report to the user, surfacing failed subgoals and a failing goal gate honestly.
@@ -189,8 +212,8 @@ the named stage — the run directory makes it resumable without redoing passed 
 - **bounded loops** — per-subgoal and goal-level loops both capped by `max_retries`.
 - **deterministic Test** — evidence from Bash/Read, never the executor's narrative.
 - **goal-level gate** — `match_pct >= 90` before Report.
-- **thin orchestrator** — stages exchange work via `RUN/` files (paths in prompts), not via
-  your context.
+- **thin team lead** — teammates exchange work via `RUN/` files (paths in prompts), not via
+  the lead's context.
 - **provider separation** — if Codex is used, Implement and Test are distinct `codex exec`
   processes with separate prompts and artifacts; QualityGate remains Claude/Opus.
 
