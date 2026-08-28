@@ -44,12 +44,15 @@ Workflow controller/fallback/report role, not the actor.
      `codex_provider: "auto"` a failed route may explicitly degrade to Sonnet fallback; required
      mode reports provider failure instead. Use `codex_provider: "off"` to force plain Sonnet
      implementation and verification.
-   - **If the Workflow tool is unavailable** (plain Agent SDK, some harnesses, CI): do NOT
-     skip the engine — follow [`engine/fallback.md`](../../engine/fallback.md) instead. It
-     reproduces the identical six stages by dispatching a **fresh subagent per stage** that
-     exchange work through files in a run directory (not your context), and closes with
-     `engine/fallback-check.mjs` as the objective done-signal. When Workflow IS available,
-     ignore fallback.md — the pipeline.js path above is unchanged.
+   - **If Dynamic Workflow (DW) is off or the Workflow tool is unavailable** (plain Agent SDK,
+     some harnesses, CI): do NOT skip the engine — follow
+     [`engine/fallback.md`](../../engine/fallback.md) instead. First form a role-isolated
+     **Agent Team** with a thin team lead and separate Plan, SetGoal/Critic, Implement, Test,
+     QualityGate, and Report teammates. Teammates exchange work through files in a run
+     directory (not the lead's context), and `engine/fallback-check.mjs` remains the objective
+     done-signal. Use the runtime's team primitive when available; otherwise explicitly compose
+     the same logical team from role-separated agents. When Workflow IS available, ignore
+     fallback.md — the pipeline.js path above is unchanged.
      In fallback mode only, the run auto-detects a local `codex` CLI; when ready, Implement/Test
      subgoals route to separate `codex exec --json` processes while Claude keeps Plan, SetGoal,
      QualityGate, and Report.
@@ -106,7 +109,7 @@ pre-wiring, and using none of them is a valid run.
 - `harness/goal-spec.md` — spec schema (authored by the SetGoal stage) + authoring rules
 - `harness/skills/codex-control/SKILL.md` — adapter discovery contract for Codex CLI delegation
 - `harness/engine/pipeline.js` — the fixed six-stage engine (Workflow path)
-- `harness/engine/fallback.md` — Workflow-less fallback: same six stages via fresh per-stage subagents sharing state through a run directory
+- `harness/engine/fallback.md` — DW-off/Workflow-less fallback: same six stages via a role-isolated Agent Team sharing state through a run directory
 - `harness/engine/fallback-check.mjs` — deterministic completion check for a fallback run (the objective done-signal)
 - `harness/engine/codex-exec-adapter.mjs` — CLI bridge that detects Codex and captures `codex exec --json` events for Claude-orchestrated Workflow Implement/Test delegation and fallback runs
 - `harness/engine/codex-runner.mjs` — legacy/external automation runner; active Codex sessions should not invoke it recursively

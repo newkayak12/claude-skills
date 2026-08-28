@@ -22,6 +22,9 @@ Plan(opus) → SetGoal(opus) → Implement(Codex when enabled) → Test(Codex wh
 
 ## Modes
 - **B (default):** raw request + the fixed engine.
+- **DW-off fallback:** when Dynamic Workflow is disabled or the Workflow tool is absent, form a
+  role-isolated Agent Team and run the same six roles through the file-backed fallback contract.
+  The team lead only coordinates; Implement, Test, and QualityGate remain separate teammates.
 - **M (meta):** the harness *generates* a bespoke Workflow when the request needs control
   flow the fixed stages can't express (tournament, escalation, loop-until-dry) — it copies
   [`templates/meta-skeleton.js`](templates/meta-skeleton.js), rewrites only the `[META]`
@@ -47,6 +50,12 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
 The project owns the copies afterward; the plugin never manages them again.
 
 ## Status
+- v1.19.0 — **DW-off Agent Team fallback**: when Dynamic Workflow is disabled or the Workflow
+  tool is absent, the fallback now explicitly requires a role-isolated Agent Team. A thin team
+  lead declares Plan, SetGoal/Critic, Implement, Test, QualityGate, and Report ownership in the
+  run manifest; teammates exchange only file paths through the run directory, and actor/judge
+  separation remains mandatory. Native team primitives are preferred, with an explicit logical
+  team of role-separated agents as the portable equivalent. `pipeline.js` is unchanged.
 - v1.18.0 — **Codex-first Implement/Test routing**: `codex_provider: "auto"` / `"required"`
   now routes every Workflow Implement/Test stage through the Codex controller by default.
   `implement_provider: "codex"` and `test_provider: "codex"` remain optional trace hints in the
