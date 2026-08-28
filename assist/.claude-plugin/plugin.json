@@ -1,0 +1,24 @@
+{
+  "name": "assist",
+  "description": "Decision assistance that composes knowledge retrieval, reframing, option generation, adversarial review, evidence calibration, tradeoff analysis, domain expertise, and decision records.",
+  "version": "0.1.0-beta.1",
+  "author": {
+    "name": "newkayak12"
+  },
+  "category": "productivity",
+  "repository": "https://github.com/newkayak12/claude-skills",
+  "license": "MIT",
+  "dependencies": [
+    "knowledge",
+    "think",
+    "cognition",
+    "technique-write",
+    "write",
+    "planning",
+    "develop",
+    "pm",
+    "leadership",
+    "self",
+    "portfolio"
+  ]
+}

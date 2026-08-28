@@ -7,6 +7,16 @@
   },
   "plugins": [
     {
+      "name": "assist",
+      "description": "Decision assistance that composes knowledge retrieval, reframing, alternatives, adversarial review, evidence calibration, tradeoffs, domain expertise, and decision records.",
+      "version": "0.1.0-beta.1",
+      "author": {
+        "name": "newkayak12"
+      },
+      "source": "./assist",
+      "category": "productivity"
+    },
+    {
       "name": "develop",
       "description": "Engineering skills: CLI, SQL, clean architecture, clean code, DDD, pragmatic programming, database optimization, chaos engineering, Spring Boot, microservices, Kotlin, TDD, frontend, code documentation, testing, SRE, performance profiling & optimization, incident response, documentation strategy, and dev-quality-workflow (full dev cycle entry point). ADR drafting moved to the technique-write plugin.",
       "version": "1.1.5",
@@ -117,6 +127,16 @@
       "category": "productivity"
     },
     {
+      "name": "leadership",
+      "description": "Engineering leadership skills: 1-on-1 meetings for managers and ICs, engineer leveling and promotion cases, calibration conversations.",
+      "version": "1.1.2",
+      "author": {
+        "name": "newkayak12"
+      },
+      "source": "./leadership",
+      "category": "productivity"
+    },
+    {
       "name": "cognition",
       "description": "Thinking quality skills: assumption extraction, bias auditing (v2 — context probe, per-bias remedies, calibration check), fallacy detection, mental models, epistemic reasoning, tradeoff articulation, question upgrading, second-order thinking, and thinking style profiling.",
       "version": "1.1.3",
@@ -124,6 +144,16 @@
         "name": "newkayak12"
       },
       "source": "./cognition",
+      "category": "productivity"
+    },
+    {
+      "name": "self",
+      "description": "Self-reflection and personal growth skills: talk (psychological counseling session), attachment style, ego states, examined life, fear inventory, flow and anti-goals, identity exploration, motivation discovery, shadow persona, strength-growth mapping, and values exploration.",
+      "version": "1.1.3",
+      "author": {
+        "name": "newkayak12"
+      },
+      "source": "./self",
       "category": "productivity"
     },
     {
