@@ -1,7 +1,7 @@
 {
   "name": "knowledge",
   "description": "Answerability-gated knowledge skills and local MCP: linked Markdown, relation-aware graph extraction, standalone graph visualization, RAG preparation, competency queries, and SQLite-backed source-grounded retrieval.",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "author": {
     "name": "newkayak12"
   },
