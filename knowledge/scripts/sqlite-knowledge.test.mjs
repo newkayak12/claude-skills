@@ -406,3 +406,36 @@ test('ranks a long title-and-alias match above many short body mentions', async 
   assert.equal(found.results[0].lexical_match, true);
   assert.equal(found.lexical_word_matches, notes.length);
 }));
+
+test('keeps the best lexical match ahead of a semantically closer rival', async () => fixture(async (root) => {
+  // Each target is long and generic, so its hash vector is diluted and it sits
+  // near the bottom of the semantic ranking; every filler is short and
+  // dominated by one term, so fillers hold the semantic top. The note that won
+  // on lexical evidence must still come first — one rank of lexical advantage
+  // has to outweigh any semantic contribution the hash provider can make, and
+  // the gap only bites once the corpus is large enough to push the target far
+  // down the semantic list.
+  const terms = ['대표송장', '부피중량', '결함 색인', '반품 회수', '출고 검수'];
+  const body = Array.from({ length: 30 }, (unused, line) => `운영 절차 상세 설명 문단 ${line}. 담당자는 정해진 순서를 따른다.`).join('\n\n');
+  const notes = [];
+  terms.forEach((term, index) => {
+    write(join(root, 'notes', `target-${index}.md`), `# ${term} 처리\n\n${body}\n`);
+    notes.push({
+      id: `target-${index}`,
+      path: `notes/target-${index}.md`,
+      title: `${term} 처리`,
+      aliases: [term],
+    });
+  });
+  for (let index = 0; index < 60; index += 1) {
+    const term = terms[index % terms.length];
+    write(join(root, 'notes', `log-${index}.md`), `# 작업 로그 ${index}\n\n${term} 관련해서 ${term} 확인 요청 있었음.\n`);
+    notes.push({ id: `log-${index}`, path: `notes/log-${index}.md`, title: `작업 로그 ${index}` });
+  }
+  write(join(root, '_knowledge', 'catalog.jsonl'), jsonl(notes));
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+
+  const found = await searchIndex(root, '대표송장', { limit: 3 });
+  assert.ok(found.results[0].semantic_score < found.results[1].semantic_score, 'fixture must pit a weak-vector target against a strong-vector rival');
+  assert.equal(found.results[0].id, 'target-0', `unexpected order: ${found.results.map((item) => item.id).join(', ')}`);
+}));

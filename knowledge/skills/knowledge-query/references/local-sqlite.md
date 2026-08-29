@@ -52,7 +52,11 @@ Ranking fuses two ordered lists over their union: a lexical list (exact tokens p
 substring index, so inflected Korean forms still match) and a semantic list. Documents with no
 indexed body, such as bare graph-node records, are excluded from semantic candidates so they cannot
 displace real notes; they remain reachable by title, `knowledge_get`, and `knowledge_neighbors`.
-Under `hash` the semantic signal is close to noise, so lexical matches rank first by design.
+Each FTS table is ranked per column (`title`, `terms`, `body`) and those rank lists are fused too,
+so a title or curated-alias match outranks a passing body mention regardless of note length.
+Under `hash` the vector signal carries no weight at all: lexical evidence decides the order whenever
+any term matches, and the vectors only order the fallback when nothing matches lexically (`retrieval:
+vector`, every `score` zero, results sorted by `semantic_score`).
 
 ## Embedding Modes
 
@@ -72,7 +76,12 @@ node --no-warnings knowledge/scripts/sqlite-knowledge.mjs index --root /path/to/
 node --no-warnings knowledge/scripts/sqlite-knowledge.mjs search "결제 실패 재시도" --root /path/to/vault
 node --no-warnings knowledge/scripts/sqlite-knowledge.mjs neighbors PaymentService --root /path/to/vault
 node --no-warnings knowledge/scripts/sqlite-knowledge.mjs status --root /path/to/vault
+node --no-warnings knowledge/scripts/sqlite-knowledge.mjs eval --root /path/to/vault --k 10
 ```
+
+`eval` scores the index against the vault's own `_knowledge/questions.jsonl`: for each competency
+question it reports the rank at which each `required_note_ids` entry was retrieved, plus aggregate
+`recall_at_k` and `mrr`. Use it to prove a retrieval change helped instead of assuming it did.
 
 For Ollama embeddings:
 
