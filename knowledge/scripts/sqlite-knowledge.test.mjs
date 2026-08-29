@@ -297,3 +297,77 @@ test('bounds the eval depth and requires a declared question set', async () => f
   await buildIndex(root, { provider: 'hash', dimensions: 128 });
   await assert.rejects(() => evalQuestions(root, {}), /No competency questions found at .*questions\.jsonl/);
 }));
+
+test('ranks a title match above a passing body mention of the same term', async () => fixture(async (root) => {
+  // The title-matching note is the long one and never repeats the term in its
+  // body; the rival is short and mentions the term twice. Length normalisation
+  // alone therefore prefers the rival — only the title weight can flip it.
+  write(join(root, 'notes', 'stock-count.md'), `# 분기 점검 절차\n\n${[
+    '창고 담당자는 분기마다 정해진 순서로 점검을 수행한다.',
+    '점검 대상 구역은 온도와 습도 기준에 따라 구분해 관리한다.',
+    '파렛트 라벨을 확인하고 위치 배정을 다시 확인한다.',
+    '이상 항목은 사유 코드를 기록한 뒤 검수 큐로 보낸다.',
+    '결과는 주간 운영 회의에서 지표로 검토한다.',
+    '보고서는 담당 팀장이 승인한 뒤 보관한다.',
+    '승인되지 않은 항목은 다음 분기로 이월한다.',
+    '이월 항목은 별도 목록으로 관리하고 추적한다.',
+  ].join('\n')}\n`);
+  write(join(root, 'notes', 'handbook.md'), '# Warehouse Operations Handbook\n\n창고 점검에는 재고 실사 절차가 포함된다. 재고 실사 결과는 보고서로 남긴다.\n');
+  write(join(root, '_knowledge', 'catalog.jsonl'), jsonl([
+    { id: 'stock-count', path: 'notes/stock-count.md', title: '재고 실사', summary: '분기 절차 안내' },
+    { id: 'handbook', path: 'notes/handbook.md', title: 'Warehouse Operations Handbook', summary: '창고 운영 안내' },
+  ]));
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+
+  const found = await searchIndex(root, '재고 실사', { limit: 5 });
+  const order = found.results.map((item) => item.id);
+  assert.ok(order.indexOf('stock-count') < order.indexOf('handbook'), `unexpected order: ${order.join(', ')}`);
+  assert.equal(found.results[0].id, 'stock-count');
+}));
+
+test('ranks a curated alias or user term above a passing body mention', async () => fixture(async (root) => {
+  // Same shape as the title test: the curated note is long and carries the term
+  // only in its alias and user term, while the rival repeats it in a short body.
+  write(join(root, 'notes', 'ops-digest.md'), `# Quarterly Ops Digest\n\n${[
+    '주요 운영 이슈를 분기 단위로 모아 정리한 문서다.',
+    '각 이슈는 발생 시점과 영향 범위를 함께 기록한다.',
+    '반복되는 민원은 사유 코드별로 집계해 추세를 본다.',
+    '계약 갱신 시점에는 단가와 손해 배상 조항을 재검토한다.',
+    '주간 스냅샷은 대시보드에 자동으로 반영된다.',
+    '이상 징후는 운영 채널로 즉시 공유한다.',
+    '분기 종료 후에는 담당 팀장이 요약본을 승인한다.',
+    '승인된 요약본은 사내 위키에 보관한다.',
+  ].join('\n')}\n`);
+  write(join(root, 'notes', 'carrier-report.md'), '# Carrier Performance Report\n\n출고 지연 민원이 늘었다. 출고 지연 원인을 택배사별로 분석한다.\n');
+  write(join(root, '_knowledge', 'catalog.jsonl'), jsonl([
+    {
+      id: 'ops-digest',
+      path: 'notes/ops-digest.md',
+      title: 'Quarterly Ops Digest',
+      summary: '분기 운영 요약',
+      aliases: ['출고 지연'],
+      user_terms: ['출고 지연 리포트'],
+    },
+    { id: 'carrier-report', path: 'notes/carrier-report.md', title: 'Carrier Performance Report', summary: '택배사 성과' },
+  ]));
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+
+  const found = await searchIndex(root, '출고 지연', { limit: 5 });
+  const order = found.results.map((item) => item.id);
+  assert.ok(order.indexOf('ops-digest') < order.indexOf('carrier-report'), `unexpected order: ${order.join(', ')}`);
+  assert.equal(found.results[0].id, 'ops-digest');
+}));
+
+test('still matches an inflected Korean body term the title does not contain', async () => fixture(async (root) => {
+  write(join(root, 'notes', 'approval.md'), '# 승인 정책\n\n승인 실패는 세 번 재시도한 뒤 수동 검토 큐로 보낸다.\n');
+  write(join(root, '_knowledge', 'catalog.jsonl'), jsonl([
+    { id: 'approval', path: 'notes/approval.md', title: '승인 정책', summary: '승인 처리 규칙' },
+  ]));
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+
+  const found = await searchIndex(root, '재시도', { limit: 2 });
+  assert.equal(found.results[0].id, 'approval');
+  assert.equal(found.results[0].lexical_match, true);
+  assert.ok(found.lexical_trigram_matches > 0);
+  assert.equal(found.lexical_word_matches, 0);
+}));

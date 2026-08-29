@@ -35,7 +35,7 @@ const DEFAULT_DB = '.knowledge/knowledge.sqlite';
 const DEFAULT_DIMENSIONS = 384;
 const DEFAULT_OLLAMA_URL = 'http://127.0.0.1:11434';
 const DEFAULT_OLLAMA_MODEL = 'embeddinggemma';
-const SCHEMA_VERSION = '2';
+const SCHEMA_VERSION = '3';
 const RRF_K = 60;
 const ARTIFACT_PATHS = {
   catalog: ['_knowledge/catalog.jsonl'],
@@ -172,6 +172,8 @@ function normalizeDocument(record) {
     title: record.title || null,
     section: record.section || null,
     text: String(record.text || '').trim(),
+    terms: String(record.terms || '').trim(),
+    body: String(record.body || '').trim(),
     sourceRef: record.sourceRef || null,
     domain: record.domain || null,
     metadata: record.metadata || {},
@@ -209,6 +211,8 @@ function collectKnowledge(root) {
       path: notePath,
       title: record.title || id,
       text: [metadataText, body].filter(Boolean).join('\n\n'),
+      terms: metadataText,
+      body,
       sourceRef: notePath || asStrings(record.source_refs ?? record.sources)[0] || null,
       domain: record.domain,
       metadata: record,
@@ -231,6 +235,7 @@ function collectKnowledge(root) {
       title: record.title,
       section: record.section ?? metadata.section,
       text,
+      body: text,
       sourceRef: record.source_ref ?? metadata.source_ref,
       domain: record.domain ?? metadata.domain,
       metadata: record,
@@ -252,6 +257,12 @@ function collectKnowledge(root) {
         ...asStrings(record.user_terms),
         ...asStrings(record.source_symbols),
       ].filter(Boolean).join('\n'),
+      terms: [
+        ...asStrings(record.aliases),
+        ...asStrings(record.user_terms),
+        ...asStrings(record.source_symbols),
+      ].filter(Boolean).join('\n'),
+      body: record.description,
       sourceRef: asStrings(record.source_refs ?? record.sources)[0] || null,
       domain: record.domain,
       metadata: record,
@@ -418,6 +429,8 @@ function createSchemaTables(db) {
       title TEXT,
       section TEXT,
       text TEXT NOT NULL,
+      terms TEXT NOT NULL DEFAULT '',
+      body TEXT NOT NULL DEFAULT '',
       source_ref TEXT,
       domain TEXT,
       metadata_json TEXT NOT NULL,
@@ -426,14 +439,16 @@ function createSchemaTables(db) {
     );
     CREATE VIRTUAL TABLE documents_fts USING fts5(
       title,
-      text,
+      terms,
+      body,
       content='documents',
       content_rowid='rowid',
       tokenize='unicode61 remove_diacritics 2'
     );
     CREATE VIRTUAL TABLE documents_trgm USING fts5(
       title,
-      text,
+      terms,
+      body,
       content='documents',
       content_rowid='rowid',
       tokenize='trigram'
@@ -509,12 +524,12 @@ async function buildIndex(inputRoot, options = {}) {
 
     const insertDocument = db.prepare(`
       INSERT INTO documents(
-        kind, document_id, note_id, path, title, section, text,
+        kind, document_id, note_id, path, title, section, text, terms, body,
         source_ref, domain, metadata_json, embedding
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    const insertFts = db.prepare('INSERT INTO documents_fts(rowid, title, text) VALUES (?, ?, ?)');
-    const insertTrgm = db.prepare('INSERT INTO documents_trgm(rowid, title, text) VALUES (?, ?, ?)');
+    const insertFts = db.prepare('INSERT INTO documents_fts(rowid, title, terms, body) VALUES (?, ?, ?, ?)');
+    const insertTrgm = db.prepare('INSERT INTO documents_trgm(rowid, title, terms, body) VALUES (?, ?, ?, ?)');
     data.documents.forEach((document, index) => {
       const result = insertDocument.run(
         document.kind,
@@ -524,13 +539,15 @@ async function buildIndex(inputRoot, options = {}) {
         document.title,
         document.section,
         document.text,
+        document.terms,
+        document.body,
         document.sourceRef,
         document.domain,
         JSON.stringify(document.metadata),
         vectorBuffer(embeddings[index]),
       );
-      insertFts.run(result.lastInsertRowid, document.title || '', document.text);
-      insertTrgm.run(result.lastInsertRowid, document.title || '', document.text);
+      insertFts.run(result.lastInsertRowid, document.title || '', document.terms, document.body);
+      insertTrgm.run(result.lastInsertRowid, document.title || '', document.terms, document.body);
     });
 
     const insertNode = db.prepare(`
@@ -655,6 +672,13 @@ async function queryEmbedding(text, metadata, options = {}) {
   throw new Error(`Unsupported index embedding provider: ${provider}`);
 }
 
+// A hit in the title is the strongest evidence that a document is *about* the
+// query; a hit in the controlled vocabulary (summary, tags, aliases, user terms,
+// symbols, entities) is deliberate curation; a hit in the body may be a single
+// passing mention. Weight the BM25 columns so those three tiers stay separated
+// even when a long body repeats the term.
+const BM25_COLUMN_WEIGHTS = '8.0, 4.0, 1.0';
+
 function ftsRanks(db, table, match, kind = null) {
   const ranks = new Map();
   if (!match) return ranks;
@@ -663,7 +687,7 @@ function ftsRanks(db, table, match, kind = null) {
     FROM ${table} f
     JOIN documents d ON d.rowid = f.rowid
     WHERE ${table} MATCH ? ${kind ? 'AND d.kind = ?' : ''}
-    ORDER BY bm25(${table})
+    ORDER BY bm25(${table}, ${BM25_COLUMN_WEIGHTS})
     LIMIT 200
   `).all(match, ...(kind ? [kind] : []));
   rows.forEach((row, index) => ranks.set(Number(row.rowid), index));
