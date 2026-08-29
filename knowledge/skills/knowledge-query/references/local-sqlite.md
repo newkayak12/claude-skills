@@ -31,6 +31,29 @@ Some hosts add a plugin namespace to MCP tool names. If the exact prefix differs
 
 `knowledge_search` runs hybrid SQLite FTS5 and vector retrieval. Search results are evidence candidates, not automatically true claims. Fetch the underlying record when the snippet does not contain enough context.
 
+## Reading Retrieval Diagnostics
+
+Every search result carries the fields needed to judge whether retrieval actually worked:
+
+| Field | Meaning |
+|---|---|
+| `retrieval` | `fts`, `hybrid-fts-vector`, `vector`, or `empty` for the returned set |
+| `lexical_candidates` | Documents the full-text query matched before fusion |
+| `lexical_word_matches` / `lexical_trigram_matches` | Exact-token and substring match counts |
+| `lexical_matches_returned` | How many returned results were lexical matches |
+| `embedding_quality` | `lexical-baseline` for `hash`, `semantic` for `ollama` |
+| `fusion_weights` | The semantic/lexical weighting applied for this provider |
+
+`lexical_candidates` far above `lexical_matches_returned`, or `retrieval: vector` on a query using
+vault vocabulary, means the terms exist in the corpus but did not survive ranking. Re-query with the
+exact note title, alias, or source symbol before concluding the vault cannot answer.
+
+Ranking fuses two ordered lists over their union: a lexical list (exact tokens plus a trigram
+substring index, so inflected Korean forms still match) and a semantic list. Documents with no
+indexed body, such as bare graph-node records, are excluded from semantic candidates so they cannot
+displace real notes; they remain reachable by title, `knowledge_get`, and `knowledge_neighbors`.
+Under `hash` the semantic signal is close to noise, so lexical matches rank first by design.
+
 ## Embedding Modes
 
 | Provider | Use when | Behavior |
@@ -85,8 +108,20 @@ docker compose -f knowledge/compose.yaml --profile semantic run --rm knowledge-i
 
 The bind-mounted vault receives `.knowledge/knowledge.sqlite`. The named `ollama-models` volume keeps model data outside Git. Claude Code normally uses the plugin's host-side stdio MCP server; Docker is an optional reproducible indexing/runtime path.
 
+## Runtime Requirements
+
+The indexer uses `node:sqlite` with FTS5 and the trigram tokenizer. Use Node 24+, where `node:sqlite`
+is available without a flag. Node 22.5-23 needs `--experimental-sqlite`, and some 22.x builds ship a
+bundled SQLite without FTS5, which fails at index time with `no such module: fts5`. The Docker path
+above provides a known-good runtime.
+
 ## Failure Handling
 
+- `ERR_UNKNOWN_BUILTIN_MODULE: No such built-in module: node:sqlite`: the runtime predates unflagged
+  `node:sqlite`. Add `--experimental-sqlite` on Node 22.5-23, upgrade to Node 24+, or use Docker.
+- `no such module: fts5`: this Node build's bundled SQLite lacks FTS5. Upgrade Node or use Docker.
+- Schema mismatch on query (`uses schema ... requires ...`): the database predates the current index
+  layout. Rebuild with `knowledge_index`.
 - Missing index: build it once, then retry the query.
 - Stale index: rebuild before making freshness-sensitive claims.
 - Ollama unavailable or model missing: report the concrete error; use `hash` only if semantic quality is not a requirement.

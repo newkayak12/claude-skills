@@ -51,7 +51,8 @@ When the `knowledge-local` MCP tools are connected, use them before scanning JSO
 1. Check index presence and freshness with `knowledge_status`.
 2. Build or refresh with `knowledge_index` when missing or stale.
 3. Retrieve candidates with `knowledge_search`; use `knowledge_get` for full evidence and `knowledge_neighbors` for relationship questions.
-4. Compose the answer yourself from the returned evidence and cite original `source_ref` or `path` values.
+4. Check the retrieval diagnostics before trusting an empty-looking result. When `lexical_candidates` exceeds `lexical_matches_returned`, or the query used vault vocabulary and `retrieval` is `vector`, the terms exist in the corpus but lost the ranking; re-query with the exact title, alias, or source symbol before grading coverage.
+5. Compose the answer yourself from the returned evidence and cite original `source_ref` or `path` values.
 
 Read [references/local-sqlite.md](references/local-sqlite.md) for exact MCP routing, embedding modes, CLI, Docker operation, and failure handling. If the MCP server is unavailable, continue with the portable asset discovery below.
 
@@ -144,6 +145,7 @@ For impact analysis:
 
 - Answers are grounded in the knowledge asset, not general memory, unless explicitly labeled as outside context.
 - SQLite retrieval cites canonical Markdown/JSONL provenance rather than the derived database file.
+- A thin SQLite result set is diagnosed against `lexical_candidates` and `embedding_quality` before it is reported as missing knowledge.
 - Catalog-backed queries narrow candidates before opening note bodies and preserve stable note IDs when paths change.
 - Relationship-heavy questions inspect graph edges or note links before giving a narrative answer.
 - Comparison, equivalence, and sequence answers verify evidence for every participant; a one-sided relation is not presented as complete.

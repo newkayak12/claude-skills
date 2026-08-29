@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim
+FROM node:24-bookworm-slim
 
 WORKDIR /opt/knowledge
 COPY scripts/sqlite-knowledge.mjs ./scripts/sqlite-knowledge.mjs

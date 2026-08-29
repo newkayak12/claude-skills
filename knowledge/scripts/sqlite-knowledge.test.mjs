@@ -8,6 +8,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import {
   buildIndex,
@@ -185,4 +186,59 @@ test('exposes index and retrieval through MCP tool calls', async () => fixture(a
   }, { root, db: null });
   assert.equal(searched.result.isError, undefined);
   assert.equal(searched.result.structuredContent.results[0].id, 'shipping');
+}));
+
+test('ranks an exact title match above unrelated notes and bodyless graph nodes', async () => fixture(async (root) => {
+  // Reproduces the 583-note vault failure: the note whose title matched the
+  // query verbatim was pushed past rank 50 by graph-node records with no body.
+  const notes = [];
+  for (let index = 0; index < 60; index += 1) {
+    write(join(root, 'notes', `filler-${index}.md`), `# Filler ${index}\n\n창고 운영 관련 일반 설명 문단 ${index}.\n`);
+    notes.push({
+      id: `filler-${index}`,
+      path: `notes/filler-${index}.md`,
+      title: `Filler ${index}`,
+      summary: `창고 운영 문서 ${index}`,
+    });
+  }
+  write(join(root, 'notes', 'defect-index.md'), '# 결함 색인 — 69건\n\n출고 결함 69건을 유형별로 모아둔 색인 문서다.\n');
+  notes.push({
+    id: 'defect-index',
+    path: 'notes/defect-index.md',
+    title: '결함 색인 — 69건',
+    summary: '출고 결함 색인',
+    aliases: ['결함 색인'],
+  });
+  write(join(root, '_knowledge', 'catalog.jsonl'), jsonl(notes));
+  write(join(root, '_graph', 'nodes.jsonl'), jsonl(
+    Array.from({ length: 60 }, (unused, index) => ({ id: `bare-${index}`, canonical_name: `Bare${index}` })),
+  ));
+
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+  const found = await searchIndex(root, '결함 색인', { limit: 5 });
+  assert.equal(found.results[0].id, 'defect-index');
+  assert.equal(found.results[0].lexical_match, true);
+  assert.equal(found.embedding_quality, 'lexical-baseline');
+  assert.ok(found.lexical_candidates > 0);
+}));
+
+test('recovers inflected Korean matches through the trigram index', async () => fixture(async (root) => {
+  write(join(root, 'notes', 'retry.md'), '# 재시도 정책\n\n승인 실패는 세 번 재시도한 뒤 수동 검토 큐로 보낸다.\n');
+  write(join(root, '_knowledge', 'catalog.jsonl'), jsonl([
+    { id: 'retry', path: 'notes/retry.md', title: '재시도 정책' },
+  ]));
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+
+  const found = await searchIndex(root, '재시도', { limit: 2 });
+  assert.equal(found.results[0].id, 'retry');
+  assert.ok(found.lexical_trigram_matches > 0);
+}));
+
+test('refuses to query an index built by an older schema', async () => fixture(async (root) => {
+  seed(root);
+  const built = await buildIndex(root, { provider: 'hash', dimensions: 64 });
+  const db = new DatabaseSync(built.database);
+  db.prepare('UPDATE metadata SET value = ? WHERE key = ?').run('0', 'schema_version');
+  db.close();
+  await assert.rejects(() => searchIndex(root, '결제', {}), /Run knowledge_index to rebuild/);
 }));

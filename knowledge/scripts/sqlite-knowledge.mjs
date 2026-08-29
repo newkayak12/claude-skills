@@ -10,15 +10,33 @@ import {
   readFileSync,
   statSync,
 } from 'node:fs';
-import { DatabaseSync } from 'node:sqlite';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+let DatabaseSync = null;
+let sqliteLoadError = null;
+try {
+  ({ DatabaseSync } = await import('node:sqlite'));
+} catch (error) {
+  sqliteLoadError = error;
+}
+
+const RUNTIME_HINT = 'Requires Node 24+, or Node 22.5-23 with --experimental-sqlite and an FTS5-enabled SQLite build. '
+  + 'The bundled Docker image (knowledge/compose.yaml) provides a working runtime.';
+
+function openSqlite(path, options = undefined) {
+  if (!DatabaseSync) {
+    throw new Error(`node:sqlite is unavailable (${sqliteLoadError?.message || 'unknown error'}). ${RUNTIME_HINT}`);
+  }
+  return options ? new DatabaseSync(path, options) : new DatabaseSync(path);
+}
 
 const DEFAULT_DB = '.knowledge/knowledge.sqlite';
 const DEFAULT_DIMENSIONS = 384;
 const DEFAULT_OLLAMA_URL = 'http://127.0.0.1:11434';
 const DEFAULT_OLLAMA_MODEL = 'embeddinggemma';
-const SCHEMA_VERSION = '1';
+const SCHEMA_VERSION = '2';
+const RRF_K = 60;
 const ARTIFACT_PATHS = {
   catalog: ['_knowledge/catalog.jsonl'],
   chunks: ['_rag/chunks.jsonl', 'rag/chunks.jsonl'],
@@ -219,6 +237,7 @@ function collectKnowledge(root) {
       id,
       title: name || id,
       text: [
+        name,
         record.description,
         ...asStrings(record.aliases),
         ...asStrings(record.user_terms),
@@ -356,6 +375,17 @@ function cosine(left, right) {
 }
 
 function createSchema(db) {
+  try {
+    createSchemaTables(db);
+  } catch (error) {
+    if (/fts5/i.test(error.message)) {
+      throw new Error(`This runtime's bundled SQLite has no FTS5 module, so the full-text index cannot be created (${error.message}). ${RUNTIME_HINT}`);
+    }
+    throw error;
+  }
+}
+
+function createSchemaTables(db) {
   db.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
@@ -364,6 +394,7 @@ function createSchema(db) {
     DROP TABLE IF EXISTS graph_nodes;
     DROP TABLE IF EXISTS graph_edges;
     DROP TABLE IF EXISTS documents_fts;
+    DROP TABLE IF EXISTS documents_trgm;
 
     CREATE TABLE metadata (
       key TEXT PRIMARY KEY,
@@ -390,6 +421,13 @@ function createSchema(db) {
       content='documents',
       content_rowid='rowid',
       tokenize='unicode61 remove_diacritics 2'
+    );
+    CREATE VIRTUAL TABLE documents_trgm USING fts5(
+      title,
+      text,
+      content='documents',
+      content_rowid='rowid',
+      tokenize='trigram'
     );
     CREATE TABLE graph_nodes (
       node_id TEXT PRIMARY KEY,
@@ -444,7 +482,7 @@ async function buildIndex(inputRoot, options = {}) {
   );
 
   mkdirSync(dirname(dbPath), { recursive: true });
-  const db = new DatabaseSync(dbPath);
+  const db = openSqlite(dbPath);
   try {
     createSchema(db);
     db.exec('BEGIN IMMEDIATE');
@@ -467,6 +505,7 @@ async function buildIndex(inputRoot, options = {}) {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertFts = db.prepare('INSERT INTO documents_fts(rowid, title, text) VALUES (?, ?, ?)');
+    const insertTrgm = db.prepare('INSERT INTO documents_trgm(rowid, title, text) VALUES (?, ?, ?)');
     data.documents.forEach((document, index) => {
       const result = insertDocument.run(
         document.kind,
@@ -482,6 +521,7 @@ async function buildIndex(inputRoot, options = {}) {
         vectorBuffer(embeddings[index]),
       );
       insertFts.run(result.lastInsertRowid, document.title || '', document.text);
+      insertTrgm.run(result.lastInsertRowid, document.title || '', document.text);
     });
 
     const insertNode = db.prepare(`
@@ -543,6 +583,10 @@ async function buildIndex(inputRoot, options = {}) {
     embedding_provider: provider,
     embedding_model: model,
     embedding_dimensions: embeddings[0]?.length || dimensions,
+    embedding_quality: embeddingQuality(provider),
+    notice: provider === 'hash'
+      ? 'hash is a dependency-free lexical feature baseline, not a semantic embedding. Search ranks full-text matches first; use --provider ollama for semantic retrieval.'
+      : null,
     source_fingerprint: data.fingerprint,
   };
 }
@@ -557,11 +601,24 @@ function openIndex(inputRoot, dbPath = null) {
   if (!existsSync(database)) {
     throw new Error(`SQLite knowledge index not found: ${database}. Run knowledge_index first.`);
   }
-  return { root, database, db: new DatabaseSync(database, { readOnly: true }) };
+  const db = openSqlite(database, { readOnly: true });
+  const version = readMetadata(db).schema_version;
+  if (version !== SCHEMA_VERSION) {
+    db.close();
+    throw new Error(`SQLite knowledge index at ${database} uses schema ${version || 'unknown'}, but this build requires ${SCHEMA_VERSION}. Run knowledge_index to rebuild.`);
+  }
+  return { root, database, db };
 }
 
 function ftsQuery(text) {
   const tokens = [...new Set(tokenize(text).filter((token) => !token.startsWith('~')))];
+  return tokens.slice(0, 16).map((token) => `"${token.replaceAll('"', '""')}"`).join(' OR ');
+}
+
+// The trigram tokenizer cannot match terms shorter than three characters.
+function trigramQuery(text) {
+  const tokens = [...new Set(tokenize(text).filter((token) => !token.startsWith('~')))]
+    .filter((token) => [...token].length >= 3);
   return tokens.slice(0, 16).map((token) => `"${token.replaceAll('"', '""')}"`).join(' OR ');
 }
 
@@ -589,51 +646,111 @@ async function queryEmbedding(text, metadata, options = {}) {
   throw new Error(`Unsupported index embedding provider: ${provider}`);
 }
 
+function ftsRanks(db, table, match, kind = null) {
+  const ranks = new Map();
+  if (!match) return ranks;
+  const rows = db.prepare(`
+    SELECT d.rowid
+    FROM ${table} f
+    JOIN documents d ON d.rowid = f.rowid
+    WHERE ${table} MATCH ? ${kind ? 'AND d.kind = ?' : ''}
+    ORDER BY bm25(${table})
+    LIMIT 200
+  `).all(match, ...(kind ? [kind] : []));
+  rows.forEach((row, index) => ranks.set(Number(row.rowid), index));
+  return ranks;
+}
+
+// Collapse the word and substring rankings into one lexical ordering so the
+// provider weights below still compare exactly two signals.
+function fuseLexicalRanks(wordRanks, trigramRanks) {
+  const scored = [...new Set([...wordRanks.keys(), ...trigramRanks.keys()])].map((rowid) => {
+    const word = wordRanks.get(rowid);
+    const trigram = trigramRanks.get(rowid);
+    return {
+      rowid,
+      score: (word === undefined ? 0 : 0.7 / (RRF_K + word + 1))
+        + (trigram === undefined ? 0 : 0.3 / (RRF_K + trigram + 1)),
+    };
+  }).sort((left, right) => right.score - left.score);
+  return new Map(scored.map((item, index) => [item.rowid, index]));
+}
+
+// The hash provider is a lexical feature hash, not a trained embedding: its
+// nearest neighbours are noise on short queries, so exact matches must win.
+function fusionWeights(provider) {
+  return provider === 'hash'
+    ? { semantic: 0.05, lexical: 0.95 }
+    : { semantic: 0.7, lexical: 0.3 };
+}
+
+function embeddingQuality(provider) {
+  return provider === 'hash' ? 'lexical-baseline' : 'semantic';
+}
+
+function retrievalMode(lexicalReturned, total) {
+  if (!total) return 'empty';
+  if (!lexicalReturned) return 'vector';
+  return lexicalReturned === total ? 'fts' : 'hybrid-fts-vector';
+}
+
 async function searchIndex(inputRoot, query, options = {}) {
   if (!String(query || '').trim()) throw new Error('query is required');
   const limit = Math.min(50, Math.max(1, Number(options.limit) || 8));
   const { root, database, db } = openIndex(inputRoot, options.db);
   try {
     const metadata = readMetadata(db);
+    const weights = fusionWeights(metadata.embedding_provider);
     const queryVector = await queryEmbedding(query, metadata, options);
     const kindClause = options.kind ? ' WHERE kind = ?' : '';
     const allRows = db.prepare(`SELECT * FROM documents${kindClause}`).all(...(options.kind ? [options.kind] : []));
-    const semantic = allRows
+    const rowsById = new Map(allRows.map((row) => [Number(row.rowid), row]));
+
+    // Documents with no indexed body cannot be matched on meaning; scoring them
+    // semantically lets short metadata-only records crowd out real notes.
+    const semanticRanks = new Map();
+    allRows
+      .filter((row) => String(row.text || '').trim())
       .map((row) => ({ row, score: cosine(queryVector, bufferVector(row.embedding)) }))
       .filter((item) => item.score !== null)
-      .sort((left, right) => right.score - left.score);
+      .sort((left, right) => right.score - left.score)
+      .forEach((item, rank) => semanticRanks.set(Number(item.row.rowid), { rank, score: item.score }));
 
-    const lexicalRanks = new Map();
-    const match = ftsQuery(query);
-    if (match) {
-      const lexical = db.prepare(`
-        SELECT d.rowid
-        FROM documents_fts f
-        JOIN documents d ON d.rowid = f.rowid
-        WHERE documents_fts MATCH ? ${options.kind ? 'AND d.kind = ?' : ''}
-        ORDER BY bm25(documents_fts)
-        LIMIT 100
-      `).all(match, ...(options.kind ? [options.kind] : []));
-      lexical.forEach((row, index) => lexicalRanks.set(Number(row.rowid), index));
-    }
+    // Word matching is exact, so inflected forms ("재시도한" vs "재시도") miss it.
+    // The trigram index recovers those substring hits before fusion.
+    const wordRanks = ftsRanks(db, 'documents_fts', ftsQuery(query), options.kind);
+    const trigramRanks = ftsRanks(db, 'documents_trgm', trigramQuery(query), options.kind);
+    const lexicalRanks = fuseLexicalRanks(wordRanks, trigramRanks);
 
-    const results = semantic.map(({ row, score }, semanticRank) => {
-      const lexicalRank = lexicalRanks.get(Number(row.rowid));
-      const semanticRrf = 1 / (60 + semanticRank + 1);
-      const lexicalRrf = lexicalRank === undefined ? 0 : 1 / (60 + lexicalRank + 1);
+    // Fuse over the union of both candidate sets. Ranking only the semantic list
+    // would cap how far a lexical match can climb, no matter how exact it is.
+    const candidates = new Set([...semanticRanks.keys(), ...lexicalRanks.keys()]);
+    const results = [...candidates].map((rowid) => {
+      const semanticHit = semanticRanks.get(rowid);
+      const lexicalRank = lexicalRanks.get(rowid);
+      const semanticRrf = semanticHit ? 1 / (RRF_K + semanticHit.rank + 1) : 0;
+      const lexicalRrf = lexicalRank === undefined ? 0 : 1 / (RRF_K + lexicalRank + 1);
       return {
-        row,
-        semantic: score,
+        row: rowsById.get(rowid),
+        semantic: semanticHit ? semanticHit.score : null,
         lexicalRank,
-        score: (0.7 * semanticRrf) + (0.3 * lexicalRrf),
+        score: (weights.semantic * semanticRrf) + (weights.lexical * lexicalRrf),
       };
-    }).sort((left, right) => right.score - left.score).slice(0, limit);
+    }).sort((left, right) => (right.score - left.score)
+      || ((right.semantic ?? -1) - (left.semantic ?? -1))).slice(0, limit);
 
+    const lexicalReturned = results.filter((item) => item.lexicalRank !== undefined).length;
     return {
       query,
       root,
       database,
-      retrieval: lexicalRanks.size ? 'hybrid-fts-vector' : 'vector',
+      retrieval: retrievalMode(lexicalReturned, results.length),
+      lexical_candidates: lexicalRanks.size,
+      lexical_word_matches: wordRanks.size,
+      lexical_trigram_matches: trigramRanks.size,
+      lexical_matches_returned: lexicalReturned,
+      fusion_weights: weights,
+      embedding_quality: embeddingQuality(metadata.embedding_provider),
       embedding_provider: metadata.embedding_provider,
       embedding_model: metadata.embedding_model,
       results: results.map(({ row, semantic: semanticScore, lexicalRank, score }) => ({
@@ -646,7 +763,7 @@ async function searchIndex(inputRoot, query, options = {}) {
         source_ref: row.source_ref,
         domain: row.domain,
         score: Number(score.toFixed(8)),
-        semantic_score: Number(semanticScore.toFixed(6)),
+        semantic_score: semanticScore === null ? null : Number(semanticScore.toFixed(6)),
         lexical_match: lexicalRank !== undefined,
         text: snippet(row.text, query),
       })),
@@ -753,7 +870,7 @@ function indexStatus(inputRoot, options = {}) {
   if (!existsSync(database)) {
     return { root, database, exists: false, stale: hasArtifacts(root) };
   }
-  const db = new DatabaseSync(database, { readOnly: true });
+  const db = openSqlite(database, { readOnly: true });
   try {
     const metadata = readMetadata(db);
     const counts = Object.fromEntries(
