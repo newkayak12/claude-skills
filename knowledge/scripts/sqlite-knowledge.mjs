@@ -42,7 +42,11 @@ const ARTIFACT_PATHS = {
   chunks: ['_rag/chunks.jsonl', 'rag/chunks.jsonl'],
   nodes: ['_graph/nodes.jsonl', 'graph/nodes.jsonl'],
   edges: ['_graph/edges.jsonl', 'graph/edges.jsonl'],
+  questions: ['_knowledge/questions.jsonl'],
 };
+// Questions are an evaluation set, not indexed content: they must not decide
+// where the knowledge root is, nor make a built index look stale when edited.
+const INDEXED_ARTIFACT_KINDS = ['catalog', 'chunks', 'nodes', 'edges'];
 
 function parseArgs(argv) {
   const args = [...argv];
@@ -55,6 +59,7 @@ function parseArgs(argv) {
     ollamaUrl: process.env.OLLAMA_HOST || DEFAULT_OLLAMA_URL,
     dimensions: DEFAULT_DIMENSIONS,
     limit: 8,
+    k: 10,
     kind: null,
   };
 
@@ -72,12 +77,13 @@ function parseArgs(argv) {
     else if (arg === '--ollama-url') options.ollamaUrl = value();
     else if (arg === '--dimensions') options.dimensions = Number(value());
     else if (arg === '--limit') options.limit = Number(value());
+    else if (arg === '--k') options.k = Number(value());
     else if (arg === '--kind') options.kind = value();
     else if (!options.query && ['search', 'neighbors', 'get'].includes(command)) options.query = arg;
     else throw new Error(`Unknown argument: ${arg}`);
   }
 
-  if (!['index', 'search', 'neighbors', 'get', 'status', 'serve'].includes(command)) {
+  if (!['index', 'search', 'neighbors', 'get', 'status', 'serve', 'eval'].includes(command)) {
     throw new Error(`Unknown command: ${command}`);
   }
   if (!['hash', 'ollama'].includes(options.provider)) {
@@ -89,6 +95,9 @@ function parseArgs(argv) {
   if (!Number.isInteger(options.limit) || options.limit < 1 || options.limit > 50) {
     throw new Error('--limit must be an integer from 1 to 50');
   }
+  if (!Number.isInteger(options.k) || options.k < 1 || options.k > 50) {
+    throw new Error('--k must be an integer from 1 to 50');
+  }
   return { command, ...options };
 }
 
@@ -98,7 +107,7 @@ function inside(parent, child) {
 }
 
 function hasArtifacts(root) {
-  return Object.values(ARTIFACT_PATHS).flat().some((path) => existsSync(join(root, path)));
+  return INDEXED_ARTIFACT_KINDS.flatMap((kind) => ARTIFACT_PATHS[kind]).some((path) => existsSync(join(root, path)));
 }
 
 function findKnowledgeRoot(inputRoot) {
@@ -250,7 +259,7 @@ function collectKnowledge(root) {
   });
 
   const fingerprint = createHash('sha256');
-  for (const kind of Object.keys(ARTIFACT_PATHS)) {
+  for (const kind of INDEXED_ARTIFACT_KINDS) {
     const absolute = artifactPath(root, kind);
     if (existsSync(absolute)) {
       fingerprint.update(relative(root, absolute)).update('\0').update(readFileSync(absolute));
@@ -266,7 +275,7 @@ function collectKnowledge(root) {
     edges,
     fingerprint: fingerprint.digest('hex'),
     artifacts: Object.fromEntries(
-      Object.keys(ARTIFACT_PATHS).map((kind) => [kind, existsSync(artifactPath(root, kind))]),
+      INDEXED_ARTIFACT_KINDS.map((kind) => [kind, existsSync(artifactPath(root, kind))]),
     ),
   };
 }
@@ -773,6 +782,71 @@ async function searchIndex(inputRoot, query, options = {}) {
   }
 }
 
+function requiredNoteRanks(results, requiredNoteIds) {
+  // A required note counts as retrieved when its own record ranks, or when one
+  // of its chunks does: both carry note_id, and either answers the question.
+  const ranksByNoteId = new Map();
+  results.forEach((result, index) => {
+    const noteId = result.note_id || (result.kind === 'note' ? result.id : null);
+    if (noteId && !ranksByNoteId.has(noteId)) ranksByNoteId.set(noteId, index + 1);
+  });
+  return requiredNoteIds.map((noteId) => ({ note_id: noteId, rank: ranksByNoteId.get(noteId) ?? null }));
+}
+
+async function evalQuestions(inputRoot, options = {}) {
+  const root = findKnowledgeRoot(inputRoot);
+  const questionsPath = artifactPath(root, 'questions');
+  if (!existsSync(questionsPath)) {
+    throw new Error(`No competency questions found at ${questionsPath}. Declare them before running eval.`);
+  }
+  const k = Math.min(50, Math.max(1, Number(options.k) || 10));
+  const records = readJsonl(questionsPath);
+
+  const questions = [];
+  let requiredTotal = 0;
+  let requiredFound = 0;
+  let reciprocalSum = 0;
+  for (const [index, record] of records.entries()) {
+    const id = String(record.id || '').trim();
+    const question = String(record.question || '').trim();
+    if (!id) throw new Error(`${questionsPath}:${index + 1}: missing id`);
+    if (!question) throw new Error(`${questionsPath}:${index + 1}: missing question`);
+    const requiredNoteIds = asStrings(record.required_note_ids);
+    const found = await searchIndex(root, question, { ...options, limit: k });
+    const required = requiredNoteRanks(found.results, requiredNoteIds);
+    const ranks = required.map((item) => item.rank).filter((rank) => rank !== null);
+    const firstRank = ranks.length ? Math.min(...ranks) : null;
+    requiredTotal += required.length;
+    requiredFound += ranks.length;
+    reciprocalSum += firstRank === null ? 0 : 1 / firstRank;
+    questions.push({
+      question_id: id,
+      question,
+      kind: record.kind ?? null,
+      required_notes: required,
+      hit: required.length > 0 && ranks.length === required.length,
+      first_rank: firstRank,
+      retrieval: found.retrieval,
+      results_returned: found.results.length,
+    });
+  }
+
+  return {
+    root,
+    database: resolveDbPath(root, options.db),
+    questions_path: questionsPath,
+    k,
+    kind: options.kind || null,
+    total: questions.length,
+    hits: questions.filter((item) => item.hit).length,
+    required_note_ids: requiredTotal,
+    required_note_ids_found: requiredFound,
+    recall_at_k: requiredTotal ? Number((requiredFound / requiredTotal).toFixed(6)) : 0,
+    mrr: questions.length ? Number((reciprocalSum / questions.length).toFixed(6)) : 0,
+    questions,
+  };
+}
+
 function getDocument(inputRoot, id, options = {}) {
   if (!String(id || '').trim()) throw new Error('id is required');
   const { root, database, db } = openIndex(inputRoot, options.db);
@@ -1066,6 +1140,7 @@ async function main(argv = process.argv.slice(2)) {
   else if (options.command === 'neighbors') result = graphNeighbors(root, options.query, options);
   else if (options.command === 'get') result = getDocument(root, options.query, options);
   else if (options.command === 'status') result = indexStatus(root, options);
+  else if (options.command === 'eval') result = await evalQuestions(root, options);
   else if (options.command === 'serve') {
     await serveMcp({ root, db: options.db });
     return;
@@ -1086,6 +1161,7 @@ export {
   buildIndex,
   callMcpTool,
   collectKnowledge,
+  evalQuestions,
   findKnowledgeRoot,
   getDocument,
   graphNeighbors,

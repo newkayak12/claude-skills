@@ -12,6 +12,7 @@ import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import {
   buildIndex,
+  evalQuestions,
   getDocument,
   graphNeighbors,
   handleMcpMessage,
@@ -241,4 +242,58 @@ test('refuses to query an index built by an older schema', async () => fixture(a
   db.prepare('UPDATE metadata SET value = ? WHERE key = ?').run('0', 'schema_version');
   db.close();
   await assert.rejects(() => searchIndex(root, '결제', {}), /Run knowledge_index to rebuild/);
+}));
+
+test('scores answerable competency questions at full recall', async () => fixture(async (root) => {
+  seed(root);
+  write(join(root, '_knowledge', 'questions.jsonl'), jsonl([
+    {
+      id: 'payment-retry-policy',
+      question: '결제 승인 재시도',
+      kind: 'direct',
+      required_note_ids: ['payments'],
+    },
+  ]));
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+
+  const scored = await evalQuestions(root, { k: 5 });
+  assert.equal(scored.total, 1);
+  assert.equal(scored.hits, 1);
+  assert.equal(scored.recall_at_k, 1);
+  assert.equal(scored.mrr, 1);
+  assert.equal(scored.questions[0].question_id, 'payment-retry-policy');
+  assert.equal(scored.questions[0].hit, true);
+  assert.equal(scored.questions[0].first_rank, 1);
+  assert.deepEqual(scored.questions[0].required_notes, [{ note_id: 'payments', rank: 1 }]);
+  assert.equal(indexStatus(root).stale, false);
+}));
+
+test('reports unretrieved required notes as misses in the aggregate scores', async () => fixture(async (root) => {
+  seed(root);
+  write(join(root, '_knowledge', 'questions.jsonl'), jsonl([
+    { id: 'payment-retry-policy', question: '결제 승인 재시도', required_note_ids: ['payments'] },
+    { id: 'refund-policy', question: '환불 정책은 무엇인가', required_note_ids: ['refunds'] },
+  ]));
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+
+  const scored = await evalQuestions(root, { k: 5 });
+  assert.equal(scored.total, 2);
+  assert.equal(scored.hits, 1);
+  assert.equal(scored.required_note_ids, 2);
+  assert.equal(scored.required_note_ids_found, 1);
+  assert.equal(scored.recall_at_k, 0.5);
+  assert.equal(scored.mrr, 0.5);
+  const missed = scored.questions.find((item) => item.question_id === 'refund-policy');
+  assert.equal(missed.hit, false);
+  assert.equal(missed.first_rank, null);
+  assert.deepEqual(missed.required_notes, [{ note_id: 'refunds', rank: null }]);
+}));
+
+test('bounds the eval depth and requires a declared question set', async () => fixture(async (root) => {
+  assert.equal(parseArgs(['eval', '--k', '3']).k, 3);
+  assert.throws(() => parseArgs(['eval', '--k', '99']), /--k/);
+
+  seed(root);
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+  await assert.rejects(() => evalQuestions(root, {}), /No competency questions found at .*questions\.jsonl/);
 }));
