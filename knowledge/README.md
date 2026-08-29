@@ -68,8 +68,17 @@ Installing the plugin registers the `knowledge-local` stdio MCP server. It expos
 - `knowledge_neighbors` — query direct graph relationships
 - `knowledge_status` — inspect index freshness and configuration
 
-The default `hash` embedding is dependency-free and local. For semantic embeddings, run a local
-Ollama instance and index with `provider: ollama`. See
+The default `hash` embedding is dependency-free and local, but it is a lexical feature hash rather
+than a trained model, so search ranks full-text matches ahead of its vector similarity and reports
+`embedding_quality: lexical-baseline`. Ranking fuses the lexical and semantic candidate lists over
+their union, backs exact-token matching with a trigram substring index so inflected Korean forms
+still match, and excludes bodyless graph-node records from semantic candidates. Search results
+carry `lexical_candidates`, `lexical_word_matches`, `lexical_trigram_matches`, and
+`lexical_matches_returned` so a ranking miss is visible instead of looking like an empty vault.
+For semantic embeddings, run a local Ollama instance and index with `provider: ollama`.
+
+The indexer needs Node 24+, or Node 22.5-23 with `--experimental-sqlite` and an FTS5-enabled
+SQLite build; the bundled Docker image provides a known-good runtime. See
 [`knowledge-query/references/local-sqlite.md`](./skills/knowledge-query/references/local-sqlite.md)
 for CLI, Docker, and data-ownership details.
 

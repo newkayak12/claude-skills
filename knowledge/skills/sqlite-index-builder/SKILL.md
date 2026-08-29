@@ -39,7 +39,7 @@ Markdown is indexed through each catalog record's `path`; the indexer does not c
 
 1. Inspect the discovered inputs and state which artifact types are present or missing.
 2. Choose the embedding provider:
-   - `hash` is the dependency-free default. It provides deterministic lexical feature vectors, not semantic-model embeddings.
+   - `hash` is the dependency-free default. It provides deterministic lexical feature vectors, not semantic-model embeddings, and search ranks full-text matches ahead of its vector similarity. Report this when the user expects semantic recall; the build result carries `embedding_quality: lexical-baseline` and a matching notice.
    - `ollama` provides semantic embeddings when a local Ollama endpoint and model already exist. Do not silently install Ollama or pull a model.
 3. When the `knowledge-local` MCP server is available, call `knowledge_status` and compare its reported root with the desired knowledge root. If they resolve to the same path, call `knowledge_index` with the selected provider and model; the MCP tool does not accept a per-call root. If the server is unavailable or points at a different root, run the bundled CLI with an explicit `--root` relative to the plugin root:
 
@@ -60,6 +60,8 @@ node --no-warnings "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" index \
 
 If `CLAUDE_PLUGIN_ROOT` is unavailable, resolve `../../scripts/sqlite-knowledge.mjs` from this `SKILL.md`.
 
+The indexer requires Node 24+, or Node 22.5-23 with `--experimental-sqlite` and an FTS5-enabled SQLite build. On `No such built-in module: node:sqlite` or `no such module: fts5`, switch to the Docker path in the local SQLite reference instead of reporting the vault as unindexable.
+
 The `index` operation rebuilds the SQLite schema and contents from the current source artifacts; it is not a live or incremental file sync.
 
 ## Verify
@@ -69,7 +71,7 @@ After indexing:
 1. Run `knowledge_status`, or the CLI `status --root /path/to/vault`.
 2. Require the database to exist and report `stale: false`.
 3. Compare the returned note, chunk, node, and edge counts with the discovered inputs. Explain legitimately absent artifact types instead of treating every zero as success.
-4. When notes exist, run one bounded search smoke test. When graph nodes and edges exist, run one neighbor lookup for a known node.
+4. When notes exist, run one bounded search smoke test using a term that appears verbatim in a known note title or alias, and confirm that note is returned with `lexical_match: true`. A smoke test whose results are all `lexical_match: false` indicates a ranking or tokenization problem, not a passing build. When graph nodes and edges exist, run one neighbor lookup for a known node.
 5. Report the database path, source root, indexed counts, embedding provider/model/dimensions, fingerprint, and freshness.
 
 Do not cite the SQLite file as source evidence and do not commit it merely to share knowledge. Commit or synchronize the canonical Markdown and JSONL instead. Do not modify source artifacts during an index-only request.
