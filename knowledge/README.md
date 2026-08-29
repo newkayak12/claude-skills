@@ -26,7 +26,7 @@ so Claude can answer from the indexed evidence.
 | `knowledge-graph-builder` | Extract source-grounded entities, relationships, schema, and graph-ready data |
 | `render-graph-view` | Render existing nodes and edges as an offline, interactive Obsidian-inspired HTML graph view |
 | `rag-corpus-builder` | Prepare retrieval-ready chunks, metadata, citations, and eval queries for RAG |
-| `sqlite-index-builder` | Rebuild a local SQLite index from catalog-backed Markdown, RAG chunks, and graph JSONL |
+| `sqlite-index-builder` | Rebuild a local SQLite index from catalog-backed Markdown, RAG chunks, and graph JSONL, and score it against the vault's competency questions |
 | `knowledge-query` | Answer questions over a linked vault, graph data, RAG corpus, or mixed knowledge assets |
 
 ## Answerability Gate
@@ -75,6 +75,8 @@ their union, backs exact-token matching with a trigram substring index so inflec
 still match, and excludes bodyless graph-node records from semantic candidates. Search results
 carry `lexical_candidates`, `lexical_word_matches`, `lexical_trigram_matches`, and
 `lexical_matches_returned` so a ranking miss is visible instead of looking like an empty vault.
+Each FTS table is ranked per column (`title`, `terms`, `body`) and fused by rank, so a title or
+curated-alias match outranks a passing body mention no matter how long the note is.
 For semantic embeddings, run a local Ollama instance and index with `provider: ollama`.
 
 The indexer needs Node 24+, or Node 22.5-23 with `--experimental-sqlite` and an FTS5-enabled

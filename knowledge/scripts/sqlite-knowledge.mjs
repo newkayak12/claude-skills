@@ -724,10 +724,14 @@ function fuseLexicalRanks(wordRanks, trigramRanks) {
 }
 
 // The hash provider is a lexical feature hash, not a trained embedding: its
-// nearest neighbours are noise on short queries, so exact matches must win.
+// nearest neighbours are noise on short queries, and a long note's vector is
+// diluted enough that it loses to any short note repeating the term. Giving it
+// no weight leaves lexical evidence to decide the order whenever there is any;
+// with no lexical match every score is zero and the secondary sort on
+// semantic_score still orders the vector-only fallback.
 function fusionWeights(provider) {
   return provider === 'hash'
-    ? { semantic: 0.05, lexical: 0.95 }
+    ? { semantic: 0, lexical: 1 }
     : { semantic: 0.7, lexical: 0.3 };
 }
 
