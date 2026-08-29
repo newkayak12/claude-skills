@@ -371,3 +371,38 @@ test('still matches an inflected Korean body term the title does not contain', a
   assert.ok(found.lexical_trigram_matches > 0);
   assert.equal(found.lexical_word_matches, 0);
 }));
+
+test('ranks a long title-and-alias match above many short body mentions', async () => fixture(async (root) => {
+  // The fixture-vault geometry: one long note whose title and alias match the
+  // query but whose body never repeats it, against many short notes that mention
+  // it twice in the body. Scalar bm25() column weights lose this because BM25
+  // normalises by the document's total length across every column.
+  const notes = [];
+  for (let index = 0; index < 20; index += 1) {
+    write(join(root, 'notes', `filler-${index}.md`), `# Filler ${index}\n\n반품 회수 절차를 언급한다. 반품 회수 일정은 별도로 관리한다.\n`);
+    notes.push({
+      id: `filler-${index}`,
+      path: `notes/filler-${index}.md`,
+      title: `Filler ${index}`,
+      summary: `운영 메모 ${index}`,
+    });
+  }
+  write(join(root, 'notes', 'returns.md'), `# 반품 회수\n\n${Array.from({ length: 40 }, (unused, index) => (
+    `창고 담당자는 지정된 순서에 따라 구역별 처리 절차를 수행한다 ${index}.`
+  )).join('\n')}\n`);
+  notes.push({
+    id: 'returns',
+    path: 'notes/returns.md',
+    title: '반품 회수',
+    summary: '구역별 처리 절차',
+    aliases: ['반품 회수'],
+  });
+  write(join(root, '_knowledge', 'catalog.jsonl'), jsonl(notes));
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+
+  const found = await searchIndex(root, '반품 회수', { limit: 10 });
+  const order = found.results.map((item) => item.id);
+  assert.equal(found.results[0].id, 'returns', `unexpected order: ${order.join(', ')}`);
+  assert.equal(found.results[0].lexical_match, true);
+  assert.equal(found.lexical_word_matches, notes.length);
+}));

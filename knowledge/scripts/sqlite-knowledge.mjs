@@ -636,16 +636,19 @@ function openIndex(inputRoot, dbPath = null) {
   return { root, database, db };
 }
 
-function ftsQuery(text) {
-  const tokens = [...new Set(tokenize(text).filter((token) => !token.startsWith('~')))];
-  return tokens.slice(0, 16).map((token) => `"${token.replaceAll('"', '""')}"`).join(' OR ');
+function ftsTokens(text) {
+  return [...new Set(tokenize(text).filter((token) => !token.startsWith('~')))].slice(0, 16);
 }
 
 // The trigram tokenizer cannot match terms shorter than three characters.
-function trigramQuery(text) {
-  const tokens = [...new Set(tokenize(text).filter((token) => !token.startsWith('~')))]
-    .filter((token) => [...token].length >= 3);
-  return tokens.slice(0, 16).map((token) => `"${token.replaceAll('"', '""')}"`).join(' OR ');
+function trigramTokens(text) {
+  return [...new Set(tokenize(text).filter((token) => !token.startsWith('~')))]
+    .filter((token) => [...token].length >= 3)
+    .slice(0, 16);
+}
+
+function columnMatch(column, tokens) {
+  return tokens.map((token) => `${column}:"${token.replaceAll('"', '""')}"`).join(' OR ');
 }
 
 function snippet(text, query, maxLength = 700) {
@@ -675,23 +678,34 @@ async function queryEmbedding(text, metadata, options = {}) {
 // A hit in the title is the strongest evidence that a document is *about* the
 // query; a hit in the controlled vocabulary (summary, tags, aliases, user terms,
 // symbols, entities) is deliberate curation; a hit in the body may be a single
-// passing mention. Weight the BM25 columns so those three tiers stay separated
-// even when a long body repeats the term.
-const BM25_COLUMN_WEIGHTS = '8.0, 4.0, 1.0';
+// passing mention.
+const COLUMN_RRF_WEIGHTS = { title: 0.5, terms: 0.35, body: 0.15 };
 
-function ftsRanks(db, table, match, kind = null) {
-  const ranks = new Map();
-  if (!match) return ranks;
-  const rows = db.prepare(`
-    SELECT d.rowid
-    FROM ${table} f
-    JOIN documents d ON d.rowid = f.rowid
-    WHERE ${table} MATCH ? ${kind ? 'AND d.kind = ?' : ''}
-    ORDER BY bm25(${table}, ${BM25_COLUMN_WEIGHTS})
-    LIMIT 200
-  `).all(match, ...(kind ? [kind] : []));
-  rows.forEach((row, index) => ranks.set(Number(row.rowid), index));
-  return ranks;
+// Rank each column separately and fuse the rank lists. Scalar bm25() column
+// weights cannot separate those tiers: BM25 normalises by the document's total
+// length across all columns, so a long note whose title matches loses to a short
+// note that merely mentions the term. Rank position carries no such scale.
+function ftsRanks(db, table, tokens, kind = null) {
+  const scores = new Map();
+  for (const [column, weight] of Object.entries(COLUMN_RRF_WEIGHTS)) {
+    const match = columnMatch(column, tokens);
+    if (!match) continue;
+    const rows = db.prepare(`
+      SELECT d.rowid
+      FROM ${table} f
+      JOIN documents d ON d.rowid = f.rowid
+      WHERE ${table} MATCH ? ${kind ? 'AND d.kind = ?' : ''}
+      ORDER BY bm25(${table})
+      LIMIT 200
+    `).all(match, ...(kind ? [kind] : []));
+    rows.forEach((row, index) => {
+      const rowid = Number(row.rowid);
+      scores.set(rowid, (scores.get(rowid) || 0) + weight / (RRF_K + index + 1));
+    });
+  }
+  return new Map([...scores.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .map(([rowid], index) => [rowid, index]));
 }
 
 // Collapse the word and substring rankings into one lexical ordering so the
@@ -751,8 +765,8 @@ async function searchIndex(inputRoot, query, options = {}) {
 
     // Word matching is exact, so inflected forms ("재시도한" vs "재시도") miss it.
     // The trigram index recovers those substring hits before fusion.
-    const wordRanks = ftsRanks(db, 'documents_fts', ftsQuery(query), options.kind);
-    const trigramRanks = ftsRanks(db, 'documents_trgm', trigramQuery(query), options.kind);
+    const wordRanks = ftsRanks(db, 'documents_fts', ftsTokens(query), options.kind);
+    const trigramRanks = ftsRanks(db, 'documents_trgm', trigramTokens(query), options.kind);
     const lexicalRanks = fuseLexicalRanks(wordRanks, trigramRanks);
 
     // Fuse over the union of both candidate sets. Ranking only the semantic list
