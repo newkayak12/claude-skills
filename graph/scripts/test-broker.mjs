@@ -1,17 +1,17 @@
 #!/usr/bin/env node
-// Regression suite for the node-broker.
+// Regression suite for the graph-engineering MCP server.
 //
 // Every case here is a bug that actually shipped and was caught by running a real
 // graph, not by reading the code. They run against the live MCP surface over stdio
 // with vendor:"self", so no vendor CLI is needed and the whole file finishes in
 // seconds.
 //
-//   node --test broker/scripts/test-broker.mjs
+//   node --test graph/scripts/test-broker.mjs
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -937,4 +937,223 @@ test('a progressToken produces progress notifications, starting immediately', as
     assert.equal(c.notifications[0].progressToken, 'tok');
     assert.match(c.notifications[0].message, /graph_run plan/);
   }, { SLOW_MS: '2000' });
+});
+
+// ---------- two brokers on one run ----------
+// A run file is read-modify-written by every mutation, and a node can be held open for
+// minutes. The slow broker's stale snapshot used to overwrite a node the fast one had
+// already finished and reported `done` to its client: the work happened, the record
+// vanished.
+
+test('a slow node finishing does not erase a node another broker completed', async () => {
+  const cwd = repoWithSlowVendor();
+  const slow = await new AsyncClient({ SLOW_MS: '4000' }).init();
+  const fast = await new AsyncClient({ SLOW_MS: '100' }).init();
+  try {
+    const { run_id } = await slow.call('graph_open', { request: 'r', cwd, vendor: 'slow' });
+    const sub = (c, node_id, payload) => c.call('graph_submit', { run_id, cwd, node_id, payload: ok(payload) });
+    await sub(slow, 'plan', { handoff: 'p' });
+    await sub(slow, 'setgoal', {
+      spec: {
+        goal: 'G', acceptance: ['A'],
+        subgoals: [
+          { id: 'U1', title: 'a', acceptance: ['a'], deps: [] },
+          { id: 'U2', title: 'b', acceptance: ['b'], deps: [] },
+        ],
+      },
+    });
+    await sub(slow, 'critique', { sound: true });
+
+    const f = dirty(cwd);
+    // the slow broker holds U1 open for seconds; the fast one finishes U2 meanwhile
+    const held = slow.call('graph_run', { run_id, cwd, node_id: 'implement:U1:1' });
+    await new Promise((r) => setTimeout(r, 1200));
+    const other = await sub(fast, 'implement:U2:1', { changed_files: [f], handoff: 'from the fast broker' });
+    assert.equal(other.state, 'done', 'the fast broker was told its node completed');
+    await held;
+
+    const st = await fast.call('graph_status', { run_id, cwd });
+    const u2 = st.nodes.find((n) => n.node_id === 'implement:U2:1');
+    assert.equal(u2.state, 'done', 'a node reported done must not revert to pending');
+  } finally {
+    slow.close();
+    fast.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('a stale lock left by a killed broker does not wedge the run', async () => {
+  const cwd = repo();
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('graph_open', { request: 'r', cwd, vendor: 'self' });
+    // a lock older than the stale window, as a crashed process would leave
+    const lock = join(cwd, '.harness-run', 'broker', 'runs', `${run_id}.json.lock`);
+    mkdirSync(lock, { recursive: true });
+    const past = new Date(Date.now() - 5 * 60 * 1000);
+    utimesSync(lock, past, past);
+
+    const v = await c.call('graph_submit', { run_id, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    assert.equal(v.state, 'done', 'a stale lock must be broken, not waited on forever');
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// ---------- the goal gate is the only node that sees the request again ----------
+// plan -> setgoal narrows the request into a spec; critique checks the spec's internal
+// soundness; subgoal gates check work against the spec. Nothing re-read the request, so
+// a run could score 100% against a spec that had quietly asked for less.
+
+test('the goal gate is briefed to judge against the request, not only the spec', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    for (const sg of ['U1', 'U2']) {
+      const f = dirty(cwd);
+      await c.call('graph_submit', { run_id: runId, cwd, node_id: `implement:${sg}:1`, payload: ok({ changed_files: [f], handoff: `built ${sg}` }) });
+      await c.call('graph_submit', { run_id: runId, cwd, node_id: `test:${sg}:1`, payload: ok({ verified: true }) });
+      await c.call('graph_submit', { run_id: runId, cwd, node_id: `gate:${sg}:1`, payload: ok({ accept: true, match_pct: 95 }) });
+    }
+    const nx = await c.call('graph_next', { run_id: runId, cwd });
+    const goalGate = nx.ready.find((n) => n.node_id.startsWith('gate:goal'));
+    const brief = readFileSync(goalGate.briefing_path, 'utf8');
+    assert.match(brief, /spec_drift/, 'the goal gate must be asked where the spec narrowed the request');
+    assert.match(brief, /the REQUEST as written/);
+    assert.match(brief, /observations/, 'non-blocking weaknesses need somewhere to go');
+  }, { isolated: true });
+});
+
+test('a subgoal gate is not given the goal-gate contract', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    const f = dirty(cwd);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [f] }) });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    const nx = await c.call('graph_next', { run_id: runId, cwd });
+    const brief = readFileSync(nx.ready.find((n) => n.node_id === 'gate:U1:1').briefing_path, 'utf8');
+    assert.equal(/spec_drift/.test(brief), false, 'only the goal gate re-reads the request');
+    assert.match(brief, /observations/);
+  }, { isolated: true });
+});
+
+test('observations and spec drift are surfaced but never block acceptance', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    for (const sg of ['U1', 'U2']) {
+      const f = dirty(cwd);
+      await c.call('graph_submit', { run_id: runId, cwd, node_id: `implement:${sg}:1`, payload: ok({ changed_files: [f] }) });
+      await c.call('graph_submit', { run_id: runId, cwd, node_id: `test:${sg}:1`, payload: ok({ verified: true }) });
+      await c.call('graph_submit', { run_id: runId, cwd, node_id: `gate:${sg}:1`, payload: ok({ accept: true, match_pct: 90 }) });
+    }
+    const nx = await c.call('graph_next', { run_id: runId, cwd });
+    const goalGate = nx.ready.find((n) => n.node_id.startsWith('gate:goal'));
+    const v = await c.call('graph_submit', {
+      run_id: runId, cwd, node_id: goalGate.node_id,
+      payload: ok({ accept: true, match_pct: 88, gaps: [], observations: ['no null guard'], spec_drift: ['request said url-safe generally'] }),
+    });
+    assert.equal(v.state, 'done', 'observations must not block a run that met its bar');
+    assert.equal(v.observation_count, 1);
+    assert.equal(v.spec_drift_count, 1);
+  }, { isolated: true });
+});
+
+// ---------- a judging node must be given the evidence it is asked to weigh ----------
+// A gate briefed with prose alone correctly refused: "no raw output or exit status was
+// provided". It was being asked to prove something from material it never received.
+
+test('a gate is briefed with the checks and commands its upstream reported', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    const f = dirty(cwd);
+    await c.call('graph_submit', {
+      run_id: runId, cwd, node_id: 'implement:U1:1',
+      payload: ok({ changed_files: [f], handoff: 'built it', checks: ['node -e probe -> printed OK'] }),
+    });
+    await c.call('graph_submit', {
+      run_id: runId, cwd, node_id: 'test:U1:1',
+      payload: ok({ verified: true, checks: ['npm test -> 6 passed, 0 failed'] }),
+    });
+    const nx = await c.call('graph_next', { run_id: runId, cwd });
+    const brief = readFileSync(nx.ready.find((n) => n.node_id === 'gate:U1:1').briefing_path, 'utf8');
+    assert.match(brief, /npm test -> 6 passed, 0 failed/, 'the gate needs the check output, not a summary of it');
+    assert.match(brief, /verified=true/);
+    assert.match(brief, /Changed: /);
+  }, { isolated: true });
+});
+
+// ---------- declared capabilities must be real ----------
+
+test('the server declares only capabilities it implements', async () => {
+  const c = await new Client().init();
+  try {
+    const init = await c.send('initialize', {
+      protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' },
+    });
+    assert.equal(init.result.serverInfo.name, 'graph-engineering');
+    assert.equal(init.result.serverInfo.version, '1.0.0');
+    const caps = init.result.capabilities;
+    assert.ok(caps.tools, 'tools are implemented and must be declared');
+    for (const unimplemented of ['logging', 'resources', 'prompts', 'completions']) {
+      assert.equal(unimplemented in caps, false, `${unimplemented} is declared but not implemented`);
+    }
+  } finally {
+    c.close();
+  }
+});
+
+// ---------- declared output shapes ----------
+
+test('every tool declares an outputSchema, and a real verdict validates against it', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    const list = await c.send('tools/list', {});
+    for (const t of list.result.tools) {
+      assert.ok(t.outputSchema, `${t.name} returns structuredContent with no declared shape`);
+      assert.equal(t.outputSchema.type, 'object');
+    }
+    const byName = Object.fromEntries(list.result.tools.map((t) => [t.name, t.outputSchema]));
+
+    const v = await c.call('graph_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    for (const req of byName.graph_submit.required) {
+      assert.ok(req in v, `a real graph_submit verdict is missing declared field ${req}`);
+    }
+    // the schema must describe the verdict surface, not the payload
+    for (const leaked of ['spec', 'handoff', 'evidence', 'checks']) {
+      assert.equal(leaked in byName.graph_submit.properties, false,
+        `outputSchema advertises ${leaked} - the payload must not cross this boundary`);
+    }
+
+    const nx = await c.call('graph_next', { run_id: runId, cwd });
+    for (const req of byName.graph_next.required) {
+      assert.ok(req in nx, `a real graph_next result is missing declared field ${req}`);
+    }
+  });
+});
+
+// ---------- a node must not re-enter the harness ----------
+// Observed in a real run: codex, executing an implement node, ran codex-exec-adapter
+// --detect and then --stage implement and --stage test inside that node. Four wasted
+// invocations and muddled evidence, with nothing to stop it nesting further.
+
+test('every node prompt forbids re-entering the harness', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    const seen = [];
+    const brief = async () => {
+      const nx = await c.call('graph_next', { run_id: runId, cwd });
+      for (const n of nx.ready) {
+        if (!n.briefing_path) continue;
+        const text = readFileSync(n.briefing_path, 'utf8');
+        seen.push(n.stage);
+        assert.match(text, /You ARE this node of the harness graph/, `${n.node_id} may re-enter the harness`);
+        assert.match(text, /no codex-exec-adapter\.mjs/, `${n.node_id} does not name the adapter`);
+      }
+    };
+    await brief();
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'setgoal', payload: ok({ spec: SPEC }) });
+    await brief();
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+    await brief();
+    assert.ok(seen.includes('implement'), 'the implement stage is where this was actually observed');
+  });
 });

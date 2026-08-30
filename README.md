@@ -14,6 +14,8 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 /plugin install agents@newkayak12-claude-skills
 /plugin install completion@newkayak12-claude-skills
 /plugin install develop@newkayak12-claude-skills
+/plugin install graph@newkayak12-claude-skills
+/plugin install harness@newkayak12-claude-skills
 /plugin install knowledge@newkayak12-claude-skills
 /plugin install planning@newkayak12-claude-skills
 /plugin install pm@newkayak12-claude-skills
@@ -30,6 +32,8 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 | [agents](./agents/README.md) | Agent orchestration: parallel agents, subagent-driven development |
 | [completion](./completion/README.md) | Verification before completion |
 | [develop](./develop/README.md) | Engineering: CLI, SQL, architecture, Spring Boot, Kotlin, TDD, and more |
+| [graph](./graph/README.md) | Graph-owned harness orchestration, MCP installation, routing, and adjudication |
+| [harness](./harness/README.md) | Six-stage planning, implementation, verification, quality gate, and reporting |
 | [knowledge](./knowledge/README.md) | Knowledge bases, ontologies, graphs, RAG corpora, and querying |
 | [planning](./planning/README.md) | Executing plans and roadmap planning |
 | [pm](./pm/README.md) | Product management: user stories, story mapping, PRD |

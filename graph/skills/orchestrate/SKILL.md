@@ -1,8 +1,8 @@
 ---
-name: broker-orchestration
+name: orchestrate
 description: >-
-  Use when running a whole request through the harness flow by throwing it at the
-  local broker and driving the returned nodes, without holding the payload yourself.
+  Use when running a whole request through the graph-engineering MCP and driving
+  its harness nodes without holding the payload yourself. Not for installation.
 effort: high
 scenarios:
   - "Run this request through the harness flow but keep my context free for the loop"
@@ -11,14 +11,15 @@ scenarios:
   - "결과가 메인에 쌓이지 않게 그래프를 끝까지 돌려줘"
 compatibility:
   required:
-    - node-broker
+    - graph-engineering
 related:
   - harness
+  - install
 ---
 
-# broker-orchestration
+# orchestrate — drive the graph-owned harness flow
 
-Throw the request at the broker, then run the loop it hands back. The broker owns the
+Throw the request at the graph engine, then run the loop it hands back. The engine owns the
 graph, the spec, the prompts, and the verdicts. You own only the loop.
 
 ## The loop
@@ -136,3 +137,4 @@ Nothing during a `graph_run` — it blocks. The full history is in
 ## Related skills
 
 - `harness` — the six-stage contract this flow implements
+- `install` — connect or verify the graph-engineering MCP before running this flow

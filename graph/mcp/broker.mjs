@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// node-broker - local stdio MCP server that owns the harness flow as a node graph and
+// graph-engineering - local stdio MCP server that owns the harness flow as a node graph and
 // mediates every node's execution across vendors.
 //
 // Two rules shape the whole tool surface:
@@ -45,7 +45,7 @@ import {
 import { composePrompt } from './prompts.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SERVER = { name: 'node-broker', version: '0.2.0' };
+const SERVER = { name: 'graph-engineering', version: '1.0.0' };
 const DEFAULT_PROTOCOL = '2025-06-18';
 
 // ---------- vendor registry ----------
@@ -404,6 +404,10 @@ function verdict(run, n) {
     out.accept = res.accept === true;
     out.match_pct = res.match_pct;
     out.gap_count = (res.gaps || []).length;
+    // Advisory, never blocking - but surfaced, or a run that passed with known
+    // weaknesses reads exactly like one that had none.
+    if ((res.observations || []).length) out.observation_count = res.observations.length;
+    if ((res.spec_drift || []).length) out.spec_drift_count = res.spec_drift.length;
   }
   if (n.stage === 'critique') out.sound = res.sound === true;
   if (!REASONING_STAGES.has(n.stage)) {
@@ -470,6 +474,91 @@ function finishNode(run, n, result, vendorName) {
 
 // ---------- tools ----------
 
+// Declared so a client can validate what comes back rather than trusting shape by
+// convention. These describe the VERDICT surface deliberately: the payload - spec,
+// handoffs, evidence, changed-file lists - never crosses this boundary.
+const VERDICT_SCHEMA = {
+  type: 'object',
+  properties: {
+    run_id: { type: 'string' },
+    node_id: { type: 'string' },
+    stage: { type: 'string' },
+    vendor: { type: 'string' },
+    state: { type: 'string', enum: ['pending', 'running', 'done', 'failed', 'skipped'] },
+    stage_ok: { type: 'boolean' },
+    verified: { type: 'boolean', description: 'test nodes' },
+    accept: { type: 'boolean', description: 'gate nodes' },
+    match_pct: { type: 'number', description: 'gate nodes' },
+    gap_count: { type: 'number', description: 'gate nodes' },
+    observation_count: { type: 'number', description: 'gate nodes: non-blocking weaknesses' },
+    spec_drift_count: { type: 'number', description: 'goal gate: where the spec asked less than the request' },
+    sound: { type: 'boolean', description: 'critique nodes' },
+    changed_files_verified: { type: ['boolean', 'null'], description: 'null means could not attribute - not a pass' },
+    change_attribution: { type: ['string', 'null'], enum: ['isolated', 'shared-worktree', 'no-git', null] },
+    contradicted_files: { type: 'array', items: { type: 'string' } },
+    submitted_stage_ok: { type: 'boolean', description: 'present when the broker overruled the executor' },
+    missing_verdict: { type: 'string', description: 'the verdict field the node failed to return' },
+    killed_for: { type: 'string', enum: ['timeout', 'cancelled'] },
+    reason: { type: 'string' },
+    detail_path: { type: ['string', 'null'], description: 'read this for one node only; never pull a whole run into context' },
+  },
+  required: ['node_id', 'stage', 'state', 'stage_ok'],
+};
+
+const READY_SCHEMA = {
+  type: 'object',
+  properties: {
+    run_id: { type: 'string' },
+    cwd: { type: 'string' },
+    state: { type: 'string', enum: ['running', 'blocked', 'complete'] },
+    counts: { type: 'object' },
+    ready: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          node_id: { type: 'string' },
+          stage: { type: 'string' },
+          vendor: { type: 'string' },
+          attempts: { type: 'array', items: { type: 'object' } },
+          briefing_path: { type: 'string', description: 'self-routed nodes only' },
+          next: { type: 'string' },
+        },
+        required: ['node_id', 'stage', 'vendor'],
+      },
+    },
+  },
+  required: ['run_id', 'state', 'ready'],
+};
+
+const STATUS_SCHEMA = {
+  type: 'object',
+  properties: {
+    run_id: { type: 'string' },
+    cwd: { type: 'string' },
+    state: { type: 'string', enum: ['running', 'blocked', 'complete'] },
+    counts: { type: 'object' },
+    has_spec: { type: 'boolean' },
+    subgoals: { type: 'array', items: { type: 'string' } },
+    nodes: { type: 'array', items: { type: 'object' } },
+  },
+  required: ['run_id', 'state', 'nodes'],
+};
+
+const RETRY_SCHEMA = {
+  type: 'object',
+  properties: {
+    run_id: { type: 'string' },
+    target: { type: 'string', description: 'a subgoal id, or "spec"' },
+    retried: { type: 'boolean' },
+    attempt: { type: 'number' },
+    reason: { type: 'string' },
+    state: { type: 'string' },
+    ready: { type: 'array', items: { type: 'object' } },
+  },
+  required: ['run_id', 'retried'],
+};
+
 const TOOLS = [
   {
     name: 'graph_open',
@@ -489,6 +578,7 @@ const TOOLS = [
       },
       required: ['request', 'cwd'],
     },
+    outputSchema: READY_SCHEMA,
   },
   {
     name: 'graph_next',
@@ -499,6 +589,7 @@ const TOOLS = [
       properties: { run_id: { type: 'string' }, cwd: { type: 'string' } },
       required: ['run_id'],
     },
+    outputSchema: READY_SCHEMA,
   },
   {
     name: 'graph_run',
@@ -515,6 +606,7 @@ const TOOLS = [
       },
       required: ['run_id', 'node_id'],
     },
+    outputSchema: VERDICT_SCHEMA,
   },
   {
     name: 'graph_submit',
@@ -534,6 +626,7 @@ const TOOLS = [
       },
       required: ['run_id', 'node_id', 'payload'],
     },
+    outputSchema: VERDICT_SCHEMA,
   },
   {
     name: 'graph_retry',
@@ -548,6 +641,7 @@ const TOOLS = [
       },
       required: ['run_id'],
     },
+    outputSchema: RETRY_SCHEMA,
   },
   {
     name: 'graph_status',
@@ -563,6 +657,7 @@ const TOOLS = [
       },
       required: ['run_id'],
     },
+    outputSchema: STATUS_SCHEMA,
   },
 ];
 
@@ -647,7 +742,7 @@ async function toolGraphNext(a) {
 
 async function toolGraphRun(a) {
   const run = mustFindRun(a);
-  const n = requireRunnable(run, String(a.node_id));
+  let n = requireRunnable(run, String(a.node_id));
 
   const r = await route(run, n.stage);
   if (r.vendor === 'self') throw new Error(`node ${n.node_id} is routed to self - use graph_submit`);
@@ -706,6 +801,22 @@ async function toolGraphRun(a) {
   }
   const report = readJson(outPath) || {};
   const payload = parseVendorResult(report) || {};
+
+  // The vendor call above may have taken minutes. Anything this process remembers about
+  // the run is potentially stale, so re-read before recording - otherwise finishing this
+  // node writes back a snapshot that erases whatever else completed meanwhile.
+  const fresh = loadRun(run.cwd, run.run_id);
+  if (fresh) {
+    run.nodes = fresh.nodes;
+    run.spec = fresh.spec;
+    const again = getNode(run, n.node_id);
+    if (again) {
+      again.ticket = n.ticket;
+      again.started_at = n.started_at;
+      again.detail_path = n.detail_path;
+      n = again;
+    }
+  }
 
   const transportOk = proc.status === 0;
   let result;
@@ -900,7 +1011,10 @@ async function handle(msg) {
     case 'initialize':
       return reply({
         protocolVersion: params && typeof params.protocolVersion === 'string' ? params.protocolVersion : DEFAULT_PROTOCOL,
-        capabilities: { tools: { listChanged: false }, logging: {} },
+        // Declare only what is implemented. `logging` was advertised while
+        // notifications/message was never sent, and a client that trusted it got
+        // silence; resources/* would answer -32601 for the same reason.
+        capabilities: { tools: { listChanged: false } },
         serverInfo: SERVER,
       });
     case 'ping':

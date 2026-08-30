@@ -29,20 +29,21 @@ skill inside a target project to make governance ambient (see
 
 | Path | When | How |
 |---|---|---|
-| **Broker (default)** | `harness-broker` MCP connected | `broker:broker-orchestration` — the flow runs as a node graph the broker owns; the main session only loops `graph_next` / `graph_run` / `graph_submit`. No transport subagents, no polling. |
-| Workflow engine | Broker absent, Workflow tool available | `Workflow({ scriptPath: "harness/engine/pipeline.js", ... })` |
+| **Graph (default)** | `graph-engineering` MCP connected | `graph:orchestrate` — the graph engine owns the flow; the main session only loops `graph_next` / `graph_run` / `graph_submit`. No transport subagents, no polling. |
+| Workflow engine | Graph MCP absent, Workflow tool available | `Workflow({ scriptPath: "harness/engine/pipeline.js", ... })` |
 | Agent team | Neither | `engine/fallback.md` |
 
-The broker exists because the Workflow path had to spend a subagent per Implement/Test node
+The graph engine exists because the Workflow path had to spend a subagent per Implement/Test node
 just to drive a CLI through Bash, and a subagent waiting on a process can only poll.
 Measured on one real run the transport layer cost more than the reasoning layer
-(6.87M vs 2.06M input tokens, zero edits by the transport). See `broker/README.md`.
+(6.87M vs 2.06M input tokens, zero edits by the transport). See `graph/README.md`.
 
 ## Which skill do I want?
 
 | I want to… | Skill |
 |---|---|
 | Get a substantial request planned, executed, verified, and gated before it comes back | `harness` |
+| Connect or verify the graph-owned default orchestration path | `graph:install` |
 | Make the harness ambient in a project — gate, hook, conventions, CLAUDE.md block | `install` |
 | Take harness governance back out of a project | `remove` |
 | Cut a synchronized patch release of the harness plugin source | `patch` |
@@ -252,6 +253,11 @@ engagement. Fail-open everywhere (v0 lesson) — a nudge, not security.
   Status section. It dry-runs first and refuses mismatched versions.
 
 ## Status
+- v1.22.0 — **Graph plugin separation**: the graph-engineering MCP moved from the
+  short-lived `broker` namespace to the independently versioned `graph` plugin. Harness now
+  discovers `graph-engineering` and delegates its default loop to `graph:orchestrate`; setup
+  and connection verification live in `graph:install`. The Workflow and Agent Team paths
+  remain fallbacks.
 - v1.20.0 — **Lifecycle helpers**: added `harness:remove` for deterministic, idempotent
   project cleanup with user-owned conventions preserved by default, and `harness:patch` for
   synchronized patch-version bumps across both manifests plus the README Status entry. Fixture
@@ -418,17 +424,18 @@ Plan(opus) → SetGoal(opus) → Implement(Codex 사용 시) → Test(Codex 사�
 
 | 경로 | 언제 | 어떻게 |
 |---|---|---|
-| **브로커 (기본)** | `harness-broker` MCP 연결됨 | `broker:broker-orchestration` — 브로커가 소유한 노드 그래프로 흐름을 돌리고, 메인 세션은 `graph_next` / `graph_run` / `graph_submit` 루프만 돕니다. 전송용 서브에이전트도, 폴링도 없습니다. |
-| Workflow 엔진 | 브로커 없음, Workflow 도구 있음 | `Workflow({ scriptPath: "harness/engine/pipeline.js", ... })` |
+| **그래프 (기본)** | `graph-engineering` MCP 연결됨 | `graph:orchestrate` — 그래프 엔진이 흐름을 소유하고, 메인 세션은 `graph_next` / `graph_run` / `graph_submit` 루프만 돕니다. 전송용 서브에이전트도, 폴링도 없습니다. |
+| Workflow 엔진 | 그래프 MCP 없음, Workflow 도구 있음 | `Workflow({ scriptPath: "harness/engine/pipeline.js", ... })` |
 | 에이전트 팀 | 둘 다 없음 | `engine/fallback.md` |
 
-브로커가 생긴 이유: Workflow 경로는 CLI를 Bash로 몰기 위해 Implement/Test 노드마다 서브에이전트를 하나씩 써야 했고, 프로세스를 기다리는 서브에이전트는 폴링밖에 못 합니다. 실측 한 번에서 전송 계층이 추론 계층보다 비쌌습니다(입력 토큰 6.87M vs 2.06M, 전송 계층의 편집은 0건). `broker/README.md` 참고.
+그래프 엔진이 생긴 이유: Workflow 경로는 CLI를 Bash로 몰기 위해 Implement/Test 노드마다 서브에이전트를 하나씩 써야 했고, 프로세스를 기다리는 서브에이전트는 폴링밖에 못 합니다. 실측 한 번에서 전송 계층이 추론 계층보다 비쌌습니다(입력 토큰 6.87M vs 2.06M, 전송 계층의 편집은 0건). `graph/README.md` 참고.
 
 ## 어떤 스킬을 쓰나
 
 | 하고 싶은 것 | 스킬 |
 |---|---|
 | 큰 요청을 계획·실행·검증·게이트까지 거쳐서 받고 싶다 | `harness` |
+| 기본 그래프 오케스트레이션 경로를 연결하거나 확인하고 싶다 | `graph:install` |
 | 프로젝트에 게이트·훅·컨벤션·CLAUDE.md 블록을 심고 싶다 | `install` |
 | 프로젝트에서 하네스 거버넌스를 걷어내고 싶다 | `remove` |
 | 하네스 플러그인 소스의 패치 릴리스를 준비하고 싶다 | `patch` |

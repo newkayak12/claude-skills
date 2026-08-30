@@ -1,10 +1,10 @@
-# broker
+# graph
 
-Vendor-agnostic node execution for the harness flow, mediated by a local MCP server.
-The main session orchestrates; the broker routes, executes, and adjudicates.
+Graph engineering for the harness flow, mediated by a local MCP server. The main
+session orchestrates; the graph engine owns state, routing, execution, and adjudication.
 
 Sibling to `harness`, not a replacement. **harness** owns the six-stage reasoning
-contract. **broker** owns who executes a node, and whether the result survives contact
+contract. **graph** owns who executes a node, and whether the result survives contact
 with the worktree.
 
 ## Why
@@ -25,17 +25,30 @@ rather than discouraged in a prompt.
 
 ## Install
 
-Add the marketplace plugin, or register the server directly:
+Install the marketplace plugin and use `graph:install` to verify the connection:
+
+```text
+/plugin install graph@newkayak12-claude-skills
+```
+
+For a source checkout, `graph:install` can instead merge this direct registration:
 
 ```json
 {
   "mcpServers": {
-    "node-broker": { "command": "node", "args": ["<plugin root>/mcp/broker.mjs"] }
+    "graph-engineering": { "command": "node", "args": ["<plugin root>/mcp/broker.mjs"] }
   }
 }
 ```
 
 Zero runtime dependencies, Node 18+.
+
+## Status
+
+- v1.0.0 — moved the existing graph-engineering MCP out of the temporary `broker`
+  plugin name and split lifecycle from execution: `graph:install` connects/verifies it,
+  while `graph:orchestrate` drives the graph. Engine code and on-disk run format remain
+  the existing implementation.
 
 ## Tools
 
@@ -152,4 +165,5 @@ corrupt ledger is simply not engagement.
 
 ## Skills
 
-- `broker-orchestration` — running the whole harness flow this way from the main session
+- `install` — connect or verify the existing graph engine without copying it
+- `orchestrate` — run the whole harness flow from the main session
