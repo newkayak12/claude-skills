@@ -72,7 +72,7 @@ After indexing:
 2. Require the database to exist and report `stale: false`.
 3. Compare the returned note, chunk, node, and edge counts with the discovered inputs. Explain legitimately absent artifact types instead of treating every zero as success.
 4. When notes exist, run one bounded search smoke test using a term that appears verbatim in a known note title or alias, and confirm that note is returned with `lexical_match: true`. A smoke test whose results are all `lexical_match: false` indicates a ranking or tokenization problem, not a passing build. When graph nodes and edges exist, run one neighbor lookup for a known node.
-5. When `_knowledge/questions.jsonl` exists, run `eval --root /path/to/vault --k 10` and report `mrr` and `recall_at_k`. Any competency question whose required notes are missing from the top k is a retrieval defect: name the question rather than reporting the build as clean.
+5. When `_knowledge/questions.jsonl` exists, run `eval --root /path/to/vault --k 10` and report `mrr`, `recall_at_k`, and `mean_distinct_notes`. A `mean_distinct_notes` well below k means chunks of one note are crowding the top slots; results are grouped per note by default, so this should only happen with `--group none`. Any competency question whose required notes are missing from the top k is a retrieval defect: name the question rather than reporting the build as clean.
 6. Report the database path, source root, indexed counts, embedding provider/model/dimensions, fingerprint, and freshness.
 
 Do not cite the SQLite file as source evidence and do not commit it merely to share knowledge. Commit or synchronize the canonical Markdown and JSONL instead. Do not modify source artifacts during an index-only request.
