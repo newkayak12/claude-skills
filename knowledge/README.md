@@ -76,7 +76,9 @@ still match, and excludes bodyless graph-node records from semantic candidates. 
 carry `lexical_candidates`, `lexical_word_matches`, `lexical_trigram_matches`, and
 `lexical_matches_returned` so a ranking miss is visible instead of looking like an empty vault.
 Each FTS table is ranked per column (`title`, `terms`, `body`) and fused by rank, so a title or
-curated-alias match outranks a passing body mention no matter how long the note is.
+curated-alias match outranks a passing body mention no matter how long the note is. A relation
+note is promoted when the query matches two or more of its declared `participants`; declared
+participants only, never co-occurrence or shared anchors.
 For semantic embeddings, run a local Ollama instance and index with `provider: ollama`.
 
 The indexer needs Node 24+, or Node 22.5-23 with `--experimental-sqlite` and an FTS5-enabled
