@@ -25,6 +25,19 @@ Marketplace install alone enforces nothing — it makes the skills available. Ru
 skill inside a target project to make governance ambient (see
 [Installing into a project](#installing-into-a-project)).
 
+## Orchestration paths
+
+| Path | When | How |
+|---|---|---|
+| **Broker (default)** | `harness-broker` MCP connected | `broker:broker-orchestration` — the flow runs as a node graph the broker owns; the main session only loops `graph_next` / `graph_run` / `graph_submit`. No transport subagents, no polling. |
+| Workflow engine | Broker absent, Workflow tool available | `Workflow({ scriptPath: "harness/engine/pipeline.js", ... })` |
+| Agent team | Neither | `engine/fallback.md` |
+
+The broker exists because the Workflow path had to spend a subagent per Implement/Test node
+just to drive a CLI through Bash, and a subagent waiting on a process can only poll.
+Measured on one real run the transport layer cost more than the reasoning layer
+(6.87M vs 2.06M input tokens, zero edits by the transport). See `broker/README.md`.
+
 ## Which skill do I want?
 
 | I want to… | Skill |
@@ -400,6 +413,16 @@ Plan(opus) → SetGoal(opus) → Implement(Codex 사용 시) → Test(Codex 사�
 마켓플레이스 설치만으로는 아무것도 강제되지 않습니다 — 스킬이 쓸 수 있게 될 뿐이에요. 대상
 프로젝트 안에서 `install` 스킬을 돌려야 거버넌스가 상시화됩니다
 ([프로젝트에 설치하기](#프로젝트에-설치하기) 참고).
+
+## 오케스트레이션 경로
+
+| 경로 | 언제 | 어떻게 |
+|---|---|---|
+| **브로커 (기본)** | `harness-broker` MCP 연결됨 | `broker:broker-orchestration` — 브로커가 소유한 노드 그래프로 흐름을 돌리고, 메인 세션은 `graph_next` / `graph_run` / `graph_submit` 루프만 돕니다. 전송용 서브에이전트도, 폴링도 없습니다. |
+| Workflow 엔진 | 브로커 없음, Workflow 도구 있음 | `Workflow({ scriptPath: "harness/engine/pipeline.js", ... })` |
+| 에이전트 팀 | 둘 다 없음 | `engine/fallback.md` |
+
+브로커가 생긴 이유: Workflow 경로는 CLI를 Bash로 몰기 위해 Implement/Test 노드마다 서브에이전트를 하나씩 써야 했고, 프로세스를 기다리는 서브에이전트는 폴링밖에 못 합니다. 실측 한 번에서 전송 계층이 추론 계층보다 비쌌습니다(입력 토큰 6.87M vs 2.06M, 전송 계층의 편집은 0건). `broker/README.md` 참고.
 
 ## 어떤 스킬을 쓰나
 

@@ -46,6 +46,25 @@ function exactMarker(dir, sid) {
   }
 }
 
+// Broker engagement: an open node in the MCP broker's ledger is a stronger
+// signal than the transcript regex - it means a node was actually routed and is
+// mid-flight, whoever is executing it (Codex or Claude).
+function anyOpenBrokerNode(cwd, windowMs) {
+  try {
+    const open = JSON.parse(
+      readFileSync(join(cwd, '.harness-run', 'broker', 'open-nodes.json'), 'utf8'),
+    );
+    const now = Date.now();
+    for (const k of Object.keys(open)) {
+      const ts = Number(open[k] && open[k].opened_at) || 0;
+      if (ts && now - ts <= windowMs) return true;
+    }
+  } catch {
+    /* no broker ledger -> not engaged this way */
+  }
+  return false;
+}
+
 function anyRecentMarker(dir, windowMs) {
   const now = Date.now();
   let recent = false;
@@ -117,6 +136,10 @@ function main() {
     }
   }
 
+  // An open broker node counts as engagement on its own: the harness routed this
+  // node, so the edit is harness work even if the transcript never named the skill.
+  if (!engaged && anyOpenBrokerNode(cwd, windowMs)) engaged = true;
+
   if (engaged) refreshMarker(markerDir, sid);
 
   // Deny applies to edit tools only; everything else just refreshed markers.
@@ -138,7 +161,8 @@ function main() {
         permissionDecision: 'deny',
         permissionDecisionReason:
           'This path is gated by the harness (.claude/harness-gate.json). Engage it first: ' +
-          'invoke the "harness" skill (or run the six-stage engine via ' +
+          'open a node with the broker MCP tool node_open, or invoke the ' +
+          '"harness" skill (or run the six-stage engine via ' +
           'Workflow({ scriptPath: "harness/engine/pipeline.js", args: { request: ... } })), ' +
           'then retry the edit.',
       },

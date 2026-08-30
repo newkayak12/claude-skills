@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "harness-broker": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/broker.mjs"]
+    }
+  }
+}

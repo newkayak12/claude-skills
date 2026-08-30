@@ -33,7 +33,19 @@ Workflow controller/fallback/report role, not the actor.
 
 ## Process
 
-1. **Pass the raw request to the engine** (B, default):
+0. **Broker path (default when the `harness-broker` MCP is connected).** Hand the raw
+   request to the broker and drive the node graph it returns — invoke
+   `broker:broker-orchestration`. `graph_open({request, cwd, vendor, isolated})` builds
+   plan → setgoal → critique and expands per-subgoal implement/test/gate nodes server-side;
+   you loop `graph_next` → `graph_run` (vendor executes; blocks) or `graph_submit` (you
+   executed it) until the run stops. The spec, handoffs, evidence and verdicts stay on disk;
+   tools return one-line verdicts, so a long retry loop never fills your context and no
+   node can poll a CLI through Bash. Reason to prefer it: measured E2E, the Workflow path's
+   transport subagents cost more tokens than the reasoning stages (6.87M vs 2.06M input),
+   with zero edits made by the transport layer. Fall through to step 1 only when the broker
+   tools are absent.
+
+1. **Pass the raw request to the engine** (B, Workflow fallback):
    `Workflow({ scriptPath: "harness/engine/pipeline.js", args: { request: "<the request>", context: "<optional constraints>", max_retries: 2, codex_provider: "auto" } })`
    The engine itself plans, authors + critiques the goal-spec, executes subgoals with
    repo-skill-equipped executors, verifies each deterministically, gates each and the
@@ -110,6 +122,7 @@ pre-wiring, and using none of them is a valid run.
 ## Related
 - `harness/goal-spec.md` — spec schema (authored by the SetGoal stage) + authoring rules
 - `harness/skills/codex-control/SKILL.md` — adapter discovery contract for Codex CLI delegation
+- `broker:broker-orchestration` — default orchestration: the harness flow as a node graph owned by the local `harness-broker` MCP (`broker/mcp/broker.mjs`)
 - `harness/engine/pipeline.js` — the fixed six-stage engine (Workflow path)
 - `harness/engine/fallback.md` — DW-off/Workflow-less fallback: same six stages via a role-isolated Agent Team sharing state through a run directory
 - `harness/engine/fallback-check.mjs` — deterministic completion check for a fallback run (the objective done-signal)
