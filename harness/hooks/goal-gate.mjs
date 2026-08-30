@@ -161,7 +161,7 @@ function main() {
         permissionDecision: 'deny',
         permissionDecisionReason:
           'This path is gated by the harness (.claude/harness-gate.json). Engage it first: ' +
-          'open a node with the broker MCP tool node_open, or invoke the ' +
+          'open a node with the graph MCP tool graph_open, or invoke the ' +
           '"harness" skill (or run the six-stage engine via ' +
           'Workflow({ scriptPath: "harness/engine/pipeline.js", args: { request: ... } })), ' +
           'then retry the edit.',

@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "harness-broker": {
+    "graph-engineering": {
       "command": "node",
       "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/broker.mjs"]
     }

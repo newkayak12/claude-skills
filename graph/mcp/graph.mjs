@@ -8,7 +8,7 @@
 //
 // Runs live at <cwd>/.harness-run/broker/runs/<run_id>.json.
 
-import { mkdirSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -35,10 +35,78 @@ function runPath(cwd, runId) {
   return join(runsDir(cwd), runId + '.json');
 }
 
+// A run file is read-modify-written by every mutation, and a node can be held open for
+// minutes while a vendor works. Two brokers on one run therefore raced: the slow one's
+// stale snapshot overwrote a node the fast one had already finished and reported `done`
+// to its client. The work had happened; only the record vanished.
+//
+// mkdir is atomic on every filesystem we care about, so it is the lock.
+const LOCK_STALE_MS = 30 * 1000;
+
+function lockPath(cwd, runId) {
+  return runPath(cwd, runId) + '.lock';
+}
+
+function acquire(cwd, runId) {
+  const lock = lockPath(cwd, runId);
+  const deadline = Date.now() + 5000;
+  for (;;) {
+    try {
+      mkdirSync(lock);
+      return lock;
+    } catch {
+      // A lock left behind by a killed process must not wedge the run forever.
+      try {
+        if (Date.now() - statSync(lock).mtimeMs > LOCK_STALE_MS) {
+          rmSync(lock, { recursive: true, force: true });
+          continue;
+        }
+      } catch {
+        continue; // it vanished between the two calls; try again
+      }
+      if (Date.now() > deadline) return null; // fall through unlocked rather than hang
+      // Busy-wait briefly: the critical section is a file write, measured in microseconds.
+      const spin = Date.now() + 5;
+      while (Date.now() < spin) { /* yield-free by design; this is a sub-millisecond wait */ }
+    }
+  }
+}
+
+function release(lock) {
+  if (!lock) return;
+  try {
+    rmSync(lock, { recursive: true, force: true });
+  } catch {
+    /* best-effort */
+  }
+}
+
+// Apply this process's view of the run onto whatever is currently on disk, instead of
+// replacing it. Nodes another broker finished while we were working are kept.
+function mergeOnto(fresh, mine) {
+  if (!fresh) return mine;
+  const byId = new Map(fresh.nodes.map((n) => [n.node_id, n]));
+  for (const n of mine.nodes) {
+    const cur = byId.get(n.node_id);
+    // A terminal state on disk that we never saw belongs to another broker: keep it.
+    if (cur && cur.state !== 'pending' && n.state === 'pending') continue;
+    byId.set(n.node_id, n);
+  }
+  return { ...fresh, ...mine, nodes: [...byId.values()] };
+}
+
 export function saveRun(run) {
   mkdirSync(runsDir(run.cwd), { recursive: true });
-  writeFileSync(runPath(run.cwd, run.run_id), JSON.stringify(run, null, 2) + '\n');
-  return run;
+  const lock = acquire(run.cwd, run.run_id);
+  try {
+    const merged = mergeOnto(loadRun(run.cwd, run.run_id), run);
+    writeFileSync(runPath(run.cwd, run.run_id), JSON.stringify(merged, null, 2) + '\n');
+    // Keep the caller's object consistent with what was written.
+    run.nodes = merged.nodes;
+    return run;
+  } finally {
+    release(lock);
+  }
 }
 
 export function loadRun(cwd, runId) {
@@ -308,9 +376,38 @@ export function runState(run) {
 // What a node needs to know to be executed, assembled from what the graph already
 // holds. The orchestrator should not have to remember any of this itself.
 export function nodeBriefing(run, n) {
+  // Prose only was not enough. A gate briefed with a handoff and a one-line summary
+  // correctly rejected the work as undemonstrated: "no raw output or exit status was
+  // provided". The checks the executor ran, the commands the adapter observed, and the
+  // files it touched are the evidence - withholding them and then asking for proof is
+  // the same mistake as briefing critique without the subgoals.
+  // A subgoal gate depends only on that subgoal's test node, so briefing it from deps
+  // alone showed it the verification and hid the implementation it was judging. Give a
+  // gate the whole attempt it is ruling on.
+  const inScope = (x) => {
+    if (n.deps.includes(x.node_id)) return true;
+    return n.stage === 'gate'
+      && n.subgoal_id
+      && x.subgoal_id === n.subgoal_id
+      && (x.attempt || 1) === (n.attempt || 1)
+      && x.node_id !== n.node_id;
+  };
   const upstream = run.nodes
-    .filter((x) => n.deps.includes(x.node_id) && x.result)
-    .map((x) => ({ node_id: x.node_id, stage: x.stage, handoff: x.result.handoff || '', evidence: x.result.evidence || '' }));
+    .filter((x) => inScope(x) && x.result)
+    .map((x) => ({
+      node_id: x.node_id,
+      stage: x.stage,
+      state: x.state,
+      handoff: x.result.handoff || '',
+      evidence: x.result.evidence || '',
+      checks: x.result.checks || [],
+      changed_files: x.result.changed_files || [],
+      changed_files_verified: x.result.changed_files_verified,
+      verified: x.result.verified,
+      commands: (x.result.event_evidence && x.result.event_evidence.commands) || [],
+      commands_executed: x.result.event_evidence ? x.result.event_evidence.commands_executed : undefined,
+      commands_failed: x.result.event_evidence ? x.result.event_evidence.commands_failed : undefined,
+    }));
 
   const sg = run.spec && n.subgoal_id
     ? (run.spec.subgoals || []).find((s) => String(s.id) === String(n.subgoal_id))
