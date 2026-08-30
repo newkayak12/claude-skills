@@ -4,7 +4,7 @@ description: >-
   Use when someone is writing Kotlin code and needs idiomatic guidance —
   coroutine and Flow patterns, Kotlin Multiplatform (KMP) structure, Android
   with Jetpack Compose, Ktor server setup, or type-safe DSL authoring. Triggers
-  on: "Kotlin coroutines",
+  on: "Kotlin coroutines".
 scenarios:
   - "Help me write idiomatic Kotlin code using coroutines for async processing"
   - "Convert this Java class to Kotlin and apply Kotlin best practices"

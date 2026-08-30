@@ -4,7 +4,7 @@ description: >-
   Use when uncertain which discovery approach fits the situation, or when
   evaluating whether continuous discovery vs. fixed-cycle planning better suits
   the team. Triggers on: "discovery process", "product discovery", "우리 팀에 맞는
-  프로세스가 뭘까", continuous
+  프로세스가 뭘까".
 license: MIT
 metadata:
   author: wondelai

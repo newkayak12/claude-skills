@@ -4,7 +4,7 @@ description: >-
   Use when someone wants to build a complete, stable test suite from scratch —
   starting with TDD discipline, moving into coverage strategy, and ending with
   flaky test elimination. Triggers on: "testing workflow", "테스트 전체 프로세스", "TDD부터
-  커버리지까지", "full
+  커버리지까지".
 type: workflow
 theme: engineering
 scenarios:

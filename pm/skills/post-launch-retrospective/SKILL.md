@@ -5,7 +5,7 @@ description: >-
   Use after a feature or product launch to formally close the cycle: validate
   the original hypothesis, analyze which metrics moved, document learnings, and
   decide what to do next. Triggers on: "출시 후 회고", "런칭 결과 분석", "피처 성과 리뷰",
-  post-launch review",
+  "post-launch review".
 license: MIT
 metadata:
   author: wondelai

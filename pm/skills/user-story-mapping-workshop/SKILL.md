@@ -5,7 +5,7 @@ description: >-
   Use when someone wants to be guided interactively through building a story map
   — step by step through scope, personas, backbone activities, tasks, and
   release slices via adaptive questions. Triggers on: "walk me through story
-  mapping", "help me
+  mapping".
 type: interactive
 scenarios:
   - "Walk me through creating a story map for our new mobile app — I'm not sure where to start"

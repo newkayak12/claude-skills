@@ -4,7 +4,7 @@ description: >-
   Use when someone wants to understand the writing patterns in their portfolio —
   not what it says but how it reads: passive voice ratio, subject audit, number
   density, and decision visibility. Triggers on: "패턴 분석해줘", "오너십이 잘 드러나나", "피동형
-  많이 썼나", "주어
+  많이 썼나".
 scenarios:
   - "Analyze the writing patterns in my portfolio — do I show ownership clearly?"
   - "How much passive voice am I using and how does it affect my portfolio?"

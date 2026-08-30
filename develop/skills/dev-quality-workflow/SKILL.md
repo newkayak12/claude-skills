@@ -4,7 +4,7 @@ description: >-
   Use when starting a new feature or system from scratch and wanting to follow a
   full quality engineering process — from architecture through to incident
   readiness. Triggers on: "dev quality process", "새 기능 처음부터 제대로", "개발 품질 전체",
-  "full dev cycle",
+  "full dev cycle".
 type: workflow
 theme: engineering
 scenarios:

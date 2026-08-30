@@ -3,8 +3,8 @@ name: first-principles
 description: >-
   Use when the current approach feels fundamentally wrong, inherited constraints
   need questioning, or someone wants to reason from the ground up. Triggers on:
-  "왜 이렇게 해야 해?", "기본부터 다시 생각해", "first principles", "가정을 의심해봐", 이 방식 자체가 맞는 건지",
-  "처음부터 다시
+  "왜 이렇게 해야 해?", "기본부터 다시 생각해", "first principles", "가정을 의심해봐", "이 방식 자체가 맞는
+  건지".
 scenarios:
   - "왜 배포가 2주나 걸려야 해? 진짜 필수적인 단계가 뭐야?"
   - "배터리 비용이 왜 이렇게 비싸야 해? 원재료부터 생각해보자"

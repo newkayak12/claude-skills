@@ -3,8 +3,8 @@ name: knowledge-query
 effort: high
 description: >-
   Use when answering questions over an existing linked Markdown vault, local
-  SQLite index, ontology, knowledge graph, RAG corpus, or mixed knowledge
-  assets while preserving citations, uncertainty, and retrieval traceability.
+  SQLite index, ontology, knowledge graph, RAG corpus, or mixed knowledge assets
+  while preserving citations, uncertainty, and retrieval traceability.
 scenarios:
   - "이 knowledge base에서 답 찾아줘"
   - "vault랑 graph를 보고 영향 범위 알려줘"

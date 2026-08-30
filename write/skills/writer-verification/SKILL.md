@@ -2,7 +2,7 @@
 name: writer-verification
 description: >-
   Use when existing writing needs reviewing, proofreading, or improvement.
-  Triggers on: "글 검토해줘", "맞춤법 확인", "proofread", "이 문장 자연스러워?", "글 다듬어줘", review
+  Triggers on: "글 검토해줘", "맞춤법 확인", "proofread", "이 문장 자연스러워?", "글 다듬어줘", "review
   my writing", "출판 전에 확인해줘", "표현이 어색한 것 같아", "문법 맞아?", "글 퀄리티 봐줘".
 scenarios:
   - "이 이메일 자연스러워?"

@@ -185,7 +185,7 @@ When agents return:
 
 ## Related
 
-- `agents:task-decomposition` — split one big job into the independent pieces this
+- `agents:agent-task-decomposer` — split one big job into the independent pieces this
   skill then fans out.
 - `completion:verification-before-completion` — the gather-step gate: settle "done"
   with isolated fresh evidence, not agent self-reports.

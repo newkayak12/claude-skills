@@ -4,7 +4,7 @@ description: >-
   Use when tests pass locally but fail in CI, pass some runs and fail others, or
   someone suspects a test is unreliable but cannot reproduce the failure
   consistently. Diagnoses root causes and provides concrete fixes. Triggers on:
-  "flaky test",
+  "flaky test".
 scenarios:
   - "Our tests pass locally but randomly fail in CI — I need to fix these flaky tests"
   - "Help me diagnose why this test fails intermittently with a race condition"

@@ -5,7 +5,7 @@ description: >-
   Use when someone needs a structured interview preparation plan before their
   interview process begins — a study schedule, gap analysis by topic area, and
   STAR story bank. This is planning, not practice. Triggers on: "interview prep
-  plan", "how to
+  plan".
 scenarios:
   - "I have 8 weeks until my Google interview — give me a structured prep plan"
   - "I'm preparing for Kakao backend engineer interviews — what should I study?"

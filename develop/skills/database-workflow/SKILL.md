@@ -4,7 +4,7 @@ description: >-
   Use when investigating database performance degradation end-to-end — from
   query quality through server tuning, connection layer, and transaction safety.
   Triggers on: "database workflow", "DB 성능 전체", "database performance
-  investigation", DB 전체 점검",
+  investigation", "DB 전체 점검".
 type: workflow
 theme: engineering
 scenarios:

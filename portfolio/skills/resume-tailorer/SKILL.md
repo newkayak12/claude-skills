@@ -4,8 +4,7 @@ effort: high
 description: >-
   Use when someone has a resume and a specific job description and wants the
   resume rewritten to match that JD — keyword alignment, achievement reframing,
-  and skills reordering. Triggers on: "이력서 맞춰줘", "공고에 맞게 고쳐줘", "이력서 최적화",
-  "tailor my resume to
+  and skills reordering. Triggers on: "이력서 맞춰줘", "공고에 맞게 고쳐줘", "이력서 최적화".
 scenarios:
   - "Tailor my resume to match this job description — keyword alignment and achievement reframing"
   - "Rewrite my resume summary and experience bullets to fit this JD"

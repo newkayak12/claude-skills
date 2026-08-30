@@ -4,7 +4,7 @@ description: >-
   Use when someone wants to run the full IC growth cycle or the full manager
   development cycle — from understanding level expectations through to
   high-quality growth conversations. Triggers on: "IC growth cycle", "manager
-  development cycle",
+  development cycle".
 type: workflow
 theme: engineering-leadership
 scenarios:

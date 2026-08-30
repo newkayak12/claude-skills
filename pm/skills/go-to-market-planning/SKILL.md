@@ -5,7 +5,7 @@ description: >-
   Use when a product or feature is near-complete and the team needs to answer:
   who do we target first, what do we say, where do we reach them, and how do we
   know the launch succeeded? Triggers on: "GTM plan", "launch strategy", "출시
-  전략", 론칭 계획", "how
+  전략", "론칭 계획".
 type: workflow
 theme: pm-strategy
 best_for:

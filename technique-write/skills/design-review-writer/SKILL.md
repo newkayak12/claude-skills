@@ -3,8 +3,8 @@ name: design-review-writer
 effort: high
 description: >-
   Use when drafting a Design Review for a new feature or system. Triggers:
-  "design review 써줘", "디자인 리뷰 문서", "RFC 초안", "write a design review",
-  "이 기능 설계 같이 잡자". Fixed 8-section template.
+  "design review 써줘", "디자인 리뷰 문서", "RFC 초안", "write a design review", "이 기능 설계
+  같이 잡자". Fixed 8-section template.
 scenarios:
   - "결제 모듈 새로 만드는데 design review 같이 작성하자"
   - "알림 시스템 디자인 리뷰 초안 잡아줘"

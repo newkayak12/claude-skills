@@ -4,7 +4,7 @@ description: >-
   Use when someone wants to design their life or work more intentionally — by
   finding what creates deep engagement (flow) or getting clearer on what to
   eliminate (anti-goals). Triggers on: "몰입", "flow", "하기 싫은 것", "anti-goal",
-  "원하지 않는 것", "몰입 조건", 삶
+  "원하지 않는 것", "몰입 조건".
 
 scenarios:
   - "Design my ideal work conditions"

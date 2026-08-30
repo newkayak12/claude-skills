@@ -2,9 +2,9 @@
 name: test-driven-development
 effort: high
 description: >-
-  Use when someone wants tests that prove a fix or feature actually works,
-  not just tests that happen to pass — TDD, red-green-refactor, falsifiable
-  tests. Triggers: "TDD", "테스트 먼저 작성", "test-first", "red-green-refactor".
+  Use when someone wants tests that prove a fix or feature actually works, not
+  just tests that happen to pass — TDD, red-green-refactor, falsifiable tests.
+  Triggers: "TDD", "테스트 먼저 작성", "test-first", "red-green-refactor".
 references:
   - references/testing-anti-patterns.md
 scenarios:

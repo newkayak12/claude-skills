@@ -2,8 +2,8 @@
 name: ppt-keycolor-changer
 description: >-
   Use when the user wants to change, swap, or replace colors in a PPTX/PPT file.
-  Also triggers on: PPT 키컬러 변경, 슬라이드 색상 교체, 브랜드 컬러로 교체, 색상 일괄 변경,
-  ppt keycolor, 키컬러 교체, 브랜드 적용, 색상 전체 바꿔줘, 색상 스캔해줘, 팔레트 교체.
+  Also triggers on: PPT 키컬러 변경, 슬라이드 색상 교체, 브랜드 컬러로 교체, 색상 일괄 변경, ppt keycolor,
+  키컬러 교체, 브랜드 적용, 색상 전체 바꿔줘, 색상 스캔해줘, 팔레트 교체.
 effort: medium
 scenarios:
   - "이 PPT에서 오렌지 계열 색을 전부 토스 파란색으로 바꿔줘"

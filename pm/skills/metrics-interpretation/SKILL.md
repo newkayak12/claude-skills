@@ -3,8 +3,8 @@ name: metrics-interpretation
 description: >-
   Use when a number moved unexpectedly and you need to understand why before
   deciding what to do. Triggers on: "지표가 떨어졌어", "retention 하락", "conversion
-  drop", A/B test 결과 해석", "KPI 이상", "metrics dropped", "why did this metric
-  change", dashboard 분석해줘".
+  drop", "A/B test 결과 해석", "KPI 이상", "metrics dropped", "why did this metric
+  change", "dashboard 분석해줘".
 type: workflow
 theme: pm-data
 best_for:

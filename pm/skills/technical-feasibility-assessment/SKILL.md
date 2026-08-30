@@ -5,7 +5,7 @@ description: >-
   Use when a PM or product team needs a rapid feasibility signal on a feature
   idea before committing engineering time — assessing implementation risk,
   complexity, and make-vs-buy tradeoffs without full engineering involvement.
-  Triggers on: "technical
+  Triggers on:.
 license: MIT
 metadata:
   author: wondelai

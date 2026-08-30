@@ -3,8 +3,8 @@ name: deep-thinking-workflow
 description: >-
   Use when you need to think through a complex problem systematically —
   generating ideas, stress-testing them, and converging on a decision. Triggers
-  on: "think workflow", "깊이 있게 생각해보자", "아이디어를 체계적으로 검토", structured thinking",
-  "체계적 사고 프로세스", "idea to
+  on: "think workflow", "깊이 있게 생각해보자", "아이디어를 체계적으로 검토", "structured thinking",
+  "체계적 사고 프로세스".
 type: workflow
 theme: thinking
 scenarios:

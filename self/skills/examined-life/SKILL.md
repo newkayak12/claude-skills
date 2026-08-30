@@ -4,7 +4,7 @@ description: >-
   Use when someone wants to look at their life from a distance — not a specific
   decision, but the whole shape of it. Especially suited to life transitions,
   major milestones, or the feeling of running on autopilot. Triggers on: "삶을
-  돌아보고 싶어", "내 인생을
+  돌아보고 싶어".
 
 scenarios:
   - "I feel like I've been on autopilot for years"

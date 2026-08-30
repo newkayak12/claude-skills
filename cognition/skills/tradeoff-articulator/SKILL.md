@@ -4,7 +4,7 @@ description: >-
   Use when someone is weighing options or making a decision where something is
   being given up. Makes the cost structure of each option explicit — including
   hidden axes — without picking a winner. Triggers on: "tradeoff", "트레이드오프",
-  "장단점", "pros and
+  "장단점".
 
 scenarios:
   - "Map out the tradeoffs between these two approaches"

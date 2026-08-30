@@ -4,8 +4,8 @@ effort: high
 description: >-
   Use when turning scattered discovery notes, Slack threads, or stakeholder
   requests into a structured PRD that engineers can act on. Triggers on: "PRD
-  작성", "기획서", 제품 요구사항 문서", "write a PRD", "product requirements document",
-  "engineering handoff", "I
+  작성", "기획서", "제품 요구사항 문서", "write a PRD", "product requirements document",
+  "engineering handoff".
 intent: >-
   Guide product managers through structured PRD creation by orchestrating problem
   framing, user research synthesis, solution definition, and success criteria into a

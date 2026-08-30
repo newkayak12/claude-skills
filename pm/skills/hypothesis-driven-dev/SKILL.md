@@ -4,8 +4,8 @@ effort: high
 description: >-
   Use when testing a product idea before committing to building it, or when a
   team needs to validate a key assumption with the smallest possible experiment.
-  Triggers on: "hypothesis", "experiment design", "가설 검증", "실험 설계", 최소 테스트",
-  "fake door test",
+  Triggers on: "hypothesis", "experiment design", "가설 검증", "실험 설계", "최소 테스트",
+  "fake door test".
 license: MIT
 metadata:
   author: wondelai

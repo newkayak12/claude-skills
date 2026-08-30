@@ -5,7 +5,7 @@ description: >-
   Use when an individual contributor wants to get more value from 1-on-1s with
   their manager — preparing agendas, driving career conversations, surfacing
   blockers, and giving upward feedback. Triggers on: "1-on-1 prep", "how to use
-  my 1-on-1 better",
+  my 1-on-1 better".
 license: MIT
 metadata:
   author: wondelai

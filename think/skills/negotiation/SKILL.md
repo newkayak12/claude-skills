@@ -4,7 +4,7 @@ effort: max
 description: >-
   Use when someone needs to negotiate, persuade, or navigate a hard
   conversation. Triggers on: "연봉 협상", "salary negotiation", "계약 협상", "거절당했어",
-  "설득해야 해", 협상 준비", "ask for a raise", "contract terms", "클라이언트 설득", "상사한테 어떻게
+  "설득해야 해", "협상 준비", "ask for a raise", "contract terms", "클라이언트 설득", "상사한테 어떻게
   말해".
 scenarios:
   - "연봉 협상을 해야 하는데 어떻게 접근해야 해?"

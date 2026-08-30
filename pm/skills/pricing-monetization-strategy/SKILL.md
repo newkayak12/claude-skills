@@ -5,7 +5,7 @@ description: >-
   Use when deciding how to charge for a product, evaluating a shift from one
   pricing model to another, or when a GTM plan needs pricing addressed before
   launch. Triggers on: "가격 전략", "요금제 설계", "pricing model", "freemium vs free
-  trial", usage-based
+  trial".
 type: workflow
 theme: pm-strategy
 best_for:

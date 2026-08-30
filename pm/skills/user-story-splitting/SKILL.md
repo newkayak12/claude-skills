@@ -5,7 +5,7 @@ description: >-
   Use when a user story, epic, or feature is too large to estimate, sequence, or
   release independently — breaking it into smaller, independently deliverable
   stories using proven split patterns. Triggers on: "split this story", "story
-  is too big",
+  is too big".
 type: component
 scenarios:
   - "This user story is too big for one sprint — help me split it using splitting patterns"

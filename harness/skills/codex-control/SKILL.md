@@ -1,8 +1,8 @@
 ---
 name: codex-control
 description: >-
-  Use when a harness stage must delegate Implement or Test work to local Codex CLI
-  from plugin, repo-local, or embedded installs.
+  Use when a harness stage must delegate Implement or Test work to local Codex
+  CLI from plugin, repo-local, or embedded installs.
 scenarios:
   - "Harness Implement stage needs to run Codex from plugin mode"
   - "Harness Test stage needs a Codex verification-only pass"

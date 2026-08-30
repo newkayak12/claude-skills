@@ -4,7 +4,7 @@ description: >-
   Use when someone is confused about a recurring relationship pattern,
   struggling with closeness or distance, or asking why certain dynamics keep
   repeating across relationships. Triggers on: "애착 유형", "attachment style", "불안
-  애착", "회피 애착", "관계 패턴", 왜 이런
+  애착", "회피 애착", "관계 패턴".
 
 scenarios:
   - "Why do I keep ending up in the same relationship dynamic?"

@@ -4,7 +4,7 @@ description: >-
   Use when a slow or failing downstream service is causing upstream latency,
   thread exhaustion, or outages — and you need to configure or tune circuit
   breakers, bulkheads, timeouts, and fallbacks to prevent cascading failures.
-  Triggers on: "circuit
+  Triggers on:.
 scenarios:
   - "Our circuit breaker is tripping too often and causing unnecessary service disruptions"
   - "Help me tune the circuit breaker thresholds for our payment service"

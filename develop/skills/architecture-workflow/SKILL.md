@@ -3,8 +3,7 @@ name: architecture-workflow
 description: >-
   Use when designing a system from scratch, evaluating a monolith-to-MSA
   migration, or needing a structured end-to-end architecture process from domain
-  discovery to documentation. Triggers on: "system architecture from scratch",
-  "architecture
+  discovery to documentation. Triggers on: "system architecture from scratch".
 type: workflow
 theme: architecture
 scenarios:

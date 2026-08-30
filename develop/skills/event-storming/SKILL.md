@@ -4,7 +4,7 @@ description: >-
   Use when someone is starting a new product, untangling a legacy system,
   mapping how a business process actually works, or asking where to begin domain
   modeling — even if they do not name Event Storming explicitly. Triggers on:
-  "domain modeling",
+  "domain modeling".
 scenarios:
   - "We're starting a new product and need to model the domain before writing code"
   - "Help me run an event storming workshop to discover bounded contexts"

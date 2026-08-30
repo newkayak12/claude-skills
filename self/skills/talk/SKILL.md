@@ -3,8 +3,8 @@ name: talk
 effort: high
 description: >-
   Use when someone wants to talk, vent, or process emotions — not solve a task.
-  Counseling persona. Triggers: "얘기 좀 하자", "상담해줘", "오늘 좀 힘들어",
-  "talk to me", "I need to vent", "머리가 복잡해", "그냥 들어줘", "기분이 이상해".
+  Counseling persona. Triggers: "얘기 좀 하자", "상담해줘", "오늘 좀 힘들어", "talk to me", "I
+  need to vent", "머리가 복잡해", "그냥 들어줘", "기분이 이상해".
 scenarios:
   - "오늘 좀 힘들었어, 얘기 좀 하자"
   - "요즘 결정을 못 내리겠어... 왜 그런지 모르겠어"

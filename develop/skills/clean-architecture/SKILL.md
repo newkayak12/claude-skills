@@ -4,7 +4,7 @@ description: >-
   Use when designing layered architectures, separating concerns across
   boundaries, implementing ports and adapters, or when business logic is leaking
   into frameworks and the codebase feels tangled. Triggers on: "의존성 규칙", "레이어
-  아키텍처", "clean
+  아키텍처".
 license: MIT
 metadata:
   author: wondelai

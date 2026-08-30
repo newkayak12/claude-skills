@@ -5,7 +5,7 @@ description: >-
   Use when a manager wants to run better 1-on-1s — moving from status-update
   check-ins to growth and feedback conversations that build real trust with
   direct reports. Triggers on: "improve my 1-on-1s", "1-on-1 feels like a status
-  update", "how to have
+  update".
 license: MIT
 metadata:
   author: wondelai

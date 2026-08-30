@@ -4,7 +4,7 @@ effort: high
 description: >-
   Use when product goals or competing initiatives need to become a sequenced,
   stakeholder-ready roadmap. Triggers on: "로드맵 만들어줘", "분기 계획", "roadmap
-  planning", "이니셔티브 우선순위 정해줘", feature list를 outcome 기반으로 바꿔줘", "Q2 로드맵", "분기별
+  planning", "이니셔티브 우선순위 정해줘", "feature list를 outcome 기반으로 바꿔줘", "Q2 로드맵", "분기별
   계획 세워줘", "이해관계자 정렬".
 scenarios:
   - "경쟁 이니셔티브 15개가 있는데 Q2 로드맵 만들어줘"
@@ -59,14 +59,14 @@ For roadmap type descriptions (Now/Next/Later, Theme-Based, Timeline, Feature-Li
 
 ### When NOT to Use This
 - For tactical sprint planning (use backlog instead)
-- When strategy is unclear (run product-strategy-session first)
+- When strategy is unclear (run `pm:pm-strategy-workflow` first)
 - When stakeholders expect date commitments (address expectations first)
 
 ---
 
 ### Facilitation Source of Truth
 
-When running this workflow as a guided conversation, use [`workshop-facilitation`](../workshop-facilitation/SKILL.md) as the interaction protocol and delegate to [`agents/roadmap-coordinator.md`](./agents/roadmap-coordinator.md) for entry mode selection, Phase 1 intake question sequence, sub-skill handoff triggers, and loop-back conditions.
+When running this workflow as a guided conversation, run it as a facilitated conversation (one phase at a time, confirm before moving on) and delegate to [`agents/roadmap-coordinator.md`](./agents/roadmap-coordinator.md) for entry mode selection, Phase 1 intake question sequence, sub-skill handoff triggers, and loop-back conditions.
 
 ---
 
@@ -92,7 +92,7 @@ The four input-gathering activities below are fully independent — collect them
 
 **2. Review Customer Problems (Discovery Insights)**
 - **Source:** Discovery interviews, support tickets, NPS feedback, churn surveys
-- **Use:** Insights from `skills/discovery-process/SKILL.md` (if recently completed)
+- **Use:** Insights from `pm:product-discovery` or `pm:customer-research-synthesis` (if recently completed)
 - **Output:** 3-5 validated customer problems
 
 **3. Review Technical Constraints & Opportunities**
@@ -119,7 +119,7 @@ The four input-gathering activities below are fully independent — collect them
 ### Activities
 
 **1. Define Epic Hypotheses**
-- **Use:** `skills/epic-hypothesis/SKILL.md` (component)
+- **Use:** `pm:hypothesis-driven-dev` (hypothesis form)
 - **Format:** "We believe that [building X] for [persona] will achieve [outcome] because [assumption]."
 - **Output:** 10-15 epic hypotheses
 
@@ -149,7 +149,7 @@ The four input-gathering activities below are fully independent — collect them
 ### Activities
 
 **1. Choose Prioritization Framework**
-- **Use:** `skills/prioritization-advisor/SKILL.md` (interactive)
+- **Use:** `pm:feature-prioritization` (interactive)
 - **Output:** Recommended framework (RICE, ICE, Value/Effort, etc.)
 
 **2. Score Epics**

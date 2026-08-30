@@ -4,7 +4,7 @@ effort: max
 description: >-
   Use when starting a substantial written artifact that will be read by others.
   Triggers on: "문서 같이 써줘", "PRD 작성", "design doc", "RFC 초안", "제안서 써야 해",
-  technical spec", "decision doc", "write a doc", "문서 작성 도와줘", "spec 써줘".
+  "technical spec", "decision doc", "write a doc", "문서 작성 도와줘", "spec 써줘".
 scenarios:
   - "API 설계 문서 같이 써줘"
   - "이 기능에 대한 PRD 작성해야 해"

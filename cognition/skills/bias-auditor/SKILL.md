@@ -3,8 +3,8 @@ name: bias-auditor
 description: >-
   Use when evaluating a person or making a decision with high confidence —
   audits judgment / attribution / metacognition layers and prescribes per-bias
-  remedies. Triggers on: "편향 점검", "내 판단 비뚤어진 것 같아", "audit my reasoning",
-  "bias check", "확신이 과한 것 같아".
+  remedies. Triggers on: "편향 점검", "내 판단 비뚤어진 것 같아", "audit my reasoning", "bias
+  check", "확신이 과한 것 같아".
 scenarios:
   - "Am I being biased in how I see this situation?"
   - "Why do I keep jumping to this conclusion?"

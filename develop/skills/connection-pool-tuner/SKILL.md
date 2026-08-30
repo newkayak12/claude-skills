@@ -4,7 +4,6 @@ description: >-
   Use when an application shows intermittent database connection failures, API
   latency that spikes under traffic, or pool exhaustion errors — and you need to
   diagnose and tune connection pool settings (HikariCP, pgBouncer, or similar).
-  Triggers on:
 scenarios:
   - "Our application is getting 'connection pool exhausted' errors under load"
   - "Help me tune HikariCP settings for a Spring Boot service with 500 concurrent users"

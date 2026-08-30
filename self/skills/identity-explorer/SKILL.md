@@ -1,7 +1,7 @@
 ---
 name: identity-explorer
 description: >-
-  Use when someone is questioning who they are, feeling unlike themselves, or
+  Use when someone is questioning who they are, feeling unlike themselves, "or
   going through a period of identity confusion or crisis. Also triggers when
   someone resists change with that's not like me" — which often signals
   identity-protective...

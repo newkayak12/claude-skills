@@ -2,9 +2,9 @@
 name: executing-plans
 description: >-
   Use when a written implementation plan is about to be run — critically review
-  it, set each step's pass bar, then route to the right executor. Triggers:
-  "계획 실행해줘", "plan 실행", "이 계획 검토하고 진행", "execute this plan", "plan 리뷰하고 가자",
-  "실행 전에 기준 잡아줘".
+  it, set each step's pass bar, then route to the right executor. Triggers: "계획
+  실행해줘", "plan 실행", "이 계획 검토하고 진행", "execute this plan", "plan 리뷰하고 가자", "실행 전에
+  기준 잡아줘".
 scenarios:
   - "이 구현 계획 그대로 진행해도 될지 보고 실행 붙여줘"
   - "Plan 파일 있는데 실행 전에 검토하고 기준 잡아줘"

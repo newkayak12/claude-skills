@@ -1,9 +1,9 @@
 ---
 name: skill-quality-assurance
 description: >-
-  Use when reviewing or quality-checking a skill before shipping. Runs 6
-  checks: usefulness, authoring, structure, MCP, weight, output quality.
-  Triggers on: 스킬 검토, skill review, validate skill, 배포 전 검토.
+  Use when reviewing or quality-checking a skill before shipping. Runs 6 checks:
+  usefulness, authoring, structure, MCP, weight, output quality. Triggers on: 스킬
+  검토, skill review, validate skill, 배포 전 검토.
 scenarios:
   - "Review my skill — is it well-designed and ready to ship?"
   - "Is this SKILL.md too heavy? Should I split it?"

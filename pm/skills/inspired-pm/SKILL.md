@@ -4,8 +4,8 @@ effort: high
 description: >-
   Use when applying Marty Cagan's empowered product team model — continuous
   discovery, outcome ownership, four-risk validation before delivery. Triggers
-  on: "Marty Cagan", empowered team", "continuous discovery", "discovery vs
-  delivery", "outcome not
+  on: "Marty Cagan", "empowered team", "continuous discovery", "discovery vs
+  delivery".
 license: MIT
 metadata:
   author: wondelai

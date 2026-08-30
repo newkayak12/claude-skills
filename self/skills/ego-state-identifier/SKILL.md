@@ -4,7 +4,7 @@ description: >-
   Use when someone is confused about why they reacted the way they did —
   especially when it felt automatic, disproportionate, childlike, or like they
   heard a parental voice in their head. Triggers on: "왜 이렇게 반응했지", "자동으로 나왔어",
-  "어린애처럼 굴었어", "부모님 목소리
+  "어린애처럼 굴었어".
 
 scenarios:
   - "Why did I react so disproportionately to that feedback?"

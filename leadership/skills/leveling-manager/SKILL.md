@@ -5,7 +5,7 @@ description: >-
   Use when an engineering manager needs to evaluate an engineer's level fairly,
   build a promotion case with evidence, or align with peers in a calibration
   conversation. Triggers on: "write a promotion case", "calibration prep",
-  "level rubric design",
+  "level rubric design".
 license: MIT
 metadata:
   author: wondelai

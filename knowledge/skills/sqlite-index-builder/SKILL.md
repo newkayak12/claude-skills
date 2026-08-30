@@ -1,9 +1,9 @@
 ---
 name: sqlite-index-builder
 description: >-
-  Use when building, rebuilding, refreshing, or syncing a local SQLite
-  knowledge index from canonical Markdown plus catalog, RAG, and graph JSONL;
-  not for querying an existing index or creating source artifacts.
+  Use when building, rebuilding, refreshing, or syncing a local SQLite knowledge
+  index from canonical Markdown plus catalog, RAG, and graph JSONL; not for
+  querying an existing index or creating source artifacts.
 scenarios:
   - "MD와 JSONL graph를 SQLite로 sync해줘"
   - "이 knowledge vault의 SQLite index를 rebuild해줘"

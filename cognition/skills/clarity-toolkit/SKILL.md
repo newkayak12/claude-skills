@@ -4,7 +4,7 @@ description: >-
   Use when someone is overwhelmed by information, stuck in vague thinking, or
   spinning in analysis without moving forward. Three modes: cut signal from
   noise, eliminate vague language, and break overthinking loops. Triggers on:
-  "overwhelmed", "too
+  "overwhelmed".
 
 scenarios:
   - "I have too much data and can't figure out what matters"
