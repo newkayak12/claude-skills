@@ -17,6 +17,7 @@ import {
   graphNeighbors,
   handleMcpMessage,
   indexStatus,
+  listDocuments,
   parseArgs,
   searchIndex,
 } from './sqlite-knowledge.mjs';
@@ -526,4 +527,56 @@ test('leaves ordering untouched in a vault that declares no relation notes', asy
   assert.equal(found.relation_promotions, 0);
   assert.deepEqual(found.relation_promoted_ids, []);
   assert.deepEqual(found.results.map((item) => item.relation_promoted), [0, 0]);
+}));
+
+test('keeps one result per note so chunks do not crowd out sibling notes', async () => fixture(async (root) => {
+  // A multi-note question needs its siblings in the top k; without grouping,
+  // one heavily chunked note fills the slots with copies of itself.
+  const notes = [];
+  const chunks = [];
+  ['ledger', 'status', 'change'].forEach((name) => {
+    write(join(root, 'notes', `stock-${name}.md`), `# 재고 ${name} 표\n\n재고 집계 기준 설명.\n`);
+    notes.push({ id: `stock-${name}`, path: `notes/stock-${name}.md`, title: `재고 ${name} 표`, user_terms: ['재고 집계'] });
+  });
+  for (let index = 0; index < 12; index += 1) {
+    chunks.push({ id: `ledger-c${index}`, note_id: 'stock-ledger', text: `재고 집계 기준 세부 ${index}. 재고 집계 재고 집계.`, source_ref: `notes/stock-ledger.md#${index}` });
+  }
+  write(join(root, '_knowledge', 'catalog.jsonl'), jsonl(notes));
+  write(join(root, '_rag', 'chunks.jsonl'), jsonl(chunks));
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+
+  const grouped = await searchIndex(root, '재고 집계', { limit: 5 });
+  assert.equal(grouped.group, 'note');
+  assert.equal(grouped.distinct_notes, 3);
+  const noteIds = new Set(grouped.results.map((item) => item.note_id));
+  assert.ok(['stock-ledger', 'stock-status', 'stock-change'].every((id) => noteIds.has(id)), `missing siblings: ${[...noteIds].join(', ')}`);
+
+  const raw = await searchIndex(root, '재고 집계', { limit: 5, group: 'none' });
+  assert.ok(raw.distinct_notes < raw.results.length, 'ungrouped results should repeat a note across chunks');
+}));
+
+test('filters search and list by domain, doc_type, section, and path prefix', async () => fixture(async (root) => {
+  write(join(root, 'notes', 'a.md'), '# 상품 정책 A\n\n상품 등록 규칙.\n');
+  write(join(root, 'notes', 'b.md'), '# 상품 사건 B\n\n상품 장애 기록.\n');
+  write(join(root, '_knowledge', 'catalog.jsonl'), jsonl([
+    { id: 'a', path: 'notes/a.md', title: '상품 정책 A', domain: 'goods', doc_type: '정책' },
+    { id: 'b', path: 'notes/b.md', title: '상품 사건 B', domain: 'goods', doc_type: '사건' },
+  ]));
+  write(join(root, '_rag', 'chunks.jsonl'), jsonl([
+    { id: 'a-claim', note_id: 'a', text: '상품 코드가 아니라 표시명을 키로 쓴다.', source_ref: 'notes/a.md#claim', metadata: { section: '주장', doc_type: '정책', domain: 'goods' } },
+  ]));
+  await buildIndex(root, { provider: 'hash', dimensions: 64 });
+
+  const policy = await searchIndex(root, '상품', { docType: '정책', group: 'none' });
+  assert.deepEqual(policy.results.map((item) => item.id).sort(), ['a', 'a-claim']);
+  const claim = await searchIndex(root, '상품', { section: '주장' });
+  assert.deepEqual(claim.results.map((item) => item.id), ['a-claim']);
+
+  const listed = listDocuments(root, { domain: 'goods', kind: 'note' });
+  assert.deepEqual(listed.results.map((item) => item.id), ['a', 'b']);
+  assert.equal(listed.results[0].doc_type, '정책');
+  assert.throws(() => listDocuments(root, {}), /at least one filter/);
+
+  const status = indexStatus(root);
+  assert.ok(status.filters.metadata_keys_seen.includes('doc_type'));
 }));

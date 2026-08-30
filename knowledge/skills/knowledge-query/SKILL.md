@@ -52,7 +52,8 @@ When the `knowledge-local` MCP tools are connected, use them before scanning JSO
 2. Build or refresh with `knowledge_index` when missing or stale.
 3. Retrieve candidates with `knowledge_search`; use `knowledge_get` for full evidence and `knowledge_neighbors` for relationship questions.
 4. Check the retrieval diagnostics before trusting an empty-looking result. When `lexical_candidates` exceeds `lexical_matches_returned`, or the query used vault vocabulary and `retrieval` is `vector`, the terms exist in the corpus but lost the ranking; re-query with the exact title, alias, or source symbol before grading coverage.
-5. Compose the answer yourself from the returned evidence and cite original `source_ref` or `path` values.
+5. For scoped questions ("every policy note in the goods domain"), use the `domain`, `docType`, `section`, and `pathPrefix` filters on `knowledge_search`, or the CLI `list` command, instead of dropping to SQL. `knowledge_status` reports which metadata keys are filterable.
+6. Compose the answer yourself from the returned evidence and cite original `source_ref` or `path` values.
 
 Read [references/local-sqlite.md](references/local-sqlite.md) for exact MCP routing, embedding modes, CLI, Docker operation, and failure handling. If the MCP server is unavailable, continue with the portable asset discovery below.
 

@@ -65,6 +65,11 @@ function parseArgs(argv) {
     limit: 8,
     k: 10,
     kind: null,
+    domain: null,
+    docType: null,
+    section: null,
+    pathPrefix: null,
+    group: 'note',
   };
 
   while (args.length) {
@@ -83,12 +88,20 @@ function parseArgs(argv) {
     else if (arg === '--limit') options.limit = Number(value());
     else if (arg === '--k') options.k = Number(value());
     else if (arg === '--kind') options.kind = value();
+    else if (arg === '--domain') options.domain = value();
+    else if (arg === '--doc-type') options.docType = value();
+    else if (arg === '--section') options.section = value();
+    else if (arg === '--path-prefix') options.pathPrefix = value();
+    else if (arg === '--group') options.group = value();
     else if (!options.query && ['search', 'neighbors', 'get'].includes(command)) options.query = arg;
     else throw new Error(`Unknown argument: ${arg}`);
   }
 
-  if (!['index', 'search', 'neighbors', 'get', 'status', 'serve', 'eval'].includes(command)) {
+  if (!['index', 'search', 'neighbors', 'get', 'status', 'serve', 'eval', 'list'].includes(command)) {
     throw new Error(`Unknown command: ${command}`);
+  }
+  if (!['note', 'none'].includes(options.group)) {
+    throw new Error('--group must be note or none');
   }
   if (!['hash', 'ollama'].includes(options.provider)) {
     throw new Error(`Unsupported embedding provider: ${options.provider}`);
@@ -721,7 +734,25 @@ const COLUMN_RRF_WEIGHTS = { title: 0.5, terms: 0.35, body: 0.15 };
 // weights cannot separate those tiers: BM25 normalises by the document's total
 // length across all columns, so a long note whose title matches loses to a short
 // note that merely mentions the term. Rank position carries no such scale.
-function ftsRanks(db, table, tokens, kind = null) {
+// Filters read the document row plus the JSON metadata the indexer already
+// stores, so scoped lookups do not require dropping into raw SQL.
+const FILTERABLE_METADATA = { docType: 'doc_type', section: 'section' };
+
+function documentFilter(options = {}, alias = 'd') {
+  const clauses = [];
+  const params = [];
+  if (options.kind) { clauses.push(`${alias}.kind = ?`); params.push(options.kind); }
+  if (options.domain) { clauses.push(`${alias}.domain = ?`); params.push(options.domain); }
+  if (options.pathPrefix) { clauses.push(`${alias}.path LIKE ?`); params.push(`${options.pathPrefix}%`); }
+  for (const [option, key] of Object.entries(FILTERABLE_METADATA)) {
+    if (!options[option]) continue;
+    clauses.push(`(json_extract(${alias}.metadata_json, '$.${key}') = ? OR json_extract(${alias}.metadata_json, '$.metadata.${key}') = ?)`);
+    params.push(options[option], options[option]);
+  }
+  return { sql: clauses.length ? ` AND ${clauses.join(' AND ')}` : '', params };
+}
+
+function ftsRanks(db, table, tokens, filter = { sql: '', params: [] }) {
   const scores = new Map();
   for (const [column, weight] of Object.entries(COLUMN_RRF_WEIGHTS)) {
     const match = columnMatch(column, tokens);
@@ -730,10 +761,10 @@ function ftsRanks(db, table, tokens, kind = null) {
       SELECT d.rowid
       FROM ${table} f
       JOIN documents d ON d.rowid = f.rowid
-      WHERE ${table} MATCH ? ${kind ? 'AND d.kind = ?' : ''}
+      WHERE ${table} MATCH ?${filter.sql}
       ORDER BY bm25(${table})
       LIMIT 200
-    `).all(match, ...(kind ? [kind] : []));
+    `).all(match, ...filter.params);
     rows.forEach((row, index) => {
       const rowid = Number(row.rowid);
       scores.set(rowid, (scores.get(rowid) || 0) + weight / (RRF_K + index + 1));
@@ -793,6 +824,10 @@ function relationRanks(db, lexicalRanks, rowsById) {
   return new Map(promoted.map((item, index) => [item.rowid, { rank: index, matched: item.matched }]));
 }
 
+function noteKey(row) {
+  return row.note_id || `${row.kind}:${row.document_id}`;
+}
+
 // The hash provider is a lexical feature hash, not a trained embedding: its
 // nearest neighbours are noise on short queries, and a long note's vector is
 // diluted enough that it loses to any short note repeating the term. Giving it
@@ -823,8 +858,8 @@ async function searchIndex(inputRoot, query, options = {}) {
     const metadata = readMetadata(db);
     const weights = fusionWeights(metadata.embedding_provider);
     const queryVector = await queryEmbedding(query, metadata, options);
-    const kindClause = options.kind ? ' WHERE kind = ?' : '';
-    const allRows = db.prepare(`SELECT * FROM documents${kindClause}`).all(...(options.kind ? [options.kind] : []));
+    const filter = documentFilter(options);
+    const allRows = db.prepare(`SELECT * FROM documents d WHERE 1 = 1${filter.sql}`).all(...filter.params);
     const rowsById = new Map(allRows.map((row) => [Number(row.rowid), row]));
 
     // Documents with no indexed body cannot be matched on meaning; scoring them
@@ -839,15 +874,15 @@ async function searchIndex(inputRoot, query, options = {}) {
 
     // Word matching is exact, so inflected forms ("재시도한" vs "재시도") miss it.
     // The trigram index recovers those substring hits before fusion.
-    const wordRanks = ftsRanks(db, 'documents_fts', ftsTokens(query), options.kind);
-    const trigramRanks = ftsRanks(db, 'documents_trgm', trigramTokens(query), options.kind);
+    const wordRanks = ftsRanks(db, 'documents_fts', ftsTokens(query), filter);
+    const trigramRanks = ftsRanks(db, 'documents_trgm', trigramTokens(query), filter);
     const lexicalRanks = fuseLexicalRanks(wordRanks, trigramRanks);
     const relationPromotions = relationRanks(db, lexicalRanks, rowsById);
 
     // Fuse over the union of both candidate sets. Ranking only the semantic list
     // would cap how far a lexical match can climb, no matter how exact it is.
     const candidates = new Set([...semanticRanks.keys(), ...lexicalRanks.keys(), ...relationPromotions.keys()]);
-    const results = [...candidates].map((rowid) => {
+    const ranked = [...candidates].map((rowid) => {
       const semanticHit = semanticRanks.get(rowid);
       const lexicalRank = lexicalRanks.get(rowid);
       const promotion = relationPromotions.get(rowid);
@@ -863,7 +898,18 @@ async function searchIndex(inputRoot, query, options = {}) {
           + (RELATION_RRF_WEIGHT * relationRrf),
       };
     }).sort((left, right) => (right.score - left.score)
-      || ((right.semantic ?? -1) - (left.semantic ?? -1))).slice(0, limit);
+      || ((right.semantic ?? -1) - (left.semantic ?? -1)));
+
+    // A note split into chunks would otherwise fill the top slots with itself
+    // and leave no room for the sibling notes a multi-note question needs.
+    const seen = new Set();
+    const grouped = options.group === 'none' ? ranked : ranked.filter((item) => {
+      const key = noteKey(item.row);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const results = grouped.slice(0, limit);
 
     const lexicalReturned = results.filter((item) => item.lexicalRank !== undefined).length;
     return {
@@ -875,6 +921,9 @@ async function searchIndex(inputRoot, query, options = {}) {
       lexical_word_matches: wordRanks.size,
       lexical_trigram_matches: trigramRanks.size,
       lexical_matches_returned: lexicalReturned,
+      group: options.group === 'none' ? 'none' : 'note',
+      distinct_notes: new Set(results.map((item) => noteKey(item.row))).size,
+      candidates_before_grouping: ranked.length,
       relation_promotions: relationPromotions.size,
       relation_promoted_ids: [...relationPromotions.keys()].map((rowid) => rowsById.get(rowid).document_id),
       fusion_weights: weights,
@@ -946,6 +995,7 @@ async function evalQuestions(inputRoot, options = {}) {
       required_notes: required,
       hit: required.length > 0 && ranks.length === required.length,
       first_rank: firstRank,
+      distinct_notes: found.distinct_notes,
       retrieval: found.retrieval,
       results_returned: found.results.length,
     });
@@ -962,6 +1012,9 @@ async function evalQuestions(inputRoot, options = {}) {
     required_note_ids: requiredTotal,
     required_note_ids_found: requiredFound,
     recall_at_k: requiredTotal ? Number((requiredFound / requiredTotal).toFixed(6)) : 0,
+    mean_distinct_notes: questions.length
+      ? Number((questions.reduce((sum, item) => sum + item.distinct_notes, 0) / questions.length).toFixed(2))
+      : 0,
     mrr: questions.length ? Number((reciprocalSum / questions.length).toFixed(6)) : 0,
     questions,
   };
@@ -1058,6 +1111,33 @@ function graphNeighbors(inputRoot, query, options = {}) {
   }
 }
 
+function listDocuments(inputRoot, options = {}) {
+  const limit = Math.min(500, Math.max(1, Number(options.limit) || 50));
+  const filter = documentFilter(options);
+  if (!filter.params.length) throw new Error('list requires at least one filter: --kind, --domain, --doc-type, --section, or --path-prefix');
+  const { root, database, db } = openIndex(inputRoot, options.db);
+  try {
+    const rows = db.prepare(`
+      SELECT kind, document_id AS id, note_id, path, title, section, domain, metadata_json
+      FROM documents d WHERE 1 = 1${filter.sql}
+      ORDER BY path, rowid
+      LIMIT ?
+    `).all(...filter.params, limit);
+    return {
+      root,
+      database,
+      filters: Object.fromEntries(['kind', 'domain', 'docType', 'section', 'pathPrefix'].filter((key) => options[key]).map((key) => [key, options[key]])),
+      total: rows.length,
+      results: rows.map(({ metadata_json: metadataJson, ...row }) => {
+        const metadata = JSON.parse(metadataJson);
+        return { ...row, doc_type: metadata.doc_type ?? metadata.metadata?.doc_type ?? null };
+      }),
+    };
+  } finally {
+    db.close();
+  }
+}
+
 function indexStatus(inputRoot, options = {}) {
   const root = findKnowledgeRoot(inputRoot);
   const database = resolveDbPath(root, options.db);
@@ -1085,6 +1165,14 @@ function indexStatus(inputRoot, options = {}) {
       metadata,
       counts,
       graph,
+      filters: {
+        column: ['kind', 'domain', 'path-prefix'],
+        metadata: Object.values(FILTERABLE_METADATA),
+        metadata_keys_seen: db.prepare(`
+          SELECT DISTINCT j.key FROM documents, json_each(documents.metadata_json) j
+          WHERE j.type NOT IN ('object', 'array') ORDER BY j.key
+        `).all().map((row) => row.key),
+      },
       bytes: statSync(database).size,
     };
   } finally {
@@ -1115,6 +1203,11 @@ const MCP_TOOLS = [
         query: { type: 'string' },
         limit: { type: 'integer', minimum: 1, maximum: 50, default: 8 },
         kind: { type: 'string', enum: ['note', 'chunk', 'node'] },
+        domain: { type: 'string' },
+        docType: { type: 'string', description: 'Matches metadata doc_type.' },
+        section: { type: 'string', description: 'Matches metadata section.' },
+        pathPrefix: { type: 'string' },
+        group: { type: 'string', enum: ['note', 'none'], default: 'note', description: 'note keeps one best result per note so chunks do not crowd out sibling notes.' },
       },
       additionalProperties: false,
     },
@@ -1261,6 +1354,7 @@ async function main(argv = process.argv.slice(2)) {
   else if (options.command === 'get') result = getDocument(root, options.query, options);
   else if (options.command === 'status') result = indexStatus(root, options);
   else if (options.command === 'eval') result = await evalQuestions(root, options);
+  else if (options.command === 'list') result = listDocuments(root, options);
   else if (options.command === 'serve') {
     await serveMcp({ root, db: options.db });
     return;
@@ -1288,6 +1382,7 @@ export {
   handleMcpMessage,
   hashEmbedding,
   indexStatus,
+  listDocuments,
   parseArgs,
   searchIndex,
   serveMcp,

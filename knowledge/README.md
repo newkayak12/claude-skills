@@ -201,13 +201,16 @@ Retrieval is **rank-fused, lexical-first**:
    ("재시도" finds "재시도한").
 3. Relation notes are promoted when the query matches two or more of their declared
    `participants` — declared participants only, never co-occurrence.
-4. The default `hash` embedding is a dependency-free lexical feature hash, **not** a semantic
+4. Results are grouped one-per-note by default (`group: none` to see every chunk), so a heavily
+   chunked note cannot crowd sibling notes out of the top *k*. `domain`, `docType`, `section`, and
+   `pathPrefix` filters — and a query-less `list` command — cover scoped lookups without SQL.
+5. The default `hash` embedding is a dependency-free lexical feature hash, **not** a semantic
    model. It carries no ranking weight when any lexical match exists and only orders the fallback
    when nothing matches. Results report `embedding_quality: lexical-baseline` so this is never
    mistaken for semantic search.
 
 Every search result carries diagnostics — `lexical_candidates`, `lexical_word_matches`,
-`lexical_trigram_matches`, `lexical_matches_returned`, `relation_promotions` — so a ranking miss
+`lexical_trigram_matches`, `lexical_matches_returned`, `relation_promotions`, `distinct_notes` — so a ranking miss
 is visible instead of looking like an empty vault.
 
 ### Runtime
@@ -441,12 +444,15 @@ Missing knowledge:
    "재시도한"을 찾음).
 3. 질의가 관계 노트의 선언된 `participants` 중 둘 이상과 매칭되면 그 관계 노트를 승격합니다.
    선언된 참여자만, 동시 출현은 근거가 아닙니다.
-4. 기본 `hash` 임베딩은 의존성 없는 어휘 특징 해시이지 의미 모델이 **아닙니다**. lexical
+4. 결과는 기본적으로 노트당 1건으로 묶입니다(`group: none`이면 청크 전부). 청크가 많은
+   노트 하나가 형제 노트를 top-*k*에서 밀어내지 못합니다. `domain`·`docType`·`section`·
+   `pathPrefix` 필터와 질의어 없는 `list` 커맨드로 SQL 없이 범위 조회가 됩니다.
+5. 기본 `hash` 임베딩은 의존성 없는 어휘 특징 해시이지 의미 모델이 **아닙니다**. lexical
    매칭이 하나라도 있으면 랭킹에 관여하지 않고, 아무것도 안 걸릴 때 폴백만 정렬합니다.
    결과에 `embedding_quality: lexical-baseline`이 찍혀 의미 검색으로 오해할 일이 없습니다.
 
 모든 검색 결과에 진단 필드가 붙습니다 — `lexical_candidates`, `lexical_word_matches`,
-`lexical_trigram_matches`, `lexical_matches_returned`, `relation_promotions` — 그래서 랭킹
+`lexical_trigram_matches`, `lexical_matches_returned`, `relation_promotions`, `distinct_notes` — 그래서 랭킹
 실패가 빈 볼트처럼 보이지 않고 눈에 띕니다.
 
 ### 런타임

@@ -43,6 +43,25 @@ Every search result carries the fields needed to judge whether retrieval actuall
 | `lexical_matches_returned` | How many returned results were lexical matches |
 | `embedding_quality` | `lexical-baseline` for `hash`, `semantic` for `ollama` |
 | `fusion_weights` | The semantic/lexical weighting applied for this provider |
+| `group` / `distinct_notes` | `note` keeps one best result per note; `distinct_notes` counts notes in the returned set |
+| `candidates_before_grouping` | Ranked candidates before per-note grouping and the limit |
+
+## Grouping and Filters
+
+Results are grouped **one per note** by default: a heavily chunked note would otherwise fill the
+top slots with its own chunks and leave no room for the sibling notes a multi-note question needs.
+Pass `--group none` (MCP: `group: "none"`) to see every chunk.
+
+Scoped lookups use the metadata the indexer already stores, so no raw SQL is needed:
+
+```bash
+sqlite-knowledge search "상품" --domain goods --doc-type 정책 --section 주장 --path-prefix wms/goods
+sqlite-knowledge list --domain goods --doc-type 정책          # no query, filters only
+sqlite-knowledge status                                       # lists filterable metadata keys
+```
+
+`--doc-type` and `--section` match `doc_type` / `section` at the record's top level or under
+`metadata`. `list` requires at least one filter and orders by path.
 
 `lexical_candidates` far above `lexical_matches_returned`, or `retrieval: vector` on a query using
 vault vocabulary, means the terms exist in the corpus but did not survive ranking. Re-query with the
@@ -77,6 +96,7 @@ node --no-warnings knowledge/scripts/sqlite-knowledge.mjs search "결제 실패 
 node --no-warnings knowledge/scripts/sqlite-knowledge.mjs neighbors PaymentService --root /path/to/vault
 node --no-warnings knowledge/scripts/sqlite-knowledge.mjs status --root /path/to/vault
 node --no-warnings knowledge/scripts/sqlite-knowledge.mjs eval --root /path/to/vault --k 10
+node --no-warnings knowledge/scripts/sqlite-knowledge.mjs list --root /path/to/vault --domain wms --doc-type 정책
 ```
 
 `eval` scores the index against the vault's own `_knowledge/questions.jsonl`: for each competency
