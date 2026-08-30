@@ -5,7 +5,7 @@ description: >-
   Use when someone needs to write a single user story or a small set of stories
   — translating a known user need into a structured, development-ready format
   with acceptance criteria. Triggers on: "write a user story", "user story
-  format", "acceptance
+  format".
 type: component
 theme: pm-artifacts
 scenarios:

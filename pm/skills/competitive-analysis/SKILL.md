@@ -5,7 +5,7 @@ description: >-
   Use when making a product or business decision where knowing the competitive
   context changes the answer — before a launch, when writing strategy, or when
   articulating differentiation. Triggers on: "competitor analysis", "competitive
-  landscape", how
+  landscape".
 type: workflow
 theme: pm-strategy
 best_for:

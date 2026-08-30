@@ -4,7 +4,7 @@ description: >-
   Use when someone wants to practice defending their work in a realistic mock
   interview — the interviewer asks questions grounded in the actual portfolio,
   evaluates answers, and gives coaching feedback. Triggers on: "모의 면접 해줘", "인터뷰
-  연습", "면접 준비 같이
+  연습".
 scenarios:
   - "Run a mock interview with me based on my portfolio — use a staff engineer persona"
   - "Ask me tough questions about my system design experience from my portfolio"

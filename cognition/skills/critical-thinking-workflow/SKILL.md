@@ -3,7 +3,7 @@ name: critical-thinking-workflow
 description: >-
   Use when stress-testing a high-stakes decision, strategic plan, or argument
   end-to-end. Triggers on: "critical thinking full process", "decision
-  stress-test", "전략 검토 전체", 논리 전체 점검", "high-stakes decision review", "결정 제대로
+  stress-test", "전략 검토 전체", "논리 전체 점검", "high-stakes decision review", "결정 제대로
   검토해줘".
 type: workflow
 theme: critical-thinking

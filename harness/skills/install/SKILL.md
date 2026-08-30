@@ -2,8 +2,8 @@
 name: install
 description: >-
   Use when installing the harness into a project. Triggers on: "하네스 설치해줘", "이
-  프로젝트에 하네스 적용해줘", "harness install", "set up the harness here", "게이트
-  켜줘", "convention 스캐폴딩해줘". Not for running the engine (use the harness skill).
+  프로젝트에 하네스 적용해줘", "harness install", "set up the harness here", "게이트 켜줘",
+  "convention 스캐폴딩해줘". Not for running the engine (use the harness skill).
 scenarios:
   - "이 프로젝트에 하네스 설치하고 게이트 켜줘"
   - "convention 기본셋이랑 하네스 규칙 스캐폴딩해줘"
@@ -13,6 +13,8 @@ compatibility:
   optional: []
 related:
   - harness
+  - remove
+  - patch
 ---
 
 # install — scaffold harness governance into the current project
@@ -121,4 +123,6 @@ plugin-owned copies and commit. In **plugin mode** (no embedding) the only drift
 ## Related
 - `install.mjs` — deterministic file ops (gate/hook/embed/gitignore) this skill invokes
 - `harness` skill — running the six-stage engine
+- `remove` skill — uninstalling project-local harness governance
+- `patch` skill — preparing a synchronized source patch release
 - `hooks/README.md` — gate semantics and accepted holes

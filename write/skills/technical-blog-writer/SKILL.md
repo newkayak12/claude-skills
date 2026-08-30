@@ -3,7 +3,7 @@ name: technical-blog-writer
 description: >-
   Use when writing a technical blog post about something built, fixed, or
   learned. Triggers on: "기술 블로그 써줘", "개발 블로그", "technical blog", "글 쓰고 싶은데 어떻게
-  시작해?", 이 경험 블로그로 쓰고 싶어", "engineering post", "회고 글", "튜토리얼 써줘", "개발 경험 공유".
+  시작해?", "이 경험 블로그로 쓰고 싶어", "engineering post", "회고 글", "튜토리얼 써줘", "개발 경험 공유".
 scenarios:
   - "DB 장애 대응 경험 블로그로 쓰고 싶어"
   - "Kafka 도입 과정을 기술 블로그로 써줘"

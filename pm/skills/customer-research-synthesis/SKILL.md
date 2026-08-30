@@ -3,8 +3,8 @@ name: customer-research-synthesis
 description: >-
   Use when raw qualitative research — interview notes, survey responses, session
   recordings — needs to become structured insights that drive decisions.
-  Triggers on: "인터뷰 정리", "고객 인터뷰 분석", "리서치 결과 정리", "설문 분석", "VOC 정리", UX
-  research synthesis",
+  Triggers on: "인터뷰 정리", "고객 인터뷰 분석", "리서치 결과 정리", "설문 분석", "VOC 정리", "UX
+  research synthesis".
 license: MIT
 metadata:
   author: wondelai

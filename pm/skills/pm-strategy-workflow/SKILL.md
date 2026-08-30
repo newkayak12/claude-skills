@@ -3,8 +3,7 @@ name: pm-strategy-workflow
 description: >-
   Use when you need to run the full PM strategy process end-to-end — from market
   analysis through to stakeholder communication and roadmap delivery. Triggers
-  on: "PM workflow", "제품 전략 전체", "처음부터 GTM까지", "pm process start to finish",
-  product strategy
+  on: "PM workflow", "제품 전략 전체", "처음부터 GTM까지", "pm process start to finish".
 type: workflow
 theme: pm-strategy
 scenarios:

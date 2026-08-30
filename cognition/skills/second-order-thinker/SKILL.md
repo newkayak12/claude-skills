@@ -4,7 +4,6 @@ description: >-
   Use when someone is evaluating a decision, policy, or action and the analysis
   focuses only on the immediate intended outcome. Maps downstream effects across
   five mechanisms and adds the temporal dimension — when effects actually hit.
-  Triggers on:
 
 scenarios:
   - "What are the second-order effects of this decision?"

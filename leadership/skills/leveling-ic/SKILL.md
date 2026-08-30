@@ -5,7 +5,7 @@ description: >-
   Use when an IC wants to understand their current level, close gaps to the next
   level, and build a promotion-ready evidence portfolio. Triggers on: "what does
   senior mean in practice", "how do I get to staff", "promotion conversation
-  with manager",
+  with manager".
 license: MIT
 metadata:
   author: wondelai

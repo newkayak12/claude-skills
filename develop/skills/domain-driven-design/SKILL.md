@@ -4,7 +4,7 @@ description: >-
   Use when aligning code structure with business concepts, designing service
   boundaries, or when domain experts and developers cannot agree on what things
   mean. Triggers on: "도메인 모델링", "바운디드 컨텍스트", "DDD", "domain-driven design",
-  "bounded context",
+  "bounded context".
 license: MIT
 metadata:
   author: wondelai

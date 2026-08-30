@@ -5,7 +5,7 @@ description: >-
   Use when defining team or company goals for a quarter, aligning cross-team
   efforts, or when goals exist but progress is unclear and teams are pulling in
   different directions. Triggers on: "OKR 설정", "분기 목표", "quarterly goals", "key
-  results", 목표 정렬",
+  results", "목표 정렬".
 license: MIT
 metadata:
   author: wondelai

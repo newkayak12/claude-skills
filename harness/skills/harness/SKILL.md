@@ -1,10 +1,9 @@
 ---
 name: harness
 description: >-
-  Use when a substantial request needs verified, non-repetitive output.
-  Triggers on: "이거 제대로 해줘", "검증까지 해서", "하네스 돌려줘", "run the harness",
-  "do this properly with verification", "6단계로 처리해줘", "메타스크립트로".
-  Not for trivial edits or Q&A.
+  Use when a substantial request needs verified, non-repetitive output. Triggers
+  on: "이거 제대로 해줘", "검증까지 해서", "하네스 돌려줘", "run the harness", "do this properly
+  with verification", "6단계로 처리해줘", "메타스크립트로". Not for trivial edits or Q&A.
 scenarios:
   - "이거 대충 말고 제대로, 검증까지 해서 처리해줘"
   - "하네스 돌려서 단계별로 검증하고 결과만 보고해줘"
@@ -17,6 +16,9 @@ compatibility:
 related:
   - plan
   - review
+  - install
+  - remove
+  - patch
 ---
 
 # harness — six-stage engine: Plan → SetGoal → Implement → Test → QualityGate → Report
@@ -116,3 +118,5 @@ pre-wiring, and using none of them is a valid run.
 - `harness/templates/meta-skeleton.js` — Mode M starting point (contract + `[META]` block)
 - `harness/templates/` — bespoke-pipeline reference
 - `harness/hooks/` — opt-in PreToolUse gate: projects list gated paths in `.claude/harness-gate.json`; editing them without engaging the harness is denied (fail-open on any ambiguity).
+- `harness/skills/install/` — project scaffolding; `remove/` reverses it and `patch/`
+  prepares synchronized patch-version metadata.

@@ -1,10 +1,10 @@
 ---
 name: render-graph-view
 description: >-
-  Use when rendering a knowledge graph or Graph View dataset as an
-  interactive, Obsidian-inspired standalone HTML visualization. Reads the
-  knowledge plugin's nodes.jsonl and edges.jsonl artifacts; does not extract or
-  invent graph relationships.
+  Use when rendering a knowledge graph or Graph View dataset as an interactive,
+  Obsidian-inspired standalone HTML visualization. Reads the knowledge plugin's
+  nodes.jsonl and edges.jsonl artifacts; does not extract or invent graph
+  relationships.
 scenarios:
   - "현재 graph view를 Obsidian 그래프처럼 HTML로 보여줘"
   - "_graph 데이터를 클릭 가능한 시각화로 렌더링해줘"

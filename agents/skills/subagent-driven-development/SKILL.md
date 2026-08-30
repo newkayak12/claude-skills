@@ -3,7 +3,7 @@ name: subagent-driven-development
 description: >-
   Use when executing an implementation plan with independent tasks using fresh
   subagents per task. Triggers on: "계획 실행해줘", "서브에이전트로 구현해줘", "subagent-driven",
-  "plan 실행", 태스크별로 에이전트 배포해줘", "두 단계 리뷰로 구현", "현재 세션에서 계획 실행".
+  "plan 실행", "태스크별로 에이전트 배포해줘", "두 단계 리뷰로 구현", "현재 세션에서 계획 실행".
 scenarios:
   - "이 구현 계획 서브에이전트로 실행해줘"
   - "각 태스크마다 새 에이전트로 구현하고 리뷰해줘"
@@ -176,3 +176,5 @@ See `references/example-workflow.md` for a full concrete trace. For context on w
 **Finishing:** after the final reviewer passes, close the branch yourself — run the full test suite, commit, then open a PR or merge per the repo's flow — and settle the done-verdict with **`completion:verification-before-completion`**.
 
 **Alternative:** **`planning:executing-plans`** — a separately-gated session instead of same-session subagent execution.
+
+**Harness mode:** `harness:harness` may map this skill as an Implement-subgoal executor. Nothing changes in the loop above; the plan arrives as a SetGoal goal-spec and the final reviewer verdict feeds the harness QualityGate instead of your own done-check. Opt-in per run, never pre-wired.

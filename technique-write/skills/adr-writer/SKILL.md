@@ -4,8 +4,8 @@ effort: high
 description: >-
   Use when capturing an architectural decision as an ADR — after a Design Review
   or from raw context. Triggers: "ADR 써줘", "이 결정 ADR로", "write an ADR",
-  "document this decision". Fixed template; Decision must be declarative
-  ("~를 채택한다").
+  "document this decision". Fixed template; Decision must be declarative ("~를
+  채택한다").
 scenarios:
   - "Postgres vs MySQL 결정 ADR로 남겨줘"
   - "방금 끝낸 design review 기반으로 ADR 만들어줘"

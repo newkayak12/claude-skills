@@ -4,7 +4,7 @@ description: >-
   Use when someone wants to rewrite specific portfolio sections into stronger,
   senior-level statements — showing Before/After with explanations. Triggers on:
   "이 문장 고쳐줘", "이 부분 어떻게 쓰면 좋아", "더 잘 쓰는 법", "임팩트 있게 바꿔줘", "rewrite this
-  portfolio section",
+  portfolio section".
 scenarios:
   - "Rewrite this portfolio bullet point to sound more senior"
   - "Make this section show more ownership and impact"

@@ -4,7 +4,7 @@ description: >-
   Use when reviewing, refactoring, or writing code that others need to read and
   maintain — any code that is hard to understand, has grown too long, or whose
   intent is not immediately clear. Triggers on: "리팩토링", "코드 가독성", "clean code",
-  "code review",
+  "code review".
 license: MIT
 metadata:
   author: wondelai

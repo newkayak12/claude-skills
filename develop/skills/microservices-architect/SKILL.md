@@ -4,7 +4,7 @@ description: >-
   Use when someone needs to design or evaluate a distributed system —
   decomposing a monolith, defining service boundaries with DDD, choosing between
   sync and async communication, or planning resilience and observability.
-  Triggers on: "microservices
+  Triggers on:.
 scenarios:
   - "Design a microservices architecture for our e-commerce monolith migration"
   - "Help me decide service boundaries and communication patterns for this system"

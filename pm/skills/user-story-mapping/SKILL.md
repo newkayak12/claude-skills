@@ -5,7 +5,7 @@ description: >-
   Use when someone wants to generate a structured user story map directly from
   existing context — outputting a two-dimensional artifact with backbone
   activities, steps, tasks, and release slices. Triggers on: "user story map",
-  "story map", "backbone
+  "story map".
 type: component
 scenarios:
   - "Generate a user story map for our onboarding flow — we have a persona and the workflow defined"

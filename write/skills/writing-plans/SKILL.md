@@ -1,9 +1,9 @@
 ---
 name: writing-plans
 description: >-
-  Use when a task is large enough that diving in without a plan leads to
-  rework. Triggers: "구현 계획 써줘", "implementation plan", "코딩 전에 계획 잡아줘",
-  "migration plan", "plan before coding", "스텝별로 정리해줘", "리팩토링 계획".
+  Use when a task is large enough that diving in without a plan leads to rework.
+  Triggers: "구현 계획 써줘", "implementation plan", "코딩 전에 계획 잡아줘", "migration plan",
+  "plan before coding", "스텝별로 정리해줘", "리팩토링 계획".
 scenarios:
   - "이 기능 구현 계획 작성해줘"
   - "DB 마이그레이션 단계별로 계획 잡아줘"

@@ -4,7 +4,7 @@ description: >-
   Use when reflecting on engineering practices, identifying systemic problems in
   a codebase, deciding how to approach technical debt, or asking what a
   pragmatic engineer would do in a given situation. Triggers on: "DRY 원칙", "기술
-  부채", "pragmatic
+  부채".
 license: MIT
 metadata:
   author: wondelai

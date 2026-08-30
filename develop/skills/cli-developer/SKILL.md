@@ -4,7 +4,7 @@ description: >-
   Use when someone needs to build a command-line tool — defining subcommands,
   flags, and argument parsing; adding interactive prompts, progress bars, or
   shell completions; or distributing a cross-platform terminal application.
-  Triggers on: "build a
+  Triggers on:.
 scenarios:
   - "Build a CLI tool that manages deployment configurations across environments"
   - "I need to create a command-line interface for our internal developer tools"

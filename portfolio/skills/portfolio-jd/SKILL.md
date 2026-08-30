@@ -4,7 +4,7 @@ description: >-
   Use when someone provides both a portfolio and a specific job description and
   wants to know how well they match — gap analysis, fit score, and positioning
   advice for that exact role. Triggers on: "이 공고에 맞아?", "JD랑 비교해줘", "이 포지션 지원해도
-  돼?", "match my
+  돼?".
 scenarios:
   - "Compare my portfolio to this job description — where are the gaps?"
   - "I want to apply to this JD — how well does my portfolio match and what should I fix?"

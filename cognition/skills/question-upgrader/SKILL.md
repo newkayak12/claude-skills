@@ -4,7 +4,7 @@ description: >-
   Use when someone is asking a question that is too narrow, too closed, or based
   on a hidden assumption that may be wrong. Upgrades weak questions and
   generates meta-questions to check whether the right question is even being
-  asked. Triggers on:
+  asked.
 
 scenarios:
   - "Is this even the right question to be asking?"

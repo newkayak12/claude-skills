@@ -3,8 +3,8 @@ name: operations-workflow
 description: >-
   Use when preparing a service for production, hardening a flaky system, or
   building lasting operational improvements after an incident. Triggers on:
-  "production readiness review", "going to prod", "pre-launch ops check", system
-  hardening", "운영 준비",
+  "production readiness review", "going to prod", "pre-launch ops check",
+  "system hardening", "운영 준비".
 type: workflow
 theme: operations
 scenarios:

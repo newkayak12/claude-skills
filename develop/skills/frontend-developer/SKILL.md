@@ -4,7 +4,7 @@ description: >-
   Use when someone needs to build or fix UI — React components, page layouts,
   client-side interactivity, data-fetching hooks, styling, or form handling.
   Defaults to Next.js App Router, TypeScript, and Tailwind. Triggers on: "build
-  a React component",
+  a React component".
 scenarios:
   - "Build a React dashboard with data fetching, state management, and responsive layout"
   - "Help me fix this UI bug where the modal doesn't close properly on mobile"

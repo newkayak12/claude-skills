@@ -4,7 +4,7 @@ effort: high
 description: >-
   Use when there are more things to build than capacity allows and the team
   needs a defensible, data-backed order. Triggers on: "backlog 정리", "우선순위 정해줘",
-  P1이 너무 많아", "what to build next", "how do we decide", "backlog grooming", 피처
+  "P1이 너무 많아", "what to build next", "how do we decide", "backlog grooming", "피처
   순위 매겨줘".
 type: workflow
 theme: pm-strategy

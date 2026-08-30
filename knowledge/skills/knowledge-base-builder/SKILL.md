@@ -2,8 +2,8 @@
 name: knowledge-base-builder
 description: >-
   Use when turning code, docs, notes, or mixed sources into a small-to-moderate,
-  query-efficient Markdown knowledge base with predictable folders, an AI
-  lookup catalog, source-grounded summaries, and RAG-ready metadata.
+  query-efficient Markdown knowledge base with predictable folders, an AI lookup
+  catalog, source-grounded summaries, and RAG-ready metadata.
 effort: high
 scenarios:
   - "코드랑 문서를 읽어서 Obsidian처럼 링크 걸린 지식 기반 만들어줘"

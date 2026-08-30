@@ -3,7 +3,7 @@ name: skill-trigger-validator
 description: >-
   Use when a skill isn't triggering reliably on natural language or Korean
   input. Triggers on: "스킬이 트리거 안 돼", "skill not firing", "description 개선해줘",
-  "한국어 트리거 추가해줘", trigger coverage audit", "skill 발동 조건 점검", "description이 너무
+  "한국어 트리거 추가해줘", "trigger coverage audit", "skill 발동 조건 점검", "description이 너무
   keyword만 있어".
 scenarios:
   - "이 skill이 한국어로 말할 때 안 트리거돼"
