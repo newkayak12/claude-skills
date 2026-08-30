@@ -25,7 +25,9 @@ req = req || {}
 if (!req.request) throw new Error('harness-engine: args.request (raw request string) is required')
 const MAX = Number.isInteger(req.max_retries) ? req.max_retries : 2
 const ctxNote = req.context ? `\nContext from the requester:\n${req.context}` : ''
-const codexProvider = String(req.codex_provider || req.codex_mode || 'auto').toLowerCase()
+// Off by default: a run that says nothing about providers stays entirely on Claude.
+// Delegation is opt-in — pass codex_provider: "auto" | "required" to enable it.
+const codexProvider = String(req.codex_provider || req.codex_mode || 'off').toLowerCase()
 const codexDelegationEnabled = !['off', 'false', 'none', 'claude', 'sonnet'].includes(codexProvider)
 const codexProviderRequired = ['required', 'require', 'must', 'strict'].includes(codexProvider)
 const codexAdapterPath = String(req.codex_adapter_path || req.codexAdapterPath || '').trim()

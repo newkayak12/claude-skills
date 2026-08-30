@@ -71,7 +71,7 @@ Workflow({ scriptPath: "harness/engine/pipeline.js", args: {
   request: "<the request>",
   context: "<optional constraints>",
   max_retries: 2,
-  codex_provider: "auto"     // "auto" | "required" | "off"
+  codex_provider: "off"      // default "off"; "auto" | "required" opt in to Codex
 }})
 ```
 
@@ -253,6 +253,13 @@ engagement. Fail-open everywhere (v0 lesson) — a nudge, not security.
   Status section. It dry-runs first and refuses mismatched versions.
 
 ## Status
+- **v1.22.1 — stable line. Claude-only by default**: `codex_provider` now defaults to
+  `"off"` in `pipeline.js`, the Agent Team fallback skips provider detection unless a run
+  opts in, and the graph's `vendor: "auto"` resolves to `self` instead of probing Codex. No
+  external provider is contacted unless a caller names one. Codex delegation is fully
+  preserved and reachable by opting in (`codex_provider: "auto"｜"required"`, or
+  `vendor: "codex"`). Primary path DW/Workflow, secondary Agent Team; the six stages, model
+  pins, retry bounds, and the goal-level gate are unchanged.
 - v1.22.0 — **Graph plugin separation**: the graph-engineering MCP moved from the
   short-lived `broker` namespace to the independently versioned `graph` plugin. Harness now
   discovers `graph-engineering` and delegates its default loop to `graph:orchestrate`; setup
@@ -463,7 +470,7 @@ Workflow({ scriptPath: "harness/engine/pipeline.js", args: {
   request: "<요청 원문>",
   context: "<선택: 알고 있는 제약>",
   max_retries: 2,
-  codex_provider: "auto"     // "auto" | "required" | "off"
+  codex_provider: "off"      // default "off"; "auto" | "required" opt in to Codex
 }})
 ```
 

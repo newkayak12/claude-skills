@@ -45,6 +45,11 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.0.1 — stable line. No vendor by default**: `vendor: "auto"` no longer enrols every
+  registered vendor as a candidate; the candidate list is empty by default, so an unnamed run
+  degrades to `self` through the existing path. The `codex` vendor, its adapter, and the
+  readiness probe are unchanged and still route when named (`vendor: "codex"`) or listed in
+  `candidates`.
 - v1.0.0 — moved the existing graph-engineering MCP out of the temporary `broker`
   plugin name and split lifecycle from execution: `graph:install` connects/verifies it,
   while `graph:orchestrate` drives the graph. Engine code and on-disk run format remain
