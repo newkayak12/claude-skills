@@ -60,7 +60,7 @@ Quick rules:
 
 ## Update Workflow
 
-After any change: bump version in `.claude-plugin/marketplace.json` → update `<plugin>/README.md` → commit → `git push skills main`.
+After any change: bump version in `.claude-plugin/marketplace.json` → update `<plugin>/README.md` **and** `<plugin>/KOR.md` (English default + Korean mirror; both must move together) → commit → `git push skills main`.
 
 See `INSTRUCT.md` for full details.
 
