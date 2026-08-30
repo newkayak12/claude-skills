@@ -1,5 +1,6 @@
 ---
 name: knowledge-query
+effort: high
 description: >-
   Use when answering questions over an existing linked Markdown vault, local
   SQLite index, ontology, knowledge graph, RAG corpus, or mixed knowledge
@@ -25,6 +26,14 @@ compatibility:
 # Knowledge Query
 
 Answer questions over existing knowledge assets: linked Markdown vaults, graph exports, RAG chunks, ontology files, source inventories, or a mixture of them.
+
+## Standing Mandates
+
+- **Search before reading.** Never open a note body with Read, Grep, or Glob until a retrieval step has named it as a candidate. The order is fixed: `knowledge_search` (or the CLI `search`) → `knowledge_get` on the top candidates → only then the Markdown file, and only when the returned text is insufficient.
+- **The index exists to be used.** If `.knowledge/knowledge.sqlite` or the `knowledge-local` MCP is present, it is the retrieval surface. Scanning `notes/**/*.md` while an index exists is a defect in the answer, not a shortcut; it bypasses ranking, filters, relation promotion, and the diagnostics that tell you whether retrieval worked.
+- **No index → catalog, not files.** Without an index, search `_knowledge/catalog.jsonl` first and open only the notes it nominates. Reading the vault directly is allowed only when neither an index nor a catalog exists, and the answer must say so.
+- **Cite what retrieval returned.** Evidence lines name the `path` / `source_ref` from the search result, so the reader can see the note was found, not browsed into.
+- **Thin results are diagnosed, not worked around.** When search looks empty, read `lexical_candidates` and re-query with exact vocabulary before touching a file. A grep-based detour hides a ranking bug that `eval` should catch.
 
 ## Query Routing
 
@@ -155,6 +164,7 @@ For impact analysis:
 - Every answer declares `complete`, `partial`, or `unanswerable` coverage using the strict meanings above.
 - If the knowledge asset cannot answer the question, say exactly what is missing and which source would likely resolve it; do not fill the gap with an unlabeled inference.
 - Read-only queries do not mutate improvement memory or competency results without maintenance authorization or an explicit vault opt-in.
+- No Markdown note is opened before a search or catalog step nominated it; when a file is read, the answer states which search result led there.
 
 ## Related Skills
 
