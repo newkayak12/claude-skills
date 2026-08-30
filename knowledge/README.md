@@ -31,7 +31,7 @@ so Claude can answer from the indexed evidence.
 
 ## Answerability Gate
 
-Version 1.3.0 treats clean structure and useful answers as separate quality dimensions.
+Since 1.3.0 the plugin treats clean structure and useful answers as separate quality dimensions.
 Non-trivial builds preserve competency questions and their evaluated results under `_knowledge/`,
 model contrasts/equivalences/sequences as first-class relation notes with evidence for every
 participant, and keep operator language separate from code and database symbols.
