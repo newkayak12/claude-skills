@@ -69,6 +69,11 @@ const BUILTIN_VENDORS = {
   },
 };
 
+// `vendor: "auto"` tries these in order, then degrades to `self`. Empty by default: a run
+// that does not name a vendor stays on the orchestrator. Registering a vendor does not
+// enrol it here — name it explicitly (`vendor: "codex"`) or list it in `candidates`.
+const AUTO_CANDIDATES = [];
+
 function loadVendors(cwd) {
   const vendors = JSON.parse(JSON.stringify(BUILTIN_VENDORS));
   for (const p of [process.env.BROKER_VENDORS, cwd && join(cwd, '.claude', 'broker-vendors.json')].filter(Boolean)) {
@@ -330,7 +335,7 @@ async function route(run, stage) {
   const order = isSelf
     ? []
     : want === 'auto'
-      ? (run.candidates && run.candidates.length ? run.candidates : Object.keys(vendors))
+      ? (run.candidates && run.candidates.length ? run.candidates : AUTO_CANDIDATES)
       : [want];
 
   const attempts = [];

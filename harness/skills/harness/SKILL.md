@@ -26,8 +26,9 @@ related:
 The harness raises the **floor**, not the ceiling: every substantial request goes through
 six staged roles so repetition and weak answers get filtered out regardless of the
 main-session model. Planning and judging are pinned to Opus. Code/repo execution and
-deterministic verification are provider-routed: when `codex_provider` is enabled, every
-Implement/Test stage delegates to Codex by default. `implement_provider: "codex"` /
+deterministic verification run on Claude by default — `codex_provider` defaults to `"off"`
+and no external provider is contacted unless a run opts in. When `codex_provider` IS enabled,
+every Implement/Test stage delegates to Codex. `implement_provider: "codex"` /
 `test_provider: "codex"` are trace hints, not prerequisites. Sonnet is then only a thin
 Workflow controller/fallback/report role, not the actor.
 
@@ -46,7 +47,7 @@ Workflow controller/fallback/report role, not the actor.
    tools are absent.
 
 1. **Pass the raw request to the engine** (B, Workflow fallback):
-   `Workflow({ scriptPath: "harness/engine/pipeline.js", args: { request: "<the request>", context: "<optional constraints>", max_retries: 2, codex_provider: "auto" } })`
+   `Workflow({ scriptPath: "harness/engine/pipeline.js", args: { request: "<the request>", context: "<optional constraints>", max_retries: 2 } })`
    The engine itself plans, authors + critiques the goal-spec, executes subgoals with
    repo-skill-equipped executors, verifies each deterministically, gates each and the
    assembled whole, and writes the report.

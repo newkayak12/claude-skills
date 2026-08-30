@@ -75,11 +75,14 @@ removed). Instead:
 
 1. Create `RUN=.harness-run/<slug>/` and write `manifest.json` with the request, `max_retries`
    (default 2), empty `subgoals`/`stages`, and the declared Agent Team roles/ownership.
-2. Detect external providers. Invoke `harness:codex-control` and resolve
-   `codex-exec-adapter.mjs` from an explicit path, `harness/engine/`,
-   `.claude/harness/engine/`, or the plugin root named in the project's `CLAUDE.md` Harness
-   block. If `node "$ADAPTER" --detect --cwd "$PWD" --output "$RUN/providers.json"` exits 0,
-   Codex is the default provider for Implement/Test stages. If it fails, keep the JSON report if
+2. Detect external providers — **only when the run was explicitly started with
+   `codex_provider=auto` or `codex_provider=required`.** Delegation is off by default: with no
+   such argument, skip this step entirely, write no `RUN/providers.json`, and run every
+   Implement/Test stage as a Claude teammate. When it IS requested, invoke
+   `harness:codex-control` and resolve `codex-exec-adapter.mjs` from an explicit path,
+   `harness/engine/`, `.claude/harness/engine/`, or the plugin root named in the project's
+   `CLAUDE.md` Harness block. If `node "$ADAPTER" --detect --cwd "$PWD" --output "$RUN/providers.json"`
+   exits 0, Codex is the provider for Implement/Test stages. If it fails, keep the JSON report if
    written. With `codex_provider=auto`, later Codex routes may explicitly degrade to Claude
    fallback; with `codex_provider=required`, a Codex route must fail the stage as a provider
    failure instead of silently falling back.

@@ -65,17 +65,18 @@ A-mode/manual authoring) and the authoring rules the SetGoal stage follows.
 ```
 Workflow({ scriptPath: "harness/engine/pipeline.js",
            args: { request: "<raw request>", context: "<optional>", max_retries: 2,
-                   codex_provider: "auto|required|off",
+                   codex_provider: "off|auto|required",   // optional; "off" is the default
                    codex_adapter_path: "<optional adapter path>" } })
 ```
 
 Stages: Plan(opus) → SetGoal(opus, +critic) → per subgoal Implement(provider-routed) →
 Test(provider-routed) → QualityGate(opus) looped up to max_retries → goal-level
 QualityGate(opus, quantified `match_pct`, pass requires >= 90%, repair-and-regate loop up to
-max_retries) → Report(sonnet). With `codex_provider: "auto"` (the default), Implement and Test
-stages delegate to Codex first and fall back only with an explicit degraded note. With
-`codex_provider: "required"`, each Codex route must succeed or the stage fails as provider
-failure. Use `codex_provider: "off"` to force plain Sonnet implementation and verification.
+max_retries) → Report(sonnet). `codex_provider` defaults to `"off"`: Implement and Test run on
+Claude and no provider is contacted. Opt in with `codex_provider: "auto"`, where the stages
+delegate to Codex first and fall back only with an explicit degraded note, or
+`codex_provider: "required"`, where each Codex route must succeed or the stage fails as
+provider failure.
 Returns `{ goal, codex_provider, spec, all_passed,
 failed[], goal_gate, results[], report }`.
 
