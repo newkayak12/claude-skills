@@ -18,7 +18,6 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 /plugin install harness@newkayak12-claude-skills
 /plugin install knowledge@newkayak12-claude-skills
 /plugin install planning@newkayak12-claude-skills
-/plugin install pm@newkayak12-claude-skills
 /plugin install portfolio@newkayak12-claude-skills
 /plugin install skill@newkayak12-claude-skills
 /plugin install think@newkayak12-claude-skills
@@ -36,7 +35,6 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 | [harness](./harness/README.md) · [한국어](./harness/KOR.md) | Six-stage planning, implementation, verification, quality gate, and reporting |
 | [knowledge](./knowledge/README.md) · [한국어](./knowledge/KOR.md) | Knowledge bases, ontologies, graphs, RAG corpora, and querying |
 | [planning](./planning/README.md) · [한국어](./planning/KOR.md) | Executing plans and roadmap planning |
-| [pm](./pm/README.md) · [한국어](./pm/KOR.md) | Product management: user stories, story mapping, PRD |
 | [portfolio](./portfolio/README.md) · [한국어](./portfolio/KOR.md) | Portfolio and career: feedback, JD analysis, interview prep |
 | [skill](./skill/README.md) · [한국어](./skill/KOR.md) | Skill creation, improvement, and validation |
 | [think](./think/README.md) · [한국어](./think/KOR.md) | Brainstorming, devil's advocate, problem reframing, and more |
