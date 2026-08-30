@@ -1,28 +1,474 @@
 # cognition
 
-Thinking quality and epistemic skills for clearer reasoning.
+**English** · [한국어](#한국어)
+
+Skills for checking the quality of your own thinking before you act on it. Each one takes a
+specific failure mode — the wrong question, an unexamined premise, a broken argument, a bias you
+cannot see from inside, confidence the evidence does not support, a cost you never priced — and
+gives it a named procedure with an output you can act on. They are deliberately separate: naming a
+fallacy is not the same job as diagnosing a bias, and mixing them produces taxonomy instead of
+analysis.
+
+Most skills in this plugin work better with the `think-tool` MCP server connected, and the
+judgment-heavy ones (`mental-model-toolkit`, and Steps 3 and 6 of the workflow) with
+`mcp-reasoner`. Connect them under Claude settings → MCP Servers as remote SSE endpoints.
 
 ## Install & Uninstall
 
 ```bash
-# Install
 /plugin install cognition@newkayak12-claude-skills
-
-# Uninstall
 /plugin uninstall cognition@newkayak12-claude-skills
 ```
 
+## Which skill do I want?
+
+| I want to… | Skill |
+|---|---|
+| Stress-test a high-stakes decision end to end | `critical-thinking-workflow` |
+| Check whether I'm even asking the right question | `question-upgrader` |
+| Find the premises this plan silently rests on | `assumption-extractor` |
+| Check an argument or a too-tidy story for structural errors | `fallacy-detector` |
+| Find out why my judgment is skewed — and what to do about it | `bias-auditor` |
+| Map what happens *after* the intended effect | `second-order-thinker` |
+| Match my stated confidence to the actual evidence | `epistemic-reasoner` |
+| See the full cost of the option I'm leaning toward | `tradeoff-articulator` |
+| Get a different frame when the obvious solutions failed | `mental-model-toolkit` |
+| Cut noise, sharpen a vague goal, or stop looping | `clarity-toolkit` |
+| Understand my own characteristic thinking pattern | `thinking-style-profiler` |
+
 ## Skills
 
-| Skill | Description |
-|-------|-------------|
-| `assumption-extractor` | Surface hidden assumptions in plans, arguments, or decisions |
-| `bias-auditor` | Audit cognitive biases with context probe, per-bias remedies, and calibration self-check (v2) |
-| `clarity-toolkit` | Sharpen vague ideas, fuzzy goals, or unclear thinking |
-| `epistemic-reasoner` | Reason about what you know, don't know, and can't know |
-| `fallacy-detector` | Detect logical fallacies in arguments or reasoning chains |
-| `mental-model-toolkit` | Apply the right mental model to a problem |
-| `question-upgrader` | Transform weak questions into high-leverage ones |
-| `second-order-thinker` | Explore second- and third-order consequences of decisions |
-| `thinking-style-profiler` | Identify dominant thinking patterns and blind spots |
-| `tradeoff-articulator` | Clearly articulate the real tradeoffs in a decision |
+### `critical-thinking-workflow`
+
+The entry point. Runs seven skills in order over one decision or argument: reframe the question,
+surface assumptions, check structure and bias in parallel, map downstream effects, calibrate
+confidence, then make the tradeoffs explicit. Use it when the request is "check this properly"
+rather than one specific diagnosis. Each step has a documented skip condition, so you can start
+mid-process.
+
+```
+I'm about to commit to migrating our billing service to event sourcing.
+Run the full critical thinking review before I take it to the team.
+```
+
+```
+[1] question-upgrader
+      ↓
+[2] assumption-extractor
+      ↓
+[3a] fallacy-detector  ──┬──  [3b] bias-auditor   (parallel)
+                         ↓
+[4] second-order-thinker → [5] epistemic-reasoner → [6] tradeoff-articulator
+```
+
+Tell it where you are — "assumptions are already done, start from second-order effects" — and it
+picks up from that step. Estimated 1–3 hours for the full run, 15–30 minutes per step.
+
+### `question-upgrader`
+
+Runs the meta-question check *before* upgrading: is this the right question, what assumption is
+embedded in it, what would change if you had the answer, and what question are you avoiding. Then
+applies upgrade moves — conditional, diagnosis, scope, inversion — to produce one to three
+stronger formulations. Not for questions that are already well-formed, or plain factual lookups.
+
+```
+"Should we adopt microservices?" — that's what leadership is asking.
+Upgrade it before I write the answer.
+```
+
+Output always includes: what makes the question weak, the hidden assumption, the upgraded
+questions with why each unlocks better thinking, and the question you might be avoiding.
+
+### `assumption-extractor`
+
+Scans four categories in parallel — factual, causal, value, definitional — and classifies each
+assumption by load: load-bearing (the argument collapses), significant (needs substantial
+revision), peripheral (details change). Then names the single most dangerous one: load-bearing with
+the lowest current verification. Not for logical structure errors (`fallacy-detector`) or
+overconfidence diagnosis (`bias-auditor`).
+
+```
+Here's our Q3 plan to double activation by improving onboarding.
+What are we taking for granted, and which of those would sink the whole thing?
+```
+
+```
+핵심 위험 전제 / Most Dangerous Assumption:
+[The load-bearing assumption with lowest current verification]
+If wrong: [Consequence for the plan]
+To verify: [What would need to be checked]
+```
+
+### `fallacy-detector`
+
+Two separate scans. First logical fallacies across structural (false dichotomy, slippery slope,
+circular reasoning, straw man), authority/social (ad hominem, appeal to authority, bandwagon), and
+causal (post hoc, cum hoc, hasty generalization) categories. Then a distinct narrative-fallacy scan
+for hindsight coherence, single-cause attribution, character-driven causation, omitted
+counterfactuals, and too-clean emotional arcs. It flags only what is actually present, and says so
+when nothing is.
+
+```
+This is the postmortem for last quarter's churn spike. It reads a little too neatly —
+one cause, one villain. Check the reasoning and the story separately.
+```
+
+Naming a fallacy without explaining which step it invalidates is taxonomy, not analysis — so every
+finding says where it appears and what it weakens, ending with the single most damaging error.
+
+### `bias-auditor`
+
+Three scan layers — judgment biases, attribution errors, metacognitive accuracy — but the point is
+what comes after. Step 2 probes the context that induces bias (time pressure, sunk investment, a
+recent vivid event, evaluating someone else), Step 6 prescribes a concrete remedy per bias, and
+Step 7 forces calibration by betting odds, base rate, and one piece of contrary evidence. Naming a
+bias without a remedy has zero effect. Not for argument structure (`fallacy-detector`) or
+quantitative confidence calibration (`epistemic-reasoner`).
+
+```
+I've decided not to renew this contractor. I'm quite sure it's the right call —
+audit how I got there.
+```
+
+| Bias | Remedy it prescribes |
+|---|---|
+| Confirmation bias | Write down what evidence would appear if this conclusion were wrong |
+| Availability heuristic | Find the base rate — long-run frequency, not the recent event |
+| Anchoring | Get one independent estimate from another source; use the midpoint |
+| Sunk cost | "If this were starting fresh today, would I start it?" |
+| Planning fallacy | Reference-class forecasting — actual duration of 3 similar tasks |
+
+### `second-order-thinker`
+
+Maps first-order effects, then checks all five second-order mechanisms without skipping:
+behavioral responses to changed incentives, feedback loops, resource and attention effects,
+signaling, and competitive responses. Every effect gets a time label — immediate, medium-term,
+long-term — because "short-term gain, long-term cost" is the pattern most often missed. Stops at
+third order unless the case warrants more.
+
+```
+We're about to pay a bonus for closed support tickets. First order is obvious.
+What happens six months in?
+```
+
+The output names one critical effect with its time horizon and, crucially, a leading indicator to
+watch for so you can tell whether it is actually materializing.
+
+### `epistemic-reasoner`
+
+Two instruments. Calibration labels each claim with the confidence the evidence actually warrants
+— high / moderate / low / speculation — and names the gap from your stated confidence. Analogy
+testing splits a comparison into source and target domain, marks which mappings hold and which
+break, then asks whether the conclusion depends on the broken part. Run calibration first when both
+apply. Not for diagnosing *why* you're overconfident (`bias-auditor`).
+
+```
+I keep telling the board "this is obviously the next AWS." Test that analogy,
+and tell me how confident I'm actually entitled to be.
+```
+
+Ships two subagents: `epistemic-labeler` for calibration and `analogy-tester` for the comparison
+work.
+
+### `tradeoff-articulator`
+
+Finds the axes you did not name — reversibility, optionality, cognitive load, risk variance, and
+who actually pays — then builds a qualitative matrix (no false-precision scores), states
+opportunity costs concretely, and names the axis pair where the tension is unavoidable. It does not
+resolve the conflict and does not recommend an option unless you ask.
+
+```
+Managed Postgres versus running our own on EC2. Everyone says managed is
+obviously right — map what we'd be giving up.
+```
+
+```
+Option    | Speed | Cost | Reversibility | Cognitive Load | Risk
+Option A  |  +++  |  --  |     high      |      low       | low variance
+Option B  |   +   |  +   |     low       |      high      | high upside
+```
+
+Opportunity costs are stated in specifics: not "giving up some flexibility" but "giving up the
+ability to switch databases without a full rewrite, ~3–6 weeks in year 2".
+
+### `mental-model-toolkit`
+
+Diagnoses which of three instruments fits before applying any of them: the mental model library
+(First Principles, Inversion, Map vs Territory, Occam's Razor, Pareto, Regret Minimization,
+Chesterton's Fence), the unknown-unknowns mapper (pre-mortem, red teaming, outsider perspective,
+assumption audit, perspective expansion), or the lateral thinking prompter (Random Entry,
+Provocation, Reversal, Analogical Thinking, Constraint Removal). Not for consequence chains
+(`second-order-thinker`) or systematic assumption audits (`assumption-extractor`).
+
+```
+We've tried three different retention experiments and none moved the number.
+Give me a frame I haven't looked at this from.
+```
+
+Full catalogs live in `references/mental-models-catalog.md` and
+`references/lateral-thinking-techniques.md`.
+
+### `clarity-toolkit`
+
+Diagnoses the mode first, then applies exactly one. Signal/Noise filters information by
+actionability, source quality, recency, and relevance into a MUST KNOW / GOOD TO KNOW / NOISE
+stack. Vagueness Eliminator rewrites a goal until two people could independently tell whether it
+was met. Overthinking Detector names the looping pattern and applies a circuit breaker — 10/10/10,
+reversibility, minimum viable answer. Not for choosing between well-defined options
+(`tradeoff-articulator`).
+
+```
+My manager said my goal this half is "be more strategic". I have no idea what
+I'm supposed to do differently on Monday.
+```
+
+Every run ends with one concrete step you can take in the next hour.
+
+### `thinking-style-profiler`
+
+Profiles you across five dimensions — systems vs detail, convergent vs divergent, abstract vs
+concrete, intuitive vs analytical, sequential vs non-linear — then matches learning and working
+strategies to the result. It asks one or two diagnostic questions at a time rather than
+administering all five at once, and treats style as contextual and developable, not as a fixed
+type. Not for simple study tips or bias diagnosis.
+
+```
+Collaborative sessions leave me flat but three hours alone with a hard problem
+energizes me. Help me name what my thinking actually does.
+```
+
+Output: profile summary, strengths, characteristic risk zones, top three matched strategies, and
+one developmental focus to actively practice.
+
+---
+
+# 한국어
+
+[English](#cognition) · **한국어**
+
+행동에 옮기기 전에 **자기 사고의 품질을 점검**하는 스킬 모음입니다. 각 스킬은 하나씩의 실패
+유형을 맡습니다 — 질문 자체가 틀렸거나, 검증 안 된 전제 위에 서 있거나, 논증 구조가 깨졌거나,
+안에서는 안 보이는 편향이 걸렸거나, 근거보다 확신이 크거나, 값을 매기지 않은 비용이 있거나.
+스킬을 굳이 나눠둔 이유가 있습니다: 오류에 이름 붙이는 일과 편향을 진단하는 일은 다른 작업이고,
+섞으면 분석이 아니라 분류표가 나옵니다.
+
+대부분의 스킬은 `think-tool` MCP 서버가 붙어 있을 때 품질이 올라가고, 판단 비중이 큰 것들
+(`mental-model-toolkit`, 워크플로 Step 3·6)은 `mcp-reasoner`가 유효합니다. Claude 설정 →
+MCP Servers에서 remote SSE 엔드포인트로 추가하세요.
+
+## 설치 / 제거
+
+```bash
+/plugin install cognition@newkayak12-claude-skills
+/plugin uninstall cognition@newkayak12-claude-skills
+```
+
+## 어떤 스킬을 쓰나
+
+| 하고 싶은 것 | 스킬 |
+|---|---|
+| 중요한 결정을 처음부터 끝까지 검증 | `critical-thinking-workflow` |
+| 애초에 맞는 질문을 하고 있는지 확인 | `question-upgrader` |
+| 이 계획이 조용히 깔고 있는 전제 찾기 | `assumption-extractor` |
+| 논증이나 너무 깔끔한 설명의 구조적 결함 점검 | `fallacy-detector` |
+| 내 판단이 왜 비뚤어졌는지 + 어떻게 보정할지 | `bias-auditor` |
+| 의도한 효과 *다음에* 벌어질 일 매핑 | `second-order-thinker` |
+| 말한 확신을 실제 근거 수준에 맞추기 | `epistemic-reasoner` |
+| 기울고 있는 선택지의 진짜 비용 전부 보기 | `tradeoff-articulator` |
+| 뻔한 해결책이 다 실패했을 때 다른 프레임 | `mental-model-toolkit` |
+| 노이즈 걷어내기 / 모호한 목표 벼리기 / 루프 끊기 | `clarity-toolkit` |
+| 내 고유한 사고 패턴 파악 | `thinking-style-profiler` |
+
+## 스킬
+
+### `critical-thinking-workflow`
+
+진입점입니다. 결정 하나나 논증 하나 위에서 일곱 스킬을 순서대로 몹니다: 질문 재구성 → 전제
+발굴 → 구조·편향 병렬 점검 → 하류 효과 → 확신 보정 → 트레이드오프 명시. 특정 진단 하나가
+아니라 "이거 제대로 검토해줘"일 때 씁니다. 각 단계에 skip 조건이 문서화돼 있어 중간부터 들어갈
+수 있습니다.
+
+```
+빌링 서비스를 이벤트 소싱으로 옮기려고 해. 팀에 들고 가기 전에
+전체 비판적 검토 한 번 돌려줘.
+```
+
+```
+[1] question-upgrader
+      ↓
+[2] assumption-extractor
+      ↓
+[3a] fallacy-detector  ──┬──  [3b] bias-auditor   (병렬)
+                         ↓
+[4] second-order-thinker → [5] epistemic-reasoner → [6] tradeoff-articulator
+```
+
+"가정은 이미 정리됐어, 2차 효과부터"처럼 현재 위치를 말하면 그 단계부터 이어갑니다. 전체 1–3
+시간, 단계당 15–30분 정도입니다.
+
+### `question-upgrader`
+
+질문을 다듬기 *전에* 메타 질문부터 돌립니다: 이게 맞는 질문인가, 어떤 전제가 박혀 있나, 답을
+알면 뭐가 달라지나, 그리고 지금 피하고 있는 질문은 뭔가. 그다음 업그레이드 수(조건화, 진단,
+범위 한정, 역전)를 적용해 더 강한 질문 1–3개를 냅니다. 이미 잘 벼려진 질문이나 단순 사실
+조회에는 안 씁니다.
+
+```
+경영진이 "마이크로서비스로 갈까요?"라고 물어봤어.
+답 쓰기 전에 이 질문부터 업그레이드해줘.
+```
+
+출력에는 항상 이게 포함됩니다: 질문이 약한 이유, 숨은 전제, 업그레이드된 질문과 각각이 여는
+사고, 그리고 당신이 피하고 있을 법한 질문.
+
+### `assumption-extractor`
+
+네 범주 — 사실·인과·가치·정의 — 를 병렬로 훑고, 각 전제를 하중으로 분류합니다: load-bearing
+(틀리면 논증 붕괴), significant(대폭 수정 필요), peripheral(디테일만 바뀜). 그다음 가장 위험한
+하나를 지목합니다 — load-bearing 중 검증 수준이 가장 낮은 것. 논리 구조 결함은
+`fallacy-detector`, 과잉확신 진단은 `bias-auditor` 쪽입니다.
+
+```
+온보딩 개선으로 활성화율 2배 만들겠다는 3분기 계획인데,
+우리가 당연하게 깔고 있는 게 뭐고 그중 뭐가 틀리면 다 무너지는지 짚어줘.
+```
+
+```
+핵심 위험 전제 / Most Dangerous Assumption:
+[검증 수준이 가장 낮은 load-bearing 전제]
+If wrong: [계획에 미치는 결과]
+To verify: [무엇을 확인해야 하는가]
+```
+
+### `fallacy-detector`
+
+스캔을 둘로 나눕니다. 먼저 논리적 오류를 구조(거짓 이분법, 미끄러운 비탈, 순환논증, 허수아비),
+권위·사회(인신공격, 권위 호소, 편승), 인과(post hoc, cum hoc, 성급한 일반화) 범주로 훑습니다.
+그다음 별도로 서사 오류를 봅니다 — 사후 정합성, 단일 원인 귀속, 인물 중심 인과, 반사실 사례
+누락, 지나치게 깔끔한 감정 곡선. 실제로 있는 것만 지적하고, 없으면 없다고 말합니다.
+
+```
+지난 분기 이탈 급증 포스트모템인데 너무 깔끔해. 원인 하나, 범인 하나.
+논증이랑 서사를 따로 봐줘.
+```
+
+어느 단계를 무효화하는지 설명 없이 오류 이름만 부르면 분석이 아니라 분류입니다. 그래서 모든
+지적에 위치와 무엇이 약해지는지가 붙고, 가장 치명적인 오류 하나로 끝납니다.
+
+### `bias-auditor`
+
+판단 편향·귀인 오류·메타인지 정확도 3레이어를 훑지만, 핵심은 그 뒤입니다. Step 2에서 편향을
+유발한 상황 트리거(시간 압박, 매몰 투자, 최근의 강렬한 사건, 타인 평가)를 먼저 확인하고,
+Step 6에서 편향마다 구체적 remedy를 처방하고, Step 7에서 베팅 odds·base rate·반대 증거 1개로
+확신을 강제 정량화합니다. remedy 없이 이름만 붙이면 효과는 0입니다. 논증 구조는
+`fallacy-detector`, 증거 대비 정량 보정은 `epistemic-reasoner`.
+
+```
+이 외주 계약 연장 안 하기로 했어. 맞는 판단이라고 꽤 확신하는데,
+내가 어떻게 여기까지 왔는지 감사해줘.
+```
+
+| 편향 | 처방되는 remedy |
+|---|---|
+| 확증편향 | 이 결론이 틀렸다면 어떤 증거가 보일지 적어두기 |
+| 가용성 휴리스틱 | base rate 찾기 — 최근 사건이 아니라 장기 빈도 |
+| 앵커링 | 다른 출처에서 독립 추정치 1개 더, 중간값 사용 |
+| 매몰비용 | "지금 처음부터 시작이라면 시작하겠는가?" |
+| 계획 오류 | reference class forecasting — 유사 작업 3건의 실제 소요 |
+
+### `second-order-thinker`
+
+1차 효과를 먼저 적고, 2차 메커니즘 다섯 개를 하나도 빼지 않고 확인합니다: 인센티브 변화에 대한
+행동 반응, 피드백 루프, 자원·주의 효과, 시그널링 효과, 경쟁자 대응. 모든 효과에 시점 라벨
+(즉시 / 중기 / 장기)이 붙습니다 — 가장 자주 놓치는 패턴이 "단기 이득, 장기 비용"이기 때문에요.
+특별한 이유가 없으면 3차에서 멈춥니다.
+
+```
+지원 티켓 클로즈 건수로 보너스를 주려고 해. 1차 효과는 뻔하고,
+6개월 뒤에 뭐가 벌어질지 보고 싶어.
+```
+
+출력은 핵심 효과 하나를 시간 지평과 함께 지목하고, 그게 실제로 나타나고 있는지 알 수 있는
+선행 지표까지 줍니다.
+
+### `epistemic-reasoner`
+
+두 가지 도구입니다. 보정(calibration)은 각 주장에 증거가 실제로 허용하는 확신 라벨
+(high / moderate / low / speculation)을 붙이고, 당신이 말한 확신과의 격차를 짚습니다. 비유
+테스트는 비유를 source domain과 target domain으로 쪼개, 성립하는 매핑과 깨지는 매핑을 표시한
+뒤 "결론이 깨진 쪽에 의존하는가"를 묻습니다. 둘 다 해당되면 보정을 먼저. 과잉확신의 *이유*
+진단은 `bias-auditor`.
+
+```
+투자자들한테 "이건 명백히 다음 AWS다"라고 계속 말하고 있는데,
+그 비유 검증하고 내가 실제로 얼마나 확신해도 되는지 알려줘.
+```
+
+서브에이전트 두 개가 함께 옵니다: 보정용 `epistemic-labeler`, 비유 검증용 `analogy-tester`.
+
+### `tradeoff-articulator`
+
+당신이 말하지 않은 축을 찾아냅니다 — 되돌릴 수 있는가, 미래 선택지를 열어두는가, 유지·설명
+비용은, 리스크의 분산은, 그리고 비용을 실제로 누가 내는가. 그다음 정성 매트릭스를 만들고
+(가짜 정밀도의 점수 없이), 기회비용을 구체적으로 진술하고, 긴장이 불가피한 축 쌍을 지목합니다.
+그 갈등을 해소해주지 않고, 요청하지 않으면 추천도 하지 않습니다.
+
+```
+매니지드 Postgres vs EC2 직접 운영. 다들 매니지드가 당연하다는데
+그러면 우리가 뭘 포기하는 건지 정리해줘.
+```
+
+```
+Option    | Speed | Cost | Reversibility | Cognitive Load | Risk
+Option A  |  +++  |  --  |     high      |      low       | low variance
+Option B  |   +   |  +   |     low       |      high      | high upside
+```
+
+기회비용은 구체적으로 씁니다. "유연성을 좀 포기한다"가 아니라 "전면 재작성 없이 DB를 바꿀 수
+있는 능력을 포기, 2년차에 대략 3–6주".
+
+### `mental-model-toolkit`
+
+적용 전에 세 도구 중 무엇이 맞는지부터 진단합니다: 멘탈 모델 라이브러리(제1원리, 역산,
+지도 vs 영토, 오컴의 면도날, 파레토, 후회 최소화, 체스터턴의 울타리), unknown unknowns 매퍼
+(프리모템, 레드팀, 외부인 관점, 가정 감사, 관점 확장), lateral thinking 프롬프터(무작위 진입,
+도발(Po), 반전, 유추, 제약 제거). 결과 사슬은 `second-order-thinker`, 체계적 가정 감사는
+`assumption-extractor`.
+
+```
+리텐션 실험 세 번 돌렸는데 지표가 안 움직여.
+내가 안 보고 있던 각도의 프레임 하나 줘.
+```
+
+전체 카탈로그는 `references/mental-models-catalog.md`와
+`references/lateral-thinking-techniques.md`에 있습니다.
+
+### `clarity-toolkit`
+
+모드부터 진단하고 정확히 하나만 적용합니다. Signal/Noise는 정보를 실행 가능성·출처 품질·최신성
+·관련성으로 걸러 MUST KNOW / GOOD TO KNOW / NOISE 스택으로 정리합니다. Vagueness Eliminator는
+"두 사람이 각자 읽고 달성 여부를 판단할 수 있는가"를 통과할 때까지 목표를 다시 씁니다.
+Overthinking Detector는 루프 패턴에 이름을 붙이고 차단기를 겁니다 — 10/10/10, 되돌릴 수 있는가,
+최소 실행 가능한 답. 이미 정의된 선택지 중 고르는 건 `tradeoff-articulator`.
+
+```
+팀장이 이번 반기 목표를 "좀 더 전략적으로"라고 줬는데,
+당장 월요일에 뭘 다르게 해야 하는지 모르겠어.
+```
+
+모든 실행은 한 시간 안에 할 수 있는 구체적 다음 한 걸음으로 끝납니다.
+
+### `thinking-style-profiler`
+
+다섯 차원으로 프로파일을 뜹니다 — 시스템 vs 디테일, 수렴 vs 발산, 추상 vs 구체, 직관 vs 분석,
+순차 vs 비선형 — 그리고 결과에 맞는 학습·업무 전략을 매칭합니다. 진단 질문 다섯 개를 한 번에
+쏟지 않고 한두 개씩 던지며, 스타일을 고정된 유형이 아니라 맥락에 따라 달라지고 넓힐 수 있는
+것으로 다룹니다. 단순 공부 팁이나 편향 진단용은 아닙니다.
+
+```
+협업 세션을 하면 기운이 빠지는데 혼자 어려운 문제 세 시간 붙잡으면 오히려 살아나.
+내 사고가 실제로 어떻게 돌아가는지 이름 붙여줘.
+```
+
+출력: 프로파일 요약, 강점, 이 프로파일 특유의 위험 구간, 매칭된 전략 3개, 그리고 의식적으로
+연습할 발달 과제 하나.
