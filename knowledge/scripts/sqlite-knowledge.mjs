@@ -35,8 +35,12 @@ const DEFAULT_DB = '.knowledge/knowledge.sqlite';
 const DEFAULT_DIMENSIONS = 384;
 const DEFAULT_OLLAMA_URL = 'http://127.0.0.1:11434';
 const DEFAULT_OLLAMA_MODEL = 'embeddinggemma';
-const SCHEMA_VERSION = '3';
+const SCHEMA_VERSION = '4';
 const RRF_K = 60;
+// A relation note is about two or more other notes. One matched participant is
+// evidence about that participant, not about the relation, so promotion needs a
+// second one before it counts as a signal at all.
+const RELATION_PARTICIPANT_FLOOR = 2;
 const ARTIFACT_PATHS = {
   catalog: ['_knowledge/catalog.jsonl'],
   chunks: ['_rag/chunks.jsonl', 'rag/chunks.jsonl'],
@@ -176,7 +180,22 @@ function normalizeDocument(record) {
     body: String(record.body || '').trim(),
     sourceRef: record.sourceRef || null,
     domain: record.domain || null,
+    relation: record.relation || null,
     metadata: record.metadata || {},
+  };
+}
+
+// A relation note's participants are the stable note IDs it relates. They live
+// only inside the catalog record, so lift them out here: query time needs them
+// as rows, not as JSON to re-parse. Under two participants there is nothing to
+// relate, and the answerability contract requires at least two.
+function relationOf(record) {
+  if (String(record.type || '').trim() !== 'relation') return null;
+  const participants = [...new Set(asStrings(record.participants).map((id) => id.trim()).filter(Boolean))];
+  if (participants.length < RELATION_PARTICIPANT_FLOOR) return null;
+  return {
+    relationType: String(record.relation_type || '').trim() || 'relation',
+    participants,
   };
 }
 
@@ -215,6 +234,7 @@ function collectKnowledge(root) {
       body,
       sourceRef: notePath || asStrings(record.source_refs ?? record.sources)[0] || null,
       domain: record.domain,
+      relation: relationOf(record),
       metadata: record,
     }));
   });
@@ -415,6 +435,7 @@ function createSchemaTables(db) {
     DROP TABLE IF EXISTS graph_edges;
     DROP TABLE IF EXISTS documents_fts;
     DROP TABLE IF EXISTS documents_trgm;
+    DROP TABLE IF EXISTS document_relations;
 
     CREATE TABLE metadata (
       key TEXT PRIMARY KEY,
@@ -453,6 +474,12 @@ function createSchemaTables(db) {
       content_rowid='rowid',
       tokenize='trigram'
     );
+    CREATE TABLE document_relations (
+      document_rowid INTEGER NOT NULL,
+      relation_type TEXT NOT NULL,
+      participant_note_id TEXT NOT NULL,
+      PRIMARY KEY (document_rowid, participant_note_id)
+    );
     CREATE TABLE graph_nodes (
       node_id TEXT PRIMARY KEY,
       canonical_name TEXT,
@@ -472,6 +499,7 @@ function createSchemaTables(db) {
     CREATE INDEX graph_edges_source_idx ON graph_edges(source_node_id);
     CREATE INDEX graph_edges_target_idx ON graph_edges(target_node_id);
     CREATE INDEX documents_kind_idx ON documents(kind);
+    CREATE INDEX document_relations_participant_idx ON document_relations(participant_note_id);
   `);
 }
 
@@ -530,6 +558,10 @@ async function buildIndex(inputRoot, options = {}) {
     `);
     const insertFts = db.prepare('INSERT INTO documents_fts(rowid, title, terms, body) VALUES (?, ?, ?, ?)');
     const insertTrgm = db.prepare('INSERT INTO documents_trgm(rowid, title, terms, body) VALUES (?, ?, ?, ?)');
+    const insertRelation = db.prepare(`
+      INSERT INTO document_relations(document_rowid, relation_type, participant_note_id)
+      VALUES (?, ?, ?)
+    `);
     data.documents.forEach((document, index) => {
       const result = insertDocument.run(
         document.kind,
@@ -548,6 +580,9 @@ async function buildIndex(inputRoot, options = {}) {
       );
       insertFts.run(result.lastInsertRowid, document.title || '', document.terms, document.body);
       insertTrgm.run(result.lastInsertRowid, document.title || '', document.terms, document.body);
+      for (const participant of document.relation?.participants || []) {
+        insertRelation.run(result.lastInsertRowid, document.relation.relationType, participant);
+      }
     });
 
     const insertNode = db.prepare(`
@@ -606,6 +641,7 @@ async function buildIndex(inputRoot, options = {}) {
     chunks: data.documents.filter((item) => item.kind === 'chunk').length,
     nodes: data.nodes.length,
     edges: data.edges.length,
+    relations: data.documents.filter((item) => item.relation).length,
     embedding_provider: provider,
     embedding_model: model,
     embedding_dimensions: embeddings[0]?.length || dimensions,
@@ -723,6 +759,40 @@ function fuseLexicalRanks(wordRanks, trigramRanks) {
   return new Map(scored.map((item, index) => [item.rowid, index]));
 }
 
+// Weighted like the curated-vocabulary column: enough to lift a relation note
+// past a participant it already ranks beside, never enough to invent a top hit
+// out of a note the query barely reached. Promotion only ever adds score, so a
+// relation note that matched the query lexically cannot be demoted by it.
+const RELATION_RRF_WEIGHT = 0.35;
+
+// Rank relation notes by how many of their declared participants the lexical
+// pass already matched. Only declared `participants` count: co-occurrence and
+// shared anchors are candidate signals, not evidence of a relation.
+function relationRanks(db, lexicalRanks, rowsById) {
+  const matchedNoteIds = new Set();
+  for (const rowid of lexicalRanks.keys()) {
+    const row = rowsById.get(rowid);
+    const noteId = row?.note_id || (row?.kind === 'note' ? row.document_id : null);
+    if (noteId) matchedNoteIds.add(noteId);
+  }
+  if (matchedNoteIds.size < RELATION_PARTICIPANT_FLOOR) return new Map();
+  const rows = db.prepare(`
+    SELECT document_rowid AS rowid, count(*) AS matched
+    FROM document_relations
+    WHERE participant_note_id IN (${[...matchedNoteIds].map(() => '?').join(', ')})
+    GROUP BY document_rowid
+    HAVING matched >= ${RELATION_PARTICIPANT_FLOOR}
+  `).all(...matchedNoteIds);
+  const promoted = rows
+    .map((row) => ({ rowid: Number(row.rowid), matched: Number(row.matched) }))
+    // A kind filter narrows rowsById, and a relation note outside it is not a candidate.
+    .filter((item) => rowsById.has(item.rowid))
+    .sort((left, right) => (right.matched - left.matched)
+      || ((lexicalRanks.get(left.rowid) ?? Infinity) - (lexicalRanks.get(right.rowid) ?? Infinity))
+      || (left.rowid - right.rowid));
+  return new Map(promoted.map((item, index) => [item.rowid, { rank: index, matched: item.matched }]));
+}
+
 // The hash provider is a lexical feature hash, not a trained embedding: its
 // nearest neighbours are noise on short queries, and a long note's vector is
 // diluted enough that it loses to any short note repeating the term. Giving it
@@ -772,20 +842,25 @@ async function searchIndex(inputRoot, query, options = {}) {
     const wordRanks = ftsRanks(db, 'documents_fts', ftsTokens(query), options.kind);
     const trigramRanks = ftsRanks(db, 'documents_trgm', trigramTokens(query), options.kind);
     const lexicalRanks = fuseLexicalRanks(wordRanks, trigramRanks);
+    const relationPromotions = relationRanks(db, lexicalRanks, rowsById);
 
     // Fuse over the union of both candidate sets. Ranking only the semantic list
     // would cap how far a lexical match can climb, no matter how exact it is.
-    const candidates = new Set([...semanticRanks.keys(), ...lexicalRanks.keys()]);
+    const candidates = new Set([...semanticRanks.keys(), ...lexicalRanks.keys(), ...relationPromotions.keys()]);
     const results = [...candidates].map((rowid) => {
       const semanticHit = semanticRanks.get(rowid);
       const lexicalRank = lexicalRanks.get(rowid);
+      const promotion = relationPromotions.get(rowid);
       const semanticRrf = semanticHit ? 1 / (RRF_K + semanticHit.rank + 1) : 0;
       const lexicalRrf = lexicalRank === undefined ? 0 : 1 / (RRF_K + lexicalRank + 1);
+      const relationRrf = promotion ? 1 / (RRF_K + promotion.rank + 1) : 0;
       return {
         row: rowsById.get(rowid),
         semantic: semanticHit ? semanticHit.score : null,
         lexicalRank,
-        score: (weights.semantic * semanticRrf) + (weights.lexical * lexicalRrf),
+        promotion,
+        score: (weights.semantic * semanticRrf) + (weights.lexical * lexicalRrf)
+          + (RELATION_RRF_WEIGHT * relationRrf),
       };
     }).sort((left, right) => (right.score - left.score)
       || ((right.semantic ?? -1) - (left.semantic ?? -1))).slice(0, limit);
@@ -800,11 +875,13 @@ async function searchIndex(inputRoot, query, options = {}) {
       lexical_word_matches: wordRanks.size,
       lexical_trigram_matches: trigramRanks.size,
       lexical_matches_returned: lexicalReturned,
+      relation_promotions: relationPromotions.size,
+      relation_promoted_ids: [...relationPromotions.keys()].map((rowid) => rowsById.get(rowid).document_id),
       fusion_weights: weights,
       embedding_quality: embeddingQuality(metadata.embedding_provider),
       embedding_provider: metadata.embedding_provider,
       embedding_model: metadata.embedding_model,
-      results: results.map(({ row, semantic: semanticScore, lexicalRank, score }) => ({
+      results: results.map(({ row, semantic: semanticScore, lexicalRank, promotion, score }) => ({
         kind: row.kind,
         id: row.document_id,
         note_id: row.note_id,
@@ -816,6 +893,7 @@ async function searchIndex(inputRoot, query, options = {}) {
         score: Number(score.toFixed(8)),
         semantic_score: semanticScore === null ? null : Number(semanticScore.toFixed(6)),
         lexical_match: lexicalRank !== undefined,
+        relation_promoted: promotion ? promotion.matched : 0,
         text: snippet(row.text, query),
       })),
     };
