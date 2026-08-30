@@ -439,3 +439,91 @@ test('keeps the best lexical match ahead of a semantically closer rival', async 
   assert.ok(found.results[0].semantic_score < found.results[1].semantic_score, 'fixture must pit a weak-vector target against a strong-vector rival');
   assert.equal(found.results[0].id, 'target-0', `unexpected order: ${found.results.map((item) => item.id).join(', ')}`);
 }));
+
+function seedStockTables(root, { withRelation = true } = {}) {
+  write(join(root, 'notes', 'stock-ledger.md'), `# 재고 수불부\n\n${[
+    '재고 수불부는 기간별 입고와 출고 수량을 품목 단위로 누적해 보여준다.',
+    '출고 모수는 확정된 출고 지시 기준으로 집계한다.',
+    '조회 조건은 창고, 품목, 기간을 조합해 지정한다.',
+  ].join('\n')}\n`);
+  write(join(root, 'notes', 'stock-change.md'), `# 재고 변동표\n\n${[
+    '재고 변동표는 변동 사유를 버킷으로 분해해 증감을 보여준다.',
+    '버킷은 입고, 출고, 조정, 폐기로 구분한다.',
+    '집계 단위는 일자이며 창고별로 나눈다.',
+  ].join('\n')}\n`);
+  const notes = [
+    {
+      id: 'stock-ledger',
+      path: 'notes/stock-ledger.md',
+      title: '재고 수불부',
+      summary: '기간별 입출고 누적',
+      source_symbols: ['getStockGoodsListVer2'],
+    },
+    {
+      id: 'stock-change',
+      path: 'notes/stock-change.md',
+      title: '재고 변동표',
+      summary: '사유 버킷 분해',
+      source_symbols: ['getStockChangeGridVer2'],
+    },
+  ];
+  if (withRelation) {
+    write(join(root, 'notes', 'stock-contrast.md'), `# 재고 보고서 대조\n\n${[
+      '두 보고서는 같은 원장에서 나오지만 집계 축이 다르다.',
+      '한쪽은 누적 잔고를, 다른 쪽은 사유별 증감을 답한다.',
+      '따라서 합계가 어긋나 보여도 오류가 아니다.',
+    ].join('\n')}\n`);
+    notes.push({
+      id: 'stock-contrast',
+      path: 'notes/stock-contrast.md',
+      title: '재고 보고서 대조',
+      type: 'relation',
+      relation_type: 'contrast',
+      participants: ['stock-ledger', 'stock-change'],
+      summary: '집계 축 차이',
+    });
+  }
+  write(join(root, '_knowledge', 'catalog.jsonl'), jsonl(notes));
+}
+
+test('promotes a relation note above its participants when the query names two of them', async () => fixture(async (root) => {
+  seedStockTables(root);
+  const built = await buildIndex(root, { provider: 'hash', dimensions: 128 });
+  assert.equal(built.relations, 1);
+
+  const found = await searchIndex(root, '재고 수불부와 재고 변동표 차이', { limit: 5 });
+  const order = found.results.map((item) => item.id);
+  assert.equal(found.results[0].id, 'stock-contrast', `unexpected order: ${order.join(', ')}`);
+  assert.ok(order.indexOf('stock-contrast') < order.indexOf('stock-ledger'));
+  assert.ok(order.indexOf('stock-contrast') < order.indexOf('stock-change'));
+  assert.equal(found.relation_promotions, 1);
+  assert.deepEqual(found.relation_promoted_ids, ['stock-contrast']);
+  assert.equal(found.results[0].relation_promoted, 2);
+}));
+
+test('leaves a relation note unpromoted when the query reaches only one participant', async () => fixture(async (root) => {
+  seedStockTables(root);
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+
+  const found = await searchIndex(root, '수불부 누적 잔고', { limit: 5 });
+  const order = found.results.map((item) => item.id);
+  assert.equal(found.relation_promotions, 0);
+  assert.deepEqual(found.relation_promoted_ids, []);
+  assert.equal(found.results[0].id, 'stock-ledger', `unexpected order: ${order.join(', ')}`);
+  const promoted = order.indexOf('stock-contrast');
+  assert.ok(promoted === -1 || promoted > order.indexOf('stock-ledger'), `unexpected order: ${order.join(', ')}`);
+}));
+
+test('leaves ordering untouched in a vault that declares no relation notes', async () => fixture(async (root) => {
+  seedStockTables(root, { withRelation: false });
+  const built = await buildIndex(root, { provider: 'hash', dimensions: 128 });
+  assert.equal(built.relations, 0);
+
+  // The unpromoted baseline ordering: with no relation rows to join, the two
+  // participants must come back in exactly the order lexical fusion alone gives.
+  const found = await searchIndex(root, '재고 수불부와 재고 변동표 차이', { limit: 5 });
+  assert.deepEqual(found.results.map((item) => item.id), ['stock-change', 'stock-ledger']);
+  assert.equal(found.relation_promotions, 0);
+  assert.deepEqual(found.relation_promoted_ids, []);
+  assert.deepEqual(found.results.map((item) => item.relation_promoted), [0, 0]);
+}));
