@@ -122,6 +122,9 @@ node "${CLAUDE_PLUGIN_ROOT}/skills/render-graph-view/scripts/render-graph-view.m
   --root knowledge-system --title "WMS 지식 그래프"
 ```
 
+줌아웃하면 노드가 한 덩어리로 뭉치지 않고 더 넓게 퍼집니다(시맨틱 줌). 노드 위치는 점 크기보다
+느리게 축소되고, 엣지는 옅어지며, 라벨은 허브만 남습니다.
+
 끝점이 없는 엣지는 빠지되 **보고됩니다**. 숨기지 않습니다.
 
 ### `rag-corpus-builder`

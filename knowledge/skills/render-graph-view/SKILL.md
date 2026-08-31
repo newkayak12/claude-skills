@@ -76,6 +76,7 @@ Report the absolute output path, rendered counts, and any omitted invalid edges.
 - Scale node size by degree with a restrained range so hubs remain visible without swallowing neighbors.
 - Emphasize the selected node and its direct relationships while fading unrelated graph elements.
 - Show titles only at useful zoom levels or for hover, selection, and search matches to avoid label noise.
+- On zoom-out, spread node positions faster than node size shrinks so the graph opens up instead of collapsing into one blob; fade edges and keep labels for hubs only.
 - Put raw metadata, aliases, evidence, and source references in the detail panel rather than on the canvas.
 - Respect reduced-motion preferences by starting with the layout paused.
 - Escape graph content through DOM text APIs; never interpolate record content as executable HTML.
