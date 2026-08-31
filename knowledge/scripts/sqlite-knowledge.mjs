@@ -76,6 +76,7 @@ function parseArgs(argv) {
     baseline: null,
     lexicalWeight: null,
     embedChars: null,
+    sweep: null,
   };
 
   while (args.length) {
@@ -104,6 +105,9 @@ function parseArgs(argv) {
     else if (arg === '--baseline') options.baseline = value();
     else if (arg === '--lexical-weight') options.lexicalWeight = Number(value());
     else if (arg === '--embed-chars') options.embedChars = Number(value());
+    else if (arg === '--sweep') {
+      options.sweep = value().split(',').map((part) => Number(part.trim()));
+    }
     else if (!options.query && ['search', 'neighbors', 'get'].includes(command)) options.query = arg;
     else throw new Error(`Unknown argument: ${arg}`);
   }
@@ -139,6 +143,11 @@ function parseArgs(argv) {
   if (options.embedChars !== null
     && (!Number.isInteger(options.embedChars) || options.embedChars < 128 || options.embedChars > 32768)) {
     throw new Error('--embed-chars must be an integer from 128 to 32768');
+  }
+  if (options.sweep !== null
+    && (!options.sweep.length || options.sweep.length > 8
+      || options.sweep.some((weight) => !Number.isFinite(weight) || weight < 0 || weight > 1))) {
+    throw new Error('--sweep must be 1 to 8 comma-separated ratios from 0 to 1');
   }
   return { command, ...options };
 }
@@ -1086,7 +1095,17 @@ async function searchIndex(inputRoot, query, options = {}) {
   try {
     const metadata = readMetadata(db);
     const weights = fusionWeights(metadata.embedding_provider, options.lexicalWeight ?? null);
-    const queryVector = await queryEmbedding(query, metadata, options);
+    // A weight sweep re-scores the same questions several times over. The query
+    // vector does not depend on the fusion weights, and with a real provider it
+    // is the one part of a search that costs an HTTP round trip, so the caller
+    // may hand in a cache to pay for it once.
+    const cache = options.embeddingCache instanceof Map ? options.embeddingCache : null;
+    const cacheKey = `${metadata.embedding_model}\u0000${query}`;
+    let queryVector = cache?.get(cacheKey);
+    if (!queryVector) {
+      queryVector = await queryEmbedding(query, metadata, options);
+      cache?.set(cacheKey, queryVector);
+    }
     const filter = documentFilter(options);
     const allRows = db.prepare(`SELECT * FROM documents d WHERE 1 = 1${filter.sql}`).all(...filter.params);
     const rowsById = new Map(allRows.map((row) => [Number(row.rowid), row]));
@@ -1160,6 +1179,12 @@ async function searchIndex(inputRoot, query, options = {}) {
         promotion,
       }))
       .filter((item) => item.row);
+    // Promotion appends to the window, so somebody leaves it. Naming who turns
+    // "a sibling note dropped out" from a guess into a measurement.
+    const evicted = promoted.length
+      ? grouped.slice(Math.max(0, limit - promoted.length), limit)
+        .filter((item) => !promotedRowids.has(item.rowid))
+      : [];
     const results = promoted.length
       ? [
         ...grouped.filter((item) => !promotedRowids.has(item.rowid)).slice(0, limit - promoted.length),
@@ -1185,6 +1210,7 @@ async function searchIndex(inputRoot, query, options = {}) {
       relation_participant_promotions: participantPromotions.size,
       relation_participant_promoted_ids: [...participantPromotions.keys()]
         .map((rowid) => rowsById.get(rowid).document_id),
+      relation_participant_evicted_ids: evicted.map((item) => item.row.document_id),
       fusion_weights: weights,
       embedding_quality: embeddingQuality(metadata.embedding_provider),
       embedding_provider: metadata.embedding_provider,
@@ -1297,9 +1323,8 @@ function repairTargets(questions, bridges) {
 // questions and sinks two reads as progress. Comparing per question against a
 // saved run makes the sunk ones the decision, which is the only safe rule when
 // the question set is small enough that one question moves recall by points.
-function compareToBaseline(questions, baselinePath) {
-  const raw = JSON.parse(readFileSync(baselinePath, 'utf8'));
-  const before = new Map((raw.questions ?? []).map((item) => [item.question_id, item]));
+function compareQuestionSets(questions, priorQuestions) {
+  const before = new Map((priorQuestions ?? []).map((item) => [item.question_id, item]));
   const improvements = [];
   const regressions = [];
   let compared = 0;
@@ -1322,13 +1347,17 @@ function compareToBaseline(questions, baselinePath) {
     else if (rank !== null && (priorRank === null || rank < priorRank)) improvements.push(move);
   }
   return {
-    path: baselinePath,
     compared,
     unmatched: questions.length - compared,
     improvements,
     regressions,
     verdict: regressions.length ? 'regressed' : improvements.length ? 'improved' : 'unchanged',
   };
+}
+
+function compareToBaseline(questions, baselinePath) {
+  const raw = JSON.parse(readFileSync(baselinePath, 'utf8'));
+  return { path: baselinePath, ...compareQuestionSets(questions, raw.questions) };
 }
 
 async function evalQuestions(inputRoot, options = {}) {
@@ -1405,6 +1434,56 @@ async function evalQuestions(inputRoot, options = {}) {
     repair_targets: repairTargets(questions, bridges),
     baseline: options.baseline ? compareToBaseline(questions, options.baseline) : null,
     questions,
+  };
+}
+
+// A sweep is not three eval runs pasted together: the question set, the split,
+// and the index are identical across weights, so the only honest comparison is
+// per question against the first weight in the list. The query vectors are
+// shared, so the extra weights cost SQL and arithmetic, not embeddings.
+async function sweepFusionWeights(inputRoot, options = {}) {
+  const weights = options.sweep;
+  const cache = new Map();
+  const runs = [];
+  for (const lexicalWeight of weights) {
+    runs.push(await evalQuestions(inputRoot, {
+      ...options,
+      sweep: null,
+      baseline: null,
+      lexicalWeight,
+      embeddingCache: cache,
+    }));
+  }
+
+  const [reference] = runs;
+  const points = runs.map((run, index) => ({
+    lexical_weight: run.fusion_weights?.lexical ?? weights[index],
+    semantic_weight: run.fusion_weights?.semantic ?? null,
+    hits: run.hits,
+    recall_at_k: run.recall_at_k,
+    mrr: run.mrr,
+    ...(index === 0
+      ? { reference: true }
+      : compareQuestionSets(run.questions, reference.questions)),
+  }));
+
+  // Rank by hits, then MRR — a tie on answered questions is broken by how high
+  // the first correct answer sits.
+  const best = [...points].sort((left, right) => right.hits - left.hits || right.mrr - left.mrr)[0];
+  return {
+    root: reference.root,
+    database: reference.database,
+    questions_path: reference.questions_path,
+    k: reference.k,
+    split: reference.split,
+    holdout_ratio: reference.holdout_ratio,
+    evaluated: reference.evaluated,
+    embedding_queries_cached: cache.size,
+    sweep: points,
+    best_lexical_weight: best.lexical_weight,
+    // A sweep that names a winner it cannot separate from the reference is a
+    // tie, and reporting it as a win is how a guess becomes a default.
+    decisive: best.hits !== reference.hits || best.mrr !== reference.mrr,
   };
 }
 
@@ -1741,7 +1820,9 @@ async function main(argv = process.argv.slice(2)) {
   else if (options.command === 'neighbors') result = graphNeighbors(root, options.query, options);
   else if (options.command === 'get') result = getDocument(root, options.query, options);
   else if (options.command === 'status') result = indexStatus(root, options);
-  else if (options.command === 'eval') result = await evalQuestions(root, options);
+  else if (options.command === 'eval') {
+    result = options.sweep ? await sweepFusionWeights(root, options) : await evalQuestions(root, options);
+  }
   else if (options.command === 'list') result = listDocuments(root, options);
   else if (options.command === 'serve') {
     await serveMcp({ root, db: options.db });
@@ -1776,5 +1857,6 @@ export {
   promptById,
   searchIndex,
   serveMcp,
+  sweepFusionWeights,
   textWindows,
 };

@@ -233,7 +233,9 @@ Retrieval is **rank-fused, lexical-first**:
 
    A side that would have been returned on its own evidence is left where it is.
    `relation_promotion` names the direction on each result, and
-   `relation_participant_promotions` counts the sides that could not come back on their own.
+   `relation_participant_promotions` counts the sides that could not come back on their own, and
+   `relation_participant_evicted_ids` names the notes that left the window to make room — so
+   "a sibling note dropped out" is a measurement rather than a guess.
 4. Results are grouped one-per-note by default (`group: none` to see every chunk), so a heavily
    chunked note cannot crowd sibling notes out of the top *k*. `domain`, `docType`, `section`, and
    `pathPrefix` filters — and a query-less `list` command — cover scoped lookups without SQL.
@@ -247,6 +249,10 @@ Retrieval is **rank-fused, lexical-first**:
    exact screen label back at the index, where meaning similarity dilutes an exact term match.
    `--lexical-weight` overrides it on `search` and `eval`, and `eval` records the split it ran
    under in `fusion_weights`, so a sweep can be read back afterwards against a saved baseline.
+   `eval --sweep 0.3,0.4,0.5` scores every weight in one pass — the query vectors do not depend
+   on the weights, so the extra points cost SQL, not embeddings — and reports each weight's
+   per-question improvements and regressions against the first one, plus a `decisive` flag that
+   is false when the winner cannot be separated from the reference.
 7. Embedding models trained for asymmetric retrieval encode a question and a stored passage
    differently, and Ollama's `/api/embed` does not add the instruction for you. `embeddinggemma`
    documents are embedded as `title: … | text: …` and queries as
@@ -274,6 +280,11 @@ some 22.x builds lack FTS5. The bundled Docker image is a known-good path:
 ```bash
 docker compose -f knowledge/compose.yaml run --rm knowledge-index
 ```
+
+## Roadmap
+
+[ROADMAP.md](ROADMAP.md) — what is measured, what is queued, and what is deliberately not being
+done, ordered by measured lever size rather than by what is easiest to edit.
 
 ## Hook
 

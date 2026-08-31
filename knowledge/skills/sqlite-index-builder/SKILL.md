@@ -118,10 +118,11 @@ same questions used to judge it.
 5. **Sweep the fusion split before accepting a semantic provider's losses.** With a real
    embedding the default is `semantic 0.7 / lexical 0.3`, which is a guess. Questions that quote
    an exact screen label back at the index are the ones it loses: meaning similarity dilutes an
-   exact term match. `--lexical-weight` overrides the split without re-indexing, so a sweep is
-   cheap — score `0.3`, `0.4`, `0.5` against the same baseline and read `fusion_weights` back
-   off each run. Judge a sweep on the whole question set, not on the label questions that
-   motivated it.
+   exact term match. `eval --sweep 0.3,0.4,0.5` scores every weight in one pass without
+   re-indexing, comparing each against the first weight per question. Judge a sweep on the whole
+   question set, not on the label questions that motivated it, and treat `decisive: false` as a
+   tie — adopting a winner that cannot be separated from the reference is how a guess becomes a
+   default.
 
 ```bash
 node --no-warnings "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval \
@@ -129,9 +130,9 @@ node --no-warnings "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval \
 # edit vocabulary, then index again
 node --no-warnings "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval \
   --root /path/to/vault --split dev --k 10 --baseline /tmp/before.json
-# fusion sweep — no re-index needed
+# fusion sweep — one pass, no re-index, shared query embeddings
 node --no-warnings "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval \
-  --root /path/to/vault --split dev --k 10 --lexical-weight 0.45 --baseline /tmp/before.json
+  --root /path/to/vault --split dev --k 10 --sweep 0.3,0.4,0.5
 ```
 
 The `baseline` block reports `improvements`, `regressions`, and a `verdict`. **Revert on any

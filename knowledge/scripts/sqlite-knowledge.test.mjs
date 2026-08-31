@@ -22,6 +22,7 @@ import {
   parseArgs,
   promptById,
   searchIndex,
+  sweepFusionWeights,
   textWindows,
 } from './sqlite-knowledge.mjs';
 
@@ -96,6 +97,36 @@ test('parses commands and validates bounded options', () => {
   assert.equal(parseArgs(['eval', '--lexical-weight', '0.55']).lexicalWeight, 0.55);
   assert.throws(() => parseArgs(['eval', '--lexical-weight', '1.4']), /--lexical-weight/);
 });
+
+test('scores every fusion weight in one pass and refuses to call a tie a winner', async () => fixture(async (root) => {
+  assert.deepEqual(parseArgs(['eval', '--sweep', '0.3,0.5']).sweep, [0.3, 0.5]);
+  assert.throws(() => parseArgs(['eval', '--sweep', '0.3,2']), /--sweep/);
+  assert.throws(() => parseArgs(['eval', '--sweep', '']), /--sweep/);
+
+  seed(root);
+  write(join(root, '_knowledge', 'questions.jsonl'), jsonl([
+    { id: 'payment-retry-policy', question: '결제 승인 재시도', required_note_ids: ['payments'] },
+    { id: 'shipping-status', question: '배송 추적 상태', required_note_ids: ['shipping'] },
+  ]));
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+
+  const swept = await sweepFusionWeights(root, { k: 5, sweep: [1, 0.5, 0] });
+  assert.equal(swept.sweep.length, 3);
+  assert.deepEqual(swept.sweep.map((point) => point.lexical_weight), [1, 0.5, 0]);
+  assert.equal(swept.sweep[0].reference, true);
+  assert.equal(swept.sweep[0].semantic_weight, 0);
+
+  // The first weight is the reference, so every other point reports its moves
+  // against it rather than an aggregate that hides which question paid.
+  assert.ok(Array.isArray(swept.sweep[1].regressions));
+  assert.ok(Array.isArray(swept.sweep[1].improvements));
+
+  // Two questions, three weights: six searches, two query embeddings.
+  assert.equal(swept.embedding_queries_cached, 2);
+
+  const flat = await sweepFusionWeights(root, { k: 5, sweep: [1, 1] });
+  assert.equal(flat.decisive, false, 'identical weights cannot produce a winner');
+}));
 
 test('embeds a note past the model context in overlapping windows instead of dropping its tail', async () => fixture(async (root) => {
   assert.deepEqual(textWindows('짧은 노트', 100), ['짧은 노트']);
