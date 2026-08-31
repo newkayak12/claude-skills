@@ -809,19 +809,18 @@ function fuseLexicalRanks(wordRanks, trigramRanks) {
 // relation note that matched the query lexically cannot be demoted by it.
 const RELATION_RRF_WEIGHT = 0.35;
 
-// A promoted participant inherits the lexical *rank* of the relation note that
-// vouched for it, one position lower — not a fraction of its score. The RRF
-// tail is flat enough that any scaling factor below ~0.9 lands a promoted note
-// underneath a dozen unrelated weak matches, which is where the sides of a
-// comparison were already stuck. Inheriting the rank places them immediately
-// behind the note that nominated them, whatever the surrounding scores look
-// like, and strictly behind it. It replaces the participant's own lexical score
-// rather than adding to it, so a side can never leapfrog its own relation.
-const RELATION_PARTICIPANT_RANK_OFFSET = 1;
+// A promoted participant is placed immediately behind the relation note that
+// vouched for it: it takes that note's fused score, decayed just enough to keep
+// the ordering strict. Anything gentler cannot reach — the RRF tail is flat, so
+// a fraction of a score or a handful of rank positions lands a promoted note
+// back underneath the wall of weak matches it was already stuck behind.
+const RELATION_PARTICIPANT_DECAY = 0.97;
 
 // Only a relation note the query actually reached may pull its participants up.
-// A relation note sitting at lexical rank 40 is itself a marginal candidate, and
-// letting it drag three more notes along would spend the top slots on a guess.
+// The rank that decides this is the fused one, not the lexical one: a contrast
+// note is often reached *through* its participants — forward promotion puts it
+// first while its own lexical rank stays in the tail — and reading lexical rank
+// here would disqualify exactly the notes that earned their place.
 const RELATION_SOURCE_RANK_LIMIT = 8;
 
 function rrfScore(rank) {
@@ -868,12 +867,14 @@ function relationRanks(db, lexicalRanks, rowsById) {
 // participants — the notes holding the per-side evidence the answer needs — do
 // not appear at all. Their declared membership in a matched relation is the same
 // evidence that justifies forward promotion, read the other way.
-function relationParticipantRanks(db, lexicalRanks, relationPromotions, rowsById) {
-  const sourceRowids = [...lexicalRanks.entries()]
-    .filter(([, rank]) => rank < RELATION_SOURCE_RANK_LIMIT)
-    .map(([rowid]) => rowid)
+function relationParticipantRanks(db, provisional, relationPromotions, rowsById, limit) {
+  const sourceRowids = provisional
+    .slice(0, RELATION_SOURCE_RANK_LIMIT)
+    .map((item) => item.rowid)
     .filter((rowid) => rowsById.has(rowid));
   if (!sourceRowids.length) return new Map();
+  const provisionalScores = new Map(provisional.map((item) => [item.rowid, item.score]));
+  const provisionalRanks = new Map(provisional.map((item, index) => [item.rowid, index]));
 
   const rowidByNoteId = new Map();
   for (const [rowid, row] of rowsById) {
@@ -888,29 +889,49 @@ function relationParticipantRanks(db, lexicalRanks, relationPromotions, rowsById
     WHERE document_rowid IN (${sourceRowids.map(() => '?').join(', ')})
   `).all(...sourceRowids);
 
-  const nominations = new Map();
+  const bySource = new Map();
   for (const row of rows) {
     const rowid = rowidByNoteId.get(String(row.note_id));
     if (rowid === undefined) continue;
     // A note already promoted forward is the relation, not one of its sides.
     if (relationPromotions.has(rowid)) continue;
-    const existing = nominations.get(rowid)
-      ?? { rowid, matched: 0, bestSourceRank: Infinity };
-    existing.matched += 1;
-    existing.bestSourceRank = Math.min(existing.bestSourceRank, lexicalRanks.get(Number(row.rowid)) ?? Infinity);
-    nominations.set(rowid, existing);
+    const sourceRowid = Number(row.rowid);
+    const existing = bySource.get(sourceRowid) ?? [];
+    existing.push(rowid);
+    bySource.set(sourceRowid, existing);
+  }
+
+  const nominations = new Map();
+  for (const [sourceRowid, participants] of bySource) {
+    const sourceScore = provisionalScores.get(sourceRowid) ?? 0;
+    const sourceRank = provisionalRanks.get(sourceRowid) ?? Infinity;
+    // Having matched the query is not the same as being retrievable: a
+    // sentence-shaped Korean query yields hundreds of candidates, and a side
+    // sitting at rank 22 of 353 is as absent from the top k as one that never
+    // matched at all. A zero score is the same story — where a note sits among
+    // the other zeroes is tie order, not retrieval.
+    const needsHelp = participants.some((rowid) => {
+      const score = provisionalScores.get(rowid) ?? 0;
+      const retrievable = score > 0 && (provisionalRanks.get(rowid) ?? Infinity) < limit;
+      return !retrievable && score < sourceScore * RELATION_PARTICIPANT_DECAY;
+    });
+    if (!needsHelp) continue;
+    // Promote the sides as a set. Lifting only the buried ones pushes the
+    // sibling that was barely inside the window back out of it, which leaves
+    // the comparison exactly as unanswerable as before.
+    for (const rowid of participants) {
+      const existing = nominations.get(rowid)
+        ?? { rowid, matched: 0, bestSourceRank: Infinity, bestSourceScore: 0 };
+      existing.matched += 1;
+      if (sourceRank < existing.bestSourceRank) {
+        existing.bestSourceRank = sourceRank;
+        existing.bestSourceScore = sourceScore;
+      }
+      nominations.set(rowid, existing);
+    }
   }
 
   const ordered = [...nominations.values()]
-    // Having matched the query lexically is not the same as being retrievable:
-    // a sentence-shaped Korean query yields hundreds of candidates, and a
-    // participant sitting at rank 22 of 353 is as absent from the top k as one
-    // that never matched at all. So the test is not whether the participant
-    // matched, but whether inheriting would place it above where its own lexical
-    // evidence already does. A side the query ranked on its own keeps that rank
-    // and is not reported as promoted.
-    .filter((item) => (lexicalRanks.get(item.rowid) ?? Infinity)
-      > item.bestSourceRank + RELATION_PARTICIPANT_RANK_OFFSET)
     .sort((left, right) => (left.bestSourceRank - right.bestSourceRank)
       || (right.matched - left.matched)
       || (left.rowid - right.rowid));
@@ -918,7 +939,7 @@ function relationParticipantRanks(db, lexicalRanks, relationPromotions, rowsById
     rank: index,
     matched: item.matched,
     source_rank: item.bestSourceRank,
-    inherited_rank: item.bestSourceRank + RELATION_PARTICIPANT_RANK_OFFSET,
+    inherited_score: item.bestSourceScore * RELATION_PARTICIPANT_DECAY,
     direction: 'relation-matched',
   }]));
 }
@@ -977,7 +998,6 @@ async function searchIndex(inputRoot, query, options = {}) {
     const trigramRanks = ftsRanks(db, 'documents_trgm', trigramTokens(query), filter);
     const lexicalRanks = fuseLexicalRanks(wordRanks, trigramRanks);
     const relationPromotions = relationRanks(db, lexicalRanks, rowsById);
-    const participantPromotions = relationParticipantRanks(db, lexicalRanks, relationPromotions, rowsById);
 
     // Fuse over the union of both candidate sets. Ranking only the semantic list
     // would cap how far a lexical match can climb, no matter how exact it is.
@@ -985,31 +1005,38 @@ async function searchIndex(inputRoot, query, options = {}) {
       ...semanticRanks.keys(),
       ...lexicalRanks.keys(),
       ...relationPromotions.keys(),
-      ...participantPromotions.keys(),
     ]);
-    const ranked = [...candidates].map((rowid) => {
-      const semanticHit = semanticRanks.get(rowid);
-      const lexicalRank = lexicalRanks.get(rowid);
-      const promotion = relationPromotions.get(rowid) ?? participantPromotions.get(rowid);
-      const semanticRrf = semanticHit ? 1 / (RRF_K + semanticHit.rank + 1) : 0;
-      const lexicalRrf = lexicalRank === undefined ? 0 : 1 / (RRF_K + lexicalRank + 1);
-      // Inheritance replaces the participant's own lexical evidence instead of
-      // adding to it, so a promoted side cannot climb past the relation note.
-      const inherited = promotion?.direction === 'relation-matched';
-      const effectiveLexicalRrf = inherited
-        ? Math.max(lexicalRrf, rrfScore(promotion.inherited_rank))
-        : lexicalRrf;
-      const relationRrf = promotion && !inherited ? 1 / (RRF_K + promotion.rank + 1) : 0;
-      return {
-        row: rowsById.get(rowid),
-        semantic: semanticHit ? semanticHit.score : null,
-        lexicalRank,
-        promotion,
-        score: (weights.semantic * semanticRrf) + (weights.lexical * effectiveLexicalRrf)
-          + (RELATION_RRF_WEIGHT * relationRrf),
-      };
-    }).sort((left, right) => (right.score - left.score)
-      || ((right.semantic ?? -1) - (left.semantic ?? -1)));
+    const fuse = (participantPromotions) => [...candidates, ...participantPromotions.keys()]
+      .reduce((unique, rowid) => unique.includes(rowid) ? unique : [...unique, rowid], [])
+      .map((rowid) => {
+        const semanticHit = semanticRanks.get(rowid);
+        const lexicalRank = lexicalRanks.get(rowid);
+        const promotion = relationPromotions.get(rowid) ?? participantPromotions.get(rowid);
+        const semanticRrf = semanticHit ? 1 / (RRF_K + semanticHit.rank + 1) : 0;
+        const lexicalRrf = lexicalRank === undefined ? 0 : 1 / (RRF_K + lexicalRank + 1);
+        const inherited = promotion?.direction === 'relation-matched';
+        const relationRrf = promotion && !inherited ? 1 / (RRF_K + promotion.rank + 1) : 0;
+        const own = (weights.semantic * semanticRrf) + (weights.lexical * lexicalRrf)
+          + (RELATION_RRF_WEIGHT * relationRrf);
+        return {
+          rowid,
+          row: rowsById.get(rowid),
+          semantic: semanticHit ? semanticHit.score : null,
+          lexicalRank,
+          promotion,
+          // Inheritance replaces the participant's own evidence instead of
+          // adding to it, so a promoted side cannot climb past its relation.
+          score: inherited ? Math.max(own, promotion.inherited_score) : own,
+        };
+      }).sort((left, right) => (right.score - left.score)
+        || ((right.semantic ?? -1) - (left.semantic ?? -1)));
+
+    // Participants are nominated off the fused order, then folded back in. A
+    // contrast note frequently arrives at the top through forward promotion
+    // rather than its own keywords; judging it by lexical rank alone would let
+    // it rank first and still be disqualified from vouching for its own sides.
+    const participantPromotions = relationParticipantRanks(db, fuse(new Map()), relationPromotions, rowsById, limit);
+    const ranked = participantPromotions.size ? fuse(participantPromotions) : fuse(new Map());
 
     // A note split into chunks would otherwise fill the top slots with itself
     // and leave no room for the sibling notes a multi-note question needs.

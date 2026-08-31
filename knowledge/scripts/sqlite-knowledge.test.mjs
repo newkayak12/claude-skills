@@ -727,6 +727,79 @@ test('promotes a participant that matched only weakly, below a wall of distracto
   assert.equal(scored.questions[0].hit, true);
 }));
 
+// A contrast note that the query reaches only weakly on its own words, but that
+// forward promotion lifts to the top through its participants.
+function seedForwardPromotedContrast(root) {
+  const notes = [];
+  const filler = '계약 시점 운임표를 승계하고 정산 조건과 반품 규정, 집화 스케줄, 부피 계수를 다르게 적용한다. '.repeat(6);
+  write(join(root, 'notes', 'box-size-contrast.md'), `# 계약 부록 승계 문제\n\n택배사별 박스 사이즈 코드가 왜 다른가에 대한 답이다. ${filler}\n`);
+  notes.push({
+    id: 'box-size-contrast',
+    path: 'notes/box-size-contrast.md',
+    title: '계약 부록 승계 문제',
+    type: 'relation',
+    relation_type: 'contrasts',
+    participants: ['hanjin', 'cj', 'lotte'],
+    summary: '계약 부록 차이',
+  });
+  for (const [id, name] of [['hanjin', '한진'], ['cj', '씨제이'], ['lotte', '롯데']]) {
+    write(join(root, 'notes', `${id}.md`), `# ${name} 벤더 연동\n\n${name} 벤더 연동 규격. 박스 사이즈 코드는 계약 부록에 있다. ${'송장 채번과 집화, 반품 회수, 정산 주기, 에러 매핑, 주소 정제. '.repeat(5)}\n`);
+    notes.push({ id, path: `notes/${id}.md`, title: `${name} 벤더 연동`, summary: '벤더 연동 규격' });
+  }
+  for (let index = 0; index < 30; index += 1) {
+    const id = `distractor-${index}`;
+    write(join(root, 'notes', `${id}.md`), `# 택배사 박스 사이즈 코드 매핑 ${index}\n\n택배사별 박스 사이즈 코드가 다른 규칙 ${index}.\n`);
+    notes.push({ id, path: `notes/${id}.md`, title: `택배사 박스 사이즈 코드 매핑 ${index}`, summary: '코드 매핑' });
+  }
+  write(join(root, '_knowledge', 'catalog.jsonl'), jsonl(notes));
+  write(join(root, '_knowledge', 'questions.jsonl'), jsonl([{
+    id: 'box-size-code',
+    question: '택배사별 박스 사이즈 코드가 왜 다른가',
+    kind: 'comparison',
+    required_note_ids: ['box-size-contrast', 'hanjin', 'cj', 'lotte'],
+  }]));
+}
+
+test('nominates participants off the fused order, not the lexical one', async () => fixture(async (root) => {
+  // The relation note is buried in the lexical list — thirty distractors answer
+  // more of the query's words — and reaches the top only because its own
+  // participants promoted it. Judging it by lexical rank would disqualify it
+  // from vouching for those same participants.
+  seedForwardPromotedContrast(root);
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+
+  const found = await searchIndex(root, '택배사별 박스 사이즈 코드가 왜 다른가', { limit: 10 });
+  const order = found.results.map((item) => item.id);
+  assert.equal(order[0], 'box-size-contrast', `unexpected order: ${order.join(', ')}`);
+  assert.equal(found.results[0].relation_promotion, 'participants-matched');
+  assert.equal(found.relation_participant_promotions, 3);
+  for (const id of ['hanjin', 'cj', 'lotte']) {
+    assert.ok(order.includes(id), `${id} missing: ${order.join(', ')}`);
+    assert.ok(found.results.find((item) => item.id === id).score < found.results[0].score);
+  }
+
+  const scored = await evalQuestions(root, { k: 10 });
+  assert.equal(scored.recall_at_k, 1);
+  assert.equal(scored.questions[0].hit, true);
+}));
+
+test('promotes the declared sides as a set so a sibling is not pushed out', async () => fixture(async (root) => {
+  // Lifting only the buried sides displaces the one that was barely inside the
+  // window, which leaves the comparison as unanswerable as before.
+  seedForwardPromotedContrast(root);
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+
+  const found = await searchIndex(root, '택배사별 박스 사이즈 코드가 왜 다른가', { limit: 6 });
+  const promoted = found.results.filter((item) => item.relation_promotion === 'relation-matched');
+  assert.equal(found.relation_participant_promotions, 3);
+  assert.equal(promoted.length, 3);
+  assert.deepEqual(
+    [...new Set(promoted.map((item) => item.score))].length,
+    1,
+    'sides promoted together must share the inherited score',
+  );
+}));
+
 test('does not re-promote participants the query already matched', async () => fixture(async (root) => {
   seedStockTables(root);
   await buildIndex(root, { provider: 'hash', dimensions: 128 });
