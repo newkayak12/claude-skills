@@ -2,10 +2,9 @@
 name: knowledge-workflow
 effort: high
 description: >-
-  Use when building a knowledge vault end to end or when competency questions
-  are failing and the fix has to be measured — routes catalog, graph, RAG,
-  index, and repair work as one loop with an explicit stop condition; not for a
-  single query against an index that already works.
+  Use when building a knowledge vault end to end, or when eval and competency
+  questions keep failing and the retrieval fix has to be measured — routes
+  catalog, graph, RAG, index, and repair as one loop with a stop condition.
 type: workflow
 theme: knowledge
 scenarios:
