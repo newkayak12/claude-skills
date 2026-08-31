@@ -285,6 +285,15 @@ Every search result carries diagnostics — `lexical_candidates`, `lexical_word_
 `lexical_trigram_matches`, `lexical_matches_returned`, `relation_promotions`, `relation_participant_promotions`, `distinct_notes` — so a ranking miss
 is visible instead of looking like an empty vault.
 
+### Rebuilds
+
+`index` always rebuilds the whole index, and reuses the embedding of any document whose embedded
+text — prompt prefix included — is byte-identical to the one already stored. The expensive half is
+therefore incremental while the correctness half is not: editing three notes embeds three
+documents, and a deleted or renamed note still cannot leave a stale row behind. The build reports
+`embeddings_reused` and `embeddings_computed`; the cache is rejected whenever the provider, model,
+prompt template, or schema version differs, and `--no-reuse-embeddings` forces a cold rebuild.
+
 ### Runtime
 
 Node 24+ (unflagged `node:sqlite` with FTS5). Node 22.5–23 needs `--experimental-sqlite`, and
