@@ -33,6 +33,7 @@ Answer questions over existing knowledge assets: linked Markdown vaults, graph e
 - **The index exists to be used.** If `.knowledge/knowledge.sqlite` or the `knowledge-local` MCP is present, it is the retrieval surface. Scanning `notes/**/*.md` while an index exists is a defect in the answer, not a shortcut; it bypasses ranking, filters, relation promotion, and the diagnostics that tell you whether retrieval worked.
 - **No index → catalog, not files.** Without an index, search `_knowledge/catalog.jsonl` first and open only the notes it nominates. Reading the vault directly is allowed only when neither an index nor a catalog exists, and the answer must say so.
 - **Cite what retrieval returned.** Evidence lines name the `path` / `source_ref` from the search result, so the reader can see the note was found, not browsed into.
+- **Cite only what you opened.** A search result is a candidate, not evidence. Run `knowledge_get` on every note you are about to cite; a snippet shows that the note matched, not what it says. Measured on a 94-question competency set: answers that opened no note cited the required note 14% of the time, answers that opened four or more, 93%. If a note is worth citing it is worth one `get`.
 - **Thin results are diagnosed, not worked around.** When search looks empty, read `lexical_candidates` and re-query with exact vocabulary before touching a file. A grep-based detour hides a ranking bug that `eval` should catch.
 - **Retrieval quality is a reported fact, not an assumption.** Every result carries `embedding_quality`, `fusion_weights`, and `reranked`. Under `embedding_quality: lexical-baseline` a paraphrased question is expected to miss — say so and re-query with vault vocabulary instead of concluding the vault lacks the answer. When `rerank_error` is set, the order you are reading is the fallback order, and the answer should not be presented as if the reranker ran.
 
@@ -114,7 +115,7 @@ If the query is concrete, skip intake and answer from the available assets. If a
 1. **Identify available assets.** Check the local SQLite MCP index first, then locate `_knowledge/catalog.jsonl`, `index.md`, `vault-plan.md`, `mocs/`, note frontmatter, `ontology.md`, `ontology.yml`, `mapping.md`, `nodes.*`, `edges.*`, `schema.md`, `chunks.jsonl`, `sources.csv`, or `eval-queries.jsonl`.
 2. **Restate the query intent.** Classify the request as lookup, synthesis, impact analysis, comparison, provenance check, reading path, or gap/open-question search.
 3. **Select candidates and a query path.** When a catalog exists, search its titles, aliases, `user_terms`, `source_symbols`, tags, domains, entities, and summaries first, then open only the best-matching notes. Use links/MOCs for conceptual navigation, graph edges for relationship traversal, and RAG chunks for passage-level evidence. For comparison, equivalence, or sequence questions, prefer first-class relation notes and verify every participant's evidence instead of synthesizing from one-sided proximity.
-4. **Trace evidence.** Preserve source references from note `Sources`, frontmatter `sources`, graph edge evidence, or chunk `source_ref`. Prefer direct evidence over inferred relationships.
+4. **Trace evidence.** Open every candidate you intend to cite with `knowledge_get` before writing anything, and preserve source references from note `Sources`, frontmatter `sources`, graph edge evidence, or chunk `source_ref`. Prefer direct evidence over inferred relationships. Answering off the search snippets is the single largest measured cause of a wrong or thin answer — the snippet is a ranking artifact, not the claim.
 5. **Answer with citations.** Cite the note, source path, chunk ID, node/edge record, or URL that supports each non-obvious claim.
 6. **Assign coverage before composing.** Use `complete` only when direct evidence covers every material part. Use `partial` when the answer needs material inference or has missing, stale, or conflicting parts. Use `unanswerable` when the assets cannot establish the answer. Never upgrade coverage because nearby notes make a plausible story.
 7. **Surface missing knowledge.** For `partial` or `unanswerable`, name the missing relation note, participant, source anchor, vocabulary bridge, or freshness evidence needed to resolve the question.
@@ -133,6 +134,9 @@ Answer in 2-5 concise paragraphs.
 Evidence:
 - `knowledge-base/path/Note.md` -> source or claim used
 - `chunks.jsonl#chunk-id` -> source_ref
+
+Opened:                               # every note read with get, in order
+- `knowledge-base/path/Note.md`
 
 Uncertainty:
 - Any missing, stale, inferred, or conflicting evidence.
@@ -166,6 +170,7 @@ For impact analysis:
 - Relationship-heavy questions inspect graph edges or note links before giving a narrative answer.
 - Comparison, equivalence, and sequence answers verify evidence for every participant; a one-sided relation is not presented as complete.
 - Citations point to stable note paths, source refs, chunk IDs, or graph records.
+- Every cited note was opened with `knowledge_get`, and the `Opened` list says so; a note cited from its search snippet alone is a defect, not a shortcut.
 - Conflicts and stale-risk evidence are visible.
 - Every answer declares `complete`, `partial`, or `unanswerable` coverage using the strict meanings above.
 - If the knowledge asset cannot answer the question, say exactly what is missing and which source would likely resolve it; do not fill the gap with an unlabeled inference.
