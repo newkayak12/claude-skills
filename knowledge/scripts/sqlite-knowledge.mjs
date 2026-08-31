@@ -809,14 +809,29 @@ function fuseLexicalRanks(wordRanks, trigramRanks) {
 // relation note that matched the query lexically cannot be demoted by it.
 const RELATION_RRF_WEIGHT = 0.35;
 
+// A promoted participant has no lexical score of its own, so a small standalone
+// weight would leave it below every weak keyword match and change nothing. It
+// inherits a fraction of the matched relation note's own lexical strength
+// instead: as relevant as the note that vouches for it, minus enough that the
+// relation note and any direct match still rank above it.
+const RELATION_PARTICIPANT_INHERITANCE = 0.75;
+
+// Only a relation note the query actually reached may pull its participants up.
+// A relation note sitting at lexical rank 40 is itself a marginal candidate, and
+// letting it drag three more notes along would spend the top slots on a guess.
+const RELATION_SOURCE_RANK_LIMIT = 8;
+
+function noteIdOf(row) {
+  return row?.note_id || (row?.kind === 'note' ? row.document_id : null);
+}
+
 // Rank relation notes by how many of their declared participants the lexical
 // pass already matched. Only declared `participants` count: co-occurrence and
 // shared anchors are candidate signals, not evidence of a relation.
 function relationRanks(db, lexicalRanks, rowsById) {
   const matchedNoteIds = new Set();
   for (const rowid of lexicalRanks.keys()) {
-    const row = rowsById.get(rowid);
-    const noteId = row?.note_id || (row?.kind === 'note' ? row.document_id : null);
+    const noteId = noteIdOf(rowsById.get(rowid));
     if (noteId) matchedNoteIds.add(noteId);
   }
   if (matchedNoteIds.size < RELATION_PARTICIPANT_FLOOR) return new Map();
@@ -834,7 +849,62 @@ function relationRanks(db, lexicalRanks, rowsById) {
     .sort((left, right) => (right.matched - left.matched)
       || ((lexicalRanks.get(left.rowid) ?? Infinity) - (lexicalRanks.get(right.rowid) ?? Infinity))
       || (left.rowid - right.rowid));
-  return new Map(promoted.map((item, index) => [item.rowid, { rank: index, matched: item.matched }]));
+  return new Map(promoted.map((item, index) => [item.rowid, {
+    rank: index,
+    matched: item.matched,
+    direction: 'participants-matched',
+  }]));
+}
+
+// The reverse of relationRanks. A comparison question is usually phrased in the
+// language of the contrast, not of its sides: the relation note matches and its
+// participants — the notes holding the per-side evidence the answer needs — do
+// not appear at all. Their declared membership in a matched relation is the same
+// evidence that justifies forward promotion, read the other way.
+function relationParticipantRanks(db, lexicalRanks, relationPromotions, rowsById) {
+  const sourceRowids = [...lexicalRanks.entries()]
+    .filter(([, rank]) => rank < RELATION_SOURCE_RANK_LIMIT)
+    .map(([rowid]) => rowid)
+    .filter((rowid) => rowsById.has(rowid));
+  if (!sourceRowids.length) return new Map();
+
+  const rowidByNoteId = new Map();
+  for (const [rowid, row] of rowsById) {
+    if (row.kind !== 'note') continue;
+    const noteId = noteIdOf(row);
+    if (noteId && !rowidByNoteId.has(noteId)) rowidByNoteId.set(noteId, rowid);
+  }
+
+  const rows = db.prepare(`
+    SELECT document_rowid AS rowid, participant_note_id AS note_id
+    FROM document_relations
+    WHERE document_rowid IN (${sourceRowids.map(() => '?').join(', ')})
+  `).all(...sourceRowids);
+
+  const nominations = new Map();
+  for (const row of rows) {
+    const rowid = rowidByNoteId.get(String(row.note_id));
+    if (rowid === undefined) continue;
+    // A participant the query already matched keeps its own lexical score; a
+    // note already promoted forward is the relation, not one of its sides.
+    if (lexicalRanks.has(rowid) || relationPromotions.has(rowid)) continue;
+    const existing = nominations.get(rowid)
+      ?? { rowid, matched: 0, bestSourceRank: Infinity };
+    existing.matched += 1;
+    existing.bestSourceRank = Math.min(existing.bestSourceRank, lexicalRanks.get(Number(row.rowid)) ?? Infinity);
+    nominations.set(rowid, existing);
+  }
+
+  const ordered = [...nominations.values()]
+    .sort((left, right) => (left.bestSourceRank - right.bestSourceRank)
+      || (right.matched - left.matched)
+      || (left.rowid - right.rowid));
+  return new Map(ordered.map((item, index) => [item.rowid, {
+    rank: index,
+    matched: item.matched,
+    source_rank: item.bestSourceRank,
+    direction: 'relation-matched',
+  }]));
 }
 
 function noteKey(row) {
@@ -891,24 +961,36 @@ async function searchIndex(inputRoot, query, options = {}) {
     const trigramRanks = ftsRanks(db, 'documents_trgm', trigramTokens(query), filter);
     const lexicalRanks = fuseLexicalRanks(wordRanks, trigramRanks);
     const relationPromotions = relationRanks(db, lexicalRanks, rowsById);
+    const participantPromotions = relationParticipantRanks(db, lexicalRanks, relationPromotions, rowsById);
 
     // Fuse over the union of both candidate sets. Ranking only the semantic list
     // would cap how far a lexical match can climb, no matter how exact it is.
-    const candidates = new Set([...semanticRanks.keys(), ...lexicalRanks.keys(), ...relationPromotions.keys()]);
+    const candidates = new Set([
+      ...semanticRanks.keys(),
+      ...lexicalRanks.keys(),
+      ...relationPromotions.keys(),
+      ...participantPromotions.keys(),
+    ]);
     const ranked = [...candidates].map((rowid) => {
       const semanticHit = semanticRanks.get(rowid);
       const lexicalRank = lexicalRanks.get(rowid);
-      const promotion = relationPromotions.get(rowid);
+      const promotion = relationPromotions.get(rowid) ?? participantPromotions.get(rowid);
       const semanticRrf = semanticHit ? 1 / (RRF_K + semanticHit.rank + 1) : 0;
       const lexicalRrf = lexicalRank === undefined ? 0 : 1 / (RRF_K + lexicalRank + 1);
-      const relationRrf = promotion ? 1 / (RRF_K + promotion.rank + 1) : 0;
+      const inherited = promotion?.direction === 'relation-matched';
+      const relationRrf = promotion
+        ? 1 / (RRF_K + (inherited ? promotion.source_rank : promotion.rank) + 1)
+        : 0;
+      const relationWeight = inherited
+        ? weights.lexical * RELATION_PARTICIPANT_INHERITANCE
+        : RELATION_RRF_WEIGHT;
       return {
         row: rowsById.get(rowid),
         semantic: semanticHit ? semanticHit.score : null,
         lexicalRank,
         promotion,
         score: (weights.semantic * semanticRrf) + (weights.lexical * lexicalRrf)
-          + (RELATION_RRF_WEIGHT * relationRrf),
+          + (relationWeight * relationRrf),
       };
     }).sort((left, right) => (right.score - left.score)
       || ((right.semantic ?? -1) - (left.semantic ?? -1)));
@@ -939,6 +1021,9 @@ async function searchIndex(inputRoot, query, options = {}) {
       candidates_before_grouping: ranked.length,
       relation_promotions: relationPromotions.size,
       relation_promoted_ids: [...relationPromotions.keys()].map((rowid) => rowsById.get(rowid).document_id),
+      relation_participant_promotions: participantPromotions.size,
+      relation_participant_promoted_ids: [...participantPromotions.keys()]
+        .map((rowid) => rowsById.get(rowid).document_id),
       fusion_weights: weights,
       embedding_quality: embeddingQuality(metadata.embedding_provider),
       embedding_provider: metadata.embedding_provider,
@@ -956,6 +1041,7 @@ async function searchIndex(inputRoot, query, options = {}) {
         semantic_score: semanticScore === null ? null : Number(semanticScore.toFixed(6)),
         lexical_match: lexicalRank !== undefined,
         relation_promoted: promotion ? promotion.matched : 0,
+        relation_promotion: promotion ? promotion.direction : null,
         text: snippet(row.text, query),
       })),
     };

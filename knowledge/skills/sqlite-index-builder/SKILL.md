@@ -92,6 +92,9 @@ same questions used to judge it.
    `no-lookup-vocabulary` means the note carries no aliases, user terms, or source symbols;
    `ranking` means the vocabulary exists and something else is outranking it. Start with the
    note blocking the most questions, not the note that is easiest to edit.
+   When a comparison question retrieves its relation note but none of the sides, check the
+   relation record's `participants` before touching vocabulary: search pulls declared
+   participants in on its own, so an undeclared side is a catalog defect, not a lookup one.
 3. **Ground each added term in the repo, not in the question set.** See the vocabulary-bridge
    repair rules in [answerability-contract.md](../knowledge-base-builder/references/answerability-contract.md).
 4. **Re-index and re-score after each change, against the saved run.** One edit per measurement;

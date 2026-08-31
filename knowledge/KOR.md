@@ -211,7 +211,11 @@ Missing knowledge:
 2. 정확 토큰 인덱스(`unicode61`)와 trigram 인덱스가 한국어 굴절을 처리합니다("재시도"로
    "재시도한"을 찾음).
 3. 질의가 관계 노트의 선언된 `participants` 중 둘 이상과 매칭되면 그 관계 노트를 승격합니다.
-   선언된 참여자만, 동시 출현은 근거가 아닙니다.
+   선언된 참여자만, 동시 출현은 근거가 아닙니다. 역방향도 성립합니다. 관계 노트는 매칭됐는데
+   참가자는 안 잡혔다면, 그 참가자들이 관계 노트의 어휘 점수 일부를 물려받아 올라옵니다. 비교형 질문은 대개 대조 자체의 언어로 표현되기
+   때문에, 이게 없으면 대조 노트만 회수되고 정작 답에 필요한 각 변의 근거가 빠집니다. 결과마다
+   어느 방향으로 승격됐는지(`relation_promotion`)가 붙고, 직접 매칭이 물려받은 것보다 항상
+   위에 옵니다.
 4. 결과는 기본적으로 노트당 1건으로 묶입니다(`group: none`이면 청크 전부). 청크가 많은
    노트 하나가 형제 노트를 top-*k*에서 밀어내지 못합니다. `domain`·`docType`·`section`·
    `pathPrefix` 필터와 질의어 없는 `list` 커맨드로 SQL 없이 범위 조회가 됩니다.
@@ -220,7 +224,7 @@ Missing knowledge:
    결과에 `embedding_quality: lexical-baseline`이 찍혀 의미 검색으로 오해할 일이 없습니다.
 
 모든 검색 결과에 진단 필드가 붙습니다 — `lexical_candidates`, `lexical_word_matches`,
-`lexical_trigram_matches`, `lexical_matches_returned`, `relation_promotions`, `distinct_notes` — 그래서 랭킹
+`lexical_trigram_matches`, `lexical_matches_returned`, `relation_promotions`, `relation_participant_promotions`, `distinct_notes` — 그래서 랭킹
 실패가 빈 볼트처럼 보이지 않고 눈에 띕니다.
 
 ### 런타임

@@ -616,6 +616,81 @@ test('leaves ordering untouched in a vault that declares no relation notes', asy
   assert.deepEqual(found.results.map((item) => item.relation_promoted), [0, 0]);
 }));
 
+// The participants are named only in code vocabulary, so a question phrased in
+// the language of the contrast reaches the relation note and nothing else.
+function seedContrastOnly(root) {
+  const notes = [];
+  for (const [id, symbol] of [['stock-ledger', 'getStockGoodsListVer2'], ['stock-change', 'getStockChangeGridVer2']]) {
+    write(join(root, 'notes', `${id}.md`), `# ${symbol}\n\n${symbol}는 창고별 집계를 반환한다.\n`);
+    notes.push({ id, path: `notes/${id}.md`, title: symbol, summary: '창고별 집계', source_symbols: [symbol] });
+  }
+  write(join(root, 'notes', 'stock-contrast.md'), '# 재고 보고서 대조\n\n두 보고서는 집계 축이 다르다.\n');
+  notes.push({
+    id: 'stock-contrast',
+    path: 'notes/stock-contrast.md',
+    title: '재고 보고서 대조',
+    type: 'relation',
+    relation_type: 'contrast',
+    participants: ['stock-ledger', 'stock-change'],
+    summary: '집계 축 차이',
+  });
+  for (let index = 0; index < 12; index += 1) {
+    const id = `filler-${index}`;
+    write(join(root, 'notes', `${id}.md`), `# 주문 정산 ${index}\n\n주문 정산 화면 ${index} 처리 절차.\n`);
+    notes.push({ id, path: `notes/${id}.md`, title: `주문 정산 ${index}`, summary: '정산 화면' });
+  }
+  write(join(root, '_knowledge', 'catalog.jsonl'), jsonl(notes));
+}
+
+test('pulls the declared participants in when only the relation note matches', async () => fixture(async (root) => {
+  seedContrastOnly(root);
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+  write(join(root, '_knowledge', 'questions.jsonl'), jsonl([{
+    id: 'stock-table-differences',
+    question: '재고 보고서 대조',
+    kind: 'comparison',
+    required_note_ids: ['stock-contrast', 'stock-ledger', 'stock-change'],
+  }]));
+
+  const found = await searchIndex(root, '재고 보고서 대조', { limit: 5 });
+  const order = found.results.map((item) => item.id);
+  assert.equal(order[0], 'stock-contrast', `unexpected order: ${order.join(', ')}`);
+  assert.equal(found.relation_participant_promotions, 2);
+  assert.deepEqual(
+    [...found.relation_participant_promoted_ids].sort(),
+    ['stock-change', 'stock-ledger'],
+  );
+  // Inherited, not matched: the participants carry no lexical hit of their own
+  // and must still stay below the relation note that vouched for them.
+  for (const id of ['stock-ledger', 'stock-change']) {
+    const item = found.results.find((result) => result.id === id);
+    assert.equal(item.lexical_match, false);
+    assert.equal(item.relation_promotion, 'relation-matched');
+    assert.ok(item.score < found.results[0].score);
+    assert.ok(order.indexOf(id) > order.indexOf('stock-contrast'));
+  }
+
+  // The comparison question needs every side, so this is the whole point:
+  // without the reverse promotion only one of three required notes is retrieved.
+  const scored = await evalQuestions(root, { k: 5 });
+  assert.equal(scored.questions[0].hit, true);
+  assert.equal(scored.recall_at_k, 1);
+}));
+
+test('does not re-promote participants the query already matched', async () => fixture(async (root) => {
+  seedStockTables(root);
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+
+  const found = await searchIndex(root, '재고 수불부와 재고 변동표 차이', { limit: 5 });
+  assert.equal(found.relation_promotions, 1);
+  assert.equal(found.relation_participant_promotions, 0);
+  assert.deepEqual(found.relation_participant_promoted_ids, []);
+  assert.deepEqual(
+    found.results.map((item) => item.relation_promotion),
+    ['participants-matched', null, null],
+  );
+}));
+
 test('keeps one result per note so chunks do not crowd out sibling notes', async () => fixture(async (root) => {
   // A multi-note question needs its siblings in the top k; without grouping,
   // one heavily chunked note fills the slots with copies of itself.
