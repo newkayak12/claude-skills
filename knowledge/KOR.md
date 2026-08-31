@@ -239,6 +239,12 @@ Missing knowledge:
    정확한 용어 일치를 희석합니다. `--lexical-weight`로 `search`·`eval`에서 덮어쓸 수 있고,
    `eval`은 실행에 쓴 비율을 `fusion_weights`에 기록하므로 저장된 기준선과 대조해 스윕 결과를
    나중에 되읽을 수 있습니다.
+7. 비대칭 검색용으로 학습된 임베딩 모델은 질문과 저장된 본문을 다르게 인코딩하는데, Ollama
+   `/api/embed`는 그 지시문을 대신 붙여주지 않습니다. `embeddinggemma`는 문서를
+   `title: … | text: …`, 질의를 `task: search result | query: …` 형태로 임베딩합니다. 프롬프트
+   id는 색인 메타데이터에 기록되고 `embedding_prompt`로 보고되므로, 질의는 자기 문서가 쓴
+   방식으로만 접두됩니다 — 이전에 만든 색인은 재색인 전까지 접두 없이 그대로 동작합니다.
+   모르는 모델에는 추측한 프롬프트를 붙이지 않습니다.
 
 모든 검색 결과에 진단 필드가 붙습니다 — `lexical_candidates`, `lexical_word_matches`,
 `lexical_trigram_matches`, `lexical_matches_returned`, `relation_promotions`, `relation_participant_promotions`, `distinct_notes` — 그래서 랭킹

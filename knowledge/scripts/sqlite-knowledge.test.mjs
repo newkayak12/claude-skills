@@ -12,6 +12,7 @@ import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import {
   buildIndex,
+  embeddingPrompt,
   evalQuestions,
   getDocument,
   graphNeighbors,
@@ -19,6 +20,7 @@ import {
   indexStatus,
   listDocuments,
   parseArgs,
+  promptById,
   searchIndex,
 } from './sqlite-knowledge.mjs';
 
@@ -93,6 +95,32 @@ test('parses commands and validates bounded options', () => {
   assert.equal(parseArgs(['eval', '--lexical-weight', '0.55']).lexicalWeight, 0.55);
   assert.throws(() => parseArgs(['eval', '--lexical-weight', '1.4']), /--lexical-weight/);
 });
+
+test('encodes questions and passages with the prompts the model was trained on', async () => fixture(async (root) => {
+  const prompt = embeddingPrompt('ollama', 'embeddinggemma:300m');
+  assert.equal(prompt.id, 'embeddinggemma-v1');
+  assert.equal(prompt.query('출고 취소'), 'task: search result | query: 출고 취소');
+  assert.equal(prompt.document('결제', '재시도 정책'), 'title: 결제 | text: 재시도 정책');
+  assert.equal(prompt.document('', '재시도 정책'), 'title: none | text: 재시도 정책');
+
+  // An unknown model gets no prompt rather than a guessed one, and the hash
+  // provider never gets one.
+  assert.equal(embeddingPrompt('ollama', 'nomic-embed-text'), null);
+  assert.equal(embeddingPrompt('hash', 'embeddinggemma'), null);
+
+  // An index built before prompts existed records none, and its queries stay
+  // unprefixed — prefixing a query its documents never saw moves it away from
+  // them.
+  assert.equal(promptById(undefined), null);
+  assert.equal(promptById('none'), null);
+  assert.equal(promptById('embeddinggemma-v1').id, 'embeddinggemma-v1');
+
+  seed(root);
+  const built = await buildIndex(root, { provider: 'hash', dimensions: 128 });
+  assert.equal(built.embedding_prompt, 'none');
+  const found = await searchIndex(root, '결제 승인 재시도', { limit: 2 });
+  assert.equal(found.embedding_prompt, 'none');
+}));
 
 test('overrides the fusion split so the weights can be swept, not guessed', async () => fixture(async (root) => {
   seed(root);

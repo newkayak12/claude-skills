@@ -48,6 +48,10 @@ Markdown is indexed through each catalog record's `path`; the indexer does not c
    — more than the previous six engine versions combined. Paraphrased and operator-phrased
    questions are the ones `hash` cannot reach at all, so when eval misses cluster there, raise
    the provider before proposing vocabulary edits.
+
+   Report `embedding_prompt` from the build result. `embeddinggemma` is trained for asymmetric
+   retrieval and the indexer applies its query and document instructions; an index that reports
+   `none` under that model predates the prompts and must be rebuilt to get them.
 3. When the `knowledge-local` MCP server is available, call `knowledge_status` and compare its reported root with the desired knowledge root. If they resolve to the same path, call `knowledge_index` with the selected provider and model; the MCP tool does not accept a per-call root. If the server is unavailable or points at a different root, run the bundled CLI with an explicit `--root` relative to the plugin root:
 
 ```bash
