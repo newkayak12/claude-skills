@@ -95,6 +95,19 @@ Completion gate:
 node knowledge/scripts/validate-knowledge.mjs --root knowledge-system --require-answerability
 ```
 
+The validator also reports **citation precision** beside answerability:
+
+```text
+Citations: recall 3/3; precision 3/4; off-key 1; full 1/1
+```
+
+Answerability alone counts whether required notes were cited, which rises for free whenever a
+change makes answers cite more notes. Precision — how much of what an answer cited was evidence
+it actually needed — is the other half, so a recall gain bought with noise is visible. Every
+result is scored, `partial` ones included, so a failed answer still reports how close it came.
+Precision is reported, never gated: off-key citations are usually legitimate supporting context,
+and gating them would teach answers to cite less rather than better.
+
 ### `ontology-builder`
 
 Defines the classes, relationship types, properties, constraints, and controlled vocabularies

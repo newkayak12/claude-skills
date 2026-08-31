@@ -210,6 +210,7 @@ function validateQuestions(root, questions, questionPath, results, resultPath, c
   const questionMap = uniqueById(questions, 'id', 'question id', questionPath, errors);
   const resultMap = uniqueById(results, 'question_id', 'question result', resultPath, errors);
   const counts = { total: questionMap.size, complete: 0, partial: 0, unanswerable: 0 };
+  const citations = { required: 0, cited: 0, on_key: 0, off_key: 0, full: 0, scored: 0 };
 
   for (const [id, question] of questionMap) {
     if (!String(question.question || '').trim()) {
@@ -263,6 +264,14 @@ function validateQuestions(root, questions, questionPath, results, resultPath, c
       continue;
     }
     counts[result.coverage] += 1;
+    const citedNoteIds = new Set(asStrings(result.answer_note_ids));
+    const onKey = requiredNoteIds.filter((noteId) => citedNoteIds.has(noteId)).length;
+    citations.scored += 1;
+    citations.required += requiredNoteIds.length;
+    citations.cited += citedNoteIds.size;
+    citations.on_key += onKey;
+    citations.off_key += citedNoteIds.size - onKey;
+    if (onKey === requiredNoteIds.length) citations.full += 1;
     if (result.coverage !== 'complete') {
       errors.push(`${resultPath}:${result.__line}: question ${id} is ${result.coverage}`);
       continue;
@@ -313,7 +322,7 @@ function validateQuestions(root, questions, questionPath, results, resultPath, c
       errors.push(`${resultPath}:${result.__line}: result references unknown question ${id}`);
     }
   }
-  return { questionMap, counts };
+  return { questionMap, counts, citations };
 }
 
 function edgeId(record) {
@@ -483,6 +492,34 @@ function validateCoverage(root, counts, required, errors) {
   }
 }
 
+function citationRates(citations) {
+  return {
+    ...citations,
+    recall: citations.required ? Number((citations.on_key / citations.required).toFixed(4)) : 0,
+    precision: citations.cited ? Number((citations.on_key / citations.cited).toFixed(4)) : 0,
+  };
+}
+
+// Citation precision is reported, never gated. An answer that cites a note outside
+// required_note_ids is usually supporting context, not an error - but without the number,
+// any change that makes answers cite more notes wins on recall by construction.
+function validateCitations(root, citations, errors) {
+  const path = join(root, '_knowledge', 'coverage.md');
+  if (!existsSync(path)) return;
+  const match = /^Citations:\s*recall\s*(\d+)\/(\d+);\s*precision\s*(\d+)\/(\d+);\s*off-key\s*(\d+);\s*full\s*(\d+)\/(\d+)\s*$/mi
+    .exec(readFileSync(path, 'utf8'));
+  if (!match) return;
+  const stated = match.slice(1).map(Number);
+  const actual = [
+    citations.on_key, citations.required,
+    citations.on_key, citations.cited,
+    citations.off_key, citations.full, citations.scored,
+  ];
+  if (stated.some((value, index) => value !== actual[index])) {
+    errors.push(`${path}: Citations summary does not match question results`);
+  }
+}
+
 function validateKnowledge(inputRoot, options = {}) {
   const root = resolve(inputRoot);
   const errors = [];
@@ -495,7 +532,7 @@ function validateKnowledge(inputRoot, options = {}) {
   const catalog = validateCatalog(root, catalogRecords, catalogPath, errors);
   const questions = readJsonl(questionPath, errors, requireAnswerability);
   const results = readJsonl(resultPath, errors, requireAnswerability);
-  const { questionMap, counts } = validateQuestions(
+  const { questionMap, counts, citations } = validateQuestions(
     root,
     questions,
     questionPath,
@@ -508,6 +545,7 @@ function validateKnowledge(inputRoot, options = {}) {
   const edges = readJsonl(join(root, '_graph', 'edges.jsonl'), errors, false);
   const graph = validateReachability(root, questionMap, nodes, edges, errors);
   validateCoverage(root, counts, requireAnswerability || questionMap.size > 0, errors);
+  validateCitations(root, citations, errors);
   if (!requireAnswerability && !questions.length) {
     warnings.push('answerability artifacts were not required and no competency questions were checked');
   }
@@ -515,6 +553,7 @@ function validateKnowledge(inputRoot, options = {}) {
     ok: errors.length === 0,
     root,
     counts: { notes: catalog.size, questions: counts, graph_questions: graph.checked },
+    citations: citationRates(citations),
     errors,
     warnings,
   };
@@ -531,6 +570,14 @@ function main() {
       `Knowledge answerability: ${q.complete}/${q.total} complete; ` +
       `${q.partial} partial; ${q.unanswerable} unanswerable\n`,
     );
+    const c = result.citations;
+    if (c.scored) {
+      process.stdout.write(
+        `Citations: recall ${c.on_key}/${c.required} (${c.recall}); ` +
+        `precision ${c.on_key}/${c.cited} (${c.precision}); ` +
+        `off-key ${c.off_key}; full ${c.full}/${c.scored}\n`,
+      );
+    }
     for (const warning of result.warnings) process.stdout.write(`WARN: ${warning}\n`);
     for (const error of result.errors) process.stderr.write(`ERROR: ${error}\n`);
     process.stdout.write(result.ok ? 'PASSED — knowledge contract is valid\n' : 'FAILED — knowledge contract violations found\n');

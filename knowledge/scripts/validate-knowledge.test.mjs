@@ -317,3 +317,84 @@ test('passes bounded directed graph paths that cover every required node', () =>
 function readRecords(path) {
   return String(readFileSync(path)).trim().split('\n').map(JSON.parse);
 }
+
+test('reports citation recall and precision, counting off-key notes without failing', () => {
+  fixture((root) => {
+    seed(root);
+    write(join(root, 'notes', 'stock-change.md'), '# Stock change\n');
+    const catalogPath = join(root, '_knowledge', 'catalog.jsonl');
+    const catalog = readRecords(catalogPath);
+    catalog.push({ id: 'stock-change', path: 'notes/stock-change.md', title: '재고 변동표' });
+    write(catalogPath, jsonl(catalog));
+    const results = readRecords(join(root, '_knowledge', 'question-results.jsonl'));
+    results[0].answer_note_ids = ['stock-contrast', 'stock-change'];
+    results[0].answer_note_hashes['stock-change'] = contentHash(join(root, 'notes', 'stock-change.md'));
+    write(join(root, '_knowledge', 'question-results.jsonl'), jsonl(results));
+    const result = validateKnowledge(root, { requireAnswerability: true });
+    assert.equal(result.ok, true, result.errors.join('\n'));
+    assert.deepEqual(result.citations, {
+      required: 1,
+      cited: 2,
+      on_key: 1,
+      off_key: 1,
+      full: 1,
+      scored: 1,
+      recall: 1,
+      precision: 0.5,
+    });
+  });
+});
+
+test('scores citations for partial results too, so a failed answer still reports recall', () => {
+  fixture((root) => {
+    seed(root);
+    write(join(root, '_knowledge', 'question-results.jsonl'), jsonl([
+      {
+        question_id: 'stock-difference',
+        coverage: 'partial',
+        answer_note_ids: ['stock-ledger'],
+        evidence_refs: ['mapper.xml#getStockGoodsListVer2'],
+        missing: ['stock status evidence'],
+      },
+    ]));
+    const result = validateKnowledge(root, { requireAnswerability: true });
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.citations, {
+      required: 1,
+      cited: 1,
+      on_key: 0,
+      off_key: 1,
+      full: 0,
+      scored: 1,
+      recall: 0,
+      precision: 0,
+    });
+  });
+});
+
+test('fails a Citations summary line that disagrees with the results', () => {
+  fixture((root) => {
+    seed(root);
+    write(
+      join(root, '_knowledge', 'coverage.md'),
+      '# Coverage\n\nAnswerability: 1/1 complete; 0 partial; 0 unanswerable; 100%\n' +
+      'Citations: recall 1/1; precision 1/3; off-key 2; full 1/1\n',
+    );
+    const result = validateKnowledge(root, { requireAnswerability: true });
+    assert.equal(result.ok, false);
+    assert.match(result.errors.join('\n'), /Citations summary does not match/);
+  });
+});
+
+test('accepts a matching Citations summary line', () => {
+  fixture((root) => {
+    seed(root);
+    write(
+      join(root, '_knowledge', 'coverage.md'),
+      '# Coverage\n\nAnswerability: 1/1 complete; 0 partial; 0 unanswerable; 100%\n' +
+      'Citations: recall 1/1; precision 1/1; off-key 0; full 1/1\n',
+    );
+    const result = validateKnowledge(root, { requireAnswerability: true });
+    assert.equal(result.ok, true, result.errors.join('\n'));
+  });
+});
