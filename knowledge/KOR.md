@@ -60,6 +60,13 @@ knowledge-system/
   _rag/         chunks.jsonl  sources.csv  eval-queries.jsonl
 ```
 
+### `knowledge-workflow`
+
+전체 구축과 검색 개선 루프의 진입점. 아래 스킬들을 순서대로 라우팅하고, 수리 루프를
+**측정 라운드**로 바꿉니다 — 첫 수정 전에 질문 세트를 분할하고, 측정 1회당 변경 1건,
+코퍼스 수정은 회귀 시 되돌리고, 편집거리가 떨어질 때가 아니라 **홀드아웃이 멈출 때**
+종료합니다.
+
 ### `knowledge-base-builder`
 
 링크 걸린 Markdown 볼트를 만듭니다. 노트 하나는 지속적인 **주장(claim)** 하나 — 개념, 코드
