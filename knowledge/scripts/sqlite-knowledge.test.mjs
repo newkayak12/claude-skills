@@ -677,6 +677,56 @@ test('pulls the declared participants in when only the relation note matches', a
   assert.equal(scored.recall_at_k, 1);
 }));
 
+test('promotes a participant that matched only weakly, below a wall of distractors', async () => fixture(async (root) => {
+  // The case a "did it match at all" guard gets wrong: the sides do match, and
+  // are still unreachable. Every distractor answers more of the query's words
+  // than the vendor notes do, so lexical rank alone buries them.
+  const notes = [];
+  write(join(root, 'notes', 'box-size-contrast.md'), '# 택배사별 박스 사이즈 코드가 다른 이유\n\n계약 시점의 운임표를 그대로 쓰기 때문이다.\n');
+  notes.push({
+    id: 'box-size-contrast',
+    path: 'notes/box-size-contrast.md',
+    title: '택배사별 박스 사이즈 코드가 다른 이유',
+    type: 'relation',
+    relation_type: 'contrasts',
+    participants: ['hanjin', 'cj'],
+    summary: '계약 부록 차이',
+  });
+  for (const [id, name] of [['hanjin', '한진'], ['cj', '씨제이']]) {
+    write(join(root, 'notes', `${id}.md`), `# ${name} 벤더\n\n송장 채번과 정산 주기. 박스 사이즈 코드는 계약 부록에 있다.\n`);
+    notes.push({ id, path: `notes/${id}.md`, title: `${name} 벤더`, summary: '벤더 연동 규격' });
+  }
+  for (let index = 0; index < 12; index += 1) {
+    const id = `distractor-${index}`;
+    write(join(root, 'notes', `${id}.md`), `# 택배사 코드 매핑 ${index}\n\n택배사 코드 체계와 사이즈 구분, 택배사별 차이 ${index}.\n`);
+    notes.push({ id, path: `notes/${id}.md`, title: `택배사 코드 매핑 ${index}`, summary: '코드 매핑' });
+  }
+  write(join(root, '_knowledge', 'catalog.jsonl'), jsonl(notes));
+  write(join(root, '_knowledge', 'questions.jsonl'), jsonl([{
+    id: 'box-size-code',
+    question: '택배사별 박스 사이즈 코드가 왜 다른가',
+    kind: 'comparison',
+    required_note_ids: ['box-size-contrast', 'hanjin', 'cj'],
+  }]));
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+
+  const found = await searchIndex(root, '택배사별 박스 사이즈 코드가 왜 다른가', { limit: 5 });
+  const order = found.results.map((item) => item.id);
+  assert.equal(order[0], 'box-size-contrast', `unexpected order: ${order.join(', ')}`);
+  assert.equal(found.relation_participant_promotions, 2);
+  for (const id of ['hanjin', 'cj']) {
+    const item = found.results.find((result) => result.id === id);
+    assert.equal(item.lexical_match, true, `${id} should still be a lexical match`);
+    assert.equal(item.relation_promotion, 'relation-matched');
+    assert.ok(order.indexOf(id) > 0 && order.indexOf(id) < order.indexOf('distractor-0'),
+      `unexpected order: ${order.join(', ')}`);
+    assert.ok(item.score < found.results[0].score, `${id} outranked its own relation note`);
+  }
+
+  const scored = await evalQuestions(root, { k: 5 });
+  assert.equal(scored.questions[0].hit, true);
+}));
+
 test('does not re-promote participants the query already matched', async () => fixture(async (root) => {
   seedStockTables(root);
   await buildIndex(root, { provider: 'hash', dimensions: 128 });
