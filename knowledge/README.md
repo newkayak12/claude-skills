@@ -214,12 +214,26 @@ Retrieval is **rank-fused, lexical-first**:
    ("재시도" finds "재시도한").
 3. Relation notes are promoted when the query matches two or more of their declared
    `participants` — declared participants only, never co-occurrence. The reverse also holds:
-   when a relation note matches and its participants do not, those participants are pulled in
-   with a fraction of the relation note's own lexical strength. A comparison question is
+   when a relation note ranks near the top and its declared participants would not be returned,
+   those participants are added to the **end** of the result window. A comparison question is
    usually phrased in the language of the contrast, so without this the contrast note is the
-   only thing retrieved and the per-side evidence the answer needs is missing. Each result says
-   which direction promoted it (`relation_promotion`), and a direct match always outranks an
-   inherited one.
+   only thing retrieved and the per-side evidence the answer needs is missing. Three things make
+   this hold up instead of trading one kind of question for another:
+   - The nomination is read off the **fused** order. A contrast note often arrives at the top
+     through its own participants rather than its keywords, so reading its lexical rank would
+     disqualify exactly the notes that earned their place.
+   - Promotion buys **retrievability, not rank**. The sides take the last slots, never the best
+     ones, so the first correct answer to every other query keeps its position. Scoring them
+     near the top was measured on a real vault: comparison answers rose, MRR fell, and five
+     previously-answered questions broke.
+   - The window boundary is **solved, not read once**. Appended sides move the cutoff, so a
+     sibling at rank 9 of 10 stops being retrievable the moment two of its siblings are
+     appended; it joins them rather than being evicted by them. Promotion is capped at half the
+     window.
+
+   A side that would have been returned on its own evidence is left where it is.
+   `relation_promotion` names the direction on each result, and
+   `relation_participant_promotions` counts the sides that could not come back on their own.
 4. Results are grouped one-per-note by default (`group: none` to see every chunk), so a heavily
    chunked note cannot crowd sibling notes out of the top *k*. `domain`, `docType`, `section`, and
    `pathPrefix` filters — and a query-less `list` command — cover scoped lookups without SQL.
