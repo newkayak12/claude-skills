@@ -74,6 +74,7 @@ function parseArgs(argv) {
     split: 'all',
     holdout: DEFAULT_HOLDOUT_RATIO,
     baseline: null,
+    lexicalWeight: null,
   };
 
   while (args.length) {
@@ -100,6 +101,7 @@ function parseArgs(argv) {
     else if (arg === '--split') options.split = value();
     else if (arg === '--holdout') options.holdout = Number(value());
     else if (arg === '--baseline') options.baseline = value();
+    else if (arg === '--lexical-weight') options.lexicalWeight = Number(value());
     else if (!options.query && ['search', 'neighbors', 'get'].includes(command)) options.query = arg;
     else throw new Error(`Unknown argument: ${arg}`);
   }
@@ -127,6 +129,10 @@ function parseArgs(argv) {
   }
   if (!Number.isFinite(options.holdout) || options.holdout < 0.1 || options.holdout > 0.5) {
     throw new Error('--holdout must be a ratio from 0.1 to 0.5');
+  }
+  if (options.lexicalWeight !== null
+    && (!Number.isFinite(options.lexicalWeight) || options.lexicalWeight < 0 || options.lexicalWeight > 1)) {
+    throw new Error('--lexical-weight must be a ratio from 0 to 1');
   }
   return { command, ...options };
 }
@@ -955,7 +961,15 @@ function noteKey(row) {
 // no weight leaves lexical evidence to decide the order whenever there is any;
 // with no lexical match every score is zero and the secondary sort on
 // semantic_score still orders the vector-only fallback.
-function fusionWeights(provider) {
+// The semantic split is a starting point, not a measured constant. A trained
+// embedding wins the paraphrased questions lexical search cannot reach, and
+// loses the ones that quote an exact screen label back at the index — meaning
+// similarity dilutes an exact term match. Sweep `--lexical-weight` against a
+// saved eval run before treating either number as settled.
+function fusionWeights(provider, lexicalWeight = null) {
+  if (lexicalWeight !== null && Number.isFinite(lexicalWeight)) {
+    return { semantic: Number((1 - lexicalWeight).toFixed(4)), lexical: Number(lexicalWeight.toFixed(4)) };
+  }
   return provider === 'hash'
     ? { semantic: 0, lexical: 1 }
     : { semantic: 0.7, lexical: 0.3 };
@@ -977,7 +991,7 @@ async function searchIndex(inputRoot, query, options = {}) {
   const { root, database, db } = openIndex(inputRoot, options.db);
   try {
     const metadata = readMetadata(db);
-    const weights = fusionWeights(metadata.embedding_provider);
+    const weights = fusionWeights(metadata.embedding_provider, options.lexicalWeight ?? null);
     const queryVector = await queryEmbedding(query, metadata, options);
     const filter = documentFilter(options);
     const allRows = db.prepare(`SELECT * FROM documents d WHERE 1 = 1${filter.sql}`).all(...filter.params);
@@ -1239,6 +1253,7 @@ async function evalQuestions(inputRoot, options = {}) {
   let requiredFound = 0;
   let reciprocalSum = 0;
   let skipped = 0;
+  let fusionUsed = null;
   for (const [index, record] of records.entries()) {
     const id = String(record.id || '').trim();
     const question = String(record.question || '').trim();
@@ -1251,6 +1266,7 @@ async function evalQuestions(inputRoot, options = {}) {
     }
     const requiredNoteIds = asStrings(record.required_note_ids);
     const found = await searchIndex(root, question, { ...options, limit: k });
+    fusionUsed = found.fusion_weights;
     const required = requiredNoteRanks(found.results, requiredNoteIds);
     const ranks = required.map((item) => item.rank).filter((rank) => rank !== null);
     const firstRank = ranks.length ? Math.min(...ranks) : null;
@@ -1277,6 +1293,7 @@ async function evalQuestions(inputRoot, options = {}) {
     questions_path: questionsPath,
     k,
     kind: options.kind || null,
+    fusion_weights: fusionUsed,
     split,
     holdout_ratio: holdoutRatio,
     evaluated: questions.length,
