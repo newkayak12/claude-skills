@@ -124,6 +124,9 @@ node "${CLAUDE_PLUGIN_ROOT}/skills/render-graph-view/scripts/render-graph-view.m
   --root knowledge-system --title "WMS knowledge graph"
 ```
 
+Zooming out spreads nodes apart instead of collapsing them into a blob (semantic zoom): node
+positions shrink more slowly than node dots, edges fade, and labels thin out to hubs only.
+
 Edges whose endpoints do not exist are omitted **and reported**, never hidden.
 
 ### `rag-corpus-builder`
