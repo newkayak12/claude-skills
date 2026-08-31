@@ -392,6 +392,33 @@ function normalizeVector(values) {
   return vector;
 }
 
+// EmbeddingGemma is trained with an instruction glued to the front of the text,
+// and it encodes a question and a stored passage differently: a query carries
+// `task: search result | query: …`, a document carries `title: … | text: …`.
+// Ollama's /api/embed does not add them — raw text goes in, so without this an
+// index embeds every question as if it were a passage, which is the exact case
+// the asymmetric training was for. Prompts are model-specific, so an unknown
+// model gets none rather than a guess; the id is recorded in the index metadata
+// so a query is only ever prefixed the way its documents were.
+const EMBEDDING_PROMPTS = {
+  embeddinggemma: {
+    id: 'embeddinggemma-v1',
+    document: (title, text) => `title: ${String(title || '').trim() || 'none'} | text: ${text}`,
+    query: (text) => `task: search result | query: ${text}`,
+  },
+};
+
+function embeddingPrompt(provider, model) {
+  if (provider !== 'ollama') return null;
+  const family = String(model || '').split(':')[0].trim().toLowerCase();
+  return EMBEDDING_PROMPTS[family] ?? null;
+}
+
+function promptById(id) {
+  if (!id || id === 'none') return null;
+  return Object.values(EMBEDDING_PROMPTS).find((prompt) => prompt.id === id) ?? null;
+}
+
 async function ollamaEmbeddings(texts, options) {
   const endpoint = new URL('/api/embed', options.ollamaUrl).toString();
   const response = await fetch(endpoint, {
@@ -560,8 +587,14 @@ async function buildIndex(inputRoot, options = {}) {
   if (!data.documents.length && !data.edges.length) {
     throw new Error(`No knowledge artifacts found under ${root}`);
   }
+  const prompt = embeddingPrompt(provider, model);
   const embeddings = await embedTexts(
-    data.documents.map((document) => [document.title, document.section, document.text].filter(Boolean).join('\n')),
+    data.documents.map((document) => {
+      const body = [document.section, document.text].filter(Boolean).join('\n');
+      return prompt
+        ? prompt.document(document.title, body)
+        : [document.title, document.section, document.text].filter(Boolean).join('\n');
+    }),
     config,
   );
 
@@ -579,6 +612,7 @@ async function buildIndex(inputRoot, options = {}) {
       embedding_provider: provider,
       embedding_model: model,
       embedding_dimensions: String(embeddings[0]?.length || dimensions),
+      embedding_prompt: prompt ? prompt.id : 'none',
     };
     for (const [key, value] of Object.entries(metadata)) insertMeta.run(key, value);
 
@@ -678,6 +712,7 @@ async function buildIndex(inputRoot, options = {}) {
     embedding_model: model,
     embedding_dimensions: embeddings[0]?.length || dimensions,
     embedding_quality: embeddingQuality(provider),
+    embedding_prompt: prompt ? prompt.id : 'none',
     notice: provider === 'hash'
       ? 'hash is a dependency-free lexical feature baseline, not a semantic embedding. Search ranks full-text matches first; use --provider ollama for semantic retrieval.'
       : null,
@@ -735,7 +770,10 @@ async function queryEmbedding(text, metadata, options = {}) {
   const dimensions = Number(metadata.embedding_dimensions);
   if (provider === 'hash') return hashEmbedding(text, dimensions);
   if (provider === 'ollama') {
-    return (await ollamaEmbeddings([text], {
+    // An index built before prompts existed carries no `embedding_prompt`, and
+    // prefixing a query its documents never saw would shift it away from them.
+    const prompt = promptById(metadata.embedding_prompt);
+    return (await ollamaEmbeddings([prompt ? prompt.query(text) : text], {
       model: metadata.embedding_model,
       ollamaUrl: options.ollamaUrl || process.env.OLLAMA_HOST || DEFAULT_OLLAMA_URL,
     }))[0];
@@ -1095,6 +1133,7 @@ async function searchIndex(inputRoot, query, options = {}) {
       embedding_quality: embeddingQuality(metadata.embedding_provider),
       embedding_provider: metadata.embedding_provider,
       embedding_model: metadata.embedding_model,
+      embedding_prompt: metadata.embedding_prompt || 'none',
       results: results.map(({ row, semantic: semanticScore, lexicalRank, promotion, score }) => ({
         kind: row.kind,
         id: row.document_id,
@@ -1668,6 +1707,7 @@ export {
   buildIndex,
   callMcpTool,
   collectKnowledge,
+  embeddingPrompt,
   evalQuestions,
   findKnowledgeRoot,
   getDocument,
@@ -1677,6 +1717,7 @@ export {
   indexStatus,
   listDocuments,
   parseArgs,
+  promptById,
   searchIndex,
   serveMcp,
 };

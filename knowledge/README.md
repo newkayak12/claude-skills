@@ -247,6 +247,13 @@ Retrieval is **rank-fused, lexical-first**:
    exact screen label back at the index, where meaning similarity dilutes an exact term match.
    `--lexical-weight` overrides it on `search` and `eval`, and `eval` records the split it ran
    under in `fusion_weights`, so a sweep can be read back afterwards against a saved baseline.
+7. Embedding models trained for asymmetric retrieval encode a question and a stored passage
+   differently, and Ollama's `/api/embed` does not add the instruction for you. `embeddinggemma`
+   documents are embedded as `title: … | text: …` and queries as
+   `task: search result | query: …`. The prompt id is recorded in the index metadata and
+   reported as `embedding_prompt`, so a query is only prefixed the way its documents were —
+   an index built before this stays unprefixed until it is rebuilt. An unknown model gets no
+   prompt rather than a guessed one.
 
 Every search result carries diagnostics — `lexical_candidates`, `lexical_word_matches`,
 `lexical_trigram_matches`, `lexical_matches_returned`, `relation_promotions`, `relation_participant_promotions`, `distinct_notes` — so a ranking miss
