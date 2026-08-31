@@ -41,6 +41,7 @@ const RRF_K = 60;
 // evidence about that participant, not about the relation, so promotion needs a
 // second one before it counts as a signal at all.
 const RELATION_PARTICIPANT_FLOOR = 2;
+const DEFAULT_HOLDOUT_RATIO = 0.35;
 const ARTIFACT_PATHS = {
   catalog: ['_knowledge/catalog.jsonl'],
   chunks: ['_rag/chunks.jsonl', 'rag/chunks.jsonl'],
@@ -70,6 +71,9 @@ function parseArgs(argv) {
     section: null,
     pathPrefix: null,
     group: 'note',
+    split: 'all',
+    holdout: DEFAULT_HOLDOUT_RATIO,
+    baseline: null,
   };
 
   while (args.length) {
@@ -93,6 +97,9 @@ function parseArgs(argv) {
     else if (arg === '--section') options.section = value();
     else if (arg === '--path-prefix') options.pathPrefix = value();
     else if (arg === '--group') options.group = value();
+    else if (arg === '--split') options.split = value();
+    else if (arg === '--holdout') options.holdout = Number(value());
+    else if (arg === '--baseline') options.baseline = value();
     else if (!options.query && ['search', 'neighbors', 'get'].includes(command)) options.query = arg;
     else throw new Error(`Unknown argument: ${arg}`);
   }
@@ -114,6 +121,12 @@ function parseArgs(argv) {
   }
   if (!Number.isInteger(options.k) || options.k < 1 || options.k > 50) {
     throw new Error('--k must be an integer from 1 to 50');
+  }
+  if (!['all', 'dev', 'holdout'].includes(options.split)) {
+    throw new Error('--split must be all, dev, or holdout');
+  }
+  if (!Number.isFinite(options.holdout) || options.holdout < 0.1 || options.holdout > 0.5) {
+    throw new Error('--holdout must be a ratio from 0.1 to 0.5');
   }
   return { command, ...options };
 }
@@ -962,6 +975,114 @@ function requiredNoteRanks(results, requiredNoteIds) {
   return requiredNoteIds.map((noteId) => ({ note_id: noteId, rank: ranksByNoteId.get(noteId) ?? null }));
 }
 
+// A question set that is entirely tuned against is no longer a measurement.
+// The bucket is derived from the question id alone, so dev and holdout stay the
+// same across runs, machines, and reorderings of questions.jsonl without any
+// side file to keep in sync — and a question can never drift between splits
+// while vocabulary is being repaired against the dev half.
+function splitBucket(questionId) {
+  let hash = 2166136261;
+  for (let index = 0; index < questionId.length; index += 1) {
+    hash ^= questionId.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  // Finalize with an avalanche mix. Without it, ids that differ only in their
+  // last characters — question-1 … question-94 — differ only in the low bits
+  // FNV touched last, and taking the high bits as the bucket drops the whole
+  // set into one split.
+  hash ^= hash >>> 16;
+  hash = Math.imul(hash, 2246822507);
+  hash ^= hash >>> 13;
+  hash = Math.imul(hash, 3266489909);
+  hash ^= hash >>> 16;
+  return (hash >>> 0) / 4294967296;
+}
+
+function bridgeFieldsByNoteId(root) {
+  const catalogPath = artifactPath(root, 'catalog');
+  const byNoteId = new Map();
+  if (!existsSync(catalogPath)) return byNoteId;
+  for (const record of readJsonl(catalogPath)) {
+    const id = String(record.id || '').trim();
+    if (!id) continue;
+    byNoteId.set(id, {
+      domain: record.domain ?? null,
+      aliases: asStrings(record.aliases).length,
+      user_terms: asStrings(record.user_terms).length,
+      source_symbols: asStrings(record.source_symbols).length,
+    });
+  }
+  return byNoteId;
+}
+
+// Ranks the notes that eval could not retrieve by how many questions they block,
+// and states which lookup-vocabulary fields those notes are missing. This turns
+// "recall is 0.71" into a specific next edit; a note absent from the catalog is
+// an extraction gap, not a vocabulary one, and is reported as such.
+function repairTargets(questions, bridges) {
+  const targets = new Map();
+  for (const question of questions) {
+    for (const required of question.required_notes) {
+      if (required.rank !== null) continue;
+      const existing = targets.get(required.note_id) ?? {
+        note_id: required.note_id,
+        in_catalog: bridges.has(required.note_id),
+        ...(bridges.get(required.note_id) ?? { domain: null, aliases: 0, user_terms: 0, source_symbols: 0 }),
+        blocked_questions: [],
+      };
+      existing.blocked_questions.push(question.question_id);
+      targets.set(required.note_id, existing);
+    }
+  }
+  return [...targets.values()]
+    .map((target) => ({
+      ...target,
+      gap: target.in_catalog
+        ? (target.user_terms + target.source_symbols + target.aliases === 0 ? 'no-lookup-vocabulary' : 'ranking')
+        : 'missing-note',
+    }))
+    .sort((a, b) => b.blocked_questions.length - a.blocked_questions.length
+      || a.note_id.localeCompare(b.note_id));
+}
+
+// A single recall number hides the trade: a vocabulary edit that lifts three
+// questions and sinks two reads as progress. Comparing per question against a
+// saved run makes the sunk ones the decision, which is the only safe rule when
+// the question set is small enough that one question moves recall by points.
+function compareToBaseline(questions, baselinePath) {
+  const raw = JSON.parse(readFileSync(baselinePath, 'utf8'));
+  const before = new Map((raw.questions ?? []).map((item) => [item.question_id, item]));
+  const improvements = [];
+  const regressions = [];
+  let compared = 0;
+  for (const question of questions) {
+    const prior = before.get(question.question_id);
+    if (!prior) continue;
+    compared += 1;
+    const priorRank = prior.first_rank ?? null;
+    const rank = question.first_rank ?? null;
+    const move = {
+      question_id: question.question_id,
+      first_rank_before: priorRank,
+      first_rank_after: rank,
+      hit_before: prior.hit === true,
+      hit_after: question.hit === true,
+    };
+    if (prior.hit === true && question.hit !== true) regressions.push(move);
+    else if (priorRank !== null && (rank === null || rank > priorRank)) regressions.push(move);
+    else if (prior.hit !== true && question.hit === true) improvements.push(move);
+    else if (rank !== null && (priorRank === null || rank < priorRank)) improvements.push(move);
+  }
+  return {
+    path: baselinePath,
+    compared,
+    unmatched: questions.length - compared,
+    improvements,
+    regressions,
+    verdict: regressions.length ? 'regressed' : improvements.length ? 'improved' : 'unchanged',
+  };
+}
+
 async function evalQuestions(inputRoot, options = {}) {
   const root = findKnowledgeRoot(inputRoot);
   const questionsPath = artifactPath(root, 'questions');
@@ -969,17 +1090,26 @@ async function evalQuestions(inputRoot, options = {}) {
     throw new Error(`No competency questions found at ${questionsPath}. Declare them before running eval.`);
   }
   const k = Math.min(50, Math.max(1, Number(options.k) || 10));
+  const split = options.split || 'all';
+  const holdoutRatio = Number.isFinite(options.holdout) ? options.holdout : DEFAULT_HOLDOUT_RATIO;
   const records = readJsonl(questionsPath);
+  const bridges = bridgeFieldsByNoteId(root);
 
   const questions = [];
   let requiredTotal = 0;
   let requiredFound = 0;
   let reciprocalSum = 0;
+  let skipped = 0;
   for (const [index, record] of records.entries()) {
     const id = String(record.id || '').trim();
     const question = String(record.question || '').trim();
     if (!id) throw new Error(`${questionsPath}:${index + 1}: missing id`);
     if (!question) throw new Error(`${questionsPath}:${index + 1}: missing question`);
+    const bucket = splitBucket(id) < holdoutRatio ? 'holdout' : 'dev';
+    if (split !== 'all' && bucket !== split) {
+      skipped += 1;
+      continue;
+    }
     const requiredNoteIds = asStrings(record.required_note_ids);
     const found = await searchIndex(root, question, { ...options, limit: k });
     const required = requiredNoteRanks(found.results, requiredNoteIds);
@@ -992,6 +1122,7 @@ async function evalQuestions(inputRoot, options = {}) {
       question_id: id,
       question,
       kind: record.kind ?? null,
+      split: bucket,
       required_notes: required,
       hit: required.length > 0 && ranks.length === required.length,
       first_rank: firstRank,
@@ -1007,6 +1138,10 @@ async function evalQuestions(inputRoot, options = {}) {
     questions_path: questionsPath,
     k,
     kind: options.kind || null,
+    split,
+    holdout_ratio: holdoutRatio,
+    evaluated: questions.length,
+    skipped_by_split: skipped,
     total: questions.length,
     hits: questions.filter((item) => item.hit).length,
     required_note_ids: requiredTotal,
@@ -1016,6 +1151,8 @@ async function evalQuestions(inputRoot, options = {}) {
       ? Number((questions.reduce((sum, item) => sum + item.distinct_notes, 0) / questions.length).toFixed(2))
       : 0,
     mrr: questions.length ? Number((reciprocalSum / questions.length).toFixed(6)) : 0,
+    repair_targets: repairTargets(questions, bridges),
+    baseline: options.baseline ? compareToBaseline(questions, options.baseline) : null,
     questions,
   };
 }

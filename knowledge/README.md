@@ -154,6 +154,16 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval --root knowledge-
 and `recall_at_k` per question. Run it after every index rebuild; a required note missing from
 the top *k* is a retrieval defect, not a clean build.
 
+Missed questions get a repair loop rather than a shrug. `repair_targets` ranks the unretrieved
+notes by how many questions they block and classifies each gap as `missing-note` (an extraction
+job), `no-lookup-vocabulary` (no aliases, user terms, or source symbols), or `ranking`. Two
+guards keep the repair from grading itself: `--split dev|holdout` reserves a third of the
+questions — the bucket is derived from the question id, so it is stable across runs and cannot
+drift while vocabulary is being edited — and `--baseline before.json` compares per question, so
+a run that lifts three questions and sinks one reports `verdict: regressed` instead of a higher
+average. Vocabulary must be grounded in the source material; a term copied out of the question
+set guarantees its own retrieval and measures nothing.
+
 ```json
 { "total": 5, "hits": 5, "recall_at_k": 1, "mrr": 1,
   "questions": [{ "question_id": "stock-table-differences", "first_rank": 1, "hit": true }] }
