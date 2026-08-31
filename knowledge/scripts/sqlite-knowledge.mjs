@@ -809,17 +809,24 @@ function fuseLexicalRanks(wordRanks, trigramRanks) {
 // relation note that matched the query lexically cannot be demoted by it.
 const RELATION_RRF_WEIGHT = 0.35;
 
-// A promoted participant has no lexical score of its own, so a small standalone
-// weight would leave it below every weak keyword match and change nothing. It
-// inherits a fraction of the matched relation note's own lexical strength
-// instead: as relevant as the note that vouches for it, minus enough that the
-// relation note and any direct match still rank above it.
-const RELATION_PARTICIPANT_INHERITANCE = 0.75;
+// A promoted participant inherits the lexical *rank* of the relation note that
+// vouched for it, one position lower — not a fraction of its score. The RRF
+// tail is flat enough that any scaling factor below ~0.9 lands a promoted note
+// underneath a dozen unrelated weak matches, which is where the sides of a
+// comparison were already stuck. Inheriting the rank places them immediately
+// behind the note that nominated them, whatever the surrounding scores look
+// like, and strictly behind it. It replaces the participant's own lexical score
+// rather than adding to it, so a side can never leapfrog its own relation.
+const RELATION_PARTICIPANT_RANK_OFFSET = 1;
 
 // Only a relation note the query actually reached may pull its participants up.
 // A relation note sitting at lexical rank 40 is itself a marginal candidate, and
 // letting it drag three more notes along would spend the top slots on a guess.
 const RELATION_SOURCE_RANK_LIMIT = 8;
+
+function rrfScore(rank) {
+  return rank === undefined || rank === null || !Number.isFinite(rank) ? 0 : 1 / (RRF_K + rank + 1);
+}
 
 function noteIdOf(row) {
   return row?.note_id || (row?.kind === 'note' ? row.document_id : null);
@@ -885,9 +892,8 @@ function relationParticipantRanks(db, lexicalRanks, relationPromotions, rowsById
   for (const row of rows) {
     const rowid = rowidByNoteId.get(String(row.note_id));
     if (rowid === undefined) continue;
-    // A participant the query already matched keeps its own lexical score; a
-    // note already promoted forward is the relation, not one of its sides.
-    if (lexicalRanks.has(rowid) || relationPromotions.has(rowid)) continue;
+    // A note already promoted forward is the relation, not one of its sides.
+    if (relationPromotions.has(rowid)) continue;
     const existing = nominations.get(rowid)
       ?? { rowid, matched: 0, bestSourceRank: Infinity };
     existing.matched += 1;
@@ -896,6 +902,15 @@ function relationParticipantRanks(db, lexicalRanks, relationPromotions, rowsById
   }
 
   const ordered = [...nominations.values()]
+    // Having matched the query lexically is not the same as being retrievable:
+    // a sentence-shaped Korean query yields hundreds of candidates, and a
+    // participant sitting at rank 22 of 353 is as absent from the top k as one
+    // that never matched at all. So the test is not whether the participant
+    // matched, but whether inheriting would place it above where its own lexical
+    // evidence already does. A side the query ranked on its own keeps that rank
+    // and is not reported as promoted.
+    .filter((item) => (lexicalRanks.get(item.rowid) ?? Infinity)
+      > item.bestSourceRank + RELATION_PARTICIPANT_RANK_OFFSET)
     .sort((left, right) => (left.bestSourceRank - right.bestSourceRank)
       || (right.matched - left.matched)
       || (left.rowid - right.rowid));
@@ -903,6 +918,7 @@ function relationParticipantRanks(db, lexicalRanks, relationPromotions, rowsById
     rank: index,
     matched: item.matched,
     source_rank: item.bestSourceRank,
+    inherited_rank: item.bestSourceRank + RELATION_PARTICIPANT_RANK_OFFSET,
     direction: 'relation-matched',
   }]));
 }
@@ -977,20 +993,20 @@ async function searchIndex(inputRoot, query, options = {}) {
       const promotion = relationPromotions.get(rowid) ?? participantPromotions.get(rowid);
       const semanticRrf = semanticHit ? 1 / (RRF_K + semanticHit.rank + 1) : 0;
       const lexicalRrf = lexicalRank === undefined ? 0 : 1 / (RRF_K + lexicalRank + 1);
+      // Inheritance replaces the participant's own lexical evidence instead of
+      // adding to it, so a promoted side cannot climb past the relation note.
       const inherited = promotion?.direction === 'relation-matched';
-      const relationRrf = promotion
-        ? 1 / (RRF_K + (inherited ? promotion.source_rank : promotion.rank) + 1)
-        : 0;
-      const relationWeight = inherited
-        ? weights.lexical * RELATION_PARTICIPANT_INHERITANCE
-        : RELATION_RRF_WEIGHT;
+      const effectiveLexicalRrf = inherited
+        ? Math.max(lexicalRrf, rrfScore(promotion.inherited_rank))
+        : lexicalRrf;
+      const relationRrf = promotion && !inherited ? 1 / (RRF_K + promotion.rank + 1) : 0;
       return {
         row: rowsById.get(rowid),
         semantic: semanticHit ? semanticHit.score : null,
         lexicalRank,
         promotion,
-        score: (weights.semantic * semanticRrf) + (weights.lexical * lexicalRrf)
-          + (relationWeight * relationRrf),
+        score: (weights.semantic * semanticRrf) + (weights.lexical * effectiveLexicalRrf)
+          + (RELATION_RRF_WEIGHT * relationRrf),
       };
     }).sort((left, right) => (right.score - left.score)
       || ((right.semantic ?? -1) - (left.semantic ?? -1)));
