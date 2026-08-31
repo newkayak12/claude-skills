@@ -713,15 +713,16 @@ test('promotes a participant that matched only weakly, below a wall of distracto
   const found = await searchIndex(root, '택배사별 박스 사이즈 코드가 왜 다른가', { limit: 5 });
   const order = found.results.map((item) => item.id);
   assert.equal(order[0], 'box-size-contrast', `unexpected order: ${order.join(', ')}`);
-  assert.equal(found.relation_participant_promotions, 2);
   for (const id of ['hanjin', 'cj']) {
-    const item = found.results.find((result) => result.id === id);
-    assert.equal(item.lexical_match, true, `${id} should still be a lexical match`);
-    assert.equal(item.relation_promotion, 'relation-matched');
-    assert.ok(order.indexOf(id) > 0 && order.indexOf(id) < order.indexOf('distractor-0'),
-      `unexpected order: ${order.join(', ')}`);
-    assert.ok(item.score < found.results[0].score, `${id} outranked its own relation note`);
+    assert.ok(order.includes(id), `${id} missing: ${order.join(', ')}`);
   }
+  // Only the side that would not have come back is promoted, and it enters at
+  // the tail of the window — retrievable, not ranked second.
+  const promoted = found.results.filter((item) => item.relation_promotion === 'relation-matched');
+  assert.equal(found.relation_participant_promotions, 1);
+  assert.equal(promoted.length, 1);
+  assert.equal(promoted[0].lexical_match, true, 'the promoted side did match, just too weakly');
+  assert.equal(order.at(-1), promoted[0].id, `unexpected order: ${order.join(', ')}`);
 
   const scored = await evalQuestions(root, { k: 5 });
   assert.equal(scored.questions[0].hit, true);
@@ -783,21 +784,26 @@ test('nominates participants off the fused order, not the lexical one', async ()
   assert.equal(scored.questions[0].hit, true);
 }));
 
-test('promotes the declared sides as a set so a sibling is not pushed out', async () => fixture(async (root) => {
-  // Lifting only the buried sides displaces the one that was barely inside the
-  // window, which leaves the comparison as unanswerable as before.
+test('caps promotion at half the window and leaves retrievable sides alone', async () => fixture(async (root) => {
   seedForwardPromotedContrast(root);
   await buildIndex(root, { provider: 'hash', dimensions: 128 });
 
-  const found = await searchIndex(root, '택배사별 박스 사이즈 코드가 왜 다른가', { limit: 6 });
-  const promoted = found.results.filter((item) => item.relation_promotion === 'relation-matched');
-  assert.equal(found.relation_participant_promotions, 3);
-  assert.equal(promoted.length, 3);
+  // Three declared sides, a window of four: promotion may claim two slots.
+  const capped = await searchIndex(root, '택배사별 박스 사이즈 코드가 왜 다른가', { limit: 4 });
+  const promoted = capped.results.filter((item) => item.relation_promotion === 'relation-matched');
+  assert.equal(promoted.length, 2);
+  assert.equal(capped.results[0].id, 'box-size-contrast');
   assert.deepEqual(
-    [...new Set(promoted.map((item) => item.score))].length,
-    1,
-    'sides promoted together must share the inherited score',
+    capped.results.slice(0, 2).map((item) => item.relation_promotion),
+    ['participants-matched', null],
+    'promotion must not take the top slots',
   );
+
+  // A side that ranks on its own evidence is not moved to the tail.
+  const found = await searchIndex(root, '한진 벤더 연동 규격', { limit: 5 });
+  const hanjin = found.results.find((item) => item.id === 'hanjin');
+  assert.equal(found.results[0].id, 'hanjin', `unexpected order: ${found.results.map((item) => item.id).join(', ')}`);
+  assert.equal(hanjin.relation_promotion, null);
 }));
 
 test('does not re-promote participants the query already matched', async () => fixture(async (root) => {

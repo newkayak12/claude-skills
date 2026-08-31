@@ -809,12 +809,18 @@ function fuseLexicalRanks(wordRanks, trigramRanks) {
 // relation note that matched the query lexically cannot be demoted by it.
 const RELATION_RRF_WEIGHT = 0.35;
 
-// A promoted participant is placed immediately behind the relation note that
-// vouched for it: it takes that note's fused score, decayed just enough to keep
-// the ordering strict. Anything gentler cannot reach — the RRF tail is flat, so
-// a fraction of a score or a handful of rank positions lands a promoted note
-// back underneath the wall of weak matches it was already stuck behind.
-const RELATION_PARTICIPANT_DECAY = 0.97;
+// A promoted side is appended to the end of the result window, not inserted
+// behind the relation note that vouched for it. Being retrievable is the whole
+// requirement — a comparison needs its sides inside the top k, not ranked
+// second — and scoring them near the top spends the best slots of every other
+// query on notes that matched nothing. Measured on a real vault, promoting into
+// the top slots traded four comparison answers for three non-relational ones:
+// recall rose, MRR fell, and five previously-answered questions broke.
+
+// Promotion may never take more than this share of the window. A relation note
+// with five declared sides would otherwise decide the entire result on the
+// strength of a single match.
+const RELATION_PARTICIPANT_WINDOW_SHARE = 0.5;
 
 // Only a relation note the query actually reached may pull its participants up.
 // The rank that decides this is the fused one, not the lexical one: a contrast
@@ -889,46 +895,42 @@ function relationParticipantRanks(db, provisional, relationPromotions, rowsById,
     WHERE document_rowid IN (${sourceRowids.map(() => '?').join(', ')})
   `).all(...sourceRowids);
 
-  const bySource = new Map();
+  const nominations = new Map();
   for (const row of rows) {
     const rowid = rowidByNoteId.get(String(row.note_id));
     if (rowid === undefined) continue;
     // A note already promoted forward is the relation, not one of its sides.
     if (relationPromotions.has(rowid)) continue;
-    const sourceRowid = Number(row.rowid);
-    const existing = bySource.get(sourceRowid) ?? [];
-    existing.push(rowid);
-    bySource.set(sourceRowid, existing);
+    const existing = nominations.get(rowid) ?? { rowid, matched: 0, bestSourceRank: Infinity };
+    existing.matched += 1;
+    existing.bestSourceRank = Math.min(existing.bestSourceRank, provisionalRanks.get(Number(row.rowid)) ?? Infinity);
+    nominations.set(rowid, existing);
   }
 
-  const nominations = new Map();
-  for (const [sourceRowid, participants] of bySource) {
-    const sourceScore = provisionalScores.get(sourceRowid) ?? 0;
-    const sourceRank = provisionalRanks.get(sourceRowid) ?? Infinity;
-    // Having matched the query is not the same as being retrievable: a
-    // sentence-shaped Korean query yields hundreds of candidates, and a side
-    // sitting at rank 22 of 353 is as absent from the top k as one that never
-    // matched at all. A zero score is the same story — where a note sits among
-    // the other zeroes is tie order, not retrieval.
-    const needsHelp = participants.some((rowid) => {
-      const score = provisionalScores.get(rowid) ?? 0;
-      const retrievable = score > 0 && (provisionalRanks.get(rowid) ?? Infinity) < limit;
-      return !retrievable && score < sourceScore * RELATION_PARTICIPANT_DECAY;
-    });
-    if (!needsHelp) continue;
-    // Promote the sides as a set. Lifting only the buried ones pushes the
-    // sibling that was barely inside the window back out of it, which leaves
-    // the comparison exactly as unanswerable as before.
-    for (const rowid of participants) {
-      const existing = nominations.get(rowid)
-        ?? { rowid, matched: 0, bestSourceRank: Infinity, bestSourceScore: 0 };
-      existing.matched += 1;
-      if (sourceRank < existing.bestSourceRank) {
-        existing.bestSourceRank = sourceRank;
-        existing.bestSourceScore = sourceScore;
-      }
-      nominations.set(rowid, existing);
-    }
+  // Having matched the query is not the same as being retrievable: a
+  // sentence-shaped Korean query yields hundreds of candidates, and a side
+  // sitting at rank 22 of 353 is as absent from the top k as one that never
+  // matched at all. A zero score is the same story — where a note sits among the
+  // other zeroes is tie order, not retrieval.
+  //
+  // Promoted sides take the last slots of the window, which moves the boundary
+  // they are judged against: a side at rank 9 of 10 is retrievable until two of
+  // its siblings are appended, and then it is not. Solving for that boundary
+  // rather than reading it once is what keeps a promotion from evicting the very
+  // sibling it was meant to join.
+  const needsHelp = (item, window) => {
+    const score = provisionalScores.get(item.rowid) ?? 0;
+    return !(score > 0 && (provisionalRanks.get(item.rowid) ?? Infinity) < window);
+  };
+  const sides = [...nominations.values()];
+  let promotedCount = 0;
+  for (let pass = 0; pass <= sides.length; pass += 1) {
+    const next = sides.filter((item) => needsHelp(item, limit - promotedCount)).length;
+    if (next === promotedCount) break;
+    promotedCount = next;
+  }
+  for (const item of sides) {
+    if (!needsHelp(item, limit - promotedCount)) nominations.delete(item.rowid);
   }
 
   const ordered = [...nominations.values()]
@@ -939,7 +941,6 @@ function relationParticipantRanks(db, provisional, relationPromotions, rowsById,
     rank: index,
     matched: item.matched,
     source_rank: item.bestSourceRank,
-    inherited_score: item.bestSourceScore * RELATION_PARTICIPANT_DECAY,
     direction: 'relation-matched',
   }]));
 }
@@ -1006,37 +1007,24 @@ async function searchIndex(inputRoot, query, options = {}) {
       ...lexicalRanks.keys(),
       ...relationPromotions.keys(),
     ]);
-    const fuse = (participantPromotions) => [...candidates, ...participantPromotions.keys()]
-      .reduce((unique, rowid) => unique.includes(rowid) ? unique : [...unique, rowid], [])
-      .map((rowid) => {
-        const semanticHit = semanticRanks.get(rowid);
-        const lexicalRank = lexicalRanks.get(rowid);
-        const promotion = relationPromotions.get(rowid) ?? participantPromotions.get(rowid);
-        const semanticRrf = semanticHit ? 1 / (RRF_K + semanticHit.rank + 1) : 0;
-        const lexicalRrf = lexicalRank === undefined ? 0 : 1 / (RRF_K + lexicalRank + 1);
-        const inherited = promotion?.direction === 'relation-matched';
-        const relationRrf = promotion && !inherited ? 1 / (RRF_K + promotion.rank + 1) : 0;
-        const own = (weights.semantic * semanticRrf) + (weights.lexical * lexicalRrf)
-          + (RELATION_RRF_WEIGHT * relationRrf);
-        return {
-          rowid,
-          row: rowsById.get(rowid),
-          semantic: semanticHit ? semanticHit.score : null,
-          lexicalRank,
-          promotion,
-          // Inheritance replaces the participant's own evidence instead of
-          // adding to it, so a promoted side cannot climb past its relation.
-          score: inherited ? Math.max(own, promotion.inherited_score) : own,
-        };
-      }).sort((left, right) => (right.score - left.score)
-        || ((right.semantic ?? -1) - (left.semantic ?? -1)));
-
-    // Participants are nominated off the fused order, then folded back in. A
-    // contrast note frequently arrives at the top through forward promotion
-    // rather than its own keywords; judging it by lexical rank alone would let
-    // it rank first and still be disqualified from vouching for its own sides.
-    const participantPromotions = relationParticipantRanks(db, fuse(new Map()), relationPromotions, rowsById, limit);
-    const ranked = participantPromotions.size ? fuse(participantPromotions) : fuse(new Map());
+    const ranked = [...candidates].map((rowid) => {
+      const semanticHit = semanticRanks.get(rowid);
+      const lexicalRank = lexicalRanks.get(rowid);
+      const promotion = relationPromotions.get(rowid);
+      const semanticRrf = semanticHit ? 1 / (RRF_K + semanticHit.rank + 1) : 0;
+      const lexicalRrf = lexicalRank === undefined ? 0 : 1 / (RRF_K + lexicalRank + 1);
+      const relationRrf = promotion ? 1 / (RRF_K + promotion.rank + 1) : 0;
+      return {
+        rowid,
+        row: rowsById.get(rowid),
+        semantic: semanticHit ? semanticHit.score : null,
+        lexicalRank,
+        promotion,
+        score: (weights.semantic * semanticRrf) + (weights.lexical * lexicalRrf)
+          + (RELATION_RRF_WEIGHT * relationRrf),
+      };
+    }).sort((left, right) => (right.score - left.score)
+      || ((right.semantic ?? -1) - (left.semantic ?? -1)));
 
     // A note split into chunks would otherwise fill the top slots with itself
     // and leave no room for the sibling notes a multi-note question needs.
@@ -1047,7 +1035,29 @@ async function searchIndex(inputRoot, query, options = {}) {
       seen.add(key);
       return true;
     });
-    const results = grouped.slice(0, limit);
+
+    // Participants are nominated off the fused order — a contrast note usually
+    // arrives at the top through forward promotion rather than its own keywords,
+    // so reading lexical rank here would disqualify exactly the notes that
+    // earned their place — and then take the last slots of the window instead of
+    // the best ones.
+    const participantPromotions = relationParticipantRanks(db, grouped, relationPromotions, rowsById, limit);
+    const promotedRowids = new Set(participantPromotions.keys());
+    const promoted = [...participantPromotions.entries()]
+      .sort(([, left], [, right]) => left.rank - right.rank)
+      .slice(0, Math.max(1, Math.floor(limit * RELATION_PARTICIPANT_WINDOW_SHARE)))
+      .map(([rowid, promotion]) => ({
+        ...(grouped.find((item) => item.rowid === rowid)
+          ?? { rowid, row: rowsById.get(rowid), semantic: null, lexicalRank: undefined, score: 0 }),
+        promotion,
+      }))
+      .filter((item) => item.row);
+    const results = promoted.length
+      ? [
+        ...grouped.filter((item) => !promotedRowids.has(item.rowid)).slice(0, limit - promoted.length),
+        ...promoted,
+      ]
+      : grouped.slice(0, limit);
 
     const lexicalReturned = results.filter((item) => item.lexicalRank !== undefined).length;
     return {
