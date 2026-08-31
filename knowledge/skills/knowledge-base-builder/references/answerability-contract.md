@@ -66,6 +66,24 @@ layer (`code` or `database`), both `user_terms` and `source_symbols` are require
 this rule on internal-only code notes or user-only policy notes that have no cross-layer lookup
 job.
 
+### Repairing Bridges After a Failed Lookup
+
+A missed competency question is the normal reason to add vocabulary, and also the normal way a
+vault starts scoring itself. Two rules keep the repair honest:
+
+- **Ground every added term in the source material, never in the question.** Copying a phrase
+  out of `_knowledge/questions.jsonl` into `user_terms` guarantees that question retrieves the
+  note and measures nothing. Add `결제 승인 화면` because that label exists in the UI, the code,
+  or the operator's own words — then cite where it came from. If a term cannot be found outside
+  the question set, it is not vocabulary; the gap is a missing note or a missing source.
+- **Repair the field, not the score.** A term whose semantics do not match `user_terms`,
+  `source_symbols`, or `aliases` does not belong in whichever field happens to lift the rank.
+  Notes written in a frontmatter style that has no bridge fields at all need the fields created,
+  not the term forced into `tags`.
+
+Run the retrieval-repair loop in `knowledge:sqlite-index-builder` when repeated lookups fail;
+it measures whether an added term actually helped rather than assuming it did.
+
 ## Competency Questions
 
 Store the canonical, machine-checkable question set in `_knowledge/questions.jsonl`. Use one

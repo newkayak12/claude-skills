@@ -290,6 +290,93 @@ test('reports unretrieved required notes as misses in the aggregate scores', asy
   assert.deepEqual(missed.required_notes, [{ note_id: 'refunds', rank: null }]);
 }));
 
+test('partitions questions into a stable dev and holdout split', async () => fixture(async (root) => {
+  assert.equal(parseArgs(['eval', '--split', 'holdout']).split, 'holdout');
+  assert.throws(() => parseArgs(['eval', '--split', 'test']), /--split/);
+  assert.throws(() => parseArgs(['eval', '--holdout', '0.9']), /--holdout/);
+
+  seed(root);
+  write(join(root, '_knowledge', 'questions.jsonl'), jsonl(
+    Array.from({ length: 24 }, (unused, index) => ({
+      id: `q${index}`,
+      question: '결제 승인 재시도',
+      required_note_ids: ['payments'],
+    })),
+  ));
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+
+  const dev = await evalQuestions(root, { k: 5, split: 'dev' });
+  const holdout = await evalQuestions(root, { k: 5, split: 'holdout' });
+  // Ids differing only in their last characters must still spread across both
+  // buckets; an unmixed hash drops the whole set into one split.
+  assert.equal(dev.evaluated + holdout.evaluated, 24);
+  assert.ok(holdout.evaluated >= 4 && holdout.evaluated <= 14, `holdout ${holdout.evaluated}`);
+  assert.equal(holdout.skipped_by_split, dev.evaluated);
+  assert.ok(dev.questions.every((item) => item.split === 'dev'));
+
+  const devIds = new Set(dev.questions.map((item) => item.question_id));
+  const again = await evalQuestions(root, { k: 5, split: 'dev' });
+  assert.deepEqual(new Set(again.questions.map((item) => item.question_id)), devIds);
+  const all = await evalQuestions(root, { k: 5 });
+  assert.equal(all.evaluated, 24);
+  assert.equal(all.questions.filter((item) => item.split === 'holdout').length, holdout.evaluated);
+}));
+
+test('ranks unretrieved required notes as repair targets with their vocabulary gap', async () => fixture(async (root) => {
+  seed(root);
+  write(join(root, '_knowledge', 'questions.jsonl'), jsonl([
+    { id: 'refund-window', question: '환불 가능 기간', required_note_ids: ['refunds'] },
+    { id: 'refund-owner', question: '환불 담당자', required_note_ids: ['refunds'] },
+    { id: 'retry-owner', question: '결제 승인 재시도 담당 팀', required_note_ids: ['shipping'] },
+  ]));
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+
+  const scored = await evalQuestions(root, { k: 1 });
+  const [first, second] = scored.repair_targets;
+  assert.equal(first.note_id, 'refunds');
+  assert.equal(first.in_catalog, false);
+  assert.equal(first.gap, 'missing-note');
+  assert.deepEqual(first.blocked_questions, ['refund-window', 'refund-owner']);
+  assert.equal(second.note_id, 'shipping');
+  assert.equal(second.in_catalog, true);
+  assert.equal(second.gap, 'no-lookup-vocabulary');
+}));
+
+test('calls a run regressed when any question loses ground against a baseline', async () => fixture(async (root) => {
+  seed(root);
+  write(join(root, '_knowledge', 'questions.jsonl'), jsonl([
+    { id: 'payment-retry-policy', question: '결제 승인 재시도', required_note_ids: ['payments'] },
+    { id: 'courier-status', question: '택배 추적 상태', required_note_ids: ['shipping'] },
+  ]));
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+  const baselinePath = join(root, 'baseline.json');
+
+  writeFileSync(baselinePath, JSON.stringify({
+    questions: [
+      { question_id: 'payment-retry-policy', hit: false, first_rank: null },
+      { question_id: 'courier-status', hit: true, first_rank: 1 },
+      { question_id: 'retired-question', hit: true, first_rank: 2 },
+    ],
+  }));
+  const improved = await evalQuestions(root, { k: 5, baseline: baselinePath });
+  assert.equal(improved.baseline.verdict, 'improved');
+  assert.equal(improved.baseline.compared, 2);
+  assert.equal(improved.baseline.regressions.length, 0);
+  assert.deepEqual(improved.baseline.improvements.map((item) => item.question_id), ['payment-retry-policy']);
+
+  writeFileSync(baselinePath, JSON.stringify({
+    questions: [
+      { question_id: 'payment-retry-policy', hit: true, first_rank: 1 },
+      { question_id: 'courier-status', hit: true, first_rank: 1 },
+      { question_id: 'refund-window', hit: true, first_rank: 1 },
+    ],
+  }));
+  const regressed = await evalQuestions(root, { k: 5, baseline: baselinePath, domain: 'billing' });
+  assert.equal(regressed.baseline.verdict, 'regressed');
+  assert.ok(regressed.baseline.regressions.some((item) => item.question_id === 'courier-status'));
+  assert.equal(regressed.baseline.unmatched, 0);
+}));
+
 test('bounds the eval depth and requires a declared question set', async () => fixture(async (root) => {
   assert.equal(parseArgs(['eval', '--k', '3']).k, 3);
   assert.throws(() => parseArgs(['eval', '--k', '99']), /--k/);

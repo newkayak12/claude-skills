@@ -152,6 +152,16 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval --root knowledge-
 `recall_at_k`를 냅니다. 인덱스를 다시 만들 때마다 돌리세요. 필수 노트가 top-*k*에 없으면 그건
 검색 결함이지 깨끗한 빌드가 아닙니다.
 
+놓친 질문에는 복구 루프가 붙습니다. `repair_targets`는 회수되지 않은 노트를 그것이 막고 있는
+질문 수로 정렬하고, 각 결함을 `missing-note`(추출 과제), `no-lookup-vocabulary`(별칭·사용자
+용어·소스 심볼이 아예 없음), `ranking`(어휘는 있으나 다른 것이 앞선다)으로 분류합니다. 복구가
+스스로를 채점하지 않도록 두 가지 장치가 있습니다. `--split dev|holdout`은 질문의 3분의 1을
+남겨둡니다 — 버킷은 질문 id에서 파생되므로 실행마다 동일하고, 어휘를 고치는 도중에 질문이 다른
+쪽으로 흘러갈 수 없습니다. `--baseline before.json`은 질문 단위로 비교해, 세 질문을 올리고 한
+질문을 떨어뜨린 실행을 평균 상승이 아니라 `verdict: regressed`로 보고합니다. 어휘는 반드시 원본
+자료에 실재해야 합니다. 질문 세트에서 복사해 온 용어는 그 질문의 회수를 보장할 뿐 아무것도
+측정하지 않습니다.
+
 ```json
 { "total": 5, "hits": 5, "recall_at_k": 1, "mrr": 1,
   "questions": [{ "question_id": "stock-table-differences", "first_rank": 1, "hit": true }] }

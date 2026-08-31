@@ -72,8 +72,45 @@ After indexing:
 2. Require the database to exist and report `stale: false`.
 3. Compare the returned note, chunk, node, and edge counts with the discovered inputs. Explain legitimately absent artifact types instead of treating every zero as success.
 4. When notes exist, run one bounded search smoke test using a term that appears verbatim in a known note title or alias, and confirm that note is returned with `lexical_match: true`. A smoke test whose results are all `lexical_match: false` indicates a ranking or tokenization problem, not a passing build. When graph nodes and edges exist, run one neighbor lookup for a known node.
-5. When `_knowledge/questions.jsonl` exists, run `eval --root /path/to/vault --k 10` and report `mrr`, `recall_at_k`, and `mean_distinct_notes`. A `mean_distinct_notes` well below k means chunks of one note are crowding the top slots; results are grouped per note by default, so this should only happen with `--group none`. Any competency question whose required notes are missing from the top k is a retrieval defect: name the question rather than reporting the build as clean.
+5. When `_knowledge/questions.jsonl` exists, run `eval --root /path/to/vault --k 10` and report `mrr`, `recall_at_k`, and `mean_distinct_notes`. A `mean_distinct_notes` well below k means chunks of one note are crowding the top slots; results are grouped per note by default, so this should only happen with `--group none`. Any competency question whose required notes are missing from the top k is a retrieval defect: name the question rather than reporting the build as clean, and follow the retrieval repair loop below instead of accepting the score.
 6. Report the database path, source root, indexed counts, embedding provider/model/dimensions, fingerprint, and freshness.
+
+## Retrieval Repair Loop
+
+Run this when eval reports missed questions. It is a measurement loop, not an editing loop: the
+danger is not a failed question, it is a fix that scores well because it was tuned against the
+same questions used to judge it.
+
+1. **Split before touching anything.** `eval --split holdout` scores the reserved third of the
+   question set; `--split dev` scores the rest. Buckets are derived from each question id, so
+   they are stable across runs and cannot drift while vocabulary is being edited. Repair against
+   `dev` only, and record the holdout number first — a holdout measured after the repair proves
+   nothing.
+2. **Read `repair_targets` before proposing an edit.** Each entry names an unretrieved required
+   note, how many questions it blocks, and its `gap`: `missing-note` means the note is absent
+   from the catalog and this is an extraction job for `knowledge:knowledge-base-builder`;
+   `no-lookup-vocabulary` means the note carries no aliases, user terms, or source symbols;
+   `ranking` means the vocabulary exists and something else is outranking it. Start with the
+   note blocking the most questions, not the note that is easiest to edit.
+3. **Ground each added term in the repo, not in the question set.** See the vocabulary-bridge
+   repair rules in [answerability-contract.md](../knowledge-base-builder/references/answerability-contract.md).
+4. **Re-index and re-score after each change, against the saved run.** One edit per measurement;
+   a batch of edits cannot be attributed or reverted.
+
+```bash
+node --no-warnings "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval \
+  --root /path/to/vault --split dev --k 10 > /tmp/before.json
+# edit vocabulary, then index again
+node --no-warnings "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval \
+  --root /path/to/vault --split dev --k 10 --baseline /tmp/before.json
+```
+
+The `baseline` block reports `improvements`, `regressions`, and a `verdict`. **Revert on any
+regression**, even when `recall_at_k` rose. Competency sets are small enough that one question
+moves recall by several points, so an aggregate gain routinely hides a question that stopped
+working; `regressions` names it. Only after `dev` is stable, score `--split holdout` once and
+report both numbers. A holdout that did not move means the repair generalized to nothing —
+report that plainly instead of citing the dev gain.
 
 Do not cite the SQLite file as source evidence and do not commit it merely to share knowledge. Commit or synchronize the canonical Markdown and JSONL instead. Do not modify source artifacts during an index-only request.
 
