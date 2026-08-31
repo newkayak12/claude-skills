@@ -127,6 +127,38 @@ can detect a stale human-readable report:
 Answerability: 3/3 complete; 0 partial; 0 unanswerable; 100%
 ```
 
+### What Belongs in `required_note_ids`
+
+A note is required when the answer must use **its** evidence. A note that is merely about the
+same subject — the status-code table behind a workflow question, the MOC that lists both sides
+of a comparison — is background, and requiring it turns the gate into a reading-list check that
+a correct answer fails. When a contrast note already carries evidence for every participant,
+the contrast note is the requirement; do not also require each participant note unless the
+question asks for something only the participant note establishes.
+
+The reverse error is worse: shrinking the list until every answer passes. Required notes come
+from the lookup job, and a question whose evidence genuinely spans four notes keeps all four.
+
+### Citation Precision
+
+Answerability counts only whether required notes were cited. That number rises for free whenever
+a change makes answers cite more notes, so record precision beside it:
+
+- **recall** = cited ∩ required / required — did the answer use the evidence it needed;
+- **precision** = cited ∩ required / cited — how much of what it cited was the evidence it needed;
+- **off-key** = cited notes outside `required_note_ids`;
+- **full** = questions where every required note was cited.
+
+```text
+Citations: recall 3/3; precision 3/4; off-key 1; full 1/1
+```
+
+The validator scores every result, including `partial` and `unanswerable` ones, so a failed
+answer still reports how close it came. It **reports** these numbers and checks the line above
+only when present; off-key citations are usually legitimate supporting context, and gating on
+precision would teach answers to cite less rather than better. Read the pair together: a change
+that lifts recall while precision falls is buying coverage with noise.
+
 ## Graph Question Reachability
 
 When graph artifacts exist, mark relationship-heavy questions with `graph_check: true` and

@@ -93,6 +93,18 @@ src/랑 docs/를 Obsidian 스타일 볼트로 만들어줘. 운영자는 화면�
 node knowledge/scripts/validate-knowledge.mjs --root knowledge-system --require-answerability
 ```
 
+검증기는 응답 가능성 옆에 **인용 정밀도**도 같이 찍습니다:
+
+```text
+Citations: recall 3/3; precision 3/4; off-key 1; full 1/1
+```
+
+응답 가능성은 필요한 노트를 인용했는지만 셉니다. 그래서 답이 노트를 더 많이 인용하게 만드는
+변경은 무조건 이깁니다. 정밀도 — 인용한 것 중 실제로 필요했던 근거의 비율 — 이 나머지 절반이고,
+노이즈로 산 recall이 이 쌍에서 드러납니다. `partial` 결과도 채점하므로 실패한 답이 얼마나
+근접했는지가 남습니다. 정밀도는 **보고만 하고 게이트로 걸지 않습니다**: 정답지 밖 인용은
+대개 정당한 보조 근거이고, 여기에 게이트를 걸면 답은 더 잘 인용하는 대신 덜 인용하게 됩니다.
+
 ### `ontology-builder`
 
 볼트·그래프·RAG 층이 공유할 클래스, 관계 타입, 속성, 제약, 통제 어휘를 정의합니다. 오래
