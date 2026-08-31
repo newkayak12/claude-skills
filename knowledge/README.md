@@ -211,6 +211,22 @@ Missing knowledge:
 name exactly what is missing so the gap becomes the next extraction task instead of a silent,
 plausible-sounding wrong answer.
 
+Three rules decide whether that grade means anything. They come from a head-to-head run of 94
+competency questions on one real vault, same index for both, only the answering model different:
+
+- **Cite only what you opened.** A search snippet says a note matched, not what it claims.
+  Answers that opened no note cited the required note 14% of the time; answers that opened four
+  or more, 93%. A local model answered 29 of 94 questions without opening a single note.
+- **One hop before answering a question with sides.** `knowledge_neighbors` was called 4 times
+  in 188 answer runs. The notes both models missed most are exactly the ones a hop reaches — a
+  shared status-flow note missed on 5 of the 6 questions requiring it, a contrast note missed on
+  all 3. Single-note questions scored 0.94 for both models; multi-source questions, 0.28 and
+  0.69. A question naming N things to compare, bridge, or order is answered from at least N
+  notes, or it is `partial` and says which side is missing.
+- **`complete` is a claim about parts, not confidence.** It was declared on 69 and 80 of 94
+  answers and was actually complete on 22 and 38. Split the question into parts, name the opened
+  note covering each, and downgrade the moment one maps to nothing, a snippet, or inference.
+
 ## Local SQLite + MCP
 
 The `knowledge-local` MCP server exposes:
