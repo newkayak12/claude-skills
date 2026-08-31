@@ -241,6 +241,12 @@ Retrieval is **rank-fused, lexical-first**:
    model. It carries no ranking weight when any lexical match exists and only orders the fallback
    when nothing matches. Results report `embedding_quality: lexical-baseline` so this is never
    mistaken for semantic search.
+6. With a real embedding provider the fusion split is `semantic 0.7 / lexical 0.3`, and that
+   split is a **starting point, not a measured constant**. Semantic weight wins the paraphrased
+   and operator-phrased questions lexical search cannot reach; it loses the ones that quote an
+   exact screen label back at the index, where meaning similarity dilutes an exact term match.
+   `--lexical-weight` overrides it on `search` and `eval`, and `eval` records the split it ran
+   under in `fusion_weights`, so a sweep can be read back afterwards against a saved baseline.
 
 Every search result carries diagnostics — `lexical_candidates`, `lexical_word_matches`,
 `lexical_trigram_matches`, `lexical_matches_returned`, `relation_promotions`, `relation_participant_promotions`, `distinct_notes` — so a ranking miss

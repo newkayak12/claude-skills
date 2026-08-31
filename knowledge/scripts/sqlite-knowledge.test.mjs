@@ -90,7 +90,33 @@ test('parses commands and validates bounded options', () => {
   );
   assert.throws(() => parseArgs(['index', '--provider', 'remote']), /Unsupported/);
   assert.throws(() => parseArgs(['search', 'x', '--limit', '0']), /--limit/);
+  assert.equal(parseArgs(['eval', '--lexical-weight', '0.55']).lexicalWeight, 0.55);
+  assert.throws(() => parseArgs(['eval', '--lexical-weight', '1.4']), /--lexical-weight/);
 });
+
+test('overrides the fusion split so the weights can be swept, not guessed', async () => fixture(async (root) => {
+  seed(root);
+  write(join(root, '_knowledge', 'questions.jsonl'), jsonl([
+    {
+      id: 'payment-retry-policy',
+      question: '결제 승인 재시도',
+      kind: 'direct',
+      required_note_ids: ['payments'],
+    },
+  ]));
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+
+  const defaults = await searchIndex(root, '결제 승인 재시도', { limit: 3 });
+  assert.deepEqual(defaults.fusion_weights, { semantic: 0, lexical: 1 });
+
+  const swept = await searchIndex(root, '결제 승인 재시도', { limit: 3, lexicalWeight: 0.3 });
+  assert.deepEqual(swept.fusion_weights, { semantic: 0.7, lexical: 0.3 });
+
+  // A run.json has to record which split produced it, or a sweep cannot be read
+  // back afterwards.
+  const scored = await evalQuestions(root, { k: 5, lexicalWeight: 0.3 });
+  assert.deepEqual(scored.fusion_weights, { semantic: 0.7, lexical: 0.3 });
+}));
 
 test('builds SQLite from catalog, RAG, and graph artifacts', async () => fixture(async (root) => {
   seed(root);

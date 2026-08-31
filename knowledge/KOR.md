@@ -233,6 +233,12 @@ Missing knowledge:
 5. 기본 `hash` 임베딩은 의존성 없는 어휘 특징 해시이지 의미 모델이 **아닙니다**. lexical
    매칭이 하나라도 있으면 랭킹에 관여하지 않고, 아무것도 안 걸릴 때 폴백만 정렬합니다.
    결과에 `embedding_quality: lexical-baseline`이 찍혀 의미 검색으로 오해할 일이 없습니다.
+6. 실제 임베딩 제공자를 붙이면 융합 비율은 `semantic 0.7 / lexical 0.3`이며, 이 값은 측정된
+   상수가 **아니라 출발점**입니다. 의미 가중치는 lexical로는 닿지 못하는 바꿔 말한 질문과
+   운영자 구어체를 잡아내지만, 화면 라벨을 그대로 인용한 질문에서는 집니다 — 의미 유사도가
+   정확한 용어 일치를 희석합니다. `--lexical-weight`로 `search`·`eval`에서 덮어쓸 수 있고,
+   `eval`은 실행에 쓴 비율을 `fusion_weights`에 기록하므로 저장된 기준선과 대조해 스윕 결과를
+   나중에 되읽을 수 있습니다.
 
 모든 검색 결과에 진단 필드가 붙습니다 — `lexical_candidates`, `lexical_word_matches`,
 `lexical_trigram_matches`, `lexical_matches_returned`, `relation_promotions`, `relation_participant_promotions`, `distinct_notes` — 그래서 랭킹

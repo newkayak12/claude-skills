@@ -41,6 +41,13 @@ Markdown is indexed through each catalog record's `path`; the indexer does not c
 2. Choose the embedding provider:
    - `hash` is the dependency-free default. It provides deterministic lexical feature vectors, not semantic-model embeddings, and search ranks full-text matches ahead of its vector similarity. Report this when the user expects semantic recall; the build result carries `embedding_quality: lexical-baseline` and a matching notice.
    - `ollama` provides semantic embeddings when a local Ollama endpoint and model already exist. Do not silently install Ollama or pull a model.
+
+   The provider is the largest single retrieval lever, and it is usually the wrong one to leave
+   for last. Measured on a 94-question vault with the engine and corpus held fixed, swapping
+   `hash` for `embeddinggemma` moved hits 43 → 62, recall@10 0.631 → 0.803, and MRR 0.558 → 0.791
+   — more than the previous six engine versions combined. Paraphrased and operator-phrased
+   questions are the ones `hash` cannot reach at all, so when eval misses cluster there, raise
+   the provider before proposing vocabulary edits.
 3. When the `knowledge-local` MCP server is available, call `knowledge_status` and compare its reported root with the desired knowledge root. If they resolve to the same path, call `knowledge_index` with the selected provider and model; the MCP tool does not accept a per-call root. If the server is unavailable or points at a different root, run the bundled CLI with an explicit `--root` relative to the plugin root:
 
 ```bash
@@ -99,6 +106,13 @@ same questions used to judge it.
    repair rules in [answerability-contract.md](../knowledge-base-builder/references/answerability-contract.md).
 4. **Re-index and re-score after each change, against the saved run.** One edit per measurement;
    a batch of edits cannot be attributed or reverted.
+5. **Sweep the fusion split before accepting a semantic provider's losses.** With a real
+   embedding the default is `semantic 0.7 / lexical 0.3`, which is a guess. Questions that quote
+   an exact screen label back at the index are the ones it loses: meaning similarity dilutes an
+   exact term match. `--lexical-weight` overrides the split without re-indexing, so a sweep is
+   cheap — score `0.3`, `0.4`, `0.5` against the same baseline and read `fusion_weights` back
+   off each run. Judge a sweep on the whole question set, not on the label questions that
+   motivated it.
 
 ```bash
 node --no-warnings "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval \
@@ -106,13 +120,19 @@ node --no-warnings "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval \
 # edit vocabulary, then index again
 node --no-warnings "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval \
   --root /path/to/vault --split dev --k 10 --baseline /tmp/before.json
+# fusion sweep — no re-index needed
+node --no-warnings "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval \
+  --root /path/to/vault --split dev --k 10 --lexical-weight 0.45 --baseline /tmp/before.json
 ```
 
 The `baseline` block reports `improvements`, `regressions`, and a `verdict`. **Revert on any
 regression**, even when `recall_at_k` rose. Competency sets are small enough that one question
 moves recall by several points, so an aggregate gain routinely hides a question that stopped
-working; `regressions` names it. Only after `dev` is stable, score `--split holdout` once and
-report both numbers. A holdout that did not move means the repair generalized to nothing —
+working; `regressions` names it. This rule scopes to vocabulary and catalog edits at a fixed engine and provider, where a
+regression means the edit broke something. A provider or engine change is judged differently:
+it moves every question at once, so weigh net movement and holdout together and name the
+regressions rather than reverting on their existence. Only after `dev` is stable, score
+`--split holdout` once and report both numbers. A holdout that did not move means the repair generalized to nothing —
 report that plainly instead of citing the dev gain.
 
 Do not cite the SQLite file as source evidence and do not commit it merely to share knowledge. Commit or synchronize the canonical Markdown and JSONL instead. Do not modify source artifacts during an index-only request.
