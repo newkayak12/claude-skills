@@ -22,6 +22,7 @@ import {
   parseArgs,
   promptById,
   searchIndex,
+  textWindows,
 } from './sqlite-knowledge.mjs';
 
 function fixture(run) {
@@ -95,6 +96,40 @@ test('parses commands and validates bounded options', () => {
   assert.equal(parseArgs(['eval', '--lexical-weight', '0.55']).lexicalWeight, 0.55);
   assert.throws(() => parseArgs(['eval', '--lexical-weight', '1.4']), /--lexical-weight/);
 });
+
+test('embeds a note past the model context in overlapping windows instead of dropping its tail', async () => fixture(async (root) => {
+  assert.deepEqual(textWindows('짧은 노트', 100), ['짧은 노트']);
+  assert.deepEqual(textWindows('abcdefghij', 0), ['abcdefghij']);
+
+  const windows = textWindows('x'.repeat(250), 100);
+  assert.equal(windows.length, 3);
+  assert.equal(windows[0].length, 100);
+  // The windows overlap, so a passage sitting on a boundary is whole in one of
+  // them rather than split across two.
+  assert.ok(windows.reduce((sum, window) => sum + window.length, 0) > 250);
+  assert.equal(windows.at(-1), 'x'.repeat(250).slice(-Math.min(100, 250 - 85 * 2)));
+
+  seed(root);
+  write(join(root, 'notes', 'long.md'), `# 장기 보관 정책\n\n${'재고 실사 절차 문단. '.repeat(200)}\n\n마지막 문단은 폐기 승인 절차를 설명합니다.`);
+  write(join(root, '_knowledge', 'catalog.jsonl'), jsonl([
+    { id: 'payments', path: 'notes/payments.md', title: 'Payment Authorization', summary: '결제 승인 처리' },
+    { id: 'long-policy', path: 'notes/long.md', title: '장기 보관 정책', summary: '장기 보관과 폐기' },
+  ]));
+
+  const unbounded = await buildIndex(root, { provider: 'hash', dimensions: 128 });
+  assert.equal(unbounded.embedding_context_chars, null);
+  assert.equal(unbounded.documents_windowed, 0);
+
+  const windowed = await buildIndex(root, { provider: 'hash', dimensions: 128, embedChars: 300 });
+  assert.equal(windowed.embedding_context_chars, 300);
+  assert.ok(windowed.documents_windowed >= 1);
+
+  // Pooling has to leave one usable vector per document, so nothing downstream
+  // of the embedding changes.
+  const found = await searchIndex(root, '폐기 승인 절차', { limit: 3, lexicalWeight: 0 });
+  assert.ok(found.results.length > 0);
+  assert.ok(found.results.every((item) => item.semantic_score === null || Number.isFinite(item.semantic_score)));
+}));
 
 test('encodes questions and passages with the prompts the model was trained on', async () => fixture(async (root) => {
   const prompt = embeddingPrompt('ollama', 'embeddinggemma:300m');
