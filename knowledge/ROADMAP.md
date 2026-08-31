@@ -33,12 +33,17 @@ recall@10 0.803, MRR 0.791. 상세는 README `How ranking works`와 커밋 메�
 3. **청크 굵기** — `documents_windowed`가 크면 `rag-corpus-builder` 쪽 청크 분할 규칙
    수정 (엔진이 아니라 코퍼스 생성 규칙).
 
-## Phase 2 — 리랭커 (사용자 부착, 선택)
+## Phase 2 — 리랭커 (사용자 부착, 선택) — 계약 완료 (v1.13.0)
 
 top-50을 cross-encoder로 재정렬. `--provider ollama`와 같은 패턴 — **기본은 없음,
-있으면 사용**. `bge-reranker-v2-m3` 같은 한국어 지원 모델이 후보. 기대 효과는 MRR
-(0.79 → 0.85+가 문헌상 통상 범위). 임베딩 스왑만큼 큰 마지막 레버지만, Phase 0/1
-측정이 "ranking이 병목"이라고 말할 때만.
+있으면 사용**. `bge-reranker-v2-m3` 같은 한국어 지원 모델이 후보.
+
+측정 게이트를 "Phase 0/1 이후"로 뒀던 건 과했습니다. 계약 자체는 **부착 안 하면
+동작에 영향이 0**이라 측정 전에 만들어도 손해가 없고, 실제로 필요한 게이트는 훨씬
+싼 숫자입니다: 리랭커는 이미 회수된 것만 재정렬하므로 **상한이
+`recall@50 − recall@10`**입니다. `eval --k 10`과 `eval --k 50`을 같은 색인에 돌리면
+모델을 받기 전에 천장을 알 수 있습니다. k=50에서도 없는 노트는 랭킹 문제가 아니라
+회수/카탈로그 문제입니다.
 
 ## Phase 3 — 루프 닫기 (E3·E5 잔여분)
 
@@ -70,8 +75,12 @@ Phase를 플러그인 변경 단위로 옮기면:
 - **R2 기본값 교체** — 스윕 승자를 `fusionWeights` 기본값으로 (측정 근거 주석 포함,
   `decisive: true`일 때만); 축출 진단이 승격을 지목하면 `WINDOW_SHARE` 조정;
   `documents_windowed`가 크면 rag-corpus-builder에 청크 상한 규칙.
-- **R3 리랭커 계약** — `--reranker-url` / `--reranker-model`, 없으면 무시·설치 안 함,
-  결과에 `reranked` 진단, eval이 리랭커 유무를 기록해 기준선 대조 성립.
+- **R3 리랭커 계약 — 완료 (v1.13.0)** — `--reranker-url` / `--reranker-model` /
+  `--rerank-depth`. Cohere·Jina `/v1/rerank` 형식(llama.cpp `--pooling rank`, TEI 호환).
+  창 구성 **전에** 재정렬하므로 승격의 회수 보장이 유지됨. 실패 시 융합 순서로 폴백 +
+  `rerank_error` 기록, eval은 `reranker` 블록으로 비교 가능성을 표시.
+  스킬 쪽: `knowledge-query`에 부착·실패 판독 규칙, `local-sqlite.md`에 천장 측정법,
+  `sqlite-index-builder`에 리랭커 전 `recall@50 − recall@10` 확인 단계.
 - **R4 루프 닫기** — eval-baseline.json 규약 + fail-open 훅, `promote` 커맨드.
 
 ## 안 하기로 유지

@@ -45,6 +45,10 @@ Every search result carries the fields needed to judge whether retrieval actuall
 | `fusion_weights` | The semantic/lexical weighting applied for this provider |
 | `group` / `distinct_notes` | `note` keeps one best result per note; `distinct_notes` counts notes in the returned set |
 | `candidates_before_grouping` | Ranked candidates before per-note grouping and the limit |
+| `embedding_prompt` | Prompt template the index was built with (`embeddinggemma-v1`, or `none`) |
+| `reranked` / `rerank_model` / `rerank_depth` | Whether a cross-encoder reordered the shortlist, and with what |
+| `rerank_error` | Set when an attached reranker failed; the returned order is the fused fallback |
+| `relation_participant_evicted_ids` | Notes that left the window to make room for promoted participants |
 
 ## Grouping and Filters
 
@@ -85,6 +89,28 @@ vector`, every `score` zero, results sorted by `semantic_score`).
 | `ollama` | Local Ollama and an embedding model are available | Semantic embeddings from Ollama `/api/embed`; the same model is used for documents and queries |
 
 Prefer `ollama` when semantic recall materially matters and the user has it available. Do not silently download a model. The default Ollama model is `embeddinggemma`; set `KNOWLEDGE_EMBED_MODEL` or pass `model` to `knowledge_index` to change it.
+
+Measured on a 94-question vault with the engine and corpus held fixed, the provider is the largest single retrieval lever: `hash` → `embeddinggemma` moved hits 43 → 62, recall@10 0.631 → 0.803, MRR 0.558 → 0.791. When a user reports that paraphrased or spoken-style questions miss, name the provider before proposing vocabulary work.
+
+`embeddinggemma` is trained for asymmetric retrieval, so the indexer prefixes documents with `title: … | text: …` and queries with `task: search result | query: …`, and records the template id in the index. An index reporting `embedding_prompt: none` under that model predates the prompts; rebuild it. Documents longer than the model's context (1800 characters for `embeddinggemma`) are embedded in overlapping windows and mean-pooled rather than truncated — `documents_windowed` counts them at build time.
+
+## Reranker (optional, user-attached)
+
+A cross-encoder reads the query and one candidate together and can settle what bi-encoder similarity cannot. It is attached the same way Ollama is: **nothing is installed, nothing is required, and an absent endpoint is not an error.**
+
+```bash
+node --no-warnings knowledge/scripts/sqlite-knowledge.mjs search "출고 취소 처리" \
+  --root /path/to/vault \
+  --reranker-url http://127.0.0.1:8080 \
+  --reranker-model bge-reranker-v2-m3
+```
+
+- The wire format is the Cohere/Jina `/v1/rerank` shape that llama.cpp's server and text-embeddings-inference both speak. A llama.cpp reranker needs `--embedding --pooling rank`.
+- `--rerank-depth` (default 50) bounds the shortlist; the tail keeps its fused order.
+- Reranking runs **before** the result window is built, so relation-participant promotion still decides retrievability on the order a reader sees.
+- A failing endpoint falls back to fused order and sets `rerank_error`. Search keeps working, but a run scored with a reranker is not comparable to one without — `eval` records the reranker in its output for that reason.
+
+**Before attaching one, measure its ceiling.** A reranker can only reorder what retrieval already returned, so its maximum possible gain is `recall@50 − recall@10`. Run `eval --k 10` and `eval --k 50` on the same index: if the required notes missing at k=10 are also missing at k=50, a reranker cannot recover them and the gap is a retrieval or catalog problem, not a ranking one.
 
 ## CLI
 
