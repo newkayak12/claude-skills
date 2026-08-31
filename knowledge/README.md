@@ -213,7 +213,13 @@ Retrieval is **rank-fused, lexical-first**:
 2. An exact-token index (`unicode61`) and a trigram index handle Korean inflection
    ("재시도" finds "재시도한").
 3. Relation notes are promoted when the query matches two or more of their declared
-   `participants` — declared participants only, never co-occurrence.
+   `participants` — declared participants only, never co-occurrence. The reverse also holds:
+   when a relation note matches and its participants do not, those participants are pulled in
+   with a fraction of the relation note's own lexical strength. A comparison question is
+   usually phrased in the language of the contrast, so without this the contrast note is the
+   only thing retrieved and the per-side evidence the answer needs is missing. Each result says
+   which direction promoted it (`relation_promotion`), and a direct match always outranks an
+   inherited one.
 4. Results are grouped one-per-note by default (`group: none` to see every chunk), so a heavily
    chunked note cannot crowd sibling notes out of the top *k*. `domain`, `docType`, `section`, and
    `pathPrefix` filters — and a query-less `list` command — cover scoped lookups without SQL.
@@ -223,7 +229,7 @@ Retrieval is **rank-fused, lexical-first**:
    mistaken for semantic search.
 
 Every search result carries diagnostics — `lexical_candidates`, `lexical_word_matches`,
-`lexical_trigram_matches`, `lexical_matches_returned`, `relation_promotions`, `distinct_notes` — so a ranking miss
+`lexical_trigram_matches`, `lexical_matches_returned`, `relation_promotions`, `relation_participant_promotions`, `distinct_notes` — so a ranking miss
 is visible instead of looking like an empty vault.
 
 ### Runtime
