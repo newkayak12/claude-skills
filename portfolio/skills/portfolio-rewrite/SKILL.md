@@ -97,6 +97,11 @@ Explain in 2–4 sentences: what changed and why it matters to an interviewer. B
 
 ## Rewriting Principles
 
+**XYZ+S — the bullet-level target shape**
+`Accomplished X, measured by Y, by doing Z — in context S.` Most weak bullets are missing Y (the metric) or S (why the context made it hard). Diagnose which letter is absent before rewriting; a bullet with all four rarely needs more words, it needs the right four.
+- Weak: `배포 파이프라인 개선`
+- Strong: `배포 소요 30분 → 4분 (X, Y) — 빌드 캐시 분리와 카나리 자동화로 (Z), 일 40회 배포하는 정산 서비스에서 (S)`
+
 **Specificity over generality**
 - Weak: "성능 개선"
 - Strong: "DB 풀 사이즈 튜닝 및 N+1 쿼리 제거로 p99 응답시간 900ms → 140ms 단축"

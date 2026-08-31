@@ -52,6 +52,8 @@ A good portfolio review has three movements:
 **1. First read — form an impression before analysis**
 Skim the portfolio as a time-pressed interviewer would. What's the immediate signal? What's the career story? What jumps out as missing? Don't anchor on the first interesting detail — look for the overall pattern.
 
+While skimming, run the document-convention check from [`references/resume-conventions.md`](references/resume-conventions.md) — summary block, length and bullet budget, section order, titles, subject conventions (which differ between English resumes and 국문 경력기술서 — don't apply one language's rule to the other). Form defects don't move dimension scores; they cost the screen before anyone reads deeply enough to score, so they are reported separately and only when violated.
+
 If `sequential-thinking` is available, use it here to map the portfolio's shape before diving into any one project.
 
 **2. Choose a reviewer persona**
@@ -93,6 +95,11 @@ Write feedback in the same language the user used. Use this structure:
 
 **[총평 / First Impression]**
 3 sentences. Open with the single strongest signal — positive or negative. What's the career story this portfolio tells?
+
+---
+
+**[형식 위반 / Convention Violations]** *(omit this block entirely when nothing is violated)*
+Flat list from the resume-conventions check — section, what's wrong, the one-line fix. No scores, no encouragement; these are screen-cost defects, not substance judgments.
 
 ---
 
