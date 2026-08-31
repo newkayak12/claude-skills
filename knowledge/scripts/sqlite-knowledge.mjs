@@ -77,6 +77,9 @@ function parseArgs(argv) {
     lexicalWeight: null,
     embedChars: null,
     sweep: null,
+    rerankerUrl: null,
+    rerankerModel: null,
+    rerankDepth: DEFAULT_RERANK_DEPTH,
   };
 
   while (args.length) {
@@ -105,6 +108,9 @@ function parseArgs(argv) {
     else if (arg === '--baseline') options.baseline = value();
     else if (arg === '--lexical-weight') options.lexicalWeight = Number(value());
     else if (arg === '--embed-chars') options.embedChars = Number(value());
+    else if (arg === '--reranker-url') options.rerankerUrl = value();
+    else if (arg === '--reranker-model') options.rerankerModel = value();
+    else if (arg === '--rerank-depth') options.rerankDepth = Number(value());
     else if (arg === '--sweep') {
       options.sweep = value().split(',').map((part) => Number(part.trim()));
     }
@@ -143,6 +149,9 @@ function parseArgs(argv) {
   if (options.embedChars !== null
     && (!Number.isInteger(options.embedChars) || options.embedChars < 128 || options.embedChars > 32768)) {
     throw new Error('--embed-chars must be an integer from 128 to 32768');
+  }
+  if (!Number.isInteger(options.rerankDepth) || options.rerankDepth < 1 || options.rerankDepth > 200) {
+    throw new Error('--rerank-depth must be an integer from 1 to 200');
   }
   if (options.sweep !== null
     && (!options.sweep.length || options.sweep.length > 8
@@ -1054,6 +1063,53 @@ function relationParticipantRanks(db, provisional, relationPromotions, rowsById,
   }]));
 }
 
+const DEFAULT_RERANK_DEPTH = 50;
+const RERANK_DOCUMENT_CHARS = 1200;
+
+// A cross-encoder reads the query and one candidate together, so it can settle
+// what bi-encoder similarity and lexical rank can only approximate — but it
+// costs a forward pass per candidate, which is why it reorders a shortlist
+// instead of the corpus. Same contract as the embedding provider: nothing is
+// installed, nothing is required, and an absent endpoint is not an error. The
+// wire format is the Cohere/Jina shape that llama.cpp `/v1/rerank` and
+// text-embeddings-inference both speak.
+async function rerankCandidates(query, candidates, options) {
+  const endpoint = new URL('/v1/rerank', options.rerankerUrl).toString();
+  const documents = candidates.map((item) => [
+    item.row.title,
+    item.row.section,
+    String(item.row.text || '').slice(0, RERANK_DOCUMENT_CHARS),
+  ].filter(Boolean).join('\n'));
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: options.rerankerModel || undefined,
+      query,
+      documents,
+      top_n: documents.length,
+    }),
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!response.ok) {
+    throw new Error(`rerank failed (${response.status}): ${(await response.text()).slice(0, 200)}`);
+  }
+  const payload = await response.json();
+  const results = Array.isArray(payload.results) ? payload.results : null;
+  if (!results) throw new Error('rerank returned no results array');
+  const scored = results
+    .map((entry) => ({
+      candidate: candidates[Number(entry.index)],
+      score: Number(entry.relevance_score ?? entry.score),
+    }))
+    .filter((entry) => entry.candidate && Number.isFinite(entry.score));
+  if (scored.length !== candidates.length) {
+    throw new Error(`rerank returned ${scored.length} usable scores for ${candidates.length} candidates`);
+  }
+  scored.sort((left, right) => right.score - left.score);
+  return scored.map((entry) => ({ ...entry.candidate, rerank_score: entry.score }));
+}
+
 function noteKey(row) {
   return row.note_id || `${row.kind}:${row.document_id}`;
 }
@@ -1163,18 +1219,40 @@ async function searchIndex(inputRoot, query, options = {}) {
       return true;
     });
 
+    // Reranking runs before the window is built, so promotion still decides
+    // retrievability on the order a reader would actually see. A shortlist is
+    // reordered and spliced back; the tail keeps its fused order.
+    let reranked = grouped;
+    let rerankState = { applied: false, error: null, depth: 0 };
+    if (options.rerankerUrl) {
+      const depth = Math.min(
+        Math.max(limit, Number(options.rerankDepth) || DEFAULT_RERANK_DEPTH),
+        grouped.length,
+      );
+      const shortlist = grouped.slice(0, depth);
+      try {
+        reranked = [...await rerankCandidates(query, shortlist, options), ...grouped.slice(depth)];
+        rerankState = { applied: true, error: null, depth };
+      } catch (error) {
+        // Falling back to the fused order keeps search working, but a silent
+        // fallback would quietly turn a benchmark into a different experiment,
+        // so the failure is reported rather than swallowed.
+        rerankState = { applied: false, error: error.message, depth };
+      }
+    }
+
     // Participants are nominated off the fused order — a contrast note usually
     // arrives at the top through forward promotion rather than its own keywords,
     // so reading lexical rank here would disqualify exactly the notes that
     // earned their place — and then take the last slots of the window instead of
     // the best ones.
-    const participantPromotions = relationParticipantRanks(db, grouped, relationPromotions, rowsById, limit);
+    const participantPromotions = relationParticipantRanks(db, reranked, relationPromotions, rowsById, limit);
     const promotedRowids = new Set(participantPromotions.keys());
     const promoted = [...participantPromotions.entries()]
       .sort(([, left], [, right]) => left.rank - right.rank)
       .slice(0, Math.max(1, Math.floor(limit * RELATION_PARTICIPANT_WINDOW_SHARE)))
       .map(([rowid, promotion]) => ({
-        ...(grouped.find((item) => item.rowid === rowid)
+        ...(reranked.find((item) => item.rowid === rowid)
           ?? { rowid, row: rowsById.get(rowid), semantic: null, lexicalRank: undefined, score: 0 }),
         promotion,
       }))
@@ -1182,15 +1260,15 @@ async function searchIndex(inputRoot, query, options = {}) {
     // Promotion appends to the window, so somebody leaves it. Naming who turns
     // "a sibling note dropped out" from a guess into a measurement.
     const evicted = promoted.length
-      ? grouped.slice(Math.max(0, limit - promoted.length), limit)
+      ? reranked.slice(Math.max(0, limit - promoted.length), limit)
         .filter((item) => !promotedRowids.has(item.rowid))
       : [];
     const results = promoted.length
       ? [
-        ...grouped.filter((item) => !promotedRowids.has(item.rowid)).slice(0, limit - promoted.length),
+        ...reranked.filter((item) => !promotedRowids.has(item.rowid)).slice(0, limit - promoted.length),
         ...promoted,
       ]
-      : grouped.slice(0, limit);
+      : reranked.slice(0, limit);
 
     const lexicalReturned = results.filter((item) => item.lexicalRank !== undefined).length;
     return {
@@ -1216,7 +1294,11 @@ async function searchIndex(inputRoot, query, options = {}) {
       embedding_provider: metadata.embedding_provider,
       embedding_model: metadata.embedding_model,
       embedding_prompt: metadata.embedding_prompt || 'none',
-      results: results.map(({ row, semantic: semanticScore, lexicalRank, promotion, score }) => ({
+      reranked: rerankState.applied,
+      rerank_model: rerankState.applied ? (options.rerankerModel || null) : null,
+      rerank_depth: rerankState.depth || null,
+      rerank_error: rerankState.error,
+      results: results.map(({ row, semantic: semanticScore, lexicalRank, promotion, score, rerank_score: rerankScore }) => ({
         kind: row.kind,
         id: row.document_id,
         note_id: row.note_id,
@@ -1227,6 +1309,7 @@ async function searchIndex(inputRoot, query, options = {}) {
         domain: row.domain,
         score: Number(score.toFixed(8)),
         semantic_score: semanticScore === null ? null : Number(semanticScore.toFixed(6)),
+        rerank_score: rerankScore === undefined ? null : Number(rerankScore.toFixed(6)),
         lexical_match: lexicalRank !== undefined,
         relation_promoted: promotion ? promotion.matched : 0,
         relation_promotion: promotion ? promotion.direction : null,
@@ -1378,6 +1461,8 @@ async function evalQuestions(inputRoot, options = {}) {
   let reciprocalSum = 0;
   let skipped = 0;
   let fusionUsed = null;
+  let rerankApplied = 0;
+  let rerankError = null;
   for (const [index, record] of records.entries()) {
     const id = String(record.id || '').trim();
     const question = String(record.question || '').trim();
@@ -1391,6 +1476,8 @@ async function evalQuestions(inputRoot, options = {}) {
     const requiredNoteIds = asStrings(record.required_note_ids);
     const found = await searchIndex(root, question, { ...options, limit: k });
     fusionUsed = found.fusion_weights;
+    if (found.reranked) rerankApplied += 1;
+    if (found.rerank_error && !rerankError) rerankError = found.rerank_error;
     const required = requiredNoteRanks(found.results, requiredNoteIds);
     const ranks = required.map((item) => item.rank).filter((rank) => rank !== null);
     const firstRank = ranks.length ? Math.min(...ranks) : null;
@@ -1418,6 +1505,11 @@ async function evalQuestions(inputRoot, options = {}) {
     k,
     kind: options.kind || null,
     fusion_weights: fusionUsed,
+    // A run scored with a reranker attached is not comparable to one without,
+    // so the baseline comparison has to be able to see which it was.
+    reranker: options.rerankerUrl
+      ? { model: options.rerankerModel || null, depth: options.rerankDepth ?? null, applied: rerankApplied, error: rerankError }
+      : null,
     split,
     holdout_ratio: holdoutRatio,
     evaluated: questions.length,
@@ -1855,6 +1947,7 @@ export {
   listDocuments,
   parseArgs,
   promptById,
+  rerankCandidates,
   searchIndex,
   serveMcp,
   sweepFusionWeights,

@@ -145,6 +145,13 @@ regressions rather than reverting on their existence. Only after `dev` is stable
 `--split holdout` once and report both numbers. A holdout that did not move means the repair generalized to nothing —
 report that plainly instead of citing the dev gain.
 
+6. **Measure a reranker's ceiling before attaching one.** A cross-encoder can only reorder what
+   retrieval already returned, so its maximum gain is `recall@50 − recall@10`. Score `eval --k 10`
+   and `eval --k 50` on the same index: required notes missing at both depths are a retrieval or
+   catalog problem that no reranker can fix. When the headroom is real and the user has an
+   endpoint, pass `--reranker-url` and re-score — and record in the report that the run had a
+   reranker attached, because it is not comparable to one without.
+
 Do not cite the SQLite file as source evidence and do not commit it merely to share knowledge. Commit or synchronize the canonical Markdown and JSONL instead. Do not modify source artifacts during an index-only request.
 
 Read [the local SQLite reference](../knowledge-query/references/local-sqlite.md) when Docker operation, MCP routing, Ollama configuration, or failure recovery is needed.

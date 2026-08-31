@@ -34,6 +34,7 @@ Answer questions over existing knowledge assets: linked Markdown vaults, graph e
 - **No index → catalog, not files.** Without an index, search `_knowledge/catalog.jsonl` first and open only the notes it nominates. Reading the vault directly is allowed only when neither an index nor a catalog exists, and the answer must say so.
 - **Cite what retrieval returned.** Evidence lines name the `path` / `source_ref` from the search result, so the reader can see the note was found, not browsed into.
 - **Thin results are diagnosed, not worked around.** When search looks empty, read `lexical_candidates` and re-query with exact vocabulary before touching a file. A grep-based detour hides a ranking bug that `eval` should catch.
+- **Retrieval quality is a reported fact, not an assumption.** Every result carries `embedding_quality`, `fusion_weights`, and `reranked`. Under `embedding_quality: lexical-baseline` a paraphrased question is expected to miss — say so and re-query with vault vocabulary instead of concluding the vault lacks the answer. When `rerank_error` is set, the order you are reading is the fallback order, and the answer should not be presented as if the reranker ran.
 
 ## Query Routing
 
@@ -62,7 +63,12 @@ When the `knowledge-local` MCP tools are connected, use them before scanning JSO
 3. Retrieve candidates with `knowledge_search`; use `knowledge_get` for full evidence and `knowledge_neighbors` for relationship questions.
 4. Check the retrieval diagnostics before trusting an empty-looking result. When `lexical_candidates` exceeds `lexical_matches_returned`, or the query used vault vocabulary and `retrieval` is `vector`, the terms exist in the corpus but lost the ranking; re-query with the exact title, alias, or source symbol before grading coverage.
 5. For scoped questions ("every policy note in the goods domain"), use the `domain`, `docType`, `section`, and `pathPrefix` filters on `knowledge_search`, or the CLI `list` command, instead of dropping to SQL. `knowledge_status` reports which metadata keys are filterable.
-6. Compose the answer yourself from the returned evidence and cite original `source_ref` or `path` values.
+6. When a reranker endpoint is attached, pass `--reranker-url` (and `--reranker-model`) so a
+   shortlist is reordered by a cross-encoder before the window is built. It is optional by
+   design: absent means fused order, and a failing endpoint falls back to fused order with
+   `rerank_error` set rather than erroring the query. Never install or start one to answer a
+   question — if the user has not attached it, answer without it.
+7. Compose the answer yourself from the returned evidence and cite original `source_ref` or `path` values.
 
 Read [references/local-sqlite.md](references/local-sqlite.md) for exact MCP routing, embedding modes, CLI, Docker operation, and failure handling. If the MCP server is unavailable, continue with the portable asset discovery below.
 

@@ -257,6 +257,12 @@ Missing knowledge:
    1800) — 토크나이저를 로컬에서 쓸 수 없기 때문입니다. `--embed-chars`로 덮어쓸 수 있고,
    빌드 결과에 `embedding_context_chars`와 `documents_windowed`가 보고됩니다. 창 크기를
    모르는 모델은 제한 없이 둡니다.
+9. 선택적 cross-encoder **리랭커**가 결과 창을 만들기 전에 후보 상위 목록을 재정렬합니다.
+   승격은 재정렬된 순서 위에서 회수 가능성을 판정하므로 독자가 보는 순서 기준이 유지됩니다.
+   부착 방식은 Ollama와 동일합니다 — `--reranker-url` / `--reranker-model`, 설치 없음, 필수
+   아님. llama.cpp와 text-embeddings-inference가 모두 제공하는 Cohere/Jina `/v1/rerank` 형식을
+   쓰고, 엔드포인트가 실패하면 융합 순서로 돌아가며 `rerank_error`를 남깁니다. 상한은 미리
+   잴 수 있습니다 — 리랭커는 `recall@50 − recall@10`을 넘을 수 없습니다.
 
 모든 검색 결과에 진단 필드가 붙습니다 — `lexical_candidates`, `lexical_word_matches`,
 `lexical_trigram_matches`, `lexical_matches_returned`, `relation_promotions`, `relation_participant_promotions`, `distinct_notes` — 그래서 랭킹

@@ -6,6 +6,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -25,6 +26,25 @@ import {
   sweepFusionWeights,
   textWindows,
 } from './sqlite-knowledge.mjs';
+
+// A stand-in for llama.cpp `/v1/rerank`: same wire shape, deterministic order.
+function rerankerStub(handler) {
+  const server = createServer((request, response) => {
+    let body = '';
+    request.on('data', (chunk) => { body += chunk; });
+    request.on('end', () => {
+      const payload = handler(JSON.parse(body), request.url);
+      response.writeHead(payload.status, { 'content-type': 'application/json' });
+      response.end(JSON.stringify(payload.body));
+    });
+  });
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => resolve({
+      url: `http://127.0.0.1:${server.address().port}`,
+      close: () => new Promise((done) => server.close(done)),
+    }));
+  });
+}
 
 function fixture(run) {
   const root = mkdtempSync(join(tmpdir(), 'sqlite-knowledge-'));
@@ -97,6 +117,66 @@ test('parses commands and validates bounded options', () => {
   assert.equal(parseArgs(['eval', '--lexical-weight', '0.55']).lexicalWeight, 0.55);
   assert.throws(() => parseArgs(['eval', '--lexical-weight', '1.4']), /--lexical-weight/);
 });
+
+test('reorders a shortlist through an attached reranker and stays usable without one', async () => fixture(async (root) => {
+  assert.throws(() => parseArgs(['search', 'x', '--rerank-depth', '0']), /--rerank-depth/);
+  assert.equal(parseArgs(['search', 'x', '--reranker-url', 'http://localhost:8080']).rerankerUrl, 'http://localhost:8080');
+
+  seed(root);
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+
+  const plain = await searchIndex(root, '결제 승인', { limit: 5 });
+  assert.equal(plain.reranked, false);
+  assert.equal(plain.rerank_error, null);
+  const fusedOrder = plain.results.map((item) => item.id);
+  assert.ok(fusedOrder.length > 1, 'need at least two candidates to reorder');
+
+  // The stub scores the fused order backwards, so a correct implementation
+  // returns the reverse — proving the endpoint's order is what lands, not ours.
+  const seen = [];
+  const stub = await rerankerStub((body, url) => {
+    seen.push({ url, query: body.query, documents: body.documents.length, model: body.model });
+    return {
+      status: 200,
+      body: {
+        results: body.documents.map((document, index) => ({
+          index,
+          relevance_score: index,
+        })),
+      },
+    };
+  });
+  try {
+    const found = await searchIndex(root, '결제 승인', {
+      limit: 5,
+      rerankerUrl: stub.url,
+      rerankerModel: 'bge-reranker-v2-m3',
+      rerankDepth: 50,
+    });
+    assert.equal(found.reranked, true);
+    assert.equal(found.rerank_error, null);
+    assert.equal(found.rerank_model, 'bge-reranker-v2-m3');
+    assert.equal(seen[0].url, '/v1/rerank');
+    assert.equal(seen[0].query, '결제 승인');
+    assert.equal(seen[0].model, 'bge-reranker-v2-m3');
+    assert.deepEqual(found.results.map((item) => item.id), [...fusedOrder].reverse());
+    assert.ok(found.results.every((item) => Number.isFinite(item.rerank_score)));
+  } finally {
+    await stub.close();
+  }
+
+  // A reranker that fails must not silently turn the run into a different
+  // experiment: order falls back to fusion and the failure is named.
+  const broken = await rerankerStub(() => ({ status: 500, body: { error: 'model not loaded' } }));
+  try {
+    const found = await searchIndex(root, '결제 승인', { limit: 5, rerankerUrl: broken.url });
+    assert.equal(found.reranked, false);
+    assert.match(found.rerank_error, /rerank failed \(500\)/);
+    assert.deepEqual(found.results.map((item) => item.id), fusedOrder);
+  } finally {
+    await broken.close();
+  }
+}));
 
 test('scores every fusion weight in one pass and refuses to call a tie a winner', async () => fixture(async (root) => {
   assert.deepEqual(parseArgs(['eval', '--sweep', '0.3,0.5']).sweep, [0.3, 0.5]);

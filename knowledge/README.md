@@ -267,6 +267,12 @@ Retrieval is **rank-fused, lexical-first**:
    (`embeddinggemma`: 1800) because the tokenizer is not available locally; `--embed-chars`
    overrides it and the build reports `embedding_context_chars` and `documents_windowed`. A model
    with no known window is left unbounded.
+9. An optional cross-encoder **reranker** reorders a shortlist before the result window is
+   built, so relation promotion still decides retrievability on the order a reader sees. It is
+   attached the way Ollama is — `--reranker-url` / `--reranker-model`, nothing installed, nothing
+   required — speaks the Cohere/Jina `/v1/rerank` shape that llama.cpp and text-embeddings-
+   inference both serve, and falls back to fused order with `rerank_error` set when the endpoint
+   fails. Its ceiling is measurable in advance: a reranker cannot beat `recall@50 − recall@10`.
 
 Every search result carries diagnostics — `lexical_candidates`, `lexical_word_matches`,
 `lexical_trigram_matches`, `lexical_matches_returned`, `relation_promotions`, `relation_participant_promotions`, `distinct_notes` — so a ranking miss
