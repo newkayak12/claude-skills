@@ -227,6 +227,8 @@ Missing knowledge:
 
    스스로 회수될 변은 자리를 그대로 둡니다. 결과마다 `relation_promotion`이 방향을 알려주고,
    `relation_participant_promotions`가 스스로는 못 돌아왔을 변의 수를 셉니다.
+   `relation_participant_evicted_ids`는 자리를 내주고 창 밖으로 나간 노트를 이름으로 찍어,
+   「형제 노트가 밀려났다」가 추측이 아니라 측정이 되게 합니다.
 4. 결과는 기본적으로 노트당 1건으로 묶입니다(`group: none`이면 청크 전부). 청크가 많은
    노트 하나가 형제 노트를 top-*k*에서 밀어내지 못합니다. `domain`·`docType`·`section`·
    `pathPrefix` 필터와 질의어 없는 `list` 커맨드로 SQL 없이 범위 조회가 됩니다.
@@ -238,7 +240,10 @@ Missing knowledge:
    운영자 구어체를 잡아내지만, 화면 라벨을 그대로 인용한 질문에서는 집니다 — 의미 유사도가
    정확한 용어 일치를 희석합니다. `--lexical-weight`로 `search`·`eval`에서 덮어쓸 수 있고,
    `eval`은 실행에 쓴 비율을 `fusion_weights`에 기록하므로 저장된 기준선과 대조해 스윕 결과를
-   나중에 되읽을 수 있습니다.
+   나중에 되읽을 수 있습니다. `eval --sweep 0.3,0.4,0.5`는 한 번에 모든 비율을 채점합니다 —
+   질의 벡터는 비율과 무관하므로 추가 지점은 임베딩이 아니라 SQL 비용입니다. 비율마다 첫
+   비율 대비 **질문별 개선·회귀 목록**이 나오고, 승자를 기준점과 구분할 수 없으면
+   `decisive: false`로 표시합니다.
 7. 비대칭 검색용으로 학습된 임베딩 모델은 질문과 저장된 본문을 다르게 인코딩하는데, Ollama
    `/api/embed`는 그 지시문을 대신 붙여주지 않습니다. `embeddinggemma`는 문서를
    `title: … | text: …`, 질의를 `task: search result | query: …` 형태로 임베딩합니다. 프롬프트
@@ -265,6 +270,11 @@ Node 24+(플래그 없는 `node:sqlite` + FTS5). Node 22.5–23은 `--experiment
 ```bash
 docker compose -f knowledge/compose.yaml run --rm knowledge-index
 ```
+
+## 로드맵
+
+[ROADMAP.md](ROADMAP.md) — 무엇을 측정 중이고, 무엇이 대기 중이며, 무엇을 의도적으로
+하지 않는지. 고치기 쉬운 순서가 아니라 측정된 레버 크기 순입니다.
 
 ## 훅
 
