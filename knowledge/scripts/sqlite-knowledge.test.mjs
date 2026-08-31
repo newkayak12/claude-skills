@@ -208,6 +208,38 @@ test('scores every fusion weight in one pass and refuses to call a tie a winner'
   assert.equal(flat.decisive, false, 'identical weights cannot produce a winner');
 }));
 
+test('reuses embeddings for unchanged documents and re-embeds the ones that moved', async () => fixture(async (root) => {
+  assert.equal(parseArgs(['index']).reuseEmbeddings, true);
+  assert.equal(parseArgs(['index', '--no-reuse-embeddings']).reuseEmbeddings, false);
+
+  seed(root);
+  const first = await buildIndex(root, { provider: 'hash', dimensions: 128 });
+  assert.equal(first.embeddings_reused, 0, 'nothing to reuse on a cold build');
+  assert.equal(first.embeddings_computed, first.documents);
+
+  const unchanged = await buildIndex(root, { provider: 'hash', dimensions: 128 });
+  assert.equal(unchanged.embeddings_computed, 0);
+  assert.equal(unchanged.embeddings_reused, unchanged.documents);
+
+  // Only the edited note misses the cache.
+  write(join(root, 'notes', 'shipping.md'), '# Shipping\n\n배송 추적과 반품 회수 절차를 설명한다.\n');
+  const edited = await buildIndex(root, { provider: 'hash', dimensions: 128 });
+  assert.equal(edited.embeddings_computed, 1);
+  assert.equal(edited.embeddings_reused, edited.documents - 1);
+
+  // A different embedding configuration cannot reuse vectors built under the
+  // old one, and --no-reuse-embeddings forces a cold rebuild on demand.
+  const rebuilt = await buildIndex(root, { provider: 'hash', dimensions: 256 });
+  assert.equal(rebuilt.embeddings_reused, 0);
+  const forced = await buildIndex(root, { provider: 'hash', dimensions: 256, reuseEmbeddings: false });
+  assert.equal(forced.embeddings_reused, 0);
+  assert.equal(forced.embeddings_computed, forced.documents);
+
+  // Reuse must not change what search returns.
+  const found = await searchIndex(root, '결제 승인 재시도', { limit: 3 });
+  assert.equal(found.results[0].id, 'payment-retry');
+}));
+
 test('embeds a note past the model context in overlapping windows instead of dropping its tail', async () => fixture(async (root) => {
   assert.deepEqual(textWindows('짧은 노트', 100), ['짧은 노트']);
   assert.deepEqual(textWindows('abcdefghij', 0), ['abcdefghij']);

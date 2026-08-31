@@ -78,7 +78,9 @@ If `CLAUDE_PLUGIN_ROOT` is unavailable, resolve `../../scripts/sqlite-knowledge.
 
 The indexer requires Node 24+, or Node 22.5-23 with `--experimental-sqlite` and an FTS5-enabled SQLite build. On `No such built-in module: node:sqlite` or `no such module: fts5`, switch to the Docker path in the local SQLite reference instead of reporting the vault as unindexable.
 
-The `index` operation rebuilds the SQLite schema and contents from the current source artifacts; it is not a live or incremental file sync.
+The `index` operation rebuilds the SQLite schema and contents from the current source artifacts; it is not a live file sync. It is, however, **incremental where it costs**: a document whose embedded text is unchanged reuses its stored vector, so a rebuild after editing three notes embeds three documents, not the corpus. Everything else is rebuilt from scratch, so a deleted or renamed note cannot leave a stale row behind — the failure mode a partial reindex has and this does not.
+
+Report `embeddings_reused` and `embeddings_computed`. A rebuild that recomputes everything when little changed means the cache was rejected: the provider, model, or prompt template differs from the existing index, or the schema version moved. That is correct behavior, not a fault — but say which it was rather than reporting a slow build as normal. Pass `--no-reuse-embeddings` to force a cold rebuild when a measurement needs one.
 
 ## Verify
 

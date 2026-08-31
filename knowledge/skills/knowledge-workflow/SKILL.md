@@ -97,6 +97,8 @@ Read, in this order: `repair_targets` (each gap and how many questions the note 
 | `gap: no-lookup-vocabulary` | Add bridge fields, grounded in the repo | `knowledge:knowledge-base-builder` |
 | Comparison question retrieves the contrast but none of its sides | Declare `participants` | `knowledge:knowledge-graph-builder` |
 
+Re-indexing between rounds is cheap: an unchanged document reuses its stored embedding, so a round that edits two notes re-embeds two documents. `embeddings_computed` far above the number of edited notes means the cache was rejected — usually because the provider or model changed, which makes the round a provider change, not a corpus one.
+
 ## Phase D — One change
 
 Apply exactly one. Ground every added term in the source, never in the question set — copying a question's words into a note is test-set leakage that scores well and retrieves nothing new.

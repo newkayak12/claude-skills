@@ -275,6 +275,15 @@ Missing knowledge:
 `lexical_trigram_matches`, `lexical_matches_returned`, `relation_promotions`, `relation_participant_promotions`, `distinct_notes` — 그래서 랭킹
 실패가 빈 볼트처럼 보이지 않고 눈에 띕니다.
 
+### 재빌드
+
+`index`는 **항상 전체를 다시 만들되**, 임베딩할 텍스트(프롬프트 접두 포함)가 기존 색인과
+바이트 단위로 같은 문서는 저장된 벡터를 재사용합니다. 비싼 쪽만 증분이고 정확성 쪽은
+아닙니다 — 노트 3개를 고치면 3개만 임베딩하지만, 삭제·이름 변경된 노트가 잔존 행으로
+남는 일은 여전히 불가능합니다. 부분 재색인이 갖는 실패 모드를 이 방식은 갖지 않습니다.
+빌드 결과에 `embeddings_reused`·`embeddings_computed`가 찍히고, 제공자·모델·프롬프트
+템플릿·스키마 버전이 다르면 캐시는 거부됩니다. `--no-reuse-embeddings`로 강제 냉시작.
+
 ### 런타임
 
 Node 24+(플래그 없는 `node:sqlite` + FTS5). Node 22.5–23은 `--experimental-sqlite`가

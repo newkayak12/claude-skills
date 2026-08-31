@@ -35,7 +35,7 @@ const DEFAULT_DB = '.knowledge/knowledge.sqlite';
 const DEFAULT_DIMENSIONS = 384;
 const DEFAULT_OLLAMA_URL = 'http://127.0.0.1:11434';
 const DEFAULT_OLLAMA_MODEL = 'embeddinggemma';
-const SCHEMA_VERSION = '4';
+const SCHEMA_VERSION = '5';
 const RRF_K = 60;
 // A relation note is about two or more other notes. One matched participant is
 // evidence about that participant, not about the relation, so promotion needs a
@@ -80,6 +80,7 @@ function parseArgs(argv) {
     rerankerUrl: null,
     rerankerModel: null,
     rerankDepth: DEFAULT_RERANK_DEPTH,
+    reuseEmbeddings: true,
   };
 
   while (args.length) {
@@ -108,6 +109,7 @@ function parseArgs(argv) {
     else if (arg === '--baseline') options.baseline = value();
     else if (arg === '--lexical-weight') options.lexicalWeight = Number(value());
     else if (arg === '--embed-chars') options.embedChars = Number(value());
+    else if (arg === '--no-reuse-embeddings') options.reuseEmbeddings = false;
     else if (arg === '--reranker-url') options.rerankerUrl = value();
     else if (arg === '--reranker-model') options.rerankerModel = value();
     else if (arg === '--rerank-depth') options.rerankDepth = Number(value());
@@ -579,6 +581,7 @@ function createSchemaTables(db) {
       source_ref TEXT,
       domain TEXT,
       metadata_json TEXT NOT NULL,
+      text_hash TEXT NOT NULL DEFAULT '',
       embedding BLOB NOT NULL,
       UNIQUE(kind, document_id)
     );
@@ -636,6 +639,43 @@ function edgeIdentity(record) {
   })).digest('hex');
 }
 
+// Re-embedding a corpus that barely changed is the whole cost of a rebuild: with
+// a real provider the SQL is seconds and the embeddings are minutes. Reusing a
+// vector keyed by the exact text that produced it gives incremental cost with
+// full-rebuild correctness — the index is still built from scratch every time,
+// so a deleted or renamed note cannot leave a stale row behind, which is the
+// failure mode a partial reindex has and this does not.
+function loadEmbeddingCache(dbPath, config, promptId) {
+  if (!existsSync(dbPath)) return new Map();
+  let db;
+  try {
+    db = openSqlite(dbPath, { readOnly: true });
+    const metadata = Object.fromEntries(
+      db.prepare('SELECT key, value FROM metadata').all().map((row) => [row.key, row.value]),
+    );
+    // A vector is only reusable under the exact conditions that produced it.
+    const reusable = metadata.schema_version === SCHEMA_VERSION
+      && metadata.embedding_provider === config.provider
+      // The hash provider encodes its dimensions in the model name, so model
+      // equality already covers them; an Ollama model's dimensions come from the
+      // model itself and are not a separate degree of freedom.
+      && metadata.embedding_model === config.model
+      && (metadata.embedding_prompt || 'none') === promptId;
+    if (!reusable) return new Map();
+    const cache = new Map();
+    for (const row of db.prepare('SELECT text_hash, embedding FROM documents WHERE text_hash != \'\'').all()) {
+      if (!cache.has(row.text_hash)) cache.set(row.text_hash, row.embedding);
+    }
+    return cache;
+  } catch {
+    // A cache that cannot be read is not an error; it just means everything is
+    // embedded again.
+    return new Map();
+  } finally {
+    db?.close();
+  }
+}
+
 async function buildIndex(inputRoot, options = {}) {
   const root = findKnowledgeRoot(inputRoot);
   const dbPath = resolveDbPath(root, options.db);
@@ -661,13 +701,27 @@ async function buildIndex(inputRoot, options = {}) {
       : [document.title, document.section, document.text].filter(Boolean).join('\n');
     return textWindows(text, contextChars);
   });
-  const vectors = await embedTexts(windows.flat(), config);
-  let cursor = 0;
-  const embeddings = windows.map((group) => {
-    const pooled = poolVectors(vectors.slice(cursor, cursor + group.length));
-    cursor += group.length;
-    return pooled;
+  // The hash covers the exact text that was embedded, prompt prefix included, so
+  // a document whose title, section, or body changed misses the cache and is
+  // re-embedded; one that did not is reused byte for byte.
+  const textHashes = windows.map((group) => createHash('sha256').update(group.join('\u0000')).digest('hex'));
+  const cache = options.reuseEmbeddings === false
+    ? new Map()
+    : loadEmbeddingCache(dbPath, config, prompt ? prompt.id : 'none');
+  const pending = [];
+  windows.forEach((group, index) => {
+    if (!cache.has(textHashes[index])) pending.push({ index, group });
   });
+  const computed = await embedTexts(pending.flatMap((item) => item.group), config);
+  const byIndex = new Map();
+  let cursor = 0;
+  for (const item of pending) {
+    byIndex.set(item.index, poolVectors(computed.slice(cursor, cursor + item.group.length)));
+    cursor += item.group.length;
+  }
+  const embeddings = windows.map((group, index) => byIndex.get(index)
+    ?? bufferVector(cache.get(textHashes[index])));
+  const embeddingsReused = windows.length - pending.length;
 
   mkdirSync(dirname(dbPath), { recursive: true });
   const db = openSqlite(dbPath);
@@ -691,8 +745,8 @@ async function buildIndex(inputRoot, options = {}) {
     const insertDocument = db.prepare(`
       INSERT INTO documents(
         kind, document_id, note_id, path, title, section, text, terms, body,
-        source_ref, domain, metadata_json, embedding
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        source_ref, domain, metadata_json, text_hash, embedding
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertFts = db.prepare('INSERT INTO documents_fts(rowid, title, terms, body) VALUES (?, ?, ?, ?)');
     const insertTrgm = db.prepare('INSERT INTO documents_trgm(rowid, title, terms, body) VALUES (?, ?, ?, ?)');
@@ -714,6 +768,7 @@ async function buildIndex(inputRoot, options = {}) {
         document.sourceRef,
         document.domain,
         JSON.stringify(document.metadata),
+        textHashes[index],
         vectorBuffer(embeddings[index]),
       );
       insertFts.run(result.lastInsertRowid, document.title || '', document.terms, document.body);
@@ -787,6 +842,8 @@ async function buildIndex(inputRoot, options = {}) {
     embedding_prompt: prompt ? prompt.id : 'none',
     embedding_context_chars: contextChars,
     documents_windowed: windows.filter((group) => group.length > 1).length,
+    embeddings_reused: embeddingsReused,
+    embeddings_computed: pending.length,
     notice: provider === 'hash'
       ? 'hash is a dependency-free lexical feature baseline, not a semantic embedding. Search ranks full-text matches first; use --provider ollama for semantic retrieval.'
       : null,
