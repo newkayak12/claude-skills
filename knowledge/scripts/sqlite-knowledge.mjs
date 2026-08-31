@@ -75,6 +75,7 @@ function parseArgs(argv) {
     holdout: DEFAULT_HOLDOUT_RATIO,
     baseline: null,
     lexicalWeight: null,
+    embedChars: null,
   };
 
   while (args.length) {
@@ -102,6 +103,7 @@ function parseArgs(argv) {
     else if (arg === '--holdout') options.holdout = Number(value());
     else if (arg === '--baseline') options.baseline = value();
     else if (arg === '--lexical-weight') options.lexicalWeight = Number(value());
+    else if (arg === '--embed-chars') options.embedChars = Number(value());
     else if (!options.query && ['search', 'neighbors', 'get'].includes(command)) options.query = arg;
     else throw new Error(`Unknown argument: ${arg}`);
   }
@@ -133,6 +135,10 @@ function parseArgs(argv) {
   if (options.lexicalWeight !== null
     && (!Number.isFinite(options.lexicalWeight) || options.lexicalWeight < 0 || options.lexicalWeight > 1)) {
     throw new Error('--lexical-weight must be a ratio from 0 to 1');
+  }
+  if (options.embedChars !== null
+    && (!Number.isInteger(options.embedChars) || options.embedChars < 128 || options.embedChars > 32768)) {
+    throw new Error('--embed-chars must be an integer from 128 to 32768');
   }
   return { command, ...options };
 }
@@ -392,6 +398,47 @@ function normalizeVector(values) {
   return vector;
 }
 
+// An embedding model silently drops whatever runs past its context window, so a
+// long note is indexed by its opening and the rest is invisible to semantic
+// search while full-text still matches it — a note that only lexical can find.
+// The budget is in characters, not tokens, because the tokenizer is not
+// available here; for CJK text one token per character is the conservative
+// direction to be wrong in. Only models with a known window get one.
+const EMBEDDING_CONTEXT_CHARS = {
+  embeddinggemma: 1800,
+};
+
+function embeddingContextChars(provider, model, override = null) {
+  if (override !== null && Number.isFinite(override)) return override > 0 ? override : null;
+  if (provider !== 'ollama') return null;
+  const family = String(model || '').split(':')[0].trim().toLowerCase();
+  return EMBEDDING_CONTEXT_CHARS[family] ?? null;
+}
+
+// Windows overlap so a passage straddling a boundary is whole in one of them.
+function textWindows(text, budget) {
+  const value = String(text ?? '');
+  if (!budget || value.length <= budget) return [value];
+  const stride = Math.max(1, Math.floor(budget * 0.85));
+  const windows = [];
+  for (let start = 0; start < value.length; start += stride) {
+    windows.push(value.slice(start, start + budget));
+    if (start + budget >= value.length) break;
+  }
+  return windows;
+}
+
+// Mean-pooling the windows keeps one vector per document, so the rest of the
+// engine — grouping, fusion, promotion — is untouched by how long a note is.
+function poolVectors(vectors) {
+  if (vectors.length === 1) return vectors[0];
+  const pooled = new Float32Array(vectors[0].length);
+  for (const vector of vectors) {
+    for (let index = 0; index < pooled.length; index += 1) pooled[index] += vector[index];
+  }
+  return normalizeVector(pooled);
+}
+
 // EmbeddingGemma is trained with an instruction glued to the front of the text,
 // and it encodes a question and a stored passage differently: a query carries
 // `task: search result | query: …`, a document carries `title: … | text: …`.
@@ -588,15 +635,21 @@ async function buildIndex(inputRoot, options = {}) {
     throw new Error(`No knowledge artifacts found under ${root}`);
   }
   const prompt = embeddingPrompt(provider, model);
-  const embeddings = await embedTexts(
-    data.documents.map((document) => {
-      const body = [document.section, document.text].filter(Boolean).join('\n');
-      return prompt
-        ? prompt.document(document.title, body)
-        : [document.title, document.section, document.text].filter(Boolean).join('\n');
-    }),
-    config,
-  );
+  const contextChars = embeddingContextChars(provider, model, options.embedChars ?? null);
+  const windows = data.documents.map((document) => {
+    const body = [document.section, document.text].filter(Boolean).join('\n');
+    const text = prompt
+      ? prompt.document(document.title, body)
+      : [document.title, document.section, document.text].filter(Boolean).join('\n');
+    return textWindows(text, contextChars);
+  });
+  const vectors = await embedTexts(windows.flat(), config);
+  let cursor = 0;
+  const embeddings = windows.map((group) => {
+    const pooled = poolVectors(vectors.slice(cursor, cursor + group.length));
+    cursor += group.length;
+    return pooled;
+  });
 
   mkdirSync(dirname(dbPath), { recursive: true });
   const db = openSqlite(dbPath);
@@ -613,6 +666,7 @@ async function buildIndex(inputRoot, options = {}) {
       embedding_model: model,
       embedding_dimensions: String(embeddings[0]?.length || dimensions),
       embedding_prompt: prompt ? prompt.id : 'none',
+      embedding_context_chars: contextChars ? String(contextChars) : 'unbounded',
     };
     for (const [key, value] of Object.entries(metadata)) insertMeta.run(key, value);
 
@@ -713,6 +767,8 @@ async function buildIndex(inputRoot, options = {}) {
     embedding_dimensions: embeddings[0]?.length || dimensions,
     embedding_quality: embeddingQuality(provider),
     embedding_prompt: prompt ? prompt.id : 'none',
+    embedding_context_chars: contextChars,
+    documents_windowed: windows.filter((group) => group.length > 1).length,
     notice: provider === 'hash'
       ? 'hash is a dependency-free lexical feature baseline, not a semantic embedding. Search ranks full-text matches first; use --provider ollama for semantic retrieval.'
       : null,
@@ -1720,4 +1776,5 @@ export {
   promptById,
   searchIndex,
   serveMcp,
+  textWindows,
 };

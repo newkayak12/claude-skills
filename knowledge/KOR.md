@@ -245,6 +245,13 @@ Missing knowledge:
    id는 색인 메타데이터에 기록되고 `embedding_prompt`로 보고되므로, 질의는 자기 문서가 쓴
    방식으로만 접두됩니다 — 이전에 만든 색인은 재색인 전까지 접두 없이 그대로 동작합니다.
    모르는 모델에는 추측한 프롬프트를 붙이지 않습니다.
+8. 모델 컨텍스트보다 긴 문서는 앞부분만 색인되고 나머지는 의미 검색에서 사라집니다 — 전문
+   검색으로는 잡히는데 의미 검색으로만 안 잡히는 노트가 됩니다. 예산을 넘는 문서는 **겹치는
+   윈도우**로 나눠 임베딩한 뒤 평균 풀링해 벡터 하나로 합칩니다. 긴 노트도 결과 1건으로
+   남으니 이후 단계는 그대로입니다. 예산 단위는 토큰이 아니라 문자입니다(`embeddinggemma`:
+   1800) — 토크나이저를 로컬에서 쓸 수 없기 때문입니다. `--embed-chars`로 덮어쓸 수 있고,
+   빌드 결과에 `embedding_context_chars`와 `documents_windowed`가 보고됩니다. 창 크기를
+   모르는 모델은 제한 없이 둡니다.
 
 모든 검색 결과에 진단 필드가 붙습니다 — `lexical_candidates`, `lexical_word_matches`,
 `lexical_trigram_matches`, `lexical_matches_returned`, `relation_promotions`, `relation_participant_promotions`, `distinct_notes` — 그래서 랭킹

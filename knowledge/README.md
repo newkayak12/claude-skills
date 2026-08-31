@@ -254,6 +254,13 @@ Retrieval is **rank-fused, lexical-first**:
    reported as `embedding_prompt`, so a query is only prefixed the way its documents were —
    an index built before this stays unprefixed until it is rebuilt. An unknown model gets no
    prompt rather than a guessed one.
+8. A document longer than the model's context window would be indexed by its opening alone,
+   with the rest invisible to semantic search while full-text still matches it. Documents past
+   the budget are embedded in **overlapping windows** and mean-pooled into one vector, so a long
+   note stays one result and nothing downstream changes. The budget is measured in characters
+   (`embeddinggemma`: 1800) because the tokenizer is not available locally; `--embed-chars`
+   overrides it and the build reports `embedding_context_chars` and `documents_windowed`. A model
+   with no known window is left unbounded.
 
 Every search result carries diagnostics — `lexical_candidates`, `lexical_word_matches`,
 `lexical_trigram_matches`, `lexical_matches_returned`, `relation_promotions`, `relation_participant_promotions`, `distinct_notes` — so a ranking miss

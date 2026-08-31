@@ -52,6 +52,11 @@ Markdown is indexed through each catalog record's `path`; the indexer does not c
    Report `embedding_prompt` from the build result. `embeddinggemma` is trained for asymmetric
    retrieval and the indexer applies its query and document instructions; an index that reports
    `none` under that model predates the prompts and must be rebuilt to get them.
+
+   Report `documents_windowed` as well. It counts notes too long for the model's context window,
+   which are embedded in overlapping windows and pooled rather than truncated. A high count is
+   not a failure, but it means the corpus is chunked more coarsely than the model can read in one
+   pass; `knowledge:rag-corpus-builder` is where that is fixed, not `--embed-chars`.
 3. When the `knowledge-local` MCP server is available, call `knowledge_status` and compare its reported root with the desired knowledge root. If they resolve to the same path, call `knowledge_index` with the selected provider and model; the MCP tool does not accept a per-call root. If the server is unavailable or points at a different root, run the bundled CLI with an explicit `--root` relative to the plugin root:
 
 ```bash
