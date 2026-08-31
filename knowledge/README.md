@@ -61,6 +61,13 @@ knowledge-system/
   _rag/         chunks.jsonl  sources.csv  eval-queries.jsonl
 ```
 
+### `knowledge-workflow`
+
+Entry point for a full build or a retrieval repair loop. Routes the skills below in order,
+and turns the repair loop into measured rounds with a declared stop condition: split the
+question set before the first edit, change one thing per measurement, revert regressions on
+corpus edits, and stop when the holdout stops moving rather than when the edits run out.
+
 ### `knowledge-base-builder`
 
 Builds the linked Markdown vault. Each note is one durable **claim** — a concept, a code module,

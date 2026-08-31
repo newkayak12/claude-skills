@@ -1,164 +1,152 @@
 ---
 name: knowledge-workflow
+effort: high
 description: >-
-  Use when turning a body of source material into a queryable knowledge system
-  through iterative graph-like exploration: intake, source frontier, linked
-  Markdown vault, ontology, graph records, RAG corpus, and query surfaces.
+  Use when building a knowledge vault end to end or when competency questions
+  are failing and the fix has to be measured — routes catalog, graph, RAG,
+  index, and repair work as one loop with an explicit stop condition; not for a
+  single query against an index that already works.
 type: workflow
+theme: knowledge
 scenarios:
-  - "자료들을 그래프 탐색하듯 읽고 지식화해줘"
-  - "이 레포/문서 묶음을 knowledge system으로 쭉 빌드해줘"
-  - "자료 바탕으로 knowledge base, ontology, graph, RAG까지 정리해줘"
-  - "knowledge-workflow 설치하면 자동으로 지식 변경을 체크하게 해줘"
-  - "Build a queryable knowledge system from this corpus"
+  - "이 저장소로 knowledge vault 처음부터 만들어줘"
+  - "eval 점수가 안 오르는데 뭘 고쳐야 하는지 같이 돌려줘"
+  - "검색 품질 개선 루프 돌리자"
+  - "Build this vault and keep repairing until retrieval stops improving"
+  - "Run the retrieval measurement loop on this knowledge base"
+estimated_time: "2-6 hours (first build), 20-40 minutes per repair round"
 compatibility:
+  recommended:
+    - mcp__knowledge-local__knowledge_index
+    - mcp__knowledge-local__knowledge_search
   optional:
     - think-tool
   remote_mcp_note: >-
-    think-tool이 있으면 source frontier, 개념 경계, ontology 후보, 관계 탐색 순서를 점검하는 데 활용할 수 있습니다.
+    knowledge-local MCP가 있으면 색인과 검색을 그쪽으로 라우팅합니다. 없으면 번들 CLI를 씁니다.
 ---
 
 # Knowledge Workflow
 
-Build a source-grounded knowledge system by exploring the material like a graph: start from seed sources, discover neighboring concepts and dependencies, write linked notes, stabilize ontology terms, extract graph/RAG artifacts, and leave queryable entry points.
+Build the vault, then repair retrieval in measured rounds until it stops improving.
 
-Use this workflow when the user wants "knowledge화" end to end rather than a single artifact.
+## Standing Mandates
 
-## Quick Intake
+- **The loop is the deliverable, not the edit.** Every round is: measure → diagnose → change **one** thing → measure against the saved run. A round with two changes cannot be attributed or reverted, so it does not count as a round.
+- **Split before the first repair.** Record `--split holdout` once, up front. A holdout measured after repairs proves nothing, and tuning against it destroys the only unbiased number in the loop.
+- **Fix the largest lever first, not the easiest edit.** The order below is measured, not intuited. Vocabulary work feels productive and has repeatedly moved nothing while the bottleneck sat in the provider or the ranker.
+- **A stop condition is part of the run.** Say which one applies before the round starts. A loop with no declared exit becomes editing that looks like progress.
+- **Never cite the round count as progress.** Report the holdout number, or say it did not move.
 
-Ask a short intake before starting unless the request already answers it:
+---
 
-- What is this material? codebase, docs, notes, tickets, research, mixed?
-- What should the knowledge system help with? onboarding, architecture navigation, impact analysis, research synthesis, operations, support, compliance?
-- Who is the main reader or querier?
+## Workflow Overview
 
-If the user answers roughly, proceed with defaults and record assumptions in `knowledge-system-plan.md`.
-
-## Default Layout
-
-Use this layout unless the user gives a path:
-
-```text
-knowledge-system/
-  knowledge-system-plan.md
-  index.md
-  vault-plan.md
-  mocs/
-  notes/
-  glossary.md
-  open-questions.md
-  _ontology/
-    ontology.md
-    ontology.yml
-    mapping.md
-    competency-questions.md
-    open-ontology-questions.md
-  _graph/
-    schema.md
-    nodes.jsonl
-    edges.jsonl
-    question-reachability.jsonl
-    extraction-report.md
-  _rag/
-    rag-schema.md
-    sources.csv
-    chunks.jsonl
-    eval-queries.jsonl
-    ingestion-report.md
-  _knowledge/
-    catalog.jsonl
-    questions.jsonl
-    question-results.jsonl
-    coverage.md
-    improvement-notes.md
-    needs-human-review.md
-    checks/latest.json
-    jobs/catalog-delta-queue.jsonl
-    jobs/answerability-check-queue.jsonl
-    jobs/embed-queue.jsonl
-    jobs/graph-update-queue.jsonl
-    jobs/ontology-review-queue.jsonl
-    reports/delta-checks.jsonl
-  .knowledge/
-    knowledge.sqlite          # local derived index; do not commit
+```
+[A] Build once
+  catalog → graph → RAG → index
+        ↓
+[B] Split + baseline   ← record holdout, save the run
+        ↓
+   ┌──> [C] Diagnose  (repair_targets, kind breakdown)
+   │         ↓
+   │    [D] One change (lever order below)
+   │         ↓
+   │    [E] Re-measure vs baseline → keep or revert
+   │         ↓
+   └─── stop condition met? ──no──┘
+                 │ yes
+                 ↓
+        [F] Report + hand off to knowledge-query
 ```
 
-If an existing vault is present, build inside it and use `_ontology/`, `_graph/`, and `_rag/` as sibling artifact folders.
+---
 
-## Exploration Model
+## Phase A — Build (once)
 
-Treat source work as a bounded graph traversal:
+| Step | Skill | Skip if |
+|---|---|---|
+| A1 Catalog | `knowledge:knowledge-base-builder` | `_knowledge/catalog.jsonl` exists and covers the sources |
+| A2 Graph | `knowledge:knowledge-graph-builder` | No relationship questions in scope |
+| A3 RAG chunks | `knowledge:rag-corpus-builder` | Notes are short enough to retrieve whole |
+| A4 Index | `knowledge:sqlite-index-builder` | — |
 
-1. **Seeds:** Start from user-specified sources, root docs, READMEs, indexes, entry points, manifests, architecture docs, or high-signal tickets.
-2. **Frontier:** Track discovered but not yet processed sources, concepts, entities, decisions, workflows, and relationship candidates.
-3. **Expansion rule:** Follow links, imports, references, repeated terms, ownership markers, config dependencies, API boundaries, and explicit "see also" pointers.
-4. **Stop rule:** Stop expanding when new sources only repeat known concepts, fall outside scope, or no longer improve the motivating questions.
-5. **Evidence rule:** Every durable note, ontology term, graph edge, and RAG chunk keeps provenance.
+Competency questions in `_knowledge/questions.jsonl` are a **precondition for Phase B**, not an output of it. Without them there is nothing to measure and the loop cannot start.
 
-Do not crawl endlessly. Prefer a useful, inspectable knowledge system over exhaustive ingestion with weak structure.
+## Phase B — Split and baseline (once)
 
-## Workflow
+```bash
+node --no-warnings "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval \
+  --root <vault> --k 10 --split holdout          # record this number, then leave it alone
+node --no-warnings "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval \
+  --root <vault> --k 10 --split dev > /tmp/round-0.json
+```
 
-1. **Plan the system and its competency questions.** Create `knowledge-system-plan.md` with purpose, audience, source boundary, output layout, traversal seeds, stop rules, lookup jobs, and assumptions. Materialize the lookup jobs as `_knowledge/questions.jsonl`; these questions remain stable requirements rather than disposable examples.
-2. **Map the source frontier.** Build a small inventory of seed sources and discovered neighbors. Mark each item as `queued`, `processed`, `skipped`, or `out-of-scope`.
-3. **Build the linked vault.** Use `knowledge:knowledge-base-builder` behavior for predictable folder placement, human-readable notes, MOCs, source-grounded frontmatter, and the AI lookup catalog.
-4. **Stabilize ontology where needed.** Use `knowledge:ontology-builder` behavior when repeated concepts, aliases, relation meanings, or constraints start to matter.
-5. **Extract graph records.** Use `knowledge:knowledge-graph-builder` behavior for entities, edges, evidence, schema, and graph-ready JSONL/CSV. For relationship-heavy competency questions, emit bounded typed paths in `_graph/question-reachability.jsonl`.
-6. **Prepare RAG corpus.** Use `knowledge:rag-corpus-builder` behavior to derive retrieval chunks, metadata, citations, and eval queries from the vault and its catalog without replacing the source-grounded notes.
-7. **Create and exercise query surfaces.** Use `knowledge:knowledge-query` behavior to run every competency question, assign strict complete/partial/unanswerable coverage, and write `_knowledge/question-results.jsonl`. Leave recommended queries, reading paths, known gaps, and evidence-backed answer patterns. When the local `knowledge-local` MCP server is available, build its derived SQLite index and exercise the same vocabulary and source-symbol paths used by the competency set.
-8. **Run the completion gates.** Check dead links, orphan notes, duplicate concepts, weak ontology terms, unsupported graph edges, RAG chunks without provenance, relation claims without evidence for every side, and unanswered competency questions. Summarize numeric answerability in `_knowledge/coverage.md`, run `validate-knowledge.mjs --require-answerability`, and leave the system incomplete while any declared question fails.
+Record the reranker ceiling once too: `eval --k 50` minus `eval --k 10`. Required notes missing at both depths can never be recovered by reordering.
 
-## Hook-First Automation
+## Phase C — Diagnose
 
-When the `knowledge` plugin is installed, its lightweight `PostToolUse` hook can watch ordinary Markdown edits and keep the knowledge system fresh without requiring a separate user direction.
+Read, in this order: `repair_targets` (each gap and how many questions the note blocks), the per-`kind` hit breakdown, then `relation_participant_evicted_ids` on any comparison question that lost a sibling note.
 
-The hook is intentionally a checker, not a builder:
+| Signal | Lever | Route to |
+|---|---|---|
+| `embedding_quality: lexical-baseline`, paraphrased or spoken-style questions miss | Attach a semantic provider | `knowledge:sqlite-index-builder` |
+| `embedding_prompt: none` under `embeddinggemma` | Rebuild with the asymmetric prompts | `knowledge:sqlite-index-builder` |
+| `documents_windowed` high | Chunk the corpus finer | `knowledge:rag-corpus-builder` |
+| Exact screen-label questions lose to paraphrases | Sweep the fusion split | `eval --sweep 0.3,0.4,0.5` |
+| `recall@50` ≫ `recall@10` | Attach a reranker | `knowledge:knowledge-query` → `references/local-sqlite.md` |
+| `gap: missing-note` | Extract the note | `knowledge:knowledge-base-builder` |
+| `gap: no-lookup-vocabulary` | Add bridge fields, grounded in the repo | `knowledge:knowledge-base-builder` |
+| Comparison question retrieves the contrast but none of its sides | Declare `participants` | `knowledge:knowledge-graph-builder` |
 
-- It activates only inside an existing knowledge workspace, detected by `knowledge-system-plan.md`, `_rag/`, `_graph/`, `_ontology/`, `_knowledge/`, or a `knowledge-system/` directory.
-- It inspects changed Markdown files after `Write`, `Edit`, `MultiEdit`, or `NotebookEdit`.
-- It records the latest check at `_knowledge/checks/latest.json` and appends history to `_knowledge/reports/delta-checks.jsonl`.
-- **Beta:** When `_knowledge/catalog.jsonl` exists, the hook queues one `upsert-note` record per changed note in `_knowledge/jobs/catalog-delta-queue.jsonl`. Consumers should update only that note's catalog record and may coalesce repeated entries for the same path; they should not interpret the queue as a request for a full vault reindex.
-- When `_knowledge/question-results.jsonl` exists, an observed answer-note edit queues `recheck-affected-questions` in `_knowledge/jobs/answerability-check-queue.jsonl`. Existing complete results are not trusted after their recorded note hash becomes stale.
-- The beta delta queue covers Markdown writes and edits observed by the hook. Deletions or moves performed outside those tools still require explicit catalog reconciliation.
-- It also queues follow-up work in `_knowledge/jobs/embed-queue.jsonl`, `_knowledge/jobs/graph-update-queue.jsonl`, and `_knowledge/jobs/ontology-review-queue.jsonl` when existing RAG, graph, or ontology artifacts look stale.
-- It fails open and never blocks edits. Missing config, unreadable files, bad JSON, unsupported tools, or non-knowledge projects should produce no interruption.
+## Phase D — One change
 
-Use the queued jobs as portable handoff files. Embedding providers, vector databases, graph stores, or full rebuild scripts may consume them later, but the canonical knowledge artifacts remain the linked vault plus `_rag/`, `_graph/`, `_ontology/`, and `_knowledge/`.
+Apply exactly one. Ground every added term in the source, never in the question set — copying a question's words into a note is test-set leakage that scores well and retrieves nothing new.
 
-The bundled `knowledge-local` MCP server is one such consumer. It rebuilds `.knowledge/knowledge.sqlite` from the portable artifacts and exposes hybrid search, record lookup, graph-neighbor queries, and freshness status. Keep the database out of Git; synchronize the canonical Markdown and JSONL instead.
+## Phase E — Re-measure
 
-## Prioritization
+```bash
+node --no-warnings "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval \
+  --root <vault> --k 10 --split dev --baseline /tmp/round-N.json
+```
 
-When time or scope is limited, build in this order:
+**Corpus and vocabulary edits: revert on any regression**, even when `recall_at_k` rose — competency sets are small enough that an aggregate gain routinely hides a question that stopped working. **Engine, provider, and reranker changes are judged differently**: they move every question at once, so weigh net movement and holdout together and name the regressions instead of reverting on their existence.
 
-1. `knowledge-system-plan.md`
-2. `index.md`, high-value MOCs, and atomic notes
-3. `glossary.md` and `open-questions.md`
-4. `_ontology/ontology.md` for repeated terms and relation semantics
-5. `_graph/nodes.jsonl` and `_graph/edges.jsonl` for important relationships
-6. `_rag/chunks.jsonl`, `_rag/sources.csv`, and `_rag/eval-queries.jsonl`
+## Stop conditions
 
-Do not interpret this prioritization as permission to omit `_knowledge/questions.jsonl` or its
-results from a completed non-trivial system. The list controls extraction depth; the
-answerability gate controls completion.
+1. **Two consecutive rounds with no dev improvement** — the remaining gaps are not the kind this loop fixes.
+2. **Every remaining `repair_target` is `missing-note` with no source material** — an authoring problem; the honest answer is that the vault does not contain the answer.
+3. **The target recall is met** — score the holdout once and report both numbers.
+4. **The holdout has not moved while dev keeps rising** — stop and say so. That gap is overfitting, and more rounds widen it.
 
-## Quality Bar
+---
 
-- The output can be entered from `index.md` and queried through `_graph/` or `_rag/` artifacts.
-- The traversal frontier explains what was explored, skipped, or left open.
-- Notes, ontology terms, graph records, and RAG chunks share stable names and provenance.
-- `_knowledge/catalog.jsonl` resolves stable note IDs to current paths and supports fast lookup before graph or RAG traversal.
-- `_knowledge/questions.jsonl` traces real lookup jobs to required notes, terms, symbols, and graph nodes; every question has a current result.
-- All competency results are complete with direct evidence, and `coverage.md` reports the numeric pass rate.
-- Cross-layer lookup keeps same-referent aliases separate from user terms and source symbols.
-- The system improves as a graph: following links or edges reveals useful neighboring knowledge.
-- Relationship-heavy questions have bounded, typed, evidence-backed graph reachability rather than hub- or co-occurrence-based shortcuts.
-- Uncertainty is explicit; missing sources and weak inferences are not hidden.
+## Output Template
+
+```markdown
+## Retrieval round N
+
+**Change:** <the one thing>       **Lever:** <provider|ranking|corpus|vocabulary>
+**Dev:** hits A → B, recall@10 X → Y, MRR P → Q
+**Verdict:** improved | regressed | unchanged
+**Regressions:** <question ids, or none>
+**Decision:** kept | reverted — <why>
+
+**Holdout (recorded at round 0):** <number, unchanged since>
+**Stop condition:** <which one, and whether it is met>
+```
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Runs eval, reads `repair_targets`, names the lever | Attaches Ollama or a reranker if you want one |
+| Proposes exactly one change per round | Confirms the change is true of the system, not just of the docs |
+| Reverts regressions without being asked | Sets the recall target and calls the loop done |
+| Reports the holdout, or that it did not move | Supplies the competency questions |
 
 ## Related Skills
 
-- `knowledge:knowledge-base-builder` - linked Markdown vault layer.
-- `knowledge:ontology-builder` - semantic class/relation/constraint layer.
-- `knowledge:knowledge-graph-builder` - graph-ready entity and edge layer.
-- `knowledge:rag-corpus-builder` - retrieval corpus layer.
-- `knowledge:knowledge-query` - query and answer layer.
+- Steps: `knowledge:knowledge-base-builder`, `knowledge:knowledge-graph-builder`, `knowledge:rag-corpus-builder`, `knowledge:sqlite-index-builder`
+- After: `knowledge:knowledge-query` — answer from the index the loop stabilized
+- Also: `knowledge:render-graph-view`, `knowledge:ontology-builder`
+- Measured lever sizes and what is deliberately not being done: [ROADMAP.md](../../ROADMAP.md)

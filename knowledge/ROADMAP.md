@@ -82,6 +82,12 @@ Phase를 플러그인 변경 단위로 옮기면:
   스킬 쪽: `knowledge-query`에 부착·실패 판독 규칙, `local-sqlite.md`에 천장 측정법,
   `sqlite-index-builder`에 리랭커 전 `recall@50 − recall@10` 확인 단계.
 - **R4 루프 닫기** — eval-baseline.json 규약 + fail-open 훅, `promote` 커맨드.
+- **R5 워크플로 진입점 — 완료 (v1.14.0)** — `knowledge:knowledge-workflow`. 기존 스킬을
+  라우팅하는 진입점이고 새 내용은 없음. 추가한 것은 **루프의 규율**입니다: 첫 수정 전
+  분할, 측정 1회당 변경 1건, 신호→레버 라우팅 표, 그리고 **명시적 종료 조건 4가지**
+  (dev 2라운드 무변화 / 남은 게 전부 missing-note / 목표 recall 도달 / dev만 오르고
+  홀드아웃 정지 = 과적합). 이 세션의 실제 실패 양상 — 어휘 3회 0점, 총합이 회귀를
+  가림, 홀드아웃 검증 — 을 규칙으로 굳힌 것.
 
 ## 안 하기로 유지
 

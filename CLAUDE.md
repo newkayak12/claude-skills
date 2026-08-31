@@ -28,6 +28,7 @@ For complex multi-step tasks, use these workflow skills as entry points:
 | Critical thinking, stress-test a plan or argument | `cognition:critical-thinking-workflow` |
 | Self-reflection, life transition, understanding myself | `self:self-discovery-workflow` |
 | Career leveling, 1-on-1 prep, manager/IC growth | `leadership:leadership-workflow` |
+| Knowledge vault build, retrieval quality loop, eval not improving | `knowledge:knowledge-workflow` |
 
 Each workflow skill guides through sub-skills step by step. Ask the user which step to start from if they're mid-process.
 
