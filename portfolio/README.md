@@ -127,19 +127,23 @@ up. Output includes the single core vulnerability, the top five questions this p
 and three prioritized fixes. Rubric and persona details: `references/scoring-rubric.md`,
 `references/personas.md`.
 
-The first read also runs a document-convention check (`references/resume-conventions.md`):
-summary block, length and bullet budget, XYZ+S bullet shape, section order, standard titles,
-and the subject rule that differs by language — an English resume drops pronouns, a 국문
-경력기술서 needs 제가/저는 as evidence of ownership. Form defects don't move dimension scores;
-they cost the screen before anyone reads deeply enough to score, so violations are reported in
-their own flat block and the section is omitted when clean.
-
 ```
 [차원별 점수]
 Technical Depth: 6 / 10
 근거: Kafka 도입은 서술되어 있으나 대안 검토와 트레이드오프가 없음
 🧠 Devil's advocate: 규모 수치는 인상적이나 본인 기여 범위가 불명확 — 7 → 6
 ```
+
+### `portfolio-feedback-beta`
+
+The same review with a document-convention pass added — a form check absorbed from pm-skills'
+review-resume, kept as a beta variant. The first read also runs the check from
+`references/resume-conventions.md`: summary block, length and bullet budget, XYZ+S bullet shape,
+section order, standard titles, and the subject rule that differs by language — an English resume
+drops pronouns, a 국문 경력기술서 needs 제가/저는 as evidence of ownership. Form defects don't
+move dimension scores; they cost the screen before anyone reads deeply enough to score, so
+violations are reported in their own flat `[형식 위반 / Convention Violations]` block and the
+section is omitted when clean. Use plain `portfolio-feedback` for the stable substance-only review.
 
 ### `portfolio-pattern`
 
