@@ -30,10 +30,12 @@ compatibility:
 - Verdict before depth: judge the 30-second screen before scoring. Substance scores assume the document gets read; the screen verdict says whether it does.
 - Tally conventions, don't just list them. A violation with a count (XYZ+S 2/9) is checkable and comparable across revisions; "bullets are weak" is neither.
 - Summarize as the screener, not the coach. The AI-screener summary uses only what the document says — no benefit of the doubt, nothing the candidate meant but didn't write.
+- Screeners read to reject, not to accept. Red flags get their own block and are never netted against strengths — one flag outweighs three strengths at the screen.
+- The recruiter verdict uses only the F-pattern visible path (titles, companies, dates, first lines). Evidence the 6-second scan can't reach doesn't exist in that pass.
 
 # Portfolio Feedback (Beta — Convention Check + Screen Verdict)
 
-Give honest, interviewer-calibrated feedback on a developer portfolio — with dimension scores, specific evidence, and prioritized improvement areas — plus three things the mainstream skill doesn't do: a quantified document-convention check (absorbed from pm-skills' review-resume, including ATS/parser safety), an AI-screener summary that shows what survives machine screening, and a 30-second screen verdict.
+Give honest, interviewer-calibrated feedback on a developer portfolio — with dimension scores, specific evidence, and prioritized improvement areas — plus what the mainstream skill doesn't do: a quantified document-convention check (absorbed from pm-skills' review-resume, including ATS/parser safety), an AI-screener summary that shows what survives machine screening, a two-reader screen verdict (recruiter 6-second pass / engineer 30-second pass), and a red-flag catalog with interview defenses — grounded in screening research (`references/screen-models.md`).
 
 ## When to use / When not to use
 
@@ -64,7 +66,7 @@ The convention check includes machine readability (§8 of the conventions file) 
 
 Then read as the AI screener for a moment: write the 3-line summary a screening model would generate from this document alone — only what the document says, no benefit of the doubt. Note which of the candidate's strongest evidence did not survive that summary; that gap is a defect the substance scores won't show.
 
-Close the first read with a screen verdict: would this document survive a 30-second screen — parse risk included — before anyone reads deeply enough to score it? Decide 통과 / 경계 / 스크린 탈락 and name the single deciding factor.
+Close the first read with a two-reader screen verdict from [`references/screen-models.md`](references/screen-models.md): the **recruiter 6-second pass** (F-pattern visible path only — titles, companies, dates, first lines) and the **engineer 30-second pass** (typos and misspelled tech names, one reachable number, decisions visible while skimming). Judge each with its own checklist — parse risk counts in both. While reading, collect red flags from the catalog in the same file (경력 갭, 잦은 이직, 직함 인플레이션, 기간 뭉개기, 검증 불가 주장 비율, 오탈자) — screeners read to reject, so flags are reported in their own block, never netted against strengths.
 
 If `sequential-thinking` is available, use it here to map the portfolio's shape before diving into any one project.
 
@@ -111,7 +113,16 @@ Write feedback in the same language the user used. Use this structure:
 ---
 
 **[서류 스크린 판정 / Screen Verdict]**
-One line: `통과 / 경계 / 스크린 탈락` + the single deciding factor (parse risk counts). This answers a question the dimension scores don't: whether the document gets read at all. A portfolio can score 7s and still die at the screen on form; a clean document can pass the screen and fail the interview.
+Two lines, one per reader model (see `references/screen-models.md`; parse risk counts in both):
+> **리크루터 (6초, F-패턴 가시 영역만)**: `통과 / 경계 / 탈락` + the single deciding factor
+> **엔지니어 (30초 스킴)**: `통과 / 경계 / 탈락` + the single deciding factor
+
+This answers a question the dimension scores don't: whether the document gets read at all. A portfolio can score 7s and still die at the recruiter pass on form; a document can clear both passes and fail the interview.
+
+---
+
+**[레드 플래그 / Red Flags]** *(omit this block entirely when none)*
+From the catalog in `references/screen-models.md` — one line per flag: what triggered it + a one-line interview defense the candidate can prepare. Screeners are loss-averse and read to reject: one flag outweighs three strengths, so never net flags against the strengths section.
 
 ---
 
