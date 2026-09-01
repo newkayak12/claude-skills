@@ -3,15 +3,15 @@ name: portfolio-feedback
 effort: high
 description: >-
   Use when someone shares a developer portfolio and wants honest,
-  interviewer-perspective feedback. Triggers on: "포트폴리오 피드백 해줘", "내 포트폴리오 어때?",
-  "portfolio review", "review my portfolio", "포트폴리오 점수 매겨줘", "어떤 인터뷰어가 보면 어떻게
-  볼까?", "portfolio critique".
+  interviewer-perspective feedback — with the screen-stage answer too. Triggers on:
+  "포트폴리오 피드백 해줘", "내 포트폴리오 어때?", "포트폴리오 점수 매겨줘",
+  "서류 통과할까", "ATS 통과할까", "이력서 컨벤션 체크", "형식까지 봐줘".
 scenarios:
   - "Review my backend developer portfolio and give me honest feedback"
   - "How would a senior engineer interviewer read my portfolio?"
   - "내 포트폴리오 인터뷰어 관점에서 평가해줘"
-  - "포트폴리오 강점과 약점 솔직하게 피드백 해줘"
-  - "Score my portfolio across technical depth, ownership, and impact"
+  - "이 이력서로 서류 통과할까? 형식 문제도 같이 봐줘"
+  - "Score my portfolio and flag anything that would fail the resume screen"
 compatibility:
   optional:
     - think-tool
@@ -28,14 +28,23 @@ compatibility:
 - Score dimensions before writing feedback. Gut feelings after writing tend to be kinder than evidence warrants.
 - Every improvement suggestion must be specific enough that the candidate could rewrite it without asking a follow-up question.
 - Never score Technical Depth high based on a technology list alone. Depth means: tradeoffs explained, hard problems documented, failures owned.
+- Verdict before depth: judge the 30-second screen before scoring. Substance scores assume the document gets read; the screen verdict says whether it does.
+- Tally conventions, don't just list them. A violation with a count (XYZ+S 2/9) is checkable and comparable across revisions; "bullets are weak" is neither.
+- Form violations are capped at 5, ranked by screen cost. A long list is a triage failure — it buries the three defects that actually decide the screen under style notes nobody rejects for.
+- The form pass does not discharge the scoring pass. Having just written four blocks of criticism, the temptation is to go easy on the dimensions. Score as if the form blocks did not exist; challenge every 7+ with the same force either way.
+- Summarize as the screener, not the coach. The AI-screener summary uses only what the document says — no benefit of the doubt, nothing the candidate meant but didn't write.
+- Screeners read to reject, not to accept. Red flags get their own block and are never netted against strengths — one flag outweighs three strengths at the screen.
+- The recruiter verdict uses only the F-pattern visible path (titles, companies, dates, first lines). Evidence the 6-second scan can't reach doesn't exist in that pass.
 
 # Portfolio Feedback
 
-Give honest, interviewer-calibrated feedback on a developer portfolio — with dimension scores, specific evidence, and prioritized improvement areas.
+Give honest, interviewer-calibrated feedback on a developer portfolio — dimension scores, specific evidence, prioritized improvement areas — and answer the question that comes before all of them: does this document survive the screen? A two-reader screen verdict (recruiter 6-second pass / engineer 30-second pass), a red-flag catalog with interview defenses, an AI-screener summary showing what survives machine screening, and a quantified document-convention check including ATS/parser safety. Screening models are grounded in research (`references/screen-models.md`).
 
 ## When to use / When not to use
 
-**Use this skill when** the user wants an overall read from an interviewer's perspective: first impression, scoring, and what to fix.
+**Use this skill when** the user wants an overall read from an interviewer's perspective: first impression, whether the document gets read at all, tallied convention violations, scoring, and what to fix.
+
+**Not for** rewriting the flagged sentences, or for a job-description match — see below.
 
 **Other portfolio skills:**
 - Rewriting specific weak sentences → `portfolio-rewrite`
@@ -51,6 +60,16 @@ A good portfolio review has three movements:
 
 **1. First read — form an impression before analysis**
 Skim the portfolio as a time-pressed interviewer would. What's the immediate signal? What's the career story? What jumps out as missing? Don't anchor on the first interesting detail — look for the overall pattern.
+
+While skimming, run the document-convention check from [`references/resume-conventions.md`](references/resume-conventions.md) — summary block, length and bullet budget, section order, titles, subject conventions (which differ between English resumes and 국문 경력기술서 — don't apply one language's rule to the other). Form defects don't move dimension scores; they cost the screen before anyone reads deeply enough to score, so they are reported separately and only when violated.
+
+Tally as you check, don't just spot: count achievement bullets that carry full XYZ+S (n/m), the 국문 decision-verb ratio (행동 문장 중 제안·채택·배제·결정 동사를 가진 비율 — §2), and the max bullets-per-role. Do not count `제가/저는`: subject omission is normal Korean, not a defect. These numbers feed the screen verdict and make a revision comparable to the version before it.
+
+The convention check includes machine readability (§8 of the conventions file) — the document is parsed by ATS extractors and LLM screeners before any human reads it, so evidence trapped in tables/images, non-standard section headers, and contact in the PDF header are screen-cost defects like any other. Judge §8 on the document itself only: collapsed spacing, scrambled reading order, and captions out of place are artifacts of the conversion that delivered the file to you, never findings.
+
+Then read as the AI screener for a moment: write the 3-line summary a screening model would generate from this document alone — only what the document says, no benefit of the doubt. Note which of the candidate's strongest evidence did not survive that summary; that gap is a defect the substance scores won't show.
+
+Close the first read with a two-reader screen verdict from [`references/screen-models.md`](references/screen-models.md): the **recruiter 6-second pass** (F-pattern visible path only — titles, companies, dates, first lines) and the **engineer 30-second pass** (typos and misspelled tech names, one reachable number, decisions visible while skimming). Judge each with its own checklist — parse risk counts in both. While reading, collect red flags from the catalog in the same file (경력 갭, 잦은 이직, 직함 인플레이션, 기간 뭉개기, 검증 불가 주장 비율, 오탈자) — screeners read to reject, so flags are reported in their own block, never netted against strengths.
 
 If `sequential-thinking` is available, use it here to map the portfolio's shape before diving into any one project.
 
@@ -93,6 +112,31 @@ Write feedback in the same language the user used. Use this structure:
 
 **[총평 / First Impression]**
 3 sentences. Open with the single strongest signal — positive or negative. What's the career story this portfolio tells?
+
+---
+
+**[서류 스크린 판정 / Screen Verdict]**
+Two lines, one per reader model (see `references/screen-models.md`; parse risk counts in both):
+> **리크루터 (6초, F-패턴 가시 영역만)**: `통과 / 경계 / 탈락` + the single deciding factor
+> **엔지니어 (30초 스킴)**: `통과 / 경계 / 탈락` + the single deciding factor
+
+This answers a question the dimension scores don't: whether the document gets read at all. A portfolio can score 7s and still die at the recruiter pass on form; a document can clear both passes and fail the interview.
+
+---
+
+**[레드 플래그 / Red Flags]** *(omit this block entirely when none)*
+From the catalog in `references/screen-models.md` — one line per flag: what triggered it + a one-line interview defense the candidate can prepare. Screeners are loss-averse and read to reject: one flag outweighs three strengths, so never net flags against the strengths section.
+
+---
+
+**[AI 스크리너 요약 / AI Screener Summary]**
+The 3-line summary a screening model would generate from this document alone — screener's voice, only what the document says, no benefit of the doubt. Then one line: which of the candidate's strongest evidence did **not** survive the summary (or state explicitly that the summary carries all of it). What dies in summarization is what dies in screening — this is the defect list the dimension scores can't see.
+
+---
+
+**[형식 위반 / Convention Violations]** *(omit this block entirely when nothing is violated)*
+Flat list from the resume-conventions check, **at most 5, ranked by screen cost** — section, what's wrong, the one-line fix. No scores, no encouragement; these are screen-cost defects, not substance judgments. Style notes nobody rejects for (abbreviation spelling-out, email handle form) do not belong here at all. End the block with one tally line:
+`XYZ+S n/m · 의사결정 동사 n% (국문일 때) · 불릿/롤 max n`
 
 ---
 

@@ -134,30 +134,31 @@ Technical Depth: 6 / 10
 🧠 Devil's advocate: 규모 수치는 인상적이나 본인 기여 범위가 불명확 — 7 → 6
 ```
 
-### `portfolio-feedback-beta`
+Beyond the interviewer's read, it answers whether the document gets read at all. A quantified
+document-convention check (`references/resume-conventions.md` — summary block, bullet budget, XYZ+S
+shape, section order, and the ownership rule that differs by language), tallied rather than listed
+and capped at the five highest screen-cost violations (`XYZ+S n/m · 의사결정 동사 n%`); an
+ATS/parser-safety pass (evidence trapped in tables or images, non-standard section headers, contact
+in the PDF header — the document is parsed before it is read); an `[AI 스크리너 요약 / AI Screener
+Summary]` — the 3-line summary a screening model would actually generate, plus what of the
+candidate's strongest evidence did not survive it; and a two-reader `[서류 스크린 판정 / Screen
+Verdict]` grounded in screening research (`references/screen-models.md`): a recruiter 6-second pass
+judged only on the F-pattern visible path (Ladders eye-tracking) and an engineer 30-second skim with
+typo/tech-name checks (Lerner's calibration data), each 통과/경계/탈락 with the deciding factor —
+plus a `[레드 플래그 / Red Flags]` block (경력 갭, 잦은 이직, 직함 인플레이션, 검증 불가 주장 비율 …)
+where each flag carries a one-line interview defense; screeners read to reject, so flags are never
+netted against strengths.
 
-The experimental lane for `portfolio-feedback` — it merges into the mainstream skill only when a
-head-to-head benchmark shows it clearly better, and until then improvements land here. Current
-edge over mainstream: a quantified document-convention check absorbed from pm-skills' review-resume
-(`references/resume-conventions.md` — summary block, bullet budget, XYZ+S shape, section order, and
-the subject rule that differs by language), tallied rather than listed (`XYZ+S n/m · 주어 오너십 n%`),
-an ATS/parser-safety pass (evidence trapped in tables or images,
-non-standard section headers, contact in the PDF header, abbreviation-only tech names — the
-document is parsed before it is read), an `[AI 스크리너 요약 / AI Screener Summary]` — the 3-line
-summary a screening model would actually generate, plus what of the candidate's strongest evidence
-did not survive it — and a two-reader `[서류 스크린 판정 / Screen Verdict]` grounded in screening research
-(`references/screen-models.md`): a recruiter 6-second pass judged only on the F-pattern visible
-path (Ladders eye-tracking) and an engineer 30-second skim with typo/tech-name checks (Lerner's
-calibration data), each 통과/경계/탈락 with the deciding factor — plus a `[레드 플래그 / Red
-Flags]` block (경력 갭, 잦은 이직, 직함 인플레이션, 검증 불가 주장 비율 …) where each flag carries a
-one-line interview defense; screeners read to reject, so flags are never netted against strengths. The first benchmark
-(3 portfolios, 15 assertions each side) came back 15/15 vs 15/15 with identical core-vulnerability
-findings — the convention pass adds catches without diluting the substance review.
+This screen layer was developed in a `-beta` lane and merged in after two head-to-head benchmarks
+(a real 40-page portfolio and the impressive-surface fixture) returned identical dimension scores and
+identical core-vulnerability findings on both sides, while the screen pass added real catches the
+substance-only review structurally cannot make — an unexplained 8-month gap, a metric that meant two
+different things in two documents, a resume with no contact details at all.
 
 ### `portfolio-pattern`
 
-Not what your portfolio says but how it reads. Audits six dimensions: subject ratio (저는/제가 vs
-팀이 vs passive), agency language, number density, failure-narrative presence, decision visibility,
+Not what your portfolio says but how it reads. Audits six dimensions: decision-verb ratio
+(제안/채택/배제 vs. bare 개발했습니다), agency language, number density, failure-narrative presence, decision visibility,
 and verb energy. Use it when you've been told your portfolio "lacks ownership" but nobody could
 point at where. Not for rewriting the flagged sentences (`portfolio-rewrite`) or overall scoring
 (`portfolio-feedback`).
@@ -167,8 +168,9 @@ People keep saying my portfolio doesn't show ownership. Analyze the writing patt
 and show me the actual sentences causing that impression.
 ```
 
-Thresholds it applies: fewer than 40 % of action sentences with 저는/제가 as subject is worth
-calling out in a senior portfolio; a number-free impact-claim rate above 60 % for 5+ years of
+Thresholds it applies: fewer than ~20 % of action sentences carrying a decision verb is worth
+calling out in a senior portfolio (the `저는/제가` rate is deliberately *not* measured — subject
+omission is normal Korean); a number-free impact-claim rate above 60 % for 5+ years of
 experience is a problem. Complete absence of failure or difficulty is itself a signal.
 
 ### `portfolio-rewrite`
