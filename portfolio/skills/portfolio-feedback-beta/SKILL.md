@@ -1,17 +1,17 @@
 ---
-name: portfolio-feedback
+name: portfolio-feedback-beta
 effort: high
 description: >-
-  Use when someone shares a developer portfolio and wants honest,
-  interviewer-perspective feedback. Triggers on: "포트폴리오 피드백 해줘", "내 포트폴리오 어때?",
-  "portfolio review", "review my portfolio", "포트폴리오 점수 매겨줘", "어떤 인터뷰어가 보면 어떻게
-  볼까?", "portfolio critique".
+  Use when someone wants portfolio feedback PLUS a resume convention check.
+  Triggers on: "형식까지 봐줘", "이력서 컨벤션 체크", "포트폴리오 피드백 베타", "resume
+  convention check", "check my resume formatting". Beta variant of
+  portfolio-feedback — form defects reported alongside dimension scores.
 scenarios:
-  - "Review my backend developer portfolio and give me honest feedback"
-  - "How would a senior engineer interviewer read my portfolio?"
-  - "내 포트폴리오 인터뷰어 관점에서 평가해줘"
-  - "포트폴리오 강점과 약점 솔직하게 피드백 해줘"
-  - "Score my portfolio across technical depth, ownership, and impact"
+  - "Review my portfolio and also check resume conventions and formatting"
+  - "Does my resume violate any formatting or section-order conventions?"
+  - "포트폴리오 피드백에 형식 검사까지 포함해서 봐줘"
+  - "이력서 컨벤션(요약, 불릿 수, 섹션 순서) 위반 있는지 체크해줘"
+  - "Score my portfolio and flag any document-convention violations"
 compatibility:
   optional:
     - think-tool
@@ -29,13 +29,15 @@ compatibility:
 - Every improvement suggestion must be specific enough that the candidate could rewrite it without asking a follow-up question.
 - Never score Technical Depth high based on a technology list alone. Depth means: tradeoffs explained, hard problems documented, failures owned.
 
-# Portfolio Feedback
+# Portfolio Feedback (Beta — with Convention Check)
 
-Give honest, interviewer-calibrated feedback on a developer portfolio — with dimension scores, specific evidence, and prioritized improvement areas.
+Give honest, interviewer-calibrated feedback on a developer portfolio — with dimension scores, specific evidence, and prioritized improvement areas — plus a document-convention form check absorbed from pm-skills' review-resume.
 
 ## When to use / When not to use
 
-**Use this skill when** the user wants an overall read from an interviewer's perspective: first impression, scoring, and what to fix.
+**Use this skill when** the user wants the interviewer's read AND a form check: first impression, scoring, what to fix, and convention violations that cost the screen before anyone scores.
+
+**Use `portfolio-feedback` instead** for the stable substance-only review without the convention pass.
 
 **Other portfolio skills:**
 - Rewriting specific weak sentences → `portfolio-rewrite`
@@ -51,6 +53,8 @@ A good portfolio review has three movements:
 
 **1. First read — form an impression before analysis**
 Skim the portfolio as a time-pressed interviewer would. What's the immediate signal? What's the career story? What jumps out as missing? Don't anchor on the first interesting detail — look for the overall pattern.
+
+While skimming, run the document-convention check from [`references/resume-conventions.md`](references/resume-conventions.md) — summary block, length and bullet budget, section order, titles, subject conventions (which differ between English resumes and 국문 경력기술서 — don't apply one language's rule to the other). Form defects don't move dimension scores; they cost the screen before anyone reads deeply enough to score, so they are reported separately and only when violated.
 
 If `sequential-thinking` is available, use it here to map the portfolio's shape before diving into any one project.
 
@@ -93,6 +97,11 @@ Write feedback in the same language the user used. Use this structure:
 
 **[총평 / First Impression]**
 3 sentences. Open with the single strongest signal — positive or negative. What's the career story this portfolio tells?
+
+---
+
+**[형식 위반 / Convention Violations]** *(omit this block entirely when nothing is violated)*
+Flat list from the resume-conventions check — section, what's wrong, the one-line fix. No scores, no encouragement; these are screen-cost defects, not substance judgments.
 
 ---
 
