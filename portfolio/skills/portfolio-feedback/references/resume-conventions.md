@@ -5,6 +5,14 @@ says; this checks how it is built. Form defects don't lower a dimension score �
 the screen before anyone reads deeply enough to score. Run this pass in under a minute and
 report violations flatly; skip anything that passes.
 
+**Report at most 5, ranked by screen cost.** This block is a triage list, not a second
+report — a list of 12 buries the three that decide the screen. Screen cost means: would a
+recruiter or an engineer actually put the document down over this? A missing summary block,
+a 4-page resume for 5 years, a misspelled tech name — yes. Spelling out an abbreviation the
+whole industry reads on sight, a name-based email address — no; those are style notes, and
+they do not belong here. When more than 5 qualify, keep the 5 with the highest cost and
+drop the rest silently.
+
 ## 1. Summary block
 
 2–3 lines, specific, at the top. It answers "what kind of engineer, at what depth, with
@@ -15,16 +23,23 @@ what proof" — not "passionate about clean code."
 
 No summary at all is acceptable for a portfolio; a generic one is worse than none.
 
-## 2. Subject conventions differ by language — do not mix the rules
+## 2. Ownership shows in verbs, not pronouns
 
 - **English resume**: no personal pronouns. Bullets start with the verb.
   `I led the migration` → `Led migration of 40 services to K8s, cutting deploy time 30m → 4m`
-- **국문 경력기술서/포트폴리오**: 주어가 오너십의 증거다. `제가/저는`이 행동 문장의 주어로
-  드러나야 하고, 피동(`구현되었습니다`)이 기본값이면 결함이다 — `portfolio-pattern`의
-  Subject Audit과 같은 기준.
+- **국문 경력기술서/포트폴리오**: 주어 생략은 국문의 정상 문체이므로 결함이 아니다.
+  `제가/저는`의 출현 빈도는 세지 말 것 — 잘 쓴 국문 경력기술서 대부분이 0%에 수렴한다.
+  대신 두 가지를 본다:
+  - **피동이 기본값인가** — `구현되었습니다`, `적용됐습니다`가 능동을 밀어냈으면 결함.
+  - **의사결정 동사가 있는가** — `제안했습니다` / `채택했습니다` / `배제했습니다` /
+    `결정했습니다`. 이것이 오너십의 실제 증거다. 능동태인데 전부 `개발했습니다`뿐이면,
+    시킨 것을 잘 만든 사람과 스스로 정한 사람이 구분되지 않는다.
 
-Flag a document that applies one language's rule to the other. An English resume full of
-"I" reads junior; a Korean 경력기술서 scrubbed of subjects reads evasive.
+세는 방법: 행동 문장 중 의사결정 동사를 가진 문장의 비율(목표 ~20% 이상)과 피동 문장 수.
+`제가/저는` 비율이 아니다.
+
+Flag a document that applies one language's rule to the other — an English resume full of
+"I" reads junior.
 
 ## 3. Length and bullet budget
 
@@ -73,6 +88,13 @@ systematized), not as an apology.
 
 The document is parsed before it is read — by classic ATS extractors and, increasingly, by
 LLM screeners. Content that doesn't survive plain-text extraction doesn't exist.
+
+**Judge only the document, never the pipeline that delivered it to you.** Collapsed Korean
+word spacing, jumbled reading order, a table of contents interleaved with page numbers,
+captions landing before headings — these are artifacts of whatever converted the file for
+you, not defects in the candidate's document. Never report them, and never let them
+downgrade a screen verdict. If the text you were given is too mangled to judge machine
+readability at all, say that in one line and skip §8 — do not infer defects from it.
 
 - **Core content in body text** — anything living only inside tables, multi-column layouts,
   text boxes, or images evaporates in plain-text extraction. Decorative layout is fine;

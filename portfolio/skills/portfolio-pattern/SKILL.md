@@ -41,7 +41,7 @@ compatibility:
 
 1. **Map the dimensions** — identify which patterns to analyze: subject ratio, agency language, number density, failure narrative, decision visibility, verb energy
 2. **Detect patterns** — tally each dimension; flag ambiguous cases with think-tool
-3. **Calculate ratios** — subject frequency (저는/제가 vs. 팀이 vs. passive); number-free impact claim rate
+3. **Calculate ratios** — decision-verb rate and passive rate (never the 저는/제가 rate); number-free impact claim rate
 4. **Identify top 3 patterns** — which most hurt (or help) this portfolio's impression; quote specific examples
 5. **Produce per-pattern fixes** — concrete, specific rewrites: not "use active voice" but exactly which sentence to change and how
 
@@ -103,11 +103,16 @@ This judgment matters most for Subject Audit and Agency Language dimensions, whe
 
 ### 1. Subject Audit
 Track who is doing things in each sentence:
-- **"저는 / 제가"** — direct individual ownership (positive)
-- **"저희 팀이 / 팀에서"** — team credit (neutral; fine in moderation)
-- **No subject / passive** — "구현되었습니다", "도입되었습니다" (flag)
+- **"저희 팀이 / 팀에서"** — team credit where the individual contribution is unclear (flag when it dominates)
+- **No subject, active voice** — "제안했습니다", "채택했습니다" (normal Korean; not a defect)
+- **No subject, passive** — "구현되었습니다", "도입되었습니다" (flag)
 
-Calculate an approximate ratio. A senior portfolio where fewer than 40% of action sentences have "저는/제가" as subject is a signal worth calling out.
+**Do not measure the `저는/제가` rate.** Subject omission is standard in 국문 경력기술서, and
+well-written ones sit near 0% — scoring against a pronoun threshold flags documents whose
+ownership is in fact strong, which is exactly backwards. What separates an owner from an
+executor is the **verb**: count action sentences carrying a decision verb (제안 / 채택 /
+배제 / 결정 / 도입 판단) and report that ratio. Under ~20% is the signal worth calling out —
+the candidate built what they were told to build and never says who chose it.
 
 ### 2. Agency Language
 Flag sentences where the candidate is acted upon rather than acting:
@@ -160,7 +165,7 @@ A 3–5 sentence overview of what the portfolio's writing pattern signals to an 
 **[항목별 분석]**
 
 For each dimension:
-- **주어 비율**: [ratio, short interpretation]
+- **의사결정 동사 비율**: [ratio, short interpretation]
 - **수동/피동 표현**: [count or estimate, examples]
 - **숫자 밀도**: [ratio — how many claims have numbers]
 - **실패/어려움 서술**: [present / minimal / absent — examples]
@@ -177,7 +182,7 @@ The three patterns that most hurt (or help) this portfolio's impression. Concret
 ---
 
 **[패턴별 개선 제안]**
-For each flagged pattern: one concrete fix. Not "use more active voice" — but "이 문장의 주어를 '저희 팀이'에서 '제가'로 바꾸고, 본인이 실제로 한 결정을 명시하세요."
+For each flagged pattern: one concrete fix. Not "use more active voice" — but "'팀에서 Kafka를 도입했습니다'를 '대안 3안을 비교해 Kafka를 채택했습니다'로 바꿔, 누가 무엇을 근거로 정했는지 드러내세요."
 
 ---
 
