@@ -99,7 +99,7 @@
     {
       "name": "portfolio",
       "description": "Portfolio and career skills: JD analysis, portfolio rewriting, company research, feedback, pattern extraction, interview prep, resume tailoring, job-application-workflow, and ppt-keycolor-changer.",
-      "version": "1.7.0",
+      "version": "1.9.0",
       "author": {
         "name": "newkayak12"
       },
@@ -129,7 +129,7 @@
     {
       "name": "graph",
       "description": "Graph engineering for the harness flow: a local MCP server owns graph state, routes nodes to vendor CLIs or the session, adjudicates results against the worktree, and keeps payloads on disk. Includes graph:install and graph:orchestrate.",
-      "version": "1.0.1",
+      "version": "1.1.0",
       "author": {
         "name": "newkayak12"
       },

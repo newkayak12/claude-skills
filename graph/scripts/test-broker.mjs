@@ -1157,3 +1157,142 @@ test('every node prompt forbids re-entering the harness', async () => {
     assert.ok(seen.includes('implement'), 'the implement stage is where this was actually observed');
   });
 });
+
+// ---------- registering a vendor does not enrol it in "auto" ----------
+// The default candidate list is empty on purpose: a run that does not name a vendor
+// stays on the orchestrator, even when a perfectly ready vendor is registered. Without
+// a test, restoring the old `Object.keys(vendors)` would silently start delegating
+// every unnamed run to whatever happened to be installed.
+
+test('auto does not pick up a registered, ready vendor that was never named', async () => {
+  const cwd = repoWithFakeVendor();
+  process.env.FAKE_REPLY = '{"stage_ok":true,"handoff":"h","evidence":"e"}';
+  const c = await new Client().init();
+  try {
+    const auto = await c.call('graph_open', { request: 'r', cwd, vendor: 'auto' });
+    assert.equal(auto.ready[0].vendor, 'self',
+      'an unnamed run must stay on the orchestrator even with a ready vendor installed');
+
+    const named = await c.call('graph_open', { request: 'r', cwd, vendor: 'fake' });
+    assert.equal(named.ready[0].vendor, 'fake', 'naming the vendor still routes to it');
+
+    const listed = await c.call('graph_open', { request: 'r', cwd, vendor: 'auto', candidates: ['fake'] });
+    assert.equal(listed.ready[0].vendor, 'fake', 'listing it in candidates still routes to it');
+  } finally {
+    c.close();
+    delete process.env.FAKE_REPLY;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('a run with no vendor argument at all stays on the orchestrator', async () => {
+  const cwd = repoWithFakeVendor();
+  const c = await new Client().init();
+  try {
+    const r = await c.call('graph_open', { request: 'r', cwd });
+    assert.equal(r.ready[0].vendor, 'self');
+    assert.ok(r.ready[0].briefing_path, 'a self node needs its briefing written to disk');
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// ---------- who decides which vendor and model runs each phase ----------
+// Nobody did. One vendor was chosen at graph_open and used for plan, implement and
+// report alike, while `model` existed only as an argument the caller had to remember on
+// every graph_run - so the harness contract (reasoning on a strong model, execution on
+// whatever can write here) had no way to be expressed at all.
+
+const FULL_POLICY = {
+  plan: { vendor: 'self', model: 'opus' },
+  setgoal: { vendor: 'self', model: 'opus' },
+  implement: { vendor: 'fake', model: 'exec-model' },
+  gate: { vendor: 'self', model: 'opus' },
+  report: { vendor: 'self', model: 'sonnet' },
+};
+
+test('a stage policy routes each phase to its own vendor and model', async () => {
+  const cwd = repoWithFakeVendor();
+  const c = await new Client().init();
+  try {
+    const open = await c.call('graph_open', {
+      request: 'r', cwd, vendor: 'fake', model: 'run-default', policy: FULL_POLICY,
+    });
+    const plan = open.ready.find((n) => n.node_id === 'plan');
+    assert.equal(plan.vendor, 'self', 'plan is pinned to self by policy');
+    assert.equal(plan.model, 'opus');
+
+    await c.call('graph_submit', { run_id: open.run_id, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('graph_submit', { run_id: open.run_id, cwd, node_id: 'setgoal', payload: ok({ spec: SPEC }) });
+
+    // critique has no policy entry: it must inherit the run-level vendor and model
+    const nx = await c.call('graph_next', { run_id: open.run_id, cwd });
+    const critique = nx.ready.find((n) => n.node_id === 'critique');
+    assert.equal(critique.vendor, 'fake', 'an unpolicied stage falls back to the run vendor');
+    assert.equal(critique.model, 'run-default', 'and to the run model');
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('a policy can route reasoning and execution to different vendors in one run', async () => {
+  const cwd = repoWithFakeVendor();
+  process.env.FAKE_REPLY = '{"stage_ok":true,"sound":true,"handoff":"h","evidence":"e"}';
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('graph_open', {
+      request: 'r', cwd, vendor: 'self',
+      policy: { critique: { vendor: 'fake' }, implement: { vendor: 'fake', model: 'exec-model' } },
+    });
+    await c.call('graph_submit', { run_id, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('graph_submit', { run_id, cwd, node_id: 'setgoal', payload: ok({ spec: SPEC }) });
+
+    const nx = await c.call('graph_next', { run_id, cwd });
+    assert.equal(nx.ready.find((n) => n.node_id === 'critique').vendor, 'fake',
+      'one run must be able to send reasoning to a vendor and keep the rest on self');
+
+    const v = await c.call('graph_run', { run_id, cwd, node_id: 'critique' });
+    assert.equal(v.state, 'done');
+    assert.equal(v.vendor, 'fake');
+
+    const after = await c.call('graph_next', { run_id, cwd });
+    const impl = after.ready.find((n) => n.node_id === 'implement:U1:1');
+    assert.equal(impl.vendor, 'fake');
+    assert.equal(impl.model, 'exec-model', 'the executor gets its own model, not the reasoning one');
+  } finally {
+    c.close();
+    delete process.env.FAKE_REPLY;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('gate:goal can be policied separately from the per-subgoal gates', async () => {
+  const cwd = repoWithFakeVendor();
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('graph_open', {
+      request: 'r', cwd, vendor: 'self',
+      policy: { gate: { model: 'gate-model' }, 'gate:goal': { model: 'goal-gate-model' } },
+    });
+    await c.call('graph_submit', { run_id, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('graph_submit', { run_id, cwd, node_id: 'setgoal', payload: ok({ spec: SPEC }) });
+    await c.call('graph_submit', { run_id, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+    for (const sg of ['U1', 'U2']) {
+      const f = dirty(cwd);
+      await c.call('graph_submit', { run_id, cwd, node_id: `implement:${sg}:1`, payload: ok({ changed_files: [f] }) });
+      await c.call('graph_submit', { run_id, cwd, node_id: `test:${sg}:1`, payload: ok({ verified: true }) });
+      const nx = await c.call('graph_next', { run_id, cwd });
+      const gate = nx.ready.find((n) => n.node_id === `gate:${sg}:1`);
+      assert.equal(gate.model, 'gate-model', 'a subgoal gate uses the gate policy');
+      await c.call('graph_submit', { run_id, cwd, node_id: gate.node_id, payload: ok({ accept: true, match_pct: 95 }) });
+    }
+    const nx = await c.call('graph_next', { run_id, cwd });
+    const goalGate = nx.ready.find((n) => n.node_id.startsWith('gate:goal'));
+    assert.equal(goalGate.model, 'goal-gate-model', 'the goal gate may be judged by a different model');
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
