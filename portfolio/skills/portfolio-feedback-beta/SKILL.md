@@ -2,9 +2,9 @@
 name: portfolio-feedback-beta
 effort: high
 description: >-
-  Use when someone wants portfolio feedback PLUS a convention check and screen
-  verdict. Triggers on: "형식까지 봐줘", "이력서 컨벤션 체크", "포트폴리오 피드백 베타", "서류
-  통과할까", "would this pass the screen". Beta of portfolio-feedback.
+  Use when someone wants portfolio feedback PLUS a convention check, ATS/AI
+  screener view, and screen verdict. Triggers on: "형식까지 봐줘", "이력서 컨벤션 체크",
+  "ATS 통과할까", "서류 통과할까", "포트폴리오 피드백 베타". Beta of portfolio-feedback.
 scenarios:
   - "Review my portfolio and also check resume conventions and formatting"
   - "Does my resume violate any formatting or section-order conventions?"
@@ -29,10 +29,11 @@ compatibility:
 - Never score Technical Depth high based on a technology list alone. Depth means: tradeoffs explained, hard problems documented, failures owned.
 - Verdict before depth: judge the 30-second screen before scoring. Substance scores assume the document gets read; the screen verdict says whether it does.
 - Tally conventions, don't just list them. A violation with a count (XYZ+S 2/9) is checkable and comparable across revisions; "bullets are weak" is neither.
+- Summarize as the screener, not the coach. The AI-screener summary uses only what the document says — no benefit of the doubt, nothing the candidate meant but didn't write.
 
 # Portfolio Feedback (Beta — Convention Check + Screen Verdict)
 
-Give honest, interviewer-calibrated feedback on a developer portfolio — with dimension scores, specific evidence, and prioritized improvement areas — plus two things the mainstream skill doesn't do: a quantified document-convention check (absorbed from pm-skills' review-resume) and a 30-second screen verdict.
+Give honest, interviewer-calibrated feedback on a developer portfolio — with dimension scores, specific evidence, and prioritized improvement areas — plus three things the mainstream skill doesn't do: a quantified document-convention check (absorbed from pm-skills' review-resume, including ATS/parser safety), an AI-screener summary that shows what survives machine screening, and a 30-second screen verdict.
 
 ## When to use / When not to use
 
@@ -59,7 +60,11 @@ While skimming, run the document-convention check from [`references/resume-conve
 
 Tally as you check, don't just spot: count achievement bullets that carry full XYZ+S (n/m), the 국문 ownership-subject ratio (행동 문장 중 제가/저는 주어 비율 — portfolio-pattern's 40% threshold), and the max bullets-per-role. These numbers feed the screen verdict and make a revision comparable to the version before it.
 
-Close the first read with a screen verdict: would this document survive a 30-second screen, before anyone reads deeply enough to score it? Decide 통과 / 경계 / 스크린 탈락 and name the single deciding factor.
+The convention check includes machine readability (§8 of the conventions file) — the document is parsed by ATS extractors and LLM screeners before any human reads it, so evidence trapped in tables/images, non-standard section headers, contact in the PDF header, and abbreviation-only tech names are screen-cost defects like any other; they go in the same violations block and tally.
+
+Then read as the AI screener for a moment: write the 3-line summary a screening model would generate from this document alone — only what the document says, no benefit of the doubt. Note which of the candidate's strongest evidence did not survive that summary; that gap is a defect the substance scores won't show.
+
+Close the first read with a screen verdict: would this document survive a 30-second screen — parse risk included — before anyone reads deeply enough to score it? Decide 통과 / 경계 / 스크린 탈락 and name the single deciding factor.
 
 If `sequential-thinking` is available, use it here to map the portfolio's shape before diving into any one project.
 
@@ -106,7 +111,12 @@ Write feedback in the same language the user used. Use this structure:
 ---
 
 **[서류 스크린 판정 / Screen Verdict]**
-One line: `통과 / 경계 / 스크린 탈락` + the single deciding factor. This answers a question the dimension scores don't: whether the document gets read at all. A portfolio can score 7s and still die at the screen on form; a clean document can pass the screen and fail the interview.
+One line: `통과 / 경계 / 스크린 탈락` + the single deciding factor (parse risk counts). This answers a question the dimension scores don't: whether the document gets read at all. A portfolio can score 7s and still die at the screen on form; a clean document can pass the screen and fail the interview.
+
+---
+
+**[AI 스크리너 요약 / AI Screener Summary]**
+The 3-line summary a screening model would generate from this document alone — screener's voice, only what the document says, no benefit of the doubt. Then one line: which of the candidate's strongest evidence did **not** survive the summary (or state explicitly that the summary carries all of it). What dies in summarization is what dies in screening — this is the defect list the dimension scores can't see.
 
 ---
 

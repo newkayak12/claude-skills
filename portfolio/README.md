@@ -141,8 +141,12 @@ head-to-head benchmark shows it clearly better, and until then improvements land
 edge over mainstream: a quantified document-convention check absorbed from pm-skills' review-resume
 (`references/resume-conventions.md` — summary block, bullet budget, XYZ+S shape, section order, and
 the subject rule that differs by language), tallied rather than listed (`XYZ+S n/m · 주어 오너십 n%`),
-plus a `[서류 스크린 판정 / Screen Verdict]` — 통과/경계/스크린 탈락 with the single deciding
-factor, answering whether the document survives the 30-second screen at all. The first benchmark
+an ATS/parser-safety pass (evidence trapped in tables or images,
+non-standard section headers, contact in the PDF header, abbreviation-only tech names — the
+document is parsed before it is read), an `[AI 스크리너 요약 / AI Screener Summary]` — the 3-line
+summary a screening model would actually generate, plus what of the candidate's strongest evidence
+did not survive it — and a `[서류 스크린 판정 / Screen Verdict]` — 통과/경계/스크린 탈락 with the
+single deciding factor, answering whether the document survives the 30-second screen at all. The first benchmark
 (3 portfolios, 15 assertions each side) came back 15/15 vs 15/15 with identical core-vulnerability
 findings — the convention pass adds catches without diluting the substance review.
 
