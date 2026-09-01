@@ -127,21 +127,24 @@ up. Output includes the single core vulnerability, the top five questions this p
 and three prioritized fixes. Rubric and persona details: `references/scoring-rubric.md`,
 `references/personas.md`.
 
-The first read also runs a document-convention check (`references/resume-conventions.md`) —
-a form pass absorbed from pm-skills' review-resume and kept after a head-to-head benchmark
-showed it adds screen-cost catches without diluting the substance review: summary block,
-length and bullet budget, XYZ+S bullet shape, section order, standard titles, and the subject
-rule that differs by language — an English resume drops pronouns, a 국문 경력기술서 needs
-제가/저는 as evidence of ownership. Form defects don't move dimension scores; violations are
-reported in their own flat `[형식 위반 / Convention Violations]` block and the section is
-omitted when clean.
-
 ```
 [차원별 점수]
 Technical Depth: 6 / 10
 근거: Kafka 도입은 서술되어 있으나 대안 검토와 트레이드오프가 없음
 🧠 Devil's advocate: 규모 수치는 인상적이나 본인 기여 범위가 불명확 — 7 → 6
 ```
+
+### `portfolio-feedback-beta`
+
+The experimental lane for `portfolio-feedback` — it merges into the mainstream skill only when a
+head-to-head benchmark shows it clearly better, and until then improvements land here. Current
+edge over mainstream: a quantified document-convention check absorbed from pm-skills' review-resume
+(`references/resume-conventions.md` — summary block, bullet budget, XYZ+S shape, section order, and
+the subject rule that differs by language), tallied rather than listed (`XYZ+S n/m · 주어 오너십 n%`),
+plus a `[서류 스크린 판정 / Screen Verdict]` — 통과/경계/스크린 탈락 with the single deciding
+factor, answering whether the document survives the 30-second screen at all. The first benchmark
+(3 portfolios, 15 assertions each side) came back 15/15 vs 15/15 with identical core-vulnerability
+findings — the convention pass adds catches without diluting the substance review.
 
 ### `portfolio-pattern`
 
