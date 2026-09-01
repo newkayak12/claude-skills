@@ -45,6 +45,13 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.1.0 — per-stage routing**: `graph_open` takes `model` (a run-level default) and
+  `policy`, a per-stage override map keyed by stage name plus the optional `gate:goal` —
+  each entry may set `vendor`, `candidates`, `sandbox`, `model`. This expresses the harness
+  contract directly: reasoning on a strong model, execution on whatever can actually write
+  on this host. `graph_next` reports the chosen `model` per ready node, and an explicit
+  `graph_run({model})` still wins for one call. Verified by a reduced-scale codex E2E that
+  reached `report` with artifacts checked independently of the run's own verdicts.
 - **v1.0.1 — stable line. No vendor by default**: `vendor: "auto"` no longer enrols every
   registered vendor as a candidate; the candidate list is empty by default, so an unnamed run
   degrades to `self` through the existing path. The `codex` vendor, its adapter, and the
@@ -109,6 +116,13 @@ does not exist — the ordering is enforced, not advisory.
 A **named** vendor does not fall back — the node returns `vendor-failure` with per-vendor
 probe reasons. Name the vendor when the run must prove who did the work; silent
 degradation is what lets a graph lie about it.
+
+`vendor`, `model`, `candidates` and `sandbox` set the run-level default; `policy` overrides
+them **per stage**, keyed by stage name (`plan`, `setgoal`, `critique`, `implement`, `test`,
+`gate`, `report`) plus the optional `gate:goal`. A stage entry wins over the run-level
+setting, a stage without one inherits it, and `graph_next` reports the chosen `model` per
+ready node. This is how "reasoning on a strong model, execution wherever it can actually
+write" is expressed without a second run.
 
 Reasoning nodes (plan, setgoal, critique, gate, report) are routed to a read-only
 sandbox: they are judged by their content, so there is no file claim to cross-check.

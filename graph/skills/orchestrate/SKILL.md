@@ -71,12 +71,45 @@ is not possible on purpose.
 
 | value | behavior |
 |---|---|
-| `"auto"` (default) | try each candidate vendor, fall back to `self` |
+| `"auto"` (default) | **stays on `self`** — the candidate list is empty unless you pass `candidates` |
+| `"auto"` + `candidates: [...]` | try those vendors in order, fall back to `self` |
 | a vendor name | require it — a node returns `vendor-failure` rather than degrading |
 | `"self"` | you execute every node |
 
+**Registering a vendor does not enrol it in `auto`.** An installed, ready Codex still goes
+unused until you name it (`vendor: "codex"`) or list it in `candidates`. The default is
+deliberately quiet: a run should not start delegating to whatever happens to be installed.
+
 Name the vendor when the run must prove who did the work. Silent degradation is what
 lets a graph claim an external vendor implemented something it never touched.
+
+### Per-stage routing
+
+`vendor` and `model` above apply to the whole run. `policy` overrides them per stage —
+this is how the harness contract (reasoning on a strong model, execution on whatever can
+actually write here) gets expressed:
+
+```js
+graph_open({
+  request, cwd,
+  vendor: "self", model: "opus",          // the run-level default
+  policy: {
+    implement: { vendor: "codex", model: "gpt-5.6-sol" },
+    test:      { vendor: "codex" },
+    report:    { model: "sonnet" },
+    "gate:goal": { model: "opus" }         // may differ from the per-subgoal gates
+  }
+})
+```
+
+Keys are stage names — `plan`, `setgoal`, `critique`, `implement`, `test`, `gate`,
+`report` — plus the optional `gate:goal`. Each entry may set `vendor`, `candidates`,
+`sandbox`, `model`. A stage entry wins over the run-level setting; a stage with no entry
+inherits it. `graph_next` reports the chosen `model` per ready node.
+
+You cannot switch your own model for a `self` node. When `graph_next` names a model you
+are not running as, say so in the report rather than executing the node silently on the
+wrong tier.
 
 Readiness is a real write probe, not a version check: a sandbox can start, accept the
 run, write nothing, and still exit 0.

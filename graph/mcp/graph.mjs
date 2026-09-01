@@ -159,6 +159,14 @@ export function createRun(opts) {
     request: opts.request,
     context: opts.context || '',
     vendor: opts.vendor || 'auto',
+    // Run-level default; a policy entry overrides it per stage.
+    model: opts.model || null,
+    // Per-stage routing. The harness contract pins reasoning to a strong model and
+    // execution to whatever can actually write here, but the graph had no way to say so:
+    // one vendor was chosen once at graph_open and used for plan, implement and report
+    // alike, while `model` existed only as an argument the caller had to remember on
+    // every single graph_run. Policy makes that a property of the run instead.
+    policy: opts.policy && typeof opts.policy === 'object' ? opts.policy : {},
     candidates: opts.candidates || null,
     sandbox: opts.sandbox || null,
     isolated: opts.isolated === true,
@@ -172,6 +180,22 @@ export function createRun(opts) {
     ],
   };
   return saveRun(run);
+}
+
+// What this stage should run on. A stage entry wins over the run-level setting, which
+// wins over the built-in default. `stage` keys are the STAGES values; `gate:goal` may be
+// keyed separately from the per-subgoal gates.
+export function stagePolicy(run, node) {
+  const p = run.policy || {};
+  const specific = node.node_id.startsWith('gate:goal') ? p['gate:goal'] : null;
+  const byStage = p[node.stage] || {};
+  const entry = { ...byStage, ...(specific || {}) };
+  return {
+    vendor: entry.vendor === undefined ? run.vendor : entry.vendor,
+    candidates: entry.candidates === undefined ? run.candidates : entry.candidates,
+    sandbox: entry.sandbox === undefined ? run.sandbox : entry.sandbox,
+    model: entry.model === undefined ? (run.model || null) : entry.model,
+  };
 }
 
 export function getNode(run, nodeId) {

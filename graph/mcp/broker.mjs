@@ -41,6 +41,7 @@ import {
   readyNodes,
   runState,
   nodeBriefing,
+  stagePolicy,
 } from './graph.mjs';
 import { composePrompt } from './prompts.mjs';
 
@@ -328,14 +329,16 @@ function mustFindRun(a) {
 
 // ---------- routing ----------
 
-async function route(run, stage) {
+async function route(run, node) {
+  const stage = node.stage;
+  const pol = stagePolicy(run, node);
   const vendors = loadVendors(run.cwd);
-  const want = String(run.vendor || 'auto').toLowerCase();
+  const want = String(pol.vendor || 'auto').toLowerCase();
   const isSelf = ['self', 'claude', 'off', 'none'].includes(want);
   const order = isSelf
     ? []
     : want === 'auto'
-      ? (run.candidates && run.candidates.length ? run.candidates : AUTO_CANDIDATES)
+      ? (pol.candidates && pol.candidates.length ? pol.candidates : AUTO_CANDIDATES)
       : [want];
 
   const attempts = [];
@@ -347,8 +350,8 @@ async function route(run, stage) {
     }
     // A reasoning node writes nothing, so it does not need a writable sandbox.
     const sandbox = REASONING_STAGES.has(stage)
-      ? (Array.isArray(v.sandboxes) && v.sandboxes.includes('read-only') ? 'read-only' : run.sandbox || v.default_sandbox)
-      : run.sandbox || v.default_sandbox || 'workspace-write';
+      ? (Array.isArray(v.sandboxes) && v.sandboxes.includes('read-only') ? 'read-only' : pol.sandbox || v.default_sandbox)
+      : pol.sandbox || v.default_sandbox || 'workspace-write';
     if (Array.isArray(v.sandboxes) && !v.sandboxes.includes(sandbox)) {
       attempts.push({ vendor: name, ready: false, reason: `vendor "${name}" does not support sandbox ${sandbox}` });
       continue;
@@ -356,11 +359,11 @@ async function route(run, stage) {
     const p = await probe(name, v, run.cwd, sandbox);
     const usable = REASONING_STAGES.has(stage) ? p.reachable : p.ready;
     attempts.push({ vendor: name, ready: usable, reason: usable ? '' : p.reason });
-    if (usable) return { vendor: name, sandbox, attempts };
+    if (usable) return { vendor: name, sandbox, model: pol.model, attempts };
   }
   // "auto" degrades to self; a named vendor does not - silent degradation is what lets
   // a graph lie about who did the work.
-  return { vendor: isSelf || want === 'auto' ? 'self' : 'vendor-failure', sandbox: null, attempts };
+  return { vendor: isSelf || want === 'auto' ? 'self' : 'vendor-failure', sandbox: null, model: pol.model, attempts };
 }
 
 // ---------- result normalization ----------
@@ -575,7 +578,13 @@ const TOOLS = [
         request: { type: 'string', description: 'the raw request, verbatim' },
         cwd: { type: 'string', description: 'absolute working directory for the whole run' },
         context: { type: 'string' },
-        vendor: { type: 'string', description: '"auto" (default), a vendor name to require it, or "self"' },
+        vendor: { type: 'string', description: '"auto" (default, stays on self unless candidates are given), a vendor name to require it, or "self"' },
+        model: { type: 'string', description: 'default model for every stage; a policy entry overrides it' },
+        policy: {
+          type: 'object',
+          description:
+            'Per-stage routing: {"plan":{"vendor":"self","model":"opus"},"implement":{"vendor":"codex"},"report":{"model":"sonnet"}}. Keys are stage names (plan, setgoal, critique, implement, test, gate, report) plus the optional "gate:goal". Each entry may set vendor, candidates, sandbox, model. A stage entry wins over the run-level setting.',
+        },
         candidates: { type: 'array', items: { type: 'string' }, description: 'vendor preference order for "auto"' },
         sandbox: { type: 'string' },
         isolated: { type: 'boolean', description: 'cwd is a private worktree with only this run in it' },
@@ -688,6 +697,8 @@ async function toolGraphOpen(a) {
     request: String(a.request),
     context: a.context || '',
     vendor: a.vendor || 'auto',
+    model: a.model || null,
+    policy: a.policy || {},
     candidates: a.candidates || null,
     sandbox: a.sandbox || null,
     isolated: a.isolated === true,
@@ -723,7 +734,7 @@ async function toolGraphNext(a) {
     state: state.state,
     counts: state.counts,
     ready: await Promise.all(ready.map(async (n) => {
-      const r = await route(run, n.stage);
+      const r = await route(run, n);
       const briefingPath = join(brokerDir(run.cwd), 'briefings', `${n.node_id.replace(/[^A-Za-z0-9._-]/g, '_')}.md`);
       if (r.vendor === 'self') {
         try {
@@ -739,6 +750,7 @@ async function toolGraphNext(a) {
         vendor: r.vendor,
         attempts: r.vendor === 'vendor-failure' ? r.attempts : undefined,
         briefing_path: r.vendor === 'self' ? briefingPath : undefined,
+        model: r.model || undefined,
         next: r.vendor === 'self' ? 'read briefing_path, do the work, then graph_submit' : r.vendor === 'vendor-failure' ? 'no vendor is ready; see attempts' : 'call graph_run',
       };
     })),
@@ -749,7 +761,7 @@ async function toolGraphRun(a) {
   const run = mustFindRun(a);
   let n = requireRunnable(run, String(a.node_id));
 
-  const r = await route(run, n.stage);
+  const r = await route(run, n);
   if (r.vendor === 'self') throw new Error(`node ${n.node_id} is routed to self - use graph_submit`);
   if (r.vendor === 'vendor-failure') {
     n.state = 'failed';
@@ -793,7 +805,9 @@ async function toolGraphRun(a) {
   ];
   if (run.isolated && !REASONING_STAGES.has(n.stage)) args.push('--isolated');
   for (const d of Array.isArray(a.add_dirs) ? a.add_dirs : []) args.push('--add-dir', String(d));
-  if (a.model) args.push('--model', String(a.model));
+  // Policy is the default; an explicit graph_run({model}) still wins for one call.
+  const chosenModel = a.model || r.model;
+  if (chosenModel) args.push('--model', String(chosenModel));
 
   let proc;
   try {
