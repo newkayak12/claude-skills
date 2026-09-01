@@ -1,17 +1,18 @@
 ---
-name: portfolio-feedback
+name: portfolio-feedback-beta
 effort: high
 description: >-
-  Use when someone shares a developer portfolio and wants honest,
-  interviewer-perspective feedback. Triggers on: "포트폴리오 피드백 해줘", "내 포트폴리오 어때?",
-  "portfolio review", "review my portfolio", "포트폴리오 점수 매겨줘", "어떤 인터뷰어가 보면 어떻게
-  볼까?", "portfolio critique".
+  Use when someone wants portfolio feedback PLUS a resume convention check and
+  a screen verdict. Triggers on: "형식까지 봐줘", "이력서 컨벤션 체크", "포트폴리오 피드백 베타",
+  "서류 통과할까", "resume convention check", "would this pass the screen". Beta
+  variant of portfolio-feedback — quantified form tallies and a 30-second
+  screen verdict on top of dimension scores.
 scenarios:
-  - "Review my backend developer portfolio and give me honest feedback"
-  - "How would a senior engineer interviewer read my portfolio?"
-  - "내 포트폴리오 인터뷰어 관점에서 평가해줘"
-  - "포트폴리오 강점과 약점 솔직하게 피드백 해줘"
-  - "Score my portfolio across technical depth, ownership, and impact"
+  - "Review my portfolio and also check resume conventions and formatting"
+  - "Does my resume violate any formatting or section-order conventions?"
+  - "포트폴리오 피드백에 형식 검사까지 포함해서 봐줘"
+  - "이력서 컨벤션(요약, 불릿 수, 섹션 순서) 위반 있는지 체크해줘"
+  - "Score my portfolio and flag any document-convention violations"
 compatibility:
   optional:
     - think-tool
@@ -28,14 +29,18 @@ compatibility:
 - Score dimensions before writing feedback. Gut feelings after writing tend to be kinder than evidence warrants.
 - Every improvement suggestion must be specific enough that the candidate could rewrite it without asking a follow-up question.
 - Never score Technical Depth high based on a technology list alone. Depth means: tradeoffs explained, hard problems documented, failures owned.
+- Verdict before depth: judge the 30-second screen before scoring. Substance scores assume the document gets read; the screen verdict says whether it does.
+- Tally conventions, don't just list them. A violation with a count (XYZ+S 2/9) is checkable and comparable across revisions; "bullets are weak" is neither.
 
-# Portfolio Feedback
+# Portfolio Feedback (Beta — Convention Check + Screen Verdict)
 
-Give honest, interviewer-calibrated feedback on a developer portfolio — with dimension scores, specific evidence, and prioritized improvement areas.
+Give honest, interviewer-calibrated feedback on a developer portfolio — with dimension scores, specific evidence, and prioritized improvement areas — plus two things the mainstream skill doesn't do: a quantified document-convention check (absorbed from pm-skills' review-resume) and a 30-second screen verdict.
 
 ## When to use / When not to use
 
-**Use this skill when** the user wants an overall read from an interviewer's perspective: first impression, scoring, and what to fix.
+**Use this skill when** the user wants the interviewer's read AND the screen-stage answer: first impression, whether the document survives the 30-second screen, tallied convention violations, scoring, what to fix.
+
+**Use `portfolio-feedback` instead** for the stable substance-only review without the convention pass.
 
 **Other portfolio skills:**
 - Rewriting specific weak sentences → `portfolio-rewrite`
@@ -51,6 +56,12 @@ A good portfolio review has three movements:
 
 **1. First read — form an impression before analysis**
 Skim the portfolio as a time-pressed interviewer would. What's the immediate signal? What's the career story? What jumps out as missing? Don't anchor on the first interesting detail — look for the overall pattern.
+
+While skimming, run the document-convention check from [`references/resume-conventions.md`](references/resume-conventions.md) — summary block, length and bullet budget, section order, titles, subject conventions (which differ between English resumes and 국문 경력기술서 — don't apply one language's rule to the other). Form defects don't move dimension scores; they cost the screen before anyone reads deeply enough to score, so they are reported separately and only when violated.
+
+Tally as you check, don't just spot: count achievement bullets that carry full XYZ+S (n/m), the 국문 ownership-subject ratio (행동 문장 중 제가/저는 주어 비율 — portfolio-pattern's 40% threshold), and the max bullets-per-role. These numbers feed the screen verdict and make a revision comparable to the version before it.
+
+Close the first read with a screen verdict: would this document survive a 30-second screen, before anyone reads deeply enough to score it? Decide 통과 / 경계 / 스크린 탈락 and name the single deciding factor.
 
 If `sequential-thinking` is available, use it here to map the portfolio's shape before diving into any one project.
 
@@ -93,6 +104,17 @@ Write feedback in the same language the user used. Use this structure:
 
 **[총평 / First Impression]**
 3 sentences. Open with the single strongest signal — positive or negative. What's the career story this portfolio tells?
+
+---
+
+**[서류 스크린 판정 / Screen Verdict]**
+One line: `통과 / 경계 / 스크린 탈락` + the single deciding factor. This answers a question the dimension scores don't: whether the document gets read at all. A portfolio can score 7s and still die at the screen on form; a clean document can pass the screen and fail the interview.
+
+---
+
+**[형식 위반 / Convention Violations]** *(omit this block entirely when nothing is violated)*
+Flat list from the resume-conventions check — section, what's wrong, the one-line fix. No scores, no encouragement; these are screen-cost defects, not substance judgments. End the block with one tally line:
+`XYZ+S n/m · 주어 오너십 n% (국문일 때) · 불릿/롤 max n`
 
 ---
 
