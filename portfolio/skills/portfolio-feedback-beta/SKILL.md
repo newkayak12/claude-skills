@@ -2,11 +2,9 @@
 name: portfolio-feedback-beta
 effort: high
 description: >-
-  Use when someone wants portfolio feedback PLUS a resume convention check and
-  a screen verdict. Triggers on: "형식까지 봐줘", "이력서 컨벤션 체크", "포트폴리오 피드백 베타",
-  "서류 통과할까", "resume convention check", "would this pass the screen". Beta
-  variant of portfolio-feedback — quantified form tallies and a 30-second
-  screen verdict on top of dimension scores.
+  Use when someone wants portfolio feedback PLUS a convention check and screen
+  verdict. Triggers on: "형식까지 봐줘", "이력서 컨벤션 체크", "포트폴리오 피드백 베타", "서류
+  통과할까", "would this pass the screen". Beta of portfolio-feedback.
 scenarios:
   - "Review my portfolio and also check resume conventions and formatting"
   - "Does my resume violate any formatting or section-order conventions?"
