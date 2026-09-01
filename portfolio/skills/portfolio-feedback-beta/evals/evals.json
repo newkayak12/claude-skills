@@ -91,6 +91,15 @@
           "description": "형식 위반 블록이 수치 집계 라인(XYZ+S n/m 등)으로 끝나야 함 — 나열이 아니라 측정",
           "type": "regex",
           "pattern": "XYZ\\+S\\s*\\d+\\s*/\\s*\\d+"
+        },
+        {
+          "name": "ai-screener-summary-present",
+          "description": "[AI 스크리너 요약 / AI Screener Summary] 블록이 존재해야 함 — 위반 여부와 무관하게 항상 출력",
+          "type": "contains_any",
+          "values": [
+            "AI 스크리너",
+            "AI Screener"
+          ]
         }
       ]
     },
@@ -182,6 +191,15 @@
           "description": "형식 위반 블록이 수치 집계 라인(XYZ+S n/m 등)으로 끝나야 함 — 나열이 아니라 측정",
           "type": "regex",
           "pattern": "XYZ\\+S\\s*\\d+\\s*/\\s*\\d+"
+        },
+        {
+          "name": "ai-screener-summary-present",
+          "description": "[AI 스크리너 요약 / AI Screener Summary] 블록이 존재해야 함 — 위반 여부와 무관하게 항상 출력",
+          "type": "contains_any",
+          "values": [
+            "AI 스크리너",
+            "AI Screener"
+          ]
         }
       ]
     },
@@ -274,6 +292,15 @@
           "description": "형식 위반 블록이 수치 집계 라인(XYZ+S n/m 등)으로 끝나야 함 — 나열이 아니라 측정",
           "type": "regex",
           "pattern": "XYZ\\+S\\s*\\d+\\s*/\\s*\\d+"
+        },
+        {
+          "name": "ai-screener-summary-present",
+          "description": "[AI 스크리너 요약 / AI Screener Summary] 블록이 존재해야 함 — 위반 여부와 무관하게 항상 출력",
+          "type": "contains_any",
+          "values": [
+            "AI 스크리너",
+            "AI Screener"
+          ]
         }
       ]
     },
@@ -327,6 +354,15 @@
             "Screen Verdict",
             "스크린 탈락",
             "서류 스크린"
+          ]
+        },
+        {
+          "name": "ai-screener-summary-present",
+          "description": "[AI 스크리너 요약 / AI Screener Summary] 블록이 존재해야 함 — 위반 여부와 무관하게 항상 출력",
+          "type": "contains_any",
+          "values": [
+            "AI 스크리너",
+            "AI Screener"
           ]
         }
       ]

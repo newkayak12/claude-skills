@@ -68,3 +68,22 @@ side projects are the experience section — write them with the same XYZ+S disc
 (`사이드 프로젝트 X — 베타 유저 500명, 리텐션 분석으로 핵심 기능 2회 개편`). Career changers
 frame prior-field work through an engineering lens (what they automated, measured,
 systematized), not as an apology.
+
+## 8. Machine readability (ATS / parser safety)
+
+The document is parsed before it is read — by classic ATS extractors and, increasingly, by
+LLM screeners. Content that doesn't survive plain-text extraction doesn't exist.
+
+- **Core content in body text** — anything living only inside tables, multi-column layouts,
+  text boxes, or images evaporates in plain-text extraction. Decorative layout is fine;
+  evidence in it is not.
+- **Standard section headers** — 경력/Experience, 프로젝트/Projects, 학력/Education. A parser
+  maps `제가 걸어온 길` or `My Journey` to nothing.
+- **Contact in the body** — PDF headers/footers are routinely dropped by extractors. Name,
+  email, and links belong in the document body, near the top.
+- **Abbreviation + full form once each** — `K8s` alone misses a `Kubernetes` keyword search
+  and vice versa. First mention: `Kubernetes(K8s)`; either form after that.
+- **Text PDF, never scanned** — export from the editor, don't print-and-scan. If text can't
+  be selected in the PDF, the document is invisible to every parser.
+- **Consistent date format** — one format throughout (see §6); mixed formats break tenure
+  calculation in parsers that compute experience length.
