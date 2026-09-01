@@ -100,6 +100,29 @@
             "AI 스크리너",
             "AI Screener"
           ]
+        },
+        {
+          "name": "recruiter-pass-present",
+          "description": "리크루터 6초 패스 판정이 존재해야 함",
+          "type": "contains_any",
+          "values": [
+            "리크루터",
+            "Recruiter",
+            "recruiter"
+          ]
+        },
+        {
+          "name": "engineer-pass-present",
+          "description": "엔지니어 30초 스킴 패스 판정이 존재해야 함",
+          "type": "contains_any",
+          "values": [
+            "엔지니어 (30",
+            "엔지니어(30",
+            "Engineer (30",
+            "engineer pass",
+            "30초 스킴",
+            "30-second"
+          ]
         }
       ]
     },
@@ -199,6 +222,29 @@
           "values": [
             "AI 스크리너",
             "AI Screener"
+          ]
+        },
+        {
+          "name": "recruiter-pass-present",
+          "description": "리크루터 6초 패스 판정이 존재해야 함",
+          "type": "contains_any",
+          "values": [
+            "리크루터",
+            "Recruiter",
+            "recruiter"
+          ]
+        },
+        {
+          "name": "engineer-pass-present",
+          "description": "엔지니어 30초 스킴 패스 판정이 존재해야 함",
+          "type": "contains_any",
+          "values": [
+            "엔지니어 (30",
+            "엔지니어(30",
+            "Engineer (30",
+            "engineer pass",
+            "30초 스킴",
+            "30-second"
           ]
         }
       ]
@@ -301,6 +347,29 @@
             "AI 스크리너",
             "AI Screener"
           ]
+        },
+        {
+          "name": "recruiter-pass-present",
+          "description": "리크루터 6초 패스 판정이 존재해야 함",
+          "type": "contains_any",
+          "values": [
+            "리크루터",
+            "Recruiter",
+            "recruiter"
+          ]
+        },
+        {
+          "name": "engineer-pass-present",
+          "description": "엔지니어 30초 스킴 패스 판정이 존재해야 함",
+          "type": "contains_any",
+          "values": [
+            "엔지니어 (30",
+            "엔지니어(30",
+            "Engineer (30",
+            "engineer pass",
+            "30초 스킴",
+            "30-second"
+          ]
         }
       ]
     },
@@ -363,6 +432,29 @@
           "values": [
             "AI 스크리너",
             "AI Screener"
+          ]
+        },
+        {
+          "name": "recruiter-pass-present",
+          "description": "리크루터 6초 패스 판정이 존재해야 함",
+          "type": "contains_any",
+          "values": [
+            "리크루터",
+            "Recruiter",
+            "recruiter"
+          ]
+        },
+        {
+          "name": "engineer-pass-present",
+          "description": "엔지니어 30초 스킴 패스 판정이 존재해야 함",
+          "type": "contains_any",
+          "values": [
+            "엔지니어 (30",
+            "엔지니어(30",
+            "Engineer (30",
+            "engineer pass",
+            "30초 스킴",
+            "30-second"
           ]
         }
       ]
