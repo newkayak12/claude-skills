@@ -4,7 +4,8 @@ Three passes that the convention check (`resume-conventions.md`) does not cover.
 convention check judges how each bullet is built; these judge whether the document agrees
 with itself, whether its numbers survive one follow-up question, and whether the level the
 document claims is the level it reads at. All three produce tallies, not adjectives. Revision
-mode lives in `revision-diff.md` (shared with stable); §C says what this lane adds to it.
+mode lives in `revision-diff.md`; §C says what these passes add to it. Promoted from the beta
+lane after two head-to-heads plus a count-reliability bench (every tally re-countable on two fixtures).
 
 ## A. Consistency cross-check — does the document agree with itself?
 
@@ -75,9 +76,8 @@ they answer different questions.
 
 ## C. Revision diff — did the fix move anything?
 
-Follow `revision-diff.md` (shared with the stable lane — tally definitions, table, regressions,
-unresolved, stale windows). The beta adds four rows to its table, counted with the definitions
-above:
+Follow `revision-diff.md` (tally definitions, table, regressions, unresolved, stale windows) and
+add four rows to its table, counted with the definitions above:
 
 | 지표 | Before | After |
 |---|---|---|
@@ -102,9 +102,9 @@ above:
   `의사결정 동사` use the definitions in `revision-diff.md`.
 - **Say each finding once.** A contradiction lives in the Consistency block; an incomplete
   claim lives in the Claim Audit block. The red-flag block, 총평, and priorities refer to it by
-  name (`스킬 인플레이션 2/12 — 정합성 참조`) and never restate the evidence. The head-to-head
-  that kept these passes in beta found the same 5년 discrepancy stated three times in one
-  review — that is length the screen pays for and the candidate does not.
+  name (`스킬 인플레이션 2/12 — 정합성 참조`) and never restate the evidence. An early bench of
+  these passes found the same 5년 discrepancy stated three times in one review — that is
+  length the screen pays for and the candidate does not.
 
 ## E. Level calibration — is the claimed level the level it reads at?
 
