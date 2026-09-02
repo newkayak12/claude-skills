@@ -5,11 +5,12 @@ description: >-
   Use when someone shares a developer portfolio and wants honest,
   interviewer-perspective feedback — with the screen-stage answer too. Triggers on:
   "포트폴리오 피드백 해줘", "내 포트폴리오 어때?", "포트폴리오 점수 매겨줘",
-  "서류 통과할까", "ATS 통과할까", "이력서 컨벤션 체크", "형식까지 봐줘".
+  "서류 통과할까", "ATS 통과할까", "이력서 컨벤션 체크", "고친 버전 비교해줘".
 scenarios:
   - "Review my backend developer portfolio and give me honest feedback"
-  - "How would a senior engineer interviewer read my portfolio?"
+  - "Here's v1 and v2 of my resume. Did the rewrite actually improve the screen?"
   - "내 포트폴리오 인터뷰어 관점에서 평가해줘"
+  - "이전 버전이랑 고친 버전 같이 줄게. 뭐가 나아졌고 뭐가 후퇴했어?"
   - "이 이력서로 서류 통과할까? 형식 문제도 같이 봐줘"
   - "Score my portfolio and flag anything that would fail the resume screen"
 compatibility:
@@ -35,6 +36,7 @@ compatibility:
 - Summarize as the screener, not the coach. The AI-screener summary uses only what the document says — no benefit of the doubt, nothing the candidate meant but didn't write.
 - Screeners read to reject, not to accept. Red flags get their own block and are never netted against strengths — one flag outweighs three strengths at the screen.
 - The recruiter verdict uses only the F-pattern visible path (titles, companies, dates, first lines). Evidence the 6-second scan can't reach doesn't exist in that pass.
+- In revision mode, report movement, not the document. Before/after tallies first, then whether the screen verdict moved and what moved it; regressions get their own lines, fixed items get one line total.
 
 # Portfolio Feedback
 
@@ -63,7 +65,9 @@ Skim the portfolio as a time-pressed interviewer would. What's the immediate sig
 
 While skimming, run the document-convention check from [`references/resume-conventions.md`](references/resume-conventions.md) — summary block, length and bullet budget, section order, titles, subject conventions (which differ between English resumes and 국문 경력기술서 — don't apply one language's rule to the other). Form defects don't move dimension scores; they cost the screen before anyone reads deeply enough to score, so they are reported separately and only when violated.
 
-Tally as you check, don't just spot: count achievement bullets that carry full XYZ+S (n/m), the 국문 decision-verb ratio (행동 문장 중 제안·채택·배제·결정 동사를 가진 비율 — §2), and the max bullets-per-role. Do not count `제가/저는`: subject omission is normal Korean, not a defect. These numbers feed the screen verdict and make a revision comparable to the version before it.
+Tally as you check, don't just spot: count Experience/Project bullets that carry full XYZ+S (n/m — denominators are pinned in [`references/revision-diff.md`](references/revision-diff.md); list the bullets before counting), the 국문 decision-verb ratio (행동 문장 중 제안·채택·배제·결정 동사를 가진 비율 — §2), and the max bullets-per-role. Do not count `제가/저는`: subject omission is normal Korean, not a defect. These numbers feed the screen verdict and make a revision comparable to the version before it.
+
+**Revision mode** — when a previous version is supplied or the user says 이전 버전 / 고친 버전 / v2 / "compare": follow [`references/revision-diff.md`](references/revision-diff.md). Open with the before/after tally table and the verdict movement instead of the first impression, list regressions (including claims the rewrite introduced) and unresolved items, and shorten everything unchanged. The rest of the output is scored on the new version only.
 
 The convention check includes machine readability (§8 of the conventions file) — the document is parsed by ATS extractors and LLM screeners before any human reads it, so evidence trapped in tables/images, non-standard section headers, and contact in the PDF header are screen-cost defects like any other. Judge §8 on the document itself only: collapsed spacing, scrambled reading order, and captions out of place are artifacts of the conversion that delivered the file to you, never findings.
 
@@ -107,6 +111,11 @@ Score = **highest level fully satisfied** — partial evidence does not round up
 ## Output
 
 Write feedback in the same language the user used. Use this structure:
+
+---
+
+**[리비전 비교 / Revision Diff]** *(revision mode only — replaces the first impression)*
+The before/after tally table from `references/revision-diff.md`, then one line on whether the screen verdict moved and what moved it. Regressions one line each with the sentence that caused them; unresolved items from the previous verdict one line each; fixed items in one summary line. Everything below is scored on the new version and shortened where nothing changed.
 
 ---
 

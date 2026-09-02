@@ -31,7 +31,7 @@ classification). Connect them under Claude settings → MCP Servers as remote SS
 | Know how well I match one specific posting | `portfolio-jd` |
 | Decide where to apply when I have no posting yet | `portfolio-company` |
 | Get an honest interviewer's read on my portfolio | `portfolio-feedback` |
-| Check whether my numbers, skills list, and dates hold up — or compare a revision | `portfolio-feedback-beta` |
+| Check whether my numbers, skills list, and dates hold up | `portfolio-feedback-beta` |
 | Find out why my portfolio doesn't read as "ownership" | `portfolio-pattern` |
 | Rewrite specific weak sentences to senior level | `portfolio-rewrite` |
 | Rewrite my resume to match one JD's vocabulary | `resume-tailorer` |
@@ -156,29 +156,36 @@ identical core-vulnerability findings on both sides, while the screen pass added
 substance-only review structurally cannot make — an unexplained 8-month gap, a metric that meant two
 different things in two documents, a resume with no contact details at all.
 
+Hand it a previous version too and it switches to **revision mode** (`references/revision-diff.md`):
+the review opens with a before/after tally table and whether the screen verdict moved, regressions
+get their own lines — including claims the rewrite *introduced*, like a summary that now says 설계
+over bullets that still say 개발 — and time-windowed claims ("12개월 무사고") are checked against
+today's date. Promoted from the beta lane after a v1/v2 head-to-head where the structured diff caught
+two regressions the ad hoc comparison missed. Tally denominators are pinned in the same file so two
+versions are always counted the same way.
+
 ### `portfolio-feedback-beta`
 
-The experimental lane, re-opened on top of the merged stable skill. Everything `portfolio-feedback`
-does, plus three passes from `references/claim-and-consistency.md` that the convention check does
-not cover: a **consistency cross-check** (dates across sections against the summary's tenure, every
-Skills entry against the bullets that would evidence it — `스킬 근거율 n/m` with the unevidenced
-entries named, role claims against bullet verbs), a **claim audit** (every outcome bullet checked
-for 수치·베이스라인·기간·기여 범위 — `완전 주장 n/m`, worst three named with the exact interview
-question each invites), and a **revision-diff mode** — hand it a previous version and it opens with
-a before/after tally table and whether the screen verdict moved, listing regressions on their own
-lines (a rewrite that added numbers and lost its decision verbs has traded one screen cost for
-another).
+The experimental lane. Everything `portfolio-feedback` does, plus two passes from
+`references/claim-and-consistency.md` that the convention check does not cover: a **consistency
+cross-check** (dates across sections against the summary's tenure, every Skills entry against the
+bullets that would evidence it — `스킬 근거율 n/m` with the unevidenced entries named, role claims
+against bullet verbs) and a **claim audit** (every outcome bullet checked for
+수치·베이스라인·기간·기여 범위 — `완전 주장 n/m`, worst three named with the exact interview question
+each invites). Both add rows to the revision-diff table.
 
 ```
-Here's v1 and v2 of my resume. Did the rewrite actually improve the screen, and what did it lose?
+Audit my portfolio — do the numbers hold up and does the skills list match the projects?
 ```
 
 ```
-XYZ+S 2/7 · 완전 주장 1/9 · 스킬 근거율 2/12 · 날짜 불일치 2 · 의사결정 동사 0% · 불릿/롤 max 7
+XYZ+S 0/14 · 완전 주장 0/5 · 스킬 근거율 2/12 · 날짜 불일치 2 · 의사결정 동사 0% · 불릿/롤 max 7
 ```
 
-Same policy as before: the beta stays a separate lane until a head-to-head benchmark shows it
-better than stable on the same documents; promotion is a deliberate call, not a merge by default.
+Head-to-head status: on the inconsistent-claims fixture the stable lane's red-flag catalog already
+found every planted contradiction, so these passes stayed in beta — their value is checkable tallies,
+and a tally-first pass is judged on its counts. The lane now lists bullets before counting, pins its
+denominators, and states each finding once (§D of the reference); it gets re-benchmarked on those terms.
 
 ### `portfolio-pattern`
 

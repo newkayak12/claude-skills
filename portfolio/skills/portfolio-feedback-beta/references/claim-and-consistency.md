@@ -59,31 +59,29 @@ they answer different questions.
 
 ## C. Revision diff — did the fix move anything?
 
-When the user gives a previous version (a second file, or "이전 버전", "고친 버전", "v2",
-"compare with my last one"), the deliverable is **movement**, not a second full review.
+Follow `revision-diff.md` (shared with the stable lane — tally definitions, table, regressions,
+unresolved, stale windows). The beta adds three rows to its table, counted with the definitions
+above:
 
-1. Run every tally on both versions and print them side by side:
+| 지표 | Before | After |
+|---|---|---|
+| 스킬 근거율 | n/m | n/m |
+| 완전 주장 | n/m | n/m |
+| 날짜 불일치 | n | n |
 
-   | 지표 | Before | After |
-   |---|---|---|
-   | XYZ+S | n/m | n/m |
-   | 의사결정 동사 (국문) | n% | n% |
-   | 불릿/롤 max | n | n |
-   | 스킬 근거율 | n/m | n/m |
-   | 완전 주장 | n/m | n/m |
-   | 날짜 불일치 | n | n |
-   | 레드 플래그 | n | n |
-   | 리크루터 / 엔지니어 판정 | 판정 / 판정 | 판정 / 판정 |
+## D. Counting and reporting rules
 
-2. One line: did the screen verdict move, and what single change moved it. If nothing
-   moved at the screen, say so — a revision that improved five tallies and no verdict is
-   still a revision that does not get read.
-3. **Regressions get their own lines.** A rewrite that added numbers and lost the decision
-   verbs, or fixed the summary and pushed contact into the header, has traded one screen
-   cost for another. List each regression with the sentence that caused it.
-4. **Unresolved items from the previous verdict**, one line each. Fixed items get a single
-   summary line, not re-praise — the candidate knows what they fixed.
-
-The rest of the standard output (dimension scores, strengths, vulnerability, questions,
-priorities) follows, but scored on the new version only and shortened: anything unchanged
-since the previous verdict is referenced, not re-derived.
+- **List before you count.** Every `n/m` in this file is preceded — in your working, not
+  necessarily in the output — by the numbered list of items in m. A tally whose list you
+  cannot produce is not reported. Re-count the side with the higher number.
+- **Denominators.** `완전 주장`: bullets and summary sentences that assert an outcome (a
+  number, or a qualitative result such as 재발 방지) — a duty-only bullet cannot be an
+  incomplete claim and is out. A scale figure that describes the environment (`일 120만 건
+  결제`) is context, not a claim; it is out unless it is presented as something the candidate
+  achieved. `스킬 근거율`: m is every entry in the Skills section, deduplicated. `XYZ+S` and
+  `의사결정 동사` use the definitions in `revision-diff.md`.
+- **Say each finding once.** A contradiction lives in the Consistency block; an incomplete
+  claim lives in the Claim Audit block. The red-flag block, 총평, and priorities refer to it by
+  name (`스킬 인플레이션 2/12 — 정합성 참조`) and never restate the evidence. The head-to-head
+  that kept these passes in beta found the same 5년 discrepancy stated three times in one
+  review — that is length the screen pays for and the candidate does not.

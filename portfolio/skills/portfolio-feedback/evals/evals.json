@@ -458,6 +458,91 @@
           ]
         }
       ]
+    },
+    {
+      "id": 5,
+      "prompt": "이전 버전이랑 고친 버전 같이 줄게. 뭐가 나아졌고 뭐가 후퇴했어? 서류 판정이 움직였는지가 제일 궁금해. 성장 스타트업 EM 페르소나로.\n\n[Previous version: portfolio-revision-v1.md]\n[Revised version: portfolio-revision-v2.md]",
+      "expected_output": "리비전 비교 블록으로 시작: before/after 태리 표(XYZ+S, 의사결정 동사 비율, 불릿/롤 max, 레드 플래그, 판정)와 판정 이동 여부. v2는 요약·연락처·수치·베이스라인이 채워져 XYZ+S가 올랐지만, v1에 있던 의사결정 동사(제안·채택·결정·배제·판단)가 전부 '개발/개선'으로 바뀌어 오너십 신호가 후퇴했음을 regression으로 명시해야 함. v2 요약의 '설계'는 불릿이 뒷받침하지 않는 새로 도입된 주장. '2024.01 이후 12개월 무사고' 창은 이미 닫혀 질문거리. Kafka·Docker가 양쪽 모두 근거 없음은 미해결 항목. 고쳐진 항목은 한 줄로만.",
+      "files": [
+        "evals/files/portfolio-revision-v1.md",
+        "evals/files/portfolio-revision-v2.md"
+      ],
+      "assertions": [
+        {
+          "name": "revision-diff-block-first",
+          "description": "[리비전 비교 / Revision Diff] 블록이 존재해야 함",
+          "type": "contains_any",
+          "values": [
+            "리비전 비교",
+            "Revision Diff"
+          ]
+        },
+        {
+          "name": "before-after-table",
+          "description": "before/after 태리 표가 있어야 함",
+          "type": "contains_all",
+          "values": [
+            "Before",
+            "After"
+          ]
+        },
+        {
+          "name": "decision-verb-regression-caught",
+          "description": "의사결정 동사가 사라진 후퇴를 명시해야 함",
+          "type": "contains_any",
+          "values": [
+            "의사결정 동사",
+            "제안",
+            "채택",
+            "후퇴",
+            "regression",
+            "regressed"
+          ]
+        },
+        {
+          "name": "verdict-movement-stated",
+          "description": "스크린 판정이 움직였는지 한 줄로 명시",
+          "type": "contains_any",
+          "values": [
+            "판정",
+            "verdict"
+          ]
+        },
+        {
+          "name": "unresolved-skills-named",
+          "description": "양쪽 모두 근거 없는 Kafka/Docker를 미해결로 지적",
+          "type": "contains_any",
+          "values": [
+            "Kafka",
+            "Docker"
+          ]
+        },
+        {
+          "name": "no-full-repraise",
+          "description": "고쳐진 항목이 별도 강점 나열이 아닌 요약 한 줄이어야 하므로 '후퇴'/'미해결' 언급이 '강점'보다 먼저 등장",
+          "type": "contains_any",
+          "values": [
+            "후퇴",
+            "미해결",
+            "regression",
+            "unresolved"
+          ]
+        },
+        {
+          "name": "xyzs-both-versions-tallied",
+          "description": "XYZ+S 태리가 양쪽 버전에 대해 보고",
+          "type": "regex",
+          "pattern": "XYZ\\+S[^\\n]*\\d+\\s*/\\s*\\d+[^\\n]*\\d+\\s*/\\s*\\d+"
+        },
+        {
+          "name": "introduced-claim-caught",
+          "description": "v2 요약이 새로 도입한 '설계' 주장을 불릿과 대조",
+          "type": "contains_any",
+          "values": [
+            "설계"
+          ]
+        }
+      ]
     }
   ]
 }
