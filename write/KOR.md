@@ -24,7 +24,7 @@ harness-aware입니다 — 혼자 돌리면 문서를 내고, `harness:harness` 
 | SKILL.md 쓰거나 고치기 | `writing-skills` |
 | 만들거나 고친 것을 기술 블로그로 쓰기 | `technical-blog-writer` |
 | 동료에게 쏘지 않고 닿는 피드백 쓰기 | `sbi-writer` |
-| 이미 쓴 글 검토하고 고치기 | `writer-verification` |
+| 글 검토, 또는 사람이 쓴 것처럼 읽히는 PR 설명·글 초안 | `writer-verification` |
 
 knowledge-base, knowledge-graph, RAG corpus, knowledge-query 스킬은 이제 `knowledge` 플러그인에
 있습니다.
@@ -147,18 +147,26 @@ Kafka consumer lag를 40초에서 2초로 줄인 과정을 기술 블로그로 �
 
 ### `writer-verification`
 
-이미 쓴 글을 네 개의 패스로 검토합니다 — 맞춤법·문법, 글쓰기 패턴, 표현·스타일, 독자 관점. 핵심
-규칙: 모든 지적은 원문 → 수정안 + 이유를 함께 냅니다. 고치지 않고 지적만 하면 리뷰의 절반입니다.
-300자 미만이면 인라인으로 순차 실행, 300자 이상이면 네 패스(`grammarian`, `editor`,
-`copywriter`, `reader`)를 병렬 서브에이전트로 띄운 뒤 집계합니다 — 위치별 중복 제거, 심각도 충돌은
+글이 사람이 쓴 것처럼 읽히게 만듭니다 — 모드 둘. **Review**는 이미 있는 글에 다섯 패스를
+돌립니다: 맞춤법·문법, 글쓰기 패턴, 표현·스타일, 독자 관점, 그리고 기계가 쓴 티만 찾는
+**humanizer** — 짧은 글에 붙은 헤더와 굵은 라벨, 습관적인 세 개 나열, 서두를 다시 말하는 결론,
+"This PR introduces…", 줄표 남발, 아무도 안 쓰는 어휘(leverage, robust, seamless, "~에 있어서"),
+그리고 *왜 없이 무엇만*. **Draft**는 diff·브랜치·개요를 받아 작성자가 동료에게 말하듯 초안을 쓰고,
+그 초안에 다섯 패스를 돌려 🔴🟡가 0이 되거나 세 라운드가 끝날 때까지 고쳐 씁니다 — 사용자에게는
+결과와 루프가 뭘 잡았는지 한 줄만 보입니다.
+
+```
+이 브랜치 PR 설명 써줘. AI 티 안 나게, 사람이 쓴 것처럼.
+```
+
+PR 설명은 1급 입력입니다(`references/pr-description.md`): 왜 → 동작 수준의 무엇 → 어디부터 볼지와
+작성자가 확신 없는 부분 → 리스크/롤백. 길이는 diff에 맞춥니다 — 40줄 수정이면 세 문장, 파일
+목록은 절대 없음. 왜가 없는 PR 설명은 🔴. 모든 지적은 원문 → 수정안 + 이유를 함께 냅니다. 300자
+미만이면 인라인, 300자 이상이면 병렬 서브에이전트로 띄운 뒤 집계 — 위치별 중복 제거, 심각도 충돌은
 높은 쪽으로, 수정안 충돌은 출처를 붙여 둘 다 제시.
 
-```
-릴리스 노트 초안이야. 사내 공지로 나갈 거라 딱딱하지 않으면서 정확해야 해.
-어색한 표현이랑 논리 비약 잡아줘.
-```
-
-우선순위는 🔴 반드시 수정(의미 오류, 논리 공백) · 🟡 권장(패턴, 표현) · 🟢 선택(스타일 취향)입니다.
+우선순위는 🔴 반드시 수정(의미 오류, 논리 공백, 왜 없음) · 🟡 권장(패턴, 기계 티) · 🟢 선택(스타일
+취향 — 당신 목소리니 당신이 정합니다).
 
 ## MCP
 
@@ -171,6 +179,6 @@ Kafka consumer lag를 40초에서 2초로 줄인 과정을 기술 블로그로 �
 | `writing-skills` | think-tool | RED 단계 압박 시나리오 설계 |
 | `technical-blog-writer` | think-tool | 초안 전에 핵심 스토리와 각도 확정 |
 | `sbi-writer` | think-tool | 관찰과 판단 구분이 애매한 케이스 |
-| `writer-verification` | think-tool, sequential-thinking, mcp-reasoner | 패스 구조화, 상충하는 지적 조정 |
+| `writer-verification` | think-tool, sequential-thinking, mcp-reasoner | 패스 구조화, 상충하는 지적 조정, Summary 선두 고르기 |
 
 Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.

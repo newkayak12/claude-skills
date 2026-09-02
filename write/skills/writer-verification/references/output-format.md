@@ -15,13 +15,17 @@ Use this exact structure for all reviews.
 ## Reader Perspective
 - [check] Adjust tech-term density in para 2 for general audience
 
+## Humanizer
+- [why] "This PR refactors the retry logic" — what without why → "Checkout timed out for ~3% of orders because retries fired back-to-back; this backs them off and caps at 5."
+- [shape] 4 headers over 120 words → three sentences, no headers
+
 ## Summary
 [2-3 lines: what the text does well + the top 1-2 improvements that matter most]
 ```
 
 ## Priority Labels
 
-- 🔴 **Must fix** — meaning errors, factual mistakes, logic gaps that break comprehension
+- 🔴 **Must fix** — meaning errors, factual mistakes, logic gaps that break comprehension, a PR description with no *why*
 - 🟡 **Recommended** — patterns and phrasing that weaken the writing
 - 🟢 **Optional** — style preferences, minor polish
 
@@ -30,3 +34,12 @@ Use this exact structure for all reviews.
 - Every finding must include: original → fix + reason. Pointing out without fixing is half a review.
 - In parallel mode: deduplicate findings by location, attribute source pass when two passes flag the same span.
 - Keep the Summary to 2-3 lines. Lead with strengths, close with the most actionable improvement.
+
+## Draft mode
+
+Deliver the final text first, nothing above it. Then one separator and a three-line note:
+
+```
+---
+Draft loop: 2 rounds · caught: why missing, 4 headers → prose, 3× "leverage" · left for you: 🟢 title tense
+```

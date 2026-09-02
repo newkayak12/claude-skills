@@ -1,0 +1,60 @@
+commit 4f1c2a9 (HEAD -> fix/retry-storm)
+Author: 정유진 <yujin@payflow.io>
+
+    fix retry
+
+    PAY-1842
+
+diff --git a/payment/src/main/kotlin/io/payflow/payment/RetryPolicy.kt b/payment/src/main/kotlin/io/payflow/payment/RetryPolicy.kt
+--- a/payment/src/main/kotlin/io/payflow/payment/RetryPolicy.kt
++++ b/payment/src/main/kotlin/io/payflow/payment/RetryPolicy.kt
+@@ -1,14 +1,26 @@
+ package io.payflow.payment
+
+-class RetryPolicy(private val maxAttempts: Int = 10) {
++import kotlin.math.min
++import kotlin.random.Random
++
++class RetryPolicy(
++    private val maxAttempts: Int = 5,
++    private val baseDelayMs: Long = 200,
++    private val maxDelayMs: Long = 5_000,
++) {
+     fun <T> run(block: () -> T): T {
+         var attempt = 0
+         while (true) {
+             try {
+                 return block()
+             } catch (e: PgTimeoutException) {
+                 attempt++
+                 if (attempt >= maxAttempts) throw e
+-                // retry immediately
++                val exp = min(maxDelayMs, baseDelayMs shl (attempt - 1))
++                val jitter = Random.nextLong(0, exp / 2 + 1)
++                Thread.sleep(exp + jitter)
+             }
+         }
+     }
+ }
+diff --git a/payment/src/test/kotlin/io/payflow/payment/RetryPolicyTest.kt b/payment/src/test/kotlin/io/payflow/payment/RetryPolicyTest.kt
+--- a/payment/src/test/kotlin/io/payflow/payment/RetryPolicyTest.kt
++++ b/payment/src/test/kotlin/io/payflow/payment/RetryPolicyTest.kt
+@@ -20,4 +20,18 @@ class RetryPolicyTest {
+         assertEquals(3, calls)
+     }
++
++    @Test
++    fun `gives up after five attempts`() {
++        val policy = RetryPolicy(baseDelayMs = 1, maxDelayMs = 2)
++        var calls = 0
++        assertThrows<PgTimeoutException> {
++            policy.run { calls++; throw PgTimeoutException("pg-b") }
++        }
++        assertEquals(5, calls)
++    }
++
++    @Test
++    fun `delay grows between attempts`() {
++        // 200, 400, 800, 1600 (+jitter) — asserted via injected clock in PaymentClientTest
++    }
+ }
