@@ -123,6 +123,11 @@
             "30초 스킴",
             "30-second"
           ]
+        },
+        {
+          "name": "judgment-before-evidence",
+          "type": "regex",
+          "pattern": "\\[총평[\\s\\S]*\\[차원별 점수[\\s\\S]*\\[개선 우선순위[\\s\\S]*\\[(정합성|주장 감사|레벨 캘리브레이션)[\\s\\S]*\\[집계"
         }
       ]
     },
@@ -653,6 +658,16 @@
             "스크린 판정",
             "Screen Verdict"
           ]
+        },
+        {
+          "name": "judgment-before-evidence",
+          "type": "regex",
+          "pattern": "\\[총평[\\s\\S]*\\[차원별 점수[\\s\\S]*\\[개선 우선순위[\\s\\S]*\\[(정합성|주장 감사|레벨 캘리브레이션)[\\s\\S]*\\[집계"
+        },
+        {
+          "name": "appendix-findings-have-ids",
+          "type": "regex",
+          "pattern": "\\b[CAL]\\d\\b"
         }
       ]
     },
@@ -740,6 +755,16 @@
           "description": "완전 주장 2/3 — 미hedge 동사는 기여 범위 있음, 55분→20분만 기간 없음",
           "type": "regex",
           "pattern": "완전 주장\\s*2\\s*/\\s*3"
+        },
+        {
+          "name": "judgment-before-evidence",
+          "type": "regex",
+          "pattern": "\\[총평[\\s\\S]*\\[차원별 점수[\\s\\S]*\\[개선 우선순위[\\s\\S]*\\[(정합성|주장 감사|레벨 캘리브레이션)[\\s\\S]*\\[집계"
+        },
+        {
+          "name": "appendix-findings-have-ids",
+          "type": "regex",
+          "pattern": "\\b[CAL]\\d\\b"
         }
       ]
     },
