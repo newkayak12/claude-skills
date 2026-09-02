@@ -83,9 +83,6 @@ Output shape:
 [설계] architecture · components · data flow · errors · tests → approval → write:writing-plans
 ```
 
-`brainstorming-back` is the pre-rewrite version (v1.1.x), kept for side-by-side comparison. It only
-runs when you name it explicitly and will be removed once the rewrite is confirmed.
-
 ### `problem-reframer`
 
 Doubts the problem before solving it. Where `brainstorming` produces more solutions to a given
@@ -156,9 +153,6 @@ Position / Steel-man
 Multi-persona attack (CFO, on-call/SRE, competitor, legal, junior, customer) is skipped for narrow
 technical choices — a regulatory critique of "Redis vs Memcached" is theater. Path-forward
 suggestions only appear if you ask for improvement rather than critique.
-
-`devils-advocate-back` is the pre-rewrite version (v1.1.x), kept for side-by-side comparison. It
-only runs when you name it explicitly and will be removed once the rewrite is confirmed.
 
 ### `thought-organizer`
 
