@@ -28,8 +28,8 @@
     },
     {
       "name": "think",
-      "description": "Thinking and ideation skills: brainstorming (v2 — explicit diverge/converge with SCAMPER/analogy/constraint relaxation + kill-criteria), devil's advocate (v2), problem reframing (v2 — symptom/problem split, 5 Whys ↔ 5 Hows, stakeholder reframe), thought organizing, microinteractions design, negotiation, first-principles thinking, and deep-thinking-workflow.",
-      "version": "1.1.5",
+      "description": "Thinking and ideation skills: brainstorming (v3 — standing mandates, ≥3 options before judgment, kill-criteria convergence to 2–3, one question at a time, hands off to write:writing-plans), devil's advocate (v3 — steel-man first, never pad to a count, honest precedent or none, core vulnerability + reversibility), problem reframing (v2), thought organizing, microinteractions design, negotiation, first-principles thinking, and deep-thinking-workflow. -back copies of the pre-rewrite brainstorming/devils-advocate are kept for comparison.",
+      "version": "1.2.0",
       "author": {
         "name": "newkayak12"
       },

@@ -19,66 +19,6 @@
         "A multi-perspective section is present (TypeScript migration affects engineers + on-call + onboarding) with 2-3 personas",
         "The position is steel-manned (strongest version stated) before being attacked",
         "Response is in Korean (matching prompt language)"
-      ],
-      "assertions": [
-        {
-          "name": "steel-man-present",
-          "type": "contains_any",
-          "values": [
-            "Steel-man",
-            "steel-man",
-            "스틸맨",
-            "강한 버전"
-          ]
-        },
-        {
-          "name": "hidden-assumptions",
-          "type": "contains_any",
-          "values": [
-            "숨은 가정",
-            "Hidden assumption",
-            "Hidden Assumption"
-          ]
-        },
-        {
-          "name": "at-least-two-objections",
-          "type": "regex",
-          "pattern": "(반론|Objection|Counterargument)\\s*2"
-        },
-        {
-          "name": "type-and-severity-labels",
-          "type": "regex",
-          "pattern": "(structural|assumption|execution|timing)[^\\n]*severity"
-        },
-        {
-          "name": "precedent-every-objection",
-          "type": "regex",
-          "pattern": "(선례|Precedent)[\\s\\S]*(선례|Precedent)"
-        },
-        {
-          "name": "core-vulnerability",
-          "type": "contains_any",
-          "values": [
-            "핵심 취약점",
-            "Core vulnerability",
-            "Core Vulnerability"
-          ]
-        },
-        {
-          "name": "reversibility-call",
-          "type": "regex",
-          "pattern": "(가역성|Reversibility)[^\\n]*(reversible|one-way)"
-        },
-        {
-          "name": "no-hedging",
-          "type": "regex",
-          "pattern": "^(?![\\s\\S]*(some might argue|on the other hand|Some might argue|On the other hand|일각에서는|반면에))[\\s\\S]*$"
-        },
-        {
-          "name": "multi-persona-present",
-          "type": "regex",
-          "pattern": "(CFO|On-call|온콜|SRE|경쟁사|Competitor|규제|Legal|주니어|New hire|신입|고객|Customer)\\s*[:：]"
-        }
       ]
     },
     {
@@ -98,66 +38,6 @@
         "A 'Reversibility' line is present, classifying sunsetting the mobile app (likely one-way door given user reinstall friction)",
         "A multi-perspective section is present (sunsetting a product is cross-functional) covering 2-3 stakeholders (e.g., user, competitor, on-call, CFO)",
         "The position is steel-manned (strongest case for web-only) before being attacked"
-      ],
-      "assertions": [
-        {
-          "name": "steel-man-present",
-          "type": "contains_any",
-          "values": [
-            "Steel-man",
-            "steel-man",
-            "스틸맨",
-            "강한 버전"
-          ]
-        },
-        {
-          "name": "hidden-assumptions",
-          "type": "contains_any",
-          "values": [
-            "숨은 가정",
-            "Hidden assumption",
-            "Hidden Assumption"
-          ]
-        },
-        {
-          "name": "at-least-two-objections",
-          "type": "regex",
-          "pattern": "(반론|Objection|Counterargument)\\s*2"
-        },
-        {
-          "name": "type-and-severity-labels",
-          "type": "regex",
-          "pattern": "(structural|assumption|execution|timing)[^\\n]*severity"
-        },
-        {
-          "name": "precedent-every-objection",
-          "type": "regex",
-          "pattern": "(선례|Precedent)[\\s\\S]*(선례|Precedent)"
-        },
-        {
-          "name": "core-vulnerability",
-          "type": "contains_any",
-          "values": [
-            "핵심 취약점",
-            "Core vulnerability",
-            "Core Vulnerability"
-          ]
-        },
-        {
-          "name": "reversibility-call",
-          "type": "regex",
-          "pattern": "(가역성|Reversibility)[^\\n]*(reversible|one-way)"
-        },
-        {
-          "name": "no-hedging",
-          "type": "regex",
-          "pattern": "^(?![\\s\\S]*(some might argue|on the other hand|Some might argue|On the other hand|일각에서는|반면에))[\\s\\S]*$"
-        },
-        {
-          "name": "multi-persona-present",
-          "type": "regex",
-          "pattern": "(CFO|On-call|온콜|SRE|경쟁사|Competitor|규제|Legal|주니어|New hire|신입|고객|Customer)\\s*[:：]"
-        }
       ]
     },
     {
@@ -177,66 +57,6 @@
         "A '가역성' line is present (multi-tenant from day one tends to be one-way door — schemas, tenant isolation become hard to undo)",
         "A multi-perspective section is present (architecture + business decision) with 2-3 personas",
         "The position is steel-manned ('처음부터 제대로'의 강한 버전) before being attacked"
-      ],
-      "assertions": [
-        {
-          "name": "steel-man-present",
-          "type": "contains_any",
-          "values": [
-            "Steel-man",
-            "steel-man",
-            "스틸맨",
-            "강한 버전"
-          ]
-        },
-        {
-          "name": "hidden-assumptions",
-          "type": "contains_any",
-          "values": [
-            "숨은 가정",
-            "Hidden assumption",
-            "Hidden Assumption"
-          ]
-        },
-        {
-          "name": "at-least-two-objections",
-          "type": "regex",
-          "pattern": "(반론|Objection|Counterargument)\\s*2"
-        },
-        {
-          "name": "type-and-severity-labels",
-          "type": "regex",
-          "pattern": "(structural|assumption|execution|timing)[^\\n]*severity"
-        },
-        {
-          "name": "precedent-every-objection",
-          "type": "regex",
-          "pattern": "(선례|Precedent)[\\s\\S]*(선례|Precedent)"
-        },
-        {
-          "name": "core-vulnerability",
-          "type": "contains_any",
-          "values": [
-            "핵심 취약점",
-            "Core vulnerability",
-            "Core Vulnerability"
-          ]
-        },
-        {
-          "name": "reversibility-call",
-          "type": "regex",
-          "pattern": "(가역성|Reversibility)[^\\n]*(reversible|one-way)"
-        },
-        {
-          "name": "no-hedging",
-          "type": "regex",
-          "pattern": "^(?![\\s\\S]*(some might argue|on the other hand|Some might argue|On the other hand|일각에서는|반면에))[\\s\\S]*$"
-        },
-        {
-          "name": "multi-persona-present",
-          "type": "regex",
-          "pattern": "(CFO|On-call|온콜|SRE|경쟁사|Competitor|규제|Legal|주니어|New hire|신입|고객|Customer)\\s*[:：]"
-        }
       ]
     }
   ]

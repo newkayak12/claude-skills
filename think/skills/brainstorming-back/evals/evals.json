@@ -1,0 +1,44 @@
+{
+  "skill_name": "brainstorming",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "알림 시스템 새로 만들어야 하는데 어떻게 접근해? 이메일, 푸시, 슬랙 세 채널 다 지원해야 해.",
+      "expected_output": "설계 승인 전에 코드 없음. 명확한 질문 1개씩. 2-3개 접근 방식 + 트레이드오프 제시. 최종적으로 아키텍처 설계안 제안.",
+      "files": [],
+      "expectations": [
+        "No code is written before a design is presented and approved",
+        "At least 2 different architectural approaches are proposed with trade-offs",
+        "Questions are asked one at a time (not in a list)",
+        "A design or architecture section is presented for user approval",
+        "The response does NOT jump straight to implementation steps"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "We need to design a rate limiting system for our public API. We expect about 10k requests/second at peak.",
+      "expected_output": "At least 2 approaches proposed (e.g., token bucket vs sliding window vs fixed window). Questions to understand constraints. A design proposal covering: algorithm choice, storage, enforcement layer. No code until design approved.",
+      "files": [],
+      "expectations": [
+        "At least 2 rate limiting approaches are named and compared",
+        "Trade-offs between approaches are explained (not just descriptions)",
+        "At least one clarifying question is asked before proposing approaches",
+        "A design recommendation is made with reasoning",
+        "No implementation code is written"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "기존 모놀리식 서비스에 실시간 채팅 기능을 추가하려고 해. 기술 스택은 Spring Boot + PostgreSQL이야.",
+      "expected_output": "기존 코드베이스 파악 시도. 질문 1개씩. WebSocket vs SSE vs polling 등 옵션 비교. 설계안 제시 후 승인 요청.",
+      "files": [],
+      "expectations": [
+        "The existing tech stack (Spring Boot + PostgreSQL) is acknowledged and factored into the design",
+        "Multiple technical approaches for real-time communication are compared (e.g., WebSocket, SSE, polling, or messaging queue)",
+        "Trade-offs specific to a monolith context are mentioned",
+        "A design is presented and user approval is explicitly requested",
+        "No code is written before design approval"
+      ]
+    }
+  ]
+}
