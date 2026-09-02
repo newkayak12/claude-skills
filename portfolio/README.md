@@ -31,6 +31,7 @@ classification). Connect them under Claude settings → MCP Servers as remote SS
 | Know how well I match one specific posting | `portfolio-jd` |
 | Decide where to apply when I have no posting yet | `portfolio-company` |
 | Get an honest interviewer's read on my portfolio | `portfolio-feedback` |
+| Check whether my numbers, skills list, and dates hold up — or compare a revision | `portfolio-feedback-beta` |
 | Find out why my portfolio doesn't read as "ownership" | `portfolio-pattern` |
 | Rewrite specific weak sentences to senior level | `portfolio-rewrite` |
 | Rewrite my resume to match one JD's vocabulary | `resume-tailorer` |
@@ -154,6 +155,30 @@ This screen layer was developed in a `-beta` lane and merged in after two head-t
 identical core-vulnerability findings on both sides, while the screen pass added real catches the
 substance-only review structurally cannot make — an unexplained 8-month gap, a metric that meant two
 different things in two documents, a resume with no contact details at all.
+
+### `portfolio-feedback-beta`
+
+The experimental lane, re-opened on top of the merged stable skill. Everything `portfolio-feedback`
+does, plus three passes from `references/claim-and-consistency.md` that the convention check does
+not cover: a **consistency cross-check** (dates across sections against the summary's tenure, every
+Skills entry against the bullets that would evidence it — `스킬 근거율 n/m` with the unevidenced
+entries named, role claims against bullet verbs), a **claim audit** (every outcome bullet checked
+for 수치·베이스라인·기간·기여 범위 — `완전 주장 n/m`, worst three named with the exact interview
+question each invites), and a **revision-diff mode** — hand it a previous version and it opens with
+a before/after tally table and whether the screen verdict moved, listing regressions on their own
+lines (a rewrite that added numbers and lost its decision verbs has traded one screen cost for
+another).
+
+```
+Here's v1 and v2 of my resume. Did the rewrite actually improve the screen, and what did it lose?
+```
+
+```
+XYZ+S 2/7 · 완전 주장 1/9 · 스킬 근거율 2/12 · 날짜 불일치 2 · 의사결정 동사 0% · 불릿/롤 max 7
+```
+
+Same policy as before: the beta stays a separate lane until a head-to-head benchmark shows it
+better than stable on the same documents; promotion is a deliberate call, not a merge by default.
 
 ### `portfolio-pattern`
 
