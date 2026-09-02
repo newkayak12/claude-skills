@@ -1,0 +1,246 @@
+{
+  "skill_name": "writer-verification",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Proofread this PR description before I post it.",
+      "files": [
+        "evals/files/pr-description-ai.md"
+      ],
+      "expected_output": "Five-section review. Humanizer flags 🔴 [why] (no reason for the change), [shape] (5 headers over ~150 words), [padding] (Conclusion restates Summary, 'This PR introduces'), [register] (leverage/robust/seamlessly/comprehensive). Reader pass flags that 'tested locally' names no test. Every finding has original → fix. Summary leads with the missing why.",
+      "assertions": [
+        {
+          "name": "humanizer-section",
+          "type": "regex",
+          "pattern": "(?i)##\\s*Humanizer"
+        },
+        {
+          "name": "why-flagged-must-fix",
+          "type": "regex",
+          "pattern": "🔴[^\\n]*\\[why\\]|\\[why\\][^\\n]*🔴"
+        },
+        {
+          "name": "this-pr-introduces-flagged",
+          "type": "contains_any",
+          "values": [
+            "This PR introduces",
+            "\"This PR"
+          ]
+        },
+        {
+          "name": "file-list-flagged",
+          "type": "regex",
+          "pattern": "(?i)(file[- ]by[- ]file|lists? files|file list|RetryPolicy\\.kt[^\\n]*(diff|cut|drop|remove))"
+        },
+        {
+          "name": "headers-flagged",
+          "type": "regex",
+          "pattern": "(?i)\\[shape\\][^\\n]*header"
+        },
+        {
+          "name": "register-vocabulary-flagged",
+          "type": "contains_any",
+          "values": [
+            "leverage",
+            "seamless",
+            "robust",
+            "comprehensive"
+          ]
+        },
+        {
+          "name": "restating-conclusion-flagged",
+          "type": "regex",
+          "pattern": "(?i)(\\[padding\\]|restat|In summary)"
+        },
+        {
+          "name": "tested-locally-flagged",
+          "type": "regex",
+          "pattern": "(?i)tested locally"
+        },
+        {
+          "name": "every-finding-has-fix",
+          "type": "regex",
+          "pattern": "→"
+        },
+        {
+          "name": "summary-section",
+          "type": "regex",
+          "pattern": "(?i)##\\s*Summary"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "이 브랜치 PR 설명 써줘. AI 티 안 나게, 사람이 쓴 것처럼.",
+      "files": [
+        "evals/files/retry-backoff.diff"
+      ],
+      "expected_output": "Draft mode. Korean PR title stating the outcome (e.g. 'PG 타임아웃 시 재시도 폭주 완화'), body of 3–6 sentences without headers: why (immediate retries ×10 hammer the PG on timeout, PAY-1842), what (exponential backoff 200ms→5s with jitter, cap 5), how to review (the shl/jitter line; the second test is a placeholder), risk (5 attempts vs 10 — worst-case latency now bounded; author unsure about the cap). Ends with the 'Draft loop: N rounds' note. Never lists files, never opens with '이 PR은'. Written in Korean because the user asked in Korean. 'PG' is never expanded — the material doesn't say what it stands for.",
+      "assertions": [
+        {
+          "name": "no-this-pr-opener",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*(이 PR은|This PR (introduces|adds|implements|refactors)))[\\s\\S]*$"
+        },
+        {
+          "name": "why-present",
+          "type": "contains_any",
+          "values": [
+            "타임아웃",
+            "timeout",
+            "폭주",
+            "즉시 재시도",
+            "immediately",
+            "back-to-back",
+            "PAY-1842"
+          ]
+        },
+        {
+          "name": "backoff-described",
+          "type": "contains_any",
+          "values": [
+            "백오프",
+            "backoff",
+            "지수",
+            "exponential",
+            "jitter",
+            "지터"
+          ]
+        },
+        {
+          "name": "cap-change-surfaced",
+          "type": "regex",
+          "pattern": "10[^\\n]*5|5[^\\n]*10|다섯"
+        },
+        {
+          "name": "review-pointer",
+          "type": "contains_any",
+          "values": [
+            "봐주",
+            "확인해",
+            "리뷰",
+            "review",
+            "look at",
+            "check"
+          ]
+        },
+        {
+          "name": "placeholder-test-noticed",
+          "type": "contains_any",
+          "values": [
+            "delay grows",
+            "비어",
+            "placeholder",
+            "빈 테스트",
+            "본문이 없",
+            "empty",
+            "TODO",
+            "검증이 애매",
+            "남겨뒀",
+            "injected clock",
+            "PaymentClientTest",
+            "본문 없",
+            "비어 있"
+          ]
+        },
+        {
+          "name": "author-doubt-present",
+          "type": "contains_any",
+          "values": [
+            "확신",
+            "고민",
+            "의견",
+            "낮춰도",
+            "not sure",
+            "open to",
+            "unsure",
+            "맞는지",
+            "이야기하면",
+            "관찰이 필요",
+            "리뷰 때",
+            "같이 볼",
+            "봐야",
+            "sure",
+            "확실"
+          ]
+        },
+        {
+          "name": "no-file-list",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*(-\\s*`?[A-Za-z]+\\.kt`?[^\\n]*\\n[^\\n]*-\\s*`?[A-Za-z]+\\.kt))[\\s\\S]*$"
+        },
+        {
+          "name": "no-headers-in-body",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*\\n##+ )[\\s\\S]*$"
+        },
+        {
+          "name": "draft-loop-note",
+          "type": "regex",
+          "pattern": "(?i)draft loop:?\\s*\\d"
+        },
+        {
+          "name": "answers-in-users-language",
+          "type": "regex",
+          "pattern": "[가-힣]{2,}[^\\n]*[가-힣]{2,}"
+        },
+        {
+          "name": "no-invented-acronym-expansion",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*(Postgres|PostgreSQL|프로그래밍 가이드))[\\s\\S]*$"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "이 이메일 자연스러워? 팀 전체에 보내는 거야.\n\n안녕하세요 팀원 여러분,\n\n이번 스프린트에 있어서 배포 프로세스의 개선을 진행하고자 합니다. 다양한 이슈들이 발생하고 있는 상황이기 때문에, 보다 효율적인 방향으로의 전환이 필요하다고 판단됩니다. 관련된 의견이 있으시면 공유해 주시면 감사하겠습니다.\n\n감사합니다.",
+      "expected_output": "Inline mode (< 300 chars), five passes. Expression flags '~에 있어서', '진행하고자', '~로의 전환' as 번역투/관청체; Reader flags that no concrete issue or proposal is named and no deadline for opinions; Humanizer flags uniform '~합니다' endings and what-without-why (which issues? what change?). Fix rewrites into plain Korean with one concrete ask and a date.",
+      "assertions": [
+        {
+          "name": "translationese-flagged",
+          "type": "contains_any",
+          "values": [
+            "에 있어서",
+            "진행하고자",
+            "로의 전환",
+            "번역투",
+            "관청"
+          ]
+        },
+        {
+          "name": "concrete-issue-asked",
+          "type": "contains_any",
+          "values": [
+            "어떤 이슈",
+            "구체",
+            "무엇을",
+            "뭘 바꾸",
+            "what change",
+            "which issue"
+          ]
+        },
+        {
+          "name": "deadline-asked",
+          "type": "contains_any",
+          "values": [
+            "언제까지",
+            "기한",
+            "날짜",
+            "deadline",
+            "by when"
+          ]
+        },
+        {
+          "name": "humanizer-section",
+          "type": "regex",
+          "pattern": "(?i)##\\s*Humanizer"
+        },
+        {
+          "name": "rewrite-provided",
+          "type": "regex",
+          "pattern": "→"
+        }
+      ]
+    }
+  ]
+}

@@ -24,7 +24,7 @@ run it alone, and a machine-readable spec when a `harness:harness` run is drivin
 | Write or fix a SKILL.md | `writing-skills` |
 | Write a technical blog post about something I built or fixed | `technical-blog-writer` |
 | Give a colleague feedback that lands instead of stinging | `sbi-writer` |
-| Review and fix text I already wrote | `writer-verification` |
+| Review text, or draft a PR description / post that reads as human-written | `writer-verification` |
 
 Knowledge-base, knowledge-graph, RAG corpus, and knowledge-query skills now live in the `knowledge`
 plugin.
@@ -150,20 +150,28 @@ Common failures it fixes:
 
 ### `writer-verification`
 
-Reviews text you already wrote in four passes — spelling & grammar, writing patterns, expression &
-style, reader perspective. Core rule: every finding carries original → fix + reason; pointing out
-without fixing is half a review. Under 300 characters it runs the passes inline; at 300 or more it
-dispatches all four as parallel subagents (`grammarian`, `editor`, `copywriter`, `reader`) and
-aggregates — deduplicating by location, elevating conflicting severity, and surfacing conflicting
-fixes with attribution.
+Makes writing read as if a person wrote it — two modes. **Review** runs five passes over text you
+already have: spelling & grammar, writing patterns, expression & style, reader perspective, and a
+**humanizer** that looks only for machine tells — headers and bold labels on short text, reflex
+triads, a closing that restates the opening, "This PR introduces…", em-dash chains, nobody's-voice
+vocabulary (leverage, robust, seamless, "~에 있어서"), and *what without why*. **Draft** takes a
+diff, branch, or outline, writes a first draft the way the author would say it to a colleague, then
+runs the five passes on its own draft and rewrites until 🔴🟡 = 0 or three rounds have run — you
+see only the result and a one-line note of what the loop caught.
 
 ```
-릴리스 노트 초안이야. 사내 공지로 나갈 거라 딱딱하지 않으면서 정확해야 해.
-어색한 표현이랑 논리 비약 잡아줘.
+이 브랜치 PR 설명 써줘. AI 티 안 나게, 사람이 쓴 것처럼.
 ```
 
-Findings are prioritized 🔴 Must fix (meaning errors, logic gaps) · 🟡 Recommended (patterns,
-phrasing) · 🟢 Optional (style preference).
+PR descriptions are a first-class input (`references/pr-description.md`): why → what at the level
+of behavior → where to look first and what the author is unsure about → risk/rollback, sized to
+the diff — three sentences for a 40-line fix, never a file list. A PR description with no *why* is
+🔴. Every finding carries original → fix + reason. Under 300 characters the passes run inline; at
+300 or more they run as parallel subagents and are aggregated — deduplicated by span, conflicting
+severity elevated, conflicting fixes shown with attribution.
+
+Priorities: 🔴 Must fix (meaning errors, logic gaps, missing why) · 🟡 Recommended (patterns,
+tells) · 🟢 Optional (style preference — your voice, your call).
 
 ## MCP
 
@@ -176,7 +184,7 @@ Every skill in this plugin lists MCP tools as optional or recommended, not requi
 | `writing-skills` | think-tool | Framing the RED-phase pressure scenario |
 | `technical-blog-writer` | think-tool | Fixing the core story and angle before drafting |
 | `sbi-writer` | think-tool | Ambiguous observation-vs-judgment cases |
-| `writer-verification` | think-tool, sequential-thinking, mcp-reasoner | Pass structuring; resolving conflicting findings |
+| `writer-verification` | think-tool, sequential-thinking, mcp-reasoner | Pass structuring; resolving conflicting findings; picking the summary lead |
 
 Add the remote SSE endpoints in Claude settings → MCP Servers.
 
