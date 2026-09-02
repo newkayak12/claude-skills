@@ -1,0 +1,646 @@
+{
+  "skill_name": "portfolio-feedback-beta",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "내 포트폴리오 인터뷰어 관점에서 솔직하게 피드백 해줘. 성장 스타트업 EM 페르소나로 봐줘.\n\n[Portfolio file: portfolio-underseller.md]",
+      "expected_output": "5차원 점수 + 구체적 근거 + 개선 우선순위 Top 3. 쿠팡 주문 처리 시스템의 구체적 수치/임팩트 부재, '참여'/'기여' 언어의 소유권 모호함, 기술 스택 나열 대비 실제 깊이 증거 부족을 지적해야 함.",
+      "files": [
+        "evals/files/portfolio-underseller.md"
+      ],
+      "assertions": [
+        {
+          "name": "scores-all-5-dimensions",
+          "description": "Technical Depth, System Design, Impact/Results, Leadership/Ownership, Portfolio Narrative 5개 차원 모두 점수 부여",
+          "type": "contains_all",
+          "values": [
+            "Technical Depth",
+            "System Design",
+            "Impact",
+            "Leadership",
+            "Narrative"
+          ]
+        },
+        {
+          "name": "identifies-passive-language",
+          "description": "'참여', '기여', '수행' 등 소유권 모호 언어 문제를 구체적으로 지적",
+          "type": "contains_any",
+          "values": [
+            "참여",
+            "기여",
+            "ownership",
+            "소유권",
+            "주도"
+          ]
+        },
+        {
+          "name": "improvement-priorities-specific",
+          "description": "개선 우선순위가 'add more detail' 수준이 아닌 구체적 내용 포함 (수치/임팩트 명시)",
+          "type": "contains_any",
+          "values": [
+            "수치",
+            "숫자",
+            "임팩트",
+            "impact",
+            "metrics",
+            "metric"
+          ]
+        },
+        {
+          "name": "core-vulnerability-present",
+          "description": "핵심 취약점 또는 Core Vulnerability 섹션이 존재",
+          "type": "contains_any",
+          "values": [
+            "핵심 취약점",
+            "Core Vulnerability",
+            "핵심취약점"
+          ]
+        },
+        {
+          "name": "interview-questions-present",
+          "description": "예상 인터뷰 질문 섹션이 존재하고 이 포트폴리오에 특화된 질문 포함",
+          "type": "contains_any",
+          "values": [
+            "예상 인터뷰",
+            "Interview Question",
+            "인터뷰 질문"
+          ]
+        },
+        {
+          "name": "convention-violations-reported",
+          "description": "형식 위반이 있는 포트폴리오이므로 [형식 위반 / Convention Violations] 블록이 출력되어야 함",
+          "type": "contains_any",
+          "values": [
+            "형식 위반",
+            "Convention Violations"
+          ]
+        },
+        {
+          "name": "screen-verdict-present",
+          "description": "[서류 스크린 판정 / Screen Verdict] 블록이 존재하고 통과/경계/스크린 탈락 판정이 있어야 함",
+          "type": "contains_any",
+          "values": [
+            "스크린 판정",
+            "Screen Verdict",
+            "스크린 탈락",
+            "서류 스크린"
+          ]
+        },
+        {
+          "name": "convention-tally-present",
+          "description": "형식 위반 블록이 수치 집계 라인(XYZ+S n/m 등)으로 끝나야 함 — 나열이 아니라 측정",
+          "type": "regex",
+          "pattern": "XYZ\\+S\\s*\\d+\\s*/\\s*\\d+"
+        },
+        {
+          "name": "ai-screener-summary-present",
+          "description": "[AI 스크리너 요약 / AI Screener Summary] 블록이 존재해야 함 — 위반 여부와 무관하게 항상 출력",
+          "type": "contains_any",
+          "values": [
+            "AI 스크리너",
+            "AI Screener"
+          ]
+        },
+        {
+          "name": "recruiter-pass-present",
+          "description": "리크루터 6초 패스 판정이 존재해야 함",
+          "type": "contains_any",
+          "values": [
+            "리크루터",
+            "Recruiter",
+            "recruiter"
+          ]
+        },
+        {
+          "name": "engineer-pass-present",
+          "description": "엔지니어 30초 스킴 패스 판정이 존재해야 함",
+          "type": "contains_any",
+          "values": [
+            "엔지니어 (30",
+            "엔지니어(30",
+            "Engineer (30",
+            "engineer pass",
+            "30초 스킴",
+            "30-second"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Review my portfolio as a Staff Engineer at a large-scale platform. Be honest about both strengths and blind spots.\n\n[Portfolio file: portfolio-impressive-surface.md]",
+      "expected_output": "Balanced review: acknowledge real strengths (12M events/sec claim, MTTR reduction, open source presence) but probe missing evidence: no failure stories, impact metrics owned by data science team, no public technical writing, design doc rationale not visible. Core vulnerability: impressive numbers without the reasoning behind them.",
+      "files": [
+        "evals/files/portfolio-impressive-surface.md"
+      ],
+      "assertions": [
+        {
+          "name": "scores-all-5-dimensions",
+          "description": "All 5 dimensions scored with numeric scores",
+          "type": "regex",
+          "pattern": "\\d+\\s*/\\s*10"
+        },
+        {
+          "name": "challenges-high-scores",
+          "description": "At least one devil's advocate or challenge to a high score",
+          "type": "contains_any",
+          "values": [
+            "devil's advocate",
+            "challenge",
+            "skeptic",
+            "however",
+            "but"
+          ]
+        },
+        {
+          "name": "identifies-missing-reasoning",
+          "description": "Identifies that impact numbers are claimed without showing the reasoning/tradeoffs behind decisions",
+          "type": "contains_any",
+          "values": [
+            "reasoning",
+            "tradeoff",
+            "trade-off",
+            "why",
+            "rationale",
+            "design decision"
+          ]
+        },
+        {
+          "name": "core-vulnerability-present",
+          "description": "Core Vulnerability section present",
+          "type": "contains_any",
+          "values": [
+            "Core Vulnerability",
+            "핵심 취약점",
+            "core weakness",
+            "Core weakness"
+          ]
+        },
+        {
+          "name": "improvement-priorities-actionable",
+          "description": "Improvement priorities include specific, rewritable suggestions",
+          "type": "contains_any",
+          "values": [
+            "public",
+            "write",
+            "document",
+            "publish",
+            "blog",
+            "design doc"
+          ]
+        },
+        {
+          "name": "convention-violations-reported",
+          "description": "형식 위반이 있는 포트폴리오이므로 [형식 위반 / Convention Violations] 블록이 출력되어야 함",
+          "type": "contains_any",
+          "values": [
+            "형식 위반",
+            "Convention Violations"
+          ]
+        },
+        {
+          "name": "screen-verdict-present",
+          "description": "[서류 스크린 판정 / Screen Verdict] 블록이 존재하고 통과/경계/스크린 탈락 판정이 있어야 함",
+          "type": "contains_any",
+          "values": [
+            "스크린 판정",
+            "Screen Verdict",
+            "스크린 탈락",
+            "서류 스크린"
+          ]
+        },
+        {
+          "name": "convention-tally-present",
+          "description": "형식 위반 블록이 수치 집계 라인(XYZ+S n/m 등)으로 끝나야 함 — 나열이 아니라 측정",
+          "type": "regex",
+          "pattern": "XYZ\\+S\\s*\\d+\\s*/\\s*\\d+"
+        },
+        {
+          "name": "ai-screener-summary-present",
+          "description": "[AI 스크리너 요약 / AI Screener Summary] 블록이 존재해야 함 — 위반 여부와 무관하게 항상 출력",
+          "type": "contains_any",
+          "values": [
+            "AI 스크리너",
+            "AI Screener"
+          ]
+        },
+        {
+          "name": "recruiter-pass-present",
+          "description": "리크루터 6초 패스 판정이 존재해야 함",
+          "type": "contains_any",
+          "values": [
+            "리크루터",
+            "Recruiter",
+            "recruiter"
+          ]
+        },
+        {
+          "name": "engineer-pass-present",
+          "description": "엔지니어 30초 스킴 패스 판정이 존재해야 함",
+          "type": "contains_any",
+          "values": [
+            "엔지니어 (30",
+            "엔지니어(30",
+            "Engineer (30",
+            "engineer pass",
+            "30초 스킴",
+            "30-second"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "이 포트폴리오 솔직하게 피드백 해줘. 나는 핀테크 스타트업 EM 페르소나로 보고 싶어. 약점도 있지만 강점도 있을 것 같아서.\n\n[Portfolio file: portfolio-career-switcher.md]",
+      "expected_output": "전직 배경에 대한 공정한 평가. 강점: 구체적 수치(처리 시간 2.1h→45min, 메모리 8GB→600MB), 멱등성 설계 문서화, 솔직한 약점 자기 인식. 약점: 스케일 경험 없음, 시스템 디자인 미성숙, 오픈소스 없음. 전직 배경이 EM에게 오히려 강점이 될 수 있는 측면 포착.",
+      "files": [
+        "evals/files/portfolio-career-switcher.md"
+      ],
+      "assertions": [
+        {
+          "name": "acknowledges-concrete-metrics",
+          "description": "구체적 수치(처리 시간, 메모리 수치)를 강점으로 언급",
+          "type": "contains_any",
+          "values": [
+            "45분",
+            "600MB",
+            "처리 시간",
+            "메모리",
+            "2.1시간",
+            "청크"
+          ]
+        },
+        {
+          "name": "addresses-scale-gap",
+          "description": "스케일 경험 부족을 리스크로 언급",
+          "type": "contains_any",
+          "values": [
+            "스케일",
+            "scale",
+            "TPS",
+            "규모",
+            "distributed"
+          ]
+        },
+        {
+          "name": "scores-all-5-dimensions",
+          "description": "5개 차원 모두 점수 부여",
+          "type": "regex",
+          "pattern": "\\d+\\s*/\\s*10"
+        },
+        {
+          "name": "career-switch-context-acknowledged",
+          "description": "전직(프론트→백엔드) 배경을 피드백 맥락으로 반영",
+          "type": "contains_any",
+          "values": [
+            "전환",
+            "전직",
+            "frontend",
+            "프론트엔드",
+            "career switch",
+            "transition"
+          ]
+        },
+        {
+          "name": "best-fit-position-present",
+          "description": "가장 잘 맞는 포지션 섹션 존재",
+          "type": "contains_any",
+          "values": [
+            "가장 잘 맞는",
+            "Best-fit",
+            "best fit",
+            "포지션",
+            "position"
+          ]
+        },
+        {
+          "name": "convention-violations-reported",
+          "description": "형식 위반이 있는 포트폴리오이므로 [형식 위반 / Convention Violations] 블록이 출력되어야 함",
+          "type": "contains_any",
+          "values": [
+            "형식 위반",
+            "Convention Violations"
+          ]
+        },
+        {
+          "name": "screen-verdict-present",
+          "description": "[서류 스크린 판정 / Screen Verdict] 블록이 존재하고 통과/경계/스크린 탈락 판정이 있어야 함",
+          "type": "contains_any",
+          "values": [
+            "스크린 판정",
+            "Screen Verdict",
+            "스크린 탈락",
+            "서류 스크린"
+          ]
+        },
+        {
+          "name": "convention-tally-present",
+          "description": "형식 위반 블록이 수치 집계 라인(XYZ+S n/m 등)으로 끝나야 함 — 나열이 아니라 측정",
+          "type": "regex",
+          "pattern": "XYZ\\+S\\s*\\d+\\s*/\\s*\\d+"
+        },
+        {
+          "name": "ai-screener-summary-present",
+          "description": "[AI 스크리너 요약 / AI Screener Summary] 블록이 존재해야 함 — 위반 여부와 무관하게 항상 출력",
+          "type": "contains_any",
+          "values": [
+            "AI 스크리너",
+            "AI Screener"
+          ]
+        },
+        {
+          "name": "recruiter-pass-present",
+          "description": "리크루터 6초 패스 판정이 존재해야 함",
+          "type": "contains_any",
+          "values": [
+            "리크루터",
+            "Recruiter",
+            "recruiter"
+          ]
+        },
+        {
+          "name": "engineer-pass-present",
+          "description": "엔지니어 30초 스킴 패스 판정이 존재해야 함",
+          "type": "contains_any",
+          "values": [
+            "엔지니어 (30",
+            "엔지니어(30",
+            "Engineer (30",
+            "engineer pass",
+            "30초 스킴",
+            "30-second"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "내 포트폴리오 인터뷰어 관점에서 솔직하게 피드백 해줘. 엔터프라이즈/핀테크 Tech Lead 페르소나로 봐줘.\n\n[Portfolio file: portfolio-clean-conventions.md]",
+      "expected_output": "형식(요약 블록, 연락처, XYZ+S 불릿, 주어 컨벤션, 섹션 순서, Month–Year 날짜)이 모두 컨벤션을 지키는 포트폴리오 — [형식 위반] 블록은 통째로 생략되어야 함. 실질 리뷰는 정상 진행: 5차원 점수, 강점(정산 파이프라인 재설계의 구체 수치, 멱등성 설계), 핵심 취약점 등.",
+      "files": [
+        "evals/files/portfolio-clean-conventions.md"
+      ],
+      "assertions": [
+        {
+          "name": "convention-block-omitted",
+          "description": "위반이 없으므로 [형식 위반 / Convention Violations] 블록이 출력에 존재하지 않아야 함 (negative lookahead)",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*(?:형식 위반|Convention Violations))"
+        },
+        {
+          "name": "scores-all-5-dimensions",
+          "description": "5개 차원 모두 점수 부여",
+          "type": "regex",
+          "pattern": "\\d+\\s*/\\s*10"
+        },
+        {
+          "name": "core-vulnerability-present",
+          "description": "핵심 취약점 섹션 존재 — 형식이 깨끗해도 실질 리뷰는 정상 수행",
+          "type": "contains_any",
+          "values": [
+            "핵심 취약점",
+            "Core Vulnerability"
+          ]
+        },
+        {
+          "name": "acknowledges-concrete-evidence",
+          "description": "구체 수치(정산 마감 단축, 중복 결제 제거 등)를 근거로 인용",
+          "type": "contains_any",
+          "values": [
+            "4시간",
+            "마감",
+            "멱등성",
+            "120만",
+            "아웃박스"
+          ]
+        },
+        {
+          "name": "screen-verdict-present",
+          "description": "[서류 스크린 판정 / Screen Verdict] 블록이 존재하고 통과/경계/스크린 탈락 판정이 있어야 함",
+          "type": "contains_any",
+          "values": [
+            "스크린 판정",
+            "Screen Verdict",
+            "스크린 탈락",
+            "서류 스크린"
+          ]
+        },
+        {
+          "name": "ai-screener-summary-present",
+          "description": "[AI 스크리너 요약 / AI Screener Summary] 블록이 존재해야 함 — 위반 여부와 무관하게 항상 출력",
+          "type": "contains_any",
+          "values": [
+            "AI 스크리너",
+            "AI Screener"
+          ]
+        },
+        {
+          "name": "recruiter-pass-present",
+          "description": "리크루터 6초 패스 판정이 존재해야 함",
+          "type": "contains_any",
+          "values": [
+            "리크루터",
+            "Recruiter",
+            "recruiter"
+          ]
+        },
+        {
+          "name": "engineer-pass-present",
+          "description": "엔지니어 30초 스킴 패스 판정이 존재해야 함",
+          "type": "contains_any",
+          "values": [
+            "엔지니어 (30",
+            "엔지니어(30",
+            "Engineer (30",
+            "engineer pass",
+            "30초 스킴",
+            "30-second"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "포트폴리오 피드백 베타로 봐줘. 숫자에 근거가 있는지, 스킬 목록이 부풀려진 건 아닌지, 앞뒤가 맞는지까지. 엔터프라이즈/핀테크 Tech Lead 페르소나로.\n\n[Portfolio file: portfolio-inconsistent-claims.md]",
+      "expected_output": "정합성 블록에서 요약의 '5년'과 실제 경력(2022.03~, 약 4년 미만)의 불일치, 오더플로우 재직(2023.03~) 이전 날짜(2022.06~11)의 오더플로우 프로젝트, '테크 리드' 직함과 '참여/기여/지원/수행' 불릿 동사의 불일치를 잡아야 함. 스킬 근거율은 12개 중 Kafka·Redis 2개만 근거가 있음을 수치로 보고하고 미근거 항목(Go, Elasticsearch, Kubernetes, Terraform 등)을 이름으로 나열. 주장 감사에서 '40% 개선', '60% 감소', '절반 단축' 등에 베이스라인·기간·기여 범위가 없음을 지적하고 각각이 부르는 인터뷰 질문을 명시. 완전 주장 n/m 태리 포함.",
+      "files": [
+        "evals/files/portfolio-inconsistent-claims.md"
+      ],
+      "assertions": [
+        {
+          "name": "consistency-block-present",
+          "description": "[정합성 / Consistency] 블록이 존재해야 함 — 모순이 있는 문서",
+          "type": "contains_any",
+          "values": [
+            "정합성",
+            "Consistency"
+          ]
+        },
+        {
+          "name": "tenure-mismatch-caught",
+          "description": "요약의 5년 주장과 실제 경력 기간의 불일치를 지적",
+          "type": "contains_any",
+          "values": [
+            "5년",
+            "tenure",
+            "경력 기간",
+            "재직 기간"
+          ]
+        },
+        {
+          "name": "project-date-outside-role",
+          "description": "오더플로우 재직 전 날짜의 오더플로우 프로젝트 모순을 지적",
+          "type": "contains_any",
+          "values": [
+            "2022.06",
+            "2022.11",
+            "재고 동기화",
+            "입사 전",
+            "재직 전",
+            "before joining"
+          ]
+        },
+        {
+          "name": "skill-evidence-ratio-tallied",
+          "description": "스킬 근거율이 n/m 수치로 보고되어야 함",
+          "type": "regex",
+          "pattern": "스킬 근거율\\s*\\d+\\s*/\\s*\\d+"
+        },
+        {
+          "name": "unevidenced-skills-named",
+          "description": "근거 없는 스킬 항목이 이름으로 나열되어야 함",
+          "type": "contains_any",
+          "values": [
+            "Terraform",
+            "Elasticsearch",
+            "Kubernetes",
+            "Go"
+          ]
+        },
+        {
+          "name": "claim-audit-block-present",
+          "description": "[주장 감사 / Claim Audit] 블록이 존재해야 함",
+          "type": "contains_any",
+          "values": [
+            "주장 감사",
+            "Claim Audit"
+          ]
+        },
+        {
+          "name": "complete-claims-tallied",
+          "description": "완전 주장이 n/m 수치로 보고되어야 함",
+          "type": "regex",
+          "pattern": "완전 주장\\s*\\d+\\s*/\\s*\\d+"
+        },
+        {
+          "name": "baseline-missing-flagged",
+          "description": "베이스라인 없는 퍼센트 주장을 구체적으로 지적",
+          "type": "contains_any",
+          "values": [
+            "베이스라인",
+            "baseline",
+            "40%",
+            "60%"
+          ]
+        },
+        {
+          "name": "title-vs-verbs-caught",
+          "description": "테크 리드 직함과 참여/기여 불릿 동사의 불일치를 지적",
+          "type": "contains_any",
+          "values": [
+            "테크 리드",
+            "참여",
+            "기여",
+            "직함"
+          ]
+        },
+        {
+          "name": "screen-verdict-present",
+          "description": "스크린 판정 블록은 여전히 존재",
+          "type": "contains_any",
+          "values": [
+            "스크린 판정",
+            "Screen Verdict"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "이전 버전이랑 고친 버전 같이 줄게. 뭐가 나아졌고 뭐가 후퇴했어? 서류 판정이 움직였는지가 제일 궁금해. 성장 스타트업 EM 페르소나로.\n\n[Previous version: portfolio-revision-v1.md]\n[Revised version: portfolio-revision-v2.md]",
+      "expected_output": "리비전 비교 블록으로 시작: before/after 태리 표(XYZ+S, 완전 주장, 의사결정 동사 비율, 스킬 근거율 등)와 판정 이동 여부. v2는 요약·연락처·수치·베이스라인·기간·기여 범위가 채워져 XYZ+S와 완전 주장이 크게 올랐지만, v1에 있던 의사결정 동사(제안·채택·결정·배제·판단)가 전부 '개발/개선'으로 바뀌어 오너십 신호가 후퇴했음을 regression으로 명시해야 함. Kafka·Docker가 양쪽 모두 근거 없음은 미해결 항목. 고쳐진 항목은 한 줄로만.",
+      "files": [
+        "evals/files/portfolio-revision-v1.md",
+        "evals/files/portfolio-revision-v2.md"
+      ],
+      "assertions": [
+        {
+          "name": "revision-diff-block-first",
+          "description": "[리비전 비교 / Revision Diff] 블록이 존재해야 함",
+          "type": "contains_any",
+          "values": [
+            "리비전 비교",
+            "Revision Diff"
+          ]
+        },
+        {
+          "name": "before-after-table",
+          "description": "before/after 태리 표가 있어야 함",
+          "type": "contains_all",
+          "values": [
+            "Before",
+            "After"
+          ]
+        },
+        {
+          "name": "decision-verb-regression-caught",
+          "description": "의사결정 동사가 사라진 후퇴를 명시해야 함",
+          "type": "contains_any",
+          "values": [
+            "의사결정 동사",
+            "제안",
+            "채택",
+            "후퇴",
+            "regression",
+            "regressed"
+          ]
+        },
+        {
+          "name": "claims-improved-tallied",
+          "description": "완전 주장 태리가 양쪽 버전에 대해 보고",
+          "type": "regex",
+          "pattern": "완전 주장[^\\n]*\\d+\\s*/\\s*\\d+[^\\n]*\\d+\\s*/\\s*\\d+"
+        },
+        {
+          "name": "verdict-movement-stated",
+          "description": "스크린 판정이 움직였는지 한 줄로 명시",
+          "type": "contains_any",
+          "values": [
+            "판정",
+            "verdict"
+          ]
+        },
+        {
+          "name": "unresolved-skills-named",
+          "description": "양쪽 모두 근거 없는 Kafka/Docker를 미해결로 지적",
+          "type": "contains_any",
+          "values": [
+            "Kafka",
+            "Docker"
+          ]
+        },
+        {
+          "name": "no-full-repraise",
+          "description": "고쳐진 항목이 별도 강점 나열이 아닌 요약 한 줄이어야 하므로 '후퇴'/'미해결' 언급이 '강점'보다 먼저 등장",
+          "type": "contains_any",
+          "values": [
+            "후퇴",
+            "미해결",
+            "regression",
+            "unresolved"
+          ]
+        }
+      ]
+    }
+  ]
+}
