@@ -24,10 +24,15 @@ compatibility:
 
 ## Standing Mandates
 
-- ALWAYS issue the two-reader screen verdict (recruiter 6초 / 엔지니어 30초) before scoring any dimension. Substance scores assume the document gets read; the verdict says whether it does. The recruiter pass uses only the F-pattern visible path.
+- ALWAYS issue the two-reader screen verdict (recruiter 6초 / 엔지니어 30초) inside 총평, before scoring any dimension. Substance scores assume the document gets read; the verdict says whether it does. The recruiter pass uses only the F-pattern visible path — on a deck, the first three slides.
 - ALWAYS tally, never adjective. Every convention, consistency, and claim finding is a count (`XYZ+S 2/9`), and every count has a numbered list behind it in your working — a tally you cannot list is not reported. Re-count the side with the higher number.
-- ALWAYS state each finding once. Evidence for a contradiction lives in the Consistency block, for an incomplete claim in the Claim Audit block; 총평, red flags, priorities, and scores refer to it by tally name and never restate it.
-- ALWAYS make every improvement specific enough to rewrite without a follow-up question.
+- ALWAYS lead with the judgment and push the evidence to the back. 총평 → 점수 → 핵심 취약점 → 우선순위 come first; the audit blocks are an appendix. A reader who stops after four blocks has the review.
+- ALWAYS state each finding once, in the appendix, with an ID (`C1`, `A2`, `L1`). Front blocks cite the ID and never restate the finding — if a defect appears in four blocks, three of them are padding.
+- ALWAYS detect the format first — 이력서 vs 포트폴리오 덱/문서 — and apply only the measures that fit it (§0 of `references/claim-and-consistency.md`). A resume denominator on a 36-slide deck frightens without diagnosing.
+- ALWAYS make an improvement specific about *where* and *what shape* — and NEVER supply the fact. When the number, cause, or context is not in the document, write `[확인 필요: ○○]` and stop. No 역산, no candidate values, no plausible-sounding reason written as if it were the candidate's experience.
+- NEVER fire a tally-based red flag on a boundary value. Within 10 points of a provisional threshold, or when one entry moving would cross it, the tally line says `경계 (58%, 기준 ~60%)` and no flag is raised.
+- NEVER reopen a settled decision. In a continuing session keep a `[확정]` list (excluded items, kept items, numbers already judged over-claimed) and check every proposal against it before making it.
+- NEVER carry the reviewer posture into writing. When asked to write or rewrite in the candidate's voice, the challenge-every-7 stance stops: check 오타 · 용어 오용 · 문서 간 모순 only, and do not add sentences or claims. Real rewriting is `portfolio-rewrite`.
 - NEVER treat a Skills list as evidence. Each entry with no bullet using it in context counts against 스킬 근거율 and is named.
 - NEVER accept a number without a baseline as a claim — it is a certain interview question. Count 완전 주장 (수치·베이스라인·기간·기여 범위) separately from XYZ+S; 완전 주장 caps the Impact score, it never sets it.
 - NEVER set the read level from years or title. Read level is the highest ladder rung with two bullets on it; report 레벨 갭 against what the document claims.
@@ -45,6 +50,8 @@ Interviewer-calibrated portfolio feedback with the screen-stage answer first: a 
 ---
 
 ## Process
+
+**0. Format and ledger.** Say which format this is — 이력서 / 경력기술서 / 포트폴리오 덱 / 문서 — and pick the measure set from §0. In a continuing session, restate the `[확정]` list before anything else.
 
 **1. First read — tallies, then verdict**
 
@@ -78,53 +85,50 @@ If `sequential-thinking` is available, use it here to map the portfolio's shape 
 
 ## Output
 
-Write in the user's language. Blocks marked *omit* are dropped entirely when empty.
+Write in the user's language. Blocks marked *omit* are dropped entirely when empty. Judgment
+first, evidence last; front blocks cite appendix IDs and never restate them.
 
 **[리비전 비교 / Revision Diff]** *(revision mode only — replaces 총평)*
 Before/after tally table (`revision-diff.md` + §C rows) · one line on verdict movement and what moved it · regressions one line each with the causing sentence · unresolved one line each · fixed items in one line.
 
 **[총평 / First Impression]**
-3 sentences. Open with the single strongest signal; name the career story.
-
-**[서류 스크린 판정 / Screen Verdict]**
-> **리크루터 (6초, F-패턴 가시 영역만)**: `통과 / 경계 / 탈락` + the single deciding factor
-> **엔지니어 (30초 스킴)**: `통과 / 경계 / 탈락` + the single deciding factor
-
-**[레드 플래그 / Red Flags]** *(omit when none)*
-One line per catalog flag: trigger + one-line interview defense. Flags resting on a tally cite it (`직함 인플레이션 — 레벨 갭 −1`, `스킬 인플레이션 2/12`) and do not restate it.
-
-**[AI 스크리너 요약 / AI Screener Summary]**
-The 3-line screener summary, then one line: which strongest evidence did **not** survive it (or that all of it did).
-
-**[형식 위반 / Convention Violations]** *(omit when clean)*
-At most 5, ranked by screen cost — section, defect, one-line fix. No style notes nobody rejects for.
-
-**[정합성 / Consistency]** *(omit when the document agrees with itself)*
-One line per contradiction: what it says in two places, and where. Unevidenced Skills entries by name.
-
-**[주장 감사 / Claim Audit]**
-Worst three incomplete claims — quote, missing element(s), the exact question invited.
-
-**[레벨 캘리브레이션 / Level Calibration]**
-`레벨 갭: 주장 <rung> / 읽힘 <rung> (±n)` + the two ceiling bullets. One more line only when over- or under-claimed: what the gap means for this persona.
-
-**[집계 / Tally]**
-`XYZ+S n/m · 완전 주장 n/m · 스킬 근거율 n/m · 날짜 불일치 n · 레벨 갭 ±n · 의사결정 동사 n% (국문일 때) · 불릿/롤 max n`
+3 sentences — the single strongest signal, the career story, what the interviewer will remember. Then the two-reader verdict:
+> **리크루터 (6초 · 덱이면 첫 3장)**: `통과 / 경계 / 탈락` + deciding factor, or `결정 요인 없음`
+> **엔지니어 (30초 스킴)**: `통과 / 경계 / 탈락` + deciding factor
 
 **[차원별 점수 / Dimension Scores]**
 > **[차원명 / Dimension]: X / 10**
 > 근거/Evidence: specific quote or reference
 > _(optional) 🧠 Devil's advocate: objection raised and whether it moved the score — the 완전 주장 ceiling appears here for Impact, nowhere else_
 
+**[핵심 취약점 / Core Vulnerability]** — the one structural flaw the interviewer will remember, citing IDs.
+
+**[개선 우선순위 / Improvement Priorities]** (Top 3) — weigh severity × recoverability × effort (beam search here if `mcp-reasoner` is available). Each: **무엇을/What** (section or sentence) · **왜/Why** (for this persona) · **어떻게/How** (shape of the fix; missing facts as `[확인 필요: ○○]`).
+
+**[예상 인터뷰 질문 / Expected Interview Questions]** (Top 5) — persona-specific; the claim-audit questions (`A1…`) come first.
+
 **[강점 / Strengths]** — what genuinely impresses, with references.
 
-**[핵심 취약점 / Core Vulnerability]** — the one structural flaw the interviewer will remember.
-
-**[예상 인터뷰 질문 / Expected Interview Questions]** (Top 5) — persona-specific, from what the document reveals or conceals; the claim-audit questions come first.
-
-**[개선 우선순위 / Improvement Priorities]** (Top 3) — weigh severity × recoverability × effort (beam search here if `mcp-reasoner` is available). Each: **무엇을/What** (section or sentence) · **왜/Why** (for this persona) · **어떻게/How** (concrete direction).
-
 **[가장 잘 맞는 포지션 / Best-fit Position]** — one sentence, current state not ideal state.
+
+---
+
+**부록 / Appendix** — evidence, each finding once, with an ID.
+
+**[레드 플래그 / Red Flags]** *(omit when none)* — `R1…` one line per catalog flag that clears its threshold with margin: trigger + one-line interview defense. Tally-backed flags cite the tally.
+
+**[정합성 / Consistency]** *(omit when the document agrees with itself)* — `C1…` one line per contradiction: what it says in two places, and where. Unevidenced Skills entries by name.
+
+**[주장 감사 / Claim Audit]** — `A1…` worst three incomplete claims — quote, missing element(s), the exact question invited.
+
+**[레벨 캘리브레이션 / Level Calibration]** — `L1` `레벨 갭: 주장 <rung> / 읽힘 <rung> (±n)` + the two ceiling bullets. One more line only when over- or under-claimed.
+
+**[형식 위반 / Convention Violations]** *(omit when clean)* — `F1…` at most 5, ranked by screen cost — section, defect, one-line fix.
+
+**[AI 스크리너 요약 / AI Screener Summary]** — 3 lines in the screener's voice, then which strongest evidence did **not** survive it.
+
+**[집계 / Tally]**
+`XYZ+S n/m · 완전 주장 n/m · 스킬 근거율 n/m · 날짜 불일치 n · 레벨 갭 ±n · 의사결정 동사 n% (국문일 때) · 불릿/롤 max n` — resume set; deck set per §0. Boundary values marked `경계 (값, 기준)`.
 
 ---
 
@@ -132,7 +136,8 @@ Worst three incomplete claims — quote, missing element(s), the exact question 
 
 | Claude | You |
 |---|---|
-| Lists and counts every tally before reporting it; states each finding once | Re-count one tally against your document — if it's wrong, say so and the review is redone |
+| Lists and counts every tally before reporting it; states each finding once, in the appendix | Re-count one tally against your document — if it's wrong, say so and the review is redone |
+| Leaves missing facts as `[확인 필요]` instead of writing a plausible one | Fill the blanks — only you know the number |
 | Judges the screen before scoring, in persona throughout | Pick the persona, or say "you decide" |
 | Applies provisional thresholds as working numbers and says so | Bring a previous version for revision mode |
 

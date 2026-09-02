@@ -14,7 +14,7 @@ Tallies are only comparable when both versions are counted the same way. Before 
 
 | tally | denominator m | numerator n |
 |---|---|---|
-| **XYZ+S** | every bullet under Experience and Projects/OSS — a duty-only bullet is exactly the failure this measures, so it stays in m. Summary lines, Skills, Education are out. | bullets carrying all four of X, Y, Z, S (§4 of `resume-conventions.md`) |
+| **XYZ+S** | every bullet under Experience and Projects/OSS — a duty-only bullet is exactly the failure this measures, so it stays in m. Summary lines, Skills, Education are out. **Deck / document format:** outcome-claim bullets only; design narration is out (§0 of `claim-and-consistency.md`). | bullets carrying all four of X, Y, Z, S (§4 of `resume-conventions.md`) |
 | **의사결정 동사** (국문) | 행동 문장 — bullets and summary sentences with an action verb | those whose verb is 제안·채택·배제·결정·판단 (§2) |
 | **불릿/롤 max** | — | the largest bullet count under any single role |
 | **레드 플래그** | — | count of flags from the `screen-models.md` catalog |
