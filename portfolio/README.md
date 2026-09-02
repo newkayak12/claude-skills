@@ -31,7 +31,7 @@ classification). Connect them under Claude settings → MCP Servers as remote SS
 | Know how well I match one specific posting | `portfolio-jd` |
 | Decide where to apply when I have no posting yet | `portfolio-company` |
 | Get an honest interviewer's read on my portfolio | `portfolio-feedback` |
-| Check whether my numbers, skills list, and dates hold up | `portfolio-feedback-beta` |
+| Check whether my numbers, skills, dates — and claimed level — hold up | `portfolio-feedback-beta` |
 | Find out why my portfolio doesn't read as "ownership" | `portfolio-pattern` |
 | Rewrite specific weak sentences to senior level | `portfolio-rewrite` |
 | Rewrite my resume to match one JD's vocabulary | `resume-tailorer` |
@@ -166,26 +166,31 @@ versions are always counted the same way.
 
 ### `portfolio-feedback-beta`
 
-The experimental lane. Everything `portfolio-feedback` does, plus two passes from
+The experimental lane. Everything `portfolio-feedback` does, plus three passes from
 `references/claim-and-consistency.md` that the convention check does not cover: a **consistency
 cross-check** (dates across sections against the summary's tenure, every Skills entry against the
 bullets that would evidence it — `스킬 근거율 n/m` with the unevidenced entries named, role claims
-against bullet verbs) and a **claim audit** (every outcome bullet checked for
+against bullet verbs), a **claim audit** (every outcome bullet checked for
 수치·베이스라인·기간·기여 범위 — `완전 주장 n/m`, worst three named with the exact interview question
-each invites). Both add rows to the revision-diff table.
+each invites; the tally caps the Impact score, it never sets it), and **level calibration** — the
+level the document claims (연차, 직함, target role) against the level it reads at on a four-rung
+evidence ladder (주니어 / 미드 / 시니어 / 리드), `레벨 갭 ±n` with the two bullets that set the ceiling.
+Over-claim is the 직함 인플레이션 flag with a number on it; under-claim is the highest-leverage
+rewrite in the document.
 
 ```
-Audit my portfolio — do the numbers hold up and does the skills list match the projects?
+7년차 시니어라고 썼는데 이 문서가 진짜 시니어로 읽히는지 봐줘
 ```
 
 ```
-XYZ+S 0/14 · 완전 주장 0/5 · 스킬 근거율 2/12 · 날짜 불일치 2 · 의사결정 동사 0% · 불릿/롤 max 7
+레벨 갭: 주장 시니어 / 읽힘 미드 (−1) — 천장: "주문 조회 API 1.2s → 380ms", "중복 차감 주 12건 → 0건"
+XYZ+S 0/8 · 완전 주장 2/3 · 스킬 근거율 5/6 · 날짜 불일치 0 · 레벨 갭 −1 · 의사결정 동사 0% · 불릿/롤 max 5
 ```
 
-Head-to-head status: on the inconsistent-claims fixture the stable lane's red-flag catalog already
-found every planted contradiction, so these passes stayed in beta — their value is checkable tallies,
-and a tally-first pass is judged on its counts. The lane now lists bullets before counting, pins its
-denominators, and states each finding once (§D of the reference); it gets re-benchmarked on those terms.
+The lane lists bullets before counting, pins its denominators, states each finding once, and labels
+its thresholds provisional (§D, §F of the reference) — the first head-to-head kept these passes in
+beta because stable's red-flag catalog already found every planted contradiction and the beta's
+counts had errors. Promotion remains a benchmark call.
 
 ### `portfolio-pattern`
 
