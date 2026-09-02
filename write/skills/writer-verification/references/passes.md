@@ -1,8 +1,8 @@
 # Inline Pass Instructions
 
-Use this file when running in inline mode (text < 300 chars). Run all four passes sequentially.
+Use this file when running in inline mode (text < 300 chars). Run all five passes sequentially.
 
-> **Maintenance note:** This file is a condensed version of `agents/grammarian.md`, `agents/editor.md`, `agents/copywriter.md`, and `agents/reader.md` for inline use. When updating any agent file, update the corresponding section here in sync.
+> **Maintenance note:** This file is a condensed version of `agents/grammarian.md`, `agents/editor.md`, `agents/copywriter.md`, `agents/reader.md`, and `agents/humanizer.md` for inline use. When updating any agent file, update the corresponding section here in sync.
 
 ---
 
@@ -69,4 +69,23 @@ Read as someone encountering the text for the first time.
 ```
 [reader] "KPI를 기반으로" — needs explanation for general audience; fine for marketers
 [reader] Para 3 logic gap: A happens, then suddenly C. Add step B.
+```
+
+---
+
+## Pass 5: Humanizer
+
+Find the tells that make a reader think "a model wrote this" and replace them with how a person who knew the material would say it.
+
+- **Shape:** headers/bold labels on short text, bullets for consecutive sentences, reflex triads, a closing that restates the opening, an opener that announces the text ("This PR introduces", "이 글에서는 ~에 대해 알아보겠습니다"), emoji section markers.
+- **Register:** "not X but Y" more than once, em-dash chains, uniform hedged sentence length, stacked hedges, delve/robust/leverage/seamless/streamline, 번역투 ("~에 있어서", "~을 진행하다", "~하는 것이 가능하다"), every sentence ending "~할 수 있습니다".
+- **Why:** describes what changed but not why, or what trade-off was weighed; lists files the diff already shows; no number/error/example; nothing the author is unsure about.
+- **Padding:** restating, announcing, padding to a count.
+
+For `pr` / `commit` genre, also apply `references/pr-description.md`. `[why]` is 🔴 there.
+
+```
+[why] "This PR refactors the retry logic" — what without why → "Checkout timed out for ~3% of orders because retries fired back-to-back; this backs them off and caps at 5."
+[shape] 4 headers over 120 words → three sentences, no headers
+[register] "leverage", "robust", "seamlessly" in one paragraph → use, reliable, cut
 ```
