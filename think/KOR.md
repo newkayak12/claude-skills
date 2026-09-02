@@ -36,7 +36,7 @@
 
 | 단계 | 스킬 | 산출 | 건너뛸 때 |
 |---|---|---|---|
-| 1. 발산 | `brainstorming` | 테마별로 묶인 아이디어 10~20개 | 아이디어가 이미 있을 때 |
+| 1. 발산 | `brainstorming` | 옵션 3~5개 → 적어둔 kill-criteria로 후보 2~3개까지 | 아이디어가 이미 있을 때 |
 | 2. 분해 | `first-principles` | 근본 원인, 구성요소, 가정 목록 | 문제 범위가 이미 명확할 때 |
 | 3. 공격 | `devils-advocate` | 가장 강한 반론 3개 + 핵심 취약점 | 판돈이 작거나 되돌릴 수 있을 때 |
 | 4. 수렴 | (결정 프레임워크) | 가중치 결정 매트릭스, 추천, 확신도 | 남은 옵션이 하나뿐일 때 |
@@ -63,10 +63,26 @@
 어떤 구조가 가능한지 옵션부터 넓게 뽑아줘.
 ```
 
-발산 도구(한 번에 1~2개): vanilla, constraint relaxation, SCAMPER, analogy/biomimicry,
-opposite-of. 수렴은 적어둔 kill-criteria로만 합니다 — 제약 위반, 핵심 success criteria 미달, 통제
-못 하는 의존성, 되돌릴 수 있는지, 팀이 실제로 운영 가능한지. 1개가 아니라 2~3개까지만 줄입니다.
-승인 후엔 `write:writing-plans`로 넘기고 구현 스킬은 직접 부르지 않습니다.
+발산 도구(한 번에 1~2개): vanilla, constraint relaxation, SCAMPER, analogy, opposite-of — 판단
+전에 최소 3개, 그중 하나는 떨어질 걸 알면서도 넣습니다. 수렴은 적어둔 kill-criteria로만 합니다 —
+제약 위반, 핵심 success criteria 미달, 통제 못 하는 의존성, 되돌릴 수 있는지, 팀이 실제로 운영
+가능한지. 1개가 아니라 2~3개까지만 줄이고, 한 옵션에 강하게 끌리면 `cognition:bias-auditor`를
+먼저 거칩니다. 질문은 한 번에 하나씩. 승인 후엔 `write:writing-plans`로 넘기고 구현 스킬은 직접
+부르지 않습니다.
+
+출력 형태:
+
+```text
+[맥락] 이미 있는 것, 따라야 할 패턴
+[문제] 한 문장, 사용자와 확인한 것
+[옵션] 3~5개, 아직 판정 없음
+[기준] 이 결정에 맞게 채운 kill-criteria
+[후보] 살아남은 2~3개 + trade-off 표 하나
+[설계] 아키텍처 · 컴포넌트 · 데이터 흐름 · 에러 · 테스트 → 승인 → write:writing-plans
+```
+
+`brainstorming-back`은 재작성 전 버전(v1.1.x)으로, 나란히 비교하려고 남겨둔 것입니다. 이름을
+직접 불러야만 실행되고, 재작성본이 확인되면 삭제합니다.
 
 ### `problem-reframer`
 
@@ -111,10 +127,12 @@ opposite-of. 수렴은 적어둔 kill-criteria로만 합니다 — 제약 위반
 ### `devils-advocate`
 
 어떤 입장에 대한 가장 강한 반론을 만듭니다. steel-man으로, 이 제안에만 해당하는 구체적 비판으로,
-헤지 없이, 균형 잡지 않고. 기본 3개이며 각각 타입(`structural` / `assumption` / `execution` /
-`timing`), severity, 그리고 실제 선례가 붙습니다 — 확실하지 않으면 선례를 지어내지 않고 "no clear
-precedent — speculative concern"이라고 정직하게 적습니다. 가장 날카로운 반론은 대개 말하지 않은
-가정을 정조준하므로, 숨은 가정 발굴이 먼저입니다.
+헤지 없이, 균형 잡지 않고. 기본 3개지만 진짜가 그보다 적으면 적은 대로 (개수 채우려고 억지로
+붙이지 않습니다). 각각 타입(`structural` / `assumption` / `execution` / `timing`), severity, 그리고
+실제 선례가 붙습니다 — 확실하지 않으면 선례를 지어내지 않고 "no clear precedent — speculative
+concern"이라고 정직하게 적습니다. 가장 날카로운 반론은 대개 말하지 않은 가정을 정조준하므로, 숨은
+가정 발굴이 먼저입니다. 마지막은 항상 핵심 취약점 하나와 가역성 판정 — 이 한 줄이 반론을 시작
+전에 풀어야 하는지, 해보면서 배워도 되는지를 정합니다.
 
 ```
 모놀리식을 MSA로 쪼개자는 제안이야. 가장 강한 반론 세 개랑
@@ -135,6 +153,9 @@ Position / Steel-man
 다중 페르소나 공격(CFO, on-call/SRE, 경쟁사, legal, 주니어, 고객)은 좁은 기술 결정에선 건너뜁니다
 — "Redis vs Memcached"에 규제 시점 공격은 theater입니다. 개선안은 비판이 아니라 개선을 원한다고
 할 때만 나옵니다.
+
+`devils-advocate-back`은 재작성 전 버전(v1.1.x)으로, 나란히 비교하려고 남겨둔 것입니다. 이름을
+직접 불러야만 실행되고, 재작성본이 확인되면 삭제합니다.
 
 ### `thought-organizer`
 

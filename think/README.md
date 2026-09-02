@@ -37,7 +37,7 @@ skills in order and then a decision matrix:
 
 | Step | Skill | Output | Skip if |
 |---|---|---|---|
-| 1. Diverge | `brainstorming` | 10–20 raw ideas grouped by theme | Ideas already exist |
+| 1. Diverge | `brainstorming` | 3–5 options, cut to 2–3 finalists against written kill-criteria | Ideas already exist |
 | 2. Decompose | `first-principles` | Root causes, components, assumption list | Scope already well-defined |
 | 3. Challenge | `devils-advocate` | 3 strongest counterarguments + core vulnerability | Low-stakes or reversible |
 | 4. Converge | (decision framework) | Weighted decision matrix, recommendation, confidence | One option left standing |
@@ -65,10 +65,26 @@ library calls, and runnable pseudocode mean you've already left design.
 어떤 구조가 가능한지 옵션부터 넓게 뽑아줘.
 ```
 
-Divergence tools (1–2 at a time): vanilla, constraint relaxation, SCAMPER, analogy/biomimicry,
-opposite-of. Convergence is gated on written kill-criteria — constraint violation, missing success
-criteria, uncontrolled dependency, reversibility, team fit — narrowing to 2–3 options, not 1. After
-approval it hands off to `write:writing-plans`, never to an implementation skill.
+Divergence tools (1–2 at a time): vanilla, constraint relaxation, SCAMPER, analogy, opposite-of —
+at least three options before any judgment, including one expected to lose. Convergence is gated on
+written kill-criteria — constraint violation, missing success criteria, uncontrolled dependency,
+reversibility, team fit — narrowing to 2–3 options, not 1; a strong pull toward one option routes
+through `cognition:bias-auditor` first. Questions come one at a time. After approval it hands off to
+`write:writing-plans`, never to an implementation skill.
+
+Output shape:
+
+```text
+[맥락] what exists, which pattern the design must follow
+[문제] one sentence, confirmed with you
+[옵션] 3–5, no verdicts yet
+[기준] kill-criteria filled in for this decision
+[후보] 2–3 survivors + one trade-off table
+[설계] architecture · components · data flow · errors · tests → approval → write:writing-plans
+```
+
+`brainstorming-back` is the pre-rewrite version (v1.1.x), kept for side-by-side comparison. It only
+runs when you name it explicitly and will be removed once the rewrite is confirmed.
 
 ### `problem-reframer`
 
@@ -114,10 +130,12 @@ reach 10. Reserve it for novel situations and large bets — it's overkill for r
 ### `devils-advocate`
 
 Produces the strongest objections against a position — steel-manned, specific to this proposal, never
-hedged and never balanced. Three counterarguments by default, each labeled with type
-(`structural` / `assumption` / `execution` / `timing`), severity, and a real precedent — or an honest
-"no clear precedent — speculative concern" rather than a fabricated one. It hunts unstated
-assumptions first, since the sharpest objection usually targets one of them.
+hedged and never balanced. Three counterarguments by default, fewer if only fewer are real (it never
+pads to a count), each labeled with type (`structural` / `assumption` / `execution` / `timing`),
+severity, and a real precedent — or an honest "no clear precedent — speculative concern" rather than
+a fabricated one. It hunts unstated assumptions first, since the sharpest objection usually targets
+one of them, and always closes with one core vulnerability and a reversibility call — that line is
+what tells you whether the objections must be resolved before starting or can be learned after.
 
 ```
 모놀리식을 MSA로 쪼개자는 제안이야. 가장 강한 반론 세 개랑
@@ -138,6 +156,9 @@ Position / Steel-man
 Multi-persona attack (CFO, on-call/SRE, competitor, legal, junior, customer) is skipped for narrow
 technical choices — a regulatory critique of "Redis vs Memcached" is theater. Path-forward
 suggestions only appear if you ask for improvement rather than critique.
+
+`devils-advocate-back` is the pre-rewrite version (v1.1.x), kept for side-by-side comparison. It
+only runs when you name it explicitly and will be removed once the rewrite is confirmed.
 
 ### `thought-organizer`
 

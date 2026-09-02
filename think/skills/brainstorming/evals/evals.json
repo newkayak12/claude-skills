@@ -12,6 +12,58 @@
         "Questions are asked one at a time (not in a list)",
         "A design or architecture section is presented for user approval",
         "The response does NOT jump straight to implementation steps"
+      ],
+      "assertions": [
+        {
+          "name": "no-code-before-approval",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*```(java|kotlin|python|ts|typescript|js|javascript|go|sql|bash)\\b)[\\s\\S]*$"
+        },
+        {
+          "name": "three-plus-options",
+          "type": "regex",
+          "pattern": "(옵션|Option)\\s*3"
+        },
+        {
+          "name": "kill-criteria-stated",
+          "type": "contains_any",
+          "values": [
+            "기준",
+            "Kill-criteria",
+            "kill-criteria",
+            "Kill criteria"
+          ]
+        },
+        {
+          "name": "finalists-with-tradeoff",
+          "type": "contains_any",
+          "values": [
+            "후보",
+            "Finalist",
+            "trade-off",
+            "트레이드오프"
+          ]
+        },
+        {
+          "name": "one-question-at-a-time",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*\\?[^\\n]*\\n[^\\n]*\\?[^\\n]*\\n[^\\n]*\\?)[\\s\\S]*$"
+        },
+        {
+          "name": "approval-before-plan",
+          "type": "contains_any",
+          "values": [
+            "승인",
+            "approv",
+            "맞는지",
+            "confirm"
+          ]
+        },
+        {
+          "name": "no-signatures-in-design",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*(def |fun |function |public |class \\w+\\s*[{(]))[\\s\\S]*$"
+        }
       ]
     },
     {
@@ -25,6 +77,58 @@
         "At least one clarifying question is asked before proposing approaches",
         "A design recommendation is made with reasoning",
         "No implementation code is written"
+      ],
+      "assertions": [
+        {
+          "name": "no-code-before-approval",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*```(java|kotlin|python|ts|typescript|js|javascript|go|sql|bash)\\b)[\\s\\S]*$"
+        },
+        {
+          "name": "three-plus-options",
+          "type": "regex",
+          "pattern": "(옵션|Option)\\s*3"
+        },
+        {
+          "name": "kill-criteria-stated",
+          "type": "contains_any",
+          "values": [
+            "기준",
+            "Kill-criteria",
+            "kill-criteria",
+            "Kill criteria"
+          ]
+        },
+        {
+          "name": "finalists-with-tradeoff",
+          "type": "contains_any",
+          "values": [
+            "후보",
+            "Finalist",
+            "trade-off",
+            "트레이드오프"
+          ]
+        },
+        {
+          "name": "one-question-at-a-time",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*\\?[^\\n]*\\n[^\\n]*\\?[^\\n]*\\n[^\\n]*\\?)[\\s\\S]*$"
+        },
+        {
+          "name": "approval-before-plan",
+          "type": "contains_any",
+          "values": [
+            "승인",
+            "approv",
+            "맞는지",
+            "confirm"
+          ]
+        },
+        {
+          "name": "no-signatures-in-design",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*(def |fun |function |public |class \\w+\\s*[{(]))[\\s\\S]*$"
+        }
       ]
     },
     {
@@ -38,6 +142,58 @@
         "Trade-offs specific to a monolith context are mentioned",
         "A design is presented and user approval is explicitly requested",
         "No code is written before design approval"
+      ],
+      "assertions": [
+        {
+          "name": "no-code-before-approval",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*```(java|kotlin|python|ts|typescript|js|javascript|go|sql|bash)\\b)[\\s\\S]*$"
+        },
+        {
+          "name": "three-plus-options",
+          "type": "regex",
+          "pattern": "(옵션|Option)\\s*3"
+        },
+        {
+          "name": "kill-criteria-stated",
+          "type": "contains_any",
+          "values": [
+            "기준",
+            "Kill-criteria",
+            "kill-criteria",
+            "Kill criteria"
+          ]
+        },
+        {
+          "name": "finalists-with-tradeoff",
+          "type": "contains_any",
+          "values": [
+            "후보",
+            "Finalist",
+            "trade-off",
+            "트레이드오프"
+          ]
+        },
+        {
+          "name": "one-question-at-a-time",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*\\?[^\\n]*\\n[^\\n]*\\?[^\\n]*\\n[^\\n]*\\?)[\\s\\S]*$"
+        },
+        {
+          "name": "approval-before-plan",
+          "type": "contains_any",
+          "values": [
+            "승인",
+            "approv",
+            "맞는지",
+            "confirm"
+          ]
+        },
+        {
+          "name": "no-signatures-in-design",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*(def |fun |function |public |class \\w+\\s*[{(]))[\\s\\S]*$"
+        }
       ]
     }
   ]
