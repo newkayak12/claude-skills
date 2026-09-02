@@ -191,6 +191,21 @@ stated once, and thresholds are labelled provisional (§D, §F). These passes we
 (`레벨 갭`) but miscounted tallies; the third, after the counting rules were pinned, matched the
 hand-computed ground truth on every tally across both fixtures.
 
+A real-session run on a 36-slide deck showed what all that evidence costs when it comes first: the
+verdict was the ninth block, resume denominators (`XYZ+S 9/60`, `불릿/롤 21`, a 6-second F-pattern
+call) were applied to slides, 58% fired a red flag against a ~60% threshold, and one finding appeared
+four times. Since 1.14.0 the review is **judgment first**: 총평 (three sentences, the recruiter and
+engineer verdicts inside it), 차원별 점수, 핵심 취약점, 개선 우선순위 — then an **appendix** where
+every finding carries an ID (`R1` `C2` `A3` `L1` `F1`) and the body refers to it instead of
+restating it. Format is detected up front (§0 of `claim-and-consistency.md`): on a deck the XYZ+S
+denominator is outcome-claim bullets only, `불릿/롤` is `—`, and the recruiter pass reads the first
+three slides. Boundary values print as `경계 (58%, 기준 ~60%)` and never fire a flag on their own.
+Three rules came from the same session about how the skill behaves *after* the review: a missing
+fact is left as `[확인 필요: ○○]` — no back-calculated or "plausible" number is ever written; a
+decision the candidate has settled goes on a `[확정]` list and is not reopened; and when the
+candidate writes their own sentence, only typos, misused terms, and cross-document contradictions
+are checked — the reviewer posture does not follow into their writing.
+
 ### `portfolio-pattern`
 
 Not what your portfolio says but how it reads. Audits six dimensions: decision-verb ratio

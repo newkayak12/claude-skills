@@ -7,6 +7,20 @@ document claims is the level it reads at. All three produce tallies, not adjecti
 mode lives in `revision-diff.md`; §C says what these passes add to it. Promoted from the beta
 lane after two head-to-heads plus a count-reliability bench (every tally re-countable on two fixtures).
 
+## 0. Format decides the measure set
+
+Say which one this is before counting anything. The tallies were built on one-page resumes;
+applied unchanged to a 36-slide deck they frighten without diagnosing.
+
+| format | XYZ+S denominator | 불릿/롤 max | recruiter pass | also report |
+|---|---|---|---|---|
+| 이력서 / 경력기술서 | every Experience and Projects bullet (`revision-diff.md`) | yes | 6초 F-pattern visible path | — |
+| 포트폴리오 덱 / 문서 | **outcome-claim bullets only** — a bullet that asserts a result or change. Design narration ("구조는 A → B → C", "Outbox로 분리") has no measurement to miss and is out of m | `—` | 첫 3장 (표지·요약·첫 프로젝트) | `설계 서술 n` — the bullets excluded, so the candidate sees the split |
+
+Deciding factor for the recruiter verdict is quoted from the document or written as
+`결정 요인 없음` — never composed to fill the slot. If a measure does not fit the format, the
+tally line carries `—` for it.
+
 ## A. Consistency cross-check — does the document agree with itself?
 
 The engineer 30-second pass catches contradictions faster than anything else, because a
@@ -143,4 +157,10 @@ that expectation is what the engineer 30-second pass actually reacts to.
 set from the fixture reviews in `evals/files/`, not from screening research. Treat them as
 working thresholds: report the tally, apply the threshold, and revisit after ten real documents.
 Do not present them to the candidate as industry numbers.
+
+**Boundary rule.** A provisional threshold cannot carry the weight of a red flag at its edge.
+A tally-backed flag (스킬 인플레이션, 검증 불가 주장 비율) fires only when the value is at least
+10 points past the threshold *and* one entry moving would not bring it back. Otherwise the
+tally line reads `경계 (58%, 기준 ~60%)` and no flag is raised — 58%, 50%, 37% against ~60% /
+~40% are boundary values, and a label that flips on one skills entry is noise, not signal.
 
