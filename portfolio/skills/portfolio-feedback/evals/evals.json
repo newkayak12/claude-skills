@@ -541,8 +541,273 @@
           "values": [
             "설계"
           ]
+        },
+        {
+          "name": "claims-improved-tallied",
+          "description": "완전 주장 태리가 양쪽 버전에 대해 보고",
+          "type": "regex",
+          "pattern": "완전 주장[^\\n]*\\d+\\s*/\\s*\\d+[^\\n]*\\d+\\s*/\\s*\\d+"
         }
       ]
+    },
+    {
+      "id": 6,
+      "prompt": "포트폴리오 피드백 해줘. 숫자에 근거가 있는지, 스킬 목록이 부풀려진 건 아닌지, 앞뒤가 맞는지까지. 엔터프라이즈/핀테크 Tech Lead 페르소나로.\n\n[Portfolio file: portfolio-inconsistent-claims.md]",
+      "expected_output": "정합성 블록에서 요약의 '5년'과 실제 경력(2022.03~, 약 4년 미만)의 불일치, 오더플로우 재직(2023.03~) 이전 날짜(2022.06~11)의 오더플로우 프로젝트, '테크 리드' 직함과 '참여/기여/지원/수행' 불릿 동사의 불일치를 잡아야 함. 스킬 근거율은 12개 중 Kafka·Redis 2개만 근거가 있음을 수치로 보고하고 미근거 항목(Go, Elasticsearch, Kubernetes, Terraform 등)을 이름으로 나열. 주장 감사에서 '40% 개선', '60% 감소', '절반 단축' 등에 베이스라인·기간·기여 범위가 없음을 지적하고 각각이 부르는 인터뷰 질문을 명시. 완전 주장 n/m 태리 포함.",
+      "files": [
+        "evals/files/portfolio-inconsistent-claims.md"
+      ],
+      "assertions": [
+        {
+          "name": "consistency-block-present",
+          "description": "[정합성 / Consistency] 블록이 존재해야 함 — 모순이 있는 문서",
+          "type": "contains_any",
+          "values": [
+            "정합성",
+            "Consistency"
+          ]
+        },
+        {
+          "name": "tenure-mismatch-caught",
+          "description": "요약의 5년 주장과 실제 경력 기간의 불일치를 지적",
+          "type": "contains_any",
+          "values": [
+            "5년",
+            "tenure",
+            "경력 기간",
+            "재직 기간"
+          ]
+        },
+        {
+          "name": "project-date-outside-role",
+          "description": "오더플로우 재직 전 날짜의 오더플로우 프로젝트 모순을 지적",
+          "type": "contains_any",
+          "values": [
+            "2022.06",
+            "2022.11",
+            "재고 동기화",
+            "입사 전",
+            "재직 전",
+            "before joining"
+          ]
+        },
+        {
+          "name": "skill-evidence-ratio-tallied",
+          "description": "스킬 근거율이 n/m 수치로 보고되어야 함",
+          "type": "regex",
+          "pattern": "스킬 근거율\\s*\\d+\\s*/\\s*\\d+"
+        },
+        {
+          "name": "unevidenced-skills-named",
+          "description": "근거 없는 스킬 항목이 이름으로 나열되어야 함",
+          "type": "contains_any",
+          "values": [
+            "Terraform",
+            "Elasticsearch",
+            "Kubernetes",
+            "Go"
+          ]
+        },
+        {
+          "name": "claim-audit-block-present",
+          "description": "[주장 감사 / Claim Audit] 블록이 존재해야 함",
+          "type": "contains_any",
+          "values": [
+            "주장 감사",
+            "Claim Audit"
+          ]
+        },
+        {
+          "name": "complete-claims-tallied",
+          "description": "완전 주장이 n/m 수치로 보고되어야 함",
+          "type": "regex",
+          "pattern": "완전 주장\\s*\\d+\\s*/\\s*\\d+"
+        },
+        {
+          "name": "baseline-missing-flagged",
+          "description": "베이스라인 없는 퍼센트 주장을 구체적으로 지적",
+          "type": "contains_any",
+          "values": [
+            "베이스라인",
+            "baseline",
+            "40%",
+            "60%"
+          ]
+        },
+        {
+          "name": "title-vs-verbs-caught",
+          "description": "테크 리드 직함과 참여/기여 불릿 동사의 불일치를 지적",
+          "type": "contains_any",
+          "values": [
+            "테크 리드",
+            "참여",
+            "기여",
+            "직함"
+          ]
+        },
+        {
+          "name": "screen-verdict-present",
+          "description": "스크린 판정 블록은 여전히 존재",
+          "type": "contains_any",
+          "values": [
+            "스크린 판정",
+            "Screen Verdict"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "7년차 시니어라고 썼는데 이 문서가 진짜 시니어로 읽히는지 봐줘. 페르소나는 알아서 골라.\n\n[portfolio-level-overclaim.md]",
+      "expected_output": "레벨 캘리브레이션 블록에 '주장 시니어 / 읽힘 미드 (−1)'과 천장을 정한 불릿 두 개를 인용. 불릿은 모두 컴포넌트 내부의 측정된 성과(응답 시간, 중복 차감, 배치 시간)이고 대안 비교·트레이드오프·컴포넌트 횡단·타인 의존이 없어 시니어 근거가 없음. 과대 주장이므로 레드 플래그의 직함 인플레이션이 레벨 갭 수치를 인용하고, 개선 방향은 직함을 낮추는 게 아니라 시니어 단에 해당하는 불릿(선택한 대안과 이유, 소유한 장애)을 쓰는 것. 날짜는 요약 7년과 2019.03–현재가 일치하므로 날짜 불일치 0 — 없는 모순을 만들어내면 안 됨. Redis만 근거 없음(스킬 근거율 5/6). 집계 줄에 레벨 갭 −1 포함.",
+      "files": [
+        "evals/files/portfolio-level-overclaim.md"
+      ],
+      "assertions": [
+        {
+          "name": "level-block-present",
+          "description": "레벨 캘리브레이션 블록 존재",
+          "type": "contains_any",
+          "values": [
+            "레벨 캘리브레이션",
+            "Level Calibration",
+            "레벨 갭"
+          ]
+        },
+        {
+          "name": "gap-minus-one",
+          "description": "주장 시니어 / 읽힘 미드, −1",
+          "type": "regex",
+          "pattern": "읽힘[^\\n]*미드|미드[^\\n]*읽힘"
+        },
+        {
+          "name": "ceiling-bullets-quoted",
+          "description": "천장 불릿 두 개를 실제 문서에서 인용",
+          "type": "contains_any",
+          "values": [
+            "380ms",
+            "주 12건",
+            "55분"
+          ]
+        },
+        {
+          "name": "no-fabricated-date-conflict",
+          "description": "날짜 불일치가 0으로 보고되어야 함 (없는 모순 생성 금지)",
+          "type": "regex",
+          "pattern": "날짜 불일치\\s*0"
+        },
+        {
+          "name": "title-inflation-cites-gap",
+          "description": "직함 인플레이션 플래그가 레벨 갭을 인용",
+          "type": "contains_any",
+          "values": [
+            "직함 인플레이션"
+          ]
+        },
+        {
+          "name": "redis-unevidenced",
+          "description": "Redis가 근거 없는 스킬로 지목",
+          "type": "contains_any",
+          "values": [
+            "Redis"
+          ]
+        },
+        {
+          "name": "fix-is-bullets-not-title",
+          "description": "개선 방향이 직함 하향이 아니라 시니어 근거 불릿 추가",
+          "type": "contains_any",
+          "values": [
+            "트레이드오프",
+            "대안",
+            "장애",
+            "tradeoff"
+          ]
+        },
+        {
+          "name": "tally-line-has-level-gap",
+          "description": "집계 줄에 레벨 갭 포함",
+          "type": "regex",
+          "pattern": "레벨 갭\\s*[−\\-+±]?\\s*\\d"
+        },
+        {
+          "name": "skill-ratio-counts-implied",
+          "description": "스킬 근거율 5/6 — Spring Batch/인덱스가 Spring Boot·Java·MySQL을 근거함, Redis만 미근거",
+          "type": "regex",
+          "pattern": "스킬 근거율\\s*5\\s*/\\s*6"
+        },
+        {
+          "name": "complete-claims-two-of-three",
+          "description": "완전 주장 2/3 — 미hedge 동사는 기여 범위 있음, 55분→20분만 기간 없음",
+          "type": "regex",
+          "pattern": "완전 주장\\s*2\\s*/\\s*3"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "포트폴리오 피드백 해줘. 페르소나는 알아서 골라.\n\n[portfolio-level-underclaim.md]",
+      "files": [
+        "evals/files/portfolio-level-underclaim.md"
+      ],
+      "assertions": [
+        {
+          "name": "level-calibration-block",
+          "description": "[레벨 캘리브레이션] 블록이 있어야 함",
+          "type": "contains_any",
+          "values": [
+            "레벨 캘리브레이션",
+            "Level Calibration"
+          ]
+        },
+        {
+          "name": "read-level-senior",
+          "description": "읽힘 레벨이 시니어여야 함 (장애 소유, 대안 선택+트레이드오프, 정합성 지연 합의 = 시니어 단 불릿 3개)",
+          "type": "regex",
+          "pattern": "읽힘\\s*시니어"
+        },
+        {
+          "name": "gap-positive-one",
+          "description": "레벨 갭 +1 (주장 미드 / 읽힘 시니어)",
+          "type": "regex",
+          "pattern": "레벨 갭[^\\n]*\\+\\s*1"
+        },
+        {
+          "name": "not-lead",
+          "description": "멘토링 1건·문서화 1건으로는 리드 단 두 불릿이 안 되므로 읽힘을 리드로 올리지 않음",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*읽힘\\s*리드)[\\s\\S]*$"
+        },
+        {
+          "name": "underclaim-is-priority-one",
+          "description": "under-claim은 개선 우선순위 #1 — 우선순위 블록의 첫 항목이 레벨/프레이밍을 다룸",
+          "type": "regex",
+          "pattern": "개선 우선순위[\\s\\S]{0,400}?(1\\.|#1|1\\))[^\\n]*(레벨|시니어|프레이밍|요약|참여|framing|level)"
+        },
+        {
+          "name": "no-title-inflation-flag",
+          "description": "under-claim 문서에 직함 인플레이션 플래그를 붙이지 않음",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*직함 인플레이션[^\\n]*—)[\\s\\S]*$"
+        },
+        {
+          "name": "no-fabricated-date-conflict",
+          "description": "졸업 2021.02 → 첫 경력 2021.03, 역할 연속 — 날짜 불일치를 날조하지 않음",
+          "type": "regex",
+          "pattern": "날짜 불일치\\s*0"
+        },
+        {
+          "name": "tally-line",
+          "description": "집계 한 줄이 있어야 함",
+          "type": "contains_all",
+          "values": [
+            "XYZ+S",
+            "완전 주장",
+            "스킬 근거율",
+            "레벨 갭"
+          ]
+        }
+      ],
+      "expected_output": "주장 미드(5년, 백엔드 개발자) / 읽힘 시니어 — 장애 소유·대안 선택·정합성 트레이드오프 합의가 시니어 단 불릿 3개. 레벨 갭 +1은 개선 우선순위 #1: 요약과 '참여' 동사를 시니어 프레이밍으로. 직함 인플레이션 없음, 날짜 불일치 0."
     }
   ]
 }
