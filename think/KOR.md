@@ -81,9 +81,6 @@
 [설계] 아키텍처 · 컴포넌트 · 데이터 흐름 · 에러 · 테스트 → 승인 → write:writing-plans
 ```
 
-`brainstorming-back`은 재작성 전 버전(v1.1.x)으로, 나란히 비교하려고 남겨둔 것입니다. 이름을
-직접 불러야만 실행되고, 재작성본이 확인되면 삭제합니다.
-
 ### `problem-reframer`
 
 풀기 전에 문제를 의심합니다. `brainstorming`이 *주어진 문제에 더 많은 해법*을 만든다면, 이건
@@ -153,9 +150,6 @@ Position / Steel-man
 다중 페르소나 공격(CFO, on-call/SRE, 경쟁사, legal, 주니어, 고객)은 좁은 기술 결정에선 건너뜁니다
 — "Redis vs Memcached"에 규제 시점 공격은 theater입니다. 개선안은 비판이 아니라 개선을 원한다고
 할 때만 나옵니다.
-
-`devils-advocate-back`은 재작성 전 버전(v1.1.x)으로, 나란히 비교하려고 남겨둔 것입니다. 이름을
-직접 불러야만 실행되고, 재작성본이 확인되면 삭제합니다.
 
 ### `thought-organizer`
 
