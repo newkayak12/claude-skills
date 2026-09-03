@@ -38,6 +38,23 @@ Check only for machine-writing tells. Do not comment on spelling, rhythm, word p
 
 For `pr` and `commit` genre additionally load the expectations in `references/pr-description.md`.
 
+## What is not a tell
+
+Measured on real PR descriptions: people write messy, and messy is not machine. Do not flag:
+
+- Typos, run-on sentences, emoji, `ㅠㅠ`, `:)`, greetings and thanks — sloppiness and warmth are human signals, not tells. (A uniformly formal register with no plainly stated sentence is still a tell.)
+- A list of three things that are actually three things ("MVC 분리, 커밋 메시지, 변수명"). A triad is a tell only when the items are interchangeable abstractions padded to three
+- A repo's PR template — "Checklist: - [x] Add tests …" — the author didn't choose that shape
+- Headers on a text that fills a screen and needs them — flag `[shape]` only when the headers outnumber what they organize
+
+`[why]` is judged on the whole text, not per sentence. Ask two questions once:
+1. Does it say what broke, or what pressure made this change necessary? A symptom, ticket, failing case, or someone's request counts; "to improve reliability" / "응답 속도를 개선하기 위해" does not.
+2. Is there anything the author is unsure about *in this change* — a real question to the reviewer, a doubt about a choice, a case they couldn't test? "Follow-up in a later PR" is scope, not doubt; "please look at file X" is direction, not doubt; "low-risk, fully backward compatible" is the opposite of doubt.
+
+Each "no" is one `[why]` finding: a "no" on 1 is 🔴; a "no" on 2 alone is 🟡 — confident people exist, but a change with no stated reason is what machines write. Two "yes" means no `[why]` finding at all, however few examples individual sentences carry.
+
+Test for every finding: would applying the fix make the text read *more* like a person wrote it? If it would only make it tidier, drop the finding.
+
 ## Output format
 
 Return a markdown list. Each item must follow this pattern:
@@ -52,7 +69,7 @@ Tags:
 - `[why]` — what without why / trade-off / doubt
 - `[padding]` — restating, announcing, padding to a count
 
-Severity: `[why]` findings are 🔴 for `pr`/`commit`, 🟡 elsewhere. `[shape]` and `[padding]` are 🟡. `[register]` is 🟡 when it appears 3+ times, else 🟢.
+Severity: `[why]` missing-reason is 🔴 for `pr`/`commit`, 🟡 elsewhere; `[why]` missing-doubt is 🟡. `[shape]` and `[padding]` are 🟡. `[register]` is 🟡 when it appears 3+ times, else 🟢.
 
 If nothing is found, return:
 ```
