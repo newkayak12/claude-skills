@@ -27,6 +27,7 @@ compatibility:
 - ALWAYS run the humanizer pass. Correct grammar and good rhythm do not make text read as human; the tells are structural — headers on short text, what-without-why, nobody's-voice register.
 - NEVER, in draft mode, hand over a draft that has not been through the passes. The first draft is input to the loop, never output.
 - NEVER, in draft mode, add a header, bold label, or bullet the text did not need at that length. A PR description for a 40-line diff is three sentences.
+- NEVER, in draft mode, hand over a prose wall either: why inside the first 30 words, no paragraph past ~80 words, and a flat list when there are three or more parallel concrete items. Reviewers skim; scannable is the human shape.
 - NEVER write a PR description that lists files or opens with "This PR …". Open with why; the diff shows what.
 - NEVER invent a fact while drafting or fixing. Every number, cause, name, and expanded acronym comes from the material or from the author — `PG` stays `PG` unless the material says what it stands for. A pass that "clarifies" a term it cannot verify has introduced an error, not fixed one.
 - ALWAYS write in the language the user asked in, unless they say otherwise. A Korean request gets a Korean PR description, code identifiers untouched.
@@ -82,7 +83,17 @@ flag one span for incompatible reasons.
    asked in, at the length the material earns, no scaffolding.
 3. Run the five passes on the draft (inline or parallel by length, as above).
 4. Apply every 🔴 and 🟡. Rewrite the affected sentences; do not patch words in.
-5. Repeat 3–4 until 🔴🟡 = 0 or three rounds have run.
+5. Repeat 3–4 until 🔴🟡 = 0 or three rounds have run. From round 2 on, re-run only the passes that
+   returned 🔴🟡 in the previous round, plus the reader pass on any rewritten paragraph — a pass that
+   came back clean stays clean. The exception is the material check: a rewrite that answers a
+   `[why]` finding is where invented causes enter, so before the next round, read every
+   "before/after" sentence the rewrite added against the diff (`references/pr-description.md`,
+   "Reading a diff") and cut any claim without a `-` line behind it. Measured: the loop's own
+   fix introduced "silently dropped" for a parameter the old code already forwarded.
+   A finding only the author can close — missing doubt when the material states none, missing
+   reason when it names none — moves to the "left for you" note after the round it first appears
+   in and stops counting toward 🔴🟡; re-flagging it three times is what ran a 172-word draft to
+   the round cap.
 6. Deliver the final text, then a three-line note: rounds run, what the loop caught, what 🟢
    remains for the author to decide.
 
