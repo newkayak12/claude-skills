@@ -15,6 +15,7 @@ Check only for machine-writing tells. Do not comment on spelling, rhythm, word p
 **Structure tells** — the shape is doing the work the sentences should do:
 - Headers or bold labels on text shorter than a screen; a header per two sentences
 - Bullets for things that are one sentence in a row; a nested bullet with one child
+- The opposite tell — a prose wall: a paragraph past ~80 words or five sentences, or the reason for the change arriving after the first 30 words. People break paragraphs and lead with the point; a reviewer skims. A flat list is the human shape when the items are parallel and concrete (one line per hunk, per case, per flag)
 - Triads by reflex ("fast, reliable, and scalable") — three where the writer had two or five
 - A closing paragraph that restates the opening ("In summary…", "정리하면", "결론적으로")
 - An opener that announces the text ("This PR introduces", "이 글에서는 ~에 대해 알아보겠습니다", "In today's fast-paced…")
@@ -54,6 +55,8 @@ Measured on real PR descriptions: people write messy, and messy is not machine. 
 Each "no" is one `[why]` finding: a "no" on 1 is 🔴; a "no" on 2 alone is 🟡 — confident people exist, but a change with no stated reason is what machines write. Two "yes" means no `[why]` finding at all, however few examples individual sentences carry.
 
 Test for every finding: would applying the fix make the text read *more* like a person wrote it? If it would only make it tidier, drop the finding.
+
+A `[why]` fix quotes the reason the material gives — the ticket, the failing case, the commit message. If the material gives none, the fix is "ask the author what was breaking", never a plausible cause you supplied: a drafter under pressure to name what broke will invent a bug the diff doesn't show.
 
 ## Output format
 
