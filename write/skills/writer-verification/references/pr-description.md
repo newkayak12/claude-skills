@@ -20,6 +20,15 @@ diff already shows that. Four things, in this order, sized to the diff:
 Length: a one-line fix gets one or two sentences, no headers. A multi-file feature gets four
 short paragraphs. Headers only when the body exceeds a screen; even then, prefer bold-free prose.
 
+Shape, measured against real reviewers: the first sentence carries the why, inside 30 words —
+"`Blueprint.add_url_rule` fails `mypy --strict` because `setupmethod` erased the decorated
+function's type." No paragraph past ~80 words; when the why has three or more concrete causes or
+the change touches three or more separable places, a flat list — one line per item, each mapping
+to something the reviewer can find in the diff — reads faster than the same content as prose. The
+"how to review" sentence and the author's doubt get their own short paragraph near the end, not a
+clause inside a long one. Prose walls lose to bullets; bullets lose to prose when the items are
+really one thought — that is the whole rule.
+
 ## Tells specific to PRs
 
 | Tell | Person's version |
@@ -38,6 +47,11 @@ When the input is a diff or branch and no description exists yet:
 
 - Read commit messages, linked issue, and the diff. Derive **why** from those; if it isn't
   recoverable, ask the author one question — "what was breaking?" — before drafting.
+- Every "before X, now Y" claim needs a `-` line that shows X. A parameter that used to ride
+  through `**options` was not "silently dropped" — it was untyped; say that. When the diff shows
+  a change but not a bug, the honest claim is the smaller one ("now explicit", "now typed"), and
+  the why is the ticket or the symptom the material names — never a failure you inferred. A
+  reason the material doesn't contain is a question for the author, not a sentence in the draft.
 - Find the one hunk a reviewer must read carefully and name it in "how to review".
 - Look for migrations, config, feature flags, deleted tests — those decide the risk line.
 - Write it as the author talking to a teammate in the review thread, in the author's language.

@@ -183,6 +183,22 @@ asked once of the whole text (does it say what broke? is the author unsure of an
 than of every sentence; missing reason is 🔴, missing doubt alone is 🟡, because confident people
 exist. Two of the human PRs ship as fixtures so the check is repeatable (`evals/evals.json` #4).
 
+Readability is measured the same way, from the reviewer's side. For three merged diffs (requests,
+flask, tokio) the draft loop's description, a no-skill draft, and the human original were shuffled
+and handed with the diff to blind maintainer-judges who had to answer why / what / where-to-look /
+what-the-author-doubts, flag any claim the diff doesn't support, and score 1–5. The first run had
+the content — the skill draft was the only one a judge could review from, and the no-skill draft
+asserted a "Closes #" the diff didn't earn — but lost on shape: 140-word opening paragraphs with
+the why arriving after ~43 words. That became a rule in `references/pr-description.md` and a
+prose-wall tell in the humanizer (why inside the first 30 words, no paragraph past ~80, a flat list
+when three or more items are parallel and concrete). Second run: skill 5·5 / 5·5 against the
+no-skill 4·4 / 4·4 and the human 3·2 / 2·2, why inside 15–20 words. The run also showed the
+loop's one real failure mode: pressed by `[why]` to say what broke, the drafter invented a bug
+("silently dropped" for a parameter the old code forwarded through `**options`). So the rewrite
+that answers a `[why]` is re-read against the diff before the next round — every "before X, now
+Y" needs a `-` line that shows X — and a `[why]` fix quotes the reason the material gives or says
+"ask the author", never a cause the pass supplied.
+
 ## MCP
 
 Every skill in this plugin lists MCP tools as optional or recommended, not required:

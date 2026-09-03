@@ -77,12 +77,12 @@ Read as someone encountering the text for the first time.
 
 Find the tells that make a reader think "a model wrote this" and replace them with how a person who knew the material would say it.
 
-- **Shape:** headers/bold labels on short text, bullets for consecutive sentences, reflex triads, a closing that restates the opening, an opener that announces the text ("This PR introduces", "이 글에서는 ~에 대해 알아보겠습니다"), emoji section markers.
+- **Shape:** headers/bold labels on short text, bullets for consecutive sentences, prose walls (paragraph past ~80 words, why after the first 30), reflex triads, a closing that restates the opening, an opener that announces the text ("This PR introduces", "이 글에서는 ~에 대해 알아보겠습니다"), emoji section markers.
 - **Register:** "not X but Y" more than once, em-dash chains, uniform hedged sentence length, stacked hedges, delve/robust/leverage/seamless/streamline, 번역투 ("~에 있어서", "~을 진행하다", "~하는 것이 가능하다"), every sentence ending "~할 수 있습니다".
 - **Why:** describes what changed but not why, or what trade-off was weighed; lists files the diff already shows; no number/error/example; nothing the author is unsure about.
 - **Padding:** restating, announcing, padding to a count.
 
-`[why]` is judged once on the whole text — (1) does it say what broke or what pressure caused the change? (2) is the author unsure about anything *in this change*? — not per sentence. Missing (1) is 🔴 for `pr`/`commit`; missing (2) alone is 🟡.
+`[why]` is judged once on the whole text — (1) does it say what broke or what pressure caused the change? (2) is the author unsure about anything *in this change*? — not per sentence. Missing (1) is 🔴 for `pr`/`commit`; missing (2) alone is 🟡. The fix for (1) quotes the reason the material gives; if it gives none, the fix is "ask the author" — never a cause you supplied.
 
 Not tells (measured on real PR descriptions): typos, run-ons, emoji, greetings; a list of three things that really are three; a repo's PR-template checklist; headers a screen-long text needs. Ask of every finding: would the fix make it read *more* human, or only tidier? Drop the tidier ones.
 
