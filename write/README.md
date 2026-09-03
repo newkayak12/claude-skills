@@ -173,6 +173,16 @@ severity elevated, conflicting fixes shown with attribution.
 Priorities: 🔴 Must fix (meaning errors, logic gaps, missing why) · 🟡 Recommended (patterns,
 tells) · 🟢 Optional (style preference — your voice, your call).
 
+The humanizer's false-positive rate is measured, not assumed. Eight merged PR descriptions from
+cargo / flask / requests / tokio (2019–2021, pre-LLM) and four from 우아한테크코스 missions were run
+blind alongside four model-written controls: every human text came back `(none)`, every control
+was caught. The one noisy case — a rushed Korean PR flagged for "no example" and a "reflex triad"
+that was really three things — became a *what is not a tell* section in `agents/humanizer.md`:
+typos, greetings, real lists of three, and PR-template checklists are not tells, and `[why]` is
+asked once of the whole text (does it say what broke? is the author unsure of anything?) rather
+than of every sentence; missing reason is 🔴, missing doubt alone is 🟡, because confident people
+exist. Two of the human PRs ship as fixtures so the check is repeatable (`evals/evals.json` #4).
+
 ## MCP
 
 Every skill in this plugin lists MCP tools as optional or recommended, not required:

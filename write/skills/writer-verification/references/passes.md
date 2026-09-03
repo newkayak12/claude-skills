@@ -82,7 +82,11 @@ Find the tells that make a reader think "a model wrote this" and replace them wi
 - **Why:** describes what changed but not why, or what trade-off was weighed; lists files the diff already shows; no number/error/example; nothing the author is unsure about.
 - **Padding:** restating, announcing, padding to a count.
 
-For `pr` / `commit` genre, also apply `references/pr-description.md`. `[why]` is 🔴 there.
+`[why]` is judged once on the whole text — (1) does it say what broke or what pressure caused the change? (2) is the author unsure about anything *in this change*? — not per sentence. Missing (1) is 🔴 for `pr`/`commit`; missing (2) alone is 🟡.
+
+Not tells (measured on real PR descriptions): typos, run-ons, emoji, greetings; a list of three things that really are three; a repo's PR-template checklist; headers a screen-long text needs. Ask of every finding: would the fix make it read *more* human, or only tidier? Drop the tidier ones.
+
+For `pr` / `commit` genre, also apply `references/pr-description.md`.
 
 ```
 [why] "This PR refactors the retry logic" — what without why → "Checkout timed out for ~3% of orders because retries fired back-to-back; this backs them off and caps at 5."
