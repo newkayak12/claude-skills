@@ -1,7 +1,7 @@
 {
   "name": "write",
   "description": "Writing skills: doc co-authoring, writing plans (gate-ready plan producer — production-time gap/ambiguity checks + per-step pass bars, dual-mode), skill writing, writer verification (v2 — five passes incl. a humanizer for machine tells, draft loop that rewrites until 🔴🟡 = 0, PR descriptions from a diff as first-class input), SBI feedback writing, and technical blog writing. Knowledge-base, graph, RAG, and query skills moved to the knowledge plugin.",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "author": {
     "name": "newkayak12"
   },

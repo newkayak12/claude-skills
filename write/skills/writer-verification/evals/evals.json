@@ -241,6 +241,37 @@
           "pattern": "→"
         }
       ]
+    },
+    {
+      "id": 4,
+      "prompt": "이 PR 설명 AI 티 나는지 봐줘.",
+      "files": [
+        "evals/files/pr-human-tokio-localset.md",
+        "evals/files/pr-human-ko-racingcar.md"
+      ],
+      "expected_output": "Both are human-written. Humanizer returns (none) or at most 🟡/🟢 — no 🔴. No [why] finding for 'no example' on individual claims, no [shape] triad finding on the three real items in the Korean text, no finding on the greeting/emoji/thanks. Summary says the texts read as a person's.",
+      "assertions": [
+        {
+          "name": "no-red-on-human-text",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*🔴)"
+        },
+        {
+          "name": "humanizer-ran",
+          "type": "regex",
+          "pattern": "(?i)humanizer|\\(none\\)"
+        },
+        {
+          "name": "no-triad-false-positive",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*(triad|3항|세 가지 나열|반사적))"
+        },
+        {
+          "name": "no-example-demand",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*(예시나 근거가 없음|needs an example|no example))"
+        }
+      ]
     }
   ]
 }
