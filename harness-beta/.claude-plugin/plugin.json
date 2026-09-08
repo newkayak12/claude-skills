@@ -1,0 +1,11 @@
+{
+  "name": "harness-beta",
+  "description": "Beta harness for Claude that uses an AI routing decision to choose a role-isolated Agent Team or Dynamic Workflow per request while preserving the six-stage verification contract. Installs alongside the stable harness plugin.",
+  "version": "0.1.0-beta.1",
+  "author": {
+    "name": "newkayak12"
+  },
+  "category": "productivity",
+  "repository": "https://github.com/newkayak12/claude-skills",
+  "license": "MIT"
+}

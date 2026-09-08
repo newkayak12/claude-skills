@@ -127,9 +127,19 @@
       "category": "productivity"
     },
     {
+      "name": "harness-beta",
+      "description": "Beta harness for Claude that selects a role-isolated Agent Team or Dynamic Workflow per request. Installs alongside the stable harness plugin and leaves its behavior unchanged.",
+      "version": "0.1.0-beta.1",
+      "author": {
+        "name": "newkayak12"
+      },
+      "source": "./harness-beta",
+      "category": "productivity"
+    },
+    {
       "name": "graph",
       "description": "Graph engineering for the harness flow: a local MCP server owns graph state, routes nodes to vendor CLIs or the session, adjudicates results against the worktree, and keeps payloads on disk. Includes graph:install and graph:orchestrate.",
-      "version": "1.1.1",
+      "version": "1.2.0",
       "author": {
         "name": "newkayak12"
       },
