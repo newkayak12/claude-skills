@@ -35,6 +35,7 @@ the specialist skills in a fixed order and let you join mid-process.
 |---|---|
 | Write a failing test first and prove it can actually fail | `test-driven-development` |
 | Add tests to untested code, audit coverage, write a test plan | `test-master` |
+| Multi-step API flow tests against a running server, then run them | `api-scenario-test` |
 | Fix tests that pass locally and fail in CI | `flaky-test-analyzer` |
 
 **Database**
@@ -209,6 +210,27 @@ flaky test (use `flaky-test-analyzer`).
 This legacy billing module has no tests. Audit what's testable, write a test plan by
 risk, then add unit and integration tests for the highest-risk paths first.
 ```
+
+### `api-scenario-test`
+
+Establishes and runs scenario tests for a backend: flows that walk a real server over HTTP through
+the states its API promises — login → create → transition → verify — capturing ids and tokens from
+each response for the next step, with one refusal per transition (the 409 matters more than the
+200) and a cross-user check. Every scenario is a spec first (`references/scenario-spec.md`), then
+runner code in the repo's own stack — RestAssured, pytest + httpx, Vitest, or Hurl when there is
+none (`references/runners.md`) — with the base URL from the environment, data namespaced per run,
+and cleanup through the API in a finally block. The suite is run twice against the same server
+process; a second run that differs from the first is a cleanup gap, reported as such. Not for
+mocked unit or single-endpoint tests (`test-master`).
+
+```
+이 백엔드 API 시나리오 테스트 수립하고 실행해줘. mock 말고 서버 띄워서.
+```
+
+Measured on a fixture order API with a unique-email trap (`evals/`): three no-skill runs each
+scored 2/7 — fixed emails, hardcoded host, one run, no spec — and would 409 on their second
+execution without knowing it; three skill runs scored 7/7, 6/7, 7/7 with the deductions being
+the scorer misreading Hurl idioms.
 
 ### `flaky-test-analyzer`
 
