@@ -10,6 +10,7 @@ scenarios:
   - "Our API has no flow tests — write ones that go login → create order → pay → assert state"
   - "Turn these Postman collections into repeatable scenario tests in the repo's language"
   - "이 백엔드 API 시나리오 테스트 수립하고 실행해줘"
+  - "시나리오 md로 써놨어, 이거 읽고 서버에 돌려줘"
   - "주문 생성부터 결제·취소까지 흐름 따라가는 테스트 만들어줘"
   - "서버 띄운 상태에서 실제로 치는 테스트가 필요해, mock 말고"
 compatibility:
@@ -28,7 +29,8 @@ compatibility:
 - ALWAYS chain: every step after the first uses a value captured from an earlier response (id, token, version, location header). A scenario whose steps share nothing is a list of smoke tests.
 - ALWAYS give each scenario its own data namespace — a unique prefix or fresh account per run — and clean up through the API in a finally block. Two scenarios that can see each other's rows will fail together someday.
 - ALWAYS include one fail-path per state transition: the request that must be rejected (wrong state, wrong owner, missing auth) with the exact status and error the API returns — the 409 matters more than the 200.
-- ALWAYS run what you wrote and paste the evidence: the runner's summary line and, for every failure, the request and response bodies. "Should pass" is not a result.
+- ALWAYS run what you wrote and paste the evidence: the runner's summary line and, for every failure, the request and response bodies. "Should pass" is not a result. When no test stack exists, the runner is curl + bash — never install a framework to run six HTTP calls.
+- ALWAYS accept a scenario the user wrote — markdown, a table, a sentence per step — as the input and normalize it into the spec shape before writing runner code; the skill runs their scenarios, not only its own.
 - NEVER invent an endpoint, field, or status code. Everything comes from routes, handlers, OpenAPI, or a request you actually sent. When the contract is unclear, send the request and read what comes back; if the server can't be started, stop and say so.
 - NEVER classify a failing scenario as flaky on the first failure. Re-run once in isolation; if it passes alone and fails in the suite, the leak is in data isolation — fix the namespace, not the assertion.
 - NEVER write assertions on whole response bodies. Assert the fields the flow depends on (status, id present, state value, total) so an added field doesn't fail every scenario.
@@ -49,13 +51,39 @@ runner code in the repo's language) and the execution report with evidence.
 
 ## Process
 
-**1. Map the surface and the states.** Read routes, handlers, OpenAPI, and any README. List
-every resource, its state values, and the transitions between them, with the auth and ownership
-rule on each. Then confirm the server starts and answer one request by hand — the map is not
-trusted until a real response backs it. If `sequential-thinking` is available, use it here so no
-transition is skipped.
+**0. Decide the mode by what was handed over.**
 
-**2. Choose the flows.** From the state map, pick scenarios in this order:
+| Input | Mode |
+|-------|------|
+| A backend and nothing else | Collect → generate → run (steps 1–5) |
+| Scenario files — `*.spec.md` in this skill's shape, or any markdown/text where a person wrote flows in their own words | Normalize → run (steps 3–5; step 1 only to confirm the server and the routes the file names) |
+| A Postman / Insomnia / `.http` / `.hurl` collection | Convert → run (same as above; origin kept in the catalog) |
+
+A hand-written scenario is normalized into the spec table (`references/scenario-spec.md`) before
+any runner code — "로그인하고 주문 만들고 결제 두 번 누르면 두 번째는 막혀야 함" becomes five rows with
+captures and asserts, and the person's wording stays in the spec as its title. Missing detail
+(which user, which sku, which status code) is a question or a request sent to the server, never
+a guess. The catalog row cites the file the flow came from.
+
+**1. Collect what already exists, then map the states.** Scenarios come from five places; read
+all of them before writing any:
+
+| Source | What it yields |
+|--------|----------------|
+| Routes, handlers, OpenAPI, README | the resource list, state values, transitions, auth rule |
+| Postman / Insomnia / `.http` / `.hurl` / existing E2E files | flows someone already walks by hand — convert, don't rewrite |
+| Access logs or traces (a day is enough) | the request sequences real clients actually send, in order |
+| Bug reports, incidents, closed issues | regressions: the exact sequence that broke once |
+| The user, in one question: "어떤 흐름이 깨지면 제일 아픈가요?" | the flow that goes first |
+
+Every collected flow enters `tests/scenarios/CATALOG.md` with its source before it has a spec;
+the catalog is the inventory that survives this session, so a flow found later is a row added,
+not a suite rewritten. Then confirm the server starts and answer one request by hand — the map
+is not trusted until a real response backs it. If `sequential-thinking` is available, use it here
+so no transition is skipped.
+
+**2. Choose the flows.** Collected flows first (they are real), then generated ones from the
+state map, in this order:
 1. The primary lifecycle — the longest happy path through the main resource.
 2. One refusal per transition — wrong state, wrong owner, missing or bad auth.
 3. Cross-user isolation — user B cannot read or mutate user A's resource.
@@ -66,7 +94,8 @@ runner is green.
 **3. Write the spec, then the runner.** Each flow is a spec first (`references/scenario-spec.md`):
 steps with request, captured values, and asserted fields. Then implement it in the runner that
 matches the repo (`references/runners.md`): RestAssured for JVM, pytest + httpx for Python,
-Vitest + fetch for Node, Hurl when the repo has no test stack. The base URL, credentials, and
+Vitest + fetch for Node, and curl + bash when the repo has no test stack — every step a `curl`
+call with the captured id in the path, the whole set driven by one `run.sh`. The base URL, credentials, and
 port are configuration, never literals. Once the specs are fixed, the runner files are
 independent per flow and can be written in parallel.
 
@@ -92,6 +121,7 @@ State map: <resource>: CREATED → PAID | CANCELLED (PAID ✗ cancel) · auth: b
 | S2 | pay twice | login → create → pay → pay | 409 "cannot pay from PAID" |
 | S3 | cross-user | A: create · B: get | 404 |
 
+Catalog: tests/scenarios/CATALOG.md — 9 flows (3 from Postman, 1 from incident #212, 5 generated) · 6 specced · 6 implemented
 Files: tests/scenarios/*.spec.md · tests/scenarios/<runner files>
 Run: BASE_URL=http://localhost:8080 <runner command>
 
@@ -110,7 +140,7 @@ Failures:
 
 | Claude | You |
 |---|---|
-| Maps resources, states, and transitions from the code and one real request | Confirm the state map — you know which transitions are intended |
+| Collects flows from code, existing collections, logs, and incidents into a catalog, then maps states from one real request | Confirm the state map and name the flow that hurts most when it breaks |
 | Writes specs, then runner code in the repo's language, with config-driven base URL | Provide credentials for a test account or a seed endpoint |
 | Starts the server, runs the suite twice, pastes the summary and every failure's request/response | Decide, for each failure, whether the server or the expectation is wrong when Claude cannot tell |
 | Names the cleanup gap when run 2 differs from run 1 | Wire the runner command into CI |
