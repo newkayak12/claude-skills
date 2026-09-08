@@ -32,6 +32,50 @@ Rules the shape enforces:
 - **Cleanup is declared** and runs in a finally block, through the API, with the captured id.
   If the API has no delete, the namespace prefix is the cleanup — say so in the spec.
 
+## Normalizing a hand-written scenario
+
+People write flows as prose or loose lists. Convert, don't reject:
+
+```
+사용자가 쓴 것:
+  주문 결제 두 번
+  - 앨리스로 로그인
+  - SKU-1 하나 주문
+  - 결제
+  - 결제 다시 → 실패해야 함
+  - 주문 조회하면 여전히 PAID
+
+스펙으로:
+  # S2 — 주문 결제 두 번 (from scenarios.md › "주문 결제 두 번")
+  | 1 | POST /auth/login {alice} | token | 200 |
+  | 2 | POST /orders {SKU-1 ×1} | order_id | 201, status = CREATED |
+  | 3 | POST /orders/{order_id}/pay | — | 200, status = PAID |
+  | 4 | POST /orders/{order_id}/pay | — | [확인 필요: 상태 코드] — send it, record what comes back |
+  | 5 | GET /orders/{order_id} | — | 200, status = PAID |
+```
+
+Rules: the person's title stays; each of their lines becomes at least one row; "실패해야 함" with
+no code becomes `[확인 필요]` resolved by sending the request once and recording the real status
+and message; a step they skipped (login before "주문") is added and marked `(added: needed for
+auth)`; anything the routes don't have is a question back, not an invented endpoint.
+
+## Catalog
+
+`tests/scenarios/CATALOG.md` is the inventory; every flow gets a row when it is found, not when
+it is implemented.
+
+```markdown
+| # | Flow | Source | Spec | Runner | Last run |
+|---|------|--------|------|--------|----------|
+| S1 | order lifecycle | generated (state map) | ✓ | ✓ | pass 2026-09-03 |
+| S2 | pay twice refused | generated | ✓ | ✓ | pass |
+| S7 | refund after partial ship | incident #212 | ✓ | — | — |
+| S8 | checkout as seen in prod logs | access log 09-01, 1.2k sessions | — | — | — |
+```
+
+A converted collection keeps its origin ("Postman: Orders.postman_collection.json › Pay flow")
+so the person who maintains it can find the row. A flow from a log names the sample.
+
 ## Flow selection checklist
 
 For each resource in the state map:

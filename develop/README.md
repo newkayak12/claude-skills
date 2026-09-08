@@ -213,12 +213,12 @@ risk, then add unit and integration tests for the highest-risk paths first.
 
 ### `api-scenario-test`
 
-Establishes and runs scenario tests for a backend: flows that walk a real server over HTTP through
+Collects and runs scenario tests for a backend. Flows are gathered first — routes and OpenAPI, existing Postman/`.http` collections, a day of access logs, closed incidents, and the one the user names as most painful — into a catalog that outlives the session, then generated from the state map: flows that walk a real server over HTTP through
 the states its API promises — login → create → transition → verify — capturing ids and tokens from
 each response for the next step, with one refusal per transition (the 409 matters more than the
 200) and a cross-user check. Every scenario is a spec first (`references/scenario-spec.md`), then
-runner code in the repo's own stack — RestAssured, pytest + httpx, Vitest, or Hurl when there is
-none (`references/runners.md`) — with the base URL from the environment, data namespaced per run,
+runner code in the repo's own stack — RestAssured, pytest + httpx, Vitest, or curl + bash when there
+is none (`references/runners.md`) — with the base URL from the environment, data namespaced per run,
 and cleanup through the API in a finally block. The suite is run twice against the same server
 process; a second run that differs from the first is a cleanup gap, reported as such. Not for
 mocked unit or single-endpoint tests (`test-master`).

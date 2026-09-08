@@ -208,11 +208,11 @@ RED 사이클마다 기록 하나가 남습니다:
 
 ### `api-scenario-test`
 
-백엔드 시나리오 테스트를 수립하고 실행합니다: 실제 서버에 HTTP로 API가 약속한 상태를 따라가는
+백엔드 시나리오 테스트를 수집·수립하고 실행합니다. 흐름은 먼저 모읍니다 — 라우트·OpenAPI, 이미 있는 Postman/`.http` 컬렉션, 하루치 접근 로그, 닫힌 장애 이슈, 그리고 사용자가 "깨지면 제일 아픈" 것으로 꼽은 흐름 — 세션이 끝나도 남는 카탈로그로. 그 다음 상태 맵에서 생성합니다: 실제 서버에 HTTP로 API가 약속한 상태를 따라가는
 흐름 — 로그인 → 생성 → 전이 → 확인 — 으로, 앞 응답의 id·토큰을 다음 스텝에서 쓰고, 전이마다
 거부 경로 하나(200보다 409가 중요합니다)와 타 사용자 격리 확인을 넣습니다. 시나리오마다 스펙을
 먼저 쓰고(`references/scenario-spec.md`) 저장소 스택에 맞는 러너 코드를 씁니다 — RestAssured,
-pytest + httpx, Vitest, 스택이 없으면 Hurl(`references/runners.md`). base URL은 환경변수, 데이터는
+pytest + httpx, Vitest, 스택이 없으면 curl + bash(`references/runners.md`). base URL은 환경변수, 데이터는
 실행마다 네임스페이스, 정리는 finally에서 API로. 같은 서버 프로세스에 두 번 돌려 2회차가 다르면
 정리 누락으로 보고합니다. mock 단위·단일 엔드포인트 테스트는 `test-master`입니다.
 
