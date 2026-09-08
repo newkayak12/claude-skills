@@ -45,6 +45,11 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.2.0 — Claude/Codex mixed orchestration**: `graph:orchestrate` now keeps reasoning,
+  gates, and reporting on the Claude session while requiring Codex for implement/test.
+  The node's selected model is forwarded into both Codex readiness probes, with
+  model-scoped probe caching, so a bad global default cannot reject a run that names a
+  working model explicitly.
 - **v1.1.1 — Codex preferred by `graph:orchestrate`**: ordinary skill-driven runs now
   open with `vendor: "auto", candidates: ["codex"]`, so the bundled adapter is actually
   used when its readiness probe passes and falls back visibly to `self` when unavailable.
@@ -118,8 +123,9 @@ does not exist — the ordering is enforced, not advisory.
 ## Routing
 
 `vendor: "auto"` (default) tries each candidate in order and falls back to `self`.
-A bare direct call has no candidates, while `graph:orchestrate` supplies `["codex"]` so
-ordinary skill-driven runs prefer the bundled Codex adapter when it is ready.
+A bare direct call has no candidates. `graph:orchestrate` instead opens a mixed run with
+`vendor: "self"` and per-stage policy that requires Codex for `implement` and `test`, so
+Claude owns reasoning and adjudication while Codex owns execution and verification.
 A **named** vendor does not fall back — the node returns `vendor-failure` with per-vendor
 probe reasons. Name the vendor when the run must prove who did the work; silent
 degradation is what lets a graph lie about it.
@@ -129,7 +135,8 @@ them **per stage**, keyed by stage name (`plan`, `setgoal`, `critique`, `impleme
 `gate`, `report`) plus the optional `gate:goal`. A stage entry wins over the run-level
 setting, a stage without one inherits it, and `graph_next` reports the chosen `model` per
 ready node. This is how "reasoning on a strong model, execution wherever it can actually
-write" is expressed without a second run.
+write" is expressed without a second run. The selected model also reaches the readiness
+probe, so the probe and the real node cannot accidentally test different Codex models.
 
 Reasoning nodes (plan, setgoal, critique, gate, report) are routed to a read-only
 sandbox: they are judged by their content, so there is no file claim to cross-check.

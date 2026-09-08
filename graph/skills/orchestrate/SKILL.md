@@ -27,7 +27,11 @@ graph, the spec, the prompts, and the verdicts. You own only the loop.
 ```
 graph_open({
   request, cwd, isolated,
-  vendor: "auto", candidates: ["codex"]
+  vendor: "self",
+  policy: {
+    implement: { vendor: "codex", model: "gpt-5.6-sol" },
+    test:      { vendor: "codex", model: "gpt-5.6-sol" }
+  }
 })                                               -> run_id + first ready node
 while state == "running":
     graph_next({run_id})                          -> ready[] with routing
@@ -81,10 +85,14 @@ is not possible on purpose.
 
 **Registering a vendor does not enrol it in `auto`.** An installed, ready Codex still goes
 unused in a bare `graph_open({vendor: "auto"})` call until you name it (`vendor: "codex"`)
-or list it in `candidates`. This skill therefore opens ordinary runs with
-`vendor: "auto", candidates: ["codex"]`: use the bundled Codex adapter when its real
-readiness probe passes, and fall back visibly to `self` when it does not. Preserve a
-user-supplied vendor or candidate list instead of replacing it.
+or list it in `candidates`.
+
+This skill defaults to a mixed run: keep `plan`, `setgoal`, `critique`, `gate`, and
+`report` on the Claude session (`vendor: "self"`), while requiring Codex for `implement`
+and `test`. The execution stages use `model: "gpt-5.6-sol"`; the broker passes that model
+to both the readiness probe and the real node invocation, so an incompatible model in
+the global Codex config cannot make the probe test the wrong runtime. A user-supplied
+vendor, candidate list, model, or policy wins over these defaults.
 
 Name the vendor when the run must prove who did the work. Silent degradation is what
 lets a graph claim an external vendor implemented something it never touched.
@@ -107,6 +115,10 @@ graph_open({
   }
 })
 ```
+
+The example above is also the ordinary mixed-routing shape. Use a named `codex` vendor
+for execution when provenance matters: unlike `auto`, it blocks visibly on readiness
+failure instead of silently turning an implement or test node back into Claude work.
 
 Keys are stage names — `plan`, `setgoal`, `critique`, `implement`, `test`, `gate`,
 `report` — plus the optional `gate:goal`. Each entry may set `vendor`, `candidates`,
@@ -157,7 +169,7 @@ run: <run_id>   state: <complete|blocked>   nodes: <done>/<total>
 |---|---|---|---|
 | implement:U1:1 | codex | true | isolated |
 | test:U1:1 | codex | true | verified |
-| gate:U1:1 | codex | true | 95% |
+| gate:U1:1 | self | true | 95% |
 
 ### Not done
 <failed or skipped nodes, and why — including any that fell back to self>

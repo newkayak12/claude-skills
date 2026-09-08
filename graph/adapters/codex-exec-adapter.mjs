@@ -269,10 +269,12 @@ function probeWrite() {
   const target = join(cwd, name);
   let probe;
   try {
-    probe = spawnSync('codex', [
+    const probeArgs = [
       'exec', '--ephemeral', '-s', opts.sandbox, '-C', cwd,
-      `Create a file named ${name} in the current directory containing exactly: PROBE_OK\nThen stop. Do not modify anything else.`,
-    ], { cwd, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
+    ];
+    if (opts.model) probeArgs.push('-m', opts.model);
+    probeArgs.push(`Create a file named ${name} in the current directory containing exactly: PROBE_OK\nThen stop. Do not modify anything else.`);
+    probe = spawnSync('codex', probeArgs, { cwd, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
   } catch (error) {
     return { ok: false, sandbox: opts.sandbox, reason: `write probe could not spawn codex: ${String(error && error.message || error)}` };
   }
@@ -312,15 +314,17 @@ function detectCodex() {
     return false;
   }
 
-  const probe = spawnSync('codex', [
+  const smokeArgs = [
     'exec',
     '--ephemeral',
     '-s',
     'read-only',
     '-C',
     cwd,
-    'Reply with exactly: CODEX_READY',
-  ], {
+  ];
+  if (opts.model) smokeArgs.push('-m', opts.model);
+  smokeArgs.push('Reply with exactly: CODEX_READY');
+  const probe = spawnSync('codex', smokeArgs, {
     cwd,
     encoding: 'utf8',
     maxBuffer: 10 * 1024 * 1024,
