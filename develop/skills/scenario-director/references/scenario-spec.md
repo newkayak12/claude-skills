@@ -1,7 +1,7 @@
 # Scenario spec
 
 One file per flow, written before the runner code. The spec is what a reviewer reads; the runner
-is what CI runs. Keep them in the same directory so a diff to one shows the other.
+is what CI runs (shapes in `../../scenario-actor/references/runners.md`). Keep them in the same directory so a diff to one shows the other.
 
 ## Shape
 
