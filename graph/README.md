@@ -45,6 +45,11 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.1.1 — Codex preferred by `graph:orchestrate`**: ordinary skill-driven runs now
+  open with `vendor: "auto", candidates: ["codex"]`, so the bundled adapter is actually
+  used when its readiness probe passes and falls back visibly to `self` when unavailable.
+  Direct callers that omit `candidates` retain the quiet `auto` behavior introduced in
+  v1.0.1.
 - **v1.1.0 — per-stage routing**: `graph_open` takes `model` (a run-level default) and
   `policy`, a per-stage override map keyed by stage name plus the optional `gate:goal` —
   each entry may set `vendor`, `candidates`, `sandbox`, `model`. This expresses the harness
@@ -113,6 +118,8 @@ does not exist — the ordering is enforced, not advisory.
 ## Routing
 
 `vendor: "auto"` (default) tries each candidate in order and falls back to `self`.
+A bare direct call has no candidates, while `graph:orchestrate` supplies `["codex"]` so
+ordinary skill-driven runs prefer the bundled Codex adapter when it is ready.
 A **named** vendor does not fall back — the node returns `vendor-failure` with per-vendor
 probe reasons. Name the vendor when the run must prove who did the work; silent
 degradation is what lets a graph lie about it.
