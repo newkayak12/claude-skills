@@ -7,7 +7,7 @@ in the wrong place, a test that passes for the wrong reason, a pool sized by gue
 nobody wrote until the pager went off. Each skill takes one of those and gives it a process:
 diagnose before changing, name the trade-off, verify with evidence rather than assertion.
 
-Five of the 32 skills are **workflow entry points** — they don't do the work themselves, they drive
+Five of the 33 skills are **workflow entry points** — they don't do the work themselves, they drive
 the specialist skills in a fixed order and let you join mid-process.
 
 ## Install & Uninstall
