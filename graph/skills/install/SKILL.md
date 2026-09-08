@@ -55,10 +55,12 @@ because two servers exposing the same `graph_*` tools make routing ambiguous.
 2. Validate the selected server path exists when using project-local mode.
 3. After Claude Code reloads the MCP configuration, confirm all six `graph_*` tools are
    present. Tool discovery is the install gate; do not open a real run just to test setup.
-4. If a later run uses a named vendor, verify that vendor separately. Installing the
-   Codex adapter does not put it into use: `vendor: "auto"` stays on `self` until the
-   vendor is named or listed in `candidates`, while a named vendor fails instead of
-   silently degrading.
+4. If a later run uses a named vendor, verify that vendor separately. The
+   `graph:orchestrate` skill opts into the bundled Codex adapter with
+   `vendor: "auto", candidates: ["codex"]`, so it uses Codex when the readiness probe
+   passes and visibly falls back to `self` otherwise. A bare direct
+   `graph_open({vendor: "auto"})` call still stays on `self`; a named vendor fails instead
+   of silently degrading.
 
 Report which mode is active, which files changed, whether a reload is still required,
 and the observed tool list. Installation ends there; use `graph:orchestrate` to run work.

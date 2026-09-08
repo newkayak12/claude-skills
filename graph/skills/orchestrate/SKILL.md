@@ -25,7 +25,10 @@ graph, the spec, the prompts, and the verdicts. You own only the loop.
 ## The loop
 
 ```
-graph_open({request, cwd, vendor, isolated})     -> run_id + first ready node
+graph_open({
+  request, cwd, isolated,
+  vendor: "auto", candidates: ["codex"]
+})                                               -> run_id + first ready node
 while state == "running":
     graph_next({run_id})                          -> ready[] with routing
     for each ready node:
@@ -77,8 +80,11 @@ is not possible on purpose.
 | `"self"` | you execute every node |
 
 **Registering a vendor does not enrol it in `auto`.** An installed, ready Codex still goes
-unused until you name it (`vendor: "codex"`) or list it in `candidates`. The default is
-deliberately quiet: a run should not start delegating to whatever happens to be installed.
+unused in a bare `graph_open({vendor: "auto"})` call until you name it (`vendor: "codex"`)
+or list it in `candidates`. This skill therefore opens ordinary runs with
+`vendor: "auto", candidates: ["codex"]`: use the bundled Codex adapter when its real
+readiness probe passes, and fall back visibly to `self` when it does not. Preserve a
+user-supplied vendor or candidate list instead of replacing it.
 
 Name the vendor when the run must prove who did the work. Silent degradation is what
 lets a graph claim an external vendor implemented something it never touched.
