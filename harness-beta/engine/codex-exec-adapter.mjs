@@ -12,7 +12,7 @@ import { spawn, spawnSync } from 'node:child_process';
 
 function usage() {
   process.stderr.write(
-    'usage: node harness/engine/codex-exec-adapter.mjs ' +
+    'usage: node harness-beta/engine/codex-exec-adapter.mjs ' +
       '[--detect] --cwd DIR --output FILE [--prompt-file FILE] [--events-output FILE] ' +
       '[--stage implement|test] [--add-dir DIR] [--isolated] ' +
       '[--sandbox read-only|workspace-write|danger-full-access] [--model MODEL]\n',
@@ -269,12 +269,10 @@ function probeWrite() {
   const target = join(cwd, name);
   let probe;
   try {
-    const probeArgs = [
+    probe = spawnSync('codex', [
       'exec', '--ephemeral', '-s', opts.sandbox, '-C', cwd,
-    ];
-    if (opts.model) probeArgs.push('-m', opts.model);
-    probeArgs.push(`Create a file named ${name} in the current directory containing exactly: PROBE_OK\nThen stop. Do not modify anything else.`);
-    probe = spawnSync('codex', probeArgs, { cwd, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
+      `Create a file named ${name} in the current directory containing exactly: PROBE_OK\nThen stop. Do not modify anything else.`,
+    ], { cwd, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
   } catch (error) {
     return { ok: false, sandbox: opts.sandbox, reason: `write probe could not spawn codex: ${String(error && error.message || error)}` };
   }
@@ -314,17 +312,15 @@ function detectCodex() {
     return false;
   }
 
-  const smokeArgs = [
+  const probe = spawnSync('codex', [
     'exec',
     '--ephemeral',
     '-s',
     'read-only',
     '-C',
     cwd,
-  ];
-  if (opts.model) smokeArgs.push('-m', opts.model);
-  smokeArgs.push('Reply with exactly: CODEX_READY');
-  const probe = spawnSync('codex', smokeArgs, {
+    'Reply with exactly: CODEX_READY',
+  ], {
     cwd,
     encoding: 'utf8',
     maxBuffer: 10 * 1024 * 1024,

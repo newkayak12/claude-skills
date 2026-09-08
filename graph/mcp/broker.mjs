@@ -24,7 +24,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   STAGES,
   REASONING_STAGES,
@@ -209,8 +209,12 @@ function readJson(path) {
 
 const probeCache = new Map();
 
-async function probe(name, vendor, cwd, sandbox) {
-  const key = [name, cwd, sandbox].join(' ');
+async function probe(name, vendor, cwd, sandbox, model) {
+  // Readiness must be checked with the same model the node will run. Otherwise a
+  // broken global Codex default can reject the probe even though the run selected a
+  // working model explicitly. Keep model in the cache key so one failed model does
+  // not poison another model's route.
+  const key = [name, cwd, sandbox, model || 'default'].join(' ');
   if (probeCache.has(key)) return probeCache.get(key);
   // Cache the promise, not the result: two nodes asking at once would otherwise each
   // pay for a full write probe.
@@ -228,8 +232,13 @@ async function probe(name, vendor, cwd, sandbox) {
     } catch {
       /* the adapter mkdirs its own output parent too */
     }
-    const outPath = join(brokerDir(cwd), `probe-${name}-${sandbox}.json`);
-    const r = await runAdapter(vendor, ['--detect', '--cwd', cwd, '--sandbox', sandbox, '--output', outPath], cwd, {
+    const modelKey = model
+      ? `-${createHash('sha256').update(String(model)).digest('hex').slice(0, 12)}`
+      : '';
+    const outPath = join(brokerDir(cwd), `probe-${name}-${sandbox}${modelKey}.json`);
+    const detectArgs = ['--detect', '--cwd', cwd, '--sandbox', sandbox, '--output', outPath];
+    if (model) detectArgs.push('--model', String(model));
+    const r = await runAdapter(vendor, detectArgs, cwd, {
       timeoutMs: Number(process.env.BROKER_PROBE_TIMEOUT_MS) > 0 ? Number(process.env.BROKER_PROBE_TIMEOUT_MS) : 5 * 60 * 1000,
     });
     const report = readJson(outPath) || {};
@@ -356,7 +365,7 @@ async function route(run, node) {
       attempts.push({ vendor: name, ready: false, reason: `vendor "${name}" does not support sandbox ${sandbox}` });
       continue;
     }
-    const p = await probe(name, v, run.cwd, sandbox);
+    const p = await probe(name, v, run.cwd, sandbox, pol.model);
     const usable = REASONING_STAGES.has(stage) ? p.reachable : p.ready;
     attempts.push({ vendor: name, ready: usable, reason: usable ? '' : p.reason });
     if (usable) return { vendor: name, sandbox, model: pol.model, attempts };

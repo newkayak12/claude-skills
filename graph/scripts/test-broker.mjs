@@ -11,12 +11,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, utimesSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, utimesSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const BROKER = join(dirname(fileURLToPath(import.meta.url)), '..', 'mcp', 'broker.mjs');
+const CODEX_ADAPTER = join(dirname(fileURLToPath(import.meta.url)), '..', 'adapters', 'codex-exec-adapter.mjs');
 
 // ---------- a minimal MCP client ----------
 
@@ -622,12 +623,13 @@ test('an unusable spec is retryable and its defects reach the next attempt', asy
 // A stand-in vendor, so the graph_run path can be exercised without a real CLI.
 
 const FAKE_ADAPTER = `#!/usr/bin/env node
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, appendFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 const args = process.argv.slice(2);
 const get = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null; };
 const out = get('--output');
 mkdirSync(dirname(out), { recursive: true });
+if (process.env.FAKE_ARGS_LOG) appendFileSync(process.env.FAKE_ARGS_LOG, JSON.stringify(args) + '\\n');
 if (args.includes('--detect')) {
   writeFileSync(out, JSON.stringify({ ok: true, codex: { ready: true, reachable: true, write_probe: { ok: true } } }));
   process.exit(0);
@@ -1233,6 +1235,74 @@ test('a stage policy routes each phase to its own vendor and model', async () =>
     assert.equal(critique.model, 'run-default', 'and to the run model');
   } finally {
     c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('the broker forwards a stage policy model to the readiness probe', async () => {
+  const cwd = repoWithFakeVendor();
+  const log = join(cwd, 'adapter-args.jsonl');
+  process.env.FAKE_ARGS_LOG = log;
+  const c = await new Client().init();
+  try {
+    const open = await c.call('graph_open', {
+      request: 'r', cwd, vendor: 'self',
+      policy: { plan: { vendor: 'fake', model: 'probe-model' } },
+    });
+    assert.equal(open.ready[0].vendor, 'fake');
+    const calls = readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
+    const detect = calls.find((call) => call.includes('--detect'));
+    assert.ok(detect, 'the vendor adapter must receive a readiness call');
+    assert.equal(detect[detect.indexOf('--model') + 1], 'probe-model');
+  } finally {
+    c.close();
+    delete process.env.FAKE_ARGS_LOG;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('the Codex adapter probes reachability and writes with the selected model', () => {
+  const cwd = repo();
+  const bin = join(cwd, 'bin');
+  const log = join(cwd, 'codex-args.jsonl');
+  const output = join(cwd, 'probe-result.json');
+  mkdirSync(bin);
+  const stub = join(bin, 'codex');
+  writeFileSync(stub, `#!/usr/bin/env node
+import { appendFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const args = process.argv.slice(2);
+appendFileSync(process.env.CODEX_ARGS_LOG, JSON.stringify(args) + '\\n');
+if (args.includes('--version')) process.exit(0);
+const prompt = args.at(-1) || '';
+if (prompt.includes('CODEX_READY')) process.stdout.write('CODEX_READY\\n');
+const match = prompt.match(/Create a file named ([^ ]+)/);
+if (match) {
+  const cwdArg = args[args.indexOf('-C') + 1];
+  writeFileSync(join(cwdArg, match[1]), 'PROBE_OK\\n');
+}
+process.exit(0);
+`);
+  chmodSync(stub, 0o755);
+  try {
+    const result = spawnSync('node', [
+      CODEX_ADAPTER,
+      '--detect', '--cwd', cwd, '--sandbox', 'workspace-write',
+      '--model', 'probe-model', '--output', output,
+    ], {
+      cwd,
+      encoding: 'utf8',
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, CODEX_ARGS_LOG: log },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(readFileSync(output, 'utf8')).codex.ready, true);
+    const calls = readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse)
+      .filter((call) => call[0] === 'exec');
+    assert.equal(calls.length, 2, 'detect must run one read-only smoke and one write probe');
+    for (const call of calls) {
+      assert.equal(call[call.indexOf('-m') + 1], 'probe-model');
+    }
+  } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
