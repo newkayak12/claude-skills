@@ -1,5 +1,8 @@
 # Runners
 
+Used by `scenario-actor` (one file per scenario) and by `scenario-director` (the shared
+helper and `run.sh`, written once before actors are dispatched).
+
 Pick by what the repo already runs; add a stack only when there is none. Base URL, credentials,
 and port come from environment variables in every runner — a literal `localhost:8080` in a test
 is a finding.

@@ -1,0 +1,126 @@
+---
+name: scenario-director
+effort: high
+description: >-
+  Use when a backend needs API scenario tests collected, generated, or read from a user's
+  markdown, then run against a live server over HTTP by one actor subagent per flow. Triggers:
+  "API 시나리오 테스트", "시나리오 수집해서 돌려줘", "시나리오 md 읽고 서버에 돌려줘", "flow test".
+scenarios:
+  - "Set up scenario tests for this backend and run them against the dev server"
+  - "Turn these Postman collections and this incident into repeatable scenario tests"
+  - "I wrote the flows in scenarios.md — read it and run each one against the server"
+  - "이 백엔드 API 시나리오 테스트 수립하고 실행해줘"
+  - "시나리오 md로 써놨어, 이거 읽고 서버에 돌려줘"
+  - "주문 생성부터 결제·취소까지 흐름 따라가는 테스트 만들어줘, mock 말고"
+compatibility:
+  optional:
+    - sequential-thinking
+    - think-tool
+  remote_mcp_note: >-
+    sequential-thinking이 있으면 1단계 상태 전이를 빠짐없이 나열할 때 씁니다. 실행 판단은 액터가 합니다.
+---
+
+## Standing Mandates
+
+- ALWAYS collect before generating. Existing collections, logs, incidents, and the user's own scenario file are real flows; the state map generates the rest. Every flow enters `tests/scenarios/CATALOG.md` with its source before it has a spec.
+- ALWAYS accept a scenario the user wrote — markdown, a table, a sentence per step — and normalize it into the spec shape (`references/scenario-spec.md`). Their title stays; a missing status code becomes `[확인 필요]` for the actor to resolve by sending the request, never a guess.
+- ALWAYS confirm the server answers one real request before writing any spec. A state map read from code is not trusted until a response backs it.
+- ALWAYS hand execution to `scenario-actor` — one subagent per spec, dispatched in one turn, each with the spec path, `BASE_URL`, the runner choice, and the shared helper path. The director never writes runner code or asserts a result it did not receive from an actor.
+- ALWAYS run the whole set twice against the same server process after the actors return, through the shared runner. Run 2 differing from run 1 is a cleanup gap and is reported as such.
+- NEVER invent an endpoint, field, or status code, and NEVER let an actor's report through unread: a "pass" with no request/response evidence is returned to the actor.
+- NEVER build state outside the API — no database inserts, no fixture edits — and never let a spec share a token or a record with another spec.
+- Goal: a catalog a teammate can extend by adding a row, a spec per flow they can read in a minute, and a runner command that gives the same pass/fail against any `BASE_URL`.
+
+# Scenario Director
+
+Owns the scenario set for a backend: collects flows from what exists, generates the rest from
+the state map, normalizes anything a person wrote, keeps the catalog, and dispatches one
+`scenario-actor` subagent per spec to implement and run it. Aggregates the actors' evidence into
+one report. The director thinks in flows; the actor thinks in requests.
+
+**Not for** unit or single-endpoint tests with mocks (`test-master`), load tests, one
+intermittent failure (`flaky-test-analyzer`), or browser flows.
+
+---
+
+## Process
+
+**0. Mode by input.**
+
+| Input | Mode |
+|-------|------|
+| A backend and nothing else | Collect → generate → dispatch (steps 1–5) |
+| Scenario files — `*.spec.md`, or any markdown/text where a person wrote flows | Normalize → dispatch (steps 3–5; step 1 only to confirm the server and the routes the file names) |
+| A Postman / Insomnia / `.http` / `.hurl` collection | Convert → dispatch (origin kept in the catalog) |
+
+**1. Collect, then map.** Read all five sources before writing anything:
+
+| Source | Yields |
+|--------|--------|
+| Routes, handlers, OpenAPI, README | resources, state values, transitions, auth rule |
+| Postman / Insomnia / `.http` / `.hurl` / existing E2E files | flows someone already walks by hand — convert, don't rewrite |
+| Access logs or traces (a day is enough) | the request sequences real clients send, in order |
+| Bug reports, incidents, closed issues | the exact sequence that broke once |
+| The user, one question: "어떤 흐름이 깨지면 제일 아픈가요?" | the flow that goes first |
+
+Start the server, send one request by hand, then write the state map. If `sequential-thinking`
+is available, use it so no transition is skipped.
+
+**2. Choose the flows.** Collected flows first, then generated: the primary lifecycle; one
+refusal per transition (wrong state, wrong owner, missing auth); cross-user isolation; input
+rejection at the entry point. Cap the first set at what a reviewer reads in five minutes.
+
+**3. Write the specs and the catalog.** One `tests/scenarios/s<n>_<flow>.spec.md` per flow in
+the shape from `references/scenario-spec.md`; `CATALOG.md` rows with source, spec ✓, runner —.
+Pick the runner from the repo's stack (`scenario-actor/references/runners.md` table) and, for
+the curl runner, write `lib.sh` and `run.sh` from that reference once so every actor shares them.
+
+**4. Dispatch the actors.** One `scenario-actor` subagent per spec, all in one turn, each told:
+spec path · `BASE_URL` · runner · shared helper path · `SCENARIO_LOG` path · "write only your
+`s<n>` files, run your scenario once, report the evidence." Actors resolve `[확인 필요]` by
+sending the request and recording the real response in the spec. Read every report; send back
+any pass that carries no request/response pair, any assert on a whole body, any literal host.
+
+**5. Run the set twice, report.** `BASE_URL=… tests/scenarios/run.sh` (or the stack's command)
+against the same server process — both summary lines verbatim. Update `CATALOG.md` (runner ✓,
+last run). Per failure: the actor's request/response pair and its spec-or-server verdict.
+
+---
+
+## Output Template
+
+```
+## Scenario set — <service>
+State map: <resource>: CREATED → PAID | CANCELLED (PAID ✗ cancel) · auth: bearer, per-owner
+Catalog: tests/scenarios/CATALOG.md — 9 flows (3 Postman, 1 incident #212, 1 scenarios.md, 4 generated) · 6 specced · 6 run
+
+| # | Flow | Source | Steps | Refuses | Actor |
+|---|------|--------|-------|---------|-------|
+| S1 | order lifecycle | generated | login → create → get → pay → get | — | pass, 5 req |
+| S2 | pay twice | scenarios.md › "결제 두 번" | … → pay → pay → get | 409 "cannot pay from PAID" (probed) | pass, 6 req |
+
+Run: BASE_URL=http://localhost:8080 tests/scenarios/run.sh
+
+## Execution — <timestamp>, <base url>
+Run 1: 6 passed, 0 failed
+Run 2 (same process): 6 passed, 0 failed
+Failures: none | per failure: step, request, response, verdict (spec | server), what changed
+```
+
+---
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|---|---|
+| Collects flows from code, collections, logs, incidents, and your file into a catalog; maps states from one real request | Name the flow that hurts most when it breaks; hand over any scenario file you have |
+| Normalizes your wording into specs, leaves unknown codes as `[확인 필요]` | Answer the one question when a step names something the routes don't have |
+| Dispatches one actor per spec, rejects evidence-free passes, runs the set twice | Provide a test account or seed endpoint; decide spec-vs-server when an actor cannot |
+| Keeps `CATALOG.md` current | Wire `run.sh` into CI |
+
+## Related Skills
+
+- `develop:scenario-actor` — implements and runs one spec; the director's subagent, also callable alone
+- `develop:test-master` — mocked unit/integration tests, coverage, test plans
+- `develop:flaky-test-analyzer` — one scenario failing intermittently after isolation is confirmed
+- `develop:transaction-boundary-reviewer` — a scenario reveals partial writes after a failed step

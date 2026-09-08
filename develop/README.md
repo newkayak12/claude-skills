@@ -7,7 +7,7 @@ in the wrong place, a test that passes for the wrong reason, a pool sized by gue
 nobody wrote until the pager went off. Each skill takes one of those and gives it a process:
 diagnose before changing, name the trade-off, verify with evidence rather than assertion.
 
-Five of the 33 skills are **workflow entry points** — they don't do the work themselves, they drive
+Five of the 34 skills are **workflow entry points** — they don't do the work themselves, they drive
 the specialist skills in a fixed order and let you join mid-process.
 
 ## Install & Uninstall
@@ -35,7 +35,8 @@ the specialist skills in a fixed order and let you join mid-process.
 |---|---|
 | Write a failing test first and prove it can actually fail | `test-driven-development` |
 | Add tests to untested code, audit coverage, write a test plan | `test-master` |
-| Multi-step API flow tests against a running server, then run them | `api-scenario-test` |
+| Collect/generate API scenarios, run each via an actor subagent against a live server | `scenario-director` |
+| Implement and run one scenario spec with request/response evidence | `scenario-actor` |
 | Fix tests that pass locally and fail in CI | `flaky-test-analyzer` |
 
 **Database**
@@ -211,26 +212,36 @@ This legacy billing module has no tests. Audit what's testable, write a test pla
 risk, then add unit and integration tests for the highest-risk paths first.
 ```
 
-### `api-scenario-test`
+### `scenario-director`
 
-Collects and runs scenario tests for a backend. Flows are gathered first — routes and OpenAPI, existing Postman/`.http` collections, a day of access logs, closed incidents, and the one the user names as most painful — into a catalog that outlives the session, then generated from the state map: flows that walk a real server over HTTP through
-the states its API promises — login → create → transition → verify — capturing ids and tokens from
-each response for the next step, with one refusal per transition (the 409 matters more than the
-200) and a cross-user check. Every scenario is a spec first (`references/scenario-spec.md`), then
-runner code in the repo's own stack — RestAssured, pytest + httpx, Vitest, or curl + bash when there
-is none (`references/runners.md`) — with the base URL from the environment, data namespaced per run,
-and cleanup through the API in a finally block. The suite is run twice against the same server
-process; a second run that differs from the first is a cleanup gap, reported as such. Not for
-mocked unit or single-endpoint tests (`test-master`).
+Owns a backend's scenario set. Collects flows first — routes and OpenAPI, existing Postman/`.http`
+collections, a day of access logs, closed incidents, and the one flow the user names as most
+painful — into `tests/scenarios/CATALOG.md` with a source per row, then generates the rest from the
+state map: the primary lifecycle, one refusal per transition (the 409 matters more than the 200),
+cross-user isolation, input rejection. A scenario the user wrote in their own words is normalized
+into the spec table (`references/scenario-spec.md`) with unknown status codes left as `[확인 필요]`.
+The director writes no runner code: it dispatches one `scenario-actor` subagent per spec in one
+turn, rejects any pass that comes back without request/response pairs, then runs the whole set
+twice against the same server process — a second run that differs is a cleanup gap.
 
 ```
-이 백엔드 API 시나리오 테스트 수립하고 실행해줘. mock 말고 서버 띄워서.
+시나리오 md로 써놨어, 이거 읽고 서버에 돌려줘. mock 말고.
 ```
 
-Measured on a fixture order API with a unique-email trap (`evals/`): three no-skill runs each
-scored 2/7 — fixed emails, hardcoded host, one run, no spec — and would 409 on their second
-execution without knowing it; three skill runs scored 7/7, 6/7, 7/7 with the deductions being
-the scorer misreading Hurl idioms.
+### `scenario-actor`
+
+One spec in, one runner file and its evidence out. Runs as the director's per-flow subagent
+(`agents/actor.md` is the contract) or alone for a single flow. Picks the runner from the repo's
+stack (`references/runners.md`): curl + bash when there is none — `lib.sh` with `req`/`expect`/
+`defer`, one `s<n>.sh` per flow, `run.sh` for the set — else pytest + httpx, RestAssured, or Hurl.
+Chains captured values, namespaces every created string with the run id, cleans up through the
+API on exit, resolves `[확인 필요]` by sending the request once and recording what came back, and
+reports every step's request/response pair with a spec-wrong or server-wrong verdict on failure.
+
+Measured on a fixture order API with a unique-email trap (`scenario-director/evals/`): three
+no-skill runs scored 2/7 — fixed emails, hardcoded host, one run, no spec — and would 409 on a
+second execution without knowing it; skill runs scored 7/7 (curl runner and a hand-written Korean
+scenario file as input included).
 
 ### `flaky-test-analyzer`
 
