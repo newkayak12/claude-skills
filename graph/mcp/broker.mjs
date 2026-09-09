@@ -25,6 +25,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } fr
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
+import { capacityFailure, selectModel, rankCandidates } from './routing.mjs';
 import {
   STAGES,
   REASONING_STAGES,
@@ -61,6 +62,13 @@ const DEFAULT_PROTOCOL = '2025-06-18';
 // the same adjudication. Projects register more in <cwd>/.claude/broker-vendors.json.
 
 const BUILTIN_VENDORS = {
+  claude: {
+    command: 'node',
+    args: [join(HERE, '..', 'adapters', 'claude-exec-adapter.mjs')],
+    sandboxes: ['read-only', 'workspace-write'],
+    default_sandbox: 'workspace-write',
+    requires_binary: 'claude',
+  },
   codex: {
     command: 'node',
     args: [join(HERE, '..', 'adapters', 'codex-exec-adapter.mjs')],
@@ -209,6 +217,13 @@ function readJson(path) {
 
 const probeCache = new Map();
 
+// Every string in a report, whatever shape the adapter chose.
+function flatten(value, depth = 0) {
+  if (typeof value === 'string') return value;
+  if (depth > 6 || !value || typeof value !== 'object') return '';
+  return Object.values(value).map((v) => flatten(v, depth + 1)).filter(Boolean).join('\n');
+}
+
 async function probe(name, vendor, cwd, sandbox, model) {
   // Readiness must be checked with the same model the node will run. Otherwise a
   // broken global Codex default can reject the probe even though the run selected a
@@ -243,6 +258,11 @@ async function probe(name, vendor, cwd, sandbox, model) {
     });
     const report = readJson(outPath) || {};
     const detail = report.codex || report.vendor || report;
+    // A vendor that is merely out of credit is not a broken vendor. Adapters bury that
+    // message at different depths (the Codex one puts it under codex.smoke.stderr and
+    // writes nothing to its own stderr), so search the whole report rather than agreeing
+    // on a field name that the next adapter will place somewhere else.
+    const quota = capacityFailure(report, [r.stderr, flatten(report)].join('\n'));
     // Two different questions. `ready` means the vendor can WRITE under this sandbox -
     // what an Implement node needs. `reachable` means the vendor answers at all - which
     // is all a reasoning node needs, since it is told not to write and is run read-only.
@@ -251,7 +271,9 @@ async function probe(name, vendor, cwd, sandbox, model) {
       ready: r.status === 0 && (detail.ready === true || report.ok === true),
       reachable: detail.reachable === true || (r.status === 0 && detail.ready === true),
       reason: detail.reason || (r.status === 0 ? '' : `adapter exit ${r.status}: ${r.stderr.slice(-200)}`),
+      quota,
     };
+    if (quota) out.reason = `usage capacity exhausted at probe${out.reason ? `; ${out.reason}` : ''}`;
   }
   settle(out);
   probeCache.set(key, Promise.resolve(out));
@@ -339,19 +361,43 @@ function mustFindRun(a) {
 // ---------- routing ----------
 
 async function route(run, node) {
+  if (node.assignment && !(run.unavailable_vendors || {})[node.assignment.executor]) return node.assignment;
   const stage = node.stage;
   const pol = stagePolicy(run, node);
   const vendors = loadVendors(run.cwd);
   const want = String(pol.vendor || 'auto').toLowerCase();
-  const isSelf = ['self', 'claude', 'off', 'none'].includes(want);
+  const balanced = run.allocation === 'balanced';
+  const isSelf = ['self', 'off', 'none'].includes(want) || (!balanced && want === 'claude');
   const order = isSelf
     ? []
     : want === 'auto'
-      ? (pol.candidates && pol.candidates.length ? pol.candidates : AUTO_CANDIDATES)
+      ? (pol.candidates || (balanced ? ['claude', 'codex'] : AUTO_CANDIDATES))
       : [want];
 
   const attempts = [];
-  for (const name of order) {
+  const ranked = balanced && want === 'auto' ? rankCandidates(run, node, order)
+    : order.map(vendor => ({ vendor, reason: 'explicit vendor/candidate order' }));
+  for (const candidate of ranked) {
+    const name = candidate.vendor;
+    if ((run.unavailable_vendors || {})[name]) {
+      attempts.push({ vendor: name, ready: false, reason: run.unavailable_vendors[name] });
+      continue;
+    }
+    const model = balanced ? selectModel(run, node, name, pol.model) : pol.model;
+    if (balanced && name === run.host_vendor) {
+      // native_models declares actual model selection capability, independently
+      // from the driving conversation's model. Never silently substitute a tier.
+      if (run.native_models && !run.native_models.includes(model)) {
+        attempts.push({ vendor: name, ready: false, reason: `native host cannot select model ${model}` });
+      } else {
+        return { vendor: 'self', executor: name, sandbox: null, model, reason: candidate.reason, attempts };
+      }
+      continue;
+    }
+    if (name === 'codex' && (run.host_vendor === 'codex' || process.env.CODEX_THREAD_ID)) {
+      attempts.push({ vendor: name, ready: false, reason: 'Codex hosts must use native agents; nested Codex CLI is disabled' });
+      continue;
+    }
     const v = vendors[name];
     if (!v) {
       attempts.push({ vendor: name, ready: false, reason: `unknown vendor "${name}"` });
@@ -365,14 +411,20 @@ async function route(run, node) {
       attempts.push({ vendor: name, ready: false, reason: `vendor "${name}" does not support sandbox ${sandbox}` });
       continue;
     }
-    const p = await probe(name, v, run.cwd, sandbox, pol.model);
+    const p = await probe(name, v, run.cwd, sandbox, model);
     const usable = REASONING_STAGES.has(stage) ? p.reachable : p.ready;
+    // Spent capacity is recorded on the run so the operator sees why the vendor dropped
+    // out, the run stops re-probing it, and graph_retry({reset_capacity:true}) is the way back.
+    if (!usable && p.quota) {
+      run.unavailable_vendors = { ...(run.unavailable_vendors || {}), [name]: 'usage capacity exhausted at probe' };
+      saveRun(run);
+    }
     attempts.push({ vendor: name, ready: usable, reason: usable ? '' : p.reason });
-    if (usable) return { vendor: name, sandbox, model: pol.model, attempts };
+    if (usable) return { vendor: name, executor: name, sandbox, model, reason: candidate.reason, attempts };
   }
   // "auto" degrades to self; a named vendor does not - silent degradation is what lets
   // a graph lie about who did the work.
-  return { vendor: isSelf || want === 'auto' ? 'self' : 'vendor-failure', sandbox: null, model: pol.model, attempts };
+  return { vendor: isSelf || (!balanced && want === 'auto') ? 'self' : 'vendor-failure', sandbox: null, model: pol.model, attempts };
 }
 
 // ---------- result normalization ----------
@@ -413,6 +465,8 @@ function verdict(run, n) {
     node_id: n.node_id,
     stage: n.stage,
     vendor: n.vendor,
+    executor: n.executor,
+    model: n.model,
     state: n.state,
     stage_ok: res.stage_ok === true,
   };
@@ -464,6 +518,7 @@ function nodeSucceeded(n, result) {
 }
 
 function finishNode(run, n, result, vendorName) {
+  delete n.recovery; // historical interruptions remain in n.interruptions
   n.state = nodeSucceeded(n, result) ? 'done' : 'failed';
   n.result = result;
   n.vendor = vendorName;
@@ -489,6 +544,32 @@ function finishNode(run, n, result, vendorName) {
   return verdict(run, n);
 }
 
+function checkpointInterruption(run, n, executor, details, kind = 'quota') {
+  const dir = join(brokerDir(run.cwd), run.run_id, n.node_id.replace(/[^A-Za-z0-9._-]/g, '_'), `recovery-${randomUUID()}`);
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, 'checkpoint.json');
+  const detailPath = join(dir, 'interrupted-result.json');
+  writeFileSync(detailPath, JSON.stringify(details, null, 2));
+  writeFileSync(path, JSON.stringify({ node_id: n.node_id, executor, kind, cwd: run.cwd,
+    detail_path: detailPath, previous_detail_path: n.detail_path || null,
+    previous_checkpoint: n.recovery?.checkpoint_path || null,
+    run_path: join(brokerDir(run.cwd), 'runs', `${run.run_id}.json`),
+    changed_files: (gitChanged(run.cwd) || []).filter(p => !p.startsWith('.harness-run/')),
+    instruction: 'Inspect the current files before continuing. Partial writes are not verified completion. Keep original acceptance criteria; rerun verification.' }, null, 2));
+  n.recovery = { checkpoint_path: path, executor, kind, from_ticket: n.ticket || null };
+  n.interruptions = [...(n.interruptions || []), n.recovery];
+  n.result = { stage_ok: false, reason: `${executor} ${kind}; work retained at ${path}` };
+  n.vendor = executor;
+  n.state = 'pending';
+  n.ticket = null;
+  delete n.assignment;
+  if (kind === 'quota') run.unavailable_vendors = { ...(run.unavailable_vendors || {}), [executor]: 'usage capacity exhausted in this run' };
+  saveRun(run);
+  syncOpenNodes(run);
+  record(run.cwd, { event: 'node_interrupted', run_id: run.run_id, node_id: n.node_id, executor, kind, checkpoint_path: path });
+  return { ...verdict(run, n), recoverable: true, checkpoint_path: path, next: 'call graph_next for fallback; graph_retry with node_id and reset_capacity after quota renewal' };
+}
+
 // ---------- tools ----------
 
 // Declared so a client can validate what comes back rather than trusting shape by
@@ -501,6 +582,11 @@ const VERDICT_SCHEMA = {
     node_id: { type: 'string' },
     stage: { type: 'string' },
     vendor: { type: 'string' },
+    executor: { type: 'string', description: 'assigned AI vendor, including native host execution' },
+    model: { type: ['string', 'null'], description: 'assigned model' },
+    recoverable: { type: 'boolean' },
+    checkpoint_path: { type: 'string' },
+    next: { type: 'string' },
     state: { type: 'string', enum: ['pending', 'running', 'done', 'failed', 'skipped'] },
     stage_ok: { type: 'boolean' },
     verified: { type: 'boolean', description: 'test nodes' },
@@ -537,6 +623,9 @@ const READY_SCHEMA = {
           node_id: { type: 'string' },
           stage: { type: 'string' },
           vendor: { type: 'string' },
+          executor: { type: 'string' },
+          model: { type: 'string' },
+          routing_reason: { type: 'string' },
           attempts: { type: 'array', items: { type: 'object' } },
           briefing_path: { type: 'string', description: 'self-routed nodes only' },
           next: { type: 'string' },
@@ -588,6 +677,10 @@ const TOOLS = [
         cwd: { type: 'string', description: 'absolute working directory for the whole run' },
         context: { type: 'string' },
         vendor: { type: 'string', description: '"auto" (default, stays on self unless candidates are given), a vendor name to require it, or "self"' },
+        allocation: { type: 'string', enum: ['ordered', 'balanced'], description: 'balanced discovers Claude/Codex, scores stage fit, review independence, load and execution errors; ordered preserves legacy candidate order' },
+        host_vendor: { type: 'string', enum: ['claude', 'codex'], description: 'Host with fresh native agents; selected host work returns self with executor identity. Omit if native role isolation is unavailable.' },
+        host_model: { type: 'string', description: 'Current driving model, used for reasoning on the host. Fable/Astra require explicit model policy; they are not inherited automatically.' },
+        native_models: { type: 'array', items: { type: 'string' }, description: 'Models selectable by fresh native agents. Omit only if the host can select all requested models; unsupported assignments fail visibly.' },
         model: { type: 'string', description: 'default model for every stage; a policy entry overrides it' },
         policy: {
           type: 'object',
@@ -660,6 +753,8 @@ const TOOLS = [
       properties: {
         run_id: { type: 'string' },
         subgoal_id: { type: 'string', description: 'omit to retry the spec after a critique rejected it' },
+        node_id: { type: 'string', description: 'Resume an interrupted/quota-exhausted node, retaining files and checkpoint. Does not reopen a completed or gate-rejected node.' },
+        reset_capacity: { type: 'boolean', description: 'Retry vendors after the caller confirms their quota is available again. With node_id it also reopens that interrupted node; alone it clears exclusions - including ones recorded at probe time, where no node was ever interrupted - re-ranks undispatched work and returns the next ready nodes.' },
         cwd: { type: 'string' },
       },
       required: ['run_id'],
@@ -706,6 +801,10 @@ async function toolGraphOpen(a) {
     request: String(a.request),
     context: a.context || '',
     vendor: a.vendor || 'auto',
+    allocation: a.allocation || 'ordered',
+    host_vendor: a.host_vendor || null,
+    host_model: a.host_model || null,
+    native_models: a.native_models || null,
     model: a.model || null,
     policy: a.policy || {},
     candidates: a.candidates || null,
@@ -738,13 +837,20 @@ async function toolGraphNext(a) {
   }
 
   const state = runState(run);
-  return {
+  const response = {
     run_id: run.run_id,
     state: state.state,
     counts: state.counts,
-    ready: await Promise.all(ready.map(async (n) => {
+    ready: await (async () => {
+      const offered = [];
+      for (const n of ready) {
       const r = await route(run, n);
-      const briefingPath = join(brokerDir(run.cwd), 'briefings', `${n.node_id.replace(/[^A-Za-z0-9._-]/g, '_')}.md`);
+      if (run.allocation === 'balanced' && r.vendor !== 'vendor-failure') {
+        n.assignment = r;
+        n.executor = r.executor || r.vendor;
+        saveRun(run);
+      }
+      const briefingPath = join(brokerDir(run.cwd), run.run_id, 'briefings', `${n.node_id.replace(/[^A-Za-z0-9._-]/g, '_')}.md`);
       if (r.vendor === 'self') {
         try {
           mkdirSync(dirname(briefingPath), { recursive: true });
@@ -753,17 +859,25 @@ async function toolGraphNext(a) {
           /* the orchestrator can still fall back to graph_status full:true */
         }
       }
-      return {
+      offered.push({
         node_id: n.node_id,
         stage: n.stage,
         vendor: r.vendor,
+        executor: r.executor,
+        routing_reason: r.reason,
         attempts: r.vendor === 'vendor-failure' ? r.attempts : undefined,
         briefing_path: r.vendor === 'self' ? briefingPath : undefined,
         model: r.model || undefined,
-        next: r.vendor === 'self' ? 'read briefing_path, do the work, then graph_submit' : r.vendor === 'vendor-failure' ? 'no vendor is ready; see attempts' : 'call graph_run',
-      };
-    })),
+        next: r.vendor === 'self' ? 'dispatch briefing_path to a fresh native agent at model, then graph_submit' : r.vendor === 'vendor-failure' ? 'no vendor is ready; see attempts' : 'call graph_run',
+      });
+      }
+      return offered;
+    })(),
   };
+  run.routing_blocked = Boolean(response.ready.length && response.ready.every(n => n.vendor === 'vendor-failure'));
+  saveRun(run);
+  response.state = runState(run).state;
+  return response;
 }
 
 async function toolGraphRun(a) {
@@ -783,6 +897,8 @@ async function toolGraphRun(a) {
   const vendor = loadVendors(run.cwd)[r.vendor];
   const ticket = randomUUID();
   n.ticket = ticket;
+  n.executor = r.executor || r.vendor;
+  n.model = r.model || null;
   n.state = 'running';
   n.started_at = Date.now();
   saveRun(run);
@@ -790,13 +906,14 @@ async function toolGraphRun(a) {
   const activeKey = `${run.run_id}:${n.node_id}`;
   activeNodes.add(activeKey);
 
-  const dir = join(brokerDir(run.cwd), run.run_id, n.node_id.replace(/[^A-Za-z0-9._-]/g, '_'));
+  const dir = join(brokerDir(run.cwd), run.run_id, n.node_id.replace(/[^A-Za-z0-9._-]/g, '_'), ticket);
   mkdirSync(dir, { recursive: true });
   const promptPath = join(dir, 'prompt.md');
   const outPath = join(dir, 'result.json');
   const eventsPath = join(dir, 'events.jsonl');
   writeFileSync(promptPath, composePrompt(run, n, nodeBriefing(run, n)));
   n.detail_path = outPath;
+  saveRun(run);
 
   // Implement/test go through the adapter's stage contract, which enforces their JSON
   // schema. Reasoning nodes must NOT: their shapes differ per stage (setgoal returns a
@@ -847,6 +964,11 @@ async function toolGraphRun(a) {
   }
 
   const transportOk = proc.status === 0;
+  if (run.allocation === 'balanced' && (!transportOk || report.stage_ok === false)
+      && capacityFailure(report, proc.stderr)) {
+    return checkpointInterruption(run, n, r.executor || r.vendor, { ...report,
+      transport: { status: proc.status, stderr: proc.stderr, stdout: proc.stdout } }, 'quota');
+  }
   let result;
   if (!transportOk) {
     const why = proc.killed_for === 'timeout'
@@ -885,6 +1007,12 @@ function toolGraphSubmit(a) {
   const run = mustFindRun(a);
   const n = requireRunnable(run, String(a.node_id));
   const payload = a.payload || {};
+  if (run.allocation === 'balanced') {
+    if (!n.assignment || n.assignment.vendor !== 'self') throw new Error('balanced node must be assigned to a native executor by graph_next before submit');
+    n.executor = n.assignment.executor || 'self';
+    n.model = n.assignment.model || null;
+    if (payload.stage_ok === false && capacityFailure(payload)) return checkpointInterruption(run, n, n.executor, payload, 'quota');
+  }
 
   let result;
   if (REASONING_STAGES.has(n.stage)) {
@@ -907,6 +1035,32 @@ function toolGraphSubmit(a) {
 
 async function toolGraphRetry(a) {
   const run = mustFindRun(a);
+
+  // A vendor can be excluded before it ever runs a node, so a capacity reset cannot
+  // require an interrupted node to name.
+  if (a.reset_capacity === true) {
+    run.unavailable_vendors = {};
+    run.capacity_epoch = (run.capacity_epoch || 0) + 1;
+    probeCache.clear();
+    // An assignment made while the vendor was excluded is stale: re-rank it. Work already
+    // dispatched keeps its executor - only what has not left the gate is reconsidered.
+    for (const n of run.nodes) if (n.state === 'pending' && !n.ticket) delete n.assignment;
+    saveRun(run);
+    if (!a.node_id && !a.subgoal_id) {
+      record(run.cwd, { event: 'graph_retry', run_id: run.run_id, target: 'capacity' });
+      return { run_id: run.run_id, target: 'capacity', retried: true, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
+    }
+  }
+
+  if (a.node_id) {
+    const n = getNode(run, String(a.node_id));
+    if (!n || n.state !== 'pending' || !n.recovery) throw new Error('node_id must identify a currently interrupted pending node');
+    n.state = 'pending';
+    n.ticket = null;
+    delete n.assignment;
+    saveRun(run);
+    return { run_id: run.run_id, target: n.node_id, retried: true, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
+  }
 
   // No subgoal named means the spec itself was rejected: redo setgoal and critique.
   if (!a.subgoal_id) {
