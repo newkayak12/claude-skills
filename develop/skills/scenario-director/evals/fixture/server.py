@@ -3,10 +3,11 @@ POST /users {email,password} -> 201 | 409 if email exists (no delete — retenti
 POST /auth/login {email,password} -> {token}
 POST /orders {items:[{sku,qty}]} -> 201 {id,status:"CREATED",total}
 GET  /orders/{id} -> 200 | 404
-POST /orders/{id}/pay -> 200 {status:"PAID"} | 409 if not CREATED
+POST /orders/{id}/pay -> 200 {status:"PAID"} | 409 if not CREATED  (--bug: also allowed from CANCELLED)
 POST /orders/{id}/cancel -> 200 {status:"CANCELLED"} | 409 if PAID
 DELETE /orders/{id} -> 204 (test cleanup)
-All /orders require Authorization: Bearer <token>; orders are per-user.
+All /orders require Authorization: Bearer <token>; orders are per-user (another user's id -> 404).
+Run: python3 server.py [port] [--bug]   --bug plants a state-machine defect for mutation checks.
 """
 import json, sys, uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -14,6 +15,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 USERS = {"alice@test.io": "pw-alice", "bob@test.io": "pw-bob"}
 PRICES = {"SKU-1": 1000, "SKU-2": 2500}
 TOKENS, ORDERS = {}, {}
+BUG = "--bug" in sys.argv  # eval mutation switch: pay allowed from CANCELLED
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -53,7 +55,8 @@ class H(BaseHTTPRequestHandler):
             o = ORDERS.get(p[2])
             if not o or o["owner"] != u: return self._send(404, {"error": "not found"})
             if p[3] == "pay":
-                if o["status"] != "CREATED": return self._send(409, {"error": f"cannot pay from {o['status']}"})
+                if o["status"] != "CREATED" and not (BUG and o["status"] == "CANCELLED"):
+                    return self._send(409, {"error": f"cannot pay from {o['status']}"})
                 o["status"] = "PAID"
             else:
                 if o["status"] == "PAID": return self._send(409, {"error": "paid orders cannot be cancelled"})
@@ -78,6 +81,7 @@ class H(BaseHTTPRequestHandler):
         self._send(404, {"error": "not found"})
 
 if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    port = int(args[0]) if args else 8765
     print(f"order-api on :{port}", flush=True)
     HTTPServer(("127.0.0.1", port), H).serve_forever()
