@@ -12,6 +12,7 @@ const CONTRACT = {
   plan: `Return JSON: {"plan": "<the decomposition>", "handoff": "<what the next node needs>", "evidence": "<how you checked the request is actually satisfiable here>"}`,
   setgoal: `Return JSON: {"spec": {"goal": "...", "acceptance": ["goal-level criteria"], "subgoals": [{"id": "U1", "title": "...", "persona": "...", "acceptance": ["subgoal criteria"], "test": ["deterministic checks"], "deps": []}]}, "handoff": "...", "evidence": "..."}
 Every acceptance criterion must be checkable by a command or a file inspection. Reject your own vague criteria before returning.
+Make each subgoal self-contained: include applicable constraints in acceptance[], required paths in files[], and checks in test[]. Implement/Test will not receive the full request or requester conversation.
 Every subgoal must be a unit of WORK that changes files. Verification is not a subgoal: express it as that subgoal's test[] entries, which run as its own Test node. A subgoal whose only job is to check something already built has nothing for its Implement node to do and can only fail.`,
   critique: `Return JSON: {"sound": true|false, "blocking": ["..."], "problems": ["..."], "handoff": "...", "evidence": "..."}
 Look for: wrong decomposition, unfalsifiable acceptance, a missing subgoal the goal needs, fake dependencies, unverifiable test entries, criteria that hinge on whole-repo state, and aspirational thresholds written as hard pass/fail bars.
@@ -40,9 +41,18 @@ function bullets(list) {
 }
 
 export function composePrompt(run, n, briefing) {
+  const scopedExecution = run.allocation === 'balanced' && ['implement', 'test'].includes(n.stage) && briefing.subgoal;
   const lines = [];
   lines.push(`# ${n.stage} node ${n.node_id}`);
   lines.push('');
+  if (n.recovery) {
+    lines.push('## Resume after interrupted execution');
+    lines.push(`Read checkpoint: ${n.recovery.checkpoint_path}`);
+    lines.push('The previous session may have changed files. Inspect the current working tree and the checkpoint before continuing.');
+    lines.push('Retain the original acceptance criteria. Reuse completed work only after inspection; rerun required checks. Do not treat partial output as a passed stage.');
+    lines.push('Read detailed prior logs only if needed; do not import the whole prior conversation.');
+    lines.push('');
+  }
   lines.push(`Working directory: ${run.cwd}`);
   lines.push(`Every command you run and every file you touch must be inside it.`);
   lines.push('');
@@ -61,15 +71,17 @@ export function composePrompt(run, n, briefing) {
     lines.push('');
   }
 
-  lines.push(`## Request`);
-  lines.push(run.request);
-  if (run.context) {
+  if (!scopedExecution) {
+    lines.push(`## Request`);
+    lines.push(run.request);
+  }
+  if (run.context && !scopedExecution) {
     lines.push('');
     lines.push(`## Context from the requester`);
     lines.push(run.context);
   }
 
-  if (briefing.goal) {
+  if (briefing.goal && !scopedExecution) {
     lines.push('');
     lines.push(`## Goal`);
     lines.push(briefing.goal);
@@ -83,6 +95,7 @@ export function composePrompt(run, n, briefing) {
     lines.push('');
     lines.push(`## Subgoal ${sg.id} — ${sg.title}`);
     if (sg.persona) lines.push(`Act as: ${sg.persona}`);
+    if (sg.files?.length) lines.push(`Required paths:\n${bullets(sg.files)}`);
     lines.push('');
     lines.push(`### Acceptance`);
     lines.push(bullets(sg.acceptance));
