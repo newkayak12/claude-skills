@@ -4,7 +4,7 @@
 # Prints one row per run and per-run detail files under outdir.
 set -uo pipefail
 source "$(dirname "$0")/lib.sh"
-MODEL=${1:?model}; RUNS=${2:-3}; OUT=${3:-$EVALS_DIR/results/actor-$MODEL-$(date +%m%d-%H%M)}; mkdir -p "$OUT"
+MODEL=${1:?model}; RUNS=${2:-3}; OUT=${3:-$BENCH_OUT/actor-$MODEL-$(date +%m%d-%H%M)}; mkdir -p "$OUT"
 export CLAUDE_ARGS="--setting-sources project --plugin-dir $REPO_DIR/develop"
 export ACTOR_MODEL=$MODEL ACTOR_PARALLEL=4
 echo "model=$MODEL runs=$RUNS out=$OUT"

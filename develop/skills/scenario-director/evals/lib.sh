@@ -4,6 +4,8 @@ EVALS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$EVALS_DIR/../../../.." && pwd)"
 FIXTURE="$EVALS_DIR/fixture"
 CI_MD="$REPO_DIR/develop/skills/scenario-actor/references/ci.md"
+# Bench workspaces must live OUTSIDE the plugin tree: Claude Code denies Write/Edit under a loaded --plugin-dir.
+BENCH_OUT="${SCENARIO_BENCH_OUT:-${TMPDIR:-/tmp}/scenario-bench}"
 
 free_port(){ python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])'; }
 # start_server PORT [--bug] -> sets SERVER_PID
