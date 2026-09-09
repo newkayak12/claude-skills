@@ -24,11 +24,12 @@ graph, the spec, the prompts, and the verdicts. You own only the loop.
 
 ## Standing Mandates
 
-- Open balanced runs with the actual host identity/model and native model capabilities.
-- Reasoning prefers the driving AI; Implement/Test prefer the other AI's efficient model.
-- Do not select Fable or Astra without an explicit user model request. Do not add token,
-  spending, or turn caps. Existing gate retry budgets and process timeouts still apply.
-- Every role uses a fresh context. Pass artifact paths and preserve partial work on quota failure.
+- NEVER call `graph_status({full: true})` on a run. One node at a time: `detail_path`, or `graph_status({full: true, node_id})`.
+- ALWAYS read `state`. A judging node can return `stage_ok: true` and still be `failed` — that is the gate working, not an error to route around.
+- A blocked run is a result. NEVER do a node's work yourself to force completion, and NEVER reopen a run to get past a gate that rejected the work. `reset_capacity` is for spent quota, not a retry-budget reset.
+- `isolated: true` only when the run has a private worktree to itself. A false claim makes attribution meaningless.
+- A `self` node's payload is the fresh agent's returned JSON, relayed verbatim. NEVER author or soften it.
+- No Fable/Astra without an explicit user model request. No token, spending, or turn caps beyond the gate retry budget and process timeouts that already exist.
 
 ## The loop
 
@@ -145,11 +146,6 @@ rather than rounding it up.
 - **Follow `graph_next`.** Both `graph_run` and `graph_submit` refuse a node whose
   dependencies are unmet, are already finished, or do not exist yet. Do not try to
   outrun the graph.
-- **`isolated: true` only when true** — a private worktree with only this run in it.
-  Assert it falsely and positive attribution becomes meaningless.
-- **A blocked run is a result.** When `state` is `blocked` and retries are exhausted,
-  report what failed and stop. Do not start doing the nodes yourself to force a finish,
-  and do not re-open the run to dodge a gate that rejected the work.
 - **Self nodes are still adjudicated.** Read the briefing, do the work, submit honestly;
   the broker cross-checks your claims the same way it checks a vendor's.
 
