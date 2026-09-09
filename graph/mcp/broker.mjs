@@ -660,8 +660,9 @@ const STATUS_SCHEMA = {
     has_spec: { type: 'boolean' },
     subgoals: { type: 'array', items: { type: 'string' } },
     nodes: { type: 'array', items: { type: 'object' } },
+    cwds: { type: 'array', items: { type: 'string' }, description: 'overview form only' },
+    runs: { type: 'array', items: { type: 'object' }, description: 'overview form only: one row per run, newest first' },
   },
-  required: ['run_id', 'state', 'nodes'],
 };
 
 const RETRY_SCHEMA = {
@@ -777,7 +778,7 @@ const TOOLS = [
   {
     name: 'graph_status',
     description:
-      'Compact run state: node counts, per-node state and verdict. Pass full:true only when you actually need a payload - it is large by design and normally stays out of your context.',
+      'Compact run state: node counts, per-node state and verdict. Omit run_id to see every run in cwd instead - state, counts, and which node is running right now with its vendor and elapsed seconds. Pass full:true only when you actually need a payload - it is large by design and normally stays out of your context.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -786,7 +787,6 @@ const TOOLS = [
         node_id: { type: 'string' },
         full: { type: 'boolean' },
       },
-      required: ['run_id'],
     },
     outputSchema: STATUS_SCHEMA,
   },
@@ -1109,7 +1109,44 @@ async function toolGraphRetry(a) {
   return { run_id: run.run_id, target: sid, subgoal_id: sid, retried: true, attempt: out.attempt, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
 }
 
+// What is happening right now, without a run_id in hand. A lead that lost the id - a
+// fresh session, a compaction, a second operator looking in - had no way back into a run
+// from the MCP alone, and no way to see what a blocking graph_run is doing meanwhile.
+// One row per run, newest first; payloads stay out of it exactly as elsewhere.
+function progressOverview(a) {
+  const cwds = a.cwd ? [resolve(String(a.cwd))] : [...knownCwds];
+  if (!cwds.length) throw new Error('pass cwd or run_id - the broker knows no working directory yet');
+  const now = Date.now();
+  const runs = [...new Set(cwds)].flatMap((cwd) => listRuns(cwd))
+    .sort((x, y) => (y.created_at || 0) - (x.created_at || 0))
+    .map((run) => {
+      reclaimAbandoned(run);
+      const state = runState(run);
+      const finished = run.nodes.filter((n) => n.state === 'done' || n.state === 'failed').at(-1);
+      const stalled = Object.keys(run.unavailable_vendors || {});
+      return {
+        run_id: run.run_id,
+        cwd: run.cwd,
+        state: state.state,
+        counts: state.counts,
+        request: String(run.request || '').slice(0, 160),
+        created_at: new Date(run.created_at || now).toISOString(),
+        running: run.nodes.filter((n) => n.state === 'running').map((n) => ({
+          node_id: n.node_id,
+          stage: n.stage,
+          executor: n.executor || n.vendor || null,
+          model: n.model || null,
+          elapsed_s: Math.round((now - (n.started_at || now)) / 1000),
+        })),
+        last_finished: finished ? { node_id: finished.node_id, stage: finished.stage, state: finished.state } : null,
+        ...(stalled.length ? { unavailable_vendors: run.unavailable_vendors } : {}),
+      };
+    });
+  return { cwds: [...new Set(cwds)], runs };
+}
+
 function toolGraphStatus(a) {
+  if (a.run_id === undefined || a.run_id === null || a.run_id === '') return progressOverview(a);
   const run = mustFindRun(a);
   reclaimAbandoned(run);
   if (a.full) {
@@ -1131,7 +1168,21 @@ function toolGraphStatus(a) {
     nodes: run.nodes
       .filter((n) => (a.node_id ? n.node_id === a.node_id : true))
       .map((n) => (n.state === 'pending' || n.state === 'running'
-        ? { node_id: n.node_id, stage: n.stage, state: n.state, deps: n.deps }
+        ? {
+          node_id: n.node_id,
+          stage: n.stage,
+          state: n.state,
+          deps: n.deps,
+          // A blocking graph_run is otherwise invisible: the node reads as bare "running"
+          // with no way to tell which vendor is on it or whether it is stuck.
+          ...(n.state === 'running'
+            ? {
+              executor: n.executor || n.vendor || null,
+              model: n.model || null,
+              elapsed_s: Math.round((Date.now() - (n.started_at || Date.now())) / 1000),
+            }
+            : {}),
+        }
         : verdict(run, n))),
   };
 }

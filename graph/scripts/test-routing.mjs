@@ -10,7 +10,7 @@ for (const host of ['claude', 'codex']) {
   test(`${host} drives reasoning and the other vendor handles execution`, () => {
     const run = { host_vendor: host, host_model: 'current-model', nodes: [] };
     const other = host === 'claude' ? 'codex' : 'claude';
-    for (const stage of ['plan', 'setgoal', 'critique', 'gate', 'report']) {
+    for (const stage of ['plan', 'setgoal', 'critique', 'gate']) {
       assert.equal(rankCandidates(run, { stage }, ['claude', 'codex'])[0].vendor, host);
       assert.equal(selectModel(run, { stage }, host), 'current-model');
     }
@@ -19,6 +19,12 @@ for (const host of ['claude', 'codex']) {
       assert.equal(selectModel(run, { stage }, 'claude'), 'sonnet');
       assert.equal(selectModel(run, { stage }, 'codex'), 'gpt-5.6-sol');
     }
+    // The peer writes the run's account of itself, so the vendor that drove the run does
+    // not get to be its own narrator. It stays reasoning work all the same: degraded back
+    // to the host it keeps the driving model rather than dropping to an execution default.
+    assert.equal(rankCandidates(run, { stage: 'report' }, ['claude', 'codex'])[0].vendor, other);
+    assert.equal(selectModel(run, { stage: 'report' }, host), 'current-model');
+    assert.equal(selectModel(run, { stage: 'report' }, other), other === 'claude' ? 'sonnet' : 'gpt-5.6-sol');
   });
 }
 
