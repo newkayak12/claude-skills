@@ -33,7 +33,7 @@ while state == "running":
     graph_next({run_id})                          -> ready[] with routing
     for each ready node:
         vendor node  -> graph_run({run_id, node_id})
-        self node    -> read briefing_path, do the work, graph_submit({run_id, node_id, payload})
+        self node    -> assign briefing_path to a fresh native agent, then graph_submit({run_id, node_id, payload})
     if state == "blocked":
         a failed subgoal    -> graph_retry({run_id, subgoal_id})
         a failed critique   -> graph_retry({run_id})          # redo the spec
@@ -77,16 +77,24 @@ is not possible on purpose.
 | `"auto"` (default) | **stays on `self`** — the candidate list is empty unless you pass `candidates` |
 | `"auto"` + `candidates: [...]` | try those vendors in order, fall back to `self` |
 | a vendor name | require it — a node returns `vendor-failure` rather than degrading |
-| `"self"` | you execute every node |
+| `"self"` | the host dispatches each node to a fresh native agent |
 
 **Registering a vendor does not enrol it in `auto`.** An installed, ready Codex still goes
 unused in a bare `graph_open({vendor: "auto"})` call until you name it (`vendor: "codex"`)
 or list it in `candidates`.
 
-This skill defaults to the current AI session (`vendor: "self"`), whether it is
-Codex or Claude. Use that session's native tools to execute each node's briefing and
-submit its result. No external CLI or particular model is required. The graph owns
-the stage order and acceptance checks; the current AI supplies the work.
+The requesting session may be Codex or Claude; its identity does not determine node
+ownership. `vendor: "self"` means host-managed execution: dispatch each briefing to a
+fresh native agent without inheriting the conversation, then submit its result. The
+lead holds only run identifiers, paths, and compact verdicts. Never execute all roles
+in the lead's accumulated context. If the host cannot provide fresh role contexts,
+use a permitted external executor or report the execution capability as unavailable.
+
+When both executors are available, choose per-stage policies based on task fit,
+observed success, retries, cost, and latency. Do not impose equal quotas or assume
+one vendor is universally better. Prefer an independent reviewer for gates; fresh
+context is required even when the same vendor handles different roles. Record actual
+executor provenance; `self` alone is not proof that Claude or Codex did the work.
 
 Use explicit vendor policies or candidates when the task calls for an available
 external executor. Do not infer availability from a vendor name or an installed
@@ -94,6 +102,35 @@ binary; use the broker's readiness probe. Inside Codex, execute harness stages w
 native tools rather than delegating them back into a nested Codex CLI process.
 A user-supplied vendor, candidate list, model, or policy overrides the defaults,
 subject to the host session's execution constraints.
+
+### Shared artifacts and bounded work
+
+Resolve one absolute project path and run-artifact directory at run start, regardless
+of which AI received the request. Give each executor an explicit working directory
+and artifact paths. Implement, Test, and Gate for a task must inspect the same code
+snapshot. Separate concurrently edited tasks into private worktrees and run an
+assembled-goal gate after integration. Record the commit or diff identity with test
+evidence so it cannot be applied to a different revision.
+
+For Implement/Test, deliver only the task's acceptance criteria, required source and
+dependency paths, deterministic check commands, and relevant prior gate gaps. Do not
+forward the full conversation, unrelated tasks, or full logs. A path is not itself a
+token saving: the referenced briefing must also be scoped. Keep implementation
+handoffs at most 1500 characters; save detailed evidence to files and return paths
+with compact verdicts. If the task cannot fit a small briefing, return it for further
+decomposition instead of expanding the executor's scope.
+
+Persist each attempt's artifacts separately. Test independently executes checks;
+Gate compares evidence with the original acceptance criteria. Retry only unmet work
+within the run's retry budget. Do not weaken criteria to pass: a defective goal must
+return to SetGoal and Critique with a recorded revision. Record token usage when the
+executor exposes it; do not claim a hard token cap without runtime enforcement.
+
+These are orchestration obligations, not newly implemented broker capabilities.
+The bundled external adapter is Codex only; `claude` currently aliases `self`, not a
+fresh Claude CLI process. Automatic cross-vendor balancing, hard token caps, and
+snapshot attribution are not enforced by the broker. Do not claim them from a policy
+setting alone.
 
 Name the vendor when the run must prove who did the work. Silent degradation is what
 lets a graph claim an external vendor implemented something it never touched.

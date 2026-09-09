@@ -45,6 +45,12 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.4.0 — host-neutral orchestration contract**: fresh role contexts, shared
+  task directories and persisted handoffs, task-scoped Implement/Test inputs, and
+  SetGoal/QualityGate retries are now explicit skill requirements. When both AI
+  executors are usable, route by task fit and observed cost rather than requester
+  identity. This release changes instructions, not the broker: automatic balancing,
+  a standalone Claude adapter, and hard token budgets remain unimplemented.
 - **v1.3.0 — current-session execution**: `graph:orchestrate` defaults to the active
   Codex or Claude session for every stage, using its native tools and current model.
   External vendor routing remains optional; no Codex CLI or fixed model is required.
@@ -127,10 +133,14 @@ does not exist — the ordering is enforced, not advisory.
 
 `vendor: "auto"` (default) tries each candidate in order and falls back to `self`.
 A bare direct call has no candidates. `graph:orchestrate` opens with `vendor: "self"`,
-so the current Codex or Claude session performs every stage with its native tools.
+so the current Codex or Claude session dispatches stages to fresh native agents.
 There is no default model override or external CLI requirement. Explicit policies
 can route selected stages to available external executors when appropriate; a Codex
 session runs harness stages natively instead of launching a nested Codex CLI.
+The lead passes scoped artifact paths and submits compact results; it does not perform
+every role in its own conversation. Each task's Implement/Test/Gate shares the same
+working directory and code snapshot. See `skills/orchestrate/SKILL.md` for the routing,
+artifact, and retry contract and the broker's current enforcement limits.
 A **named** vendor does not fall back — the node returns `vendor-failure` with per-vendor
 probe reasons. Name the vendor when the run must prove who did the work; silent
 degradation is what lets a graph lie about it.
