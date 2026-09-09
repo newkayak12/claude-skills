@@ -1524,6 +1524,12 @@ import { join } from 'node:path';
 const a = process.argv.slice(2), get = k => a[a.indexOf(k) + 1];
 const cwd = get('--cwd'), vendor = get('--vendor-id'), output = get('--output');
 if (a.includes('--detect')) {
+  if (existsSync(join(cwd, 'broken-' + vendor))) {
+    writeFileSync(output, JSON.stringify({ ok: false, codex: { available: true, ready: false, reachable: false,
+      reason: 'sandbox denied write access',
+      smoke: { exit_code: 1, stdout: '', stderr: 'operation not permitted; the model produced no output limit' } } }));
+    process.exit(1);
+  }
   if (existsSync(join(cwd, 'quota-' + vendor))) {
     writeFileSync(output, JSON.stringify({ ok: false, codex: { available: true, ready: false, reachable: false,
       reason: 'codex unreachable',
@@ -1544,6 +1550,14 @@ writeFileSync(output, JSON.stringify({ stage_ok: true, result }));
     sandboxes: ['read-only', 'workspace-write'], default_sandbox: 'workspace-write',
   }]))));
   writeFileSync(join(cwd, 'quota-codex'), '');
+  return cwd;
+}
+
+// Same fixture, but the probe fails for a reason that has nothing to do with capacity.
+function brokenProbeRepo() {
+  const cwd = quotaProbeRepo();
+  rmSync(join(cwd, 'quota-codex'));
+  writeFileSync(join(cwd, 'broken-codex'), '');
   return cwd;
 }
 
@@ -1589,6 +1603,56 @@ test('capacity reset alone restores a vendor excluded at probe time, with no int
     const full = await c.call('graph_status', { run_id, cwd, full: true });
     assert.deepEqual(full.unavailable_vendors, {}, 'a capacity reset must clear probe-time exclusions');
     assert.equal(reset.ready?.[0]?.vendor, 'codex', 'the recovered vendor is offered again for execution work');
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('a rejected graph_retry leaves capacity untouched; a failed call must not half-apply', async () => {
+  const cwd = quotaProbeRepo();
+  const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+  try {
+    const { run_id } = await c.call('graph_open', { request: 'r', cwd, allocation: 'balanced',
+      host_vendor: 'claude', host_model: 'driving-model' });
+    for (const [node_id, payload] of [['plan', ok({ handoff: 'p' })], ['setgoal', ok({ spec: SPEC })], ['critique', ok({ sound: true })]]) {
+      await c.call('graph_next', { run_id, cwd });
+      await c.call('graph_submit', { run_id, cwd, node_id, payload });
+    }
+    await c.call('graph_next', { run_id, cwd });
+    const before = await c.call('graph_status', { run_id, cwd, full: true });
+    assert.ok(before.unavailable_vendors.codex, 'precondition: codex is excluded');
+
+    // 'implement:U1:1' is pending but was never interrupted, so this retry is rejected.
+    const r = await c.call('graph_retry', { run_id, cwd, node_id: 'implement:U1:1', reset_capacity: true });
+    assert.match(String(r.error || ''), /interrupted pending node/);
+
+    const after = await c.call('graph_status', { run_id, cwd, full: true });
+    assert.deepEqual(after.unavailable_vendors, before.unavailable_vendors,
+      'a retry that throws must not have already cleared capacity exclusions');
+    assert.equal(after.capacity_epoch, before.capacity_epoch, 'nor bumped the capacity epoch');
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('an ordinary probe failure is not laundered into a capacity exclusion', async () => {
+  const cwd = brokenProbeRepo();
+  const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+  try {
+    const { run_id } = await c.call('graph_open', { request: 'r', cwd, allocation: 'balanced',
+      host_vendor: 'claude', host_model: 'driving-model' });
+    for (const [node_id, payload] of [['plan', ok({ handoff: 'p' })], ['setgoal', ok({ spec: SPEC })], ['critique', ok({ sound: true })]]) {
+      await c.call('graph_next', { run_id, cwd });
+      await c.call('graph_submit', { run_id, cwd, node_id, payload });
+    }
+    const next = await c.call('graph_next', { run_id, cwd });
+    assert.equal(next.ready[0].executor, 'claude', 'a broken peer is still routed around');
+
+    const full = await c.call('graph_status', { run_id, cwd, full: true });
+    assert.deepEqual(full.unavailable_vendors, {},
+      'a broken vendor must stay probeable; only spent capacity is held against the run');
   } finally {
     c.close();
     rmSync(cwd, { recursive: true, force: true });
