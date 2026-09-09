@@ -45,6 +45,9 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.3.0 — current-session execution**: `graph:orchestrate` defaults to the active
+  Codex or Claude session for every stage, using its native tools and current model.
+  External vendor routing remains optional; no Codex CLI or fixed model is required.
 - **v1.2.0 — Claude/Codex mixed orchestration**: `graph:orchestrate` now keeps reasoning,
   gates, and reporting on the Claude session while requiring Codex for implement/test.
   The node's selected model is forwarded into both Codex readiness probes, with
@@ -123,9 +126,11 @@ does not exist — the ordering is enforced, not advisory.
 ## Routing
 
 `vendor: "auto"` (default) tries each candidate in order and falls back to `self`.
-A bare direct call has no candidates. `graph:orchestrate` instead opens a mixed run with
-`vendor: "self"` and per-stage policy that requires Codex for `implement` and `test`, so
-Claude owns reasoning and adjudication while Codex owns execution and verification.
+A bare direct call has no candidates. `graph:orchestrate` opens with `vendor: "self"`,
+so the current Codex or Claude session performs every stage with its native tools.
+There is no default model override or external CLI requirement. Explicit policies
+can route selected stages to available external executors when appropriate; a Codex
+session runs harness stages natively instead of launching a nested Codex CLI.
 A **named** vendor does not fall back — the node returns `vendor-failure` with per-vendor
 probe reasons. Name the vendor when the run must prove who did the work; silent
 degradation is what lets a graph lie about it.
