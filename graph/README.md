@@ -45,6 +45,12 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.5.0 — automatic allocation and capacity recovery**: balanced routing keeps
+  reasoning on the driving host and prefers the other vendor's efficient model for
+  Implement/Test. Claude now has a fresh-session CLI adapter. Fable/Astra are excluded
+  from inherited defaults; explicit model requests remain supported. Usage-limit
+  interruptions retain checkpoints and partial files, then route to another available
+  vendor. No new token, spending, or turn limits are imposed.
 - **v1.4.0 — host-neutral orchestration contract**: fresh role contexts, shared
   task directories and persisted handoffs, task-scoped Implement/Test inputs, and
   SetGoal/QualityGate retries are now explicit skill requirements. When both AI
@@ -132,11 +138,18 @@ does not exist — the ordering is enforced, not advisory.
 ## Routing
 
 `vendor: "auto"` (default) tries each candidate in order and falls back to `self`.
-A bare direct call has no candidates. `graph:orchestrate` opens with `vendor: "self"`,
-so the current Codex or Claude session dispatches stages to fresh native agents.
-There is no default model override or external CLI requirement. Explicit policies
-can route selected stages to available external executors when appropriate; a Codex
-session runs harness stages natively instead of launching a nested Codex CLI.
+A bare direct call has no candidates. `graph:orchestrate` instead opens with
+`vendor: "auto", allocation: "balanced", host_vendor, host_model, native_models`.
+Reasoning prefers the driving AI/model; Implement/Test prefer the other vendor using
+Claude `sonnet` or Codex `gpt-5.6-sol`. If only one vendor is available, it can fill both
+roles with fresh contexts and selectable models. Fable/Astra are never inherited from
+the driving session automatically; they require an explicit model request. Hosts must
+declare their native model capabilities honestly. A Codex session uses native agents
+instead of nested Codex CLI; external vendors pass readiness probes.
+
+Balanced ranking considers stage preference, assigned/running work, completion counts,
+and execution errors. It is a deterministic heuristic, not learned performance or cost
+prediction. Explicit policies override it. No token/spending cap is added.
 The lead passes scoped artifact paths and submits compact results; it does not perform
 every role in its own conversation. Each task's Implement/Test/Gate shares the same
 working directory and code snapshot. See `skills/orchestrate/SKILL.md` for the routing,
@@ -180,8 +193,15 @@ A vendor is anything meeting the adapter CLI contract:
       --output F --sandbox MODE [--isolated] [--add-dir DIR] [--model M]
 ```
 
-Exit 0 **and** `stage_ok === true` in the report is the only success. `codex` ships
-built in (`adapters/codex-exec-adapter.mjs`). Add more per project in
+Execution stages require exit 0 **and** `stage_ok === true` in the report. `codex` and
+`claude` ship built in (`adapters/codex-exec-adapter.mjs` and
+`adapters/claude-exec-adapter.mjs`). Claude uses print mode without resume or session
+persistence. It disables MCP inheritance to avoid re-entering the graph, retains project
+permissions, and never bypasses permission checks. Its read-only profile exposes only
+Read/Glob/Grep; workspace-write adds editing and Bash tools under existing permissions.
+This tool profile is not an OS filesystem sandbox. Permission-denied work fails visibly.
+CLI flags follow the [Claude CLI reference](https://code.claude.com/docs/en/cli-reference).
+Add more per project in
 `.claude/broker-vendors.json`, or point `BROKER_VENDORS` at a registry file:
 
 ```json
@@ -199,6 +219,21 @@ built in (`adapters/codex-exec-adapter.mjs`). Add more per project in
 Readiness is a **real write probe**, not a version check: some sandboxes start, accept
 the run, write nothing, and exit 0. The probe creates a throwaway file and looks at the
 filesystem itself.
+
+## Capacity recovery
+
+Balanced runs distinguish usage-limit errors from task failures. A quota interruption
+preserves a checkpoint, raw report/log paths, and the working tree, excludes the exhausted
+vendor for that run, and makes the node ready for another available executor. The next
+session inspects the checkpoint and current files before continuing under the same goal.
+This resumes work from artifacts; vendor conversations are not interchangeable.
+
+For native agents, submit `stage_ok:false, failure_kind:"quota"` and available evidence.
+Call `graph_next` for fallback. When all candidates are exhausted the run reports blocked;
+after capacity returns, use `graph_retry({run_id,cwd,node_id,reset_capacity:true})`.
+Each external invocation has its own output directory. Persisted state survives an MCP
+restart; supply the original `cwd` with `run_id` when reconnecting. No automatic worktree
+rollback occurs, and partial work is never treated as verified completion.
 
 ## Ledger
 

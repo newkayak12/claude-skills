@@ -18,12 +18,13 @@ import { fileURLToPath } from 'node:url';
 
 const BROKER = join(dirname(fileURLToPath(import.meta.url)), '..', 'mcp', 'broker.mjs');
 const CODEX_ADAPTER = join(dirname(fileURLToPath(import.meta.url)), '..', 'adapters', 'codex-exec-adapter.mjs');
+const CLAUDE_ADAPTER = join(dirname(fileURLToPath(import.meta.url)), '..', 'adapters', 'claude-exec-adapter.mjs');
 
 // ---------- a minimal MCP client ----------
 
 class Client {
-  constructor() {
-    this.proc = spawn('node', [BROKER], { stdio: ['pipe', 'pipe', 'inherit'] });
+  constructor(env = {}) {
+    this.proc = spawn('node', [BROKER], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, ...env } });
     this.buf = '';
     this.id = 0;
     this.queue = [];
@@ -1158,6 +1159,149 @@ test('every node prompt forbids re-entering the harness', async () => {
     await brief();
     assert.ok(seen.includes('implement'), 'the implement stage is where this was actually observed');
   });
+});
+
+// Balanced mode uses deterministic stand-ins; no real AI CLI or account is used.
+function balancedRepo() {
+  const cwd = repo();
+  const adapter = join(cwd, 'balanced-adapter.mjs');
+  writeFileSync(adapter, `
+import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'node:fs';
+import { join } from 'node:path';
+const a = process.argv.slice(2), get = k => a[a.indexOf(k) + 1];
+const cwd = get('--cwd'), vendor = get('--vendor-id'), output = get('--output');
+appendFileSync(join(cwd, 'invocations.jsonl'), JSON.stringify({vendor, args:a}) + '\\n');
+if (a.includes('--detect')) {
+  const ready = !existsSync(join(cwd, 'unavailable-' + vendor));
+  writeFileSync(output, JSON.stringify({vendor:{ready, reachable:ready, reason:ready ? '' : 'unavailable'}}));
+  process.exit(ready ? 0 : 1);
+}
+const prompt = readFileSync(get('--prompt-file'), 'utf8');
+if (existsSync(join(cwd, 'quota-' + vendor))) {
+  writeFileSync(join(cwd, 'partial.txt'), 'retained partial work');
+  writeFileSync(output, JSON.stringify({stage_ok:false, failure_kind:'quota', stderr:'usage_limit_reached'}));
+  process.exit(1);
+}
+const stage = prompt.match(/^# (\\w+) node/)[1];
+const result = {stage_ok:true, handoff:'saved', evidence:'checked', changed_files:[], checks:['check -> pass'], verified:true, sound:true, accept:true, match_pct:100, gaps:[]};
+if(stage === 'implement') { writeFileSync(join(cwd, 'a.txt'), 'implemented'); result.changed_files=['a.txt']; }
+if(stage === 'setgoal') result.spec = ${JSON.stringify(SPEC)};
+writeFileSync(output, JSON.stringify({stage_ok:true,result}));
+`);
+  mkdirSync(join(cwd, '.claude'), { recursive: true });
+  writeFileSync(join(cwd, '.claude', 'broker-vendors.json'), JSON.stringify(Object.fromEntries(['claude', 'codex'].map(vendor => [vendor, {
+    command: 'node', args: [adapter, '--vendor-id', vendor], requires_binary: null,
+    sandboxes: ['read-only', 'workspace-write'], default_sandbox: 'workspace-write',
+  }]))));
+  return cwd;
+}
+
+for (const host_vendor of ['claude', 'codex']) {
+  test(`balanced MCP flow: ${host_vendor} drives, peer implements/tests, host gates`, async () => {
+    const cwd = balancedRepo();
+    const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+    const other = host_vendor === 'claude' ? 'codex' : 'claude';
+    try {
+      const open = await c.call('graph_open', { request: 'r', cwd, allocation: 'balanced', host_vendor, host_model: 'driving-model' });
+      const run_id = open.run_id;
+      for (const [node_id, payload] of [['plan', ok({ handoff: 'p' })], ['setgoal', ok({ spec: SPEC })], ['critique', ok({ sound: true })]]) {
+        const next = await c.call('graph_next', { run_id, cwd });
+        assert.equal(next.ready[0].executor, host_vendor);
+        assert.equal(next.ready[0].model, 'driving-model');
+        assert.ok(next.ready[0].briefing_path.includes(run_id));
+        const result = await c.call('graph_submit', { run_id, cwd, node_id, payload });
+        assert.equal(result.state, 'done', JSON.stringify(result));
+      }
+      for (const stage of ['implement', 'test']) {
+        const next = await c.call('graph_next', { run_id, cwd });
+        assert.equal(next.ready[0].vendor, other);
+        assert.equal(next.ready[0].model, other === 'claude' ? 'sonnet' : 'gpt-5.6-sol');
+        assert.equal((await c.call('graph_run', { run_id, cwd, node_id: next.ready[0].node_id })).state, 'done');
+      }
+      const gate = await c.call('graph_next', { run_id, cwd });
+      assert.equal(gate.ready[0].executor, host_vendor);
+      assert.equal(gate.ready[0].stage, 'gate');
+      await c.call('graph_submit', { run_id, cwd, node_id: gate.ready[0].node_id,
+        payload: { stage_ok: false, failure_kind: 'quota' } });
+      await c.call('graph_retry', { run_id, cwd, node_id: gate.ready[0].node_id, reset_capacity: true });
+      // Gate rejection remains a failed verdict; it must not trigger quota recovery.
+      const rejected = await c.call('graph_submit', { run_id, cwd, node_id: gate.ready[0].node_id, payload: ok({ accept: false, gaps: ['missing requirement'] }) });
+      assert.equal(rejected.state, 'failed');
+      assert.equal(rejected.recoverable, undefined);
+      assert.ok((await c.call('graph_retry', { run_id, cwd, node_id: gate.ready[0].node_id })).error,
+        'historical interruption cannot reopen a rejected gate');
+    } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+  });
+}
+
+test('quota fallback preserves partial files and checkpoint across broker restart', async () => {
+  const cwd = balancedRepo();
+  let c = await new Client({ CODEX_THREAD_ID: '' }).init();
+  try {
+    writeFileSync(join(cwd, 'quota-claude'), '1');
+    const open = await c.call('graph_open', { request: 'original acceptance', cwd, allocation: 'balanced' });
+    const run_id = open.run_id;
+    assert.equal(open.ready[0].vendor, 'claude');
+    const interrupted = await c.call('graph_run', { run_id, cwd, node_id: 'plan' });
+    assert.equal(interrupted.state, 'pending');
+    assert.equal(interrupted.recoverable, true);
+    assert.equal(readFileSync(join(cwd, 'partial.txt'), 'utf8'), 'retained partial work');
+    assert.ok(readFileSync(interrupted.checkpoint_path, 'utf8').includes('partial.txt'));
+    c.close();
+    c = await new Client({ CODEX_THREAD_ID: '' }).init();
+    const next = await c.call('graph_next', { run_id, cwd });
+    assert.equal(next.ready[0].vendor, 'codex');
+    const done = await c.call('graph_run', { run_id, cwd, node_id: 'plan' });
+    assert.equal(done.state, 'done');
+    const prompt = readFileSync(join(dirname(done.detail_path), 'prompt.md'), 'utf8');
+    assert.ok(prompt.includes(interrupted.checkpoint_path));
+    assert.ok(prompt.includes('original acceptance'));
+    assert.equal(readFileSync(join(cwd, 'partial.txt'), 'utf8'), 'retained partial work');
+    assert.ok((await c.call('graph_retry', { run_id, cwd, node_id: 'plan' })).error, 'completed nodes cannot be reopened through recovery');
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('native quota submission falls back; all exhausted blocks until explicit capacity reset', async () => {
+  const cwd = balancedRepo();
+  const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+  try {
+    const open = await c.call('graph_open', { request: 'r', cwd, allocation: 'balanced', host_vendor: 'claude' });
+    const run_id = open.run_id;
+    const native = await c.call('graph_submit', { run_id, cwd, node_id: 'plan', payload: { stage_ok: false, failure_kind: 'quota' } });
+    assert.equal(native.recoverable, true);
+    const fallback = await c.call('graph_next', { run_id, cwd });
+    assert.equal(fallback.ready[0].vendor, 'codex');
+    const bypass = await c.call('graph_submit', { run_id, cwd, node_id: 'plan', payload: ok({}) });
+    assert.ok(bypass.error);
+    writeFileSync(join(cwd, 'quota-codex'), '1');
+    await c.call('graph_run', { run_id, cwd, node_id: 'plan' });
+    assert.equal((await c.call('graph_next', { run_id, cwd })).state, 'blocked');
+    assert.equal((await c.call('graph_status', { run_id, cwd })).state, 'blocked');
+    const resumed = await c.call('graph_retry', { run_id, cwd, node_id: 'plan', reset_capacity: true });
+    assert.equal(resumed.ready[0].executor, 'claude');
+    assert.equal(resumed.ready[0].vendor, 'self');
+    assert.ok(readFileSync(resumed.ready[0].briefing_path, 'utf8').includes('Resume after interrupted'));
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('single vendor uses native lower model; unsupported native model fails visibly', async () => {
+  const cwd = balancedRepo();
+  const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+  try {
+    const open = await c.call('graph_open', { request: 'r', cwd, allocation: 'balanced', host_vendor: 'codex',
+      host_model: 'driving-model', candidates: ['codex'], policy: { plan: { model: 'gpt-5.6-sol' } }, native_models: ['gpt-5.6-sol'] });
+    assert.equal(open.ready[0].vendor, 'self');
+    assert.equal(open.ready[0].model, 'gpt-5.6-sol');
+    const unavailable = await c.call('graph_open', { request: 'r', cwd, allocation: 'balanced', host_vendor: 'codex',
+      candidates: ['codex'], native_models: ['gpt-6-astra'] });
+    assert.equal(unavailable.state, 'blocked');
+    assert.match(JSON.stringify(unavailable.ready[0].attempts), /cannot select model/);
+    const explicit = await c.call('graph_open', { request: 'r', cwd, allocation: 'balanced', host_vendor: 'codex',
+      candidates: ['codex'], native_models: ['gpt-6-astra'], model: 'gpt-6-astra' });
+    assert.equal(explicit.ready[0].model, 'gpt-6-astra');
+    const a = await c.call('graph_open', { request: 'different run', cwd, allocation: 'balanced', host_vendor: 'codex', candidates: ['codex'] });
+    assert.notEqual(open.ready[0].briefing_path, a.ready[0].briefing_path);
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
 });
 
 // ---------- registering a vendor does not enrol it in "auto" ----------

@@ -22,18 +22,28 @@ related:
 Throw the request at the graph engine, then run the loop it hands back. The engine owns the
 graph, the spec, the prompts, and the verdicts. You own only the loop.
 
+## Standing Mandates
+
+- Open balanced runs with the actual host identity/model and native model capabilities.
+- Reasoning prefers the driving AI; Implement/Test prefer the other AI's efficient model.
+- Do not select Fable or Astra without an explicit user model request. Do not add token,
+  spending, or turn caps. Existing gate retry budgets and process timeouts still apply.
+- Every role uses a fresh context. Pass artifact paths and preserve partial work on quota failure.
+
 ## The loop
 
 ```
 graph_open({
   request, cwd, isolated,
-  vendor: "self"
+  vendor: "auto", allocation: "balanced",
+  host_vendor, host_model, native_models
 })                                               -> run_id + first ready node
 while state == "running":
     graph_next({run_id})                          -> ready[] with routing
     for each ready node:
         vendor node  -> graph_run({run_id, node_id})
         self node    -> assign briefing_path to a fresh native agent, then graph_submit({run_id, node_id, payload})
+        quota interruption -> graph_next selects the remaining available vendor
     if state == "blocked":
         a failed subgoal    -> graph_retry({run_id, subgoal_id})
         a failed critique   -> graph_retry({run_id})          # redo the spec
@@ -48,7 +58,7 @@ itself worked"; the verdict is `accept` (gate), `verified` (test), or `sound` (c
 A node whose verdict is negative is `failed` and holds back everything downstream — that
 is the gate doing its job, not an error to route around. Read `state`, not `stage_ok`.
 
-**`graph_retry` without a `subgoal_id` retries the spec.** When critique rejects the
+**`graph_retry` without a `subgoal_id` or `node_id` retries the spec.** When critique rejects the
 goal-spec, redoing one subgoal fixes nothing: the whole decomposition is in question. That
 call reopens `setgoal` and `critique` with the critique's problems as feedback and retires
 the subgoal graph the rejected spec produced.
@@ -70,7 +80,25 @@ is not possible on purpose.
 
 ## Routing
 
-`graph_open` takes `vendor`:
+This skill opens with `allocation: "balanced"`. Pass `host_vendor` (`claude` or `codex`),
+the actual driving `host_model`, and `native_models` (the models fresh native agents can
+select). Omit host identity only when native agents are unavailable. Never claim model
+selection support that the host does not expose.
+
+The broker prefers the driving host for Plan/SetGoal/Critique/Gate/Report and the other
+vendor for Implement/Test. Execution defaults are Claude `sonnet` and Codex
+`gpt-5.6-sol`; reasoning on the host inherits `host_model`, except Fable/Astra fall back
+to the safe defaults unless the user explicitly requests them through `model` or a
+stage policy. Explicit stage policies override automatic selection.
+
+Availability, current assignments, execution errors, and prior completion counts affect
+ranking. A negative Gate verdict does not count as a vendor execution error. This is
+a deterministic heuristic, not learned cost optimization. `graph_next` returns the
+executor, model, and routing reason; the assignment persists until completion or
+interruption. Named vendor policies remain strict and never silently switch vendors.
+
+`graph_open` takes `vendor` (the table describes legacy `allocation: "ordered"`, which
+remains the default for direct callers that omit allocation):
 
 | value | behavior |
 |---|---|
@@ -90,11 +118,10 @@ lead holds only run identifiers, paths, and compact verdicts. Never execute all 
 in the lead's accumulated context. If the host cannot provide fresh role contexts,
 use a permitted external executor or report the execution capability as unavailable.
 
-When both executors are available, choose per-stage policies based on task fit,
-observed success, retries, cost, and latency. Do not impose equal quotas or assume
-one vendor is universally better. Prefer an independent reviewer for gates; fresh
-context is required even when the same vendor handles different roles. Record actual
-executor provenance; `self` alone is not proof that Claude or Codex did the work.
+Do not impose equal quotas or assume one vendor is universally better. Fresh context
+is required even when the same vendor handles different roles. Verify actual native
+executor provenance before submitting; broker executor/model fields record assignment,
+not independent proof of which native model the host actually launched.
 
 Use explicit vendor policies or candidates when the task calls for an available
 external executor. Do not infer availability from a vendor name or an installed
@@ -126,11 +153,30 @@ within the run's retry budget. Do not weaken criteria to pass: a defective goal 
 return to SetGoal and Critique with a recorded revision. Record token usage when the
 executor exposes it; do not claim a hard token cap without runtime enforcement.
 
-These are orchestration obligations, not newly implemented broker capabilities.
-The bundled external adapter is Codex only; `claude` currently aliases `self`, not a
-fresh Claude CLI process. Automatic cross-vendor balancing, hard token caps, and
-snapshot attribution are not enforced by the broker. Do not claim them from a policy
-setting alone.
+Both Codex and Claude adapters are bundled. In balanced mode `claude` is a real vendor;
+the old alias to `self` exists only in legacy ordered mode. When the selected vendor
+is the host, native agents execute it. A Codex host never launches nested Codex CLI.
+The broker enforces routing and persists recovery artifacts, but native session isolation
+and code snapshot attribution remain caller obligations. No token/spending cap is imposed.
+
+### Capacity failure and recovery
+
+For a native executor that hits its provider usage limit, submit
+`{stage_ok:false, failure_kind:"quota", ...}` with available handoff/evidence. Never
+mark an ordinary implementation failure as quota. External adapter diagnostics are
+classified by the broker. The broker preserves a checkpoint, raw result/log paths,
+partial working files, and the original goal; it excludes that vendor for the run and
+returns a pending, recoverable node. Call `graph_next` to receive the alternate route.
+
+The next fresh session reads the checkpoint and inspects the current files before
+continuing. This is artifact-based recovery, not a portable vendor session transcript.
+Each external invocation has a unique artifact directory, so retries do not overwrite
+earlier output. Reopening the MCP process does not discard the run or checkpoints.
+
+If all permitted vendors are exhausted, report blocked. Once capacity is restored,
+`graph_retry({run_id, cwd, node_id, reset_capacity:true})` reopens the interrupted node
+and clears capacity exclusions/readiness cache. This cannot reopen completed nodes or
+bypass a rejected Gate. Keep `run_id` and `cwd` to resume after restarting the client.
 
 Name the vendor when the run must prove who did the work. Silent degradation is what
 lets a graph claim an external vendor implemented something it never touched.
@@ -161,9 +207,8 @@ Keys are stage names — `plan`, `setgoal`, `critique`, `implement`, `test`, `ga
 `sandbox`, `model`. A stage entry wins over the run-level setting; a stage with no entry
 inherits it. `graph_next` reports the chosen `model` per ready node.
 
-You cannot switch your own model for a `self` node. When `graph_next` names a model you
-are not running as, say so in the report rather than executing the node silently on the
-wrong tier.
+For a `self` node, launch a fresh native agent at the returned model. Declare supported
+models through `native_models` so unsupported tiers are routed away or visibly blocked.
 
 Readiness is a real write probe, not a version check: a sandbox can start, accept the
 run, write nothing, and still exit 0.
