@@ -24,7 +24,7 @@ Shapes for curl, the log line, and the result JSON are in `references/http.md`. 
    - **spec wrong** — a wrong path, a field the API names differently, a code the server actually returns where the spec guessed → fix the spec row, re-run the scenario once from step 1 with a fresh namespace.
    - **server wrong** — the spec matches the routes and the documented rule, the server violates it; any 5xx; a refusal that did have a side effect → stop there, keep the pair, `fail_server`.
    One re-run only. A second failure is reported as it stands. Never loop.
-8. Write `results/s<n>.json` in the schema from `references/http.md` and return the report below.
+8. Before writing results: grep the spec for `확인 필요`. Any left means step 3 was skipped — go back and write the probed value into the spec row. Then write `results/s<n>.json` in the schema from `references/http.md` and return the report below.
 9. Do not restart or modify the server, other `s<n>` files, `CATALOG.md`, `ci.sh`, or repo source.
 
 ## Report format

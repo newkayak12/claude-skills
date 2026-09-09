@@ -3,7 +3,7 @@
 # Each run: fresh workspace = fixture server + README + scenarios.md; one `claude -p` director run; score.sh.
 set -uo pipefail
 source "$(dirname "$0")/lib.sh"
-ARM=${1:?arm}; RUNS=${2:-2}; OUT=${3:-$EVALS_DIR/results/director-$ARM-$(date +%m%d-%H%M)}; mkdir -p "$OUT"
+ARM=${1:?arm}; RUNS=${2:-2}; OUT=${3:-$BENCH_OUT/director-$ARM-$(date +%m%d-%H%M)}; mkdir -p "$OUT"
 MODEL=${DIRECTOR_MODEL:-sonnet}
 case "$ARM" in
   noskill) PLUG="" ;;
