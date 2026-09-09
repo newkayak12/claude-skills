@@ -65,7 +65,9 @@ const BUILTIN_VENDORS = {
   claude: {
     command: 'node',
     args: [join(HERE, '..', 'adapters', 'claude-exec-adapter.mjs')],
-    sandboxes: ['read-only', 'workspace-write'],
+    // danger-full-access is offered so a run can opt into it; the default stays the
+    // profile that still answers to the project's permission settings.
+    sandboxes: ['read-only', 'workspace-write', 'danger-full-access'],
     default_sandbox: 'workspace-write',
     requires_binary: 'claude',
   },
@@ -301,8 +303,19 @@ function gitChanged(cwd) {
 function crossCheck(cwd, claimed, isolated) {
   const observed = gitChanged(cwd);
   if (observed === null) return { changed_files_verified: null, change_attribution: 'no-git', contradicted_files: [] };
+  // A briefing names files by absolute path, so a truthful executor claims them that way,
+  // while git reports them relative to cwd. Compare in one space. A path outside cwd is
+  // left as-is rather than trimmed, so it stays unmatched instead of matching by suffix.
+  const base = String(cwd).replace(/\\/g, '/').replace(/\/+$/, '') + '/';
+  const toRel = (f) => {
+    const p = String(f).replace(/\\/g, '/');
+    return (p.startsWith(base) ? p.slice(base.length) : p).replace(/^\.\//, '');
+  };
   const list = Array.isArray(claimed) ? claimed.map(String) : [];
-  const missing = list.filter((f) => !observed.some((o) => o === f || o.endsWith('/' + f)));
+  const missing = list.filter((f) => {
+    const r = toRel(f);
+    return !r || !observed.some((o) => o === r || o.endsWith('/' + r));
+  });
   if (!isolated) {
     return {
       changed_files_verified: missing.length ? false : null,

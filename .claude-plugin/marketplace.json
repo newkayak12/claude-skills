@@ -139,7 +139,7 @@
     {
       "name": "graph",
       "description": "Graph engineering for the harness flow: a local MCP server owns graph state, routes nodes to vendor CLIs or the session, adjudicates results against the worktree, and keeps payloads on disk. Includes graph:install and graph:orchestrate.",
-      "version": "1.5.6",
+      "version": "1.5.7",
       "author": {
         "name": "newkayak12"
       },

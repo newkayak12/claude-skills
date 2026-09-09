@@ -45,6 +45,11 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.5.7 — honest absolute paths, opt-in full access**: the worktree cross-check compared
+  an executor's absolute `changed_files` claim against git's relative output and failed every
+  truthful node that used the briefing's own paths. Claude gains `danger-full-access`
+  (`--permission-mode bypassPermissions`) as a per-run opt-in, matching Codex; defaults are
+  unchanged and still answer to the project's permission settings.
 - **v1.5.6 — close the two gaps the eval measured**: the blocked mandate now forbids
   *offering* a way past a gate, not only taking one, and `isolated: true` requires an actual
   worktree rather than a user's stated wish for one.

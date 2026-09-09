@@ -76,3 +76,24 @@ test('Claude adapter retains quota diagnostics and rejects malformed stage outpu
     assert.equal(f.run(args, { MOCK_PROSE: '1' }).status, 1);
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
+
+test('Claude accepts danger-full-access and bypasses the permission prompt there', () => {
+  const f = fixture();
+  try {
+    const r = f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'test', '--sandbox', 'danger-full-access']);
+    assert.equal(r.status, 0, r.stderr);
+    const observed = JSON.parse(readFileSync(join(f.dir, 'observed.json')));
+    assert.equal(observed.args[observed.args.indexOf('--permission-mode') + 1], 'bypassPermissions');
+    assert.equal(observed.args[observed.args.indexOf('--tools') + 1], 'Read,Glob,Grep,Edit,Write,Bash');
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+// The bypass must be something a run opts into, never what every stage silently gets.
+test('workspace-write still defers to the project permission layer', () => {
+  const f = fixture();
+  try {
+    f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'test', '--sandbox', 'workspace-write']);
+    const observed = JSON.parse(readFileSync(join(f.dir, 'observed.json')));
+    assert.equal(observed.args[observed.args.indexOf('--permission-mode') + 1], 'acceptEdits');
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
