@@ -1,7 +1,8 @@
 # Scenario spec
 
-One file per flow, written before the runner code. The spec is what a reviewer reads; the runner
-is what CI runs (shapes in `../../scenario-actor/references/runners.md`). Keep them in the same directory so a diff to one shows the other.
+One file per flow. The spec is the only test artifact: a reviewer reads it, a `scenario-actor`
+executes it by hand (curl per row, `../../scenario-actor/agents/actor.md`), CI runs the same actor
+through `tests/scenarios/ci.sh`. The actor's evidence lands next to it in `results/s<n>.{log,json}`.
 
 ## Shape
 
@@ -26,11 +27,15 @@ Rules the shape enforces:
 - **Assert names fields, not bodies.** `status = PAID`, `total = 2000`, `id present`. Never
   "body equals {...}".
 - **Refusal steps assert the code and the message fragment** the server actually returns —
-  copy it from a real response, don't paraphrase.
+  copy it from a real response, don't paraphrase. A code taken from README or OpenAPI that no one
+  has seen returned is `[확인 필요: docs say 403]` until the actor probes it. When the server
+  answers differently the row keeps the server's code and records the lie:
+  `404, error contains "not found" (probed; docs said 403, server 404)`. Docs are a finding, not a fact.
 - **A verify step follows every refusal.** Step 5 proves the rejected request had no side
   effect; without it the 409 could mask a half-applied write.
-- **Cleanup is declared** and runs in a finally block, through the API, with the captured id.
-  If the API has no delete, the namespace prefix is the cleanup — say so in the spec.
+- **Cleanup is declared** and the actor runs it through the API with the captured id on every
+  exit path — after the last row, after a failed row, after a probe. If the API has no delete, the
+  namespace prefix is the cleanup — say so in the spec.
 
 ## Normalizing a hand-written scenario
 
@@ -74,7 +79,21 @@ it is implemented.
 ```
 
 A converted collection keeps its origin ("Postman: Orders.postman_collection.json › Pay flow")
-so the person who maintains it can find the row. A flow from a log names the sample.
+so the person who maintains it can find the row. A flow from a log names the sample. The `Runner`
+column reads ✓ once the actor has produced `results/s<n>.json` for that spec.
+
+Below the inventory, the coverage matrix — one row per transition in the state map, so a missing
+refusal is visible as an empty cell, not as an absence:
+
+```markdown
+| Transition | Happy | Refusal (wrong state) | Refusal (wrong owner) | Refusal (no auth) |
+|------------|-------|-----------------------|-----------------------|-------------------|
+| CREATED → PAID | S1 | S2 (from CANCELLED) | S3 | S4 |
+| CREATED → CANCELLED | S1 | S5 (from PAID) | S3 | S4 |
+| * → deleted | — skipped: no delete, retention policy (README) | | | |
+```
+
+Every cell is a scenario id or a written skip reason. Nothing blank.
 
 ## Flow selection checklist
 
