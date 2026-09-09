@@ -14,10 +14,8 @@ INSTRUCT.md
 /report/
 *-workspace/
 .claude/.feedback/
-# Local-only harness scaffold (applied to this repo as a project; kept out of version control)
-.claude/harness-gate.json
+# Local-only Claude config for this repo (kept out of version control)
 .claude/settings.json
-.claude/hooks/
 .claude/conventions/
 **/.knowledge/knowledge.sqlite
 **/.knowledge/knowledge.sqlite-shm
