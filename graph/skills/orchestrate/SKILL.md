@@ -41,15 +41,15 @@ graph_open({
 })                                               -> run_id + first ready node
 while state == "running":
     graph_next({run_id})                          -> ready[] with routing
-    for each ready node:
-        vendor node  -> graph_run({run_id, node_id})
-        self node    -> assign briefing_path to a fresh native agent, then graph_submit({run_id, node_id, payload})
+    for each ready node:                          # all self nodes first, in one message; then vendor nodes
+        self node    -> fresh agent at the returned model, briefing_path only; relay its JSON to graph_submit({run_id, node_id, payload})
+        vendor node  -> graph_run({run_id, node_id})   # blocks; the self agents keep working meanwhile
         quota interruption -> graph_next selects the remaining available vendor
     if state == "blocked":
         a failed subgoal    -> graph_retry({run_id, subgoal_id})
         a failed critique   -> graph_retry({run_id})          # redo the spec
         nothing retryable   -> report and stop
-graph_status({run_id})                            -> final counts
+graph_status({run_id})                            -> final counts, only if the last graph_next did not already return them
 ```
 
 That is the whole protocol. Six tools, one loop.
@@ -63,6 +63,27 @@ is the gate doing its job, not an error to route around. Read `state`, not `stag
 goal-spec, redoing one subgoal fixes nothing: the whole decomposition is in question. That
 call reopens `setgoal` and `critique` with the critique's problems as feedback and retires
 the subgoal graph the rejected spec produced.
+
+## Dispatching a self node
+
+One fresh agent per self node — a new context, never this conversation — at the
+`model` that `graph_next` returned. Its entire prompt is:
+
+```
+Working directory: <cwd>. Read <briefing_path> in full and do only what it asks.
+Do not read the conversation, and nothing under .harness-run/ the briefing does not name.
+Your final message must be exactly the JSON the briefing's "Return JSON" line specifies — nothing else.
+```
+
+Dispatch every self node in `ready[]` in one message so they run concurrently, then call
+`graph_run` for the vendor nodes — it blocks, so the self agents work while you wait.
+Fan out concurrent `implement` nodes only when each has its own worktree; otherwise run
+implement one at a time and fan out only non-editing stages (test, gate, critique).
+
+As each agent finishes, pass its final message to `graph_submit` unchanged. If it is not
+parseable JSON, submit `{stage_ok: false, reason: "executor returned no verdict"}` — do
+not do the work in this context. If the host cannot launch at the returned model, say so
+in the report instead of substituting a tier silently.
 
 ## Do not pull the payload into your context
 
