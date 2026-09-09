@@ -29,7 +29,7 @@ Plan(opus) → SetGoal(opus) → Implement(Codex 사용 시) → Test(Codex 사�
 
 | 경로 | 언제 | 어떻게 |
 |---|---|---|
-| **그래프 (기본)** | `graph-engineering` MCP 연결됨 | `graph:orchestrate` — 그래프 엔진이 흐름을 소유하고, 메인 세션은 `graph_next` / `graph_run` / `graph_submit` 루프만 돕니다. 전송용 서브에이전트도, 폴링도 없습니다. |
+| **그래프 (기본)** | `graph-engineering` MCP 연결됨 | `graph:orchestrate` — 그래프 엔진이 흐름을 소유하고, 메인 세션은 `graph_next` / `graph_run` / `graph_submit` 루프만 돕니다. 전송용 서브에이전트도, 폴링도 없습니다. `allocation: "balanced"`로 열어야 스테이지가 실제로 분산됩니다 — 생략하면 legacy `ordered`로 떨어져 전부 한 세션에서 돕니다. |
 | Workflow 엔진 | 그래프 MCP 없음, Workflow 도구 있음 | `Workflow({ scriptPath: "harness/engine/pipeline.js", ... })` |
 | 에이전트 팀 | 둘 다 없음 | `engine/fallback.md` |
 

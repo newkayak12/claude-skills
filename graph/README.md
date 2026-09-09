@@ -45,6 +45,19 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.6.1 — orchestrate reports as it goes, and the report node has somewhere to land**:
+  1.6.0 routed `report` to the peer vendor but left the driver's output template narrating
+  the run, so a graph node's payload had nowhere to go and a driver under context pressure
+  would quietly re-narrate. The template now ends with a `### Report` section relaying that
+  node verbatim, and the mandates say plainly that the report node writes the run's account.
+  The loop also prints one line per node as it goes — `node_id`, vendor/model, state, short
+  reason — so a long run is visible while it runs; the line is written from the verdict the
+  driver already holds, never from an opened payload. Duplication that had regrown against
+  `references/` is gone again. QA: Usefulness/Authoring/Output-Quality PASS, MCP NONE,
+  Weight OK; eval delta **+0.42** (12/12 vs 7/12), above the +0.375 baseline, re-measured
+  after the edits with no regression. The driver is also told plainly that the broker does
+  not serialize concurrent `implement` nodes — `readyNodes` returns every dependency-satisfied
+  node, so keeping two of them off one worktree is the caller's job.
 - **v1.6.0 — the peer writes the report, and progress is answerable**: `report` routes to
   the vendor that did *not* drive the run, so a run's account of itself is not written by
   its own driver; it stays reasoning work (read-only sandbox, `host_model` if it falls back
