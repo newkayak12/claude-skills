@@ -35,8 +35,8 @@ the specialist skills in a fixed order and let you join mid-process.
 |---|---|
 | Write a failing test first and prove it can actually fail | `test-driven-development` |
 | Add tests to untested code, audit coverage, write a test plan | `test-master` |
-| Collect/generate API scenarios, run each via an actor subagent against a live server | `scenario-director` |
-| Implement and run one scenario spec with request/response evidence | `scenario-actor` |
+| Collect/generate API scenarios as specs, dispatch one actor AI per spec, install `ci.sh` | `scenario-director` |
+| Execute one scenario spec by hand with curl — locally or as CI's `claude -p` unit | `scenario-actor` |
 | Fix tests that pass locally and fail in CI | `flaky-test-analyzer` |
 
 **Database**
@@ -216,13 +216,14 @@ risk, then add unit and integration tests for the highest-risk paths first.
 
 Owns a backend's scenario set. Collects flows first — routes and OpenAPI, existing Postman/`.http`
 collections, a day of access logs, closed incidents, and the one flow the user names as most
-painful — into `tests/scenarios/CATALOG.md` with a source per row, then generates the rest from the
-state map: the primary lifecycle, one refusal per transition (the 409 matters more than the 200),
-cross-user isolation, input rejection. A scenario the user wrote in their own words is normalized
-into the spec table (`references/scenario-spec.md`) with unknown status codes left as `[확인 필요]`.
-The director writes no runner code: it dispatches one `scenario-actor` subagent per spec in one
-turn, rejects any pass that comes back without request/response pairs, then runs the whole set
-twice against the same server process — a second run that differs is a cleanup gap.
+painful — into `tests/scenarios/CATALOG.md` with a source per row and a coverage matrix
+(transition × happy / refusal / skip reason), then generates the rest from the state map. A
+scenario the user wrote in their own words is normalized into the spec table
+(`references/scenario-spec.md`) with unknown status codes left as `[확인 필요]`. Nobody writes test
+code: the director copies `ci.sh` in, dispatches one `scenario-actor` subagent per spec in one turn,
+rejects any pass without step pairs or a result JSON, runs `ci.sh` twice on the same server process
+(a differing run 2 is a cleanup gap), and — when the server has a fault switch — once against the
+broken server to prove the set is not vacuous.
 
 ```
 시나리오 md로 써놨어, 이거 읽고 서버에 돌려줘. mock 말고.
@@ -230,18 +231,17 @@ twice against the same server process — a second run that differs is a cleanup
 
 ### `scenario-actor`
 
-One spec in, one runner file and its evidence out. Runs as the director's per-flow subagent
-(`agents/actor.md` is the contract) or alone for a single flow. Picks the runner from the repo's
-stack (`references/runners.md`): curl + bash when there is none — `lib.sh` with `req`/`expect`/
-`defer`, one `s<n>.sh` per flow, `run.sh` for the set — else pytest + httpx, RestAssured, or Hurl.
-Chains captured values, namespaces every created string with the run id, cleans up through the
-API on exit, resolves `[확인 필요]` by sending the request once and recording what came back, and
-reports every step's request/response pair with a spec-wrong or server-wrong verdict on failure.
+The actor is the runner. One spec in; the actor curls each row by hand, chains captured values,
+asserts named fields, verifies after every refusal, cleans up through the API on every exit path,
+and leaves `results/s<n>.log` (every request/response pair, secrets masked) and `results/s<n>.json`
+(`pass | fail_spec | fail_server`, steps, probed values, docs≠server findings). `[확인 필요]` is
+resolved by sending the request once; a README code the server contradicts is recorded as
+`(docs said 403, server 404)`. Same contract (`agents/actor.md`) three ways in: the director's
+subagent, `claude -p "/develop:scenario-actor spec=… BASE_URL=…"` from `tests/scenarios/ci.sh` in CI
+(`references/ci.md` has the script and a GitHub Actions job; results merge into JUnit), or alone for
+one flow.
 
-Measured on a fixture order API with a unique-email trap (`scenario-director/evals/`): three
-no-skill runs scored 2/7 — fixed emails, hardcoded host, one run, no spec — and would 409 on a
-second execution without knowing it; skill runs scored 7/7 (curl runner and a hand-written Korean
-scenario file as input included).
+Measured on the fixture order API (`scenario-director/evals/`, three traps: unique email, README that lies about a status code, `--bug` switch). Actor bench, 3 runs × 4 specs × healthy + `--bug`: haiku and sonnet both 12/12 pass, every `[확인 필요]` probed into the spec, the 403 lie recorded as 404, the planted bug caught as `fail_server`, zero false passes — haiku at $0.09 per actor vs sonnet's $0.20, so `ci.sh` defaults to haiku. Director end to end, 12-point scorer that re-runs the produced `ci.sh`: no skill 2/12, 1.3.0 code runner 7/12, 1.4.0 12/12.
 
 ### `flaky-test-analyzer`
 
