@@ -1658,3 +1658,47 @@ test('an ordinary probe failure is not laundered into a capacity exclusion', asy
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+// A briefing names files by absolute path, so a truthful executor reports them that way.
+// The cross-check compared the claim to git's relative output and called every honest
+// absolute claim a lie.
+test('an absolute changed_files path inside cwd verifies instead of contradicting', async () => {
+  const cwd = repoWithFakeVendor();
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('graph_open', { request: 'r', cwd, vendor: 'self', isolated: true });
+    for (const [node_id, payload] of [['plan', ok({ handoff: 'p' })], ['setgoal', ok({ spec: SPEC })], ['critique', ok({ sound: true })]]) {
+      await c.call('graph_submit', { run_id, cwd, node_id, payload });
+    }
+    const rel = dirty(cwd);
+    const r = await c.call('graph_submit', { run_id, cwd, node_id: 'implement:U1:1',
+      payload: ok({ changed_files: [join(cwd, rel)] }) });
+
+    assert.equal(r.state, 'done', JSON.stringify(r));
+    assert.equal(r.changed_files_verified, true, 'the file really is in the worktree');
+    assert.equal(r.contradicted_files, undefined, 'an existing file must not be called contradicted');
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('an absolute path outside cwd is still contradicted', async () => {
+  const cwd = repoWithFakeVendor();
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('graph_open', { request: 'r', cwd, vendor: 'self', isolated: true });
+    for (const [node_id, payload] of [['plan', ok({ handoff: 'p' })], ['setgoal', ok({ spec: SPEC })], ['critique', ok({ sound: true })]]) {
+      await c.call('graph_submit', { run_id, cwd, node_id, payload });
+    }
+    dirty(cwd);
+    const r = await c.call('graph_submit', { run_id, cwd, node_id: 'implement:U1:1',
+      payload: ok({ changed_files: ['/etc/hosts'] }) });
+
+    assert.equal(r.state, 'failed');
+    assert.deepEqual(r.contradicted_files, ['/etc/hosts']);
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
