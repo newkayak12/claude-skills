@@ -45,6 +45,9 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.5.6 — close the two gaps the eval measured**: the blocked mandate now forbids
+  *offering* a way past a gate, not only taking one, and `isolated: true` requires an actual
+  worktree rather than a user's stated wish for one.
 - **v1.5.5 — orchestrate QA follow-ups**: the loop carries `cwd` so a restarted client can
   find the run, and the last duplication the weight check found is gone (briefing rules and
   the ranking sentence live in `references/` only).
