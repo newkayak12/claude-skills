@@ -45,6 +45,9 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.5.5 — orchestrate QA follow-ups**: the loop carries `cwd` so a restarted client can
+  find the run, and the last duplication the weight check found is gone (briefing rules and
+  the ranking sentence live in `references/` only).
 - **v1.5.4 — orchestrate QA pass**: the skill states the self-node dispatch contract
   (fresh agent at the returned model, briefing path only, JSON relayed verbatim), fans out
   ready self nodes before blocking on vendor nodes, promotes the discriminating rules to
