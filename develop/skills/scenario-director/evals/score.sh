@@ -22,7 +22,7 @@ has404=$(specs | xargs grep -l '404' 2>/dev/null | wc -l | tr -d ' ')
 bare403=$(specs | xargs grep -l '403' 2>/dev/null | xargs -r grep -L 'server 404\|probed' 2>/dev/null | wc -l | tr -d ' ')
 c docs_not_copied $([ "$has404" -ge 1 ] && [ "$bare403" -eq 0 ] && echo 1 || echo 0)
 if [ "${SCORE_EXECUTE:-1}" = 1 ] && [ -f "$T/ci.sh" ] && [ "$nspec" -ge 1 ]; then
-  export CLAUDE_ARGS="${CLAUDE_ARGS:---setting-sources project --plugin-dir $REPO_DIR/develop}" ACTOR_MODEL="${ACTOR_MODEL:-sonnet}"
+  export CLAUDE_ARGS="${CLAUDE_ARGS:---setting-sources project --plugin-dir $REPO_DIR/develop}" ACTOR_MODEL="${ACTOR_MODEL:-haiku}"
   SP=$(free_port); start_server "$SP"; BASE_URL="http://127.0.0.1:$SP" SCENARIO_RESULTS="$D/score-results" "$T/ci.sh" > "$D/score-healthy.out" 2>&1; ex=$?; stop_server
   c executed       $([ $ex -eq 0 ] && grep -q 'Run: [0-9]* passed, 0 failed' "$D/score-healthy.out" && echo 1 || echo 0)
   SP=$(free_port); start_server "$SP" --bug; BASE_URL="http://127.0.0.1:$SP" SCENARIO_RESULTS="$D/score-results-bug" "$T/ci.sh" > "$D/score-bug.out" 2>&1; stop_server
