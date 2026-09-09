@@ -49,6 +49,14 @@ and code snapshot attribution remain caller obligations. No token/spending cap i
 Name the vendor when the run must prove who did the work. Silent degradation is what
 lets a graph claim an external vendor implemented something it never touched.
 
+## Ranking
+
+Availability, current assignments, execution errors, and prior completion counts affect
+ranking. A negative Gate verdict does not count as a vendor execution error. This is
+a deterministic heuristic, not learned cost optimization. `graph_next` returns the
+executor, model, and routing reason; the assignment persists until completion or
+interruption. Named vendor policies remain strict and never silently switch vendors.
+
 ## Per-stage policy
 
 `vendor` and `model` apply to the whole run. `policy` overrides them per stage — this is
