@@ -10,14 +10,14 @@ Needs: `claude` on PATH (`npm i -g @anthropic-ai/claude-code`), `ANTHROPIC_API_K
 ```bash
 #!/usr/bin/env bash
 # tests/scenarios/ci.sh — run every s*.spec.md through the scenario-actor skill (claude -p).
-# env: BASE_URL (required) · SCENARIO_RESULTS · ACTOR_MODEL (sonnet) · ACTOR_PARALLEL (4)
+# env: BASE_URL (required) · SCENARIO_RESULTS · ACTOR_MODEL (haiku) · ACTOR_PARALLEL (4)
 #      ACTOR_BUDGET_USD (per spec, 1.00) · CLAUDE_ARGS (extra flags, e.g. --plugin-dir)
 set -uo pipefail
 cd "$(dirname "$0")"
 : "${BASE_URL:?set BASE_URL, e.g. BASE_URL=http://localhost:8080}"
 export BASE_URL SCENARIO_RESULTS="${SCENARIO_RESULTS:-$PWD/results}"
 mkdir -p "$SCENARIO_RESULTS"
-export ACTOR_MODEL="${ACTOR_MODEL:-sonnet}" ACTOR_BUDGET_USD="${ACTOR_BUDGET_USD:-1.00}" CLAUDE_ARGS="${CLAUDE_ARGS:-}"
+export ACTOR_MODEL="${ACTOR_MODEL:-haiku}" ACTOR_BUDGET_USD="${ACTOR_BUDGET_USD:-1.00}" CLAUDE_ARGS="${CLAUDE_ARGS:-}"
 specs=(s*.spec.md); [ -e "${specs[0]}" ] || { echo "no s*.spec.md here"; exit 2; }
 
 run_one() {
@@ -80,7 +80,7 @@ jobs:
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       BASE_URL: http://localhost:8080
-      ACTOR_MODEL: sonnet
+      ACTOR_MODEL: haiku            # bench: haiku = sonnet on verdicts at half the cost; set sonnet for long flows
     steps:
       - uses: actions/checkout@v4
       - run: ./start-server.sh &          # whatever boots the API
