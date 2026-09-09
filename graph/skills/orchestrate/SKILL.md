@@ -60,9 +60,18 @@ Six tools, one loop. `cwd` is optional after `graph_open` but carry it anyway �
 lets a restarted client find the run again. Lost the `run_id` entirely — a new session, a
 compaction — call `graph_status({cwd})` and read it back off the run list.
 
-**Say what just happened, each time round the loop.** A run is long and mostly silent; the
-user should not have to wait until the end to see it moving. After each `graph_next`, print
-one line per node from the verdict you already hold — nothing fetched to say it:
+## Show the graph while it runs
+
+A run is long and mostly silent, and the user cannot see inside it. Mirror the graph into
+whatever live progress surface the host has — a task list is the usual one:
+
+- Each `graph_next` — open a task per newly ready node, subject `<node_id> · <vendor>/<model>`.
+- On dispatch — that task to `in_progress`.
+- On the verdict — `completed`, with the short `reason` appended when it failed.
+
+The graph already carries the dependencies, so the surface ends up shaped like the run: nodes
+waiting, one moving, the rest done. On a host with no such surface, print the same three
+columns as plain lines instead:
 
 ```
 ✅ implement:U1:1  codex/gpt-5.6-sol   files verified
@@ -70,9 +79,9 @@ one line per node from the verdict you already hold — nothing fetched to say i
 ⏳ test:U2:1       codex/gpt-5.6-sol   running
 ```
 
-`node_id`, `vendor`/`model`, `state`, and the short `reason` are the whole vocabulary. Never
-open a payload to enrich a progress line: no gap text, no evidence, no `detail_path` read.
-A line you cannot write from the verdict is a line you do not write.
+Either way the vocabulary is the same and it is small: `node_id`, `vendor`/`model`, `state`,
+and the short `reason`. Never open a payload to enrich a line — no gap text, no evidence, no
+`detail_path` read. **A line you cannot write from the verdict is a line you do not write.**
 
 **On a judging node `stage_ok` only means the judging itself worked.** The verdict is
 `accept` (gate), `verified` (test), or `sound` (critique); a negative one makes the node
