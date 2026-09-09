@@ -2,7 +2,8 @@
 name: orchestrate
 description: >-
   Use when running a whole request through the graph-engineering MCP and driving
-  its harness nodes without holding the payload yourself. Not for installation.
+  its harness nodes without holding the payload yourself. Triggers on: "그래프 돌려줘",
+  "노드 단위로 돌려줘", "run it through the MCP", "orchestrate this run". Not for installation.
 effort: high
 scenarios:
   - "Run this request through the harness flow but keep my context free for the loop"
