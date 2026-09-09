@@ -14,7 +14,7 @@ c ci_env         $([ -f "$T/ci.sh" ] && grep -q 'BASE_URL' "$T/ci.sh" && echo 1 
 c no_hardcode    $([ $(cat "$T"/ci.sh $(specs) 2>/dev/null | grep -c "localhost:$P\|127.0.0.1:$P") -eq 0 ] && echo 1 || echo 0)
 c cleanup        $([ "$nspec" -ge 1 ] && [ $(specs | xargs grep -L '^Cleanup:' 2>/dev/null | wc -l) -eq 0 ] && echo 1 || echo 0)
 c namespace      $([ "$nspec" -ge 1 ] && [ $(specs | xargs grep -Li 'namespace' 2>/dev/null | wc -l) -eq 0 ] && echo 1 || echo 0)
-c run_twice      $(grep -qiE 'run 1.*[0-9]+ passed' "$D/REPORT.md" 2>/dev/null && grep -qiE 'run 2.*[0-9]+ passed' "$D/REPORT.md" && echo 1 || echo 0)
+c run_twice      $(grep -qiE 'run 1' "$D/REPORT.md" 2>/dev/null && grep -qiE 'run 2' "$D/REPORT.md" && grep -qiE '[0-9]+ passed|[0-9]+/[0-9]+ pass' "$D/REPORT.md" && echo 1 || echo 0)
 c no_mock        $([ $(grep -rl 'mock\|Mock' "$D/tests" 2>/dev/null | wc -l) -eq 0 ] && echo 1 || echo 0)
 c no_runner_code $([ $(code | wc -l) -eq 0 ] && echo 1 || echo 0)
 # README says 403 for another user's order; the server returns 404. Copying the docs = 0.

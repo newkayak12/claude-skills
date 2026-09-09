@@ -29,7 +29,7 @@ run_one() {
     --model "$ACTOR_MODEL" --max-budget-usd "$ACTOR_BUDGET_USD" \
     --output-format json --no-session-persistence \
     --allowedTools Bash Read Write Edit $CLAUDE_ARGS \
-    > "$SCENARIO_RESULTS/$lid.claude.json" 2> "$SCENARIO_RESULTS/$lid.stderr"
+    < /dev/null > "$SCENARIO_RESULTS/$lid.claude.json" 2> "$SCENARIO_RESULTS/$lid.stderr"
   [ -f "$SCENARIO_RESULTS/$lid.json" ] || printf '{"id":"%s","flow":"%s","status":"fail_server","steps":[],"probed":[],"docs_mismatch":[],"cleanup":"","verdict":"actor returned no result json (see %s.stderr)","duration_ms":0}\n' \
       "$id" "$spec" "$lid" > "$SCENARIO_RESULTS/$lid.json"
 }
@@ -94,6 +94,9 @@ jobs:
         if: always()
         with: { report_paths: tests/scenarios/results/junit.xml }
 ```
+
+`< /dev/null` matters: `claude -p` reads a prompt from stdin when stdin is not a terminal, so under
+`xargs`, a CI step, or a nested Claude Code session it would otherwise wait for EOF forever.
 
 Cost guard: `ACTOR_BUDGET_USD` caps each actor's spend (a capped actor writes no JSON, so `ci.sh`
 records it as `fail_server` with a pointer to its stderr). A spec that blows a dollar is too long —

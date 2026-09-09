@@ -91,7 +91,10 @@ the rejection list in the mandates; send the actor back once, then report the ga
 
 **5. Run `ci.sh` twice, mutation-check, report.** `BASE_URL=… tests/scenarios/ci.sh` twice
 against the same server process — both `Run:` lines verbatim, plus any scenario whose status
-changed between runs. If the server has a fault switch, restart it broken and run `ci.sh` once
+changed between runs. If `ci.sh` cannot run from inside this session (a nested `claude -p` that
+never returns within two minutes), stop it, re-dispatch the actors once more with fresh namespaces
+as run 2, and say in the report that `ci.sh` itself is unverified until the user runs it in a
+terminal. If the server has a fault switch, restart it broken and run `ci.sh` once
 more: at least one `fail_server` or the set is vacuous — say which scenario should have caught it.
 Update `CATALOG.md` (run ✓, last run). Per failure: the actor's pair and its spec-or-server
 verdict. Hand over `references/ci.md`'s GitHub Actions job for the user to wire in.
