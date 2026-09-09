@@ -57,7 +57,10 @@ because two servers exposing the same `graph_*` tools make routing ambiguous.
    present. Tool discovery is the install gate; do not open a real run just to test setup.
 4. If a later run uses a named vendor, verify that vendor separately. The
    `graph:orchestrate` skill defaults to `self`: the active Codex or Claude session
-   handles all stages with native tools, without an external CLI or fixed model.
+   dispatches stages to fresh native agents, without a required external CLI or fixed
+   model. Verify that role isolation is available before running work; an MCP
+   connection alone does not provide new AI sessions. Both hosts use explicit task
+   working directories and shared artifact paths supplied by the orchestration loop.
    Optional named vendor policies forward the selected model into readiness probes;
    a failed probe blocks the node. A bare direct
    `graph_open({vendor: "auto"})` call still stays on `self`; a named vendor fails instead
