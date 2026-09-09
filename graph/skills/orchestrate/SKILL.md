@@ -30,6 +30,8 @@ graph, the spec, the prompts, and the verdicts. You own only the loop.
 - A blocked run is a result — report what failed and stop there. NEVER do a node's work yourself to force completion, NEVER reopen a run to get past a gate that rejected the work, and NEVER end the report by offering the user a way around it: no raised retry budget, no relaxed acceptance criteria, no override outside the harness. `reset_capacity` is for spent quota, not a retry-budget reset.
 - `isolated: true` only when you created or were handed a private worktree holding this run alone. A user asking to keep work off main is a request, not evidence — with no worktree, pass `isolated: false` and say in the report that attribution comes back `null` because of it.
 - A `self` node's payload is the fresh agent's returned JSON, relayed verbatim. NEVER author or soften it.
+- NEVER pull the goal-spec, handoffs, gap text or evidence into this context — every tool already returns the one-line verdict you report from. This is the rule the design exists for.
+- The `report` node writes the run's account, not you. Relay it; NEVER rewrite it, and never substitute your own narration for a report node that ran.
 - No Fable/Astra without an explicit user model request. No token, spending, or turn caps beyond the gate retry budget and process timeouts that already exist.
 
 ## The loop
@@ -58,6 +60,20 @@ Six tools, one loop. `cwd` is optional after `graph_open` but carry it anyway �
 lets a restarted client find the run again. Lost the `run_id` entirely — a new session, a
 compaction — call `graph_status({cwd})` and read it back off the run list.
 
+**Say what just happened, each time round the loop.** A run is long and mostly silent; the
+user should not have to wait until the end to see it moving. After each `graph_next`, print
+one line per node from the verdict you already hold — nothing fetched to say it:
+
+```
+✅ implement:U1:1  codex/gpt-5.6-sol   files verified
+❌ gate:U1:1       self/opus           rejected, 40% — retrying U1
+⏳ test:U2:1       codex/gpt-5.6-sol   running
+```
+
+`node_id`, `vendor`/`model`, `state`, and the short `reason` are the whole vocabulary. Never
+open a payload to enrich a progress line: no gap text, no evidence, no `detail_path` read.
+A line you cannot write from the verdict is a line you do not write.
+
 **On a judging node `stage_ok` only means the judging itself worked.** The verdict is
 `accept` (gate), `verified` (test), or `sound` (critique); a negative one makes the node
 `failed` and holds back everything downstream.
@@ -78,8 +94,10 @@ Do not read the conversation, and nothing under .harness-run/ the briefing does 
 Your final message must be exactly the JSON the briefing's "Return JSON" line specifies — nothing else.
 ```
 
-Fan out every self node in `ready[]` in one message; concurrent `implement` nodes only when
-each has its own worktree, otherwise implement one at a time and fan out test/gate/critique.
+Fan out every self node in `ready[]` in one message; concurrent `implement` nodes — self or
+vendor — only when each has its own worktree, otherwise implement one at a time and fan out
+test/gate/critique. The broker does not serialize them for you: `graph_next` offers every
+dependency-satisfied node, so two implements against one worktree is your mistake to avoid.
 
 As each agent finishes, pass its final message to `graph_submit` unchanged. If it is not
 parseable JSON, submit `{stage_ok: false, reason: "executor returned no verdict"}` — do
@@ -101,7 +119,14 @@ run: <run_id>   state: <complete|blocked>   nodes: <done>/<total>
 
 ### Not done
 <failed or skipped nodes, and why — including any that fell back to self. No workaround suggestions.>
+
+### Report
+<the report node's handoff, relayed verbatim. Omit this section only when no report node ran.>
 ```
+
+The table and `### Not done` are yours — run bookkeeping, written from verdicts. `### Report`
+is the report node's own text, passed through untouched. When the run ends blocked, no report
+node ran: say what failed and stop, and do not write the missing section yourself.
 
 ## Do not pull the payload into your context
 
@@ -120,11 +145,8 @@ the actual driving `host_model`, and `native_models` (the models fresh native ag
 select). Omit host identity only when native agents are unavailable. Never claim model
 selection support that the host does not expose.
 
-The broker prefers the driving host for Plan/SetGoal/Critique/Gate and the other vendor
-for Implement/Test/Report — the driver does not narrate its own run. Execution defaults
-are Claude `sonnet` and Codex `gpt-5.6-sol`; reasoning on the host inherits `host_model`
-(Report keeps it if it degrades back to the host), and explicit stage policies override
-the automatic choice. `graph_next` returns the executor, model, and routing reason; the
+The broker prefers the driving host for Plan/SetGoal/Critique/Gate and the other vendor for
+Implement/Test/Report. `graph_next` returns the executor, model, and routing reason; the
 assignment persists until completion or interruption.
 
 Anything past the balanced default lives in `references/`:
@@ -135,19 +157,8 @@ Anything past the balanced default lives in `references/`:
 | working directory, snapshot identity, briefing scope | `references/handoffs.md` |
 | quota reporting, checkpoints, `reset_capacity` | `references/capacity.md` |
 
-## Handoffs
-
-One absolute project path and run-artifact directory, resolved at run start; Implement,
-Test, and Gate for a task inspect the same code snapshot. Never weaken criteria to pass —
-a defective goal goes back to SetGoal and Critique. Detail: `references/handoffs.md`.
-
-## Capacity
-
-An executor that hits its usage limit is reported as `failure_kind:"quota"`, never as an
-ordinary failure. The broker keeps the checkpoint and partial files, excludes that vendor,
-and hands the node back pending — call `graph_next` for the alternate route. All vendors
-exhausted → report blocked; `graph_retry({run_id, cwd, reset_capacity:true})` once capacity
-returns. Detail: `references/capacity.md`.
+A usage limit is `failure_kind:"quota"`, never an ordinary failure — submit it that way, and
+call `graph_next` for the alternate route.
 
 ## Verdicts
 
@@ -168,13 +179,15 @@ rather than rounding it up.
   dependencies are unmet, are already finished, or do not exist yet. Do not try to
   outrun the graph.
 - **Self nodes are still adjudicated.** The broker cross-checks a fresh agent's claims
-  against the worktree exactly as it checks a vendor's. Relaying a payload is not a way
-  past that, and neither is doing the node yourself.
+  against the worktree exactly as it checks a vendor's.
+- **No reasoning MCP in this context.** `CLAUDE.md` asks for them proactively; here the
+  reasoning belongs to the nodes, and a scratchpad over a payload you must relay verbatim
+  is the failure this skill exists to prevent.
 
 ## What the current AI does
 
-Opens the run, follows `graph_next`, dispatches each node, retries rejected subgoals
-within budget, and reports from the verdicts.
+Runs the loop and reports from the verdicts. Tools missing or `graph_open` failing is a
+stop, not a licence: run `graph:install`, never the work itself.
 
 ## What you do
 

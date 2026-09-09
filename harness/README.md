@@ -253,6 +253,11 @@ engagement. Fail-open everywhere (v0 lesson) — a nudge, not security.
   Status section. It dry-runs first and refuses mismatched versions.
 
 ## Status
+- **v1.22.2 — graph path opens in balanced mode**: step 0 documented `graph_open({request,
+  cwd, vendor, isolated})`, omitting `allocation`. The broker defaults it to `"ordered"`,
+  where `vendor: "auto"` stays on `self` — so a caller following this signature silently ran
+  every stage in one session instead of distributing them. The call now names
+  `allocation: "balanced"`, `host_vendor` and `host_model`.
 - **v1.22.1 — stable line. Claude-only by default**: `codex_provider` now defaults to
   `"off"` in `pipeline.js`, the Agent Team fallback skips provider detection unless a run
   opts in, and the graph's `vendor: "auto"` resolves to `self` instead of probing Codex. No
