@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Fresh print-mode session per invocation. Keep project permission settings; never
-// bypass permissions. workspace-write is a tool profile, not an OS sandbox claim.
+// Fresh print-mode session per invocation. read-only and workspace-write defer to the
+// project's permission settings; danger-full-access is an explicit per-run opt-in that
+// bypasses the prompt. A sandbox name here is a tool profile, not an OS sandbox claim.
 import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -16,7 +17,7 @@ for (let i = 0; i < args.length; i++) {
   else throw new Error(`unknown argument ${key}`);
 }
 if (!opts.cwd || !opts.output || (!opts.detect && !opts['prompt-file'])) throw new Error('cwd, output and prompt-file (unless detect) are required');
-if (!['read-only', 'workspace-write'].includes(opts.sandbox)) throw new Error(`unsupported sandbox ${opts.sandbox}`);
+if (!['read-only', 'workspace-write', 'danger-full-access'].includes(opts.sandbox)) throw new Error(`unsupported sandbox ${opts.sandbox}`);
 opts.cwd = resolve(opts.cwd);
 opts.output = resolve(opts.output);
 mkdirSync(dirname(opts.output), { recursive: true });
@@ -27,11 +28,14 @@ function parse(text) {
 
 async function invoke(prompt) {
   const readOnly = opts.sandbox === 'read-only';
+  const permissionMode = readOnly ? 'dontAsk'
+    : opts.sandbox === 'danger-full-access' ? 'bypassPermissions'
+      : 'acceptEdits';
   const cli = ['-p', '--output-format', 'json', '--no-session-persistence',
     '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
     '--model', opts.model || 'sonnet',
     '--tools', readOnly ? 'Read,Glob,Grep' : 'Read,Glob,Grep,Edit,Write,Bash',
-    '--permission-mode', readOnly ? 'dontAsk' : 'acceptEdits'];
+    '--permission-mode', permissionMode];
   for (const dir of opts.addDirs) cli.push('--add-dir', dir);
   return await new Promise(resolveResult => {
     const child = spawn('claude', cli, { cwd: opts.cwd, stdio: ['pipe', 'pipe', 'pipe'] });
