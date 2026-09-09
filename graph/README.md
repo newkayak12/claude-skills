@@ -45,6 +45,10 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.5.4 — orchestrate QA pass**: the skill states the self-node dispatch contract
+  (fresh agent at the returned model, briefing path only, JSON relayed verbatim), fans out
+  ready self nodes before blocking on vendor nodes, promotes the discriminating rules to
+  Standing Mandates, drops prose duplicated in `references/`, and names its trigger phrases.
 - **v1.5.3 — orchestrate skill split**: routing detail, handoff obligations, and capacity
   recovery move to `skills/orchestrate/references/`; the skill keeps the loop, the mandates,
   and the verdict contract (275 -> 186 lines).
