@@ -35,8 +35,8 @@
 |---|---|
 | 실패하는 테스트를 먼저 쓰고, 진짜 실패할 수 있는지 증명 | `test-driven-development` |
 | 테스트 없는 코드에 테스트 추가, 커버리지 감사, 테스트 계획 | `test-master` |
-| API 시나리오 수집·생성, 액터 서브에이전트로 실제 서버에 실행 | `scenario-director` |
-| 시나리오 스펙 하나를 구현·실행하고 요청/응답 증거 보고 | `scenario-actor` |
+| API 시나리오를 스펙으로 수집·생성, 스펙마다 액터 AI 디스패치, `ci.sh` 설치 | `scenario-director` |
+| 시나리오 스펙 하나를 curl로 직접 실행 — 로컬에서도, CI의 `claude -p` 단위로도 | `scenario-actor` |
 | 로컬은 통과, CI는 실패하는 테스트 고치기 | `flaky-test-analyzer` |
 
 **데이터베이스**
@@ -211,12 +211,13 @@ RED 사이클마다 기록 하나가 남습니다:
 
 백엔드의 시나리오 세트를 책임집니다. 흐름을 먼저 모읍니다 — 라우트·OpenAPI, 이미 있는
 Postman/`.http` 컬렉션, 하루치 접근 로그, 닫힌 장애 이슈, 그리고 사용자가 "깨지면 제일 아픈"
-것으로 꼽은 흐름 — 출처를 붙여 `tests/scenarios/CATALOG.md`에. 그 다음 상태 맵에서 생성합니다:
-기본 생명주기, 전이마다 거부 하나(200보다 409가 중요합니다), 타 사용자 격리, 입력 거부. 사용자가
-자기 말로 쓴 시나리오는 스펙 표(`references/scenario-spec.md`)로 정규화하고 모르는 상태 코드는
-`[확인 필요]`로 둡니다. 디렉터는 러너 코드를 쓰지 않습니다: 스펙마다 `scenario-actor`
-서브에이전트를 한 턴에 띄우고, 요청/응답 쌍 없이 돌아온 통과는 돌려보내고, 전체 세트를 같은
-서버 프로세스에 두 번 돌립니다 — 2회차가 다르면 정리 누락입니다.
+것으로 꼽은 흐름 — 출처를 붙여 `tests/scenarios/CATALOG.md`에, 전이 × happy/거부/스킵 사유
+커버리지 매트릭스와 함께. 그 다음 상태 맵에서 나머지를 생성합니다. 사용자가 자기 말로 쓴
+시나리오는 스펙 표(`references/scenario-spec.md`)로 정규화하고 모르는 상태 코드는 `[확인 필요]`로
+둡니다. 아무도 테스트 코드를 쓰지 않습니다: 디렉터는 `ci.sh`를 복사해 넣고, 스펙마다
+`scenario-actor` 서브에이전트를 한 턴에 띄우고, 스텝 쌍이나 결과 JSON 없이 돌아온 통과는
+돌려보내고, 같은 서버 프로세스에 `ci.sh`를 두 번 돌리고(2회차가 다르면 정리 누락), 서버에 결함
+스위치가 있으면 깨진 서버에도 한 번 돌려 세트가 공허하지 않음을 증명합니다.
 
 ```
 시나리오 md로 써놨어, 이거 읽고 서버에 돌려줘. mock 말고.
@@ -224,16 +225,16 @@ Postman/`.http` 컬렉션, 하루치 접근 로그, 닫힌 장애 이슈, 그리
 
 ### `scenario-actor`
 
-스펙 하나를 받아 러너 파일 하나와 증거를 냅니다. 디렉터의 흐름별 서브에이전트로(`agents/actor.md`가
-계약) 또는 흐름 하나만 단독으로 돕니다. 러너는 저장소 스택을 따릅니다(`references/runners.md`):
-스택이 없으면 curl + bash — `req`/`expect`/`defer`가 든 `lib.sh`, 흐름당 `s<n>.sh`, 세트용
-`run.sh` — 아니면 pytest + httpx, RestAssured, Hurl. 캡처한 값을 다음 스텝에 잇고, 만드는 문자열마다
-run id를 붙이고, 종료 시 API로 정리하고, `[확인 필요]`는 요청을 한 번 보내 돌아온 값을 기록해
-채우며, 실패 시 스텝별 요청/응답 쌍과 함께 스펙 탓인지 서버 탓인지 판정을 보고합니다.
+액터가 러너입니다. 스펙 하나를 받아 행마다 curl을 직접 쏘고, 캡처한 값을 다음 요청에 잇고,
+필드 단위로 검증하고, 거부 뒤엔 반드시 확인 스텝을 돌리고, 어떤 종료 경로에서도 API로 정리하고,
+`results/s<n>.log`(요청/응답 쌍 전부, 시크릿 마스킹)와 `results/s<n>.json`(`pass | fail_spec |
+fail_server`, 스텝, probe 값, docs≠server 발견)을 남깁니다. `[확인 필요]`는 요청을 한 번 보내
+채우고, README가 말한 코드를 서버가 부정하면 `(docs said 403, server 404)`로 기록합니다. 계약
+하나(`agents/actor.md`)로 세 경로: 디렉터의 서브에이전트, CI의 `tests/scenarios/ci.sh`가 띄우는
+`claude -p "/develop:scenario-actor spec=… BASE_URL=…"`(`references/ci.md`에 스크립트와 GitHub
+Actions 잡, 결과는 JUnit으로 병합), 흐름 하나만 단독.
 
-이메일 유니크 제약을 심은 픽스처 주문 API로 측정했습니다(`scenario-director/evals/`): 무스킬
-3런은 모두 2/7 — 고정 이메일, 호스트 하드코딩, 1회 실행, 스펙 없음 — 이고 두 번째 실행에서
-409로 깨지는 걸 스스로 모릅니다. 스킬 런은 7/7(curl 러너, 한국어로 쓴 시나리오 파일 입력 포함).
+픽스처 주문 API(`scenario-director/evals/`, 함정 셋: 이메일 유니크, 상태 코드를 틀리게 쓴 README, `--bug` 스위치)로 측정했습니다. 액터 벤치 3런 × spec 4 × 정상 + `--bug`: haiku·sonnet 모두 12/12 통과, `[확인 필요]` 전부 spec에 probe 기록, README의 403 거짓을 404로 기록, 심은 버그를 `fail_server`로 검출, false pass 0 — 액터당 haiku $0.09 vs sonnet $0.20이라 `ci.sh` 기본값은 haiku. 디렉터 E2E, 산출된 `ci.sh`를 실제로 재실행하는 12점 채점: 무스킬 2/12, 1.3.0 코드 러너 7/12, 1.4.0 12/12.
 
 ### `flaky-test-analyzer`
 
