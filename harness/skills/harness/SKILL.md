@@ -36,8 +36,9 @@ Workflow controller/fallback/report role, not the actor.
 
 0. **Graph path (default when the `graph-engineering` MCP is connected).** Hand the raw
    request to the graph engine and drive the node graph it returns — invoke
-   `graph:orchestrate`. `graph_open({request, cwd, vendor, isolated})` builds
-   plan → setgoal → critique and expands per-subgoal implement/test/gate nodes server-side;
+   `graph:orchestrate`. `graph_open({request, cwd, isolated, allocation: "balanced",
+   host_vendor, host_model})` builds plan → setgoal → critique and expands per-subgoal
+   implement/test/gate nodes server-side;
    you loop `graph_next` → `graph_run` (vendor executes; blocks) or `graph_submit` (you
    executed it) until the run stops. The spec, handoffs, evidence and verdicts stay on disk;
    tools return one-line verdicts, so a long retry loop never fills your context and no
