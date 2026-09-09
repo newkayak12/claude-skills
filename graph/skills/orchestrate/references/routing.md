@@ -78,6 +78,10 @@ vendor for execution when provenance matters: unlike `auto`, it blocks visibly o
 readiness failure instead of silently turning an implement or test node back into
 Claude work.
 
+`report` is routed like `implement`/`test` — to the vendor that did **not** drive the run,
+so a run's account of itself is not written by its own driver. It stays reasoning work:
+read-only sandbox, and `host_model` if no peer is available and it falls back to the host.
+
 Keys are stage names — `plan`, `setgoal`, `critique`, `implement`, `test`, `gate`,
 `report` — plus the optional `gate:goal`. Each entry may set `vendor`, `candidates`,
 `sandbox`, `model`. A stage entry wins over the run-level setting; a stage with no entry

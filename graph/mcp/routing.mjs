@@ -22,11 +22,18 @@ export function selectModel(run, node, vendor, explicit) {
   return DEFAULT_MODELS[vendor] || null;
 }
 
+// implement and test hand the work to the other vendor. report joins them so a run's
+// account of itself is not written by the vendor that drove it - the same independence
+// the same-actor penalty buys gate and critique. Model defaults stay tied to execution:
+// a report that degrades back to the host is still reasoning work.
+export const CROSS_VENDOR_STAGES = new Set(['implement', 'test', 'report']);
+
 export function rankCandidates(run, node, candidates) {
   const execution = ['implement', 'test'].includes(node.stage);
+  const cross = CROSS_VENDOR_STAGES.has(node.stage);
   const preferred = run.host_vendor
-    ? (execution ? (run.host_vendor === 'claude' ? 'codex' : 'claude') : run.host_vendor)
-    : (execution ? 'codex' : 'claude');
+    ? (cross ? (run.host_vendor === 'claude' ? 'codex' : 'claude') : run.host_vendor)
+    : (cross ? 'codex' : 'claude');
   const peers = run.nodes.filter(n => n.subgoal_id === node.subgoal_id && n.node_id !== node.node_id);
   const actor = node.stage === 'critique'
     ? run.nodes.filter(n => n.stage === 'setgoal' && n.state === 'done').at(-1)
