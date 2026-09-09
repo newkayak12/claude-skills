@@ -45,6 +45,13 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.6.2 — the run shows itself**: 1.6.1 had the driver print progress as plain text lines.
+  A host with a live progress surface already has a better one, and a graph run is exactly the
+  shape it wants: the skill now mirrors the node graph into the host's task list — a task per
+  ready node, `in_progress` on dispatch, `completed` on the verdict — with the text lines kept
+  as the fallback for hosts without one. Same small vocabulary either way (`node_id`,
+  vendor/model, state, short `reason`), and the same rule holds: a line you cannot write from
+  the verdict is a line you do not write.
 - **v1.6.1 — orchestrate reports as it goes, and the report node has somewhere to land**:
   1.6.0 routed `report` to the peer vendor but left the driver's output template narrating
   the run, so a graph node's payload had nowhere to go and a driver under context pressure
