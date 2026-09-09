@@ -85,6 +85,23 @@ parseable JSON, submit `{stage_ok: false, reason: "executor returned no verdict"
 not do the work in this context. If the host cannot launch at the returned model, say so
 in the report instead of substituting a tier silently.
 
+## Output template
+
+```
+## <request>
+
+run: <run_id>   state: <complete|blocked>   nodes: <done>/<total>
+
+| node | vendor | stage_ok | note |
+|---|---|---|---|
+| implement:U1:1 | codex | true | isolated |
+| test:U1:1 | codex | true | verified |
+| gate:U1:1 | self | true | 95% |
+
+### Not done
+<failed or skipped nodes, and why — including any that fell back to self>
+```
+
 ## Do not pull the payload into your context
 
 This is the rule the design exists for. The goal-spec, subgoal acceptance, upstream
@@ -92,8 +109,7 @@ handoffs, prior rejection feedback, changed-file lists and evidence all live in 
 graph. Every tool returns a one-line verdict instead: `node_id`, `stage`, `vendor`,
 `state`, `stage_ok`, and a short `reason` when it failed.
 
-If you accumulate payloads, the loop dies before the work does — a graph with retries
-outgrows your context and you can no longer decide the next step. When you genuinely
+When you genuinely
 need a detail, read `detail_path` for that one node, or call
 `graph_status({full: true, node_id})` for that one node. Never `full: true` for a run.
 
@@ -109,15 +125,10 @@ selection support that the host does not expose.
 
 The broker prefers the driving host for Plan/SetGoal/Critique/Gate/Report and the other
 vendor for Implement/Test. Execution defaults are Claude `sonnet` and Codex
-`gpt-5.6-sol`; reasoning on the host inherits `host_model`, except Fable/Astra fall back
-to the safe defaults unless the user explicitly requests them through `model` or a
-stage policy. Explicit stage policies override automatic selection.
+`gpt-5.6-sol`; reasoning on the host inherits `host_model`.
+Explicit stage policies override automatic selection.
 
-Availability, current assignments, execution errors, and prior completion counts affect
-ranking. A negative Gate verdict does not count as a vendor execution error. This is
-a deterministic heuristic, not learned cost optimization. `graph_next` returns the
-executor, model, and routing reason; the assignment persists until completion or
-interruption. Named vendor policies remain strict and never silently switch vendors.
+`graph_next` returns the executor, model, and routing reason; the assignment persists until completion or interruption.
 
 Anything past the balanced default lives in `references/`:
 
@@ -129,25 +140,19 @@ Anything past the balanced default lives in `references/`:
 
 ## Handoffs
 
-Resolve one absolute project path and run-artifact directory at run start. Implement,
-Test, and Gate for a task inspect the same code snapshot. Give Implement/Test only the
-task's acceptance criteria, required paths, check commands, and prior gate gaps — never
-the conversation, unrelated tasks, or full logs. Keep implementation handoffs at most
-1500 characters; write evidence to files and return paths. A task that cannot fit a
-small briefing goes back for decomposition rather than widening the executor's scope.
-
-Do not weaken criteria to pass. A defective goal returns to SetGoal and Critique with a
-recorded revision.
+One absolute project path and run-artifact directory, resolved at run start. Implement,
+Test, and Gate for a task inspect the same code snapshot. An Implement/Test briefing is
+at most 1500 characters: acceptance criteria, required paths, check commands, prior gate
+gaps — never the conversation or full logs. Never weaken criteria to pass; a defective
+goal goes back to SetGoal and Critique. Detail: `references/handoffs.md`.
 
 ## Capacity
 
-A native executor that hits its provider usage limit submits
-`{stage_ok:false, failure_kind:"quota", ...}` with whatever handoff and evidence exist.
-Never mark an ordinary implementation failure as quota. The broker keeps the checkpoint
-and partial files, excludes that vendor for the run, and hands back a pending node —
-call `graph_next` for the alternate route. When every permitted vendor is exhausted,
-report blocked; `graph_retry({run_id, cwd, reset_capacity:true})` is the way back once
-capacity returns.
+A native executor that hits its usage limit submits `{stage_ok:false, failure_kind:"quota", ...}`
+with whatever evidence exists; an ordinary failure is never marked quota. The broker keeps the
+checkpoint and partial files, excludes that vendor for the run, and hands back a pending node —
+call `graph_next` for the alternate route. All vendors exhausted → report blocked;
+`graph_retry({run_id, cwd, reset_capacity:true})` once capacity returns. Detail: `references/capacity.md`.
 
 ## Verdicts
 
@@ -169,23 +174,6 @@ rather than rounding it up.
   outrun the graph.
 - **Self nodes are still adjudicated.** Read the briefing, do the work, submit honestly;
   the broker cross-checks your claims the same way it checks a vendor's.
-
-## Output template
-
-```
-## <request>
-
-run: <run_id>   state: <complete|blocked>   nodes: <done>/<total>
-
-| node | vendor | stage_ok | note |
-|---|---|---|---|
-| implement:U1:1 | codex | true | isolated |
-| test:U1:1 | codex | true | verified |
-| gate:U1:1 | self | true | 95% |
-
-### Not done
-<failed or skipped nodes, and why — including any that fell back to self>
-```
 
 ## What the current AI does
 
