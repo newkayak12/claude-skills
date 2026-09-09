@@ -41,7 +41,7 @@ graph_open({
   host_vendor, host_model, native_models
 })                                               -> run_id + first ready node
 while state == "running":
-    graph_next({run_id})                          -> ready[] with routing
+    graph_next({run_id, cwd})                     -> ready[] with routing
     for each ready node:                          # all self nodes first, in one message; then vendor nodes
         self node    -> fresh agent at the returned model, briefing_path only; relay its JSON to graph_submit({run_id, node_id, payload})
         vendor node  -> graph_run({run_id, node_id})   # blocks; the self agents keep working meanwhile
@@ -50,10 +50,11 @@ while state == "running":
         a failed subgoal    -> graph_retry({run_id, subgoal_id})
         a failed critique   -> graph_retry({run_id})          # redo the spec
         nothing retryable   -> report and stop
-graph_status({run_id})                            -> final counts, only if the last graph_next did not already return them
+graph_status({run_id, cwd})                       -> final counts, only if the last graph_next did not already return them
 ```
 
-That is the whole protocol. Six tools, one loop.
+Six tools, one loop. `cwd` is optional after `graph_open` but carry it anyway — it is what
+lets a restarted client find the run again.
 
 **On a judging node `stage_ok` only means the judging itself worked.** The verdict is
 `accept` (gate), `verified` (test), or `sound` (critique); a negative one makes the node
@@ -75,10 +76,8 @@ Do not read the conversation, and nothing under .harness-run/ the briefing does 
 Your final message must be exactly the JSON the briefing's "Return JSON" line specifies — nothing else.
 ```
 
-Dispatch every self node in `ready[]` in one message so they run concurrently, then call
-`graph_run` for the vendor nodes — it blocks, so the self agents work while you wait.
-Fan out concurrent `implement` nodes only when each has its own worktree; otherwise run
-implement one at a time and fan out only non-editing stages (test, gate, critique).
+Fan out every self node in `ready[]` in one message; concurrent `implement` nodes only when
+each has its own worktree, otherwise implement one at a time and fan out test/gate/critique.
 
 As each agent finishes, pass its final message to `graph_submit` unchanged. If it is not
 parseable JSON, submit `{stage_ok: false, reason: "executor returned no verdict"}` — do
@@ -135,19 +134,17 @@ Anything past the balanced default lives in `references/`:
 
 ## Handoffs
 
-One absolute project path and run-artifact directory, resolved at run start. Implement,
-Test, and Gate for a task inspect the same code snapshot. An Implement/Test briefing is
-at most 1500 characters: acceptance criteria, required paths, check commands, prior gate
-gaps — never the conversation or full logs. Never weaken criteria to pass; a defective
-goal goes back to SetGoal and Critique. Detail: `references/handoffs.md`.
+One absolute project path and run-artifact directory, resolved at run start; Implement,
+Test, and Gate for a task inspect the same code snapshot. Never weaken criteria to pass —
+a defective goal goes back to SetGoal and Critique. Detail: `references/handoffs.md`.
 
 ## Capacity
 
-A native executor that hits its usage limit submits `{stage_ok:false, failure_kind:"quota", ...}`
-with whatever evidence exists; an ordinary failure is never marked quota. The broker keeps the
-checkpoint and partial files, excludes that vendor for the run, and hands back a pending node —
-call `graph_next` for the alternate route. All vendors exhausted → report blocked;
-`graph_retry({run_id, cwd, reset_capacity:true})` once capacity returns. Detail: `references/capacity.md`.
+An executor that hits its usage limit is reported as `failure_kind:"quota"`, never as an
+ordinary failure. The broker keeps the checkpoint and partial files, excludes that vendor,
+and hands the node back pending — call `graph_next` for the alternate route. All vendors
+exhausted → report blocked; `graph_retry({run_id, cwd, reset_capacity:true})` once capacity
+returns. Detail: `references/capacity.md`.
 
 ## Verdicts
 
