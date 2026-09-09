@@ -27,11 +27,7 @@ graph, the spec, the prompts, and the verdicts. You own only the loop.
 ```
 graph_open({
   request, cwd, isolated,
-  vendor: "self",
-  policy: {
-    implement: { vendor: "codex", model: "gpt-5.6-sol" },
-    test:      { vendor: "codex", model: "gpt-5.6-sol" }
-  }
+  vendor: "self"
 })                                               -> run_id + first ready node
 while state == "running":
     graph_next({run_id})                          -> ready[] with routing
@@ -87,12 +83,17 @@ is not possible on purpose.
 unused in a bare `graph_open({vendor: "auto"})` call until you name it (`vendor: "codex"`)
 or list it in `candidates`.
 
-This skill defaults to a mixed run: keep `plan`, `setgoal`, `critique`, `gate`, and
-`report` on the Claude session (`vendor: "self"`), while requiring Codex for `implement`
-and `test`. The execution stages use `model: "gpt-5.6-sol"`; the broker passes that model
-to both the readiness probe and the real node invocation, so an incompatible model in
-the global Codex config cannot make the probe test the wrong runtime. A user-supplied
-vendor, candidate list, model, or policy wins over these defaults.
+This skill defaults to the current AI session (`vendor: "self"`), whether it is
+Codex or Claude. Use that session's native tools to execute each node's briefing and
+submit its result. No external CLI or particular model is required. The graph owns
+the stage order and acceptance checks; the current AI supplies the work.
+
+Use explicit vendor policies or candidates when the task calls for an available
+external executor. Do not infer availability from a vendor name or an installed
+binary; use the broker's readiness probe. Inside Codex, execute harness stages with
+native tools rather than delegating them back into a nested Codex CLI process.
+A user-supplied vendor, candidate list, model, or policy overrides the defaults,
+subject to the host session's execution constraints.
 
 Name the vendor when the run must prove who did the work. Silent degradation is what
 lets a graph claim an external vendor implemented something it never touched.
@@ -106,17 +107,15 @@ actually write here) gets expressed:
 ```js
 graph_open({
   request, cwd,
-  vendor: "self", model: "opus",          // the run-level default
+  vendor: "self",                         // current session; retain its model
   policy: {
     implement: { vendor: "codex", model: "gpt-5.6-sol" },
     test:      { vendor: "codex" },
-    report:    { model: "sonnet" },
-    "gate:goal": { model: "opus" }         // may differ from the per-subgoal gates
   }
 })
 ```
 
-The example above is also the ordinary mixed-routing shape. Use a named `codex` vendor
+The example above is optional external routing from a Claude session. Use a named `codex` vendor
 for execution when provenance matters: unlike `auto`, it blocks visibly on readiness
 failure instead of silently turning an implement or test node back into Claude work.
 
@@ -175,7 +174,7 @@ run: <run_id>   state: <complete|blocked>   nodes: <done>/<total>
 <failed or skipped nodes, and why — including any that fell back to self>
 ```
 
-## What Claude does
+## What the current AI does
 
 Opens the run, follows `graph_next`, dispatches each node, retries rejected subgoals
 within budget, and reports from the verdicts.
