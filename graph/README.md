@@ -45,6 +45,9 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.5.2 — atomic capacity reset**: a `graph_retry` that is going to be rejected no
+  longer clears capacity exclusions first, and an ordinary probe failure is never
+  laundered into a capacity exclusion.
 - **v1.5.1 — probe-time capacity**: a readiness probe rejected for usage limits is
   classified as spent capacity instead of a broken vendor, recorded on the run, and
   cleared by `graph_retry({reset_capacity:true})` with no interrupted node to name.
