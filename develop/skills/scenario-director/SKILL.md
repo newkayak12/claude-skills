@@ -90,8 +90,10 @@ the spec, and note `(docs said X, server Y)` when documentation lied. Read every
 the rejection list in the mandates; send the actor back once, then report the gap.
 
 **5. Run `ci.sh` twice, mutation-check, report.** `BASE_URL=… tests/scenarios/ci.sh` twice
-against the same server process — both `Run:` lines verbatim, plus any scenario whose status
-changed between runs. If `ci.sh` cannot run from inside this session (a nested `claude -p` that
+against the same server process, in the foreground — never backgrounded: a headless director that
+backgrounds `ci.sh` and waits for a notification ends its session with no report. Both `Run:` lines
+verbatim, plus any scenario whose status changed between runs. The actors dispatched in step 4 are
+not a substitute for these runs; `ci.sh` is the command CI will execute, so it is what gets verified. If `ci.sh` cannot run from inside this session (a nested `claude -p` that
 never returns within two minutes), stop it, re-dispatch the actors once more with fresh namespaces
 as run 2, and say in the report that `ci.sh` itself is unverified until the user runs it in a
 terminal. If the server has a fault switch, restart it broken and run `ci.sh` once
