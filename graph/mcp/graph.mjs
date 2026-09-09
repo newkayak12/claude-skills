@@ -89,10 +89,18 @@ function mergeOnto(fresh, mine) {
   for (const n of mine.nodes) {
     const cur = byId.get(n.node_id);
     // A terminal state on disk that we never saw belongs to another broker: keep it.
-    if (cur && cur.state !== 'pending' && n.state === 'pending') continue;
+    const recoveringOwnExecution = cur?.state === 'running' && cur.ticket
+      && n.recovery?.from_ticket === cur.ticket;
+    if (cur && cur.state !== 'pending' && n.state === 'pending' && !recoveringOwnExecution) continue;
     byId.set(n.node_id, n);
   }
-  return { ...fresh, ...mine, nodes: [...byId.values()] };
+  const freshEpoch = fresh.capacity_epoch || 0;
+  const mineEpoch = mine.capacity_epoch || 0;
+  const unavailable = freshEpoch > mineEpoch ? fresh.unavailable_vendors
+    : mineEpoch > freshEpoch ? mine.unavailable_vendors
+      : { ...(fresh.unavailable_vendors || {}), ...(mine.unavailable_vendors || {}) };
+  return { ...fresh, ...mine, nodes: [...byId.values()],
+    capacity_epoch: Math.max(freshEpoch, mineEpoch), unavailable_vendors: unavailable || {} };
 }
 
 export function saveRun(run) {
@@ -103,6 +111,8 @@ export function saveRun(run) {
     writeFileSync(runPath(run.cwd, run.run_id), JSON.stringify(merged, null, 2) + '\n');
     // Keep the caller's object consistent with what was written.
     run.nodes = merged.nodes;
+    run.capacity_epoch = merged.capacity_epoch || 0;
+    run.unavailable_vendors = merged.unavailable_vendors || {};
     return run;
   } finally {
     release(lock);
@@ -159,6 +169,10 @@ export function createRun(opts) {
     request: opts.request,
     context: opts.context || '',
     vendor: opts.vendor || 'auto',
+    allocation: opts.allocation || 'ordered',
+    host_vendor: opts.host_vendor || null,
+    host_model: opts.host_model || null,
+    native_models: opts.native_models || null,
     // Run-level default; a policy entry overrides it per stage.
     model: opts.model || null,
     // Per-stage routing. The harness contract pins reasoning to a strong model and
@@ -391,6 +405,7 @@ export function runState(run) {
   // nothing - the worst kind of failure, because it looks like success.
   const reports = run.nodes.filter((n) => n.stage === 'report');
   if (reports.some((n) => n.state === 'done')) return { state: 'complete', counts };
+  if (run.routing_blocked && !counts.running) return { state: 'blocked', counts };
   // Blocked means nothing can proceed - not merely that nothing is pending. A node
   // waiting on a dependency that failed is still pending and still stuck.
   if (!readyNodes(run).length && !counts.running) return { state: 'blocked', counts };

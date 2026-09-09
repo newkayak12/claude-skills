@@ -56,10 +56,15 @@ because two servers exposing the same `graph_*` tools make routing ambiguous.
 3. After Claude Code reloads the MCP configuration, confirm all six `graph_*` tools are
    present. Tool discovery is the install gate; do not open a real run just to test setup.
 4. If a later run uses a named vendor, verify that vendor separately. The
-   `graph:orchestrate` skill opens a mixed run: Claude handles reasoning and gates while
-   named `codex` policies handle implement/test with the selected model forwarded into
-   their readiness probes. A failed Codex probe is therefore visible and blocks that
-   execution node instead of silently moving it to Claude. A bare direct
+   `graph:orchestrate` skill uses balanced allocation: reasoning prefers the driving
+   host/model, Implement/Test prefer the other vendor's efficient model. It declares
+   `host_vendor`, `host_model`, and supported `native_models`; external executors pass
+   readiness checks. Fable/Astra require explicit model requests. Verify that role
+   isolation is available before running work; an MCP
+   connection alone does not provide new AI sessions. Both hosts use explicit task
+   working directories and shared artifact paths supplied by the orchestration loop.
+   Optional named vendor policies forward the selected model into readiness probes;
+   a failed probe blocks the node. A bare direct
    `graph_open({vendor: "auto"})` call still stays on `self`; a named vendor fails instead
    of silently degrading.
 
