@@ -27,8 +27,8 @@ graph, the spec, the prompts, and the verdicts. You own only the loop.
 
 - NEVER call `graph_status({full: true})` on a run. One node at a time: `detail_path`, or `graph_status({full: true, node_id})`.
 - ALWAYS read `state`. A judging node can return `stage_ok: true` and still be `failed` — that is the gate working, not an error to route around.
-- A blocked run is a result. NEVER do a node's work yourself to force completion, and NEVER reopen a run to get past a gate that rejected the work. `reset_capacity` is for spent quota, not a retry-budget reset.
-- `isolated: true` only when the run has a private worktree to itself. A false claim makes attribution meaningless.
+- A blocked run is a result — report what failed and stop there. NEVER do a node's work yourself to force completion, NEVER reopen a run to get past a gate that rejected the work, and NEVER end the report by offering the user a way around it: no raised retry budget, no relaxed acceptance criteria, no override outside the harness. `reset_capacity` is for spent quota, not a retry-budget reset.
+- `isolated: true` only when you created or were handed a private worktree holding this run alone. A user asking to keep work off main is a request, not evidence — with no worktree, pass `isolated: false` and say in the report that attribution comes back `null` because of it.
 - A `self` node's payload is the fresh agent's returned JSON, relayed verbatim. NEVER author or soften it.
 - No Fable/Astra without an explicit user model request. No token, spending, or turn caps beyond the gate retry budget and process timeouts that already exist.
 
@@ -98,7 +98,7 @@ run: <run_id>   state: <complete|blocked>   nodes: <done>/<total>
 | gate:U1:1 | self | true | 95% |
 
 ### Not done
-<failed or skipped nodes, and why — including any that fell back to self>
+<failed or skipped nodes, and why — including any that fell back to self. No workaround suggestions.>
 ```
 
 ## Do not pull the payload into your context
