@@ -1035,6 +1035,13 @@ function toolGraphSubmit(a) {
 
 async function toolGraphRetry(a) {
   const run = mustFindRun(a);
+  // Validate before touching anything: a call that is going to be rejected must not have
+  // already spent the capacity reset. The node itself is looked up again below, after the
+  // reset has saved - saveRun rebuilds run.nodes, so a reference taken here can go stale.
+  const retryable = (n) => n && n.state === 'pending' && n.recovery;
+  if (a.node_id && !retryable(getNode(run, String(a.node_id)))) {
+    throw new Error('node_id must identify a currently interrupted pending node');
+  }
 
   // A vendor can be excluded before it ever runs a node, so a capacity reset cannot
   // require an interrupted node to name.
@@ -1054,7 +1061,6 @@ async function toolGraphRetry(a) {
 
   if (a.node_id) {
     const n = getNode(run, String(a.node_id));
-    if (!n || n.state !== 'pending' || !n.recovery) throw new Error('node_id must identify a currently interrupted pending node');
     n.state = 'pending';
     n.ticket = null;
     delete n.assignment;
