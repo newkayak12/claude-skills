@@ -31,8 +31,11 @@ the message fragment. Print the pair on a mismatch — the pair is the evidence.
   -> 201 {"id":"c91e","status":"CREATED","total":1000}
 ```
 
-Rules: tokens, passwords, cookies masked as `****` (`sed 's/Bearer [^" ]*/Bearer ****/g'`);
-body truncated at 500 chars; probes logged as `[S2 probe step 5]`; cleanup as `[S2 cleanup]`.
+Rules: secrets masked as `****` in both directions — the `Authorization` header, and any
+`password`, `token`, `access_token`, `refresh_token`, `secret`, `Set-Cookie` value in a request or
+response body (`sed -E 's/("(password|token|access_token|refresh_token|secret)": *")[^"]*"/\1****"/g'`).
+The captured value still goes into the next request; only the log is masked. Body truncated at
+500 chars; probes logged as `[S2 probe step 5]`; cleanup as `[S2 cleanup]`.
 
 ## Result JSON — `results/s<n>.json`
 
