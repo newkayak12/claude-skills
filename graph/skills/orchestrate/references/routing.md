@@ -53,9 +53,8 @@ lets a graph claim an external vendor implemented something it never touched.
 
 Availability, current assignments, execution errors, and prior completion counts affect
 ranking. A negative Gate verdict does not count as a vendor execution error. This is
-a deterministic heuristic, not learned cost optimization. `graph_next` returns the
-executor, model, and routing reason; the assignment persists until completion or
-interruption. Named vendor policies remain strict and never silently switch vendors.
+a deterministic heuristic, not learned cost optimization. Named vendor policies remain
+strict and never silently switch vendors.
 
 ## Per-stage policy
 
