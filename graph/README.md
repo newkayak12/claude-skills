@@ -45,6 +45,15 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.6.0 — the peer writes the report, and progress is answerable**: `report` routes to
+  the vendor that did *not* drive the run, so a run's account of itself is not written by
+  its own driver; it stays reasoning work (read-only sandbox, `host_model` if it falls back
+  to the host). `graph_status` now takes no `run_id`: it lists every run in a directory with
+  state, counts, the node running right now with its vendor and elapsed seconds, and the last
+  node to finish — so a lead that lost the id, or a second operator looking in, can find the
+  run without the transcript. A running node in the single-run view carries the same detail.
+  First full cross-vendor E2E on 1.5.7 completed 8/8 with Codex implementing and testing
+  under `danger-full-access` and `changed_files_verified: true`.
 - **v1.5.7 — honest absolute paths, opt-in full access**: the worktree cross-check compared
   an executor's absolute `changed_files` claim against git's relative output and failed every
   truthful node that used the briefing's own paths. Claude gains `danger-full-access`
@@ -120,7 +129,7 @@ Zero runtime dependencies, Node 18+.
 | `graph_run` | the routed vendor executes one node; **blocks**; returns a one-line verdict |
 | `graph_submit` | record a node the orchestrator executed itself; same adjudication |
 | `graph_retry` | open a fresh attempt, carrying rejection feedback — a subgoal, or the spec itself |
-| `graph_status` | compact run state; `full:true` only for one node at a time |
+| `graph_status` | compact run state; omit `run_id` for every run in a directory and what is running right now; `full:true` only for one node at a time |
 
 ## The orchestrator never holds the payload
 

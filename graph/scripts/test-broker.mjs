@@ -910,6 +910,25 @@ test('ping is answered while a node is still running', async () => {
   }, { SLOW_MS: '5000' });
 });
 
+// "which node is running, on what, for how long" was unanswerable: a blocking graph_run
+// showed up as a bare state:"running" row, and an operator without the run_id in hand
+// could not reach the run at all.
+test('an in-flight node names its vendor and elapsed time, with or without a run_id', async () => {
+  await slowRun(async ({ c, cwd, runId }) => {
+    const run = c.request('tools/call', { name: 'graph_run', arguments: { run_id: runId, cwd, node_id: 'plan' } });
+    await c.request('ping', {}).done;
+    const node = (await c.call('graph_status', { run_id: runId, cwd })).nodes.find((n) => n.node_id === 'plan');
+    assert.equal(node.state, 'running');
+    assert.equal(node.executor, 'slow');
+    assert.ok(Number.isInteger(node.elapsed_s), `no elapsed_s on the running node: ${JSON.stringify(node)}`);
+    const overview = await c.call('graph_status', { cwd });
+    const row = overview.runs.find((r) => r.run_id === runId);
+    assert.equal(row.state, 'running');
+    assert.deepEqual(row.running.map((n) => [n.node_id, n.executor]), [['plan', 'slow']]);
+    await run.done;
+  }, { SLOW_MS: '5000' });
+});
+
 test('a running node can be cancelled', async () => {
   await slowRun(async ({ c, cwd, runId }) => {
     const run = c.request('tools/call', {
@@ -1701,4 +1720,62 @@ test('an absolute path outside cwd is still contradicted', async () => {
     c.close();
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+// A lead that lost its run_id - a fresh session, a compaction, a second operator - had no
+// way back into a run through the MCP, only through the transcript.
+test('every run in a directory is listable without knowing a run_id', async () => {
+  const cwd = repo();
+  const c = await new Client().init();
+  try {
+    const first = await openRun(c, cwd);
+    const second = await openRun(c, cwd, { request: 'the second request' });
+    const overview = await c.call('graph_status', { cwd });
+    assert.deepEqual([...overview.runs.map((r) => r.run_id)].sort(), [first, second].sort());
+    const stamps = overview.runs.map((r) => Date.parse(r.created_at));
+    assert.deepEqual(stamps, [...stamps].sort((x, y) => y - x), 'newest run is not listed first');
+    const fresh = overview.runs.find((r) => r.run_id === second);
+    assert.equal(fresh.request, 'the second request');
+    assert.equal(fresh.state, 'running');
+    assert.equal(fresh.counts.pending, 3);
+    assert.deepEqual(fresh.running, []);
+    assert.equal(fresh.last_finished, null);
+    // The overview is a progress view, never a way around the one-node-at-a-time rule.
+    assert.ok(!JSON.stringify(overview).includes('acceptance'), 'the overview leaked payload');
+
+    await c.call('graph_submit', { run_id: first, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    const row = (await c.call('graph_status', { cwd })).runs.find((r) => r.run_id === first);
+    assert.deepEqual(row.last_finished, { node_id: 'plan', stage: 'plan', state: 'done' });
+    assert.equal(row.counts.done, 1);
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
+// The driver grading its own account of the run is exactly the self-attestation the gate
+// stages exist to prevent; report now goes to the peer for the same reason.
+test('the peer vendor, not the driver, writes the run report', async () => {
+  const cwd = balancedRepo();
+  const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+  try {
+    const { run_id } = await c.call('graph_open', {
+      request: 'r', cwd, allocation: 'balanced', host_vendor: 'claude', host_model: 'driving-model' });
+    let report = null;
+    for (let i = 0; i < 24 && !report; i++) {
+      const next = await c.call('graph_next', { run_id, cwd });
+      assert.ok(next.ready.length, `run stalled with nothing ready: ${JSON.stringify(next.counts)}`);
+      const node = next.ready[0];
+      if (node.stage === 'report') { report = node; break; }
+      // Host-vendor work comes back as self; only the peer's nodes are actually run.
+      const r = node.vendor === 'self'
+        ? await c.call('graph_submit', { run_id, cwd, node_id: node.node_id,
+          payload: ok(node.stage === 'setgoal' ? { spec: SPEC } : { handoff: 'h', sound: true, accept: true, match_pct: 100, gaps: [] }) })
+        : await c.call('graph_run', { run_id, cwd, node_id: node.node_id });
+      assert.equal(r.state, 'done', JSON.stringify(r));
+    }
+    assert.ok(report, 'the run never reached its report node');
+    assert.equal(report.executor, 'codex');
+    assert.equal(report.model, 'gpt-5.6-sol');
+    assert.match(report.routing_reason, /preference=codex/);
+    assert.equal((await c.call('graph_run', { run_id, cwd, node_id: 'report' })).state, 'done');
+    assert.equal((await c.call('graph_status', { run_id, cwd })).state, 'complete');
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
 });

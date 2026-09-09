@@ -51,10 +51,12 @@ while state == "running":
         a failed critique   -> graph_retry({run_id})          # redo the spec
         nothing retryable   -> report and stop
 graph_status({run_id, cwd})                       -> final counts, only if the last graph_next did not already return them
+graph_status({cwd})                               -> every run here: state, counts, what is running now and for how long
 ```
 
 Six tools, one loop. `cwd` is optional after `graph_open` but carry it anyway — it is what
-lets a restarted client find the run again.
+lets a restarted client find the run again. Lost the `run_id` entirely — a new session, a
+compaction — call `graph_status({cwd})` and read it back off the run list.
 
 **On a judging node `stage_ok` only means the judging itself worked.** The verdict is
 `accept` (gate), `verified` (test), or `sound` (critique); a negative one makes the node
@@ -118,10 +120,11 @@ the actual driving `host_model`, and `native_models` (the models fresh native ag
 select). Omit host identity only when native agents are unavailable. Never claim model
 selection support that the host does not expose.
 
-The broker prefers the driving host for Plan/SetGoal/Critique/Gate/Report and the other
-vendor for Implement/Test. Execution defaults are Claude `sonnet` and Codex `gpt-5.6-sol`;
-reasoning on the host inherits `host_model`, and explicit stage policies override the
-automatic choice. `graph_next` returns the executor, model, and routing reason; the
+The broker prefers the driving host for Plan/SetGoal/Critique/Gate and the other vendor
+for Implement/Test/Report — the driver does not narrate its own run. Execution defaults
+are Claude `sonnet` and Codex `gpt-5.6-sol`; reasoning on the host inherits `host_model`
+(Report keeps it if it degrades back to the host), and explicit stage policies override
+the automatic choice. `graph_next` returns the executor, model, and routing reason; the
 assignment persists until completion or interruption.
 
 Anything past the balanced default lives in `references/`:
