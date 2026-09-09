@@ -55,10 +55,9 @@ graph_status({run_id})                            -> final counts, only if the l
 
 That is the whole protocol. Six tools, one loop.
 
-**A node can fail with `stage_ok: true`.** On judging nodes that field means "the judging
-itself worked"; the verdict is `accept` (gate), `verified` (test), or `sound` (critique).
-A node whose verdict is negative is `failed` and holds back everything downstream — that
-is the gate doing its job, not an error to route around. Read `state`, not `stage_ok`.
+**On a judging node `stage_ok` only means the judging itself worked.** The verdict is
+`accept` (gate), `verified` (test), or `sound` (critique); a negative one makes the node
+`failed` and holds back everything downstream.
 
 **`graph_retry` without a `subgoal_id` or `node_id` retries the spec.** When critique rejects the
 goal-spec, redoing one subgoal fixes nothing: the whole decomposition is in question. That
@@ -110,10 +109,6 @@ handoffs, prior rejection feedback, changed-file lists and evidence all live in 
 graph. Every tool returns a one-line verdict instead: `node_id`, `stage`, `vendor`,
 `state`, `stage_ok`, and a short `reason` when it failed.
 
-When you genuinely
-need a detail, read `detail_path` for that one node, or call
-`graph_status({full: true, node_id})` for that one node. Never `full: true` for a run.
-
 You do not write node prompts. `graph_run` composes them from graph state; passing one
 is not possible on purpose.
 
@@ -125,11 +120,10 @@ select). Omit host identity only when native agents are unavailable. Never claim
 selection support that the host does not expose.
 
 The broker prefers the driving host for Plan/SetGoal/Critique/Gate/Report and the other
-vendor for Implement/Test. Execution defaults are Claude `sonnet` and Codex
-`gpt-5.6-sol`; reasoning on the host inherits `host_model`.
-Explicit stage policies override automatic selection.
-
-`graph_next` returns the executor, model, and routing reason; the assignment persists until completion or interruption.
+vendor for Implement/Test. Execution defaults are Claude `sonnet` and Codex `gpt-5.6-sol`;
+reasoning on the host inherits `host_model`, and explicit stage policies override the
+automatic choice. `graph_next` returns the executor, model, and routing reason; the
+assignment persists until completion or interruption.
 
 Anything past the balanced default lives in `references/`:
 
