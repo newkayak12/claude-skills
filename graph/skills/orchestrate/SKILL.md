@@ -174,7 +174,9 @@ Each external invocation has a unique artifact directory, so retries do not over
 earlier output. Reopening the MCP process does not discard the run or checkpoints.
 
 If all permitted vendors are exhausted, report blocked. Once capacity is restored,
-`graph_retry({run_id, cwd, node_id, reset_capacity:true})` reopens the interrupted node
+`graph_retry({run_id, cwd, reset_capacity:true})` clears capacity exclusions on their own,
+including a vendor rejected at probe time before it ran anything, and re-ranks work that has
+not been dispatched. Adding `node_id` also reopens the interrupted node
 and clears capacity exclusions/readiness cache. This cannot reopen completed nodes or
 bypass a rejected Gate. Keep `run_id` and `cwd` to resume after restarting the client.
 

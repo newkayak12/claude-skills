@@ -1510,3 +1510,87 @@ test('gate:goal can be policied separately from the per-subgoal gates', async ()
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+// ---------- quota discovered at probe time ----------
+// The real Codex adapter buries the usage-limit message at codex.smoke.stderr and writes
+// nothing to its own stderr, so a probe-time exhaustion is indistinguishable from a broken
+// vendor unless the report is searched. Reproduces that exact shape.
+function quotaProbeRepo() {
+  const cwd = repo();
+  const adapter = join(cwd, 'quota-probe-adapter.mjs');
+  writeFileSync(adapter, `
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+const a = process.argv.slice(2), get = k => a[a.indexOf(k) + 1];
+const cwd = get('--cwd'), vendor = get('--vendor-id'), output = get('--output');
+if (a.includes('--detect')) {
+  if (existsSync(join(cwd, 'quota-' + vendor))) {
+    writeFileSync(output, JSON.stringify({ ok: false, codex: { available: true, ready: false, reachable: false,
+      reason: 'codex unreachable',
+      smoke: { exit_code: 1, stdout: '', stderr: "You've hit your usage limit. Upgrade to Pro, visit settings to purchase more credits or try again at 4:21 AM." } } }));
+    process.exit(1);
+  }
+  writeFileSync(output, JSON.stringify({ vendor: { ready: true, reachable: true, reason: '' } }));
+  process.exit(0);
+}
+const stage = readFileSync(get('--prompt-file'), 'utf8').match(/^# (\\w+) node/)[1];
+const result = { stage_ok: true, handoff: 'h', evidence: 'e', changed_files: [], checks: ['c -> pass'], verified: true, sound: true, accept: true, match_pct: 100, gaps: [] };
+if (stage === 'implement') { writeFileSync(join(cwd, 'a.txt'), 'implemented'); result.changed_files = ['a.txt']; }
+writeFileSync(output, JSON.stringify({ stage_ok: true, result }));
+`);
+  mkdirSync(join(cwd, '.claude'), { recursive: true });
+  writeFileSync(join(cwd, '.claude', 'broker-vendors.json'), JSON.stringify(Object.fromEntries(['claude', 'codex'].map(vendor => [vendor, {
+    command: 'node', args: [adapter, '--vendor-id', vendor], requires_binary: null,
+    sandboxes: ['read-only', 'workspace-write'], default_sandbox: 'workspace-write',
+  }]))));
+  writeFileSync(join(cwd, 'quota-codex'), '');
+  return cwd;
+}
+
+test('a probe rejected for usage limits is recorded as spent capacity, not a broken vendor', async () => {
+  const cwd = quotaProbeRepo();
+  const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+  try {
+    const { run_id } = await c.call('graph_open', { request: 'r', cwd, allocation: 'balanced',
+      host_vendor: 'claude', host_model: 'driving-model' });
+    for (const [node_id, payload] of [['plan', ok({ handoff: 'p' })], ['setgoal', ok({ spec: SPEC })], ['critique', ok({ sound: true })]]) {
+      await c.call('graph_next', { run_id, cwd });
+      assert.equal((await c.call('graph_submit', { run_id, cwd, node_id, payload })).state, 'done');
+    }
+    // Implement prefers the peer vendor; its probe is out of quota, so the run falls back.
+    const next = await c.call('graph_next', { run_id, cwd });
+    assert.equal(next.ready[0].executor, 'claude', 'the exhausted peer must not be assigned');
+
+    const full = await c.call('graph_status', { run_id, cwd, full: true });
+    assert.match(String((full.unavailable_vendors || {}).codex || ''), /capacity/i,
+      'a quota-exhausted probe must mark the vendor as spent capacity so reset_capacity is the way back');
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('capacity reset alone restores a vendor excluded at probe time, with no interrupted node to name', async () => {
+  const cwd = quotaProbeRepo();
+  const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+  try {
+    const { run_id } = await c.call('graph_open', { request: 'r', cwd, allocation: 'balanced',
+      host_vendor: 'claude', host_model: 'driving-model' });
+    for (const [node_id, payload] of [['plan', ok({ handoff: 'p' })], ['setgoal', ok({ spec: SPEC })], ['critique', ok({ sound: true })]]) {
+      await c.call('graph_next', { run_id, cwd });
+      await c.call('graph_submit', { run_id, cwd, node_id, payload });
+    }
+    await c.call('graph_next', { run_id, cwd });
+    assert.ok((await c.call('graph_status', { run_id, cwd, full: true })).unavailable_vendors.codex, 'precondition: codex is excluded');
+
+    rmSync(join(cwd, 'quota-codex'));  // capacity came back
+    const reset = await c.call('graph_retry', { run_id, cwd, reset_capacity: true });
+
+    const full = await c.call('graph_status', { run_id, cwd, full: true });
+    assert.deepEqual(full.unavailable_vendors, {}, 'a capacity reset must clear probe-time exclusions');
+    assert.equal(reset.ready?.[0]?.vendor, 'codex', 'the recovered vendor is offered again for execution work');
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
