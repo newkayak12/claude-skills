@@ -167,8 +167,9 @@ rather than rounding it up.
 - **Follow `graph_next`.** Both `graph_run` and `graph_submit` refuse a node whose
   dependencies are unmet, are already finished, or do not exist yet. Do not try to
   outrun the graph.
-- **Self nodes are still adjudicated.** Read the briefing, do the work, submit honestly;
-  the broker cross-checks your claims the same way it checks a vendor's.
+- **Self nodes are still adjudicated.** The broker cross-checks a fresh agent's claims
+  against the worktree exactly as it checks a vendor's. Relaying a payload is not a way
+  past that, and neither is doing the node yourself.
 
 ## What the current AI does
 
