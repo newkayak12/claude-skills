@@ -56,10 +56,10 @@ because two servers exposing the same `graph_*` tools make routing ambiguous.
 3. After Claude Code reloads the MCP configuration, confirm all six `graph_*` tools are
    present. Tool discovery is the install gate; do not open a real run just to test setup.
 4. If a later run uses a named vendor, verify that vendor separately. The
-   `graph:orchestrate` skill opens a mixed run: Claude handles reasoning and gates while
-   named `codex` policies handle implement/test with the selected model forwarded into
-   their readiness probes. A failed Codex probe is therefore visible and blocks that
-   execution node instead of silently moving it to Claude. A bare direct
+   `graph:orchestrate` skill defaults to `self`: the active Codex or Claude session
+   handles all stages with native tools, without an external CLI or fixed model.
+   Optional named vendor policies forward the selected model into readiness probes;
+   a failed probe blocks the node. A bare direct
    `graph_open({vendor: "auto"})` call still stays on `self`; a named vendor fails instead
    of silently degrading.
 
