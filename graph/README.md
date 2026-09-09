@@ -45,6 +45,9 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.5.1 — probe-time capacity**: a readiness probe rejected for usage limits is
+  classified as spent capacity instead of a broken vendor, recorded on the run, and
+  cleared by `graph_retry({reset_capacity:true})` with no interrupted node to name.
 - **v1.5.0 — automatic allocation and capacity recovery**: balanced routing keeps
   reasoning on the driving host and prefers the other vendor's efficient model for
   Implement/Test. Claude now has a fresh-session CLI adapter. Fable/Astra are excluded
@@ -222,7 +225,10 @@ filesystem itself.
 
 ## Capacity recovery
 
-Balanced runs distinguish usage-limit errors from task failures. A quota interruption
+Balanced runs distinguish usage-limit errors from task failures, at execution time and at
+readiness probe time alike - the probe searches the whole adapter report, since adapters bury
+that message at different depths. A vendor rejected for spent capacity is recorded on the run
+as such rather than as a broken vendor. A quota interruption
 preserves a checkpoint, raw report/log paths, and the working tree, excludes the exhausted
 vendor for that run, and makes the node ready for another available executor. The next
 session inspects the checkpoint and current files before continuing under the same goal.
@@ -230,7 +236,8 @@ This resumes work from artifacts; vendor conversations are not interchangeable.
 
 For native agents, submit `stage_ok:false, failure_kind:"quota"` and available evidence.
 Call `graph_next` for fallback. When all candidates are exhausted the run reports blocked;
-after capacity returns, use `graph_retry({run_id,cwd,node_id,reset_capacity:true})`.
+after capacity returns, use `graph_retry({run_id,cwd,reset_capacity:true})`, adding `node_id`
+when a specific interrupted node should reopen.
 Each external invocation has its own output directory. Persisted state survives an MCP
 restart; supply the original `cwd` with `run_id` when reconnecting. No automatic worktree
 rollback occurs, and partial work is never treated as verified completion.

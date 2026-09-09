@@ -217,6 +217,13 @@ function readJson(path) {
 
 const probeCache = new Map();
 
+// Every string in a report, whatever shape the adapter chose.
+function flatten(value, depth = 0) {
+  if (typeof value === 'string') return value;
+  if (depth > 6 || !value || typeof value !== 'object') return '';
+  return Object.values(value).map((v) => flatten(v, depth + 1)).filter(Boolean).join('\n');
+}
+
 async function probe(name, vendor, cwd, sandbox, model) {
   // Readiness must be checked with the same model the node will run. Otherwise a
   // broken global Codex default can reject the probe even though the run selected a
@@ -251,6 +258,11 @@ async function probe(name, vendor, cwd, sandbox, model) {
     });
     const report = readJson(outPath) || {};
     const detail = report.codex || report.vendor || report;
+    // A vendor that is merely out of credit is not a broken vendor. Adapters bury that
+    // message at different depths (the Codex one puts it under codex.smoke.stderr and
+    // writes nothing to its own stderr), so search the whole report rather than agreeing
+    // on a field name that the next adapter will place somewhere else.
+    const quota = capacityFailure(report, [r.stderr, flatten(report)].join('\n'));
     // Two different questions. `ready` means the vendor can WRITE under this sandbox -
     // what an Implement node needs. `reachable` means the vendor answers at all - which
     // is all a reasoning node needs, since it is told not to write and is run read-only.
@@ -259,7 +271,9 @@ async function probe(name, vendor, cwd, sandbox, model) {
       ready: r.status === 0 && (detail.ready === true || report.ok === true),
       reachable: detail.reachable === true || (r.status === 0 && detail.ready === true),
       reason: detail.reason || (r.status === 0 ? '' : `adapter exit ${r.status}: ${r.stderr.slice(-200)}`),
+      quota,
     };
+    if (quota) out.reason = `usage capacity exhausted at probe${out.reason ? `; ${out.reason}` : ''}`;
   }
   settle(out);
   probeCache.set(key, Promise.resolve(out));
@@ -399,6 +413,12 @@ async function route(run, node) {
     }
     const p = await probe(name, v, run.cwd, sandbox, model);
     const usable = REASONING_STAGES.has(stage) ? p.reachable : p.ready;
+    // Spent capacity is recorded on the run so the operator sees why the vendor dropped
+    // out, the run stops re-probing it, and graph_retry({reset_capacity:true}) is the way back.
+    if (!usable && p.quota) {
+      run.unavailable_vendors = { ...(run.unavailable_vendors || {}), [name]: 'usage capacity exhausted at probe' };
+      saveRun(run);
+    }
     attempts.push({ vendor: name, ready: usable, reason: usable ? '' : p.reason });
     if (usable) return { vendor: name, executor: name, sandbox, model, reason: candidate.reason, attempts };
   }
@@ -734,7 +754,7 @@ const TOOLS = [
         run_id: { type: 'string' },
         subgoal_id: { type: 'string', description: 'omit to retry the spec after a critique rejected it' },
         node_id: { type: 'string', description: 'Resume an interrupted/quota-exhausted node, retaining files and checkpoint. Does not reopen a completed or gate-rejected node.' },
-        reset_capacity: { type: 'boolean', description: 'With node_id, retry vendors after the caller confirms their quota is available again.' },
+        reset_capacity: { type: 'boolean', description: 'Retry vendors after the caller confirms their quota is available again. With node_id it also reopens that interrupted node; alone it clears exclusions - including ones recorded at probe time, where no node was ever interrupted - re-ranks undispatched work and returns the next ready nodes.' },
         cwd: { type: 'string' },
       },
       required: ['run_id'],
@@ -1016,14 +1036,25 @@ function toolGraphSubmit(a) {
 async function toolGraphRetry(a) {
   const run = mustFindRun(a);
 
+  // A vendor can be excluded before it ever runs a node, so a capacity reset cannot
+  // require an interrupted node to name.
+  if (a.reset_capacity === true) {
+    run.unavailable_vendors = {};
+    run.capacity_epoch = (run.capacity_epoch || 0) + 1;
+    probeCache.clear();
+    // An assignment made while the vendor was excluded is stale: re-rank it. Work already
+    // dispatched keeps its executor - only what has not left the gate is reconsidered.
+    for (const n of run.nodes) if (n.state === 'pending' && !n.ticket) delete n.assignment;
+    saveRun(run);
+    if (!a.node_id && !a.subgoal_id) {
+      record(run.cwd, { event: 'graph_retry', run_id: run.run_id, target: 'capacity' });
+      return { run_id: run.run_id, target: 'capacity', retried: true, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
+    }
+  }
+
   if (a.node_id) {
     const n = getNode(run, String(a.node_id));
     if (!n || n.state !== 'pending' || !n.recovery) throw new Error('node_id must identify a currently interrupted pending node');
-    if (a.reset_capacity === true) {
-      run.unavailable_vendors = {};
-      run.capacity_epoch = (run.capacity_epoch || 0) + 1;
-      probeCache.clear();
-    }
     n.state = 'pending';
     n.ticket = null;
     delete n.assignment;
