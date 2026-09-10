@@ -9,7 +9,7 @@
     {
       "name": "develop",
       "description": "Engineering skills: CLI, SQL, clean architecture, clean code, DDD, pragmatic programming, database optimization, chaos engineering, Spring Boot, microservices, Kotlin, TDD, frontend, code documentation, testing, SRE, performance profiling & optimization, incident response, documentation strategy, and dev-quality-workflow (full dev cycle entry point). ADR drafting moved to the technique-write plugin.",
-      "version": "1.4.0",
+      "version": "1.4.1",
       "author": {
         "name": "newkayak12"
       },
@@ -99,7 +99,7 @@
     {
       "name": "portfolio",
       "description": "Portfolio and career skills: JD analysis, portfolio rewriting, company research, feedback, pattern extraction, interview prep, resume tailoring, job-application-workflow, and ppt-keycolor-changer.",
-      "version": "1.14.0",
+      "version": "1.14.1",
       "author": {
         "name": "newkayak12"
       },
@@ -139,7 +139,7 @@
     {
       "name": "graph",
       "description": "Graph engineering for the harness flow: a local MCP server owns graph state, routes nodes to vendor CLIs or the session, adjudicates results against the worktree, and keeps payloads on disk. Includes graph:install and graph:orchestrate.",
-      "version": "1.6.2",
+      "version": "1.6.3",
       "author": {
         "name": "newkayak12"
       },
