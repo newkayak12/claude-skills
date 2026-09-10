@@ -1,5 +1,7 @@
 # graph
 
+**English** · [한국어](KOR.md)
+
 Graph engineering for the harness flow, mediated by a local MCP server. The main
 session orchestrates; the graph engine owns state, routing, execution, and adjudication.
 
@@ -45,6 +47,7 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.6.3 — Korean README**: documentation only. No skill or broker changes.
 - **v1.6.2 — the run shows itself**: 1.6.1 had the driver print progress as plain text lines.
   A host with a live progress surface already has a better one, and a graph run is exactly the
   shape it wants: the skill now mirrors the node graph into the host's task list — a task per
