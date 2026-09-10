@@ -1,5 +1,6 @@
 ---
 name: portfolio-jd
+effort: high
 description: >-
   Use when someone provides both a portfolio and a specific job description and
   wants to know how well they match — gap analysis, fit score, and positioning
@@ -24,6 +25,19 @@ compatibility:
 ---
 
 # Portfolio × JD Gap Analyzer
+
+## Standing Mandates
+
+- ALWAYS build the JD profile before opening the portfolio, and the candidate profile without the JD in view. Comparing while parsing bends the JD toward whatever the portfolio happens to contain — the two profiles must be able to disagree.
+- ALWAYS split must-have from nice-to-have before scoring anything, and say which line of the JD put each one on which side. A missing nice-to-have never moves the verdict, and a missing must-have is never averaged away by four strong dimensions.
+- ALWAYS read a requirement against the company's size and stage. "Kubernetes experience preferred" at a 10-person startup and at a 200-person platform team are different requirements; the same phrase gets a different weight and the analysis says why.
+- ALWAYS quote both sides — the JD line and the portfolio line — for every match and every gap. A gap with a citation on only one side is a guess, and it is not reported.
+- ALWAYS classify each gap 치명적 / 보완 가능 / 마이너 with what closing it actually takes and how long. An unclassified gap is not advice the candidate can act on before the deadline.
+- NEVER count a technology named in a Skills list as a match. Evidence is a bullet that uses it in context; a listed-but-unused technology is a gap the interviewer will find first.
+- NEVER let adjacent experience pass as an exact match. Label it adjacent, and name the one piece of evidence that would upgrade it.
+- NEVER supply the candidate's missing fact. When a number, scale, or context is not in the portfolio, write `[확인 필요: ○○]` and stop — no 역산, no plausible value.
+- NEVER round a weak match up to "apply anyway". 서류 통과 / 경계 / 스크린아웃 is stated plainly with what it hinges on, and 스크린아웃 is a legitimate output of this skill.
+- Goal: every analysis ends with one line the candidate can re-check against the JD — `판정 <통과|경계|스크린아웃> · 5개 차원 n/10 · 치명적 n · 보완 가능 n · 마이너 n · must-have 미충족 n/m`.
 
 ## When to Use / When Not to Use
 
