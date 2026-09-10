@@ -2,10 +2,9 @@
 name: scenario-director
 effort: high
 description: >-
-  Use when a backend needs API scenario tests collected, generated, or read from a user's
-  markdown, written as specs, then executed against a live server by one scenario-actor AI per
-  flow — locally as subagents, in CI through `ci.sh`. Triggers: "API 시나리오 테스트", "시나리오
-  수집해서 돌려줘", "시나리오 md 읽고 서버에 돌려줘", "flow test", "시나리오 CI 붙여줘".
+  Use when a backend's API scenario tests must be collected or read from md, written as specs,
+  then run against a live server by one actor AI per flow. Triggers: "API 시나리오 테스트",
+  "시나리오 md 읽고 서버에 돌려줘", "flow test", "시나리오 CI 붙여줘".
 scenarios:
   - "Set up scenario tests for this backend and run them against the dev server"
   - "Turn these Postman collections and this incident into repeatable scenario tests"

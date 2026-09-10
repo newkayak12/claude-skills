@@ -2,10 +2,9 @@
 name: scenario-actor
 effort: medium
 description: >-
-  Use when one API scenario spec must be executed by hand against a live server — curl per step,
-  captured values chained, request/response evidence logged, verdict returned. scenario-director's
-  per-flow subagent, the `claude -p` unit CI runs, or alone for one flow. Triggers: "이 시나리오 하나만
-  돌려줘", "이 spec 실행해줘", "run this scenario", "spec=… BASE_URL=…".
+  Use when one API scenario spec must be run by hand against a live server — curl per step,
+  captured values chained, evidence logged, verdict returned. Triggers: "이 시나리오 하나만 돌려줘",
+  "이 spec 실행해줘", "run this scenario", "spec=… BASE_URL=…".
 scenarios:
   - "Run S3 from tests/scenarios against the staging URL and show me every request"
   - "spec=tests/scenarios/s2_pay_twice.spec.md BASE_URL=http://localhost:8080 results=tests/scenarios/results"
