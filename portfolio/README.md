@@ -72,8 +72,12 @@ Parses the JD and the portfolio *independently* — comparing too early biases t
 portfolio's own framing — then scores fit across five dimensions: tech stack, experience scale,
 role scope, domain, and soft signals. Each gap is classified 치명적 / 보완 가능 / 마이너 with the
 reason for that severity. It ends with an honest pass / borderline / screen-out call and the one
-factor that would most shift it. Not for company-type matching without a posting
-(`portfolio-company`) or resume keyword work (`resume-tailorer`).
+factor that would most shift it. Every match and gap cites the line on both sides, a
+technology named only in a Skills list counts as a gap rather than a match, and a missing
+fact stays `[확인 필요]` instead of being filled in. Closes with one re-checkable tally line:
+verdict, five dimension scores, gap counts by severity, unmet must-haves. Not for
+company-type matching without a posting (`portfolio-company`) or resume keyword work
+(`resume-tailorer`).
 
 ```
 Here's my portfolio and the full JD for a senior backend role at a Series C fintech.
