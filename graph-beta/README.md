@@ -48,6 +48,19 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.6.1 — the host's own model is selectable, and a bench**: the first e2e round's
+  driving session reported itself as `claude-opus-5[1m]`, a context variant the fresh-agent
+  picker does not list, and `graph_open` blocked at `plan` with `native host cannot select
+  model` — a vendor failure for a model the host was running at that moment. The check now
+  passes `host_model` unconditionally: a fresh native agent with no override inherits it.
+  The same round sized both flat requests S — an empty single-package repository shows `size`
+  no build units — so `scripts/bench/` now carries two monorepo fixtures that size L (`code`:
+  four workspace packages; `docs`: three packages to document), the flat ones for the delegate
+  path, a runner that drives one arm (`beta`, `stable` graph 1.x, `none`) through a headless
+  session, and a scorer (static + executed criteria, one LLM-judged accuracy check for docs,
+  session cost and skill-compliance counts from the top-level transcript). Fixture note: the
+  first round's `npm test` = `node --test test/` fails on Node 22 (a directory argument); the
+  fixtures now use `node --test`. Results land in `scripts/bench/README.md` as rounds complete.
 - **v0.6.0 — integrate and repackage**: the git work is the manager's, so a conflict is a fact
   it saw and not a claim a node made. Folding an accepted child commits its worktree on the
   package branch (the run's own state directory excluded). A package with `deps` is branched
