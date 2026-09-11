@@ -2,6 +2,9 @@
 
 One worked exchange per move. The name never appears in the conversation; the operation does.
 
+The last five were absorbed from the retired `self` plugin (`deprecated/self`). They are not
+therapy — each one is a judgment operation on material people usually treat as feeling.
+
 ## Elenchus
 
 They state a principle. Find the case they would accept that the principle mishandles, and let the
@@ -114,3 +117,52 @@ The question dissolves. Do not rebuild something in its place to be useful.
 
 Name what got sharper. Unresolved is not the same as unchanged, and the difference is the whole
 value of the session.
+
+## Ranking under scarcity
+
+Two values that both claim first place. Make them spend; a hierarchy nobody has paid for is a wish
+list.
+
+> — 가족도 중요하고 일도 중요해요.
+> — 둘 다 1번일 수는 없어서요. 일에서 1년 정체되는 대신 저녁을 매일 집에서 먹는 거, 받아요?
+> — …받을 것 같은데요.
+> — 그럼 순서가 있는 거고, 지금 일정은 그 순서와 반대로 짜여 있네요.
+
+## Avoidance inversion
+
+A fear with no stated content cannot be argued with, and that is exactly its defence. Make it state
+a condition, then remove the condition.
+
+> — 준비되면 지원할 거예요.
+> — 준비됐다는 걸 뭘 보고 알아요? 구체적으로 어떤 게 있으면요?
+> — …모르겠네요.
+> — 그 조건이 영원히 안 오면 어떻게 하실 거예요? 지금이 그 상태예요.
+
+## Owning the motive
+
+Trace the motive to whose approval it settles. If nobody's, it may be theirs.
+
+> — 이걸 왜 하는지는 모르겠는데 해야 해요.
+> — 다 끝냈을 때, 누가 알아주면 제일 시원할 것 같아요?
+> — 아버지요.
+> — 그럼 목표는 그 일이 아니라 그 문장이었네요. 그 문장을 다른 방법으로 받을 수는 없어요?
+
+## Role vs person
+
+Most identity distress is a role being worn as a self. Separate the role's demands from theirs.
+
+> — 요즘 제가 저답지 않아요. 사람들한테 차갑게 대해요.
+> — 리드가 된 다음부터요?
+> — …네.
+> — 그럼 차가운 게 당신이 된 게 아니라, 그 자리가 요구하는 걸 당신 성격으로 번역해서 입고 있는
+>   거예요. 자리가 요구하는 건 뭐고, 당신이 덧붙인 건 뭐예요?
+
+## Projection check
+
+Contempt out of proportion to the offence usually marks a disowned want. Ask what that person is
+allowed to do.
+
+> — 그 사람 진짜 꼴보기 싫어요. 자기 자랑만 해요.
+> — 그 사람은 해도 되고 당신은 하면 안 되는 게 뭐예요?
+> — …자기 한 일을 말하는 거요.
+> — 그게 싫은 게 아니라 부러운 쪽에 가까워 보이는데요. 그 금지는 누가 걸었어요?

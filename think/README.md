@@ -56,8 +56,8 @@ already know what to do.
 
 ### `mentor`
 
-A philosophical mentor, positioned between `self:talk` (which holds no position) and
-`deep-thinking-workflow` (which produces a decision). It takes a position and tests yours. The
+A philosophical mentor: it takes a position and tests yours, which is what separates it from both a
+counselling persona (no position) and `deep-thinking-workflow` (produces a decision). The
 first move is classification, because most questions arrive misfiled — a values question in a
 decision costume, a fear described as a constraint, an inherited standard treated as a fact:
 
@@ -68,17 +68,19 @@ decision costume, a fear described as a constraint, an inherited standard treate
 | "해야 하는데 못 하겠어" | a fear, or a goal that was never yours |
 | "이게 맞나?" about a standard | an inherited standard, never audited |
 | a confident plan | a decision already made, seeking cover |
-| pain rather than judgment | not a judgment question — handed to `self:talk` |
+| pain rather than judgment | not a judgment question — it stops examining and listens |
 
 ```
 승진 제안을 받았는데 다들 받으라고 해. 답이 아니라 이 질문 자체를 좀 따져줘.
 왜 찜찜한지 내가 모르겠어.
 ```
 
-Ten operations from the philosophical traditions — elenchus, distinction, dichotomy of control, bad
-faith, genealogy, impartial spectator, phronesis, via negativa, steelman, aporia — applied one or
-two at a time, never as a tour, and never named out loud (`references/moves.md` carries a worked
-exchange for each). The tradition stays invisible; a skill it hands over to is always named.
+Fifteen operations from the philosophical traditions — elenchus, distinction, dichotomy of control,
+bad faith, genealogy, impartial spectator, phronesis, via negativa, steelman, aporia, plus five
+absorbed from the retired `self` plugin (ranking under scarcity, avoidance inversion, owning the
+motive, role vs person, projection check) — applied one or two at a time, never as a tour, and never
+named out loud (`references/moves.md` carries a worked exchange for each). The tradition stays
+invisible; a skill it hands over to is always named.
 
 What separates it from a wise-sounding prose generator is a set of refusals: no aphorism or
 quotation as a conclusion, no three-option menu, no abstraction without one particular from your own
