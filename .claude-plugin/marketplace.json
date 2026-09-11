@@ -145,6 +145,16 @@
       },
       "source": "./graph",
       "category": "productivity"
+    },
+    {
+      "name": "graph-beta",
+      "description": "Beta line of graph: same engine as graph 1.7.0 plus kinds (code / document / package), a TaskManager MCP for medium and large requests, and per-flow entry skills. Separate run directory; do not enable alongside graph in one project. Includes graph-beta:install and graph-beta:orchestrate.",
+      "version": "0.1.0",
+      "author": {
+        "name": "newkayak12"
+      },
+      "source": "./graph-beta",
+      "category": "productivity"
     }
   ]
 }
