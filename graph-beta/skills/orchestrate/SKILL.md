@@ -55,7 +55,11 @@ fresh agent at size.briefing_path -> tm_submit({task_id, node_id: "size", payloa
 ```
 
 `delegate.args` already carries the request, cwd, the flow `size` chose, and every routing
-argument you gave `tm_open`; add only `isolated`. Do not re-measure: `plan` in the graph run
+argument you gave `tm_open`; add only `isolated`. When the user has said, in their own words,
+that the request must be split — "패키지별로 나눠서", "one worktree per package", "these are
+separate deliverables" — pass `size: "L"` and `size` is recorded as pinned, not measured;
+"one run, don't split it" pins `size: "S"`. A monorepo with one test script and one commit
+measures S on its own: `size` reads build units and ownership boundaries, not package counts. Do not re-measure: `plan` in the graph run
 returns `size` too, and if it says L where the manager said S, that goes in the report as an
 observation — the run still proceeds as one graph.
 

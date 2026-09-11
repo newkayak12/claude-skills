@@ -1751,6 +1751,26 @@ test('the host model is selectable even when native_models omits it', async () =
   } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
 });
 
+test('a default tier resolves against declared native ids; an undeclared tier falls back to the host model, visibly', async () => {
+  // The defaults name a tier ("sonnet"); a host lists ids ("claude-sonnet-5"). The second
+  // e2e round blocked every implement node on that mismatch with zero failed nodes, and the
+  // session's only way out was a second graph_open - an orphan run and a redone spec.
+  const cwd = balancedRepo();
+  const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+  try {
+    const ids = await c.call('graph_open', { request: 'r', cwd, allocation: 'balanced', host_vendor: 'codex',
+      host_model: 'gpt-5.6-sol[1m]', candidates: ['codex'], policy: { plan: { model: 'mini' } }, native_models: ['gpt-5.6-sol', 'gpt-5.6-mini'] });
+    assert.equal(ids.state, 'running');
+    assert.equal(ids.ready[0].vendor, 'self');
+    assert.equal(ids.ready[0].model, 'gpt-5.6-mini', 'the tier word finds the declared id');
+    const fb = await c.call('graph_open', { request: 'r', cwd, allocation: 'balanced', host_vendor: 'codex',
+      host_model: 'gpt-5.6-sol', candidates: ['codex'], policy: { plan: { model: 'nano' } }, native_models: ['gpt-5.6-sol'] });
+    assert.equal(fb.state, 'running');
+    assert.equal(fb.ready[0].model, 'gpt-5.6-sol', 'an undeclared tier runs on the host model instead of killing the run');
+    assert.match(JSON.stringify(fb.ready[0]), /not in native_models, host model used/, 'the substitution is visible in the routing reason');
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
 // ---------- registering a vendor does not enrol it in "auto" ----------
 // The default candidate list is empty on purpose: a run that does not name a vendor
 // stays on the orchestrator, even when a perfectly ready vendor is registered. Without

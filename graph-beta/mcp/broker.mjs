@@ -378,6 +378,23 @@ function reclaimAbandoned(run) {
   return reclaimed;
 }
 
+
+// Which model a fresh native agent is asked for. `model` is a tier or an id; the host's
+// native_models are ids or aliases. Same string, then the host's own model, then a
+// declared model that names the same tier ("sonnet" ~ "claude-sonnet-5"); otherwise the
+// host model as a marked fallback. null only when the host declared nothing usable.
+export function resolveNativeModel(run, model) {
+  const list = Array.isArray(run.native_models) ? run.native_models.map(String) : null;
+  if (!list || !model) return { model, fallback: false };
+  if (model === run.host_model || list.includes(model)) return { model, fallback: false };
+  const want = String(model).toLowerCase();
+  const tier = (want.match(/(sonnet|opus|haiku|fable|astra|mini|sol|nano)/) || [])[1] || want;
+  const hit = list.find((m) => m.toLowerCase().includes(want)) || list.find((m) => m.toLowerCase().includes(tier));
+  if (hit) return { model: hit, fallback: false };
+  if (run.host_model) return { model: run.host_model, fallback: true };
+  return null;
+}
+
 function mustFindRun(a) {
   if (a.cwd) knownCwds.add(resolve(String(a.cwd)));
   const cwd = a.cwd ? resolve(String(a.cwd)) : null;
@@ -414,17 +431,20 @@ async function route(run, node) {
     }
     const model = balanced ? selectModel(run, node, name, pol.model) : pol.model;
     if (balanced && name === run.host_vendor) {
-      // native_models declares actual model selection capability, independently
-      // from the driving conversation's model. Never silently substitute a tier.
+      // native_models declares actual model selection capability, independently from the
+      // driving conversation's model. The defaults name a tier ("sonnet"); the host names
+      // ids ("claude-sonnet-5") or aliases - resolve one against the other before refusing.
       // The host's own model is selectable by definition: a fresh native agent with no
-      // model override inherits it, so a host_model the list omits (a context variant
-      // such as "claude-opus-5[1m]") is not a routing failure.
-      if (run.native_models && model !== run.host_model && !run.native_models.includes(model)) {
+      // model override inherits it. A tier the host did not declare at all falls back to
+      // that model, and the reason says so - visible substitution, never a silent one, and
+      // never a dead run over a naming mismatch.
+      const resolved = resolveNativeModel(run, model);
+      if (!resolved) {
         attempts.push({ vendor: name, ready: false, reason: `native host cannot select model ${model}` });
-      } else {
-        return { vendor: 'self', executor: name, sandbox: null, model, reason: candidate.reason, attempts };
+        continue;
       }
-      continue;
+      const reason = resolved.fallback ? `${candidate.reason}; model ${model} not in native_models, host model used` : candidate.reason;
+      return { vendor: 'self', executor: name, sandbox: null, model: resolved.model, reason, attempts };
     }
     if (name === 'codex' && (run.host_vendor === 'codex' || process.env.CODEX_THREAD_ID)) {
       attempts.push({ vendor: name, ready: false, reason: 'Codex hosts must use native agents; nested Codex CLI is disabled' });
