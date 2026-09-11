@@ -117,6 +117,9 @@ function createTask(a) {
     flow: FLOWS[a.flow] ? a.flow : 'auto',
     flow_chosen: null,
     size: null,
+    // The user said, in their own words, that this must be split (L) or must stay one run
+    // (S): the size node is recorded as pinned and never measured. Mirrors the flow pin.
+    size_pinned: ['S', 'L'].includes(a.size) ? a.size : null,
     max_retries: Number.isInteger(a.max_retries) ? a.max_retries : 2,
     // Everything a child run needs to route the way the parent's session routes.
     child_opts: {
@@ -788,6 +791,7 @@ const TOOLS = [
         flow: { type: 'string', enum: ['auto', 'develop', 'document'] },
         vendor: { type: 'string' }, allocation: { type: 'string', enum: ['ordered', 'balanced'] },
         host_vendor: { type: 'string' }, host_model: { type: 'string' }, native_models: { type: 'array', items: { type: 'string' } },
+        size: { type: 'string', enum: ['S', 'L'], description: 'Pin the size instead of measuring it: L when the user said in their own words that the request must be split into packages, S when they said one run must carry it. The size node is recorded as pinned.' },
         model: { type: 'string' }, policy: { type: 'object' }, candidates: { type: 'array', items: { type: 'string' } },
         sandbox: { type: 'string' }, max_retries: { type: 'number' },
       },
@@ -840,8 +844,35 @@ function requireRunnable(task, nodeId) {
 
 function toolOpen(a) {
   const task = createTask(a);
-  record(task, { event: 'tm_open', task_id: task.run_id, cwd: task.cwd, flow: task.flow });
+  record(task, { event: 'tm_open', task_id: task.run_id, cwd: task.cwd, flow: task.flow, size_pinned: task.size_pinned });
+  if (task.size_pinned) {
+    const n = task.nodes.find((x) => x.node_id === 'size');
+    const out = finish(task, n, {
+      stage_ok: true, size: task.size_pinned, size_source: 'pinned', sizing: [],
+      handoff: task.size_pinned === 'L'
+        ? 'Size pinned L by the entry: the user said the request must be split into packages. Nothing was measured; shape decides the packages from the request and the tree.'
+        : 'Size pinned S by the entry: the user said one run must carry it.',
+      evidence: 'no measurement: pinned by the caller',
+    });
+    const delegated = delegateIfSmall(task, n, out);
+    if (delegated) return delegated;
+    saveRun(task);
+  }
   return toolNext({ task_id: task.run_id });
+}
+
+// Size S: this request needs no manager. Say where to go, and leave nothing behind - a
+// task directory for a request that never had packages is clutter that looks like state.
+function delegateIfSmall(task, n, out) {
+  if (!(n.stage === 'size' && n.state === 'done' && task.size === 'S')) return null;
+  const delegate = {
+    tool: 'graph_open',
+    args: { request: task.request, cwd: task.cwd, context: task.context || undefined,
+      flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'), ...task.child_opts },
+    reason: 'size S: one graph run carries it; the manager adds nothing',
+  };
+  try { rmSync(taskDir(task.run_id), { recursive: true, force: true }); } catch { /* best-effort */ }
+  return { ...out, state: 'done', task_state: 'delegated', delegate };
 }
 
 function toolNext(a) {
@@ -904,20 +935,7 @@ function toolSubmit(a) {
   const payload = a.payload || {};
   const result = { ...payload, stage_ok: payload.stage_ok !== false };
   const out = finish(task, n, result);
-
-  // Size S: this request needs no manager. Say where to go, and leave nothing behind - a
-  // task directory for a request that never had packages is clutter that looks like state.
-  if (n.stage === 'size' && n.state === 'done' && task.size === 'S') {
-    const delegate = {
-      tool: 'graph_open',
-      args: { request: task.request, cwd: task.cwd, context: task.context || undefined,
-        flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'), ...task.child_opts },
-      reason: 'size S: one graph run carries it; the manager adds nothing',
-    };
-    try { rmSync(taskDir(task.run_id), { recursive: true, force: true }); } catch { /* best-effort */ }
-    return { ...out, state: 'done', task_state: 'delegated', delegate };
-  }
-  return out;
+  return delegateIfSmall(task, n, out) || out;
 }
 
 function toolRetry(a) {

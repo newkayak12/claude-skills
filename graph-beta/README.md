@@ -48,6 +48,21 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.6.2 — tiers resolve against what the host declared, and size can be pinned**: the
+  second e2e round got past `plan` and then blocked every `implement`/`draft` node with zero
+  failed nodes: the execution default names a tier (`sonnet`), the session declared ids
+  (`claude-sonnet-5`), and the check compared strings. The driving session's only way out was
+  a second `graph_open` — an orphan run and a redone spec, twice. `resolveNativeModel` now
+  matches a tier against the declared list (`sonnet` ~ `claude-sonnet-5`), and a tier the host
+  never declared runs on the host model with the substitution written into the routing
+  reason — visible, never silent, never a dead run over naming. `loop.md` names the
+  `vendor-failure` dead end and forbids the second open. The same round also measured both
+  monorepo fixtures S, with sound reasons (one test script, one commit, no ownership
+  boundary): `size` reads build units, not package counts, and the manager path was never
+  reached. `tm_open({size: "L"|"S"})` pins it the way `flow` is pinned — for a user who said in
+  their own words that the work must be split — and records the size node as `pinned`. The
+  bench's beta arm now carries those words; the runs without them are the delegate-path
+  datapoint.
 - **v0.6.1 — the host's own model is selectable, and a bench**: the first e2e round's
   driving session reported itself as `claude-opus-5[1m]`, a context variant the fresh-agent
   picker does not list, and `graph_open` blocked at `plan` with `native host cannot select

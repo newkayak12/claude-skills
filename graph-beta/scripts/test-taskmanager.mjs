@@ -181,6 +181,27 @@ test('size S delegates to graph_open and leaves nothing on disk', async () => {
   });
 });
 
+test('tm_open({size}) pins the size: L opens shape without measuring, S delegates at once', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root }).init();
+  try {
+    const L = await tm.call('tm_open', { request: 'big request', cwd, flow: 'develop', vendor: 'self', size: 'L' });
+    assert.equal(L.state, 'running', JSON.stringify(L));
+    assert.equal(L.size, 'L');
+    assert.deepEqual(L.ready.map((r) => r.node_id), ['shape'], 'nothing was measured: shape is ready at once');
+    const task = JSON.parse(readFileSync(join(root, L.task_id, 'task.json'), 'utf8'));
+    const size = task.nodes.find((n) => n.node_id === 'size');
+    assert.equal(size.state, 'done');
+    assert.equal(size.result.size_source, 'pinned');
+    const S = await tm.call('tm_open', { request: 'small request', cwd, flow: 'document', vendor: 'self', size: 'S' });
+    assert.equal(S.task_state, 'delegated');
+    assert.equal(S.delegate.tool, 'graph_open');
+    assert.equal(S.delegate.args.flow, 'document');
+    assert.ok(!existsSync(join(root, S.task_id)), 'a pinned S leaves no manager state either');
+  } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
+});
+
 test('a pinned flow survives sizing, and delegate.args open a graph run verbatim', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));

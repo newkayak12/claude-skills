@@ -26,6 +26,9 @@ while state == "running":
         retried == false    -> budget gone: the broker settled it, downstream is `unreachable`,
                                and `report` is in ready[] — run it like any node
         still blocked       -> no report node exists (setgoal never produced a spec): report and stop
+        vendor-failure      -> a ready node no vendor can take (every attempt lists its reason): a routing
+                               dead end, not a failed node. Report the attempts and stop. NEVER open a
+                               second run for the same request — it orphans this one and redoes the spec.
 graph_status({run_id, cwd})                       -> final counts, only if the last graph_next did not already return them
 graph_status({cwd})                               -> every run here: state, counts, what is running now and for how long
 ```

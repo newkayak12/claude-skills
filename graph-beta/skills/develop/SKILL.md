@@ -39,6 +39,10 @@ fresh agent at size.briefing_path -> tm_submit({task_id, node_id: "size", payloa
     no delegate       -> a task of runs: ../orchestrate/references/manager.md
 ```
 
+`size` measures build units and ownership boundaries, so a monorepo with one test script
+sizes S on its own. When the user said the work must be split — "패키지별로 나눠서", "one
+worktree per package" — pass `size: "L"` to `tm_open` and the size node is recorded as pinned.
+
 The flow is pinned, so `size` does not choose one — it only measures. `mixed: true` is
 deliberate: "implement the feature and update the design note" is one run, and the note is a `document` subgoal inside it.
 Pass `mixed: false` only when the user said nothing may be written that is not code — then a spec
