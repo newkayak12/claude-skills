@@ -852,6 +852,69 @@ test('a rejected document gets a fresh draft, and the goal gate waits for the ne
   });
 });
 
+// ---------- flow ----------
+
+test('flow document with mixed=false rejects a spec that carries a code subgoal', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    // U1 says it is code; U2 says nothing and so follows the flow; D1 is a document.
+    const v = await setgoalWith(c, cwd, runId, { spec: { ...MIXED, subgoals: [
+      { ...MIXED.subgoals[0], kind: 'subgoal' }, MIXED.subgoals[1], MIXED.subgoals[2],
+    ] } });
+    assert.equal(v.state, 'failed');
+    assert.match(v.reason, /subgoal U1 has kind subgoal, but this run is flow document with mixed=false/);
+    assert.doesNotMatch(v.reason, /subgoal U2/, 'an unnamed kind takes the flow and is not a violation');
+    assert.doesNotMatch(v.reason, /subgoal D1/);
+  }, { flow: 'document', mixed: false });
+});
+
+test('a fixed flow supplies the kind a subgoal did not name, and the entry choice is visible', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    const open = await c.call('graph_status', { run_id: runId, cwd });
+    assert.equal(open.flow, 'document');
+    assert.equal(open.mixed, true);
+    let nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.match(readFileSync(nx.ready[0].briefing_path, 'utf8'), /## Flow\ndocument \(fixed by the entry\) — default kind for a subgoal that names none: document/);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.match(readFileSync(nx.ready[0].briefing_path, 'utf8'), /Personas to draw from:\n- technical writer/);
+    // SPEC names no kinds: under the document flow it is two documents, plus one code subgoal by name.
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'setgoal', payload: ok({ spec: {
+      ...SPEC, subgoals: [...SPEC.subgoals, { id: 'U3', kind: 'subgoal', title: 'code', acceptance: ['c'], test: ['t'], deps: [] }],
+    } }) });
+    const ids = (await c.call('graph_status', { run_id: runId, cwd })).nodes.map((n) => n.node_id);
+    assert.ok(ids.includes('draft:U1:1') && ids.includes('review:U2:1'), 'unnamed kinds follow the flow');
+    assert.ok(ids.includes('implement:U3:1'), 'a named kind still wins under mixed=true');
+    assert.ok(!ids.includes('implement:U1:1'));
+  }, { flow: 'document' });
+});
+
+test('under auto, plan chooses the flow and measures the size; a plan that says nothing defaults to develop', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    let nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.equal(nx.flow, 'auto');
+    assert.equal(nx.size, undefined);
+    assert.match(readFileSync(nx.ready[0].briefing_path, 'utf8'), /## Flow\nauto — plan decides/);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p', flow: 'document', size: 'S', sizing: ['ls docs -> 3 files'] }) });
+    nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.equal(nx.flow, 'document');
+    assert.equal(nx.size, 'S');
+    assert.match(readFileSync(nx.ready[0].briefing_path, 'utf8'), /document \(chosen by plan\)/);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'setgoal', payload: ok({ spec: SPEC }) });
+    const st = await c.call('graph_status', { run_id: runId, cwd });
+    assert.equal(st.flow, 'document');
+    assert.ok(st.nodes.some((n) => n.node_id === 'draft:U1:1'), 'the chosen flow supplies the default kind');
+    const full = await c.call('graph_status', { run_id: runId, cwd, full: true });
+    assert.equal(full.flow_source, 'plan');
+  });
+  await withRun(async ({ c, cwd, runId }) => {
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    const nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.equal(nx.flow, 'develop');
+    const full = await c.call('graph_status', { run_id: runId, cwd, full: true });
+    assert.equal(full.flow_source, 'default', 'a defaulted choice is recorded as such, not passed off as a decision');
+  });
+});
+
 // A vendor that writes a document when asked to draft and answers as a reader when asked to
 // review. Both run under one vendor name so the broker sees identical identities.
 function documentRepo() {

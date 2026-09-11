@@ -65,6 +65,41 @@ export const REASONING_STAGES = new Set([
 // to count as done. A stage absent here has no verdict beyond stage_ok.
 export const VERDICT_FIELD = { gate: 'accept', critique: 'sound', test: 'verified', review: 'verified' };
 
+// A flow is what the user-facing entry chose - or, under `auto`, what the plan node decided
+// from the request. It sets the kind a subgoal gets when setgoal names none, and gives
+// setgoal a persona set to draw from. With `mixed: false` it also forbids the other kinds,
+// which is what a manual `graph-beta:document` entry means by "this is a writing job".
+export const FLOWS = {
+  develop: {
+    kind: 'subgoal',
+    personas: ['implementer who owns the module being changed', 'test engineer who distrusts the implementation narrative', 'reviewer who has to maintain this code next year'],
+  },
+  document: {
+    kind: 'document',
+    personas: ['technical writer who has never seen this codebase', 'the reader the document is for - name their role', 'editor checking every claim against the source'],
+  },
+};
+export const DEFAULT_FLOW = 'develop';
+
+// The flow this run is actually in: fixed by the entry, or chosen by plan under `auto`.
+export function flowOf(run) {
+  const f = run.flow && run.flow !== 'auto' ? run.flow : run.flow_chosen;
+  return FLOWS[f] ? f : null;
+}
+
+export function defaultKind(run) {
+  const f = flowOf(run);
+  return f ? FLOWS[f].kind : DEFAULT_KIND;
+}
+
+// Every subgoal leaves setgoal with an explicit kind, so nothing downstream - retries, the
+// author check, the cross-check - has to know what the run's default was at the time.
+export function normalizeSpec(run, spec) {
+  if (!spec || typeof spec !== 'object' || !Array.isArray(spec.subgoals)) return spec;
+  const dflt = defaultKind(run);
+  return { ...spec, subgoals: spec.subgoals.map((sg) => (sg && typeof sg === 'object' && sg.kind == null ? { ...sg, kind: dflt } : sg)) };
+}
+
 // The stage a kind's chain opens with - the one whose author a later stage must not be.
 export function authorStage(kind) {
   return (KINDS[kind] || KINDS[DEFAULT_KIND]).chain[0];
@@ -241,6 +276,12 @@ export function createRun(opts) {
     sandbox: opts.sandbox || null,
     isolated: opts.isolated === true,
     max_retries: Number.isInteger(opts.max_retries) ? opts.max_retries : 2,
+    // `auto` lets plan pick the flow; an entry skill pins it. `mixed` false turns the pin
+    // into a rule every subgoal must follow.
+    flow: FLOWS[opts.flow] ? opts.flow : 'auto',
+    mixed: opts.mixed !== false,
+    flow_chosen: null,
+    size: null,
     created_at: Date.now(),
     spec: null,
     nodes: [
@@ -277,7 +318,7 @@ export function getNode(run, nodeId) {
 // spec left the graph at three nodes; a spec with zero subgoals made the goal gate
 // immediately ready over no work at all; a dep naming a subgoal that does not exist left
 // its node waiting on a gate that could never be created.
-export function validateSpec(spec) {
+export function validateSpec(spec, opts = {}) {
   const problems = [];
   if (!spec || typeof spec !== 'object') return ['setgoal returned no spec object'];
   if (!spec.goal) problems.push('spec has no goal');
@@ -301,6 +342,9 @@ export function validateSpec(spec) {
       problems.push(`subgoal ${id} has no acceptance criteria`);
     }
     if (!KINDS[kindOf(sg)]) problems.push(`subgoal ${id} has unknown kind ${kindOf(sg)}`);
+    else if (opts.mixed === false && opts.kind && kindOf(sg) !== opts.kind) {
+      problems.push(`subgoal ${id} has kind ${kindOf(sg)}, but this run is flow ${opts.flow || opts.kind} with mixed=false`);
+    }
   }
   for (const sg of subgoals) {
     const id = sg && sg.id != null ? String(sg.id) : '';
@@ -633,6 +677,11 @@ export function nodeBriefing(run, n) {
     cwd: run.cwd,
     request: run.request,
     context: run.context,
+    flow: run.flow || 'auto',
+    flow_chosen: flowOf(run),
+    default_kind: defaultKind(run),
+    mixed: run.mixed !== false,
+    size: run.size || null,
     goal: run.spec ? run.spec.goal : null,
     goal_acceptance: run.spec ? run.spec.acceptance || [] : [],
     subgoal: sg || null,
