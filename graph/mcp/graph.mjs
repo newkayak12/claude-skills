@@ -149,11 +149,17 @@ export function listRuns(cwd) {
   }
 }
 
+// Two kinds of edge. `deps` is a data dependency: the node consumes what the dep
+// produced, so the dep must be `done`. `after` is order-only, Make's `|` prerequisite:
+// the node must not start before the dep has finished, but it does not need the dep to
+// have succeeded. Without the second kind the report could never run behind a gate that
+// rejected the work - and writing the account of a failure is precisely the report's job.
 function node(id, stage, deps, extra) {
   return {
     node_id: id,
     stage,
     deps: deps || [],
+    after: [],
     state: 'pending',
     attempt: 1,
     ticket: null,
@@ -252,10 +258,19 @@ export function validateSpec(spec) {
       if (dep === id) problems.push(`subgoal ${id} depends on itself`);
       else if (!ids.has(dep)) problems.push(`subgoal ${id} depends on ${dep}, which is not in the spec`);
     }
+    for (const d of (sg && sg.after) || []) {
+      const dep = String(d);
+      if (dep === id) problems.push(`subgoal ${id} is ordered after itself`);
+      else if (!ids.has(dep)) problems.push(`subgoal ${id} is ordered after ${dep}, which is not in the spec`);
+    }
   }
 
-  // A cycle deadlocks exactly like a dangling dep, and is just as silent.
-  const edges = new Map(subgoals.map((sg) => [String(sg.id), ((sg.deps || []).map(String)).filter((d) => ids.has(d))]));
+  // A cycle deadlocks exactly like a dangling dep, and is just as silent. Order-only
+  // edges deadlock the same way, so they count.
+  const edges = new Map(subgoals.map((sg) => [
+    String(sg.id),
+    [...(sg.deps || []), ...(sg.after || [])].map(String).filter((d) => ids.has(d)),
+  ]));
   const state = new Map();
   const walk = (id, path) => {
     if (state.get(id) === 'done') return;
@@ -298,10 +313,11 @@ export function expandSubgoals(run, subgoals) {
   for (const sg of subgoals) {
     const id = String(sg.id);
     const deps = (sg.deps || []).map((d) => `gate:${d}:${round}`);
+    const after = (sg.after || []).map((d) => `gate:${d}:${round}`);
     const impl = `implement:${id}:${round}`;
     const test = `test:${id}:${round}`;
     const gate = `gate:${id}:${round}`;
-    run.nodes.push(node(impl, 'implement', [critiqueDep, ...deps], { subgoal_id: id, attempt: round }));
+    run.nodes.push(node(impl, 'implement', [critiqueDep, ...deps], { subgoal_id: id, attempt: round, after }));
     run.nodes.push(node(test, 'test', [impl], { subgoal_id: id, attempt: round }));
     run.nodes.push(node(gate, 'gate', [test], { subgoal_id: id, attempt: round }));
     gateIds.push(gate);
@@ -309,8 +325,43 @@ export function expandSubgoals(run, subgoals) {
   const goalGate = `gate:goal:${nextIndex(run, 'gate:goal')}`;
   const reportId = round === 1 ? 'report' : `report:${round}`;
   run.nodes.push(node(goalGate, 'gate', gateIds, { subgoal_id: null }));
-  run.nodes.push(node(reportId, 'report', [goalGate]));
+  // Order-only: the report waits for the goal gate to be settled, not to pass. A run
+  // whose subgoal ran out of retries used to end `blocked` with the passing subgoals'
+  // work never reported - partial success was simply lost.
+  run.nodes.push(node(reportId, 'report', [], { after: [goalGate] }));
   return saveRun(run);
+}
+
+// Failure becomes definitive at exactly one point: when the retry budget is gone.
+// Until then a failed node is a retry waiting to happen, and nothing downstream may be
+// written off. Once it is definitive, everything that needs the node's output through a
+// data edge can never run - mark it `unreachable` with the reason, transitively, so the
+// graph says so instead of sitting `blocked` with a pile of `pending` nodes. A node that
+// already failed downstream is final too: no retry of it can succeed with a dead upstream.
+// Order-only edges do not propagate; that is what they are for.
+export function settleFailure(run, root) {
+  if (!root || root.state !== 'failed') return [];
+  const touched = [];
+  root.final = true;
+  const queue = [root];
+  while (queue.length) {
+    const x = queue.shift();
+    const why = x.state === 'failed' ? `${x.node_id} failed with no retry left` : `${x.node_id} is unreachable`;
+    for (const n of run.nodes) {
+      if (!n.deps.includes(x.node_id)) continue;
+      if (n.state === 'pending') {
+        n.state = 'unreachable';
+        n.result = { stage_ok: false, reason: `unreachable: ${why}` };
+        touched.push(n.node_id);
+        queue.push(n);
+      } else if (n.state === 'failed' && !n.final) {
+        n.final = true;
+        touched.push(n.node_id);
+        queue.push(n);
+      }
+    }
+  }
+  return touched;
 }
 
 // A rejected subgoal gets a fresh attempt rather than a retried node: the old attempt
@@ -318,7 +369,11 @@ export function expandSubgoals(run, subgoals) {
 export function retrySubgoal(run, subgoalId, feedback) {
   const prior = run.nodes.filter((n) => n.subgoal_id === subgoalId && n.stage === 'gate');
   const attempt = prior.length + 1;
-  if (attempt > run.max_retries + 1) return { run: saveRun(run), attempt: null, reason: 'retry budget exhausted' };
+  if (attempt > run.max_retries + 1) {
+    const dead = run.nodes.filter((n) => n.subgoal_id === subgoalId && n.state === 'failed' && !n.final);
+    const unreachable = dead.flatMap((n) => settleFailure(run, n));
+    return { run: saveRun(run), attempt: null, reason: 'retry budget exhausted', unreachable };
+  }
 
   const impl = `implement:${subgoalId}:${attempt}`;
   const test = `test:${subgoalId}:${attempt}`;
@@ -339,8 +394,9 @@ export function retrySubgoal(run, subgoalId, feedback) {
   // attempt that just failed.
   const first = run.nodes.find((x) => x.subgoal_id === subgoalId && x.stage === 'implement');
   const baseDeps = first ? first.deps.slice() : ['critique'];
+  const baseAfter = first ? (first.after || []).slice() : [];
 
-  run.nodes.push(node(impl, 'implement', baseDeps, { subgoal_id: subgoalId, attempt, feedback: feedback || '' }));
+  run.nodes.push(node(impl, 'implement', baseDeps, { subgoal_id: subgoalId, attempt, feedback: feedback || '', after: baseAfter }));
   run.nodes.push(node(test, 'test', [impl], { subgoal_id: subgoalId, attempt }));
   run.nodes.push(node(gate, 'gate', [test], { subgoal_id: subgoalId, attempt }));
 
@@ -348,6 +404,7 @@ export function retrySubgoal(run, subgoalId, feedback) {
   for (const n of run.nodes) {
     if (n.node_id === gate) continue;
     n.deps = n.deps.map((d) => (d === prevGate ? gate : d));
+    n.after = (n.after || []).map((d) => (d === prevGate ? gate : d));
   }
   // A goal gate retired by an earlier failure would strand the rebuilt attempt.
   for (const n of run.nodes) {
@@ -366,10 +423,14 @@ export function retrySubgoal(run, subgoalId, feedback) {
 export function retrySpec(run, feedback) {
   const priors = run.nodes.filter((n) => n.stage === 'setgoal');
   const attempt = priors.length + 1;
-  if (attempt > run.max_retries + 1) return { run: saveRun(run), attempt: null, reason: 'retry budget exhausted' };
+  if (attempt > run.max_retries + 1) {
+    const dead = run.nodes.filter((n) => (n.stage === 'setgoal' || n.stage === 'critique') && n.state === 'failed' && !n.final);
+    const unreachable = dead.flatMap((n) => settleFailure(run, n));
+    return { run: saveRun(run), attempt: null, reason: 'retry budget exhausted', unreachable };
+  }
 
   for (const n of run.nodes) {
-    if (n.stage === 'setgoal' || n.stage === 'critique' || n.subgoal_id || n.node_id === 'gate:goal:1' || n.node_id === 'report') {
+    if (n.stage === 'setgoal' || n.stage === 'critique' || n.subgoal_id || n.stage === 'report' || (n.stage === 'gate' && n.subgoal_id === null)) {
       if (n.state === 'pending' || n.state === 'failed') {
         n.state = 'skipped';
         n.result = n.result || { stage_ok: false, reason: `superseded by spec attempt ${attempt}` };
@@ -385,11 +446,23 @@ export function retrySpec(run, feedback) {
   return { run: saveRun(run), attempt, reason: '' };
 }
 
+// An order-only dep is satisfied once it can no longer change: it finished, was retired,
+// can never run, or failed with no retry left. A plain `failed` is not settled - the
+// orchestrator may still retry it, and the report must not run ahead of that.
+function settled(dep) {
+  return dep.state === 'done' || dep.state === 'skipped' || dep.state === 'unreachable'
+    || (dep.state === 'failed' && dep.final === true);
+}
+
+// Which deps still hold this node back, by kind. Empty means runnable.
+export function unmetDeps(run, n) {
+  const data = n.deps.filter((d) => (getNode(run, d) || {}).state !== 'done');
+  const order = (n.after || []).filter((d) => { const dep = getNode(run, d); return !dep || !settled(dep); });
+  return [...data, ...order];
+}
+
 function depsSatisfied(run, n) {
-  return n.deps.every((d) => {
-    const dep = getNode(run, d);
-    return dep && dep.state === 'done';
-  });
+  return unmetDeps(run, n).length === 0;
 }
 
 export function readyNodes(run) {
@@ -397,7 +470,7 @@ export function readyNodes(run) {
 }
 
 export function runState(run) {
-  const counts = { pending: 0, running: 0, done: 0, failed: 0, skipped: 0 };
+  const counts = { pending: 0, running: 0, done: 0, failed: 0, skipped: 0, unreachable: 0 };
   for (const n of run.nodes) counts[n.state] = (counts[n.state] || 0) + 1;
 
   // Only a finished report means the run finished. Deciding on "nothing pending" once
@@ -424,7 +497,7 @@ export function nodeBriefing(run, n) {
   // alone showed it the verification and hid the implementation it was judging. Give a
   // gate the whole attempt it is ruling on.
   const inScope = (x) => {
-    if (n.deps.includes(x.node_id)) return true;
+    if (n.deps.includes(x.node_id) || (n.after || []).includes(x.node_id)) return true;
     return n.stage === 'gate'
       && n.subgoal_id
       && x.subgoal_id === n.subgoal_id
@@ -463,7 +536,9 @@ export function nodeBriefing(run, n) {
   // one line of gate evidence and nothing about what was actually built. Give them
   // every finished node, including the failures: "what was not done and why" cannot be
   // written from a list of successes.
-  const wholeRun = n.node_id === 'report' || n.node_id.startsWith('gate:goal')
+  // By stage, not by id: after a spec retry the live report is `report:N`, and matching
+  // the bare name left that report briefed with nothing but its order-only upstream.
+  const wholeRun = n.stage === 'report' || n.node_id.startsWith('gate:goal')
     ? run.nodes
         .filter((x) => x.result && x.node_id !== n.node_id)
         .map((x) => ({
@@ -478,8 +553,11 @@ export function nodeBriefing(run, n) {
           changed_files_verified: x.result.changed_files_verified,
           verified: x.result.verified,
           accept: x.result.accept,
+          sound: x.result.sound,
           match_pct: x.result.match_pct,
-          gaps: x.result.gaps || [],
+          // A gate's gaps, or a critique's blocking defects and problems: whatever the
+          // judging node said was wrong. The report cannot explain a dead spec otherwise.
+          gaps: x.result.gaps || [...(x.result.blocking || []), ...(x.result.problems || [])],
           reason: x.result.reason || x.result.verification_error || '',
         }))
     : null;
