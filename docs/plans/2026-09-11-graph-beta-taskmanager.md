@@ -136,10 +136,17 @@ as feedback and moves the report's `after` to it; `graph_retry(subgoal_id)` also
 gate's gaps into the retried subgoal. Candidate for a stable fix release — not applied there yet
 (D12 says beta does not back-port; this is a bug, so the user decides).
 
-### Step 5 — `size` gate and hand-off from `orchestrate` (v0.5.0)
-- [ ] `graph-beta:orchestrate` opens with `tm_open`; if `size` is S the manager returns
-      `{delegate: 'graph', ...}` and the skill continues with `graph_open` exactly as today.
-- [ ] Test: an S request produces no manager state on disk.
+### Step 5 — `size` gate and hand-off from the entries (v0.5.0)  ✅
+- [x] All three entries open with `tm_open` (flow `auto` for orchestrate, pinned for
+      develop/document). `tm_submit(size)` → `delegate` → `graph_open({...delegate.args,
+      isolated})` + `loop.md`; no delegate → `manager.md`.
+- [x] `references/manager.md`: the task loop — children driven with `loop.md` at the child cwd,
+      payload-less fold, `tm_retry`, integrate, progress mirror, output notes. `loop.md` says how
+      it is entered from a task.
+- [x] Tests: S leaves no state (Step 4); pinned flow survives sizing and `delegate.args` opens a
+      graph run verbatim. 110 pass.
+- Open: the request is measured twice (manager `size`, then graph `plan`). The skill tells the
+  session to report a disagreement as an observation, not to re-decide. Watch it on real runs.
 
 ### Step 6 — `integrate` and repackage (v0.6.0)
 - [ ] Worktree merge node; cross-package checks from the packages' `acceptance`.
