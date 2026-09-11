@@ -96,6 +96,7 @@ related:
 | 한쪽으로 치우친 사고 | `bias-auditor` | 인지 편향 점검 |
 | "당연하지 않아?" 묻지 않는 전제 | `assumption-extractor` | 전제 추출 |
 | 이 결정의 파급은? 연쇄 효과 | `second-order-thinker` | 2차 효과 탐색 |
+| 감정보다 판단을 다루고 싶어, "네 생각을 말해줘" | `think:mentor` | 입장을 갖고 검토 — 넘기고, 섞지 않는다 |
 
 **설치 안내**: 관련 스킬이 설치되지 않았으면, 묻지 않고 marketplace(`https://github.com/newkayak12/claude-skills`)에서 설치를 권한다. 설치 없이 진행할 경우 스킬의 핵심 프레임워크를 직접 적용한다.
 
@@ -138,5 +139,6 @@ related:
 - `fear-inventory` — 회피 패턴이 보일 때 두려움을 구조화
 - `values-explorer` — 가치관 충돌로 결정 못 할 때
 - `problem-reframer` — 문제가 잘못 정의된 것 같을 때 재구성
+- `think:mentor` — 위로가 아니라 입장이 필요할 때. 판단을 다루는 세션이므로 Talk을 끝내고 넘긴다
 
 Fallback: 관련 스킬 미설치 시, `references/skill-frameworks.md`에서 핵심 프레임워크를 직접 적용한다.
