@@ -43,14 +43,18 @@ git -C "$WS" commit -q -m seed
 
 REQ=$(cat "$HERE/requests/$CASE.txt")
 ROUTING='Pass host_vendor "claude", the model you are actually running as host_model, and the native models you can select as native_models.'
+# The monorepo fixtures measure S on their own (one test script, one commit): the second
+# round's size agents said so with sound reasons. The beta arm therefore carries the user's
+# own words that the work must be split, which the entry skills turn into size: "L".
+SPLIT='The user has said, in their own words: "split this by workspace package — one package per worktree, integrated at the end" — so pin size: "L" in tm_open.'
 PLUGIN=()
 case "$ARM" in
   beta)
     PLUGIN=(--plugin-dir "$REPO/graph-beta")
     if [[ "$CASE" == code* ]]; then
-      PROMPT="Use the graph-beta:develop skill to run the following request through the harness. Follow the skill exactly: start with tm_open, drive whatever it hands back (a single graph run or a task of child runs), and end with the skill's output template. $ROUTING Request: $REQ"
+      PROMPT="Use the graph-beta:develop skill to run the following request through the harness. Follow the skill exactly: start with tm_open, drive whatever it hands back (a single graph run or a task of child runs), and end with the skill's output template. $ROUTING $SPLIT Request: $REQ"
     else
-      PROMPT="Use the graph-beta:orchestrate skill to run the following request through the harness. Follow the skill exactly: start with tm_open with flow \"auto\", drive whatever it hands back (a single graph run or a task of child runs), and end with the skill's output template. $ROUTING Request: $REQ"
+      PROMPT="Use the graph-beta:orchestrate skill to run the following request through the harness. Follow the skill exactly: start with tm_open with flow \"auto\", drive whatever it hands back (a single graph run or a task of child runs), and end with the skill's output template. $ROUTING $SPLIT Request: $REQ"
     fi ;;
   stable)
     PLUGIN=(--plugin-dir "$REPO/graph")
