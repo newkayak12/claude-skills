@@ -10,18 +10,25 @@ import { REASONING_STAGES } from './graph.mjs';
 
 const CONTRACT = {
   plan: `Return JSON: {"plan": "<the decomposition>", "handoff": "<what the next node needs>", "evidence": "<how you checked the request is actually satisfiable here>"}`,
-  setgoal: `Return JSON: {"spec": {"goal": "...", "acceptance": ["goal-level criteria"], "subgoals": [{"id": "U1", "title": "...", "persona": "...", "acceptance": ["subgoal criteria"], "test": ["deterministic checks"], "deps": []}]}, "handoff": "...", "evidence": "..."}
-Every acceptance criterion must be checkable by a command or a file inspection. Reject your own vague criteria before returning.
-Make each subgoal self-contained: include applicable constraints in acceptance[], required paths in files[], and checks in test[]. Implement/Test will not receive the full request or requester conversation.
-Every subgoal must be a unit of WORK that changes files. Verification is not a subgoal: express it as that subgoal's test[] entries, which run as its own Test node. A subgoal whose only job is to check something already built has nothing for its Implement node to do and can only fail.`,
+  setgoal: `Return JSON: {"spec": {"goal": "...", "acceptance": ["goal-level criteria"], "subgoals": [{"id": "U1", "kind": "subgoal|document", "title": "...", "persona": "...", "acceptance": ["subgoal criteria"], "test": ["deterministic checks"], "files": ["paths"], "deps": []}]}, "handoff": "...", "evidence": "..."}
+Every acceptance criterion must be checkable by a command, a file inspection, or - for a document - by a reader finding a specific passage. Reject your own vague criteria before returning.
+Make each subgoal self-contained: include applicable constraints in acceptance[], required paths in files[], and checks in test[]. The nodes that do the work will not receive the full request or requester conversation.
+Every subgoal must be a unit of work with a checkable artifact, and must say which kind it is:
+  "subgoal" (default) - work that changes code and is verified by running commands. Expands to implement -> test -> gate.
+  "document" - a written artifact: a design note, a spec, a guide, a report. Expands to draft -> review -> gate. Its acceptance[] is the reviewer's rubric: each item names something a reader can find, or fail to find, in the text. Name the output path in files[].
+Verification is not a subgoal of either kind: express it as that subgoal's test[] (code) or acceptance[] (document). A subgoal whose only job is to check something already built has nothing for its first node to do and can only fail.`,
   critique: `Return JSON: {"sound": true|false, "blocking": ["..."], "problems": ["..."], "handoff": "...", "evidence": "..."}
-Look for: wrong decomposition, unfalsifiable acceptance, a missing subgoal the goal needs, fake dependencies, unverifiable test entries, criteria that hinge on whole-repo state, and aspirational thresholds written as hard pass/fail bars.
+Look for: wrong decomposition, unfalsifiable acceptance, a missing subgoal the goal needs, fake dependencies, unverifiable test entries, criteria that hinge on whole-repo state, aspirational thresholds written as hard pass/fail bars, a document subgoal whose rubric no reader could apply to the text, and code work filed as a document (or the reverse) so that the wrong chain would check it.
 Set sound=false ONLY for defects in "blocking": something that makes the work impossible to do or impossible to verify as specified. Everything else goes in "problems" - it is carried into the next node as advice and does not stop the run.
 A spec you would merely improve is not a spec you should reject. Wording you would tighten, a check you would add, a scope note you would sharpen: those are problems, not blockers. An unbounded refutation always finds something, and a gate nothing can pass is not a gate - it is a dead end.`,
   implement: `Return JSON: {"stage_ok": true|false, "handoff": "<paths, names, interfaces the dependent work needs>", "changed_files": ["..."], "checks": ["what you ran and what it printed"], "evidence": "..."}
 stage_ok=false when required work or checks could not run. Do not report a file as changed unless you changed it.`,
   test: `Return JSON: {"stage_ok": true|false, "verified": true|false, "checks": ["command -> observed output"], "evidence": "..."}
 stage_ok=false means a required check could not run at all (sandbox, missing tool). verified=false with stage_ok=true means the checks ran and found a genuine failure. Do not edit implementation files. Do not trust the implement narrative - run the checks or inspect the artifacts yourself.`,
+  draft: `Return JSON: {"stage_ok": true|false, "handoff": "<paths written, then a one-paragraph abstract of what the document now says>", "changed_files": ["..."], "checks": ["what you verified about the artifact - structure, cross-references, examples - and how"], "evidence": "..."}
+Write the artifact the acceptance describes, at the path the subgoal names. Every acceptance item must be answerable by pointing at a passage. stage_ok=false when the artifact could not be produced. Do not report a file as changed unless you changed it.`,
+  review: `Return JSON: {"stage_ok": true|false, "verified": true|false, "checks": ["<acceptance item> -> \"<the passage that meets it>\" (path:line) | MISSING: <what the text lacks>"], "evidence": "..."}
+You are the reader, not the author. Open the artifact at the paths the draft reported and read it; do not judge from the draft's abstract. One entry per acceptance item, in order. verified=true only when every item has a quoted passage. stage_ok=false only when the artifact could not be read at all. Do not edit the artifact.`,
   gate: `Return JSON: {"stage_ok": true, "accept": true|false, "match_pct": 0-100, "gaps": ["what blocks acceptance"], "observations": ["weaknesses that do not block"], "reason": "...", "evidence": "..."}
 You are the judge, not the actor. Judge only what the evidence below shows. Absent evidence is a gap, not a pass - "the previous node said so" is not evidence.
 Put anything that falls short but does not block into "observations" rather than inflating the score past it. A run that met its bar with known weaknesses is not a 100.`,
@@ -41,7 +48,7 @@ function bullets(list) {
 }
 
 export function composePrompt(run, n, briefing) {
-  const scopedExecution = run.allocation === 'balanced' && ['implement', 'test'].includes(n.stage) && briefing.subgoal;
+  const scopedExecution = run.allocation === 'balanced' && ['implement', 'test', 'draft'].includes(n.stage) && briefing.subgoal;
   const lines = [];
   lines.push(`# ${n.stage} node ${n.node_id}`);
   lines.push('');
@@ -94,6 +101,7 @@ export function composePrompt(run, n, briefing) {
     const sg = briefing.subgoal;
     lines.push('');
     lines.push(`## Subgoal ${sg.id} — ${sg.title}`);
+    if (sg.kind && sg.kind !== 'subgoal') lines.push(`Kind: ${sg.kind}`);
     if (sg.persona) lines.push(`Act as: ${sg.persona}`);
     if (sg.files?.length) lines.push(`Required paths:\n${bullets(sg.files)}`);
     lines.push('');
@@ -111,6 +119,7 @@ export function composePrompt(run, n, briefing) {
     lines.push(`## Subgoals in the spec`);
     for (const sg of briefing.subgoals) {
       lines.push(`### ${sg.id} — ${sg.title}`);
+      if (sg.kind && sg.kind !== 'subgoal') lines.push(`Kind: ${sg.kind}`);
       if ((sg.deps || []).length) lines.push(`Depends on: ${sg.deps.join(', ')}`);
       lines.push(`Acceptance:`);
       lines.push(bullets(sg.acceptance));

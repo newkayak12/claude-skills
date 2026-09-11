@@ -62,18 +62,27 @@ passing, a Status entry in `graph-beta/README.md` and `KOR.md`, a version bump, 
 - [x] 89 regression cases pass unchanged (+1 new: unknown kind fails at setgoal). That is the
       acceptance: the seam exists, behaviour has not moved.
 
-### Step 2 — `document` kind (v0.2.0)
-- [ ] `KINDS.document = { chain: ['draft','review','gate'], reasoning: ['review'] }`.
-- [ ] Contracts in `prompts.mjs`: `draft` (returns paths written + a one-paragraph abstract as
-      handoff), `review` (reader's pass: per acceptance item, quote the passage that meets it or
-      name what is missing; `verified` is the verdict; **must not be the draft's author** — broker
-      enforces a different vendor/model or a fresh session), `gate` reuses the existing contract.
-- [ ] `REASONING_STAGES` becomes a per-kind property; `draft` mutates, `review` does not.
-- [ ] `crossCheck`: for `document` kind an empty `changed_files` is `null`, not a contradiction.
-- [ ] setgoal contract: "unit of WORK that changes files" → "unit of work with a checkable
-      artifact"; add the `kind` field and when to use each.
-- [ ] Tests: a mixed spec (two `subgoal`, one `document`) reaches report; a review by the same
-      executor as the draft is refused; a document subgoal with no file change is not contradicted.
+### Step 2 — `document` kind (v0.2.0)  ✅
+- [x] `KINDS.document = { chain: ['draft','review','gate'], reasoning: ['review'] }`.
+- [x] Contracts in `prompts.mjs`: `draft` (paths written + one-paragraph abstract as handoff),
+      `review` (per acceptance item, quote the passage or name what is missing; `verified`),
+      `gate` unchanged. Author ≠ reviewer: enforced on identity (executor + model) — a review
+      routed to the draft's identity is *refused* (node stays pending, no retry spent), `self`
+      is marked `unverifiable-self` because the broker cannot see native agents.
+- [x] `REASONING_STAGES` = base run-level stages ∪ every kind's `reasoning[]`; `VERDICT_FIELD`
+      table replaces the per-stage ifs in `nodeSucceeded`/`verdict`.
+- [x] `crossCheck(…, kind)`: `document` + empty claim → `null`, attribution `document-unchanged`.
+- [x] setgoal contract: "unit of work with a checkable artifact", `kind` field documented;
+      critique looks for misfiled kinds and rubrics no reader could apply.
+- [x] Routing: `draft` is an execution/cross-vendor stage, `review` judges `draft` in the
+      same-actor penalty (`AUTHOR_OF` table).
+- [x] Found on the way: `graph_retry(subgoal_id)` took feedback only from gates, so a retry
+      after a failed review or test went in blind. Now the last judging node's reason/gaps/
+      failing checks are carried.
+- [x] Tests: mixed spec reaches report; empty-claim draft unattributed while code implement
+      still verifies; review without verdict fails with `missing_verdict`; document retry
+      rebuilds the chain and briefs the review's gaps; same-identity review refused, other
+      model accepted. 95 pass.
 
 ### Step 3 — entry skills and `flow` (v0.3.0)
 - [ ] `graph_open({ flow: 'auto'|'develop'|'document', mixed: true })`; `plan` contract returns
