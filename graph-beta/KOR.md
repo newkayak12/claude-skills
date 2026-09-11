@@ -9,7 +9,7 @@
 
 | | `graph` (안정) | `graph-beta` |
 |---|---|---|
-| MCP 서버 이름 | `graph-engineering` | `graph-beta-engineering` |
+| MCP 서버 | `graph-engineering` | `graph-beta-engineering` + `task-manager` |
 | 런 파일 | `.harness-run/broker/` | `.harness-run/broker-beta/` |
 | 스킬 | `graph:install`, `graph:orchestrate` | `graph-beta:install`, `graph-beta:orchestrate`, `graph-beta:develop`, `graph-beta:document` |
 | 버전 | 1.x | 승격 전까지 0.x |
@@ -45,6 +45,22 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 
 ## 상태
 
+- **v0.4.0 — TaskManager 서버, 자식 런은 읽기만**: `mcp/taskmanager.mjs`를 브로커 옆에
+  `task-manager`로 등록. `tm_open`은 `size → shape → critique`를 `~/.harness/tasks/<task_id>/`
+  아래에(프로젝트 밖) 만듭니다. `size`가 S면 태스크를 지우고 `delegate: {tool: "graph_open", args}`를
+  돌려줍니다 — S 요청은 매니저 상태를 남기지 않습니다. L이면 `shape`(패키지: `brief`, `acceptance`,
+  `touches[]`, `deps[]`; 겹치는 touches·없는 dep·사이클·패키지 하나짜리를 검증) → 패키지마다
+  `[dispatch → accept]` → `integrate` → `gate:goal` → `report`. 준비된 `dispatch`는 `tm_next`에서
+  서버가 직접 실행합니다: 프로젝트 HEAD에서 `git worktree add`, 그 안에 `graph.mjs`의 `createRun`을
+  라이브러리로 불러 격리된 자식 graph 런을 열고, 패키지 brief를 request로, 패키지 계약(과 의존
+  패키지의 보고서)을 context로 넘깁니다. 세션은 평소의 `graph_*` 도구로 자식을 돌리고, dispatch에
+  `tm_submit`하면 자식 파일을 읽어 goal-gate 판정과 보고서를 접어 넣습니다 — 파일은 바이트 하나
+  안 바뀝니다(테스트로 확인). 재시도는 같은 워크트리에 gaps를 실은 새 자식을 열고, 예산 소진은
+  하류를 확정해 report를 풉니다. 서버를 재시작해도 파일에서 이어가며 진행 중인 dispatch를
+  회수하지 않습니다. 진행 중 graph 엔진 자체의 버그 발견: 거부된 `gate:goal`이 서브골 재시도 뒤
+  다시 판정되지 않아 수정이 들어간 채 런이 멈췄습니다 — 이제 살아있는 서브골 gate들 위에 새
+  `gate:goal:N`이 열리고 report가 그 뒤로 옮겨집니다. 매니저 10건 + 엔진 1건; 세 스위트 합계
+  109개 통과.
 - **v0.3.0 — flow와 진입 스킬**: `graph_open({flow, mixed})`. `flow: "auto"`(`graph-beta:orchestrate`
   기본값)는 선택을 `plan`에 맡기고, plan 계약은 이제 `flow`(develop | document), `size`(S | L),
   그리고 측정에 쓴 명령을 반환합니다. 아무 말 없는 plan은 develop으로 떨어지되 런에
