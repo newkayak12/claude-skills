@@ -1,0 +1,5 @@
+{
+  "name": "@ledger/report",
+  "type": "module",
+  "main": "src/index.mjs"
+}

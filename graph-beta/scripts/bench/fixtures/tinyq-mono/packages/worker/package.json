@@ -1,0 +1,5 @@
+{
+  "name": "@tinyq/worker",
+  "type": "module",
+  "main": "src/index.mjs"
+}

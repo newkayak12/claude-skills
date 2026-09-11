@@ -1,0 +1,5 @@
+{
+  "name": "@tinyq/queue",
+  "type": "module",
+  "main": "src/index.mjs"
+}
