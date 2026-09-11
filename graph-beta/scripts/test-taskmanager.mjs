@@ -180,6 +180,32 @@ test('size S delegates to graph_open and leaves nothing on disk', async () => {
   });
 });
 
+test('a pinned flow survives sizing, and delegate.args open a graph run verbatim', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root }).init();
+  const g = await new Client(BROKER).init();
+  try {
+    const { task_id } = await tm.call('tm_open', { request: 'r', cwd, flow: 'develop', vendor: 'self', max_retries: 1 });
+    // size says document; the entry pinned develop, and the entry wins.
+    const v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'document' }) });
+    assert.equal(v.delegate.args.flow, 'develop');
+    assert.equal(v.delegate.args.max_retries, 1);
+    const open = await g.call('graph_open', { ...v.delegate.args, isolated: true });
+    assert.ok(open.run_id, JSON.stringify(open));
+    assert.deepEqual(open.ready.map((n) => n.node_id), ['plan']);
+    const st = await g.call('graph_status', { run_id: open.run_id, cwd, full: true });
+    assert.equal(st.flow, 'develop');
+    assert.equal(st.isolated, true);
+    assert.equal(st.max_retries, 1);
+    assert.equal(st.request, 'r');
+  } finally {
+    tm.close(); g.close();
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('a shape is validated: one package, overlapping touches, dangling deps and cycles fail it', async () => {
   await withTask(async ({ tm, task_id }) => {
     await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop' }) });

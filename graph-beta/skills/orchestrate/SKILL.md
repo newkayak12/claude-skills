@@ -39,22 +39,28 @@ expands accordingly. A user who wants to decide that themselves has `graph-beta:
 
 ## Entry
 
+Size first. One fresh agent measures the request; the manager decides from its answer whether
+this is one graph run or several.
+
 ```
-graph_open({
-  request, cwd, isolated,
-  flow: "auto",                                   # plan returns flow + size; the spec follows
+tm_open({
+  request, cwd, flow: "auto",
   vendor: "auto", allocation: "balanced",
   host_vendor, host_model, native_models
-})                                               -> run_id, flow: "auto", first ready node
+})                                               -> task_id, ready: [size]
+fresh agent at size.briefing_path -> tm_submit({task_id, node_id: "size", payload})
+    delegate present  -> size S. The task is gone from disk. Continue with
+                         graph_open({...delegate.args, isolated}) and references/loop.md
+    no delegate       -> size L. Continue with references/manager.md
 ```
 
-After `plan`, `graph_next` reports `flow` (`develop` or `document`) and `size` (`S` or `L`).
-Mirror both into the first progress line. `size: L` is recorded, not yet acted on — the run
-proceeds as one graph until the TaskManager lands; say so in the report when you see it.
+`delegate.args` already carries the request, cwd, the flow `size` chose, and every routing
+argument you gave `tm_open`; add only `isolated`. Do not re-measure: `plan` in the graph run
+returns `size` too, and if it says L where the manager said S, that goes in the report as an
+observation — the run still proceeds as one graph.
 
-Then run **`references/loop.md`** — the same loop every entry uses. Read it before the first
-`graph_next`; it holds the dispatch rules, the retry rules, the progress mirror, and the
-verdict vocabulary.
+Then run **`references/loop.md`** (one run) or **`references/manager.md`** (a task of runs).
+Read the one you need before the first `graph_next`/`tm_next`.
 
 ## Output template
 
@@ -108,6 +114,7 @@ Everything past the entry lives in `references/`:
 | need | read |
 |---|---|
 | the loop itself: dispatch, retries, progress mirror, verdicts, rules | `references/loop.md` |
+| a task of runs: children, folds, `tm_retry`, integrate | `references/manager.md` |
 | legacy `ordered` mode, per-stage `policy`, `native_models`, provenance | `references/routing.md` |
 | working directory, snapshot identity, briefing scope | `references/handoffs.md` |
 | quota reporting, checkpoints, `reset_capacity` | `references/capacity.md` |
@@ -117,13 +124,14 @@ call `graph_next` for the alternate route.
 
 ## What the current AI does
 
-Runs the loop and reports from the verdicts. Tools missing or `graph_open` failing is a
-stop, not a licence: run `graph-beta:install`, never the work itself.
+Sizes, then runs the loop — or the task — and reports from the verdicts. Tools missing or
+`tm_open`/`graph_open` failing is a stop, not a licence: run `graph-beta:install`, never the
+work itself.
 
 ## What you do
 
 Nothing during a `graph_run` — it blocks. The full history is in
-`.harness-run/broker-beta/` if you want it.
+`.harness-run/broker-beta/` (one run) and `~/.harness/tasks/<task_id>/` (a task) if you want it.
 
 ## Related skills
 

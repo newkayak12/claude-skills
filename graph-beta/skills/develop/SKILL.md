@@ -29,18 +29,20 @@ distrustful test engineer, and next year's maintainer.
 ## Entry
 
 ```
-graph_open({
-  request, cwd, isolated,
-  flow: "develop", mixed: true,                   # code by default; a document subgoal is still allowed when the work is one
+tm_open({
+  request, cwd, flow: "develop",
   vendor: "auto", allocation: "balanced",
   host_vendor, host_model, native_models
-})
+})                                               -> task_id, ready: [size]
+fresh agent at size.briefing_path -> tm_submit({task_id, node_id: "size", payload})
+    delegate present  -> one run: graph_open({...delegate.args, isolated, mixed: true}), then the loop
+    no delegate       -> a task of runs: ../orchestrate/references/manager.md
 ```
 
-`mixed: true` is deliberate: "implement the feature and update the design note" is one run,
-and the note is a `document` subgoal inside it. Pass `mixed: false` only when the user said
-nothing may be written that is not code — then a spec with a document subgoal fails at
-setgoal instead of quietly running.
+The flow is pinned, so `size` does not choose one — it only measures. `mixed: true` is
+deliberate: "implement the feature and update the design note" is one run, and the note is a `document` subgoal inside it.
+Pass `mixed: false` only when the user said nothing may be written that is not code — then a spec
+with the other kind fails at setgoal instead of quietly running.
 
 ## Then
 

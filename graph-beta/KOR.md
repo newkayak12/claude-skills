@@ -45,6 +45,14 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 
 ## 상태
 
+- **v0.5.0 — 모든 진입에 size 게이트**: `graph-beta:orchestrate`·`develop`·`document`가 모두
+  `tm_open`으로 열고, 새 에이전트 하나가 `size`를 돕니다. `delegate`가 있으면 태스크는 이미
+  사라졌고 스킬은 `graph_open(delegate.args)`와 단일 런 루프로 이어갑니다. 없으면 새
+  `orchestrate/references/manager.md` 루프: `tm_next`의 children을 자식 워크트리에서 평소의
+  `graph_*` 루프로 돌리고, payload 없는 `tm_submit`으로 접고, 패키지별 `tm_retry` 또는 reshape.
+  고정된 진입 flow는 사이징을 통과해도 유지되고(`size`가 뭐라 해도 진입이 이김),
+  `delegate.args`는 `graph_open`에 그대로 들어갑니다 — 두 서버를 가로질러 끝까지 테스트.
+  110개 통과.
 - **v0.4.0 — TaskManager 서버, 자식 런은 읽기만**: `mcp/taskmanager.mjs`를 브로커 옆에
   `task-manager`로 등록. `tm_open`은 `size → shape → critique`를 `~/.harness/tasks/<task_id>/`
   아래에(프로젝트 밖) 만듭니다. `size`가 S면 태스크를 지우고 `delegate: {tool: "graph_open", args}`를

@@ -48,6 +48,14 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.5.0 — size gate in every entry**: `graph-beta:orchestrate`, `develop` and `document` all
+  open with `tm_open`; one fresh agent runs `size`. `delegate` present → the task is already gone
+  and the skill continues with `graph_open(delegate.args)` and the one-run loop; absent → the
+  new `orchestrate/references/manager.md` loop: `tm_next` children driven with the ordinary
+  `graph_*` loop at the child's worktree, folded with a payload-less `tm_submit`, `tm_retry` per
+  package or reshape. A pinned entry flow survives sizing (the entry wins over what `size` says),
+  and `delegate.args` is accepted by `graph_open` verbatim — tested end to end across the two
+  servers. 110 pass.
 - **v0.4.0 — TaskManager server, read-only over children**: `mcp/taskmanager.mjs`, registered as
   `task-manager` next to the broker. `tm_open` builds `size → shape → critique` under
   `~/.harness/tasks/<task_id>/` (never under a project). A `size` of S deletes the task and
