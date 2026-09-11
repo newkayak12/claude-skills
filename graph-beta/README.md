@@ -48,6 +48,19 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.6.0 — integrate and repackage**: the git work is the manager's, so a conflict is a fact
+  it saw and not a claim a node made. Folding an accepted child commits its worktree on the
+  package branch (the run's own state directory excluded). A package with `deps` is branched
+  from its first dependency's branch with the rest merged in — it builds on delivered work
+  instead of re-discovering it at merge time; two dependencies that conflict fail the dependent
+  dispatch before any child opens. When `integrate` becomes ready, `tm_next` merges every
+  package branch into the integration worktree in dependency order and records the merge
+  commits; the `integrate` agent only runs the goal-level checks on the combined tree. A merge
+  conflict fails the node with `conflicts` and `conflicting_packages` (the merged one, then the
+  owners by declared `touches`), and `tm_retry({repackage: [...]})` — the open question, now
+  answered — reshapes with those packages told to become one or to depend on each other; kept
+  ids reuse their worktrees. Identical edits merge silently by git's rules, which the tests had
+  to learn. 13 manager cases; 112 pass across the three suites.
 - **v0.5.0 — size gate in every entry**: `graph-beta:orchestrate`, `develop` and `document` all
   open with `tm_open`; one fresh agent runs `size`. `delegate` present → the task is already gone
   and the skill continues with `graph_open(delegate.args)` and the one-run loop; absent → the

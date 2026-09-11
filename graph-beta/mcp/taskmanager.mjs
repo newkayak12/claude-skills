@@ -47,7 +47,7 @@ import {
   FLOWS,
 } from './graph.mjs';
 
-const SERVER = { name: 'task-manager', version: '0.4.0' };
+const SERVER = { name: 'task-manager', version: '0.6.0' };
 const DEFAULT_PROTOCOL = '2025-06-18';
 
 // ---------- where tasks live ----------
@@ -90,8 +90,8 @@ Each package becomes one graph run in its own worktree branched from the current
 Attack the shape: packages that overlap in touches[], a dependency the brief does not actually need, a package too large to be one run, a goal-level criterion no integration step could check, and - above all - a request that was S sized as L. Set sound=false only for defects in "blocking" that make the packages impossible to run or impossible to integrate. Everything else is a problem, carried forward as advice.`,
   accept: `Return JSON: {"stage_ok": true, "accept": true|false, "match_pct": 0-100, "gaps": ["what the package did not deliver"], "observations": ["weaknesses that do not block"], "reason": "...", "evidence": "..."}
 You are the judge, not the actor. The child run's own goal gate and report are below; judge them against THIS package's acceptance, which the child never saw in full. A child that passed its own gate but delivered less than the package asked for is a gap here. Absent evidence is a gap, not a pass.`,
-  integrate: `Return JSON: {"stage_ok": true|false, "verified": true|false, "integration_branch": "...", "merged": ["branch -> merge commit"], "conflicts": ["path: how it was resolved, or unresolved"], "checks": ["command -> observed output"], "evidence": "..."}
-Work in the integration worktree named below. Merge every package branch into it in dependency order. Then run the goal-level checks the shape's acceptance implies - the packages passed alone; this is where they are run together. stage_ok=false when a merge could not be completed. verified=false when it merged but the combined checks fail. Do not fix package work here: a failing package is a gap for the gate, and a repackage for the manager.`,
+  integrate: `Return JSON: {"stage_ok": true|false, "verified": true|false, "checks": ["command -> observed output"], "evidence": "..."}
+The package branches are already merged into the integration worktree named below - the manager did that and recorded each merge commit. Your job is what no package could do alone: run the goal-level checks the shape's acceptance implies against the combined tree, and read the seams between packages. stage_ok=false when a check could not run at all. verified=false when the combined tree fails a check the packages passed separately. Do not fix package work here: a failing seam is a gap for the gate and a repackage for the manager.`,
   'gate:goal': `Return JSON: {"stage_ok": true, "accept": true|false, "match_pct": 0-100, "gaps": ["what blocks acceptance"], "observations": ["weaknesses that do not block"], "spec_drift": ["where the shape asked for less than the request did"], "reason": "...", "evidence": "..."}
 You are the judge, not the actor, and the only node that sees the original request again. Judge the integrated result against BOTH the goal-level acceptance and the REQUEST as written. Anything the request asked for that no package delivered and no criterion named belongs in "spec_drift". Absent evidence is a gap, not a pass.`,
   report: `Return JSON: {"stage_ok": true, "handoff": "<the final report>", "evidence": "..."}
@@ -283,17 +283,78 @@ function shortId(taskId) {
 
 // One worktree per package, kept across attempts: a retry continues in the tree the first
 // attempt left, exactly as a graph retry keeps the worktree of the attempt it replaces.
-function ensureWorktree(task, name) {
+// `base` is the commit or branch the tree starts from - the project's HEAD, or a dependency's
+// branch so the package builds on what it depends on instead of re-discovering it at merge.
+function ensureWorktree(task, name, base = 'HEAD') {
   const path = join(taskDir(task.run_id), 'worktrees', name);
   const branch = `harness/${shortId(task.run_id)}/${name}`;
-  if (existsSync(join(path, '.git'))) return { ok: true, path, branch };
+  if (existsSync(join(path, '.git'))) return { ok: true, path, branch, created: false };
   mkdirSync(dirname(path), { recursive: true });
   const exists = git(task.cwd, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]).ok;
   const r = exists
     ? git(task.cwd, ['worktree', 'add', path, branch])
-    : git(task.cwd, ['worktree', 'add', '-b', branch, path, 'HEAD']);
+    : git(task.cwd, ['worktree', 'add', '-b', branch, path, base]);
   if (!r.ok) return { ok: false, path, branch, reason: r.err || r.out || 'git worktree add failed' };
-  return { ok: true, path, branch };
+  return { ok: true, path, branch, created: !exists };
+}
+
+// A child run changes files; it does not commit. The package branch has to carry the work for
+// anything downstream to build on it, so the manager commits the worktree when it folds an
+// accepted child. This writes to git, not to the child's run file - the run file stays the
+// broker's alone. The run's own state directory is left out of the commit.
+function commitWorktree(cwd, message) {
+  const add = git(cwd, ['add', '-A', '--', '.', ':!.harness-run']);
+  if (!add.ok) return { ok: false, reason: add.err || 'git add failed' };
+  const staged = git(cwd, ['diff', '--cached', '--quiet']);
+  if (staged.ok) return { ok: true, commit: null }; // nothing to commit is not an error
+  const c = git(cwd, ['-c', 'user.email=harness@local', '-c', 'user.name=harness', 'commit', '-q', '-m', message]);
+  if (!c.ok) return { ok: false, reason: c.err || 'git commit failed' };
+  return { ok: true, commit: git(cwd, ['rev-parse', 'HEAD']).out };
+}
+
+// Merge one branch into a worktree. A conflict is observed, not reported: the files git
+// marks unmerged are the evidence, and the merge is aborted so the tree stays usable.
+function mergeInto(cwd, branch, message) {
+  const r = git(cwd, ['-c', 'user.email=harness@local', '-c', 'user.name=harness', 'merge', '--no-ff', '--no-edit', '-m', message, branch]);
+  if (r.ok) return { ok: true, commit: git(cwd, ['rev-parse', 'HEAD']).out };
+  const conflicts = git(cwd, ['diff', '--name-only', '--diff-filter=U']).out.split('\n').filter(Boolean);
+  git(cwd, ['merge', '--abort']);
+  return { ok: false, conflicts, reason: r.err || r.out || 'merge failed' };
+}
+
+// Packages in an order where every dependency comes before what depends on it.
+function dependencyOrder(packages) {
+  const byId = new Map(packages.map((p) => [String(p.id), p]));
+  const out = [];
+  const seen = new Set();
+  const visit = (p) => {
+    const id = String(p.id);
+    if (seen.has(id)) return;
+    seen.add(id);
+    for (const d of p.deps || []) if (byId.has(String(d))) visit(byId.get(String(d)));
+    out.push(p);
+  };
+  for (const p of packages) visit(p);
+  return out;
+}
+
+// Which of the given packages own a conflicting path, by their declared touches[]. Declared
+// ownership is a claim; the conflict is the fact. Both go in the reason so shape can see
+// where the claim and the fact disagreed.
+function ownersOf(packages, files) {
+  const owners = new Set();
+  for (const f of files) {
+    for (const p of packages) {
+      if ((p.touches || []).some((t) => { const k = String(t).replace(/\/+$/, ''); return f === k || f.startsWith(k + '/'); })) owners.add(String(p.id));
+    }
+  }
+  return [...owners];
+}
+
+// The branch a dependency delivered on, if its dispatch has folded.
+function deliveredBranch(task, pkgId) {
+  const d = task.nodes.filter((n) => n.subgoal_id === String(pkgId) && n.stage === 'dispatch' && n.state === 'done' && n.child).pop();
+  return d ? d.child.branch : null;
 }
 
 function packageOf(task, id) {
@@ -339,12 +400,36 @@ function openChild(task, n) {
     n.result = { stage_ok: false, reason: `no package ${n.subgoal_id} in the shape` };
     return;
   }
-  const wt = ensureWorktree(task, String(pkg.id));
+  // A package that depends on others starts from what they delivered: its tree is branched
+  // from the first dependency's branch and the rest are merged in. A conflict between two
+  // dependencies here is the same fact integration would find later, found earlier.
+  const depBranches = (pkg.deps || []).map((d) => deliveredBranch(task, d)).filter(Boolean);
+  const wt = ensureWorktree(task, String(pkg.id), depBranches[0] || 'HEAD');
   if (!wt.ok) {
     n.state = 'failed';
     n.result = { stage_ok: false, reason: `could not create a worktree for ${pkg.id}: ${wt.reason}` };
     record(task, { event: 'dispatch_failed', task_id: task.run_id, node_id: n.node_id, reason: n.result.reason });
     return;
+  }
+  const based_on = [];
+  if (wt.created) {
+    if (depBranches[0]) based_on.push(depBranches[0]);
+    for (const b of depBranches.slice(1)) {
+      const m = mergeInto(wt.path, b, `harness: base ${pkg.id} on ${b}`);
+      if (!m.ok) {
+        const merged = (pkg.deps || []).filter((d) => based_on.includes(deliveredBranch(task, d)));
+        const culprit = (pkg.deps || []).find((d) => deliveredBranch(task, d) === b);
+        n.state = 'failed';
+        n.result = {
+          stage_ok: false, accept: false, conflicts: m.conflicts,
+          conflicting_packages: [String(culprit), ...merged.map(String)],
+          reason: `dependencies of ${pkg.id} conflict with each other on ${m.conflicts.join(', ')} (${culprit} against ${merged.join(', ')}); repackage them`,
+        };
+        record(task, { event: 'dispatch_failed', task_id: task.run_id, node_id: n.node_id, reason: n.result.reason });
+        return;
+      }
+      based_on.push(b);
+    }
   }
   const flow = FLOWS[pkg.flow] ? pkg.flow : (task.flow_chosen && FLOWS[task.flow_chosen] ? task.flow_chosen : 'auto');
   const child = createRun({
@@ -358,7 +443,7 @@ function openChild(task, n) {
   });
   n.state = 'running';
   n.started_at = Date.now();
-  n.child = { cwd: wt.path, run_id: child.run_id, branch: wt.branch, flow };
+  n.child = { cwd: wt.path, run_id: child.run_id, branch: wt.branch, flow, based_on };
   record(task, { event: 'dispatch', task_id: task.run_id, node_id: n.node_id, child_run_id: child.run_id, cwd: wt.path, branch: wt.branch });
 }
 
@@ -393,8 +478,18 @@ function foldChild(task, n) {
       reason: `child run ended blocked${g.reason ? `: ${g.reason}` : ''} (${JSON.stringify(cs.counts)})`,
     };
   }
+  // An accepted child's work becomes a commit on the package branch, so a dependent package
+  // and the integration can start from it. A rejected child's tree is left as it is - the
+  // retry continues there.
+  let commit = null;
+  if (g.accept === true) {
+    const c = commitWorktree(n.child.cwd, `harness: package ${n.subgoal_id} attempt ${n.attempt || 1} (${child.run_id})`);
+    if (!c.ok) return { ...base, stage_ok: false, accept: false, reason: `child passed but its worktree could not be committed: ${c.reason}` };
+    commit = c.commit;
+  }
   return {
     ...base,
+    commit,
     stage_ok: true,
     accept: g.accept === true,
     match_pct: g.match_pct,
@@ -404,6 +499,45 @@ function foldChild(task, n) {
     reason: g.accept === true ? '' : (g.reason || 'child goal gate did not accept'),
     evidence: `child ${child.run_id}: ${cs.counts.done} done, ${cs.counts.failed} failed, ${cs.counts.unreachable} unreachable`,
   };
+}
+
+function prepareIntegration(task, n) {
+  const round = Number(String(n.node_id).split(':')[1] || 1);
+  const wt = ensureWorktree(task, round === 1 ? 'integration' : `integration-${round}`);
+  if (!wt.ok) {
+    n.state = 'failed';
+    n.result = { stage_ok: false, verified: false, reason: `could not create the integration worktree: ${wt.reason}` };
+    return;
+  }
+  const merged = [];
+  const ordered = dependencyOrder(task.spec.packages || []);
+  for (const p of ordered) {
+    const branch = deliveredBranch(task, p.id);
+    if (!branch) {
+      n.state = 'failed';
+      n.result = { stage_ok: false, verified: false, reason: `package ${p.id} has no delivered branch to merge` };
+      return;
+    }
+    const m = mergeInto(wt.path, branch, `harness: integrate ${p.id} (${branch})`);
+    if (!m.ok) {
+      const owners = ownersOf(ordered.filter((q) => merged.some((x) => x.package === String(q.id))), m.conflicts);
+      n.state = 'failed';
+      n.result = {
+        stage_ok: false, verified: false,
+        integration_branch: wt.branch, merged: merged.map((x) => `${x.package} ${x.branch} -> ${x.commit}`),
+        conflicts: m.conflicts,
+        conflicting_packages: [String(p.id), ...owners],
+        reason: `merge of ${p.id} conflicts on ${m.conflicts.join(', ')}`
+          + (owners.length ? ` with ${owners.join(', ')} (by declared touches)` : ' with an already merged package none of them declared')
+          + `; tm_retry({repackage: [${[String(p.id), ...owners].map((x) => `"${x}"`).join(', ')}]}) reshapes them together`,
+      };
+      record(task, { event: 'integrate_conflict', task_id: task.run_id, node_id: n.node_id, conflicts: m.conflicts, packages: n.result.conflicting_packages });
+      return;
+    }
+    merged.push({ package: String(p.id), branch, commit: m.commit });
+  }
+  n.integration = { cwd: wt.path, branch: wt.branch, merged };
+  record(task, { event: 'integrated', task_id: task.run_id, node_id: n.node_id, merged: merged.length });
 }
 
 // ---------- briefings ----------
@@ -480,7 +614,9 @@ function composeTaskPrompt(task, n) {
     L.push('');
     L.push(`## Integration worktree`);
     L.push(`${n.integration.cwd} on branch ${n.integration.branch}, created from the project's HEAD.`);
-    L.push(`Merge each package branch listed above into it, in dependency order.`);
+    L.push(`Already merged, in dependency order:`);
+    L.push(bullets((n.integration.merged || []).map((m) => `${m.package}: ${m.branch} -> ${m.commit}`)));
+    L.push(`Run the goal-level checks there. Read the seams: where one package's output meets another's input.`);
   }
   if (['gate', 'report'].includes(n.stage)) {
     L.push('');
@@ -495,10 +631,11 @@ function composeTaskPrompt(task, n) {
         r.sound === undefined ? '' : `sound=${r.sound}`,
         r.match_pct === undefined ? '' : `match=${r.match_pct}%`].filter(Boolean).join(' ');
       L.push(`### ${x.node_id} (${x.stage}) — ${v}`);
-      if (r.branch) L.push(`Branch: ${r.branch}`);
+      if (r.branch) L.push(`Branch: ${r.branch}${r.commit ? ` @ ${r.commit}` : ''}`);
       if (r.integration_branch) L.push(`Integration branch: ${r.integration_branch}`);
       if ((r.merged || []).length) L.push(`Merged:\n${bullets(r.merged)}`);
       if ((r.conflicts || []).length) L.push(`Conflicts:\n${bullets(r.conflicts)}`);
+      if ((r.conflicting_packages || []).length) L.push(`Conflicting packages: ${r.conflicting_packages.join(', ')}`);
       if ((r.checks || []).length) L.push(`Checks:\n${bullets(r.checks)}`);
       if (r.handoff) L.push(r.handoff);
       if (r.report) L.push(r.report);
@@ -557,7 +694,9 @@ function verdict(task, n) {
     if (r.match_pct !== undefined) out.match_pct = r.match_pct;
     out.gap_count = (r.gaps || []).length;
   }
-  if (n.stage === 'dispatch' && n.child) out.child = { cwd: n.child.cwd, run_id: n.child.run_id, branch: n.child.branch };
+  if (n.stage === 'dispatch' && n.child) out.child = { cwd: n.child.cwd, run_id: n.child.run_id, branch: n.child.branch, ...(r.commit ? { commit: r.commit } : {}) };
+  if ((r.conflicting_packages || []).length) { out.conflicts = r.conflicts; out.conflicting_packages = r.conflicting_packages; }
+  if (n.stage === 'integrate' && n.integration) out.integration = { cwd: n.integration.cwd, branch: n.integration.branch, merged: (n.integration.merged || []).length };
   if (n.state === 'failed' && r.stage_ok === true && f && r[f] === undefined) out.missing_verdict = f;
   const reason = String(r.reason || '');
   if (reason) out.reason = reason.slice(0, 300);
@@ -565,6 +704,11 @@ function verdict(task, n) {
 }
 
 function finish(task, n, result) {
+  // The merges the manager made are part of the integrate node's account.
+  if (n.stage === 'integrate' && n.integration) {
+    result = { ...result, integration_branch: n.integration.branch, integration_cwd: n.integration.cwd,
+      merged: (n.integration.merged || []).map((m) => `${m.package} ${m.branch} -> ${m.commit}`) };
+  }
   n.state = succeeded(n, result) ? 'done' : 'failed';
   n.result = result;
   n.finished_at = Date.now();
@@ -624,7 +768,9 @@ const VERDICT_SCHEMA = {
     sound: { type: 'boolean' }, accept: { type: 'boolean' }, verified: { type: 'boolean' },
     size: { type: 'string' }, flow: { type: 'string' },
     match_pct: { type: 'number' }, gap_count: { type: 'number' },
-    child: { type: 'object' }, missing_verdict: { type: 'string' }, reason: { type: 'string' },
+    child: { type: 'object' }, integration: { type: 'object' }, conflicts: { type: 'array', items: { type: 'string' } },
+    conflicting_packages: { type: 'array', items: { type: 'string' }, description: 'pass to tm_retry({repackage})' },
+    missing_verdict: { type: 'string' }, reason: { type: 'string' },
     delegate: { type: 'object' },
   },
   required: ['task_id', 'node_id', 'stage', 'state', 'stage_ok'],
@@ -667,8 +813,8 @@ const TOOLS = [
   },
   {
     name: 'tm_retry',
-    description: 'Open a fresh attempt. With package_id: a new dispatch in the same worktree, carrying the rejection forward into the child request. Without it: reshape (shape + critique) and discard the package graph. When the budget is gone the failure is settled and the report is released over the unreachable set.',
-    inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, package_id: { type: 'string' } }, required: ['task_id'] },
+    description: 'Open a fresh attempt. With package_id: a new dispatch in the same worktree, carrying the rejection forward into the child request. With repackage: [ids] after an integration conflict, reshape with those packages told to become one or to depend on each other. Without either: reshape (shape + critique) and discard the package graph. When the budget is gone the failure is settled and the report is released over the unreachable set.',
+    inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, package_id: { type: 'string' }, repackage: { type: 'array', items: { type: 'string' }, description: 'the conflicting_packages an integrate or dispatch failure named' } }, required: ['task_id'] },
     outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, retried: { type: 'boolean' }, attempt: { type: 'number' }, reason: { type: 'string' }, unreachable: { type: 'array', items: { type: 'string' } } }, required: ['task_id', 'retried'] },
   },
   {
@@ -709,16 +855,12 @@ function toolNext(a) {
     opened++;
   }
   if (opened) saveRun(task);
-  // The integration worktree is deterministic too: created when integrate is ready.
+  // Integration is mechanical up to the checks: the worktree and the merges are done here,
+  // in dependency order, so a conflict is a fact the manager saw and not a claim a node made.
   for (const n of readyNodes(task)) {
     if (n.stage !== 'integrate' || n.integration) continue;
-    const wt = ensureWorktree(task, 'integration');
-    if (wt.ok) { n.integration = { cwd: wt.path, branch: wt.branch }; saveRun(task); }
-    else {
-      n.state = 'failed';
-      n.result = { stage_ok: false, reason: `could not create the integration worktree: ${wt.reason}` };
-      saveRun(task);
-    }
+    prepareIntegration(task, n);
+    saveRun(task);
   }
   const state = runState(task);
   const ready = readyNodes(task).map((n) => {
@@ -780,6 +922,26 @@ function toolSubmit(a) {
 
 function toolRetry(a) {
   const task = mustFindTask(a);
+  // Two children pass and the merge fails: that is nobody's failure but the shape's. The
+  // packages that collided go back to shape as one instruction - make them one package, or
+  // order them so the later one builds on the earlier - with the conflicting files as the
+  // evidence. Worktrees of ids the new shape keeps are reused with their delivered commits.
+  if (Array.isArray(a.repackage) && a.repackage.length) {
+    const ids = a.repackage.map(String);
+    const unknown = ids.filter((id) => !packageOf(task, id));
+    if (unknown.length) throw new Error(`repackage names packages not in the shape: ${unknown.join(', ')}`);
+    const failed = task.nodes.filter((n) => n.state === 'failed' && n.result && (n.result.conflicts || []).length).pop();
+    const fb = [
+      `Repackage ${ids.join(' and ')}: they conflicted at integration and cannot be independent packages.`,
+      `Either shape them as ONE package, or make one depend on the other so it starts from the other's delivered branch.`,
+      ...(failed ? [`Conflicting files: ${failed.result.conflicts.join(', ')}`, failed.result.reason || ''] : []),
+      ...ids.map((id) => { const p = packageOf(task, id); return `${id} (${p.title}) declared touches: ${(p.touches || []).join(', ') || '(none)'}`; }),
+      `Worktrees of package ids you keep are reused with the work they already delivered.`,
+    ].filter(Boolean).join('\n- ');
+    const out = retryShape(task, fb);
+    record(task, { event: out.attempt ? 'tm_repackage' : 'tm_settle', task_id: task.run_id, packages: ids, attempt: out.attempt });
+    return { task_id: task.run_id, target: 'shape', repackage: ids, retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable, ...toolNext({ task_id: task.run_id }) };
+  }
   if (!a.package_id) {
     const source = task.nodes.filter((n) => (n.stage === 'critique' || n.stage === 'shape') && n.state === 'failed' && n.result).pop();
     const fb = source && source.result

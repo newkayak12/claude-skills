@@ -94,7 +94,8 @@ async function completeChild(g, child, { accept = true } = {}) {
   assert.equal(v.state, 'done', JSON.stringify(v));
   await sub('setgoal', { spec: CHILD_SPEC });
   await sub('critique', { sound: true });
-  appendFileSync(join(cwd, 'a.txt'), 'changed by child\n');
+  // Distinct per package: git resolves identical hunks silently, and a conflict test needs a real one.
+  appendFileSync(join(cwd, 'a.txt'), `changed by ${child.package_id || 'child'}\n`);
   v = await sub('implement:U1:1', { changed_files: ['a.txt'], handoff: 'built' });
   assert.equal(v.state, 'done', JSON.stringify(v));
   await sub('test:U1:1', { verified: true });
@@ -276,6 +277,8 @@ test('a parent with two dependent children runs to report; the second child sees
     let v = await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
     assert.equal(v.state, 'done', JSON.stringify(v));
     assert.equal(readFileSync(childPath, 'utf8'), beforeFold, 'the manager never writes a child run file');
+    assert.match(v.child.commit, /^[0-9a-f]{40}$/, 'an accepted child\'s work is committed on its package branch');
+    assert.equal(spawnSync('git', ['status', '--porcelain', '--', '.', ':!.harness-run'], { cwd: nx.children[0].cwd, encoding: 'utf8' }).stdout.trim(), '', 'the worktree is clean after the fold');
     assert.equal(v.accept, true);
     assert.equal(v.match_pct, 95);
     assert.equal(v.child.run_id, nx.children[0].run_id);
@@ -296,6 +299,7 @@ test('a parent with two dependent children runs to report; the second child sees
     const p2 = await g.call('graph_status', { run_id: nx.children[0].run_id, cwd: nx.children[0].cwd, full: true });
     assert.match(p2.context, /Delivered by package P1/);
     assert.match(p2.context, /child report for/);
+    assert.equal(readFileSync(join(nx.children[0].cwd, 'a.txt'), 'utf8'), 'x\nchanged by P1\n', 'P2 starts from what P1 delivered, not from HEAD');
     assert.notEqual(nx.children[0].cwd, (await tm.call('tm_status', { task_id, node_id: 'dispatch:P1:1' })).nodes[0].child.cwd, 'each package has its own worktree');
     await completeChild(g, nx.children[0]);
     await tm.call('tm_submit', { task_id, node_id: 'dispatch:P2:1' });
@@ -306,12 +310,16 @@ test('a parent with two dependent children runs to report; the second child sees
     const st = await tm.call('tm_status', { task_id, node_id: 'integrate:1' });
     assert.ok(st.nodes[0].deps.includes('accept:P1:1') && st.nodes[0].deps.includes('accept:P2:1'));
     const integ = readFileSync(nx.ready[0].briefing_path, 'utf8');
-    assert.match(integ, /## Integration worktree\n.*worktrees\/integration on branch harness\/[0-9a-f]{8}\/integration/);
+    const wtMatch = integ.match(/## Integration worktree\n(.*worktrees\/integration) on branch (harness\/[0-9a-f]{8}\/integration)/);
+    assert.ok(wtMatch, integ);
+    assert.match(integ, /Already merged, in dependency order:\n- P1: harness\/[0-9a-f]{8}\/P1 -> [0-9a-f]{40}\n- P2: harness\/[0-9a-f]{8}\/P2 -> [0-9a-f]{40}/, 'the manager merged, and says what');
     assert.match(integ, /You may run commands and change files only inside the integration worktree/);
     assert.match(integ, /### P1 — module a \(develop\)\nTouches: a\.txt/);
-    v = await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, integration_branch: 'x', merged: ['p1 -> abc', 'p2 -> def'], checks: ['build -> ok'] }) });
+    assert.equal(readFileSync(join(wtMatch[1], 'a.txt'), 'utf8'), 'x\nchanged by P1\nchanged by P2\n', 'the integration tree holds both packages\' work');
+    v = await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
     assert.equal(v.state, 'done');
     assert.equal(v.verified, true);
+    assert.equal(v.integration.merged, 2);
 
     nx = await tm.call('tm_next', { task_id });
     assert.deepEqual(nx.ready.map((n) => n.node_id), ['gate:goal:1']);
@@ -319,6 +327,7 @@ test('a parent with two dependent children runs to report; the second child sees
     assert.match(gate, /## Every node in this task/);
     assert.match(gate, /### dispatch:P1:1 \(dispatch\) — done accept=true match=95%/);
     assert.match(gate, /### integrate:1 \(integrate\) — done verified=true/);
+    assert.match(gate, /Merged:\n- P1 harness/, 'the gate sees the merge commits the manager made');
     assert.match(gate, /spec_drift/);
     await tm.call('tm_submit', { task_id, node_id: 'gate:goal:1', payload: ok({ accept: true, match_pct: 92 }) });
     nx = await tm.call('tm_next', { task_id });
@@ -328,6 +337,80 @@ test('a parent with two dependent children runs to report; the second child sees
     const fin = await tm.call('tm_status', { task_id });
     assert.equal(fin.state, 'complete');
     assert.deepEqual(fin.packages, ['P1', 'P2']);
+  });
+});
+
+const INDEPENDENT = {
+  acceptance: ['both modules build together'],
+  packages: [
+    { id: 'P1', title: 'module a', flow: 'develop', brief: 'change a.txt', acceptance: ['a'], touches: ['a.txt'], deps: [] },
+    { id: 'P2', title: 'module b', flow: 'develop', brief: 'change b.txt', acceptance: ['b'], touches: ['b.txt'], deps: [] },
+  ],
+};
+
+// Both children edit a.txt - P2 despite declaring b.txt. Declared touches are a claim; the
+// merge is the fact.
+async function acceptBoth(tm, g, task_id) {
+  const nx = await tm.call('tm_next', { task_id });
+  assert.equal(nx.children.length, 2, 'independent packages dispatch together');
+  for (const c of nx.children) {
+    await completeChild(g, c);
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: c.node_id })).state, 'done');
+  }
+  for (const id of ['P1', 'P2']) {
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: `accept:${id}:1`, payload: ok({ accept: true, match_pct: 90 }) })).state, 'done');
+  }
+}
+
+test('an integration conflict is observed by the manager, names the packages, and tm_retry({repackage}) reshapes them together', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id, INDEPENDENT);
+    await acceptBoth(tm, g, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.state, 'blocked');
+    assert.deepEqual(nx.ready, [], 'no agent is asked to run checks on a tree that did not merge');
+    const st = await tm.call('tm_status', { task_id, node_id: 'integrate:1' });
+    const integ = st.nodes[0];
+    assert.equal(integ.state, 'failed');
+    assert.equal(integ.verified, false);
+    assert.deepEqual(integ.conflicts, ['a.txt']);
+    assert.deepEqual(integ.conflicting_packages, ['P2', 'P1'], 'the package being merged, then the merged owner by declared touches');
+    assert.match(integ.reason, /merge of P2 conflicts on a\.txt with P1 \(by declared touches\)/);
+    assert.match(integ.reason, /tm_retry\(\{repackage: \["P2", "P1"\]\}\)/);
+
+    const bad = await tm.call('tm_retry', { task_id, repackage: ['P9'] });
+    assert.match(bad.error, /not in the shape: P9/);
+    const rt = await tm.call('tm_retry', { task_id, repackage: integ.conflicting_packages });
+    assert.equal(rt.retried, true);
+    assert.equal(rt.attempt, 2);
+    assert.deepEqual(rt.repackage, ['P2', 'P1']);
+    assert.deepEqual(rt.ready.map((n) => n.node_id), ['shape:2']);
+    const prompt = readFileSync(rt.ready[0].briefing_path, 'utf8');
+    assert.match(prompt, /Repackage P2 and P1: they conflicted at integration/);
+    assert.match(prompt, /Conflicting files: a\.txt/);
+    assert.match(prompt, /P2 \(module b\) declared touches: b\.txt/);
+    assert.match(prompt, /Worktrees of package ids you keep are reused/);
+    const after = await tm.call('tm_status', { task_id });
+    assert.equal(after.nodes.find((n) => n.node_id === 'dispatch:P1:1').state, 'done', 'delivered packages stay as evidence');
+    assert.equal(after.nodes.find((n) => n.node_id === 'gate:goal:1').state, 'skipped');
+  });
+});
+
+test('two dependencies that conflict with each other fail the dependent dispatch before any child is opened', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id, {
+      ...INDEPENDENT,
+      packages: [...INDEPENDENT.packages, { id: 'P3', title: 'glue', flow: 'develop', brief: 'join them', acceptance: ['c'], touches: ['c.txt'], deps: ['P1', 'P2'] }],
+    });
+    await acceptBoth(tm, g, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.children, [], 'P3 was not dispatched');
+    const d = (await tm.call('tm_status', { task_id, node_id: 'dispatch:P3:1' })).nodes[0];
+    assert.equal(d.state, 'failed');
+    assert.deepEqual(d.conflicts, ['a.txt']);
+    assert.deepEqual(d.conflicting_packages, ['P2', 'P1']);
+    assert.match(d.reason, /dependencies of P3 conflict with each other on a\.txt/);
+    assert.match(d.reason, /repackage them/);
   });
 });
 
@@ -355,7 +438,7 @@ test('a child whose goal gate rejected fails the dispatch; tm_retry reopens it i
     const child = await g.call('graph_status', { run_id: second.run_id, cwd: second.cwd, full: true });
     assert.match(child.request, /Previous attempt of this package was rejected/);
     assert.match(child.request, /missing the b half/);
-    assert.equal(readFileSync(join(second.cwd, 'a.txt'), 'utf8'), 'x\nchanged by child\n', 'the first attempt\'s work is still there');
+    assert.equal(readFileSync(join(second.cwd, 'a.txt'), 'utf8'), 'x\nchanged by P1\n', 'the first attempt\'s work is still there');
     const st = await tm.call('tm_status', { task_id });
     assert.equal(st.nodes.find((n) => n.node_id === 'accept:P1:1').state, 'skipped');
     assert.deepEqual(st.nodes.find((n) => n.node_id === 'dispatch:P2:1').deps, ['critique', 'accept:P1:2'], 'P2 now waits on the new attempt');
