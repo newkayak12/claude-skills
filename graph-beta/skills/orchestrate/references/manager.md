@@ -16,6 +16,7 @@ for each child in children[]:
     child_state != "running"   -> tm_submit({task_id, node_id: child.node_id})   # NO payload: the manager reads the child
 if state == "blocked":
     a failed dispatch or accept -> tm_retry({task_id, package_id})    # same worktree, fresh child, gaps carried
+    conflicting_packages named  -> tm_retry({task_id, repackage: [...]})   # integrate or dispatch found a merge conflict: reshape those together
     a failed shape or critique  -> tm_retry({task_id})                # reshape; the package graph is discarded
     retried == false            -> budget gone: downstream is `unreachable`, `report` is in ready[]
 tm_status({task_id})                              -> final counts; tm_status({}) lists every task
@@ -35,12 +36,20 @@ time; they cannot collide, each has its own tree. A child's own `graph_retry` bu
 child's; when it ends `blocked`, fold it — the manager records the failure with the child's
 goal-gate gaps and `tm_retry({package_id})` opens the next attempt.
 
-## Integrate
+## Branches, merges, conflicts
 
-`integrate` is the one manager node that changes files, and only inside the integration
-worktree its briefing names. The fresh agent merges each package branch there in dependency
-order and runs the goal-level checks together. It does not fix package work: a failing package
-is a gap for `gate:goal`.
+The manager does the git work; no node claims it. Folding an accepted child commits its
+worktree on the package branch. A package with `deps` gets a worktree branched from its first
+dependency's branch with the others merged in, so it builds on what they delivered. When
+`integrate` becomes ready, `tm_next` merges every package branch into the integration worktree
+in dependency order and records each merge commit; only then does a fresh agent get the
+`integrate` briefing, to run the goal-level checks on the combined tree and read the seams.
+
+A conflict at either point is observed, not reported: the node fails with `conflicts` (the
+files) and `conflicting_packages` (the one being merged, then the merged owners by declared
+`touches`). That is a shape failure, not a package's — pass `conflicting_packages` to
+`tm_retry({repackage})`. Shape is told to make them one package or order them by dependency;
+worktrees of ids it keeps are reused with their delivered commits.
 
 ## Progress mirror
 

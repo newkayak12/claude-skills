@@ -35,9 +35,8 @@ namespace `graph-beta:*`. Stable keeps running unchanged next to it.
 
 ## Open questions
 
-- **`integrate` failure ownership.** Two children pass and the merge fails: whose failure is it?
-  Proposed: `tm_retry({repackage: [P1, P2]})` feeds the merge failure to `shape` as "these two
-  must be one package". No equivalent exists in graph's `retrySubgoal`. Decide when step 6 starts.
+- ~~**`integrate` failure ownership.**~~ Resolved in Step 6: the shape's. `tm_retry({repackage})`
+  feeds the conflicting packages, files and declared touches back to `shape`.
 - **Size honesty.** `plan` will over-size (a manager layer exists, so it wants to use it). The
   evidence rule — module count, file count, boundary count, each checkable by a command — and a
   critique instruction to attack S→L inflation are the current answer. Measure on real runs.
@@ -148,9 +147,22 @@ gate's gaps into the retried subgoal. Candidate for a stable fix release — not
 - Open: the request is measured twice (manager `size`, then graph `plan`). The skill tells the
   session to report a disagreement as an observation, not to re-decide. Watch it on real runs.
 
-### Step 6 — `integrate` and repackage (v0.6.0)
-- [ ] Worktree merge node; cross-package checks from the packages' `acceptance`.
-- [ ] `tm_retry({repackage})` — resolve the open question above first.
+### Step 6 — `integrate` and repackage (v0.6.0)  ✅
+- [x] Fold commits an accepted child's worktree on its package branch (`:!.harness-run`).
+      Writes git, not the run file — D7 holds.
+- [x] `ensureWorktree(task, name, base)`: a package with `deps` branches from its first
+      dependency's delivered branch; further deps are merged in; a conflict fails the dispatch
+      with `conflicting_packages` before any child opens.
+- [x] `prepareIntegration` in `tm_next`: merges in `dependencyOrder`, records
+      `{package, branch, commit}`; conflict → node failed with `conflicts`, `conflicting_packages`
+      (merging package, then merged owners via `touches`), aborted merge. The `integrate` agent
+      only runs the combined checks; its contract shrank to `{stage_ok, verified, checks}`.
+- [x] `tm_retry({repackage: [ids]})`: reshape with an explicit instruction (one package, or a
+      dependency), the conflicting files, each package's declared touches, and the note that
+      kept ids reuse their worktrees. Unknown ids are refused.
+- [x] Tests: full two-package integration with merge commits in briefing and file content in
+      the integration tree; independent packages that collide → observed conflict → repackage
+      prompt; conflicting dependencies fail the dependent dispatch. 112 pass.
 
 ### Graduation
 - [ ] Ten real runs across the three flows with no skill edits needed mid-run.
