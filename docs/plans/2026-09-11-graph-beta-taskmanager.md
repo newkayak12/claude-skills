@@ -84,14 +84,23 @@ passing, a Status entry in `graph-beta/README.md` and `KOR.md`, a version bump, 
       rebuilds the chain and briefs the review's gaps; same-identity review refused, other
       model accepted. 95 pass.
 
-### Step 3 — entry skills and `flow` (v0.3.0)
-- [ ] `graph_open({ flow: 'auto'|'develop'|'document', mixed: true })`; `plan` contract returns
-      `size: S|L` and `flow` with command-checkable evidence when `flow` is `auto`.
-- [ ] Move the loop from `orchestrate/SKILL.md` into `orchestrate/references/loop.md`; `SKILL.md`
-      keeps mandates, entry, output template.
-- [ ] `skills/develop/SKILL.md`, `skills/document/SKILL.md`: triggers, `flow`, persona set, delegate
-      to the loop reference. ≤ 60 lines each.
-- [ ] Test: `flow: 'document'` with `mixed: false` rejects a spec containing a `subgoal` kind.
+### Step 3 — entry skills and `flow` (v0.3.0)  ✅
+- [x] `graph_open({ flow: 'auto'|'develop'|'document', mixed: true })`. `FLOWS` table in
+      `graph.mjs` (kind + personas). `plan` contract returns `size`, `flow`, `sizing[]`; under
+      `auto` the broker records `flow_chosen` + `flow_source: plan|default`. A silent plan is
+      not failed (the old contract never asked) — it defaults to develop, visibly.
+- [x] `normalizeSpec` stamps the flow's kind on every subgoal that named none, so downstream
+      never needs the run default; `validateSpec(spec, {kind, mixed, flow})` rejects other
+      kinds under `mixed: false`.
+- [x] Loop moved to `orchestrate/references/loop.md`; `SKILL.md` keeps mandates, entry, output
+      template, routing summary (133 lines, from 215).
+- [x] `skills/develop/SKILL.md`, `skills/document/SKILL.md`: triggers, pinned `flow`, `mixed`
+      rationale, delegate to the loop reference. 63 / 66 lines.
+- [x] `graph_next` and `graph_status` carry `flow` and `size`. `size: L` is recorded only —
+      Step 5 acts on it.
+- [x] Tests: `mixed:false` rejects a named code subgoal under the document flow while an
+      unnamed one follows the flow; fixed flow supplies default kinds and shows in briefings;
+      auto lets plan choose and records the source. 98 pass.
 
 ### Step 4 — TaskManager server, read-only over children (v0.4.0)
 - [ ] `mcp/taskmanager.mjs` registered as `task-manager` in `.mcp.json`. State under

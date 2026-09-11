@@ -47,6 +47,11 @@ import {
   VERDICT_FIELD,
   authorStage,
   nodeKind,
+  FLOWS,
+  DEFAULT_FLOW,
+  flowOf,
+  defaultKind,
+  normalizeSpec,
 } from './graph.mjs';
 import { composePrompt } from './prompts.mjs';
 
@@ -584,14 +589,27 @@ function finishNode(run, n, result, vendorName) {
   // the spec out of the orchestrator entirely - but only for a spec that can actually
   // be expanded. A bad one is failed here with its defects as the reason, so the normal
   // spec-retry loop carries them into the next attempt instead of deadlocking later.
+  // plan is where an `auto` run learns its flow and size. A plan that names neither is
+  // not failed - the earlier contract never asked - it falls to the develop flow, and the
+  // record says the choice was defaulted rather than made.
+  if (n.stage === 'plan' && n.state === 'done') {
+    if (run.flow === 'auto') {
+      const chosen = FLOWS[result.flow] ? result.flow : DEFAULT_FLOW;
+      run.flow_chosen = chosen;
+      run.flow_source = FLOWS[result.flow] ? 'plan' : 'default';
+    }
+    run.size = ['S', 'L'].includes(result.size) ? result.size : null;
+  }
   if (n.stage === 'setgoal' && n.state === 'done') {
-    const problems = validateSpec(result.spec);
+    const spec = normalizeSpec(run, result.spec);
+    const problems = validateSpec(spec, { kind: defaultKind(run), mixed: run.mixed, flow: flowOf(run) });
     if (problems.length) {
       n.state = 'failed';
       n.result = { ...result, stage_ok: false, spec_problems: problems, reason: `unusable spec: ${problems.join('; ')}` };
     } else {
-      run.spec = result.spec;
-      expandSubgoals(run, result.spec.subgoals);
+      run.spec = spec;
+      n.result = { ...result, spec };
+      expandSubgoals(run, spec.subgoals);
     }
   }
   saveRun(run);
@@ -672,6 +690,8 @@ const READY_SCHEMA = {
     cwd: { type: 'string' },
     state: { type: 'string', enum: ['running', 'blocked', 'complete'] },
     counts: { type: 'object' },
+    flow: { type: 'string', description: 'the flow the run is in: fixed by the entry, chosen by plan, or still "auto" before plan ran' },
+    size: { type: 'string', enum: ['S', 'L'], description: 'what plan measured; absent before plan ran or when it did not say' },
     ready: {
       type: 'array',
       items: {
@@ -750,6 +770,8 @@ const TOOLS = [
         sandbox: { type: 'string' },
         isolated: { type: 'boolean', description: 'cwd is a private worktree with only this run in it' },
         max_retries: { type: 'number' },
+        flow: { type: 'string', enum: ['auto', 'develop', 'document'], description: 'auto (default): plan decides from the request. develop: subgoals default to code work. document: subgoals default to written artifacts. Set by the entry skill, not by the user.' },
+        mixed: { type: 'boolean', description: 'default true. false: every subgoal must be the flow\'s kind; a spec that mixes kinds fails at setgoal.' },
       },
       required: ['request', 'cwd'],
     },
@@ -869,8 +891,10 @@ async function toolGraphOpen(a) {
     sandbox: a.sandbox || null,
     isolated: a.isolated === true,
     max_retries: a.max_retries,
+    flow: a.flow,
+    mixed: a.mixed,
   });
-  record(cwd, { event: 'graph_open', run_id: run.run_id, vendor: run.vendor });
+  record(cwd, { event: 'graph_open', run_id: run.run_id, vendor: run.vendor, flow: run.flow, mixed: run.mixed });
   return { run_id: run.run_id, cwd, ...(await toolGraphNext({ run_id: run.run_id, cwd })) };
 }
 
@@ -899,6 +923,8 @@ async function toolGraphNext(a) {
     run_id: run.run_id,
     state: state.state,
     counts: state.counts,
+    flow: flowOf(run) || run.flow || 'auto',
+    ...(run.size ? { size: run.size } : {}),
     ready: await (async () => {
       const offered = [];
       for (const n of ready) {
@@ -1227,6 +1253,9 @@ function toolGraphStatus(a) {
     state: state.state,
     counts: state.counts,
     has_spec: !!run.spec,
+    flow: flowOf(run) || run.flow || 'auto',
+    mixed: run.mixed !== false,
+    ...(run.size ? { size: run.size } : {}),
     subgoals: run.spec ? (run.spec.subgoals || []).map((s) => s.id) : [],
     nodes: run.nodes
       .filter((n) => (a.node_id ? n.node_id === a.node_id : true))

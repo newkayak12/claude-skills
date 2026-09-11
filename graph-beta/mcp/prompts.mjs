@@ -6,10 +6,12 @@
 // long loop impossible. The graph already holds all of it, so the broker writes the
 // prompt and the orchestrator never sees the payload.
 
-import { REASONING_STAGES } from './graph.mjs';
+import { REASONING_STAGES, FLOWS } from './graph.mjs';
 
 const CONTRACT = {
-  plan: `Return JSON: {"plan": "<the decomposition>", "handoff": "<what the next node needs>", "evidence": "<how you checked the request is actually satisfiable here>"}`,
+  plan: `Return JSON: {"plan": "<the decomposition>", "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "handoff": "<what the next node needs>", "evidence": "<how you checked the request is actually satisfiable here>"}
+size is S when one run in one worktree can carry the whole request; L when it spans independent modules, packages or repositories that would each need their own run. Decide it from what commands show - file count, module boundaries, owners - and put those commands in "sizing". The default is S; a manager layer exists, and the temptation is to use it.
+flow is develop when the deliverable is code the repository must run, document when it is text a reader must find things in. If the run's flow is already fixed below, return it unchanged.`,
   setgoal: `Return JSON: {"spec": {"goal": "...", "acceptance": ["goal-level criteria"], "subgoals": [{"id": "U1", "kind": "subgoal|document", "title": "...", "persona": "...", "acceptance": ["subgoal criteria"], "test": ["deterministic checks"], "files": ["paths"], "deps": []}]}, "handoff": "...", "evidence": "..."}
 Every acceptance criterion must be checkable by a command, a file inspection, or - for a document - by a reader finding a specific passage. Reject your own vague criteria before returning.
 Make each subgoal self-contained: include applicable constraints in acceptance[], required paths in files[], and checks in test[]. The nodes that do the work will not receive the full request or requester conversation.
@@ -86,6 +88,21 @@ export function composePrompt(run, n, briefing) {
     lines.push('');
     lines.push(`## Context from the requester`);
     lines.push(run.context);
+  }
+
+  if (['plan', 'setgoal', 'critique'].includes(n.stage)) {
+    lines.push('');
+    lines.push(`## Flow`);
+    if (briefing.flow === 'auto' && !briefing.flow_chosen) {
+      lines.push(`auto — plan decides. develop: the deliverable is code the repository must run; document: the deliverable is text a reader must find things in.`);
+    } else {
+      const f = briefing.flow_chosen || briefing.flow;
+      lines.push(`${f}${briefing.flow === 'auto' ? ' (chosen by plan)' : ' (fixed by the entry)'} — default kind for a subgoal that names none: ${briefing.default_kind}.`);
+      if (briefing.mixed === false) lines.push(`mixed=false: every subgoal must be kind ${briefing.default_kind}. A subgoal of another kind fails the spec.`);
+      else lines.push(`mixed=true: a subgoal may name another kind when the work genuinely is one.`);
+      if (FLOWS[f] && n.stage === 'setgoal') lines.push(`Personas to draw from:\n${bullets(FLOWS[f].personas)}`);
+    }
+    if (briefing.size) lines.push(`size: ${briefing.size}`);
   }
 
   if (briefing.goal && !scopedExecution) {
