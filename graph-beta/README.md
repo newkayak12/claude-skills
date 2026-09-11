@@ -12,7 +12,7 @@ Same broker, same six tools, same skills — with these differences:
 |---|---|---|
 | MCP server name | `graph-engineering` | `graph-beta-engineering` |
 | Run files | `.harness-run/broker/` | `.harness-run/broker-beta/` |
-| Skills | `graph:install`, `graph:orchestrate` | `graph-beta:install`, `graph-beta:orchestrate` |
+| Skills | `graph:install`, `graph:orchestrate` | `graph-beta:install`, `graph-beta:orchestrate`, `graph-beta:develop`, `graph-beta:document` |
 | Version line | 1.x | 0.x until it graduates |
 
 **Do not enable both in the same project.** Both servers expose `graph_*` tools; a driving
@@ -48,6 +48,15 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.3.0 — flows and entry skills**: `graph_open({flow, mixed})`. `flow: "auto"` (the
+  `graph-beta:orchestrate` default) leaves the choice to `plan`, whose contract now returns
+  `flow` (develop | document), `size` (S | L) and the commands it measured with; a plan that
+  says nothing falls to develop and the run records `flow_source: "default"` rather than
+  passing it off as a decision. `graph-beta:develop` and `graph-beta:document` are thin manual
+  entries — trigger words, the pinned `flow`, a persona set — that hand off to the one loop,
+  now in `orchestrate/references/loop.md`. The flow supplies the kind a subgoal did not name;
+  `mixed: false` makes the other kinds a spec defect at setgoal. `graph_next`/`graph_status`
+  report `flow` and `size`. Three new cases; 98 pass. `size: L` is recorded, not yet acted on.
 - **v0.2.0 — `document` kind**: a subgoal may declare `kind: "document"` and expands to
   `draft → review → gate` instead of implement/test/gate; kinds mix in one spec. `draft`
   writes the artifact and is cross-checked like implement, except that an empty file claim

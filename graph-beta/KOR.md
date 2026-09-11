@@ -11,7 +11,7 @@
 |---|---|---|
 | MCP 서버 이름 | `graph-engineering` | `graph-beta-engineering` |
 | 런 파일 | `.harness-run/broker/` | `.harness-run/broker-beta/` |
-| 스킬 | `graph:install`, `graph:orchestrate` | `graph-beta:install`, `graph-beta:orchestrate` |
+| 스킬 | `graph:install`, `graph:orchestrate` | `graph-beta:install`, `graph-beta:orchestrate`, `graph-beta:develop`, `graph-beta:document` |
 | 버전 | 1.x | 승격 전까지 0.x |
 
 **한 프로젝트에 둘을 함께 켜지 마세요.** 두 서버 모두 `graph_*` 도구를 노출하므로, 각각 두 개씩
@@ -45,6 +45,15 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 
 ## 상태
 
+- **v0.3.0 — flow와 진입 스킬**: `graph_open({flow, mixed})`. `flow: "auto"`(`graph-beta:orchestrate`
+  기본값)는 선택을 `plan`에 맡기고, plan 계약은 이제 `flow`(develop | document), `size`(S | L),
+  그리고 측정에 쓴 명령을 반환합니다. 아무 말 없는 plan은 develop으로 떨어지되 런에
+  `flow_source: "default"`로 기록되어 결정인 척하지 않습니다. `graph-beta:develop`과
+  `graph-beta:document`는 얇은 수동 진입 — 트리거 단어, 고정된 `flow`, 페르소나 집합 — 이고
+  하나의 루프(`orchestrate/references/loop.md`로 이동)에 넘깁니다. flow는 서브골이 이름 붙이지
+  않은 kind를 공급하고, `mixed: false`면 다른 kind는 setgoal에서 스펙 결함이 됩니다.
+  `graph_next`/`graph_status`가 `flow`와 `size`를 보고합니다. 신규 3건, 98개 통과. `size: L`은
+  기록만 되고 아직 행동하지 않습니다.
 - **v0.2.0 — `document` kind**: 서브골이 `kind: "document"`를 선언하면 implement/test/gate
   대신 `draft → review → gate`로 펼쳐지고, 한 스펙에 kind를 섞을 수 있습니다. `draft`는 산출물을
   쓰고 implement와 같은 워크트리 교차검증을 받되, 빈 파일 목록은 모순이 아니라
