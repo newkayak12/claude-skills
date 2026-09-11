@@ -16,30 +16,65 @@ export const STAGES = [
   'plan',      // decompose the raw request
   'setgoal',   // turn the plan into a goal-spec
   'critique',  // adversarial pass over the goal-spec (judge != author)
-  'implement', // per subgoal
-  'test',      // per subgoal, verification-only
+  'implement', // per code subgoal
+  'test',      // per code subgoal, verification-only
+  'draft',     // per document subgoal
+  'review',    // per document subgoal, reader's pass (reviewer != author)
   'gate',      // per subgoal, then once at goal level (judge != actor)
   'report',    // synthesize from the ledger
 ];
-
-// Stages whose work is reasoning rather than file mutation. They are still routed and
-// still adjudicated, but a claimed file list is not what makes them true, so the
-// worktree cross-check has nothing to contradict.
-export const REASONING_STAGES = new Set(['plan', 'setgoal', 'critique', 'gate', 'report']);
 
 // What kind of work a subgoal is decides which node chain it expands into. The engine
 // below - edges, readiness, retries, settled failure - does not care what the stages are
 // called; only this table and the contracts in prompts.mjs do. The chain's first node
 // carries the subgoal's deps and `after`, each later node depends on the one before it,
-// and the last node is the gate the goal gate collects. `subgoal` is the code flow the
-// stable engine has always run; further kinds hang off this seam.
+// and the last node is the gate the goal gate collects.
+//
+//   subgoal   the code flow the stable engine has always run. implement mutates the
+//             worktree and is cross-checked against git; test runs commands.
+//   document  a written artifact. draft mutates the worktree too (it writes the file)
+//             but the check on it is a reading, not a command: review is a reasoning
+//             node, and its verdict - like test's - is `verified`. A document that
+//             touched nothing is not contradicted by git; it is judged by its reviewer.
+//
+// `reasoning` names the chain stages that write nothing. Everything not listed there,
+// and not in BASE_REASONING, is a mutating stage: routed to a writable sandbox, offered
+// one at a time under isolation, and cross-checked against the worktree.
 export const KINDS = {
-  subgoal: { chain: ['implement', 'test', 'gate'] },
+  subgoal: { chain: ['implement', 'test', 'gate'], reasoning: [] },
+  document: { chain: ['draft', 'review', 'gate'], reasoning: ['review'] },
 };
 export const DEFAULT_KIND = 'subgoal';
 
 export function kindOf(sg) {
   return sg && sg.kind != null ? String(sg.kind) : DEFAULT_KIND;
+}
+
+// Stages whose work is reasoning rather than file mutation. They are still routed and
+// still adjudicated, but a claimed file list is not what makes them true, so the
+// worktree cross-check has nothing to contradict. The run-level stages are fixed; the
+// per-subgoal ones come from the kind table so a new kind cannot forget to declare them.
+const BASE_REASONING = ['plan', 'setgoal', 'critique', 'gate', 'report'];
+export const REASONING_STAGES = new Set([
+  ...BASE_REASONING,
+  ...Object.values(KINDS).flatMap((k) => k.reasoning || []),
+]);
+
+// The field that carries a judging node's verdict. stage_ok on these nodes means only
+// "the judging itself worked"; the verdict must be present and affirmative for the node
+// to count as done. A stage absent here has no verdict beyond stage_ok.
+export const VERDICT_FIELD = { gate: 'accept', critique: 'sound', test: 'verified', review: 'verified' };
+
+// The stage a kind's chain opens with - the one whose author a later stage must not be.
+export function authorStage(kind) {
+  return (KINDS[kind] || KINDS[DEFAULT_KIND]).chain[0];
+}
+
+// The kind of the subgoal a node belongs to, from the run's spec. Run-level nodes have none.
+export function nodeKind(run, n) {
+  if (!n || !n.subgoal_id || !run.spec) return null;
+  const sg = (run.spec.subgoals || []).find((s) => String(s.id) === String(n.subgoal_id));
+  return sg ? kindOf(sg) : null;
 }
 
 function runsDir(cwd) {

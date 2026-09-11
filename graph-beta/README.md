@@ -48,6 +48,19 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.2.0 — `document` kind**: a subgoal may declare `kind: "document"` and expands to
+  `draft → review → gate` instead of implement/test/gate; kinds mix in one spec. `draft`
+  writes the artifact and is cross-checked like implement, except that an empty file claim
+  is `changed_files_verified: null` (`document-unchanged`), never a contradiction — a note
+  delivered in the handoff is judged by its reviewer, not by git. `review` is a reasoning
+  node: read-only sandbox, one entry per acceptance item quoting the passage or naming what
+  is missing, verdict `verified`. Author ≠ reviewer is enforced where the broker can see
+  identity: a review routed to the vendor+model that drafted is refused and left pending
+  (`reviewer_independence: distinct-identity | unverifiable-self` on the verdict). Balanced
+  allocation gets this for free — draft goes to the peer, review stays on the host. A retry
+  after a failed review or test now carries that node's checks as feedback, not only a
+  gate's gaps. Five new cases; 95 pass.
+
 - **v0.1.0 — fork + kind table**: copied from graph 1.7.0 (typed edges, settled failure).
   `expandSubgoals` and `retrySubgoal` now build a subgoal's node chain from a `KINDS` table
   instead of hard-coded implement/test/gate; `subgoal.kind` is validated against it. One kind

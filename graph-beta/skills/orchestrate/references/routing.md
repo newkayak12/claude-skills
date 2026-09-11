@@ -82,8 +82,11 @@ Claude work.
 so a run's account of itself is not written by its own driver. It stays reasoning work:
 read-only sandbox, and `host_model` if no peer is available and it falls back to the host.
 
-Keys are stage names — `plan`, `setgoal`, `critique`, `implement`, `test`, `gate`,
-`report` — plus the optional `gate:goal`. Each entry may set `vendor`, `candidates`,
+Keys are stage names — `plan`, `setgoal`, `critique`, `implement`, `test`, `draft`,
+`review`, `gate`, `report` — plus the optional `gate:goal`. `draft` is routed like
+`implement` (writes, cross-vendor); `review` like `gate` (reads, stays on the host). Under
+`ordered` allocation with one vendor for both, give `review` its own vendor or model — the
+broker refuses a review on the identity that drafted. Each entry may set `vendor`, `candidates`,
 `sandbox`, `model`. A stage entry wins over the run-level setting; a stage with no entry
 inherits it. `graph_next` reports the chosen `model` per ready node.
 

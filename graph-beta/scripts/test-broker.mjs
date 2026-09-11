@@ -741,6 +741,174 @@ test('a subgoal with an unknown kind is caught at setgoal, not left to expand in
   });
 });
 
+// ---------- document kind ----------
+
+const MIXED = {
+  goal: 'G',
+  acceptance: ['A'],
+  subgoals: [
+    { id: 'U1', title: 'code', acceptance: ['a'], test: ['t'], deps: [] },
+    { id: 'U2', title: 'more code', acceptance: ['b'], test: ['t'], deps: ['U1'] },
+    { id: 'D1', kind: 'document', title: 'design note', acceptance: ['names the two modules', 'states the invariant'], files: ['doc.md'], deps: ['U1'] },
+  ],
+};
+
+test('a mixed spec expands each subgoal by its kind and reaches the report', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, MIXED);
+    const st = await c.call('graph_status', { run_id: runId, cwd });
+    const ids = st.nodes.map((n) => n.node_id);
+    assert.ok(ids.includes('implement:U1:1') && ids.includes('test:U1:1') && ids.includes('gate:U1:1'));
+    assert.ok(ids.includes('draft:D1:1') && ids.includes('review:D1:1') && ids.includes('gate:D1:1'));
+    assert.ok(!ids.includes('implement:D1:1') && !ids.includes('test:D1:1'), 'a document has no implement/test');
+    const draft = st.nodes.find((n) => n.node_id === 'draft:D1:1');
+    assert.deepEqual(draft.deps, ['critique', 'gate:U1:1'], 'the chain head carries the subgoal deps');
+    assert.deepEqual(st.nodes.find((n) => n.node_id === 'review:D1:1').deps, ['draft:D1:1']);
+    assert.ok(st.nodes.find((n) => n.node_id === 'gate:goal:1').deps.includes('gate:D1:1'), 'the goal gate collects the document gate');
+
+    await passSubgoal(c, cwd, runId, 'U1');
+    await passSubgoal(c, cwd, runId, 'U2');
+    writeFileSync(join(cwd, 'doc.md'), '# note\nmodules: a, b\ninvariant: x\n');
+    const d = await c.call('graph_submit', { run_id: runId, cwd, node_id: 'draft:D1:1', payload: ok({ changed_files: ['doc.md'], handoff: 'doc.md — a note' }) });
+    assert.equal(d.state, 'done', JSON.stringify(d));
+    const r = await c.call('graph_submit', { run_id: runId, cwd, node_id: 'review:D1:1', payload: ok({ verified: true, checks: ['names the two modules -> "modules: a, b"'] }) });
+    assert.equal(r.state, 'done');
+    assert.equal(r.verified, true);
+    assert.equal(r.reviewer_independence, 'unverifiable-self', 'self cannot be checked, and the verdict says so');
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'gate:D1:1', payload: ok({ accept: true, match_pct: 90 }) });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'gate:goal:1', payload: ok({ accept: true, match_pct: 90 }) });
+    const nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['report']);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'report', payload: ok({ handoff: 'done' }) });
+    assert.equal((await c.call('graph_status', { run_id: runId, cwd })).state, 'complete');
+  });
+});
+
+test('a document draft that changed no file is unattributed, not contradicted; a code implement still is', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, {
+      goal: 'G', acceptance: ['A'],
+      subgoals: [
+        { id: 'D1', kind: 'document', title: 'inline answer', acceptance: ['a'], deps: [] },
+        { id: 'U1', title: 'code', acceptance: ['a'], test: ['t'], deps: [] },
+      ],
+    });
+    const d = await c.call('graph_submit', { run_id: runId, cwd, node_id: 'draft:D1:1', payload: ok({ changed_files: [], handoff: 'the whole note is here in the handoff' }) });
+    assert.equal(d.state, 'done', JSON.stringify(d));
+    assert.equal(d.stage_ok, true);
+    assert.equal(d.changed_files_verified, null);
+    assert.equal(d.change_attribution, 'document-unchanged');
+    // The same empty claim from a code node is untouched behaviour: under isolation it
+    // still verifies, because for code "nothing changed" is a claim git can confirm.
+    const i = await c.call('graph_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [], handoff: 'h' }) });
+    assert.equal(i.change_attribution, 'isolated');
+    assert.equal(i.changed_files_verified, true);
+  }, { isolated: true });
+});
+
+test('a review without a verdict fails, and a review is briefed as a reasoning node', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, {
+      goal: 'G', acceptance: ['A'],
+      subgoals: [{ id: 'D1', kind: 'document', title: 'note', acceptance: ['a'], files: ['doc.md'], deps: [] }],
+    });
+    let nx = await c.call('graph_next', { run_id: runId, cwd });
+    const draftPrompt = readFileSync(nx.ready.find((n) => n.node_id === 'draft:D1:1').briefing_path, 'utf8');
+    assert.match(draftPrompt, /Kind: document/);
+    assert.match(draftPrompt, /one-paragraph abstract/);
+    assert.doesNotMatch(draftPrompt, /This is a reasoning node/, 'a draft writes the artifact');
+    writeFileSync(join(cwd, 'doc.md'), 'x\n');
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'draft:D1:1', payload: ok({ changed_files: ['doc.md'], handoff: 'doc.md' }) });
+    nx = await c.call('graph_next', { run_id: runId, cwd });
+    const reviewPrompt = readFileSync(nx.ready.find((n) => n.node_id === 'review:D1:1').briefing_path, 'utf8');
+    assert.match(reviewPrompt, /This is a reasoning node/);
+    assert.match(reviewPrompt, /You are the reader, not the author/);
+    assert.match(reviewPrompt, /doc\.md/, 'the review sees the paths the draft reported');
+    const r = await c.call('graph_submit', { run_id: runId, cwd, node_id: 'review:D1:1', payload: ok({ checks: ['read it'] }) });
+    assert.equal(r.state, 'failed');
+    assert.equal(r.missing_verdict, 'verified');
+  });
+});
+
+test('a rejected document gets a fresh draft, and the goal gate waits for the new review chain', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, {
+      goal: 'G', acceptance: ['A'],
+      subgoals: [{ id: 'D1', kind: 'document', title: 'note', acceptance: ['a'], deps: [] }],
+    });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'draft:D1:1', payload: ok({ changed_files: [], handoff: 'v1' }) });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'review:D1:1', payload: ok({ verified: false, checks: ['a -> MISSING: the invariant'] }) });
+    const rt = await c.call('graph_retry', { run_id: runId, cwd, subgoal_id: 'D1' });
+    assert.equal(rt.retried, true);
+    assert.equal(rt.attempt, 2);
+    const st = await c.call('graph_status', { run_id: runId, cwd });
+    const ids = st.nodes.map((n) => n.node_id);
+    assert.ok(ids.includes('draft:D1:2') && ids.includes('review:D1:2') && ids.includes('gate:D1:2'));
+    assert.equal(st.nodes.find((n) => n.node_id === 'gate:D1:1').state, 'skipped');
+    assert.deepEqual(st.nodes.find((n) => n.node_id === 'gate:goal:1').deps, ['gate:D1:2']);
+    const nx = await c.call('graph_next', { run_id: runId, cwd });
+    const prompt = readFileSync(nx.ready.find((n) => n.node_id === 'draft:D1:2').briefing_path, 'utf8');
+    assert.match(prompt, /Previous attempt was rejected/, 'the review\'s gaps reach the second draft');
+  });
+});
+
+// A vendor that writes a document when asked to draft and answers as a reader when asked to
+// review. Both run under one vendor name so the broker sees identical identities.
+function documentRepo() {
+  const dir = repo();
+  const adapter = join(dir, 'ink-adapter.mjs');
+  writeFileSync(adapter, `
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+const a = process.argv.slice(2), get = k => a[a.indexOf(k) + 1];
+const out = get('--output'); mkdirSync(dirname(out), { recursive: true });
+if (a.includes('--detect')) { writeFileSync(out, JSON.stringify({ vendor: { ready: true, reachable: true } })); process.exit(0); }
+const stage = readFileSync(get('--prompt-file'), 'utf8').match(/^# (\\w+) node/)[1];
+const result = { stage_ok: true, handoff: 'read', evidence: 'e', checks: ['c'], verified: true };
+if (stage === 'draft') { writeFileSync(join(get('--cwd'), 'doc.md'), 'the note\\n'); result.changed_files = ['doc.md']; result.handoff = 'doc.md — the note'; }
+writeFileSync(out, JSON.stringify({ stage_ok: true, result }));
+`);
+  mkdirSync(join(dir, '.claude'), { recursive: true });
+  writeFileSync(join(dir, '.claude', 'broker-vendors.json'), JSON.stringify({
+    ink: { command: 'node', args: [adapter], requires_binary: null, sandboxes: ['read-only', 'workspace-write'], default_sandbox: 'workspace-write' },
+  }));
+  return dir;
+}
+
+test('a review routed to the identity that wrote the draft is refused, and the node stays open for rerouting', async () => {
+  const cwd = documentRepo();
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('graph_open', {
+      request: 'r', cwd, vendor: 'self',
+      policy: { draft: { vendor: 'ink', model: 'm1' }, review: { vendor: 'ink', model: 'm1' } },
+    });
+    await throughCritiqueWith(c, cwd, run_id, {
+      goal: 'G', acceptance: ['A'],
+      subgoals: [{ id: 'D1', kind: 'document', title: 'note', acceptance: ['a'], files: ['doc.md'], deps: [] }],
+    });
+    const d = await c.call('graph_run', { run_id, cwd, node_id: 'draft:D1:1' });
+    assert.equal(d.state, 'done', JSON.stringify(d));
+    assert.equal(d.executor, 'ink');
+    assert.equal(d.model, 'm1');
+
+    const refused = await c.call('graph_run', { run_id, cwd, node_id: 'review:D1:1' });
+    assert.match(refused.error, /someone other than its author/);
+    assert.match(refused.error, /ink@m1/);
+    const st = await c.call('graph_status', { run_id, cwd, node_id: 'review:D1:1' });
+    assert.equal(st.nodes[0].state, 'pending', 'a routing mistake costs no retry');
+
+    // Same vendor, different model is a different identity.
+    const r = await c.call('graph_run', { run_id, cwd, node_id: 'review:D1:1', model: 'm2' });
+    assert.equal(r.state, 'done', JSON.stringify(r));
+    assert.equal(r.verified, true);
+    assert.equal(r.reviewer_independence, 'distinct-identity');
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('duplicate subgoal ids and missing acceptance are caught', async () => {
   await withRun(async ({ c, cwd, runId }) => {
     const v = await setgoalWith(c, cwd, runId, {

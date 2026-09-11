@@ -44,6 +44,9 @@ import {
   unmetDeps,
   nodeBriefing,
   stagePolicy,
+  VERDICT_FIELD,
+  authorStage,
+  nodeKind,
 } from './graph.mjs';
 import { composePrompt } from './prompts.mjs';
 
@@ -301,9 +304,16 @@ function gitChanged(cwd) {
 
 // Positive attribution is only sound when this node had the worktree to itself.
 // Otherwise null - "could not attribute" is neither a pass nor a failure.
-function crossCheck(cwd, claimed, isolated) {
+function crossCheck(cwd, claimed, isolated, kind) {
   const observed = gitChanged(cwd);
   if (observed === null) return { changed_files_verified: null, change_attribution: 'no-git', contradicted_files: [] };
+  // A document draft that reports no files is not caught lying - it wrote nothing git
+  // can see, perhaps because the deliverable is the handoff text itself. Under isolation
+  // an empty claim used to verify as `true`, which asserts attribution of nothing. Say
+  // "could not attribute" and leave the judgement to review, whose job it is.
+  if (kind === 'document' && !(Array.isArray(claimed) && claimed.length)) {
+    return { changed_files_verified: null, change_attribution: 'document-unchanged', contradicted_files: [] };
+  }
   // A briefing names files by absolute path, so a truthful executor claims them that way,
   // while git reports them relative to cwd. Compare in one space. A path outside cwd is
   // left as-is rather than trimmed, so it stays unmatched instead of matching by suffix.
@@ -484,7 +494,7 @@ function verdict(run, n) {
     state: n.state,
     stage_ok: res.stage_ok === true,
   };
-  if (n.stage === 'test') out.verified = res.verified === true;
+  if (VERDICT_FIELD[n.stage] === 'verified') out.verified = res.verified === true;
   if (n.stage === 'gate') {
     out.accept = res.accept === true;
     out.match_pct = res.match_pct;
@@ -505,9 +515,10 @@ function verdict(run, n) {
   // that claimed success and was caught.
   if (res.submitted_stage_ok === true && out.stage_ok !== true) out.submitted_stage_ok = true;
   if (n.state === 'failed' && res.stage_ok === true) {
-    const field = n.stage === 'gate' ? 'accept' : n.stage === 'critique' ? 'sound' : n.stage === 'test' ? 'verified' : null;
+    const field = VERDICT_FIELD[n.stage] || null;
     if (field && res[field] === undefined) out.missing_verdict = field;
   }
+  if (res.reviewer_independence) out.reviewer_independence = res.reviewer_independence;
   if (res.killed_for) out.killed_for = res.killed_for;
   const reason = String(res.reason || res.verification_error || '');
   if (reason) out.reason = reason.slice(0, 300);
@@ -525,10 +536,41 @@ function nodeSucceeded(n, result) {
   // field pass: a vendor that returned an implement-shaped result for a test node, or a
   // gate that returned no verdict at all, sailed through. Absent evidence is not a pass -
   // which is exactly what these nodes are told.
-  if (n.stage === 'gate') return result.accept === true;
-  if (n.stage === 'critique') return result.sound === true;
-  if (n.stage === 'test') return result.verified === true;
-  return true;
+  const field = VERDICT_FIELD[n.stage];
+  return field ? result[field] === true : true;
+}
+
+// ---------- author != reviewer ----------
+//
+// A document is checked by reading it, and a reading by the hand that wrote it checks
+// nothing: the author already believes every acceptance item is met. The gate has always
+// had this rule as prose ("you are the judge, not the actor"); review gets it as
+// enforcement, because here the broker can actually see both identities. Identity is
+// executor + model. Two vendor runs on the same identity are refused - the node stays
+// pending so the caller can route it elsewhere - rather than failed, which would burn a
+// retry on a routing mistake. `self` is the driving session dispatching a fresh native
+// agent, whose identity the broker cannot see: allowed, and marked as unverifiable.
+function identityOf(executor, model) {
+  return `${executor || 'self'}@${model || 'default'}`;
+}
+
+function reviewIndependence(run, n, executor, model) {
+  if (n.stage !== 'review') return null;
+  const kind = nodeKind(run, n);
+  const author = run.nodes.find((x) => x.subgoal_id === n.subgoal_id
+    && (x.attempt || 1) === (n.attempt || 1) && x.stage === authorStage(kind || 'subgoal'));
+  if (!author || !author.result) return null;
+  const mine = identityOf(executor, model);
+  const theirs = identityOf(author.executor || author.vendor, author.model);
+  if ((executor || 'self') === 'self' || (author.executor || author.vendor || 'self') === 'self') {
+    return { independence: 'unverifiable-self', author: theirs, reviewer: mine };
+  }
+  if (mine === theirs) {
+    throw new Error(`review ${n.node_id} is routed to ${mine}, which wrote ${author.node_id}. `
+      + `A document must be read by someone other than its author: route the review stage to another vendor `
+      + `(policy.review) or pass a different model to graph_run.`);
+  }
+  return { independence: 'distinct-identity', author: theirs, reviewer: mine };
 }
 
 function finishNode(run, n, result, vendorName) {
@@ -611,7 +653,8 @@ const VERDICT_SCHEMA = {
     spec_drift_count: { type: 'number', description: 'goal gate: where the spec asked less than the request' },
     sound: { type: 'boolean', description: 'critique nodes' },
     changed_files_verified: { type: ['boolean', 'null'], description: 'null means could not attribute - not a pass' },
-    change_attribution: { type: ['string', 'null'], enum: ['isolated', 'shared-worktree', 'no-git', null] },
+    change_attribution: { type: ['string', 'null'], enum: ['isolated', 'shared-worktree', 'no-git', 'document-unchanged', null] },
+    reviewer_independence: { type: 'string', enum: ['distinct-identity', 'unverifiable-self'], description: 'review nodes: whether the broker could see that the reviewer is not the draft author' },
     contradicted_files: { type: 'array', items: { type: 'string' } },
     submitted_stage_ok: { type: 'boolean', description: 'present when the broker overruled the executor' },
     missing_verdict: { type: 'string', description: 'the verdict field the node failed to return' },
@@ -701,7 +744,7 @@ const TOOLS = [
         policy: {
           type: 'object',
           description:
-            'Per-stage routing: {"plan":{"vendor":"self","model":"opus"},"implement":{"vendor":"codex"},"report":{"model":"sonnet"}}. Keys are stage names (plan, setgoal, critique, implement, test, gate, report) plus the optional "gate:goal". Each entry may set vendor, candidates, sandbox, model. A stage entry wins over the run-level setting.',
+            'Per-stage routing: {"plan":{"vendor":"self","model":"opus"},"implement":{"vendor":"codex"},"report":{"model":"sonnet"}}. Keys are stage names (plan, setgoal, critique, implement, test, draft, review, gate, report) plus the optional "gate:goal". A document subgoal review must not run on the identity that drafted it; give review its own vendor or model here. Each entry may set vendor, candidates, sandbox, model. A stage entry wins over the run-level setting.',
         },
         candidates: { type: 'array', items: { type: 'string' }, description: 'vendor preference order for "auto"' },
         sandbox: { type: 'string' },
@@ -909,6 +952,10 @@ async function toolGraphRun(a) {
     return verdict(run, n);
   }
 
+  // Policy is the default; an explicit graph_run({model}) still wins for one call.
+  const chosenModel = a.model || r.model;
+  const independence = reviewIndependence(run, n, r.executor || r.vendor, chosenModel);
+
   const vendor = loadVendors(run.cwd)[r.vendor];
   const ticket = randomUUID();
   n.ticket = ticket;
@@ -935,6 +982,9 @@ async function toolGraphRun(a) {
   // spec, gate returns a verdict) and the implement schema is additionalProperties:false,
   // so a valid setgoal answer would be rejected as malformed. The adapter's --stage is
   // optional, so we omit it and parse the model's reply here instead.
+  // The adapter knows two staged schemas: implement (files + checks) and test (verified).
+  // A draft is implement-shaped - it writes files and reports them - so it borrows that
+  // schema; review is reasoning and runs unstaged like the other judging nodes.
   const reasoning = REASONING_STAGES.has(n.stage);
   const args = [
     ...(reasoning ? [] : ['--stage', n.stage === 'test' ? 'test' : 'implement']),
@@ -946,8 +996,6 @@ async function toolGraphRun(a) {
   ];
   if (run.isolated && !REASONING_STAGES.has(n.stage)) args.push('--isolated');
   for (const d of Array.isArray(a.add_dirs) ? a.add_dirs : []) args.push('--add-dir', String(d));
-  // Policy is the default; an explicit graph_run({model}) still wins for one call.
-  const chosenModel = a.model || r.model;
   if (chosenModel) args.push('--model', String(chosenModel));
 
   let proc;
@@ -1002,9 +1050,9 @@ async function toolGraphRun(a) {
           stage_ok: false,
           reason: `${entry(n)} returned no usable JSON: ${String((payload && payload.handoff) || report.last_message || '').slice(0, 200)}`,
         }
-      : { ...payload, stage_ok: payload.stage_ok !== false };
+      : { ...payload, stage_ok: payload.stage_ok !== false, ...(independence ? { reviewer_independence: independence.independence } : {}) };
   } else {
-    const check = crossCheck(run.cwd, payload.changed_files, run.isolated);
+    const check = crossCheck(run.cwd, payload.changed_files, run.isolated, nodeKind(run, n));
     const contradicted = check.contradicted_files.length > 0;
     result = {
       ...payload,
@@ -1029,11 +1077,12 @@ function toolGraphSubmit(a) {
     if (payload.stage_ok === false && capacityFailure(payload)) return checkpointInterruption(run, n, n.executor, payload, 'quota');
   }
 
+  const independence = reviewIndependence(run, n, n.executor || 'self', n.model);
   let result;
   if (REASONING_STAGES.has(n.stage)) {
-    result = { ...payload, stage_ok: payload.stage_ok !== false };
+    result = { ...payload, stage_ok: payload.stage_ok !== false, ...(independence ? { reviewer_independence: independence.independence } : {}) };
   } else {
-    const check = crossCheck(run.cwd, payload.changed_files, run.isolated);
+    const check = crossCheck(run.cwd, payload.changed_files, run.isolated, nodeKind(run, n));
     const contradicted = check.contradicted_files.length > 0;
     result = {
       ...payload,
@@ -1102,11 +1151,17 @@ async function toolGraphRetry(a) {
     return { run_id: run.run_id, target: 'spec', retried: true, attempt: out.attempt, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
   }
 
+  // The feedback is whatever judged the attempt last: a gate's gaps, or - when the
+  // attempt never reached its gate - the check that failed it. A review that listed
+  // what the text lacks, or a test that printed the failing command, is the feedback
+  // the next draft or implement needs; carrying only gate verdicts sent it in blind.
   const sid = String(a.subgoal_id);
-  const gates = run.nodes.filter((n) => n.subgoal_id === sid && n.stage === 'gate' && n.result);
-  const last = gates[gates.length - 1];
+  const judged = run.nodes.filter((n) => n.subgoal_id === sid && n.result && (n.stage === 'gate' || n.state === 'failed'));
+  const last = judged[judged.length - 1];
   const feedback = last && last.result
-    ? [last.result.reason || '', ...(last.result.gaps || [])].filter(Boolean).join('\n- ')
+    ? [last.result.reason || '', ...(last.result.gaps || []),
+       ...(last.result.verified === false ? (last.result.checks || []) : [])]
+        .filter(Boolean).join('\n- ')
     : '';
   const out = retrySubgoal(run, sid, feedback);
   if (!out.attempt) {
