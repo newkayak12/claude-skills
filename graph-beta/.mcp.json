@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "graph-beta-engineering": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/broker.mjs"]
+    }
+  }
+}
