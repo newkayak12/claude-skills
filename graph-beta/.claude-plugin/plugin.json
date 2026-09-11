@@ -1,7 +1,7 @@
 {
   "name": "graph-beta",
-  "description": "Beta line of the graph plugin. Same engine as graph 1.7.0 plus the work toward kinds (code / document / package), a TaskManager MCP for medium and large requests, and entry skills per flow. Runs are kept under .harness-run/broker-beta/ so it never touches a stable graph run. Do not enable graph and graph-beta in the same project. Zero runtime dependencies beyond Node 18+.",
-  "version": "0.3.0",
+  "description": "Beta line of the graph plugin. Same engine as graph 1.7.0 plus kinds (code / document), flows with develop/document entry skills, and a second MCP server, task-manager, that splits medium and large requests into packages, runs each as its own graph in its own worktree, integrates and reports. Runs are kept under .harness-run/broker-beta/ and ~/.harness/tasks/ so it never touches a stable graph run. Do not enable graph and graph-beta in the same project. Zero runtime dependencies beyond Node 18+.",
+  "version": "0.4.0",
   "author": {
     "name": "newkayak12"
   },

@@ -9,7 +9,7 @@
 // Runs live at <cwd>/.harness-run/broker-beta/runs/<run_id>.json.
 
 import { mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 export const STAGES = [
@@ -128,12 +128,15 @@ function runPath(cwd, runId) {
 // mkdir is atomic on every filesystem we care about, so it is the lock.
 const LOCK_STALE_MS = 30 * 1000;
 
-function lockPath(cwd, runId) {
-  return runPath(cwd, runId) + '.lock';
+// Where this run's file is. The broker's runs live under their project; a run that manages
+// other runs (the TaskManager's) lives outside any project and says so with `store_path`.
+// Everything else - lock, merge, save, load - keys off this one function.
+export function pathOf(run) {
+  return run.store_path || runPath(run.cwd, run.run_id);
 }
 
-function acquire(cwd, runId) {
-  const lock = lockPath(cwd, runId);
+function acquire(path) {
+  const lock = path + '.lock';
   const deadline = Date.now() + 5000;
   for (;;) {
     try {
@@ -189,11 +192,12 @@ function mergeOnto(fresh, mine) {
 }
 
 export function saveRun(run) {
-  mkdirSync(runsDir(run.cwd), { recursive: true });
-  const lock = acquire(run.cwd, run.run_id);
+  const path = pathOf(run);
+  mkdirSync(dirname(path), { recursive: true });
+  const lock = acquire(path);
   try {
-    const merged = mergeOnto(loadRun(run.cwd, run.run_id), run);
-    writeFileSync(runPath(run.cwd, run.run_id), JSON.stringify(merged, null, 2) + '\n');
+    const merged = mergeOnto(loadRunAt(path), run);
+    writeFileSync(path, JSON.stringify(merged, null, 2) + '\n');
     // Keep the caller's object consistent with what was written.
     run.nodes = merged.nodes;
     run.capacity_epoch = merged.capacity_epoch || 0;
@@ -204,12 +208,16 @@ export function saveRun(run) {
   }
 }
 
-export function loadRun(cwd, runId) {
+export function loadRunAt(path) {
   try {
-    return JSON.parse(readFileSync(runPath(cwd, runId), 'utf8'));
+    return JSON.parse(readFileSync(path, 'utf8'));
   } catch {
     return null;
   }
+}
+
+export function loadRun(cwd, runId) {
+  return loadRunAt(runPath(cwd, runId));
 }
 
 // A run id alone is enough to find the run when the caller did not pass a cwd,
@@ -239,7 +247,7 @@ export function listRuns(cwd) {
 // the node must not start before the dep has finished, but it does not need the dep to
 // have succeeded. Without the second kind the report could never run behind a gate that
 // rejected the work - and writing the account of a failure is precisely the report's job.
-function node(id, stage, deps, extra) {
+export function node(id, stage, deps, extra) {
   return {
     node_id: id,
     stage,
@@ -388,13 +396,14 @@ export function validateSpec(spec, opts = {}) {
 // The nth node of a kind, so a re-expansion after a spec retry cannot collide with the
 // retired nodes it left behind. Reusing an id there silently created nothing: the run
 // went straight to "complete" with no implement node ever having run.
-function nextIndex(run, prefix) {
+export function nextIndex(run, prefix) {
   return run.nodes.filter((n) => n.node_id === prefix || n.node_id.startsWith(prefix + ':')).length + 1;
 }
 
-// One attempt of one subgoal: the kind's chain, wired head to tail. Returns the gate id.
-function pushChain(run, kind, subgoalId, attempt, headDeps, headAfter, headExtra) {
-  const { chain } = KINDS[kind] || KINDS[DEFAULT_KIND];
+// One attempt of one subgoal: a chain of stages, wired head to tail. Returns the last id.
+// Takes the chain itself, not a kind, so a run with its own stage table (the TaskManager's
+// package chain) can use the same wiring.
+export function pushChain(run, chain, subgoalId, attempt, headDeps, headAfter, headExtra) {
   let prev = null;
   for (const stage of chain) {
     const id = `${stage}:${subgoalId}:${attempt}`;
@@ -428,7 +437,7 @@ export function expandSubgoals(run, subgoals) {
     const id = String(sg.id);
     const deps = (sg.deps || []).map((d) => `gate:${d}:${round}`);
     const after = (sg.after || []).map((d) => `gate:${d}:${round}`);
-    gateIds.push(pushChain(run, kindOf(sg), id, round, [critiqueDep, ...deps], after, {}));
+    gateIds.push(pushChain(run, (KINDS[kindOf(sg)] || KINDS[DEFAULT_KIND]).chain, id, round, [critiqueDep, ...deps], after, {}));
   }
   const goalGate = `gate:goal:${nextIndex(run, 'gate:goal')}`;
   const reportId = round === 1 ? 'report' : `report:${round}`;
@@ -505,7 +514,7 @@ export function retrySubgoal(run, subgoalId, feedback) {
   const baseDeps = first ? first.deps.slice() : ['critique'];
   const baseAfter = first ? (first.after || []).slice() : [];
 
-  const gate = pushChain(run, kind, subgoalId, attempt, baseDeps, baseAfter, { feedback: feedback || '' });
+  const gate = pushChain(run, (KINDS[kind] || KINDS[DEFAULT_KIND]).chain, subgoalId, attempt, baseDeps, baseAfter, { feedback: feedback || '' });
 
   // Anything that waited on the old attempt's gate must wait on the new one.
   for (const n of run.nodes) {
@@ -519,6 +528,17 @@ export function retrySubgoal(run, subgoalId, feedback) {
       n.state = 'pending';
       n.result = null;
     }
+  }
+  // A goal gate that REJECTED is a different case: it ran, and its verdict is evidence. The
+  // retried subgoal will pass or fail on its own, but nothing re-judged the whole - the old
+  // gate stayed `failed`, the report stayed behind it, and the run wedged with the fix in
+  // place. Open a fresh goal gate over the live subgoal gates, carrying the rejection as
+  // feedback, and move the report behind it. The old gate stays, as every failed attempt does.
+  for (const old of run.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id === null && n.state === 'failed' && !n.final && n.deps.includes(gate))) {
+    const fresh = `gate:goal:${nextIndex(run, 'gate:goal')}`;
+    const fb = [old.result && old.result.reason, ...((old.result && old.result.gaps) || [])].filter(Boolean).join('\n- ');
+    run.nodes.push(node(fresh, 'gate', old.deps.slice(), { subgoal_id: null, feedback: fb, supersedes: old.node_id }));
+    for (const n of run.nodes) n.after = (n.after || []).map((d) => (d === old.node_id ? fresh : d));
   }
   return { run: saveRun(run), attempt, reason: '' };
 }

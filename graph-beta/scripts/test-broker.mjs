@@ -741,6 +741,37 @@ test('a subgoal with an unknown kind is caught at setgoal, not left to expand in
   });
 });
 
+test('a rejected goal gate is re-judged after the subgoal retry, instead of wedging the run', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, INDEPENDENT);
+    await passSubgoal(c, cwd, runId, 'U1');
+    await passSubgoal(c, cwd, runId, 'U2');
+    const g = await c.call('graph_submit', { run_id: runId, cwd, node_id: 'gate:goal:1', payload: ok({ accept: false, match_pct: 50, gaps: ['U2 never wired to U1'], reason: 'halves do not meet' }) });
+    assert.equal(g.state, 'failed');
+    let nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.equal(nx.state, 'blocked', 'a rejection with retries left holds the report');
+    const rt = await c.call('graph_retry', { run_id: runId, cwd, subgoal_id: 'U2' });
+    assert.equal(rt.retried, true);
+    const prompt = readFileSync(rt.ready.find((n) => n.node_id === 'implement:U2:2').briefing_path, 'utf8');
+    assert.match(prompt, /goal gate gate:goal:1: halves do not meet/, 'the retried subgoal hears why the whole was rejected');
+    assert.match(prompt, /U2 never wired to U1/);
+    await passSubgoal(c, cwd, runId, 'U2', 2);
+    nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['gate:goal:2'], 'a fresh goal gate judges the rebuilt whole');
+    const st = await c.call('graph_status', { run_id: runId, cwd });
+    assert.equal(st.nodes.find((n) => n.node_id === 'gate:goal:1').state, 'failed', 'the rejection stays as evidence');
+    assert.deepEqual(st.nodes.find((n) => n.node_id === 'gate:goal:2').deps.sort(), ['gate:U1:1', 'gate:U2:2']);
+    assert.deepEqual(st.nodes.find((n) => n.node_id === 'report').after, ['gate:goal:2']);
+    const gatePrompt = readFileSync(nx.ready[0].briefing_path, 'utf8');
+    assert.match(gatePrompt, /Previous attempt was rejected[\s\S]*U2 never wired to U1/);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'gate:goal:2', payload: ok({ accept: true, match_pct: 90 }) });
+    nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['report']);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'report', payload: ok({ handoff: 'done' }) });
+    assert.equal((await c.call('graph_status', { run_id: runId, cwd })).state, 'complete');
+  });
+});
+
 // ---------- document kind ----------
 
 const MIXED = {
