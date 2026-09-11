@@ -86,7 +86,7 @@ and the short `reason`. Never open a payload to enrich a line — no gap text, n
 `detail_path` read. **A line you cannot write from the verdict is a line you do not write.**
 
 **On a judging node `stage_ok` only means the judging itself worked.** The verdict is
-`accept` (gate), `verified` (test), or `sound` (critique); a negative one makes the node
+`accept` (gate), `verified` (test and review), or `sound` (critique); a negative one makes the node
 `failed` and holds back everything downstream. `failed` is not final: it is a retry waiting to
 happen. When `graph_retry` declines because the budget is gone, the failure is settled — every
 node that needed it becomes `unreachable`, and `report` (order-only on the goal gate) is ready.
@@ -107,10 +107,15 @@ Do not read the conversation, and nothing under .harness-run/ the briefing does 
 Your final message must be exactly the JSON the briefing's "Return JSON" line specifies — nothing else.
 ```
 
-Fan out every self node in `ready[]` in one message; concurrent `implement` nodes — self or
-vendor — only when each has its own worktree, otherwise implement one at a time and fan out
-test/gate/critique. The broker does not serialize them for you: `graph_next` offers every
-dependency-satisfied node, so two implements against one worktree is your mistake to avoid.
+Fan out every self node in `ready[]` in one message; concurrent `implement`/`draft` nodes —
+self or vendor — only when each has its own worktree, otherwise one at a time and fan out
+test/review/gate/critique. The broker does not serialize them for you: `graph_next` offers
+every dependency-satisfied node, so two writers against one worktree is your mistake to avoid.
+
+A `review` node reads a document its `draft` wrote, and must not be the same agent. For self
+nodes that is already the rule (a fresh agent per node); for vendor nodes the broker refuses
+a review routed to the identity — vendor + model — that drafted, and leaves the node pending.
+Route `review` to another vendor or model in `policy` and call `graph_run` again.
 
 As each agent finishes, pass its final message to `graph_submit` unchanged. If it is not
 parseable JSON, submit `{stage_ok: false, reason: "executor returned no verdict"}` — do
@@ -180,9 +185,10 @@ call `graph_next` for the alternate route.
 | field | meaning |
 |---|---|
 | `stage_ok` | adjudicated. Never report a value above what the broker returned. |
-| `verified` | test nodes: the checks ran and passed |
+| `verified` | test nodes: the checks ran and passed. review nodes: every acceptance item has a passage |
+| `reviewer_independence` | review nodes: `distinct-identity` when the broker saw author ≠ reviewer; `unverifiable-self` when it could not |
 | `accept`, `match_pct`, `gap_count` | gate nodes |
-| `changed_files_verified` | `true`/`false` under `isolated`; `null` in a shared worktree unless contradicted |
+| `changed_files_verified` | `true`/`false` under `isolated`; `null` in a shared worktree unless contradicted; `null` for a document draft that claimed no files |
 | `contradicted_files` | claimed files the worktree does not show — these fail the node |
 
 `null` verification means "could not attribute": neither a pass nor a failure. Say so
