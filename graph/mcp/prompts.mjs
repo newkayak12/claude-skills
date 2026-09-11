@@ -125,13 +125,14 @@ export function composePrompt(run, n, briefing) {
   if (briefing.whole_run && briefing.whole_run.length) {
     lines.push('');
     lines.push(`## Every node in this run`);
-    lines.push(`Judge from these facts. A node that failed or was skipped is part of the outcome.`);
+    lines.push(`Judge from these facts. A node that failed, was skipped, or became unreachable is part of the outcome.`);
     for (const x of briefing.whole_run) {
       const verdict = [
         x.state,
         x.vendor ? `vendor=${x.vendor}` : '',
         x.verified === undefined ? '' : `verified=${x.verified}`,
         x.accept === undefined ? '' : `accept=${x.accept}`,
+        x.sound === undefined ? '' : `sound=${x.sound}`,
         x.match_pct === undefined ? '' : `match=${x.match_pct}%`,
         x.changed_files_verified === undefined || x.changed_files_verified === null
           ? ''

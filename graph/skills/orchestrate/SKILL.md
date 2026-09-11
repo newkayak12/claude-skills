@@ -51,7 +51,9 @@ while state == "running":
     if state == "blocked":
         a failed subgoal    -> graph_retry({run_id, subgoal_id})
         a failed critique   -> graph_retry({run_id})          # redo the spec
-        nothing retryable   -> report and stop
+        retried == false    -> budget gone: the broker settled it, downstream is `unreachable`,
+                               and `report` is in ready[] — run it like any node
+        still blocked       -> no report node exists (setgoal never produced a spec): report and stop
 graph_status({run_id, cwd})                       -> final counts, only if the last graph_next did not already return them
 graph_status({cwd})                               -> every run here: state, counts, what is running now and for how long
 ```
@@ -85,7 +87,9 @@ and the short `reason`. Never open a payload to enrich a line — no gap text, n
 
 **On a judging node `stage_ok` only means the judging itself worked.** The verdict is
 `accept` (gate), `verified` (test), or `sound` (critique); a negative one makes the node
-`failed` and holds back everything downstream.
+`failed` and holds back everything downstream. `failed` is not final: it is a retry waiting to
+happen. When `graph_retry` declines because the budget is gone, the failure is settled — every
+node that needed it becomes `unreachable`, and `report` (order-only on the goal gate) is ready.
 
 **`graph_retry` without a `subgoal_id` or `node_id` retries the spec.** When critique rejects the
 goal-spec, redoing one subgoal fixes nothing: the whole decomposition is in question. That
@@ -127,15 +131,17 @@ run: <run_id>   state: <complete|blocked>   nodes: <done>/<total>
 | gate:U1:1 | self | true | 95% |
 
 ### Not done
-<failed or skipped nodes, and why — including any that fell back to self. No workaround suggestions.>
+<failed, skipped or unreachable nodes, and why — including any that fell back to self. No workaround suggestions.>
 
 ### Report
 <the report node's handoff, relayed verbatim. Omit this section only when no report node ran.>
 ```
 
 The table and `### Not done` are yours — run bookkeeping, written from verdicts. `### Report`
-is the report node's own text, passed through untouched. When the run ends blocked, no report
-node ran: say what failed and stop, and do not write the missing section yourself.
+is the report node's own text, passed through untouched. A run whose retry budget ran out is
+not blocked: the report node runs over the `unreachable` set and its text is `### Report`. When
+the run does end blocked, no report node ran: say what failed and stop, and do not write the
+missing section yourself.
 
 ## Do not pull the payload into your context
 

@@ -47,6 +47,22 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.7.0 — typed edges and settled failure**: a dependency meant one thing, "must have
+  succeeded". So `report` hung behind `gate:goal`, and a subgoal that ran out of retries left
+  the run `blocked` forever - the subgoals that HAD passed were never reported. Edges now come
+  in two kinds: `deps` is a data dependency (the dep must be `done`) and `after` is order-only,
+  Make's `|` prerequisite (the dep must have finished, not passed). `report` hangs off the goal
+  gate with `after`. When `graph_retry` finds the budget gone it settles the failure instead of
+  returning a dead end: every node that needed the dead node's output through a data edge
+  becomes `unreachable`, transitively and with the reason; a node that had already failed
+  downstream is final too; order-only edges do not propagate. The goal gate goes `unreachable`,
+  `report` becomes ready, and the run ends `complete` with the partial account written by the
+  report node. A plain `failed` with retries left settles nothing - the report cannot run ahead
+  of a retry. A spec may give a subgoal `after: [id]`, checked for self/dangling/cycle like
+  `deps`. `graph_retry` returns `unreachable[]` and the next ready nodes when it declines;
+  `graph_status` shows `after` and counts `unreachable`. Also fixed: a report rebuilt after a
+  spec retry (`report:2`) was briefed without the whole run, and a critique's `blocking` /
+  `problems` never reached the goal gate or the report.
 - **v1.6.3 — Korean README**: documentation only. No skill or broker changes.
 - **v1.6.2 — the run shows itself**: 1.6.1 had the driver print progress as plain text lines.
   A host with a live progress surface already has a better one, and a graph run is exactly the
@@ -151,7 +167,7 @@ Zero runtime dependencies, Node 18+.
 | `graph_next` | ask which nodes are ready, and how each is routed |
 | `graph_run` | the routed vendor executes one node; **blocks**; returns a one-line verdict |
 | `graph_submit` | record a node the orchestrator executed itself; same adjudication |
-| `graph_retry` | open a fresh attempt, carrying rejection feedback — a subgoal, or the spec itself |
+| `graph_retry` | open a fresh attempt, carrying rejection feedback — a subgoal, or the spec itself. Budget gone: settles the failure, returns `unreachable[]` and the now-ready `report` |
 | `graph_status` | compact run state; omit `run_id` for every run in a directory and what is running right now; `full:true` only for one node at a time |
 
 ## The orchestrator never holds the payload
@@ -174,6 +190,21 @@ before the work did.
 
 `plan -> setgoal -> critique`, then per subgoal `implement -> test -> gate` with
 subgoal dependencies mapped onto gate nodes, then `gate:goal:1 -> report`.
+
+Edges come in two kinds. `deps` is a **data dependency**: the node consumes what the dep
+produced, so the dep must be `done`. `after` is **order-only** — Make's `|` prerequisite:
+the node must not start before the dep has finished, but it does not need the dep to have
+passed. `report` hangs off the goal gate with `after`, which is what lets it write the
+account of a failure. A spec may give a subgoal `after: ["U1"]` alongside `deps`.
+
+Failure becomes **settled** at exactly one point: when `graph_retry` finds the retry budget
+gone. Until then a `failed` node is a retry waiting to happen and nothing downstream is
+written off. Once settled, every node that needed the dead node through a data edge becomes
+`unreachable`, transitively and with the reason (`unreachable: gate:U1:2 is unreachable`);
+a downstream node that had already failed is final too; order-only edges do not propagate.
+The goal gate goes `unreachable`, `report` becomes ready, and the run ends `complete` with a
+report that names what shipped and what did not. Only a run with no report node at all —
+setgoal never produced a spec — still ends `blocked`.
 
 A rejected subgoal gets a **new attempt** rather than a re-run node: the failed attempt
 stays in the graph as evidence, its still-pending nodes are retired as `skipped`, and
