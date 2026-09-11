@@ -45,6 +45,18 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 
 ## 상태
 
+- **v0.6.1 — 호스트 자신의 모델은 항상 선택 가능, 그리고 벤치**: 첫 e2e 라운드에서 구동
+  세션이 자신을 `claude-opus-5[1m]`(fresh agent 선택기에 없는 컨텍스트 변형)로 보고했고,
+  `graph_open`이 `plan`에서 `native host cannot select model`로 막혔습니다 — 그 순간 호스트가
+  실제로 돌고 있던 모델에 대한 vendor failure. 이제 검사는 `host_model`을 무조건 통과시킵니다:
+  모델 지정 없는 fresh native agent는 그 모델을 상속합니다. 같은 라운드에서 flat 요청 둘이 모두
+  S로 측정됐습니다 — 빈 단일 패키지 리포에는 `size`가 볼 build unit이 없습니다 — 그래서
+  `scripts/bench/`에 L로 측정되는 monorepo 픽스처 둘(`code`: 워크스페이스 패키지 넷, `docs`:
+  문서화할 패키지 셋), 위임 경로용 flat 픽스처, 한 arm(`beta`, `stable` graph 1.x, `none`)을
+  headless 세션으로 돌리는 러너, 채점기(정적+실행 기준, docs용 LLM 판정 정확성 검사 하나, 최상위
+  transcript에서 뽑는 세션 비용과 스킬 준수 카운트)를 넣었습니다. 픽스처 메모: 첫 라운드의
+  `npm test` = `node --test test/`는 Node 22에서 실패합니다(디렉터리 인자); 이제 `node --test`.
+  결과는 라운드가 끝날 때마다 `scripts/bench/README.md`에 적습니다.
 - **v0.6.0 — integrate와 repackage**: git 작업은 매니저의 것이라, 충돌은 노드의 주장이 아니라
   매니저가 본 사실입니다. 수용된 자식을 접을 때 워크트리를 패키지 브랜치에 커밋합니다(런 상태
   디렉터리는 제외). `deps`가 있는 패키지는 첫 의존 패키지의 브랜치에서 갈라지고 나머지는 머지되어

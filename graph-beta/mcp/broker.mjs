@@ -416,7 +416,10 @@ async function route(run, node) {
     if (balanced && name === run.host_vendor) {
       // native_models declares actual model selection capability, independently
       // from the driving conversation's model. Never silently substitute a tier.
-      if (run.native_models && !run.native_models.includes(model)) {
+      // The host's own model is selectable by definition: a fresh native agent with no
+      // model override inherits it, so a host_model the list omits (a context variant
+      // such as "claude-opus-5[1m]") is not a routing failure.
+      if (run.native_models && model !== run.host_model && !run.native_models.includes(model)) {
         attempts.push({ vendor: name, ready: false, reason: `native host cannot select model ${model}` });
       } else {
         return { vendor: 'self', executor: name, sandbox: null, model, reason: candidate.reason, attempts };

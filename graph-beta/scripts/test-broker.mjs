@@ -1736,6 +1736,21 @@ test('single vendor uses native lower model; unsupported native model fails visi
   } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
 });
 
+test('the host model is selectable even when native_models omits it', async () => {
+  // A driving session reports itself as e.g. "claude-opus-5[1m]" — a context variant the
+  // fresh-agent picker does not list. A fresh native agent with no override inherits the
+  // host model, so plan must route to self, not block with a vendor failure.
+  const cwd = balancedRepo();
+  const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+  try {
+    const open = await c.call('graph_open', { request: 'r', cwd, allocation: 'balanced', host_vendor: 'codex',
+      host_model: 'gpt-5.6-sol[1m]', candidates: ['codex'], native_models: ['gpt-5.6-sol', 'gpt-5.6-mini'] });
+    assert.equal(open.state, 'running');
+    assert.equal(open.ready[0].vendor, 'self');
+    assert.equal(open.ready[0].model, 'gpt-5.6-sol[1m]');
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
 // ---------- registering a vendor does not enrol it in "auto" ----------
 // The default candidate list is empty on purpose: a run that does not name a vendor
 // stays on the orchestrator, even when a perfectly ready vendor is registered. Without
