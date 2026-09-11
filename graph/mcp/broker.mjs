@@ -41,6 +41,7 @@ import {
   retrySpec,
   readyNodes,
   runState,
+  unmetDeps,
   nodeBriefing,
   stagePolicy,
 } from './graph.mjs';
@@ -600,7 +601,7 @@ const VERDICT_SCHEMA = {
     recoverable: { type: 'boolean' },
     checkpoint_path: { type: 'string' },
     next: { type: 'string' },
-    state: { type: 'string', enum: ['pending', 'running', 'done', 'failed', 'skipped'] },
+    state: { type: 'string', enum: ['pending', 'running', 'done', 'failed', 'skipped', 'unreachable'] },
     stage_ok: { type: 'boolean' },
     verified: { type: 'boolean', description: 'test nodes' },
     accept: { type: 'boolean', description: 'gate nodes' },
@@ -673,6 +674,7 @@ const RETRY_SCHEMA = {
     retried: { type: 'boolean' },
     attempt: { type: 'number' },
     reason: { type: 'string' },
+    unreachable: { type: 'array', items: { type: 'string' }, description: 'retried=false with the budget gone: nodes that can never run now, so the report is released' },
     state: { type: 'string' },
     ready: { type: 'array', items: { type: 'object' } },
   },
@@ -761,7 +763,7 @@ const TOOLS = [
   {
     name: 'graph_retry',
     description:
-      'Open a fresh attempt, carrying the rejection feedback forward. With subgoal_id, retries that subgoal. Without it, retries the spec itself (setgoal + critique) and discards the subgoal graph the rejected spec produced. The failed attempt stays in the graph as evidence.',
+      'Open a fresh attempt, carrying the rejection feedback forward. With subgoal_id, retries that subgoal. Without it, retries the spec itself (setgoal + critique) and discards the subgoal graph the rejected spec produced. The failed attempt stays in the graph as evidence. When the retry budget is gone the failure is settled instead: every node that needed its output becomes `unreachable`, and the report - which only waits for the goal gate to finish, not to pass - becomes ready to write the partial account.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -801,7 +803,7 @@ function requireRunnable(run, nodeId) {
   const n = getNode(run, nodeId);
   if (!n) throw new Error(`unknown node ${nodeId}`);
   if (n.state !== 'pending') throw new Error(`node ${n.node_id} is ${n.state}, not pending`);
-  const missing = n.deps.filter((d) => (getNode(run, d) || {}).state !== 'done');
+  const missing = unmetDeps(run, n);
   if (missing.length) throw new Error(`node ${n.node_id} is blocked on ${missing.join(', ')}`);
   return n;
 }
@@ -1092,7 +1094,10 @@ async function toolGraphRetry(a) {
           .filter(Boolean).join('\n- ')
       : '';
     const out = retrySpec(run, fb);
-    if (!out.attempt) return { run_id: run.run_id, target: 'spec', retried: false, reason: out.reason };
+    if (!out.attempt) {
+      record(run.cwd, { event: 'graph_settle', run_id: run.run_id, target: 'spec', unreachable: out.unreachable.length });
+      return { run_id: run.run_id, target: 'spec', retried: false, reason: out.reason, unreachable: out.unreachable, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
+    }
     record(run.cwd, { event: 'graph_retry', run_id: run.run_id, target: 'spec', attempt: out.attempt });
     return { run_id: run.run_id, target: 'spec', retried: true, attempt: out.attempt, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
   }
@@ -1104,7 +1109,10 @@ async function toolGraphRetry(a) {
     ? [last.result.reason || '', ...(last.result.gaps || [])].filter(Boolean).join('\n- ')
     : '';
   const out = retrySubgoal(run, sid, feedback);
-  if (!out.attempt) return { run_id: run.run_id, target: sid, subgoal_id: sid, retried: false, reason: out.reason };
+  if (!out.attempt) {
+    record(run.cwd, { event: 'graph_settle', run_id: run.run_id, subgoal_id: sid, unreachable: out.unreachable.length });
+    return { run_id: run.run_id, target: sid, subgoal_id: sid, retried: false, reason: out.reason, unreachable: out.unreachable, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
+  }
   record(run.cwd, { event: 'graph_retry', run_id: run.run_id, subgoal_id: sid, attempt: out.attempt });
   return { run_id: run.run_id, target: sid, subgoal_id: sid, retried: true, attempt: out.attempt, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
 }
@@ -1173,6 +1181,7 @@ function toolGraphStatus(a) {
           stage: n.stage,
           state: n.state,
           deps: n.deps,
+          after: n.after || [],
           // A blocking graph_run is otherwise invisible: the node reads as bare "running"
           // with no way to tell which vendor is on it or whether it is stuck.
           ...(n.state === 'running'

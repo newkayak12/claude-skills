@@ -323,6 +323,147 @@ test('the retry budget is finite', async () => {
   }, { max_retries: 1 });
 });
 
+// ---------- settled failure: order-only edges and the unreachable set ----------
+// A subgoal that ran out of retries left the run `blocked` forever: gate:goal could never
+// be satisfied, the report hung behind it, and the subgoals that HAD passed were never
+// reported. Failure is settled at the moment the budget is gone, everything that needed the
+// dead node becomes `unreachable`, and the report - order-only on the goal gate - runs.
+
+const INDEPENDENT = {
+  goal: 'G',
+  acceptance: ['A'],
+  subgoals: [
+    { id: 'U1', title: 'first', acceptance: ['a'], test: ['t'], deps: [] },
+    { id: 'U2', title: 'second', acceptance: ['b'], test: ['t'], deps: [] },
+  ],
+};
+
+async function throughCritiqueWith(c, cwd, runId, spec) {
+  await c.call('graph_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+  await c.call('graph_submit', { run_id: runId, cwd, node_id: 'setgoal', payload: ok({ spec, handoff: 's' }) });
+  await c.call('graph_submit', { run_id: runId, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+}
+
+async function passSubgoal(c, cwd, runId, sg, attempt = 1) {
+  const f = dirty(cwd);
+  await c.call('graph_submit', { run_id: runId, cwd, node_id: `implement:${sg}:${attempt}`, payload: ok({ changed_files: [f], handoff: `built ${sg}` }) });
+  await c.call('graph_submit', { run_id: runId, cwd, node_id: `test:${sg}:${attempt}`, payload: ok({ verified: true }) });
+  await c.call('graph_submit', { run_id: runId, cwd, node_id: `gate:${sg}:${attempt}`, payload: ok({ accept: true, match_pct: 95 }) });
+}
+
+test('exhausting a subgoal settles it: its downstream is unreachable and the report is released', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, INDEPENDENT);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: ['ghost.js'], handoff: 'claimed' }) });
+    await passSubgoal(c, cwd, runId, 'U2');
+    let nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.equal(nx.state, 'blocked', 'with U1 failed and U2 done, nothing is runnable yet');
+
+    const r = await c.call('graph_retry', { run_id: runId, cwd, subgoal_id: 'U1' });
+    assert.equal(r.retried, false);
+    assert.match(r.reason, /budget/);
+    assert.deepEqual(r.unreachable.sort(), ['gate:U1:1', 'gate:goal:1', 'test:U1:1'],
+      'everything that needed the dead implement through a data edge is written off - transitively');
+    assert.equal(r.state, 'running', 'the run is not blocked: the report can run');
+    assert.deepEqual(r.ready.map((n) => n.node_id), ['report']);
+
+    const st = await c.call('graph_status', { run_id: runId, cwd });
+    assert.equal(st.counts.unreachable, 3);
+    const goal = st.nodes.find((n) => n.node_id === 'gate:goal:1');
+    assert.equal(goal.state, 'unreachable');
+    assert.match(goal.reason, /gate:U1:1 is unreachable/);
+
+    nx = await c.call('graph_next', { run_id: runId, cwd });
+    const brief = readFileSync(nx.ready.find((n) => n.stage === 'report').briefing_path, 'utf8');
+    assert.match(brief, /built U2/, 'the partial success must reach the report');
+    assert.match(brief, /ghost\.js/, 'and so must the failure that stopped U1');
+    assert.match(brief, /gate:goal:1 \(gate\) — unreachable/);
+
+    const v = await c.call('graph_submit', { run_id: runId, cwd, node_id: 'report', payload: ok({ handoff: 'U2 shipped; U1 did not' }) });
+    assert.equal(v.state, 'done');
+    assert.equal((await c.call('graph_status', { run_id: runId, cwd })).state, 'complete');
+  }, { max_retries: 0 });
+});
+
+test('a failure with retries left does not release the report', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, INDEPENDENT);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: ['ghost.js'] }) });
+    await passSubgoal(c, cwd, runId, 'U2');
+    const nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.equal(nx.ready.some((n) => n.stage === 'report'), false, 'a plain failed gate is a retry waiting to happen, not a settled outcome');
+    const r = await c.call('graph_submit', { run_id: runId, cwd, node_id: 'report', payload: ok({ handoff: 'too early' }) });
+    assert.match(r.error, /blocked on gate:goal:1/);
+  });
+});
+
+test('a spec-level `after` edge orders a subgoal without requiring the other to pass', async () => {
+  const spec = {
+    ...INDEPENDENT,
+    subgoals: [
+      { id: 'U1', title: 'first', acceptance: ['a'], test: ['t'], deps: [] },
+      { id: 'U2', title: 'second', acceptance: ['b'], test: ['t'], deps: [], after: ['U1'] },
+    ],
+  };
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, spec);
+    let nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['implement:U1:1'], 'U2 waits for U1 to finish');
+    const st = await c.call('graph_status', { run_id: runId, cwd });
+    const u2 = st.nodes.find((n) => n.node_id === 'implement:U2:1');
+    assert.deepEqual(u2.after, ['gate:U1:1']);
+    assert.equal(u2.deps.includes('gate:U1:1'), false, 'order-only, not a data dependency');
+
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: ['ghost.js'] }) });
+    nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.equal(nx.state, 'blocked', 'U1 merely failed: its gate is not settled, so U2 still waits');
+
+    const r = await c.call('graph_retry', { run_id: runId, cwd, subgoal_id: 'U1' });
+    assert.equal(r.retried, false);
+    assert.ok(r.ready.map((n) => n.node_id).includes('implement:U2:1'), 'once U1 is settled as failed, U2 may run');
+  }, { max_retries: 0 });
+});
+
+test('an `after` naming a missing subgoal, or closing a cycle, is caught like a dep', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    const v = await setgoalWith(c, cwd, runId, {
+      spec: { goal: 'G', acceptance: ['A'], subgoals: [{ id: 'U1', title: 't', acceptance: ['a'], after: ['nope'] }] },
+    });
+    assert.equal(v.state, 'failed');
+    assert.match(v.reason, /ordered after nope/);
+  });
+  await withRun(async ({ c, cwd, runId }) => {
+    const v = await setgoalWith(c, cwd, runId, {
+      spec: { goal: 'G', acceptance: ['A'], subgoals: [
+        { id: 'U1', title: 't', acceptance: ['a'], after: ['U2'] },
+        { id: 'U2', title: 't', acceptance: ['a'], deps: ['U1'] },
+      ] },
+    });
+    assert.equal(v.state, 'failed');
+    assert.match(v.reason, /cycle/);
+  });
+});
+
+test('exhausting the spec retry settles the rebuilt graph and releases its report', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'setgoal', payload: ok({ spec: SPEC }) });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'critique', payload: ok({ sound: false, problems: ['vague'] }) });
+    assert.equal((await c.call('graph_retry', { run_id: runId, cwd })).retried, true);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'setgoal:2', payload: ok({ spec: SPEC }) });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'critique:2', payload: ok({ sound: false, blocking: ['still vague'], problems: ['nit'] }) });
+
+    const r = await c.call('graph_retry', { run_id: runId, cwd });
+    assert.equal(r.retried, false);
+    assert.ok(r.unreachable.includes('implement:U1:2') && r.unreachable.includes('gate:goal:2'),
+      'the graph the rejected spec produced can never run');
+    assert.deepEqual(r.ready.map((n) => n.node_id), ['report:2']);
+    const brief = readFileSync(r.ready[0].briefing_path, 'utf8');
+    assert.match(brief, /critique:2 \(critique\) — failed .*sound=false/);
+    assert.match(brief, /still vague/, 'the report must see why the spec died');
+  }, { max_retries: 1 });
+});
+
 // ---------- routing ----------
 
 test('a named vendor fails instead of silently degrading to self', async () => {
