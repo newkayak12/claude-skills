@@ -10,7 +10,7 @@ Same broker, same six tools, same skills — with these differences:
 
 | | `graph` (stable) | `graph-beta` |
 |---|---|---|
-| MCP server name | `graph-engineering` | `graph-beta-engineering` |
+| MCP servers | `graph-engineering` | `graph-beta-engineering` + `task-manager` |
 | Run files | `.harness-run/broker/` | `.harness-run/broker-beta/` |
 | Skills | `graph:install`, `graph:orchestrate` | `graph-beta:install`, `graph-beta:orchestrate`, `graph-beta:develop`, `graph-beta:document` |
 | Version line | 1.x | 0.x until it graduates |
@@ -48,6 +48,24 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.4.0 — TaskManager server, read-only over children**: `mcp/taskmanager.mjs`, registered as
+  `task-manager` next to the broker. `tm_open` builds `size → shape → critique` under
+  `~/.harness/tasks/<task_id>/` (never under a project). A `size` of S deletes the task and
+  returns `delegate: {tool: "graph_open", args}` — an S request leaves no manager state. L goes
+  on to `shape` (packages with `brief`, `acceptance`, `touches[]`, `deps[]`; validated for
+  overlap, dangling deps, cycles, and the one-package case), then `[dispatch → accept]` per
+  package, `integrate`, `gate:goal`, `report`. A ready `dispatch` is executed by the server in
+  `tm_next`: `git worktree add` from the project's HEAD, then `createRun` from `graph.mjs` as a
+  library opens an isolated child graph run there with the package brief as request and the
+  package contract (plus its dependencies' reports) as context. The session drives the child
+  with the ordinary `graph_*` tools; `tm_submit` on the dispatch folds the child's goal-gate
+  verdict and report by reading its file — byte-for-byte untouched, tested. A retry reopens the
+  same worktree with a fresh child carrying the gaps; exhaustion settles downstream and releases
+  the report. Restarting the server resumes from files without reclaiming a running dispatch.
+  Found on the way, in the graph engine itself: a rejected `gate:goal` was never re-judged after
+  the subgoal retry, so the run wedged with the fix in place — now a fresh `gate:goal:N` opens
+  over the live subgoal gates and the report moves behind it. 10 manager cases + 1 engine case;
+  109 pass across the three suites.
 - **v0.3.0 — flows and entry skills**: `graph_open({flow, mixed})`. `flow: "auto"` (the
   `graph-beta:orchestrate` default) leaves the choice to `plan`, whose contract now returns
   `flow` (develop | document), `size` (S | L) and the commands it measured with; a plan that

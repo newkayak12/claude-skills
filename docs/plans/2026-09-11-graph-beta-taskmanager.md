@@ -102,20 +102,39 @@ passing, a Status entry in `graph-beta/README.md` and `KOR.md`, a version bump, 
       unnamed one follows the flow; fixed flow supplies default kinds and shows in briefings;
       auto lets plan choose and records the source. 98 pass.
 
-### Step 4 — TaskManager server, read-only over children (v0.4.0)
-- [ ] `mcp/taskmanager.mjs` registered as `task-manager` in `.mcp.json`. State under
-      `~/.harness/tasks/<task_id>/` (configurable), never under a project `cwd`.
-- [ ] Flow table for the manager: `size → shape → critique → [dispatch → accept] per package →
-      integrate → gate:goal → report`, built on `graph.mjs` node/edge/settle primitives.
-- [ ] `dispatch:Pn`: creates `git worktree add` for the package, opens the child run by calling
-      the broker's `createRun` **as a library** (same process, same writer discipline: the child
-      file is then owned by whichever `graph-beta-engineering` process the session drives), stores
-      `child: {cwd, run_id}` on the node, stays `running`.
-- [ ] `tm_next` returns manager nodes plus, for a running dispatch, the child pointer; `tm_submit`
-      on a dispatch node reads the child file, folds `gate:goal` verdict + report handoff path into
-      the node result.
-- [ ] `reclaimAbandoned` equivalent must not reclaim a dispatch node while its child run is alive.
-- [ ] Tests: parent with two children; kill and restart the manager; tree resumes from files.
+### Step 4 — TaskManager server, read-only over children (v0.4.0)  ✅
+- [x] `mcp/taskmanager.mjs` registered as `task-manager` in `.mcp.json`. State under
+      `~/.harness/tasks/<task_id>/` (`HARNESS_TASKS_DIR` overrides), never under a project `cwd`.
+      `graph.mjs` gained `store_path` (a run may say where its file is), and exports
+      `node`/`pushChain(chain)`/`nextIndex`/`loadRunAt` so the manager reuses the engine.
+- [x] Flow table: `size → shape → critique → [dispatch → accept] per package → integrate →
+      gate:goal → report`. `validateShape`: acceptance, ≥2 packages, brief, deps, overlap in
+      `touches[]`, cycles. Retry paths mirror the engine's (`tm_retry({package_id})` /
+      `tm_retry()` reshape), exhaustion settles via `settleFailure`.
+- [x] `dispatch:Pn:k` runs inside `tm_next`: `ensureWorktree` (kept across attempts, branch
+      `harness/<task8>/<Pn>`), `createRun` as a library with the package brief as request and
+      the package contract + dependency reports as context, `isolated: true`, flow from the
+      package or the size node. Node stays `running` with `child: {cwd, run_id, branch}`.
+- [x] `tm_next` returns `children[]` with `child_state` and the exact next call; `tm_submit`
+      on a dispatch takes no payload and folds the child's goal gate + report by reading its
+      file. Refused while the child is `running`; a `blocked` child folds as a failure with the
+      gate's gaps. Test proves the child file is byte-identical after the fold.
+- [x] No reclaim of a running dispatch — a restarted server offers the same child.
+- [x] Size S: server-side already — the task deletes itself and returns `delegate`. Only the
+      skill hand-off remains for Step 5.
+- [x] Tests (10): handshake; open under root not project; S delegates and leaves nothing;
+      shape validation + reshape feedback; dispatch creates worktree + child, early fold
+      refused; two dependent children to report with P1's report in P2's context; rejected
+      child → retry in same worktree with gaps; budget exhaustion releases report; kill/restart
+      resumes; non-git project fails the dispatch with a reason.
+
+**Found in the engine while testing (fixed in beta, present in stable `graph` 1.7.0):** a
+`gate:goal` that rejected was never re-judged. `retrySubgoal` rewired the new subgoal gate into
+the failed goal gate's deps but left it `failed`; the report stayed behind it and the run wedged
+with the fix in place. Beta now opens `gate:goal:N` over the live subgoal gates with the rejection
+as feedback and moves the report's `after` to it; `graph_retry(subgoal_id)` also carries the goal
+gate's gaps into the retried subgoal. Candidate for a stable fix release — not applied there yet
+(D12 says beta does not back-port; this is a bug, so the user decides).
 
 ### Step 5 — `size` gate and hand-off from `orchestrate` (v0.5.0)
 - [ ] `graph-beta:orchestrate` opens with `tm_open`; if `size` is S the manager returns

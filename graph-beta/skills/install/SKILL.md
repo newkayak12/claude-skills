@@ -28,7 +28,8 @@ Prefer the marketplace plugin. Its `.mcp.json` already registers the
 `graph-beta-engineering` stdio server, so installation should not add project files. Ask the
 user to install or update `graph-beta@newkayak12-claude-skills`, reload Claude Code if needed,
 then verify that `graph_open`, `graph_next`, `graph_run`, `graph_submit`, `graph_retry`,
-and `graph_status` are available.
+and `graph_status` are available, and - from the second server the plugin registers,
+`task-manager` - `tm_open`, `tm_next`, `tm_submit`, `tm_retry`, `tm_status`.
 
 Use a project-local connection only when the user explicitly wants to run from a source
 checkout instead of the marketplace plugin. Merge this entry into the target project's
@@ -39,11 +40,19 @@ existing `.mcp.json`; preserve every unrelated server and use an absolute path:
   "mcpServers": {
     "graph-beta-engineering": {
       "command": "node",
-      "args": ["/absolute/path/to/graph/mcp/broker.mjs"]
+      "args": ["/absolute/path/to/graph-beta/mcp/broker.mjs"]
+    },
+    "task-manager": {
+      "command": "node",
+      "args": ["/absolute/path/to/graph-beta/mcp/taskmanager.mjs"]
     }
   }
 }
 ```
+
+The task manager keeps its state under `~/.harness/tasks/` (override with `HARNESS_TASKS_DIR`),
+never under a project. It needs the project to be a git repository: each package of a large
+request runs in its own `git worktree` branched from HEAD.
 
 Do not use `${CLAUDE_PLUGIN_ROOT}` in a project-owned `.mcp.json`; that variable belongs
 to the plugin's own manifest. Do not register both marketplace and project-local copies,
@@ -53,8 +62,9 @@ because two servers exposing the same `graph_*` tools make routing ambiguous.
 
 1. Confirm `node --version` is 18 or newer.
 2. Validate the selected server path exists when using project-local mode.
-3. After Claude Code reloads the MCP configuration, confirm all six `graph_*` tools are
-   present. Tool discovery is the install gate; do not open a real run just to test setup.
+3. After Claude Code reloads the MCP configuration, confirm all six `graph_*` tools and all
+   five `tm_*` tools are present. Tool discovery is the install gate; do not open a real run
+   just to test setup.
 4. If a later run uses a named vendor, verify that vendor separately. The
    `graph-beta:orchestrate` skill uses balanced allocation: reasoning prefers the driving
    host/model, Implement/Test prefer the other vendor's efficient model. It declares

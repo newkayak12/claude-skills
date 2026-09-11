@@ -1184,11 +1184,15 @@ async function toolGraphRetry(a) {
   const sid = String(a.subgoal_id);
   const judged = run.nodes.filter((n) => n.subgoal_id === sid && n.result && (n.stage === 'gate' || n.state === 'failed'));
   const last = judged[judged.length - 1];
-  const feedback = last && last.result
-    ? [last.result.reason || '', ...(last.result.gaps || []),
-       ...(last.result.verified === false ? (last.result.checks || []) : [])]
-        .filter(Boolean).join('\n- ')
-    : '';
+  // A goal gate that rejected the assembled result names what the run as a whole lacks; the
+  // subgoal being retried for it must hear that too, since its own gate passed.
+  const goal = run.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id === null && n.state === 'failed' && !n.final && n.result).pop();
+  const feedback = [
+    ...(last && last.result
+      ? [last.result.reason || '', ...(last.result.gaps || []), ...(last.result.verified === false ? (last.result.checks || []) : [])]
+      : []),
+    ...(goal ? [`goal gate ${goal.node_id}: ${goal.result.reason || 'rejected'}`, ...(goal.result.gaps || [])] : []),
+  ].filter(Boolean).join('\n- ');
   const out = retrySubgoal(run, sid, feedback);
   if (!out.attempt) {
     record(run.cwd, { event: 'graph_settle', run_id: run.run_id, subgoal_id: sid, unreachable: out.unreachable.length });
