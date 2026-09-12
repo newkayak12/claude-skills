@@ -17,6 +17,9 @@ for each child in children[]:
 if state == "blocked":
     a failed dispatch or accept -> tm_retry({task_id, package_id})    # same worktree, fresh child, gaps carried
     conflicting_packages named  -> tm_retry({task_id, repackage: [...]})   # integrate or dispatch found a merge conflict: reshape those together
+    integrate verified=false    -> tm_retry({task_id, package_id}) for the package its checks blame;
+                                   the manager reopens integrate:N over the new accept by itself.
+                                   package_id must be one the shape named — "integrate" is a node, not a package
     a failed shape or critique  -> tm_retry({task_id})                # reshape; the package graph is discarded
     retried == false            -> budget gone: downstream is `unreachable`, `report` is in ready[]
 tm_status({task_id})                              -> final counts; tm_status({}) lists every task

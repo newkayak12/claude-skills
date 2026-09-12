@@ -37,9 +37,12 @@ namespace `graph-beta:*`. Stable keeps running unchanged next to it.
 
 - ~~**`integrate` failure ownership.**~~ Resolved in Step 6: the shape's. `tm_retry({repackage})`
   feeds the conflicting packages, files and declared touches back to `shape`.
-- **Size honesty.** `plan` will over-size (a manager layer exists, so it wants to use it). The
-  evidence rule — module count, file count, boundary count, each checkable by a command — and a
-  critique instruction to attack S→L inflation are the current answer. Measure on real runs.
+- ~~**Size honesty.**~~ Measured 2026-09-11 (bench round 2): the fear ran the other way. Both
+  monorepo fixtures — four and three workspace packages — were sized **S** with sound, command-backed
+  reasons (one root test script, one commit, no ownership boundary → one build unit). `size` reads
+  build units, not package counts, exactly as the contract says. Nothing over-sized. The manager path
+  therefore needed `tm_open({size: "L"})` (0.6.2) to be reached at all, and that pin is for a user
+  who said the work must be split, not for the harness to decide.
 - **Tool name collision.** Both servers expose `graph_*`. Claude Code namespaces them per server,
   but the install skill's warning about ambiguity stands. Renaming beta's tools would break the
   1781-line suite for no user benefit yet; revisit at graduation.
@@ -164,6 +167,78 @@ gate's gaps into the retried subgoal. Candidate for a stable fix release — not
       the integration tree; independent packages that collide → observed conflict → repackage
       prompt; conflicting dependencies fail the dependent dispatch. 112 pass.
 
-### Graduation
-- [ ] Ten real runs across the three flows with no skill edits needed mid-run.
-- [ ] Decide tool names; port to `graph` 2.0; `graph-beta` is deleted, not kept.
+### What the bench measured (2026-09-11 → 12)
+
+`scripts/bench/` — two size-L-shaped requests (`code`: four workspace packages + CLI + tests +
+README; `docs`: three package references + architecture + three ADRs + CONTRIBUTING + README),
+three arms, scored on the tree left behind plus session cost. Full table in
+`graph-beta/scripts/bench/README.md`.
+
+| arm | code | docs |
+|---|---|---|
+| none (plain `claude -p`) | 9/9 · 8 min · $2.17 | 9/9 · 14 min · $3.97 · 0 false claims / 82 |
+| beta, size pinned L (manager, 4 packages) | 9/9 · 173 min · $72.97 · 2 sessions | 9/9 tree · 104 min · $48.63 · task blocked at integrate (fixed in 0.6.3) |
+| stable 1.7.0 (one graph run) | 9/9 · 48 min · $13.27 | 9/9 · 61 min · $18.10 · 2 sessions |
+| beta, size measured (S → one run) | interrupted by usage limits at 45 min / $12–13 | same |
+
+Five manager defects the unit suite could not see, all fixed and covered (0.6.1, 0.6.2, 0.6.3):
+the host's own model refused when `native_models` omitted its variant; a tier default (`sonnet`)
+compared as a string against declared ids so every execution node was `vendor-failure` with
+zero failed nodes; the fold's `':!.harness-run'` pathspec exits 1 when the project ignores that
+directory; `tm_retry` accepted a package id the shape never named and opened a phantom package;
+an `integrate` that failed its checks (P2's README example did not run) stayed failed after the
+package was retried and accepted, with the goal gate pending behind it forever — the manager's
+copy of the rejected-`gate:goal` wedge. Each was found only because a real session drove a real tree. Also found: a headless
+session that hits its usage limit dies mid-run — three rounds did — and the on-disk task, child
+runs and worktrees resume exactly (`resume.sh`, `drive.sh`).
+
+The manager delivered the same 9/9 as the baseline at ~34× the cost and ~21× the time, with
+things the baseline does not produce: per-package gates at 92–95%, a critique that caught a
+contradictory spec and forced a retry, a gate that executed the README example and diffed it,
+commits on package branches and an integration branch. The request was S by the harness's own
+measurement; the manager's value on a request that is genuinely L — several repositories, a tree
+no one session can hold — is still unmeasured, because no such request has been run.
+
+### Step 7 — cost (proposed, not started)
+
+Where the $73 went, from the stream's per-message usage (proportions; the absolute sum
+double-counts streamed events):
+
+| who | model | share | note |
+|---|---|---|---|
+| the driving session (manager) | opus 1M | ~55% | 331 turns, context grew to **507k tokens**, 67.6M cache-read tokens |
+| fresh judging agents (plan/setgoal/critique/gate/review/accept/integrate/report) | opus | ~40% | 38 agents, context ≤ 71k each |
+| fresh execution agents (implement/test) | sonnet | ~3% | 15 agents |
+
+So the judges are not the problem and stay on the strong model — a gate on the cheap tier would
+make the harness the baseline with extra steps. The problem is the manager's own context: the
+design says the payload never enters it, and the manager wrote nothing (0 top-level edits), but
+every self node's JSON — handoff, evidence, gaps — passes through it twice, once as the agent's
+return and once as the `graph_submit` argument, and 67 dispatches later the session is half a
+million tokens that every turn re-reads. Candidates, in order of expected yield:
+- **payload by path, not by value**: a fresh agent writes its JSON next to its briefing and returns
+  the path; `graph_submit`/`tm_submit` take `payload_path`. The manager's context holds verdicts
+  only, as the design intended. Expected to remove most of the manager's share.
+- the manager session on the lower tier: it relays and loops, it judges nothing; the judges are
+  the agents. For the bench this is one flag (`--model sonnet` on the driving session).
+- shorter briefings: the spec once, the upstream handoff once, no repeated goal text
+- `report` optional on child runs (the manager reads the gate; the parent report covers the whole)
+- a per-task cost line in `tm_status`, so a run says what it has spent so far
+
+### Step 8 — ports to stable `graph` (proposed)
+
+Bugs, not features, so D12 does not apply: the rejected `gate:goal` never re-judged (1.7.0 has
+it), the host-model variant refusal, the tier-vs-id comparison. Each is a small fix with a test
+already written in beta.
+
+### Graduation (revised)
+
+The old bar — ten real runs across three flows — assumed a run costs what a run used to cost.
+At $70 a manager run it is not a bar anyone will clear, and it measured the wrong thing: the
+manager's worth is decided by requests that are actually L, not by count.
+- [ ] Step 7 lands and the bench shows a manager run under 3× the baseline on `code`.
+- [ ] One request that `size` measures **L on its own** — not pinned — runs to `report`. Until
+      one exists, the manager stays experimental and the entry skills say so.
+- [ ] Step 8 ported; stable keeps the single-run path and its 89 tests.
+- [ ] Decide tool names; port the `document` kind and `flow` to `graph` 2.0; `graph-beta` is deleted,
+      not kept. The manager graduates only if the second box is ticked.

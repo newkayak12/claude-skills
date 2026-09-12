@@ -270,6 +270,22 @@ function retryPackage(task, pkgId, feedback) {
     n.deps = n.deps.map((d) => (d === prevAccept ? accept : d));
     n.after = (n.after || []).map((d) => (d === prevAccept ? accept : d));
   }
+  // An integrate that failed its checks and blamed this package stays failed forever unless
+  // someone re-judges the combined tree once the package is redone - the same wedge the graph
+  // engine had with a rejected gate:goal. Open a fresh integrate over the same accepts (now
+  // pointing at the new attempt) and move the goal gate behind it. The first docs task to
+  // reach this point ended blocked with every document delivered and no route forward.
+  for (const old of task.nodes.filter((x) => x.stage === 'integrate' && x.state === 'failed' && !x.final && x.deps.includes(accept))) {
+    if (task.nodes.some((x) => x.supersedes === old.node_id)) continue;
+    const fresh = `integrate:${nextIndex(task, 'integrate')}`;
+    const fb = [feedback, old.result && old.result.reason, ...((old.result && old.result.gaps) || [])].filter(Boolean).join('\n');
+    task.nodes.push(node(fresh, 'integrate', old.deps.slice(), { subgoal_id: null, feedback: fb, supersedes: old.node_id }));
+    for (const n of task.nodes) {
+      if (n.node_id === fresh) continue;
+      n.deps = n.deps.map((d) => (d === old.node_id ? fresh : d));
+      n.after = (n.after || []).map((d) => (d === old.node_id ? fresh : d));
+    }
+  }
   return { task: saveRun(task), attempt, reason: '' };
 }
 
@@ -304,10 +320,16 @@ function ensureWorktree(task, name, base = 'HEAD') {
 // A child run changes files; it does not commit. The package branch has to carry the work for
 // anything downstream to build on it, so the manager commits the worktree when it folds an
 // accepted child. This writes to git, not to the child's run file - the run file stays the
-// broker's alone. The run's own state directory is left out of the commit.
+// broker's alone. The run's own state directory is left out of the commit - by unstaging it
+// after the add, not by a negative pathspec: when the project's .gitignore already lists
+// .harness-run/ (the usual case), git refuses `:!.harness-run` as "a path that is ignored" and
+// exits 1 before staging anything. The first e2e task to reach a fold failed exactly there,
+// with both children accepted and nothing committed.
 function commitWorktree(cwd, message) {
-  const add = git(cwd, ['add', '-A', '--', '.', ':!.harness-run']);
+  const add = git(cwd, ['add', '-A', '--', '.']);
   if (!add.ok) return { ok: false, reason: add.err || 'git add failed' };
+  const drop = git(cwd, ['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', '.harness-run']);
+  if (!drop.ok) return { ok: false, reason: drop.err || 'could not leave .harness-run out of the commit' };
   const staged = git(cwd, ['diff', '--cached', '--quiet']);
   if (staged.ok) return { ok: true, commit: null }; // nothing to commit is not an error
   const c = git(cwd, ['-c', 'user.email=harness@local', '-c', 'user.name=harness', 'commit', '-q', '-m', message]);
@@ -970,6 +992,10 @@ function toolRetry(a) {
     return { task_id: task.run_id, target: 'shape', retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable, ...toolNext({ task_id: task.run_id }) };
   }
   const pid = String(a.package_id);
+  // A package id the shape never named would open a phantom package with a dispatch that can
+  // only fail. The first task to reach a failed integrate probed `package_id: "integrate"`.
+  const known = ((task.spec && task.spec.packages) || []).map((p) => String(p.id));
+  if (!known.includes(pid)) throw new Error(`no package ${pid} in the shape (packages: ${known.join(', ') || 'none yet'}); a failed integrate is retried through the package its checks blame, or reshaped with repackage`);
   const judged = task.nodes.filter((n) => n.subgoal_id === pid && n.result && (n.stage === 'accept' || n.state === 'failed'));
   const last = judged[judged.length - 1];
   const fb = last && last.result ? [last.result.reason || '', ...(last.result.gaps || [])].filter(Boolean).join('\n- ') : '';
