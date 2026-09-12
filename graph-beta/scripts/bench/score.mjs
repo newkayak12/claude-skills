@@ -73,9 +73,11 @@ const harness = { tasks: [], runs: [] };
     let task; try { task = JSON.parse(read(join(root, id, 'task.json'))); } catch { continue; }
     const nodes = task.nodes || [];
     const size = nodes.find((n) => n.node_id === 'size');
+    const shape = nodes.filter((n) => n.stage === 'shape' && n.state === 'done').at(-1);
+    const packages = task.spec?.packages || shape?.result?.packages || [];
     harness.tasks.push({
-      id, state: task.state, size: size?.result?.size ?? null,
-      packages: (task.packages || []).map((p) => ({ id: p.id, flow: p.flow, deps: p.deps, touches: p.touches })),
+      id, state: task.state, size: size?.result?.size ?? null, size_source: size?.result?.size_source ?? 'measured',
+      packages: packages.map((p) => ({ id: p.id, flow: p.flow, deps: p.deps, touches: p.touches })),
       nodes: nodeStats(nodes), failed: nodes.filter((n) => n.state === 'failed').map(short),
       conflicts: nodes.map((n) => n.result?.conflicting_packages).filter(Boolean),
     });
@@ -85,16 +87,23 @@ const harness = { tasks: [], runs: [] };
 }
 
 // ---------- session meta from stream-json (top-level session only) ----------
-const meta = { duration_ms: null, cost_usd: null, turns: null, is_error: null, tools: {}, top_level_edits: 0, subagents: 0, report_section: false, node_table: false };
-if (STREAM && existsSync(STREAM)) {
+// Only the driving session's own calls count as "top level": with --verbose the stream also
+// carries every fresh agent's tool calls, tagged with parent_tool_use_id. Those are node work
+// and belong in sub_tools; a Write there is the harness working, not the manager overreaching.
+const meta = { duration_ms: null, cost_usd: null, turns: null, is_error: null, tools: {}, sub_tools: {}, top_level_edits: 0, subagents: 0, report_section: false, node_table: false };
+// Several streams (the first session plus every resume, comma-separated) add up: one run's
+// cost is what every session that drove it cost. The final text is the newest session's.
+const streams = (STREAM || '').split(',').filter((p) => p && existsSync(p));
+for (const streamPath of streams) {
   let last = null;
-  for (const line of read(STREAM).split('\n')) {
+  for (const line of read(streamPath).split('\n')) {
     if (!line.trim()) continue;
     let ev; try { ev = JSON.parse(line); } catch { continue; }
     if (ev.type === 'result') last = ev;
     const content = ev.type === 'assistant' && ev.message && Array.isArray(ev.message.content) ? ev.message.content : [];
     for (const c of content) if (c.type === 'tool_use') {
       const name = String(c.name).includes('__') ? 'mcp:' + String(c.name).split('__').at(-1) : String(c.name);
+      if (ev.parent_tool_use_id) { meta.sub_tools[name] = (meta.sub_tools[name] || 0) + 1; continue; }
       meta.tools[name] = (meta.tools[name] || 0) + 1;
       if (['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(c.name)) meta.top_level_edits++;
       if (c.name === 'Task' || c.name === 'Agent') meta.subagents++;
@@ -102,8 +111,10 @@ if (STREAM && existsSync(STREAM)) {
     }
   }
   if (last) {
-    meta.duration_ms = last.duration_ms ?? null; meta.cost_usd = last.total_cost_usd ?? null;
-    meta.turns = last.num_turns ?? null; meta.is_error = !!last.is_error;
+    meta.sessions = (meta.sessions || 0) + 1;
+    meta.duration_ms = (meta.duration_ms || 0) + (last.duration_ms || 0); meta.cost_usd = (meta.cost_usd || 0) + (last.total_cost_usd || 0);
+    meta.turns = (meta.turns || 0) + (last.num_turns || 0); meta.is_error = !!last.is_error;
+    meta.limit_hit = (meta.limit_hit || 0) + (/hit your (session|usage) limit/.test(String(last.result)) ? 1 : 0);
     const text = typeof last.result === 'string' ? last.result : '';
     meta.report_section = /###\s*Report/.test(text);
     meta.node_table = /\|\s*node\s*\|/i.test(text);
@@ -194,9 +205,24 @@ if (KIND === 'code') {
   }
 }
 
+// Wall time comes from the runner's start/exit stamps: a session's own duration_ms turned out
+// not to cover the time its sub-agents ran (a 2h23m resume reported 1.9 minutes).
+{
+  const stamps = (read(`${WS}.start.txt`) || '').split('\n');
+  let start = null, wall = 0;
+  for (const line of stamps) {
+    const m = line.match(/^(\S+) (resume \d+ exit|resume \d+|start|exit) ?/);
+    if (!m) continue;
+    const t = Date.parse(m[1]);
+    if (/^(start|resume \d+)$/.test(m[2].trim())) start = t;
+    else if (start) { wall += t - start; start = null; }
+  }
+  if (wall) meta.wall_ms = wall;
+}
+
 const bools = Object.entries(crit).filter(([, v]) => typeof v === 'boolean');
 const score = { case: CASE, workspace: WS, tree: TREE === WS ? '.' : TREE.slice(WS.length + 1), passed: bools.filter(([, v]) => v).length, of: bools.length, criteria: crit, session: meta, harness };
 writeFileSync(`${WS}.score.json`, JSON.stringify(score, null, 2));
 const fails = bools.filter(([, v]) => !v).map(([k]) => k).join(',') || '-';
 const t = harness.tasks[0];
-console.log(`${basename(WS)} | ${score.passed}/${score.of} | fail: ${fails} | ${meta.duration_ms ? Math.round(meta.duration_ms / 60000) + 'min' : '?'} | $${typeof meta.cost_usd === 'number' ? meta.cost_usd.toFixed(2) : '?'} | turns ${meta.turns ?? '?'} | task ${t?.state ?? '-'} size ${t?.size ?? '-'} pkgs ${t?.packages?.length ?? '-'} | runs ${harness.runs.length} | top-level edits ${meta.top_level_edits} | tree ${score.tree}`);
+console.log(`${basename(WS)} | ${score.passed}/${score.of} | fail: ${fails} | ${meta.wall_ms ? Math.round(meta.wall_ms / 60000) + 'min' : meta.duration_ms ? Math.round(meta.duration_ms / 60000) + 'min(api)' : '?'} | $${typeof meta.cost_usd === 'number' ? meta.cost_usd.toFixed(2) : '?'} | turns ${meta.turns ?? '?'} | task ${t?.state ?? '-'} size ${t?.size ?? '-'} pkgs ${t?.packages?.length ?? '-'} | runs ${harness.runs.length} | top-level edits ${meta.top_level_edits} | tree ${score.tree}`);

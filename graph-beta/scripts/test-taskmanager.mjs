@@ -66,6 +66,9 @@ function repo() {
   git('config', 'user.name', 't');
   writeFileSync(join(dir, 'a.txt'), 'x\n');
   writeFileSync(join(dir, 'b.txt'), 'y\n');
+  // Real projects ignore the run state directory. With it ignored, `git add -- . ':!.harness-run'`
+  // exits 1 ("paths are ignored") - the fold that the first e2e task reached failed on exactly this.
+  writeFileSync(join(dir, '.gitignore'), '.harness-run/\n');
   git('add', '-A');
   git('commit', '-qm', 'init');
   return dir;
@@ -358,6 +361,62 @@ test('a parent with two dependent children runs to report; the second child sees
     const fin = await tm.call('tm_status', { task_id });
     assert.equal(fin.state, 'complete');
     assert.deepEqual(fin.packages, ['P1', 'P2']);
+  });
+});
+
+// Drive SHAPE (P2 depends on P1) to the point where integrate:1 is ready, in the fewest calls.
+async function toIntegrate(tm, g, task_id) {
+  await throughCritique(tm, task_id);
+  let nx = await tm.call('tm_next', { task_id });
+  await completeChild(g, nx.children[0]);
+  assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' })).state, 'done');
+  assert.equal((await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) })).state, 'done');
+  nx = await tm.call('tm_next', { task_id });
+  await completeChild(g, nx.children[0]);
+  assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P2:1' })).state, 'done');
+  assert.equal((await tm.call('tm_submit', { task_id, node_id: 'accept:P2:1', payload: ok({ accept: true, match_pct: 90 }) })).state, 'done');
+  nx = await tm.call('tm_next', { task_id });
+  assert.deepEqual(nx.ready.map((n) => n.node_id), ['integrate:1']);
+  return nx;
+}
+
+test('a failed integrate reopens once the package it blamed is retried; an unknown package id is refused', async () => {
+  // The first docs task to finish its packages ended here: integrate ran the README examples,
+  // one package's failed, the package was retried and accepted - and integrate stayed failed
+  // with the goal gate pending behind it. The session's only probe, tm_retry({package_id:
+  // "integrate"}), opened a phantom package.
+  await withTask(async ({ tm, g, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    let v = await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: false, checks: ['run example -> P2 example fails'], gaps: ['P2 example does not run'] }) });
+    assert.equal(v.state, 'failed');
+    let nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.state, 'blocked');
+
+    const bad = await tm.call('tm_retry', { task_id, package_id: 'integrate' });
+    assert.match(bad.error, /no package integrate in the shape \(packages: P1, P2\)/);
+    assert.equal((await tm.call('tm_status', { task_id })).nodes.filter((n) => n.node_id.startsWith('dispatch:integrate')).length, 0, 'no phantom package');
+
+    const rt = await tm.call('tm_retry', { task_id, package_id: 'P2' });
+    assert.equal(rt.retried, true);
+    assert.equal(rt.children.length, 1);
+    assert.equal(rt.children[0].node_id, 'dispatch:P2:2');
+    await completeChild(g, rt.children[0]);
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P2:2' })).state, 'done');
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'accept:P2:2', payload: ok({ accept: true, match_pct: 96 }) })).state, 'done');
+
+    nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['integrate:2'], 'a fresh integrate judges the combined tree again');
+    const st = await tm.call('tm_status', { task_id, node_id: 'integrate:2' });
+    assert.ok(st.nodes[0].deps.includes('accept:P2:2') && st.nodes[0].deps.includes('accept:P1:1'), JSON.stringify(st.nodes[0].deps));
+    const briefing = readFileSync(nx.ready[0].briefing_path, 'utf8');
+    assert.match(briefing, /P2 example does not run/, 'the failed checks travel to the new integrate');
+    const gate = (await tm.call('tm_status', { task_id, node_id: 'gate:goal:1' })).nodes[0];
+    assert.deepEqual(gate.deps, ['integrate:2'], 'the goal gate waits for the new integrate, not the failed one');
+    v = await tm.call('tm_submit', { task_id, node_id: 'integrate:2', payload: ok({ verified: true, checks: ['run example -> ok'] }) });
+    assert.equal(v.state, 'done');
+    assert.equal(v.integration.merged, 2, 'the retried package branch was merged again');
+    nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['gate:goal:1']);
   });
 });
 

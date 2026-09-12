@@ -48,6 +48,23 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.6.3 — the first manager runs to complete, and what they broke on the way**: two size-L
+  tasks ran to `report` end to end (`scripts/bench/README.md`, Results). Getting there found
+  three more manager defects, each fixed with a test: the fold's `git add -A -- . ':!.harness-run'`
+  exits 1 when the project's `.gitignore` lists `.harness-run/` — the usual case, and every test
+  repo now has it — so two accepted children could not be committed; the add now stages
+  everything and unstages `.harness-run`. `tm_retry({package_id})` accepted an id the shape never
+  named and opened a phantom package; it now refuses with the list. And an `integrate` that failed
+  its checks stayed failed after the package it blamed was retried and accepted — the goal gate
+  waited behind it forever, the same wedge the graph engine had with a rejected `gate:goal` —
+  so a package retry now reopens a fresh `integrate:N` over the same accepts and moves the goal
+  gate behind it. Also in this release: `resume.sh` and `drive.sh` continue an interrupted
+  workspace in a new session and sleep through usage-limit resets; the scorer sums every session
+  that drove a workspace, takes wall time from the runner's stamps, and separates the driving
+  session's tool calls from its fresh agents'. Measured: the manager matched the plain session's
+  9/9 on both cases at 34× / 12× the cost; where the money went and what to do about it is in the
+  plan doc (Step 7). The manager stays experimental until a request that measures L on its own
+  runs through it.
 - **v0.6.2 — tiers resolve against what the host declared, and size can be pinned**: the
   second e2e round got past `plan` and then blocked every `implement`/`draft` node with zero
   failed nodes: the execution default names a tier (`sonnet`), the session declared ids
