@@ -3,13 +3,18 @@
 # session on the case's request, then score what it left behind.
 #
 #   bench.sh <arm> <case> [label]
-#     arm   beta   graph-beta (task-manager + graph-beta-engineering), skills develop/orchestrate
+#     arm   beta   graph-beta (task-manager + graph-beta-engineering), skills develop/orchestrate;
+#                  the prompt carries the user's words that the work must be split -> size pinned L
+#           betas  graph-beta without those words: size measures on its own (S on these fixtures),
+#                  one graph run through the delegate path - the same topology as `stable`
 #           stable graph 1.x (single graph run), skill graph:orchestrate
 #           none   no plugin — plain claude -p on the same request (baseline)
 #     case  code       fixtures/ledger-mono + requests/code.txt  (4 packages: csv, rules, report, cli)
 #           docs       fixtures/tinyq-mono  + requests/docs.txt  (3 package READMEs + architecture + 3 ADRs + CONTRIBUTING + README)
 #           code-flat  fixtures/ledger      + requests/code-flat.txt (same work in one empty package: sizes S)
 #           docs-flat  fixtures/tinyq       + requests/docs-flat.txt (same docs for one flat library: sizes S)
+#           goal-code  fixtures/ledger-mono + requests/goal-code.txt  (a one-line goal; the split is the harness's)
+#           goal-docs  fixtures/tinyq-mono  + requests/goal-docs.txt  (a one-line goal; the document set is the harness's)
 #
 # Workspaces go to $GRAPH_BENCH_OUT (default $TMPDIR/graph-bench) — never inside the plugin
 # tree: Claude Code denies Write/Edit under a loaded --plugin-dir. Arms are isolated with
@@ -17,7 +22,7 @@
 # `timeout` is not available on macOS; a run ends when the session does.
 set -euo pipefail
 
-ARM=${1:?arm: beta|stable|none}
+ARM=${1:?arm: beta|betas|stable|none}
 CASE=${2:?case: code|docs}
 LABEL=${3:-$(date +%Y%m%d-%H%M%S)}
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -30,6 +35,8 @@ case "$CASE" in
   docs)      FIX=tinyq-mono ;;    # 3 workspace packages -> size L
   code-flat) FIX=ledger ;;        # empty single-package repo -> size S (delegate path)
   docs-flat) FIX=tinyq ;;         # single-package library -> size S (delegate path)
+  goal-code) FIX=ledger-mono ;;   # one-line goal: the harness decides the split and the contracts
+  goal-docs) FIX=tinyq-mono ;;    # one-line goal: the harness decides the document set
   *) echo "unknown case $CASE" >&2; exit 2 ;;
 esac
 
@@ -49,9 +56,10 @@ ROUTING='Pass host_vendor "claude", the model you are actually running as host_m
 SPLIT='The user has said, in their own words: "split this by workspace package — one package per worktree, integrated at the end" — so pin size: "L" in tm_open.'
 PLUGIN=()
 case "$ARM" in
-  beta)
+  beta|betas)
+    [ "$ARM" = betas ] && SPLIT=''
     PLUGIN=(--plugin-dir "$REPO/graph-beta")
-    if [[ "$CASE" == code* ]]; then
+    if [[ "$CASE" == code* || "$CASE" == goal-code ]]; then
       PROMPT="Use the graph-beta:develop skill to run the following request through the harness. Follow the skill exactly: start with tm_open, drive whatever it hands back (a single graph run or a task of child runs), and end with the skill's output template. $ROUTING $SPLIT Request: $REQ"
     else
       PROMPT="Use the graph-beta:orchestrate skill to run the following request through the harness. Follow the skill exactly: start with tm_open with flow \"auto\", drive whatever it hands back (a single graph run or a task of child runs), and end with the skill's output template. $ROUTING $SPLIT Request: $REQ"

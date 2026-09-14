@@ -22,7 +22,7 @@ REQ=$(cat "$HERE/requests/$CASE.txt")
 ROUTING='Pass host_vendor "claude", the model you are actually running as host_model, and the native models you can select as native_models — the same routing the task was opened with.'
 
 case "$ARM" in
-  beta)
+  beta|betas)
     PLUGIN=(--plugin-dir "$REPO/graph-beta")
     TASK_ID=$(ls "$WS/.harness-tasks" 2>/dev/null | head -1 || true)
     if [ -n "$TASK_ID" ]; then
@@ -33,7 +33,7 @@ case "$ARM" in
   stable)
     PLUGIN=(--plugin-dir "$REPO/graph")
     PROMPT="Use the graph:orchestrate skill, but CONTINUE the graph run that is already open at this cwd instead of opening one: call graph_status({cwd: \"$WS\"}), take the run whose state is running, and drive the loop from graph_next on. Do not call graph_open. $ROUTING End with the skill's output template. The original request was: $REQ" ;;
-  *) echo "resume is for beta and stable workspaces, not $ARM" >&2; exit 2 ;;
+  *) echo "resume is for beta, betas and stable workspaces, not $ARM" >&2; exit 2 ;;
 esac
 
 echo "$(date -u +%FT%TZ) resume $N $ARM/$CASE -> $WS" | tee -a "$WS.start.txt"

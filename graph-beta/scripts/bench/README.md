@@ -5,7 +5,8 @@ by what the arm left in the tree and what the session cost.
 
 | Arm | What runs | Skill |
 |-----|-----------|-------|
-| `beta` | graph-beta 0.x: `task-manager` sizes and shapes, one child graph run per package, integrate | `graph-beta:develop` (code), `graph-beta:orchestrate` with `flow: auto` (docs) |
+| `beta` | graph-beta 0.x with the user's words that the work must be split → `size` pinned L: `task-manager` shapes packages, one child graph run per package, integrate | `graph-beta:develop` (code), `graph-beta:orchestrate` with `flow: auto` (docs) |
+| `betas` | graph-beta 0.x without those words: `size` measures (S on these fixtures) and delegates to one graph run — the same topology as `stable`, with the `document` kind and `flow` | same |
 | `stable` | graph 1.x: one graph run for the whole request | `graph:orchestrate` |
 | `none` | plain `claude -p` on the same request, no plugin | — |
 
@@ -15,6 +16,14 @@ by what the arm left in the tree and what the session cost.
 | `docs` | `fixtures/tinyq-mono` — 3 workspace packages with real code and tests, no docs | 3 package READMEs, `docs/architecture.md`, 3 ADRs, `CONTRIBUTING.md`, root README, all reviewed against the code | L |
 | `code-flat` | `fixtures/ledger` — one empty package | the same work as four files under `src/` | S |
 | `docs-flat` | `fixtures/tinyq` — one flat library | the same documents with one `docs/api.md` | S |
+| `goal-code` | `fixtures/ledger-mono` | **one line**: import bank CSVs, categorize by rules, report monthly from the CLI; the split, contracts, CLI shape and tests are the harness's to decide | — |
+| `goal-docs` | `fixtures/tinyq-mono` | **one line**: document it so a new maintainer can use, extend and understand it; the document set is the harness's to decide | — |
+
+The `goal-*` cases exist because the `code`/`docs` requests already do the decomposition — four
+packages, module contracts, a CLI signature — so a manager whose value is the planning layer
+had nothing left to plan. A one-line goal is where shape, critique and integrate earn or lose
+their cost; the scorer judges the outcome against the goal and the decomposition on its own
+terms (several packages, disjoint ownership, no cycles).
 
 The `-flat` cases exist because `size` decides from what commands show — file and module
 counts, ownership boundaries, build units — and an empty single-package repository has none:
@@ -89,11 +98,15 @@ continued it. Judged tree: the integration worktree for the manager, the workspa
 | beta 0.6.2, size pinned L | docs | 9/9 (tree) · task **blocked** | 104 min | $48.63 | 2 | 69 | 4 document packages, every `review` `verified` with `distinct-identity`; `integrate` ran the README examples and failed P2's (bare `@tinyq/retry` needs `npm install`) → `tm_retry(P2)` fixed it (gate 95%) → **integrate never reopened** (engine gap, fixed after); judge: 0 false / 58 |
 | beta, size measured (S → one run) | code · docs | interrupted | 45 min | $12–13 each | — | — | the delegate path; killed by the usage limit mid-subgoals, not resumed (superseded by the L runs) |
 
-Read across a row pair: the manager delivered the same 9/9 as the plain session at roughly 34×
-the cost and 21× the time on `code`, 12× and 7× on `docs`; stable's single run sat at 6× / 6× and
-5× / 4×. The request was S by the harness's own `size` measurement — the manager was forced on by
-the pin — so this round measures the manager's overhead, not its value; its value needs a request
-that measures L on its own (plan doc, Graduation).
+Two topologies are in this table and they must not be read as one. `none` and `stable` are one
+session or one graph run; `beta` (pinned L) is **four child graph runs plus a manager**. Its 34× /
+12× over the plain session is mostly four runs' worth of harness (stable's single run is 6× / 5×
+on its own); the manager's own share is the remainder — roughly $73 − 4 × $13 ≈ $20 on `code`,
+of which most is the driving session's context (below). The like-for-like engine comparison is
+`stable` against `betas` (one run each, same fixtures); `betas` is round 2. And the request was
+S by the harness's own `size` measurement — the manager was forced on by the pin — so this round
+measures the manager's overhead, not its value; its value is what the `goal-*` cases and a request
+that measures L on its own are for (plan doc, Graduation).
 
 Where the manager's money went (`code`, from per-message usage; proportions): the driving
 session itself ~55% (context grew to 507k tokens over 331 turns and every turn re-read it), the
@@ -112,3 +125,22 @@ reopened after the package it blamed was retried (0.6.3). Stable shares the firs
 
 Fixture note: the `size` agents were right that these monorepos are one build unit; the
 `code-flat`/`docs-flat` cases and the unpinned beta runs measure the delegate path.
+
+## Results — round 2, 2026-09-14 (in progress)
+
+Same-topology and one-line-goal runs. Rows land here as the sequential driver finishes them.
+
+| arm | case | score | wall | cost | sessions | fresh agents | what happened |
+|---|---|---|---|---|---|---|---|
+| betas (unpinned, one run) | code | 8/9 | 50 min | $13.20 | 1 | 21 | `size` measured S, delegated; the run used `implement/test` for code and `draft/review` for the README (mixed); failed only the README phrasing criterion. Same topology and same cost as `stable` (9/9 · 48 min · $13.27): the engine's overhead is the engine's, not the beta's |
+| none | goal-code | 6/6 | 29 min | $11.92 | 1 | 0 | the plain session met the one-line goal on its own — at 5.5× what it cost with the four-package spec written for it ($2.17): the planning moved inside the session |
+| beta (pinned L) | goal-code | running | | | | | shape split the one-line goal into `csv` / `rules` / `report` / `cli`+README+examples, disjoint touches, only `cli` depends (on all three) — the same split a person wrote for the `code` case. Critique returned 11 problems, one of which caught a stale sentence in the shape contract (dependents "branch from HEAD" — they branch from their dependency's branch since 0.6.0); fixed |
+| betas · none · beta | docs · goal-docs | queued | | | | | |
+
+**Cross-vendor dispatch was not measured in either round.** Codex is installed on the bench
+machine but not logged in, so every `vendor: auto` route reported `codex unreachable` and every
+node ran on Claude — the harness's first stated purpose, dispatching to whichever vendor can do
+the work regardless of which one is driving, has no data yet. That round needs `codex login` on
+the machine and adds to the scorer: nodes per vendor, `changed_files_verified` on cross-vendor
+implement/test, and how many review/gate identities differed from their author's by vendor
+rather than by model tier.
