@@ -4,20 +4,24 @@
 #   drive.sh "<arm> <case> <label>" ["<arm> <case> <label>" ...]
 #
 # A job whose workspace does not exist starts with bench.sh; one that exists is resumed with
-# resume.sh. After each session the last result text is checked for a usage-limit message;
-# "resets 11:50pm (Asia/Seoul)" is parsed, the driver sleeps until then plus a margin, and the
-# job is resumed. A job ends when a session finishes for any other reason (complete or blocked
-# are both results). At most MAX_RESUMES (default 6) resumes per job.
+# resume.sh. After each session the newest stream is read for how it ended:
+#   - no `result` event at all  -> the session was killed from outside (a memory kill, a SIGKILL,
+#     the terminal going away). Nothing to wait for: resume straight away.
+#   - a usage-limit message     -> "resets 11:50pm (Asia/Seoul)" is parsed, the driver sleeps
+#     until then plus a margin, then resumes.
+#   - anything else             -> the session ended on its own (complete or blocked are both
+#     results) and the job is done.
+# At most MAX_RESUMES (default 6) resumes per job.
 set -uo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=${GRAPH_BENCH_OUT:-${TMPDIR:-/tmp}/graph-bench}
 MAX=${MAX_RESUMES:-6}
 
-last_result_text() {  # newest stream of a workspace -> its result text (or empty)
+stream_end() {  # newest stream of a workspace -> "killed", or "ended\t<result text>"
   local ws=$1 f
   f=$(ls -t "$ws".stream*.jsonl 2>/dev/null | head -1)
-  [ -n "$f" ] || return 0
+  [ -n "$f" ] || { echo killed; return 0; }
   python3 - "$f" <<'EOF'
 import json,sys
 last=None
@@ -25,7 +29,9 @@ for line in open(sys.argv[1]):
     try: e=json.loads(line)
     except Exception: continue
     if e.get('type')=='result': last=e
-print((last or {}).get('result') or '')
+# A stream that never carried a result event is a session that was killed from outside; the
+# work on disk is untouched and resumable. An empty result text is still an ended session.
+print('killed' if last is None else 'ended\t' + (last.get('result') or '').replace('\n',' '))
 EOF
 }
 
@@ -61,15 +67,26 @@ for job in "$@"; do
     fresh=1
   fi
   while :; do
-    text=$(last_result_text "$ws")
-    if [[ $text =~ hit\ your\ (session|usage)\ limit ]]; then
+    end=$(stream_end "$ws")
+    text=${end#*$'\t'}
+    [ "$end" = killed ] && text=''
+    if [ "$end" = killed ] || [[ $text =~ hit\ your\ (session|usage)\ limit ]]; then
       if [ "$n" -ge "$MAX" ]; then echo "$(date -u +%FT%TZ) $job: gave up after $n resumes"; break; fi
+      if [ "$end" = killed ]; then
+        echo "$(date -u +%FT%TZ) $job: session killed with no result event; resuming"
       # A limit message left by an earlier driver names a reset that has long passed: resume now.
-      if [ "$fresh" = 1 ]; then sleep_until_reset "$text"; else echo "$(date -u +%FT%TZ) stale limit message from before this driver; resuming"; fi
+      elif [ "$fresh" = 1 ]; then sleep_until_reset "$text"
+      else echo "$(date -u +%FT%TZ) stale limit message from before this driver; resuming"; fi
       fresh=1
       n=$((n + 1))
       echo "$(date -u +%FT%TZ) resume $n of $job"
+      before=$(ls "$ws".stream*.jsonl 2>/dev/null | wc -l)
       "$HERE/resume.sh" "$ws" "$n"
+      # resume.sh that never opened a session (bad arguments, a missing request file) leaves the
+      # streams untouched: the loop would read the same "killed" and spin. Stop the job instead.
+      if [ "$(ls "$ws".stream*.jsonl 2>/dev/null | wc -l)" = "$before" ]; then
+        echo "$(date -u +%FT%TZ) $job: resume started no session; stopping"; break
+      fi
       continue
     fi
     echo "$(date -u +%FT%TZ) done $job"; cat "$ws.score.txt" 2>/dev/null

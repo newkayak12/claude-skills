@@ -48,6 +48,21 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.6.5 — the bench driver no longer mistakes a killed session for a finished one, and the
+  same-topology comparison is complete**: a session killed from outside (a low-memory kill, a
+  SIGKILL) writes no `result` event, and `drive.sh` read that empty text as "ended cleanly" —
+  two runs were marked done at the moment they died. A stream with no `result` event is now a
+  kill and is resumed straight away; a resume that opens no session stops its job instead of
+  spending the whole retry budget in a second. `resume.sh` parsed a workspace name
+  `<case>-<arm>-<label>` from the left, so `goal-code-beta-g1` became case `goal` and every
+  one-line-goal resume died on a missing request file; it parses from the right now. The
+  `$TMPDIR`-under-`/private/var` assertion fixed in graph 1.7.1 was still failing here. With
+  `betas docs` in (9/9 · 68 min · $21.79 · 31 agents) both same-topology pairs are measured:
+  against stable's 9/9 · $18.10 the beta costs 20% more and spends it on a real `document`
+  flow — 9 `draft`, 9 `review`, 10 `gate`, no `implement` — where stable has no document kind
+  and ran the same request as implement/test. The engine's overhead is the engine's; round 1's
+  34× belongs to the manager topology, not to the beta.
+
 - **v0.6.4 — the shape contract tells the truth about branches, and the bench measures the
   layer the manager is for**: a critique node in the first one-line-goal run caught the shape
   contract still saying every package "branches from the current HEAD" — dependents have

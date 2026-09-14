@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, chmodSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, chmodSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -43,7 +43,7 @@ test('Claude adapter starts fresh, keeps cwd, uses explicit efficient model, and
     assert.equal(r.report.stage_ok, true);
     assert.equal(r.report.usage.input_tokens, 12);
     const observed = JSON.parse(readFileSync(join(f.dir, 'observed.json')));
-    assert.equal(observed.cwd, f.dir);
+    assert.equal(realpathSync(observed.cwd), realpathSync(f.dir), 'same directory; macOS reports $TMPDIR under /private/var');
     assert.ok(observed.args.includes('--no-session-persistence'));
     assert.ok(observed.args.includes('--strict-mcp-config'));
     assert.equal(observed.args[observed.args.indexOf('--model') + 1], 'sonnet');
