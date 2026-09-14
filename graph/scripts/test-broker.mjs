@@ -1464,6 +1464,72 @@ test('single vendor uses native lower model; unsupported native model fails visi
   } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
 });
 
+test('the host model is selectable even when native_models omits it', async () => {
+  // A driving session reports itself as e.g. "claude-opus-5[1m]" — a context variant the
+  // fresh-agent picker does not list. A fresh native agent with no override inherits the
+  // host model, so plan must route to self, not block with a vendor failure.
+  const cwd = balancedRepo();
+  const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+  try {
+    const open = await c.call('graph_open', { request: 'r', cwd, allocation: 'balanced', host_vendor: 'codex',
+      host_model: 'gpt-5.6-sol[1m]', candidates: ['codex'], native_models: ['gpt-5.6-sol', 'gpt-5.6-mini'] });
+    assert.equal(open.state, 'running');
+    assert.equal(open.ready[0].vendor, 'self');
+    assert.equal(open.ready[0].model, 'gpt-5.6-sol[1m]');
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('a default tier resolves against declared native ids; an undeclared tier falls back to the host model, visibly', async () => {
+  // The defaults name a tier ("sonnet"); a host lists ids ("claude-sonnet-5"). The second
+  // e2e round blocked every implement node on that mismatch with zero failed nodes, and the
+  // session's only way out was a second graph_open - an orphan run and a redone spec.
+  const cwd = balancedRepo();
+  const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+  try {
+    const ids = await c.call('graph_open', { request: 'r', cwd, allocation: 'balanced', host_vendor: 'codex',
+      host_model: 'gpt-5.6-sol[1m]', candidates: ['codex'], policy: { plan: { model: 'mini' } }, native_models: ['gpt-5.6-sol', 'gpt-5.6-mini'] });
+    assert.equal(ids.state, 'running');
+    assert.equal(ids.ready[0].vendor, 'self');
+    assert.equal(ids.ready[0].model, 'gpt-5.6-mini', 'the tier word finds the declared id');
+    const fb = await c.call('graph_open', { request: 'r', cwd, allocation: 'balanced', host_vendor: 'codex',
+      host_model: 'gpt-5.6-sol', candidates: ['codex'], policy: { plan: { model: 'nano' } }, native_models: ['gpt-5.6-sol'] });
+    assert.equal(fb.state, 'running');
+    assert.equal(fb.ready[0].model, 'gpt-5.6-sol', 'an undeclared tier runs on the host model instead of killing the run');
+    assert.match(JSON.stringify(fb.ready[0]), /not in native_models, host model used/, 'the substitution is visible in the routing reason');
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('a rejected goal gate is re-judged after the subgoal retry, instead of wedging the run', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, INDEPENDENT);
+    await passSubgoal(c, cwd, runId, 'U1');
+    await passSubgoal(c, cwd, runId, 'U2');
+    const g = await c.call('graph_submit', { run_id: runId, cwd, node_id: 'gate:goal:1', payload: ok({ accept: false, match_pct: 50, gaps: ['U2 never wired to U1'], reason: 'halves do not meet' }) });
+    assert.equal(g.state, 'failed');
+    let nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.equal(nx.state, 'blocked', 'a rejection with retries left holds the report');
+    const rt = await c.call('graph_retry', { run_id: runId, cwd, subgoal_id: 'U2' });
+    assert.equal(rt.retried, true);
+    const prompt = readFileSync(rt.ready.find((n) => n.node_id === 'implement:U2:2').briefing_path, 'utf8');
+    assert.match(prompt, /goal gate gate:goal:1: halves do not meet/, 'the retried subgoal hears why the whole was rejected');
+    assert.match(prompt, /U2 never wired to U1/);
+    await passSubgoal(c, cwd, runId, 'U2', 2);
+    nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['gate:goal:2'], 'a fresh goal gate judges the rebuilt whole');
+    const st = await c.call('graph_status', { run_id: runId, cwd });
+    assert.equal(st.nodes.find((n) => n.node_id === 'gate:goal:1').state, 'failed', 'the rejection stays as evidence');
+    assert.deepEqual(st.nodes.find((n) => n.node_id === 'gate:goal:2').deps.sort(), ['gate:U1:1', 'gate:U2:2']);
+    assert.deepEqual(st.nodes.find((n) => n.node_id === 'report').after, ['gate:goal:2']);
+    const gatePrompt = readFileSync(nx.ready[0].briefing_path, 'utf8');
+    assert.match(gatePrompt, /Previous attempt was rejected[\s\S]*U2 never wired to U1/);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'gate:goal:2', payload: ok({ accept: true, match_pct: 90 }) });
+    nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['report']);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'report', payload: ok({ handoff: 'done' }) });
+    assert.equal((await c.call('graph_status', { run_id: runId, cwd })).state, 'complete');
+  });
+});
+
 // ---------- registering a vendor does not enrol it in "auto" ----------
 // The default candidate list is empty on purpose: a run that does not name a vendor
 // stays on the orchestrator, even when a perfectly ready vendor is registered. Without

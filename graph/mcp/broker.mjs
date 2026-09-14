@@ -363,6 +363,23 @@ function reclaimAbandoned(run) {
   return reclaimed;
 }
 
+
+// Which model a fresh native agent is asked for. `model` is a tier or an id; the host's
+// native_models are ids or aliases. Same string, then the host's own model, then a
+// declared model that names the same tier ("sonnet" ~ "claude-sonnet-5"); otherwise the
+// host model as a marked fallback. null only when the host declared nothing usable.
+export function resolveNativeModel(run, model) {
+  const list = Array.isArray(run.native_models) ? run.native_models.map(String) : null;
+  if (!list || !model) return { model, fallback: false };
+  if (model === run.host_model || list.includes(model)) return { model, fallback: false };
+  const want = String(model).toLowerCase();
+  const tier = (want.match(/(sonnet|opus|haiku|fable|astra|mini|sol|nano)/) || [])[1] || want;
+  const hit = list.find((m) => m.toLowerCase().includes(want)) || list.find((m) => m.toLowerCase().includes(tier));
+  if (hit) return { model: hit, fallback: false };
+  if (run.host_model) return { model: run.host_model, fallback: true };
+  return null;
+}
+
 function mustFindRun(a) {
   if (a.cwd) knownCwds.add(resolve(String(a.cwd)));
   const cwd = a.cwd ? resolve(String(a.cwd)) : null;
@@ -399,14 +416,22 @@ async function route(run, node) {
     }
     const model = balanced ? selectModel(run, node, name, pol.model) : pol.model;
     if (balanced && name === run.host_vendor) {
-      // native_models declares actual model selection capability, independently
-      // from the driving conversation's model. Never silently substitute a tier.
-      if (run.native_models && !run.native_models.includes(model)) {
+      // native_models declares actual model selection capability, independently from the
+      // driving conversation's model. The defaults name a tier ("sonnet"); the host names
+      // ids ("claude-sonnet-5") or aliases - resolve one against the other before refusing.
+      // The host's own model is selectable by definition: a fresh native agent with no
+      // model override inherits it. A tier the host did not declare at all falls back to
+      // that model, and the reason says so - visible substitution, never a silent one, and
+      // never a dead run over a naming mismatch. (Ported from graph-beta 0.6.1/0.6.2, where a
+      // bench session reporting itself as "claude-opus-5[1m]" blocked at plan, and every
+      // implement node blocked on "sonnet" vs "claude-sonnet-5" with zero failed nodes.)
+      const resolved = resolveNativeModel(run, model);
+      if (!resolved) {
         attempts.push({ vendor: name, ready: false, reason: `native host cannot select model ${model}` });
-      } else {
-        return { vendor: 'self', executor: name, sandbox: null, model, reason: candidate.reason, attempts };
+        continue;
       }
-      continue;
+      const reason = resolved.fallback ? `${candidate.reason}; model ${model} not in native_models, host model used` : candidate.reason;
+      return { vendor: 'self', executor: name, sandbox: null, model: resolved.model, reason, attempts };
     }
     if (name === 'codex' && (run.host_vendor === 'codex' || process.env.CODEX_THREAD_ID)) {
       attempts.push({ vendor: name, ready: false, reason: 'Codex hosts must use native agents; nested Codex CLI is disabled' });
@@ -1103,11 +1128,19 @@ async function toolGraphRetry(a) {
   }
 
   const sid = String(a.subgoal_id);
-  const gates = run.nodes.filter((n) => n.subgoal_id === sid && n.stage === 'gate' && n.result);
-  const last = gates[gates.length - 1];
-  const feedback = last && last.result
-    ? [last.result.reason || '', ...(last.result.gaps || [])].filter(Boolean).join('\n- ')
-    : '';
+  // The last node that judged this subgoal: its gate, or the test that failed before any
+  // gate ran. A retry after a failed test used to carry no feedback at all.
+  const judged = run.nodes.filter((n) => n.subgoal_id === sid && n.result && (n.stage === 'gate' || n.state === 'failed'));
+  const last = judged[judged.length - 1];
+  // A goal gate that rejected the assembled result names what the run as a whole lacks; the
+  // subgoal being retried for it must hear that too, since its own gate passed.
+  const goal = run.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id === null && n.state === 'failed' && !n.final && n.result).pop();
+  const feedback = [
+    ...(last && last.result
+      ? [last.result.reason || '', ...(last.result.gaps || []), ...(last.result.verified === false ? (last.result.checks || []) : [])]
+      : []),
+    ...(goal ? [`goal gate ${goal.node_id}: ${goal.result.reason || 'rejected'}`, ...(goal.result.gaps || [])] : []),
+  ].filter(Boolean).join('\n- ');
   const out = retrySubgoal(run, sid, feedback);
   if (!out.attempt) {
     record(run.cwd, { event: 'graph_settle', run_id: run.run_id, subgoal_id: sid, unreachable: out.unreachable.length });
