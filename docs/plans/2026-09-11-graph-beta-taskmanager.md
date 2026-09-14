@@ -225,7 +225,7 @@ million tokens that every turn re-reads. Candidates, in order of expected yield:
 - `report` optional on child runs (the manager reads the gate; the parent report covers the whole)
 - a per-task cost line in `tm_status`, so a run says what it has spent so far
 
-### Step 8 — ports to stable `graph` (proposed)
+### Step 8 — ports to stable `graph`  ✅ (1.7.1)
 
 Bugs, not features, so D12 does not apply: the rejected `gate:goal` never re-judged (1.7.0 has
 it), the host-model variant refusal, the tier-vs-id comparison. Each is a small fix with a test
@@ -239,6 +239,6 @@ manager's worth is decided by requests that are actually L, not by count.
 - [ ] Step 7 lands and the bench shows a manager run under 3× the baseline on `code`.
 - [ ] One request that `size` measures **L on its own** — not pinned — runs to `report`. Until
       one exists, the manager stays experimental and the entry skills say so.
-- [ ] Step 8 ported; stable keeps the single-run path and its 89 tests.
+- [x] Step 8 ported (graph 1.7.1, 2026-09-14): host-model variant, tier resolution, rejected `gate:goal` re-judge + retry feedback; stable at 97 tests.
 - [ ] Decide tool names; port the `document` kind and `flow` to `graph` 2.0; `graph-beta` is deleted,
       not kept. The manager graduates only if the second box is ticked.

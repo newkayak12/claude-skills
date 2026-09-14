@@ -413,6 +413,18 @@ export function retrySubgoal(run, subgoalId, feedback) {
       n.result = null;
     }
   }
+  // A goal gate that REJECTED is a different case: it ran, and its verdict is evidence. The
+  // retried subgoal will pass or fail on its own, but nothing re-judged the whole - the old
+  // gate stayed `failed`, the report stayed behind it, and the run wedged with the fix in
+  // place. Open a fresh goal gate over the live subgoal gates, carrying the rejection as
+  // feedback, and move the report behind it. The old gate stays, as every failed attempt does.
+  // (Ported from graph-beta 0.6.0.)
+  for (const old of run.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id === null && n.state === 'failed' && !n.final && n.deps.includes(gate))) {
+    const fresh = `gate:goal:${nextIndex(run, 'gate:goal')}`;
+    const fb = [old.result && old.result.reason, ...((old.result && old.result.gaps) || [])].filter(Boolean).join('\n- ');
+    run.nodes.push(node(fresh, 'gate', old.deps.slice(), { subgoal_id: null, feedback: fb, supersedes: old.node_id }));
+    for (const n of run.nodes) n.after = (n.after || []).map((d) => (d === old.node_id ? fresh : d));
+  }
   return { run: saveRun(run), attempt, reason: '' };
 }
 

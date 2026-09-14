@@ -47,6 +47,24 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.7.1 — three fixes the beta bench found in the shared engine**: graph-beta's first
+  end-to-end rounds (`graph-beta/scripts/bench/`) drove this engine's code through real
+  sessions and hit three defects the unit suite never had; both stable bench runs reproduced
+  the first. (1) A driving session that reports itself as `claude-opus-5[1m]` — a context
+  variant the fresh-agent picker does not list — blocked at `plan` with `native host cannot
+  select model`; the host's own model is now selectable by definition. (2) The execution
+  default names a tier (`sonnet`) and hosts declare ids (`claude-sonnet-5`); the check compared
+  strings, so every `implement` node could be `vendor-failure` with zero failed nodes, and the
+  only way out was a second `graph_open`. Tiers now resolve against the declared list, and an
+  undeclared tier runs on the host model with the substitution written into the routing
+  reason. (3) A `gate:goal` that rejected the assembled result was never re-judged after the
+  subgoal it blamed was retried — the run wedged with the fix in place; a subgoal retry now
+  opens `gate:goal:N` over the live gates and moves `report` behind it, and the retried
+  subgoal's briefing carries the goal gate's reason and gaps (and a failed test's checks,
+  which a retry used to lose). Tests ported with the fixes. Bench: one run of this version's
+  predecessor on a 4-package request completed 9/9 at 6× the cost and time of a plain
+  session; graph-beta's manager on the same request is a different topology (four runs plus a
+  manager) and is read separately there.
 - **v1.7.0 — typed edges and settled failure**: a dependency meant one thing, "must have
   succeeded". So `report` hung behind `gate:goal`, and a subgoal that ran out of retries left
   the run `blocked` forever - the subgoals that HAD passed were never reported. Edges now come
