@@ -48,6 +48,19 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.6.4 — the shape contract tells the truth about branches, and the bench measures the
+  layer the manager is for**: a critique node in the first one-line-goal run caught the shape
+  contract still saying every package "branches from the current HEAD" — dependents have
+  branched from their dependency's delivered branch since 0.6.0, and the stale sentence made
+  the critique argue against a dependency that was in fact the point. Fixed. The bench gains a
+  `betas` arm (graph-beta with `size` left to measure: one run, the same topology as stable —
+  8/9 · $13.20 against stable's 9/9 · $13.27 on `code`) and `goal-code`/`goal-docs` cases that
+  hand the harness a one-line goal and leave the split, the contracts and the document set to
+  it; the scorer judges the outcome against the goal and the manager's decomposition on its
+  own terms. First observation: shape split the one-line goal into the same four packages a
+  person had written for the specified case. Not measured yet, in any round: cross-vendor
+  dispatch — codex is not logged in on the bench machine, so every node ran on Claude; recorded
+  as the next round, not assumed.
 - **v0.6.3 — the first manager runs to complete, and what they broke on the way**: two size-L
   tasks ran to `report` end to end (`scripts/bench/README.md`, Results). Getting there found
   three more manager defects, each fixed with a test: the fold's `git add -A -- . ':!.harness-run'`

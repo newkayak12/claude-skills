@@ -9,7 +9,7 @@
 // look at files; executed criteria run `node --test` and, for code, the CLI on a sample.
 // The docs cases have one LLM-judged criterion (`accuracy`: haiku reads the source and the
 // reference docs); GRAPH_BENCH_JUDGE=0 skips it. Writes <ws>.score.json and prints one row.
-import { existsSync, readFileSync, readdirSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync, mkdtempSync, statSync } from 'node:fs';
 import { join, resolve, basename } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -17,7 +17,8 @@ import { tmpdir } from 'node:os';
 const [CASE, WS_ARG, STREAM] = process.argv.slice(2);
 if (!CASE || !WS_ARG) { console.error('usage: score.mjs <code|docs|code-flat|docs-flat> <workspace> [stream.jsonl]'); process.exit(2); }
 const WS = resolve(WS_ARG);
-const KIND = CASE.startsWith('code') ? 'code' : 'docs';
+const GOAL = CASE.startsWith('goal-');
+const KIND = /code/.test(CASE) ? 'code' : 'docs';
 const MONO = !CASE.endsWith('-flat');
 
 const env = { ...process.env }; delete env.CLAUDECODE;
@@ -136,7 +137,70 @@ const exportNames = (src) => {
   return [...names];
 };
 
-if (KIND === 'code') {
+const judge = (prompt) => {
+  const j = sh('claude', ['-p', '--setting-sources', 'project', '--model', 'haiku', '--output-format', 'json', prompt], TREE, '');
+  try {
+    const outer = JSON.parse(j.stdout);
+    const inner = JSON.parse(String(outer.result).replace(/^[^{]*/, '').replace(/[^}]*$/, ''));
+    return { ...inner, judge_cost_usd: outer.total_cost_usd };
+  } catch { return null; }
+};
+const treeFiles = (dir, depth, acc = [], rel = '') => {
+  if (depth < 0) return acc;
+  for (const e of ls(join(dir, rel))) {
+    if (['.git', '.harness-run', 'node_modules'].includes(e)) continue;
+    const r = rel ? `${rel}/${e}` : e;
+    let st; try { st = statSync(join(dir, r)); } catch { continue; }
+    if (st.isDirectory()) treeFiles(dir, depth - 1, acc, r); else acc.push(r);
+  }
+  return acc;
+};
+
+if (GOAL) {
+  // A one-line goal: the harness decided the split, the contracts and the document set, so
+  // nothing here names a path. What is checked: the tree works, the goal is met (judged), and
+  // - for a manager run - the decomposition it chose holds up on its own terms.
+  const files = treeFiles(TREE, 4);
+  const mds = files.filter((f) => f.endsWith('.md'));
+  crit.readme = has('README.md') && /```/.test(read(join(TREE, 'README.md')) || '');
+  if (KIND === 'code') {
+    const pkgs = ls(join(TREE, 'packages')).filter((p) => existsSync(join(TREE, 'packages', p, 'package.json')));
+    crit.cli = pkgs.some((p) => { try { const j = JSON.parse(read(join(TREE, 'packages', p, 'package.json'))); return !!j.bin; } catch { return false; } })
+      || files.some((f) => /(^|\/)bin\/[^/]+\.m?js$/.test(f));
+    const calls = files.filter((f) => /\.test\.m?js$/.test(f)).reduce((n, f) => n + ((read(join(TREE, f)) || '').match(/\btest\(/g) || []).length, 0);
+    crit.tests_grown = calls > 4;
+    crit.tests_total = calls;
+    const readme = read(join(TREE, 'README.md')) || '';
+    const bins = files.filter((f) => /(^|\/)bin\/[^/]+\.m?js$/.test(f)).slice(0, 2).map((f) => `// ${f}\n${(read(join(TREE, f)) || '').slice(0, 6000)}`).join('\n\n');
+    const j = judge(`You are judging whether a delivered code tree meets a one-line goal. Goal: "import bank CSV exports, categorize each expense by user-defined rules, report monthly spending from the command line; a new user can follow the root README from a CSV file to a monthly report". Below: the file list, the README, and the CLI entry point(s). Reply with JSON only: {"import_csv": true|false, "rules": true|false, "monthly_report": true|false, "readme_walkthrough": true|false, "missing": ["..."]}.\n\n=== FILES ===\n${files.join('\n')}\n\n=== README.md ===\n${readme.slice(0, 12000)}\n\n=== CLI ===\n${bins}`);
+    crit.goal_met = j ? !!(j.import_csv && j.rules && j.monthly_report && j.readme_walkthrough) : 'judge-failed';
+    crit.goal_detail = j;
+  } else {
+    crit.docs_count = mds.length;
+    crit.docs_written = mds.length >= 3;
+    const codePaths = ['packages/queue/src', 'packages/retry/src', 'packages/worker/src', 'packages/queue/test', 'packages/retry/test', 'packages/worker/test'];
+    crit.src_untouched = !!seed && sh('git', ['diff', '--quiet', seed, '--', ...codePaths], TREE).code === 0;
+    const srcs = ['queue', 'retry', 'worker'].map((p) => `// packages/${p}/src/index.mjs\n${read(join(TREE, `packages/${p}/src/index.mjs`)) || ''}`).join('\n\n');
+    let budget = 40000;
+    const docs = mds.map((f) => { const t = (read(join(TREE, f)) || '').slice(0, Math.max(0, Math.min(8000, budget))); budget -= t.length; return `=== ${f} ===\n${t}`; }).join('\n\n');
+    const j = judge(`You are judging a documentation set written for a small library against its source. Goal: "a new maintainer can use it, extend it, and understand why it is built the way it is; every claim derived from the code". Reply with JSON only: {"usable": true|false, "extendable": true|false, "rationale_explained": true|false, "claims_checked": <int>, "false_claims": ["<doc>: <claim> — <why wrong>"]}.\n\n=== SOURCE ===\n${srcs}\n\n${docs}`);
+    crit.goal_met = j ? !!(j.usable && j.extendable && j.rationale_explained) : 'judge-failed';
+    crit.accuracy = j ? j.false_claims.length === 0 : 'judge-failed';
+    crit.goal_detail = j;
+  }
+  // The manager's decomposition, on its own terms: several packages, disjoint ownership, no cycles.
+  const t = harness.tasks[0];
+  if (t && t.packages.length) {
+    const touches = t.packages.map((p) => (p.touches || []).map(String));
+    const disjoint = touches.every((a, i) => touches.every((b, k) => i === k || !a.some((x) => b.some((y) => x === y || x.startsWith(y + '/') || y.startsWith(x + '/')))));
+    const ids = new Set(t.packages.map((p) => p.id));
+    const seen = new Set(); let acyclic = true;
+    const visit = (id, stack) => { if (stack.has(id)) { acyclic = false; return; } if (seen.has(id)) return; stack.add(id); for (const d of (t.packages.find((p) => p.id === id)?.deps || [])) if (ids.has(d)) visit(d, stack); stack.delete(id); seen.add(id); };
+    for (const id of ids) visit(id, new Set());
+    crit.decomposition = t.packages.length >= 2 && disjoint && acyclic;
+    crit.decomposition_detail = { packages: t.packages.length, disjoint, acyclic };
+  } else crit.decomposition = 'n/a';
+} else if (KIND === 'code') {
   const P = MONO
     ? { csv: 'packages/csv/src/index.mjs', rules: 'packages/rules/src/index.mjs', report: 'packages/report/src/index.mjs', cli: 'packages/cli/bin/ledger.mjs' }
     : { csv: 'src/csv.mjs', rules: 'src/rules.mjs', report: 'src/report.mjs', cli: 'bin/ledger.mjs' };

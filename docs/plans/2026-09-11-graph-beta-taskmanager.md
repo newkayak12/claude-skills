@@ -167,7 +167,16 @@ gate's gaps into the retried subgoal. Candidate for a stable fix release — not
       the integration tree; independent packages that collide → observed conflict → repackage
       prompt; conflicting dependencies fail the dependent dispatch. 112 pass.
 
-### What the bench measured (2026-09-11 → 12)
+### What the bench measured (2026-09-11 → 14)
+
+Round 2 (partial, 2026-09-14): the unpinned beta — one graph run, `size` measured S — cost the
+same as stable on the same request (8/9 · 50 min · $13.20 vs 9/9 · 48 min · $13.27): the
+beta's engine additions (kinds, flows, mixed runs) add nothing measurable to a single run. A
+one-line goal (`goal-code`) cost the plain session 5.5× what the fully specified request did
+($11.92 vs $2.17) — the planning happened inside the session — and the manager's shape split
+that same one-line goal into the four packages a person had written for the specified case,
+with disjoint ownership and a single dependent. That is the first evidence for the manager's
+planning layer; the rest of round 2 is in the bench README.
 
 `scripts/bench/` — two size-L-shaped requests (`code`: four workspace packages + CLI + tests +
 README; `docs`: three package references + architecture + three ADRs + CONTRIBUTING + README),
@@ -237,6 +246,10 @@ The old bar — ten real runs across three flows — assumed a run costs what a 
 At $70 a manager run it is not a bar anyone will clear, and it measured the wrong thing: the
 manager's worth is decided by requests that are actually L, not by count.
 - [ ] Step 7 lands and the bench shows a manager run under 3× the baseline on `code`.
+- [ ] Cross-vendor round: codex logged in on the bench machine, `goal-*` cases under `vendor: auto`,
+      scorer extended with nodes-per-vendor, cross-vendor `changed_files_verified`, and author/reviewer
+      identity split by vendor. Not measured in rounds 1–2: codex was unreachable, every node ran on
+      Claude. This is the harness's first stated purpose and it has no data yet.
 - [ ] One request that `size` measures **L on its own** — not pinned — runs to `report`. Until
       one exists, the manager stays experimental and the entry skills say so.
 - [x] Step 8 ported (graph 1.7.1, 2026-09-14): host-model variant, tier resolution, rejected `gate:goal` re-judge + retry feedback; stable at 97 tests.
