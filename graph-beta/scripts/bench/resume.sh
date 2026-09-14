@@ -15,9 +15,10 @@ N=${2:-1}
 WS=$(cd "$WS" && pwd)
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../../.." && pwd)
-NAME=$(basename "$WS")            # <case>-<arm>-<label>
-CASE=${NAME%%-*}
-ARM=$(echo "$NAME" | cut -d- -f2)
+NAME=$(basename "$WS")            # <case>-<arm>-<label>; a case may carry a hyphen
+REST=${NAME%-*}                   # drop <label>
+ARM=${REST##*-}
+CASE=${REST%-*}
 REQ=$(cat "$HERE/requests/$CASE.txt")
 ROUTING='Pass host_vendor "claude", the model you are actually running as host_model, and the native models you can select as native_models — the same routing the task was opened with.'
 

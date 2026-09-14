@@ -133,9 +133,16 @@ Same-topology and one-line-goal runs. Rows land here as the sequential driver fi
 | arm | case | score | wall | cost | sessions | fresh agents | what happened |
 |---|---|---|---|---|---|---|---|
 | betas (unpinned, one run) | code | 8/9 | 50 min | $13.20 | 1 | 21 | `size` measured S, delegated; the run used `implement/test` for code and `draft/review` for the README (mixed); failed only the README phrasing criterion. Same topology and same cost as `stable` (9/9 · 48 min · $13.27): the engine's overhead is the engine's, not the beta's |
+| betas (unpinned, one run) | docs | 9/9 | 68 min | $21.79 | 2 | 31 | `size` measured S, `flow` chose `document`: 9 `draft` · 9 `review` · 10 `gate` and not one `implement` — round 1's stable ran the same request as implement/test because it has no `document` kind. Three review rejections retried and passed. Against stable's 9/9 · 61 min · $18.10: the same score for 20% more, and the 20% buys author≠reviewer on every document |
 | none | goal-code | 6/6 | 29 min | $11.92 | 1 | 0 | the plain session met the one-line goal on its own — at 5.5× what it cost with the four-package spec written for it ($2.17): the planning moved inside the session |
 | beta (pinned L) | goal-code | running | | | | | shape split the one-line goal into `csv` / `rules` / `report` / `cli`+README+examples, disjoint touches, only `cli` depends (on all three) — the same split a person wrote for the `code` case. Critique returned 11 problems, one of which caught a stale sentence in the shape contract (dependents "branch from HEAD" — they branch from their dependency's branch since 0.6.0); fixed |
-| betas · none · beta | docs · goal-docs | queued | | | | | |
+| beta (pinned L) | goal-docs | queued | | | | | |
+
+Both same-topology pairs are now in: `stable` against `betas` is 9/9 · $13.27 against 8/9 ·
+$13.20 on `code` and 9/9 · $18.10 against 9/9 · $21.79 on `docs`. The engine's cost is the
+engine's — the beta adds no overhead at the same topology, and on `docs` the 20% it does add is
+the `document` flow doing review work stable cannot express. Round 1's 34×/12× figures belong to
+the manager topology (four child runs plus a manager), not to the beta.
 
 **Cross-vendor dispatch was not measured in either round.** Codex is installed on the bench
 machine but not logged in, so every `vendor: auto` route reported `codex unreachable` and every
