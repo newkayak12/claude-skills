@@ -318,6 +318,97 @@ function retryPackage(task, pkgId, feedback) {
   return { task: saveRun(task), attempt, reason: '' };
 }
 
+// ---------- repair: the package whose worktree is the integration tree ----------
+
+// A seam is a defect that exists only in the combined tree: package P2's README example needs
+// something P4 installed, two packages' exports disagree about a name. tm_retry({package_id})
+// cannot reach it - it reopens that package in its OWN worktree, where the offending claim is
+// still true and the defect does not reproduce. `goal-docs` round 2 ended settled-failure
+// exactly there: every package accepted, integrate refusing twice, and no tool that could see
+// what integrate saw. The answer is a package whose worktree IS the integration tree.
+//
+// Which integrate that would be, or why it is not one. Returns {node} or {error}: the caller
+// throws, and the error has to name what to call instead - a manager session that gets an
+// unhelpful refusal here has nowhere left to go.
+function integrateToRepair(task) {
+  const last = task.nodes.filter((x) => x.stage === 'integrate').pop();
+  if (!last) {
+    return { error: 'this task has integrated nothing yet, so there is no combined tree to repair. '
+      + 'Retry a package with tm_retry({task_id, package_id}), or reshape with tm_retry({task_id}).' };
+  }
+  if (last.state !== 'failed') {
+    return { error: `${last.node_id} is ${last.state}, not failed: a repair package exists to make a failed integrate's checks pass, and there is nothing here to repair`
+      + (last.state === 'pending' ? '. Run it first - tm_next hands you its briefing.' : '.') };
+  }
+  const r = last.result || {};
+  if (r.verified === true) {
+    return { error: `${last.node_id} verified the combined tree; its failure is not a seam. Fix what its stage_ok=false named, or retry the package its checks blame with tm_retry({task_id, package_id}).` };
+  }
+  if ((r.conflicts || []).length) {
+    const ids = (r.conflicting_packages || []).map((x) => `"${x}"`).join(', ');
+    return { error: `${last.node_id} failed on a merge conflict (${r.conflicts.join(', ')}), not on its checks: two packages own the same path, which is a shape failure and no repair can fix it. `
+      + `tm_retry({task_id, repackage: [${ids}]}) reshapes them together.` };
+  }
+  if (!last.integration || !last.integration.cwd) {
+    return { error: `${last.node_id} never reached a combined tree (${r.reason || 'it failed before the merges'}), so there is nothing for a repair package to work in.` };
+  }
+  if (task.nodes.some((x) => x.supersedes === last.node_id)) {
+    return { error: `${last.node_id} has already been superseded; run the integrate that replaced it instead.` };
+  }
+  return { node: last };
+}
+
+// Append a repair package to the shape, expand it like any other package, and open a fresh
+// integrate behind it - the same move retryPackage makes when a package it retried was the one
+// an integrate blamed. The old integrate stays failed as evidence, superseded, and the goal
+// gate and report move behind the new one.
+function openRepair(task, integ) {
+  const packages = (task.spec && task.spec.packages) || [];
+  const priors = packages.filter((p) => p.repair);
+  if (priors.length > task.max_retries) {
+    // Settle before saving: the same ordering retryPackage needs, for the same reason.
+    const unreachable = settleFailure(task, integ);
+    return { task: saveRun(task), package_id: null, reason: 'repair budget exhausted', unreachable };
+  }
+  const round = Number(String(integ.node_id).split(':')[1] || 1);
+  const id = `R${priors.length + 1}`;
+  const r = integ.result || {};
+  const brief = [
+    `This package works on the COMBINED tree of every package in this task - its worktree is the integration worktree, with all package branches already merged - and its whole job is to make the integration checks below pass.`,
+    '',
+    `Integration round ${round} was not verified.`,
+    r.reason ? `Why it refused:\n${r.reason}` : '',
+    (r.gaps || []).length ? `Gaps it named:\n${bullets(r.gaps)}` : '',
+    (r.checks || []).length ? `Checks it ran:\n${bullets(r.checks)}` : '',
+    r.evidence ? `Evidence:\n${r.evidence}` : '',
+  ].filter(Boolean).join('\n');
+  packages.push({
+    id,
+    title: `repair: integration ${round}`,
+    repair: true,
+    integration_of: integ.node_id,
+    flow: task.flow_chosen || 'auto',
+    brief,
+    acceptance: ((task.spec && task.spec.acceptance) || []).slice(),
+    // Every path any package claimed: the seam is between them, so none of them is out of bounds.
+    touches: [...new Set(packages.flatMap((p) => (p.touches || []).map(String)))],
+    deps: packages.filter((p) => !p.repair).map((p) => String(p.id)),
+  });
+  // The same deps the failed integrate had - every package's accept, all done. A repair that
+  // depended on the failed integrate itself could never become ready: a failed node is never
+  // satisfied.
+  const accept = pushChain(task, PACKAGE_CHAIN, id, 1, integ.deps.slice(), [], { feedback: '' });
+  const fresh = `integrate:${nextIndex(task, 'integrate')}`;
+  const fb = [r.reason, ...(r.gaps || []), ...(r.checks || [])].filter(Boolean).join('\n- ');
+  task.nodes.push(node(fresh, 'integrate', [accept], { subgoal_id: null, feedback: fb, supersedes: integ.node_id }));
+  for (const x of task.nodes) {
+    if (x.node_id === fresh) continue;
+    x.deps = x.deps.map((d) => (d === integ.node_id ? fresh : d));
+    x.after = (x.after || []).map((d) => (d === integ.node_id ? fresh : d));
+  }
+  return { task: saveRun(task), package_id: id, integrate: fresh, reason: '' };
+}
+
 // ---------- worktrees and child runs ----------
 
 function git(cwd, args) {
@@ -415,6 +506,43 @@ function packageOf(task, id) {
   return ((task.spec && task.spec.packages) || []).find((p) => String(p.id) === String(id)) || null;
 }
 
+// A repair package gets no worktree of its own: it runs IN the integration worktree of the
+// integrate that refused, because that is the only tree the seam exists in. Everything else
+// about it is an ordinary package, which is why this returns the same shape ensureWorktree
+// does - created:false, since the tree is already there with every package branch merged.
+function repairWorktree(task, pkg) {
+  const src = task.nodes.find((x) => x.node_id === String(pkg.integration_of) && x.integration);
+  if (!src) return { ok: false, path: null, branch: null, reason: `${pkg.id} repairs ${pkg.integration_of}, which has no integration worktree` };
+  if (!existsSync(join(src.integration.cwd, '.git'))) return { ok: false, path: src.integration.cwd, branch: src.integration.branch, reason: `the integration worktree at ${src.integration.cwd} is gone` };
+  return { ok: true, path: src.integration.cwd, branch: src.integration.branch, created: false };
+}
+
+// Where integration round N starts. Normally the project's HEAD, with every package branch
+// merged in. But once a repair package has been accepted, its delivered branch IS the
+// integration branch of the round that failed, now carrying the repair commit: merging the
+// package branches into a fresh tree from HEAD would rebuild exactly the tree the repair was
+// made against and throw the repair away. This finds that branch - named by the integrate's
+// own deps first, and otherwise by the latest accepted repair package the shape holds.
+function repairBase(task, n) {
+  const named = (n.deps || []).map((d) => /^accept:(.+):\d+$/.exec(String(d))).filter(Boolean).map((m) => m[1]);
+  const rest = ((task.spec && task.spec.packages) || []).map((p) => String(p.id)).reverse();
+  for (const id of [...named, ...rest]) {
+    const pkg = packageOf(task, id);
+    if (!pkg || !pkg.repair) continue;
+    const branch = deliveredBranch(task, id);
+    const d = task.nodes.filter((x) => x.subgoal_id === String(id) && x.stage === 'dispatch' && x.state === 'done' && x.result && x.result.accept === true).pop();
+    if (!branch || !d) continue;
+    return { package: String(pkg.id), branch, commit: (d.result && d.result.commit) || null };
+  }
+  return null;
+}
+
+// Does this worktree's HEAD already contain that branch? Cheap, and the only way to tell a
+// package branch the repair was made on from one a retry delivered while the repair ran.
+function containsBranch(cwd, branch) {
+  return git(cwd, ['merge-base', '--is-ancestor', branch, 'HEAD']).ok;
+}
+
 // Array.isArray rather than a truthiness check: a shape that returns "skills":
 // "develop:cli-developer" as a bare string would otherwise be spread through the briefing one
 // character per bullet, and the package would look like it had asked for twenty skills.
@@ -428,11 +556,25 @@ function packageSkills(pkg) {
 function childContext(task, pkg) {
   const lines = [];
   lines.push(`This run is package ${pkg.id} (${pkg.title}) of a larger task managed outside this worktree.`);
-  lines.push(`The worktree is private to this package and branched from the project's HEAD; integration happens later, elsewhere.`);
+  if (pkg.repair) {
+    // The one package that is not private to itself. Said plainly, because the defect it is
+    // here for cannot be seen from any single package's tree: every other child was told to
+    // stay inside its own paths, and this one has to be told the opposite in as many words.
+    lines.push(`This worktree is the COMBINED tree of every package in this task: all of their branches are already merged here, and you are on the integration branch itself.`);
+    lines.push(`The goal-level integration checks were run on this tree and FAILED. What failed is in your request above. Your job is to make those checks pass.`);
+    lines.push(`Every package's files are yours to touch - that is the point of this package. The defect lives in the seam between packages, which is why no package could repair it in its own worktree.`);
+    lines.push(`Do not undo another package's work to get the checks green. Reconcile them: change the least that makes the combined tree true.`);
+  } else {
+    lines.push(`The worktree is private to this package and branched from the project's HEAD; integration happens later, elsewhere.`);
+  }
   lines.push('');
   lines.push('Package acceptance - what the manager will judge this run against:');
   lines.push(bullets(pkg.acceptance));
-  if ((pkg.touches || []).length) {
+  if (pkg.repair && (pkg.touches || []).length) {
+    lines.push('');
+    lines.push('Paths the packages of this task own. All of them are in scope here:');
+    lines.push(bullets(pkg.touches));
+  } else if ((pkg.touches || []).length) {
     lines.push('');
     lines.push('Paths this package owns. Stay inside them; another package owns the rest:');
     lines.push(bullets(pkg.touches));
@@ -477,7 +619,11 @@ function openChild(task, n) {
   // from the first dependency's branch and the rest are merged in. A conflict between two
   // dependencies here is the same fact integration would find later, found earlier.
   const depBranches = (pkg.deps || []).map((d) => deliveredBranch(task, d)).filter(Boolean);
-  const wt = ensureWorktree(task, String(pkg.id), depBranches[0] || 'HEAD');
+  // A repair package is the exception: its tree is the integration tree of the integrate it
+  // repairs, already holding every package's work. Nothing is created and nothing is merged.
+  const wt = pkg.repair
+    ? repairWorktree(task, pkg)
+    : ensureWorktree(task, String(pkg.id), depBranches[0] || 'HEAD');
   if (!wt.ok) {
     n.state = 'failed';
     n.result = { stage_ok: false, reason: `could not create a worktree for ${pkg.id}: ${wt.reason}` };
@@ -576,14 +722,18 @@ function foldChild(task, n) {
 
 function prepareIntegration(task, n) {
   const round = Number(String(n.node_id).split(':')[1] || 1);
-  const wt = ensureWorktree(task, round === 1 ? 'integration' : `integration-${round}`);
+  // After an accepted repair, this round starts FROM the repaired integration branch and
+  // merges nothing: that branch already is every package branch merged, plus the repair. The
+  // seam was fixed in the combined tree, and re-merging from HEAD would recreate it.
+  const repair = repairBase(task, n);
+  const wt = ensureWorktree(task, round === 1 ? 'integration' : `integration-${round}`, repair ? repair.branch : 'HEAD');
   if (!wt.ok) {
     n.state = 'failed';
     n.result = { stage_ok: false, verified: false, reason: `could not create the integration worktree: ${wt.reason}` };
     return;
   }
-  const merged = [];
-  const ordered = dependencyOrder(task.spec.packages || []);
+  const merged = repair ? [{ package: repair.package, branch: repair.branch, commit: repair.commit }] : [];
+  const ordered = dependencyOrder((task.spec.packages || []).filter((p) => !p.repair));
   for (const p of ordered) {
     const branch = deliveredBranch(task, p.id);
     if (!branch) {
@@ -591,6 +741,10 @@ function prepareIntegration(task, n) {
       n.result = { stage_ok: false, verified: false, reason: `package ${p.id} has no delivered branch to merge` };
       return;
     }
+    // A package branch the repair was made on is already in this tree. Only one delivered
+    // since - a retry that landed while the repair ran - is outside it, and it is merged in
+    // dependency order like any other.
+    if (repair && containsBranch(wt.path, branch)) continue;
     const m = mergeInto(wt.path, branch, `harness: integrate ${p.id} (${branch})`);
     if (!m.ok) {
       const owners = ownersOf(ordered.filter((q) => merged.some((x) => x.package === String(q.id))), m.conflicts);
@@ -609,8 +763,8 @@ function prepareIntegration(task, n) {
     }
     merged.push({ package: String(p.id), branch, commit: m.commit });
   }
-  n.integration = { cwd: wt.path, branch: wt.branch, merged };
-  record(task, { event: 'integrated', task_id: task.run_id, node_id: n.node_id, merged: merged.length });
+  n.integration = { cwd: wt.path, branch: wt.branch, merged, ...(repair ? { based_on: 'repair', repair_package: repair.package } : {}) };
+  record(task, { event: 'integrated', task_id: task.run_id, node_id: n.node_id, merged: merged.length, ...(repair ? { based_on: 'repair' } : {}) });
 }
 
 // ---------- briefings ----------
@@ -689,7 +843,7 @@ function composeTaskPrompt(task, n) {
   if (n.stage === 'integrate' && n.integration) {
     L.push('');
     L.push(`## Integration worktree`);
-    L.push(`${n.integration.cwd} on branch ${n.integration.branch}, created from the project's HEAD.`);
+    L.push(`${n.integration.cwd} on branch ${n.integration.branch}, created from ${n.integration.based_on === 'repair' ? `the repaired integration branch of package ${n.integration.repair_package}` : `the project's HEAD`}.`);
     L.push(`Already merged, in dependency order:`);
     L.push(bullets((n.integration.merged || []).map((m) => `${m.package}: ${m.branch} -> ${m.commit}`)));
     L.push(`Run the goal-level checks there. Read the seams: where one package's output meets another's input.`);
@@ -901,8 +1055,8 @@ const TOOLS = [
   },
   {
     name: 'tm_retry',
-    description: 'Open a fresh attempt. With package_id: a new dispatch in the same worktree, carrying the rejection forward into the child request. With repackage: [ids] after an integration conflict, reshape with those packages told to become one or to depend on each other. Without either: reshape (shape + critique) and discard the package graph. When the budget is gone the failure is settled and the report is released over the unreachable set.',
-    inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, package_id: { type: 'string' }, repackage: { type: 'array', items: { type: 'string' }, description: 'the conflicting_packages an integrate or dispatch failure named' } }, required: ['task_id'] },
+    description: 'Open a fresh attempt. With package_id: a new dispatch in the same worktree, carrying the rejection forward into the child request. With repackage: [ids] after an integration conflict, reshape with those packages told to become one or to depend on each other. With repair: true after an integrate came back verified=false with no conflicts: a repair package whose worktree IS the integration tree, for a seam no package can reproduce alone. Without any of them: reshape (shape + critique) and discard the package graph. When the budget is gone the failure is settled and the report is released over the unreachable set.',
+    inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, package_id: { type: 'string' }, repackage: { type: 'array', items: { type: 'string' }, description: 'the conflicting_packages an integrate or dispatch failure named' }, repair: { type: 'boolean', description: 'the last integrate failed with verified=false and no conflicts: open a package that runs IN the integration worktree, where every package branch is merged and the defect is visible. package_id: "integration" is an alias for it.' } }, required: ['task_id'] },
     outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, retried: { type: 'boolean' }, attempt: { type: 'number' }, reason: { type: 'string' }, unreachable: { type: 'array', items: { type: 'string' } } }, required: ['task_id', 'retried'] },
   },
   {
@@ -1043,6 +1197,19 @@ function toolRetry(a) {
     const out = retryShape(task, fb);
     record(task, { event: out.attempt ? 'tm_repackage' : 'tm_settle', task_id: task.run_id, packages: ids, attempt: out.attempt });
     return { task_id: task.run_id, target: 'shape', repackage: ids, retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable, ...toolNext({ task_id: task.run_id }) };
+  }
+  // An integrate that refused over a seam has no package to blame: reopening one puts the child
+  // back in its own worktree, where the offending claim is still true and the defect is not
+  // reproducible. The repair package is the route out, and `package_id: "integration"` is the
+  // alias for it because that is what the first real task to reach this wedge reached for.
+  if (a.repair === true || (a.package_id != null && String(a.package_id) === 'integration')) {
+    const target = integrateToRepair(task);
+    if (target.error) throw new Error(target.error);
+    const out = openRepair(task, target.node);
+    record(task, { event: out.package_id ? 'tm_repair' : 'tm_settle', task_id: task.run_id, package_id: out.package_id, integrate: target.node.node_id });
+    return { task_id: task.run_id, target: out.package_id || target.node.node_id, package_id: out.package_id || undefined, repair: true,
+      repairs: target.node.node_id, retried: !!out.package_id, attempt: out.package_id ? 1 : undefined,
+      reason: out.reason, unreachable: out.unreachable, ...toolNext({ task_id: task.run_id }) };
   }
   if (!a.package_id) {
     const source = task.nodes.filter((n) => (n.stage === 'critique' || n.stage === 'shape') && n.state === 'failed' && n.result).pop();

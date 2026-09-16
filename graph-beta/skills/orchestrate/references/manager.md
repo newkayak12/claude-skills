@@ -20,6 +20,12 @@ if state == "blocked":
     integrate verified=false    -> tm_retry({task_id, package_id}) for the package its checks blame;
                                    the manager reopens integrate:N over the new accept by itself.
                                    package_id must be one the shape named — "integrate" is a node, not a package
+    integrate verified=false,
+      no conflicts, no package
+      whose own worktree shows
+      the defect (a seam)       -> tm_retry({task_id, repair: true})   # or package_id: "integration"
+                                   a repair package that runs IN the integration worktree, on the
+                                   combined tree; the manager opens integrate:N+1 behind it
     a failed shape or critique  -> tm_retry({task_id})                # reshape; the package graph is discarded
     retried == false            -> budget gone: downstream is `unreachable`, `report` is in ready[]
 tm_status({task_id})                              -> final counts; tm_status({}) lists every task
@@ -47,6 +53,10 @@ dependency's branch with the others merged in, so it builds on what they deliver
 `integrate` becomes ready, `tm_next` merges every package branch into the integration worktree
 in dependency order and records each merge commit; only then does a fresh agent get the
 `integrate` briefing, to run the goal-level checks on the combined tree and read the seams.
+
+A repair package (`tm_retry({repair: true})`) is the one package with no worktree of its own: it
+runs in the integration worktree, on the integration branch, so its commit lands there and the
+next integration round starts from that branch and re-merges nothing.
 
 A conflict at either point is observed, not reported: the node fails with `conflicts` (the
 files) and `conflicting_packages` (the one being merged, then the merged owners by declared
