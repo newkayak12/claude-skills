@@ -48,6 +48,21 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.7.0 — a rejected quality gate reassigns the subgoal itself**: a gate, review or test
+  that returned a negative verdict used to fail its node, block the run, and wait for the
+  caller to call `graph_retry`. That made the rejection advisory — a session that never called
+  it simply stopped, and the gaps the gate had found went nowhere. The engine now opens the
+  next attempt on the rejection, carrying exactly the feedback `graph_retry` would have carried
+  (the last judging node's reason, gaps and failing checks, plus a rejecting goal gate's text),
+  and settles into `unreachable` when the budget is gone precisely as before. The submit verdict
+  carries `reassigned` so the caller can see it happened. Routing reassigns too: an identity
+  whose earlier attempt at the same stage was rejected is now penalised, because `goal-docs`
+  spent its whole budget handing the same package back to the same author in the same worktree
+  to reach the same conclusion. Only the verdict reassigns — a node that could not run at all
+  keeps its existing path — and the goal gate is excluded, since its rejection blames the
+  assembled result rather than one subgoal. `graph_open({auto_reassign: false})` restores the
+  old advisory behaviour; the manager passes the setting through to every child run.
+
 - **v0.6.9 — a hook that makes the driving session dispatch instead of doing the work**: the
   plugin now ships a `PreToolUse` gate, installed with it. It does nothing until a project
   opts in with `.claude/graph-beta-dispatch.json`; with that file present, a write to a gated
