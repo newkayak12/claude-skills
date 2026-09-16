@@ -40,15 +40,28 @@ export const CROSS_VENDOR_STAGES = new Set(['implement', 'test', 'draft', 'repor
 // makes author and reviewer different identities without anyone arranging it.
 export const EXECUTION_STAGES = new Set(['implement', 'test', 'draft']);
 // The node whose author a judging stage must not share an identity with.
-const AUTHOR_OF = { critique: 'setgoal', gate: ['implement', 'draft'], review: 'draft' };
+// test joins: the node that verifies an implementation must not be the identity that wrote it.
+// Measured on code-flat 2026-09-16: implement and test both went to the peer (both are
+// CROSS_VENDOR_STAGES), the implementer's own "am I main" guard compared import.meta.url against
+// an unresolved argv path, the tester invoked the CLI through the one path that hides that, three
+// gates ran no checks, and the integrated CLI printed nothing when called by its /var symlink.
+const AUTHOR_OF = { critique: 'setgoal', gate: ['implement', 'draft'], review: 'draft', test: 'implement' };
 
 export function rankCandidates(run, node, candidates) {
   const execution = EXECUTION_STAGES.has(node.stage);
   const cross = CROSS_VENDOR_STAGES.has(node.stage);
-  const preferred = run.host_vendor
-    ? (cross ? (run.host_vendor === 'claude' ? 'codex' : 'claude') : run.host_vendor)
-    : (cross ? 'codex' : 'claude');
   const peers = run.nodes.filter(n => n.subgoal_id === node.subgoal_id && n.node_id !== node.node_id);
+  // test's preference is "not the implementer", wherever the implementer ended up: a peer that
+  // fell back to the host still leaves the same blind spot in author and tester if test follows
+  // the static cross-vendor rule to the same vendor.
+  const implementer = node.stage === 'test' ? peers.filter(n => n.stage === 'implement' && n.state === 'done').at(-1) : null;
+  const implVendor = implementer ? (implementer.executor || implementer.vendor) : null;
+  const other = (v) => (v === 'claude' ? 'codex' : 'claude');
+  const preferred = implVendor
+    ? other(implVendor)
+    : run.host_vendor
+      ? (cross ? other(run.host_vendor) : run.host_vendor)
+      : (cross ? 'codex' : 'claude');
   const authored = [].concat(AUTHOR_OF[node.stage] || []);
   const actor = node.stage === 'critique'
     ? run.nodes.filter(n => n.stage === 'setgoal' && n.state === 'done').at(-1)

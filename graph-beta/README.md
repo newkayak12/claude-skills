@@ -48,6 +48,20 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.8.1 — test goes to whoever did not implement**: the 6/9 on the manager run was traced to
+  one line. The integrated CLI is correct when run from inside the tree and prints nothing when
+  reached by its `/var` symlink, because its "am I main" guard compares `import.meta.url` to the
+  unresolved `process.argv[1]`. The peer (codex) wrote it; the peer's test node invoked it
+  through the one path that hides the mismatch and reported 17/17; three host gates accepted at
+  92–95 with `checks: []`. The plain-session CLI has no such guard, hence its 9/9. This is not
+  "the other vendor cannot be trusted" — the same run's 17 codex nodes all verified their file
+  claims and `npm test` is 85/85 — it is author and tester sharing a vendor and therefore a blind
+  spot, which `CROSS_VENDOR_STAGES` guaranteed by sending both to the peer. `rankCandidates` now
+  prefers, for `test`, whichever vendor did **not** implement the subgoal (`AUTHOR_OF.test =
+  'implement'`), including when the implementer fell back to the host. Every other score loss
+  to date was spec drift on all-Claude runs or an engine bug; the analysis is in
+  `scripts/bench/README.md`. 161 tests.
+
 - **v0.8.0 — the recursion moves into the process tree, and the scorer starts counting what the
   harness is for**: four changes built in parallel from one diagnosis. The manager had been
   relaying every child node's briefing and result through its own context — 54 nodes across five

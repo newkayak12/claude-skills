@@ -102,3 +102,22 @@ test('concurrent saves retain capacity exclusions and explicit reset wins over s
     assert.equal(loadRun(cwd, original.run_id).capacity_epoch, 1);
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
+
+test('test goes to whichever vendor did not implement the subgoal', () => {
+  for (const host of ['claude', 'codex']) {
+    const other = host === 'claude' ? 'codex' : 'claude';
+    // The ordinary case: implement went to the peer, so test comes back to the host.
+    let run = { host_vendor: host, host_model: 'm', nodes: [{ node_id: 'implement:U1:1', stage: 'implement', subgoal_id: 'U1', state: 'done', executor: other }] };
+    let ranked = rankCandidates(run, { node_id: 'test:U1:1', stage: 'test', subgoal_id: 'U1' }, ['claude', 'codex']);
+    assert.equal(ranked[0].vendor, host, `implement on ${other} -> test on ${host}`);
+    assert.match(ranked.find((r) => r.vendor === other).reason, /same_actor=true/);
+    // The peer ran out and implement fell back to the host: test must then go to the peer,
+    // not follow the static cross-vendor rule to the host and share the author's blind spot.
+    run = { host_vendor: host, host_model: 'm', nodes: [{ node_id: 'implement:U1:1', stage: 'implement', subgoal_id: 'U1', state: 'done', executor: host }] };
+    ranked = rankCandidates(run, { node_id: 'test:U1:1', stage: 'test', subgoal_id: 'U1' }, ['claude', 'codex']);
+    assert.equal(ranked[0].vendor, other, `implement on ${host} -> test on ${other}`);
+    // Another subgoal's implementer is not this test's author.
+    run = { host_vendor: host, host_model: 'm', nodes: [{ node_id: 'implement:U2:1', stage: 'implement', subgoal_id: 'U2', state: 'done', executor: host }] };
+    assert.equal(rankCandidates(run, { node_id: 'test:U1:1', stage: 'test', subgoal_id: 'U1' }, ['claude', 'codex'])[0].vendor, other);
+  }
+});
