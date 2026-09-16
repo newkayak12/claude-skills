@@ -40,10 +40,47 @@ export const STAGES = [
 // `reasoning` names the chain stages that write nothing. Everything not listed there,
 // and not in BASE_REASONING, is a mutating stage: routed to a writable sandbox, offered
 // one at a time under isolation, and cross-checked against the worktree.
+//
+// `skills` is method, by the stage that does the work. It is named here rather than asked
+// for in the spec because asking did not work: the first live runs came back with
+// `skills: []` on every subgoal and no `skills` field at all on any package, while
+// `persona` - asked for in the same breath - was filled in every time and filled well.
+// The difference is that the flow hands setgoal a list of personas to choose from, and the
+// skills contract handed it a shape (`["plugin:skill"]`) and no candidates. An agent that
+// cannot see what is installed will not invent a name, and an empty array is the honest
+// answer to an impossible question. A kind knows what its own stages are for, so the kind
+// is where the list belongs - which is also how the generation this replaced did it, with
+// skill names written into the prompts rather than chosen at runtime.
 export const KINDS = {
-  subgoal: { chain: ['implement', 'test', 'gate'], reasoning: [] },
-  document: { chain: ['draft', 'review', 'gate'], reasoning: ['review'] },
+  subgoal: {
+    chain: ['implement', 'test', 'gate'],
+    reasoning: [],
+    skills: {
+      implement: ['develop:clean-code'],
+      test: ['develop:testing-workflow', 'completion:verification-before-completion'],
+      gate: ['think:devils-advocate'],
+    },
+  },
+  document: {
+    chain: ['draft', 'review', 'gate'],
+    reasoning: ['review'],
+    skills: {
+      draft: ['write:doc-coauthoring'],
+      review: ['write:writer-verification'],
+      gate: ['think:devils-advocate'],
+    },
+  },
 };
+
+// The method a node inherits from its kind. A spec that names its own `skills` for the
+// subgoal replaces the family for authoring stages - setgoal knows this particular piece
+// of work, the kind only knows the shape of the work - but a judging stage keeps its own:
+// a gate's method is the gate's, and handing it the author's was the bug that made a gate
+// act as the implementer it was supposed to be checking.
+export function kindSkills(kind, stage) {
+  const table = (KINDS[kind] || KINDS[DEFAULT_KIND]).skills || {};
+  return (table[stage] || []).slice();
+}
 export const DEFAULT_KIND = 'subgoal';
 
 export function kindOf(sg) {

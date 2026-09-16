@@ -2394,7 +2394,30 @@ test('persona and method go to the hand that works, never to the one that judges
     const gate = await brief('gate:U1:1');
     assert.ok(gate, 'the gate opened');
     assert.doesNotMatch(gate, /Act as:/, 'the judge is not handed the author\'s identity');
-    assert.doesNotMatch(gate, /develop:clean-code/, 'nor the author\'s method');
+    assert.doesNotMatch(gate, /develop:clean-code/, 'nor the method the spec picked for the author');
+    assert.match(gate, /think:devils-advocate/, 'it has its own method, from the kind');
     assert.match(gate, /judge, not the actor/, 'it is told the opposite, and now nothing contradicts it');
   }, { isolated: true });
+});
+
+test('a subgoal that names no skills still gets its method from the kind', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('graph_submit', {
+      run_id: runId, cwd, node_id: 'setgoal',
+      payload: ok({ handoff: 's', spec: { goal: 'G', acceptance: ['A'], subgoals: [
+        { id: 'U1', kind: 'subgoal', title: 'code', acceptance: ['a'], test: ['x'], deps: [] },
+        { id: 'D1', kind: 'document', title: 'doc', acceptance: ['b'], deps: [] },
+      ] } }),
+    });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+    const nx = await c.call('graph_next', { run_id: runId, cwd });
+    const brief = (id) => readFileSync(nx.ready.find((x) => x.node_id === id).briefing_path, 'utf8');
+    // Live runs returned skills: [] every time when the spec was asked for them, so the
+    // kind has to carry the method or nothing does.
+    assert.match(brief('implement:U1:1'), /develop:clean-code/, 'code work gets the code family');
+    assert.match(brief('draft:D1:1'), /write:doc-coauthoring/, 'writing gets the writing family');
+    assert.doesNotMatch(brief('draft:D1:1'), /develop:clean-code/, 'and not the other kind\'s');
+    // Not isolated: isolation offers one mutating node at a time, and this needs both at once.
+  });
 });
