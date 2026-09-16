@@ -10,13 +10,15 @@ the balanced default.
 
 | value | behavior |
 |---|---|
-| `"auto"` (default) | **stays on `self`** — the candidate list is empty unless you pass `candidates` |
-| `"auto"` + `candidates: [...]` | try those vendors in order, fall back to `self` |
+| `"auto"` (default) | tries `claude` then `codex` (whichever is not `host_vendor` first), falls back to `self` if neither is ready |
+| `"auto"` + `candidates: [...]` | try those vendors in order instead, fall back to `self` |
 | a vendor name | require it — a node returns `vendor-failure` rather than degrading |
 | `"self"` | the host dispatches each node to a fresh native agent |
 
-**Registering a vendor does not enrol it in `auto`.** An installed, ready Codex still goes
-unused in a bare `graph_open({vendor: "auto"})` call until you name it (`vendor: "codex"`)
+**Registering a THIRD-PARTY vendor does not enrol it in `auto`.** `auto` only ever tries
+the two builtins, host's own name ranked last so a ready peer is preferred over asking the
+driving session to do the work itself. An installed, ready custom vendor still goes unused
+in a bare `graph_open({vendor: "auto"})` call until you name it (`vendor: "your-vendor"`)
 or list it in `candidates`.
 
 ## Host identity and provenance
@@ -104,3 +106,16 @@ run, write nothing, and still exit 0.
 implement the subgoal, wherever that vendor ended up. A tester that shares its author's vendor
 shares its author's assumptions about how the program is invoked; the first cross-vendor run
 proved it with a CLI that printed nothing through a symlink and 17/17 from its own tests.
+
+## Method and MCP mounts
+
+`tm_open({skills: {...}})` pins method to the manager's own stages (`mcp/taskmanager.mjs`
+STAGE_SKILLS). `graph_open` has the same mechanism for the graph engine's own stages —
+`plan`, `critique`, every `gate` (a subgoal gate and `gate:goal` alike), `test`, `review` —
+none of which has any other way to get method, since a kind's skills and a spec's named
+skills only ever apply inside a subgoal chain. `graph_open({skills: {plan: [...]}})`
+overrides one stage without touching the rest; `skills: false` runs every one of those
+stages on its contract alone. `graph_open({mounts: {...}})` is the same switch for the
+advisory MCP tools offered per stage (`plan` gets sequential-thinking, `setgoal` gets
+think-tool, `gate:goal` gets mcp-reasoner) — a tool that is not connected is skipped in
+silence, never searched for and never blocking.

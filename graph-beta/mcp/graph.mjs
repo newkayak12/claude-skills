@@ -331,6 +331,13 @@ export function createRun(opts) {
     // into a rule every subgoal must follow.
     flow: FLOWS[opts.flow] ? opts.flow : 'auto',
     mixed: opts.mixed !== false,
+    // graph_open({skills}) mirrors tm_open's mechanism (taskmanager.mjs STAGE_SKILLS) for
+    // the graph engine's own stages - see mounts.mjs. false turns stage-mounted method off
+    // entirely; an object overrides the per-stage default; anything else keeps it.
+    skills: opts.skills === false ? false : (opts.skills && typeof opts.skills === 'object' ? opts.skills : null),
+    // graph_open({mounts}) is the same switch for the advisory MCP tools mounts.mjs offers
+    // per stage (plan, setgoal, gate:goal) - skipped in silence if the tool is not connected.
+    mounts: opts.mounts === false ? false : (opts.mounts && typeof opts.mounts === 'object' ? opts.mounts : null),
     flow_chosen: null,
     size: null,
     created_at: Date.now(),
