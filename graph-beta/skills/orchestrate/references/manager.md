@@ -14,7 +14,13 @@ for each ready manager node:                      # shape, critique, accept:Pn, 
 for each child in children[]:
     child_state != "running"   -> tm_submit({task_id, node_id: child.node_id})   # NO payload: the manager reads the child
     driver.alive == true       -> wait; poll tm_next again. Its own session is driving it; you do not
-    driver.alive == false      -> the driver died mid-run: tm_submit folds it blocked, then tm_retry({task_id, package_id})
+                                  (a dead driver polled here was already respawned on the SAME run_id, or
+                                  parked — see waiting_capacity below — before you ever saw it: nothing to do)
+    waiting_capacity present   -> tell the user the reset time in .reason and stop. tm_retry({task_id,
+                                  package_id, reset_capacity: true}) resumes it once capacity is back — this
+                                  spends no restart
+    driver.alive == false      -> the restart budget (driver_restarts, default 2) is spent: tm_submit folds
+                                  it blocked with every attempt's stderr, then tm_retry({task_id, package_id})
     no driver at all           -> child_driver "inline" was chosen: drive it yourself with loop.md,
                                   cwd=child.cwd and run_id=child.run_id in every graph_* call
 if nothing is ready and a driver is alive: poll tm_next until one of them stops.
@@ -47,15 +53,28 @@ refused and costs nothing.
 
 Each child is a full graph run: `plan → setgoal → critique → …`, isolated in its worktree at
 `child.cwd`, driven by its own session following `loop.md` there. Yours is to wait: poll
-`tm_next` and read `driver: {pid, alive, log}` — the log is that session's stream if you need to
-see what it is doing. Children with no dependency between them run at the same time; they cannot
-collide, each has its own tree. A child's own `graph_retry` budget is the child's; when it ends
-`blocked`, fold it — the manager records the failure with the child's goal-gate gaps and
-`tm_retry({package_id})` opens the next attempt in the same worktree.
+`tm_next` and read `driver: {pid, alive, log, restarts}` — the log is that session's stream if
+you need to see what it is doing. Children with no dependency between them run at the same time;
+they cannot collide, each has its own tree. A child's own `graph_retry` budget is the child's;
+when it ends `blocked`, fold it — the manager records the failure with the child's goal-gate gaps
+and `tm_retry({package_id})` opens the next attempt in the same worktree.
 
-A driver that exits with the run still `running` (a crash, a usage limit) is not a verdict about
-the package: `tm_submit` folds that attempt as blocked with the driver's stderr as the reason, and
-`tm_retry({package_id})` gives the package a fresh session where the dead one stopped.
+A driver that exits with the run still `running` is not a verdict about the package, and `tm_next`
+handles it before you ever see it as something to fold:
+
+- **The run finished some other way** (the driver's own last act) — an ordinary fold reads that
+  from the child's state, not from the driver dying, and nothing below applies.
+- **A usage limit** — the driver's own stream said so — parks the child on `waiting_capacity:
+  {reason, since}` and respawns nothing. No restart is spent. Say the reset time in `.reason` and
+  stop; `tm_retry({task_id, package_id, reset_capacity: true})` clears it and respawns once
+  capacity is back.
+- **Anything else** (a crash, a kill) and the restart budget (`driver_restarts`, default 2, a
+  `tm_open` option) is not spent — `tm_next` respawns a fresh driver on the SAME child `run_id`,
+  told to resume rather than redo, and records the death on `driver.restarts`. Poll again; there
+  is nothing for you to do.
+- **The budget is spent** — `tm_submit` folds that attempt as blocked, with every attempt's
+  stderr as the reason, and `tm_retry({package_id})` gives the package a fresh session (and a
+  fresh restart budget) where the dead one stopped.
 
 Only a task opened with `child_driver: "inline"` hands you the child nodes — choose it when you
 must watch a package node by node, and expect the context cost.
