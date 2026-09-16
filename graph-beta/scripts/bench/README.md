@@ -166,7 +166,44 @@ the bench's own scoring did not: a score is now printed alongside the harness's 
 (`delivered` / `settled-failure` / `incomplete` / `not-delivered`) precisely so a rejected tree
 can never again be reported as a pass.
 
-**Cross-vendor dispatch was not measured in either round.** Codex is installed on the bench
+## Results — cross-vendor, 2026-09-16
+
+The first run in which any node executed on a vendor other than the one driving. Codex
+logged in on the bench machine; `betas` arm, so one graph run and no manager.
+
+| arm | case | score | wall | cost | nodes | what happened |
+|---|---|---|---|---|---|---|
+| betas + codex | code-flat | 8/9 (`readme`) | 44 min | $11.88 | 23, all done | 7 execution nodes on codex, 16 on Claude |
+
+```
+codex  (7)  draft:U1  implement:U2 test:U2  implement:U3 test:U3  implement:U4 test:U4
+claude (16) plan setgoal critique | review:U1 gate:U1..U6 gate:goal report
+            + implement:U5 test:U5 draft:U6 review:U6   (after codex ran out)
+```
+
+Until Codex's capacity ran out the split held without exception: every `draft`, `implement`
+and `test` went to the peer, every `critique`, `review` and `gate` stayed on the host. Nobody
+arranged that — `CROSS_VENDOR_STAGES` sends execution to the peer and judging stays where the
+run is driven, so **author and reviewer were different vendors on U1–U4 as a side effect of the
+routing**. Codex returned a valid stage contract 7 times out of 7.
+
+When capacity ran out the run did not stop: the vendor was recorded in
+`unavailable_vendors`, the node's `attempts` kept the reason, ranking still named codex as
+preferred, and the work fell back to Claude. The reason survives in the run file, so a reader
+can tell later why a node ran where it did.
+
+Cost did not rise: $11.88 / 44 min here against $13.20 / 50 min for `betas code` all on Claude
+(different fixtures, so this is a first signal and not a measurement).
+
+`changed_files_verified` came back `null` on all 7 codex nodes, with `contradicted_files` empty
+— no false claim, but no positive attribution either. That is the shared-worktree path and not
+a gap: `crossCheck` only asserts attribution when one node had the tree to itself. The manager
+creates every child run with `isolated: true` and hands out one mutating node at a time, and
+across the manager-path runs already on disk the tally is **49 nodes, every one
+`('isolated', true)`**. What is still unmeasured is narrow: an `isolated` node whose executor is
+codex. The mechanism is a `git status` comparison and vendor-independent, but there is no data.
+
+## Cross-vendor before 2026-09-16 — not measured Codex is installed on the bench
 machine but not logged in, so every `vendor: auto` route reported `codex unreachable` and every
 node ran on Claude — the harness's first stated purpose, dispatching to whichever vendor can do
 the work regardless of which one is driving, has no data yet. That round needs `codex login` on

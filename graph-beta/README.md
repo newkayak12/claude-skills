@@ -48,6 +48,20 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.6.8 — a node ran on the other vendor, and the split held on its own**: with Codex
+  logged in, `betas code-flat` put all seven execution nodes (`draft`, `implement`, `test`) on
+  `gpt-5.6-sol` and kept every `critique`, `review` and `gate` on the driving host — so author
+  and reviewer were **different vendors** on four subgoals without anyone arranging it. Codex
+  returned a valid stage contract 7 times out of 7, the run finished 23/23 nodes at 8/9 and
+  $11.88 against $13.20 for the same arm entirely on Claude, and when Codex's capacity ran out
+  mid-run the vendor was recorded in `unavailable_vendors`, the reason was kept on the node's
+  `attempts`, and the remaining work fell back to Claude without stopping. `changed_files_verified`
+  was `null` on all seven with no contradicted file: that is the shared-worktree path, where
+  positive attribution is unsound by design. The manager opens every child run `isolated` and
+  serialises mutating nodes, and the manager-path runs already on disk tally **49 nodes, all
+  `('isolated', true)`** — so what remains unmeasured is only an isolated node whose executor is
+  Codex, not the mechanism.
+
 - **v0.6.7 — the manager's stages get a method, and say which one they used**: every judging
   and planning stage now names skills it should load before working — `shape` gets
   `develop:domain-driven-design` and `architecture-designer` because its contract already says
