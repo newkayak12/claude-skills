@@ -283,6 +283,9 @@ export function createRun(opts) {
     candidates: opts.candidates || null,
     sandbox: opts.sandbox || null,
     isolated: opts.isolated === true,
+    // A rejected subgoal gate opens its own next attempt. false makes a rejection advisory
+    // again: the run blocks and waits for graph_retry, which a caller may simply never call.
+    auto_reassign: opts.auto_reassign !== false,
     max_retries: Number.isInteger(opts.max_retries) ? opts.max_retries : 2,
     // `auto` lets plan pick the flow; an entry skill pins it. `mixed` false turns the pin
     // into a rule every subgoal must follow.

@@ -240,20 +240,37 @@ test('a shared worktree reports null attribution rather than a pass', async () =
 // stage_ok on a judging node means "the judging worked". Reading only stage_ok once let
 // a rejected subgoal flow downstream as if it had passed.
 
-test('test verified=false fails the node and blocks the graph', async () => {
+test('test verified=false fails the node and the engine reassigns the subgoal itself', async () => {
   await withRun(async ({ c, cwd, runId }) => {
     await throughCritique(c, cwd, runId);
     const f = dirty(cwd);
     await c.call('graph_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [f] }) });
     const v = await c.call('graph_submit', {
-      run_id: runId, cwd, node_id: 'test:U1:1', payload: ok({ verified: false }),
+      run_id: runId, cwd, node_id: 'test:U1:1', payload: ok({ verified: false, checks: ['npm test -> 1 failing'] }),
     });
     assert.equal(v.stage_ok, true, 'the checks did run');
     assert.equal(v.state, 'failed', 'but the subgoal did not pass');
+    assert.deepEqual(v.reassigned, { subgoal_id: 'U1', attempt: 2 }, 'the rejection opens the next attempt by itself');
+    const nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.equal(nx.state, 'running', 'a rejected gate is not a dead end the caller must notice');
+    const fresh = nx.ready.find((n) => n.node_id === 'implement:U1:2');
+    assert.ok(fresh, 'the second attempt is ready without anyone calling graph_retry');
+    assert.match(readFileSync(fresh.briefing_path, 'utf8'), /npm test -> 1 failing/, 'the failing check is the feedback');
+  }, { isolated: true });
+});
+
+test('auto_reassign false keeps the rejection advisory: the run blocks and waits for graph_retry', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    const f = dirty(cwd);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [f] }) });
+    const v = await c.call('graph_submit', { run_id: runId, cwd, node_id: 'test:U1:1', payload: ok({ verified: false }) });
+    assert.equal(v.state, 'failed');
+    assert.equal(v.reassigned, undefined);
     const nx = await c.call('graph_next', { run_id: runId, cwd });
     assert.equal(nx.state, 'blocked');
     assert.deepEqual(nx.ready, []);
-  }, { isolated: true });
+  }, { isolated: true, auto_reassign: false });
 });
 
 test('gate accept=false fails the node and holds back dependents', async () => {
@@ -868,10 +885,10 @@ test('a rejected document gets a fresh draft, and the goal gate waits for the ne
       subgoals: [{ id: 'D1', kind: 'document', title: 'note', acceptance: ['a'], deps: [] }],
     });
     await c.call('graph_submit', { run_id: runId, cwd, node_id: 'draft:D1:1', payload: ok({ changed_files: [], handoff: 'v1' }) });
-    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'review:D1:1', payload: ok({ verified: false, checks: ['a -> MISSING: the invariant'] }) });
-    const rt = await c.call('graph_retry', { run_id: runId, cwd, subgoal_id: 'D1' });
-    assert.equal(rt.retried, true);
-    assert.equal(rt.attempt, 2);
+    const rv = await c.call('graph_submit', { run_id: runId, cwd, node_id: 'review:D1:1', payload: ok({ verified: false, checks: ['a -> MISSING: the invariant'] }) });
+    // The engine reassigns on the rejection; graph_retry is no longer the way here, and
+    // calling it anyway would spend a second attempt on the same rejection.
+    assert.deepEqual(rv.reassigned, { subgoal_id: 'D1', attempt: 2 });
     const st = await c.call('graph_status', { run_id: runId, cwd });
     const ids = st.nodes.map((n) => n.node_id);
     assert.ok(ids.includes('draft:D1:2') && ids.includes('review:D1:2') && ids.includes('gate:D1:2'));

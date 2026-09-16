@@ -53,8 +53,13 @@ export function rankCandidates(run, node, candidates) {
     const errors = history.filter(n => n.stage === node.stage && n.result?.stage_ok === false).length;
     const sameActor = Boolean(AUTHOR_OF[node.stage])
       && actor && (actor.executor || actor.vendor) === vendor;
+    // A retry that hands the work back to the identity whose attempt was just rejected
+    // tends to get the same work back. goal-docs spent its entire budget that way: the
+    // same author, in the same worktree, reached the same conclusion three times.
+    const rejectedBefore = (node.attempt || 1) > 1 && run.nodes.some((n) => n.subgoal_id === node.subgoal_id
+      && n.stage === node.stage && (n.attempt || 1) < (node.attempt || 1) && (n.executor || n.vendor) === vendor);
     // Keep reasoning on the driving host; execution is where load balancing helps.
-    const score = (vendor === preferred ? 10 : 0) - active * 4 - (execution ? completed * 0.25 : 0) - errors * 3 - (sameActor ? 3 : 0);
-    return { vendor, score, index, reason: `stage=${node.stage}; preference=${preferred}; active=${active}; completed=${completed}; execution_errors=${errors}; same_actor=${Boolean(sameActor)}` };
+    const score = (vendor === preferred ? 10 : 0) - active * 4 - (execution ? completed * 0.25 : 0) - errors * 3 - (sameActor ? 3 : 0) - (rejectedBefore ? 5 : 0);
+    return { vendor, score, index, reason: `stage=${node.stage}; preference=${preferred}; active=${active}; completed=${completed}; execution_errors=${errors}; same_actor=${Boolean(sameActor)}; rejected_before=${Boolean(rejectedBefore)}` };
   }).sort((a, b) => b.score - a.score || a.index - b.index);
 }

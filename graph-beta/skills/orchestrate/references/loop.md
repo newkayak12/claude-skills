@@ -21,7 +21,10 @@ while state == "running":
         vendor node  -> graph_run({run_id, node_id})   # blocks; the self agents keep working meanwhile
         quota interruption -> graph_next selects the remaining available vendor
     if state == "blocked":
-        a failed subgoal    -> graph_retry({run_id, subgoal_id})
+        a failed subgoal    -> already reassigned: the engine opened the next attempt when the
+                               gate rejected (`reassigned` on the submit verdict) and graph_next is
+                               running again. Call graph_retry({subgoal_id}) only for a run opened
+                               with auto_reassign:false - on a normal run it spends a second attempt
         a failed critique   -> graph_retry({run_id})          # redo the spec
         retried == false    -> budget gone: the broker settled it, downstream is `unreachable`,
                                and `report` is in ready[] — run it like any node

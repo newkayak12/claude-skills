@@ -160,6 +160,7 @@ function createTask(a) {
       candidates: a.candidates || null,
       sandbox: a.sandbox || null,
       max_retries: Number.isInteger(a.max_retries) ? a.max_retries : 2,
+      auto_reassign: a.auto_reassign !== false,
     },
     created_at: Date.now(),
     spec: null,

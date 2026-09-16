@@ -601,6 +601,48 @@ function reviewIndependence(run, n, executor, model) {
   return { independence: 'distinct-identity', author: theirs, reviewer: mine };
 }
 
+// The feedback is whatever judged the attempt last: a gate's gaps, or - when the attempt
+// never reached its gate - the check that failed it. A review that listed what the text
+// lacks, or a test that printed the failing command, is the feedback the next draft or
+// implement needs; carrying only gate verdicts sent it in blind.
+function subgoalFeedback(run, sid) {
+  const judged = run.nodes.filter((n) => n.subgoal_id === sid && n.result && (n.stage === 'gate' || n.state === 'failed'));
+  const last = judged[judged.length - 1];
+  // A goal gate that rejected the assembled result names what the run as a whole lacks; the
+  // subgoal being retried for it must hear that too, since its own gate passed.
+  const goal = run.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id === null && n.state === 'failed' && !n.final && n.result).pop();
+  return [
+    ...(last && last.result
+      ? [last.result.reason || '', ...(last.result.gaps || []), ...(last.result.verified === false ? (last.result.checks || []) : [])]
+      : []),
+    ...(goal ? [`goal gate ${goal.node_id}: ${goal.result.reason || 'rejected'}`, ...(goal.result.gaps || [])] : []),
+  ].filter(Boolean).join('\n- ');
+}
+
+// A rejected quality gate reassigns the subgoal itself. Leaving the next attempt to the
+// caller made the rejection advisory: a session that did not call graph_retry simply
+// stopped, and the gate's gaps went nowhere. The engine opens the next attempt instead,
+// carrying the same feedback graph_retry would have carried, and settles when the budget
+// is gone exactly as before. The goal gate is not included - its rejection blames the
+// assembled result, not one subgoal, and choosing which subgoal to reopen is a judgement
+// the manager makes.
+function autoReassign(run, n) {
+  if (run.auto_reassign === false) return null;
+  if (!n.subgoal_id || n.final) return null;
+  if (!VERDICT_FIELD[n.stage]) return null;
+  if (n.state !== 'failed') return null;
+  // Only the verdict reassigns. A node that could not run at all (transport, vendor,
+  // malformed output) is a different failure and keeps its existing path.
+  if (n.result && n.result.stage_ok !== true) return null;
+  const out = retrySubgoal(run, String(n.subgoal_id), subgoalFeedback(run, String(n.subgoal_id)));
+  record(run.cwd, {
+    event: out.attempt ? 'graph_reassign' : 'graph_settle',
+    run_id: run.run_id, subgoal_id: n.subgoal_id, rejected_by: n.node_id,
+    ...(out.attempt ? { attempt: out.attempt } : { unreachable: out.unreachable.length }),
+  });
+  return out;
+}
+
 function finishNode(run, n, result, vendorName) {
   delete n.recovery; // historical interruptions remain in n.interruptions
   n.state = nodeSucceeded(n, result) ? 'done' : 'failed';
@@ -636,9 +678,17 @@ function finishNode(run, n, result, vendorName) {
     }
   }
   saveRun(run);
+  const reassigned = autoReassign(run, n);
+  saveRun(run);
   syncOpenNodes(run);
   record(run.cwd, { event: 'node_finish', run_id: run.run_id, node_id: n.node_id, stage: n.stage, vendor: vendorName, stage_ok: n.result.stage_ok === true });
-  return verdict(run, n);
+  const out = verdict(run, n);
+  if (reassigned) {
+    out.reassigned = reassigned.attempt
+      ? { subgoal_id: n.subgoal_id, attempt: reassigned.attempt }
+      : { subgoal_id: n.subgoal_id, attempt: null, reason: reassigned.reason, unreachable: reassigned.unreachable };
+  }
+  return out;
 }
 
 function checkpointInterruption(run, n, executor, details, kind = 'quota') {
@@ -792,6 +842,7 @@ const TOOLS = [
         candidates: { type: 'array', items: { type: 'string' }, description: 'vendor preference order for "auto"' },
         sandbox: { type: 'string' },
         isolated: { type: 'boolean', description: 'cwd is a private worktree with only this run in it' },
+        auto_reassign: { type: 'boolean', description: 'default true: a rejected subgoal gate, review or test opens the next attempt itself, carrying the rejection feedback, and settles when the budget is gone. false leaves the next attempt to graph_retry, which makes a rejection advisory - a caller that never retries simply stops.' },
         max_retries: { type: 'number' },
         flow: { type: 'string', enum: ['auto', 'develop', 'document'], description: 'auto (default): plan decides from the request. develop: subgoals default to code work. document: subgoals default to written artifacts. Set by the entry skill, not by the user.' },
         mixed: { type: 'boolean', description: 'default true. false: every subgoal must be the flow\'s kind; a spec that mixes kinds fails at setgoal.' },
@@ -913,6 +964,7 @@ async function toolGraphOpen(a) {
     candidates: a.candidates || null,
     sandbox: a.sandbox || null,
     isolated: a.isolated === true,
+    auto_reassign: a.auto_reassign !== false,
     max_retries: a.max_retries,
     flow: a.flow,
     mixed: a.mixed,
@@ -1205,18 +1257,7 @@ async function toolGraphRetry(a) {
   // what the text lacks, or a test that printed the failing command, is the feedback
   // the next draft or implement needs; carrying only gate verdicts sent it in blind.
   const sid = String(a.subgoal_id);
-  const judged = run.nodes.filter((n) => n.subgoal_id === sid && n.result && (n.stage === 'gate' || n.state === 'failed'));
-  const last = judged[judged.length - 1];
-  // A goal gate that rejected the assembled result names what the run as a whole lacks; the
-  // subgoal being retried for it must hear that too, since its own gate passed.
-  const goal = run.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id === null && n.state === 'failed' && !n.final && n.result).pop();
-  const feedback = [
-    ...(last && last.result
-      ? [last.result.reason || '', ...(last.result.gaps || []), ...(last.result.verified === false ? (last.result.checks || []) : [])]
-      : []),
-    ...(goal ? [`goal gate ${goal.node_id}: ${goal.result.reason || 'rejected'}`, ...(goal.result.gaps || [])] : []),
-  ].filter(Boolean).join('\n- ');
-  const out = retrySubgoal(run, sid, feedback);
+  const out = retrySubgoal(run, sid, subgoalFeedback(run, sid));
   if (!out.attempt) {
     record(run.cwd, { event: 'graph_settle', run_id: run.run_id, subgoal_id: sid, unreachable: out.unreachable.length });
     return { run_id: run.run_id, target: sid, subgoal_id: sid, retried: false, reason: out.reason, unreachable: out.unreachable, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
