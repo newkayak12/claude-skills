@@ -48,6 +48,26 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.7.4 — cross-vendor attribution stops being an assertion and becomes a measurement**: no
+  code changed; three runs on 0.7.3 went out in parallel to see whether everything built between
+  0.6.9 and 0.7.3 shows up live. `betas code-flat` 8/9 in 44 min for $11.88, `betas docs-flat` 9/9
+  in 63 min for $21.79, and the manager path `beta code-flat` 6/9 in 143 min for $42.50 — the last
+  one stopped at `integrate` because the session limit ran out, not because anything in it failed.
+  It measured `size` **L** on its own, shaped **4 packages**, and accepted all four: P1 and P2 at
+  95, P4 at exactly the 90 floor, and **P3 rejected at `accept: false` then retried into a fresh
+  child run and accepted at 94** — `tm_retry` doing in the live manager loop what `autoReassign`
+  does inside a graph. The cell that mattered: across the five child runs the executor split was
+  claude 32 / codex 22, and **17 nodes carry `('codex', 'isolated', changed_files_verified: true)`**
+  with `contradicted_files` empty. Every one of the 49 isolated attributions on disk before this
+  round had run on Claude, so positive cross-vendor attribution was an argument about the
+  mechanism; it is now data. All five child runs carry `isolated: true, goal_threshold: 90,
+  auto_reassign: true`, so the `child_opts` plumbing is real. One non-finding recorded so it is
+  not rediscovered: every manager stage reported `skills_used: ["none"]`, which is correct — the
+  bench arms load `--plugin-dir graph-beta` alone, so the skill plugins are genuinely absent and
+  the briefing's "skipped without comment" rule fired. Still unmeasured: `integrate` and the
+  manager's own `gate:goal`, which no run has reached with four packages in play, and that gate is
+  held to no threshold at all. Numbers in `scripts/bench/README.md`.
+
 - **v0.7.3 — a reassigned subgoal no longer inherits a dead generation's dependencies**: the
   first live run on 0.7.2 confirmed the new work — persona on `implement` and not on `gate`,
   `develop:clean-code` / `develop:testing-workflow` + `completion:verification-before-completion`

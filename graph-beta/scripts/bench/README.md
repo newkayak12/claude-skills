@@ -210,3 +210,59 @@ the work regardless of which one is driving, has no data yet. That round needs `
 the machine and adds to the scorer: nodes per vendor, `changed_files_verified` on cross-vendor
 implement/test, and how many review/gate identities differed from their author's by vendor
 rather than by model tier.
+
+## Results — three sets on 0.7.3, 2026-09-16
+
+Three runs in parallel, one per path, to check that everything landed between 0.6.9 and 0.7.3
+actually shows up in a live run. Codex was logged in; the session limit was expected and the
+driver was allowed to fall back to the host.
+
+| arm | case | score | wall | cost | turns | ended |
+|---|---|---|---|---|---|---|
+| betas + codex | code-flat | 8/9 (`readme`) | 44 min | $11.88 | 72 | complete |
+| betas + codex | docs-flat | 9/9 | 63 min | $21.79 | 92 | complete |
+| beta + codex | code-flat | 6/9 (`cli_ok`, `cli_invalid`, `cli_month`) | 143 min | $42.50 | 201 | **session limit at `integrate`** |
+
+The manager run is the interesting one, and it did not fail — it ran out of quota. `size` measured
+**L** on its own and shaped **4 packages**; all four were dispatched, judged and accepted:
+
+```
+dispatch:P1:1 done accept=true match=95   accept:P1:1 done 95
+dispatch:P2:1 done accept=true match=95   accept:P2:1 done 95
+dispatch:P3:1 FAILED accept=false match=93 -> accept:P3:1 skipped
+dispatch:P3:2 done accept=true match=94   accept:P3:2 done 93
+dispatch:P4:1 done accept=true match=92   accept:P4:1 done 90
+integrate:1 / gate:goal:1 / report        pending — driver gave up at resume 6
+```
+
+Three things this round settled.
+
+**The rejected-package retry works outside the unit tests.** P3 came back `accept: false`, the
+manager marked `accept:P3:1` skipped, opened `dispatch:P3:2` against a *fresh child run* in the
+same worktree, and that one was accepted. Five child runs on four packages, and the retry is the
+difference. This is `tm_retry` doing in the live loop what `autoReassign` does inside a graph.
+
+**The last empty attribution cell is filled.** Across the five child runs the tally is
+**claude 32 / codex 22**, and of those, **17 nodes carry `('codex', 'isolated', changed_files_verified: true)`**
+with `contradicted_files` empty. Before this round every one of the 49 `isolated` attributions on
+disk had run on Claude, so positive cross-vendor attribution was asserted from the mechanism and
+not from data. It is now measured: an isolated worktree plus a `git status` comparison verifies a
+peer vendor's file claims exactly as it verifies the host's. The `null` results in the
+cross-vendor section above were the shared-worktree path, not a vendor limitation.
+
+**`goal_threshold` and `auto_reassign` reach the children.** Every one of the five child runs
+carries `isolated: true, goal_threshold: 90, auto_reassign: true` — the `child_opts` plumbing from
+0.7.0/0.7.2 is not theoretical. `accept:P4:1` came back at exactly 90 and passed, which is the
+floor behaving as specified rather than as a rounding accident.
+
+One non-finding worth recording so it is not rediscovered: every manager stage reported
+`skills_used: ["none"]`. That is correct. The bench arms load `--plugin-dir graph-beta` and
+nothing else, so `develop:*`, `think:*` and `cognition:*` are genuinely not installed in the
+workspace, and the briefing's rule is that a missing skill is skipped without comment or
+substitute. `stage_skills` was `null` on the task, meaning the default `STAGE_SKILLS` table was
+injected as designed. Measuring whether the skills change the output needs an arm that installs
+the other plugins; no such arm exists yet.
+
+What is still unmeasured after this round: `integrate` and the manager's own `gate:goal`, which
+no run has reached with four packages in play. The manager's `gate:goal` is also held to no
+threshold — `goal_threshold` is a run-level field and the task object has none.

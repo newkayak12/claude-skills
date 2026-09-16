@@ -45,6 +45,24 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 
 ## 상태
 
+- **v0.7.4 — 벤더 간 귀속이 주장에서 측정으로**: 코드 변경 없음. 0.6.9부터 0.7.3까지 만든 것이 실제
+  런에 나타나는지 보려고 0.7.3에서 세 런을 동시에 돌렸습니다. `betas code-flat` 8/9 · 44분 · $11.88,
+  `betas docs-flat` 9/9 · 63분 · $21.79, 매니저 경로 `beta code-flat` 6/9 · 143분 · $42.50 — 마지막
+  런은 뭔가 실패해서가 아니라 세션 리밋이 끝나서 `integrate`에서 멈췄습니다. 스스로 `size`를 **L**로
+  재고 **패키지 4개**로 나눴고 넷 다 통과시켰습니다: P1·P2는 95, P4는 정확히 바닥값 90, 그리고 **P3는
+  `accept: false`로 거부된 뒤 새 자식 런으로 재시도해 94로 통과** — `tm_retry`가 실전 매니저 루프에서
+  하는 일이 그래프 안의 `autoReassign`과 같다는 뜻입니다. 중요한 칸은 이것입니다: 자식 런 다섯 개의
+  실행자 분포는 claude 32 / codex 22였고, 그중 **17개 노드가
+  `('codex', 'isolated', changed_files_verified: true)`** 를 `contradicted_files` 빈 채로 들고
+  있습니다. 이번 라운드 전까지 디스크에 있던 isolated 귀속 49건은 전부 Claude에서 나온 것이어서 벤더
+  간 긍정 귀속은 메커니즘에 대한 논증이었는데, 이제 데이터입니다. 자식 런 다섯 개 전부
+  `isolated: true, goal_threshold: 90, auto_reassign: true`를 들고 있어 `child_opts` 배선도 실재합니다.
+  다시 발견하지 않도록 기록해 두는 비발견 하나: 매니저 모든 단계가 `skills_used: ["none"]`을 보고했는데
+  이건 맞습니다 — 벤치 arm은 `--plugin-dir graph-beta` 하나만 로드해서 스킬 플러그인이 실제로 없고,
+  브리핑의 "설치 안 된 스킬은 말없이 건너뛴다"가 발동한 것입니다. 여전히 미측정: 패키지 4개가 살아 있는
+  채로 어떤 런도 도달하지 못한 `integrate`와 매니저 자신의 `gate:goal`, 그리고 그 게이트에는 임계값이
+  아예 없습니다. 숫자는 `scripts/bench/README.md`에 있습니다.
+
 - **v0.7.3 — 재할당된 subgoal이 죽은 세대의 의존을 물려받지 않음**: 0.7.2의 첫 실전 런이 새 작업을
   확인해주고 — `implement`에 persona가 있고 `gate`에는 없음, kind에서 `develop:clean-code` /
   `develop:testing-workflow`+`completion:verification-before-completion` / `think:devils-advocate`가
