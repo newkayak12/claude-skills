@@ -420,6 +420,51 @@ test('critique sound=false fails the node', async () => {
   });
 });
 
+// A `sound: false` critique used to dead-end exactly like the goal gate still does today:
+// autoReassign returned early because the node has no subgoal_id, and the run waited for a
+// caller that might never call graph_retry. It is now reassigned the same way a subgoal
+// escalation is - a fresh setgoal+critique pair, budgeted, settled when that budget is gone.
+test('critique sound=false opens a new setgoal attempt by itself, with no caller retry', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'setgoal', payload: ok({ spec: SPEC }) });
+    const v = await c.call('graph_submit', {
+      run_id: runId, cwd, node_id: 'critique', payload: ok({ sound: false, blocking: ['acceptance is unfalsifiable'] }),
+    });
+    assert.equal(v.state, 'failed', 'the critique itself still failed - this is not a pass in disguise');
+    assert.deepEqual(v.reassigned, { target: 'spec', attempt: 2, reason: 'the same rejection twice: reshaped rather than retried' },
+      'no subgoal_id to reassign, so the spec itself reopens - nobody called graph_retry');
+
+    const nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.equal(nx.state, 'running', 'a rejected critique is not a dead end the caller must notice');
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['setgoal:2']);
+    assert.match(readFileSync(nx.ready[0].briefing_path, 'utf8'), /acceptance is unfalsifiable/,
+      'the blocking defect is carried forward as feedback');
+
+    // The re-authored spec is critiqued again, not waved through - retrySpec already wires
+    // this for every caller of it; confirm it holds for the automatic path too.
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'setgoal:2', payload: ok({ spec: SPEC }) });
+    const again = await c.call('graph_next', { run_id: runId, cwd });
+    assert.deepEqual(again.ready.map((n) => n.node_id), ['critique:2'], 'the new spec attempt is critiqued again');
+  });
+});
+
+test('an exhausted critique retry budget settles the run and releases the report, exactly as a caller retry would', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'setgoal', payload: ok({ spec: SPEC }) });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'critique', payload: ok({ sound: false, blocking: ['x'] }) });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'setgoal:2', payload: ok({ spec: SPEC }) });
+    const v = await c.call('graph_submit', { run_id: runId, cwd, node_id: 'critique:2', payload: ok({ sound: false, blocking: ['still x'] }) });
+    assert.equal(v.state, 'failed');
+    assert.equal(v.reassigned.attempt, null, 'the budget is gone - no third attempt opens');
+    assert.ok(v.reassigned.unreachable.length, 'the dead generation is settled, not left pending forever');
+
+    const nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['report:2'], 'settling releases the report over the unreachable set');
+  }, { max_retries: 1 });
+});
+
 // ---------- retry ----------
 
 test('a retry retires the dead attempt, rewires dependents, and yields a ready node', async () => {
@@ -598,7 +643,9 @@ test('exhausting the spec retry settles the rebuilt graph and releases its repor
     const brief = readFileSync(r.ready[0].briefing_path, 'utf8');
     assert.match(brief, /critique:2 \(critique\) — failed .*sound=false/);
     assert.match(brief, /still vague/, 'the report must see why the spec died');
-  }, { max_retries: 1 });
+    // This test drives graph_retry itself; the engine's own auto-reassign for a sound:false
+    // critique (see below) would consume the same budget before the manual retry gets to.
+  }, { max_retries: 1, auto_reassign: false });
 });
 
 // ---------- routing ----------
@@ -617,6 +664,35 @@ test('auto degrades to self when no vendor is ready', async () => {
     assert.equal(nx.ready[0].vendor, 'self');
     assert.ok(nx.ready[0].briefing_path, 'a self node needs a briefing on disk, not in the reply');
   }, { vendor: 'auto', candidates: ['nosuchvendor'] });
+});
+
+// AUTO_CANDIDATES used to be empty, so "auto" under ordered allocation never tried a
+// builtin vendor at all - see the fixed comment in broker.mjs. It now tries claude and
+// codex before giving up on the orchestrator, with the run's own host_vendor ranked last:
+// a ready peer is preferred over asking the driving session to do the work itself. Both
+// fakes in repoWithFakeVendor() report unavailable, so this stays deterministic and never
+// touches a real CLI - only the `attempts` order is under test, not the final route.
+test('auto tries the peer before the host vendor, and the host vendor before self', async () => {
+  // balancedRepo() makes both builtin vendors ready by default (no unavailable-* marker) -
+  // exactly what AUTO_CANDIDATES now tries under plain ordered allocation. route() returns
+  // on the first usable candidate, so whichever name comes first in the order is the one
+  // actually picked - an observable proxy for the order itself, without depending on
+  // `attempts`, which the broker only surfaces on a vendor-failure (see route()).
+  for (const [host_vendor, want] of [
+    ['claude', 'codex'],   // peer tried first, ranked ahead of the host's own name
+    ['codex', 'claude'],
+    [undefined, 'claude'], // no host to rank last: base order stands
+  ]) {
+    const cwd = balancedRepo();
+    const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+    try {
+      const open = await c.call('graph_open', { request: 'r', cwd, vendor: 'auto', ...(host_vendor ? { host_vendor } : {}) });
+      assert.equal(open.ready[0].vendor, want, `host_vendor=${host_vendor}`);
+    } finally {
+      c.close();
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }
 });
 
 test('graph_run refuses a self-routed node', async () => {
@@ -682,7 +758,9 @@ test('a rejected spec can be retried, discarding the graph it produced', async (
     assert.equal(st.has_spec, false, 'the rejected spec must be dropped');
     const stale = st.nodes.filter((n) => n.node_id.startsWith('implement:') || n.node_id === 'gate:goal:1');
     assert.ok(stale.every((n) => n.state === 'skipped'), 'the old subgoal graph must be retired');
-  });
+    // This test drives graph_retry itself; auto_reassign:false keeps the sound:false
+    // critique advisory so the manual retry below is the only one that fires.
+  }, { auto_reassign: false });
 });
 
 test('the retried spec rebuilds the graph off the live critique', async () => {
@@ -702,7 +780,7 @@ test('the retried spec rebuilds the graph off the live critique', async () => {
     assert.ok(impl.deps.includes('critique:2'), 'must hang off the live critique, not the retired one');
     const nx = await c.call('graph_next', { run_id: runId, cwd });
     assert.deepEqual(nx.ready.map((n) => n.node_id), ['implement:V1:1']);
-  });
+  }, { auto_reassign: false });
 });
 
 test('the spec retry budget is finite', async () => {
@@ -717,7 +795,7 @@ test('the spec retry budget is finite', async () => {
     const second = await c.call('graph_retry', { run_id: runId, cwd });
     assert.equal(second.retried, false);
     assert.match(second.reason, /budget/);
-  }, { max_retries: 1 });
+  }, { max_retries: 1, auto_reassign: false });
 });
 
 // ---------- a spec retry that reuses subgoal ids ----------
@@ -746,7 +824,7 @@ test('a retried spec with the SAME subgoal ids rebuilds real nodes', async () =>
     const st = await c.call('graph_status', { run_id: runId, cwd });
     const live = st.nodes.filter((n) => n.node_id.startsWith('implement:U1:'));
     assert.equal(live.length, 2, 'the retired node stays as evidence alongside the new one');
-  });
+  }, { auto_reassign: false });
 });
 
 test('a run is complete only when a report node is done', async () => {
@@ -759,7 +837,7 @@ test('a run is complete only when a report node is done', async () => {
     await c.call('graph_submit', { run_id: runId, cwd, node_id: 'critique:2', payload: ok({ sound: true }) });
     const st = await c.call('graph_status', { run_id: runId, cwd });
     assert.notEqual(st.state, 'complete', 'no implement node has run; this is not complete');
-  });
+  }, { auto_reassign: false });
 });
 
 // ---------- the report must be able to see the run ----------
@@ -1189,13 +1267,33 @@ writeFileSync(out, JSON.stringify({ ok: true, last_message: process.env.FAKE_REP
 process.exit(0);
 `;
 
+// "auto" under ordered allocation now tries the builtin claude/codex vendors before
+// falling back to self (see AUTO_CANDIDATES in broker.mjs). Overriding both here keeps
+// every test in this file deterministic and free of real CLI calls, regardless of what
+// happens to be installed on the machine running the suite - the same trick balancedRepo()
+// already uses for balanced allocation, below.
+const FAKE_UNAVAILABLE_ADAPTER = `#!/usr/bin/env node
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+const args = process.argv.slice(2);
+const get = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null; };
+const out = get('--output');
+mkdirSync(dirname(out), { recursive: true });
+writeFileSync(out, JSON.stringify({ ok: false, codex: { ready: false, reachable: false, reason: 'fake: unavailable in this test' } }));
+process.exit(1);
+`;
+
 function repoWithFakeVendor() {
   const dir = repo();
   const adapter = join(dir, 'fake-adapter.mjs');
   writeFileSync(adapter, FAKE_ADAPTER);
+  const unavailable = join(dir, 'unavailable-adapter.mjs');
+  writeFileSync(unavailable, FAKE_UNAVAILABLE_ADAPTER);
   mkdirSync(join(dir, '.claude'), { recursive: true });
   writeFileSync(join(dir, '.claude', 'broker-vendors.json'), JSON.stringify({
     fake: { command: 'node', args: [adapter], sandboxes: ['read-only', 'workspace-write'], default_sandbox: 'workspace-write' },
+    claude: { command: 'node', args: [unavailable], requires_binary: null, sandboxes: ['read-only', 'workspace-write'], default_sandbox: 'workspace-write' },
+    codex: { command: 'node', args: [unavailable], requires_binary: null, sandboxes: ['read-only', 'workspace-write'], default_sandbox: 'workspace-write' },
   }));
   return dir;
 }
@@ -2523,10 +2621,10 @@ test('a subgoal reassigned after a spec retry waits on the live generation, not 
     ] };
     await c.call('graph_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
     await c.call('graph_submit', { run_id: runId, cwd, node_id: 'setgoal', payload: ok({ spec, handoff: 's' }) });
-    // critique rejects, so the whole first generation is superseded and setgoal runs again.
+    // critique rejects, so the whole first generation is superseded and setgoal runs again -
+    // the engine opens setgoal:2 itself now; a caller-driven graph_retry on top of that would
+    // only open a redundant setgoal:3 and strand this generation as superseded.
     await c.call('graph_submit', { run_id: runId, cwd, node_id: 'critique', payload: ok({ sound: false, blocking: ['no'] }) });
-    const rt = await c.call('graph_retry', { run_id: runId, cwd });
-    assert.equal(rt.retried, true);
     await c.call('graph_submit', { run_id: runId, cwd, node_id: 'setgoal:2', payload: ok({ spec, handoff: 's' }) });
     await c.call('graph_submit', { run_id: runId, cwd, node_id: 'critique:2', payload: ok({ sound: true }) });
     // Now fail U1 of the live generation and let the engine reassign it.

@@ -30,6 +30,12 @@ function capHandoff(text) {
 // generation's `isDegenerateSpec` corrective re-author carried; `validateSpec` catches the
 // same emptiness cases (and more) but only lists them - it never explained why they recur.
 export const DEGENERATE_SPEC_DIAGNOSIS = `Diagnosis: the previous spec was rejected by structured-output validation, not by a human judgment call. The usual cause is a single missing or empty top-level field - most often "acceptance" at the goal level, or a subgoal with no "acceptance", no "title", or a title/goal so short it reads as a placeholder rather than real content. The failure mode to avoid: shrinking the whole spec to isolate which field is wrong. Do not throw away subgoals, decomposition, or detail that was not named below. Fix exactly the field(s) named as the problem and return the rest of the spec unchanged.`;
+import { mountBlock } from './mounts.mjs';
+
+// Shared by every Method block a composed prompt can carry - the per-subgoal one below and
+// the stage-mounted one mounts.mjs renders - so the two mechanisms state the same rule in
+// the same words instead of drifting apart.
+export const SKILL_METHOD_DISCLAIMER = `A skill that is not installed here is skipped without comment or substitute. Its own output template does not apply - "Required output" below is the only shape you may return - and neither does its "what you do / what I do" half: nobody is reading this but the machine that called you, so ask nothing and finish the work yourself.`;
 
 const CONTRACT = {
   plan: `Return JSON: {"plan": "<the decomposition>", "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "dependencies": ["unit -> its real ordering dependency, or \\"none\\""], "verification": ["unit -> command or inspection that would deterministically verify it"], "conventions": ["path -> the rule it states, if .claude/conventions/** applies"], "handoff": "<what the next node needs>", "evidence": "<how you checked the request is actually satisfiable here>"}
@@ -170,7 +176,7 @@ export function composePrompt(run, n, briefing) {
     // missing skill is skipped in silence, and nobody is there to answer a question.
     if (method.length) {
       lines.push(`Method — load each of these that is available, then work the way it says:\n${bullets(method)}`);
-      lines.push(`A skill that is not installed here is skipped without comment or substitute. Its own output template does not apply - "Required output" below is the only shape you may return - and neither does its "what you do / what I do" half: nobody is reading this but the machine that called you, so ask nothing and finish the work yourself.`);
+      lines.push(SKILL_METHOD_DISCLAIMER);
     }
     if (sg.files?.length) lines.push(`Required paths:\n${bullets(sg.files)}`);
     if (['implement', 'draft'].includes(n.stage)) {
@@ -273,6 +279,8 @@ export function composePrompt(run, n, briefing) {
     }
     lines.push(briefing.prior_feedback);
   }
+
+  lines.push(mountBlock(run, n));
 
   lines.push('');
   lines.push(`## Required output`);
