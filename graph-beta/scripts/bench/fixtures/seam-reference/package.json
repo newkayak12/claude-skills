@@ -1,0 +1,7 @@
+{
+  "name": "lintcfg",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "scripts": { "test": "node --test" }
+}

@@ -7,8 +7,16 @@ by what the arm left in the tree and what the session cost.
 |-----|-----------|-------|
 | `beta` | graph-beta 0.x with the user's words that the work must be split → `size` pinned L: `task-manager` shapes packages, one child graph run per package, integrate | `graph-beta:develop` (code), `graph-beta:orchestrate` with `flow: auto` (docs) |
 | `betas` | graph-beta 0.x without those words: `size` measures (S on these fixtures) and delegates to one graph run — the same topology as `stable`, with the `document` kind and `flow` | same |
+| `skills` | `betas`, with `--plugin-dir` for every plugin any `STAGE_SKILLS` (taskmanager.mjs) or `kindSkills` (graph.mjs) entry actually names — `develop`, `think`, `cognition`, `completion`, `write` — plus `agents`, mounted only when the directory exists | same as `betas` |
 | `stable` | graph 1.x: one graph run for the whole request | `graph:orchestrate` |
 | `none` | plain `claude -p` on the same request, no plugin | — |
+
+Without the `skills` arm's extra `--plugin-dir`s, every `Skill()` call the mounted-skills tables
+name misses and falls back silently — round 3's `skills_used: ["none"]` on every manager stage
+(see "three sets on 0.7.3" below) was this, not a defect: `beta`/`betas`/`stable` never mount
+anything but the arm's own plugin, so `develop:*`, `think:*`, `cognition:*`, `completion:*` and
+`write:*` are genuinely not installed in those workspaces. `skills` exists to measure whether
+mounting them changes the outcome; it does not change the engine, only what the engine can find.
 
 | Case | Fixture | Request | Sizes |
 |------|---------|---------|-------|
@@ -18,6 +26,8 @@ by what the arm left in the tree and what the session cost.
 | `docs-flat` | `fixtures/tinyq` — one flat library | the same documents with one `docs/api.md` | S |
 | `goal-code` | `fixtures/ledger-mono` | **one line**: import bank CSVs, categorize by rules, report monthly from the CLI; the split, contracts, CLI shape and tests are the harness's to decide | — |
 | `goal-docs` | `fixtures/tinyq-mono` | **one line**: document it so a new maintainer can use, extend and understand it; the document set is the harness's to decide | — |
+| `seam` | `fixtures/seam-mono` — 3 workspace packages (`codes`, `parser`, `cli`); `codes` is pre-built and fixed, `parser`/`cli` are stubs | parser and CLI must both agree with `codes`' exit-code table, the README must document it, and the CLI must run identically as given, as its realpath, and through a symlink | L |
+| `seam-flat` | `fixtures/seam` — one empty package | the same domain (`codes.mjs`, `parser.mjs`, `bin/lintcfg.mjs`) built by one worker, no split | S |
 
 The `goal-*` cases exist because the `code`/`docs` requests already do the decomposition — four
 packages, module contracts, a CLI signature — so a manager whose value is the planning layer
@@ -30,6 +40,18 @@ counts, ownership boundaries, build units — and an empty single-package reposi
 the first e2e round sized both flat requests S and delegated to one graph run. They measure the
 delegate path; the monorepo cases measure the manager.
 
+The `seam` case exists because none of the cases above discriminate the harness from a plain
+session: both score 8-9/9 on `code`/`docs` (see "Results — three sets on 0.7.3" below), because
+every criterion there is checkable from inside one package or one document. `seam` splits the
+request across three packages that each pass their own tests in isolation and only agree when
+a cross-cutting constraint — an error-code table defined once, in `packages/codes` — is honoured
+by both `packages/parser` (which names failures) and `packages/cli` (which turns a name back
+into a process exit code). The fixture also reproduces the 0.8.1 defect on purpose: bench
+workspaces already live under `$TMPDIR`, itself a `/var` path that resolves through
+`/private/var` on macOS, so the workspace path as given and its `realpath` are already the two
+spellings that broke a naive `import.meta.url === pathToFileURL(argv[1]).href` main-module
+guard. See "How to read a seam result" under Score.
+
 ## Run
 
 ```
@@ -39,6 +61,9 @@ scripts/bench/drive.sh "beta code run1" "stable docs run1" ...  # jobs in sequen
 GRAPH_BENCH_OUT=... (default $TMPDIR/graph-bench)
 node scripts/bench/score.mjs <case> <workspace> [a.jsonl,b.jsonl]  # re-score; streams add up
 ```
+
+`<arm>` is `beta | betas | skills | stable | none`; `<case>` is `code | docs | code-flat |
+docs-flat | goal-code | goal-docs | seam | seam-flat`.
 
 A headless session on a plan with a usage limit dies mid-run — three rounds of this bench did,
 at roughly $20–25 per five-hour window across every concurrent session. Nothing is lost: the
@@ -74,6 +99,66 @@ package is named in its README) · `api_examples` (a fenced example per referenc
 LLM-judged criterion: haiku reads the three sources and `packages/retry/README.md`,
 `packages/worker/README.md`, `docs/adr/0002-retry-policy.md`, and lists claims the code does not
 support; passes when the list is empty (`GRAPH_BENCH_JUDGE=0` skips it).
+
+`seam`/`seam-flat`: `no_deps` · `npm_test` · `modules` (`codes`/`parser`/`cli` entry points exist)
+· `exports` · `tests` (parser and cli have grown past the seed's smoke test) · `cli_ok` (valid
+config → exit 0) · `cli_invalid` (a missing file → non-zero, not a silent exit 0) — all ordinary.
+Five are **SEAM** — they fail when either half was built without regard for the other, even
+though `cli_ok`/`cli_invalid`/`npm_test` above can still pass:
+
+- `readme_exit_codes` — every `KEY: number` pair actually in `packages/codes`' source must also
+  appear in `README.md`, read from the tree at run time rather than assumed, so a legitimate
+  future change to the table cannot make this scorer wrong the way a hardcoded answer key would.
+- `parser_names_match_codes` — every failure-code name `packages/parser`'s source actually
+  returns must be a key `packages/codes` actually defines — catches a naming drift between the
+  two packages that neither package's own tests would ever see.
+- `cli_uses_codes_table` — for every failure kind (`MISSING_FIELD`, `BAD_TYPE`, `UNKNOWN_FIELD`,
+  `PARSE_ERROR`), the CLI's actual exit code, from running it, must equal `packages/codes`'
+  actual numeric value for that name. A CLI that kept its own copy of the table — right or
+  wrong — fails this the moment its copy and `packages/codes` disagree, even though the CLI's
+  own unit tests (written against its own copy) never noticed.
+- `cli_abs_path` / `cli_realpath` — the 0.8.1 defect, reproduced directly rather than simulated:
+  the CLI is run once with the workspace path as given and once with its `realpath`; both must
+  exit 0 and print the same line. A naive `import.meta.url === pathToFileURL(argv[1]).href`
+  main-module guard makes the process exit 0 with **no output** under exactly one of the two
+  spellings — a silent no-op that `cli_abs_path`/`cli_realpath` catch and `npm_test` would not,
+  since `node --test` never invokes the binary through either spelling.
+
+### How to read a seam result
+
+A plain session (`none`) is expected to pass `cli_ok`/`cli_invalid`/`npm_test` — there is only
+one worker, so there is no seam to miss — and to score however it scores on the SEAM criteria
+by chance, not by design: nothing tells it a shared table exists to disagree with. The harness
+arms' claim is narrower and checkable: a gate, critique or integrate node catches the seam
+*before* the scorer does, because it is the harness's job to read across package boundaries
+that no single package's own worker or tests can see (see "What `goal-docs` found, by failing"
+and "What `code-flat` found, by failing" below for two prior instances of exactly this gap). The
+`judge` fields below (`seam_detected`, `gate_rejections`, `judges_with_checks`) are what let a
+reader tell "the harness caught it and fixed it" apart from "the harness got lucky" apart from
+"nothing caught it and the scorer's SEAM criteria are the only thing that did."
+
+### Judge fields
+
+Printed alongside the `passed/of` row, never folded into it — they describe the harness's own
+judging behaviour on this run, not what the tree contains, and are written to `score.json` under
+`judge` plus one `JUDGE: {...}` line for machine parsing:
+
+- `seam_detected` — did any `gate`/`critique`/`report` node's own words (`checks`, `attacks`,
+  `gaps`, `problems`, `reason`, `handoff`), or — for a `none` session with no harness nodes at
+  all — the driving session's own prose, mention the cross-cutting constraint this case's
+  criteria check (a small per-case keyword list; `'n/a'` for a case with none defined).
+- `gate_rejections` — count of `gate`/`accept`/etc. nodes whose result carried `accept: false`
+  or `stage_ok: false` anywhere in the run.
+- `judges_with_checks` `N/M` — of every `gate`/`accept`/`critique`/`review` node, how many logged
+  a non-empty `checks[]` or `attacks[]` — 0.8.0's rule is that `accept: true` with an empty
+  `checks[]` is refused by the engine, so this is how often a judgement actually had evidence
+  behind it versus how often it merely could have.
+- `repairs` — count of nodes on an explicit `repair` stage/id, plus packages opened under a
+  `R<n>` repackage generation — the two shapes a seam fix can currently take. `tm_retry` alone
+  resends work to a worktree that cannot see the seam it needs to fix (see "What `goal-docs`
+  found, by failing"); a repair or repackage is what actually addresses one.
+- `cost_usd`, `turns`, `minutes` — the same session totals already in the row, repeated here so
+  a `JUDGE:` line alone is enough to compare runs without re-parsing the human-readable row.
 
 Session meta comes from the top-level `stream-json` only: duration, cost, turns, tool-call
 counts per MCP tool, top-level Write/Edit calls (a manager doing node work), sub-agent count,
@@ -118,6 +203,34 @@ re-run those, so they are left uncounted rather than guessed at. Same for a `gat
 README mentions (checking those would need the same LLM read the docs cases already spend on
 `accuracy`, and this does not add a second one). Anything that lands in `unverifiable` is a claim
 this scorer chose not to adjudicate, not one it cleared.
+
+A `code-flat betas` live run on 2026-09-16 turned up nine scorer misreads (all `false`, none of
+them a real defect in the tree) that are now fixed in `verifyCheckClaim` and the README-example
+block, unit-tested in `test-score.mjs` against the pure helpers in `lib/claims.mjs`:
+
+- `impliesFailure` now reads filesystem-not-found phrasing ("No such file or directory", "not
+  found", "ENOENT", "cannot access", "does not exist") as implying a non-zero exit, the same way
+  it already read "fail"/"error".
+- A check whose command is several ` / `-joined paths in prose ("`node --test a.mjs / b.mjs /
+  c.mjs -> each exited 0 individually`") is split and each command verified against the same
+  claim, rather than run once as one bogus command; a slash that is not between bare path-like
+  tokens still reads as prose and stays `unverifiable`.
+- A content-showing command (`cat`, `sed -n`, `head`, `tail`, `grep` without `-c`) is no longer
+  judged by the fail/error-word heuristic at all — the shown text describes the file's content
+  ("...fail-fast throw on first bad row"), not an outcome, so a successful rerun is
+  `unverifiable` ("shown text describes content, not an outcome") and only a rerun that cannot
+  read the file at all is `false`.
+- README shell examples now run `hasPlaceholder` before executing, same as `checks[]` entries
+  (an example like `` ledger report <csv> --rules <json> `` is `unverifiable`, not run as a
+  literal shell command with `<` read as redirection), map a bare `ledger ...` example to the
+  tree's actual `bin` entry from `package.json` before running it, and materialize any file-like
+  argument a command names but the README never says to "Save this as" — the first fenced block
+  whose language tag matches the argument's extension (`.csv` → ` ```csv `, `.json` → ` ```json
+  `) — before running, removing it afterward; a command naming an input with no matching fenced
+  block anywhere is `unverifiable` ("README example names an input it never shows"), not run.
+- `verified_flag`/`gate_accept` claims on the same node as a fixed check flip to `verified` (or
+  `unverifiable`, if the node logged no checks at all) on their own — they were never wrong
+  themselves, only downstream of a `checks[]` entry that was.
 
 ## Results — round 1, 2026-09-11 → 12
 
