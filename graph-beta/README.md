@@ -48,6 +48,24 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.6.7 — the manager's stages get a method, and say which one they used**: every judging
+  and planning stage now names skills it should load before working — `shape` gets
+  `develop:domain-driven-design` and `architecture-designer` because its contract already says
+  to split by ownership rather than by phase, `critique` gets `think:devils-advocate` and
+  `cognition:assumption-extractor` because its contract's word is "attack", `accept` gets
+  `cognition:epistemic-reasoner` for claims against evidence, `integrate` gets
+  `cognition:second-order-thinker` for what breaks only when the packages are combined, and
+  `gate:goal` gets `cognition:critical-thinking-workflow`. `size` deliberately gets none: it is
+  a measurement whose one failure mode is reaching for method instead of running commands. A
+  skill written for a person carries two things a headless node cannot obey — its own output
+  template, and a "what you do" half addressed to a human partner — so the briefing says
+  outright that the stage contract outranks both, that a skill absent from the installation is
+  skipped without comment, and that no node may ask a question. Every contract now returns
+  `skills_used`, because a method whose use cannot be observed cannot be judged. Override per
+  stage with `tm_open({skills: {...}})`, or run on the contracts alone with `skills: false`.
+  **Unmeasured so far**: whether this earns its cost. The baseline to beat is `goal-code` at
+  7/7 · 130 min · $44.74, and judging nodes are already ~40% of a task's spend.
+
 - **v0.6.6 — a score can no longer contradict the harness's own verdict**: `goal-docs` ended
   with two failed `integrate` nodes, a blocked package and three `unreachable` nodes — the
   settle path, working — and the bench scorer reported **8/8** on the integration worktree that

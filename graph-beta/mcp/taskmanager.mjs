@@ -81,18 +81,43 @@ const PACKAGE_CHAIN = ['dispatch', 'accept'];
 // A judging node's verdict field; stage_ok alone never completes one of these.
 const VERDICT = { critique: 'sound', dispatch: 'accept', accept: 'accept', integrate: 'verified', gate: 'accept' };
 
+// Method a stage may load before it works. A skill named here must be analytic and
+// non-dialogic: it reasons about material it is handed and never asks the operator
+// anything - a node runs headless, so a skill with a "What You Do" half has no one to do
+// it. `size` gets none on purpose: it is a measurement, and its one failure mode is
+// reaching for method instead of running commands. The stage contract always outranks a
+// skill's own output template; the briefing says so, and the contract asks each stage to
+// name what it actually loaded so the effect can be measured rather than assumed.
+const STAGE_SKILLS = {
+  size: [],
+  shape: ['develop:domain-driven-design', 'develop:architecture-designer'],
+  critique: ['think:devils-advocate', 'cognition:assumption-extractor'],
+  accept: ['cognition:epistemic-reasoner'],
+  integrate: ['cognition:second-order-thinker'],
+  'gate:goal': ['cognition:critical-thinking-workflow'],
+};
+
+// tm_open({skills: {...}}) merges over the defaults; skills: false turns the whole thing off.
+function stageSkills(task, n) {
+  if (task.stage_skills === false) return [];
+  const key = n.node_id.startsWith('gate:goal') ? 'gate:goal' : n.stage;
+  const override = task.stage_skills && typeof task.stage_skills === 'object' ? task.stage_skills[key] : undefined;
+  const list = Array.isArray(override) ? override : STAGE_SKILLS[key];
+  return (list || []).map(String).filter(Boolean);
+}
+
 const CONTRACT = {
-  size: `Return JSON: {"stage_ok": true, "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "handoff": "<what shape needs to know>", "evidence": "..."}
+  size: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "handoff": "<what shape needs to know>", "evidence": "..."}
 S means one graph run in one worktree can carry the whole request. L means it spans independent modules, packages or repositories that each need their own run and worktree, integrated afterwards. Decide from what commands show - file and module counts, ownership boundaries, build units - and put those commands in "sizing". The default is S: a manager layer exists, and the temptation is to use it. Over-sizing costs a worktree, a run and an integration per package; under-sizing costs one retry.`,
-  shape: `Return JSON: {"stage_ok": true, "acceptance": ["goal-level criteria for the integrated result"], "packages": [{"id": "P1", "title": "...", "flow": "develop|document", "brief": "<the request this package's own graph run will receive - self-contained>", "acceptance": ["what the package must deliver, checkable inside its worktree"], "touches": ["paths or modules this package changes"], "deps": ["P0"]}], "handoff": "...", "evidence": "..."}
+  shape: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "acceptance": ["goal-level criteria for the integrated result"], "packages": [{"id": "P1", "title": "...", "flow": "develop|document", "brief": "<the request this package's own graph run will receive - self-contained>", "acceptance": ["what the package must deliver, checkable inside its worktree"], "touches": ["paths or modules this package changes"], "deps": ["P0"]}], "handoff": "...", "evidence": "..."}
 Each package becomes one graph run in its own worktree. A package with no deps branches from the current HEAD; a package with deps branches from its first dependency's delivered branch with the others merged in, so it builds on what they delivered - not on stubs. Two packages that touch the same path will conflict at integration: split by ownership, not by phase. A dependency means the package needs another's delivered result; it receives that package's report as context and starts from its tree. Every package must be size S on its own - if one still needs splitting, the shape is wrong. Two to six packages is the usual range.`,
-  critique: `Return JSON: {"stage_ok": true, "sound": true|false, "blocking": ["..."], "problems": ["..."], "handoff": "...", "evidence": "..."}
+  critique: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "sound": true|false, "blocking": ["..."], "problems": ["..."], "handoff": "...", "evidence": "..."}
 Attack the shape: packages that overlap in touches[], a dependency the brief does not actually need, a package too large to be one run, a goal-level criterion no integration step could check, and - above all - a request that was S sized as L. Set sound=false only for defects in "blocking" that make the packages impossible to run or impossible to integrate. Everything else is a problem, carried forward as advice.`,
-  accept: `Return JSON: {"stage_ok": true, "accept": true|false, "match_pct": 0-100, "gaps": ["what the package did not deliver"], "observations": ["weaknesses that do not block"], "reason": "...", "evidence": "..."}
+  accept: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "accept": true|false, "match_pct": 0-100, "gaps": ["what the package did not deliver"], "observations": ["weaknesses that do not block"], "reason": "...", "evidence": "..."}
 You are the judge, not the actor. The child run's own goal gate and report are below; judge them against THIS package's acceptance, which the child never saw in full. A child that passed its own gate but delivered less than the package asked for is a gap here. Absent evidence is a gap, not a pass.`,
-  integrate: `Return JSON: {"stage_ok": true|false, "verified": true|false, "checks": ["command -> observed output"], "evidence": "..."}
+  integrate: `Return JSON: {"stage_ok": true|false, "skills_used": ["<skill or none>"], "verified": true|false, "checks": ["command -> observed output"], "evidence": "..."}
 The package branches are already merged into the integration worktree named below - the manager did that and recorded each merge commit. Your job is what no package could do alone: run the goal-level checks the shape's acceptance implies against the combined tree, and read the seams between packages. stage_ok=false when a check could not run at all. verified=false when the combined tree fails a check the packages passed separately. Do not fix package work here: a failing seam is a gap for the gate and a repackage for the manager.`,
-  'gate:goal': `Return JSON: {"stage_ok": true, "accept": true|false, "match_pct": 0-100, "gaps": ["what blocks acceptance"], "observations": ["weaknesses that do not block"], "spec_drift": ["where the shape asked for less than the request did"], "reason": "...", "evidence": "..."}
+  'gate:goal': `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "accept": true|false, "match_pct": 0-100, "gaps": ["what blocks acceptance"], "observations": ["weaknesses that do not block"], "spec_drift": ["where the shape asked for less than the request did"], "reason": "...", "evidence": "..."}
 You are the judge, not the actor, and the only node that sees the original request again. Judge the integrated result against BOTH the goal-level acceptance and the REQUEST as written. Anything the request asked for that no package delivered and no criterion named belongs in "spec_drift". Absent evidence is a gap, not a pass.`,
   report: `Return JSON: {"stage_ok": true, "handoff": "<the final report>", "evidence": "..."}
 Synthesize from the node results below only: which packages ran, what each delivered, what the integration showed, what the gate said. State plainly what was not done and why.`,
@@ -120,6 +145,8 @@ function createTask(a) {
     // The user said, in their own words, that this must be split (L) or must stay one run
     // (S): the size node is recorded as pinned and never measured. Mirrors the flow pin.
     size_pinned: ['S', 'L'].includes(a.size) ? a.size : null,
+    // false turns method off entirely; an object overrides STAGE_SKILLS per stage.
+    stage_skills: a.skills === false ? false : (a.skills && typeof a.skills === 'object' ? a.skills : null),
     max_retries: Number.isInteger(a.max_retries) ? a.max_retries : 2,
     // Everything a child run needs to route the way the parent's session routes.
     child_opts: {
@@ -682,6 +709,16 @@ function composeTaskPrompt(task, n) {
     const shape = n.stage === 'critique' ? task.nodes.filter((x) => x.stage === 'shape' && x.result && x.state === 'done').pop() : null;
     if (shape && shape.result && shape.result.handoff) { L.push(''); L.push(`## From shape`); L.push(shape.result.handoff); }
   }
+  const skills = stageSkills(task, n);
+  if (skills.length) {
+    L.push('');
+    L.push(`## Method`);
+    L.push(`Load these skills first and work the way they say, each one that is available to you:`);
+    L.push(bullets(skills));
+    L.push(`A skill that is not installed here is simply skipped - do not look for a substitute, and never stop to report a missing one.`);
+    L.push(`Two rules outrank everything a skill says. Its output template does not apply: the "Required output" below is the only shape you may return. And its "what you do / what I do" half does not apply: nobody is reading this but the machine that called you, so ask no questions, offer no choices, and finish the work yourself.`);
+    L.push(`List in "skills_used" the ones you actually loaded, or ["none"].`);
+  }
   if (n.feedback) {
     L.push('');
     L.push(`## Previous attempt was rejected — fix this`);
@@ -815,6 +852,7 @@ const TOOLS = [
         host_vendor: { type: 'string' }, host_model: { type: 'string' }, native_models: { type: 'array', items: { type: 'string' } },
         size: { type: 'string', enum: ['S', 'L'], description: 'Pin the size instead of measuring it: L when the user said in their own words that the request must be split into packages, S when they said one run must carry it. The size node is recorded as pinned.' },
         model: { type: 'string' }, policy: { type: 'object' }, candidates: { type: 'array', items: { type: 'string' } },
+        skills: { description: 'Method per manager stage, overriding the defaults: {"shape": ["develop:domain-driven-design"], "critique": []}. false runs every stage on its contract alone. A skill named here must be analytic and non-dialogic - a node runs headless and cannot answer a skill that asks it something.' },
         sandbox: { type: 'string' }, max_retries: { type: 'number' },
       },
       required: ['request', 'cwd'],

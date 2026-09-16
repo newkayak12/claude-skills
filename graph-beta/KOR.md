@@ -45,6 +45,21 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 
 ## 상태
 
+- **v0.6.7 — 매니저 단계에 방법론을 주고, 무엇을 썼는지 말하게 함**: 판단·기획 단계가 작업 전에
+  로드할 스킬을 지정합니다 — `shape`는 `develop:domain-driven-design`과 `architecture-designer`
+  (계약문이 이미 "단계가 아니라 소유권으로 쪼개라"고 합니다), `critique`는
+  `think:devils-advocate`와 `cognition:assumption-extractor`(계약문의 단어가 "공격하라"),
+  `accept`는 주장 대 증거를 가리는 `cognition:epistemic-reasoner`, `integrate`는 합쳤을 때만
+  깨지는 것을 보는 `cognition:second-order-thinker`, `gate:goal`은
+  `cognition:critical-thinking-workflow`. `size`는 의도적으로 없음 — 측정이고, 유일한 실패 모드가
+  명령 대신 방법론에 손대는 것입니다. 사람을 위해 쓰인 스킬에는 headless 노드가 따를 수 없는 것이
+  둘 있습니다(자기 출력 템플릿, 그리고 사람 파트너에게 말하는 "what you do" 절) — 그래서 브리핑이
+  단계 계약이 둘 다 이긴다는 것, 설치돼 있지 않은 스킬은 말없이 건너뛴다는 것, 어떤 노드도 질문해서는
+  안 된다는 것을 명시합니다. 모든 계약이 `skills_used`를 반환합니다 — 사용 여부를 관찰할 수 없는
+  방법론은 평가할 수 없기 때문입니다. 단계별 교체는 `tm_open({skills: {...}})`, 계약문만으로 돌리려면
+  `skills: false`. **아직 미측정**: 비용값을 하는지. 기준선은 `goal-code` 7/7 · 130분 · $44.74이고,
+  심판 노드는 이미 작업 총비용의 약 40%입니다.
+
 - **v0.6.6 — 점수가 하네스 자신의 판정과 모순될 수 없게**: `goal-docs`는 `integrate` 2회 실패,
   패키지 blocked, `unreachable` 3개로 끝났는데(정산 경로, 설계대로) 벤치 채점기는 integrate가
   거부한 바로 그 통합 워크트리에 **8/8**을 줬습니다 — LLM accuracy 심판까지 통과. `task.json`에

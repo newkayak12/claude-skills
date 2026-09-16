@@ -592,3 +592,49 @@ test('a project that is not a git repository fails the dispatch with the reason,
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('a stage briefing carries its method, and the contract outranks what the method asks for', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root }).init();
+  try {
+    const open = await tm.call('tm_open', { request: 'big request', cwd, vendor: 'self', size: 'L' });
+    // size is a measurement: it gets no method at all, and reaching for one is its failure mode.
+    const sizing = readFileSync(open.ready.find((n) => n.stage === 'shape' || n.stage === 'size')?.briefing_path, 'utf8');
+    const shape = open.ready.find((n) => n.stage === 'shape');
+    assert.ok(shape, 'a pinned L task opens at shape');
+    assert.match(sizing, /## Method/);
+    assert.match(sizing, /develop:domain-driven-design/);
+    // The three things a headless node needs said out loud.
+    assert.match(sizing, /output template does not apply/);
+    assert.match(sizing, /ask no questions/);
+    assert.match(sizing, /not installed here is simply skipped/);
+    // Unfalsifiable otherwise: the stage has to say what it actually loaded.
+    assert.match(sizing, /"skills_used"/);
+  } finally {
+    tm.close();
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('skills: false runs every stage on its contract alone, and an override replaces the default', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root }).init();
+  try {
+    const off = await tm.call('tm_open', { request: 'big request', cwd, vendor: 'self', size: 'L', skills: false });
+    assert.doesNotMatch(readFileSync(off.ready[0].briefing_path, 'utf8'), /## Method/);
+    const mine = await tm.call('tm_open', {
+      request: 'big request', cwd, vendor: 'self', size: 'L',
+      skills: { shape: ['write:writing-plans'] },
+    });
+    const prompt = readFileSync(mine.ready[0].briefing_path, 'utf8');
+    assert.match(prompt, /write:writing-plans/);
+    assert.doesNotMatch(prompt, /develop:domain-driven-design/, 'an override replaces the default, it does not add to it');
+  } finally {
+    tm.close();
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
