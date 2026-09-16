@@ -89,10 +89,22 @@ const BUILTIN_VENDORS = {
   },
 };
 
-// `vendor: "auto"` tries these in order, then degrades to `self`. Empty by default: a run
-// that does not name a vendor stays on the orchestrator. Registering a vendor does not
-// enrol it here — name it explicitly (`vendor: "codex"`) or list it in `candidates`.
-const AUTO_CANDIDATES = [];
+// `vendor: "auto"` tries these in order, then degrades to `self`. An empty list meant
+// "auto" under ordered allocation was indistinguishable from `vendor: "self"` - a ready,
+// registered `codex` sat unused unless a caller named it, which is exactly the silent
+// self-preference the balanced allocator was built to avoid. Auto now tries both builtin
+// vendors before giving up on the orchestrator, with the run's own host_vendor last: a
+// peer that is ready is preferred over asking the driving session to do the work itself,
+// and the host is not ranked against itself as if it were a candidate for its own work.
+// Registering a THIRD-PARTY vendor still does not enrol it here — name it explicitly
+// (`vendor: "codex"`) or list it in `candidates`; this list only ever names the two
+// builtins.
+function AUTO_CANDIDATES(hostVendor) {
+  const base = ['claude', 'codex'];
+  return hostVendor && base.includes(hostVendor)
+    ? [...base.filter((v) => v !== hostVendor), hostVendor]
+    : base;
+}
 
 function loadVendors(cwd) {
   const vendors = JSON.parse(JSON.stringify(BUILTIN_VENDORS));
@@ -417,7 +429,7 @@ async function route(run, node) {
   const order = isSelf
     ? []
     : want === 'auto'
-      ? (pol.candidates || (balanced ? ['claude', 'codex'] : AUTO_CANDIDATES))
+      ? (pol.candidates || (balanced ? ['claude', 'codex'] : AUTO_CANDIDATES(run.host_vendor)))
       : [want];
 
   const attempts = [];
@@ -662,6 +674,33 @@ function priorSig(run, sid, attempt) {
 
 function autoReassign(run, n) {
   if (run.auto_reassign === false) return null;
+  // A critique's rejection (`sound: false`) has no subgoal to reassign - the spec itself
+  // is the defect. Escalate straight to retrySpec, the same move a subgoal takes below
+  // after two identical rejections: it opens a fresh setgoal+critique pair, so the
+  // re-authored spec is critiqued again rather than waved through the way a one-shot
+  // critic would. Budgeted the same way too - retrySpec caps at max_retries + 1 attempts
+  // and settles, leaving the rejection for the caller, when that budget is gone.
+  if (n.stage === 'critique' && !n.final) {
+    if (n.state !== 'failed') return null;
+    if (n.result && n.result.stage_ok !== true) return null;
+    if (!n.result || n.result.sound !== false) return null;
+    const feedback = [n.result.reason || '', ...(n.result.blocking || [])].filter(Boolean).join('\n- ')
+      || 'critique found the spec unsound (sound: false)';
+    const out = retrySpec(run, feedback);
+    // retrySpec's own cleanup sweeps every setgoal/critique node still `pending` or
+    // `failed` to `skipped` as "superseded by spec attempt N" - including THIS node,
+    // since it is a critique node too. That is right for a stale prior attempt; it is not
+    // right for the node that just ran and whose own verdict this call is about to return.
+    // Put it back the way finishNode left it before handing back to verdict().
+    n.state = 'failed';
+    saveRun(run);
+    record(run.cwd, {
+      event: out.attempt ? 'graph_escalate' : 'graph_settle',
+      run_id: run.run_id, rejected_by: n.node_id,
+      ...(out.attempt ? { attempt: out.attempt } : { unreachable: out.unreachable.length }),
+    });
+    return { ...out, escalated: true };
+  }
   if (!n.subgoal_id || n.final) return null;
   if (!VERDICT_FIELD[n.stage]) return null;
   if (n.state !== 'failed') return null;
@@ -912,6 +951,8 @@ const TOOLS = [
         max_retries: { type: 'number' },
         flow: { type: 'string', enum: ['auto', 'develop', 'document'], description: 'auto (default): plan decides from the request. develop: subgoals default to code work. document: subgoals default to written artifacts. Set by the entry skill, not by the user.' },
         mixed: { type: 'boolean', description: 'default true. false: every subgoal must be the flow\'s kind; a spec that mixes kinds fails at setgoal.' },
+        skills: { description: 'Method per engine stage, overriding the defaults: {"plan": ["agents:agent-task-decomposer"], "critique": []}. Keys are plan, critique, test, review, gate, plus the optional gate:goal. false runs every one of those stages on its contract alone. A skill named here must be analytic and non-dialogic - a node runs headless and cannot answer a skill that asks it something.' },
+        mounts: { description: 'Advisory MCP tools per engine stage, overriding the defaults: {"plan": ["mcp__sequential-thinking__sequentialthinking"]}. Keys are plan, setgoal, plus the optional gate:goal. false offers none of them. A tool named here that is not connected is skipped in silence, never searched for.' },
       },
       required: ['request', 'cwd'],
     },
@@ -1035,6 +1076,8 @@ async function toolGraphOpen(a) {
     max_retries: a.max_retries,
     flow: a.flow,
     mixed: a.mixed,
+    skills: a.skills,
+    mounts: a.mounts,
   });
   saveRun(run);
   record(cwd, { event: 'graph_open', run_id: run.run_id, vendor: run.vendor, flow: run.flow, mixed: run.mixed });
