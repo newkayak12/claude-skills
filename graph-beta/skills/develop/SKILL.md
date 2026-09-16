@@ -30,13 +30,14 @@ distrustful test engineer, and next year's maintainer.
 
 ```
 tm_open({
-  request, cwd, flow: "develop",
+  request, cwd, isolated, mixed: true, flow: "develop",
   vendor: "auto", allocation: "balanced",
   host_vendor, host_model, native_models
 })                                               -> task_id, ready: [size]
 fresh agent at size.briefing_path -> tm_submit({task_id, node_id: "size", payload})
-    delegate present  -> one run: graph_open({...delegate.args, isolated, mixed: true}), then the loop
-    no delegate       -> a task of runs: ../orchestrate/references/manager.md
+    delegate present     -> size S, s_driver "inline": one run, graph_open(delegate.args), then the loop
+    task_state "s_run"   -> size S, s_driver "process" (the default): poll tm_next until it reports
+    neither              -> a task of runs: ../orchestrate/references/manager.md
 ```
 
 `size` measures build units and ownership boundaries, so a monorepo with one test script
@@ -46,13 +47,16 @@ worktree per package" — pass `size: "L"` to `tm_open` and the size node is rec
 The flow is pinned, so `size` does not choose one — it only measures. `mixed: true` is
 deliberate: "implement the feature and update the design note" is one run, and the note is a `document` subgoal inside it.
 Pass `mixed: false` only when the user said nothing may be written that is not code — then a spec
-with the other kind fails at setgoal instead of quietly running.
+with the other kind fails at setgoal instead of quietly running. `mixed` and `isolated` reach
+whichever size-S run `tm_open` ends up opening, under either `s_driver`.
 
 ## Then
 
-Run **`../orchestrate/references/loop.md`** exactly as `orchestrate` would. The Standing
-Mandates and Output template in `../orchestrate/SKILL.md` apply unchanged — read them once;
-this skill adds nothing to them and removes nothing from them.
+Run **`../orchestrate/references/loop.md`** yourself only for a delegated (`s_driver: "inline"`)
+S run; otherwise poll `tm_next` (an `s_run`, or `../orchestrate/references/manager.md` for a
+task of runs) exactly as `orchestrate` would. The Standing Mandates and Output template in
+`../orchestrate/SKILL.md` apply unchanged — read them once; this skill adds nothing to them and
+removes nothing from them.
 
 ## What the current AI does
 

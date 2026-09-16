@@ -47,7 +47,7 @@ import {
   FLOWS,
 } from './graph.mjs';
 
-const SERVER = { name: 'task-manager', version: '0.6.0' };
+const SERVER = { name: 'task-manager', version: '0.7.0' };
 const DEFAULT_PROTOCOL = '2025-06-18';
 
 // ---------- where tasks live ----------
@@ -155,6 +155,23 @@ function createTask(a) {
     // 'process': every package is driven by its own headless session (see spawnChildDriver).
     // 'inline': the dispatch only opens the child run and the caller drives it itself.
     child_driver: a.child_driver === 'inline' ? 'inline' : 'process',
+    // Same choice as child_driver, but for the single run a size-S request becomes: 'process'
+    // (default) spawns one headless driver for it and the caller only polls tm_next until the
+    // report arrives; 'inline' keeps the old delegate-to-graph_open shape.
+    s_driver: a.s_driver === 'inline' ? 'inline' : 'process',
+    // How many times a package's dead driver is respawned on the SAME child run_id before the
+    // dispatch is folded blocked. A usage-limit death never spends this budget - see
+    // serviceDeadDriver.
+    driver_restarts: Number.isInteger(a.driver_restarts) ? a.driver_restarts : 2,
+    // Whether the S-size single run (s_driver 'process') is opened isolated. graph_open's own
+    // 'isolated' used to be added by the entry skill only after seeing 'delegate'; that no
+    // longer works once the manager opens the run itself, so it is a tm_open argument now and
+    // an inline delegate carries it too.
+    isolated: a.isolated === true,
+    // Same story as isolated: an entry skill pinned to 'develop' or 'document' used to add
+    // mixed:true (or mixed:false, to forbid the other kind entirely) itself when opening the
+    // delegated graph_open. Carried on the task, for the same size-S run either s_driver opens.
+    mixed: a.mixed !== false,
     // The floor the manager's own goal gate's match_pct must clear - same meaning, same
     // default, as the graph engine's run.goal_threshold.
     goal_threshold: Number.isInteger(a.goal_threshold) ? a.goal_threshold : 90,
@@ -175,6 +192,10 @@ function createTask(a) {
     },
     created_at: Date.now(),
     spec: null,
+    // Set only for a size-S task with s_driver 'process': {cwd, run_id, driver, spawn_count,
+    // waiting_capacity?} for the one graph run the manager opened and is driving with a
+    // headless session, mirroring a package's n.child.
+    s_run: null,
     nodes: [
       node('size', 'size', []),
       node('shape', 'shape', ['size']),
@@ -647,7 +668,10 @@ function driverArgv() {
 
 // The child's request and context are already in its run file. This says only which run to
 // continue and how to drive it - the same words that resume an interrupted bench workspace.
-function driverPrompt(task, child) {
+// opts.resume marks a driver spawned in place of one that died before the run finished: the
+// run and its worktree already carry whatever that attempt completed, so the new session is
+// told to read graph_status first rather than redo work.
+function driverPrompt(task, child, opts = {}) {
   const o = task.child_opts || {};
   const routing = [
     o.host_vendor ? `host_vendor ${o.host_vendor}` : '',
@@ -657,6 +681,9 @@ function driverPrompt(task, child) {
   return [
     `Use the graph-beta:orchestrate skill, but CONTINUE the graph run that is already open instead of opening one:`,
     `run_id ${child.run_id} at cwd ${child.cwd}. Do not call graph_open or tm_open.`,
+    opts.resume
+      ? `A previous driver for this exact run died before it finished; call graph_status({run_id, cwd}) first to see what it already completed, and resume from there - do not redo a node that is already done.`
+      : '',
     `Read references/loop.md, then drive graph_next/graph_run/graph_submit exactly as it says until the run is`,
     `complete or blocked - a fresh agent for every ready node, its JSON relayed verbatim to graph_submit,`,
     `graph_retry as the loop says.`,
@@ -665,11 +692,18 @@ function driverPrompt(task, child) {
   ].filter(Boolean).join(' ');
 }
 
-function spawnChildDriver(task, n) {
+// nodeIdLabel names the log files under <taskDir>/drivers/ (a package's node_id, or "S" for a
+// size-S task's single run). child is the {cwd, run_id} pointer - n.child for a package,
+// task.s_run for a size-S task; both are plain objects the caller can keep mutating (driver,
+// spawn_count, restarts, waiting_capacity) after this returns.
+function spawnChildDriver(task, nodeIdLabel, child, opts = {}) {
   const dir = join(taskDir(task.run_id), 'drivers');
-  const base = String(n.node_id).replace(/[^A-Za-z0-9._-]/g, '_');
-  const log = join(dir, `${base}.stream.jsonl`);
-  const stderr = join(dir, `${base}.stderr.txt`);
+  const base = String(nodeIdLabel).replace(/[^A-Za-z0-9._-]/g, '_');
+  const attempt = Number.isInteger(opts.attempt) ? opts.attempt : 0;
+  const suffix = attempt > 0 ? `.restart${attempt}` : '';
+  const log = join(dir, `${base}${suffix}.stream.jsonl`);
+  const stderr = join(dir, `${base}${suffix}.stderr.txt`);
+  const exitFile = join(dir, `${base}${suffix}.exit.json`);
   const argv = driverArgv();
   const command = argv.join(' ');
   let out = null;
@@ -683,17 +717,25 @@ function spawnChildDriver(task, n) {
     // keeps a relative HARNESS_TASKS_DIR pointing at the same place from the child's cwd.
     delete env.CLAUDECODE;
     if (process.env.HARNESS_TASKS_DIR) env.HARNESS_TASKS_DIR = tasksRoot();
-    const proc = spawn(argv[0], [...argv.slice(1), driverPrompt(task, n.child)], {
-      cwd: n.child.cwd,
+    const proc = spawn(argv[0], [...argv.slice(1), driverPrompt(task, child, opts)], {
+      cwd: child.cwd,
       env,
       detached: true,
       // stdin must be closed, not inherited: a nested `claude -p` waits forever on the parent's.
       stdio: ['ignore', out, err],
     });
+    // Held only for this process's lifetime, and only useful while it is: a restart across an
+    // MCP server restart has no exit code to record, which is fine - the stderr tail already
+    // carries the evidence.
+    try {
+      proc.on('exit', (code, signal) => {
+        try { appendFileSync(exitFile, JSON.stringify({ code, signal, at: Date.now() }) + '\n'); } catch { /* best-effort */ }
+      });
+    } catch { /* best-effort */ }
     proc.unref();
-    return { pid: proc.pid || null, started_at: Date.now(), log, stderr, command };
+    return { pid: proc.pid || null, started_at: Date.now(), log, stderr, exit: exitFile, command };
   } catch (e) {
-    return { pid: null, started_at: Date.now(), log, stderr, command, error: String((e && e.message) || e) };
+    return { pid: null, started_at: Date.now(), log, stderr, exit: exitFile, command, error: String((e && e.message) || e) };
   } finally {
     for (const fd of [out, err]) { try { if (fd !== null) closeSync(fd); } catch { /* already closed */ } }
   }
@@ -725,6 +767,86 @@ function driverStderrTail(driver, chars = 300) {
   } catch {
     return '';
   }
+}
+
+// The exit code/signal recorded by spawnChildDriver's own 'exit' listener, if this server
+// process was still alive to hear it. null when unknown - a restart across server processes,
+// or a driver still starting up.
+function driverExitInfo(driver) {
+  if (!driver || !driver.exit) return null;
+  try {
+    if (!existsSync(driver.exit)) return null;
+    const lines = readFileSync(driver.exit, 'utf8').trim().split('\n').filter(Boolean);
+    if (!lines.length) return null;
+    return JSON.parse(lines[lines.length - 1]);
+  } catch {
+    return null;
+  }
+}
+
+// Reads the driver's own stdout stream (NDJSON, `claude -p --output-format stream-json`) for
+// its last `result` event, and returns that text only when it names a usage limit - the same
+// pattern scripts/bench/drive.sh uses to tell a spent quota from an ordinary ending. A death
+// with this text set is not the package's failure and must not spend a restart.
+function driverUsageLimitText(driver) {
+  if (!driver || !driver.log) return '';
+  try {
+    if (!existsSync(driver.log)) return '';
+    const lines = readFileSync(driver.log, 'utf8').split('\n');
+    let last = null;
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      let e;
+      try { e = JSON.parse(line); } catch { continue; }
+      if (e && e.type === 'result') last = e;
+    }
+    const text = last && typeof last.result === 'string' ? last.result : '';
+    return /hit your [a-z0-9-]+ limit/i.test(text) ? text : '';
+  } catch {
+    return '';
+  }
+}
+
+// The next spawn's attempt number for this child, for a unique log filename - shared by a
+// budget restart and a reset_capacity restart so the two schemes never collide on one.
+function nextSpawnAttempt(child) {
+  const n = (Number.isInteger(child.spawn_count) ? child.spawn_count : 0) + 1;
+  child.spawn_count = n;
+  return n;
+}
+
+// Called on every tm_next poll (and defensively from foldChild) for a package whose driver is
+// no longer alive while its child run is still `running`. Distinguishes three cases:
+//   - the driver died because a usage limit was hit: park it on `waiting_capacity`, spend no
+//     restart, and wait for tm_retry({reset_capacity:true}).
+//   - the driver died for any other reason and the restart budget is not spent: respawn a
+//     driver on the SAME run_id with a resume prompt, and record the death on driver.restarts.
+//   - the budget is spent: do nothing and let the dispatch fold blocked with every tail.
+// Returns true when it changed anything (so the caller knows to persist the task).
+function serviceDeadDriver(task, child, nodeId) {
+  const driver = child.driver;
+  if (!driver || driverAlive(driver)) return false;
+  const run = loadRun(child.cwd, child.run_id);
+  const cs = run ? runState(run) : { state: 'missing' };
+  if (cs.state !== 'running') return false; // the run finished; an ordinary fold reads that
+  if (child.waiting_capacity) return false; // already parked; reset_capacity is the way out
+  const tail = driverStderrTail(driver, 2000);
+  const usage = driverUsageLimitText(driver);
+  const entry = { pid: driver.pid, exit: driverExitInfo(driver), at: Date.now(), stderr_tail: (usage || tail).slice(-300) };
+  if (usage) {
+    child.waiting_capacity = { reason: usage.slice(0, 500), since: Date.now() };
+    record(task, { event: 'child_driver_capacity', task_id: task.run_id, node_id: nodeId, pid: driver.pid, reason: usage.slice(0, 300) });
+    return true;
+  }
+  const budget = Number.isInteger(task.driver_restarts) ? task.driver_restarts : 2;
+  const priorRestarts = driver.restarts || [];
+  if (priorRestarts.length >= budget) return false; // budget spent: fold it, do not respawn again
+  const restarts = [...priorRestarts, entry];
+  const fresh = spawnChildDriver(task, nodeId, child, { resume: true, attempt: nextSpawnAttempt(child) });
+  fresh.restarts = restarts;
+  child.driver = fresh;
+  record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: nodeId, pid: fresh.pid, restart: restarts.length, budget });
+  return true;
 }
 
 // Executed by the server the moment the node is ready. The model never opens a run.
@@ -785,7 +907,8 @@ function openChild(task, n) {
   n.child = { cwd: wt.path, run_id: child.run_id, branch: wt.branch, flow, based_on };
   record(task, { event: 'dispatch', task_id: task.run_id, node_id: n.node_id, child_run_id: child.run_id, cwd: wt.path, branch: wt.branch });
   if (task.child_driver !== 'inline') {
-    const driver = spawnChildDriver(task, n);
+    n.child.spawn_count = 0; // the first spawn gets no filename suffix; a respawn starts at 1
+    const driver = spawnChildDriver(task, n.node_id, n.child);
     n.child.driver = driver;
     record(task, {
       event: 'child_driver_spawned', task_id: task.run_id, node_id: n.node_id, child_run_id: child.run_id,
@@ -814,25 +937,38 @@ function foldChild(task, n) {
     changed_files: changed,
     report: report ? String(report.result.handoff || '') : '',
   };
-  const driver = (n.child && n.child.driver) || null;
   if (cs.state === 'running') {
+    // A direct tm_submit (skipping tm_next) still gets the same dead-driver handling tm_next
+    // gives it on every poll: respawn on the same run_id, or park on capacity, before ever
+    // folding blocked. Persist first - this throws on every branch but the last.
+    if (n.child.driver && !driverAlive(n.child.driver) && serviceDeadDriver(task, n.child, n.node_id)) saveRun(task);
+    const driver = n.child.driver || null;
+    if (n.child.waiting_capacity) {
+      throw new Error(`dispatch ${n.node_id}: child run ${n.child.run_id} is waiting on provider capacity `
+        + `(${n.child.waiting_capacity.reason}). Tell the user the reset time and stop; `
+        + `tm_retry({task_id, package_id: "${n.subgoal_id}", reset_capacity: true}) resumes it once capacity is back.`);
+    }
     if (!driver || driverAlive(driver)) {
       throw new Error(`dispatch ${n.node_id}: child run ${n.child.run_id} is still running (${JSON.stringify(cs.counts)}). `
         + (driver
           ? `Its driver process (pid ${driver.pid}) is still working; wait and poll tm_next, then submit this node again.`
           : `Drive it with graph_next/graph_run/graph_submit at cwd ${n.child.cwd}, then submit this node again.`));
     }
-    // The driver died with the run unfinished - a crash, a usage limit, a kill. That is not a
-    // verdict about the package, but it is an honest end for this attempt: fold it as blocked
-    // so tm_retry can open the next one in the same worktree.
+    // The driver died with the run unfinished and the restart budget (serviceDeadDriver already
+    // tried) is spent. That is not a verdict about the package, but it is an honest end for
+    // this attempt: fold it as blocked, with every attempt's stderr, so tm_retry can open the
+    // next one in the same worktree.
+    const restarts = driver.restarts || [];
     const tail = driverStderrTail(driver);
+    const tails = [...restarts.map((r) => r.stderr_tail).filter(Boolean), tail].filter(Boolean);
     return {
       ...base, stage_ok: false, accept: false, gaps: g.gaps || [], match_pct: g.match_pct,
       child_state: 'running',
       driver: { pid: driver.pid, log: driver.log, stderr: driver.stderr },
-      driver_stderr: tail,
-      reason: `child driver exited (pid ${driver.pid}) with the run still running (${JSON.stringify(cs.counts)})`
-        + (tail ? `: ${tail}` : ''),
+      driver_restarts: restarts,
+      driver_stderr: tails.join(' | '),
+      reason: `child driver exited (pid ${driver.pid}) after ${restarts.length} restart(s) with the run still running (${JSON.stringify(cs.counts)})`
+        + (tails.length ? `: ${tails.join(' | ')}` : ''),
     };
   }
   if (cs.state === 'blocked') {
@@ -1196,11 +1332,11 @@ const VERDICT_SCHEMA = {
 const TOOLS = [
   {
     name: 'tm_open',
-    description: 'Open a task for a request that may be too large for one graph run. Builds size -> shape -> critique on disk under ~/.harness/tasks/<task_id>/ and returns the first ready node. If size comes back S the task deletes itself and tells you to graph_open instead. Routing arguments are passed through to every child run.',
+    description: 'Open a task for a request that may be too large for one graph run. Builds size -> shape -> critique on disk under ~/.harness/tasks/<task_id>/ and returns the first ready node. If size comes back S and s_driver is "inline" the task deletes itself and tells you to graph_open instead; with the default s_driver "process" it instead opens and drives that one run itself - poll tm_next for it like any child. Routing arguments are passed through to every child run.',
     inputSchema: {
       type: 'object',
       properties: {
-        request: { type: 'string' }, cwd: { type: 'string', description: 'the project root: child worktrees branch from its HEAD' },
+        request: { type: 'string' }, cwd: { type: 'string', description: 'the project root: child worktrees branch from its HEAD, and a size-S run under s_driver "process" opens directly here' },
         context: { type: 'string' },
         flow: { type: 'string', enum: ['auto', 'develop', 'document'] },
         vendor: { type: 'string' }, allocation: { type: 'string', enum: ['ordered', 'balanced'] },
@@ -1209,7 +1345,11 @@ const TOOLS = [
         model: { type: 'string' }, policy: { type: 'object' }, candidates: { type: 'array', items: { type: 'string' } },
         skills: { description: 'Method per manager stage, overriding the defaults: {"shape": ["develop:domain-driven-design"], "critique": []}. false runs every stage on its contract alone. A skill named here must be analytic and non-dialogic - a node runs headless and cannot answer a skill that asks it something.' },
         sandbox: { type: 'string' }, max_retries: { type: 'number' },
+        isolated: { type: 'boolean', description: 'Passed to the graph run this task opens (a size-S run under s_driver "process", or the delegate.args of one under "inline"). true only when you created or were handed a private worktree holding this run alone.' },
+        mixed: { type: 'boolean', description: 'Passed the same way isolated is, to the same size-S run. Default true. false forbids the other kind of work entirely - a develop-flow request with a document subgoal fails at setgoal instead of quietly running one. Has no effect on an L task: every package is already mixed:true.' },
         child_driver: { type: 'string', enum: ['process', 'inline'], description: "How a package's child run is driven. 'process' (default): the manager spawns a headless session per package that drives the child to the end, and you only fold it. 'inline': the dispatch only opens the child run and you drive it yourself, node by node, in this session." },
+        s_driver: { type: 'string', enum: ['process', 'inline'], description: "How a size-S request's single run is driven. 'process' (default): the manager opens the run and spawns one headless driver for it, same as a package's dispatch, and you only poll tm_next until the report arrives. 'inline': tm_submit(size) hands back a delegate to graph_open instead, and you drive it yourself with references/loop.md - the pre-0.9 shape." },
+        driver_restarts: { type: 'integer', description: 'default 2: how many times a package or size-S driver that died mid-run is respawned on the SAME run_id before the dispatch folds blocked. A usage-limit death never spends this - it parks on waiting_capacity for tm_retry({reset_capacity:true}) instead.' },
         goal_threshold: { type: 'integer', description: 'default 90: the manager\'s own goal gate must report match_pct at or above this to accept, and it is passed through to every child run as its own goal_threshold. A gate that says accept with 40% match is reporting a partial result as a pass. 0 accepts on the verdict alone.' },
       },
       required: ['request', 'cwd'],
@@ -1218,13 +1358,13 @@ const TOOLS = [
   },
   {
     name: 'tm_next',
-    description: 'Which manager nodes are ready, each with a briefing_path for a fresh agent, plus every running child as {cwd, run_id, driver}. A ready dispatch node is executed here and now: its worktree is created, its child graph run opened, and (unless the task was opened with child_driver "inline") a headless driver process spawned to run that child to the end. Poll tm_next while a child driver is alive; do not drive that child yourself. tm_submit the dispatch node once the child is no longer running.',
+    description: 'Which manager nodes are ready, each with a briefing_path for a fresh agent, plus every running child as {cwd, run_id, driver}. A ready dispatch node is executed here and now: its worktree is created, its child graph run opened, and (unless the task was opened with child_driver "inline") a headless driver process spawned to run that child to the end. Also where a dead driver is serviced: respawned on the same run_id (driver.restarts) if the budget allows, or parked on waiting_capacity after a usage-limit death - neither needs you to do anything but poll again. A size-S task under s_driver "process" has no manager nodes at all; tm_next instead returns {run_id, cwd, driver, nodes, report} for the one run it is driving, ready for the entry skill\'s output template once state is complete or blocked. Poll tm_next while a driver is alive; do not drive that child yourself. tm_submit the dispatch node once the child is no longer running.',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' } }, required: ['task_id'] },
     outputSchema: NEXT_SCHEMA,
   },
   {
     name: 'tm_submit',
-    description: 'Record a manager node. For size/shape/critique/accept/integrate/gate/report pass the payload the fresh agent returned. For a dispatch node pass no payload: the manager reads the child run file and folds its goal-gate verdict and report into the node. Refused while the child is still running and its driver alive; a child whose driver died unfinished folds as blocked.',
+    description: 'Record a manager node. For size/shape/critique/accept/integrate/gate/report pass the payload the fresh agent returned. For a dispatch node pass no payload: the manager reads the child run file and folds its goal-gate verdict and report into the node. Refused while the child is still running and its driver alive, or waiting_capacity (a usage-limit death; use tm_retry({reset_capacity:true})); a child whose driver died mid-run and spent its whole restart budget folds as blocked, with every attempt\'s stderr.',
     inputSchema: {
       type: 'object',
       properties: { task_id: { type: 'string' }, node_id: { type: 'string' }, payload: { type: 'object' } },
@@ -1234,9 +1374,9 @@ const TOOLS = [
   },
   {
     name: 'tm_retry',
-    description: 'Open a fresh attempt. With package_id: a new dispatch in the same worktree, carrying the rejection forward into the child request. With repackage: [ids] after an integration conflict, reshape with those packages told to become one or to depend on each other. With repair: true after an integrate came back verified=false with no conflicts: a repair package whose worktree IS the integration tree, for a seam no package can reproduce alone. Without any of them: reshape (shape + critique) and discard the package graph. When the budget is gone the failure is settled and the report is released over the unreachable set.',
-    inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, package_id: { type: 'string' }, repackage: { type: 'array', items: { type: 'string' }, description: 'the conflicting_packages an integrate or dispatch failure named' }, repair: { type: 'boolean', description: 'the last integrate failed with verified=false and no conflicts: open a package that runs IN the integration worktree, where every package branch is merged and the defect is visible. package_id: "integration" is an alias for it.' } }, required: ['task_id'] },
-    outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, retried: { type: 'boolean' }, attempt: { type: 'number' }, reason: { type: 'string' }, unreachable: { type: 'array', items: { type: 'string' } } }, required: ['task_id', 'retried'] },
+    description: 'Open a fresh attempt. With package_id: a new dispatch in the same worktree, carrying the rejection forward into the child request. With repackage: [ids] after an integration conflict, reshape with those packages told to become one or to depend on each other. With repair: true after an integrate came back verified=false with no conflicts: a repair package whose worktree IS the integration tree, for a seam no package can reproduce alone. With reset_capacity: true, clears every child (or just package_id\'s, or the size-S run) parked waiting_capacity after a usage-limit death and respawns its driver - this spends no restart. Without any of them: reshape (shape + critique) and discard the package graph. When the budget is gone the failure is settled and the report is released over the unreachable set.',
+    inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, package_id: { type: 'string' }, repackage: { type: 'array', items: { type: 'string' }, description: 'the conflicting_packages an integrate or dispatch failure named' }, repair: { type: 'boolean', description: 'the last integrate failed with verified=false and no conflicts: open a package that runs IN the integration worktree, where every package branch is merged and the defect is visible. package_id: "integration" is an alias for it.' }, reset_capacity: { type: 'boolean', description: 'a driver is parked on waiting_capacity after a usage-limit death (see tm_next\'s children[].waiting_capacity, or the top-level one for a size-S task). Clears it and respawns a driver on the same run_id, spending no restart. Combine with package_id to target just that package.' } }, required: ['task_id'] },
+    outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, retried: { type: 'boolean' }, attempt: { type: 'number' }, resumed: { type: 'array', items: { type: 'string' } }, reason: { type: 'string' }, unreachable: { type: 'array', items: { type: 'string' } } }, required: ['task_id', 'retried'] },
   },
   {
     name: 'tm_status',
@@ -1278,22 +1418,113 @@ function toolOpen(a) {
   return toolNext({ task_id: task.run_id });
 }
 
-// Size S: this request needs no manager. Say where to go, and leave nothing behind - a
-// task directory for a request that never had packages is clutter that looks like state.
+// Size S, s_driver 'process' (the default): open the one graph run this request needs, in the
+// project's own cwd - not a package worktree, there is no shape to make one - and spawn a
+// driver for it the same way a package's dispatch does. task.s_run mirrors n.child.
+function openSRun(task) {
+  const flow = task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto');
+  const child = createRun({
+    ...task.child_opts,
+    cwd: task.cwd,
+    request: task.request,
+    context: task.context || '',
+    isolated: task.isolated === true,
+    flow: FLOWS[flow] ? flow : 'auto',
+    mixed: task.mixed !== false,
+  });
+  task.s_run = { cwd: task.cwd, run_id: child.run_id };
+  record(task, { event: 's_open', task_id: task.run_id, run_id: child.run_id, cwd: task.cwd });
+  if (task.s_driver !== 'inline') {
+    task.s_run.spawn_count = 0;
+    const driver = spawnChildDriver(task, 'S', task.s_run);
+    task.s_run.driver = driver;
+    record(task, {
+      event: 'child_driver_spawned', task_id: task.run_id, node_id: 'S', child_run_id: child.run_id,
+      pid: driver.pid, cwd: task.cwd, log: driver.log, command: driver.command,
+      ...(driver.error ? { error: driver.error } : {}),
+    });
+  }
+}
+
+// Size S: this request needs no manager stage graph, only one run. s_driver 'inline' keeps the
+// original shape - hand the caller a graph_open call and leave nothing behind. s_driver
+// 'process' (the default) instead opens that run here and drives it with its own headless
+// session; the task stays on disk only as the pointer to that run, and the caller polls
+// tm_next until the report arrives, exactly as it would for one L package.
 function delegateIfSmall(task, n, out) {
   if (!(n.stage === 'size' && n.state === 'done' && task.size === 'S')) return null;
-  const delegate = {
-    tool: 'graph_open',
-    args: { request: task.request, cwd: task.cwd, context: task.context || undefined,
-      flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'), ...task.child_opts },
-    reason: 'size S: one graph run carries it; the manager adds nothing',
+  if (task.s_driver === 'inline') {
+    const delegate = {
+      tool: 'graph_open',
+      args: { request: task.request, cwd: task.cwd, context: task.context || undefined,
+        flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'), isolated: task.isolated === true,
+        mixed: task.mixed !== false, ...task.child_opts },
+      reason: 'size S, s_driver "inline": drive the single run yourself with references/loop.md',
+    };
+    try { rmSync(taskDir(task.run_id), { recursive: true, force: true }); } catch { /* best-effort */ }
+    return { ...out, state: 'done', task_state: 'delegated', delegate };
+  }
+  for (const x of task.nodes) {
+    if (x.node_id === 'size') continue;
+    if (x.state === 'pending') { x.state = 'skipped'; x.result = { stage_ok: false, reason: 'size S: the single run is driven directly, with no shape/critique stages' }; }
+  }
+  openSRun(task);
+  saveRun(task);
+  return { ...out, task_state: 's_run', ...toolNext({ task_id: task.run_id }) };
+}
+
+// tm_next for a size-S task driven by s_driver 'process': there is no manager node graph to
+// read readiness from, only the one run task.s_run points at. Shaped so the caller can fill
+// the entry skill's output template - node/vendor/stage_ok/note, then the report - without
+// ever opening a node payload itself.
+function toolNextSRun(task) {
+  const s = task.s_run;
+  const run = loadRun(s.cwd, s.run_id);
+  const cs = run ? runState(run) : { state: 'missing', counts: {} };
+  if (cs.state === 'running' && s.driver && !driverAlive(s.driver)) {
+    if (serviceDeadDriver(task, s, 'S')) saveRun(task);
+  }
+  const driver = s.driver || null;
+  const out = {
+    task_id: task.run_id,
+    state: cs.state === 'running' ? 'running' : (cs.state === 'complete' ? 'complete' : 'blocked'),
+    counts: cs.counts || {},
+    ...(task.size ? { size: task.size } : {}),
+    flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),
+    run_id: s.run_id,
+    cwd: s.cwd,
+    ready: [],
+    children: [],
   };
-  try { rmSync(taskDir(task.run_id), { recursive: true, force: true }); } catch { /* best-effort */ }
-  return { ...out, state: 'done', task_state: 'delegated', delegate };
+  if (driver) out.driver = { pid: driver.pid, alive: driverAlive(driver), log: driver.log, ...((driver.restarts || []).length ? { restarts: driver.restarts.length } : {}) };
+  if (s.waiting_capacity) out.waiting_capacity = s.waiting_capacity;
+  if (cs.state !== 'running') {
+    out.nodes = run ? run.nodes.filter((x) => x.result).map((x) => ({
+      node_id: x.node_id,
+      stage: x.stage,
+      vendor: (x.result && (x.result.vendor || x.result.executor)) || 'self',
+      stage_ok: !!(x.result && x.result.stage_ok === true),
+      note: String((x.result && (x.result.reason || x.result.evidence)) || '').slice(0, 140),
+    })) : [];
+    const report = run ? run.nodes.filter((x) => x.stage === 'report' && x.state === 'done' && x.result).pop() : null;
+    out.report = report ? String(report.result.handoff || '') : '';
+    out.next = 'this task is finished: relay the node table and the report to the requester, exactly as the entry skill\'s output template asks';
+  } else if (s.waiting_capacity) {
+    out.next = `waiting on provider capacity (${s.waiting_capacity.reason.slice(0, 160)}); tell the user the reset time and stop. tm_retry({task_id, reset_capacity:true}) resumes it`;
+  } else if (driver && driverAlive(driver)) {
+    out.next = `its driver process (pid ${driver.pid}) is running this run: wait; poll tm_next; do not drive it yourself`;
+  } else if (driver) {
+    const budget = Number.isInteger(task.driver_restarts) ? task.driver_restarts : 2;
+    out.next = `driver died and the restart budget (${budget}) is spent; graph_status({run_id, cwd}) shows where it stopped, or reopen the task with s_driver "inline" to drive it yourself`;
+  } else {
+    out.next = `drive it yourself with graph_next/graph_run/graph_submit at cwd ${s.cwd}, run_id ${s.run_id}`;
+  }
+  return out;
 }
 
 function toolNext(a) {
   const task = mustFindTask(a);
+  if (task.s_run) return toolNextSRun(task);
   // Dispatch nodes run here, the moment they are ready. Doing it in tm_next rather than in
   // a separate call means the session cannot forget to, and cannot do it twice.
   let opened = 0;
@@ -1303,6 +1534,15 @@ function toolNext(a) {
     opened++;
   }
   if (opened) saveRun(task);
+  // Every running dispatch whose driver is no longer alive gets serviced here, on every poll:
+  // respawned on the same run_id, or parked on capacity, before the caller ever sees it as
+  // something to fold. Only a spent restart budget leaves it dead for the children[] map below.
+  let serviced = 0;
+  for (const n of task.nodes) {
+    if (n.stage !== 'dispatch' || n.state !== 'running' || !n.child || !n.child.driver) continue;
+    if (serviceDeadDriver(task, n.child, n.node_id)) serviced++;
+  }
+  if (serviced) saveRun(task);
   // Integration is mechanical up to the checks: the worktree and the merges are done here,
   // in dependency order, so a conflict is a fact the manager saw and not a claim a node made.
   for (const n of readyNodes(task)) {
@@ -1316,17 +1556,21 @@ function toolNext(a) {
     try { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, composeTaskPrompt(task, n)); } catch { /* status full is the fallback */ }
     return { node_id: n.node_id, stage: n.stage, briefing_path: p, next: 'dispatch briefing_path to a fresh native agent, then tm_submit' };
   });
+  const budget = Number.isInteger(task.driver_restarts) ? task.driver_restarts : 2;
   const children = task.nodes.filter((n) => n.stage === 'dispatch' && n.state === 'running' && n.child).map((n) => {
     const child = loadRun(n.child.cwd, n.child.run_id);
     const childState = child ? runState(child).state : 'missing';
     const driver = n.child.driver || null;
     const alive = driverAlive(driver);
+    const waiting = n.child.waiting_capacity || null;
+    const restarts = (driver && driver.restarts) || [];
     const fold = `tm_submit({task_id, node_id: "${n.node_id}"})`;
     let next;
     if (childState !== 'running') next = fold;
     else if (!driver) next = `graph_next({run_id: "${n.child.run_id}", cwd: "${n.child.cwd}"}) and drive it; tm_submit this node when complete`;
+    else if (waiting) next = `waiting on provider capacity (${waiting.reason.slice(0, 160)}); tell the user the reset time and stop. tm_retry({task_id, package_id: "${n.subgoal_id}", reset_capacity:true}) resumes it`;
     else if (alive) next = `its driver process (pid ${driver.pid}) is running this child: wait; poll tm_next; do not drive this child yourself`;
-    else next = `driver exited before the run finished: ${fold} folds it as blocked, then tm_retry({package_id: "${n.subgoal_id}"}) reopens it (or reopen the task with child_driver "inline" to drive children yourself)`;
+    else next = `driver died and the restart budget (${budget}) is spent: ${fold} folds it as blocked with every attempt's stderr, then tm_retry({package_id: "${n.subgoal_id}"}) reopens it (or reopen the task with child_driver "inline" to drive children yourself)`;
     return {
       node_id: n.node_id,
       package_id: n.subgoal_id,
@@ -1334,7 +1578,8 @@ function toolNext(a) {
       run_id: n.child.run_id,
       branch: n.child.branch,
       child_state: childState,
-      ...(driver ? { driver: { pid: driver.pid, alive, log: driver.log } } : {}),
+      ...(driver ? { driver: { pid: driver.pid, alive, log: driver.log, ...(restarts.length ? { restarts: restarts.length } : {}) } } : {}),
+      ...(waiting ? { waiting_capacity: waiting } : {}),
       next,
     };
   });
@@ -1365,6 +1610,42 @@ function toolSubmit(a) {
 
 function toolRetry(a) {
   const task = mustFindTask(a);
+  // A driver parked waiting_capacity after a usage-limit death spent no restart; the way back
+  // is not a retried package but a cleared wait, once the caller believes capacity is back.
+  // Clears every waiting child (or just package_id's, or task.s_run for a size-S task) and
+  // respawns its driver - none of that counts against driver_restarts.
+  if (a.reset_capacity === true) {
+    const resumed = [];
+    if (task.s_run && task.s_run.waiting_capacity && (!a.package_id || String(a.package_id) === 'S')) {
+      record(task, { event: 'child_driver_capacity_cleared', task_id: task.run_id, node_id: 'S', was: task.s_run.waiting_capacity });
+      delete task.s_run.waiting_capacity;
+      if (task.s_driver !== 'inline') {
+        const restarts = (task.s_run.driver && task.s_run.driver.restarts) || [];
+        const fresh = spawnChildDriver(task, 'S', task.s_run, { resume: true, attempt: nextSpawnAttempt(task.s_run) });
+        fresh.restarts = restarts;
+        task.s_run.driver = fresh;
+        record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: 'S', pid: fresh.pid, reason: 'reset_capacity' });
+      }
+      resumed.push('S');
+    }
+    for (const n of task.nodes) {
+      if (n.stage !== 'dispatch' || n.state !== 'running' || !n.child || !n.child.waiting_capacity) continue;
+      if (a.package_id && n.subgoal_id !== String(a.package_id)) continue;
+      record(task, { event: 'child_driver_capacity_cleared', task_id: task.run_id, node_id: n.node_id, was: n.child.waiting_capacity });
+      delete n.child.waiting_capacity;
+      if (task.child_driver !== 'inline') {
+        const restarts = (n.child.driver && n.child.driver.restarts) || [];
+        const fresh = spawnChildDriver(task, n.node_id, n.child, { resume: true, attempt: nextSpawnAttempt(n.child) });
+        fresh.restarts = restarts;
+        n.child.driver = fresh;
+        record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: n.node_id, pid: fresh.pid, reason: 'reset_capacity' });
+      }
+      resumed.push(n.node_id);
+    }
+    saveRun(task);
+    record(task, { event: 'tm_reset_capacity', task_id: task.run_id, resumed });
+    return { task_id: task.run_id, retried: resumed.length > 0, resumed, reason: resumed.length ? '' : 'nothing in this task is waiting on provider capacity', ...toolNext({ task_id: task.run_id }) };
+  }
   // Two children pass and the merge fails: that is nobody's failure but the shape's. The
   // packages that collided go back to shape as one instruction - make them one package, or
   // order them so the later one builds on the earlier - with the conflicting files as the
@@ -1433,6 +1714,23 @@ function toolStatus(a) {
   if (a.full) {
     if (a.node_id) { const n = getNode(task, String(a.node_id)); if (!n) throw new Error(`unknown node ${a.node_id}`); return { task_id: task.run_id, node: n }; }
     return task;
+  }
+  if (task.s_run) {
+    const run = loadRun(task.s_run.cwd, task.s_run.run_id);
+    const cs = run ? runState(run) : { state: 'missing', counts: {} };
+    return {
+      task_id: task.run_id,
+      cwd: task.cwd,
+      state: cs.state,
+      counts: cs.counts,
+      size: task.size,
+      flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),
+      s_driver: task.s_driver || 'process',
+      s_run: { cwd: task.s_run.cwd, run_id: task.s_run.run_id,
+        ...(task.s_run.driver ? { driver: { ...task.s_run.driver, alive: driverAlive(task.s_run.driver) } } : {}),
+        ...(task.s_run.waiting_capacity ? { waiting_capacity: task.s_run.waiting_capacity } : {}) },
+      packages: [],
+    };
   }
   const state = runState(task);
   return {
