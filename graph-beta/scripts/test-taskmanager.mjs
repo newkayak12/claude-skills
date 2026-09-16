@@ -422,6 +422,104 @@ test('a failed integrate reopens once the package it blamed is retried; an unkno
   });
 });
 
+// A seam: the combined tree fails a check no package's own worktree can reproduce. Before the
+// repair package the only tool was tm_retry({package_id}), which reopens the blamed package in
+// its own tree - where the offending claim is still true. `goal-docs` round 2 died there.
+async function toSeam(tm, task_id) {
+  const v = await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({
+    verified: false,
+    checks: ['run the README example -> fails: P2 documents a command only P1 installs'],
+    gaps: ['the README example only runs with both packages present'],
+    reason: 'the seam between P1 and P2 fails; neither package is wrong on its own',
+  }) });
+  assert.equal(v.state, 'failed', JSON.stringify(v));
+  return (await tm.call('tm_status', { task_id, node_id: 'integrate:1' })).nodes[0].integration;
+}
+
+test('a seam opens a repair package whose worktree IS the integration tree, and the next integrate starts from it', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    const early = await tm.call('tm_retry', { task_id, repair: true });
+    assert.match(early.error, /integrate:1 is pending, not failed/, 'nothing to repair until integrate has refused');
+
+    const tree = await toSeam(tm, task_id);
+    assert.equal(tree.merged, 2);
+
+    const rt = await tm.call('tm_retry', { task_id, repair: true });
+    assert.equal(rt.retried, true, JSON.stringify(rt));
+    assert.equal(rt.package_id, 'R1');
+    assert.equal(rt.repairs, 'integrate:1');
+    assert.deepEqual((await tm.call('tm_status', { task_id })).packages, ['P1', 'P2', 'R1']);
+    assert.equal(rt.children.length, 1);
+    assert.equal(rt.children[0].node_id, 'dispatch:R1:1');
+    assert.equal(rt.children[0].cwd, tree.cwd, 'the repair child runs in the integration worktree, not one of its own');
+    assert.equal(rt.children[0].branch, tree.branch);
+    assert.ok(!existsSync(join(root, task_id, 'worktrees', 'R1')), 'a repair package gets no worktree of its own');
+
+    const child = await g.call('graph_status', { run_id: rt.children[0].run_id, cwd: rt.children[0].cwd, full: true });
+    assert.match(child.request, /make the integration checks below pass/);
+    assert.match(child.request, /the README example only runs with both packages present/);
+    assert.match(child.request, /P2 documents a command only P1 installs/);
+    assert.match(child.context, /COMBINED tree of every package in this task/);
+    assert.match(child.context, /Every package's files are yours to touch/);
+    assert.match(child.context, /Do not undo another package's work/);
+    assert.match(child.context, /Paths the packages of this task own\. All of them are in scope here:/);
+    assert.match(child.context, /- a\.txt\n- b\.txt/, 'the union of every package\'s touches');
+
+    await completeChild(g, rt.children[0]);
+    let v = await tm.call('tm_submit', { task_id, node_id: 'dispatch:R1:1' });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    assert.equal(v.child.branch, tree.branch, 'the repair is committed on the integration branch itself');
+    assert.ok(v.child.commit, 'and it is a commit, not just a dirty tree');
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'accept:R1:1', payload: ok({ accept: true, match_pct: 95 }) })).state, 'done');
+
+    const nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['integrate:2']);
+    const file = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const two = file.nodes.find((n) => n.node_id === 'integrate:2');
+    assert.equal(two.supersedes, 'integrate:1');
+    assert.equal(two.integration.based_on, 'repair');
+    assert.deepEqual(two.integration.merged.map((m) => m.package), ['R1'], 'nothing is re-merged: that would rebuild the tree the seam was in');
+    assert.match(readFileSync(join(two.integration.cwd, 'a.txt'), 'utf8'), /changed by R1/, 'the repair commit is what round 2 checks');
+    assert.deepEqual(file.nodes.find((n) => n.node_id === 'gate:goal:1').deps, ['integrate:2'], 'the goal gate waits for the repaired integrate');
+    assert.deepEqual(file.nodes.find((n) => n.node_id === 'report').after, ['gate:goal:1'], 'and the report stays behind the gate');
+    const briefing = readFileSync(nx.ready[0].briefing_path, 'utf8');
+    assert.match(briefing, /repaired integration branch of package R1/);
+    assert.match(briefing, /the README example only runs with both packages present/, 'the failed checks travel to the new integrate');
+
+    v = await tm.call('tm_submit', { task_id, node_id: 'integrate:2', payload: ok({ verified: true, checks: ['run the README example -> ok'] }) });
+    assert.equal(v.state, 'done');
+    assert.equal(v.integration.merged, 1);
+    assert.deepEqual((await tm.call('tm_next', { task_id })).ready.map((n) => n.node_id), ['gate:goal:1']);
+  });
+});
+
+test('package_id: "integration" is the alias for a repair; "integrate" is still not a package', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    await toSeam(tm, task_id);
+    const rt = await tm.call('tm_retry', { task_id, package_id: 'integration' });
+    assert.equal(rt.retried, true, JSON.stringify(rt));
+    assert.equal(rt.repair, true);
+    assert.equal(rt.package_id, 'R1');
+    assert.equal(rt.children[0].node_id, 'dispatch:R1:1');
+    const bad = await tm.call('tm_retry', { task_id, package_id: 'integrate' });
+    assert.match(bad.error, /no package integrate in the shape/, 'the alias is one word, not any word that looks like it');
+  });
+});
+
+test('a merge conflict is refused a repair: that is a shape failure, and repackage is the route', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id, INDEPENDENT);
+    await acceptBoth(tm, g, task_id);
+    assert.equal((await tm.call('tm_next', { task_id })).state, 'blocked');
+    const bad = await tm.call('tm_retry', { task_id, repair: true });
+    assert.match(bad.error, /integrate:1 failed on a merge conflict \(a\.txt\)/);
+    assert.match(bad.error, /tm_retry\(\{task_id, repackage: \["P2", "P1"\]\}\)/);
+    assert.deepEqual((await tm.call('tm_status', { task_id })).packages, ['P1', 'P2'], 'no repair package was appended');
+  });
+});
+
 const INDEPENDENT = {
   acceptance: ['both modules build together'],
   packages: [
