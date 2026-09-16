@@ -1835,7 +1835,7 @@ writeFileSync(output, JSON.stringify({stage_ok:true,result}));
 }
 
 for (const host_vendor of ['claude', 'codex']) {
-  test(`balanced MCP flow: ${host_vendor} drives, peer implements/tests, host gates`, async () => {
+  test(`balanced MCP flow: ${host_vendor} drives, peer implements, host tests and gates`, async () => {
     const cwd = balancedRepo();
     const c = await new Client({ CODEX_THREAD_ID: '' }).init();
     const other = host_vendor === 'claude' ? 'codex' : 'claude';
@@ -1857,11 +1857,23 @@ for (const host_vendor of ['claude', 'codex']) {
         const result = await c.call('graph_submit', { run_id, cwd, node_id, payload });
         assert.equal(result.state, 'done', JSON.stringify(result));
       }
-      for (const stage of ['implement', 'test']) {
+      // implement goes to the peer. test comes back to the host: the node that verifies an
+      // implementation must not share its author's blind spot (code-flat, 2026-09-16 - the
+      // peer wrote a main-module guard that failed on a symlinked path, the peer's test invoked
+      // it through the one path that hid that, and the integrated CLI printed nothing).
+      {
         const next = await c.call('graph_next', { run_id, cwd });
+        assert.equal(next.ready[0].stage, 'implement');
         assert.equal(next.ready[0].vendor, other);
         assert.equal(next.ready[0].model, other === 'claude' ? 'sonnet' : 'gpt-5.6-sol');
         assert.equal((await c.call('graph_run', { run_id, cwd, node_id: next.ready[0].node_id })).state, 'done');
+      }
+      {
+        const next = await c.call('graph_next', { run_id, cwd });
+        assert.equal(next.ready[0].stage, 'test');
+        assert.equal(next.ready[0].executor, host_vendor);
+        assert.match(next.ready[0].routing_reason, new RegExp(`preference=${host_vendor}`));
+        assert.equal((await c.call('graph_submit', { run_id, cwd, node_id: next.ready[0].node_id, payload: ok({ verified: true, handoff: 't' }) })).state, 'done');
       }
       const gate = await c.call('graph_next', { run_id, cwd });
       assert.equal(gate.ready[0].executor, host_vendor);
@@ -2437,7 +2449,7 @@ test('the peer vendor, not the driver, writes the run report', async () => {
       // Host-vendor work comes back as self; only the peer's nodes are actually run.
       const r = node.vendor === 'self'
         ? await c.call('graph_submit', { run_id, cwd, node_id: node.node_id,
-          payload: ok(node.stage === 'setgoal' ? { spec: SPEC } : { handoff: 'h', sound: true, accept: true, match_pct: 100, gaps: [] }) })
+          payload: ok(node.stage === 'setgoal' ? { spec: SPEC } : { handoff: 'h', sound: true, accept: true, verified: true, match_pct: 100, gaps: [] }) })
         : await c.call('graph_run', { run_id, cwd, node_id: node.node_id });
       assert.equal(r.state, 'done', JSON.stringify(r));
     }

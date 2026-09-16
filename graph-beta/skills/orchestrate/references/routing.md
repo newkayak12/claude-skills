@@ -99,3 +99,8 @@ models through `native_models` so unsupported tiers are routed away or visibly b
 
 Readiness is a real write probe, not a version check: a sandbox can start, accept the
 run, write nothing, and still exit 0.
+
+`test` is the exception to the static cross-vendor rule: it prefers whichever vendor did **not**
+implement the subgoal, wherever that vendor ended up. A tester that shares its author's vendor
+shares its author's assumptions about how the program is invoked; the first cross-vendor run
+proved it with a CLI that printed nothing through a symlink and 17/17 from its own tests.

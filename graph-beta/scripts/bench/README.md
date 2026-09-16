@@ -310,3 +310,53 @@ Rescored on 0.8.0's claim-counting scorer (`false N/M` column): `betas code-flat
 reported 16 on the first row; all 16 were its own misreadings and are fixed. No `none`-arm
 workspace from this round survives to be scored, so the plain session's false-claim rate — the
 number this column exists to produce — is still unmeasured.
+
+### What `code-flat` found, by failing
+
+The manager run scored 6/9 with `cli_ok`, `cli_invalid` and `cli_month` failing — and the
+integrated CLI is correct. Run by hand from inside the tree it prints the report, rejects a bad
+amount with exit 1, and filters by month. The scorer got nothing: exit 0, empty stdout, on every
+call. The reason is one line at the bottom of `bin/ledger.mjs`:
+
+```js
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exitCode = await run(process.argv.slice(2));
+```
+
+An "am I the main module" guard. `import.meta.url` is the resolved path
+(`file:///private/var/...`); the scorer passes the workspace path as given (`/var/...`, a
+symlink on macOS). They differ, `run()` is never called, the process exits 0 having printed
+nothing. Any `ledger` reached through a symlink — an npm `bin` link, a `/usr/local/bin` entry —
+behaves the same way on every platform. It is a real defect, and the fixture found it the way a
+user would.
+
+Who missed it, in order: `implement:U1:1` (**codex**) wrote the guard. `test:U1:1` (**codex**)
+invoked the CLI through `process.execPath` and a path derived from `import.meta.url` — the one
+spelling that makes the comparison true — and reported 17/17. `gate:U1:1`, `gate:U2:1`,
+`gate:goal:1` (**claude**) accepted at 92–95 with `checks: []`. The plain-session CLI from the
+`none` arm has no such guard at all (`grep -c import.meta.url` → 0), which is why `none` scored
+9/9 on the same criteria.
+
+Three readings of this, and only one is "the other vendor cannot be trusted":
+
+1. *Vendor quality.* The guard is an idiom this model family reaches for and the other does not.
+   That is a style difference that happened to carry a bug — not evidence that its code is worse
+   in general (the same run's 17 codex nodes all verified their file claims; `npm test` in the
+   tree is 85/85).
+2. *Shared blind spot.* `CROSS_VENDOR_STAGES` sent **both** implement and test to the peer.
+   Author and tester were the same vendor, so the tester invoked the program the way its author
+   thinks about it. The design said author ≠ reviewer; the routing delivered that for the gate
+   and not for the test, which is the node that actually runs things. **Fixed in 0.8.1**: test
+   prefers whichever vendor did not implement the subgoal, wherever that vendor ended up.
+3. *Judges that do not execute.* Every gate that accepted this ran zero checks. A gate that had
+   run `node /var/…/bin/ledger.mjs report …` once from outside the tree would have caught it.
+   0.8.0's rule — `accept: true` with empty `checks[]` is refused — was written before this was
+   found and would have refused all three.
+
+The earlier score drops in this table are not this failure. `betas code` 8/9 and `betas
+code-flat` 8/9 both lost `readme` (a phrasing criterion) with **all-Claude** execution in round
+2 — that is spec narrowing across decomposition layers, not vendor. The one blocked run (3/9)
+was an engine bug. Across every code run to date the score losses divide into: one real
+cross-vendor defect (this), two spec-drift phrasing misses, one engine bug. None is "the peer
+wrote worse code"; one is "the peer's tester shared the peer's assumptions and the host's judges
+did not run anything".
