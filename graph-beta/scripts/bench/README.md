@@ -304,3 +304,9 @@ the other plugins; no such arm exists yet.
 What is still unmeasured after this round: `integrate` and the manager's own `gate:goal`, which
 no run has reached with four packages in play. The manager's `gate:goal` is also held to no
 threshold — `goal_threshold` is a run-level field and the task object has none.
+
+Rescored on 0.8.0's claim-counting scorer (`false N/M` column): `betas code-flat` **0/107**,
+`betas docs-flat` **0/92**, `beta code-flat` **0/193** false claims. The scorer's first draft
+reported 16 on the first row; all 16 were its own misreadings and are fixed. No `none`-arm
+workspace from this round survives to be scored, so the plain session's false-claim rate — the
+number this column exists to produce — is still unmeasured.

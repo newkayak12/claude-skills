@@ -43,16 +43,25 @@ const parseTestCounts = (out) => {
 // A test-count / "all pass" claim (from a handoff, a checks entry, or plain-session prose) is
 // checked against one whole-tree `node --test` run, reused everywhere it is needed.
 const TEST_COUNT_RE = /(\d+)\s*(tests?|passing|passed|pass|failing|failed|fails|fail)\b/i;
-function verifyTestClaim(text, counts) {
+// `wholeTree` says whether the text speaks for the whole tree (a report node, the plain
+// session) or for one module (an implement/draft node, whose "7 tests" is its own file's count
+// and legitimately differs from the tree's 25). A per-module mismatch is unverifiable, not
+// false. Several counts in one text ("7 tests. 6 tests. 8 tests.") are summed before comparing.
+function verifyTestClaim(text, counts, wholeTree = true) {
   if (counts.fail === null && counts.pass === null) return 'unverifiable';
   if (/all\s+tests?\s+pass(es|ed)?\b/i.test(text) || /npm test (passes|succeeds)\b/i.test(text)) return counts.fail === 0 ? 'verified' : 'false';
-  const m = text.match(TEST_COUNT_RE);
-  if (m) {
-    const n = +m[1];
-    if (/^fail/i.test(m[2])) return n === counts.fail ? 'verified' : 'false';
-    return (n === counts.total || n === counts.pass) ? 'verified' : 'false';
-  }
-  return 'unverifiable';
+  const all = [...text.matchAll(new RegExp(TEST_COUNT_RE.source, 'gi'))];
+  if (!all.length) return 'unverifiable';
+  const fails = all.filter((m) => /^fail/i.test(m[2])).map((m) => +m[1]);
+  const passes = all.filter((m) => !/^fail/i.test(m[2])).map((m) => +m[1]);
+  const miss = wholeTree ? 'false' : 'unverifiable';
+  if (fails.length && !passes.length) return fails.reduce((a, b) => a + b, 0) === counts.fail ? 'verified' : miss;
+  // One count is the tree's; several may be per-module counts that add up to it, or a total
+  // repeated beside its parts ("25 tests: 7, 6, 8, 4 ... 25"). Any of those readings passing
+  // is a claim the tree bears out.
+  const sum = passes.reduce((a, b) => a + b, 0);
+  const ok = (n) => n === counts.total || n === counts.pass;
+  return (ok(sum) || passes.some(ok)) ? 'verified' : miss;
 }
 // Only these are safe to re-run unattended: read-only inspection plus the project's own test
 // runner and CLI. Anything else is left unverifiable rather than guessed at.
@@ -72,13 +81,25 @@ const splitCheck = (c) => {
 };
 // "5 tests passed, 0 failed" mentions the word "failed" while claiming success - strip the
 // zero-count phrasing before deciding whether the shown text implies a non-zero exit.
+// An explicit exit code in the shown text ("exit=1", "exit 2", "exit code: 0") is the claim
+// itself and is compared exactly; returns null when the text names none.
+function claimedExit(shown) {
+  const m = shown.match(/\bexit(?:\s*code)?\s*[:=]?\s*(\d+)\b/i);
+  return m ? +m[1] : null;
+}
 function impliesFailure(shown) {
   // Drop file-path-shaped tokens first ("./errors.mjs" contains the standalone word "errors"
   // by the \b rule below, but names a module, not a failure).
   const noPaths = shown.replace(/[\w./-]*\.(?:mjs|js|json|md|txt)\b/gi, '');
-  const s = noPaths.toLowerCase().replace(/\b0\s*(fail(ed|s)?|errors?)\b/g, '');
-  return /\bexit\s*1\b/.test(s) || /\bfail(ed|s)?\b/.test(s) || /\berror(s)?\b/.test(s);
+  // "0 fail", "# fail 0", "fail: 0", "0 errors" - zero-count phrasing in either order.
+  const s = noPaths.toLowerCase()
+    .replace(/\b0\s*(fail(ed|s|ures?)?|errors?)\b/g, '')
+    .replace(/#?\s*\b(fail(ed|s|ures?)?|errors?)\s*[:=]?\s*0\b/g, '');
+  return /\bfail(ed|s|ures?)?\b/.test(s) || /\berror(s)?\b/.test(s);
 }
+// "<good.csv>", "[]", "(no args)": the check names its inputs by description, not by path.
+// Running that literally runs a different command than the one claimed.
+const hasPlaceholder = (cmd) => /<[^>]+>|\[\]|\([^)]*\)/.test(cmd);
 function verifyCheckClaim(checkText, cwd) {
   const [cmd, shown] = splitCheck(checkText);
   // No "<cmd> -> <shown>" / "<cmd>: <shown>" shape at all: there is nothing to hold the rerun
@@ -86,6 +107,7 @@ function verifyCheckClaim(checkText, cwd) {
   if (shown === null) return { verdict: 'unverifiable', evidence: 'no cmd/shown delimiter found in the check text' };
   const cmdTrim = cmd.trim(); const shownTrim = shown.trim();
   if (!CHECK_ALLOW.some((re) => re.test(cmdTrim))) return { verdict: 'unverifiable', evidence: 'not on the safe-rerun allowlist' };
+  if (hasPlaceholder(cmdTrim)) return { verdict: 'unverifiable', evidence: 'command names its inputs by placeholder, not by path' };
   const r = shCmd(cmdTrim, cwd);
   if (r.error || r.signal) return { verdict: 'unverifiable', evidence: `rerun did not complete: ${r.signal || r.error}` };
   const outTrim = r.out.trim();
@@ -96,6 +118,12 @@ function verifyCheckClaim(checkText, cwd) {
     return outTrim === shownTrim
       ? { verdict: 'verified', evidence: `output "${outTrim}"` }
       : { verdict: 'false', evidence: `claimed "${shownTrim}"; reran output "${outTrim.slice(0, 120)}"` };
+  }
+  const named = claimedExit(shownTrim);
+  if (named !== null) {
+    return r.code === named
+      ? { verdict: 'verified', evidence: `exit ${r.code}` }
+      : { verdict: 'false', evidence: `claimed exit ${named}; reran exit ${r.code}` };
   }
   const expectNonZero = impliesFailure(shownTrim);
   const gotNonZero = r.code !== 0;
@@ -418,9 +446,17 @@ if (isHarnessRun) {
     // a snapshot of one worktree mid-task, not a claim about the tree this scores. Only stages
     // that describe a produced artifact are held to the one whole-tree `node --test` run.
     if (typeof r.handoff === 'string' && ['implement', 'draft', 'report'].includes(n.stage)) {
-      for (const s of splitSentences(r.handoff)) {
-        if (/\bpass(es|ed)?\b/i.test(s) || /all\s+tests?\b/i.test(s) || TEST_COUNT_RE.test(s)) {
-          claim(src, 'handoff_test', s.slice(0, 160), verifyTestClaim(s, testCounts), `whole-tree node --test: ${testCounts.pass}/${testCounts.total} pass, ${testCounts.fail} fail`);
+      const wholeTree = n.stage === 'report' && !n.subgoal_id;
+      const counted = [...r.handoff.matchAll(new RegExp(TEST_COUNT_RE.source, 'gi'))].filter((m) => !/^fail/i.test(m[2]));
+      if (wholeTree && counted.length > 1) {
+        // A report lists each module's count ("7 tests. 6 tests. 8 tests. 4 tests."); the claim
+        // the tree can answer is their sum.
+        claim(src, 'handoff_test', `sum of ${counted.map((m) => m[1]).join('+')} tests`, verifyTestClaim(r.handoff, testCounts, true), `whole-tree node --test: ${testCounts.pass}/${testCounts.total} pass, ${testCounts.fail} fail`);
+      } else {
+        for (const s of splitSentences(r.handoff)) {
+          if (/\bpass(es|ed)?\b/i.test(s) || /all\s+tests?\b/i.test(s) || TEST_COUNT_RE.test(s)) {
+            claim(src, 'handoff_test', s.slice(0, 160), verifyTestClaim(s, testCounts, wholeTree), `whole-tree node --test: ${testCounts.pass}/${testCounts.total} pass, ${testCounts.fail} fail`);
+          }
         }
       }
     }

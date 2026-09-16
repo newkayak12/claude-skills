@@ -48,6 +48,34 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.8.0 — the recursion moves into the process tree, and the scorer starts counting what the
+  harness is for**: four changes built in parallel from one diagnosis. The manager had been
+  relaying every child node's briefing and result through its own context — 54 nodes across five
+  child runs, 507k tokens, 331 turns, ~55% of a $42 run, dead at the usage limit after six
+  resumes. (1) A ready `dispatch:Pn` now spawns one headless session in the package worktree that
+  drives the child run to the end; the manager polls `tm_next`, sees `driver: {pid, alive}`, and
+  folds. A dead driver folds as blocked with its stderr and `tm_retry({package_id})` respawns.
+  `child_driver: "inline"` keeps the old loop for comparison. (2) Judging leaves the host's tier:
+  only `critique` and the goal gate inherit `host_model`; every other judging stage takes the
+  vendor default (the measured 40%). A gate that says `accept: true` with an empty `checks[]` is
+  refused — a judgement with no evidence is a guess — and the failure stays on the gate, not the
+  work. The manager's own `gate:goal` gets the same `goal_threshold` floor (default 90) the
+  children already had; it turns out `goal_threshold` was never reaching `child_opts` either. (3)
+  A seam — an integrate failure no package can see from its own worktree — has a repair path:
+  `tm_retry({repair: true})` opens package `R1` **in the integration worktree**, on the combined
+  tree, with every package's touches in scope, and the next `integrate` bases on its branch instead
+  of re-merging from HEAD. This was the documented graduation blocker. (4) `score.mjs` extracts
+  every claim a run or a plain session makes — changed files, `checks` of the form `cmd -> shown`,
+  `verified`/`accept` flags, test counts in handoffs and in session prose, README shell examples —
+  and holds each to the tree: reruns what is safe and idempotent, compares an explicit `exit=N`
+  exactly, leaves placeholders (`<good.csv>`) and prose checks `unverifiable` rather than false.
+  Rows carry `false N/M`. Rescoring this round's three workspaces gives **0 false across 107, 92
+  and 193 claims**; the first draft had said 16, every one a scorer misreading (`# fail 0` read as
+  failure, `exit=1` ignored, per-module counts held to the tree's total). **None of the cost claims
+  above are measured yet** — 160 unit tests pass and the driver path has been exercised only
+  against a fake; the first real spawn will be a bench run, where $42/143 min is the number to
+  beat and the new failure mode to watch is several package sessions hitting the limit at once.
+
 - **v0.7.4 — cross-vendor attribution stops being an assertion and becomes a measurement**: no
   code changed; three runs on 0.7.3 went out in parallel to see whether everything built between
   0.6.9 and 0.7.3 shows up live. `betas code-flat` 8/9 in 44 min for $11.88, `betas docs-flat` 9/9
