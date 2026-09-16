@@ -286,6 +286,9 @@ export function createRun(opts) {
     // A rejected subgoal gate opens its own next attempt. false makes a rejection advisory
     // again: the run blocks and waits for graph_retry, which a caller may simply never call.
     auto_reassign: opts.auto_reassign !== false,
+    // The floor the goal gate's match_pct must clear. Carried on the run because the gate is
+    // judged in the broker, which only has the run to read it from.
+    goal_threshold: Number.isInteger(opts.goal_threshold) ? opts.goal_threshold : 90,
     max_retries: Number.isInteger(opts.max_retries) ? opts.max_retries : 2,
     // `auto` lets plan pick the flow; an entry skill pins it. `mixed` false turns the pin
     // into a rule every subgoal must follow.

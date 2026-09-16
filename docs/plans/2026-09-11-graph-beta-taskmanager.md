@@ -240,6 +240,137 @@ Bugs, not features, so D12 does not apply: the rejected `gate:goal` never re-jud
 it), the host-model variant refusal, the tier-vs-id comparison. Each is a small fix with a test
 already written in beta.
 
+### What the rewrite dropped
+
+Every row below could have been read off `harness/engine/pipeline.js` in an afternoon. Four of
+them were instead re-discovered one at a time from bench runs at $13 to $73 each: the retry
+loop, the stall check, the per-subgoal skills and the goal threshold all came back because a
+run behaved wrongly, not because anyone diffed the rewrite against the thing it replaced. The
+old generation is one 573-line script in which most of the design lives inside prompt strings;
+the new one is an MCP server plus a graph, and a feature that was a sentence in a template had
+nothing in the port to catch it. This table is the diff nobody ran. Both sides were read for
+it at beta 0.7.0 — "present" means the code was found, not that the feature was remembered.
+
+| `harness/engine/pipeline.js` | `graph-beta` | status |
+|---|---|---|
+| Retry loop per subgoal: `while (attempt <= RETRIES)` reruns implement → test → gate and breaks on `verdict.pass`. Budget `spec.max_retries ?? args.max_retries ?? 2`, so three attempts. | `autoReassign` opens the next attempt chain when a verdict node fails; `retrySubgoal` caps at `max_retries + 1`, the same three. | **Restored** in 0.7.0. Two differences on purpose: only a verdict reassigns, so a node that could not run at all (`stage_ok: false` — transport, vendor, unparseable reply) leaves its chain pending for the caller, where the old loop simply went round again; and `spec.max_retries` no longer overrides the run, which owns the budget from `graph_open`. |
+| Stall check: `rejectionSig` = sorted gaps + reason. Two consecutive identical signatures abort the subgoal, mark it `stalled`, and let the run proceed to the goal gate on partial work. | The same signature, plus `blocking`. On a match `autoReassign` calls `retrySpec`, so setgoal and critique re-author with what the subgoal kept failing on. | **Present, changed on purpose.** The original stopped; beta reshapes. goal-docs is the evidence: a package README truthfully said the repo had no other docs, false only in the combined tree, so no attempt inside that package could ever fix it. Aborting there would have been correct and useless. |
+| Persona per subgoal: `subgoals[].persona`, rendered as `Act as: …` in the implement prompt and passed into the Codex bridge. | The same field in the setgoal contract, a persona set per flow in `FLOWS[*].personas` offered to setgoal, and `Act as:` in the briefing. | **Present on both.** One difference nobody chose: the original attached the persona to implement alone, while beta emits it inside the shared `## Subgoal` block, which every node of the chain gets — the gate is told to act as the implementer it is judging, two lines above being told it is the judge and not the actor. |
+| Skills per subgoal: `subgoals[].skills`, "1-3 repository skill names the executor must invoke", mounted in the implement prompt with a Skill-tool-then-Read fallback. | Being added now: `skills` in the setgoal contract and a `Method —` block in `composePrompt`; the TaskManager carries a package's `skills` into its child run's context. | **Restored.** The 1-3 bound is gone, and the Method block sits in the same shared subgoal section as the persona, so test, review and gate are told to load the implementer's method too. Beta adds something the original never said and should keep: the node contract outranks a skill's own output template, and a dialogic skill has nobody here to answer it. |
+| Stage-mounted skills: `mountSkill` pins method to the stage — plan → `agents:agent-task-decomposer`, spec critic → `think:devils-advocate`, every subgoal gate and the goal gate → `think:devils-advocate`, test → `completion:verification-before-completion`. | `STAGE_SKILLS` in `taskmanager.mjs` covers the manager's stages only (shape, critique, accept, integrate, `gate:goal`), overridable per stage by `tm_open({skills})` and switchable off entirely. | **Half restored** (0.6.7). The manager got the mechanism; the graph engine that every size-S request runs mounts nothing on plan, setgoal, critique, test or gate. |
+| Stage-mounted MCP tools: `mountMcp` offers plan → sequential-thinking, setgoal → think-tool, the goal gate → mcp-reasoner, each skipped in silence if absent. | Nothing. No node prompt under `graph-beta/` mentions an MCP tool or ToolSearch. | **Dropped**, and until now unlisted. The smallest loss in the table — the mounts were advisory — but it is the row above's omission repeated, and it was never decided either. |
+| `GOAL_MATCH_THRESHOLD = 90`: the goal gate's `match_pct` is compared against it, and the comparison is what drives the repair loop. | Being added now as `goal_threshold`, default 90, set at `graph_open`, enforced in `nodeSucceeded` for `gate:goal` only; `0` accepts on the verdict alone. | **Restored** and made a property of the run rather than a constant. The TaskManager's own `gate:goal` is not held to it: `succeeded()` in `taskmanager.mjs` reads `accept` and nothing else, so a manager task can accept the integrated result at any `match_pct`. That is the decorative gate the threshold exists to prevent, one layer up. |
+| Goal-gate repair: below threshold, a repair agent (`sonnetGoalRepairInstructions` / `codexGoalRepairInstructions`) is given the gaps and every subgoal handoff, fixes across the tree, and the whole is re-gated — up to `RETRIES` times, with the same stall check. | Nothing. `autoReassign` declines the goal gate on purpose; `retrySubgoal` opens a fresh `gate:goal:N` and `subgoalFeedback` carries the goal gate's gaps into whichever subgoal the caller retries. Nothing works on the assembled result as a whole. | **Absent.** Step 9 below. |
+| Degenerate-spec guard: `isDegenerateSpec` (no subgoals, no goal-level acceptance, goal text under 8 characters, a subgoal title under 4 or with no acceptance) plus one corrective re-author whose prompt names the failure mode — structured-output validation rejects a large correct draft, usually over the missing top-level `acceptance`, and the model shrinks the payload to isolate the error instead of fixing the field. | `validateSpec` checks the same emptiness cases and more: missing and duplicate ids, missing titles, unknown kinds, a kind `mixed: false` forbids, self-dependency, dangling `deps`/`after`, cycles. A failing spec fails the setgoal node with `spec_problems`, and `retrySpec` carries them into the next attempt — which is critiqued again, where the original never re-critiqued its re-author. | **Equivalent and then some, with two specific losses.** The placeholder heuristics have no counterpart, so a spec that is well-formed and vacuous passes. And the retry feedback is the problem list alone, not the diagnosis of why a spec collapses. The diagnosis was worth more than the check: it named a failure mode the model can otherwise only rediscover. |
+| Unwinnable-gate patterns, stated twice: setgoal is forbidden to write criteria that hinge on whole-repo state (git diff/status, aggregate repo-wide counts) because concurrent work makes them non-deterministic, and forbidden to write aspirational or arbitrary-threshold targets as hard bars; the critic is then told to flag both by name. | The critique contract names both. The setgoal contract does not — it asks only that every criterion be checkable by a command, a file inspection, or a reader finding a passage. | **Half present**: detection kept, prevention dropped. Not authoring the criterion is cheaper than critiquing it out, and the critique that has to catch it is the same node we now ask to reject only blocking defects. |
+| `.claude/conventions/**` in three prompts: plan reads the relevant ones and lists the rules that must constrain the work, setgoal folds them into subgoal acceptance and `test[]`, implement reads the ones relevant to its files. | Nothing. The string "convention" does not occur anywhere under `graph-beta/`, including the install skill. | **Dropped**, and until now unlisted. The largest silent loss here: it was the only path by which a project's own rules reached the work, and losing it fails nothing — the run just produces work that ignores them, and every gate passes because no criterion ever mentioned them. |
+| Plan's survey asks for five things: decomposition, real ordering dependencies, which repository skills and persona fit each unit, how each unit can be deterministically verified, and the conventions that constrain it. | The plan contract asks for the decomposition, `size`, `flow`, and the commands that decided size. | **Changed, partly on purpose.** Moving skill and persona choice to setgoal is right — setgoal is the stage that knows what each unit is. Losing the conventions question is the row above. Losing "how would this be verified" is not obviously fine: setgoal now invents `test[]` with no upstream reconnaissance behind it. |
+| Dependency waves: subgoals whose deps are done run in parallel; a wave with nothing ready logs "unsatisfiable deps" and runs the remainder anyway. | `deps`/`after` edges and a ready set. `validateSpec` rejects dangling deps and cycles before any node exists, so the degraded path has nothing to degrade from. Under `isolated`, mutating nodes are offered one at a time so positive file attribution stays sound. | **Superseded.** The original's fallback was a guess made at runtime; beta makes the condition unreachable at authoring time. |
+| Handoff budget: `handoffOf` extracts the `HANDOFF:` section and slices it to 1500 characters before any downstream prompt sees it. | `handoff` is a contract field with no cap, and `nodeBriefing` puts every upstream handoff, check and changed-file list into the next prompt. | **Dropped.** This is about briefing size, not about the driving session's context that Step 7 measures — but it is the same shape of problem one level down, and a node prompt that grows with the run is how a late gate ends up reading more than it can weigh. The cap was doing work nobody credited it with. |
+| Codex delegation: `codex_provider: auto\|required\|off`, and a Sonnet "delegation controller" inside each implement/test node that locates the adapter, writes a prompt file, runs it, and must mark `DEGRADED:` or return `PROVIDER_FAILURE:` when it cannot. | Vendors, adapters and probes belong to the broker. `route()` picks per stage; a named vendor that is not ready returns `vendor-failure` rather than degrading silently; every node prompt forbids re-entering the harness. | **Superseded**, and the reason is written into `prompts.mjs`: a vendor with harness skills installed re-entered the harness from inside a node, running `--detect` and then `--stage implement` within the node that was already the implement stage. |
+| Nothing checks the executor's file claims; the test agent's narrative is the evidence. | `crossCheck` compares claimed `changed_files` against `git status` and may lower `stage_ok`, never raise it. Attribution is `isolated`, `shared-worktree`, `no-git` or `document-unchanged`, and `null` means "could not attribute", which is neither a pass nor a failure. | **Addition.** No counterpart in the original. |
+| The goal gate sees the goal, the goal-level acceptance, and one line per subgoal. It does not see the request. | It sees all of that, the request again, and every finished node including the failures; its contract asks for `spec_drift` — what the request asked for that the spec never turned into a criterion. | **Addition.** The original could not tell a spec that narrowed the request from a request that was met. |
+| The spec critic runs once over the first draft. If `sound: false`, one revision follows and is never re-critiqued. `sound` is unbounded: any defect sets it. | A critique node per spec attempt, so each re-authored spec is attacked again. `sound: false` is reserved for `blocking` defects; everything else is advisory `problems` carried forward. | **Addition, with a gap.** `autoReassign` returns early for a node with no `subgoal_id`, so a `sound: false` critique waits for the caller to call `graph_retry` — exactly the advisory rejection 0.7.0 fixed for subgoal gates, still open one stage up. |
+
+### Step 9 — the goal-gate repair pass (proposed, not started)
+
+The row above is the only one in the table with nothing on the beta side at all. The gap it
+leaves is specific: a run whose subgoals all passed and whose assembled result does not meet
+the goal has no move. The goal gate rejects, `autoReassign` declines it by design, and the run
+sits until a caller picks a subgoal to reopen — which is a guess, because the failure is
+usually not in any one subgoal. It is in the seam: two halves that each satisfied their own
+acceptance and do not meet. The repo owner's instruction was that the repair work "globally",
+against the assembled result, and that is the same reading.
+
+**Shape: a run-level `repair` stage, not a kind.** Kinds describe subgoals, and this node has
+no subgoal — it belongs next to plan, setgoal, critique, `gate:goal` and report. It writes
+files, so it stays out of `BASE_REASONING`: routed to a writable sandbox, offered one at a time
+under `isolated`, and cross-checked against the worktree, which the original's repair agent
+never was. Its contract is implement-shaped (`stage_ok`, `handoff`, `changed_files`, `checks`,
+`evidence`), so the adapter's existing implement schema covers it with no new plumbing.
+
+**Wiring.** On a `gate:goal:N` that failed on `accept: false` or on `match_pct` below
+`goal_threshold` — and only that; a goal gate whose `stage_ok` is false could not judge at all
+and is a routing failure, the same distinction `autoReassign` already draws — the engine opens
+
+    repair:N        deps [gate:goal:N]
+    gate:goal:N+1   deps [repair:N, ...gate:goal:N's own deps]
+
+and moves the live report's `after` to `gate:goal:N+1`. All of that except the first line is
+rewiring `retrySubgoal` already performs when a rejected goal gate has to be re-judged; the new
+part is the node in between.
+
+**Briefing.** `nodeBriefing` already assembles `whole_run` for anything whose id starts with
+`gate:goal`; repair wants the same branch extended to its stage, plus the rejecting gate's
+`reason` and `gaps` as `prior_feedback`. The original passed the gaps and one handoff line per
+subgoal. Beta holds the checks each node ran, the commands the adapter observed and the
+changed-file lists, and that is the difference between "the CLI is missing a flag" and "the CLI
+is missing a flag, here is the file, here is what its test runs".
+
+**What the contract must say.** That this node is the only one in the run not bound to a
+subgoal's acceptance, and may touch files several subgoals own — which is the point, because a
+seam is a path nobody declared. And that it may not restate the acceptance criteria to fit what
+exists, which is the failure a node holding the gaps is most tempted by. The gate that follows
+sees the criteria unchanged, so the temptation stays checkable rather than merely forbidden.
+
+**Budget.** One repair per goal-gate rejection, `max_retries` repairs per run (default 2),
+counted off `nextIndex(run, 'repair')` like every other attempt, on its own counter — subgoal
+budgets are per subgoal, the spec budget is per run, this is a third. The original spent the
+same number. Beyond it the goal gate settles: `settleFailure` marks it final, and the report,
+which waits on `after` rather than `deps`, writes the partial account. Keep the stall check
+too — a repair that leaves the same `rejectionSig` twice is being asked for something it cannot
+produce, and the second one is a paid rediscovery of the first.
+
+**Auto or advisory.** Auto, under the same `auto_reassign` flag, for the reason 0.7.0 gave: a
+rejection the caller has to act on is a rejection nobody acts on, and most runs are size S with
+no manager loop above them to act. It should be as visible as reassignment is — a `repaired:
+{attempt}` field next to `reassigned` in the verdict.
+
+**How this differs from the stall escalation.** They answer different questions and sit at
+different levels. Escalation fires on one subgoal rejected twice for the same reason and
+concludes the *spec* is wrong: setgoal re-authors, critique re-attacks, the subgoal graph is
+discarded and rebuilt. Repair fires on the assembled result and concludes the spec was right
+and the delivery fell short: the tree changes, the spec does not. One rewrites the question,
+the other finishes the answer. In code, escalation is a branch inside `autoReassign` on a node
+with a `subgoal_id`; repair is a branch on the node `autoReassign` explicitly refuses to touch.
+
+**Where the two can fight.**
+- **Rewiring collision.** A caller can call `graph_retry(subgoal_id)` while a repair is open.
+  `retrySubgoal` then opens its own fresh `gate:goal`, and the repair ends up either orphaned
+  behind a gate nobody waits on or judged by a gate that never depended on it. `retrySubgoal`
+  has to learn about repair nodes before this ships; it is the same rewiring bug the rejected
+  `gate:goal` had, and it will not show up in a unit test that only retries subgoals.
+- **Escalation discarding a live repair.** `retrySpec` sets `run.spec = null` and retires the
+  subgoal graph. A pending repair must be retired with it; a *running* one cannot be, and its
+  work is already in the tree. The honest rule is the one already true of every retried
+  subgoal: the node is superseded, its commits stay where the next attempt will find them, and
+  the graph keeps it as evidence of what was tried.
+- **Signature leakage.** A repair that closes a goal-level gap by editing a file some subgoal
+  owns can make that subgoal's next gate reject for a *new* reason, which resets its
+  `rejectionSig` and buys a retry the run had not budgeted. Not a bug so much as a leak. The
+  cheap defense is to record on the subgoal which repair touched it, so a later gate reading
+  `whole_run` can see that the work it is judging was not written by the attempt it is judging.
+
+**What else could go wrong.**
+- **Nothing verifies the repair.** The original appended the repair's handoff to `results` and
+  re-gated, so the gate judged a claim. `crossCheck` catches a fabricated file list, but no
+  subgoal's `test[]` runs again. The gate contract already says absent evidence is a gap, so
+  the first answer is briefing discipline, not a new rule. The fuller answer is a `test`-shaped
+  node between repair and the gate, which doubles the cost of every repair — build it when a
+  bench run shows a repair accepted on its own account, and not before.
+- **Scope.** A node told to fix globally can rewrite work that passed. Claimed files are
+  cross-checked for existence, not for permission. The graph knows which subgoal declared which
+  `files[]`, so a repair touching a path no subgoal named is worth surfacing in the verdict
+  rather than forbidding — that path is usually the seam it was opened for.
+- **Cost.** Two repairs plus two extra goal gates is roughly one more subgoal's worth of budget
+  on a run that has already spent everything, and it lands on a run that was about to end.
+  Step 7 has to land first or this makes the manager's number worse.
+- **Out of scope: the manager.** The TaskManager has the same hole — its `gate:goal` rejection
+  also falls to the caller, and `integrate` is explicitly forbidden to fix anything. But its
+  tree is a merge of package branches, so a repair there has to decide what it commits and
+  where that merges back, which is a design of its own and not this one. Its nearer problem is
+  the missing threshold in the table above.
+
 ### Graduation (revised)
 
 The old bar — ten real runs across three flows — assumed a run costs what a run used to cost.

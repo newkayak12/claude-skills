@@ -558,14 +558,23 @@ function verdict(run, n) {
 // means "the judging itself worked" and accept is the verdict; reading only stage_ok let
 // a rejected subgoal flow downstream as if it had passed, which makes the gate
 // decorative. Same shape for critique (sound) and test (verified).
-function nodeSucceeded(n, result) {
+function nodeSucceeded(run, n, result) {
   if (result.stage_ok !== true) return false;
   // The verdict must be present and affirmative. Accepting `!== false` let a missing
   // field pass: a vendor that returned an implement-shaped result for a test node, or a
   // gate that returned no verdict at all, sailed through. Absent evidence is not a pass -
   // which is exactly what these nodes are told.
   const field = VERDICT_FIELD[n.stage];
-  return field ? result[field] === true : true;
+  if (field && result[field] !== true) return false;
+  // A gate that accepts at 70% is reporting a partial result as a pass. The percentage was
+  // already being collected and shown; the threshold is what makes it mean something. Only
+  // the goal gate is held to it - a subgoal gate answers for its own slice, the goal gate
+  // answers for the whole thing - and a run may set its own number, or 0 to go by verdict alone.
+  if (n.stage === 'gate' && !n.subgoal_id && Number.isFinite(result.match_pct)) {
+    const floor = Number.isInteger(run.goal_threshold) ? run.goal_threshold : 90;
+    if (result.match_pct < floor) return false;
+  }
+  return true;
 }
 
 // ---------- author != reviewer ----------
@@ -626,6 +635,23 @@ function subgoalFeedback(run, sid) {
 // is gone exactly as before. The goal gate is not included - its rejection blames the
 // assembled result, not one subgoal, and choosing which subgoal to reopen is a judgement
 // the manager makes.
+// A rejection, reduced to what it actually objected to. Two attempts that fail on the same
+// signature are not converging: the work is being asked for something it cannot produce
+// where it stands, and a third attempt spends budget to learn that again.
+function rejectionSig(result) {
+  if (!result) return '';
+  const gaps = [...(result.gaps || []), ...(result.blocking || [])].map((g) => String(g).trim().toLowerCase());
+  return [String(result.reason || '').trim().toLowerCase(), ...gaps.sort()].filter(Boolean).join('|');
+}
+
+// The rejection this subgoal's previous attempt died on, if it had one.
+function priorSig(run, sid, attempt) {
+  const prior = run.nodes
+    .filter((x) => x.subgoal_id === sid && x.state === 'failed' && (x.attempt || 1) === attempt - 1 && x.result)
+    .pop();
+  return prior ? rejectionSig(prior.result) : '';
+}
+
 function autoReassign(run, n) {
   if (run.auto_reassign === false) return null;
   if (!n.subgoal_id || n.final) return null;
@@ -634,7 +660,25 @@ function autoReassign(run, n) {
   // Only the verdict reassigns. A node that could not run at all (transport, vendor,
   // malformed output) is a different failure and keeps its existing path.
   if (n.result && n.result.stage_ok !== true) return null;
-  const out = retrySubgoal(run, String(n.subgoal_id), subgoalFeedback(run, String(n.subgoal_id)));
+  const sid = String(n.subgoal_id);
+
+  // Same objection twice: retrying the subgoal again would ask the same author, in the same
+  // worktree, for the same thing. Escalate to the line that can actually change the answer -
+  // setgoal and critique - carrying what the subgoal kept failing on. goal-docs is the case
+  // this exists for: a package README truthfully said "the repo has no other docs", which was
+  // false only in the combined tree, so no attempt inside that package could ever fix it.
+  const sig = rejectionSig(n.result);
+  if (sig && sig === priorSig(run, sid, n.attempt || 1)) {
+    const out = retrySpec(run, `subgoal ${sid} was rejected twice for the same reason, so the shape is what has to change, not the work:\n- ${subgoalFeedback(run, sid)}`);
+    record(run.cwd, {
+      event: out.attempt ? 'graph_escalate' : 'graph_settle',
+      run_id: run.run_id, subgoal_id: sid, rejected_by: n.node_id, signature: sig,
+      ...(out.attempt ? { attempt: out.attempt } : { unreachable: out.unreachable.length }),
+    });
+    return { ...out, escalated: true };
+  }
+
+  const out = retrySubgoal(run, sid, subgoalFeedback(run, sid));
   record(run.cwd, {
     event: out.attempt ? 'graph_reassign' : 'graph_settle',
     run_id: run.run_id, subgoal_id: n.subgoal_id, rejected_by: n.node_id,
@@ -645,7 +689,7 @@ function autoReassign(run, n) {
 
 function finishNode(run, n, result, vendorName) {
   delete n.recovery; // historical interruptions remain in n.interruptions
-  n.state = nodeSucceeded(n, result) ? 'done' : 'failed';
+  n.state = nodeSucceeded(run, n, result) ? 'done' : 'failed';
   n.result = result;
   n.vendor = vendorName;
   n.finished_at = Date.now();
@@ -684,9 +728,11 @@ function finishNode(run, n, result, vendorName) {
   record(run.cwd, { event: 'node_finish', run_id: run.run_id, node_id: n.node_id, stage: n.stage, vendor: vendorName, stage_ok: n.result.stage_ok === true });
   const out = verdict(run, n);
   if (reassigned) {
+    const where = reassigned.escalated ? 'spec' : 'subgoal';
     out.reassigned = reassigned.attempt
-      ? { subgoal_id: n.subgoal_id, attempt: reassigned.attempt }
-      : { subgoal_id: n.subgoal_id, attempt: null, reason: reassigned.reason, unreachable: reassigned.unreachable };
+      ? { target: where, subgoal_id: n.subgoal_id, attempt: reassigned.attempt,
+          ...(reassigned.escalated ? { reason: 'the same rejection twice: reshaped rather than retried' } : {}) }
+      : { target: where, subgoal_id: n.subgoal_id, attempt: null, reason: reassigned.reason, unreachable: reassigned.unreachable };
   }
   return out;
 }
@@ -842,6 +888,7 @@ const TOOLS = [
         candidates: { type: 'array', items: { type: 'string' }, description: 'vendor preference order for "auto"' },
         sandbox: { type: 'string' },
         isolated: { type: 'boolean', description: 'cwd is a private worktree with only this run in it' },
+        goal_threshold: { type: 'integer', description: 'default 90: the goal gate must report match_pct at or above this to accept. A gate that says accept with 70% match is reporting a partial result as a pass; the number it already returns is made to mean something. 0 accepts on the verdict alone.' },
         auto_reassign: { type: 'boolean', description: 'default true: a rejected subgoal gate, review or test opens the next attempt itself, carrying the rejection feedback, and settles when the budget is gone. false leaves the next attempt to graph_retry, which makes a rejection advisory - a caller that never retries simply stops.' },
         max_retries: { type: 'number' },
         flow: { type: 'string', enum: ['auto', 'develop', 'document'], description: 'auto (default): plan decides from the request. develop: subgoals default to code work. document: subgoals default to written artifacts. Set by the entry skill, not by the user.' },
@@ -965,10 +1012,12 @@ async function toolGraphOpen(a) {
     sandbox: a.sandbox || null,
     isolated: a.isolated === true,
     auto_reassign: a.auto_reassign !== false,
+    goal_threshold: Number.isInteger(a.goal_threshold) ? a.goal_threshold : 90,
     max_retries: a.max_retries,
     flow: a.flow,
     mixed: a.mixed,
   });
+  saveRun(run);
   record(cwd, { event: 'graph_open', run_id: run.run_id, vendor: run.vendor, flow: run.flow, mixed: run.mixed });
   return { run_id: run.run_id, cwd, ...(await toolGraphNext({ run_id: run.run_id, cwd })) };
 }

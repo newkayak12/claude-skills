@@ -6,13 +6,13 @@
 // long loop impossible. The graph already holds all of it, so the broker writes the
 // prompt and the orchestrator never sees the payload.
 
-import { REASONING_STAGES, FLOWS } from './graph.mjs';
+import { REASONING_STAGES, FLOWS, VERDICT_FIELD } from './graph.mjs';
 
 const CONTRACT = {
   plan: `Return JSON: {"plan": "<the decomposition>", "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "handoff": "<what the next node needs>", "evidence": "<how you checked the request is actually satisfiable here>"}
 size is S when one run in one worktree can carry the whole request; L when it spans independent modules, packages or repositories that would each need their own run. Decide it from what commands show - file count, module boundaries, owners - and put those commands in "sizing". The default is S; a manager layer exists, and the temptation is to use it.
 flow is develop when the deliverable is code the repository must run, document when it is text a reader must find things in. If the run's flow is already fixed below, return it unchanged.`,
-  setgoal: `Return JSON: {"spec": {"goal": "...", "acceptance": ["goal-level criteria"], "subgoals": [{"id": "U1", "kind": "subgoal|document", "title": "...", "persona": "...", "acceptance": ["subgoal criteria"], "test": ["deterministic checks"], "files": ["paths"], "deps": []}]}, "handoff": "...", "evidence": "..."}
+  setgoal: `Return JSON: {"spec": {"goal": "...", "acceptance": ["goal-level criteria"], "subgoals": [{"id": "U1", "kind": "subgoal|document", "title": "...", "persona": "...", "skills": ["plugin:skill"], "acceptance": ["subgoal criteria"], "test": ["deterministic checks"], "files": ["paths"], "deps": []}]}, "handoff": "...", "evidence": "..."}
 Every acceptance criterion must be checkable by a command, a file inspection, or - for a document - by a reader finding a specific passage. Reject your own vague criteria before returning.
 Make each subgoal self-contained: include applicable constraints in acceptance[], required paths in files[], and checks in test[]. The nodes that do the work will not receive the full request or requester conversation.
 Every subgoal must be a unit of work with a checkable artifact, and must say which kind it is:
@@ -119,7 +119,20 @@ export function composePrompt(run, n, briefing) {
     lines.push('');
     lines.push(`## Subgoal ${sg.id} — ${sg.title}`);
     if (sg.kind && sg.kind !== 'subgoal') lines.push(`Kind: ${sg.kind}`);
-    if (sg.persona) lines.push(`Act as: ${sg.persona}`);
+    // Persona and method belong to whoever does the work, not to whoever judges it. The
+    // subgoal block is shared by every stage in the chain, so a gate used to be told "act as
+    // the implementer who owns this module" two lines above its contract telling it it is the
+    // judge and not the actor - the exact identity the gate exists to not have.
+    const authoring = !REASONING_STAGES.has(n.stage) && !VERDICT_FIELD[n.stage];
+    if (sg.persona && authoring) lines.push(`Act as: ${sg.persona}`);
+    // A persona says who is working; skills say how. setgoal names them per subgoal because
+    // it is the stage that knows what the work is - a migration wants different method than
+    // a reference document. Same precedence as everywhere else: the node contract wins, a
+    // missing skill is skipped in silence, and nobody is there to answer a question.
+    if (sg.skills?.length && authoring) {
+      lines.push(`Method — load each of these that is available, then work the way it says:\n${bullets(sg.skills)}`);
+      lines.push(`A skill that is not installed here is skipped without comment or substitute. Its own output template does not apply - "Required output" below is the only shape you may return - and neither does its "what you do / what I do" half: nobody is reading this but the machine that called you, so ask nothing and finish the work yourself.`);
+    }
     if (sg.files?.length) lines.push(`Required paths:\n${bullets(sg.files)}`);
     lines.push('');
     lines.push(`### Acceptance`);

@@ -618,6 +618,77 @@ test('a stage briefing carries its method, and the contract outranks what the me
   }
 });
 
+test('the shape contract asks each package for optional skills, and says why shape is the one to name them', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root }).init();
+  try {
+    const open = await tm.call('tm_open', { request: 'big request', cwd, vendor: 'self', size: 'L' });
+    const shape = readFileSync(open.ready.find((n) => n.stage === 'shape').briefing_path, 'utf8');
+    assert.match(shape, /"skills": \["plugin:skill"\]/);
+    assert.match(shape, /optional/);
+    assert.match(shape, /CLI package and a reference-document package want different method/);
+    assert.match(shape, /travel into its child run/);
+  } finally {
+    tm.close();
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+const SKILLED = {
+  acceptance: ['both modules build together'],
+  packages: [
+    { ...SHAPE.packages[0], skills: ['develop:cli-developer', 'develop:clean-code'] },
+    SHAPE.packages[1],
+  ],
+};
+
+test('a package that names skills hands them to its child run with the precedence rules attached', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id, SKILLED);
+    const nx = await tm.call('tm_next', { task_id });
+    const child = await g.call('graph_status', { run_id: nx.children[0].run_id, cwd: nx.children[0].cwd, full: true });
+    assert.match(child.context, /Method for this package/);
+    assert.match(child.context, /- develop:cli-developer\n- develop:clean-code/);
+    // The child's nodes never read the manager's briefing, so the three rules have to be here.
+    assert.match(child.context, /not installed here is skipped without comment or substitute/);
+    assert.match(child.context, /output template does not apply/);
+    assert.match(child.context, /ask nothing and finish the work yourself/);
+    assert.equal(child.request, 'change a.txt', 'the brief itself is untouched');
+  });
+});
+
+test('a package that names no skills produces the child request and context it produced before', async () => {
+  let plain = null;
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE);
+    const nx = await tm.call('tm_next', { task_id });
+    const child = await g.call('graph_status', { run_id: nx.children[0].run_id, cwd: nx.children[0].cwd, full: true });
+    plain = { request: child.request, context: child.context };
+    assert.doesNotMatch(child.context, /Method for this package/);
+  });
+  // Same shape with skills added to the OTHER package: P1's child is byte-for-byte what it was.
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id, { ...SHAPE, packages: [SHAPE.packages[0], { ...SHAPE.packages[1], skills: ['write:writing-plans'] }] });
+    const nx = await tm.call('tm_next', { task_id });
+    const child = await g.call('graph_status', { run_id: nx.children[0].run_id, cwd: nx.children[0].cwd, full: true });
+    assert.equal(child.request, plain.request);
+    assert.equal(child.context, plain.context);
+  });
+});
+
+test('the packages listing shows a package\'s method so critique can attack the choice', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop' }) });
+    await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({ ...SKILLED, handoff: 's' }) });
+    const nx = await tm.call('tm_next', { task_id });
+    const critique = readFileSync(nx.ready.find((n) => n.stage === 'critique').briefing_path, 'utf8');
+    assert.match(critique, /### P1 — module a \(develop\)\nTouches: a\.txt\nMethod: develop:cli-developer, develop:clean-code/);
+    assert.doesNotMatch(critique, /### P2 — module b \(develop\)\nTouches: b\.txt\nMethod:/, 'a package with no skills gets no Method line');
+  });
+});
+
 test('skills: false runs every stage on its contract alone, and an override replaces the default', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));

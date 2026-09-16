@@ -48,6 +48,30 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.7.1 — the same objection twice reshapes instead of retrying, and the judge stops being
+  handed the author's identity**: a subgoal rejected twice on the same signature (reason plus
+  sorted gaps) is no longer retried a third time — the engine escalates to `setgoal` and
+  `critique`, the line that can actually change the answer, carrying what the subgoal kept
+  failing on. `goal-docs` is the case: a package README truthfully said "the repo has no other
+  docs", false only once the packages were combined, so no attempt inside that package could
+  ever fix it and the budget went on learning that three times. The goal gate now has a match
+  floor, `goal_threshold`, default 90 and settable per run (0 judges on the verdict alone) —
+  a gate that accepts at 70% was reporting a partial result as a pass. Per-subgoal `skills`
+  join `persona` in the spec, and packages carry their own into their child run. And the bug
+  that comparison found: persona and method sat in the briefing block every stage of a chain
+  shares, so a gate was told to act as the implementer who owns the module two lines above
+  being told it is the judge and not the actor. Both now reach authoring stages only.
+
+  Comparing the rewrite against the generation it replaced (`harness/engine/pipeline.js`) is
+  what produced most of this, and the plan document now carries that table so the rest is not
+  rediscovered one expensive bench run at a time. It is not flattering: the automatic retry
+  loop, stall detection, stage-mounted skills and the goal threshold were all present before
+  and were lost in the move from an in-process loop to an MCP server driven by an external
+  session. Still outstanding and now written down: `.claude/conventions/**` is gone entirely
+  from the engine, the manager's own `gate:goal` is held to no threshold, a `sound: false`
+  critique still has no automatic path, and the goal-gate repair pass is proposed as Step 9
+  rather than built.
+
 - **v0.7.0 — a rejected quality gate reassigns the subgoal itself**: a gate, review or test
   that returned a negative verdict used to fail its node, block the run, and wait for the
   caller to call `graph_retry`. That made the rejection advisory — a session that never called
