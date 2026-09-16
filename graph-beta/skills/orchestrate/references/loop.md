@@ -92,6 +92,15 @@ self or vendor — only when each has its own worktree, otherwise one at a time 
 test/review/gate/critique. The broker does not serialize them for you: `graph_next` offers
 every dependency-satisfied node, so two writers against one worktree is your mistake to avoid.
 
+The briefing at `briefing_path` folds in more than the subgoal: `plan` and `setgoal` get a
+`## Conventions` list of anything under `.claude/conventions/**` plus an instruction to use it
+(list rules in `plan`; fold applicable ones into subgoal `acceptance`/`test[]` in `setgoal`);
+`implement` and `draft` get the full text of whichever convention files match their target
+paths. And every upstream `handoff` folded into a later prompt is capped at 1500 characters
+with a `truncated at 1500 of N chars` marker — a node that grows with the run reads more than
+it can weigh. Checks and changed-file lists are never capped; they are the evidence a judge
+needs whole.
+
 A `review` node reads a document its `draft` wrote, and must not be the same agent. For self
 nodes that is already the rule (a fresh agent per node); for vendor nodes the broker refuses
 a review routed to the identity — vendor + model — that drafted, and leaves the node pending.

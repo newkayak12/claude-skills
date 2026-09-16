@@ -739,6 +739,21 @@ export function nodeBriefing(run, n) {
         }))
     : null;
 
+  // A setgoal retry's feedback is one flat string by the time it reaches this node -
+  // retrySpec joined it from whichever node rejected the prior attempt. That collapses two
+  // different situations: a critique that rejected the spec on its merits (blocking/problems),
+  // and a setgoal draft that validateSpec itself threw out before any judgment happened
+  // (spec_problems). Only the second is the structural-validation failure the degenerate-spec
+  // diagnosis in prompts.mjs is for, so recover it here from the actual prior setgoal attempt's
+  // result rather than guessing from the joined string.
+  const priorSetgoal = n.stage === 'setgoal' && (n.attempt || 1) > 1
+    ? run.nodes.find((x) => x.stage === 'setgoal' && (x.attempt || 1) === (n.attempt || 1) - 1)
+    : null;
+  const specProblems = priorSetgoal && priorSetgoal.result && Array.isArray(priorSetgoal.result.spec_problems)
+    && priorSetgoal.result.spec_problems.length
+    ? priorSetgoal.result.spec_problems
+    : null;
+
   return {
     run_id: run.run_id,
     node_id: n.node_id,
@@ -758,6 +773,7 @@ export function nodeBriefing(run, n) {
     subgoals: specWide,
     whole_run: wholeRun,
     prior_feedback: n.feedback || '',
+    spec_problems: specProblems,
     upstream,
     reasoning_stage: REASONING_STAGES.has(n.stage),
   };
