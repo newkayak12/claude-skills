@@ -31,6 +31,22 @@ then verify that `graph_open`, `graph_next`, `graph_run`, `graph_submit`, `graph
 and `graph_status` are available, and - from the second server the plugin registers,
 `task-manager` - `tm_open`, `tm_next`, `tm_submit`, `tm_retry`, `tm_status`.
 
+## Dispatch gate (optional)
+
+The plugin ships a `PreToolUse` hook, installed with it — nothing to register. It does
+nothing until a project opts in with `.claude/graph-beta-dispatch.json`:
+
+```json
+{"paths": ["src/**", "packages/**"], "min_chars": 400, "allow": ["**/*.generated.*"]}
+```
+
+With that file present, a write to a gated path is denied **while no task or run is open**,
+and the message tells the session to call `tm_open` instead. Once the harness is engaged
+every write passes — nodes have to write. The point is the handoff at the start: the driving
+session dispatches the work rather than doing it inline, which is what keeps its context flat
+and what puts every change through a gate, a reviewer of a different identity, and its own
+branch. Every field is optional, no file means no gate, and the hook fails open on any error.
+
 Use a project-local connection only when the user explicitly wants to run from a source
 checkout instead of the marketplace plugin. Merge this entry into the target project's
 existing `.mcp.json`; preserve every unrelated server and use an absolute path:

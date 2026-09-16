@@ -48,6 +48,20 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.6.9 — a hook that makes the driving session dispatch instead of doing the work**: the
+  plugin now ships a `PreToolUse` gate, installed with it. It does nothing until a project
+  opts in with `.claude/graph-beta-dispatch.json`; with that file present, a write to a gated
+  path is denied **while no task or run is open**, and the denial names the call to make
+  (`tm_open`) and the way out (delete the file, or add the path to `allow`). Once the harness
+  is engaged every write passes — nodes have to write, and a gate that told a node's fresh
+  agent otherwise would brick the run. This enforces the shape the bench already measured: a
+  session driving the harness well shows `top-level edits 0`, and a session that starts editing
+  the project has stopped orchestrating — which is both how the manager's reason for existing
+  gets skipped and how the driving session's context grows (507k tokens over 331 turns, ~55%
+  of a task's cost). `paths`, `min_chars` and `allow` are all optional, the harness's own state
+  is never gated, and the hook fails open on every error: a hook that blocks a session over its
+  own parsing is worse than no hook.
+
 - **v0.6.8 — a node ran on the other vendor, and the split held on its own**: with Codex
   logged in, `betas code-flat` put all seven execution nodes (`draft`, `implement`, `test`) on
   `gpt-5.6-sol` and kept every `critique`, `review` and `gate` on the driving host — so author
