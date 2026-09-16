@@ -171,7 +171,7 @@ test('tm_open seeds size -> shape -> critique under the tasks root, not under th
   });
 });
 
-test('size S delegates to graph_open and leaves nothing on disk', async () => {
+test('size S delegates to graph_open and leaves nothing on disk (s_driver "inline")', async () => {
   await withTask(async ({ cwd, root, task_id, tm }) => {
     const v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'document', sizing: ['ls -> one file'] }) });
     assert.equal(v.state, 'done');
@@ -186,10 +186,10 @@ test('size S delegates to graph_open and leaves nothing on disk', async () => {
     assert.deepEqual(readdirSync(root), []);
     const after = await tm.call('tm_next', { task_id });
     assert.match(after.error, /unknown task/);
-  });
+  }, { s_driver: 'inline' });
 });
 
-test('tm_open({size}) pins the size: L opens shape without measuring, S delegates at once', async () => {
+test('tm_open({size}) pins the size: L opens shape without measuring, S (s_driver "inline") delegates at once', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root }).init();
@@ -202,7 +202,7 @@ test('tm_open({size}) pins the size: L opens shape without measuring, S delegate
     const size = task.nodes.find((n) => n.node_id === 'size');
     assert.equal(size.state, 'done');
     assert.equal(size.result.size_source, 'pinned');
-    const S = await tm.call('tm_open', { request: 'small request', cwd, flow: 'document', vendor: 'self', size: 'S' });
+    const S = await tm.call('tm_open', { request: 'small request', cwd, flow: 'document', vendor: 'self', size: 'S', s_driver: 'inline' });
     assert.equal(S.task_state, 'delegated');
     assert.equal(S.delegate.tool, 'graph_open');
     assert.equal(S.delegate.args.flow, 'document');
@@ -216,7 +216,7 @@ test('a pinned flow survives sizing, and delegate.args open a graph run verbatim
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root }).init();
   const g = await new Client(BROKER).init();
   try {
-    const { task_id } = await tm.call('tm_open', { request: 'r', cwd, flow: 'develop', vendor: 'self', max_retries: 1 });
+    const { task_id } = await tm.call('tm_open', { request: 'r', cwd, flow: 'develop', vendor: 'self', max_retries: 1, s_driver: 'inline' });
     // size says document; the entry pinned develop, and the entry wins.
     const v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'document' }) });
     assert.equal(v.delegate.args.flow, 'develop');
@@ -895,6 +895,38 @@ console.log('{"type":"fake-driver"}');
 console.error('fake driver drove nothing');
 `;
 
+// Dies on its first invocation (the death serviceDeadDriver has to catch and respawn from), then
+// stays up on every later invocation - a respawned driver a test can observe alive, instead of
+// racing the next death. A shared counter file (one JS process per invocation; no in-memory
+// state survives between them) says which attempt this is; each attempt's own argv/pid is
+// written to "<FAKE_DRIVER_OUT>.<n>" so a test can read every generation, not just the last.
+const FAKE_DRIVER_RESPAWN = `
+import { writeFileSync, existsSync, readFileSync } from 'node:fs';
+const counterFile = process.env.FAKE_DRIVER_COUNTER;
+let n = 1;
+if (counterFile) {
+  n = existsSync(counterFile) ? parseInt(readFileSync(counterFile, 'utf8'), 10) + 1 : 1;
+  writeFileSync(counterFile, String(n));
+}
+const out = process.env.FAKE_DRIVER_OUT;
+if (out) writeFileSync(\`\${out}.\${n}\`, JSON.stringify({ n, pid: process.pid, argv: process.argv.slice(2) }));
+console.log(JSON.stringify({ type: 'fake-driver', attempt: n }));
+console.error(\`fake driver attempt \${n} drove nothing\`);
+if (n < 2) { process.exit(0); } else { setTimeout(() => process.exit(0), 5000); }
+`;
+
+// Emits a usage-limit result event on its stdout stream - the same NDJSON shape
+// \`claude -p --output-format stream-json\` writes - then exits. serviceDeadDriver reads this
+// back from the log, not from stderr, exactly as scripts/bench/drive.sh does.
+const FAKE_DRIVER_LIMIT = `
+import { writeFileSync } from 'node:fs';
+const out = process.env.FAKE_DRIVER_OUT;
+if (out) writeFileSync(out, JSON.stringify({ argv: process.argv.slice(2) }));
+console.log(JSON.stringify({ type: 'result', result: "You've hit your 5-hour limit · resets 11:50pm (Asia/Seoul)" }));
+console.error('fake driver hit a usage limit');
+setTimeout(() => process.exit(1), 50);
+`;
+
 async function waitFor(fn, what, ms = 15000) {
   const until = Date.now() + ms;
   for (;;) {
@@ -905,22 +937,24 @@ async function waitFor(fn, what, ms = 15000) {
   }
 }
 
-function driverFixture(env = {}) {
+function driverFixture(env = {}, script = FAKE_DRIVER) {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
   const drv = mkdtempSync(join(tmpdir(), 'tm-drv-'));
-  const script = join(drv, 'fake-driver.mjs');
-  writeFileSync(script, FAKE_DRIVER);
+  const scriptPath = join(drv, 'fake-driver.mjs');
+  writeFileSync(scriptPath, script);
   const ran = join(drv, 'ran.json');
+  const counter = join(drv, 'counter.txt');
   const client = new Client(TM, {
     HARNESS_TASKS_DIR: root,
-    HARNESS_CHILD_DRIVER: `node ${script}`,
+    HARNESS_CHILD_DRIVER: `node ${scriptPath}`,
     FAKE_DRIVER_OUT: ran,
+    FAKE_DRIVER_COUNTER: counter,
     // The manager runs inside a claude session; a nested `claude -p` refuses to start if it sees this.
     CLAUDECODE: '1',
     ...env,
   });
-  return { cwd, root, drv, ran, client };
+  return { cwd, root, drv, ran, counter, client };
 }
 
 test('a ready dispatch spawns a driver process in the package worktree, with the run to continue in its prompt', async () => {
@@ -966,26 +1000,79 @@ test('a ready dispatch spawns a driver process in the package worktree, with the
   }
 });
 
-test('a driver that exits with the child run unfinished folds the dispatch as blocked, with its stderr', async () => {
-  const f = driverFixture();
+test('a driver that dies mid-run is respawned on the SAME run_id with a resume prompt, before any budget is spent', async () => {
+  const f = driverFixture({}, FAKE_DRIVER_RESPAWN);
   const tm = await f.client.init();
   try {
+    // Default driver_restarts (2): the first death must not fold anything.
     const { task_id } = await tm.call('tm_open', { request: 'big request', cwd: f.cwd, vendor: 'self' });
     await throughCritique(tm, task_id);
-    await tm.call('tm_next', { task_id });
-    const dead = await waitFor(async () => {
+    const first = await tm.call('tm_next', { task_id });
+    const firstChild = first.children[0];
+    const firstPid = firstChild.driver.pid;
+
+    // Attempt 1 dies immediately; tm_next's own poll respawns attempt 2, which stays up long
+    // enough (FAKE_DRIVER_RESPAWN) for this to observe it alive rather than racing its death too.
+    const resumed = await waitFor(async () => {
       const nx = await tm.call('tm_next', { task_id });
-      return nx.children[0] && nx.children[0].driver.alive === false ? nx : null;
-    }, 'the fake driver to exit');
-    const c = dead.children[0];
-    assert.equal(c.child_state, 'running', 'the fake drove nothing: the child run is still open');
-    assert.match(c.next, /driver exited before the run finished/);
-    assert.match(c.next, /tm_retry\({package_id: "P1"}\)/);
+      const c = nx.children[0];
+      return c.driver.restarts === 1 ? c : null;
+    }, 'the respawned driver');
+    assert.equal(resumed.child_state, 'running', 'the child run itself never stopped: only its driver died');
+    assert.equal(resumed.run_id, firstChild.run_id, 'the SAME child run_id, not a fresh one');
+    assert.equal(resumed.cwd, firstChild.cwd, 'the same worktree too');
+    assert.notEqual(resumed.driver.pid, firstPid, 'a fresh process');
+    assert.equal(resumed.driver.alive, true, 'the respawned driver is alive: nothing to fold yet');
+    assert.match(resumed.next, /its driver process \(pid/, 'poll tm_next, do not fold - a live respawn is exactly like a first spawn');
+
+    const early = await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    assert.match(early.error, /still running/, 'a live respawned driver refuses the fold exactly like a first one would');
+
+    const second = await waitFor(
+      () => (existsSync(`${f.ran}.2`) ? JSON.parse(readFileSync(`${f.ran}.2`, 'utf8')) : null),
+      'the respawned driver\'s own invocation record',
+    );
+    const prompt = second.argv[second.argv.length - 1];
+    assert.match(prompt, new RegExp(`run_id ${firstChild.run_id}`), prompt);
+    assert.match(prompt, /A previous driver for this exact run died before it finished/);
+    assert.match(prompt, /graph_status\(\{run_id, cwd\}\) first/);
+    assert.match(resumed.driver.log, /\.restart1\.stream\.jsonl$/, 'a distinct log per generation, not overwritten');
+
+    const ledger = readFileSync(join(f.root, task_id, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    const restarted = ledger.find((e) => e.event === 'child_driver_restarted');
+    assert.equal(restarted.node_id, 'dispatch:P1:1');
+    assert.equal(restarted.restart, 1);
+    assert.equal(restarted.budget, 2);
+  } finally {
+    tm.close();
+    rmSync(f.cwd, { recursive: true, force: true });
+    rmSync(f.root, { recursive: true, force: true });
+    rmSync(f.drv, { recursive: true, force: true });
+  }
+});
+
+test('once the restart budget is spent, the dispatch folds blocked with every attempt\'s stderr', async () => {
+  const f = driverFixture(); // FAKE_DRIVER: dies immediately, every single time
+  const tm = await f.client.init();
+  try {
+    const { task_id } = await tm.call('tm_open', { request: 'big request', cwd: f.cwd, vendor: 'self', driver_restarts: 1 });
+    await throughCritique(tm, task_id);
+    await tm.call('tm_next', { task_id });
+    const spent = await waitFor(async () => {
+      const nx = await tm.call('tm_next', { task_id });
+      const c = nx.children[0];
+      return c.driver.alive === false && c.driver.restarts === 1 ? c : null;
+    }, 'the restart budget (1) to be spent');
+    assert.equal(spent.child_state, 'running', 'the fake drove nothing: the child run is still open');
+    assert.match(spent.next, /restart budget \(1\) is spent/);
+    assert.match(spent.next, /tm_retry\({package_id: "P1"}\)/);
 
     const v = await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
     assert.equal(v.state, 'failed', JSON.stringify(v));
-    assert.match(v.reason, /child driver exited \(pid \d+\) with the run still running/);
+    assert.match(v.reason, /child driver exited \(pid \d+\) after 1 restart\(s\) with the run still running/);
     assert.match(v.reason, /fake driver drove nothing/, 'the last of the driver stderr is the evidence');
+    const full = await tm.call('tm_status', { task_id, node_id: 'dispatch:P1:1', full: true });
+    assert.equal(full.node.result.driver_restarts.length, 1, 'one death was recorded before the fold, not the fold itself');
     // Blocked, and retryable in the same worktree - the package is not dead, its session is.
     const after = await tm.call('tm_status', { task_id });
     assert.equal(after.state, 'blocked');
@@ -994,8 +1081,83 @@ test('a driver that exits with the child run unfinished folds the dispatch as bl
     assert.equal(rt.retried, true, JSON.stringify(rt));
     assert.equal(rt.children[0].node_id, 'dispatch:P1:2');
     assert.ok(Number.isInteger(rt.children[0].driver.pid), 'the retry spawns its own driver');
+    assert.equal(rt.children[0].driver.restarts, undefined, 'a fresh dispatch starts with no restarts of its own');
   } finally {
     tm.close();
+    rmSync(f.cwd, { recursive: true, force: true });
+    rmSync(f.root, { recursive: true, force: true });
+    rmSync(f.drv, { recursive: true, force: true });
+  }
+});
+
+test('a usage-limit death parks the dispatch on waiting_capacity, spends no restart, and tm_retry({reset_capacity}) resumes it', async () => {
+  const f = driverFixture({}, FAKE_DRIVER_LIMIT);
+  const tm = await f.client.init();
+  try {
+    const { task_id } = await tm.call('tm_open', { request: 'big request', cwd: f.cwd, vendor: 'self' });
+    await throughCritique(tm, task_id);
+    await tm.call('tm_next', { task_id });
+    const parked = await waitFor(async () => {
+      const nx = await tm.call('tm_next', { task_id });
+      return nx.children[0].waiting_capacity ? nx.children[0] : null;
+    }, 'the driver to park on capacity');
+    assert.equal(parked.child_state, 'running');
+    assert.match(parked.waiting_capacity.reason, /hit your 5-hour limit/);
+    assert.equal(parked.driver.alive, false, 'the driver process did exit');
+    assert.equal(parked.driver.restarts, undefined, 'a usage-limit death spends no restart');
+    assert.match(parked.next, /waiting on provider capacity/);
+    assert.match(parked.next, /tm_retry\({task_id, package_id: "P1", reset_capacity:true}\)/);
+
+    const early = await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    assert.match(early.error, /waiting on provider capacity/, 'parked, not blocked: reset_capacity is the way out, not a fold');
+
+    const badPkg = await tm.call('tm_retry', { task_id, package_id: 'P9', reset_capacity: true });
+    assert.equal(badPkg.retried, false, 'reset_capacity for a package with nothing waiting resumes nothing');
+
+    const oldPid = parked.driver.pid;
+    const rt = await tm.call('tm_retry', { task_id, package_id: 'P1', reset_capacity: true });
+    assert.equal(rt.retried, true, JSON.stringify(rt));
+    assert.deepEqual(rt.resumed, ['dispatch:P1:1']);
+    assert.equal(rt.children[0].node_id, 'dispatch:P1:1', 'the SAME dispatch - reset_capacity is not a new attempt');
+    assert.equal(rt.children[0].waiting_capacity, undefined, 'cleared');
+    assert.ok(Number.isInteger(rt.children[0].driver.pid) && rt.children[0].driver.pid !== oldPid, 'a fresh driver process');
+    assert.equal(rt.children[0].driver.alive, true, 'observed in the same tick spawnChildDriver returned it');
+
+    const ledger = readFileSync(join(f.root, task_id, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.ok(ledger.some((e) => e.event === 'child_driver_capacity' && e.node_id === 'dispatch:P1:1'));
+    assert.ok(ledger.some((e) => e.event === 'child_driver_capacity_cleared' && e.node_id === 'dispatch:P1:1'));
+    assert.ok(ledger.some((e) => e.event === 'child_driver_restarted' && e.reason === 'reset_capacity'));
+  } finally {
+    tm.close();
+    rmSync(f.cwd, { recursive: true, force: true });
+    rmSync(f.root, { recursive: true, force: true });
+    rmSync(f.drv, { recursive: true, force: true });
+  }
+});
+
+test('a driver that exits only after its child run finished folds normally: a crash and an ordinary ending are not the same thing', async () => {
+  const f = driverFixture(); // dies immediately; the point is that the RUN finishes some other way first
+  const tm = await f.client.init();
+  const g = await new Client(BROKER).init();
+  try {
+    const { task_id } = await tm.call('tm_open', { request: 'big request', cwd: f.cwd, vendor: 'self' });
+    await throughCritique(tm, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    const c = nx.children[0];
+    await waitFor(async () => (await tm.call('tm_next', { task_id })).children[0].driver.alive === false, 'the fake driver to exit');
+    // The driver is long dead, but the run itself is completed by other means (as the broker
+    // would, driven by whatever replaced the dead driver in a real deployment) before anyone
+    // folds the dispatch. serviceDeadDriver must read that as a finish, not a crash.
+    await completeChild(g, c);
+    const after = await tm.call('tm_next', { task_id });
+    assert.equal(after.children[0].child_state, 'complete');
+    assert.equal(after.children[0].next, `tm_submit({task_id, node_id: "${c.node_id}"})`);
+    const v = await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    assert.equal(v.accept, true, 'the normal fold path ran, not the dead-driver one');
+  } finally {
+    tm.close();
+    g.close();
     rmSync(f.cwd, { recursive: true, force: true });
     rmSync(f.root, { recursive: true, force: true });
     rmSync(f.drv, { recursive: true, force: true });
@@ -1023,6 +1185,111 @@ test('child_driver "inline" spawns nothing: the child is the session\'s to drive
   } finally {
     tm.close();
     g.close();
+    rmSync(f.cwd, { recursive: true, force: true });
+    rmSync(f.root, { recursive: true, force: true });
+    rmSync(f.drv, { recursive: true, force: true });
+  }
+});
+
+// ---------- size-S process handoff: s_driver ----------
+
+test('a size-S task with the default s_driver spawns one headless driver, and tm_next relays its report once it completes', async () => {
+  const f = driverFixture();
+  const tm = await f.client.init();
+  const g = await new Client(BROKER).init();
+  try {
+    const { task_id } = await tm.call('tm_open', { request: 'small request', cwd: f.cwd, vendor: 'self' });
+    const v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'develop', sizing: ['ls -> one module'] }) });
+    assert.equal(v.task_state, 's_run');
+    assert.equal(v.delegate, undefined, 'process mode opens the run itself; there is nothing to delegate');
+    assert.equal(v.state, 'running');
+    assert.ok(Number.isInteger(v.driver.pid), JSON.stringify(v));
+    assert.equal(v.driver.log, join(f.root, task_id, 'drivers', 'S.stream.jsonl'));
+    const { run_id, cwd } = v;
+    assert.equal(cwd, f.cwd, 'the single run opens directly in the project cwd, not a package worktree');
+    assert.ok(existsSync(join(f.root, task_id, 'task.json')), 'the task stays on disk as the pointer to this run');
+
+    const ran = await waitFor(() => (existsSync(f.ran) ? JSON.parse(readFileSync(f.ran, 'utf8')) : null), 'the fake driver to run');
+    assert.match(ran.argv[ran.argv.length - 1], new RegExp(`run_id ${run_id}`));
+    assert.equal(realpathSync(ran.cwd), realpathSync(cwd));
+
+    // The fake driver drove nothing; drive the single run to completion directly, exactly as a
+    // real driver session would with graph_next/graph_run/graph_submit.
+    const sub = (node_id, payload) => g.call('graph_submit', { run_id, cwd, node_id, payload: ok(payload) });
+    await sub('plan', { handoff: 'p', flow: 'develop', size: 'S' });
+    await sub('setgoal', { spec: CHILD_SPEC });
+    await sub('critique', { sound: true });
+    appendFileSync(join(cwd, 'a.txt'), 'changed by S\n');
+    await sub('implement:U1:1', { changed_files: ['a.txt'], handoff: 'built' });
+    await sub('test:U1:1', { verified: true });
+    await sub('gate:U1:1', { accept: true, match_pct: 95 });
+    await sub('gate:goal:1', { accept: true, match_pct: 95 });
+    await sub('report', { handoff: 'S run done' });
+
+    const done = await waitFor(async () => {
+      const nx = await tm.call('tm_next', { task_id });
+      return nx.state !== 'running' ? nx : null;
+    }, 'the S run to finish');
+    assert.equal(done.state, 'complete');
+    assert.equal(done.report, 'S run done');
+    assert.deepEqual(done.ready, []);
+    assert.deepEqual(done.children, []);
+    const reportRow = done.nodes.find((nd) => nd.node_id === 'report');
+    assert.ok(reportRow && reportRow.stage_ok === true, JSON.stringify(done.nodes));
+    const implRow = done.nodes.find((nd) => nd.node_id === 'implement:U1:1');
+    assert.ok(implRow, 'the table carries every node the entry skill\'s output template wants: node, vendor, stage_ok, note');
+
+    const status = await tm.call('tm_status', { task_id });
+    assert.equal(status.state, 'complete');
+    assert.equal(status.s_driver, 'process');
+    assert.equal(status.s_run.run_id, run_id);
+  } finally {
+    tm.close();
+    g.close();
+    rmSync(f.cwd, { recursive: true, force: true });
+    rmSync(f.root, { recursive: true, force: true });
+    rmSync(f.drv, { recursive: true, force: true });
+  }
+});
+
+test('tm_open({mixed}) reaches the size-S run under either s_driver, the same way isolated does', async () => {
+  const f = driverFixture();
+  const tm = await f.client.init();
+  const g = await new Client(BROKER).init();
+  try {
+    const inline = await tm.call('tm_open', { request: 'r', cwd: f.cwd, vendor: 'self', s_driver: 'inline', mixed: false, isolated: true });
+    const iv = await tm.call('tm_submit', { task_id: inline.task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'develop' }) });
+    assert.equal(iv.delegate.args.mixed, false);
+    assert.equal(iv.delegate.args.isolated, true);
+
+    const proc = await tm.call('tm_open', { request: 'r', cwd: f.cwd, vendor: 'self', mixed: false, isolated: true });
+    const pv = await tm.call('tm_submit', { task_id: proc.task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'develop' }) });
+    assert.equal(pv.task_state, 's_run');
+    const full = await g.call('graph_status', { run_id: pv.run_id, cwd: pv.cwd, full: true });
+    assert.equal(full.mixed, false);
+    assert.equal(full.isolated, true);
+  } finally {
+    tm.close(); g.close();
+    rmSync(f.cwd, { recursive: true, force: true });
+    rmSync(f.root, { recursive: true, force: true });
+    rmSync(f.drv, { recursive: true, force: true });
+  }
+});
+
+test('s_driver "inline" for a size-S task spawns no driver: the pre-existing delegate shape', async () => {
+  const f = driverFixture();
+  const tm = await f.client.init();
+  try {
+    const { task_id } = await tm.call('tm_open', { request: 'small request', cwd: f.cwd, vendor: 'self', s_driver: 'inline' });
+    const v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'develop' }) });
+    assert.equal(v.task_state, 'delegated');
+    assert.equal(v.delegate.tool, 'graph_open');
+    assert.equal(v.delegate.args.cwd, f.cwd);
+    assert.equal(v.delegate.args.isolated, false);
+    assert.ok(!existsSync(join(f.root, task_id)), 'an inline S request leaves no manager state, same as before s_driver existed');
+    assert.ok(!existsSync(f.ran), 'no driver process was ever spawned');
+  } finally {
+    tm.close();
     rmSync(f.cwd, { recursive: true, force: true });
     rmSync(f.root, { recursive: true, force: true });
     rmSync(f.drv, { recursive: true, force: true });
