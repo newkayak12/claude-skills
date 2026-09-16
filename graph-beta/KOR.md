@@ -45,6 +45,18 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 
 ## 상태
 
+- **v0.6.8 — 다른 벤더에서 노드가 실행됐고, 분담이 저절로 지켜짐**: Codex 로그인 상태에서
+  `betas code-flat`이 실행 노드 7개(`draft`·`implement`·`test`)를 전부 `gpt-5.6-sol`에 보내고
+  `critique`·`review`·`gate`는 전부 구동 호스트에 남겼습니다 — 누가 지시하지 않았는데 subgoal 4개에서
+  **작성자와 리뷰어의 벤더가 갈렸습니다**. Codex는 7번 중 7번 유효한 단계 계약을 반환했고, 런은
+  23/23 노드를 끝내 8/9 · $11.88(같은 arm을 전부 Claude로 돌린 $13.20 대비)이었으며, 도중에 Codex
+  용량이 소진되자 `unavailable_vendors`에 기록하고 이유를 노드 `attempts`에 남긴 채 남은 작업을
+  Claude로 넘겨 중단 없이 완주했습니다. 7건 모두 `changed_files_verified`가 `null`이고 모순 파일은
+  0건 — 공유 워크트리 경로이고, 거기서 긍정 귀속은 설계상 성립하지 않습니다. 매니저는 자식 run을
+  전부 `isolated`로 열고 쓰기 노드를 하나씩만 내주며, 이미 디스크에 있는 매니저 경로 런들의 집계는
+  **49노드 전부 `('isolated', true)`** 입니다 — 남은 미측정은 메커니즘이 아니라 "executor가 Codex인
+  isolated 노드" 하나로 좁혀집니다.
+
 - **v0.6.7 — 매니저 단계에 방법론을 주고, 무엇을 썼는지 말하게 함**: 판단·기획 단계가 작업 전에
   로드할 스킬을 지정합니다 — `shape`는 `develop:domain-driven-design`과 `architecture-designer`
   (계약문이 이미 "단계가 아니라 소유권으로 쪼개라"고 합니다), `critique`는
