@@ -44,18 +44,24 @@ this is one graph run or several.
 
 ```
 tm_open({
-  request, cwd, flow: "auto",
+  request, cwd, isolated, flow: "auto",
   vendor: "auto", allocation: "balanced",
   host_vendor, host_model, native_models
 })                                               -> task_id, ready: [size]
 fresh agent at size.briefing_path -> tm_submit({task_id, node_id: "size", payload})
-    delegate present  -> size S. The task is gone from disk. Continue with
-                         graph_open({...delegate.args, isolated}) and references/loop.md
-    no delegate       -> size L. Continue with references/manager.md
+    delegate present     -> size S, s_driver "inline": the task is gone from disk. Continue with
+                            graph_open(delegate.args) and references/loop.md
+    task_state "s_run"   -> size S, s_driver "process" (the default): one driver is already
+                            running the single graph run tm_submit opened. Poll tm_next — same
+                            shape as an L child — until it reports; relay the table and report
+    neither              -> size L. Continue with references/manager.md
 ```
 
-`delegate.args` already carries the request, cwd, the flow `size` chose, and every routing
-argument you gave `tm_open`; add only `isolated`. When the user has said, in their own words,
+`isolated` is true only when you created or were handed a private worktree holding this run
+alone; it travels straight into whichever run `tm_open` ends up opening — the single run under
+the default `s_driver`, or `delegate.args` under `s_driver: "inline"`. Pass `s_driver: "inline"`
+only when you must drive an S request's single run yourself, node by node, and accept the
+context cost. When the user has said, in their own words,
 that the request must be split — "패키지별로 나눠서", "one worktree per package", "these are
 separate deliverables" — pass `size: "L"` and `size` is recorded as pinned, not measured;
 "one run, don't split it" pins `size: "S"`. A monorepo with one test script and one commit
@@ -63,8 +69,10 @@ measures S on its own: `size` reads build units and ownership boundaries, not pa
 returns `size` too, and if it says L where the manager said S, that goes in the report as an
 observation — the run still proceeds as one graph.
 
-Then run **`references/loop.md`** (one run) or **`references/manager.md`** (a task of runs).
-Read the one you need before the first `graph_next`/`tm_next`.
+Then run **`references/loop.md`** yourself only for a delegated (`s_driver: "inline"`) S run, or
+**`references/manager.md`** for a task of runs (L, or S under the default `s_driver`) — the
+latter never has you call `graph_next`/`graph_run`/`graph_submit` directly. Read the one you
+need before the first `graph_next`/`tm_next`.
 
 ## Output template
 
