@@ -7,6 +7,12 @@
 // prompt and the orchestrator never sees the payload.
 
 import { REASONING_STAGES, FLOWS, VERDICT_FIELD, kindSkills, kindOf } from './graph.mjs';
+import { mountBlock } from './mounts.mjs';
+
+// Shared by every Method block a composed prompt can carry - the per-subgoal one below and
+// the stage-mounted one mounts.mjs renders - so the two mechanisms state the same rule in
+// the same words instead of drifting apart.
+export const SKILL_METHOD_DISCLAIMER = `A skill that is not installed here is skipped without comment or substitute. Its own output template does not apply - "Required output" below is the only shape you may return - and neither does its "what you do / what I do" half: nobody is reading this but the machine that called you, so ask nothing and finish the work yourself.`;
 
 const CONTRACT = {
   plan: `Return JSON: {"plan": "<the decomposition>", "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "handoff": "<what the next node needs>", "evidence": "<how you checked the request is actually satisfiable here>"}
@@ -137,7 +143,7 @@ export function composePrompt(run, n, briefing) {
     // missing skill is skipped in silence, and nobody is there to answer a question.
     if (method.length) {
       lines.push(`Method — load each of these that is available, then work the way it says:\n${bullets(method)}`);
-      lines.push(`A skill that is not installed here is skipped without comment or substitute. Its own output template does not apply - "Required output" below is the only shape you may return - and neither does its "what you do / what I do" half: nobody is reading this but the machine that called you, so ask nothing and finish the work yourself.`);
+      lines.push(SKILL_METHOD_DISCLAIMER);
     }
     if (sg.files?.length) lines.push(`Required paths:\n${bullets(sg.files)}`);
     lines.push('');
@@ -226,6 +232,8 @@ export function composePrompt(run, n, briefing) {
     lines.push(`## Previous attempt was rejected — fix this`);
     lines.push(briefing.prior_feedback);
   }
+
+  lines.push(mountBlock(run, n));
 
   lines.push('');
   lines.push(`## Required output`);
