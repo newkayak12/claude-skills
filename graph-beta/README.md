@@ -48,6 +48,35 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.9.0 — the accuracy round**: five changes built in parallel against the "What the rewrite
+  dropped" table, all on the side of more judging and more evidence, none on the side of cost.
+  (1) `.claude/conventions/**` reaches plan, setgoal, implement and draft again (`mcp/conventions.mjs`);
+  plan surveys dependencies, deterministic verification and conventions per unit; setgoal is
+  forbidden by name to author whole-repo-state or aspirational criteria; a structurally rejected
+  spec gets the "you shrank the payload" diagnosis on retry; every upstream handoff folded into a
+  prompt is capped at 1500 chars (`HANDOFF_CAP`). (2) The graph engine mounts stage skills like
+  the manager does — plan → `agents:agent-task-decomposer`, critique/gate/review →
+  `think:devils-advocate`, test → `completion:verification-before-completion` — plus advisory MCP
+  mounts (sequential-thinking, think-tool, mcp-reasoner); `graph_open({skills, mounts})` overrides
+  or disables. A `sound:false` critique now re-authors the spec by itself, budgeted like a subgoal
+  retry; `vendor:"auto"` actually tries claude then codex before `self`. (3) The goal gate is two
+  independent judges (`goal_judges`, default 2) with different identities; the run accepts only on
+  unanimous accept at or above `goal_threshold`; each judge must list `attacks[]` — invocations
+  from outside the tree, the way the requester will call it — or its accept is refused like an
+  empty `checks[]`. A rejected round opens a cross-vendor `repair` stage over the assembled result
+  (Step 9), then re-judges; two identical rejections stall onto partial-work reporting;
+  `graph_retry({repair:true})` forces one. (4) A dead package driver resumes on the same run_id up
+  to `driver_restarts` (default 2); a usage-limit death parks the package on `waiting_capacity`
+  and `tm_retry({reset_capacity:true})` resumes it; size-S requests get the same one-driver
+  process handoff as an L package (`s_driver`, default `process`). (5) Bench: a `seam` fixture
+  whose two halves pass alone and only meet through a shared exit-code table (12 criteria, 5 seam,
+  two of which reproduce the 0.8.1 `/var` defect); a `skills` arm that mounts the plugins the
+  harness names; judge fields (`seam_detected`, `gate_rejections`, `judges_with_checks`,
+  `repairs`); and six scorer misreads fixed with the helpers moved to `bench/lib/claims.mjs`.
+  Measured before this round, on 0.8.1 all-Claude with codex disabled: `betas code-flat` **9/9**,
+  21 min, $6.54, every gate with checks, 0 false claims after rescoring — against 8/9, 44 min,
+  $11.88 on 0.7.3. Tests 219 across nine files. Not yet measured: this round, the `seam` case,
+  and anything with codex.
 - **v0.8.1 — test goes to whoever did not implement**: the 6/9 on the manager run was traced to
   one line. The integrated CLI is correct when run from inside the tree and prints nothing when
   reached by its `/var` symlink, because its "am I main" guard compares `import.meta.url` to the

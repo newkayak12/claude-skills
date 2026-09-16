@@ -45,6 +45,30 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 
 ## 상태
 
+- **v0.9.0 — 정확도 라운드**: "What the rewrite dropped" 표를 상대로 다섯 가지를 병렬로 만들었습니다.
+  전부 판정과 증거를 늘리는 쪽이고, 비용을 줄이는 쪽은 없습니다. (1) `.claude/conventions/**`가 다시
+  plan·setgoal·implement·draft에 도달합니다(`mcp/conventions.mjs`); plan은 단위별 의존·결정적 검증·
+  컨벤션을 조사하고, setgoal은 리포 전체 상태나 희망치 기준을 쓰는 것이 이름으로 금지되며, 구조적으로
+  거부된 스펙은 재시도 때 "페이로드를 줄였다"는 진단을 받고, 프롬프트에 접히는 모든 upstream handoff는
+  1500자로 캡됩니다(`HANDOFF_CAP`). (2) 그래프 엔진이 매니저처럼 스테이지 스킬을 마운트합니다 — plan →
+  `agents:agent-task-decomposer`, critique/gate/review → `think:devils-advocate`, test →
+  `completion:verification-before-completion` — 그리고 권고형 MCP 마운트(sequential-thinking,
+  think-tool, mcp-reasoner); `graph_open({skills, mounts})`로 덮어쓰거나 끕니다. `sound:false`
+  critique는 이제 스스로 스펙을 재작성하고(subgoal 재시도와 같은 예산), `vendor:"auto"`는 `self` 전에
+  실제로 claude→codex를 시도합니다. (3) goal gate는 정체가 다른 판정자 둘(`goal_judges`, 기본 2);
+  전원이 `goal_threshold` 이상으로 accept해야 통과; 각 판정자는 `attacks[]` — 트리 밖에서, 요청자가
+  부를 방식으로 부른 호출 — 를 적어야 하고 비어 있으면 빈 `checks[]`처럼 거부됩니다. 거부된 라운드는
+  조립된 결과 위에서 교차 벤더 `repair` 스테이지를 열고(Step 9) 다시 판정; 같은 거부가 두 번이면
+  stall로 부분 결과 보고; `graph_retry({repair:true})`로 강제. (4) 죽은 패키지 드라이버는 같은
+  run_id로 `driver_restarts`(기본 2)까지 resume; usage-limit 사망은 `waiting_capacity`로 보류하고
+  `tm_retry({reset_capacity:true})`로 재개; S 사이즈도 L 패키지와 같은 단일 드라이버 프로세스 위임
+  (`s_driver`, 기본 `process`). (5) 벤치: 두 반쪽이 각자는 통과하고 공유 exit-code 표를 통해서만 만나는
+  `seam` fixture(기준 12개, seam 5개, 그중 둘이 0.8.1의 `/var` 결함을 재현); 하네스가 이름 대는 플러그인을
+  마운트하는 `skills` arm; judge 지표(`seam_detected`, `gate_rejections`, `judges_with_checks`,
+  `repairs`); 채점기 오독 6건 수정과 `bench/lib/claims.mjs`로 헬퍼 분리. 이 라운드 전에 0.8.1
+  all-Claude(코덱스 off)로 측정: `betas code-flat` **9/9**, 21분, $6.54, 전 게이트 checks 기록, 재채점 후
+  거짓 주장 0 — 0.7.3의 8/9, 44분, $11.88 대비. 테스트 9파일 219개. 미측정: 이 라운드 자체, `seam`
+  케이스, 코덱스 포함 전부.
 - **v0.8.1 — test는 구현하지 않은 쪽이 맡음**: 매니저 런의 6/9가 한 줄로 추적됐습니다. 통합된 CLI는
   트리 안에서 실행하면 맞고, `/var` 심링크로 부르면 아무것도 안 찍습니다 — "내가 main인가" 가드가
   `import.meta.url`을 resolve 안 된 `process.argv[1]`과 비교하기 때문입니다. peer(codex)가 썼고, peer의

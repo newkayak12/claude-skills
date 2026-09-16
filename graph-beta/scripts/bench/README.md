@@ -473,3 +473,26 @@ was an engine bug. Across every code run to date the score losses divide into: o
 cross-vendor defect (this), two spec-drift phrasing misses, one engine bug. None is "the peer
 wrote worse code"; one is "the peer's tester shared the peer's assumptions and the host's judges
 did not run anything".
+
+## Results — 0.8.1 all-Claude, codex disabled, 2026-09-16
+
+One run to see whether 0.8.0's process drivers, evidence-gated judging and the sonnet tier for
+execution stages changed anything, with codex kept out (`BROKER_VENDORS` pointing at a registry
+whose `codex` entry requires a binary that does not exist, so the probe fails and every
+cross-vendor stage falls back to the host). The 0.8.1 routing fix itself is therefore not in
+this measurement.
+
+| arm | case | score | wall | cost | turns | claims |
+|---|---|---|---|---|---|---|
+| betas, no codex (0.8.1) | code-flat | **9/9** | 21 min | $6.54 | 56 | false 0/88 after rescoring |
+| betas + codex (0.7.3) | code-flat | 8/9 (`readme`) | 44 min | $11.88 | 72 | 0/107 |
+
+Seventeen nodes, all `self`; plan/setgoal/implement/test/subgoal gates on sonnet, critique and
+`gate:goal` on opus. Every gate logged checks — `gate:goal` sixteen — where the 0.7.3 gates had
+`checks: []`. The scorer's first pass said `false 9/88`; all nine were misreads of the scorer's
+own (an `ls` of removed files correctly exiting 1, four `node --test` commands joined with ` / `
+in prose, a `cat` whose content description contained the words "Error" and "throw", a README
+usage line with `<csv>` placeholders, and an example whose inputs the README gives as fenced
+`csv`/`json` blocks rather than "Save this as"). Fixed in `lib/claims.mjs`, covered by
+`test-score.mjs`, rescored to 0/88. A single run, so the halving of wall and cost is a data
+point and not a claim.
