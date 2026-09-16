@@ -250,7 +250,7 @@ test('test verified=false fails the node and the engine reassigns the subgoal it
     });
     assert.equal(v.stage_ok, true, 'the checks did run');
     assert.equal(v.state, 'failed', 'but the subgoal did not pass');
-    assert.deepEqual(v.reassigned, { subgoal_id: 'U1', attempt: 2 }, 'the rejection opens the next attempt by itself');
+    assert.deepEqual(v.reassigned, { target: 'subgoal', subgoal_id: 'U1', attempt: 2 }, 'the rejection opens the next attempt by itself');
     const nx = await c.call('graph_next', { run_id: runId, cwd });
     assert.equal(nx.state, 'running', 'a rejected gate is not a dead end the caller must notice');
     const fresh = nx.ready.find((n) => n.node_id === 'implement:U1:2');
@@ -271,6 +271,61 @@ test('auto_reassign false keeps the rejection advisory: the run blocks and waits
     assert.equal(nx.state, 'blocked');
     assert.deepEqual(nx.ready, []);
   }, { isolated: true, auto_reassign: false });
+});
+
+// ---------- the same objection twice is not converging ----------
+// A subgoal rejected on identical grounds twice is being asked, in the same worktree, of the
+// same author, for something it cannot produce there. goal-docs is the case: a package README
+// truthfully said "the repo has no other docs", false only in the combined tree, so no attempt
+// inside that package could ever fix it. A third try buys the same rejection, so the engine
+// escalates to setgoal+critique - the line that can change the shape rather than the work.
+
+async function rejectU1(c, cwd, runId, attempt, reason) {
+  const f = dirty(cwd);
+  await c.call('graph_submit', { run_id: runId, cwd, node_id: `implement:U1:${attempt}`, payload: ok({ changed_files: [f] }) });
+  return c.call('graph_submit', {
+    run_id: runId, cwd, node_id: `test:U1:${attempt}`,
+    payload: ok({ verified: false, reason, checks: [`npm test -> ${reason}`] }),
+  });
+}
+
+test('two different rejections in a row keep retrying the subgoal', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    const first = await rejectU1(c, cwd, runId, 1, 'the retry path is untested');
+    assert.deepEqual(first.reassigned, { target: 'subgoal', subgoal_id: 'U1', attempt: 2 });
+    const second = await rejectU1(c, cwd, runId, 2, 'the timeout is off by a factor of ten');
+    assert.deepEqual(second.reassigned, { target: 'subgoal', subgoal_id: 'U1', attempt: 3 },
+      'a new objection is movement: the subgoal is worth another attempt');
+    const nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.ok(nx.ready.some((n) => n.node_id === 'implement:U1:3'), 'the third attempt opens where the work is');
+  }, { isolated: true });
+});
+
+test('the same rejection twice reassigns the spec instead of the subgoal', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    await rejectU1(c, cwd, runId, 1, 'the package cannot see the combined tree');
+    const again = await rejectU1(c, cwd, runId, 2, 'the package cannot see the combined tree');
+    assert.equal(again.reassigned.target, 'spec', 'a third attempt at the same work would buy the same rejection');
+    assert.equal(again.reassigned.attempt, 2, 'the second spec attempt - the subgoal attempts stop here');
+    const nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.ok(nx.ready.some((n) => n.node_id === 'setgoal:2'), 'the graph reopens at setgoal');
+    assert.equal(nx.ready.some((n) => n.node_id.startsWith('implement:U1')), false,
+      'nothing reopens at the work that kept failing');
+  }, { isolated: true });
+});
+
+test('what the subgoal kept failing on reaches the setgoal that replaces it', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    await rejectU1(c, cwd, runId, 1, 'the package cannot see the combined tree');
+    await rejectU1(c, cwd, runId, 2, 'the package cannot see the combined tree');
+    const nx = await c.call('graph_next', { run_id: runId, cwd });
+    const brief = readFileSync(nx.ready.find((n) => n.node_id === 'setgoal:2').briefing_path, 'utf8');
+    assert.match(brief, /rejected twice for the same reason/, 'the next spec must be told the shape is what failed');
+    assert.match(brief, /the package cannot see the combined tree/, 'and what it failed on');
+  }, { isolated: true });
 });
 
 test('gate accept=false fails the node and holds back dependents', async () => {
@@ -888,7 +943,7 @@ test('a rejected document gets a fresh draft, and the goal gate waits for the ne
     const rv = await c.call('graph_submit', { run_id: runId, cwd, node_id: 'review:D1:1', payload: ok({ verified: false, checks: ['a -> MISSING: the invariant'] }) });
     // The engine reassigns on the rejection; graph_retry is no longer the way here, and
     // calling it anyway would spend a second attempt on the same rejection.
-    assert.deepEqual(rv.reassigned, { subgoal_id: 'D1', attempt: 2 });
+    assert.deepEqual(rv.reassigned, { target: 'subgoal', subgoal_id: 'D1', attempt: 2 });
     const st = await c.call('graph_status', { run_id: runId, cwd });
     const ids = st.nodes.map((n) => n.node_id);
     assert.ok(ids.includes('draft:D1:2') && ids.includes('review:D1:2') && ids.includes('gate:D1:2'));
@@ -1502,11 +1557,80 @@ test('observations and spec drift are surfaced but never block acceptance', asyn
     const goalGate = nx.ready.find((n) => n.node_id.startsWith('gate:goal'));
     const v = await c.call('graph_submit', {
       run_id: runId, cwd, node_id: goalGate.node_id,
-      payload: ok({ accept: true, match_pct: 88, gaps: [], observations: ['no null guard'], spec_drift: ['request said url-safe generally'] }),
+      payload: ok({ accept: true, match_pct: 92, gaps: [], observations: ['no null guard'], spec_drift: ['request said url-safe generally'] }),
     });
     assert.equal(v.state, 'done', 'observations must not block a run that met its bar');
     assert.equal(v.observation_count, 1);
     assert.equal(v.spec_drift_count, 1);
+  }, { isolated: true });
+});
+
+// ---------- the goal gate's match floor ----------
+// A gate that said accept at 70% was reporting a partial result as a pass, and the run went
+// out as complete. The percentage was already collected and shown; the floor is what makes it
+// mean something. Only the goal gate answers for the whole, so only it is held to the number.
+
+async function toGoalGate(c, cwd, runId, subgoalPct = 95) {
+  await throughCritique(c, cwd, runId);
+  for (const sg of ['U1', 'U2']) {
+    const f = dirty(cwd);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: `implement:${sg}:1`, payload: ok({ changed_files: [f] }) });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: `test:${sg}:1`, payload: ok({ verified: true }) });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: `gate:${sg}:1`, payload: ok({ accept: true, match_pct: subgoalPct }) });
+  }
+  const nx = await c.call('graph_next', { run_id: runId, cwd });
+  return nx.ready.find((n) => n.node_id.startsWith('gate:goal')).node_id;
+}
+
+test('a goal gate accepting at 95 clears the default floor', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    const gate = await toGoalGate(c, cwd, runId);
+    const v = await c.call('graph_submit', { run_id: runId, cwd, node_id: gate, payload: ok({ accept: true, match_pct: 95, gaps: [] }) });
+    assert.equal(v.state, 'done');
+  }, { isolated: true });
+});
+
+test('a goal gate accepting at 70 fails: most of the goal is not the goal', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    const gate = await toGoalGate(c, cwd, runId);
+    const v = await c.call('graph_submit', { run_id: runId, cwd, node_id: gate, payload: ok({ accept: true, match_pct: 70, gaps: [] }) });
+    assert.equal(v.stage_ok, true, 'the judging itself worked');
+    assert.equal(v.accept, true, 'and the gate did say accept');
+    assert.equal(v.state, 'failed', 'the number it reported overrules the word');
+    assert.equal(v.match_pct, 70);
+  }, { isolated: true });
+});
+
+test('goal_threshold 0 puts the goal gate back on its verdict alone', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    const gate = await toGoalGate(c, cwd, runId);
+    const v = await c.call('graph_submit', { run_id: runId, cwd, node_id: gate, payload: ok({ accept: true, match_pct: 70, gaps: [] }) });
+    assert.equal(v.state, 'done', 'a run may decide the percentage is not its bar');
+  }, { isolated: true, goal_threshold: 0 });
+});
+
+test('the floor is the goal gate\'s alone: a subgoal gate accepting at 70 still passes', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    const f = dirty(cwd);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [f] }) });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    const v = await c.call('graph_submit', { run_id: runId, cwd, node_id: 'gate:U1:1', payload: ok({ accept: true, match_pct: 70 }) });
+    assert.equal(v.state, 'done', 'a subgoal answers for its own slice, not for the whole');
+    assert.equal(v.reassigned, undefined, 'and a gate that passed reassigns nothing');
+  }, { isolated: true });
+});
+
+test('a goal gate that reports no match_pct is judged on its verdict', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    const gate = await toGoalGate(c, cwd, runId);
+    const v = await c.call('graph_submit', { run_id: runId, cwd, node_id: gate, payload: ok({ accept: true, gaps: [] }) });
+    assert.equal(v.state, 'done', 'the floor screens a number the gate offered; it does not demand one');
+  }, { isolated: true });
+  await withRun(async ({ c, cwd, runId }) => {
+    const gate = await toGoalGate(c, cwd, runId);
+    const v = await c.call('graph_submit', { run_id: runId, cwd, node_id: gate, payload: ok({ accept: false, gaps: ['the CLI was never wired up'] }) });
+    assert.equal(v.state, 'failed', 'and a rejection with no number is still a rejection');
   }, { isolated: true });
 });
 
@@ -2243,4 +2367,34 @@ test('the peer vendor, not the driver, writes the run report', async () => {
     assert.equal((await c.call('graph_run', { run_id, cwd, node_id: 'report' })).state, 'done');
     assert.equal((await c.call('graph_status', { run_id, cwd })).state, 'complete');
   } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('persona and method go to the hand that works, never to the one that judges', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('graph_submit', {
+      run_id: runId, cwd, node_id: 'setgoal',
+      payload: ok({ handoff: 's', spec: { goal: 'G', acceptance: ['A'], subgoals: [{
+        id: 'U1', kind: 'subgoal', title: 't', persona: 'implementer who owns this module',
+        skills: ['develop:clean-code'], acceptance: ['a'], test: ['x'], deps: [],
+      }] } }),
+    });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+    const brief = async (node_id) => {
+      const nx = await c.call('graph_next', { run_id: runId, cwd });
+      const n = nx.ready.find((x) => x.node_id === node_id);
+      return n ? readFileSync(n.briefing_path, 'utf8') : null;
+    };
+    const impl = await brief('implement:U1:1');
+    assert.match(impl, /Act as: implementer who owns this module/);
+    assert.match(impl, /develop:clean-code/);
+    const f = dirty(cwd);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [f] }) });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    const gate = await brief('gate:U1:1');
+    assert.ok(gate, 'the gate opened');
+    assert.doesNotMatch(gate, /Act as:/, 'the judge is not handed the author\'s identity');
+    assert.doesNotMatch(gate, /develop:clean-code/, 'nor the author\'s method');
+    assert.match(gate, /judge, not the actor/, 'it is told the opposite, and now nothing contradicts it');
+  }, { isolated: true });
 });

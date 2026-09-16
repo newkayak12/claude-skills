@@ -109,7 +109,8 @@ function stageSkills(task, n) {
 const CONTRACT = {
   size: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "handoff": "<what shape needs to know>", "evidence": "..."}
 S means one graph run in one worktree can carry the whole request. L means it spans independent modules, packages or repositories that each need their own run and worktree, integrated afterwards. Decide from what commands show - file and module counts, ownership boundaries, build units - and put those commands in "sizing". The default is S: a manager layer exists, and the temptation is to use it. Over-sizing costs a worktree, a run and an integration per package; under-sizing costs one retry.`,
-  shape: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "acceptance": ["goal-level criteria for the integrated result"], "packages": [{"id": "P1", "title": "...", "flow": "develop|document", "brief": "<the request this package's own graph run will receive - self-contained>", "acceptance": ["what the package must deliver, checkable inside its worktree"], "touches": ["paths or modules this package changes"], "deps": ["P0"]}], "handoff": "...", "evidence": "..."}
+  shape: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "acceptance": ["goal-level criteria for the integrated result"], "packages": [{"id": "P1", "title": "...", "flow": "develop|document", "skills": ["plugin:skill"], "brief": "<the request this package's own graph run will receive - self-contained>", "acceptance": ["what the package must deliver, checkable inside its worktree"], "touches": ["paths or modules this package changes"], "deps": ["P0"]}], "handoff": "...", "evidence": "..."}
+"skills" is optional and is method for the package, not for you: you are the stage that knows what each package IS, and a CLI package and a reference-document package want different method. Name the skills that package's own nodes should work by, and they travel into its child run; leave it out when the brief is method enough. Do not name a skill that asks its reader questions - the child's nodes run headless too.
 Each package becomes one graph run in its own worktree. A package with no deps branches from the current HEAD; a package with deps branches from its first dependency's delivered branch with the others merged in, so it builds on what they delivered - not on stubs. Two packages that touch the same path will conflict at integration: split by ownership, not by phase. A dependency means the package needs another's delivered result; it receives that package's report as context and starts from its tree. Every package must be size S on its own - if one still needs splitting, the shape is wrong. Two to six packages is the usual range.`,
   critique: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "sound": true|false, "blocking": ["..."], "problems": ["..."], "handoff": "...", "evidence": "..."}
 Attack the shape: packages that overlap in touches[], a dependency the brief does not actually need, a package too large to be one run, a goal-level criterion no integration step could check, and - above all - a request that was S sized as L. Set sound=false only for defects in "blocking" that make the packages impossible to run or impossible to integrate. Everything else is a problem, carried forward as advice.`,
@@ -414,6 +415,13 @@ function packageOf(task, id) {
   return ((task.spec && task.spec.packages) || []).find((p) => String(p.id) === String(id)) || null;
 }
 
+// Array.isArray rather than a truthiness check: a shape that returns "skills":
+// "develop:cli-developer" as a bare string would otherwise be spread through the briefing one
+// character per bullet, and the package would look like it had asked for twenty skills.
+function packageSkills(pkg) {
+  return (Array.isArray(pkg && pkg.skills) ? pkg.skills : []).map(String).filter(Boolean);
+}
+
 // What a package's child run is told beyond its own brief: the package contract, and the
 // reports of the packages it depends on. Not the whole request - that is what the brief
 // is for - and never another package's spec.
@@ -428,6 +436,18 @@ function childContext(task, pkg) {
     lines.push('');
     lines.push('Paths this package owns. Stay inside them; another package owns the rest:');
     lines.push(bullets(pkg.touches));
+  }
+  // Method for the whole child run, named by shape because shape is the stage that knows what
+  // each package IS - a CLI package and a reference-document package want different method,
+  // and the manager's own STAGE_SKILLS table cannot know which is which. The precedence has to
+  // be restated here rather than left to the child: its nodes never see the manager's briefing,
+  // so this context is the only place they hear it.
+  const skills = packageSkills(pkg);
+  if (skills.length) {
+    lines.push('');
+    lines.push('Method for this package — load each of these that is available, then work the way it says:');
+    lines.push(bullets(skills));
+    lines.push('A skill that is not installed here is skipped without comment or substitute. Its own output template does not apply - each node\'s own "Required output" is the only shape it may return - and neither does its "what you do / what I do" half: nobody is reading this but the machine that called you, so ask nothing and finish the work yourself.');
   }
   for (const d of pkg.deps || []) {
     const acc = task.nodes.filter((n) => n.subgoal_id === String(d) && n.stage === 'dispatch' && n.state === 'done' && n.result).pop();
@@ -631,6 +651,9 @@ function composeTaskPrompt(task, n) {
       L.push(`### ${p.id} — ${p.title}${p.flow ? ` (${p.flow})` : ''}`);
       if ((p.deps || []).length) L.push(`Depends on: ${p.deps.join(', ')}`);
       if ((p.touches || []).length) L.push(`Touches: ${p.touches.join(', ')}`);
+      // Shown so critique can attack the method the same way it attacks the split: a package
+      // handed a skill that fits nothing it does is a defect in the shape, not in the child.
+      if (packageSkills(p).length) L.push(`Method: ${packageSkills(p).join(', ')}`);
       L.push(`Acceptance:`);
       L.push(bullets(p.acceptance));
       const d = task.nodes.filter((x) => x.subgoal_id === String(p.id) && x.stage === 'dispatch' && x.result).pop();
