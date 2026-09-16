@@ -48,6 +48,20 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.6.6 — a score can no longer contradict the harness's own verdict**: `goal-docs` ended
+  with two failed `integrate` nodes, a blocked package and three `unreachable` nodes — the
+  settle path, working — and the bench scorer reported **8/8** on the integration worktree that
+  integrate had refused, LLM accuracy judge included. `task.json` carries no state field, so the
+  scorer had been printing `-` where the verdict belongs; it now derives one from the nodes
+  (`delivered` / `settled-failure` / `incomplete` / `not-delivered`) and prints it beside the
+  score. Two driver defects with it: a limit message reading "hit your **weekly** limit" did not
+  match a regex that knew only `session|usage`, so a job was marked done mid-task; and a second
+  driver over the same workspace restarted its resume numbering at zero and overwrote the first
+  driver's stream, losing that session's cost and turns from every later sum ($53.38 read back as
+  $22.89). What `goal-docs` proved by failing: a seam defect cannot be repaired by retrying the
+  package in isolation — `tm_retry({package_id})` returns the work to a worktree where the
+  offending claim is still true. The repair path is missing, and it blocks graduation.
+
 - **v0.6.5 — the bench driver no longer mistakes a killed session for a finished one, and the
   same-topology comparison is complete**: a session killed from outside (a low-memory kill, a
   SIGKILL) writes no `result` event, and `drive.sh` read that empty text as "ended cleanly" —

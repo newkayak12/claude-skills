@@ -76,8 +76,16 @@ const harness = { tasks: [], runs: [] };
     const size = nodes.find((n) => n.node_id === 'size');
     const shape = nodes.filter((n) => n.stage === 'shape' && n.state === 'done').at(-1);
     const packages = task.spec?.packages || shape?.result?.packages || [];
+    // task.json carries no state field: the verdict is what the nodes say. A tree can look
+    // finished while the harness has rejected it - a failed integrate leaves its worktree on
+    // disk, and scoring that tree without the verdict reports a pass the harness refused.
+    const goalGate = nodes.filter((n) => n.node_id.startsWith('gate:goal')).at(-1);
+    const verdict = nodes.some((n) => n.state === 'unreachable') ? 'settled-failure'
+      : nodes.some((n) => ['pending', 'running'].includes(n.state)) ? 'incomplete'
+      : goalGate?.state === 'done' && goalGate?.result?.accept !== false ? 'delivered'
+      : 'not-delivered';
     harness.tasks.push({
-      id, state: task.state, size: size?.result?.size ?? null, size_source: size?.result?.size_source ?? 'measured',
+      id, state: task.state, verdict, size: size?.result?.size ?? null, size_source: size?.result?.size_source ?? 'measured',
       packages: packages.map((p) => ({ id: p.id, flow: p.flow, deps: p.deps, touches: p.touches })),
       nodes: nodeStats(nodes), failed: nodes.filter((n) => n.state === 'failed').map(short),
       conflicts: nodes.map((n) => n.result?.conflicting_packages).filter(Boolean),
@@ -289,4 +297,4 @@ const score = { case: CASE, workspace: WS, tree: TREE === WS ? '.' : TREE.slice(
 writeFileSync(`${WS}.score.json`, JSON.stringify(score, null, 2));
 const fails = bools.filter(([, v]) => !v).map(([k]) => k).join(',') || '-';
 const t = harness.tasks[0];
-console.log(`${basename(WS)} | ${score.passed}/${score.of} | fail: ${fails} | ${meta.wall_ms ? Math.round(meta.wall_ms / 60000) + 'min' : meta.duration_ms ? Math.round(meta.duration_ms / 60000) + 'min(api)' : '?'} | $${typeof meta.cost_usd === 'number' ? meta.cost_usd.toFixed(2) : '?'} | turns ${meta.turns ?? '?'} | task ${t?.state ?? '-'} size ${t?.size ?? '-'} pkgs ${t?.packages?.length ?? '-'} | runs ${harness.runs.length} | top-level edits ${meta.top_level_edits} | tree ${score.tree}`);
+console.log(`${basename(WS)} | ${score.passed}/${score.of} | fail: ${fails} | ${meta.wall_ms ? Math.round(meta.wall_ms / 60000) + 'min' : meta.duration_ms ? Math.round(meta.duration_ms / 60000) + 'min(api)' : '?'} | $${typeof meta.cost_usd === 'number' ? meta.cost_usd.toFixed(2) : '?'} | turns ${meta.turns ?? '?'} | task ${t?.verdict ?? t?.state ?? '-'} size ${t?.size ?? '-'} pkgs ${t?.packages?.length ?? '-'} | runs ${harness.runs.length} | top-level edits ${meta.top_level_edits} | tree ${score.tree}`);
