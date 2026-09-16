@@ -5,10 +5,12 @@ the same for every flow: the graph decides what is ready, you dispatch it, the b
 it. Nothing about the flow — code or document — changes a line below; only the node names
 you see differ (`implement/test` vs `draft/review`).
 
-Two ways in: the entry skill delegated an S request here with `graph_open`, or `manager.md`
-handed you a child run (`cwd` = the child's worktree, `run_id` from `children[]`). Same loop
-either way; for a child, every call carries that `cwd`, and when the run is `complete` or
-`blocked` you go back to `manager.md` and fold it with `tm_submit`.
+Two ways in: the entry skill delegated an S request here with `graph_open`, or you were started
+on a child run that is already open (`cwd` = the package worktree, `run_id` handed to you). Same
+loop either way; for a child, every call carries that `cwd`. When a child run reaches `complete`
+or `blocked` you are finished — end with the output template. A driver session owns nothing else:
+the manager reads the run file and folds it. Only in an inline task do you go back to
+`manager.md` and fold it yourself with `tm_submit`.
 
 ## The loop
 
