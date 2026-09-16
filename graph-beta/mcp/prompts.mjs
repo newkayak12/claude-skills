@@ -6,7 +6,7 @@
 // long loop impossible. The graph already holds all of it, so the broker writes the
 // prompt and the orchestrator never sees the payload.
 
-import { REASONING_STAGES, FLOWS, VERDICT_FIELD } from './graph.mjs';
+import { REASONING_STAGES, FLOWS, VERDICT_FIELD, kindSkills, kindOf } from './graph.mjs';
 
 const CONTRACT = {
   plan: `Return JSON: {"plan": "<the decomposition>", "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "handoff": "<what the next node needs>", "evidence": "<how you checked the request is actually satisfiable here>"}
@@ -125,12 +125,16 @@ export function composePrompt(run, n, briefing) {
     // judge and not the actor - the exact identity the gate exists to not have.
     const authoring = !REASONING_STAGES.has(n.stage) && !VERDICT_FIELD[n.stage];
     if (sg.persona && authoring) lines.push(`Act as: ${sg.persona}`);
+    // Method comes from the kind, by stage. A spec that named its own replaces the family
+    // for the hand that writes; a judge keeps the family's, because a judge's method is not
+    // the author's to choose.
+    const method = authoring && sg.skills?.length ? sg.skills : kindSkills(kindOf(sg), n.stage);
     // A persona says who is working; skills say how. setgoal names them per subgoal because
     // it is the stage that knows what the work is - a migration wants different method than
     // a reference document. Same precedence as everywhere else: the node contract wins, a
     // missing skill is skipped in silence, and nobody is there to answer a question.
-    if (sg.skills?.length && authoring) {
-      lines.push(`Method — load each of these that is available, then work the way it says:\n${bullets(sg.skills)}`);
+    if (method.length) {
+      lines.push(`Method — load each of these that is available, then work the way it says:\n${bullets(method)}`);
       lines.push(`A skill that is not installed here is skipped without comment or substitute. Its own output template does not apply - "Required output" below is the only shape you may return - and neither does its "what you do / what I do" half: nobody is reading this but the machine that called you, so ask nothing and finish the work yourself.`);
     }
     if (sg.files?.length) lines.push(`Required paths:\n${bullets(sg.files)}`);

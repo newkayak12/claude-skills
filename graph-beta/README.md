@@ -48,6 +48,21 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.7.2 — method comes from the kind, because asking for it did not work**: the first live
+  runs on 0.7.1 came back with `skills: []` on every subgoal and no `skills` field at all on
+  any package, while `persona` — asked for in the same breath — was filled every time and
+  filled well ("editor-archivist reconstructing design history from code"). The difference was
+  candidates: the flow hands setgoal a list of personas to choose from, and the skills contract
+  handed it a shape and nothing to pick. An agent that cannot see what is installed will not
+  invent a plugin name, and `[]` was the honest answer. So the list moved to `KINDS`, by stage:
+  `subgoal` gives implement `develop:clean-code`, test `develop:testing-workflow` and
+  `completion:verification-before-completion`, `document` gives draft `write:doc-coauthoring`
+  and review `write:writer-verification`, and both give the gate `think:devils-advocate` — which
+  is how the generation this replaced did it, with names written into the prompts rather than
+  chosen at runtime. A spec that does name its own still wins for the authoring stage, since
+  setgoal knows this particular work and the kind only knows its shape; a judging stage always
+  keeps the family's, because a judge's method is not the author's to choose.
+
 - **v0.7.1 — the same objection twice reshapes instead of retrying, and the judge stops being
   handed the author's identity**: a subgoal rejected twice on the same signature (reason plus
   sorted gaps) is no longer retried a third time — the engine escalates to `setgoal` and

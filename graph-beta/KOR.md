@@ -45,6 +45,19 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 
 ## 상태
 
+- **v0.7.2 — 방법론은 kind에서 온다, 물어보는 방식이 실패했으므로**: 0.7.1의 첫 실전 런들이 모든
+  subgoal에 `skills: []`, 모든 패키지에 `skills` 필드 자체 없음으로 돌아왔습니다. 같은 자리에서 요구한
+  `persona`는 매번, 그것도 잘 채워졌는데도요("코드에서 설계 이력을 복원하는 편집자-아키비스트"). 차이는
+  후보였습니다 — flow는 setgoal에 고를 persona 목록을 쥐여주는데, skills 계약은 형식만 주고 고를 것을
+  주지 않았습니다. 무엇이 설치돼 있는지 볼 수 없는 에이전트는 플러그인 이름을 지어내지 않고, `[]`가
+  정직한 답이었습니다. 그래서 목록을 `KINDS`로, 단계별로 옮겼습니다: `subgoal`은 implement에
+  `develop:clean-code`, test에 `develop:testing-workflow`와 `completion:verification-before-completion`,
+  `document`는 draft에 `write:doc-coauthoring`, review에 `write:writer-verification`, 그리고 양쪽 gate에
+  `think:devils-advocate` — 이 재작성판이 대체한 세대가 하던 방식 그대로(런타임 선택이 아니라 프롬프트에
+  박힌 이름). spec이 스스로 지정하면 작성 단계에서는 그쪽이 이깁니다(setgoal은 이 구체적 작업을 알고,
+  kind는 작업의 형태만 아니까). 판단 단계는 언제나 family 것을 지킵니다 — 심판의 방법론은 작성자가
+  고를 것이 아니므로.
+
 - **v0.7.1 —같은 반론이 두 번이면 재시도가 아니라 재설계, 그리고 심판이 작성자의 정체를 넘겨받지
   않음**: 같은 서명(reason + 정렬된 gaps)으로 두 번 거부된 subgoal은 세 번째 시도를 열지 않고
   `setgoal`·`critique`로 **에스컬레이션**합니다 — 답을 실제로 바꿀 수 있는 라인으로, 계속 실패한
