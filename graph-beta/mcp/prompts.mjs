@@ -7,13 +7,38 @@
 // prompt and the orchestrator never sees the payload.
 
 import { REASONING_STAGES, FLOWS, VERDICT_FIELD, kindSkills, kindOf } from './graph.mjs';
+import { conventionsBlock } from './conventions.mjs';
+
+// Every upstream handoff inserted into a downstream prompt is sliced to this many
+// characters before it reaches the model. Restores a budget the original generation
+// enforced (`handoffOf`) and the MCP rewrite dropped: a node prompt that grows with the
+// run is how a late gate ends up reading more than it can weigh. Checks and changed-file
+// lists are not capped - they are the evidence a judge needs in full.
+export const HANDOFF_CAP = 1500;
+
+function capHandoff(text) {
+  const s = String(text || '');
+  if (s.length <= HANDOFF_CAP) return s;
+  return `${s.slice(0, HANDOFF_CAP)}\n… [handoff truncated at ${HANDOFF_CAP} of ${s.length} chars]`;
+}
+
+// The failure mode behind almost every rejected setgoal retry, named so the model does not
+// have to rediscover it: structured-output validation rejects a large, mostly-correct draft
+// - usually over one missing top-level field, most often `acceptance` - and the model's own
+// fix is to shrink the whole payload to isolate the error, instead of adding the one field
+// back and returning everything else unchanged. Restores the diagnosis the original
+// generation's `isDegenerateSpec` corrective re-author carried; `validateSpec` catches the
+// same emptiness cases (and more) but only lists them - it never explained why they recur.
+export const DEGENERATE_SPEC_DIAGNOSIS = `Diagnosis: the previous spec was rejected by structured-output validation, not by a human judgment call. The usual cause is a single missing or empty top-level field - most often "acceptance" at the goal level, or a subgoal with no "acceptance", no "title", or a title/goal so short it reads as a placeholder rather than real content. The failure mode to avoid: shrinking the whole spec to isolate which field is wrong. Do not throw away subgoals, decomposition, or detail that was not named below. Fix exactly the field(s) named as the problem and return the rest of the spec unchanged.`;
 
 const CONTRACT = {
-  plan: `Return JSON: {"plan": "<the decomposition>", "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "handoff": "<what the next node needs>", "evidence": "<how you checked the request is actually satisfiable here>"}
+  plan: `Return JSON: {"plan": "<the decomposition>", "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "dependencies": ["unit -> its real ordering dependency, or \\"none\\""], "verification": ["unit -> command or inspection that would deterministically verify it"], "conventions": ["path -> the rule it states, if .claude/conventions/** applies"], "handoff": "<what the next node needs>", "evidence": "<how you checked the request is actually satisfiable here>"}
 size is S when one run in one worktree can carry the whole request; L when it spans independent modules, packages or repositories that would each need their own run. Decide it from what commands show - file count, module boundaries, owners - and put those commands in "sizing". The default is S; a manager layer exists, and the temptation is to use it.
-flow is develop when the deliverable is code the repository must run, document when it is text a reader must find things in. If the run's flow is already fixed below, return it unchanged.`,
+flow is develop when the deliverable is code the repository must run, document when it is text a reader must find things in. If the run's flow is already fixed below, return it unchanged.
+For every unit the decomposition names, say what real ordering dependency it has on another unit (not a guess - a data or artifact dependency an executor would actually hit), how it can be deterministically verified (a command that exits, or a specific passage a reader would find), and which convention file constrains it, if any apply. setgoal turns these into subgoal deps[], test[] and acceptance[] - it has no other source for them, since the nodes that do the work never see this plan.`,
   setgoal: `Return JSON: {"spec": {"goal": "...", "acceptance": ["goal-level criteria"], "subgoals": [{"id": "U1", "kind": "subgoal|document", "title": "...", "persona": "...", "skills": ["plugin:skill"], "acceptance": ["subgoal criteria"], "test": ["deterministic checks"], "files": ["paths"], "deps": []}]}, "handoff": "...", "evidence": "..."}
 Every acceptance criterion must be checkable by a command, a file inspection, or - for a document - by a reader finding a specific passage. Reject your own vague criteria before returning.
+Two shapes are forbidden as hard pass/fail bars, at goal level and per subgoal alike: a criterion that hinges on whole-repo state - a git diff or git status across the whole tree, an aggregate count taken over the whole repository - because concurrent work on other subgoals or other runs makes it non-deterministic between when it is written and when it is judged; and an aspirational or arbitrary-threshold target - a percentage, a score, "significantly better", "mostly done" - written as a bar rather than derived from something a command or a reader can settle. Author around both now; the critique that follows can only flag them after the fact, and a run that has to be re-authored costs more than writing it right once.
 Make each subgoal self-contained: include applicable constraints in acceptance[], required paths in files[], and checks in test[]. The nodes that do the work will not receive the full request or requester conversation.
 Every subgoal must be a unit of work with a checkable artifact, and must say which kind it is:
   "subgoal" (default) - work that changes code and is verified by running commands. Expands to implement -> test -> gate.
@@ -107,6 +132,14 @@ export function composePrompt(run, n, briefing) {
     if (briefing.size) lines.push(`size: ${briefing.size}`);
   }
 
+  if (['plan', 'setgoal'].includes(n.stage)) {
+    const conv = conventionsBlock(run.cwd, { stage: n.stage });
+    if (conv) {
+      lines.push('');
+      lines.push(conv);
+    }
+  }
+
   if (briefing.goal && !scopedExecution) {
     lines.push('');
     lines.push(`## Goal`);
@@ -140,6 +173,13 @@ export function composePrompt(run, n, briefing) {
       lines.push(`A skill that is not installed here is skipped without comment or substitute. Its own output template does not apply - "Required output" below is the only shape you may return - and neither does its "what you do / what I do" half: nobody is reading this but the machine that called you, so ask nothing and finish the work yourself.`);
     }
     if (sg.files?.length) lines.push(`Required paths:\n${bullets(sg.files)}`);
+    if (['implement', 'draft'].includes(n.stage)) {
+      const conv = conventionsBlock(run.cwd, { stage: n.stage, files: sg.files });
+      if (conv) {
+        lines.push('');
+        lines.push(conv);
+      }
+    }
     lines.push('');
     lines.push(`### Acceptance`);
     lines.push(bullets(sg.acceptance));
@@ -186,7 +226,7 @@ export function composePrompt(run, n, briefing) {
       lines.push(`### ${x.node_id} (${x.stage}) — ${verdict}`);
       if (x.changed_files.length) lines.push(`Changed: ${x.changed_files.join(', ')}`);
       if (x.checks.length) lines.push(`Checks:\n${bullets(x.checks)}`);
-      if (x.handoff) lines.push(x.handoff);
+      if (x.handoff) lines.push(capHandoff(x.handoff));
       if (x.evidence) lines.push(`Evidence: ${x.evidence}`);
       if (x.gaps.length) lines.push(`Gaps:\n${bullets(x.gaps)}`);
       if (x.reason) lines.push(`Reason: ${x.reason}`);
@@ -215,7 +255,7 @@ export function composePrompt(run, n, briefing) {
         lines.push(`Commands actually observed by the adapter:`);
         lines.push(bullets(u.commands.map((cmd) => String(cmd).slice(0, 300))));
       }
-      if (u.handoff) lines.push(u.handoff);
+      if (u.handoff) lines.push(capHandoff(u.handoff));
       if (u.evidence) lines.push(`Evidence: ${u.evidence}`);
       lines.push('');
     }
@@ -224,6 +264,13 @@ export function composePrompt(run, n, briefing) {
   if (briefing.prior_feedback) {
     lines.push('');
     lines.push(`## Previous attempt was rejected — fix this`);
+    if (n.stage === 'setgoal' && briefing.spec_problems && briefing.spec_problems.length) {
+      lines.push(DEGENERATE_SPEC_DIAGNOSIS);
+      lines.push('');
+      lines.push(`The specific fields that failed:`);
+      lines.push(bullets(briefing.spec_problems));
+      lines.push('');
+    }
     lines.push(briefing.prior_feedback);
   }
 
