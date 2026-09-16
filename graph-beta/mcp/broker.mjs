@@ -50,6 +50,10 @@ import {
   FLOWS,
   DEFAULT_FLOW,
   flowOf,
+  goalRoundOf,
+  goalGateSiblings,
+  goalConsensus,
+  openRepair,
   defaultKind,
   normalizeSpec,
 } from './graph.mjs';
@@ -531,6 +535,7 @@ function verdict(run, n) {
     // weaknesses reads exactly like one that had none.
     if ((res.observations || []).length) out.observation_count = res.observations.length;
     if ((res.spec_drift || []).length) out.spec_drift_count = res.spec_drift.length;
+    if (!n.subgoal_id) out.attack_count = (res.attacks || []).length;
   }
   if (n.stage === 'critique') out.sound = res.sound === true;
   if (!REASONING_STAGES.has(n.stage)) {
@@ -580,6 +585,16 @@ function nodeSucceeded(run, n, result) {
   // checks[] is a guess wearing a verdict, and the engine refuses it the same way a
   // missing verdict field is refused above.
   if (n.stage === 'gate' && result.accept === true && !(Array.isArray(result.checks) && result.checks.length > 0)) {
+    return false;
+  }
+  // The goal gate is the only node that can invoke the assembled result the way the
+  // requester actually will - a fresh shell, an absolute-path call, `npm test` from the
+  // project root, the README read as a stranger. `checks[]` alone let three gates pass
+  // a CLI whose own "am I main" guard broke under macOS's /var -> /private/var symlink,
+  // because every one of them read diffs and reran the subgoals' own test[] instead of
+  // calling the artifact from outside the tree. Same refusal as an empty checks[].
+  if (n.stage === 'gate' && !n.subgoal_id && result.accept === true
+    && !(Array.isArray(result.attacks) && result.attacks.length > 0)) {
     return false;
   }
   return true;
@@ -660,7 +675,92 @@ function priorSig(run, sid, attempt) {
   return prior ? rejectionSig(prior.result) : '';
 }
 
+// A goal-gate round's rejection, reduced to what it actually objected to - the same
+// shape rejectionSig gives a subgoal, but over the union the whole round agreed on
+// (gaps and spec_drift both name a shortfall) rather than one judge's reason line,
+// which the round's judges will not have worded identically even when they mean the
+// same thing.
+function goalRejectionSig(consensus) {
+  const gaps = [...(consensus.gaps || []), ...(consensus.spec_drift || [])].map((g) => String(g).trim().toLowerCase());
+  return gaps.sort().join('|');
+}
+
+// repair's briefing: the goal is already in nodeBriefing's `goal`/`goal_acceptance`,
+// and the whole run's nodes arrive via the `whole_run` branch it now shares with the
+// goal gate - so what repair needs here is the round's own verdict (the reason the
+// generic upstream/whole_run views cannot carry, since consensus is computed across
+// several nodes, not read off one) and a size-bounded pointer into every subgoal's
+// handoff. Unsliced, a run of a dozen subgoals would hand repair a briefing as large
+// as the run itself - the same shape of problem handoffOf's 1500-character cap solved
+// one level down, and just as uncredited if it silently works.
+const REPAIR_HANDOFF_CAP = 1500;
+function repairBriefing(run, consensus) {
+  const lines = [];
+  lines.push(`goal gate round ${consensus.round} rejected the assembled result: every judge must accept at or above the run's threshold, and did not.`);
+  if (consensus.gaps.length) lines.push(`Gaps (union across judges):\n- ${consensus.gaps.join('\n- ')}`);
+  if (consensus.spec_drift.length) lines.push(`Spec drift (the request asked for this, the spec never turned it into a criterion):\n- ${consensus.spec_drift.join('\n- ')}`);
+  const subgoals = (run.spec && run.spec.subgoals) || [];
+  for (const sg of subgoals) {
+    // Every kind's chain ends in `gate` (subgoal: implement/test/gate; document:
+    // draft/review/gate), so the subgoal's own gate is always this stage name -
+    // no need to look up the kind to find it.
+    const gates = run.nodes.filter((n) => n.subgoal_id === String(sg.id) && n.stage === 'gate' && n.result);
+    const last = gates.at(-1);
+    const handoff = last && last.result ? String(last.result.handoff || '') : '';
+    const sliced = handoff.length > REPAIR_HANDOFF_CAP
+      ? `${handoff.slice(0, REPAIR_HANDOFF_CAP)} …[truncated at ${REPAIR_HANDOFF_CAP} chars]`
+      : handoff;
+    lines.push(`Subgoal ${sg.id} (${sg.title}) handoff: ${sliced || '(none recorded)'}`);
+  }
+  lines.push('Fix across the tree at the seams these gaps point to - several subgoals may own the files involved, which is the point: a gap here is usually in what is between them, not inside any one of them. Do not restate the goal-level acceptance criteria to fit what already exists; the gate that follows judges them unchanged.');
+  return lines.join('\n');
+}
+
+// The goal-gate branch of autoReassign. A rejected subgoal gate reassigns the subgoal;
+// a rejected goal-gate ROUND has no single subgoal to blame - the failure is usually in
+// the seam between subgoals that each met their own acceptance - so it opens a repair
+// pass over the assembled result instead (Step 9). Consensus, not one judge: the round
+// is not decided until every sibling has a terminal state, and a peer that could not
+// judge at all is a routing failure for the caller, not a verdict to repair.
+function autoReassignGoalGate(run, n) {
+  if (run.auto_reassign === false) return null;
+  if (n.final) return null;
+  const round = goalRoundOf(n.node_id);
+  if (round == null) return null;
+  const siblings = goalGateSiblings(run, round);
+  if (siblings.some((s) => s.state === 'pending' || s.state === 'running')) return null; // wait for the rest of the round
+  // A later round already exists means this one was already handled - by a prior call
+  // of this same function for a sibling that finished after this one, or before it.
+  if (run.nodes.some((x) => x.stage === 'gate' && x.subgoal_id === null && goalRoundOf(x.node_id) === round + 1)) return null;
+
+  const consensus = goalConsensus(run, round);
+  if (!consensus || consensus.routing_failure || !consensus.settled) return null; // a peer's transport/vendor failure - the caller's problem
+  if (consensus.accept) return null; // every judge accepted at or above the threshold
+
+  for (const s of siblings) s.final = true;
+
+  const sig = goalRejectionSig(consensus);
+  if (sig && sig === run.last_goal_sig) {
+    saveRun(run);
+    record(run.cwd, { event: 'graph_settle', run_id: run.run_id, target: 'goal_gate', round, signature: sig, stalled: true });
+    return { round, stalled: true };
+  }
+  run.last_goal_sig = sig;
+
+  const feedback = repairBriefing(run, consensus);
+  const out = openRepair(run, round, feedback, run.goal_judges || siblings.length);
+  record(run.cwd, {
+    event: out.attempt ? 'graph_repair' : 'graph_settle',
+    run_id: run.run_id, target: 'goal_gate', round,
+    ...(out.attempt ? { attempt: out.attempt, repair_id: out.repair_id } : { reason: out.reason }),
+  });
+  return out.attempt
+    ? { round, repaired: { attempt: out.attempt, repair_id: out.repair_id } }
+    : { round, stalled: false, settled: true, reason: out.reason };
+}
+
 function autoReassign(run, n) {
+  if (n.stage === 'gate' && n.subgoal_id === null) return autoReassignGoalGate(run, n);
   if (run.auto_reassign === false) return null;
   if (!n.subgoal_id || n.final) return null;
   if (!VERDICT_FIELD[n.stage]) return null;
@@ -703,11 +803,18 @@ function finishNode(run, n, result, vendorName) {
   // does (autoReassign skips a node whose stage_ok did not come back true - see below).
   // The gate itself is retried the ordinary way: graph_retry({subgoal_id}) - the engine has
   // no path that reruns a gate alone, so that rebuilds the whole chain, gate included.
-  const gateNoEvidence = n.stage === 'gate' && result.accept === true
+  const noChecks = n.stage === 'gate' && result.accept === true
     && !(Array.isArray(result.checks) && result.checks.length > 0);
+  // Same rule, one level up: the goal gate accepting with no `attacks[]` judged nothing
+  // outside the tree - see nodeSucceeded.
+  const noAttacks = n.stage === 'gate' && !n.subgoal_id && result.accept === true
+    && !(Array.isArray(result.attacks) && result.attacks.length > 0);
+  const gateNoEvidence = noChecks || noAttacks;
   n.state = nodeSucceeded(run, n, result) ? 'done' : 'failed';
   if (gateNoEvidence && n.state === 'failed') {
-    result = { ...result, stage_ok: false, reason: 'gate accepted without a check; a judgement with no evidence is a guess' };
+    result = { ...result, stage_ok: false, reason: noChecks
+      ? 'gate accepted without a check; a judgement with no evidence is a guess'
+      : 'goal gate accepted without an attack; a judgement never invoked from outside the tree is a guess' };
   }
   n.result = result;
   n.vendor = vendorName;
@@ -747,11 +854,23 @@ function finishNode(run, n, result, vendorName) {
   record(run.cwd, { event: 'node_finish', run_id: run.run_id, node_id: n.node_id, stage: n.stage, vendor: vendorName, stage_ok: n.result.stage_ok === true });
   const out = verdict(run, n);
   if (reassigned) {
-    const where = reassigned.escalated ? 'spec' : 'subgoal';
-    out.reassigned = reassigned.attempt
-      ? { target: where, subgoal_id: n.subgoal_id, attempt: reassigned.attempt,
-          ...(reassigned.escalated ? { reason: 'the same rejection twice: reshaped rather than retried' } : {}) }
-      : { target: where, subgoal_id: n.subgoal_id, attempt: null, reason: reassigned.reason, unreachable: reassigned.unreachable };
+    if (reassigned.repaired || reassigned.stalled !== undefined) {
+      // Goal-gate consensus rejected the round: a repair pass opens over the assembled
+      // result rather than reassigning a subgoal, or the run is stalled on a repair
+      // that closed the same gaps twice. As visible as `reassigned` is for a subgoal.
+      if (reassigned.repaired) out.repaired = reassigned.repaired;
+      if (reassigned.stalled) {
+        out.stalled = { reason: 'repair rejected the same gaps twice; the run proceeds to report on partial work' };
+      } else if (reassigned.stalled === false && reassigned.settled) {
+        out.repaired = { attempt: null, reason: reassigned.reason };
+      }
+    } else {
+      const where = reassigned.escalated ? 'spec' : 'subgoal';
+      out.reassigned = reassigned.attempt
+        ? { target: where, subgoal_id: n.subgoal_id, attempt: reassigned.attempt,
+            ...(reassigned.escalated ? { reason: 'the same rejection twice: reshaped rather than retried' } : {}) }
+        : { target: where, subgoal_id: n.subgoal_id, attempt: null, reason: reassigned.reason, unreachable: reassigned.unreachable };
+    }
   }
   return out;
 }
@@ -859,6 +978,7 @@ const STATUS_SCHEMA = {
     cwd: { type: 'string' },
     state: { type: 'string', enum: ['running', 'blocked', 'complete'] },
     counts: { type: 'object' },
+    goal_verdict: { type: 'object', description: 'the most recent goal-gate round\'s consensus, once every judge has settled: {accept, match_pct (min across judges), judges: [{node_id, state, accept, match_pct, identity}], gaps, spec_drift}' },
     has_spec: { type: 'boolean' },
     subgoals: { type: 'array', items: { type: 'string' } },
     nodes: { type: 'array', items: { type: 'object' } },
@@ -871,9 +991,10 @@ const RETRY_SCHEMA = {
   type: 'object',
   properties: {
     run_id: { type: 'string' },
-    target: { type: 'string', description: 'a subgoal id, or "spec"' },
+    target: { type: 'string', description: 'a subgoal id, "spec", or "goal_gate"' },
     retried: { type: 'boolean' },
     attempt: { type: 'number' },
+    repair_id: { type: 'string', description: 'present when target is "goal_gate": the repair node opened' },
     reason: { type: 'string' },
     unreachable: { type: 'array', items: { type: 'string' }, description: 'retried=false with the budget gone: nodes that can never run now, so the report is released' },
     state: { type: 'string' },
@@ -908,6 +1029,7 @@ const TOOLS = [
         sandbox: { type: 'string' },
         isolated: { type: 'boolean', description: 'cwd is a private worktree with only this run in it' },
         goal_threshold: { type: 'integer', description: 'default 90: the goal gate must report match_pct at or above this to accept. A gate that says accept with 70% match is reporting a partial result as a pass; the number it already returns is made to mean something. 0 accepts on the verdict alone.' },
+        goal_judges: { type: 'integer', description: 'default 2: independent judges on the goal gate. Each round opens that many sibling gate nodes (gate:goal:<round>, gate:goal:<round>b, ...) over the same subgoal gates, routed to different identities where possible. The run accepts only if EVERY judge accepts at or above goal_threshold; gaps and spec_drift are the union. 1 reproduces the single-judge behaviour every earlier run had. A rejected round opens a repair pass over the assembled result (graph_retry({repair:true}) forces one) rather than reassigning a subgoal.' },
         auto_reassign: { type: 'boolean', description: 'default true: a rejected subgoal gate, review or test opens the next attempt itself, carrying the rejection feedback, and settles when the budget is gone. false leaves the next attempt to graph_retry, which makes a rejection advisory - a caller that never retries simply stops.' },
         max_retries: { type: 'number' },
         flow: { type: 'string', enum: ['auto', 'develop', 'document'], description: 'auto (default): plan decides from the request. develop: subgoals default to code work. document: subgoals default to written artifacts. Set by the entry skill, not by the user.' },
@@ -976,6 +1098,7 @@ const TOOLS = [
         subgoal_id: { type: 'string', description: 'omit to retry the spec after a critique rejected it' },
         node_id: { type: 'string', description: 'Resume an interrupted/quota-exhausted node, retaining files and checkpoint. Does not reopen a completed or gate-rejected node.' },
         reset_capacity: { type: 'boolean', description: 'Retry vendors after the caller confirms their quota is available again. With node_id it also reopens that interrupted node; alone it clears exclusions - including ones recorded at probe time, where no node was ever interrupted - re-ranks undispatched work and returns the next ready nodes.' },
+        repair: { type: 'boolean', description: 'Force a repair round over the most recent settled goal-gate round, the same move auto_reassign makes on its own when consensus rejects. Use it when auto_reassign is off, or when a stalled round (two repairs closing the same gaps) needs a deliberate third try.' },
         cwd: { type: 'string' },
       },
       required: ['run_id'],
@@ -1032,6 +1155,10 @@ async function toolGraphOpen(a) {
     isolated: a.isolated === true,
     auto_reassign: a.auto_reassign !== false,
     goal_threshold: Number.isInteger(a.goal_threshold) ? a.goal_threshold : 90,
+    // The MCP tool boundary defaults to two judges; createRun itself defaults to one,
+    // so a caller that builds runs directly - the TaskManager's own per-package child
+    // runs among them - keeps today's single-gate behaviour unless it asks otherwise.
+    goal_judges: Number.isInteger(a.goal_judges) && a.goal_judges > 0 ? a.goal_judges : 2,
     max_retries: a.max_retries,
     flow: a.flow,
     mixed: a.mixed,
@@ -1301,6 +1428,30 @@ async function toolGraphRetry(a) {
     return { run_id: run.run_id, target: n.node_id, retried: true, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
   }
 
+  // Force a repair round: the same move autoReassignGoalGate makes on its own when
+  // consensus rejects, callable directly for auto_reassign:false runs or to push past
+  // a stall the caller wants to override.
+  if (a.repair === true) {
+    const rounds = [...new Set(run.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id === null)
+      .map((n) => goalRoundOf(n.node_id)).filter((r) => r != null))];
+    if (!rounds.length) throw new Error('no goal-gate round exists yet to repair');
+    const round = Math.max(...rounds);
+    const consensus = goalConsensus(run, round);
+    if (!consensus || !consensus.settled) throw new Error(`goal-gate round ${round} has not finished judging yet`);
+    if (consensus.accept) throw new Error(`goal-gate round ${round} already accepted - nothing to repair`);
+    // repair's `after` edge only counts a failed judge as settled once it is final -
+    // the same mark autoReassignGoalGate leaves before opening repair on its own.
+    for (const s of goalGateSiblings(run, round)) if (s.state === 'failed') s.final = true;
+    const feedback = repairBriefing(run, consensus);
+    const out = openRepair(run, round, feedback, run.goal_judges || goalGateSiblings(run, round).length);
+    if (!out.attempt) {
+      record(run.cwd, { event: 'graph_settle', run_id: run.run_id, target: 'goal_gate', round, reason: out.reason });
+      return { run_id: run.run_id, target: 'goal_gate', retried: false, reason: out.reason, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
+    }
+    record(run.cwd, { event: 'graph_repair', run_id: run.run_id, target: 'goal_gate', round, attempt: out.attempt, repair_id: out.repair_id, forced: true });
+    return { run_id: run.run_id, target: 'goal_gate', retried: true, attempt: out.attempt, repair_id: out.repair_id, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
+  }
+
   // No subgoal named means the spec itself was rejected: redo setgoal and critique.
   if (!a.subgoal_id) {
     const source = run.nodes
@@ -1388,6 +1539,7 @@ function toolGraphStatus(a) {
     cwd: run.cwd,
     state: state.state,
     counts: state.counts,
+    ...(state.goal_verdict ? { goal_verdict: state.goal_verdict } : {}),
     has_spec: !!run.spec,
     flow: flowOf(run) || run.flow || 'auto',
     mixed: run.mixed !== false,
