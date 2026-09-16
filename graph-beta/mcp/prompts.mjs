@@ -31,16 +31,18 @@ stage_ok=false means a required check could not run at all (sandbox, missing too
 Write the artifact the acceptance describes, at the path the subgoal names. Every acceptance item must be answerable by pointing at a passage. stage_ok=false when the artifact could not be produced. Do not report a file as changed unless you changed it.`,
   review: `Return JSON: {"stage_ok": true|false, "verified": true|false, "checks": ["<acceptance item> -> \"<the passage that meets it>\" (path:line) | MISSING: <what the text lacks>"], "evidence": "..."}
 You are the reader, not the author. Open the artifact at the paths the draft reported and read it; do not judge from the draft's abstract. One entry per acceptance item, in order. verified=true only when every item has a quoted passage. stage_ok=false only when the artifact could not be read at all. Do not edit the artifact.`,
-  gate: `Return JSON: {"stage_ok": true, "accept": true|false, "match_pct": 0-100, "gaps": ["what blocks acceptance"], "observations": ["weaknesses that do not block"], "reason": "...", "evidence": "..."}
+  gate: `Return JSON: {"stage_ok": true, "accept": true|false, "match_pct": 0-100, "checks": ["<command or read> -> <what it showed>"], "gaps": ["what blocks acceptance"], "observations": ["weaknesses that do not block"], "reason": "...", "evidence": "..."}
 You are the judge, not the actor. Judge only what the evidence below shows. Absent evidence is a gap, not a pass - "the previous node said so" is not evidence.
-Put anything that falls short but does not block into "observations" rather than inflating the score past it. A run that met its bar with known weaknesses is not a 100.`,
+Put anything that falls short but does not block into "observations" rather than inflating the score past it. A run that met its bar with known weaknesses is not a 100.
+accept:true with an empty checks[] is refused by the engine - a judgement with no evidence is a guess.`,
 
-  'gate:goal': `Return JSON: {"stage_ok": true, "accept": true|false, "match_pct": 0-100, "gaps": ["what blocks acceptance"], "observations": ["weaknesses that do not block"], "spec_drift": ["where the spec asked for less than the request did"], "reason": "...", "evidence": "..."}
+  'gate:goal': `Return JSON: {"stage_ok": true, "accept": true|false, "match_pct": 0-100, "checks": ["<command or read> -> <what it showed>"], "gaps": ["what blocks acceptance"], "observations": ["weaknesses that do not block"], "spec_drift": ["where the spec asked for less than the request did"], "reason": "...", "evidence": "..."}
 You are the judge, not the actor, and you are the only node that sees the original request again. Judge the assembled result against BOTH:
   1. the goal-level acceptance criteria, and
   2. the REQUEST as written at the top of this briefing.
 The spec was authored from the request and may have narrowed it. Anything the request asked for that the spec never turned into a criterion belongs in "spec_drift" - the work cannot be faulted for it, but the run must not claim to have delivered it either.
-Absent evidence is a gap, not a pass. Weaknesses that do not block go in "observations", not into a rounded-up score.`,
+Absent evidence is a gap, not a pass. Weaknesses that do not block go in "observations", not into a rounded-up score.
+accept:true with an empty checks[] is refused by the engine - a judgement with no evidence is a guess.`,
   report: `Return JSON: {"stage_ok": true, "handoff": "<the final report>", "evidence": "..."}
 Synthesize from the node results below only. State plainly what was not done and why.`,
 };
