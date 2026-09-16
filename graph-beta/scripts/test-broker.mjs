@@ -95,14 +95,18 @@ const SPEC = {
 };
 
 async function openRun(c, cwd, extra = {}) {
-  const r = await c.call('graph_open', { request: 'r', cwd, vendor: 'self', ...extra });
+  // goal_judges:1 keeps every existing fixture on the single-gate:goal:1 shape it was
+  // written against; the multi-judge consensus path has its own suite (test-goalgate.mjs).
+  const r = await c.call('graph_open', { request: 'r', cwd, vendor: 'self', goal_judges: 1, ...extra });
   return r.run_id;
 }
 
 // A default so every existing fixture keeps behaving as if it had checked something -
 // the engine now refuses an accept:true gate with an empty checks[]. Tests of that rule
-// itself pass their own checks: [] to override the default.
-const ok = (payload) => ({ stage_ok: true, evidence: 'e', checks: ['ok -> looked fine'], ...payload });
+// itself pass their own checks: [] to override the default. attacks is the goal gate's
+// analogous default (Step 9): accept:true with an empty attacks[] is refused the same way,
+// but only on the goal gate - a harmless extra field on every other stage's payload.
+const ok = (payload) => ({ stage_ok: true, evidence: 'e', checks: ['ok -> looked fine'], attacks: ['ok -> looked fine from outside'], ...payload });
 
 async function throughCritique(c, cwd, runId) {
   await c.call('graph_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
@@ -879,6 +883,9 @@ test('a subgoal with an unknown kind is caught at setgoal, not left to expand in
 });
 
 test('a rejected goal gate is re-judged after the subgoal retry, instead of wedging the run', async () => {
+  // auto_reassign:false: this test drives the manual graph_retry({subgoal_id}) path on
+  // purpose. With it on, a rejected goal-gate round now opens a repair pass itself
+  // (Step 9) - covered by test-goalgate.mjs - before the caller ever gets a turn.
   await withRun(async ({ c, cwd, runId }) => {
     await throughCritiqueWith(c, cwd, runId, INDEPENDENT);
     await passSubgoal(c, cwd, runId, 'U1');
@@ -906,7 +913,7 @@ test('a rejected goal gate is re-judged after the subgoal retry, instead of wedg
     assert.deepEqual(nx.ready.map((n) => n.node_id), ['report']);
     await c.call('graph_submit', { run_id: runId, cwd, node_id: 'report', payload: ok({ handoff: 'done' }) });
     assert.equal((await c.call('graph_status', { run_id: runId, cwd })).state, 'complete');
-  });
+  }, { auto_reassign: false });
 });
 
 // ---------- document kind ----------

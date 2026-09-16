@@ -76,6 +76,24 @@ goal-spec, redoing one subgoal fixes nothing: the whole decomposition is in ques
 call reopens `setgoal` and `critique` with the critique's problems as feedback and retires
 the subgoal graph the rejected spec produced.
 
+**The goal gate is one or more judges, not one node.** `graph_open({goal_judges})` (default 2)
+opens a round of sibling gates over the same assembled result — `gate:goal:1` and, past the
+primary, a lettered sibling like `gate:goal:1b` — routed to different identities where the run
+can manage it. Dispatch and submit every sibling in `ready[]` exactly like any other node; the
+run's verdict is their consensus, not any one judge's, and it accepts only when every judge
+accepted at or above `goal_threshold`. Read it off `graph_status`'s `goal_verdict` — `{accept,
+match_pct: <the minimum across judges>, judges: [...], gaps, spec_drift}` — rather than one
+sibling's own verdict, which is only its own opinion.
+
+**A rejected round opens `repair:N`, not a dead end.** When consensus rejects, the engine opens
+a run-level `repair` node — implement-shaped, mutating, fixing across the tree at the seams the
+judges' gaps point to, briefed with the union of every judge's gaps and every subgoal's handoff.
+Dispatch and submit it exactly like an `implement` node; a fresh goal-gate round follows it
+automatically. Two repair rounds that close the same gaps twice stall the run on purpose — it
+proceeds to `report` on partial work rather than paying for a third identical attempt. On a run
+opened with `auto_reassign:false`, or to force a repair the stall held back, call
+`graph_retry({repair:true})` yourself.
+
 ## Dispatching a self node
 
 One fresh agent per self node — a new context, never this conversation — at the

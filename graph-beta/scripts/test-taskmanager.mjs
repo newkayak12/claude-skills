@@ -77,7 +77,10 @@ function repo() {
 // A default so every existing fixture keeps behaving as if it had checked something -
 // the manager now refuses an accept:true/verified:true verdict with an empty checks[].
 // Tests of that rule itself pass their own checks: [] to override the default.
-const ok = (payload) => ({ stage_ok: true, evidence: 'e', checks: ['ok -> looked fine'], ...payload });
+// attacks is the goal gate's analogous default (graph.mjs Step 9): accept:true with an
+// empty attacks[] is refused by the real broker exactly like an empty checks[], and every
+// child run's gate:goal here is a real broker-adjudicated node.
+const ok = (payload) => ({ stage_ok: true, evidence: 'e', checks: ['ok -> looked fine'], attacks: ['ok -> looked fine from outside'], ...payload });
 
 const SHAPE = {
   acceptance: ['both modules build together'],
@@ -658,6 +661,11 @@ test('two dependencies that conflict with each other fail the dependent dispatch
 });
 
 test('a child whose goal gate rejected fails the dispatch; tm_retry reopens it in the same worktree with the gaps', async () => {
+  // auto_reassign:false on the child runs: this test drives the manager's OWN
+  // dispatch-fold/tm_retry path on a rejected child. With it on, the child's rejected
+  // goal gate now opens a repair pass on itself (graph-beta Step 9, out of scope for
+  // the manager's own gate:goal per the taskmanager plan) before the manager ever
+  // folds the dispatch.
   await withTask(async ({ tm, g, task_id }) => {
     await throughCritique(tm, task_id);
     let nx = await tm.call('tm_next', { task_id });
@@ -685,10 +693,12 @@ test('a child whose goal gate rejected fails the dispatch; tm_retry reopens it i
     const st = await tm.call('tm_status', { task_id });
     assert.equal(st.nodes.find((n) => n.node_id === 'accept:P1:1').state, 'skipped');
     assert.deepEqual(st.nodes.find((n) => n.node_id === 'dispatch:P2:1').deps, ['critique', 'accept:P1:2'], 'P2 now waits on the new attempt');
-  });
+  }, { auto_reassign: false });
 });
 
 test('the package retry budget settles: downstream becomes unreachable and the report is released', async () => {
+  // Same reason as above: auto_reassign:false keeps the rejected children's own goal
+  // gates from opening a repair pass, so the dispatch fold sees a plain rejection.
   await withTask(async ({ tm, g, task_id }) => {
     await throughCritique(tm, task_id);
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -711,7 +721,7 @@ test('the package retry budget settles: downstream becomes unreachable and the r
     assert.match(prompt, /### integrate:1 \(integrate\) — unreachable/);
     await tm.call('tm_submit', { task_id, node_id: 'report', payload: ok({ handoff: 'partial' }) });
     assert.equal((await tm.call('tm_status', { task_id })).state, 'complete');
-  });
+  }, { auto_reassign: false });
 });
 
 test('kill and restart the manager: the tree resumes from files and no running dispatch is reclaimed', async () => {
