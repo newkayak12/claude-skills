@@ -23,8 +23,13 @@ REQ=$(cat "$HERE/requests/$CASE.txt")
 ROUTING='Pass host_vendor "claude", the model you are actually running as host_model, and the native models you can select as native_models — the same routing the task was opened with.'
 
 case "$ARM" in
-  beta|betas)
+  beta|betas|skills)
     PLUGIN=(--plugin-dir "$REPO/graph-beta")
+    if [ "$ARM" = skills ]; then
+      for p in develop think cognition completion write agents; do
+        [ -d "$REPO/$p" ] && PLUGIN+=(--plugin-dir "$REPO/$p")
+      done
+    fi
     TASK_ID=$(ls "$WS/.harness-tasks" 2>/dev/null | head -1 || true)
     if [ -n "$TASK_ID" ]; then
       PROMPT="Use the graph-beta:orchestrate skill, but CONTINUE the task that is already open for this project instead of opening one: task_id $TASK_ID at cwd $WS. Do not call tm_open or graph_open. Read references/manager.md and references/loop.md, then call tm_status({task_id}) and tm_next({task_id}) and drive exactly as the manager loop says: a fresh agent for every ready manager node (relay its JSON to tm_submit), every child in children[] driven with loop.md at its own child.cwd (graph_next/graph_run/graph_submit carry that cwd), a child that is complete or blocked folded with tm_submit and no payload, tm_retry on failures. $ROUTING End with the skill's output template. The original request was: $REQ"
@@ -34,7 +39,7 @@ case "$ARM" in
   stable)
     PLUGIN=(--plugin-dir "$REPO/graph")
     PROMPT="Use the graph:orchestrate skill, but CONTINUE the graph run that is already open at this cwd instead of opening one: call graph_status({cwd: \"$WS\"}), take the run whose state is running, and drive the loop from graph_next on. Do not call graph_open. $ROUTING End with the skill's output template. The original request was: $REQ" ;;
-  *) echo "resume is for beta, betas and stable workspaces, not $ARM" >&2; exit 2 ;;
+  *) echo "resume is for beta, betas, skills and stable workspaces, not $ARM" >&2; exit 2 ;;
 esac
 
 echo "$(date -u +%FT%TZ) resume $N $ARM/$CASE -> $WS" | tee -a "$WS.start.txt"
