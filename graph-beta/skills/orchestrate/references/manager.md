@@ -3,17 +3,21 @@
 You arrive here from an entry skill when `tm_submit` on `size` came back **without**
 `delegate`: the request is L, and the task will have packages. Everything a package does
 happens in its own child graph run, in its own worktree, driven with the ordinary loop in
-`loop.md`. This file is only what sits around those runs.
+`loop.md` — by that child's own session, not by you. This file is only what sits around those runs.
 
 ## The loop
 
 ```
-tm_next({task_id})                                -> ready[] (manager nodes) + children[] (running child runs)
+tm_next({task_id})                                -> ready[] (manager nodes) + children[] (running children + drivers)
 for each ready manager node:                      # shape, critique, accept:Pn, integrate, gate:goal, report
     fresh agent at briefing_path -> tm_submit({task_id, node_id, payload})   # relay its JSON verbatim
 for each child in children[]:
-    child_state == "running"   -> drive it with loop.md at cwd=child.cwd, run_id=child.run_id
     child_state != "running"   -> tm_submit({task_id, node_id: child.node_id})   # NO payload: the manager reads the child
+    driver.alive == true       -> wait; poll tm_next again. Its own session is driving it; you do not
+    driver.alive == false      -> the driver died mid-run: tm_submit folds it blocked, then tm_retry({task_id, package_id})
+    no driver at all           -> child_driver "inline" was chosen: drive it yourself with loop.md,
+                                  cwd=child.cwd and run_id=child.run_id in every graph_* call
+if nothing is ready and a driver is alive: poll tm_next until one of them stops.
 if state == "blocked":
     a failed dispatch or accept -> tm_retry({task_id, package_id})    # same worktree, fresh child, gaps carried
     conflicting_packages named  -> tm_retry({task_id, repackage: [...]})   # integrate or dispatch found a merge conflict: reshape those together
@@ -25,19 +29,30 @@ if state == "blocked":
 tm_status({task_id})                              -> final counts; tm_status({}) lists every task
 ```
 
-`tm_next` is where dispatch happens: a ready `dispatch:Pn` has already created its worktree and
-opened its child by the time the call returns. You never open a child. You never pass a payload
-for a dispatch node. A fold attempted while the child is still `running` is refused and costs
-nothing — finish the child first.
+`tm_next` is where dispatch happens: a ready `dispatch:Pn` has already created its worktree,
+opened its child run, and spawned a headless session inside that worktree to drive the child to
+the end. You never open a child, never drive one, and never pass a payload for a dispatch node —
+the recursion belongs to the process tree, because a session that relays every child node's
+briefing and result through its own context burns it out and dies at the usage limit long before
+the packages are done. A fold attempted while the child is `running` and its driver alive is
+refused and costs nothing.
 
 ## Children
 
 Each child is a full graph run: `plan → setgoal → critique → …`, isolated in its worktree at
-`child.cwd`. Drive it exactly as `loop.md` says, with that `cwd` in every `graph_*` call — it is
-what lets the broker find the run. Children with no dependency between them may run at the same
-time; they cannot collide, each has its own tree. A child's own `graph_retry` budget is the
-child's; when it ends `blocked`, fold it — the manager records the failure with the child's
-goal-gate gaps and `tm_retry({package_id})` opens the next attempt.
+`child.cwd`, driven by its own session following `loop.md` there. Yours is to wait: poll
+`tm_next` and read `driver: {pid, alive, log}` — the log is that session's stream if you need to
+see what it is doing. Children with no dependency between them run at the same time; they cannot
+collide, each has its own tree. A child's own `graph_retry` budget is the child's; when it ends
+`blocked`, fold it — the manager records the failure with the child's goal-gate gaps and
+`tm_retry({package_id})` opens the next attempt in the same worktree.
+
+A driver that exits with the run still `running` (a crash, a usage limit) is not a verdict about
+the package: `tm_submit` folds that attempt as blocked with the driver's stderr as the reason, and
+`tm_retry({package_id})` gives the package a fresh session where the dead one stopped.
+
+Only a task opened with `child_driver: "inline"` hands you the child nodes — choose it when you
+must watch a package node by node, and expect the context cost.
 
 ## Branches, merges, conflicts
 
