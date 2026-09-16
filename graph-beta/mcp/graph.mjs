@@ -11,6 +11,7 @@
 import { mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { DEFAULT_MODELS } from './routing.mjs';
 
 export const STAGES = [
   'plan',      // decompose the raw request
@@ -21,6 +22,7 @@ export const STAGES = [
   'draft',     // per document subgoal
   'review',    // per document subgoal, reader's pass (reviewer != author)
   'gate',      // per subgoal, then once at goal level (judge != actor)
+  'repair',    // run-level, opened when goal-gate consensus rejects the assembled result
   'report',    // synthesize from the ledger
 ];
 
@@ -326,6 +328,13 @@ export function createRun(opts) {
     // The floor the goal gate's match_pct must clear. Carried on the run because the gate is
     // judged in the broker, which only has the run to read it from.
     goal_threshold: Number.isInteger(opts.goal_threshold) ? opts.goal_threshold : 90,
+    // How many independent judges sit on the goal gate. 1 is every prior behaviour: a
+    // single gate:goal:<round> node, its own accept/match_pct decides the round. The
+    // MCP tool boundary (graph_open) defaults this to 2 for a fresh run; createRun
+    // itself defaults to 1 so a caller that builds runs directly - the TaskManager's
+    // per-package child runs among them - keeps behaving exactly as before unless it
+    // asks for more judges.
+    goal_judges: Number.isInteger(opts.goal_judges) && opts.goal_judges > 0 ? opts.goal_judges : 1,
     max_retries: Number.isInteger(opts.max_retries) ? opts.max_retries : 2,
     // `auto` lets plan pick the flow; an entry skill pins it. `mixed` false turns the pin
     // into a rule every subgoal must follow.
@@ -359,12 +368,47 @@ export function stagePolicy(run, node) {
   const specific = node.node_id.startsWith('gate:goal') ? p['gate:goal'] : null;
   const byStage = p[node.stage] || {};
   const entry = { ...byStage, ...(specific || {}) };
-  return {
+  const out = {
     vendor: entry.vendor === undefined ? run.vendor : entry.vendor,
     candidates: entry.candidates === undefined ? run.candidates : entry.candidates,
     sandbox: entry.sandbox === undefined ? run.sandbox : entry.sandbox,
     model: entry.model === undefined ? (run.model || null) : entry.model,
   };
+  return goalJudgeBias(run, node, out);
+}
+
+// A second (or third) judge on the same goal-gate round, asked with the same candidate
+// order and the same model as the primary, tends to land on the same identity - which
+// makes the second opinion decorative rather than independent. Best-effort only: a
+// judge past the primary (`gate:goal:<round><letter>`) gets its candidate order biased
+// away from the primary's resolved vendor when more than one is configured; failing
+// that, and only when this judge is pinned to the very vendor the primary used, it
+// gets the vendor's ordinary default tier rather than whatever the primary got (the
+// goal gate is a "decisive" stage, so selectModel would otherwise hand both the same
+// host model). Nothing here blocks a run that only has one identity available - a
+// default self-routed run keeps working exactly as it did with one judge - and the
+// judges actually reached is what `goal_verdict.judges[].identity` reports, not what
+// this function hoped for.
+function goalJudgeBias(run, node, pol) {
+  const m = /^gate:goal:(\d+)[a-z]$/.exec(node.node_id || '');
+  if (!m) return pol;
+  const primary = getNode(run, `gate:goal:${m[1]}`);
+  if (!primary) return pol;
+  const primaryVendor = primary.executor || primary.vendor || null;
+  if (!primaryVendor) return pol;
+  const out = { ...pol };
+  const candidates = Array.isArray(out.candidates) ? out.candidates : null;
+  if (candidates && candidates.length > 1) {
+    out.candidates = [...candidates].sort((a, b) => (a === primaryVendor ? 1 : 0) - (b === primaryVendor ? 1 : 0));
+    return out;
+  }
+  const pinnedVendor = out.vendor && !['auto', undefined, null].includes(out.vendor)
+    ? out.vendor
+    : (candidates && candidates.length === 1 ? candidates[0] : null);
+  if (!out.model && pinnedVendor && pinnedVendor === primaryVendor && DEFAULT_MODELS[pinnedVendor]) {
+    out.model = DEFAULT_MODELS[pinnedVendor];
+  }
+  return out;
 }
 
 export function getNode(run, nodeId) {
@@ -470,6 +514,131 @@ function gateStage(kind) {
   return chain[chain.length - 1];
 }
 
+// ---------- goal-gate consensus and repair (Step 9) ----------
+//
+// A goal-gate "round" is one or more sibling `gate` nodes with subgoal_id null, all
+// judging the same assembled result over the same deps. The primary is unlettered
+// (`gate:goal:3`); a second and further judge get a letter suffix (`gate:goal:3b`,
+// `gate:goal:3c`, ...) so `goal_judges:1` reproduces the exact node id every prior run
+// and test relied on, and `nextIndex(run, 'gate:goal')`-style counting elsewhere still
+// treats the round as one thing rather than N.
+
+function goalGateSuffix(i) {
+  return i === 0 ? '' : String.fromCharCode(98 + i - 1); // 0 -> '', 1 -> 'b', 2 -> 'c', ...
+}
+
+// The round number embedded in a goal-gate node id, or null for anything else -
+// including a subgoal gate, which never starts with `gate:goal`.
+export function goalRoundOf(nodeId) {
+  const m = /^gate:goal:(\d+)[a-z]?$/.exec(nodeId || '');
+  return m ? Number(m[1]) : null;
+}
+
+// Every judge of a round, primary first, in a stable id order.
+export function goalGateSiblings(run, round) {
+  return run.nodes
+    .filter((n) => n.stage === 'gate' && n.subgoal_id === null && goalRoundOf(n.node_id) === round)
+    .sort((a, b) => a.node_id.localeCompare(b.node_id));
+}
+
+// One past the highest round already opened - siblings all share a round, so counting
+// by node_id prefix the way `nextIndex` does would count N per round and desync the
+// letter suffixes from the round number.
+export function nextGoalRound(run) {
+  let max = 0;
+  for (const n of run.nodes) {
+    const r = goalRoundOf(n.node_id);
+    if (r != null && r > max) max = r;
+  }
+  return max + 1;
+}
+
+// Opens a fresh round of `judges` sibling gate nodes, all sharing `deps`. Used both for
+// the round a fresh subgoal expansion produces and for the round that follows a repair.
+export function pushGoalGateRound(run, deps, extra, judges) {
+  const round = nextGoalRound(run);
+  const n = Math.max(1, Number.isInteger(judges) ? judges : 1);
+  const ids = [];
+  for (let i = 0; i < n; i++) {
+    const id = `gate:goal:${round}${goalGateSuffix(i)}`;
+    run.nodes.push(node(id, 'gate', deps.slice(), { subgoal_id: null, ...(extra || {}) }));
+    ids.push(id);
+  }
+  return { round, ids };
+}
+
+// Consensus over one round: null until every judge has a terminal state. `accept`
+// requires every judge's OWN verdict to have passed (nodeSucceeded already enforces
+// that judge's accept/match_pct/checks rule, so a judge that fails on any of those
+// never reaches `done`) - consensus adds nothing beyond "all of them, not just one".
+// `routing_failure` is a peer that could not judge at all (transport, vendor,
+// unparseable reply): the same distinction the subgoal branch of autoReassign draws,
+// and the caller's problem, not a rejection to repair.
+export function goalConsensus(run, round) {
+  const judges = goalGateSiblings(run, round);
+  if (!judges.length) return null;
+  const routingFailure = judges.some((n) => n.result && n.result.stage_ok !== true);
+  const settled = !routingFailure && judges.every((n) => n.state === 'done' || n.state === 'failed');
+  const matches = judges
+    .map((n) => (n.result && Number.isFinite(n.result.match_pct) ? n.result.match_pct : null))
+    .filter((x) => x != null);
+  return {
+    round,
+    settled,
+    routing_failure: routingFailure,
+    accept: settled && judges.every((n) => n.state === 'done'),
+    match_pct: matches.length ? Math.min(...matches) : null,
+    gaps: [...new Set(judges.flatMap((n) => (n.result && n.result.gaps) || []))],
+    spec_drift: [...new Set(judges.flatMap((n) => (n.result && n.result.spec_drift) || []))],
+    judges: judges.map((n) => ({
+      node_id: n.node_id,
+      state: n.state,
+      accept: n.result ? n.result.accept === true : null,
+      match_pct: n.result && Number.isFinite(n.result.match_pct) ? n.result.match_pct : null,
+      identity: `${n.executor || n.vendor || 'self'}@${n.model || 'default'}`,
+    })),
+  };
+}
+
+// One repair per rejected round, capped like every other attempt counter -
+// `nextIndex(run, 'repair')` is deliberately not reused: subgoal budgets are per
+// subgoal, the spec budget is per run, and this is a third counter with its own name.
+export function nextRepairIndex(run) {
+  return run.nodes.filter((n) => n.stage === 'repair').length + 1;
+}
+
+// Opens repair:N over the rejecting round's siblings, then a fresh goal-gate round
+// behind it - `repair:N after [gate:goal:round's siblings]`, `gate:goal:round+1 deps
+// [repair:N, ...the subgoal gates that fed round]` - and moves the report's `after`
+// from the old round onto the new one. Over budget, the rejecting siblings are marked
+// final and the report is left free to run on partial work, same as every other
+// exhausted budget in this engine.
+//
+// repair's edge to the round it follows is `after`, not `deps`: a rejecting judge ends
+// `failed`, never `done`, and a data dep only ever waits for `done` - repair would sit
+// forever behind a round it exists to answer. `after` only needs the round settled,
+// which a failed-and-final judge already is.
+export function openRepair(run, round, feedback, judges) {
+  const siblings = goalGateSiblings(run, round);
+  const attempt = nextRepairIndex(run);
+  if (attempt > run.max_retries) {
+    for (const s of siblings) if (s.state === 'failed') s.final = true;
+    return { run: saveRun(run), attempt: null, reason: 'repair budget exhausted' };
+  }
+  const subgoalGateIds = siblings.length ? siblings[0].deps.slice() : [];
+  const repairId = `repair:${attempt}`;
+  run.nodes.push(node(repairId, 'repair', [], { after: siblings.map((s) => s.node_id), feedback: feedback || '' }));
+  const { ids: freshIds } = pushGoalGateRound(run, [repairId, ...subgoalGateIds], {}, judges || 1);
+
+  const oldIds = new Set(siblings.map((s) => s.node_id));
+  for (const n of run.nodes) {
+    if (n.node_id === repairId) continue; // repair itself follows the OLD round, not the new one it opens
+    if (!n.after || !n.after.some((d) => oldIds.has(d))) continue;
+    n.after = [...new Set([...n.after.filter((d) => !oldIds.has(d)), ...freshIds])];
+  }
+  return { run: saveRun(run), attempt, repair_id: repairId, gate_ids: freshIds };
+}
+
 export function expandSubgoals(run, subgoals) {
   const gateIds = [];
   // After a spec retry the live critique is critique:N, not the retired `critique`.
@@ -489,13 +658,15 @@ export function expandSubgoals(run, subgoals) {
     const after = (sg.after || []).map((d) => `gate:${d}:${round}`);
     gateIds.push(pushChain(run, (KINDS[kindOf(sg)] || KINDS[DEFAULT_KIND]).chain, id, round, [critiqueDep, ...deps], after, {}));
   }
-  const goalGate = `gate:goal:${nextIndex(run, 'gate:goal')}`;
+  // Multi-judge consensus (Step 9 / D-goal-consensus): a fresh round of `run.goal_judges`
+  // sibling gates over the same subgoal gates, instead of the single node this used to
+  // push directly. goal_judges:1 is exactly the old shape - one node named `gate:goal:N`.
+  const { ids: goalGates } = pushGoalGateRound(run, gateIds, {}, run.goal_judges || 1);
   const reportId = round === 1 ? 'report' : `report:${round}`;
-  run.nodes.push(node(goalGate, 'gate', gateIds, { subgoal_id: null }));
-  // Order-only: the report waits for the goal gate to be settled, not to pass. A run
-  // whose subgoal ran out of retries used to end `blocked` with the passing subgoals'
-  // work never reported - partial success was simply lost.
-  run.nodes.push(node(reportId, 'report', [], { after: [goalGate] }));
+  // Order-only: the report waits for every judge in the round to be settled, not to
+  // pass. A run whose subgoal ran out of retries used to end `blocked` with the
+  // passing subgoals' work never reported - partial success was simply lost.
+  run.nodes.push(node(reportId, 'report', [], { after: goalGates }));
   return saveRun(run);
 }
 
@@ -589,13 +760,29 @@ export function retrySubgoal(run, subgoalId, feedback) {
   // A goal gate that REJECTED is a different case: it ran, and its verdict is evidence. The
   // retried subgoal will pass or fail on its own, but nothing re-judged the whole - the old
   // gate stayed `failed`, the report stayed behind it, and the run wedged with the fix in
-  // place. Open a fresh goal gate over the live subgoal gates, carrying the rejection as
-  // feedback, and move the report behind it. The old gate stays, as every failed attempt does.
-  for (const old of run.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id === null && n.state === 'failed' && !n.final && n.deps.includes(gate))) {
-    const fresh = `gate:goal:${nextIndex(run, 'gate:goal')}`;
-    const fb = [old.result && old.result.reason, ...((old.result && old.result.gaps) || [])].filter(Boolean).join('\n- ');
-    run.nodes.push(node(fresh, 'gate', old.deps.slice(), { subgoal_id: null, feedback: fb, supersedes: old.node_id }));
-    for (const n of run.nodes) n.after = (n.after || []).map((d) => (d === old.node_id ? fresh : d));
+  // place. Open a fresh goal-gate ROUND (every judge, not just the one whose deps happen to
+  // name this gate) over the live subgoal gates, carrying the rejection as feedback, and move
+  // the report behind it. The old round stays, as every failed attempt does.
+  const staleRounds = [...new Set(
+    run.nodes
+      .filter((n) => n.stage === 'gate' && n.subgoal_id === null && !n.final && n.deps.includes(gate))
+      .map((n) => goalRoundOf(n.node_id))
+      .filter((r) => r != null),
+  )];
+  for (const round of staleRounds) {
+    const siblings = goalGateSiblings(run, round);
+    if (siblings.some((s) => s.state === 'pending' || s.state === 'running')) continue; // still live, not stale
+    const rejecting = siblings.filter((s) => s.state === 'failed');
+    if (!rejecting.length) continue; // the round accepted; nothing stale to replace
+    const fb = rejecting
+      .flatMap((old) => [old.result && old.result.reason, ...((old.result && old.result.gaps) || [])])
+      .filter(Boolean).join('\n- ');
+    const { ids: fresh } = pushGoalGateRound(run, siblings[0].deps.slice(), { feedback: fb, supersedes: siblings.map((s) => s.node_id) }, run.goal_judges || siblings.length);
+    const oldIds = new Set(siblings.map((s) => s.node_id));
+    for (const n of run.nodes) {
+      if (!n.after || !n.after.some((d) => oldIds.has(d))) continue;
+      n.after = [...new Set([...n.after.filter((d) => !oldIds.has(d)), ...fresh])];
+    }
   }
   return { run: saveRun(run), attempt, reason: '' };
 }
@@ -614,7 +801,13 @@ export function retrySpec(run, feedback) {
   }
 
   for (const n of run.nodes) {
-    if (n.stage === 'setgoal' || n.stage === 'critique' || n.subgoal_id || n.stage === 'report' || (n.stage === 'gate' && n.subgoal_id === null)) {
+    // `repair` joins the run-level stages retired here: escalation discards the
+    // subgoal graph a rejected spec produced, and a pending repair over that graph's
+    // goal gate has nothing left to fix. A repair already RUNNING cannot be retired -
+    // its commits are already in the tree, and it stays in the graph as evidence of
+    // what was tried, exactly like a retried subgoal's superseded attempt.
+    if (n.stage === 'setgoal' || n.stage === 'critique' || n.subgoal_id || n.stage === 'report'
+      || n.stage === 'repair' || (n.stage === 'gate' && n.subgoal_id === null)) {
       if (n.state === 'pending' || n.state === 'failed') {
         n.state = 'skipped';
         n.result = n.result || { stage_ok: false, reason: `superseded by spec attempt ${attempt}` };
@@ -653,20 +846,45 @@ export function readyNodes(run) {
   return run.nodes.filter((n) => n.state === 'pending' && depsSatisfied(run, n));
 }
 
+// The public shape of goal-gate consensus, trimmed of internal bookkeeping
+// (`routing_failure` stays out - it means "not decided yet", not a verdict).
+function publicGoalVerdict(c) {
+  if (!c || !c.settled) return null;
+  return { accept: c.accept, match_pct: c.match_pct, judges: c.judges, gaps: c.gaps, spec_drift: c.spec_drift };
+}
+
 export function runState(run) {
   const counts = { pending: 0, running: 0, done: 0, failed: 0, skipped: 0, unreachable: 0 };
   for (const n of run.nodes) counts[n.state] = (counts[n.state] || 0) + 1;
+
+  // The most recently SETTLED goal-gate round's consensus, once one exists - surfaced
+  // here so a caller reading run state does not have to re-derive it from the node
+  // list. "most recent" skips a newer round a repair already opened but that has not
+  // finished judging yet - that round has no verdict of its own to report, and the
+  // prior one's is still the honest answer to "did the run's goal gate accept".
+  const rounds = [...new Set(
+    run.nodes
+      .filter((n) => n.stage === 'gate' && n.subgoal_id === null)
+      .map((n) => goalRoundOf(n.node_id))
+      .filter((r) => r != null),
+  )].sort((a, b) => b - a);
+  let goalVerdict = null;
+  for (const r of rounds) {
+    const c = goalConsensus(run, r);
+    if (c && c.settled) { goalVerdict = publicGoalVerdict(c); break; }
+  }
+  const withVerdict = (s) => (goalVerdict ? { ...s, goal_verdict: goalVerdict } : s);
 
   // Only a finished report means the run finished. Deciding on "nothing pending" once
   // let a spec retry that rebuilt no nodes report itself complete having implemented
   // nothing - the worst kind of failure, because it looks like success.
   const reports = run.nodes.filter((n) => n.stage === 'report');
-  if (reports.some((n) => n.state === 'done')) return { state: 'complete', counts };
-  if (run.routing_blocked && !counts.running) return { state: 'blocked', counts };
+  if (reports.some((n) => n.state === 'done')) return withVerdict({ state: 'complete', counts });
+  if (run.routing_blocked && !counts.running) return withVerdict({ state: 'blocked', counts });
   // Blocked means nothing can proceed - not merely that nothing is pending. A node
   // waiting on a dependency that failed is still pending and still stuck.
-  if (!readyNodes(run).length && !counts.running) return { state: 'blocked', counts };
-  return { state: 'running', counts };
+  if (!readyNodes(run).length && !counts.running) return withVerdict({ state: 'blocked', counts });
+  return withVerdict({ state: 'running', counts });
 }
 
 // What a node needs to know to be executed, assembled from what the graph already
@@ -722,7 +940,11 @@ export function nodeBriefing(run, n) {
   // written from a list of successes.
   // By stage, not by id: after a spec retry the live report is `report:N`, and matching
   // the bare name left that report briefed with nothing but its order-only upstream.
-  const wholeRun = n.stage === 'report' || n.node_id.startsWith('gate:goal')
+  // repair joins this branch (Step 9): it fixes across the tree at the seams a rejected
+  // goal gate found, not one subgoal's slice, so it needs the same whole-run view the
+  // goal gate itself gets - plus, via `prior_feedback` below (n.feedback, set when
+  // repair is opened), the rejecting round's reason and gaps.
+  const wholeRun = n.stage === 'report' || n.node_id.startsWith('gate:goal') || n.stage === 'repair'
     ? run.nodes
         .filter((x) => x.result && x.node_id !== n.node_id)
         .map((x) => ({

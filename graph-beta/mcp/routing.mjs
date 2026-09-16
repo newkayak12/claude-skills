@@ -34,18 +34,26 @@ export function selectModel(run, node, vendor, explicit) {
 // account of itself is not written by the vendor that drove it - the same independence
 // the same-actor penalty buys gate and critique. Model defaults stay tied to execution:
 // a report that degrades back to the host is still reasoning work.
-export const CROSS_VENDOR_STAGES = new Set(['implement', 'test', 'draft', 'report']);
+// repair joins the same group (Step 9): it writes to the tree fixing a goal-gate
+// rejection, and is routed the way implement is - to the peer of whichever identity is
+// driving, so the fix is not made by the same vendor that has been driving the run.
+export const CROSS_VENDOR_STAGES = new Set(['implement', 'test', 'draft', 'report', 'repair']);
 // Stages that do the work rather than judge it. draft joins implement and test: it writes
 // the artifact, so it goes to the peer, and its review stays on the host - which is what
-// makes author and reviewer different identities without anyone arranging it.
-export const EXECUTION_STAGES = new Set(['implement', 'test', 'draft']);
+// makes author and reviewer different identities without anyone arranging it. repair joins
+// them too: a run-level stage, but a mutating one, offered one at a time under isolation
+// exactly like implement and draft.
+export const EXECUTION_STAGES = new Set(['implement', 'test', 'draft', 'repair']);
 // The node whose author a judging stage must not share an identity with.
 // test joins: the node that verifies an implementation must not be the identity that wrote it.
 // Measured on code-flat 2026-09-16: implement and test both went to the peer (both are
 // CROSS_VENDOR_STAGES), the implementer's own "am I main" guard compared import.meta.url against
 // an unresolved argv path, the tester invoked the CLI through the one path that hides that, three
 // gates ran no checks, and the integrated CLI printed nothing when called by its /var symlink.
-const AUTHOR_OF = { critique: 'setgoal', gate: ['implement', 'draft'], review: 'draft', test: 'implement' };
+// gate gains `repair`: the goal-gate round that follows a repair pass (Step 9) is soft-
+// discouraged from sharing an identity with whoever did the repair, the same way it
+// already is with whoever implemented or drafted the subgoal it is judging.
+const AUTHOR_OF = { critique: 'setgoal', gate: ['implement', 'draft', 'repair'], review: 'draft', test: 'implement' };
 
 export function rankCandidates(run, node, candidates) {
   const execution = EXECUTION_STAGES.has(node.stage);
