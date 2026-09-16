@@ -45,6 +45,18 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 
 ## 상태
 
+- **v0.7.3 — 재할당된 subgoal이 죽은 세대의 의존을 물려받지 않음**: 0.7.2의 첫 실전 런이 새 작업을
+  확인해주고 — `implement`에 persona가 있고 `gate`에는 없음, kind에서 `develop:clean-code` /
+  `develop:testing-workflow`+`completion:verification-before-completion` / `think:devils-advocate`가
+  도착, 실행 노드 6개 전부 codex·기획과 판단 노드 7개 전부 호스트 — 그리고 유닛 테스트로는 볼 수 없는
+  버그에 3/9으로 막혔습니다. `test:U3:2`가 거부되자 엔진이 의도대로 U3를 스스로 재할당했는데, 새로
+  태어난 `implement:U3:3`의 의존이 `["critique", "gate:U1:1", "gate:U2:1"]` — spec 재시도가 이미
+  superseded로 skip한 attempt-1 노드들이었습니다. 영영 ready가 되지 못해 subgoal 둘과 목표 게이트에
+  도달하지 못한 채 blocked로 끝났습니다. `retrySubgoal`이 subgoal의 **가장 이른** head 노드에서 상류를
+  읽고 있었는데, 그건 spec 재시도가 그 아래 subgoal들을 다시 전개하기 전까지만 옳은 노드입니다. 이제
+  superseded되지 않은 가장 최근 head에서 읽습니다 — 한 세대 안의 모든 시도는 같은 기반 의존을 복사하므로
+  같은 상류이고, 다만 실제로 살아 있는 세대의 것입니다.
+
 - **v0.7.2 — 방법론은 kind에서 온다, 물어보는 방식이 실패했으므로**: 0.7.1의 첫 실전 런들이 모든
   subgoal에 `skills: []`, 모든 패키지에 `skills` 필드 자체 없음으로 돌아왔습니다. 같은 자리에서 요구한
   `persona`는 매번, 그것도 잘 채워졌는데도요("코드에서 설계 이력을 복원하는 편집자-아키비스트"). 차이는

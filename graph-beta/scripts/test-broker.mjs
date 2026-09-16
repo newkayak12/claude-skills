@@ -2421,3 +2421,33 @@ test('a subgoal that names no skills still gets its method from the kind', async
     // Not isolated: isolation offers one mutating node at a time, and this needs both at once.
   });
 });
+
+test('a subgoal reassigned after a spec retry waits on the live generation, not the dead one', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    const spec = { goal: 'G', acceptance: ['A'], subgoals: [
+      { id: 'U1', kind: 'subgoal', title: 'a', acceptance: ['a'], test: ['x'], deps: [] },
+      { id: 'U2', kind: 'subgoal', title: 'b', acceptance: ['b'], test: ['y'], deps: ['U1'] },
+    ] };
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'setgoal', payload: ok({ spec, handoff: 's' }) });
+    // critique rejects, so the whole first generation is superseded and setgoal runs again.
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'critique', payload: ok({ sound: false, blocking: ['no'] }) });
+    const rt = await c.call('graph_retry', { run_id: runId, cwd });
+    assert.equal(rt.retried, true);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'setgoal:2', payload: ok({ spec, handoff: 's' }) });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'critique:2', payload: ok({ sound: true }) });
+    // Now fail U1 of the live generation and let the engine reassign it.
+    const f = dirty(cwd);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'implement:U1:2', payload: ok({ changed_files: [f] }) });
+    const v = await c.call('graph_submit', { run_id: runId, cwd, node_id: 'test:U1:2', payload: ok({ verified: false, checks: ['c -> failed'] }) });
+    assert.equal(v.reassigned.attempt, 3);
+    const st = await c.call('graph_status', { run_id: runId, cwd });
+    const fresh = st.nodes.find((n) => n.node_id === 'implement:U1:3');
+    // Reading the earliest head node instead gave deps on the dead generation's critique,
+    // and the node could never become ready.
+    assert.ok(!fresh.deps.some((d) => /:1$/.test(d)), `inherited a dead generation's deps: ${fresh.deps.join(', ')}`);
+    assert.deepEqual(fresh.deps, ['critique:2']);
+    const nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.ok(nx.ready.some((n) => n.node_id === 'implement:U1:3'), 'and so it is actually offered');
+  }, { isolated: true });
+});

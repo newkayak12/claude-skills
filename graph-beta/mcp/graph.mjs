@@ -550,12 +550,19 @@ export function retrySubgoal(run, subgoalId, feedback) {
     }
   }
 
-  // The new attempt starts from the same upstream the first attempt had, not from the
-  // attempt that just failed.
+  // The new attempt starts from the upstream its own generation had, not from the attempt
+  // that just failed - every attempt in a generation copies the same baseDeps, so the latest
+  // head node carries it. Reading the *earliest* head node instead was a run-killer: after a
+  // spec-level retry re-expands the subgoals, attempt 1's deps name gate nodes that retry
+  // skipped as superseded, so the new attempt was born waiting on the dead generation and
+  // could never become ready. Observed in a live run, which then blocked with the goal gate
+  // and two subgoals never reached and a retry budget spent on a node nothing was waiting for.
   const headStage = (KINDS[kind] || KINDS[DEFAULT_KIND]).chain[0];
-  const first = run.nodes.find((x) => x.subgoal_id === subgoalId && x.stage === headStage);
-  const baseDeps = first ? first.deps.slice() : ['critique'];
-  const baseAfter = first ? (first.after || []).slice() : [];
+  const heads = run.nodes.filter((x) => x.subgoal_id === subgoalId && x.stage === headStage);
+  const live = heads.filter((x) => !(x.state === 'skipped' && x.result && /superseded/.test(x.result.reason || '')));
+  const head = (live.length ? live : heads).at(-1);
+  const baseDeps = head ? head.deps.slice() : ['critique'];
+  const baseAfter = head ? (head.after || []).slice() : [];
 
   const gate = pushChain(run, (KINDS[kind] || KINDS[DEFAULT_KIND]).chain, subgoalId, attempt, baseDeps, baseAfter, { feedback: feedback || '' });
 
