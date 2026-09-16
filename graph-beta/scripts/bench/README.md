@@ -135,14 +135,36 @@ Same-topology and one-line-goal runs. Rows land here as the sequential driver fi
 | betas (unpinned, one run) | code | 8/9 | 50 min | $13.20 | 1 | 21 | `size` measured S, delegated; the run used `implement/test` for code and `draft/review` for the README (mixed); failed only the README phrasing criterion. Same topology and same cost as `stable` (9/9 · 48 min · $13.27): the engine's overhead is the engine's, not the beta's |
 | betas (unpinned, one run) | docs | 9/9 | 68 min | $21.79 | 2 | 31 | `size` measured S, `flow` chose `document`: 9 `draft` · 9 `review` · 10 `gate` and not one `implement` — round 1's stable ran the same request as implement/test because it has no `document` kind. Three review rejections retried and passed. Against stable's 9/9 · 61 min · $18.10: the same score for 20% more, and the 20% buys author≠reviewer on every document |
 | none | goal-code | 6/6 | 29 min | $11.92 | 1 | 0 | the plain session met the one-line goal on its own — at 5.5× what it cost with the four-package spec written for it ($2.17): the planning moved inside the session |
-| beta (pinned L) | goal-code | running | | | | | shape split the one-line goal into `csv` / `rules` / `report` / `cli`+README+examples, disjoint touches, only `cli` depends (on all three) — the same split a person wrote for the `code` case. Critique returned 11 problems, one of which caught a stale sentence in the shape contract (dependents "branch from HEAD" — they branch from their dependency's branch since 0.6.0); fixed |
-| beta (pinned L) | goal-docs | queued | | | | | |
+| beta (pinned L) | goal-code | **7/7 · delivered** | 130 min | $44.74 | 3 | 65 | shape split the one-line goal into `csv` / `rules` / `report` / `cli`+README+examples, disjoint touches, only `cli` depends (on all three) — the same split a person wrote for the `code` case. Critique returned 11 problems, one of which caught a stale sentence in the shape contract (dependents "branch from HEAD" — they branch from their dependency's branch since 0.6.0); fixed. 4 packages, 4 child runs, integrate → `gate:goal` → report all passed |
+| beta (pinned L) | goal-docs | 8/8 tree · **settled-failure** | 135 min | $53.38 | 3 | 57+ | `integrate` twice refused the combined tree over a seam no package could see, and the package could not be repaired in isolation — below |
 
 Both same-topology pairs are now in: `stable` against `betas` is 9/9 · $13.27 against 8/9 ·
 $13.20 on `code` and 9/9 · $18.10 against 9/9 · $21.79 on `docs`. The engine's cost is the
 engine's — the beta adds no overhead at the same topology, and on `docs` the 20% it does add is
 the `document` flow doing review work stable cannot express. Round 1's 34×/12× figures belong to
 the manager topology (four child runs plus a manager), not to the beta.
+
+### What `goal-docs` found, by failing
+
+`packages/retry/README.md:3` said "the repo has no other docs, so everything a maintainer needs
+to know about @tinyq/retry is written here." On branch `harness/…/P2` that was **true** — `git
+ls-tree` shows it was the only `.md` in that tree. In the combined tree it is false: seven `.md`
+files, several of them documenting retry behaviour, and the same file's own "See also" section
+links to them. `integrate:1` caught it, `integrate:2` caught it again after a retry, the child
+run for P2 then went blocked on its own gate, the manager's retry budget ran out, and
+`gate:goal`, `accept:P2:3` and `integrate:3` became `unreachable` — the settle path, working as
+designed, releasing a partial report.
+
+The finding is the design gap, not the defect: **a seam defect cannot be repaired by retrying
+the package in isolation.** `tm_retry({package_id})` sends the work back to a worktree where the
+offending sentence is correct, so the author receives feedback that is unsatisfiable where they
+stand and spends the budget failing. The repair path has to be `repackage`, or integrate
+feedback that tells the package what the combined tree looks like. Neither exists yet.
+
+The scorer gave that same tree **8/8**, `accuracy` judge included. The harness read the seams and
+the bench's own scoring did not: a score is now printed alongside the harness's verdict
+(`delivered` / `settled-failure` / `incomplete` / `not-delivered`) precisely so a rejected tree
+can never again be reported as a pass.
 
 **Cross-vendor dispatch was not measured in either round.** Codex is installed on the bench
 machine but not logged in, so every `vendor: auto` route reported `codex unreachable` and every

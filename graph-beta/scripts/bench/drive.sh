@@ -59,7 +59,10 @@ sleep_until_reset() {  # "resets 11:50pm (Asia/Seoul)" -> sleep until then (+3 m
 for job in "$@"; do
   read -r arm case label <<<"$job"
   ws="$OUT/$case-$arm-$label"
-  n=0
+  # Resume streams are numbered from what is already on disk, not from zero: a second driver
+  # over the same workspace used to reopen .stream.resume1.jsonl and overwrite the first
+  # driver's session, losing its cost and turns from every later sum.
+  n=$(ls "$ws".stream.resume*.jsonl 2>/dev/null | wc -l | tr -d ' ')
   fresh=0   # 1 once a session ran under this driver: only then is a limit message's reset time current
   if [ ! -d "$ws" ]; then
     echo "$(date -u +%FT%TZ) start $job"
@@ -70,8 +73,11 @@ for job in "$@"; do
     end=$(stream_end "$ws")
     text=${end#*$'\t'}
     [ "$end" = killed ] && text=''
-    if [ "$end" = killed ] || [[ $text =~ hit\ your\ (session|usage)\ limit ]]; then
-      if [ "$n" -ge "$MAX" ]; then echo "$(date -u +%FT%TZ) $job: gave up after $n resumes"; break; fi
+    # Limit messages name the window: "session limit", "usage limit", "weekly limit",
+    # "5-hour limit". Matching only two of them read a weekly limit as a clean ending and
+    # marked a job done mid-task.
+    if [ "$end" = killed ] || [[ $text =~ hit\ your\ [a-z0-9-]+\ limit ]]; then
+      if [ "$n" -ge "$MAX" ]; then echo "$(date -u +%FT%TZ) $job: gave up at resume $n"; break; fi
       if [ "$end" = killed ]; then
         echo "$(date -u +%FT%TZ) $job: session killed with no result event; resuming"
       # A limit message left by an earlier driver names a reset that has long passed: resume now.
