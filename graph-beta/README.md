@@ -48,6 +48,20 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.7.3 — a reassigned subgoal no longer inherits a dead generation's dependencies**: the
+  first live run on 0.7.2 confirmed the new work — persona on `implement` and not on `gate`,
+  `develop:clean-code` / `develop:testing-workflow` + `completion:verification-before-completion`
+  / `think:devils-advocate` arriving from the kind, all six execution nodes on codex and all
+  seven planning and judging nodes on the host — and then blocked at 3/9 on a bug none of the
+  unit tests could see. `test:U3:2` was rejected, the engine reassigned U3 by itself exactly as
+  intended, and the new `implement:U3:3` was born with `deps: ["critique", "gate:U1:1",
+  "gate:U2:1"]` — attempt-1 nodes a spec-level retry had already skipped as superseded. It could
+  never become ready, so the run sat blocked with two subgoals and the goal gate never reached.
+  `retrySubgoal` took its upstream from the *earliest* head node of the subgoal, which is the
+  right node only until a spec retry re-expands the subgoals underneath it. It now takes the
+  latest head that has not been superseded; every attempt in a generation copies the same base
+  dependencies, so that is the same upstream, from the generation that is actually alive.
+
 - **v0.7.2 — method comes from the kind, because asking for it did not work**: the first live
   runs on 0.7.1 came back with `skills: []` on every subgoal and no `skills` field at all on
   any package, while `persona` — asked for in the same breath — was filled every time and
