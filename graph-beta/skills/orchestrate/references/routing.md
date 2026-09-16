@@ -80,7 +80,11 @@ Claude work.
 
 `report` is routed like `implement`/`test` — to the vendor that did **not** drive the run,
 so a run's account of itself is not written by its own driver. It stays reasoning work:
-read-only sandbox, and `host_model` if no peer is available and it falls back to the host.
+read-only sandbox, and `DEFAULT_MODELS[vendor]` if no peer is available and it falls back
+to the host. Only `critique` and the goal gate (`gate:goal`) inherit the host's driving
+model; every other judging stage — a subgoal `gate`, `review`, `test`, `report`, `plan`,
+`setgoal` — takes the default tier. Measured: judging on the host's premium model was
+~40% of a run's cost while discriminating nothing between gates.
 
 Keys are stage names — `plan`, `setgoal`, `critique`, `implement`, `test`, `draft`,
 `review`, `gate`, `report` — plus the optional `gate:goal`. `draft` is routed like

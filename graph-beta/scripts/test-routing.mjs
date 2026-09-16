@@ -10,9 +10,11 @@ for (const host of ['claude', 'codex']) {
   test(`${host} drives reasoning and the other vendor handles execution`, () => {
     const run = { host_vendor: host, host_model: 'current-model', nodes: [] };
     const other = host === 'claude' ? 'codex' : 'claude';
+    const hostDefault = host === 'claude' ? 'sonnet' : 'gpt-5.6-sol';
+    const otherDefault = other === 'claude' ? 'sonnet' : 'gpt-5.6-sol';
+    // Vendor preference (who does the work) is unaffected by which model tier a stage gets.
     for (const stage of ['plan', 'setgoal', 'critique', 'gate']) {
       assert.equal(rankCandidates(run, { stage }, ['claude', 'codex'])[0].vendor, host);
-      assert.equal(selectModel(run, { stage }, host), 'current-model');
     }
     for (const stage of ['implement', 'test']) {
       assert.equal(rankCandidates(run, { stage }, ['claude', 'codex'])[0].vendor, other);
@@ -20,13 +22,35 @@ for (const host of ['claude', 'codex']) {
       assert.equal(selectModel(run, { stage }, 'codex'), 'gpt-5.6-sol');
     }
     // The peer writes the run's account of itself, so the vendor that drove the run does
-    // not get to be its own narrator. It stays reasoning work all the same: degraded back
-    // to the host it keeps the driving model rather than dropping to an execution default.
+    // not get to be its own narrator - but report is judging work, not the decisive kind,
+    // and takes the default tier like every judging stage except critique and the goal
+    // gate. Measured: judging on the host's premium model was ~40% of a run's cost while
+    // discriminating nothing.
     assert.equal(rankCandidates(run, { stage: 'report' }, ['claude', 'codex'])[0].vendor, other);
-    assert.equal(selectModel(run, { stage: 'report' }, host), 'current-model');
-    assert.equal(selectModel(run, { stage: 'report' }, other), other === 'claude' ? 'sonnet' : 'gpt-5.6-sol');
+    assert.equal(selectModel(run, { stage: 'report' }, host), hostDefault);
+    assert.equal(selectModel(run, { stage: 'report' }, other), otherDefault);
   });
 }
+
+test('only the two decisive judges - critique and the goal gate - inherit the host model', () => {
+  for (const host of ['claude', 'codex']) {
+    const run = { host_vendor: host, host_model: 'current-model' };
+    const hostDefault = host === 'claude' ? 'sonnet' : 'gpt-5.6-sol';
+    // A subgoal gate is judging work too, but not the decisive kind: default tier.
+    assert.equal(selectModel(run, { stage: 'gate', subgoal_id: 'U1' }, host), hostDefault);
+    // The goal gate is the one node that sees the request again, and stays on the host.
+    assert.equal(selectModel(run, { stage: 'gate', subgoal_id: null }, host), 'current-model');
+    // critique can reject the spec before anything is built: also stays on the host.
+    assert.equal(selectModel(run, { stage: 'critique' }, host), 'current-model');
+    // plan, setgoal, review and test never inherit the host model either way.
+    for (const stage of ['plan', 'setgoal', 'review', 'test']) {
+      assert.equal(selectModel(run, { stage }, host), hostDefault);
+    }
+    // An explicit model always wins, decisive stage or not.
+    assert.equal(selectModel(run, { stage: 'gate', subgoal_id: null }, host, 'opus'), 'opus');
+    assert.equal(selectModel(run, { stage: 'gate', subgoal_id: 'U1' }, host, 'opus'), 'opus');
+  }
+});
 
 test('premium driving models are not inherited; explicit model selection wins', () => {
   for (const [host_vendor, host_model] of [['claude', 'fable'], ['codex', 'gpt-6-astra']]) {

@@ -99,7 +99,10 @@ async function openRun(c, cwd, extra = {}) {
   return r.run_id;
 }
 
-const ok = (payload) => ({ stage_ok: true, evidence: 'e', ...payload });
+// A default so every existing fixture keeps behaving as if it had checked something -
+// the engine now refuses an accept:true gate with an empty checks[]. Tests of that rule
+// itself pass their own checks: [] to override the default.
+const ok = (payload) => ({ stage_ok: true, evidence: 'e', checks: ['ok -> looked fine'], ...payload });
 
 async function throughCritique(c, cwd, runId) {
   await c.call('graph_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
@@ -341,6 +344,68 @@ test('gate accept=false fails the node and holds back dependents', async () => {
     const nx = await c.call('graph_next', { run_id: runId, cwd });
     const ready = nx.ready.map((n) => n.node_id);
     assert.equal(ready.includes('implement:U2:1'), false, 'U2 must not start on a rejected U1');
+  }, { isolated: true });
+});
+
+// ---------- a gate cannot accept without having checked something ----------
+// Every gate in a measured run came back match_pct 92-95 - a thermometer stuck at room
+// temperature. accept:true with nothing in checks[] is a guess wearing a verdict.
+
+test('a gate that accepts with an empty checks[] fails, not the subgoal it judged', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    const f = dirty(cwd);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [f] }) });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    const v = await c.call('graph_submit', {
+      run_id: runId, cwd, node_id: 'gate:U1:1', payload: ok({ accept: true, match_pct: 95, checks: [] }),
+    });
+    assert.equal(v.stage_ok, false, 'the judging itself is what failed here');
+    assert.equal(v.state, 'failed');
+    assert.match(v.reason, /gate accepted without a check/);
+    assert.match(v.reason, /judgement with no evidence is a guess/);
+    // The gate was defective, not the work: autoReassign must not open a fresh implement
+    // attempt over a subgoal nothing was actually wrong with.
+    assert.equal(v.reassigned, undefined, 'the subgoal is not reassigned over a defective gate');
+    const st = await c.call('graph_status', { run_id: runId, cwd });
+    assert.equal(st.nodes.filter((n) => n.node_id.startsWith('implement:U1')).length, 1,
+      'no second implement attempt was opened');
+    // The ordinary path back is graph_retry - there is no way to rerun just the gate; it
+    // rebuilds the whole subgoal chain, the gate included.
+    const nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.equal(nx.state, 'blocked', 'nothing reopens on its own');
+    const rt = await c.call('graph_retry', { run_id: runId, cwd, subgoal_id: 'U1' });
+    assert.equal(rt.retried, true);
+    assert.deepEqual(rt.ready.map((n) => n.node_id), ['implement:U1:2'], 'the whole chain is rebuilt, not the gate alone');
+  }, { isolated: true });
+});
+
+test('a gate that accepts with at least one check passes', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    const f = dirty(cwd);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [f] }) });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    const v = await c.call('graph_submit', {
+      run_id: runId, cwd, node_id: 'gate:U1:1', payload: ok({ accept: true, match_pct: 95, checks: ['read a.txt -> matches acceptance'] }),
+    });
+    assert.equal(v.state, 'done');
+  }, { isolated: true });
+});
+
+test('a gate that rejects with no checks fails normally: a rejection needs no evidence of its own', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    const f = dirty(cwd);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [f] }) });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    const v = await c.call('graph_submit', {
+      run_id: runId, cwd, node_id: 'gate:U1:1', payload: ok({ accept: false, match_pct: 60, gaps: ['no runtime check'], checks: [] }),
+    });
+    assert.equal(v.stage_ok, true, 'the judging itself worked - it is the verdict that is negative');
+    assert.equal(v.state, 'failed');
+    assert.doesNotMatch(v.reason || '', /judgement with no evidence/, 'a rejection is not held to the evidence rule');
+    assert.deepEqual(v.reassigned, { target: 'subgoal', subgoal_id: 'U1', attempt: 2 }, 'a real rejection still reassigns');
   }, { isolated: true });
 });
 
@@ -1774,13 +1839,20 @@ for (const host_vendor of ['claude', 'codex']) {
     const cwd = balancedRepo();
     const c = await new Client({ CODEX_THREAD_ID: '' }).init();
     const other = host_vendor === 'claude' ? 'codex' : 'claude';
+    const hostDefault = host_vendor === 'claude' ? 'sonnet' : 'gpt-5.6-sol';
     try {
       const open = await c.call('graph_open', { request: 'r', cwd, allocation: 'balanced', host_vendor, host_model: 'driving-model' });
       const run_id = open.run_id;
-      for (const [node_id, payload] of [['plan', ok({ handoff: 'p' })], ['setgoal', ok({ spec: SPEC })], ['critique', ok({ sound: true })]]) {
+      // Only critique is decisive judging on the host model; plan and setgoal - reasoning
+      // stages that never veto anything - take the default tier.
+      for (const [node_id, payload, expectModel] of [
+        ['plan', ok({ handoff: 'p' }), hostDefault],
+        ['setgoal', ok({ spec: SPEC }), hostDefault],
+        ['critique', ok({ sound: true }), 'driving-model'],
+      ]) {
         const next = await c.call('graph_next', { run_id, cwd });
         assert.equal(next.ready[0].executor, host_vendor);
-        assert.equal(next.ready[0].model, 'driving-model');
+        assert.equal(next.ready[0].model, expectModel);
         assert.ok(next.ready[0].briefing_path.includes(run_id));
         const result = await c.call('graph_submit', { run_id, cwd, node_id, payload });
         assert.equal(result.state, 'done', JSON.stringify(result));
@@ -1880,7 +1952,9 @@ test('single vendor uses native lower model; unsupported native model fails visi
 test('the host model is selectable even when native_models omits it', async () => {
   // A driving session reports itself as e.g. "claude-opus-5[1m]" — a context variant the
   // fresh-agent picker does not list. A fresh native agent with no override inherits the
-  // host model, so plan must route to self, not block with a vendor failure.
+  // host model, so a decisive judging stage must route to self on it, not block with a
+  // vendor failure. plan is not decisive - it takes the default tier, which happens to
+  // already be declared - so critique is what actually exercises the fallback.
   const cwd = balancedRepo();
   const c = await new Client({ CODEX_THREAD_ID: '' }).init();
   try {
@@ -1888,7 +1962,14 @@ test('the host model is selectable even when native_models omits it', async () =
       host_model: 'gpt-5.6-sol[1m]', candidates: ['codex'], native_models: ['gpt-5.6-sol', 'gpt-5.6-mini'] });
     assert.equal(open.state, 'running');
     assert.equal(open.ready[0].vendor, 'self');
-    assert.equal(open.ready[0].model, 'gpt-5.6-sol[1m]');
+    assert.equal(open.ready[0].model, 'gpt-5.6-sol', 'plan takes the default tier, already declared');
+    await c.call('graph_submit', { run_id: open.run_id, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('graph_next', { run_id: open.run_id, cwd }); // assigns setgoal before it can be submitted
+    await c.call('graph_submit', { run_id: open.run_id, cwd, node_id: 'setgoal', payload: ok({ spec: SPEC }) });
+    const nx = await c.call('graph_next', { run_id: open.run_id, cwd });
+    assert.equal(nx.ready[0].stage, 'critique');
+    assert.equal(nx.ready[0].vendor, 'self');
+    assert.equal(nx.ready[0].model, 'gpt-5.6-sol[1m]', 'critique is decisive and falls back to the host model');
   } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
 });
 

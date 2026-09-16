@@ -74,7 +74,10 @@ function repo() {
   return dir;
 }
 
-const ok = (payload) => ({ stage_ok: true, evidence: 'e', ...payload });
+// A default so every existing fixture keeps behaving as if it had checked something -
+// the manager now refuses an accept:true/verified:true verdict with an empty checks[].
+// Tests of that rule itself pass their own checks: [] to override the default.
+const ok = (payload) => ({ stage_ok: true, evidence: 'e', checks: ['ok -> looked fine'], ...payload });
 
 const SHAPE = {
   acceptance: ['both modules build together'],
@@ -126,7 +129,7 @@ async function throughCritique(tm, task_id, shape = SHAPE) {
   assert.equal(v.state, 'done', JSON.stringify(v));
 }
 
-async function withTask(fn) {
+async function withTask(fn, extra) {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root }).init();
@@ -134,7 +137,7 @@ async function withTask(fn) {
   try {
     // These tests are the regression suite for driving children by hand, which is exactly what
     // child_driver 'inline' means. The default ('process') is covered by the driver tests below.
-    const open = await tm.call('tm_open', { request: 'big request', cwd, vendor: 'self', child_driver: 'inline' });
+    const open = await tm.call('tm_open', { request: 'big request', cwd, vendor: 'self', child_driver: 'inline', ...extra });
     await fn({ tm, g, cwd, root, task_id: open.task_id, open });
   } finally {
     tm.close();
@@ -363,6 +366,66 @@ test('a parent with two dependent children runs to report; the second child sees
     const fin = await tm.call('tm_status', { task_id });
     assert.equal(fin.state, 'complete');
     assert.deepEqual(fin.packages, ['P1', 'P2']);
+  });
+});
+
+// ---------- the manager's own goal gate has the same floor as the graph engine's ----------
+
+// Drive the default two-package SHAPE to the point where gate:goal:1 is ready, reusing
+// the same helpers the integrate tests use.
+async function toManagerGoalGate(tm, g, task_id) {
+  await toIntegrate(tm, g, task_id);
+  await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+}
+
+test('the manager\'s goal gate accepting at 85 fails: the number overrules the word', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await toManagerGoalGate(tm, g, task_id);
+    const v = await tm.call('tm_submit', { task_id, node_id: 'gate:goal:1', payload: ok({ accept: true, match_pct: 85 }) });
+    assert.equal(v.stage_ok, true, 'the judging itself worked');
+    assert.equal(v.accept, true, 'and the gate did say accept');
+    assert.equal(v.state, 'failed', 'the number it reported overrules the word');
+    assert.match(v.reason, /match_pct 85 below the goal threshold 90/);
+  });
+});
+
+test('tm_open({goal_threshold: 80}) lets the same 85% accept', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await toManagerGoalGate(tm, g, task_id);
+    const v = await tm.call('tm_submit', { task_id, node_id: 'gate:goal:1', payload: ok({ accept: true, match_pct: 85 }) });
+    assert.equal(v.state, 'done', 'a manager may decide the percentage is not its bar');
+  }, { goal_threshold: 80 });
+});
+
+test('tm_open({goal_threshold}) is stored on the task and reaches every child through child_opts', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root }).init();
+  try {
+    const open = await tm.call('tm_open', { request: 'r', cwd, vendor: 'self', goal_threshold: 77 });
+    const task = JSON.parse(readFileSync(join(root, open.task_id, 'task.json'), 'utf8'));
+    assert.equal(task.goal_threshold, 77);
+    assert.equal(task.child_opts.goal_threshold, 77, 'every child run is opened with the same floor');
+  } finally {
+    tm.close();
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('an accept node that says accept with no checks fails, not the package it judged', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    const v = await tm.call('tm_submit', {
+      task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90, checks: [] }),
+    });
+    assert.equal(v.stage_ok, false, 'the judging itself is what failed here');
+    assert.equal(v.state, 'failed');
+    assert.match(v.reason, /positive verdict without a check/);
+    assert.match(v.reason, /judgement with no evidence is a guess/);
   });
 });
 
