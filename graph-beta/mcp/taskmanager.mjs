@@ -114,12 +114,15 @@ S means one graph run in one worktree can carry the whole request. L means it sp
 Each package becomes one graph run in its own worktree. A package with no deps branches from the current HEAD; a package with deps branches from its first dependency's delivered branch with the others merged in, so it builds on what they delivered - not on stubs. Two packages that touch the same path will conflict at integration: split by ownership, not by phase. A dependency means the package needs another's delivered result; it receives that package's report as context and starts from its tree. Every package must be size S on its own - if one still needs splitting, the shape is wrong. Two to six packages is the usual range.`,
   critique: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "sound": true|false, "blocking": ["..."], "problems": ["..."], "handoff": "...", "evidence": "..."}
 Attack the shape: packages that overlap in touches[], a dependency the brief does not actually need, a package too large to be one run, a goal-level criterion no integration step could check, and - above all - a request that was S sized as L. Set sound=false only for defects in "blocking" that make the packages impossible to run or impossible to integrate. Everything else is a problem, carried forward as advice.`,
-  accept: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "accept": true|false, "match_pct": 0-100, "gaps": ["what the package did not deliver"], "observations": ["weaknesses that do not block"], "reason": "...", "evidence": "..."}
-You are the judge, not the actor. The child run's own goal gate and report are below; judge them against THIS package's acceptance, which the child never saw in full. A child that passed its own gate but delivered less than the package asked for is a gap here. Absent evidence is a gap, not a pass.`,
+  accept: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "accept": true|false, "match_pct": 0-100, "checks": ["<what you verified in the worktree or the report, and what it showed>"], "gaps": ["what the package did not deliver"], "observations": ["weaknesses that do not block"], "reason": "...", "evidence": "..."}
+You are the judge, not the actor. The child run's own goal gate and report are below; judge them against THIS package's acceptance, which the child never saw in full. A child that passed its own gate but delivered less than the package asked for is a gap here. Absent evidence is a gap, not a pass.
+accept:true with an empty checks[] is refused by the engine - a judgement with no evidence is a guess.`,
   integrate: `Return JSON: {"stage_ok": true|false, "skills_used": ["<skill or none>"], "verified": true|false, "checks": ["command -> observed output"], "evidence": "..."}
-The package branches are already merged into the integration worktree named below - the manager did that and recorded each merge commit. Your job is what no package could do alone: run the goal-level checks the shape's acceptance implies against the combined tree, and read the seams between packages. stage_ok=false when a check could not run at all. verified=false when the combined tree fails a check the packages passed separately. Do not fix package work here: a failing seam is a gap for the gate and a repackage for the manager.`,
-  'gate:goal': `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "accept": true|false, "match_pct": 0-100, "gaps": ["what blocks acceptance"], "observations": ["weaknesses that do not block"], "spec_drift": ["where the shape asked for less than the request did"], "reason": "...", "evidence": "..."}
-You are the judge, not the actor, and the only node that sees the original request again. Judge the integrated result against BOTH the goal-level acceptance and the REQUEST as written. Anything the request asked for that no package delivered and no criterion named belongs in "spec_drift". Absent evidence is a gap, not a pass.`,
+The package branches are already merged into the integration worktree named below - the manager did that and recorded each merge commit. Your job is what no package could do alone: run the goal-level checks the shape's acceptance implies against the combined tree, and read the seams between packages. stage_ok=false when a check could not run at all. verified=false when the combined tree fails a check the packages passed separately. Do not fix package work here: a failing seam is a gap for the gate and a repackage for the manager.
+verified:true with an empty checks[] is refused by the engine - a judgement with no evidence is a guess.`,
+  'gate:goal': `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "accept": true|false, "match_pct": 0-100, "checks": ["<what you verified and what it showed>"], "gaps": ["what blocks acceptance"], "observations": ["weaknesses that do not block"], "spec_drift": ["where the shape asked for less than the request did"], "reason": "...", "evidence": "..."}
+You are the judge, not the actor, and the only node that sees the original request again. Judge the integrated result against BOTH the goal-level acceptance and the REQUEST as written. Anything the request asked for that no package delivered and no criterion named belongs in "spec_drift". Absent evidence is a gap, not a pass.
+accept:true with an empty checks[] is refused by the engine - a judgement with no evidence is a guess.`,
   report: `Return JSON: {"stage_ok": true, "handoff": "<the final report>", "evidence": "..."}
 Synthesize from the node results below only: which packages ran, what each delivered, what the integration showed, what the gate said. State plainly what was not done and why.`,
 };
@@ -149,6 +152,9 @@ function createTask(a) {
     // false turns method off entirely; an object overrides STAGE_SKILLS per stage.
     stage_skills: a.skills === false ? false : (a.skills && typeof a.skills === 'object' ? a.skills : null),
     max_retries: Number.isInteger(a.max_retries) ? a.max_retries : 2,
+    // The floor the manager's own goal gate's match_pct must clear - same meaning, same
+    // default, as the graph engine's run.goal_threshold.
+    goal_threshold: Number.isInteger(a.goal_threshold) ? a.goal_threshold : 90,
     // Everything a child run needs to route the way the parent's session routes.
     child_opts: {
       vendor: a.vendor || 'auto',
@@ -162,6 +168,7 @@ function createTask(a) {
       sandbox: a.sandbox || null,
       max_retries: Number.isInteger(a.max_retries) ? a.max_retries : 2,
       auto_reassign: a.auto_reassign !== false,
+      goal_threshold: Number.isInteger(a.goal_threshold) ? a.goal_threshold : 90,
     },
     created_at: Date.now(),
     spec: null,
@@ -758,10 +765,26 @@ function composeTaskPrompt(task, n) {
 
 // ---------- verdicts ----------
 
-function succeeded(n, result) {
+function succeeded(task, n, result) {
   if (result.stage_ok !== true) return false;
   const f = VERDICT[n.stage];
-  return f ? result[f] === true : true;
+  if (!f) return true;
+  if (result[f] !== true) return false;
+  // The manager's own goal gate is held to the same floor the graph engine holds its
+  // goal gate to: accept:true at 40% match is reporting a partial result as a pass.
+  // There is no per-package gate in the manager - every 'gate' node here IS the goal gate.
+  if (n.stage === 'gate' && Number.isFinite(result.match_pct)) {
+    const floor = Number.isInteger(task.goal_threshold) ? task.goal_threshold : 90;
+    if (result.match_pct < floor) return false;
+  }
+  // A rejection needs no evidence of its own. A positive verdict does: dispatch's accept
+  // is computed by the manager itself from the folded child and is exempt, but gate,
+  // accept and integrate are judgements a fresh agent returned, and accept:true/verified:true
+  // with nothing in checks[] is a guess wearing a verdict.
+  if (['gate', 'accept', 'integrate'].includes(n.stage) && !(Array.isArray(result.checks) && result.checks.length > 0)) {
+    return false;
+  }
+  return true;
 }
 
 function verdict(task, n) {
@@ -795,7 +818,22 @@ function finish(task, n, result) {
     result = { ...result, integration_branch: n.integration.branch, integration_cwd: n.integration.cwd,
       merged: (n.integration.merged || []).map((m) => `${m.package} ${m.branch} -> ${m.commit}`) };
   }
-  n.state = succeeded(n, result) ? 'done' : 'failed';
+  const f = VERDICT[n.stage];
+  const floor = Number.isInteger(task.goal_threshold) ? task.goal_threshold : 90;
+  const belowFloor = n.stage === 'gate' && f && result[f] === true
+    && Number.isFinite(result.match_pct) && result.match_pct < floor;
+  const noEvidence = ['gate', 'accept', 'integrate'].includes(n.stage) && f && result[f] === true
+    && !(Array.isArray(result.checks) && result.checks.length > 0);
+  n.state = succeeded(task, n, result) ? 'done' : 'failed';
+  if (n.state === 'failed' && belowFloor) {
+    // The judging itself worked - it is the number that overrules the word, exactly as
+    // the graph engine's own goal gate is held to its floor.
+    result = { ...result, reason: `match_pct ${result.match_pct} below the goal threshold ${floor}` };
+  } else if (n.state === 'failed' && noEvidence) {
+    // A rejection needs no evidence of its own; a positive verdict does. This is the
+    // manager's own judging failing to do its job, not a verdict on the work it judged.
+    result = { ...result, stage_ok: false, reason: `${n.stage} returned a positive verdict without a check; a judgement with no evidence is a guess` };
+  }
   n.result = result;
   n.finished_at = Date.now();
 
@@ -878,6 +916,7 @@ const TOOLS = [
         model: { type: 'string' }, policy: { type: 'object' }, candidates: { type: 'array', items: { type: 'string' } },
         skills: { description: 'Method per manager stage, overriding the defaults: {"shape": ["develop:domain-driven-design"], "critique": []}. false runs every stage on its contract alone. A skill named here must be analytic and non-dialogic - a node runs headless and cannot answer a skill that asks it something.' },
         sandbox: { type: 'string' }, max_retries: { type: 'number' },
+        goal_threshold: { type: 'integer', description: 'default 90: the manager\'s own goal gate must report match_pct at or above this to accept, and it is passed through to every child run as its own goal_threshold. A gate that says accept with 40% match is reporting a partial result as a pass. 0 accepts on the verdict alone.' },
       },
       required: ['request', 'cwd'],
     },

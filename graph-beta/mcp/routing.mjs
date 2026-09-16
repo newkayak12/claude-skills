@@ -17,8 +17,16 @@ export function capacityFailure(report, stderr = '') {
 }
 export function selectModel(run, node, vendor, explicit) {
   if (explicit) return explicit;
-  const execution = EXECUTION_STAGES.has(node.stage);
-  if (!execution && vendor === run.host_vendor && run.host_model && !isPremiumModel(run.host_model)) return run.host_model;
+  // Measured, not assumed: a manager run's round-1 cost split was driving session ~55%,
+  // judging on the host's premium model ~40%, execution ~3% - and that 40% was buying
+  // nothing. Every gate in the same run returned match_pct within three points of the
+  // others, a thermometer stuck at room temperature. Only two judges actually move a run:
+  // critique, which can reject the spec before anything is built, and the goal gate, the
+  // one node that sees the request again and can reject the assembled result. Every other
+  // judging stage - a subgoal gate, review, test, report, plan, setgoal - takes the
+  // default tier; it was never the discriminating one.
+  const decisive = node.stage === 'critique' || (node.stage === 'gate' && !node.subgoal_id);
+  if (decisive && vendor === run.host_vendor && run.host_model && !isPremiumModel(run.host_model)) return run.host_model;
   return DEFAULT_MODELS[vendor] || null;
 }
 

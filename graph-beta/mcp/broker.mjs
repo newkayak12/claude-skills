@@ -574,6 +574,14 @@ function nodeSucceeded(run, n, result) {
     const floor = Number.isInteger(run.goal_threshold) ? run.goal_threshold : 90;
     if (result.match_pct < floor) return false;
   }
+  // A rejection needs no evidence - "it does not meet the bar" stands on its own. An
+  // acceptance does: today every gate in a run returned match_pct within a few points of
+  // the others, a thermometer stuck at room temperature. accept:true with nothing in
+  // checks[] is a guess wearing a verdict, and the engine refuses it the same way a
+  // missing verdict field is refused above.
+  if (n.stage === 'gate' && result.accept === true && !(Array.isArray(result.checks) && result.checks.length > 0)) {
+    return false;
+  }
   return true;
 }
 
@@ -689,7 +697,18 @@ function autoReassign(run, n) {
 
 function finishNode(run, n, result, vendorName) {
   delete n.recovery; // historical interruptions remain in n.interruptions
+  // A gate that says accept with nothing in checks[] did not fail the work - it failed to
+  // do its own job. That is a defect in the judging, not a verdict on the subgoal, so it
+  // must read as one and it must not autoReassign the subgoal the way a real rejection
+  // does (autoReassign skips a node whose stage_ok did not come back true - see below).
+  // The gate itself is retried the ordinary way: graph_retry({subgoal_id}) - the engine has
+  // no path that reruns a gate alone, so that rebuilds the whole chain, gate included.
+  const gateNoEvidence = n.stage === 'gate' && result.accept === true
+    && !(Array.isArray(result.checks) && result.checks.length > 0);
   n.state = nodeSucceeded(run, n, result) ? 'done' : 'failed';
+  if (gateNoEvidence && n.state === 'failed') {
+    result = { ...result, stage_ok: false, reason: 'gate accepted without a check; a judgement with no evidence is a guess' };
+  }
   n.result = result;
   n.vendor = vendorName;
   n.finished_at = Date.now();
