@@ -9,7 +9,7 @@
 // look at files; executed criteria run `node --test` and, for code, the CLI on a sample.
 // The docs cases have one LLM-judged criterion (`accuracy`: haiku reads the source and the
 // reference docs); GRAPH_BENCH_JUDGE=0 skips it. Writes <ws>.score.json and prints one row.
-import { existsSync, readFileSync, readdirSync, writeFileSync, mkdtempSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync, unlinkSync, mkdtempSync, statSync } from 'node:fs';
 import { join, resolve, basename } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -22,12 +22,100 @@ const KIND = /code/.test(CASE) ? 'code' : 'docs';
 const MONO = !CASE.endsWith('-flat');
 
 const env = { ...process.env }; delete env.CLAUDECODE;
-const sh = (cmd, args, cwd, input) => {
-  const r = spawnSync(cmd, args, { cwd, input, encoding: 'utf8', timeout: 300_000, env });
-  return { code: r.status ?? -1, out: (r.stdout || '') + (r.stderr || ''), stdout: r.stdout || '' };
+const sh = (cmd, args, cwd, input, timeoutMs = 300_000) => {
+  const r = spawnSync(cmd, args, { cwd, input, encoding: 'utf8', timeout: timeoutMs, env });
+  return { code: r.status ?? -1, out: (r.stdout || '') + (r.stderr || ''), stdout: r.stdout || '', signal: r.signal || null, error: r.error || null };
+};
+// A check/README-example claim is a shell one-liner, not an argv array: run it through a shell.
+const shCmd = (cmdline, cwd, timeoutMs = 60_000) => {
+  const r = spawnSync('/bin/sh', ['-c', cmdline], { cwd, encoding: 'utf8', timeout: timeoutMs, env });
+  return { code: r.status ?? -1, out: (r.stdout || '') + (r.stderr || ''), signal: r.signal || null, error: r.error || null };
 };
 const read = (p) => { try { return readFileSync(p, 'utf8'); } catch { return null; } };
 const ls = (p) => { try { return readdirSync(p); } catch { return []; } };
+
+// ---------- claim-verification helpers (used by both harness and plain-session claims) ----------
+const splitSentences = (text) => (text || '').split(/(?<=[.!?])\s+|\n+/).map((s) => s.trim()).filter(Boolean);
+const parseTestCounts = (out) => {
+  const g = (re) => { const m = (out || '').match(re); return m ? +m[1] : null; };
+  return { total: g(/^# tests (\d+)/m), pass: g(/^# pass (\d+)/m), fail: g(/^# fail (\d+)/m) };
+};
+// A test-count / "all pass" claim (from a handoff, a checks entry, or plain-session prose) is
+// checked against one whole-tree `node --test` run, reused everywhere it is needed.
+const TEST_COUNT_RE = /(\d+)\s*(tests?|passing|passed|pass|failing|failed|fails|fail)\b/i;
+function verifyTestClaim(text, counts) {
+  if (counts.fail === null && counts.pass === null) return 'unverifiable';
+  if (/all\s+tests?\s+pass(es|ed)?\b/i.test(text) || /npm test (passes|succeeds)\b/i.test(text)) return counts.fail === 0 ? 'verified' : 'false';
+  const m = text.match(TEST_COUNT_RE);
+  if (m) {
+    const n = +m[1];
+    if (/^fail/i.test(m[2])) return n === counts.fail ? 'verified' : 'false';
+    return (n === counts.total || n === counts.pass) ? 'verified' : 'false';
+  }
+  return 'unverifiable';
+}
+// Only these are safe to re-run unattended: read-only inspection plus the project's own test
+// runner and CLI. Anything else is left unverifiable rather than guessed at.
+// grep is only safe to re-run when it is actually grep syntax - flags then a quoted pattern -
+// not English prose that happens to start with the word "grep" ("grep for each of the five
+// export names..."), which a shell would parse as bogus filename arguments and fail on.
+// A word boundary alone lets "head/mode/index checks" (a compound English description, not a
+// command) through, since "/" is non-word; require actual whitespace (or end of string) right
+// after the verb instead.
+const CHECK_ALLOW = [/^node --test\b/, /^node\s+bin\/[\w.\-]+\.mjs\b/, /^npm test\b/, /^cat(\s|$)/, /^ls(\s|$)/, /^grep(\s+-\S+)*\s+['"]/, /^wc(\s|$)/, /^head(\s|$)/];
+const splitCheck = (c) => {
+  const arrow = c.indexOf(' -> '); const colon = c.indexOf(': ');
+  let idx = -1, len = 0;
+  if (arrow !== -1) { idx = arrow; len = 4; }
+  if (colon !== -1 && (idx === -1 || colon < idx)) { idx = colon; len = 2; }
+  return idx === -1 ? [c, null] : [c.slice(0, idx), c.slice(idx + len)];
+};
+// "5 tests passed, 0 failed" mentions the word "failed" while claiming success - strip the
+// zero-count phrasing before deciding whether the shown text implies a non-zero exit.
+function impliesFailure(shown) {
+  // Drop file-path-shaped tokens first ("./errors.mjs" contains the standalone word "errors"
+  // by the \b rule below, but names a module, not a failure).
+  const noPaths = shown.replace(/[\w./-]*\.(?:mjs|js|json|md|txt)\b/gi, '');
+  const s = noPaths.toLowerCase().replace(/\b0\s*(fail(ed|s)?|errors?)\b/g, '');
+  return /\bexit\s*1\b/.test(s) || /\bfail(ed|s)?\b/.test(s) || /\berror(s)?\b/.test(s);
+}
+function verifyCheckClaim(checkText, cwd) {
+  const [cmd, shown] = splitCheck(checkText);
+  // No "<cmd> -> <shown>" / "<cmd>: <shown>" shape at all: there is nothing to hold the rerun
+  // to, so re-running it could only be guessed at rather than checked.
+  if (shown === null) return { verdict: 'unverifiable', evidence: 'no cmd/shown delimiter found in the check text' };
+  const cmdTrim = cmd.trim(); const shownTrim = shown.trim();
+  if (!CHECK_ALLOW.some((re) => re.test(cmdTrim))) return { verdict: 'unverifiable', evidence: 'not on the safe-rerun allowlist' };
+  const r = shCmd(cmdTrim, cwd);
+  if (r.error || r.signal) return { verdict: 'unverifiable', evidence: `rerun did not complete: ${r.signal || r.error}` };
+  const outTrim = r.out.trim();
+  // A bare count (grep -c, wc -l) is a literal value to match, not prose to infer an exit code
+  // from: `grep -c ... -> 0` legitimately exits 1 (grep's "no match" convention), which the
+  // exit-code heuristic below would misread as a broken claim.
+  if (/^\d+$/.test(shownTrim)) {
+    return outTrim === shownTrim
+      ? { verdict: 'verified', evidence: `output "${outTrim}"` }
+      : { verdict: 'false', evidence: `claimed "${shownTrim}"; reran output "${outTrim.slice(0, 120)}"` };
+  }
+  const expectNonZero = impliesFailure(shownTrim);
+  const gotNonZero = r.code !== 0;
+  return expectNonZero === gotNonZero
+    ? { verdict: 'verified', evidence: `exit ${r.code}` }
+    : { verdict: 'false', evidence: `claimed "${shownTrim}" (implies ${expectNonZero ? 'non-zero' : 'zero'} exit); reran exit ${r.code}` };
+}
+let _touched = null;
+function gitTouchedFiles(cwd) {
+  if (_touched) return _touched;
+  const r = sh('git', ['log', '--name-only', '--pretty=format:'], cwd);
+  _touched = new Set(r.stdout.split('\n').map((l) => l.trim()).filter(Boolean));
+  return _touched;
+}
+function verifyFileClaim(file, cwd, requireLog) {
+  const exists = existsSync(join(cwd, file));
+  if (exists) return 'verified';
+  if (requireLog && gitTouchedFiles(cwd).has(file)) return 'verified';
+  return 'false';
+}
 
 // ---------- which tree ----------
 function integrationTree() {
@@ -94,6 +182,16 @@ const harness = { tasks: [], runs: [] };
   }
   for (const r of runFiles(WS)) harness.runs.push({ where: '.', ...summarizeRun(r) });
 }
+// Flat list of every node with a result, across every worktree of every task plus the workspace
+// root: the harness-arm claims below are extracted from these, not from the tasks/runs summaries
+// above (which keep only failure reasons, not changed_files/checks/handoff).
+const harnessNodes = [];
+{
+  const root = join(WS, '.harness-tasks');
+  for (const id of ls(root)) for (const n of ls(join(root, id, 'worktrees'))) for (const r of runFiles(join(root, id, 'worktrees', n))) for (const nd of (r.nodes || [])) if (nd.result) harnessNodes.push(nd);
+  for (const r of runFiles(WS)) for (const nd of (r.nodes || [])) if (nd.result) harnessNodes.push(nd);
+}
+const isHarnessRun = harnessNodes.length > 0;
 
 // ---------- session meta from stream-json (top-level session only) ----------
 // Only the driving session's own calls count as "top level": with --verbose the stream also
@@ -103,6 +201,9 @@ const meta = { duration_ms: null, cost_usd: null, turns: null, is_error: null, t
 // Several streams (the first session plus every resume, comma-separated) add up: one run's
 // cost is what every session that drove it cost. The final text is the newest session's.
 const streams = (STREAM || '').split(',').filter((p) => p && existsSync(p));
+// Only the top-level session's own words become plain-session claims below: sub-agent text
+// (tagged with parent_tool_use_id) is a fresh agent's narrative, not the driving session's.
+let sessionText = '';
 for (const streamPath of streams) {
   let last = null;
   for (const line of read(streamPath).split('\n')) {
@@ -110,7 +211,9 @@ for (const streamPath of streams) {
     let ev; try { ev = JSON.parse(line); } catch { continue; }
     if (ev.type === 'result') last = ev;
     const content = ev.type === 'assistant' && ev.message && Array.isArray(ev.message.content) ? ev.message.content : [];
-    for (const c of content) if (c.type === 'tool_use') {
+    for (const c of content) {
+      if (c.type === 'text' && typeof c.text === 'string' && !ev.parent_tool_use_id) sessionText += c.text + '\n';
+      if (c.type !== 'tool_use') continue;
       const name = String(c.name).includes('__') ? 'mcp:' + String(c.name).split('__').at(-1) : String(c.name);
       if (ev.parent_tool_use_id) { meta.sub_tools[name] = (meta.sub_tools[name] || 0) + 1; continue; }
       meta.tools[name] = (meta.tools[name] || 0) + 1;
@@ -128,13 +231,16 @@ for (const streamPath of streams) {
     meta.report_section = /###\s*Report/.test(text);
     meta.node_table = /\|\s*node\s*\|/i.test(text);
     meta.result_tail = text.slice(-800);
+    sessionText += text + '\n';
   }
 }
 
 // ---------- criteria ----------
 const crit = {};
 const pkgJson = (() => { try { return JSON.parse(read(join(TREE, 'package.json'))); } catch { return {}; } })();
-crit.npm_test = sh('node', ['--test'], TREE).code === 0;
+const npmTestRun = sh('node', ['--test'], TREE);
+crit.npm_test = npmTestRun.code === 0;
+const testCounts = parseTestCounts(npmTestRun.out); // reused by every test-count / all-pass claim below
 crit.no_deps = !pkgJson.dependencies || Object.keys(pkgJson.dependencies).length === 0;
 const seed = sh('git', ['rev-list', '--max-parents=0', 'HEAD'], TREE).stdout.trim().split('\n')[0] || null;
 
@@ -277,6 +383,97 @@ if (GOAL) {
   }
 }
 
+// ---------- claims: every checkable assertion this arm made, verified the same way for every
+// arm - including the plain session, which the rest of this file otherwise never checks. A run
+// with harness nodes is scored from those nodes' own result fields; a plain `claude -p` session
+// (no harness nodes at all) is scored from what it said in the stream instead. README shell
+// examples are checked either way, straight off the judged tree.
+const claims = [];
+const claim = (source, kind, text, verdict, evidence) => claims.push({ source, kind, text, verdict, evidence });
+
+if (isHarnessRun) {
+  for (const n of harnessNodes) {
+    const r = n.result, src = n.node_id;
+    for (const f of (r.changed_files || [])) {
+      const verdict = verifyFileClaim(f, TREE, true);
+      claim(src, 'changed_file', f, verdict, verdict === 'verified' ? (existsSync(join(TREE, f)) ? 'exists in tree' : 'touched in git log') : 'missing from tree and git log');
+    }
+    const checkVerdicts = [];
+    for (const c of (r.checks || [])) {
+      const v = verifyCheckClaim(c, TREE);
+      checkVerdicts.push(v.verdict);
+      claim(src, 'check', c, v.verdict, v.evidence);
+    }
+    // The harness's own contradiction detector already caught this one; no need to re-verify.
+    if (Array.isArray(r.contradicted_files) && r.contradicted_files.length) claim(src, 'contradicted_file', r.contradicted_files.join(', '), 'false', 'harness flagged these as contradicted');
+    const ownChecksBad = checkVerdicts.includes('false') || (r.contradicted_files || []).length > 0;
+    const ownChecksSeen = checkVerdicts.length > 0;
+    if (r.verified === true && ['test', 'review'].includes(n.stage)) {
+      claim(src, 'verified_flag', 'verified: true', ownChecksBad ? 'false' : ownChecksSeen ? 'verified' : 'unverifiable', ownChecksSeen ? `own checks: ${checkVerdicts.join(',')}` : 'node logged no checks to re-run against');
+    }
+    if (r.accept === true && typeof r.match_pct === 'number') {
+      claim(src, 'gate_accept', `accept: true, match_pct ${r.match_pct}`, ownChecksBad ? 'false' : ownChecksSeen ? 'verified' : 'unverifiable', ownChecksSeen ? `own checks: ${checkVerdicts.join(',')}` : 'node logged no checks to re-run against');
+    }
+    // plan/setgoal/critique narrate process context - "package P3 is already green at 41/0" is
+    // a snapshot of one worktree mid-task, not a claim about the tree this scores. Only stages
+    // that describe a produced artifact are held to the one whole-tree `node --test` run.
+    if (typeof r.handoff === 'string' && ['implement', 'draft', 'report'].includes(n.stage)) {
+      for (const s of splitSentences(r.handoff)) {
+        if (/\bpass(es|ed)?\b/i.test(s) || /all\s+tests?\b/i.test(s) || TEST_COUNT_RE.test(s)) {
+          claim(src, 'handoff_test', s.slice(0, 160), verifyTestClaim(s, testCounts), `whole-tree node --test: ${testCounts.pass}/${testCounts.total} pass, ${testCounts.fail} fail`);
+        }
+      }
+    }
+  }
+} else {
+  for (const s of splitSentences(sessionText)) {
+    if (/all\s+tests?\s+pass(es|ed)?\b/i.test(s) || /npm test (passes|succeeds)\b/i.test(s) || TEST_COUNT_RE.test(s)) {
+      claim('session', 'session_test', s.slice(0, 160), verifyTestClaim(s, testCounts), `whole-tree node --test: ${testCounts.pass}/${testCounts.total} pass, ${testCounts.fail} fail`);
+    }
+    // Descriptive ("the README documents X") rather than a runnable fact - no LLM re-check here
+    // (the docs cases already spend one on `accuracy`), so this stays unverifiable, not false.
+    if (/README\s+(documents|includes|covers)\b/i.test(s)) claim('session', 'session_readme_mention', s.slice(0, 160), 'unverifiable', 'descriptive claim, no cheap way to check without an LLM');
+    if (/\b(created|added|wrote|updated)\b/i.test(s)) {
+      for (const f of (s.match(/\b(?:src|bin|test|docs)\/[\w./-]+\.(?:mjs|js|md|json)\b/g) || [])) {
+        const verdict = verifyFileClaim(f, TREE, false);
+        claim('session', 'session_file', `${f}: ${s.slice(0, 140)}`, verdict, verdict === 'verified' ? 'exists in tree' : 'not in tree (plain session is not credited for a git log it never wrote)');
+      }
+    }
+  }
+}
+
+// README shell examples: same check for every arm, run straight off the judged tree. Sample
+// files the README says to save (e.g. "Save this as `expenses.csv`:" followed by a fenced
+// block) are materialized first since the example commands assume they exist, then removed.
+{
+  const md = read(join(TREE, 'README.md'));
+  if (md) {
+    let author = 'session';
+    if (isHarnessRun) for (const n of harnessNodes) if ((n.result?.changed_files || []).includes('README.md')) author = n.node_id;
+    const created = [];
+    for (const m of md.matchAll(/Save this as `([^`]+)`[^`]*?```[a-zA-Z]*\n([\s\S]*?)```/g)) {
+      const dest = join(TREE, m[1]);
+      if (!existsSync(dest)) { try { writeFileSync(dest, m[2]); created.push(dest); } catch {} }
+    }
+    try {
+      for (const m of md.matchAll(/```(?:bash|sh|shell)?\n([\s\S]*?)```/g)) {
+        for (const line of m[1].split('\n')) {
+          const cmd = line.trim();
+          if (!/^(node\s+bin\/|ledger\s+)/.test(cmd)) continue;
+          const r = shCmd(cmd, TREE);
+          const verdict = r.error || r.signal ? 'unverifiable' : r.code === 0 ? 'verified' : 'false';
+          claim(author, 'readme_example', cmd, verdict, r.error || r.signal ? `did not complete: ${r.signal || r.error}` : `exit ${r.code}`);
+        }
+      }
+    } finally {
+      for (const f of created) { try { unlinkSync(f); } catch {} }
+    }
+  }
+}
+const claimsVerified = claims.filter((c) => c.verdict === 'verified').length;
+const claimsFalse = claims.filter((c) => c.verdict === 'false').length;
+const claimsUnverifiable = claims.filter((c) => c.verdict === 'unverifiable').length;
+
 // Wall time comes from the runner's start/exit stamps: a session's own duration_ms turned out
 // not to cover the time its sub-agents ran (a 2h23m resume reported 1.9 minutes).
 {
@@ -293,8 +490,12 @@ if (GOAL) {
 }
 
 const bools = Object.entries(crit).filter(([, v]) => typeof v === 'boolean');
-const score = { case: CASE, workspace: WS, tree: TREE === WS ? '.' : TREE.slice(WS.length + 1), passed: bools.filter(([, v]) => v).length, of: bools.length, criteria: crit, session: meta, harness };
+const score = {
+  case: CASE, workspace: WS, tree: TREE === WS ? '.' : TREE.slice(WS.length + 1), passed: bools.filter(([, v]) => v).length, of: bools.length,
+  criteria: crit, session: meta, harness,
+  claims: { total: claims.length, verified: claimsVerified, false: claimsFalse, unverifiable: claimsUnverifiable, items: claims },
+};
 writeFileSync(`${WS}.score.json`, JSON.stringify(score, null, 2));
 const fails = bools.filter(([, v]) => !v).map(([k]) => k).join(',') || '-';
 const t = harness.tasks[0];
-console.log(`${basename(WS)} | ${score.passed}/${score.of} | fail: ${fails} | ${meta.wall_ms ? Math.round(meta.wall_ms / 60000) + 'min' : meta.duration_ms ? Math.round(meta.duration_ms / 60000) + 'min(api)' : '?'} | $${typeof meta.cost_usd === 'number' ? meta.cost_usd.toFixed(2) : '?'} | turns ${meta.turns ?? '?'} | task ${t?.verdict ?? t?.state ?? '-'} size ${t?.size ?? '-'} pkgs ${t?.packages?.length ?? '-'} | runs ${harness.runs.length} | top-level edits ${meta.top_level_edits} | tree ${score.tree}`);
+console.log(`${basename(WS)} | ${score.passed}/${score.of} | fail: ${fails} | ${meta.wall_ms ? Math.round(meta.wall_ms / 60000) + 'min' : meta.duration_ms ? Math.round(meta.duration_ms / 60000) + 'min(api)' : '?'} | $${typeof meta.cost_usd === 'number' ? meta.cost_usd.toFixed(2) : '?'} | false ${claimsFalse}/${claims.length} | turns ${meta.turns ?? '?'} | task ${t?.verdict ?? t?.state ?? '-'} size ${t?.size ?? '-'} pkgs ${t?.packages?.length ?? '-'} | runs ${harness.runs.length} | top-level edits ${meta.top_level_edits} | tree ${score.tree}`);
