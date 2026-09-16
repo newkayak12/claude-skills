@@ -1,0 +1,5 @@
+{
+  "name": "@lintcfg/codes",
+  "type": "module",
+  "main": "src/index.mjs"
+}

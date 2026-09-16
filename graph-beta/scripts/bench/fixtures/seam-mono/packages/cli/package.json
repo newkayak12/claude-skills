@@ -1,0 +1,5 @@
+{
+  "name": "@lintcfg/cli",
+  "type": "module",
+  "main": "src/index.mjs"
+}
