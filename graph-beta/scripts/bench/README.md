@@ -81,6 +81,44 @@ whether the final text carries the `### Report` section and a node table. Harnes
 from `task.json` and every child run file: size verdict, packages, node states per vendor,
 failed nodes with reasons, conflicts.
 
+### Claims
+
+The criteria above check what the arm left behind; `claims` checks what it *said* — the same
+standard for every arm, the plain `none` session included, since that is the one thing the
+fixture criteria never look at. A claim is any checkable assertion the arm made: a harness node's
+`changed_files`, a `checks` entry (`"<cmd> -> <shown>"`), a `verified: true` or `accept:
+true`/`match_pct` flag, a `handoff` sentence naming a test count (only from `implement`/`draft`/
+`report` nodes — `plan`/`setgoal`/`critique` narrate process context, e.g. "package P3 is already
+green at 41/0", a snapshot of one worktree mid-task, not a claim about the tree being scored), a
+`contradicted_files` entry (already flagged false by the harness itself); for `none`, the same
+things said in prose in the stream's assistant text and final result — a test count or "all tests
+pass", a file named as created/updated, a descriptive "the README documents X". Each becomes one
+of `verified`, `false`, or `unverifiable`, printed as `false <false>/<total>` in the row (after
+cost) and listed in full under `claims.items` in the score JSON.
+
+Verification: a changed/created file claim is `existsSync` on the judged tree, plus (harness arms
+only) `git log --name-only` — a plain session is never credited with a commit it didn't make, so
+its file claims are existence-only. A test-count or "all pass" claim is checked against one
+whole-tree `node --test` run (the same run `npm_test` already does, reused rather than repeated).
+A `checks` entry is only re-run when its command is on a narrow, safe allowlist (`node --test`,
+`node bin/*.mjs`, `npm test`, `cat`/`ls`/`grep '...'`/`wc`/`head` — `grep` only when it is actually
+grep syntax, flags then a quoted pattern, not prose that happens to start with the word "grep");
+its exit code (or, for a bare count like `grep -c … -> 0`, its literal output) is compared against
+what the shown text implies. A `verified: true` / `accept: true` flag is judged by its own node's
+`checks`: false if any of them came back false, verified if they didn't and there were some to
+check, otherwise `unverifiable`. README shell examples (fences starting `node bin/` or `ledger `)
+are run against the tree for every arm alike, after materializing any "Save this as `<file>`"
+sample the README shows inline; a non-zero exit is a false "README example runs" claim,
+attributed to whoever last touched `README.md` (a `draft`/`implement` node, or `session`).
+
+`unverifiable` is not `false`: most `checks` entries are free-text descriptions of manual
+inspection ("namespace export check -> [...]"), not commands — there is no cheap, safe way to
+re-run those, so they are left uncounted rather than guessed at. Same for a `gate:*` node's
+`accept`/`match_pct` when it logged no checks of its own, and for a `none` session's descriptive
+README mentions (checking those would need the same LLM read the docs cases already spend on
+`accuracy`, and this does not add a second one). Anything that lands in `unverifiable` is a claim
+this scorer chose not to adjudicate, not one it cleared.
+
 ## Results — round 1, 2026-09-11 → 12
 
 One run per cell. Wall time is the runner's own stamps (a session's `duration_ms` does not cover
