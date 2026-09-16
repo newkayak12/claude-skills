@@ -10,7 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, appendFileSync, readFileSync, rmSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, appendFileSync, readFileSync, rmSync, existsSync, readdirSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -132,7 +132,9 @@ async function withTask(fn) {
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root }).init();
   const g = await new Client(BROKER).init();
   try {
-    const open = await tm.call('tm_open', { request: 'big request', cwd, vendor: 'self' });
+    // These tests are the regression suite for driving children by hand, which is exactly what
+    // child_driver 'inline' means. The default ('process') is covered by the driver tests below.
+    const open = await tm.call('tm_open', { request: 'big request', cwd, vendor: 'self', child_driver: 'inline' });
     await fn({ tm, g, cwd, root, task_id: open.task_id, open });
   } finally {
     tm.close();
@@ -707,5 +709,161 @@ test('skills: false runs every stage on its contract alone, and an override repl
     tm.close();
     rmSync(cwd, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// ---------- child driver processes ----------
+
+// Records what the manager spawned, then exits without driving anything: a driver that dies with
+// the run still open is exactly the case the fold has to survive.
+const FAKE_DRIVER = `
+import { writeFileSync, fstatSync } from 'node:fs';
+let stdin_fifo = 'unreadable';
+try { stdin_fifo = fstatSync(0).isFIFO(); } catch { /* keep the marker */ }
+const out = process.env.FAKE_DRIVER_OUT;
+if (out) {
+  writeFileSync(out, JSON.stringify({
+    argv: process.argv.slice(2),
+    cwd: process.cwd(),
+    claudecode: process.env.CLAUDECODE === undefined ? null : process.env.CLAUDECODE,
+    tasks_dir: process.env.HARNESS_TASKS_DIR || null,
+    stdin_fifo,
+  }));
+}
+console.log('{"type":"fake-driver"}');
+console.error('fake driver drove nothing');
+`;
+
+async function waitFor(fn, what, ms = 15000) {
+  const until = Date.now() + ms;
+  for (;;) {
+    const v = await fn();
+    if (v) return v;
+    if (Date.now() > until) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
+function driverFixture(env = {}) {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const drv = mkdtempSync(join(tmpdir(), 'tm-drv-'));
+  const script = join(drv, 'fake-driver.mjs');
+  writeFileSync(script, FAKE_DRIVER);
+  const ran = join(drv, 'ran.json');
+  const client = new Client(TM, {
+    HARNESS_TASKS_DIR: root,
+    HARNESS_CHILD_DRIVER: `node ${script}`,
+    FAKE_DRIVER_OUT: ran,
+    // The manager runs inside a claude session; a nested `claude -p` refuses to start if it sees this.
+    CLAUDECODE: '1',
+    ...env,
+  });
+  return { cwd, root, drv, ran, client };
+}
+
+test('a ready dispatch spawns a driver process in the package worktree, with the run to continue in its prompt', async () => {
+  const f = driverFixture();
+  const tm = await f.client.init();
+  try {
+    const { task_id } = await tm.call('tm_open', {
+      request: 'big request', cwd: f.cwd, vendor: 'self',
+      host_vendor: 'claude', host_model: 'claude-opus-4', native_models: ['sonnet', 'haiku'],
+    });
+    await throughCritique(tm, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    const c = nx.children[0];
+    assert.equal(c.node_id, 'dispatch:P1:1', JSON.stringify(nx));
+    assert.ok(Number.isInteger(c.driver.pid), `no driver pid: ${JSON.stringify(c)}`);
+    assert.equal(c.driver.log, join(f.root, task_id, 'drivers', 'dispatch_P1_1.stream.jsonl'));
+
+    const ran = await waitFor(() => (existsSync(f.ran) ? JSON.parse(readFileSync(f.ran, 'utf8')) : null), 'the fake driver to run');
+    // $TMPDIR is a symlink into /private/var on macOS; the spawn cwd is the path we gave it.
+    assert.equal(realpathSync(ran.cwd), realpathSync(c.cwd), 'the driver runs in the package worktree');
+    assert.equal(ran.tasks_dir, f.root, 'the tasks dir travels to the child session');
+    assert.equal(ran.claudecode, null, 'CLAUDECODE is deleted: a nested claude refuses to start with it');
+    assert.equal(ran.stdin_fifo, false, "stdin is ignored, not the manager's pipe");
+
+    const prompt = ran.argv[ran.argv.length - 1];
+    assert.match(prompt, new RegExp(`run_id ${c.run_id}`), prompt);
+    assert.match(prompt, new RegExp(c.cwd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.match(prompt, /Do not call graph_open or tm_open/);
+    assert.match(prompt, /graph_next\/graph_run\/graph_submit/);
+    assert.match(prompt, /host_vendor claude, host_model claude-opus-4, native_models sonnet, haiku/);
+
+    const ledger = readFileSync(join(f.root, task_id, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    const spawned = ledger.find((e) => e.event === 'child_driver_spawned');
+    assert.equal(spawned.node_id, 'dispatch:P1:1');
+    assert.equal(spawned.pid, c.driver.pid);
+    // The driver's stdout is captured, not lost down /dev/null.
+    await waitFor(() => existsSync(c.driver.log) && readFileSync(c.driver.log, 'utf8').includes('fake-driver'), 'the driver log');
+  } finally {
+    tm.close();
+    rmSync(f.cwd, { recursive: true, force: true });
+    rmSync(f.root, { recursive: true, force: true });
+    rmSync(f.drv, { recursive: true, force: true });
+  }
+});
+
+test('a driver that exits with the child run unfinished folds the dispatch as blocked, with its stderr', async () => {
+  const f = driverFixture();
+  const tm = await f.client.init();
+  try {
+    const { task_id } = await tm.call('tm_open', { request: 'big request', cwd: f.cwd, vendor: 'self' });
+    await throughCritique(tm, task_id);
+    await tm.call('tm_next', { task_id });
+    const dead = await waitFor(async () => {
+      const nx = await tm.call('tm_next', { task_id });
+      return nx.children[0] && nx.children[0].driver.alive === false ? nx : null;
+    }, 'the fake driver to exit');
+    const c = dead.children[0];
+    assert.equal(c.child_state, 'running', 'the fake drove nothing: the child run is still open');
+    assert.match(c.next, /driver exited before the run finished/);
+    assert.match(c.next, /tm_retry\({package_id: "P1"}\)/);
+
+    const v = await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    assert.equal(v.state, 'failed', JSON.stringify(v));
+    assert.match(v.reason, /child driver exited \(pid \d+\) with the run still running/);
+    assert.match(v.reason, /fake driver drove nothing/, 'the last of the driver stderr is the evidence');
+    // Blocked, and retryable in the same worktree - the package is not dead, its session is.
+    const after = await tm.call('tm_status', { task_id });
+    assert.equal(after.state, 'blocked');
+    assert.equal(after.child_driver, 'process');
+    const rt = await tm.call('tm_retry', { task_id, package_id: 'P1' });
+    assert.equal(rt.retried, true, JSON.stringify(rt));
+    assert.equal(rt.children[0].node_id, 'dispatch:P1:2');
+    assert.ok(Number.isInteger(rt.children[0].driver.pid), 'the retry spawns its own driver');
+  } finally {
+    tm.close();
+    rmSync(f.cwd, { recursive: true, force: true });
+    rmSync(f.root, { recursive: true, force: true });
+    rmSync(f.drv, { recursive: true, force: true });
+  }
+});
+
+test('child_driver "inline" spawns nothing: the child is the session\'s to drive, and a fold is refused while it runs', async () => {
+  const f = driverFixture();
+  const tm = await f.client.init();
+  const g = await new Client(BROKER).init();
+  try {
+    const { task_id } = await tm.call('tm_open', { request: 'big request', cwd: f.cwd, vendor: 'self', child_driver: 'inline' });
+    await throughCritique(tm, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    const c = nx.children[0];
+    assert.equal(c.driver, undefined, 'no driver was spawned');
+    assert.match(c.next, /graph_next/);
+    assert.ok(!existsSync(f.ran), 'the fake driver was never started');
+    assert.ok(!existsSync(join(f.root, task_id, 'drivers')), 'no driver logs either');
+    assert.equal((await tm.call('tm_status', { task_id })).child_driver, 'inline');
+    const early = await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    assert.match(early.error, /still running/, 'with no driver, a running child is still the caller to finish');
+    await completeChild(g, c);
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' })).state, 'done');
+  } finally {
+    tm.close();
+    g.close();
+    rmSync(f.cwd, { recursive: true, force: true });
+    rmSync(f.root, { recursive: true, force: true });
+    rmSync(f.drv, { recursive: true, force: true });
   }
 });
