@@ -9,15 +9,17 @@
 // look at files; executed criteria run `node --test` and, for code, the CLI on a sample.
 // The docs cases have one LLM-judged criterion (`accuracy`: haiku reads the source and the
 // reference docs); GRAPH_BENCH_JUDGE=0 skips it. Writes <ws>.score.json and prints one row.
-import { existsSync, readFileSync, readdirSync, writeFileSync, unlinkSync, mkdtempSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync, unlinkSync, mkdtempSync, statSync, realpathSync } from 'node:fs';
 import { join, resolve, basename } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
+import { CHECK_ALLOW, splitCheck, claimedExit, impliesFailure, hasPlaceholder, isContentShowCmd, splitSlashCmd, fencedBlocksByLang, neededInputTokens } from './lib/claims.mjs';
 
 const [CASE, WS_ARG, STREAM] = process.argv.slice(2);
-if (!CASE || !WS_ARG) { console.error('usage: score.mjs <code|docs|code-flat|docs-flat> <workspace> [stream.jsonl]'); process.exit(2); }
+if (!CASE || !WS_ARG) { console.error('usage: score.mjs <code|docs|code-flat|docs-flat|seam|seam-flat|goal-*> <workspace> [stream.jsonl]'); process.exit(2); }
 const WS = resolve(WS_ARG);
 const GOAL = CASE.startsWith('goal-');
+const SEAM = CASE === 'seam' || CASE === 'seam-flat';
 const KIND = /code/.test(CASE) ? 'code' : 'docs';
 const MONO = !CASE.endsWith('-flat');
 
@@ -63,49 +65,30 @@ function verifyTestClaim(text, counts, wholeTree = true) {
   const ok = (n) => n === counts.total || n === counts.pass;
   return (ok(sum) || passes.some(ok)) ? 'verified' : miss;
 }
-// Only these are safe to re-run unattended: read-only inspection plus the project's own test
-// runner and CLI. Anything else is left unverifiable rather than guessed at.
-// grep is only safe to re-run when it is actually grep syntax - flags then a quoted pattern -
-// not English prose that happens to start with the word "grep" ("grep for each of the five
-// export names..."), which a shell would parse as bogus filename arguments and fail on.
-// A word boundary alone lets "head/mode/index checks" (a compound English description, not a
-// command) through, since "/" is non-word; require actual whitespace (or end of string) right
-// after the verb instead.
-const CHECK_ALLOW = [/^node --test\b/, /^node\s+bin\/[\w.\-]+\.mjs\b/, /^npm test\b/, /^cat(\s|$)/, /^ls(\s|$)/, /^grep(\s+-\S+)*\s+['"]/, /^wc(\s|$)/, /^head(\s|$)/];
-const splitCheck = (c) => {
-  const arrow = c.indexOf(' -> '); const colon = c.indexOf(': ');
-  let idx = -1, len = 0;
-  if (arrow !== -1) { idx = arrow; len = 4; }
-  if (colon !== -1 && (idx === -1 || colon < idx)) { idx = colon; len = 2; }
-  return idx === -1 ? [c, null] : [c.slice(0, idx), c.slice(idx + len)];
-};
-// "5 tests passed, 0 failed" mentions the word "failed" while claiming success - strip the
-// zero-count phrasing before deciding whether the shown text implies a non-zero exit.
-// An explicit exit code in the shown text ("exit=1", "exit 2", "exit code: 0") is the claim
-// itself and is compared exactly; returns null when the text names none.
-function claimedExit(shown) {
-  const m = shown.match(/\bexit(?:\s*code)?\s*[:=]?\s*(\d+)\b/i);
-  return m ? +m[1] : null;
-}
-function impliesFailure(shown) {
-  // Drop file-path-shaped tokens first ("./errors.mjs" contains the standalone word "errors"
-  // by the \b rule below, but names a module, not a failure).
-  const noPaths = shown.replace(/[\w./-]*\.(?:mjs|js|json|md|txt)\b/gi, '');
-  // "0 fail", "# fail 0", "fail: 0", "0 errors" - zero-count phrasing in either order.
-  const s = noPaths.toLowerCase()
-    .replace(/\b0\s*(fail(ed|s|ures?)?|errors?)\b/g, '')
-    .replace(/#?\s*\b(fail(ed|s|ures?)?|errors?)\s*[:=]?\s*0\b/g, '');
-  return /\bfail(ed|s|ures?)?\b/.test(s) || /\berror(s)?\b/.test(s);
-}
-// "<good.csv>", "[]", "(no args)": the check names its inputs by description, not by path.
-// Running that literally runs a different command than the one claimed.
-const hasPlaceholder = (cmd) => /<[^>]+>|\[\]|\([^)]*\)/.test(cmd);
+// CHECK_ALLOW, splitCheck, claimedExit, impliesFailure, hasPlaceholder, isContentShowCmd and
+// splitSlashCmd now live in ./lib/claims.mjs (imported above) so test-score.mjs can unit-test
+// them without triggering this file's own top-level scoring pass.
 function verifyCheckClaim(checkText, cwd) {
   const [cmd, shown] = splitCheck(checkText);
   // No "<cmd> -> <shown>" / "<cmd>: <shown>" shape at all: there is nothing to hold the rerun
   // to, so re-running it could only be guessed at rather than checked.
   if (shown === null) return { verdict: 'unverifiable', evidence: 'no cmd/shown delimiter found in the check text' };
   const cmdTrim = cmd.trim(); const shownTrim = shown.trim();
+  if (cmdTrim.includes(' / ')) {
+    const subs = splitSlashCmd(cmdTrim);
+    if (!subs || !subs.every((s) => CHECK_ALLOW.some((re) => re.test(s))) || subs.some(hasPlaceholder)) {
+      return { verdict: 'unverifiable', evidence: 'several commands joined in prose' };
+    }
+    for (const sub of subs) {
+      const r = shCmd(sub, cwd);
+      if (r.error || r.signal) return { verdict: 'unverifiable', evidence: `rerun did not complete: ${r.signal || r.error}` };
+      const expectNonZero = impliesFailure(shownTrim);
+      if (expectNonZero !== (r.code !== 0)) {
+        return { verdict: 'false', evidence: `claimed "${shownTrim}" for "${sub}" (implies ${expectNonZero ? 'non-zero' : 'zero'} exit); reran exit ${r.code}` };
+      }
+    }
+    return { verdict: 'verified', evidence: `all ${subs.length} commands reran matching "${shownTrim}"` };
+  }
   if (!CHECK_ALLOW.some((re) => re.test(cmdTrim))) return { verdict: 'unverifiable', evidence: 'not on the safe-rerun allowlist' };
   if (hasPlaceholder(cmdTrim)) return { verdict: 'unverifiable', evidence: 'command names its inputs by placeholder, not by path' };
   const r = shCmd(cmdTrim, cwd);
@@ -124,6 +107,11 @@ function verifyCheckClaim(checkText, cwd) {
     return r.code === named
       ? { verdict: 'verified', evidence: `exit ${r.code}` }
       : { verdict: 'false', evidence: `claimed exit ${named}; reran exit ${r.code}` };
+  }
+  if (isContentShowCmd(cmdTrim)) {
+    return r.code === 0
+      ? { verdict: 'unverifiable', evidence: 'shown text describes content, not an outcome' }
+      : { verdict: 'false', evidence: `command could not be rerun (exit ${r.code}) though the check claims to show its content` };
   }
   const expectNonZero = impliesFailure(shownTrim);
   const gotNonZero = r.code !== 0;
@@ -298,7 +286,83 @@ const treeFiles = (dir, depth, acc = [], rel = '') => {
   return acc;
 };
 
-if (GOAL) {
+if (SEAM) {
+  // The seam case: a parser package and a CLI package that only meet correctly if both honour
+  // an error-code table defined in a third package (packages/codes / src/codes.mjs), which the
+  // fixture seeds pre-built and asks not to be changed. Each half's own tests can pass while
+  // disagreeing with the other half — that disagreement, and a CLI whose main-module guard
+  // breaks under a macOS /var -> /private/var symlink (the 0.8.1 defect), are what the criteria
+  // below check from outside the tree. At least three of them (marked SEAM) fail when either
+  // half was implemented in isolation from the other; the rest are ordinary functional checks.
+  const SP = MONO
+    ? { codes: 'packages/codes/src/index.mjs', parser: 'packages/parser/src/index.mjs', cli: 'packages/cli/bin/lintcfg.mjs' }
+    : { codes: 'src/codes.mjs', parser: 'src/parser.mjs', cli: 'bin/lintcfg.mjs' };
+  crit.modules = Object.values(SP).every(has);
+  crit.exports = ['codes', 'parser'].every((k) => exportNames(read(join(TREE, SP[k]))).length > 0);
+  const countTests = (dir) => ls(dir).filter((f) => f.endsWith('.mjs')).reduce((n, f) => n + ((read(join(dir, f)) || '').match(/\btest\(/g) || []).length, 0);
+  crit.tests = MONO
+    ? ['parser', 'cli'].every((k) => countTests(join(TREE, 'packages', k, 'test')) >= 2)
+    : (() => { const t = ls(join(TREE, 'test')); return [/parser/i, /cli|lintcfg/i].every((re) => t.some((f) => re.test(f))); })();
+
+  // Ground truth for every "must agree with the third place" check below: parsed straight out
+  // of the codes source in the judged tree, not hardcoded here, so a legitimate future change
+  // to the table (the fixture currently forbids one) would not silently make this scorer wrong.
+  const codesSrc = read(join(TREE, SP.codes)) || '';
+  const staticCodes = {};
+  for (const m of codesSrc.matchAll(/\b([A-Z_]+)\s*:\s*(-?\d+)/g)) staticCodes[m[1]] = +m[2];
+
+  // SEAM: the README's exit-code table must match the numbers actually in packages/codes, not
+  // numbers the doc-writing half remembered or invented independently.
+  crit.readme_exit_codes = Object.keys(staticCodes).length > 0 && Object.entries(staticCodes).every(([name, num]) =>
+    new RegExp(`${name}[^\\n]{0,40}?${num}\\b`).test(read(join(TREE, 'README.md')) || '') ||
+    new RegExp(`${num}\\b[^\\n]{0,10}${name}`).test(read(join(TREE, 'README.md')) || ''));
+
+  // SEAM: every code name the parser half actually returns must be a key the codes half
+  // actually defines - catches a naming drift between the two packages.
+  const parserSrc = read(join(TREE, SP.parser)) || '';
+  const usedNames = new Set([...parserSrc.matchAll(/code:\s*['"]([A-Z_]+)['"]/g)].map((m) => m[1]));
+  crit.parser_names_match_codes = usedNames.size >= 3 && [...usedNames].every((n) => n in staticCodes);
+
+  // Executed checks: five inputs, one per outcome the request specifies.
+  const tmp = mkdtempSync(join(tmpdir(), 'seam-score-'));
+  const cfg = {
+    valid: 'name=svc\nport=8080\ntimeout=30\n',
+    missing: 'name=svc\nport=8080\n',
+    badtype: 'name=svc\nport=notanumber\ntimeout=30\n',
+    unknown: 'name=svc\nport=8080\ntimeout=30\nregion=us\n',
+    parseerr: 'name=svc\nthis-line-has-no-equals\nport=8080\ntimeout=30\n',
+  };
+  for (const [k, v] of Object.entries(cfg)) writeFileSync(join(tmp, `${k}.cfg`), v);
+  const cliPath = join(TREE, SP.cli);
+  const runCli = (cliFile, key) => has(SP.cli) ? sh('node', [cliFile, 'check', join(tmp, `${key}.cfg`)], TREE) : { code: -1, out: '' };
+
+  const rValid = runCli(cliPath, 'valid');
+  crit.cli_ok = rValid.code === 0 && /^OK\b/.test(rValid.out.trim());
+  crit.cli_invalid = runCli(cliPath, '__missing__').code !== 0; // file does not exist -> must fail, not silently exit 0
+
+  // SEAM: for every failure kind, the CLI's actual exit code must equal packages/codes' actual
+  // numeric value for that failure's name - read from the tree at run time, not assumed. A CLI
+  // that hardcodes its own copy of the table (right or wrong) fails this the moment its copy
+  // and the codes package disagree, even if the CLI's own unit tests never noticed.
+  const expectFor = { missing: 'MISSING_FIELD', badtype: 'BAD_TYPE', unknown: 'UNKNOWN_FIELD', parseerr: 'PARSE_ERROR' };
+  crit.cli_uses_codes_table = Object.keys(staticCodes).length > 0 && Object.entries(expectFor).every(([key, name]) => {
+    const want = staticCodes[name];
+    return typeof want === 'number' && runCli(cliPath, key).code === want;
+  });
+
+  // SEAM: the 0.8.1 defect, reproduced directly. bench workspaces already live under $TMPDIR,
+  // which on macOS is itself a /var path that resolves through /private/var - so the workspace
+  // path handed in as-is and its realpath are already the two spellings that broke a naive
+  // `import.meta.url === pathToFileURL(argv[1]).href` main-module guard. Both invocations below
+  // must behave identically; a CLI that silently no-ops (exit 0, no output) under one of them
+  // fails `cli_ok`-shaped output on that spelling even though the process "succeeded".
+  let cliReal = cliPath;
+  try { cliReal = realpathSync(cliPath); } catch { /* cli not built yet */ }
+  const rAbs = runCli(cliPath, 'valid');
+  const rReal = runCli(cliReal, 'valid');
+  crit.cli_abs_path = rAbs.code === 0 && /^OK\b/.test(rAbs.out.trim());
+  crit.cli_realpath = rReal.code === 0 && /^OK\b/.test(rReal.out.trim()) && rAbs.code === rReal.code && rAbs.out.trim() === rReal.out.trim();
+} else if (GOAL) {
   // A one-line goal: the harness decided the split, the contracts and the document set, so
   // nothing here names a path. What is checked: the tree works, the goal is met (judged), and
   // - for a manager run - the decomposition it chose holds up on its own terms.
@@ -491,11 +555,44 @@ if (isHarnessRun) {
       const dest = join(TREE, m[1]);
       if (!existsSync(dest)) { try { writeFileSync(dest, m[2]); created.push(dest); } catch {} }
     }
+    // Every fenced block in the README, queued by language, for commands that name an input
+    // file the README never says to "Save this as" but does show under its own heading (e.g.
+    // "CSV format" followed by a ```csv block). Consumed in order, one block per token; a token
+    // that already exists on disk (materialized above, or genuinely present in the tree) never
+    // touches this queue.
+    const fencedByLang = fencedBlocksByLang(md);
+    const neededInputs = (cmdLine) => neededInputTokens(cmdLine, (tok) => existsSync(join(TREE, tok)));
+    // A bare `ledger ...` example assumes the CLI is installed on PATH, which the scorer's
+    // environment never has; resolve it to the actual bin script the tree declares (root or any
+    // packages/* package.json's "bin" field), falling back to the convention every other
+    // criterion in this file already assumes when nothing declares one.
+    function resolveLedgerBin(cmdLine) {
+      const m = cmdLine.match(/^ledger\s+(.*)$/);
+      if (!m) return cmdLine;
+      for (const dir of [TREE, ...ls(join(TREE, 'packages')).map((p) => join(TREE, 'packages', p))]) {
+        let pkg; try { pkg = JSON.parse(read(join(dir, 'package.json'))); } catch { continue; }
+        const bin = pkg && pkg.bin;
+        const target = typeof bin === 'string' ? bin : (bin && (bin.ledger || Object.values(bin)[0]));
+        if (target && existsSync(join(dir, target))) return `node ${join(dir, target).slice(TREE.length + 1)} ${m[1]}`.trim();
+      }
+      return `node bin/ledger.mjs ${m[1]}`.trim();
+    }
     try {
       for (const m of md.matchAll(/```(?:bash|sh|shell)?\n([\s\S]*?)```/g)) {
         for (const line of m[1].split('\n')) {
-          const cmd = line.trim();
+          let cmd = line.trim();
           if (!/^(node\s+bin\/|ledger\s+)/.test(cmd)) continue;
+          if (hasPlaceholder(cmd)) { claim(author, 'readme_example', cmd, 'unverifiable', 'command names its inputs by placeholder, not by path'); continue; }
+          if (/^ledger\s+/.test(cmd)) cmd = resolveLedgerBin(cmd);
+          const needed = neededInputs(cmd);
+          if (needed.some((n) => !fencedByLang[n.lang] || !fencedByLang[n.lang].length)) {
+            claim(author, 'readme_example', cmd, 'unverifiable', 'README example names an input it never shows');
+            continue;
+          }
+          for (const n of needed) {
+            const dest = join(TREE, n.token);
+            try { writeFileSync(dest, fencedByLang[n.lang].shift()); created.push(dest); } catch {}
+          }
           const r = shCmd(cmd, TREE);
           const verdict = r.error || r.signal ? 'unverifiable' : r.code === 0 ? 'verified' : 'false';
           claim(author, 'readme_example', cmd, verdict, r.error || r.signal ? `did not complete: ${r.signal || r.error}` : `exit ${r.code}`);
@@ -525,13 +622,55 @@ const claimsUnverifiable = claims.filter((c) => c.verdict === 'unverifiable').le
   if (wall) meta.wall_ms = wall;
 }
 
+// ---------- judge criteria: report these alongside the rubric line, never folded into
+// passed/of - they measure the harness's own judging behaviour (did a gate reject anything, did
+// it run checks before accepting, did anything get repaired, what did the run cost), not what
+// the tree contains. A `none` session has no harness nodes at all, so these come back 0/n-a
+// rather than skewing the rubric that the fixture criteria above already cover.
+const isJudgeNode = (n) => /^gate|^accept|^critique|^review/.test(n.node_id) || ['gate', 'accept', 'critique', 'review'].includes(n.stage);
+const judgeNodes = harnessNodes.filter(isJudgeNode);
+const gateRejections = harnessNodes.filter((n) => n.result && (n.result.accept === false || n.result.stage_ok === false)).length;
+const judgesWithChecks = judgeNodes.filter((n) => (Array.isArray(n.result?.checks) && n.result.checks.length) || (Array.isArray(n.result?.attacks) && n.result.attacks.length)).length;
+// "repairs": nodes on an explicit repair stage/id, plus packages opened under a repackage
+// generation (R<n>) - the two shapes a seam fix can currently take (see README: repackage is
+// the repair path a seam defect needs; tm_retry alone resends work to a worktree that cannot see
+// the seam).
+const repairNodes = harnessNodes.filter((n) => /^repair/i.test(n.node_id) || n.stage === 'repair').length;
+const repairPackages = harness.tasks.reduce((n, t) => n + t.packages.filter((p) => /^R\d+/i.test(String(p.id))).length, 0);
+
+// seam_detected: did any gate/critique/review/report node's own words - or, for a plain session
+// with no harness nodes, the driving session's own prose - mention the cross-cutting constraint
+// this case's criteria check. Per-case keyword lists; a case with none defined reports 'n/a'
+// rather than a manufactured false.
+const SEAM_KEYWORDS = {
+  seam: ['exit code', 'exit-code', 'exitcode', 'exit_codes', 'error code', 'error-code', 'codes table', 'packages/codes', 'shared table', 'seam'],
+  'seam-flat': ['exit code', 'exit-code', 'exitcode', 'exit_codes', 'error code', 'error-code', 'codes table', 'codes.mjs', 'shared table', 'seam'],
+};
+const seamKeywords = SEAM_KEYWORDS[CASE] || [];
+const nodeText = (n) => [n.result?.reason, n.result?.handoff, ...(n.result?.checks || []), ...(n.result?.attacks || []), ...(n.result?.gaps || []), ...(n.result?.problems || [])].filter((x) => typeof x === 'string').join(' \n ');
+const judgeLikeText = harnessNodes.filter((n) => /^gate|^critique|^report/.test(n.node_id) || ['gate', 'critique', 'report'].includes(n.stage)).map(nodeText).join(' \n ').toLowerCase();
+const seamHay = judgeLikeText + ' \n ' + sessionText.toLowerCase();
+const seamDetected = seamKeywords.some((kw) => seamHay.includes(kw));
+
+const judgeStats = {
+  seam_detected: seamKeywords.length ? seamDetected : 'n/a',
+  gate_rejections: gateRejections,
+  judges_with_checks: `${judgesWithChecks}/${judgeNodes.length}`,
+  repairs: repairNodes + repairPackages,
+  cost_usd: typeof meta.cost_usd === 'number' ? +meta.cost_usd.toFixed(2) : null,
+  turns: meta.turns ?? null,
+  minutes: meta.wall_ms ? Math.round(meta.wall_ms / 60000) : (meta.duration_ms ? Math.round(meta.duration_ms / 60000) : null),
+};
+
 const bools = Object.entries(crit).filter(([, v]) => typeof v === 'boolean');
 const score = {
   case: CASE, workspace: WS, tree: TREE === WS ? '.' : TREE.slice(WS.length + 1), passed: bools.filter(([, v]) => v).length, of: bools.length,
-  criteria: crit, session: meta, harness,
+  criteria: crit, session: meta, harness, judge: judgeStats,
   claims: { total: claims.length, verified: claimsVerified, false: claimsFalse, unverifiable: claimsUnverifiable, items: claims },
 };
 writeFileSync(`${WS}.score.json`, JSON.stringify(score, null, 2));
 const fails = bools.filter(([, v]) => !v).map(([k]) => k).join(',') || '-';
 const t = harness.tasks[0];
 console.log(`${basename(WS)} | ${score.passed}/${score.of} | fail: ${fails} | ${meta.wall_ms ? Math.round(meta.wall_ms / 60000) + 'min' : meta.duration_ms ? Math.round(meta.duration_ms / 60000) + 'min(api)' : '?'} | $${typeof meta.cost_usd === 'number' ? meta.cost_usd.toFixed(2) : '?'} | false ${claimsFalse}/${claims.length} | turns ${meta.turns ?? '?'} | task ${t?.verdict ?? t?.state ?? '-'} size ${t?.size ?? '-'} pkgs ${t?.packages?.length ?? '-'} | runs ${harness.runs.length} | top-level edits ${meta.top_level_edits} | tree ${score.tree}`);
+console.log(`  judge: seam_detected=${judgeStats.seam_detected} gate_rejections=${judgeStats.gate_rejections} judges_with_checks=${judgeStats.judges_with_checks} repairs=${judgeStats.repairs} cost=$${judgeStats.cost_usd ?? '?'} turns=${judgeStats.turns ?? '?'} minutes=${judgeStats.minutes ?? '?'}`);
+console.log(`JUDGE: ${JSON.stringify(judgeStats)}`);
