@@ -205,6 +205,39 @@ test('tm_open seeds size -> shape -> critique under the tasks root, not under th
   });
 });
 
+test('tm_open({roles: {planning: true}}) inserts a planning phase-Team before shape (§2)', async () => {
+  await withTask(async ({ root, task_id, open }) => {
+    assert.deepEqual(open.ready.map((n) => n.node_id), ['size']);
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const dispatch = task.nodes.find((n) => n.node_id === 'dispatch:PLAN:1');
+    assert.ok(dispatch, 'planning phase-Team dispatch node missing');
+    assert.deepEqual(dispatch.deps, ['size']);
+    const accept = task.nodes.find((n) => n.node_id === 'accept:PLAN:1');
+    assert.ok(accept, 'planning phase-Team accept node missing');
+    assert.deepEqual(accept.deps, ['dispatch:PLAN:1']);
+    const shape = task.nodes.find((n) => n.node_id === 'shape');
+    assert.deepEqual(shape.deps, ['accept:PLAN:1'], 'shape must wait on the planning phase-Team, not size directly');
+    const critique = task.nodes.find((n) => n.node_id === 'critique');
+    assert.deepEqual(critique.deps, ['shape']);
+    assert.equal(task.planning_pkg && task.planning_pkg.id, 'PLAN');
+    assert.equal(task.planning_pkg.phase, 'planning');
+    assert.equal(task.planning_pkg.flow, 'plan');
+    assert.equal(task.planning_pkg.brief, 'big request');
+  }, { roles: { planning: true } });
+});
+
+test('roles.planning left at its default (false) keeps the node graph exactly as before (regression)', async () => {
+  await withTask(async ({ root, task_id }) => {
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.deepEqual(task.nodes.map((n) => ({ node_id: n.node_id, deps: n.deps })), [
+      { node_id: 'size', deps: [] },
+      { node_id: 'shape', deps: ['size'] },
+      { node_id: 'critique', deps: ['shape'] },
+    ]);
+    assert.equal(task.planning_pkg, null);
+  });
+});
+
 test('tm_open({size}) pins the size: L opens shape without measuring, S opens its single run at once', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
