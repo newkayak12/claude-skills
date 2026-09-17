@@ -49,11 +49,21 @@ tm_open({
   host_vendor, host_model, native_models
 })                                               -> task_id, ready: [size]
 fresh agent at size.briefing_path -> tm_submit({task_id, node_id: "size", payload})
-    task_state "s_run"  -> size S: tm_open already opened the single graph run itself and
-                           spawned its own headless session to drive it. Poll tm_next — same
-                           shape as an L child — until it reports; relay the table and report
+    queued: true        -> the ordinary reply. tm_open spawned the TaskLeader, and a mutating
+                           call from any process but the leader is queued for it - your sizing
+                           is applied on the leader's next tm_next, not lost. You do NOT get
+                           task_state or a verdict back, and there is nothing to wait for here
+    task_state "s_run"  -> only when no leader is running: size S, and this reply already
+                           carries tm_next's own fields for the single run
     absent              -> size L. Continue with references/manager.md
 ```
+
+After this you watch; you never drive. `tm_next` from this session answers `driven_by: "leader"`
+with no `ready[]` — that is the design, not a stall. Poll `tm_next` or `tm_status` until `state`
+is `complete` or `blocked`, then relay the report. For a size-S task that `state` is **the single
+run's own**, not the task's three settled manager nodes: a size-S task's manager graph finishes
+the moment `size` resolves, and reading it instead of the run is what once had a watcher call a
+live run `blocked` and stop two minutes in — the first real-vendor run's whole failure.
 
 `isolated` is true only when you created or were handed a private worktree holding this run
 alone; it travels straight into whichever run `tm_open` ends up opening — the single run a

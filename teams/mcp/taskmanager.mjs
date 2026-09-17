@@ -1205,6 +1205,27 @@ function serviceLeader(task) {
   return true;
 }
 
+// What a watcher (main, while a leader is alive) may be told the task's state is. For a size-L
+// task that is the manager graph itself - a running dispatch keeps it `running` while its child
+// works. A size-S task is the opposite shape: its manager graph is SETTLED the moment `size`
+// resolves (shape and critique are skipped, nothing is left pending or running), and all of the
+// work lives in the one child run task.s_run points at. Judging that task by its own three nodes
+// reports `blocked` while the run is alive and building - and the entry skill's standing mandate
+// on a blocked run is "report what failed and stop there", so the watcher stops. That is how the
+// first real-vendor run ended at two minutes with the workspace untouched and every driver still
+// working. So read the child run instead, normalized exactly the way toolNextSRun normalizes it -
+// one mapping, not a second truth. Read-only on purpose: servicing a dead S driver is the
+// leader's job, and a watcher that respawned it would be driving.
+function watcherState(task) {
+  if (!task.s_run) return runState(task);
+  const run = loadRun(task.s_run.cwd, task.s_run.run_id);
+  const cs = run ? runState(run) : { state: 'missing', counts: {} };
+  return {
+    state: cs.state === 'running' ? 'running' : (cs.state === 'complete' ? 'complete' : 'blocked'),
+    counts: cs.counts || {},
+  };
+}
+
 // A tool call that mutates the task, made by a process that is not the leader while a leader is
 // alive, is queued here instead of applied - the leader drains it at the top of its own tm_next.
 const MUTATING_TOOLS = new Set(['tm_submit', 'tm_retry', 'tm_file', 'tm_settle', 'tm_repackage', 'tm_repair', 'tm_reset_capacity']);
@@ -2484,9 +2505,12 @@ function callTool(name, args) {
     const watcher = !noLeader() && !isLeaderProcess(task) && task.leader && leaderAlive(task);
     if (watcher && MUTATING_TOOLS.has(name)) return queueToInbox(task, name, a);
     if (watcher && name === 'tm_next') {
-      const st = runState(task);
+      const st = watcherState(task);
       return {
         task_id: task.run_id, state: st.state, counts: st.counts, driven_by: 'leader',
+        // Named so a watcher told "running" can go look at the right run rather than at the
+        // task's own three settled nodes.
+        ...(task.s_run ? { run_id: task.s_run.run_id, cwd: task.s_run.cwd } : {}),
         leader: { pid: task.leader.pid, alive: true, log: task.leader.log, restarts: task.leader.restarts },
         hint: 'the TaskLeader driver runs the loop; watch tm_status({task_id}) and tm_events({task_id})',
       };
