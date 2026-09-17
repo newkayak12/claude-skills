@@ -1535,6 +1535,25 @@ test('tm_open reads .claude/team.json as defaults and an explicit argument still
   } finally { tm.close(); rmSync(dir, { recursive: true, force: true }); rmSync(tasks, { recursive: true, force: true }); }
 });
 
+test('team.json-only goal_threshold and max_retries (no explicit tm_open args) reach child_opts, not just the task-level gate', async () => {
+  const dir = repo();
+  const tasks = mkdtempSync(join(tmpdir(), 'tm-tasks-'));
+  mkdirSync(join(dir, '.claude'), { recursive: true });
+  writeFileSync(join(dir, '.claude', 'team.json'), JSON.stringify({ goal_threshold: 95, max_retries: 4 }));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: tasks, HARNESS_TEST_NO_LEADER: '1' }).init();
+  try {
+    // Neither goal_threshold nor max_retries is passed as an explicit tm_open argument here -
+    // team.json is the only source, so child_opts must pick it up the same way vendor/allocation
+    // and the task-level gate fields already do.
+    const a = await tm.call('tm_open', { request: 'r', cwd: dir, vendor: 'self' });
+    const task = JSON.parse(readFileSync(join(tasks, a.task_id, 'task.json'), 'utf8'));
+    assert.equal(task.goal_threshold, 95, 'task-level gate sees team.json');
+    assert.equal(task.max_retries, 4, 'task-level gate sees team.json');
+    assert.equal(task.child_opts.goal_threshold, 95, 'every child run must be opened with the project floor, not the 90 args fallback');
+    assert.equal(task.child_opts.max_retries, 4, 'every child run must be opened with the project retry budget, not the 2 args fallback');
+  } finally { tm.close(); rmSync(dir, { recursive: true, force: true }); rmSync(tasks, { recursive: true, force: true }); }
+});
+
 test('a malformed team.json is reported on the task and the defaults apply', async () => {
   const dir = repo();
   const tasks = mkdtempSync(join(tmpdir(), 'tm-tasks-'));
