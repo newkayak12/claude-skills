@@ -36,6 +36,7 @@ import {
   epicKey, storyKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
   storyTicketState, storyTaskProgress, epicBoardRows, ticketSnapshot,
 } from './tickets.mjs';
+import { writeDocs } from './docs.mjs';
 import { readTeamConfig, resolveTeamOptions } from './teamconfig.mjs';
 import {
   node,
@@ -1579,6 +1580,12 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] },
     outputSchema: { type: 'object' },
   },
+  {
+    name: 'tm_docs',
+    description: '(Re)render the phase markdown under <docs_dir>/E-<task8>/ from task.json - INDEX, request, shape, critique, one page per STORY, integrate, goal gate and report, whichever already have data (§7c). rebuild:true DELETES THE ENTIRE EPIC DOCS DIRECTORY FIRST, then writes every file fresh; without it (the default), existing files are simply overwritten and a stale file from a dropped package survives. The engine never reads these back - md is a rendered view, not a second source of truth.',
+    inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, rebuild: { type: 'boolean', description: 'default false. true deletes <docs_dir>/E-<task8>/ recursively before re-rendering - destructive, use to clear stale files left by a dropped package.' } }, required: ['task_id'] },
+    outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, rebuild: { type: 'boolean' }, written: { type: 'array', items: { type: 'string' } } } },
+  },
 ];
 
 function toolEvents(a) {
@@ -1666,6 +1673,15 @@ function toolTicket(a) {
     reporter: pkg.repair ? 'repair' : 'shape',
     doc_path: docPaths(task).story(pkgId),
   };
+}
+
+// tm_docs's whole job: call docs.mjs's single write site. No rendering logic lives here, and no
+// second write site is introduced - writeDocs takes no clock, so this stays a pure function of
+// task.json every time it is called (rebuild or not).
+function toolDocs(a) {
+  const task = mustFindTask(a);
+  const written = writeDocs(task, { rebuild: a.rebuild === true });
+  return { task_id: task.run_id, rebuild: a.rebuild === true, written };
 }
 
 function requireRunnable(task, nodeId) {
@@ -2043,6 +2059,7 @@ function dispatch(name, a) {
     case 'tm_events': return toolEvents(a);
     case 'tm_board': return toolBoard(a);
     case 'tm_ticket': return toolTicket(a);
+    case 'tm_docs': return toolDocs(a);
     default: throw new Error('unknown tool: ' + name);
   }
 }
