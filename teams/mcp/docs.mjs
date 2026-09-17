@@ -22,16 +22,21 @@ function bullets(list) {
 function rev(task) {
   return task.nodes.filter((n) => n.result).length;
 }
-function frontmatter(key, state, task, now) {
-  return ['---', `key: ${key}`, `state: ${state}`, `updated: ${new Date(now).toISOString()}`, `source: task.json@${rev(task)}`, '---', ''].join('\n');
+// No `updated:` timestamp here on purpose: task.json carries no per-node completion clock (only
+// created_at on the run and started_at/finished_at on the task, neither of which is "when this
+// doc was rendered"), and a wall-clock `now` would make rebuild never byte-identical - the one
+// property this whole layer exists to prove. `source: task.json@<rev>` already carries the
+// freshness signal, and a reader who wants the write time has the file's own mtime.
+function frontmatter(key, state, task) {
+  return ['---', `key: ${key}`, `state: ${state}`, `source: task.json@${rev(task)}`, '---', ''].join('\n');
 }
 
-export function renderIndex(task, now = Date.now()) {
+export function renderIndex(task) {
   const key = epicKey(task.run_id);
   const state = epicTicketState(task);
   const phase = epicPhase(task);
   const rows = epicBoardRows(task);
-  const L = [frontmatter(key, state, task, now), `# ${key} — ${String(task.request).slice(0, 60)}`, ''];
+  const L = [frontmatter(key, state, task), `# ${key} — ${String(task.request).slice(0, 60)}`, ''];
   L.push(`state: ${state} · phase: ${phase || '(done)'} · leader: ${task.leader ? `pid ${task.leader.pid}` : '—'}`, '');
   L.push('| key | role | state | tasks | last verdict |', '|---|---|---|---|---|');
   for (const r of rows) L.push(`| ${r.id} | ${r.role} | ${r.state} | ${r.tasks || '—'} | ${r.last_verdict} |`);
@@ -47,10 +52,10 @@ export function renderIndex(task, now = Date.now()) {
   return L.join('\n') + '\n';
 }
 
-export function renderRequest(task, now = Date.now()) {
+export function renderRequest(task) {
   const key = epicKey(task.run_id);
   const T = (task.team && task.team.opts) || {};
-  const L = [frontmatter(key, epicTicketState(task), task, now), '# Request', '', String(task.request), ''];
+  const L = [frontmatter(key, epicTicketState(task), task), '# Request', '', String(task.request), ''];
   L.push('## Context', task.context ? String(task.context) : '(none)', '');
   L.push('## Team snapshot');
   L.push(`- interactive: ${T.interactive === true}`);
@@ -62,9 +67,9 @@ export function renderRequest(task, now = Date.now()) {
   return L.join('\n') + '\n';
 }
 
-export function renderShape(task, now = Date.now()) {
+export function renderShape(task) {
   const key = epicKey(task.run_id);
-  const L = [frontmatter(key, epicTicketState(task), task, now), '# Shape', ''];
+  const L = [frontmatter(key, epicTicketState(task), task), '# Shape', ''];
   L.push('Acceptance:', bullets(task.spec.acceptance), '');
   L.push('| id | title | flow | deps | touches |', '|---|---|---|---|---|');
   for (const p of task.spec.packages) {
@@ -73,24 +78,24 @@ export function renderShape(task, now = Date.now()) {
   return L.join('\n') + '\n';
 }
 
-export function renderCritique(task, now = Date.now()) {
+export function renderCritique(task) {
   const critique = task.nodes.filter((n) => n.stage === 'critique' && n.result).pop();
   const r = critique.result;
   const key = epicKey(task.run_id);
-  const L = [frontmatter(key, epicTicketState(task), task, now), '# Critique', ''];
+  const L = [frontmatter(key, epicTicketState(task), task), '# Critique', ''];
   L.push(`sound: ${r.sound === true}`, '');
   L.push('Blocking:', bullets(r.blocking), '', 'Problems:', bullets(r.problems));
   return L.join('\n') + '\n';
 }
 
-export function renderStory(task, pkgId, now = Date.now()) {
+export function renderStory(task, pkgId) {
   const pkg = (task.spec.packages || []).find((p) => String(p.id) === String(pkgId));
   const key = storyKey(task.run_id, pkgId);
   const state = storyTicketState(task, pkgId);
   const dispatch = latestBySubgoal(task, pkgId, 'dispatch');
   const accept = latestBySubgoal(task, pkgId, 'accept');
   const r = accept && accept.result;
-  const L = [frontmatter(key, state, task, now), `# ${pkgId} — ${(pkg && pkg.title) || ''}`, ''];
+  const L = [frontmatter(key, state, task), `# ${pkgId} — ${(pkg && pkg.title) || ''}`, ''];
   L.push(`state: ${state} · tasks: ${storyTaskProgress(task, pkgId) || '—'} · reporter: ${pkg && pkg.repair ? 'repair' : 'shape'}`, '');
   if (dispatch && dispatch.child) L.push(`worktree: ${dispatch.child.cwd} on branch ${dispatch.child.branch}`, '');
   L.push('## Last verdict');
@@ -104,31 +109,31 @@ export function renderStory(task, pkgId, now = Date.now()) {
   return L.join('\n') + '\n';
 }
 
-export function renderIntegrate(task, now = Date.now()) {
+export function renderIntegrate(task) {
   const n = task.nodes.filter((x) => x.stage === 'integrate' && x.result).pop();
   const r = n.result;
   const key = epicKey(task.run_id);
-  const L = [frontmatter(key, epicTicketState(task), task, now), `# Integrate (${n.node_id})`, ''];
+  const L = [frontmatter(key, epicTicketState(task), task), `# Integrate (${n.node_id})`, ''];
   L.push(`verified: ${r.verified === true}`, '');
   if (n.integration) L.push(`branch: ${n.integration.branch}`, 'Merged:', bullets((n.integration.merged || []).map((m) => `${m.package}: ${m.branch} -> ${m.commit}`)), '');
   L.push('Checks:', bullets(r.checks), '', 'Conflicts:', bullets(r.conflicts));
   return L.join('\n') + '\n';
 }
 
-export function renderGoalGate(task, now = Date.now()) {
+export function renderGoalGate(task) {
   const n = task.nodes.filter((x) => x.stage === 'gate' && x.subgoal_id === null && x.result).pop();
   const r = n.result;
   const key = epicKey(task.run_id);
-  const L = [frontmatter(key, epicTicketState(task), task, now), `# Goal gate (${n.node_id})`, ''];
+  const L = [frontmatter(key, epicTicketState(task), task), `# Goal gate (${n.node_id})`, ''];
   L.push(`accept: ${r.accept === true} · match_pct: ${r.match_pct == null ? '—' : r.match_pct}`, '');
   L.push('Checks:', bullets(r.checks), '', 'Gaps:', bullets(r.gaps), '', 'Spec drift:', bullets(r.spec_drift));
   return L.join('\n') + '\n';
 }
 
-export function renderReport(task, now = Date.now()) {
+export function renderReport(task) {
   const n = task.nodes.find((x) => x.stage === 'report' && x.state === 'done');
   const key = epicKey(task.run_id);
-  const L = [frontmatter(key, 'DONE', task, now), '# Report', ''];
+  const L = [frontmatter(key, 'DONE', task), '# Report', ''];
   L.push(String((n.result && n.result.handoff) || ''));
   return L.join('\n') + '\n';
 }
@@ -136,17 +141,17 @@ export function renderReport(task, now = Date.now()) {
 // Every file this task currently has data for, keyed by its full path. A shape not yet done
 // means only INDEX + request exist; a fresh gate:goal round adds the goal-gate file; and so on -
 // nothing is ever rendered ahead of the data that would back it.
-export function renderAll(task, now = Date.now()) {
+export function renderAll(task) {
   const paths = docPaths(task);
-  const files = { [paths.index]: renderIndex(task, now), [paths.request]: renderRequest(task, now) };
+  const files = { [paths.index]: renderIndex(task), [paths.request]: renderRequest(task) };
   if (task.spec) {
-    files[paths.shape] = renderShape(task, now);
-    if (task.nodes.some((n) => n.stage === 'critique' && n.result)) files[paths.critique] = renderCritique(task, now);
-    for (const p of task.spec.packages) files[paths.story(p.id)] = renderStory(task, String(p.id), now);
+    files[paths.shape] = renderShape(task);
+    if (task.nodes.some((n) => n.stage === 'critique' && n.result)) files[paths.critique] = renderCritique(task);
+    for (const p of task.spec.packages) files[paths.story(p.id)] = renderStory(task, String(p.id));
   }
-  if (task.nodes.some((n) => n.stage === 'integrate' && n.result)) files[paths.integrate] = renderIntegrate(task, now);
-  if (task.nodes.some((n) => n.stage === 'gate' && n.subgoal_id === null && n.result)) files[paths.goalGate] = renderGoalGate(task, now);
-  if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) files[paths.report] = renderReport(task, now);
+  if (task.nodes.some((n) => n.stage === 'integrate' && n.result)) files[paths.integrate] = renderIntegrate(task);
+  if (task.nodes.some((n) => n.stage === 'gate' && n.subgoal_id === null && n.result)) files[paths.goalGate] = renderGoalGate(task);
+  if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) files[paths.report] = renderReport(task);
   return files;
 }
 
@@ -154,7 +159,7 @@ export function renderAll(task, now = Date.now()) {
 // file from a superseded package (a reshape that dropped it) cannot linger - every remaining
 // call writes fresh files over whatever is there.
 export function writeDocs(task, opts = {}) {
-  const files = renderAll(task, opts.now);
+  const files = renderAll(task);
   if (opts.rebuild) {
     try { rmSync(docPaths(task).dir, { recursive: true, force: true }); } catch { /* nothing to remove */ }
   }
