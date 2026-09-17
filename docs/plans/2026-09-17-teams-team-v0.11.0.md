@@ -77,7 +77,7 @@ SKILL.md 둘, golden 픽스처 파일들.
   파생 함수 자체는 옳고 단위 테스트로 그 창을 고정해서 본다).
 - 저장소에 "golden 파일 비교" 관례가 이미 있는 테스트는 없다(`grep -r golden` 무응답) — 이번
   라운드가 이 패턴을 새로 연다. golden 파일은 `teams/scripts/fixtures/docs-golden/`에 둔다.
-- `.claude/team.json`의 `docs_dir` 기본값(`.harness-run/team`)은 이미 v0.10.0의
+- `.claude/team.json`의 `docs_dir` 기본값(`.teams_output/team`)은 이미 v0.10.0의
   `teamconfig.mjs`(`TEAM_DEFAULTS.docs_dir`)에 있고 모든 `task.team.opts.docs_dir`에 이미 채워져
   있다 — §7c가 요구하는 위치 규칙을 위해 새 배관이 필요 없다.
 - `graph.mjs`가 내보내는 `nodeKind(run, n)`/`KINDS`/`authorStage`는 자식 run의 subgoal이 어떤
@@ -169,7 +169,7 @@ const TASK_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 
 function baseTask(nodes, extra) {
   return { run_id: TASK_ID, cwd: '/proj', request: 'do the thing', created_at: 1,
-    team: { opts: { docs_dir: '.harness-run/team' } }, spec: null, nodes, ...extra };
+    team: { opts: { docs_dir: '.teams_output/team' } }, spec: null, nodes, ...extra };
 }
 
 function dispatchNode(pkgId, patch) {
@@ -185,8 +185,8 @@ test('epicKey takes the task id\'s first 8 hex chars; storyKey/docPaths compose 
   assert.equal(epicKey(TASK_ID), 'E-aaaaaaaa');
   assert.equal(storyKey(TASK_ID, 'P1'), 'E-aaaaaaaa/P1');
   const paths = docPaths(baseTask([]));
-  assert.equal(paths.index, '/proj/.harness-run/team/E-aaaaaaaa/INDEX.md');
-  assert.equal(paths.story('P2'), '/proj/.harness-run/team/E-aaaaaaaa/40-stories/P2.md');
+  assert.equal(paths.index, '/proj/.teams_output/team/E-aaaaaaaa/INDEX.md');
+  assert.equal(paths.story('P2'), '/proj/.teams_output/team/E-aaaaaaaa/40-stories/P2.md');
 });
 
 test('docPaths honors team.json\'s docs_dir override', () => {
@@ -362,11 +362,11 @@ export function taskKey(taskId, pkgId, subgoalId) {
   return `${storyKey(taskId, pkgId)}/${subgoalId}`;
 }
 
-// §7c: the project's own docs_dir (team.json, default .harness-run/team - already resolved onto
+// §7c: the project's own docs_dir (team.json, default .teams_output/team - already resolved onto
 // every task by teamconfig.mjs) holds one directory per EPIC. story() is a function because a
 // STORY's file lives one level deeper, under 40-stories/.
 export function docPaths(task) {
-  const docsDir = (task.team && task.team.opts && task.team.opts.docs_dir) || join('.harness-run', 'team');
+  const docsDir = (task.team && task.team.opts && task.team.opts.docs_dir) || join('.teams_output', 'team');
   const base = join(task.cwd, docsDir, epicKey(task.run_id));
   return {
     dir: base,
@@ -739,7 +739,7 @@ function fixtureTask(cwd) {
     cwd,
     request: 'change a.txt and b.txt together',
     context: 'from the requester: keep both in sync',
-    team: { opts: { docs_dir: '.harness-run/team', interactive: false, max_parallel_teams: 2, roles: { planning: false, qa: false }, goal_threshold: 90 } },
+    team: { opts: { docs_dir: '.teams_output/team', interactive: false, max_parallel_teams: 2, roles: { planning: false, qa: false }, goal_threshold: 90 } },
     size: 'L', size_pinned: null, flow: 'develop', flow_chosen: 'develop',
     leader: { pid: 4242 },
     spec: {
