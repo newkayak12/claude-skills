@@ -97,6 +97,25 @@ export const KINDS = {
       gate: ['think:devils-advocate'],
     },
   },
+  // planning's own second pass over an EPIC, after integration: audit compares the PRD's
+  // user_stories[] against what was actually built (and, when a QA report exists, against
+  // it too) and gate judges completeness. Unlike planning's revise, audit has no edit
+  // rights - that is stated in the audit stage's own Required-output contract
+  // (prompts.mjs), not encoded here via `reasoning`, because this table follows the same
+  // shape planning and qa already use: every non-final chain stage counts as mutating, and
+  // only the closing gate judges. audit's own skill is think:devils-advocate, same as
+  // gate - its character is judgment, not authorship, so there is no draft/revise-style
+  // authoring skill to name. Nothing opens this kind yet; wiring the audit phase-Team into
+  // the EPIC flow (taskmanager.mjs) is separate, unstarted work - this is an inert lookup
+  // table row.
+  'planning-audit': {
+    chain: ['audit', 'gate'],
+    reasoning: [],
+    skills: {
+      audit: ['think:devils-advocate'],
+      gate: ['think:devils-advocate'],
+    },
+  },
 };
 
 // The method a node inherits from its kind. A spec that names its own `skills` for the
@@ -152,6 +171,13 @@ export const FLOWS = {
   qa: {
     kind: 'qa',
     personas: ['QA who represents the user', 'release manager weighing risk', 'someone deliberately trying malicious or malformed input'],
+  },
+  // The 기획 크로스 검수 (planning cross-review) pass: planning's own identity, run a
+  // second time against the integrated result, so its persona list is planning's own -
+  // verbatim, not a new set (a decision already made, not this file's to reopen).
+  audit: {
+    kind: 'planning-audit',
+    personas: ['PO who owns value and scope', 'domain expert who owns terminology and rules', 'implementation lead reading for feasibility'],
   },
 };
 export const DEFAULT_FLOW = 'develop';
