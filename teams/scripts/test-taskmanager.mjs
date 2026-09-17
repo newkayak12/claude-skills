@@ -619,6 +619,58 @@ test('roles.qa inserts a QA phase-Team between integrate and gate:goal, reusing 
   }, { roles: { qa: true } });
 });
 
+test('max_parallel_teams:1 opens only the lowest-priority ready dispatch; the rest stay pending', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    let v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop' }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    v = await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({
+      acceptance: ['all three modules build'],
+      packages: [
+        { id: 'P1', title: 'module a', flow: 'develop', brief: 'change a.txt', acceptance: ['a'], touches: ['a.txt'], deps: [] },
+        { id: 'P2', title: 'module b', flow: 'develop', brief: 'change b.txt', acceptance: ['b'], touches: ['b.txt'], deps: [] },
+        { id: 'P3', title: 'module c', flow: 'develop', brief: 'change c.txt', acceptance: ['c'], touches: ['c.txt'], deps: [] },
+      ],
+      handoff: 's',
+    }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    await tm.call('tm_submit', { task_id, node_id: 'critique', payload: ok({ sound: true }) });
+
+    const nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children.length, 1, 'only one dispatch opens with max_parallel_teams:1');
+    assert.equal(nx.children[0].package_id, 'P1', 'the lowest-priority ready package (array position 0) opens first');
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    for (const id of ['dispatch:P2:1', 'dispatch:P3:1']) {
+      const n = task.nodes.find((x) => x.node_id === id);
+      assert.equal(n.state, 'pending', `${id} is ready but must wait for capacity, not open`);
+      assert.equal(n.child, undefined);
+    }
+
+    // A second poll, with P1 still running: the cap (1) is already spent, so nothing new opens.
+    const again = await tm.call('tm_next', { task_id });
+    assert.equal(again.children.length, 1);
+    assert.equal(again.children[0].package_id, 'P1');
+  }, { max_parallel_teams: 1 });
+});
+
+test('below the cap, independent ready dispatches still open at once (regression)', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    let v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop' }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    v = await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({
+      acceptance: ['both modules build'],
+      packages: [
+        { id: 'P1', title: 'module a', flow: 'develop', brief: 'change a.txt', acceptance: ['a'], touches: ['a.txt'], deps: [] },
+        { id: 'P2', title: 'module b', flow: 'develop', brief: 'change b.txt', acceptance: ['b'], touches: ['b.txt'], deps: [] },
+      ],
+      handoff: 's',
+    }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    await tm.call('tm_submit', { task_id, node_id: 'critique', payload: ok({ sound: true }) });
+    const nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children.length, 2, 'the default max_parallel_teams (2) is not exceeded, so both open immediately, exactly as before this change');
+  });
+});
+
 // ---------- the manager's own goal gate has the same floor as the graph engine's ----------
 
 // Drive the default two-package SHAPE to the point where gate:goal:1 is ready, reusing
