@@ -312,3 +312,163 @@ test('proof: the 4999ed8 shape (tm_open never threading goal_judges through) mak
   const r = checkGoalJudgesException(realGraph, realBroker, mutatedTaskmanager);
   assert.ok(!r.ok, 'the goal_judges guard should FAIL once tm_open stops reading a.goal_judges and hardcodes the literal instead - it did not, so this guard cannot catch the 4999ed8 bug (an argument silently never threaded through, with no way for a caller to raise a package\'s judge count)');
 });
+
+// ---------- guard D: every declared output-schema field must have a producer ----------
+//
+// A sibling bug class to A/B/C above, same underlying shape: a declaration and the behaviour
+// behind it disagree, and nothing catches it. Where A/B/C are about one OPTION's default value
+// agreeing across sites, D is about one FIELD's presence in an output schema being backed by
+// code that can actually produce it. It shipped once: taskmanager.mjs's NEXT_SCHEMA and
+// VERDICT_SCHEMA both declared `delegate` (and NEXT_SCHEMA's `state` enum listed `'delegated'`),
+// but `delegateIfSmall` (taskmanager.mjs) always calls `openSRun` and returns
+// `task_state: 's_run'` - nothing ever set `delegate`. Fixed in the commit this guard's proof
+// test targets; this guard is general on purpose, so the next field that goes the same way
+// fails a test instead of sitting undetected the way `delegate` did.
+//
+// A field counts as having a producer if, anywhere in the file OUTSIDE the schema's own
+// declaration and outside comments, it appears as:
+//   1. a JS object-literal key:      fieldName: <value>        (most fields)
+//   2. a JSON-shaped CONTRACT key:   "fieldName": <value>      (a field a fresh agent's payload
+//                                    carries, spread through via `{...payload}` in toolSubmit -
+//                                    CONTRACT's "Return JSON" templates are where that shape is
+//                                    documented, in JSON's quoted-key syntax, not JS's)
+//   3. a dot-assignment:             <expr>.fieldName = <value>  (a few fields, e.g. gap_count
+//                                    and missing_verdict, are computed onto an object after
+//                                    it's built, not declared as a literal key)
+// This is deliberately textual, not a real evaluator: a field produced only through some other
+// indirection (a computed key, a renamed destructure) would still read as "unreachable" here and
+// need the explicit ALLOWLIST below, with the reason a human can check. An empty allowlist today
+// means every current field is producible by one of the three patterns above - proven per-field,
+// not assumed.
+
+function stripComments(src) {
+  let out = '';
+  let inStr = null;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i], n = src[i + 1];
+    if (inStr) {
+      out += c;
+      if (c === '\\') { out += n; i++; continue; }
+      if (c === inStr) inStr = null;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') { inStr = c; out += c; continue; }
+    if (c === '/' && n === '/') { while (i < src.length && src[i] !== '\n') i++; out += '\n'; continue; }
+    if (c === '/' && n === '*') { i += 2; while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) i++; i++; out += '  '; continue; }
+    out += c;
+  }
+  return out;
+}
+
+// Balanced-brace extraction from `openIdx` (the index of an opening `{`), string-literal-aware
+// so a brace quoted inside a description (there are none today, but a future one could add one)
+// can't desync the depth count.
+function extractBalanced(src, openIdx) {
+  let depth = 0, inStr = null;
+  for (let i = openIdx; i < src.length; i++) {
+    const c = src[i];
+    if (inStr) {
+      if (c === '\\') { i++; continue; }
+      if (c === inStr) inStr = null;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') { inStr = c; continue; }
+    if (c === '{') depth++;
+    else if (c === '}') { depth--; if (depth === 0) return src.slice(openIdx, i + 1); }
+  }
+  throw new Error(`unbalanced braces extracting from index ${openIdx}`);
+}
+
+function findSchemaLiteral(src, constName) {
+  const m = new RegExp(`const ${constName}\\s*=\\s*(\\{)`).exec(src);
+  if (!m) throw new Error(`"const ${constName} = {" not found - schema renamed or restructured; update this guard`);
+  return extractBalanced(src, m.index + m[0].length - 1);
+}
+
+// Object.keys(schema.properties) reads the schema's OWN notion of its top-level fields - not a
+// regex re-deriving what "looks like" a field, so a nested field (e.g. NEXT_SCHEMA.ready's own
+// item shape) is never mistaken for a top-level one. The schema literal has no free variables
+// (every value is a literal string/array/object), so evaluating it is exact, not approximate.
+function schemaKeys(rawLiteral) {
+  const schema = new Function(`return ${rawLiteral}`)();
+  return Object.keys(schema.properties);
+}
+
+// Fields with no textual producer anywhere else in this file, by design: each entry names why,
+// so an empty allowlist (the state today) is a claim this test proves, not an assumption.
+const SCHEMA_FIELD_ALLOWLIST = {};
+
+// Removes each schema's own literal text from a comment-stripped copy of `fullSrc`, so a
+// field's declaration inside its own schema can never count as its own producer, then checks
+// every declared field's producer patterns against what's left. Throws if a schema's
+// comment-stripped literal can't be found verbatim in the comment-stripped source (extraction
+// drifted from stripComments) rather than silently checking nothing.
+function checkSchemaReachability(fullSrc, schemaNames, allowlist = SCHEMA_FIELD_ALLOWLIST) {
+  const noComments = stripComments(fullSrc);
+  let producerText = noComments;
+  const allKeys = {};
+  for (const name of schemaNames) {
+    allKeys[name] = schemaKeys(findSchemaLiteral(fullSrc, name));
+    const strippedLiteral = findSchemaLiteral(noComments, name);
+    const before = producerText;
+    producerText = producerText.split(strippedLiteral).join('');
+    if (producerText === before) throw new Error(`${name}'s literal did not appear in the comment-stripped source - extraction mismatch, not "no comments to strip"`);
+  }
+  const reachable = (field) => {
+    const objKey = new RegExp(`\\b${field}\\s*:`);
+    const jsonKey = new RegExp(`"${field}"\\s*:`);
+    const dotAssign = new RegExp(`\\.${field}\\s*=[^=]`);
+    return objKey.test(producerText) || jsonKey.test(producerText) || dotAssign.test(producerText);
+  };
+  const unreachable = [];
+  for (const [schemaName, keys] of Object.entries(allKeys)) {
+    for (const k of keys) {
+      if (reachable(k) || allowlist[k]) continue;
+      unreachable.push(`${schemaName}.${k}`);
+    }
+  }
+  return { unreachable, allKeys };
+}
+
+test('every NEXT_SCHEMA/VERDICT_SCHEMA field in taskmanager.mjs has a producer, or a reasoned allowlist entry', () => {
+  const r = checkSchemaReachability(src('teamsTaskmanager'), ['NEXT_SCHEMA', 'VERDICT_SCHEMA']);
+  assert.deepEqual(r.unreachable, [], `declared with no producer and no allowlist entry: ${r.unreachable.join(', ')}`);
+  // The vacuity floor guard A/B/C already explain: too few fields found means extraction
+  // stopped matching real code, not that the schemas shrank. Pinned to today's exact shape -
+  // if a field is added or removed, update these two numbers in the same commit.
+  assert.equal(r.allKeys.NEXT_SCHEMA.length, 7, `NEXT_SCHEMA should declare 7 fields, found ${r.allKeys.NEXT_SCHEMA.length}: ${r.allKeys.NEXT_SCHEMA.join(', ')}`);
+  assert.equal(r.allKeys.VERDICT_SCHEMA.length, 19, `VERDICT_SCHEMA should declare 19 fields, found ${r.allKeys.VERDICT_SCHEMA.length}: ${r.allKeys.VERDICT_SCHEMA.join(', ')}`);
+});
+
+test('guard D is general, not tuned to taskmanager.mjs: a synthetic schema with one produced and one dead field is told apart correctly', () => {
+  const synthetic = `
+const FAKE_SCHEMA = {
+  type: 'object',
+  properties: {
+    alpha: { type: 'string' },
+    beta: { type: 'string' },
+  },
+};
+
+function build() {
+  return { alpha: 'x' }; // beta is declared above but never produced anywhere
+}
+`;
+  const r = checkSchemaReachability(synthetic, ['FAKE_SCHEMA']);
+  assert.deepEqual(r.unreachable, ['FAKE_SCHEMA.beta']);
+  assert.deepEqual(r.allKeys.FAKE_SCHEMA, ['alpha', 'beta']);
+});
+
+test('proof: re-adding delegate to NEXT_SCHEMA (the exact 2095662 shape) makes guard D fail; the real source passes', () => {
+  const realTaskmanager = src('teamsTaskmanager');
+  assert.deepEqual(checkSchemaReachability(realTaskmanager, ['NEXT_SCHEMA', 'VERDICT_SCHEMA']).unreachable, [], 'sanity: real source must pass before mutating it');
+
+  const mutated = realTaskmanager.replace(
+    "flow: { type: 'string' },\n    ready:",
+    "flow: { type: 'string' },\n    delegate: { type: 'object', description: 'size S: open this with team_open instead; the task left nothing on disk' },\n    ready:",
+  );
+  assert.notEqual(mutated, realTaskmanager, 'mutation target text was not found in teams/mcp/taskmanager.mjs - update this proof to match current source');
+
+  const r = checkSchemaReachability(mutated, ['NEXT_SCHEMA', 'VERDICT_SCHEMA']);
+  assert.deepEqual(r.unreachable, ['NEXT_SCHEMA.delegate'], 'guard D should flag exactly the re-added dead field - it did not, so this guard cannot catch the 2095662 shape (a schema field with no producer)');
+});
