@@ -266,3 +266,54 @@ test('a short handoff is left exactly alone, in upstream and whole_run alike', (
   assert.equal(occurrences, 2);
   assert.ok(!prompt.includes('truncated'));
 });
+
+// ---------- new-kind contracts: revise, cases, execute ----------
+
+test('revise, cases and execute each get their own Required output contract, not the implement fallback', () => {
+  const cwd = tmpProject();
+  try {
+    const run = baseRun(cwd);
+    for (const stage of ['revise', 'cases', 'execute']) {
+      const prompt = composePrompt(run, baseNode({ stage }), baseBriefing());
+      assert.ok(prompt.includes('## Required output'));
+      // The implement contract's own signature line - if this appears, the lookup fell
+      // back instead of finding a contract keyed to this stage name.
+      assert.doesNotMatch(prompt, /"handoff": "<paths, names, interfaces the dependent work needs>"/,
+        `${stage} must not fall back to CONTRACT.implement`);
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('revise contract allows editing and asks for claim-vs-evidence checks, unlike review', () => {
+  const cwd = tmpProject();
+  try {
+    const prompt = composePrompt(baseRun(cwd), baseNode({ stage: 'revise' }), baseBriefing());
+    assert.match(prompt, /you may edit the artifact/i);
+    assert.match(prompt, /"changed_files"/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('execute contract asks for defects, forbids touching src/, and carries a verdict like test', () => {
+  const cwd = tmpProject();
+  try {
+    const prompt = composePrompt(baseRun(cwd), baseNode({ stage: 'execute' }), baseBriefing());
+    assert.match(prompt, /"defects"/);
+    assert.match(prompt, /do not touch src\//i);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('cases contract writes a scenario spec derived from acceptance, not from the implementation', () => {
+  const cwd = tmpProject();
+  try {
+    const prompt = composePrompt(baseRun(cwd), baseNode({ stage: 'cases' }), baseBriefing());
+    assert.match(prompt, /scenario\/case specification/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
