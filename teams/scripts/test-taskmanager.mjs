@@ -351,6 +351,79 @@ test('a shape is validated: one package, overlapping touches, dangling deps and 
   });
 });
 
+// Drives the PLAN package (opened by roles.planning:true) from dispatch to accept, so the
+// task reaches the point where shape can be submitted with `implements[]` checked against
+// these userStories. Assumes `size` has already been submitted.
+async function completePlanning(tm, g, task_id, cwd, userStories) {
+  const nx = await tm.call('tm_next', { task_id });
+  const child = nx.children.find((c) => c.package_id === 'PLAN');
+  const sub = (node_id, payload) => g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id, payload: ok(payload) });
+  await sub('plan', { handoff: 'p', flow: 'plan', size: 'S' });
+  await sub('setgoal', { spec: { goal: 'PRD', acceptance: ['PRD covers the request'], subgoals: [{ id: 'U1', title: 'draft PRD', acceptance: ['PRD written'], deps: [] }] } });
+  await sub('critique', { sound: true });
+  await sub('draft:U1:1', { changed_files: [], handoff: 'drafted' });
+  await sub('revise:U1:1', { changed_files: [], handoff: 'revised' });
+  await sub('gate:U1:1', { accept: true, match_pct: 95 });
+  await sub('gate:goal:1', { accept: true, match_pct: 95, user_stories: userStories });
+  await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+  await sub('report', { handoff: 'PRD complete' });
+  await tm.call('tm_submit', { task_id, node_id: 'dispatch:PLAN:1' });
+  await tm.call('tm_submit', { task_id, node_id: 'accept:PLAN:1', payload: ok({ accept: true, match_pct: 95 }) });
+}
+
+test('shape is rejected when implements[] does not cover every user story planning produced', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    const v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2 modules'], handoff: 'two modules' }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    await completePlanning(tm, g, task_id, cwd, ['US-1', 'US-2']);
+
+    const rejected = await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({
+      acceptance: ['both modules build together'],
+      packages: [
+        { id: 'P1', title: 'module a', flow: 'develop', brief: 'change a.txt', acceptance: ['a.txt says a'], touches: ['a.txt'], deps: [], implements: ['US-1'] },
+        { id: 'P2', title: 'module b', flow: 'develop', brief: 'change b.txt', acceptance: ['b.txt says b'], touches: ['b.txt'], deps: [] },
+      ],
+      handoff: 's',
+    }) });
+    assert.equal(rejected.state, 'failed', JSON.stringify(rejected));
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const shapeProblems = task.nodes.find((n) => n.node_id === 'shape').result.shape_problems;
+    assert.ok(shapeProblems.some((p) => p.includes('US-2')), JSON.stringify(shapeProblems));
+    assert.ok(!shapeProblems.some((p) => p.includes('US-1 ')), 'US-1 is covered by P1 and must not be named as missing');
+  }, { roles: { planning: true } });
+});
+
+test('shape whose implements[] fully covers user stories is accepted, and priority defaults to array position', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    const v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2 modules'], handoff: 'two modules' }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    await completePlanning(tm, g, task_id, cwd, ['US-1', 'US-2']);
+
+    const accepted = await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({
+      acceptance: ['both modules build together'],
+      packages: [
+        { id: 'P1', title: 'module a', flow: 'develop', brief: 'change a.txt', acceptance: ['a.txt says a'], touches: ['a.txt'], deps: [], implements: ['US-1'] },
+        { id: 'P2', title: 'module b', flow: 'develop', brief: 'change b.txt', acceptance: ['b.txt says b'], touches: ['b.txt'], deps: [], implements: ['US-2'] },
+      ],
+      handoff: 's',
+    }) });
+    assert.equal(accepted.state, 'done', JSON.stringify(accepted));
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.deepEqual(task.spec.packages.map((p) => [p.id, p.priority]), [['P1', 0], ['P2', 1]], 'priority defaults to array position when the shape omits it');
+  }, { roles: { planning: true } });
+});
+
+test('implements[] completeness is skipped entirely when roles.planning is off (regression)', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    const v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop' }) });
+    assert.equal(v.state, 'done');
+    // SHAPE's packages carry no `implements` at all; with planning off there is no user_stories
+    // list to check them against, so this must still be accepted exactly as before this change.
+    const result = await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({ ...SHAPE, handoff: 's' }) });
+    assert.equal(result.state, 'done', JSON.stringify(result));
+  });
+});
+
 test('a sound shape dispatches its root package: worktree created, child run opened, node running', async () => {
   await withTask(async ({ tm, g, cwd, root, task_id }) => {
     await throughCritique(tm, task_id);
