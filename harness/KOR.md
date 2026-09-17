@@ -126,10 +126,10 @@ node "<plugin>/skills/remove/remove.mjs" '{
 
 ### `patch`
 
-하네스 플러그인 **소스**의 패치 릴리스를 준비합니다. 두 매니페스트의 `x.y.Z`를 올리고 Status
-로그 맨 위에 한 줄짜리 노트를 넣어요. 이 마켓플레이스 체크아웃용이지, 애플리케이션 프로젝트에
-설치된 파일을 갱신하는 용도가 아닙니다. 기능/브레이킹 릴리스에도 쓰지 마세요 — 그건 minor/major를
-직접 올려야 합니다.
+하네스 플러그인 **소스**의 패치 릴리스를 준비합니다. 두 매니페스트의 `x.y.Z`를 올리고 README와
+KOR.md 양쪽 Status 로그 맨 위에 각각 영문/한글 한 줄짜리 노트를 넣어요. 이 마켓플레이스
+체크아웃용이지, 애플리케이션 프로젝트에 설치된 파일을 갱신하는 용도가 아닙니다. 기능/브레이킹
+릴리스에도 쓰지 마세요 — 그건 minor/major를 직접 올려야 합니다.
 
 ```
 하네스 패치 릴리스 준비해줘 — 이번 diff 요약해서 Status에 한 줄 넣고 버전 올려줘.
@@ -139,19 +139,22 @@ node "<plugin>/skills/remove/remove.mjs" '{
 node "<plugin>/skills/patch/patch.mjs" '{
   "repoRoot": "<claude-skills 체크아웃 절대경로>",
   "summary": "<간결한 status 한 줄>",
+  "summary_ko": "<간결한 한국어 status 한 줄>",
   "dryRun": true
 }'
 ```
 
 먼저 dry-run으로 이전/다음 버전을 확인하고, 그다음 `"dryRun": false`로 다시 돌립니다. 플러그인과
-마켓플레이스 버전이 다르거나, Status 헤딩이 없거나, summary가 비었거나 여러 줄이면 쓰기를
-거부합니다. 건드리는 파일:
+마켓플레이스 버전이 다르거나, README의 `## Status` 또는 KOR.md의 `## 상태` 헤딩이 없거나,
+`summary`/`summary_ko` 중 하나라도 비었거나 여러 줄이거나 빠졌으면 쓰기를 거부합니다 — 한쪽
+언어만 있는 릴리스 노트는 이 스킬이 막으려는 바로 그 문제라 허용하지 않습니다. 건드리는 파일:
 
 | 파일 | 변경 |
 |---|---|
 | `harness/.claude-plugin/plugin.json` | `version` 패치 증가 |
 | `.claude-plugin/marketplace.json` | `harness` 항목의 `version` |
 | `harness/README.md` | `## Status`의 새 첫 항목 |
+| `harness/KOR.md` | `## 상태`의 새 첫 항목 |
 
 ### `codex-control`
 
@@ -241,10 +244,14 @@ Implement 단계에서 plugin 모드로 Codex 돌려야 해 — 어댑터부터 
 - **`harness:remove`** — 설치된 훅, 등록, 게이트, 임베드 런타임, 마커 캐시, CLAUDE.md 블록,
   gitignore 항목을 제거합니다. 프로젝트 소유 컨벤션은 명시적으로 요청하지 않는 한 보존됩니다.
 - **`harness:patch`** — 소스 패치 릴리스를 준비합니다. 두 매니페스트의 패치 버전을 올리고,
-  전달받은 한 줄 릴리스 노트를 Status 섹션 맨 위에 넣습니다. 먼저 dry-run하고, 버전이 어긋나면
-  거부합니다.
+  영문/한글 릴리스 노트를 각각 README와 이 파일의 Status 섹션 맨 위에 넣습니다. 먼저 dry-run하고,
+  버전이 어긋나거나 둘 중 한쪽 언어 노트가 빠지면 거부합니다.
 
-버전별 변경 이력은 [README의 Status](README.md#status) 섹션에 있습니다.
+## 상태
+- **이 지점 이전 항목**: 여기부터 새로 쌓이는 항목이 실제 릴리스 이력입니다. v1.22.2 이하의
+  이전 변경 이력은 이 파일에 한국어로 없습니다 — 패치 도구(`patch.mjs`)가 최근까지 이 파일에는
+  쓰지 않고 `README.md`에만 기록했기 때문입니다. 전체 이력은 영어
+  [README의 Status](README.md#status) 섹션에서 볼 수 있습니다.
 
 진입점: [`harness`](skills/harness/SKILL.md), [`install`](skills/install/SKILL.md),
 [`remove`](skills/remove/SKILL.md), [`patch`](skills/patch/SKILL.md),

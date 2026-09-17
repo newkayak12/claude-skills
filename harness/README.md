@@ -144,19 +144,23 @@ feature- or breaking-sized releases (use an explicit minor/major bump instead).
 node "<plugin>/skills/patch/patch.mjs" '{
   "repoRoot": "<abs claude-skills checkout>",
   "summary": "<concise status entry>",
+  "summary_ko": "<concise 한국어 status entry>",
   "dryRun": true
 }'
 ```
 
 Dry-run first, confirm the reported previous/next versions, then re-run with `"dryRun": false`.
-It refuses to write when plugin and marketplace versions differ, the Status heading is missing, or
-the summary is empty or multiline. Files touched:
+It refuses to write when plugin and marketplace versions differ, either Status heading
+(`README.md`'s `## Status` or `KOR.md`'s `## 상태`) is missing, or either `summary` / `summary_ko`
+is empty, multiline, or omitted — English-only and Korean-only releases are both refused. Files
+touched:
 
 | File | Change |
 |---|---|
 | `harness/.claude-plugin/plugin.json` | `version` patch bump |
 | `.claude-plugin/marketplace.json` | the `harness` entry's `version` |
 | `harness/README.md` | new first entry under `## Status` |
+| `harness/KOR.md` | new first entry under `## 상태` |
 
 ### `codex-control`
 
@@ -250,7 +254,8 @@ engagement. Fail-open everywhere (v0 lesson) — a nudge, not security.
   unless their removal is explicitly requested.
 - **`harness:patch`** prepares a source patch release: it increments the harness patch
   version in both manifests and inserts the supplied one-line release note at the top of this
-  Status section. It dry-runs first and refuses mismatched versions.
+  Status section *and* the matching Korean note at the top of `KOR.md`'s `## 상태` section. It
+  dry-runs first and refuses mismatched versions or a release note supplied in only one language.
 
 ## Status
 - **v1.22.2 — graph path opens in balanced mode**: step 0 documented `graph_open({request,
