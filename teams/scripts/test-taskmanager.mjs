@@ -572,6 +572,53 @@ test('a parent with two dependent children runs to report; the second child sees
   });
 });
 
+test('roles.qa left at its default (false) leaves gate:goal depending directly on integrate (regression)', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['gate:goal:1']);
+    const st = await tm.call('tm_status', { task_id, node_id: 'gate:goal:1' });
+    assert.deepEqual(st.nodes[0].deps, ['integrate:1']);
+  });
+});
+
+test('roles.qa inserts a QA phase-Team between integrate and gate:goal, reusing the repair-style worktree (§2, §3)', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    const v = await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    const integ = await tm.call('tm_status', { task_id, node_id: 'integrate:1', full: true });
+
+    const nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children.length, 1, JSON.stringify(nx));
+    const qa = nx.children[0];
+    assert.equal(qa.package_id, 'QA');
+    assert.equal(qa.cwd, integ.node.integration.cwd, "QA reuses integrate's worktree, not a fresh one");
+
+    const sub = (node_id, payload) => g.call('team_submit', { run_id: qa.run_id, cwd: qa.cwd, node_id, payload: ok(payload) });
+    await sub('plan', { handoff: 'p', flow: 'qa', size: 'S' });
+    await sub('setgoal', { spec: { goal: 'QA', acceptance: ['no regressions'], subgoals: [{ id: 'Q1', title: 'run cases', acceptance: ['cases run'], deps: [] }] } });
+    await sub('critique', { sound: true });
+    await sub('cases:Q1:1', { changed_files: [], handoff: 'cases written' });
+    await sub('execute:Q1:1', { verified: true, handoff: 'cases passed' });
+    await sub('gate:Q1:1', { accept: true, match_pct: 95 });
+    await sub('gate:goal:1', { accept: true, match_pct: 95 });
+    const qaNext = await g.call('team_next', { run_id: qa.run_id, cwd: qa.cwd });
+    assert.deepEqual(qaNext.ready.map((n) => n.node_id), ['report']);
+    await sub('report', { handoff: 'QA report: no defects' });
+
+    const folded = await tm.call('tm_submit', { task_id, node_id: 'dispatch:QA:1' });
+    assert.equal(folded.state, 'done', JSON.stringify(folded));
+    const goalGateStatus = await tm.call('tm_status', { task_id, node_id: 'gate:goal:1' });
+    assert.deepEqual(goalGateStatus.nodes[0].deps, ['accept:QA:1'], 'gate:goal must wait on QA, not on integrate directly, once roles.qa is on');
+    const accepted = await tm.call('tm_submit', { task_id, node_id: 'accept:QA:1', payload: ok({ accept: true, match_pct: 95 }) });
+    assert.equal(accepted.state, 'done', JSON.stringify(accepted));
+    const after = await tm.call('tm_next', { task_id });
+    assert.deepEqual(after.ready.map((n) => n.node_id), ['gate:goal:1']);
+  }, { roles: { qa: true } });
+});
+
 // ---------- the manager's own goal gate has the same floor as the graph engine's ----------
 
 // Drive the default two-package SHAPE to the point where gate:goal:1 is ready, reusing
