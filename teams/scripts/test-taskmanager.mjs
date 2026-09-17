@@ -451,22 +451,17 @@ test('tm_open({goal_threshold: 80}) lets the same 85% accept', async () => {
   }, { goal_threshold: 80 });
 });
 
-test('tm_open({goal_threshold}) is stored on the task and reaches every child through child_opts', async () => {
-  const cwd = repo();
-  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  // No HARNESS_CHILD_DRIVER override here: without HARNESS_TEST_NO_LEADER, tm_open would try to
-  // spawn a real `claude` process for the TaskLeader the moment it is called.
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_LEADER: '1' }).init();
-  try {
-    const open = await tm.call('tm_open', { request: 'r', cwd, vendor: 'self', goal_threshold: 77 });
-    const task = JSON.parse(readFileSync(join(root, open.task_id, 'task.json'), 'utf8'));
+test('tm_open({goal_threshold}) is stored on the task and reaches every child through child_opts and the actual dispatched run', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
     assert.equal(task.goal_threshold, 77);
     assert.equal(task.child_opts.goal_threshold, 77, 'every child run is opened with the same floor');
-  } finally {
-    tm.close();
-    rmSync(cwd, { recursive: true, force: true });
-    rmSync(root, { recursive: true, force: true });
-  }
+    await throughCritique(tm, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    const c = nx.children[0];
+    const full = await g.call('team_status', { run_id: c.run_id, cwd: c.cwd, full: true });
+    assert.equal(full.goal_threshold, 77, 'an explicit tm_open argument must reach the actual dispatched child run, not just the parent task.json');
+  }, { goal_threshold: 77 });
 });
 
 test('a dispatched child run keeps the legacy single-judge default (goal_judges:1) unless tm_open asks for more', async () => {
@@ -1605,23 +1600,35 @@ test('tm_open reads .claude/team.json as defaults and an explicit argument still
   } finally { tm.close(); rmSync(dir, { recursive: true, force: true }); rmSync(tasks, { recursive: true, force: true }); }
 });
 
-test('team.json-only goal_threshold and max_retries (no explicit tm_open args) reach child_opts, not just the task-level gate', async () => {
+test('team.json-only goal_threshold and max_retries (no explicit tm_open args) reach child_opts and the actual dispatched child run', async () => {
   const dir = repo();
   const tasks = mkdtempSync(join(tmpdir(), 'tm-tasks-'));
   mkdirSync(join(dir, '.claude'), { recursive: true });
   writeFileSync(join(dir, '.claude', 'team.json'), JSON.stringify({ goal_threshold: 95, max_retries: 4 }));
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: tasks, HARNESS_TEST_NO_LEADER: '1' }).init();
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: tasks, HARNESS_TEST_NO_DRIVER: '1' }).init();
+  const g = await new Client(BROKER).init();
   try {
     // Neither goal_threshold nor max_retries is passed as an explicit tm_open argument here -
     // team.json is the only source, so child_opts must pick it up the same way vendor/allocation
     // and the task-level gate fields already do.
     const a = await tm.call('tm_open', { request: 'r', cwd: dir, vendor: 'self' });
-    const task = JSON.parse(readFileSync(join(tasks, a.task_id, 'task.json'), 'utf8'));
+    const task_id = a.task_id;
+    const task = JSON.parse(readFileSync(join(tasks, task_id, 'task.json'), 'utf8'));
     assert.equal(task.goal_threshold, 95, 'task-level gate sees team.json');
     assert.equal(task.max_retries, 4, 'task-level gate sees team.json');
     assert.equal(task.child_opts.goal_threshold, 95, 'every child run must be opened with the project floor, not the 90 args fallback');
     assert.equal(task.child_opts.max_retries, 4, 'every child run must be opened with the project retry budget, not the 2 args fallback');
-  } finally { tm.close(); rmSync(dir, { recursive: true, force: true }); rmSync(tasks, { recursive: true, force: true }); }
+
+    // The claim above only reaches the parent's own task.json. Drive to the point where a
+    // package is actually dispatched, and read the value back through the broker's own
+    // team_status on that child run - the same hop the goal_judges test already proves.
+    await throughCritique(tm, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    const c = nx.children[0];
+    const full = await g.call('team_status', { run_id: c.run_id, cwd: c.cwd, full: true });
+    assert.equal(full.goal_threshold, 95, 'the dispatched child run must actually open with the project floor, not the 90 default');
+    assert.equal(full.max_retries, 4, 'the dispatched child run must actually open with the project retry budget, not the 2 default');
+  } finally { tm.close(); g.close(); rmSync(dir, { recursive: true, force: true }); rmSync(tasks, { recursive: true, force: true }); }
 });
 
 test('a malformed team.json is reported on the task and the defaults apply', async () => {
