@@ -10,7 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, appendFileSync, readFileSync, rmSync, existsSync, readdirSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, existsSync, readdirSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1401,4 +1401,45 @@ test('tm_events tails the ledger, newest last, filtered by since', async () => {
     const two = await tm.call('tm_events', { task_id, limit: 2 });
     assert.equal(two.events.length, 2);
   });
+});
+
+// ---------- team.json project defaults ----------
+
+test('tm_open reads .claude/team.json as defaults and an explicit argument still wins', async () => {
+  const dir = repo();
+  const tasks = mkdtempSync(join(tmpdir(), 'tm-tasks-'));
+  mkdirSync(join(dir, '.claude'), { recursive: true });
+  writeFileSync(join(dir, '.claude', 'team.json'), JSON.stringify({ goal_threshold: 95, max_retries: 4, roles: { qa: true } }));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: tasks, HARNESS_TEST_NO_LEADER: '1' }).init();
+  try {
+    const a = await tm.call('tm_open', { request: 'split me', cwd: dir, size: 'L' });
+    const sa = await tm.call('tm_status', { task_id: a.task_id });
+    assert.equal(sa.team.opts.goal_threshold, 95);
+    assert.equal(sa.team.sources.goal_threshold, 'team.json');
+    assert.equal(sa.team.opts.max_retries, 4);
+    assert.deepEqual(sa.team.opts.roles, { planning: false, qa: true });
+    assert.equal(sa.team.file_status, 'ok');
+    const taskFile = JSON.parse(readFileSync(join(tasks, a.task_id, 'task.json'), 'utf8'));
+    assert.equal(taskFile.goal_threshold, 95, 'the value the manager actually gates with');
+    assert.equal(taskFile.max_retries, 4);
+
+    const b = await tm.call('tm_open', { request: 'split me', cwd: dir, size: 'L', goal_threshold: 80 });
+    const sb = await tm.call('tm_status', { task_id: b.task_id });
+    assert.equal(sb.team.opts.goal_threshold, 80);
+    assert.equal(sb.team.sources.goal_threshold, 'args');
+  } finally { tm.close(); rmSync(dir, { recursive: true, force: true }); rmSync(tasks, { recursive: true, force: true }); }
+});
+
+test('a malformed team.json is reported on the task and the defaults apply', async () => {
+  const dir = repo();
+  const tasks = mkdtempSync(join(tmpdir(), 'tm-tasks-'));
+  mkdirSync(join(dir, '.claude'), { recursive: true });
+  writeFileSync(join(dir, '.claude', 'team.json'), '{oops');
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: tasks, HARNESS_TEST_NO_LEADER: '1' }).init();
+  try {
+    const a = await tm.call('tm_open', { request: 'split me', cwd: dir, size: 'L' });
+    const s = await tm.call('tm_status', { task_id: a.task_id });
+    assert.equal(s.team.file_status, 'parse-error');
+    assert.equal(s.team.opts.goal_threshold, 90);
+  } finally { tm.close(); rmSync(dir, { recursive: true, force: true }); rmSync(tasks, { recursive: true, force: true }); }
 });
