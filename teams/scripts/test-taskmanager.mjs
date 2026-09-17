@@ -238,6 +238,49 @@ test('roles.planning left at its default (false) keeps the node graph exactly as
   });
 });
 
+test("planning phase-Team's PRD and user_stories flow into shape's input, verbatim body never leaves the child run", async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    let v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2 modules'], handoff: 'two modules' }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+
+    const nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children.length, 1, JSON.stringify(nx));
+    const child = nx.children[0];
+    assert.equal(child.package_id, 'PLAN');
+    assert.equal(child.cwd, cwd, 'planning phase-Team gets no isolated worktree - it runs directly in the project cwd');
+
+    const sub = (node_id, payload) => g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id, payload: ok(payload) });
+    await sub('plan', { handoff: 'p', flow: 'plan', size: 'S' });
+    await sub('setgoal', { spec: { goal: 'PRD', acceptance: ['PRD covers the request'], subgoals: [{ id: 'U1', title: 'draft PRD', acceptance: ['PRD written'], deps: [] }] } });
+    await sub('critique', { sound: true });
+    await sub('draft:U1:1', { changed_files: [], handoff: 'drafted' });
+    await sub('revise:U1:1', { changed_files: [], handoff: 'revised' });
+    await sub('gate:U1:1', { accept: true, match_pct: 95 });
+    await sub('gate:goal:1', { accept: true, match_pct: 95, user_stories: ['US-1', 'US-2'] });
+    const childNext = await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+    assert.deepEqual(childNext.ready.map((n) => n.node_id), ['report']);
+    await sub('report', { handoff: 'PRD complete' });
+
+    const folded = await tm.call('tm_submit', { task_id, node_id: 'dispatch:PLAN:1' });
+    assert.equal(folded.state, 'done', JSON.stringify(folded));
+    const foldedTask = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.deepEqual(foldedTask.nodes.find((n) => n.node_id === 'dispatch:PLAN:1').result.user_stories, ['US-1', 'US-2']);
+    const accepted = await tm.call('tm_submit', { task_id, node_id: 'accept:PLAN:1', payload: ok({ accept: true, match_pct: 95 }) });
+    assert.equal(accepted.state, 'done', JSON.stringify(accepted));
+
+    const after = await tm.call('tm_next', { task_id });
+    assert.deepEqual(after.ready.map((n) => n.node_id), ['shape']);
+    const briefing = readFileSync(after.ready[0].briefing_path, 'utf8');
+    assert.match(briefing, /US-1/);
+    assert.match(briefing, /US-2/);
+    assert.match(briefing, /10-prd\.md/, 'shape must be told where the PRD lives');
+    assert.doesNotMatch(briefing, /Executive Summary/, 'the PRD body must never be pasted into the briefing - a link only');
+
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.deepEqual(task.nodes.find((n) => n.node_id === 'dispatch:PLAN:1').result.user_stories, ['US-1', 'US-2']);
+  }, { roles: { planning: true } });
+});
+
 test('tm_open({size}) pins the size: L opens shape without measuring, S opens its single run at once', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
