@@ -440,34 +440,40 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 
 ## 설정
 
-`.claude/team.json`은 `tm_open`의 프로젝트 기본값을 공급합니다 — 브로커의 직접 진입점인
-`team_open`은 이 파일을 전혀 읽지 않습니다. 우선순위는 내장 기본값 < `team.json` < 같은 이름의
-명시적 `tm_open` 인자입니다(`teamconfig.mjs`의 `resolveTeamOptions`); 알 수 없는 키나 검증기를
-통과하지 못한 값은 적용되지 않고 무시되며, 태스크에 노트로 기록됩니다(`tm_status`의
-`team.notes` — `tm_open` 자체가 바로 돌려주지는 않습니다). 스키마는
-[`mcp/teamconfig.mjs`](mcp/teamconfig.mjs)의 `TEAM_DEFAULTS`/`CHECK`입니다 — 13개 키 중 실제로
-동작에 반영되는 건 여섯입니다:
+`.claude/team.json`은 `tm_open`과 `team_open` 양쪽 모두에 프로젝트 기본값을 공급합니다 —
+브로커의 직접 진입점인 `team_open`도 이제 TaskManager와 같은 방식으로 이 파일을 읽습니다.
+우선순위는 내장 기본값 < `team.json` < 런을 연 도구의 같은 이름 명시적 인자입니다
+(`teamconfig.mjs`의 `resolveTeamOptions`); 알 수 없는 키나 검증기를 통과하지 못한 값은
+적용되지 않고 무시되며, 기록됩니다(`tm_open` 경로에서는 `tm_status`의 `team.notes` —
+`team_open`은 `resolveTeamOptions`의 노트를 전혀 돌려주지 않습니다, 그래프 런에는 이를
+저장할 곳이 없기 때문입니다). 스키마는 [`mcp/teamconfig.mjs`](mcp/teamconfig.mjs)의
+`TEAM_DEFAULTS`/`CHECK`입니다 — 13개 키 중 실제로 동작에 반영되는 건 여섯이고, 각 키가
+`tm_open`, `team_open`, 또는 둘 다에 닿는지 보여주는 리더 열이 추가되었습니다. `team_open`의
+`inputSchema`는 애초에 `TEAM_DEFAULTS` 이름 중 일부만 인자로 받습니다 — 인자로조차 받지 않는
+키는 `resolveTeamOptions`가 무엇을 계산해내든 그 경로에서는 `team.json`으로 닿을 수 없습니다.
 
-| 키 | 기본값 | 동작에 반영? | 하는 일 |
-|---|---|---|---|
-| `vendor` | `"auto"` | 예 | 모든 자식 런의 벤더 선택(`child_opts.vendor`). |
-| `allocation` | `"ordered"` | 예 | 모든 자식 런의 `"ordered"` vs `"balanced"` 라우팅(`child_opts.allocation`); `"balanced"`가 무엇을 바꾸는지는 `graph`의 상태 로그 참고. |
-| `goal_threshold` | `90` | 예 | 매니저 자신의 goal-gate 바닥값, 그리고 — 커밋 `f765c03` 이후 — 모든 자식 런이 자기 goal gate를 여는 바닥값(`child_opts.goal_threshold`). 그 커밋 전에는 프로젝트가 고정한 값이 모든 패키지에서 조용히 버려졌습니다 — `team.json`이 뭐라 하든 모든 자식은 하드코딩된 90으로 돌았습니다. |
-| `max_retries` | `2` | 예 | 매니저 자신의 subgoal/패키지 재시도 예산, 그리고 — `f765c03` 이후 — 모든 자식 런이 여는 재시도 예산(`child_opts.max_retries`). `goal_threshold`와 같은 `f765c03` 이전 문제를 겪었습니다. |
-| `driver_restarts` | `2` | 예 | 죽은 패키지 또는 size-S 드라이버가 같은 run_id로 몇 번 재기동되는지 — 그 다음엔 dispatch가 `blocked`로 접힙니다. |
-| `docs_dir` | `.teams_output/team` | 예 | `tm_docs`/`tickets.mjs`가 phase 문서 트리(`INDEX.md` 등)를 렌더링하는 위치. 실재하고 동작에 반영되는 키인데, 지금까지 어디에도 적혀 있지 않았습니다. |
-| `roles` | `{planning:false, qa:false}` | 아니요 | 기록만 되고 아직 무동작 — 렌더링된 request 문서의 "Team snapshot" 줄에 echo될 뿐, 아무것도 이를 근거로 분기하지 않습니다. |
-| `interactive` | `false` | 아니요 | 기록만 되고 아직 무동작 — 같은 snapshot 줄 echo뿐, 그 외엔 아무도 읽지 않습니다. |
-| `max_parallel_teams` | `2` | 아니요 | 기록만 되고 아직 무동작 — 같은 snapshot 줄 echo뿐, 그 외엔 아무도 읽지 않습니다. |
-| `human_gates` | `[]` | 아니요 | 기록만 되고 아직 무동작 — snapshot 줄에도 없이, 어디서도 읽지 않습니다. |
-| `human_scope` | `"leader"` | 아니요 | 기록만 되고 아직 무동작 — 어디서도 읽지 않습니다. |
-| `max_depth` | `2` | 아니요 | 기록만 되고 아직 무동작 — 어디서도 읽지 않습니다. |
-| `qa_rounds` | `2` | 아니요 | 기록만 되고 아직 무동작 — 어디서도 읽지 않습니다. |
+| 키 | 기본값 | 동작에 반영? | 리더 | 하는 일 |
+|---|---|---|---|---|
+| `vendor` | `"auto"` | 예 | `tm_open` + `team_open` | 벤더 선택: `tm_open`에서는 모든 자식 런(`child_opts.vendor`), `team_open`에서는 런 자신(`run.vendor`). |
+| `allocation` | `"ordered"` | 예 | `tm_open` + `team_open` | `"ordered"` vs `"balanced"` 라우팅: `tm_open`에서는 모든 자식 런(`child_opts.allocation`), `team_open`에서는 런 자신(`run.allocation`); `"balanced"`가 무엇을 바꾸는지는 `graph`의 상태 로그 참고. |
+| `goal_threshold` | `90` | 예 | `tm_open` + `team_open` | goal-gate 바닥값. `tm_open`: 매니저 자신의 바닥값, 그리고 — 커밋 `f765c03` 이후 — 모든 자식 런이 자기 goal gate를 여는 바닥값(`child_opts.goal_threshold`); 그 커밋 전에는 프로젝트가 고정한 값이 모든 패키지에서 조용히 버려져 `team.json`이 뭐라 하든 모든 자식은 하드코딩된 90으로 돌았습니다. `team_open`: 런 자신의 goal-gate 바닥값(`run.goal_threshold`) — 같은 부류의 버그를, 같은 방식으로, 한 라운드 늦게 고쳤습니다. |
+| `max_retries` | `2` | 예 | `tm_open` + `team_open` | 재시도 예산. `tm_open`: 매니저 자신의 subgoal/패키지 예산, 그리고 — `f765c03` 이후 — 모든 자식 런이 여는 예산(`child_opts.max_retries`), `goal_threshold`와 같은 `f765c03` 이전 문제를 겪었습니다. `team_open`: 런 자신의 재시도 예산(`run.max_retries`) — `TEAM_DEFAULTS.max_retries`(2)가 이미 `createRun`의 기본값과 같았기 때문에, `team.json`이 없는 프로젝트는 이 배선으로 동작이 전혀 바뀌지 않았습니다. |
+| `driver_restarts` | `2` | 예 | `tm_open`만 | 죽은 패키지 또는 size-S 드라이버가 같은 run_id로 몇 번 재기동되는지 — 그 다음엔 dispatch가 `blocked`로 접힙니다. `team_open`의 인자가 아닙니다 — `team_open`은 드라이버 재기동 개념이 없는 단일 그래프 런을 열 뿐이라, `team.json` 고정값이 그 경로에는 닿을 수 없습니다. |
+| `docs_dir` | `.teams_output/team` | 예 | `tm_open`만 | `tm_docs`/`tickets.mjs`가 phase 문서 트리(`INDEX.md` 등)를 렌더링하는 위치. `team_open`의 인자도 개념도 아닙니다 — `team_open`은 phase 문서 트리를 쓰지 않습니다. |
+| `roles` | `{planning:false, qa:false}` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — 렌더링된 request 문서의 "Team snapshot" 줄에 echo될 뿐, 아무것도 이를 근거로 분기하지 않습니다. `team_open`의 인자가 아닙니다. |
+| `interactive` | `false` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — 같은 snapshot 줄 echo뿐, 그 외엔 아무도 읽지 않습니다. `team_open`의 인자가 아닙니다. |
+| `max_parallel_teams` | `2` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — 같은 snapshot 줄 echo뿐, 그 외엔 아무도 읽지 않습니다. `team_open`의 인자가 아닙니다. |
+| `human_gates` | `[]` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — snapshot 줄에도 없이, 어디서도 읽지 않습니다. `team_open`의 인자가 아닙니다. |
+| `human_scope` | `"leader"` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — 어디서도 읽지 않습니다. `team_open`의 인자가 아닙니다. |
+| `max_depth` | `2` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — 어디서도 읽지 않습니다. `team_open`의 인자가 아닙니다. |
+| `qa_rounds` | `2` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — 어디서도 읽지 않습니다. `team_open`의 인자가 아닙니다. |
 
 `goal_judges`(goal gate의 독립 판정자 수)와 `auto_reassign`(거부된 판정의 자동 재시도)는
 실재하는 런 단위 옵션입니다 — `tm_open`/`team_open` 자신의 인자 설명 참고 — 하지만 이 스키마에는
 없습니다: 이 글을 쓰는 시점 기준으로는 호출마다 명시 인자로만 줄 수 있고, `.claude/team.json`에
-고정할 수는 없습니다.
+고정할 수는 없습니다. `team_open`은 프로젝트의 `team.json`에 무엇이 있든 자신의 `goal_judges`
+기본값 2를 그대로 유지합니다 — 그 파일 안의 `goal_judges` 키는 다른 미지의 키와 마찬가지로
+그냥 무시됩니다.
 
 ## 나머지 전부
 
