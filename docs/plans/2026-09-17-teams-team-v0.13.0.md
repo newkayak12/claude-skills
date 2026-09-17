@@ -142,30 +142,27 @@ v0.12.0 계획(`2026-09-17-teams-team-v0.12.0.md` §0.1)은 planning/qa phase-Te
    없음, 이 계획이 채운다**: `TEAM_DEFAULTS.ask_timeout: null`(기본 없음 = 타임아웃 없음),
    `CHECK.ask_timeout: (v) => v === null || (Number.isInteger(v) && v > 0)`(밀리초). Task 4가
    구현한다.
-2. **`tm_answer`가 오면 리더를 즉시 재기동해야 하는데, `serviceLeader`의 얼리 리턴 조건
-   (`taskmanager.mjs:1060`, `if (st === 'complete' || st === 'blocked') return false;`)을
-   `waiting_human`도 막는 쪽으로 넓히면 *어떤* 폴링(`tm_board`, `tm_status`)도 리더를 깨우지 않게
-   된다 — 그런데 그건 맞는 동작이다: 사람이 아직 안 답했으면 아무 폴링도 리더를 깨우면 안 된다(살려
-   둬 봤자 할 일이 없다). **팀 리더 확인(2026-09-17으로 가정, §14 결정 기록 `5·7·8·C`의 "애매하면
-   제안된 기본값" 원칙 적용): `tm_answer`(신설, Task 6)의 핸들러는 payload를 기록한 직후
-   `serviceLeader`의 일반 게이트를 거치지 않고 **직접** `spawnLeader(task, {resume: true})`를
-   호출한다** — `reset_capacity`가 `tm_retry`에서 이미 쓰는 것과 같은 모양(`taskmanager.mjs:2068-
-   2090` 부근, "clears it and respawns a driver on the same run_id, spending no restart"라는
-   기존 설명과 대구를 이룬다). `serviceLeader` 자체의 게이트 조건은 `waiting_human`을 `complete`/
-   `blocked`와 같은 "자동 재기동 안 함" 취급으로 넓히기만 하면 된다 — `tm_answer`는 그 게이트를
-   우회하는 별도 호출이므로 모순이 없다.
-3. **`human_scope: "all"`(Team 내부 질문이 `ask`로 승격되는 것 말고, TeamLeader 자신이 human 노드를
-   여는 것)까지 이 단계가 완전히 검증하는가.** 설계 문서 §7의 "`"all"`이면 TeamLeader도 human 노드를
-   열 수 있다 — 질문 폭주 주의"는 기본값이 아니다(`teamconfig.mjs`의 기본은 `human_scope: 'leader'`).
-   **이 계획은 `human_scope: 'leader'`(기본값) 경로만 Task 9의 가짜 드라이버 테스트로 끝까지
-   검증한다.** `'all'`은 구조적으로 막지 않는다(같은 `waiting_human` 상태 값, 같은 park 메커니즘이
-   child run에도 그대로 적용된다 — `runState()`가 범용이므로) — 다만 "child run의 TeamLeader가
-   `ask`를 여는" 구체적인 삽입 로직(`broker.mjs`의 child-run 매니저 루프에 같은 종류의 분기 추가)은
-   이 계획의 태스크 목록에 별도 항목으로 없다. **팀 리더에게 보고할 것**: `human_scope: 'all'`을
-   이 라운드에 완전히 지원하려면 +1 unit 후보다(`broker.mjs`의 child-run 매니저 루프에
-   `ask`/`gate:human` 삽입을 별도로 구현). 사이징 문서 §4.2가 이미 경고한 "12 이상" 위험의 가장
-   그럴듯한 원인이 이것이라고 본다 — 이 계획은 `'leader'` 스코프만으로 §4.2의 11–12 경계를 지키는
-   쪽을 택했다.
+2. **`tm_answer`가 오면 리더를 즉시 재기동해야 한다 — 팀 리더 확인(2026-09-17, §14 결정 기록
+   `5·7·8·C` 적용): 진행하되 검증부터.** 이 항목은 더 이상 해결 안 된 발견이 아니다 — **Task 5가
+   그 검증을 실제로 수행했고, `reset_capacity`와의 유비가 패턴은 맞지만 예산 처리는 그대로
+   가져다 쓸 수 없음을 코드로 확인했다.** `spawnLeader(task, {resume: true})`를 그대로 불렀다면
+   `restarts`를 매 응답마다 올려 정상적인 대기·답변 반복이 결국 `leader_exhausted`로 죽는
+   버그였다(`spawnLeader`의 `restarts: ... + (opts.resume ? 1 : 0)`가 무조건 증가). Task 5는
+   `spawnLeader`에 `free` 옵션을 더해 `tm_answer`가 `{resume: true, free: true}`로 불러 예산을
+   전혀 쓰지 않게 고쳤다 — `serviceLeader`의 게이트가 `waiting_human`에서 자동 재기동을 막는 것은
+   그대로 두고, `tm_answer`만 그 게이트를 우회해 명시적으로 재기동한다는 구조는 바뀌지 않았다.
+3. **`human_scope: "all"`은 이 단계에서 구현하지 않는다 — 팀 리더 확인(2026-09-17): 세 번째 선택지,
+   조용히 무시하지 않고 시끄럽게 거부한다.** 이전 초안은 "`'leader'`만 검증하고 `'all'`은 구조적으로
+   막지 않되 태스크 없음"으로 남겨 뒀는데, 그건 `team.json`에 `human_scope: "all"`을 적어도 `"leader"`
+   처럼 조용히 받아들여지고 아무 일도 안 일어나는 상태였다 — 오늘 이 저장소가 세 번 고친 것과 같은
+   "옵션은 있는데 값 하나만 실제로 읽힌다" 결함군. **Task 4가 대신 한다**: `teamconfig.mjs`의
+   `resolveTeamOptions`가 레이어링을 마친 뒤 `human_scope === 'all'`이면 `'leader'`로 강등하고
+   전용 note(`'human_scope "all" is not implemented yet ...'`)를 남긴다 — `tm_status`의
+   `team.notes`, `team_status`의 `config_notes`(`3292a91`)로 기존 경로 그대로 노출된다. 새 태스크가
+   아니라 Task 4 안의 몇 줄이다. **팀 리더에게 남은 요청**: 설계 문서(`2026-09-17-teams-team.md`)
+   §11 로드맵 표에 `human_scope: "all"`을 나중 버전으로 미룬 행을 추가하는 것 — 이 계획 파일은
+   `docs/plans/2026-09-17-teams-team-v0.13.0.md` 하나만 쓸 수 있어(공유 워크트리 규칙) 설계 문서는
+   이 계획이 직접 건드리지 않는다. 팀 리더나 그 문서를 소유한 agent가 추가해야 한다.
 4. **명령 스킬 개수 — §4.2 표의 자기 모순.** 6번 행은 "도구 3–4개 배선(답변·담당·내 할 일·로그)"라고
    4개를 세지만 8번 행은 "명령 스킬 셋(내 할 일·답변·take)"이라고 3개만 이름을 댄다(`/teams:log`가
    빠져 있다). 설계 문서 §8의 슬래시 명령 표에는 `/teams:log`가 분명히 있다("**미구현** — `tm_log`
@@ -207,8 +204,9 @@ v0.12.0 계획(`2026-09-17-teams-team-v0.12.0.md` §0.1)은 planning/qa phase-Te
 - **`interactive: true`로 실제로 멈춰 서서 사람을 기다리는 경로.** v0.13.1. 이 단계가 만드는 것은
   자동 결정되는 쪽과 그 기록뿐이다 — `waiting_human` park는 SKIP 직전의 찰나로만 관측된다
   (Task 9의 테스트가 그 찰나를 표로 확인한다).
-- **`human_scope: "all"`의 완전한 배선.** §0.4 발견 3 — 구조적으로 막지 않지만 이 계획의 태스크로
-  별도 구현·검증하지 않는다.
+- **`human_scope: "all"`의 배선.** §0.4 발견 3 — 이 단계는 구현하지 않고, `team.json`이 `"all"`을
+  적으면 Task 4가 `"leader"`로 강등하며 미구현 note를 남긴다(조용히 무시하지 않는다). 실제 배선은
+  나중 버전.
 - **사용자 오버라이드가 보고서·보드에 크게 드러나는 형식 확정.** `gate:human` payload의 `override`
   필드는 결정 기록 #4가 이미 정했지만, 이 단계는 `gate:human:spec`만 배선한다 — `release` 게이트와
   `override`의 판정 로직(`gate:goal`이 reject한 것을 override로 통과시키는 경로)은 이 단계 범위
@@ -341,11 +339,13 @@ AUTO_CANDIDATES(run.host_vendor))`)에서 그 결과 배열을 `.filter(v => v !
 
 ---
 
-### Task 4: `interactive: false` = 자동 결정 + 기록 + `ask_timeout`
-**Files:** modify `teams/mcp/teamconfig.mjs` (`TEAM_DEFAULTS`, `CHECK` — `ask_timeout` 추가),
-modify `teams/mcp/taskmanager.mjs` (Task 2가 만든 `ask`/`gate:human:spec`/핀 노드가 ready가 되는
-지점, `tm_next`가 다음 ready 노드를 돌려주기 직전), modify `teams/scripts/test-teamconfig.mjs`,
-`teams/scripts/test-taskmanager.mjs`
+### Task 4: `interactive: false` = 자동 결정 + 기록 + `ask_timeout` + `human_scope:"all"`을 시끄럽게 거부
+**Files:** modify `teams/mcp/teamconfig.mjs` (`TEAM_DEFAULTS`, `CHECK` — `ask_timeout` 추가,
+`resolveTeamOptions` — `human_scope: "all"` 강등), modify `teams/mcp/taskmanager.mjs` (Task 2가 만든
+`ask`/`gate:human:spec`/핀 노드가 ready가 되는 지점, `tm_next`가 다음 ready 노드를 돌려주기 직전),
+modify `teams/scripts/test-teamconfig.mjs`, `teams/scripts/test-taskmanager.mjs`, **modify
+`teams/README.md`, `teams/KOR.md`(Configuration 절 — `team.json` 키 표가 13개에서 14개로 늘어난다,
+같은 커밋에서 영문·국문 함께)**
 **Interfaces:** ready가 된 `ask`/`gate:human`/`assignee:human` 노드를 만났을 때(Task 1의
 `waiting_human` 상태를 거쳐) `T.interactive`가 false면 **그 자리에서 바로** SKIP으로 결정한다:
 `ask`는 각 질문의 `default`를 `answers`로 채워 `state: 'skipped', by: 'auto', default_applied:
@@ -354,51 +354,96 @@ decision: 'accept'`)로 다음 노드(dispatch들)를 즉시 열어 준다, `ass
 `route()`가 그 핀을 무시하고 일반 라우팅으로 재배정한다(Task 2가 심은 `spec_assignee` 필드 자체는
 남기되, 실제 배정은 AI로). `ask_timeout`이 설정돼 있고 `interactive: true`(v0.13.1이 실제로 쓰는
 값이지만 이 필드 자체는 이 태스크가 만든다)여도 만료 시 같은 `default` 경로를 타되 `by: 'timeout'`
-으로 기록한다.
+으로 기록한다. **`ask_timeout`은 `tm_open` 전용이다 — `team_open`(Team/TeamLeader 라인)에는 인자로
+추가하지 않는다.** `team_open`에는 human-wait 개념 자체가 없으므로(§7의 human 노드는 전부
+TaskLeader 레벨) 읽는 쪽이 없는 값을 노출하지 않는다. `TEAM_DEFAULTS`에 **한 곳에서만** 선언하고
+`T`(해석된 레이어)를 통해서만 읽는다 — `teams/scripts/test-defaults.mjs`(옵션 하나·기본값 여럿 드리프트
+가드)가 이 규칙을 어기면(예: `taskmanager.mjs`가 `a.ask_timeout`을 원시 인자에서 직접 다시 읽으면)
+빌드를 실패시킨다, 그 가드가 정상 동작한다는 뜻이니 그대로 존중한다. **`human_scope: "all"`은
+`resolveTeamOptions`가 값을 그대로 통과시키지 않는다** — `CHECK.human_scope`는 `'leader'`/`'all'`
+둘 다 "구문상 유효"로 계속 받아들이되(설계 문서에 이미 기록된 미래 값이므로 "잘못된 타입"은 아니다),
+`resolveTeamOptions`가 레이어링을 마친 뒤 `opts.human_scope === 'all'`이면 `opts.human_scope =
+'leader'`로 강등하고 `notes`에 `'human_scope "all" is not implemented yet (v0.13.0 only wires
+"leader") - falling back to "leader"'`를 남긴다 — 일반 "wrong type or range" 메시지가 아니라 이
+전용 문구여야 사용자가 오타가 아니라 미구현임을 안다. 이 note는 `tm_status`의 `team.notes`와
+`team_status`의 `config_notes`(commit `3292a91`) 양쪽으로 이미 나가는 경로를 그대로 탄다 — 새
+노출 지점을 만들 필요가 없다.
 **Pass bar:** `interactive: false`(기본)로 `ask`가 ready가 되자마자 `state: 'skipped'`,
 `by: 'auto'`, `default_applied: true`로 즉시 전이함을 확인 — `waiting_human`으로 관측되는 창은 그
 찰나뿐임을 두 번의 연속 `tm_next` 호출(중간에 아무 제출 없이)로 확인. `gate:human:spec`도 같은
 방식으로 즉시 pass-through됨을 확인. `assignee: 'human'`인 TASK가 `interactive: false`에서 AI로
 재배정됨을 확인(Task 3의 교차 벤더 규칙과 결합해 `test`가 non-human으로 가는지까지 한 번에 확인).
 `ask_timeout: 100`을 준 픽스처에서(가짜 시계 또는 sleep) 만료 후 `by: 'timeout'`으로 기록됨을 확인.
+`team.json`에 `human_scope: "all"`을 준 픽스처에서 `resolveTeamOptions().opts.human_scope ===
+'leader'`이고 `notes`에 "not implemented yet" 문구가 있음을 표 테스트로 확인 — `tm_status({task_id})
+.team.notes`와 `team_status({}).config_notes` 양쪽에서 그 문구가 실제로 보임을 확인(리더 코드 경로
+따로 없이 기존 note 파이프라인을 그대로 통과하는지가 이 pass bar의 핵심).
 
-- [ ] 1: `teamconfig.mjs`에 `ask_timeout` 실패 테스트, `taskmanager.mjs`에 위 네 가지 케이스의
-  실패 테스트 작성.
-- [ ] 2: `TEAM_DEFAULTS.ask_timeout: null` + `CHECK.ask_timeout` 추가. 자동 결정 로직 구현.
-- [ ] 3: 테스트 통과 확인.
-- [ ] 4: `git add teams/mcp/teamconfig.mjs teams/mcp/taskmanager.mjs teams/scripts/test-teamconfig.mjs teams/scripts/test-taskmanager.mjs && git commit -m
-  "feat(teams): interactive:false auto-decides human seats on default and records it, ask_timeout resolved (§7)"`
+- [ ] 1: `teamconfig.mjs`에 `ask_timeout` 실패 테스트 + `human_scope:"all"` 강등 실패 테스트,
+  `taskmanager.mjs`에 위 네 가지 케이스의 실패 테스트 작성.
+- [ ] 2: `TEAM_DEFAULTS.ask_timeout: null` + `CHECK.ask_timeout` 추가, `resolveTeamOptions`에
+  `human_scope: "all"` 강등 로직 추가. 자동 결정 로직 구현.
+- [ ] 3: 테스트 통과 확인(`test-defaults.mjs` 포함 — 새 키가 드리프트 가드를 어기지 않는지).
+- [ ] 4: README.md/KOR.md의 Configuration 절 `team.json` 키 표에 `ask_timeout` 행 추가(영문·국문
+  같은 커밋).
+- [ ] 5: `git add teams/mcp/teamconfig.mjs teams/mcp/taskmanager.mjs teams/README.md teams/KOR.md teams/scripts/test-teamconfig.mjs teams/scripts/test-taskmanager.mjs && git commit -m
+  "feat(teams): interactive:false auto-decides human seats and records it, ask_timeout resolved, human_scope:\"all\" fails loudly not silently (§7, §14)"`
 
 ---
 
 ### Task 5: 사람 대기 시 드라이버 종료 · `tm_answer` 시 재기동
-**Files:** modify `teams/mcp/taskmanager.mjs` (`serviceLeader:1056-1072`, `leaderPrompt:1036-1045`),
-modify `teams/scripts/test-taskmanager.mjs`
-**Interfaces:** `interactive: true`(v0.13.1이 실제로 여는 값이지만, 이 태스크는 그 플래그 아래에서
-드라이버가 어떻게 움직이는지의 **기계**를 만든다 — v0.13.1은 플래그를 켜는 것 자체만 추가한다)에서
-사람 노드만 ready로 남으면, TaskLeader의 `manager.md` 루프는 `tm_next`가 그 노드를 `ready` 배열에
-내주지 않으므로(Task 4가 SKIP 대신 진짜로 기다리게 두는 경로 — `waiting_human`으로 두고 SKIP하지
-않음) 더 이상 할 일이 없어 스스로 종료한다 — `leaderPrompt`의 종료 조건 문구("until tm_status
-reports complete or blocked")에 `waiting_human`을 추가한다. `serviceLeader`의 얼리 리턴 조건
-(`taskmanager.mjs:1060`)에 `waiting_human`을 더해(`complete`/`blocked`/`waiting_human` 모두 자동
-재기동 안 함) 일반 폴링(`tm_board`, `tm_status`)이 리더를 깨우지 않게 한다. **`tm_answer`(Task 6이
-도구로 노출)의 핸들러만은 이 게이트를 우회한다**: payload를 park된 노드에 기록한 직후
-`spawnLeader(task, {resume: true})`를 직접 호출한다(§0.4 발견 2) — `reset_capacity`가
-`taskmanager.mjs:2068-2090`에서 이미 쓰는 것과 같은 모양(예산 소모 없는 즉시 재기동).
+**Files:** modify `teams/mcp/taskmanager.mjs` (`serviceLeader:1056-1072`, `leaderPrompt:1036-1045`,
+`spawnLeader:1049-1054`), modify `teams/scripts/test-taskmanager.mjs`
+**검증 먼저 (팀 리더 지시, 결정 기록 `5·7·8·C` 적용— 애매하면 제안된 기본값으로 진행, 단 검증부터):**
+`reset_capacity`의 실제 구현(`toolRetry`, `taskmanager.mjs:2066-2100`)을 열어 비교한 결과, **패턴은
+같지만 대상과 예산 처리가 다르다.**
+- `reset_capacity`는 **패키지/size-S 드라이버**(`n.child`/`task.s_run`)를 대상으로,
+  `waiting_capacity`를 지우고 `spawnChildDriver`를 **직접** 호출한다 — 기존 `restarts` 배열을
+  `fresh.restarts = restarts`로 그대로 옮길 뿐 늘리지 않는다(`taskmanager.mjs:2078,2088`). 예산을
+  건드리지 않는다는 주장은 이 대상에서는 정확하다.
+- 하지만 `tm_answer`가 되살려야 할 것은 **`task.leader`**이고, 그 재기동 경로는 `spawnLeader`
+  (`taskmanager.mjs:1049-1054`)다 — `reset_capacity`가 쓰는 `spawnChildDriver` 직접 호출과 다른
+  함수다. **`spawnLeader(task, {resume: true})`를 그대로 호출하면 예산이 새는 버그가 있다**:
+  `spawnLeader`의 `restarts: task.leader ? (task.leader.restarts || 0) + (opts.resume ? 1 : 0) : 0`
+  이 `opts.resume`만 보고 무조건 1을 더한다 — 이 함수는 애초에 *진짜 드라이버 죽음*을 재기동하는
+  `serviceLeader`(`1069`행의 `spawnLeader(task, {resume: true})`)를 위해 있고, 그 경우엔 예산을
+  쓰는 게 맞다. `tm_answer`가 이 함수를 그대로 부르면 사람이 정상적으로 답할 때마다(장애가 전혀
+  아닌데도) `task.leader.restarts`가 올라가고, 대기·답변을 여러 번 반복하는 정상적인 EPIC은 결국
+  `driver_restarts` 예산을 소진해 `leader_exhausted`(`1064-1067`)로 죽는다 — `reset_capacity`가
+  정확히 막는 그 실패를 `tm_answer`가 만들어 낸다.
+**Interfaces (검증으로 조정됨):** `interactive: true`(v0.13.1이 실제로 여는 값이지만, 이 태스크는 그
+플래그 아래에서 드라이버가 어떻게 움직이는지의 **기계**를 만든다 — v0.13.1은 플래그를 켜는 것 자체만
+추가한다)에서 사람 노드만 ready로 남으면, TaskLeader의 `manager.md` 루프는 `tm_next`가 그 노드를
+`ready` 배열에 내주지 않으므로(Task 4가 SKIP 대신 진짜로 기다리게 두는 경로 — `waiting_human`으로
+두고 SKIP하지 않음) 더 이상 할 일이 없어 스스로 종료한다 — `leaderPrompt`의 종료 조건 문구("until
+tm_status reports complete or blocked")에 `waiting_human`을 추가한다. `serviceLeader`의 얼리 리턴
+조건(`taskmanager.mjs:1060`)에 `waiting_human`을 더해(`complete`/`blocked`/`waiting_human` 모두
+자동 재기동 안 함) 일반 폴링(`tm_board`, `tm_status`)이 리더를 깨우지 않게 한다. **`spawnLeader`에
+`free`(불리언, 기본 false) 옵션을 추가한다** — `restarts` 계산을 `(opts.resume && !opts.free ?
+1 : 0)`로 바꿔 `free: true`면 재시작 카운트를 전혀 건드리지 않는다(`reset_capacity`가
+`spawnChildDriver`를 직접 불러 얻는 효과와 동일 — 함수는 다르지만 예산 의미는 일치시킨다). `tm_answer`
+(Task 6)의 핸들러가 payload를 park된 노드에 기록한 직후 `spawnLeader(task, {resume: true, free:
+true})`를 호출한다 — `serviceLeader`의 일반 게이트는 여전히 `waiting_human`에서 자동 재기동을
+안 하므로 두 경로가 충돌하지 않는다.
 **Pass bar:** 가짜 드라이버로 `ask:1`이 ready가 됐을 때(`interactive: true`) 드라이버가 자연 종료
 (exit code 0, `driver.alive === false`)함을 확인 — 살아서 대기하지 않는다(프로세스 목록에 없음).
 그 상태에서 `tm_board`/`tm_status`를 두 번 호출해도 새 리더가 뜨지 않음을 확인(pid 불변). `tm_answer`
-를 호출한 직후에는 새 리더 pid가 생김을 확인 — 재시작 예산(`task.leader.restarts`)이 소모되지
-않았음을 확인(이것이 `reset_capacity`와 같은 "무료 재기동"임을 증명).
+를 호출한 직후에는 새 리더 pid가 생김을 확인 — **재시작 예산(`task.leader.restarts`)이 호출 전후로
+정확히 0 증가함을 표로 확인**(단순 "소모되지 않는다"는 서술이 아니라 숫자 단언). 대기·답변 사이클을
+`driver_restarts`보다 많은 횟수(예: 예산 2에 5회) 반복해도 `leader_exhausted`가 되지 않음을 확인 —
+이것이 위에서 찾은 버그의 회귀 테스트다. 대조군으로, 드라이버가 진짜로 죽어 `serviceLeader`가
+일반 경로(`{resume:true}`, `free` 없이)로 재기동하는 기존 케이스는 여전히 `restarts`가 올라감을
+회귀로 확인(진짜 장애는 여전히 예산을 쓴다).
 
-- [ ] 1: 실패하는 테스트 작성(위 세 가지 왕복 + 예산 미소모 확인). 이 태스크의 테스트는 실제 가짜
-  드라이버 프로세스를 스폰해야 하므로 Task 9와 픽스처 구성을 공유할 수 있다 — 미리 만든다.
-- [ ] 2: `leaderPrompt` 문구 수정, `serviceLeader` 게이트 확장, `tm_answer` 핸들러의 명시적
-  `spawnLeader` 호출(Task 6과 함께 구현 — 이 태스크는 그 호출 지점을 만들고, Task 6이 도구 스키마와
-  payload 기록 쪽을 채운다).
+- [ ] 1: 실패하는 테스트 작성(위 왕복 + 예산 0-증가 표 + 반복 대기·답변에도 exhausted 안 됨 + 진짜
+  장애 재기동은 여전히 예산을 쓰는 회귀). 이 태스크의 테스트는 실제 가짜 드라이버 프로세스를
+  스폰해야 하므로 Task 9와 픽스처 구성을 공유할 수 있다 — 미리 만든다.
+- [ ] 2: `spawnLeader`에 `free` 옵션 추가, `leaderPrompt` 문구 수정, `serviceLeader` 게이트 확장,
+  `tm_answer` 핸들러의 명시적 `spawnLeader(..., {free: true})` 호출(Task 6과 함께 구현 — 이
+  태스크는 그 호출 지점을 만들고, Task 6이 도구 스키마와 payload 기록 쪽을 채운다).
 - [ ] 3: 테스트 통과 확인.
 - [ ] 4: `git add teams/mcp/taskmanager.mjs teams/scripts/test-taskmanager.mjs && git commit -m
-  "feat(teams): leader exits cleanly while only human nodes are ready, tm_answer respawns it for free (§7, §7b)"`
+  "feat(teams): leader exits cleanly while only human nodes are ready, tm_answer respawns it for free via spawnLeader's new free flag - reset_capacity's analogy held for the pattern but not the budget accounting (§7, §7b, decision 5·7·8·C)"`
 
 ---
 
@@ -417,8 +462,8 @@ reports complete or blocked")에 `waiting_human`을 추가한다. `serviceLeader
   쓴다(그 노드 자체가 `critique` 뒤에 있으므로 결과적으로 `shape`부터 다시 도는 것이 맞다 — critique
   판정 자체를 다시 받는 셈). `MUTATING_TOOLS`에 추가해 리더가 아닌 프로세스의 호출은 inbox로
   큐잉(`queueToInbox:1078`)되고 리더가 자기 `tm_next`에서 `drainInbox:1086`로 적용하게 한다 — 단,
-  Task 5의 명시적 `spawnLeader` 호출은 큐잉 여부와 무관하게 항상 일어난다(리더가 죽어 있으면
-  respawn 자체가 곧 drain을 트리거한다).
+  Task 5의 명시적 `spawnLeader(task, {resume: true, free: true})` 호출은 큐잉 여부와 무관하게 항상
+  일어난다(리더가 죽어 있으면 respawn 자체가 곧 drain을 트리거한다).
 - `tm_assign({task_id, key, vendor})` — `assignee` 필드를 사후에 바꾼다(shape가 이미 낸 TASK에).
   `MUTATING_TOOLS`에 추가.
 - `tm_inbox({task_id})` — 읽기 전용. §7의 두 절("대기 중" / "대신 결정됨")을 반환: 전자는
@@ -561,17 +606,19 @@ v0.13.0.
   태스크를 순수 파생/구성/도구로 좁게 유지하는 전략을 택했다. Task 5가 예상보다 커지면(예: 드라이버가
   여러 인스턴스에서 동시에 종료·재기동 경쟁 상태에 놓이는 경우가 발견되면) 이 계획의 11이 12로 넘어갈
   첫 후보는 Task 5다.
-- **§0.4 발견 3(`human_scope: 'all'` 미완주)은 팀 리더가 다르게 볼 수 있는 판단이다.** 이 계획은
-  "leader 스코프만 완전히 검증"을 택해 11 unit을 지켰지만, 사용자가 애초에 `human_scope: 'all'`을
-  기대하고 있었다면 이 계획은 그 기대를 충족하지 못한 채 릴리스한다 — v0.13.1이나 별도 패치로
-  미뤄야 한다는 뜻이고, 이 계획은 그 미룸을 §2("v0.13.0이 하지 않는 것")에 명시했다.
-  `'all'`이더라도 구조(`waiting_human` 상태, `runState` 파생)는 이미 범용이라 나중에 얹기가
-  `role` 필드를 나중에 빼는 것 같은 어려운 일은 아니다 — 되돌리기는 쉬운 쪽이다.
-- **§0.4 발견 2(`tm_answer`의 즉시 재기동)는 이 계획이 새로 설계한 다리다.** `reset_capacity`와
-  "같은 모양"이라고 주장했지만, `reset_capacity`는 `tm_retry`라는 이미 있는 도구의 옵션이고
-  `tm_answer`는 이 계획이 신설하는 도구다 — 유사성은 코드 재사용이 아니라 설계 유추다. 다른 사람이
-  이 지점을 다르게(예: `tm_answer`도 폴링을 기다리는 쪽으로) 구현하면 Task 5·6·9 셋 다 다시 써야
-  한다.
+- **§0.4 발견 3(`human_scope: 'all'`)은 팀 리더가 세 번째 선택지로 정리했다.** "구현" 대 "조용히
+  안 함" 둘 중 고르라고 escalate했는데, 세 번째 답("구현은 안 하지만 시끄럽게 거부한다")이 맞았다 —
+  이 저장소가 오늘 같은 결함군(옵션은 받는데 값 하나만 실제로 읽힘)을 세 번 고친 뒤라 더 분명했다.
+  Task 4에 반영(강등 + note), 배선 자체는 여전히 미룸 — 설계 문서 §11에 그 미룸을 적는 것은 이
+  계획 파일 소유가 아니라 팀 리더 몫으로 남는다.
+- **§0.4 발견 2(`tm_answer`의 즉시 재기동)는 검증 지시를 받고 실제로 검증한 결과 유비가 절반만
+  맞았다.** `reset_capacity`(`tm_retry`의 기존 옵션)와 "같은 모양"이라는 주장은 패턴(park 지우고
+  예산 안 쓰고 재기동)은 맞았지만, `reset_capacity`가 대상으로 삼는 `spawnChildDriver` 직접 호출과
+  `tm_answer`가 실제로 불러야 하는 `spawnLeader`는 다른 함수였고, `spawnLeader`의 `resume` 옵션은
+  무조건 `restarts`를 올린다 — 그대로 재사용했으면 정상적인 대기·답변 반복이 결국
+  `leader_exhausted`로 죽는 버그를 이 계획이 스스로 심을 뻔했다. Task 5가 `spawnLeader`에 `free`
+  옵션을 더해 고쳤다 — 팀 리더의 "검증부터" 지시가 없었으면 이 계획은 이 버그를 그대로 낸 채
+  릴리스됐을 것이다.
 - **`ask`/`gate:human`이 "TaskLeader 관리 노드"라는 §0.2의 해석은 phase-Team(합성 패키지) 패턴과
   의도적으로 다르다** — 다른 읽기(child-run에도 `ask` kind를 만든다)를 택하면 `graph.mjs`의
   `KINDS`/`FLOWS`에 새 항목이 필요해지고 Task 2가 최소 +1 unit 커진다. 이 계획은 설계 문서 §7의
