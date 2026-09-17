@@ -496,34 +496,41 @@ Install `teams@newkayak12-claude-skills` and run `teams:install` to verify the s
 
 ## Configuration
 
-`.claude/team.json` supplies project defaults for `tm_open` — `team_open`, the broker's own
-direct entry point, never reads this file at all. Precedence is built-in default < `team.json`
-< an explicit `tm_open` argument of the same name (`teamconfig.mjs`'s `resolveTeamOptions`); an
-unrecognized key or a value that fails its validator is ignored rather than applied, and
-recorded as a note on the task (`tm_status`'s `team.notes` — `tm_open` itself does not return it
-inline). The schema is `TEAM_DEFAULTS`/`CHECK` in [`mcp/teamconfig.mjs`](mcp/teamconfig.mjs) —
-13 keys, six of which actually change behavior today:
+`.claude/team.json` supplies project defaults for both `tm_open` and `team_open` — the broker's
+own direct entry point reads it too, the same way TaskManager does. Precedence is built-in
+default < `team.json` < an explicit argument of the same name on whichever tool opened the run
+(`teamconfig.mjs`'s `resolveTeamOptions`); an unrecognized key or a value that fails its
+validator is ignored rather than applied, and recorded as a note (`tm_status`'s `team.notes` on
+the `tm_open` path — `team_open` does not return `resolveTeamOptions`' notes at all, since
+nothing stores them on the graph run). The schema is `TEAM_DEFAULTS`/`CHECK` in
+[`mcp/teamconfig.mjs`](mcp/teamconfig.mjs) — 13 keys, six of which actually change behavior
+today, plus a reader-status column: whether each key reaches `tm_open`, `team_open`, or both.
+`team_open`'s `inputSchema` only accepts a subset of `TEAM_DEFAULTS`' names in the first place —
+a key it does not accept as an argument at all cannot be reached from `team.json` on that path
+either, no matter what `resolveTeamOptions` resolves.
 
-| Key | Default | Reaches behavior? | What it does |
-|---|---|---|---|
-| `vendor` | `"auto"` | yes | Every child run's vendor selection (`child_opts.vendor`). |
-| `allocation` | `"ordered"` | yes | `"ordered"` vs `"balanced"` routing for every child run (`child_opts.allocation`); see `graph`'s Status for what `"balanced"` changes. |
-| `goal_threshold` | `90` | yes | The manager's own goal-gate floor, and — as of commit `f765c03` — the floor every child run's own goal gate opens with (`child_opts.goal_threshold`). Before that commit, a project's pinned value was silently dropped for every package; every child ran the hardcoded 90 regardless of `team.json`. |
-| `max_retries` | `2` | yes | The manager's own subgoal/package retry budget, and — as of `f765c03` — the retry budget every child run opens with (`child_opts.max_retries`). Same pre-`f765c03` caveat as `goal_threshold`. |
-| `driver_restarts` | `2` | yes | How many times a dead package or size-S driver respawns on the same run_id before the dispatch folds `blocked`. |
-| `docs_dir` | `.teams_output/team` | yes | Where `tm_docs`/`tickets.mjs` render the phase-document tree (`INDEX.md` and friends). Real and load-bearing; simply never written down here before now. |
-| `roles` | `{planning:false, qa:false}` | no | recorded-but-inert — echoed in the rendered request doc's "Team snapshot" line; nothing branches on it yet. |
-| `interactive` | `false` | no | recorded-but-inert — same snapshot-line echo, nothing else reads it. |
-| `max_parallel_teams` | `2` | no | recorded-but-inert — same snapshot-line echo, nothing else reads it. |
-| `human_gates` | `[]` | no | recorded-but-inert — not read anywhere, not even the snapshot line. |
-| `human_scope` | `"leader"` | no | recorded-but-inert — not read anywhere. |
-| `max_depth` | `2` | no | recorded-but-inert — not read anywhere. |
-| `qa_rounds` | `2` | no | recorded-but-inert — not read anywhere. |
+| Key | Default | Reaches behavior? | Reader | What it does |
+|---|---|---|---|---|
+| `vendor` | `"auto"` | yes | `tm_open` + `team_open` | Vendor selection: every child run's (`child_opts.vendor`) on `tm_open`, the run's own (`run.vendor`) on `team_open`. |
+| `allocation` | `"ordered"` | yes | `tm_open` + `team_open` | `"ordered"` vs `"balanced"` routing: every child run's (`child_opts.allocation`) on `tm_open`, the run's own (`run.allocation`) on `team_open`; see `graph`'s Status for what `"balanced"` changes. |
+| `goal_threshold` | `90` | yes | `tm_open` + `team_open` | The goal-gate floor. On `tm_open`: the manager's own floor, and — as of commit `f765c03` — the floor every child run's own goal gate opens with (`child_opts.goal_threshold`); before that commit a project's pinned value was silently dropped for every package, every child ran the hardcoded 90 regardless of `team.json`. On `team_open`: the run's own goal gate floor (`run.goal_threshold`) — the same class of bug, fixed the same way, one round later. |
+| `max_retries` | `2` | yes | `tm_open` + `team_open` | The retry budget. On `tm_open`: the manager's own subgoal/package budget, and — as of `f765c03` — the budget every child run opens with (`child_opts.max_retries`), same pre-`f765c03` caveat as `goal_threshold`. On `team_open`: the run's own retry budget (`run.max_retries`) — `TEAM_DEFAULTS.max_retries` (2) already matched `createRun`'s own bare default, so a project with no `team.json` saw no behavior change from wiring this in. |
+| `driver_restarts` | `2` | yes | `tm_open` only | How many times a dead package or size-S driver respawns on the same run_id before the dispatch folds `blocked`. Not a `team_open` argument — `team_open` opens a single graph run with no driver-restart concept of its own — so a `team.json` pin cannot reach it on that path. |
+| `docs_dir` | `.teams_output/team` | yes | `tm_open` only | Where `tm_docs`/`tickets.mjs` render the phase-document tree (`INDEX.md` and friends). Not a `team_open` argument or concept — `team_open` writes no phase-document tree. |
+| `roles` | `{planning:false, qa:false}` | no | `tm_open` only | recorded-but-inert — echoed in the rendered request doc's "Team snapshot" line; nothing branches on it yet. Not a `team_open` argument. |
+| `interactive` | `false` | no | `tm_open` only | recorded-but-inert — same snapshot-line echo, nothing else reads it. Not a `team_open` argument. |
+| `max_parallel_teams` | `2` | no | `tm_open` only | recorded-but-inert — same snapshot-line echo, nothing else reads it. Not a `team_open` argument. |
+| `human_gates` | `[]` | no | `tm_open` only | recorded-but-inert — not read anywhere, not even the snapshot line. Not a `team_open` argument. |
+| `human_scope` | `"leader"` | no | `tm_open` only | recorded-but-inert — not read anywhere. Not a `team_open` argument. |
+| `max_depth` | `2` | no | `tm_open` only | recorded-but-inert — not read anywhere. Not a `team_open` argument. |
+| `qa_rounds` | `2` | no | `tm_open` only | recorded-but-inert — not read anywhere. Not a `team_open` argument. |
 
 `goal_judges` (independent judges on the goal gate) and `auto_reassign` (auto-retry on a
 rejected verdict) are real per-run options — see `tm_open`'s/`team_open`'s own argument
 descriptions — but are not part of this schema: as of this writing they can only be set as an
-explicit call argument each time, never pinned in `.claude/team.json`.
+explicit call argument each time, never pinned in `.claude/team.json`. `team_open` keeps its
+own `goal_judges` default of 2 regardless of what a project's `team.json` contains — a
+`goal_judges` key in that file is simply an unrecognized key, ignored like any other.
 
 ## Everything else
 
