@@ -15,7 +15,7 @@
 |---|---|---|
 | MCP 서버 | `graph-engineering` (`graph_*` 도구) | `teams-engineering` (`team_*`) + `task-manager` (`tm_*`) |
 | 런 파일 | `.harness-run/broker/` | `.teams_output/broker/` |
-| 스킬 | `graph:install`, `graph:orchestrate` | `teams:install`, `teams:orchestrate`, `teams:develop`, `teams:document` |
+| 스킬 | `graph:install`, `graph:orchestrate` | `teams:install`, `teams:remove`, `teams:patch`, `teams:orchestrate`, `teams:develop`, `teams:document`, `teams:plan`, `teams:qa`, `teams:board`, `teams:ticket` |
 | 버전 | 1.x | 0.x |
 
 두 플러그인은 한 프로젝트에 함께 켜도 됩니다: 도구 접두사가 다르고(`graph_*` vs.
@@ -52,9 +52,10 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 
 - **v0.11.0 — 티켓 레이어, board.jsonl, phase 문서**: `tickets.mjs`가 `task.json`만 보고
   EPIC/STORY/TASK 티켓 상태와 `epicPhase`를 순수 함수로 파생합니다 — 그 자체가 진실의 원천이
-  아니라 어디까지나 파생값입니다. `tm_board`(전체 EPIC 목록, 또는 EPIC 하나의 STORY 칸반 — `task_id`는 전체 run id
-  또는 그 `E-xxxxxxxx` 키를 모두 받습니다)와 `tm_ticket`(키 하나 — `E-xxxxxxxx` 또는
-  `E-xxxxxxxx/Pn` — 로 티켓 하나)가 이를 읽습니다;
+  아니라 어디까지나 파생값입니다. `tm_board`(전체 EPIC 목록, 또는 EPIC 하나의 STORY 칸반)와
+  `tm_ticket`(키 하나 — `E-xxxxxxxx` 또는 `E-xxxxxxxx/Pn` — 로 티켓 하나)가 이를 읽습니다 —
+  `task_id`를 받는 도구는 전부 전체 run id든 그 `E-xxxxxxxx` 키든 같은 방식으로 풀어냅니다(§8);
+  `tm_board`만 특별 취급되는 게 아니라, 이 항목이 그 예로 든 것일 뿐입니다.
   `board.jsonl`은 티켓을 실제로 움직일 수 있는 네 도구(`tm_open`/`tm_next`/`tm_submit`/
   `tm_retry`) 주변에서 before/after diff가 실제로 찾아낸 전환만 기록합니다 — JIRA 스타일 이력이며
   그 자체를 진실의 원천으로 다시 읽지 않습니다. `docs.mjs`는 같은 `task.json`으로부터 §7c의 13개
