@@ -32,6 +32,13 @@ may write under `test/` or its own report path; it must not touch `src/` - that 
 the engine's changed-file check is for. A qa subgoal's `deps[]` should name the develop work it is
 checking, so it never runs before there is anything to check.
 
+This is the standalone route, where the whole run is the QA pass. `.claude/team.json`'s
+`roles.qa` switch (see `install`) is a second route to the same `cases → execute → gate` work: a
+QA phase-Team the EPIC flow inserts between `integrate` and `gate:goal` on its own, reusing the
+repair worktree, inside an ordinary `develop`/`document`/`orchestrate` run. Use this skill when
+the deliverable IS the QA pass; turn `roles.qa` on instead when every EPIC should get one
+automatically, gating its own `gate:goal`.
+
 ## Entry
 
 ```
@@ -70,3 +77,4 @@ Say it is a QA pass. That is the whole difference from `orchestrate`.
 - `orchestrate` — same loop, the decomposition stage picks the flow
 - `develop` — same loop, flow pinned to the code the qa pass checks
 - `plan` — same loop, flow pinned to the PRD this work traces back to
+- `install` — turn on `roles.qa` for the non-standalone route to this same work

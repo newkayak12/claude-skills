@@ -38,6 +38,13 @@ defaults to `.teams_output/team`; `team.json`'s key of the same name overrides i
 in the planning subgoal's `files[]` when the goal-spec is authored - there is no automatic
 placement yet, only the plain `files[]` mechanism every subgoal already has.
 
+This is the standalone route, where the whole run is the PRD. `.claude/team.json`'s
+`roles.planning` switch (see `install`) is a second route to the same `draft → revise → gate`
+work: a planning phase-Team the EPIC flow inserts before `shape` on its own, inside an ordinary
+`develop`/`document`/`orchestrate` run, writing to that same `10-prd.md` path. Use this skill when
+the deliverable IS the PRD; turn `roles.planning` on instead when a PRD should precede every EPIC
+that also does code or writing work, without a separate run to ask for it.
+
 ## Entry
 
 ```
@@ -77,3 +84,4 @@ Say it is a planning job. That is the whole difference from `orchestrate`.
 - `orchestrate` — same loop, the decomposition stage picks the flow
 - `document` — same loop, flow pinned to a general written artifact, not a PRD
 - `qa` — same loop, flow pinned to test-case authoring and execution
+- `install` — turn on `roles.planning` for the non-standalone route to this same work
