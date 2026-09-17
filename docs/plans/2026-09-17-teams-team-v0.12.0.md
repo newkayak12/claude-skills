@@ -17,12 +17,16 @@ report`뿐이고, `planning`/`qa`는 `teams:plan`/`teams:qa` entry 스킬로 **�
 
 ## 0. 이 계획이 내리는 해석 — 설계 문서가 못 박지 않은 것
 
-### 0.1 phase-Team이 실제로 어떤 노드 모양으로 뜨는가
+### 0.1 phase-Team이 실제로 어떤 노드 모양으로 뜨는가 (결정됨)
 
 설계 문서 §2는 "기획 Team = TaskLeader의 plan/setgoal 단계를 위임받은 팀"이라고만 하고, §9 변경
-지점 표에도 그 노드가 없다. 사이징 문서 §2.3 말미가 이미 이 공백을 지적하며 "패키지 dispatch와 같은
-모양의 노드를 스펙에 없는 합성 id로 여는 것"을 가장 싼 읽기로 추천했다. 엔진을 읽고 그 읽기를
-구체화한다:
+지점 표에도 그 노드가 없다. **팀 리더 확인(2026-09-17)**: 이 계획이 아래에서 구체화한 읽기로
+진행한다 — §14 결정 기록 `5·7·8·C`("애매 → 제안한 기본값으로 진행, 실측 뒤 재론")가 정확히 이런
+경우를 위한 규칙이고, 이 읽기는 임의 추측이 아니라 `packageOf`가 실제로 `task.spec.packages`만
+본다는 사실에 근거를 댔다. 재론은 실측 뒤로 미룬다 — 이 계획을 쓰는 시점에 다시 열지 않는다.
+
+사이징 문서 §2.3 말미가 이미 이 공백을 지적하며 "패키지 dispatch와 같은 모양의 노드를 스펙에 없는
+합성 id로 여는 것"을 가장 싼 읽기로 추천했다. 엔진을 읽고 그 읽기를 구체화한다:
 
 - `openChild(task, n)`(`taskmanager.mjs:1038`)는 `packageOf(task, n.subgoal_id)`
   (`taskmanager.mjs:637`)로 패키지를 찾는데, `packageOf`는 **`task.spec.packages`만** 본다. shape의
@@ -108,22 +112,25 @@ v0.13.0을 하는 도중에 누군가의 계획서로 새어 들어가고, 그 �
 
 ### 0.4 발견 — 팀 리더에게 보고, 해결하지 않고 진행
 
-1. **§3의 `planning-audit` kind가 코드에 없다** (위 §0.3). 모순은 아니다 — 설계는 이미 이 kind의
-   체인(`audit → gate`)과 스킬(`develop:transaction-boundary-reviewer`류가 아니라 §3 표에는 audit
-   전용 스킬이 안 나와 있다 — **발견**: §3의 페르소나·스킬 표는 `planning`/`develop`/`qa` 셋만 채워져
-   있고 `planning-audit`의 setgoal 페르소나·스테이지 스킬 칸이 비어 있다. 이 계획은 `planning`과
-   같은 페르소나(PO·도메인 전문가·구현 리드)를 재사용하고 스킬은 `think:devils-advocate`(gate와
-   동일, 판정 성격이 강하므로)로 채운다 — **이것은 설계 문서가 답하지 않은 빈칸을 이 계획이 메운
-   것이라 팀 리더 확인이 필요**하다.
-2. **§5의 `implements[]` 완전성 검사가 요구하는 "user story 목록"이 구조화돼 있지 않다.** PRD 본문
-   (`10-prd.md`)은 §14 결정 3b에 의해 **verbatim 자유 텍스트**(`pm/skills/prd-development/
-   template.md`의 10절 스켈레톤)다. `validateShape`(`taskmanager.mjs:235`)가 "모든 user story가
-   어느 STORY에든 속해야 한다"를 기계적으로 검사하려면 user story ID 목록(`US-1`, `US-2`, …)이
-   **구조화된 필드로** 어딘가에 있어야 하는데, 설계 문서 어디에도 이 필드의 자리가 없다. **이 계획이
-   내리는 선택**: `planning` 체인의 `gate` 노드 결과에 `result.user_stories: string[]`(ID 목록만,
-   본문은 여전히 PRD가 verbatim으로 들고 있음)를 추가해 shape 프롬프트와 `validateShape`가 그 배열만
-   대조한다 — PRD 본문을 파싱하지 않고, verbatim 규칙을 어기지 않는다. 이것도 설계 문서에 없던
-   빈칸을 메운 것이므로 **팀 리더 확인 필요**.
+1. **§3의 `planning-audit` kind가 코드에 없다** (위 §0.3) — **팀 리더 확인(2026-09-17): 이 계획이
+   메운 빈칸으로 확정, 재론하지 않는다.** 설계는 이미 이 kind의 체인(`audit → gate`)을 §3에 적어
+   뒀지만, §3의 페르소나·스킬 표는 `planning`/`develop`/`qa` 셋만 채워져 있고 `planning-audit`의
+   setgoal 페르소나·스테이지 스킬 칸이 비어 있었다 — **결정 기록 #1이 기획 크로스 검수를 흐름에
+   못박아 둔 이상 이 kind는 존재해야 하고, §3의 표에 그 행만 없었을 뿐**이다. 이 계획은 그 빈칸을
+   `planning`과 같은 페르소나(PO·도메인 전문가·구현 리드)를 재사용하고 스킬은
+   `think:devils-advocate`(gate와 동일, 판정 성격이 강하므로)로 채워 닫는다 — 다음 읽는 사람이
+   "빈칸을 추측했다"가 아니라 "빈칸을 의도적으로 메웠다"로 읽도록 여기 남긴다.
+2. **§5의 `implements[]` 완전성 검사가 요구하는 "user story 목록"이 구조화돼 있지 않다** — **팀
+   리더 확인(2026-09-17): 아래 다리로 확정.** PRD 본문(`10-prd.md`)은 §14 결정 3b에 의해
+   **verbatim 자유 텍스트**(`pm/skills/prd-development/template.md`의 10절 스켈레톤)다.
+   `validateShape`(`taskmanager.mjs:235`)가 "모든 user story가 어느 STORY에든 속해야 한다"를
+   기계적으로 검사하려면 user story ID 목록(`US-1`, `US-2`, …)이 **구조화된 필드로** 어딘가에
+   있어야 하는데, 설계 문서 어디에도 이 필드의 자리가 없다. 이 계획은 `planning` 체인의 `gate` 노드
+   결과에 `result.user_stories: string[]`(ID 목록만, 본문은 여전히 PRD가 verbatim으로 들고 있음)를
+   추가해 shape 프롬프트와 `validateShape`가 그 배열만 대조한다. **이것은 결정 3b를 어기지 않는다**:
+   3b가 정한 것은 PRD **본문**이 있을 자리와 그것이 verbatim이어야 한다는 것이지, planning이 구조화된
+   출력을 **전혀** 낼 수 없다는 것이 아니다. `gate` 노드 결과에서 ID 목록만 뽑는 것은 PRD 본문을
+   파싱하는 것과 다르다 — 이 계획은 PRD 파일을 열어 읽지 않는다.
 3. **모순 후보 — QA phase-Team의 워크트리 소유권과 `qa_rounds` 재순회.** §3은 "QA STORY는 통합
    워크트리를 쓴다, `src/` 쓰기 금지"라고 하는데, 결함 STORY가 발행되면 develop이 **같은** 통합
    워크트리가 아니라 **자기 워크트리**에서 고친 뒤 새 통합이 열린다(§5b: "보통의 dispatch →
@@ -359,21 +366,27 @@ defects)`가 각 결함을 `openRepair`와 같은 모양으로(단 `repair: true
 경로), modify `teams/scripts/test-tickets.mjs`류
 **Interfaces:** `graph.mjs`의 `KINDS.planning-audit = { chain: ['audit', 'gate'], reasoning: [],
 skills: { audit: [...], gate: ['think:devils-advocate'] } }`(§0.4 발견 1이 채운 빈칸,
-`FLOWS`에도 `'audit'` 항목 추가, `kind: 'planning-audit'`). `T.roles.planning &&
-T.roles.qa`(감사는 QA 리포트를 대조 대상으로 삼으므로 QA도 켜져 있어야 의미가 있다 — **이 조건은
-설계 문서에 명시되지 않은, 이 계획이 내리는 판단**이다: qa가 꺼져 있으면 audit은 PRD ↔ 통합
-결과물만 대조하고 QA 리포트 대조는 건너뛴다는 완화된 버전도 가능하나, 이 계획은 "qa 켜짐"을
-전제조건으로 단순화한다 — 팀 리더 확인 필요, §0.4에 이미 적었다)일 때, `accept:QA:1`(또는 결함
-루프의 마지막 `accept:QA:N`) 완료 뒤 `dispatch:AUDIT:1`을 열고, 결과 STORY 발행은 Task 6의
-`fileDefects`류 경로를 `reporter: 'planning-audit'`로 재사용한다. `gate:goal`의 dep을
-`accept:AUDIT:1`로 재배선.
-**Pass bar:** `planning`+`qa` 둘 다 켜진 EPIC에서 QA 완료 뒤 `dispatch:AUDIT:1`이 열리고, audit
-gate가 미충족 user story 1건을 내면 새 develop STORY가 `reporter: 'planning-audit'`로 생김을 확인.
-`planning`만 켜지고 `qa`는 꺼진 경우 audit phase-Team이 **생기지 않음**을 회귀로 확인(위 판단의
-직접 귀결).
+`FLOWS`에도 `'audit'` 항목 추가, `kind: 'planning-audit'`). **게이트 조건은 `T.roles.planning`
+하나뿐이다 — `T.roles.qa`와 묶지 않는다(팀 리더 확인, 2026-09-17, §0.4의 원래 판단을 뒤집음).**
+기획 크로스 검수는 결정 기록 #1이 그리는 흐름에서 **planning 자신의 두 번째 pass**다(§2: "planning
+Team은 EPIC 안에서 두 번 돈다 … 같은 Team 정체성이지만 run은 새로 연다") — QA라는 다른 역할의
+스위치에 이 pass를 묶으면, 사용자가 QA만 끄고 싶었을 때 사용자가 요청하지도 않은 기획 단계까지
+조용히 사라진다. 대신 **QA 리포트는 있으면 소비하고 없으면 생략한다**: audit의 briefing은 PRD·
+user_stories·통합 결과물은 항상 포함하고, `accept:QA:*` 노드가 존재하면(=`roles.qa`가 켜져 있었으면)
+그 결과(`defects`, `gate` 판정)를 추가로 얹는다 — 없으면 그 절만 빠진다. 삽입 시점은 `roles.qa`가
+켜져 있으면 마지막 `accept:QA:N` 완료 뒤, 꺼져 있으면 `integrate` 완료 뒤(QA가 없으니 기다릴 QA
+노드가 없다). 결과 STORY 발행은 v0.12.1(아래)의 결함 STORY 발행 경로를 `reporter:
+'planning-audit'`로 재사용한다. `gate:goal`의 dep을 `accept:AUDIT:1`로 재배선.
+**Pass bar:** `planning`만 켜지고 `qa`는 꺼진 EPIC에서 `integrate` 완료 뒤 `dispatch:AUDIT:1`이
+열리고 그 briefing에 QA 관련 절이 없음을 확인(이번 방향의 핵심 회귀 — v0.12.0 애초 설계는 이
+경우 audit이 아예 안 생겼는데, 지금은 생겨야 한다). `planning`+`qa` 둘 다 켜진 EPIC에서는 QA
+완료 뒤 `dispatch:AUDIT:1`이 열리고 그 briefing에 QA 결과 절이 포함됨을 확인, audit gate가 미충족
+user story 1건을 내면 새 develop STORY가 `reporter: 'planning-audit'`로 생김을 확인. `planning`이
+꺼진 경우 audit phase-Team이 생기지 않음을 회귀로 확인.
 
 - [ ] 1: `graph.mjs`에 실패하는 kind 테스트(`KINDS['planning-audit']`의 체인·스킬 모양)와
-  `taskmanager.mjs`에 위 두 케이스의 실패 테스트 작성.
+  `taskmanager.mjs`에 위 세 케이스(qa 없이 audit, qa와 함께 audit, planning 꺼짐)의 실패 테스트
+  작성.
 - [ ] 2: `graph.mjs`의 `KINDS`/`FLOWS`에 항목 추가, `prompts.mjs`에 audit 스테이지 프롬프트
   (§0.4 발견 1이 채운 페르소나 재사용 + "판정만, 파일 변경 없음" 문구 명시 — planning의 `revise`와
   달리 audit은 수정 권한이 없다는 §2의 구분을 프롬프트에 못박는다), `taskmanager.mjs`에 audit
