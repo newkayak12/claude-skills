@@ -1,9 +1,9 @@
-# graph-beta (team) v0.10.0 — install / remove / patch + team.json + 공존 + engagement 마커 구현 계획
+# teams (team) v0.10.0 — install / remove / patch + team.json + 공존 + engagement 마커 구현 계획
 
 > Produced by write:writing-plans. Owner for execution routing: planning:executing-plans.
-> Steps use checkbox (`- [ ]`) syntax. 설계 근거: `2026-09-17-graph-beta-team.md` §6·§7b·§12·§13.
+> Steps use checkbox (`- [ ]`) syntax. 설계 근거: `2026-09-17-teams-team.md` §6·§7b·§12·§13.
 
-**Goal:** graph-beta에 harness와 같은 두께의 `install`/`remove`/`patch`를 두고, `tm_open`이 프로젝트의
+**Goal:** teams에 harness와 같은 두께의 `install`/`remove`/`patch`를 두고, `tm_open`이 프로젝트의
 `.claude/team.json`을 기본값으로 읽게 하며, harness와 같은 프로젝트에서 서로의 게이트를 막지 않게 한다.
 
 **Architecture:** 세 스크립트는 harness의 `install.mjs`/`remove.mjs`/`patch.mjs`를 그대로 본뜬 결정적·멱등
@@ -14,7 +14,7 @@ team이 워크트리와 S-run cwd에 `team-<task8>` 마커를 쓰고 폴링마�
 쪽 세션의 쓰기도 통과한다. **harness 코드 변경 0.** 설계 문서 §13의 `~/.harness/active/`는 이 방식으로
 대체한다(Task 9에서 문서 갱신).
 
-**Tech Stack:** Node 18+ ESM, `node:test`, 런타임 의존성 0. 테스트는 `node --test graph-beta/scripts/test-*.mjs`.
+**Tech Stack:** Node 18+ ESM, `node:test`, 런타임 의존성 0. 테스트는 `node --test teams/scripts/test-*.mjs`.
 
 **이번 라운드에 들어가는 것 (결정 2026-09-17):** install/remove/patch, team.json, 공존 마커, **inline 제거**,
 **TaskLeader driver + inbox + 최소 가시성(`tm_events`, `tm_status.leader`, 세션 간 알림)**.
@@ -34,7 +34,7 @@ team이 워크트리와 S-run cwd에 `team-<task8>` 마커를 쓰고 폴링마�
   워크트리에 없음)를 읽는다. 그래서 마커는 **워크트리 안에** 써야 한다.
 - harness `goal-gate.mjs`: transcript에 harness 흔적이 없고 `.claude/.harness-markers/*`에 `window_hours`
   (기본 2h) 이내 타임스탬프 파일이 하나라도 있으면 통과. 마커 내용은 `String(Date.now())`.
-- `graph-beta/.claude-plugin/plugin.json`은 0.6.4, marketplace는 0.9.0 — 불일치. patch 스크립트가 거부하므로
+- `teams/.claude-plugin/plugin.json`은 0.6.4, marketplace는 0.9.0 — 불일치. patch 스크립트가 거부하므로
   먼저 맞춘다.
 - `taskmanager.mjs`는 export가 없다. 테스트는 stdio JSON-RPC `Client`(test-taskmanager.mjs)로 한다.
 - harness 템플릿은 `harness/skills/install/templates/{claude-md-section.md, conventions/*.md}`에 있다.
@@ -42,26 +42,26 @@ team이 워크트리와 S-run cwd에 `team-<task8>` 마커를 쓰고 폴링마�
 ---
 
 ### Task 0: 버전 정합
-**Files:** modify `graph-beta/.claude-plugin/plugin.json`
+**Files:** modify `teams/.claude-plugin/plugin.json`
 **Interfaces:** produces — 이후 patch 스크립트가 통과하는 전제.
-**Pass bar:** `python3 scripts/validate_plugins.py` 출력에 graph-beta 버전 불일치 ERROR가 없다.
+**Pass bar:** `python3 scripts/validate_plugins.py` 출력에 teams 버전 불일치 ERROR가 없다.
 
-- [ ] 1: `python3 scripts/validate_plugins.py 2>&1 | grep -i "graph-beta" | grep -i version` 로 불일치를 확인한다
+- [ ] 1: `python3 scripts/validate_plugins.py 2>&1 | grep -i "teams" | grep -i version` 로 불일치를 확인한다
 - [ ] 2: `plugin.json`의 `"version": "0.6.4"` → `"0.9.0"`
 - [ ] 3: 1의 명령을 다시 실행해 출력이 비었음을 확인한다
-- [ ] 4: `git commit -am "chore(graph-beta): sync plugin.json version to 0.9.0"`
+- [ ] 4: `git commit -am "chore(teams): sync plugin.json version to 0.9.0"`
 
 ---
 
 ### Task 1: `mcp/teamconfig.mjs` — team.json 읽기와 우선순위 해석
-**Files:** create `graph-beta/mcp/teamconfig.mjs`, create `graph-beta/scripts/test-teamconfig.mjs`
+**Files:** create `teams/mcp/teamconfig.mjs`, create `teams/scripts/test-teamconfig.mjs`
 **Interfaces:** produces `TEAM_DEFAULTS`, `TEAM_FILE`, `readTeamConfig(cwd) → {config, path, status}`,
 `resolveTeamOptions(args, fileConfig) → {opts, sources, notes}`. 우선순위: 내장 기본값 < team.json < 명시 인자.
-**Pass bar:** `node --test graph-beta/scripts/test-teamconfig.mjs` 6개 통과.
+**Pass bar:** `node --test teams/scripts/test-teamconfig.mjs` 6개 통과.
 
 - [ ] 1: 실패하는 테스트를 쓴다
 ```js
-// graph-beta/scripts/test-teamconfig.mjs
+// teams/scripts/test-teamconfig.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -130,10 +130,10 @@ test('unknown keys are reported, not merged', () => {
   assert.match(notes[0], /unknown key "colour"/);
 });
 ```
-- [ ] 2: `node --test graph-beta/scripts/test-teamconfig.mjs` → import 실패로 6개 모두 fail 확인
+- [ ] 2: `node --test teams/scripts/test-teamconfig.mjs` → import 실패로 6개 모두 fail 확인
 - [ ] 3: 모듈을 쓴다
 ```js
-// graph-beta/mcp/teamconfig.mjs - project defaults for tm_open, read from .claude/team.json.
+// teams/mcp/teamconfig.mjs - project defaults for tm_open, read from .claude/team.json.
 //
 // Precedence is built-in defaults < team.json < explicit tm_open arguments. Every resolved key
 // carries where it came from so tm_status can show it. Keys that no code acts on yet
@@ -213,12 +213,12 @@ export function resolveTeamOptions(args, fileConfig) {
 }
 ```
 - [ ] 4: 테스트 6개 통과 확인
-- [ ] 5: `git add graph-beta/mcp/teamconfig.mjs graph-beta/scripts/test-teamconfig.mjs && git commit -m "feat(graph-beta): teamconfig - .claude/team.json defaults with precedence and sources"`
+- [ ] 5: `git add teams/mcp/teamconfig.mjs teams/scripts/test-teamconfig.mjs && git commit -m "feat(teams): teamconfig - .claude/team.json defaults with precedence and sources"`
 
 ---
 
 ### Task 2: `createTask`가 team.json을 읽고, `tm_status`가 출처를 보인다
-**Files:** modify `graph-beta/mcp/taskmanager.mjs` (`createTask`, `toolStatus`), modify `graph-beta/scripts/test-taskmanager.mjs`
+**Files:** modify `teams/mcp/taskmanager.mjs` (`createTask`, `toolStatus`), modify `teams/scripts/test-taskmanager.mjs`
 **Interfaces:** consumes Task 1의 `readTeamConfig`, `resolveTeamOptions` / produces `task.team = {opts, sources, notes, file_status}`,
 `tm_status({task_id}).team`.
 **Pass bar:** 새 테스트 2개 통과 + 기존 test-taskmanager 전부 통과(회귀 0).
@@ -265,7 +265,7 @@ test('a malformed team.json is reported on the task and the defaults apply', asy
 });
 ```
 `mkdirSync`가 test 파일 import에 없으면 `node:fs` import 줄에 추가한다.
-- [ ] 2: `node --test graph-beta/scripts/test-taskmanager.mjs` → 새 2개만 fail (`sa.team` undefined) 확인
+- [ ] 2: `node --test teams/scripts/test-taskmanager.mjs` → 새 2개만 fail (`sa.team` undefined) 확인
 - [ ] 3: `taskmanager.mjs` 수정
   - import 추가: `import { readTeamConfig, resolveTeamOptions } from './teamconfig.mjs';`
   - `createTask(a)` 첫 줄 `const cwd = resolve(String(a.cwd));` 바로 뒤에:
@@ -287,20 +287,20 @@ test('a malformed team.json is reported on the task and the defaults apply', asy
   - `task` 객체 리터럴에 필드 추가: `team: { opts: T, sources: team.sources, notes: team.notes, file_status: teamFile.status },`
   - `toolStatus(a)`에서 단일 task를 돌려주는 객체(`task_id`가 있을 때)에 `team: task.team || null` 을 추가한다.
     `full: true` 경로는 task 파일 전체를 돌려주므로 이미 포함된다.
-- [ ] 4: 테스트 전체 통과 확인 (`node --test graph-beta/scripts/test-taskmanager.mjs`)
-- [ ] 5: `git commit -am "feat(graph-beta): tm_open takes .claude/team.json as project defaults; tm_status shows sources"`
+- [ ] 4: 테스트 전체 통과 확인 (`node --test teams/scripts/test-taskmanager.mjs`)
+- [ ] 5: `git commit -am "feat(teams): tm_open takes .claude/team.json as project defaults; tm_status shows sources"`
 
 ---
 
 ### Task 3: `mcp/engage.mjs` — 공유 engagement 마커 (harness 훅과 호환)
-**Files:** create `graph-beta/mcp/engage.mjs`, create `graph-beta/scripts/test-engage.mjs`, modify `graph-beta/mcp/taskmanager.mjs` (`ensureWorktree`, `openSRun`, `toolNext`)
+**Files:** create `teams/mcp/engage.mjs`, create `teams/scripts/test-engage.mjs`, modify `teams/mcp/taskmanager.mjs` (`ensureWorktree`, `openSRun`, `toolNext`)
 **Interfaces:** produces `markerPath(cwd, taskId)`, `touchMarker(cwd, taskId) → boolean`, `clearMarker(cwd, taskId)`,
 `MARKER_WINDOW_MS`. consumes harness `hooks/goal-gate.mjs`(변경 없이, 검증용).
-**Pass bar:** `node --test graph-beta/scripts/test-engage.mjs` 통과 — 특히 "harness goal-gate가 마커 없으면 deny, 있으면 통과".
+**Pass bar:** `node --test teams/scripts/test-engage.mjs` 통과 — 특히 "harness goal-gate가 마커 없으면 deny, 있으면 통과".
 
 - [ ] 1: 실패하는 테스트
 ```js
-// graph-beta/scripts/test-engage.mjs
+// teams/scripts/test-engage.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
@@ -374,7 +374,7 @@ test('a stale marker (older than the 2h window) does not count', () => {
 - [ ] 2: 실행 → import 실패 확인
 - [ ] 3: 모듈
 ```js
-// graph-beta/mcp/engage.mjs - the shared "an engine is engaged here" marker.
+// teams/mcp/engage.mjs - the shared "an engine is engaged here" marker.
 //
 // harness's goal-gate.mjs (a PreToolUse hook copied into projects) refuses gated edits unless
 // the session's transcript shows the harness or .claude/.harness-markers/ holds a file whose
@@ -436,13 +436,13 @@ export function clearMarker(cwd, taskId) {
     assert.ok(existsSync(join(child.cwd, '.claude', '.harness-markers', `team-${a.task_id.slice(0, 8)}`)), 'worktree carries the shared engagement marker');
 ```
   (`child`는 그 테스트가 이미 `tm_next`의 `children[0]`으로 읽는 변수명에 맞춘다.)
-- [ ] 7: `node --test graph-beta/scripts/test-taskmanager.mjs graph-beta/scripts/test-engage.mjs` 전체 통과
-- [ ] 8: `git add -A graph-beta && git commit -m "feat(graph-beta): shared engagement marker in worktrees and S-run cwd so the harness gate passes node writes"`
+- [ ] 7: `node --test teams/scripts/test-taskmanager.mjs teams/scripts/test-engage.mjs` 전체 통과
+- [ ] 8: `git add -A teams && git commit -m "feat(teams): shared engagement marker in worktrees and S-run cwd so the harness gate passes node writes"`
 
 ---
 
 ### Task 4: `dispatch-gate.mjs`가 harness 마커를 인정한다 (역방향 공존)
-**Files:** modify `graph-beta/hooks/dispatch-gate.mjs`, modify `graph-beta/scripts/test-dispatch-gate.mjs`
+**Files:** modify `teams/hooks/dispatch-gate.mjs`, modify `teams/scripts/test-dispatch-gate.mjs`
 **Interfaces:** 훅은 자급자족(import 없음) — `engage.mjs`를 import하지 않고 같은 규칙을 인라인한다.
 **Pass bar:** test-dispatch-gate 기존 7개 + 새 2개 통과.
 
@@ -483,38 +483,38 @@ test('a stale harness marker does not open the gate', () => {
   }
 ```
 - [ ] 4: 9개 통과 확인
-- [ ] 5: `git commit -am "feat(graph-beta): dispatch-gate honours a recent harness engagement marker"`
+- [ ] 5: `git commit -am "feat(teams): dispatch-gate honours a recent harness engagement marker"`
 
 ---
 
 ### Task 5: `skills/install/install.mjs` + 템플릿
-**Files:** create `graph-beta/skills/install/install.mjs`, create `graph-beta/skills/install/templates/claude-md-section.md`,
-create `graph-beta/skills/install/templates/conventions/{coding,verification,boundaries}.md` (harness의 것을 byte-identical 복사),
-create `graph-beta/scripts/test-install.mjs`
+**Files:** create `teams/skills/install/install.mjs`, create `teams/skills/install/templates/claude-md-section.md`,
+create `teams/skills/install/templates/conventions/{coding,verification,boundaries}.md` (harness의 것을 byte-identical 복사),
+create `teams/scripts/test-install.mjs`
 **Interfaces:** consumes Task 1의 `TEAM_DEFAULTS`, `TEAM_FILE` / produces CLI `node install.mjs '<json>'` → JSON report,
 exit 0 정상, 2 잘못된 입력, **3 공존 충돌**(`force: true`면 0).
-**Pass bar:** `node --test graph-beta/scripts/test-install.mjs` 7개 통과.
+**Pass bar:** `node --test teams/scripts/test-install.mjs` 7개 통과.
 
 - [ ] 1: 템플릿 두 종류를 만든다
-  - `cp harness/skills/install/templates/conventions/{coding,verification,boundaries}.md graph-beta/skills/install/templates/conventions/`
-  - `graph-beta/skills/install/templates/claude-md-section.md`:
+  - `cp harness/skills/install/templates/conventions/{coding,verification,boundaries}.md teams/skills/install/templates/conventions/`
+  - `teams/skills/install/templates/claude-md-section.md`:
 ```markdown
-<!-- graph-beta:begin v1 -->
-## graph-beta (team)
+<!-- teams:begin v1 -->
+## teams (team)
 
-This project runs substantial work through the graph-beta task manager.
+This project runs substantial work through the teams task manager.
 
-- **Open before you write.** Paths in `.claude/graph-beta-dispatch.json` are denied to the driving
+- **Open before you write.** Paths in `.claude/teams-dispatch.json` are denied to the driving
   session until a task is open: call `tm_open({request, cwd})` and let a node do the writing.
 - **Defaults live in `.claude/team.json`**; a `tm_open` argument overrides a key for one task.
 - **Conventions are law:** `.claude/conventions/**` feeds plan, setgoal and implement.
-- **Watch, do not drive:** `tm_status({task_id})` (and, from 0.11, `/graph-beta:board`).
+- **Watch, do not drive:** `tm_status({task_id})` (and, from 0.11, `/teams:board`).
 - Trivial edits (typos, single-line fixes, docs) do not need a task.
-<!-- graph-beta:end -->
+<!-- teams:end -->
 ```
 - [ ] 2: 실패하는 테스트
 ```js
-// graph-beta/scripts/test-install.mjs
+// teams/scripts/test-install.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
@@ -548,7 +548,7 @@ test('first install creates team.json (defaults), CLAUDE.md block, conventions, 
     assert.deepEqual(team.roles, { planning: false, qa: false });
     assert.equal(report.actions.dispatch, 'skipped');
     assert.equal(report.actions.claudeMd, 'created');
-    assert.match(readFileSync(join(dir, 'CLAUDE.md'), 'utf8'), /<!-- graph-beta:begin/);
+    assert.match(readFileSync(join(dir, 'CLAUDE.md'), 'utf8'), /<!-- teams:begin/);
     assert.deepEqual(report.actions.conventions, { 'coding.md': 'created', 'verification.md': 'created', 'boundaries.md': 'created' });
     const gi = readFileSync(join(dir, '.gitignore'), 'utf8');
     assert.match(gi, /^\.harness-run\/$/m);
@@ -570,12 +570,12 @@ test('second run is idempotent: everything kept/present, nothing rewritten', () 
   } finally { cleanup(); }
 });
 
-test('dispatch patterns write graph-beta-dispatch.json once; team overrides land in team.json', () => {
+test('dispatch patterns write teams-dispatch.json once; team overrides land in team.json', () => {
   const { home, dir, cleanup } = fresh();
   try {
     const { report } = run(dir, home, { dispatch: { paths: ['src/**'], min_chars: 400 }, team: { goal_threshold: 95, roles: { qa: true } } });
     assert.equal(report.actions.dispatch, 'created');
-    assert.deepEqual(JSON.parse(readFileSync(join(dir, '.claude', 'graph-beta-dispatch.json'), 'utf8')), { paths: ['src/**'], min_chars: 400 });
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, '.claude', 'teams-dispatch.json'), 'utf8')), { paths: ['src/**'], min_chars: 400 });
     const team = JSON.parse(readFileSync(join(dir, '.claude', 'team.json'), 'utf8'));
     assert.equal(team.goal_threshold, 95);
     assert.deepEqual(team.roles, { planning: false, qa: true });
@@ -632,7 +632,7 @@ test('shipped convention templates are byte-identical to the harness ones (drift
 - [ ] 4: 스크립트
 ```js
 #!/usr/bin/env node
-// Deterministic file ops for the graph-beta `install` skill. The SKILL keeps the judgment
+// Deterministic file ops for the teams `install` skill. The SKILL keeps the judgment
 // (dispatch patterns, which roles to switch on, whether a conflict is real); this runs the
 // confirmed values the same way every time. Idempotent and non-destructive: an existing file is
 // 'kept'. With "refresh": true, team.json gains keys a newer plugin introduced - existing values
@@ -716,7 +716,7 @@ function writeTeam(claudeDir, projectDir, overrides, refresh) {
 
 function writeDispatch(claudeDir, dispatch) {
   if (!dispatch || !Array.isArray(dispatch.paths) || !dispatch.paths.length) return 'skipped';
-  const path = join(claudeDir, 'graph-beta-dispatch.json');
+  const path = join(claudeDir, 'teams-dispatch.json');
   if (existsSync(path)) return 'kept';
   const cfg = { paths: dispatch.paths };
   if (Number.isFinite(dispatch.min_chars)) cfg.min_chars = dispatch.min_chars;
@@ -745,7 +745,7 @@ function writeClaudeMd(projectDir) {
   const block = readFileSync(join(HERE, 'templates', 'claude-md-section.md'), 'utf8');
   if (!existsSync(path)) { writeFileSync(path, block); return 'created'; }
   const cur = readFileSync(path, 'utf8');
-  if (cur.includes('<!-- graph-beta:begin')) return 'present';
+  if (cur.includes('<!-- teams:begin')) return 'present';
   writeFileSync(path, cur + (cur.endsWith('\n') ? '' : '\n') + '\n' + block);
   return 'appended';
 }
@@ -776,7 +776,7 @@ function main() {
 
   report.actions.team = writeTeam(claudeDir, projectDir, args.team, refresh);
   report.actions.dispatch = writeDispatch(claudeDir, args.dispatch);
-  if (report.actions.dispatch === 'skipped') report.notes.push('dispatch: no paths provided - .claude/graph-beta-dispatch.json not written (gate stays inactive)');
+  if (report.actions.dispatch === 'skipped') report.notes.push('dispatch: no paths provided - .claude/teams-dispatch.json not written (gate stays inactive)');
   report.actions.conventions = copyConventions(claudeDir);
   report.actions.claudeMd = writeClaudeMd(projectDir);
   report.actions.gitignore = writeGitignore(projectDir);
@@ -787,18 +787,18 @@ function main() {
 main();
 ```
 - [ ] 5: 7개 통과 확인
-- [ ] 6: `git add -A graph-beta/skills/install graph-beta/scripts/test-install.mjs && git commit -m "feat(graph-beta): install.mjs - team.json, dispatch gate, conventions, CLAUDE.md block, coexistence check"`
+- [ ] 6: `git add -A teams/skills/install teams/scripts/test-install.mjs && git commit -m "feat(teams): install.mjs - team.json, dispatch gate, conventions, CLAUDE.md block, coexistence check"`
 
 ---
 
 ### Task 6: `skills/remove/remove.mjs`
-**Files:** create `graph-beta/skills/remove/remove.mjs`, create `graph-beta/scripts/test-remove.mjs`
+**Files:** create `teams/skills/remove/remove.mjs`, create `teams/scripts/test-remove.mjs`
 **Interfaces:** consumes Task 5가 만든 파일 이름들 / produces CLI `node remove.mjs '{projectDir, purgeConventions, purgeRuns, purgeTasks}'` → JSON report.
-**Pass bar:** `node --test graph-beta/scripts/test-remove.mjs` 5개 통과.
+**Pass bar:** `node --test teams/scripts/test-remove.mjs` 5개 통과.
 
 - [ ] 1: 테스트
 ```js
-// graph-beta/scripts/test-remove.mjs
+// teams/scripts/test-remove.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
@@ -881,7 +881,7 @@ test('purgeTasks removes only tasks of this project, and refuses one whose drive
 test('unmatched CLAUDE.md markers are left alone and reported', () => {
   const { dir, tasks, cleanup } = installed();
   try {
-    writeFileSync(join(dir, 'CLAUDE.md'), '<!-- graph-beta:begin v1 -->\nno end\n');
+    writeFileSync(join(dir, 'CLAUDE.md'), '<!-- teams:begin v1 -->\nno end\n');
     const { report } = run(dir, tasks, {});
     assert.equal(report.actions.claudeMd, 'marker-error');
     assert.match(readFileSync(join(dir, 'CLAUDE.md'), 'utf8'), /no end/);
@@ -892,7 +892,7 @@ test('unmatched CLAUDE.md markers are left alone and reported', () => {
 - [ ] 3: 스크립트
 ```js
 #!/usr/bin/env node
-// Deterministically remove what graph-beta install.mjs wrote. Conventions, run history and task
+// Deterministically remove what teams install.mjs wrote. Conventions, run history and task
 // history are kept unless asked for by name; a task whose driver is still alive is never removed.
 // Usage: node remove.mjs '{"projectDir":"/abs","purgeConventions":false,"purgeRuns":false,"purgeTasks":false}'
 import { existsSync, readFileSync, writeFileSync, rmSync, rmdirSync, readdirSync, statSync } from 'node:fs';
@@ -915,17 +915,17 @@ function removeKnownPath(p) {
 function removeClaudeBlock(path, notes) {
   if (!existsSync(path)) return 'absent';
   const cur = readFileSync(path, 'utf8');
-  const begins = (cur.match(/<!-- graph-beta:begin\b/g) || []).length;
-  const ends = (cur.match(/<!-- graph-beta:end -->/g) || []).length;
+  const begins = (cur.match(/<!-- teams:begin\b/g) || []).length;
+  const ends = (cur.match(/<!-- teams:end -->/g) || []).length;
   if (!begins && !ends) return 'absent';
-  if (begins !== ends) { notes.push('CLAUDE.md has unmatched graph-beta markers - left untouched'); return 'marker-error'; }
+  if (begins !== ends) { notes.push('CLAUDE.md has unmatched teams markers - left untouched'); return 'marker-error'; }
   const lines = cur.split(/\r?\n/);
   const kept = [];
   let inside = false;
   let justClosed = false;
   for (const line of lines) {
-    if (/^\s*<!-- graph-beta:begin\b[^>]*-->\s*$/.test(line)) { inside = true; continue; }
-    if (inside) { if (/^\s*<!-- graph-beta:end -->\s*$/.test(line)) { inside = false; justClosed = true; } continue; }
+    if (/^\s*<!-- teams:begin\b[^>]*-->\s*$/.test(line)) { inside = true; continue; }
+    if (inside) { if (/^\s*<!-- teams:end -->\s*$/.test(line)) { inside = false; justClosed = true; } continue; }
     if (justClosed && !line.trim() && kept.at(-1)?.trim() === '') { justClosed = false; continue; }
     justClosed = false;
     kept.push(line);
@@ -985,7 +985,7 @@ function main() {
   const notes = [];
   const actions = {};
   actions.team = removeKnownPath(join(claudeDir, 'team.json'));
-  actions.dispatch = removeKnownPath(join(claudeDir, 'graph-beta-dispatch.json'));
+  actions.dispatch = removeKnownPath(join(claudeDir, 'teams-dispatch.json'));
   actions.claudeMd = removeClaudeBlock(join(projectDir, 'CLAUDE.md'), notes);
   actions.gitignore = removeGitignoreLines(join(projectDir, '.gitignore'));
   actions.markers = removeKnownPath(join(claudeDir, '.harness-markers'));
@@ -1009,19 +1009,19 @@ main();
   actions.markers = existsSync(join(claudeDir, 'harness-gate.json')) ? 'kept-harness' : removeKnownPath(join(claudeDir, '.harness-markers'));
 ```
 - [ ] 4: 5개 통과 확인
-- [ ] 5: `git add -A graph-beta/skills/remove graph-beta/scripts/test-remove.mjs && git commit -m "feat(graph-beta): remove.mjs - idempotent uninstall, opt-in purges, refuses live drivers"`
+- [ ] 5: `git add -A teams/skills/remove teams/scripts/test-remove.mjs && git commit -m "feat(teams): remove.mjs - idempotent uninstall, opt-in purges, refuses live drivers"`
 
 ---
 
 ### Task 7: `skills/patch/patch.mjs` — 두 매니페스트 + README·KOR Status
-**Files:** create `graph-beta/skills/patch/patch.mjs`, create `graph-beta/scripts/test-patch.mjs`
-**Interfaces:** produces CLI `node patch.mjs '{plugin?="graph-beta", repoRoot, summary, summary_ko, dryRun}'` → JSON report.
+**Files:** create `teams/skills/patch/patch.mjs`, create `teams/scripts/test-patch.mjs`
+**Interfaces:** produces CLI `node patch.mjs '{plugin?="teams", repoRoot, summary, summary_ko, dryRun}'` → JSON report.
 harness `patch.mjs`와 같은 규칙에 `summary_ko`/`KOR.md`가 더해진 것. harness 것은 이번에 건드리지 않는다(후속에서 이 스크립트로 이전 가능 — `plugin` 인자가 그 목적).
-**Pass bar:** `node --test graph-beta/scripts/test-patch.mjs` 4개 통과.
+**Pass bar:** `node --test teams/scripts/test-patch.mjs` 4개 통과.
 
 - [ ] 1: 테스트
 ```js
-// graph-beta/scripts/test-patch.mjs
+// teams/scripts/test-patch.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
@@ -1035,11 +1035,11 @@ const PATCH = fileURLToPath(new URL('../skills/patch/patch.mjs', import.meta.url
 function repo(version = '0.9.0', mkVersion = version) {
   const root = mkdtempSync(join(tmpdir(), 'patch-repo-'));
   mkdirSync(join(root, '.claude-plugin'), { recursive: true });
-  mkdirSync(join(root, 'graph-beta', '.claude-plugin'), { recursive: true });
-  writeFileSync(join(root, '.claude-plugin', 'marketplace.json'), JSON.stringify({ plugins: [{ name: 'graph-beta', version: mkVersion }, { name: 'harness', version: '1.2.3' }] }, null, 2) + '\n');
-  writeFileSync(join(root, 'graph-beta', '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'graph-beta', version }, null, 2) + '\n');
-  writeFileSync(join(root, 'graph-beta', 'README.md'), '# graph-beta\n\n## Status\n\n- v0.9.0 — old\n');
-  writeFileSync(join(root, 'graph-beta', 'KOR.md'), '# graph-beta\n\n## 상태\n\n- v0.9.0 — 이전\n');
+  mkdirSync(join(root, 'teams', '.claude-plugin'), { recursive: true });
+  writeFileSync(join(root, '.claude-plugin', 'marketplace.json'), JSON.stringify({ plugins: [{ name: 'teams', version: mkVersion }, { name: 'harness', version: '1.2.3' }] }, null, 2) + '\n');
+  writeFileSync(join(root, 'teams', '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'teams', version }, null, 2) + '\n');
+  writeFileSync(join(root, 'teams', 'README.md'), '# teams\n\n## Status\n\n- v0.9.0 — old\n');
+  writeFileSync(join(root, 'teams', 'KOR.md'), '# teams\n\n## 상태\n\n- v0.9.0 — 이전\n');
   return root;
 }
 function run(root, args) {
@@ -1054,7 +1054,7 @@ test('dry run reports next version and touches nothing', () => {
     assert.equal(status, 0);
     assert.equal(report.previousVersion, '0.9.0');
     assert.equal(report.version, '0.9.1');
-    assert.equal(JSON.parse(readFileSync(join(root, 'graph-beta', '.claude-plugin', 'plugin.json'), 'utf8')).version, '0.9.0');
+    assert.equal(JSON.parse(readFileSync(join(root, 'teams', '.claude-plugin', 'plugin.json'), 'utf8')).version, '0.9.0');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -1062,12 +1062,12 @@ test('real run bumps both manifests and prepends both status logs', () => {
   const root = repo();
   try {
     assert.equal(run(root, { summary: 'fix a', summary_ko: 'a 수정' }).status, 0);
-    assert.equal(JSON.parse(readFileSync(join(root, 'graph-beta', '.claude-plugin', 'plugin.json'), 'utf8')).version, '0.9.1');
+    assert.equal(JSON.parse(readFileSync(join(root, 'teams', '.claude-plugin', 'plugin.json'), 'utf8')).version, '0.9.1');
     const mk = JSON.parse(readFileSync(join(root, '.claude-plugin', 'marketplace.json'), 'utf8'));
-    assert.equal(mk.plugins.find((p) => p.name === 'graph-beta').version, '0.9.1');
+    assert.equal(mk.plugins.find((p) => p.name === 'teams').version, '0.9.1');
     assert.equal(mk.plugins.find((p) => p.name === 'harness').version, '1.2.3');
-    assert.match(readFileSync(join(root, 'graph-beta', 'README.md'), 'utf8'), /## Status\n- v0\.9\.1 — fix a\n/);
-    assert.match(readFileSync(join(root, 'graph-beta', 'KOR.md'), 'utf8'), /## 상태\n- v0\.9\.1 — a 수정\n/);
+    assert.match(readFileSync(join(root, 'teams', 'README.md'), 'utf8'), /## Status\n- v0\.9\.1 — fix a\n/);
+    assert.match(readFileSync(join(root, 'teams', 'KOR.md'), 'utf8'), /## 상태\n- v0\.9\.1 — a 수정\n/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -1098,7 +1098,7 @@ test('the plugin argument selects another plugin directory', () => {
 // Prepare a patch release for a plugin in this marketplace: bump x.y.Z in plugin.json and the
 // marketplace entry, and prepend one status line to README (## Status) AND KOR.md (## 상태) -
 // this repository moves the two together. For a source checkout only.
-// Usage: node patch.mjs '{"plugin":"graph-beta","repoRoot":"/abs","summary":"...","summary_ko":"...","dryRun":true}'
+// Usage: node patch.mjs '{"plugin":"teams","repoRoot":"/abs","summary":"...","summary_ko":"...","dryRun":true}'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1135,7 +1135,7 @@ function prepend(text, heading, line, label) {
 
 function main() {
   const args = parseArgs();
-  const plugin = String(args.plugin || 'graph-beta');
+  const plugin = String(args.plugin || 'teams');
   const summary = oneLine(args.summary, 'summary');
   const summaryKo = oneLine(args.summary_ko, 'summary_ko');
   const repoRoot = resolve(args.repoRoot || DEFAULT_REPO_ROOT);
@@ -1173,52 +1173,52 @@ function main() {
 main();
 ```
 - [ ] 4: 4개 통과 확인
-- [ ] 5: `git add -A graph-beta/skills/patch graph-beta/scripts/test-patch.mjs && git commit -m "feat(graph-beta): patch.mjs - synchronized patch release incl. KOR.md status"`
+- [ ] 5: `git add -A teams/skills/patch teams/scripts/test-patch.mjs && git commit -m "feat(teams): patch.mjs - synchronized patch release incl. KOR.md status"`
 
 ---
 
 ### Task 8: SKILL.md 셋 (install 재작성, remove·patch 신설)
-**Files:** modify `graph-beta/skills/install/SKILL.md`, create `graph-beta/skills/remove/SKILL.md`, create `graph-beta/skills/patch/SKILL.md`
+**Files:** modify `teams/skills/install/SKILL.md`, create `teams/skills/remove/SKILL.md`, create `teams/skills/patch/SKILL.md`
 **Interfaces:** consumes Task 5·6·7의 CLI 인자·리포트 필드 이름 그대로.
-**Pass bar:** `python3 scripts/validate_plugins.py`에 graph-beta 관련 ERROR 0. 세 SKILL 모두 `description`이 `Use when`으로 시작, `scenarios` EN+KR, `compatibility`, Process → What Claude does → What you do → Related 구조.
+**Pass bar:** `python3 scripts/validate_plugins.py`에 teams 관련 ERROR 0. 세 SKILL 모두 `description`이 `Use when`으로 시작, `scenarios` EN+KR, `compatibility`, Process → What Claude does → What you do → Related 구조.
 
-- [ ] 1: `install/SKILL.md` 본문을 아래 구조로 다시 쓴다 (frontmatter의 `name: install`, `compatibility.required: [node-18+]` 유지; description은 "Use when installing graph-beta into a project: team.json defaults, the dispatch gate, conventions, and the coexistence check against the stable graph plugin. Not for running a task; use graph-beta:orchestrate.")
-  - **Process**: (1) 판단 — dispatch 패턴 제안·확인(프로젝트 언어 보고), 켤 roles 물음(0.10에서는 기록만 됨을 말한다), harness가 있으면 "conventions는 공유, 마커 디렉터리 공유"를 말한다; (2) `node "<plugin>/skills/install/install.mjs" '{...}'` 실행 — exit 3이면 `report.conflicts`를 읽어 사용자에게 stable graph를 끄거나 `force`를 고르게 한다, **절대 스스로 force하지 않는다**; (3) 리포트 JSON을 진실로 삼아 created/kept/present를 보고; (4) 도구 발견 — `graph_*` 6 + `tm_*` (tm_open tm_next tm_submit tm_retry tm_status tm_settle tm_repackage tm_repair tm_reset_capacity), 없으면 reload 안내; (5) `refresh: true`는 버전 업 뒤 team.json에 새 키를 채우는 용도임을 적는다.
+- [ ] 1: `install/SKILL.md` 본문을 아래 구조로 다시 쓴다 (frontmatter의 `name: install`, `compatibility.required: [node-18+]` 유지; description은 "Use when installing teams into a project: team.json defaults, the dispatch gate, conventions, and the coexistence check against the stable graph plugin. Not for running a task; use teams:orchestrate.")
+  - **Process**: (1) 판단 — dispatch 패턴 제안·확인(프로젝트 언어 보고), 켤 roles 물음(0.10에서는 기록만 됨을 말한다), harness가 있으면 "conventions는 공유, 마커 디렉터리 공유"를 말한다; (2) `node "<plugin>/skills/install/install.mjs" '{...}'` 실행 — exit 3이면 `report.conflicts`를 읽어 사용자에게 stable graph를 끄거나 `force`를 고르게 한다, **절대 스스로 force하지 않는다**; (3) 리포트 JSON을 진실로 삼아 created/kept/present를 보고; (4) 도구 발견 — `team_*` 6 + `tm_*` (tm_open tm_next tm_submit tm_retry tm_status tm_settle tm_repackage tm_repair tm_reset_capacity), 없으면 reload 안내; (5) `refresh: true`는 버전 업 뒤 team.json에 새 키를 채우는 용도임을 적는다.
   - 기존 "Install modes"의 marketplace 우선 원칙과 "project-local `.mcp.json`" 절, "Dispatch gate" 절은 유지하되 dispatch json 쓰기는 이제 `install.mjs`가 한다고 바꾼다.
   - **What Claude does / What you do / Related** (`orchestrate`, `remove`, `patch`, `harness:install`).
   - 도구 발견 목록에 `tm_events` 추가; "main은 tm_open 뒤 tm_status/tm_events로 지켜본다"를 한 줄로.
-- [ ] 2: `remove/SKILL.md` — frontmatter `name: remove`, description "Use when removing graph-beta from a project: team.json, the dispatch gate, the CLAUDE.md block and gitignore lines. Keeps conventions, run and task history unless asked by name. Refuses to purge a task whose driver is alive.", scenarios EN 2 + KR 2 ("graph-beta 이 프로젝트에서 제거해줘", "team.json이랑 dispatch 게이트 지워줘"), `compatibility.optional: []`. Process: 대상 나열 → `purgeConventions`/`purgeRuns`/`purgeTasks`는 각각 **명시 확인 후에만** → 실행 → 리포트에서 `refused-alive`·`marker-error`·`kept-harness`를 그대로 보고. Related: install, patch, harness:remove.
-- [ ] 3: `patch/SKILL.md` — `name: patch`, description "Use when preparing a patch release of the graph-beta plugin source: bumps x.y.Z in plugin.json and marketplace.json and prepends the same entry to README Status and KOR.md 상태. Not for project installs.", scenarios EN 2 + KR 2 ("graph-beta 패치 버전 올려줘", "0.10.x 릴리스 준비"). Process: diff에서 한 줄 요약 EN·KO 도출 → minor/major면 중단하고 손으로 → `dryRun: true` → 확인 → 실행 → `python3 scripts/validate_plugins.py` → git diff 보고, "published"라 말하지 않기. Related: install, remove, harness:patch.
-- [ ] 4: `python3 scripts/validate_plugins.py` 실행, graph-beta ERROR 0 확인 (WARN은 허용)
-- [ ] 5: `git add -A graph-beta/skills && git commit -m "docs(graph-beta): install/remove/patch skills"`
+- [ ] 2: `remove/SKILL.md` — frontmatter `name: remove`, description "Use when removing teams from a project: team.json, the dispatch gate, the CLAUDE.md block and gitignore lines. Keeps conventions, run and task history unless asked by name. Refuses to purge a task whose driver is alive.", scenarios EN 2 + KR 2 ("teams 이 프로젝트에서 제거해줘", "team.json이랑 dispatch 게이트 지워줘"), `compatibility.optional: []`. Process: 대상 나열 → `purgeConventions`/`purgeRuns`/`purgeTasks`는 각각 **명시 확인 후에만** → 실행 → 리포트에서 `refused-alive`·`marker-error`·`kept-harness`를 그대로 보고. Related: install, patch, harness:remove.
+- [ ] 3: `patch/SKILL.md` — `name: patch`, description "Use when preparing a patch release of the teams plugin source: bumps x.y.Z in plugin.json and marketplace.json and prepends the same entry to README Status and KOR.md 상태. Not for project installs.", scenarios EN 2 + KR 2 ("teams 패치 버전 올려줘", "0.10.x 릴리스 준비"). Process: diff에서 한 줄 요약 EN·KO 도출 → minor/major면 중단하고 손으로 → `dryRun: true` → 확인 → 실행 → `python3 scripts/validate_plugins.py` → git diff 보고, "published"라 말하지 않기. Related: install, remove, harness:patch.
+- [ ] 4: `python3 scripts/validate_plugins.py` 실행, teams ERROR 0 확인 (WARN은 허용)
+- [ ] 5: `git add -A teams/skills && git commit -m "docs(teams): install/remove/patch skills"`
 
 ---
 
 ### Task 9: 릴리스 0.10.0 — 버전, Status, 설계 문서 §13, 전체 검증
-**Files:** modify `graph-beta/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` (graph-beta 항목 version + description),
-`graph-beta/README.md`, `graph-beta/KOR.md`, `docs/plans/2026-09-17-graph-beta-team.md` (§13)
+**Files:** modify `teams/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` (teams 항목 version + description),
+`teams/README.md`, `teams/KOR.md`, `docs/plans/2026-09-17-teams-team.md` (§13)
 **Interfaces:** consumes 모든 이전 Task.
-**Pass bar:** `node --test graph-beta/scripts/test-*.mjs` 전부 통과(회귀 0), `python3 scripts/validate_plugins.py` ERROR 0, 두 매니페스트 0.10.0 일치, README·KOR Status 첫 항목이 v0.10.0.
+**Pass bar:** `node --test teams/scripts/test-*.mjs` 전부 통과(회귀 0), `python3 scripts/validate_plugins.py` ERROR 0, 두 매니페스트 0.10.0 일치, README·KOR Status 첫 항목이 v0.10.0.
 
 - [ ] 1: 메모리 규칙대로 `git fetch skills main && git status -sb`로 origin이 앞서 있는지 확인, 앞서 있으면 rebase
-- [ ] 2: `node --test graph-beta/scripts/test-*.mjs 2>&1 | tail -8` → `# fail 0` 확인
-- [ ] 3: minor 범프는 손으로: plugin.json과 marketplace의 graph-beta `version` → `0.10.0`; marketplace description 끝에 " Ships graph-beta:install/remove/patch, .claude/team.json project defaults, and a shared engagement marker so it coexists with the harness plugin." 추가
+- [ ] 2: `node --test teams/scripts/test-*.mjs 2>&1 | tail -8` → `# fail 0` 확인
+- [ ] 3: minor 범프는 손으로: plugin.json과 marketplace의 teams `version` → `0.10.0`; marketplace description 끝에 " Ships teams:install/remove/patch, .claude/team.json project defaults, and a shared engagement marker so it coexists with the harness plugin." 추가
 - [ ] 4: README `## Status` 첫 항목과 KOR `## 상태` 첫 항목에 v0.10.0 — install/remove/patch, team.json(우선순위·출처), 공유 마커(harness 변경 0, 워크트리 위치가 이유), dispatch-gate 역방향, patch가 KOR 포함, **inline 제거(breaking: `child_driver`/`s_driver` 인자 에러)**, **TaskLeader driver + inbox + `tm_events`**, 테스트 파일 수/개수(실행 결과 숫자를 그대로), **미측정 항목**: 실제 harness+team 프로젝트에서의 런 1회, leader 세션의 SendMessage 알림이 실제로 도착하는지
 - [ ] 5: 설계 문서 갱신 — §14 결정 기록의 "inline 옵션 셋 제거"를 v0.10.0 완료로, §6의 main 허용 호출 표에 `tm_events`를,
   §7b의 inbox 문단에 "구현: `HARNESS_LEADER_OF`로 leader 프로세스 식별, `<taskDir>/inbox/`"를 한 줄 추가. 그리고 §13의 "harness + team" 행을 이 계획의 Architecture 문단대로 고친다 — `~/.harness/active/` 삭제, `.claude/.harness-markers/team-<task8>` 공유, "harness 훅 한 줄 변경"을 "harness 변경 0"으로. §12 install 표의 "훅 쓰지 않음" 유지. §11 단계 표의 v0.10.0 행을 "완료" 표시
 - [ ] 6: `python3 scripts/validate_plugins.py` ERROR 0 확인
-- [ ] 7: `git add -A && git commit -m "feat(graph-beta): 0.10.0 - install/remove/patch, team.json defaults, shared engagement marker for harness coexistence"`
+- [ ] 7: `git add -A && git commit -m "feat(teams): 0.10.0 - install/remove/patch, team.json defaults, shared engagement marker for harness coexistence"`
 - [ ] 8: `git push skills main` (저장소 규칙. 실패하면 1번으로 돌아가 fetch·rebase 후 재시도)
 
 ---
 
 ### Task 10: inline 제거 — main은 어떤 노드도 드라이브하지 않는다
-**Files:** modify `graph-beta/mcp/taskmanager.mjs`, modify `graph-beta/scripts/test-taskmanager.mjs`,
-modify `graph-beta/skills/{orchestrate,develop,document,install}/SKILL.md`, `graph-beta/skills/orchestrate/references/{manager,loop}.md`
+**Files:** modify `teams/mcp/taskmanager.mjs`, modify `teams/scripts/test-taskmanager.mjs`,
+modify `teams/skills/{orchestrate,develop,document,install}/SKILL.md`, `teams/skills/orchestrate/references/{manager,loop}.md`
 **Interfaces:** `tm_open`에서 `child_driver`·`s_driver` 인자 **제거**(넘기면 에러). 내부 spawn 생략은 **테스트 전용 env**
 `HARNESS_TEST_NO_DRIVER=1`로만 — 사용자에게 노출되는 옵션이 아니다. produces `noDriver()`.
 **Pass bar:** test-taskmanager 전체 통과(기존 inline 테스트는 env 방식으로 전환, delegate 테스트는 삭제), 스킬 문서에 `inline` 0회
-(`grep -rn inline graph-beta/skills | grep -v "doing it inline"` 이 비어야 한다 — install/SKILL.md 46행의 일반 영어 표현은 예외).
+(`grep -rn inline teams/skills | grep -v "doing it inline"` 이 비어야 한다 — install/SKILL.md 46행의 일반 영어 표현은 예외).
 
 - [ ] 1: 테스트 전환 — `withTask`의 `tm_open` 호출에서 `child_driver: 'inline'`을 지우고 TM Client env에 `HARNESS_TEST_NO_DRIVER: '1'` 추가:
 ```js
@@ -1226,9 +1226,9 @@ modify `graph-beta/skills/{orchestrate,develop,document,install}/SKILL.md`, `gra
   // ...
     const open = await tm.call('tm_open', { request: 'big request', cwd, vendor: 'self', ...extra });
 ```
-  같은 파일에서 `s_driver: 'inline'`을 넘기던 테스트(177, 195, 222, 1270, 1289행 근방)는: (a) "delegates to graph_open and leaves
+  같은 파일에서 `s_driver: 'inline'`을 넘기던 테스트(177, 195, 222, 1270, 1289행 근방)는: (a) "delegates to team_open and leaves
   nothing on disk"와 "the pre-existing delegate shape" 두 개는 **삭제**; (b) 나머지는 `s_driver` 인자를 지우고, S로 측정된 뒤
-  `tm_status({task_id}).s_run.run_id`를 읽어 broker Client `g`로 `graph_next/graph_submit({cwd: task.cwd, run_id})`를 부르는
+  `tm_status({task_id}).s_run.run_id`를 읽어 broker Client `g`로 `team_next/team_submit({cwd: task.cwd, run_id})`를 부르는
   형태로 바꾼다(env 덕에 driver는 뜨지 않는다). (c) 1177행 "child_driver inline spawns nothing"은 제목과 본문을
   `HARNESS_TEST_NO_DRIVER spawns nothing` 으로 바꾸고 `tm_status().child_driver` assert를 지운다.
   새 테스트 추가:
@@ -1247,7 +1247,7 @@ test('child_driver and s_driver are gone: passing either is an error that names 
   } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
 });
 ```
-- [ ] 2: `node --test graph-beta/scripts/test-taskmanager.mjs` → 전환한 테스트와 새 테스트가 fail 확인
+- [ ] 2: `node --test teams/scripts/test-taskmanager.mjs` → 전환한 테스트와 새 테스트가 fail 확인
 - [ ] 3: `taskmanager.mjs`
   - 헬퍼 추가(파일 상단 helpers 근처):
 ```js
@@ -1277,13 +1277,13 @@ Watch: tm_status({task_id}) for state and leader; tm_events({task_id}) for what 
 one-line message to this session on each state change when session messaging is available.
 ```
   manager.md: 24행 "no driver at all -> child_driver inline" 줄과 79행 문단 삭제, 파일 머리에 "이 파일은 TaskLeader driver 세션이 읽는다" 한 줄. loop.md 12행의 "Only in an inline task..." 문장 삭제. README 101행은 Status 이력이므로 그대로.
-- [ ] 6: `grep -rn "inline" graph-beta/skills | grep -v "doing it inline"` 출력이 빈 것을 확인
-- [ ] 7: `git add -A graph-beta && git commit -m "feat(graph-beta)!: remove child_driver/s_driver inline - the driving session never drives; HARNESS_TEST_NO_DRIVER is the test seam"`
+- [ ] 6: `grep -rn "inline" teams/skills | grep -v "doing it inline"` 출력이 빈 것을 확인
+- [ ] 7: `git add -A teams && git commit -m "feat(teams)!: remove child_driver/s_driver inline - the driving session never drives; HARNESS_TEST_NO_DRIVER is the test seam"`
 
 ---
 
 ### Task 11: TaskLeader driver — `tm_open`이 leader를 띄우고, main은 보기만 한다
-**Files:** modify `graph-beta/mcp/taskmanager.mjs`, modify `graph-beta/scripts/test-taskmanager.mjs`
+**Files:** modify `teams/mcp/taskmanager.mjs`, modify `teams/scripts/test-taskmanager.mjs`
 **Interfaces:** consumes Task 10 `noDriver()`, 기존 `spawnChildDriver`/`driverAlive`/`driverStderrTail`/`record`/`nextSpawnAttempt`.
 produces `task.leader = {pid, started_at, log, stderr, exit, command, spawn_count, restarts}`, `leaderPrompt(task)`, `isLeaderProcess(task)`,
 inbox(`<taskDir>/inbox/<ts>-<seq>-<tool>.json`), `drainInbox(task)`, `serviceLeader(task)`, 새 도구 `tm_events`,
@@ -1411,8 +1411,8 @@ test('tm_events tails the ledger, newest last, filtered by since', async () => {
 ```js
 function leaderPrompt(task, opts = {}) {
   return [
-    `You are the TaskLeader of graph-beta task ${task.run_id} at cwd ${task.cwd}. The task is already open: Do not call tm_open.`,
-    `Use the graph-beta:orchestrate skill and read references/manager.md; run its loop with tm_next / tm_submit / tm_retry on this task_id`,
+    `You are the TaskLeader of teams task ${task.run_id} at cwd ${task.cwd}. The task is already open: Do not call tm_open.`,
+    `Use the teams:orchestrate skill and read references/manager.md; run its loop with tm_next / tm_submit / tm_retry on this task_id`,
     `until tm_status reports complete or blocked, or the report node has run. A fresh agent for every ready manager node, its JSON relayed verbatim.`,
     `You never do a node's work yourself, never edit project files, never open a child run by hand.`,
     opts.resume ? `A previous leader for this task died; call tm_status first and resume from what is already done - do not redo a done node.` : '',
@@ -1519,8 +1519,8 @@ function toolEvents(a) {
     TOOLS에 `{ name: 'tm_events', description: 'Tail the task ledger: what the manager and its drivers did, newest last. since: a ts to start after; limit: default 50. Read-only; safe from any session.', inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, since: { type: 'number' }, limit: { type: 'integer' } }, required: ['task_id'] } }` 추가, switch에 `case 'tm_events': return toolEvents(a);`.
   - `toolStatus`: 두 반환 분기 모두에 `leader: task.leader ? { pid: task.leader.pid, alive: leaderAlive(task), log: task.leader.log, stderr: task.leader.stderr, spawn_count: task.leader.spawn_count, restarts: task.leader.restarts || 0, exhausted: !!task.leader.exhausted, stderr_tail: driverStderrTail(task.leader) } : null,` 추가.
   - `toolSubmit` 진입에 `record(task, { event: 'tm_submit', task_id: task.run_id, node_id: String(a.node_id) });` (없다면).
-- [ ] 4: 전체 통과 확인 (`node --test graph-beta/scripts/test-taskmanager.mjs`)
-- [ ] 5: `git commit -am "feat(graph-beta): TaskLeader driver - tm_open spawns the manager loop; inbox for non-leader mutations; respawn; tm_events"`
+- [ ] 4: 전체 통과 확인 (`node --test teams/scripts/test-taskmanager.mjs`)
+- [ ] 5: `git commit -am "feat(teams): TaskLeader driver - tm_open spawns the manager loop; inbox for non-leader mutations; respawn; tm_events"`
 
 ---
 

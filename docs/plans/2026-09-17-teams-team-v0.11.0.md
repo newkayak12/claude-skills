@@ -1,7 +1,7 @@
-# graph-beta (team) v0.11.0 — tickets.mjs 파생 + board.jsonl + docs.mjs phase md + tm_board/tm_ticket/tm_docs + 명령 스킬 구현 계획
+# teams (team) v0.11.0 — tickets.mjs 파생 + board.jsonl + docs.mjs phase md + tm_board/tm_ticket/tm_docs + 명령 스킬 구현 계획
 
 > Produced by write:writing-plans. Owner for execution routing: planning:executing-plans.
-> Steps use checkbox (`- [ ]`) syntax. 설계 근거: `2026-09-17-graph-beta-team.md` §4·§5b·§6·§7b·§7c·§8·§9·§11.
+> Steps use checkbox (`- [ ]`) syntax. 설계 근거: `2026-09-17-teams-team.md` §4·§5b·§6·§7b·§7c·§8·§9·§11.
 
 **Goal:** 엔진 상태(`task.json`)에서 파생되는 **티켓 레이어**를 만든다. 세 조각이다.
 
@@ -14,8 +14,8 @@
    한다(멱등 렌더).
 
 그 위에 `tm_board`/`tm_ticket`/`tm_docs` 세 도구(§8, §11의 v0.11.0 행이 실제로 요구하는 신규 도구는
-이 셋뿐 — `tm_events`는 v0.10.0에서 이미 나갔다)와 명령 스킬 둘(`/graph-beta:board`,
-`/graph-beta:ticket`)을 얹는다.
+이 셋뿐 — `tm_events`는 v0.10.0에서 이미 나갔다)와 명령 스킬 둘(`/teams:board`,
+`/teams:ticket`)을 얹는다.
 
 **Architecture:** `tickets.mjs`는 파일을 쓰지 않는다(§9: "순수 함수, 파일 안 씀") — 유일한 예외는
 자식 패키지의 진행률을 보려고 자식 run 파일을 **읽는** 것뿐이고, 이는 taskmanager.mjs가 이미
@@ -31,7 +31,7 @@
 전에 조기 반환되므로 — 아무것도 안 바뀌었으니 — 자동으로 아무 이벤트도 안 남는다(별도 분기 불필요).
 
 **Tech Stack:** Node 18+ ESM, `node:test`, 런타임 의존성 0. 테스트는
-`node --test graph-beta/scripts/test-*.mjs`.
+`node --test teams/scripts/test-*.mjs`.
 
 **이번 라운드에 들어가는 것:** `mcp/tickets.mjs`(신설), `mcp/docs.mjs`(신설),
 `mcp/taskmanager.mjs`의 board.jsonl diff 래퍼 + `tm_board`/`tm_ticket`/`tm_docs` 세 도구,
@@ -76,7 +76,7 @@ SKILL.md 둘, golden 픽스처 파일들.
   `dispatch`가 열려 IN_PROGRESS로 넘어가므로, READY는 실제로는 매우 짧게 관측되는 창이다 — 그래도
   파생 함수 자체는 옳고 단위 테스트로 그 창을 고정해서 본다).
 - 저장소에 "golden 파일 비교" 관례가 이미 있는 테스트는 없다(`grep -r golden` 무응답) — 이번
-  라운드가 이 패턴을 새로 연다. golden 파일은 `graph-beta/scripts/fixtures/docs-golden/`에 둔다.
+  라운드가 이 패턴을 새로 연다. golden 파일은 `teams/scripts/fixtures/docs-golden/`에 둔다.
 - `.claude/team.json`의 `docs_dir` 기본값(`.harness-run/team`)은 이미 v0.10.0의
   `teamconfig.mjs`(`TEAM_DEFAULTS.docs_dir`)에 있고 모든 `task.team.opts.docs_dir`에 이미 채워져
   있다 — §7c가 요구하는 위치 규칙을 위해 새 배관이 필요 없다.
@@ -88,7 +88,7 @@ SKILL.md 둘, golden 픽스처 파일들.
   쓴다 — 진짜 버전 카운터를 `task.json`에 추가하는 것은 이번 라운드 범위 밖(발견 6).
 - **팀 리더 지시**: 이 파일 하나만 내가 소유한다. `harness-beta` 플러그인 은퇴는 다른 agent가 병행
   중이므로 이 계획은 `deprecated/`, `harness-beta/`, `.claude-plugin/marketplace.json`(harness-beta
-  관련 부분)을 건드리지 않는다 — Task 6의 매니페스트 변경은 graph-beta 항목에 한정한다.
+  관련 부분)을 건드리지 않는다 — Task 6의 매니페스트 변경은 teams 항목에 한정한다.
 
 **§4/§7c 대비 발견한 불일치·추가 (팀 리더에게 보고):**
 1. §4의 STORY/EPIC 행에 있는 `WAITING_USER`는 human 실행자(v0.13.0)가 있어야 만들어지는 상태다.
@@ -135,7 +135,7 @@ Task 5  skills/board, skills/ticket                    — 코드 의존 없음,
 Task 6  릴리스 0.11.0                                   — 전부의 위
 ```
 
-- **파일 충돌**: Task 3과 Task 4만 `graph-beta/mcp/taskmanager.mjs`(+`scripts/test-taskmanager.mjs`)를
+- **파일 충돌**: Task 3과 Task 4만 `teams/mcp/taskmanager.mjs`(+`scripts/test-taskmanager.mjs`)를
   같이 건드린다 — 그래서 Task 4는 Task 3 뒤에 직렬로 온다. Task 1·2·5는 서로 파일이 하나도
   겹치지 않아 Task 1가 끝나는 즉시(Task 5는 처음부터) 3-way 병렬이 가능하다.
 - **1라운드/2라운드 판단**: 1라운드. 근거는 위 발견 7.
@@ -143,17 +143,17 @@ Task 6  릴리스 0.11.0                                   — 전부의 위
 ---
 
 ### Task 1: `mcp/tickets.mjs` — 엔진 상태 → 티켓 상태 파생 함수 (순수)
-**Files:** create `graph-beta/mcp/tickets.mjs`, create `graph-beta/scripts/test-tickets.mjs`
+**Files:** create `teams/mcp/tickets.mjs`, create `teams/scripts/test-tickets.mjs`
 **Interfaces:** produces `epicKey`, `storyKey`, `docPaths`, `latestBySubgoal`, `storyTicketState`,
 `epicTicketState`, `taskTicketState`, `epicPhase`, `storyTaskProgress`, `epicBoardRows`,
 `ticketSnapshot` — Task 2(`docs.mjs`)·Task 3(`taskmanager.mjs`의 보드 도구)가 소비. `graph.mjs`의
 `unmetDeps`/`runState`/`nodeKind`/`KINDS`/`loadRun`만 가져다 쓰고, `taskmanager.mjs`는 전혀
 가져오지 않는다(순환 임포트 방지 — `taskmanager.mjs`가 `tickets.mjs`를 가져오는 방향만 있다).
-**Pass bar:** `node --test graph-beta/scripts/test-tickets.mjs` 전부 통과.
+**Pass bar:** `node --test teams/scripts/test-tickets.mjs` 전부 통과.
 
 - [ ] 1: 실패하는 테스트를 쓴다
 ```js
-// graph-beta/scripts/test-tickets.mjs - table test over the design doc's §4 mapping (engine
+// teams/scripts/test-tickets.mjs - table test over the design doc's §4 mapping (engine
 // state -> ticket state), plus the derived states §4 only sketches (CANCELLED/UNREACHABLE at
 // every level, BLOCKED at EPIC level - see the plan's 발견 3/4). Every fixture is a plain object
 // shaped exactly like a real task.json/child run.json - no server, no filesystem.
@@ -336,8 +336,8 @@ test('ticketSnapshot maps every known key (EPIC + each STORY) to its current sta
   assert.deepEqual(ticketSnapshot(t, { alive: () => true }), { 'E-aaaaaaaa': 'IN_PROGRESS', 'E-aaaaaaaa/P1': 'IN_PROGRESS' });
 });
 ```
-- [ ] 2: `node --test graph-beta/scripts/test-tickets.mjs` → import 대상이 없어 전부 fail 확인
-- [ ] 3: `graph-beta/mcp/tickets.mjs`를 만든다
+- [ ] 2: `node --test teams/scripts/test-tickets.mjs` → import 대상이 없어 전부 fail 확인
+- [ ] 3: `teams/mcp/tickets.mjs`를 만든다
 ```js
 // tickets.mjs - derives JIRA-style ticket state from task.json (and, for a TASK, its child
 // run's own file). Pure: no writes, ever - the design doc's §4 principle that ticket state is a
@@ -527,22 +527,22 @@ export function ticketSnapshot(task, opts = {}) {
   return snap;
 }
 ```
-- [ ] 4: `node --test graph-beta/scripts/test-tickets.mjs` 전부 통과 확인
-- [ ] 5: `git add graph-beta/mcp/tickets.mjs graph-beta/scripts/test-tickets.mjs && git commit -m "feat(graph-beta): tickets.mjs - EPIC/STORY/TASK ticket state as a pure function of task.json (§4)"`
+- [ ] 4: `node --test teams/scripts/test-tickets.mjs` 전부 통과 확인
+- [ ] 5: `git add teams/mcp/tickets.mjs teams/scripts/test-tickets.mjs && git commit -m "feat(teams): tickets.mjs - EPIC/STORY/TASK ticket state as a pure function of task.json (§4)"`
 
 ---
 
 ### Task 2: `mcp/docs.mjs` — phase md 렌더러 (순수 함수 + 쓰기 한 곳)
-**Files:** create `graph-beta/mcp/docs.mjs`, create `graph-beta/scripts/test-docs.mjs`, create
-golden fixtures under `graph-beta/scripts/fixtures/docs-golden/E-aaaaaaaa/`
+**Files:** create `teams/mcp/docs.mjs`, create `teams/scripts/test-docs.mjs`, create
+golden fixtures under `teams/scripts/fixtures/docs-golden/E-aaaaaaaa/`
 **Interfaces:** consumes Task 1(`tickets.mjs`)의 전부. produces `renderIndex`, `renderRequest`,
 `renderShape`, `renderCritique`, `renderStory`, `renderIntegrate`, `renderGoalGate`, `renderReport`,
 `renderAll`, `writeDocs` — Task 4(`taskmanager.mjs`의 `tm_docs`)가 `writeDocs`만 소비. Task 1에만
 의존하고 `taskmanager.mjs`를 전혀 건드리지 않으므로 Task 3과 완전히 병행 가능.
-**Pass bar:** `node --test graph-beta/scripts/test-docs.mjs` 전부 통과 — golden 파일 바이트 비교
+**Pass bar:** `node --test teams/scripts/test-docs.mjs` 전부 통과 — golden 파일 바이트 비교
 포함, `writeDocs({rebuild:true})`가 첫 출력과 동일한 파일을 만드는지 확인.
 
-- [ ] 1: `graph-beta/mcp/docs.mjs`를 만든다
+- [ ] 1: `teams/mcp/docs.mjs`를 만든다
 ```js
 // docs.mjs - §7c's phase markdown, rendered from task.json. Pure render functions plus exactly
 // one impure function (writeDocs) that writes them - the engine never reads any of this back
@@ -711,11 +711,11 @@ export function writeDocs(task, opts = {}) {
   return Object.keys(files);
 }
 ```
-- [ ] 2: `graph-beta/scripts/test-docs.mjs`를 만든다 — 먼저 golden 파일이 없는 채로 실행해 실패를 확인한다
+- [ ] 2: `teams/scripts/test-docs.mjs`를 만든다 — 먼저 golden 파일이 없는 채로 실행해 실패를 확인한다
 ```js
-// graph-beta/scripts/test-docs.mjs - golden-file comparison for docs.mjs's renderers, plus a
+// teams/scripts/test-docs.mjs - golden-file comparison for docs.mjs's renderers, plus a
 // rebuild-produces-identical-output check. The golden fixtures under
-// graph-beta/scripts/fixtures/docs-golden/E-aaaaaaaa/ are generated once (step 3b below) by
+// teams/scripts/fixtures/docs-golden/E-aaaaaaaa/ are generated once (step 3b below) by
 // running the real renderer and are then locked in - the usual way a golden test is bootstrapped.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -816,37 +816,37 @@ test('writeDocs without rebuild leaves a stale file from a dropped package - reb
   }
 });
 ```
-- [ ] 3: `node --test graph-beta/scripts/test-docs.mjs` → golden 파일이 없어 첫 테스트가 fail 확인
+- [ ] 3: `node --test teams/scripts/test-docs.mjs` → golden 파일이 없어 첫 테스트가 fail 확인
 - [ ] 3b: golden 픽스처를 생성한다 — 실제 렌더러를 한 번 돌려 그 출력을 그대로 저장한다(golden 테스트를
   부트스트랩하는 통상 방법: 손으로 마크다운을 옮겨 적지 않고, 코드가 낸 출력을 사람이 읽어 확인한 뒤
   고정한다):
 ```bash
 node -e "
-import('./graph-beta/mcp/docs.mjs').then(({ renderAll }) => {
-  import('./graph-beta/mcp/graph.mjs').then(() => {}); // ensure ESM resolution order
+import('./teams/mcp/docs.mjs').then(({ renderAll }) => {
+  import('./teams/mcp/graph.mjs').then(() => {}); // ensure ESM resolution order
   const NOW = 1758000000000;
   const task = /* the exact fixtureTask('/proj') object from test-docs.mjs, pasted here verbatim */ null;
 });
 "
 ```
   (실무 절차: `test-docs.mjs`의 `fixtureTask('/proj')`를 그대로 복사한 작은 일회성 스크립트로
-  `renderAll(task, NOW)`를 호출해 각 경로→내용 맵을 얻고, `graph-beta/scripts/fixtures/docs-golden/`
+  `renderAll(task, NOW)`를 호출해 각 경로→내용 맵을 얻고, `teams/scripts/fixtures/docs-golden/`
   아래 `INDEX.md`, `00-request.md`, `20-shape.md`, `30-critique.md`, `40-stories/P1.md`,
   `40-stories/P2.md`, `50-integrate.md`, `70-goal-gate.md`, `80-report.md` 아홉 파일로 저장한다.
   저장 전에 각 파일을 사람이 읽어 §7c의 형식과 어긋나지 않는지 확인한다.)
-- [ ] 4: `node --test graph-beta/scripts/test-docs.mjs` 전부 통과 확인
-- [ ] 5: `git add graph-beta/mcp/docs.mjs graph-beta/scripts/test-docs.mjs graph-beta/scripts/fixtures/docs-golden && git commit -m "feat(graph-beta): docs.mjs - §7c phase markdown rendered from task.json, golden-file tested"`
+- [ ] 4: `node --test teams/scripts/test-docs.mjs` 전부 통과 확인
+- [ ] 5: `git add teams/mcp/docs.mjs teams/scripts/test-docs.mjs teams/scripts/fixtures/docs-golden && git commit -m "feat(teams): docs.mjs - §7c phase markdown rendered from task.json, golden-file tested"`
 
 ---
 
 ### Task 3: `taskmanager.mjs` — board.jsonl diff 배선 + `tm_board`/`tm_ticket`
-**Files:** modify `graph-beta/mcp/taskmanager.mjs`, modify `graph-beta/scripts/test-taskmanager.mjs`
+**Files:** modify `teams/mcp/taskmanager.mjs`, modify `teams/scripts/test-taskmanager.mjs`
 **Interfaces:** consumes Task 1(`tickets.mjs`)의 `ticketSnapshot`/`epicKey`/`storyKey`/`docPaths`/
 `epicTicketState`/`epicPhase`/`epicBoardRows`/`latestBySubgoal`/`storyTicketState`/
 `storyTaskProgress`. `docs.mjs`(Task 2)는 가져오지 않는다 — `doc_path`는 결정적 경로 문자열일 뿐,
 파일이 실제로 있는지는 확인하지 않는다(Task 4가 `tm_docs`로 그 파일을 만든다). Task 2와 파일이
 겹치지 않아 완전히 병행 가능.
-**Pass bar:** `node --test graph-beta/scripts/test-taskmanager.mjs` 전체 통과(회귀 0), 새로 추가한
+**Pass bar:** `node --test teams/scripts/test-taskmanager.mjs` 전체 통과(회귀 0), 새로 추가한
 것 포함, `tools/list`가 `tm_board`/`tm_ticket`을 포함(여덟 개).
 
 - [ ] 1: 실패하는 테스트를 `test-taskmanager.mjs`에 추가한다(기존 `withTask`/`throughCritique`/
@@ -949,9 +949,9 @@ test('a non-leader call that gets queued to the inbox writes no board.jsonl line
   }
 });
 ```
-- [ ] 2: `node --test graph-beta/scripts/test-taskmanager.mjs` → 위 새 테스트 6개가 fail 확인(기존은
+- [ ] 2: `node --test teams/scripts/test-taskmanager.mjs` → 위 새 테스트 6개가 fail 확인(기존은
   회귀 없이 통과)
-- [ ] 3: `graph-beta/mcp/taskmanager.mjs`를 고친다. 임포트 블록(`import { touchMarker } from
+- [ ] 3: `teams/mcp/taskmanager.mjs`를 고친다. 임포트 블록(`import { touchMarker } from
   './engage.mjs';` 다음 줄)에 추가:
 ```js
 import {
@@ -1106,16 +1106,16 @@ function callTool(name, args) {
   return out;
 }
 ```
-- [ ] 4: `node --test graph-beta/scripts/test-taskmanager.mjs` 전체 통과 확인(회귀 0)
-- [ ] 5: `git add graph-beta/mcp/taskmanager.mjs graph-beta/scripts/test-taskmanager.mjs && git commit -m "feat(graph-beta): board.jsonl ticket-transition log + tm_board/tm_ticket, derived from task.json (§4/§8)"`
+- [ ] 4: `node --test teams/scripts/test-taskmanager.mjs` 전체 통과 확인(회귀 0)
+- [ ] 5: `git add teams/mcp/taskmanager.mjs teams/scripts/test-taskmanager.mjs && git commit -m "feat(teams): board.jsonl ticket-transition log + tm_board/tm_ticket, derived from task.json (§4/§8)"`
 
 ---
 
 ### Task 4: `taskmanager.mjs` — `tm_docs` 배선
-**Files:** modify `graph-beta/mcp/taskmanager.mjs`, modify `graph-beta/scripts/test-taskmanager.mjs`
+**Files:** modify `teams/mcp/taskmanager.mjs`, modify `teams/scripts/test-taskmanager.mjs`
 **Interfaces:** consumes Task 2(`docs.mjs`의 `writeDocs`)와 Task 3(같은 파일의 `dispatch`/`TOOLS`).
 Task 3이 끝난 뒤에만 의미 있게 시작할 수 있다(같은 파일, 직렬).
-**Pass bar:** `node --test graph-beta/scripts/test-taskmanager.mjs` 전체 통과(회귀 0), `tools/list`
+**Pass bar:** `node --test teams/scripts/test-taskmanager.mjs` 전체 통과(회귀 0), `tools/list`
 아홉 개(`tm_docs` 포함).
 
 - [ ] 1: 실패하는 테스트를 추가한다:
@@ -1152,8 +1152,8 @@ test('tm_docs writes the phase md tm_board/tm_ticket already pointed at, and reb
   });
 });
 ```
-- [ ] 2: `node --test graph-beta/scripts/test-taskmanager.mjs` → 위 두 테스트 fail 확인
-- [ ] 3: `graph-beta/mcp/taskmanager.mjs`를 고친다. 임포트 블록 끝에 추가:
+- [ ] 2: `node --test teams/scripts/test-taskmanager.mjs` → 위 두 테스트 fail 확인
+- [ ] 3: `teams/mcp/taskmanager.mjs`를 고친다. 임포트 블록 끝에 추가:
 ```js
 import { writeDocs } from './docs.mjs';
 ```
@@ -1178,24 +1178,24 @@ function toolDocs(a) {
 ```js
     case 'tm_docs': return toolDocs(a);
 ```
-- [ ] 4: `node --test graph-beta/scripts/test-taskmanager.mjs` 전체 통과 확인(회귀 0)
-- [ ] 5: `git add graph-beta/mcp/taskmanager.mjs graph-beta/scripts/test-taskmanager.mjs && git commit -m "feat(graph-beta): tm_docs - render §7c phase markdown on demand, rebuild reproduces the same files"`
+- [ ] 4: `node --test teams/scripts/test-taskmanager.mjs` 전체 통과 확인(회귀 0)
+- [ ] 5: `git add teams/mcp/taskmanager.mjs teams/scripts/test-taskmanager.mjs && git commit -m "feat(teams): tm_docs - render §7c phase markdown on demand, rebuild reproduces the same files"`
 
 ---
 
-### Task 5: 명령 스킬 — `graph-beta:board`, `graph-beta:ticket`
-**Files:** create `graph-beta/skills/board/SKILL.md`, create `graph-beta/skills/ticket/SKILL.md`
+### Task 5: 명령 스킬 — `teams:board`, `teams:ticket`
+**Files:** create `teams/skills/board/SKILL.md`, create `teams/skills/ticket/SKILL.md`
 **Interfaces:** consumes 없음(정적 문서) — `tm_board`/`tm_ticket`을 이름으로만 참조. 어떤 소스
 파일과도 import 관계가 없어 Task 1-4 전부와 완전히 병행 가능(실제로 유용해지는 건 Task 3 이후지만,
 파일 자체는 먼저 만들어도 충돌이 없다).
-**Pass bar:** `python3 scripts/validate_plugins.py` graph-beta 관련 ERROR 0.
+**Pass bar:** `python3 scripts/validate_plugins.py` teams 관련 ERROR 0.
 
-- [ ] 1: `graph-beta/skills/board/SKILL.md`
+- [ ] 1: `teams/skills/board/SKILL.md`
 ```markdown
 ---
 name: board
 description: >-
-  Use when the user wants to see the state of a graph-beta task without opening task.json or
+  Use when the user wants to see the state of a teams task without opening task.json or
   polling tm_status - "보드 보여줘", "지금 어떻게 돼가?", "show me the board", "what's the state of
   this task". Calls tm_board and renders its ticket table. Not for opening a new task (use
   orchestrate/develop/document/plan/qa) and not for one ticket's detail (use ticket).
@@ -1205,7 +1205,7 @@ scenarios:
   - "그래프 태스크 지금 상태 좀 보여줘"
 compatibility:
   required:
-    - graph-beta-engineering
+    - teams-engineering
 related:
   - ticket
   - orchestrate
@@ -1241,7 +1241,7 @@ Say which task, or which key on it if you have several open.
 - `ticket` — the same idea for one STORY or the EPIC itself, with more detail
 - `orchestrate` — opens a task in the first place
 ```
-- [ ] 2: `graph-beta/skills/ticket/SKILL.md`
+- [ ] 2: `teams/skills/ticket/SKILL.md`
 ```markdown
 ---
 name: ticket
@@ -1255,7 +1255,7 @@ scenarios:
   - "이 티켓 지금 어떤 상태인지, 워크트리는 어디 있는지 보여줘"
 compatibility:
   required:
-    - graph-beta-engineering
+    - teams-engineering
 related:
   - board
   - orchestrate
@@ -1285,25 +1285,25 @@ Say which ticket - the key, or enough to find it (task + package id).
 - `board` — the whole task's kanban table, one row per STORY
 - `orchestrate` — opens a task in the first place
 ```
-- [ ] 3: `python3 scripts/validate_plugins.py 2>&1 | grep -i graph-beta` — ERROR 없음 확인
-- [ ] 4: `grep -c '^name: board$' graph-beta/skills/board/SKILL.md` → 1, `grep -c '^name: ticket$' graph-beta/skills/ticket/SKILL.md` → 1 확인
-- [ ] 5: `git add graph-beta/skills/board/SKILL.md graph-beta/skills/ticket/SKILL.md && git commit -m "docs(graph-beta): board/ticket entry skills - thin wrappers over tm_board/tm_ticket"`
+- [ ] 3: `python3 scripts/validate_plugins.py 2>&1 | grep -i teams` — ERROR 없음 확인
+- [ ] 4: `grep -c '^name: board$' teams/skills/board/SKILL.md` → 1, `grep -c '^name: ticket$' teams/skills/ticket/SKILL.md` → 1 확인
+- [ ] 5: `git add teams/skills/board/SKILL.md teams/skills/ticket/SKILL.md && git commit -m "docs(teams): board/ticket entry skills - thin wrappers over tm_board/tm_ticket"`
 
 ---
 
 ### Task 6: 릴리스 0.11.0 — 버전, Status, 설계 문서 §11, 전체 검증
-**Files:** modify `graph-beta/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`
-(graph-beta 항목만), `graph-beta/README.md`, `graph-beta/KOR.md`
+**Files:** modify `teams/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`
+(teams 항목만), `teams/README.md`, `teams/KOR.md`
 **Interfaces:** consumes Task 1-5 전부.
-**Pass bar:** `node --test graph-beta/scripts/test-*.mjs` 전부 통과(회귀 0), `python3
+**Pass bar:** `node --test teams/scripts/test-*.mjs` 전부 통과(회귀 0), `python3
 scripts/validate_plugins.py` ERROR 0, 두 매니페스트 0.11.0 일치, README·KOR Status 첫 항목이
 v0.11.0.
 
 - [ ] 1: `git fetch skills main && git status -sb` — origin이 앞서 있으면 rebase(다른 agent가
   병행 중인 `harness-beta` 은퇴 커밋이 먼저 들어와 있을 수 있다 — 그 변경과는 파일이 겹치지 않는다)
-- [ ] 2: `node --test graph-beta/scripts/test-*.mjs 2>&1 | tail -8` → `# fail 0` 확인
-- [ ] 3: patch 범프: `graph-beta/.claude-plugin/plugin.json`과 `.claude-plugin/marketplace.json`의
-  graph-beta `"version": "0.10.1"` → `"0.11.0"`; marketplace description 끝에 " Adds a ticket
+- [ ] 2: `node --test teams/scripts/test-*.mjs 2>&1 | tail -8` → `# fail 0` 확인
+- [ ] 3: patch 범프: `teams/.claude-plugin/plugin.json`과 `.claude-plugin/marketplace.json`의
+  teams `"version": "0.10.1"` → `"0.11.0"`; marketplace description 끝에 " Adds a ticket
   layer derived from task.json (tickets.mjs), an append-only board.jsonl transition log, §7c phase
   markdown (docs.mjs), and tm_board/tm_ticket/tm_docs with two entry skills." 추가
 - [ ] 4: README `## Status` 맨 위, KOR `## 상태` 맨 위에 한 줄씩 prepend(기존 항목은 그 아래 그대로
@@ -1313,14 +1313,14 @@ v0.11.0.
     transitions a diff actually found, around the four tools that can move one. docs.mjs renders
     §7c's phase markdown (INDEX, request, shape, critique, one page per STORY, integrate, goal
     gate, report) from the same task.json; the engine never reads it back, and tm_docs({rebuild})
-    reproduces byte-identical files. graph-beta:board and graph-beta:ticket are thin terminal-table
+    reproduces byte-identical files. teams:board and teams:ticket are thin terminal-table
     wrappers. Not yet: planning/qa wired into the EPIC flow itself, shape's role/priority, defect
     STORYs, or human executors - those are v0.12.0+.`
   - KOR: 같은 내용을 한국어로.
-- [ ] 5: 설계 문서(`docs/plans/2026-09-17-graph-beta-team.md`)는 이 계획 파일 소유가 아니므로
+- [ ] 5: 설계 문서(`docs/plans/2026-09-17-teams-team.md`)는 이 계획 파일 소유가 아니므로
   건드리지 않는다 — §11의 v0.11.0 행을 "완료"로 표시하는 것은 팀 리더나 그 갱신을 맡은 agent의 몫.
 - [ ] 6: `python3 scripts/validate_plugins.py` ERROR 0 확인
-- [ ] 7: `git add graph-beta/.claude-plugin/plugin.json .claude-plugin/marketplace.json graph-beta/README.md graph-beta/KOR.md && git commit -m "feat(graph-beta): 0.11.0 - ticket layer (tickets.mjs, board.jsonl, docs.mjs), tm_board/tm_ticket/tm_docs, board/ticket entry skills"`
+- [ ] 7: `git add teams/.claude-plugin/plugin.json .claude-plugin/marketplace.json teams/README.md teams/KOR.md && git commit -m "feat(teams): 0.11.0 - ticket layer (tickets.mjs, board.jsonl, docs.mjs), tm_board/tm_ticket/tm_docs, board/ticket entry skills"`
 - [ ] 8: `git push skills main`(저장소 규칙. 실패하면 1번으로 돌아가 fetch·rebase 후 재시도)
 
 ---
@@ -1332,7 +1332,7 @@ v0.11.0.
   가져오지 않는다) — 그래서 둘이 완전히 병행된다. Task 4는 Task 2(`writeDocs`)와 Task 3(같은
   `taskmanager.mjs`의 `dispatch`/`TOOLS`)이 **둘 다** 끝난 뒤에만 의미 있게 시작할 수 있다. Task 5는
   코드 의존이 전혀 없어 언제든 갈 수 있다. Task 6은 전부의 위.
-- **파일 충돌**: `graph-beta/mcp/taskmanager.mjs`(+`scripts/test-taskmanager.mjs`)를 건드리는 건
+- **파일 충돌**: `teams/mcp/taskmanager.mjs`(+`scripts/test-taskmanager.mjs`)를 건드리는 건
   Task 3과 Task 4뿐이고, 이 둘은 이미 직렬로 배치했다. 나머지 넷(1·2·5·6)은 서로 파일이 하나도
   겹치지 않는다.
 - **`doc_path`가 항상 반환된다는 설계가 Task 3/4 분리를 실제로 가능하게 한다**: `docPaths()`(Task 1)
