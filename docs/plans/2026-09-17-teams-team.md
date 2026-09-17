@@ -518,9 +518,9 @@ harness `patch.mjs`와 같은 규칙: `x.y.Z`만, plugin.json + marketplace 항�
 | 조합 | 판정 | 근거·방법 |
 |---|---|---|
 | harness + team | **허용, 기본** (v0.10.0 완료) | 훅이 둘(`goal-gate.mjs`, `dispatch-gate.mjs`) 다 PreToolUse. 충돌 지점은 **harness gate가 team의 worker 쓰기를 막는 것** — 워크트리 경로가 프로젝트 상대 패턴에 걸린다. 실제로 나간 해법은 `~/.harness/active/`가 아니라 **트리 안의 공유 마커** `.claude/.harness-markers/team-<task8>`(engage.mjs) — harness gate가 이미 읽던 바로 그 디렉터리·파일 모양이라 **harness 쪽 변경은 0**이다. `tm_open`/`tm_next`가 매 폴링마다 워크트리에 쓰고, `excludeMarkers()`가 그 경로를 저장소의 `info/exclude`(git-common-dir, 워크트리 전체에 공유)에 등록해 마커가 git에 잡히지 않게 하며, `commitWorktree`의 fold 커밋도 그 경로를 `git rm --cached`로 언스테이지한다 — 이게 없으면 마커가 매 패키지 브랜치에 커밋되고 모든 integrate가 타임스탬프 충돌로 깨진다. dispatch-gate.mjs는 반대 방향(team → harness 경로 보호)으로 같은 마커를 읽는다. 두 훅 모두 지금도 fail-open이니 마커 읽기 실패는 통과 |
-| graph + team | **거부, install이 검사** | 두 서버가 같은 `graph_*` 이름을 낸다(README 경고 그대로). install이 프로젝트·유저 mcp 설정에서 `graph-engineering`을 발견하면 중단하고 하나를 고르게 한다. 이름공간 분리(`gb_*`)는 스킬 문서 전부의 리네임이라 **이 라운드에서 하지 않는다** — beta는 graph로 졸업하는 라인이다 |
+| graph + team | **허용** (install 상호배제 검사 없음, commit `0ff8a2f`) | 리네임(§14 결정 6b)으로 두 서버가 더는 이름을 공유하지 않는다 — graph는 `graph-engineering`/`graph_*`, teams는 `teams-engineering`/`team_*`. install의 `findConflicts`는 제거됐고, `test-install.mjs`가 graph 플러그인이 켜져 있고 `graph-engineering` `.mcp.json` 항목이 있어도 install이 성공(status 0)함을 검증한다 |
 | harness + graph | 현행 | 변경 없음 |
-| 셋 다 | **거부** | 위 둘의 합 |
+| 셋 다 | **허용** | 위 두 행이 독립적으로 성립 — harness+team, graph+team 어느 쪽도 서로 겹치는 리소스를 막지 않는다 |
 
 - `conventions/`는 셋이 공유한다. 형식이 이미 같다(`conventions.mjs`가 harness 템플릿을 읽음).
 - `~/.harness/tasks/`는 team 소유(task.json), `.claude/.harness-markers/`(프로젝트/워크트리 안)는
@@ -644,7 +644,7 @@ harness `patch.mjs`와 같은 규칙: `x.y.Z`만, plugin.json + marketplace 항�
 | 1 | **B안 + 보강**: 한 보드. 1순위 TaskLeader의 프롬프트 분해·분배 → 기획이 정리·기능 분할 → shape가 소유권으로 묶어 개발 → 통합 → QA → **기획 크로스 검수** → goal gate. Team 간 선후 있음 | §2 EPIC 흐름, §3 `planning-audit`, §5 `implements[]`, 7c `65-audit.md` |
 | 5·7·8·C | 애매 → 제안한 기본값으로 진행, 실측 뒤 재론 | — |
 | 3b | 기획 산출물(PRD)의 자리·형식. 본문은 `.harness-run/team/E-<task8>/10-prd.md`(§7c verbatim, planning 체인이 직접 씀), 템플릿은 `pm/skills/prd-development/template.md`(10절 스켈레톤; 같은 플러그인의 `user-story-*`는 대체 아님). `team.json.docs_dir`로 커밋 경로로 이동 가능 — 기본은 gitignore라 EPIC 정리 후 git 이력에 안 남음 | §7c 파일 구성에 `10-prd.md`, §14 A.3 |
-| 6b | **리네임 + 독립화** (0.10.2로 출시). plugin `graph-beta` → `teams`, 도구 접두어 `graph_*` → `team_*`(`teams/mcp/broker.mjs`의 서버 이름도 `teams-engineering`). #6이 상호배제 근거로 든 "두 서버가 같은 `graph_*` 이름을 낸다"는 이제 사실이 아니다 — graph는 `graph-engineering`/`graph_*`를 그대로 쓰고, teams만 `teams-engineering`/`team_*`로 옮겨 갔다. harness·graph·teams 세 플러그인은 이제 서로의 코드를 참조하지 않는 독립된 형제다(§0 재서술) | §0 계보 재서술. **미확인 채로 남김**: 이 문서를 고치는 시점(HEAD, `teams/skills/install/install.mjs`·`teams/README.md`)에는 graph↔teams 상호배제 검사와 "동시에 켜지 말 것" 경고가 여전히 남아 있고, 그 경고 문구 자체도 리네임 스윕에 휩쓸려 "두 서버가 같은 `team_*`를 쓴다"는 틀린 문장이 돼 있다 — §13 표는 그대로 두었으니 팀 리더가 실제로 상호배제를 걷어낼지, 이름만 바로잡을지 확인 필요 |
+| 6b | **리네임 + 독립화** (0.10.2로 출시). plugin `graph-beta` → `teams`, 도구 접두어 `graph_*` → `team_*`(`teams/mcp/broker.mjs`의 서버 이름도 `teams-engineering`). #6이 상호배제 근거로 든 "두 서버가 같은 `graph_*` 이름을 낸다"는 이제 사실이 아니다 — graph는 `graph-engineering`/`graph_*`를 그대로 쓰고, teams만 `teams-engineering`/`team_*`로 옮겨 갔다. harness·graph·teams 세 플러그인은 이제 서로의 코드를 참조하지 않는 독립된 형제다(§0 재서술) | §0 계보 재서술. **확인됨** (commit `0ff8a2f`): `teams/skills/install/install.mjs`에서 `findConflicts`가 제거되어 install-time 상호배제 검사가 더는 없다. `teams/scripts/test-install.mjs`에 graph 플러그인이 활성화되고 `graph-engineering` `.mcp.json` 항목이 있어도 install이 성공(status 0)함을 검증하는 테스트가 추가됐다 — 팀 리더는 이름만 바로잡는 대신 상호배제 자체를 걷어내는 쪽을 택했다. §13 표도 이에 맞춰 갱신 |
 | 추가 | **main 세션은 절대 TaskLeader가 아니다.** inline 옵션 셋(`leader_driver`/`s_driver`/`child_driver`) team 라인에서 제거·거부 | §6 재작성, 7b inbox 문구, entry 스킬 축소. **v0.10.0 완료**: `child_driver`/`s_driver`는 넘기면 `tm_open`이 에러(commit 20306ec, breaking); `leader_driver: "inline"`은 애초에 만들지 않고 대신 TaskLeader driver를 항상 spawn(commit 6ecd744) |
 
 ## 5b. 결함 STORY — QA가 발행하는 티켓
