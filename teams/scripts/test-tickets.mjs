@@ -101,6 +101,43 @@ test('EPIC ticket state: before shape -> READY, packages exist -> IN_PROGRESS, i
   assert.equal(epicTicketState(baseTask([node('report', 'report', [], { state: 'done', result: {} })])), 'DONE');
 });
 
+// expandPackages (taskmanager.mjs) pushes integrate/gate:goal/report onto task.nodes in the
+// same call that opens every package's dispatch/accept chain - a task shaped exactly the way it
+// actually leaves one, not the dispatch-only or integrate-only fixtures above which never let
+// dispatch/accept and integrate co-exist and so cannot see this. Before the old `goalLevel`
+// predicate (integrate node merely existing) was replaced with unmetDeps() on it (every
+// package's accept actually reaching 'done'), the first case here read IN_REVIEW/qualitygate
+// instead of IN_PROGRESS/impl.
+function expandedTask(packageNodes, { deps = ['accept:P1:1', 'accept:P2:1'] } = {}) {
+  return baseTask(
+    [
+      ...packageNodes,
+      node('integrate:1', 'integrate', deps, { subgoal_id: null }),
+      node('gate:goal:1', 'gate', ['integrate:1'], { subgoal_id: null }),
+      node('report', 'report', [], { after: ['gate:goal:1'] }),
+    ],
+    { spec: { packages: [{ id: 'P1' }, { id: 'P2' }] } },
+  );
+}
+
+test('EPIC ticket state/phase: integrate/gate:goal/report exist but no package is accepted yet -> IN_PROGRESS/impl, not IN_REVIEW/qualitygate', () => {
+  const t = expandedTask([
+    dispatchNode('P1', { state: 'done', result: {} }), acceptNode('P1'),
+    dispatchNode('P2', { state: 'running', child: { driver: { pid: 1 } } }),
+  ]);
+  assert.equal(epicTicketState(t), 'IN_PROGRESS');
+  assert.equal(epicPhase(t), 'impl');
+});
+
+test('EPIC ticket state/phase: same shape, every package accepted -> IN_REVIEW/qualitygate', () => {
+  const t = expandedTask([
+    dispatchNode('P1', { state: 'done', result: {} }), acceptNode('P1', { state: 'done', result: { accept: true, match_pct: 90 } }),
+    dispatchNode('P2', { state: 'done', result: {} }), acceptNode('P2', { state: 'done', result: { accept: false } }),
+  ]);
+  assert.equal(epicTicketState(t), 'IN_REVIEW');
+  assert.equal(epicPhase(t), 'qualitygate');
+});
+
 test('EPIC ticket state adds BLOCKED beyond §4\'s table: runState says blocked (retry budget spent), never shown as READY/IN_PROGRESS', () => {
   const t = baseTask([
     node('size', 'size', [], { state: 'done', result: { size: 'L' } }),

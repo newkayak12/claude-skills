@@ -52,6 +52,34 @@ export function latestBySubgoal(task, pkgId, stage) {
   return list.length ? list[list.length - 1] : null;
 }
 
+// The current node for a goal-level stage. Stage alone disambiguates it - unlike 'gate', which
+// a subgoal's own chain also uses, 'integrate' never names anything but the goal-level node, so
+// no subgoal_id filter is needed. A repair (openRepair in taskmanager.mjs) opens a fresh
+// `integrate:N` and rewires every other node's deps/after from the old one to it, but leaves the
+// old, now-superseded node in place as evidence - so "current" means latest by push order, the
+// same "last in array wins" rule latestBySubgoal already uses for a retried STORY's
+// dispatch/accept.
+function latestGoalNode(task, stage) {
+  const list = task.nodes.filter((n) => n.stage === stage);
+  return list.length ? list[list.length - 1] : null;
+}
+
+// Whether the task has actually reached goal level, not merely had its goal-level nodes created.
+// expandPackages (taskmanager.mjs) pushes integrate/gate:goal/report onto task.nodes in the same
+// call that opens the package dispatch/accept chains - so `some(n => n.stage === 'integrate')`
+// is true from the instant task.spec exists, long before any package is dispatched, let alone
+// accepted. The integrate node's own `deps` are every package's accept id (see expandPackages),
+// a data dependency: unmetDeps() reads it empty only once every one of those accepts has reached
+// `done` - exactly "every package has been judged" the same way storyTicketState's own
+// `unmetDeps(task, dispatch).length ? 'BACKLOG' : 'READY'` already distinguishes "not yet
+// reachable" from "ready to run", and it reads off the dependency graph rather than off a node's
+// own mutable `state`, which a fresh, not-yet-scheduled integrate node would still show as
+// 'pending' even after every accept has landed.
+function goalLevelReached(task) {
+  const integrate = latestGoalNode(task, 'integrate');
+  return !!integrate && unmetDeps(task, integrate).length === 0;
+}
+
 // §4's STORY row, plus CANCELLED/UNREACHABLE (the workflow diagram already draws these; the
 // mapping table just did not spell them out - see the plan's 발견 4) and no WAITING_USER (no
 // human executor exists yet to produce it - 발견 1).
@@ -90,8 +118,7 @@ export function epicTicketState(task) {
   if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) return 'DONE';
   if (runState(task).state === 'blocked') return 'BLOCKED';
   if (!task.spec) return 'READY';
-  const goalLevel = task.nodes.some((n) => n.stage === 'integrate' || (n.stage === 'gate' && n.subgoal_id === null));
-  return goalLevel ? 'IN_REVIEW' : 'IN_PROGRESS';
+  return goalLevelReached(task) ? 'IN_REVIEW' : 'IN_PROGRESS';
 }
 
 // §6's phase table: plan (size, shape) / setgoal (critique) / impl (dispatch:Pn) / qualitygate
@@ -103,8 +130,7 @@ export function epicPhase(task) {
     const critique = task.nodes.find((n) => n.node_id === 'critique' || n.stage === 'critique');
     return critique && critique.state !== 'pending' ? 'setgoal' : 'plan';
   }
-  const goalLevel = task.nodes.some((n) => n.stage === 'integrate' || (n.stage === 'gate' && n.subgoal_id === null));
-  return goalLevel ? 'qualitygate' : 'impl';
+  return goalLevelReached(task) ? 'qualitygate' : 'impl';
 }
 
 // §4's TASK row ("자식 run 노드 상태 그대로"), generalized over kind (subgoal/document/planning/
