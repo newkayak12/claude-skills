@@ -2,10 +2,10 @@
 // one impure function (writeDocs) that writes them - the engine never reads any of this back
 // (md is a rendered view, never a second source of truth, same principle as tickets.mjs's §4).
 //
-// Scoped to the phases that exist without a planning/qa Team (v0.12+ wires those in - see the
-// plan's head): INDEX, the request, the shape, the critique, one page per STORY, the integrate
-// round, the goal gate, and the report. 10-planning/10-prd/15-spec-gate/60-qa/65-audit are not
-// rendered - there is no data behind them yet, and an empty file would claim a feature that does
+// v0.12.0 wires planning/qa into the EPIC flow as phase-Teams (taskmanager.mjs's task.planning_pkg
+// and task.qa_pkg), and renders three more of §7c's 13: 10-planning.md, 10-prd.md, 60-qa.md.
+// 15-spec-gate.md (v0.13.0's human gate) and 65-audit.md (v0.12.1's planning cross-review) still
+// have no data behind them and are not rendered - an empty file would claim a feature that does
 // not exist.
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -41,12 +41,14 @@ export function renderIndex(task) {
   L.push('| key | role | state | tasks | last verdict |', '|---|---|---|---|---|');
   for (const r of rows) L.push(`| ${r.id} | ${r.role} | ${r.state} | ${r.tasks || '—'} | ${r.last_verdict} |`);
   L.push('', '## Sections', '', '- [Request](./00-request.md)');
+  if (task.planning_pkg) L.push('- [Planning](./10-planning.md)', '- [PRD](./10-prd.md)');
   if (task.spec) {
     L.push('- [Shape](./20-shape.md)');
     if (task.nodes.some((n) => n.stage === 'critique' && n.result)) L.push('- [Critique](./30-critique.md)');
     for (const p of task.spec.packages) L.push(`- [${p.id}](./40-stories/${p.id}.md)`);
   }
   if (task.nodes.some((n) => n.stage === 'integrate' && n.result)) L.push('- [Integrate](./50-integrate.md)');
+  if (task.qa_pkg) L.push('- [QA](./60-qa.md)');
   if (task.nodes.some((n) => n.stage === 'gate' && n.subgoal_id === null && n.result)) L.push('- [Goal gate](./70-goal-gate.md)');
   if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) L.push('- [Report](./80-report.md)');
   return L.join('\n') + '\n';
@@ -65,6 +67,54 @@ export function renderRequest(task) {
   L.push('## Size', `- pinned: ${task.size_pinned || '(not pinned)'}`, `- measured: ${task.size || '(pending)'}`);
   L.push(`- flow: ${task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto')}`);
   return L.join('\n') + '\n';
+}
+
+// A phase-Team's own dispatch/accept verdict, shared shape between renderPlanning and renderQa -
+// both are "how did the phase-Team's run go", where the difference is only which package (and
+// what to say about its worktree) each one is reporting on. Returns lines, not a joined string,
+// so each caller can append its own closing line before joining once.
+function phaseTeamLines(task, pkg, title, worktreeLine) {
+  const key = storyKey(task.run_id, pkg.id);
+  const state = storyTicketState(task, pkg.id);
+  const dispatch = latestBySubgoal(task, pkg.id, 'dispatch');
+  const accept = latestBySubgoal(task, pkg.id, 'accept');
+  const r = accept && accept.result;
+  const L = [frontmatter(key, state, task), `# ${title}`, ''];
+  L.push(`state: ${state}`, '');
+  if (dispatch && dispatch.child) L.push(worktreeLine(dispatch.child), '');
+  L.push('## Last verdict');
+  if (r) {
+    L.push(`accept: ${r.accept === true} · match_pct: ${r.match_pct == null ? '—' : r.match_pct}`, '');
+    L.push('Checks:', bullets(r.checks), '', 'Gaps:', bullets(r.gaps));
+  } else {
+    L.push('(not judged yet)');
+  }
+  return L;
+}
+
+export function renderPlanning(task) {
+  const L = phaseTeamLines(task, task.planning_pkg, 'Planning phase-Team', (child) => `run: ${child.run_id} at ${child.cwd}`);
+  L.push('', 'The PRD itself is rendered separately - see [PRD](./10-prd.md).');
+  return L.join('\n') + '\n';
+}
+
+// Link/citation only (§7c verbatim rule): the PRD's own body lives in the planning phase-Team's
+// child run, never copied here or into shape's briefing (taskmanager.mjs's composeTaskPrompt
+// makes the same choice for the same reason).
+export function renderPrd(task) {
+  const pkg = task.planning_pkg;
+  const key = storyKey(task.run_id, pkg.id);
+  const dispatch = latestBySubgoal(task, pkg.id, 'dispatch');
+  const userStories = (dispatch && dispatch.result && Array.isArray(dispatch.result.user_stories)) ? dispatch.result.user_stories : [];
+  const L = [frontmatter(key, storyTicketState(task, pkg.id), task), '# PRD', ''];
+  L.push('The PRD itself lives in the planning phase-Team\'s own child run; this page links to it and never repeats its body.', '');
+  if (dispatch && dispatch.child) L.push(`- run: ${dispatch.child.run_id} at ${dispatch.child.cwd}`, '');
+  L.push('## User stories', bullets(userStories));
+  return L.join('\n') + '\n';
+}
+
+export function renderQa(task) {
+  return phaseTeamLines(task, task.qa_pkg, 'QA', (child) => `worktree: ${child.cwd} (the integration tree)`).join('\n') + '\n';
 }
 
 export function renderShape(task) {
@@ -144,12 +194,17 @@ export function renderReport(task) {
 export function renderAll(task) {
   const paths = docPaths(task);
   const files = { [paths.index]: renderIndex(task), [paths.request]: renderRequest(task) };
+  if (task.planning_pkg) {
+    files[paths.planning] = renderPlanning(task);
+    files[paths.prd] = renderPrd(task);
+  }
   if (task.spec) {
     files[paths.shape] = renderShape(task);
     if (task.nodes.some((n) => n.stage === 'critique' && n.result)) files[paths.critique] = renderCritique(task);
     for (const p of task.spec.packages) files[paths.story(p.id)] = renderStory(task, String(p.id));
   }
   if (task.nodes.some((n) => n.stage === 'integrate' && n.result)) files[paths.integrate] = renderIntegrate(task);
+  if (task.qa_pkg) files[paths.qa] = renderQa(task);
   if (task.nodes.some((n) => n.stage === 'gate' && n.subgoal_id === null && n.result)) files[paths.goalGate] = renderGoalGate(task);
   if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) files[paths.report] = renderReport(task);
   return files;

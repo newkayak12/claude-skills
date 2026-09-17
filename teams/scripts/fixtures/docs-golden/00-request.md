@@ -1,7 +1,7 @@
 ---
 key: E-aaaaaaaa
 state: DONE
-source: task.json@12
+source: task.json@16
 ---
 
 # Request
@@ -14,7 +14,7 @@ from the requester: keep both in sync
 ## Team snapshot
 - interactive: false
 - max_parallel_teams: 2
-- roles: planning=false, qa=false
+- roles: planning=true, qa=true
 - goal_threshold: 90
 
 ## Size

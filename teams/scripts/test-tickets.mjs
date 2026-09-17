@@ -312,7 +312,7 @@ test('storyTaskProgress is null before the child run exists, and null if the chi
   assert.equal(storyTaskProgress(baseTask([dispatchNode('P1', { state: 'running', child: { cwd: '/nope', run_id: 'missing' } })]), 'P1'), null);
 });
 
-test('epicBoardRows renders one row per package with role always "develop" - no other Team reaches the EPIC flow until v0.12', () => {
+test('epicBoardRows renders one row per develop package with role "develop" when no planning/qa phase-Team exists', () => {
   const t = baseTask(
     [dispatchNode('P1', { state: 'done', result: {} }), acceptNode('P1', { state: 'done', result: { accept: true, match_pct: 91 } })],
     { spec: { packages: [{ id: 'P1', title: 'module a' }] } },
@@ -320,6 +320,27 @@ test('epicBoardRows renders one row per package with role always "develop" - no 
   const rows = epicBoardRows(t);
   assert.equal(rows.length, 1);
   assert.deepEqual(rows[0], { key: 'E-aaaaaaaa/P1', id: 'P1', title: 'module a', role: 'develop', state: 'DONE', tasks: null, last_verdict: 'accept 91', reporter: 'shape' });
+});
+
+// v0.12.0 wires planning/qa into the EPIC flow as phase-Teams: role becomes p.phase || 'develop',
+// and epicBoardRows now also renders a row for task.planning_pkg (first, ahead of shape) and
+// task.qa_pkg (last, after every develop package) when those fields are present.
+test('epicBoardRows puts the planning phase-Team row first and the qa phase-Team row last, with role set from p.phase', () => {
+  const t = baseTask(
+    [
+      dispatchNode('PLAN', { state: 'done', result: {} }), acceptNode('PLAN', { state: 'done', result: { accept: true, match_pct: 95 } }),
+      dispatchNode('P1', { state: 'done', result: {} }), acceptNode('P1', { state: 'done', result: { accept: true, match_pct: 91 } }),
+      dispatchNode('QA', { state: 'done', result: {} }), acceptNode('QA', { state: 'done', result: { accept: true, match_pct: 93 } }),
+    ],
+    {
+      spec: { packages: [{ id: 'P1', title: 'module a' }] },
+      planning_pkg: { id: 'PLAN', phase: 'planning', title: 'PRD' },
+      qa_pkg: { id: 'QA', phase: 'qa', title: 'QA' },
+    },
+  );
+  const rows = epicBoardRows(t);
+  assert.deepEqual(rows.map((r) => [r.id, r.role]), [['PLAN', 'planning'], ['P1', 'develop'], ['QA', 'qa']]);
+  assert.deepEqual(rows[1], { key: 'E-aaaaaaaa/P1', id: 'P1', title: 'module a', role: 'develop', state: 'DONE', tasks: null, last_verdict: 'accept 91', reporter: 'shape' });
 });
 
 test('ticketSnapshot maps every known key (EPIC + each STORY) to its current state - the input a board.jsonl diff is taken over', () => {
