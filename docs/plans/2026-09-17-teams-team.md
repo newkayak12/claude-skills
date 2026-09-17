@@ -612,7 +612,8 @@ harness `patch.mjs`와 같은 규칙: `x.y.Z`만, plugin.json + marketplace 항�
 | v0.10.1 | **완료.** `planning`(draft→revise→gate)/`qa`(cases→execute→gate) kind + 페르소나·per-stage 스킬·advisory mounts(§3) + entry 스킬 2개(`teams:plan`/`teams:qa`) + `broker.mjs`의 revise 정체성-분리 가드 + `ensureWorktree`의 `gate_uncommitted` 이벤트(계획에 없던 안전 수정) | `node --test teams/scripts/test-*.mjs` 258/258, 회귀 0. 벤치 요청 파일(`plan-flat`/`qa-flat`)만 추가, 벤치 자체는 미실행 — 실제 벤더 실행 증거 없음, 전부 단위 테스트 |
 | v0.10.2 | **완료.** 리네임 + 독립화 — `graph-beta`→`teams`, `graph_*`→`team_*`(`broker.mjs`의 서버 이름도 `teams-engineering`), install 시 graph와의 상호배제 검사 제거(§14 결정 기록 6b) | 전용 계획서 없이 나간 릴리스라 다른 세 완료 단계와 같은 방식의 task-unit 집계·테스트 카운트가 없다 — `docs/plans/2026-09-17-teams-roadmap-sizing.md` §6에 크기 칸을 비운 채로 행만 남겨 둠 |
 | v0.11.0 | **완료.** `tickets.mjs` 파생 + `board.jsonl` + `docs.mjs` phase md + `tm_board`/`tm_ticket`/`tm_docs`(v0.10.0에 이미 있던 `tm_events` 포함) + `teams:board`/`teams:ticket` 명령 스킬. 계획과 다르게 간 것 둘, 둘 다 의도적: `docs.mjs`는 §7c 13종 문서 중 **8종**만 렌더한다(planning/qa Team 연결이 필요한 5종 — `10-planning`/`10-prd`/`15-spec-gate`/`60-qa`/`65-audit` — 은 v0.12.0+로 미룸; 빈 파일을 만드는 것보다 안 만드는 쪽이 신뢰를 덜 깎는다는 판단). TaskLeader의 push notification(§6에 "SendMessage"로 남아 있던 그 알림)은 확장이 아니라 **제거**됐다 — `tm_board`/`tm_events`가 durable pull 경로로 대신한다(§14 결정 기록 참고) | `node --test teams/scripts/test-*.mjs` 289/289, 회귀 0. 매핑 표는 테이블 테스트, md는 golden 파일 비교로 `rebuild`가 동일 출력임을 확인. **벤치는 이번에도 미실행 — 실제 벤더 실행 증거 없음, 전부 단위 테스트**(v0.10.1 행과 같은 사정). 구현 중 실결함 2건 발견·수정: EPIC 티켓 상태가 `integrate`/`gate:goal`/`report` 노드의 *존재*로 판정돼 shape 성공 즉시 `impl`을 건너뛰고 `IN_REVIEW`로 뛰던 버그(`026c119`), TASK 티켓 상태가 마찬가지로 gate/mid 노드 *존재*로 판정돼 subgoal이 생성된 순간부터 평생 `IN_REVIEW`로 읽히던 버그(`13738a7`) — 둘 다 "존재"가 아니라 "그 단계까지 실제로 도달"로 고쳤다 |
-| v0.12.0 | shape `role/priority/worktree`, 스케줄러 캡, QA=통합 트리 | seam 픽스처에 qa STORY 추가 |
+| v0.12.0 | planning/qa가 EPIC의 phase에 붙는 Team으로 편입(shape 앞/통합 뒤), shape `priority/implements[]`, 스케줄러 캡(`max_parallel_teams`) | seam 픽스처에 qa phase-Team 추가. 계획: `docs/plans/2026-09-17-teams-team-v0.12.0.md` |
+| v0.12.1 | 결함 STORY 발행(`tm_file`, `qa_rounds` 캡·재순회, 결정 기록 #2) + 기획 크로스 검수(`planning-audit` kind, 결정 기록 #1) — 둘 다 v0.12.0이 만드는 QA-in-tree/기획 phase-Team 기계 위에 얹는다 | 결함 루프 픽스처(`qa_rounds` 캡에서 멈추는지), 크로스 검수가 미충족 user story를 STORY로 발행하는 픽스처. 계획: `docs/plans/2026-09-17-teams-team-v0.12.0.md`의 "v0.12.1" 절 |
 | v0.13.0 | executor `human`: `ask`, `gate:human`, `assignee`, `waiting_human` park/respawn, `tm_answer/tm_assign/tm_inbox` | fake driver 테스트 (0.8.0 방식), human이 implement한 TASK의 test가 non-human으로 가는지 |
 | v0.13.1 | `interactive` 플래그 (사용자 질문 모드) | 실측 1회, main 컨텍스트 토큰 비교. **kill-and-resume 표 테스트**: 매니저 노드 전이마다 leader kill → `tm_next` → 동일 결과 |
 | v0.14.0 | sub-EPIC (`parent`, `max_depth`) | 깊이 2 픽스처 |
@@ -622,20 +623,28 @@ harness `patch.mjs`와 같은 규칙: `x.y.Z`만, plugin.json + marketplace 항�
 ### 이 표에 없는, 그러나 이미 결정된 일
 
 위 표 어디에도 없지만 이미 **결정**으로 남아 있고, §2 EPIC 흐름도에 그려져 있고, §7c 문서 구성에
-파일 자리까지 잡혀 있는 일 넷이 있다(`docs/plans/2026-09-17-teams-roadmap-sizing.md` §5가 처음
-지적):
+파일 자리까지 잡혀 있던 일이 원래 넷이었다(`docs/plans/2026-09-17-teams-roadmap-sizing.md` §5가
+처음 지적). **그중 둘은 이제 자리를 찾았다** — v0.12.0의 계획서(`2026-09-17-teams-team-v0.12.0.md`)
+가 §4.1의 7–8 unit 경계를 지키기 위해 이 둘을 v0.12.1로 떼어 배치했다(위 단계표):
 
-- **결함 STORY 발행** — QA가 찾은 결함을 STORY로 발행하고, EPIC이 impl 단계로 되돌아가고, QA
-  라운드 상한이 지켜진다 (결정 기록 #2, §5b, 보드의 `reporter` 컬럼)
-- **기획 크로스 검수** — 통합 결과물을 PRD와 대조하고 미충족 항목을 STORY로 발행하는 마지막 기획
-  패스 (결정 기록 #1, §3의 `planning-audit` kind, §7c `65-audit.md`)
+- **결함 STORY 발행** → **v0.12.1**. QA가 찾은 결함을 STORY로 발행하고, EPIC이 impl 단계로
+  되돌아가고, QA 라운드 상한이 지켜진다 (결정 기록 #2, §5b, 보드의 `reporter` 컬럼)
+- **기획 크로스 검수** → **v0.12.1**. 통합 결과물을 PRD와 대조하고 미충족 항목을 STORY로 발행하는
+  마지막 기획 패스 (결정 기록 #1, §3의 `planning-audit` kind, §7c `65-audit.md`)
+
+남은 둘은 여전히 배치되지 않았다:
+
 - **EPIC 정리 도구**(`tm_clean`) — EPIC DONE 뒤 워크트리·브랜치 정리 (§14 C-11)
 - **역할별 마운트 키잉** — §3이 요구한 `{role}:{stage}` 키잉. v0.10.1이 실제로 넣은 것은 단계
-  키뿐이다(`teams/mcp/mounts.mjs`의 코드 주석이 이 부작용을 스스로 인정한다)
+  키뿐이다(`teams/mcp/mounts.mjs`의 코드 주석이 이 부작용을 스스로 인정한다). v0.12.0/v0.12.1의
+  계획서가 확인한 바로는, 이 충돌은 v0.12 라인이 새로 만드는 것이 아니라 `teams:plan`/`teams:qa`
+  entry 스킬이 v0.10.1부터 이미 밟아 온 것이라 v0.12 라인이 강제로 닫을 이유는 없었다 — 여전히
+  미배치인 채로 남는다.
 
-크기 추정과 그 근거는 `docs/plans/2026-09-17-teams-roadmap-sizing.md` §5(**〔추정〕 5–7 task-unit**
-합계)에 있다. **여기서는 어느 버전에 넣을지 정하지 않는다** — 그건 이 문서가 내릴 결정이 아니라
-사용자의 결정이다.
+크기 추정과 그 근거는 `docs/plans/2026-09-17-teams-roadmap-sizing.md` §5(원래 넷 합
+**〔추정〕 5–7 task-unit**, 결함 STORY·기획 크로스 검수가 v0.12.1로 빠지며 남은 둘의 합은
+**~1.5**)에 있다. **여기서는 남은 둘을 어느 버전에 넣을지 정하지 않는다** — 그건 이 문서가 내릴
+결정이 아니라 사용자의 결정이다.
 
 별개로 — 위 넷과 달리 미래 일감이 아니라 이미 끝난 일인데, 이 표에 행이 아예 없었던 것도 하나
 있었다: **v0.10.2**(리네임 + 독립화, §14 결정 기록 6b). 위 표에 행을 추가했다. 사이징
