@@ -345,8 +345,9 @@ main 세션·TaskLeader·TeamLeader·worker 어느 것도 메모리에만 있는
 - 예외 하나: **노드가 직접 쓴 산출물**(PRD, 케이스 명세, report 노드의 본문)은 렌더가 아니라
   원문이다. md는 그것을 **링크·인용**하고 다듬지 않는다(verbatim 규칙).
 - 위치: 기본 프로젝트 안 `.harness-run/team/<E-task8>/` (gitignore). `team.json.docs_dir`로
-  `docs/epics/`처럼 커밋되는 경로로 돌릴 수 있다. PRD 같은 실제 산출물은 어차피 planning STORY의
-  changed file로 프로젝트 트리에 들어간다.
+  `docs/epics/`처럼 커밋되는 경로로 돌릴 수 있다. PRD 본문(`10-prd.md`)도 이 디렉터리 안에 있다 —
+  planning STORY의 changed file이 아니라 위 예외(노드가 직접 쓴 산출물, verbatim)로 다루는 문서이고,
+  `docs_dir`을 옮기지 않으면 EPIC 정리 후 git 이력에 남지 않는다.
 
 ### 파일 구성
 
@@ -355,6 +356,7 @@ main 세션·TaskLeader·TeamLeader·worker 어느 것도 메모리에만 있는
   INDEX.md              보드 스냅샷 — 전이마다 다시 렌더. 아래 파일들로 링크
   00-request.md         사용자 요청 원문, size verdict, 핀된 플래그, team.json 스냅샷
   10-planning.md        planning Team 요약 + PRD 링크 + 물었거나 SKIP한 질문과 적용된 default
+  10-prd.md              PRD 본문 — planning 체인(draft→revise→gate)이 직접 쓴 원문(verbatim). 10-planning.md가 링크·인용
   15-spec-gate.md       gate:human:spec — 누가(you/auto) 언제 무엇을 승인·반려·override 했나
   20-shape.md           STORY 표: id, 제목, touches, deps, acceptance — JIRA의 스토리 설명
   30-critique.md        critique verdict, sound 여부, 재저작 이력
@@ -548,7 +550,7 @@ harness `patch.mjs`와 같은 규칙: `x.y.Z`만, plugin.json + marketplace 항�
 | v0.11.0 | `tickets.mjs` 파생 + `board.jsonl` + **`docs.mjs` phase md** + `tm_board/tm_ticket/tm_events/tm_docs` + 명령 스킬 | 매핑 표 테이블 테스트. md는 golden 파일 비교, `rebuild`가 동일 출력 |
 | v0.12.0 | shape `role/priority/worktree`, 스케줄러 캡, QA=통합 트리 | seam 픽스처에 qa STORY 추가 |
 | v0.13.0 | executor `human`: `ask`, `gate:human`, `assignee`, `waiting_human` park/respawn, `tm_answer/tm_assign/tm_inbox` | fake driver 테스트 (0.8.0 방식), human이 implement한 TASK의 test가 non-human으로 가는지 |
-| v0.13.1 | TaskLeader driver (`leader_driver: process`) + `interactive` | 실측 1회, main 컨텍스트 토큰 비교. **kill-and-resume 표 테스트**: 매니저 노드 전이마다 leader kill → `tm_next` → 동일 결과 |
+| v0.13.1 | `interactive` 플래그 (사용자 질문 모드) | 실측 1회, main 컨텍스트 토큰 비교. **kill-and-resume 표 테스트**: 매니저 노드 전이마다 leader kill → `tm_next` → 동일 결과 |
 | v0.14.0 | sub-EPIC (`parent`, `max_depth`) | 깊이 2 픽스처 |
 
 각 단계 끝에 실측 1회 — "측정 전 비용 주장 금지" 규칙 유지.
@@ -570,8 +572,15 @@ harness `patch.mjs`와 같은 규칙: `x.y.Z`만, plugin.json + marketplace 항�
    "checks blame" 판정을 재사용해 TaskLeader가 package_id를 고르고 `tm_retry({package_id})`, 못 고르면
    seam → `repair`. 결정 필요: blame 판정을 qa gate 노드가 하나(payload에 `blame: [Pn]`), TaskLeader의
    별도 노드가 하나.
-3. **기획 산출물의 자리와 형식.** `docs/prd/<epic>.md`? pm 플러그인의 PRD 템플릿을 쓰나? 기획이
-   끝난 뒤 사용자 승인(`gate:human:spec`)이 기본으로 켜져야 하나 — 기획은 사람이 보는 게 자연스럽다.
+3. **기획 산출물의 자리와 형식 (결정 2026-09-17).** PRD 본문은 `.harness-run/team/E-<task8>/10-prd.md` —
+   planning Team의 draft→revise→gate 체인이 직접 쓴 원문이며, §7c의 verbatim 규칙(노드가 직접 쓴
+   산출물은 렌더가 아니라 원문) 적용 대상이다. 템플릿은 `pm/skills/prd-development/template.md`
+   — 실재하는 10절 fill-in 스켈레톤(Executive Summary, Problem Statement, Target Users & Personas,
+   Strategic Context, Solution Overview, Success Metrics, User Stories & Requirements, Out of
+   Scope, Dependencies & Risks, Open Questions). 같은 플러그인의 `user-story-*` 템플릿은 PRD가
+   아니므로 대체하지 않는다. 커밋되는 자리에 남기고 싶으면 `team.json.docs_dir`로 팀 문서
+   디렉터리 전체를 옮긴다(§7c에 이미 있는 장치). 기본은 `.harness-run/` 아래이고 gitignore이므로,
+   EPIC 정리 후 PRD는 git 이력에 남지 않는다. 기획 뒤 `gate:human:spec` 기본 켬은 결정 기록 #3 참조.
 
 ### B. 권한·정책 (사용자의 값)
 
@@ -604,6 +613,7 @@ harness `patch.mjs`와 같은 규칙: `x.y.Z`만, plugin.json + marketplace 항�
 | 6 | graph ↔ team 상호배제, install이 검사 | §13 그대로 |
 | 1 | **B안 + 보강**: 한 보드. 1순위 TaskLeader의 프롬프트 분해·분배 → 기획이 정리·기능 분할 → shape가 소유권으로 묶어 개발 → 통합 → QA → **기획 크로스 검수** → goal gate. Team 간 선후 있음 | §2 EPIC 흐름, §3 `planning-audit`, §5 `implements[]`, 7c `65-audit.md` |
 | 5·7·8·C | 애매 → 제안한 기본값으로 진행, 실측 뒤 재론 | — |
+| 3b | 기획 산출물(PRD)의 자리·형식. 본문은 `.harness-run/team/E-<task8>/10-prd.md`(§7c verbatim, planning 체인이 직접 씀), 템플릿은 `pm/skills/prd-development/template.md`(10절 스켈레톤; 같은 플러그인의 `user-story-*`는 대체 아님). `team.json.docs_dir`로 커밋 경로로 이동 가능 — 기본은 gitignore라 EPIC 정리 후 git 이력에 안 남음 | §7c 파일 구성에 `10-prd.md`, §14 A.3 |
 | 추가 | **main 세션은 절대 TaskLeader가 아니다.** inline 옵션 셋(`leader_driver`/`s_driver`/`child_driver`) team 라인에서 제거·거부 | §6 재작성, 7b inbox 문구, entry 스킬 축소. **v0.10.0 완료**: `child_driver`/`s_driver`는 넘기면 `tm_open`이 에러(commit 20306ec, breaking); `leader_driver: "inline"`은 애초에 만들지 않고 대신 TaskLeader driver를 항상 spawn(commit 6ecd744) |
 
 ## 5b. 결함 STORY — QA가 발행하는 티켓
