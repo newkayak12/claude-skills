@@ -225,12 +225,34 @@ function createTask(a) {
     // waiting_capacity?} for the one graph run the manager opened and is driving with a
     // headless session, mirroring a package's n.child.
     s_run: null,
-    nodes: [
-      node('size', 'size', []),
-      node('shape', 'shape', ['size']),
-      node('critique', 'critique', ['shape']),
-    ],
+    // The synthetic planning phase-Team package (§0.1), stashed here rather than in
+    // task.spec.packages because task.spec is still null before shape runs. expandPackages
+    // folds it into task.spec.packages, as the lead package, once shape succeeds (Task 2/3).
+    // null when roles.planning is off - the default, and the byte-for-byte compat case.
+    planning_pkg: null,
+    nodes: T.roles.planning
+      ? [node('size', 'size', [])]
+      : [
+        node('size', 'size', []),
+        node('shape', 'shape', ['size']),
+        node('critique', 'critique', ['shape']),
+      ],
   };
+  if (T.roles.planning) {
+    task.planning_pkg = {
+      id: 'PLAN',
+      phase: 'planning',
+      flow: 'plan',
+      title: 'PRD',
+      brief: task.request,
+      acceptance: ['PRD covers the request'],
+      deps: [],
+      touches: [],
+    };
+    pushChain(task, PACKAGE_CHAIN, 'PLAN', 1, ['size'], [], {});
+    task.nodes.push(node('shape', 'shape', ['accept:PLAN:1']));
+    task.nodes.push(node('critique', 'critique', ['shape']));
+  }
   return saveRun(task);
 }
 
