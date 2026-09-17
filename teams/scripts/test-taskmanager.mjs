@@ -469,6 +469,32 @@ test('tm_open({goal_threshold}) is stored on the task and reaches every child th
   }
 });
 
+test('tm_open no longer accepts notify: dropped from the tool schema and never stored on the task', async () => {
+  const c = await new Client(TM).init();
+  try {
+    const r = await c.send('tools/list', {});
+    const tmOpen = r.result.tools.find((t) => t.name === 'tm_open');
+    assert.equal(Object.prototype.hasOwnProperty.call(tmOpen.inputSchema.properties, 'notify'), false);
+  } finally {
+    c.close();
+  }
+
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_LEADER: '1' }).init();
+  try {
+    // Passing notify is silently a no-op now, not an error - same as any other unrecognized
+    // argument this hand-rolled schema does not validate against.
+    const open = await tm.call('tm_open', { request: 'r', cwd, vendor: 'self', notify: 'some-agent' });
+    const task = JSON.parse(readFileSync(join(root, open.task_id, 'task.json'), 'utf8'));
+    assert.equal(Object.prototype.hasOwnProperty.call(task, 'notify'), false);
+  } finally {
+    tm.close();
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('an accept node that says accept with no checks fails, not the package it judged', async () => {
   await withTask(async ({ tm, g, task_id }) => {
     await throughCritique(tm, task_id);
@@ -1386,7 +1412,10 @@ test('tm_open spawns a TaskLeader driver whose prompt names the task and manager
     assert.match(prompt, /references\/manager\.md/);
     assert.match(prompt, /Do not call tm_open/);
     assert.match(prompt, /never do a node's work/i);
-    assert.match(prompt, /SendMessage/);
+    // The leader's push notification (SendMessage on every state change) was removed - unverified,
+    // unretried, unacked, indistinguishable from silence. Watching is pull-only now: tm_status/
+    // tm_events/tm_board/tm_ticket.
+    assert.doesNotMatch(prompt, /SendMessage/);
     const ledger = readFileSync(join(root, open.task_id, 'ledger.jsonl'), 'utf8');
     assert.match(ledger, /"event":"leader_spawned"/);
     const s = await tm.call('tm_status', { task_id: open.task_id });
