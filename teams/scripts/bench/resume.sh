@@ -4,7 +4,8 @@
 #   resume.sh <workspace> [n]
 #
 # A session that dies mid-run (a usage limit, a crash) leaves the task under
-# <ws>/.harness-tasks and every run file under .harness-run — all of it resumable. This opens a
+# <ws>/.harness-tasks and every run file under .teams_output (or .harness-run for the stable
+# graph arm) — all of it resumable. This opens a
 # new session at the same cwd and tells the skill to continue what is there instead of opening
 # again: tm_status/tm_next for a task, team_status({cwd})/team_next for a bare run. The stream
 # goes to <ws>.stream.resume<n>.jsonl; score.mjs sums every stream of a workspace.

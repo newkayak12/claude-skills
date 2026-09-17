@@ -34,7 +34,7 @@ against its evidence, rather than only judging what draft wrote.
 
 The PRD itself is a node-written original, filled from `pm:prd-development`'s `template.md` (not
 a rendered copy of it), at `<docs_dir>/E-<first 8 chars of task_id>/10-prd.md` (`docs_dir`
-defaults to `.harness-run/team`; `team.json`'s key of the same name overrides it). Name that path
+defaults to `.teams_output/team`; `team.json`'s key of the same name overrides it). Name that path
 in the planning subgoal's `files[]` when the goal-spec is authored - there is no automatic
 placement yet, only the plain `files[]` mechanism every subgoal already has.
 

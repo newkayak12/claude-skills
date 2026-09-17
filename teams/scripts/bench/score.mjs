@@ -147,8 +147,9 @@ const has = (p) => existsSync(join(TREE, p));
 // ---------- harness state ----------
 function runFiles(dir) {
   const out = [];
-  for (const b of ['broker-beta', 'broker']) {
-    const d = join(dir, '.harness-run', b, 'runs');
+  // teams' own runs (.teams_output/broker/runs) and the stable graph plugin's (.harness-run/broker/runs)
+  // - a fixture may carry either, or both if graph and teams both ran here.
+  for (const d of [join(dir, '.teams_output', 'broker', 'runs'), join(dir, '.harness-run', 'broker', 'runs')]) {
     for (const f of ls(d)) if (f.endsWith('.json')) { try { out.push(JSON.parse(read(join(d, f)))); } catch {} }
   }
   return out;
@@ -278,7 +279,7 @@ const judge = (prompt) => {
 const treeFiles = (dir, depth, acc = [], rel = '') => {
   if (depth < 0) return acc;
   for (const e of ls(join(dir, rel))) {
-    if (['.git', '.harness-run', 'node_modules'].includes(e)) continue;
+    if (['.git', '.harness-run', '.teams_output', 'node_modules'].includes(e)) continue;
     const r = rel ? `${rel}/${e}` : e;
     let st; try { st = statSync(join(dir, r)); } catch { continue; }
     if (st.isDirectory()) treeFiles(dir, depth - 1, acc, r); else acc.push(r);

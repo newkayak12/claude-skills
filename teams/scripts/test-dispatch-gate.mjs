@@ -46,8 +46,8 @@ test('a gated write with nothing open is denied, and the message says what to ca
 test('once a run is open the nodes are the ones writing, so writes pass', () => {
   const dir = project({ paths: ['src/**'] });
   try {
-    mkdirSync(join(dir, '.harness-run', 'broker-beta', 'runs'), { recursive: true });
-    writeFileSync(join(dir, '.harness-run', 'broker-beta', 'runs', 'r.json'), '{}');
+    mkdirSync(join(dir, '.teams_output', 'broker', 'runs'), { recursive: true });
+    writeFileSync(join(dir, '.teams_output', 'broker', 'runs', 'r.json'), '{}');
     assert.equal(run(dir, { file_path: join(dir, 'src/a.mjs'), content: 'x'.repeat(5000) }).status, 0);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
@@ -65,7 +65,8 @@ test('paths outside the list, the allow list, and small edits all pass', () => {
 test('the harness own state is never gated, and neither is anything outside the project', () => {
   const dir = project({});
   try {
-    assert.equal(run(dir, { file_path: join(dir, '.harness-run/broker-beta/runs/r.json'), content: 'x'.repeat(900) }).status, 0);
+    assert.equal(run(dir, { file_path: join(dir, '.harness-run/broker/runs/r.json'), content: 'x'.repeat(900) }).status, 0, 'the harness/graph run dir stays allowed for coexistence');
+    assert.equal(run(dir, { file_path: join(dir, '.teams_output/broker/runs/r.json'), content: 'x'.repeat(900) }).status, 0);
     assert.equal(run(dir, { file_path: join(dir, '.harness-tasks/t/task.json'), content: 'x'.repeat(900) }).status, 0);
     assert.equal(run(dir, { file_path: '/etc/hosts', content: 'x'.repeat(900) }).status, 0);
   } finally { rmSync(dir, { recursive: true, force: true }); }

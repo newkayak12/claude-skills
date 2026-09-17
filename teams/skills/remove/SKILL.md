@@ -30,7 +30,7 @@ settings, project instructions, or harness's own files. The deterministic work l
    `CLAUDE.md`, and the teams lines in `.gitignore`. `.claude/.harness-markers/` is removed
    too, unless `.claude/harness-gate.json` is present, in which case harness also owns that
    directory and it is kept.
-2. Conventions, `.harness-run/` (run history), and this project's tasks under
+2. Conventions, `.teams_output/` (run history), and this project's tasks under
    `~/.harness/tasks/` are kept by default. Ask for explicit confirmation, one at a time,
    before passing `purgeConventions`, `purgeRuns`, or `purgeTasks` as `true` — conventions may
    hold project edits, and run/task history may still be wanted for review.

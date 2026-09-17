@@ -140,7 +140,7 @@ function binaryPresent(name) {
 // ---------- ledger ----------
 
 function brokerDir(cwd) {
-  return join(cwd, '.harness-run', 'broker-beta');
+  return join(cwd, '.teams_output', 'broker');
 }
 
 function record(cwd, entry) {
@@ -929,7 +929,7 @@ function checkpointInterruption(run, n, executor, details, kind = 'quota') {
     detail_path: detailPath, previous_detail_path: n.detail_path || null,
     previous_checkpoint: n.recovery?.checkpoint_path || null,
     run_path: join(brokerDir(run.cwd), 'runs', `${run.run_id}.json`),
-    changed_files: (gitChanged(run.cwd) || []).filter(p => !p.startsWith('.harness-run/')),
+    changed_files: (gitChanged(run.cwd) || []).filter(p => !p.startsWith('.teams_output/')),
     instruction: 'Inspect the current files before continuing. Partial writes are not verified completion. Keep original acceptance criteria; rerun verification.' }, null, 2));
   n.recovery = { checkpoint_path: path, executor, kind, from_ticket: n.ticket || null };
   n.interruptions = [...(n.interruptions || []), n.recovery];

@@ -53,7 +53,7 @@ function harnessEngaged(cwd) {
   const tasksRoot = process.env.HARNESS_TASKS_DIR
     ? resolve(process.env.HARNESS_TASKS_DIR)
     : join(process.env.HOME || '', '.harness', 'tasks');
-  for (const dir of [tasksRoot, join(cwd, '.harness-run', 'broker-beta', 'runs')]) {
+  for (const dir of [tasksRoot, join(cwd, '.teams_output', 'broker', 'runs')]) {
     try {
       if (existsSync(dir) && readdirSync(dir).length) return true;
     } catch {
@@ -115,7 +115,7 @@ function main() {
   if (!rel || rel.startsWith('..')) return ALLOW; // outside the project is not ours to gate
   // Never gate the harness's own state, or a file inside a package worktree: that is node
   // work by definition.
-  if (rel.startsWith('.harness-run/') || rel.startsWith('.harness-tasks/') || rel.startsWith('.claude/')) return ALLOW;
+  if (rel.startsWith('.harness-run/') || rel.startsWith('.teams_output/') || rel.startsWith('.harness-tasks/') || rel.startsWith('.claude/')) return ALLOW;
 
   const allow = Array.isArray(cfg.allow) ? cfg.allow : [];
   if (allow.some((p) => matches(p, rel))) return ALLOW;

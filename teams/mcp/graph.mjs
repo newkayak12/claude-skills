@@ -6,7 +6,7 @@
 // something each orchestrator re-improvises in prose and becomes state on disk that
 // survives a restart and can be read by a hook.
 //
-// Runs live at <cwd>/.harness-run/broker-beta/runs/<run_id>.json.
+// Runs live at <cwd>/.teams_output/broker/runs/<run_id>.json.
 
 import { mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -188,7 +188,7 @@ export function nodeKind(run, n) {
 }
 
 function runsDir(cwd) {
-  return join(cwd, '.harness-run', 'broker-beta', 'runs');
+  return join(cwd, '.teams_output', 'broker', 'runs');
 }
 
 function runPath(cwd, runId) {
