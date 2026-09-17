@@ -196,9 +196,13 @@ function createTask(a) {
       policy: a.policy && typeof a.policy === 'object' ? a.policy : {},
       candidates: a.candidates || null,
       sandbox: a.sandbox || null,
-      max_retries: Number.isInteger(a.max_retries) ? a.max_retries : 2,
+      // T already layers team.json under an explicit tm_open arg (teamconfig.mjs's
+      // resolveTeamOptions), the same precedence vendor/allocation above already rely on -
+      // so reading T here, not `a` with its own hardcoded fallback, is what keeps a project's
+      // pinned goal_threshold/max_retries from being silently dropped for every child run.
+      max_retries: T.max_retries,
       auto_reassign: a.auto_reassign !== false,
-      goal_threshold: Number.isInteger(a.goal_threshold) ? a.goal_threshold : 90,
+      goal_threshold: T.goal_threshold,
     },
     created_at: Date.now(),
     spec: null,
