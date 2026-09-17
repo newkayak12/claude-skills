@@ -522,7 +522,9 @@ test('an exhausted critique retry budget settles the run and releases the report
     const v = await c.call('team_submit', { run_id: runId, cwd, node_id: 'critique:2', payload: ok({ sound: false, blocking: ['still x'] }) });
     assert.equal(v.state, 'failed');
     assert.equal(v.reassigned.attempt, null, 'the budget is gone - no third attempt opens');
-    assert.ok(v.reassigned.unreachable.length, 'the dead generation is settled, not left pending forever');
+    assert.deepEqual(v.reassigned.unreachable.slice().sort(), [
+      'gate:U1:2', 'gate:U2:2', 'gate:goal:2', 'implement:U1:2', 'implement:U2:2', 'test:U1:2', 'test:U2:2',
+    ], 'the dead generation is settled, not left pending forever');
 
     const nx = await c.call('team_next', { run_id: runId, cwd });
     assert.deepEqual(nx.ready.map((n) => n.node_id), ['report:2'], 'settling releases the report over the unreachable set');
@@ -1720,10 +1722,16 @@ test('an in-flight node names its vendor and elapsed time, with or without a run
   await slowRun(async ({ c, cwd, runId }) => {
     const run = c.request('tools/call', { name: 'team_run', arguments: { run_id: runId, cwd, node_id: 'plan' } });
     await c.request('ping', {}).done;
+    // A wait long enough that a real elapsed_s must read at least 1: a hardcoded 0
+    // (or any other constant) fails this, where the earlier bare Number.isInteger
+    // check did not care what the value was.
+    await new Promise((r) => setTimeout(r, 1200));
     const node = (await c.call('team_status', { run_id: runId, cwd })).nodes.find((n) => n.node_id === 'plan');
     assert.equal(node.state, 'running');
     assert.equal(node.executor, 'slow');
     assert.ok(Number.isInteger(node.elapsed_s), `no elapsed_s on the running node: ${JSON.stringify(node)}`);
+    assert.ok(node.elapsed_s >= 1 && node.elapsed_s < 5,
+      `elapsed_s ${node.elapsed_s} does not track the ~1.2s actually elapsed`);
     const overview = await c.call('team_status', { cwd });
     const row = overview.runs.find((r) => r.run_id === runId);
     assert.equal(row.state, 'running');
@@ -2006,6 +2014,12 @@ test('every tool declares an outputSchema, and a real verdict validates against 
       assert.equal(t.outputSchema.type, 'object');
     }
     const byName = Object.fromEntries(list.result.tools.map((t) => [t.name, t.outputSchema]));
+
+    // Pin the fields each schema must require as canaries: an emptied or narrowed
+    // `required` list in broker.mjs would otherwise turn the loops below into no-ops
+    // that still pass with nothing left to check.
+    assert.deepEqual(byName.team_submit.required.slice().sort(), ['node_id', 'stage', 'stage_ok', 'state']);
+    assert.deepEqual(byName.team_next.required.slice().sort(), ['ready', 'run_id', 'state']);
 
     const v = await c.call('team_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
     for (const req of byName.team_submit.required) {
