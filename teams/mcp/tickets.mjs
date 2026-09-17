@@ -31,10 +31,13 @@ export function docPaths(task) {
     dir: base,
     index: join(base, 'INDEX.md'),
     request: join(base, '00-request.md'),
+    planning: join(base, '10-planning.md'),
+    prd: join(base, '10-prd.md'),
     shape: join(base, '20-shape.md'),
     critique: join(base, '30-critique.md'),
     story: (pkgId) => join(base, '40-stories', `${pkgId}.md`),
     integrate: join(base, '50-integrate.md'),
+    qa: join(base, '60-qa.md'),
     goalGate: join(base, '70-goal-gate.md'),
     report: join(base, '80-report.md'),
   };
@@ -209,11 +212,17 @@ export function storyTaskProgress(task, pkgId) {
   return `${done}/${ids.length}`;
 }
 
-// One row per package, for tm_board's STORY table. role is always 'develop': no other Team
-// (planning/qa) reaches the EPIC flow's shape output until v0.12.0 wires it in (§2 is not this
-// round's job - see the plan's head).
+// One row per package, for tm_board's STORY table. role is p.phase || 'develop': the planning
+// phase-Team's row (task.planning_pkg) comes first, ahead of shape's own packages, and the qa
+// phase-Team's row (task.qa_pkg) comes last, after every develop package - the same order they
+// run in (§2). Neither ever joins task.spec.packages (taskmanager.mjs's packageOf reads them
+// straight off these fields), so they are stitched in here rather than found in `packages`.
 export function epicBoardRows(task) {
-  const packages = (task.spec && task.spec.packages) || [];
+  const packages = [
+    ...(task.planning_pkg ? [task.planning_pkg] : []),
+    ...((task.spec && task.spec.packages) || []),
+    ...(task.qa_pkg ? [task.qa_pkg] : []),
+  ];
   return packages.map((p) => {
     const id = String(p.id);
     const accept = latestBySubgoal(task, id, 'accept');
@@ -223,7 +232,7 @@ export function epicBoardRows(task) {
       : String(r.reason || 'rejected').slice(0, 60);
     return {
       key: storyKey(task.run_id, id), id, title: p.title || '',
-      role: 'develop',
+      role: p.phase || 'develop',
       state: storyTicketState(task, id),
       tasks: storyTaskProgress(task, id),
       last_verdict: last,
