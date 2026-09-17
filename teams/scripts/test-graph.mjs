@@ -51,10 +51,10 @@ test('kindOf is unaffected for unnamed and existing kinds, and resolves the two 
   assert.equal(kindOf({ id: 'Q1', kind: 'qa' }), 'qa');
 });
 
-// planning-audit: the kind that the fictitious 기획 크로스 검수 (planning cross-review) pass
-// uses. Nothing opens this kind yet - taskmanager.mjs wiring the audit phase-Team into the
-// EPIC flow is separate, unstarted work. This pins only the lookup-table row itself, as
-// literals, so a later change to taskmanager.mjs cannot silently redefine the kind's shape.
+// planning-audit: the kind the 기획 크로스 검수 (planning cross-review) pass uses -
+// taskmanager.mjs's openAudit opens a child run of it after integration. This pins only the
+// lookup-table row itself, as literals, so a later change to taskmanager.mjs cannot silently
+// redefine the kind's shape.
 test('planning-audit kind: chain, no reasoning stage, and both audit and gate skilled with devils-advocate', () => {
   assert.deepEqual(KINDS['planning-audit'].chain, ['audit', 'gate']);
   assert.deepEqual(KINDS['planning-audit'].reasoning, []);

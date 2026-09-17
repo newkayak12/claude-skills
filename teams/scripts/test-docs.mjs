@@ -17,9 +17,15 @@ import { docPaths } from '../mcp/tickets.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GOLDEN = join(HERE, 'fixtures', 'docs-golden');
 
-// A task well past goal-gate, with a rejected-then-retried P1 and an accepted P2, PLUS both the
-// planning and qa phase-Teams turned on - exercises every renderer renderAll would reach for a
-// task this far along, v0.12.0's three new ones (10-planning/10-prd/60-qa) included.
+// A task well past goal-gate, with a rejected-then-retried P1 and an accepted P2, PLUS all three
+// phase-Teams turned on - exercises every renderer renderAll would reach for a task this far
+// along, v0.12.0's three (10-planning/10-prd/60-qa) and v0.12.1's 65-audit.md included.
+//
+// The tail follows a full v0.12.1 loop rather than stopping at the first goal gate: audit round 1
+// found US-2 unmet and filed D1, D1 was delivered, integrate:2 rebuilt the tree, and QA and the
+// audit each ran a second round over it before the goal gate - which is the order the engine
+// itself produces (taskmanager.mjs's integrate-completion and accept-completion hooks), not a
+// shape invented for the fixture.
 function fixtureTask(cwd) {
   return {
     run_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
@@ -31,11 +37,13 @@ function fixtureTask(cwd) {
     leader: { pid: 4242 },
     planning_pkg: { id: 'PLAN', phase: 'planning', flow: 'plan', title: 'PRD', brief: 'change a.txt and b.txt together', acceptance: ['PRD covers the request'], deps: [], touches: [] },
     qa_pkg: { id: 'QA', phase: 'qa', flow: 'qa', integration_of: 'integrate:1', title: 'QA', brief: 'Run the goal-level QA pass over the integrated result.', acceptance: ['the integrated result has been exercised end to end'], deps: [], touches: [] },
+    audit_pkg: { id: 'AUDIT', phase: 'audit', flow: 'audit', integration_of: 'integrate:2', title: 'planning audit', brief: 'Cross-check what was built against the PRD.', acceptance: ['every user story in the PRD is judged against the integrated result'], deps: [], touches: [] },
     spec: {
       acceptance: ['both modules build together'],
       packages: [
         { id: 'P1', title: 'module a', flow: 'develop', deps: [], touches: ['a.txt'], implements: ['US-1'], priority: 0 },
         { id: 'P2', title: 'module b', flow: 'develop', deps: ['P1'], touches: ['b.txt'], implements: ['US-2'], priority: 1 },
+        { id: 'D1', title: 'US-2 -> b.txt was never wired to the exported path', flow: 'develop', reporter: 'planning-audit', deps: [], touches: ['b.txt'] },
       ],
     },
     nodes: [
@@ -57,7 +65,20 @@ function fixtureTask(cwd) {
       }),
       node('dispatch:QA:1', 'dispatch', ['integrate:1'], { subgoal_id: 'QA', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 93, checks: ['exercised the integrated tree -> no defects found'], gaps: [] }, child: { cwd: '/wt/integration', run_id: 'qa1', branch: 'harness/aaaaaaaa/integration', driver: { pid: 10, log: '/log/QA.jsonl' } } }),
       node('accept:QA:1', 'accept', ['dispatch:QA:1'], { subgoal_id: 'QA', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 93, checks: ['QA report reviewed -> no defects'], gaps: [] } }),
-      node('gate:goal:1', 'gate', ['accept:QA:1'], { subgoal_id: null, state: 'done', result: { stage_ok: true, accept: true, match_pct: 96, checks: ['reread the request -> matches'], gaps: [], spec_drift: [] } }),
+      node('dispatch:AUDIT:1', 'dispatch', ['accept:QA:1'], { subgoal_id: 'AUDIT', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 91, checks: ['read the PRD against the tree -> US-2 unmet'], gaps: [] }, child: { cwd: '/wt/integration', run_id: 'audit1', branch: 'harness/aaaaaaaa/integration', driver: { pid: 11, log: '/log/AUDIT.jsonl' } } }),
+      node('accept:AUDIT:1', 'accept', ['dispatch:AUDIT:1'], { subgoal_id: 'AUDIT', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 91, checks: ['audit report reviewed -> one story unmet'], gaps: [], unmet: ['US-2 -> b.txt was never wired to the exported path'], filed: ['D1'] } }),
+      node('dispatch:D1:1', 'dispatch', [], { subgoal_id: 'D1', attempt: 1, state: 'done', result: { stage_ok: true }, child: { cwd: '/wt/D1', run_id: 'd1', branch: 'harness/aaaaaaaa/D1', driver: { pid: 12, log: '/log/D1.jsonl' } } }),
+      node('accept:D1:1', 'accept', ['dispatch:D1:1'], { subgoal_id: 'D1', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 94, checks: ['the reproduction no longer reproduces'], gaps: [] } }),
+      node('integrate:2', 'integrate', ['accept:D1:1'], {
+        subgoal_id: null, state: 'done', supersedes: 'accept:AUDIT:1',
+        result: { stage_ok: true, verified: true, checks: ['build -> ok'], conflicts: [] },
+        integration: { cwd: '/wt/integration-2', branch: 'harness/aaaaaaaa/integration-2', merged: [{ package: 'P1', branch: 'harness/aaaaaaaa/P1', commit: 'c0ffee1' }, { package: 'P2', branch: 'harness/aaaaaaaa/P2', commit: 'c0ffee2' }, { package: 'D1', branch: 'harness/aaaaaaaa/D1', commit: 'c0ffee3' }] },
+      }),
+      node('dispatch:QA:2', 'dispatch', ['integrate:2'], { subgoal_id: 'QA', attempt: 2, state: 'done', result: { stage_ok: true, accept: true, match_pct: 94, checks: ['re-exercised the integrated tree -> no defects'], gaps: [] }, child: { cwd: '/wt/integration-2', run_id: 'qa2', branch: 'harness/aaaaaaaa/integration-2', driver: { pid: 13, log: '/log/QA.restart1.jsonl' } } }),
+      node('accept:QA:2', 'accept', ['dispatch:QA:2'], { subgoal_id: 'QA', attempt: 2, state: 'done', result: { stage_ok: true, accept: true, match_pct: 94, checks: ['QA report reviewed -> no defects'], gaps: [] } }),
+      node('dispatch:AUDIT:2', 'dispatch', ['accept:QA:2'], { subgoal_id: 'AUDIT', attempt: 2, state: 'done', result: { stage_ok: true, accept: true, match_pct: 96, checks: ['reread the PRD against the rebuilt tree -> every story met'], gaps: [] }, child: { cwd: '/wt/integration-2', run_id: 'audit2', branch: 'harness/aaaaaaaa/integration-2', driver: { pid: 14, log: '/log/AUDIT.restart1.jsonl' } } }),
+      node('accept:AUDIT:2', 'accept', ['dispatch:AUDIT:2'], { subgoal_id: 'AUDIT', attempt: 2, state: 'done', result: { stage_ok: true, accept: true, match_pct: 96, checks: ['audit report reviewed -> every story met'], gaps: [], unmet: [], filed: [] } }),
+      node('gate:goal:1', 'gate', ['accept:AUDIT:2'], { subgoal_id: null, state: 'done', result: { stage_ok: true, accept: true, match_pct: 96, checks: ['reread the request -> matches'], gaps: [], spec_drift: [] } }),
       node('report', 'report', [], { after: ['gate:goal:1'], state: 'done', result: { stage_ok: true, handoff: 'Both modules delivered and integrated; goal gate accepted at 96%.' } }),
     ],
   };
@@ -66,16 +87,29 @@ function fixtureTask(cwd) {
 function goldenPath(name) { return join(GOLDEN, name); }
 function readGolden(name) { return readFileSync(goldenPath(name), 'utf8'); }
 
-test('renderAll produces exactly the files this fixture has data for (11/13 - 15-spec-gate.md and 65-audit.md excluded), matching the golden fixtures byte for byte', () => {
+test('renderAll produces exactly the files this fixture has data for (12/13 - only 15-spec-gate.md excluded), matching the golden fixtures byte for byte', () => {
   const task = fixtureTask('/proj');
   const files = renderAll(task);
-  const expectedNames = ['INDEX.md', '00-request.md', '10-planning.md', '10-prd.md', '20-shape.md', '30-critique.md', '40-stories/P1.md', '40-stories/P2.md', '50-integrate.md', '60-qa.md', '70-goal-gate.md', '80-report.md'];
+  const expectedNames = ['INDEX.md', '00-request.md', '10-planning.md', '10-prd.md', '20-shape.md', '30-critique.md', '40-stories/P1.md', '40-stories/P2.md', '40-stories/D1.md', '50-integrate.md', '60-qa.md', '65-audit.md', '70-goal-gate.md', '80-report.md'];
   const paths = docPaths(task);
-  const expectedPaths = new Set([paths.index, paths.request, paths.planning, paths.prd, paths.shape, paths.critique, paths.story('P1'), paths.story('P2'), paths.integrate, paths.qa, paths.goalGate, paths.report]);
+  const expectedPaths = new Set([paths.index, paths.request, paths.planning, paths.prd, paths.shape, paths.critique, paths.story('P1'), paths.story('P2'), paths.story('D1'), paths.integrate, paths.qa, paths.audit, paths.goalGate, paths.report]);
   assert.deepEqual(new Set(Object.keys(files)), expectedPaths);
   for (const name of expectedNames) {
     assert.equal(files[join(paths.dir, name)], readGolden(name), `${name} did not match its golden file`);
   }
+});
+
+// The one claim the byte-for-byte comparison above makes but does not spell out: 65-audit.md is
+// the page that carries what the audit actually produced, and a STORY a FIRST round filed stays
+// on it after a second round found nothing (renderAudit aggregates filed[] over rounds and takes
+// unmet[] from the latest).
+test('65-audit.md links the STORY the audit filed in an earlier round, and shows the latest round\'s unmet list', () => {
+  const task = fixtureTask('/proj');
+  const page = renderAll(task)[docPaths(task).audit];
+  assert.match(page, /## STORYs filed\n- \[D1\]\(\.\/40-stories\/D1\.md\)/);
+  assert.match(page, /rounds: 2/);
+  assert.match(page, /## Unmet user stories \(latest round\)\n- \(none\)/);
+  assert.match(renderAll(task)[docPaths(task).story('D1')], /reporter: planning-audit/);
 });
 
 test('writeDocs({rebuild:true}) reproduces byte-identical files from engine state alone, with no clock passed - the actual production call shape', () => {

@@ -45,6 +45,7 @@ export function docPaths(task) {
     story: (pkgId) => join(base, '40-stories', `${pkgId}.md`),
     integrate: join(base, '50-integrate.md'),
     qa: join(base, '60-qa.md'),
+    audit: join(base, '65-audit.md'),
     goalGate: join(base, '70-goal-gate.md'),
     report: join(base, '80-report.md'),
   };
@@ -233,6 +234,7 @@ function boardPackages(task) {
     ...(task.planning_pkg ? [task.planning_pkg] : []),
     ...((task.spec && task.spec.packages) || []),
     ...(task.qa_pkg ? [task.qa_pkg] : []),
+    ...(task.audit_pkg ? [task.audit_pkg] : []),
   ];
 }
 
@@ -252,7 +254,7 @@ export function epicBoardRows(task) {
       tasks: storyTaskProgress(task, id),
       last_verdict: last,
       // A filed defect STORY (fileDefects, taskmanager.mjs - QA-found or tm_file) carries its own
-      // reporter ('qa'/'you'/'planning-audit' once Task 2 lands); everything else is either a
+      // reporter ('qa'/'you'/'planning-audit'); everything else is either a
       // repair package (its worktree IS the integration tree, never filed as a STORY) or
       // shape's own original scope.
       reporter: p.reporter || (p.repair ? 'repair' : 'shape'),

@@ -798,6 +798,160 @@ test('tm_file joins the board.jsonl tools: filing a STORY logs its ticket moving
   });
 });
 
+// ---------- the audit phase-Team: planning's second pass (v0.12.1 Task 2, §2, §3) ----------
+
+// SHAPE, but with implements[] on every package - roles.planning turns on shape's completeness
+// check against the user stories the PRD produced, which plain SHAPE would fail.
+const SHAPE_IMPLEMENTS = {
+  acceptance: SHAPE.acceptance,
+  packages: SHAPE.packages.map((p, i) => ({ ...p, implements: [`US-${i + 1}`] })),
+};
+
+// throughCritique's planning-on twin: size, then the PLAN phase-Team, then shape/critique.
+async function throughCritiqueWithPlanning(tm, g, task_id, cwd, userStories = ['US-1', 'US-2']) {
+  let v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2 modules'], handoff: 'two modules' }) });
+  assert.equal(v.state, 'done', JSON.stringify(v));
+  await completePlanning(tm, g, task_id, cwd, userStories);
+  v = await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({ ...SHAPE_IMPLEMENTS, handoff: 's' }) });
+  assert.equal(v.state, 'done', JSON.stringify(v));
+  v = await tm.call('tm_submit', { task_id, node_id: 'critique', payload: ok({ sound: true }) });
+  assert.equal(v.state, 'done', JSON.stringify(v));
+}
+
+// toIntegrate's planning-on twin: both packages driven and accepted, integrate:1 ready.
+async function toIntegrateWithPlanning(tm, g, task_id, cwd) {
+  await throughCritiqueWithPlanning(tm, g, task_id, cwd);
+  let nx = await tm.call('tm_next', { task_id });
+  await completeChild(g, nx.children[0]);
+  await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+  await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) });
+  nx = await tm.call('tm_next', { task_id });
+  await completeChild(g, nx.children[0]);
+  await tm.call('tm_submit', { task_id, node_id: 'dispatch:P2:1' });
+  await tm.call('tm_submit', { task_id, node_id: 'accept:P2:1', payload: ok({ accept: true, match_pct: 90 }) });
+  nx = await tm.call('tm_next', { task_id });
+  assert.deepEqual(nx.ready.map((n) => n.node_id), ['integrate:1']);
+  return nx;
+}
+
+// Drives one audit phase-Team child (kind planning-audit: audit -> gate) to report.
+async function completeAuditChild(g, child, gatePayload) {
+  const { cwd, run_id } = child;
+  const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
+  await sub('plan', { handoff: 'p', flow: 'audit', size: 'S' });
+  await sub('setgoal', { spec: { goal: 'AUDIT', acceptance: ['every user story is accounted for'], subgoals: [{ id: 'A1', title: 'cross-check the PRD', acceptance: ['each story judged'], deps: [] }] } });
+  await sub('critique', { sound: true });
+  await sub('audit:A1:1', { changed_files: [], handoff: 'stories judged', user_stories_checked: ['US-1', 'US-2'], unmet: [], qa_considered: true });
+  await sub('gate:A1:1', { accept: true, match_pct: 95 });
+  await sub('gate:goal:1', gatePayload);
+  const nx = await g.call('team_next', { run_id, cwd });
+  assert.deepEqual(nx.ready.map((n) => n.node_id), ['report']);
+  await sub('report', { handoff: 'audit report' });
+}
+
+test('roles.planning opens an audit phase-Team after integrate when qa is off, and its brief carries no QA section (§2, decision #4)', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    await toIntegrateWithPlanning(tm, g, task_id, cwd);
+    const integ = await tm.call('tm_status', { task_id, node_id: 'integrate:1', full: true });
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.deepEqual(task.nodes.find((n) => n.node_id === 'gate:goal:1').deps, ['accept:AUDIT:1'],
+      'the goal gate waits on the audit, not on integrate directly');
+    assert.equal(task.audit_pkg.phase, 'audit');
+    assert.equal(task.audit_pkg.flow, 'audit');
+    assert.match(task.audit_pkg.brief, /US-1/, 'the PRD\'s user stories travel into the audit brief');
+    assert.ok(!/QA/.test(task.audit_pkg.brief), `roles.qa is off - nothing about QA belongs in the brief:\n${task.audit_pkg.brief}`);
+
+    const nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children.length, 1, JSON.stringify(nx));
+    assert.equal(nx.children[0].package_id, 'AUDIT');
+    assert.equal(nx.children[0].cwd, integ.node.integration.cwd, 'the audit reads the integrated tree, like QA does');
+  }, { roles: { planning: true } });
+});
+
+test('with both roles on the audit follows QA, consumes its report, and an unmet story files a STORY with reporter "planning-audit"', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    await toIntegrateWithPlanning(tm, g, task_id, cwd);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+
+    let nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children[0].package_id, 'QA', 'QA runs first; the audit waits on it');
+    await completeQaChild(g, nx.children[0], { accept: true, match_pct: 95 });
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:QA:1' });
+    nx = await tm.call('tm_next', { task_id });
+    assert.match(readFileSync(nx.ready.find((r) => r.node_id === 'accept:QA:1').briefing_path, 'utf8'), /"defects"/,
+      'the QA judge is told to pass defects up - the same contract gap the audit would have had');
+    await tm.call('tm_submit', { task_id, node_id: 'accept:QA:1', payload: ok({
+      accept: true, match_pct: 95, checks: ['QA report reviewed -> one weak spot'], gaps: ['b.txt untested'],
+    }) });
+
+    let task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.deepEqual(task.nodes.find((n) => n.node_id === 'gate:goal:1').deps, ['accept:AUDIT:1']);
+    assert.match(task.audit_pkg.brief, /QA/, 'roles.qa is on, so the QA verdict is in the audit brief');
+    assert.match(task.audit_pkg.brief, /b\.txt untested/);
+
+    nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children[0].package_id, 'AUDIT');
+    await completeAuditChild(g, nx.children[0], { accept: true, match_pct: 95 });
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:AUDIT:1' });
+
+    // The judge is told to pass the list up. Without this the hook below has nothing to act on.
+    nx = await tm.call('tm_next', { task_id });
+    const auditAccept = nx.ready.find((r) => r.node_id === 'accept:AUDIT:1');
+    assert.ok(auditAccept, JSON.stringify(nx.ready));
+    assert.match(readFileSync(auditAccept.briefing_path, 'utf8'), /"unmet"/);
+
+    const accepted = await tm.call('tm_submit', { task_id, node_id: 'accept:AUDIT:1', payload: ok({
+      accept: true, match_pct: 91, checks: ['reread the PRD against the tree -> US-2 unmet'],
+      unmet: ['US-2 -> b.txt was never wired to the exported path'],
+    }) });
+    assert.equal(accepted.state, 'done', JSON.stringify(accepted));
+
+    task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const d1 = task.spec.packages.find((p) => p.id === 'D1');
+    assert.ok(d1, `an unmet story files a STORY: ${task.spec.packages.map((p) => p.id).join(', ')}`);
+    assert.equal(d1.reporter, 'planning-audit');
+    assert.match(d1.title, /US-2/);
+    assert.deepEqual(task.nodes.find((n) => n.node_id === 'gate:goal:1').deps, ['integrate:2'],
+      'the EPIC loops back through a fresh integrate, exactly as a QA-found defect does');
+    assert.deepEqual(task.nodes.find((n) => n.node_id === 'accept:AUDIT:1').result.filed, ['D1'],
+      'the audit node records which STORYs it filed, so 65-audit.md can link them');
+  }, { roles: { planning: true, qa: true } });
+});
+
+test('roles.planning off: no audit phase-Team is ever opened (regression)', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.equal(task.audit_pkg == null, true);
+    assert.deepEqual(task.nodes.find((n) => n.node_id === 'gate:goal:1').deps, ['integrate:1']);
+    assert.ok(!task.nodes.some((n) => n.subgoal_id === 'AUDIT'));
+  });
+});
+
+test('an audit round is capped like a QA round: past qa_rounds an unmet story is recorded, not filed', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    await toIntegrateWithPlanning(tm, g, task_id, cwd);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    let nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children[0].package_id, 'AUDIT');
+    await completeAuditChild(g, nx.children[0], { accept: true, match_pct: 95 });
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:AUDIT:1' });
+    // qa_rounds: 0 - the very first audit round is already past the cap, so nothing is filed.
+    await tm.call('tm_submit', { task_id, node_id: 'accept:AUDIT:1', payload: ok({
+      accept: true, match_pct: 91, unmet: ['US-2 -> never wired'],
+    }) });
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.deepEqual(task.spec.packages.map((p) => p.id), ['P1', 'P2'], 'the cap holds - no STORY is filed');
+    assert.deepEqual(task.unresolved_defects, [{ title: 'US-2 -> never wired', evidence: '', reporter: 'planning-audit', round: 1 }]);
+    const after = await tm.call('tm_next', { task_id });
+    assert.deepEqual(after.ready.map((n) => n.node_id), ['gate:goal:1'], 'the EPIC proceeds past a capped audit');
+  }, { roles: { planning: true }, qa_rounds: 0 });
+});
+
+
 test('max_parallel_teams:1 opens only the lowest-priority ready dispatch; the rest stay pending', async () => {
   await withTask(async ({ tm, root, task_id }) => {
     let v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop' }) });

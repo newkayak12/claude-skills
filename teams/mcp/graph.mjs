@@ -105,9 +105,8 @@ export const KINDS = {
   // shape planning and qa already use: every non-final chain stage counts as mutating, and
   // only the closing gate judges. audit's own skill is think:devils-advocate, same as
   // gate - its character is judgment, not authorship, so there is no draft/revise-style
-  // authoring skill to name. Nothing opens this kind yet; wiring the audit phase-Team into
-  // the EPIC flow (taskmanager.mjs) is separate, unstarted work - this is an inert lookup
-  // table row.
+  // authoring skill to name. taskmanager.mjs's openAudit opens a child run of this kind once
+  // integration (and QA, when it is on) has finished, whenever roles.planning is set.
   'planning-audit': {
     chain: ['audit', 'gate'],
     reasoning: [],

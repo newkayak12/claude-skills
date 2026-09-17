@@ -33,8 +33,12 @@ delegated to `install.mjs` so it runs identically every time; this skill owns th
    propose dispatch patterns (e.g. `src/**`, `packages/**`); confirm them with the user. Ask
    which `roles` to turn on (`planning`, `qa`) — both default off. `planning` inserts a planning
    phase-Team (PRD draft → revise → gate) before `shape`, and its PRD and user stories feed
-   shape's packages. `qa` inserts a QA phase-Team between `integrate` and `gate:goal`, reusing
-   the repair worktree, to run a QA pass over the integrated tree before the goal gate judges it.
+   shape's packages — and a second planning pass (`audit → gate`) after integration, which
+   cross-checks the built result against those user stories and files a STORY for each one still
+   unmet. `qa` inserts a QA phase-Team between `integrate` and `gate:goal`, reusing the repair
+   worktree, to run a QA pass over the integrated tree before the goal gate judges it; a defect it
+   finds is filed as a STORY too, and the EPIC loops back through integration (capped by
+   `qa_rounds`, which caps audit rounds as well).
    If harness is already installed in this project, say so: `.claude/conventions/` and the
    session-marker directory are shared between the two plugins.
 2. Run:

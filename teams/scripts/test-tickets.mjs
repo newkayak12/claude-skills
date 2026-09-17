@@ -367,6 +367,29 @@ test('epicBoardRows puts the planning phase-Team row first and the qa phase-Team
   assert.deepEqual(rows[1], { key: 'E-aaaaaaaa/P1', id: 'P1', title: 'module a', role: 'develop', state: 'DONE', tasks: null, last_verdict: 'accept 91', reporter: 'shape' });
 });
 
+// v0.12.1 Task 2 adds a third phase-Team, the audit - planning's own second pass, opened after
+// integration (and after QA when it is on). It sits last of all: the audit is the final judgement
+// before the goal gate, and a STORY it files is an ordinary develop row in the middle.
+test('epicBoardRows renders the audit phase-Team last, with role "audit", and a STORY it filed carries reporter "planning-audit"', () => {
+  const t = baseTask(
+    [
+      dispatchNode('PLAN', { state: 'done', result: {} }), acceptNode('PLAN', { state: 'done', result: { accept: true, match_pct: 95 } }),
+      dispatchNode('P1', { state: 'done', result: {} }), acceptNode('P1', { state: 'done', result: { accept: true, match_pct: 91 } }),
+      dispatchNode('QA', { state: 'done', result: {} }), acceptNode('QA', { state: 'done', result: { accept: true, match_pct: 93 } }),
+      dispatchNode('AUDIT', { state: 'done', result: {} }), acceptNode('AUDIT', { state: 'done', result: { accept: true, match_pct: 90 } }),
+    ],
+    {
+      spec: { packages: [{ id: 'P1', title: 'module a' }, { id: 'D1', title: 'US-2 never wired', reporter: 'planning-audit' }] },
+      planning_pkg: { id: 'PLAN', phase: 'planning', title: 'PRD' },
+      qa_pkg: { id: 'QA', phase: 'qa', title: 'QA' },
+      audit_pkg: { id: 'AUDIT', phase: 'audit', title: 'planning audit' },
+    },
+  );
+  const rows = epicBoardRows(t);
+  assert.deepEqual(rows.map((r) => [r.id, r.role]), [['PLAN', 'planning'], ['P1', 'develop'], ['D1', 'develop'], ['QA', 'qa'], ['AUDIT', 'audit']]);
+  assert.deepEqual(rows.map((r) => [r.id, r.reporter]), [['PLAN', 'shape'], ['P1', 'shape'], ['D1', 'planning-audit'], ['QA', 'shape'], ['AUDIT', 'shape']]);
+});
+
 test('ticketSnapshot maps every known key (EPIC + each STORY) to its current state - the input a board.jsonl diff is taken over', () => {
   const t = baseTask(
     [dispatchNode('P1', { state: 'running', child: { driver: { pid: 1 } } })],

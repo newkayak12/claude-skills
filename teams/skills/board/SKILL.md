@@ -61,13 +61,19 @@ One EPIC (named):
 doc: .teams_output/team/E-a1b2c3d4/INDEX.md
 ```
 
-`role` is `develop` for an ordinary package. `planning` and `qa` are the phase-Team rows that
-`.claude/team.json`'s `roles.planning`/`roles.qa` switches insert into the EPIC flow, each
+`role` is `develop` for an ordinary package. `planning`, `qa` and `audit` are the phase-Team rows
+that `.claude/team.json`'s `roles.planning`/`roles.qa` switches insert into the EPIC flow, each
 appearing only when its switch is on: `planning` (key `PLAN`) is always the first row — it drafts
-the PRD `shape` reads, before `shape` runs at all. `qa` (key `QA`) is always the last row — it
-runs between `integrate` and `gate:goal`, reusing the repair worktree. `tasks` is `—` when no
-dispatch has started a child run. A row whose story carries `reporter: repair` is a QA-raised
-defect story, not original scope — call it out in prose under the table.
+the PRD `shape` reads, before `shape` runs at all. `qa` (key `QA`) runs between `integrate` and
+`gate:goal`, reusing the repair worktree. `audit` (key `AUDIT`, `roles.planning` again) is always
+the last row — planning's second pass, cross-checking the integrated result against its own PRD
+after QA, or straight after `integrate` when `qa` is off. `tasks` is `—` when no dispatch has
+started a child run.
+
+`reporter` says where a story came from: `shape` is original scope, `repair` is an integration
+seam, and `qa`, `planning-audit` and `you` are filed stories — a defect QA found, a user story the
+audit found unmet, and one filed by hand through `tm_file`. Anything but `shape` is work the EPIC
+grew after shaping; call it out in prose under the table.
 `leader` prints `none` when the task has none yet.
 
 ## What Claude Does
