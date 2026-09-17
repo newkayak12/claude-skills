@@ -1961,9 +1961,29 @@ function toolNext(a) {
   if (task.s_run) return toolNextSRun(task);
   // Dispatch nodes run here, the moment they are ready. Doing it in tm_next rather than in
   // a separate call means the session cannot forget to, and cannot do it twice.
+  // max_parallel_teams caps how many develop STORY dispatches run at once - phase-Team
+  // packages (PLAN/QA) are exempt, both from the count and from the cap itself: the design
+  // already limits each to at most one at a time (§2 "v0.12.0이 하지 않는 것"), so throttling
+  // them further would only add a wait with nothing behind it.
   let opened = 0;
-  for (const n of readyNodes(task)) {
-    if (n.stage !== 'dispatch') continue;
+  const isPhaseTeam = (n) => { const pkg = packageOf(task, n.subgoal_id); return !!(pkg && (pkg.phase === 'planning' || pkg.phase === 'qa')); };
+  const readyDispatch = readyNodes(task).filter((n) => n.stage === 'dispatch');
+  for (const n of readyDispatch) {
+    if (!isPhaseTeam(n)) continue;
+    openChild(task, n);
+    opened++;
+  }
+  const maxParallel = Number.isInteger(task.team && task.team.opts && task.team.opts.max_parallel_teams)
+    ? task.team.opts.max_parallel_teams : 2;
+  const runningStories = task.nodes.filter((n) => n.stage === 'dispatch' && n.state === 'running' && !isPhaseTeam(n)).length;
+  const slots = Math.max(0, maxParallel - runningStories);
+  const storyReady = readyDispatch.filter((n) => !isPhaseTeam(n))
+    .sort((a, b) => {
+      const pa = packageOf(task, a.subgoal_id);
+      const pb = packageOf(task, b.subgoal_id);
+      return (Number.isInteger(pa && pa.priority) ? pa.priority : 0) - (Number.isInteger(pb && pb.priority) ? pb.priority : 0);
+    });
+  for (const n of storyReady.slice(0, slots)) {
     openChild(task, n);
     opened++;
   }
