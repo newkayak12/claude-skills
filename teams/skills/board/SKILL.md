@@ -50,18 +50,24 @@ One EPIC (named):
 ```
 ## E-a1b2c3d4  결제 취소 기능              state: IN_PROGRESS   phase: impl   leader: pid 4121 alive
 
-| key | role    | state        | tasks | last verdict |
-|-----|---------|--------------|-------|--------------|
-| P1  | develop | DONE         | 3/3   | accept 94    |
-| P2  | develop | IN_PROGRESS  | 2/5   | —            |
-| P3  | develop | WAITING_USER | —     | —            |
+| key  | role     | state        | tasks | last verdict |
+|------|----------|--------------|-------|--------------|
+| PLAN | planning | DONE         | 1/1   | accept 92    |
+| P1   | develop  | DONE         | 3/3   | accept 94    |
+| P2   | develop  | IN_PROGRESS  | 2/5   | —            |
+| P3   | develop  | WAITING_USER | —     | —            |
+| QA   | qa       | READY        | —     | —            |
 
 doc: .teams_output/team/E-a1b2c3d4/INDEX.md
 ```
 
-`role` is always `develop` this round — no other Team reaches the EPIC flow's shape output yet.
-`tasks` is `—` when no dispatch has started a child run. A row whose story carries `reporter:
-repair` is a QA-raised defect story, not original scope — call it out in prose under the table.
+`role` is `develop` for an ordinary package. `planning` and `qa` are the phase-Team rows that
+`.claude/team.json`'s `roles.planning`/`roles.qa` switches insert into the EPIC flow, each
+appearing only when its switch is on: `planning` (key `PLAN`) is always the first row — it drafts
+the PRD `shape` reads, before `shape` runs at all. `qa` (key `QA`) is always the last row — it
+runs between `integrate` and `gate:goal`, reusing the repair worktree. `tasks` is `—` when no
+dispatch has started a child run. A row whose story carries `reporter: repair` is a QA-raised
+defect story, not original scope — call it out in prose under the table.
 `leader` prints `none` when the task has none yet.
 
 ## What Claude Does
