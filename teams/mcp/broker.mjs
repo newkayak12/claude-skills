@@ -1029,6 +1029,7 @@ const STATUS_SCHEMA = {
     nodes: { type: 'array', items: { type: 'object' } },
     cwds: { type: 'array', items: { type: 'string' }, description: 'overview form only' },
     runs: { type: 'array', items: { type: 'object' }, description: 'overview form only: one row per run, newest first' },
+    config_notes: { type: 'array', items: { type: 'string' }, description: 'present only when .claude/team.json had an unrecognized key or a value that failed its validator - each note names the key and what was wrong with it' },
   },
 };
 
@@ -1223,6 +1224,12 @@ async function toolGraphOpen(a) {
     skills: a.skills,
     mounts: a.mounts,
   });
+  // resolveTeamOptions' notes (an unrecognized team.json key, or one whose value failed
+  // its validator) reach tm_status's team.notes on the tm_open path but had nowhere to
+  // land here - team_open handed back only READY_SCHEMA, so a typo'd key was silently
+  // ignored with no diagnostic anywhere. Persist it on the run itself so team_status can
+  // surface it, the same way task.team.notes does for tm_open.
+  if (team.notes.length) run.config_notes = team.notes;
   saveRun(run);
   record(cwd, { event: 'team_open', run_id: run.run_id, vendor: run.vendor, flow: run.flow, mixed: run.mixed });
   return { run_id: run.run_id, cwd, ...(await toolGraphNext({ run_id: run.run_id, cwd })) };
@@ -1604,6 +1611,7 @@ function toolGraphStatus(a) {
     flow: flowOf(run) || run.flow || 'auto',
     mixed: run.mixed !== false,
     ...(run.size ? { size: run.size } : {}),
+    ...(run.config_notes && run.config_notes.length ? { config_notes: run.config_notes } : {}),
     subgoals: run.spec ? (run.spec.subgoals || []).map((s) => s.id) : [],
     nodes: run.nodes
       .filter((n) => (a.node_id ? n.node_id === a.node_id : true))

@@ -210,6 +210,20 @@ test('goal_judges keeps its own default of 2 on team_open regardless of team.jso
   } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
 });
 
+test('team_open surfaces team.json config notes through team_status - a typo is not silently swallowed', async () => {
+  const cwd = repo();
+  mkdirSync(join(cwd, '.claude'), { recursive: true });
+  writeFileSync(join(cwd, '.claude', 'team.json'), JSON.stringify({ vendor: 'self', goal_threshhold: 95 }));
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, goal_judges: 1 });
+    const st = await c.call('team_status', { run_id, cwd });
+    assert.ok(Array.isArray(st.config_notes) && st.config_notes.length,
+      `a typo'd team.json key must be visible somewhere on the team_open path: ${JSON.stringify(st)}`);
+    assert.ok(st.config_notes.some((n) => n.includes('goal_threshhold')), `notes: ${JSON.stringify(st.config_notes)}`);
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
 // ---------- the orchestrator must not receive payloads ----------
 
 test('a verdict carries no spec, handoff, or evidence', async () => {
