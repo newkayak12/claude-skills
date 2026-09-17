@@ -7,7 +7,10 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const INSTALL = fileURLToPath(new URL('../skills/install/install.mjs', import.meta.url));
+// The harness plugin is a sibling, not a dependency: its templates prove the drift guard below
+// when present, but this suite must not fail just because harness moved or is not checked out.
 const HARNESS_CONV = fileURLToPath(new URL('../../harness/skills/install/templates/conventions/', import.meta.url));
+const HARNESS_CONV_PRESENT = existsSync(HARNESS_CONV);
 const OUR_CONV = fileURLToPath(new URL('../skills/install/templates/conventions/', import.meta.url));
 
 function fresh() {
@@ -34,7 +37,7 @@ test('first install creates team.json (defaults), CLAUDE.md block, conventions, 
     assert.match(readFileSync(join(dir, 'CLAUDE.md'), 'utf8'), /<!-- teams:begin/);
     assert.deepEqual(report.actions.conventions, { 'coding.md': 'created', 'verification.md': 'created', 'boundaries.md': 'created' });
     const gi = readFileSync(join(dir, '.gitignore'), 'utf8');
-    assert.match(gi, /^\.harness-run\/$/m);
+    assert.match(gi, /^\.teams_output\/$/m);
     assert.match(gi, /^\.claude\/\.harness-markers\/$/m);
   } finally { cleanup(); }
 });
@@ -80,32 +83,21 @@ test('refresh adds keys a newer plugin introduced to team.json without touching 
   } finally { cleanup(); }
 });
 
-test('the stable graph plugin in the same project is a conflict: exit 3, nothing written, force overrides', () => {
+test('teams installs cleanly alongside an enabled graph plugin and a graph-engineering .mcp.json entry', () => {
   const { home, dir, cleanup } = fresh();
   try {
     writeFileSync(join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { 'graph-engineering': { command: 'node', args: ['x'] } } }));
-    const r = run(dir, home, {});
-    assert.equal(r.status, 3);
-    assert.deepEqual(r.report.conflicts, ['.mcp.json registers graph-engineering (stable graph)']);
-    assert.equal(existsSync(join(dir, '.claude', 'team.json')), false);
-    assert.equal(run(dir, home, { force: true }).status, 0);
-  } finally { cleanup(); }
-});
-
-test('graph enabled in the user settings is also a conflict; harness enabled is not', () => {
-  const { home, dir, cleanup } = fresh();
-  try {
     mkdirSync(join(home, '.claude'), { recursive: true });
     writeFileSync(join(home, '.claude', 'settings.json'), JSON.stringify({ enabledPlugins: { 'graph@newkayak12-claude-skills': true, 'harness@newkayak12-claude-skills': true } }));
-    const r = run(dir, home, {});
-    assert.equal(r.status, 3);
-    assert.match(r.report.conflicts[0], /graph@newkayak12-claude-skills/);
-    writeFileSync(join(home, '.claude', 'settings.json'), JSON.stringify({ enabledPlugins: { 'harness@newkayak12-claude-skills': true } }));
-    assert.equal(run(dir, home, {}).status, 0);
+    const { status, report } = run(dir, home, {});
+    assert.equal(status, 0, 'graph_* and team_* no longer share a tool surface, so there is nothing to guard against');
+    assert.equal(report.actions.team, 'created');
+    assert.equal(existsSync(join(dir, '.claude', 'team.json')), true);
   } finally { cleanup(); }
 });
 
-test('shipped convention templates are byte-identical to the harness ones (drift guard)', () => {
+test('shipped convention templates are byte-identical to the harness ones (drift guard)', (t) => {
+  if (!HARNESS_CONV_PRESENT) { t.skip('harness plugin source not present at ../../harness; cannot compare templates'); return; }
   for (const f of ['coding.md', 'verification.md', 'boundaries.md']) {
     assert.equal(readFileSync(join(OUR_CONV, f), 'utf8'), readFileSync(join(HARNESS_CONV, f), 'utf8'), f);
   }
