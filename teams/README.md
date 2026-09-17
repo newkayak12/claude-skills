@@ -494,6 +494,37 @@ Install `teams@newkayak12-claude-skills` and run `teams:install` to verify the s
 `team_*` tools are present. For a source checkout, register `mcp/broker.mjs` under the name
 `teams-engineering` in the project's `.mcp.json`; `teams:install` shows the entry.
 
+## Configuration
+
+`.claude/team.json` supplies project defaults for `tm_open` — `team_open`, the broker's own
+direct entry point, never reads this file at all. Precedence is built-in default < `team.json`
+< an explicit `tm_open` argument of the same name (`teamconfig.mjs`'s `resolveTeamOptions`); an
+unrecognized key or a value that fails its validator is ignored rather than applied, and
+recorded as a note on the task (`tm_status`'s `team.notes` — `tm_open` itself does not return it
+inline). The schema is `TEAM_DEFAULTS`/`CHECK` in [`mcp/teamconfig.mjs`](mcp/teamconfig.mjs) —
+13 keys, six of which actually change behavior today:
+
+| Key | Default | Reaches behavior? | What it does |
+|---|---|---|---|
+| `vendor` | `"auto"` | yes | Every child run's vendor selection (`child_opts.vendor`). |
+| `allocation` | `"ordered"` | yes | `"ordered"` vs `"balanced"` routing for every child run (`child_opts.allocation`); see `graph`'s Status for what `"balanced"` changes. |
+| `goal_threshold` | `90` | yes | The manager's own goal-gate floor, and — as of commit `f765c03` — the floor every child run's own goal gate opens with (`child_opts.goal_threshold`). Before that commit, a project's pinned value was silently dropped for every package; every child ran the hardcoded 90 regardless of `team.json`. |
+| `max_retries` | `2` | yes | The manager's own subgoal/package retry budget, and — as of `f765c03` — the retry budget every child run opens with (`child_opts.max_retries`). Same pre-`f765c03` caveat as `goal_threshold`. |
+| `driver_restarts` | `2` | yes | How many times a dead package or size-S driver respawns on the same run_id before the dispatch folds `blocked`. |
+| `docs_dir` | `.teams_output/team` | yes | Where `tm_docs`/`tickets.mjs` render the phase-document tree (`INDEX.md` and friends). Real and load-bearing; simply never written down here before now. |
+| `roles` | `{planning:false, qa:false}` | no | recorded-but-inert — echoed in the rendered request doc's "Team snapshot" line; nothing branches on it yet. |
+| `interactive` | `false` | no | recorded-but-inert — same snapshot-line echo, nothing else reads it. |
+| `max_parallel_teams` | `2` | no | recorded-but-inert — same snapshot-line echo, nothing else reads it. |
+| `human_gates` | `[]` | no | recorded-but-inert — not read anywhere, not even the snapshot line. |
+| `human_scope` | `"leader"` | no | recorded-but-inert — not read anywhere. |
+| `max_depth` | `2` | no | recorded-but-inert — not read anywhere. |
+| `qa_rounds` | `2` | no | recorded-but-inert — not read anywhere. |
+
+`goal_judges` (independent judges on the goal gate) and `auto_reassign` (auto-retry on a
+rejected verdict) are real per-run options — see `tm_open`'s/`team_open`'s own argument
+descriptions — but are not part of this schema: as of this writing they can only be set as an
+explicit call argument each time, never pinned in `.claude/team.json`.
+
 ## Everything else
 
 Tools, routing, adjudication, vendors, capacity recovery and the ledger are the same broker
