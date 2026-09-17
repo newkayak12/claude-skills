@@ -1,27 +1,25 @@
 #!/usr/bin/env node
 // Deterministic file ops for the teams `install` skill. The SKILL keeps the judgment
-// (dispatch patterns, which roles to switch on, whether a conflict is real); this runs the
-// confirmed values the same way every time. Idempotent and non-destructive: an existing file is
-// 'kept'. With "refresh": true, team.json gains keys a newer plugin introduced - existing values
-// are never changed. Hooks are NOT installed here: the plugin's hooks.json registers them.
+// (dispatch patterns, which roles to switch on); this runs the confirmed values the same
+// way every time. Idempotent and non-destructive: an existing file is 'kept'. With
+// "refresh": true, team.json gains keys a newer plugin introduced - existing values are
+// never changed. Hooks are NOT installed here: the plugin's hooks.json registers them.
 //
 // Usage: node install.mjs '{
 //   "projectDir": "/abs/path",                       // default: cwd
 //   "refresh": false,
 //   "dispatch": { "paths": ["src/**"], "min_chars": 400, "allow": [] },   // omit → no dispatch gate
-//   "team": { "goal_threshold": 95, "roles": { "qa": true } },            // overrides on first write
-//   "force": false                                   // write despite a coexistence conflict
+//   "team": { "goal_threshold": 95, "roles": { "qa": true } }             // overrides on first write
 // }'
-// Exit 0 ok · 2 bad input · 3 coexistence conflict (report.conflicts lists them, nothing written).
+// Exit 0 ok · 2 bad input.
 import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
-import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { TEAM_DEFAULTS, TEAM_FILE } from '../../mcp/teamconfig.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CONVENTIONS = ['coding.md', 'verification.md', 'boundaries.md'];
-const GITIGNORE_LINES = ['.harness-run/', '.claude/.harness-markers/'];
+const GITIGNORE_LINES = ['.teams_output/', '.claude/.harness-markers/'];
 
 function parseArgs() {
   const raw = process.argv[2];
@@ -35,19 +33,6 @@ function readJsonOr(path, fallback) {
   try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return fallback; }
 }
 function ensureDir(d) { mkdirSync(d, { recursive: true }); }
-
-// Two servers exposing team_* tools make routing ambiguous (README). Harness is fine.
-function findConflicts(projectDir) {
-  const out = [];
-  const mcp = readJsonOr(join(projectDir, '.mcp.json'), null);
-  if (mcp && mcp.mcpServers && mcp.mcpServers['graph-engineering']) out.push('.mcp.json registers graph-engineering (stable graph)');
-  for (const p of [join(homedir(), '.claude', 'settings.json'), join(projectDir, '.claude', 'settings.json'), join(projectDir, '.claude', 'settings.local.json')]) {
-    const s = readJsonOr(p, null);
-    const enabled = s && s.enabledPlugins ? Object.keys(s.enabledPlugins).filter((k) => /^graph@/.test(k) && s.enabledPlugins[k]) : [];
-    for (const k of enabled) out.push(`${p} enables ${k} (stable graph)`);
-  }
-  return out;
-}
 
 function deepMergeDefaults(target, defaults) {
   let changed = false;
@@ -133,13 +118,7 @@ function main() {
   const projectDir = args.projectDir ? resolve(args.projectDir) : process.cwd();
   const claudeDir = join(projectDir, '.claude');
   const refresh = args.refresh === true;
-  const report = { projectDir, refresh, conflicts: findConflicts(projectDir), actions: {}, notes: [] };
-
-  if (report.conflicts.length && args.force !== true) {
-    report.notes.push('coexistence: the stable graph plugin exposes the same team_* tools; disable one line per project, or pass "force": true');
-    process.stdout.write(JSON.stringify(report, null, 2) + '\n');
-    process.exit(3);
-  }
+  const report = { projectDir, refresh, actions: {}, notes: [] };
 
   report.actions.team = writeTeam(claudeDir, projectDir, args.team, refresh);
   report.actions.dispatch = writeDispatch(claudeDir, args.dispatch);

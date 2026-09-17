@@ -1,9 +1,8 @@
 ---
 name: install
 description: >-
-  Use when installing teams into a project: team.json defaults, the dispatch gate,
-  conventions, and the coexistence check against the stable graph plugin. Not for running
-  a task; use teams:orchestrate.
+  Use when installing teams into a project: team.json defaults, the dispatch gate, and
+  conventions. Not for running a task; use teams:orchestrate.
 scenarios:
   - "이 프로젝트에 teams 설치해줘"
   - "team.json이랑 dispatch 게이트 설정해줘"
@@ -21,13 +20,12 @@ related:
 
 # install — team.json, the dispatch gate, and conventions
 
-Connect the graph engine already shipped by this plugin and scaffold the project-owned files
-that give it defaults. Do not copy, regenerate, or fork the engine: `mcp/broker.mjs`,
+Connect the node-graph engine already shipped by this plugin and scaffold the project-owned
+files that give it defaults. Do not copy, regenerate, or fork the engine: `mcp/broker.mjs`,
 `mcp/graph.mjs`, `mcp/taskmanager.mjs`, `mcp/teamconfig.mjs`, and the bundled Codex adapter
 remain plugin-owned and are updated with the `teams` plugin. The deterministic file work —
 `team.json`, the dispatch gate file, conventions, the CLAUDE.md block, `.gitignore` — is
-delegated to `install.mjs` so it runs identically every time; this skill owns the judgment and
-the coexistence decision.
+delegated to `install.mjs` so it runs identically every time; this skill owns the judgment.
 
 ## Process
 
@@ -46,10 +44,7 @@ the coexistence decision.
      "refresh": false
    }'
    ```
-   Omit `dispatch` to skip the gate file entirely (no file means no gate). Exit 3 means a
-   coexistence conflict: read `report.conflicts` — the stable `graph` plugin registers an MCP
-   server or is enabled with the same `team_*` tool surface — and let the user choose to
-   disable it or re-run with `"force": true`. **Never set `force` yourself.**
+   Omit `dispatch` to skip the gate file entirely (no file means no gate).
 3. Treat the printed report JSON as ground truth, not your own judgment. Report, per action,
    whether `team.json`, the dispatch file, each convention file, the CLAUDE.md block, and
    `.gitignore` came back `created`, `kept`, `present`, `appended`, `refreshed`, `unchanged`, or
@@ -95,9 +90,8 @@ never under a project. It needs the project to be a git repository: each package
 request runs in its own `git worktree` branched from HEAD.
 
 Do not use `${CLAUDE_PLUGIN_ROOT}` in a project-owned `.mcp.json`; that variable belongs to the
-plugin's own manifest. Do not register both marketplace and project-local copies, because two
-servers exposing the same `team_*` tools make routing ambiguous — that is exactly what
-`install.mjs`'s coexistence check (step 2) looks for.
+plugin's own manifest. Do not register both marketplace and project-local copies: two servers
+exposing the same `team_*` tools make routing ambiguous.
 
 ## Dispatch gate (optional)
 
@@ -132,13 +126,11 @@ means no gate, and the hook fails open on any error.
 ## What Claude does
 
 - Proposes dispatch patterns and role toggles, runs `install.mjs` for every deterministic file
-  op, surfaces a coexistence conflict without resolving it unilaterally, confirms tool
-  discovery, and reports honestly from the script's JSON.
+  op, confirms tool discovery, and reports honestly from the script's JSON.
 
 ## What you do
 
-- Confirm the dispatch patterns and roles. Choose how to resolve a coexistence conflict
-  (disable the stable plugin, or explicitly authorize `force`). Commit `.claude/team.json`,
+- Confirm the dispatch patterns and roles. Commit `.claude/team.json`,
   `.claude/teams-dispatch.json`, `.claude/conventions/`, and the CLAUDE.md block so the
   gate applies team-wide. After a plugin version bump, re-run with `"refresh": true` to backfill
   new `team.json` keys.
