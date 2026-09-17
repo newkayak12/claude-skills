@@ -672,6 +672,9 @@ function deliveredBranch(task, pkgId) {
 }
 
 function packageOf(task, id) {
+  // The planning phase-Team's package lives on task.planning_pkg, not task.spec.packages: its
+  // dispatch/accept run before shape, while task.spec is still null (§0.1).
+  if (task.planning_pkg && String(task.planning_pkg.id) === String(id)) return task.planning_pkg;
   return ((task.spec && task.spec.packages) || []).find((p) => String(p.id) === String(id)) || null;
 }
 
@@ -1085,9 +1088,14 @@ function openChild(task, n) {
   const depBranches = (pkg.deps || []).map((d) => deliveredBranch(task, d)).filter(Boolean);
   // A repair package is the exception: its tree is the integration tree of the integrate it
   // repairs, already holding every package's work. Nothing is created and nothing is merged.
+  // A planning phase-Team package is a second exception, for a different reason: its result is
+  // the node's own output (the PRD, the user_stories[]), not a file artifact, so no isolated
+  // worktree is needed - it runs directly in the project cwd (§0.1, Task 2).
   const wt = pkg.repair
     ? repairWorktree(task, pkg)
-    : ensureWorktree(task, String(pkg.id), depBranches[0] || 'HEAD');
+    : pkg.phase === 'planning'
+      ? { ok: true, path: task.cwd, branch: null, created: false }
+      : ensureWorktree(task, String(pkg.id), depBranches[0] || 'HEAD');
   if (!wt.ok) {
     n.state = 'failed';
     n.result = { stage_ok: false, reason: `could not create a worktree for ${pkg.id}: ${wt.reason}` };
@@ -1143,6 +1151,7 @@ function openChild(task, n) {
 // The child's account, read from its file. This is the only place the manager touches a
 // run file, and it only reads.
 function foldChild(task, n) {
+  const pkg = packageOf(task, n.subgoal_id);
   const child = loadRun(n.child.cwd, n.child.run_id);
   if (!child) return { stage_ok: false, reason: `child run ${n.child.run_id} has no file under ${n.child.cwd}` };
   const cs = runState(child);
@@ -1233,6 +1242,9 @@ function foldChild(task, n) {
     spec_drift: g.spec_drift || [],
     reason: g.accept === true ? '' : (g.reason || 'child goal gate did not accept'),
     evidence: `child ${child.run_id}: ${cs.counts.done} done, ${cs.counts.failed} failed, ${cs.counts.unreachable} unreachable`,
+    // The planning phase-Team's structured bridge (§0.4 finding 2): shape's implements[]
+    // completeness check needs the ID list, not the PRD body, which stays in the child run.
+    ...(pkg && pkg.phase === 'planning' ? { user_stories: Array.isArray(g.user_stories) ? g.user_stories : [] } : {}),
   };
 }
 
@@ -1310,6 +1322,18 @@ function composeTaskPrompt(task, n) {
     L.push(`## Sizing`);
     if (task.size) L.push(`size: ${task.size}`);
     L.push(`flow: ${task.flow !== 'auto' ? `${task.flow} (fixed by the entry)` : task.flow_chosen ? `${task.flow_chosen} (chosen by size)` : 'auto'}`);
+  }
+  if (n.stage === 'shape' && task.planning_pkg) {
+    const planDispatch = task.nodes.find((x) => x.node_id === 'dispatch:PLAN:1');
+    const userStories = (planDispatch && planDispatch.result && Array.isArray(planDispatch.result.user_stories))
+      ? planDispatch.result.user_stories : [];
+    L.push('');
+    L.push(`## Planning phase-Team`);
+    // A link, never the PRD body itself (§7c "payload를 main에 올리지 않는다"): the body stays
+    // in the child run and its rendered doc, not in this briefing.
+    L.push(`A planning phase-Team ran ahead of this stage and wrote the PRD to ${join(docPaths(task).dir, '10-prd.md')}. Read it there if you need the reasoning; its body is not repeated here.`);
+    L.push(`User stories it produced - every "packages[].implements[]" this stage returns must together cover all of these:`);
+    L.push(bullets(userStories));
   }
   if (task.spec && ['critique', 'integrate', 'gate', 'report'].includes(n.stage)) {
     L.push('');
