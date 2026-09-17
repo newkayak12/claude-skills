@@ -15,7 +15,7 @@ Same broker, same six core tools, same skill shape as `graph` — with these dif
 |---|---|---|
 | MCP servers | `graph-engineering` (`graph_*` tools) | `teams-engineering` (`team_*`) + `task-manager` (`tm_*`) |
 | Run files | `.harness-run/broker/` | `.teams_output/broker/` |
-| Skills | `graph:install`, `graph:orchestrate` | `teams:install`, `teams:orchestrate`, `teams:develop`, `teams:document` |
+| Skills | `graph:install`, `graph:orchestrate` | `teams:install`, `teams:remove`, `teams:patch`, `teams:orchestrate`, `teams:develop`, `teams:document`, `teams:plan`, `teams:qa`, `teams:board`, `teams:ticket` |
 | Version line | 1.x | 0.x |
 
 Both plugins can be enabled in the same project: distinct tool prefixes (`graph_*` vs.
@@ -55,9 +55,10 @@ Design and step list: [`docs/plans/2026-09-11-teams-taskmanager.md`](../docs/pla
 
 - **v0.11.0 — ticket layer, board.jsonl, phase documents**: `tickets.mjs` derives EPIC/STORY/TASK
   ticket state and `epicPhase` from `task.json` alone, as pure functions — never a second source
-  of truth. `tm_board` (every EPIC, or one EPIC's STORY kanban — `task_id` takes a full run id
-  or its `E-xxxxxxxx` key) and `tm_ticket` (one ticket by key, `E-xxxxxxxx` or `E-xxxxxxxx/Pn`)
-  read them; `board.jsonl` logs only the transitions a
+  of truth. `tm_board` (every EPIC, or one EPIC's STORY kanban) and `tm_ticket` (one ticket by
+  key, `E-xxxxxxxx` or `E-xxxxxxxx/Pn`) read them — every tool that takes a `task_id` resolves a
+  full run id or its `E-xxxxxxxx` key the same way (§8); `tm_board` is not special-cased, it just
+  happens to be the one this entry names. `board.jsonl` logs only the transitions a
   before/after diff actually finds around the four tools that can move a ticket
   (`tm_open`/`tm_next`/`tm_submit`/`tm_retry`) — a JIRA-style history, never itself read as
   ground truth. `docs.mjs` renders 8 of §7c's 13 phase documents from the same `task.json` —
