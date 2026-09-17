@@ -54,9 +54,9 @@ the coexistence decision.
    whether `team.json`, the dispatch file, each convention file, the CLAUDE.md block, and
    `.gitignore` came back `created`, `kept`, `present`, `appended`, `refreshed`, `unchanged`, or
    `skipped`.
-4. **Tool discovery** — confirm all eleven tools are visible: six `graph_*` tools (`graph_open`,
-   `graph_next`, `graph_run`, `graph_submit`, `graph_retry`, `graph_status`) and five `tm_*`
-   tools (`tm_open`, `tm_next`, `tm_submit`, `tm_retry`, `tm_status`). If any are missing, tell
+4. **Tool discovery** — confirm all twelve tools are visible: six `graph_*` tools (`graph_open`,
+   `graph_next`, `graph_run`, `graph_submit`, `graph_retry`, `graph_status`) and six `tm_*`
+   tools (`tm_open`, `tm_next`, `tm_submit`, `tm_retry`, `tm_status`, `tm_events`). If any are missing, tell
    the user to reload Claude Code — this is the install gate; do not open a real task just to
    test setup. Once a task is open, main watches it with `tm_status({task_id})` and never
    drives a node itself.

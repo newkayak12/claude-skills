@@ -148,8 +148,8 @@
     },
     {
       "name": "graph-beta",
-      "description": "Beta line of graph: same engine as graph 1.7.0 plus kinds (code / document / package), a TaskManager MCP for medium and large requests, and per-flow entry skills. Separate run directory; do not enable alongside graph in one project. Includes graph-beta:install and graph-beta:orchestrate.",
-      "version": "0.9.0",
+      "description": "Beta line of graph: same engine as graph 1.7.0 plus kinds (code / document / package), a TaskManager MCP for medium and large requests, and per-flow entry skills. Separate run directory; do not enable alongside graph in one project. Includes graph-beta:install and graph-beta:orchestrate. Ships graph-beta:install/remove/patch, .claude/team.json project defaults, and a shared engagement marker so it coexists with the harness plugin.",
+      "version": "0.10.0",
       "author": {
         "name": "newkayak12"
       },
