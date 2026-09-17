@@ -89,3 +89,21 @@ test('an Edit and a MultiEdit are measured by what they add', () => {
     assert.equal(run(dir, edits, 'MultiEdit').status, 2, '300 + 300 is over 400');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('a recent harness marker means another engine is engaged, so the write passes', () => {
+  const dir = project({ paths: ['src/**'] });
+  try {
+    mkdirSync(join(dir, '.claude', '.harness-markers'), { recursive: true });
+    writeFileSync(join(dir, '.claude', '.harness-markers', 'sess-1'), String(Date.now()));
+    assert.equal(run(dir, { file_path: join(dir, 'src/a.mjs'), content: 'x'.repeat(5000) }).status, 0);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a stale harness marker does not open the gate', () => {
+  const dir = project({ paths: ['src/**'] });
+  try {
+    mkdirSync(join(dir, '.claude', '.harness-markers'), { recursive: true });
+    writeFileSync(join(dir, '.claude', '.harness-markers', 'sess-1'), String(Date.now() - 3 * 60 * 60 * 1000));
+    assert.equal(run(dir, { file_path: join(dir, 'src/a.mjs'), content: 'x'.repeat(5000) }).status, 2);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

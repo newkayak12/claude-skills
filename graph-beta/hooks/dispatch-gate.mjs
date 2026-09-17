@@ -60,6 +60,18 @@ function harnessEngaged(cwd) {
       /* unreadable is not engaged */
     }
   }
+  // The harness plugin's own gate writes .claude/.harness-markers/<session> (content Date.now())
+  // while it is engaged; a recent one means its nodes are the ones writing here.
+  try {
+    const dir = join(cwd, '.claude', '.harness-markers');
+    const now = Date.now();
+    for (const f of readdirSync(dir)) {
+      const ts = parseInt(readFileSync(join(dir, f), 'utf8'), 10) || 0;
+      if (now - ts <= 2 * 60 * 60 * 1000) return true;
+    }
+  } catch {
+    /* no markers dir: not engaged this way */
+  }
   return false;
 }
 
