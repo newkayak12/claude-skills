@@ -232,9 +232,9 @@ main 세션이 할 수 있는 일의 전부:
 | 호출 | 성격 |
 |---|---|
 | `tm_open` | EPIC 열기 → leader 프로세스 spawn → `task_id` 받고 끝 |
-| `tm_board` `tm_ticket` `tm_inbox` `tm_events` `tm_log` `tm_status` `tm_docs` | 읽기 |
-| `tm_answer` `tm_assign` `tm_file` `tm_retry` | inbox에 요청 파일 하나 떨어뜨림 (§7b). 적용은 leader |
-| `tm_clean` | EPIC DONE 뒤 정리 |
+| `tm_board` `tm_ticket` `tm_events` `tm_status` `tm_docs` `tm_inbox`(**미구현** — human 노드가 있어야 채울 게 생긴다, v0.13.0) `tm_log`(**미구현** — v0.11.0 범위에서 의도적으로 뺐다, §8) | 읽기. 뒤 둘은 이 자리를 노리고 설계됐지만 지금은 없다(§8 도구 표 참고) |
+| `tm_answer`(**미구현**, v0.13.0) `tm_assign`(**미구현**, v0.13.0) `tm_retry`(구현됨) `tm_file`(**미구현** — §11 어느 단계에도 아직 배정 안 됐다, `docs/plans/2026-09-17-teams-roadmap-sizing.md`의 미배치 일감 목록 참고) | inbox에 요청 파일 하나 떨어뜨림 (§7b). 적용은 leader — 지금 실제로 있는 건 `tm_retry`뿐 |
+| `tm_clean`(**미구현** — 위와 같음, §11 어느 단계에도 아직 배정 안 됐다) | EPIC DONE 뒤 정리 (계획) |
 
 leader가 죽어 있으면 main 쪽 **어느 `tm_*` 호출이든** pid 검사 후 같은 task_id로 respawn한다 —
 main이 대신 도는 것이 아니라 leader를 다시 세우는 것. `orchestrate`/`develop`/`document`/`plan`/`qa`
@@ -521,9 +521,15 @@ driver)은 위 표의 결정 4개를 문서에 박은 뒤. v0.14(sub-EPIC)는 v0
 | `.gitignore` | user | `.teams_output/` |
 | `.claude/hooks/*` | — | **쓰지 않는다.** 훅은 플러그인 `hooks.json`이 이미 등록. 임베딩 모드는 이 라운드에서 제공하지 않음(엔진이 MCP 서버라 harness식 임베딩과 모양이 다름 — 명시적으로 미지원 선언) |
 
-검증(스킬 쪽 판단): node 18+, git 저장소, **§13 공존 검사**, 도구 발견 — `team_*` 6 + `tm_*` 기존 5
-+ 신규(`tm_board tm_ticket tm_log tm_answer tm_assign tm_inbox tm_events`). `"refresh": true`는
-plugin-owned 파일이 없으므로 `team.json`에 새 키만 추가(기존 값 유지)하는 역할.
+검증(스킬 쪽 판단): node 18+, git 저장소, **§13 공존 검사**, 도구 발견 — **이 도구-개수 검사 자체가
+`install.mjs`/`test-install.mjs`에 아직 없다**(`teams/skills/install/install.mjs`에
+`team_*`/`tm_*` 카운트를 세는 코드가 없음, 확인함). 있게 된다면 셀 숫자는 이 문서를 쓴 시점의
+"`team_*` 6 + `tm_*` 기존 5 + 신규 7"이 아니라 실측값이어야 한다 — 지금은 `team_*` 6개
+(`teams/mcp/broker.mjs`의 `TOOLS[]`: `team_open/team_next/team_run/team_submit/team_retry/team_status`)
++ `tm_*` 9개(`teams/mcp/taskmanager.mjs`의 `TOOLS[]`: `tm_open/tm_next/tm_submit/tm_retry/tm_status/
+tm_events/tm_board/tm_ticket/tm_docs`)이고, `tm_log`/`tm_answer`/`tm_assign`/`tm_inbox`는 지금도
+없다(§8) — `tm_events`는 v0.10.0에 이미 있었으니(§11) 애초에 "신규"로 셀 것도 아니었다.
+`"refresh": true`는 plugin-owned 파일이 없으므로 `team.json`에 새 키만 추가(기존 값 유지)하는 역할.
 
 ### `remove` — `skills/remove/remove.mjs`
 
