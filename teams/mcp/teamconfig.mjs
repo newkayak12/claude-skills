@@ -22,6 +22,21 @@ export const TEAM_DEFAULTS = Object.freeze({
   driver_restarts: 2,
   vendor: 'auto',
   allocation: 'ordered',
+  // The DEFAULT lives under .teams_output/, but this key is user-settable, so docs_dir is not
+  // pinned to that root - and three other places assume that root without consulting this key:
+  // install.mjs:22 scaffolds the project .gitignore with '.teams_output/', commitWorktree
+  // (taskmanager.mjs:645) unstages '.teams_output' so engine state never enters a package
+  // commit, and dispatch-gate.mjs:118 allows writes under '.teams_output/'.
+  //
+  // A project that moves docs_dir outside that root therefore loses .gitignore coverage for its
+  // rendered phase markdown. That is a coupling, not a duplicated default: the four uses of the
+  // string '.teams_output' across teams/mcp are four independent facts (the broker state root at
+  // broker.mjs:144 and graph.mjs:217, this default, the gitignore scaffold, the unstage
+  // pathspec), not one value written four times - which is why they are deliberately NOT hoisted
+  // into a shared constant. A constant would assert they must move together, and they must not.
+  // The rendered markdown is a human-readable artifact; a project that moves it out may well
+  // want it committed. Recorded here rather than "fixed" because the right behaviour is a
+  // product decision nobody has made.
   docs_dir: join('.teams_output', 'team'),
 });
 
