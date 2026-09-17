@@ -49,6 +49,7 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 설계와 단계 목록: [`docs/plans/2026-09-11-teams-taskmanager.md`](../docs/plans/2026-09-11-teams-taskmanager.md).
 
 ## 상태
+- v0.12.2 — **v0.12.2 — 첫 실벤더 런의 진짜 원인: 거짓 `blocked`**: size S 태스크는 `size`가 풀리는 순간 매니저 그래프가 이미 settled라서, `toolNext()` 앞에서 리턴하는 TaskLeader 게이트의 watcher 분기가 살아 있는 태스크를 세 노드만 보고 `blocked`으로 보고했습니다. 스킬의 standing mandate가 "blocked는 결과다 — 보고하고 멈춰라"이므로 main은 2분 만에 그대로 멈췄고, 벤치는 드라이버가 아직 돌고 있는 워크스페이스를 채점했습니다. `watcherState()`가 `toolNextSRun`과 같은 방식으로 자식 런을 읽도록(쓰기 없음) 고쳤고, entry 스킬 5개도 leader 게이트가 불가능하게 만드는 `task_state` 응답을 더 이상 약속하지 않습니다(main의 size 제출은 `queued: true`로 돌아옵니다).
 - v0.12.1 — **v0.12.1 — 발행되는 STORY: QA 결함, 기획 크로스 검수, tm_file**: QA phase-Team이 낸 결함이 이제 develop STORY로 발행되고 EPIC은 새 integrate를 거쳐 되돌아옵니다(`qa_rounds`로 상한). `roles.planning`에 두 번째 pass인 `planning-audit` phase-Team이 붙어, 통합 결과와 (있다면) QA 리포트를 자신이 쓴 PRD에 대조하고 아직 미충족인 user story마다 STORY를 발행합니다. `tm_file`로 사람이 같은 경로로 직접 STORY를 발행할 수도 있습니다(상한 없음). 보드와 phase 문서는 `reporter`(`shape`/`repair`/`qa`/`planning-audit`/`you`)로 출처를 구분하고 `65-audit.md`가 렌더됩니다 — §7c의 13개 문서 중 `15-spec-gate.md` 하나만 남았습니다.
 
 - **v0.12.0 — planning/QA를 동등한 STORY가 아니라 EPIC phase-Team으로**: `.claude/team.json`의
