@@ -1,11 +1,9 @@
 ---
 name: plan
 description: >-
-  Use when the user has said, in their own words, that the deliverable is a PRD or product
-  requirement write-up to run through the graph-beta harness — "기획서 그래프로", "PRD 작성해서
-  그래프로 돌려줘", "run the planning flow", "write a PRD through the graph". Pins flow: plan.
-  When they have not said which kind of work it is, use orchestrate instead. Not for
-  installation, and not for a general design note or guide - use document for those.
+  Use when the user has said the deliverable is a PRD to run through the graph-beta harness —
+  "기획서 그래프로", "PRD 작성해서 그래프로 돌려줘", "run the planning flow", "write a PRD through
+  the graph". Pins flow: plan.
 effort: high
 scenarios:
   - "Turn this feature request into a PRD through the harness, drafted then revised by a different reader"
