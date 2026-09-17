@@ -203,6 +203,21 @@ function createTask(a) {
       max_retries: T.max_retries,
       auto_reassign: a.auto_reassign !== false,
       goal_threshold: T.goal_threshold,
+      // team_open's own tool boundary (broker.mjs) defaults this to 2; createRun's own bare
+      // default is 1, deliberately - see graph.mjs's createRun and the commit that introduced
+      // goal_judges, 858e0b9: "createRun itself still defaults goal_judges to 1, so a caller
+      // that builds runs directly - the TaskManager's per-package child runs among them - is
+      // unaffected unless it asks otherwise". That was not an oversight left for this fix:
+      // bumping this default to 2 was tried here first and broke 18 of this suite's existing
+      // tests (every helper that drives a child to its report submits exactly one gate:goal:N -
+      // a second, letter-suffixed sibling never gets a verdict and the round never settles). The
+      // bug this fixes is narrower than the default: before this line, tm_open had no
+      // `goal_judges` argument at all, so no caller could raise a package's judge count above 1
+      // even by asking - every EPIC package was pinned to single-judge with no escape hatch.
+      // Keeping createRun's own default here is consistent with that precedent AND lets an
+      // explicit tm_open({goal_judges}) argument reach every child run for the first time. Not
+      // yet a team.json key - teamconfig.mjs's TEAM_DEFAULTS is out of scope for this change.
+      goal_judges: Number.isInteger(a.goal_judges) && a.goal_judges > 0 ? a.goal_judges : 1,
     },
     created_at: Date.now(),
     spec: null,
@@ -1112,7 +1127,19 @@ function foldChild(task, n) {
   const goalGate = child.nodes.filter((x) => x.stage === 'gate' && x.subgoal_id === null && x.result).pop();
   const report = child.nodes.filter((x) => x.stage === 'report' && x.state === 'done' && x.result).pop();
   const changed = [...new Set(child.nodes.flatMap((x) => (x.result && Array.isArray(x.result.changed_files) ? x.result.changed_files : [])))];
-  const g = (goalGate && goalGate.result) || {};
+  // A round may have more than one judge (goal_judges > 1, the default above): the round's
+  // consensus - every judge accepting, not any one sibling's own verdict - decides whether it
+  // accepted. Reading the last gate node in node order (as this used to, unconditionally) picks
+  // whichever sibling happens to sort last, which is not necessarily the primary and is never
+  // the AND of all of them - a single dissenting judge could be silently overridden by whichever
+  // one node the filter's .pop() lands on. runState already computes the true consensus as
+  // goal_verdict, and it reduces to exactly this node's own fields when there is one judge, so
+  // overriding with it here is a strict generalization, not a behaviour change, for a run still
+  // opened with the legacy default. reason/observations have no consensus-level counterpart
+  // (they are free text a single judge writes), so those two still come from the raw node.
+  const raw = (goalGate && goalGate.result) || {};
+  const gv = cs.goal_verdict;
+  const g = gv ? { ...raw, accept: gv.accept, match_pct: gv.match_pct, gaps: gv.gaps, spec_drift: gv.spec_drift } : raw;
   const base = {
     child_run_id: child.run_id,
     child_cwd: n.child.cwd,
@@ -1534,6 +1561,7 @@ const TOOLS = [
         mixed: { type: 'boolean', description: 'Passed the same way isolated is, to the same size-S run. Default true. false forbids the other kind of work entirely - a develop-flow request with a document subgoal fails at setgoal instead of quietly running one. Has no effect on an L task: every package is already mixed:true.' },
         driver_restarts: { type: 'integer', description: 'default 2: how many times a package or size-S driver that died mid-run is respawned on the SAME run_id before the dispatch folds blocked. A usage-limit death never spends this - it parks on waiting_capacity for tm_retry({reset_capacity:true}) instead.' },
         goal_threshold: { type: 'integer', description: 'default 90: the manager\'s own goal gate must report match_pct at or above this to accept, and it is passed through to every child run as its own goal_threshold. A gate that says accept with 40% match is reporting a partial result as a pass. 0 accepts on the verdict alone.' },
+        goal_judges: { type: 'integer', description: 'default 1: independent judges on EVERY child run\'s own goal gate (each package\'s dispatch, and the one run a size-S task opens). >1 opens that many sibling gate nodes per round, routed to different identities where possible, and accepts only if every judge accepts at or above goal_threshold - the same mechanism team_open documents (default 2 there). The default stays 1 here, matching every run this manager has ever opened, so an existing project sees no change in judge count or cost unless it asks for more. This is the child run\'s own gate, not the manager\'s own top-level gate:goal, which is a separate, single-judge mechanism unaffected by this option.' },
       },
       required: ['request', 'cwd'],
     },

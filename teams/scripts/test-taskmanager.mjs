@@ -469,6 +469,76 @@ test('tm_open({goal_threshold}) is stored on the task and reaches every child th
   }
 });
 
+test('a dispatched child run keeps the legacy single-judge default (goal_judges:1) unless tm_open asks for more', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    const c = nx.children[0];
+    assert.equal(c.node_id, 'dispatch:P1:1');
+    const full = await g.call('team_status', { run_id: c.run_id, cwd: c.cwd, full: true });
+    // team_open's own tool boundary defaults to 2; createRun's bare default (what every child run
+    // here goes through) stays 1, matching every run this manager has ever opened - bumping this
+    // default breaks every existing helper that drives a child to completion, which submits
+    // exactly one gate:goal:N per round. The bug is the argument's total absence, not this value.
+    assert.equal(full.goal_judges, 1, 'a package\'s child run keeps the manager\'s long-standing single-judge default');
+  });
+});
+
+test('tm_open({goal_judges}) is stored in child_opts and reaches the actual dispatched child run', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    const c = nx.children[0];
+    const full = await g.call('team_status', { run_id: c.run_id, cwd: c.cwd, full: true });
+    assert.equal(full.goal_judges, 4, 'an explicit tm_open argument must reach every child run the same way goal_threshold and max_retries already do');
+  }, { goal_judges: 4 });
+});
+
+test('a dispatched package with goal_judges:2 is folded by the true multi-judge consensus, not by whichever sibling node happens to sort last', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    const c = nx.children[0];
+    const { cwd, run_id } = c;
+    const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
+    let v = await sub('plan', { handoff: 'p', flow: 'develop', size: 'S' });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    await sub('setgoal', { spec: CHILD_SPEC });
+    await sub('critique', { sound: true });
+    appendFileSync(join(cwd, 'a.txt'), 'changed by P1\n');
+    v = await sub('implement:U1:1', { changed_files: ['a.txt'], handoff: 'built' });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    await sub('test:U1:1', { verified: true });
+    await sub('gate:U1:1', { accept: true, match_pct: 95 });
+    // The round's two judges disagree: the primary rejects, the letter-suffixed second judge
+    // accepts. Consensus requires EVERY judge to accept - the true verdict is reject. With
+    // max_retries:0 the repair budget is exhausted on the first rejection, so autoReassignGoalGate
+    // marks both siblings final without opening a repair round, and the report's order-only
+    // `after` on the round is satisfied (both siblings are now settled) without ever reaching
+    // accept.
+    v = await sub('gate:goal:1', { accept: false, match_pct: 40, gaps: ['missing the b half'], reason: 'short' });
+    assert.equal(v.state, 'failed', JSON.stringify(v));
+    v = await sub('gate:goal:1b', { accept: true, match_pct: 95 });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    const afterRound = await g.call('team_status', { run_id, cwd, full: true });
+    const round1 = afterRound.nodes.filter((n) => n.node_id === 'gate:goal:1' || n.node_id === 'gate:goal:1b');
+    assert.ok(round1.every((n) => n.final === true), 'repair budget exhausted: both siblings settle as final');
+    assert.deepEqual(afterRound.nodes.filter((n) => n.stage === 'repair'), [], 'no repair opened: max_retries:0 exhausts the budget on the first round');
+    const nxChild = await g.call('team_next', { run_id, cwd });
+    assert.deepEqual(nxChild.ready.map((n) => n.node_id), ['report'], 'the order-only after-edge only needs the round settled, not accepted');
+    await sub('report', { handoff: `child report for ${cwd}` });
+    assert.equal((await g.call('team_status', { run_id, cwd })).state, 'complete');
+
+    // The manager folds this child next. If it reads the true multi-judge consensus, the
+    // dispatch is rejected (not every judge accepted); if it naively reads whichever gate
+    // node happens to sort/insert last (gate:goal:1b, the lone accepter), it wrongly reports
+    // accept:true and commits the package's worktree as if the round had passed.
+    const folded = await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    assert.equal(folded.accept, false, 'goal_judges:2 requires every judge to accept; one rejection must reject the round');
+    assert.equal(folded.state, 'failed', JSON.stringify(folded));
+  }, { goal_judges: 2, max_retries: 0 });
+});
+
 test('tm_open no longer accepts notify: dropped from the tool schema and never stored on the task', async () => {
   const c = await new Client(TM).init();
   try {
