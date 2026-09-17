@@ -475,6 +475,23 @@ function integrateToRepair(task) {
   return { node: last };
 }
 
+// Opens a fresh `integrate:N` depending on `acceptIds` and reroutes every node that referenced
+// `oldId` in its deps/after (gate:goal chief among them) to the fresh integrate instead -
+// marking `supersedes: oldId` for evidence. The one move both a repair (one package's accept)
+// and a filed defect STORY (one or more packages' accepts, §5b) make once their fix needs a
+// fresh combined tree: openRepair and fileDefects both call this instead of each inlining their
+// own copy of the rewiring loop.
+function reintegrateBehind(task, oldId, acceptIds, feedback) {
+  const fresh = `integrate:${nextIndex(task, 'integrate')}`;
+  task.nodes.push(node(fresh, 'integrate', acceptIds.slice(), { subgoal_id: null, feedback: feedback || '', supersedes: oldId }));
+  for (const x of task.nodes) {
+    if (x.node_id === fresh) continue;
+    x.deps = x.deps.map((d) => (d === oldId ? fresh : d));
+    x.after = (x.after || []).map((d) => (d === oldId ? fresh : d));
+  }
+  return fresh;
+}
+
 // Append a repair package to the shape, expand it like any other package, and open a fresh
 // integrate behind it - the same move retryPackage makes when a package it retried was the one
 // an integrate blamed. The old integrate stays failed as evidence, superseded, and the goal
@@ -515,15 +532,74 @@ function openRepair(task, integ) {
   // depended on the failed integrate itself could never become ready: a failed node is never
   // satisfied.
   const accept = pushChain(task, PACKAGE_CHAIN, id, 1, integ.deps.slice(), [], { feedback: '' });
-  const fresh = `integrate:${nextIndex(task, 'integrate')}`;
   const fb = [r.reason, ...(r.gaps || []), ...(r.checks || [])].filter(Boolean).join('\n- ');
-  task.nodes.push(node(fresh, 'integrate', [accept], { subgoal_id: null, feedback: fb, supersedes: integ.node_id }));
-  for (const x of task.nodes) {
-    if (x.node_id === fresh) continue;
-    x.deps = x.deps.map((d) => (d === integ.node_id ? fresh : d));
-    x.after = (x.after || []).map((d) => (d === integ.node_id ? fresh : d));
-  }
+  const fresh = reintegrateBehind(task, integ.node_id, [accept], fb);
   return { task: saveRun(task), package_id: id, integrate: fresh, reason: '' };
+}
+
+// ---------- defect STORYs: tm_file and the QA re-loop (v0.12.1 Task 1, §5b) ----------
+//
+// Files one ordinary develop package per defect - unlike a repair package, each gets its OWN
+// fresh worktree (shape's usual package machinery), because a defect fix is normal develop work,
+// not a fix to a seam only visible in the combined tree. `reporter` is set instead of `repair:
+// true` so the board (tickets.mjs epicBoardRows) and docs can tell a filed STORY apart from one
+// shape produced. Reuses reintegrateBehind for the same "detour gate:goal through a fresh
+// integrate" move openRepair makes; unlike openRepair this can file more than one package at
+// once (one QA gate can report several defects in the same round).
+//
+// Deliberately does NOT touch QA here: reopening a QA round the moment defects are filed would
+// make the QA phase-Team's dispatch "live" at the same time as the defect packages' own dispatch
+// nodes - exactly the concurrency the v0.12.1 self-review flags as breaking the
+// max_parallel_teams/runningStories phase-Team exemption (taskmanager.mjs's isPhaseTeam block,
+// below). Instead the integrate-completion hook in finish() reopens QA lazily, only once the
+// fresh integrate this call creates has itself finished - by which point every defect package is
+// already done, not running, so the exemption's original premise (a phase-Team dispatch is never
+// concurrent with a develop STORY dispatch) keeps holding. See that hook's comment for the rest
+// of this argument.
+//
+// Never itself checks qa_rounds: the cap is the caller's job. The accept:QA:N hook below checks
+// it before deciding whether to call this at all; tm_file (a user filing a STORY directly) never
+// checks it - a user-filed STORY is not a QA round (v0.12.1 self-review's open risk on tm_file
+// vs qa_rounds, resolved here: tm_file always proceeds, uncapped).
+function fileDefects(task, defects, opts) {
+  const reporter = (opts && opts.reporter) || 'you';
+  const packages = task.spec.packages;
+  const goal = task.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id == null).pop();
+  if (!goal) throw new Error('this task has not reached goal level yet - there is no gate:goal to reroute a filed STORY behind');
+  const oldDep = goal.deps[0];
+  const acceptIds = [];
+  const filed = [];
+  for (const d of defects) {
+    const id = `D${packages.filter((p) => p.reporter).length + 1}`;
+    const evidence = d && d.evidence ? String(d.evidence) : '';
+    const title = (d && d.title) || `defect ${id}`;
+    const pkg = {
+      id,
+      title,
+      reporter,
+      flow: task.flow_chosen || 'auto',
+      brief: [
+        `This package fixes a defect filed against this task's integrated result.`,
+        `Title: ${title}`,
+        d && d.severity ? `Severity: ${d.severity}` : '',
+        evidence ? `Evidence:\n${evidence}` : '',
+      ].filter(Boolean).join('\n'),
+      // §5b: acceptance is that the reproduction QA (or the filer) gave stops reproducing.
+      acceptance: [evidence ? `the reproduction below no longer reproduces the defect:\n${evidence}` : `"${title}" no longer reproduces`],
+      touches: ((d && d.touches) || []).map(String),
+      deps: ((d && d.deps) || []).map(String),
+    };
+    packages.push(pkg);
+    filed.push(pkg);
+    // Every named dep is a sibling package id, resolved to ITS current accept the same way a
+    // shape-declared package's deps are resolved in expandPackages - all of them are already
+    // done by the time a goal-level defect can even be filed, so this always finds one.
+    const headDeps = pkg.deps.map((dep) => { const acc = latestBySubgoal(task, dep, 'accept'); return acc ? acc.node_id : null; }).filter(Boolean);
+    acceptIds.push(pushChain(task, PACKAGE_CHAIN, id, 1, headDeps, [], { feedback: '' }));
+  }
+  const feedback = defects.map((d) => `${(d && d.title) || ''}${d && d.evidence ? `: ${d.evidence}` : ''}`).filter(Boolean).join('\n- ');
+  const fresh = reintegrateBehind(task, oldDep, acceptIds, feedback);
+  return { task: saveRun(task), filed: filed.map((p) => p.id), integrate: fresh };
 }
 
 // ---------- worktrees and child runs ----------
@@ -1073,7 +1149,7 @@ function serviceLeader(task) {
 
 // A tool call that mutates the task, made by a process that is not the leader while a leader is
 // alive, is queued here instead of applied - the leader drains it at the top of its own tm_next.
-const MUTATING_TOOLS = new Set(['tm_submit', 'tm_retry', 'tm_settle', 'tm_repackage', 'tm_repair', 'tm_reset_capacity']);
+const MUTATING_TOOLS = new Set(['tm_submit', 'tm_retry', 'tm_file', 'tm_settle', 'tm_repackage', 'tm_repair', 'tm_reset_capacity']);
 let inboxSeq = 0;
 function queueToInbox(task, tool, args) {
   const dir = join(taskDir(task.run_id), 'inbox');
@@ -1585,6 +1661,44 @@ function finish(task, n, result) {
       expandPackages(task, task.spec.packages);
     }
   }
+  // The QA phase-Team's gate result carries defects (§5b), not a pass/fail on the QA package
+  // itself - `accept:QA:N` still finishes 'done' whether or not it found any. Capped by
+  // qa_rounds: once the QA package has already been attempted that many times, a further defect
+  // is not filed as a new STORY - it is recorded for the report's "unresolved defects" section
+  // instead, and the EPIC proceeds (gate:goal is already wired to this very node - see the
+  // integrate-completion hook below).
+  if (n.stage === 'accept' && n.subgoal_id === 'QA' && n.state === 'done') {
+    const defects = Array.isArray(result.defects) ? result.defects : [];
+    if (defects.length) {
+      const qaAttempts = task.nodes.filter((x) => x.stage === 'accept' && x.subgoal_id === 'QA').length;
+      const cap = Number.isInteger(task.team && task.team.opts && task.team.opts.qa_rounds)
+        ? task.team.opts.qa_rounds : TEAM_DEFAULTS.qa_rounds;
+      if (qaAttempts > cap) {
+        task.unresolved_defects = (task.unresolved_defects || []).concat(defects.map((d) => ({ ...d, round: qaAttempts })));
+      } else {
+        fileDefects(task, defects, { reporter: 'qa' });
+      }
+    }
+  }
+  // Every integrate that finishes reroutes gate:goal behind it (see fileDefects/reintegrateBehind
+  // above and retryPackage's own re-integrate loop) - so "an integrate just finished" is the one
+  // moment that generalizes over both "the first round" (expandPackages already wired QA ahead of
+  // time, at shape) and "a later round" (a filed defect's fix, where nothing has wired QA yet).
+  // Reopen a fresh QA round here, lazily, only when nothing already depends on THIS integrate for
+  // QA - which is deliberately what makes the phase-Team exemption above still safe: by the time
+  // any integrate reaches 'done', every package it depends on is already done too (integrate's own
+  // deps are every one of those accepts), so the QA dispatch this opens is never concurrent with a
+  // develop STORY dispatch that fed into it.
+  if (n.stage === 'integrate' && n.state === 'done'
+    && task.team && task.team.opts && task.team.opts.roles && task.team.opts.roles.qa) {
+    const alreadyWired = task.nodes.some((x) => x.stage === 'dispatch' && x.subgoal_id === 'QA' && x.deps.includes(n.node_id));
+    if (!alreadyWired) {
+      const goal = task.nodes.filter((x) => x.stage === 'gate' && x.subgoal_id == null).pop();
+      const qaRound = nextIndex(task, 'dispatch:QA');
+      const qaAccept = pushChain(task, PACKAGE_CHAIN, 'QA', qaRound, [n.node_id], [], {});
+      if (goal) goal.deps = [qaAccept];
+    }
+  }
   saveRun(task);
   record(task, { event: 'node_finish', task_id: task.run_id, node_id: n.node_id, stage: n.stage, stage_ok: n.result.stage_ok === true, state: n.state });
   return verdict(task, n);
@@ -1680,6 +1794,25 @@ const TOOLS = [
     outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, retried: { type: 'boolean' }, attempt: { type: 'number' }, resumed: { type: 'array', items: { type: 'string' } }, reason: { type: 'string' }, unreachable: { type: 'array', items: { type: 'string' } } }, required: ['task_id', 'retried'] },
   },
   {
+    name: 'tm_file',
+    description: 'File one or more develop STORYs directly against a task that has already reached goal level (a gate:goal node exists) - the same path a QA-found defect takes (§5b: a fresh package per story, its own dispatch/accept chain, a fresh integrate opened behind it, gate:goal - and a fresh QA round if roles.qa is on - rerouted there), but reporter: "you" on the board instead of "qa". Never checked against qa_rounds: a user filing a STORY is not a QA round, so this always proceeds regardless of how many QA rounds this task has already run.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string' },
+        stories: { type: 'array', items: { type: 'object', properties: {
+          title: { type: 'string' },
+          touches: { type: 'array', items: { type: 'string' } },
+          deps: { type: 'array', items: { type: 'string' }, description: 'sibling package ids this STORY builds on - resolved to their current accept.' },
+          evidence: { type: 'string' },
+          severity: { type: 'string' },
+        }, required: ['title'] } },
+      },
+      required: ['task_id', 'stories'],
+    },
+    outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, filed: { type: 'array', items: { type: 'string' } }, integrate: { type: 'string' } }, required: ['task_id', 'filed'] },
+  },
+  {
     name: 'tm_status',
     description: 'Compact task state: counts, per-node state and verdict, child pointers. Omit task_id to list every task the manager knows. full:true returns the whole task file - large by design.',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, node_id: { type: 'string' }, full: { type: 'boolean' } } },
@@ -1723,10 +1856,11 @@ function toolEvents(a) {
 
 // board.jsonl - ticket TRANSITIONS only, append-only, never read as ground truth. tickets.mjs's
 // pure functions over task.json are the ground truth; this is the JIRA-style history a human
-// reads (§4, §7b). Written by diffing a before/after snapshot around the four tools that can
-// actually move a ticket - never by instrumenting taskmanager.mjs's dozen individual mutation
-// sites one at a time.
-const BOARD_TOOLS = new Set(['tm_open', 'tm_next', 'tm_submit', 'tm_retry']);
+// reads (§4, §7b). Written by diffing a before/after snapshot around the tools that can actually
+// move a ticket - never by instrumenting taskmanager.mjs's dozen individual mutation sites one at
+// a time. tm_file joined this set in v0.12.1: filing a STORY moves its ticket from nonexistent to
+// BACKLOG/READY exactly like tm_retry opening a repair package does.
+const BOARD_TOOLS = new Set(['tm_open', 'tm_next', 'tm_submit', 'tm_retry', 'tm_file']);
 
 function appendBoardTransitions(task, before, by) {
   const after = ticketSnapshot(task);
@@ -2162,6 +2296,16 @@ function toolRetry(a) {
   return { task_id: task.run_id, target: pid, package_id: pid, retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable, ...toolNext({ task_id: task.run_id }) };
 }
 
+function toolFile(a) {
+  const task = mustFindTask(a);
+  if (!task.spec || !Array.isArray(task.spec.packages)) throw new Error('this task has no shape yet - tm_file needs an existing package list to file a STORY beside');
+  const stories = Array.isArray(a.stories) ? a.stories : [];
+  if (!stories.length) throw new Error('tm_file needs at least one story in stories[]');
+  const out = fileDefects(task, stories, { reporter: 'you' });
+  record(task, { event: 'tm_file', task_id: task.run_id, filed: out.filed, integrate: out.integrate });
+  return { task_id: task.run_id, filed: out.filed, integrate: out.integrate };
+}
+
 function toolStatus(a) {
   if (!a.task_id) {
     let ids = [];
@@ -2220,6 +2364,7 @@ function dispatch(name, a) {
     case 'tm_next': return { ...toolNext(a), inbox_applied: a.__inbox_applied || 0 };
     case 'tm_submit': return toolSubmit(a);
     case 'tm_retry': return toolRetry(a);
+    case 'tm_file': return toolFile(a);
     case 'tm_status': return toolStatus(a);
     case 'tm_events': return toolEvents(a);
     case 'tm_board': return toolBoard(a);
@@ -2251,7 +2396,7 @@ function callTool(name, args) {
     }
     if (name === 'tm_next' && (isLeaderProcess(task) || noDriver())) { const n = drainInbox(task); if (n) a.__inbox_applied = n; }
   }
-  // board.jsonl: taken as a before/after diff of the four tools that can move a ticket. A call
+  // board.jsonl: taken as a before/after diff of the tools that can move a ticket. A call
   // that got queued above (return already happened) never reaches here - nothing moved, so
   // nothing is logged, with no special-casing needed. A recursive call from drainInbox reaches
   // here too, exactly like a direct one, and is diffed the same way.
