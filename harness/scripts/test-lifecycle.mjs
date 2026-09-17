@@ -103,7 +103,7 @@ try {
     '<!-- harness:end -->\nkeep\n<!-- harness:begin v1 -->\n',
   );
 
-  // patch: synchronized dry-run and write across both manifests + README status.
+  // patch: synchronized dry-run and write across both manifests + bilingual README/KOR status.
   const repo = join(scratch, 'repo');
   write(
     join(repo, 'harness', '.claude-plugin', 'plugin.json'),
@@ -114,16 +114,84 @@ try {
     JSON.stringify({ plugins: [{ name: 'other', version: '9.0.0' }, { name: 'harness', version: '1.2.3' }] }, null, 2) + '\n',
   );
   write(join(repo, 'harness', 'README.md'), '# harness\n\n## Status\n- v1.2.3 — previous\n');
+  write(join(repo, 'harness', 'KOR.md'), '# harness\n\n## 상태\n- v1.2.3 — 이전\n');
 
-  const dryRun = run(PATCH, { repoRoot: repo, summary: 'lifecycle helpers', dryRun: true });
+  const dryRun = run(PATCH, { repoRoot: repo, summary: 'lifecycle helpers', summary_ko: '라이프사이클 헬퍼', dryRun: true });
   assert.equal(dryRun.version, '1.2.4');
   assert.equal(readJson(join(repo, 'harness', '.claude-plugin', 'plugin.json')).version, '1.2.3');
-  const patched = run(PATCH, { repoRoot: repo, summary: 'lifecycle helpers' });
+  assert.equal(readFileSync(join(repo, 'harness', 'KOR.md'), 'utf8'), '# harness\n\n## 상태\n- v1.2.3 — 이전\n');
+  const patched = run(PATCH, { repoRoot: repo, summary: 'lifecycle helpers', summary_ko: '라이프사이클 헬퍼' });
   assert.equal(patched.previousVersion, '1.2.3');
   assert.equal(patched.version, '1.2.4');
   assert.equal(readJson(join(repo, 'harness', '.claude-plugin', 'plugin.json')).version, '1.2.4');
   assert.equal(readJson(join(repo, '.claude-plugin', 'marketplace.json')).plugins[1].version, '1.2.4');
   assert.match(readFileSync(join(repo, 'harness', 'README.md'), 'utf8'), /## Status\n- v1\.2\.4 — lifecycle helpers\n/);
+  assert.match(readFileSync(join(repo, 'harness', 'KOR.md'), 'utf8'), /## 상태\n- v1\.2\.4 — 라이프사이클 헬퍼\n/);
+
+  // patch: refuses an English-only release — a summary with no summary_ko must fail loudly
+  // before touching any file, not silently produce a half-updated bilingual pair.
+  const koMissing = join(scratch, 'ko-missing-summary');
+  write(
+    join(koMissing, 'harness', '.claude-plugin', 'plugin.json'),
+    JSON.stringify({ name: 'harness', version: '1.0.0' }, null, 2) + '\n',
+  );
+  write(
+    join(koMissing, '.claude-plugin', 'marketplace.json'),
+    JSON.stringify({ plugins: [{ name: 'harness', version: '1.0.0' }] }, null, 2) + '\n',
+  );
+  write(join(koMissing, 'harness', 'README.md'), '# harness\n\n## Status\n');
+  write(join(koMissing, 'harness', 'KOR.md'), '# harness\n\n## 상태\n');
+  const beforePlugin = readFileSync(join(koMissing, 'harness', '.claude-plugin', 'plugin.json'), 'utf8');
+  const beforeReadme = readFileSync(join(koMissing, 'harness', 'README.md'), 'utf8');
+  const koMissingFailed = spawnSync(
+    process.execPath,
+    [PATCH, JSON.stringify({ repoRoot: koMissing, summary: 'english only' })],
+    { encoding: 'utf8' },
+  );
+  assert.notEqual(koMissingFailed.status, 0);
+  assert.match(koMissingFailed.stderr, /summary_ko is required/);
+  assert.equal(readFileSync(join(koMissing, 'harness', '.claude-plugin', 'plugin.json'), 'utf8'), beforePlugin);
+  assert.equal(readFileSync(join(koMissing, 'harness', 'README.md'), 'utf8'), beforeReadme);
+
+  // patch: refuses when KOR.md has no "## 상태" heading to prepend into.
+  const koNoHeading = join(scratch, 'ko-no-heading');
+  write(
+    join(koNoHeading, 'harness', '.claude-plugin', 'plugin.json'),
+    JSON.stringify({ name: 'harness', version: '1.0.0' }, null, 2) + '\n',
+  );
+  write(
+    join(koNoHeading, '.claude-plugin', 'marketplace.json'),
+    JSON.stringify({ plugins: [{ name: 'harness', version: '1.0.0' }] }, null, 2) + '\n',
+  );
+  write(join(koNoHeading, 'harness', 'README.md'), '# harness\n\n## Status\n');
+  write(join(koNoHeading, 'harness', 'KOR.md'), '# harness\n\n(no status section yet)\n');
+  const noHeadingFailed = spawnSync(
+    process.execPath,
+    [PATCH, JSON.stringify({ repoRoot: koNoHeading, summary: 'x', summary_ko: 'y' })],
+    { encoding: 'utf8' },
+  );
+  assert.notEqual(noHeadingFailed.status, 0);
+  assert.match(noHeadingFailed.stderr, /KOR\.md has no "## 상태" heading/);
+
+  // patch: refuses when KOR.md is missing entirely (pre-existing project layouts predating
+  // the bilingual requirement).
+  const koFileMissing = join(scratch, 'ko-file-missing');
+  write(
+    join(koFileMissing, 'harness', '.claude-plugin', 'plugin.json'),
+    JSON.stringify({ name: 'harness', version: '1.0.0' }, null, 2) + '\n',
+  );
+  write(
+    join(koFileMissing, '.claude-plugin', 'marketplace.json'),
+    JSON.stringify({ plugins: [{ name: 'harness', version: '1.0.0' }] }, null, 2) + '\n',
+  );
+  write(join(koFileMissing, 'harness', 'README.md'), '# harness\n\n## Status\n');
+  const koFileMissingFailed = spawnSync(
+    process.execPath,
+    [PATCH, JSON.stringify({ repoRoot: koFileMissing, summary: 'x', summary_ko: 'y' })],
+    { encoding: 'utf8' },
+  );
+  assert.notEqual(koFileMissingFailed.status, 0);
+  assert.match(koFileMissingFailed.stderr, /harness KOR\.md not found/);
 
   // patch: mismatched versions fail before any file is changed.
   const mismatch = join(scratch, 'mismatch');
@@ -136,8 +204,9 @@ try {
     JSON.stringify({ plugins: [{ name: 'harness', version: '2.0.1' }] }, null, 2) + '\n',
   );
   write(join(mismatch, 'harness', 'README.md'), '# harness\n\n## Status\n');
+  write(join(mismatch, 'harness', 'KOR.md'), '# harness\n\n## 상태\n');
   const before = readFileSync(join(mismatch, 'harness', '.claude-plugin', 'plugin.json'), 'utf8');
-  const failed = spawnSync(process.execPath, [PATCH, JSON.stringify({ repoRoot: mismatch, summary: 'no write' })], { encoding: 'utf8' });
+  const failed = spawnSync(process.execPath, [PATCH, JSON.stringify({ repoRoot: mismatch, summary: 'no write', summary_ko: '쓰기 없음' })], { encoding: 'utf8' });
   assert.notEqual(failed.status, 0);
   assert.match(failed.stderr, /version mismatch/);
   assert.equal(readFileSync(join(mismatch, 'harness', '.claude-plugin', 'plugin.json'), 'utf8'), before);
