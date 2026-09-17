@@ -421,12 +421,22 @@ main 세션·TaskLeader·TeamLeader·worker 어느 것도 메모리에만 있는
 
 **v0.11.0 기준 실제 반환** — `TOOLS[]`(`teams/mcp/taskmanager.mjs`)에 있는 것과 없는 것을 그대로 적는다.
 
+**티켓 키가 `task_id`의 진짜 자리를 대신한다.** `mustFindTask(a)`(`taskmanager.mjs:218`)가
+`resolveTaskRef(a.task_id)`로 8-hex 프리픽스 `E-xxxxxxxx`를 실제 run id로 풀어 찾는다 — 그리고
+`mustFindTask`는 `callTool`의 TaskLeader 게이트(각 도구의 `dispatch` 이전, `task_id`가 있는 모든
+호출에서 실행)에서도, 각 도구 함수 자신에게서도 똑같이 호출된다. 그 결과 `task_id`를 받는 도구
+**전부**(`tm_status`, `tm_events`, `tm_docs`, `tm_next`, `tm_submit`, `tm_retry`, `tm_board`) 가
+전체 run id든 티켓 키든 똑같이 받는다 — `tm_board`만의 특수 케이스가 아니다. 사람이 타이핑하고
+보드가 찍는 바로 그 식별자를 이제 API도 그대로 받아들인다. 전체 run id도 그대로 통하고(길이가
+달라 충돌 여지가 없다), 순수 추가 변경이다. 테스트: `test-taskmanager.mjs`의 "tm_board accepts
+the ticket key..." 케이스로 회귀를 잡는다.
+
 | 도구 | 반환 |
 |---|---|
-| `tm_board({task_id?})` | task_id 없으면 EPIC 목록(`key, task_id, title, state, phase`). 있으면 EPIC 헤더(`state, phase, leader`) + STORY 표(`epicBoardRows`: `key, id, title, role, state, tasks, last_verdict, reporter`) + `doc_path`. `task_id`는 전체 run id 또는 티켓 키 `E-xxxxxxxx` 둘 다 받는다(`tm_ticket`과 같은 8-hex 프리픽스 해석) |
+| `tm_board({task_id?})` | task_id 없으면 EPIC 목록(`key, task_id, title, state, phase`). 있으면 EPIC 헤더(`state, phase, leader`) + STORY 표(`epicBoardRows`: `key, id, title, role, state, tasks, last_verdict, reporter`) + `doc_path`. `task_id`는 전체 run id 또는 티켓 키 `E-xxxxxxxx` 둘 다 받는다(위 참고 — `tm_ticket`의 `key`와 같은 8-hex 프리픽스 해석) |
 | `tm_ticket({key})` | 티켓 1개. EPIC 키면 `state, phase, leader, doc_path`. STORY 키(`E-xxx/Pn`)면 `state, tasks, worktree, last_verdict, reporter, doc_path`. **담당(vendor/model), 전이 이력, 열린 질문, 가정은 반환하지 않는다** — 아래 human 관련 도구와 같은 이유(§7, v0.13.0 전까지 만들 데이터가 없다) |
-| `tm_docs({task_id, rebuild?})` | §7c 문서를 task.json에서 다시 렌더. 실제로는 13종 중 **8종**(INDEX·request·shape·critique·STORY별·integrate·goal-gate·report) — planning/qa Team이 아직 EPIC 흐름에 안 붙어서(§11 v0.11.0 행, v0.12.0+) `10-planning`/`10-prd`/`15-spec-gate`/`60-qa`/`65-audit` 5종은 만들지 않는다 |
-| `tm_events({task_id, since?})` | **`board.jsonl`이 아니라 `ledger.jsonl`(일반 이벤트 로그, v0.10.0부터 있음)의 꼬리를 반환한다** — 티켓 전이만 담는 `board.jsonl`을 읽어 돌려주는 도구는 아직 없다 |
+| `tm_docs({task_id, rebuild?})` | §7c 문서를 task.json에서 다시 렌더. 실제로는 13종 중 **8종**(INDEX·request·shape·critique·STORY별·integrate·goal-gate·report) — planning/qa Team이 아직 EPIC 흐름에 안 붙어서(§11 v0.11.0 행, v0.12.0+) `10-planning`/`10-prd`/`15-spec-gate`/`60-qa`/`65-audit` 5종은 만들지 않는다. `task_id`는 위와 같이 티켓 키도 받는다 |
+| `tm_events({task_id, since?})` | **`board.jsonl`이 아니라 `ledger.jsonl`(일반 이벤트 로그, v0.10.0부터 있음)의 꼬리를 반환한다** — 티켓 전이만 담는 `board.jsonl`을 읽어 돌려주는 도구는 아직 없다. `task_id`는 위와 같이 티켓 키도 받는다 |
 | `tm_log({key, tail?})` | **미구현.** v0.11.0 범위에서 의도적으로 뺐다 |
 | `tm_answer({key, payload})` | **미구현.** §7의 human 노드(`ask`/`gate:human`/`waiting_human`)가 없으면 제출할 대상이 없다 — v0.13.0 |
 | `tm_assign({key, vendor})` | **미구현.** 위와 같음 — v0.13.0 |
@@ -436,7 +446,7 @@ main 세션·TaskLeader·TeamLeader·worker 어느 것도 메모리에만 있는
 
 | 명령 | 하는 일 |
 |---|---|
-| `/teams:board [E-xxx]` | **구현됨**(`teams/skills/board`). `tm_board` → 아래 표. `E-xxx`는 짧은 티켓 키로 받는다(`tm_board`가 직접 해석) |
+| `/teams:board [E-xxx]` | **구현됨**(`teams/skills/board`). `tm_board` → 아래 표. `E-xxx`는 짧은 티켓 키로 받는다 — `tm_board`만이 아니라 `task_id`를 받는 도구 전부가 같은 방식으로 해석한다(위 도구 표 참고) |
 | `/teams:ticket E-xxx/P2` | **구현됨**(`teams/skills/ticket`). `tm_ticket` → 한 티켓 |
 | `/teams:log E-xxx/P2` | **미구현** — `tm_log` 자체가 없다 |
 | `/teams:inbox` | **미구현** — `tm_inbox` 자체가 없다 |
