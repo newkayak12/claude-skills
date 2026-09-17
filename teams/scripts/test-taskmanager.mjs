@@ -303,6 +303,22 @@ test('tm_open({size}) pins the size: L opens shape without measuring, S opens it
   } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
 });
 
+test('resolving size to S returns task_state: "s_run" and never the dead "delegate" field - delegateIfSmall always opens its own run itself (openSRun) rather than handing one back for the caller to open, so nothing can ever produce "delegate"', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
+  try {
+    const pinned = await tm.call('tm_open', { request: 'small request', cwd, flow: 'document', vendor: 'self', size: 'S' });
+    assert.equal(pinned.task_state, 's_run');
+    assert.equal('delegate' in pinned, false, JSON.stringify(pinned));
+
+    const { task_id } = await tm.call('tm_open', { request: 'r', cwd, flow: 'develop', vendor: 'self' });
+    const measured = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'develop' }) });
+    assert.equal(measured.task_state, 's_run');
+    assert.equal('delegate' in measured, false, JSON.stringify(measured));
+  } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
+});
+
 test('a pinned flow survives sizing and reaches the single run the manager opens', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));

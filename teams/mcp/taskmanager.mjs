@@ -1596,11 +1596,13 @@ const NEXT_SCHEMA = {
   type: 'object',
   properties: {
     task_id: { type: 'string' },
-    state: { type: 'string', enum: ['running', 'blocked', 'complete', 'delegated'] },
+    // 'delegated' has no producer: a size-S task always opens its own run via openSRun and
+    // reports task_state: 's_run' (delegateIfSmall) - see the removed `delegate` field below,
+    // same story.
+    state: { type: 'string', enum: ['running', 'blocked', 'complete'] },
     counts: { type: 'object' },
     size: { type: 'string', enum: ['S', 'L'] },
     flow: { type: 'string' },
-    delegate: { type: 'object', description: 'size S: open this with team_open instead; the task left nothing on disk' },
     ready: { type: 'array', items: { type: 'object', properties: {
       node_id: { type: 'string' }, stage: { type: 'string' }, briefing_path: { type: 'string' }, next: { type: 'string' },
     }, required: ['node_id', 'stage'] } },
@@ -1624,7 +1626,7 @@ const VERDICT_SCHEMA = {
     child: { type: 'object' }, integration: { type: 'object' }, conflicts: { type: 'array', items: { type: 'string' } },
     conflicting_packages: { type: 'array', items: { type: 'string' }, description: 'pass to tm_retry({repackage})' },
     missing_verdict: { type: 'string' }, reason: { type: 'string' },
-    delegate: { type: 'object' },
+    task_state: { type: 'string', enum: ['s_run'], description: 'present, and always "s_run", on the tm_submit reply that resolves the size node to S: the task opened its own graph run (openSRun) and this reply already carries tm_next\'s own fields (ready/children/etc.) for that run. Absent for every other node, and for a size-L task, where those same fields describe the manager\'s own graph instead.' },
   },
   required: ['task_id', 'node_id', 'stage', 'state', 'stage_ok'],
 };
