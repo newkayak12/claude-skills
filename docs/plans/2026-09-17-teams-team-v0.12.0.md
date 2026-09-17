@@ -237,13 +237,25 @@ Task 7  릴리스 0.12.0                                                        
   `{ id: 'PLAN', phase: 'planning', flow: 'plan', title: 'PRD', brief: task.request,
   acceptance: ['PRD covers the request'], deps: [], touches: [] }`를 **아직 없는**
   `task.spec.packages`가 아니라 `task.planning_pkg`(shape 전이라 `task.spec`이 아직 null이므로
-  별도 필드에 둔다 — shape 성공 시 `expandPackages`가 `task.spec.packages`를 만들 때 이 항목을
-  **선두에 합류**시킨다) 자리에 준비하고, `pushChain(task, PACKAGE_CHAIN, 'PLAN', 1, ['size'], [],
+  별도 필드에 둔다) 자리에 준비하고, `pushChain(task, PACKAGE_CHAIN, 'PLAN', 1, ['size'], [],
   {})`로 `dispatch:PLAN:1`/`accept:PLAN:1`을 만든다. `shape` 노드의 `deps`를
   `['accept:PLAN:1']`로, `critique`는 그대로 `['shape']`로 둔다.
 - [ ] 3: `node --test teams/scripts/test-taskmanager.mjs` 통과 확인.
 - [ ] 4: `git add teams/mcp/taskmanager.mjs teams/scripts/test-taskmanager.mjs && git commit -m
   "feat(teams): roles.planning inserts a planning phase-Team before shape (§2)"`
+
+> **사후 정정 (2026-09-17, board.jsonl 비대칭 수정 작업 중 발견).** 위 2번 항목은 원래
+> "shape 성공 시 `expandPackages`가 `task.spec.packages`를 만들 때 `task.planning_pkg`를
+> 선두에 합류시킨다"고 적었으나, **실제 구현은 그렇게 하지 않는다** — 좋은 이유가 있다:
+> `pushChain`이 이미 이 단계(`createTask`)에서 `dispatch:PLAN:1`/`accept:PLAN:1`을 직접 열어
+> 두는데, `expandPackages`가 도는 `task.spec.packages` 배열에 `PLAN`을 다시 넣으면 같은
+> `subgoal_id`로 **두 번째, 충돌하는 체인**을 또 여는 꼴이 된다. 실제 코드는 `task.planning_pkg`를
+> `task.spec.packages`에 합류시키지 않고 끝까지 별도 필드로 남겨 두며, `epicBoardRows`/
+> `ticketSnapshot`(`tickets.mjs`)과 문서 렌더러(`docs.mjs`)가 `task.planning_pkg`/`task.qa_pkg`를
+> 직접 읽어 들인다. 이 계획은 역사를 다시 쓰지 않는다 — 원래 의도가 틀렸다는 사실 자체를
+> 지우지 않고 남긴다. Task 4(QA phase-Team)의 원문은 애초에 "합류"를 주장한 적이 없어 정정이
+> 필요 없다. v0.12.1 Task 2(audit phase-Team)도 확인했고, `task.spec.packages`에 합류시킨다는
+> 주장이 없어 같은 실수를 물려받지 않았다.
 
 ---
 
