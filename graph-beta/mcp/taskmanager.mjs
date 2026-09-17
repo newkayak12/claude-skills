@@ -32,6 +32,7 @@ import { homedir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { touchMarker } from './engage.mjs';
+import { readTeamConfig, resolveTeamOptions } from './teamconfig.mjs';
 import {
   node,
   pushChain,
@@ -139,6 +140,9 @@ function createTask(a) {
     throw new Error('child_driver and s_driver were removed in 0.10.0: the driving session never drives a child run or the manager loop. Open the task and watch tm_status / tm_events; the TaskLeader and package drivers do the rest.');
   }
   const cwd = resolve(String(a.cwd));
+  const teamFile = readTeamConfig(cwd);
+  const team = resolveTeamOptions(a, teamFile.config);
+  const T = team.opts;
   const taskId = randomUUID();
   const task = {
     run_id: taskId,
@@ -155,11 +159,11 @@ function createTask(a) {
     size_pinned: ['S', 'L'].includes(a.size) ? a.size : null,
     // false turns method off entirely; an object overrides STAGE_SKILLS per stage.
     stage_skills: a.skills === false ? false : (a.skills && typeof a.skills === 'object' ? a.skills : null),
-    max_retries: Number.isInteger(a.max_retries) ? a.max_retries : 2,
+    max_retries: T.max_retries,
     // How many times a package's dead driver is respawned on the SAME child run_id before the
     // dispatch is folded blocked. A usage-limit death never spends this budget - see
     // serviceDeadDriver.
-    driver_restarts: Number.isInteger(a.driver_restarts) ? a.driver_restarts : 2,
+    driver_restarts: T.driver_restarts,
     // Whether the single run a size-S request becomes is opened isolated. It is a tm_open
     // argument because the manager, not the entry skill, is what opens that run.
     isolated: a.isolated === true,
@@ -168,17 +172,21 @@ function createTask(a) {
     mixed: a.mixed !== false,
     // The floor the manager's own goal gate's match_pct must clear - same meaning, same
     // default, as the graph engine's run.goal_threshold.
-    goal_threshold: Number.isInteger(a.goal_threshold) ? a.goal_threshold : 90,
+    goal_threshold: T.goal_threshold,
     // Best-effort: the agent/session name the TaskLeader driver SendMessages on every state
     // change. null falls back to "whoever ListAgents shows opened this task".
     notify: typeof a.notify === 'string' && a.notify ? a.notify : null,
     // Set once tm_open spawns it (toolOpen): {pid, started_at, log, stderr, exit, command,
     // spawn_count, restarts, exhausted}. null under noLeader() - see serviceLeader/spawnLeader.
     leader: null,
+    // .claude/team.json project defaults, layered under explicit tm_open arguments - see
+    // teamconfig.mjs. Recorded here (not just applied) so tm_status can show where each
+    // resolved option came from.
+    team: { opts: T, sources: team.sources, notes: team.notes, file_status: teamFile.status },
     // Everything a child run needs to route the way the parent's session routes.
     child_opts: {
-      vendor: a.vendor || 'auto',
-      allocation: a.allocation || 'ordered',
+      vendor: T.vendor,
+      allocation: T.allocation,
       host_vendor: a.host_vendor || null,
       host_model: a.host_model || null,
       native_models: a.native_models || null,
@@ -1882,6 +1890,7 @@ function toolStatus(a) {
         ...(task.s_run.waiting_capacity ? { waiting_capacity: task.s_run.waiting_capacity } : {}) },
       packages: [],
       leader: task.leader ? { pid: task.leader.pid, alive: leaderAlive(task), log: task.leader.log, stderr: task.leader.stderr, spawn_count: task.leader.spawn_count, restarts: task.leader.restarts || 0, exhausted: !!task.leader.exhausted, stderr_tail: driverStderrTail(task.leader) } : null,
+      team: task.team || null,
     };
   }
   const state = runState(task);
@@ -1898,6 +1907,7 @@ function toolStatus(a) {
           ...(n.child ? { child: { ...n.child, ...(n.child.driver ? { driver: { ...n.child.driver, alive: driverAlive(n.child.driver) } } : {}) } } : {}) }
       : verdict(task, n))),
     leader: task.leader ? { pid: task.leader.pid, alive: leaderAlive(task), log: task.leader.log, stderr: task.leader.stderr, spawn_count: task.leader.spawn_count, restarts: task.leader.restarts || 0, exhausted: !!task.leader.exhausted, stderr_tail: driverStderrTail(task.leader) } : null,
+    team: task.team || null,
   };
 }
 
