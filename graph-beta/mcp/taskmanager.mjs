@@ -169,6 +169,12 @@ function createTask(a) {
     // The floor the manager's own goal gate's match_pct must clear - same meaning, same
     // default, as the graph engine's run.goal_threshold.
     goal_threshold: Number.isInteger(a.goal_threshold) ? a.goal_threshold : 90,
+    // Best-effort: the agent/session name the TaskLeader driver SendMessages on every state
+    // change. null falls back to "whoever ListAgents shows opened this task".
+    notify: typeof a.notify === 'string' && a.notify ? a.notify : null,
+    // Set once tm_open spawns it (toolOpen): {pid, started_at, log, stderr, exit, command,
+    // spawn_count, restarts, exhausted}. null under noLeader() - see serviceLeader/spawnLeader.
+    leader: null,
     // Everything a child run needs to route the way the parent's session routes.
     child_opts: {
       vendor: a.vendor || 'auto',
@@ -457,6 +463,14 @@ function shortId(taskId) {
 // (measured: 507k tokens over 331 turns, ~55% of one task's cost, dead at the usage limit).
 // A test that wants to submit nodes by hand through the broker sets this and nothing spawns.
 function noDriver() { return process.env.HARNESS_TEST_NO_DRIVER === '1'; }
+
+// Test seam only, like noDriver() but narrower: disables just the TaskLeader auto-spawn (and the
+// inbox/watcher gate that only exists once a leader does) without touching package or size-S
+// driver spawning. A fixture that drives a real fake-driver process for a PACKAGE dispatch sets
+// this so a leader - spawned from the very same HARNESS_CHILD_DRIVER script - cannot race its own
+// direct tm_submit calls into the inbox, or (with no HARNESS_CHILD_DRIVER override at all) spawn a
+// real `claude` process merely because tm_open was called.
+function noLeader() { return noDriver() || process.env.HARNESS_TEST_NO_LEADER === '1'; }
 
 // The engagement marker (engage.mjs) lives at .claude/.harness-markers/ INSIDE the tree, because
 // that is where the harness gate looks. It is harness state, not project content, so git must
@@ -753,7 +767,9 @@ function spawnChildDriver(task, nodeIdLabel, child, opts = {}) {
     // keeps a relative HARNESS_TASKS_DIR pointing at the same place from the child's cwd.
     delete env.CLAUDECODE;
     if (process.env.HARNESS_TASKS_DIR) env.HARNESS_TASKS_DIR = tasksRoot();
-    const proc = spawn(argv[0], [...argv.slice(1), driverPrompt(task, child, opts)], {
+    if (opts.env) Object.assign(env, opts.env);
+    const prompt = opts.prompt || driverPrompt(task, child, opts);
+    const proc = spawn(argv[0], [...argv.slice(1), prompt], {
       cwd: child.cwd,
       env,
       detached: true,
@@ -883,6 +899,93 @@ function serviceDeadDriver(task, child, nodeId) {
   child.driver = fresh;
   record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: nodeId, pid: fresh.pid, restart: restarts.length, budget });
   return true;
+}
+
+// ---------- the TaskLeader driver ----------
+//
+// tm_open no longer hands the opening session a manager loop to run: it spawns a second headless
+// session - the TaskLeader - that runs references/manager.md's loop (tm_next/tm_submit/tm_retry)
+// on this task_id until it is complete or blocked, exactly the way a package's own driver runs
+// the graph loop on a child run. The opening session only watches: tm_status for state, tm_events
+// for what happened, and a best-effort SendMessage from the leader on every change.
+//
+// A mutating call from anyone other than the leader process itself is queued to an inbox instead
+// of applied directly, and the leader drains it at the top of its own tm_next - the same
+// recursion-by-process rule Task 11's block comment gives child drivers, extended one level up.
+
+function leaderPrompt(task, opts = {}) {
+  return [
+    `You are the TaskLeader of graph-beta task ${task.run_id} at cwd ${task.cwd}. The task is already open: Do not call tm_open.`,
+    `Use the graph-beta:orchestrate skill and read references/manager.md; run its loop with tm_next / tm_submit / tm_retry on this task_id`,
+    `until tm_status reports complete or blocked, or the report node has run. A fresh agent for every ready manager node, its JSON relayed verbatim.`,
+    `You never do a node's work yourself, never edit project files, never open a child run by hand.`,
+    opts.resume ? `A previous leader for this task died; call tm_status first and resume from what is already done - do not redo a done node.` : '',
+    task.notify ? `On every state change, if ListAgents lists "${task.notify}", SendMessage it one line: task_id, phase, state, and what changed. If the tool or the name is missing, skip silently and never wait for it.`
+                : `On every state change, if the session that opened this task is listed by ListAgents, SendMessage it one line: task_id, phase, state, and what changed. If session messaging is unavailable, skip silently and never wait for it.`,
+    `End with the skill's output template.`,
+  ].filter(Boolean).join(' ');
+}
+function isLeaderProcess(task) { return process.env.HARNESS_LEADER_OF === task.run_id; }
+function leaderAlive(task) { return !!(task.leader && driverAlive(task.leader)); }
+
+function spawnLeader(task, opts = {}) {
+  const attempt = task.leader ? (task.leader.spawn_count || 0) : 0;
+  const d = spawnChildDriver(task, 'leader', { cwd: task.cwd, run_id: task.run_id }, { attempt, prompt: leaderPrompt(task, opts), env: { HARNESS_LEADER_OF: task.run_id } });
+  task.leader = { ...d, spawn_count: attempt + 1, restarts: task.leader ? (task.leader.restarts || 0) + (opts.resume ? 1 : 0) : 0, exhausted: false };
+  record(task, { event: opts.resume ? 'leader_restarted' : 'leader_spawned', task_id: task.run_id, pid: d.pid, log: d.log, ...(d.error ? { error: d.error } : {}) });
+}
+
+// Called at the top of every tm_* entry. The main session never drives; it re-raises the leader.
+function serviceLeader(task) {
+  if (noLeader() || !task.leader || isLeaderProcess(task)) return false;
+  const st = runState(task).state;
+  if (st === 'complete' || st === 'blocked') return false;
+  if (driverAlive(task.leader)) return false;
+  if (task.leader.exhausted) return false;
+  if ((task.leader.restarts || 0) >= task.driver_restarts) {
+    task.leader.exhausted = true;
+    record(task, { event: 'leader_exhausted', task_id: task.run_id, restarts: task.leader.restarts, stderr: driverStderrTail(task.leader) });
+    saveRun(task);
+    return true;
+  }
+  spawnLeader(task, { resume: true });
+  saveRun(task);
+  return true;
+}
+
+// A tool call that mutates the task, made by a process that is not the leader while a leader is
+// alive, is queued here instead of applied - the leader drains it at the top of its own tm_next.
+const MUTATING_TOOLS = new Set(['tm_submit', 'tm_retry', 'tm_settle', 'tm_repackage', 'tm_repair', 'tm_reset_capacity']);
+let inboxSeq = 0;
+function queueToInbox(task, tool, args) {
+  const dir = join(taskDir(task.run_id), 'inbox');
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, `${Date.now()}-${String(++inboxSeq).padStart(4, '0')}-${tool}.json`);
+  writeFileSync(path, JSON.stringify({ tool, args, ts: Date.now(), from_pid: process.pid }) + '\n');
+  record(task, { event: 'inbox_queued', task_id: task.run_id, tool, path });
+  return { queued: true, task_id: task.run_id, tool, inbox_path: path, applied_by: 'the leader on its next tm_next', leader: { pid: task.leader.pid, alive: leaderAlive(task) } };
+}
+function drainInbox(task) {
+  const dir = join(taskDir(task.run_id), 'inbox');
+  let files = [];
+  try { files = readdirSync(dir).filter((f) => f.endsWith('.json')).sort(); } catch { return 0; }
+  let applied = 0;
+  for (const f of files) {
+    const path = join(dir, f);
+    let req;
+    try { req = JSON.parse(readFileSync(path, 'utf8')); } catch { mkdirSync(join(dir, 'failed'), { recursive: true }); try { writeFileSync(join(dir, 'failed', f), readFileSync(path)); rmSync(path); } catch { /* best-effort */ } continue; }
+    try {
+      callTool(req.tool, { ...req.args, task_id: task.run_id });
+      record(task, { event: 'inbox_applied', task_id: task.run_id, tool: req.tool, path });
+      applied++;
+    } catch (e) {
+      record(task, { event: 'inbox_failed', task_id: task.run_id, tool: req.tool, path, error: String((e && e.message) || e) });
+      mkdirSync(join(dir, 'failed'), { recursive: true });
+      try { writeFileSync(join(dir, 'failed', f), readFileSync(path)); } catch { /* best-effort */ }
+    }
+    try { rmSync(path); } catch { /* best-effort */ }
+  }
+  return applied;
 }
 
 // Executed by the server the moment the node is ready. The model never opens a run.
@@ -1385,6 +1488,7 @@ const TOOLS = [
         mixed: { type: 'boolean', description: 'Passed the same way isolated is, to the same size-S run. Default true. false forbids the other kind of work entirely - a develop-flow request with a document subgoal fails at setgoal instead of quietly running one. Has no effect on an L task: every package is already mixed:true.' },
         driver_restarts: { type: 'integer', description: 'default 2: how many times a package or size-S driver that died mid-run is respawned on the SAME run_id before the dispatch folds blocked. A usage-limit death never spends this - it parks on waiting_capacity for tm_retry({reset_capacity:true}) instead.' },
         goal_threshold: { type: 'integer', description: 'default 90: the manager\'s own goal gate must report match_pct at or above this to accept, and it is passed through to every child run as its own goal_threshold. A gate that says accept with 40% match is reporting a partial result as a pass. 0 accepts on the verdict alone.' },
+        notify: { type: 'string', description: 'agent/session name for the TaskLeader driver\'s one-line SendMessage progress updates, best-effort. Defaults to whoever ListAgents shows opened this task.' },
       },
       required: ['request', 'cwd'],
     },
@@ -1418,7 +1522,23 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, node_id: { type: 'string' }, full: { type: 'boolean' } } },
     outputSchema: { type: 'object' },
   },
+  {
+    name: 'tm_events',
+    description: 'Tail the task ledger: what the manager and its drivers did, newest last. since: a ts to start after; limit: default 50. Read-only; safe from any session.',
+    inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, since: { type: 'number' }, limit: { type: 'integer' } }, required: ['task_id'] },
+    outputSchema: { type: 'object' },
+  },
 ];
+
+function toolEvents(a) {
+  const task = mustFindTask(a);
+  const since = Number(a.since) || 0;
+  const limit = Number.isInteger(a.limit) && a.limit > 0 ? a.limit : 50;
+  let lines = [];
+  try { lines = readFileSync(join(taskDir(task.run_id), 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean); } catch { lines = []; }
+  const events = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter((e) => e && e.ts > since);
+  return { task_id: task.run_id, count: events.length, events: events.slice(-limit) };
+}
 
 function requireRunnable(task, nodeId) {
   const n = getNode(task, nodeId);
@@ -1449,7 +1569,8 @@ function toolOpen(a) {
     if (delegated) return delegated;
     saveRun(task);
   }
-  return toolNext({ task_id: task.run_id });
+  if (!noLeader()) { spawnLeader(task); saveRun(task); }
+  return { ...toolNext({ task_id: task.run_id }), leader: task.leader ? { pid: task.leader.pid, log: task.leader.log } : null };
 }
 
 // Size S, s_driver 'process' (the default): open the one graph run this request needs, in the
@@ -1626,6 +1747,7 @@ function toolNext(a) {
 
 function toolSubmit(a) {
   const task = mustFindTask(a);
+  record(task, { event: 'tm_submit', task_id: task.run_id, node_id: String(a.node_id) });
   const n = requireRunnable(task, String(a.node_id));
   if (n.stage === 'dispatch') {
     if (a.payload && Object.keys(a.payload).length) throw new Error('a dispatch node takes no payload: the manager reads the child run itself');
@@ -1759,6 +1881,7 @@ function toolStatus(a) {
         ...(task.s_run.driver ? { driver: { ...task.s_run.driver, alive: driverAlive(task.s_run.driver) } } : {}),
         ...(task.s_run.waiting_capacity ? { waiting_capacity: task.s_run.waiting_capacity } : {}) },
       packages: [],
+      leader: task.leader ? { pid: task.leader.pid, alive: leaderAlive(task), log: task.leader.log, stderr: task.leader.stderr, spawn_count: task.leader.spawn_count, restarts: task.leader.restarts || 0, exhausted: !!task.leader.exhausted, stderr_tail: driverStderrTail(task.leader) } : null,
     };
   }
   const state = runState(task);
@@ -1774,6 +1897,7 @@ function toolStatus(a) {
       ? { node_id: n.node_id, stage: n.stage, state: n.state, deps: n.deps, after: n.after || [],
           ...(n.child ? { child: { ...n.child, ...(n.child.driver ? { driver: { ...n.child.driver, alive: driverAlive(n.child.driver) } } : {}) } } : {}) }
       : verdict(task, n))),
+    leader: task.leader ? { pid: task.leader.pid, alive: leaderAlive(task), log: task.leader.log, stderr: task.leader.stderr, spawn_count: task.leader.spawn_count, restarts: task.leader.restarts || 0, exhausted: !!task.leader.exhausted, stderr_tail: driverStderrTail(task.leader) } : null,
   };
 }
 
@@ -1781,12 +1905,33 @@ function toolStatus(a) {
 
 function callTool(name, args) {
   const a = args || {};
+  // The TaskLeader gate: runs before every tool but tm_open (there is no task yet to gate).
+  // Any dead leader is serviced here so it is respawned (or reported exhausted) on any tm_* call,
+  // not just tm_next. While a leader is alive and this call is not from the leader process itself,
+  // a mutating tool is queued to the inbox instead of applied, and tm_next reports the leader's
+  // state instead of driving; the leader drains the inbox at the top of its OWN tm_next below.
+  if (a.task_id && name !== 'tm_open') {
+    const task = mustFindTask(a);
+    serviceLeader(task);
+    const watcher = !noLeader() && !isLeaderProcess(task) && task.leader && leaderAlive(task);
+    if (watcher && MUTATING_TOOLS.has(name)) return queueToInbox(task, name, a);
+    if (watcher && name === 'tm_next') {
+      const st = runState(task);
+      return {
+        task_id: task.run_id, state: st.state, counts: st.counts, driven_by: 'leader',
+        leader: { pid: task.leader.pid, alive: true, log: task.leader.log, restarts: task.leader.restarts },
+        hint: 'the TaskLeader driver runs the loop; watch tm_status({task_id}) and tm_events({task_id})',
+      };
+    }
+    if (name === 'tm_next' && (isLeaderProcess(task) || noDriver())) { const n = drainInbox(task); if (n) a.__inbox_applied = n; }
+  }
   switch (name) {
     case 'tm_open': return toolOpen(a);
-    case 'tm_next': return toolNext(a);
+    case 'tm_next': return { ...toolNext(a), inbox_applied: a.__inbox_applied || 0 };
     case 'tm_submit': return toolSubmit(a);
     case 'tm_retry': return toolRetry(a);
     case 'tm_status': return toolStatus(a);
+    case 'tm_events': return toolEvents(a);
     default: throw new Error('unknown tool: ' + name);
   }
 }
