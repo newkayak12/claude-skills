@@ -41,6 +41,12 @@ const GRAPH_STAGE_MOUNTS = {
   plan: [{ tool: 'mcp__sequential-thinking__sequentialthinking', use: 'stepping through the decomposition before you answer' }],
   setgoal: [{ tool: 'mcp__think-tool__think', use: 'reasoning through the acceptance criteria and subgoal shape before you answer' }],
   'gate:goal': [{ tool: 'mcp__mcp-reasoner__mcp-reasoner', use: 'weighing the evidence for and against acceptance before you answer' }],
+  // draft is shared with the document kind - this stage name, not the planning kind alone, is
+  // what the mechanism keys on, so a document draft gets the same advisory mount too. That is
+  // a side effect of the design doc's plan (§3) asking for it on planning's draft specifically;
+  // harmless, since a mount is advisory and skipped in silence when unconnected.
+  draft: [{ tool: 'mcp__think-tool__think', use: 'reasoning through the problem framing and requirements before you write' }],
+  cases: [{ tool: 'mcp__sequential-thinking__sequentialthinking', use: 'stepping through the behaviors a user or an attacker could hit before you write the case set' }],
 };
 
 function stageKey(n) {
