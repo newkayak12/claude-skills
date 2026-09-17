@@ -610,6 +610,7 @@ harness `patch.mjs`와 같은 규칙: `x.y.Z`만, plugin.json + marketplace 항�
 |---|---|---|
 | v0.10.0 | **완료.** install/remove/patch 셋 + `team.json` + 공존 검사 + engagement 마커(harness 변경 0) + inline 옵션 셋 제거 + TaskLeader driver·inbox·`tm_events` | install→remove 멱등 테스트, harness+team 동시 설치 픽스처에서 worker 쓰기 통과, `node --test teams/scripts/test-*.mjs` 241/241 |
 | v0.10.1 | **완료.** `planning`(draft→revise→gate)/`qa`(cases→execute→gate) kind + 페르소나·per-stage 스킬·advisory mounts(§3) + entry 스킬 2개(`teams:plan`/`teams:qa`) + `broker.mjs`의 revise 정체성-분리 가드 + `ensureWorktree`의 `gate_uncommitted` 이벤트(계획에 없던 안전 수정) | `node --test teams/scripts/test-*.mjs` 258/258, 회귀 0. 벤치 요청 파일(`plan-flat`/`qa-flat`)만 추가, 벤치 자체는 미실행 — 실제 벤더 실행 증거 없음, 전부 단위 테스트 |
+| v0.10.2 | **완료.** 리네임 + 독립화 — `graph-beta`→`teams`, `graph_*`→`team_*`(`broker.mjs`의 서버 이름도 `teams-engineering`), install 시 graph와의 상호배제 검사 제거(§14 결정 기록 6b) | 전용 계획서 없이 나간 릴리스라 다른 세 완료 단계와 같은 방식의 task-unit 집계·테스트 카운트가 없다 — `docs/plans/2026-09-17-teams-roadmap-sizing.md` §6에 크기 칸을 비운 채로 행만 남겨 둠 |
 | v0.11.0 | **완료.** `tickets.mjs` 파생 + `board.jsonl` + `docs.mjs` phase md + `tm_board`/`tm_ticket`/`tm_docs`(v0.10.0에 이미 있던 `tm_events` 포함) + `teams:board`/`teams:ticket` 명령 스킬. 계획과 다르게 간 것 둘, 둘 다 의도적: `docs.mjs`는 §7c 13종 문서 중 **8종**만 렌더한다(planning/qa Team 연결이 필요한 5종 — `10-planning`/`10-prd`/`15-spec-gate`/`60-qa`/`65-audit` — 은 v0.12.0+로 미룸; 빈 파일을 만드는 것보다 안 만드는 쪽이 신뢰를 덜 깎는다는 판단). TaskLeader의 push notification(§6에 "SendMessage"로 남아 있던 그 알림)은 확장이 아니라 **제거**됐다 — `tm_board`/`tm_events`가 durable pull 경로로 대신한다(§14 결정 기록 참고) | `node --test teams/scripts/test-*.mjs` 289/289, 회귀 0. 매핑 표는 테이블 테스트, md는 golden 파일 비교로 `rebuild`가 동일 출력임을 확인. **벤치는 이번에도 미실행 — 실제 벤더 실행 증거 없음, 전부 단위 테스트**(v0.10.1 행과 같은 사정). 구현 중 실결함 2건 발견·수정: EPIC 티켓 상태가 `integrate`/`gate:goal`/`report` 노드의 *존재*로 판정돼 shape 성공 즉시 `impl`을 건너뛰고 `IN_REVIEW`로 뛰던 버그(`026c119`), TASK 티켓 상태가 마찬가지로 gate/mid 노드 *존재*로 판정돼 subgoal이 생성된 순간부터 평생 `IN_REVIEW`로 읽히던 버그(`13738a7`) — 둘 다 "존재"가 아니라 "그 단계까지 실제로 도달"로 고쳤다 |
 | v0.12.0 | shape `role/priority/worktree`, 스케줄러 캡, QA=통합 트리 | seam 픽스처에 qa STORY 추가 |
 | v0.13.0 | executor `human`: `ask`, `gate:human`, `assignee`, `waiting_human` park/respawn, `tm_answer/tm_assign/tm_inbox` | fake driver 테스트 (0.8.0 방식), human이 implement한 TASK의 test가 non-human으로 가는지 |
@@ -636,11 +637,10 @@ harness `patch.mjs`와 같은 규칙: `x.y.Z`만, plugin.json + marketplace 항�
 합계)에 있다. **여기서는 어느 버전에 넣을지 정하지 않는다** — 그건 이 문서가 내릴 결정이 아니라
 사용자의 결정이다.
 
-별개로, 이미 **출시된** 버전 하나도 이 표에 행이 없다: **v0.10.2**(리네임 + 독립화, §14 결정 기록
-6b — `plugin.json` git 이력에서 확인됨)는 v0.10.1과 v0.11.0 사이에 실제로 나갔지만, 위 넷과 달리
-이건 미래 일감이 아니라 이미 끝난 일이다. 전용 계획서가 없어 다른 세 완료 단계와 같은 방식으로
-task-unit을 셀 수 없었을 뿐이고, 그래서 사이징 문서의 완료 합계에도 들어가 있지 않다(사이징 문서
-§6 참고).
+별개로 — 위 넷과 달리 미래 일감이 아니라 이미 끝난 일인데, 이 표에 행이 아예 없었던 것도 하나
+있었다: **v0.10.2**(리네임 + 독립화, §14 결정 기록 6b). 위 표에 행을 추가했다. 사이징
+문서(§6)에도 같은 행을 추가했는데, 거기는 크기 칸이 있는 표라 그 칸을 비워 둔 채로 뒀다 — 없는
+task-unit 숫자를 지어내지 않기 위해서다.
 
 ## 14. 열린 논점 — 코드 전에 결정할 것
 
