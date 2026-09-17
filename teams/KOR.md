@@ -438,6 +438,37 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 있는지 확인합니다. 소스 체크아웃이면 프로젝트 `.mcp.json`에 `mcp/broker.mjs`를
 `teams-engineering` 이름으로 등록합니다. `teams:install`이 그 항목을 보여줍니다.
 
+## 설정
+
+`.claude/team.json`은 `tm_open`의 프로젝트 기본값을 공급합니다 — 브로커의 직접 진입점인
+`team_open`은 이 파일을 전혀 읽지 않습니다. 우선순위는 내장 기본값 < `team.json` < 같은 이름의
+명시적 `tm_open` 인자입니다(`teamconfig.mjs`의 `resolveTeamOptions`); 알 수 없는 키나 검증기를
+통과하지 못한 값은 적용되지 않고 무시되며, 태스크에 노트로 기록됩니다(`tm_status`의
+`team.notes` — `tm_open` 자체가 바로 돌려주지는 않습니다). 스키마는
+[`mcp/teamconfig.mjs`](mcp/teamconfig.mjs)의 `TEAM_DEFAULTS`/`CHECK`입니다 — 13개 키 중 실제로
+동작에 반영되는 건 여섯입니다:
+
+| 키 | 기본값 | 동작에 반영? | 하는 일 |
+|---|---|---|---|
+| `vendor` | `"auto"` | 예 | 모든 자식 런의 벤더 선택(`child_opts.vendor`). |
+| `allocation` | `"ordered"` | 예 | 모든 자식 런의 `"ordered"` vs `"balanced"` 라우팅(`child_opts.allocation`); `"balanced"`가 무엇을 바꾸는지는 `graph`의 상태 로그 참고. |
+| `goal_threshold` | `90` | 예 | 매니저 자신의 goal-gate 바닥값, 그리고 — 커밋 `f765c03` 이후 — 모든 자식 런이 자기 goal gate를 여는 바닥값(`child_opts.goal_threshold`). 그 커밋 전에는 프로젝트가 고정한 값이 모든 패키지에서 조용히 버려졌습니다 — `team.json`이 뭐라 하든 모든 자식은 하드코딩된 90으로 돌았습니다. |
+| `max_retries` | `2` | 예 | 매니저 자신의 subgoal/패키지 재시도 예산, 그리고 — `f765c03` 이후 — 모든 자식 런이 여는 재시도 예산(`child_opts.max_retries`). `goal_threshold`와 같은 `f765c03` 이전 문제를 겪었습니다. |
+| `driver_restarts` | `2` | 예 | 죽은 패키지 또는 size-S 드라이버가 같은 run_id로 몇 번 재기동되는지 — 그 다음엔 dispatch가 `blocked`로 접힙니다. |
+| `docs_dir` | `.teams_output/team` | 예 | `tm_docs`/`tickets.mjs`가 phase 문서 트리(`INDEX.md` 등)를 렌더링하는 위치. 실재하고 동작에 반영되는 키인데, 지금까지 어디에도 적혀 있지 않았습니다. |
+| `roles` | `{planning:false, qa:false}` | 아니요 | 기록만 되고 아직 무동작 — 렌더링된 request 문서의 "Team snapshot" 줄에 echo될 뿐, 아무것도 이를 근거로 분기하지 않습니다. |
+| `interactive` | `false` | 아니요 | 기록만 되고 아직 무동작 — 같은 snapshot 줄 echo뿐, 그 외엔 아무도 읽지 않습니다. |
+| `max_parallel_teams` | `2` | 아니요 | 기록만 되고 아직 무동작 — 같은 snapshot 줄 echo뿐, 그 외엔 아무도 읽지 않습니다. |
+| `human_gates` | `[]` | 아니요 | 기록만 되고 아직 무동작 — snapshot 줄에도 없이, 어디서도 읽지 않습니다. |
+| `human_scope` | `"leader"` | 아니요 | 기록만 되고 아직 무동작 — 어디서도 읽지 않습니다. |
+| `max_depth` | `2` | 아니요 | 기록만 되고 아직 무동작 — 어디서도 읽지 않습니다. |
+| `qa_rounds` | `2` | 아니요 | 기록만 되고 아직 무동작 — 어디서도 읽지 않습니다. |
+
+`goal_judges`(goal gate의 독립 판정자 수)와 `auto_reassign`(거부된 판정의 자동 재시도)는
+실재하는 런 단위 옵션입니다 — `tm_open`/`team_open` 자신의 인자 설명 참고 — 하지만 이 스키마에는
+없습니다: 이 글을 쓰는 시점 기준으로는 호출마다 명시 인자로만 줄 수 있고, `.claude/team.json`에
+고정할 수는 없습니다.
+
 ## 나머지 전부
 
 도구, 라우팅, 판정, 벤더, 용량 복구, 원장은 `graph`와 같은 브로커 메커니즘입니다 —
