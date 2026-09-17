@@ -546,7 +546,7 @@ harness `patch.mjs`와 같은 규칙: `x.y.Z`만, plugin.json + marketplace 항�
 | 단계 | 내용 | 검증 |
 |---|---|---|
 | v0.10.0 | **완료.** install/remove/patch 셋 + `team.json` + 공존 검사 + engagement 마커(harness 변경 0) + inline 옵션 셋 제거 + TaskLeader driver·inbox·`tm_events` | install→remove 멱등 테스트, harness+team 동시 설치 픽스처에서 worker 쓰기 통과, `node --test graph-beta/scripts/test-*.mjs` 241/241 |
-| v0.10.1 | `planning`/`qa` kind + 페르소나·mounts + entry 스킬 2개 | 단위 테스트, `betas plan-flat`/`qa-flat` 벤치 요청 파일 추가 |
+| v0.10.1 | **완료.** `planning`(draft→revise→gate)/`qa`(cases→execute→gate) kind + 페르소나·per-stage 스킬·advisory mounts(§3) + entry 스킬 2개(`graph-beta:plan`/`graph-beta:qa`) + `broker.mjs`의 revise 정체성-분리 가드 + `ensureWorktree`의 `gate_uncommitted` 이벤트(계획에 없던 안전 수정) | `node --test graph-beta/scripts/test-*.mjs` 258/258, 회귀 0. 벤치 요청 파일(`plan-flat`/`qa-flat`)만 추가, 벤치 자체는 미실행 — 실제 벤더 실행 증거 없음, 전부 단위 테스트 |
 | v0.11.0 | `tickets.mjs` 파생 + `board.jsonl` + **`docs.mjs` phase md** + `tm_board/tm_ticket/tm_events/tm_docs` + 명령 스킬 | 매핑 표 테이블 테스트. md는 golden 파일 비교, `rebuild`가 동일 출력 |
 | v0.12.0 | shape `role/priority/worktree`, 스케줄러 캡, QA=통합 트리 | seam 픽스처에 qa STORY 추가 |
 | v0.13.0 | executor `human`: `ask`, `gate:human`, `assignee`, `waiting_human` park/respawn, `tm_answer/tm_assign/tm_inbox` | fake driver 테스트 (0.8.0 방식), human이 implement한 TASK의 test가 non-human으로 가는지 |
