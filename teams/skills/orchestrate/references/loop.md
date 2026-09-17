@@ -42,6 +42,11 @@ Six tools, one loop. `cwd` is optional after `team_open` but carry it anyway —
 lets a restarted client find the run again. Lost the `run_id` entirely — a new session, a
 compaction — call `team_status({cwd})` and read it back off the run list.
 
+Check `team_status`'s `config_notes` when it is present: it means this project's
+`.claude/team.json` had an unrecognized key or a value that failed validation, and the run
+fell back to the default instead — silently, from the run's own point of view. Say so in the
+report; a config problem that produced no error is still worth the user's attention.
+
 ## Show the graph while it runs
 
 A run is long and mostly silent, and the user cannot see inside it. Mirror the graph into
@@ -84,6 +89,17 @@ run's verdict is their consensus, not any one judge's, and it accepts only when 
 accepted at or above `goal_threshold`. Read it off `team_status`'s `goal_verdict` — `{accept,
 match_pct: <the minimum across judges>, judges: [...], gaps, spec_drift}` — rather than one
 sibling's own verdict, which is only its own opinion.
+
+**A run `tm_open` opens for you defaults to one judge, not two.** `team_open({goal_judges})`
+above is what you get calling `team_open` yourself; every run `tm_open` opens on your behalf —
+the single run a size-S task drives, and every package's own `dispatch` under an L task — instead
+defaults to `goal_judges: 1`, unless the task's own `tm_open({goal_judges})` argument says
+otherwise. That argument, when given, applies to every child run the task opens; it is not a
+`.claude/team.json` key, so it cannot be pinned project-wide. The split is deliberate, not an
+oversight left unfixed: raising a `tm_open` child's default to 2 to match `team_open` broke 18
+existing tests, because every test helper that drives a child to its report submits exactly one
+`gate:goal:N` per round — a second, letter-suffixed sibling never got a verdict and the round
+never settled. Ask for more judges explicitly when a task's stakes call for it.
 
 **A rejected round opens `repair:N`, not a dead end.** When consensus rejects, the engine opens
 a run-level `repair` node — implement-shaped, mutating, fixing across the tree at the seams the
