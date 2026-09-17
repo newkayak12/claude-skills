@@ -34,9 +34,9 @@ tm_open({
   host_vendor, host_model, native_models
 })                                               -> task_id, ready: [size]
 fresh agent at size.briefing_path -> tm_submit({task_id, node_id: "size", payload})
-    delegate present     -> size S, s_driver "inline": one run, team_open(delegate.args), then the loop
-    task_state "s_run"   -> size S, s_driver "process" (the default): poll tm_next until it reports
-    neither              -> a task of runs: ../orchestrate/references/manager.md
+    task_state "s_run"  -> size S: tm_open already opened the single run and is driving it
+                           with its own headless session; poll tm_next until it reports
+    absent              -> a task of runs: ../orchestrate/references/manager.md
 ```
 
 `size` measures build units and ownership boundaries, so a monorepo with one test script
@@ -47,15 +47,16 @@ The flow is pinned, so `size` does not choose one — it only measures. `mixed: 
 deliberate: "implement the feature and update the design note" is one run, and the note is a `document` subgoal inside it.
 Pass `mixed: false` only when the user said nothing may be written that is not code — then a spec
 with the other kind fails at setgoal instead of quietly running. `mixed` and `isolated` reach
-whichever size-S run `tm_open` ends up opening, under either `s_driver`.
+whichever size-S run `tm_open` ends up opening.
 
 ## Then
 
-Run **`../orchestrate/references/loop.md`** yourself only for a delegated (`s_driver: "inline"`)
-S run; otherwise poll `tm_next` (an `s_run`, or `../orchestrate/references/manager.md` for a
-task of runs) exactly as `orchestrate` would. The Standing Mandates and Output template in
-`../orchestrate/SKILL.md` apply unchanged — read them once; this skill adds nothing to them and
-removes nothing from them.
+Poll `tm_next` for the size-S run `tm_open` already opened and is driving (`task_state: "s_run"`),
+or continue with `../orchestrate/references/manager.md` for a task of runs — exactly as
+`orchestrate` would. Neither case ever has you call `team_next`/`team_run`/`team_submit`
+yourself: every run is driven by its own spawned headless session, never by you. The Standing
+Mandates and Output template in `../orchestrate/SKILL.md` apply unchanged — read them once; this
+skill adds nothing to them and removes nothing from them.
 
 ## What the current AI does
 

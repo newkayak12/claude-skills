@@ -1,7 +1,7 @@
 # Inside a task — the manager loop
 
-You arrive here from an entry skill when `tm_submit` on `size` came back **without**
-`delegate`: the request is L, and the task will have packages. Everything a package does
+You arrive here from an entry skill when `tm_submit` on `size` came back with no `task_state`
+(not `"s_run"`): the request is L, and the task will have packages. Everything a package does
 happens in its own child graph run, in its own worktree, driven with the ordinary loop in
 `loop.md` — by that child's own session, not by you. This file is only what sits around those runs.
 
@@ -21,8 +21,9 @@ for each child in children[]:
                                   spends no restart
     driver.alive == false      -> the restart budget (driver_restarts, default 2) is spent: tm_submit folds
                                   it blocked with every attempt's stderr, then tm_retry({task_id, package_id})
-    no driver at all           -> child_driver "inline" was chosen: drive it yourself with loop.md,
-                                  cwd=child.cwd and run_id=child.run_id in every team_* call
+    no driver at all           -> only under the internal HARNESS_TEST_NO_DRIVER test seam, never
+                                  in real use: drive it yourself with loop.md, cwd=child.cwd and
+                                  run_id=child.run_id in every team_* call
 if nothing is ready and a driver is alive: poll tm_next until one of them stops.
 if state == "blocked":
     a failed dispatch or accept -> tm_retry({task_id, package_id})    # same worktree, fresh child, gaps carried
@@ -76,8 +77,10 @@ handles it before you ever see it as something to fold:
   stderr as the reason, and `tm_retry({package_id})` gives the package a fresh session (and a
   fresh restart budget) where the dead one stopped.
 
-Only a task opened with `child_driver: "inline"` hands you the child nodes — choose it when you
-must watch a package node by node, and expect the context cost.
+There is no way to have `tm_next` hand you a child's own nodes instead of spawning its driver —
+`child_driver` was a caller-facing option once; `tm_open` now throws if it is passed. Every child
+is driven this way, and `driver: {pid, alive, log, restarts}` is your only view into one while it
+runs.
 
 ## Branches, merges, conflicts
 
