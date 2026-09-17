@@ -317,3 +317,65 @@ test('cases contract writes a scenario spec derived from acceptance, not from th
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+// ---------- planning-audit kind: the audit stage contract ----------
+//
+// Nothing opens an audit node yet (taskmanager.mjs wiring is separate, unstarted work) -
+// these tests only pin the contract text composePrompt produces when handed an audit node,
+// the same way the revise/cases/execute tests above do for their own stages.
+
+test('audit gets its own Required output contract, not the implement fallback', () => {
+  const cwd = tmpProject();
+  try {
+    const prompt = composePrompt(baseRun(cwd), baseNode({ stage: 'audit' }), baseBriefing());
+    assert.ok(prompt.includes('## Required output'));
+    assert.doesNotMatch(prompt, /"handoff": "<paths, names, interfaces the dependent work needs>"/,
+      'audit must not fall back to CONTRACT.implement');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('audit contract forbids editing files and asks for unmet user stories', () => {
+  const cwd = tmpProject();
+  try {
+    const prompt = composePrompt(baseRun(cwd), baseNode({ stage: 'audit' }), baseBriefing());
+    assert.match(prompt, /"unmet"/);
+    assert.match(prompt, /do not modify any files/i);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('audit prompt reads correctly with no QA report present - no upstream section, contract still names the no-QA branch', () => {
+  const cwd = tmpProject();
+  try {
+    const briefing = baseBriefing({ upstream: [] });
+    const prompt = composePrompt(baseRun(cwd), baseNode({ stage: 'audit' }), briefing);
+    assert.ok(!prompt.includes('## Completed upstream nodes'));
+    assert.match(prompt, /if no qa report appears/i);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('audit prompt surfaces a QA report when present, via the ordinary upstream-nodes section', () => {
+  const cwd = tmpProject();
+  try {
+    const briefing = baseBriefing({
+      upstream: [
+        {
+          node_id: 'accept:QA:1', stage: 'gate', state: 'done',
+          handoff: 'QA found 1 defect in checkout', evidence: '',
+          checks: ['ran scenario -> failed'], changed_files: [], commands: [],
+        },
+      ],
+    });
+    const prompt = composePrompt(baseRun(cwd), baseNode({ stage: 'audit', deps: ['accept:QA:1'] }), briefing);
+    assert.ok(prompt.includes('## Completed upstream nodes'));
+    assert.ok(prompt.includes('accept:QA:1'));
+    assert.match(prompt, /if a qa report appears/i);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
