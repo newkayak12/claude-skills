@@ -49,12 +49,12 @@ delegated to `install.mjs` so it runs identically every time; this skill owns th
    whether `team.json`, the dispatch file, each convention file, the CLAUDE.md block, and
    `.gitignore` came back `created`, `kept`, `present`, `appended`, `refreshed`, `unchanged`, or
    `skipped`.
-4. **Tool discovery** — confirm all twelve tools are visible: six `team_*` tools (`team_open`,
-   `team_next`, `team_run`, `team_submit`, `team_retry`, `team_status`) and six `tm_*`
-   tools (`tm_open`, `tm_next`, `tm_submit`, `tm_retry`, `tm_status`, `tm_events`). If any are missing, tell
-   the user to reload Claude Code — this is the install gate; do not open a real task just to
-   test setup. Once a task is open, main watches it with `tm_status({task_id})` and never
-   drives a node itself.
+4. **Tool discovery** — confirm all fifteen tools are visible: six `team_*` tools (`team_open`,
+   `team_next`, `team_run`, `team_submit`, `team_retry`, `team_status`) and nine `tm_*`
+   tools (`tm_open`, `tm_next`, `tm_submit`, `tm_retry`, `tm_status`, `tm_events`, `tm_board`,
+   `tm_ticket`, `tm_docs`). If any are missing, tell the user to reload Claude Code — this is
+   the install gate; do not open a real task just to test setup. Once a task is open, main
+   watches it with `tm_status({task_id})` and never drives a node itself.
 5. `"refresh": true` only backfills keys a newer plugin version introduced into an existing
    `team.json`; it never changes a value the project already set. Use it after bumping the
    plugin version, not on a routine install.
