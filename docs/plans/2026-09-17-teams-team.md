@@ -6,12 +6,18 @@
 ## 0. 계보
 
 ```
-harness                              6단계 계약 (plan → setgoal → impl → test → gate → report)
-  └─ graph        = harness + MULTI_AI_VENDOR        그래프 엔진, 크로스벤더 라우팅
-       └─ teams (team) = graph + task-manager(MCP) + team concept
+harness → graph → teams   (계보. graph는 harness + MULTI_AI_VENDOR, teams는 그 다음 라인이었다)
 ```
 
-- **graph 엔진은 그대로 둔다.** 노드 체인, 라우팅, 게이트, 리페어 전부 손대지 않는다.
+- **계보이지 종속이 아니다.** harness → graph → teams는 세 플러그인이 어디서 갈라져 나왔는지를
+  보여줄 뿐, 지금 코드에서 teams가 graph 위에서 도는 게 아니다. `graph-beta` → `teams` 리네임
+  (`graph_*` 도구도 `team_*`로)과 함께 셋은 **완전히 독립된 형제 플러그인**이 됐다 — teams는
+  더 이상 "graph의 beta 라인"이 아니고, 자기 엔진(`teams/mcp/graph.mjs`)·자기 도구 이름공간
+  (`team_*`)·자기 실행 경로(`.harness-run/broker-beta/`, `~/.harness/tasks/`)를 그대로 갖되 graph를
+  런타임에 불러오거나 의존하지 않는다. 설치 시 상호배제도 이 독립성 위에서 다시 봐야 한다(§14
+  결정 기록 참고).
+- **graph 엔진은 그대로 둔다.** 노드 체인, 라우팅, 게이트, 리페어 전부 손대지 않는다 — teams는
+  자기 사본 위에서 같은 원칙을 지킨다는 뜻이다.
 - **task-manager는 MCP 서버로 운용한다.** 지금처럼 `task-manager` 서버 하나. 이번 라운드는 그 위에
   *역할(Role)*, *티켓 워크플로*, *TaskLeader 프로세스*, *가시성 도구* 네 가지를 얹는다.
 
@@ -137,7 +143,7 @@ E-<task8>/P1/E-<sub8> sub-EPIC (프랙탈)
 ```
 BACKLOG ─→ READY ─→ IN_PROGRESS ─→ IN_REVIEW ─→ DONE
               ↑          │             │
-              │          ├→ WAITING_USER      (human 노드 ready, §7)
+              │          ├→ WAITING_USER      (human 노드 ready, §7 — v0.13.0 전까지 도달 불가, 아래 참고)
               │          ├→ WAITING_CAPACITY  (쿼터)
               │          └→ BLOCKED           (driver 사망·예산 소진)
               └── REJECTED ←──────────┘        (검수 반려, 피드백 동봉 → READY)
@@ -148,20 +154,37 @@ CANCELLED / UNREACHABLE                        (상류 실패로 도달 불가)
 
 | 레벨 | 엔진 근거 | 티켓 상태 |
 |---|---|---|
-| STORY | `dispatch:Pn` 미생성, deps 미완 | BACKLOG |
-| STORY | deps 전부 done, dispatch 아직 안 뜸 | READY |
+| STORY | `dispatch:Pn` 존재(§주1), `unmetDeps()` 비어있지 않음 | BACKLOG |
+| STORY | `dispatch:Pn` 존재, `unmetDeps()` 빈 배열 (아직 `pending`) | READY |
 | STORY | `dispatch:Pn` running, driver.alive | IN_PROGRESS |
 | STORY | 자식 run complete, `accept:Pn` pending/running | IN_REVIEW |
 | STORY | `accept:Pn` done, accept:true | DONE |
 | STORY | `accept:Pn` failed → `tm_retry` 전 | REJECTED (gaps 동봉) |
 | STORY | `waiting_capacity` | WAITING_CAPACITY |
-| STORY / EPIC | ready인 `vendor: human` 노드가 있음 (`waiting_human`) | WAITING_USER — 티켓 담당 "you" |
 | STORY | driver 사망, 재시작 예산 소진 | BLOCKED |
+| STORY | 최신 attempt(`dispatch`/`accept`)가 `skipped`(재구성으로 대체됨) | CANCELLED |
+| STORY | 최신 attempt(`dispatch`/`accept`)가 `unreachable`(상류 실패로 도달 불가, `settleFailure`) | UNREACHABLE |
+| STORY / EPIC | ready인 `vendor: human` 노드가 있음 (`waiting_human`) | WAITING_USER — 티켓 담당 "you" (§주2: 이번 라운드의 코드 경로엔 없음, v0.13.0에서 human 노드가 생기면 도달) |
 | TASK | 자식 run 노드 상태 그대로 | implement/draft/cases running → IN_PROGRESS, test/revise/execute → IN_REVIEW, gate done → DONE |
-| EPIC | shape 전 → READY / dispatch 진행 → IN_PROGRESS / integrate·gate:goal → IN_REVIEW / report → DONE |
+| TASK | 자식 run 노드가 `skipped` | CANCELLED |
+| TASK | 자식 run 노드가 `unreachable` | UNREACHABLE |
+| EPIC | shape 전 → READY / dispatch 진행 → IN_PROGRESS / integrate·gate:goal → IN_REVIEW / report → DONE | — |
+| EPIC | `runState(task).state === 'blocked'`(재시도 예산 소진 등) | BLOCKED |
 
 전이마다 `board.jsonl`에 `{ts, key, from, to, by, reason}` 한 줄. `by`는 노드 id
 (`accept:P2:1`) 또는 `user`.
+
+- **§주1**: `dispatch:Pn` 노드는 shape가 성공하는 순간 `expandPackages`가 모든 package에 대해
+  한 번에 만든다(deps 있는 패키지도 포함) — "dispatch 미생성"은 이 코드에서 일어나지 않는다.
+  BACKLOG/READY는 노드 존재 여부가 아니라 `unmetDeps()`(이미 `graph.mjs`가 내보냄)로 갈린다.
+  deps 없거나 전부 done인 패키지는 즉시 READY로 보이고(다음 `tm_next` 폴링에서 바로 `dispatch`가
+  열려 IN_PROGRESS로 넘어가므로 실제로는 매우 짧게 관측되는 창), deps 남은 패키지는 BACKLOG.
+- **§주2**: `WAITING_USER`는 human 실행자(`ask`, `gate:human`, `waiting_human`, v0.13.0)가 있어야
+  만들어지는 상태다. 그 전까지는 존재하지 않는 기능의 자리를 비워두지 않고, 이 상태를 반환하는
+  코드 경로 자체가 없다.
+- CANCELLED(재구성으로 폐기)·UNREACHABLE(상류 실패로 도달 불가)는 이 장의 워크플로 다이어그램에
+  이미 그려져 있던 상태다 — reshape(`retryShape` 등)와 정착된 실패(`settleFailure`)가 실제로
+  `skipped`/`unreachable` 노드 상태를 만들며, STORY·TASK 레벨 둘 다에서 관측된다.
 
 ## 5. 순서 수립과 할당
 
@@ -314,8 +337,12 @@ main 세션·TaskLeader·TeamLeader·worker 어느 것도 메모리에만 있는
   있는 이유이기도 하다.
 - **쓰기 순서**: 노드 payload → task.json/run.json → board.jsonl → phase md → (있으면) git 커밋. 뒤에서 죽으면
   앞은 유효하고 뒤는 재개 시 다시 만들어진다(커밋은 fold 재실행이 재시도, 이벤트는 파생으로 복구).
-- **쓰기 원자성**: 현행 tmp+rename 유지. 소유권은 하나 — run.json은 그 run의 driver만,
-  board.jsonl은 leader만, worker는 자기 handoff 파일만.
+- **쓰기 원자성**: 실제 메커니즘은 tmp+rename이 아니라 **mkdir 락 + merge-on-save**다
+  (`graph.mjs`의 `acquire`/`release`/`mergeOnto`/`saveRun`): `<path>.lock` 디렉터리를 `mkdirSync`로
+  잡고(실패하면 짧게 스핀·5초 데드라인, stale lock은 mtime으로 판정해 강제 해제), 디스크에 있는
+  판을 읽어(`loadRunAt`) 이번 프로세스가 들고 있는 판과 `mergeOnto`로 합친 뒤(다른 브로커가 먼저
+  끝낸 노드는 보존) `writeFileSync`로 그 자리에 바로 쓴다 — 임시 파일도 rename도 없다. 소유권은
+  하나 — run.json은 그 run의 driver만, board.jsonl은 leader만, worker는 자기 handoff 파일만.
 - **task.json은 예외다 — 쓰는 프로세스가 둘이다.** leader driver의 MCP 서버 인스턴스와, main
   세션의 서버 인스턴스(`tm_answer`, `tm_retry`, `tm_assign`)는 서로 다른 프로세스다. 지금은 main
   하나만 task.json을 써서 문제가 없었다. 해법은 둘 중 하나, **후자 권장**:
@@ -373,7 +400,10 @@ main 세션·TaskLeader·TeamLeader·worker 어느 것도 메모리에만 있는
 ```
 
 - 각 md 머리에 `key`, `state`, `updated`, `source: task.json@<rev>` 4줄 frontmatter — 어느 JSON
-  상태에서 렌더됐는지 추적.
+  상태에서 렌더됐는지 추적. `task.json`에는 리비전 카운터가 없다 — `<rev>`는
+  `task.nodes.filter(n => n.result).length`(지금까지 결과가 난 노드 수)를 값싼 단조 증가
+  대용으로 쓴다는 뜻이다. 진짜 버전 카운터를 추가하는 것은 이 문서가 다루는 범위 밖이고,
+  이 표기는 어디까지나 대용(stand-in)임을 명시한다.
 - STORY md의 "코멘트" 절은 `board.jsonl`의 그 키 이벤트를 시간순으로 푼 것이다. human이 `tm_answer`로
   준 답도 한 코멘트로 들어간다.
 - sub-EPIC은 자기 디렉터리를 갖고, 부모 STORY md가 그 INDEX.md로 링크한다.
@@ -614,6 +644,7 @@ harness `patch.mjs`와 같은 규칙: `x.y.Z`만, plugin.json + marketplace 항�
 | 1 | **B안 + 보강**: 한 보드. 1순위 TaskLeader의 프롬프트 분해·분배 → 기획이 정리·기능 분할 → shape가 소유권으로 묶어 개발 → 통합 → QA → **기획 크로스 검수** → goal gate. Team 간 선후 있음 | §2 EPIC 흐름, §3 `planning-audit`, §5 `implements[]`, 7c `65-audit.md` |
 | 5·7·8·C | 애매 → 제안한 기본값으로 진행, 실측 뒤 재론 | — |
 | 3b | 기획 산출물(PRD)의 자리·형식. 본문은 `.harness-run/team/E-<task8>/10-prd.md`(§7c verbatim, planning 체인이 직접 씀), 템플릿은 `pm/skills/prd-development/template.md`(10절 스켈레톤; 같은 플러그인의 `user-story-*`는 대체 아님). `team.json.docs_dir`로 커밋 경로로 이동 가능 — 기본은 gitignore라 EPIC 정리 후 git 이력에 안 남음 | §7c 파일 구성에 `10-prd.md`, §14 A.3 |
+| 6b | **리네임 + 독립화** (0.10.2로 출시). plugin `graph-beta` → `teams`, 도구 접두어 `graph_*` → `team_*`(`teams/mcp/broker.mjs`의 서버 이름도 `teams-engineering`). #6이 상호배제 근거로 든 "두 서버가 같은 `graph_*` 이름을 낸다"는 이제 사실이 아니다 — graph는 `graph-engineering`/`graph_*`를 그대로 쓰고, teams만 `teams-engineering`/`team_*`로 옮겨 갔다. harness·graph·teams 세 플러그인은 이제 서로의 코드를 참조하지 않는 독립된 형제다(§0 재서술) | §0 계보 재서술. **미확인 채로 남김**: 이 문서를 고치는 시점(HEAD, `teams/skills/install/install.mjs`·`teams/README.md`)에는 graph↔teams 상호배제 검사와 "동시에 켜지 말 것" 경고가 여전히 남아 있고, 그 경고 문구 자체도 리네임 스윕에 휩쓸려 "두 서버가 같은 `team_*`를 쓴다"는 틀린 문장이 돼 있다 — §13 표는 그대로 두었으니 팀 리더가 실제로 상호배제를 걷어낼지, 이름만 바로잡을지 확인 필요 |
 | 추가 | **main 세션은 절대 TaskLeader가 아니다.** inline 옵션 셋(`leader_driver`/`s_driver`/`child_driver`) team 라인에서 제거·거부 | §6 재작성, 7b inbox 문구, entry 스킬 축소. **v0.10.0 완료**: `child_driver`/`s_driver`는 넘기면 `tm_open`이 에러(commit 20306ec, breaking); `leader_driver: "inline"`은 애초에 만들지 않고 대신 TaskLeader driver를 항상 spawn(commit 6ecd744) |
 
 ## 5b. 결함 STORY — QA가 발행하는 티켓
