@@ -4,7 +4,7 @@
 // shaped exactly like a real task.json/child run.json - no server, no filesystem.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { node } from '../mcp/graph.mjs';
+import { node, pushChain, KINDS } from '../mcp/graph.mjs';
 import {
   epicKey, storyKey, docPaths, latestBySubgoal, storyTicketState, epicTicketState,
   taskTicketState, epicPhase, storyTaskProgress, epicBoardRows, ticketSnapshot,
@@ -149,55 +149,136 @@ test('EPIC ticket state adds BLOCKED beyond §4\'s table: runState says blocked 
 
 // ---------- §4 TASK mapping (child-run subgoal, generic over kind) ----------
 
-function childRun(subgoalKind, subgoalNodes) {
-  return { cwd: '/pkg', run_id: 'child-1', spec: { subgoals: [{ id: 'U1', kind: subgoalKind }] }, nodes: subgoalNodes };
+// A child run's subgoal chain - implement/test/gate, draft/revise/gate, draft/review/gate,
+// cases/execute/gate - exactly as expandSubgoals (graph.mjs) leaves it: ONE pushChain call
+// creates every stage together, all starting 'pending', well before the author stage even
+// runs. This file used to build these fixtures one hand-picked node at a time, leaving the
+// later stages out entirely - describing a shape the real engine never produces. That is
+// exactly how the taskTicketState bug (existence of the gate/mid node, not its actual
+// progress, driving IN_REVIEW) went uncaught: a fixture with only an `implement` node can
+// never exercise the branch a real, co-created gate node short-circuits into.
+function childRun(kind, subgoalId, headDeps = []) {
+  const run = { cwd: '/pkg', run_id: 'child-1', spec: { subgoals: [{ id: subgoalId, kind }] }, nodes: [] };
+  pushChain(run, KINDS[kind].chain, subgoalId, 1, headDeps, [], {});
+  return run;
+}
+function stageNode(run, subgoalId, stage) {
+  return run.nodes.find((n) => n.subgoal_id === subgoalId && n.stage === stage);
+}
+// Drives a stage to 'done' the way the engine would (a result object present), optionally
+// overridden - e.g. a gate's own verdict.
+function finish(run, subgoalId, stage, patch) {
+  Object.assign(stageNode(run, subgoalId, stage), { state: 'done', result: {} }, patch);
 }
 
-test('TASK ticket state for a subgoal (implement/test/gate): author running -> IN_PROGRESS, mid stage reached -> IN_REVIEW, gate done -> DONE', () => {
-  assert.equal(taskTicketState(childRun('subgoal', [node('implement:U1:1', 'implement', [], { subgoal_id: 'U1', state: 'running' })]), 'U1'), 'IN_PROGRESS');
-  assert.equal(taskTicketState(childRun('subgoal', [
-    node('implement:U1:1', 'implement', [], { subgoal_id: 'U1', state: 'done', result: {} }),
-    node('test:U1:1', 'test', ['implement:U1:1'], { subgoal_id: 'U1', state: 'running' }),
-  ]), 'U1'), 'IN_REVIEW');
-  assert.equal(taskTicketState(childRun('subgoal', [
-    node('implement:U1:1', 'implement', [], { subgoal_id: 'U1', state: 'done', result: {} }),
-    node('test:U1:1', 'test', ['implement:U1:1'], { subgoal_id: 'U1', state: 'done', result: { verified: true } }),
-    node('gate:U1:1', 'gate', ['test:U1:1'], { subgoal_id: 'U1', state: 'done', result: { accept: true } }),
-  ]), 'U1'), 'DONE');
+test('TASK ticket state: a freshly-expanded chain (author/mid/gate ALL pending at once, exactly what expandSubgoals leaves) reads BACKLOG/READY off the author stage, never IN_REVIEW off the gate merely existing', () => {
+  // This is the bug's core regression: before the fix, the gate node's mere presence -
+  // true from the instant the chain above is created - made this read IN_REVIEW regardless
+  // of author/mid ever having run.
+  assert.equal(taskTicketState(childRun('subgoal', 'U1', ['implement:U0:1']), 'U1'), 'BACKLOG');
+  assert.equal(taskTicketState(childRun('subgoal', 'U1'), 'U1'), 'READY');
+});
+
+test('TASK ticket state: author stage - running, skipped, unreachable, failed-but-not-yet-settled', () => {
+  const running = childRun('subgoal', 'U1');
+  stageNode(running, 'U1', 'implement').state = 'running';
+  assert.equal(taskTicketState(running, 'U1'), 'IN_PROGRESS');
+
+  const skipped = childRun('subgoal', 'U1');
+  stageNode(skipped, 'U1', 'implement').state = 'skipped';
+  assert.equal(taskTicketState(skipped, 'U1'), 'CANCELLED');
+
+  const unreachable = childRun('subgoal', 'U1');
+  stageNode(unreachable, 'U1', 'implement').state = 'unreachable';
+  assert.equal(taskTicketState(unreachable, 'U1'), 'UNREACHABLE');
+
+  const failed = childRun('subgoal', 'U1');
+  Object.assign(stageNode(failed, 'U1', 'implement'), { state: 'failed', result: { stage_ok: false } });
+  assert.equal(taskTicketState(failed, 'U1'), 'IN_PROGRESS'); // not yet retried or settled - still "moving"
+});
+
+// pushChain always creates the whole chain together - a subgoal with genuinely no nodes at
+// all cannot happen via the engine (unlike storyTicketState's analogous defensive case,
+// which guards a package that predates expandPackages ever running). Kept anyway, and
+// labeled synthetic, because taskTicketState is called generically and must not throw.
+test('TASK ticket state: no nodes at all for the subgoal reads BACKLOG (defensive; not reachable via expandSubgoals today)', () => {
+  const empty = { cwd: '/pkg', run_id: 'child-1', spec: { subgoals: [{ id: 'U1', kind: 'subgoal' }] }, nodes: [] };
+  assert.equal(taskTicketState(empty, 'U1'), 'BACKLOG');
+});
+
+test('TASK ticket state: mid stage (test/revise/execute) reads IN_REVIEW once the author has handed off - running, pending-but-ready, skipped, unreachable', () => {
+  const running = childRun('subgoal', 'U1');
+  finish(running, 'U1', 'implement');
+  stageNode(running, 'U1', 'test').state = 'running';
+  assert.equal(taskTicketState(running, 'U1'), 'IN_REVIEW');
+
+  const readyNotStarted = childRun('subgoal', 'U1');
+  finish(readyNotStarted, 'U1', 'implement');
+  assert.equal(taskTicketState(readyNotStarted, 'U1'), 'IN_REVIEW'); // test is pending, but its own dep (implement) is met
+
+  const skipped = childRun('subgoal', 'U1');
+  finish(skipped, 'U1', 'implement');
+  stageNode(skipped, 'U1', 'test').state = 'skipped';
+  assert.equal(taskTicketState(skipped, 'U1'), 'CANCELLED');
+
+  const unreachable = childRun('subgoal', 'U1');
+  finish(unreachable, 'U1', 'implement');
+  stageNode(unreachable, 'U1', 'test').state = 'unreachable';
+  assert.equal(taskTicketState(unreachable, 'U1'), 'UNREACHABLE');
+});
+
+test('TASK ticket state: gate stage - pending-but-ready/running -> IN_REVIEW, done -> DONE, failed -> REJECTED, skipped -> CANCELLED, unreachable -> UNREACHABLE, once mid has handed off', () => {
+  const readyNotJudged = childRun('subgoal', 'U1');
+  finish(readyNotJudged, 'U1', 'implement');
+  finish(readyNotJudged, 'U1', 'test');
+  assert.equal(taskTicketState(readyNotJudged, 'U1'), 'IN_REVIEW');
+
+  const judging = childRun('subgoal', 'U1');
+  finish(judging, 'U1', 'implement');
+  finish(judging, 'U1', 'test');
+  stageNode(judging, 'U1', 'gate').state = 'running';
+  assert.equal(taskTicketState(judging, 'U1'), 'IN_REVIEW');
+
+  const done = childRun('subgoal', 'U1');
+  finish(done, 'U1', 'implement');
+  finish(done, 'U1', 'test');
+  finish(done, 'U1', 'gate', { result: { accept: true } });
+  assert.equal(taskTicketState(done, 'U1'), 'DONE');
+
+  const rejected = childRun('subgoal', 'U1');
+  finish(rejected, 'U1', 'implement');
+  finish(rejected, 'U1', 'test');
+  Object.assign(stageNode(rejected, 'U1', 'gate'), { state: 'failed', result: { stage_ok: false } });
+  assert.equal(taskTicketState(rejected, 'U1'), 'REJECTED');
+
+  const cancelled = childRun('subgoal', 'U1');
+  finish(cancelled, 'U1', 'implement');
+  finish(cancelled, 'U1', 'test');
+  stageNode(cancelled, 'U1', 'gate').state = 'skipped';
+  assert.equal(taskTicketState(cancelled, 'U1'), 'CANCELLED');
+
+  const unreachable = childRun('subgoal', 'U1');
+  finish(unreachable, 'U1', 'implement');
+  finish(unreachable, 'U1', 'test');
+  stageNode(unreachable, 'U1', 'gate').state = 'unreachable';
+  assert.equal(taskTicketState(unreachable, 'U1'), 'UNREACHABLE');
 });
 
 test('TASK ticket state generalizes to the planning kind (draft/revise/gate) with no special-casing', () => {
-  assert.equal(taskTicketState(childRun('planning', [node('draft:U1:1', 'draft', [], { subgoal_id: 'U1', state: 'running' })]), 'U1'), 'IN_PROGRESS');
-  assert.equal(taskTicketState(childRun('planning', [
-    node('draft:U1:1', 'draft', [], { subgoal_id: 'U1', state: 'done', result: {} }),
-    node('revise:U1:1', 'revise', ['draft:U1:1'], { subgoal_id: 'U1', state: 'running' }),
-  ]), 'U1'), 'IN_REVIEW');
-  assert.equal(taskTicketState(childRun('planning', [
-    node('draft:U1:1', 'draft', [], { subgoal_id: 'U1', state: 'done', result: {} }),
-    node('revise:U1:1', 'revise', ['draft:U1:1'], { subgoal_id: 'U1', state: 'done', result: {} }),
-    node('gate:U1:1', 'gate', ['revise:U1:1'], { subgoal_id: 'U1', state: 'failed', result: { stage_ok: false } }),
-  ]), 'U1'), 'REJECTED');
-});
+  const running = childRun('planning', 'U1');
+  stageNode(running, 'U1', 'draft').state = 'running';
+  assert.equal(taskTicketState(running, 'U1'), 'IN_PROGRESS');
 
-test('TASK ticket state: author skipped/unreachable and no author node at all (BACKLOG/READY boundary too)', () => {
-  assert.equal(taskTicketState(childRun('subgoal', [node('implement:U1:1', 'implement', [], { subgoal_id: 'U1', state: 'skipped' })]), 'U1'), 'CANCELLED');
-  assert.equal(taskTicketState(childRun('subgoal', [node('implement:U1:1', 'implement', [], { subgoal_id: 'U1', state: 'unreachable' })]), 'U1'), 'UNREACHABLE');
-  assert.equal(taskTicketState(childRun('subgoal', []), 'U1'), 'BACKLOG');
-  assert.equal(taskTicketState(childRun('subgoal', [node('implement:U1:1', 'implement', ['implement:U0:1'], { subgoal_id: 'U1' })]), 'U1'), 'BACKLOG');
-  assert.equal(taskTicketState(childRun('subgoal', [node('implement:U1:1', 'implement', [], { subgoal_id: 'U1' })]), 'U1'), 'READY');
-});
+  const inReview = childRun('planning', 'U1');
+  finish(inReview, 'U1', 'draft');
+  stageNode(inReview, 'U1', 'revise').state = 'running';
+  assert.equal(taskTicketState(inReview, 'U1'), 'IN_REVIEW');
 
-test('TASK ticket state: gate skipped/unreachable read CANCELLED/UNREACHABLE too, not just author', () => {
-  assert.equal(taskTicketState(childRun('subgoal', [
-    node('implement:U1:1', 'implement', [], { subgoal_id: 'U1', state: 'done', result: {} }),
-    node('test:U1:1', 'test', ['implement:U1:1'], { subgoal_id: 'U1', state: 'done', result: {} }),
-    node('gate:U1:1', 'gate', ['test:U1:1'], { subgoal_id: 'U1', state: 'skipped' }),
-  ]), 'U1'), 'CANCELLED');
-  assert.equal(taskTicketState(childRun('subgoal', [
-    node('implement:U1:1', 'implement', [], { subgoal_id: 'U1', state: 'done', result: {} }),
-    node('test:U1:1', 'test', ['implement:U1:1'], { subgoal_id: 'U1', state: 'done', result: {} }),
-    node('gate:U1:1', 'gate', ['test:U1:1'], { subgoal_id: 'U1', state: 'unreachable' }),
-  ]), 'U1'), 'UNREACHABLE');
+  const rejected = childRun('planning', 'U1');
+  finish(rejected, 'U1', 'draft');
+  finish(rejected, 'U1', 'revise');
+  Object.assign(stageNode(rejected, 'U1', 'gate'), { state: 'failed', result: { stage_ok: false } });
+  assert.equal(taskTicketState(rejected, 'U1'), 'REJECTED');
 });
 
 // ---------- helpers used by tm_board/tm_ticket/docs.mjs ----------

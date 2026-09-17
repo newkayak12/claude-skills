@@ -133,10 +133,36 @@ export function epicPhase(task) {
   return goalLevelReached(task) ? 'qualitygate' : 'impl';
 }
 
-// §4's TASK row ("자식 run 노드 상태 그대로"), generalized over kind (subgoal/document/planning/
-// qa, whichever v0.10.1 chain the subgoal is) rather than hardcoded to implement/test/gate - the
-// same genericness graph.mjs's own engine already has. Extended with CANCELLED/UNREACHABLE/
-// BACKLOG/READY/REJECTED for the same reason STORY was: §4's own diagram already has them.
+// Whether a chain node's own state can be trusted as reached progress, rather than the
+// placeholder expandSubgoals/pushChain (graph.mjs) leaves sitting there. A subgoal's whole
+// chain - author/mid/gate, e.g. implement/test/gate - is pushed by ONE pushChain call, so
+// every stage's node exists, in state 'pending', from the instant the subgoal is created,
+// long before the author stage even starts. Every OTHER state (running/done/failed/
+// skipped/unreachable) only happens through a genuine transition: running/done/failed only
+// once the orchestrator actually dispatches the node, which itself requires the node's own
+// deps to already be met; skipped/unreachable only via an explicit retry or settleFailure.
+// So only 'pending' is ambiguous between "not yet reached" and "ready to run" - and
+// unmetDeps (whether the *previous* stage has reached 'done') is exactly what disambiguates
+// it, the same reading goalLevelReached (the EPIC fix above) gives the integrate node.
+function reached(childRun, n) {
+  return n.state !== 'pending' || unmetDeps(childRun, n).length === 0;
+}
+
+// §4's TASK row ("자식 run 노드 상태 그대로": implement/draft/cases running -> IN_PROGRESS,
+// test/revise/execute -> IN_REVIEW, gate done -> DONE), generalized over kind (subgoal/
+// document/planning/qa, whichever v0.10.1 chain the subgoal is) rather than hardcoded to
+// implement/test/gate - the same genericness graph.mjs's own engine already has. Extended
+// with CANCELLED/UNREACHABLE/BACKLOG/READY/REJECTED for the same reason STORY was: §4's own
+// diagram already has them.
+//
+// Gates on progression, not existence. expandSubgoals pushes a subgoal's whole chain in one
+// pushChain call, so checking whether the gate (or mid) node merely EXISTS put every TASK in
+// IN_REVIEW for its entire life, the instant its chain was created - the same existence-vs-
+// reached confusion epicTicketState had, except here it swallowed almost the whole state
+// machine (BACKLOG/READY/IN_PROGRESS/CANCELLED/UNREACHABLE at the author stage) instead of
+// skipping one transition. Reading backward from the gate - each stage trusted only once
+// `reached()` says the one before it has actually handed off - is what storyTicketState
+// already does by construction when it walks dispatch -> accept in stage order.
 export function taskTicketState(childRun, subgoalId) {
   const kind = nodeKind(childRun, { subgoal_id: subgoalId }) || 'subgoal';
   const chain = (KINDS[kind] || KINDS.subgoal).chain; // e.g. [implement,test,gate] or [draft,revise,gate]
@@ -146,22 +172,28 @@ export function taskTicketState(childRun, subgoalId) {
     return list.length ? list[list.length - 1] : null;
   };
   const gate = byStage(gateStage);
-  if (gate) {
+  if (gate && reached(childRun, gate)) {
     if (gate.state === 'done') return 'DONE';
     if (gate.state === 'failed') return 'REJECTED';
     if (gate.state === 'skipped') return 'CANCELLED';
     if (gate.state === 'unreachable') return 'UNREACHABLE';
-    return 'IN_REVIEW'; // gate exists but has not judged yet: the mid stage already handed off
+    return 'IN_REVIEW'; // pending-but-ready or running: the mid stage already handed off
   }
   const mid = byStage(midStage);
-  if (mid) return 'IN_REVIEW'; // running, done or failed - once the mid stage exists the TASK reads "in review"
+  if (mid && reached(childRun, mid)) {
+    if (mid.state === 'skipped') return 'CANCELLED';
+    if (mid.state === 'unreachable') return 'UNREACHABLE';
+    // running, pending-but-ready, or failed-not-yet-settled: §4 counts test/revise/execute
+    // as already "in review" the moment the author stage has handed off to it.
+    return 'IN_REVIEW';
+  }
   const author = byStage(authorStage);
-  if (!author) return 'BACKLOG';
+  if (!author) return 'BACKLOG'; // defensive: pushChain always creates the whole chain together
   if (author.state === 'running') return 'IN_PROGRESS';
   if (author.state === 'pending') return unmetDeps(childRun, author).length ? 'BACKLOG' : 'READY';
   if (author.state === 'skipped') return 'CANCELLED';
   if (author.state === 'unreachable') return 'UNREACHABLE';
-  return 'IN_PROGRESS'; // author done, mid stage not yet pushed - a brief window, still "moving"
+  return 'IN_PROGRESS'; // author failed, not yet retried or settled - a brief window, still "moving"
 }
 
 // A STORY's "x/y" tasks column: how many of its child run's subgoals have a DONE task ticket.
