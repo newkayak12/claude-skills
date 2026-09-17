@@ -21,6 +21,7 @@
 // skipped in silence, never searched for and never blocking.
 
 import { SKILL_METHOD_DISCLAIMER } from './prompts.mjs';
+import { nodeKind } from './graph.mjs';
 
 // Keyed the same way taskmanager's STAGE_SKILLS is: by stage name, with `gate:goal` split
 // out from the plain per-subgoal `gate` so a caller can override the goal gate without
@@ -41,12 +42,19 @@ const GRAPH_STAGE_MOUNTS = {
   plan: [{ tool: 'mcp__sequential-thinking__sequentialthinking', use: 'stepping through the decomposition before you answer' }],
   setgoal: [{ tool: 'mcp__think-tool__think', use: 'reasoning through the acceptance criteria and subgoal shape before you answer' }],
   'gate:goal': [{ tool: 'mcp__mcp-reasoner__mcp-reasoner', use: 'weighing the evidence for and against acceptance before you answer' }],
-  // draft is shared with the document kind - this stage name, not the planning kind alone, is
-  // what the mechanism keys on, so a document draft gets the same advisory mount too. That is
-  // a side effect of the design doc's plan (§3) asking for it on planning's draft specifically;
-  // harmless, since a mount is advisory and skipped in silence when unconnected.
-  draft: [{ tool: 'mcp__think-tool__think', use: 'reasoning through the problem framing and requirements before you write' }],
   cases: [{ tool: 'mcp__sequential-thinking__sequentialthinking', use: 'stepping through the behaviors a user or an attacker could hit before you write the case set' }],
+};
+
+// Some stage names are not unique to one kind - `draft` opens both the document chain and
+// the planning chain (KINDS in graph.mjs). A default that belongs to one of them, not the
+// stage in general, is keyed here as `<kind>:<stage>` and checked before the plain
+// GRAPH_STAGE_MOUNTS table above. Only entries that actually need to differ by kind live
+// here; a stage whose default is the same for every kind that has it (or that only one
+// kind has at all) stays in the plain table and never needs a line in this one.
+const GRAPH_STAGE_MOUNTS_BY_KIND = {
+  // The design doc's §3 asked for this framing prompt on planning's draft (a PRD)
+  // specifically. document's draft writes prose, not requirements, and gets nothing here.
+  'planning:draft': [{ tool: 'mcp__think-tool__think', use: 'reasoning through the problem framing and requirements before you write' }],
 };
 
 function stageKey(n) {
@@ -71,12 +79,17 @@ function normalizeMount(entry) {
   return null;
 }
 
-// Same off/override switch as graphStageSkills, for team_open({mounts: {...}}).
+// Same off/override switch as graphStageSkills, for team_open({mounts: {...}}). An
+// explicit override (team_open({mounts: {...}})) is still keyed by stage alone, same as
+// before - only the built-in default falls back through the kind-specific table first,
+// so a caller overriding "draft" still overrides it for every kind that has one.
 export function graphStageMounts(run, n) {
   if (run.mounts === false) return [];
   const key = stageKey(n);
   const override = run.mounts && typeof run.mounts === 'object' ? run.mounts[key] : undefined;
-  const list = Array.isArray(override) ? override : GRAPH_STAGE_MOUNTS[key];
+  const kind = nodeKind(run, n);
+  const byKind = kind ? GRAPH_STAGE_MOUNTS_BY_KIND[`${kind}:${key}`] : undefined;
+  const list = Array.isArray(override) ? override : (byKind || GRAPH_STAGE_MOUNTS[key]);
   return (list || []).map(normalizeMount).filter(Boolean);
 }
 
