@@ -47,7 +47,7 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
-- **v1.7.1 — three fixes the teams bench found in the shared engine**: teams's first
+- **v1.7.1 — three fixes the teams bench found in the shared engine**: teams' first
   end-to-end rounds (`teams/scripts/bench/`) drove this engine's code through real
   sessions and hit three defects the unit suite never had; both stable bench runs reproduced
   the first. (1) A driving session that reports itself as `claude-opus-5[1m]` — a context
@@ -63,7 +63,7 @@ Zero runtime dependencies, Node 18+.
   subgoal's briefing carries the goal gate's reason and gaps (and a failed test's checks,
   which a retry used to lose). Tests ported with the fixes. Bench: one run of this version's
   predecessor on a 4-package request completed 9/9 at 6× the cost and time of a plain
-  session; teams's manager on the same request is a different topology (four runs plus a
+  session; teams' manager on the same request is a different topology (four runs plus a
   manager) and is read separately there.
 - **v1.7.0 — typed edges and settled failure**: a dependency meant one thing, "must have
   succeeded". So `report` hung behind `gate:goal`, and a subgoal that ran out of retries left
