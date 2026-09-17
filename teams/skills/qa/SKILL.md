@@ -58,11 +58,24 @@ fresh agent at size.briefing_path -> tm_submit({task_id, node_id: "size", payloa
 ```
 
 After this you watch; you never drive. `tm_next` from this session answers `driven_by: "leader"`
-with no `ready[]` — that is the design, not a stall. Poll `tm_next` or `tm_status` until `state`
-is `complete` or `blocked`, then relay the report. For a size-S task that `state` is **the single
-run's own**, not the task's three settled manager nodes: a size-S task's manager graph finishes
-the moment `size` resolves, and reading it instead of the run is what once had a watcher call a
-live run `blocked` and stop two minutes in.
+with no `ready[]` — that is the design, not a stall.
+
+```
+tm_next({task_id, wait_ms: 60000})        # blocks until the task stops running, or 60s
+    state "running"  -> call it again, immediately, with wait_ms again. Nothing else.
+    state "complete" -> relay the node table and the report
+    state "blocked"  -> a result: report what failed and stop there
+```
+
+**Never sleep, never schedule a background check, never end your turn while it is running.** You
+are a headless session: it ends the moment you stop calling tools, and the leader and its drivers
+go on building into a workspace nobody is waiting for. The blocking `tm_next` call is the only
+thing holding you open — a real run died at one minute saying "I'll check again in about four
+minutes", and everything it was waiting for finished long after it was gone.
+
+For a size-S task that `state` is **the single run's own**, not the task's three settled manager
+nodes: a size-S task's manager graph finishes the moment `size` resolves, and reading it instead
+of the run is what once had a watcher call a live run `blocked` and stop two minutes in.
 
 `size` measures the same way it does for `develop` and `document`. The flow is pinned, so `size`
 does not choose one - it only measures. `mixed: true` is deliberate: a QA pass that also needs
@@ -71,9 +84,9 @@ the user said nothing may change but the case set and its report.
 
 ## Then
 
-Poll `tm_next` for the size-S run `tm_open` already opened and is driving (`task_state: "s_run"`),
-or continue with `../orchestrate/references/manager.md` for a task of runs — exactly as
-`orchestrate` would. Neither case ever has you call `team_next`/`team_run`/`team_submit`
+The blocking `tm_next({task_id, wait_ms})` loop above is the whole of your job for a size-S
+task; for a task of runs it is the leader that reads `../orchestrate/references/manager.md`, not
+you — you watch the same way either way. Neither case ever has you call `team_next`/`team_run`/`team_submit`
 yourself: every run is driven by its own spawned headless session, never by you. The Standing
 Mandates and Output template in `../orchestrate/SKILL.md` apply unchanged.
 

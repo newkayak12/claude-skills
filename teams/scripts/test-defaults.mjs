@@ -438,7 +438,7 @@ test('every NEXT_SCHEMA/VERDICT_SCHEMA field in taskmanager.mjs has a producer, 
   // The vacuity floor guard A/B/C already explain: too few fields found means extraction
   // stopped matching real code, not that the schemas shrank. Pinned to today's exact shape -
   // if a field is added or removed, update these two numbers in the same commit.
-  assert.equal(r.allKeys.NEXT_SCHEMA.length, 7, `NEXT_SCHEMA should declare 7 fields, found ${r.allKeys.NEXT_SCHEMA.length}: ${r.allKeys.NEXT_SCHEMA.join(', ')}`);
+  assert.equal(r.allKeys.NEXT_SCHEMA.length, 9, `NEXT_SCHEMA should declare 9 fields, found ${r.allKeys.NEXT_SCHEMA.length}: ${r.allKeys.NEXT_SCHEMA.join(', ')}`);
   assert.equal(r.allKeys.VERDICT_SCHEMA.length, 19, `VERDICT_SCHEMA should declare 19 fields, found ${r.allKeys.VERDICT_SCHEMA.length}: ${r.allKeys.VERDICT_SCHEMA.join(', ')}`);
 });
 
@@ -466,8 +466,8 @@ test('proof: re-adding delegate to NEXT_SCHEMA (the exact 2095662 shape) makes g
   assert.deepEqual(checkSchemaReachability(realTaskmanager, ['NEXT_SCHEMA', 'VERDICT_SCHEMA']).unreachable, [], 'sanity: real source must pass before mutating it');
 
   const mutated = realTaskmanager.replace(
-    "flow: { type: 'string' },\n    ready:",
-    "flow: { type: 'string' },\n    delegate: { type: 'object', description: 'size S: open this with team_open instead; the task left nothing on disk' },\n    ready:",
+    "flow: { type: 'string' },\n    run_id:",
+    "flow: { type: 'string' },\n    delegate: { type: 'object', description: 'size S: open this with team_open instead; the task left nothing on disk' },\n    run_id:",
   );
   assert.notEqual(mutated, realTaskmanager, 'mutation target text was not found in teams/mcp/taskmanager.mjs - update this proof to match current source');
 

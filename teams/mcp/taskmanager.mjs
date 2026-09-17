@@ -1216,6 +1216,41 @@ function serviceLeader(task) {
 // working. So read the child run instead, normalized exactly the way toolNextSRun normalizes it -
 // one mapping, not a second truth. Read-only on purpose: servicing a dead S driver is the
 // leader's job, and a watcher that respawned it would be driving.
+// Synchronous on purpose: this whole server is one synchronous stdin loop (see the bottom of
+// this file), and each session has its own server process, so blocking here blocks nothing but
+// the one call that asked to block.
+function sleepSync(ms) {
+  if (!(ms > 0)) return;
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+// The wait a watcher has and a headless session needs. The second real-vendor run died on the
+// lack of it: the watcher was correctly told `running`, said "I'll check again in about four
+// minutes", scheduled a background shell sleep - and ended its turn. A `claude -p` session ends
+// when the model stops calling tools, so the session was over one minute in while the leader and
+// its driver kept building, and the bench scored an empty tree. A watcher cannot sleep; the only
+// thing that can hold a headless session open is a tool call that has not returned yet. So
+// tm_next blocks here until the task stops running or the budget is spent, and the caller simply
+// calls it again. 90s of blocking was measured to return cleanly through Claude Code's MCP
+// client; the 300s cap is deliberately above what the skills ask for (60s) and below anything
+// that has been shown to work, so a caller that raises it is choosing, not guessing.
+const WAIT_MS_MAX = 300000;
+function waitWhileRunning(task, waitMs) {
+  const budget = Math.min(Math.max(Number(waitMs) || 0, 0), WAIT_MS_MAX);
+  const until = Date.now() + budget;
+  let st = watcherState(task);
+  let current = task;
+  while (st.state === 'running' && Date.now() < until) {
+    sleepSync(Math.min(2000, until - Date.now()));
+    // Re-read from disk every pass: the leader writes task.json from its own process, and a
+    // leader that died while we waited is respawned here rather than after the wait.
+    current = mustFindTask({ task_id: task.run_id });
+    serviceLeader(current);
+    st = watcherState(current);
+  }
+  return { st, task: current };
+}
+
 function watcherState(task) {
   if (!task.s_run) return runState(task);
   const run = loadRun(task.s_run.cwd, task.s_run.run_id);
@@ -1835,6 +1870,8 @@ const NEXT_SCHEMA = {
     counts: { type: 'object' },
     size: { type: 'string', enum: ['S', 'L'] },
     flow: { type: 'string' },
+    run_id: { type: 'string' },
+    cwd: { type: 'string' },
     ready: { type: 'array', items: { type: 'object', properties: {
       node_id: { type: 'string' }, stage: { type: 'string' }, briefing_path: { type: 'string' }, next: { type: 'string' },
     }, required: ['node_id', 'stage'] } },
@@ -1892,7 +1929,8 @@ const TOOLS = [
   {
     name: 'tm_next',
     description: 'Which manager nodes are ready, each with a briefing_path for a fresh agent, plus every running child as {cwd, run_id, driver}. A ready dispatch node is executed here and now: its worktree is created, its child graph run opened, and a headless driver process spawned to run that child to the end. Also where a dead driver is serviced: respawned on the same run_id (driver.restarts) if the budget allows, or parked on waiting_capacity after a usage-limit death - neither needs you to do anything but poll again. A size-S task under s_driver "process" has no manager nodes at all; tm_next instead returns {run_id, cwd, driver, nodes, report} for the one run it is driving, ready for the entry skill\'s output template once state is complete or blocked. Poll tm_next while a driver is alive; do not drive that child yourself. tm_submit the dispatch node once the child is no longer running.',
-    inputSchema: { type: 'object', properties: { task_id: { type: 'string' } }, required: ['task_id'] },
+    inputSchema: { type: 'object', properties: { task_id: { type: 'string' },
+      wait_ms: { type: 'number', description: 'Only while a TaskLeader is driving (driven_by: "leader"): block up to this many milliseconds, returning as soon as the task stops running. Pass 60000 and call again the moment it returns - this call is the ONLY thing holding a headless session open. A session that sleeps, or schedules a background check, or simply stops calling tools, ends; its leader and drivers keep building into a workspace nobody is waiting for. Capped at 300000; 90000 has been measured to return cleanly through Claude Code\'s MCP client.' } }, required: ['task_id'] },
     outputSchema: NEXT_SCHEMA,
   },
   {
@@ -2505,14 +2543,18 @@ function callTool(name, args) {
     const watcher = !noLeader() && !isLeaderProcess(task) && task.leader && leaderAlive(task);
     if (watcher && MUTATING_TOOLS.has(name)) return queueToInbox(task, name, a);
     if (watcher && name === 'tm_next') {
-      const st = watcherState(task);
+      const waited = waitWhileRunning(task, a.wait_ms);
+      const st = waited.st;
+      const t = waited.task;
       return {
-        task_id: task.run_id, state: st.state, counts: st.counts, driven_by: 'leader',
+        task_id: t.run_id, state: st.state, counts: st.counts, driven_by: 'leader',
         // Named so a watcher told "running" can go look at the right run rather than at the
         // task's own three settled nodes.
-        ...(task.s_run ? { run_id: task.s_run.run_id, cwd: task.s_run.cwd } : {}),
-        leader: { pid: task.leader.pid, alive: true, log: task.leader.log, restarts: task.leader.restarts },
-        hint: 'the TaskLeader driver runs the loop; watch tm_status({task_id}) and tm_events({task_id})',
+        ...(t.s_run ? { run_id: t.s_run.run_id, cwd: t.s_run.cwd } : {}),
+        leader: t.leader ? { pid: t.leader.pid, alive: leaderAlive(t), log: t.leader.log, restarts: t.leader.restarts } : null,
+        hint: st.state === 'running'
+          ? 'still running: call tm_next again with wait_ms immediately. Do NOT sleep and do NOT schedule a background check - this session ends the moment you stop calling tools, and the task is abandoned mid-build'
+          : 'the TaskLeader driver ran the loop; read the account with tm_status({task_id}) and tm_events({task_id})',
       };
     }
     if (name === 'tm_next' && (isLeaderProcess(task) || noDriver())) { const n = drainInbox(task); if (n) a.__inbox_applied = n; }
