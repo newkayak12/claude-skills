@@ -300,7 +300,8 @@ entry 스킬의 본문은 그래서 짧아진다: `tm_open` 한 번, 그 뒤는 
   reason + 무시된 gaps", 보드 티켓에 ⚑. 벤치 스코어러는 `overrides`를 따로 센다.
   "게이트 우회 제안 금지" 규칙은 **AI와 driver에게** 적용되는 규칙이다 — driver가 사용자에게
   override를 *권하는 것*은 여전히 금지, 사용자가 스스로 하는 것은 권리.
-- `reject`(피드백 동봉 → REJECTED)와 `redirect`(critique부터 재개, 제약 추가)는 그대로.
+- `reject`(피드백 동봉 → REJECTED)와 `redirect`(§14 결정 기록 **#15** — `retrySpec` 재사용,
+  `setgoal`부터 재개·제약 추가)는 그대로.
 - `ask`는 **setgoal 이전**에만 삽입된다. impl/qualitygate 단계에서는 가정 기록만.
 - human 노드 payload도 verbatim 규칙: driver가 다듬거나 요약하지 않는다.
 - 벤치 스코어러는 `human_nodes`, `human_wait_ms`를 따로 센다 — 비용이 아니라 지연으로.
@@ -497,13 +498,18 @@ doc: .teams_output/team/E-a1b2c3d4/INDEX.md
 | §4 tickets.mjs 파생 | **바로 코딩 가능** — 순수 함수 + 매핑 표가 곧 테이블 테스트 | 없음 |
 | §5 shape 스키마 | **바로 코딩 가능** — `validateShape` 확장(`implements[]` 완전성) | qa는 단계라 워크트리 문제 없음(통합 트리에서 돈다). planning이 꺼진 EPIC에서 `implements[]`는 선택 |
 | §8 읽기 도구 4개 | **바로 코딩 가능** — 파일 읽기만 | 보드 렌더 폭·컬럼 확정 |
-| §7 human executor | **스펙 한 단락 더 필요** | (1) `ask` 노드가 shape 출력의 어느 필드에서 생기는가 → `shape.questions[]`로 통일. (2) `gate:human` payload 스키마와 `redirect`가 재개하는 정확한 노드(critique? setgoal?) → **critique부터** (spec 재저작 경로가 이미 있음). (3) routing.mjs에서 `human`은 `rankCandidates` 후보에서 제외, `assignee` 핀으로만 |
+| §7 human executor | **코딩 가능** — 아래 결정 3개가 §14 결정 기록에 고정됨 | §14 결정 기록 **#14**(`ask` 노드의 질문 필드) · **#15**(`gate:human` payload 스키마와 `redirect` 재개 지점) · **#16**(routing.mjs의 human 제외) 참고. 남은 것은 구현뿐: 매니저 노드의 질문 삽입, `gate:human` 노드 타입, `assignee` 핀 라우팅 |
 | §6 TaskLeader driver | **코딩 가능** — inbox 결정, respawn 규칙 결정, inline 옵션 제거로 남은 결정 없음 | leader의 세션 프롬프트(manager.md를 driver용으로 다시 씀), `claude-exec-adapter` 재사용 |
 | §2 sub-EPIC | **아직 설계 부족** — 마지막 단계로 미룸 | 자식 EPIC의 worktree 기준점(부모 STORY 브랜치), 자식 report가 부모 accept로 접히는 형식 |
 | §12 install/remove/patch | 아래에 정의 — harness의 `install.mjs`/`remove.mjs`/`patch.mjs` 패턴 그대로 | 공존 규칙(§13) 확정 |
 
 판정: **v0.10~v0.12(§3·§4·§5·§8)는 지금 상태로 계획서를 쓸 수 있다.** v0.13(human, leader
-driver)은 위 표의 결정 4개를 문서에 박은 뒤. v0.14(sub-EPIC)는 v0.13 실측 뒤에 설계.
+driver)의 결정은 **§14 결정 기록 #14·#15·#16**에 고정됐다. **"결정 4개"는 오기였다 — 정정: 3개.**
+위 표의 §6 TaskLeader driver 행은 이미 그 자리에서 "inbox 결정, respawn 규칙 결정, inline 옵션
+제거로 남은 결정 없음"이라 적고 있고, 오른쪽 칸에 남은 두 항목(leader 세션 프롬프트 재작성,
+`claude-exec-adapter` 재사용)은 *선택해야 할 결정*이 아니라 *쓰기만 하면 되는 구현 항목*이다 —
+코딩 전에 필요했던 결정은 §7 human executor 행의 3개뿐이었다. v0.14(sub-EPIC)는 v0.13 실측 뒤에
+설계.
 
 ## 12. install / remove / patch — harness와 같은 두께로
 
@@ -713,6 +719,9 @@ task-unit 숫자를 지어내지 않기 위해서다.
 | 6b | **리네임 + 독립화** (0.10.2로 출시). plugin `graph-beta` → `teams`, 도구 접두어 `graph_*` → `team_*`(`teams/mcp/broker.mjs`의 서버 이름도 `teams-engineering`). #6이 상호배제 근거로 든 "두 서버가 같은 `graph_*` 이름을 낸다"는 이제 사실이 아니다 — graph는 `graph-engineering`/`graph_*`를 그대로 쓰고, teams만 `teams-engineering`/`team_*`로 옮겨 갔다. harness·graph·teams 세 플러그인은 이제 서로의 코드를 참조하지 않는 독립된 형제다(§0 재서술) | §0 계보 재서술. **확인됨** (commit `0ff8a2f`): `teams/skills/install/install.mjs`에서 `findConflicts`가 제거되어 install-time 상호배제 검사가 더는 없다. `teams/scripts/test-install.mjs`에 graph 플러그인이 활성화되고 `graph-engineering` `.mcp.json` 항목이 있어도 install이 성공(status 0)함을 검증하는 테스트가 추가됐다 — 팀 리더는 이름만 바로잡는 대신 상호배제 자체를 걷어내는 쪽을 택했다. §13 표도 이에 맞춰 갱신 |
 | 추가 | **main 세션은 절대 TaskLeader가 아니다.** inline 옵션 셋(`leader_driver`/`s_driver`/`child_driver`) team 라인에서 제거·거부 | §6 재작성, 7b inbox 문구, entry 스킬 축소. **v0.10.0 완료**: `child_driver`/`s_driver`는 넘기면 `tm_open`이 에러(commit 20306ec, breaking); `leader_driver: "inline"`은 애초에 만들지 않고 대신 TaskLeader driver를 항상 spawn(commit 6ecd744) |
 | 13 | **TaskLeader의 push notification을 확장이 아니라 제거했다** (v0.11.0, commit `49a10a1`). `leaderPrompt`는 스폰된 TaskLeader 세션에게 상태가 바뀔 때마다 opener를 `SendMessage`하라고 *지시*만 했을 뿐 — `taskmanager.mjs`는 그 메시지가 실제로 갔는지 검증·재시도·ack 어느 것도 하지 않았다. 메시지가 영영 안 와도 "아무 일도 안 일어남"과 구분이 안 되는, 알림 채널로서 최악의 성질이었고, §7 가이드 요구 7항("main 컨텍스트 사용 안 함")과도 어긋났다 — 매 노드 전이마다 main에 SendMessage로 뭔가를 채우는 것 자체가 그 요구가 비워두라는 자리다 | `tm_open`의 `notify` 인자·`task.notify` 필드·`leaderPrompt`의 두 SendMessage 분기 전부 삭제. `tm_board`/`tm_events`가 durable하고 검증 가능한 pull 경로로 대신한다 — 사람이 확인하고 싶을 때 확인하지, driver가 밀어 넣지 않는다 |
+| 14 | **`ask` 노드의 질문 필드.** `ask:N`은 매니저 노드(`size`/`shape`/`critique`) 출력에 `questions[]`가 있어야 TaskLeader가 삽입한다(§7 표). shape 출력에서는 이 필드를 **`shape.questions[]`로 통일** — §5의 `packages[]`/`implements[]`와 같은 층위의 필드로 둬서, TaskLeader의 질문 추출 로직이 노드마다 다른 이름을 파싱하지 않게 한다 | §5 shape 출력 스키마에 `questions[]` 추가, §7 `ask:N` 행, §8b (구 A행 (1)) |
+| 15 | **`gate:human` payload 스키마와 `redirect` 재개 지점.** payload 스키마는 이미 `{decision: "accept" \| "reject" \| "redirect", note}`(§7 표) + UserFirst의 `override`(결정 4)로 고정돼 있다 — 새로 정할 것은 스키마가 아니라 `redirect`가 어디서부터 다시 도는가였다. 답: 기존 스펙 재저작 경로, 즉 `retrySpec`(`teams/mcp/graph.mjs:856`)을 재사용한다. **코드 확인 결과 정정**: `retrySpec`은 `critique`가 아니라 **`setgoal`**부터 다시 만든다 — `setgoal:N`을 새로 생성한 뒤(`feedback` 포함) 그 밑에 `critique:N`을 다시 붙인다(`graph.mjs:881-884`). §7 가드레일과 §8b 초안이 써 온 "critique부터"는 critique의 거부가 redirect의 트리거라는 뜻으로 읽어야지, 실제 재실행이 시작되는 노드를 가리키는 표현이 아니다 — **정확한 재개 지점은 `setgoal`** | §7 가드레일 "redirect" 문구를 이 결정을 가리키도록 갱신, §8b (구 A행 (2)), `taskmanager.mjs`의 `ask`/`gate:human` 삽입 구현 시 `retrySpec` 재사용 |
+| 16 | **routing.mjs의 human 제외.** `rankCandidates`는 `human`을 후보 자동 선택에 넣지 않는다 — human 배정은 `assignee` 핀, 또는 `ask`/`gate:human` 전용 노드 타입을 통해서만 이루어진다. 자동 라우팅이 임의로 사람에게 일을 떠넘기지 않아야 `interactive: false` 기본 흐름이 그대로 AI만으로 돈다(현재 `routing.mjs`에 `human` 관련 분기 없음 — 확인함, v0.13.0에서 신설) | §9 변경 지점(routing.mjs 행), §7 "범위" 절, §8b (구 A행 (3)) |
 
 ## 5b. 결함 STORY — QA가 발행하는 티켓
 
