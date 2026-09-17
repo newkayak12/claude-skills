@@ -503,6 +503,31 @@ function excludeMarkers(cwd) {
   }
 }
 
+// A worktree holds only what git committed. harness's own gate (.claude/harness-gate.json,
+// enforced by .claude/hooks/goal-gate.mjs) is installed into the PROJECT tree by
+// harness:install, but if the user has not yet committed it, a fresh worktree branches from a
+// HEAD that never had it: the worker inside is silently ungated, while the user still believes
+// tm_open is protected. Every hook here is deliberately fail-open, and this stays that way - a
+// warning, never a blocked dispatch - but fail-open plus a false belief in protection is the
+// trap, so it has to be said somewhere a person looks. The ledger is that place: the same
+// best-effort record() every other worktree/dispatch event already uses.
+function warnUncommittedGate(task, worktreePath) {
+  try {
+    if (!existsSync(join(task.cwd, '.claude', 'harness-gate.json'))) return;
+    if (existsSync(join(worktreePath, '.claude', 'harness-gate.json'))) return;
+    record(task, {
+      event: 'gate_uncommitted',
+      task_id: task.run_id,
+      path: worktreePath,
+      reason: `${task.cwd} has .claude/harness-gate.json but this worktree does not: a worktree `
+        + `inherits only committed files, so the harness gate is NOT enforced here. Commit `
+        + `.claude/harness-gate.json and .claude/hooks/goal-gate.mjs in the project, then retry.`,
+    });
+  } catch {
+    /* best-effort, like touchMarker */
+  }
+}
+
 // One worktree per package, kept across attempts: a retry continues in the tree the first
 // attempt left, exactly as a graph retry keeps the worktree of the attempt it replaces.
 // `base` is the commit or branch the tree starts from - the project's HEAD, or a dependency's
@@ -515,6 +540,7 @@ function ensureWorktree(task, name, base = 'HEAD') {
     // from the session's cwd, which for a worker IS this worktree. See engage.mjs.
     excludeMarkers(path);
     touchMarker(path, task.run_id);
+    warnUncommittedGate(task, path);
     return { ok: true, path, branch, created: false };
   }
   mkdirSync(dirname(path), { recursive: true });
@@ -525,6 +551,7 @@ function ensureWorktree(task, name, base = 'HEAD') {
   if (!r.ok) return { ok: false, path, branch, reason: r.err || r.out || 'git worktree add failed' };
   excludeMarkers(path);
   touchMarker(path, task.run_id);
+  warnUncommittedGate(task, path);
   return { ok: true, path, branch, created: !exists };
 }
 
