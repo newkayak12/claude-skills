@@ -1,0 +1,49 @@
+flowchart TB
+  U["사용자 요청"] --> SK["entry 스킬<br/>teams:develop / plan / qa / orchestrate"]
+  SK --> TO["tm_open"]
+
+  subgraph MGR["매니저 세션 (main) — 폴링만, 직접 일 안 함"]
+    TO --> TJ[("task.json<br/>단일 진실 원본")]
+    TJ --> SIZE{"size 노드<br/>S or L"}
+    POLL["tm_next / tm_submit / tm_status<br/>tm_events / tm_board / tm_ticket"]
+  end
+
+  SIZE -->|S| SRUN["openSRun<br/>그래프 런 1개"]
+  SIZE -->|L| LEAD["spawnLeader<br/>TaskLeader 드라이버"]
+
+  SRUN -.spawn.-> SD["S 드라이버 세션<br/>claude -p, loop.md"]
+  LEAD -.spawn.-> LD["TaskLeader 세션<br/>claude -p, manager.md"]
+
+  subgraph EPIC["EPIC 흐름 (size L)"]
+    direction TB
+    PLAN["PLAN phase-Team<br/>roles.planning (선택)<br/>draft→revise→gate"]
+    SHAPE["shape<br/>priority / implements[]"]
+    CRIT["critique"]
+    DISP["dispatch P1..Pn<br/>max_parallel_teams 캡"]
+    ACC["accept P1..Pn"]
+    INT["integrate"]
+    QA["QA phase-Team<br/>roles.qa (선택)<br/>cases→execute→gate<br/>통합 트리 재사용"]
+    GG["gate:goal<br/>goal_threshold 90"]
+    REP["report"]
+    PLAN --> SHAPE --> CRIT --> DISP --> ACC --> INT --> QA --> GG --> REP
+  end
+
+  LD --> EPIC
+  DISP -.spawn 패키지마다.-> PD["패키지 드라이버 세션<br/>+ 전용 git worktree"]
+  PD --> ACC
+
+  TJ --> TK["tickets.mjs<br/>EPIC/STORY/TASK 카드<br/>순수 함수 파생"]
+  TK --> BD["board.jsonl<br/>전이 로그"]
+  TJ --> DOC["docs.mjs<br/>phase 문서 13종 중 11종"]
+
+  CFG[".claude/team.json<br/>TEAM_DEFAULTS 13키"] --> TO
+
+  classDef broken fill:#ffe0e0,stroke:#c00,stroke-width:3px
+  classDef missing fill:#fff4d6,stroke:#d90,stroke-dasharray:5 3
+  classDef ok fill:#e6f4ea,stroke:#2a7
+  class SD,LD broken
+  class QA,PLAN missing
+
+  TMF["tm_file — 결함 STORY 발행<br/>미구현 (v0.12.1)"]:::missing
+  QA -.결함 발견.-> TMF
+  TMF -.->|reporter: repair| DISP
