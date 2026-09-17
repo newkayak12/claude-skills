@@ -7,8 +7,9 @@
 # <ws>/.harness-tasks and every run file under .teams_output (or .harness-run for the stable
 # graph arm) — all of it resumable. This opens a
 # new session at the same cwd and tells the skill to continue what is there instead of opening
-# again: tm_status/tm_next for a task, team_status({cwd})/team_next for a bare run. The stream
-# goes to <ws>.stream.resume<n>.jsonl; score.mjs sums every stream of a workspace.
+# again: tm_status/tm_next for a task, team_status({cwd})/team_next for a bare teams run
+# (graph_status({cwd})/graph_next for the stable graph arm). The stream goes to
+# <ws>.stream.resume<n>.jsonl; score.mjs sums every stream of a workspace.
 set -euo pipefail
 
 WS=${1:?workspace}
@@ -39,7 +40,7 @@ case "$ARM" in
     fi ;;
   stable)
     PLUGIN=(--plugin-dir "$REPO/graph")
-    PROMPT="Use the graph:orchestrate skill, but CONTINUE the graph run that is already open at this cwd instead of opening one: call team_status({cwd: \"$WS\"}), take the run whose state is running, and drive the loop from team_next on. Do not call team_open. $ROUTING End with the skill's output template. The original request was: $REQ" ;;
+    PROMPT="Use the graph:orchestrate skill, but CONTINUE the graph run that is already open at this cwd instead of opening one: call graph_status({cwd: \"$WS\"}), take the run whose state is running, and drive the loop from graph_next on. Do not call graph_open. $ROUTING End with the skill's output template. The original request was: $REQ" ;;
   *) echo "resume is for beta, betas, skills and stable workspaces, not $ARM" >&2; exit 2 ;;
 esac
 
