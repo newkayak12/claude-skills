@@ -50,3 +50,28 @@ test('kindOf is unaffected for unnamed and existing kinds, and resolves the two 
   assert.equal(kindOf({ id: 'D1', kind: 'planning' }), 'planning');
   assert.equal(kindOf({ id: 'Q1', kind: 'qa' }), 'qa');
 });
+
+// planning-audit: the kind that the fictitious 기획 크로스 검수 (planning cross-review) pass
+// uses. Nothing opens this kind yet - taskmanager.mjs wiring the audit phase-Team into the
+// EPIC flow is separate, unstarted work. This pins only the lookup-table row itself, as
+// literals, so a later change to taskmanager.mjs cannot silently redefine the kind's shape.
+test('planning-audit kind: chain, no reasoning stage, and both audit and gate skilled with devils-advocate', () => {
+  assert.deepEqual(KINDS['planning-audit'].chain, ['audit', 'gate']);
+  assert.deepEqual(KINDS['planning-audit'].reasoning, []);
+  assert.deepEqual(kindSkills('planning-audit', 'audit'), ['think:devils-advocate']);
+  assert.deepEqual(kindSkills('planning-audit', 'gate'), ['think:devils-advocate']);
+  assert.equal(authorStage('planning-audit'), 'audit');
+});
+
+test('audit is not a reasoning stage - it mutates nothing, but the shape follows planning/qa: only gate judges', () => {
+  assert.equal(REASONING_STAGES.has('audit'), false);
+});
+
+test('flow audit supplies the planning-audit kind and reuses planning\'s own persona list verbatim', () => {
+  assert.equal(FLOWS.audit.kind, 'planning-audit');
+  assert.deepEqual(FLOWS.audit.personas, FLOWS.plan.personas);
+});
+
+test('kindOf resolves planning-audit', () => {
+  assert.equal(kindOf({ id: 'A1', kind: 'planning-audit' }), 'planning-audit');
+});
