@@ -52,6 +52,7 @@ Three things this plugin adds, in this order, each behind the previous one's tes
 Design and step list: [`docs/plans/2026-09-11-teams-taskmanager.md`](../docs/plans/2026-09-11-teams-taskmanager.md).
 
 ## Status
+- v0.12.1 — **v0.12.1 — filed STORYs: QA defects, the planning audit, and tm_file**: a defect the QA phase-Team reports now becomes its own develop STORY and the EPIC loops back through a fresh integrate (capped by `qa_rounds`); `roles.planning` gains a second pass, the `planning-audit` phase-Team, which cross-checks the integrated result and the QA report against its own PRD after integration and files a STORY for every user story still unmet; `tm_file` lets a person file the same kind of STORY by hand, uncapped. The board and phase docs tell them apart by `reporter` (`shape`/`repair`/`qa`/`planning-audit`/`you`), and `65-audit.md` renders the audit — leaving `15-spec-gate.md` the only one of §7c's 13 documents still unwritten.
 
 - **v0.12.0 — planning/QA as EPIC phase-Teams, not peer STORYs**: `.claude/team.json`'s
   `roles.planning`/`roles.qa` switches, recorded-but-inert since v0.10.1, now do something.
