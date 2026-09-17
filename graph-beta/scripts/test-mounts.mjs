@@ -82,6 +82,20 @@ test('a mounts override replaces the default for that stage only, and accepts a 
   assert.deepEqual(graphStageMounts(run, node('setgoal', 'setgoal')).map((m) => m.tool), ['mcp__think-tool__think'], 'setgoal keeps its default');
 });
 
+test('draft and cases each get one advisory MCP tool by default, added for planning/qa', () => {
+  const run = {};
+  assert.deepEqual(graphStageMounts(run, node('draft:D1:1', 'draft', { subgoal_id: 'D1' })).map((m) => m.tool), ['mcp__think-tool__think']);
+  assert.deepEqual(graphStageMounts(run, node('cases:Q1:1', 'cases', { subgoal_id: 'Q1' })).map((m) => m.tool), ['mcp__sequential-thinking__sequentialthinking']);
+  // execute gets none by default, matching the design doc's "없음"
+  assert.deepEqual(graphStageMounts(run, node('execute:Q1:1', 'execute', { subgoal_id: 'Q1' })), []);
+});
+
+test('a mounts override on draft does not touch cases, and vice versa', () => {
+  const run = { mounts: { draft: [] } };
+  assert.deepEqual(graphStageMounts(run, node('draft:D1:1', 'draft', { subgoal_id: 'D1' })), []);
+  assert.deepEqual(graphStageMounts(run, node('cases:Q1:1', 'cases', { subgoal_id: 'Q1' })).map((m) => m.tool), ['mcp__sequential-thinking__sequentialthinking']);
+});
+
 // ---------- mountBlock rendering ----------
 
 test('mountBlock renders nothing for a stage with neither a skill nor a mount', () => {
