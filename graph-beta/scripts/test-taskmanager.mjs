@@ -135,12 +135,12 @@ async function throughCritique(tm, task_id, shape = SHAPE) {
 async function withTask(fn, extra) {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root }).init();
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
   const g = await new Client(BROKER).init();
   try {
-    // These tests are the regression suite for driving children by hand, which is exactly what
-    // child_driver 'inline' means. The default ('process') is covered by the driver tests below.
-    const open = await tm.call('tm_open', { request: 'big request', cwd, vendor: 'self', child_driver: 'inline', ...extra });
+    // These tests submit every node by hand through the broker, so they ask the manager to spawn
+    // nothing. HARNESS_TEST_NO_DRIVER is a test seam, not an option: a real session never drives.
+    const open = await tm.call('tm_open', { request: 'big request', cwd, vendor: 'self', ...extra });
     await fn({ tm, g, cwd, root, task_id: open.task_id, open });
   } finally {
     tm.close();
@@ -174,28 +174,10 @@ test('tm_open seeds size -> shape -> critique under the tasks root, not under th
   });
 });
 
-test('size S delegates to graph_open and leaves nothing on disk (s_driver "inline")', async () => {
-  await withTask(async ({ cwd, root, task_id, tm }) => {
-    const v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'document', sizing: ['ls -> one file'] }) });
-    assert.equal(v.state, 'done');
-    assert.equal(v.size, 'S');
-    assert.equal(v.task_state, 'delegated');
-    assert.equal(v.delegate.tool, 'graph_open');
-    assert.equal(v.delegate.args.cwd, cwd);
-    assert.equal(v.delegate.args.request, 'big request');
-    assert.equal(v.delegate.args.flow, 'document', 'the flow size chose travels with the delegation');
-    assert.equal(v.delegate.args.vendor, 'self', 'routing arguments travel too');
-    assert.ok(!existsSync(join(root, task_id)), 'an S request produces no manager state');
-    assert.deepEqual(readdirSync(root), []);
-    const after = await tm.call('tm_next', { task_id });
-    assert.match(after.error, /unknown task/);
-  }, { s_driver: 'inline' });
-});
-
-test('tm_open({size}) pins the size: L opens shape without measuring, S (s_driver "inline") delegates at once', async () => {
+test('tm_open({size}) pins the size: L opens shape without measuring, S opens its single run at once', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root }).init();
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
   try {
     const L = await tm.call('tm_open', { request: 'big request', cwd, flow: 'develop', vendor: 'self', size: 'L' });
     assert.equal(L.state, 'running', JSON.stringify(L));
@@ -205,29 +187,27 @@ test('tm_open({size}) pins the size: L opens shape without measuring, S (s_drive
     const size = task.nodes.find((n) => n.node_id === 'size');
     assert.equal(size.state, 'done');
     assert.equal(size.result.size_source, 'pinned');
-    const S = await tm.call('tm_open', { request: 'small request', cwd, flow: 'document', vendor: 'self', size: 'S', s_driver: 'inline' });
-    assert.equal(S.task_state, 'delegated');
-    assert.equal(S.delegate.tool, 'graph_open');
-    assert.equal(S.delegate.args.flow, 'document');
-    assert.ok(!existsSync(join(root, S.task_id)), 'a pinned S leaves no manager state either');
+    const S = await tm.call('tm_open', { request: 'small request', cwd, flow: 'document', vendor: 'self', size: 'S' });
+    assert.equal(S.task_state, 's_run');
+    assert.ok(S.run_id, 'a pinned S opens its single graph run at once');
+    const sTask = JSON.parse(readFileSync(join(root, S.task_id, 'task.json'), 'utf8'));
+    assert.equal(sTask.nodes.find((n) => n.node_id === 'size').result.size_source, 'pinned');
+    assert.equal(sTask.s_run.run_id, S.run_id);
   } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
 });
 
-test('a pinned flow survives sizing, and delegate.args open a graph run verbatim', async () => {
+test('a pinned flow survives sizing and reaches the single run the manager opens', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root }).init();
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
   const g = await new Client(BROKER).init();
   try {
-    const { task_id } = await tm.call('tm_open', { request: 'r', cwd, flow: 'develop', vendor: 'self', max_retries: 1, s_driver: 'inline' });
+    const { task_id } = await tm.call('tm_open', { request: 'r', cwd, flow: 'develop', vendor: 'self', max_retries: 1, isolated: true });
     // size says document; the entry pinned develop, and the entry wins.
     const v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'document' }) });
-    assert.equal(v.delegate.args.flow, 'develop');
-    assert.equal(v.delegate.args.max_retries, 1);
-    const open = await g.call('graph_open', { ...v.delegate.args, isolated: true });
-    assert.ok(open.run_id, JSON.stringify(open));
-    assert.deepEqual(open.ready.map((n) => n.node_id), ['plan']);
-    const st = await g.call('graph_status', { run_id: open.run_id, cwd, full: true });
+    assert.equal(v.task_state, 's_run');
+    assert.ok(v.run_id, JSON.stringify(v));
+    const st = await g.call('graph_status', { run_id: v.run_id, cwd, full: true });
     assert.equal(st.flow, 'develop');
     assert.equal(st.isolated, true);
     assert.equal(st.max_retries, 1);
@@ -1087,7 +1067,6 @@ test('once the restart budget is spent, the dispatch folds blocked with every at
     // Blocked, and retryable in the same worktree - the package is not dead, its session is.
     const after = await tm.call('tm_status', { task_id });
     assert.equal(after.state, 'blocked');
-    assert.equal(after.child_driver, 'process');
     const rt = await tm.call('tm_retry', { task_id, package_id: 'P1' });
     assert.equal(rt.retried, true, JSON.stringify(rt));
     assert.equal(rt.children[0].node_id, 'dispatch:P1:2');
@@ -1175,12 +1154,12 @@ test('a driver that exits only after its child run finished folds normally: a cr
   }
 });
 
-test('child_driver "inline" spawns nothing: the child is the session\'s to drive, and a fold is refused while it runs', async () => {
-  const f = driverFixture();
+test('HARNESS_TEST_NO_DRIVER spawns nothing: the child is the test to drive, and a fold is refused while it runs', async () => {
+  const f = driverFixture({ HARNESS_TEST_NO_DRIVER: '1' });
   const tm = await f.client.init();
   const g = await new Client(BROKER).init();
   try {
-    const { task_id } = await tm.call('tm_open', { request: 'big request', cwd: f.cwd, vendor: 'self', child_driver: 'inline' });
+    const { task_id } = await tm.call('tm_open', { request: 'big request', cwd: f.cwd, vendor: 'self' });
     await throughCritique(tm, task_id);
     const nx = await tm.call('tm_next', { task_id });
     const c = nx.children[0];
@@ -1188,7 +1167,6 @@ test('child_driver "inline" spawns nothing: the child is the session\'s to drive
     assert.match(c.next, /graph_next/);
     assert.ok(!existsSync(f.ran), 'the fake driver was never started');
     assert.ok(!existsSync(join(f.root, task_id, 'drivers')), 'no driver logs either');
-    assert.equal((await tm.call('tm_status', { task_id })).child_driver, 'inline');
     const early = await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
     assert.match(early.error, /still running/, 'with no driver, a running child is still the caller to finish');
     await completeChild(g, c);
@@ -1204,7 +1182,7 @@ test('child_driver "inline" spawns nothing: the child is the session\'s to drive
 
 // ---------- size-S process handoff: s_driver ----------
 
-test('a size-S task with the default s_driver spawns one headless driver, and tm_next relays its report once it completes', async () => {
+test('a size-S task spawns one headless driver, and tm_next relays its report once it completes', async () => {
   const f = driverFixture();
   const tm = await f.client.init();
   const g = await new Client(BROKER).init();
@@ -1252,7 +1230,6 @@ test('a size-S task with the default s_driver spawns one headless driver, and tm
 
     const status = await tm.call('tm_status', { task_id });
     assert.equal(status.state, 'complete');
-    assert.equal(status.s_driver, 'process');
     assert.equal(status.s_run.run_id, run_id);
   } finally {
     tm.close();
@@ -1263,16 +1240,11 @@ test('a size-S task with the default s_driver spawns one headless driver, and tm
   }
 });
 
-test('tm_open({mixed}) reaches the size-S run under either s_driver, the same way isolated does', async () => {
+test('tm_open({mixed}) reaches the size-S run the same way isolated does', async () => {
   const f = driverFixture();
   const tm = await f.client.init();
   const g = await new Client(BROKER).init();
   try {
-    const inline = await tm.call('tm_open', { request: 'r', cwd: f.cwd, vendor: 'self', s_driver: 'inline', mixed: false, isolated: true });
-    const iv = await tm.call('tm_submit', { task_id: inline.task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'develop' }) });
-    assert.equal(iv.delegate.args.mixed, false);
-    assert.equal(iv.delegate.args.isolated, true);
-
     const proc = await tm.call('tm_open', { request: 'r', cwd: f.cwd, vendor: 'self', mixed: false, isolated: true });
     const pv = await tm.call('tm_submit', { task_id: proc.task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'develop' }) });
     assert.equal(pv.task_state, 's_run');
@@ -1287,22 +1259,16 @@ test('tm_open({mixed}) reaches the size-S run under either s_driver, the same wa
   }
 });
 
-test('s_driver "inline" for a size-S task spawns no driver: the pre-existing delegate shape', async () => {
-  const f = driverFixture();
-  const tm = await f.client.init();
+test('child_driver and s_driver are gone: passing either is an error that names the reason', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
   try {
-    const { task_id } = await tm.call('tm_open', { request: 'small request', cwd: f.cwd, vendor: 'self', s_driver: 'inline' });
-    const v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'develop' }) });
-    assert.equal(v.task_state, 'delegated');
-    assert.equal(v.delegate.tool, 'graph_open');
-    assert.equal(v.delegate.args.cwd, f.cwd);
-    assert.equal(v.delegate.args.isolated, false);
-    assert.ok(!existsSync(join(f.root, task_id)), 'an inline S request leaves no manager state, same as before s_driver existed');
-    assert.ok(!existsSync(f.ran), 'no driver process was ever spawned');
-  } finally {
-    tm.close();
-    rmSync(f.cwd, { recursive: true, force: true });
-    rmSync(f.root, { recursive: true, force: true });
-    rmSync(f.drv, { recursive: true, force: true });
-  }
+    for (const bad of [{ child_driver: 'inline' }, { s_driver: 'process' }]) {
+      const r = await tm.call('tm_open', { request: 'r', cwd, vendor: 'self', ...bad });
+      assert.match(r.error, /removed in 0\.10\.0/);
+      assert.match(r.error, /never drives/);
+    }
+    assert.deepEqual(readdirSync(root), [], 'a refused open leaves no task behind');
+  } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
 });

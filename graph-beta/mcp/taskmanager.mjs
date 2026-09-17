@@ -135,6 +135,9 @@ function bullets(list) {
 // ---------- task creation ----------
 
 function createTask(a) {
+  if (a.child_driver !== undefined || a.s_driver !== undefined) {
+    throw new Error('child_driver and s_driver were removed in 0.10.0: the driving session never drives a child run or the manager loop. Open the task and watch tm_status / tm_events; the TaskLeader and package drivers do the rest.');
+  }
   const cwd = resolve(String(a.cwd));
   const taskId = randomUUID();
   const task = {
@@ -153,25 +156,15 @@ function createTask(a) {
     // false turns method off entirely; an object overrides STAGE_SKILLS per stage.
     stage_skills: a.skills === false ? false : (a.skills && typeof a.skills === 'object' ? a.skills : null),
     max_retries: Number.isInteger(a.max_retries) ? a.max_retries : 2,
-    // 'process': every package is driven by its own headless session (see spawnChildDriver).
-    // 'inline': the dispatch only opens the child run and the caller drives it itself.
-    child_driver: a.child_driver === 'inline' ? 'inline' : 'process',
-    // Same choice as child_driver, but for the single run a size-S request becomes: 'process'
-    // (default) spawns one headless driver for it and the caller only polls tm_next until the
-    // report arrives; 'inline' keeps the old delegate-to-graph_open shape.
-    s_driver: a.s_driver === 'inline' ? 'inline' : 'process',
     // How many times a package's dead driver is respawned on the SAME child run_id before the
     // dispatch is folded blocked. A usage-limit death never spends this budget - see
     // serviceDeadDriver.
     driver_restarts: Number.isInteger(a.driver_restarts) ? a.driver_restarts : 2,
-    // Whether the S-size single run (s_driver 'process') is opened isolated. graph_open's own
-    // 'isolated' used to be added by the entry skill only after seeing 'delegate'; that no
-    // longer works once the manager opens the run itself, so it is a tm_open argument now and
-    // an inline delegate carries it too.
+    // Whether the single run a size-S request becomes is opened isolated. It is a tm_open
+    // argument because the manager, not the entry skill, is what opens that run.
     isolated: a.isolated === true,
-    // Same story as isolated: an entry skill pinned to 'develop' or 'document' used to add
-    // mixed:true (or mixed:false, to forbid the other kind entirely) itself when opening the
-    // delegated graph_open. Carried on the task, for the same size-S run either s_driver opens.
+    // Same story as isolated: an entry skill pinned to 'develop' or 'document' says whether the
+    // other kind may appear in the spec at all. Carried on the task, for that same size-S run.
     mixed: a.mixed !== false,
     // The floor the manager's own goal gate's match_pct must clear - same meaning, same
     // default, as the graph engine's run.goal_threshold.
@@ -193,7 +186,7 @@ function createTask(a) {
     },
     created_at: Date.now(),
     spec: null,
-    // Set only for a size-S task with s_driver 'process': {cwd, run_id, driver, spawn_count,
+    // Set only for a size-S task: {cwd, run_id, driver, spawn_count,
     // waiting_capacity?} for the one graph run the manager opened and is driving with a
     // headless session, mirroring a package's n.child.
     s_run: null,
@@ -457,6 +450,13 @@ function git(cwd, args) {
 function shortId(taskId) {
   return String(taskId).slice(0, 8);
 }
+
+// Test seam only, never an option. The driving session does not drive: every package, every
+// size-S run and the manager loop itself belong to their own headless sessions, because a
+// session that relays each node's briefing and result through its own context burns it out
+// (measured: 507k tokens over 331 turns, ~55% of one task's cost, dead at the usage limit).
+// A test that wants to submit nodes by hand through the broker sets this and nothing spawns.
+function noDriver() { return process.env.HARNESS_TEST_NO_DRIVER === '1'; }
 
 // The engagement marker (engage.mjs) lives at .claude/.harness-markers/ INSIDE the tree, because
 // that is where the harness gate looks. It is harness state, not project content, so git must
@@ -942,7 +942,7 @@ function openChild(task, n) {
   n.started_at = Date.now();
   n.child = { cwd: wt.path, run_id: child.run_id, branch: wt.branch, flow, based_on };
   record(task, { event: 'dispatch', task_id: task.run_id, node_id: n.node_id, child_run_id: child.run_id, cwd: wt.path, branch: wt.branch });
-  if (task.child_driver !== 'inline') {
+  if (!noDriver()) {
     n.child.spawn_count = 0; // the first spawn gets no filename suffix; a respawn starts at 1
     const driver = spawnChildDriver(task, n.node_id, n.child);
     n.child.driver = driver;
@@ -1368,7 +1368,7 @@ const VERDICT_SCHEMA = {
 const TOOLS = [
   {
     name: 'tm_open',
-    description: 'Open a task for a request that may be too large for one graph run. Builds size -> shape -> critique on disk under ~/.harness/tasks/<task_id>/ and returns the first ready node. If size comes back S and s_driver is "inline" the task deletes itself and tells you to graph_open instead; with the default s_driver "process" it instead opens and drives that one run itself - poll tm_next for it like any child. Routing arguments are passed through to every child run.',
+    description: 'Open a task for a request that may be too large for one graph run. Builds size -> shape -> critique on disk under ~/.harness/tasks/<task_id>/ and returns the first ready node. If size comes back S the task opens that one graph run itself and drives it with its own headless session - poll tm_next for it like any child. The driving session never drives a run or the manager loop. Routing arguments are passed through to every child run.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1381,10 +1381,8 @@ const TOOLS = [
         model: { type: 'string' }, policy: { type: 'object' }, candidates: { type: 'array', items: { type: 'string' } },
         skills: { description: 'Method per manager stage, overriding the defaults: {"shape": ["develop:domain-driven-design"], "critique": []}. false runs every stage on its contract alone. A skill named here must be analytic and non-dialogic - a node runs headless and cannot answer a skill that asks it something.' },
         sandbox: { type: 'string' }, max_retries: { type: 'number' },
-        isolated: { type: 'boolean', description: 'Passed to the graph run this task opens (a size-S run under s_driver "process", or the delegate.args of one under "inline"). true only when you created or were handed a private worktree holding this run alone.' },
+        isolated: { type: 'boolean', description: 'Passed to the graph run this task opens (the single run of a size-S request, or each package child run). true only when you created or were handed a private worktree holding this run alone.' },
         mixed: { type: 'boolean', description: 'Passed the same way isolated is, to the same size-S run. Default true. false forbids the other kind of work entirely - a develop-flow request with a document subgoal fails at setgoal instead of quietly running one. Has no effect on an L task: every package is already mixed:true.' },
-        child_driver: { type: 'string', enum: ['process', 'inline'], description: "How a package's child run is driven. 'process' (default): the manager spawns a headless session per package that drives the child to the end, and you only fold it. 'inline': the dispatch only opens the child run and you drive it yourself, node by node, in this session." },
-        s_driver: { type: 'string', enum: ['process', 'inline'], description: "How a size-S request's single run is driven. 'process' (default): the manager opens the run and spawns one headless driver for it, same as a package's dispatch, and you only poll tm_next until the report arrives. 'inline': tm_submit(size) hands back a delegate to graph_open instead, and you drive it yourself with references/loop.md - the pre-0.9 shape." },
         driver_restarts: { type: 'integer', description: 'default 2: how many times a package or size-S driver that died mid-run is respawned on the SAME run_id before the dispatch folds blocked. A usage-limit death never spends this - it parks on waiting_capacity for tm_retry({reset_capacity:true}) instead.' },
         goal_threshold: { type: 'integer', description: 'default 90: the manager\'s own goal gate must report match_pct at or above this to accept, and it is passed through to every child run as its own goal_threshold. A gate that says accept with 40% match is reporting a partial result as a pass. 0 accepts on the verdict alone.' },
       },
@@ -1394,7 +1392,7 @@ const TOOLS = [
   },
   {
     name: 'tm_next',
-    description: 'Which manager nodes are ready, each with a briefing_path for a fresh agent, plus every running child as {cwd, run_id, driver}. A ready dispatch node is executed here and now: its worktree is created, its child graph run opened, and (unless the task was opened with child_driver "inline") a headless driver process spawned to run that child to the end. Also where a dead driver is serviced: respawned on the same run_id (driver.restarts) if the budget allows, or parked on waiting_capacity after a usage-limit death - neither needs you to do anything but poll again. A size-S task under s_driver "process" has no manager nodes at all; tm_next instead returns {run_id, cwd, driver, nodes, report} for the one run it is driving, ready for the entry skill\'s output template once state is complete or blocked. Poll tm_next while a driver is alive; do not drive that child yourself. tm_submit the dispatch node once the child is no longer running.',
+    description: 'Which manager nodes are ready, each with a briefing_path for a fresh agent, plus every running child as {cwd, run_id, driver}. A ready dispatch node is executed here and now: its worktree is created, its child graph run opened, and a headless driver process spawned to run that child to the end. Also where a dead driver is serviced: respawned on the same run_id (driver.restarts) if the budget allows, or parked on waiting_capacity after a usage-limit death - neither needs you to do anything but poll again. A size-S task under s_driver "process" has no manager nodes at all; tm_next instead returns {run_id, cwd, driver, nodes, report} for the one run it is driving, ready for the entry skill\'s output template once state is complete or blocked. Poll tm_next while a driver is alive; do not drive that child yourself. tm_submit the dispatch node once the child is no longer running.',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' } }, required: ['task_id'] },
     outputSchema: NEXT_SCHEMA,
   },
@@ -1472,7 +1470,7 @@ function openSRun(task) {
   excludeMarkers(task.cwd);
   touchMarker(task.cwd, task.run_id);
   record(task, { event: 's_open', task_id: task.run_id, run_id: child.run_id, cwd: task.cwd });
-  if (task.s_driver !== 'inline') {
+  if (!noDriver()) {
     task.s_run.spawn_count = 0;
     const driver = spawnChildDriver(task, 'S', task.s_run);
     task.s_run.driver = driver;
@@ -1484,24 +1482,12 @@ function openSRun(task) {
   }
 }
 
-// Size S: this request needs no manager stage graph, only one run. s_driver 'inline' keeps the
-// original shape - hand the caller a graph_open call and leave nothing behind. s_driver
-// 'process' (the default) instead opens that run here and drives it with its own headless
-// session; the task stays on disk only as the pointer to that run, and the caller polls
-// tm_next until the report arrives, exactly as it would for one L package.
+// Size S: this request needs no manager stage graph, only one run. The manager opens that run
+// here and drives it with its own headless session; the task stays on disk only as the pointer
+// to it, and the caller polls tm_next until the report arrives, exactly as it would for one L
+// package. There is no shape in which the caller drives it instead.
 function delegateIfSmall(task, n, out) {
   if (!(n.stage === 'size' && n.state === 'done' && task.size === 'S')) return null;
-  if (task.s_driver === 'inline') {
-    const delegate = {
-      tool: 'graph_open',
-      args: { request: task.request, cwd: task.cwd, context: task.context || undefined,
-        flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'), isolated: task.isolated === true,
-        mixed: task.mixed !== false, ...task.child_opts },
-      reason: 'size S, s_driver "inline": drive the single run yourself with references/loop.md',
-    };
-    try { rmSync(taskDir(task.run_id), { recursive: true, force: true }); } catch { /* best-effort */ }
-    return { ...out, state: 'done', task_state: 'delegated', delegate };
-  }
   for (const x of task.nodes) {
     if (x.node_id === 'size') continue;
     if (x.state === 'pending') { x.state = 'skipped'; x.result = { stage_ok: false, reason: 'size S: the single run is driven directly, with no shape/critique stages' }; }
@@ -1553,7 +1539,7 @@ function toolNextSRun(task) {
     out.next = `its driver process (pid ${driver.pid}) is running this run: wait; poll tm_next; do not drive it yourself`;
   } else if (driver) {
     const budget = Number.isInteger(task.driver_restarts) ? task.driver_restarts : 2;
-    out.next = `driver died and the restart budget (${budget}) is spent; graph_status({run_id, cwd}) shows where it stopped, or reopen the task with s_driver "inline" to drive it yourself`;
+    out.next = `driver died and the restart budget (${budget}) is spent; graph_status({run_id, cwd}) shows where it stopped, ; tm_retry({task_id}) gives it a fresh session where the dead one stopped`;
   } else {
     out.next = `drive it yourself with graph_next/graph_run/graph_submit at cwd ${s.cwd}, run_id ${s.run_id}`;
   }
@@ -1663,7 +1649,7 @@ function toolRetry(a) {
     if (task.s_run && task.s_run.waiting_capacity && (!a.package_id || String(a.package_id) === 'S')) {
       record(task, { event: 'child_driver_capacity_cleared', task_id: task.run_id, node_id: 'S', was: task.s_run.waiting_capacity });
       delete task.s_run.waiting_capacity;
-      if (task.s_driver !== 'inline') {
+      if (!noDriver()) {
         const restarts = (task.s_run.driver && task.s_run.driver.restarts) || [];
         const fresh = spawnChildDriver(task, 'S', task.s_run, { resume: true, attempt: nextSpawnAttempt(task.s_run) });
         fresh.restarts = restarts;
@@ -1677,7 +1663,7 @@ function toolRetry(a) {
       if (a.package_id && n.subgoal_id !== String(a.package_id)) continue;
       record(task, { event: 'child_driver_capacity_cleared', task_id: task.run_id, node_id: n.node_id, was: n.child.waiting_capacity });
       delete n.child.waiting_capacity;
-      if (task.child_driver !== 'inline') {
+      if (!noDriver()) {
         const restarts = (n.child.driver && n.child.driver.restarts) || [];
         const fresh = spawnChildDriver(task, n.node_id, n.child, { resume: true, attempt: nextSpawnAttempt(n.child) });
         fresh.restarts = restarts;
@@ -1769,7 +1755,6 @@ function toolStatus(a) {
       counts: cs.counts,
       size: task.size,
       flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),
-      s_driver: task.s_driver || 'process',
       s_run: { cwd: task.s_run.cwd, run_id: task.s_run.run_id,
         ...(task.s_run.driver ? { driver: { ...task.s_run.driver, alive: driverAlive(task.s_run.driver) } } : {}),
         ...(task.s_run.waiting_capacity ? { waiting_capacity: task.s_run.waiting_capacity } : {}) },
@@ -1784,7 +1769,6 @@ function toolStatus(a) {
     counts: state.counts,
     size: task.size,
     flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),
-    child_driver: task.child_driver || 'process',
     packages: task.spec ? task.spec.packages.map((p) => p.id) : [],
     nodes: task.nodes.filter((n) => (a.node_id ? n.node_id === a.node_id : true)).map((n) => (n.state === 'pending' || n.state === 'running'
       ? { node_id: n.node_id, stage: n.stage, state: n.state, deps: n.deps, after: n.after || [],
