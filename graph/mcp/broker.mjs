@@ -839,18 +839,27 @@ async function toolGraphOpen(a) {
   const run = createRun({
     cwd,
     request: String(a.request),
-    context: a.context || '',
-    // createRun applies its own vendor/'auto' and allocation/'ordered' defaults - passing
-    // the caller's value through untouched keeps that the one place either default lives.
+    // createRun already applies its own default for every field below - passing the
+    // caller's value through untouched keeps createRun the one place any of them is
+    // decided, instead of two sites that only agree by coincidence (the be83bbc shape).
+    // context/vendor/allocation/host_vendor/host_model/native_models/model/candidates/
+    // sandbox are `opts.x || DEFAULT` on createRun's side, and `||` is idempotent - a raw
+    // value re-run through the same fallback twice or once lands on the same result for
+    // every input. policy's createRun-side check is stricter (`typeof === 'object'`, not
+    // just truthy), but still reduces any input - falsy, a truthy non-object, or a real
+    // object - to the same output whether or not this call pre-applied `|| {}` first.
+    context: a.context,
     vendor: a.vendor,
     allocation: a.allocation,
-    host_vendor: a.host_vendor || null,
-    host_model: a.host_model || null,
-    native_models: a.native_models || null,
-    model: a.model || null,
-    policy: a.policy || {},
-    candidates: a.candidates || null,
-    sandbox: a.sandbox || null,
+    host_vendor: a.host_vendor,
+    host_model: a.host_model,
+    native_models: a.native_models,
+    model: a.model,
+    policy: a.policy,
+    candidates: a.candidates,
+    sandbox: a.sandbox,
+    // Not a default fallback like the above - both sides hardcode the same `=== true`
+    // coercion, so there is no second value for the two sites to disagree on. Left as-is.
     isolated: a.isolated === true,
     max_retries: a.max_retries,
   });
