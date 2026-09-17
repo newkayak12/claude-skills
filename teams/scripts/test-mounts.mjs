@@ -107,8 +107,12 @@ test('a planning draft and a document draft at the same stage name get their own
 });
 
 test('a mounts override on draft does not touch cases, and vice versa', () => {
-  const run = { mounts: { draft: [] } };
-  assert.deepEqual(graphStageMounts(run, node('draft:D1:1', 'draft', { subgoal_id: 'D1' })), []);
+  // P1 is a planning subgoal, so draft's real default here is planning:draft's non-empty
+  // think-tool mount - the override below has an actual default to suppress. Without
+  // run.spec (kind unresolved), a draft node already has no default post-fix, and
+  // draft: [] would pass whether or not the override branch ran at all.
+  const run = { mounts: { draft: [] }, spec: { subgoals: [{ id: 'P1', kind: 'planning' }] } };
+  assert.deepEqual(graphStageMounts(run, node('draft:P1:1', 'draft', { subgoal_id: 'P1' })), []);
   assert.deepEqual(graphStageMounts(run, node('cases:Q1:1', 'cases', { subgoal_id: 'Q1' })).map((m) => m.tool), ['mcp__sequential-thinking__sequentialthinking']);
 });
 
