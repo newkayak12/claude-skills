@@ -482,6 +482,23 @@ test('auto degrades to self when no vendor is ready', async () => {
   }, { vendor: 'auto', candidates: ['nosuchvendor'] });
 });
 
+// createRun owns the vendor/allocation defaults. If the tool boundary re-declared them,
+// a caller who passes neither would still get the right answer, but only because both
+// sites happened to agree - changing createRun's default alone would not show up here.
+test('a graph_open with no vendor or allocation pins createRun\'s own defaults', async () => {
+  const cwd = repo();
+  const c = await new Client().init();
+  try {
+    const open = await c.call('graph_open', { request: 'r', cwd });
+    const full = await c.call('graph_status', { run_id: open.run_id, cwd, full: true });
+    assert.equal(full.vendor, 'auto');
+    assert.equal(full.allocation, 'ordered');
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('graph_run refuses a self-routed node', async () => {
   await withRun(async ({ c, cwd, runId }) => {
     const r = await c.call('graph_run', { run_id: runId, cwd, node_id: 'plan' });
