@@ -45,6 +45,27 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 
 ## 상태
 
+- **v0.10.1 — planning/qa kind, 그리고 워크트리 게이트 가시성 수정**: 새 `KINDS` 두 개,
+  `planning`(draft→revise→gate)과 `qa`(cases→execute→gate)가 각자의 페르소나·스테이지별 스킬·
+  MCP 마운트(§3, advisory `draft`/`cases` 마운트)를 갖고 `CONTRACT.revise/cases/execute`에
+  도달합니다(이번 라운드 전에는 이 두 스테이지가 조용히 `CONTRACT.implement`로 폴백해 벤더에게
+  문서나 테스트 대신 구현 형태 산출물을 지시했을 것입니다) — 그리고 `broker.mjs`의 리뷰어 독립성
+  가드: `revise`도 이제 draft를 쓴 정체성으로 라우팅되면 `review`와 같은 방식으로 거부됩니다.
+  새 엔트리 스킬 둘, `graph-beta:plan`과 `graph-beta:qa`가 `develop`/`document`처럼 흐름을
+  고정합니다. 별도로 `ensureWorktree`가 이제, 워크트리가 harness 게이트 설정을 커밋되지 않은 채로
+  물려받을 때 태스크 원장에 `gate_uncommitted` 이벤트(`tm_events`)를 기록합니다 — git 워크트리는
+  커밋된 파일만 물려받으므로 `.claude/harness-gate.json`과 훅을 커밋하지 않고 열면 사용자는
+  게이트가 보호하고 있다고 믿지만 워커의 쓰기는 조용히 무방비 상태가 됩니다; 이 이벤트는 경고
+  전용·best-effort이며 절대 막지 않습니다. 아직 안 된 것: `planning`/`qa`는 EPIC 흐름에
+  연결되지 않았습니다 — planning이 shape 전에 자동으로 돌지 않고 qa가 integrate 뒤에 자동으로
+  돌지 않으며 `team.json.roles`는 기록만 되고 아직 무동작입니다 — 지금은
+  `tm_open({flow: "plan"|"qa"})`나 두 엔트리 스킬로만 도달합니다; 그 연결에는 티켓 레이어가
+  필요합니다, v0.11.0+. 전체 스위트: 모든 `test-*.mjs`에서 258/258, 회귀 0. 아직 미측정: 두
+  kind는 실제 벤더로 돌려본 적이 없습니다 — `plan-flat`/`qa-flat` 벤치 요청 파일은 있지만 이번
+  라운드에 벤치 자체는 돌리지 않았습니다(실제 모델 프로세스를 스폰하기 때문); 지금까지의 증거는
+  전부 단위 테스트입니다. PRD 경로 `.harness-run/team/E-<task8>/10-prd.md`는 문서화되어 있고
+  테스트에서 왕복 확인되지만, 그 경로를 자동으로 계산하는 코드는 아직 없습니다 — 스펙이
+  `subgoal.files[]`에 직접 이름을 붙여야 합니다.
 - **v0.10.0 — install/remove/patch, 그리고 main은 이제 아무것도 드라이브하지 않는다**: 두 갈래가
   함께 끝났습니다. 첫째, graph-beta가 harness와 같은 운영 셸을 갖습니다 — 결정적 스크립트 기반의
   install/remove/patch 스킬. `install.mjs`가 `.claude/team.json`을 씁니다 — `tm_open`이 인자보다

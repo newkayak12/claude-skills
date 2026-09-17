@@ -48,6 +48,28 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.10.1 — planning and qa kinds, plus a worktree gate-visibility fix**: two new `KINDS`
+  entries, `planning` (draft→revise→gate) and `qa` (cases→execute→gate), each with their own
+  personas, per-stage skills and MCP mounts (§3, advisory `draft`/`cases` mounts), reaching
+  `CONTRACT.revise/cases/execute` (before this round the two new stages silently fell back to
+  `CONTRACT.implement` and would have prompted a vendor for implementation-shaped output instead
+  of a document or a test) and `broker.mjs`'s reviewer-independence guard: `revise` is now refused
+  the same way `review` is when routed to the identity that wrote the draft. Two new entry skills,
+  `graph-beta:plan` and `graph-beta:qa`, pin the flow the way `develop`/`document` already do.
+  Separately, `ensureWorktree` now records a `gate_uncommitted` event to the task ledger
+  (`tm_events`) when a worktree inherits harness's gate config without the gate files being
+  committed — a git worktree only inherits committed files, so an uncommitted
+  `.claude/harness-gate.json` plus hook left a worker's writes silently ungated while the user
+  believed the gate was protecting them; the event is warning-only, best-effort, and never blocks.
+  Not done yet: `planning`/`qa` are not wired into the EPIC flow — planning does not automatically
+  run before shape, qa does not automatically run after integrate, `team.json.roles` stays
+  recorded-but-inert — reach them today only via `tm_open({flow: "plan"|"qa"})` or the two entry
+  skills; that wiring needs the ticket layer, v0.11.0+. Full suite: 258/258 across all
+  `test-*.mjs`, 0 regressions. Not yet measured: the two kinds have never run against a real
+  vendor — the `plan-flat`/`qa-flat` bench request files exist but the bench itself was not run
+  this round (it spawns real model processes), so all evidence so far is unit tests. The PRD path
+  `.harness-run/team/E-<task8>/10-prd.md` is documented and round-tripped in a test, but nothing
+  computes it automatically yet — a spec has to name it in `subgoal.files[]`.
 - **v0.10.0 — install/remove/patch, and main never drives anything**: two threads finished
   together. First, graph-beta gets the same operational shell as harness: `install`/`remove`/
   `patch` skills backed by deterministic scripts. `install.mjs` writes `.claude/team.json` —
