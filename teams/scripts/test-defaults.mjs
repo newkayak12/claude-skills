@@ -315,11 +315,11 @@ test('proof: the 4999ed8 shape (tm_open never threading goal_judges through) mak
   assert.ok(!r.ok, 'the goal_judges guard should FAIL once tm_open stops reading a.goal_judges and hardcodes the literal instead - it did not, so this guard cannot catch the 4999ed8 bug (an argument silently never threaded through, with no way for a caller to raise a package\'s judge count)');
 });
 
-// ---------- guard D: every declared output-schema field must have a producer ----------
+// ---------- guard E: every declared output-schema field must have a producer ----------
 //
 // A sibling bug class to A/B/C above, same underlying shape: a declaration and the behaviour
 // behind it disagree, and nothing catches it. Where A/B/C are about one OPTION's default value
-// agreeing across sites, D is about one FIELD's presence in an output schema being backed by
+// agreeing across sites, E is about one FIELD's presence in an output schema being backed by
 // code that can actually produce it. It shipped once: taskmanager.mjs's NEXT_SCHEMA and
 // VERDICT_SCHEMA both declared `delegate` (and NEXT_SCHEMA's `state` enum listed `'delegated'`),
 // but `delegateIfSmall` (taskmanager.mjs) always calls `openSRun` and returns
@@ -442,7 +442,7 @@ test('every NEXT_SCHEMA/VERDICT_SCHEMA field in taskmanager.mjs has a producer, 
   assert.equal(r.allKeys.VERDICT_SCHEMA.length, 19, `VERDICT_SCHEMA should declare 19 fields, found ${r.allKeys.VERDICT_SCHEMA.length}: ${r.allKeys.VERDICT_SCHEMA.join(', ')}`);
 });
 
-test('guard D is general, not tuned to taskmanager.mjs: a synthetic schema with one produced and one dead field is told apart correctly', () => {
+test('guard E is general, not tuned to taskmanager.mjs: a synthetic schema with one produced and one dead field is told apart correctly', () => {
   const synthetic = `
 const FAKE_SCHEMA = {
   type: 'object',
@@ -461,7 +461,7 @@ function build() {
   assert.deepEqual(r.allKeys.FAKE_SCHEMA, ['alpha', 'beta']);
 });
 
-test('proof: re-adding delegate to NEXT_SCHEMA (the exact 2095662 shape) makes guard D fail; the real source passes', () => {
+test('proof: re-adding delegate to NEXT_SCHEMA (the exact 2095662 shape) makes guard E fail; the real source passes', () => {
   const realTaskmanager = src('teamsTaskmanager');
   assert.deepEqual(checkSchemaReachability(realTaskmanager, ['NEXT_SCHEMA', 'VERDICT_SCHEMA']).unreachable, [], 'sanity: real source must pass before mutating it');
 
@@ -472,7 +472,7 @@ test('proof: re-adding delegate to NEXT_SCHEMA (the exact 2095662 shape) makes g
   assert.notEqual(mutated, realTaskmanager, 'mutation target text was not found in teams/mcp/taskmanager.mjs - update this proof to match current source');
 
   const r = checkSchemaReachability(mutated, ['NEXT_SCHEMA', 'VERDICT_SCHEMA']);
-  assert.deepEqual(r.unreachable, ['NEXT_SCHEMA.delegate'], 'guard D should flag exactly the re-added dead field - it did not, so this guard cannot catch the 2095662 shape (a schema field with no producer)');
+  assert.deepEqual(r.unreachable, ['NEXT_SCHEMA.delegate'], 'guard E should flag exactly the re-added dead field - it did not, so this guard cannot catch the 2095662 shape (a schema field with no producer)');
 });
 
 // ---------- Guard D: sole ownership. A default RE-TYPED rather than re-declared. ----------
@@ -520,4 +520,39 @@ test('proof: guard D flags the pre-fix docPaths line that re-typed docs_dir', ()
   const preFix = "  const docsDir = (task.team && task.team.opts && task.team.opts.docs_dir) || join('.teams_output', 'team');";
   const hits = collect(preFix, /('\.teams_output', 'team')/g, 'teamsTickets');
   assert.deepStrictEqual(hits.map((x) => x.label), ['teamsTickets']);
+});
+
+// ---------- Guard D (continued): max_parallel_teams, the same sole-ownership shape ----------
+//
+// toolNext's (taskmanager.mjs) max_parallel_teams fallback had exactly docs_dir's defect: it
+// re-typed TEAM_DEFAULTS.max_parallel_teams's literal (2) as its own `? ... : 2` ternary branch
+// instead of reading TEAM_DEFAULTS.max_parallel_teams. Unlike the docs_dir pair
+// ('.teams_output', 'team'), the bare digit 2 is not a distinctive literal on its own - it also
+// appears for max_depth, qa_rounds, driver_restarts and other unrelated defaults throughout
+// teams/mcp - so this guard matches the exact ternary SHAPE the bug took
+// (`? task.team.opts.max_parallel_teams : <N>`), not the digit alone.
+//
+// Neither max_parallel_teams nor docs_dir was tracked by any guard in this file before today -
+// that gap is why both survived a week of this exact defect class being hunted elsewhere.
+
+function maxParallelTeamsLiteralSites() {
+  return TEAMS_MCP_FOR_SOLE_OWNERSHIP
+    .flatMap((k) => collect(src(k), /\? task\.team\.opts\.max_parallel_teams : (\d+)/g, k));
+}
+
+test('max_parallel_teams: toolNext falls back to TEAM_DEFAULTS.max_parallel_teams, not a re-typed literal', () => {
+  const sites = maxParallelTeamsLiteralSites();
+  assert.deepStrictEqual(
+    sites, [],
+    `max_parallel_teams fallback re-types a literal instead of reading TEAM_DEFAULTS at: ${sites.map((x) => x.label).join(', ')}`,
+  );
+  assert.match(src('teamsTaskmanager'), /: TEAM_DEFAULTS\.max_parallel_teams;/, 'toolNext must fall back through TEAM_DEFAULTS.max_parallel_teams');
+});
+
+test('proof: guard D flags the pre-fix toolNext line that re-typed max_parallel_teams', () => {
+  // The real pre-fix expression, verbatim. Fed to the same collector the live test uses, so
+  // the proof cannot drift away from the guard it is proving.
+  const preFix = '  const maxParallel = Number.isInteger(task.team && task.team.opts && task.team.opts.max_parallel_teams)\n    ? task.team.opts.max_parallel_teams : 2;';
+  const hits = collect(preFix, /\? task\.team\.opts\.max_parallel_teams : (\d+)/g, 'teamsTaskmanager');
+  assert.deepStrictEqual(hits.map((x) => x.label), ['teamsTaskmanager']);
 });
