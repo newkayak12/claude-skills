@@ -53,6 +53,32 @@ Design and step list: [`docs/plans/2026-09-11-teams-taskmanager.md`](../docs/pla
 
 ## Status
 
+- **v0.11.0 — ticket layer, board.jsonl, phase documents**: `tickets.mjs` derives EPIC/STORY/TASK
+  ticket state and `epicPhase` from `task.json` alone, as pure functions — never a second source
+  of truth. `tm_board` (every EPIC, or one EPIC's STORY kanban — `task_id` takes a full run id
+  or its `E-xxxxxxxx` key) and `tm_ticket` (one ticket by key, `E-xxxxxxxx` or `E-xxxxxxxx/Pn`)
+  read them; `board.jsonl` logs only the transitions a
+  before/after diff actually finds around the four tools that can move a ticket
+  (`tm_open`/`tm_next`/`tm_submit`/`tm_retry`) — a JIRA-style history, never itself read as
+  ground truth. `docs.mjs` renders 8 of §7c's 13 phase documents from the same `task.json` —
+  INDEX, request, shape, critique, one page per STORY, integrate, goal gate, report — wired
+  through `tm_docs({rebuild})`, proven byte-identical on a second render; the other 5 (planning,
+  PRD, spec-gate, qa, audit) need Team wiring that doesn't exist until v0.12+, so they are
+  omitted rather than rendered empty. `teams:board`/`teams:ticket` are thin terminal-table
+  wrappers over the two read tools. Two real bugs surfaced building this: EPIC ticket
+  state/phase was gating on the integrate/report nodes merely *existing* — which
+  `expandPackages` creates in the same call that opens the package dispatch/accept chains — so
+  an EPIC jumped to IN_REVIEW the instant shape succeeded, before any package had even been
+  dispatched; TASK ticket state had the same existence-vs-reached bug across
+  implement/test/gate. Both now gate on the node's own `unmetDeps()`/stage actually being
+  reached. Also this round: the TaskLeader's best-effort `SendMessage` progress ping is gone —
+  it was never verified, retried, or acked, and a message that never arrives is
+  indistinguishable from nothing having changed; `tm_board`/`tm_ticket`/`tm_events` are the
+  durable, pull-based replacement. Full suite: 301/301 across all `test-*.mjs`, 0 regressions.
+  Not yet measured: none of this has run against a real vendor — every line above is
+  unit-tested only, the same bar v0.10.1 held. Not done yet: `planning`/`qa` still are not wired
+  into the EPIC flow, and shape's role/priority, defect STORYs, and human executors remain
+  v0.12.0+ — same round that will pick up the 5 omitted document kinds above.
 - **v0.10.1 — planning and qa kinds, plus a worktree gate-visibility fix**: two new `KINDS`
   entries, `planning` (draft→revise→gate) and `qa` (cases→execute→gate), each with their own
   personas, per-stage skills and MCP mounts (§3, advisory `draft`/`cases` mounts), reaching

@@ -50,6 +50,32 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 
 ## 상태
 
+- **v0.11.0 — 티켓 레이어, board.jsonl, phase 문서**: `tickets.mjs`가 `task.json`만 보고
+  EPIC/STORY/TASK 티켓 상태와 `epicPhase`를 순수 함수로 파생합니다 — 그 자체가 진실의 원천이
+  아니라 어디까지나 파생값입니다. `tm_board`(전체 EPIC 목록, 또는 EPIC 하나의 STORY 칸반 — `task_id`는 전체 run id
+  또는 그 `E-xxxxxxxx` 키를 모두 받습니다)와 `tm_ticket`(키 하나 — `E-xxxxxxxx` 또는
+  `E-xxxxxxxx/Pn` — 로 티켓 하나)가 이를 읽습니다;
+  `board.jsonl`은 티켓을 실제로 움직일 수 있는 네 도구(`tm_open`/`tm_next`/`tm_submit`/
+  `tm_retry`) 주변에서 before/after diff가 실제로 찾아낸 전환만 기록합니다 — JIRA 스타일 이력이며
+  그 자체를 진실의 원천으로 다시 읽지 않습니다. `docs.mjs`는 같은 `task.json`으로부터 §7c의 13개
+  문서 중 8개 — INDEX, request, shape, critique, STORY별 한 페이지, integrate, goal gate,
+  report — 를 렌더링하고, `tm_docs({rebuild})`로 연결되어 두 번째 렌더가 바이트 단위로 동일함을
+  테스트로 증명합니다; 나머지 5개(planning, PRD, spec-gate, qa, audit)는 v0.12+ 전까지 없는 Team
+  배선이 필요해서, 비워서 렌더링하는 대신 아예 빼두었습니다. `teams:board`/`teams:ticket`은 이 두
+  읽기 도구 위의 얇은 터미널 테이블 래퍼입니다. 이번에 실제 버그 두 개가 드러났습니다: EPIC 티켓
+  상태/phase가 integrate/report 노드가 단지 *존재*하는지로 게이트되고 있었는데,
+  `expandPackages`가 패키지 dispatch/accept 체인을 여는 바로 그 호출에서 그 노드들을 함께
+  만들어버려서 — 패키지가 하나도 dispatch되기 전에 shape가 성공하는 순간 EPIC이 곧바로
+  IN_REVIEW로 뛰었습니다; TASK 티켓 상태도 implement/test/gate 전체에서 같은
+  존재-대-도달 버그를 갖고 있었습니다. 이제 둘 다 노드 자신의 `unmetDeps()`/스테이지가 실제로
+  도달했는지로 게이트합니다. 역시 이번 라운드: TaskLeader의 best-effort `SendMessage` 진행
+  알림을 없앴습니다 — 검증도, 재시도도, ack도 없었고, 도착하지 않은 메시지는 아무 변화도 없었던
+  것과 구분할 수 없습니다; `tm_board`/`tm_ticket`/`tm_events`가 그 자리를 대신하는 내구성 있는
+  pull 기반 경로입니다. 전체 스위트: 모든 `test-*.mjs`에서 301/301, 회귀 0. 아직 미측정: 위
+  내용 전부 실제 벤더로 돌려본 적이 없습니다 — 전부 단위 테스트뿐이며, v0.10.1이 세운 기준과
+  같습니다. 아직 안 된 것: `planning`/`qa`는 여전히 EPIC 흐름에 연결되지 않았고, shape의
+  role/priority, defect STORY, human executor는 여전히 v0.12.0+ 몫입니다 — 위에서 뺀 문서 5종도
+  같은 라운드에서 채워집니다.
 - **v0.10.1 — planning/qa kind, 그리고 워크트리 게이트 가시성 수정**: 새 `KINDS` 두 개,
   `planning`(draft→revise→gate)과 `qa`(cases→execute→gate)가 각자의 페르소나·스테이지별 스킬·
   MCP 마운트(§3, advisory `draft`/`cases` 마운트)를 갖고 `CONTRACT.revise/cases/execute`에
