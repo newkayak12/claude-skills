@@ -517,12 +517,12 @@ defects)`가 각 결함을 `openRepair`와 같은 모양으로(단 `repair: true
 `reporter: 'you'`로 생기는 왕복 테스트. `epicBoardRows`의 표 테스트에 `reporter: 'qa'`/`'you'` 행
 추가.
 
-- [ ] 1: 실패하는 테스트 작성(위 세 가지 케이스 + `epicBoardRows` 표 행).
-- [ ] 2: `fileDefects` 구현(내부적으로 `openRepair`의 재배선 로직을 공유 헬퍼로 뽑아 `openRepair`와
+- [x] 1: 실패하는 테스트 작성(위 세 가지 케이스 + `epicBoardRows` 표 행).
+- [x] 2: `fileDefects` 구현(내부적으로 `openRepair`의 재배선 로직을 공유 헬퍼로 뽑아 `openRepair`와
   `fileDefects` 둘 다 호출 — 코드 중복 없이), `qa_rounds` 카운트·캡, `tm_file` 도구
   (`TOOLS`/`dispatch()`) 추가, `epicBoardRows`의 `reporter` 확장.
-- [ ] 3: 테스트 통과 확인.
-- [ ] 4: `git add teams/mcp/taskmanager.mjs teams/mcp/tickets.mjs teams/scripts/test-taskmanager.mjs teams/scripts/test-tickets.mjs && git commit -m
+- [x] 3: 테스트 통과 확인.
+- [x] 4: `git add teams/mcp/taskmanager.mjs teams/mcp/tickets.mjs teams/scripts/test-taskmanager.mjs teams/scripts/test-tickets.mjs && git commit -m
   "feat(teams): QA-found defects file a develop STORY and loop the EPIC back through integrate, capped by qa_rounds (§5b, decision #2)"`
 
 ---
@@ -554,16 +554,16 @@ story 1건을 내면 새 develop STORY가 `reporter: 'planning-audit'`로 생기
 나타남을 확인. `planning`이 꺼진 경우 audit phase-Team이 생기지 않음을 회귀로 확인. golden 파일
 비교로 12/13 문서(`15-spec-gate.md` 제외 전부)가 렌더됨을 확인.
 
-- [ ] 1: `graph.mjs`에 실패하는 kind 테스트(`KINDS['planning-audit']`의 체인·스킬 모양)와
+- [x] 1: `graph.mjs`에 실패하는 kind 테스트(`KINDS['planning-audit']`의 체인·스킬 모양)와
   `taskmanager.mjs`에 위 세 케이스(qa 없이 audit, qa와 함께 audit, planning 꺼짐)의 실패 테스트,
   `test-docs.mjs`에 `65-audit.md` golden 파일 실패 테스트 작성.
-- [ ] 2: `graph.mjs`의 `KINDS`/`FLOWS`에 항목 추가, `prompts.mjs`에 audit 스테이지 프롬프트
+- [x] 2: `graph.mjs`의 `KINDS`/`FLOWS`에 항목 추가, `prompts.mjs`에 audit 스테이지 프롬프트
   (§0.4 발견 1이 채운 페르소나 재사용 + "판정만, 파일 변경 없음" 문구 명시 — planning의 `revise`와
   달리 audit은 수정 권한이 없다는 §2의 구분을 프롬프트에 못박는다), `taskmanager.mjs`에 audit
   phase-Team 삽입 로직 + `fileDefects` 재사용, `docs.mjs`의 `renderAudit`.
-- [ ] 3: golden 파일 갱신(v0.12.0의 Task 6이 만든 픽스처에 audit 결과를 더한 버전) 확인.
-- [ ] 4: 테스트 통과 확인.
-- [ ] 5: `git add teams/mcp/graph.mjs teams/mcp/prompts.mjs teams/mcp/taskmanager.mjs teams/mcp/docs.mjs teams/scripts/test-tickets.mjs teams/scripts/test-taskmanager.mjs teams/scripts/test-docs.mjs teams/scripts/fixtures/docs-golden && git commit -m
+- [x] 3: golden 파일 갱신(v0.12.0의 Task 6이 만든 픽스처에 audit 결과를 더한 버전) 확인.
+- [x] 4: 테스트 통과 확인.
+- [x] 5: `git add teams/mcp/graph.mjs teams/mcp/prompts.mjs teams/mcp/taskmanager.mjs teams/mcp/docs.mjs teams/scripts/test-tickets.mjs teams/scripts/test-taskmanager.mjs teams/scripts/test-docs.mjs teams/scripts/fixtures/docs-golden && git commit -m
   "feat(teams): planning-audit kind - a second planning pass cross-checks PRD/user stories against the integrated result and QA report, files STORYs on gaps (§2, §3, decision #1)"`
 
 ---
@@ -576,20 +576,20 @@ story 1건을 내면 새 develop STORY가 `reporter: 'planning-audit'`로 생기
 scripts/validate_plugins.py` ERROR 0, 두 매니페스트 0.12.1 일치, README·KOR Status 첫 항목이
 v0.12.1.
 
-- [ ] 1: `git fetch skills main && git status -sb` — origin이 앞서 있으면 rebase.
-- [ ] 2: `node --test teams/scripts/test-*.mjs 2>&1 | tail -8` → `# fail 0` 확인.
-- [ ] 3: patch 범프: teams `"version": "0.12.0"` → `"0.12.1"`; marketplace description에
+- [x] 1: `git fetch skills main && git status -sb` — origin이 앞서 있으면 rebase.
+- [x] 2: `node --test teams/scripts/test-*.mjs 2>&1 | tail -8` → `# fail 0` 확인.
+- [x] 3: patch 범프: teams `"version": "0.12.0"` → `"0.12.1"`; marketplace description에
   "QA-found defects file a develop STORY and loop the EPIC back through integrate (capped by
   qa_rounds); a second planning pass cross-checks the integrated result and QA report against
   the PRD and files STORYs on gaps." 추가.
-- [ ] 4: README/KOR `## Status` 맨 위에 한 줄 prepend(v0.12.0 항목 등 기존 내용은 그대로 아래에
+- [x] 4: README/KOR `## Status` 맨 위에 한 줄 prepend(v0.12.0 항목 등 기존 내용은 그대로 아래에
   둔다).
-- [ ] 5: 설계 문서(`docs/plans/2026-09-17-teams-team.md`) §11의 v0.12.1 행을 "완료"로 표시하는
+- [x] 5: 설계 문서(`docs/plans/2026-09-17-teams-team.md`) §11의 v0.12.1 행을 "완료"로 표시하는
   것은 이 계획 파일 소유가 아니다 — 팀 리더나 그 갱신을 맡은 agent의 몫.
-- [ ] 6: `python3 scripts/validate_plugins.py` ERROR 0 확인.
-- [ ] 7: `git add teams/.claude-plugin/plugin.json .claude-plugin/marketplace.json teams/README.md teams/KOR.md && git commit -m
+- [x] 6: `python3 scripts/validate_plugins.py` ERROR 0 확인.
+- [x] 7: `git add teams/.claude-plugin/plugin.json .claude-plugin/marketplace.json teams/README.md teams/KOR.md && git commit -m
   "feat(teams): 0.12.1 - defect STORYs (tm_file, qa_rounds loop) and planning cross-review (planning-audit kind)"`
-- [ ] 8: `git push skills main`(실패하면 1번으로 돌아가 fetch·rebase 후 재시도).
+- [x] 8: `git push skills main`(실패하면 1번으로 돌아가 fetch·rebase 후 재시도).
 
 ---
 
