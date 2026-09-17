@@ -32,6 +32,10 @@ import { homedir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { touchMarker } from './engage.mjs';
+import {
+  epicKey, storyKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
+  storyTicketState, storyTaskProgress, epicBoardRows, ticketSnapshot,
+} from './tickets.mjs';
 import { readTeamConfig, resolveTeamOptions } from './teamconfig.mjs';
 import {
   node,
@@ -1563,6 +1567,18 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, since: { type: 'number' }, limit: { type: 'integer' } }, required: ['task_id'] },
     outputSchema: { type: 'object' },
   },
+  {
+    name: 'tm_board',
+    description: 'Ticket-shaped board (§4/§8 of the design doc). Omit task_id for every EPIC this manager knows (key, state, phase). With task_id: the EPIC header plus its STORY kanban - one row per package, its state derived from task.json the same way tm_status is, never a second source of truth - and a doc_path to the human-readable INDEX.md (which may not exist on disk yet; see tm_docs). Read-only.',
+    inputSchema: { type: 'object', properties: { task_id: { type: 'string' } } },
+    outputSchema: { type: 'object' },
+  },
+  {
+    name: 'tm_ticket',
+    description: 'One ticket by key: E-xxxxxxxx for the EPIC, E-xxxxxxxx/Pn for a STORY. State, worktree/branch, task progress (x/y) and the last accept verdict, plus a doc_path. Read-only; a doc_path is always returned, even before tm_docs has written anything there.',
+    inputSchema: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] },
+    outputSchema: { type: 'object' },
+  },
 ];
 
 function toolEvents(a) {
@@ -1573,6 +1589,83 @@ function toolEvents(a) {
   try { lines = readFileSync(join(taskDir(task.run_id), 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean); } catch { lines = []; }
   const events = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter((e) => e && e.ts > since);
   return { task_id: task.run_id, count: events.length, events: events.slice(-limit) };
+}
+
+// board.jsonl - ticket TRANSITIONS only, append-only, never read as ground truth. tickets.mjs's
+// pure functions over task.json are the ground truth; this is the JIRA-style history a human
+// reads (§4, §7b). Written by diffing a before/after snapshot around the four tools that can
+// actually move a ticket - never by instrumenting taskmanager.mjs's dozen individual mutation
+// sites one at a time.
+const BOARD_TOOLS = new Set(['tm_open', 'tm_next', 'tm_submit', 'tm_retry']);
+
+function appendBoardTransitions(task, before, by) {
+  const after = ticketSnapshot(task);
+  const path = join(taskDir(task.run_id), 'board.jsonl');
+  for (const [key, to] of Object.entries(after)) {
+    const from = before[key] || null;
+    if (from === to) continue;
+    try {
+      mkdirSync(taskDir(task.run_id), { recursive: true });
+      appendFileSync(path, JSON.stringify({ ts: Date.now(), key, from, to, by: String(by || 'tm') }) + '\n');
+    } catch { /* the board is evidence, not a dependency - same rule as record() */ }
+  }
+}
+
+function toolBoard(a) {
+  if (!a.task_id) {
+    let ids = [];
+    try { ids = readdirSync(tasksRoot()); } catch { ids = []; }
+    const epics = ids.map((id) => loadRunAt(taskPath(id))).filter(Boolean)
+      .sort((x, y) => (y.created_at || 0) - (x.created_at || 0))
+      .map((t) => ({ key: epicKey(t.run_id), task_id: t.run_id, title: String(t.request).slice(0, 60), state: epicTicketState(t), phase: epicPhase(t) }));
+    return { epics };
+  }
+  const task = mustFindTask(a);
+  return {
+    key: epicKey(task.run_id),
+    task_id: task.run_id,
+    title: String(task.request).slice(0, 80),
+    state: epicTicketState(task),
+    phase: epicPhase(task),
+    leader: task.leader ? { pid: task.leader.pid, alive: leaderAlive(task) } : null,
+    stories: epicBoardRows(task),
+    doc_path: docPaths(task).index,
+  };
+}
+
+function toolTicket(a) {
+  const key = String(a.key || '');
+  const m = /^E-([0-9a-f]{8})(?:\/(.+))?$/.exec(key);
+  if (!m) throw new Error(`unrecognized ticket key "${key}": expected E-xxxxxxxx or E-xxxxxxxx/Pn`);
+  const [, epic8, pkgId] = m;
+  let ids = [];
+  try { ids = readdirSync(tasksRoot()); } catch { ids = []; }
+  const found = ids.find((id) => id.startsWith(epic8));
+  if (!found) throw new Error(`no EPIC starting with ${epic8}`);
+  const task = mustFindTask({ task_id: found });
+  if (!pkgId) {
+    return {
+      key: epicKey(task.run_id), task_id: task.run_id, kind: 'EPIC',
+      title: String(task.request).slice(0, 160),
+      state: epicTicketState(task), phase: epicPhase(task),
+      leader: task.leader ? { pid: task.leader.pid, alive: leaderAlive(task) } : null,
+      doc_path: docPaths(task).index,
+    };
+  }
+  const pkg = packageOf(task, pkgId);
+  if (!pkg) throw new Error(`no package ${pkgId} in ${epicKey(task.run_id)} (packages: ${((task.spec && task.spec.packages) || []).map((p) => p.id).join(', ') || 'none yet'})`);
+  const dispatch = latestBySubgoal(task, pkgId, 'dispatch');
+  const accept = latestBySubgoal(task, pkgId, 'accept');
+  return {
+    key: storyKey(task.run_id, pkgId), task_id: task.run_id, kind: 'STORY',
+    title: pkg.title,
+    state: storyTicketState(task, pkgId),
+    tasks: storyTaskProgress(task, pkgId),
+    worktree: dispatch && dispatch.child ? { cwd: dispatch.child.cwd, branch: dispatch.child.branch } : null,
+    last_verdict: accept && accept.result ? { accept: accept.result.accept, match_pct: accept.result.match_pct, gaps: accept.result.gaps || [] } : null,
+    reporter: pkg.repair ? 'repair' : 'shape',
+    doc_path: docPaths(task).story(pkgId),
+  };
 }
 
 function requireRunnable(task, nodeId) {
@@ -1940,6 +2033,20 @@ function toolStatus(a) {
 
 // ---------- JSON-RPC / MCP plumbing ----------
 
+function dispatch(name, a) {
+  switch (name) {
+    case 'tm_open': return toolOpen(a);
+    case 'tm_next': return { ...toolNext(a), inbox_applied: a.__inbox_applied || 0 };
+    case 'tm_submit': return toolSubmit(a);
+    case 'tm_retry': return toolRetry(a);
+    case 'tm_status': return toolStatus(a);
+    case 'tm_events': return toolEvents(a);
+    case 'tm_board': return toolBoard(a);
+    case 'tm_ticket': return toolTicket(a);
+    default: throw new Error('unknown tool: ' + name);
+  }
+}
+
 function callTool(name, args) {
   const a = args || {};
   // The TaskLeader gate: runs before every tool but tm_open (there is no task yet to gate).
@@ -1962,15 +2069,18 @@ function callTool(name, args) {
     }
     if (name === 'tm_next' && (isLeaderProcess(task) || noDriver())) { const n = drainInbox(task); if (n) a.__inbox_applied = n; }
   }
-  switch (name) {
-    case 'tm_open': return toolOpen(a);
-    case 'tm_next': return { ...toolNext(a), inbox_applied: a.__inbox_applied || 0 };
-    case 'tm_submit': return toolSubmit(a);
-    case 'tm_retry': return toolRetry(a);
-    case 'tm_status': return toolStatus(a);
-    case 'tm_events': return toolEvents(a);
-    default: throw new Error('unknown tool: ' + name);
+  // board.jsonl: taken as a before/after diff of the four tools that can move a ticket. A call
+  // that got queued above (return already happened) never reaches here - nothing moved, so
+  // nothing is logged, with no special-casing needed. A recursive call from drainInbox reaches
+  // here too, exactly like a direct one, and is diffed the same way.
+  if (!BOARD_TOOLS.has(name)) return dispatch(name, a);
+  const before = a.task_id ? ticketSnapshot(mustFindTask(a)) : {};
+  const out = dispatch(name, a);
+  const taskId = (out && out.task_id) || a.task_id;
+  if (taskId) {
+    try { appendBoardTransitions(mustFindTask({ task_id: taskId }), before, a.node_id || name); } catch { /* best-effort, like record() */ }
   }
+  return out;
 }
 
 function emit(obj) {

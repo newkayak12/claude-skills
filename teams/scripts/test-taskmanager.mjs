@@ -151,11 +151,11 @@ async function withTask(fn, extra) {
   }
 }
 
-test('serves the MCP handshake and the six manager tools', async () => {
+test('serves the MCP handshake and the eight manager tools', async () => {
   const c = await new Client(TM).init();
   try {
     const r = await c.send('tools/list', {});
-    assert.deepEqual(r.result.tools.map((t) => t.name).sort(), ['tm_events', 'tm_next', 'tm_open', 'tm_retry', 'tm_status', 'tm_submit']);
+    assert.deepEqual(r.result.tools.map((t) => t.name).sort(), ['tm_board', 'tm_events', 'tm_next', 'tm_open', 'tm_retry', 'tm_status', 'tm_submit', 'tm_ticket']);
   } finally {
     c.close();
   }
@@ -1487,4 +1487,116 @@ test('a malformed team.json is reported on the task and the defaults apply', asy
     assert.equal(s.team.file_status, 'parse-error');
     assert.equal(s.team.opts.goal_threshold, 90);
   } finally { tm.close(); rmSync(dir, { recursive: true, force: true }); rmSync(tasks, { recursive: true, force: true }); }
+});
+
+// ---------- tm_board / tm_ticket / board.jsonl ----------
+
+test('tm_board with no task_id lists every EPIC, ticket-shaped; with task_id it gives the STORY kanban and a doc_path', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    const list = await tm.call('tm_board', {});
+    assert.ok(list.epics.some((e) => e.task_id === task_id && e.state === 'READY' && e.phase === 'plan'));
+
+    await throughCritique(tm, task_id);
+    const board = await tm.call('tm_board', { task_id });
+    assert.equal(board.key, `E-${task_id.slice(0, 8)}`);
+    // Not 'impl': expandPackages (called the instant shape succeeds, before critique even runs)
+    // creates dispatch+accept AND integrate/gate:goal/report together in one shot, so
+    // epicPhase's goalLevel check (stage 'integrate' exists) is already true here even though
+    // no package has been dispatched yet - see this task's report for the discovered mismatch
+    // against §6's phase table.
+    assert.equal(board.phase, 'qualitygate');
+    assert.equal(board.stories.length, 2);
+    assert.deepEqual(board.stories.map((s) => s.id), ['P1', 'P2']);
+    assert.equal(board.stories[0].state, 'READY', 'P1 has no deps: ready at once');
+    assert.equal(board.stories[1].state, 'BACKLOG', 'P2 depends on P1');
+    assert.match(board.doc_path, /INDEX\.md$/);
+  });
+});
+
+test('tm_ticket reads an EPIC key or a STORY key, and always returns a doc_path even before tm_docs has written anything', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    await throughCritique(tm, task_id);
+    const epic = await tm.call('tm_ticket', { key: `E-${task_id.slice(0, 8)}` });
+    assert.equal(epic.kind, 'EPIC');
+    // Same eager-integrate-node mismatch as tm_board's phase assertion above: IN_REVIEW, not
+    // IN_PROGRESS, the moment shape succeeds.
+    assert.equal(epic.state, 'IN_REVIEW');
+    const story = await tm.call('tm_ticket', { key: `E-${task_id.slice(0, 8)}/P1` });
+    assert.equal(story.kind, 'STORY');
+    assert.equal(story.state, 'READY');
+    assert.match(story.doc_path, /40-stories\/P1\.md$/);
+    assert.ok(!existsSync(story.doc_path), 'tm_ticket never writes the file itself');
+  });
+});
+
+test('tm_ticket refuses an unknown EPIC prefix or a package not in the shape', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    await throughCritique(tm, task_id);
+    const bad = await tm.call('tm_ticket', { key: 'E-ffffffff' });
+    assert.match(bad.error, /no EPIC starting with ffffffff/);
+    const badPkg = await tm.call('tm_ticket', { key: `E-${task_id.slice(0, 8)}/P9` });
+    assert.match(badPkg.error, /no package P9/);
+  });
+});
+
+test('board.jsonl gets one line per ticket key that actually changed - never a line for a key that did not move', async () => {
+  await withTask(async ({ tm, g, task_id, root }) => {
+    const boardPath = join(root, task_id, 'board.jsonl');
+    await throughCritique(tm, task_id);
+    const afterCritique = readFileSync(boardPath, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    const epicKey = `E-${task_id.slice(0, 8)}`;
+    // The EPIC ticket moves READY -> IN_REVIEW in the same shape submission that creates the
+    // integrate node (see the phase/state comments above) - it never passes through IN_PROGRESS.
+    assert.ok(afterCritique.some((e) => e.key === epicKey && e.from === 'READY' && e.to === 'IN_REVIEW'));
+    assert.ok(afterCritique.some((e) => e.key === `${epicKey}/P1` && e.to === 'READY'));
+    assert.ok(afterCritique.some((e) => e.key === `${epicKey}/P2` && e.to === 'BACKLOG'));
+
+    const nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    const events = readFileSync(boardPath, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.ok(events.some((e) => e.key === `${epicKey}/P1` && e.from === 'READY' && e.to === 'IN_PROGRESS'));
+    assert.ok(events.some((e) => e.key === `${epicKey}/P1` && e.to === 'IN_REVIEW'), 'dispatch folded done, accept is pending');
+    // P2 never moved in this stretch - unmet deps the whole time - so it gets no new line at all.
+    assert.equal(events.filter((e) => e.key === `${epicKey}/P2`).length, 1, 'only the original BACKLOG line from shape');
+  });
+});
+
+test('board.jsonl is append-only and never consulted for current state - deleting it changes nothing tm_board/tm_ticket report', async () => {
+  await withTask(async ({ tm, task_id, root }) => {
+    const boardPath = join(root, task_id, 'board.jsonl');
+    await throughCritique(tm, task_id);
+    assert.ok(existsSync(boardPath));
+    const before = await tm.call('tm_board', { task_id });
+    rmSync(boardPath);
+    const after = await tm.call('tm_board', { task_id });
+    assert.deepEqual(after, before, 'tm_board recomputed everything from task.json alone, oblivious to board.jsonl being gone');
+    // And a fresh transition still appends a line to a file that had to be recreated from
+    // scratch - appendBoardTransitions never assumes the file (or its prior contents) survives.
+    await tm.call('tm_next', { task_id });
+    assert.ok(existsSync(boardPath));
+  });
+});
+
+test('a non-leader call that gets queued to the inbox writes no board.jsonl line - nothing on disk changed yet', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const main = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_CHILD_DRIVER: 'node -e setTimeout(()=>{},30000)' }).init();
+  let leader;
+  try {
+    const open = await main.call('tm_open', { request: 'r', cwd, vendor: 'self' });
+    leader = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_LEADER_OF: open.task_id }).init();
+    await main.call('tm_submit', { task_id: open.task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop' }) });
+    const boardPath = join(root, open.task_id, 'board.jsonl');
+    const before = existsSync(boardPath) ? readFileSync(boardPath, 'utf8') : '';
+    const q = await main.call('tm_submit', { task_id: open.task_id, node_id: 'shape', payload: ok({ ...SHAPE, handoff: 's' }) });
+    assert.equal(q.queued, true, JSON.stringify(q));
+    const after = existsSync(boardPath) ? readFileSync(boardPath, 'utf8') : '';
+    assert.equal(after, before, 'queued, not applied: no ticket actually moved');
+  } finally {
+    main.close();
+    if (leader) leader.close();
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
 });
