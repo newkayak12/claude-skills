@@ -10,6 +10,7 @@
 // check, so a unit test can fix it without a real pid and the module stays otherwise pure.
 import { join } from 'node:path';
 import { loadRun, unmetDeps, runState, nodeKind, KINDS } from './graph.mjs';
+import { TEAM_DEFAULTS } from './teamconfig.mjs';
 
 export function epicKey(taskId) {
   return `E-${String(taskId).slice(0, 8)}`;
@@ -24,8 +25,14 @@ export function taskKey(taskId, pkgId, subgoalId) {
 // §7c: the project's own docs_dir (team.json, default .teams_output/team - already resolved onto
 // every task by teamconfig.mjs's TEAM_DEFAULTS) holds one directory per EPIC. story() is a
 // function because a STORY's file lives one level deeper, under 40-stories/.
+//
+// The fallback reads TEAM_DEFAULTS.docs_dir rather than repeating its literal. It only fires
+// for a task.json written before task.team existed; createTask has set it on every task since
+// (taskmanager.mjs:187). Re-typing that literal here made this a second site deciding the same
+// default - the shape be83bbc shipped, where the two literals agreed and nothing made them
+// keep agreeing.
 export function docPaths(task) {
-  const docsDir = (task.team && task.team.opts && task.team.opts.docs_dir) || join('.teams_output', 'team');
+  const docsDir = (task.team && task.team.opts && task.team.opts.docs_dir) || TEAM_DEFAULTS.docs_dir;
   const base = join(task.cwd, docsDir, epicKey(task.run_id));
   return {
     dir: base,
