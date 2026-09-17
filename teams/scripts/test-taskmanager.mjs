@@ -1573,6 +1573,25 @@ test('tm_board with no task_id lists every EPIC, ticket-shaped; with task_id it 
   });
 });
 
+test('tm_board accepts the ticket key E-xxxxxxxx in place of task_id, resolved the same way tm_ticket resolves it', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    await throughCritique(tm, task_id);
+    const byRunId = await tm.call('tm_board', { task_id });
+    const byKey = await tm.call('tm_board', { task_id: `E-${task_id.slice(0, 8)}` });
+    assert.deepEqual(byKey, byRunId, 'the ticket key and the full run id name the same EPIC and must report identically');
+  });
+});
+
+test('tm_board refuses an unknown EPIC prefix the same way tm_ticket does', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    await throughCritique(tm, task_id);
+    const bad = await tm.call('tm_board', { task_id: 'E-ffffffff' });
+    const badTicket = await tm.call('tm_ticket', { key: 'E-ffffffff' });
+    assert.match(bad.error, /no EPIC starting with ffffffff/);
+    assert.equal(bad.error, badTicket.error, 'same prefix, same lookup, same failure shape from both tools');
+  });
+});
+
 test('tm_ticket reads an EPIC key or a STORY key, and always returns a doc_path even before tm_docs has written anything', async () => {
   await withTask(async ({ tm, task_id }) => {
     await throughCritique(tm, task_id);

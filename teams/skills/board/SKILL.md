@@ -25,10 +25,9 @@ of truth. This skill calls it and prints the Output Template below; it makes no 
 ## Process
 
 1. No EPIC named → `tm_board({})` → the epic-list table.
-2. An EPIC named (`E-xxxxxxxx`) → if its `task_id` (full run_id) is already in hand — e.g. from
-   `tm_open` earlier in this session — call `tm_board({task_id})` directly. Otherwise `tm_board`
-   takes no short key, so call `tm_board({})` first, find the epic whose `key` matches, and use
-   its `task_id`. (`ticket`, below, resolves the short key itself — `board` does not.)
+2. An EPIC named (`E-xxxxxxxx`) → call `tm_board({task_id: "E-xxxxxxxx"})` with the key straight
+   through; `tm_board` resolves it the same way `tm_ticket` does, so no lookup round trip is
+   needed here (a full `task_id` from earlier in the session also still works, unchanged).
 3. Render exactly the fields the reply carries; do not add columns for data it doesn't return
    (no vendor/model, no human-inbox counts, no gate status — those come from tooling this round
    didn't build).
@@ -67,8 +66,8 @@ repair` is a QA-raised defect story, not original scope — call it out in prose
 
 ## What Claude Does
 
-Calls `tm_board` with the right argument, resolves a short EPIC key to its `task_id` when needed,
-and renders the table above — nothing more.
+Calls `tm_board` with the right argument — the EPIC key or a full `task_id`, passed straight
+through — and renders the table above — nothing more.
 
 ## What You Do
 

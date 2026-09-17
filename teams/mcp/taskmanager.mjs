@@ -216,7 +216,11 @@ function createTask(a) {
 }
 
 function mustFindTask(a) {
-  const id = String(a.task_id || '');
+  // resolveTaskRef turns the ticket key E-xxxxxxxx into the run id it names (§8) - the same
+  // 8-hex-prefix match tm_ticket resolves its key with. Every task_id-taking tool goes through
+  // this one lookup (including callTool's leader gate, which calls mustFindTask ahead of
+  // dispatch), so a ticket key works anywhere a run id already did, tm_board included.
+  const id = resolveTaskRef(a.task_id);
   const task = id && loadRunAt(taskPath(id));
   if (!task) throw new Error(`unknown task ${a.task_id}`);
   return task;
@@ -1567,7 +1571,7 @@ const TOOLS = [
   },
   {
     name: 'tm_board',
-    description: 'Ticket-shaped board (§4/§8 of the design doc). Omit task_id for every EPIC this manager knows (key, state, phase). With task_id: the EPIC header plus its STORY kanban - one row per package, its state derived from task.json the same way tm_status is, never a second source of truth - and a doc_path to the human-readable INDEX.md (which may not exist on disk yet; see tm_docs). Read-only.',
+    description: 'Ticket-shaped board (§4/§8 of the design doc). Omit task_id for every EPIC this manager knows (key, state, phase). With task_id: the EPIC header plus its STORY kanban - one row per package, its state derived from task.json the same way tm_status is, never a second source of truth - and a doc_path to the human-readable INDEX.md (which may not exist on disk yet; see tm_docs). task_id accepts a full run id or the ticket key E-xxxxxxxx (the same 8-hex-prefix resolution tm_ticket uses). Read-only.',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' } } },
     outputSchema: { type: 'object' },
   },
@@ -1637,15 +1641,33 @@ function toolBoard(a) {
   };
 }
 
+// The EPIC half of a ticket key (E-xxxxxxxx) resolved to the run id it names - an 8-hex
+// prefix match over tasksRoot(). Shared by tm_ticket and tm_board so both resolve an EPIC
+// prefix identically and fail identically on an unknown one; a second copy of this lookup is
+// how the two tools would drift apart again.
+function findEpicByPrefix(epic8) {
+  let ids = [];
+  try { ids = readdirSync(tasksRoot()); } catch { ids = []; }
+  const found = ids.find((id) => id.startsWith(epic8));
+  if (!found) throw new Error(`no EPIC starting with ${epic8}`);
+  return found;
+}
+
+// tm_board's task_id: accepts a full run id unchanged, or the ticket key E-xxxxxxxx (§8),
+// resolved through findEpicByPrefix exactly as tm_ticket resolves its key's EPIC half.
+// Anything else is passed through for mustFindTask to reject with its own "unknown task" error.
+function resolveTaskRef(raw) {
+  const s = String(raw || '');
+  const m = /^E-([0-9a-f]{8})$/.exec(s);
+  return m ? findEpicByPrefix(m[1]) : s;
+}
+
 function toolTicket(a) {
   const key = String(a.key || '');
   const m = /^E-([0-9a-f]{8})(?:\/(.+))?$/.exec(key);
   if (!m) throw new Error(`unrecognized ticket key "${key}": expected E-xxxxxxxx or E-xxxxxxxx/Pn`);
   const [, epic8, pkgId] = m;
-  let ids = [];
-  try { ids = readdirSync(tasksRoot()); } catch { ids = []; }
-  const found = ids.find((id) => id.startsWith(epic8));
-  if (!found) throw new Error(`no EPIC starting with ${epic8}`);
+  const found = findEpicByPrefix(epic8);
   const task = mustFindTask({ task_id: found });
   if (!pkgId) {
     return {
