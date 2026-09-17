@@ -151,14 +151,45 @@ async function withTask(fn, extra) {
   }
 }
 
-test('serves the MCP handshake and the eight manager tools', async () => {
+test('serves the MCP handshake and the nine manager tools', async () => {
   const c = await new Client(TM).init();
   try {
     const r = await c.send('tools/list', {});
-    assert.deepEqual(r.result.tools.map((t) => t.name).sort(), ['tm_board', 'tm_events', 'tm_next', 'tm_open', 'tm_retry', 'tm_status', 'tm_submit', 'tm_ticket']);
+    assert.deepEqual(r.result.tools.map((t) => t.name).sort(), ['tm_board', 'tm_docs', 'tm_events', 'tm_next', 'tm_open', 'tm_retry', 'tm_status', 'tm_submit', 'tm_ticket']);
   } finally {
     c.close();
   }
+});
+
+test('tm_docs writes the phase md tm_board/tm_ticket already pointed at, and rebuild reproduces the same files', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id);
+    const board = await tm.call('tm_board', { task_id });
+    const first = await tm.call('tm_docs', { task_id });
+    assert.ok(first.written.includes(board.doc_path));
+    assert.equal(readFileSync(board.doc_path, 'utf8').includes(`E-${task_id.slice(0, 8)}`), true);
+
+    const nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) });
+
+    const before = readFileSync(board.doc_path, 'utf8');
+    const rebuilt = await tm.call('tm_docs', { task_id, rebuild: true });
+    assert.notEqual(readFileSync(board.doc_path, 'utf8'), before, 'P1 moved to DONE since the first render');
+    // Snapshot every file's bytes right after the FIRST rebuild:true call, before calling it
+    // again - this is what the second snapshot below gets compared against.
+    const afterFirstRebuild = Object.fromEntries(rebuilt.written.map((p) => [p, readFileSync(p, 'utf8')]));
+
+    // The determinism claim tm_docs exists to prove: calling it twice through the real MCP tool
+    // path (not writeDocs directly) with rebuild:true - which deletes the docs dir first - must
+    // reproduce byte-identical files across the two calls. If a wall clock or any
+    // process-dependent value ever crept back into the rendered output, this is the assertion
+    // that would catch it (comparing a file to itself read twice would not).
+    const again = await tm.call('tm_docs', { task_id, rebuild: true });
+    assert.deepEqual(again.written.sort(), rebuilt.written.sort());
+    for (const p of again.written) assert.equal(readFileSync(p, 'utf8'), afterFirstRebuild[p], p);
+  });
 });
 
 test('tm_open seeds size -> shape -> critique under the tasks root, not under the project', async () => {
