@@ -48,6 +48,32 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
 
 ## Status
 
+- **v0.10.0 — install/remove/patch, and main never drives anything**: two threads finished
+  together. First, graph-beta gets the same operational shell as harness: `install`/`remove`/
+  `patch` skills backed by deterministic scripts. `install.mjs` writes `.claude/team.json` —
+  `tm_open`'s own defaults, read before its arguments, so a project can pin
+  `goal_threshold`/`allocation`/etc. without every call repeating them (explicit args still win
+  over team.json, team.json over hardcoded defaults). `remove.mjs` undoes it idempotently.
+  `patch.mjs` bumps `x.y.Z` in both manifests and prepends one `## Status`/`## 상태` line to
+  README **and** KOR.md in the same call — it refuses without both `summary` and `summary_ko`,
+  because this repo moves the two languages together. Second: the driving session never drives
+  a node, full stop. `tm_open` now throws if `child_driver` or `s_driver` is passed (**breaking**:
+  any script pinning either gets `removed in 0.10.0: the driving session never drives...`);
+  `HARNESS_TEST_NO_DRIVER` is the internal test seam that replaces them. In their place, `tm_open`
+  spawns a **TaskLeader driver** — a headless session that runs the manager loop
+  (tm_next/tm_submit/tm_retry) itself; main only watches `tm_status`/new `tm_events` (tails the
+  ledger, `since`/`limit`, read-only from any session) and gets queued behind an inbox
+  (`<taskDir>/inbox/<ts>-<seq>-<tool>.json`) if it tries to mutate a task the leader owns — the
+  leader drains it on its next `tm_next`. A dead leader respawns up to `driver_restarts` like a
+  package driver, then reports exhausted. Coexistence with harness needed one more piece:
+  `.claude/.harness-markers/team-<task8>`, written into every worktree `tm_next` touches — the
+  **same file shape harness's own gate already reads**, so harness needed zero code changes;
+  `dispatch-gate.mjs` reads it back the other way, so a harness-engaged session isn't blocked by
+  team's own dispatch gate either. `excludeMarkers()` keeps that path out of git (`info/exclude`)
+  and fold commits unstage it, or every package branch would conflict on a timestamp. Full suite:
+  241/241 across 13 files, 0 regressions. Not yet measured: a real run against a harness+team
+  project, and whether the leader's SendMessage progress line actually reaches the session that
+  opened the task.
 - **v0.9.0 — the accuracy round**: five changes built in parallel against the "What the rewrite
   dropped" table, all on the side of more judging and more evidence, none on the side of cost.
   (1) `.claude/conventions/**` reaches plan, setgoal, implement and draft again (`mcp/conventions.mjs`);

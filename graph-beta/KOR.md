@@ -45,6 +45,30 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 
 ## 상태
 
+- **v0.10.0 — install/remove/patch, 그리고 main은 이제 아무것도 드라이브하지 않는다**: 두 갈래가
+  함께 끝났습니다. 첫째, graph-beta가 harness와 같은 운영 셸을 갖습니다 — 결정적 스크립트 기반의
+  install/remove/patch 스킬. `install.mjs`가 `.claude/team.json`을 씁니다 — `tm_open`이 인자보다
+  먼저 읽는 프로젝트 기본값이라, 매 호출마다 `goal_threshold`/`allocation` 등을 반복할 필요가
+  없습니다(그래도 명시적 인자가 team.json을, team.json이 하드코딩 기본값을 이깁니다).
+  `remove.mjs`는 멱등하게 되돌립니다. `patch.mjs`는 두 매니페스트의 `x.y.Z`를 올리고 README
+  `## Status`와 KOR.md `## 상태`에 한 줄씩 같은 호출에서 prepend합니다 — `summary`와 `summary_ko`
+  둘 다 없으면 거부합니다, 이 저장소는 두 언어를 같이 움직이기 때문입니다. 둘째, 드라이빙 세션은
+  더 이상 노드를 드라이브하지 않습니다. `tm_open`은 `child_driver`나 `s_driver`를 넘기면 이제
+  에러를 던집니다(**breaking**: 둘 중 하나를 고정해 두던 스크립트는 "removed in 0.10.0: the
+  driving session never drives..."를 받습니다); `HARNESS_TEST_NO_DRIVER`가 그 자리를 대신하는
+  내부 테스트 전용 시임입니다. 대신 `tm_open`이 **TaskLeader driver**를 spawn합니다 — 매니저 루프
+  (tm_next/tm_submit/tm_retry)를 스스로 도는 헤드리스 세션. main은 `tm_status`와 신설
+  `tm_events`(원장을 tail, `since`/`limit`, 어느 세션에서든 안전한 읽기 전용)만 보고, leader가
+  소유한 태스크를 mutate하려 하면 inbox(`<taskDir>/inbox/<ts>-<seq>-<tool>.json`)에 큐잉되어
+  leader가 다음 `tm_next`에서 적용합니다. 죽은 leader는 패키지 드라이버처럼 `driver_restarts`까지
+  재기동되고, 그 뒤엔 exhausted로 보고됩니다. harness와의 공존에는 조각 하나가 더 필요했습니다:
+  `tm_next`가 건드리는 모든 워크트리에 쓰는 `.claude/.harness-markers/team-<task8>` — harness
+  게이트가 이미 읽던 것과 **같은 파일 모양**이라 harness 쪽 코드 변경은 0이고, `dispatch-gate.mjs`가
+  반대 방향으로 그것을 읽어 harness가 관여 중인 세션이 team의 dispatch 게이트에 막히지도 않습니다.
+  `excludeMarkers()`가 그 경로를 git에서 뺍니다(`info/exclude`), fold 커밋도 언스테이지합니다 —
+  안 그러면 모든 패키지 브랜치가 타임스탬프로 충돌합니다. 전체 스위트: 13개 파일 241/241, 회귀
+  0. 아직 미측정: 실제 harness+team 프로젝트에서의 런 1회, leader의 SendMessage 진행 알림이
+  실제로 여는 세션에 도달하는지.
 - **v0.9.0 — 정확도 라운드**: "What the rewrite dropped" 표를 상대로 다섯 가지를 병렬로 만들었습니다.
   전부 판정과 증거를 늘리는 쪽이고, 비용을 줄이는 쪽은 없습니다. (1) `.claude/conventions/**`가 다시
   plan·setgoal·implement·draft에 도달합니다(`mcp/conventions.mjs`); plan은 단위별 의존·결정적 검증·
