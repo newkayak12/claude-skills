@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "teams-engineering": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/mcp/broker.mjs"
+      ]
+    },
+    "task-manager": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/mcp/taskmanager.mjs"
+      ]
+    }
+  }
+}

@@ -137,13 +137,13 @@
       "category": "productivity"
     },
     {
-      "name": "graph-beta",
+      "name": "teams",
       "description": "Beta line of graph: same engine as graph 1.7.0 plus kinds (code / document / package), a TaskManager MCP for medium and large requests, and per-flow entry skills. Separate run directory; do not enable alongside graph in one project. Includes graph-beta:install and graph-beta:orchestrate. Ships graph-beta:install/remove/patch, .claude/team.json project defaults, and a shared engagement marker so it coexists with the harness plugin. Adds planning (draft→revise→gate) and qa (cases→execute→gate) kinds with their own personas/skills/MCP mounts, and graph-beta:plan/graph-beta:qa entry skills.",
-      "version": "0.10.1",
+      "version": "0.10.2",
       "author": {
         "name": "newkayak12"
       },
-      "source": "./graph-beta",
+      "source": "./teams",
       "category": "productivity"
     }
   ]
