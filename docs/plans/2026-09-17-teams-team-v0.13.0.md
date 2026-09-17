@@ -75,13 +75,13 @@ v0.12.0 계획(`2026-09-17-teams-team-v0.12.0.md` §0.1)은 planning/qa phase-Te
   값 쪽을 가리킨 것으로 읽는다 — 다른 읽기(child-run 레벨에도 `ask` kind를 만든다)를 택하는 사람은
   §7의 표에 `ask`가 "TaskLeader가 삽입"이라고만 쓰여 있고 child run 레벨의 `ask` 사용처가 설계 문서
   어디에도 없음을 먼저 반박해야 한다).
-- 삽입 지점: `finish(task, n, result)`가 `size`/`shape`/`critique`의 결과에 `questions`(비어있지
-  않은 배열)가 있으면 그 직후 `ask:N` 노드를 `deps: [n.node_id]`로 밀어 넣고, 그 노드에 **의존하던
-  다음 관리 노드의 deps를 그 `ask:N`으로 재배선**한다(§7 "ask는 setgoal 이전에만 삽입된다" — 여기서
-  "setgoal 이전"은 관리 노드 기준으로 `size`/`shape`/`critique` 세 곳까지이고, `dispatch` 이후에는
-  질문 삽입 자체가 없다는 뜻으로 읽는다). `gate:human:spec`은 `critique` 완료 직후, `T.human_gates`
-  에 `'spec'`이 있을 때만 삽입되고 `dispatch`들의 선행 노드가 된다(`critique`가 열던 자리를 그대로
-  대체).
+- 삽입 지점(**§14 결정 기록 #14로 확정, 더 이상 이 계획의 해석이 아니다**): `ask`는 `size`/
+  `critique`가 아니라 **`shape.questions[]`에서만** 생긴다 — `§5`의 `packages[]`/`implements[]`와
+  같은 층위의 필드다. `finish(task, n, result)`가 `shape` 완료 직후 `result.questions`(비어있지
+  않은 배열)가 있으면 `ask:N` 노드를 `deps: ['shape']`로 밀어 넣고, `shape`에 의존하던 다음 관리
+  노드(`critique`)의 `deps`를 그 `ask:N`으로 재배선한다. `gate:human:spec`은 `critique` 완료 직후,
+  `T.human_gates`에 `'spec'`이 있을 때만 삽입되고 `dispatch`들의 선행 노드가 된다(`critique`가 열던
+  자리를 그대로 대체).
 
 ### 0.3 human 실행자는 라우팅 풀에 절대 들어가지 않는다 — 핀 경로만 있다 (확인됨)
 
@@ -103,9 +103,39 @@ v0.12.0 계획(`2026-09-17-teams-team-v0.12.0.md` §0.1)은 planning/qa phase-Te
   떨어진다. 이것은 고쳐야 할 버그가 아니라 **이미 맞는 동작**이다(둘뿐인 이진 분기가 human을
   자동으로 비-human 쪽으로 밀어낸다) — 이 계획은 여기 아무 코드도 건드리지 않는다. 확인한 사실을
   기록해 다음 사람이 다시 세지 않게 하는 것이 §0.3의 역할이다.
+- **§14 결정 기록 #16과의 대조**: 위 두 항목(자동 후보 풀 제외, 핀 경로만)은 팀 리더가
+  `2026-09-17-teams-team.md` §14에 결정 기록 #16으로 막 박아 넣은 것과 정확히 같다 — 이 계획은
+  그 결정이 오기 전에 독립적으로 같은 결론에 코드 대조로 도달했다(위 §0.3 전체가 그 대조다). 재론할
+  것이 없으므로 Task 3의 내용도 바꾸지 않는다.
 
-### 0.4 발견 — 팀 리더에게 보고, 해결하지 않고 진행
+### 0.4 결정된 것의 확인, 그리고 그 위에서 새로 발견한 것
 
+**§14 결정 기록 #14·#16은 위 §0.2·§0.3이 코드로 이미 확인한 것과 그대로 일치한다** — #14(`ask`는
+`shape.questions[]`에서만 생긴다)는 §0.2에 반영했고, #16(`routing.mjs`의 human 제외)은 위에서 확인.
+**#15(`gate:human`의 `redirect` 재개 지점)는 코드를 다시 대조한 결과 이 계획이 그대로 가져다 쓸 수
+없다 — 아래 발견 0이 그 이유다.**
+
+0. **결정 기록 #15가 가리키는 `retrySpec`(`graph.mjs:856`)은 child run 레벨 함수이고, `ask`/
+   `gate:human:spec`은 TaskLeader(EPIC) 레벨 노드다 — 층이 다르다.** `retrySpec`은 `run.nodes`에
+   `setgoal:${attempt}`를 **`deps: ['plan']`**로 밀어 넣는다(`graph.mjs:879-882`) — `'plan'`은 child
+   run의 노드 이름이다. `task.json`(TaskLeader 레벨)의 `createTask`(`taskmanager.mjs:234-241`)가
+   만드는 노드는 `size`/`shape`/`critique`뿐, **`plan`도 `setgoal`도 없다** — 확인함
+   (`grep -n "node('plan'\|node('setgoal'" teams/mcp/taskmanager.mjs`가 무응답). `retrySpec(task,
+   feedback)`을 `task.json`에 그대로 호출하면 존재하지 않는 `'plan'`에 의존하는 `setgoal:1`이
+   생기고, 그 의존은 영원히 풀리지 않는다 — 죽은 노드다.
+   같은 파일에 **TaskLeader 레벨의 대응 함수가 이미 따로 있다**: `retryShape`(`taskmanager.mjs:
+   367-386`, 이미 `tm_retry`의 일반 reshape 경로로 쓰이고 있다 — `toolRetry`의 2120·2142행)가
+   정확히 `retrySpec`과 같은 패턴(spec 폐기 → 나머지 노드 전부 supersede → 새 spec 노드 + 새
+   critique 재부착)을 `task.json`의 실제 노드 이름(`shape`)으로 수행한다 —
+   `task.nodes.push(node(\`shape:${attempt}\`, 'shape', ['size'], ...))`.
+   **이 계획은 `ask`/`gate:human:spec`의 `redirect`(Task 6, `tm_answer`)가 `retrySpec`이 아니라
+   `retryShape`를 재사용하도록 정한다** — 재개 지점은 `setgoal`이 아니라 **`shape`**다. 결정 기록
+   #15의 "spec 재저작 경로를 재사용한다"는 취지·"resume은 critique가 아니다"는 결론 둘 다 그대로
+   유지된다 — 잘못 짚인 것은 그 경로의 **함수 이름과 층**뿐이다(`retrySpec`/`setgoal`이 아니라
+   `retryShape`/`shape`). **팀 리더에게 보고**: `human_scope: "all"`이 나중에 완전히 배선되면(§0.4
+   발견 3, 아래) 그때는 child run 안의 human 노드가 실제로 `retrySpec`/`setgoal`을 쓸 자리가
+   생긴다 — 결정 기록 #15는 그 경우를 위해서는 정확하다. 지금 이 계획이 다루는 `leader` 스코프
+   에서만 `retryShape`로 바꿔 읽어야 한다.
 1. **`ask_timeout`이 `teamconfig.mjs`의 `TEAM_DEFAULTS`에 없다** — 확인함
    (`teams/mcp/teamconfig.mjs:12-26`에 없음). 설계 문서 §7이 "`ask_timeout`(기본 없음) 만료 시
    `default`로 자동 제출"이라고 쓴 값이 지금 코드 어디에도 해석되지 않는다. **팀 리더 확인 필요
@@ -145,6 +175,11 @@ v0.12.0 계획(`2026-09-17-teams-team-v0.12.0.md` §0.1)은 planning/qa phase-Te
    뒀으므로 이 계획도 만들지 않는다. Task 8은 그래서 4개 스킬(1 unit, "얇은 명령 스킬은 2개에 1"
    규칙이면 4개는 2가 나오지만, `board`/`ticket` 대비 이 넷은 인자 하나 받아 도구 하나 부르는
    **더 얇은** 스킬이라 1로 잡는다 — 근거는 Task 8 자체에).
+5. **설계 문서 §8b의 "§6 TaskLeader driver" 행("코딩 가능 — 남은 결정 없음, 남은 것은 leader의
+   세션 프롬프트와 `claude-exec-adapter` 재사용")은 이미 v0.10.0에서 닫혔다 — 새 태스크가 아니다.**
+   `leaderPrompt`(`taskmanager.mjs:1036-1045`)·`spawnLeader`(`1049-1054`)·`spawnChildDriver` 재사용이
+   모두 코드에 있다(확인함). 이 계획이 그 위에 얹는 것은 Task 5의 `leaderPrompt` 문구 수정(종료
+   조건에 `waiting_human` 추가)뿐 — 별도 태스크를 만들지 않는다.
 
 ---
 
@@ -255,10 +290,11 @@ Task 10 릴리스                                                            —
 `validateShape` 근방 — `assignee` 필드 통과), modify `teams/mcp/broker.mjs` (`route`가 subgoal spec의
 `assignee`를 읽어 `node.assignment`를 직접 채우는 지점, `route:426` 근방), modify
 `teams/scripts/test-taskmanager.mjs`, `teams/scripts/test-broker.mjs`
-**Interfaces:** `finish()`가 `size`/`shape`/`critique` 완료 직후 `result.questions`(문자열 배열,
-각 항목에 `default` 동봉하는 구조는 이 계획이 `{text, default}` 객체로 확정한다 — 설계 문서는 구조를
-못 박지 않았다)가 비어있지 않으면 `ask:N` 노드를 `deps: [n.node_id]`로 밀고, 그 원래 다음 관리 노드의
-`deps`를 `ask:N`으로 재배선한다. `T.human_gates.includes('spec')`이면 `critique` 완료 직후
+**Interfaces:** `finish()`가 `shape` 완료 직후 `result.questions`(§14 결정 기록 #14로 `shape`
+전용 필드로 확정 — 문자열 배열, 각 항목에 `default` 동봉하는 구조는 이 계획이 `{text, default}`
+객체로 확정한다, 설계 문서는 그 내부 구조까지는 못 박지 않았다)가 비어있지 않으면 `ask:N` 노드를
+`deps: ['shape']`로 밀고, `shape`에 의존하던 `critique`의 `deps`를 `ask:N`으로 재배선한다.
+`T.human_gates.includes('spec')`이면 `critique` 완료 직후
 `gate:human:spec` 노드를 `deps: ['critique']`로 밀고 모든 `dispatch:Pn:1`의 `deps`(planning이
 꺼졌으면 `['shape']`에서 파생, 켜졌으면 `['accept:PLAN:1']`에서 파생하던 것)를 이 노드로 재배선한다.
 `assignee: "human"`은 shape 출력 스키마의 새 필드(패키지가 아니라 **subgoal** 레벨,
@@ -368,15 +404,21 @@ reports complete or blocked")에 `waiting_human`을 추가한다. `serviceLeader
 
 ### Task 6: 도구 4개 — `tm_answer` / `tm_assign` / `tm_inbox` / `tm_log`
 **Files:** modify `teams/mcp/taskmanager.mjs` (`TOOLS:1632`, `dispatch:2211`, `MUTATING_TOOLS:1076`,
-새 핸들러 함수들), modify `teams/scripts/test-taskmanager.mjs`
+`retryShape:367-386`이 이미 있는 자리, 새 핸들러 함수들), modify `teams/scripts/test-taskmanager.mjs`
 **Interfaces:**
 - `tm_answer({task_id, key, payload})` — Task 5가 만든 재기동 호출부에 payload 기록 로직을 채운다:
-  `key`가 가리키는 `ask`/`gate:human`/human-TASK 노드에 `{state: 'done', by: 'user', answer:
-  payload}`를 쓰고(SKIPPED로 이미 자동 결정된 노드를 다시 답하는 경우는 §7의 `redirect` — 이 단계
-  범위 밖, 미구현으로 명시적으로 거부), `MUTATING_TOOLS`에 추가해 리더가 아닌 프로세스의 호출은
-  inbox로 큐잉(`queueToInbox:1078`)되고 리더가 자기 `tm_next`에서 `drainInbox:1086`로 적용하게
-  한다 — 단, Task 5의 명시적 `spawnLeader` 호출은 큐잉 여부와 무관하게 항상 일어난다(리더가 죽어
-  있으면 respawn 자체가 곧 drain을 트리거한다).
+  `key`가 가리키는 `ask`/`gate:human`/human-TASK 노드가 아직 미결(`waiting_human`)이면
+  `{state: 'done', by: 'user', answer: payload}`를 쓴다. **`redirect`(§14 결정 기록 #15, §0.4
+  발견 0으로 이 계획이 정정한 자리): `key`가 가리키는 노드가 이미 `SKIPPED`(자동 결정 완료)인데
+  `tm_answer`가 다른 답을 주면**, `retryShape(task, payload.note || '')`를 호출해 `shape` 재저작을
+  다시 열고(기존 `dispatch`/`accept`/`integrate`/`gate:goal`/`report`는 전부 `superseded by shape
+  attempt N`으로 supersede — `retryShape`가 이미 하는 일 그대로) 이미 한 작업은 `retryShape`가
+  남기는 supersede 기록이 곧 §7의 "gaps로 전달"이다. `gate:human:spec`의 `redirect`도 같은 함수를
+  쓴다(그 노드 자체가 `critique` 뒤에 있으므로 결과적으로 `shape`부터 다시 도는 것이 맞다 — critique
+  판정 자체를 다시 받는 셈). `MUTATING_TOOLS`에 추가해 리더가 아닌 프로세스의 호출은 inbox로
+  큐잉(`queueToInbox:1078`)되고 리더가 자기 `tm_next`에서 `drainInbox:1086`로 적용하게 한다 — 단,
+  Task 5의 명시적 `spawnLeader` 호출은 큐잉 여부와 무관하게 항상 일어난다(리더가 죽어 있으면
+  respawn 자체가 곧 drain을 트리거한다).
 - `tm_assign({task_id, key, vendor})` — `assignee` 필드를 사후에 바꾼다(shape가 이미 낸 TASK에).
   `MUTATING_TOOLS`에 추가.
 - `tm_inbox({task_id})` — 읽기 전용. §7의 두 절("대기 중" / "대신 결정됨")을 반환: 전자는
@@ -386,17 +428,22 @@ reports complete or blocked")에 `waiting_human`을 추가한다. `serviceLeader
   필드, `docs.mjs`의 `renderStory`가 이미 읽는 것과 같은 자리, `docs.mjs:158`) 파일의 꼬리
   `tail`줄(기본 50)을 반환 — §11이 "§8이 약속했지만 §11의 어느 행에도 없는 드라이버 로그 꼬리
   도구"라고 부른 자리.
-**Pass bar:** `tm_answer` 왕복 테스트(park된 `ask`에 답하면 `done`으로 전이하고 다음 노드가 열림),
-non-leader 프로세스에서 호출 시 inbox에 큐잉됨을 파일 존재로 확인. `tm_assign`이 TASK의 `assignee`를
-바꾸고 다음 라우팅에 반영됨을 확인. `tm_inbox`가 "대기 중"/"대신 결정됨" 두 절을 올바르게 채움을
-표 테스트로 확인(Task 4가 만든 SKIPPED 노드들로). `tm_log`가 실제 로그 파일의 마지막 N줄만 반환함을
-확인(전체를 올리지 않음 — "payload를 main에 올리지 않는다" 원칙의 로그 버전).
+**Pass bar:** `tm_answer` 왕복 테스트(park된 `ask`에 답하면 `done`으로 전이하고 다음 노드가 열림).
+**`redirect` 표 테스트**: `ask`가 `interactive: false`로 이미 `SKIPPED`(자동 결정)된 뒤
+`tm_answer`가 다른 `answers`를 주면 `shape:2`/`critique:2`가 새로 생기고 옛 `dispatch`/`accept`/
+`integrate`/`gate:goal`/`report`가 전부 `skipped, reason: superseded by shape attempt 2`로
+바뀜을 확인(`retryShape` 회귀 픽스처와 같은 단언). non-leader 프로세스에서 호출 시 inbox에
+큐잉됨을 파일 존재로 확인. `tm_assign`이 TASK의 `assignee`를 바꾸고 다음 라우팅에 반영됨을 확인.
+`tm_inbox`가 "대기 중"/"대신 결정됨" 두 절을 올바르게 채움을 표 테스트로 확인(Task 4가 만든
+SKIPPED 노드들로). `tm_log`가 실제 로그 파일의 마지막 N줄만 반환함을 확인(전체를 올리지 않음 —
+"payload를 main에 올리지 않는다" 원칙의 로그 버전).
 
-- [ ] 1: 실패하는 테스트 작성(네 도구 각각 + inbox 큐잉 왕복).
-- [ ] 2: 네 핸들러 구현, `TOOLS`/`dispatch()`/`MUTATING_TOOLS`에 등록.
+- [ ] 1: 실패하는 테스트 작성(네 도구 각각 + `redirect`/`retryShape` 왕복 + inbox 큐잉 왕복).
+- [ ] 2: 네 핸들러 구현(`tm_answer`의 `redirect` 분기는 `retryShape` 호출), `TOOLS`/`dispatch()`/
+  `MUTATING_TOOLS`에 등록.
 - [ ] 3: 테스트 통과 확인.
 - [ ] 4: `git add teams/mcp/taskmanager.mjs teams/scripts/test-taskmanager.mjs && git commit -m
-  "feat(teams): tm_answer/tm_assign/tm_inbox/tm_log - the tools a human executor needs (§6, §8)"`
+  "feat(teams): tm_answer/tm_assign/tm_inbox/tm_log - the tools a human executor needs, redirect reuses retryShape (§6, §8, decision #15)"`
 
 ---
 
@@ -500,6 +547,15 @@ v0.13.0.
 
 ## 자기 검토
 
+- **팀 리더가 §14 결정 기록 #15로 "redirect는 setgoal부터"라고 전달했을 때, 그 문구를 그대로
+  받아쓰지 않고 코드를 다시 대조했다(§0.4 발견 0).** `retrySpec`(`graph.mjs:856`)이 실제로 만드는
+  `setgoal:${attempt}` 노드는 child run 전용(`deps:['plan']`)이고, `task.json`에는 `plan`도
+  `setgoal`도 없다 — 그대로 재사용하면 죽은 노드가 생긴다. 같은 파일에 이미 있는 `retryShape`
+  (`taskmanager.mjs:367`, `shape`부터 재개)가 TaskLeader 레벨의 정확한 대응이다. Task 6의
+  `tm_answer` `redirect` 분기를 `retryShape` 호출로 다시 썼다 — 팀 리더의 결론(critique가 트리거,
+  spec 재저작 경로 재사용)은 유지하고 **함수·재개 노드 이름만** 고쳤다. 이 계획은 팀 리더가 먼저
+  틀렸다가 스스로 정정한 그 판단(`retrySpec`/`setgoal`)조차 이 특정 층(TaskLeader)에는 다시
+  안 맞는다고 본다 — 팀 리더에게 이 정정을 명시적으로 보고한다.
 - **§0.1의 Task 1/Task 5 분리가 이 계획 전체의 위험 관리 축이다.** 사이징 문서 §4.2가 경고한 "12
   이상으로 번질 위험"은 실제로 존재한다 — 이 계획은 그 확산을 Task 5 하나에 몰아넣고 나머지 아홉
   태스크를 순수 파생/구성/도구로 좁게 유지하는 전략을 택했다. Task 5가 예상보다 커지면(예: 드라이버가
