@@ -8,7 +8,7 @@ scenarios:
   - "teams 이 프로젝트에서 제거해줘"
   - "team.json이랑 dispatch 게이트 지워줘"
   - "Remove teams from this project"
-  - "Uninstall teams's team.json and dispatch gate"
+  - "Uninstall teams' team.json and dispatch gate"
 compatibility:
   optional: []
 related:
