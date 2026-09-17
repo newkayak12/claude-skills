@@ -178,9 +178,6 @@ function createTask(a) {
     // The floor the manager's own goal gate's match_pct must clear - same meaning, same
     // default, as the graph engine's run.goal_threshold.
     goal_threshold: T.goal_threshold,
-    // Best-effort: the agent/session name the TaskLeader driver SendMessages on every state
-    // change. null falls back to "whoever ListAgents shows opened this task".
-    notify: typeof a.notify === 'string' && a.notify ? a.notify : null,
     // Set once tm_open spawns it (toolOpen): {pid, started_at, log, stderr, exit, command,
     // spawn_count, restarts, exhausted}. null under noLeader() - see serviceLeader/spawnLeader.
     leader: null,
@@ -946,8 +943,11 @@ function serviceDeadDriver(task, child, nodeId) {
 // tm_open no longer hands the opening session a manager loop to run: it spawns a second headless
 // session - the TaskLeader - that runs references/manager.md's loop (tm_next/tm_submit/tm_retry)
 // on this task_id until it is complete or blocked, exactly the way a package's own driver runs
-// the graph loop on a child run. The opening session only watches: tm_status for state, tm_events
-// for what happened, and a best-effort SendMessage from the leader on every change.
+// the graph loop on a child run. The opening session only watches, and only by pulling: tm_status
+// for state, tm_events for what happened, tm_board/tm_ticket for the ticket-shaped view. There is
+// no push - a prior version had the leader SendMessage the opener on every state change, but
+// taskmanager.mjs never verified, retried or acked that message, so a message that never arrived
+// was indistinguishable from nothing having changed. Removed; watch by polling instead.
 //
 // A mutating call from anyone other than the leader process itself is queued to an inbox instead
 // of applied directly, and the leader drains it at the top of its own tm_next - the same
@@ -960,8 +960,6 @@ function leaderPrompt(task, opts = {}) {
     `until tm_status reports complete or blocked, or the report node has run. A fresh agent for every ready manager node, its JSON relayed verbatim.`,
     `You never do a node's work yourself, never edit project files, never open a child run by hand.`,
     opts.resume ? `A previous leader for this task died; call tm_status first and resume from what is already done - do not redo a done node.` : '',
-    task.notify ? `On every state change, if ListAgents lists "${task.notify}", SendMessage it one line: task_id, phase, state, and what changed. If the tool or the name is missing, skip silently and never wait for it.`
-                : `On every state change, if the session that opened this task is listed by ListAgents, SendMessage it one line: task_id, phase, state, and what changed. If session messaging is unavailable, skip silently and never wait for it.`,
     `End with the skill's output template.`,
   ].filter(Boolean).join(' ');
 }
@@ -1528,7 +1526,6 @@ const TOOLS = [
         mixed: { type: 'boolean', description: 'Passed the same way isolated is, to the same size-S run. Default true. false forbids the other kind of work entirely - a develop-flow request with a document subgoal fails at setgoal instead of quietly running one. Has no effect on an L task: every package is already mixed:true.' },
         driver_restarts: { type: 'integer', description: 'default 2: how many times a package or size-S driver that died mid-run is respawned on the SAME run_id before the dispatch folds blocked. A usage-limit death never spends this - it parks on waiting_capacity for tm_retry({reset_capacity:true}) instead.' },
         goal_threshold: { type: 'integer', description: 'default 90: the manager\'s own goal gate must report match_pct at or above this to accept, and it is passed through to every child run as its own goal_threshold. A gate that says accept with 40% match is reporting a partial result as a pass. 0 accepts on the verdict alone.' },
-        notify: { type: 'string', description: 'agent/session name for the TaskLeader driver\'s one-line SendMessage progress updates, best-effort. Defaults to whoever ListAgents shows opened this task.' },
       },
       required: ['request', 'cwd'],
     },
