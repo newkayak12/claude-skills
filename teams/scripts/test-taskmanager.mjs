@@ -2117,6 +2117,49 @@ test('tm_next from a non-leader process does not drive: it returns leader state 
   } finally { try { process.kill(pid, 'SIGTERM'); } catch { /* gone */ } main.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
 });
 
+// The first real-vendor run died here. A size-S task settles its own manager graph the moment
+// `size` resolves - shape and critique are skipped, nothing is left pending or running - and all
+// the actual work moves into the single child run task.s_run points at. The watcher branch above
+// returns before toolNext() ever runs, so it judged the task by `runState(task)` over those three
+// settled manager nodes and reported `blocked` while the child run was alive and building. The
+// entry skill's standing mandate is "a blocked run is a result - report what failed and stop
+// there", so main did exactly that: it stopped at two minutes, and the bench scored a workspace
+// whose driver was still working. (Reproduced 2026-09-17: tm_next said blocked and tm_status said
+// running for the same task in the same second; the run then delivered its file.)
+test('a size-S task under a live leader reports running to the watcher, not blocked - the work is in s_run, not in the settled manager graph', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const main = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_CHILD_DRIVER: 'node -e setTimeout(()=>{},30000)' }).init();
+  let leader;
+  const pids = [];
+  try {
+    const open = await main.call('tm_open', { request: 'one small thing', cwd, vendor: 'self' });
+    pids.push(open.leader.pid);
+
+    // The leader is the only process that may apply a mutating call, so it is the one that
+    // resolves size - exactly as it does in a real run, by draining main's queued submit.
+    leader = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_LEADER_OF: open.task_id }).init();
+    const sized = await leader.call('tm_submit', { task_id: open.task_id, node_id: 'size',
+      payload: ok({ size: 'S', flow: 'develop', sizing: ['ls -> one file'], handoff: 'tiny' }) });
+    assert.equal(sized.task_state, 's_run', JSON.stringify(sized));
+
+    const st = await main.call('tm_status', { task_id: open.task_id });
+    assert.equal(st.s_run.driver.alive, true, 'the child driver is alive and holding the work');
+    pids.push(st.s_run.driver.pid);
+    assert.equal(st.state, 'running', 'tm_status already reads the child run');
+
+    const n = await main.call('tm_next', { task_id: open.task_id });
+    assert.equal(n.driven_by, 'leader');
+    assert.equal(n.ready, undefined, 'still no driving from the watcher');
+    assert.equal(n.state, 'running', `the watcher must not call a live s_run blocked: ${JSON.stringify(n)}`);
+    assert.equal(n.run_id, st.s_run.run_id, 'and it names the run the work is actually in');
+  } finally {
+    for (const pid of pids) { try { process.kill(pid, 'SIGTERM'); } catch { /* gone */ } }
+    main.close(); if (leader) leader.close();
+    rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('a dead leader is respawned on any tm_* call up to driver_restarts, then reported exhausted', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));

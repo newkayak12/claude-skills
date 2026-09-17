@@ -18,17 +18,18 @@ sequenceDiagram
   TM->>L: spawn  claude -p  (manager.md)
   TM-->>M: task_state = "s_run"
 
+  note over D,L: 두 세션 다 정상. 재현 결과 드라이버는 끝까지 돌아 산출물을 만든다<br/>(2026-09-17 재현: 같은 경로로 8/8 complete)
+  D->>D: 일하는 중 (수 분 소요)
+
   rect rgba(255,220,220,0.5)
-    note over D,L: 여기가 끊긴 지점 — 두 세션 다 떴고 stderr 비었고 오류 0건
-    D--xD: 일을 하지 않음 (파일 수정 0건)
-    L--xL: 일을 하지 않음
+    loop 26턴 동안 반복 — 여기가 진짜 끊긴 지점
+      M->>TM: tm_next
+      TM->>FS: runState(task) — size/shape/critique 세 노드만
+      TM-->>M: state "blocked" (s_run은 보지 않음)
+    end
+    note over M,TM: size S 태스크의 매니저 그래프는 size가 풀리는 순간 이미 settled다.<br/>일은 전부 task.s_run의 자식 런에 있는데 watcher 분기가 그걸 읽지 않았다.
   end
 
-  loop 26턴 동안 반복
-    M->>TM: tm_next / tm_status / tm_events
-    TM->>FS: 읽기
-    TM-->>M: 준비된 노드 없음
-  end
   M-->>U: 빈손 종료 (2/9, not-delivered, 2분, $1.29)
-
-  note right of D: 정상이라면 D가 해야 할 일:<br/>team_next → 구현 → team_submit<br/>→ 워크트리 커밋 → accept
+  note right of M: 스킬의 standing mandate:<br/>"blocked는 결과다 — 보고하고 멈춰라"<br/>main은 스킬대로 했다. 거짓 blocked가 원인.
+  note right of D: main이 나간 뒤에도 D는 계속 돌았다.<br/>벤치는 main이 끝나는 즉시 채점하므로<br/>파일 0건으로 기록됐다.

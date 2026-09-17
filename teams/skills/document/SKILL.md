@@ -38,10 +38,21 @@ tm_open({
   host_vendor, host_model, native_models
 })                                               -> task_id, ready: [size]
 fresh agent at size.briefing_path -> tm_submit({task_id, node_id: "size", payload})
-    task_state "s_run"  -> size S: tm_open already opened the single run and is driving it
-                           with its own headless session; poll tm_next until it reports
+    queued: true        -> the ordinary reply. tm_open spawned the TaskLeader, and a mutating
+                           call from any process but the leader is queued for it - your sizing
+                           is applied on the leader's next tm_next, not lost. You do NOT get
+                           task_state or a verdict back, and there is nothing to wait for here
+    task_state "s_run"  -> only when no leader is running: size S, and this reply already
+                           carries tm_next's own fields for the single run
     absent              -> a task of runs: ../orchestrate/references/manager.md
 ```
+
+After this you watch; you never drive. `tm_next` from this session answers `driven_by: "leader"`
+with no `ready[]` — that is the design, not a stall. Poll `tm_next` or `tm_status` until `state`
+is `complete` or `blocked`, then relay the report. For a size-S task that `state` is **the single
+run's own**, not the task's three settled manager nodes: a size-S task's manager graph finishes
+the moment `size` resolves, and reading it instead of the run is what once had a watcher call a
+live run `blocked` and stop two minutes in.
 
 `size` measures build units and ownership boundaries, so a monorepo with one test script
 sizes S on its own. When the user said the work must be split — "패키지별로 나눠서", "one
