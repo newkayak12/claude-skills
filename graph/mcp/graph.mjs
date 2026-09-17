@@ -418,7 +418,7 @@ export function retrySubgoal(run, subgoalId, feedback) {
   // gate stayed `failed`, the report stayed behind it, and the run wedged with the fix in
   // place. Open a fresh goal gate over the live subgoal gates, carrying the rejection as
   // feedback, and move the report behind it. The old gate stays, as every failed attempt does.
-  // (Ported from graph-beta 0.6.0.)
+  // (Ported from teams 0.6.0.)
   for (const old of run.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id === null && n.state === 'failed' && !n.final && n.deps.includes(gate))) {
     const fresh = `gate:goal:${nextIndex(run, 'gate:goal')}`;
     const fb = [old.result && old.result.reason, ...((old.result && old.result.gaps) || [])].filter(Boolean).join('\n- ');
