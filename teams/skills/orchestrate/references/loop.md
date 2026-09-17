@@ -101,7 +101,7 @@ One fresh agent per self node — a new context, never this conversation — at 
 
 ```
 Working directory: <cwd>. Read <briefing_path> in full and do only what it asks.
-Do not read the conversation, and nothing under .harness-run/ the briefing does not name.
+Do not read the conversation, and nothing under .teams_output/ the briefing does not name.
 Your final message must be exactly the JSON the briefing's "Return JSON" line specifies — nothing else.
 ```
 

@@ -6,7 +6,7 @@ import { existsSync, readFileSync, writeFileSync, rmSync, rmdirSync, readdirSync
 import { join, parse, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
-const GITIGNORE_LINES = new Set(['.harness-run/', '.claude/.harness-markers/']);
+const GITIGNORE_LINES = new Set(['.teams_output/', '.claude/.harness-markers/']);
 
 function fail(m) { process.stderr.write(`remove.mjs: ${m}\n`); process.exit(2); }
 function parseArgs() {
@@ -100,8 +100,8 @@ function main() {
   actions.markers = existsSync(join(claudeDir, 'harness-gate.json')) ? 'kept-harness' : removeKnownPath(join(claudeDir, '.harness-markers'));
   if (args.purgeConventions === true) actions.conventions = removeKnownPath(join(claudeDir, 'conventions'));
   else { actions.conventions = existsSync(join(claudeDir, 'conventions')) ? 'kept' : 'absent'; if (actions.conventions === 'kept') notes.push('conventions preserved (shared with harness; projects own them) - purgeConventions=true removes them'); }
-  if (args.purgeRuns === true) actions.runs = removeKnownPath(join(projectDir, '.harness-run'));
-  else actions.runs = existsSync(join(projectDir, '.harness-run')) ? 'kept' : 'absent';
+  if (args.purgeRuns === true) actions.runs = removeKnownPath(join(projectDir, '.teams_output'));
+  else actions.runs = existsSync(join(projectDir, '.teams_output')) ? 'kept' : 'absent';
   if (args.purgeTasks === true) actions.tasks = purgeTasks(projectDir, notes);
   else actions.tasks = 'kept';
   const cleanedDirs = [];

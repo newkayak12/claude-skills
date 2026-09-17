@@ -560,7 +560,7 @@ function ensureWorktree(task, name, base = 'HEAD') {
 // accepted child. This writes to git, not to the child's run file - the run file stays the
 // broker's alone. The run's own state directory is left out of the commit - by unstaging it
 // after the add, not by a negative pathspec: when the project's .gitignore already lists
-// .harness-run/ (the usual case), git refuses `:!.harness-run` as "a path that is ignored" and
+// .teams_output/ (the usual case), git refuses `:!.teams_output` as "a path that is ignored" and
 // exits 1 before staging anything. The first e2e task to reach a fold failed exactly there,
 // with both children accepted and nothing committed.
 function commitWorktree(cwd, message) {
@@ -570,7 +570,7 @@ function commitWorktree(cwd, message) {
   // every worktree writes its own marker with its own timestamp (engage.mjs), so committing it
   // would make every package branch differ in that one file and every integrate merge conflict
   // on it. install.mjs gitignores it in a real project; a project without it must not break.
-  const drop = git(cwd, ['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', '.harness-run', '.claude/.harness-markers']);
+  const drop = git(cwd, ['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', '.teams_output', '.claude/.harness-markers']);
   if (!drop.ok) return { ok: false, reason: drop.err || 'could not leave the harness state out of the commit' };
   const staged = git(cwd, ['diff', '--cached', '--quiet']);
   if (staged.ok) return { ok: true, commit: null }; // nothing to commit is not an error

@@ -53,11 +53,11 @@ test('second run reports absent everywhere', () => {
 test('purgeConventions and purgeRuns are opt-in', () => {
   const { dir, tasks, cleanup } = installed();
   try {
-    mkdirSync(join(dir, '.harness-run', 'broker-beta'), { recursive: true });
+    mkdirSync(join(dir, '.teams_output', 'broker'), { recursive: true });
     const { report } = run(dir, tasks, { purgeConventions: true, purgeRuns: true });
     assert.equal(report.actions.conventions, 'removed');
     assert.equal(report.actions.runs, 'removed');
-    assert.equal(existsSync(join(dir, '.harness-run')), false);
+    assert.equal(existsSync(join(dir, '.teams_output')), false);
   } finally { cleanup(); }
 });
 

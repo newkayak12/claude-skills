@@ -22,7 +22,7 @@ export const TEAM_DEFAULTS = Object.freeze({
   driver_restarts: 2,
   vendor: 'auto',
   allocation: 'ordered',
-  docs_dir: join('.harness-run', 'team'),
+  docs_dir: join('.teams_output', 'team'),
 });
 
 // One validator per key. A value that fails is ignored (the lower layer's value stays) and

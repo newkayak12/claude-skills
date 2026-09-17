@@ -143,7 +143,7 @@ work itself.
 ## What you do
 
 Nothing during a `team_run` — it blocks. The full history is in
-`.harness-run/broker-beta/` (one run) and `~/.harness/tasks/<task_id>/` (a task) if you want it.
+`.teams_output/broker/` (one run) and `~/.harness/tasks/<task_id>/` (a task) if you want it.
 
 ## Related skills
 

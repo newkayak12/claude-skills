@@ -270,7 +270,7 @@ branches and an integration branch. The plain session left an uncommitted workin
 
 Engine defects this round found, none visible to the unit suite: host-model variant refused
 (0.6.1); tier default vs declared ids → `vendor-failure` with zero failed nodes (0.6.2); fold
-`git add` with `':!.harness-run'` exits 1 when the project ignores it (0.6.3); `tm_retry` with a
+`git add` with `':!.teams_output'` exits 1 when the project ignores it (0.6.3); `tm_retry` with a
 package id not in the shape created a phantom package (0.6.3); a failed `integrate` was never
 reopened after the package it blamed was retried (0.6.3). Stable shares the first.
 

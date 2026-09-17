@@ -1043,7 +1043,7 @@ const PLANNING_QA_MIX = {
   goal: 'G',
   acceptance: ['A'],
   subgoals: [
-    { id: 'P1', kind: 'planning', title: 'PRD for priority mode', acceptance: ['names the problem', 'states the target user'], files: ['.harness-run/team/E-deadbeef/10-prd.md'], deps: [] },
+    { id: 'P1', kind: 'planning', title: 'PRD for priority mode', acceptance: ['names the problem', 'states the target user'], files: ['.teams_output/team/E-deadbeef/10-prd.md'], deps: [] },
     { id: 'Q1', kind: 'qa', title: 'QA the priority mode', acceptance: ['covers ordering under load'], files: ['test/qa/priority.md'], deps: ['P1'] },
   ],
 };
@@ -1437,7 +1437,7 @@ test('a vendor that returns stage_ok:false fails the node', async () => {
 // permanently: team_next offered nothing and team_run refused the node as running.
 
 function forceRunning(cwd, runId, nodeId, ageMs) {
-  const p = join(cwd, '.harness-run', 'broker-beta', 'runs', `${runId}.json`);
+  const p = join(cwd, '.teams_output', 'broker', 'runs', `${runId}.json`);
   const run = JSON.parse(readFileSync(p, 'utf8'));
   const n = run.nodes.find((x) => x.node_id === nodeId);
   n.state = 'running';
@@ -1753,7 +1753,7 @@ test('a stale lock left by a killed broker does not wedge the run', async () => 
   try {
     const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'self' });
     // a lock older than the stale window, as a crashed process would leave
-    const lock = join(cwd, '.harness-run', 'broker-beta', 'runs', `${run_id}.json.lock`);
+    const lock = join(cwd, '.teams_output', 'broker', 'runs', `${run_id}.json.lock`);
     mkdirSync(lock, { recursive: true });
     const past = new Date(Date.now() - 5 * 60 * 1000);
     utimesSync(lock, past, past);

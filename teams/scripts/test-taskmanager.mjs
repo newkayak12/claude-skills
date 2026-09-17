@@ -66,9 +66,9 @@ function repo() {
   git('config', 'user.name', 't');
   writeFileSync(join(dir, 'a.txt'), 'x\n');
   writeFileSync(join(dir, 'b.txt'), 'y\n');
-  // Real projects ignore the run state directory. With it ignored, `git add -- . ':!.harness-run'`
+  // Real projects ignore the run state directory. With it ignored, `git add -- . ':!.teams_output'`
   // exits 1 ("paths are ignored") - the fold that the first e2e task reached failed on exactly this.
-  writeFileSync(join(dir, '.gitignore'), '.harness-run/\n');
+  writeFileSync(join(dir, '.gitignore'), '.teams_output/\n');
   git('add', '-A');
   git('commit', '-qm', 'init');
   return dir;
@@ -166,7 +166,7 @@ test('tm_open seeds size -> shape -> critique under the tasks root, not under th
     assert.deepEqual(open.ready.map((n) => n.node_id), ['size']);
     assert.equal(open.state, 'running');
     assert.ok(existsSync(join(root, task_id, 'task.json')));
-    assert.ok(!existsSync(join(cwd, '.harness-run')), 'the project holds no manager state');
+    assert.ok(!existsSync(join(cwd, '.teams_output')), 'the project holds no manager state');
     const prompt = readFileSync(open.ready[0].briefing_path, 'utf8');
     assert.match(prompt, /# size node size \(task manager\)/);
     assert.match(prompt, /The default is S/);
@@ -324,13 +324,13 @@ test('a parent with two dependent children runs to report; the second child sees
     let nx = await tm.call('tm_next', { task_id });
     await completeChild(g, nx.children[0]);
     // Read-only over children: folding the child leaves its run file byte-for-byte as the broker wrote it.
-    const childPath = join(nx.children[0].cwd, '.harness-run', 'broker-beta', 'runs', `${nx.children[0].run_id}.json`);
+    const childPath = join(nx.children[0].cwd, '.teams_output', 'broker', 'runs', `${nx.children[0].run_id}.json`);
     const beforeFold = readFileSync(childPath, 'utf8');
     let v = await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
     assert.equal(v.state, 'done', JSON.stringify(v));
     assert.equal(readFileSync(childPath, 'utf8'), beforeFold, 'the manager never writes a child run file');
     assert.match(v.child.commit, /^[0-9a-f]{40}$/, 'an accepted child\'s work is committed on its package branch');
-    assert.equal(spawnSync('git', ['status', '--porcelain', '--', '.', ':!.harness-run'], { cwd: nx.children[0].cwd, encoding: 'utf8' }).stdout.trim(), '', 'the worktree is clean after the fold');
+    assert.equal(spawnSync('git', ['status', '--porcelain', '--', '.', ':!.teams_output'], { cwd: nx.children[0].cwd, encoding: 'utf8' }).stdout.trim(), '', 'the worktree is clean after the fold');
     assert.equal(v.accept, true);
     assert.equal(v.match_pct, 95);
     assert.equal(v.child.run_id, nx.children[0].run_id);
