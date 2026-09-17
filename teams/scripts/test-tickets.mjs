@@ -322,6 +322,30 @@ test('epicBoardRows renders one row per develop package with role "develop" when
   assert.deepEqual(rows[0], { key: 'E-aaaaaaaa/P1', id: 'P1', title: 'module a', role: 'develop', state: 'DONE', tasks: null, last_verdict: 'accept 91', reporter: 'shape' });
 });
 
+// v0.12.1 Task 1: fileDefects (taskmanager.mjs) sets p.reporter on a filed defect STORY instead
+// of p.repair - epicBoardRows must expose it (and keep falling back to 'repair'/'shape' for
+// packages fileDefects never touched, the byte-for-byte compat case).
+test('epicBoardRows exposes p.reporter for a filed defect STORY (\'qa\'/\'you\'), and still falls back to \'repair\'/\'shape\' otherwise', () => {
+  const t = baseTask(
+    [
+      dispatchNode('P1', { state: 'done', result: {} }), acceptNode('P1', { state: 'done', result: { accept: true, match_pct: 91 } }),
+      dispatchNode('R1', { state: 'done', result: {} }), acceptNode('R1', { state: 'done', result: { accept: true, match_pct: 90 } }),
+      dispatchNode('D1', { state: 'done', result: {} }), acceptNode('D1', { state: 'done', result: { accept: true, match_pct: 92 } }),
+      dispatchNode('D2', { state: 'done', result: {} }), acceptNode('D2', { state: 'done', result: { accept: true, match_pct: 88 } }),
+    ],
+    {
+      spec: { packages: [
+        { id: 'P1', title: 'module a' },
+        { id: 'R1', title: 'repair: integration 1', repair: true },
+        { id: 'D1', title: 'checkout crashes', reporter: 'qa' },
+        { id: 'D2', title: 'add a missing edge case', reporter: 'you' },
+      ] },
+    },
+  );
+  const rows = epicBoardRows(t);
+  assert.deepEqual(rows.map((r) => [r.id, r.reporter]), [['P1', 'shape'], ['R1', 'repair'], ['D1', 'qa'], ['D2', 'you']]);
+});
+
 // v0.12.0 wires planning/qa into the EPIC flow as phase-Teams: role becomes p.phase || 'develop',
 // and epicBoardRows now also renders a row for task.planning_pkg (first, ahead of shape) and
 // task.qa_pkg (last, after every develop package) when those fields are present.

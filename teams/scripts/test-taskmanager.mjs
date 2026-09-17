@@ -151,11 +151,11 @@ async function withTask(fn, extra) {
   }
 }
 
-test('serves the MCP handshake and the nine manager tools', async () => {
+test('serves the MCP handshake and the ten manager tools', async () => {
   const c = await new Client(TM).init();
   try {
     const r = await c.send('tools/list', {});
-    assert.deepEqual(r.result.tools.map((t) => t.name).sort(), ['tm_board', 'tm_docs', 'tm_events', 'tm_next', 'tm_open', 'tm_retry', 'tm_status', 'tm_submit', 'tm_ticket']);
+    assert.deepEqual(r.result.tools.map((t) => t.name).sort(), ['tm_board', 'tm_docs', 'tm_events', 'tm_file', 'tm_next', 'tm_open', 'tm_retry', 'tm_status', 'tm_submit', 'tm_ticket']);
   } finally {
     c.close();
   }
@@ -633,6 +633,169 @@ test('roles.qa inserts a QA phase-Team between integrate and gate:goal, reusing 
     const after = await tm.call('tm_next', { task_id });
     assert.deepEqual(after.ready.map((n) => n.node_id), ['gate:goal:1']);
   }, { roles: { qa: true } });
+});
+
+// Drives one QA phase-Team child from plan to report through the graph broker, exactly as
+// completeChild does for an ordinary develop package. Takes the QA gate's own payload so a test
+// can hand it defects (or not).
+async function completeQaChild(g, child, gatePayload) {
+  const { cwd, run_id } = child;
+  const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
+  await sub('plan', { handoff: 'p', flow: 'qa', size: 'S' });
+  await sub('setgoal', { spec: { goal: 'QA', acceptance: ['no regressions'], subgoals: [{ id: 'Q1', title: 'run cases', acceptance: ['cases run'], deps: [] }] } });
+  await sub('critique', { sound: true });
+  await sub('cases:Q1:1', { changed_files: [], handoff: 'cases written' });
+  await sub('execute:Q1:1', { verified: true, handoff: 'cases run' });
+  await sub('gate:Q1:1', { accept: true, match_pct: 95 });
+  await sub('gate:goal:1', gatePayload);
+  const nx = await g.call('team_next', { run_id, cwd });
+  assert.deepEqual(nx.ready.map((n) => n.node_id), ['report']);
+  await sub('report', { handoff: 'QA report' });
+}
+
+// Drives a filed defect's own package to report, like completeChild - but a filed defect
+// package has no declared deps (fileDefects resolves any it names to an already-done accept, but
+// none are given here) so its worktree branches from the project's own HEAD, before P1/P2's
+// a.txt edits landed there. Touching a.txt the way completeChild does would make a REAL merge
+// conflict once the fresh integrate re-merges every package from HEAD (prepareIntegration always
+// does, repair packages aside) - so this touches its own file instead.
+async function completeDefectChild(g, child, filename) {
+  const { cwd, run_id } = child;
+  const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
+  await sub('plan', { handoff: 'p', flow: 'develop', size: 'S' });
+  await sub('setgoal', { spec: CHILD_SPEC });
+  await sub('critique', { sound: true });
+  writeFileSync(join(cwd, filename), `fixed by ${child.package_id}\n`);
+  await sub('implement:U1:1', { changed_files: [filename], handoff: 'fixed' });
+  await sub('test:U1:1', { verified: true });
+  await sub('gate:U1:1', { accept: true, match_pct: 95 });
+  await sub('gate:goal:1', { accept: true, match_pct: 95 });
+  await g.call('team_next', { run_id, cwd });
+  await sub('report', { handoff: 'defect fix report' });
+}
+
+test('a QA-found defect files a develop STORY and reroutes gate:goal to a fresh integrate; a second defect beyond qa_rounds is recorded, not filed (§5b, decision #2)', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+
+    let nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children.length, 1);
+    const qa1 = nx.children[0];
+    assert.equal(qa1.package_id, 'QA');
+    await completeQaChild(g, qa1, { accept: true, match_pct: 95 });
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:QA:1' });
+
+    const accepted1 = await tm.call('tm_submit', { task_id, node_id: 'accept:QA:1', payload: ok({
+      accept: true, match_pct: 95,
+      defects: [{ title: 'checkout crashes on empty cart', touches: ['d.txt'], deps: [], evidence: 'run checkout with 0 items -> 500', severity: 'high' }],
+    }) });
+    assert.equal(accepted1.state, 'done', JSON.stringify(accepted1));
+
+    let task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.deepEqual(task.spec.packages.map((p) => p.id), ['P1', 'P2', 'D1']);
+    const d1 = task.spec.packages.find((p) => p.id === 'D1');
+    assert.equal(d1.reporter, 'qa');
+    assert.equal(d1.title, 'checkout crashes on empty cart');
+    let goal = task.nodes.find((n) => n.node_id === 'gate:goal:1');
+    assert.deepEqual(goal.deps, ['integrate:2'], 'a fresh integrate becomes gate:goal\'s dep the moment the defect is filed');
+    const integrate2 = task.nodes.find((n) => n.node_id === 'integrate:2');
+    assert.deepEqual(integrate2.deps, ['accept:D1:1']);
+    assert.equal(integrate2.supersedes, 'accept:QA:1');
+    assert.deepEqual(task.nodes.find((n) => n.node_id === 'report').after, ['gate:goal:1'], 'report stays behind the gate');
+
+    // Drive D1 (an ordinary develop package - its own worktree, not the integration tree) and the
+    // fresh integrate to done.
+    nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children.length, 1);
+    assert.equal(nx.children[0].package_id, 'D1');
+    await completeDefectChild(g, nx.children[0], 'd.txt');
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:D1:1' });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:D1:1', payload: ok({ accept: true, match_pct: 92 }) });
+
+    nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['integrate:2']);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:2', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+
+    // roles.qa on: the integrate that just finished has nothing wired to it for QA yet, so a
+    // fresh QA round opens automatically and gate:goal reroutes there - "dispatch -> accept ->
+    // integrate -> qa" closing the loop.
+    task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    goal = task.nodes.find((n) => n.node_id === 'gate:goal:1');
+    assert.deepEqual(goal.deps, ['accept:QA:2'], 'a fresh QA round re-verifies the fix before the goal gate');
+    nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children.length, 1);
+    const qa2 = nx.children[0];
+    assert.equal(qa2.package_id, 'QA');
+    await completeQaChild(g, qa2, { accept: true, match_pct: 95 });
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:QA:2' });
+
+    // qa_rounds: 1 - this task has now run QA twice (accept:QA:1 and this one), which exceeds the
+    // cap, so a second defect is recorded rather than filed as D2.
+    const accepted2 = await tm.call('tm_submit', { task_id, node_id: 'accept:QA:2', payload: ok({
+      accept: true, match_pct: 95,
+      defects: [{ title: 'second defect', touches: [], deps: [], evidence: 'e2', severity: 'low' }],
+    }) });
+    assert.equal(accepted2.state, 'done', JSON.stringify(accepted2));
+
+    const final = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.deepEqual(final.spec.packages.map((p) => p.id), ['P1', 'P2', 'D1'], 'qa_rounds:1 caps the loop - no D2 is filed');
+    assert.deepEqual(final.unresolved_defects, [{ title: 'second defect', touches: [], deps: [], evidence: 'e2', severity: 'low', round: 2 }]);
+    assert.deepEqual(final.nodes.find((n) => n.node_id === 'gate:goal:1').deps, ['accept:QA:2'], 'unaffected by the cap - already wired there');
+
+    const after = await tm.call('tm_next', { task_id });
+    assert.deepEqual(after.ready.map((n) => n.node_id), ['gate:goal:1'], 'the EPIC proceeds once the capped QA round is done, defects or not');
+  }, { roles: { qa: true }, qa_rounds: 1 });
+});
+
+test('tm_file lets a user file a STORY directly, reporter: "you", never checked against qa_rounds (§5b, C-9)', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    let nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['gate:goal:1']);
+
+    const filed = await tm.call('tm_file', { task_id, stories: [
+      { title: 'add a missing edge case', touches: ['b.txt'], deps: [], evidence: 'manual repro', severity: 'medium' },
+    ] });
+    assert.deepEqual(filed.filed, ['D1']);
+    assert.equal(filed.integrate, 'integrate:2');
+
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const d1 = task.spec.packages.find((p) => p.id === 'D1');
+    assert.equal(d1.reporter, 'you');
+    assert.deepEqual(task.nodes.find((n) => n.node_id === 'gate:goal:1').deps, ['integrate:2']);
+
+    nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children.length, 1);
+    assert.equal(nx.children[0].package_id, 'D1');
+  });
+});
+
+test('tm_file refuses before the task has a shape, and refuses an empty stories[]', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    const early = await tm.call('tm_file', { task_id, stories: [{ title: 'x' }] });
+    assert.match(early.error, /no shape yet/);
+    await throughCritique(tm, task_id);
+    const empty = await tm.call('tm_file', { task_id, stories: [] });
+    assert.match(empty.error, /at least one story/);
+  });
+});
+
+test('tm_file joins the board.jsonl tools: filing a STORY logs its ticket moving to BACKLOG/READY', async () => {
+  await withTask(async ({ tm, g, task_id, root }) => {
+    await toIntegrate(tm, g, task_id);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const boardPath = join(root, task_id, 'board.jsonl');
+    const before = readFileSync(boardPath, 'utf8').trim().split('\n').length;
+
+    await tm.call('tm_file', { task_id, stories: [{ title: 'add a missing edge case', touches: [], deps: [], evidence: 'e', severity: 'low' }] });
+
+    const epicKey = `E-${task_id.slice(0, 8)}`;
+    const events = readFileSync(boardPath, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.ok(events.length > before, 'tm_file logged at least one new board line');
+    assert.ok(events.some((e) => e.key === `${epicKey}/D1` && e.from === null && e.to === 'READY'), JSON.stringify(events.slice(before)));
+  });
 });
 
 test('max_parallel_teams:1 opens only the lowest-priority ready dispatch; the rest stay pending', async () => {

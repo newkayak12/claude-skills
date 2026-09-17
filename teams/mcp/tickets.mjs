@@ -251,7 +251,11 @@ export function epicBoardRows(task) {
       state: storyTicketState(task, id),
       tasks: storyTaskProgress(task, id),
       last_verdict: last,
-      reporter: p.repair ? 'repair' : 'shape',
+      // A filed defect STORY (fileDefects, taskmanager.mjs - QA-found or tm_file) carries its own
+      // reporter ('qa'/'you'/'planning-audit' once Task 2 lands); everything else is either a
+      // repair package (its worktree IS the integration tree, never filed as a STORY) or
+      // shape's own original scope.
+      reporter: p.reporter || (p.repair ? 'repair' : 'shape'),
     };
   });
 }
