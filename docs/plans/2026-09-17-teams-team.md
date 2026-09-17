@@ -13,7 +13,7 @@ harness → graph → teams   (계보. graph는 harness + MULTI_AI_VENDOR, teams
   보여줄 뿐, 지금 코드에서 teams가 graph 위에서 도는 게 아니다. `graph-beta` → `teams` 리네임
   (`graph_*` 도구도 `team_*`로)과 함께 셋은 **완전히 독립된 형제 플러그인**이 됐다 — teams는
   더 이상 "graph의 beta 라인"이 아니고, 자기 엔진(`teams/mcp/graph.mjs`)·자기 도구 이름공간
-  (`team_*`)·자기 실행 경로(`.harness-run/broker-beta/`, `~/.harness/tasks/`)를 그대로 갖되 graph를
+  (`team_*`)·자기 실행 경로(`.teams_output/broker/`, `~/.harness/tasks/`)를 그대로 갖되 graph를
   런타임에 불러오거나 의존하지 않는다. 설치 시 상호배제도 이 독립성 위에서 다시 봐야 한다(§14
   결정 기록 참고).
 - **graph 엔진은 그대로 둔다.** 노드 체인, 라우팅, 게이트, 리페어 전부 손대지 않는다 — teams는
@@ -316,10 +316,10 @@ main 세션·TaskLeader·TeamLeader·worker 어느 것도 메모리에만 있는
 | 레벨 | 파일 | 쓰는 시점 | 재개 방법 |
 |---|---|---|---|
 | worker(노드) | 자식 run 파일의 노드 항목 + `detail_path` handoff | `team_submit` 직후, 다음 `team_next` 전 | 현행. done 노드는 다시 안 돈다 |
-| TeamLeader(자식 run) | `.harness-run/broker-beta/<run_id>.json` (워크트리 안) | 노드 전이마다 | 현행 v0.9: driver 사망 → 같은 run_id로 respawn, "resume, not redo" |
+| TeamLeader(자식 run) | `.teams_output/broker/<run_id>.json` (워크트리 안) | 노드 전이마다 | 현행 v0.9: driver 사망 → 같은 run_id로 respawn, "resume, not redo" |
 | TaskLeader(EPIC) | `~/.harness/tasks/<task_id>/task.json` | 매니저 노드 전이, dispatch, fold, retry마다 | **신설**: leader driver 사망 → `tm_next`가 같은 task_id로 respawn. main이 죽어도 EPIC은 산다 |
 | 티켓 이벤트 | `~/.harness/tasks/<task_id>/board.jsonl` | task.json 쓰기와 **같은 전이에서**, task.json 다음에 append | 읽기 근거 아님. 유실돼도 `tm_board`는 task.json에서 파생 — 이력만 빈다 |
-| Phase md (§7c) | `.harness-run/team/<E>/…md` | board.jsonl 다음, 같은 전이에서 렌더 | 읽기 근거 아님. `tm_docs({rebuild})`로 전부 재생성 |
+| Phase md (§7c) | `.teams_output/team/<E>/…md` | board.jsonl 다음, 같은 전이에서 렌더 | 읽기 근거 아님. `tm_docs({rebuild})`로 전부 재생성 |
 | human 노드 | 노드 항목 `{state: waiting_human \| skipped \| done, by, default_applied, answer}` | ready 시점(대기·SKIP 기록), `tm_answer` 시점 | driver가 종료된 상태에서 답이 와도 `tm_next`가 respawn |
 | sub-EPIC | 자식 task.json에 `parent`, 부모 task.json의 STORY에 `child_task_id` | 개설 시 양쪽 | 부모 재개 시 `child_task_id`로 자식 `tm_status` 읽기. 자식은 자기 driver로 따로 재개 |
 | 워크트리·브랜치 | git (`harness/<task8>/<Pn>`) + task.json의 `child.cwd/branch` | 개설·fold 커밋 시 | 현행. 워크트리는 attempt 간 유지 |
@@ -371,7 +371,7 @@ main 세션·TaskLeader·TeamLeader·worker 어느 것도 메모리에만 있는
   ({task_id, rebuild: true})`가 JSON에서 전부 다시 만든다.
 - 예외 하나: **노드가 직접 쓴 산출물**(PRD, 케이스 명세, report 노드의 본문)은 렌더가 아니라
   원문이다. md는 그것을 **링크·인용**하고 다듬지 않는다(verbatim 규칙).
-- 위치: 기본 프로젝트 안 `.harness-run/team/<E-task8>/` (gitignore). `team.json.docs_dir`로
+- 위치: 기본 프로젝트 안 `.teams_output/team/<E-task8>/` (gitignore). `team.json.docs_dir`로
   `docs/epics/`처럼 커밋되는 경로로 돌릴 수 있다. PRD 본문(`10-prd.md`)도 이 디렉터리 안에 있다 —
   planning STORY의 changed file이 아니라 위 예외(노드가 직접 쓴 산출물, verbatim)로 다루는 문서이고,
   `docs_dir`을 옮기지 않으면 EPIC 정리 후 git 이력에 남지 않는다.
@@ -379,7 +379,7 @@ main 세션·TaskLeader·TeamLeader·worker 어느 것도 메모리에만 있는
 ### 파일 구성
 
 ```
-.harness-run/team/E-a1b2c3d4/
+.teams_output/team/E-a1b2c3d4/
   INDEX.md              보드 스냅샷 — 전이마다 다시 렌더. 아래 파일들로 링크
   00-request.md         사용자 요청 원문, size verdict, 핀된 플래그, team.json 스냅샷
   10-planning.md        planning Team 요약 + PRD 링크 + 물었거나 SKIP한 질문과 적용된 default
@@ -491,7 +491,7 @@ driver)은 위 표의 결정 4개를 문서에 박은 뒤. v0.14(sub-EPIC)는 v0
 | `.claude/team.json` | user | **프로젝트 기본값 — `tm_open`이 인자보다 먼저 읽는다.** 이것이 "강제"의 실체다: `{interactive, human_gates, max_parallel_teams, max_depth, roles: {planning, develop, qa}, leader_driver, s_driver}` |
 | `.claude/conventions/**` | user | harness와 **같은 디렉터리** — 이미 `conventions.mjs`가 읽는다. 없으면 harness 템플릿 복사, 있으면 유지 |
 | `CLAUDE.md` 펜스 블록 `<!-- teams:team -->` | user | "쓰기 전에 `tm_open`", 보드 명령 목록 3줄 |
-| `.gitignore` | user | `.harness-run/` |
+| `.gitignore` | user | `.teams_output/` |
 | `.claude/hooks/*` | — | **쓰지 않는다.** 훅은 플러그인 `hooks.json`이 이미 등록. 임베딩 모드는 이 라운드에서 제공하지 않음(엔진이 MCP 서버라 harness식 임베딩과 모양이 다름 — 명시적으로 미지원 선언) |
 
 검증(스킬 쪽 판단): node 18+, git 저장소, **§13 공존 검사**, 도구 발견 — `team_*` 6 + `tm_*` 기존 5
@@ -502,7 +502,7 @@ plugin-owned 파일이 없으므로 `team.json`에 새 키만 추가(기존 값 
 
 - 지운다: `teams-dispatch.json`, `team.json`, CLAUDE.md 블록, `.gitignore` 줄.
 - 남긴다: `.claude/conventions/` (harness와 공유, `purgeConventions` 명시 시만), **`~/.harness/tasks/`**
-  (이력. `purgeTasks: true` + 확인 시만, 그리고 **살아 있는 driver pid가 있으면 거부**), `.harness-run/`
+  (이력. `purgeTasks: true` + 확인 시만, 그리고 **살아 있는 driver pid가 있으면 거부**), `.teams_output/`
   (프로젝트 안 run 이력, `purgeRuns` 별도).
 - 멱등: 두 번째 실행은 `absent`.
 
@@ -602,14 +602,14 @@ harness `patch.mjs`와 같은 규칙: `x.y.Z`만, plugin.json + marketplace 항�
    "checks blame" 판정을 재사용해 TaskLeader가 package_id를 고르고 `tm_retry({package_id})`, 못 고르면
    seam → `repair`. 결정 필요: blame 판정을 qa gate 노드가 하나(payload에 `blame: [Pn]`), TaskLeader의
    별도 노드가 하나.
-3. **기획 산출물의 자리와 형식 (결정 2026-09-17).** PRD 본문은 `.harness-run/team/E-<task8>/10-prd.md` —
+3. **기획 산출물의 자리와 형식 (결정 2026-09-17).** PRD 본문은 `.teams_output/team/E-<task8>/10-prd.md` —
    planning Team의 draft→revise→gate 체인이 직접 쓴 원문이며, §7c의 verbatim 규칙(노드가 직접 쓴
    산출물은 렌더가 아니라 원문) 적용 대상이다. 템플릿은 `pm/skills/prd-development/template.md`
    — 실재하는 10절 fill-in 스켈레톤(Executive Summary, Problem Statement, Target Users & Personas,
    Strategic Context, Solution Overview, Success Metrics, User Stories & Requirements, Out of
    Scope, Dependencies & Risks, Open Questions). 같은 플러그인의 `user-story-*` 템플릿은 PRD가
    아니므로 대체하지 않는다. 커밋되는 자리에 남기고 싶으면 `team.json.docs_dir`로 팀 문서
-   디렉터리 전체를 옮긴다(§7c에 이미 있는 장치). 기본은 `.harness-run/` 아래이고 gitignore이므로,
+   디렉터리 전체를 옮긴다(§7c에 이미 있는 장치). 기본은 `.teams_output/` 아래이고 gitignore이므로,
    EPIC 정리 후 PRD는 git 이력에 남지 않는다. 기획 뒤 `gate:human:spec` 기본 켬은 결정 기록 #3 참조.
 
 ### B. 권한·정책 (사용자의 값)
@@ -643,7 +643,7 @@ harness `patch.mjs`와 같은 규칙: `x.y.Z`만, plugin.json + marketplace 항�
 | 6 | graph ↔ team 상호배제, install이 검사 | §13 그대로 |
 | 1 | **B안 + 보강**: 한 보드. 1순위 TaskLeader의 프롬프트 분해·분배 → 기획이 정리·기능 분할 → shape가 소유권으로 묶어 개발 → 통합 → QA → **기획 크로스 검수** → goal gate. Team 간 선후 있음 | §2 EPIC 흐름, §3 `planning-audit`, §5 `implements[]`, 7c `65-audit.md` |
 | 5·7·8·C | 애매 → 제안한 기본값으로 진행, 실측 뒤 재론 | — |
-| 3b | 기획 산출물(PRD)의 자리·형식. 본문은 `.harness-run/team/E-<task8>/10-prd.md`(§7c verbatim, planning 체인이 직접 씀), 템플릿은 `pm/skills/prd-development/template.md`(10절 스켈레톤; 같은 플러그인의 `user-story-*`는 대체 아님). `team.json.docs_dir`로 커밋 경로로 이동 가능 — 기본은 gitignore라 EPIC 정리 후 git 이력에 안 남음 | §7c 파일 구성에 `10-prd.md`, §14 A.3 |
+| 3b | 기획 산출물(PRD)의 자리·형식. 본문은 `.teams_output/team/E-<task8>/10-prd.md`(§7c verbatim, planning 체인이 직접 씀), 템플릿은 `pm/skills/prd-development/template.md`(10절 스켈레톤; 같은 플러그인의 `user-story-*`는 대체 아님). `team.json.docs_dir`로 커밋 경로로 이동 가능 — 기본은 gitignore라 EPIC 정리 후 git 이력에 안 남음 | §7c 파일 구성에 `10-prd.md`, §14 A.3 |
 | 6b | **리네임 + 독립화** (0.10.2로 출시). plugin `graph-beta` → `teams`, 도구 접두어 `graph_*` → `team_*`(`teams/mcp/broker.mjs`의 서버 이름도 `teams-engineering`). #6이 상호배제 근거로 든 "두 서버가 같은 `graph_*` 이름을 낸다"는 이제 사실이 아니다 — graph는 `graph-engineering`/`graph_*`를 그대로 쓰고, teams만 `teams-engineering`/`team_*`로 옮겨 갔다. harness·graph·teams 세 플러그인은 이제 서로의 코드를 참조하지 않는 독립된 형제다(§0 재서술) | §0 계보 재서술. **확인됨** (commit `0ff8a2f`): `teams/skills/install/install.mjs`에서 `findConflicts`가 제거되어 install-time 상호배제 검사가 더는 없다. `teams/scripts/test-install.mjs`에 graph 플러그인이 활성화되고 `graph-engineering` `.mcp.json` 항목이 있어도 install이 성공(status 0)함을 검증하는 테스트가 추가됐다 — 팀 리더는 이름만 바로잡는 대신 상호배제 자체를 걷어내는 쪽을 택했다. §13 표도 이에 맞춰 갱신 |
 | 추가 | **main 세션은 절대 TaskLeader가 아니다.** inline 옵션 셋(`leader_driver`/`s_driver`/`child_driver`) team 라인에서 제거·거부 | §6 재작성, 7b inbox 문구, entry 스킬 축소. **v0.10.0 완료**: `child_driver`/`s_driver`는 넘기면 `tm_open`이 에러(commit 20306ec, breaking); `leader_driver: "inline"`은 애초에 만들지 않고 대신 TaskLeader driver를 항상 spawn(commit 6ecd744) |
 
