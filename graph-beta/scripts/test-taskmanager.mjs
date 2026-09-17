@@ -151,11 +151,11 @@ async function withTask(fn, extra) {
   }
 }
 
-test('serves the MCP handshake and the five manager tools', async () => {
+test('serves the MCP handshake and the six manager tools', async () => {
   const c = await new Client(TM).init();
   try {
     const r = await c.send('tools/list', {});
-    assert.deepEqual(r.result.tools.map((t) => t.name).sort(), ['tm_next', 'tm_open', 'tm_retry', 'tm_status', 'tm_submit']);
+    assert.deepEqual(r.result.tools.map((t) => t.name).sort(), ['tm_events', 'tm_next', 'tm_open', 'tm_retry', 'tm_status', 'tm_submit']);
   } finally {
     c.close();
   }
@@ -384,7 +384,9 @@ test('tm_open({goal_threshold: 80}) lets the same 85% accept', async () => {
 test('tm_open({goal_threshold}) is stored on the task and reaches every child through child_opts', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root }).init();
+  // No HARNESS_CHILD_DRIVER override here: without HARNESS_TEST_NO_LEADER, tm_open would try to
+  // spawn a real `claude` process for the TaskLeader the moment it is called.
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_LEADER: '1' }).init();
   try {
     const open = await tm.call('tm_open', { request: 'r', cwd, vendor: 'self', goal_threshold: 77 });
     const task = JSON.parse(readFileSync(join(root, open.task_id, 'task.json'), 'utf8'));
@@ -730,7 +732,9 @@ test('kill and restart the manager: the tree resumes from files and no running d
 test('a project that is not a git repository fails the dispatch with the reason, not a hang', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'tm-nogit-'));
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root }).init();
+  // No HARNESS_CHILD_DRIVER override here: without HARNESS_TEST_NO_LEADER, tm_open would try to
+  // spawn a real `claude` process for the TaskLeader the moment it is called.
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_LEADER: '1' }).init();
   try {
     const { task_id } = await tm.call('tm_open', { request: 'r', cwd });
     await throughCritique(tm, task_id);
@@ -750,7 +754,9 @@ test('a project that is not a git repository fails the dispatch with the reason,
 test('a stage briefing carries its method, and the contract outranks what the method asks for', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root }).init();
+  // No HARNESS_CHILD_DRIVER override here: without HARNESS_TEST_NO_LEADER, tm_open would try to
+  // spawn a real `claude` process for the TaskLeader the moment it is called.
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_LEADER: '1' }).init();
   try {
     const open = await tm.call('tm_open', { request: 'big request', cwd, vendor: 'self', size: 'L' });
     // size is a measurement: it gets no method at all, and reaching for one is its failure mode.
@@ -775,7 +781,9 @@ test('a stage briefing carries its method, and the contract outranks what the me
 test('the shape contract asks each package for optional skills, and says why shape is the one to name them', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root }).init();
+  // No HARNESS_CHILD_DRIVER override here: without HARNESS_TEST_NO_LEADER, tm_open would try to
+  // spawn a real `claude` process for the TaskLeader the moment it is called.
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_LEADER: '1' }).init();
   try {
     const open = await tm.call('tm_open', { request: 'big request', cwd, vendor: 'self', size: 'L' });
     const shape = readFileSync(open.ready.find((n) => n.stage === 'shape').briefing_path, 'utf8');
@@ -846,7 +854,9 @@ test('the packages listing shows a package\'s method so critique can attack the 
 test('skills: false runs every stage on its contract alone, and an override replaces the default', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root }).init();
+  // No HARNESS_CHILD_DRIVER override here: without HARNESS_TEST_NO_LEADER, tm_open would try to
+  // spawn a real `claude` process for the TaskLeader the moment it is called.
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_LEADER: '1' }).init();
   try {
     const off = await tm.call('tm_open', { request: 'big request', cwd, vendor: 'self', size: 'L', skills: false });
     assert.doesNotMatch(readFileSync(off.ready[0].briefing_path, 'utf8'), /## Method/);
@@ -943,6 +953,11 @@ function driverFixture(env = {}, script = FAKE_DRIVER) {
     FAKE_DRIVER_COUNTER: counter,
     // The manager runs inside a claude session; a nested `claude -p` refuses to start if it sees this.
     CLAUDECODE: '1',
+    // These fixtures are about PACKAGE/S-run driver behavior, submitted through directly by the
+    // test itself exactly like a TaskLeader would - not about the TaskLeader driver's own inbox
+    // gate. Without this, a leader spawned from this same HARNESS_CHILD_DRIVER script would race
+    // the test's own tm_submit calls into the inbox and write over FAKE_DRIVER_OUT.
+    HARNESS_TEST_NO_LEADER: '1',
     ...env,
   });
   return { cwd, root, drv, ran, counter, client };
@@ -1271,4 +1286,119 @@ test('child_driver and s_driver are gone: passing either is an error that names 
     }
     assert.deepEqual(readdirSync(root), [], 'a refused open leaves no task behind');
   } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
+});
+
+// ---------- the TaskLeader driver ----------
+
+test('tm_open spawns a TaskLeader driver whose prompt names the task and manager.md, and records it', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const fake = join(root, 'fake-leader.mjs');
+  writeFileSync(fake, FAKE_DRIVER);
+  const out = join(root, 'leader.out');
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_CHILD_DRIVER: `node ${fake}`, FAKE_DRIVER_OUT: out }).init();
+  try {
+    const open = await tm.call('tm_open', { request: 'lead me', cwd, vendor: 'self', size: 'L' });
+    assert.ok(open.leader && open.leader.pid, 'a leader pid comes back');
+    assert.ok(open.leader.log.endsWith('leader.stream.jsonl'));
+    await new Promise((r) => setTimeout(r, 400));
+    const prompt = readFileSync(out, 'utf8');
+    assert.match(prompt, new RegExp(open.task_id));
+    assert.match(prompt, /references\/manager\.md/);
+    assert.match(prompt, /Do not call tm_open/);
+    assert.match(prompt, /never do a node's work/i);
+    assert.match(prompt, /SendMessage/);
+    const ledger = readFileSync(join(root, open.task_id, 'ledger.jsonl'), 'utf8');
+    assert.match(ledger, /"event":"leader_spawned"/);
+    const s = await tm.call('tm_status', { task_id: open.task_id });
+    assert.equal(typeof s.leader.alive, 'boolean');
+    // Not a strict ===1: this same FAKE_DRIVER dies at once, and tm_status's own leader-servicing
+    // gate (see 'a dead leader is respawned on any tm_* call') may already have respawned it once
+    // by the time this call lands - a leader was spawned at least once, which is the point here.
+    assert.ok(Number.isInteger(s.leader.spawn_count) && s.leader.spawn_count >= 1, JSON.stringify(s.leader));
+  } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a mutating call from a non-leader process is queued to the inbox; the leader process drains it on tm_next', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const main = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_CHILD_DRIVER: 'node -e setTimeout(()=>{},30000)' }).init();
+  let leader;
+  let pid;
+  try {
+    const open = await main.call('tm_open', { request: 'lead me', cwd, vendor: 'self', size: 'L' });
+    pid = open.leader.pid;
+    const q = await main.call('tm_submit', { task_id: open.task_id, node_id: 'shape', payload: { stage_ok: true } });
+    assert.equal(q.queued, true);
+    assert.match(q.inbox_path, /inbox\/\d+-\d+-tm_submit\.json$/);
+    assert.ok(existsSync(q.inbox_path));
+    const before = JSON.parse(readFileSync(join(root, open.task_id, 'task.json'), 'utf8'));
+    assert.equal(before.nodes.find((n) => n.node_id === 'shape').state, 'pending', 'main did not write task.json');
+
+    leader = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_LEADER_OF: open.task_id }).init();
+    const n = await leader.call('tm_next', { task_id: open.task_id });
+    assert.equal(existsSync(q.inbox_path), false, 'drained');
+    assert.ok(n.inbox_applied >= 1);
+    const ledger = readFileSync(join(root, open.task_id, 'ledger.jsonl'), 'utf8');
+    assert.match(ledger, /"event":"inbox_applied"/);
+    // shape depended on size; the queued submit was applied and failed the same way a direct one would.
+    assert.match(ledger, /"tool":"tm_submit"/);
+  } finally {
+    try { process.kill(pid, 'SIGTERM'); } catch { /* gone */ }
+    main.close(); if (leader) leader.close();
+    rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('tm_next from a non-leader process does not drive: it returns leader state and a hint', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const main = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_CHILD_DRIVER: 'node -e setTimeout(()=>{},30000)' }).init();
+  let pid;
+  try {
+    const open = await main.call('tm_open', { request: 'lead me', cwd, vendor: 'self', size: 'L' });
+    pid = open.leader.pid;
+    const n = await main.call('tm_next', { task_id: open.task_id });
+    assert.equal(n.driven_by, 'leader');
+    assert.equal(n.leader.alive, true);
+    assert.match(n.hint, /tm_status|tm_events/);
+    assert.equal(n.ready, undefined, 'no briefing paths are handed to the watcher');
+  } finally { try { process.kill(pid, 'SIGTERM'); } catch { /* gone */ } main.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a dead leader is respawned on any tm_* call up to driver_restarts, then reported exhausted', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const fake = join(root, 'fake-leader.mjs');
+  writeFileSync(fake, FAKE_DRIVER); // exits at once
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_CHILD_DRIVER: `node ${fake}`, FAKE_DRIVER_OUT: join(root, 'o') }).init();
+  try {
+    const open = await tm.call('tm_open', { request: 'lead me', cwd, vendor: 'self', size: 'L', driver_restarts: 1 });
+    await new Promise((r) => setTimeout(r, 400));
+    let s = await tm.call('tm_status', { task_id: open.task_id });
+    assert.equal(s.leader.restarts, 1, 'first dead leader respawned');
+    await new Promise((r) => setTimeout(r, 400));
+    s = await tm.call('tm_status', { task_id: open.task_id });
+    assert.equal(s.leader.restarts, 1);
+    assert.equal(s.leader.exhausted, true);
+    assert.ok(s.leader.stderr_tail.length > 0);
+    const ledger = readFileSync(join(root, open.task_id, 'ledger.jsonl'), 'utf8');
+    assert.match(ledger, /"event":"leader_restarted"/);
+    assert.match(ledger, /"event":"leader_exhausted"/);
+  } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
+});
+
+test('tm_events tails the ledger, newest last, filtered by since', async () => {
+  await withTask(async ({ tm, task_id, root }) => {
+    const all = await tm.call('tm_events', { task_id });
+    assert.ok(all.events.length >= 1);
+    assert.equal(all.events[0].event, 'tm_open');
+    const last = all.events.at(-1).ts;
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: { stage_ok: true, size: 'L', handoff: 'h', evidence: 'e' } });
+    const since = await tm.call('tm_events', { task_id, since: last });
+    assert.ok(since.events.every((e) => e.ts > last));
+    assert.ok(since.events.some((e) => e.event === 'tm_submit' || e.event === 'node_done' || /submit|done/.test(e.event)));
+    const two = await tm.call('tm_events', { task_id, limit: 2 });
+    assert.equal(two.events.length, 2);
+  });
 });
