@@ -1,0 +1,34 @@
+sequenceDiagram
+  autonumber
+  actor U as 사용자
+  participant M as 매니저 세션<br/>(claude -p, main)
+  participant TM as task-manager MCP<br/>(taskmanager.mjs)
+  participant FS as task.json<br/>(디스크)
+  participant L as TaskLeader 세션<br/>(별도 claude -p)
+  participant D as 작업 드라이버 세션<br/>(별도 claude -p + worktree)
+
+  U->>M: 요청
+  M->>TM: tm_open(request, cwd)
+  TM->>FS: task.json 생성 (size 노드)
+  TM-->>M: task_id, ready=[size]
+  M->>M: 코드베이스 조사 (Agent/Read/Bash)
+  M->>TM: tm_submit(size, "S")
+  TM->>FS: size=done, shape/critique=skipped
+  TM->>D: spawn  claude -p  (loop.md)
+  TM->>L: spawn  claude -p  (manager.md)
+  TM-->>M: task_state = "s_run"
+
+  rect rgba(255,220,220,0.5)
+    note over D,L: 여기가 끊긴 지점 — 두 세션 다 떴고 stderr 비었고 오류 0건
+    D--xD: 일을 하지 않음 (파일 수정 0건)
+    L--xL: 일을 하지 않음
+  end
+
+  loop 26턴 동안 반복
+    M->>TM: tm_next / tm_status / tm_events
+    TM->>FS: 읽기
+    TM-->>M: 준비된 노드 없음
+  end
+  M-->>U: 빈손 종료 (2/9, not-delivered, 2분, $1.29)
+
+  note right of D: 정상이라면 D가 해야 할 일:<br/>team_next → 구현 → team_submit<br/>→ 워크트리 커밋 → accept
