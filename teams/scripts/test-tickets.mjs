@@ -350,3 +350,34 @@ test('ticketSnapshot maps every known key (EPIC + each STORY) to its current sta
   );
   assert.deepEqual(ticketSnapshot(t, { alive: () => true }), { 'E-aaaaaaaa': 'IN_PROGRESS', 'E-aaaaaaaa/P1': 'IN_PROGRESS' });
 });
+
+// taskmanager.mjs's appendBoardTransitions diffs two ticketSnapshot() calls and logs one
+// board.jsonl line per key whose value changed - reproduced here (not imported: this module
+// owns no filesystem writes) so the assertion is over the events a board.jsonl reader actually
+// sees, not merely over ticketSnapshot's key set.
+function boardEvents(before, after) {
+  const events = [];
+  for (const [key, to] of Object.entries(after)) {
+    const from = before[key] || null;
+    if (from !== to) events.push({ key, from, to });
+  }
+  return events;
+}
+
+// v0.12.0 taught epicBoardRows to render task.planning_pkg/task.qa_pkg rows but left
+// ticketSnapshot reading task.spec.packages alone, so a board.jsonl diff over a phase-Team
+// package produced zero events - the board showed the row, but no transition was ever logged
+// for it. Fixed by having both read the same boardPackages() list.
+test('a board.jsonl diff over a planning/qa phase-Team package logs its transitions, not just develop packages', () => {
+  const before = ticketSnapshot(baseTask(
+    [dispatchNode('PLAN'), dispatchNode('QA', { deps: ['integrate:1'] })],
+    { planning_pkg: { id: 'PLAN', phase: 'planning' }, qa_pkg: { id: 'QA', phase: 'qa' } },
+  ));
+  const after = ticketSnapshot(baseTask(
+    [dispatchNode('PLAN', { state: 'running', child: { driver: { pid: 1 } } }), dispatchNode('QA', { deps: ['integrate:1'] })],
+    { planning_pkg: { id: 'PLAN', phase: 'planning' }, qa_pkg: { id: 'QA', phase: 'qa' } },
+  ), { alive: () => true });
+  assert.equal(after['E-aaaaaaaa/QA'], 'BACKLOG'); // tracked (unmet dep on integrate:1), just unchanged - not merely absent
+  const events = boardEvents(before, after);
+  assert.deepEqual(events, [{ key: 'E-aaaaaaaa/PLAN', from: 'READY', to: 'IN_PROGRESS' }]);
+});
