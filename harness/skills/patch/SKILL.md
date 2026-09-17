@@ -18,33 +18,41 @@ related:
 # patch — prepare a synchronized harness patch release
 
 Increment the patch component of the harness plugin version and keep the two release manifests
-plus the README Status log synchronized. This skill is for a source checkout of this marketplace,
-not for refreshing files installed into an application project.
+plus the bilingual README.md / KOR.md Status logs synchronized. This skill is for a source
+checkout of this marketplace, not for refreshing files installed into an application project.
 
 ## Process
 
-1. Inspect the harness diff and derive a concise, single-line release summary. If the intended
-   release is breaking or feature-sized, stop and use the appropriate major/minor version instead;
-   this skill only increments `x.y.Z`.
+1. Inspect the harness diff and derive a concise, single-line release summary **in both English
+   and Korean**. If the intended release is breaking or feature-sized, stop and use the
+   appropriate major/minor version instead; this skill only increments `x.y.Z`.
 2. Run a dry-run first:
    ```sh
    node "<plugin>/skills/patch/patch.mjs" '{
      "repoRoot": "<abs claude-skills checkout>",
      "summary": "<concise status entry>",
+     "summary_ko": "<간결한 한국어 status 한 줄>",
      "dryRun": true
    }'
    ```
 3. Confirm the reported previous and next versions, then run the same command with
    `"dryRun": false`. The script refuses to write if plugin and marketplace versions differ,
-   the README Status heading is missing, or the summary is empty/multiline.
+   the README `## Status` or KOR.md `## 상태` heading is missing, or either `summary` /
+   `summary_ko` is empty, multiline, or omitted — a release note that lands in only one language
+   is exactly the silent divergence this script exists to prevent.
 4. Run `python3 scripts/validate_plugins.py`, inspect `git diff`, and report the new version and
-   status entry. Do not claim the release is published; this only prepares source metadata.
+   both status entries. Do not claim the release is published; this only prepares source metadata.
 
 `patch.mjs` updates:
 
 - `harness/.claude-plugin/plugin.json`
 - the `harness` entry in `.claude-plugin/marketplace.json`
 - the first entry under `harness/README.md` → `## Status`
+- the first entry under `harness/KOR.md` → `## 상태`
+
+Note: `harness/KOR.md`'s `## 상태` section only started tracking entries once this bilingual
+requirement was added — it does not carry the ~30 pre-existing English-only Status entries, and
+that history is not being backfilled. See the note at the top of that section.
 
 ## Related
 
