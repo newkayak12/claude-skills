@@ -1,0 +1,473 @@
+# teams (team) v0.12.0 — 기획/QA를 EPIC 흐름에 편입, 순서·할당, 결함 STORY, 기획 크로스 검수
+
+> Produced by write:writing-plans. Owner for execution routing: planning:executing-plans.
+> Steps use checkbox (`- [ ]`) syntax. 설계 근거: `2026-09-17-teams-team.md` §2·§3·§5·§5b·§6·§7c·§9·§11·§14,
+> `2026-09-17-teams-roadmap-sizing.md` §2.2–2.4·§4.1·§5.
+
+**Goal:** 지금 EPIC 흐름은 `size → shape → critique → [dispatch→accept]×P → integrate → gate:goal →
+report`뿐이고, `planning`/`qa`는 `teams:plan`/`teams:qa` entry 스킬로 **독립 실행**될 때만 존재한다
+(v0.10.1). 이 라운드는 그 두 kind를 **EPIC 흐름 자체에** 편입한다 — `team.json.roles.planning`이
+켜지면 shape **앞**에 기획 단계가, `roles.qa`가 켜지면 통합 **뒤**에 QA 단계가 생긴다. 그 위에
+결함 STORY 발행(결정 기록 #2)과 기획 크로스 검수(결정 기록 #1의 마지막 패스)를 **이 라운드로 접어
+넣는다** — 이유는 §0.2에서 수치로 논증한다.
+
+**전제: A-1은 분기 B로 결정됐다** — `docs/plans/2026-09-17-teams-roadmap-sizing.md` §2.4의 추천을
+그대로 받는다. shape 출력에 `role`은 **영원히 생기지 않는다**. planning/qa는 STORY(package)가 아니라
+**EPIC의 phase에 붙는 Team**이다.
+
+## 0. 이 계획이 내리는 해석 — 설계 문서가 못 박지 않은 것
+
+### 0.1 phase-Team이 실제로 어떤 노드 모양으로 뜨는가
+
+설계 문서 §2는 "기획 Team = TaskLeader의 plan/setgoal 단계를 위임받은 팀"이라고만 하고, §9 변경
+지점 표에도 그 노드가 없다. 사이징 문서 §2.3 말미가 이미 이 공백을 지적하며 "패키지 dispatch와 같은
+모양의 노드를 스펙에 없는 합성 id로 여는 것"을 가장 싼 읽기로 추천했다. 엔진을 읽고 그 읽기를
+구체화한다:
+
+- `openChild(task, n)`(`taskmanager.mjs:1038`)는 `packageOf(task, n.subgoal_id)`
+  (`taskmanager.mjs:637`)로 패키지를 찾는데, `packageOf`는 **`task.spec.packages`만** 본다. shape의
+  출력 계약에는 `role`이 없으므로(위 전제), phase-Team용 패키지 항목은 shape가 낼 수 없다 —
+  **TaskLeader 자신이 합성해 `task.spec.packages`에 밀어 넣어야 한다.**
+- 이 패턴은 이미 출시돼 있다. `openRepair`(`taskmanager.mjs:420`)가 정확히 이 일을 한다: shape를
+  거치지 않고 `{id: 'R1', repair: true, integration_of, brief, acceptance, touches, deps}`를
+  `packages` 배열에 직접 push하고, `pushChain(task, PACKAGE_CHAIN, id, 1, …)`으로 dispatch/accept를
+  연다. `openChild`는 `pkg.repair`를 보고 워크트리를 새로 파지 않고 통합 워크트리를 그대로 준다
+  (`taskmanager.mjs:1049-1053`). **phase-Team(planning/qa)도 같은 패턴을 쓴다**: `pkg.repair` 자리에
+  `pkg.phase: 'planning' | 'qa' | 'planning-audit'`를 놓고, `flow`를 `'plan'`/`'qa'`(둘 다
+  `graph.mjs:148-155`의 `FLOWS`에 이미 있다)로 고정한다.
+- **이것이 결정 기록 #1을 어기지 않는 이유**: 결정 기록 #1과 §5가 금지하는 것은 **shape가 `role`을
+  내는 것**(사용자·planning이 나눈 STORY에 역할이 붙는 것)이다. TaskLeader가 자기 내부 스케줄링을
+  위해 `task.spec.packages`에 합성 항목을 얹는 것은 `repair: true`가 이미 그렇게 하고 있고, 사이징
+  문서 §2.2 스스로가 "QA/결함 STORY의 기계 절반은 이미 존재한다"고 확인한 바로 그 메커니즘이다.
+  `epicBoardRows`(`tickets.mjs:215`)의 `role` 컬럼(보드에 보이는 필드, shape 계약과는 다른 층)은
+  `pkg.phase`가 있으면 `'planning'`/`'qa'`를, 없으면(develop STORY) 여전히 `'develop'`을 반환하도록
+  바뀐다 — **shape 출력 계약과 보드 렌더링 필드는 다른 층**이라는 점을 §7c도 이미 구분해서 쓴다
+  (보드의 `role`은 `epicBoardRows`가 렌더하는 값이지 shape가 반환하는 값이 아니다).
+- 다른 읽기(전용 노드 kind를 신설)를 택하면 사이징 문서 §2.3 말미가 말한 대로 +1 unit. 이 계획은
+  **패키지-모양 합성 항목** 읽기로 비용을 냈다 — `repairWorktree`/`openChild`/`foldChild`/
+  `packageOf`를 그대로 재사용할 수 있어 가장 싸고, `pkg.repair`가 이미 증명한 패턴이기 때문이다.
+
+### 0.2 무엇을 접어 넣고 무엇을 넣지 않는가 — 수치 논증
+
+`2026-09-17-teams-roadmap-sizing.md` §5가 "결정은 됐는데 단계가 없는" 넷을 지목했다. 그 넷을
+하나씩 이 단계에 대조한다.
+
+| 미배치 일감 | 접어 넣는가 | 근거 |
+|---|---|---|
+| **결함 STORY 발행** | **접는다.** | §2.2가 이미 확인한 사실: "통합 이후에, shape를 거치지 않고 생기는 패키지 + 그 뒤의 새 통합"은 **QA phase-Team을 여는 것과 정확히 같은 기계**(repair 패턴의 일반화)다. 이 라운드는 어차피 QA를 통합 워크트리에서 도는 패키지로 만들며 그 기계를 일반화한다(§0.1) — 결함이 나왔을 때 `tm_file`로 **develop 패키지**를 하나 더 얹는 것은 그 위에 얹는 한 단계일 뿐, 새 기계가 아니다. §4.1의 원 산정(2–3)에서 QA-in-tree 인프라 비용을 빼고 "STORY 생성 + reporter 컬럼 + `qa_rounds` 캡을 지키는 재순회"만 남기면 **2**로 내려간다. |
+| **기획 크로스 검수** | **접는다.** | 결함 STORY와 같은 이유(팀 리더의 프롬프트가 이미 짚었다): PRD를 shape의 입력으로 만드는 일(§4.1의 기본 범위, planning phase-Team)이 이 라운드의 핵심이고, 크로스 검수는 그 PRD를 다시 읽어 통합 결과·QA 리포트와 대조하는 **같은 planning Team의 두 번째 run**이다(설계 문서 §2: "planning Team은 EPIC 안에서 두 번 돈다 … 같은 Team 정체성이지만 run은 새로 연다"). STORY 발행 메커니즘은 결함 STORY 작업이 이미 만든다(재사용, 원 산정 2에서 할인 없음 — `planning-audit`은 `graph.mjs`의 `KINDS`에 없는 **새 kind**라 새 체인·새 프롬프트가 그대로 필요하다). |
+| **역할별 마운트 키잉** | **접지 않는다.** | `mounts.mjs:44-47`의 주석이 스스로 인정하는 충돌(`document`와 `planning` 둘 다 `draft` 스테이지를 쓰고 같은 mount를 받음)은 **이 라운드가 만드는 충돌이 아니다** — `teams:plan` entry 스킬이 v0.10.1부터 이미 독립 실행으로 이 경로를 열어 왔다. v0.12.0이 바꾸는 것은 planning Team이 그 경로를 EPIC 흐름 안에서도 타게 된다는 것뿐, 충돌 자체의 성질(스테이지 키가 kind를 구분 못함)은 그대로다. 새로 만드는 위험이 아니므로 **강제하지 않는다** — 다만 이 라운드 뒤 planning/qa가 기본 경로가 되면 이 충돌을 실제로 밟을 트래픽이 늘어나므로, 로드맵 어딘가에는 여전히 있어야 한다(팀 리더 판단). |
+| **EPIC 정리 도구(`tm_clean`)** | **접지 않는다.** | EPIC DONE 뒤 워크트리·브랜치 정리는 이 라운드가 바꾸는 EPIC **흐름의 모양**과 의존 관계가 없다 — `tm_clean`은 어떤 phase가 있었든 없었든 "DONE 뒤 청소"라는 같은 한 가지 일이다. 팀 리더의 가설과 일치: 여기 넣을 이유가 없다. |
+
+**결과 unit 수와 그 산수.** 사이징 문서 §4.1의 표(7개 항목, 7–8)에 위에서 접은 둘을 더한다:
+
+```
+기본 (§4.1)                     7–8
++ 결함 STORY 발행 (할인 적용)     2   (원 산정 2–3의 하한 — QA-in-tree 인프라를 이중 계산하지 않음)
++ 기획 크로스 검수 (할인 없음)     2   (planning-audit는 새 kind라 원 산정 2 그대로)
+──────────────────────────────
+합계                            11–12
+```
+
+**11–12는 §11 헤더의 7–8을 넘는다 — 초과분은 4.** 이 초과는 "이 라운드가 부풀었다"는 뜻이 아니라
+`docs/plans/2026-09-17-teams-roadmap-sizing.md` §5가 이미 예측한 바로 그 결과다: "그 일은 어차피
+v0.13.0을 하는 도중에 누군가의 계획서로 새어 들어가고, 그 계획서가 부풀었다고 오해받는다"의 반대
+선택지(v0.12.0을 7–8에서 12–15로 다시 쓰는 안)를 택한 것. 팀 리더가 이 숫자를 §11에 반영할지,
+아니면 정말 v0.12.1로 쪼갤지는 이 계획의 결정이 아니다.
+
+### 0.3 코드를 읽고 확인한 사실 (전제)
+
+- `finish(task, n, result)`(`taskmanager.mjs:1429`)가 매니저 노드 전이의 **단일 지점**이다:
+  `shape` 완료 시 `task.spec`을 채우고 `expandPackages()`를 호출하는 것(1463-1471)이 지금 유일한
+  분기 로직 — phase-Team 삽입은 여기(shape 앞은 `createTask`의 초기 `nodes` 배열, QA/audit 뒤는
+  `expandPackages` 안)에 건다.
+- `expandPackages(task, packages)`(`taskmanager.mjs:286`)는 `critique` 완료를 기다리는 dispatch들과
+  `integrate`/`gate:goal`/`report`를 **한 번에** 만든다 — QA/audit phase-Team 노드를 끼워 넣으려면
+  `gate:goal`의 dep을 `integrateId`에서 QA(있으면)·audit(있으면)의 마지막 노드로 바꿔야 한다.
+- `PACKAGE_CHAIN = ['dispatch', 'accept']`(`taskmanager.mjs:87`)는 **STORY 레벨** 체인(관리자 노드
+  이름)이고, 그 안에서 열리는 자식 run의 **subgoal 레벨** 체인이 `graph.mjs`의 `KINDS[kind].chain`
+  (구현/테스트/게이트, 초안/퇴고/게이트, 케이스/실행/게이트)이다 — 이 둘은 다른 층이라 phase-Team도
+  여전히 `dispatch:PLAN:1`/`accept:PLAN:1` 같은 관리자 노드를 갖고, 그 안의 자식 run이 `flow: 'plan'`
+  이라 `planning` kind로 도는 것뿐이다.
+- `graph.mjs`의 `KINDS`(56-98행)에는 `subgoal`/`document`/`planning`/`qa` 넷뿐이다 —
+  **`planning-audit`은 없다.** 설계 문서 §3이 이미 설계해 둔 `audit → gate` 체인을 이 라운드가 처음
+  코드로 넣는다(발견 1, 아래).
+- `teamconfig.mjs`의 `roles`/`qa_rounds`/`max_parallel_teams`(12-26행)는 `taskmanager.mjs`·
+  `graph.mjs` 어디에서도 소비되지 않는다(`grep -n "roles\b\|qa_rounds\|max_parallel_teams"` 무응답,
+  확인함) — 배선은 전부 이 라운드가 처음 만든다.
+- `mounts.mjs:44-47`의 코드 주석이 §3 요구(`{role}:{stage}` 키잉)를 스스로 "단계 키뿐"이라고 인정
+  한다 — 위 §0.2에서 이 라운드가 그것을 고치지 않기로 한 이유를 밝혔다.
+- `docs.mjs`는 지금 8종(`INDEX`/`request`/`shape`/`critique`/STORY별/`integrate`/`goal-gate`/
+  `report`)만 렌더한다(`renderAll`, `docs.mjs:144`). §7c의 13종 중 남은 5종
+  (`10-planning`/`10-prd`/`15-spec-gate`/`60-qa`/`65-audit`)은 planning/qa Team이 EPIC 흐름에
+  없어서 미뤄졌다(v0.11.0 계획서 자기 진술). **이 라운드는 그중 3종을 닫는다**: `10-planning.md`,
+  `10-prd.md`, `60-qa.md`. `15-spec-gate.md`는 human 게이트(v0.13.0)의 산출물이라 그대로 남고,
+  `65-audit.md`는 §0.2에서 접어 넣은 기획 크로스 검수 작업(Task 7)이 닫는다 — 결국 **이 라운드가
+  13종 중 4종(planning/prd/qa/audit)을 새로 닫아 12/13**이 되고, `15-spec-gate.md` 하나만
+  v0.13.0에 남는다.
+
+### 0.4 발견 — 팀 리더에게 보고, 해결하지 않고 진행
+
+1. **§3의 `planning-audit` kind가 코드에 없다** (위 §0.3). 모순은 아니다 — 설계는 이미 이 kind의
+   체인(`audit → gate`)과 스킬(`develop:transaction-boundary-reviewer`류가 아니라 §3 표에는 audit
+   전용 스킬이 안 나와 있다 — **발견**: §3의 페르소나·스킬 표는 `planning`/`develop`/`qa` 셋만 채워져
+   있고 `planning-audit`의 setgoal 페르소나·스테이지 스킬 칸이 비어 있다. 이 계획은 `planning`과
+   같은 페르소나(PO·도메인 전문가·구현 리드)를 재사용하고 스킬은 `think:devils-advocate`(gate와
+   동일, 판정 성격이 강하므로)로 채운다 — **이것은 설계 문서가 답하지 않은 빈칸을 이 계획이 메운
+   것이라 팀 리더 확인이 필요**하다.
+2. **§5의 `implements[]` 완전성 검사가 요구하는 "user story 목록"이 구조화돼 있지 않다.** PRD 본문
+   (`10-prd.md`)은 §14 결정 3b에 의해 **verbatim 자유 텍스트**(`pm/skills/prd-development/
+   template.md`의 10절 스켈레톤)다. `validateShape`(`taskmanager.mjs:235`)가 "모든 user story가
+   어느 STORY에든 속해야 한다"를 기계적으로 검사하려면 user story ID 목록(`US-1`, `US-2`, …)이
+   **구조화된 필드로** 어딘가에 있어야 하는데, 설계 문서 어디에도 이 필드의 자리가 없다. **이 계획이
+   내리는 선택**: `planning` 체인의 `gate` 노드 결과에 `result.user_stories: string[]`(ID 목록만,
+   본문은 여전히 PRD가 verbatim으로 들고 있음)를 추가해 shape 프롬프트와 `validateShape`가 그 배열만
+   대조한다 — PRD 본문을 파싱하지 않고, verbatim 규칙을 어기지 않는다. 이것도 설계 문서에 없던
+   빈칸을 메운 것이므로 **팀 리더 확인 필요**.
+3. **모순 후보 — QA phase-Team의 워크트리 소유권과 `qa_rounds` 재순회.** §3은 "QA STORY는 통합
+   워크트리를 쓴다, `src/` 쓰기 금지"라고 하는데, 결함 STORY가 발행되면 develop이 **같은** 통합
+   워크트리가 아니라 **자기 워크트리**에서 고친 뒤 새 통합이 열린다(§5b: "보통의 dispatch →
+   accept → integrate:N+1"). 즉 QA는 매 라운드 **다른** integrate가 만든 **새** 통합 워크트리를
+   봐야 한다 — `repairWorktree`(`taskmanager.mjs:645`)처럼 "가장 최근 integrate의 워크트리"를 찾는
+   함수가 QA에도 필요하고, 이는 `repairWorktree`와 로직이 사실상 같다(재사용 가능, 새로 만들 필요
+   없음 — 모순이 아니라 재확인). **팀 리더에게 보고할 것은 사실 확인 결과이지 모순이 아니다**: 이미
+   있는 함수로 충분하다.
+
+---
+
+## 1. 이 라운드에 들어가는 것 (요약)
+
+- `team.json.roles.planning`/`roles.qa` 스위치가 실제로 EPIC 노드 그래프를 바꾼다.
+- planning phase-Team이 shape **앞**에서 돈다: 자기 `draft→revise→gate` 체인으로 PRD
+  (`10-prd.md`)를 쓰고, 구조화된 `user_stories[]`를 gate 결과에 남겨 shape에 넘긴다.
+- shape 계약에 `priority`, `implements[]`가 생기고 완전성 검사가 붙는다(`role`은 여전히 없다).
+- QA phase-Team이 통합 **뒤**, `gate:goal` **앞**에서 통합 워크트리 위에 돈다.
+- 스케줄러가 `priority` 오름차순 + `max_parallel_teams` 상한으로 dispatch를 연다(지금은 무제한
+  동시 개방).
+- QA가 결함을 찾으면 develop STORY(결함 STORY)를 발행하고, EPIC이 dispatch→accept→integrate→qa로
+  돌아간다. `qa_rounds` 캡을 넘기면 보고서의 "미해결 결함" 절로 넘어간다.
+- planning phase-Team이 EPIC 안에서 **두 번째로** 돈다(크로스 검수, `planning-audit` kind,
+  `audit → gate`) — QA 뒤, `gate:goal` 앞. PRD·user stories를 통합 결과·QA 리포트와 대조하고
+  미충족 항목을 STORY로 발행한다.
+- 보드·phase 문서가 위 전부를 안다: `role` 컬럼이 `develop`/`planning`/`qa`를, `reporter` 컬럼이
+  `shape`/`qa`/`planning-audit`을 구분하고, `10-planning.md`/`10-prd.md`/`60-qa.md`/`65-audit.md`가
+  렌더된다.
+
+## 2. 이 라운드가 하지 않는 것
+
+- **shape 출력의 `role` 필드.** 분기 B에서는 영원히 만들지 않는다(§5, 위 전제).
+- **human이 스펙을 승인하는 게이트(`gate:human:spec`).** v0.13.0. 이 라운드는 `interactive`/
+  `human_gates`를 여전히 읽고 기록만 한다 — 소비하지 않는다(`teamconfig.mjs` 그대로).
+- **역할별 mounts 키잉(`{role}:{stage}`).** §0.2에서 접지 않기로 했다 — `mounts.mjs`는 이 라운드
+  에서 손대지 않는다.
+- **`tm_clean`(EPIC 정리 도구).** §0.2에서 접지 않기로 했다.
+- **sub-EPIC.** v0.14.0.
+- **`15-spec-gate.md`.** human 게이트의 산출물이라 이 라운드는 렌더하지 않는다(§0.3).
+- **planning/qa phase-Team이 여러 개 병렬로 뜨는 것.** 사이징 문서 §2.4가 분기 B를 추천한 근거 3번
+  그대로: 설계 문서 어디에도 기획·QA가 여러 개 필요하다는 요구가 없다. 한 EPIC에 planning
+  phase-Team은 최대 둘(초안 1 + 감사 1), QA phase-Team은 최대 `qa_rounds` 개(순차, 병렬 아님).
+
+---
+
+## 태스크 그룹과 의존 관계
+
+```
+Task 1  createTask: 역할 스위치 → planning phase-Team 노드 삽입 (shape 앞)         ─┐
+Task 2  planning phase-Team 자식 run 열기 + PRD/user_stories → shape 입력           │ taskmanager.mjs를
+Task 3  shape 계약(priority, implements[]) + validateShape 완전성 검사             │ 공유 — 직렬
+Task 4  expandPackages: QA phase-Team 노드 삽입 (통합 뒤, gate:goal 앞)             │ (Task 1이 먼저,
+Task 5  스케줄러 상한(max_parallel_teams) + priority 정렬                          │  2·3·4·5는 서로
+Task 6  결함 STORY — tm_file + qa_rounds 재순회 + reporter 컬럼                    │  순서가 크게
+Task 7  기획 크로스 검수 — planning-audit kind(graph.mjs) + audit phase-Team 삽입   ┘ 상관없지만 같은
+                                                                                     파일이라 직렬)
+Task 8  tickets.mjs + docs.mjs — role/reporter, 10-planning/10-prd/60-qa/65-audit  — Task 1-7 뒤
+Task 9  릴리스 0.12.0                                                              — 전부의 위
+```
+
+- **파일 충돌**: Task 1·2·3·4·5·6·7 **전부**가 `teams/mcp/taskmanager.mjs`를 건드린다 — v0.11.0과
+  달리 이번 라운드는 "서로 겹치지 않아 병렬"인 조합이 거의 없다. 순서는 위 그래프대로: 노드 그래프
+  모양을 바꾸는 순서(planning 삽입 → shape 계약 → QA 삽입 → 스케줄러 → 결함 STORY → 크로스 검수)를
+  따라야 각 태스크가 그 앞 태스크가 만든 노드를 전제로 검증을 쓸 수 있다. `graph.mjs`는 Task 7만
+  건드린다(새 kind 추가, 다른 태스크와 겹치지 않음 — `KINDS` 객체에 새 키를 더하는 것뿐이라 실제
+  충돌 위험은 낮지만, `taskmanager.mjs`의 Task 7 절반과 짝지어 직렬로 둔다). Task 8은 `tickets.mjs`/
+  `docs.mjs`만 건드리므로 파일은 안 겹치지만, Task 1-7이 만드는 노드 모양(phase-Team의 `stage`/
+  `subgoal_id` 규칙)이 확정돼야 그 위의 파생 함수를 쓸 수 있어 순서상 뒤에 온다.
+- **1라운드/2라운드 판단**: 코드 변경은 사실상 1라운드(위 순서를 지키는 한 파일 충돌 없이 순차
+  진행 가능)이지만, Task 6·7(결함 STORY·크로스 검수)은 §0.2의 판단 — 사용자가 그 판단에 동의하지
+  않으면 이 계획의 Task 1-5·8(전제 없음)·9만으로 v0.12.0을 내고 6·7을 별도 라운드(v0.12.1)로 뺄 수
+  있다. 그 경우 크기는 7–8로 되돌아간다.
+
+---
+
+### Task 1: `createTask` — 역할 스위치에 따른 planning phase-Team 삽입 (shape 앞)
+**Files:** modify `teams/mcp/taskmanager.mjs` (`createTask`, `taskmanager.mjs:143-220`), modify
+`teams/scripts/test-taskmanager.mjs`
+**Interfaces:** `createTask`가 `T.roles.planning`(이미 `teamconfig.mjs`가 해석해 놓은
+`task.team.opts.roles.planning`)을 읽어 초기 `nodes` 배열을 바꾼다. planning이 꺼져 있으면 지금과
+바이트 단위로 같은 배열 — 하위 호환.
+**Pass bar:** `node --test teams/scripts/test-taskmanager.mjs` 전부 통과.
+
+- [ ] 1: 실패하는 테스트를 쓴다 — `roles.planning: true`로 `tm_open`(또는 `createTask` 직접 호출하는
+  하네스 픽스처)을 열면 `task.nodes`에 `dispatch:PLAN:1`이 있고 `deps`가 `['size']`이며, `shape`
+  노드의 `deps`가 `['size']`가 아니라 `['accept:PLAN:1']`(또는 이 계획이 채택한 명칭 —
+  아래 구현과 일치)임을 확인한다. `roles.planning: false`(기본값)일 때는 지금과 같은 3-노드
+  배열(`size`/`shape`/`critique`)임을 확인하는 회귀 테스트도 같은 파일에 남긴다.
+- [ ] 2: `createTask`를 고친다: `T.roles.planning`이 true면 합성 패키지
+  `{ id: 'PLAN', phase: 'planning', flow: 'plan', title: 'PRD', brief: task.request,
+  acceptance: ['PRD covers the request'], deps: [], touches: [] }`를 **아직 없는**
+  `task.spec.packages`가 아니라 `task.planning_pkg`(shape 전이라 `task.spec`이 아직 null이므로
+  별도 필드에 둔다 — shape 성공 시 `expandPackages`가 `task.spec.packages`를 만들 때 이 항목을
+  **선두에 합류**시킨다) 자리에 준비하고, `pushChain(task, PACKAGE_CHAIN, 'PLAN', 1, ['size'], [],
+  {})`로 `dispatch:PLAN:1`/`accept:PLAN:1`을 만든다. `shape` 노드의 `deps`를
+  `['accept:PLAN:1']`로, `critique`는 그대로 `['shape']`로 둔다.
+- [ ] 3: `node --test teams/scripts/test-taskmanager.mjs` 통과 확인.
+- [ ] 4: `git add teams/mcp/taskmanager.mjs teams/scripts/test-taskmanager.mjs && git commit -m
+  "feat(teams): roles.planning inserts a planning phase-Team before shape (§2)"`
+
+---
+
+### Task 2: planning phase-Team 자식 run — PRD/`user_stories[]` → shape 입력
+**Files:** modify `teams/mcp/taskmanager.mjs` (`openChild:1038`, `foldChild:1108`,
+`childContext:688`, `composeTaskPrompt:1243`), modify `teams/scripts/test-taskmanager.mjs`
+**Interfaces:** `openChild`가 `pkg.phase === 'planning'`일 때 워크트리를 **새로 파지 않고**
+(PRD는 파일 산출물이 아니라 노드 결과이므로 격리된 워크트리가 필요 없다 — 프로젝트 `cwd` 그대로
+넘긴다), `flow: 'plan'`을 고정한다. `foldChild`가 그 자식 run의 `gate` 결과에서 `user_stories`를
+읽어 `dispatch:PLAN:1`의 `result`에 얹는다. `shape`를 여는 프롬프트(`composeTaskPrompt`)가 PRD의
+**링크**(`10-prd.md` 경로)와 `user_stories[]`를 컨텍스트로 받는다 — 본문을 통째로 올리지 않는다
+(§7c "payload를 main에 올리지 않는다" 원칙, `docPaths(task).dir`에 이미 있는 규칙 재사용).
+**Pass bar:** `node --test teams/scripts/test-taskmanager.mjs` 전부 통과, `shape`의 briefing에 PRD
+경로 문자열이 있고 본문 텍스트가 없음을 문자열 검사로 확인.
+
+- [ ] 1: 실패하는 테스트 — 가짜 driver로 `dispatch:PLAN:1`을 `{sound:true, user_stories:['US-1',
+  'US-2']}`로 submit한 뒤, `shape`가 ready가 됐을 때 그 briefing에 `user_stories`가 그대로 나열되고
+  `10-prd.md`의 경로 문자열은 있지만 PRD 본문 텍스트("Executive Summary" 같은 템플릿 절 이름)는
+  없음을 확인.
+- [ ] 2: `openChild`에 `pkg.phase === 'planning'` 분기 추가(워크트리 미생성, `cwd: task.cwd`),
+  `foldChild`에 `pkg.phase === 'planning'`이면 자식 run의 `planning` kind gate 결과에서
+  `user_stories`를 뽑아 `n.result.user_stories`에 싣는 분기 추가. `composeTaskPrompt`의 shape 절에
+  `docPaths(task).dir`(PRD 링크)과 `user_stories`를 붙인다.
+- [ ] 3: 테스트 통과 확인.
+- [ ] 4: `git add teams/mcp/taskmanager.mjs teams/scripts/test-taskmanager.mjs && git commit -m
+  "feat(teams): planning phase-Team's PRD and user_stories flow into shape's input, verbatim body never leaves the child run"`
+
+---
+
+### Task 3: shape 계약 — `priority`, `implements[]`, 완전성 검사
+**Files:** modify `teams/mcp/taskmanager.mjs` (`validateShape:235-284`), modify
+`teams/scripts/test-taskmanager.mjs`
+**Interfaces:** `validateShape(spec)`가 `p.priority`(정수, 없으면 배열 순서를 기본값으로 채움)와,
+`task.planning_pkg`가 있던 태스크(즉 planning이 켜졌던 태스크)에 한해 `p.implements`(문자열 배열,
+Task 2가 넘긴 `user_stories`의 부분집합)를 검사한다. 모든 `user_stories`가 어느 패키지의
+`implements`에도 없으면 거부.
+**Pass bar:** 표 기반 테스트 — `user_stories: ['US-1','US-2']`인데 패키지들의 `implements`가
+`US-1`만 덮으면 `unusable shape`로 거부되고 `shape_problems`에 `US-2`가 이름으로 등장함을 확인.
+planning이 꺼진 태스크는 `implements` 검사를 건너뜀을 별도 테스트로 확인(회귀 방지).
+
+- [ ] 1: 실패하는 표 테스트 작성(완전성 통과/실패 양쪽, planning 꺼짐일 때 미검사 케이스 포함).
+- [ ] 2: `validateShape`에 `priority` 기본값 채우기(부작용: `spec.packages`를 직접 변형하지 않고
+  `finish()`가 `task.spec`을 만들 때 정렬용 값을 채운다 — `validateShape`는 여전히 problems만
+  반환하는 순수 검사 함수로 남긴다), `implements[]` 완전성 검사 추가(`task.__user_stories`처럼
+  `finish()`가 Task 2의 `dispatch:PLAN:1` 결과에서 미리 뽑아 `validateShape`에 두 번째 인자로
+  넘긴다 — 순수성 유지).
+- [ ] 3: 테스트 통과 확인.
+- [ ] 4: `git add teams/mcp/taskmanager.mjs teams/scripts/test-taskmanager.mjs && git commit -m
+  "feat(teams): shape contract gains priority + implements[] completeness against planning's user_stories (§5)"`
+
+---
+
+### Task 4: `expandPackages` — QA phase-Team 삽입 (통합 뒤, `gate:goal` 앞)
+**Files:** modify `teams/mcp/taskmanager.mjs` (`expandPackages:286-303`, `openChild:1038`,
+`repairWorktree:645`), modify `teams/scripts/test-taskmanager.mjs`
+**Interfaces:** `T.roles.qa`가 true면 `expandPackages`가 `integrateId` 완료 뒤 합성 패키지
+`{id: 'QA', phase: 'qa', flow: 'qa', repair_style_worktree: true, deps: [], touches: []}`를
+만들어 `dispatch:QA:1`/`accept:QA:1`을 `integrateId`에 의존시키고, `gate:goal`의 dep을
+`integrateId`에서 `accept:QA:1`로 바꾼다. `openChild`가 `pkg.phase === 'qa'`일 때
+`repairWorktree`(이미 있는, "가장 최근 integrate의 워크트리 재사용" 로직)를 그대로 호출한다 —
+새 함수를 만들지 않는다(§0.3 발견 3에서 확인한 재사용 가능성).
+**Pass bar:** `qa` 꺼짐일 때 지금과 바이트 단위로 같은 노드 그래프(회귀), 켜짐일 때
+`gate:goal`이 `accept:QA:1`에 의존하고 `dispatch:QA:1`의 워크트리가 `integrate:1`과 같은 cwd임을
+확인.
+
+- [ ] 1: 실패하는 테스트 작성.
+- [ ] 2: `expandPackages` 수정, `openChild`에 `pkg.phase === 'qa'` 분기(`repairWorktree` 재사용,
+  `src/`가 아니라 `test/`·리포트만 쓰라는 §3 규칙은 브리핑 문구로 전달 — 강제 검증은 Task 6의
+  `changed_files_verified` 확장이 맡는다, 아래).
+- [ ] 3: 테스트 통과 확인.
+- [ ] 4: `git add teams/mcp/taskmanager.mjs teams/scripts/test-taskmanager.mjs && git commit -m
+  "feat(teams): roles.qa inserts a QA phase-Team between integrate and gate:goal, reusing the repair worktree (§2, §3)"`
+
+---
+
+### Task 5: 스케줄러 상한(`max_parallel_teams`) + `priority` 정렬
+**Files:** modify `teams/mcp/taskmanager.mjs` (`toolNext`/`toolNextSRun`이 ready dispatch를 여는
+지점 — `taskmanager.mjs:1792-1914` 구간에서 dispatch를 실행 상태로 넘기는 루프), modify
+`teams/scripts/test-taskmanager.mjs`
+**Interfaces:** 지금은 ready인 dispatch를 **전부** 한 번에 연다(설계 문서·사이징 문서 둘 다 확인한
+사실). `max_parallel_teams`개까지만, 그것도 `priority` 오름차순으로 골라 연다 — 나머지는 ready라도
+이번 폴링에서 열리지 않고 다음 폴링을 기다린다(티켓 상태는 여전히 READY, BACKLOG이 아님 — `unmetDeps`
+기준은 그대로).
+**Pass bar:** `max_parallel_teams: 1`로 열고 서로 독립인 패키지 3개를 shape가 냈을 때, 한 번의
+`tm_next` 호출 뒤 `running` dispatch가 정확히 1개(가장 낮은 `priority`)이고 나머지 둘은 `pending`
+그대로임을 확인. 상한을 다 채우지 않은 상태(현재 실행 중 0개, 상한 2)에서는 즉시 2개까지 열림을
+확인(회귀: 상한보다 적으면 지금처럼 즉시 연다).
+
+- [ ] 1: 실패하는 테스트 작성.
+- [ ] 2: dispatch를 여는 루프에 "현재 `running` 상태 dispatch 개수"를 세고 상한에서 뺀 만큼만,
+  `priority` 오름차순으로 열도록 필터 추가. phase-Team(`PLAN`/`QA`) 패키지는 이 상한 계산에서
+  제외한다 — 동시에 도는 develop STORY 수를 캡하는 것이 목적이고, phase-Team은 애초에 한 번에
+  하나만 존재하도록 설계돼 있다(§2 "이 라운드가 하지 않는 것").
+- [ ] 3: 테스트 통과 확인.
+- [ ] 4: `git add teams/mcp/taskmanager.mjs teams/scripts/test-taskmanager.mjs && git commit -m
+  "feat(teams): max_parallel_teams caps concurrent STORY dispatch, priority-ordered (§5)"`
+
+---
+
+### Task 6: 결함 STORY — `tm_file`, `qa_rounds` 재순회, `reporter` 컬럼
+**Files:** modify `teams/mcp/taskmanager.mjs` (새 함수 `fileDefects`, `TOOLS` 배열, `dispatch()`,
+QA의 `accept:QA:1` 판정 이후 훅), modify `teams/scripts/test-taskmanager.mjs`
+**Interfaces:** QA phase-Team의 `gate` 결과가 결함 목록(`result.defects: [{title, touches, deps,
+evidence, severity}]`, §5b 그대로)을 내면, `accept:QA:1`이 판정된 직후 `fileDefects(task,
+defects)`가 각 결함을 `openRepair`와 같은 모양으로(단 `repair: true` 대신 `reporter: 'qa'`,
+새 develop 패키지) `task.spec.packages`에 push하고 `pushChain`으로 dispatch/accept를 열고, 새
+`integrate:N+1`을 열고 `gate:goal`의 dep을 그리로 재배선한다(`openRepair`의 재배선 루프,
+`taskmanager.mjs:459-463`, 그대로 재사용). **`qa_rounds` 캡**: 이미 발행된 QA 라운드 수(`QA`
+패키지의 attempt 수)가 `T.qa_rounds`를 넘으면 결함을 새 STORY로 만들지 않고 `report`의 "미해결
+결함" 절 데이터로만 `task.unresolved_defects`에 쌓는다. `tm_file({task_id, stories: [...]})` 도구를
+새로 추가해 **사용자**도 같은 경로로 STORY를 직접 발행할 수 있게 한다(§14 결정 기록 C-9 계열,
+`reporter: 'you'`) — §11이 `tm_file`을 "어느 단계에도 아직 배정 안 됐다"고 적어 둔 자리를 여기서
+채운다.
+**Pass bar:** 표 테스트 — QA gate가 결함 1건을 내면 새 develop 패키지가 생기고 새
+`integrate:2`가 `gate:goal`의 dep이 됨을 확인. `qa_rounds: 1`로 두 번째 결함이 나오면 새 패키지가
+**생기지 않고** `task.unresolved_defects`에 쌓임을 확인. `tm_file` 도구 호출로 STORY가
+`reporter: 'you'`로 생기는 왕복 테스트.
+
+- [ ] 1: 실패하는 테스트 작성(위 세 가지 케이스).
+- [ ] 2: `fileDefects` 구현(내부적으로 `openRepair`의 재배선 로직을 공유 헬퍼로 뽑아 `openRepair`와
+  `fileDefects` 둘 다 호출 — 코드 중복 없이), `qa_rounds` 카운트·캡, `tm_file` 도구
+  (`TOOLS`/`dispatch()`) 추가, `epicBoardRows`(Task 8이 아니라 여기서 최소 배선 — `reporter`
+  필드를 `p.reporter || (p.repair ? 'repair' : 'shape')`로 확장, 전체 렌더링 다듬기는 Task 8).
+- [ ] 3: 테스트 통과 확인.
+- [ ] 4: `git add teams/mcp/taskmanager.mjs teams/scripts/test-taskmanager.mjs && git commit -m
+  "feat(teams): QA-found defects file a develop STORY and loop the EPIC back through integrate, capped by qa_rounds (§5b, decision #2)"`
+
+---
+
+### Task 7: 기획 크로스 검수 — `planning-audit` kind + audit phase-Team
+**Files:** modify `teams/mcp/graph.mjs` (`KINDS`, `56-98`행 근방에 새 항목), modify
+`teams/mcp/prompts.mjs`(audit 스테이지 프롬프트), modify `teams/mcp/taskmanager.mjs`
+(`expandPackages` 또는 QA 완료 훅에 audit phase-Team 삽입, §0.4 발견 3이 재사용하는 STORY 발행
+경로), modify `teams/scripts/test-tickets.mjs`류
+**Interfaces:** `graph.mjs`의 `KINDS.planning-audit = { chain: ['audit', 'gate'], reasoning: [],
+skills: { audit: [...], gate: ['think:devils-advocate'] } }`(§0.4 발견 1이 채운 빈칸,
+`FLOWS`에도 `'audit'` 항목 추가, `kind: 'planning-audit'`). `T.roles.planning &&
+T.roles.qa`(감사는 QA 리포트를 대조 대상으로 삼으므로 QA도 켜져 있어야 의미가 있다 — **이 조건은
+설계 문서에 명시되지 않은, 이 계획이 내리는 판단**이다: qa가 꺼져 있으면 audit은 PRD ↔ 통합
+결과물만 대조하고 QA 리포트 대조는 건너뛴다는 완화된 버전도 가능하나, 이 계획은 "qa 켜짐"을
+전제조건으로 단순화한다 — 팀 리더 확인 필요, §0.4에 이미 적었다)일 때, `accept:QA:1`(또는 결함
+루프의 마지막 `accept:QA:N`) 완료 뒤 `dispatch:AUDIT:1`을 열고, 결과 STORY 발행은 Task 6의
+`fileDefects`류 경로를 `reporter: 'planning-audit'`로 재사용한다. `gate:goal`의 dep을
+`accept:AUDIT:1`로 재배선.
+**Pass bar:** `planning`+`qa` 둘 다 켜진 EPIC에서 QA 완료 뒤 `dispatch:AUDIT:1`이 열리고, audit
+gate가 미충족 user story 1건을 내면 새 develop STORY가 `reporter: 'planning-audit'`로 생김을 확인.
+`planning`만 켜지고 `qa`는 꺼진 경우 audit phase-Team이 **생기지 않음**을 회귀로 확인(위 판단의
+직접 귀결).
+
+- [ ] 1: `graph.mjs`에 실패하는 kind 테스트(`KINDS['planning-audit']`의 체인·스킬 모양)와
+  `taskmanager.mjs`에 위 두 케이스의 실패 테스트 작성.
+- [ ] 2: `graph.mjs`의 `KINDS`/`FLOWS`에 항목 추가, `prompts.mjs`에 audit 스테이지 프롬프트
+  (§0.4 발견 1이 채운 페르소나 재사용 + "판정만, 파일 변경 없음" 문구 명시 — planning의 `revise`와
+  달리 audit은 수정 권한이 없다는 §2의 구분을 프롬프트에 못박는다), `taskmanager.mjs`에 audit
+  phase-Team 삽입 로직 + STORY 발행 재사용.
+- [ ] 3: 테스트 통과 확인.
+- [ ] 4: `git add teams/mcp/graph.mjs teams/mcp/prompts.mjs teams/mcp/taskmanager.mjs teams/scripts/test-tickets.mjs teams/scripts/test-taskmanager.mjs && git commit -m
+  "feat(teams): planning-audit kind — a second planning pass cross-checks PRD/user stories against the integrated result and QA report, files STORYs on gaps (§2, §3, decision #1)"`
+
+---
+
+### Task 8: `tickets.mjs` + `docs.mjs` — role/reporter, 4개 렌더러
+**Files:** modify `teams/mcp/tickets.mjs` (`epicBoardRows:215`), modify `teams/mcp/docs.mjs`
+(새 `renderPlanning`, `renderPrd`(링크·인용, verbatim 본문 자체는 아님), `renderQa`,
+`renderAudit`, `renderAll` 확장), modify `teams/scripts/test-tickets.mjs`,
+`teams/scripts/test-docs.mjs` + golden 픽스처 확장
+**Interfaces:** `epicBoardRows`의 `role`이 `p.phase || 'develop'`을 반환(`'planning'`/`'qa'`
+그대로, 새 값 도입 없음 — phase 문자열을 그대로 role로 쓴다). `reporter`가
+`p.reporter || (p.repair ? 'repair' : 'shape')`로 이미 Task 6에서 확장된 것을 그대로 노출. 4개
+새 렌더러는 Task 1·2(`10-planning.md`/`10-prd.md`), Task 4·6(`60-qa.md`), Task 7(`65-audit.md`)이
+만든 노드·결과 필드를 읽는다 — `renderAll`은 해당 phase-Team 패키지가 `task.spec.packages`에
+있을 때만 그 파일을 만든다(기존 원칙: 데이터 없는 곳에 빈 md 없음).
+**Pass bar:** golden 파일 비교(`test-docs.mjs`가 이미 갖고 있는 패턴) — planning+qa+audit이
+전부 뜬 픽스처 태스크로 12/13 문서(`15-spec-gate.md` 제외 전부)가 렌더됨을 확인, `tm_docs
+({rebuild:true})`가 동일 바이트를 재생산함을 확인(기존 v0.11.0 테스트가 이미 검증하는 불변식의
+연장).
+
+- [ ] 1: `test-tickets.mjs`에 `role`이 `'planning'`/`'qa'`를 반환하는 표 행 추가, `test-docs.mjs`에
+  새 golden 파일 4개를 위한 실패 테스트(파일 없음 확인) 작성.
+- [ ] 2: `epicBoardRows` 확장, `renderPlanning`/`renderPrd`/`renderQa`/`renderAudit` 구현
+  (`renderPrd`는 PRD 본문을 **인용하지 않고 링크만** 건다 — verbatim 규칙, §7c), `renderAll`에
+  조건부 추가.
+- [ ] 3: golden 파일 생성(`writeDocs`를 실제로 실행해 저장, v0.11.0과 같은 부트스트랩 절차) 후
+  사람이 §7c 형식과 어긋나지 않는지 확인.
+- [ ] 4: `node --test teams/scripts/test-tickets.mjs teams/scripts/test-docs.mjs` 전부 통과 확인.
+- [ ] 5: `git add teams/mcp/tickets.mjs teams/mcp/docs.mjs teams/scripts/test-tickets.mjs teams/scripts/test-docs.mjs teams/scripts/fixtures/docs-golden && git commit -m
+  "feat(teams): board/docs know planning and qa phase-Teams — role/reporter columns, 10-planning/10-prd/60-qa/65-audit renderers (§7c)"`
+
+---
+
+### Task 9: 릴리스 0.12.0
+**Files:** modify `teams/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`(teams
+항목만), `teams/README.md`, `teams/KOR.md`
+**Interfaces:** consumes Task 1-8 전부.
+**Pass bar:** `node --test teams/scripts/test-*.mjs` 전부 통과(회귀 0), `python3
+scripts/validate_plugins.py` ERROR 0, 두 매니페스트 0.12.0 일치, README·KOR Status 첫 항목이
+v0.12.0.
+
+- [ ] 1: `git fetch skills main && git status -sb` — origin이 앞서 있으면 rebase.
+- [ ] 2: `node --test teams/scripts/test-*.mjs 2>&1 | tail -8` → `# fail 0` 확인.
+- [ ] 3: patch 범프: teams `"version": "0.11.0"` → `"0.12.0"`; marketplace description에 "Wires
+  planning/QA into the EPIC flow as phase-Teams (not peer STORYs), adds shape priority/implements[]
+  and a max_parallel_teams cap, QA-found defects file a develop STORY (capped by qa_rounds), and a
+  second planning pass cross-checks the integrated result against the PRD." 추가.
+- [ ] 4: README/KOR `## Status` 맨 위에 한 줄 prepend(v0.11.0 항목 등 기존 내용은 그대로 아래에
+  둔다) — 이 라운드가 실제로 닫은 것(위 §1)과 여전히 안 닫은 것(§2)을 요약.
+- [ ] 5: 설계 문서(`docs/plans/2026-09-17-teams-team.md`) §11의 v0.12.0 행을 "완료"로 표시하는
+  것은 이 계획 파일 소유가 아니다 — 팀 리더나 그 갱신을 맡은 agent의 몫. 이 계획은 건드리지 않는다.
+- [ ] 6: `python3 scripts/validate_plugins.py` ERROR 0 확인.
+- [ ] 7: `git add teams/.claude-plugin/plugin.json .claude-plugin/marketplace.json teams/README.md teams/KOR.md && git commit -m
+  "feat(teams): 0.12.0 - planning/QA as EPIC phase-Teams, shape priority/implements[], scheduler cap, defect STORYs, planning cross-review"`
+- [ ] 8: `git push skills main`(실패하면 1번으로 돌아가 fetch·rebase 후 재시도).
+
+---
+
+## 자기 검토
+
+- **§0.1의 해석(phase-Team = 합성 패키지)이 이 계획 전체의 기초다.** 다른 읽기(전용 노드 kind)를
+  택하면 Task 1·2·4·7의 구현 세부(어떤 함수가 무엇을 재사용하는지)가 바뀐다 — 비용은 §0.2가 밝힌
+  대로 +1이지만, **재검토가 필요한 건 이 계획의 절반**이다. 팀 리더가 이 해석에 동의하는지가
+  이 계획의 가장 중요한 확인 지점이다.
+- **결함 STORY(Task 6)와 크로스 검수(Task 7)를 접어 넣은 결정은 이 계획의 것이 아니라 §0.2의
+  수치 논증에 따른 것**이지만, 사이징 문서 §4.1은 원래 이 둘을 **명시적으로 범위 밖**이라고 써
+  두었다("이 단계는 QA를 한 번 돌리고 결과를 보고서에 싣는 데까지다"). 이 계획은 그 경계를
+  넘는다 — 팀 리더가 §4.1의 원 경계를 지키고 싶다면 Task 6·7을 들어내고 Task 1-5·8·9만으로
+  v0.12.0을 내면 되고, 이 계획의 Task 순서는 그 절단을 그대로 지지한다(Task 6·7은 Task 1-5 뒤에,
+  서로 뒤에 오도록 이미 배치돼 있다).
+- **발견 2(user_stories 구조화 필드)는 설계 문서에 없는 스키마를 이 계획이 새로 만든 것**이다 —
+  PRD verbatim 규칙을 지키면서 기계 검사를 가능하게 하는 가장 작은 다리다. 팀 리더가 다른 다리를
+  원하면(예: PRD 템플릿 자체에 `## User Stories`를 파싱 가능한 형식으로 강제) Task 2·3만 다시
+  쓰면 된다 — 나머지 태스크는 영향받지 않는다.
+- **파일 충돌이 v0.11.0보다 훨씬 심하다**: 9개 태스크 중 7개가 `taskmanager.mjs`를 건드린다. 이
+  라운드는 v0.11.0처럼 "3-way 병렬"을 낼 수 없다 — 위 태스크 그룹 절이 이미 그렇게 표시했다.
+  여러 agent에게 동시에 맡기려면 Task 1-5(노드 그래프 기초)를 한 agent가 순서대로 끝낸 뒤에만
+  Task 6·7·8을 나눠 맡길 수 있고, 그마저도 Task 6·7이 같은 파일(`taskmanager.mjs`)을 또 건드리므로
+  둘도 직렬이다. 실질적으로 이 계획은 **한 agent가 순서대로 도는 것**을 전제로 쓰였다.
+- **위험**: Task 4(QA phase-Team)와 Task 6(결함 STORY)이 만드는 재순회 그래프(`integrate:1` →
+  결함 → `integrate:2` → QA 재실행 → …)는 `retryShape`가 shape 재시도 시 하는 것과 다른 종류의
+  "여러 라운드"다 — `retryShape`는 이전 라운드를 `skipped`로 폐기하지만, 결함 STORY 루프는 이전
+  `integrate:1`을 **superseded**로 남긴다(`openRepair`가 이미 하는 방식 그대로, §5b "결함 STORY는
+  shape를 거치지 않는다"와 일치). 두 "여러 라운드"의 티켓 상태(CANCELLED vs 그냥 supersede돼 안
+  보이는 것)가 보드에서 헷갈리지 않는지는 Task 8의 golden 픽스처가 실제로 결함 루프를 도는 태스크로
+  한 번 그려봐야 확인된다 — 코드를 실행하지 않고 예측하는 것보다 이 편이 맞다(v0.11.0과 같은
+  이유).
+- **위험**: `max_parallel_teams`(Task 5)가 phase-Team을 상한 계산에서 빼는 판단은 이 계획의
+  것이다 — phase-Team은 설계상 한 번에 하나뿐이므로 상한과 무관해야 한다고 봤지만, 사용자가
+  "총 동시 실행 Team 수"로 상한을 이해하고 있었다면 이 판단은 틀렸다. 작은 변경(필터 조건 한 줄)
+  이라 되돌리기 쉽다.
