@@ -460,8 +460,9 @@ async function route(run, node) {
         attempts.push({ vendor: name, ready: false, reason: `native host cannot select model ${model}` });
         continue;
       }
-      const reason = resolved.fallback ? `${candidate.reason}; model ${model} not in native_models, host model used` : candidate.reason;
-      return { vendor: 'self', executor: name, sandbox: null, model: resolved.model, reason, attempts };
+      const base = resolved.fallback ? `${candidate.reason}; model ${model} not in native_models, host model used` : candidate.reason;
+      const rev = reviewerModel(run, node, resolved.model);
+      return { vendor: 'self', executor: name, sandbox: null, model: rev.model, reason: `${base}${rev.note}`, attempts };
     }
     if (name === 'codex' && (run.host_vendor === 'codex' || process.env.CODEX_THREAD_ID)) {
       attempts.push({ vendor: name, ready: false, reason: 'Codex hosts must use native agents; nested Codex CLI is disabled' });
@@ -627,6 +628,23 @@ function identityOf(executor, model) {
   return `${executor || 'self'}@${model || 'default'}`;
 }
 
+// The model axis, tried before the degradation above. When draft and review both land on the
+// host (no peer vendor installed), they arrive on the same model by default and the reviewer is
+// the author. If the host declared more than one native model, use a different one for the
+// review - independence by model rather than by vendor. Returns the model to use and a phrase
+// for the routing reason, because a substituted model must be visible in the run, never silent.
+function reviewerModel(run, node, chosen) {
+  if (node.stage !== 'review' && node.stage !== 'revise') return { model: chosen, note: '' };
+  const kind = nodeKind(run, node);
+  const author = run.nodes.find((x) => x.subgoal_id === node.subgoal_id
+    && (x.attempt || 1) === (node.attempt || 1) && x.stage === authorStage(kind || 'subgoal'));
+  const wrote = author && (author.model || (author.assignment && author.assignment.model));
+  if (!wrote || wrote !== chosen) return { model: chosen, note: '' };
+  const other = (Array.isArray(run.native_models) ? run.native_models.map(String) : []).find((m) => m !== wrote);
+  if (!other) return { model: chosen, note: `; ${chosen} wrote the draft and the host declared no second native model, so this review is not independent` };
+  return { model: other, note: `; ${chosen} wrote the draft, reviewing with ${other} instead` };
+}
+
 function reviewIndependence(run, n, executor, model) {
   // revise (planning kind) makes the same "not the same identity as the author" demand
   // review does - the design doc's decision that a different identity revises. The
@@ -644,9 +662,27 @@ function reviewIndependence(run, n, executor, model) {
     return { independence: 'unverifiable-self', author: theirs, reviewer: mine };
   }
   if (mine === theirs) {
+    // Both escapes the message used to name are unreachable for a host-dispatched node: a
+    // second vendor may not be installed at all (the bench's own arms are claude-only), and
+    // team_run refuses a node routed to self - so a run that got here had no move left and
+    // sat offering the same node forever. Measured 2026-09-17: three driver sessions in a row
+    // hit exactly this on review:U5:1, each correctly gave up, and the run stalled at 16/20
+    // with every artifact already written.
+    //
+    // The design's independence comes from draft going to a peer vendor while review stays on
+    // the host (routing.mjs's EXECUTION_STAGES comment: "without anyone arranging it"). When
+    // there is no peer, draft degrades to the host and that arrangement silently collapses.
+    // Model is then the only axis left, and route() now tries it first (see reviewerModel).
+    // If even that is gone - one declared model, or none - the honest answer is the one this
+    // file already gives everywhere else: degrade visibly rather than deadlock. The review
+    // runs, and `reviewer_independence` says it was not independent, so the report and anyone
+    // reading the run can see exactly what the verdict is worth.
+    if ((n.assignment && n.assignment.vendor === 'self') || (executor || 'self') === 'self') {
+      return { independence: 'unverifiable-same-host', author: theirs, reviewer: mine };
+    }
     throw new Error(`${n.stage} ${n.node_id} is routed to ${mine}, which wrote ${author.node_id}. `
       + `A document must be read or revised by someone other than its author: route the ${n.stage} stage to another vendor `
-      + `(policy.${n.stage}) or pass a different model to team_run.`);
+      + `(policy.${n.stage}).`);
   }
   return { independence: 'distinct-identity', author: theirs, reviewer: mine };
 }
