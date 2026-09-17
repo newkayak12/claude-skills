@@ -1,6 +1,6 @@
-# graph-beta: kinds, entry flows, TaskManager
+# teams: kinds, entry flows, TaskManager
 
-> Design ledger for the `graph-beta` plugin. Written 2026-09-11 from a design conversation;
+> Design ledger for the `teams` plugin. Written 2026-09-11 from a design conversation;
 > every decision below has its reason next to it so a fresh session can tell which parts are
 > settled and which are still open. Steps use checkbox syntax. `graph` (stable) is not touched
 > by any step here except forward-porting its fixes.
@@ -10,9 +10,9 @@ through the code flow, the document flow, or — when it is large — splits it 
 runs each as its own graph run in its own worktree, integrates, and reports. The user never
 picks a mode; a user who wants to can.
 
-**Where it lives:** `graph-beta/` — a fork of `graph` 1.7.0 with its own MCP server name
-(`graph-beta-engineering`), its own run directory (`.harness-run/broker-beta/`), and skill
-namespace `graph-beta:*`. Stable keeps running unchanged next to it.
+**Where it lives:** `teams/` — a fork of `graph` 1.7.0 with its own MCP server name
+(`teams-engineering`), its own run directory (`.harness-run/broker-beta/`), and skill
+namespace `teams:*`. Stable keeps running unchanged next to it.
 
 ---
 
@@ -22,13 +22,13 @@ namespace `graph-beta:*`. Stable keeps running unchanged next to it.
 |---|---|---|
 | D1 | The engine (`mcp/graph.mjs`: DAG, `deps`/`after`, retries, settled failure, ready set) is domain-neutral and stays one. What is code-specific is the **leaf node chain** and the **contracts** in `prompts.mjs`, plus `crossCheck` in the broker. | Grep shows the coupling: setgoal contract "unit of WORK that changes files", test contract "command -> observed output", gate evidence = command output, `crossCheck` = `git status`. Nothing in graph.mjs knows about files. |
 | D2 | Domain difference is a **kind** on the subgoal, not a second skill or a second engine. A spec may mix kinds. | "Implement the feature and update the design doc" must be one run. Two skills would force the user to choose and would split this into two runs. |
-| D3 | The user-facing entry stays one: `graph-beta:orchestrate`, no parameters. `plan` returns `size` and `flow`; expansion follows. | The requirement is "install and use without thinking". |
-| D4 | Manual specialisation exists as **thin entry skills** (`graph-beta:develop`, `graph-beta:document`), not as a parameter the user must remember. They set `flow` and a persona set and hand off to the shared loop in `references/`. | Skills trigger on how the user phrases the request; that *is* the manual choice. The loop is identical either way and must not be duplicated. |
-| D5 | `flow` (run default kind + persona set) and `mixed` (default `true`) are `graph_open` parameters the entry skills set. | Choosing the document entry should not forbid fixing one code example. |
+| D3 | The user-facing entry stays one: `teams:orchestrate`, no parameters. `plan` returns `size` and `flow`; expansion follows. | The requirement is "install and use without thinking". |
+| D4 | Manual specialisation exists as **thin entry skills** (`teams:develop`, `teams:document`), not as a parameter the user must remember. They set `flow` and a persona set and hand off to the shared loop in `references/`. | Skills trigger on how the user phrases the request; that *is* the manual choice. The loop is identical either way and must not be duplicated. |
+| D5 | `flow` (run default kind + persona set) and `mixed` (default `true`) are `team_open` parameters the entry skills set. | Choosing the document entry should not forbid fixing one code example. |
 | D6 | TaskManager is a **separate MCP server** in the same plugin (`mcp/taskmanager.mjs`), reusing `graph.mjs` as a library. | (a) a graph run is bound to one `cwd`; medium/large work spans worktrees and sometimes repos, so the manager's state must live outside any one `cwd`. (b) reuse, not a second DAG. (c) install stays one step — `.mcp.json` lists two servers. |
 | D7 | TaskManager **reads** child run files, never writes them. The broker is the only writer of a run file. | Two processes writing one run file is the exact failure `mergeOnto` exists to paper over. Keeping a single writer removes event sourcing from the TaskManager prerequisites. |
 | D8 | The child run is opened by the TaskManager server on a `dispatch` node, never by a model inside a node. The "do not re-enter the harness" rule in every node prompt stays. | It was written after a vendor re-entered the harness from inside a node. The team structure comes from the broker opening runs, not from nodes calling tools. |
-| D9 | MCP servers do not call each other. The driving session relays: `tm_next` returns a `dispatch` node with `child: {cwd, run_id}`; the session drives the child with `graph_next`/`graph_run`/`graph_submit`; when the child's report is done it calls `tm_submit`. | MCP has no server-to-server channel, and the session is already the relay for everything else. Its context still holds no payload. |
+| D9 | MCP servers do not call each other. The driving session relays: `tm_next` returns a `dispatch` node with `child: {cwd, run_id}`; the session drives the child with `team_next`/`team_run`/`team_submit`; when the child's report is done it calls `tm_submit`. | MCP has no server-to-server channel, and the session is already the relay for everything else. Its context still holds no payload. |
 | D10 | Children are always size S — recursion depth 1. | If a package still needs splitting, `shape` split badly; that is a critique finding, not a reason for depth 2. |
 | D11 | Small requests skip TaskManager entirely. There is no "parent run" wrapping an S request. | A shell run adds a file, a lock and a second report and buys nothing. |
 | D12 | Stable fixes are forward-ported to beta; beta work is not back-ported until it graduates. | Two lines diverging silently is how forks die. |
@@ -51,8 +51,8 @@ namespace `graph-beta:*`. Stable keeps running unchanged next to it.
 
 ## Steps
 
-Each step ends with the full suite green (`node --test graph-beta/scripts/*.mjs`), the validator
-passing, a Status entry in `graph-beta/README.md` and `KOR.md`, a version bump, commit, push.
+Each step ends with the full suite green (`node --test teams/scripts/*.mjs`), the validator
+passing, a Status entry in `teams/README.md` and `KOR.md`, a version bump, commit, push.
 
 ### Step 1 — kind table (v0.1.0)  ✅
 - [x] `KINDS = { subgoal: { chain: ['implement','test','gate'] } }` in `graph.mjs`.
@@ -78,7 +78,7 @@ passing, a Status entry in `graph-beta/README.md` and `KOR.md`, a version bump, 
       critique looks for misfiled kinds and rubrics no reader could apply.
 - [x] Routing: `draft` is an execution/cross-vendor stage, `review` judges `draft` in the
       same-actor penalty (`AUTHOR_OF` table).
-- [x] Found on the way: `graph_retry(subgoal_id)` took feedback only from gates, so a retry
+- [x] Found on the way: `team_retry(subgoal_id)` took feedback only from gates, so a retry
       after a failed review or test went in blind. Now the last judging node's reason/gaps/
       failing checks are carried.
 - [x] Tests: mixed spec reaches report; empty-claim draft unattributed while code implement
@@ -87,7 +87,7 @@ passing, a Status entry in `graph-beta/README.md` and `KOR.md`, a version bump, 
       model accepted. 95 pass.
 
 ### Step 3 — entry skills and `flow` (v0.3.0)  ✅
-- [x] `graph_open({ flow: 'auto'|'develop'|'document', mixed: true })`. `FLOWS` table in
+- [x] `team_open({ flow: 'auto'|'develop'|'document', mixed: true })`. `FLOWS` table in
       `graph.mjs` (kind + personas). `plan` contract returns `size`, `flow`, `sizing[]`; under
       `auto` the broker records `flow_chosen` + `flow_source: plan|default`. A silent plan is
       not failed (the old contract never asked) — it defaults to develop, visibly.
@@ -98,7 +98,7 @@ passing, a Status entry in `graph-beta/README.md` and `KOR.md`, a version bump, 
       template, routing summary (133 lines, from 215).
 - [x] `skills/develop/SKILL.md`, `skills/document/SKILL.md`: triggers, pinned `flow`, `mixed`
       rationale, delegate to the loop reference. 63 / 66 lines.
-- [x] `graph_next` and `graph_status` carry `flow` and `size`. `size: L` is recorded only —
+- [x] `team_next` and `team_status` carry `flow` and `size`. `size: L` is recorded only —
       Step 5 acts on it.
 - [x] Tests: `mixed:false` rejects a named code subgoal under the document flow while an
       unnamed one follows the flow; fixed flow supplies default kinds and shows in briefings;
@@ -134,13 +134,13 @@ passing, a Status entry in `graph-beta/README.md` and `KOR.md`, a version bump, 
 `gate:goal` that rejected was never re-judged. `retrySubgoal` rewired the new subgoal gate into
 the failed goal gate's deps but left it `failed`; the report stayed behind it and the run wedged
 with the fix in place. Beta now opens `gate:goal:N` over the live subgoal gates with the rejection
-as feedback and moves the report's `after` to it; `graph_retry(subgoal_id)` also carries the goal
+as feedback and moves the report's `after` to it; `team_retry(subgoal_id)` also carries the goal
 gate's gaps into the retried subgoal. Candidate for a stable fix release — not applied there yet
 (D12 says beta does not back-port; this is a bug, so the user decides).
 
 ### Step 5 — `size` gate and hand-off from the entries (v0.5.0)  ✅
 - [x] All three entries open with `tm_open` (flow `auto` for orchestrate, pinned for
-      develop/document). `tm_submit(size)` → `delegate` → `graph_open({...delegate.args,
+      develop/document). `tm_submit(size)` → `delegate` → `team_open({...delegate.args,
       isolated})` + `loop.md`; no delegate → `manager.md`.
 - [x] `references/manager.md`: the task loop — children driven with `loop.md` at the child cwd,
       payload-less fold, `tm_retry`, integrate, progress mirror, output notes. `loop.md` says how
@@ -181,7 +181,7 @@ planning layer; the rest of round 2 is in the bench README.
 `scripts/bench/` — two size-L-shaped requests (`code`: four workspace packages + CLI + tests +
 README; `docs`: three package references + architecture + three ADRs + CONTRIBUTING + README),
 three arms, scored on the tree left behind plus session cost. Full table in
-`graph-beta/scripts/bench/README.md`.
+`teams/scripts/bench/README.md`.
 
 | arm | code | docs |
 |---|---|---|
@@ -223,10 +223,10 @@ So the judges are not the problem and stay on the strong model — a gate on the
 make the harness the baseline with extra steps. The problem is the manager's own context: the
 design says the payload never enters it, and the manager wrote nothing (0 top-level edits), but
 every self node's JSON — handoff, evidence, gaps — passes through it twice, once as the agent's
-return and once as the `graph_submit` argument, and 67 dispatches later the session is half a
+return and once as the `team_submit` argument, and 67 dispatches later the session is half a
 million tokens that every turn re-reads. Candidates, in order of expected yield:
 - **payload by path, not by value**: a fresh agent writes its JSON next to its briefing and returns
-  the path; `graph_submit`/`tm_submit` take `payload_path`. The manager's context holds verdicts
+  the path; `team_submit`/`tm_submit` take `payload_path`. The manager's context holds verdicts
   only, as the design intended. Expected to remove most of the manager's share.
 - the manager session on the lower tier: it relays and loops, it judges nothing; the judges are
   the agents. For the bench this is one flag (`--model sonnet` on the driving session).
@@ -251,26 +251,26 @@ the new one is an MCP server plus a graph, and a feature that was a sentence in 
 nothing in the port to catch it. This table is the diff nobody ran. Both sides were read for
 it at beta 0.7.0 — "present" means the code was found, not that the feature was remembered.
 
-| `harness/engine/pipeline.js` | `graph-beta` | status |
+| `harness/engine/pipeline.js` | `teams` | status |
 |---|---|---|
-| Retry loop per subgoal: `while (attempt <= RETRIES)` reruns implement → test → gate and breaks on `verdict.pass`. Budget `spec.max_retries ?? args.max_retries ?? 2`, so three attempts. | `autoReassign` opens the next attempt chain when a verdict node fails; `retrySubgoal` caps at `max_retries + 1`, the same three. | **Restored** in 0.7.0. Two differences on purpose: only a verdict reassigns, so a node that could not run at all (`stage_ok: false` — transport, vendor, unparseable reply) leaves its chain pending for the caller, where the old loop simply went round again; and `spec.max_retries` no longer overrides the run, which owns the budget from `graph_open`. |
+| Retry loop per subgoal: `while (attempt <= RETRIES)` reruns implement → test → gate and breaks on `verdict.pass`. Budget `spec.max_retries ?? args.max_retries ?? 2`, so three attempts. | `autoReassign` opens the next attempt chain when a verdict node fails; `retrySubgoal` caps at `max_retries + 1`, the same three. | **Restored** in 0.7.0. Two differences on purpose: only a verdict reassigns, so a node that could not run at all (`stage_ok: false` — transport, vendor, unparseable reply) leaves its chain pending for the caller, where the old loop simply went round again; and `spec.max_retries` no longer overrides the run, which owns the budget from `team_open`. |
 | Stall check: `rejectionSig` = sorted gaps + reason. Two consecutive identical signatures abort the subgoal, mark it `stalled`, and let the run proceed to the goal gate on partial work. | The same signature, plus `blocking`. On a match `autoReassign` calls `retrySpec`, so setgoal and critique re-author with what the subgoal kept failing on. | **Present, changed on purpose.** The original stopped; beta reshapes. goal-docs is the evidence: a package README truthfully said the repo had no other docs, false only in the combined tree, so no attempt inside that package could ever fix it. Aborting there would have been correct and useless. |
 | Persona per subgoal: `subgoals[].persona`, rendered as `Act as: …` in the implement prompt and passed into the Codex bridge. | The same field in the setgoal contract, a persona set per flow in `FLOWS[*].personas` offered to setgoal, and `Act as:` in the briefing. | **Present on both.** One difference nobody chose: the original attached the persona to implement alone, while beta emits it inside the shared `## Subgoal` block, which every node of the chain gets — the gate is told to act as the implementer it is judging, two lines above being told it is the judge and not the actor. |
 | Skills per subgoal: `subgoals[].skills`, "1-3 repository skill names the executor must invoke", mounted in the implement prompt with a Skill-tool-then-Read fallback. | Being added now: `skills` in the setgoal contract and a `Method —` block in `composePrompt`; the TaskManager carries a package's `skills` into its child run's context. | **Restored.** The 1-3 bound is gone, and the Method block sits in the same shared subgoal section as the persona, so test, review and gate are told to load the implementer's method too. Beta adds something the original never said and should keep: the node contract outranks a skill's own output template, and a dialogic skill has nobody here to answer it. |
 | Stage-mounted skills: `mountSkill` pins method to the stage — plan → `agents:agent-task-decomposer`, spec critic → `think:devils-advocate`, every subgoal gate and the goal gate → `think:devils-advocate`, test → `completion:verification-before-completion`. | `STAGE_SKILLS` in `taskmanager.mjs` covers the manager's stages only (shape, critique, accept, integrate, `gate:goal`), overridable per stage by `tm_open({skills})` and switchable off entirely. | **Half restored** (0.6.7). The manager got the mechanism; the graph engine that every size-S request runs mounts nothing on plan, setgoal, critique, test or gate. |
-| Stage-mounted MCP tools: `mountMcp` offers plan → sequential-thinking, setgoal → think-tool, the goal gate → mcp-reasoner, each skipped in silence if absent. | Nothing. No node prompt under `graph-beta/` mentions an MCP tool or ToolSearch. | **Dropped**, and until now unlisted. The smallest loss in the table — the mounts were advisory — but it is the row above's omission repeated, and it was never decided either. |
-| `GOAL_MATCH_THRESHOLD = 90`: the goal gate's `match_pct` is compared against it, and the comparison is what drives the repair loop. | Being added now as `goal_threshold`, default 90, set at `graph_open`, enforced in `nodeSucceeded` for `gate:goal` only; `0` accepts on the verdict alone. | **Restored** and made a property of the run rather than a constant. The TaskManager's own `gate:goal` is not held to it: `succeeded()` in `taskmanager.mjs` reads `accept` and nothing else, so a manager task can accept the integrated result at any `match_pct`. That is the decorative gate the threshold exists to prevent, one layer up. |
+| Stage-mounted MCP tools: `mountMcp` offers plan → sequential-thinking, setgoal → think-tool, the goal gate → mcp-reasoner, each skipped in silence if absent. | Nothing. No node prompt under `teams/` mentions an MCP tool or ToolSearch. | **Dropped**, and until now unlisted. The smallest loss in the table — the mounts were advisory — but it is the row above's omission repeated, and it was never decided either. |
+| `GOAL_MATCH_THRESHOLD = 90`: the goal gate's `match_pct` is compared against it, and the comparison is what drives the repair loop. | Being added now as `goal_threshold`, default 90, set at `team_open`, enforced in `nodeSucceeded` for `gate:goal` only; `0` accepts on the verdict alone. | **Restored** and made a property of the run rather than a constant. The TaskManager's own `gate:goal` is not held to it: `succeeded()` in `taskmanager.mjs` reads `accept` and nothing else, so a manager task can accept the integrated result at any `match_pct`. That is the decorative gate the threshold exists to prevent, one layer up. |
 | Goal-gate repair: below threshold, a repair agent (`sonnetGoalRepairInstructions` / `codexGoalRepairInstructions`) is given the gaps and every subgoal handoff, fixes across the tree, and the whole is re-gated — up to `RETRIES` times, with the same stall check. | Nothing. `autoReassign` declines the goal gate on purpose; `retrySubgoal` opens a fresh `gate:goal:N` and `subgoalFeedback` carries the goal gate's gaps into whichever subgoal the caller retries. Nothing works on the assembled result as a whole. | **Absent.** Step 9 below. |
 | Degenerate-spec guard: `isDegenerateSpec` (no subgoals, no goal-level acceptance, goal text under 8 characters, a subgoal title under 4 or with no acceptance) plus one corrective re-author whose prompt names the failure mode — structured-output validation rejects a large correct draft, usually over the missing top-level `acceptance`, and the model shrinks the payload to isolate the error instead of fixing the field. | `validateSpec` checks the same emptiness cases and more: missing and duplicate ids, missing titles, unknown kinds, a kind `mixed: false` forbids, self-dependency, dangling `deps`/`after`, cycles. A failing spec fails the setgoal node with `spec_problems`, and `retrySpec` carries them into the next attempt — which is critiqued again, where the original never re-critiqued its re-author. | **Equivalent and then some, with two specific losses.** The placeholder heuristics have no counterpart, so a spec that is well-formed and vacuous passes. And the retry feedback is the problem list alone, not the diagnosis of why a spec collapses. The diagnosis was worth more than the check: it named a failure mode the model can otherwise only rediscover. |
 | Unwinnable-gate patterns, stated twice: setgoal is forbidden to write criteria that hinge on whole-repo state (git diff/status, aggregate repo-wide counts) because concurrent work makes them non-deterministic, and forbidden to write aspirational or arbitrary-threshold targets as hard bars; the critic is then told to flag both by name. | The critique contract names both. The setgoal contract does not — it asks only that every criterion be checkable by a command, a file inspection, or a reader finding a passage. | **Half present**: detection kept, prevention dropped. Not authoring the criterion is cheaper than critiquing it out, and the critique that has to catch it is the same node we now ask to reject only blocking defects. |
-| `.claude/conventions/**` in three prompts: plan reads the relevant ones and lists the rules that must constrain the work, setgoal folds them into subgoal acceptance and `test[]`, implement reads the ones relevant to its files. | Nothing. The string "convention" does not occur anywhere under `graph-beta/`, including the install skill. | **Dropped**, and until now unlisted. The largest silent loss here: it was the only path by which a project's own rules reached the work, and losing it fails nothing — the run just produces work that ignores them, and every gate passes because no criterion ever mentioned them. |
+| `.claude/conventions/**` in three prompts: plan reads the relevant ones and lists the rules that must constrain the work, setgoal folds them into subgoal acceptance and `test[]`, implement reads the ones relevant to its files. | Nothing. The string "convention" does not occur anywhere under `teams/`, including the install skill. | **Dropped**, and until now unlisted. The largest silent loss here: it was the only path by which a project's own rules reached the work, and losing it fails nothing — the run just produces work that ignores them, and every gate passes because no criterion ever mentioned them. |
 | Plan's survey asks for five things: decomposition, real ordering dependencies, which repository skills and persona fit each unit, how each unit can be deterministically verified, and the conventions that constrain it. | The plan contract asks for the decomposition, `size`, `flow`, and the commands that decided size. | **Changed, partly on purpose.** Moving skill and persona choice to setgoal is right — setgoal is the stage that knows what each unit is. Losing the conventions question is the row above. Losing "how would this be verified" is not obviously fine: setgoal now invents `test[]` with no upstream reconnaissance behind it. |
 | Dependency waves: subgoals whose deps are done run in parallel; a wave with nothing ready logs "unsatisfiable deps" and runs the remainder anyway. | `deps`/`after` edges and a ready set. `validateSpec` rejects dangling deps and cycles before any node exists, so the degraded path has nothing to degrade from. Under `isolated`, mutating nodes are offered one at a time so positive file attribution stays sound. | **Superseded.** The original's fallback was a guess made at runtime; beta makes the condition unreachable at authoring time. |
 | Handoff budget: `handoffOf` extracts the `HANDOFF:` section and slices it to 1500 characters before any downstream prompt sees it. | `handoff` is a contract field with no cap, and `nodeBriefing` puts every upstream handoff, check and changed-file list into the next prompt. | **Dropped.** This is about briefing size, not about the driving session's context that Step 7 measures — but it is the same shape of problem one level down, and a node prompt that grows with the run is how a late gate ends up reading more than it can weigh. The cap was doing work nobody credited it with. |
 | Codex delegation: `codex_provider: auto\|required\|off`, and a Sonnet "delegation controller" inside each implement/test node that locates the adapter, writes a prompt file, runs it, and must mark `DEGRADED:` or return `PROVIDER_FAILURE:` when it cannot. | Vendors, adapters and probes belong to the broker. `route()` picks per stage; a named vendor that is not ready returns `vendor-failure` rather than degrading silently; every node prompt forbids re-entering the harness. | **Superseded**, and the reason is written into `prompts.mjs`: a vendor with harness skills installed re-entered the harness from inside a node, running `--detect` and then `--stage implement` within the node that was already the implement stage. |
 | Nothing checks the executor's file claims; the test agent's narrative is the evidence. | `crossCheck` compares claimed `changed_files` against `git status` and may lower `stage_ok`, never raise it. Attribution is `isolated`, `shared-worktree`, `no-git` or `document-unchanged`, and `null` means "could not attribute", which is neither a pass nor a failure. | **Addition.** No counterpart in the original. |
 | The goal gate sees the goal, the goal-level acceptance, and one line per subgoal. It does not see the request. | It sees all of that, the request again, and every finished node including the failures; its contract asks for `spec_drift` — what the request asked for that the spec never turned into a criterion. | **Addition.** The original could not tell a spec that narrowed the request from a request that was met. |
-| The spec critic runs once over the first draft. If `sound: false`, one revision follows and is never re-critiqued. `sound` is unbounded: any defect sets it. | A critique node per spec attempt, so each re-authored spec is attacked again. `sound: false` is reserved for `blocking` defects; everything else is advisory `problems` carried forward. | **Addition, with a gap.** `autoReassign` returns early for a node with no `subgoal_id`, so a `sound: false` critique waits for the caller to call `graph_retry` — exactly the advisory rejection 0.7.0 fixed for subgoal gates, still open one stage up. |
+| The spec critic runs once over the first draft. If `sound: false`, one revision follows and is never re-critiqued. `sound` is unbounded: any defect sets it. | A critique node per spec attempt, so each re-authored spec is attacked again. `sound: false` is reserved for `blocking` defects; everything else is advisory `problems` carried forward. | **Addition, with a gap.** `autoReassign` returns early for a node with no `subgoal_id`, so a `sound: false` critique waits for the caller to call `team_retry` — exactly the advisory rejection 0.7.0 fixed for subgoal gates, still open one stage up. |
 
 ### Step 9 — the goal-gate repair pass (proposed, not started)
 
@@ -335,7 +335,7 @@ the other finishes the answer. In code, escalation is a branch inside `autoReass
 with a `subgoal_id`; repair is a branch on the node `autoReassign` explicitly refuses to touch.
 
 **Where the two can fight.**
-- **Rewiring collision.** A caller can call `graph_retry(subgoal_id)` while a repair is open.
+- **Rewiring collision.** A caller can call `team_retry(subgoal_id)` while a repair is open.
   `retrySubgoal` then opens its own fresh `gate:goal`, and the repair ends up either orphaned
   behind a gate nobody waits on or judged by a gate that never depended on it. `retrySubgoal`
   has to learn about repair nodes before this ships; it is the same rewiring bug the rejected
@@ -384,5 +384,5 @@ manager's worth is decided by requests that are actually L, not by count.
 - [ ] One request that `size` measures **L on its own** — not pinned — runs to `report`. Until
       one exists, the manager stays experimental and the entry skills say so.
 - [x] Step 8 ported (graph 1.7.1, 2026-09-14): host-model variant, tier resolution, rejected `gate:goal` re-judge + retry feedback; stable at 97 tests.
-- [ ] Decide tool names; port the `document` kind and `flow` to `graph` 2.0; `graph-beta` is deleted,
+- [ ] Decide tool names; port the `document` kind and `flow` to `graph` 2.0; `teams` is deleted,
       not kept. The manager graduates only if the second box is ticked.

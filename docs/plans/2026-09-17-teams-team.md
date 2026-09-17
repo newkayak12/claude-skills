@@ -1,14 +1,14 @@
-# graph-beta (team) — Team / TeamLeader / Task / TaskLeader 구체화 (검토용 초안)
+# teams (team) — Team / TeamLeader / Task / TaskLeader 구체화 (검토용 초안)
 
 > 상태: **검토용**. 코드 변경 없음. 2026-09-17.
-> 대상: `graph-beta` 0.9.0 위에 얹는 다음 라운드.
+> 대상: `teams` 0.9.0 위에 얹는 다음 라운드.
 
 ## 0. 계보
 
 ```
 harness                              6단계 계약 (plan → setgoal → impl → test → gate → report)
   └─ graph        = harness + MULTI_AI_VENDOR        그래프 엔진, 크로스벤더 라우팅
-       └─ graph-beta (team) = graph + task-manager(MCP) + team concept
+       └─ teams (team) = graph + task-manager(MCP) + team concept
 ```
 
 - **graph 엔진은 그대로 둔다.** 노드 체인, 라우팅, 게이트, 리페어 전부 손대지 않는다.
@@ -180,7 +180,7 @@ develop STORY만이고 각 STORY가 어느 user story를 구현하는지 매핑�
   validateShape가 거부한다 — 기획이 나눈 것을 shape가 흘리지 않게.
 - 스케줄: `deps` 전부 DONE인 STORY 중 `priority` 오름차순으로, **`max_parallel_teams`**(기본 2)
   까지 dispatch. 0.8.0 관찰 — 패키지 세션 여럿이 동시에 쿼터를 치는 모드 — 에 대한 캡.
-- 할당(vendor/model)은 현행 라우팅. TeamLeader가 TASK 할당을 바꾸는 건 `graph_next`의 몫.
+- 할당(vendor/model)은 현행 라우팅. TeamLeader가 TASK 할당을 바꾸는 건 `team_next`의 몫.
 
 ## 6. TaskLeader — main 컨텍스트 0
 
@@ -215,7 +215,7 @@ main 세션이 할 수 있는 일의 전부:
 
 leader가 죽어 있으면 main 쪽 **어느 `tm_*` 호출이든** pid 검사 후 같은 task_id로 respawn한다 —
 main이 대신 도는 것이 아니라 leader를 다시 세우는 것. `orchestrate`/`develop`/`document`/`plan`/`qa`
-entry 스킬의 본문은 그래서 짧아진다: `tm_open` 한 번, 그 뒤는 `/graph-beta:board`.
+entry 스킬의 본문은 그래서 짧아진다: `tm_open` 한 번, 그 뒤는 `/teams:board`.
 
 **phase 라벨**: 매니저 노드에 `phase`를 붙여 보드에 노출.
 
@@ -258,7 +258,7 @@ entry 스킬의 본문은 그래서 짧아진다: `tm_open` 한 번, 그 뒤는 
   deps가 없는 형제 노드는 계속 돈다. 전부 human 대기면 driver는 **깨끗이 종료**(살아서 기다리지
   않음). `tm_answer`/`tm_submit`이 payload를 기록하면 `tm_next`가 같은 run_id로 driver를
   respawn — `reset_capacity`와 같은 경로, 재시작 예산 소모 없음.
-- `tm_answer({key, payload})`는 `tm_submit`/`graph_submit`의 human 전용 설탕. 새 진실 원천 없음.
+- `tm_answer({key, payload})`는 `tm_submit`/`team_submit`의 human 전용 설탕. 새 진실 원천 없음.
 - **크로스벤더 규칙 그대로**: human이 `implement`하면 `test`는 non-human(`AUTHOR_OF.test`).
   human이 `draft`하면 `revise`/`review`는 AI.
 - **범위**: 기본 `human_scope: "leader"` — TaskLeader 레벨 노드만 human 가능. Team 내부 질문은
@@ -286,13 +286,13 @@ entry 스킬의 본문은 그래서 짧아진다: `tm_open` 한 번, 그 뒤는 
 
 **불변식: 프로세스는 어느 두 쓰기 사이에서든 죽을 수 있고, 상태는 디스크에 있는 것이 전부다.**
 main 세션·TaskLeader·TeamLeader·worker 어느 것도 메모리에만 있는 상태를 갖지 않는다. 재개는
-언제나 "파일 읽기 → `tm_next`/`graph_next`"이고, 그 호출은 멱등이다.
+언제나 "파일 읽기 → `tm_next`/`team_next`"이고, 그 호출은 멱등이다.
 
 ### 무엇이 언제 쓰이나
 
 | 레벨 | 파일 | 쓰는 시점 | 재개 방법 |
 |---|---|---|---|
-| worker(노드) | 자식 run 파일의 노드 항목 + `detail_path` handoff | `graph_submit` 직후, 다음 `graph_next` 전 | 현행. done 노드는 다시 안 돈다 |
+| worker(노드) | 자식 run 파일의 노드 항목 + `detail_path` handoff | `team_submit` 직후, 다음 `team_next` 전 | 현행. done 노드는 다시 안 돈다 |
 | TeamLeader(자식 run) | `.harness-run/broker-beta/<run_id>.json` (워크트리 안) | 노드 전이마다 | 현행 v0.9: driver 사망 → 같은 run_id로 respawn, "resume, not redo" |
 | TaskLeader(EPIC) | `~/.harness/tasks/<task_id>/task.json` | 매니저 노드 전이, dispatch, fold, retry마다 | **신설**: leader driver 사망 → `tm_next`가 같은 task_id로 respawn. main이 죽어도 EPIC은 산다 |
 | 티켓 이벤트 | `~/.harness/tasks/<task_id>/board.jsonl` | task.json 쓰기와 **같은 전이에서**, task.json 다음에 append | 읽기 근거 아님. 유실돼도 `tm_board`는 task.json에서 파생 — 이력만 빈다 |
@@ -306,7 +306,7 @@ main 세션·TaskLeader·TeamLeader·worker 어느 것도 메모리에만 있는
 ```
 1. 파일 읽기            task.json / run.json — 어떤 노드가 done인지, 어떤 driver가 살아있는지(pid 검사)
 2. 죽은 driver 정리     alive:false → respawn(예산 내) | waiting_human → 그대로 | waiting_capacity → 그대로
-3. tm_next / graph_next  ready인 것만 돌려준다. 메모리 상태 없음
+3. tm_next / team_next  ready인 것만 돌려준다. 메모리 상태 없음
 ```
 
 - `tm_next`는 언제 몇 번 불려도 같은 답이다. main 세션이 `/clear` 되거나 다른 세션에서
@@ -381,7 +381,7 @@ main 세션·TaskLeader·TeamLeader·worker 어느 것도 메모리에만 있는
 ### 도구·명령과의 관계
 
 - `tm_board`/`tm_ticket`은 터미널 표를 돌려주면서 `doc_path`를 함께 준다. 긴 것은 md로 가서 읽는다.
-- `/graph-beta:board`는 표, `/graph-beta:ticket`은 표 + doc_path. md를 세션 컨텍스트로 통째로
+- `/teams:board`는 표, `/teams:ticket`은 표 + doc_path. md를 세션 컨텍스트로 통째로
   읽어 들이지 않는다 — "payload를 main에 올리지 않는다" 규칙은 md에도 적용된다. 사람은 편집기로 연다.
 - `tm_docs({task_id, rebuild})` 하나만 추가.
 
@@ -403,13 +403,13 @@ main 세션·TaskLeader·TeamLeader·worker 어느 것도 메모리에만 있는
 
 | 명령 | 하는 일 |
 |---|---|
-| `/graph-beta:board [E-xxx]` | `tm_board` → 아래 표 |
-| `/graph-beta:ticket E-xxx/P2` | `tm_ticket` → 한 티켓 |
-| `/graph-beta:log E-xxx/P2` | `tm_log` 꼬리 20줄 |
-| `/graph-beta:inbox` | `tm_inbox` — 내가 답하거나 해야 할 노드 |
-| `/graph-beta:answer E-xxx/ask:1 '{...}'` | `tm_answer` |
-| `/graph-beta:take E-xxx/P2/U1` | `tm_assign(vendor: human)` — 이 TASK는 내가 한다 |
-| `/graph-beta:watch E-xxx` | `tm_board`를 `/loop`로 폴링 (선택) |
+| `/teams:board [E-xxx]` | `tm_board` → 아래 표 |
+| `/teams:ticket E-xxx/P2` | `tm_ticket` → 한 티켓 |
+| `/teams:log E-xxx/P2` | `tm_log` 꼬리 20줄 |
+| `/teams:inbox` | `tm_inbox` — 내가 답하거나 해야 할 노드 |
+| `/teams:answer E-xxx/ask:1 '{...}'` | `tm_answer` |
+| `/teams:take E-xxx/P2/U1` | `tm_assign(vendor: human)` — 이 TASK는 내가 한다 |
+| `/teams:watch E-xxx` | `tm_board`를 `/loop`로 폴링 (선택) |
 
 ### 보드 출력 템플릿
 
@@ -427,7 +427,7 @@ interactive: yes   inbox(you): 1 (ask:1 → P3)   decided-for-you: 2   human_gat
 integrate: pending   gate:goal: pending   report: pending
 ```
 
-`tm_ticket`은 여기에 전이 이력·gaps·attacks[]·워크트리 경로를 붙인다. `graph_status({full})`
+`tm_ticket`은 여기에 전이 이력·gaps·attacks[]·워크트리 경로를 붙인다. `team_status({full})`
 금지 규칙은 그대로 — 티켓은 verdict와 카운트만, payload는 절대 안 올린다.
 
 ## 8b. 구현 가능성 판정
@@ -450,27 +450,27 @@ driver)은 위 표의 결정 4개를 문서에 박은 뒤. v0.14(sub-EPIC)는 v0
 
 ## 12. install / remove / patch — harness와 같은 두께로
 
-지금 graph-beta에는 `install`만 있고, 그것도 "MCP 연결 확인"에 그친다. harness처럼 **결정적
+지금 teams에는 `install`만 있고, 그것도 "MCP 연결 확인"에 그친다. harness처럼 **결정적
 스크립트 + 판단하는 스킬** 쌍으로 셋을 둔다. 스크립트는 멱등·비파괴, JSON 리포트가 진실.
 
 ### `install` — `skills/install/install.mjs`
 
 | 쓰는 것 | 소유 | 내용 |
 |---|---|---|
-| `.claude/graph-beta-dispatch.json` | user | dispatch gate 켬. 패턴은 프로젝트를 보고 제안·확인(harness의 gate 패턴 절차 재사용) |
+| `.claude/teams-dispatch.json` | user | dispatch gate 켬. 패턴은 프로젝트를 보고 제안·확인(harness의 gate 패턴 절차 재사용) |
 | `.claude/team.json` | user | **프로젝트 기본값 — `tm_open`이 인자보다 먼저 읽는다.** 이것이 "강제"의 실체다: `{interactive, human_gates, max_parallel_teams, max_depth, roles: {planning, develop, qa}, leader_driver, s_driver}` |
 | `.claude/conventions/**` | user | harness와 **같은 디렉터리** — 이미 `conventions.mjs`가 읽는다. 없으면 harness 템플릿 복사, 있으면 유지 |
-| `CLAUDE.md` 펜스 블록 `<!-- graph-beta:team -->` | user | "쓰기 전에 `tm_open`", 보드 명령 목록 3줄 |
+| `CLAUDE.md` 펜스 블록 `<!-- teams:team -->` | user | "쓰기 전에 `tm_open`", 보드 명령 목록 3줄 |
 | `.gitignore` | user | `.harness-run/` |
 | `.claude/hooks/*` | — | **쓰지 않는다.** 훅은 플러그인 `hooks.json`이 이미 등록. 임베딩 모드는 이 라운드에서 제공하지 않음(엔진이 MCP 서버라 harness식 임베딩과 모양이 다름 — 명시적으로 미지원 선언) |
 
-검증(스킬 쪽 판단): node 18+, git 저장소, **§13 공존 검사**, 도구 발견 — `graph_*` 6 + `tm_*` 기존 5
+검증(스킬 쪽 판단): node 18+, git 저장소, **§13 공존 검사**, 도구 발견 — `team_*` 6 + `tm_*` 기존 5
 + 신규(`tm_board tm_ticket tm_log tm_answer tm_assign tm_inbox tm_events`). `"refresh": true`는
 plugin-owned 파일이 없으므로 `team.json`에 새 키만 추가(기존 값 유지)하는 역할.
 
 ### `remove` — `skills/remove/remove.mjs`
 
-- 지운다: `graph-beta-dispatch.json`, `team.json`, CLAUDE.md 블록, `.gitignore` 줄.
+- 지운다: `teams-dispatch.json`, `team.json`, CLAUDE.md 블록, `.gitignore` 줄.
 - 남긴다: `.claude/conventions/` (harness와 공유, `purgeConventions` 명시 시만), **`~/.harness/tasks/`**
   (이력. `purgeTasks: true` + 확인 시만, 그리고 **살아 있는 driver pid가 있으면 거부**), `.harness-run/`
   (프로젝트 안 run 이력, `purgeRuns` 별도).
@@ -483,7 +483,7 @@ harness `patch.mjs`와 같은 규칙: `x.y.Z`만, plugin.json + marketplace 항�
 항목을 받는다**(`summary_ko` 필수, 없으면 거부). 두 플러그인이 같은 스크립트를 쓰도록
 `scripts/patch-plugin.mjs`로 올리고 `plugin` 인자만 다르게 — harness의 것도 거기로 옮긴다.
 
-## 13. 공존 — harness · graph · graph-beta(team)
+## 13. 공존 — harness · graph · teams(team)
 
 | 조합 | 판정 | 근거·방법 |
 |---|---|---|
@@ -515,7 +515,7 @@ harness `patch.mjs`와 같은 규칙: `x.y.Z`만, plugin.json + marketplace 항�
 | `skills/orchestrate/SKILL.md` | 엔트리 후 "TaskLeader가 돈다, 당신은 board를 본다"로 축소 |
 | `scripts/test-tickets.mjs` | 파생 매핑 표 전부를 테이블 테스트로 |
 | `skills/install/{SKILL.md,install.mjs}`, `skills/remove/{SKILL.md,remove.mjs}`, `skills/patch/SKILL.md` | §12. `team.json`, dispatch json, CLAUDE.md 블록, 공존 검사 |
-| `scripts/patch-plugin.mjs` (저장소 루트) | harness·graph-beta 공용 패치 스크립트, KOR.md Status 포함 |
+| `scripts/patch-plugin.mjs` (저장소 루트) | harness·teams 공용 패치 스크립트, KOR.md Status 포함 |
 | `hooks/dispatch-gate.mjs`, `harness/hooks/goal-gate.mjs` | §13 공유 engagement 마커 읽기 |
 | `mcp/taskmanager.mjs` (추가) | `team.json` 읽어 `tm_open` 기본값, engagement 마커 쓰기/지우기, inbox 적용 |
 
@@ -545,8 +545,8 @@ harness `patch.mjs`와 같은 규칙: `x.y.Z`만, plugin.json + marketplace 항�
 
 | 단계 | 내용 | 검증 |
 |---|---|---|
-| v0.10.0 | **완료.** install/remove/patch 셋 + `team.json` + 공존 검사 + engagement 마커(harness 변경 0) + inline 옵션 셋 제거 + TaskLeader driver·inbox·`tm_events` | install→remove 멱등 테스트, harness+team 동시 설치 픽스처에서 worker 쓰기 통과, `node --test graph-beta/scripts/test-*.mjs` 241/241 |
-| v0.10.1 | **완료.** `planning`(draft→revise→gate)/`qa`(cases→execute→gate) kind + 페르소나·per-stage 스킬·advisory mounts(§3) + entry 스킬 2개(`graph-beta:plan`/`graph-beta:qa`) + `broker.mjs`의 revise 정체성-분리 가드 + `ensureWorktree`의 `gate_uncommitted` 이벤트(계획에 없던 안전 수정) | `node --test graph-beta/scripts/test-*.mjs` 258/258, 회귀 0. 벤치 요청 파일(`plan-flat`/`qa-flat`)만 추가, 벤치 자체는 미실행 — 실제 벤더 실행 증거 없음, 전부 단위 테스트 |
+| v0.10.0 | **완료.** install/remove/patch 셋 + `team.json` + 공존 검사 + engagement 마커(harness 변경 0) + inline 옵션 셋 제거 + TaskLeader driver·inbox·`tm_events` | install→remove 멱등 테스트, harness+team 동시 설치 픽스처에서 worker 쓰기 통과, `node --test teams/scripts/test-*.mjs` 241/241 |
+| v0.10.1 | **완료.** `planning`(draft→revise→gate)/`qa`(cases→execute→gate) kind + 페르소나·per-stage 스킬·advisory mounts(§3) + entry 스킬 2개(`teams:plan`/`teams:qa`) + `broker.mjs`의 revise 정체성-분리 가드 + `ensureWorktree`의 `gate_uncommitted` 이벤트(계획에 없던 안전 수정) | `node --test teams/scripts/test-*.mjs` 258/258, 회귀 0. 벤치 요청 파일(`plan-flat`/`qa-flat`)만 추가, 벤치 자체는 미실행 — 실제 벤더 실행 증거 없음, 전부 단위 테스트 |
 | v0.11.0 | `tickets.mjs` 파생 + `board.jsonl` + **`docs.mjs` phase md** + `tm_board/tm_ticket/tm_events/tm_docs` + 명령 스킬 | 매핑 표 테이블 테스트. md는 golden 파일 비교, `rebuild`가 동일 출력 |
 | v0.12.0 | shape `role/priority/worktree`, 스케줄러 캡, QA=통합 트리 | seam 픽스처에 qa STORY 추가 |
 | v0.13.0 | executor `human`: `ask`, `gate:human`, `assignee`, `waiting_human` park/respawn, `tm_answer/tm_assign/tm_inbox` | fake driver 테스트 (0.8.0 방식), human이 implement한 TASK의 test가 non-human으로 가는지 |
