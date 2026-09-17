@@ -610,3 +610,16 @@ v0.12.1.
 - **위험**: `tm_file`(사용자 직접 STORY 발행)이 `qa_rounds` 캡과 상호작용하는지는 이 계획이
   명시하지 않았다 — 사용자가 직접 STORY를 발행하는 것은 QA 라운드가 아니므로 캡에서 제외했지만,
   이것도 이 계획의 판단이라 팀 리더가 다르게 볼 수 있다.
+- **위험 (팀 리더 지적, 2026-09-17, board.jsonl 비대칭 수정 작업 중)**: v0.12.0의 Task 5는 phase-Team
+  dispatch(PLAN/QA)를 `max_parallel_teams`의 상한과 진행 중 카운트 양쪽 모두에서 제외한다
+  (`taskmanager.mjs:1964-1978`) — 그 자리의 주석이 적은 근거는 "planning은 shape 전, QA는
+  integrate 후에 돌아 develop STORY와 절대 동시에 뜨지 않고, 설계 자체가 각각 최대 1개로 이미
+  제한하므로 추가로 제한해도 뒤에 아무것도 없는 대기만 늘어난다"는 것이다. **v0.12.1이 이
+  전제를 깬다**: 결함 STORY 재순회는 QA **이후에** develop 패키지를 다시 연다, `qa_rounds`는
+  그 수정 결과 위에 QA를 다시 돌린다. QA phase-Team이 살아 있는 동안 결함 STORY가 디스패치되는
+  순간이 생기면, 이 제외는 더 이상 no-op가 아니다 — `runningStories`가 QA를 세지 않으므로,
+  `max_parallel_teams: 1`로 리소스를 묶어 둔 프로젝트가 동시에 2개의 자식 run을 띄우게 될 수
+  있다. 이것이 맞는 동작일 수도 있다(QA는 읽기, develop은 쓰기라 종류가 다른 작업이다) — 여기서
+  결정하지 않는다. v0.12.1 Task 1(결함 STORY 재순회) 또는 Task 5의 후속 구현이 착수하기 전에,
+  `taskmanager.mjs:1964-1978`의 현재 근거를 먼저 읽고 이 동시성이 실제로 발생하는지, 발생한다면
+  `max_parallel_teams`가 QA phase-Team까지 세야 하는지를 확인해야 한다.
