@@ -422,7 +422,7 @@ async function route(run, node) {
       // The host's own model is selectable by definition: a fresh native agent with no
       // model override inherits it. A tier the host did not declare at all falls back to
       // that model, and the reason says so - visible substitution, never a silent one, and
-      // never a dead run over a naming mismatch. (Ported from graph-beta 0.6.1/0.6.2, where a
+      // never a dead run over a naming mismatch. (Ported from teams 0.6.1/0.6.2, where a
       // bench session reporting itself as "claude-opus-5[1m]" blocked at plan, and every
       // implement node blocked on "sonnet" vs "claude-sonnet-5" with zero failed nodes.)
       const resolved = resolveNativeModel(run, model);
