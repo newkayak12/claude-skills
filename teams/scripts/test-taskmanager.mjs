@@ -2112,7 +2112,10 @@ test('tm_next from a non-leader process does not drive: it returns leader state 
     const n = await main.call('tm_next', { task_id: open.task_id });
     assert.equal(n.driven_by, 'leader');
     assert.equal(n.leader.alive, true);
-    assert.match(n.hint, /tm_status|tm_events/);
+    // A task still running tells the watcher how to stay alive; a finished one points at the
+    // account. Both are hints, and which one comes back is itself part of the contract.
+    assert.equal(n.state, 'running');
+    assert.match(n.hint, /call tm_next again with wait_ms/);
     assert.equal(n.ready, undefined, 'no briefing paths are handed to the watcher');
   } finally { try { process.kill(pid, 'SIGTERM'); } catch { /* gone */ } main.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
 });
@@ -2153,6 +2156,18 @@ test('a size-S task under a live leader reports running to the watcher, not bloc
     assert.equal(n.ready, undefined, 'still no driving from the watcher');
     assert.equal(n.state, 'running', `the watcher must not call a live s_run blocked: ${JSON.stringify(n)}`);
     assert.equal(n.run_id, st.s_run.run_id, 'and it names the run the work is actually in');
+
+    // wait_ms is the only thing that can hold a headless watcher session open: it ends the moment
+    // the model stops calling tools, and the second real-vendor run died exactly there - correctly
+    // told "running", it scheduled a background sleep and ended its turn one minute in. So the
+    // call itself has to block, and say so when it comes back still running.
+    const t0 = Date.now();
+    const waited = await main.call('tm_next', { task_id: open.task_id, wait_ms: 1500 });
+    const elapsed = Date.now() - t0;
+    assert.ok(elapsed >= 1400, `tm_next({wait_ms}) must block, took ${elapsed}ms`);
+    assert.equal(waited.state, 'running', 'nothing finished, so it comes back still running');
+    assert.match(waited.hint, /call tm_next again with wait_ms/);
+    assert.match(waited.hint, /Do NOT sleep/);
   } finally {
     for (const pid of pids) { try { process.kill(pid, 'SIGTERM'); } catch { /* gone */ } }
     main.close(); if (leader) leader.close();
