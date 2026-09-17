@@ -31,6 +31,7 @@ import { existsSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmS
 import { homedir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { touchMarker } from './engage.mjs';
 import {
   node,
   pushChain,
@@ -457,6 +458,29 @@ function shortId(taskId) {
   return String(taskId).slice(0, 8);
 }
 
+// The engagement marker (engage.mjs) lives at .claude/.harness-markers/ INSIDE the tree, because
+// that is where the harness gate looks. It is harness state, not project content, so git must
+// not see it at all: an untracked marker leaves every worktree dirty and a committed one makes
+// every package branch conflict on a timestamp. info/exclude is the local, never-committed place
+// for that, and it is read from the common git dir, so one write covers the repo and every
+// worktree of it. install.mjs also gitignores the path for projects that want it committed.
+const EXCLUDE_LINE = '.claude/.harness-markers/';
+function excludeMarkers(cwd) {
+  try {
+    const common = git(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
+    if (!common.ok || !common.out) return false;
+    const info = join(common.out, 'info');
+    const file = join(info, 'exclude');
+    const cur = existsSync(file) ? readFileSync(file, 'utf8') : '';
+    if (cur.split(/\r?\n/).some((l) => l.trim() === EXCLUDE_LINE)) return true;
+    mkdirSync(info, { recursive: true });
+    writeFileSync(file, cur + (cur === '' || cur.endsWith('\n') ? '' : '\n') + EXCLUDE_LINE + '\n');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // One worktree per package, kept across attempts: a retry continues in the tree the first
 // attempt left, exactly as a graph retry keeps the worktree of the attempt it replaces.
 // `base` is the commit or branch the tree starts from - the project's HEAD, or a dependency's
@@ -464,13 +488,21 @@ function shortId(taskId) {
 function ensureWorktree(task, name, base = 'HEAD') {
   const path = join(taskDir(task.run_id), 'worktrees', name);
   const branch = `harness/${shortId(task.run_id)}/${name}`;
-  if (existsSync(join(path, '.git'))) return { ok: true, path, branch, created: false };
+  if (existsSync(join(path, '.git'))) {
+    // The harness gate (if this project also installs harness) reads .claude/.harness-markers/
+    // from the session's cwd, which for a worker IS this worktree. See engage.mjs.
+    excludeMarkers(path);
+    touchMarker(path, task.run_id);
+    return { ok: true, path, branch, created: false };
+  }
   mkdirSync(dirname(path), { recursive: true });
   const exists = git(task.cwd, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]).ok;
   const r = exists
     ? git(task.cwd, ['worktree', 'add', path, branch])
     : git(task.cwd, ['worktree', 'add', '-b', branch, path, base]);
   if (!r.ok) return { ok: false, path, branch, reason: r.err || r.out || 'git worktree add failed' };
+  excludeMarkers(path);
+  touchMarker(path, task.run_id);
   return { ok: true, path, branch, created: !exists };
 }
 
@@ -485,8 +517,12 @@ function ensureWorktree(task, name, base = 'HEAD') {
 function commitWorktree(cwd, message) {
   const add = git(cwd, ['add', '-A', '--', '.']);
   if (!add.ok) return { ok: false, reason: add.err || 'git add failed' };
-  const drop = git(cwd, ['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', '.harness-run']);
-  if (!drop.ok) return { ok: false, reason: drop.err || 'could not leave .harness-run out of the commit' };
+  // .claude/.harness-markers/ gets the same treatment for the same reason, plus one of its own:
+  // every worktree writes its own marker with its own timestamp (engage.mjs), so committing it
+  // would make every package branch differ in that one file and every integrate merge conflict
+  // on it. install.mjs gitignores it in a real project; a project without it must not break.
+  const drop = git(cwd, ['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', '.harness-run', '.claude/.harness-markers']);
+  if (!drop.ok) return { ok: false, reason: drop.err || 'could not leave the harness state out of the commit' };
   const staged = git(cwd, ['diff', '--cached', '--quiet']);
   if (staged.ok) return { ok: true, commit: null }; // nothing to commit is not an error
   const c = git(cwd, ['-c', 'user.email=harness@local', '-c', 'user.name=harness', 'commit', '-q', '-m', message]);
@@ -1433,6 +1469,8 @@ function openSRun(task) {
     mixed: task.mixed !== false,
   });
   task.s_run = { cwd: task.cwd, run_id: child.run_id };
+  excludeMarkers(task.cwd);
+  touchMarker(task.cwd, task.run_id);
   record(task, { event: 's_open', task_id: task.run_id, run_id: child.run_id, cwd: task.cwd });
   if (task.s_driver !== 'inline') {
     task.s_run.spawn_count = 0;
@@ -1524,6 +1562,12 @@ function toolNextSRun(task) {
 
 function toolNext(a) {
   const task = mustFindTask(a);
+  // Refresh the shared engagement marker in every tree a live driver is working in, so the
+  // harness gate's 2h window never closes on a long package (see engage.mjs).
+  for (const n of task.nodes) {
+    if (n.child && n.child.cwd && n.state === 'running') touchMarker(n.child.cwd, task.run_id);
+  }
+  if (task.s_run && task.s_run.cwd) touchMarker(task.s_run.cwd, task.run_id);
   if (task.s_run) return toolNextSRun(task);
   // Dispatch nodes run here, the moment they are ready. Doing it in tm_next rather than in
   // a separate call means the session cannot forget to, and cannot do it twice.

@@ -280,6 +280,7 @@ test('a sound shape dispatches its root package: worktree created, child run ope
     assert.ok(c.cwd.startsWith(join(root, task_id, 'worktrees')));
     assert.equal(spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: c.cwd, encoding: 'utf8' }).stdout.trim(), c.branch);
     assert.equal(readFileSync(join(c.cwd, 'a.txt'), 'utf8'), 'x\n');
+    assert.ok(existsSync(join(c.cwd, '.claude', '.harness-markers', `team-${task_id.slice(0, 8)}`)), 'worktree carries the shared engagement marker');
     // The child is a graph-beta run the broker can pick up by (cwd, run_id): isolated, flowed, briefed.
     const st = await g.call('graph_status', { run_id: c.run_id, cwd: c.cwd });
     assert.equal(st.state, 'running');
