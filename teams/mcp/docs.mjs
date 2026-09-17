@@ -4,9 +4,11 @@
 //
 // v0.12.0 wires planning/qa into the EPIC flow as phase-Teams (taskmanager.mjs's task.planning_pkg
 // and task.qa_pkg), and renders three more of §7c's 13: 10-planning.md, 10-prd.md, 60-qa.md.
-// 15-spec-gate.md (v0.13.0's human gate) and 65-audit.md (v0.12.1's planning cross-review) still
-// have no data behind them and are not rendered - an empty file would claim a feature that does
-// not exist.
+// v0.12.1 adds the third phase-Team, the audit (task.audit_pkg), and with it 65-audit.md - which
+// says more than the other two phase-Team pages because an audit's output is a list the manager
+// acted on: the unmet user stories it named, and the STORYs those became. 15-spec-gate.md
+// (v0.13.0's human gate) is the one file of §7c's 13 still without data behind it, and is not
+// rendered - an empty file would claim a feature that does not exist.
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname } from 'node:path';
 import {
@@ -49,6 +51,7 @@ export function renderIndex(task) {
   }
   if (task.nodes.some((n) => n.stage === 'integrate' && n.result)) L.push('- [Integrate](./50-integrate.md)');
   if (task.qa_pkg) L.push('- [QA](./60-qa.md)');
+  if (task.audit_pkg) L.push('- [Planning audit](./65-audit.md)');
   if (task.nodes.some((n) => n.stage === 'gate' && n.subgoal_id === null && n.result)) L.push('- [Goal gate](./70-goal-gate.md)');
   if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) L.push('- [Report](./80-report.md)');
   return L.join('\n') + '\n';
@@ -117,6 +120,24 @@ export function renderQa(task) {
   return phaseTeamLines(task, task.qa_pkg, 'QA', (child) => `worktree: ${child.cwd} (the integration tree)`).join('\n') + '\n';
 }
 
+// The audit's own page. phaseTeamLines carries the shared "how did the phase-Team's run go"
+// half; what is particular to the audit is below it - the unmet stories are the audit's actual
+// product, and the filed[] list is read from the accept node rather than recomputed from the
+// package list, because a later round's STORYs would be indistinguishable from this one's.
+export function renderAudit(task) {
+  const rounds = task.nodes.filter((n) => n.stage === 'accept' && String(n.subgoal_id) === String(task.audit_pkg.id) && n.result);
+  const last = rounds.length ? rounds[rounds.length - 1].result : {};
+  // Unmet is the latest round's - an earlier round's unmet story was either filed or is still
+  // unmet, and either way the latest round is the current truth. Filed is every round's, because
+  // the STORYs a first round filed are still this audit's doing after a second round found none.
+  const filed = rounds.flatMap((n) => (n.result.filed || []).map(String));
+  const L = phaseTeamLines(task, task.audit_pkg, 'Planning audit', (child) => `worktree: ${child.cwd} (the integration tree)`);
+  L.push('', `rounds: ${rounds.length}`);
+  L.push('', '## Unmet user stories (latest round)', bullets((last.unmet || []).map((u) => (u && u.title) || String(u))));
+  L.push('', '## STORYs filed', bullets(filed.map((id) => `[${id}](./40-stories/${id}.md)`)));
+  return L.join('\n') + '\n';
+}
+
 export function renderShape(task) {
   const key = epicKey(task.run_id);
   const L = [frontmatter(key, epicTicketState(task), task), '# Shape', ''];
@@ -146,7 +167,7 @@ export function renderStory(task, pkgId) {
   const accept = latestBySubgoal(task, pkgId, 'accept');
   const r = accept && accept.result;
   const L = [frontmatter(key, state, task), `# ${pkgId} — ${(pkg && pkg.title) || ''}`, ''];
-  L.push(`state: ${state} · tasks: ${storyTaskProgress(task, pkgId) || '—'} · reporter: ${pkg && pkg.repair ? 'repair' : 'shape'}`, '');
+  L.push(`state: ${state} · tasks: ${storyTaskProgress(task, pkgId) || '—'} · reporter: ${(pkg && pkg.reporter) || (pkg && pkg.repair ? 'repair' : 'shape')}`, '');
   if (dispatch && dispatch.child) L.push(`worktree: ${dispatch.child.cwd} on branch ${dispatch.child.branch}`, '');
   L.push('## Last verdict');
   if (r) {
@@ -205,6 +226,7 @@ export function renderAll(task) {
   }
   if (task.nodes.some((n) => n.stage === 'integrate' && n.result)) files[paths.integrate] = renderIntegrate(task);
   if (task.qa_pkg) files[paths.qa] = renderQa(task);
+  if (task.audit_pkg) files[paths.audit] = renderAudit(task);
   if (task.nodes.some((n) => n.stage === 'gate' && n.subgoal_id === null && n.result)) files[paths.goalGate] = renderGoalGate(task);
   if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) files[paths.report] = renderReport(task);
   return files;

@@ -320,9 +320,9 @@ test('cases contract writes a scenario spec derived from acceptance, not from th
 
 // ---------- planning-audit kind: the audit stage contract ----------
 //
-// Nothing opens an audit node yet (taskmanager.mjs wiring is separate, unstarted work) -
-// these tests only pin the contract text composePrompt produces when handed an audit node,
-// the same way the revise/cases/execute tests above do for their own stages.
+// taskmanager.mjs's openAudit opens these nodes now (v0.12.1 Task 2); these tests still only
+// pin the contract text composePrompt produces when handed an audit node, the same way the
+// revise/cases/execute tests above do for their own stages.
 
 test('audit gets its own Required output contract, not the implement fallback', () => {
   const cwd = tmpProject();

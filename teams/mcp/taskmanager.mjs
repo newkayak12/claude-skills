@@ -134,6 +134,16 @@ accept:true with an empty checks[] is refused by the engine - a judgement with n
 Synthesize from the node results below only: which packages ran, what each delivered, what the integration showed, what the gate said. State plainly what was not done and why.`,
 };
 
+// What an ordinary accept never has to say, and a phase-Team's accept does. Both of these pass
+// a list UP to the manager rather than judging it: the QA accept's `defects` and the audit
+// accept's `unmet` are what finish() files STORYs from (§5b). A judge that is never told to
+// return the field returns a verdict the hook has nothing to act on - so the field is named
+// here, in the same breath as the contract it extends, rather than left to the child's report.
+const ACCEPT_EXTRA = {
+  qa: `This package is the goal-level QA pass, so your JSON carries one more field: "defects": [{"title": "...", "touches": ["path"], "deps": ["P1"], "evidence": "<how to reproduce>", "severity": "high|medium|low"}]. Every defect the QA report substantiates goes there, whether or not you accept the package - the manager files each one as its own STORY and loops the task back through integration. An empty list is the right answer when QA found nothing; do not invent one, and do not put a defect only in "gaps".`,
+  audit: `This package is planning's audit pass, so your JSON carries one more field: "unmet": ["US-n -> what the integrated result still does not do"]. Put every user story the audit showed is unsatisfied there, one entry each, whether or not you accept the package - the manager files each as its own STORY. An empty list is the right answer when every story is met.`,
+};
+
 function bullets(list) {
   return (list || []).map((x) => `- ${x}`).join('\n') || '- (none)';
 }
@@ -602,6 +612,47 @@ function fileDefects(task, defects, opts) {
   return { task: saveRun(task), filed: filed.map((p) => p.id), integrate: fresh };
 }
 
+// ---------- the audit phase-Team: planning's second pass (v0.12.1 Task 2, §2, §3) ----------
+//
+// Opens AUDIT in front of gate:goal, the same shape the QA phase-Team takes, once the node
+// gate:goal currently hangs on has finished - the last accept:QA:N when roles.qa is on, the
+// integrate itself when it is off. Gated on roles.planning ALONE (team leader decision #4): the
+// audit is planning's own second pass over the EPIC, so hanging it off roles.qa would delete a
+// planning stage the user never asked to turn off. The QA report is consumed when one exists and
+// is simply absent when it does not - which is also why the brief is built here, at open time,
+// rather than at shape: only now is there an integrated result and (maybe) a QA verdict to name.
+function openAudit(task, afterNodeId) {
+  const integ = task.nodes.filter((x) => x.stage === 'integrate' && x.state === 'done' && x.integration).pop();
+  const planDispatch = latestBySubgoal(task, 'PLAN', 'dispatch');
+  const stories = (planDispatch && planDispatch.result && Array.isArray(planDispatch.result.user_stories))
+    ? planDispatch.result.user_stories : [];
+  const qaAccept = task.nodes.filter((x) => x.stage === 'accept' && x.subgoal_id === 'QA' && x.state === 'done' && x.result).pop();
+  const L = [
+    `This is planning's second pass over this task: cross-check what was actually built against the PRD this same Team wrote, and say which user stories are still unmet.`,
+    '',
+    'User stories the PRD produced:',
+    bullets(stories),
+  ];
+  if (qaAccept) {
+    const r = qaAccept.result;
+    L.push('', `The goal-level QA pass has already run (${qaAccept.node_id}). Its verdict, as further evidence - a story whose files exist can still be unmet:`);
+    L.push(`- accept: ${r.accept === true} (match ${r.match_pct == null ? '?' : r.match_pct})`);
+    if ((r.gaps || []).length) L.push('Gaps it named:', bullets(r.gaps));
+    if ((r.defects || []).length) L.push('Defects it reported:', bullets(r.defects.map((d) => (d && d.title) || String(d))));
+  }
+  task.audit_pkg = {
+    id: 'AUDIT', phase: 'audit', flow: 'audit', integration_of: integ ? integ.node_id : null,
+    title: 'planning audit',
+    brief: L.join('\n'),
+    acceptance: ['every user story in the PRD is judged against the integrated result, and the unmet ones are named'],
+    deps: [], touches: [],
+  };
+  const accept = pushChain(task, PACKAGE_CHAIN, 'AUDIT', nextIndex(task, 'dispatch:AUDIT'), [afterNodeId], [], {});
+  const goal = task.nodes.filter((x) => x.stage === 'gate' && x.subgoal_id == null).pop();
+  if (goal) goal.deps = [accept];
+  return accept;
+}
+
 // ---------- worktrees and child runs ----------
 
 function git(cwd, args) {
@@ -779,6 +830,9 @@ function packageOf(task, id) {
   // Same reasoning for the QA phase-Team's package: expandPackages stashes it on task.qa_pkg
   // rather than pushing it into task.spec.packages, which shape (not the manager) owns.
   if (task.qa_pkg && String(task.qa_pkg.id) === String(id)) return task.qa_pkg;
+  // And the audit phase-Team's, for the same reason again: openAudit stashes it on task.audit_pkg
+  // when planning's second pass opens, long after shape has closed its own package list.
+  if (task.audit_pkg && String(task.audit_pkg.id) === String(id)) return task.audit_pkg;
   return ((task.spec && task.spec.packages) || []).find((p) => String(p.id) === String(id)) || null;
 }
 
@@ -844,6 +898,10 @@ function childContext(task, pkg) {
     lines.push(`This worktree is the COMBINED tree of every package in this task: all of their branches are already merged here, on the integration branch itself.`);
     lines.push(`This is the goal-level QA pass, run once over the integrated result. Exercise it the way a user would and report what you find.`);
     lines.push(`Write only to test/ and your own report - src/ and every package's delivered files are read-only here. This is a review, not a repair: a defect you find is reported, not fixed.`);
+  } else if (pkg.phase === 'audit') {
+    lines.push(`This worktree is the COMBINED tree of every package in this task: all of their branches are already merged here, on the integration branch itself.`);
+    lines.push(`This is planning's own second pass over this EPIC, taken after integration. Read the tree against the PRD's user stories in your request above and judge each one: satisfied, partially satisfied, or missing.`);
+    lines.push(`You have no edit rights here - not over the tree and not over the PRD. Change no files. An unmet story is reported, not fixed: the manager files it as its own STORY.`);
   } else {
     lines.push(`The worktree is private to this package and branched from the project's HEAD; integration happens later, elsewhere.`);
   }
@@ -1202,7 +1260,9 @@ function openChild(task, n) {
   // A QA phase-Team package is a third exception that IS shaped like a repair: it judges the
   // very tree integrate just built, so it reuses that worktree the same way repairWorktree
   // already does for a repair package (§0.3 finding 3 - same mechanism, no new function).
-  const wt = pkg.repair || pkg.phase === 'qa'
+  // The audit phase-Team joins QA in that third exception, and for the same reason: it judges
+  // the integrated tree, so its worktree IS the integration worktree.
+  const wt = pkg.repair || pkg.phase === 'qa' || pkg.phase === 'audit'
     ? repairWorktree(task, pkg)
     : pkg.phase === 'planning'
       ? { ok: true, path: task.cwd, branch: null, created: false }
@@ -1556,6 +1616,10 @@ function composeTaskPrompt(task, n) {
   L.push('');
   L.push(`## Required output`);
   L.push(n.node_id.startsWith('gate:goal') ? CONTRACT['gate:goal'] : CONTRACT[n.stage]);
+  if (n.stage === 'accept') {
+    const judged = packageOf(task, n.subgoal_id);
+    if (judged && ACCEPT_EXTRA[judged.phase]) L.push(ACCEPT_EXTRA[judged.phase]);
+  }
   L.push('');
   L.push(`Return that JSON object and nothing else.`);
   return L.join('\n');
@@ -1697,6 +1761,39 @@ function finish(task, n, result) {
       const qaRound = nextIndex(task, 'dispatch:QA');
       const qaAccept = pushChain(task, PACKAGE_CHAIN, 'QA', qaRound, [n.node_id], [], {});
       if (goal) goal.deps = [qaAccept];
+    }
+  }
+  // planning's second pass (§2, decision #4). The trigger is "the node gate:goal is waiting on
+  // just finished": accept:QA:N when roles.qa is on, the integrate itself when it is off. Reading
+  // gate:goal's own dep rather than the node's stage alone is what keeps this from firing on a
+  // round that ended in defects - fileDefects (above) has already rerouted gate:goal to a fresh
+  // integrate by the time this runs, so the audit waits for the fix instead of auditing a tree
+  // that is about to be rebuilt.
+  const roles = (task.team && task.team.opts && task.team.opts.roles) || {};
+  if (roles.planning && n.state === 'done'
+    && ((n.stage === 'accept' && n.subgoal_id === 'QA') || (n.stage === 'integrate' && !roles.qa))) {
+    const goal = task.nodes.filter((x) => x.stage === 'gate' && x.subgoal_id == null).pop();
+    if (goal && goal.deps.length === 1 && goal.deps[0] === n.node_id) openAudit(task, n.node_id);
+  }
+  // An unmet user story the audit named is filed exactly like a QA-found defect - same STORY
+  // path, same detour through a fresh integrate - under its own reporter, and capped by the same
+  // qa_rounds knob for the same reason: a pass that can file work which reopens the pass needs a
+  // bound, and a second knob for the second such pass would only be two numbers to keep in step.
+  if (n.stage === 'accept' && n.subgoal_id === 'AUDIT' && n.state === 'done') {
+    const unmet = (Array.isArray(result.unmet) ? result.unmet : [])
+      .map((u) => (u && typeof u === 'object' ? u : { title: String(u), evidence: '' }));
+    if (unmet.length) {
+      const rounds = task.nodes.filter((x) => x.stage === 'accept' && x.subgoal_id === 'AUDIT').length;
+      const cap = Number.isInteger(task.team && task.team.opts && task.team.opts.qa_rounds)
+        ? task.team.opts.qa_rounds : TEAM_DEFAULTS.qa_rounds;
+      if (rounds > cap) {
+        task.unresolved_defects = (task.unresolved_defects || []).concat(unmet.map((u) => ({ ...u, reporter: 'planning-audit', round: rounds })));
+      } else {
+        const out = fileDefects(task, unmet, { reporter: 'planning-audit' });
+        // What 65-audit.md links. Kept on the node rather than recomputed from the package list
+        // because a later round's STORYs would be indistinguishable from this one's.
+        n.result = { ...n.result, filed: out.filed };
+      }
     }
   }
   saveRun(task);
@@ -1945,7 +2042,7 @@ function toolTicket(a) {
     tasks: storyTaskProgress(task, pkgId),
     worktree: dispatch && dispatch.child ? { cwd: dispatch.child.cwd, branch: dispatch.child.branch } : null,
     last_verdict: accept && accept.result ? { accept: accept.result.accept, match_pct: accept.result.match_pct, gaps: accept.result.gaps || [] } : null,
-    reporter: pkg.repair ? 'repair' : 'shape',
+    reporter: pkg.reporter || (pkg.repair ? 'repair' : 'shape'),
     doc_path: docPaths(task).story(pkgId),
   };
 }
@@ -2102,7 +2199,7 @@ function toolNext(a) {
   // already limits each to at most one at a time (§2 "v0.12.0이 하지 않는 것"), so throttling
   // them further would only add a wait with nothing behind it.
   let opened = 0;
-  const isPhaseTeam = (n) => { const pkg = packageOf(task, n.subgoal_id); return !!(pkg && (pkg.phase === 'planning' || pkg.phase === 'qa')); };
+  const isPhaseTeam = (n) => { const pkg = packageOf(task, n.subgoal_id); return !!(pkg && (pkg.phase === 'planning' || pkg.phase === 'qa' || pkg.phase === 'audit')); };
   const readyDispatch = readyNodes(task).filter((n) => n.stage === 'dispatch');
   for (const n of readyDispatch) {
     if (!isPhaseTeam(n)) continue;
