@@ -143,14 +143,15 @@ v0.12.0 계획(`2026-09-17-teams-team-v0.12.0.md` §0.1)은 planning/qa phase-Te
    `CHECK.ask_timeout: (v) => v === null || (Number.isInteger(v) && v > 0)`(밀리초). Task 4가
    구현한다.
 2. **`tm_answer`가 오면 리더를 즉시 재기동해야 한다 — 팀 리더 확인(2026-09-17, §14 결정 기록
-   `5·7·8·C` 적용): 진행하되 검증부터.** 이 항목은 더 이상 해결 안 된 발견이 아니다 — **Task 5가
-   그 검증을 실제로 수행했고, `reset_capacity`와의 유비가 패턴은 맞지만 예산 처리는 그대로
-   가져다 쓸 수 없음을 코드로 확인했다.** `spawnLeader(task, {resume: true})`를 그대로 불렀다면
-   `restarts`를 매 응답마다 올려 정상적인 대기·답변 반복이 결국 `leader_exhausted`로 죽는
-   버그였다(`spawnLeader`의 `restarts: ... + (opts.resume ? 1 : 0)`가 무조건 증가). Task 5는
-   `spawnLeader`에 `free` 옵션을 더해 `tm_answer`가 `{resume: true, free: true}`로 불러 예산을
-   전혀 쓰지 않게 고쳤다 — `serviceLeader`의 게이트가 `waiting_human`에서 자동 재기동을 막는 것은
-   그대로 두고, `tm_answer`만 그 게이트를 우회해 명시적으로 재기동한다는 구조는 바뀌지 않았다.
+   `5·7·8·C` 적용): 진행하되 검증부터.** 계획 단계에서 그 검증을 미리 해 본 결과, `reset_capacity`
+   와의 유비는 패턴(park 지우고 예산 안 쓰고 재기동)은 맞지만 예산 처리는 그대로 가져다 쓸 수
+   없다는 것이 코드로 확인됐다. `spawnLeader(task, {resume: true})`를 그대로 부르면 `restarts`를
+   매 응답마다 올려(`spawnLeader`의 `restarts: ... + (opts.resume ? 1 : 0)`가 무조건 증가) 정상적인
+   대기·답변 반복이 결국 `leader_exhausted`로 죽는 버그가 된다 — 아직 구현되지 않았으니 아직 일어난
+   일은 아니지만, Task 5가 그대로 구현하면 반드시 일어난다. **그래서 Task 5는 `spawnLeader`에
+   `free` 옵션을 더해야 한다** — `tm_answer`가 `{resume: true, free: true}`로 불러 예산을 전혀
+   쓰지 않게. `serviceLeader`의 게이트가 `waiting_human`에서 자동 재기동을 막는 것은 그대로 두고,
+   `tm_answer`만 그 게이트를 우회해 명시적으로 재기동한다는 구조는 바뀌지 않는다.
 3. **`human_scope: "all"`은 이 단계에서 구현하지 않는다 — 팀 리더 확인(2026-09-17): 세 번째 선택지,
    조용히 무시하지 않고 시끄럽게 거부한다.** 이전 초안은 "`'leader'`만 검증하고 `'all'`은 구조적으로
    막지 않되 태스크 없음"으로 남겨 뒀는데, 그건 `team.json`에 `human_scope: "all"`을 적어도 `"leader"`
@@ -616,9 +617,9 @@ v0.13.0.
   예산 안 쓰고 재기동)은 맞았지만, `reset_capacity`가 대상으로 삼는 `spawnChildDriver` 직접 호출과
   `tm_answer`가 실제로 불러야 하는 `spawnLeader`는 다른 함수였고, `spawnLeader`의 `resume` 옵션은
   무조건 `restarts`를 올린다 — 그대로 재사용했으면 정상적인 대기·답변 반복이 결국
-  `leader_exhausted`로 죽는 버그를 이 계획이 스스로 심을 뻔했다. Task 5가 `spawnLeader`에 `free`
-  옵션을 더해 고쳤다 — 팀 리더의 "검증부터" 지시가 없었으면 이 계획은 이 버그를 그대로 낸 채
-  릴리스됐을 것이다.
+  `leader_exhausted`로 죽는 버그를 이 계획이 스스로 심을 뻔했다. Task 5는 이제 `spawnLeader`에
+  `free` 옵션을 더하는 것을 자기 체크리스트에 명시적으로 담고 있다 — 팀 리더의 "검증부터" 지시가
+  없었으면 이 계획은 이 버그를 그대로 낸 채 구현으로 넘어갔을 것이다.
 - **`ask`/`gate:human`이 "TaskLeader 관리 노드"라는 §0.2의 해석은 phase-Team(합성 패키지) 패턴과
   의도적으로 다르다** — 다른 읽기(child-run에도 `ask` kind를 만든다)를 택하면 `graph.mjs`의
   `KINDS`/`FLOWS`에 새 항목이 필요해지고 Task 2가 최소 +1 unit 커진다. 이 계획은 설계 문서 §7의
