@@ -69,6 +69,10 @@ test('audit is not a reasoning stage - it mutates nothing, but the shape follows
 
 test('flow audit supplies the planning-audit kind and reuses planning\'s own persona list verbatim', () => {
   assert.equal(FLOWS.audit.kind, 'planning-audit');
+  // Canary: pins an actual persona string as a literal, so this test still fails if
+  // FLOWS.plan.personas and FLOWS.audit.personas drift together to something else - the
+  // deepEqual below only proves the two lists match each other, not what they match to.
+  assert.ok(FLOWS.audit.personas.includes('PO who owns value and scope'));
   assert.deepEqual(FLOWS.audit.personas, FLOWS.plan.personas);
 });
 
