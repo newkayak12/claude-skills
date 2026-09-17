@@ -1499,12 +1499,12 @@ test('tm_board with no task_id lists every EPIC, ticket-shaped; with task_id it 
     await throughCritique(tm, task_id);
     const board = await tm.call('tm_board', { task_id });
     assert.equal(board.key, `E-${task_id.slice(0, 8)}`);
-    // Not 'impl': expandPackages (called the instant shape succeeds, before critique even runs)
-    // creates dispatch+accept AND integrate/gate:goal/report together in one shot, so
-    // epicPhase's goalLevel check (stage 'integrate' exists) is already true here even though
-    // no package has been dispatched yet - see this task's report for the discovered mismatch
-    // against §6's phase table.
-    assert.equal(board.phase, 'qualitygate');
+    // 'impl', not 'qualitygate': expandPackages (called the instant shape succeeds, before
+    // critique even runs) creates dispatch+accept AND integrate/gate:goal/report together in
+    // one shot, but epicPhase now gates on the integrate node's own unmetDeps (every package's
+    // accept actually reaching 'done') rather than on integrate merely existing - and no
+    // package has even been dispatched yet, let alone accepted.
+    assert.equal(board.phase, 'impl');
     assert.equal(board.stories.length, 2);
     assert.deepEqual(board.stories.map((s) => s.id), ['P1', 'P2']);
     assert.equal(board.stories[0].state, 'READY', 'P1 has no deps: ready at once');
@@ -1518,9 +1518,9 @@ test('tm_ticket reads an EPIC key or a STORY key, and always returns a doc_path 
     await throughCritique(tm, task_id);
     const epic = await tm.call('tm_ticket', { key: `E-${task_id.slice(0, 8)}` });
     assert.equal(epic.kind, 'EPIC');
-    // Same eager-integrate-node mismatch as tm_board's phase assertion above: IN_REVIEW, not
-    // IN_PROGRESS, the moment shape succeeds.
-    assert.equal(epic.state, 'IN_REVIEW');
+    // IN_PROGRESS, not IN_REVIEW: same as tm_board's phase assertion above, the integrate node
+    // exists the moment shape succeeds but no package has been dispatched, let alone accepted.
+    assert.equal(epic.state, 'IN_PROGRESS');
     const story = await tm.call('tm_ticket', { key: `E-${task_id.slice(0, 8)}/P1` });
     assert.equal(story.kind, 'STORY');
     assert.equal(story.state, 'READY');
@@ -1545,9 +1545,10 @@ test('board.jsonl gets one line per ticket key that actually changed - never a l
     await throughCritique(tm, task_id);
     const afterCritique = readFileSync(boardPath, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     const epicKey = `E-${task_id.slice(0, 8)}`;
-    // The EPIC ticket moves READY -> IN_REVIEW in the same shape submission that creates the
-    // integrate node (see the phase/state comments above) - it never passes through IN_PROGRESS.
-    assert.ok(afterCritique.some((e) => e.key === epicKey && e.from === 'READY' && e.to === 'IN_REVIEW'));
+    // The EPIC ticket moves READY -> IN_PROGRESS in the same shape submission that creates the
+    // integrate node (see the phase/state comments above) - it only reaches IN_REVIEW once every
+    // package's accept has actually landed, which this stretch never does.
+    assert.ok(afterCritique.some((e) => e.key === epicKey && e.from === 'READY' && e.to === 'IN_PROGRESS'));
     assert.ok(afterCritique.some((e) => e.key === `${epicKey}/P1` && e.to === 'READY'));
     assert.ok(afterCritique.some((e) => e.key === `${epicKey}/P2` && e.to === 'BACKLOG'));
 
