@@ -269,7 +269,10 @@ function mustFindTask(a) {
 
 // ---------- shape validation and expansion ----------
 
-function validateShape(spec) {
+// userStories is task.planning_pkg's dispatch:PLAN:1 result.user_stories, passed only for a
+// task planning ran on - finish() decides that, so this stays a pure function of what it is
+// handed. undefined/null skips the check entirely (planning off: nothing to be complete against).
+function validateShape(spec, userStories) {
   const problems = [];
   if (!spec || typeof spec !== 'object') return ['shape returned no packages object'];
   if (!Array.isArray(spec.acceptance) || !spec.acceptance.length) problems.push('shape has no goal-level acceptance criteria');
@@ -317,6 +320,14 @@ function validateShape(spec) {
     state.set(id, 'done');
   };
   for (const id of ids) walk(id, []);
+  // §5's completeness check: every user story planning produced must be implemented by some
+  // package, or it silently falls through the crack between "planning decided it" and "shape
+  // scheduled it". Only checked when planning actually ran (userStories is an array, not null).
+  if (Array.isArray(userStories)) {
+    const covered = new Set(packages.flatMap((p) => (Array.isArray(p && p.implements) ? p.implements.map(String) : [])));
+    const missing = userStories.map(String).filter((u) => !covered.has(u));
+    if (missing.length) problems.push(`user stories not implemented by any package: ${missing.join(', ')}`);
+  }
   return problems;
 }
 
@@ -1534,12 +1545,19 @@ function finish(task, n, result) {
     }
   }
   if (n.stage === 'shape' && n.state === 'done') {
-    const problems = validateShape(result);
+    const planDispatch = task.planning_pkg ? task.nodes.find((x) => x.node_id === 'dispatch:PLAN:1') : null;
+    const userStories = task.planning_pkg
+      ? ((planDispatch && planDispatch.result && Array.isArray(planDispatch.result.user_stories)) ? planDispatch.result.user_stories : [])
+      : null;
+    const problems = validateShape(result, userStories);
     if (problems.length) {
       n.state = 'failed';
       n.result = { ...result, stage_ok: false, shape_problems: problems, reason: `unusable shape: ${problems.join('; ')}` };
     } else {
-      task.spec = { acceptance: result.acceptance, packages: result.packages.map((p) => ({ ...p, id: String(p.id) })) };
+      task.spec = {
+        acceptance: result.acceptance,
+        packages: result.packages.map((p, i) => ({ ...p, id: String(p.id), priority: Number.isInteger(p.priority) ? p.priority : i })),
+      };
       expandPackages(task, task.spec.packages);
     }
   }
