@@ -58,6 +58,7 @@ import {
   normalizeSpec,
 } from './graph.mjs';
 import { composePrompt } from './prompts.mjs';
+import { readTeamConfig, resolveTeamOptions } from './teamconfig.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER = { name: 'teams-engineering', version: '1.0.0' };
@@ -1185,12 +1186,21 @@ function requireRunnable(run, nodeId) {
 async function toolGraphOpen(a) {
   const cwd = resolve(String(a.cwd));
   knownCwds.add(cwd);
+  // .claude/team.json layers under an explicit team_open argument of the same name -
+  // the same precedence tm_open's own resolveTeamOptions call gives it (teamconfig.mjs).
+  // Only vendor/allocation/goal_threshold/max_retries are both a TEAM_DEFAULTS key and a
+  // team_open argument that createRun actually consumes on a single run; the other nine
+  // TEAM_DEFAULTS keys (interactive, human_gates, human_scope, max_parallel_teams,
+  // max_depth, qa_rounds, roles, driver_restarts, docs_dir) belong to tm_open's
+  // multi-team/TaskManager layer and are not team_open arguments at all.
+  const team = resolveTeamOptions(a, readTeamConfig(cwd).config);
+  const T = team.opts;
   const run = createRun({
     cwd,
     request: String(a.request),
     context: a.context || '',
-    vendor: a.vendor || 'auto',
-    allocation: a.allocation || 'ordered',
+    vendor: T.vendor,
+    allocation: T.allocation,
     host_vendor: a.host_vendor || null,
     host_model: a.host_model || null,
     native_models: a.native_models || null,
@@ -1200,12 +1210,14 @@ async function toolGraphOpen(a) {
     sandbox: a.sandbox || null,
     isolated: a.isolated === true,
     auto_reassign: a.auto_reassign !== false,
-    goal_threshold: Number.isInteger(a.goal_threshold) ? a.goal_threshold : 90,
-    // The MCP tool boundary defaults to two judges; createRun itself defaults to one,
-    // so a caller that builds runs directly - the TaskManager's own per-package child
-    // runs among them - keeps today's single-gate behaviour unless it asks otherwise.
+    goal_threshold: T.goal_threshold,
+    // goal_judges is not a TEAM_DEFAULTS key, so resolveTeamOptions never touches it - it
+    // is not pinnable in team.json. The MCP tool boundary defaults it to two judges;
+    // createRun itself defaults to one, so a caller that builds runs directly - the
+    // TaskManager's own per-package child runs among them - keeps today's single-gate
+    // behaviour unless it asks otherwise.
     goal_judges: Number.isInteger(a.goal_judges) && a.goal_judges > 0 ? a.goal_judges : 2,
-    max_retries: a.max_retries,
+    max_retries: T.max_retries,
     flow: a.flow,
     mixed: a.mixed,
     skills: a.skills,
