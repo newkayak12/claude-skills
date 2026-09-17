@@ -419,46 +419,63 @@ main 세션·TaskLeader·TeamLeader·worker 어느 것도 메모리에만 있는
 
 ### MCP 도구 (task-manager에 추가)
 
+**v0.11.0 기준 실제 반환** — `TOOLS[]`(`teams/mcp/taskmanager.mjs`)에 있는 것과 없는 것을 그대로 적는다.
+
 | 도구 | 반환 |
 |---|---|
-| `tm_board({task_id?})` | task_id 없으면 EPIC 목록. 있으면 STORY 칸반 표 + 각 STORY의 TASK 진행률 |
-| `tm_ticket({key})` | 티켓 1개: 상태, role, 담당(vendor/model), 워크트리·브랜치, 전이 이력, 마지막 verdict, 열린 질문, 가정 |
-| `tm_log({key, tail?})` | 그 티켓 driver의 stream 마지막 N줄 (파일 경로도 반환) |
-| `tm_answer({key, payload})` | human 노드에 payload 제출 = `tm_submit` 설탕. WAITING_USER 해제, driver respawn |
-| `tm_assign({key, vendor})` | STORY/TASK를 `human`(또는 특정 vendor)에 핀 |
-| `tm_inbox({task_id?})` | 지금 나(human)에게 ready인 노드 목록 + briefing_path — "내 할 일" |
-| `tm_events({task_id, since?})` | `board.jsonl` 꼬리 — 무슨 일이 있었는지 시간순 |
+| `tm_board({task_id?})` | task_id 없으면 EPIC 목록(`key, task_id, title, state, phase`). 있으면 EPIC 헤더(`state, phase, leader`) + STORY 표(`epicBoardRows`: `key, id, title, role, state, tasks, last_verdict, reporter`) + `doc_path`. `task_id`는 전체 run id 또는 티켓 키 `E-xxxxxxxx` 둘 다 받는다(`tm_ticket`과 같은 8-hex 프리픽스 해석) |
+| `tm_ticket({key})` | 티켓 1개. EPIC 키면 `state, phase, leader, doc_path`. STORY 키(`E-xxx/Pn`)면 `state, tasks, worktree, last_verdict, reporter, doc_path`. **담당(vendor/model), 전이 이력, 열린 질문, 가정은 반환하지 않는다** — 아래 human 관련 도구와 같은 이유(§7, v0.13.0 전까지 만들 데이터가 없다) |
+| `tm_docs({task_id, rebuild?})` | §7c 문서를 task.json에서 다시 렌더. 실제로는 13종 중 **8종**(INDEX·request·shape·critique·STORY별·integrate·goal-gate·report) — planning/qa Team이 아직 EPIC 흐름에 안 붙어서(§11 v0.11.0 행, v0.12.0+) `10-planning`/`10-prd`/`15-spec-gate`/`60-qa`/`65-audit` 5종은 만들지 않는다 |
+| `tm_events({task_id, since?})` | **`board.jsonl`이 아니라 `ledger.jsonl`(일반 이벤트 로그, v0.10.0부터 있음)의 꼬리를 반환한다** — 티켓 전이만 담는 `board.jsonl`을 읽어 돌려주는 도구는 아직 없다 |
+| `tm_log({key, tail?})` | **미구현.** v0.11.0 범위에서 의도적으로 뺐다 |
+| `tm_answer({key, payload})` | **미구현.** §7의 human 노드(`ask`/`gate:human`/`waiting_human`)가 없으면 제출할 대상이 없다 — v0.13.0 |
+| `tm_assign({key, vendor})` | **미구현.** 위와 같음 — v0.13.0 |
+| `tm_inbox({task_id?})` | **미구현.** 위와 같음 — v0.13.0 |
 
 ### 슬래시 명령 (스킬, 얇게)
 
 | 명령 | 하는 일 |
 |---|---|
-| `/teams:board [E-xxx]` | `tm_board` → 아래 표 |
-| `/teams:ticket E-xxx/P2` | `tm_ticket` → 한 티켓 |
-| `/teams:log E-xxx/P2` | `tm_log` 꼬리 20줄 |
-| `/teams:inbox` | `tm_inbox` — 내가 답하거나 해야 할 노드 |
-| `/teams:answer E-xxx/ask:1 '{...}'` | `tm_answer` |
-| `/teams:take E-xxx/P2/U1` | `tm_assign(vendor: human)` — 이 TASK는 내가 한다 |
-| `/teams:watch E-xxx` | `tm_board`를 `/loop`로 폴링 (선택) |
+| `/teams:board [E-xxx]` | **구현됨**(`teams/skills/board`). `tm_board` → 아래 표. `E-xxx`는 짧은 티켓 키로 받는다(`tm_board`가 직접 해석) |
+| `/teams:ticket E-xxx/P2` | **구현됨**(`teams/skills/ticket`). `tm_ticket` → 한 티켓 |
+| `/teams:log E-xxx/P2` | **미구현** — `tm_log` 자체가 없다 |
+| `/teams:inbox` | **미구현** — `tm_inbox` 자체가 없다 |
+| `/teams:answer E-xxx/ask:1 '{...}'` | **미구현** — `tm_answer` 자체가 없다 |
+| `/teams:take E-xxx/P2/U1` | **미구현** — `tm_assign` 자체가 없다 |
+| `/teams:watch E-xxx` | **미구현** (선택 사항으로 남겨둔 것이지 아직 만든 것이 아니다) |
 
 ### 보드 출력 템플릿
 
+**v0.11.0이 실제로 찍는 것** — `toolBoard`(`teams/mcp/taskmanager.mjs`)와 `epicBoardRows`
+(`teams/mcp/tickets.mjs`)가 반환하는 필드만. `teams:board` 스킬이 이미 같은 결론에 도달해
+아래와 같은 모양으로 렌더한다(`teams/skills/board/SKILL.md`).
+
 ```
 ## E-a1b2c3d4  결제 취소 기능              state: IN_PROGRESS   phase: impl   leader: pid 4121 alive
-interactive: yes   inbox(you): 1 (ask:1 → P3)   decided-for-you: 2   human_gates: spec ✓, release
 
-| key | role     | state           | team (vendor/model)   | tasks    | last verdict          |
-|-----|----------|-----------------|-----------------------|----------|-----------------------|
-| P1  | planning | DONE            | claude/opus           | 3/3      | accept 94             |
-| P2  | develop  | IN_PROGRESS     | codex                 | 2/5      | —                     |
-| P3  | qa       | WAITING_USER    | **you** (ask:1)       | 0/0      | Q2: 부분취소 포함?      |
-| P4  | develop  | BACKLOG (←P2)   | —                     | —        | —                     |
+| key | role     | state           | tasks    | last verdict          | reporter |
+|-----|----------|-----------------|----------|-----------------------|----------|
+| P1  | develop  | DONE            | 3/3      | accept 94             | shape    |
+| P2  | develop  | IN_PROGRESS     | 2/5      | —                     | shape    |
+| P4  | develop  | BACKLOG         | —        | —                     | shape    |
 
-integrate: pending   gate:goal: pending   report: pending
+doc: .teams_output/team/E-a1b2c3d4/INDEX.md
 ```
 
-`tm_ticket`은 여기에 전이 이력·gaps·attacks[]·워크트리 경로를 붙인다. `team_status({full})`
-금지 규칙은 그대로 — 티켓은 verdict와 카운트만, payload는 절대 안 올린다.
+`tm_ticket`은 여기에 워크트리 경로를 붙인다(§8 도구 표 참고) — 전이 이력·gaps·attacks[]는 아직
+반환하지 않는다. `team_status({full})` 금지 규칙은 그대로 — 티켓은 verdict와 카운트만, payload는
+절대 안 올린다.
+
+- **`role`은 지금 항상 `develop`이다.** `epicBoardRows`는 shape가 낸 STORY만 보고, planning/qa가
+  EPIC 흐름 자체에 Team으로 붙는 것은 v0.12.0+(§14 A.1)이라 다른 값이 나올 길이 없다 —
+  그래서 위 표에도 다양성이 없다.
+- **아래는 §7 human 실행자가 설계한 필드이고, v0.13.0 전까지는 반환되지 않는다** — `interactive`
+  플래그, `inbox(you)`/`decided-for-you` 카운트, `human_gates` 상태, STORY 행의
+  `team (vendor/model)` 컬럼. §4 §주2와 같은 이유: 코드 경로 자체가 없다. 설계 의도는 남기되
+  지금 `tm_board`가 이 값을 내지 않는다는 것은 분명히 해 둔다.
+- **`integrate: pending gate:goal: pending report: pending` 같은 푸터 줄도 아직 없다.** `tm_board`가
+  주는 것은 EPIC 전체의 거친 `phase`(plan/setgoal/impl/qualitygate) 하나뿐, 매니저 노드별 상태는
+  `tm_status({full: true})`로 봐야 한다.
 
 ## 8b. 구현 가능성 판정
 
@@ -577,7 +594,7 @@ harness `patch.mjs`와 같은 규칙: `x.y.Z`만, plugin.json + marketplace 항�
 |---|---|---|
 | v0.10.0 | **완료.** install/remove/patch 셋 + `team.json` + 공존 검사 + engagement 마커(harness 변경 0) + inline 옵션 셋 제거 + TaskLeader driver·inbox·`tm_events` | install→remove 멱등 테스트, harness+team 동시 설치 픽스처에서 worker 쓰기 통과, `node --test teams/scripts/test-*.mjs` 241/241 |
 | v0.10.1 | **완료.** `planning`(draft→revise→gate)/`qa`(cases→execute→gate) kind + 페르소나·per-stage 스킬·advisory mounts(§3) + entry 스킬 2개(`teams:plan`/`teams:qa`) + `broker.mjs`의 revise 정체성-분리 가드 + `ensureWorktree`의 `gate_uncommitted` 이벤트(계획에 없던 안전 수정) | `node --test teams/scripts/test-*.mjs` 258/258, 회귀 0. 벤치 요청 파일(`plan-flat`/`qa-flat`)만 추가, 벤치 자체는 미실행 — 실제 벤더 실행 증거 없음, 전부 단위 테스트 |
-| v0.11.0 | `tickets.mjs` 파생 + `board.jsonl` + **`docs.mjs` phase md** + `tm_board/tm_ticket/tm_events/tm_docs` + 명령 스킬 | 매핑 표 테이블 테스트. md는 golden 파일 비교, `rebuild`가 동일 출력 |
+| v0.11.0 | **완료.** `tickets.mjs` 파생 + `board.jsonl` + `docs.mjs` phase md + `tm_board`/`tm_ticket`/`tm_docs`(v0.10.0에 이미 있던 `tm_events` 포함) + `teams:board`/`teams:ticket` 명령 스킬. 계획과 다르게 간 것 둘, 둘 다 의도적: `docs.mjs`는 §7c 13종 문서 중 **8종**만 렌더한다(planning/qa Team 연결이 필요한 5종 — `10-planning`/`10-prd`/`15-spec-gate`/`60-qa`/`65-audit` — 은 v0.12.0+로 미룸; 빈 파일을 만드는 것보다 안 만드는 쪽이 신뢰를 덜 깎는다는 판단). TaskLeader의 push notification(§6에 "SendMessage"로 남아 있던 그 알림)은 확장이 아니라 **제거**됐다 — `tm_board`/`tm_events`가 durable pull 경로로 대신한다(§14 결정 기록 참고) | `node --test teams/scripts/test-*.mjs` 289/289, 회귀 0. 매핑 표는 테이블 테스트, md는 golden 파일 비교로 `rebuild`가 동일 출력임을 확인. **벤치는 이번에도 미실행 — 실제 벤더 실행 증거 없음, 전부 단위 테스트**(v0.10.1 행과 같은 사정). 구현 중 실결함 2건 발견·수정: EPIC 티켓 상태가 `integrate`/`gate:goal`/`report` 노드의 *존재*로 판정돼 shape 성공 즉시 `impl`을 건너뛰고 `IN_REVIEW`로 뛰던 버그(`026c119`), TASK 티켓 상태가 마찬가지로 gate/mid 노드 *존재*로 판정돼 subgoal이 생성된 순간부터 평생 `IN_REVIEW`로 읽히던 버그(`13738a7`) — 둘 다 "존재"가 아니라 "그 단계까지 실제로 도달"로 고쳤다 |
 | v0.12.0 | shape `role/priority/worktree`, 스케줄러 캡, QA=통합 트리 | seam 픽스처에 qa STORY 추가 |
 | v0.13.0 | executor `human`: `ask`, `gate:human`, `assignee`, `waiting_human` park/respawn, `tm_answer/tm_assign/tm_inbox` | fake driver 테스트 (0.8.0 방식), human이 implement한 TASK의 test가 non-human으로 가는지 |
 | v0.13.1 | `interactive` 플래그 (사용자 질문 모드) | 실측 1회, main 컨텍스트 토큰 비교. **kill-and-resume 표 테스트**: 매니저 노드 전이마다 leader kill → `tm_next` → 동일 결과 |
@@ -646,6 +663,7 @@ harness `patch.mjs`와 같은 규칙: `x.y.Z`만, plugin.json + marketplace 항�
 | 3b | 기획 산출물(PRD)의 자리·형식. 본문은 `.teams_output/team/E-<task8>/10-prd.md`(§7c verbatim, planning 체인이 직접 씀), 템플릿은 `pm/skills/prd-development/template.md`(10절 스켈레톤; 같은 플러그인의 `user-story-*`는 대체 아님). `team.json.docs_dir`로 커밋 경로로 이동 가능 — 기본은 gitignore라 EPIC 정리 후 git 이력에 안 남음 | §7c 파일 구성에 `10-prd.md`, §14 A.3 |
 | 6b | **리네임 + 독립화** (0.10.2로 출시). plugin `graph-beta` → `teams`, 도구 접두어 `graph_*` → `team_*`(`teams/mcp/broker.mjs`의 서버 이름도 `teams-engineering`). #6이 상호배제 근거로 든 "두 서버가 같은 `graph_*` 이름을 낸다"는 이제 사실이 아니다 — graph는 `graph-engineering`/`graph_*`를 그대로 쓰고, teams만 `teams-engineering`/`team_*`로 옮겨 갔다. harness·graph·teams 세 플러그인은 이제 서로의 코드를 참조하지 않는 독립된 형제다(§0 재서술) | §0 계보 재서술. **확인됨** (commit `0ff8a2f`): `teams/skills/install/install.mjs`에서 `findConflicts`가 제거되어 install-time 상호배제 검사가 더는 없다. `teams/scripts/test-install.mjs`에 graph 플러그인이 활성화되고 `graph-engineering` `.mcp.json` 항목이 있어도 install이 성공(status 0)함을 검증하는 테스트가 추가됐다 — 팀 리더는 이름만 바로잡는 대신 상호배제 자체를 걷어내는 쪽을 택했다. §13 표도 이에 맞춰 갱신 |
 | 추가 | **main 세션은 절대 TaskLeader가 아니다.** inline 옵션 셋(`leader_driver`/`s_driver`/`child_driver`) team 라인에서 제거·거부 | §6 재작성, 7b inbox 문구, entry 스킬 축소. **v0.10.0 완료**: `child_driver`/`s_driver`는 넘기면 `tm_open`이 에러(commit 20306ec, breaking); `leader_driver: "inline"`은 애초에 만들지 않고 대신 TaskLeader driver를 항상 spawn(commit 6ecd744) |
+| 13 | **TaskLeader의 push notification을 확장이 아니라 제거했다** (v0.11.0, commit `49a10a1`). `leaderPrompt`는 스폰된 TaskLeader 세션에게 상태가 바뀔 때마다 opener를 `SendMessage`하라고 *지시*만 했을 뿐 — `taskmanager.mjs`는 그 메시지가 실제로 갔는지 검증·재시도·ack 어느 것도 하지 않았다. 메시지가 영영 안 와도 "아무 일도 안 일어남"과 구분이 안 되는, 알림 채널로서 최악의 성질이었고, §7 가이드 요구 7항("main 컨텍스트 사용 안 함")과도 어긋났다 — 매 노드 전이마다 main에 SendMessage로 뭔가를 채우는 것 자체가 그 요구가 비워두라는 자리다 | `tm_open`의 `notify` 인자·`task.notify` 필드·`leaderPrompt`의 두 SendMessage 분기 전부 삭제. `tm_board`/`tm_events`가 durable하고 검증 가능한 pull 경로로 대신한다 — 사람이 확인하고 싶을 때 확인하지, driver가 밀어 넣지 않는다 |
 
 ## 5b. 결함 STORY — QA가 발행하는 티켓
 
