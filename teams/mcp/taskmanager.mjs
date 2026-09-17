@@ -225,9 +225,10 @@ function createTask(a) {
     // waiting_capacity?} for the one graph run the manager opened and is driving with a
     // headless session, mirroring a package's n.child.
     s_run: null,
-    // The synthetic planning phase-Team package (§0.1), stashed here rather than in
-    // task.spec.packages because task.spec is still null before shape runs. expandPackages
-    // folds it into task.spec.packages, as the lead package, once shape succeeds (Task 2/3).
+    // The synthetic planning phase-Team package (§0.1), stashed here (not in task.spec.packages,
+    // which shape owns and which is still null before shape runs). packageOf reads it directly,
+    // the same way it reads task.qa_pkg for the QA phase-Team (Task 4) - neither ever joins
+    // task.spec.packages; docs/board render them from these fields instead (Task 6).
     // null when roles.planning is off - the default, and the byte-for-byte compat case.
     planning_pkg: null,
     nodes: T.roles.planning
@@ -342,10 +343,23 @@ function expandPackages(task, packages) {
     acceptIds.push(pushChain(task, PACKAGE_CHAIN, id, round, [critiqueDep, ...deps], [], {}));
   }
   const integrateId = `integrate:${nextIndex(task, 'integrate')}`;
+  task.nodes.push(node(integrateId, 'integrate', acceptIds, { subgoal_id: null }));
+  // roles.qa (§2): a QA phase-Team runs once over the integrated tree, between integrate and
+  // the goal gate - same synthetic-package pattern as planning_pkg (§0.1), reusing repairWorktree
+  // rather than a fresh worktree since QA's tree IS the integration tree.
+  let goalGateDep = integrateId;
+  if (task.team && task.team.opts && task.team.opts.roles && task.team.opts.roles.qa) {
+    task.qa_pkg = {
+      id: 'QA', phase: 'qa', flow: 'qa', integration_of: integrateId, title: 'QA',
+      brief: 'Run the goal-level QA pass over the integrated result: exercise it the way a user would and report defects.',
+      acceptance: ['the integrated result has been exercised end to end and defects, if any, are reported'],
+      deps: [], touches: [],
+    };
+    goalGateDep = pushChain(task, PACKAGE_CHAIN, 'QA', round, [integrateId], [], {});
+  }
   const goalGate = `gate:goal:${nextIndex(task, 'gate:goal')}`;
   const reportId = round === 1 ? 'report' : `report:${round}`;
-  task.nodes.push(node(integrateId, 'integrate', acceptIds, { subgoal_id: null }));
-  task.nodes.push(node(goalGate, 'gate', [integrateId], { subgoal_id: null }));
+  task.nodes.push(node(goalGate, 'gate', [goalGateDep], { subgoal_id: null }));
   task.nodes.push(node(reportId, 'report', [], { after: [goalGate] }));
   return saveRun(task);
 }
@@ -686,6 +700,9 @@ function packageOf(task, id) {
   // The planning phase-Team's package lives on task.planning_pkg, not task.spec.packages: its
   // dispatch/accept run before shape, while task.spec is still null (§0.1).
   if (task.planning_pkg && String(task.planning_pkg.id) === String(id)) return task.planning_pkg;
+  // Same reasoning for the QA phase-Team's package: expandPackages stashes it on task.qa_pkg
+  // rather than pushing it into task.spec.packages, which shape (not the manager) owns.
+  if (task.qa_pkg && String(task.qa_pkg.id) === String(id)) return task.qa_pkg;
   return ((task.spec && task.spec.packages) || []).find((p) => String(p.id) === String(id)) || null;
 }
 
@@ -747,6 +764,10 @@ function childContext(task, pkg) {
     lines.push(`The goal-level integration checks were run on this tree and FAILED. What failed is in your request above. Your job is to make those checks pass.`);
     lines.push(`Every package's files are yours to touch - that is the point of this package. The defect lives in the seam between packages, which is why no package could repair it in its own worktree.`);
     lines.push(`Do not undo another package's work to get the checks green. Reconcile them: change the least that makes the combined tree true.`);
+  } else if (pkg.phase === 'qa') {
+    lines.push(`This worktree is the COMBINED tree of every package in this task: all of their branches are already merged here, on the integration branch itself.`);
+    lines.push(`This is the goal-level QA pass, run once over the integrated result. Exercise it the way a user would and report what you find.`);
+    lines.push(`Write only to test/ and your own report - src/ and every package's delivered files are read-only here. This is a review, not a repair: a defect you find is reported, not fixed.`);
   } else {
     lines.push(`The worktree is private to this package and branched from the project's HEAD; integration happens later, elsewhere.`);
   }
@@ -1102,7 +1123,10 @@ function openChild(task, n) {
   // A planning phase-Team package is a second exception, for a different reason: its result is
   // the node's own output (the PRD, the user_stories[]), not a file artifact, so no isolated
   // worktree is needed - it runs directly in the project cwd (§0.1, Task 2).
-  const wt = pkg.repair
+  // A QA phase-Team package is a third exception that IS shaped like a repair: it judges the
+  // very tree integrate just built, so it reuses that worktree the same way repairWorktree
+  // already does for a repair package (§0.3 finding 3 - same mechanism, no new function).
+  const wt = pkg.repair || pkg.phase === 'qa'
     ? repairWorktree(task, pkg)
     : pkg.phase === 'planning'
       ? { ok: true, path: task.cwd, branch: null, created: false }
