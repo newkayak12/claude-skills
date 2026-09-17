@@ -627,7 +627,12 @@ function identityOf(executor, model) {
 }
 
 function reviewIndependence(run, n, executor, model) {
-  if (n.stage !== 'review') return null;
+  // revise (planning kind) makes the same "not the same identity as the author" demand
+  // review does - the design doc's decision that a different identity revises. The
+  // reviewer_independence field is still merged into the result only on the reasoning
+  // branch below (graph_run/graph_submit); revise is not a reasoning stage, so only the
+  // refusal (the throw below) applies to it, not the field.
+  if (n.stage !== 'review' && n.stage !== 'revise') return null;
   const kind = nodeKind(run, n);
   const author = run.nodes.find((x) => x.subgoal_id === n.subgoal_id
     && (x.attempt || 1) === (n.attempt || 1) && x.stage === authorStage(kind || 'subgoal'));
@@ -638,9 +643,9 @@ function reviewIndependence(run, n, executor, model) {
     return { independence: 'unverifiable-self', author: theirs, reviewer: mine };
   }
   if (mine === theirs) {
-    throw new Error(`review ${n.node_id} is routed to ${mine}, which wrote ${author.node_id}. `
-      + `A document must be read by someone other than its author: route the review stage to another vendor `
-      + `(policy.review) or pass a different model to graph_run.`);
+    throw new Error(`${n.stage} ${n.node_id} is routed to ${mine}, which wrote ${author.node_id}. `
+      + `A document must be read or revised by someone other than its author: route the ${n.stage} stage to another vendor `
+      + `(policy.${n.stage}) or pass a different model to graph_run.`);
   }
   return { independence: 'distinct-identity', author: theirs, reviewer: mine };
 }
@@ -968,7 +973,7 @@ const VERDICT_SCHEMA = {
     sound: { type: 'boolean', description: 'critique nodes' },
     changed_files_verified: { type: ['boolean', 'null'], description: 'null means could not attribute - not a pass' },
     change_attribution: { type: ['string', 'null'], enum: ['isolated', 'shared-worktree', 'no-git', 'document-unchanged', null] },
-    reviewer_independence: { type: 'string', enum: ['distinct-identity', 'unverifiable-self'], description: 'review nodes: whether the broker could see that the reviewer is not the draft author' },
+    reviewer_independence: { type: 'string', enum: ['distinct-identity', 'unverifiable-self'], description: 'review and revise nodes: whether the broker could see that the reviewer is not the draft author' },
     contradicted_files: { type: 'array', items: { type: 'string' } },
     submitted_stage_ok: { type: 'boolean', description: 'present when the broker overruled the executor' },
     missing_verdict: { type: 'string', description: 'the verdict field the node failed to return' },
