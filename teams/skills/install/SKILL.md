@@ -31,10 +31,12 @@ delegated to `install.mjs` so it runs identically every time; this skill owns th
 
 1. **Judgment, before running anything.** Inspect the project's languages and source roots and
    propose dispatch patterns (e.g. `src/**`, `packages/**`); confirm them with the user. Ask
-   which `roles` to turn on (`planning`, `qa`) — note that in 0.10 these are recorded in
-   `team.json` only, no code acts on them yet. If harness is already installed in this project,
-   say so: `.claude/conventions/` and the session-marker directory are shared between the two
-   plugins.
+   which `roles` to turn on (`planning`, `qa`) — both default off. `planning` inserts a planning
+   phase-Team (PRD draft → revise → gate) before `shape`, and its PRD and user stories feed
+   shape's packages. `qa` inserts a QA phase-Team between `integrate` and `gate:goal`, reusing
+   the repair worktree, to run a QA pass over the integrated tree before the goal gate judges it.
+   If harness is already installed in this project, say so: `.claude/conventions/` and the
+   session-marker directory are shared between the two plugins.
 2. Run:
    ```sh
    node "<plugin>/skills/install/install.mjs" '{
