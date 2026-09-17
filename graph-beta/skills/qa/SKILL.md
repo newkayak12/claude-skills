@@ -1,12 +1,9 @@
 ---
 name: qa
 description: >-
-  Use when the user has said, in their own words, that this is a QA pass - test cases written
-  and executed against work that already exists - to run through the graph-beta harness —
-  "QA 그래프로 돌려줘", "테스트 케이스 작성하고 실행해줘", "run the qa flow", "write and run test cases
-  through the graph". Pins flow: qa. When they have not said which kind of work it is, use
-  orchestrate instead. Not for installation, and not for writing the code itself - use develop
-  for that.
+  Use when the user has said this is a QA pass — cases written and executed against existing
+  work — to run through the graph-beta harness — "QA 그래프로 돌려줘", "테스트 케이스 작성하고
+  실행해줘", "run the qa flow". Pins flow: qa.
 effort: high
 scenarios:
   - "Write test cases for this feature and execute them against the tree, reporting defects"
