@@ -49,6 +49,8 @@ const FILES = {
   teamsTaskmanager: join(REPO_ROOT, 'teams/mcp/taskmanager.mjs'),
   graphGraph: join(REPO_ROOT, 'graph/mcp/graph.mjs'),
   graphBroker: join(REPO_ROOT, 'graph/mcp/broker.mjs'),
+  teamsTickets: join(REPO_ROOT, 'teams/mcp/tickets.mjs'),
+  teamsDocs: join(REPO_ROOT, 'teams/mcp/docs.mjs'),
 };
 
 function src(key) {
@@ -471,4 +473,51 @@ test('proof: re-adding delegate to NEXT_SCHEMA (the exact 2095662 shape) makes g
 
   const r = checkSchemaReachability(mutated, ['NEXT_SCHEMA', 'VERDICT_SCHEMA']);
   assert.deepEqual(r.unreachable, ['NEXT_SCHEMA.delegate'], 'guard D should flag exactly the re-added dead field - it did not, so this guard cannot catch the 2095662 shape (a schema field with no producer)');
+});
+
+// ---------- Guard D: sole ownership. A default RE-TYPED rather than re-declared. ----------
+//
+// Guards A and B compare sites that all declare the same option. They cannot see the other
+// shape: a consumer deep in the codebase that writes the default's literal VALUE again as a
+// `||` fallback, without looking like a declaration site at all. That is how docs_dir got a
+// second owner - tickets.mjs's docPaths read
+//
+//     (task.team && task.team.opts && task.team.opts.docs_dir) || join('.teams_output', 'team')
+//
+// with a comment two lines above it that correctly said teamconfig.mjs's TEAM_DEFAULTS had
+// already resolved the value onto every task. The two literals agreed. Nothing made them keep
+// agreeing, and neither guard A nor guard B was looking at that file.
+//
+// This guard is deliberately narrow: for an option whose default is a distinctive literal,
+// TEAM_DEFAULTS must be the ONLY place in teams/mcp that writes it. The count is pinned, not
+// bounded - a new legitimate occurrence must be added here on purpose, with a reason.
+
+const TEAMS_MCP_FOR_SOLE_OWNERSHIP = ['teamconfig', 'teamsGraph', 'teamsBroker', 'teamsTaskmanager', 'teamsTickets', 'teamsDocs'];
+
+function docsDirLiteralSites() {
+  // Matched as the PAIR, not on '.teams_output' alone: that root is legitimately written by
+  // three other places for a different subdirectory (broker.mjs:144 and graph.mjs:217 for
+  // .teams_output/broker, taskmanager.mjs:645 for a git rm --cached path). Only the pair
+  // ('.teams_output', 'team') is docs_dir's default, so only the pair is this option's.
+  return TEAMS_MCP_FOR_SOLE_OWNERSHIP
+    .flatMap((k) => collect(src(k), /('\.teams_output', 'team')/g, k));
+}
+
+test('docs_dir: TEAM_DEFAULTS is the only place in teams/mcp that writes the .teams_output literal', () => {
+  const sites = docsDirLiteralSites();
+  assert.deepStrictEqual(
+    sites.map((x) => x.label),
+    ['teamconfig'],
+    `.teams_output is written outside TEAM_DEFAULTS at: ${sites.map((x) => x.label).join(', ')} - `
+    + 'a consumer must fall back to TEAM_DEFAULTS.docs_dir, not re-type the literal',
+  );
+  assert.match(src('teamsTickets'), /\|\| TEAM_DEFAULTS\.docs_dir;/, 'docPaths must fall back through TEAM_DEFAULTS');
+});
+
+test('proof: guard D flags the pre-fix docPaths line that re-typed docs_dir', () => {
+  // The real pre-fix expression, verbatim. Fed to the same collector the live test uses, so
+  // the proof cannot drift away from the guard it is proving.
+  const preFix = "  const docsDir = (task.team && task.team.opts && task.team.opts.docs_dir) || join('.teams_output', 'team');";
+  const hits = collect(preFix, /('\.teams_output', 'team')/g, 'teamsTickets');
+  assert.deepStrictEqual(hits.map((x) => x.label), ['teamsTickets']);
 });
