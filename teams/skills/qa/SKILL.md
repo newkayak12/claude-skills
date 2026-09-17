@@ -48,9 +48,9 @@ tm_open({
   host_vendor, host_model, native_models
 })                                               -> task_id, ready: [size]
 fresh agent at size.briefing_path -> tm_submit({task_id, node_id: "size", payload})
-    delegate present     -> size S, s_driver "inline": one run, team_open(delegate.args), then the loop
-    task_state "s_run"   -> size S, s_driver "process" (the default): poll tm_next until it reports
-    neither              -> a task of runs: ../orchestrate/references/manager.md
+    task_state "s_run"  -> size S: tm_open already opened the single run and is driving it
+                           with its own headless session; poll tm_next until it reports
+    absent              -> a task of runs: ../orchestrate/references/manager.md
 ```
 
 `size` measures the same way it does for `develop` and `document`. The flow is pinned, so `size`
@@ -60,9 +60,11 @@ the user said nothing may change but the case set and its report.
 
 ## Then
 
-Run **`../orchestrate/references/loop.md`** yourself only for a delegated (`s_driver: "inline"`)
-S run; otherwise poll `tm_next` exactly as `orchestrate` would. The Standing Mandates and Output
-template in `../orchestrate/SKILL.md` apply unchanged.
+Poll `tm_next` for the size-S run `tm_open` already opened and is driving (`task_state: "s_run"`),
+or continue with `../orchestrate/references/manager.md` for a task of runs — exactly as
+`orchestrate` would. Neither case ever has you call `team_next`/`team_run`/`team_submit`
+yourself: every run is driven by its own spawned headless session, never by you. The Standing
+Mandates and Output template in `../orchestrate/SKILL.md` apply unchanged.
 
 ## What the current AI does
 

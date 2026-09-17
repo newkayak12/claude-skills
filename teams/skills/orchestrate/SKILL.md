@@ -49,30 +49,28 @@ tm_open({
   host_vendor, host_model, native_models
 })                                               -> task_id, ready: [size]
 fresh agent at size.briefing_path -> tm_submit({task_id, node_id: "size", payload})
-    delegate present     -> size S, s_driver "inline": the task is gone from disk. Continue with
-                            team_open(delegate.args) and references/loop.md
-    task_state "s_run"   -> size S, s_driver "process" (the default): one driver is already
-                            running the single graph run tm_submit opened. Poll tm_next — same
-                            shape as an L child — until it reports; relay the table and report
-    neither              -> size L. Continue with references/manager.md
+    task_state "s_run"  -> size S: tm_open already opened the single graph run itself and
+                           spawned its own headless session to drive it. Poll tm_next — same
+                           shape as an L child — until it reports; relay the table and report
+    absent              -> size L. Continue with references/manager.md
 ```
 
 `isolated` is true only when you created or were handed a private worktree holding this run
-alone; it travels straight into whichever run `tm_open` ends up opening — the single run under
-the default `s_driver`, or `delegate.args` under `s_driver: "inline"`. Pass `s_driver: "inline"`
-only when you must drive an S request's single run yourself, node by node, and accept the
-context cost. When the user has said, in their own words,
-that the request must be split — "패키지별로 나눠서", "one worktree per package", "these are
-separate deliverables" — pass `size: "L"` and `size` is recorded as pinned, not measured;
-"one run, don't split it" pins `size: "S"`. A monorepo with one test script and one commit
-measures S on its own: `size` reads build units and ownership boundaries, not package counts. Do not re-measure: `plan` in the graph run
-returns `size` too, and if it says L where the manager said S, that goes in the report as an
-observation — the run still proceeds as one graph.
+alone; it travels straight into whichever run `tm_open` ends up opening — the single run a
+size-S task drives, or each package's own dispatch under an L task. When the user has said, in
+their own words, that the request must be split — "패키지별로 나눠서", "one worktree per
+package", "these are separate deliverables" — pass `size: "L"` and `size` is recorded as pinned,
+not measured; "one run, don't split it" pins `size: "S"`. A monorepo with one test script and one
+commit measures S on its own: `size` reads build units and ownership boundaries, not package
+counts. Do not re-measure: `plan` in the graph run returns `size` too, and if it says L where the
+manager said S, that goes in the report as an observation — the run still proceeds as one graph.
 
-Then run **`references/loop.md`** yourself only for a delegated (`s_driver: "inline"`) S run, or
-**`references/manager.md`** for a task of runs (L, or S under the default `s_driver`) — the
-latter never has you call `team_next`/`team_run`/`team_submit` directly. Read the one you
-need before the first `team_next`/`tm_next`.
+Then run **`references/manager.md`** — for size L, or for size S while its own run finishes; the
+S case is already fully described above, and `manager.md` covers the rest. Neither case ever has
+you call `team_next`/`team_run`/`team_submit` yourself: the driving session never drives a run or
+the manager loop, full stop. Every graph run — the manager's own package dispatches and a
+size-S task's single run alike — is driven by its own spawned headless session running
+`references/loop.md`, never by you.
 
 ## Output template
 

@@ -1,21 +1,20 @@
 # The loop — shared by `orchestrate`, `develop`, and `document`
 
-The entry skill has already called `team_open` and has a `run_id`. Everything from here is
-the same for every flow: the graph decides what is ready, you dispatch it, the broker judges
-it. Nothing about the flow — code or document — changes a line below; only the node names
-you see differ (`implement/test` vs `draft/review`).
-
-Two ways in: the entry skill delegated an S request here with `team_open`, or you were started
-on a child run that is already open (`cwd` = the package worktree, `run_id` handed to you). Same
-loop either way; for a child, every call carries that `cwd`. When a child run reaches `complete`
-or `blocked` you are finished — end with the output template. A driver session owns nothing else:
-the manager reads the run file and folds it. Only in an inline task do you go back to
-`manager.md` and fold it yourself with `tm_submit`.
+You are a headless driver session, spawned by `tm_open`/`tm_next` to run one graph run to
+completion: `run_id` and `cwd` (the package worktree, or the project root for a size-S task) are
+already in your prompt, and the run itself is already open. Everything from here is the same for
+every flow: the graph decides what is ready, you dispatch it, the broker judges it. Nothing about
+the flow — code or document — changes a line below; only the node names you see differ
+(`implement/test` vs `draft/review`). Every call carries that `cwd`. When the run reaches
+`complete` or `blocked` you are finished — end with the output template and stop. A driver
+session owns nothing else: the manager (a different session — the top-level one, for a size-S
+task) reads the run file with `tm_next`/`tm_submit` and folds it. You never call `tm_submit`
+yourself.
 
 ## The loop
 
 ```
-# team_open already happened in the entry skill -> run_id + first ready node
+# run already open when you were spawned -> run_id + first ready node
 while state == "running":
     team_next({run_id, cwd})                     -> ready[] with routing
     for each ready node:                          # all self nodes first, in one message; then vendor nodes
