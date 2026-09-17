@@ -1356,6 +1356,89 @@ test('a review routed to the identity that wrote the draft is refused, and the n
   }
 });
 
+async function balancedThroughCritique(c, cwd, runId, spec) {
+  await c.call('team_next', { run_id: runId, cwd });
+  let v = await c.call('team_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+  assert.equal(v.state, 'done', JSON.stringify(v));
+  await c.call('team_next', { run_id: runId, cwd });
+  v = await c.call('team_submit', { run_id: runId, cwd, node_id: 'setgoal', payload: ok({ spec, handoff: 's' }) });
+  assert.equal(v.state, 'done', JSON.stringify(v));
+  await c.call('team_next', { run_id: runId, cwd });
+  v = await c.call('team_submit', { run_id: runId, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+  assert.equal(v.state, 'done', JSON.stringify(v));
+}
+
+// The deadlock the second real-vendor bench run died in (2026-09-17). With no peer vendor
+// installed, draft degrades to the host and review lands on the same host model, so the
+// identity guard refused the submit - while team_run refused the same node for being routed to
+// self, and team_next kept offering it. Three driver sessions in a row correctly gave up; the
+// run sat at 16/20 with every artifact already written. Independence is now taken on the model
+// axis when one is available, and recorded as absent when it is not - never a dead run.
+test('with a second native model, the review of a host-written draft is routed to the other model', async () => {
+  const cwd = documentRepo();
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', {
+      request: 'r', cwd, vendor: 'auto', allocation: 'balanced',
+      host_vendor: 'claude', host_model: 'claude-sonnet-5',
+      native_models: ['claude-sonnet-5', 'claude-opus-5'],
+    });
+    // A balanced run refuses a submit on a node team_next has not assigned yet, so each of
+    // plan/setgoal/critique is assigned before it is answered.
+    await balancedThroughCritique(c, cwd, run_id, {
+      goal: 'G', acceptance: ['A'],
+      subgoals: [{ id: 'D1', kind: 'document', title: 'note', acceptance: ['a'], files: ['doc.md'], deps: [] }],
+    });
+    await c.call('team_next', { run_id, cwd });
+    writeFileSync(join(cwd, 'doc.md'), 'the note\n');
+    await c.call('team_submit', { run_id, cwd, node_id: 'draft:D1:1', payload: ok({ changed_files: ['doc.md'], handoff: 'wrote it' }) });
+
+    const nx = await c.call('team_next', { run_id, cwd });
+    const review = nx.ready.find((r) => r.node_id === 'review:D1:1');
+    assert.ok(review, JSON.stringify(nx.ready));
+    assert.equal(review.model, 'claude-opus-5', `the reviewer must not be the model that drafted: ${JSON.stringify(review)}`);
+    assert.match(review.routing_reason, /wrote the draft, reviewing with claude-opus-5 instead/);
+
+    const r = await c.call('team_submit', { run_id, cwd, node_id: 'review:D1:1', payload: ok({ verified: true }) });
+    assert.equal(r.state, 'done', JSON.stringify(r));
+    assert.equal(r.reviewer_independence, 'distinct-identity');
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('with only one native model the review still runs, and says plainly that it was not independent', async () => {
+  const cwd = documentRepo();
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', {
+      request: 'r', cwd, vendor: 'auto', allocation: 'balanced',
+      host_vendor: 'claude', host_model: 'claude-sonnet-5', native_models: ['claude-sonnet-5'],
+    });
+    // A balanced run refuses a submit on a node team_next has not assigned yet, so each of
+    // plan/setgoal/critique is assigned before it is answered.
+    await balancedThroughCritique(c, cwd, run_id, {
+      goal: 'G', acceptance: ['A'],
+      subgoals: [{ id: 'D1', kind: 'document', title: 'note', acceptance: ['a'], files: ['doc.md'], deps: [] }],
+    });
+    await c.call('team_next', { run_id, cwd });
+    writeFileSync(join(cwd, 'doc.md'), 'the note\n');
+    await c.call('team_submit', { run_id, cwd, node_id: 'draft:D1:1', payload: ok({ changed_files: ['doc.md'], handoff: 'wrote it' }) });
+
+    const nx = await c.call('team_next', { run_id, cwd });
+    const review = nx.ready.find((r) => r.node_id === 'review:D1:1');
+    assert.match(review.routing_reason, /declared no second native model, so this review is not independent/);
+
+    const r = await c.call('team_submit', { run_id, cwd, node_id: 'review:D1:1', payload: ok({ verified: true }) });
+    assert.equal(r.state, 'done', `this is the node the bench run deadlocked on: ${JSON.stringify(r)}`);
+    assert.equal(r.reviewer_independence, 'unverifiable-same-host');
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('a revise routed to the identity that drafted is refused, the same way review is', async () => {
   const cwd = documentRepo();
   const c = await new Client().init();
