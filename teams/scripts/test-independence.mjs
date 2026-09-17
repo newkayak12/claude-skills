@@ -140,17 +140,48 @@ function findCrossPluginImports(pluginsByDir) {
 test('MCP tool names are pairwise disjoint across teams / graph / harness', () => {
   const byPlugin = {};
   for (const [name, dir] of Object.entries(REAL_PLUGINS)) byPlugin[name] = collectPluginSurface(dir).toolNames;
-  // Sanity: this must not degenerate into "everything is empty therefore disjoint".
-  assert.ok(byPlugin.teams.length > 0, 'expected teams to declare MCP tools');
-  assert.ok(byPlugin.graph.length > 0, 'expected graph to declare MCP tools');
+
+  // Vacuity guards. A regex extractor can fail *partially*, not just totally: reformat
+  // TOOLS in one file (a trailing comment, a spread, a different quote style, splitting
+  // the array) and it can silently match 1 name instead of 9. The set is then still
+  // non-empty and still disjoint from the others, and this test goes green while
+  // guarding almost nothing - worse than no guard, since it also stops anyone from
+  // looking. Canaries pinned to real, known tool names catch that degradation without
+  // breaking every time someone legitimately adds a tool, the way an exact count would.
+  //
+  // teams declares its tools across two files: broker.mjs (team_*, 6 tools) and
+  // taskmanager.mjs (tm_*, 9 tools) - one canary from each proves both were read.
+  assert.ok(byPlugin.teams.includes('team_open'), 'expected team_open, from teams/mcp/broker.mjs');
+  assert.ok(byPlugin.teams.includes('tm_open'), 'expected tm_open, from teams/mcp/taskmanager.mjs');
+  assert.ok(byPlugin.teams.includes('tm_docs'), 'expected tm_docs, from teams/mcp/taskmanager.mjs (proves the extractor read to the end of that file, not just its first entries)');
+  // graph declares all of its tools in the one file, graph/mcp/broker.mjs.
+  assert.ok(byPlugin.graph.includes('graph_open'), 'expected graph_open, from graph/mcp/broker.mjs');
+
+  // harness ships no MCP server at all today - no .mcp.json anywhere under harness/, so
+  // mcpServersForPlugin() returns []. An empty set here is a fact about harness, not a
+  // sign the extractor missed something; do not add a "length > 0" guard for it. If
+  // harness ever gains an MCP server (a harness/.mcp.json appears), it is picked up by
+  // mcpServersForPlugin() automatically and starts being covered by the disjointness
+  // check below with no change to this test.
+  assert.deepEqual(byPlugin.harness, []);
+
   assertPairwiseDisjoint(byPlugin, 'tool name');
 });
 
 test('MCP server names are pairwise disjoint across teams / graph / harness', () => {
   const byPlugin = {};
   for (const [name, dir] of Object.entries(REAL_PLUGINS)) byPlugin[name] = collectPluginSurface(dir).serverNames;
-  assert.ok(byPlugin.teams.length > 0, 'expected teams to declare MCP servers');
-  assert.ok(byPlugin.graph.length > 0, 'expected graph to declare MCP servers');
+
+  // Same reasoning as the tool-name test above: canaries, not a length or exact-count
+  // check, so a legitimate new server doesn't break this, but a degraded regex does.
+  assert.ok(byPlugin.teams.includes('teams-engineering'), 'expected the teams-engineering server, from teams/mcp/broker.mjs');
+  assert.ok(byPlugin.teams.includes('task-manager'), 'expected the task-manager server, from teams/mcp/taskmanager.mjs');
+  assert.ok(byPlugin.graph.includes('graph-engineering'), 'expected the graph-engineering server, from graph/mcp/broker.mjs');
+
+  // harness has no MCP server today (see the tool-name test above) - [] is correct, not
+  // a missed extraction, and this check starts covering harness the moment it gets one.
+  assert.deepEqual(byPlugin.harness, []);
+
   assertPairwiseDisjoint(byPlugin, 'server name');
 });
 
