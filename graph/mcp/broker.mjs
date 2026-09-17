@@ -840,8 +840,10 @@ async function toolGraphOpen(a) {
     cwd,
     request: String(a.request),
     context: a.context || '',
-    vendor: a.vendor || 'auto',
-    allocation: a.allocation || 'ordered',
+    // createRun applies its own vendor/'auto' and allocation/'ordered' defaults - passing
+    // the caller's value through untouched keeps that the one place either default lives.
+    vendor: a.vendor,
+    allocation: a.allocation,
     host_vendor: a.host_vendor || null,
     host_model: a.host_model || null,
     native_models: a.native_models || null,
