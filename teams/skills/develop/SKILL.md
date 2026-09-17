@@ -1,10 +1,9 @@
 ---
 name: develop
 description: >-
-  Use when the user has said, in their own words, that this is code work to run through the
-  teams harness — "구현해줘 그래프로", "이 기능 코드로 돌려", "run the dev flow on this",
-  "implement this through the graph". Pins flow: develop. When they have not said which kind of
-  work it is, use orchestrate instead. Not for installation.
+  Use when the user says this is code work for the teams harness — "구현해줘 그래프로",
+  "이 기능 코드로 돌려", "run the dev flow on this", "implement this through the graph".
+  Pins flow: develop; else use orchestrate. Not for installation.
 effort: high
 scenarios:
   - "Run this feature through the harness as code work, every subgoal implemented and tested"

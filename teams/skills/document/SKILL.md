@@ -1,10 +1,9 @@
 ---
 name: document
 description: >-
-  Use when the user has said, in their own words, that the deliverable is a written artifact
-  to run through the teams harness — "문서 작성 그래프로", "설계 문서 돌려줘", "write the
-  design doc through the graph", "run the document flow". Pins flow: document. When they have
-  not said which kind of work it is, use orchestrate instead. Not for installation.
+  Use when the user says the deliverable is a written artifact for the teams harness —
+  "문서 작성 그래프로", "설계 문서 돌려줘", "write the design doc through the graph",
+  "run the document flow". Pins flow: document; else use orchestrate. Not for installation.
 effort: high
 scenarios:
   - "Write the architecture note through the harness: drafted, reviewed by someone else, gated"
