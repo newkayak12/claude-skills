@@ -444,9 +444,10 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 브로커의 직접 진입점인 `team_open`도 이제 TaskManager와 같은 방식으로 이 파일을 읽습니다.
 우선순위는 내장 기본값 < `team.json` < 런을 연 도구의 같은 이름 명시적 인자입니다
 (`teamconfig.mjs`의 `resolveTeamOptions`); 알 수 없는 키나 검증기를 통과하지 못한 값은
-적용되지 않고 무시되며, 기록됩니다(`tm_open` 경로에서는 `tm_status`의 `team.notes` —
-`team_open`은 `resolveTeamOptions`의 노트를 전혀 돌려주지 않습니다, 그래프 런에는 이를
-저장할 곳이 없기 때문입니다). 스키마는 [`mcp/teamconfig.mjs`](mcp/teamconfig.mjs)의
+적용되지 않고 무시되며, 기록됩니다 — `tm_open` 경로에서는 `tm_status`의 `team.notes`,
+`team_open` 경로에서는 `team_status`의 `config_notes`(노트가 하나라도 있을 때만 나타나며,
+`resolveTeamOptions`의 노트를 런에 영구 저장해둔 사본입니다 — 실시간 재검사가 아닙니다).
+스키마는 [`mcp/teamconfig.mjs`](mcp/teamconfig.mjs)의
 `TEAM_DEFAULTS`/`CHECK`입니다 — 13개 키 중 실제로 동작에 반영되는 건 여섯이고, 각 키가
 `tm_open`, `team_open`, 또는 둘 다에 닿는지 보여주는 리더 열이 추가되었습니다. `team_open`의
 `inputSchema`는 애초에 `TEAM_DEFAULTS` 이름 중 일부만 인자로 받습니다 — 인자로조차 받지 않는

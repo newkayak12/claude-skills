@@ -500,9 +500,10 @@ Install `teams@newkayak12-claude-skills` and run `teams:install` to verify the s
 own direct entry point reads it too, the same way TaskManager does. Precedence is built-in
 default < `team.json` < an explicit argument of the same name on whichever tool opened the run
 (`teamconfig.mjs`'s `resolveTeamOptions`); an unrecognized key or a value that fails its
-validator is ignored rather than applied, and recorded as a note (`tm_status`'s `team.notes` on
-the `tm_open` path — `team_open` does not return `resolveTeamOptions`' notes at all, since
-nothing stores them on the graph run). The schema is `TEAM_DEFAULTS`/`CHECK` in
+validator is ignored rather than applied, and recorded as a note — `tm_status`'s `team.notes` on
+the `tm_open` path, `team_status`'s `config_notes` on the `team_open` path (present only when
+there is at least one note; it is the run's own persisted copy of `resolveTeamOptions`' notes,
+not a live re-check). The schema is `TEAM_DEFAULTS`/`CHECK` in
 [`mcp/teamconfig.mjs`](mcp/teamconfig.mjs) — 13 keys, six of which actually change behavior
 today, plus a reader-status column: whether each key reaches `tm_open`, `team_open`, or both.
 `team_open`'s `inputSchema` only accepts a subset of `TEAM_DEFAULTS`' names in the first place —
