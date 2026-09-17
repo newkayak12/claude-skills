@@ -72,6 +72,31 @@ export const KINDS = {
       gate: ['think:devils-advocate'],
     },
   },
+  // planning and qa both mutate on every authoring stage, unlike document's review: revise
+  // rewrites the PRD itself (a different identity from draft, with edit rights - not only a
+  // judge, per the design doc), and execute is qa's test - it runs the case set and reports
+  // defects, not a verdict on someone else's claim. Neither belongs in `reasoning`; only the
+  // closing `gate` judges. (The design doc's own table listed revise as reasoning while also
+  // describing it as having edit rights - a contradiction; this follows document's precedent
+  // instead: the mutating stage is never reasoning.)
+  planning: {
+    chain: ['draft', 'revise', 'gate'],
+    reasoning: [],
+    skills: {
+      draft: ['pm:prd-development', 'write:doc-coauthoring'],
+      revise: ['write:writer-verification', 'think:devils-advocate'],
+      gate: ['think:devils-advocate'],
+    },
+  },
+  qa: {
+    chain: ['cases', 'execute', 'gate'],
+    reasoning: [],
+    skills: {
+      cases: ['develop:test-master', 'develop:scenario-director'],
+      execute: ['develop:scenario-actor', 'completion:verification-before-completion'],
+      gate: ['think:devils-advocate'],
+    },
+  },
 };
 
 // The method a node inherits from its kind. A spec that names its own `skills` for the
@@ -102,7 +127,7 @@ export const REASONING_STAGES = new Set([
 // The field that carries a judging node's verdict. stage_ok on these nodes means only
 // "the judging itself worked"; the verdict must be present and affirmative for the node
 // to count as done. A stage absent here has no verdict beyond stage_ok.
-export const VERDICT_FIELD = { gate: 'accept', critique: 'sound', test: 'verified', review: 'verified' };
+export const VERDICT_FIELD = { gate: 'accept', critique: 'sound', test: 'verified', review: 'verified', execute: 'verified' };
 
 // A flow is what the user-facing entry chose - or, under `auto`, what the plan node decided
 // from the request. It sets the kind a subgoal gets when setgoal names none, and gives
@@ -116,6 +141,17 @@ export const FLOWS = {
   document: {
     kind: 'document',
     personas: ['technical writer who has never seen this codebase', 'the reader the document is for - name their role', 'editor checking every claim against the source'],
+  },
+  // Flow name collides in spelling with the `plan` STAGE (the run's own decomposition node) -
+  // different namespace, same word, because that is what the design doc names the entry skill.
+  // A node id is never a flow name and vice versa, so nothing in the engine confuses them.
+  plan: {
+    kind: 'planning',
+    personas: ['PO who owns value and scope', 'domain expert who owns terminology and rules', 'implementation lead reading for feasibility'],
+  },
+  qa: {
+    kind: 'qa',
+    personas: ['QA who represents the user', 'release manager weighing risk', 'someone deliberately trying malicious or malformed input'],
   },
 };
 export const DEFAULT_FLOW = 'develop';
