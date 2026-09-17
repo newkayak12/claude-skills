@@ -1037,6 +1037,61 @@ test('a mixed spec expands each subgoal by its kind and reaches the report', asy
   });
 });
 
+// ---------- planning and qa kinds ----------
+
+const PLANNING_QA_MIX = {
+  goal: 'G',
+  acceptance: ['A'],
+  subgoals: [
+    { id: 'P1', kind: 'planning', title: 'PRD for priority mode', acceptance: ['names the problem', 'states the target user'], files: ['.harness-run/team/E-deadbeef/10-prd.md'], deps: [] },
+    { id: 'Q1', kind: 'qa', title: 'QA the priority mode', acceptance: ['covers ordering under load'], files: ['test/qa/priority.md'], deps: ['P1'] },
+  ],
+};
+
+test('a mixed spec expands a planning subgoal into draft->revise->gate and a qa subgoal into cases->execute->gate', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, PLANNING_QA_MIX);
+    const st = await c.call('graph_status', { run_id: runId, cwd });
+    const ids = st.nodes.map((n) => n.node_id);
+    assert.ok(ids.includes('draft:P1:1') && ids.includes('revise:P1:1') && ids.includes('gate:P1:1'));
+    assert.ok(ids.includes('cases:Q1:1') && ids.includes('execute:Q1:1') && ids.includes('gate:Q1:1'));
+    assert.ok(!ids.includes('implement:P1:1') && !ids.includes('test:P1:1'), 'planning has no implement/test');
+    assert.ok(!ids.includes('implement:Q1:1') && !ids.includes('test:Q1:1'), 'qa has no implement/test either - execute is the test');
+    assert.deepEqual(st.nodes.find((n) => n.node_id === 'cases:Q1:1').deps, ['critique', 'gate:P1:1'], "qa's own deps[] on the planning subgoal carries through");
+
+    const f = dirty(cwd);
+    const d = await c.call('graph_submit', { run_id: runId, cwd, node_id: 'draft:P1:1', payload: ok({ changed_files: [f], handoff: 'PRD drafted' }) });
+    assert.equal(d.state, 'done', JSON.stringify(d));
+    const rv = await c.call('graph_submit', { run_id: runId, cwd, node_id: 'revise:P1:1', payload: ok({ changed_files: [], handoff: 'revised for the reader' }) });
+    assert.equal(rv.state, 'done', JSON.stringify(rv));
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'gate:P1:1', payload: ok({ accept: true, match_pct: 95 }) });
+
+    const g = dirty(cwd, 'b.txt');
+    const cs = await c.call('graph_submit', { run_id: runId, cwd, node_id: 'cases:Q1:1', payload: ok({ changed_files: [g], handoff: 'case set written' }) });
+    assert.equal(cs.state, 'done', JSON.stringify(cs));
+    const ex = await c.call('graph_submit', { run_id: runId, cwd, node_id: 'execute:Q1:1', payload: ok({ verified: true }) });
+    assert.equal(ex.state, 'done', JSON.stringify(ex));
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'gate:Q1:1', payload: ok({ accept: true, match_pct: 95 }) });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'gate:goal:1', payload: ok({ accept: true, match_pct: 95 }) });
+    const nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['report']);
+  });
+});
+
+test('a rejected qa execute gets a fresh cases/execute pair, the same reassignment review gets for a rejected document', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, {
+      goal: 'G', acceptance: ['A'],
+      subgoals: [{ id: 'Q1', kind: 'qa', title: 'qa pass', acceptance: ['a'], deps: [] }],
+    });
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'cases:Q1:1', payload: ok({ changed_files: [], handoff: 'cases v1' }) });
+    const rv = await c.call('graph_submit', { run_id: runId, cwd, node_id: 'execute:Q1:1', payload: ok({ verified: false, defects: ['double-processed a retried job -> reproduce with 2 workers and a forced retry'] }) });
+    assert.deepEqual(rv.reassigned, { target: 'subgoal', subgoal_id: 'Q1', attempt: 2 });
+    const ids = (await c.call('graph_status', { run_id: runId, cwd })).nodes.map((n) => n.node_id);
+    assert.ok(ids.includes('cases:Q1:2') && ids.includes('execute:Q1:2'));
+  });
+});
+
 test('a document draft that changed no file is unattributed, not contradicted; a code implement still is', async () => {
   await withRun(async ({ c, cwd, runId }) => {
     await throughCritiqueWith(c, cwd, runId, {
@@ -1219,6 +1274,39 @@ test('a review routed to the identity that wrote the draft is refused, and the n
     assert.equal(r.state, 'done', JSON.stringify(r));
     assert.equal(r.verified, true);
     assert.equal(r.reviewer_independence, 'distinct-identity');
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('a revise routed to the identity that drafted is refused, the same way review is', async () => {
+  const cwd = documentRepo();
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('graph_open', {
+      request: 'r', cwd, vendor: 'self',
+      policy: { draft: { vendor: 'ink', model: 'm1' }, revise: { vendor: 'ink', model: 'm1' } },
+    });
+    await throughCritiqueWith(c, cwd, run_id, {
+      goal: 'G', acceptance: ['A'],
+      subgoals: [{ id: 'P1', kind: 'planning', title: 'prd', acceptance: ['a'], files: ['prd.md'], deps: [] }],
+    });
+    const d = await c.call('graph_run', { run_id, cwd, node_id: 'draft:P1:1' });
+    assert.equal(d.state, 'done', JSON.stringify(d));
+    assert.equal(d.executor, 'ink');
+
+    const refused = await c.call('graph_run', { run_id, cwd, node_id: 'revise:P1:1' });
+    assert.match(refused.error, /someone other than its author/);
+    const st = await c.call('graph_status', { run_id, cwd, node_id: 'revise:P1:1' });
+    assert.equal(st.nodes[0].state, 'pending', 'a routing mistake costs no retry');
+
+    const r = await c.call('graph_run', { run_id, cwd, node_id: 'revise:P1:1', model: 'm2' });
+    assert.equal(r.state, 'done', JSON.stringify(r));
+    // reviewer_independence itself is only merged into the result on the reasoning branch
+    // of graph_run/graph_submit; revise is not a reasoning stage (Task 1), so the refusal
+    // applies here but the provenance field does not surface - left out of scope (see the
+    // plan's 발견 6).
   } finally {
     c.close();
     rmSync(cwd, { recursive: true, force: true });
