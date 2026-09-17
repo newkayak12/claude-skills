@@ -53,6 +53,30 @@ Design and step list: [`docs/plans/2026-09-11-teams-taskmanager.md`](../docs/pla
 
 ## Status
 
+- **v0.12.0 — planning/QA as EPIC phase-Teams, not peer STORYs**: `.claude/team.json`'s
+  `roles.planning`/`roles.qa` switches, recorded-but-inert since v0.10.1, now do something.
+  `roles.planning` inserts a planning phase-Team before `shape` — its PRD and `user_stories[]`
+  flow into `shape`'s own input, and `shape`'s contract gains `priority` and an `implements[]`
+  completeness check against those user stories, so a story planning named can't silently fall
+  through the crack between the two phases. `roles.qa` inserts a QA phase-Team between
+  `integrate` and `gate:goal`, reusing the repair worktree rather than a fresh one since QA's
+  tree IS the integration tree — it runs once per EPIC in this release and reports what it
+  finds; it does not yet act on it. `max_parallel_teams` (default 2, a `team.json` key) caps
+  concurrent develop STORY dispatch, priority-ordered — phase-Teams are exempt from both the
+  count and the cap, since the design already limits each to one at a time. `tickets.mjs`/
+  `docs.mjs` know both phase-Teams: `tm_board`'s STORY rows carry `role: 'planning'|'qa'|
+  'develop'` (previously always `'develop'`), and `10-planning.md`/`10-prd.md`/`60-qa.md` render
+  alongside the 8 phase documents v0.11.0 already covered — 11 of §7c's 13 now render; the
+  remaining two are `65-audit.md` (v0.12.1, the planning cross-review) and `15-spec-gate.md`
+  (v0.13.0). Two real bugs surfaced closing out the doc work: `team_open` never surfaced a
+  malformed `.claude/team.json` key to the caller (now `team_status`'s `config_notes`), and
+  `tickets.mjs`'s `docPaths` had re-typed `docs_dir`'s `.teams_output/team` literal instead of
+  reading it from `TEAM_DEFAULTS` — the be83bbc shape exactly, just never triggered. Full suite:
+  344/344 across all `test-*.mjs`, 0 regressions. Not yet measured: none of this has run against
+  a real vendor — every line above is unit-tested only, the same bar v0.10.1 and v0.11.0 held.
+  Not done yet: a QA-found defect does not yet reopen the EPIC as a develop STORY (no `tm_file`,
+  no automatic dispatch→accept→integrate→qa loop), and planning does not yet run a second time
+  as a cross-review pass — both are v0.12.1, already staged on top of this release.
 - **v0.11.0 — ticket layer, board.jsonl, phase documents**: `tickets.mjs` derives EPIC/STORY/TASK
   ticket state and `epicPhase` from `task.json` alone, as pure functions — never a second source
   of truth. `tm_board` (every EPIC, or one EPIC's STORY kanban) and `tm_ticket` (one ticket by

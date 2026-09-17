@@ -50,6 +50,30 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 
 ## 상태
 
+- **v0.12.0 — planning/QA를 동등한 STORY가 아니라 EPIC phase-Team으로**: `.claude/team.json`의
+  `roles.planning`/`roles.qa` 스위치는 v0.10.1부터 기록만 되고 아무 동작도 하지 않았는데, 이제
+  실제로 동작합니다. `roles.planning`은 `shape` 앞에 planning phase-Team을 끼워 넣습니다 — 그
+  PRD와 `user_stories[]`가 `shape` 자신의 입력으로 흘러들고, `shape`의 계약은 `priority`와, 그
+  user story들에 대한 `implements[]` 완전성 검사를 얻습니다 — planning이 지목한 스토리가 두
+  단계 사이 틈으로 조용히 빠지지 않도록. `roles.qa`는 `integrate`와 `gate:goal` 사이에 QA
+  phase-Team을 끼워 넣습니다. QA의 트리가 곧 통합 트리이므로 새 워크트리가 아니라 repair
+  워크트리를 재사용하며 — 이번 릴리스에서는 EPIC당 한 번만 돌고 찾은 것을 보고할 뿐, 아직 그에
+  따라 행동하지는 않습니다. `max_parallel_teams`(기본값 2, `team.json` 키)는 동시에 도는 develop
+  STORY dispatch 수를 priority 순으로 제한합니다 — phase-Team은 설계상 한 번에 하나뿐이므로 이
+  카운트와 상한 모두에서 예외입니다. `tickets.mjs`/`docs.mjs`는 두 phase-Team을 모두 압니다:
+  `tm_board`의 STORY 행이 `role: 'planning'|'qa'|'develop'`을 갖고(이전에는 항상 `'develop'`),
+  `10-planning.md`/`10-prd.md`/`60-qa.md`가 v0.11.0이 이미 렌더링하던 8개 phase 문서 옆에
+  더해집니다 — §7c의 13개 중 11개가 이제 렌더링되고, 남은 둘은 `65-audit.md`(v0.12.1의 기획
+  크로스 검수)와 `15-spec-gate.md`(v0.13.0)입니다. 문서 작업을 마무리하며 실제 버그 두 개가
+  드러났습니다: `team_open`이 잘못된 `.claude/team.json` 키를 호출자에게 전혀 알리지 않고
+  있었고(이제 `team_status`의 `config_notes`), `tickets.mjs`의 `docPaths`가 `docs_dir`의
+  `.teams_output/team` 리터럴을 `TEAM_DEFAULTS`에서 읽는 대신 다시 타이핑해두고 있었습니다 —
+  정확히 be83bbc의 그 모양인데, 그동안은 한 번도 걸리지 않았을 뿐입니다. 전체 스위트: 모든
+  `test-*.mjs`에서 344/344, 회귀 0. 아직 미측정: 위 내용 전부 실제 벤더로 돌려본 적이 없습니다
+  — 전부 단위 테스트뿐이며, v0.10.1과 v0.11.0이 세운 기준과 같습니다. 아직 안 된 것: QA가 찾은
+  결함이 아직 develop STORY(결함 STORY)로 EPIC을 재오픈하지 않고(`tm_file`도, 자동
+  dispatch→accept→integrate→qa 루프도 없음), planning이 아직 크로스 검수로 두 번째 도는 일도
+  없습니다 — 둘 다 v0.12.1이며, 이미 이 릴리스 위에 준비되어 있습니다.
 - **v0.11.0 — 티켓 레이어, board.jsonl, phase 문서**: `tickets.mjs`가 `task.json`만 보고
   EPIC/STORY/TASK 티켓 상태와 `epicPhase`를 순수 함수로 파생합니다 — 그 자체가 진실의 원천이
   아니라 어디까지나 파생값입니다. `tm_board`(전체 EPIC 목록, 또는 EPIC 하나의 STORY 칸반)와
