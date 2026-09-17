@@ -2,31 +2,36 @@
 
 **English** · [한국어](KOR.md)
 
-The beta line of [`graph`](../graph/README.md). `graph` stays the stable engine and keeps
-getting fixes; everything below is being built here first and graduates to `graph` only
-when it is proven on real runs.
+`teams` is its own plugin: a broker-driven node-graph engine, plus a second MCP server,
+`task-manager`, that splits a medium or large request into packages and runs each as its own
+graph in its own worktree. It is a sibling of [`graph`](../graph/README.md) and
+[`harness`](../harness/README.md) — built on the same broker/graph engine lineage as `graph`,
+and plugging into `harness`'s runtime gate protocol the way any project can — but it is not a
+beta of either: its own MCP servers, its own run directory, its own release line.
 
-Same broker, same six tools, same skills — with these differences:
+Same broker, same six core tools, same skill shape as `graph` — with these differences:
 
-| | `graph` (stable) | `teams` |
+| | `graph` | `teams` |
 |---|---|---|
-| MCP servers | `graph-engineering` | `teams-engineering` + `task-manager` |
-| Run files | `.harness-run/broker/` | `.harness-run/broker-beta/` |
+| MCP servers | `graph-engineering` (`graph_*` tools) | `teams-engineering` (`team_*`) + `task-manager` (`tm_*`) |
+| Run files | `.harness-run/broker/` | `.teams_output/broker/` |
 | Skills | `graph:install`, `graph:orchestrate` | `teams:install`, `teams:orchestrate`, `teams:develop`, `teams:document` |
-| Version line | 1.x | 0.x until it graduates |
+| Version line | 1.x | 0.x |
 
-**Do not enable both in the same project.** Both servers expose `team_*` tools; a driving
-session with two of each cannot tell which run it is in.
+Both plugins can be enabled in the same project: distinct tool prefixes (`graph_*` vs.
+`team_*`/`tm_*`) and distinct run directories mean neither can mistake the other's state for
+its own.
 
-## Why a beta line
+## Why teams exists
 
-The stable engine is built for one shape of work: a request that becomes subgoals, each of
-which **changes files** and is verified by **running commands** against a git worktree. That is
+`graph` is built for one shape of work: a request that becomes subgoals, each of which
+**changes files** and is verified by **running commands** against a git worktree. That is
 the right shape for code. It is the wrong shape for a design document, a research write-up,
 or a request large enough that it should be split into several runs across several
-worktrees — and it has no notion of a run that manages other runs.
+worktrees — and it has no notion of a run that manages other runs. `teams` adds exactly that,
+on the same engine lineage:
 
-Three things are being added, in this order, each behind the previous one's tests:
+Three things this plugin adds, in this order, each behind the previous one's tests:
 
 1. **Kinds.** A subgoal declares what kind of work it is, and the kind decides which node
    chain it expands into. `subgoal` (code) keeps `implement → test → gate` exactly as today.
@@ -44,7 +49,7 @@ Three things are being added, in this order, each behind the previous one's test
    `mcp/graph.mjs` as a library (DAG, typed edges, retries, settled failure) and reads child
    run files without ever writing them. Small requests skip it entirely.
 
-Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../docs/plans/2026-09-11-graph-beta-taskmanager.md).
+Design and step list: [`docs/plans/2026-09-11-teams-taskmanager.md`](../docs/plans/2026-09-11-teams-taskmanager.md).
 
 ## Status
 
@@ -68,7 +73,7 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
   `test-*.mjs`, 0 regressions. Not yet measured: the two kinds have never run against a real
   vendor — the `plan-flat`/`qa-flat` bench request files exist but the bench itself was not run
   this round (it spawns real model processes), so all evidence so far is unit tests. The PRD path
-  `.harness-run/team/E-<task8>/10-prd.md` is documented and round-tripped in a test, but nothing
+  `.teams_output/team/E-<task8>/10-prd.md` is documented and round-tripped in a test, but nothing
   computes it automatically yet — a spec has to name it in `subgoal.files[]`.
 - **v0.10.0 — install/remove/patch, and main never drives anything**: two threads finished
   together. First, teams gets the same operational shell as harness: `install`/`remove`/
@@ -345,10 +350,10 @@ Design and step list: [`docs/plans/2026-09-11-graph-beta-taskmanager.md`](../doc
   as the next round, not assumed.
 - **v0.6.3 — the first manager runs to complete, and what they broke on the way**: two size-L
   tasks ran to `report` end to end (`scripts/bench/README.md`, Results). Getting there found
-  three more manager defects, each fixed with a test: the fold's `git add -A -- . ':!.harness-run'`
-  exits 1 when the project's `.gitignore` lists `.harness-run/` — the usual case, and every test
+  three more manager defects, each fixed with a test: the fold's `git add -A -- . ':!.teams_output'`
+  exits 1 when the project's `.gitignore` lists `.teams_output/` — the usual case, and every test
   repo now has it — so two accepted children could not be committed; the add now stages
-  everything and unstages `.harness-run`. `tm_retry({package_id})` accepted an id the shape never
+  everything and unstages `.teams_output`. `tm_retry({package_id})` accepted an id the shape never
   named and opened a phantom package; it now refuses with the list. And an `integrate` that failed
   its checks stayed failed after the package it blamed was retried and accepted — the goal gate
   waited behind it forever, the same wedge the graph engine had with a rejected `gate:goal` —
@@ -464,6 +469,7 @@ Install `teams@newkayak12-claude-skills` and run `teams:install` to verify the s
 
 ## Everything else
 
-Tools, routing, adjudication, vendors, capacity recovery and the ledger are unchanged from
-stable — read [`graph/README.md`](../graph/README.md). Stable fixes are forward-ported here;
-beta work is not back-ported until it graduates.
+Tools, routing, adjudication, vendors, capacity recovery and the ledger are the same broker
+mechanics as `graph` — read [`graph/README.md`](../graph/README.md) for the shared internals.
+Fixes to that shared engine are ported between the two plugins; `teams`'s own kinds, entry
+skills and TaskManager stay here.

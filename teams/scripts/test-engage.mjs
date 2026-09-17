@@ -7,7 +7,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { markerPath, touchMarker, clearMarker } from '../mcp/engage.mjs';
 
+// The harness plugin is a sibling, not a dependency: its goal-gate hook is what these two
+// end-to-end tests prove the shared marker against. teams' own suite must not fail just
+// because harness moved or is not checked out - it skips, honestly, rather than faking the hook.
 const HARNESS_GATE = fileURLToPath(new URL('../../harness/hooks/goal-gate.mjs', import.meta.url));
+const HARNESS_GATE_PRESENT = existsSync(HARNESS_GATE);
 
 function worktreeLike() {
   const dir = mkdtempSync(join(tmpdir(), 'engage-'));
@@ -47,7 +51,8 @@ test('touchMarker never throws on an unwritable cwd', () => {
   assert.equal(touchMarker('/nonexistent/definitely/not/here', 'abc'), false);
 });
 
-test('harness goal-gate denies a gated write in a fresh worktree, and passes once the team marker exists', () => {
+test('harness goal-gate denies a gated write in a fresh worktree, and passes once the team marker exists', (t) => {
+  if (!HARNESS_GATE_PRESENT) { t.skip('harness plugin source not present at ../../harness; cannot exercise goal-gate.mjs'); return; }
   const dir = worktreeLike();
   try {
     const denied = harnessGate(dir);
@@ -59,7 +64,8 @@ test('harness goal-gate denies a gated write in a fresh worktree, and passes onc
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('a stale marker (older than the 2h window) does not count', () => {
+test('a stale marker (older than the 2h window) does not count', (t) => {
+  if (!HARNESS_GATE_PRESENT) { t.skip('harness plugin source not present at ../../harness; cannot exercise goal-gate.mjs'); return; }
   const dir = worktreeLike();
   try {
     mkdirSync(join(dir, '.claude', '.harness-markers'), { recursive: true });
