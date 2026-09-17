@@ -212,18 +212,26 @@ export function storyTaskProgress(task, pkgId) {
   return `${done}/${ids.length}`;
 }
 
-// One row per package, for tm_board's STORY table. role is p.phase || 'develop': the planning
-// phase-Team's row (task.planning_pkg) comes first, ahead of shape's own packages, and the qa
-// phase-Team's row (task.qa_pkg) comes last, after every develop package - the same order they
-// run in (§2). Neither ever joins task.spec.packages (taskmanager.mjs's packageOf reads them
-// straight off these fields), so they are stitched in here rather than found in `packages`.
-export function epicBoardRows(task) {
-  const packages = [
+// The full package list a board walks: the planning phase-Team's package (task.planning_pkg)
+// first, ahead of shape's own task.spec.packages, then the qa phase-Team's package
+// (task.qa_pkg) last - the same order they run in (§2). Neither phase-Team package ever joins
+// task.spec.packages (taskmanager.mjs's packageOf reads them straight off these fields), so
+// they are stitched in here rather than found in `packages`. Shared by epicBoardRows (one row
+// per package) and ticketSnapshot (one key per package) - v0.12.0 gave epicBoardRows this list
+// but left ticketSnapshot reading task.spec.packages alone, so the board showed a planning/qa
+// row that board.jsonl never logged a single transition for. One list, read by both, closes
+// that gap for good.
+function boardPackages(task) {
+  return [
     ...(task.planning_pkg ? [task.planning_pkg] : []),
     ...((task.spec && task.spec.packages) || []),
     ...(task.qa_pkg ? [task.qa_pkg] : []),
   ];
-  return packages.map((p) => {
+}
+
+// One row per package, for tm_board's STORY table. role is p.phase || 'develop'.
+export function epicBoardRows(task) {
+  return boardPackages(task).map((p) => {
     const id = String(p.id);
     const accept = latestBySubgoal(task, id, 'accept');
     const r = accept && accept.result;
@@ -242,12 +250,17 @@ export function epicBoardRows(task) {
 }
 
 // The snapshot a board.jsonl diff is taken over: EPIC key plus every STORY key this task
-// currently has a shape for. Called before AND after a mutating tool call; only the keys whose
-// value actually changed become a board.jsonl line (taskmanager.mjs's job, not this module's -
-// this module never writes).
+// currently has a shape for - the planning/qa phase-Team packages included, via the same
+// boardPackages() list epicBoardRows renders (see its comment for why they need stitching in).
+// storyTicketState applies to a phase-Team package unchanged: pushChain (graph.mjs) opens its
+// dispatch/accept chain with subgoal_id 'PLAN'/'QA' exactly as it does for any develop package
+// with subgoal_id 'P1', and storyTicketState only ever reads a node by subgoal_id/stage - it
+// has no develop-only assumption to violate. Called before AND after a mutating tool call; only
+// the keys whose value actually changed become a board.jsonl line (taskmanager.mjs's job, not
+// this module's - this module never writes).
 export function ticketSnapshot(task, opts = {}) {
   const snap = { [epicKey(task.run_id)]: epicTicketState(task) };
-  for (const p of (task.spec && task.spec.packages) || []) {
+  for (const p of boardPackages(task)) {
     snap[storyKey(task.run_id, p.id)] = storyTicketState(task, String(p.id), opts);
   }
   return snap;
