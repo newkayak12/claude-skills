@@ -88,21 +88,26 @@ function checkAgreement(option, sites, minSites, expectedValue) {
 
 // ---------- site extraction, one function per option so a proof test can feed in a mutated string ----------
 
-function vendorSites(teamconfigSrc, teamsGraphSrc, graphGraphSrc, graphBrokerSrc) {
+// toolGraphOpen (graph/mcp/broker.mjs) used to be a 4th site here, declaring its own
+// `a.vendor || 'auto'` / `a.allocation || 'ordered'` fallback that only agreed with the
+// other three by coincidence - the same latent shape as be83bbc, just never triggered
+// since graph has no config layer to bypass. It now passes a.vendor/a.allocation straight
+// through and lets createRun (graph/mcp/graph.mjs) be the only site deciding either
+// default, so it is intentionally absent from these lists - there is nothing left there
+// to agree or disagree.
+function vendorSites(teamconfigSrc, teamsGraphSrc, graphGraphSrc) {
   return [
     ...collect(teamconfigSrc, /^\s*vendor:\s*'([^']+)',\s*$/gm, 'TEAM_DEFAULTS (teams/mcp/teamconfig.mjs)'),
     ...collect(teamsGraphSrc, /vendor:\s*opts\.vendor\s*\|\|\s*'([^']+)',/g, 'createRun (teams/mcp/graph.mjs)'),
     ...collect(graphGraphSrc, /vendor:\s*opts\.vendor\s*\|\|\s*'([^']+)',/g, 'createRun (graph/mcp/graph.mjs)'),
-    ...collect(graphBrokerSrc, /vendor:\s*a\.vendor\s*\|\|\s*'([^']+)',/g, 'toolGraphOpen (graph/mcp/broker.mjs)'),
   ];
 }
 
-function allocationSites(teamconfigSrc, teamsGraphSrc, graphGraphSrc, graphBrokerSrc) {
+function allocationSites(teamconfigSrc, teamsGraphSrc, graphGraphSrc) {
   return [
     ...collect(teamconfigSrc, /^\s*allocation:\s*'([^']+)',\s*$/gm, 'TEAM_DEFAULTS (teams/mcp/teamconfig.mjs)'),
     ...collect(teamsGraphSrc, /allocation:\s*opts\.allocation\s*\|\|\s*'([^']+)',/g, 'createRun (teams/mcp/graph.mjs)'),
     ...collect(graphGraphSrc, /allocation:\s*opts\.allocation\s*\|\|\s*'([^']+)',/g, 'createRun (graph/mcp/graph.mjs)'),
-    ...collect(graphBrokerSrc, /allocation:\s*a\.allocation\s*\|\|\s*'([^']+)',/g, 'toolGraphOpen (graph/mcp/broker.mjs)'),
   ];
 }
 
@@ -133,14 +138,14 @@ function driverRestartsSites(teamconfigSrc, taskmanagerSrc) {
 // ---------- guard A tests: value agreement ----------
 
 test('vendor default ("auto") agrees across every declared site, teams and graph alike', () => {
-  const sites = vendorSites(src('teamconfig'), src('teamsGraph'), src('graphGraph'), src('graphBroker'));
-  const r = checkAgreement('vendor', sites, 4, 'auto');
+  const sites = vendorSites(src('teamconfig'), src('teamsGraph'), src('graphGraph'));
+  const r = checkAgreement('vendor', sites, 3, 'auto');
   assert.ok(r.ok, r.message);
 });
 
 test('allocation default ("ordered") agrees across every declared site, teams and graph alike', () => {
-  const sites = allocationSites(src('teamconfig'), src('teamsGraph'), src('graphGraph'), src('graphBroker'));
-  const r = checkAgreement('allocation', sites, 4, 'ordered');
+  const sites = allocationSites(src('teamconfig'), src('teamsGraph'), src('graphGraph'));
+  const r = checkAgreement('allocation', sites, 3, 'ordered');
   assert.ok(r.ok, r.message);
 });
 
@@ -288,8 +293,10 @@ test('proof: the be83bbc shape (team_open rebuilding vendor/allocation/goal_thre
 
   // Confirm guard A alone really would have missed it: the rebuilt literals still agree in
   // VALUE with every other site, so the value-agreement check stays green on the mutation -
-  // this is the concrete demonstration that be83bbc needed guard B, not guard A.
-  const stillAgrees = checkAgreement('vendor', vendorSites(src('teamconfig'), src('teamsGraph'), src('graphGraph'), src('graphBroker')), 4, 'auto');
+  // this is the concrete demonstration that be83bbc needed guard B, not guard A. (Sites are
+  // teamconfig/teams-graph/graph-graph only - graph/mcp/broker.mjs no longer declares a
+  // vendor default of its own, so it is not part of this mutation or this count.)
+  const stillAgrees = checkAgreement('vendor', vendorSites(src('teamconfig'), src('teamsGraph'), src('graphGraph')), 3, 'auto');
   assert.ok(stillAgrees.ok, 'sanity: be83bbc\'s literals coincided with team.json\'s default, so guard A sees no disagreement even on the buggy shape - confirming guard A alone is not sufficient here');
 });
 
