@@ -896,6 +896,13 @@ console.log('{"type":"fake-driver"}');
 console.error('fake driver drove nothing');
 `;
 
+// Same write as FAKE_DRIVER, but stays up instead of exiting - for a test that wants to read what
+// was spawned without racing serviceLeader/serviceDeadDriver's own respawn-on-death handling.
+const FAKE_DRIVER_ALIVE = FAKE_DRIVER.replace(
+  "console.log('{\"type\":\"fake-driver\"}');\nconsole.error('fake driver drove nothing');",
+  "console.log('{\"type\":\"fake-driver\"}');\nconsole.error('fake driver drove nothing');\nsetTimeout(() => {}, 30000);",
+);
+
 // Dies on its first invocation (the death serviceDeadDriver has to catch and respawn from), then
 // stays up on every later invocation - a respawned driver a test can observe alive, instead of
 // racing the next death. A shared counter file (one JS process per invocation; no in-memory
@@ -1294,11 +1301,13 @@ test('tm_open spawns a TaskLeader driver whose prompt names the task and manager
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
   const fake = join(root, 'fake-leader.mjs');
-  writeFileSync(fake, FAKE_DRIVER);
+  writeFileSync(fake, FAKE_DRIVER_ALIVE);
   const out = join(root, 'leader.out');
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_CHILD_DRIVER: `node ${fake}`, FAKE_DRIVER_OUT: out }).init();
+  let pid;
   try {
     const open = await tm.call('tm_open', { request: 'lead me', cwd, vendor: 'self', size: 'L' });
+    pid = open.leader.pid;
     assert.ok(open.leader && open.leader.pid, 'a leader pid comes back');
     assert.ok(open.leader.log.endsWith('leader.stream.jsonl'));
     await new Promise((r) => setTimeout(r, 400));
@@ -1312,11 +1321,8 @@ test('tm_open spawns a TaskLeader driver whose prompt names the task and manager
     assert.match(ledger, /"event":"leader_spawned"/);
     const s = await tm.call('tm_status', { task_id: open.task_id });
     assert.equal(typeof s.leader.alive, 'boolean');
-    // Not a strict ===1: this same FAKE_DRIVER dies at once, and tm_status's own leader-servicing
-    // gate (see 'a dead leader is respawned on any tm_* call') may already have respawned it once
-    // by the time this call lands - a leader was spawned at least once, which is the point here.
-    assert.ok(Number.isInteger(s.leader.spawn_count) && s.leader.spawn_count >= 1, JSON.stringify(s.leader));
-  } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
+    assert.equal(s.leader.spawn_count, 1);
+  } finally { try { process.kill(pid, 'SIGTERM'); } catch { /* gone */ } tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
 });
 
 test('a mutating call from a non-leader process is queued to the inbox; the leader process drains it on tm_next', async () => {
