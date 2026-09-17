@@ -68,8 +68,9 @@ docs-flat | goal-code | goal-docs | seam | seam-flat`.
 A headless session on a plan with a usage limit dies mid-run — three rounds of this bench did,
 at roughly $20–25 per five-hour window across every concurrent session. Nothing is lost: the
 task under `.harness-tasks`, every child run file, every worktree are on disk, and `resume.sh`
-opens a new session that continues them (`tm_status`/`tm_next` for a task, `team_status({cwd})`
-for a bare run) instead of opening again. `drive.sh` parses the reset time out of the limit
+opens a new session that continues them (`tm_status`/`tm_next` for a task, `team_status({cwd})`/
+`team_next` for a bare teams run, `graph_status({cwd})`/`graph_next` for the stable graph arm)
+instead of opening again. `drive.sh` parses the reset time out of the limit
 message, sleeps past it, resumes, and moves to the next job when a session ends for any other
 reason. The scorer sums duration, cost and turns over every session that drove a workspace and
 counts the limit hits (`sessions`, `limit_hit`).
@@ -243,8 +244,8 @@ continued it. Judged tree: the integration worktree for the manager, the workspa
 |---|---|---|---|---|---|---|---|
 | none | code | 9/9 | 8 min | $2.17 | 1 | 0 | 26 Bash calls, uncommitted working tree |
 | none | docs | 9/9 | 14 min | $3.97 | 1 | 0 | judge: 0 false claims / 82 checked |
-| stable 1.7.0 | code | 9/9 | 48 min | $13.27 | 1 | 20 | one graph run, 20 nodes; first `team_open` blocked on the host-model variant (Step 8), reopened |
-| stable 1.7.0 | docs | 9/9 | 61 min | $18.10 | 2 | 32 | `test:U3` and `gate:U5` failed → two `team_retry`; docs ran as implement/test (no `document` kind); judge parsed 0 claims |
+| stable 1.7.0 | code | 9/9 | 48 min | $13.27 | 1 | 20 | one graph run, 20 nodes; first `graph_open` blocked on the host-model variant (Step 8), reopened |
+| stable 1.7.0 | docs | 9/9 | 61 min | $18.10 | 2 | 32 | `test:U3` and `gate:U5` failed → two `graph_retry`; docs ran as implement/test (no `document` kind); judge parsed 0 claims |
 | beta 0.6.2, size pinned L | code | 9/9 | 173 min | $72.97 | 2 | 67 | 4 packages (csv, rules, report←csv,rules, cli←all); P1 child critique caught a contradictory check → spec retry; fold → integrate → `gate:goal` → report, all `self`; judge n/a |
 | beta 0.6.2, size pinned L | docs | 9/9 (tree) · task **blocked** | 104 min | $48.63 | 2 | 69 | 4 document packages, every `review` `verified` with `distinct-identity`; `integrate` ran the README examples and failed P2's (bare `@tinyq/retry` needs `npm install`) → `tm_retry(P2)` fixed it (gate 95%) → **integrate never reopened** (engine gap, fixed after); judge: 0 false / 58 |
 | beta, size measured (S → one run) | code · docs | interrupted | 45 min | $12–13 each | — | — | the delegate path; killed by the usage limit mid-subgoals, not resumed (superseded by the L runs) |

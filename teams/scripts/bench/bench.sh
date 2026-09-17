@@ -92,7 +92,7 @@ case "$ARM" in
     fi ;;
   stable)
     PLUGIN=(--plugin-dir "$REPO/graph")
-    PROMPT="Use the graph:orchestrate skill to run the following request through the harness. Follow the skill exactly: start with team_open, drive the loop to the end, and end with the skill's output template. $ROUTING Request: $REQ" ;;
+    PROMPT="Use the graph:orchestrate skill to run the following request through the harness. Follow the skill exactly: start with graph_open, drive the loop to the end, and end with the skill's output template. $ROUTING Request: $REQ" ;;
   none)
     PROMPT="Complete the following request in this repository. Work until it is fully done and verified; do not stop to ask questions. Request: $REQ" ;;
   *) echo "unknown arm $ARM" >&2; exit 2 ;;
