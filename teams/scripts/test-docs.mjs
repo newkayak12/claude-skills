@@ -1,7 +1,9 @@
 // teams/scripts/test-docs.mjs - golden-file comparison for docs.mjs's renderers, plus a
-// rebuild-produces-identical-output check. The golden fixtures under
-// teams/scripts/fixtures/docs-golden/ are generated once (see fixtures/docs-golden/GENERATE.mjs)
-// by running the real renderer and are then locked in - the usual way a golden test is bootstrapped.
+// rebuild-produces-identical-output check (with no clock argument - the actual production call
+// shape, since docs.mjs takes none; that is what makes byte-identical rebuild an honest claim
+// rather than one only true under a test harness's fixed clock). The golden fixtures under
+// teams/scripts/fixtures/docs-golden/ are generated once by running the real renderer and are
+// then locked in - the usual way a golden test is bootstrapped.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, rmSync, readdirSync } from 'node:fs';
@@ -14,7 +16,6 @@ import { docPaths } from '../mcp/tickets.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GOLDEN = join(HERE, 'fixtures', 'docs-golden');
-const NOW = 1758000000000; // fixed clock: every render in this file must be byte-identical run to run
 
 // A task well past goal-gate, with a rejected-then-retried P1 and an accepted P2 - exercises
 // every renderer renderAll would reach for a task this far along.
@@ -60,7 +61,7 @@ function readGolden(name) { return readFileSync(goldenPath(name), 'utf8'); }
 
 test('renderAll produces exactly the files this fixture has data for, matching the golden fixtures byte for byte', () => {
   const task = fixtureTask('/proj');
-  const files = renderAll(task, NOW);
+  const files = renderAll(task);
   const expectedNames = ['INDEX.md', '00-request.md', '20-shape.md', '30-critique.md', '40-stories/P1.md', '40-stories/P2.md', '50-integrate.md', '70-goal-gate.md', '80-report.md'];
   const paths = docPaths(task);
   const expectedPaths = new Set([paths.index, paths.request, paths.shape, paths.critique, paths.story('P1'), paths.story('P2'), paths.integrate, paths.goalGate, paths.report]);
@@ -70,15 +71,15 @@ test('renderAll produces exactly the files this fixture has data for, matching t
   }
 });
 
-test('writeDocs({rebuild:true}) reproduces byte-identical files - the property that matters, not any one file\'s content', () => {
+test('writeDocs({rebuild:true}) reproduces byte-identical files from engine state alone, with no clock passed - the actual production call shape', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'docs-rebuild-'));
   try {
     const task = fixtureTask(cwd);
-    const first = writeDocs(task, { rebuild: true, now: NOW });
+    const first = writeDocs(task, { rebuild: true });
     const firstBytes = Object.fromEntries(first.map((p) => [p, readFileSync(p, 'utf8')]));
-    const second = writeDocs(task, { rebuild: true, now: NOW });
+    const second = writeDocs(task, { rebuild: true });
     assert.deepEqual(second.sort(), first.sort(), 'rebuild wrote the same set of files');
-    for (const p of second) assert.equal(readFileSync(p, 'utf8'), firstBytes[p], `${p} changed on rebuild`);
+    for (const p of second) assert.equal(readFileSync(p, 'utf8'), firstBytes[p], `${p} changed on rebuild even though task.json did not`);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -88,13 +89,13 @@ test('writeDocs without rebuild leaves a stale file from a dropped package - reb
   const cwd = mkdtempSync(join(tmpdir(), 'docs-stale-'));
   try {
     const task = fixtureTask(cwd);
-    writeDocs(task, { rebuild: true, now: NOW });
+    writeDocs(task, { rebuild: true });
     const paths = docPaths(task);
     task.spec.packages = task.spec.packages.filter((p) => p.id !== 'P2'); // P2 dropped by a reshape
-    const withoutRebuild = writeDocs(task, { now: NOW });
+    const withoutRebuild = writeDocs(task);
     assert.ok(readdirSync(join(paths.dir, '40-stories')).includes('P2.md'), 'stale file survives a non-rebuild write');
     assert.ok(!withoutRebuild.includes(paths.story('P2')), 'but renderAll itself no longer names it');
-    writeDocs(task, { rebuild: true, now: NOW });
+    writeDocs(task, { rebuild: true });
     assert.ok(!readdirSync(join(paths.dir, '40-stories')).includes('P2.md'), 'rebuild:true removes it');
   } finally {
     rmSync(cwd, { recursive: true, force: true });
