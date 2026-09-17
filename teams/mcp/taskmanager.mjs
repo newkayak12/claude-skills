@@ -37,7 +37,7 @@ import {
   storyTicketState, storyTaskProgress, epicBoardRows, ticketSnapshot,
 } from './tickets.mjs';
 import { writeDocs } from './docs.mjs';
-import { readTeamConfig, resolveTeamOptions } from './teamconfig.mjs';
+import { readTeamConfig, resolveTeamOptions, TEAM_DEFAULTS } from './teamconfig.mjs';
 import {
   node,
   pushChain,
@@ -1975,8 +1975,12 @@ function toolNext(a) {
     openChild(task, n);
     opened++;
   }
+  // The fallback reads TEAM_DEFAULTS.max_parallel_teams rather than repeating its literal. It
+  // only fires for a task.json written before task.team existed - createTask has set task.team
+  // on every task since taskmanager.mjs:187, so a task created by the current code always has
+  // task.team.opts.max_parallel_teams and never reaches this branch.
   const maxParallel = Number.isInteger(task.team && task.team.opts && task.team.opts.max_parallel_teams)
-    ? task.team.opts.max_parallel_teams : 2;
+    ? task.team.opts.max_parallel_teams : TEAM_DEFAULTS.max_parallel_teams;
   const runningStories = task.nodes.filter((n) => n.stage === 'dispatch' && n.state === 'running' && !isPhaseTeam(n)).length;
   const slots = Math.max(0, maxParallel - runningStories);
   const storyReady = readyDispatch.filter((n) => !isPhaseTeam(n))
