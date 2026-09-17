@@ -29,7 +29,7 @@ skill inside a target project to make governance ambient (see
 
 | Path | When | How |
 |---|---|---|
-| **Graph (default)** | `graph-engineering` MCP connected | `graph:orchestrate` — the graph engine owns the flow; the main session only loops `graph_next` / `graph_run` / `graph_submit`. No transport subagents, no polling. |
+| **Graph (default)** | `graph-engineering` MCP connected | `graph:orchestrate` — the graph engine owns the flow; the main session only loops `graph_next` / `graph_run` / `graph_submit`. No transport subagents, no polling. Open with `allocation: "balanced"` for stages to actually be distributed — omit it and it falls back to legacy `ordered`, running everything in one session. |
 | Workflow engine | Graph MCP absent, Workflow tool available | `Workflow({ scriptPath: "harness/engine/pipeline.js", ... })` |
 | Agent team | Neither | `engine/fallback.md` |
 
