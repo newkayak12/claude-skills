@@ -150,6 +150,66 @@ test('team_open seeds plan -> setgoal -> critique and offers plan first', async 
   });
 });
 
+// ---------- team_open honors .claude/team.json (same precedence tm_open has) ----------
+
+test('team_open reads .claude/team.json as defaults for vendor/allocation/goal_threshold/max_retries', async () => {
+  const cwd = repo();
+  mkdirSync(join(cwd, '.claude'), { recursive: true });
+  writeFileSync(join(cwd, '.claude', 'team.json'), JSON.stringify({
+    vendor: 'codex', allocation: 'balanced', goal_threshold: 95, max_retries: 4,
+  }));
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, goal_judges: 1 });
+    const full = await c.call('team_status', { run_id, cwd, full: true });
+    assert.equal(full.vendor, 'codex');
+    assert.equal(full.allocation, 'balanced');
+    assert.equal(full.goal_threshold, 95);
+    assert.equal(full.max_retries, 4);
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('an explicit team_open argument still wins over a team.json pin', async () => {
+  const cwd = repo();
+  mkdirSync(join(cwd, '.claude'), { recursive: true });
+  writeFileSync(join(cwd, '.claude', 'team.json'), JSON.stringify({ goal_threshold: 95, max_retries: 4 }));
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', {
+      request: 'r', cwd, vendor: 'self', goal_judges: 1, goal_threshold: 80,
+    });
+    const full = await c.call('team_status', { run_id, cwd, full: true });
+    assert.equal(full.goal_threshold, 80, 'explicit arg beats team.json');
+    assert.equal(full.max_retries, 4, 'team.json still applies where no explicit arg was given');
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('no team.json: team_open defaults stay byte-identical to today', async () => {
+  const cwd = repo();
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'self', goal_judges: 1 });
+    const full = await c.call('team_status', { run_id, cwd, full: true });
+    assert.equal(full.vendor, 'self');
+    assert.equal(full.allocation, 'ordered');
+    assert.equal(full.goal_threshold, 90);
+    assert.equal(full.max_retries, 2);
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('goal_judges keeps its own default of 2 on team_open regardless of team.json - it is not a team.json key', async () => {
+  const cwd = repo();
+  mkdirSync(join(cwd, '.claude'), { recursive: true });
+  writeFileSync(join(cwd, '.claude', 'team.json'), JSON.stringify({ goal_judges: 1, goal_threshold: 95 }));
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'self' });
+    const full = await c.call('team_status', { run_id, cwd, full: true });
+    assert.equal(full.goal_judges, 2, 'goal_judges is not in TEAM_DEFAULTS; team_open keeps its own default of 2');
+    assert.equal(full.goal_threshold, 95, 'goal_threshold from team.json still applies alongside it');
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
 // ---------- the orchestrator must not receive payloads ----------
 
 test('a verdict carries no spec, handoff, or evidence', async () => {
