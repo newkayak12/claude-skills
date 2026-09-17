@@ -279,6 +279,45 @@ test('a sound shape dispatches its root package: worktree created, child run ope
   });
 });
 
+// ---------- silent-ungated-worktree trap ----------
+//
+// A worktree holds only what git committed. A project that installed harness but has not yet
+// committed .claude/harness-gate.json leaves every package worktree with no gate config at all -
+// worker writes there are silently ungated, and the user still believes tm_open protects them.
+// ensureWorktree cannot block on this (fail-open is the rule every hook in this codebase
+// follows) but it must say so somewhere a person looks: the ledger, same as dispatch/integrated.
+function addGateConfig(cwd) {
+  mkdirSync(join(cwd, '.claude'), { recursive: true });
+  writeFileSync(join(cwd, '.claude', 'harness-gate.json'), '{}\n');
+}
+
+test('a committed harness gate reaches the worktree: no uncommitted-gate warning', async () => {
+  await withTask(async ({ tm, cwd, task_id }) => {
+    addGateConfig(cwd);
+    spawnSync('git', ['add', '.claude/harness-gate.json'], { cwd });
+    spawnSync('git', ['commit', '-qm', 'add harness gate'], { cwd });
+    await throughCritique(tm, task_id);
+    await tm.call('tm_next', { task_id });
+    const events = (await tm.call('tm_events', { task_id })).events;
+    assert.ok(!events.some((e) => e.event === 'gate_uncommitted'), JSON.stringify(events));
+  });
+});
+
+test('an uncommitted harness gate leaves the worktree silently ungated: ensureWorktree warns in the ledger', async () => {
+  await withTask(async ({ tm, cwd, task_id }) => {
+    // The gate file exists in the project's working tree but was never committed - exactly
+    // the state `harness:install` leaves a project in until the user commits its output.
+    addGateConfig(cwd);
+    await throughCritique(tm, task_id);
+    await tm.call('tm_next', { task_id });
+    const events = (await tm.call('tm_events', { task_id })).events;
+    const warn = events.find((e) => e.event === 'gate_uncommitted');
+    assert.ok(warn, JSON.stringify(events));
+    assert.match(warn.reason, /commit \.claude\/harness-gate\.json/i);
+    assert.match(warn.reason, /worktree inherits only committed files/i);
+  });
+});
+
 test('a parent with two dependent children runs to report; the second child sees the first\'s report', async () => {
   await withTask(async ({ tm, g, task_id }) => {
     await throughCritique(tm, task_id);
