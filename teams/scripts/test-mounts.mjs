@@ -82,12 +82,28 @@ test('a mounts override replaces the default for that stage only, and accepts a 
   assert.deepEqual(graphStageMounts(run, node('setgoal', 'setgoal')).map((m) => m.tool), ['mcp__think-tool__think'], 'setgoal keeps its default');
 });
 
-test('draft and cases each get one advisory MCP tool by default, added for planning/qa', () => {
-  const run = {};
-  assert.deepEqual(graphStageMounts(run, node('draft:D1:1', 'draft', { subgoal_id: 'D1' })).map((m) => m.tool), ['mcp__think-tool__think']);
+test('draft (for a planning subgoal) and cases each get one advisory MCP tool by default', () => {
+  // draft's mount is keyed by kind now (planning:draft), not by the bare stage name - see
+  // the dedicated collision test below - so this needs a real planning subgoal in run.spec
+  // to resolve, unlike cases/execute which only qa ever has and need no kind context.
+  const run = { spec: { subgoals: [{ id: 'P1', kind: 'planning' }] } };
+  assert.deepEqual(graphStageMounts(run, node('draft:P1:1', 'draft', { subgoal_id: 'P1' })).map((m) => m.tool), ['mcp__think-tool__think']);
   assert.deepEqual(graphStageMounts(run, node('cases:Q1:1', 'cases', { subgoal_id: 'Q1' })).map((m) => m.tool), ['mcp__sequential-thinking__sequentialthinking']);
   // execute gets none by default, matching the design doc's "없음"
   assert.deepEqual(graphStageMounts(run, node('execute:Q1:1', 'execute', { subgoal_id: 'Q1' })), []);
+});
+
+test('a planning draft and a document draft at the same stage name get their own kind\'s mount, not each other\'s', () => {
+  // draft is the stage document and planning share (both chains open with it). The
+  // mount was designed for planning's draft only (design doc §3, a PRD's framing pass) -
+  // a document draft writing prose has no such need. Keying by stage alone cannot tell
+  // the two node kinds apart, so this is where the collision the module comment used to
+  // admit actually bites.
+  const run = { spec: { subgoals: [{ id: 'P1', kind: 'planning' }, { id: 'D1', kind: 'document' }] } };
+  const planningDraft = graphStageMounts(run, node('draft:P1:1', 'draft', { subgoal_id: 'P1' })).map((m) => m.tool);
+  const documentDraft = graphStageMounts(run, node('draft:D1:1', 'draft', { subgoal_id: 'D1' })).map((m) => m.tool);
+  assert.deepEqual(planningDraft, ['mcp__think-tool__think'], "planning's draft keeps the framing mount the design doc asked for");
+  assert.deepEqual(documentDraft, [], "document's draft must not inherit planning's mount just because the stage name collides");
 });
 
 test('a mounts override on draft does not touch cases, and vice versa', () => {
