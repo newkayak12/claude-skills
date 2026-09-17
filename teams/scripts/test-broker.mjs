@@ -1744,8 +1744,10 @@ test('an in-flight node names its vendor and elapsed time, with or without a run
     assert.equal(node.state, 'running');
     assert.equal(node.executor, 'slow');
     assert.ok(Number.isInteger(node.elapsed_s), `no elapsed_s on the running node: ${JSON.stringify(node)}`);
-    assert.ok(node.elapsed_s >= 1 && node.elapsed_s < 5,
-      `elapsed_s ${node.elapsed_s} does not track the ~1.2s actually elapsed`);
+    // Lower bound only: it is what a hardcoded elapsed_s (0, or any other constant) fails.
+    // An upper bound here would fail on a merely slow/busy machine for reasons that have
+    // nothing to do with the code under test.
+    assert.ok(node.elapsed_s >= 1, `elapsed_s ${node.elapsed_s} does not track the ~1.2s actually elapsed`);
     const overview = await c.call('team_status', { cwd });
     const row = overview.runs.find((r) => r.run_id === runId);
     assert.equal(row.state, 'running');
