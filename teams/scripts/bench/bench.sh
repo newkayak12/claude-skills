@@ -23,6 +23,11 @@
 #                      error-code table defined in packages/codes; size L, so the harness splits)
 #           seam-flat  fixtures/seam        + requests/seam-flat.txt (same domain, one empty package: sizes S)
 #
+# TEAM_ROLES='{"planning":true,"qa":true}' seeds .claude/team.json into the workspace before the
+#   session. Roles are project configuration rather than a tm_open argument, so this is the only
+#   way to reach the planning/QA/audit phase-Teams from here - without it that whole path had
+#   never run against a real vendor. Only the beta/betas/skills arms read it.
+#
 # Workspaces go to $GRAPH_BENCH_OUT (default $TMPDIR/graph-bench) — never inside the plugin
 # tree: Claude Code denies Write/Edit under a loaded --plugin-dir. Arms are isolated with
 # --setting-sources project (hides installed plugins) plus --plugin-dir for the arm under test.
@@ -51,6 +56,15 @@ esac
 
 mkdir -p "$WS"
 cp -R "$HERE/fixtures/$FIX/." "$WS/"
+# TEAM_ROLES seeds .claude/team.json before the session, which is the only way to exercise the
+# planning/QA/audit phase-Teams here: roles are project configuration, not a tm_open argument, so
+# without this the whole roles path was unreachable from the bench and had never run against a
+# real vendor at all. Value is the roles object as JSON, e.g. TEAM_ROLES='{"planning":true}'.
+# Committed with the seed so the run starts from a clean tree, exactly like every other file.
+if [ -n "${TEAM_ROLES:-}" ]; then
+  mkdir -p "$WS/.claude"
+  printf '{"roles": %s}\n' "$TEAM_ROLES" > "$WS/.claude/team.json"
+fi
 git -C "$WS" init -q -b main
 git -C "$WS" config user.name bench
 git -C "$WS" config user.email bench@example.com
