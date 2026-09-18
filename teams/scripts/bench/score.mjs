@@ -184,9 +184,20 @@ const harness = { tasks: [], runs: [] };
     // task.json carries no state field: the verdict is what the nodes say. A tree can look
     // finished while the harness has rejected it - a failed integrate leaves its worktree on
     // disk, and scoring that tree without the verdict reports a pass the harness refused.
-    const goalGate = nodes.filter((n) => n.node_id.startsWith('gate:goal')).at(-1);
-    const verdict = nodes.some((n) => n.state === 'unreachable') ? 'settled-failure'
-      : nodes.some((n) => ['pending', 'running'].includes(n.state)) ? 'incomplete'
+    // A size-S task has no goal gate of its own: `size` resolving to S skips shape and critique
+    // and moves the whole run - gate:goal included - into the single child run task.s_run points
+    // at. Judging such a task by its own three settled nodes finds no goal gate and calls every
+    // one of them 'not-delivered', which is how a run that closed 20/20 with an accepted goal
+    // gate was scored as a failure on 2026-09-17. (The engine had the same bug in its own
+    // watcher branch, fixed in teams 0.12.2 - the same mistake in two places: reading the
+    // manager graph when the work is in the child run.) So for a size-S task, the verdict is
+    // taken from the run that actually holds the nodes.
+    const child = task.s_run
+      ? runFiles(task.s_run.cwd).find((r) => r.run_id === task.s_run.run_id) : null;
+    const judged = child ? (child.nodes || []) : nodes;
+    const goalGate = judged.filter((n) => String(n.node_id).startsWith('gate:goal')).at(-1);
+    const verdict = judged.some((n) => n.state === 'unreachable') ? 'settled-failure'
+      : judged.some((n) => ['pending', 'running'].includes(n.state)) ? 'incomplete'
       : goalGate?.state === 'done' && goalGate?.result?.accept !== false ? 'delivered'
       : 'not-delivered';
     harness.tasks.push({
