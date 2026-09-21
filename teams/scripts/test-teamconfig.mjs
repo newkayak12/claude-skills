@@ -53,9 +53,9 @@ test('team.json overrides defaults, explicit args override team.json', () => {
 });
 
 test('a wrongly typed key is ignored with a note, not applied', () => {
-  const { opts, notes } = resolveTeamOptions({}, { goal_threshold: 'ninety', human_gates: 'spec' });
+  const { opts, notes } = resolveTeamOptions({}, { goal_threshold: 'ninety', max_depth: 'two' });
   assert.equal(opts.goal_threshold, TEAM_DEFAULTS.goal_threshold);
-  assert.deepEqual(opts.human_gates, []);
+  assert.equal(opts.max_depth, TEAM_DEFAULTS.max_depth);
   assert.equal(notes.length, 2);
   assert.match(notes[0], /goal_threshold/);
 });

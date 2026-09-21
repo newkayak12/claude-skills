@@ -379,3 +379,20 @@ test('audit prompt surfaces a QA report when present, via the ordinary upstream-
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test('audit contract adds the product-owner pass: missing, duplication and volume questions, each with its own field', () => {
+  const cwd = tmpProject();
+  try {
+    const prompt = composePrompt(baseRun(cwd), baseNode({ stage: 'audit' }), baseBriefing());
+    // The three questions must be separately findable, both as named JSON fields and as
+    // the prose instruction telling the agent what evidence belongs in each.
+    assert.match(prompt, /"unowned"/);
+    assert.match(prompt, /"duplication"/);
+    assert.match(prompt, /"volume"/);
+    assert.match(prompt, /map every requirement in the prd or request to the package that implemented it/i);
+    assert.match(prompt, /name any responsibility two or more packages each implemented/i);
+    assert.match(prompt, /for each package, give file\/loc\/test counts/i);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});

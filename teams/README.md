@@ -531,7 +531,7 @@ validator is ignored rather than applied, and recorded as a note — `tm_status`
 the `tm_open` path, `team_status`'s `config_notes` on the `team_open` path (present only when
 there is at least one note; it is the run's own persisted copy of `resolveTeamOptions`' notes,
 not a live re-check). The schema is `TEAM_DEFAULTS`/`CHECK` in
-[`mcp/teamconfig.mjs`](mcp/teamconfig.mjs) — 13 keys, six of which actually change behavior
+[`mcp/teamconfig.mjs`](mcp/teamconfig.mjs) — 10 keys, seven of which actually change behavior
 today, plus a reader-status column: whether each key reaches `tm_open`, `team_open`, or both.
 `team_open`'s `inputSchema` only accepts a subset of `TEAM_DEFAULTS`' names in the first place —
 a key it does not accept as an argument at all cannot be reached from `team.json` on that path
@@ -545,12 +545,9 @@ either, no matter what `resolveTeamOptions` resolves.
 | `max_retries` | `2` | yes | `tm_open` + `team_open` | The retry budget. On `tm_open`: the manager's own subgoal/package budget, and — as of `f765c03` — the budget every child run opens with (`child_opts.max_retries`), same pre-`f765c03` caveat as `goal_threshold`. On `team_open`: the run's own retry budget (`run.max_retries`) — `TEAM_DEFAULTS.max_retries` (2) already matched `createRun`'s own bare default, so a project with no `team.json` saw no behavior change from wiring this in. |
 | `driver_restarts` | `2` | yes | `tm_open` only | How many times a dead package or size-S driver respawns on the same run_id before the dispatch folds `blocked`. Not a `team_open` argument — `team_open` opens a single graph run with no driver-restart concept of its own — so a `team.json` pin cannot reach it on that path. |
 | `docs_dir` | `.teams_output/team` | yes | `tm_open` only | Where `tm_docs`/`tickets.mjs` render the phase-document tree (`INDEX.md` and friends). Not a `team_open` argument or concept — `team_open` writes no phase-document tree. |
+| `max_parallel_teams` | `2` | yes | `tm_open` only | Caps how many develop STORY dispatches `tm_next` opens at once (`taskmanager.mjs`'s `toolNext`, ~line 2256/2268); phase-Team packages (PLAN/QA/audit) are exempt. `2` is a provisional default, not a measurement — see `PROVISIONAL_MAX_PARALLEL_TEAMS` in `teamconfig.mjs`. Not a `team_open` argument. |
 | `roles` | `{planning:false, qa:false}` | no | `tm_open` only | recorded-but-inert — echoed in the rendered request doc's "Team snapshot" line; nothing branches on it yet. Not a `team_open` argument. |
-| `interactive` | `false` | no | `tm_open` only | recorded-but-inert — same snapshot-line echo, nothing else reads it. Not a `team_open` argument. |
-| `max_parallel_teams` | `2` | no | `tm_open` only | recorded-but-inert — same snapshot-line echo, nothing else reads it. Not a `team_open` argument. |
-| `human_gates` | `[]` | no | `tm_open` only | recorded-but-inert — not read anywhere, not even the snapshot line. Not a `team_open` argument. |
-| `human_scope` | `"leader"` | no | `tm_open` only | recorded-but-inert — not read anywhere. Not a `team_open` argument. |
-| `max_depth` | `2` | no | `tm_open` only | recorded-but-inert — not read anywhere. Not a `team_open` argument. |
+| `max_depth` | `2` | no | `tm_open` only | recorded-but-inert — declared and validated, but nothing enforces it yet. This becomes the depth cap on a child run re-decomposing itself; see `docs/plans/2026-09-21-teams-server-owns-the-loop.md` §3. Not a `team_open` argument. |
 | `qa_rounds` | `2` | no | `tm_open` only | recorded-but-inert — not read anywhere. Not a `team_open` argument. |
 
 `goal_judges` (independent judges on the goal gate) and `auto_reassign` (auto-retry on a

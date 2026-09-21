@@ -56,7 +56,7 @@ function writeTeam(claudeDir, projectDir, overrides, refresh) {
     writeFileSync(path, JSON.stringify(cur, null, 2) + '\n');
     return 'refreshed';
   }
-  const team = { ...TEAM_DEFAULTS, roles: { ...TEAM_DEFAULTS.roles }, human_gates: [] };
+  const team = { ...TEAM_DEFAULTS, roles: { ...TEAM_DEFAULTS.roles } };
   for (const [k, v] of Object.entries(overrides || {})) {
     if (!(k in TEAM_DEFAULTS)) continue;
     team[k] = k === 'roles' && v && typeof v === 'object' ? { ...team.roles, ...v } : v;

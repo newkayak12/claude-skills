@@ -63,7 +63,6 @@ export function renderRequest(task) {
   const L = [frontmatter(key, epicTicketState(task), task), '# Request', '', String(task.request), ''];
   L.push('## Context', task.context ? String(task.context) : '(none)', '');
   L.push('## Team snapshot');
-  L.push(`- interactive: ${T.interactive === true}`);
   L.push(`- max_parallel_teams: ${T.max_parallel_teams == null ? '—' : T.max_parallel_teams}`);
   L.push(`- roles: planning=${(T.roles && T.roles.planning) === true}, qa=${(T.roles && T.roles.qa) === true}`);
   L.push(`- goal_threshold: ${T.goal_threshold == null ? '—' : T.goal_threshold}`, '');

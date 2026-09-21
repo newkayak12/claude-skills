@@ -32,7 +32,7 @@ function fixtureTask(cwd) {
     cwd,
     request: 'change a.txt and b.txt together',
     context: 'from the requester: keep both in sync',
-    team: { opts: { docs_dir: '.teams_output/team', interactive: false, max_parallel_teams: 2, roles: { planning: true, qa: true }, goal_threshold: 90 } },
+    team: { opts: { docs_dir: '.teams_output/team', max_parallel_teams: 2, roles: { planning: true, qa: true }, goal_threshold: 90 } },
     size: 'L', size_pinned: null, flow: 'develop', flow_chosen: 'develop',
     leader: { pid: 4242 },
     planning_pkg: { id: 'PLAN', phase: 'planning', flow: 'plan', title: 'PRD', brief: 'change a.txt and b.txt together', acceptance: ['PRD covers the request'], deps: [], touches: [] },
