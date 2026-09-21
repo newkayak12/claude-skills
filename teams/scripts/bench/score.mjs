@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { CHECK_ALLOW, splitCheck, claimedExit, impliesFailure, hasPlaceholder, isContentShowCmd, splitSlashCmd, fencedBlocksByLang, neededInputTokens, parseRequirements, requirementCovered, majorityVote } from './lib/claims.mjs';
 import { collectDriverCosts } from './lib/drivercost.mjs';
+import { resolveTree } from './lib/tree.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -138,14 +139,9 @@ function verifyFileClaim(file, cwd, requireLog) {
 }
 
 // ---------- which tree ----------
-function integrationTree() {
-  const root = join(WS, '.harness-tasks');
-  const found = [];
-  for (const id of ls(root)) for (const n of ls(join(root, id, 'worktrees'))) if (n.startsWith('integration')) found.push(join(root, id, 'worktrees', n));
-  found.sort();
-  return found.at(-1) || null;
-}
-const TREE = integrationTree() || WS;
+// integrationTree/resolveTree now live in ./lib/tree.mjs, shared with audit.mjs, so the two
+// never disagree about which tree is judged.
+const TREE = resolveTree(WS);
 const has = (p) => existsSync(join(TREE, p));
 
 // ---------- harness state ----------
