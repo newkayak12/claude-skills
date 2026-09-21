@@ -31,7 +31,7 @@ import {
   taskPath, taskDir, record, noDriver, taskState,
   advanceDispatches, serviceRunningDispatches, prepareReadyIntegrations,
   dispatchSettled, foldChild, serviceSRun, delegateIfSmall,
-  finish, composeTaskPrompt, briefingPath, autoRepair,
+  finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages,
 } from './taskmanager.mjs';
 
 function parseArgs(argv) {
@@ -280,6 +280,9 @@ async function stepOnce(task) {
   // the task is not done: open the repair package (budgeted by max_retries) the way a caller's
   // tm_retry({package_id: "integration"}) would, and keep driving.
   if (autoRepair(task)) progressed = true;
+  // A package whose attempt failed (dispatch folded blocked, or accept rejected) gets its next
+  // attempt the way tm_retry({package_id}) would give it, while max_retries allows.
+  if (autoRetryPackages(task)) progressed = true;
 
   return progressed;
 }

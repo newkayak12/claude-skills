@@ -2524,6 +2524,76 @@ test('a blocked child whose driver is still alive is not settled: the driver may
   });
 });
 
+// Drive a child to 'blocked' the way a real run gets there: every gate rejects, auto_reassign
+// opens the next attempt, until the child's own retry budget is spent. completeChild({accept:false})
+// assumes auto_reassign:false and asserts 'blocked' after ONE rejection - not what a default child does.
+async function blockChild(g, child) {
+  const { cwd, run_id } = child;
+  for (let i = 0; i < 40; i++) {
+    const nx = await g.call('team_next', { run_id, cwd });
+    if (nx.state === 'blocked' || nx.state === 'complete') return nx.state;
+    if (!nx.ready.length) throw new Error(`child ${run_id} is ${nx.state} with nothing ready`);
+    for (const n of nx.ready) {
+      const stage = n.node_id.split(':')[0];
+      let payload;
+      if (stage === 'plan') payload = { handoff: 'p', flow: 'develop', size: 'S' };
+      else if (stage === 'setgoal') payload = { spec: CHILD_SPEC };
+      else if (stage === 'critique') payload = { sound: true };
+      else if (stage === 'implement' || stage === 'draft' || stage === 'cases') { appendFileSync(join(cwd, 'a.txt'), `attempt ${n.node_id}\n`); payload = { changed_files: ['a.txt'], handoff: 'built' }; }
+      else if (stage === 'test' || stage === 'review' || stage === 'execute' || stage === 'revise') payload = { verified: true, changed_files: [], handoff: 'ok' };
+      else if (stage === 'gate') payload = { accept: false, match_pct: 40, gaps: ['missing the b half'], reason: 'short' };
+      else payload = { handoff: 'x' };
+      await g.call('team_submit', { run_id, cwd, node_id: n.node_id, payload: ok(payload) });
+    }
+  }
+  throw new Error(`child ${run_id} never blocked`);
+}
+
+test('a package whose child blocked opens its next attempt by itself (autoRetryPackages), until max_retries is spent', async () => {
+  // trap-beta-T1 (2026-09-21): P1's child spent its three gate attempts, folded failed, and the
+  // daemon recorded daemon_done with the manager's whole max_retries budget untouched.
+  const { autoRetryPackages } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    const load = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const prevRoot = process.env.HARNESS_TASKS_DIR;
+    const withRoot = (fn) => { process.env.HARNESS_TASKS_DIR = root; try { return fn(); } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; } };
+    const maxRetries = load().max_retries;
+    assert.ok(Number.isInteger(maxRetries) && maxRetries >= 1, `max_retries is ${maxRetries}`);
+    for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+      const nx = await tm.call('tm_next', { task_id });
+      const child = nx.children.find((c) => c.node_id === `dispatch:P1:${attempt}`);
+      assert.ok(child, `attempt ${attempt} is dispatched: ${JSON.stringify(nx.children.map((c) => c.node_id))}`);
+      await blockChild(g, child);
+      const v = await tm.call('tm_submit', { task_id, node_id: `dispatch:P1:${attempt}` });
+      assert.equal(v.state, 'failed', `attempt ${attempt} folds failed`);
+      const changed = withRoot(() => autoRetryPackages(load()));
+      assert.equal(changed, true, `attempt ${attempt}: the daemon acts on a failed package`);
+      const t = load();
+      if (attempt <= maxRetries) {
+        const next = t.nodes.find((n) => n.node_id === `dispatch:P1:${attempt + 1}`);
+        assert.ok(next, `attempt ${attempt + 1} opened`);
+        assert.match(String(next.feedback || ''), /short|missing the b half/, 'the rejection reason travels as feedback');
+        assert.equal(withRoot(() => autoRetryPackages(load())), false, 'nothing to retry twice while the new attempt is open');
+      } else {
+        assert.ok(!t.nodes.some((n) => n.node_id === `dispatch:P1:${attempt + 1}`), 'budget spent: no further attempt');
+        const st = await tm.call('tm_status', { task_id });
+        // Settled: everything behind the dead package is unreachable and only `report` is left,
+        // which the daemon judges to close the task on partial work (that is the design, not a leak).
+        const nxs = await tm.call('tm_next', { task_id });
+        assert.deepEqual((nxs.ready || []).map((n) => n.node_id), ['report'], `only the report is left: ${JSON.stringify(nxs.ready)}`);
+        assert.equal((nxs.children || []).length, 0, 'no package is running any more');
+        const full = await tm.call('tm_status', { task_id, full: true });
+        assert.ok(['dispatch:P2:1', 'integrate:1', 'gate:goal:1'].every((id) => (full.nodes || []).find((n) => n.node_id === id).state === 'unreachable'), 'downstream is unreachable');
+        void st;
+      }
+    }
+    const ev = await tm.call('tm_events', { task_id });
+    assert.ok(ev.events.some((e) => e.event === 'daemon_retry_opened' && e.package_id === 'P1' && e.attempt === 2));
+    assert.ok(ev.events.some((e) => e.event === 'daemon_retry_settled' && e.package_id === 'P1'));
+  });
+});
+
 test('tm_events tails the ledger, newest last, filtered by since', async () => {
   await withTask(async ({ tm, task_id, root }) => {
     const all = await tm.call('tm_events', { task_id });
