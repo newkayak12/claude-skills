@@ -484,6 +484,9 @@ function integrateToRepair(task) {
       + (last.state === 'pending' ? '. Run it first - tm_next hands you its briefing.' : '.') };
   }
   const r = last.result || {};
+  if (r.judge_failed === true) {
+    return { error: `${last.node_id} was never judged (${String(r.reason || '').slice(0, 120)}); it is re-judged, not repaired.` };
+  }
   if (r.verified === true) {
     return { error: `${last.node_id} verified the combined tree; its failure is not a seam. Fix what its stage_ok=false named, or retry the package its checks blame with tm_retry({task_id, package_id}).` };
   }
@@ -591,6 +594,7 @@ export function autoRetryPackages(task) {
     }
     if ((failed.result.conflicts || []).length) continue;
     if (failed.result.waiting_capacity) continue;
+    if (failed.result.judge_failed === true) continue; // no verdict yet - autoRejudge owns it
     const fb = [failed.result.reason || '', ...(failed.result.gaps || [])].filter(Boolean).join('\n- ');
     const out = retryPackage(task, pid, fb);
     record(task, {
@@ -599,6 +603,119 @@ export function autoRetryPackages(task) {
     });
     changed = true;
   }
+  return changed;
+}
+
+// Clears a parked-on-capacity driver (every waiting child, or one package's, or the s_run)
+// and respawns it on the same run_id - none of it counts against driver_restarts. Shared by
+// tm_retry({reset_capacity:true}) and the daemon's own autoResumeCapacity.
+export function clearCapacity(task, packageId) {
+  const resumed = [];
+  const a = { package_id: packageId };
+    if (task.s_run && task.s_run.waiting_capacity && (!a.package_id || String(a.package_id) === 'S')) {
+      record(task, { event: 'child_driver_capacity_cleared', task_id: task.run_id, node_id: 'S', was: task.s_run.waiting_capacity });
+      delete task.s_run.waiting_capacity;
+      if (!noDriver()) {
+        const restarts = (task.s_run.driver && task.s_run.driver.restarts) || [];
+        const fresh = spawnChildDriver(task, 'S', task.s_run, { resume: true, attempt: nextSpawnAttempt(task.s_run) });
+        fresh.restarts = restarts;
+        task.s_run.driver = fresh;
+        record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: 'S', pid: fresh.pid, reason: 'reset_capacity' });
+      }
+      resumed.push('S');
+    }
+    for (const n of task.nodes) {
+      if (n.stage !== 'dispatch' || n.state !== 'running' || !n.child || !n.child.waiting_capacity) continue;
+      if (a.package_id && n.subgoal_id !== String(a.package_id)) continue;
+      record(task, { event: 'child_driver_capacity_cleared', task_id: task.run_id, node_id: n.node_id, was: n.child.waiting_capacity });
+      delete n.child.waiting_capacity;
+      if (!noDriver()) {
+        const restarts = (n.child.driver && n.child.driver.restarts) || [];
+        const fresh = spawnChildDriver(task, n.node_id, n.child, { resume: true, attempt: nextSpawnAttempt(n.child) });
+        fresh.restarts = restarts;
+        n.child.driver = fresh;
+        record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: n.node_id, pid: fresh.pid, reason: 'reset_capacity' });
+      }
+      resumed.push(n.node_id);
+    }
+  return resumed;
+}
+
+// "You've hit your session limit · resets 5:40pm (UTC)" / "resets 11:50pm (Asia/Seoul)" -> the
+// epoch ms of that wall-clock time in that zone, the first occurrence after `since`. Unparseable
+// -> since + 30 minutes, the same fallback drive.sh uses.
+export function capacityResetAt(reason, since) {
+  const m = /resets\s+(\d{1,2}):(\d{2})\s*(am|pm)(?:\s*\(([^)]+)\))?/i.exec(String(reason || ''));
+  const base = Number(since) || Date.now();
+  if (!m) return base + 30 * 60 * 1000;
+  let h = Number(m[1]) % 12; if (m[3].toLowerCase() === 'pm') h += 12;
+  const min = Number(m[2]);
+  const tz = m[4] || 'UTC';
+  // Walk the zone's wall clock: find the offset at `since`, build the candidate, roll a day if past.
+  const wall = (ms) => {
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(ms));
+      const g = (t) => Number(parts.find((x) => x.type === t).value);
+      return { y: g('year'), mo: g('month'), d: g('day'), h: g('hour'), mi: g('minute') };
+    } catch { return null; }
+  };
+  const w = wall(base);
+  if (!w) return base + 30 * 60 * 1000;
+  // zone offset at `since`: (wall clock as if UTC) - actual
+  const asUtc = Date.UTC(w.y, w.mo - 1, w.d, w.h, w.mi);
+  const offset = asUtc - Math.floor(base / 60000) * 60000;
+  let candidate = Date.UTC(w.y, w.mo - 1, w.d, h, min) - offset;
+  if (candidate <= base) candidate += 24 * 60 * 60 * 1000;
+  return candidate;
+}
+
+const CAPACITY_GRACE_MS = 3 * 60 * 1000;
+
+// The daemon's own tm_retry({reset_capacity:true}): once the reset time a provider named has
+// passed (plus a few minutes' grace), clear the park and respawn - the caller no longer has to
+// notice. trap-beta-T2 (2026-09-21) sat 1h51m on "resets 5:40pm (UTC)" after the reset because
+// nothing in the loop read the clock.
+export function autoResumeCapacity(task, now = Date.now()) {
+  const due = (w) => w && now >= capacityResetAt(w.reason, w.since) + CAPACITY_GRACE_MS;
+  let resumed = [];
+  if (task.s_run && due(task.s_run.waiting_capacity)) resumed = resumed.concat(clearCapacity(task, 'S'));
+  for (const n of task.nodes) {
+    if (n.stage !== 'dispatch' || n.state !== 'running' || !n.child || !due(n.child.waiting_capacity)) continue;
+    resumed = resumed.concat(clearCapacity(task, String(n.subgoal_id)));
+  }
+  if (!resumed.length) return false;
+  saveRun(task);
+  record(task, { event: 'daemon_capacity_resumed', task_id: task.run_id, resumed });
+  return true;
+}
+
+const JUDGE_ATTEMPTS_MAX = 2;
+
+// A judging node whose judge could not judge (process failed, timed out, replied without JSON,
+// or answered with a usage-limit notice) has no verdict - it is not a refusal, and the moves a
+// refusal triggers (a repair package, a package retry) must not fire on it. The daemon marks
+// such results judge_failed:true; this reopens the node for another single-shot judge, at most
+// JUDGE_ATTEMPTS_MAX more times, after a usage-limit reset when the reply named one. trap-beta-T2:
+// integrate:1's judge hit the session limit and autoRepair opened a repair package on it.
+export function autoRejudge(task, now = Date.now()) {
+  let changed = false;
+  for (const n of task.nodes) {
+    if (n.state !== 'failed' || !n.result || n.result.judge_failed !== true) continue;
+    if ((n.judge_attempts || 0) >= JUDGE_ATTEMPTS_MAX) continue;
+    const reason = String(n.result.reason || '');
+    const at = /session limit|usage limit|resets\s+\d/i.test(reason)
+      ? capacityResetAt(reason, n.finished_at || now) + CAPACITY_GRACE_MS
+      : (n.finished_at || 0) + 60 * 1000;
+    if (now < at) continue;
+    n.judge_attempts = (n.judge_attempts || 0) + 1;
+    n.judge_failures = (n.judge_failures || []).concat([{ at: n.finished_at || null, reason: reason.slice(0, 300) }]);
+    n.state = 'pending';
+    n.reopened = (n.reopened || 0) + 1; // mergeOnto's one legitimate terminal -> pending path
+    delete n.result; delete n.finished_at; delete n.started_at;
+    record(task, { event: 'daemon_rejudge', task_id: task.run_id, node_id: n.node_id, attempt: n.judge_attempts, reason: reason.slice(0, 200) });
+    changed = true;
+  }
+  if (changed) saveRun(task);
   return changed;
 }
 
@@ -2649,33 +2766,7 @@ function toolRetry(a) {
   // Clears every waiting child (or just package_id's, or task.s_run for a size-S task) and
   // respawns its driver - none of that counts against driver_restarts.
   if (a.reset_capacity === true) {
-    const resumed = [];
-    if (task.s_run && task.s_run.waiting_capacity && (!a.package_id || String(a.package_id) === 'S')) {
-      record(task, { event: 'child_driver_capacity_cleared', task_id: task.run_id, node_id: 'S', was: task.s_run.waiting_capacity });
-      delete task.s_run.waiting_capacity;
-      if (!noDriver()) {
-        const restarts = (task.s_run.driver && task.s_run.driver.restarts) || [];
-        const fresh = spawnChildDriver(task, 'S', task.s_run, { resume: true, attempt: nextSpawnAttempt(task.s_run) });
-        fresh.restarts = restarts;
-        task.s_run.driver = fresh;
-        record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: 'S', pid: fresh.pid, reason: 'reset_capacity' });
-      }
-      resumed.push('S');
-    }
-    for (const n of task.nodes) {
-      if (n.stage !== 'dispatch' || n.state !== 'running' || !n.child || !n.child.waiting_capacity) continue;
-      if (a.package_id && n.subgoal_id !== String(a.package_id)) continue;
-      record(task, { event: 'child_driver_capacity_cleared', task_id: task.run_id, node_id: n.node_id, was: n.child.waiting_capacity });
-      delete n.child.waiting_capacity;
-      if (!noDriver()) {
-        const restarts = (n.child.driver && n.child.driver.restarts) || [];
-        const fresh = spawnChildDriver(task, n.node_id, n.child, { resume: true, attempt: nextSpawnAttempt(n.child) });
-        fresh.restarts = restarts;
-        n.child.driver = fresh;
-        record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: n.node_id, pid: fresh.pid, reason: 'reset_capacity' });
-      }
-      resumed.push(n.node_id);
-    }
+    const resumed = clearCapacity(task, a.package_id != null ? String(a.package_id) : null);
     saveRun(task);
     record(task, { event: 'tm_reset_capacity', task_id: task.run_id, resumed });
     return { task_id: task.run_id, retried: resumed.length > 0, resumed, reason: resumed.length ? '' : 'nothing in this task is waiting on provider capacity', ...toolNext({ task_id: task.run_id }) };

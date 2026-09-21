@@ -279,7 +279,11 @@ function mergeOnto(fresh, mine) {
     // A terminal state on disk that we never saw belongs to another broker: keep it.
     const recoveringOwnExecution = cur?.state === 'running' && cur.ticket
       && n.recovery?.from_ticket === cur.ticket;
-    if (cur && cur.state !== 'pending' && n.state === 'pending' && !recoveringOwnExecution) continue;
+    // A deliberate reopen (the daemon re-judging a node whose judge never judged - autoRejudge)
+    // carries a higher `reopened` count than the disk copy; that is the one legitimate way back
+    // from a terminal state to pending.
+    const reopenedOnPurpose = n.state === 'pending' && (n.reopened || 0) > ((cur && cur.reopened) || 0);
+    if (cur && cur.state !== 'pending' && n.state === 'pending' && !recoveringOwnExecution && !reopenedOnPurpose) continue;
     byId.set(n.node_id, n);
   }
   const freshEpoch = fresh.capacity_epoch || 0;
