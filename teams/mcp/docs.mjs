@@ -39,7 +39,7 @@ export function renderIndex(task) {
   const phase = epicPhase(task);
   const rows = epicBoardRows(task);
   const L = [frontmatter(key, state, task), `# ${key} — ${String(task.request).slice(0, 60)}`, ''];
-  L.push(`state: ${state} · phase: ${phase || '(done)'} · leader: ${task.leader ? `pid ${task.leader.pid}` : '—'}`, '');
+  L.push(`state: ${state} · phase: ${phase || '(done)'} · daemon: ${task.daemon ? `pid ${task.daemon.pid}` : '—'}`, '');
   L.push('| key | role | state | tasks | last verdict |', '|---|---|---|---|---|');
   for (const r of rows) L.push(`| ${r.id} | ${r.role} | ${r.state} | ${r.tasks || '—'} | ${r.last_verdict} |`);
   L.push('', '## Sections', '', '- [Request](./00-request.md)');

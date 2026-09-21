@@ -9,9 +9,9 @@
 | 보고했던 것 | 실제 | 원인 |
 |---|---|---|
 | teams $4.53, plain $12.97 (2.9배 쌈) | teams **$45.92** (3.5배 비쌈) | `score.mjs`가 `$ws.stream*.jsonl`만 합산. 드라이버 7세션(`.harness-tasks/*/drivers/*.stream.jsonl`) $41.39 누락 |
-| 6/6 vs 6/6 | 다른 6개 | teams는 `goal_met`(judge-failed) 대신 `decomposition`으로 6점째. 그 쪼개기는 `size_source: pinned` — 벤치 프롬프트 강제 |
+| 6/6 vs 6/6 | 다른 6개 | teams는 `goal_met` 대신 `decomposition`으로 6점째를 받았다. **`judge-failed`는 판정이 아니라 하네스 실행 실패였다** — `goal_detail: null`은 `judge()`의 catch 분기다. 재채점 5회 × 2판(haiku 10회 호출) 전원 `goal_met: true`, 하위 4항목까지 만장일치. **양 팔 모두 목표를 달성했다.** 남는 결함은 `decomposition` 대체 하나뿐 |
 | 채점 5기준 | 변별력 0 | npm_test / no_deps / readme / cli / tests_grown — 전부 "만들었냐". 세션 하나도 다 통과 |
-| `max_parallel_teams: 2`, `size: pinned` | 사용자 제약 아님 | `teamconfig.mjs` 기본값과 벤치 프롬프트. 결과를 조건에 귀속시켰어야 함 |
+| `max_parallel_teams: 2`, `size: pinned` | 사용자 제약 아님 | `teamconfig.mjs` 기본값과 벤치 프롬프트. 결과를 조건에 귀속시켰어야 함. 단 `SPLIT` 문구는 `bench.sh`의 `beta\|betas\|skills` 분기에만 주입된다 — **plain 팔은 원래 깨끗했고 과제문은 두 팔이 바이트 동일**. 비자율 분해는 teams 팔만의 사실이지 비교를 불공정하게 만들지는 않았다 |
 | 과제 크기 | plain 최대 컨텍스트 **229,868** | 한 세션에 *간신히* 들어가는 크기. 쪼개기가 값을 하는 교차점 **아래**에서 잼 |
 | seam 판 12/12 | 대조군 없음 | teams가 이길 만한 유일한 지점(`seam_detected=true, gate_rejections=6`)인데 plain 대조 미실행 |
 
@@ -49,6 +49,8 @@ driver ×6     team_next→Agent→team_submit = 1:1:1    $31.71   파일 0   (�
 | packages | cli **core** csv report rules | cli csv report rules |
 | rules 패키지 | 525 LOC (config 232 + matcher 218 + index 75) | **113 LOC** |
 
+그리고 검토가 **한 건도 반려하지 않았다.** 새 `review_yield` 지표(반려 중 실제 트리 변경으로 이어진 것)는 goal-code teams 판에서 `0 반려 / 0 수정`이다. 앞서 인용하던 `gate_rejections=9`는 허수였다 — 크래시로 스킵된 implement/test 노드까지 세는 넓은 지표였다. 진짜 반려가 있었던 판은 seam뿐(2건, 둘 다 수정으로 이어짐). **프로세스가 660 LOC를 막지 못한 게 아니라, 검토 단계가 작동하지 않았다.**
+
 STORY 워커는 카드에 적힌 것을 하고 멈춘다. plain은 제품 전체를 소유한 한 세션이라 만들다가 필요한 걸 발견한다 —
 `core/money.mjs` `dates.mjs` `errors.mjs`를 스스로 만들고, 결과 보고에 "중복 임포트 버그를 만들다 발견해 고쳤다"고 썼다.
 teams에는 **제품을 소유한 자리가 없었고**, 기획검토(revise)·개발검토(gate)·QA·AUDIT 어느 단계도
@@ -56,10 +58,14 @@ teams에는 **제품을 소유한 자리가 없었고**, 기획검토(revise)·�
 
 ## 2. 결정 — MCP 서버가 오케스트레이터다
 
+**중요한 정정**: `taskmanager.mjs`는 데몬이 아니다 — 맨 아래 `process.stdin.on('end', () => process.exit(0))`, 세션당 한 프로세스다. 그리고 그것이 leader가 존재한 진짜 이유였다: leader는 `detached: true` + `unref()`로 띄운, **세션보다 오래 사는 프로세스**다. leader를 지우기만 하면 사용자가 세션을 닫는 순간 런이 멈춘다.
+
+그러므로 **leader를 지우지 않고 모델을 코드로 바꾼다**: `claude -p + manager.md`($9.66, 91턴) → `node mcp/daemon.mjs --task <id>`($0, 0턴). 같은 detached 프로세스, 같은 생존 속성, 루프를 도는 주체만 Node 코드.
+
 ```
-사용자 세션 ── tm_run(request) ──▶ { run_id, docs_dir, verdict, summary(≤1k) }     한 번, 작게
-                    │
-              MCP 서버 (데몬, 그래프 소유)
+사용자 세션 ── tm_run(request) ──▶ { task_id, run_id, docs_dir }     한 번, 작게
+                    │ spawn detached
+              daemon.mjs (Node 프로세스, 그래프 소유)
                     ├─ 판단 노드 (size / shape / critique / accept / integrate 판정) → claude -p 단발
                     ├─ 작업 노드 (implement / test / draft / … )                   → claude -p (워크트리)
                     └─ 노드가 끝나면 다음 노드를 즉시 연다. 아무도 묻지 않는다.
@@ -123,10 +129,13 @@ plan / setgoal / critique 3노드가 EPIC의 shape / critique를 반복**한다�
 
 ## 6. 측정 수정 (§0 해소)
 
-- `score.mjs`: `<ws>/.harness-tasks/*/drivers/*.stream.jsonl` 및 하위 워크트리의 `.teams_output/broker/runs/*`의 드라이버 스트림을 비용·턴 합산에 포함. 과거 `*.score.json` 재계산.
+- `score.mjs`: `<ws>/.harness-tasks/*/drivers/*.stream.jsonl` 및 하위 워크트리의 드라이버 스트림을 비용·턴 합산에 포함. **드라이버 스트림은 git 추적 대상이라 워크트리마다 복사본이 생긴다** — `(task-id, 파일명)`으로 중복제거하지 않으면 PLAN이 3중 계산돼 $66.62가 나온다.
+- **judge 분산은 측정했고 문제가 아니었다**: 3판 × 5회 재채점에서 불일치 0/15. 실제 위험은 서브프로세스 실행 실패이며 그것이 기준 하나를 조용히 0으로 만든다. `judgeVote()`가 N회(기본 3) 독립 호출 후 필드별 다수결을 내고, `judge_agreement`와 `judge_runs`를 따로 기록해 **"불일치"와 "호출 실패"를 구분**한다.
 - `goal_met`을 **양 팔에 동일 적용.** `decomposition`은 점수가 아니라 메타데이터.
 - 프로세스가 사는 것을 재는 기준 추가: **스펙 누락 수**(스펙 항목 ↔ 구현 매핑), **검토가 잡은 결함 수**(gate 반려 중 실제 수정으로 이어진 것), **최종 보고의 거짓 주장률**(양 팔 같은 추출기), **회귀**(통합 후 깨진 것).
-- 다음 두 판이 존재 이유를 판가름한다: **seam + plain 대조군**(독립 컨텍스트가 서로를 검증해야 잡히는 결함), **plain 천장(230k) 초과 크기**(plain이 못 담는 일).
+- 새 metadata 기준 넷(`spec_coverage` / `review_yield` / `regression` / `volume`)은 양 팔에 같은 추출기로 돌고, 점수에는 넣지 않는다 — 좋은 값이 얼마인지 보정이 없는 상태에서 임계값을 지어내면 6/6 무승부를 만든 실수를 반복한다. `spec_coverage`는 현재 3판에서 변별력이 없다(요청문이 한 줄 산문이라 양쪽 3/3). 패키지별 서브골 스펙을 읽어야 의미가 생긴다 — 미해결.
+- 다음 두 판이 존재 이유를 판가름한다: **seam + plain 대조군**(배관은 이미 동작 확인됨, 코드 변경 불필요), **plain 천장(230k) 초과 크기**(plain이 못 담는 일).
+- `drive.sh`는 이제 상위 세션이 아니라 **일이 끝났을 때** 채점한다(`wait_for_settle`, 상한 있음). 이전에는 detached 드라이버가 일하는 중에 채점돼 파일 0건으로 기록된 판이 있었다.
 - 두 판 모두 §4-C로 돌린다. `size`는 pinned 없이 자율.
 
 ## 7. 설정 정리

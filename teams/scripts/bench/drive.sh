@@ -35,6 +35,119 @@ print('killed' if last is None else 'ended\t' + (last.get('result') or '').repla
 EOF
 }
 
+task_settle_state() {  # workspace dir -> "no-task|complete|running\t<reason>"
+  # The work does not live in the top-level session drive.sh just watched: teams (arm beta/
+  # betas/skills) hands off to a detached leader process, which spawns further detached driver
+  # processes per dispatch node (task.json's `.child.driver`). The top-level session can - and,
+  # per docs/diagrams/teams-first-real-run.mmd:33-35, once did - exit while those are still
+  # working. This inspects <ws>/.harness-tasks/*/task.json on disk only (no model calls, no
+  # network) to tell whether the actual work is finished, still in flight, or dead in a way that
+  # will never finish on its own (a driver process that has already exited while its node is
+  # still marked "running" - archived example: goal-code-beta-R1's dispatch:AUDIT:1, killed by an
+  # HTTP 429). It does not try to resurrect a stalled run - only to avoid scoring one as if the
+  # run had reached a report node, or if it had died in a way that would look like an
+  # explanations-only "running" state forever.
+  python3 - "$1" <<'EOF'
+import json, os, sys, glob
+
+ws = sys.argv[1]
+
+def alive(pid, exit_file):
+    # An exit file on disk means the process already ran to completion (however it ended) -
+    # decisive regardless of what the pid check below would say. Its absence does not prove
+    # aliveness (a killed process may never get the chance to write one), so fall through to a
+    # real pid check.
+    if exit_file and os.path.exists(exit_file):
+        return False
+    if not pid:
+        return None  # no pid on record - unknown, not claimed alive
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # exists, owned by someone else - treat as alive
+    except Exception:
+        return None
+
+def child_run_summary(node):
+    child = node.get('child') or {}
+    cwd, rid = child.get('cwd'), child.get('run_id')
+    if not cwd or not rid:
+        return ''
+    path = os.path.join(cwd, '.teams_output', 'broker', 'runs', rid + '.json')
+    try:
+        d = json.load(open(path))
+    except Exception:
+        return ''
+    nodes = d.get('nodes') or []
+    done = sum(1 for n in nodes if n.get('state') == 'done')
+    reported = any(n.get('stage') == 'report' and n.get('state') == 'done' for n in nodes)
+    return f" child_run={rid[:8]} {done}/{len(nodes)} nodes done report_done={reported}"
+
+task_files = sorted(glob.glob(os.path.join(ws, '.harness-tasks', '*', 'task.json')))
+if not task_files:
+    print('no-task\tno .harness-tasks under this workspace (arm has no task manager, or the task was never opened)')
+    sys.exit(0)
+
+# Every task file found must be settled for the workspace to count as settled; the first one
+# that is still running decides the (single) verdict reported back.
+best = None  # ('complete'|'running', reason)
+for tf in task_files:
+    tdir = os.path.basename(os.path.dirname(tf))
+    try:
+        d = json.load(open(tf))
+    except Exception as e:
+        best = ('running', f'{tdir}: task.json unreadable ({e}) - treating as not settled')
+        break
+    nodes = d.get('nodes') or []
+    reports = [n for n in nodes if n.get('stage') == 'report']
+    if any(n.get('state') == 'done' for n in reports):
+        if best is None:
+            best = ('complete', f'{tdir}: report node done')
+        continue
+    running = [n for n in nodes if n.get('state') == 'running']
+    pending = [n for n in nodes if n.get('state') == 'pending']
+    leader = d.get('leader') or {}
+    leader_alive = alive(leader.get('pid'), leader.get('exit'))
+    parts = [f'leader_alive={leader_alive}']
+    for n in running:
+        drv = ((n.get('child') or {}).get('driver')) or {}
+        a = alive(drv.get('pid'), drv.get('exit'))
+        parts.append(f"{n['node_id']} driver_alive={a}{child_run_summary(n)}")
+    if not running and pending:
+        parts.append(f"pending_no_running={[n['node_id'] for n in pending][:5]}")
+    best = ('running', f"{tdir}: " + ' '.join(parts))
+    break  # this task file alone is enough to keep the workspace not-settled
+
+print(f"{best[0]}\t{best[1]}")
+EOF
+}
+
+# --- The waiting seam (plan docs/plans/2026-09-21-teams-server-owns-the-loop.md §4) -----------
+# A headless bench must wait OUTSIDE any model session (§4-C): waiting inside a session charges
+# the arm under test for turns spent polling, not for work (§3 of that plan: 125 polling turns,
+# $4.53, for one run). wait_for_settle is that whole waiting strategy behind one name - today it
+# polls task_settle_state (pure disk reads, zero model turns) on an interval up to a hard
+# ceiling. The `teams run` CLI in the daemon work referenced by that plan is meant to replace
+# this polling with a single blocking, zero-turn wait; when it exists, swap this function's body
+# for a call to it - nothing else in drive.sh should need to change.
+wait_for_settle() {
+  local ws=$1 elapsed=0 poll=${SETTLE_POLL_SECONDS:-30} ceiling=$((${SETTLE_MAX_MINUTES:-60} * 60))
+  local status reason
+  while :; do
+    IFS=$'\t' read -r status reason < <(task_settle_state "$ws")
+    if [ "$status" != running ]; then echo "$status"$'\t'"$reason"; return 0; fi
+    if [ "$elapsed" -ge "$ceiling" ]; then
+      echo "ceiling"$'\t'"$reason (still not settled after ${ceiling}s; scoring anyway)"
+      return 0
+    fi
+    sleep "$poll"
+    elapsed=$((elapsed + poll))
+  done
+}
+
 sleep_until_reset() {  # "resets 11:50pm (Asia/Seoul)" -> sleep until then (+3 min); else 30 min
   local text=$1 hm ap h m target now
   if [[ $text =~ resets\ ([0-9]{1,2}):([0-9]{2})(am|pm) ]]; then
@@ -95,7 +208,17 @@ for job in "$@"; do
       fi
       continue
     fi
-    echo "$(date -u +%FT%TZ) done $job"; cat "$ws.score.txt" 2>/dev/null
+    # The top-level session ended (cleanly or blocked) - but the work may not have: teams'
+    # leader/driver processes are detached and can still be running (see task_settle_state
+    # above). Score only once that work has actually settled, or a hard ceiling gives up on it -
+    # never on the top-level session's exit alone (that was scoring a run that was still
+    # running: docs/diagrams/teams-first-real-run.mmd:33-35).
+    echo "$(date -u +%FT%TZ) $job: top-level session ended; waiting for the task to settle"
+    IFS=$'\t' read -r settle_status settle_reason < <(wait_for_settle "$ws")
+    echo "$(date -u +%FT%TZ) $job: scoring now ($settle_status) - $settle_reason"
+    streams=$(ls "$ws".stream*.jsonl 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+    node "$HERE/score.mjs" "$case" "$ws" "$streams" | tee "$ws.score.txt"
+    echo "$(date -u +%FT%TZ) done $job"
     break
   done
 done

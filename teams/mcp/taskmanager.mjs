@@ -30,6 +30,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, readdirSync, openSync, closeSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { touchMarker } from './engage.mjs';
 import {
@@ -59,17 +60,17 @@ const DEFAULT_PROTOCOL = '2025-06-18';
 
 // ---------- where tasks live ----------
 
-function tasksRoot() {
+export function tasksRoot() {
   return process.env.HARNESS_TASKS_DIR ? resolve(process.env.HARNESS_TASKS_DIR) : join(homedir(), '.harness', 'tasks');
 }
-function taskDir(taskId) {
+export function taskDir(taskId) {
   return join(tasksRoot(), taskId);
 }
-function taskPath(taskId) {
+export function taskPath(taskId) {
   return join(taskDir(taskId), 'task.json');
 }
 
-function record(task, entry) {
+export function record(task, entry) {
   try {
     mkdirSync(taskDir(task.run_id), { recursive: true });
     appendFileSync(join(taskDir(task.run_id), 'ledger.jsonl'), JSON.stringify({ ts: Date.now(), ...entry }) + '\n');
@@ -124,8 +125,9 @@ Attack the shape: packages that overlap in touches[], a dependency the brief doe
   accept: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "accept": true|false, "match_pct": 0-100, "checks": ["<what you verified in the worktree or the report, and what it showed>"], "gaps": ["what the package did not deliver"], "observations": ["weaknesses that do not block"], "reason": "...", "evidence": "..."}
 You are the judge, not the actor. The child run's own goal gate and report are below; judge them against THIS package's acceptance, which the child never saw in full. A child that passed its own gate but delivered less than the package asked for is a gap here. Absent evidence is a gap, not a pass.
 accept:true with an empty checks[] is refused by the engine - a judgement with no evidence is a guess.`,
-  integrate: `Return JSON: {"stage_ok": true|false, "skills_used": ["<skill or none>"], "verified": true|false, "checks": ["command -> observed output"], "evidence": "..."}
+  integrate: `Return JSON: {"stage_ok": true|false, "skills_used": ["<skill or none>"], "verified": true|false, "checks": ["command -> observed output"], "unowned": ["requirement -> the package that delivered it, NONE if no package did, or <package> -> did not deliver its own stated scope"], "duplication": ["responsibility built more than once -> the packages that each built it, and what shared module it should have been"], "volume": ["package -> files/LOC/tests it delivered -> plausible for its stated scope, or looks like a card was closed rather than a job finished, and why"], "evidence": "..."}
 The package branches are already merged into the integration worktree named below - the manager did that and recorded each merge commit. Your job is what no package could do alone: run the goal-level checks the shape's acceptance implies against the combined tree, and read the seams between packages. stage_ok=false when a check could not run at all. verified=false when the combined tree fails a check the packages passed separately. Do not fix package work here: a failing seam is a gap for the gate and a repackage for the manager.
+Three more questions, answered with evidence, not vibes - the same product-owner pass planning's audit takes after integration, run here so it happens even when roles.planning is off (audit, when it does run, takes this as its own second pass - do not treat this as done because that one is coming): missing - map every requirement in the request or the shape's acceptance to the package that implemented it, name any with no owning package, and name any package whose stated scope it did not actually deliver, into "unowned". duplication - name any responsibility two or more packages each implemented, and any type or helper multiple packages each defined locally instead of sharing, into "duplication", saying what the shared module should be called. volume - for each package, give file/LOC/test counts and say whether that size is plausible for its stated scope, into "volume", with the reasoning that got you there, not just the numbers. An empty list in any of the three is a real finding, not something you skipped.
 verified:true with an empty checks[] is refused by the engine - a judgement with no evidence is a guess.`,
   'gate:goal': `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "accept": true|false, "match_pct": 0-100, "checks": ["<what you verified and what it showed>"], "gaps": ["what blocks acceptance"], "observations": ["weaknesses that do not block"], "spec_drift": ["where the shape asked for less than the request did"], "reason": "...", "evidence": "..."}
 You are the judge, not the actor, and the only node that sees the original request again. Judge the integrated result against BOTH the goal-level acceptance and the REQUEST as written. Anything the request asked for that no package delivered and no criterion named belongs in "spec_drift". Absent evidence is a gap, not a pass.
@@ -152,7 +154,7 @@ function bullets(list) {
 
 function createTask(a) {
   if (a.child_driver !== undefined || a.s_driver !== undefined) {
-    throw new Error('child_driver and s_driver were removed in 0.10.0: the driving session never drives a child run or the manager loop. Open the task and watch tm_status / tm_events; the TaskLeader and package drivers do the rest.');
+    throw new Error('child_driver and s_driver were removed in 0.10.0: the driving session never drives a child run or the manager loop. Open the task and watch tm_status / tm_events; the daemon and package drivers do the rest.');
   }
   const cwd = resolve(String(a.cwd));
   const teamFile = readTeamConfig(cwd);
@@ -188,9 +190,9 @@ function createTask(a) {
     // The floor the manager's own goal gate's match_pct must clear - same meaning, same
     // default, as the graph engine's run.goal_threshold.
     goal_threshold: T.goal_threshold,
-    // Set once tm_open spawns it (toolOpen): {pid, started_at, log, stderr, exit, command,
-    // spawn_count, restarts, exhausted}. null under noLeader() - see serviceLeader/spawnLeader.
-    leader: null,
+    // Set once a daemon is spawned for this task (serviceDaemon/spawnDaemon): {pid, started_at,
+    // log, stderr, exit, command, spawn_count, restarts, exhausted}. null under noDaemon().
+    daemon: null,
     // .claude/team.json project defaults, layered under explicit tm_open arguments - see
     // teamconfig.mjs. Recorded here (not just applied) so tm_status can show where each
     // resolved option came from.
@@ -267,11 +269,11 @@ function createTask(a) {
   return saveRun(task);
 }
 
-function mustFindTask(a) {
+export function mustFindTask(a) {
   // resolveTaskRef turns the ticket key E-xxxxxxxx into the run id it names (§8) - the same
   // 8-hex-prefix match tm_ticket resolves its key with. Every task_id-taking tool goes through
-  // this one lookup (including callTool's leader gate, which calls mustFindTask ahead of
-  // dispatch), so a ticket key works anywhere a run id already did, tm_board included.
+  // this one lookup (including callTool's own serviceDaemon call, which calls mustFindTask ahead
+  // of dispatch), so a ticket key works anywhere a run id already did, tm_board included.
   const id = resolveTaskRef(a.task_id);
   const task = id && loadRunAt(taskPath(id));
   if (!task) throw new Error(`unknown task ${a.task_id}`);
@@ -669,15 +671,7 @@ function shortId(taskId) {
 // session that relays each node's briefing and result through its own context burns it out
 // (measured: 507k tokens over 331 turns, ~55% of one task's cost, dead at the usage limit).
 // A test that wants to submit nodes by hand through the broker sets this and nothing spawns.
-function noDriver() { return process.env.HARNESS_TEST_NO_DRIVER === '1'; }
-
-// Test seam only, like noDriver() but narrower: disables just the TaskLeader auto-spawn (and the
-// inbox/watcher gate that only exists once a leader does) without touching package or size-S
-// driver spawning. A fixture that drives a real fake-driver process for a PACKAGE dispatch sets
-// this so a leader - spawned from the very same HARNESS_CHILD_DRIVER script - cannot race its own
-// direct tm_submit calls into the inbox, or (with no HARNESS_CHILD_DRIVER override at all) spawn a
-// real `claude` process merely because tm_open was called.
-function noLeader() { return noDriver() || process.env.HARNESS_TEST_NO_LEADER === '1'; }
+export function noDriver() { return process.env.HARNESS_TEST_NO_DRIVER === '1'; }
 
 // The engagement marker (engage.mjs) lives at .claude/.harness-markers/ INSIDE the tree, because
 // that is where the harness gate looks. It is harness state, not project content, so git must
@@ -823,7 +817,7 @@ function deliveredBranch(task, pkgId) {
   return d ? d.child.branch : null;
 }
 
-function packageOf(task, id) {
+export function packageOf(task, id) {
   // The planning phase-Team's package lives on task.planning_pkg, not task.spec.packages: its
   // dispatch/accept run before shape, while task.spec is still null (§0.1).
   if (task.planning_pkg && String(task.planning_pkg.id) === String(id)) return task.planning_pkg;
@@ -1044,7 +1038,7 @@ function spawnChildDriver(task, nodeIdLabel, child, opts = {}) {
   }
 }
 
-function driverAlive(driver) {
+export function driverAlive(driver) {
   if (!driver || !driver.pid) return false;
   try {
     process.kill(driver.pid, 0);
@@ -1062,7 +1056,7 @@ function killDriver(driver) {
   try { process.kill(driver.pid, 'SIGTERM'); return true; } catch { return false; }
 }
 
-function driverStderrTail(driver, chars = 300) {
+export function driverStderrTail(driver, chars = 300) {
   if (!driver || !driver.stderr) return '';
   try {
     if (!statSync(driver.stderr).size) return '';
@@ -1126,7 +1120,7 @@ function nextSpawnAttempt(child) {
 //     driver on the SAME run_id with a resume prompt, and record the death on driver.restarts.
 //   - the budget is spent: do nothing and let the dispatch fold blocked with every tail.
 // Returns true when it changed anything (so the caller knows to persist the task).
-function serviceDeadDriver(task, child, nodeId) {
+export function serviceDeadDriver(task, child, nodeId) {
   const driver = child.driver;
   if (!driver || driverAlive(driver)) return false;
   const run = loadRun(child.cwd, child.run_id);
@@ -1152,106 +1146,100 @@ function serviceDeadDriver(task, child, nodeId) {
   return true;
 }
 
-// ---------- the TaskLeader driver ----------
+// ---------- the daemon: server owns the loop ----------
 //
-// tm_open no longer hands the opening session a manager loop to run: it spawns a second headless
-// session - the TaskLeader - that runs references/manager.md's loop (tm_next/tm_submit/tm_retry)
-// on this task_id until it is complete or blocked, exactly the way a package's own driver runs
-// the graph loop on a child run. The opening session only watches, and only by pulling: tm_status
-// for state, tm_events for what happened, tm_board/tm_ticket for the ticket-shaped view. There is
-// no push - a prior version had the leader SendMessage the opener on every state change, but
-// taskmanager.mjs never verified, retried or acked that message, so a message that never arrived
-// was indistinguishable from nothing having changed. Removed; watch by polling instead.
-//
-// A mutating call from anyone other than the leader process itself is queued to an inbox instead
-// of applied directly, and the leader drains it at the top of its own tm_next - the same
+// tm_open (and tm_run) no longer hand a model session a loop to run: they spawn a second
+// process - `node daemon.mjs --task <id>` - that drives this task's graph directly, by calling
+// the very functions this file exports (advanceDispatches, finish, foldChild, ...), the same
 // recursion-by-process rule Task 11's block comment gives child drivers, extended one level up.
+// The difference from the TaskLeader it replaces is that there is no model in this process at
+// all except where a node genuinely needs judgment - the daemon spawns a single-shot `claude -p`
+// per judging node (composeTaskPrompt's own briefing, its own Required-output contract), reads
+// the last `result` event back, and calls finish() itself. A relay session cost $9.66 and 91
+// turns to move JSON it never looked at; a loop is code, not a conversation.
+//
+// One writer, no arbitration: the old inbox (a mutating call from anyone but the leader queued
+// for the leader to drain) existed only because the leader was itself a model session that had
+// to poll its OWN inbox at the top of its OWN tm_next to see it. The daemon is not a client of
+// this MCP server - it never calls back into it - so a direct tm_submit/tm_retry from any other
+// caller and the daemon's own graph.mjs saveRun() calls are just two writers sharing the same
+// mkdir-lock saveRun already serializes; requireRunnable's fresh state re-read (mustFindTask
+// loads from disk on every call) is what stops either side from finishing a node twice.
 
-function leaderPrompt(task, opts = {}) {
-  return [
-    `You are the TaskLeader of teams task ${task.run_id} at cwd ${task.cwd}. The task is already open: Do not call tm_open.`,
-    `Use the teams:orchestrate skill and read references/manager.md; run its loop with tm_next / tm_submit / tm_retry on this task_id`,
-    `until tm_status reports complete or blocked, or the report node has run. A fresh agent for every ready manager node, its JSON relayed verbatim.`,
-    `You never do a node's work yourself, never edit project files, never open a child run by hand.`,
-    opts.resume ? `A previous leader for this task died; call tm_status first and resume from what is already done - do not redo a done node.` : '',
-    `End with the skill's output template.`,
-  ].filter(Boolean).join(' ');
-}
-function isLeaderProcess(task) { return process.env.HARNESS_LEADER_OF === task.run_id; }
-function leaderAlive(task) { return !!(task.leader && driverAlive(task.leader)); }
-
-function spawnLeader(task, opts = {}) {
-  const attempt = task.leader ? (task.leader.spawn_count || 0) : 0;
-  const d = spawnChildDriver(task, 'leader', { cwd: task.cwd, run_id: task.run_id }, { attempt, prompt: leaderPrompt(task, opts), env: { HARNESS_LEADER_OF: task.run_id } });
-  task.leader = { ...d, spawn_count: attempt + 1, restarts: task.leader ? (task.leader.restarts || 0) + (opts.resume ? 1 : 0) : 0, exhausted: false };
-  record(task, { event: opts.resume ? 'leader_restarted' : 'leader_spawned', task_id: task.run_id, pid: d.pid, log: d.log, ...(d.error ? { error: d.error } : {}) });
+function daemonPath() {
+  return join(dirname(fileURLToPath(import.meta.url)), 'daemon.mjs');
 }
 
-// Called at the top of every tm_* entry. The main session never drives; it re-raises the leader.
-function serviceLeader(task) {
-  if (noLeader() || !task.leader || isLeaderProcess(task)) return false;
-  const st = runState(task).state;
-  if (st === 'complete' || st === 'blocked') return false;
-  if (driverAlive(task.leader)) return false;
-  if (task.leader.exhausted) return false;
-  if ((task.leader.restarts || 0) >= task.driver_restarts) {
-    task.leader.exhausted = true;
-    record(task, { event: 'leader_exhausted', task_id: task.run_id, restarts: task.leader.restarts, stderr: driverStderrTail(task.leader) });
-    saveRun(task);
-    return true;
+// Test seam, like HARNESS_CHILD_DRIVER for a package driver: replaces the whole daemon command
+// line so a test can point it at a fake script instead of a real `node daemon.mjs`, which would
+// import this whole module and start driving the graph for real. `--task <id>` is always
+// appended, exactly as a package driver's prompt always carries its run_id.
+function daemonArgv(taskId) {
+  const override = String(process.env.HARNESS_DAEMON || '').trim();
+  const argv = override ? override.split(/\s+/) : ['node', daemonPath()];
+  return [...argv, '--task', taskId];
+}
+
+// Test seam only, never an option, same rule as noDriver(): a caller that wants to drive a
+// task's manager nodes by hand through tm_next/tm_submit/tm_retry (every test in this suite,
+// bar the daemon's own) sets this and nothing spawns to race it. HARNESS_TEST_NO_LEADER is the
+// name the whole existing test surface already uses for exactly this switch; kept rather than
+// renamed so that surface does not have to move. HARNESS_TEST_NO_DAEMON is the same switch under
+// its current name, for anything written after the daemon replaced the leader.
+export function noDaemon() {
+  return noDriver() || process.env.HARNESS_TEST_NO_LEADER === '1' || process.env.HARNESS_TEST_NO_DAEMON === '1';
+}
+
+// task.daemon mirrors task.leader's old shape: {pid, started_at, log, stderr, exit, command,
+// spawn_count, restarts, exhausted}. Spawned detached + unref(), like every driver - it has to
+// outlive the session that opened the task, because closing that session must not stop the run.
+function spawnDaemon(task, opts = {}) {
+  const dir = join(taskDir(task.run_id), 'daemon');
+  const attempt = task.daemon ? (task.daemon.spawn_count || 0) : 0;
+  const suffix = attempt > 0 ? `.restart${attempt}` : '';
+  const log = join(dir, `daemon${suffix}.log.jsonl`);
+  const stderr = join(dir, `daemon${suffix}.stderr.txt`);
+  const exitFile = join(dir, `daemon${suffix}.exit.json`);
+  const argv = daemonArgv(task.run_id);
+  const command = argv.join(' ');
+  let out = null;
+  let err = null;
+  try {
+    mkdirSync(dir, { recursive: true });
+    out = openSync(log, 'a');
+    err = openSync(stderr, 'a');
+    const env = { ...process.env };
+    delete env.CLAUDECODE; // a nested claude -p (the daemon's own judge calls) refuses to start with it set
+    if (process.env.HARNESS_TASKS_DIR) env.HARNESS_TASKS_DIR = tasksRoot();
+    const proc = spawn(argv[0], [...argv.slice(1)], { cwd: task.cwd, env, detached: true, stdio: ['ignore', out, err] });
+    try {
+      proc.on('exit', (code, signal) => {
+        try { appendFileSync(exitFile, JSON.stringify({ code, signal, at: Date.now() }) + '\n'); } catch { /* best-effort */ }
+      });
+    } catch { /* best-effort */ }
+    proc.unref();
+    const d = { pid: proc.pid || null, started_at: Date.now(), log, stderr, exit: exitFile, command };
+    task.daemon = { ...d, spawn_count: attempt + 1, restarts: task.daemon ? (task.daemon.restarts || 0) + (opts.resume ? 1 : 0) : 0, exhausted: false };
+    record(task, { event: opts.resume ? 'daemon_restarted' : 'daemon_spawned', task_id: task.run_id, pid: d.pid, log: d.log, ...(d.error ? { error: d.error } : {}) });
+  } catch (e) {
+    const error = String((e && e.message) || e);
+    task.daemon = { pid: null, started_at: Date.now(), log, stderr, exit: exitFile, command, error, spawn_count: attempt + 1, restarts: task.daemon ? (task.daemon.restarts || 0) : 0, exhausted: false };
+    record(task, { event: 'daemon_spawn_failed', task_id: task.run_id, error });
+  } finally {
+    for (const fd of [out, err]) { try { if (fd !== null) closeSync(fd); } catch { /* already closed */ } }
   }
-  spawnLeader(task, { resume: true });
-  saveRun(task);
-  return true;
 }
 
-// What a watcher (main, while a leader is alive) may be told the task's state is. For a size-L
-// task that is the manager graph itself - a running dispatch keeps it `running` while its child
-// works. A size-S task is the opposite shape: its manager graph is SETTLED the moment `size`
-// resolves (shape and critique are skipped, nothing is left pending or running), and all of the
-// work lives in the one child run task.s_run points at. Judging that task by its own three nodes
-// reports `blocked` while the run is alive and building - and the entry skill's standing mandate
-// on a blocked run is "report what failed and stop there", so the watcher stops. That is how the
-// first real-vendor run ended at two minutes with the workspace untouched and every driver still
-// working. So read the child run instead, normalized exactly the way toolNextSRun normalizes it -
-// one mapping, not a second truth. Read-only on purpose: servicing a dead S driver is the
-// leader's job, and a watcher that respawned it would be driving.
-// Synchronous on purpose: this whole server is one synchronous stdin loop (see the bottom of
-// this file), and each session has its own server process, so blocking here blocks nothing but
-// the one call that asked to block.
-function sleepSync(ms) {
-  if (!(ms > 0)) return;
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-// The wait a watcher has and a headless session needs. The second real-vendor run died on the
-// lack of it: the watcher was correctly told `running`, said "I'll check again in about four
-// minutes", scheduled a background shell sleep - and ended its turn. A `claude -p` session ends
-// when the model stops calling tools, so the session was over one minute in while the leader and
-// its driver kept building, and the bench scored an empty tree. A watcher cannot sleep; the only
-// thing that can hold a headless session open is a tool call that has not returned yet. So
-// tm_next blocks here until the task stops running or the budget is spent, and the caller simply
-// calls it again. 90s of blocking was measured to return cleanly through Claude Code's MCP
-// client; the 300s cap is deliberately above what the skills ask for (60s) and below anything
-// that has been shown to work, so a caller that raises it is choosing, not guessing.
-const WAIT_MS_MAX = 300000;
-function waitWhileRunning(task, waitMs) {
-  const budget = Math.min(Math.max(Number(waitMs) || 0, 0), WAIT_MS_MAX);
-  const until = Date.now() + budget;
-  let st = watcherState(task);
-  let current = task;
-  while (st.state === 'running' && Date.now() < until) {
-    sleepSync(Math.min(2000, until - Date.now()));
-    // Re-read from disk every pass: the leader writes task.json from its own process, and a
-    // leader that died while we waited is respawned here rather than after the wait.
-    current = mustFindTask({ task_id: task.run_id });
-    serviceLeader(current);
-    st = watcherState(current);
-  }
-  return { st, task: current };
-}
-
-function watcherState(task) {
+// The state a caller OUTSIDE the s_run's own graph should be told. A size-S task's manager
+// graph - three nodes - settles the moment `size` resolves (shape/critique skipped by
+// delegateIfSmall), which is not the task being done: the work is in the one child run
+// task.s_run points at. Judging a live S task by its own settled manager graph is exactly the
+// bug that once made a watcher call a live run "blocked" while the child was still building (see
+// toolNextSRun, and the historical note on the test above this one) - so anything that needs to
+// know "is there still work here", not just "what does the manager's own node list say", reads
+// THIS instead of runState(task) directly. serviceDaemon and tm_wait both need it; daemon.mjs
+// imports it for the same reason rather than re-deriving its own copy.
+export function taskState(task) {
   if (!task.s_run) return runState(task);
   const run = loadRun(task.s_run.cwd, task.s_run.run_id);
   const cs = run ? runState(run) : { state: 'missing', counts: {} };
@@ -1261,43 +1249,30 @@ function watcherState(task) {
   };
 }
 
-// A tool call that mutates the task, made by a process that is not the leader while a leader is
-// alive, is queued here instead of applied - the leader drains it at the top of its own tm_next.
-const MUTATING_TOOLS = new Set(['tm_submit', 'tm_retry', 'tm_file', 'tm_settle', 'tm_repackage', 'tm_repair', 'tm_reset_capacity']);
-let inboxSeq = 0;
-function queueToInbox(task, tool, args) {
-  const dir = join(taskDir(task.run_id), 'inbox');
-  mkdirSync(dir, { recursive: true });
-  const path = join(dir, `${Date.now()}-${String(++inboxSeq).padStart(4, '0')}-${tool}.json`);
-  writeFileSync(path, JSON.stringify({ tool, args, ts: Date.now(), from_pid: process.pid }) + '\n');
-  record(task, { event: 'inbox_queued', task_id: task.run_id, tool, path });
-  return { queued: true, task_id: task.run_id, tool, inbox_path: path, applied_by: 'the leader on its next tm_next', leader: { pid: task.leader.pid, alive: leaderAlive(task) } };
-}
-function drainInbox(task) {
-  const dir = join(taskDir(task.run_id), 'inbox');
-  let files = [];
-  try { files = readdirSync(dir).filter((f) => f.endsWith('.json')).sort(); } catch { return 0; }
-  let applied = 0;
-  for (const f of files) {
-    const path = join(dir, f);
-    let req;
-    try { req = JSON.parse(readFileSync(path, 'utf8')); } catch { mkdirSync(join(dir, 'failed'), { recursive: true }); try { writeFileSync(join(dir, 'failed', f), readFileSync(path)); rmSync(path); } catch { /* best-effort */ } continue; }
-    try {
-      callTool(req.tool, { ...req.args, task_id: task.run_id });
-      record(task, { event: 'inbox_applied', task_id: task.run_id, tool: req.tool, path });
-      applied++;
-    } catch (e) {
-      record(task, { event: 'inbox_failed', task_id: task.run_id, tool: req.tool, path, error: String((e && e.message) || e) });
-      mkdirSync(join(dir, 'failed'), { recursive: true });
-      try { writeFileSync(join(dir, 'failed', f), readFileSync(path)); } catch { /* best-effort */ }
-    }
-    try { rmSync(path); } catch { /* best-effort */ }
+// Called at the top of (and again after) every tm_* entry that has a task_id. No gate, no
+// watcher branch, no inbox: any caller may read or mutate the task at any time, the same as it
+// always could when there was no daemon at all. This only re-raises a dead daemon while work
+// remains - taskState() is the only thing that decides whether there is anything left to drive.
+function serviceDaemon(task) {
+  if (noDaemon()) return false;
+  const st = taskState(task).state;
+  if (st === 'complete' || st === 'blocked') return false;
+  if (task.daemon && driverAlive(task.daemon)) return false;
+  if (task.daemon && task.daemon.exhausted) return false;
+  const budget = Number.isInteger(task.driver_restarts) ? task.driver_restarts : 2;
+  if (task.daemon && (task.daemon.restarts || 0) >= budget) {
+    task.daemon.exhausted = true;
+    record(task, { event: 'daemon_exhausted', task_id: task.run_id, restarts: task.daemon.restarts, stderr: driverStderrTail(task.daemon) });
+    saveRun(task);
+    return true;
   }
-  return applied;
+  spawnDaemon(task, { resume: !!task.daemon });
+  saveRun(task);
+  return true;
 }
 
 // Executed by the server the moment the node is ready. The model never opens a run.
-function openChild(task, n) {
+export function openChild(task, n) {
   const pkg = packageOf(task, n.subgoal_id);
   if (!pkg) {
     n.state = 'failed';
@@ -1375,9 +1350,30 @@ function openChild(task, n) {
   }
 }
 
+// Whether a running dispatch node's child has stopped running - the point past which foldChild
+// can be called without it throwing "still running". Read-only: it does not service a dead
+// driver itself (serviceRunningDispatches/foldChild already do that elsewhere) - it only answers
+// "is there something to fold", which is what the daemon's own loop needs to know before it
+// tries.
+export function dispatchSettled(task, n) {
+  if (!n.child) return false;
+  const child = loadRun(n.child.cwd, n.child.run_id);
+  if (!child) return true; // foldChild will report the missing-file error; that IS a fold
+  return runState(child).state !== 'running';
+}
+
+// serviceDeadDriver generalized to task.s_run, which mirrors n.child but is not a node's child -
+// it is the task's own single run under a size-S request. Same story as dispatchSettled: a tiny
+// wrapper so the daemon's S-branch does not have to know serviceDeadDriver's node-shaped calling
+// convention.
+export function serviceSRun(task) {
+  if (!task.s_run || !task.s_run.driver) return false;
+  return serviceDeadDriver(task, task.s_run, 'S');
+}
+
 // The child's account, read from its file. This is the only place the manager touches a
 // run file, and it only reads.
-function foldChild(task, n) {
+export function foldChild(task, n) {
   const pkg = packageOf(task, n.subgoal_id);
   const child = loadRun(n.child.cwd, n.child.run_id);
   if (!child) return { stage_ok: false, reason: `child run ${n.child.run_id} has no file under ${n.child.cwd}` };
@@ -1475,7 +1471,7 @@ function foldChild(task, n) {
   };
 }
 
-function prepareIntegration(task, n) {
+export function prepareIntegration(task, n) {
   const round = Number(String(n.node_id).split(':')[1] || 1);
   // After an accepted repair, this round starts FROM the repaired integration branch and
   // merges nothing: that branch already is every package branch merged, plus the repair. The
@@ -1524,11 +1520,11 @@ function prepareIntegration(task, n) {
 
 // ---------- briefings ----------
 
-function briefingPath(task, n) {
+export function briefingPath(task, n) {
   return join(taskDir(task.run_id), 'briefings', `${n.node_id.replace(/[^A-Za-z0-9._-]/g, '_')}.md`);
 }
 
-function composeTaskPrompt(task, n) {
+export function composeTaskPrompt(task, n) {
   const L = [];
   L.push(`# ${n.stage} node ${n.node_id} (task manager)`);
   L.push('');
@@ -1730,7 +1726,7 @@ function verdict(task, n) {
   return out;
 }
 
-function finish(task, n, result) {
+export function finish(task, n, result) {
   // The merges the manager made are part of the integrate node's account.
   if (n.stage === 'integrate' && n.integration) {
     result = { ...result, integration_branch: n.integration.branch, integration_cwd: n.integration.cwd,
@@ -1903,7 +1899,7 @@ const VERDICT_SCHEMA = {
 const TOOLS = [
   {
     name: 'tm_open',
-    description: 'Open a task for a request that may be too large for one graph run. Builds size -> shape -> critique on disk under ~/.harness/tasks/<task_id>/ and returns the first ready node. If size comes back S the task opens that one graph run itself and drives it with its own headless session - poll tm_next for it like any child. The driving session never drives a run or the manager loop. Routing arguments are passed through to every child run.',
+    description: 'Open a task for a request that may be too large for one graph run. Builds size -> shape -> critique on disk under ~/.harness/tasks/<task_id>/ and spawns a daemon process that drives the whole task to completion by itself - size, shape, critique, every package dispatch and fold, integrate, the goal gate, the report. The caller never drives a node: watch with tm_status/tm_board/tm_events, or block for a bounded stretch with tm_wait. Routing arguments are passed through to every child run. Prefer tm_run for a caller that does not also want tm_next\'s node-by-node reply.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1927,11 +1923,48 @@ const TOOLS = [
     outputSchema: NEXT_SCHEMA,
   },
   {
+    name: 'tm_run',
+    description: 'Open a task exactly like tm_open, and spawn the same daemon to drive it - but never self-drive and never return a node table: just {task_id, run_id, docs_dir}. This is the entry point for a caller that wants to hand off a whole request and walk away (§4-B of the design doc); follow up with tm_wait for a bounded look at progress, or tm_status/tm_board any time, or nothing at all if only the final docs matter.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        request: { type: 'string' }, cwd: { type: 'string' }, context: { type: 'string' },
+        flow: { type: 'string', enum: ['auto', 'develop', 'document'] },
+        vendor: { type: 'string' }, allocation: { type: 'string', enum: ['ordered', 'balanced'] },
+        host_vendor: { type: 'string' }, host_model: { type: 'string' }, native_models: { type: 'array', items: { type: 'string' } },
+        size: { type: 'string', enum: ['S', 'L'] },
+        model: { type: 'string' }, policy: { type: 'object' }, candidates: { type: 'array', items: { type: 'string' } },
+        skills: { description: 'Same meaning as tm_open({skills}).' },
+        sandbox: { type: 'string' }, max_retries: { type: 'number' },
+        isolated: { type: 'boolean' }, mixed: { type: 'boolean' },
+        driver_restarts: { type: 'integer' }, goal_threshold: { type: 'integer' }, goal_judges: { type: 'integer' },
+      },
+      required: ['request', 'cwd'],
+    },
+    outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, run_id: { type: 'string' }, docs_dir: { type: 'string' }, state: { type: 'string' } }, required: ['task_id', 'run_id', 'docs_dir'] },
+  },
+  {
     name: 'tm_next',
-    description: 'Which manager nodes are ready, each with a briefing_path for a fresh agent, plus every running child as {cwd, run_id, driver}. A ready dispatch node is executed here and now: its worktree is created, its child graph run opened, and a headless driver process spawned to run that child to the end. Also where a dead driver is serviced: respawned on the same run_id (driver.restarts) if the budget allows, or parked on waiting_capacity after a usage-limit death - neither needs you to do anything but poll again. A size-S task under s_driver "process" has no manager nodes at all; tm_next instead returns {run_id, cwd, driver, nodes, report} for the one run it is driving, ready for the entry skill\'s output template once state is complete or blocked. Poll tm_next while a driver is alive; do not drive that child yourself. tm_submit the dispatch node once the child is no longer running.',
-    inputSchema: { type: 'object', properties: { task_id: { type: 'string' },
-      wait_ms: { type: 'number', description: 'Only while a TaskLeader is driving (driven_by: "leader"): block up to this many milliseconds, returning as soon as the task stops running. Pass 60000 and call again the moment it returns - this call is the ONLY thing holding a headless session open. A session that sleeps, or schedules a background check, or simply stops calling tools, ends; its leader and drivers keep building into a workspace nobody is waiting for. Capped at 300000; 90000 has been measured to return cleanly through Claude Code\'s MCP client.' } }, required: ['task_id'] },
+    description: 'Which manager nodes are ready, each with a briefing_path for a fresh agent, plus every running child as {cwd, run_id, driver}. A ready dispatch node is executed here and now: its worktree is created, its child graph run opened, and a headless driver process spawned to run that child to the end. Also where a dead driver is serviced: respawned on the same run_id (driver.restarts) if the budget allows, or parked on waiting_capacity after a usage-limit death - neither needs you to do anything but poll again. A size-S task under s_driver "process" has no manager nodes at all; tm_next instead returns {run_id, cwd, driver, nodes, report} for the one run it is driving, ready for the entry skill\'s output template once state is complete or blocked. Poll tm_next while a driver is alive; do not drive that child yourself. tm_submit the dispatch node once the child is no longer running. A task opened with a daemon in play (tm_open/tm_run when not under a test seam) is normally left to the daemon - call tm_next only to drive by hand or to inspect a node\'s briefing_path.',
+    inputSchema: { type: 'object', properties: { task_id: { type: 'string' } }, required: ['task_id'] },
     outputSchema: NEXT_SCHEMA,
+  },
+  {
+    name: 'tm_wait',
+    description: 'Bounded long-poll on a task the daemon is driving: blocks up to max_ms, returning the node transitions (finished nodes, newest last) recorded since `cursor`, or an empty list on timeout - never the full state. Pass the previous reply\'s `cursor` back in to continue watching without re-reading anything already seen; omit it (or pass 0) to start from the beginning. This is the way to watch a tm_run/tm_open task without accumulating its payload in your own context: call again with the returned `cursor` while `state` is "running", stop when it is "complete" or "blocked".',
+    inputSchema: { type: 'object', properties: {
+      task_id: { type: 'string' },
+      cursor: { type: 'number', description: 'a ts from a previous tm_wait reply; 0 or omitted to start from the beginning' },
+      max_ms: { type: 'number', description: 'default 60000, capped at 300000 - the same cap tm_next\'s old wait_ms used, measured to return cleanly through Claude Code\'s MCP client' },
+    }, required: ['task_id'] },
+    outputSchema: { type: 'object', properties: {
+      task_id: { type: 'string' }, state: { type: 'string' }, counts: { type: 'object' },
+      cursor: { type: 'number', description: 'pass this back as the next call\'s cursor' },
+      timed_out: { type: 'boolean' },
+      transitions: { type: 'array', items: { type: 'object', properties: {
+        node_id: { type: 'string' }, stage: { type: 'string' }, state: { type: 'string' }, stage_ok: { type: 'boolean' }, ts: { type: 'number' },
+      } } },
+    }, required: ['task_id', 'state', 'cursor', 'transitions'] },
   },
   {
     name: 'tm_submit',
@@ -2010,13 +2043,62 @@ function toolEvents(a) {
   return { task_id: task.run_id, count: events.length, events: events.slice(-limit) };
 }
 
+// Synchronous on purpose, exactly like the old leader-era one this replaces: this whole server
+// is one synchronous stdin loop (see the bottom of this file), and each client session has its
+// own server process, so blocking here blocks nothing but the one tm_wait call that asked for it.
+function sleepSync(ms) {
+  if (!(ms > 0)) return;
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+// tm_wait's own read of the ledger: every `node_finish` record() emits (finish(), above) is
+// already the transition a caller wants - node_id, stage, state, stage_ok - so tm_wait reads
+// that stream back rather than keeping a second cursor-indexed log of its own.
+function nodeTransitionsSince(task, since) {
+  let lines = [];
+  try { lines = readFileSync(join(taskDir(task.run_id), 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean); } catch { lines = []; }
+  return lines
+    .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+    .filter((e) => e && e.event === 'node_finish' && e.ts > since);
+}
+
+const WAIT_MS_MAX = 300000;
+// tm_wait: the bounded long-poll a caller uses to follow a daemon-driven task without holding
+// its state in its own context (§4-A of the design doc). Unlike the old tm_next({wait_ms}) it
+// replaces, this never drives anything itself - it only reads the ledger and re-raises a dead
+// daemon (serviceDaemon, the same call every other tm_* entry makes) so a caller that keeps
+// calling tm_wait is enough, on its own, to keep a task alive across a daemon crash.
+function toolWait(a) {
+  const budget = Math.min(Math.max(Number(a.max_ms) || 60000, 0), WAIT_MS_MAX);
+  const since = Number(a.cursor) || 0;
+  const until = Date.now() + budget;
+  let task = mustFindTask(a);
+  let events = nodeTransitionsSince(task, since);
+  while (!events.length && Date.now() < until && taskState(task).state === 'running') {
+    sleepSync(Math.min(2000, until - Date.now()));
+    task = mustFindTask(a); // re-read from disk: the daemon writes task.json from its own process
+    serviceDaemon(task);
+    events = nodeTransitionsSince(task, since);
+  }
+  const st = taskState(task);
+  const cursor = events.length ? events[events.length - 1].ts : since;
+  return {
+    task_id: task.run_id,
+    state: st.state,
+    counts: st.counts,
+    cursor,
+    timed_out: events.length === 0 && st.state === 'running',
+    transitions: events.map((e) => ({ node_id: e.node_id, stage: e.stage, state: e.state, stage_ok: e.stage_ok === true, ts: e.ts })),
+  };
+}
+
 // board.jsonl - ticket TRANSITIONS only, append-only, never read as ground truth. tickets.mjs's
 // pure functions over task.json are the ground truth; this is the JIRA-style history a human
 // reads (§4, §7b). Written by diffing a before/after snapshot around the tools that can actually
 // move a ticket - never by instrumenting taskmanager.mjs's dozen individual mutation sites one at
 // a time. tm_file joined this set in v0.12.1: filing a STORY moves its ticket from nonexistent to
 // BACKLOG/READY exactly like tm_retry opening a repair package does.
-const BOARD_TOOLS = new Set(['tm_open', 'tm_next', 'tm_submit', 'tm_retry', 'tm_file']);
+const BOARD_TOOLS = new Set(['tm_open', 'tm_run', 'tm_next', 'tm_submit', 'tm_retry', 'tm_file']);
 
 function appendBoardTransitions(task, before, by) {
   const after = ticketSnapshot(task);
@@ -2047,7 +2129,7 @@ function toolBoard(a) {
     title: String(task.request).slice(0, 80),
     state: epicTicketState(task),
     phase: epicPhase(task),
-    leader: task.leader ? { pid: task.leader.pid, alive: leaderAlive(task) } : null,
+    daemon: task.daemon ? { pid: task.daemon.pid, alive: driverAlive(task.daemon) } : null,
     stories: epicBoardRows(task),
     doc_path: docPaths(task).index,
   };
@@ -2086,7 +2168,7 @@ function toolTicket(a) {
       key: epicKey(task.run_id), task_id: task.run_id, kind: 'EPIC',
       title: String(task.request).slice(0, 160),
       state: epicTicketState(task), phase: epicPhase(task),
-      leader: task.leader ? { pid: task.leader.pid, alive: leaderAlive(task) } : null,
+      daemon: task.daemon ? { pid: task.daemon.pid, alive: driverAlive(task.daemon) } : null,
       doc_path: docPaths(task).index,
     };
   }
@@ -2115,7 +2197,7 @@ function toolDocs(a) {
   return { task_id: task.run_id, rebuild: a.rebuild === true, written };
 }
 
-function requireRunnable(task, nodeId) {
+export function requireRunnable(task, nodeId) {
   const n = getNode(task, nodeId);
   if (!n) throw new Error(`unknown node ${nodeId}`);
   if (n.stage === 'dispatch') {
@@ -2128,30 +2210,61 @@ function requireRunnable(task, nodeId) {
   return n;
 }
 
-function toolOpen(a) {
+// Shared by tm_open and tm_run: create the task and, when the caller pinned size, resolve the
+// size node right away exactly like a measured S/L would. Returns {task, delegated} - delegated
+// is delegateIfSmall's own return (already carrying task_state: 's_run' and the S run's own
+// tm_next-shaped fields) when the pin was S, null otherwise so the caller decides what to do
+// next with an L (or unmeasured) task.
+function openTaskAndMaybePin(a, eventName) {
   const task = createTask(a);
-  record(task, { event: 'tm_open', task_id: task.run_id, cwd: task.cwd, flow: task.flow, size_pinned: task.size_pinned });
-  if (task.size_pinned) {
-    const n = task.nodes.find((x) => x.node_id === 'size');
-    const out = finish(task, n, {
-      stage_ok: true, size: task.size_pinned, size_source: 'pinned', sizing: [],
-      handoff: task.size_pinned === 'L'
-        ? 'Size pinned L by the entry: the user said the request must be split into packages. Nothing was measured; shape decides the packages from the request and the tree.'
-        : 'Size pinned S by the entry: the user said one run must carry it.',
-      evidence: 'no measurement: pinned by the caller',
-    });
-    const delegated = delegateIfSmall(task, n, out);
-    if (delegated) return delegated;
-    saveRun(task);
-  }
-  if (!noLeader()) { spawnLeader(task); saveRun(task); }
-  return { ...toolNext({ task_id: task.run_id }), leader: task.leader ? { pid: task.leader.pid, log: task.leader.log } : null };
+  record(task, { event: eventName, task_id: task.run_id, cwd: task.cwd, flow: task.flow, size_pinned: task.size_pinned });
+  if (!task.size_pinned) return { task, delegated: null };
+  const n = task.nodes.find((x) => x.node_id === 'size');
+  const out = finish(task, n, {
+    stage_ok: true, size: task.size_pinned, size_source: 'pinned', sizing: [],
+    handoff: task.size_pinned === 'L'
+      ? 'Size pinned L by the entry: the user said the request must be split into packages. Nothing was measured; shape decides the packages from the request and the tree.'
+      : 'Size pinned S by the entry: the user said one run must carry it.',
+    evidence: 'no measurement: pinned by the caller',
+  });
+  const delegated = delegateIfSmall(task, n, out);
+  if (!delegated) saveRun(task);
+  return { task, delegated };
+}
+
+// tm_open: kept for the existing skill path and this whole test suite, byte-for-byte compatible
+// under noDaemon() (every test that drives a task by hand sets it). With a daemon in play, this
+// does NOT also call toolNext() itself for an L task - toolNext opens ready dispatches and would
+// race the very daemon this call just spawned into opening the same node twice. So the shapes
+// diverge on purpose: noDaemon() gets the old, fully-driven reply (ready[]/children[]); a real
+// daemon gets a thin pointer, and the caller reads progress with tm_status/tm_board/tm_wait
+// instead - the daemon and package drivers do the rest.
+function toolOpen(a) {
+  const { task, delegated } = openTaskAndMaybePin(a, 'tm_open');
+  if (delegated) return { ...delegated, docs_dir: docPaths(task).dir };
+  if (noDaemon()) return toolNext({ task_id: task.run_id });
+  return { task_id: task.run_id, state: runState(task).state, docs_dir: docPaths(task).dir };
+}
+
+// tm_run: the non-driving entry point §4/§10-1 of the design doc asks for - open, spawn the
+// daemon, hand back a pointer, never block and never self-drive. Always this shape, daemon
+// spawned or not (noDaemon() only stops the process from actually starting; a test that wants
+// to drive a tm_run-created task by hand still can, through tm_next/tm_submit, exactly as it
+// would for a tm_open-created one).
+function toolRun(a) {
+  const { task, delegated } = openTaskAndMaybePin(a, 'tm_run');
+  return {
+    task_id: task.run_id,
+    run_id: task.run_id,
+    docs_dir: docPaths(task).dir,
+    state: delegated ? delegated.state : runState(task).state,
+  };
 }
 
 // Size S, s_driver 'process' (the default): open the one graph run this request needs, in the
 // project's own cwd - not a package worktree, there is no shape to make one - and spawn a
 // driver for it the same way a package's dispatch does. task.s_run mirrors n.child.
-function openSRun(task) {
+export function openSRun(task) {
   const flow = task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto');
   const child = createRun({
     ...task.child_opts,
@@ -2182,7 +2295,7 @@ function openSRun(task) {
 // here and drives it with its own headless session; the task stays on disk only as the pointer
 // to it, and the caller polls tm_next until the report arrives, exactly as it would for one L
 // package. There is no shape in which the caller drives it instead.
-function delegateIfSmall(task, n, out) {
+export function delegateIfSmall(task, n, out) {
   if (!(n.stage === 'size' && n.state === 'done' && task.size === 'S')) return null;
   for (const x of task.nodes) {
     if (x.node_id === 'size') continue;
@@ -2242,19 +2355,13 @@ function toolNextSRun(task) {
   return out;
 }
 
-function toolNext(a) {
-  const task = mustFindTask(a);
-  // Refresh the shared engagement marker in every tree a live driver is working in, so the
-  // harness gate's 2h window never closes on a long package (see engage.mjs).
-  for (const n of task.nodes) {
-    if (n.child && n.child.cwd && n.state === 'running') touchMarker(n.child.cwd, task.run_id);
-  }
-  if (task.s_run && task.s_run.cwd) touchMarker(task.s_run.cwd, task.run_id);
-  if (task.s_run) return toolNextSRun(task);
-  // Dispatch nodes run here, the moment they are ready. Doing it in tm_next rather than in
-  // a separate call means the session cannot forget to, and cannot do it twice.
+// Opens every ready dispatch node this poll is allowed to - the phase-Team exemption and
+// max_parallel_teams for ordinary STORY packages - and returns how many it opened. Shared by
+// tm_next (a caller driving the graph by hand, chiefly tests) and the daemon's own loop, so the
+// two can never disagree about which dispatch is allowed to open when.
+export function advanceDispatches(task) {
   // max_parallel_teams caps how many develop STORY dispatches run at once - phase-Team
-  // packages (PLAN/QA) are exempt, both from the count and from the cap itself: the design
+  // packages (PLAN/QA/AUDIT) are exempt, both from the count and from the cap itself: the design
   // already limits each to at most one at a time (§2 "v0.12.0이 하지 않는 것"), so throttling
   // them further would only add a wait with nothing behind it.
   let opened = 0;
@@ -2283,23 +2390,51 @@ function toolNext(a) {
     openChild(task, n);
     opened++;
   }
-  if (opened) saveRun(task);
-  // Every running dispatch whose driver is no longer alive gets serviced here, on every poll:
-  // respawned on the same run_id, or parked on capacity, before the caller ever sees it as
-  // something to fold. Only a spent restart budget leaves it dead for the children[] map below.
+  return opened;
+}
+
+// Every running dispatch whose driver is no longer alive gets serviced here: respawned on the
+// same run_id, or parked on capacity, before anyone ever sees it as something to fold. Only a
+// spent restart budget leaves it dead. Returns how many it touched.
+export function serviceRunningDispatches(task) {
   let serviced = 0;
   for (const n of task.nodes) {
     if (n.stage !== 'dispatch' || n.state !== 'running' || !n.child || !n.child.driver) continue;
     if (serviceDeadDriver(task, n.child, n.node_id)) serviced++;
   }
-  if (serviced) saveRun(task);
-  // Integration is mechanical up to the checks: the worktree and the merges are done here,
-  // in dependency order, so a conflict is a fact the manager saw and not a claim a node made.
+  return serviced;
+}
+
+// Integration is mechanical up to the checks: the worktree and the merges are done here, in
+// dependency order, so a conflict is a fact the manager saw and not a claim a node made. Only
+// after this does an integrate node's own judging (composeTaskPrompt's CONTRACT.integrate) run.
+export function prepareReadyIntegrations(task) {
+  let prepared = 0;
   for (const n of readyNodes(task)) {
     if (n.stage !== 'integrate' || n.integration) continue;
     prepareIntegration(task, n);
     saveRun(task);
+    prepared++;
   }
+  return prepared;
+}
+
+function toolNext(a) {
+  const task = mustFindTask(a);
+  // Refresh the shared engagement marker in every tree a live driver is working in, so the
+  // harness gate's 2h window never closes on a long package (see engage.mjs).
+  for (const n of task.nodes) {
+    if (n.child && n.child.cwd && n.state === 'running') touchMarker(n.child.cwd, task.run_id);
+  }
+  if (task.s_run && task.s_run.cwd) touchMarker(task.s_run.cwd, task.run_id);
+  if (task.s_run) return toolNextSRun(task);
+  // Dispatch nodes run here, the moment they are ready. Doing it in tm_next rather than in
+  // a separate call means a caller driving the graph by hand cannot forget to, and cannot do it
+  // twice - the same three steps the daemon's own loop runs, shared through the exports above so
+  // the two never diverge on what "ready" means.
+  if (advanceDispatches(task)) saveRun(task);
+  if (serviceRunningDispatches(task)) saveRun(task);
+  prepareReadyIntegrations(task);
   const state = runState(task);
   const ready = readyNodes(task).map((n) => {
     const p = briefingPath(task, n);
@@ -2490,7 +2625,7 @@ function toolStatus(a) {
         ...(task.s_run.driver ? { driver: { ...task.s_run.driver, alive: driverAlive(task.s_run.driver) } } : {}),
         ...(task.s_run.waiting_capacity ? { waiting_capacity: task.s_run.waiting_capacity } : {}) },
       packages: [],
-      leader: task.leader ? { pid: task.leader.pid, alive: leaderAlive(task), log: task.leader.log, stderr: task.leader.stderr, spawn_count: task.leader.spawn_count, restarts: task.leader.restarts || 0, exhausted: !!task.leader.exhausted, stderr_tail: driverStderrTail(task.leader) } : null,
+      daemon: task.daemon ? { pid: task.daemon.pid, alive: driverAlive(task.daemon), log: task.daemon.log, stderr: task.daemon.stderr, spawn_count: task.daemon.spawn_count, restarts: task.daemon.restarts || 0, exhausted: !!task.daemon.exhausted, stderr_tail: driverStderrTail(task.daemon) } : null,
       team: task.team || null,
     };
   }
@@ -2507,7 +2642,7 @@ function toolStatus(a) {
       ? { node_id: n.node_id, stage: n.stage, state: n.state, deps: n.deps, after: n.after || [],
           ...(n.child ? { child: { ...n.child, ...(n.child.driver ? { driver: { ...n.child.driver, alive: driverAlive(n.child.driver) } } : {}) } } : {}) }
       : verdict(task, n))),
-    leader: task.leader ? { pid: task.leader.pid, alive: leaderAlive(task), log: task.leader.log, stderr: task.leader.stderr, spawn_count: task.leader.spawn_count, restarts: task.leader.restarts || 0, exhausted: !!task.leader.exhausted, stderr_tail: driverStderrTail(task.leader) } : null,
+    daemon: task.daemon ? { pid: task.daemon.pid, alive: driverAlive(task.daemon), log: task.daemon.log, stderr: task.daemon.stderr, spawn_count: task.daemon.spawn_count, restarts: task.daemon.restarts || 0, exhausted: !!task.daemon.exhausted, stderr_tail: driverStderrTail(task.daemon) } : null,
     team: task.team || null,
   };
 }
@@ -2517,7 +2652,9 @@ function toolStatus(a) {
 function dispatch(name, a) {
   switch (name) {
     case 'tm_open': return toolOpen(a);
-    case 'tm_next': return { ...toolNext(a), inbox_applied: a.__inbox_applied || 0 };
+    case 'tm_run': return toolRun(a);
+    case 'tm_next': return toolNext(a);
+    case 'tm_wait': return toolWait(a);
     case 'tm_submit': return toolSubmit(a);
     case 'tm_retry': return toolRetry(a);
     case 'tm_file': return toolFile(a);
@@ -2532,43 +2669,24 @@ function dispatch(name, a) {
 
 function callTool(name, args) {
   const a = args || {};
-  // The TaskLeader gate: runs before every tool but tm_open (there is no task yet to gate).
-  // Any dead leader is serviced here so it is respawned (or reported exhausted) on any tm_* call,
-  // not just tm_next. While a leader is alive and this call is not from the leader process itself,
-  // a mutating tool is queued to the inbox instead of applied, and tm_next reports the leader's
-  // state instead of driving; the leader drains the inbox at the top of its OWN tm_next below.
-  if (a.task_id && name !== 'tm_open') {
-    const task = mustFindTask(a);
-    serviceLeader(task);
-    const watcher = !noLeader() && !isLeaderProcess(task) && task.leader && leaderAlive(task);
-    if (watcher && MUTATING_TOOLS.has(name)) return queueToInbox(task, name, a);
-    if (watcher && name === 'tm_next') {
-      const waited = waitWhileRunning(task, a.wait_ms);
-      const st = waited.st;
-      const t = waited.task;
-      return {
-        task_id: t.run_id, state: st.state, counts: st.counts, driven_by: 'leader',
-        // Named so a watcher told "running" can go look at the right run rather than at the
-        // task's own three settled nodes.
-        ...(t.s_run ? { run_id: t.s_run.run_id, cwd: t.s_run.cwd } : {}),
-        leader: t.leader ? { pid: t.leader.pid, alive: leaderAlive(t), log: t.leader.log, restarts: t.leader.restarts } : null,
-        hint: st.state === 'running'
-          ? 'still running: call tm_next again with wait_ms immediately. Do NOT sleep and do NOT schedule a background check - this session ends the moment you stop calling tools, and the task is abandoned mid-build'
-          : 'the TaskLeader driver ran the loop; read the account with tm_status({task_id}) and tm_events({task_id})',
-      };
-    }
-    if (name === 'tm_next' && (isLeaderProcess(task) || noDriver())) { const n = drainInbox(task); if (n) a.__inbox_applied = n; }
+  // Re-raise a dead daemon before doing anything else, on every tool that already has a task to
+  // raise one for. No gate here beyond that: any caller may read or mutate the task at any time -
+  // there is no leader to defer to and no inbox to queue behind. saveRun's own mkdir-lock is what
+  // makes two writers (this call and the daemon's own loop) safe together.
+  if (a.task_id && name !== 'tm_open' && name !== 'tm_run') {
+    serviceDaemon(mustFindTask(a));
   }
-  // board.jsonl: taken as a before/after diff of the tools that can move a ticket. A call
-  // that got queued above (return already happened) never reaches here - nothing moved, so
-  // nothing is logged, with no special-casing needed. A recursive call from drainInbox reaches
-  // here too, exactly like a direct one, and is diffed the same way.
+  // board.jsonl: taken as a before/after diff of the tools that can move a ticket.
   if (!BOARD_TOOLS.has(name)) return dispatch(name, a);
   const before = a.task_id ? ticketSnapshot(mustFindTask(a)) : {};
   const out = dispatch(name, a);
   const taskId = (out && out.task_id) || a.task_id;
   if (taskId) {
     try { appendBoardTransitions(mustFindTask({ task_id: taskId }), before, a.node_id || name); } catch { /* best-effort, like record() */ }
+    // A mutation may have just turned a blocked task running again (tm_retry, tm_file) or opened
+    // a brand-new one (tm_open, tm_run): re-check right after, not only on the NEXT call in, so a
+    // caller that never polls again still leaves the task with a live daemon behind it.
+    try { serviceDaemon(mustFindTask({ task_id: taskId })); } catch { /* best-effort */ }
   }
   return out;
 }
@@ -2603,22 +2721,34 @@ function handle(msg) {
   }
 }
 
-let buf = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (chunk) => {
-  buf += chunk;
-  let nl;
-  while ((nl = buf.indexOf('\n')) >= 0) {
-    const line = buf.slice(0, nl).trim();
-    buf = buf.slice(nl + 1);
-    if (!line) continue;
-    let msg;
-    try { msg = JSON.parse(line); } catch { continue; }
-    let out;
-    try { out = handle(msg); } catch (e) {
-      out = typeof msg.id === 'undefined' ? null : { jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: String((e && e.message) || e) } };
+// Only run the stdio server when this file is the process entry point. daemon.mjs imports this
+// module as a plain library - advanceDispatches, finish, foldChild, and the rest of the exports
+// above - to drive a task's graph directly, without a JSON-RPC layer in between. Its own stdin is
+// closed (spawnDaemon's stdio: ['ignore', ...]), and an ignored stream emits 'end' as soon as
+// Node looks at it - so without this guard, importing taskmanager.mjs would call process.exit(0)
+// on the daemon within its first tick, before it ever read the task it was told to drive.
+const isMain = (() => {
+  try { return fileURLToPath(import.meta.url) === resolve(process.argv[1] || ''); } catch { return false; }
+})();
+
+if (isMain) {
+  let buf = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (chunk) => {
+    buf += chunk;
+    let nl;
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line) continue;
+      let msg;
+      try { msg = JSON.parse(line); } catch { continue; }
+      let out;
+      try { out = handle(msg); } catch (e) {
+        out = typeof msg.id === 'undefined' ? null : { jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: String((e && e.message) || e) } };
+      }
+      if (out) emit(out);
     }
-    if (out) emit(out);
-  }
-});
-process.stdin.on('end', () => process.exit(0));
+  });
+  process.stdin.on('end', () => process.exit(0));
+}

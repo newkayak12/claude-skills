@@ -10,10 +10,13 @@
 // The docs cases have one LLM-judged criterion (`accuracy`: haiku reads the source and the
 // reference docs); GRAPH_BENCH_JUDGE=0 skips it. Writes <ws>.score.json and prints one row.
 import { existsSync, readFileSync, readdirSync, writeFileSync, unlinkSync, mkdtempSync, statSync, realpathSync } from 'node:fs';
-import { join, resolve, basename } from 'node:path';
+import { join, resolve, basename, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { CHECK_ALLOW, splitCheck, claimedExit, impliesFailure, hasPlaceholder, isContentShowCmd, splitSlashCmd, fencedBlocksByLang, neededInputTokens } from './lib/claims.mjs';
+import { fileURLToPath } from 'node:url';
+import { CHECK_ALLOW, splitCheck, claimedExit, impliesFailure, hasPlaceholder, isContentShowCmd, splitSlashCmd, fencedBlocksByLang, neededInputTokens, parseRequirements, requirementCovered, majorityVote } from './lib/claims.mjs';
+
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
 const [CASE, WS_ARG, STREAM] = process.argv.slice(2);
 if (!CASE || !WS_ARG) { console.error('usage: score.mjs <code|docs|code-flat|docs-flat|seam|seam-flat|goal-*> <workspace> [stream.jsonl]'); process.exit(2); }
@@ -363,6 +366,33 @@ const judge = (prompt) => {
     return { ...inner, judge_cost_usd: outer.total_cost_usd };
   } catch { return null; }
 };
+// A single `judge()` call has two distinct failure modes that a 2026-09-21 re-score conflated:
+// the subprocess/parse failing outright (network hiccup, non-JSON reply - `judge()` returns
+// null for this), and the model's content judgment itself disagreeing run to run. A 5x rerun of
+// three archived workspaces found zero of the second kind (15/15 goal-code judge calls agreed
+// on every sub-goal boolean) - the one "goal_met: true vs judge-failed" discrepancy that
+// prompted this investigation was the first kind (the archived run's judge subprocess failed to
+// return parseable JSON at all: goal_detail was already null in the archived score.json, not a
+// disagreeing verdict). That means a single retry-on-failure would have caught the actual
+// incident. Voting is kept anyway, for a reason retries alone don't cover: the sample here is
+// tiny (3 workspaces, 1 judge prompt shape) and says nothing about trees nearer a genuine
+// decision boundary, where a non-zero-temperature model is more likely to actually waver.
+// Odd N (default 3) means a vote never ties; the split is recorded on every criterion it
+// touches (`judge_agreement`) so a reader sees "2/3" rather than a laundered single boolean -
+// the two failure modes are also kept visible separately (`judge_runs: "k/N"` for calls that
+// simply did not return, `judge_agreement` for calls that did but disagreed).
+const JUDGE_RUNS = Math.max(1, +(process.env.GRAPH_BENCH_JUDGE_N || 3));
+function judgeVote(prompt, boolKeys, prepare) {
+  const oks = [];
+  for (let i = 0; i < JUDGE_RUNS; i++) { const r = judge(prompt); if (r) oks.push(r); }
+  if (prepare) for (const o of oks) prepare(o);
+  if (!oks.length) return { result: null, runs_ok: 0, runs_total: JUDGE_RUNS, agreement: null, cost_usd: 0 };
+  const agreement = {}; const voted = {};
+  for (const k of boolKeys) { const v = majorityVote(oks, k); voted[k] = v.value; agreement[k] = v.split; }
+  const rep = oks[oks.length - 1]; // representative run, for free-form fields (missing[], false_claims[]) no vote applies to
+  const cost_usd = +oks.reduce((a, o) => a + (o.judge_cost_usd || 0), 0).toFixed(4);
+  return { result: { ...rep, ...voted }, runs_ok: oks.length, runs_total: JUDGE_RUNS, agreement, cost_usd };
+}
 const treeFiles = (dir, depth, acc = [], rel = '') => {
   if (depth < 0) return acc;
   for (const e of ls(join(dir, rel))) {
@@ -466,9 +496,10 @@ if (SEAM) {
     crit.tests_total = calls;
     const readme = read(join(TREE, 'README.md')) || '';
     const bins = files.filter((f) => /(^|\/)bin\/[^/]+\.m?js$/.test(f)).slice(0, 2).map((f) => `// ${f}\n${(read(join(TREE, f)) || '').slice(0, 6000)}`).join('\n\n');
-    const j = judge(`You are judging whether a delivered code tree meets a one-line goal. Goal: "import bank CSV exports, categorize each expense by user-defined rules, report monthly spending from the command line; a new user can follow the root README from a CSV file to a monthly report". Below: the file list, the README, and the CLI entry point(s). Reply with JSON only: {"import_csv": true|false, "rules": true|false, "monthly_report": true|false, "readme_walkthrough": true|false, "missing": ["..."]}.\n\n=== FILES ===\n${files.join('\n')}\n\n=== README.md ===\n${readme.slice(0, 12000)}\n\n=== CLI ===\n${bins}`);
-    crit.goal_met = j ? !!(j.import_csv && j.rules && j.monthly_report && j.readme_walkthrough) : 'judge-failed';
-    crit.goal_detail = j;
+    const prompt = `You are judging whether a delivered code tree meets a one-line goal. Goal: "import bank CSV exports, categorize each expense by user-defined rules, report monthly spending from the command line; a new user can follow the root README from a CSV file to a monthly report". Below: the file list, the README, and the CLI entry point(s). Reply with JSON only: {"import_csv": true|false, "rules": true|false, "monthly_report": true|false, "readme_walkthrough": true|false, "missing": ["..."]}.\n\n=== FILES ===\n${files.join('\n')}\n\n=== README.md ===\n${readme.slice(0, 12000)}\n\n=== CLI ===\n${bins}`;
+    const jv = judgeVote(prompt, ['import_csv', 'rules', 'monthly_report', 'readme_walkthrough']);
+    crit.goal_met = jv.result ? !!(jv.result.import_csv && jv.result.rules && jv.result.monthly_report && jv.result.readme_walkthrough) : 'judge-failed';
+    crit.goal_detail = jv.result ? { ...jv.result, judge_runs: `${jv.runs_ok}/${jv.runs_total}`, judge_agreement: jv.agreement, judge_cost_usd: jv.cost_usd } : null;
   } else {
     crit.docs_count = mds.length;
     crit.docs_written = mds.length >= 3;
@@ -477,10 +508,12 @@ if (SEAM) {
     const srcs = ['queue', 'retry', 'worker'].map((p) => `// packages/${p}/src/index.mjs\n${read(join(TREE, `packages/${p}/src/index.mjs`)) || ''}`).join('\n\n');
     let budget = 40000;
     const docs = mds.map((f) => { const t = (read(join(TREE, f)) || '').slice(0, Math.max(0, Math.min(8000, budget))); budget -= t.length; return `=== ${f} ===\n${t}`; }).join('\n\n');
-    const j = judge(`You are judging a documentation set written for a small library against its source. Goal: "a new maintainer can use it, extend it, and understand why it is built the way it is; every claim derived from the code". Reply with JSON only: {"usable": true|false, "extendable": true|false, "rationale_explained": true|false, "claims_checked": <int>, "false_claims": ["<doc>: <claim> — <why wrong>"]}.\n\n=== SOURCE ===\n${srcs}\n\n${docs}`);
-    crit.goal_met = j ? !!(j.usable && j.extendable && j.rationale_explained) : 'judge-failed';
-    crit.accuracy = j ? j.false_claims.length === 0 : 'judge-failed';
-    crit.goal_detail = j;
+    const prompt = `You are judging a documentation set written for a small library against its source. Goal: "a new maintainer can use it, extend it, and understand why it is built the way it is; every claim derived from the code". Reply with JSON only: {"usable": true|false, "extendable": true|false, "rationale_explained": true|false, "claims_checked": <int>, "false_claims": ["<doc>: <claim> — <why wrong>"]}.\n\n=== SOURCE ===\n${srcs}\n\n${docs}`;
+    const jv = judgeVote(prompt, ['usable', 'extendable', 'rationale_explained', '_no_false_claims'],
+      (o) => { o._no_false_claims = Array.isArray(o.false_claims) && o.false_claims.length === 0; });
+    crit.goal_met = jv.result ? !!(jv.result.usable && jv.result.extendable && jv.result.rationale_explained) : 'judge-failed';
+    crit.accuracy = jv.result ? !!jv.result._no_false_claims : 'judge-failed';
+    crit.goal_detail = jv.result ? { ...jv.result, judge_runs: `${jv.runs_ok}/${jv.runs_total}`, judge_agreement: jv.agreement, judge_cost_usd: jv.cost_usd } : null;
   }
   // The manager's decomposition, on its own terms: several packages, disjoint ownership, no cycles.
   const t = harness.tasks[0];
@@ -553,15 +586,141 @@ if (SEAM) {
       : ['queue', 'retry', 'worker', 'index'].map((m) => `// src/${m}.mjs\n${read(join(TREE, `src/${m}.mjs`)) || ''}`);
     const docs = MONO ? ['packages/retry/README.md', 'packages/worker/README.md', 'docs/adr/0002-retry-policy.md'] : ['docs/api.md', 'docs/adr/0002-retry-policy.md'];
     const prompt = `You are grading documentation for factual accuracy against source code. Below is the complete source of a small library, then some of its documents. List every claim in the documents about behaviour, signatures, defaults, return values or thrown errors that the code does NOT support (wrong or invented). Ignore style, omissions, and claims you cannot decide. Reply with JSON only: {"claims_checked": <int>, "false_claims": ["<doc>: <claim> — <why wrong>", ...]}.\n\n=== SOURCE ===\n${srcs.join('\n\n')}\n\n${docs.map((d) => `=== ${d} ===\n${read(join(TREE, d)) || '(missing)'}`).join('\n\n')}`;
-    const j = sh('claude', ['-p', '--setting-sources', 'project', '--model', 'haiku', '--output-format', 'json', prompt], TREE, '');
-    try {
-      const outer = JSON.parse(j.stdout);
-      const inner = JSON.parse(String(outer.result).replace(/^[^{]*/, '').replace(/[^}]*$/, ''));
-      crit.accuracy = inner.false_claims.length === 0;
-      crit.accuracy_detail = { claims_checked: inner.claims_checked, false_claims: inner.false_claims.slice(0, 8), judge_cost_usd: outer.total_cost_usd };
-    } catch { crit.accuracy = 'judge-failed'; }
+    const jv = judgeVote(prompt, ['_no_false_claims'],
+      (o) => { o._no_false_claims = Array.isArray(o.false_claims) && o.false_claims.length === 0; });
+    if (jv.result) {
+      crit.accuracy = !!jv.result._no_false_claims;
+      crit.accuracy_detail = {
+        claims_checked: jv.result.claims_checked, false_claims: (jv.result.false_claims || []).slice(0, 8),
+        judge_runs: `${jv.runs_ok}/${jv.runs_total}`, judge_agreement: jv.agreement, judge_cost_usd: jv.cost_usd,
+      };
+    } else crit.accuracy = 'judge-failed';
   }
 }
+
+// ---------- process criteria: does the six-stage process buy anything a single competent
+// session's tree does not already have? npm_test/no_deps/readme/cli/tests_grown above are all
+// "did you produce the artifact" checks a single session passes trivially - both arms of a
+// 2026-09-17..21 goal-code run printed 6/6 while shipping 2,893 LOC and 655 LOC respectively.
+// The four blocks below are computed by the SAME extractor for a plain tree and a teams-
+// integrated tree alike (the previous false-claim comparison was invalid precisely because the
+// two arms used different extraction paths, inflating one denominator to 298 and the other to
+// 5) - reported as `criteria` metadata, not folded into `bools`/`passed`/`of`: there is no
+// calibration yet for what a good spec-coverage or review-yield number is, and inventing a
+// threshold now would repeat the mistake that produced the 6/6 tie in the first place. Every
+// value here is either an object or an array; the `typeof v === 'boolean'` filter that builds
+// `bools` further down skips them automatically, the same way `goal_detail`/`decomposition_detail`
+// already do.
+
+function findPackageDirs() {
+  const pkgs = ls(join(TREE, 'packages')).filter((p) => existsSync(join(TREE, 'packages', p, 'package.json')));
+  return pkgs.length ? pkgs.map((p) => ({ id: p, dir: join(TREE, 'packages', p) })) : [{ id: '.', dir: TREE }];
+}
+
+// 1. spec coverage - the case's own request/spec, split into discrete requirements
+// (parseRequirements: lettered clauses when the request has them, substantive sentences when it
+// doesn't - the goal-* cases are one-line prose with no letters at all), each checked against a
+// corpus built from the tree's own file list, README and a source sample. Heuristic keyword/
+// identifier overlap, not semantic verification - hence reporting the uncovered list alongside
+// the ratio rather than a bare score a reader would have to trust blind.
+crit.spec_coverage = (() => {
+  let reqText = '';
+  try { reqText = readFileSync(join(SCRIPT_DIR, 'requests', `${CASE}.txt`), 'utf8'); } catch { /* no request file for this case */ }
+  const reqs = parseRequirements(reqText);
+  if (!reqs.length) return 'n/a (no request file, or nothing substantive to split out of it)';
+  const files = treeFiles(TREE, 6);
+  let budget = 250_000;
+  const srcSample = files.filter((f) => /\.(m?js|md|json)$/.test(f)).map((f) => {
+    if (budget <= 0) return '';
+    const t = (read(join(TREE, f)) || '').slice(0, 5000);
+    budget -= t.length; return t;
+  }).join('\n');
+  const corpusLower = (files.join('\n') + '\n' + srcSample).toLowerCase();
+  const checked = reqs.map((r) => ({ requirement: r.slice(0, 200), covered: requirementCovered(r, corpusLower, files) }));
+  return {
+    covered: checked.filter((c) => c.covered).length, total: checked.length,
+    uncovered: checked.filter((c) => !c.covered).map((c) => c.requirement),
+  };
+})();
+
+// 2. review yield - a gate/accept rejection (accept: false), a critique that found the plan
+// unsound (sound: false, or a non-empty blocking[]), or a review that could not verify (verified:
+// false) only "bought" something if a later node for the SAME unit then changed the tree. A
+// rejection nobody acted on is not yield. No harness nodes at all (a `none` plain session): n/a,
+// never a zero that scores against that arm - it has no gates to reject anything with.
+crit.review_yield = (() => {
+  if (!isHarnessRun) return 'n/a (plain session has no gate/review/critique nodes)';
+  const isRejected = (n) => {
+    const r = n.result; if (!r) return false;
+    if (n.stage === 'gate' || n.stage === 'accept' || /^(gate|accept)/.test(String(n.node_id))) return r.accept === false;
+    if (n.stage === 'critique' || /^critique/.test(String(n.node_id))) return r.sound === false || (Array.isArray(r.blocking) && r.blocking.length > 0);
+    if (n.stage === 'review' || /^review/.test(String(n.node_id))) return r.verified === false;
+    return false;
+  };
+  const root = join(WS, '.harness-tasks');
+  const nodeLists = [];
+  for (const id of ls(root)) for (const wt of ls(join(root, id, 'worktrees'))) for (const r of runFiles(join(root, id, 'worktrees', wt))) nodeLists.push(r.nodes || []);
+  for (const r of runFiles(WS)) nodeLists.push(r.nodes || []);
+  let rejections = 0, yielded = 0;
+  for (const nodes of nodeLists) {
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (!isRejected(n)) continue;
+      rejections++;
+      const unit = (String(n.node_id).match(/:([A-Za-z]+\d+)/) || [])[1];
+      const changedAfter = nodes.slice(i + 1).some((m) => {
+        if (!m.result) return false;
+        if (unit && !String(m.node_id).includes(`:${unit}`)) return false;
+        return Array.isArray(m.result.changed_files) && m.result.changed_files.length > 0;
+      });
+      if (changedAfter) yielded++;
+    }
+  }
+  return { rejections, yielded };
+})();
+
+// 3. regression - the whole tree already ran once above (`npm_test`, `testCounts`). Re-run each
+// package's own test suite standalone, inside the SAME integrated tree, and sum: a package whose
+// tests pass alone but the whole-tree run does not reach (or the reverse - counted once at the
+// root but silently dropped per-package) is exactly the kind of seam an integration step can
+// break without any single node noticing. A flat (single-package) tree has nothing to sum
+// against the whole-tree run other than itself, so that comparison reports n/a rather than a
+// vacuous match.
+crit.regression = (() => {
+  const pkgDirs = findPackageDirs().filter((p) => p.dir !== TREE);
+  const perPackage = {};
+  let sumTotal = 0, sumPass = 0, sumFail = 0;
+  for (const p of pkgDirs) {
+    const r = sh('node', ['--test'], p.dir);
+    const c = parseTestCounts(r.out);
+    perPackage[p.id] = c;
+    sumTotal += c.total || 0; sumPass += c.pass || 0; sumFail += c.fail || 0;
+  }
+  return {
+    whole_tree: testCounts,
+    per_package: pkgDirs.length ? perPackage : 'n/a (flat tree; the whole-tree run above already is the only package)',
+    sum_of_packages: pkgDirs.length ? { total: sumTotal, pass: sumPass, fail: sumFail } : 'n/a',
+    count_matches_sum: pkgDirs.length ? testCounts.total === sumTotal : 'n/a',
+    whole_tree_failures: testCounts.fail,
+  };
+})();
+
+// 4. volume sanity - raw src/test file and line counts, no verdict attached. This is the number
+// that would have put 655 LOC / 5 src files on the score line next to 2,893 LOC / 26, instead of
+// burying the gap under a 6/6 tie on artifact-presence checks alone.
+crit.volume = (() => {
+  const files = treeFiles(TREE, 6);
+  const isTest = (f) => /\.test\.m?js$/.test(f) || /(^|\/)tests?\//.test(f);
+  const isCode = (f) => /\.m?js$/.test(f);
+  const srcFiles = files.filter((f) => isCode(f) && !isTest(f));
+  const testFiles = files.filter((f) => isCode(f) && isTest(f));
+  const loc = (f) => { const t = read(join(TREE, f)); return t ? t.split('\n').length : 0; };
+  return {
+    packages: findPackageDirs().length,
+    src_files: srcFiles.length, src_loc: srcFiles.reduce((n, f) => n + loc(f), 0),
+    test_files: testFiles.length, test_loc: testFiles.reduce((n, f) => n + loc(f), 0),
+  };
+})();
 
 // ---------- claims: every checkable assertion this arm made, verified the same way for every
 // arm - including the plain session, which the rest of this file otherwise never checks. A run

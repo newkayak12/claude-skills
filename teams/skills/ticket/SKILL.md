@@ -39,7 +39,7 @@ makes no decisions.
 EPIC (`kind: "EPIC"`):
 
 ```
-E-a1b2c3d4  결제 취소 기능              state: IN_PROGRESS   phase: impl   leader: pid 4121 alive
+E-a1b2c3d4  결제 취소 기능              state: IN_PROGRESS   phase: impl   daemon: pid 4121 alive
 doc: .teams_output/team/E-a1b2c3d4/INDEX.md
 ```
 
@@ -54,7 +54,7 @@ reporter: shape                          (repair = QA-raised defect story)
 doc: .teams_output/team/E-a1b2c3d4/40-stories/P2.md
 ```
 
-`leader` prints `none` when the EPIC has none yet. `worktree` prints `—` before any dispatch has
+`daemon` prints `none` when the EPIC has none yet. `worktree` prints `—` before any dispatch has
 run. `tasks` is `—` when no dispatch has started a child run to measure.
 
 ## What Claude Does

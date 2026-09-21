@@ -60,7 +60,7 @@ function driverPids(task) {
   const pids = [];
   for (const n of task.nodes || []) if (n.child && n.child.driver && n.child.driver.pid) pids.push(n.child.driver.pid);
   if (task.s_run && task.s_run.driver && task.s_run.driver.pid) pids.push(task.s_run.driver.pid);
-  if (task.leader && task.leader.pid) pids.push(task.leader.pid);
+  if (task.daemon && task.daemon.pid) pids.push(task.daemon.pid);
   return pids;
 }
 function purgeTasks(projectDir, notes) {
