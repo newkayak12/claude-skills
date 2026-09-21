@@ -928,7 +928,11 @@ function finishNode(run, n, result, vendorName) {
       expandSubgoals(run, spec.subgoals);
     }
   }
-  saveRun(run);
+  // One save, after autoReassign: a rejected gate and the retry chain it opens must land on
+  // disk together. Saved separately, the run is 'blocked' on disk for the gap between the two
+  // writes, and a reader woken by fs.watch on the first rename (the task-manager daemon's
+  // dispatchSettled) folds the dispatch as failed while this driver is already on attempt 2 -
+  // seam-silent-beta-E1 (2026-09-21) lost P1 exactly there.
   const reassigned = autoReassign(run, n);
   saveRun(run);
   syncOpenNodes(run);

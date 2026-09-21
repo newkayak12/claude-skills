@@ -1414,7 +1414,15 @@ export function dispatchSettled(task, n) {
     // process is mid-write (or was, before saveRun became write-then-rename); not settled yet.
     return !existsSync(join(n.child.cwd, '.teams_output', 'broker', 'runs', `${n.child.run_id}.json`));
   }
-  return runState(child).state !== 'running';
+  const st = runState(child).state;
+  if (st === 'running') return false;
+  if (st === 'complete') return true;
+  // Blocked or missing-report with a live driver: the driver's own broker may be about to open
+  // the next attempt (auto_reassign), or is about to exit having reported the block. Either way
+  // the settle signal is the driver's exit (serviceRunningDispatches reads its exit file), not
+  // this snapshot. seam-silent-beta-E1: folded a 'blocked' P1 whose driver was on implement:U1:2.
+  if (n.child.driver && driverAlive(n.child.driver)) return false;
+  return true;
 }
 
 // serviceDeadDriver generalized to task.s_run, which mirrors n.child but is not a node's child -
