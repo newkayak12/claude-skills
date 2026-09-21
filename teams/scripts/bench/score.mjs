@@ -20,10 +20,10 @@ import { collectDriverCosts } from './lib/drivercost.mjs';
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
 const [CASE, WS_ARG, STREAM] = process.argv.slice(2);
-if (!CASE || !WS_ARG) { console.error('usage: score.mjs <code|docs|code-flat|docs-flat|seam|seam-flat|goal-*> <workspace> [stream.jsonl]'); process.exit(2); }
+if (!CASE || !WS_ARG) { console.error('usage: score.mjs <code|docs|code-flat|docs-flat|seam|seam-flat|seam-silent|goal-*> <workspace> [stream.jsonl]'); process.exit(2); }
 const WS = resolve(WS_ARG);
 const GOAL = CASE.startsWith('goal-');
-const SEAM = CASE === 'seam' || CASE === 'seam-flat';
+const SEAM = CASE === 'seam' || CASE === 'seam-flat' || CASE === 'seam-silent';
 const KIND = /code/.test(CASE) ? 'code' : 'docs';
 const MONO = !CASE.endsWith('-flat');
 
@@ -335,17 +335,28 @@ const judge = (prompt) => {
 // the two failure modes are also kept visible separately (`judge_runs: "k/N"` for calls that
 // simply did not return, `judge_agreement` for calls that did but disagreed).
 const JUDGE_RUNS = Math.max(1, +(process.env.GRAPH_BENCH_JUDGE_N || 3));
+// Every judge-backed criterion needs a `claude -p` subprocess per vote, which is exactly what
+// makes re-scoring an already-driven workspace expensive (and pointless, when all that is
+// wanted is the offline metadata - spec_present, volume, and the like). GRAPH_BENCH_NO_JUDGE=1
+// short-circuits every judgeVote() call before it spawns anything, so score.mjs can run fully
+// offline; every criterion whose only source is a judge call reports 'skipped' (its own state,
+// never folded into 'judge-failed' - a call that was never attempted is not one that failed).
+const NO_JUDGE = process.env.GRAPH_BENCH_NO_JUDGE === '1';
 function judgeVote(prompt, boolKeys, prepare) {
+  if (NO_JUDGE) return { result: null, runs_ok: 0, runs_total: JUDGE_RUNS, agreement: null, cost_usd: 0, skipped: true };
   const oks = [];
   for (let i = 0; i < JUDGE_RUNS; i++) { const r = judge(prompt); if (r) oks.push(r); }
   if (prepare) for (const o of oks) prepare(o);
-  if (!oks.length) return { result: null, runs_ok: 0, runs_total: JUDGE_RUNS, agreement: null, cost_usd: 0 };
+  if (!oks.length) return { result: null, runs_ok: 0, runs_total: JUDGE_RUNS, agreement: null, cost_usd: 0, skipped: false };
   const agreement = {}; const voted = {};
   for (const k of boolKeys) { const v = majorityVote(oks, k); voted[k] = v.value; agreement[k] = v.split; }
   const rep = oks[oks.length - 1]; // representative run, for free-form fields (missing[], false_claims[]) no vote applies to
   const cost_usd = +oks.reduce((a, o) => a + (o.judge_cost_usd || 0), 0).toFixed(4);
-  return { result: { ...rep, ...voted }, runs_ok: oks.length, runs_total: JUDGE_RUNS, agreement, cost_usd };
+  return { result: { ...rep, ...voted }, runs_ok: oks.length, runs_total: JUDGE_RUNS, agreement, cost_usd, skipped: false };
 }
+// Shared by every judge-backed criterion below: 'skipped' when GRAPH_BENCH_NO_JUDGE=1 held the
+// call back, 'judge-failed' when it ran but every vote came back unparseable, else fn(jv.result).
+const judgeVerdict = (jv, fn) => (jv.skipped ? 'skipped' : jv.result ? fn(jv.result) : 'judge-failed');
 const treeFiles = (dir, depth, acc = [], rel = '') => {
   if (depth < 0) return acc;
   for (const e of ls(join(dir, rel))) {
@@ -451,8 +462,8 @@ if (SEAM) {
     const bins = files.filter((f) => /(^|\/)bin\/[^/]+\.m?js$/.test(f)).slice(0, 2).map((f) => `// ${f}\n${(read(join(TREE, f)) || '').slice(0, 6000)}`).join('\n\n');
     const prompt = `You are judging whether a delivered code tree meets a one-line goal. Goal: "import bank CSV exports, categorize each expense by user-defined rules, report monthly spending from the command line; a new user can follow the root README from a CSV file to a monthly report". Below: the file list, the README, and the CLI entry point(s). Reply with JSON only: {"import_csv": true|false, "rules": true|false, "monthly_report": true|false, "readme_walkthrough": true|false, "missing": ["..."]}.\n\n=== FILES ===\n${files.join('\n')}\n\n=== README.md ===\n${readme.slice(0, 12000)}\n\n=== CLI ===\n${bins}`;
     const jv = judgeVote(prompt, ['import_csv', 'rules', 'monthly_report', 'readme_walkthrough']);
-    crit.goal_met = jv.result ? !!(jv.result.import_csv && jv.result.rules && jv.result.monthly_report && jv.result.readme_walkthrough) : 'judge-failed';
-    crit.goal_detail = jv.result ? { ...jv.result, judge_runs: `${jv.runs_ok}/${jv.runs_total}`, judge_agreement: jv.agreement, judge_cost_usd: jv.cost_usd } : null;
+    crit.goal_met = judgeVerdict(jv, (r) => !!(r.import_csv && r.rules && r.monthly_report && r.readme_walkthrough));
+    crit.goal_detail = jv.skipped ? 'skipped' : jv.result ? { ...jv.result, judge_runs: `${jv.runs_ok}/${jv.runs_total}`, judge_agreement: jv.agreement, judge_cost_usd: jv.cost_usd } : null;
   } else {
     crit.docs_count = mds.length;
     crit.docs_written = mds.length >= 3;
@@ -464,9 +475,9 @@ if (SEAM) {
     const prompt = `You are judging a documentation set written for a small library against its source. Goal: "a new maintainer can use it, extend it, and understand why it is built the way it is; every claim derived from the code". Reply with JSON only: {"usable": true|false, "extendable": true|false, "rationale_explained": true|false, "claims_checked": <int>, "false_claims": ["<doc>: <claim> — <why wrong>"]}.\n\n=== SOURCE ===\n${srcs}\n\n${docs}`;
     const jv = judgeVote(prompt, ['usable', 'extendable', 'rationale_explained', '_no_false_claims'],
       (o) => { o._no_false_claims = Array.isArray(o.false_claims) && o.false_claims.length === 0; });
-    crit.goal_met = jv.result ? !!(jv.result.usable && jv.result.extendable && jv.result.rationale_explained) : 'judge-failed';
-    crit.accuracy = jv.result ? !!jv.result._no_false_claims : 'judge-failed';
-    crit.goal_detail = jv.result ? { ...jv.result, judge_runs: `${jv.runs_ok}/${jv.runs_total}`, judge_agreement: jv.agreement, judge_cost_usd: jv.cost_usd } : null;
+    crit.goal_met = judgeVerdict(jv, (r) => !!(r.usable && r.extendable && r.rationale_explained));
+    crit.accuracy = judgeVerdict(jv, (r) => !!r._no_false_claims);
+    crit.goal_detail = jv.skipped ? 'skipped' : jv.result ? { ...jv.result, judge_runs: `${jv.runs_ok}/${jv.runs_total}`, judge_agreement: jv.agreement, judge_cost_usd: jv.cost_usd } : null;
   }
   // The manager's decomposition, on its own terms: several packages, disjoint ownership, no cycles.
   const t = harness.tasks[0];
@@ -541,13 +552,13 @@ if (SEAM) {
     const prompt = `You are grading documentation for factual accuracy against source code. Below is the complete source of a small library, then some of its documents. List every claim in the documents about behaviour, signatures, defaults, return values or thrown errors that the code does NOT support (wrong or invented). Ignore style, omissions, and claims you cannot decide. Reply with JSON only: {"claims_checked": <int>, "false_claims": ["<doc>: <claim> — <why wrong>", ...]}.\n\n=== SOURCE ===\n${srcs.join('\n\n')}\n\n${docs.map((d) => `=== ${d} ===\n${read(join(TREE, d)) || '(missing)'}`).join('\n\n')}`;
     const jv = judgeVote(prompt, ['_no_false_claims'],
       (o) => { o._no_false_claims = Array.isArray(o.false_claims) && o.false_claims.length === 0; });
+    crit.accuracy = judgeVerdict(jv, (r) => !!r._no_false_claims);
     if (jv.result) {
-      crit.accuracy = !!jv.result._no_false_claims;
       crit.accuracy_detail = {
         claims_checked: jv.result.claims_checked, false_claims: (jv.result.false_claims || []).slice(0, 8),
         judge_runs: `${jv.runs_ok}/${jv.runs_total}`, judge_agreement: jv.agreement, judge_cost_usd: jv.cost_usd,
       };
-    } else crit.accuracy = 'judge-failed';
+    }
   }
 }
 
@@ -601,6 +612,11 @@ crit.spec_coverage = (() => {
 // false) only "bought" something if a later node for the SAME unit then changed the tree. A
 // rejection nobody acted on is not yield. No harness nodes at all (a `none` plain session): n/a,
 // never a zero that scores against that arm - it has no gates to reject anything with.
+// Rejections are not a quality score under spec-driven development: a run with zero rejections
+// because the PRD was followed exactly is not worse than one with ten because packages drifted
+// from it - `scope_match`/`spec_traceability` below are what actually says whether the delivered
+// tree matches what was asked for and what was planned; this stays metadata about how much
+// friction the process itself generated, not a stand-in for tree quality.
 crit.review_yield = (() => {
   if (!isHarnessRun) return 'n/a (plain session has no gate/review/critique nodes)';
   const isRejected = (n) => {
@@ -674,6 +690,85 @@ crit.volume = (() => {
     test_files: testFiles.length, test_loc: testFiles.reduce((n, f) => n + loc(f), 0),
   };
 })();
+
+// 5. spec-driven metrics - `volume` above says how big the tree is, not whether it is the tree
+// the request (or, if one exists, the PRD) actually asked for. A bigger tree is not a better
+// one under spec-driven development: goal-code's beta arm wrote a 13.5k PRD that named 4
+// packages and rejected a single-package split, and its code's imports matched that wiring
+// exactly; plain's arm built more (persistence, dedupe, multi-format date detection) that
+// nothing asked for. These four report that gap instead of letting LOC stand in for it.
+// The negative lookahead excludes a sibling audit doc (audit's own contract, prompts.mjs,
+// writes "<something>-prd-audit.md" for the planning cross-review pass) - a real 2026-09-21
+// goal-code-beta-R1 tree has both docs/ledger-prd.md and docs/ledger-prd-audit.md, and without
+// this exclusion `.find()` could pick the audit's commentary about the PRD instead of the PRD.
+const SPEC_PATH_RE = [/^docs\/(?!.*audit)[^/]*prd[^/]*\.md$/i, /^docs\/(?!.*audit)[^/]*spec[^/]*\.md$/i, /^PRD\.md$/i, /^SPEC\.md$/i];
+const specFile = (() => {
+  const files = treeFiles(TREE, 4);
+  return files.find((f) => SPEC_PATH_RE.some((re) => re.test(f))) || null;
+})();
+const specText = specFile ? (read(join(TREE, specFile)) || '') : '';
+
+// spec_present: does a PRD/spec document exist in the deliverable at all - teams writes
+// docs/ledger-prd.md for a goal-* task with roles.planning on; plain writes none.
+crit.spec_present = !!specFile;
+
+// spec_user_stories: how many distinct "US-n" ids the spec names, counted from the id itself
+// (present whether it is written as a "## US-1 ..." heading, a "- [ ] US-1 ..." checklist row,
+// or an id inline in a "## User stories" list) - any of those shapes carries the same id, so
+// counting the id once per occurrence-set is what the draft/gate:goal contract in prompts.mjs
+// (CONTRACT.draft, CONTRACT['gate:goal']) actually asks the writer for.
+crit.spec_user_stories = specFile ? new Set([...specText.matchAll(/\bUS-\d+\b/g)].map((m) => m[0])).size : 0;
+
+// spec_traceability: judged - does the delivered package split and module wiring follow what
+// the spec itself decided (or explicitly left open)? 'n/a' when there is no spec to trace
+// against at all (a plain session, most of the time) rather than a manufactured false.
+crit.spec_traceability = 'n/a';
+crit.spec_traceability_detail = 'n/a (no spec/PRD found in the tree)';
+if (specFile) {
+  const files = treeFiles(TREE, 6);
+  const pkgDirsForTrace = findPackageDirs();
+  const importLines = pkgDirsForTrace.map((p) => {
+    const entries = files.filter((f) => (p.id === '.' ? !f.startsWith('packages/') : f.startsWith(`packages/${p.id}/`)) && /\.m?js$/.test(f)).slice(0, 8);
+    return entries.map((f) => {
+      const src = read(join(TREE, f)) || '';
+      const imports = src.split('\n').filter((l) => /^\s*(import\b|export\s*\{[^}]*\}\s*from|const\s.*=\s*require\()/.test(l));
+      return imports.length ? `// ${f}\n${imports.join('\n')}` : '';
+    }).filter(Boolean).join('\n');
+  }).filter(Boolean).join('\n\n');
+  const prompt = `You are checking whether a delivered code tree's structure follows the decisions stated in its own spec/PRD document. Below: the spec/PRD, the tree's file list, and each package's own import/require lines (its dependency wiring). Judge only whether the package split and the wiring between packages matches what the spec decided (or explicitly left open) - not whether the spec itself is good. Reply with JSON only: {"traceable": true|false, "detail": "..."}.\n\n=== SPEC (${specFile}) ===\n${specText.slice(0, 15000)}\n\n=== FILES ===\n${files.join('\n')}\n\n=== IMPORTS ===\n${importLines.slice(0, 8000)}`;
+  const jv = judgeVote(prompt, ['traceable']);
+  crit.spec_traceability = judgeVerdict(jv, (r) => !!r.traceable);
+  crit.spec_traceability_detail = jv.skipped ? 'skipped'
+    : jv.result ? { detail: jv.result.detail, judge_runs: `${jv.runs_ok}/${jv.runs_total}`, judge_agreement: jv.agreement, judge_cost_usd: jv.cost_usd }
+    : 'judge-failed';
+}
+
+// scope_match: judged from the ORIGINAL REQUEST alone (not the spec - a spec that narrowed the
+// request is a `spec_drift` question the harness's own gate:goal already asks; this is asking
+// the same question the requester would: did I get what I asked for, no more and no less).
+// true iff the judge names neither an unrequested feature nor a missing one.
+crit.scope_match = 'n/a (no request file for this case)';
+crit.scope_match_detail = null;
+{
+  let reqText = '';
+  try { reqText = readFileSync(join(SCRIPT_DIR, 'requests', `${CASE}.txt`), 'utf8'); } catch { /* no request file for this case */ }
+  if (reqText) {
+    const files = treeFiles(TREE, 5);
+    const readme = read(join(TREE, 'README.md')) || '';
+    // A result/report summary if the arm left one (a plain session's own closing text, or the
+    // harness's report node) - the requester never reads the diff, only what the arm told them
+    // and what the README shows, so that is what this judges against.
+    const reportNode = isHarnessRun ? [...harnessNodes].reverse().find((n) => n.stage === 'report' && typeof n.result?.handoff === 'string') : null;
+    const resultSummary = reportNode ? reportNode.result.handoff : (meta.result_tail || sessionText.slice(-4000));
+    const prompt = `You are comparing a delivered software tree against the ORIGINAL REQUEST it was built for - nothing else (not a spec, not a plan, just what was asked). Below: the request, the README, a closing summary, and the file tree. List features/behaviour that are PRESENT but were never requested ("unrequested"), and features/behaviour the request named but the tree does not appear to deliver ("missing"). Ignore incidental scaffolding (tests, package.json, .gitignore) - only list actual product features. Reply with JSON only: {"unrequested": ["..."], "missing": ["..."]}.\n\n=== REQUEST ===\n${reqText}\n\n=== README.md ===\n${readme.slice(0, 8000)}\n\n=== CLOSING SUMMARY ===\n${resultSummary.slice(0, 3000)}\n\n=== FILES ===\n${files.join('\n')}`;
+    const jv = judgeVote(prompt, ['_scope_ok'],
+      (o) => { o._scope_ok = Array.isArray(o.unrequested) && Array.isArray(o.missing) && o.unrequested.length === 0 && o.missing.length === 0; });
+    crit.scope_match = judgeVerdict(jv, (r) => !!r._scope_ok);
+    crit.scope_match_detail = jv.skipped ? 'skipped'
+      : jv.result ? { unrequested: jv.result.unrequested || [], missing: jv.result.missing || [], judge_runs: `${jv.runs_ok}/${jv.runs_total}`, judge_agreement: jv.agreement, judge_cost_usd: jv.cost_usd }
+      : 'judge-failed';
+  }
+}
 
 // ---------- claims: every checkable assertion this arm made, verified the same way for every
 // arm - including the plain session, which the rest of this file otherwise never checks. A run
@@ -845,6 +940,8 @@ const repairPackages = harness.tasks.reduce((n, t) => n + t.packages.filter((p) 
 const SEAM_KEYWORDS = {
   seam: ['exit code', 'exit-code', 'exitcode', 'exit_codes', 'error code', 'error-code', 'codes table', 'packages/codes', 'shared table', 'seam'],
   'seam-flat': ['exit code', 'exit-code', 'exitcode', 'exit_codes', 'error code', 'error-code', 'codes table', 'codes.mjs', 'shared table', 'seam'],
+  // Same fixture/layout as `seam` (mono), request silent on the answer: same keyword list.
+  'seam-silent': ['exit code', 'exit-code', 'exitcode', 'exit_codes', 'error code', 'error-code', 'codes table', 'packages/codes', 'shared table', 'seam'],
 };
 const seamKeywords = SEAM_KEYWORDS[CASE] || [];
 const nodeText = (n) => [n.result?.reason, n.result?.handoff, ...(n.result?.checks || []), ...(n.result?.attacks || []), ...(n.result?.gaps || []), ...(n.result?.problems || [])].filter((x) => typeof x === 'string').join(' \n ');
@@ -868,8 +965,14 @@ const judgeStats = {
 // identically for both arms: a 'judge-failed' value is graded as not-passed, not dropped from
 // the denominator - dropping it is what let the teams arm's `decomposition` stand in as its
 // sixth criterion while its real sixth (`goal_met: 'judge-failed'`) went uncounted.
+// `spec_present`/`spec_traceability`/`scope_match` are metadata for the same reason `volume`
+// and `review_yield` already are: there is no calibration yet for what a good number looks like
+// here, and folding a fresh boolean into passed/of the moment it is invented is the mistake
+// that produced 6/6 ties in the first place. `spec_present` in particular is a plain boolean
+// (unlike the judge-backed pair) and would otherwise be picked up by the `typeof v ===
+// 'boolean'` filter below automatically - it is excluded by name, same as `decomposition`.
 const bools = Object.entries(crit)
-  .filter(([k]) => k !== 'decomposition')
+  .filter(([k]) => !['decomposition', 'spec_present', 'spec_traceability', 'scope_match'].includes(k))
   .map(([k, v]) => [k, v === 'judge-failed' ? false : v])
   .filter(([, v]) => typeof v === 'boolean');
 const score = {
@@ -882,4 +985,5 @@ const fails = bools.filter(([, v]) => !v).map(([k]) => (crit[k] === 'judge-faile
 const t = harness.tasks[0];
 console.log(`${basename(WS)} | ${score.passed}/${score.of} | fail: ${fails} | ${meta.wall_ms ? Math.round(meta.wall_ms / 60000) + 'min' : meta.duration_ms ? Math.round(meta.duration_ms / 60000) + 'min(api)' : '?'} | TOTAL=$${total.cost_usd.toFixed(2)} (session=$${typeof meta.cost_usd === 'number' ? meta.cost_usd.toFixed(2) : '?'} +drivers[${drivers.sessions}]=$${drivers.cost_usd.toFixed(2)}) | false ${claimsFalse}/${claims.length} | turns total=${total.turns} (session ${meta.turns ?? '?'}+drivers ${drivers.turns}) | task ${t?.verdict ?? t?.state ?? '-'} size ${t?.size ?? '-'} pkgs ${t?.packages?.length ?? '-'} | runs ${harness.runs.length} | top-level edits ${meta.top_level_edits} | tree ${score.tree}`);
 console.log(`  judge: seam_detected=${judgeStats.seam_detected} gate_rejections=${judgeStats.gate_rejections} judges_with_checks=${judgeStats.judges_with_checks} repairs=${judgeStats.repairs} cost=$${judgeStats.cost_usd ?? '?'} turns=${judgeStats.turns ?? '?'} minutes=${judgeStats.minutes ?? '?'}`);
+console.log(`  spec-driven: spec_present=${crit.spec_present} spec_user_stories=${crit.spec_user_stories} spec_traceability=${crit.spec_traceability} scope_match=${crit.scope_match} volume=${JSON.stringify(crit.volume)}`);
 console.log(`JUDGE: ${JSON.stringify(judgeStats)}`);

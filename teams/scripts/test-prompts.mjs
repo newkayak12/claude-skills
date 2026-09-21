@@ -396,3 +396,35 @@ test('audit contract adds the product-owner pass: missing, duplication and volum
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+// ---------- planning contract: PRD user stories ----------
+//
+// taskmanager.mjs's dispatch:PLAN bridge reads `g.user_stories` off the child run's own
+// gate:goal result (composeTaskPrompt / finish()), and audit's contract already tells it to
+// "Open the PRD and its user_stories[]" - so both ends (draft, which writes the PRD, and
+// gate:goal, which is the only node that hands the ids back to the manager) must actually
+// require them, not just audit's read of them.
+
+test('draft contract requires a PRD to carry a "## User stories" section with US-n ids', () => {
+  const cwd = tmpProject();
+  try {
+    const prompt = composePrompt(baseRun(cwd), baseNode({ stage: 'draft' }), baseBriefing());
+    assert.match(prompt, /## User stories/);
+    assert.match(prompt, /US-1/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('gate:goal contract requires user_stories[] (ids + acceptance[]) back in its JSON for a planning-kind run', () => {
+  const cwd = tmpProject();
+  try {
+    const n = baseNode({ node_id: 'gate:goal:1', stage: 'gate' });
+    const prompt = composePrompt(baseRun(cwd), n, baseBriefing());
+    assert.match(prompt, /"user_stories"/);
+    assert.match(prompt, /"id": "US-1"/);
+    assert.match(prompt, /"acceptance"/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
