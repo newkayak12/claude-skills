@@ -562,6 +562,45 @@ function openRepair(task, integ) {
   return { task: saveRun(task), package_id: id, integrate: fresh, reason: '' };
 }
 
+// The daemon's own route out of a failed package - the move tm_retry({package_id}) makes for a
+// caller, made by the loop itself. A package attempt fails two ways the manager can act on: its
+// dispatch folded failed (the child ran out of its own gate retries and blocked, or its driver
+// died past its restart budget), or its accept rejected. Either way, while retryPackage's
+// max_retries budget allows, the next attempt opens with the last verdict's reason and gaps as
+// feedback, exactly as the tool would; when the budget is spent retryPackage settles the
+// failure so runState reads blocked for good. Skipped: a dispatch that failed on a merge conflict
+// (a shape problem no retry fixes), a repair package (openRepair owns its budget), and any
+// package that already has a later attempt. trap-beta-T1 (2026-09-21) stopped here: P1's child
+// spent three gate attempts, folded failed, and the daemon recorded daemon_done on a task with a
+// whole max_retries budget untouched.
+export function autoRetryPackages(task) {
+  let changed = false;
+  const packages = (task.spec && task.spec.packages) || [];
+  for (const pkg of packages) {
+    if (pkg.repair) continue;
+    const pid = String(pkg.id);
+    const mine = task.nodes.filter((n) => n.subgoal_id === pid && (n.stage === 'dispatch' || n.stage === 'accept'));
+    if (!mine.length) continue;
+    const lastAttempt = Math.max(...mine.map((n) => n.attempt || 1));
+    const latest = mine.filter((n) => (n.attempt || 1) === lastAttempt);
+    const failed = latest.find((n) => n.state === 'failed' && n.result && !n.final);
+    if (!failed) continue;
+    if (latest.some((n) => n.state === 'running' || n.state === 'pending' || n.state === 'ready') && failed.stage === 'dispatch') {
+      // accept of this attempt still open behind a failed dispatch cannot be - but guard anyway
+    }
+    if ((failed.result.conflicts || []).length) continue;
+    if (failed.result.waiting_capacity) continue;
+    const fb = [failed.result.reason || '', ...(failed.result.gaps || [])].filter(Boolean).join('\n- ');
+    const out = retryPackage(task, pid, fb);
+    record(task, {
+      event: out.attempt ? 'daemon_retry_opened' : 'daemon_retry_settled', task_id: task.run_id,
+      package_id: pid, attempt: out.attempt || null, reason: out.reason || '', failed_node: failed.node_id,
+    });
+    changed = true;
+  }
+  return changed;
+}
+
 // The daemon's own route out of a refused integrate. tm_retry({package_id: "integration"}) is the
 // same move made by a caller; the daemon makes it itself, because a task whose integrate refused
 // on its checks (verified:false, a combined tree that exists, no merge conflict) is not blocked -
