@@ -401,8 +401,16 @@ if (SEAM) {
 
   // SEAM: every code name the parser half actually returns must be a key the codes half
   // actually defines - catches a naming drift between the two packages.
+  // Any way the parser can name a code counts: a `code: 'X'` literal, a helper call
+  // `fail('X', ...)`, or a property read `EXIT_CODES.X` / `codes.X`. The first shape alone made
+  // every plain run (C1, E0) and every teams run (S1) "fail" this criterion for using a helper -
+  // a scorer false negative that read as a shipped defect for a whole day (2026-09-21).
   const parserSrc = read(join(TREE, SP.parser)) || '';
-  const usedNames = new Set([...parserSrc.matchAll(/code:\s*['"]([A-Z_]+)['"]/g)].map((m) => m[1]));
+  const NAME = /[A-Z]+_[A-Z_]+/; // every failure code in the table is SNAKE_CASE with an underscore
+  const usedNames = new Set([
+    ...[...parserSrc.matchAll(/['"]([A-Z]+_[A-Z_]+)['"]/g)].map((m) => m[1]),
+    ...[...parserSrc.matchAll(/\b(?:EXIT_CODES|CODES|codes)\.([A-Z]+_[A-Z_]+)\b/g)].map((m) => m[1]),
+  ].filter((n) => NAME.test(n)));
   crit.parser_names_match_codes = usedNames.size >= 3 && [...usedNames].every((n) => n in staticCodes);
 
   // Executed checks: five inputs, one per outcome the request specifies.
