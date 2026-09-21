@@ -252,6 +252,58 @@ block, unit-tested in `test-score.mjs` against the pure helpers in `lib/claims.m
   `unverifiable`, if the node logged no checks at all) on their own — they were never wrong
   themselves, only downstream of a `checks[]` entry that was.
 
+## Post-hoc audit (defects_shipped)
+
+`teams` is an adversarial-verification flow — spec → build → gate-by-execution → integrate →
+goal gate. The fixed criteria checklist above and `claims` both score a fixed feature set or what
+the arm *said*; on those, plain `claude -p` and teams have so far tied (12/12 both). Neither one
+measures the thing that verification is actually for: **defects that survive into the
+deliverable anyway**. `audit.mjs` measures that directly, and it is the primary quality number
+for this flow — the criteria checklist is secondary.
+
+`node audit.mjs <case> <workspace>` locates the deliverable tree exactly like `score.mjs` does
+(`lib/tree.mjs`, shared between the two — never forked), copies it to a scratch dir stripped of
+`.harness*`/`.teams_output`/`.git`, and runs one independent auditor over the copy:
+
+```
+claude -p --output-format json --model ${GRAPH_BENCH_AUDIT_MODEL:-sonnet} \
+  --dangerously-skip-permissions --setting-sources project
+```
+
+with cwd set to the copy and no `--plugin-dir` at all. The auditor is handed the ORIGINAL request
+text (`requests/<case>.txt`) and nothing else — not which arm produced the tree, not the score.
+Its brief (`lib/audit-prompt.mjs`): be a hostile reviewer whose job is to find defects the author
+shipped, verify by *execution*, not by reading — run the test suite, then probe inputs the
+request implies but the tests may not cover (edge cases, precedence rules, the invocation matrix
+— direct path / realpath / symlink / different cwd —, empty/whitespace/CRLF input, unicode, huge
+input, a missing file, an unreadable file) — and check every explicit rule in the request against
+actual behavior. A defect needs a repro the auditor actually ran and that actually failed; style
+opinions and features the request never asked for are excluded by instruction, not by this
+script.
+
+Output: `<workspace>.audit.json` = `{case, workspace, tree, model, defects[], defects_by_severity:
+{blocking, major, minor}, checks_run[], tests: {pass, fail}, notes, cost_usd, duration_ms}`, plus
+one summary line:
+
+```
+<label> | defects=<n> (blocking=<b> major=<m> minor=<k>) | checks=<c> | tests <pass>/<fail> | audit $<cost> <min>m
+```
+
+Same auditor, same model, same prompt, blind to the arm, run identically on both — the only
+difference between a `none` audit and a `beta`/`stable` audit is which tree got copied in.
+
+`GRAPH_BENCH_NO_JUDGE=1` (or `GRAPH_BENCH_NO_AUDIT=1`) skips the `claude` call entirely and writes
+`{"audit": "skipped"}` — used by `test-audit.mjs` and any offline/CI run. `drive.sh` runs
+`audit.mjs` right after its final `score.mjs` call on the same workspace and appends the summary
+line to `<ws>.score.txt`; `GRAPH_BENCH_AUDIT=0` opts a drive run out of it. `bench.sh`/`resume.sh`
+do not call it — run it by hand (or through `drive.sh`) once a workspace has settled.
+
+Run by hand against an already-scored workspace:
+
+```
+node audit.mjs seam-silent /tmp/graph-bench/seam-silent-beta-E2
+```
+
 ## Results — round 1, 2026-09-11 → 12
 
 One run per cell. Wall time is the runner's own stamps (a session's `duration_ms` does not cover
