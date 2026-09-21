@@ -2484,6 +2484,46 @@ test('a refused integrate opens a repair package by itself (autoRepair) instead 
   });
 });
 
+test('a blocked child whose driver is still alive is not settled: the driver may be opening the next attempt', async () => {
+  // seam-silent-beta-E1 (2026-09-21): gate:U1:1 rejected, broker saved, THEN pushed implement:U1:2
+  // and saved again. The daemon read the first save ('blocked'), folded P1 as failed, and the
+  // task went blocked while the driver was already on attempt 2.
+  const { dispatchSettled } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children[0];
+    // Reject the chain's gate with auto_reassign off, so the child is genuinely 'blocked' on disk.
+    await g.call('team_retry', { run_id: child.run_id, cwd: child.cwd, auto_reassign: false }).catch(() => {});
+    const sub = (node_id, payload) => g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id, payload: ok(payload) });
+    const full = await g.call('team_status', { run_id: child.run_id, cwd: child.cwd, full: true });
+    if (full.parent_shaped !== true) {
+      await sub('plan', { handoff: 'p', flow: 'develop', size: 'S' });
+      await sub('setgoal', { spec: CHILD_SPEC });
+      await sub('critique', { sound: true });
+    }
+    appendFileSync(join(child.cwd, 'a.txt'), 'changed\n');
+    await sub('implement:U1:1', { changed_files: ['a.txt'], handoff: 'built' });
+    await sub('test:U1:1', { verified: true });
+    await sub('gate:U1:1', { accept: false, match_pct: 40, gaps: ['x'], reason: 'short' });
+    const st = await g.call('team_status', { run_id: child.run_id, cwd: child.cwd });
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const n = task.nodes.find((x) => x.node_id === `dispatch:${child.package_id}:1`);
+    if (st.state === 'blocked') {
+      n.child.driver = { pid: process.pid }; // an alive driver (this very process)
+      assert.equal(dispatchSettled(task, n), false, 'blocked + live driver = the driver decides, not this snapshot');
+      n.child.driver = { pid: 2147483646 }; // a pid nothing holds
+      assert.equal(dispatchSettled(task, n), true, 'blocked + dead driver = settled');
+      delete n.child.driver;
+      assert.equal(dispatchSettled(task, n), true, 'blocked with no driver at all (a caller-driven child) = settled, as before');
+    } else {
+      // auto_reassign stayed on and opened attempt 2: the child is running, and running is never settled.
+      assert.equal(st.state, 'running');
+      assert.equal(dispatchSettled(task, n), false);
+    }
+  });
+});
+
 test('tm_events tails the ledger, newest last, filtered by since', async () => {
   await withTask(async ({ tm, task_id, root }) => {
     const all = await tm.call('tm_events', { task_id });
