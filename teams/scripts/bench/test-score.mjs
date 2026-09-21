@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -140,9 +140,41 @@ function sizeSWorkspace(childNodes) {
   return ws;
 }
 
+// GRAPH_BENCH_NO_JUDGE=1 by default: `scope_match` (added alongside the spec-driven metrics)
+// runs for every case that has a request file, code-flat included, so every one of these
+// fixture-driven tests would otherwise start spawning a real `claude` subprocess the moment
+// score.mjs reaches it - turning a hermetic, sub-second unit test into a network call. Tests
+// that actually want a judge verdict use scoreLineEnv with a stubbed `claude` on PATH instead
+// (see stubClaudePath below), which overrides this default off.
 function scoreLine(ws) {
-  const r = spawnSync('node', [join(HERE, 'score.mjs'), 'code-flat', ws, join(ws, 'stream.jsonl')], { encoding: 'utf8' });
+  const r = spawnSync('node', [join(HERE, 'score.mjs'), 'code-flat', ws, join(ws, 'stream.jsonl')],
+    { encoding: 'utf8', timeout: 60_000, env: { ...process.env, GRAPH_BENCH_NO_JUDGE: '1' } });
   return (r.stdout || '') + (r.stderr || '');
+}
+
+// Same as scoreLine, but with extra environment variables layered over this test process's own
+// (PATH included) instead of the GRAPH_BENCH_NO_JUDGE=1 default above - used by the
+// spec-driven-metrics tests below to either keep every judge call skipped explicitly, or to
+// redirect it at a fake `claude` executable placed ahead of the real one on PATH, the same
+// technique a real offline/CI environment would need since there is no `claude` CLI to call
+// there either.
+function scoreLineEnv(ws, extraEnv) {
+  const r = spawnSync('node', [join(HERE, 'score.mjs'), 'code-flat', ws, join(ws, 'stream.jsonl')],
+    { encoding: 'utf8', timeout: 60_000, env: { ...process.env, ...extraEnv } });
+  return (r.stdout || '') + (r.stderr || '');
+}
+
+// A fake `claude -p ... --output-format json <prompt>` that ignores its input and always
+// returns the same judge response, in a fresh directory prepended to PATH - stands in for the
+// real CLI so a judge-backed criterion (scope_match) can be tested without a network call or a
+// real claude installation.
+function stubClaudePath(responseJson) {
+  const dir = mkdtempSync(join(tmpdir(), 'claude-stub-'));
+  const script = join(dir, 'claude');
+  const outer = JSON.stringify({ result: JSON.stringify(responseJson), total_cost_usd: 0.001 });
+  writeFileSync(script, `#!/bin/sh\ncat <<'STUBEOF'\n${outer}\nSTUBEOF\n`);
+  chmodSync(script, 0o755);
+  return dir;
 }
 
 test('a size-S task whose child run closed with an accepted goal gate scores delivered, not not-delivered', () => {
@@ -255,4 +287,112 @@ test('Part 2 criteria appear as metadata in score.json and never move passed/of'
       if (['spec_coverage', 'review_yield', 'regression', 'volume'].includes(k)) assert.notEqual(typeof v, 'boolean', `criteria.${k} must not be a bare boolean`);
     }
   } finally { rmSync(ws, { recursive: true, force: true }); }
+});
+
+// ---------- Part 3: spec-driven metrics (spec_present / spec_user_stories / spec_traceability /
+// scope_match) - a bare flat workspace (no .harness-tasks at all, the `none`-arm shape), scored
+// with GRAPH_BENCH_NO_JUDGE=1 for the metadata-only checks and a stubbed `claude` on PATH for
+// the one test that needs an actual judge verdict (scope_match).
+
+function flatWorkspace(files) {
+  const ws = mkdtempSync(join(tmpdir(), 'score-flat-'));
+  for (const [rel, content] of Object.entries({
+    'package.json': JSON.stringify({ name: 'ledger', type: 'module', scripts: { test: 'node --test' } }),
+    'stream.jsonl': '',
+    ...files,
+  })) {
+    const p = join(ws, rel);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, content);
+  }
+  return ws;
+}
+
+test('spec_present / spec_user_stories: a PRD under docs/ with a "## User stories" section is found and its US-n ids counted', () => {
+  const ws = flatWorkspace({
+    'docs/ledger-prd.md': [
+      '# Ledger PRD', '',
+      '## User stories', '',
+      '- US-1: import a bank CSV — acceptance: rows parse into typed records',
+      '- US-2: categorize by user rules — acceptance: each row gets a category',
+      '- US-3: report monthly spending — acceptance: totals group by month',
+    ].join('\n'),
+  });
+  try {
+    scoreLineEnv(ws, { GRAPH_BENCH_NO_JUDGE: '1' });
+    const score = JSON.parse(readFileSync(`${ws}.score.json`, 'utf8'));
+    assert.equal(score.criteria.spec_present, true);
+    assert.equal(score.criteria.spec_user_stories, 3);
+    // NO_JUDGE held every judge-backed criterion back - both the pre-existing kind (none of
+    // which apply to a code-flat, non-goal, non-seam case) and the two new ones.
+    assert.equal(score.criteria.spec_traceability, 'skipped');
+    assert.equal(score.criteria.scope_match, 'skipped');
+  } finally { rmSync(ws, { recursive: true, force: true }); }
+});
+
+test('spec_present is a real boolean but is excluded from passed/of, the same way decomposition is', () => {
+  const ws = flatWorkspace({ 'docs/ledger-prd.md': '# PRD\n\n## User stories\n\n- US-1: a story\n' });
+  try {
+    scoreLineEnv(ws, { GRAPH_BENCH_NO_JUDGE: '1' });
+    const score = JSON.parse(readFileSync(`${ws}.score.json`, 'utf8'));
+    assert.equal(typeof score.criteria.spec_present, 'boolean');
+    // Re-derive score.mjs's own bools filter here: a boolean-typed spec_present/spec_traceability/
+    // scope_match must not have been picked up into passed/of just because they are booleans.
+    const excluded = ['decomposition', 'spec_present', 'spec_traceability', 'scope_match'];
+    const expectedOf = Object.entries(score.criteria).filter(([k, v]) => !excluded.includes(k) && typeof v === 'boolean').length;
+    assert.equal(score.of, expectedOf);
+  } finally { rmSync(ws, { recursive: true, force: true }); }
+});
+
+test('no spec in the tree: spec_present=false, spec_user_stories=0, spec_traceability=n/a (not judge-failed)', () => {
+  const ws = flatWorkspace({ 'src/csv.mjs': 'export function parseCsv() {}\n' });
+  try {
+    scoreLineEnv(ws, { GRAPH_BENCH_NO_JUDGE: '1' });
+    const score = JSON.parse(readFileSync(`${ws}.score.json`, 'utf8'));
+    assert.equal(score.criteria.spec_present, false);
+    assert.equal(score.criteria.spec_user_stories, 0);
+    assert.equal(score.criteria.spec_traceability, 'n/a');
+  } finally { rmSync(ws, { recursive: true, force: true }); }
+});
+
+test('scope_match via a stubbed judge: unrequested features reported make scope_match false and are stored in the detail', () => {
+  const ws = flatWorkspace({ 'src/csv.mjs': 'export function parseCsv() {}\n' });
+  const stubDir = stubClaudePath({ unrequested: ['a persistence layer'], missing: [] });
+  try {
+    scoreLineEnv(ws, { PATH: `${stubDir}:${process.env.PATH}`, GRAPH_BENCH_JUDGE_N: '1' });
+    const score = JSON.parse(readFileSync(`${ws}.score.json`, 'utf8'));
+    assert.equal(score.criteria.scope_match, false);
+    assert.deepEqual(score.criteria.scope_match_detail.unrequested, ['a persistence layer']);
+    assert.deepEqual(score.criteria.scope_match_detail.missing, []);
+    // scope_match is a real boolean here, but is excluded from passed/of - see the bools
+    // filter's exclusion list in score.mjs (the same list decomposition/spec_present are on).
+    assert.equal(typeof score.criteria.scope_match, 'boolean');
+  } finally { rmSync(ws, { recursive: true, force: true }); rmSync(stubDir, { recursive: true, force: true }); }
+});
+
+test('scope_match via a stubbed judge: an empty unrequested[]/missing[] makes scope_match true', () => {
+  const ws = flatWorkspace({ 'src/csv.mjs': 'export function parseCsv() {}\n' });
+  const stubDir = stubClaudePath({ unrequested: [], missing: [] });
+  try {
+    scoreLineEnv(ws, { PATH: `${stubDir}:${process.env.PATH}`, GRAPH_BENCH_JUDGE_N: '1' });
+    const score = JSON.parse(readFileSync(`${ws}.score.json`, 'utf8'));
+    assert.equal(score.criteria.scope_match, true);
+    assert.deepEqual(score.criteria.scope_match_detail.unrequested, []);
+    assert.deepEqual(score.criteria.scope_match_detail.missing, []);
+  } finally { rmSync(ws, { recursive: true, force: true }); rmSync(stubDir, { recursive: true, force: true }); }
+});
+
+test('spec_traceability via a stubbed judge: a spec present with matching imports reports true, with a detail object', () => {
+  const ws = flatWorkspace({
+    'docs/ledger-prd.md': '# PRD\n\n## User stories\n\n- US-1: import CSV\n',
+    'src/csv.mjs': "import { EXIT_CODES } from './codes.mjs';\nexport function parseCsv() {}\n",
+  });
+  const stubDir = stubClaudePath({ traceable: true, detail: 'package wiring matches the PRD' });
+  try {
+    scoreLineEnv(ws, { PATH: `${stubDir}:${process.env.PATH}`, GRAPH_BENCH_JUDGE_N: '1' });
+    const score = JSON.parse(readFileSync(`${ws}.score.json`, 'utf8'));
+    assert.equal(score.criteria.spec_traceability, true);
+    assert.equal(typeof score.criteria.spec_traceability_detail, 'object');
+    assert.equal(score.criteria.spec_traceability_detail.detail, 'package wiring matches the PRD');
+  } finally { rmSync(ws, { recursive: true, force: true }); rmSync(stubDir, { recursive: true, force: true }); }
 });

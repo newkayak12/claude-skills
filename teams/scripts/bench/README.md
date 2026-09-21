@@ -26,8 +26,9 @@ mounting them changes the outcome; it does not change the engine, only what the 
 | `docs-flat` | `fixtures/tinyq` — one flat library | the same documents with one `docs/api.md` | S |
 | `goal-code` | `fixtures/ledger-mono` | **one line**: import bank CSVs, categorize by rules, report monthly from the CLI; the split, contracts, CLI shape and tests are the harness's to decide | — |
 | `goal-docs` | `fixtures/tinyq-mono` | **one line**: document it so a new maintainer can use, extend and understand it; the document set is the harness's to decide | — |
-| `seam` | `fixtures/seam-mono` — 3 workspace packages (`codes`, `parser`, `cli`); `codes` is pre-built and fixed, `parser`/`cli` are stubs | parser and CLI must both agree with `codes`' exit-code table, the README must document it, and the CLI must run identically as given, as its realpath, and through a symlink | L |
+| `seam` | `fixtures/seam-mono` — 3 workspace packages (`codes`, `parser`, `cli`); `codes` is pre-built and fixed, `parser`/`cli` are stubs | parser and CLI must both agree with `codes`' exit-code table, the README must document it, and the CLI must run identically as given, as its realpath, and through a symlink; the request states outright that the exit-code table must be imported, not copied, and names the macOS `import.meta.url` trap to avoid | L |
 | `seam-flat` | `fixtures/seam` — one empty package | the same domain (`codes.mjs`, `parser.mjs`, `bin/lintcfg.mjs`) built by one worker, no split | S |
+| `seam-silent` | `fixtures/seam-mono`, same as `seam` | byte-identical to `seam.txt` with the two answer-spelling sentences removed — the arm has to notice the seam and the macOS trap on its own | L |
 
 The `goal-*` cases exist because the `code`/`docs` requests already do the decomposition — four
 packages, module contracts, a CLI signature — so a manager whose value is the planning layer
@@ -52,6 +53,17 @@ workspaces already live under `$TMPDIR`, itself a `/var` path that resolves thro
 spellings that broke a naive `import.meta.url === pathToFileURL(argv[1]).href` main-module
 guard. See "How to read a seam result" under Score.
 
+`seam-silent` exists because `seam.txt` itself gives the answer away: it says outright that
+"every package that turns a result into a process exit code must import it from there, not keep
+its own copy", and separately names the macOS `import.meta.url` trap and how to avoid it. Both
+arms followed those two sentences and scored an identical 11/12 on `seam` — the request was
+testing instruction-following, not coordination. `seam-silent` is byte-identical to `seam.txt`
+with exactly those two sentences removed; everything else — the fixture, the packages, the
+SEAM criteria, `seam_detected`'s keyword list — is unchanged. A harness arm that still catches
+the seam and the macOS defect on `seam-silent` is doing what `seam` could never show it doing.
+Both cases stay in the suite: `seam` is the cheap regression check (does the arm at least follow
+an explicit instruction), `seam-silent` is the actual discriminator.
+
 ## Run
 
 ```
@@ -63,7 +75,7 @@ node scripts/bench/score.mjs <case> <workspace> [a.jsonl,b.jsonl]  # re-score; s
 ```
 
 `<arm>` is `beta | betas | skills | stable | none`; `<case>` is `code | docs | code-flat |
-docs-flat | goal-code | goal-docs | seam | seam-flat`.
+docs-flat | goal-code | goal-docs | seam | seam-flat | seam-silent`.
 
 A headless session on a plan with a usage limit dies mid-run — three rounds of this bench did,
 at roughly $20–25 per five-hour window across every concurrent session. Nothing is lost: the
@@ -101,7 +113,7 @@ LLM-judged criterion: haiku reads the three sources and `packages/retry/README.m
 `packages/worker/README.md`, `docs/adr/0002-retry-policy.md`, and lists claims the code does not
 support; passes when the list is empty (`GRAPH_BENCH_JUDGE=0` skips it).
 
-`seam`/`seam-flat`: `no_deps` · `npm_test` · `modules` (`codes`/`parser`/`cli` entry points exist)
+`seam`/`seam-flat`/`seam-silent`: `no_deps` · `npm_test` · `modules` (`codes`/`parser`/`cli` entry points exist)
 · `exports` · `tests` (parser and cli have grown past the seed's smoke test) · `cli_ok` (valid
 config → exit 0) · `cli_invalid` (a missing file → non-zero, not a silent exit 0) — all ordinary.
 Five are **SEAM** — they fail when either half was built without regard for the other, even
@@ -137,6 +149,13 @@ and "What `code-flat` found, by failing" below for two prior instances of exactl
 `judge` fields below (`seam_detected`, `gate_rejections`, `judges_with_checks`) are what let a
 reader tell "the harness caught it and fixed it" apart from "the harness got lucky" apart from
 "nothing caught it and the scorer's SEAM criteria are the only thing that did."
+
+`seam_detected`'s definition (below, under Judge fields) is the same keyword search for both
+`seam` and `seam-silent` — but it means something different on each. On `seam`, the request
+already names the constraint ("import it from there"), so a gate mentioning "exit code" or
+"shared table" may just be repeating what it was told. On `seam-silent`, where the request never
+says that, the same keyword hit means the harness noticed the constraint on its own — that is
+the number worth trusting as a coordination signal, not `seam`'s.
 
 ### Judge fields
 
