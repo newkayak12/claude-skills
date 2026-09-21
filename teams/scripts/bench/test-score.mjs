@@ -432,3 +432,190 @@ export function parseConfig(text) {
   assert.equal(JSON.parse(readFileSync(`${ws}.score.json`, 'utf8')).criteria.parser_names_match_codes, false, 'UNKNOWN_KEY is not in the table');
   rmSync(ws, { recursive: true, force: true }); rmSync(`${ws}.score.json`, { force: true });
 });
+
+// ---------- Part 4: the trap case - a tiny reference scheduler implementation, built once and
+// mutated one rule at a time, so each crit.trap_* can be shown flipping true/false
+// deterministically rather than trusted on faith. GRAPH_BENCH_NO_JUDGE=1 throughout (offline).
+
+const QUEUE_SRC = (precedenceBug = false) => `
+import { systemClock, fixedClock } from '../../core/src/index.mjs';
+import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
+
+const CAP = 3;
+const WINDOW_MS = 10000;
+const KEY_RE = /^[a-z0-9][a-z0-9-]*$/;
+
+export function resolveNow(nowArg, envNow) {
+  const raw = nowArg ?? envNow;
+  if (raw == null) return systemClock().nowMs();
+  if (/^\\d+$/.test(raw)) return fixedClock(Number(raw)).nowMs();
+  const t = Date.parse(raw);
+  return Number.isNaN(t) ? systemClock().nowMs() : fixedClock(t).nowMs();
+}
+
+export function readState(path) {
+  if (!existsSync(path)) return { jobs: [] };
+  try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return { jobs: [] }; }
+}
+
+export function writeStateAtomic(path, state) {
+  const tmp = \`\${path}.\${process.pid}.\${Date.now()}.\${Math.random().toString(36).slice(2)}.tmp\`;
+  writeFileSync(tmp, JSON.stringify(state));
+  renameSync(tmp, path);
+}
+
+function rateLimited(state, key, now) {
+  const last = state.jobs.filter((j) => j.key === key).sort((a, b) => b.submittedAt - a.submittedAt)[0];
+  return !!last && (now - last.submittedAt) < WINDOW_MS;
+}
+function overCap(state) {
+  return state.jobs.filter((j) => j.status === 'queued' || j.status === 'running').length >= CAP;
+}
+
+export function submit(state, { id, key, priority, now }) {
+  const existing = state.jobs.find((j) => j.id === id);
+  if (existing) return { ok: true, code: 0, message: \`already queued \${id}\`, mutated: false };
+  if (!KEY_RE.test(key)) return { ok: false, code: 2, message: \`invalid key: \${key}\` };
+  ${precedenceBug
+    ? `if (rateLimited(state, key, now)) return { ok: false, code: 4, message: \`rate limited: \${key}\` };
+  if (overCap(state)) return { ok: false, code: 3, message: 'queue full' };`
+    : `if (overCap(state)) return { ok: false, code: 3, message: 'queue full' };
+  if (rateLimited(state, key, now)) return { ok: false, code: 4, message: \`rate limited: \${key}\` };`}
+  state.jobs.push({ id, key, priority, status: 'queued', submittedAt: now, seq: state.jobs.length });
+  return { ok: true, code: 0, message: \`queued \${id} key=\${key} priority=\${priority}\`, mutated: true };
+}
+
+export function pickNext(state) {
+  const queued = state.jobs.filter((j) => j.status === 'queued');
+  if (!queued.length) return null;
+  queued.sort((a, b) => (b.priority - a.priority) || (a.submittedAt - b.submittedAt) || (a.seq - b.seq));
+  return queued[0];
+}
+
+export function run(state) {
+  const job = pickNext(state);
+  if (!job) return { ok: false, code: 5, message: 'no jobs queued' };
+  job.status = 'done';
+  return { ok: true, code: 0, message: \`RAN \${job.id} key=\${job.key} priority=\${job.priority}\` };
+}
+
+export function status(state, id) {
+  const job = state.jobs.find((j) => j.id === id);
+  if (!job) return { ok: false, code: 6, message: \`unknown id: \${id}\` };
+  return { ok: true, code: 0, message: \`\${job.id} \${job.status}\` };
+}
+
+export function list(state) {
+  const rank = (j) => (j.status === 'queued' ? [0, -j.priority, j.submittedAt, j.seq] : [1, 0, j.submittedAt, j.seq]);
+  const sorted = [...state.jobs].sort((a, b) => {
+    const ra = rank(a), rb = rank(b);
+    for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] - rb[i];
+    return 0;
+  });
+  return sorted.map((j) => \`\${j.id} \${j.key} \${j.priority} \${j.status}\`);
+}
+`;
+
+const CLI_SRC = `
+import { resolveNow, readState, writeStateAtomic, submit, run as runNext, status as jobStatus, list as listJobs } from '../../queue/src/index.mjs';
+import { resolve } from 'node:path';
+
+function parseArgs(argv) {
+  const args = { _: [] };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a.startsWith('--')) args[a.slice(2)] = argv[++i];
+    else args._.push(a);
+  }
+  return args;
+}
+
+function main() {
+  const [cmd, ...rest] = process.argv.slice(2);
+  const args = parseArgs(rest);
+  const statePath = resolve(process.cwd(), args.state || '.sched-state.json');
+  const now = resolveNow(args.now, process.env.SCHED_NOW);
+  const state = readState(statePath);
+
+  if (cmd === 'submit') {
+    const r = submit(state, { id: args.id, key: args._[0], priority: Number(args.priority ?? 0), now });
+    if (r.ok) writeStateAtomic(statePath, state);
+    console.log(r.message);
+    process.exitCode = r.code;
+    return;
+  }
+  if (cmd === 'run') {
+    const r = runNext(state);
+    if (r.ok) writeStateAtomic(statePath, state);
+    console.log(r.message);
+    process.exitCode = r.code;
+    return;
+  }
+  if (cmd === 'status') {
+    const r = jobStatus(state, args._[0]);
+    console.log(r.message);
+    process.exitCode = r.code;
+    return;
+  }
+  if (cmd === 'list') {
+    for (const line of listJobs(state)) console.log(line);
+    process.exitCode = 0;
+    return;
+  }
+  console.error(\`unknown command: \${cmd}\`);
+  process.exitCode = 1;
+}
+
+main();
+`;
+
+function buildTrapWorkspace({ precedenceBug = false } = {}) {
+  const ws = mkdtempSync(join(tmpdir(), 'score-trap-'));
+  cpSync(join(HERE, 'fixtures', 'trap-mono'), ws, { recursive: true });
+  writeFileSync(join(ws, 'stream.jsonl'), '');
+  writeFileSync(join(ws, 'packages', 'queue', 'src', 'index.mjs'), QUEUE_SRC(precedenceBug));
+  mkdirSync(join(ws, 'packages', 'cli', 'bin'), { recursive: true });
+  writeFileSync(join(ws, 'packages', 'cli', 'bin', 'ratesched.mjs'), CLI_SRC);
+  return ws;
+}
+
+function scoreTrap(ws) {
+  return spawnSync('node', [join(HERE, 'score.mjs'), 'trap', ws, join(ws, 'stream.jsonl')],
+    { encoding: 'utf8', timeout: 120_000, env: { ...process.env, GRAPH_BENCH_NO_JUDGE: '1' } });
+}
+
+test('trap: a correct reference scheduler passes every trap_a..trap_h', { timeout: 120_000 }, () => {
+  const ws = buildTrapWorkspace();
+  try {
+    const r = scoreTrap(ws);
+    const json = JSON.parse(readFileSync(`${ws}.score.json`, 'utf8'));
+    for (const k of ['trap_a', 'trap_b', 'trap_c', 'trap_d', 'trap_e', 'trap_f', 'trap_g', 'trap_h']) {
+      assert.equal(json.criteria[k], true, `${k} — ${(r.stdout || '') + (r.stderr || '')}`);
+    }
+  } finally { rmSync(ws, { recursive: true, force: true }); rmSync(`${ws}.score.json`, { force: true }); }
+});
+
+test('trap: an unbuilt fixture (nothing implemented yet) reports every trap_* false, no crash', () => {
+  const ws = mkdtempSync(join(tmpdir(), 'score-trap-empty-'));
+  cpSync(join(HERE, 'fixtures', 'trap-mono'), ws, { recursive: true });
+  writeFileSync(join(ws, 'stream.jsonl'), '');
+  try {
+    const r = spawnSync('node', [join(HERE, 'score.mjs'), 'trap', ws, join(ws, 'stream.jsonl')],
+      { encoding: 'utf8', timeout: 60_000, env: { ...process.env, GRAPH_BENCH_NO_JUDGE: '1' } });
+    assert.equal(r.status, 0, (r.stdout || '') + (r.stderr || ''));
+    const json = JSON.parse(readFileSync(`${ws}.score.json`, 'utf8'));
+    for (const k of ['trap_a', 'trap_b', 'trap_c', 'trap_d', 'trap_e', 'trap_f', 'trap_g', 'trap_h']) {
+      assert.equal(json.criteria[k], false, k);
+    }
+  } finally { rmSync(ws, { recursive: true, force: true }); rmSync(`${ws}.score.json`, { force: true }); }
+});
+
+test('trap_a: reversing precedence (rate-limit checked before the cap) flips trap_a false while trap_b stays true', { timeout: 120_000 }, () => {
+  const ws = buildTrapWorkspace({ precedenceBug: true });
+  try {
+    scoreTrap(ws);
+    const json = JSON.parse(readFileSync(`${ws}.score.json`, 'utf8'));
+    assert.equal(json.criteria.trap_a, false, 'precedence bug: cap should have been reported over, not rate-limit');
+    assert.equal(json.criteria.trap_b, true, 'the boundary rule itself is untouched by the precedence swap');
+  } finally { rmSync(ws, { recursive: true, force: true }); rmSync(`${ws}.score.json`, { force: true }); }
+});

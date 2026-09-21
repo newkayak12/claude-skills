@@ -29,6 +29,7 @@ mounting them changes the outcome; it does not change the engine, only what the 
 | `seam` | `fixtures/seam-mono` — 3 workspace packages (`codes`, `parser`, `cli`); `codes` is pre-built and fixed, `parser`/`cli` are stubs | parser and CLI must both agree with `codes`' exit-code table, the README must document it, and the CLI must run identically as given, as its realpath, and through a symlink; the request states outright that the exit-code table must be imported, not copied, and names the macOS `import.meta.url` trap to avoid | L |
 | `seam-flat` | `fixtures/seam` — one empty package | the same domain (`codes.mjs`, `parser.mjs`, `bin/lintcfg.mjs`) built by one worker, no split | S |
 | `seam-silent` | `fixtures/seam-mono`, same as `seam` | byte-identical to `seam.txt` with the two answer-spelling sentences removed — the arm has to notice the seam and the macOS trap on its own | L |
+| `trap` | `fixtures/trap-mono` — 3 workspace packages (`core`, `queue`, `cli`); `core`'s Clock is pre-built and fixed, `queue`/`cli` are stubs | a rate-limited job scheduler CLI — real-ticket shaped, clear on what it does, silent on how it's built, planting eight traps (precedence, an inclusive/exclusive boundary, idempotent replay, a stable tie-break, an atomic crash-safe write, invocation invariance, clock/DST injection, an "already exists" success exit) each stated once and never flagged | L |
 
 The `goal-*` cases exist because the `code`/`docs` requests already do the decomposition — four
 packages, module contracts, a CLI signature — so a manager whose value is the planning layer
@@ -64,6 +65,23 @@ the seam and the macOS defect on `seam-silent` is doing what `seam` could never 
 Both cases stay in the suite: `seam` is the cheap regression check (does the arm at least follow
 an explicit instruction), `seam-silent` is the actual discriminator.
 
+`trap` exists because even `seam-silent` is one coordination gap the arm either notices or
+doesn't — it says nothing about the defects that only *execution* reveals, which is what
+`audit.mjs` (the primary quality number) actually measures and what the checklist above does
+not. `trap`'s request (`requests/trap.txt`) is a real-shaped ticket for a rate-limited job
+scheduler CLI, clear on what it does and silent on how, that plants eight traps a single `claude
+-p` session is likely to ship: a precedence conflict between two rules that can both fire on one
+input, an inclusive/exclusive rate-limit boundary, an idempotent-replay rule, a stable
+priority tie-break, an atomic state-file write that must survive a mid-write kill, invocation
+invariance (path/realpath/symlink/cwd), a clock rule that must use UTC arithmetic across a DST
+transition, and an "already exists" path that is success-with-a-warning rather than an error.
+Each is stated exactly once, the way a real ticket would, never flagged as a trap. The answer key
+(`requests/trap.expected.md`) is for the maintainer only — never handed to either arm — and lists
+the exact repro command and expected output per trap; `score.mjs` runs those same repros as
+`crit.trap_a`..`crit.trap_h`, deterministic execution checks alongside the usual
+`modules`/`exports`/`tests`/`readme`. None of the eight are covered by the fixture's own seed
+tests — the builder writes every test that would catch any of this.
+
 ## Run
 
 ```
@@ -75,7 +93,7 @@ node scripts/bench/score.mjs <case> <workspace> [a.jsonl,b.jsonl]  # re-score; s
 ```
 
 `<arm>` is `beta | betas | skills | stable | none`; `<case>` is `code | docs | code-flat |
-docs-flat | goal-code | goal-docs | seam | seam-flat | seam-silent`.
+docs-flat | goal-code | goal-docs | seam | seam-flat | seam-silent | trap`.
 
 A headless session on a plan with a usage limit dies mid-run — three rounds of this bench did,
 at roughly $20–25 per five-hour window across every concurrent session. Nothing is lost: the
@@ -136,6 +154,24 @@ though `cli_ok`/`cli_invalid`/`npm_test` above can still pass:
   main-module guard makes the process exit 0 with **no output** under exactly one of the two
   spellings — a silent no-op that `cli_abs_path`/`cli_realpath` catch and `npm_test` would not,
   since `node --test` never invokes the binary through either spelling.
+
+`trap`: `no_deps` · `npm_test` · `modules` (`core`/`queue`/`cli` entry points exist) · `exports` ·
+`tests` (queue and cli have grown past the seed's smoke test) · `readme` (documents `submit` and
+the exit-code table) — all ordinary. Eight are execution-only, each reproducing exactly one line
+of `requests/trap.txt` (full repro + expected output in `requests/trap.expected.md`, maintainer
+only): `trap_a` (a submission that is both over the 3-job cap and inside its own key's rate
+window exits for the cap, not the rate window) · `trap_b` (9.999s since the same key's last
+submission is still rate-limited, 10.000s is not) · `trap_c` (replaying an `--id` with a
+different key/priority leaves the original job unchanged — one line in `list`, not two, not
+overwritten) · `trap_d` (`run` picks the highest priority first, and on a tie the earliest
+submission) · `trap_e` (a `submit` killed with SIGKILL at ten different delays against an
+already-populated state file never leaves it holding invalid JSON) · `trap_f` (the CLI run as
+given, as its realpath, through a symlink, and from another cwd, all print the same `status`
+line) · `trap_g` (two `--now` values exactly 10.000s apart that straddle the US DST fall-back
+instant are still accepted — UTC millisecond arithmetic only) · `trap_h` (replaying an existing
+`--id` exits 0 with `already queued`, not a nonzero error, distinct from a genuinely unknown id's
+exit 6). `has(SP.cli)` guards every one, so scoring the bare fixture (nothing built yet) reports
+every `trap_*` false rather than crashing.
 
 ### How to read a seam result
 

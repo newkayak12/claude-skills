@@ -9,9 +9,9 @@
 // look at files; executed criteria run `node --test` and, for code, the CLI on a sample.
 // The docs cases have one LLM-judged criterion (`accuracy`: haiku reads the source and the
 // reference docs); GRAPH_BENCH_JUDGE=0 skips it. Writes <ws>.score.json and prints one row.
-import { existsSync, readFileSync, readdirSync, writeFileSync, unlinkSync, mkdtempSync, statSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync, unlinkSync, mkdtempSync, statSync, realpathSync, symlinkSync } from 'node:fs';
 import { join, resolve, basename, dirname } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { CHECK_ALLOW, splitCheck, claimedExit, impliesFailure, hasPlaceholder, isContentShowCmd, splitSlashCmd, fencedBlocksByLang, neededInputTokens, parseRequirements, requirementCovered, majorityVote } from './lib/claims.mjs';
@@ -21,10 +21,11 @@ import { resolveTree } from './lib/tree.mjs';
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
 const [CASE, WS_ARG, STREAM] = process.argv.slice(2);
-if (!CASE || !WS_ARG) { console.error('usage: score.mjs <code|docs|code-flat|docs-flat|seam|seam-flat|seam-silent|goal-*> <workspace> [stream.jsonl]'); process.exit(2); }
+if (!CASE || !WS_ARG) { console.error('usage: score.mjs <code|docs|code-flat|docs-flat|seam|seam-flat|seam-silent|trap|goal-*> <workspace> [stream.jsonl]'); process.exit(2); }
 const WS = resolve(WS_ARG);
 const GOAL = CASE.startsWith('goal-');
 const SEAM = CASE === 'seam' || CASE === 'seam-flat' || CASE === 'seam-silent';
+const TRAP = CASE === 'trap';
 const KIND = /code/.test(CASE) ? 'code' : 'docs';
 const MONO = !CASE.endsWith('-flat');
 
@@ -136,6 +137,36 @@ function verifyFileClaim(file, cwd, requireLog) {
   if (exists) return 'verified';
   if (requireLog && gitTouchedFiles(cwd).has(file)) return 'verified';
   return 'false';
+}
+
+// trap e (atomic write under a mid-write kill): seed the state file with enough jobs that a
+// rewrite has a real window to be caught mid-write, then SIGKILL a submit at ten different
+// delays and confirm the file is always valid JSON afterward - a torn direct writeFileSync onto
+// the target path fails this on at least one delay in a normal run; a temp-file-plus-rename
+// never can. Real crash test, not a simulation - never returns a "probably fine" partial credit.
+async function checkAtomicWrite(cliPath, tmp, runEnv, cwd) {
+  const st = join(tmp, 'e.json');
+  for (let i = 0; i < 40; i++) {
+    const t = 1700000000000 + i * 20000;
+    spawnSync('node', [cliPath, 'submit', `seed${i}`, '--id', `seed${i}`, '--priority', '0', '--now', String(t), '--state', st], { cwd, encoding: 'utf8', timeout: 10_000, env: runEnv });
+    spawnSync('node', [cliPath, 'run', '--now', String(t + 1), '--state', st], { cwd, encoding: 'utf8', timeout: 10_000, env: runEnv });
+  }
+  if (!existsSync(st)) return false;
+  for (let delay = 0; delay < 10; delay++) {
+    await new Promise((resolveKill) => {
+      let done = false;
+      const finish = () => { if (!done) { done = true; resolveKill(); } };
+      let child;
+      try {
+        child = spawn('node', [cliPath, 'submit', `kZ${delay}`, '--id', `eK${delay}`, '--priority', '0', '--now', String(1700000900000 + delay), '--state', st], { cwd, env: runEnv, stdio: 'ignore' });
+      } catch { finish(); return; }
+      const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, delay);
+      child.on('exit', () => { clearTimeout(timer); finish(); });
+      child.on('error', () => { clearTimeout(timer); finish(); });
+    });
+    try { JSON.parse(readFileSync(st, 'utf8')); } catch { return false; }
+  }
+  return true;
 }
 
 // ---------- which tree ----------
@@ -448,6 +479,119 @@ if (SEAM) {
   const rReal = runCli(cliReal, 'valid');
   crit.cli_abs_path = rAbs.code === 0 && /^OK\b/.test(rAbs.out.trim());
   crit.cli_realpath = rReal.code === 0 && /^OK\b/.test(rReal.out.trim()) && rAbs.code === rReal.code && rAbs.out.trim() === rReal.out.trim();
+} else if (TRAP) {
+  // The trap case: a rate-limited job scheduler CLI (packages/queue + packages/cli) built on a
+  // shared Clock (packages/core, fixed by the fixture). Eight execution-only checks below
+  // (crit.trap_a..crit.trap_h) mirror requests/trap.expected.md exactly - each is a trap that
+  // reads fine in a diff and only fails when actually run: a plain claude -p session with no
+  // execution-gate has no mechanism that would catch any of these before they ship. has(SP.cli)
+  // guards every one so scoring an unbuilt fixture (offline dry run) reports every trap_* false
+  // instead of crashing.
+  const SP = { core: 'packages/core/src/index.mjs', queue: 'packages/queue/src/index.mjs', cli: 'packages/cli/bin/ratesched.mjs' };
+  crit.modules = Object.values(SP).every(has);
+  crit.exports = ['core', 'queue'].every((k) => exportNames(read(join(TREE, SP[k]))).length > 0);
+  const countTests = (dir) => ls(dir).filter((f) => f.endsWith('.mjs')).reduce((n, f) => n + ((read(join(dir, f)) || '').match(/\btest\(/g) || []).length, 0);
+  crit.tests = ['queue', 'cli'].every((k) => countTests(join(TREE, 'packages', k, 'test')) >= 2);
+  const trapReadme = read(join(TREE, 'README.md')) || '';
+  crit.readme = /```/.test(trapReadme) && /submit/i.test(trapReadme) && /\bexit\b/i.test(trapReadme);
+
+  const cliPath = join(TREE, SP.cli);
+  const cliExists = has(SP.cli);
+  let cliReal = cliPath;
+  try { cliReal = realpathSync(cliPath); } catch { /* not built yet */ }
+  const tmp = mkdtempSync(join(tmpdir(), 'trap-score-'));
+  const stateFor = (name) => join(tmp, name);
+  const runCli = (args, bin = cliPath) => cliExists ? sh('node', [bin, ...args], TREE, undefined, 30_000) : { code: -1, out: '', stdout: '' };
+
+  // trap a - precedence: a submission over cap AND within its own rate window is rejected for
+  // the cap, not the rate window (stated once in trap.txt).
+  crit.trap_a = (() => {
+    if (!cliExists) return false;
+    const st = stateFor('a.json');
+    const r1 = runCli(['submit', 'k1', '--id', 'a1', '--priority', '0', '--now', '1700000000000', '--state', st]);
+    const r2 = runCli(['submit', 'k2', '--id', 'a2', '--priority', '0', '--now', '1700000000000', '--state', st]);
+    const r3 = runCli(['submit', 'k3', '--id', 'a3', '--priority', '0', '--now', '1700000000000', '--state', st]);
+    const r4 = runCli(['submit', 'k1', '--id', 'a4', '--priority', '0', '--now', '1700000000000', '--state', st]);
+    return r1.code === 0 && r2.code === 0 && r3.code === 0 && r4.code === 3;
+  })();
+
+  // trap b - inclusive/exclusive rate-limit boundary: 10.000s allowed, 9.999s is not.
+  crit.trap_b = (() => {
+    if (!cliExists) return false;
+    const st = stateFor('b.json');
+    const r1 = runCli(['submit', 'k1', '--id', 'b1', '--priority', '0', '--now', '1700000000000', '--state', st]);
+    const r2 = runCli(['submit', 'k1', '--id', 'b2', '--priority', '0', '--now', '1700000009999', '--state', st]);
+    const r3 = runCli(['submit', 'k1', '--id', 'b3', '--priority', '0', '--now', '1700000010000', '--state', st]);
+    return r1.code === 0 && r2.code === 4 && r3.code === 0;
+  })();
+
+  // trap c - idempotent replay: a resubmitted --id is a no-op even when its key/priority differ.
+  crit.trap_c = (() => {
+    if (!cliExists) return false;
+    const st = stateFor('c.json');
+    const r1 = runCli(['submit', 'k1', '--id', 'c1', '--priority', '0', '--now', '1700000000000', '--state', st]);
+    const r2 = runCli(['submit', 'k2', '--id', 'c1', '--priority', '9', '--now', '1700000005000', '--state', st]);
+    const l = runCli(['list', '--state', st]);
+    const lines = (l.stdout || l.out || '').split('\n').filter((x) => /\bc1\b/.test(x));
+    return r1.code === 0 && r2.code === 0 && /already queued c1/.test(r2.out) && lines.length === 1 && /\bk1\b/.test(lines[0]) && !/\bk2\b/.test(lines[0]);
+  })();
+
+  // trap d - stable tie-break: highest priority runs first; ties go to earliest submission.
+  crit.trap_d = (() => {
+    if (!cliExists) return false;
+    const st = stateFor('d.json');
+    runCli(['submit', 'k1', '--id', 'd1', '--priority', '5', '--now', '1700000000000', '--state', st]);
+    runCli(['submit', 'k2', '--id', 'd2', '--priority', '5', '--now', '1700000000001', '--state', st]);
+    runCli(['submit', 'k3', '--id', 'd3', '--priority', '9', '--now', '1700000000002', '--state', st]);
+    const r1 = runCli(['run', '--now', '1700000000100', '--state', st]);
+    const r2 = runCli(['run', '--now', '1700000000200', '--state', st]);
+    return /\bd3\b/.test(r1.out) && /\bd1\b/.test(r2.out) && !/\bd2\b/.test(r2.out);
+  })();
+
+  // trap e - atomic write under a mid-write kill; see checkAtomicWrite above.
+  crit.trap_e = cliExists ? await checkAtomicWrite(cliPath, tmp, env, TREE) : false;
+
+  // trap f - invocation invariance: as given, realpath, through a symlink, from another cwd.
+  crit.trap_f = (() => {
+    if (!cliExists) return false;
+    const st = stateFor('f.json');
+    const r1 = runCli(['submit', 'k1', '--id', 'f1', '--priority', '0', '--now', '1700000000000', '--state', st]);
+    const r2 = runCli(['status', 'f1', '--state', st], cliReal);
+    let r3 = { code: -1, out: '' }, r4 = { code: -1, out: '' };
+    try {
+      const symlinkDir = mkdtempSync(join(tmpdir(), 'trap-sym-'));
+      const symlinkPath = join(symlinkDir, 'sched');
+      symlinkSync(cliReal, symlinkPath);
+      r3 = sh('node', [symlinkPath, 'status', 'f1', '--state', st], symlinkDir, undefined, 30_000);
+      const otherDir = mkdtempSync(join(tmpdir(), 'trap-cwd-'));
+      r4 = sh('node', [cliPath, 'status', 'f1', '--state', st], otherDir, undefined, 30_000);
+    } catch { /* symlink unsupported on this host */ }
+    const outs = [r2.out, r3.out, r4.out].map((o) => (o || '').trim());
+    return r1.code === 0 && r2.code === 0 && r3.code === 0 && r4.code === 0 && outs.every((o) => o === outs[0]) && /f1/.test(outs[0] || '');
+  })();
+
+  // trap g - clock injection across the US DST fall-back instant: local wall-clock time moves
+  // backward ~1h at 2026-11-01T06:00:00Z, but real elapsed time between the two --now values
+  // below is exactly 10.000s and must still be accepted (UTC millisecond subtraction only).
+  crit.trap_g = (() => {
+    if (!cliExists) return false;
+    const st = stateFor('g.json');
+    const dstEnv = { ...env, TZ: 'America/New_York' };
+    const r1 = spawnSync('node', [cliPath, 'submit', 'k1', '--id', 'g1', '--priority', '0', '--now', '2026-11-01T05:59:55Z', '--state', st], { cwd: TREE, encoding: 'utf8', timeout: 30_000, env: dstEnv });
+    const r2 = spawnSync('node', [cliPath, 'submit', 'k1', '--id', 'g2', '--priority', '0', '--now', '2026-11-01T06:00:05Z', '--state', st], { cwd: TREE, encoding: 'utf8', timeout: 30_000, env: dstEnv });
+    return (r1.status ?? -1) === 0 && (r2.status ?? -1) === 0 && /queued g2 key=k1 priority=0/.test(r2.stdout || '');
+  })();
+
+  // trap h - "already exists" is success-with-a-warning (exit 0), not an error; contrasted
+  // against status on a genuinely unknown id (exit 6) so the two paths cannot be conflated.
+  crit.trap_h = (() => {
+    if (!cliExists) return false;
+    const st = stateFor('h.json');
+    const r1 = runCli(['submit', 'k1', '--id', 'h1', '--priority', '0', '--now', '1700000000000', '--state', st]);
+    const r2 = runCli(['submit', 'k9', '--id', 'h1', '--priority', '7', '--now', '1700000000001', '--state', st]);
+    const r3 = runCli(['status', 'doesnotexist', '--state', st]);
+    return r1.code === 0 && r2.code === 0 && /already queued h1/.test(r2.out) && r3.code === 6;
+  })();
 } else if (GOAL) {
   // A one-line goal: the harness decided the split, the contracts and the document set, so
   // nothing here names a path. What is checked: the tree works, the goal is met (judged), and
@@ -764,7 +908,7 @@ crit.scope_match_detail = null;
     // and what the README shows, so that is what this judges against.
     const reportNode = isHarnessRun ? [...harnessNodes].reverse().find((n) => n.stage === 'report' && typeof n.result?.handoff === 'string') : null;
     const resultSummary = reportNode ? reportNode.result.handoff : (meta.result_tail || sessionText.slice(-4000));
-    const prompt = `You are comparing a delivered software tree against the ORIGINAL REQUEST it was built for - nothing else (not a spec, not a plan, just what was asked). Below: the request, the README, a closing summary, and the file tree. List features/behaviour that are PRESENT but were never requested ("unrequested"), and features/behaviour the request named but the tree does not appear to deliver ("missing"). Ignore incidental scaffolding (tests, package.json, .gitignore) - only list actual product features. Reply with JSON only: {"unrequested": ["..."], "missing": ["..."]}.\n\n=== REQUEST ===\n${reqText}\n\n=== README.md ===\n${readme.slice(0, 8000)}\n\n=== CLOSING SUMMARY ===\n${resultSummary.slice(0, 3000)}\n\n=== FILES ===\n${files.join('\n')}`;
+    const prompt = `You are comparing a delivered software tree against the ORIGINAL REQUEST it was built for - nothing else (not a spec, not a plan, just what was asked). Below: the request, the README, a closing summary, and the file tree. List features/behaviour that are PRESENT but were never requested ("unrequested"), and features/behaviour the request named but the tree does not appear to deliver ("missing"). A request that is silent on a necessary decision it never had to spell out - how input is trimmed, what happens on a duplicate key, the exact wording of an error message, which of two reasonable defaults was picked - is NOT unrequested scope: the builder had to decide it one way or another to ship anything at all, and picking a reasonable answer is not "adding" a feature. Only count "unrequested" for things the request gave no reason to build at all: an extra command or flag, persistence the request never mentioned, support for another input/output format, a whole capability with no hook in the request text. Ignore incidental scaffolding (tests, package.json, .gitignore) - only list actual product features. Reply with JSON only: {"unrequested": ["..."], "missing": ["..."]}.\n\n=== REQUEST ===\n${reqText}\n\n=== README.md ===\n${readme.slice(0, 8000)}\n\n=== CLOSING SUMMARY ===\n${resultSummary.slice(0, 3000)}\n\n=== FILES ===\n${files.join('\n')}`;
     const jv = judgeVote(prompt, ['_scope_ok'],
       (o) => { o._scope_ok = Array.isArray(o.unrequested) && Array.isArray(o.missing) && o.unrequested.length === 0 && o.missing.length === 0; });
     crit.scope_match = judgeVerdict(jv, (r) => !!r._scope_ok);
