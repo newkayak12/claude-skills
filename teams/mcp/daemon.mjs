@@ -58,6 +58,15 @@ function loadTask() {
 // command line so a test can hand back canned NDJSON instead of a real `claude -p` call. A test
 // that wants the daemon to run at all (most do not - HARNESS_TEST_NO_LEADER/HARNESS_TEST_NO_DAEMON
 // keeps it from spawning in the first place) sets this to a fixture script.
+// A judge call is a `claude -p` this process awaits directly, so a child that never closes its
+// stdio wedges the whole daemon - and a wedged daemon is invisible: it holds no session, writes
+// no stream, and keeps a task 'running' forever. One orphan lived 2h37m this way, still awaiting
+// a close event for a task whose directory had already been deleted. broker.mjs's runAdapter
+// already had this guard (BROKER_NODE_TIMEOUT_MS, SIGTERM then SIGKILL); judge() did not.
+const JUDGE_TIMEOUT_MS = Number(process.env.HARNESS_JUDGE_TIMEOUT_MS) > 0
+  ? Number(process.env.HARNESS_JUDGE_TIMEOUT_MS)
+  : 45 * 60 * 1000;
+
 function judgeArgv() {
   const override = String(process.env.HARNESS_JUDGE_DRIVER || '').trim();
   if (override) return override.split(/\s+/);
@@ -120,14 +129,40 @@ async function judge(task, n) {
       resolve({ stage_ok: false, reason: `judge process for ${n.node_id} could not start: ${String((e && e.message) || e)}` });
       return;
     }
+    // settle() guarantees exactly one resolve no matter which of close / error / timeout wins,
+    // and clears the timer so a finished judge cannot leave the process alive on a pending handle.
+    let settled = false;
+    const settle = (v) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(v);
+    };
+    const timer = setTimeout(() => {
+      // SIGTERM first, SIGKILL after a grace period: the same escalation runAdapter uses, for the
+      // same reason - a child mid-write should get the chance to finish the line it is on.
+      try { proc.kill('SIGTERM'); } catch { /* already gone */ }
+      setTimeout(() => { try { proc.kill('SIGKILL'); } catch { /* already gone */ } }, 5000).unref();
+      settle({
+        stage_ok: false,
+        reason: `judge process for ${n.node_id} did not finish within ${Math.round(JUDGE_TIMEOUT_MS / 60000)}m and was killed. `
+          + `stderr: ${err.slice(-300)}`,
+      });
+    }, JUDGE_TIMEOUT_MS);
+    // spawn reports ENOENT and friends asynchronously, not by throwing: without this the promise
+    // never settles when the judge binary is missing, which looks exactly like a hang.
+    proc.on('error', (e) => settle({
+      stage_ok: false,
+      reason: `judge process for ${n.node_id} failed to run: ${String((e && e.message) || e)}`,
+    }));
     proc.stdout.on('data', (d) => { out += d; });
     proc.stderr.on('data', (d) => { err += d; });
     proc.on('close', () => {
       const text = lastResultText(out);
       try {
-        resolve(extractJson(text));
+        settle(extractJson(text));
       } catch (e) {
-        resolve({
+        settle({
           stage_ok: false,
           reason: `judge reply for ${n.node_id} was not valid JSON: ${String((e && e.message) || e)}. `
             + `stderr: ${err.slice(-300)} raw: ${text.slice(0, 500)}`,
