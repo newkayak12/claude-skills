@@ -559,6 +559,26 @@ explicit call argument each time, never pinned in `.claude/team.json`. `team_ope
 own `goal_judges` default of 2 regardless of what a project's `team.json` contains — a
 `goal_judges` key in that file is simply an unrecognized key, ignored like any other.
 
+## Watching a task
+
+`tm_status`/`tm_board`/`tm_events` return machine-shaped JSON for a driving session — not
+something a person wants to stare at. `scripts/view.mjs` is the separate human surface: a
+zero-dependency, read-only CLI that renders a task-manager task (running or finished) as a page
+or a text tree, built from the same `task.json` and child run files these tools already read.
+
+```
+node teams/scripts/view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--once]
+```
+
+With no `--once`, it starts a local HTTP server on `127.0.0.1` and prints the URL: open it for a
+live view that polls every ~3s — the request, size/flow/state, cost and turns so far, the
+manager pipeline (size → shape → critique → one card per dispatched package → integrate →
+gate:goal → report) with each package expandable into its child run's own node chain (and any
+task nested inside a package's worktree, recursively), plus the last ~50 ledger events.
+`--tasks-dir` defaults to `tasksRoot()` (`HARNESS_TASKS_DIR`, else `~/.harness/tasks`); with
+`--task` omitted and more than one task on disk, it serves an index instead. `--once` skips the
+server and prints the same model as a plain-text tree, for a terminal or a CI log.
+
 ## Everything else
 
 Tools, routing, adjudication, vendors, capacity recovery and the ledger are the same broker
