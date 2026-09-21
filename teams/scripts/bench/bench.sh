@@ -22,6 +22,9 @@
 #           seam       fixtures/seam-mono   + requests/seam.txt      (3 packages - codes/parser/cli - sharing an
 #                      error-code table defined in packages/codes; size L, so the harness splits)
 #           seam-flat  fixtures/seam        + requests/seam-flat.txt (same domain, one empty package: sizes S)
+#           seam-silent fixtures/seam-mono  + requests/seam-silent.txt (byte-identical to seam.txt minus the two
+#                      sentences that spell out the answer - "import it from there" and the import.meta.url/macOS
+#                      warning - so seam_detected measures coordination instead of instruction-following; size L
 #
 # TEAM_ROLES='{"planning":true,"qa":true}' seeds .claude/team.json into the workspace before the
 #   session. Roles are project configuration rather than a tm_open argument, so this is the only
@@ -35,7 +38,7 @@
 set -euo pipefail
 
 ARM=${1:?arm: beta|betas|skills|stable|none}
-CASE=${2:?case: code|docs|code-flat|docs-flat|goal-code|goal-docs|seam|seam-flat}
+CASE=${2:?case: code|docs|code-flat|docs-flat|goal-code|goal-docs|seam|seam-flat|seam-silent}
 LABEL=${3:-$(date +%Y%m%d-%H%M%S)}
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../../.." && pwd)
@@ -51,6 +54,7 @@ case "$CASE" in
   goal-docs) FIX=tinyq-mono ;;    # one-line goal: the harness decides the document set
   seam)      FIX=seam-mono ;;     # 3 workspace packages (codes/parser/cli) -> size L
   seam-flat) FIX=seam ;;          # same domain, empty single-package repo -> size S (delegate path)
+  seam-silent) FIX=seam-mono ;;   # same fixture and task as seam, request silent on the seam's answer
   *) echo "unknown case $CASE" >&2; exit 2 ;;
 esac
 
