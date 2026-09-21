@@ -25,6 +25,11 @@
 #           seam-silent fixtures/seam-mono  + requests/seam-silent.txt (byte-identical to seam.txt minus the two
 #                      sentences that spell out the answer - "import it from there" and the import.meta.url/macOS
 #                      warning - so seam_detected measures coordination instead of instruction-following; size L
+#           trap       fixtures/trap-mono   + requests/trap.txt (3 packages - core/queue/cli - a rate-limited
+#                      job scheduler CLI; eight execution-only traps: cap/rate-limit precedence, an inclusive/
+#                      exclusive rate-limit boundary, idempotent replay, a stable priority tie-break, an atomic
+#                      state-file write under a mid-write kill, invocation invariance, clock injection across a
+#                      DST transition, and an "already exists" success-not-error exit code; size L
 #
 # TEAM_ROLES='{"planning":true,"qa":true}' seeds .claude/team.json into the workspace before the
 #   session. Roles are project configuration rather than a tm_open argument, so this is the only
@@ -38,7 +43,7 @@
 set -euo pipefail
 
 ARM=${1:?arm: beta|betas|skills|stable|none}
-CASE=${2:?case: code|docs|code-flat|docs-flat|goal-code|goal-docs|seam|seam-flat|seam-silent}
+CASE=${2:?case: code|docs|code-flat|docs-flat|goal-code|goal-docs|seam|seam-flat|seam-silent|trap}
 LABEL=${3:-$(date +%Y%m%d-%H%M%S)}
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../../.." && pwd)
@@ -55,6 +60,7 @@ case "$CASE" in
   seam)      FIX=seam-mono ;;     # 3 workspace packages (codes/parser/cli) -> size L
   seam-flat) FIX=seam ;;          # same domain, empty single-package repo -> size S (delegate path)
   seam-silent) FIX=seam-mono ;;   # same fixture and task as seam, request silent on the seam's answer
+  trap)      FIX=trap-mono ;;     # 3 workspace packages (core/queue/cli), 8 execution-only traps -> size L
   *) echo "unknown case $CASE" >&2; exit 2 ;;
 esac
 
@@ -103,7 +109,7 @@ case "$ARM" in
         [ -d "$REPO/$p" ] && PLUGIN+=(--plugin-dir "$REPO/$p")
       done
     fi
-    if [[ "$CASE" == code* || "$CASE" == goal-code || "$CASE" == seam* ]]; then
+    if [[ "$CASE" == code* || "$CASE" == goal-code || "$CASE" == seam* || "$CASE" == trap ]]; then
       PROMPT="Use the teams:develop skill to run the following request through the harness. Follow the skill exactly: start with tm_open, drive whatever it hands back (a single graph run or a task of child runs), and end with the skill's output template. $ROUTING $SPLIT Request: $REQ"
     else
       PROMPT="Use the teams:orchestrate skill to run the following request through the harness. Follow the skill exactly: start with tm_open with flow \"auto\", drive whatever it hands back (a single graph run or a task of child runs), and end with the skill's output template. $ROUTING $SPLIT Request: $REQ"

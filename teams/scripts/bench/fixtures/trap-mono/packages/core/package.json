@@ -1,0 +1,5 @@
+{
+  "name": "@ratesched/core",
+  "type": "module",
+  "main": "src/index.mjs"
+}

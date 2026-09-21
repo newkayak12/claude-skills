@@ -10,7 +10,7 @@ ${requestText}
 """
 
 Rules:
-- You MUST verify by execution, not by reading. Run the test suite first. Then probe with inputs the request implies but the tests may not cover: edge cases, precedence/priority rules, the invocation matrix (direct path, realpath, a symlink to it, different cwd), empty input, whitespace-only input, CRLF line endings, unicode, a huge input, a missing file, an unreadable file (chmod 000).
+- You MUST verify by execution, not by reading. Run the test suite first. Then probe with inputs the request implies but the tests may not cover: edge cases, precedence/priority rules, idempotency/replay (does repeating the same operation twice double-apply it), atomicity under a crash (kill the process mid-write and check the persisted state is never left corrupted), clock/time injection (does the tool accept an injectable "now" and compute elapsed time in UTC rather than local-calendar arithmetic, especially across a DST transition), the invocation matrix (direct path, realpath, a symlink to it, different cwd), empty input, whitespace-only input, CRLF line endings, unicode, a huge input, a missing file, an unreadable file (chmod 000).
 - Check every explicit rule and contract stated in the request against actual behavior, one by one.
 - A defect must have a repro that you actually ran and that actually failed. Do not report a defect you did not execute.
 - Style opinions, missing features the request never asked for, and "could be improved" are NOT defects - put anything like that in notes instead, not in defects[].
