@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, chmodSync, cpSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -395,4 +395,40 @@ test('spec_traceability via a stubbed judge: a spec present with matching import
     assert.equal(typeof score.criteria.spec_traceability_detail, 'object');
     assert.equal(score.criteria.spec_traceability_detail.detail, 'package wiring matches the PRD');
   } finally { rmSync(ws, { recursive: true, force: true }); rmSync(stubDir, { recursive: true, force: true }); }
+});
+
+test('parser_names_match_codes accepts a parser that names codes through a helper call or a property read, not only a `code:` literal', () => {
+  // Every plain run (C1, E0) and the teams run S1 wrote `fail('PARSE_ERROR', msg)` and scored
+  // 11/12 on this criterion for a whole day - a scorer false negative that read as a shipped
+  // defect (2026-09-21).
+  const ws = mkdtempSync(join(tmpdir(), 'score-seam-'));
+  cpSync(join(HERE, 'fixtures', 'seam-mono'), ws, { recursive: true });
+  writeFileSync(join(ws, 'stream.jsonl'), '');
+  const parser = join(ws, 'packages', 'parser', 'src', 'index.mjs');
+  writeFileSync(parser, `import { EXIT_CODES } from '../../codes/src/index.mjs';
+const fail = (code, message) => ({ ok: false, code, message });
+export function parseConfig(text) {
+  if (typeof text !== 'string') return fail('PARSE_ERROR', 'not a string');
+  const f = {};
+  for (const raw of text.split(/\\r?\\n/)) {
+    const line = raw.trim(); if (!line || line.startsWith('#')) continue;
+    const i = line.indexOf('='); if (i < 0) return fail('PARSE_ERROR', 'no =');
+    const k = line.slice(0, i).trim(); const v = line.slice(i + 1).trim();
+    if (!['name', 'port', 'timeout'].includes(k)) return fail('UNKNOWN_FIELD', k);
+    if (k !== 'name' && !/^\\d+$/.test(v)) return { ok: false, code: Object.keys(EXIT_CODES).find((n) => n === 'BAD_TYPE'), message: k };
+    f[k] = v;
+  }
+  for (const k of ['name', 'port', 'timeout']) if (!(k in f)) return fail('MISSING_FIELD', k);
+  return { ok: true, value: { name: f.name, port: +f.port, timeout: +f.timeout } };
+}
+`);
+  const r = spawnSync('node', [join(HERE, 'score.mjs'), 'seam-silent', ws, join(ws, 'stream.jsonl')],
+    { encoding: 'utf8', timeout: 60_000, env: { ...process.env, GRAPH_BENCH_NO_JUDGE: '1' } });
+  const json = JSON.parse(readFileSync(`${ws}.score.json`, 'utf8'));
+  assert.equal(json.criteria.parser_names_match_codes, true, (r.stdout || '') + (r.stderr || ''));
+  // and a genuine drift is still caught: a name the codes table does not define
+  writeFileSync(parser, readFileSync(parser, 'utf8').replace("fail('UNKNOWN_FIELD', k)", "fail('UNKNOWN_KEY', k)"));
+  spawnSync('node', [join(HERE, 'score.mjs'), 'seam-silent', ws, join(ws, 'stream.jsonl')], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, GRAPH_BENCH_NO_JUDGE: '1' } });
+  assert.equal(JSON.parse(readFileSync(`${ws}.score.json`, 'utf8')).criteria.parser_names_match_codes, false, 'UNKNOWN_KEY is not in the table');
+  rmSync(ws, { recursive: true, force: true }); rmSync(`${ws}.score.json`, { force: true });
 });
