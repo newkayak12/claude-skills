@@ -8,7 +8,7 @@
 //
 // Runs live at <cwd>/.teams_output/broker/runs/<run_id>.json.
 
-import { mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, statSync, renameSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_MODELS } from './routing.mjs';
@@ -297,7 +297,13 @@ export function saveRun(run) {
   const lock = acquire(path);
   try {
     const merged = mergeOnto(loadRunAt(path), run);
-    writeFileSync(path, JSON.stringify(merged, null, 2) + '\n');
+    // Write-then-rename: a reader in another process (the daemon's dispatchSettled, a tm_status
+    // from a session) must never see a truncated file. A plain writeFileSync truncates first and
+    // fills second, and seam-beta-D2 (2026-09-21) caught the daemon in that gap - it read a torn
+    // child run, called the dispatch settled, then foldChild re-read a whole file and threw.
+    const tmp = `${path}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
+    writeFileSync(tmp, JSON.stringify(merged, null, 2) + '\n');
+    renameSync(tmp, path);
     // Keep the caller's object consistent with what was written.
     run.nodes = merged.nodes;
     run.capacity_epoch = merged.capacity_epoch || 0;

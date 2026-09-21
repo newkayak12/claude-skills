@@ -249,7 +249,16 @@ async function stepOnce(task) {
   for (const n of task.nodes) {
     if (n.stage !== 'dispatch' || n.state !== 'running' || !n.child) continue;
     if (!dispatchSettled(task, n)) continue;
-    const result = foldChild(task, n);
+    let result;
+    try {
+      result = foldChild(task, n);
+    } catch (e) {
+      // foldChild throws when the child is in fact still running (a driver alive, a capacity
+      // park). dispatchSettled and foldChild read the child file separately, so the two can
+      // disagree across a write; that is "not yet", never a reason for the daemon to die.
+      record(task, { event: 'daemon_fold_deferred', task_id: task.run_id, node_id: n.node_id, reason: String((e && e.message) || e).slice(0, 300) });
+      continue;
+    }
     finish(task, n, result);
     progressed = true;
   }

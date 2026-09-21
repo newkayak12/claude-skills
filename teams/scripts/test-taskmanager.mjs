@@ -2291,6 +2291,34 @@ test('the daemon stays alive while it only has a running child to wait on', asyn
   }
 });
 
+test('a torn read of a child run file is "not settled yet", and saveRun never leaves one to read', async () => {
+  // seam-beta-D2 (2026-09-21): dispatchSettled read a child run mid-write, got null, said
+  // "settled", and foldChild - re-reading a whole file a millisecond later - threw "still
+  // running" straight through the daemon's main loop (exit code 1, restart 1 of 2).
+  const { dispatchSettled } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, cwd, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children[0];
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const n = task.nodes.find((x) => x.node_id === `dispatch:${child.package_id}:1`);
+    const file = join(child.cwd, '.teams_output', 'broker', 'runs', `${child.run_id}.json`);
+    assert.ok(existsSync(file));
+    assert.equal(dispatchSettled(task, n), false, 'a running child is not settled');
+    const whole = readFileSync(file, 'utf8');
+    writeFileSync(file, whole.slice(0, Math.floor(whole.length / 2))); // a truncated, mid-write file
+    assert.equal(dispatchSettled(task, n), false, 'an unparseable child file is a write in progress, not a settled child');
+    writeFileSync(file, whole);
+    // saveRun is write-then-rename: after a save there is no .tmp sibling and the file parses.
+    await tm.call('tm_status', { task_id });
+    const dir = dirname(file);
+    assert.ok(!readdirSync(dir).some((f) => f.endsWith('.tmp')), 'no temp file survives a save');
+    assert.doesNotThrow(() => JSON.parse(readFileSync(file, 'utf8')));
+    rmSync(file);
+    assert.equal(dispatchSettled(task, n), true, 'a missing child file IS a fold - foldChild reports it');
+  });
+});
+
 test('tm_events tails the ledger, newest last, filtered by since', async () => {
   await withTask(async ({ tm, task_id, root }) => {
     const all = await tm.call('tm_events', { task_id });
