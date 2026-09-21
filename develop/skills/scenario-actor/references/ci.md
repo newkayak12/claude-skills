@@ -19,6 +19,9 @@ export BASE_URL SCENARIO_RESULTS="${SCENARIO_RESULTS:-$PWD/results}"
 mkdir -p "$SCENARIO_RESULTS"
 export ACTOR_MODEL="${ACTOR_MODEL:-haiku}" ACTOR_BUDGET_USD="${ACTOR_BUDGET_USD:-1.00}" CLAUDE_ARGS="${CLAUDE_ARGS:-}"
 specs=(s*.spec.md); [ -e "${specs[0]}" ] || { echo "no s*.spec.md here"; exit 2; }
+if grep -l '확인 필요' "${specs[@]}" >/dev/null 2>&1; then
+  echo "unresolved [확인 필요] in: $(grep -l '확인 필요' "${specs[@]}" | tr '\n' ' ')— run the actor locally first; CI checkouts discard the probed value"; exit 2
+fi
 
 run_one() {
   local spec=$1 id lid
