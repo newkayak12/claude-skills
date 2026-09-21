@@ -59,7 +59,8 @@ stage_ok=false when required work or checks could not run. Do not report a file 
   test: `Return JSON: {"stage_ok": true|false, "verified": true|false, "checks": ["command -> observed output"], "evidence": "..."}
 stage_ok=false means a required check could not run at all (sandbox, missing tool). verified=false with stage_ok=true means the checks ran and found a genuine failure. Do not edit implementation files. Do not trust the implement narrative - run the checks or inspect the artifacts yourself.`,
   draft: `Return JSON: {"stage_ok": true|false, "handoff": "<paths written, then a one-paragraph abstract of what the document now says>", "changed_files": ["..."], "checks": ["what you verified about the artifact - structure, cross-references, examples - and how"], "evidence": "..."}
-Write the artifact the acceptance describes, at the path the subgoal names. Every acceptance item must be answerable by pointing at a passage. stage_ok=false when the artifact could not be produced. Do not report a file as changed unless you changed it.`,
+Write the artifact the acceptance describes, at the path the subgoal names. Every acceptance item must be answerable by pointing at a passage. stage_ok=false when the artifact could not be produced. Do not report a file as changed unless you changed it.
+If this document is a PRD (a planning-kind subgoal), it must carry a "## User stories" section listing every story as "US-1", "US-2", ... in document order, each with its own acceptance[] - audit and gate:goal have no other source for them.`,
   review: `Return JSON: {"stage_ok": true|false, "verified": true|false, "checks": ["<acceptance item> -> \"<the passage that meets it>\" (path:line) | MISSING: <what the text lacks>"], "evidence": "..."}
 You are the reader, not the author. Open the artifact at the paths the draft reported and read it; do not judge from the draft's abstract. One entry per acceptance item, in order. verified=true only when every item has a quoted passage. stage_ok=false only when the artifact could not be read at all. Do not edit the artifact.`,
   revise: `Return JSON: {"stage_ok": true|false, "handoff": "<what changed, then a one-paragraph abstract of what the document now says>", "changed_files": ["..."], "checks": ["claim -> the evidence you checked it against, or the passage you rewrote and why"], "evidence": "..."}
@@ -78,6 +79,7 @@ Put anything that falls short but does not block into "observations" rather than
 accept:true with an empty checks[] is refused by the engine - a judgement with no evidence is a guess.`,
 
   'gate:goal': `Return JSON: {"stage_ok": true, "accept": true|false, "match_pct": 0-100, "checks": ["<command or read> -> <what it showed>"], "attacks": ["<command run from OUTSIDE this tree, the way the requester will invoke it> -> <what it showed>"], "gaps": ["what blocks acceptance"], "observations": ["weaknesses that do not block"], "spec_drift": ["where the spec asked for less than the request did"], "reason": "...", "evidence": "..."}
+For a planning-kind run producing a PRD, also return "user_stories": [{"id": "US-1", "title": "...", "acceptance": ["..."]}, ...] - one entry per story in the document's "## User stories" section, ids in order; this is the only bridge the task manager has to the PRD's stories.
 You are the judge, not the actor, and you are the only node that sees the original request again. Judge the assembled result against BOTH:
   1. the goal-level acceptance criteria, and
   2. the REQUEST as written at the top of this briefing.
