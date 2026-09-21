@@ -2210,6 +2210,48 @@ test('the daemon drives a size-S task to completion with no external tm_next cal
   }
 });
 
+test('a judge call that never returns is killed on its timeout instead of wedging the daemon', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const drv = mkdtempSync(join(tmpdir(), 'tm-drv-'));
+  // A judge that hangs forever. Before JUDGE_TIMEOUT_MS existed this wedged the daemon on a
+  // pending close event: it held no session, wrote no stream, and left the task 'running'
+  // forever - one orphan survived 2h37m that way, still awaiting a task whose directory had
+  // already been deleted.
+  const hang = join(drv, 'hanging-judge.mjs');
+  writeFileSync(hang, 'setInterval(() => {}, 1000);\n');
+  const tm = await new Client(TM, {
+    HARNESS_TASKS_DIR: root,
+    HARNESS_JUDGE_DRIVER: `node ${hang}`,
+    HARNESS_JUDGE_TIMEOUT_MS: '2000',
+    // Deliberately NOT HARNESS_TEST_NO_DRIVER: noDaemon() includes noDriver(), so that seam would
+    // suppress the very daemon under test. HARNESS_CHILD_DRIVER fakes out any child driver instead
+    // - none is reached here, because size is judged before the first dispatch ever opens.
+    HARNESS_CHILD_DRIVER: `node ${hang}`,
+    CLAUDECODE: '1',
+  }).init();
+  try {
+    // No size: the size node is ready, so the daemon's first act is to judge it.
+    const open = await tm.call('tm_open', { request: 'a request whose size must be judged', cwd, vendor: 'self' });
+    const sized = await waitFor(async () => {
+      const s = await tm.call('tm_status', { task_id: open.task_id, full: true });
+      const n = (s.nodes || []).find((x) => x.stage === 'size');
+      return n && n.state !== 'pending' && n.state !== 'running' ? n : null;
+    }, 'the size node to settle after its judge was killed', 30000);
+    assert.equal(sized.state, 'failed', 'a judge that could not judge is a failed node, not a verdict');
+    assert.match(String(sized.result && sized.result.reason), /did not finish within/,
+      'the failure has to name the timeout, so a person reading tm_status sees a killed judge and not a bad verdict');
+    // The daemon is still alive and still working the graph - the timeout killed the child, not the loop.
+    const st = await tm.call('tm_status', { task_id: open.task_id });
+    assert.ok(st.state === 'running' || st.state === 'blocked', 'the daemon survives its own judge timing out');
+  } finally {
+    tm.close();
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+    rmSync(drv, { recursive: true, force: true });
+  }
+});
+
 test('tm_events tails the ledger, newest last, filtered by since', async () => {
   await withTask(async ({ tm, task_id, root }) => {
     const all = await tm.call('tm_events', { task_id });
