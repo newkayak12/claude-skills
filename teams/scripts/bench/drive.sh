@@ -218,6 +218,12 @@ for job in "$@"; do
     echo "$(date -u +%FT%TZ) $job: scoring now ($settle_status) - $settle_reason"
     streams=$(ls "$ws".stream*.jsonl 2>/dev/null | tr '\n' ',' | sed 's/,$//')
     node "$HERE/score.mjs" "$case" "$ws" "$streams" | tee "$ws.score.txt"
+    # Post-hoc adversarial defect audit: an independent reviewer, blind to which arm produced
+    # the tree, runs against the same deliverable score.mjs just judged. GRAPH_BENCH_AUDIT=0
+    # opts out (e.g. when only the criteria checklist is wanted, or claude is unavailable).
+    if [ "${GRAPH_BENCH_AUDIT:-1}" != 0 ]; then
+      node "$HERE/audit.mjs" "$case" "$ws" | tee -a "$ws.score.txt"
+    fi
     echo "$(date -u +%FT%TZ) done $job"
     break
   done
