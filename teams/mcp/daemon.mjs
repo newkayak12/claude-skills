@@ -219,8 +219,13 @@ function waitForProgress(task) {
       const w = watchDir(join(task.s_run.cwd, '.teams_output', 'broker', 'runs'), finishWait);
       if (w) watchers.push(w);
     }
+    // This timer is deliberately ref()'d and the watchers are deliberately NOT what keeps the
+    // process alive: fs.watch handles here are non-persistent and Node exits with code 0 the
+    // moment its event loop holds nothing ref'd - even inside a pending await. seam-beta-D1
+    // (2026-09-21) died exactly that way, one second after dispatching P1: an unref()'d timer here
+    // was the only handle left, so the daemon "finished" mid-wait with nothing in stderr, and so
+    // did both restarts. The child ran every node to done and nobody was left to fold it.
     const timer = setTimeout(finishWait, FALLBACK_WAIT_MS);
-    if (typeof timer.unref === 'function') timer.unref();
   });
 }
 
@@ -273,8 +278,19 @@ async function main() {
       return;
     }
     const progressed = await stepOnce(task);
-    const fresh = loadTask();
-    if (!fresh) return;
+    let fresh = loadTask();
+    if (!fresh) {
+      // loadRunAt returns null on a parse error too, and another process (tm_submit, tm_wait's
+      // serviceDaemon) may be mid-write on task.json. That is a torn read, not a deleted task:
+      // re-read after a beat, and only give up when the file itself is gone.
+      await new Promise((r) => setTimeout(r, 250));
+      fresh = loadTask();
+      if (!fresh) {
+        if (!existsSync(taskPath(TASK_ID))) return;
+        record({ run_id: TASK_ID, store_path: taskPath(TASK_ID) }, { event: 'daemon_torn_read', task_id: TASK_ID });
+        continue;
+      }
+    }
     if (taskState(fresh).state !== 'running') {
       record(fresh, { event: 'daemon_done', task_id: TASK_ID, state: taskState(fresh).state });
       return;

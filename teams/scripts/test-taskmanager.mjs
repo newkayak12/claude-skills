@@ -2252,6 +2252,45 @@ test('a judge call that never returns is killed on its timeout instead of wedgin
   }
 });
 
+test('the daemon stays alive while it only has a running child to wait on', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const drv = mkdtempSync(join(tmpdir(), 'tm-drv-'));
+  // A child driver that runs forever and writes nothing: the daemon has nothing to do but wait.
+  // seam-beta-D1 (2026-09-21) died exactly here: waitForProgress held only an unref()'d fallback
+  // timer and non-persistent fs.watch handles, so the event loop emptied and Node exited with
+  // code 0 mid-await - one second after dispatching P1, and again on both restarts. The child
+  // finished every node; nobody was left to fold it.
+  const hang = join(drv, 'hanging-driver.mjs');
+  writeFileSync(hang, 'setInterval(() => {}, 1000);\n');
+  const tm = await new Client(TM, {
+    HARNESS_TASKS_DIR: root,
+    HARNESS_CHILD_DRIVER: `node ${hang}`,
+    HARNESS_JUDGE_DRIVER: `node ${hang}`,
+    CLAUDECODE: '1',
+  }).init();
+  try {
+    // size pinned S: no judge runs, the one child run opens at once, and the daemon's whole job
+    // is to wait for that driver.
+    const open = await tm.call('tm_open', { request: 'one small request', cwd, vendor: 'self', size: 'S' });
+    const task = () => JSON.parse(readFileSync(join(root, open.task_id, 'task.json'), 'utf8'));
+    const d = await waitFor(async () => (task().daemon && task().daemon.pid ? task().daemon : null), 'the daemon to be spawned', 10000);
+    await new Promise((r) => setTimeout(r, 3000));
+    let alive = true;
+    try { process.kill(d.pid, 0); } catch (e) { alive = !!(e && e.code === 'EPERM'); }
+    assert.ok(alive, `the daemon exited while its child was still running (exit file: ${existsSync(d.exit) ? readFileSync(d.exit, 'utf8').trim() : 'none'})`);
+    assert.ok(!existsSync(d.exit), 'no exit file may exist while the child driver is alive');
+    assert.equal(task().daemon.restarts || 0, 0, 'nothing had to restart it');
+  } finally {
+    try { const t = task(); if (t.daemon && t.daemon.pid) process.kill(t.daemon.pid, 'SIGTERM'); } catch { /* gone */ }
+    try { const t = task(); const sr = t.s_run && t.s_run.driver; if (sr && sr.pid) process.kill(sr.pid, 'SIGTERM'); } catch { /* gone */ }
+    tm.close();
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+    rmSync(drv, { recursive: true, force: true });
+  }
+});
+
 test('tm_events tails the ledger, newest last, filtered by since', async () => {
   await withTask(async ({ tm, task_id, root }) => {
     const all = await tm.call('tm_events', { task_id });
