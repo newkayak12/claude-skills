@@ -263,6 +263,82 @@ for (const streamPath of streams) {
   }
 }
 
+// ---------- driver sessions ----------
+// The teams arm spawns child `claude -p` driver processes (leader, dispatch_*) whose streams
+// never show up in STREAM - they live under <workspace>/.harness-tasks/<task-id>/drivers/ and,
+// because a child run's own task can nest another driver run inside its worktree, potentially
+// several levels deeper than that. A run's real cost is top-level + every driver it spawned; a
+// 2026-09-17 run reported $4.53 when the true total (drivers included) was $45.92. Discovered by
+// walking the tree for any directory literally named "drivers" and reading each *.stream.jsonl
+// in it - not by hardcoding the .harness-tasks/*/drivers shape, so a nested child run's drivers/
+// dir (found while walking its worktree) is picked up the same way. Driver text is never folded
+// into sessionText/claims (see the "top-level session only" note above): only each stream's last
+// `result` event is read, for cost/turns/duration - never its assistant prose.
+function findDriverStreams(dir, acc = [], depth = 0) {
+  if (depth > 14) return acc;
+  let entries;
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return acc; }
+  for (const e of entries) {
+    if (e.name === '.git' || e.name === 'node_modules') continue;
+    const p = join(dir, e.name);
+    if (!e.isDirectory()) continue;
+    if (e.name === 'drivers') { for (const f of ls(p)) if (f.endsWith('.stream.jsonl')) acc.push(join(p, f)); }
+    findDriverStreams(p, acc, depth + 1);
+  }
+  return acc;
+}
+function lastResultEvent(streamPath) {
+  let last = null;
+  const txt = read(streamPath);
+  if (!txt) return null;
+  for (const line of txt.split('\n')) {
+    if (!line.trim()) continue;
+    let ev; try { ev = JSON.parse(line); } catch { continue; }
+    if (ev.type === 'result') last = ev;
+  }
+  return last;
+}
+const driverStreamPaths = findDriverStreams(WS).sort();
+// A task's own .harness-tasks/<task-id>/drivers/ directory is itself tracked in git, so every
+// worktree spawned off it (P1..P4, integration, ...) checks out whatever driver streams had
+// already finished at branch time - the SAME driver session, copied verbatim into N worktrees.
+// A driver still running when the worktree was cut has no `result` event yet in that frozen
+// copy (lastResultEvent returns null for it, so it is dropped above the dedup step); a driver
+// that had already finished is byte-identical across every copy. So identity is (task-id,
+// driver filename) - not the path - and duplicates are collapsed to the single highest-cost
+// (= most complete) reading, which also protects against a rarer case where two copies of the
+// same driver diverge (mid-run in one location, further along in another).
+const driverKey = (p) => { const m = p.match(/\.harness-tasks[\\/]([^\\/]+)[\\/]drivers[\\/]([^\\/]+)$/); return m ? `${m[1]}/${m[2]}` : p; };
+const byDriver = new Map();
+for (const p of driverStreamPaths) {
+  const last = lastResultEvent(p);
+  if (!last) continue;
+  const key = driverKey(p);
+  const cost = last.total_cost_usd || 0;
+  const prev = byDriver.get(key);
+  if (prev && prev.cost_usd >= cost) continue; // keep the most-complete duplicate only
+  byDriver.set(key, {
+    stream: p.startsWith(WS) ? p.slice(WS.length + 1) : p,
+    cost_usd: cost,
+    turns: last.num_turns || 0,
+    duration_ms: last.duration_ms || 0,
+  });
+}
+const driverSessions = [...byDriver.values()];
+const drivers = {
+  sessions: driverSessions.length,
+  cost_usd: +driverSessions.reduce((a, s) => a + s.cost_usd, 0).toFixed(4),
+  turns: driverSessions.reduce((a, s) => a + s.turns, 0),
+  duration_ms: driverSessions.reduce((a, s) => a + s.duration_ms, 0),
+  streams: driverSessions.map((s) => ({ stream: s.stream, cost_usd: +s.cost_usd.toFixed(4), turns: s.turns, duration_ms: s.duration_ms })),
+};
+// session.cost_usd / turns keep meaning "the top-level driving session" (unchanged); total is
+// top-level + every driver this run spawned, which is the number anyone comparing arms should use.
+const total = {
+  cost_usd: +(((typeof meta.cost_usd === 'number' ? meta.cost_usd : 0) + drivers.cost_usd)).toFixed(4),
+  turns: (meta.turns || 0) + drivers.turns,
+};
+
 // ---------- criteria ----------
 const crit = {};
 const pkgJson = (() => { try { return JSON.parse(read(join(TREE, 'package.json'))); } catch { return {}; } })();
@@ -674,15 +750,24 @@ const judgeStats = {
   minutes: meta.wall_ms ? Math.round(meta.wall_ms / 60000) : (meta.duration_ms ? Math.round(meta.duration_ms / 60000) : null),
 };
 
-const bools = Object.entries(crit).filter(([, v]) => typeof v === 'boolean');
+// `decomposition` is metadata about how the manager split the work, not a scored criterion - a
+// task that decomposes cleanly but misses the goal must not borrow a passing point from the
+// split. `goal_met` (and any other judge-backed criterion whose judge call failed) must count
+// identically for both arms: a 'judge-failed' value is graded as not-passed, not dropped from
+// the denominator - dropping it is what let the teams arm's `decomposition` stand in as its
+// sixth criterion while its real sixth (`goal_met: 'judge-failed'`) went uncounted.
+const bools = Object.entries(crit)
+  .filter(([k]) => k !== 'decomposition')
+  .map(([k, v]) => [k, v === 'judge-failed' ? false : v])
+  .filter(([, v]) => typeof v === 'boolean');
 const score = {
   case: CASE, workspace: WS, tree: TREE === WS ? '.' : TREE.slice(WS.length + 1), passed: bools.filter(([, v]) => v).length, of: bools.length,
-  criteria: crit, session: meta, harness, judge: judgeStats,
+  criteria: crit, session: meta, drivers, total, harness, judge: judgeStats,
   claims: { total: claims.length, verified: claimsVerified, false: claimsFalse, unverifiable: claimsUnverifiable, items: claims },
 };
 writeFileSync(`${WS}.score.json`, JSON.stringify(score, null, 2));
-const fails = bools.filter(([, v]) => !v).map(([k]) => k).join(',') || '-';
+const fails = bools.filter(([, v]) => !v).map(([k]) => (crit[k] === 'judge-failed' ? `${k}(judge-failed)` : k)).join(',') || '-';
 const t = harness.tasks[0];
-console.log(`${basename(WS)} | ${score.passed}/${score.of} | fail: ${fails} | ${meta.wall_ms ? Math.round(meta.wall_ms / 60000) + 'min' : meta.duration_ms ? Math.round(meta.duration_ms / 60000) + 'min(api)' : '?'} | $${typeof meta.cost_usd === 'number' ? meta.cost_usd.toFixed(2) : '?'} | false ${claimsFalse}/${claims.length} | turns ${meta.turns ?? '?'} | task ${t?.verdict ?? t?.state ?? '-'} size ${t?.size ?? '-'} pkgs ${t?.packages?.length ?? '-'} | runs ${harness.runs.length} | top-level edits ${meta.top_level_edits} | tree ${score.tree}`);
+console.log(`${basename(WS)} | ${score.passed}/${score.of} | fail: ${fails} | ${meta.wall_ms ? Math.round(meta.wall_ms / 60000) + 'min' : meta.duration_ms ? Math.round(meta.duration_ms / 60000) + 'min(api)' : '?'} | TOTAL=$${total.cost_usd.toFixed(2)} (session=$${typeof meta.cost_usd === 'number' ? meta.cost_usd.toFixed(2) : '?'} +drivers[${drivers.sessions}]=$${drivers.cost_usd.toFixed(2)}) | false ${claimsFalse}/${claims.length} | turns total=${total.turns} (session ${meta.turns ?? '?'}+drivers ${drivers.turns}) | task ${t?.verdict ?? t?.state ?? '-'} size ${t?.size ?? '-'} pkgs ${t?.packages?.length ?? '-'} | runs ${harness.runs.length} | top-level edits ${meta.top_level_edits} | tree ${score.tree}`);
 console.log(`  judge: seam_detected=${judgeStats.seam_detected} gate_rejections=${judgeStats.gate_rejections} judges_with_checks=${judgeStats.judges_with_checks} repairs=${judgeStats.repairs} cost=$${judgeStats.cost_usd ?? '?'} turns=${judgeStats.turns ?? '?'} minutes=${judgeStats.minutes ?? '?'}`);
 console.log(`JUDGE: ${JSON.stringify(judgeStats)}`);

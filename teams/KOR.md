@@ -475,7 +475,7 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 `team_open` 경로에서는 `team_status`의 `config_notes`(노트가 하나라도 있을 때만 나타나며,
 `resolveTeamOptions`의 노트를 런에 영구 저장해둔 사본입니다 — 실시간 재검사가 아닙니다).
 스키마는 [`mcp/teamconfig.mjs`](mcp/teamconfig.mjs)의
-`TEAM_DEFAULTS`/`CHECK`입니다 — 13개 키 중 실제로 동작에 반영되는 건 여섯이고, 각 키가
+`TEAM_DEFAULTS`/`CHECK`입니다 — 10개 키 중 실제로 동작에 반영되는 건 일곱이고, 각 키가
 `tm_open`, `team_open`, 또는 둘 다에 닿는지 보여주는 리더 열이 추가되었습니다. `team_open`의
 `inputSchema`는 애초에 `TEAM_DEFAULTS` 이름 중 일부만 인자로 받습니다 — 인자로조차 받지 않는
 키는 `resolveTeamOptions`가 무엇을 계산해내든 그 경로에서는 `team.json`으로 닿을 수 없습니다.
@@ -488,12 +488,9 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 | `max_retries` | `2` | 예 | `tm_open` + `team_open` | 재시도 예산. `tm_open`: 매니저 자신의 subgoal/패키지 예산, 그리고 — `f765c03` 이후 — 모든 자식 런이 여는 예산(`child_opts.max_retries`), `goal_threshold`와 같은 `f765c03` 이전 문제를 겪었습니다. `team_open`: 런 자신의 재시도 예산(`run.max_retries`) — `TEAM_DEFAULTS.max_retries`(2)가 이미 `createRun`의 기본값과 같았기 때문에, `team.json`이 없는 프로젝트는 이 배선으로 동작이 전혀 바뀌지 않았습니다. |
 | `driver_restarts` | `2` | 예 | `tm_open`만 | 죽은 패키지 또는 size-S 드라이버가 같은 run_id로 몇 번 재기동되는지 — 그 다음엔 dispatch가 `blocked`로 접힙니다. `team_open`의 인자가 아닙니다 — `team_open`은 드라이버 재기동 개념이 없는 단일 그래프 런을 열 뿐이라, `team.json` 고정값이 그 경로에는 닿을 수 없습니다. |
 | `docs_dir` | `.teams_output/team` | 예 | `tm_open`만 | `tm_docs`/`tickets.mjs`가 phase 문서 트리(`INDEX.md` 등)를 렌더링하는 위치. `team_open`의 인자도 개념도 아닙니다 — `team_open`은 phase 문서 트리를 쓰지 않습니다. |
+| `max_parallel_teams` | `2` | 예 | `tm_open`만 | `tm_next`(`taskmanager.mjs`의 `toolNext`, ~2256/2268행)가 한 번에 여는 develop STORY dispatch 수를 제한합니다 — phase-Team 패키지(PLAN/QA/audit)는 예외입니다. `2`는 측정값이 아니라 잠정 기본값입니다 — `teamconfig.mjs`의 `PROVISIONAL_MAX_PARALLEL_TEAMS` 참고. `team_open`의 인자가 아닙니다. |
 | `roles` | `{planning:false, qa:false}` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — 렌더링된 request 문서의 "Team snapshot" 줄에 echo될 뿐, 아무것도 이를 근거로 분기하지 않습니다. `team_open`의 인자가 아닙니다. |
-| `interactive` | `false` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — 같은 snapshot 줄 echo뿐, 그 외엔 아무도 읽지 않습니다. `team_open`의 인자가 아닙니다. |
-| `max_parallel_teams` | `2` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — 같은 snapshot 줄 echo뿐, 그 외엔 아무도 읽지 않습니다. `team_open`의 인자가 아닙니다. |
-| `human_gates` | `[]` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — snapshot 줄에도 없이, 어디서도 읽지 않습니다. `team_open`의 인자가 아닙니다. |
-| `human_scope` | `"leader"` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — 어디서도 읽지 않습니다. `team_open`의 인자가 아닙니다. |
-| `max_depth` | `2` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — 어디서도 읽지 않습니다. `team_open`의 인자가 아닙니다. |
+| `max_depth` | `2` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — 선언되고 검증만 될 뿐 아무것도 강제하지 않습니다. 자식 런이 스스로 다시 쪼갤 때의 깊이 캡이 될 자리입니다 — `docs/plans/2026-09-21-teams-server-owns-the-loop.md` §3 참고. `team_open`의 인자가 아닙니다. |
 | `qa_rounds` | `2` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — 어디서도 읽지 않습니다. `team_open`의 인자가 아닙니다. |
 
 `goal_judges`(goal gate의 독립 판정자 수)와 `auto_reassign`(거부된 판정의 자동 재시도)는

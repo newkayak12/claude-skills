@@ -12,7 +12,6 @@ change a.txt and b.txt together
 from the requester: keep both in sync
 
 ## Team snapshot
-- interactive: false
 - max_parallel_teams: 2
 - roles: planning=true, qa=true
 - goal_threshold: 90

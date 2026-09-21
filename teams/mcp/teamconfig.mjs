@@ -2,18 +2,29 @@
 //
 // Precedence is built-in defaults < team.json < explicit tm_open arguments. Every resolved key
 // carries where it came from so tm_status can show it. Keys that no code acts on yet
-// (interactive, human_gates, roles, ...) are still resolved and recorded: the file is the
-// contract, the rounds after 0.10 fill in the behaviour.
+// (roles, max_depth, ...) are still resolved and recorded: the file is the contract, the rounds
+// after 0.10 fill in the behaviour.
+//
+// Human-as-a-node (interactive, human_gates, human_scope) was removed here - see the note above
+// PROVISIONAL_MAX_PARALLEL_TEAMS's neighbour, max_depth, for where that design now lives.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+// 2 is a guess, not a measurement, and a measured cause of slowness (docs/plans/
+// 2026-09-21-teams-server-owns-the-loop.md §0/§7). It stays the default until a capacity-based
+// rule (same plan, §7) replaces it - named here so that replacement is a one-line edit, not a
+// grep for a bare "2" among max_depth/qa_rounds/driver_restarts's own 2s.
+const PROVISIONAL_MAX_PARALLEL_TEAMS = 2;
 
 export const TEAM_FILE = join('.claude', 'team.json');
 
 export const TEAM_DEFAULTS = Object.freeze({
-  interactive: false,
-  human_gates: [],
-  human_scope: 'leader',
-  max_parallel_teams: 2,
+  max_parallel_teams: PROVISIONAL_MAX_PARALLEL_TEAMS,
+  // Declared and validated, but nothing enforces it yet: this is the depth cap on a child run
+  // re-decomposing itself (a STORY that, inside its own run, decides it must shape and dispatch
+  // sub-STORYs of its own). docs/plans/2026-09-21-teams-server-owns-the-loop.md §3 is where the
+  // child-run chain rule lands and where max_depth enforcement gets wired in; not implemented
+  // here.
   max_depth: 2,
   qa_rounds: 2,
   roles: { planning: false, qa: false },
@@ -43,9 +54,6 @@ export const TEAM_DEFAULTS = Object.freeze({
 // One validator per key. A value that fails is ignored (the lower layer's value stays) and
 // the caller gets a note; nothing here ever throws.
 const CHECK = {
-  interactive: (v) => typeof v === 'boolean',
-  human_gates: (v) => Array.isArray(v) && v.every((x) => typeof x === 'string'),
-  human_scope: (v) => v === 'leader' || v === 'all',
   max_parallel_teams: (v) => Number.isInteger(v) && v >= 1,
   max_depth: (v) => Number.isInteger(v) && v >= 0,
   qa_rounds: (v) => Number.isInteger(v) && v >= 0,
@@ -83,7 +91,7 @@ function applyLayer(opts, sources, notes, layer, name) {
 // `args` is the raw tm_open argument object; only keys named in TEAM_DEFAULTS are considered,
 // so tm_open's other arguments (request, cwd, size, ...) pass through untouched.
 export function resolveTeamOptions(args, fileConfig) {
-  const opts = { ...TEAM_DEFAULTS, roles: { ...TEAM_DEFAULTS.roles }, human_gates: [] };
+  const opts = { ...TEAM_DEFAULTS, roles: { ...TEAM_DEFAULTS.roles } };
   const sources = Object.fromEntries(Object.keys(TEAM_DEFAULTS).map((k) => [k, 'default']));
   const notes = [];
   applyLayer(opts, sources, notes, fileConfig, 'team.json');
