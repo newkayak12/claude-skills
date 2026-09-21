@@ -56,6 +56,7 @@ import {
   KINDS,
   DEFAULT_KIND,
   kindOf,
+  REASONING_STAGES,
 } from './graph.mjs';
 
 const SERVER = { name: 'task-manager', version: '0.7.0' };
@@ -1572,10 +1573,24 @@ export function foldChild(task, n) {
   }
   if (cs.state === 'blocked') {
     // The child stopped short of a report. Whatever its goal gate said is still the best
-    // account of why, and is what a retried package needs to hear.
+    // account of why, and is what a retried package needs to hear. A parent_shaped child has
+    // no goal gate at all, and even a full child that ran out of subgoal retries never reached
+    // one - so the verdicts that actually stopped it are its failed gate/test/review nodes.
+    // Without them the retry brief said only "test:U1:3 failed with no retry left"
+    // (trap-beta-T2, 2026-09-21) and the next attempt had nothing to fix from.
+    const verdicts = child.nodes
+      .filter((x) => x.state === 'failed' && x.result && REASONING_STAGES.has(x.stage) && (x.result.reason || (x.result.gaps || []).length))
+      .slice(-3);
+    const vReason = verdicts.map((x) => `${x.node_id}${x.result.match_pct != null ? ` (${x.result.match_pct}%)` : ''}: ${x.result.reason || ''}`).filter(Boolean).join('\n');
+    const vGaps = verdicts.flatMap((x) => x.result.gaps || []);
     return {
-      ...base, stage_ok: false, accept: false, gaps: g.gaps || [], match_pct: g.match_pct,
-      reason: `child run ended blocked${g.reason ? `: ${g.reason}` : ''} (${JSON.stringify(cs.counts)})`,
+      ...base, stage_ok: false, accept: false,
+      gaps: [...new Set([...(g.gaps || []), ...vGaps])],
+      match_pct: g.match_pct != null ? g.match_pct : (verdicts.length ? verdicts[verdicts.length - 1].result.match_pct : undefined),
+      child_verdicts: verdicts.map((x) => ({ node_id: x.node_id, match_pct: x.result.match_pct, reason: x.result.reason || '', gaps: x.result.gaps || [] })),
+      // g.reason for a chain-only child that ran out of retries is the terminal node's one-line
+      // account ("unreachable: test:U1:3 failed with no retry left"); the verdicts are the substance.
+      reason: `child run ended blocked${g.reason ? `: ${g.reason}` : ''}${vReason ? `. Its own verdicts:\n${vReason}` : ''} (${JSON.stringify(cs.counts)})`,
     };
   }
   // An accepted child's work becomes a commit on the package branch, so a dependent package

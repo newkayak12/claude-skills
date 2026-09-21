@@ -2594,6 +2594,25 @@ test('a package whose child blocked opens its next attempt by itself (autoRetryP
   });
 });
 
+test('folding a blocked child carries its own failed verdicts (reason, gaps) - the retry brief has something to fix from', async () => {
+  // trap-beta-T2 (2026-09-21): attempt 2 of P2 was briefed only "test:U1:3 failed with no retry
+  // left"; the 35% and 80% gate reasons that actually explained the failure never reached it.
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children.find((c) => c.node_id === 'dispatch:P1:1');
+    await blockChild(g, child);
+    const v = await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    assert.equal(v.state, 'failed');
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const r = task.nodes.find((n) => n.node_id === 'dispatch:P1:1').result;
+    assert.match(String(r.reason), /gate:U1:\d+ \(40%\): short/, `the gate's own reason is in the fold: ${r.reason}`);
+    assert.ok((r.gaps || []).includes('missing the b half'), `the gate's gaps are the fold's gaps: ${JSON.stringify(r.gaps)}`);
+    assert.ok(Array.isArray(r.child_verdicts) && r.child_verdicts.length >= 1 && r.child_verdicts.every((x) => /^gate:/.test(x.node_id)));
+    assert.equal(r.match_pct, 40);
+  });
+});
+
 test('tm_events tails the ledger, newest last, filtered by since', async () => {
   await withTask(async ({ tm, task_id, root }) => {
     const all = await tm.call('tm_events', { task_id });
