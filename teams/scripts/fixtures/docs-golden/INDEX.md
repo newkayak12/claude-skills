@@ -6,7 +6,7 @@ source: task.json@25
 
 # E-aaaaaaaa — change a.txt and b.txt together
 
-state: DONE · phase: (done) · leader: pid 4242
+state: DONE · phase: (done) · daemon: pid 4242
 
 | key | role | state | tasks | last verdict |
 |---|---|---|---|---|

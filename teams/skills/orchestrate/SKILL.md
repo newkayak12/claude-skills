@@ -39,61 +39,57 @@ expands accordingly. A user who wants to decide that themselves has `teams:devel
 
 ## Entry
 
-Size first. One fresh agent measures the request; the manager decides from its answer whether
-this is one graph run or several.
+One call opens the task AND drives it. There is no sizing step for you to run by hand any more:
+the daemon `tm_open` spawns judges `size` itself, the same fresh-agent contract a session used to
+relay, and decides from its answer whether this is one graph run or several.
 
 ```
 tm_open({
   request, cwd, isolated, flow: "auto",
   vendor: "auto", allocation: "balanced",
   host_vendor, host_model, native_models
-})                                               -> task_id, ready: [size]
-fresh agent at size.briefing_path -> tm_submit({task_id, node_id: "size", payload})
-    queued: true        -> the ordinary reply. tm_open spawned the TaskLeader, and a mutating
-                           call from any process but the leader is queued for it - your sizing
-                           is applied on the leader's next tm_next, not lost. You do NOT get
-                           task_state or a verdict back, and there is nothing to wait for here
-    task_state "s_run"  -> only when no leader is running: size S, and this reply already
-                           carries tm_next's own fields for the single run
-    absent              -> size L. Continue with references/manager.md
+})                                               -> task_id, state, docs_dir
 ```
 
-After this you watch; you never drive. `tm_next` from this session answers `driven_by: "leader"`
-with no `ready[]` — that is the design, not a stall.
+That is the whole of your job to start it: size, shape, critique, every package's dispatch and
+fold, integrate, the goal gate, the report — or, for a size-S request, the one run it opens —
+all happen on their own from here. Prefer `tm_run` over `tm_open` when you do not even want the
+`state` field back, only a pointer: same open, same daemon, `{task_id, run_id, docs_dir}`.
+
+After this you watch; you never drive.
 
 ```
-tm_next({task_id, wait_ms: 60000})        # blocks until the task stops running, or 60s
-    state "running"  -> call it again, immediately, with wait_ms again. Nothing else.
-    state "complete" -> relay the node table and the report
+tm_wait({task_id, cursor, max_ms: 60000})   # bounded long-poll: node transitions since cursor, or a timeout
+    state "running"  -> call it again, immediately, with the returned cursor. Nothing else.
+    state "complete" -> relay the node table (tm_status) and the report
     state "blocked"  -> a result: report what failed and stop there
 ```
 
 **Never sleep, never schedule a background check, never end your turn while it is running.** You
-are a headless session: it ends the moment you stop calling tools, and the leader and its drivers
-go on building into a workspace nobody is waiting for. The blocking `tm_next` call is the only
+are a headless session: it ends the moment you stop calling tools, and the daemon and its drivers
+go on building into a workspace nobody is waiting for. The blocking `tm_wait` call is the only
 thing holding you open — a real run died at one minute saying "I'll check again in about four
 minutes", and everything it was waiting for finished long after it was gone.
 
-For a size-S task that `state` is **the single run's own**, not the task's three settled manager
-nodes: a size-S task's manager graph finishes the moment `size` resolves, and reading it instead
-of the run is what once had a watcher call a live run `blocked` and stop two minutes in — the first real-vendor run's whole failure.
-
 `isolated` is true only when you created or were handed a private worktree holding this run
-alone; it travels straight into whichever run `tm_open` ends up opening — the single run a
+alone; it travels straight into whichever run the daemon ends up opening — the single run a
 size-S task drives, or each package's own dispatch under an L task. When the user has said, in
 their own words, that the request must be split — "패키지별로 나눠서", "one worktree per
 package", "these are separate deliverables" — pass `size: "L"` and `size` is recorded as pinned,
 not measured; "one run, don't split it" pins `size: "S"`. A monorepo with one test script and one
 commit measures S on its own: `size` reads build units and ownership boundaries, not package
 counts. Do not re-measure: `plan` in the graph run returns `size` too, and if it says L where the
-manager said S, that goes in the report as an observation — the run still proceeds as one graph.
+daemon's own `size` judgment said S, that goes in the report as an observation — the run still
+proceeds as one graph.
 
-Then run **`references/manager.md`** — for size L, or for size S while its own run finishes; the
-S case is already fully described above, and `manager.md` covers the rest. Neither case ever has
-you call `team_next`/`team_run`/`team_submit` yourself: the driving session never drives a run or
-the manager loop, full stop. Every graph run — the manager's own package dispatches and a
-size-S task's single run alike — is driven by its own spawned headless session running
-`references/loop.md`, never by you.
+There is no manager loop for you to read or run by hand any more — the daemon `tm_open`/`tm_run`
+spawned is what a relayed session used to do, now code instead of a relay. Every graph run it
+opens — the manager's own package dispatches, and a size-S task's single run — is still driven by
+its own spawned headless session running `references/loop.md`; you never call
+`team_next`/`team_run`/`team_submit` yourself, and now you never call `tm_next`/`tm_submit` for a
+manager node either. `tm_next`/`tm_submit`/`tm_retry` still exist for the rare case you need to
+intervene by hand (a human decision the daemon cannot make), and stay safe to call alongside a
+running daemon.
 
 ## Output template
 
@@ -147,7 +143,7 @@ Everything past the entry lives in `references/`:
 | need | read |
 |---|---|
 | the loop itself: dispatch, retries, progress mirror, verdicts, rules | `references/loop.md` |
-| a task of runs: children, folds, `tm_retry`, integrate | `references/manager.md` |
+| following a task the daemon is driving: worktrees, folds, `tm_retry`, integrate | `tm_status`/`tm_board`/`tm_ticket`/`tm_events` — read-only, safe from any session |
 | legacy `ordered` mode, per-stage `policy`, `native_models`, provenance | `references/routing.md` |
 | working directory, snapshot identity, briefing scope | `references/handoffs.md` |
 | quota reporting, checkpoints, `reset_capacity` | `references/capacity.md` |

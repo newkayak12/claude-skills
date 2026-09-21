@@ -34,7 +34,7 @@ function fixtureTask(cwd) {
     context: 'from the requester: keep both in sync',
     team: { opts: { docs_dir: '.teams_output/team', max_parallel_teams: 2, roles: { planning: true, qa: true }, goal_threshold: 90 } },
     size: 'L', size_pinned: null, flow: 'develop', flow_chosen: 'develop',
-    leader: { pid: 4242 },
+    daemon: { pid: 4242 },
     planning_pkg: { id: 'PLAN', phase: 'planning', flow: 'plan', title: 'PRD', brief: 'change a.txt and b.txt together', acceptance: ['PRD covers the request'], deps: [], touches: [] },
     qa_pkg: { id: 'QA', phase: 'qa', flow: 'qa', integration_of: 'integrate:1', title: 'QA', brief: 'Run the goal-level QA pass over the integrated result.', acceptance: ['the integrated result has been exercised end to end'], deps: [], touches: [] },
     audit_pkg: { id: 'AUDIT', phase: 'audit', flow: 'audit', integration_of: 'integrate:2', title: 'planning audit', brief: 'Cross-check what was built against the PRD.', acceptance: ['every user story in the PRD is judged against the integrated result'], deps: [], touches: [] },

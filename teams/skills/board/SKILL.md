@@ -48,7 +48,7 @@ Epic list (no EPIC named):
 One EPIC (named):
 
 ```
-## E-a1b2c3d4  결제 취소 기능              state: IN_PROGRESS   phase: impl   leader: pid 4121 alive
+## E-a1b2c3d4  결제 취소 기능              state: IN_PROGRESS   phase: impl   daemon: pid 4121 alive
 
 | key  | role     | state        | tasks | last verdict |
 |------|----------|--------------|-------|--------------|
@@ -74,7 +74,7 @@ started a child run.
 seam, and `qa`, `planning-audit` and `you` are filed stories — a defect QA found, a user story the
 audit found unmet, and one filed by hand through `tm_file`. Anything but `shape` is work the EPIC
 grew after shaping; call it out in prose under the table.
-`leader` prints `none` when the task has none yet.
+`daemon` prints `none` when the task has none yet.
 
 ## What Claude Does
 

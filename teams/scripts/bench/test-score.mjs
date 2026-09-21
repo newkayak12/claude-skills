@@ -7,11 +7,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { impliesFailure, hasPlaceholder, isContentShowCmd, splitSlashCmd, splitCheck, claimedExit, fencedBlocksByLang, neededInputTokens, CHECK_ALLOW } from './lib/claims.mjs';
+import { impliesFailure, hasPlaceholder, isContentShowCmd, splitSlashCmd, splitCheck, claimedExit, fencedBlocksByLang, neededInputTokens, CHECK_ALLOW, parseRequirements, requirementCovered, majorityVote } from './lib/claims.mjs';
 
 test('impliesFailure: filesystem-not-found phrasing implies non-zero exit', () => {
   assert.equal(impliesFailure("both 'No such file or directory' (removed)"), true);
@@ -165,5 +165,94 @@ test('a size-S task whose child run still has a pending node scores incomplete -
   ]);
   try {
     assert.match(scoreLine(ws), /task incomplete/);
+  } finally { rmSync(ws, { recursive: true, force: true }); }
+});
+
+// ---------- Part 2: process criteria (spec coverage / review yield / regression / volume) -
+// pure-logic pieces first, then one end-to-end check that score.mjs actually reports all four
+// as `criteria` metadata without folding any of them into `passed`/`of`.
+
+test('parseRequirements: a lettered request splits into its (a)/(b)/(c) clauses', () => {
+  const req = 'Build a thing: (a) src/csv.mjs — parses rows; (b) src/rules.mjs — categorizes them; (c) bin/cli.mjs — wires it up.';
+  const reqs = parseRequirements(req);
+  assert.equal(reqs.length, 3);
+  assert.match(reqs[0], /^src\/csv\.mjs/);
+  assert.match(reqs[2], /^bin\/cli\.mjs/);
+});
+
+test('parseRequirements: a one-line prose goal (no letters) falls back to substantive sentences', () => {
+  const req = 'Build ledger. You decide the split. It must import CSVs and report monthly spending from the command line, and a new user must be able to follow the README end to end.';
+  const reqs = parseRequirements(req);
+  assert.ok(reqs.length >= 1);
+  assert.ok(reqs.every((r) => r.length > 30));
+  assert.ok(!reqs.some((r) => /^you decide/i.test(r)));
+});
+
+test('parseRequirements: empty/missing request text yields no requirements, not a crash', () => {
+  assert.deepEqual(parseRequirements(''), []);
+  assert.deepEqual(parseRequirements(null), []);
+});
+
+test('requirementCovered: a backticked path/identifier that exists in the file list is covered', () => {
+  const req = 'src/csv.mjs — parse CSV rows with `parseCsv` into typed records';
+  const files = ['src/csv.mjs', 'src/rules.mjs', 'README.md'];
+  const corpus = (files.join('\n') + '\nexport function parseCsv(text) {}').toLowerCase();
+  assert.equal(requirementCovered(req, corpus, files), true);
+});
+
+test('requirementCovered: a requirement whose nouns never appear anywhere is uncovered', () => {
+  const req = 'the CLI must also support exporting a PDF invoice with a company logo watermark';
+  const files = ['src/csv.mjs', 'bin/ledger.mjs'];
+  const corpus = (files.join('\n') + '\nexport function report() {}').toLowerCase();
+  assert.equal(requirementCovered(req, corpus, files), false);
+});
+
+test('majorityVote: 3/3 and 2/3 both resolve, tracking the split', () => {
+  const unanimous = [{ ok: true }, { ok: true }, { ok: true }];
+  assert.deepEqual(majorityVote(unanimous, 'ok'), { value: true, split: '3/3' });
+  const twoOfThree = [{ ok: true }, { ok: true }, { ok: false }];
+  assert.deepEqual(majorityVote(twoOfThree, 'ok'), { value: true, split: '2/3' });
+  const oneOfThree = [{ ok: false }, { ok: false }, { ok: true }];
+  assert.deepEqual(majorityVote(oneOfThree, 'ok'), { value: false, split: '1/3' });
+});
+
+test('majorityVote: an even split (some judge calls failed and were dropped) falls to false, not true', () => {
+  const tie = [{ ok: true }, { ok: false }];
+  assert.deepEqual(majorityVote(tie, 'ok'), { value: false, split: '1/2' });
+});
+
+test('majorityVote: no successful calls at all reports 0/0, not a crash', () => {
+  assert.deepEqual(majorityVote([], 'ok'), { value: null, split: '0/0' });
+});
+
+// End-to-end: a size-S synthetic workspace (same fixture shape as the tests above) actually
+// carries `spec_coverage`, `review_yield`, `regression` and `volume` in its score.json, and none
+// of the four leak into `passed`/`of` - they are objects/strings, not booleans, so the existing
+// `typeof v === 'boolean'` filter that builds `bools` should skip them automatically.
+test('Part 2 criteria appear as metadata in score.json and never move passed/of', () => {
+  const ws = sizeSWorkspace([
+    { node_id: 'plan', stage: 'plan', state: 'done', result: { stage_ok: true } },
+    { node_id: 'implement:U1:1', stage: 'implement', state: 'done', result: { stage_ok: true, changed_files: ['bin/ledger.mjs'] } },
+    { node_id: 'gate:U1:1', stage: 'gate', state: 'done', result: { stage_ok: true, accept: false, match_pct: 40, gaps: ['missing rules engine'] } },
+    { node_id: 'implement:U1:2', stage: 'implement', state: 'done', result: { stage_ok: true, changed_files: ['bin/ledger.mjs', 'src/rules.mjs'] } },
+    { node_id: 'gate:U1:2', stage: 'gate', state: 'done', result: { stage_ok: true, accept: true, match_pct: 95 } },
+    { node_id: 'gate:goal:1', stage: 'gate', subgoal_id: null, state: 'done', result: { stage_ok: true, accept: true, match_pct: 96 } },
+    { node_id: 'report', stage: 'report', state: 'done', result: { stage_ok: true, handoff: 'done' } },
+  ]);
+  try {
+    scoreLine(ws); // score.mjs writes <ws>.score.json as a side effect
+    const score = JSON.parse(readFileSync(`${ws}.score.json`, 'utf8'));
+    for (const key of ['spec_coverage', 'review_yield', 'regression', 'volume']) {
+      assert.ok(key in score.criteria, `criteria.${key} missing`);
+    }
+    // a gate rejection (accept:false on gate:U1:1) immediately followed by an implement:U1:2
+    // that touched files is exactly what "yield" means: this fixture is built to have one.
+    assert.equal(score.criteria.review_yield.rejections, 1);
+    assert.equal(score.criteria.review_yield.yielded, 1);
+    assert.equal(score.criteria.volume.src_files, 0); // the code-flat fixture seed ships no src/ files of its own
+    assert.deepEqual(Object.keys(score.criteria.volume).sort(), ['packages', 'src_files', 'src_loc', 'test_files', 'test_loc'].sort());
+    for (const [k, v] of Object.entries(score.criteria)) {
+      if (['spec_coverage', 'review_yield', 'regression', 'volume'].includes(k)) assert.notEqual(typeof v, 'boolean', `criteria.${k} must not be a bare boolean`);
+    }
   } finally { rmSync(ws, { recursive: true, force: true }); }
 });

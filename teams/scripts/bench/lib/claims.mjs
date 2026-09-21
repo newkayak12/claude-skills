@@ -106,3 +106,65 @@ export function neededInputTokens(cmdLine, exists) {
     .filter(Boolean)
     .filter((n) => !exists(n.token));
 }
+
+// ---------- spec coverage: split a case's request into discrete requirement clauses, then
+// check each against the delivered tree by keyword/identifier overlap. This is a heuristic, not
+// a semantic check - score.mjs reports the uncovered list alongside the count precisely so a
+// human can see what the heuristic called missing rather than trusting a bare ratio.
+const STOPWORDS = new Set(['this', 'that', 'with', 'from', 'each', 'then', 'when', 'what',
+  'into', 'must', 'have', 'does', 'will', 'your', 'they', 'their', 'which', 'where', 'also',
+  'such', 'only', 'same', 'both', 'than', 'over', 'under', 'plus', 'every', 'some', 'none',
+  'file', 'files', 'user', 'users', 'root']);
+
+// Every request in requests/*.txt is either a lettered list ("(a) ...; (b) ...") naming the
+// discrete pieces of work, or (the goal-* cases) a one-line prose goal with no letters at all.
+// >=2 letter markers means the lettered shape is real, not a stray "(a)" inside a sentence.
+export function parseRequirements(reqText) {
+  if (!reqText) return [];
+  const text = reqText.trim();
+  const letterHits = [...text.matchAll(/\([a-z]\)\s*/g)];
+  if (letterHits.length >= 2) {
+    return text.split(/\([a-z]\)\s*/).slice(1)
+      .map((s) => s.replace(/;\s*$/, '').replace(/\.\s*$/, '').trim())
+      .filter(Boolean);
+  }
+  // Prose fallback: sentence-split, keep only substantive sentences - drops connective filler
+  // ("You decide the package split...") that names no checkable requirement of its own.
+  return text.split(/(?<=[.!?])\s+/).map((s) => s.trim())
+    .filter((s) => s.length > 30 && !/^you decide\b/i.test(s));
+}
+
+export function requirementTokens(req) {
+  const backticked = [...req.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+  const words = [...new Set((req.toLowerCase().match(/[a-z][a-z0-9_-]{3,}/g) || [])
+    .filter((w) => !STOPWORDS.has(w)))];
+  return { backticked, words };
+}
+
+// corpusLower: a lowercased blob of everything worth searching (tree file paths, README,
+// source samples) built by score.mjs, which knows the tree; fileList: the tree's own path list,
+// checked case-sensitively for backticked path/identifier tokens (an identifier like `csv.mjs`
+// naming a real file is stronger evidence than the same word merely appearing in prose).
+export function requirementCovered(req, corpusLower, fileList) {
+  const { backticked, words } = requirementTokens(req);
+  if (backticked.length) {
+    const hits = backticked.filter((t) => fileList.some((f) => f.includes(t)) || corpusLower.includes(t.toLowerCase()));
+    if (hits.length >= Math.ceil(backticked.length * 0.6)) return true;
+  }
+  if (!words.length) return false;
+  const hits = words.filter((w) => corpusLower.includes(w));
+  const need = Math.min(3, words.length);
+  return hits.length >= need;
+}
+
+// ---------- majority vote over N independent judge calls. `oks` is the array of already-
+// -parsed, already-successful judge responses (a failed/unparseable call is dropped before this
+// is called, by the caller) - each is a plain object whose `key` field score.mjs wants voted on.
+// N is normally odd (score.mjs defaults to 3) so a vote never ties; if oks.length is even
+// (some calls failed) a tie falls to `false`, which is the conservative direction for a
+// pass/fail rubric - an undecided sub-goal is not credited.
+export function majorityVote(oks, key) {
+  if (!oks.length) return { value: null, split: '0/0' };
+  const trueCount = oks.filter((o) => !!o[key]).length;
+  return { value: trueCount * 2 > oks.length, split: `${trueCount}/${oks.length}` };
+}

@@ -52,36 +52,29 @@ tm_open({
   request, cwd, isolated, mixed: true, flow: "plan",
   vendor: "auto", allocation: "balanced",
   host_vendor, host_model, native_models
-})                                               -> task_id, ready: [size]
-fresh agent at size.briefing_path -> tm_submit({task_id, node_id: "size", payload})
-    queued: true        -> the ordinary reply. tm_open spawned the TaskLeader, and a mutating
-                           call from any process but the leader is queued for it - your sizing
-                           is applied on the leader's next tm_next, not lost. You do NOT get
-                           task_state or a verdict back, and there is nothing to wait for here
-    task_state "s_run"  -> only when no leader is running: size S, and this reply already
-                           carries tm_next's own fields for the single run
-    absent              -> a task of runs: ../orchestrate/references/manager.md
+})                                               -> task_id, state, docs_dir
 ```
 
-After this you watch; you never drive. `tm_next` from this session answers `driven_by: "leader"`
-with no `ready[]` — that is the design, not a stall.
+That one call opens the task and spawns the daemon that drives it — size, shape, critique, every
+package's dispatch and fold, integrate, the goal gate, the report, or the one run a size-S
+request opens — end to end. You never see `size`'s own briefing or submit its payload; the daemon
+judges it itself. Prefer `tm_run` when you do not want even the `state` field back: same open,
+same daemon, `{task_id, run_id, docs_dir}`.
+
+After this you watch; you never drive.
 
 ```
-tm_next({task_id, wait_ms: 60000})        # blocks until the task stops running, or 60s
-    state "running"  -> call it again, immediately, with wait_ms again. Nothing else.
-    state "complete" -> relay the node table and the report
+tm_wait({task_id, cursor, max_ms: 60000})   # bounded long-poll: node transitions since cursor, or a timeout
+    state "running"  -> call it again, immediately, with the returned cursor. Nothing else.
+    state "complete" -> relay the node table (tm_status) and the report
     state "blocked"  -> a result: report what failed and stop there
 ```
 
 **Never sleep, never schedule a background check, never end your turn while it is running.** You
-are a headless session: it ends the moment you stop calling tools, and the leader and its drivers
-go on building into a workspace nobody is waiting for. The blocking `tm_next` call is the only
+are a headless session: it ends the moment you stop calling tools, and the daemon and its drivers
+go on building into a workspace nobody is waiting for. The blocking `tm_wait` call is the only
 thing holding you open — a real run died at one minute saying "I'll check again in about four
 minutes", and everything it was waiting for finished long after it was gone.
-
-For a size-S task that `state` is **the single run's own**, not the task's three settled manager
-nodes: a size-S task's manager graph finishes the moment `size` resolves, and reading it instead
-of the run is what once had a watcher call a live run `blocked` and stop two minutes in.
 
 `size` measures build units and ownership boundaries the same way it does for `develop` and
 `document`. The flow is pinned, so `size` does not choose one - it only measures. `mixed: true`
@@ -91,11 +84,11 @@ delivered but the PRD itself.
 
 ## Then
 
-The blocking `tm_next({task_id, wait_ms})` loop above is the whole of your job for a size-S
-task; for a task of runs it is the leader that reads `../orchestrate/references/manager.md`, not
-you — you watch the same way either way. Neither case ever has you call `team_next`/`team_run`/`team_submit`
-yourself: every run is driven by its own spawned headless session, never by you. The Standing
-Mandates and Output template in `../orchestrate/SKILL.md` apply unchanged.
+The `tm_wait({task_id, cursor})` loop above is the whole of your job either way — a size-S task or
+a task of runs — there is no manager loop left to read by hand: the daemon `tm_open` spawned is
+what a relayed session used to run. Every graph run it opens is still driven by its own spawned
+headless session, never by you. The Standing Mandates and Output template in
+`../orchestrate/SKILL.md` apply unchanged.
 
 ## What the current AI does
 

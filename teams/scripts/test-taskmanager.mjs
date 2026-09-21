@@ -151,11 +151,11 @@ async function withTask(fn, extra) {
   }
 }
 
-test('serves the MCP handshake and the ten manager tools', async () => {
+test('serves the MCP handshake and the twelve manager tools', async () => {
   const c = await new Client(TM).init();
   try {
     const r = await c.send('tools/list', {});
-    assert.deepEqual(r.result.tools.map((t) => t.name).sort(), ['tm_board', 'tm_docs', 'tm_events', 'tm_file', 'tm_next', 'tm_open', 'tm_retry', 'tm_status', 'tm_submit', 'tm_ticket']);
+    assert.deepEqual(r.result.tools.map((t) => t.name).sort(), ['tm_board', 'tm_docs', 'tm_events', 'tm_file', 'tm_next', 'tm_open', 'tm_retry', 'tm_run', 'tm_status', 'tm_submit', 'tm_ticket', 'tm_wait']);
   } finally {
     c.close();
   }
@@ -2037,164 +2037,177 @@ test('child_driver and s_driver are gone: passing either is an error that names 
   } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
 });
 
-// ---------- the TaskLeader driver ----------
+// ---------- the daemon: server owns the loop ----------
 
-test('tm_open spawns a TaskLeader driver whose prompt names the task and manager.md, and records it', async () => {
+test('tm_open spawns a daemon process whose argv names --task, and records it', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const fake = join(root, 'fake-leader.mjs');
+  const fake = join(root, 'fake-daemon.mjs');
   writeFileSync(fake, FAKE_DRIVER_ALIVE);
-  const out = join(root, 'leader.out');
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_CHILD_DRIVER: `node ${fake}`, FAKE_DRIVER_OUT: out }).init();
+  const out = join(root, 'daemon.out');
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_DAEMON: `node ${fake}`, FAKE_DRIVER_OUT: out }).init();
   let pid;
   try {
     const open = await tm.call('tm_open', { request: 'lead me', cwd, vendor: 'self', size: 'L' });
-    pid = open.leader.pid;
-    assert.ok(open.leader && open.leader.pid, 'a leader pid comes back');
-    assert.ok(open.leader.log.endsWith('leader.stream.jsonl'));
-    await new Promise((r) => setTimeout(r, 400));
-    const prompt = readFileSync(out, 'utf8');
-    assert.match(prompt, new RegExp(open.task_id));
-    assert.match(prompt, /references\/manager\.md/);
-    assert.match(prompt, /Do not call tm_open/);
-    assert.match(prompt, /never do a node's work/i);
-    // The leader's push notification (SendMessage on every state change) was removed - unverified,
-    // unretried, unacked, indistinguishable from silence. Watching is pull-only now: tm_status/
-    // tm_events/tm_board/tm_ticket.
-    assert.doesNotMatch(prompt, /SendMessage/);
+    // tm_open itself only returns a thin pointer (task_id/state/docs_dir) once a daemon is in
+    // play - it must not also self-drive via toolNext, which would race the daemon it just
+    // spawned into opening the same node twice. Daemon bookkeeping is read back from tm_status.
+    assert.equal(open.ready, undefined, 'tm_open does not self-drive once a daemon is spawned');
+    const s0 = await waitFor(async () => {
+      const s = await tm.call('tm_status', { task_id: open.task_id });
+      return s.daemon && s.daemon.pid ? s : null;
+    }, 'the daemon to be recorded on the task');
+    pid = s0.daemon.pid;
+    assert.ok(Number.isInteger(pid), 'a daemon pid comes back');
+    assert.ok(s0.daemon.log.endsWith('daemon.log.jsonl'));
+    assert.equal(s0.daemon.spawn_count, 1);
+    assert.equal(typeof s0.daemon.alive, 'boolean');
+
+    const ran = await waitFor(() => (existsSync(out) ? JSON.parse(readFileSync(out, 'utf8')) : null), 'the fake daemon to run');
+    assert.deepEqual(ran.argv, ['--task', open.task_id], 'the daemon is told only which task to drive');
+
     const ledger = readFileSync(join(root, open.task_id, 'ledger.jsonl'), 'utf8');
-    assert.match(ledger, /"event":"leader_spawned"/);
-    const s = await tm.call('tm_status', { task_id: open.task_id });
-    assert.equal(typeof s.leader.alive, 'boolean');
-    assert.equal(s.leader.spawn_count, 1);
+    assert.match(ledger, /"event":"daemon_spawned"/);
   } finally { try { process.kill(pid, 'SIGTERM'); } catch { /* gone */ } tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
 });
 
-test('a mutating call from a non-leader process is queued to the inbox; the leader process drains it on tm_next', async () => {
+test('a tm_submit is applied directly - there is no inbox to queue it behind any more', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const main = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_CHILD_DRIVER: 'node -e setTimeout(()=>{},30000)' }).init();
-  let leader;
-  let pid;
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_LEADER: '1' }).init();
   try {
-    const open = await main.call('tm_open', { request: 'lead me', cwd, vendor: 'self', size: 'L' });
-    pid = open.leader.pid;
-    const q = await main.call('tm_submit', { task_id: open.task_id, node_id: 'shape', payload: { stage_ok: true } });
-    assert.equal(q.queued, true);
-    assert.match(q.inbox_path, /inbox\/\d+-\d+-tm_submit\.json$/);
-    assert.ok(existsSync(q.inbox_path));
-    const before = JSON.parse(readFileSync(join(root, open.task_id, 'task.json'), 'utf8'));
-    assert.equal(before.nodes.find((n) => n.node_id === 'shape').state, 'pending', 'main did not write task.json');
-
-    leader = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_LEADER_OF: open.task_id }).init();
-    const n = await leader.call('tm_next', { task_id: open.task_id });
-    assert.equal(existsSync(q.inbox_path), false, 'drained');
-    assert.ok(n.inbox_applied >= 1);
-    const ledger = readFileSync(join(root, open.task_id, 'ledger.jsonl'), 'utf8');
-    assert.match(ledger, /"event":"inbox_applied"/);
-    // shape depended on size; the queued submit was applied and failed the same way a direct one would.
-    assert.match(ledger, /"tool":"tm_submit"/);
-  } finally {
-    try { process.kill(pid, 'SIGTERM'); } catch { /* gone */ }
-    main.close(); if (leader) leader.close();
-    rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true });
-  }
+    const open = await tm.call('tm_open', { request: 'lead me', cwd, vendor: 'self', size: 'L' });
+    const v = await tm.call('tm_submit', { task_id: open.task_id, node_id: 'shape', payload: { stage_ok: true } });
+    assert.equal(v.queued, undefined, 'no queued reply - the old inbox is gone');
+    // size was pinned L, so shape was already ready: this payload is applied immediately and
+    // judged on its own merits (an empty shape is unusable), not deferred for a leader to drain.
+    assert.equal(v.state, 'failed', JSON.stringify(v));
+    assert.match(v.reason, /unusable shape/);
+    assert.ok(!existsSync(join(root, open.task_id, 'inbox')), 'no inbox directory exists at all any more');
+  } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
 });
 
-test('tm_next from a non-leader process does not drive: it returns leader state and a hint', async () => {
+test('tm_next reads graph state directly: there is no watcher gate or driven_by branch any more', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const main = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_CHILD_DRIVER: 'node -e setTimeout(()=>{},30000)' }).init();
-  let pid;
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_LEADER: '1' }).init();
   try {
-    const open = await main.call('tm_open', { request: 'lead me', cwd, vendor: 'self', size: 'L' });
-    pid = open.leader.pid;
-    const n = await main.call('tm_next', { task_id: open.task_id });
-    assert.equal(n.driven_by, 'leader');
-    assert.equal(n.leader.alive, true);
-    // A task still running tells the watcher how to stay alive; a finished one points at the
-    // account. Both are hints, and which one comes back is itself part of the contract.
-    assert.equal(n.state, 'running');
-    assert.match(n.hint, /call tm_next again with wait_ms/);
-    assert.equal(n.ready, undefined, 'no briefing paths are handed to the watcher');
-  } finally { try { process.kill(pid, 'SIGTERM'); } catch { /* gone */ } main.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
+    const open = await tm.call('tm_open', { request: 'lead me', cwd, vendor: 'self', size: 'L' });
+    const n = await tm.call('tm_next', { task_id: open.task_id });
+    assert.equal(n.driven_by, undefined, 'driven_by does not exist any more');
+    // size was pinned L, so it resolved at open time; shape is the next ready node. What matters
+    // here is that tm_next answers from the graph directly - no watcher branch, no empty ready[].
+    assert.deepEqual(n.ready.map((x) => x.node_id), ['shape'], 'tm_next drives the graph itself, exactly as it always could');
+  } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
 });
 
-// The first real-vendor run died here. A size-S task settles its own manager graph the moment
-// `size` resolves - shape and critique are skipped, nothing is left pending or running - and all
-// the actual work moves into the single child run task.s_run points at. The watcher branch above
-// returns before toolNext() ever runs, so it judged the task by `runState(task)` over those three
-// settled manager nodes and reported `blocked` while the child run was alive and building. The
-// entry skill's standing mandate is "a blocked run is a result - report what failed and stop
-// there", so main did exactly that: it stopped at two minutes, and the bench scored a workspace
-// whose driver was still working. (Reproduced 2026-09-17: tm_next said blocked and tm_status said
-// running for the same task in the same second; the run then delivered its file.)
-test('a size-S task under a live leader reports running to the watcher, not blocked - the work is in s_run, not in the settled manager graph', async () => {
-  const cwd = repo();
-  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const main = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_CHILD_DRIVER: 'node -e setTimeout(()=>{},30000)' }).init();
-  let leader;
-  const pids = [];
-  try {
-    const open = await main.call('tm_open', { request: 'one small thing', cwd, vendor: 'self' });
-    pids.push(open.leader.pid);
-
-    // The leader is the only process that may apply a mutating call, so it is the one that
-    // resolves size - exactly as it does in a real run, by draining main's queued submit.
-    leader = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_LEADER_OF: open.task_id }).init();
-    const sized = await leader.call('tm_submit', { task_id: open.task_id, node_id: 'size',
-      payload: ok({ size: 'S', flow: 'develop', sizing: ['ls -> one file'], handoff: 'tiny' }) });
-    assert.equal(sized.task_state, 's_run', JSON.stringify(sized));
-
-    const st = await main.call('tm_status', { task_id: open.task_id });
-    assert.equal(st.s_run.driver.alive, true, 'the child driver is alive and holding the work');
-    pids.push(st.s_run.driver.pid);
-    assert.equal(st.state, 'running', 'tm_status already reads the child run');
-
-    const n = await main.call('tm_next', { task_id: open.task_id });
-    assert.equal(n.driven_by, 'leader');
-    assert.equal(n.ready, undefined, 'still no driving from the watcher');
-    assert.equal(n.state, 'running', `the watcher must not call a live s_run blocked: ${JSON.stringify(n)}`);
-    assert.equal(n.run_id, st.s_run.run_id, 'and it names the run the work is actually in');
-
-    // wait_ms is the only thing that can hold a headless watcher session open: it ends the moment
-    // the model stops calling tools, and the second real-vendor run died exactly there - correctly
-    // told "running", it scheduled a background sleep and ended its turn one minute in. So the
-    // call itself has to block, and say so when it comes back still running.
+test('tm_wait returns a bounded delta of node transitions and times out cleanly when nothing finishes', async () => {
+  await withTask(async ({ tm, task_id }) => {
     const t0 = Date.now();
-    const waited = await main.call('tm_next', { task_id: open.task_id, wait_ms: 1500 });
+    const w = await tm.call('tm_wait', { task_id, max_ms: 300 });
     const elapsed = Date.now() - t0;
-    assert.ok(elapsed >= 1400, `tm_next({wait_ms}) must block, took ${elapsed}ms`);
-    assert.equal(waited.state, 'running', 'nothing finished, so it comes back still running');
-    assert.match(waited.hint, /call tm_next again with wait_ms/);
-    assert.match(waited.hint, /Do NOT sleep/);
-  } finally {
-    for (const pid of pids) { try { process.kill(pid, 'SIGTERM'); } catch { /* gone */ } }
-    main.close(); if (leader) leader.close();
-    rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true });
-  }
+    assert.ok(elapsed >= 250, `tm_wait must block close to max_ms when nothing finishes, took ${elapsed}ms`);
+    assert.equal(w.state, 'running');
+    assert.equal(w.timed_out, true);
+    assert.deepEqual(w.transitions, []);
+    assert.ok(Number.isInteger(w.cursor));
+
+    // Progress now happens; the very next tm_wait must return it as a transition, not a timeout -
+    // and never the full payload, only the node_id/stage/state/stage_ok delta.
+    const v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2 modules'], handoff: 'two' }) });
+    assert.equal(v.state, 'done');
+    const w2 = await tm.call('tm_wait', { task_id, cursor: w.cursor, max_ms: 5000 });
+    assert.equal(w2.timed_out, false);
+    assert.deepEqual(w2.transitions, [{ node_id: 'size', stage: 'size', state: 'done', stage_ok: true, ts: w2.transitions[0].ts }]);
+    assert.ok(w2.cursor > w.cursor);
+  });
 });
 
-test('a dead leader is respawned on any tm_* call up to driver_restarts, then reported exhausted', async () => {
+test('a tm_submit for a node the daemon already finished is rejected outright, not re-applied', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    const v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2 modules'], handoff: 'h' }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    // requireRunnable re-reads the node's state from the task this call loads fresh off disk on
+    // every call, so a second writer racing in after the first already finished the node - the
+    // daemon's own loop, or any other caller - is refused, not silently re-run.
+    const again = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'develop' }) });
+    assert.match(again.error, /is done, not pending/);
+    const status = await tm.call('tm_status', { task_id });
+    assert.equal(status.size, 'L', 'the first verdict stands; the second attempt changed nothing');
+  });
+});
+
+test('a dead daemon is respawned on any tm_* call up to driver_restarts, then reported exhausted', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const fake = join(root, 'fake-leader.mjs');
+  const fake = join(root, 'fake-daemon.mjs');
   writeFileSync(fake, FAKE_DRIVER); // exits at once
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_CHILD_DRIVER: `node ${fake}`, FAKE_DRIVER_OUT: join(root, 'o') }).init();
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_DAEMON: `node ${fake}`, FAKE_DRIVER_OUT: join(root, 'o') }).init();
   try {
     const open = await tm.call('tm_open', { request: 'lead me', cwd, vendor: 'self', size: 'L', driver_restarts: 1 });
     await new Promise((r) => setTimeout(r, 400));
     let s = await tm.call('tm_status', { task_id: open.task_id });
-    assert.equal(s.leader.restarts, 1, 'first dead leader respawned');
+    assert.equal(s.daemon.restarts, 1, 'first dead daemon respawned');
     await new Promise((r) => setTimeout(r, 400));
     s = await tm.call('tm_status', { task_id: open.task_id });
-    assert.equal(s.leader.restarts, 1);
-    assert.equal(s.leader.exhausted, true);
-    assert.ok(s.leader.stderr_tail.length > 0);
+    assert.equal(s.daemon.restarts, 1);
+    assert.equal(s.daemon.exhausted, true);
+    assert.ok(s.daemon.stderr_tail.length > 0);
     const ledger = readFileSync(join(root, open.task_id, 'ledger.jsonl'), 'utf8');
-    assert.match(ledger, /"event":"leader_restarted"/);
-    assert.match(ledger, /"event":"leader_exhausted"/);
+    assert.match(ledger, /"event":"daemon_restarted"/);
+    assert.match(ledger, /"event":"daemon_exhausted"/);
   } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
+});
+
+test('the daemon drives a size-S task to completion with no external tm_next caller', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const drv = mkdtempSync(join(tmpdir(), 'tm-drv-'));
+  const scriptPath = join(drv, 'fake-driver.mjs');
+  writeFileSync(scriptPath, FAKE_DRIVER);
+  // No HARNESS_TEST_NO_LEADER/HARNESS_TEST_NO_DAEMON: a real `node daemon.mjs --task <id>`
+  // process is spawned, exactly as it would be for a real user. HARNESS_CHILD_DRIVER still fakes
+  // out the S run's OWN driver (the same seam every other driver test in this file uses) so the
+  // test can drive that one child run directly through the broker instead of needing a real
+  // `claude -p` there too.
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_CHILD_DRIVER: `node ${scriptPath}`, CLAUDECODE: '1' }).init();
+  const g = await new Client(BROKER).init();
+  let daemonPid;
+  try {
+    const open = await tm.call('tm_open', { request: 'small request', cwd, vendor: 'self', size: 'S' });
+    const s0 = await waitFor(async () => {
+      const s = await tm.call('tm_status', { task_id: open.task_id });
+      return s.s_run && s.s_run.run_id ? s : null;
+    }, 'the size-S run to open');
+    assert.ok(s0.daemon && Number.isInteger(s0.daemon.pid), 'a real daemon process is driving this task');
+    daemonPid = s0.daemon.pid;
+    const { run_id, cwd: runCwd } = s0.s_run;
+
+    const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd: runCwd, node_id, payload: ok(payload) });
+    await sub('plan', { handoff: 'p', flow: 'develop', size: 'S' });
+    await sub('setgoal', { spec: CHILD_SPEC });
+    await sub('critique', { sound: true });
+    appendFileSync(join(runCwd, 'a.txt'), 'changed by S\n');
+    await sub('implement:U1:1', { changed_files: ['a.txt'], handoff: 'built' });
+    await sub('test:U1:1', { verified: true });
+    await sub('gate:U1:1', { accept: true, match_pct: 95 });
+    await sub('gate:goal:1', { accept: true, match_pct: 95 });
+    await sub('report', { handoff: 'S run done' });
+
+    // The daemon notices on its own (fs.watch on the run directory, or its fallback poll) and
+    // exits once the run is no longer running. Nobody here ever called tm_next.
+    await waitFor(() => { try { process.kill(daemonPid, 0); return false; } catch { return true; } }, 'the daemon process to exit on its own', 20000);
+
+    const status = await tm.call('tm_status', { task_id: open.task_id });
+    assert.equal(status.state, 'complete');
+    const ledger = readFileSync(join(root, open.task_id, 'ledger.jsonl'), 'utf8');
+    assert.match(ledger, /"event":"daemon_done"/);
+  } finally {
+    tm.close(); g.close();
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+    rmSync(drv, { recursive: true, force: true });
+  }
 });
 
 test('tm_events tails the ledger, newest last, filtered by since', async () => {
@@ -2393,24 +2406,22 @@ test('board.jsonl is append-only and never consulted for current state - deletin
   });
 });
 
-test('a non-leader call that gets queued to the inbox writes no board.jsonl line - nothing on disk changed yet', async () => {
+test('a tm_submit that moves a ticket writes a board.jsonl line immediately - there is no queue to delay it any more', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const main = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_CHILD_DRIVER: 'node -e setTimeout(()=>{},30000)' }).init();
-  let leader;
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_LEADER: '1' }).init();
   try {
-    const open = await main.call('tm_open', { request: 'r', cwd, vendor: 'self' });
-    leader = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_LEADER_OF: open.task_id }).init();
-    await main.call('tm_submit', { task_id: open.task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop' }) });
+    const open = await tm.call('tm_open', { request: 'r', cwd, vendor: 'self' });
+    await tm.call('tm_submit', { task_id: open.task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop' }) });
     const boardPath = join(root, open.task_id, 'board.jsonl');
     const before = existsSync(boardPath) ? readFileSync(boardPath, 'utf8') : '';
-    const q = await main.call('tm_submit', { task_id: open.task_id, node_id: 'shape', payload: ok({ ...SHAPE, handoff: 's' }) });
-    assert.equal(q.queued, true, JSON.stringify(q));
+    const v = await tm.call('tm_submit', { task_id: open.task_id, node_id: 'shape', payload: ok({ ...SHAPE, handoff: 's' }) });
+    assert.equal(v.queued, undefined, 'no inbox to queue behind any more');
+    assert.equal(v.state, 'done', JSON.stringify(v));
     const after = existsSync(boardPath) ? readFileSync(boardPath, 'utf8') : '';
-    assert.equal(after, before, 'queued, not applied: no ticket actually moved');
+    assert.notEqual(after, before, 'applied immediately: the ticket moved in the same call');
   } finally {
-    main.close();
-    if (leader) leader.close();
+    tm.close();
     rmSync(cwd, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
   }
