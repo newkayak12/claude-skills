@@ -86,6 +86,10 @@ through — and renders the table above — nothing more.
 Name an EPIC key for its kanban, or nothing for the full list. Open `doc_path` yourself for the
 long form; the skill won't paste it into the conversation.
 
+For a live visual instead of a table — the manager pipeline, per-package cards, each child
+run's node chain, and the event ledger, polling every ~3s in a browser — run
+`node teams/scripts/view.mjs --task <task_id>` (read-only; `--once` prints a text tree instead).
+
 ## Related Skills
 
 - `ticket` — one ticket's full detail, EPIC or STORY
