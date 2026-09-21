@@ -234,6 +234,18 @@ trap-beta-T1 (teams)    2/14   27분   $4.49   미납품 — P1 자식이 gate 3
 - 하네스 공백 하나 더: 패키지 수준 재시도(`tm_retry({package_id})`)를 데몬이 스스로 열지 않았다 → `autoRetryPackages` (0.15.3). T2로 재실행.
 - `trap_f` 채점기 오류(출력에 id 요구) 수정 (0.15.2) — 채점기 거짓 음성이 이틀 사이 세 번째다. 채점 기준은 요청문이 명시한 것만 요구해야 한다.
 
+### 8e. T2 실행 중 관찰한 하네스 결함 다섯 (2026-09-21, 워크트리 `fold-feedback`에 수정·테스트 완료, T2 종료 후 머지)
+
+| # | 관찰 | 수정 |
+|---|---|---|
+| 1 | blocked로 접힌 자식의 재시도 brief가 "test:U1:3 failed with no retry left" 한 줄. 자식 gate의 35%·80% 반려 사유는 전달 안 됨 | `foldChild`가 자식의 마지막 실패 판정(node, match, reason, gaps)을 `child_verdicts`로 싣고 reason에 덧붙임 |
+| 2 | 구현자가 "66/66 통과, 커밋 완료"를 보고하며 `stage_ok:false`를 찍음 → broker가 자기보고를 믿고 gate를 unreachable 처리, 패키지 1차부터 재시작. P3에서 2번 | 사유·에러·실패 검사가 없는 authoring 노드의 `stage_ok:false`는 실패로 확정하지 않고 `self_reported_stage_ok:false`로 남긴 채 test/gate가 판정 |
+| 3 | accept가 잡은 "SIGKILL이 쓰기 구간에 한 번도 안 떨어지는 원자성 테스트"를 사후 감사는 plain 쪽에서 묻지 않음 | 감사 프롬프트에 테스트 적정성 항목: 실패할 수 없는 테스트는 major 결함 |
+| 4 | integrate 판정이 한도 메시지를 받음 → 유효하지 않은 JSON → "실패" → `autoRepair`가 R1을 엶(반려가 아닌데) | `judge()` 실패는 `judge_failed:true`; `autoRejudge`가 리셋 시각 뒤 재판정(최대 2회, `mergeOnto`의 `reopened` 탈출구); repair·패키지 재시도는 non-verdict를 거부 |
+| 5 | R1 드라이버가 "resets 5:40pm (UTC)"에 주차된 채 리셋 후 1h51m 방치. 호출자의 `tm_retry({reset_capacity})`만이 길 | `autoResumeCapacity`: `capacityResetAt`로 시각 파싱(UTC/Asia/Seoul 검증), 3분 유예 뒤 자동 재개; `clearCapacity`를 tm_retry와 공유 |
+
+공통점: 다섯 다 **"서버가 루프를 소유한다"(§2)를 끝까지 밀지 않은 자리**다. 호출자가 하던 판단(재시도, repair, 재판정, capacity 해제)이 남아 있으면 데몬은 거기서 멈춘다.
+
 ## 9. 반론과 리스크
 
 - **"서버가 `claude -p`를 노드마다 띄우면 프로세스 기동 비용이 있다."** 지금도 driver마다 띄운다. 노드 수만큼 띄우면 횟수는 늘지만 각 호출이 짧고, 릴레이 3턴이 사라진 순감소가 더 크다. 실측으로 확인(단계 5).
