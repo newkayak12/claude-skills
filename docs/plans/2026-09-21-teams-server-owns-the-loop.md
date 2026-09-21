@@ -18,6 +18,10 @@
 **결론: 품질은 한 번도 못 쟀고, 비용은 10배 틀렸고, 조건은 teams가 이길 이유가 없는 곳이었다.**
 "졌다"는 판단은 측정 오류 위에 있었다. 단, 아래 §1의 두 문제는 측정 오류와 무관하게 실재한다.
 
+seam 판 자체도 재검토가 필요하다. `requests/seam.txt`는 "반드시 거기서 import해라, 자체 복사본을 두지 마라"고 명시하고 macOS의 `import.meta.url` 함정까지 경고한다. 두 팔 다 11/12를 받았다 — `seam_detected` 지표는 seam을 지켰는지가 아니라 **지시를 따랐는지**를 쟀다. `seam-none-C1`(플러그인 없는 순정 claude): 3분, $0.92, 11/12, `seam_detected: true`, 14턴. `seam-beta-S1`(teams 0.12): 78분, $25.87, 11/12. 문구 두 문장을 뺀 `seam-silent` 변형을 별도로 추가 중이다 — 지시 없이도 seam을 지키는지를 봐야 변별력이 생긴다.
+
+LOC를 산출물 품질의 대리 지표로 썼다. 이 도구에는 맞지 않는 잣대다(아래 §1c).
+
 ## 1. 진단 — 실재하는 문제 둘
 
 ### 1a. 루프를 모델이 돈다
@@ -55,6 +59,14 @@ STORY 워커는 카드에 적힌 것을 하고 멈춘다. plain은 제품 전체
 `core/money.mjs` `dates.mjs` `errors.mjs`를 스스로 만들고, 결과 보고에 "중복 임포트 버그를 만들다 발견해 고쳤다"고 썼다.
 teams에는 **제품을 소유한 자리가 없었고**, 기획검토(revise)·개발검토(gate)·QA·AUDIT 어느 단계도
 "rules가 113줄로 되나?"를 묻지 않았다. 6단계가 로컬 최적화를 막지 못했다. 이것이 이번 판에서 프로세스가 값을 못 한 지점이다.
+
+### 1c. 산출물이 적은 게 아니라 명세가 범위를 정했다
+
+goal-code 요청은 의도적으로 비지정이다("You decide the package split, the module contracts, the CLI shape, the error handling and the tests"). teams는 `docs/ledger-prd.md`(약 13.5k자)를 산출했다: §2는 "단일 패키지 구현을 검토했고 기각했다"고 적고, `@ledger/cli`는 "파싱이나 집계 로직을 자체로 소유하지 않는다"고 규정한다. §3.1은 Transaction 계약 — ISO 날짜, trim된 description, 정수 cents(부동소수점을 피하는 근거까지) — 를 정의하고, §7은 에러 케이스 셋을 나열하고, §10의 완료 정의는 명령 하나 `ledger report --csv --rules --month`다. cli는 세 패키지에서 정확히 `parseCsv` / `parseRules, categorize` / `aggregate, formatReport`만 import한다 — 코드가 스펙을 그대로 따라간다. 660 LOC는 스펙이 정한 범위다.
+
+plain(스펙 없음)은 `core/`(소수점 구분자 자동 감지가 있는 money, mdy/dmy/ymd 날짜 감지, errors, 트랜잭션 dedupe/정렬)를 만들고, 상태를 갖는 `ledger import` + `ledger report` 두 명령, CSV 레이아웃 세 종을 만들고, 만드는 도중 버그 둘(재-import dedupe 카운터, 날짜 범위 정렬)을 고쳤다 — 전부 아무도 요청하지 않은 기능 안에 있다. 약 2,900 LOC 중 대략 3분의 1이 비요청 범위다.
+
+귀결: (1) "검토가 반려 0건"은 코드보다 스펙이 먼저 있으면 결함이 아니다 — 반려할 게 거의 없다; 반려 건수는 여기서 품질 지표가 아니다. (2) teams가 작동한다면 개발은 스펙 주도가 되고 PRD는 1급 산출물이 된다. (3) 남는 질문은 스펙 품질 대 사용자 의도다 — 이 PRD는 `US-` 사용자 스토리 행이 0건이라 감사(audit)의 `user_stories_checked`가 검사할 대상이 없었다. 기획 계약에 `user_stories[]`를 필수로 넣어야 한다.
 
 ## 2. 결정 — MCP 서버가 오케스트레이터다
 
@@ -137,6 +149,7 @@ plan / setgoal / critique 3노드가 EPIC의 shape / critique를 반복**한다�
 - 다음 두 판이 존재 이유를 판가름한다: **seam + plain 대조군**(배관은 이미 동작 확인됨, 코드 변경 불필요), **plain 천장(230k) 초과 크기**(plain이 못 담는 일).
 - `drive.sh`는 이제 상위 세션이 아니라 **일이 끝났을 때** 채점한다(`wait_for_settle`, 상한 있음). 이전에는 detached 드라이버가 일하는 중에 채점돼 파일 0건으로 기록된 판이 있었다.
 - 두 판 모두 §4-C로 돌린다. `size`는 pinned 없이 자율.
+- `score.mjs`에 메타데이터 필드를 더 추가한다: `spec_present`, `spec_user_stories`, `spec_traceability`(판정: 코드 구조가 스펙의 결정을 따라가는가), `scope_match`(`unrequested[]`/`missing[]` — 판정: 요청 대비 산출물). `volume`은 그대로 메타데이터로 남고, `review_yield`는 위 §1b의 지적대로 격을 낮춘다. judge 비용은 여전히 총액에 안 더해진다(알려진 공백).
 
 ## 7. 설정 정리
 
@@ -157,6 +170,8 @@ plan / setgoal / critique 3노드가 EPIC의 shape / critique를 반복**한다�
 6. **설정 정리** — §7 (1·3과 함께 자연히 정리되는 것은 그때)
 7. TODO — 팀 종류 직접 정의(보안·디자인 = KINDS 항목 추가) / 가변 깊이 / 사람 노드. **5 결과 뒤.**
 
+§3 체인만 도는 자식 런(`parent_shaped`, `pkg.split` opt-out, `max_depth` 강제)과 사람이 보는 뷰어 `scripts/view.mjs`는 별도 워크트리에서 병행 진행 중이다. seam-beta-D1이 끝난 뒤 머지한다 — 돌아가는 벤치가 절반 고친 mcp 파일을 로드하는 일이 없도록.
+
 ## 9. 반론과 리스크
 
 - **"서버가 `claude -p`를 노드마다 띄우면 프로세스 기동 비용이 있다."** 지금도 driver마다 띄운다. 노드 수만큼 띄우면 횟수는 늘지만 각 호출이 짧고, 릴레이 3턴이 사라진 순감소가 더 크다. 실측으로 확인(단계 5).
@@ -173,6 +188,7 @@ plan / setgoal / critique 3노드가 EPIC의 shape / critique를 반복**한다�
 3. §3 규칙에서 "부모가 shape·critique를 끝냈다"의 신호는? — 자식 런 open 시 `parent_shaped: true` 플래그 하나. 그 플래그가 있으면 `plan/setgoal/critique/gate:goal`을 skipped로 생성.
 4. `teams run` CLI의 위치 — `teams/scripts/run.mjs`. `harness`·`graph`에는 없는 것이라 형제 플러그인과의 대칭은 깨진다. 허용.
 5. 09-17 문서 §7 "사용자 = human 노드"는 이 라운드에서 손대지 않는다. 사람 노드가 들어오면 그때 `tm_wait`가 자연스러운 접점이 된다(사람 차례면 델타에 `waiting_human`이 뜬다).
+6. 벤치는 `$REPO/teams`를 `--plugin-dir`로 실행 중인 그대로 편집한다. 실행 도중의 mcp 편집은 새로 뜨는 자식에게 바로 반영된다. 규칙: 워크트리에서 개발하고, 판 사이에 머지한다.
 
 ## 11. 한 줄
 
