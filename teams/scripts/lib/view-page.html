@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>teams task view</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f7f8; --panel: #ffffff; --text: #1b1d1f; --muted: #6b7280; --border: #e2e4e8;
+    --pending: #9aa1ac; --running: #2563eb; --done: #16a34a; --failed: #dc2626;
+    --skipped: #9aa1ac; --blocked: #d97706; --accent: #2563eb; --code-bg: #f0f1f3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111317; --panel: #1a1d22; --text: #e6e8eb; --muted: #9aa3ad; --border: #2a2e35;
+      --pending: #6b7280; --running: #60a5fa; --done: #4ade80; --failed: #f87171;
+      --skipped: #6b7280; --blocked: #fbbf24; --accent: #60a5fa; --code-bg: #22262d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 24px 0 8px; }
+  a { color: var(--accent); }
+  .muted { color: var(--muted); }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .header-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 10px; }
+  .stat { }
+  .stat .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+  .stat .value { font-size: 16px; font-weight: 600; }
+  .request-box { margin-top: 10px; white-space: pre-wrap; word-break: break-word; }
+  .request-box.collapsed { max-height: 3.2em; overflow: hidden; }
+  .toggle-link { cursor: pointer; font-size: 12px; }
+
+  .strip { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; margin-top: 8px; }
+  .node-chip {
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; background: var(--panel);
+    font-size: 12px; display: flex; flex-direction: column; gap: 2px; min-width: 90px;
+  }
+  .node-chip .id { font-weight: 600; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+  .dot.pending { background: var(--pending); }
+  .dot.running { background: var(--running); animation: pulse 1.4s ease-in-out infinite; }
+  .dot.done, .dot.complete { background: var(--done); }
+  .dot.failed { background: var(--failed); }
+  .dot.skipped { background: var(--skipped); border: 1px dashed var(--skipped); background: transparent; }
+  .dot.blocked, .dot.missing { background: var(--blocked); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  .pkg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; margin-top: 8px; }
+  .pkg-card { border: 1px solid var(--border); border-radius: 10px; background: var(--panel); padding: 10px 12px; cursor: pointer; }
+  .pkg-card .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .pkg-card .title { font-weight: 600; }
+  .pkg-card .brief { color: var(--muted); font-size: 12px; margin-top: 4px; max-height: 2.6em; overflow: hidden; }
+  .pkg-card .meta { display: flex; gap: 10px; margin-top: 8px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+  .pkg-detail { margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 10px; display: none; }
+  .pkg-card.open .pkg-detail { display: block; }
+  .badge { display: inline-block; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 600; }
+  .badge.pending { background: color-mix(in srgb, var(--pending) 20%, transparent); color: var(--pending); }
+  .badge.running { background: color-mix(in srgb, var(--running) 18%, transparent); color: var(--running); }
+  .badge.done, .badge.complete { background: color-mix(in srgb, var(--done) 18%, transparent); color: var(--done); }
+  .badge.failed { background: color-mix(in srgb, var(--failed) 18%, transparent); color: var(--failed); }
+  .badge.skipped { background: transparent; color: var(--skipped); border: 1px dashed var(--skipped); }
+  .badge.blocked, .badge.missing { background: color-mix(in srgb, var(--blocked) 18%, transparent); color: var(--blocked); }
+
+  .ledger { list-style: none; margin: 8px 0 0; padding: 0; max-height: 360px; overflow: auto; }
+  .ledger li { padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .ledger time { color: var(--muted); margin-right: 8px; }
+  .reason { color: var(--failed); font-size: 12px; margin-top: 4px; }
+  .index-list { list-style: none; margin: 8px 0 0; padding: 0; }
+  .index-list li { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; background: var(--panel); }
+  .index-list a { text-decoration: none; font-weight: 600; }
+  code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+  #err { color: var(--failed); margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <p class="muted">loading…</p>
+</div>
+<script>
+(function () {
+  var qs = new URLSearchParams(location.search);
+  var taskParam = qs.get('task');
+  var app = document.getElementById('app');
+  var openPkgs = new Set();
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function fmtMs(ms) {
+    if (ms == null) return '';
+    var s = Math.round(ms / 1000);
+    if (s < 60) return s + 's';
+    var m = Math.floor(s / 60), r = s % 60;
+    if (m < 60) return m + 'm' + r + 's';
+    var h = Math.floor(m / 60);
+    return h + 'h' + (m % 60) + 'm';
+  }
+  function fmtUsd(n) { return typeof n === 'number' ? '$' + n.toFixed(2) : '–'; }
+  function fmtTime(ts) { return ts ? new Date(ts).toLocaleString() : '–'; }
+
+  function chip(n) {
+    var st = n.state || 'pending';
+    var bits = ['<div class="node-chip">',
+      '<span class="id"><span class="dot ' + esc(st) + '"></span>' + esc(n.node_id) + '</span>',
+      '<span class="muted">' + esc(st) + (n.elapsed_ms != null ? ' · ' + fmtMs(n.elapsed_ms) : '') + '</span>'];
+    if (n.match_pct !== undefined) bits.push('<span class="muted">match ' + esc(n.match_pct) + '%</span>');
+    if (n.reason) bits.push('<div class="reason">' + esc(n.reason) + '</div>');
+    bits.push('</div>');
+    return bits.join('');
+  }
+
+  function childStrip(child) {
+    if (!child) return '<p class="muted">not dispatched yet</p>';
+    if (child.missing) return '<p class="reason">child run file missing: ' + esc(child.cwd) + '</p>';
+    var out = ['<p class="mono muted">', esc(child.run_id), ' · ', esc(child.cwd), ' · state=', esc(child.state), '</p>'];
+    out.push('<div class="strip">');
+    (child.nodes || []).forEach(function (n) { out.push(chip(n)); });
+    out.push('</div>');
+    if (child.nested && child.nested.length) {
+      child.nested.forEach(function (nt) {
+        out.push('<h2>nested task ' + esc(nt.task_id) + '</h2>');
+        out.push(taskBody(nt));
+      });
+    }
+    return out.join('');
+  }
+
+  function pkgCard(p, idx) {
+    var st = (p.dispatch && p.dispatch.state) || 'pending';
+    var id = 'pkg-' + idx;
+    var open = openPkgs.has(p.id);
+    var costLine = '';
+    if (p.child && p.child.driver && p.child.driver.cost) {
+      costLine = fmtUsd(p.child.driver.cost.cost_usd) + ' · ' + p.child.driver.cost.turns + ' turns';
+    }
+    var driverAlive = p.child && p.child.driver ? (p.child.driver.alive ? 'driver alive' : 'driver dead') : '';
+    return (
+      '<div class="pkg-card' + (open ? ' open' : '') + '" data-pkgid="' + esc(p.id) + '" id="' + id + '">' +
+      '<div class="top"><span class="title">' + esc(p.id) + (p.title ? ' – ' + esc(p.title) : '') + '</span>' +
+      '<span class="badge ' + esc(st) + '">' + esc(st) + '</span></div>' +
+      (p.brief ? '<div class="brief">' + esc(p.brief) + '</div>' : '') +
+      '<div class="meta"><span>' + fmtMs(p.dispatch && p.dispatch.elapsed_ms) + '</span>' +
+      (costLine ? '<span>' + costLine + '</span>' : '') +
+      (driverAlive ? '<span>' + esc(driverAlive) + '</span>' : '') +
+      '</div>' +
+      '<div class="pkg-detail">' + childStrip(p.child) + '</div>' +
+      '</div>'
+    );
+  }
+
+  function taskBody(m) {
+    if (m.error) return '<p class="reason">' + esc(m.error) + '</p>';
+    var out = [];
+    out.push('<div class="panel">');
+    out.push('<h1>' + esc(m.task_id) + '</h1>');
+    out.push('<div class="request-box collapsed" id="reqbox">' + esc(m.request) + '</div>');
+    out.push('<span class="toggle-link" id="reqtoggle">show more ▾</span>');
+    out.push('<div class="header-grid">');
+    out.push('<div class="stat"><div class="label">state</div><div class="value"><span class="badge ' + esc(m.state) + '">' + esc(m.state) + '</span></div></div>');
+    out.push('<div class="stat"><div class="label">size</div><div class="value">' + esc(m.size || '–') + '</div></div>');
+    out.push('<div class="stat"><div class="label">flow</div><div class="value">' + esc(m.flow || '–') + '</div></div>');
+    out.push('<div class="stat"><div class="label">elapsed</div><div class="value">' + fmtMs(m.elapsed_ms) + '</div></div>');
+    out.push('<div class="stat"><div class="label">cost</div><div class="value">' + fmtUsd(m.cost && m.cost.usd) + '</div></div>');
+    out.push('<div class="stat"><div class="label">turns</div><div class="value">' + ((m.cost && m.cost.turns) || 0) + '</div></div>');
+    out.push('<div class="stat"><div class="label">daemon</div><div class="value">' + (m.daemon ? (m.daemon.alive ? 'alive' : 'dead') + (m.daemon.exhausted ? ' (exhausted)' : '') : '–') + '</div></div>');
+    out.push('<div class="stat"><div class="label">created</div><div class="value">' + fmtTime(m.created_at) + '</div></div>');
+    out.push('</div></div>');
+
+    if (m.s_run) {
+      out.push('<h2>run (size S)</h2><div class="panel"><div class="strip">');
+      (m.s_run.nodes || []).forEach(function (n) { out.push(chip(n)); });
+      out.push('</div></div>');
+    } else {
+      out.push('<h2>manager pipeline</h2><div class="panel"><div class="strip">');
+      (m.manager_stages || []).forEach(function (n) { out.push(chip(n)); });
+      out.push('</div></div>');
+
+      out.push('<h2>packages</h2><div class="pkg-grid">');
+      (m.packages || []).forEach(function (p, i) { out.push(pkgCard(p, i)); });
+      out.push('</div>');
+    }
+
+    out.push('<h2>recent events</h2><div class="panel"><ul class="ledger">');
+    (m.events || []).slice().reverse().forEach(function (e) {
+      var rest = Object.assign({}, e); delete rest.ts; delete rest.event; delete rest.task_id;
+      out.push('<li><time>' + esc(e.ts ? new Date(e.ts).toLocaleTimeString() : '') + '</time>' +
+        '<strong>' + esc(e.event) + '</strong> <span class="mono muted">' + esc(JSON.stringify(rest)) + '</span></li>');
+    });
+    out.push('</ul></div>');
+    return out.join('');
+  }
+
+  function indexBody(tasks, tasksDir) {
+    var out = ['<div class="panel"><h1>teams tasks</h1><p class="muted mono">' + esc(tasksDir) + '</p></div>'];
+    out.push('<ul class="index-list">');
+    if (!tasks.length) out.push('<li class="muted">no tasks found</li>');
+    tasks.forEach(function (t) {
+      if (t.error) { out.push('<li><span class="mono">' + esc(t.task_id) + '</span> <span class="reason">' + esc(t.error) + '</span></li>'); return; }
+      out.push('<li><a href="/?task=' + encodeURIComponent(t.task_id) + '">' + esc(t.task_id) + '</a> ' +
+        '<span class="badge ' + esc(t.state) + '">' + esc(t.state) + '</span> ' +
+        '<span class="muted">size=' + esc(t.size || '–') + ' · ' + fmtUsd(t.cost_usd) + ' · ' + fmtTime(t.created_at) + '</span>' +
+        '<div class="muted">' + esc(t.request) + '</div></li>');
+    });
+    out.push('</ul>');
+    return out.join('');
+  }
+
+  function attachInteractions() {
+    var toggle = document.getElementById('reqtoggle');
+    if (toggle) {
+      toggle.addEventListener('click', function () {
+        var box = document.getElementById('reqbox');
+        box.classList.toggle('collapsed');
+        toggle.textContent = box.classList.contains('collapsed') ? 'show more ▾' : 'show less ▴';
+      });
+    }
+    Array.prototype.forEach.call(document.querySelectorAll('.pkg-card'), function (card) {
+      card.addEventListener('click', function (ev) {
+        if (ev.target.closest('a')) return;
+        var id = card.getAttribute('data-pkgid');
+        if (openPkgs.has(id)) openPkgs.delete(id); else openPkgs.add(id);
+        card.classList.toggle('open');
+      });
+    });
+  }
+
+  function render(data) {
+    if (data.mode === 'index') {
+      app.innerHTML = indexBody(data.tasks, data.tasks_dir);
+      return;
+    }
+    app.innerHTML = taskBody(data.model);
+    attachInteractions();
+  }
+
+  function tick() {
+    var url = '/state.json' + (taskParam ? '?task=' + encodeURIComponent(taskParam) : '');
+    fetch(url, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (data) {
+      render(data);
+      document.getElementById('err') && document.getElementById('err').remove();
+    }).catch(function (e) {
+      var el = document.getElementById('err');
+      if (!el) { el = document.createElement('p'); el.id = 'err'; app.prepend(el); }
+      el.textContent = 'fetch failed: ' + e;
+    });
+  }
+
+  tick();
+  setInterval(tick, 3000);
+})();
+</script>
+</body>
+</html>

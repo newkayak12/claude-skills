@@ -15,6 +15,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { CHECK_ALLOW, splitCheck, claimedExit, impliesFailure, hasPlaceholder, isContentShowCmd, splitSlashCmd, fencedBlocksByLang, neededInputTokens, parseRequirements, requirementCovered, majorityVote } from './lib/claims.mjs';
+import { collectDriverCosts } from './lib/drivercost.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -276,63 +277,15 @@ for (const streamPath of streams) {
 // in it - not by hardcoding the .harness-tasks/*/drivers shape, so a nested child run's drivers/
 // dir (found while walking its worktree) is picked up the same way. Driver text is never folded
 // into sessionText/claims (see the "top-level session only" note above): only each stream's last
-// `result` event is read, for cost/turns/duration - never its assistant prose.
-function findDriverStreams(dir, acc = [], depth = 0) {
-  if (depth > 14) return acc;
-  let entries;
-  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return acc; }
-  for (const e of entries) {
-    if (e.name === '.git' || e.name === 'node_modules') continue;
-    const p = join(dir, e.name);
-    if (!e.isDirectory()) continue;
-    if (e.name === 'drivers') { for (const f of ls(p)) if (f.endsWith('.stream.jsonl')) acc.push(join(p, f)); }
-    findDriverStreams(p, acc, depth + 1);
-  }
-  return acc;
-}
-function lastResultEvent(streamPath) {
-  let last = null;
-  const txt = read(streamPath);
-  if (!txt) return null;
-  for (const line of txt.split('\n')) {
-    if (!line.trim()) continue;
-    let ev; try { ev = JSON.parse(line); } catch { continue; }
-    if (ev.type === 'result') last = ev;
-  }
-  return last;
-}
-const driverStreamPaths = findDriverStreams(WS).sort();
-// A task's own .harness-tasks/<task-id>/drivers/ directory is itself tracked in git, so every
-// worktree spawned off it (P1..P4, integration, ...) checks out whatever driver streams had
-// already finished at branch time - the SAME driver session, copied verbatim into N worktrees.
-// A driver still running when the worktree was cut has no `result` event yet in that frozen
-// copy (lastResultEvent returns null for it, so it is dropped above the dedup step); a driver
-// that had already finished is byte-identical across every copy. So identity is (task-id,
-// driver filename) - not the path - and duplicates are collapsed to the single highest-cost
-// (= most complete) reading, which also protects against a rarer case where two copies of the
-// same driver diverge (mid-run in one location, further along in another).
-const driverKey = (p) => { const m = p.match(/\.harness-tasks[\\/]([^\\/]+)[\\/]drivers[\\/]([^\\/]+)$/); return m ? `${m[1]}/${m[2]}` : p; };
-const byDriver = new Map();
-for (const p of driverStreamPaths) {
-  const last = lastResultEvent(p);
-  if (!last) continue;
-  const key = driverKey(p);
-  const cost = last.total_cost_usd || 0;
-  const prev = byDriver.get(key);
-  if (prev && prev.cost_usd >= cost) continue; // keep the most-complete duplicate only
-  byDriver.set(key, {
-    stream: p.startsWith(WS) ? p.slice(WS.length + 1) : p,
-    cost_usd: cost,
-    turns: last.num_turns || 0,
-    duration_ms: last.duration_ms || 0,
-  });
-}
-const driverSessions = [...byDriver.values()];
+// `result` event is read, for cost/turns/duration - never its assistant prose. This walk+dedupe
+// logic lives in lib/drivercost.mjs so view.mjs (the human-readable task-status surface) reads
+// the exact same numbers instead of a second parser that could disagree.
+const { cost_usd: driversCostUsd, turns: driversTurns, duration_ms: driversDurationMs, streams: driverSessions } = collectDriverCosts(WS);
 const drivers = {
   sessions: driverSessions.length,
-  cost_usd: +driverSessions.reduce((a, s) => a + s.cost_usd, 0).toFixed(4),
-  turns: driverSessions.reduce((a, s) => a + s.turns, 0),
-  duration_ms: driverSessions.reduce((a, s) => a + s.duration_ms, 0),
+  cost_usd: driversCostUsd,
+  turns: driversTurns,
+  duration_ms: driversDurationMs,
   streams: driverSessions.map((s) => ({ stream: s.stream, cost_usd: +s.cost_usd.toFixed(4), turns: s.turns, duration_ms: s.duration_ms })),
 };
 // session.cost_usd / turns keep meaning "the top-level driving session" (unchanged); total is
