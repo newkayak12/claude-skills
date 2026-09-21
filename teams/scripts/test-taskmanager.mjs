@@ -95,19 +95,44 @@ const CHILD_SPEC = {
   subgoals: [{ id: 'U1', title: 'do it', acceptance: ['a'], test: ['t'], deps: [] }],
 };
 
-// Drive one child run from plan to report through the graph broker, exactly as the session would.
+// Drive one child run from plan to report through the graph broker, exactly as the session
+// would - OR, when the parent already shaped and critiqued this package (§3, the default for
+// an ordinary SHAPE package below), straight through the subgoal chain: no plan/setgoal/
+// critique/gate:goal/report node exists on a parent_shaped run, so gate:U1 alone both
+// implements and judges. Which shape a given child run is takes reading the run itself - a
+// test SHAPE package with no split/size:'L' is parent_shaped by default now, but a repair,
+// phase-Team, or split package still gets the full graph.
 async function completeChild(g, child, { accept = true } = {}) {
   const { cwd, run_id } = child;
   const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
-  let v = await sub('plan', { handoff: 'p', flow: 'develop', size: 'S' });
-  assert.equal(v.state, 'done', JSON.stringify(v));
-  await sub('setgoal', { spec: CHILD_SPEC });
-  await sub('critique', { sound: true });
+  const full = await g.call('team_status', { run_id, cwd, full: true });
+  const parentShaped = full.parent_shaped === true;
+  if (!parentShaped) {
+    let v = await sub('plan', { handoff: 'p', flow: 'develop', size: 'S' });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    await sub('setgoal', { spec: CHILD_SPEC });
+    await sub('critique', { sound: true });
+  }
   // Distinct per package: git resolves identical hunks silently, and a conflict test needs a real one.
   appendFileSync(join(cwd, 'a.txt'), `changed by ${child.package_id || 'child'}\n`);
-  v = await sub('implement:U1:1', { changed_files: ['a.txt'], handoff: 'built' });
+  let v = await sub('implement:U1:1', { changed_files: ['a.txt'], handoff: 'built' });
   assert.equal(v.state, 'done', JSON.stringify(v));
   await sub('test:U1:1', { verified: true });
+  if (parentShaped) {
+    // gate:U1 alone is both the subgoal gate and the run's own verdict - there is no
+    // separate gate:goal round to reject.
+    await sub('gate:U1:1', { accept, match_pct: accept ? 95 : 40, gaps: accept ? [] : ['missing the b half'], reason: accept ? '' : 'short' });
+    const nx = await g.call('team_next', { run_id, cwd });
+    if (!accept) {
+      // Same caveat as the full-graph branch below: this assumes auto_reassign:false, or a
+      // rejected gate:U1 would open a fresh attempt of the chain on its own instead of
+      // leaving the run blocked for the caller to retry.
+      assert.equal(nx.state, 'blocked');
+      return;
+    }
+    assert.equal(nx.state, 'complete');
+    return;
+  }
   await sub('gate:U1:1', { accept: true, match_pct: 95 });
   await sub('gate:goal:1', { accept, match_pct: accept ? 95 : 40, gaps: accept ? [] : ['missing the b half'], reason: accept ? '' : 'short' });
   const nx = await g.call('team_next', { run_id, cwd });
@@ -460,10 +485,13 @@ test('a sound shape dispatches its root package: worktree created, child run ope
     // The child is a teams run the broker can pick up by (cwd, run_id): isolated, flowed, briefed.
     const st = await g.call('team_status', { run_id: c.run_id, cwd: c.cwd });
     assert.equal(st.state, 'running');
-    assert.deepEqual(st.nodes.map((n) => n.node_id), ['plan', 'setgoal', 'critique']);
+    // P1 has no split/size:'L' - it opens parent_shaped (§3): its own chain directly, no
+    // run-level plan/setgoal/critique to redo what this task's shape+critique already did.
+    assert.deepEqual(st.nodes.map((n) => n.node_id), ['implement:U1:1', 'test:U1:1', 'gate:U1:1']);
     assert.equal(st.flow, 'develop');
     const full = await g.call('team_status', { run_id: c.run_id, cwd: c.cwd, full: true });
     assert.equal(full.isolated, true);
+    assert.equal(full.parent_shaped, true);
     assert.equal(full.request, 'change a.txt');
     assert.match(full.context, /package P1 \(module a\)/);
     assert.match(full.context, /a\.txt says a/);
@@ -472,6 +500,82 @@ test('a sound shape dispatches its root package: worktree created, child run ope
     const early = await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
     assert.match(early.error, /still running/);
     assert.equal((await tm.call('tm_status', { task_id, node_id: 'dispatch:P1:1' })).nodes[0].state, 'running');
+  });
+});
+
+// ---------- parent_shaped (§3 of docs/plans/2026-09-21-teams-server-owns-the-loop.md) ----------
+//
+// openChild decides parent_shaped per package (default on for an ordinary STORY - test 14
+// above already pins that default's node list); these tests cover the two escape hatches
+// (pkg.split, depth >= max_depth) and foldChild reading a parent_shaped child back correctly.
+
+test('pkg.split: true opts a package out of parent_shaped - its child run still opens the full plan/setgoal/critique/gate:goal graph', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id, {
+      ...SHAPE,
+      packages: SHAPE.packages.map((p) => (p.id === 'P1' ? { ...p, split: true } : p)),
+    });
+    const nx = await tm.call('tm_next', { task_id });
+    const c = nx.children[0];
+    const full = await g.call('team_status', { run_id: c.run_id, cwd: c.cwd, full: true });
+    assert.equal(full.parent_shaped, undefined, 'split:true keeps the run off the parent_shaped path');
+    assert.deepEqual(full.nodes.map((n) => n.node_id), ['plan', 'setgoal', 'critique']);
+    // Driven to completion the ordinary (non-parent_shaped) way, exactly like every
+    // pre-§3 fixture - completeChild's own team_status check picks this branch itself.
+    await completeChild(g, c);
+    const folded = await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    assert.equal(folded.state, 'done');
+    assert.equal(folded.accept, true);
+  });
+});
+
+test('pkg.size: "L" is the same opt-out as pkg.split - the size node\'s own letter, read on a package', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id, {
+      ...SHAPE,
+      packages: SHAPE.packages.map((p) => (p.id === 'P1' ? { ...p, size: 'L' } : p)),
+    });
+    const nx = await tm.call('tm_next', { task_id });
+    const full = await g.call('team_status', { run_id: nx.children[0].run_id, cwd: nx.children[0].cwd, full: true });
+    assert.equal(full.parent_shaped, undefined);
+  });
+});
+
+test('depth >= max_depth forces every package chain-only regardless of split - a package this deep may not open its own shape/dispatch cycle', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    // max_depth:0 with this task's own depth 0 (the ordinary case: nothing opened it as a
+    // nested task) trips depth >= max_depth immediately.
+    await throughCritique(tm, task_id, {
+      ...SHAPE,
+      packages: SHAPE.packages.map((p) => (p.id === 'P1' ? { ...p, split: true } : p)),
+    });
+    const nx = await tm.call('tm_next', { task_id });
+    const full = await g.call('team_status', { run_id: nx.children[0].run_id, cwd: nx.children[0].cwd, full: true });
+    assert.equal(full.parent_shaped, true, 'depth >= max_depth overrides split:true');
+    assert.deepEqual(full.nodes.map((n) => n.node_id), ['implement:U1:1', 'test:U1:1', 'gate:U1:1']);
+  }, { max_depth: 0 });
+});
+
+test('foldChild folds an accepted parent_shaped child: its chain gate stands in for the goal gate, implement\'s handoff for the report', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    const c = nx.children[0];
+    const full = await g.call('team_status', { run_id: c.run_id, cwd: c.cwd, full: true });
+    assert.equal(full.parent_shaped, true);
+    await completeChild(g, c);
+    const folded = await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    assert.equal(folded.state, 'done');
+    assert.equal(folded.accept, true, 'gate:U1\'s own accept, read where a goal gate\'s used to be');
+    assert.equal(folded.match_pct, 95);
+    // report and changed_files land on the node's own result (verdict() does not surface
+    // them at the tm_submit top level, so this reads the raw node) - the same place the
+    // 'accept' node's own briefing reads them from, which is what P2's childContext already
+    // asserted above via /built/.
+    const st = await tm.call('tm_status', { task_id, node_id: 'dispatch:P1:1', full: true });
+    const r = st.node.result;
+    assert.equal(r.report, 'built', 'implement:U1\'s handoff, read where a report node\'s handoff used to be');
+    assert.deepEqual(r.changed_files, ['a.txt']);
   });
 });
 
@@ -536,7 +640,10 @@ test('a parent with two dependent children runs to report; the second child sees
     const acceptPrompt = readFileSync(nx.ready[0].briefing_path, 'utf8');
     assert.match(acceptPrompt, /## Package P1 — module a/);
     assert.match(acceptPrompt, /Its goal gate: accept=true match=95%/);
-    assert.match(acceptPrompt, /child report for/);
+    // P1 is parent_shaped (§3): there is no report node to carry a custom string, so the
+    // "what this child delivered" text foldChild reads is implement:U1's own handoff instead
+    // - completeChild's fixed "built" (see its implement:U1:1 submission above).
+    assert.match(acceptPrompt, /built/);
     assert.match(acceptPrompt, /Files it reported changing:\n- a\.txt/);
     v = await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) });
     assert.equal(v.state, 'done');
@@ -546,7 +653,8 @@ test('a parent with two dependent children runs to report; the second child sees
     assert.equal(nx.children[0].node_id, 'dispatch:P2:1');
     const p2 = await g.call('team_status', { run_id: nx.children[0].run_id, cwd: nx.children[0].cwd, full: true });
     assert.match(p2.context, /Delivered by package P1/);
-    assert.match(p2.context, /child report for/);
+    // Same parent_shaped caveat as the accept prompt above: P1's "report" is implement:U1's handoff.
+    assert.match(p2.context, /built/);
     assert.equal(readFileSync(join(nx.children[0].cwd, 'a.txt'), 'utf8'), 'x\nchanged by P1\n', 'P2 starts from what P1 delivered, not from HEAD');
     assert.notEqual(nx.children[0].cwd, (await tm.call('tm_status', { task_id, node_id: 'dispatch:P1:1' })).nodes[0].child.cwd, 'each package has its own worktree');
     await completeChild(g, nx.children[0]);
@@ -1072,7 +1180,13 @@ test('tm_open({goal_judges}) is stored in child_opts and reaches the actual disp
 
 test('a dispatched package with goal_judges:2 is folded by the true multi-judge consensus, not by whichever sibling node happens to sort last', async () => {
   await withTask(async ({ tm, g, task_id }) => {
-    await throughCritique(tm, task_id);
+    // This test is about the goal-gate ROUND's own multi-judge consensus, which only exists
+    // on a full-graph child run - P1 opts out of parent_shaped (§3) with split:true so its
+    // child run still opens plan/setgoal/critique/gate:goal instead of running chain-only.
+    await throughCritique(tm, task_id, {
+      ...SHAPE,
+      packages: SHAPE.packages.map((p) => (p.id === 'P1' ? { ...p, split: true } : p)),
+    });
     const nx = await tm.call('tm_next', { task_id });
     const c = nx.children[0];
     const { cwd, run_id } = c;

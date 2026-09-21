@@ -1,9 +1,9 @@
 // teams/mcp/teamconfig.mjs - project defaults for tm_open, read from .claude/team.json.
 //
 // Precedence is built-in defaults < team.json < explicit tm_open arguments. Every resolved key
-// carries where it came from so tm_status can show it. Keys that no code acts on yet
-// (roles, max_depth, ...) are still resolved and recorded: the file is the contract, the rounds
-// after 0.10 fill in the behaviour.
+// carries where it came from so tm_status can show it. roles and max_depth are both acted on now
+// (taskmanager.mjs); a key still resolved and recorded with nothing reading it yet stays that way
+// on purpose - the file is the contract, a later round fills in the behaviour.
 //
 // Human-as-a-node (interactive, human_gates, human_scope) was removed here - see the note above
 // PROVISIONAL_MAX_PARALLEL_TEAMS's neighbour, max_depth, for where that design now lives.
@@ -20,11 +20,13 @@ export const TEAM_FILE = join('.claude', 'team.json');
 
 export const TEAM_DEFAULTS = Object.freeze({
   max_parallel_teams: PROVISIONAL_MAX_PARALLEL_TEAMS,
-  // Declared and validated, but nothing enforces it yet: this is the depth cap on a child run
-  // re-decomposing itself (a STORY that, inside its own run, decides it must shape and dispatch
-  // sub-STORYs of its own). docs/plans/2026-09-21-teams-server-owns-the-loop.md §3 is where the
-  // child-run chain rule lands and where max_depth enforcement gets wired in; not implemented
-  // here.
+  // The depth cap on a package re-decomposing itself (a STORY that, inside its own child run,
+  // still needs its own shape/dispatch cycle - pkg.split:true or pkg.size:'L', taskmanager.mjs's
+  // openChild). Enforced there: a package opened at task.depth >= this value is always
+  // parent_shaped chain-only regardless of what it asked for (docs/plans/
+  // 2026-09-21-teams-server-owns-the-loop.md §3, item 3). task.depth itself is only ever 0 today
+  // - nothing in this codebase opens a nested tm_open yet - so this cap has no live effect until
+  // that exists; it is threaded through task.child_opts.depth now so it is ready when it does.
   max_depth: 2,
   qa_rounds: 2,
   roles: { planning: false, qa: false },
