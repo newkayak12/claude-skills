@@ -1358,7 +1358,11 @@ export function openChild(task, n) {
 export function dispatchSettled(task, n) {
   if (!n.child) return false;
   const child = loadRun(n.child.cwd, n.child.run_id);
-  if (!child) return true; // foldChild will report the missing-file error; that IS a fold
+  if (!child) {
+    // Missing file: foldChild will report that, and that IS a fold. Unparseable file: another
+    // process is mid-write (or was, before saveRun became write-then-rename); not settled yet.
+    return !existsSync(join(n.child.cwd, '.teams_output', 'broker', 'runs', `${n.child.run_id}.json`));
+  }
   return runState(child).state !== 'running';
 }
 
