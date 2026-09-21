@@ -172,6 +172,18 @@ plan / setgoal / critique 3노드가 EPIC의 shape / critique를 반복**한다�
 
 §3 체인만 도는 자식 런(`parent_shaped`, `pkg.split` opt-out, `max_depth` 강제)과 사람이 보는 뷰어 `scripts/view.mjs`는 별도 워크트리에서 병행 진행 중이다. seam-beta-D1이 끝난 뒤 머지한다 — 돌아가는 벤치가 절반 고친 mcp 파일을 로드하는 일이 없도록.
 
+### 8a. 첫 완주 시도에서 나온 하네스 버그 셋 (2026-09-21, seam-beta D1/D2)
+
+측정 전에 데몬이 세 가지 다른 이유로 멈췄다. 셋 다 stderr 없이 또는 예외 하나로 끝나 "느리다/비싸다"로 오독될 수 있었던 것들이다.
+
+| 판 | 증상 | 원인 | 수정 |
+|---|---|---|---|
+| D1 | P1 dispatch 1초 뒤 데몬 `exit 0`, 재시작 2회 동일, `exhausted`. 자식은 8노드 완주, 아무도 fold 안 함. 1h44m 정지 | `waitForProgress`의 fallback 타이머가 `unref()`, `fs.watch`는 비영속 → 이벤트 루프가 비어 await 도중 정상 종료 | 타이머 ref 유지, task.json 찢긴 읽기는 재시도 (0.13.1) |
+| D2 | 데몬 `exit 1` ×2, 스택은 `foldChild: still running` | `fs.watch`가 broker의 쓰기 순간에 깨워 잘린 자식 런을 읽음 → `dispatchSettled` true → `foldChild`가 온전한 파일을 다시 읽고 throw | `saveRun` 쓰기→rename 원자화, 파싱 불가 파일은 미정착, fold 예외는 `daemon_fold_deferred`로 기록 (0.13.2) |
+| D2 | integrate가 정당하게 반려(cli 테스트에 종료코드 숫자 하드코딩) → runState `blocked` → `daemon_done`, 종료. 3패키지 accept 상태로 repair 하나 부족 | repair 패키지는 `tm_retry({package_id:"integration"})` 호출자만 열 수 있었다 — 서버가 루프를 소유한다는 §2와 어긋남 | `autoRepair(task)`: 데몬이 `integrateToRepair`→`openRepair`를 직접 호출, `max_retries` 예산 그대로 (0.13.3) |
+
+D2 수치(비교 참고용, 완주 아님): 64분, $14.99 (세션 $0.95 + 드라이버 3개 $14.04), 132턴, integrate까지. 0.12 S1은 78분 $25.87. 세션 두 개 몫($14)은 사라졌고 시간은 shape가 P1→P2→P3 직렬 의존으로 쪼개 병렬이 0이라 그대로다. §3 체인 전용이 들어간 D3에서 다시 잰다.
+
 ## 9. 반론과 리스크
 
 - **"서버가 `claude -p`를 노드마다 띄우면 프로세스 기동 비용이 있다."** 지금도 driver마다 띄운다. 노드 수만큼 띄우면 횟수는 늘지만 각 호출이 짧고, 릴레이 3턴이 사라진 순감소가 더 크다. 실측으로 확인(단계 5).

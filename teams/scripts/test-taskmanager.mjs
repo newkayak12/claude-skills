@@ -2319,6 +2319,57 @@ test('a torn read of a child run file is "not settled yet", and saveRun never le
   });
 });
 
+test('a refused integrate opens a repair package by itself (autoRepair) instead of leaving the task blocked', async () => {
+  // seam-beta-D2 (2026-09-21): integrate refused on its checks, the daemon read "blocked",
+  // recorded daemon_done and exited - three accepted packages, one repair short of a report.
+  const { autoRepair } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    let nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) });
+    nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P2:1' });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:P2:1', payload: ok({ accept: true, match_pct: 90 }) });
+    nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['integrate:1']);
+    const v = await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: false, checks: ['grep -> a hardcoded exit code in packages/cli/test'], reason: 'cli tests hardcode 2 and 0' }) });
+    assert.equal(v.state, 'failed');
+    assert.equal((await tm.call('tm_status', { task_id })).state, 'blocked', 'by node state alone the graph is blocked');
+
+    const load = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    let task = load();
+    // autoRepair runs in THIS process here (the daemon is off under HARNESS_TEST_NO_DRIVER), and
+    // record() resolves the ledger through tasksRoot() - point it at the same root the server uses.
+    const prevRoot = process.env.HARNESS_TASKS_DIR;
+    process.env.HARNESS_TASKS_DIR = root;
+    try {
+      assert.equal(autoRepair(task), true, 'a refused integrate with a combined tree is a repair, not an end');
+    } finally {
+      if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot;
+    }
+    task = load();
+    const r1 = task.spec.packages.find((p) => p.id === 'R1');
+    assert.ok(r1 && r1.repair && r1.integration_of === 'integrate:1', 'R1 is a repair of integrate:1');
+    assert.match(r1.brief, /cli tests hardcode 2 and 0/, 'the refusal reason travels into the repair brief');
+    assert.ok(task.nodes.some((n) => n.node_id === 'dispatch:R1:1'), 'the repair dispatch exists');
+    assert.ok(task.nodes.some((n) => n.node_id === 'integrate:2' && n.supersedes === 'integrate:1'), 'a fresh integrate waits behind it');
+    const gate = task.nodes.find((n) => n.node_id === 'gate:goal:1');
+    assert.ok(gate.deps.includes('integrate:2') && !gate.deps.includes('integrate:1'), 'gate:goal moved behind the fresh integrate');
+    assert.equal((await tm.call('tm_status', { task_id })).state, 'running', 'the task is live again');
+    process.env.HARNESS_TASKS_DIR = root;
+    try {
+      assert.equal(autoRepair(load()), false, 'nothing to repair twice: integrate:1 is superseded, integrate:2 is pending');
+    } finally {
+      if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot;
+    }
+    const ev = await tm.call('tm_events', { task_id });
+    assert.ok(ev.events.some((e) => e.event === 'daemon_repair_opened' && e.package_id === 'R1'));
+  });
+});
+
 test('tm_events tails the ledger, newest last, filtered by since', async () => {
   await withTask(async ({ tm, task_id, root }) => {
     const all = await tm.call('tm_events', { task_id });
