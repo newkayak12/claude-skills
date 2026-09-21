@@ -182,6 +182,10 @@ plan / setgoal / critique 3노드가 EPIC의 shape / critique를 반복**한다�
 | D2 | 데몬 `exit 1` ×2, 스택은 `foldChild: still running` | `fs.watch`가 broker의 쓰기 순간에 깨워 잘린 자식 런을 읽음 → `dispatchSettled` true → `foldChild`가 온전한 파일을 다시 읽고 throw | `saveRun` 쓰기→rename 원자화, 파싱 불가 파일은 미정착, fold 예외는 `daemon_fold_deferred`로 기록 (0.13.2) |
 | D2 | integrate가 정당하게 반려(cli 테스트에 종료코드 숫자 하드코딩) → runState `blocked` → `daemon_done`, 종료. 3패키지 accept 상태로 repair 하나 부족 | repair 패키지는 `tm_retry({package_id:"integration"})` 호출자만 열 수 있었다 — 서버가 루프를 소유한다는 §2와 어긋남 | `autoRepair(task)`: 데몬이 `integrateToRepair`→`openRepair`를 직접 호출, `max_retries` 예산 그대로 (0.13.3) |
 
+| E1 | P1 fold 직후 `daemon_done blocked`. 드라이버는 `implement:U1:2` 진행 중 | broker가 gate 반려를 **먼저 저장**하고 그 다음 autoReassign 재시도 체인을 저장 — 두 저장 사이 디스크상 자식 런은 `blocked`, 데몬의 `fs.watch`가 첫 rename에 깨어 그걸 읽음 | broker는 autoReassign 뒤 한 번만 저장; `dispatchSettled`는 드라이버가 살아 있는 blocked 자식을 미정착으로(정착 신호 = 드라이버 종료) (0.14.1) |
+
+공통 교훈: **디스크 스냅샷 하나로 "끝났다"를 판정하지 말 것.** 자식 런 파일은 한 프로세스(broker)가 여러 단계로 쓰고, 데몬은 그 사이 어느 순간에도 깨어난다. 정착 신호는 상태 파일이 아니라 드라이버 프로세스의 종료(exit 파일)여야 하고, 상태 파일은 그 뒤에 읽는다.
+
 D2 수치(비교 참고용, 완주 아님): 64분, $14.99 (세션 $0.95 + 드라이버 3개 $14.04), 132턴, integrate까지. 0.12 S1은 78분 $25.87. 세션 두 개 몫($14)은 사라졌고 시간은 shape가 P1→P2→P3 직렬 의존으로 쪼개 병렬이 0이라 그대로다. §3 체인 전용이 들어간 D3에서 다시 잰다.
 
 ## 9. 반론과 리스크
