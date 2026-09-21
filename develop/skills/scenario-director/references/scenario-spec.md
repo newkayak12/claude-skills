@@ -31,6 +31,25 @@ Rules the shape enforces:
   has seen returned is `[확인 필요: docs say 403]` until the actor probes it. When the server
   answers differently the row keeps the server's code and records the lie:
   `404, error contains "not found" (probed; docs said 403, server 404)`. Docs are a finding, not a fact.
+- **Capture and request notation covers more than JSON.** `Capture` is `field` (JSON body),
+  `header ETag → etag`, or `xml //d:href → href`; `Request` carries headers after `·`
+  (`· Depth: 1`, `· If-Match: {etag}`), a method the router needs (`PROPFIND`, `REPORT`), and a
+  body type when it isn't JSON (`body: text/calendar <ics>`). The spec's second line names the auth:
+  `Auth: bearer` · `basic (app password)` · `cookie` · `api-key`. A 207 is asserted by the
+  element inside it (`d:status contains "200"`), a 412 is the refusal for ETag-guarded writes.
+
+  ```markdown
+  # S3 — put event, then stale If-Match is refused
+  Actor: alice · Auth: basic (app password)   Namespace: s3-<run id>
+
+  | Step | Request | Capture | Assert |
+  |------|---------|---------|--------|
+  | 1 | PUT /calendars/alice/default/{uid}.ics · body: text/calendar (UID = s3-<run id>) | header ETag → etag | 201, ETag present |
+  | 2 | PROPFIND /calendars/alice/default/ · Depth: 1 | xml //d:href → href | 207, d:getetag contains {etag} |
+  | 3 | PUT /calendars/alice/default/{uid}.ics · If-Match: "stale" · body: text/calendar | — | 412 |
+  | 4 | GET /calendars/alice/default/{uid}.ics | header ETag → etag2 | 200, etag2 = etag (step 3 changed nothing) |
+  Cleanup: DELETE /calendars/alice/default/{uid}.ics
+  ```
 - **A verify step follows every refusal.** Step 5 proves the rejected request had no side
   effect; without it the 409 could mask a half-applied write.
 - **Cleanup is declared** and the actor runs it through the API with the captured id on every
