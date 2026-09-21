@@ -418,12 +418,39 @@ export function createRun(opts) {
     size: null,
     created_at: Date.now(),
     spec: null,
-    nodes: [
+    // How many packages deep this run was opened. 0 at the top; task.child_opts.depth =
+    // parent.depth + 1 for every package's child run (teamconfig.mjs's max_depth reads
+    // this). A caller that never asks - the ordinary team_open path, every run before this
+    // field existed - gets 0, which max_depth (default 2) never trips.
+    depth: Number.isInteger(opts.depth) ? opts.depth : 0,
+    nodes: [],
+  };
+  // A parent that already shaped and critiqued this run's one subgoal (docs/plans/
+  // 2026-09-21-teams-server-owns-the-loop.md §3) hands it down already decided: run-level
+  // plan/setgoal/critique would only re-derive what the parent's shape+critique already
+  // settled, and a goal-level gate would only re-judge what that one subgoal's own gate
+  // just judged. Skip both layers - this run IS the subgoal chain, nothing else. No plan
+  // node ever runs here, so run.flow (opts.flow - a package's child is always opened with a
+  // resolved flow, never 'auto') decides the kind directly instead of waiting on flow_chosen.
+  if (opts.parent_shaped === true) {
+    run.parent_shaped = true;
+    const kind = FLOWS[run.flow] ? FLOWS[run.flow].kind : DEFAULT_KIND;
+    const acceptance = Array.isArray(opts.acceptance) && opts.acceptance.length
+      ? opts.acceptance.slice()
+      : [String(opts.goal || opts.request || '').slice(0, 200) || 'the package meets its brief'];
+    run.spec = {
+      goal: opts.goal || opts.request,
+      acceptance,
+      subgoals: [{ id: 'U1', title: opts.goal || 'the package', kind, acceptance: acceptance.slice(), deps: [], after: [] }],
+    };
+    pushChain(run, (KINDS[kind] || KINDS[DEFAULT_KIND]).chain, 'U1', 1, [], [], {});
+  } else {
+    run.nodes.push(
       node('plan', 'plan', []),
       node('setgoal', 'setgoal', ['plan']),
       node('critique', 'critique', ['setgoal']),
-    ],
-  };
+    );
+  }
   return saveRun(run);
 }
 
@@ -579,6 +606,19 @@ export function pushChain(run, chain, subgoalId, attempt, headDeps, headAfter, h
 function gateStage(kind) {
   const { chain } = KINDS[kind] || KINDS[DEFAULT_KIND];
   return chain[chain.length - 1];
+}
+
+// A parent_shaped run's terminal node: the latest-attempt gate of its one subgoal. There is
+// no gate:goal and no report on this run, so runState (below) and any caller reading the
+// child's own account of itself (taskmanager.mjs's foldChild) read this instead. Latest
+// attempt is the last-pushed one, the same convention retrySubgoal's own `heads.at(-1)` and
+// `prior.length` counting rely on elsewhere in this file.
+export function parentShapedTerminal(run) {
+  const sg = run.spec && Array.isArray(run.spec.subgoals) ? run.spec.subgoals[0] : null;
+  if (!sg) return null;
+  const stage = gateStage(kindOf(sg));
+  const nodes = run.nodes.filter((n) => n.stage === stage && n.subgoal_id === String(sg.id));
+  return nodes.length ? nodes[nodes.length - 1] : null;
 }
 
 // ---------- goal-gate consensus and repair (Step 9) ----------
@@ -859,6 +899,14 @@ export function retrySubgoal(run, subgoalId, feedback) {
 // setgoal with the critique's problems, and discard the subgoal graph the old spec
 // produced - a new spec may decompose differently.
 export function retrySpec(run, feedback) {
+  // A parent_shaped run has no setgoal/critique to redo - its "spec" IS the one subgoal the
+  // parent already shaped. A caller that asks for a spec-level retry anyway (autoReassign's
+  // twice-rejected-for-the-same-reason escalation, or a bare team_retry({run_id})) gets the
+  // one retry this run actually has: a fresh attempt of that subgoal's chain.
+  if (run.parent_shaped) {
+    const sg = run.spec && Array.isArray(run.spec.subgoals) ? run.spec.subgoals[0] : null;
+    if (sg) return retrySubgoal(run, sg.id, feedback);
+  }
   const priors = run.nodes.filter((n) => n.stage === 'setgoal');
   const attempt = priors.length + 1;
   if (attempt > run.max_retries + 1) {
@@ -941,6 +989,18 @@ export function runState(run) {
     if (c && c.settled) { goalVerdict = publicGoalVerdict(c); break; }
   }
   const withVerdict = (s) => (goalVerdict ? { ...s, goal_verdict: goalVerdict } : s);
+
+  // A parent_shaped run has no gate:goal and no report node (§3 of docs/plans/
+  // 2026-09-21-teams-server-owns-the-loop.md) - it IS the one subgoal's chain, so its
+  // terminal gate stands in for both: done means complete, and the ordinary blocked/running
+  // reads below still apply to everything short of that.
+  if (run.parent_shaped) {
+    const terminal = parentShapedTerminal(run);
+    if (terminal && terminal.state === 'done') return withVerdict({ state: 'complete', counts });
+    if (run.routing_blocked && !counts.running) return withVerdict({ state: 'blocked', counts });
+    if (!readyNodes(run).length && !counts.running) return withVerdict({ state: 'blocked', counts });
+    return withVerdict({ state: 'running', counts });
+  }
 
   // Only a finished report means the run finished. Deciding on "nothing pending" once
   // let a spec retry that rebuilt no nodes report itself complete having implemented
