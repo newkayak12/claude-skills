@@ -31,7 +31,7 @@ import {
   taskPath, taskDir, record, noDriver, taskState,
   advanceDispatches, serviceRunningDispatches, prepareReadyIntegrations,
   dispatchSettled, foldChild, serviceSRun, delegateIfSmall,
-  finish, composeTaskPrompt, briefingPath,
+  finish, composeTaskPrompt, briefingPath, autoRepair,
 } from './taskmanager.mjs';
 
 function parseArgs(argv) {
@@ -275,6 +275,11 @@ async function stepOnce(task) {
     if (n.stage === 'size') delegateIfSmall(task, n, out);
     progressed = true;
   }
+
+  // An integrate that refused on its checks leaves the graph "blocked" by node state alone, but
+  // the task is not done: open the repair package (budgeted by max_retries) the way a caller's
+  // tm_retry({package_id: "integration"}) would, and keep driving.
+  if (autoRepair(task)) progressed = true;
 
   return progressed;
 }

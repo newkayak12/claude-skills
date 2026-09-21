@@ -549,6 +549,25 @@ function openRepair(task, integ) {
   return { task: saveRun(task), package_id: id, integrate: fresh, reason: '' };
 }
 
+// The daemon's own route out of a refused integrate. tm_retry({package_id: "integration"}) is the
+// same move made by a caller; the daemon makes it itself, because a task whose integrate refused
+// on its checks (verified:false, a combined tree that exists, no merge conflict) is not blocked -
+// it has a repair left to try, budgeted by max_retries exactly as openRepair already counts.
+// seam-beta-D2 (2026-09-21) stopped here: integrate rightly refused (cli tests hardcoded exit
+// numbers), the daemon saw runState "blocked", recorded daemon_done and left, three accepted
+// packages one repair short of a report. Returns true when a repair package was opened (or the
+// budget was spent and the failure settled) so the daemon knows the graph changed.
+export function autoRepair(task) {
+  const target = integrateToRepair(task);
+  if (!target.node) return false;
+  const out = openRepair(task, target.node);
+  record(task, {
+    event: 'daemon_repair_opened', task_id: task.run_id, integrate: target.node.node_id,
+    package_id: out.package_id, integrate_next: out.integrate || null, reason: out.reason || '',
+  });
+  return true;
+}
+
 // ---------- defect STORYs: tm_file and the QA re-loop (v0.12.1 Task 1, §5b) ----------
 //
 // Files one ordinary develop package per defect - unlike a repair package, each gets its OWN
