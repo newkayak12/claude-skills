@@ -561,6 +561,8 @@ function verdict(run, n) {
   // sees a plain stage_ok=false and cannot tell a node that admitted failure from one
   // that claimed success and was caught.
   if (res.submitted_stage_ok === true && out.stage_ok !== true) out.submitted_stage_ok = true;
+  // The opposite overrule: an author said stage_ok:false with nothing behind it and the work went on to be judged.
+  if (res.self_reported_stage_ok === false) out.self_reported_stage_ok = false;
   if (n.state === 'failed' && res.stage_ok === true) {
     const field = VERDICT_FIELD[n.stage] || null;
     if (field && res[field] === undefined) out.missing_verdict = field;
@@ -891,6 +893,24 @@ function finishNode(run, n, result, vendorName) {
   const noAttacks = n.stage === 'gate' && !n.subgoal_id && result.accept === true
     && !(Array.isArray(result.attacks) && result.attacks.length > 0);
   const gateNoEvidence = noChecks || noAttacks;
+  // An authoring node's own stage_ok is not a verdict on its work - the chain's test and gate
+  // are. An author that reports stage_ok:false with no reason, no error and only passing checks
+  // has mis-set a flag, not failed: trap-beta-T2's P3 did exactly that twice ("66 tests, 66
+  // pass, 0 fail", "clean working tree after commit", stage_ok:false) and each time the chain
+  // treated the self-report as final, made the gate unreachable, blocked the child and sent
+  // the whole package back to attempt 1. The flag is kept on the result for the gate to see,
+  // and the work goes on to be judged. A stated reason, an error, or a failing check is honoured.
+  if (!REASONING_STAGES.has(n.stage) && result.stage_ok === false && !result.reason && !result.error
+    && !result.verification_error && !(result.contradicted_files || []).length && result.submitted_stage_ok !== true) {
+    const checks = Array.isArray(result.checks) ? result.checks : [];
+    const failing = checks.some((c) => /\b(fail(ed|ing|s)?|error|ENOENT|exit(ed)? [1-9]|not ok)\b/i.test(String(c)) && !/\b0 fail/i.test(String(c)));
+    if (!failing) {
+      result = {
+        ...result, stage_ok: true, self_reported_stage_ok: false,
+        stage_ok_note: 'author reported stage_ok:false with no reason and no failing check; the test and gate nodes judge the work, not the author',
+      };
+    }
+  }
   n.state = nodeSucceeded(run, n, result) ? 'done' : 'failed';
   if (gateNoEvidence && n.state === 'failed') {
     result = { ...result, stage_ok: false, reason: noChecks
@@ -1017,6 +1037,7 @@ const VERDICT_SCHEMA = {
     reviewer_independence: { type: 'string', enum: ['distinct-identity', 'unverifiable-self'], description: 'review and revise nodes: whether the broker could see that the reviewer is not the draft author' },
     contradicted_files: { type: 'array', items: { type: 'string' } },
     submitted_stage_ok: { type: 'boolean', description: 'present when the broker overruled the executor' },
+    self_reported_stage_ok: { type: 'boolean', description: 'present (false) when an authoring node reported stage_ok:false with no reason and no failing check, and the broker let the chain judge the work instead' },
     missing_verdict: { type: 'string', description: 'the verdict field the node failed to return' },
     killed_for: { type: 'string', enum: ['timeout', 'cancelled'] },
     reason: { type: 'string' },

@@ -321,6 +321,44 @@ test('a shared worktree reports null attribution rather than a pass', async () =
 // stage_ok on a judging node means "the judging worked". Reading only stage_ok once let
 // a rejected subgoal flow downstream as if it had passed.
 
+test("an author's stage_ok:false with no reason and passing checks does not fail the node - the chain judges the work", async () => {
+  // trap-beta-T2 P3 (2026-09-21): implement reported 66/66 tests passing, a clean committed tree,
+  // and stage_ok:false. Twice. Each time the gate became unreachable and the package restarted.
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    const f = dirty(cwd);
+    const v = await c.call('team_submit', {
+      run_id: runId, cwd, node_id: 'implement:U1:1',
+      payload: { stage_ok: false, changed_files: [f], handoff: 'built it', evidence: 'e', checks: ['node --test -> 66 tests, 66 pass, 0 fail', 'git status --porcelain -> empty'] },
+    });
+    assert.equal(v.state, 'done', `a mis-set flag is not a failure: ${JSON.stringify(v)}`);
+    assert.equal(v.self_reported_stage_ok, false, 'the self-report is kept for the gate to see');
+    const nx = await c.call('team_next', { run_id: runId, cwd });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['test:U1:1'], 'the chain goes on to test and gate');
+  });
+});
+
+test("an author's stage_ok:false WITH a reason, or with a failing check, still fails the node", async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    const f = dirty(cwd);
+    const v = await c.call('team_submit', {
+      run_id: runId, cwd, node_id: 'implement:U1:1',
+      payload: { stage_ok: false, changed_files: [f], evidence: 'e', reason: 'could not write the file', checks: ['ok -> looked fine'] },
+    });
+    assert.equal(v.state, 'failed');
+  });
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    const f = dirty(cwd);
+    const v = await c.call('team_submit', {
+      run_id: runId, cwd, node_id: 'implement:U1:1',
+      payload: { stage_ok: false, changed_files: [f], evidence: 'e', checks: ['node --test -> 3 failing'] },
+    });
+    assert.equal(v.state, 'failed');
+  });
+});
+
 test('test verified=false fails the node and the engine reassigns the subgoal itself', async () => {
   await withRun(async ({ c, cwd, runId }) => {
     await throughCritique(c, cwd, runId);
