@@ -53,6 +53,9 @@ import {
   runState,
   settleFailure,
   FLOWS,
+  KINDS,
+  DEFAULT_KIND,
+  kindOf,
 } from './graph.mjs';
 
 const SERVER = { name: 'task-manager', version: '0.7.0' };
@@ -117,9 +120,9 @@ function stageSkills(task, n) {
 const CONTRACT = {
   size: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "handoff": "<what shape needs to know>", "evidence": "..."}
 S means one graph run in one worktree can carry the whole request. L means it spans independent modules, packages or repositories that each need their own run and worktree, integrated afterwards. Decide from what commands show - file and module counts, ownership boundaries, build units - and put those commands in "sizing". The default is S: a manager layer exists, and the temptation is to use it. Over-sizing costs a worktree, a run and an integration per package; under-sizing costs one retry.`,
-  shape: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "acceptance": ["goal-level criteria for the integrated result"], "packages": [{"id": "P1", "title": "...", "flow": "develop|document", "skills": ["plugin:skill"], "brief": "<the request this package's own graph run will receive - self-contained>", "acceptance": ["what the package must deliver, checkable inside its worktree"], "touches": ["paths or modules this package changes"], "deps": ["P0"]}], "handoff": "...", "evidence": "..."}
+  shape: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "acceptance": ["goal-level criteria for the integrated result"], "packages": [{"id": "P1", "title": "...", "flow": "develop|document", "skills": ["plugin:skill"], "brief": "<the request this package's own graph run will receive - self-contained>", "acceptance": ["what the package must deliver, checkable inside its worktree"], "touches": ["paths or modules this package changes"], "deps": ["P0"], "split": false}], "handoff": "...", "evidence": "..."}
 "skills" is optional and is method for the package, not for you: you are the stage that knows what each package IS, and a CLI package and a reference-document package want different method. Name the skills that package's own nodes should work by, and they travel into its child run; leave it out when the brief is method enough. Do not name a skill that asks its reader questions - the child's nodes run headless too.
-Each package becomes one graph run in its own worktree. A package with no deps branches from the current HEAD; a package with deps branches from its first dependency's delivered branch with the others merged in, so it builds on what they delivered - not on stubs. Two packages that touch the same path will conflict at integration: split by ownership, not by phase. A dependency means the package needs another's delivered result; it receives that package's report as context and starts from its tree. Every package must be size S on its own - if one still needs splitting, the shape is wrong. Two to six packages is the usual range.`,
+Each package becomes one graph run in its own worktree. A package with no deps branches from the current HEAD; a package with deps branches from its first dependency's delivered branch with the others merged in, so it builds on what they delivered - not on stubs. Two packages that touch the same path will conflict at integration: split by ownership, not by phase. A dependency means the package needs another's delivered result; it receives that package's report as context and starts from its tree. Every package must be size S on its own - if one still needs splitting, the shape is wrong. Two to six packages is the usual range. "split": true (or "size": "L") is the one exception to that rule - the rare package whose own scope still needs its own shape/dispatch cycle inside its child run; leave it false for the ordinary package, whose child run opens with this shape's own acceptance already decided and no plan/setgoal/critique/gate:goal of its own to redo (§3, docs/plans/2026-09-21-teams-server-owns-the-loop.md).`,
   critique: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "sound": true|false, "blocking": ["..."], "problems": ["..."], "handoff": "...", "evidence": "..."}
 Attack the shape: packages that overlap in touches[], a dependency the brief does not actually need, a package too large to be one run, a goal-level criterion no integration step could check, and - above all - a request that was S sized as L. Set sound=false only for defects in "blocking" that make the packages impossible to run or impossible to integrate. Everything else is a problem, carried forward as advice.`,
   accept: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "accept": true|false, "match_pct": 0-100, "checks": ["<what you verified in the worktree or the report, and what it showed>"], "gaps": ["what the package did not deliver"], "observations": ["weaknesses that do not block"], "reason": "...", "evidence": "..."}
@@ -161,6 +164,7 @@ function createTask(a) {
   const team = resolveTeamOptions(a, teamFile.config);
   const T = team.opts;
   const taskId = randomUUID();
+  const depth = Number.isInteger(a.depth) ? a.depth : 0;
   const task = {
     run_id: taskId,
     kind: 'task',
@@ -171,6 +175,12 @@ function createTask(a) {
     flow: FLOWS[a.flow] ? a.flow : 'auto',
     flow_chosen: null,
     size: null,
+    // How many packages deep this task was opened - 0 for a tm_open a caller drives directly.
+    // Nothing in this codebase opens a nested tm_open yet (a package's child is a graph.mjs
+    // run, never another task), so this is forward declared for when it does; max_depth
+    // (teamconfig.mjs) reads it via child_opts.depth below to force every package this task
+    // opens at depth >= max_depth to run chain-only (§3, openChild).
+    depth,
     // The user said, in their own words, that this must be split (L) or must stay one run
     // (S): the size node is recorded as pinned and never measured. Mirrors the flow pin.
     size_pinned: ['S', 'L'].includes(a.size) ? a.size : null,
@@ -208,6 +218,9 @@ function createTask(a) {
       policy: a.policy && typeof a.policy === 'object' ? a.policy : {},
       candidates: a.candidates || null,
       sandbox: a.sandbox || null,
+      // One package's child run is one level deeper than the task that opens it - this task's
+      // own depth, since a package's child is a graph.mjs run, not another task (§3, item 3).
+      depth: depth + 1,
       // T already layers team.json under an explicit tm_open arg (teamconfig.mjs's
       // resolveTeamOptions), the same precedence vendor/allocation above already rely on -
       // so reading T here, not `a` with its own hardcoded fallback, is what keeps a project's
@@ -1344,6 +1357,22 @@ export function openChild(task, n) {
     }
   }
   const flow = FLOWS[pkg.flow] ? pkg.flow : (task.flow_chosen && FLOWS[task.flow_chosen] ? task.flow_chosen : 'auto');
+  // §3: a package this task already shaped and critiqued opens its child run with the
+  // subgoal chain only - no run-level plan/setgoal/critique/gate:goal/report, which would
+  // only redo what shape+critique already settled and re-judge what this one subgoal's own
+  // gate is about to judge. Three things turn it off: a phase-Team package (PLAN/QA/AUDIT),
+  // which never went through this task's own shape at all; a repair package, whose seam-fix
+  // brief may need more than one unit of work; and a package shape itself marked as still
+  // needing its own split (`split: true`, or `size: 'L'` - the same letter the manager's own
+  // size node would have used). depth >= max_depth overrides that last escape hatch: a
+  // package this deep may not open its own shape/dispatch cycle regardless of what it asked
+  // for, so it always runs chain-only.
+  const isPhaseTeam = pkg.repair || pkg.phase === 'planning' || pkg.phase === 'qa' || pkg.phase === 'audit';
+  const needsSplit = pkg.split === true || pkg.size === 'L';
+  const maxDepth = Number.isInteger(task.team && task.team.opts && task.team.opts.max_depth)
+    ? task.team.opts.max_depth : TEAM_DEFAULTS.max_depth;
+  const depthForced = (task.depth || 0) >= maxDepth;
+  const parentShaped = !isPhaseTeam && (depthForced || !needsSplit);
   const child = createRun({
     ...task.child_opts,
     cwd: wt.path,
@@ -1352,11 +1381,14 @@ export function openChild(task, n) {
     isolated: true,
     flow,
     mixed: true,
+    parent_shaped: parentShaped,
+    goal: pkg.title || pkg.brief,
+    acceptance: Array.isArray(pkg.acceptance) && pkg.acceptance.length ? pkg.acceptance : null,
   });
   n.state = 'running';
   n.started_at = Date.now();
   n.child = { cwd: wt.path, run_id: child.run_id, branch: wt.branch, flow, based_on };
-  record(task, { event: 'dispatch', task_id: task.run_id, node_id: n.node_id, child_run_id: child.run_id, cwd: wt.path, branch: wt.branch });
+  record(task, { event: 'dispatch', task_id: task.run_id, node_id: n.node_id, child_run_id: child.run_id, cwd: wt.path, branch: wt.branch, parent_shaped: parentShaped });
   if (!noDriver()) {
     n.child.spawn_count = 0; // the first spawn gets no filename suffix; a respawn starts at 1
     const driver = spawnChildDriver(task, n.node_id, n.child);
@@ -1396,12 +1428,43 @@ export function serviceSRun(task) {
 
 // The child's account, read from its file. This is the only place the manager touches a
 // run file, and it only reads.
+// A parent_shaped child (§3) has no run-level gate:goal and no report node - it IS its one
+// subgoal's chain, nothing else. `gate` is that chain's own terminal gate (same verdict
+// fields as a goal gate: accept/match_pct/gaps/reason/checks - see prompts.mjs's `gate`
+// contract), the stand-in foldChild reads below in place of a run-level gate:goal node.
+// `authored` is the chain's last mutating stage (the one before its gate - implement for a
+// subgoal, revise for planning, draft for a document, execute for qa), the stand-in for a
+// report's handoff: a parent_shaped run's dependents still need a one-line account of what
+// this package delivered, and there is no report node to read it from.
+function parentShapedChild(child) {
+  const sg = child.parent_shaped && child.spec && Array.isArray(child.spec.subgoals) ? child.spec.subgoals[0] : null;
+  if (!sg) return { gate: null, authored: null };
+  const chain = (KINDS[kindOf(sg)] || KINDS[DEFAULT_KIND]).chain;
+  const latest = (stage) => {
+    const nodes = child.nodes.filter((x) => x.stage === stage && x.subgoal_id === String(sg.id) && x.result);
+    return nodes.length ? nodes[nodes.length - 1] : null;
+  };
+  // Not every mutating stage in a chain carries a handoff (test/review/execute are
+  // verification, not authorship - see prompts.mjs's CONTRACT). Walk the chain's mutating
+  // stages (everything but the closing gate) back to front and take the last one whose
+  // result actually has one: planning's revise rewrites over draft's first pass, so its
+  // handoff is the truer "what does this package now say" than the earlier draft's - but a
+  // run that never reached revise still has draft's to fall back to.
+  let authored = null;
+  for (let i = chain.length - 2; i >= 0; i--) {
+    const cand = latest(chain[i]);
+    if (cand && cand.result && cand.result.handoff) { authored = cand; break; }
+  }
+  return { gate: latest(chain[chain.length - 1]), authored };
+}
+
 export function foldChild(task, n) {
   const pkg = packageOf(task, n.subgoal_id);
   const child = loadRun(n.child.cwd, n.child.run_id);
   if (!child) return { stage_ok: false, reason: `child run ${n.child.run_id} has no file under ${n.child.cwd}` };
   const cs = runState(child);
-  const goalGate = child.nodes.filter((x) => x.stage === 'gate' && x.subgoal_id === null && x.result).pop();
+  const { gate: chainGate, authored: chainAuthored } = parentShapedChild(child);
+  const goalGate = chainGate || child.nodes.filter((x) => x.stage === 'gate' && x.subgoal_id === null && x.result).pop();
   const report = child.nodes.filter((x) => x.stage === 'report' && x.state === 'done' && x.result).pop();
   const changed = [...new Set(child.nodes.flatMap((x) => (x.result && Array.isArray(x.result.changed_files) ? x.result.changed_files : [])))];
   // A round may have more than one judge (goal_judges > 1, the default above): the round's
@@ -1424,7 +1487,7 @@ export function foldChild(task, n) {
     child_state: cs.state,
     child_counts: cs.counts,
     changed_files: changed,
-    report: report ? String(report.result.handoff || '') : '',
+    report: report ? String(report.result.handoff || '') : (chainAuthored ? String(chainAuthored.result.handoff || '') : ''),
   };
   if (cs.state === 'running') {
     // A direct tm_submit (skipping tm_next) still gets the same dead-driver handling tm_next
