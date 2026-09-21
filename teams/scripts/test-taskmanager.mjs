@@ -2594,6 +2594,95 @@ test('a package whose child blocked opens its next attempt by itself (autoRetryP
   });
 });
 
+test('folding a blocked child carries its own failed verdicts (reason, gaps) - the retry brief has something to fix from', async () => {
+  // trap-beta-T2 (2026-09-21): attempt 2 of P2 was briefed only "test:U1:3 failed with no retry
+  // left"; the 35% and 80% gate reasons that actually explained the failure never reached it.
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children.find((c) => c.node_id === 'dispatch:P1:1');
+    await blockChild(g, child);
+    const v = await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    assert.equal(v.state, 'failed');
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const r = task.nodes.find((n) => n.node_id === 'dispatch:P1:1').result;
+    assert.match(String(r.reason), /gate:U1:\d+ \(40%\): short/, `the gate's own reason is in the fold: ${r.reason}`);
+    assert.ok((r.gaps || []).includes('missing the b half'), `the gate's gaps are the fold's gaps: ${JSON.stringify(r.gaps)}`);
+    assert.ok(Array.isArray(r.child_verdicts) && r.child_verdicts.length >= 1 && r.child_verdicts.every((x) => /^gate:/.test(x.node_id)));
+    assert.equal(r.match_pct, 40);
+  });
+});
+
+test('autoResumeCapacity clears a capacity park once the provider-named reset time has passed, and not before', async () => {
+  // trap-beta-T2 (2026-09-21): R1 sat 1h51m on "resets 5:40pm (UTC)" after 5:40pm because
+  // nothing in the loop read the clock; a caller's tm_retry({reset_capacity:true}) was the only way.
+  const { autoResumeCapacity, capacityResetAt } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    await tm.call('tm_next', { task_id }); // dispatches P1 (no driver under the test seam)
+    const load = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const prevRoot = process.env.HARNESS_TASKS_DIR;
+    const withRoot = (fn) => { process.env.HARNESS_TASKS_DIR = root; try { return fn(); } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; } };
+    const task = load();
+    const n = task.nodes.find((x) => x.node_id === 'dispatch:P1:1');
+    const since = Date.UTC(2026, 8, 21, 15, 50);
+    n.child.waiting_capacity = { reason: "You've hit your session limit · resets 5:40pm (UTC)", since };
+    writeFileSync(join(root, task_id, 'task.json'), JSON.stringify(task, null, 2));
+    const resetAt = capacityResetAt(n.child.waiting_capacity.reason, since);
+    assert.equal(new Date(resetAt).toISOString(), '2026-09-21T17:40:00.000Z');
+    assert.equal(withRoot(() => autoResumeCapacity(load(), resetAt + 60 * 1000)), false, 'one minute after the reset is inside the grace period: still parked');
+    assert.ok(load().nodes.find((x) => x.node_id === 'dispatch:P1:1').child.waiting_capacity, 'untouched');
+    assert.equal(withRoot(() => autoResumeCapacity(load(), resetAt + 4 * 60 * 1000)), true, 'four minutes after: resumed');
+    assert.ok(!load().nodes.find((x) => x.node_id === 'dispatch:P1:1').child.waiting_capacity, 'the park is cleared');
+    const ev = await tm.call('tm_events', { task_id });
+    assert.ok(ev.events.some((e) => e.event === 'daemon_capacity_resumed' && e.resumed.includes('dispatch:P1:1')));
+  });
+});
+
+test('a judge that could not judge is re-judged, not treated as a refusal: no repair, no package retry, at most two more tries', async () => {
+  // trap-beta-T2: integrate:1's judge answered with the usage-limit notice; autoRepair opened R1 on it.
+  const { autoRejudge, autoRepair, autoRetryPackages } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    let nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) });
+    nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P2:1' });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:P2:1', payload: ok({ accept: true, match_pct: 90 }) });
+    nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['integrate:1']);
+    // The daemon's judge() failing looks like this on the node:
+    const v = await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: { stage_ok: false, judge_failed: true, reason: "judge reply for integrate:1 was not valid JSON: no JSON object found in the reply. stderr:  raw: You've hit your session limit · resets 5:40pm (UTC)" } });
+    assert.equal(v.state, 'failed');
+    const load = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const prevRoot = process.env.HARNESS_TASKS_DIR;
+    const withRoot = (fn) => { process.env.HARNESS_TASKS_DIR = root; try { return fn(); } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; } };
+    assert.equal(withRoot(() => autoRepair(load())), false, 'a non-verdict opens no repair package');
+    assert.equal(withRoot(() => autoRetryPackages(load())), false, 'and retries no package');
+    const finishedAt = load().nodes.find((n) => n.node_id === 'integrate:1').finished_at;
+    assert.equal(withRoot(() => autoRejudge(load(), finishedAt + 60 * 1000)), false, 'the reply named a reset time: not before it');
+    const t1 = withRoot(() => autoRejudge(load(), finishedAt + 26 * 60 * 60 * 1000));
+    assert.equal(t1, true, 'after the reset: re-judged');
+    let n = load().nodes.find((x) => x.node_id === 'integrate:1');
+    assert.equal(n.state, 'pending'); assert.equal(n.judge_attempts, 1); assert.equal(n.result, undefined);
+    nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.ready.map((x) => x.node_id), ['integrate:1'], 'ready to be judged again');
+    // Two more failures with no reset time named: the second re-judge happens after a minute, a third never.
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: { stage_ok: false, judge_failed: true, reason: 'judge process for integrate:1 failed to run: spawn ENOENT' } });
+    n = load().nodes.find((x) => x.node_id === 'integrate:1');
+    assert.equal(withRoot(() => autoRejudge(load(), n.finished_at + 2 * 60 * 1000)), true);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: { stage_ok: false, judge_failed: true, reason: 'judge process for integrate:1 failed to run: spawn ENOENT' } });
+    n = load().nodes.find((x) => x.node_id === 'integrate:1');
+    assert.equal(withRoot(() => autoRejudge(load(), n.finished_at + 2 * 60 * 1000)), false, 'budget of two re-judges spent');
+    assert.equal(load().nodes.find((x) => x.node_id === 'integrate:1').state, 'failed');
+    const ev = await tm.call('tm_events', { task_id });
+    assert.equal(ev.events.filter((e) => e.event === 'daemon_rejudge').length, 2);
+  });
+});
+
 test('tm_events tails the ledger, newest last, filtered by since', async () => {
   await withTask(async ({ tm, task_id, root }) => {
     const all = await tm.call('tm_events', { task_id });

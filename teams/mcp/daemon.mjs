@@ -31,7 +31,7 @@ import {
   taskPath, taskDir, record, noDriver, taskState,
   advanceDispatches, serviceRunningDispatches, prepareReadyIntegrations,
   dispatchSettled, foldChild, serviceSRun, delegateIfSmall,
-  finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages,
+  finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages, autoRejudge, autoResumeCapacity,
 } from './taskmanager.mjs';
 
 function parseArgs(argv) {
@@ -126,7 +126,7 @@ async function judge(task, n) {
     try {
       proc = spawn(argv[0], [...argv.slice(1), ...extra, prompt], { cwd: task.cwd, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (e) {
-      resolve({ stage_ok: false, reason: `judge process for ${n.node_id} could not start: ${String((e && e.message) || e)}` });
+      resolve({ stage_ok: false, judge_failed: true, reason: `judge process for ${n.node_id} could not start: ${String((e && e.message) || e)}` });
       return;
     }
     // settle() guarantees exactly one resolve no matter which of close / error / timeout wins,
@@ -145,6 +145,7 @@ async function judge(task, n) {
       setTimeout(() => { try { proc.kill('SIGKILL'); } catch { /* already gone */ } }, 5000).unref();
       settle({
         stage_ok: false,
+        judge_failed: true,
         reason: `judge process for ${n.node_id} did not finish within ${Math.round(JUDGE_TIMEOUT_MS / 60000)}m and was killed. `
           + `stderr: ${err.slice(-300)}`,
       });
@@ -153,6 +154,7 @@ async function judge(task, n) {
     // never settles when the judge binary is missing, which looks exactly like a hang.
     proc.on('error', (e) => settle({
       stage_ok: false,
+      judge_failed: true,
       reason: `judge process for ${n.node_id} failed to run: ${String((e && e.message) || e)}`,
     }));
     proc.stdout.on('data', (d) => { out += d; });
@@ -164,6 +166,7 @@ async function judge(task, n) {
       } catch (e) {
         settle({
           stage_ok: false,
+          judge_failed: true,
           reason: `judge reply for ${n.node_id} was not valid JSON: ${String((e && e.message) || e)}. `
             + `stderr: ${err.slice(-300)} raw: ${text.slice(0, 500)}`,
         });
@@ -239,6 +242,10 @@ async function stepOnce(task) {
   }
 
   let progressed = false;
+  // A judge that could not judge is re-judged before anything reads its non-verdict as a
+  // refusal; a driver parked on a provider's reset time is respawned once that time has passed.
+  if (autoRejudge(task)) progressed = true;
+  if (autoResumeCapacity(task)) progressed = true;
   if (advanceDispatches(task)) { saveRun(task); progressed = true; }
   if (serviceRunningDispatches(task)) saveRun(task);
   if (prepareReadyIntegrations(task)) progressed = true;
