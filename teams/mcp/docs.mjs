@@ -11,6 +11,7 @@
 // rendered - an empty file would claim a feature that does not exist.
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { storyLabel } from './taskmanager.mjs';
 import {
   epicKey, storyKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
   storyTicketState, storyTaskProgress, epicBoardRows,
@@ -111,7 +112,9 @@ export function renderPrd(task) {
   const L = [frontmatter(key, storyTicketState(task, pkg.id), task), '# PRD', ''];
   L.push('The PRD itself lives in the planning phase-Team\'s own child run; this page links to it and never repeats its body.', '');
   if (dispatch && dispatch.child) L.push(`- run: ${dispatch.child.run_id} at ${dispatch.child.cwd}`, '');
-  L.push('## User stories', bullets(userStories));
+  // Stories arrive as {id, title, acceptance} objects; bullets(String(obj)) printed
+  // "[object Object]" on this page long after the same bug was fixed in shape's path (2026-09-22).
+  L.push('## User stories', bullets(userStories.map(storyLabel)));
   return L.join('\n') + '\n';
 }
 
