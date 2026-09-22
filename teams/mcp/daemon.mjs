@@ -23,8 +23,7 @@
 
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync, watch } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join, dirname } from 'node:path';
 import {
   loadRunAt, saveRun, readyNodes,
 } from './graph.mjs';
@@ -36,7 +35,7 @@ import {
   STAGE_SKILLS, syncTickets, autoReshape,
 } from './taskmanager.mjs';
 import { ticketSnapshot } from './tickets.mjs';
-import { pluginDirArgs } from './pluginroots.mjs';
+import { pluginDirArgs, isEntryPoint } from './pluginroots.mjs';
 
 function parseArgs(argv) {
   const out = {};
@@ -49,7 +48,15 @@ function parseArgs(argv) {
 // This file is both the daemon executable and a small library (judgeArgv is tested directly).
 // Importing it must therefore not exit: the --task guard and the run-the-loop tail below are
 // gated on being the process entry point, the way any dual-purpose Node module is.
-const RUN_AS_MAIN = process.argv[1] ? resolve(process.argv[1]) === fileURLToPath(import.meta.url) : false;
+//
+// isEntryPoint (pluginroots.mjs, already imported below for pluginDirArgs) realpath-resolves
+// both sides rather than comparing raw strings - taskmanager.mjs's spawnDaemon builds this
+// process's own argv from ITS `import.meta.url` (daemonPath()), so a symlinked plugin path
+// (macOS's $TMPDIR -> /private/var, or an installed-marketplace layout) reaches this file's
+// argv[1] exactly as symlinked; without realpath on both sides this guard decides "not main"
+// and the daemon exits having driven nothing - the same failure taskmanager.mjs's own `isMain`
+// guard had (3c5ad0c8), one process down.
+const RUN_AS_MAIN = isEntryPoint(import.meta.url);
 const TASK_ID = parseArgs(process.argv.slice(2)).task;
 if (RUN_AS_MAIN && !TASK_ID) {
   process.stderr.write('daemon.mjs: --task <task_id> is required\n');

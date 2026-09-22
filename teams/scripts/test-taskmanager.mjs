@@ -10,7 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, existsSync, readdirSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, existsSync, readdirSync, realpathSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -198,6 +198,63 @@ test('serves the MCP handshake and the twelve manager tools', async () => {
   } finally {
     c.close();
   }
+});
+
+// isEntryPoint (pluginroots.mjs) is what taskmanager.mjs's `isMain` and daemon.mjs's
+// RUN_AS_MAIN both compare against - a raw `import.meta.url === process.argv[1]` string
+// comparison (3c5ad0c8) exits silently, having started nothing, the moment either side is
+// reached through a symlink: macOS resolves $TMPDIR's `/var/...` to `/private/var/...` for
+// import.meta.url (the ESM loader realpaths) but leaves argv[1] exactly as typed. A real bench
+// run hit this - "plugin:teams:task-manager: failed (CONNECTION_CLOSED)" while broker.mjs (which
+// carries no such guard) connected fine. Spawns taskmanager.mjs through a symlink standing in
+// for exactly that trap and requires a real reply, not silence.
+test('taskmanager.mjs starts its stdio server even when reached through a symlinked path (the macOS $TMPDIR /var -> /private/var trap)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tm-symlink-'));
+  const link = join(dir, 'tm-link.mjs');
+  try {
+    symlinkSync(realpathSync(TM), link);
+    const tm = await new Client(link).init();
+    try {
+      const r = await tm.send('tools/list', {});
+      assert.ok(r.result && Array.isArray(r.result.tools), `symlinked taskmanager.mjs must answer tools/list, got ${JSON.stringify(r)}`);
+      assert.ok(r.result.tools.some((t) => t.name === 'tm_open'), 'tm_open must be in the symlinked server\'s tool list');
+    } finally {
+      tm.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// daemon.mjs carries the identical guard one process down (RUN_AS_MAIN) - taskmanager.mjs's
+// spawnDaemon builds this process's own argv from taskmanager.mjs's OWN import.meta.url
+// (daemonPath()), so a symlinked plugin path reaches daemon.mjs's argv[1] exactly as symlinked
+// too. Without --task, RUN_AS_MAIN true means a specific, visible failure (exit 1, a stderr
+// message); RUN_AS_MAIN false (the bug) means the process loads the module and exits 0 in
+// silence, having driven nothing - indistinguishable from a task that was already done.
+test('daemon.mjs runs as the process entry point even when reached through a symlinked path (exits 1 on a missing --task, not silently 0)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'daemon-symlink-'));
+  const link = join(dir, 'daemon-link.mjs');
+  try {
+    symlinkSync(realpathSync(join(HERE, '..', 'mcp', 'daemon.mjs')), link);
+    const r = spawnSync('node', [link], { encoding: 'utf8' });
+    assert.equal(r.status, 1, `symlinked daemon.mjs must run as main and exit 1 on a missing --task, not silently exit 0 (stderr: ${r.stderr})`);
+    assert.match(r.stderr, /--task <task_id> is required/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The guard must still be a guard: importing either file as a library - every dynamic
+// `await import('../mcp/taskmanager.mjs')` elsewhere in this suite, and daemon.mjs's own import
+// of taskmanager.mjs - must never start a stdio loop or touch process.stdin. This test's own
+// process (argv[1] is this test file, not taskmanager.mjs/daemon.mjs) would hang waiting on
+// its own stdin here if either guard degraded to "always true".
+test('importing taskmanager.mjs or daemon.mjs as a module (not as the process entry point) starts no stdio loop', async () => {
+  const tmMod = await import('../mcp/taskmanager.mjs');
+  const daemonMod = await import('../mcp/daemon.mjs');
+  assert.equal(typeof tmMod.dispatchSettled, 'function');
+  assert.equal(typeof daemonMod.judgeArgv, 'function');
 });
 
 test('tm_docs writes the phase md tm_board/tm_ticket already pointed at, and rebuild reproduces the same files', async () => {
@@ -3054,6 +3111,89 @@ test('tm_ticket refuses an unknown EPIC prefix or a package not in the shape', a
     const badPkg = await tm.call('tm_ticket', { key: `E-${task_id.slice(0, 8)}/P9` });
     assert.match(badPkg.error, /no package P9/);
   });
+});
+
+// tm_ticket now wires storyLinks() (tickets.mjs) onto a STORY exactly as tm_board's own rows do
+// - one source of truth, read from both tools. SHAPE (the default two-package shape every other
+// test in this suite reuses) has P2.deps: ['P1'], so P1/P2 name each other's own current state
+// on both sides of the relation - the exact fixture, not a fresh one built for this test.
+test('tm_ticket returns links (blocked_by/blocks/implements/filed_by) on a STORY, exactly matching tm_board\'s own links for the same key', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    await throughCritique(tm, task_id);
+    const epicKeyStr = `E-${task_id.slice(0, 8)}`;
+    const p1 = await tm.call('tm_ticket', { key: `${epicKeyStr}/P1` });
+    const p2 = await tm.call('tm_ticket', { key: `${epicKeyStr}/P2` });
+    assert.equal(p1.state, 'READY', 'P1 has no deps: ready at once');
+    assert.equal(p2.state, 'BACKLOG', 'P2 depends on P1');
+    assert.deepEqual(p1.links, {
+      blocked_by: [],
+      blocks: [{ key: `${epicKeyStr}/P2`, id: 'P2', state: 'BACKLOG' }],
+      implements: [],
+      filed_by: null,
+    });
+    assert.deepEqual(p2.links, {
+      blocked_by: [{ key: `${epicKeyStr}/P1`, id: 'P1', state: 'READY' }],
+      blocks: [],
+      implements: [],
+      filed_by: null,
+    });
+    // Same fact both ways: tm_board's own STORY rows must carry the identical links object for
+    // the same keys - one function (storyLinks), two callers, never a second computation.
+    const board = await tm.call('tm_board', { task_id });
+    assert.deepEqual(board.stories.find((s) => s.id === 'P1').links, p1.links);
+    assert.deepEqual(board.stories.find((s) => s.id === 'P2').links, p2.links);
+  });
+});
+
+// SHAPE_IMPLEMENTS (defined below, reused as-is - roles.planning is not needed to exercise it:
+// its completeness check against PRD user stories only runs when roles.planning is on, and
+// SHAPE_IMPLEMENTS is otherwise identical to SHAPE) gives P1/P2 a non-trivial `implements`
+// without needing the full planning phase-Team machinery.
+test('tm_ticket\'s links pins a non-trivial implements (SHAPE_IMPLEMENTS) alongside blocked_by/blocks', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE_IMPLEMENTS);
+    const epicKeyStr = `E-${task_id.slice(0, 8)}`;
+    const p1 = await tm.call('tm_ticket', { key: `${epicKeyStr}/P1` });
+    const p2 = await tm.call('tm_ticket', { key: `${epicKeyStr}/P2` });
+    assert.deepEqual(p1.links.implements, ['US-1']);
+    assert.deepEqual(p2.links.implements, ['US-2']);
+  });
+});
+
+// Same tm_file fixture "tm_file joins the board.jsonl tools" (above) already drives: a STORY
+// filed directly (not through QA) carries reporter/filed_by "you" - not null, not "qa" - the
+// non-trivial filed_by case.
+test('tm_ticket\'s links pins a non-trivial filed_by ("you") on a STORY tm_file filed directly', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    const filed = await tm.call('tm_file', { task_id, stories: [
+      { title: 'add a missing edge case', touches: ['b.txt'], deps: [], evidence: 'manual repro', severity: 'medium' },
+    ] });
+    assert.deepEqual(filed.filed, ['D1']);
+    const epicKeyStr = `E-${task_id.slice(0, 8)}`;
+    const d1 = await tm.call('tm_ticket', { key: `${epicKeyStr}/D1` });
+    assert.equal(d1.reporter, 'you');
+    assert.equal(d1.links.filed_by, 'you');
+  });
+});
+
+// The reporter fix this test pins: toolTicket (tm_ticket) used to fall back to
+// `pkg.reporter || (pkg.repair ? 'repair' : 'shape')` - never checking pkg.phase - so a
+// phase-Team's own row (PLAN/QA/AUDIT, which carries p.phase but never p.reporter) still said
+// 'shape' from tm_ticket while tm_board's epicBoardRows (packageReporter, tickets.mjs) already
+// said 'engine' for the identical key. task.planning_pkg (id 'PLAN') exists the instant
+// tm_open({roles:{planning:true}}) returns - no shape submission needed to exercise this.
+test('tm_ticket and tm_board agree on reporter for a phase-Team key (E-xxxx/PLAN): both report "engine"', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    const epicKeyStr = `E-${task_id.slice(0, 8)}`;
+    const ticket = await tm.call('tm_ticket', { key: `${epicKeyStr}/PLAN` });
+    const board = await tm.call('tm_board', { task_id });
+    const planRow = board.stories.find((s) => s.id === 'PLAN');
+    assert.ok(planRow, 'tm_board must carry a PLAN row once roles.planning is on');
+    assert.equal(ticket.reporter, 'engine');
+    assert.equal(planRow.reporter, 'engine');
+    assert.equal(ticket.reporter, planRow.reporter, 'tm_ticket and tm_board must agree on reporter for the same key');
+  }, { roles: { planning: true } });
 });
 
 test('board.jsonl gets one line per ticket key that actually changed - never a line for a key that did not move', async () => {
