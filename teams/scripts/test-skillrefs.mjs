@@ -86,3 +86,18 @@ test('the planning draft contract carries the PRD contract', async () => {
   const briefing = { subgoal: { id: 'U1', title: 'PRD', kind: 'planning', acceptance: ['a'], files: ['PRD.md'] }, upstream: [], problems: [] };
   assert.ok(composePrompt(run, n, briefing).includes('You are writing a PRD'));
 });
+
+// idol-pm-1 (2026-09-22) produced a PRD whose own accept node called it "a generic high-demand
+// ticketing PRD with 'idol concert' in the title": fan-club / presale / membership / tour scored
+// zero mentions, `bot` scored 41. The contract asked for the seven sections and nothing about
+// the domain, so the model filled them from what it already knew.
+test('PRD_CONTRACT makes the domain a requirement, not a hope', () => {
+  assert.match(PRD_CONTRACT, /name the domain the request belongs to/);
+  // The failure mode named, so the model can recognise itself doing it.
+  assert.match(PRD_CONTRACT, /general version of a problem is the one you already know/);
+  // Its own vocabulary, not a neutral paraphrase.
+  assert.match(PRD_CONTRACT, /domain's own vocabulary/);
+  // And the escape hatch is explicit scoping, never silence.
+  assert.match(PRD_CONTRACT, /named in Out of scope/);
+  assert.match(PRD_CONTRACT, /has not been scoped, it has been overlooked/);
+});
