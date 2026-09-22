@@ -349,6 +349,22 @@ export function storyLinks(task, pkgId) {
   };
 }
 
+// A filed defect STORY (fileDefects, taskmanager.mjs - QA-found or tm_file) carries its own
+// reporter ('qa'/'you'/'planning-audit'); a phase-Team package (PLAN/QA/AUDIT) carries
+// p.phase but never p.reporter, and reported itself, not shape - falling through to p.phase
+// used to mislabel it 'qa' for the QA phase-Team row, the exact same string a QA-filed
+// defect STORY's own reporter carries (see FILED_REPORTERS, view-collect.mjs) - two
+// different kinds of row, one token, no way to tell them apart by reporter alone. 'engine'
+// is honest instead of a phase name: this row exists because a role (roles.planning/
+// roles.qa) is on, not because anything was filed - the caller's own `role`/`phase` field
+// already carries which phase it is. Everything genuinely left is either a repair package
+// (its worktree IS the integration tree, never filed as a STORY) or shape's own original
+// scope. epicBoardRows (tm_board) and toolTicket (tm_ticket, taskmanager.mjs) both call this
+// one function so the two tools can never again report a different reporter for the same key.
+export function packageReporter(p) {
+  return p.reporter || (p.repair ? 'repair' : (p.phase ? 'engine' : 'shape'));
+}
+
 // One row per package, for tm_board's STORY table. role is p.phase || 'develop'.
 export function epicBoardRows(task) {
   return boardPackages(task).map((p) => {
@@ -364,17 +380,7 @@ export function epicBoardRows(task) {
       state: storyTicketState(task, id),
       tasks: storyTaskProgress(task, id),
       last_verdict: last,
-      // A filed defect STORY (fileDefects, taskmanager.mjs - QA-found or tm_file) carries its own
-      // reporter ('qa'/'you'/'planning-audit'); a phase-Team package (PLAN/QA/AUDIT) carries
-      // p.phase but never p.reporter, and reported itself, not shape - falling through to p.phase
-      // used to mislabel it 'qa' for the QA phase-Team row, the exact same string a QA-filed
-      // defect STORY's own reporter carries (see FILED_REPORTERS, view-collect.mjs) - two
-      // different kinds of row, one token, no way to tell them apart by reporter alone. 'engine'
-      // is honest instead of a phase name: this row exists because a role (roles.planning/
-      // roles.qa) is on, not because anything was filed - `role` (above) already carries which
-      // phase it is. Everything genuinely left is either a repair package (its worktree IS the
-      // integration tree, never filed as a STORY) or shape's own original scope.
-      reporter: p.reporter || (p.repair ? 'repair' : (p.phase ? 'engine' : 'shape')),
+      reporter: packageReporter(p),
       links: storyLinks(task, id),
     };
   });
