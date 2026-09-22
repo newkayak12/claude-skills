@@ -198,6 +198,26 @@ test('runState on a parent_shaped run: a rejected gate with no retry called leav
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+test('a report written over a settled failure completes with settled:true, and a clean one does not', () => {
+  const clean = { nodes: [
+    { node_id: 'report', stage: 'report', subgoal_id: null, state: 'done', deps: [] },
+  ] };
+  const st = runState(clean);
+  assert.equal(st.state, 'complete');
+  assert.equal(st.settled, undefined, 'a clean completion carries no settled marker');
+
+  // settleFailure releases everything downstream as unreachable and a report is still written
+  // over it. The state string stays 'complete' on purpose - every caller collapses anything
+  // else to 'blocked' - but the marker stops the machine surface from reading plain success.
+  const wrecked = { nodes: [
+    { node_id: 'report', stage: 'report', subgoal_id: null, state: 'done', deps: [] },
+    { node_id: 'dispatch:P1:1', stage: 'dispatch', subgoal_id: 'P1', state: 'unreachable', deps: [] },
+  ] };
+  const w = runState(wrecked);
+  assert.equal(w.state, 'complete');
+  assert.equal(w.settled, true);
+});
+
 
 test('retrySubgoal on a parent_shaped run opens a fresh chain attempt - there is no gate:goal round to reroute', () => {
   const cwd = scratchCwd();
