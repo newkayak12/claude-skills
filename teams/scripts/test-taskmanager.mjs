@@ -90,6 +90,9 @@ const SHAPE = {
   ],
 };
 
+const PRD_FIXTURE = ['Problem', 'Target users', 'Solution overview', 'Success criteria', 'User stories', 'Out of scope', 'Open questions']
+  .map((h) => `## ${h}\n\nbody\n`).join('\n');
+
 const CHILD_SPEC = {
   goal: 'G', acceptance: ['A'],
   subgoals: [{ id: 'U1', title: 'do it', acceptance: ['a'], test: ['t'], deps: [] }],
@@ -325,7 +328,7 @@ test("planning phase-Team's PRD and user_stories flow into shape's input, verbat
     // The broker cross-checks a claimed changed_file against the worktree, so the PRD has to
     // actually be there - which is also what makes prd_paths real rather than a claim.
     mkdirSync(join(cwd, 'docs'), { recursive: true });
-    writeFileSync(join(cwd, 'docs', 'PRD.md'), '# PRD\n\n## User stories\n\n- US-1\n- US-2\n');
+    writeFileSync(join(cwd, 'docs', 'PRD.md'), `# PRD\n\n${PRD_FIXTURE}`);
     await sub('draft:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'drafted' });
     await sub('revise:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'revised' });
     await sub('gate:U1:1', { accept: true, match_pct: 95 });
@@ -3142,7 +3145,7 @@ test("shape is told the gaps the PRD was accepted with, not only the stories", a
     await sub('setgoal', { spec: { goal: 'PRD', acceptance: ['a'], subgoals: [{ id: 'U1', title: 'draft PRD', acceptance: ['written'], deps: [] }] } });
     await sub('critique', { sound: true });
     mkdirSync(join(cwd, 'docs'), { recursive: true });
-    writeFileSync(join(cwd, 'docs', 'PRD.md'), '# PRD\n\n## User stories\n\n- US-1\n');
+    writeFileSync(join(cwd, 'docs', 'PRD.md'), `# PRD\n\n${PRD_FIXTURE}`);
     await sub('draft:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'd' });
     await sub('revise:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'r' });
     await sub('gate:U1:1', { accept: true, match_pct: 95 });
@@ -3159,4 +3162,35 @@ test("shape is told the gaps the PRD was accepted with, not only the stories", a
     assert.match(briefing, /no idol-concert domain particulars/, 'a gap named while accepting must travel');
     assert.match(briefing, /14 open items have no owner/, 'so must an observation');
   }, { roles: { planning: true } });
+});
+
+// --- the PRD's required sections are checked, not judged ------------------------------------
+// idol-pm-2 (2026-09-22) restructured the PRD: two required sections renamed, one dropped
+// entirely, and gate:goal accepted it at 95%. The contract states the section list in words; a
+// judge will not check that reliably and does not need to, because it is a grep.
+
+test('missingPrdSections accepts the renames a reader would accept, and nothing further', async () => {
+  const { missingPrdSections } = await import('../mcp/taskmanager.mjs');
+  const cwd = mkdtempSync(join(tmpdir(), 'prd-sec-'));
+  const write = (body) => { writeFileSync(join(cwd, 'PRD.md'), body); return missingPrdSections(cwd, ['PRD.md']); };
+  try {
+    const full = ['Problem', 'Target users', 'Solution overview', 'Success criteria', 'User stories', 'Out of scope', 'Open questions'];
+    assert.deepEqual(write(full.map((h) => `## ${h}\n\nbody\n`).join('\n')), [], 'the canonical names pass');
+
+    // The real document's shape: nested under fewer top-level headings, two renamed.
+    assert.deepEqual(write([
+      '## Problem & Goals', '### Problem', '### Target users', '### Goals (measurable)',
+      '## User Stories', '### US-1: a story',
+      '## Scope & Non-Goals', '### Non-Goals',
+      '## Risks & Open Questions', '### Open Questions',
+    ].map((h) => `${h}\n\nbody\n`).join('\n')), ['Solution overview'], 'only the one that is actually absent');
+
+    // A heading that merely sounds adjacent is not the section.
+    assert.ok(write(full.filter((h) => h !== 'Open questions').map((h) => `## ${h}\n\nbody\n`).join('\n') + '\n## Future work\n\nbody\n')
+      .includes('Open questions'), '"Future work" is not "Open questions"');
+
+    // No readable PRD is not evidence of absence - the zero-stories check covers the empty case.
+    assert.deepEqual(missingPrdSections(cwd, ['nope.md']), []);
+    assert.deepEqual(missingPrdSections(cwd, []), []);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
