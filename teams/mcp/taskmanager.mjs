@@ -1798,6 +1798,20 @@ export function foldChild(task, n) {
   const planningStories = pkg && pkg.phase === 'planning'
     ? (Array.isArray(g.user_stories) ? g.user_stories : []).filter((u) => storyId(u))
     : null;
+  // Same principle as the story check: a structural requirement the contract states in words is
+  // verified here rather than trusted to a judge that accepted a PRD missing three of them.
+  if (planningStories && g.accept === true && planningStories.length) {
+    const missing = missingPrdSections(n.child ? n.child.cwd : task.cwd, (Array.isArray(g.prd_paths) ? g.prd_paths : []).length
+      ? g.prd_paths
+      : [...new Set((child.nodes || []).flatMap((x) => (x.result && x.result.changed_files) || []).map(String))]);
+    if (missing.length) {
+      return {
+        ...base, stage_ok: true, accept: false, match_pct: g.match_pct, user_stories: planningStories,
+        gaps: [...(g.gaps || []), ...missing.map((m) => `the PRD has no "${m}" section`)],
+        reason: `the PRD is missing required sections: ${missing.join(', ')}. Every one of them is a heading a reader looks for and this document does not answer`,
+      };
+    }
+  }
   if (planningStories && g.accept === true && !planningStories.length) {
     return {
       ...base, stage_ok: true, accept: false, match_pct: g.match_pct, user_stories: [],
@@ -2501,6 +2515,37 @@ function lastLoggedStates(path) {
     }
   } catch { /* no board yet */ }
   return last;
+}
+
+// The PRD's required sections, and the headings a document is allowed to call them. The
+// contract names them exactly; a real run renamed two ("Goals (measurable)" for Success
+// criteria, "Non-Goals" for Out of scope), dropped Solution overview entirely, and gate:goal
+// accepted it at 95% (idol-pm-2, 2026-09-22). A judge will not check a structural requirement
+// reliably, and it does not need to: this is a grep. The alternatives are the renames a reader
+// would accept without blinking - anything further afield is a section that is missing.
+const PRD_SECTIONS = [
+  ['Problem', ['problem', 'problem statement', '문제']],
+  ['Target users', ['target users', 'users', 'personas', 'users / personas', '대상 사용자']],
+  ['Solution overview', ['solution overview', 'solution', 'overview', 'proposed solution', '솔루션']],
+  ['Success criteria', ['success criteria', 'success metrics', 'goals', 'goals (measurable)', 'measurable goals', '성공 기준']],
+  ['User stories', ['user stories', 'stories', '유저 스토리']],
+  ['Out of scope', ['out of scope', 'non-goals', 'non goals', 'scope & non-goals', 'scope and non-goals', '비목표']],
+  ['Open questions', ['open questions', 'open items', 'risks & open questions', 'risks and open questions', '미해결 질문']],
+];
+
+// Headings the PRD does not carry, under any of the names above, at any level. Reads the files
+// the planning run reported writing; a file it cannot read is not evidence of absence, so an
+// unreadable PRD yields no complaint here (the zero-stories check already covers the empty case).
+export function missingPrdSections(cwd, paths) {
+  let text = '';
+  for (const rel of paths || []) {
+    try { text += `\n${readFileSync(resolve(cwd, String(rel)), 'utf8')}`; } catch { /* unreadable */ }
+  }
+  if (!text.trim()) return [];
+  const headings = (text.match(/^#{1,6} .*$/gm) || []).map((h) => h.replace(/^#+\s*/, '').replace(/[:：].*$/, '').trim().toLowerCase());
+  return PRD_SECTIONS
+    .filter(([, names]) => !headings.some((h) => names.some((n) => h === n || h.startsWith(`${n} `) || h.includes(n))))
+    .map(([canonical]) => canonical);
 }
 
 // A ticket is three things and they have to agree: its state (tickets.mjs over task.json), its
