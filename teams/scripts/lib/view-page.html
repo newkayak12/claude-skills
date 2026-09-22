@@ -151,6 +151,26 @@
     return out.join('');
   }
 
+  // storyLinks (tickets.mjs), compacted onto one optional line per package card - the same
+  // format view-render-text.mjs's formatLinksLine renders for the CLI/text tree, both reading
+  // the same collect() model field (p.links) so the browser and the terminal never disagree
+  // about what a STORY is waiting on. `filed_by` is left out here too: the title line already
+  // shows "[filed by X]" a few pixels up (see pkgCard below).
+  function formatLinksLine(links) {
+    if (!links) return '';
+    var bits = [];
+    if (links.blocked_by && links.blocked_by.length) {
+      bits.push('blocked by ' + links.blocked_by.map(function (l) { return l.id + ' (' + l.state + ')'; }).join(', '));
+    }
+    if (links.blocks && links.blocks.length) {
+      bits.push('blocks ' + links.blocks.map(function (l) { return l.id + ' (' + l.state + ')'; }).join(', '));
+    }
+    if (links.implements && links.implements.length) {
+      bits.push('implements ' + links.implements.join(', '));
+    }
+    return bits.join(' · ');
+  }
+
   function pkgCard(p, idx) {
     // p.state is set on a QA/audit round (its accept state if the round has one, else its
     // dispatch state - see view-collect.mjs's phaseRoundModel); an ordinary package has no
@@ -163,11 +183,13 @@
       costLine = fmtUsd(p.child.driver.cost.cost_usd) + ' · ' + p.child.driver.cost.turns + ' turns';
     }
     var driverAlive = p.child && p.child.driver ? (p.child.driver.alive ? 'driver alive' : 'driver dead') : '';
+    var linksLine = formatLinksLine(p.links);
     return (
       '<div class="pkg-card' + (open ? ' open' : '') + '" data-pkgid="' + esc(p.id) + '" id="' + id + '">' +
       '<div class="top"><span class="title">' + esc(p.id) + (p.title ? ' – ' + esc(p.title) : '') +
       (p.reporter ? ' <span class="muted mono">[filed by ' + esc(p.reporter) + ']</span>' : '') + '</span>' +
       '<span class="badge ' + esc(st) + '">' + esc(st) + '</span></div>' +
+      (linksLine ? '<div class="muted mono">' + esc(linksLine) + '</div>' : '') +
       (p.brief ? '<div class="brief">' + esc(p.brief) + '</div>' : '') +
       '<div class="meta"><span>' + fmtMs(p.dispatch && p.dispatch.elapsed_ms) + '</span>' +
       (costLine ? '<span>' + costLine + '</span>' : '') +

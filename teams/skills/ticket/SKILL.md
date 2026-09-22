@@ -60,6 +60,12 @@ original scope, `repair` for an integration seam, or `qa`/`planning-audit`/`you`
 defect (QA, audit, or `tm_file`) — see `board`'s own explanation for how a PLAN/QA/AUDIT
 phase-Team package's ticket reads instead.
 
+A STORY also has relations to its siblings — what it's blocked by, what it blocks, what PRD user
+story it implements, who filed it (`tickets.mjs`'s `storyLinks`) — but `tm_ticket`'s STORY card
+above does not carry them yet. Until that's wired in, read them off `board` (every STORY row's
+`links`) or `node teams/scripts/view.mjs --task <task_id>` for the same EPIC, which already
+render `blocked by P1 (DONE) · implements US-1 · filed by qa`-style detail per package.
+
 ## What Claude Does
 
 Calls `tm_ticket({key})` with the key as given and renders the card above — nothing more.
