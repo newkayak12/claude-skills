@@ -142,3 +142,32 @@ test('writeDocs without rebuild leaves a stale file from a dropped package - reb
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+// The PRD page printed "[object Object]" for every story long after the same bug was fixed in
+// shape's path (2026-09-22): user_stories arrive from gate:goal as {id, title, acceptance}
+// objects, and this page rendered them straight through bullets(). Found by reading the page a
+// real run produced, not by a test - which is why this one exists.
+test('the PRD page lists user stories by id, never as [object Object]', async () => {
+  const { renderPrd } = await import('../mcp/docs.mjs');
+  const task = {
+    run_id: 'aaaaaaaa-1111-2222-3333-444444444444',
+    cwd: '/tmp/x',
+    request: 'build a thing',
+    planning_pkg: { id: 'PLAN', title: 'PRD', phase: 'planning' },
+    nodes: [{
+      node_id: 'dispatch:PLAN:1', stage: 'dispatch', subgoal_id: 'PLAN', state: 'done',
+      child: { run_id: 'cccccccc-1111-2222-3333-444444444444', cwd: '/tmp/x' },
+      result: {
+        accept: true,
+        user_stories: [
+          { id: 'US-1', title: 'Fan queue admission', acceptance: ['a'] },
+          { id: 'US-2', title: 'Atomic hold', acceptance: ['b'] },
+        ],
+      },
+    }],
+  };
+  const page = renderPrd(task);
+  assert.doesNotMatch(page, /\[object Object\]/, page);
+  assert.match(page, /US-1 - Fan queue admission/);
+  assert.match(page, /US-2 - Atomic hold/);
+});
