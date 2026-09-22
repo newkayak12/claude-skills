@@ -370,7 +370,7 @@ test('epicBoardRows puts the planning phase-Team row first and the qa phase-Team
 // v0.12.1 Task 2 adds a third phase-Team, the audit - planning's own second pass, opened after
 // integration (and after QA when it is on). It sits last of all: the audit is the final judgement
 // before the goal gate, and a STORY it files is an ordinary develop row in the middle.
-test('epicBoardRows renders the audit phase-Team last, with role "audit", and a STORY it filed carries reporter "planning-audit"', () => {
+test('epicBoardRows renders the audit phase-Team last, with role "audit", and every phase-Team package carries its own phase as reporter (never "shape")', () => {
   const t = baseTask(
     [
       dispatchNode('PLAN', { state: 'done', result: {} }), acceptNode('PLAN', { state: 'done', result: { accept: true, match_pct: 95 } }),
@@ -387,7 +387,7 @@ test('epicBoardRows renders the audit phase-Team last, with role "audit", and a 
   );
   const rows = epicBoardRows(t);
   assert.deepEqual(rows.map((r) => [r.id, r.role]), [['PLAN', 'planning'], ['P1', 'develop'], ['D1', 'develop'], ['QA', 'qa'], ['AUDIT', 'audit']]);
-  assert.deepEqual(rows.map((r) => [r.id, r.reporter]), [['PLAN', 'shape'], ['P1', 'shape'], ['D1', 'planning-audit'], ['QA', 'shape'], ['AUDIT', 'shape']]);
+  assert.deepEqual(rows.map((r) => [r.id, r.reporter]), [['PLAN', 'planning'], ['P1', 'shape'], ['D1', 'planning-audit'], ['QA', 'qa'], ['AUDIT', 'audit']]);
 });
 
 test('ticketSnapshot maps every known key (EPIC + each STORY) to its current state - the input a board.jsonl diff is taken over', () => {
