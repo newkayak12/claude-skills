@@ -13,13 +13,29 @@ import { mkdtempSync, appendFileSync, writeFileSync, readFileSync, rmSync, exist
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { collectTask, listTasks } from './lib/view-collect.mjs';
+import { collectTask, listTasks, deriveTitle } from './lib/view-collect.mjs';
 import { renderText, renderIndexText } from './lib/view-render-text.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TM = join(HERE, '..', 'mcp', 'taskmanager.mjs');
 const BROKER = join(HERE, '..', 'mcp', 'broker.mjs');
 const VIEW = join(HERE, 'view.mjs');
+const PAGE_HTML = join(HERE, 'lib', 'view-page.html');
+
+// Runs the page's own client-side indexBody(rows, tasksDir) against a real DOM-free stub - the
+// same function view-page.html's tick()/render() call against /state.json's `tasks` array. This
+// is the one way to pin what the browser actually shows for the index without a headless
+// browser: extract the IIFE's body, stub the two globals it touches at load time (`location`,
+// `document`), and call the function it defines by name.
+function renderIndexHtml(rows, tasksDir) {
+  const html = readFileSync(PAGE_HTML, 'utf8');
+  const body = html.match(/\(function \(\) \{([\s\S]*)\}\)\(\);/)[1].replace(/tick\(\);\s*setInterval\(tick, 3000\);/, '');
+  const sandbox = { location: { search: '' }, URLSearchParams, document: { getElementById: () => null } };
+  const fn = new Function('location', 'URLSearchParams', 'document', 'exportsObj', `${body}\nexportsObj.indexBody = indexBody;`);
+  const out = {};
+  fn(sandbox.location, sandbox.URLSearchParams, sandbox.document, out);
+  return out.indexBody(rows, tasksDir);
+}
 
 // ---------- the same fixture recipe test-taskmanager.mjs uses ----------
 
@@ -371,9 +387,84 @@ test('listTasks() lists every task dir under tasksRoot, newest first', async () 
   await withTask(TWO_PKG_SHAPE, async ({ root, task_id }) => {
     const rows = listTasks(root);
     assert.equal(rows.length, 1);
-    assert.equal(rows[0].task_id, task_id);
-    assert.equal(rows[0].state, 'running');
+    const row = rows[0];
+    assert.equal(row.task_id, task_id);
+    assert.deepStrictEqual(Object.keys(row).sort(), [
+      'cost_usd', 'created_at', 'elapsed_ms', 'epic_key', 'open_defects',
+      'phase', 'size', 'state', 'stories_done', 'stories_total', 'task_id', 'title',
+    ].sort());
+    // Pinned exactly: row.state is tickets.mjs's epicTicketState() ('IN_PROGRESS'), never the
+    // engine's own runState() ('running') - the two vocabularies are close enough (both real
+    // words a task can be in) that assert.ok(row.state) or a substring match would pass whether
+    // this read the ticket state or the raw run state. Only critique has run at this point (no
+    // package dispatched yet), which is exactly what epicPhase() calls 'impl' (task.spec exists,
+    // goal level not reached) - a stale 'plan'/'setgoal' would mean shape's own task.spec write
+    // was not seen.
+    assert.deepStrictEqual(
+      { epic_key: row.epic_key, title: row.title, state: row.state, phase: row.phase, size: row.size, stories_done: row.stories_done, stories_total: row.stories_total, open_defects: row.open_defects },
+      { epic_key: `E-${task_id.slice(0, 8)}`, title: 'a request for the view test', state: 'IN_PROGRESS', phase: 'impl', size: 'L', stories_done: 0, stories_total: 2, open_defects: 0 },
+    );
+    assert.equal(typeof row.cost_usd, 'number');
+    assert.equal(typeof row.elapsed_ms, 'number');
   });
+});
+
+test('listTasks() reads the ticket state through a real QA-found-defect round: IN_PROGRESS with an open defect while D1 is unresolved, IN_REVIEW with none once round 2 comes back clean', async () => {
+  await withOpenTask({ planning: false, qa: true }, async ({ tm, g, root, task_id }) => {
+    await driveToQaDefectFound(tm, g, task_id);
+    let row = listTasks(root)[0];
+    assert.deepStrictEqual(
+      { state: row.state, phase: row.phase, stories_done: row.stories_done, stories_total: row.stories_total, open_defects: row.open_defects },
+      { state: 'IN_PROGRESS', phase: 'impl', stories_done: 2, stories_total: 3, open_defects: 1 },
+    );
+
+    await driveQaRound2Clean(tm, g, task_id);
+    row = listTasks(root)[0];
+    assert.deepStrictEqual(
+      { state: row.state, phase: row.phase, stories_done: row.stories_done, stories_total: row.stories_total, open_defects: row.open_defects },
+      { state: 'IN_REVIEW', phase: 'qualitygate', stories_done: 3, stories_total: 3, open_defects: 0 },
+    );
+  });
+});
+
+test('listTasks() before shape: no packages yet reads READY/plan with null story progress, not "0/0"', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'view-test-root-'));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
+  try {
+    const open = await tm.call('tm_open', { request: 'task A', cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    const row = listTasks(root)[0];
+    assert.deepStrictEqual(
+      { state: row.state, phase: row.phase, stories_done: row.stories_done, stories_total: row.stories_total, open_defects: row.open_defects },
+      { state: 'READY', phase: 'plan', stories_done: null, stories_total: null, open_defects: 0 },
+    );
+    assert.equal(row.task_id, open.task_id);
+  } finally {
+    tm.close();
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('listTasks() on a size-S task (task.s_run, no task.spec) reads IN_PROGRESS/DONE by hand rather than falling into epicTicketState\'s spec-less READY default forever', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'view-test-root-'));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
+  const g = await new Client(BROKER).init();
+  try {
+    const open = await tm.call('tm_open', { request: 'small request', cwd, vendor: 'self', flow: 'develop', size: 'S', roles: { planning: false, qa: false } });
+    assert.equal(open.task_state, 's_run');
+    let row = listTasks(root)[0];
+    assert.deepStrictEqual({ state: row.state, phase: row.phase }, { state: 'IN_PROGRESS', phase: null });
+
+    await completeChild(g, { cwd, run_id: open.run_id });
+    row = listTasks(root)[0];
+    assert.deepStrictEqual({ state: row.state, phase: row.phase }, { state: 'DONE', phase: null });
+  } finally {
+    tm.close(); g.close();
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 // ---------- QA and planning-audit phase-Teams ----------
@@ -549,6 +640,22 @@ test('--once renders a QA round, its defect count, and the STORY it filed (the C
   });
 });
 
+test('renderText() indents every line of a filed defect\'s multi-line brief (fileDefects\' Title/Severity/Evidence block), not just the first', async () => {
+  await withOpenTask({ planning: false, qa: true }, async ({ tm, g, root, task_id }) => {
+    await driveToQaDefectFound(tm, g, task_id);
+    const text = renderText(collectTask(root, task_id));
+    const lines = text.split('\n');
+    // Pinned exactly: every continuation line carries the SAME 4-space indent as the first
+    // ("This package fixes...") - before the fix, only that first line was indented and every
+    // line after it fell back to column 0 (the bug report's own repro).
+    assert.equal(lines.find((l) => l.includes("This package fixes a defect")), '    This package fixes a defect filed against this task\'s integrated result.');
+    assert.equal(lines.find((l) => l.trim() === 'Title: checkout crashes on empty cart'), '    Title: checkout crashes on empty cart');
+    assert.equal(lines.find((l) => l.trim() === 'Severity: high'), '    Severity: high');
+    assert.equal(lines.find((l) => l.trim() === 'Evidence:'), '    Evidence:');
+    assert.equal(lines.find((l) => l.includes('run checkout with 0 items -> 500')), '    run checkout with 0 items -> 500');
+  });
+});
+
 test('/state.json carries model.qa for a task with a QA round (the HTML page and --once read the same collect() output)', async () => {
   await withOpenTask({ planning: false, qa: true }, async ({ tm, g, root, task_id }) => {
     await driveToQaDefectFound(tm, g, task_id);
@@ -585,16 +692,36 @@ test('renderText() names every node_id the model carries', async () => {
   });
 });
 
-test('renderIndexText() lists every task row', () => {
+test('renderIndexText() renders one card per row, in tickets.mjs vocabulary (epic_key/state/phase), pinned exactly - not the raw task_id as headline, not the engine run state', () => {
   const rows = [
-    { task_id: 't1', request: 'req one', state: 'running', size: 'L', created_at: 1000, cost_usd: 1.5 },
-    { task_id: 't2', request: 'req two', state: 'complete', size: 'S', created_at: 2000, cost_usd: 0 },
+    { task_id: 't1', epic_key: 'E-t1', title: 'ship the thing', state: 'IN_PROGRESS', phase: 'impl', size: 'L', created_at: 1000, elapsed_ms: 65000, cost_usd: 1.5, stories_done: 1, stories_total: 2, open_defects: 0 },
+    { task_id: 't2', epic_key: 'E-t2', title: 'done deal', state: 'DONE', phase: null, size: 'S', created_at: 2000, elapsed_ms: 5000, cost_usd: 0, stories_done: null, stories_total: null, open_defects: 2 },
+    { task_id: 't3', epic_key: 'E-t3', error: 'could not read task.json: missing' },
   ];
   const text = renderIndexText(rows, '/tmp/somewhere');
-  assert.match(text, /t1/);
-  assert.match(text, /t2/);
-  assert.match(text, /req one/);
-  assert.match(text, /\/tmp\/somewhere/);
+  assert.equal(text, [
+    'tasks under /tmp/somewhere:',
+    '  E-t1  IN_PROGRESS · impl  ship the thing',
+    '    task=t1  size=L  stories 1/2 done  cost=$1.50  elapsed=1m5s',
+    '  E-t2  DONE  done deal',
+    '    task=t2  size=S  open defects=2  cost=$0.00  elapsed=5s',
+    '  E-t3  ERROR: could not read task.json: missing  (task t3)',
+    '',
+  ].join('\n'));
+});
+
+test('renderIndexText() on an empty tasks dir', () => {
+  assert.equal(renderIndexText([], '/tmp/nowhere'), 'tasks under /tmp/nowhere:\n  (none)\n');
+});
+
+test('deriveTitle() takes the first sentence/clause of the request as the card headline, truncating deliberately rather than showing a raw task_id', () => {
+  assert.equal(deriveTitle('Demo: build the expense tracker across two modules, then QA the integrated tree.'),
+    'Demo: build the expense tracker across two modules, then QA the integra…');
+  assert.equal(deriveTitle('Fix the login bug. Also update the docs.'), 'Fix the login bug');
+  assert.equal(deriveTitle('no terminal punctuation at all here'), 'no terminal punctuation at all here');
+  assert.equal(deriveTitle(''), '(no request)');
+  assert.equal(deriveTitle(undefined), '(no request)');
+  assert.equal(deriveTitle('   '), '(no request)');
 });
 
 // ---------- the view.mjs CLI itself ----------
@@ -661,6 +788,13 @@ test('/state.json serves an index when several tasks exist and no --task is give
     assert.equal(data.mode, 'index');
     const ids = data.tasks.map((t) => t.task_id).sort();
     assert.deepEqual(ids, [a.task_id, b.task_id].sort());
+    // the card model - epic_key/title/state/phase, the same shape listTasks() and
+    // renderIndexText() are pinned against above - travels over the wire unchanged.
+    const rowA = data.tasks.find((t) => t.task_id === a.task_id);
+    assert.deepStrictEqual(
+      { epic_key: rowA.epic_key, title: rowA.title, state: rowA.state, phase: rowA.phase },
+      { epic_key: `E-${a.task_id.slice(0, 8)}`, title: 'task A', state: 'READY', phase: 'plan' },
+    );
 
     // the index page's per-task link resolves through the same server
     const linked = await fetch(`${base}/state.json?task=${a.task_id}`);
@@ -673,6 +807,29 @@ test('/state.json serves an index when several tasks exist and no --task is give
     rmSync(cwd2, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('the HTML index page renders one card per EPIC, headlined by epic_key + title (never the raw task_id or the engine run state), each linking to its own /?task=<id>', () => {
+  const rows = [
+    { task_id: 'aaaaaaaa-1111-2222-3333-444444444444', epic_key: 'E-aaaaaaaa', title: 'ship the thing', state: 'IN_PROGRESS', phase: 'impl', size: 'L', created_at: Date.now(), elapsed_ms: 60000, cost_usd: 1.23, stories_done: 1, stories_total: 3, open_defects: 2 },
+    { task_id: 'bbbbbbbb-1111-2222-3333-444444444444', epic_key: 'E-bbbbbbbb', error: 'could not read task.json: missing' },
+  ];
+  const html = renderIndexHtml(rows, '/tmp/x');
+  assert.match(html, /<div class="index-grid">/);
+  // headline is the epic key + title, not the raw task_id
+  assert.match(html, /<span class="key mono">E-aaaaaaaa<\/span>/);
+  assert.match(html, /<div class="title">ship the thing<\/div>/);
+  // the ticket state (with phase), not the engine's run state, drives the badge
+  assert.match(html, /<span class="badge IN_PROGRESS">IN_PROGRESS · impl<\/span>/);
+  // full task_id survives, but only in the card body, never as the href's link text
+  assert.match(html, /<a class="epic-card" href="\/\?task=aaaaaaaa-1111-2222-3333-444444444444">/);
+  assert.match(html, /<div class="id mono">aaaaaaaa-1111-2222-3333-444444444444<\/div>/);
+  assert.doesNotMatch(html, /<span class="key mono">aaaaaaaa-1111-2222-3333-444444444444/);
+  // open defects only surface when there are any
+  assert.match(html, /<span class="defects">open defects: 2<\/span>/);
+  // an unreadable task.json still gets a card and a working link, not a crash
+  assert.match(html, /<a class="epic-card" href="\/\?task=bbbbbbbb-1111-2222-3333-444444444444">/);
+  assert.match(html, /could not read task\.json: missing/);
 });
 
 test('view.mjs never writes to task.json (read-only)', async () => {
