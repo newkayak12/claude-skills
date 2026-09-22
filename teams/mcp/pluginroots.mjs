@@ -16,10 +16,36 @@
 // A directory counts only when it holds .claude-plugin/plugin.json. Nothing here is required:
 // a plugin that cannot be found is left out and the node falls back to its contract, as before.
 
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync, realpathSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { KINDS } from './graph.mjs';
 import { GRAPH_STAGE_SKILLS } from './mounts.mjs';
+
+// isEntryPoint(): whether the module that calls this (via its own `import.meta.url`) was
+// invoked directly - `node <this file>` - rather than merely imported as a library. Both
+// taskmanager.mjs (`isMain`, its stdio-loop guard) and daemon.mjs (`RUN_AS_MAIN`, the same
+// guard one process down: daemon.mjs imports taskmanager.mjs as a library and must not also
+// start ITS stdio loop) need exactly this check, so it lives here - the one module both already
+// import (pluginDirArgs) - rather than being copied into each, which is how the two guards drifted
+// apart in the first place: 3c5ad0c8 added a raw `fileURLToPath(import.meta.url) ===
+// resolve(process.argv[1])` string comparison to both files. That breaks the moment either side
+// of the comparison is reached through a symlink - e.g. macOS resolving $TMPDIR's `/var/...`
+// to `/private/var/...` - which is exactly the trap a bench run hit: the plugin loaded from a
+// symlinked path, `import.meta.url` kept the symlinked string, `argv[1]` did not match, the
+// guard decided "not main", and the server exited 0 having started nothing. realpathSync on
+// both sides (tolerating a path that does not exist, e.g. under a bundler or a fake test argv0)
+// makes two names for the same file compare equal regardless of which side is symlinked.
+export function isEntryPoint(importMetaUrl) {
+  const argv1 = process.argv[1];
+  if (!argv1) return false;
+  let a;
+  try { a = fileURLToPath(importMetaUrl); } catch { return false; }
+  let b = resolve(argv1);
+  try { a = realpathSync(a); } catch { /* leave as-is */ }
+  try { b = realpathSync(b); } catch { /* leave as-is */ }
+  return a === b;
+}
 
 export function pluginOf(skill) {
   const s = String(skill || '');

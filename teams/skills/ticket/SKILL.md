@@ -60,6 +60,11 @@ original scope, `repair` for an integration seam, or `qa`/`planning-audit`/`you`
 defect (QA, audit, or `tm_file`) — see `board`'s own explanation for how a PLAN/QA/AUDIT
 phase-Team package's ticket reads instead.
 
+A STORY's reply also carries `links` (`tickets.mjs`'s `storyLinks`): `blocked_by`/`blocks` name a
+sibling STORY key plus that sibling's own current state, `implements` names the PRD user-story
+ids this STORY was shaped to satisfy, and `filed_by` repeats `reporter` — the same relations
+`board`'s own STORY rows carry under the same name.
+
 ## What Claude Does
 
 Calls `tm_ticket({key})` with the key as given and renders the card above — nothing more.
