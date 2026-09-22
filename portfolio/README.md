@@ -38,6 +38,7 @@ classification). Connect them under Claude settings → MCP Servers as remote SS
 | Get a week-by-week study plan before interviews | `interview-prep` |
 | Practice defending my work in a mock interview | `portfolio-interview` |
 | Swap the key colors in a PPTX across every slide | `ppt-keycolor-changer` |
+| Build a PPTX from a template plus content, as a repeatable build | `deck-builder` |
 
 ## Skills
 
@@ -309,6 +310,51 @@ Don't go easy on the reliability questions.
 
 Closes with an overall verdict (would this persona advance you), your strongest and weakest
 answers, and the one thing to work on before the real interview.
+
+### `deck-builder`
+
+Treats a deck as a build rather than a document. `template.pptx` is the toolchain — its slides are
+the archetype catalog; `deck.md` is the source, the only file anyone edits; the output pptx is a
+build artifact, regenerated in full each time. Every output slide is a clone of a template slide
+with its content swapped, so the template's design survives byte for byte and nothing is laid out
+from scratch. Requires Python 3.9+ (stdlib only — no python-pptx, no PyYAML).
+
+```
+이 템플릿 읽고 분기 리뷰 내용으로 PPT 만들어줘.
+슬라이드별로 어떤 아키타입 쓸지 먼저 보여주고.
+```
+
+```bash
+# 1 — catalog: every archetype, its slots, and what the template shows there
+python3 /abs/path/to/skills/deck-builder/scripts/deck.py catalog \
+  --template "template.pptx" --output "deck.catalog.md"
+
+# 2 — check: unknown slots, missing images, text that will overflow its frame
+python3 /abs/path/to/skills/deck-builder/scripts/deck.py check --deck deck.md
+
+# 3 — build: the same deck.md always produces a byte-identical pptx
+python3 /abs/path/to/skills/deck-builder/scripts/deck.py build --deck deck.md
+```
+
+`deck.md` is markdown with a small, self-parsed syntax — `## @s3` starts a slide from template
+slide 3, `key: value` fills a text slot, indented `- ` lines fill a list, indented `| a | b |`
+lines fill table rows, a path fills a picture, `!drop` deletes a shape, and an omitted slot keeps
+the template's own content. Lists and table rows grow and shrink freely: four bullets go into a
+three-bullet archetype by cloning the paragraph that carries the formatting. Replaced images are
+center-cropped to the frame's aspect ratio rather than stretched.
+
+Known limits, reported explicitly rather than hidden:
+
+| Limit | Detail |
+|---|---|
+| **No new layouts** | Output slides are clones of template slides. Content with no matching archetype needs the template extended in PowerPoint first. |
+| **Charts are not writable** | Series values live in an embedded xlsx plus cached XML. `catalog` lists chart slots; `build` leaves them at template values. |
+| **Capacity is an estimate** | Overflow warnings come from frame width ÷ font size, not real text metrics — a prompt to look, not a verdict. |
+| **Formatting follows the template** | A replaced run inherits the template run's font, size and color; per-word emphasis is not expressible in `deck.md`. |
+| **Speaker notes are dropped** | Notes slides are not carried into the build. |
+
+Tests: `python3 portfolio/skills/deck-builder/scripts/test_deck.py` — builds its own minimal pptx,
+so it needs no fixture file.
 
 ### `ppt-keycolor-changer`
 
