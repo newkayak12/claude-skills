@@ -51,6 +51,9 @@ export const TEAM_DEFAULTS = Object.freeze({
   // want it committed. Recorded here rather than "fixed" because the right behaviour is a
   // product decision nobody has made.
   docs_dir: join('.teams_output', 'team'),
+  // Extra plugin directories every child driver and judge session is given with --plugin-dir,
+  // on top of the ones pluginroots.mjs finds for the skills the method tables name.
+  plugin_dirs: [],
 });
 
 // One validator per key. A value that fails is ignored (the lower layer's value stays) and
@@ -67,6 +70,7 @@ const CHECK = {
   vendor: (v) => typeof v === 'string' && v.length > 0,
   allocation: (v) => typeof v === 'string' && v.length > 0,
   docs_dir: (v) => typeof v === 'string' && v.length > 0,
+  plugin_dirs: (v) => Array.isArray(v) && v.every((d) => typeof d === 'string' && d.length > 0),
 };
 
 export function readTeamConfig(cwd) {

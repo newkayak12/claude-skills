@@ -39,6 +39,7 @@ import {
 } from './tickets.mjs';
 import { writeDocs } from './docs.mjs';
 import { readTeamConfig, resolveTeamOptions, TEAM_DEFAULTS } from './teamconfig.mjs';
+import { pluginDirArgs } from './pluginroots.mjs';
 import {
   node,
   pushChain,
@@ -100,7 +101,7 @@ const VERDICT = { critique: 'sound', dispatch: 'accept', accept: 'accept', integ
 // reaching for method instead of running commands. The stage contract always outranks a
 // skill's own output template; the briefing says so, and the contract asks each stage to
 // name what it actually loaded so the effect can be measured rather than assumed.
-const STAGE_SKILLS = {
+export const STAGE_SKILLS = {
   size: [],
   shape: ['develop:domain-driven-design', 'develop:architecture-designer'],
   critique: ['think:devils-advocate', 'cognition:assumption-extractor'],
@@ -1143,7 +1144,7 @@ function childContext(task, pkg) {
 // graph loop to the end; the manager waits and folds the result. Manager context per package:
 // a few lines.
 
-function driverArgv() {
+export function driverArgv(task = null) {
   // Tests (and anyone with a different CLI) replace the whole command line here; the prompt is
   // always appended as the last argument.
   const override = String(process.env.HARNESS_CHILD_DRIVER || '').trim();
@@ -1153,6 +1154,13 @@ function driverArgv() {
   // This server is launched with CLAUDE_PLUGIN_ROOT when it runs from a --plugin-dir; the child
   // needs the same directory to see the same plugin. Without it the plugin is installed.
   if (process.env.CLAUDE_PLUGIN_ROOT) argv.push('--plugin-dir', process.env.CLAUDE_PLUGIN_ROOT);
+  // And every plugin the method tables name (pluginroots.mjs): --setting-sources project hides
+  // the user's installed plugins, so without these the child's nodes never see a single skill
+  // they are told to load - which is how every bench run before 0.18.0 ran (skills_used none).
+  argv.push(...pluginDirArgs({
+    skills: [task && task.child_opts && task.child_opts.skills, task && task.stage_skills, Object.values(STAGE_SKILLS)].filter(Boolean),
+    extraDirs: (task && task.team && task.team.opts && task.team.opts.plugin_dirs) || [],
+  }));
   return argv;
 }
 
@@ -1194,7 +1202,7 @@ function spawnChildDriver(task, nodeIdLabel, child, opts = {}) {
   const log = join(dir, `${base}${suffix}.stream.jsonl`);
   const stderr = join(dir, `${base}${suffix}.stderr.txt`);
   const exitFile = join(dir, `${base}${suffix}.exit.json`);
-  const argv = driverArgv();
+  const argv = driverArgv(task);
   const command = argv.join(' ');
   let out = null;
   let err = null;
