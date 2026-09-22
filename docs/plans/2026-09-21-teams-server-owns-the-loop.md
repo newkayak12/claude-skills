@@ -291,6 +291,67 @@ gate 반려              -               14  (P1×1, P2×2, P3×2, integrate×1 
 
 **P1 첫 시도 (00:06Z 시작, 메모리 압박으로 드라이버·데몬 함께 종료됨) — 기획 하네스 버그 1:** PLAN 자식 런이 `flow: plan`인데 노드가 `implement:U1/test:U1/gate:U1, implement:U2, draft:U3`였다. 자식 런을 여는 `openChild`가 모든 패키지에 `mixed: true`를 주어 plan 노드가 "구현하라"는 요청을 develop 서브골로 분해했고, `childContext`에 planning 분기가 없어 "이건 계획할 대상"이라는 말이 어디에도 없었다. 0.17.1: phase-Team 런은 `mixed:false`, planning context 추가, 회귀 테스트. P1 재시작.
 
+### 8h. 기획 하네스 첫 완주 두 판 — 배관은 뚫렸고, 핵심은 아직 안 돈다 (2026-09-22, idol-pm-1/2)
+
+§8g가 남긴 "결과는 여기 아래에"의 답. 실런 두 판(`/tmp/graph-bench/idol-pm-1`, `idol-pm-2`), 같은 요청 — "아이돌 공연 티켓 예매 시스템, 티켓 오픈 순간 1초 20만 명, 빈 저장소".
+
+| | idol-pm-1 | idol-pm-2 |
+|---|---|---|
+| 총 시간 | 247분 | 61분 |
+| 산출물 | `docs/PRD.md` 220줄 | `docs/PRD.md` 588줄 |
+| 디스패치된 구현 패키지 | **0** | **0** |
+| 종료 | shape 예산 소진 → report → `complete` | `critique failed` → `blocked` |
+
+**기획 하네스는 PRD 생성기로서는 작동한다.** 두 판 모두 `accept:PLAN` 통과(88%, 93%), 스토리 7개/4개, 200,000이라는 숫자가 장식이 아니라 설계 조건으로 15~25회 등장, 도메인의 어려운 부분(원자적 단일 승자 홀드, 승인 대 정산 시계, late-authorization 되돌림)이 실제로 명세됨. 판정자가 잡아낸 결함도 정확했다 — idol-pm-1의 PRD는 `팬클럽`/`presale`이 0회로, 이 도메인의 표준 기능이 통째로 공백이었다.
+
+**그리고 거기서 멈춘다.** 두 판을 합쳐 5.1시간 동안 코드는 한 줄도 생기지 않았다.
+
+#### 게이트가 양방향으로 틀어져 있다
+
+| 게이트 | 실런 결과 | 통과 조건 |
+|---|---|---|
+| `accept:PLAN` | 2/2 통과 (88%, 93%) | `accept:true` **하나뿐** |
+| `critique` | **0/4 통과** | `sound:true` |
+
+`succeeded()`는 `goal_threshold`를 `gate`에만 적용했다. `accept`에는 바닥이 없어 `match_pct`는 기록만 되고 아무것도 막지 않았다 — 판정문이 직접 "도메인 고유 요소가 제목에만 있다"고 쓴 PRD가 88%로 통과했다.
+
+반대편에서 critique는 4전 4패다. 그런데 **critique는 오작동하고 있지 않다.** 네 판정의 blocking이 전부 같은 클래스다:
+
+- "최종 조립을 소유한 패키지가 없어 저장소 안에 실행 가능한 시스템이 없다" (양 판 공통)
+- "공유 입장 토큰의 소유자가 없다 — P2는 발급, P3는 검증을 요구받는데 `platform/`은 P1 단독 소유"
+- "goal 기준 1과 P6의 인수기준이 모순이라 어떤 런도 둘 다 만족 못 한다"
+- "goal 기준 2는 어떤 통합 단계도 검사할 수 없는 것을 요구한다"
+- "P5의 인수기준이 P5의 의존집합으로 충족 불가능하다"
+
+critique 계약은 바를 명시하고 있다 — *"패키지를 실행 불가능하거나 통합 불가능하게 만드는 blocking 결함에만 sound=false"*. 네 판정 모두 그 바를 지켰다. 문제는 **`CONTRACT.shape`가 그 규칙을 한 줄도 말하지 않는다**는 것이다(shape 브리핑 전문 4,031바이트에 부재 확인). 시험 범위를 안 알려주고 시험만 네 번 보게 한 구조다.
+
+부수적으로 드러난 것들:
+
+- **judge 타임아웃이 예산을 태운다.** idol-pm-1의 247분 중 ~130분이 45분 judge 타임아웃 두 번이었다. `autoReshape`에는 `autoRetryPackages`가 가진 `judge_failed` 가드가 없어서, autoRejudge의 1분 대기 창이 그대로 공짜 reshape가 된다 — "judge process did not finish within 45m"가 critique 행세를 하며 shape 예산을 소진한다. 재현 스크립트로 확인.
+- **커버리지 검사가 합집합 세기였다.** idol-pm-2는 P1과 P6이 각각 US-1~4 전부를 주장한 채 통과했다. 4개 스토리를 6개 패키지가 중복 주장해도 검사를 통과한다.
+- **정산된 실패가 성공으로 보인다.** idol-pm-1은 스토리 7개 중 6개 UNREACHABLE, 디스패치 0인 채 EPIC 행이 `DONE`이었다. 보고서 첫 줄은 "구현된 것은 없다"였다.
+- **거부된 `accept:PLAN`에 앞길이 없다.** `autoRetryPackages`가 `task.spec.packages`만 돌아 phase-Team 패키지(PLAN/QA/AUDIT)를 지나친다. accept 바닥을 넣자마자 드러난 웨지.
+- **PLAN 한 건에 51~81분**, 전체의 33~80%. 산출 경로도 `plan` 스킬이 약속한 `<docs_dir>/E-xxx/10-prd.md`가 아니라 자식이 고른 `docs/PRD.md`다 — 자동 배치가 없어 말과 엔진이 갈린다.
+- **audit / QA phase-Team은 여전히 실측 0회.** 둘 다 integrate 뒤라 두 판 모두 도달하지 못했다.
+
+#### 0.24.0이 닫은 것
+
+`CONTRACT.shape`에 critique가 거부하는 세 규칙 명시(공유물 단일 소유·goal 기준의 검사가능성·패키지 인수기준의 deps 자족성), `accept`에 `goal_threshold` 적용, `autoRetryPackages`에 phase-Team 패키지 포함, `autoReshape`의 `judge_failed` 가드, `implements[]`의 소유 검사 둘(전부 주장·무주장), 정산 실패의 `SETTLED`. 테스트 7건.
+
+#### 남은 것 — 판단이 필요한 지점
+
+배관 네 개(멈춰 서던 것들)는 로직이라 단위 테스트로 끝났다. **핵심은 안 닫혔다: shape이 critique를 통과한 적이 없고, 계약 세 줄이 그 통과율을 바꾼다는 증거는 없다.**
+
+구조를 그대로 두고 보면 수렴할 이유가 없다. 588줄 추상 PRD → shape이 4~6분 단발로 시스템 전체 분할안 작성 → 적대적 critique가 pass/fail. greenfield에서 4분짜리 단발 설계에 조립 루트·공유 토큰 소유가 빠지지 않을 이유가 없고, 빠지면 critique가 옳게 막는다. 그리고 `retryShape`는 부분 수정이 아니라 패키지 그래프 전체 폐기 후 재작성이라, 잘 잡힌 분할까지 버리고 매 회차 새 결함을 만든다.
+
+선택지 셋:
+
+1. **critique를 종착역에서 내린다** — 기계 검사(`validateShape`)만으로 디스패치하고, critique의 blocking은 소유 패키지의 brief에 경고로 실어 보낸다. 결함은 integrate/gate가 잡는다. 적어도 실행이 시작된다. 엔진 변경 중간 규모, 되돌리기 어려움.
+2. **greenfield에 PM 경로를 쓰지 않는다** — PRD는 문서 산출물로 받고(이건 실제로 된다), 패키지 분할은 사람이 정해 `develop`로 돌린다. `roles.planning`은 기존 코드베이스의 기능 추가에만 켠다.
+3. **0.24.0 상태로 한 번 더 잰다** — 계약 세 줄이 수렴을 바꾸는지 1시간 안에 답이 나온다. 성공 기준은 report가 아니라 **첫 패키지 dispatch 도달**.
+
+권고: **3 → 1**. 1번은 되돌리기 어려운 설계 변경이므로, 계약 수정이 먹히는지 재보고 가는 편이 훨씬 싸다. 다만 오늘 당장 PM 경로를 쓰려는 상황이면 답은 2번이다 — 현 시점에서 기획 하네스는 PRD 생성기로만 쓸 수 있다.
+
 ## 9. 반론과 리스크
 
 - **"서버가 `claude -p`를 노드마다 띄우면 프로세스 기동 비용이 있다."** 지금도 driver마다 띄운다. 노드 수만큼 띄우면 횟수는 늘지만 각 호출이 짧고, 릴레이 3턴이 사라진 순감소가 더 크다. 실측으로 확인(단계 5).
