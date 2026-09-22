@@ -40,6 +40,21 @@ import { mountBlock } from './mounts.mjs';
 export const SKILLS_USED_FIELD = `Add "skills_used": ["plugin:skill", ...] to the Required output JSON below, naming the ones you actually loaded, or ["none"].`;
 export const SKILL_METHOD_DISCLAIMER = `A skill that is not installed here is skipped without comment or substitute. Its own output template does not apply - "Required output" below is the only shape you may return - and neither does its "what you do / what I do" half: nobody is reading this but the machine that called you, so ask nothing and finish the work yourself.`;
 
+// Absorbed from what a PRD skill would have supplied. The engine names no PM plugin here: the
+// planning kind is the only caller, it always runs headless, and a method skill that is not
+// published can never mount - a dangling reference silently left every planning draft with no
+// method at all. Written as the identity plus the sections, so it survives with no plugin.
+export const PRD_CONTRACT = `You are writing a PRD, and a PRD is not a design spec. State the problem and who has it before any requirement, and keep "why we are building this" separate from "what we are building". Module contracts, package splits, file layouts and import rules are the shaping stage's job, not yours - naming them here pre-empts the stage that is supposed to decide them, and a document that opens at the data shapes has skipped the part only planning can do.
+The document must carry these sections, in this order, each as a "## " heading:
+  Problem - what is wrong today, for whom, and the evidence in the request or the tree that says so.
+  Target users - who this serves, what they are trying to get done, and what they do today instead.
+  Solution overview - two or three paragraphs of what is being built, at the level of behaviour a user sees.
+  Success criteria - what must be observably true for this to have worked, each one checkable.
+  User stories - headed exactly "## User stories", listing every story as "US-1", "US-2", ... in document order, each with its own acceptance[]. audit and gate:goal have no other source for them, and a PRD with none is rejected.
+  Out of scope - what is deliberately not being built, and why.
+  Open questions - decisions this document could not settle, each with the recommendation you would make.
+A section you cannot fill from the request or the tree is written with what you do know plus the gap stated plainly; it is never dropped, and never padded by restating the request.`
+
 const CONTRACT = {
   plan: `Return JSON: {"plan": "<the decomposition>", "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "dependencies": ["unit -> its real ordering dependency, or \\"none\\""], "verification": ["unit -> command or inspection that would deterministically verify it"], "conventions": ["path -> the rule it states, if .claude/conventions/** applies"], "handoff": "<what the next node needs>", "evidence": "<how you checked the request is actually satisfiable here>"}
 size is S when one run in one worktree can carry the whole request; L when it spans independent modules, packages or repositories that would each need their own run. Decide it from what commands show - file count, module boundaries, owners - and put those commands in "sizing". The default is S; a manager layer exists, and the temptation is to use it.
@@ -63,7 +78,7 @@ stage_ok=false when required work or checks could not run. Do not report a file 
 stage_ok=false means a required check could not run at all (sandbox, missing tool). verified=false with stage_ok=true means the checks ran and found a genuine failure. Do not edit implementation files. Do not trust the implement narrative - run the checks or inspect the artifacts yourself.`,
   draft: `Return JSON: {"stage_ok": true|false, "handoff": "<paths written, then a one-paragraph abstract of what the document now says>", "changed_files": ["..."], "checks": ["what you verified about the artifact - structure, cross-references, examples - and how"], "evidence": "..."}
 Write the artifact the acceptance describes, at the path the subgoal names. Every acceptance item must be answerable by pointing at a passage. stage_ok=false when the artifact could not be produced. Do not report a file as changed unless you changed it.
-If this document is a PRD (a planning-kind subgoal), it must carry a "## User stories" section listing every story as "US-1", "US-2", ... in document order, each with its own acceptance[] - audit and gate:goal have no other source for them.
+${PRD_CONTRACT}
 A planning-kind subgoal writes its section into a markdown document and touches nothing else. Source files are evidence to read, never a place to put the document: a rule written into the file it governs is not a PRD, and this run has no worktree of its own, so an edit there lands in the real project tree. If the subgoal names a path that is not a document, write the document beside it and say so in "handoff" rather than editing source.`,
   review: `Return JSON: {"stage_ok": true|false, "verified": true|false, "checks": ["<acceptance item> -> \"<the passage that meets it>\" (path:line) | MISSING: <what the text lacks>"], "evidence": "..."}
 You are the reader, not the author. Open the artifact at the paths the draft reported and read it; do not judge from the draft's abstract. One entry per acceptance item, in order. verified=true only when every item has a quoted passage. stage_ok=false only when the artifact could not be read at all. Do not edit the artifact.`,
