@@ -1167,7 +1167,7 @@ function childContext(task, pkg) {
     // Without this the planning run reads a request that says "implement ..." and does exactly
     // that (first real-vendor run, 2026-09-22: the PLAN child opened implement/test/gate chains
     // and started building the CLI). The request is the thing to PLAN, not the thing to do.
-    lines.push(`This is the planning phase-Team. The request above describes work that OTHER packages will build later; your deliverable is the PRD for it - the problem, the users, user stories with acceptance criteria an engineer can build from, scope and non-goals, risks and open questions - not the implementation.`);
+    lines.push(`This is the planning phase-Team. The request above describes work that OTHER packages will build later; your deliverable is this request's planning documents - not the implementation. The PRD is the floor of that set: the problem, the users, user stories with acceptance criteria an engineer can build from, scope and non-goals, risks and open questions. Nothing limits you to one document, and the run decides its own set: when this request's domain has a vocabulary, rules people will argue about, or a stated load condition, those belong in documents of their own rather than compressed into the PRD or dropped into its Out of scope.`);
     lines.push(`Change no source files. This run works directly in the project root, and nothing you write besides the PRD document itself is kept. The user_stories[] you return are what the manager hands to the shape stage that splits the work into packages.`);
   } else if (pkg.phase === 'qa') {
     lines.push(`This worktree is the COMBINED tree of every package in this task: all of their branches are already merged here, on the integration branch itself.`);

@@ -32,17 +32,23 @@ reading for feasibility.
 `review`, `revise` may edit the artifact: it rewrites for the reader and checks every claim
 against its evidence, rather than only judging what draft wrote.
 
-The PRD itself is a node-written original, filled from `pm:prd-development`'s `template.md` (not
-a rendered copy of it), at `<docs_dir>/E-<first 8 chars of task_id>/10-prd.md` (`docs_dir`
-defaults to `.teams_output/team`; `team.json`'s key of the same name overrides it). Name that path
-in the planning subgoal's `files[]` when the goal-spec is authored - there is no automatic
-placement yet, only the plain `files[]` mechanism every subgoal already has.
+The deliverable is a **set** of planning documents, and the run decides what is in it the way
+`shape` decides packages. The PRD is the floor, never the ceiling: when the request has a
+vocabulary an engineer would get wrong, rules people will argue about later, or a stated load
+condition, those become documents of their own rather than sections compressed into the PRD or
+lines in its Out of scope. `setgoal` makes that call; each document is one subgoal with its own
+`files[]` path. Every one is a node-written original - the method is the engine's own
+`PRD_CONTRACT`, not a plugin template. The PRD's conventional home is
+`<docs_dir>/E-<first 8 chars of task_id>/10-prd.md` (`docs_dir` defaults to `.teams_output/team`;
+`team.json`'s key of the same name overrides it); name it, and every other document's path, in the
+planning subgoals' `files[]` when the goal-spec is authored - there is no automatic placement yet,
+only the plain `files[]` mechanism every subgoal already has.
 
 This is the standalone route, where the whole run is the PRD. `.claude/team.json`'s
 `roles.planning` switch (see `install`) is a second route to the same `draft → revise → gate`
 work: a planning phase-Team the EPIC flow inserts before `shape` on its own, inside an ordinary
-`develop`/`document`/`orchestrate` run, writing to that same `10-prd.md` path. Use this skill when
-the deliverable IS the PRD; turn `roles.planning` on instead when a PRD should precede every EPIC
+`develop`/`document`/`orchestrate` run, writing that same set with `10-prd.md` at its floor. Use
+this skill when the deliverable IS the planning work; turn `roles.planning` on instead when a PRD should precede every EPIC
 that also does code or writing work, without a separate run to ask for it.
 
 ## Entry
