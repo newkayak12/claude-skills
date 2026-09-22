@@ -438,7 +438,7 @@ test('every NEXT_SCHEMA/VERDICT_SCHEMA field in taskmanager.mjs has a producer, 
   // The vacuity floor guard A/B/C already explain: too few fields found means extraction
   // stopped matching real code, not that the schemas shrank. Pinned to today's exact shape -
   // if a field is added or removed, update these two numbers in the same commit.
-  assert.equal(r.allKeys.NEXT_SCHEMA.length, 9, `NEXT_SCHEMA should declare 9 fields, found ${r.allKeys.NEXT_SCHEMA.length}: ${r.allKeys.NEXT_SCHEMA.join(', ')}`);
+  assert.equal(r.allKeys.NEXT_SCHEMA.length, 10, `NEXT_SCHEMA should declare 10 fields, found ${r.allKeys.NEXT_SCHEMA.length}: ${r.allKeys.NEXT_SCHEMA.join(', ')}`);
   assert.equal(r.allKeys.VERDICT_SCHEMA.length, 19, `VERDICT_SCHEMA should declare 19 fields, found ${r.allKeys.VERDICT_SCHEMA.length}: ${r.allKeys.VERDICT_SCHEMA.join(', ')}`);
 });
 
