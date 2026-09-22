@@ -1162,18 +1162,20 @@ const PLANNING_QA_MIX = {
   ],
 };
 
-test('a mixed spec expands a planning subgoal into draft->revise->gate and a qa subgoal into cases->execute->gate', async () => {
+test('a mixed spec expands a planning subgoal into investigate->draft->revise->gate and a qa subgoal into cases->execute->gate', async () => {
   await withRun(async ({ c, cwd, runId }) => {
     await throughCritiqueWith(c, cwd, runId, PLANNING_QA_MIX);
     const st = await c.call('team_status', { run_id: runId, cwd });
     const ids = st.nodes.map((n) => n.node_id);
-    assert.ok(ids.includes('draft:P1:1') && ids.includes('revise:P1:1') && ids.includes('gate:P1:1'));
+    assert.ok(ids.includes('investigate:P1:1') && ids.includes('draft:P1:1') && ids.includes('revise:P1:1') && ids.includes('gate:P1:1'));
     assert.ok(ids.includes('cases:Q1:1') && ids.includes('execute:Q1:1') && ids.includes('gate:Q1:1'));
     assert.ok(!ids.includes('implement:P1:1') && !ids.includes('test:P1:1'), 'planning has no implement/test');
     assert.ok(!ids.includes('implement:Q1:1') && !ids.includes('test:Q1:1'), 'qa has no implement/test either - execute is the test');
     assert.deepEqual(st.nodes.find((n) => n.node_id === 'cases:Q1:1').deps, ['critique', 'gate:P1:1'], "qa's own deps[] on the planning subgoal carries through");
 
     const f = dirty(cwd);
+    const inv = await c.call('team_submit', { run_id: runId, cwd, node_id: 'investigate:P1:1', payload: ok({ changed_files: [], handoff: 'findings.md', findings: [], unknowns: ['the per-person limit -> product owner'] }) });
+    assert.equal(inv.state, 'done', JSON.stringify(inv));
     const d = await c.call('team_submit', { run_id: runId, cwd, node_id: 'draft:P1:1', payload: ok({ changed_files: [f], handoff: 'PRD drafted' }) });
     assert.equal(d.state, 'done', JSON.stringify(d));
     const rv = await c.call('team_submit', { run_id: runId, cwd, node_id: 'revise:P1:1', payload: ok({ changed_files: [], handoff: 'revised for the reader' }) });
@@ -1489,6 +1491,10 @@ test('a revise routed to the identity that drafted is refused, the same way revi
       goal: 'G', acceptance: ['A'],
       subgoals: [{ id: 'P1', kind: 'planning', title: 'prd', acceptance: ['a'], files: ['prd.md'], deps: [] }],
     });
+    // investigate is not pinned by this test's policy, so it stays on self - the independence
+    // rule under test is between revise and draft, not between revise and the investigator.
+    const inv = await c.call('team_submit', { run_id, cwd, node_id: 'investigate:P1:1', payload: ok({ changed_files: [], handoff: 'findings.md' }) });
+    assert.equal(inv.state, 'done', JSON.stringify(inv));
     const d = await c.call('team_run', { run_id, cwd, node_id: 'draft:P1:1' });
     assert.equal(d.state, 'done', JSON.stringify(d));
     assert.equal(d.executor, 'ink');

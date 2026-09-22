@@ -9,7 +9,7 @@
 // needs it takes an injectable `{ alive }` predicate defaulting to a real process.kill(pid, 0)
 // check, so a unit test can fix it without a real pid and the module stays otherwise pure.
 import { join } from 'node:path';
-import { loadRun, loadRunAt, unmetDeps, runState, nodeKind, KINDS } from './graph.mjs';
+import { loadRun, loadRunAt, unmetDeps, runState, nodeKind, authorStage, KINDS } from './graph.mjs';
 import { TEAM_DEFAULTS } from './teamconfig.mjs';
 
 export function epicKey(taskId) {
@@ -245,8 +245,17 @@ function reached(childRun, n) {
 // already does by construction when it walks dispatch -> accept in stage order.
 export function taskTicketState(childRun, subgoalId) {
   const kind = nodeKind(childRun, { subgoal_id: subgoalId }) || 'subgoal';
-  const chain = (KINDS[kind] || KINDS.subgoal).chain; // e.g. [implement,test,gate] or [draft,revise,gate]
-  const [authorStage, midStage, gateStage] = chain;
+  // Destructuring the chain as a fixed [author, mid, gate] triple held only while every kind
+  // was three stages long. planning is four (investigate -> draft -> revise -> gate), and under
+  // the old read its gate slot landed on `revise`, so a planning TASK reported DONE the moment
+  // revise finished and could never report REJECTED. Derived by position instead: the gate is
+  // the last stage, the kind's own author splits what comes before it, and everything between
+  // author and gate is the reviewing half.
+  const chain = (KINDS[kind] || KINDS.subgoal).chain; // [implement,test,gate] | [investigate,draft,revise,gate]
+  const gateStage = chain[chain.length - 1];
+  const authorIdx = Math.max(0, chain.indexOf(authorStage(kind)));
+  const preStages = chain.slice(0, authorIdx + 1); // through the hand that authors
+  const reviewStages = chain.slice(authorIdx + 1, chain.length - 1); // after it, before the gate
   const byStage = (stage) => {
     const list = childRun.nodes.filter((n) => n.subgoal_id === String(subgoalId) && n.stage === stage);
     return list.length ? list[list.length - 1] : null;
@@ -259,21 +268,32 @@ export function taskTicketState(childRun, subgoalId) {
     if (gate.state === 'unreachable') return 'UNREACHABLE';
     return 'IN_REVIEW'; // pending-but-ready or running: the mid stage already handed off
   }
-  const mid = byStage(midStage);
-  if (mid && reached(childRun, mid)) {
+  for (const stage of reviewStages.slice().reverse()) {
+    const mid = byStage(stage);
+    if (!mid || !reached(childRun, mid)) continue;
     if (mid.state === 'skipped') return 'CANCELLED';
     if (mid.state === 'unreachable') return 'UNREACHABLE';
     // running, pending-but-ready, or failed-not-yet-settled: §4 counts test/revise/execute
     // as already "in review" the moment the author stage has handed off to it.
     return 'IN_REVIEW';
   }
-  const author = byStage(authorStage);
-  if (!author) return 'BACKLOG'; // defensive: pushChain always creates the whole chain together
-  if (author.state === 'running') return 'IN_PROGRESS';
-  if (author.state === 'pending') return unmetDeps(childRun, author).length ? 'BACKLOG' : 'READY';
-  if (author.state === 'skipped') return 'CANCELLED';
-  if (author.state === 'unreachable') return 'UNREACHABLE';
-  return 'IN_PROGRESS'; // author failed, not yet retried or settled - a brief window, still "moving"
+  for (const stage of preStages.slice().reverse()) {
+    const author = byStage(stage);
+    if (!author) continue;
+    const first = stage === chain[0];
+    // Only the chain's opening stage can still be waiting to start. A later pre-gate stage
+    // that is merely pending-and-ready means the ones before it are done - that is work in
+    // progress, not a task nobody has picked up.
+    if (!first && !reached(childRun, author)) continue;
+    if (author.state === 'skipped') return 'CANCELLED';
+    if (author.state === 'unreachable') return 'UNREACHABLE';
+    if (author.state === 'pending') {
+      if (!first) return 'IN_PROGRESS';
+      return unmetDeps(childRun, author).length ? 'BACKLOG' : 'READY';
+    }
+    return 'IN_PROGRESS'; // running, or failed-not-yet-settled - a brief window, still "moving"
+  }
+  return 'BACKLOG'; // defensive: pushChain always creates the whole chain together
 }
 
 // A STORY's "x/y" tasks column: how many of its child run's subgoals have a DONE task ticket.

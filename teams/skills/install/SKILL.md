@@ -42,7 +42,7 @@ precede a run; add it whenever the project is ready to commit to it.
 1. **Judgment, before running anything.** Inspect the project's languages and source roots and
    propose dispatch patterns (e.g. `src/**`, `packages/**`); confirm them with the user. Ask
    which `roles` to keep on (`planning`, `qa`) — both default ON since 0.17.0; a develop task passes planning and QA unless the project turns one off. `planning` inserts a planning
-   phase-Team (PRD draft → revise → gate) before `shape`, and its PRD and user stories feed
+   phase-Team (PRD investigate → draft → revise → gate) before `shape`, and its PRD and user stories feed
    shape's packages — and a second planning pass (`audit → gate`) after integration, which
    cross-checks the built result against those user stories and files a STORY for each one still
    unmet. `qa` inserts a QA phase-Team between `integrate` and `gate:goal`, reusing the repair
