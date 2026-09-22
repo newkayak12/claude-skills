@@ -172,7 +172,7 @@ async function throughCritique(tm, task_id, shape) {
 async function withTask(shape, fn) {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'view-test-root-'));
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '0' }).init();
   const g = await new Client(BROKER).init();
   try {
     const open = await tm.call('tm_open', { request: 'a request for the view test', cwd, vendor: 'self', roles: { planning: false, qa: false } });
@@ -193,7 +193,7 @@ async function withTask(shape, fn) {
 async function withOpenTask(roles, fn) {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'view-test-root-'));
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '0' }).init();
   const g = await new Client(BROKER).init();
   try {
     const open = await tm.call('tm_open', { request: 'a request for the view test', cwd, vendor: 'self', roles });
@@ -458,7 +458,7 @@ test('listTasks() reads the ticket state through a real QA-found-defect round: I
 test('listTasks() before shape: no packages yet reads READY/plan with null story progress, not "0/0"', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'view-test-root-'));
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '0' }).init();
   try {
     const open = await tm.call('tm_open', { request: 'task A', cwd, vendor: 'self', roles: { planning: false, qa: false } });
     const row = listTasks(root)[0];
@@ -486,7 +486,7 @@ test('listTasks() before shape: no packages yet reads READY/plan with null story
 test('listTasks() on a size-S task (task.s_run, no task.spec) reads the real state/phase off the child run at every stage - READY/plan through DONE/null', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'view-test-root-'));
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '0' }).init();
   const g = await new Client(BROKER).init();
   try {
     const open = await tm.call('tm_open', { request: 'small request', cwd, vendor: 'self', flow: 'develop', size: 'S', roles: { planning: false, qa: false } });
@@ -901,7 +901,7 @@ test('/state.json serves an index when several tasks exist and no --task is give
   const cwd1 = repo();
   const cwd2 = repo();
   const root = mkdtempSync(join(tmpdir(), 'view-test-root-'));
-  const tm1 = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
+  const tm1 = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '0' }).init();
   let proc;
   try {
     const a = await tm1.call('tm_open', { request: 'task A', cwd: cwd1, vendor: 'self', roles: { planning: false, qa: false } });
