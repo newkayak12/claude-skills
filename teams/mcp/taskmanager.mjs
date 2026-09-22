@@ -128,6 +128,7 @@ export const CONTRACT = {
 S means one graph run in one worktree can carry the whole request. L means it spans independent modules, packages or repositories that each need their own run and worktree, integrated afterwards. Decide from what commands show - file and module counts, ownership boundaries, build units - and put those commands in "sizing". The default is S: a manager layer exists, and the temptation is to use it. Over-sizing costs a worktree, a run and an integration per package; under-sizing costs one retry.`,
   shape: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "acceptance": ["goal-level criteria for the integrated result"], "packages": [{"id": "P1", "title": "...", "flow": "develop|document", "skills": ["plugin:skill"], "brief": "<the request this package's own graph run will receive - self-contained>", "acceptance": ["what the package must deliver, checkable inside its worktree"], "touches": ["paths or modules this package changes"], "deps": ["P0"], "implements": ["US-1"], "split": false}], "handoff": "...", "evidence": "..."}
 "skills" is optional and is method for the package, not for you: you are the stage that knows what each package IS, and a CLI package and a reference-document package want different method. Name the skills that package's own nodes should work by, and they travel into its child run; leave it out when the brief is method enough. Do not name a skill that asks its reader questions - the child's nodes run headless too.
+Three rules critique will refuse the shape over, so decide them here rather than letting it find them. One: every shared artifact two or more packages depend on - the composition root or app assembly that makes the merged tree runnable, a cross-package contract, an auth or admission token and its verifier, a shared schema or type - is owned by exactly one package, named in that package's touches[] AND in its acceptance[]. A package may not be judged on a primitive no package was told to build. Two: every goal-level criterion must be checkable by the integration step from the merged tree alone, and no two of them may contradict each other; a criterion that needs an environment this harness cannot produce states the achievable measurement and what it extrapolates from, rather than naming a number no run can reach. Three: a package's own acceptance must be satisfiable from that package's deps[] alone - if proving it needs a sibling's delivered result, that sibling is a dependency or the criterion belongs to whoever has it.
 Each package becomes one graph run in its own worktree. A package with no deps branches from the current HEAD; a package with deps branches from its first dependency's delivered branch with the others merged in, so it builds on what they delivered - not on stubs. Two packages that touch the same path will conflict at integration: split by ownership, not by phase. A dependency means the package needs another's delivered result; it receives that package's report as context and starts from its tree. Every package must be size S on its own - if one still needs splitting, the shape is wrong. Two to six packages is the usual range. "split": true (or "size": "L") is the one exception to that rule - the rare package whose own scope still needs its own shape/dispatch cycle inside its child run; leave it false for the ordinary package, whose child run opens with this shape's own acceptance already decided and no plan/setgoal/critique/gate:goal of its own to redo (§3, docs/plans/2026-09-21-teams-server-owns-the-loop.md).`,
   critique: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "sound": true|false, "blocking": ["..."], "problems": ["..."], "handoff": "...", "evidence": "..."}
 Attack the shape: packages that overlap in touches[], a dependency the brief does not actually need, a package too large to be one run, a goal-level criterion no integration step could check, and - above all - a request that was S sized as L. Set sound=false only for defects in "blocking" that make the packages impossible to run or impossible to integrate. Everything else is a problem, carried forward as advice.`,
@@ -372,9 +373,22 @@ export function validateShape(spec, userStories) {
   // package, or it silently falls through the crack between "planning decided it" and "shape
   // scheduled it". Only checked when planning actually ran (userStories is an array, not null).
   if (Array.isArray(userStories)) {
-    const covered = new Set(packages.flatMap((p) => (Array.isArray(p && p.implements) ? p.implements.map(String) : [])));
+    const claims = (p) => (Array.isArray(p && p.implements) ? p.implements.map(String) : []);
+    const covered = new Set(packages.flatMap(claims));
     const missing = userStories.map(storyId).filter((u) => u && !covered.has(u));
     if (missing.length) problems.push(`user stories not implemented by any package: ${missing.join(', ')}`);
+    // Union coverage alone is satisfied by a shape where everyone claims everything, and that
+    // is what a real one did: idol-pm-2 (2026-09-22) had P1 and P6 each claim all four stories,
+    // so the check passed over a split that said nothing about who owns what. These two read the
+    // same field for what it is meant to mean - what this package delivers, not what it touches.
+    const ids = userStories.map(storyId).filter(Boolean);
+    if (ids.length && packages.length > 1) {
+      for (const p of packages) {
+        const mine = new Set(claims(p));
+        if (!mine.size) problems.push(`package ${p.id} implements no user story: every package in a planned task delivers some part of the PRD, or it is not in this shape`);
+        else if (ids.every((u) => mine.has(u))) problems.push(`package ${p.id} claims every user story (${ids.join(', ')}): implements[] is what this package delivers, not what it touches - a package that delivers all of them is the whole job, not a package`);
+      }
+    }
   }
   return problems;
 }
@@ -606,7 +620,17 @@ function openRepair(task, integ) {
 // This is autoRepair/autoRetryPackages for the shaping pair, budgeted the same way.
 export function autoReshape(task) {
   if (task.s_run) return false;
-  const source = task.nodes.filter((n) => (n.stage === 'critique' || n.stage === 'shape') && n.state === 'failed' && n.result && !n.final).pop();
+  // A judge that could not judge is not a verdict on the shape, exactly as it is not one on a
+  // package (autoRetryPackages skips the same result for the same reason). autoRejudge owns the
+  // node while its rejudge budget lasts - and it deliberately waits a minute (or a usage-limit
+  // reset) before reopening, so within that window this function would otherwise find a 'failed'
+  // shape/critique and spend a whole reshape attempt on it, carrying "judge process did not
+  // finish within 45m and was killed" into the next shape as if it were a critique. idol-pm-1
+  // (2026-09-22) hit the 45m judge timeout twice in 247 minutes; under this code that is two of
+  // the three shaping attempts gone to a timeout string. Once the rejudge budget IS spent there
+  // is no verdict coming, and reshaping is the only move left - so reshape then.
+  const judgeStuck = (n) => n.result.judge_failed === true && (n.judge_attempts || 0) < JUDGE_ATTEMPTS_MAX;
+  const source = task.nodes.filter((n) => (n.stage === 'critique' || n.stage === 'shape') && n.state === 'failed' && n.result && !n.final && !judgeStuck(n)).pop();
   if (!source) return false;
   // Nothing else may still be moving: a live dispatch belongs to the shape being replaced.
   if (task.nodes.some((n) => n.state === 'running')) return false;
@@ -619,7 +643,13 @@ export function autoReshape(task) {
 
 export function autoRetryPackages(task) {
   let changed = false;
-  const packages = (task.spec && task.spec.packages) || [];
+  // The phase-Team packages belong here for the same reason packageOf() has to know them: they
+  // are dispatched and accepted exactly like a package, they just do not live in the list shape
+  // owns. Without them a rejected accept:PLAN (or QA, or AUDIT) had no route forward at all -
+  // the daemon would record daemon_done on a task whose whole retry budget was untouched, the
+  // same wedge autoRepair/autoReshape were written to close. Reachable from the accept floor
+  // below, which is the first thing that rejects a PLAN fold on a number rather than a verdict.
+  const packages = [task.planning_pkg, task.qa_pkg, task.audit_pkg, ...((task.spec && task.spec.packages) || [])].filter(Boolean);
   for (const pkg of packages) {
     if (pkg.repair) continue;
     const pid = String(pkg.id);
@@ -2086,7 +2116,13 @@ function succeeded(task, n, result) {
   // The manager's own goal gate is held to the same floor the graph engine holds its
   // goal gate to: accept:true at 40% match is reporting a partial result as a pass.
   // There is no per-package gate in the manager - every 'gate' node here IS the goal gate.
-  if (n.stage === 'gate' && Number.isFinite(result.match_pct)) {
+  // And by that same reading `accept` IS the gate for its package, so it gets the same floor:
+  // without one, match_pct was decorative on every accept node. idol-pm-1's PRD was accepted at
+  // 88% by a judgement whose own text said the document named nothing specific to the domain
+  // ("fan-club"/"팬클럽"/"presale" zero times) - the number was recorded and nothing acted on it.
+  // A rejection here is not the end of the package: it buys the retry max_retries already
+  // budgets, with the gaps that cost it the points carried into the next attempt.
+  if ((n.stage === 'gate' || n.stage === 'accept') && Number.isFinite(result.match_pct)) {
     const floor = Number.isInteger(task.goal_threshold) ? task.goal_threshold : 90;
     if (result.match_pct < floor) return false;
   }
