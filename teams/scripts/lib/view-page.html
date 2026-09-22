@@ -136,7 +136,10 @@
   }
 
   function pkgCard(p, idx) {
-    var st = (p.dispatch && p.dispatch.state) || 'pending';
+    // p.state is set on a QA/audit round (its accept state if the round has one, else its
+    // dispatch state - see view-collect.mjs's phaseRoundModel); an ordinary package has no
+    // top-level state and falls back to dispatch's, as before.
+    var st = p.state || (p.dispatch && p.dispatch.state) || 'pending';
     var id = 'pkg-' + idx;
     var open = openPkgs.has(p.id);
     var costLine = '';
@@ -146,12 +149,15 @@
     var driverAlive = p.child && p.child.driver ? (p.child.driver.alive ? 'driver alive' : 'driver dead') : '';
     return (
       '<div class="pkg-card' + (open ? ' open' : '') + '" data-pkgid="' + esc(p.id) + '" id="' + id + '">' +
-      '<div class="top"><span class="title">' + esc(p.id) + (p.title ? ' – ' + esc(p.title) : '') + '</span>' +
+      '<div class="top"><span class="title">' + esc(p.id) + (p.title ? ' – ' + esc(p.title) : '') +
+      (p.reporter ? ' <span class="muted mono">[filed by ' + esc(p.reporter) + ']</span>' : '') + '</span>' +
       '<span class="badge ' + esc(st) + '">' + esc(st) + '</span></div>' +
       (p.brief ? '<div class="brief">' + esc(p.brief) + '</div>' : '') +
       '<div class="meta"><span>' + fmtMs(p.dispatch && p.dispatch.elapsed_ms) + '</span>' +
       (costLine ? '<span>' + costLine + '</span>' : '') +
       (driverAlive ? '<span>' + esc(driverAlive) + '</span>' : '') +
+      (p.defects_count != null ? '<span>defects: ' + p.defects_count + '</span>' : '') +
+      (p.unmet_count != null ? '<span>unmet: ' + p.unmet_count + '</span>' : '') +
       '</div>' +
       '<div class="pkg-detail">' + childStrip(p.child) + '</div>' +
       '</div>'
@@ -188,6 +194,21 @@
       out.push('<h2>packages</h2><div class="pkg-grid">');
       (m.packages || []).forEach(function (p, i) { out.push(pkgCard(p, i)); });
       out.push('</div>');
+
+      // QA and planning-audit phase-Teams (task.qa_pkg / task.audit_pkg): a fixed package that
+      // can be dispatched more than once, one round per defect/unmet-story cycle. Rendered as
+      // its own section, one card per round, so a round that already found a defect and was
+      // superseded by a later clean round stays visible instead of disappearing.
+      if (m.qa && m.qa.rounds.length) {
+        out.push('<h2>QA</h2><div class="pkg-grid">');
+        m.qa.rounds.forEach(function (r, i) { out.push(pkgCard(r, 'qa-' + i)); });
+        out.push('</div>');
+      }
+      if (m.audit && m.audit.rounds.length) {
+        out.push('<h2>audit</h2><div class="pkg-grid">');
+        m.audit.rounds.forEach(function (r, i) { out.push(pkgCard(r, 'audit-' + i)); });
+        out.push('</div>');
+      }
     }
 
     out.push('<h2>recent events</h2><div class="panel"><ul class="ledger">');
