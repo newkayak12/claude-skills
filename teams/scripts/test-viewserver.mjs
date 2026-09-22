@@ -36,11 +36,13 @@ function killAll() {
 
 process.on('exit', killAll);
 
-// Every running viewer, by pid, as the OS sees it - the only way to catch one this module
-// started and then lost track of.
-async function viewerPids() {
+// Every running viewer pointed at `tasksDir`, by pid, as the OS sees it - the only way to catch
+// one this module started and then lost track of. Filtered to that one root on purpose: other
+// suites in the same `node --test` run open real tasks and legitimately start viewers of their
+// own, and a system-wide count once flagged one of those as this test's orphan.
+async function viewerPids(tasksDir) {
   const { spawnSync } = await import('node:child_process');
-  const r = spawnSync('pgrep', ['-f', 'scripts/view.mjs'], { encoding: 'utf8' });
+  const r = spawnSync('pgrep', ['-f', `scripts/view.mjs --tasks-dir ${tasksDir} `], { encoding: 'utf8' });
   return new Set((r.stdout || '').split('\n').map((l) => Number(l.trim())).filter(Boolean));
 }
 
@@ -148,13 +150,14 @@ test('TEAMS_VIEW_PORT pins the port', async () => {
 test('an unwritable tasks root returns null, and leaves no orphan holding a port', async () => {
   // A path that cannot hold a file at all: a record write under a nonexistent directory throws
   // ENOENT, which is exactly the class of failure that must not reach the caller.
-  const before = await viewerPids();
-  const v = await ensureViewer(join(tmpdir(), 'teams-viewserver-does-not-exist', 'nested'), 'E-z');
+  const missing = join(tmpdir(), 'teams-viewserver-does-not-exist', 'nested');
+  const before = await viewerPids(missing);
+  const v = await ensureViewer(missing, 'E-z');
   assert.equal(v, null);
   // The spawn itself succeeds - only the record write fails - so without the kill on that path
   // a viewer nothing can name is left listening forever. Give it time to bind before counting.
   await new Promise((r) => setTimeout(r, 1500));
-  const after = await viewerPids();
+  const after = await viewerPids(missing);
   const leaked = [...after].filter((p) => !before.has(p));
   assert.deepEqual(leaked, [], `a viewer that could not be recorded must be killed, not orphaned on ${leaked.join(',')}`);
 });
