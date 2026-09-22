@@ -23,7 +23,8 @@
 
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync, watch } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   loadRunAt, saveRun, readyNodes,
 } from './graph.mjs';
@@ -32,7 +33,9 @@ import {
   advanceDispatches, serviceRunningDispatches, prepareReadyIntegrations,
   dispatchSettled, foldChild, serviceSRun, delegateIfSmall,
   finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages, autoRejudge, autoResumeCapacity,
+  STAGE_SKILLS,
 } from './taskmanager.mjs';
+import { pluginDirArgs } from './pluginroots.mjs';
 
 function parseArgs(argv) {
   const out = {};
@@ -42,8 +45,12 @@ function parseArgs(argv) {
   return out;
 }
 
+// This file is both the daemon executable and a small library (judgeArgv is tested directly).
+// Importing it must therefore not exit: the --task guard and the run-the-loop tail below are
+// gated on being the process entry point, the way any dual-purpose Node module is.
+const RUN_AS_MAIN = process.argv[1] ? resolve(process.argv[1]) === fileURLToPath(import.meta.url) : false;
 const TASK_ID = parseArgs(process.argv.slice(2)).task;
-if (!TASK_ID) {
+if (RUN_AS_MAIN && !TASK_ID) {
   process.stderr.write('daemon.mjs: --task <task_id> is required\n');
   process.exit(1);
 }
@@ -67,12 +74,18 @@ const JUDGE_TIMEOUT_MS = Number(process.env.HARNESS_JUDGE_TIMEOUT_MS) > 0
   ? Number(process.env.HARNESS_JUDGE_TIMEOUT_MS)
   : 45 * 60 * 1000;
 
-function judgeArgv() {
+export function judgeArgv(task = null) {
   const override = String(process.env.HARNESS_JUDGE_DRIVER || '').trim();
   if (override) return override.split(/\s+/);
   const argv = ['claude', '-p', '--output-format', 'stream-json', '--verbose',
     '--dangerously-skip-permissions', '--setting-sources', 'project'];
   if (process.env.CLAUDE_PLUGIN_ROOT) argv.push('--plugin-dir', process.env.CLAUDE_PLUGIN_ROOT);
+  // The manager's own stage skills (shape/critique/accept/integrate/gate:goal) live in other
+  // plugins; without their directories the judge is told to load skills it cannot see.
+  argv.push(...pluginDirArgs({
+    skills: [Object.values(STAGE_SKILLS), task && task.stage_skills].filter(Boolean),
+    extraDirs: (task && task.team && task.team.opts && task.team.opts.plugin_dirs) || [],
+  }));
   return argv;
 }
 
@@ -116,7 +129,7 @@ async function judge(task, n) {
     mkdirSync(dirname(p), { recursive: true });
     writeFileSync(p, prompt);
   } catch { /* tm_status full is the fallback view */ }
-  const argv = judgeArgv();
+  const argv = judgeArgv(task);
   const extra = [];
   if (task.child_opts && task.child_opts.model) extra.push('--model', task.child_opts.model);
   return new Promise((resolve) => {
@@ -326,12 +339,14 @@ async function main() {
 // noDriver() doubles as the daemon's own "never spawn a real claude -p" test seam here too: a
 // test that disables driver spawning does not want a real judge call either, and HARNESS_JUDGE_DRIVER
 // is there for the narrower case of a test that wants the daemon to run but with a fake judge.
-if (noDriver() && !process.env.HARNESS_JUDGE_DRIVER) {
-  process.stderr.write('daemon.mjs: HARNESS_TEST_NO_DRIVER is set with no HARNESS_JUDGE_DRIVER override; exiting without driving anything.\n');
-  process.exit(0);
-} else {
-  main().catch((e) => {
-    process.stderr.write(`daemon.mjs: ${String((e && e.stack) || e)}\n`);
-    process.exit(1);
-  });
+if (RUN_AS_MAIN) {
+  if (noDriver() && !process.env.HARNESS_JUDGE_DRIVER) {
+    process.stderr.write('daemon.mjs: HARNESS_TEST_NO_DRIVER is set with no HARNESS_JUDGE_DRIVER override; exiting without driving anything.\n');
+    process.exit(0);
+  } else {
+    main().catch((e) => {
+      process.stderr.write(`daemon.mjs: ${String((e && e.stack) || e)}\n`);
+      process.exit(1);
+    });
+  }
 }

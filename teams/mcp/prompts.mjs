@@ -35,6 +35,9 @@ import { mountBlock } from './mounts.mjs';
 // Shared by every Method block a composed prompt can carry - the per-subgoal one below and
 // the stage-mounted one mounts.mjs renders - so the two mechanisms state the same rule in
 // the same words instead of drifting apart.
+// Telemetry, not method: without this field no graph node ever said which skills it loaded, so
+// a run with no skills mounted at all was indistinguishable from one that used them.
+export const SKILLS_USED_FIELD = `Add "skills_used": ["plugin:skill", ...] to the Required output JSON below, naming the ones you actually loaded, or ["none"].`;
 export const SKILL_METHOD_DISCLAIMER = `A skill that is not installed here is skipped without comment or substitute. Its own output template does not apply - "Required output" below is the only shape you may return - and neither does its "what you do / what I do" half: nobody is reading this but the machine that called you, so ask nothing and finish the work yourself.`;
 
 const CONTRACT = {
@@ -192,6 +195,7 @@ export function composePrompt(run, n, briefing) {
     if (method.length) {
       lines.push(`Method — load each of these that is available, then work the way it says:\n${bullets(method)}`);
       lines.push(SKILL_METHOD_DISCLAIMER);
+      lines.push(SKILLS_USED_FIELD);
     }
     if (sg.files?.length) lines.push(`Required paths:\n${bullets(sg.files)}`);
     if (['implement', 'draft'].includes(n.stage)) {

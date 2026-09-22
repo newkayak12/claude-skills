@@ -20,14 +20,14 @@
 // for the goal gate) to reason with. Advisory only - a tool that is not connected is
 // skipped in silence, never searched for and never blocking.
 
-import { SKILL_METHOD_DISCLAIMER } from './prompts.mjs';
+import { SKILL_METHOD_DISCLAIMER, SKILLS_USED_FIELD } from './prompts.mjs';
 import { nodeKind } from './graph.mjs';
 
 // Keyed the same way taskmanager's STAGE_SKILLS is: by stage name, with `gate:goal` split
 // out from the plain per-subgoal `gate` so a caller can override the goal gate without
 // touching every subgoal gate. Both default to the same skill here, on purpose - the
 // original pipeline.js pinned "every subgoal gate and the goal gate" to one skill.
-const GRAPH_STAGE_SKILLS = {
+export const GRAPH_STAGE_SKILLS = {
   plan: ['agents:agent-task-decomposer'],
   critique: ['think:devils-advocate'],
   gate: ['think:devils-advocate'],
@@ -110,6 +110,7 @@ export function mountBlock(run, n) {
     lines.push(bulletList(skills));
     lines.push('Invoke it through the Skill tool. If the Skill tool is not available here, read the skill\'s own SKILL.md directly and follow it instead.');
     lines.push(SKILL_METHOD_DISCLAIMER);
+    lines.push(SKILLS_USED_FIELD);
   }
   const mounted = graphStageMounts(run, n);
   if (mounted.length) {
