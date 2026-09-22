@@ -53,9 +53,10 @@ The document must carry these sections, in this order, each as a "## " heading:
   User stories - headed exactly "## User stories", listing every story as "US-1", "US-2", ... in document order, each with its own acceptance[]. audit and gate:goal have no other source for them, and a PRD with none is rejected.
   Out of scope - what is deliberately not being built, and why.
   Open questions - decisions this document could not settle, each with the recommendation you would make.
-A section you cannot fill from the request or the tree is written with what you do know plus the gap stated plainly; it is never dropped, and never padded by restating the request.`
+A section you cannot fill from the request or the tree is written with what you do know plus the gap stated plainly; it is never dropped, and never padded by restating the request.
+Before any of that, name the domain the request belongs to and what is specific to it. The general version of a problem is the one you already know, and it is the one you will write if nobody stops you: a ticketing PRD about queues and bots, a payments PRD about retries, a chat PRD about delivery receipts. Those are real, and they are not the point. Ask what the people in THIS domain actually do that the generic version has no idea about - who gets priority and on what basis, what an established customer expects that a first-time one does not, which rule exists because of that industry's history or regulation, what everyone in it would notice missing on the first read. Write those into Problem, Target users and the stories, with the domain's own vocabulary rather than a neutral paraphrase of it. A domain practice you decide not to build is named in Out of scope, so that skipping it is a decision on the record; one you never mention has not been scoped, it has been overlooked - and it is the reason a reader in that industry puts the document down.`
 
-const CONTRACT = {
+export const CONTRACT = {
   plan: `Return JSON: {"plan": "<the decomposition>", "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "dependencies": ["unit -> its real ordering dependency, or \\"none\\""], "verification": ["unit -> command or inspection that would deterministically verify it"], "conventions": ["path -> the rule it states, if .claude/conventions/** applies"], "handoff": "<what the next node needs>", "evidence": "<how you checked the request is actually satisfiable here>"}
 size is S when one run in one worktree can carry the whole request; L when it spans independent modules, packages or repositories that would each need their own run. Decide it from what commands show - file count, module boundaries, owners - and put those commands in "sizing". The default is S; a manager layer exists, and the temptation is to use it.
 flow is develop when the deliverable is code the repository must run, document when it is text a reader must find things in. If the run's flow is already fixed below, return it unchanged.
@@ -67,7 +68,9 @@ Make each subgoal self-contained: include applicable constraints in acceptance[]
 Every subgoal must be a unit of work with a checkable artifact, and must say which kind it is:
   "subgoal" (default) - work that changes code and is verified by running commands. Expands to implement -> test -> gate.
   "document" - a written artifact: a design note, a spec, a guide, a report. Expands to draft -> review -> gate. Its acceptance[] is the reviewer's rubric: each item names something a reader can find, or fail to find, in the text. Name the output path in files[].
-Verification is not a subgoal of either kind: express it as that subgoal's test[] (code) or acceptance[] (document). A subgoal whose only job is to check something already built has nothing for its first node to do and can only fail.`,
+Verification is not a subgoal of either kind: express it as that subgoal's test[] (code) or acceptance[] (document). A subgoal whose only job is to check something already built has nothing for its first node to do and can only fail.
+"deps" means one thing only: this subgoal's own work cannot START until that one has finished. It is not the order the product is built in, and not the order a reader will read the result in. For a document that distinction decides the whole run's shape: sections of one document are almost always independent to WRITE even when the things they describe depend on each other, and a dependency copied from the subject matter turns a set that could be written at once into a chain. The planning run that wrote a seven-section PRD (2026-09-22) declared U1 -> U3 -> U2 -> U4 -> U6 because the product's stories depend that way, and spent 81 minutes on a document whose sections nobody had to wait for. Depend only on content you must read before you can write; deps: [] is the right answer more often than it looks.
+When several independent subgoals write the same file, give each one the section it owns, by heading, in its title and acceptance[], and say in acceptance[] that it touches no other section. That is what makes them safe to run at once: two nodes editing one document is a conflict only when nobody said which part belongs to whom.`,
   critique: `Return JSON: {"sound": true|false, "blocking": ["..."], "problems": ["..."], "handoff": "...", "evidence": "..."}
 Look for: wrong decomposition, unfalsifiable acceptance, a missing subgoal the goal needs, fake dependencies, unverifiable test entries, criteria that hinge on whole-repo state, aspirational thresholds written as hard pass/fail bars, a document subgoal whose rubric no reader could apply to the text, and code work filed as a document (or the reverse) so that the wrong chain would check it.
 Set sound=false ONLY for defects in "blocking": something that makes the work impossible to do or impossible to verify as specified. Everything else goes in "problems" - it is carried into the next node as advice and does not stop the run.
@@ -214,8 +217,11 @@ export function composePrompt(run, n, briefing) {
       lines.push(SKILLS_USED_FIELD);
     }
     if (sg.files?.length) lines.push(`Required paths:\n${bullets(sg.files)}`);
-    if (['implement', 'draft'].includes(n.stage)) {
-      const conv = conventionsBlock(run.cwd, { stage: n.stage, files: sg.files });
+    if (['implement', 'draft', 'revise'].includes(n.stage)) {
+      // A planning subgoal writes the PRD, which governs the whole tree - its conventions are
+      // not selected by the paths it touches.
+      const planning = kindOf(sg) === 'planning';
+      const conv = conventionsBlock(run.cwd, { stage: planning ? 'planning' : n.stage, files: sg.files });
       if (conv) {
         lines.push('');
         lines.push(conv);

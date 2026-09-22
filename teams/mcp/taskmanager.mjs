@@ -29,7 +29,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, readdirSync, openSync, closeSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve, dirname } from 'node:path';
+import { join, resolve, dirname, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { touchMarker } from './engage.mjs';
@@ -38,6 +38,7 @@ import {
   storyTicketState, storyTaskProgress, epicBoardRows, ticketSnapshot,
 } from './tickets.mjs';
 import { writeDocs } from './docs.mjs';
+import { conventionsBlock } from './conventions.mjs';
 import { readTeamConfig, resolveTeamOptions, TEAM_DEFAULTS } from './teamconfig.mjs';
 import { pluginDirArgs } from './pluginroots.mjs';
 import {
@@ -118,6 +119,9 @@ function stageSkills(task, n) {
   const list = Array.isArray(override) ? override : STAGE_SKILLS[key];
   return (list || []).map(String).filter(Boolean);
 }
+
+// Every manager stage that decides or judges. size only measures, and report only recounts.
+const MANAGER_CONVENTION_STAGES = new Set(['shape', 'critique', 'accept', 'integrate', 'gate', 'gate:goal']);
 
 export const CONTRACT = {
   size: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "handoff": "<what shape needs to know>", "evidence": "..."}
@@ -594,6 +598,25 @@ function openRepair(task, integ) {
 // package that already has a later attempt. trap-beta-T1 (2026-09-21) stopped here: P1's child
 // spent three gate attempts, folded failed, and the daemon recorded daemon_done on a task with a
 // whole max_retries budget untouched.
+// A failed shape or critique has the same shape as a failed package: the engine already knows
+// how to recover (retryShape carries the verdict into the next attempt) and already knows what
+// to say. Only tm_retry ever called it, so with the daemon owning the loop since v0.16.0 a
+// critique that found real defects simply stopped the task and waited for a person - idol-pm-1
+// (2026-09-22) named three blocking defects in the shape and sat blocked with the fix in hand.
+// This is autoRepair/autoRetryPackages for the shaping pair, budgeted the same way.
+export function autoReshape(task) {
+  if (task.s_run) return false;
+  const source = task.nodes.filter((n) => (n.stage === 'critique' || n.stage === 'shape') && n.state === 'failed' && n.result && !n.final).pop();
+  if (!source) return false;
+  // Nothing else may still be moving: a live dispatch belongs to the shape being replaced.
+  if (task.nodes.some((n) => n.state === 'running')) return false;
+  const fb = [source.result.reason || '', ...(source.result.blocking || []), ...(source.result.shape_problems || []), ...(source.result.problems || [])]
+    .filter(Boolean).join('\n- ');
+  const out = retryShape(task, fb);
+  record(task, { event: out.attempt ? 'auto_reshape' : 'tm_settle', task_id: task.run_id, target: 'shape', attempt: out.attempt, from: source.node_id });
+  return !!out.attempt;
+}
+
 export function autoRetryPackages(task) {
   let changed = false;
   const packages = (task.spec && task.spec.packages) || [];
@@ -962,6 +985,21 @@ function ensureWorktree(task, name, base = 'HEAD') {
 // .teams_output/ (the usual case), git refuses `:!.teams_output` as "a path that is ignored" and
 // exits 1 before staging anything. The first e2e task to reach a fold failed exactly there,
 // with both children accepted and nothing committed.
+// Everything under the worktree that is harness state rather than delivered work. .teams_output
+// and the marker dir are always relative; the tasks root usually is not - it defaults to
+// ~/.harness/tasks, outside any project - but HARNESS_TASKS_DIR can put it inside the tree, and
+// then a fold commits the whole manager: idol-pm-1's planning commit (2026-09-22) carried 1,520
+// lines of task.json, board/ledger jsonl and a 1,326-line raw vendor stream log alongside the
+// 220-line PRD that was the only thing anyone wanted.
+export function harnessPathsUnder(cwd) {
+  const paths = ['.teams_output', '.claude/.harness-markers'];
+  try {
+    const rel = relative(resolve(cwd), tasksRoot());
+    if (rel && !rel.startsWith('..') && !isAbsolute(rel)) paths.push(rel);
+  } catch { /* an unresolvable root is simply not inside this tree */ }
+  return paths;
+}
+
 function commitWorktree(cwd, message) {
   const add = git(cwd, ['add', '-A', '--', '.']);
   if (!add.ok) return { ok: false, reason: add.err || 'git add failed' };
@@ -969,7 +1007,7 @@ function commitWorktree(cwd, message) {
   // every worktree writes its own marker with its own timestamp (engage.mjs), so committing it
   // would make every package branch differ in that one file and every integrate merge conflict
   // on it. install.mjs gitignores it in a real project; a project without it must not break.
-  const drop = git(cwd, ['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', '.teams_output', '.claude/.harness-markers']);
+  const drop = git(cwd, ['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', ...harnessPathsUnder(cwd)]);
   if (!drop.ok) return { ok: false, reason: drop.err || 'could not leave the harness state out of the commit' };
   const staged = git(cwd, ['diff', '--cached', '--quiet']);
   if (staged.ok) return { ok: true, commit: null }; // nothing to commit is not an error
@@ -1752,6 +1790,35 @@ export function foldChild(task, n) {
     if (!c.ok) return { ...base, stage_ok: false, accept: false, reason: `child passed but its worktree could not be committed: ${c.reason}` };
     commit = c.commit;
   }
+  // A PRD with no user stories is not a PRD the rest of this task can use: shape's completeness
+  // check has nothing to check, the audit has nothing to audit, and every downstream briefing
+  // says "(none)". goal-code-beta-R1 (2026-09-18) accepted exactly that at 93% and the run went
+  // on to build from the request alone. The child's own gate cannot see this - it judges its
+  // document, not what the manager needs from it - so the fold is where it has to be caught.
+  const planningStories = pkg && pkg.phase === 'planning'
+    ? (Array.isArray(g.user_stories) ? g.user_stories : []).filter((u) => storyId(u))
+    : null;
+  // Same principle as the story check: a structural requirement the contract states in words is
+  // verified here rather than trusted to a judge that accepted a PRD missing three of them.
+  if (planningStories && g.accept === true && planningStories.length) {
+    const missing = missingPrdSections(n.child ? n.child.cwd : task.cwd, (Array.isArray(g.prd_paths) ? g.prd_paths : []).length
+      ? g.prd_paths
+      : [...new Set((child.nodes || []).flatMap((x) => (x.result && x.result.changed_files) || []).map(String))]);
+    if (missing.length) {
+      return {
+        ...base, stage_ok: true, accept: false, match_pct: g.match_pct, user_stories: planningStories,
+        gaps: [...(g.gaps || []), ...missing.map((m) => `the PRD has no "${m}" section`)],
+        reason: `the PRD is missing required sections: ${missing.join(', ')}. Every one of them is a heading a reader looks for and this document does not answer`,
+      };
+    }
+  }
+  if (planningStories && g.accept === true && !planningStories.length) {
+    return {
+      ...base, stage_ok: true, accept: false, match_pct: g.match_pct, user_stories: [],
+      gaps: [...(g.gaps || []), 'the PRD names no user stories, so nothing downstream can be built or audited against it'],
+      reason: 'the planning run returned no user stories: the PRD must carry a "## User stories" section and gate:goal must return it as user_stories[]',
+    };
+  }
   return {
     ...base,
     commit,
@@ -1867,6 +1934,21 @@ export function composeTaskPrompt(task, n) {
       : `A planning phase-Team ran ahead of this stage, but reported no document path. Its user stories are below; there is no PRD body to read.`);
     L.push(`User stories it produced - every "packages[].implements[]" this stage returns must together cover all of these, by id:`);
     L.push(bullets(userStories.map(storyLabel)));
+    // What the judges said while letting it through. A gap named on an ACCEPTED node used to go
+    // nowhere at all - gaps travelled only on rejection - so accept:PLAN calling the PRD "a
+    // generic high-demand ticketing PRD with 'idol concert' in the title" (idol-pm-1,
+    // 2026-09-22) reached no later stage and changed nothing about what got built.
+    const planAccept = task.nodes.find((x) => x.node_id === 'accept:PLAN:1');
+    const carried = [
+      ...((planDispatch && planDispatch.result && planDispatch.result.gaps) || []),
+      ...((planAccept && planAccept.result && planAccept.result.gaps) || []),
+      ...((planAccept && planAccept.result && planAccept.result.observations) || []),
+    ].filter(Boolean);
+    if (carried.length) {
+      L.push('');
+      L.push(`The PRD was accepted WITH these gaps still open. They were not blocking, and they are not yours to fix - but a package split that ignores them ships them:`);
+      L.push(bullets([...new Set(carried)]));
+    }
   }
   if (task.spec && ['critique', 'integrate', 'gate', 'report'].includes(n.stage)) {
     L.push('');
@@ -1997,6 +2079,13 @@ export function composeTaskPrompt(task, n) {
     }
     const shape = n.stage === 'critique' ? task.nodes.filter((x) => x.stage === 'shape' && x.result && x.state === 'done').pop() : null;
     if (shape && shape.result && shape.result.handoff) { L.push(''); L.push(`## From shape`); L.push(shape.result.handoff); }
+  }
+  // The project's own rules reach the manager's judging stages too: shape splits the work and
+  // accept/gate judge the result, and until now neither could see a project rule at all -
+  // conventions.mjs was wired into the child graph's stages only (2026-09-22).
+  if (MANAGER_CONVENTION_STAGES.has(n.stage)) {
+    const conv = conventionsBlock(task.cwd, { stage: 'manager' });
+    if (conv) { L.push(''); L.push(conv); }
   }
   const skills = stageSkills(task, n);
   if (skills.length) {
@@ -2474,6 +2563,37 @@ function lastLoggedStates(path) {
     }
   } catch { /* no board yet */ }
   return last;
+}
+
+// The PRD's required sections, and the headings a document is allowed to call them. The
+// contract names them exactly; a real run renamed two ("Goals (measurable)" for Success
+// criteria, "Non-Goals" for Out of scope), dropped Solution overview entirely, and gate:goal
+// accepted it at 95% (idol-pm-2, 2026-09-22). A judge will not check a structural requirement
+// reliably, and it does not need to: this is a grep. The alternatives are the renames a reader
+// would accept without blinking - anything further afield is a section that is missing.
+const PRD_SECTIONS = [
+  ['Problem', ['problem', 'problem statement', '문제']],
+  ['Target users', ['target users', 'users', 'personas', 'users / personas', '대상 사용자']],
+  ['Solution overview', ['solution overview', 'solution', 'overview', 'proposed solution', '솔루션']],
+  ['Success criteria', ['success criteria', 'success metrics', 'goals', 'goals (measurable)', 'measurable goals', '성공 기준']],
+  ['User stories', ['user stories', 'stories', '유저 스토리']],
+  ['Out of scope', ['out of scope', 'non-goals', 'non goals', 'scope & non-goals', 'scope and non-goals', '비목표']],
+  ['Open questions', ['open questions', 'open items', 'risks & open questions', 'risks and open questions', '미해결 질문']],
+];
+
+// Headings the PRD does not carry, under any of the names above, at any level. Reads the files
+// the planning run reported writing; a file it cannot read is not evidence of absence, so an
+// unreadable PRD yields no complaint here (the zero-stories check already covers the empty case).
+export function missingPrdSections(cwd, paths) {
+  let text = '';
+  for (const rel of paths || []) {
+    try { text += `\n${readFileSync(resolve(cwd, String(rel)), 'utf8')}`; } catch { /* unreadable */ }
+  }
+  if (!text.trim()) return [];
+  const headings = (text.match(/^#{1,6} .*$/gm) || []).map((h) => h.replace(/^#+\s*/, '').replace(/[:：].*$/, '').trim().toLowerCase());
+  return PRD_SECTIONS
+    .filter(([, names]) => !headings.some((h) => names.some((n) => h === n || h.startsWith(`${n} `) || h.includes(n))))
+    .map(([canonical]) => canonical);
 }
 
 // A ticket is three things and they have to agree: its state (tickets.mjs over task.json), its
