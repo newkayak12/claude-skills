@@ -27,6 +27,16 @@ remain plugin-owned and are updated with the `teams` plugin. The deterministic f
 `team.json`, the dispatch gate file, conventions, the CLAUDE.md block, `.gitignore` — is
 delegated to `install.mjs` so it runs identically every time; this skill owns the judgment.
 
+## What this buys you
+
+A team already runs with no setup at all — every run skill's own "Running without install" note
+(`../orchestrate/SKILL.md`) covers the bare `TEAM_DEFAULTS` a project gets with no
+`.claude/team.json`. This skill buys three things that path does not have: the dispatch gate (a
+write to a gated path is redirected into `tm_open` instead of landing directly — see "Dispatch
+gate" below), defaults pinned to this project instead of the plugin's built-in ones, and
+`.claude/conventions/` for plan/setgoal/implement/draft to read against. None of it has to
+precede a run; add it whenever the project is ready to commit to it.
+
 ## Process
 
 1. **Judgment, before running anything.** Inspect the project's languages and source roots and

@@ -50,12 +50,15 @@ E-a1b2c3d4/P2  결제 취소 API              state: IN_REVIEW
 tasks: 2/5
 worktree: /proj/.worktrees/P2 @ team/E-a1b2c3d4/P2
 last verdict: accept 94                 (or: rejected — <reason>; gaps: <gap, gap>; or —)
-reporter: shape                          (repair = QA-raised defect story)
+reporter: shape                          (qa/planning-audit/you = filed defect; repair = integration seam)
 doc: .teams_output/team/E-a1b2c3d4/40-stories/P2.md
 ```
 
 `daemon` prints `none` when the EPIC has none yet. `worktree` prints `—` before any dispatch has
-run. `tasks` is `—` when no dispatch has started a child run to measure.
+run. `tasks` is `—` when no dispatch has started a child run to measure. `reporter` is `shape` for
+original scope, `repair` for an integration seam, or `qa`/`planning-audit`/`you` for a filed
+defect (QA, audit, or `tm_file`) — see `board`'s own explanation for how a PLAN/QA/AUDIT
+phase-Team package's ticket reads instead.
 
 ## What Claude Does
 

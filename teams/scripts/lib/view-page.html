@@ -68,14 +68,30 @@
   .badge.failed { background: color-mix(in srgb, var(--failed) 18%, transparent); color: var(--failed); }
   .badge.skipped { background: transparent; color: var(--skipped); border: 1px dashed var(--skipped); }
   .badge.blocked, .badge.missing { background: color-mix(in srgb, var(--blocked) 18%, transparent); color: var(--blocked); }
+  /* tickets.mjs's own EPIC vocabulary (epicTicketState) - the index's cards, unlike everything
+     else on this page, show ticket state rather than the engine's own node state, so it needs
+     its own badge colors rather than reusing pending/running/done/failed/skipped/blocked. */
+  .badge.READY, .badge.BACKLOG, .badge.WAITING_CAPACITY { background: color-mix(in srgb, var(--pending) 20%, transparent); color: var(--pending); }
+  .badge.IN_PROGRESS, .badge.IN_REVIEW { background: color-mix(in srgb, var(--running) 18%, transparent); color: var(--running); }
+  .badge.DONE { background: color-mix(in srgb, var(--done) 18%, transparent); color: var(--done); }
+  .badge.REJECTED { background: color-mix(in srgb, var(--failed) 18%, transparent); color: var(--failed); }
+  .badge.CANCELLED { background: transparent; color: var(--skipped); border: 1px dashed var(--skipped); }
+  .badge.BLOCKED, .badge.UNREACHABLE { background: color-mix(in srgb, var(--blocked) 18%, transparent); color: var(--blocked); }
 
   .ledger { list-style: none; margin: 8px 0 0; padding: 0; max-height: 360px; overflow: auto; }
   .ledger li { padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
   .ledger time { color: var(--muted); margin-right: 8px; }
   .reason { color: var(--failed); font-size: 12px; margin-top: 4px; }
-  .index-list { list-style: none; margin: 8px 0 0; padding: 0; }
-  .index-list li { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; background: var(--panel); }
-  .index-list a { text-decoration: none; font-weight: 600; }
+
+  .index-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-top: 8px; list-style: none; padding: 0; }
+  .epic-card { border: 1px solid var(--border); border-radius: 10px; background: var(--panel); padding: 12px 14px; display: block; text-decoration: none; color: inherit; }
+  .epic-card:hover { border-color: var(--accent); }
+  .epic-card .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .epic-card .key { font-weight: 700; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .epic-card .title { margin-top: 4px; font-weight: 600; }
+  .epic-card .meta { display: flex; gap: 10px; margin-top: 8px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+  .epic-card .id { margin-top: 6px; font-size: 11px; color: var(--muted); word-break: break-all; }
+  .epic-card .defects { color: var(--failed); font-weight: 600; }
   code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
   #err { color: var(--failed); margin-top: 10px; }
 </style>
@@ -136,7 +152,10 @@
   }
 
   function pkgCard(p, idx) {
-    var st = (p.dispatch && p.dispatch.state) || 'pending';
+    // p.state is set on a QA/audit round (its accept state if the round has one, else its
+    // dispatch state - see view-collect.mjs's phaseRoundModel); an ordinary package has no
+    // top-level state and falls back to dispatch's, as before.
+    var st = p.state || (p.dispatch && p.dispatch.state) || 'pending';
     var id = 'pkg-' + idx;
     var open = openPkgs.has(p.id);
     var costLine = '';
@@ -146,12 +165,15 @@
     var driverAlive = p.child && p.child.driver ? (p.child.driver.alive ? 'driver alive' : 'driver dead') : '';
     return (
       '<div class="pkg-card' + (open ? ' open' : '') + '" data-pkgid="' + esc(p.id) + '" id="' + id + '">' +
-      '<div class="top"><span class="title">' + esc(p.id) + (p.title ? ' – ' + esc(p.title) : '') + '</span>' +
+      '<div class="top"><span class="title">' + esc(p.id) + (p.title ? ' – ' + esc(p.title) : '') +
+      (p.reporter ? ' <span class="muted mono">[filed by ' + esc(p.reporter) + ']</span>' : '') + '</span>' +
       '<span class="badge ' + esc(st) + '">' + esc(st) + '</span></div>' +
       (p.brief ? '<div class="brief">' + esc(p.brief) + '</div>' : '') +
       '<div class="meta"><span>' + fmtMs(p.dispatch && p.dispatch.elapsed_ms) + '</span>' +
       (costLine ? '<span>' + costLine + '</span>' : '') +
       (driverAlive ? '<span>' + esc(driverAlive) + '</span>' : '') +
+      (p.defects_count != null ? '<span>defects: ' + p.defects_count + '</span>' : '') +
+      (p.unmet_count != null ? '<span>unmet: ' + p.unmet_count + '</span>' : '') +
       '</div>' +
       '<div class="pkg-detail">' + childStrip(p.child) + '</div>' +
       '</div>'
@@ -188,6 +210,21 @@
       out.push('<h2>packages</h2><div class="pkg-grid">');
       (m.packages || []).forEach(function (p, i) { out.push(pkgCard(p, i)); });
       out.push('</div>');
+
+      // QA and planning-audit phase-Teams (task.qa_pkg / task.audit_pkg): a fixed package that
+      // can be dispatched more than once, one round per defect/unmet-story cycle. Rendered as
+      // its own section, one card per round, so a round that already found a defect and was
+      // superseded by a later clean round stays visible instead of disappearing.
+      if (m.qa && m.qa.rounds.length) {
+        out.push('<h2>QA</h2><div class="pkg-grid">');
+        m.qa.rounds.forEach(function (r, i) { out.push(pkgCard(r, 'qa-' + i)); });
+        out.push('</div>');
+      }
+      if (m.audit && m.audit.rounds.length) {
+        out.push('<h2>audit</h2><div class="pkg-grid">');
+        m.audit.rounds.forEach(function (r, i) { out.push(pkgCard(r, 'audit-' + i)); });
+        out.push('</div>');
+      }
     }
 
     out.push('<h2>recent events</h2><div class="panel"><ul class="ledger">');
@@ -200,18 +237,38 @@
     return out.join('');
   }
 
+  // One card per EPIC - the key + a derived title as the headline (view-collect.mjs's
+  // listTasks()), never the raw task_id or the engine's own run state (see that file's
+  // deriveTitle/sRunTicketState/storyProgress for where every field here comes from). Each card
+  // links to its own task view, the same /?task=<id> route the per-task page already reads.
+  function epicCard(t) {
+    if (t.error) {
+      return '<a class="epic-card" href="/?task=' + encodeURIComponent(t.task_id) + '">' +
+        '<div class="top"><span class="key mono">' + esc(t.epic_key) + '</span></div>' +
+        '<div class="reason">' + esc(t.error) + '</div>' +
+        '<div class="id mono">' + esc(t.task_id) + '</div></a>';
+    }
+    var statusText = t.phase ? t.state + ' · ' + t.phase : t.state;
+    var meta = ['size=' + esc(t.size || '–'), fmtUsd(t.cost_usd), fmtMs(t.elapsed_ms)];
+    if (t.stories_total != null) meta.splice(1, 0, 'stories ' + t.stories_done + '/' + t.stories_total);
+    var defects = t.open_defects ? '<span class="defects">open defects: ' + t.open_defects + '</span>' : '';
+    return (
+      '<a class="epic-card" href="/?task=' + encodeURIComponent(t.task_id) + '">' +
+      '<div class="top"><span class="key mono">' + esc(t.epic_key) + '</span>' +
+      '<span class="badge ' + esc(t.state) + '">' + esc(statusText) + '</span></div>' +
+      '<div class="title">' + esc(t.title) + '</div>' +
+      '<div class="meta"><span>' + meta.map(esc).join('</span><span>') + '</span>' + (defects ? defects : '') + '</div>' +
+      '<div class="id mono">' + esc(t.task_id) + '</div>' +
+      '</a>'
+    );
+  }
+
   function indexBody(tasks, tasksDir) {
     var out = ['<div class="panel"><h1>teams tasks</h1><p class="muted mono">' + esc(tasksDir) + '</p></div>'];
-    out.push('<ul class="index-list">');
-    if (!tasks.length) out.push('<li class="muted">no tasks found</li>');
-    tasks.forEach(function (t) {
-      if (t.error) { out.push('<li><span class="mono">' + esc(t.task_id) + '</span> <span class="reason">' + esc(t.error) + '</span></li>'); return; }
-      out.push('<li><a href="/?task=' + encodeURIComponent(t.task_id) + '">' + esc(t.task_id) + '</a> ' +
-        '<span class="badge ' + esc(t.state) + '">' + esc(t.state) + '</span> ' +
-        '<span class="muted">size=' + esc(t.size || '–') + ' · ' + fmtUsd(t.cost_usd) + ' · ' + fmtTime(t.created_at) + '</span>' +
-        '<div class="muted">' + esc(t.request) + '</div></li>');
-    });
-    out.push('</ul>');
+    if (!tasks.length) { out.push('<p class="muted">no tasks found</p>'); return out.join(''); }
+    out.push('<div class="index-grid">');
+    tasks.forEach(function (t) { out.push(epicCard(t)); });
+    out.push('</div>');
     return out.join('');
   }
 

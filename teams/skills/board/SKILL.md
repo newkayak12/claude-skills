@@ -70,10 +70,15 @@ the last row — planning's second pass, cross-checking the integrated result ag
 after QA, or straight after `integrate` when `qa` is off. `tasks` is `—` when no dispatch has
 started a child run.
 
-`reporter` says where a story came from: `shape` is original scope, `repair` is an integration
-seam, and `qa`, `planning-audit` and `you` are filed stories — a defect QA found, a user story the
-audit found unmet, and one filed by hand through `tm_file`. Anything but `shape` is work the EPIC
-grew after shaping; call it out in prose under the table.
+`reporter` says where a row came from. For a `develop` row: `shape` is original scope, `repair`
+is an integration seam, and `qa`, `planning-audit` and `you` are filed stories — a defect QA
+found, a user story the audit found unmet, and one filed by hand through `tm_file`. A
+`planning`/`qa`/`audit` row (its `role` reads the same) reports itself the same way — that row IS
+the phase-Team run, not shape's output. That means `reporter: qa` shows up on two different kinds
+of row: the QA phase-Team's own run (`role: qa`) and a `develop` STORY that QA filed as a defect
+(`role: develop`) — read `role` alongside `reporter` to tell them apart, never `reporter` alone.
+Anything but `shape` (and not a phase-Team's own row) is work the EPIC grew after shaping; call it
+out in prose under the table.
 `daemon` prints `none` when the task has none yet.
 
 ## What Claude Does

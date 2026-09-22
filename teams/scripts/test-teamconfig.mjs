@@ -33,9 +33,20 @@ test('malformed file: status parse-error, config empty, never throws', () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('defaults alone: every key sourced "default"', () => {
+// This used to be titled "defaults alone: every key sourced 'default'" and asserted
+// `assert.deepEqual(opts, TEAM_DEFAULTS)` as if that pinned the documented default VALUES. It
+// does not and cannot: opts is built FROM TEAM_DEFAULTS (resolveTeamOptions's `{ ...TEAM_DEFAULTS,
+// roles: { ...TEAM_DEFAULTS.roles } }`), so comparing it back against TEAM_DEFAULTS is comparing
+// an object to itself - a wrong literal in TEAM_DEFAULTS (e.g. qa_rounds: 3, or roles.qa: false)
+// would still make opts equal TEAM_DEFAULTS and this test would stay green. What this test can
+// legitimately prove, and still does below: resolveTeamOptions({}, {}) does not corrupt or drop
+// any key on the way through, does not alias a mutable sub-object (roles) back into the frozen
+// TEAM_DEFAULTS, and marks every key's source 'default'. Pinning the default VALUES themselves is
+// scripts/test-defaults.mjs's job (Guard F).
+test('defaults alone: resolution reproduces TEAM_DEFAULTS without corrupting or aliasing it, and every key is sourced "default" (does not pin the default VALUES - see test-defaults.mjs Guard F)', () => {
   const { opts, sources } = resolveTeamOptions({}, {});
-  assert.deepEqual(opts, TEAM_DEFAULTS);
+  assert.deepEqual(opts, TEAM_DEFAULTS, 'resolving with no team.json and no args must reproduce TEAM_DEFAULTS key-for-key - this can only catch resolveTeamOptions corrupting a key, never a wrong literal in TEAM_DEFAULTS itself');
+  assert.notEqual(opts.roles, TEAM_DEFAULTS.roles, 'opts.roles must be resolveTeamOptions\' own fresh copy, never an alias into the frozen TEAM_DEFAULTS.roles object');
   for (const k of Object.keys(TEAM_DEFAULTS)) assert.equal(sources[k], 'default', k);
 });
 
