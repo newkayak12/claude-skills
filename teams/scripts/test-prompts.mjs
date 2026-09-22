@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { composePrompt, HANDOFF_CAP, DEGENERATE_SPEC_DIAGNOSIS } from '../mcp/prompts.mjs';
+import { composePrompt, HANDOFF_CAP, DEGENERATE_SPEC_DIAGNOSIS, CONTRACT } from '../mcp/prompts.mjs';
 import { loadConventions, conventionsBlock, CONVENTIONS_CAP } from '../mcp/conventions.mjs';
 import { nodeBriefing } from '../mcp/graph.mjs';
 
@@ -472,4 +472,16 @@ test('the manager stages are told to judge and shape against the project rules',
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+// A seven-section PRD took 81 minutes because setgoal copied the product's story dependencies
+// (U1 -> U3 -> U2 -> U4 -> U6) onto the sections that describe them, turning a set that could
+// have been written at once into a chain (2026-09-22).
+test('the setgoal contract defines deps as start-order, not subject-matter order', () => {
+  const setgoal = CONTRACT.setgoal;
+  assert.match(setgoal, /cannot START until that one has finished/);
+  assert.match(setgoal, /not the order the product is built in/);
+  assert.match(setgoal, /independent to WRITE even when the things they describe depend/);
+  // Removing the deps must not create a shared-file conflict instead.
+  assert.match(setgoal, /give each one the section it owns, by heading/);
 });
