@@ -59,11 +59,35 @@ function renderModelBody(m, indent, out) {
   for (const n of m.manager_stages || []) renderNode(n, indent + 1, out);
   out.push(line(indent, 'packages:'));
   for (const p of m.packages || []) {
-    out.push(line(indent + 1, `${p.id}${p.title ? ' - ' + p.title : ''}${p.phase ? ` (${p.phase})` : ''}`));
+    out.push(line(indent + 1, `${p.id}${p.title ? ' - ' + p.title : ''}${p.phase ? ` (${p.phase})` : ''}${p.reporter ? ` [filed by ${p.reporter}]` : ''}`));
     if (p.brief) out.push(line(indent + 2, p.brief));
     if (p.dispatch) renderNode(p.dispatch, indent + 2, out);
     if (p.accept) renderNode(p.accept, indent + 2, out);
     if (p.dispatch && p.dispatch.node_id && p.child) renderChild(p.child, indent + 2, out);
+  }
+  renderPhaseRounds(m.qa, 'QA', indent, out);
+  renderPhaseRounds(m.audit, 'AUDIT', indent, out);
+}
+
+// The QA and planning-audit phase-Teams (§2/§3): a fixed package (task.qa_pkg / task.audit_pkg)
+// that can be dispatched more than once - one round per defect/unmet-story cycle, capped by
+// qa_rounds. Printed as its own section, not folded into "packages:", because a round is not a
+// develop STORY: it has no title of its own worth repeating per round, and what a person needs
+// from it - round number, state, how many defects/unmet stories it found - is different from
+// what a package needs (title, brief, deps).
+function renderPhaseRounds(phase, label, indent, out) {
+  if (!phase || !phase.rounds.length) return;
+  out.push(line(indent, `${label}:`));
+  for (const r of phase.rounds) {
+    const bits = [`[${mark(r.state)}] ${label}:${r.round}`];
+    if (r.defects_count != null) bits.push(`defects=${r.defects_count}`);
+    if (r.unmet_count != null) bits.push(`unmet=${r.unmet_count}`);
+    out.push(line(indent + 1, bits.join(' ')));
+    if (r.defect_titles && r.defect_titles.length) out.push(line(indent + 2, `defects: ${r.defect_titles.join('; ')}`));
+    if (r.unmet_titles && r.unmet_titles.length) out.push(line(indent + 2, `unmet: ${r.unmet_titles.join('; ')}`));
+    if (r.dispatch) renderNode(r.dispatch, indent + 2, out);
+    if (r.accept) renderNode(r.accept, indent + 2, out);
+    if (r.dispatch && r.dispatch.node_id && r.child) renderChild(r.child, indent + 2, out);
   }
 }
 

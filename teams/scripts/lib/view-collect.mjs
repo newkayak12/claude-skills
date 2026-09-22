@@ -156,6 +156,11 @@ function packageModel(pkg, dispatchNode, acceptNode, visiting) {
     brief: String(pkg.brief || '').slice(0, 200),
     phase: pkg.phase || null,
     deps: pkg.deps || [],
+    // Set only on a package fileDefects() created (a QA-found defect, an audit-found unmet
+    // story, or a user's tm_file) - null for a package shape itself declared. This is the only
+    // way a human looking at the board can tell "this STORY exists because QA/audit found
+    // something" apart from "this STORY is part of the original plan".
+    reporter: pkg.reporter || null,
     dispatch: dispatchNode ? nodeSummary(dispatchNode) : null,
     accept: acceptNode ? nodeSummary(acceptNode) : null,
     child,
@@ -163,6 +168,48 @@ function packageModel(pkg, dispatchNode, acceptNode, visiting) {
 }
 
 function pidAliveFromDriver(driver) { return pidAlive(driver && driver.pid); }
+
+// task.qa_pkg / task.audit_pkg (§2/§3 of the QA and planning-audit phase-Teams) are not part of
+// task.spec.packages - they are a single fixed package template (id 'QA' or 'AUDIT') that can be
+// dispatched more than once: a QA round that finds a defect reopens a fresh QA round once the
+// fix is integrated (capped by qa_rounds), and an audit round can do the same for an unmet user
+// story. Each round is its own dispatch:<id>:<attempt>/accept:<id>:<attempt> node pair sharing
+// one subgoal_id - packageModel's own "latest attempt wins" rule (built for a retried develop
+// package) would silently hide every round but the last, which is exactly the bug: a QA round
+// that found a defect and was then superseded by a clean round 2 would vanish from view.mjs
+// entirely. So this walks every attempt, oldest first, and returns one round entry each.
+function collectPhaseRounds(task, pkg, subgoalId, visiting) {
+  if (!pkg) return [];
+  const dispatches = task.nodes.filter((n) => n.stage === 'dispatch' && n.subgoal_id === subgoalId)
+    .sort((a, b) => (a.attempt || 1) - (b.attempt || 1));
+  return dispatches.map((dispatchNode) => {
+    const attempt = dispatchNode.attempt || 1;
+    const accepts = task.nodes.filter((n) => n.stage === 'accept' && n.subgoal_id === subgoalId && (n.attempt || 1) === attempt);
+    const acceptNode = accepts[accepts.length - 1] || null;
+    const pm = packageModel(pkg, dispatchNode, acceptNode, visiting);
+    const r = (acceptNode && acceptNode.result) || {};
+    // 'defects' (QA) and 'unmet' (audit) are the two shapes fileDefects() itself reads off a
+    // finished accept node (taskmanager.mjs) - counted here, not left buried in accept.result,
+    // because "did this round find anything, and how much" is the single fact a person watching
+    // a live run most needs and least wants to go dig a result blob for. taskmanager.mjs's own
+    // finish() reads a missing defects/unmet array the same as an empty one
+    // (`Array.isArray(result.defects) ? result.defects : []`), so a finished round with neither
+    // field present counts as zero, not unknown - null is reserved for "this round has not
+    // finished (or was never dispatched) yet", the one case that really is unknown.
+    const defects = Array.isArray(r.defects) ? r.defects : [];
+    const unmet = Array.isArray(r.unmet) ? r.unmet : [];
+    return {
+      ...pm,
+      id: `${subgoalId}:${attempt}`,
+      round: attempt,
+      state: (acceptNode && acceptNode.state) || dispatchNode.state,
+      defects_count: acceptNode ? defects.length : null,
+      defect_titles: acceptNode ? defects.slice(0, 5).map((d) => String((d && d.title) || d)) : null,
+      unmet_count: acceptNode ? unmet.length : null,
+      unmet_titles: acceptNode ? unmet.slice(0, 5).map((u) => String((u && u.title) || u)) : null,
+    };
+  });
+}
 
 // The one function both renderers call. `tasksDir` is where task.json lives directly under
 // <tasksDir>/<taskId>/ - the top-level tasks root for the outermost call, or a package
@@ -219,6 +266,13 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     }
   }
 
+  // task.qa_pkg / task.audit_pkg: the QA and planning-audit phase-Teams (view-collect.mjs's
+  // packages loop above only ever sees task.spec.packages + planning_pkg, so without this a
+  // task with QA or audit turned on drives every one of its rounds - defects found, STORYs
+  // filed, the audit's own verdict - with nothing on this surface ever showing it happened).
+  const qaRounds = collectPhaseRounds(task, task.qa_pkg, 'QA', visiting);
+  const auditRounds = collectPhaseRounds(task, task.audit_pkg, 'AUDIT', visiting);
+
   const managerStages = task.nodes.filter((n) => !['dispatch', 'accept'].includes(n.stage)).map(nodeSummary);
 
   const driverTotal = collectDriverCosts(join(tasksDir, taskId));
@@ -249,6 +303,8 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     cost: { usd: driverTotal.cost_usd, turns: driverTotal.turns, sessions: driverTotal.sessions },
     manager_stages: managerStages,
     packages,
+    qa: task.qa_pkg ? { id: task.qa_pkg.id, rounds: qaRounds } : null,
+    audit: task.audit_pkg ? { id: task.audit_pkg.id, rounds: auditRounds } : null,
     s_run: sRun,
     events,
     error: null,
