@@ -14,14 +14,22 @@ import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rm
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { viewRecordPath, readViewRecord } from '../mcp/viewserver.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TM = join(HERE, '..', 'mcp', 'taskmanager.mjs');
 const BROKER = join(HERE, '..', 'mcp', 'broker.mjs');
 
 class Client {
+  // TEAMS_VIEW: '0' by default - every tm_open/tm_run in this suite would otherwise spawn a
+  // real, detached scripts/view.mjs process (taskmanager.mjs's ensureViewer wiring), and this
+  // file opens a fresh scratch tasks root per test so none of them would ever find an existing
+  // .view.json to reuse: a full run would leak ~100 orphan node processes, one per test, none of
+  // which this suite's own cleanup (rmSync of the scratch root) touches since they are detached
+  // and unref'd on purpose (viewserver.mjs). The handful of tests that actually exercise the
+  // viewer override this explicitly.
   constructor(script, env = {}) {
-    this.proc = spawn('node', [script], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, ...env } });
+    this.proc = spawn('node', [script], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, TEAMS_VIEW: '0', ...env } });
     this.buf = '';
     this.id = 0;
     this.queue = [];
@@ -1389,6 +1397,68 @@ test('tm_open no longer accepts notify: dropped from the tool schema and never s
     const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'r', cwd, vendor: 'self', notify: 'some-agent' });
     const task = JSON.parse(readFileSync(join(root, open.task_id, 'task.json'), 'utf8'));
     assert.equal(Object.prototype.hasOwnProperty.call(task, 'notify'), false);
+  } finally {
+    tm.close();
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('tm_open starts one viewer per tasks root and hands back its URL; .view.json records a live pid', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '1' }).init();
+  const pids = [];
+  try {
+    const open = await tm.call('tm_open', { request: 'r', cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    assert.match(open.view_url, new RegExp(`^http://127\\.0\\.0\\.1:\\d+/\\?task=${open.task_id}$`));
+    const rec = readViewRecord(root);
+    assert.ok(rec, '.view.json missing, unreadable, or its pid is already dead');
+    pids.push(rec.pid);
+    assert.equal(open.view_url, `http://127.0.0.1:${rec.port}/?task=${open.task_id}`);
+  } finally {
+    for (const pid of pids) { try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ } }
+    tm.close();
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a second tm_open under the same tasks root reuses the first viewer - one window per root, not one per task', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '1' }).init();
+  const pids = [];
+  try {
+    const open1 = await tm.call('tm_open', { request: 'r1', cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    const rec1 = readViewRecord(root);
+    assert.ok(rec1, '.view.json missing after the first tm_open');
+    pids.push(rec1.pid);
+
+    const open2 = await tm.call('tm_open', { request: 'r2', cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    const rec2 = readViewRecord(root);
+    assert.ok(rec2, '.view.json missing after the second tm_open');
+    assert.equal(rec2.pid, rec1.pid, 'the second tm_open must reuse the same viewer process, not spawn a second one');
+    assert.equal(rec2.port, rec1.port, 'reuse must keep the same port');
+    assert.match(open2.view_url, new RegExp(`^http://127\\.0\\.0\\.1:${rec1.port}/\\?task=${open2.task_id}$`));
+  } finally {
+    for (const pid of pids) { try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ } }
+    tm.close();
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('TEAMS_VIEW=0 disables the viewer entirely: no view_url, no .view.json, and the task still opens normally', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '0' }).init();
+  try {
+    const open = await tm.call('tm_open', { request: 'r', cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    assert.ok(!open.view_url, 'view_url must be absent or null when TEAMS_VIEW=0');
+    assert.ok(!existsSync(viewRecordPath(root)), '.view.json must not be written when TEAMS_VIEW=0');
+    assert.equal(open.state, 'running');
+    assert.deepEqual(open.ready.map((n) => n.node_id), ['size'], 'the task must still open normally with the viewer disabled');
   } finally {
     tm.close();
     rmSync(cwd, { recursive: true, force: true });
