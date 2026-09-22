@@ -26,6 +26,32 @@ whether this is code work or writing work: `plan` does, from the request, and th
 expands accordingly. A user who wants to decide that themselves has `teams:develop` and
 `teams:document`; this skill is for everyone who does not.
 
+## Running without install
+
+`install` is optional. This skill, `develop`, `document`, `plan`, and `qa` all run through
+`tm_open`/`tm_run` against the `teams-engineering`/`task-manager` MCP servers alone; none of
+them needs `.claude/team.json` to exist first. The one prerequisite that is not optional: those
+two MCP servers must be connected. If any `tm_*`/`team_*` tool is missing, that is a stop —
+install or update the `teams@newkayak12-claude-skills` plugin and reload Claude Code. This is a
+session-connection problem, not a missing `team.json`, and running `install` will not fix it.
+
+With no `team.json`, a run falls back to `TEAM_DEFAULTS` (`teams/mcp/teamconfig.mjs`; precedence
+is built-in defaults < `team.json` < an explicit `tm_open` argument — a missing file is the
+normal no-config case, not an error). What matters on a first run:
+
+| Key | Default with no `team.json` | Source |
+|---|---|---|
+| `roles` | `{planning: true, qa: true}` — both on | `teamconfig.mjs:32` |
+| `qa_rounds` | `2` | `teamconfig.mjs:31` |
+| `max_parallel_teams` | `2` | `teamconfig.mjs:22` |
+| `docs_dir` | `.teams_output/team` | `teamconfig.mjs:53` |
+
+What you don't get without it: no dispatch gate, so an inline write to a path like `src/**` is
+never redirected into `tm_open` (`install`'s Dispatch gate section — no file means no gate); no
+project-pinned defaults, so every run uses the table above instead of a project's own choices;
+no `.claude/conventions/` for plan/setgoal/implement/draft to read against. Run `install` any
+time afterward to add these — it never has to precede a run.
+
 ## Standing Mandates
 
 - NEVER call `team_status({full: true})` on a run. One node at a time: `detail_path`, or `team_status({full: true, node_id})`.
@@ -155,8 +181,8 @@ call `team_next` for the alternate route.
 ## What the current AI does
 
 Sizes, then runs the loop — or the task — and reports from the verdicts. Tools missing or
-`tm_open`/`team_open` failing is a stop, not a licence: run `teams:install`, never the
-work itself.
+`tm_open`/`team_open` failing is a stop, not a licence — see "Running without install" above for
+the fix (plugin connection, not `team.json`); never the work itself.
 
 ## What you do
 

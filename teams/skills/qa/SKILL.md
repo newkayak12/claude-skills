@@ -80,8 +80,8 @@ the user said nothing may change but the case set and its report.
 The `tm_wait({task_id, cursor})` loop above is the whole of your job either way — a size-S task or
 a task of runs — there is no manager loop left to read by hand: the daemon `tm_open` spawned is
 what a relayed session used to run. Every graph run it opens is still driven by its own spawned
-headless session, never by you. The Standing Mandates and Output template in
-`../orchestrate/SKILL.md` apply unchanged.
+headless session, never by you. The Standing Mandates, Output template, and "Running without
+install" note in `../orchestrate/SKILL.md` apply unchanged.
 
 ## What the current AI does
 

@@ -75,8 +75,8 @@ whichever size-S run the daemon ends up opening.
 The `tm_wait({task_id, cursor})` loop above is the whole of your job either way — a size-S task or
 a task of runs — there is no manager loop left to read by hand: the daemon `tm_open` spawned is
 what a relayed session used to run. Every graph run it opens is still driven by its own spawned
-headless session, never by you. The Standing Mandates and Output template in
-`../orchestrate/SKILL.md` apply unchanged. One reading note: a draft that claims no files is
+headless session, never by you. The Standing Mandates, Output template, and "Running without
+install" note in `../orchestrate/SKILL.md` apply unchanged. One reading note: a draft that claims no files is
 `changed_files_verified: null`, attribution `document-unchanged` — the review judges it, not
 git. Report it as unattributed, not as verified.
 

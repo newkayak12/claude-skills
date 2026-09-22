@@ -539,9 +539,21 @@ Design and step list: [`docs/plans/2026-09-11-teams-taskmanager.md`](../docs/pla
 
 ## Install
 
-Install `teams@newkayak12-claude-skills` and run `teams:install` to verify the six
-`team_*` tools are present. For a source checkout, register `mcp/broker.mjs` under the name
-`teams-engineering` in the project's `.mcp.json`; `teams:install` shows the entry.
+Installing `teams@newkayak12-claude-skills` is the one non-optional step: it registers the
+`teams-engineering` and `task-manager` MCP servers. Reload Claude Code if a `tm_*`/`team_*` tool
+is not visible afterward. For a source checkout instead of the marketplace plugin, register
+`mcp/broker.mjs` under the name `teams-engineering` and `mcp/taskmanager.mjs` under
+`task-manager` in the project's `.mcp.json`; `skills/install/SKILL.md`'s "Install modes" section
+shows both entries.
+
+Running `teams:install` after that is optional, not a prerequisite for running a task — every
+run skill (`orchestrate`/`develop`/`document`/`plan`/`qa`) drives a team through the two MCP
+servers alone, falling back to `TEAM_DEFAULTS` (below) with no `.claude/team.json` at all. Run
+`teams:install` when the project is ready to commit to its own defaults, a dispatch gate, and
+`.claude/conventions/` instead of the plugin's built-in ones — see
+[`skills/install/SKILL.md`](skills/install/SKILL.md) for what it adds and
+[`skills/orchestrate/SKILL.md`](skills/orchestrate/SKILL.md)'s "Running without install" note for
+the bare path.
 
 ## Configuration
 
