@@ -1,16 +1,45 @@
 // teams/scripts/test-tickets.mjs - table test over the design doc's §4 mapping (engine
 // state -> ticket state), plus the derived states §4 only sketches (CANCELLED/UNREACHABLE at
 // every level, BLOCKED at EPIC level - see the plan's 발견 3/4). Every fixture is a plain object
-// shaped exactly like a real task.json/child run.json - no server, no filesystem.
+// shaped exactly like a real task.json/child run.json - no server, no filesystem - except the
+// size-S EPIC fixtures below, which need one real run file on disk: epicTicketState/epicPhase's
+// S-run branch reads task.s_run's own file (tickets.mjs's loadSRun), the same as taskState()
+// (taskmanager.mjs) always has, and there is nothing to inject it with.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { node, pushChain, KINDS } from '../mcp/graph.mjs';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { node, pushChain, KINDS, saveRun } from '../mcp/graph.mjs';
 import {
   epicKey, storyKey, docPaths, latestBySubgoal, storyTicketState, epicTicketState,
   taskTicketState, epicPhase, storyTaskProgress, epicBoardRows, ticketSnapshot,
 } from '../mcp/tickets.mjs';
 
 const TASK_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+
+// A size-S task's own manager graph never carries the work - task.s_run points at the one
+// real graph run that does (openSRun, taskmanager.mjs). Builds that run's file on disk under a
+// fresh temp cwd and returns a task object wired to it exactly the way taskmanager leaves
+// task.s_run: {cwd, run_id}. Caller must rmSync the returned cwd when done.
+// `taskNodes` fakes the size-S manager graph itself (task.nodes/task.spec never exist for real
+// on a size-S task once delegateIfSmall runs, so any fixed choice here is already fiction) -
+// picked per test, in each case, to be a value the PRE-FIX code (which reads task.nodes/
+// task.spec straight, never task.s_run) would turn into an answer DIFFERENT from what this
+// fixture's real child run should produce. That is deliberate: a fixed default here would make
+// the pre-fix code answer the same constant for every fixture, and whichever test happened to
+// expect that same constant would keep "passing" with the defect back in - see the three
+// FAKE_MANAGER_SAYS_* constants below and pick whichever is not the expected answer.
+const FAKE_MANAGER_SAYS_DONE = [node('report', 'report', [], { state: 'done', result: {} })];
+const FAKE_MANAGER_SAYS_BLOCKED = []; // runState([]): nothing ready, nothing running -> blocked
+const FAKE_MANAGER_SAYS_READY = [node('size', 'size', [])]; // pending+ready, no task.spec -> READY
+
+function sRunTask(nodes, extra, taskNodes) {
+  const cwd = mkdtempSync(join(tmpdir(), 'tickets-srun-'));
+  const run_id = `srun-${Math.random().toString(16).slice(2)}`;
+  saveRun({ run_id, cwd, spec: null, nodes, ...(extra || {}) });
+  return { cwd, task: { run_id: TASK_ID, cwd: '/proj', nodes: taskNodes, s_run: { cwd, run_id } } };
+}
 
 function baseTask(nodes, extra) {
   return { run_id: TASK_ID, cwd: '/proj', request: 'do the thing', created_at: 1,
@@ -170,6 +199,105 @@ test('EPIC ticket state adds BLOCKED beyond §4\'s table: runState says blocked 
     node('critique', 'critique', ['shape'], { state: 'skipped' }),
   ]);
   assert.equal(epicTicketState(t), 'BLOCKED');
+});
+
+// ---------- §4/§6 EPIC mapping for a size-S task (task.s_run, no task.spec) ----------
+//
+// Defect 1: epicTicketState()/epicPhase() gated on task.spec alone, which a size-S task never
+// sets (delegateIfSmall skips shape/critique outright - see taskmanager.mjs). Live repro
+// through tm_open+tm_board on a size-S task, driven to a real report through the taskmanager
+// and broker MCP servers: a COMPLETED S run's task.nodes is frozen at
+// [size:done, shape:skipped, critique:skipped] forever, so runState(task) reads 'blocked' (no
+// node ready, none running) - epicTicketState returned BLOCKED and epicPhase returned 'setgoal'
+// on a run that had actually finished and reported. Fixed by reading task.s_run's own child run
+// (tickets.mjs's loadSRun/sRunTicketState/sRunPhase) instead of the manager's frozen 3 nodes.
+
+test('EPIC ticket state/phase for a size-S task: before the child run has a spec (still in plan/setgoal/critique) -> READY, plan or setgoal by whether critique has started', () => {
+  let s = sRunTask([
+    node('plan', 'plan', []),
+    node('setgoal', 'setgoal', ['plan']),
+    node('critique', 'critique', ['setgoal']),
+  ], null, FAKE_MANAGER_SAYS_DONE);
+  try {
+    assert.equal(epicTicketState(s.task), 'READY');
+    assert.equal(epicPhase(s.task), 'plan');
+  } finally { rmSync(s.cwd, { recursive: true, force: true }); }
+
+  s = sRunTask([
+    node('plan', 'plan', [], { state: 'done', result: {} }),
+    node('setgoal', 'setgoal', ['plan'], { state: 'done', result: {} }),
+    node('critique', 'critique', ['setgoal'], { state: 'running' }),
+  ], null, FAKE_MANAGER_SAYS_BLOCKED);
+  try {
+    assert.equal(epicTicketState(s.task), 'READY');
+    assert.equal(epicPhase(s.task), 'setgoal');
+  } finally { rmSync(s.cwd, { recursive: true, force: true }); }
+});
+
+test('EPIC ticket state/phase for a size-S task: spec set, subgoal chain running, goal gate not reached -> IN_PROGRESS/impl', () => {
+  const s = sRunTask(
+    [
+      node('plan', 'plan', [], { state: 'done', result: {} }),
+      node('setgoal', 'setgoal', ['plan'], { state: 'done', result: {} }),
+      node('critique', 'critique', ['setgoal'], { state: 'done', result: {} }),
+      node('implement:U1:1', 'implement', ['critique'], { subgoal_id: 'U1', state: 'running' }),
+    ],
+    { spec: { subgoals: [{ id: 'U1' }] } },
+    FAKE_MANAGER_SAYS_DONE,
+  );
+  try {
+    assert.equal(epicTicketState(s.task), 'IN_PROGRESS');
+    assert.equal(epicPhase(s.task), 'impl');
+  } finally { rmSync(s.cwd, { recursive: true, force: true }); }
+});
+
+test('EPIC ticket state/phase for a size-S task: every subgoal gate done and the goal-level gate reached (ready, still pending) -> IN_REVIEW/qualitygate', () => {
+  const s = sRunTask(
+    [
+      node('plan', 'plan', [], { state: 'done', result: {} }),
+      node('setgoal', 'setgoal', ['plan'], { state: 'done', result: {} }),
+      node('critique', 'critique', ['setgoal'], { state: 'done', result: {} }),
+      node('implement:U1:1', 'implement', ['critique'], { subgoal_id: 'U1', state: 'done', result: {} }),
+      node('test:U1:1', 'test', ['implement:U1:1'], { subgoal_id: 'U1', state: 'done', result: {} }),
+      node('gate:U1:1', 'gate', ['test:U1:1'], { subgoal_id: 'U1', state: 'done', result: { accept: true } }),
+      node('gate:goal:1', 'gate', ['gate:U1:1'], { subgoal_id: null }),
+    ],
+    { spec: { subgoals: [{ id: 'U1' }] } },
+    FAKE_MANAGER_SAYS_BLOCKED,
+  );
+  try {
+    assert.equal(epicTicketState(s.task), 'IN_REVIEW');
+    assert.equal(epicPhase(s.task), 'qualitygate');
+  } finally { rmSync(s.cwd, { recursive: true, force: true }); }
+});
+
+test('EPIC ticket state/phase for a size-S task: report done -> DONE/null (the live tm_board repro this defect was found through)', () => {
+  const s = sRunTask(
+    [node('report', 'report', [], { state: 'done', result: {} })],
+    { spec: { subgoals: [{ id: 'U1' }] } },
+    FAKE_MANAGER_SAYS_READY,
+  );
+  try {
+    assert.equal(epicTicketState(s.task), 'DONE');
+    assert.equal(epicPhase(s.task), null);
+  } finally { rmSync(s.cwd, { recursive: true, force: true }); }
+});
+
+test('EPIC ticket state for a size-S task: runState blocked (nothing ready, nothing running) -> BLOCKED, checked before spec so a stuck run is never shown READY', () => {
+  const s = sRunTask([
+    node('plan', 'plan', [], { state: 'failed', result: { stage_ok: false } }),
+    node('setgoal', 'setgoal', ['plan'], { state: 'skipped' }),
+    node('critique', 'critique', ['setgoal'], { state: 'skipped' }),
+  ], null, FAKE_MANAGER_SAYS_READY);
+  try {
+    assert.equal(epicTicketState(s.task), 'BLOCKED');
+  } finally { rmSync(s.cwd, { recursive: true, force: true }); }
+});
+
+test('EPIC ticket state/phase for a size-S task whose child run file cannot be read (race right after openSRun) -> BLOCKED/plan, never a crash', () => {
+  const task = { run_id: TASK_ID, cwd: '/proj', nodes: FAKE_MANAGER_SAYS_READY, s_run: { cwd: '/definitely/does/not/exist', run_id: 'missing' } };
+  assert.equal(epicTicketState(task), 'BLOCKED');
+  assert.equal(epicPhase(task), 'plan');
 });
 
 // ---------- §4 TASK mapping (child-run subgoal, generic over kind) ----------
@@ -395,7 +523,7 @@ test('epicBoardRows puts the planning phase-Team row first and the qa phase-Team
 // v0.12.1 Task 2 adds a third phase-Team, the audit - planning's own second pass, opened after
 // integration (and after QA when it is on). It sits last of all: the audit is the final judgement
 // before the goal gate, and a STORY it files is an ordinary develop row in the middle.
-test('epicBoardRows renders the audit phase-Team last, with role "audit", and a STORY it filed carries reporter "planning-audit"', () => {
+test('epicBoardRows renders the audit phase-Team last, with role "audit", and every phase-Team package carries its own phase as reporter (never "shape")', () => {
   const t = baseTask(
     [
       dispatchNode('PLAN', { state: 'done', result: {} }), acceptNode('PLAN', { state: 'done', result: { accept: true, match_pct: 95 } }),
@@ -412,7 +540,7 @@ test('epicBoardRows renders the audit phase-Team last, with role "audit", and a 
   );
   const rows = epicBoardRows(t);
   assert.deepEqual(rows.map((r) => [r.id, r.role]), [['PLAN', 'planning'], ['P1', 'develop'], ['D1', 'develop'], ['QA', 'qa'], ['AUDIT', 'audit']]);
-  assert.deepEqual(rows.map((r) => [r.id, r.reporter]), [['PLAN', 'shape'], ['P1', 'shape'], ['D1', 'planning-audit'], ['QA', 'shape'], ['AUDIT', 'shape']]);
+  assert.deepEqual(rows.map((r) => [r.id, r.reporter]), [['PLAN', 'planning'], ['P1', 'shape'], ['D1', 'planning-audit'], ['QA', 'qa'], ['AUDIT', 'audit']]);
 });
 
 test('ticketSnapshot maps every known key (EPIC + each STORY) to its current state - the input a board.jsonl diff is taken over', () => {

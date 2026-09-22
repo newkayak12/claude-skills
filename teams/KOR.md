@@ -484,9 +484,21 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 
 ## 설치
 
-`teams@newkayak12-claude-skills`를 설치하고 `teams:install`로 `team_*` 도구 여섯 개가
-있는지 확인합니다. 소스 체크아웃이면 프로젝트 `.mcp.json`에 `mcp/broker.mjs`를
-`teams-engineering` 이름으로 등록합니다. `teams:install`이 그 항목을 보여줍니다.
+`teams@newkayak12-claude-skills`를 설치하는 것만이 유일하게 선택이 아닌 단계입니다 —
+`teams-engineering`과 `task-manager` MCP 서버를 등록하기 때문입니다. 이후 `tm_*`/`team_*`
+도구가 보이지 않으면 Claude Code를 재시작하세요. 마켓플레이스 플러그인 대신 소스
+체크아웃을 쓴다면, 프로젝트 `.mcp.json`에 `mcp/broker.mjs`를 `teams-engineering`으로,
+`mcp/taskmanager.mjs`를 `task-manager`로 등록합니다 — `skills/install/SKILL.md`의 "Install
+modes" 절이 두 항목을 모두 보여줍니다.
+
+그 다음 `teams:install`을 실행하는 것은 선택이며, 태스크를 돌리기 위한 전제조건이 아닙니다 —
+모든 실행 스킬(`orchestrate`/`develop`/`document`/`plan`/`qa`)은 두 MCP 서버만으로 팀을
+돌리고, `.claude/team.json`이 전혀 없으면 `TEAM_DEFAULTS`(아래)로 대체합니다. 프로젝트가
+플러그인의 내장 기본값 대신 자신만의 기본값, dispatch 게이트, `.claude/conventions/`를
+갖추기로 한 시점에 `teams:install`을 실행하세요 — 무엇이 추가되는지는
+[`skills/install/SKILL.md`](skills/install/SKILL.md), 설치 없이 도는 기본 경로는
+[`skills/orchestrate/SKILL.md`](skills/orchestrate/SKILL.md)의 "Running without install" 절을
+참고하세요.
 
 ## 설정
 
