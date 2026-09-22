@@ -101,6 +101,31 @@ test('EPIC ticket state: before shape -> READY, packages exist -> IN_PROGRESS, i
   assert.equal(epicTicketState(baseTask([node('report', 'report', [], { state: 'done', result: {} })])), 'DONE');
 });
 
+// idol-pm-1 (2026-09-22): three shaping attempts spent, zero packages dispatched, six of seven
+// STORYs released as unreachable - and a report written over that settled failure. The report's
+// own prose said "구현된 것은 없다"; this row said DONE, and so did every surface built on it.
+test('EPIC ticket state: a report written over a settled failure is SETTLED, not DONE', () => {
+  const settled = baseTask(
+    [
+      node('report:2', 'report', [], { state: 'done', result: {} }),
+      dispatchNode('P1', { state: 'unreachable' }),
+      acceptNode('P1', { state: 'unreachable' }),
+    ],
+    { spec: { packages: [{ id: 'P1' }] } },
+  );
+  assert.equal(epicTicketState(settled), 'SETTLED');
+  // A task that delivered and then reported is untouched: DONE still means DONE.
+  const delivered = baseTask(
+    [
+      node('report', 'report', [], { state: 'done', result: {} }),
+      dispatchNode('P1', { state: 'done', result: { accept: true } }),
+      acceptNode('P1', { state: 'done', result: { accept: true, match_pct: 95 } }),
+    ],
+    { spec: { packages: [{ id: 'P1' }] } },
+  );
+  assert.equal(epicTicketState(delivered), 'DONE');
+});
+
 // expandPackages (taskmanager.mjs) pushes integrate/gate:goal/report onto task.nodes in the
 // same call that opens every package's dispatch/accept chain - a task shaped exactly the way it
 // actually leaves one, not the dispatch-only or integrate-only fixtures above which never let

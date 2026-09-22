@@ -126,7 +126,16 @@ export function storyTicketState(task, pkgId, opts = {}) {
 // knows when nothing can proceed and showing READY/IN_PROGRESS for a stuck EPIC would defeat the
 // board's own point (see the plan's 발견 3).
 export function epicTicketState(task) {
-  if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) return 'DONE';
+  if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) {
+    // A report is also written over a settled failure: a retry budget ran out, settleFailure
+    // released everything downstream as unreachable, and the report says plainly what did not
+    // ship. idol-pm-1 (2026-09-22) ended exactly there - three shaping attempts spent, zero
+    // packages dispatched, six of its seven STORYs UNREACHABLE - and this row still read DONE.
+    // The report's prose was honest; every machine-readable surface above it said success, which
+    // is the one failure mode runState's own comment calls the worst kind. SETTLED is "finished,
+    // and it did not deliver": a terminal state like DONE, never confused with it.
+    return task.nodes.some((n) => n.state === 'unreachable') ? 'SETTLED' : 'DONE';
+  }
   if (runState(task).state === 'blocked') return 'BLOCKED';
   if (!task.spec) return 'READY';
   return goalLevelReached(task) ? 'IN_REVIEW' : 'IN_PROGRESS';
