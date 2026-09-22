@@ -10,6 +10,11 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadRunAt, runState } from '../../mcp/graph.mjs';
 import { driverCostOf, collectDriverCosts } from '../bench/lib/drivercost.mjs';
+// listTasks()'s card model speaks tickets.mjs's own vocabulary (EPIC key, ticket state, phase,
+// STORY rows) rather than inventing a second one - the same words tm_board and tm_ticket already
+// use, so a person moving between the index and those MCP tools never has to re-learn what
+// "IN_PROGRESS" or "E-d0ee9043" means.
+import { epicKey, epicTicketState, epicPhase, epicBoardRows } from '../../mcp/tickets.mjs';
 
 // ---------- small read helpers, all fail soft ----------
 
@@ -311,27 +316,95 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
   };
 }
 
+// A short, human-quotable headline for a card - there is no title field on a task, only
+// `request` (a free-text sentence or paragraph a person typed). Takes the first sentence/clause
+// (up to the first ./!/?), falls back to the whole string when none of those appear, then
+// truncates. The full `request` is never lost: view.mjs's per-task page (and --task <id>) still
+// show it in full - this is only the index's headline.
+const TITLE_MAX = 72;
+export function deriveTitle(request) {
+  const s = String(request || '').trim();
+  if (!s) return '(no request)';
+  const clause = (s.match(/^[^.!?]*[.!?]/) || [s])[0].replace(/[.!?]+$/, '').trim();
+  if (clause.length <= TITLE_MAX) return clause;
+  return `${clause.slice(0, TITLE_MAX - 1).trimEnd()}…`;
+}
+
+// tickets.mjs's epicTicketState()/epicPhase() both gate on task.spec, which a size-S task
+// (task.s_run set, openSRun's single run stands in for the whole manager graph - see
+// collectTaskFromValue's own `isS` branch above) never has: neither function has an S-run
+// variant, so calling them on one would read task.spec as permanently absent and report every
+// S-run task 'READY' forever, even complete ones. Handled by hand here, onto the SAME
+// DONE/BLOCKED/IN_PROGRESS words epicTicketState already uses (never a fourth vocabulary) -
+// phase is left null because an S run is one linear chain with no plan/setgoal/impl/qualitygate
+// breakdown of its own to name.
+function sRunTicketState(task) {
+  let engineState = 'blocked';
+  try {
+    const run = loadRunAt(join(task.s_run.cwd, '.teams_output', 'broker', 'runs', `${task.s_run.run_id}.json`));
+    engineState = run ? runState(run).state : 'blocked';
+  } catch { /* leave 'blocked' */ }
+  const state = engineState === 'complete' ? 'DONE' : engineState === 'blocked' ? 'BLOCKED' : 'IN_PROGRESS';
+  return { state, phase: null };
+}
+
+// epicBoardRows' own `reporter` field (tickets.mjs) is not itself "was this filed as a defect" -
+// it defaults to 'shape' for an ordinary package and 'repair' for a repair package precisely so
+// tm_board always has SOME reporter to print. A filed defect/unmet-story STORY is the one whose
+// reporter is one of these three - fileDefects (taskmanager.mjs) never writes any other value -
+// the same set epicBoardRows' own comment names.
+const FILED_REPORTERS = ['qa', 'you', 'planning-audit'];
+
+// A task's STORY rows that are develop work (epicBoardRows' `role` is 'develop' for a plan
+// package and any filed defect/unmet-story STORY; PLAN/QA/AUDIT phase-Team packages carry their
+// own phase as role instead) - what a person scanning the index means by "how much of the actual
+// work is done", and separately, how many of those rows a QA or planning-audit round filed
+// (reporter in FILED_REPORTERS) that have not yet reached DONE/CANCELLED/UNREACHABLE - still
+// open, still something to look at.
+function storyProgress(task) {
+  const rows = epicBoardRows(task).filter((r) => r.role === 'develop');
+  const openDefects = rows.filter((r) => FILED_REPORTERS.includes(r.reporter) && !['DONE', 'CANCELLED', 'UNREACHABLE'].includes(r.state)).length
+    // task.unresolved_defects: a defect/unmet-story found after the QA/planning-audit round cap
+    // was already spent - never filed as a STORY at all (fileDefects is skipped for these; see
+    // taskmanager.mjs), so epicBoardRows never sees them. Still a real, still-open problem this
+    // run will not fix on its own - counted in, not silently dropped.
+    + (Array.isArray(task.unresolved_defects) ? task.unresolved_defects.length : 0);
+  return {
+    storiesDone: rows.length ? rows.filter((r) => r.state === 'DONE').length : null,
+    storiesTotal: rows.length || null,
+    openDefects,
+  };
+}
+
 export function listTasks(tasksDir) {
   const ids = listTaskIds(tasksDir);
   const rows = [];
   for (const id of ids) {
+    const key = epicKey(id);
     const read = readJsonRetry(taskPathOf(tasksDir, id));
-    if (!read.ok) { rows.push({ task_id: id, error: read.error }); continue; }
+    if (!read.ok) { rows.push({ task_id: id, epic_key: key, error: read.error }); continue; }
     const task = read.value;
-    let state = 'unknown';
+    let state = 'unknown', phase = null, stories = { storiesDone: null, storiesTotal: null, openDefects: 0 };
     try {
-      state = task.s_run
-        ? (() => { const r = loadRunAt(join(task.s_run.cwd, '.teams_output', 'broker', 'runs', `${task.s_run.run_id}.json`)); return r ? runState(r).state : 'blocked'; })()
-        : runState(task).state;
-    } catch { /* leave 'unknown' */ }
+      const ticket = task.s_run ? sRunTicketState(task) : { state: epicTicketState(task), phase: epicPhase(task) };
+      state = ticket.state;
+      phase = ticket.phase;
+      if (!task.s_run) stories = storyProgress(task);
+    } catch { /* leave 'unknown' / no progress - a torn task.json should not crash the index */ }
     const driverTotal = collectDriverCosts(join(tasksDir, id));
     rows.push({
       task_id: id,
-      request: String(task.request || '').slice(0, 160),
+      epic_key: key,
+      title: deriveTitle(task.request),
       state,
+      phase,
       size: task.size || null,
       created_at: task.created_at || null,
+      elapsed_ms: elapsedMs(task.created_at),
       cost_usd: driverTotal.cost_usd,
+      stories_done: stories.storiesDone,
+      stories_total: stories.storiesTotal,
+      open_defects: stories.openDefects,
     });
   }
   rows.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
