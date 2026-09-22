@@ -100,6 +100,21 @@ export function conventionsBlock(cwd, { stage, files } = {}) {
   } else if (stage === 'setgoal') {
     lines.push('');
     lines.push('Fold applicable conventions into subgoal `acceptance` and `test[]`; name the convention file in the criterion.');
+  } else if (stage === 'planning' || stage === 'manager') {
+    // A PRD governs the whole tree, so path matching is the wrong filter for it: a rule about
+    // how this domain works matches no source path and would have shown up as a title only.
+    // idol-pm-1 (2026-09-22) produced a domain-empty PRD with the mechanism sitting right there.
+    // The manager's own judging stages get the same list for the same reason - shape splits the
+    // work and accept judges the PRD, and neither could see a project rule at all.
+    lines.push('');
+    lines.push(stage === 'planning'
+      ? 'These are this project\'s own rules. They are requirements on what you write, not background: a rule you do not follow is named in Out of scope with the reason, never left unmentioned.'
+      : 'These are this project\'s own rules. Judge and shape against them; a result that ignores one has a gap, whatever else it did.');
+    for (const e of entries) {
+      lines.push('');
+      lines.push(`### ${e.path}`);
+      lines.push(e.text.trim());
+    }
   } else if (stage === 'implement' || stage === 'draft') {
     const matched = entries.filter((e) => matchesFiles(e, files));
     if (matched.length) {

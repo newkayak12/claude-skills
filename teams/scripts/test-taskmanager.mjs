@@ -3046,3 +3046,117 @@ test('appendBoardTransitions skips a move the board has already recorded', async
   const { appendBoardTransitions } = await import('../mcp/taskmanager.mjs');
   assert.equal(typeof appendBoardTransitions, 'function', 'the board writer is exported for both callers');
 });
+
+// --- a fold commits delivered work, never the harness's own state ---------------------------
+// idol-pm-1 (2026-09-22): the planning fold committed 1,740 lines into the project, of which
+// 1,520 were manager state - task.json, board.jsonl, ledger.jsonl and a 1,326-line raw vendor
+// stream log. Only docs/PRD.md was the deliverable. .teams_output and the marker dir were
+// already unstaged; the tasks root was not, because it usually lives outside any project - but
+// HARNESS_TASKS_DIR can put it inside one, and the bench does exactly that.
+
+test('a tasks root inside the worktree is left out of the commit; one outside it is not named', async () => {
+  const { harnessPathsUnder } = await import('../mcp/taskmanager.mjs');
+  const cwd = mkdtempSync(join(tmpdir(), 'tm-commit-'));
+  const prior = process.env.HARNESS_TASKS_DIR;
+  try {
+    // Always dropped, whatever the tasks root is.
+    process.env.HARNESS_TASKS_DIR = join(tmpdir(), 'elsewhere', 'tasks');
+    let paths = harnessPathsUnder(cwd);
+    assert.ok(paths.includes('.teams_output'));
+    assert.ok(paths.includes('.claude/.harness-markers'));
+    assert.equal(paths.length, 2, `a root outside the tree adds nothing: ${paths}`);
+
+    // Inside the tree: dropped by its path relative to the worktree.
+    process.env.HARNESS_TASKS_DIR = join(cwd, '.harness-tasks');
+    paths = harnessPathsUnder(cwd);
+    assert.ok(paths.includes('.harness-tasks'), `an in-tree tasks root must be dropped: ${paths}`);
+
+    // A sibling directory whose name merely starts the same way is not inside the tree.
+    process.env.HARNESS_TASKS_DIR = `${cwd}-other`;
+    paths = harnessPathsUnder(cwd);
+    assert.equal(paths.length, 2, `a sibling is not inside the tree: ${paths}`);
+  } finally {
+    if (prior === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prior;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// --- functional completeness of the PM path (2026-09-22) ------------------------------------
+// Four holes found by running the planning harness for real on a ticketing PRD: the loop
+// stopped at a critique it could act on; a PRD with no stories was accepted; a gap named while
+// accepting reached nobody; and the project's own rules never reached planning or the manager.
+
+test('a failed critique is reshaped by the engine, carrying the verdict that refused it', async () => {
+  await withTask(async ({ task_id, tm, root }) => {
+    const { autoReshape } = await import('../mcp/taskmanager.mjs');
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop' }) });
+    await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({ ...SHAPE, handoff: 's' }) });
+    await tm.call('tm_submit', { task_id, node_id: 'critique', payload: ok({ sound: false, blocking: ['no package owns final assembly'], problems: ['P1 and P2 both touch a.txt'] }) });
+
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.equal(task.nodes.find((n) => n.node_id === 'critique').state, 'failed');
+    assert.ok(autoReshape(task), 'the engine must open the next shape attempt itself');
+    const next = task.nodes.find((n) => n.node_id === 'shape:2');
+    assert.ok(next, 'a second shape attempt exists');
+    assert.match(next.feedback, /no package owns final assembly/, "critique's blocking travels into it");
+    assert.match(next.feedback, /both touch a\.txt/, 'so do its non-blocking problems');
+    assert.equal(autoReshape(task), false, 'it does not reshape again while the new attempt is open');
+  });
+});
+
+test('a planning fold returning no user stories is rejected, and says why', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', handoff: 'x' }) });
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children[0];
+    const sub = (node_id, payload) => g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id, payload: ok(payload) });
+    await sub('plan', { handoff: 'p', flow: 'plan', size: 'S' });
+    await sub('setgoal', { spec: { goal: 'PRD', acceptance: ['PRD covers the request'], subgoals: [{ id: 'U1', title: 'draft PRD', acceptance: ['PRD written'], deps: [] }] } });
+    await sub('critique', { sound: true });
+    mkdirSync(join(cwd, 'docs'), { recursive: true });
+    writeFileSync(join(cwd, 'docs', 'PRD.md'), '# PRD\n\nno stories here\n');
+    await sub('draft:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'drafted' });
+    await sub('revise:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'revised' });
+    await sub('gate:U1:1', { accept: true, match_pct: 95 });
+    // The child's own gate is happy with its document - it judges the text, not what the
+    // manager needs from it - and returns no stories. R1 (2026-09-18) accepted this at 93%.
+    await sub('gate:goal:1', { accept: true, match_pct: 95, user_stories: [] });
+    await sub('report', { handoff: 'PRD complete' });
+
+    const folded = await tm.call('tm_submit', { task_id, node_id: 'dispatch:PLAN:1' });
+    assert.equal(folded.state, 'failed', JSON.stringify(folded));
+    const saved = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const r = saved.nodes.find((n) => n.node_id === 'dispatch:PLAN:1').result;
+    assert.match(r.reason, /no user stories/, JSON.stringify(r));
+    assert.ok((r.gaps || []).some((x) => /nothing downstream can be built/.test(x)), JSON.stringify(r.gaps));
+  }, { roles: { planning: true } });
+});
+
+test("shape is told the gaps the PRD was accepted with, not only the stories", async () => {
+  await withTask(async ({ tm, g, cwd, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', handoff: 'x' }) });
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children[0];
+    const sub = (node_id, payload) => g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id, payload: ok(payload) });
+    await sub('plan', { handoff: 'p', flow: 'plan', size: 'S' });
+    await sub('setgoal', { spec: { goal: 'PRD', acceptance: ['a'], subgoals: [{ id: 'U1', title: 'draft PRD', acceptance: ['written'], deps: [] }] } });
+    await sub('critique', { sound: true });
+    mkdirSync(join(cwd, 'docs'), { recursive: true });
+    writeFileSync(join(cwd, 'docs', 'PRD.md'), '# PRD\n\n## User stories\n\n- US-1\n');
+    await sub('draft:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'd' });
+    await sub('revise:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'r' });
+    await sub('gate:U1:1', { accept: true, match_pct: 95 });
+    await sub('gate:goal:1', { accept: true, match_pct: 95, user_stories: [{ id: 'US-1', title: 'a story', acceptance: ['x'] }] });
+    await sub('report', { handoff: 'done' });
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:PLAN:1' });
+    await tm.call('tm_submit', {
+      task_id, node_id: 'accept:PLAN:1',
+      payload: ok({ accept: true, match_pct: 88, gaps: ['no idol-concert domain particulars anywhere'], observations: ['14 open items have no owner'] }),
+    });
+    const after = await tm.call('tm_next', { task_id });
+    const briefing = readFileSync(after.ready[0].briefing_path, 'utf8');
+    assert.match(briefing, /accepted WITH these gaps still open/);
+    assert.match(briefing, /no idol-concert domain particulars/, 'a gap named while accepting must travel');
+    assert.match(briefing, /14 open items have no owner/, 'so must an observation');
+  }, { roles: { planning: true } });
+});
