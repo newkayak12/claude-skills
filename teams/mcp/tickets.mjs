@@ -185,7 +185,16 @@ function sRunPhase(run) {
 // question to sRunTicketState - see its own comment for why task.spec can never answer it.
 export function epicTicketState(task) {
   if (task.s_run) return sRunTicketState(loadSRun(task));
-  if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) return 'DONE';
+  if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) {
+    // A report is also written over a settled failure: a retry budget ran out, settleFailure
+    // released everything downstream as unreachable, and the report says plainly what did not
+    // ship. idol-pm-1 (2026-09-22) ended exactly there - three shaping attempts spent, zero
+    // packages dispatched, six of its seven STORYs UNREACHABLE - and this row still read DONE.
+    // The report's prose was honest; every machine-readable surface above it said success, which
+    // is the one failure mode runState's own comment calls the worst kind. SETTLED is "finished,
+    // and it did not deliver": a terminal state like DONE, never confused with it.
+    return task.nodes.some((n) => n.state === 'unreachable') ? 'SETTLED' : 'DONE';
+  }
   if (runState(task).state === 'blocked') return 'BLOCKED';
   if (!task.spec) return 'READY';
   return goalLevelReached(task) ? 'IN_REVIEW' : 'IN_PROGRESS';
