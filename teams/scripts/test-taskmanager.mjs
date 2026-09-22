@@ -283,6 +283,22 @@ test('roles.planning:false keeps the node graph exactly as before (regression)',
   });
 });
 
+test('the PLAN child run is pinned to the plan flow (mixed:false) and its context says PRD, not implementation (2026-09-22 first real run)', async () => {
+  await withTask(async ({ tm, cwd, root, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', sizing: ['x'] }) });
+    await tm.call('tm_next', { task_id });
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const d = task.nodes.find((n) => n.node_id === 'dispatch:PLAN:1');
+    assert.equal(d.state, 'running');
+    const run = JSON.parse(readFileSync(join(d.child.cwd, '.teams_output', 'broker', 'runs', `${d.child.run_id}.json`), 'utf8'));
+    assert.equal(run.flow, 'plan');
+    assert.equal(run.mixed, false, 'a phase-Team run may not mix in develop subgoals');
+    assert.match(run.context, /PRD/);
+    assert.match(run.context, /Change no source files/);
+    assert.doesNotMatch(run.context, /private to this package/, 'the ordinary-package worktree line does not apply to planning');
+  }, { roles: { planning: true } });
+});
+
 test("planning phase-Team's PRD and user_stories flow into shape's input, verbatim body never leaves the child run", async () => {
   await withTask(async ({ tm, g, cwd, root, task_id }) => {
     let v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2 modules'], handoff: 'two modules' }) });
