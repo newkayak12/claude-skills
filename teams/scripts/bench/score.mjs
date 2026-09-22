@@ -181,7 +181,7 @@ function runFiles(dir) {
   // teams' own runs (.teams_output/broker/runs) and the stable graph plugin's (.harness-run/broker/runs)
   // - a fixture may carry either, or both if graph and teams both ran here.
   for (const d of [join(dir, '.teams_output', 'broker', 'runs'), join(dir, '.harness-run', 'broker', 'runs')]) {
-    for (const f of ls(d)) if (f.endsWith('.json')) { try { out.push(JSON.parse(read(join(d, f)))); } catch {} }
+    for (const f of ls(d)) if (f.endsWith('.json')) { try { const j = JSON.parse(read(join(d, f))); if (j) out.push(j); } catch {} }
   }
   return out;
 }
@@ -207,7 +207,11 @@ const harness = { tasks: [], runs: [] };
 {
   const root = join(WS, '.harness-tasks');
   for (const id of ls(root)) {
+    // read() returns null for a missing file and JSON.parse(null) is null, not a throw - so a
+    // task dir whose task.json is not written yet (every run, for its first moments) reached the
+    // property access below and killed the whole scorer. That is what ended the P1/Q1 round.
     let task; try { task = JSON.parse(read(join(root, id, 'task.json'))); } catch { continue; }
+    if (!task || typeof task !== 'object') continue;
     const nodes = task.nodes || [];
     const size = nodes.find((n) => n.node_id === 'size');
     const shape = nodes.filter((n) => n.stage === 'shape' && n.state === 'done').at(-1);
@@ -324,7 +328,7 @@ const total = {
 
 // ---------- criteria ----------
 const crit = {};
-const pkgJson = (() => { try { return JSON.parse(read(join(TREE, 'package.json'))); } catch { return {}; } })();
+const pkgJson = (() => { try { return JSON.parse(read(join(TREE, 'package.json'))) || {}; } catch { return {}; } })();
 const npmTestRun = sh('node', ['--test'], TREE);
 crit.npm_test = npmTestRun.code === 0;
 const testCounts = parseTestCounts(npmTestRun.out); // reused by every test-count / all-pass claim below
@@ -604,7 +608,7 @@ if (SEAM) {
   crit.readme = has('README.md') && /```/.test(read(join(TREE, 'README.md')) || '');
   if (KIND === 'code') {
     const pkgs = ls(join(TREE, 'packages')).filter((p) => existsSync(join(TREE, 'packages', p, 'package.json')));
-    crit.cli = pkgs.some((p) => { try { const j = JSON.parse(read(join(TREE, 'packages', p, 'package.json'))); return !!j.bin; } catch { return false; } })
+    crit.cli = pkgs.some((p) => { try { const j = JSON.parse(read(join(TREE, 'packages', p, 'package.json'))); return !!(j && j.bin); } catch { return false; } })
       || files.some((f) => /(^|\/)bin\/[^/]+\.m?js$/.test(f));
     const calls = files.filter((f) => /\.test\.m?js$/.test(f)).reduce((n, f) => n + ((read(join(TREE, f)) || '').match(/\btest\(/g) || []).length, 0);
     crit.tests_grown = calls > 4;
@@ -1017,6 +1021,7 @@ if (isHarnessRun) {
       if (!m) return cmdLine;
       for (const dir of [TREE, ...ls(join(TREE, 'packages')).map((p) => join(TREE, 'packages', p))]) {
         let pkg; try { pkg = JSON.parse(read(join(dir, 'package.json'))); } catch { continue; }
+        if (!pkg || typeof pkg !== 'object') continue;
         const bin = pkg && pkg.bin;
         const target = typeof bin === 'string' ? bin : (bin && (bin.ledger || Object.values(bin)[0]));
         if (target && existsSync(join(dir, target))) return `node ${join(dir, target).slice(TREE.length + 1)} ${m[1]}`.trim();
