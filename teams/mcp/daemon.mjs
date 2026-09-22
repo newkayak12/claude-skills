@@ -33,8 +33,9 @@ import {
   advanceDispatches, serviceRunningDispatches, prepareReadyIntegrations,
   dispatchSettled, foldChild, serviceSRun, delegateIfSmall,
   finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages, autoRejudge, autoResumeCapacity,
-  STAGE_SKILLS,
+  STAGE_SKILLS, syncTickets,
 } from './taskmanager.mjs';
+import { ticketSnapshot } from './tickets.mjs';
 import { pluginDirArgs } from './pluginroots.mjs';
 
 function parseArgs(argv) {
@@ -245,7 +246,21 @@ function waitForProgress(task) {
   });
 }
 
+// board.jsonl is a before/after diff of a mutation, the same mechanism the MCP tool boundary
+// uses - but since v0.16.0 the daemon owns the loop, so the tools that hook it are no longer the
+// thing that moves a ticket. The board therefore froze at tm_open: idol-pm-1 (2026-09-22) ran 81
+// minutes and 25 nodes and its PLAN story still read READY. One wrapper around stepOnce, not a
+// dozen instrumented mutation sites, for exactly the reason appendBoardTransitions already gives.
 async function stepOnce(task) {
+  const before = ticketSnapshot(task);
+  try {
+    return await stepOnceInner(task);
+  } finally {
+    try { syncTickets(task, before, 'daemon'); } catch { /* evidence, not a dependency */ }
+  }
+}
+
+async function stepOnceInner(task) {
   // Size S: no manager-level node is left to judge once `size` has resolved (delegateIfSmall
   // already skipped shape/critique) - the whole task is now the one child run at task.s_run, and
   // this daemon's only job is keeping ITS driver alive.

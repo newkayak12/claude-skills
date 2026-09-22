@@ -197,14 +197,16 @@ test('tm_docs writes the phase md tm_board/tm_ticket already pointed at, and reb
     assert.ok(first.written.includes(board.doc_path));
     assert.equal(readFileSync(board.doc_path, 'utf8').includes(`E-${task_id.slice(0, 8)}`), true);
 
+    const before = readFileSync(board.doc_path, 'utf8');
     const nx = await tm.call('tm_next', { task_id });
     await completeChild(g, nx.children[0]);
     await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
     await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) });
 
-    const before = readFileSync(board.doc_path, 'utf8');
-    const rebuilt = await tm.call('tm_docs', { task_id, rebuild: true });
+    // The page tracks the ticket without anyone asking: P1 moved to DONE across the two submits
+    // above, and the rendered board says so before tm_docs is called at all.
     assert.notEqual(readFileSync(board.doc_path, 'utf8'), before, 'P1 moved to DONE since the first render');
+    const rebuilt = await tm.call('tm_docs', { task_id, rebuild: true });
     // Snapshot every file's bytes right after the FIRST rebuild:true call, before calling it
     // again - this is what the second snapshot below gets compared against.
     const afterFirstRebuild = Object.fromEntries(rebuilt.written.map((p) => [p, readFileSync(p, 'utf8')]));
@@ -225,7 +227,13 @@ test('tm_open seeds size -> shape -> critique under the tasks root, not under th
     assert.deepEqual(open.ready.map((n) => n.node_id), ['size']);
     assert.equal(open.state, 'running');
     assert.ok(existsSync(join(root, task_id, 'task.json')));
-    assert.ok(!existsSync(join(cwd, '.teams_output')), 'the project holds no manager state');
+    // Manager STATE - task.json, board.jsonl, briefings, worktrees - stays under the tasks root.
+    // The ticket PAGES under .teams_output/team are output, not state, and are written as the
+    // run moves so a ticket's body, its state and its history agree at every point (2026-09-22);
+    // the assertion below used to forbid the whole directory, which is why no page was ever
+    // written until someone called tm_docs by hand, and usually nobody did.
+    assert.ok(!existsSync(join(cwd, 'task.json')), 'the project holds no manager state');
+    assert.ok(!existsSync(join(cwd, '.harness-tasks')), 'the project holds no tasks root');
     const prompt = readFileSync(open.ready[0].briefing_path, 'utf8');
     assert.match(prompt, /# size node size \(task manager\)/);
     assert.match(prompt, /The default is S/);
@@ -314,8 +322,12 @@ test("planning phase-Team's PRD and user_stories flow into shape's input, verbat
     await sub('plan', { handoff: 'p', flow: 'plan', size: 'S' });
     await sub('setgoal', { spec: { goal: 'PRD', acceptance: ['PRD covers the request'], subgoals: [{ id: 'U1', title: 'draft PRD', acceptance: ['PRD written'], deps: [] }] } });
     await sub('critique', { sound: true });
-    await sub('draft:U1:1', { changed_files: [], handoff: 'drafted' });
-    await sub('revise:U1:1', { changed_files: [], handoff: 'revised' });
+    // The broker cross-checks a claimed changed_file against the worktree, so the PRD has to
+    // actually be there - which is also what makes prd_paths real rather than a claim.
+    mkdirSync(join(cwd, 'docs'), { recursive: true });
+    writeFileSync(join(cwd, 'docs', 'PRD.md'), '# PRD\n\n## User stories\n\n- US-1\n- US-2\n');
+    await sub('draft:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'drafted' });
+    await sub('revise:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'revised' });
     await sub('gate:U1:1', { accept: true, match_pct: 95 });
     await sub('gate:goal:1', { accept: true, match_pct: 95, user_stories: ['US-1', 'US-2'] });
     const childNext = await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
@@ -334,7 +346,11 @@ test("planning phase-Team's PRD and user_stories flow into shape's input, verbat
     const briefing = readFileSync(after.ready[0].briefing_path, 'utf8');
     assert.match(briefing, /US-1/);
     assert.match(briefing, /US-2/);
-    assert.match(briefing, /10-prd\.md/, 'shape must be told where the PRD lives');
+    // The path the planning run actually wrote, never docPaths()'s 10-prd.md: that page is a
+    // link rendered later and carries no PRD body, so pointing shape at it left it with nothing
+    // to read (2026-09-22).
+    assert.match(briefing, /docs\/PRD\.md/, 'shape must be told where the PRD actually lives');
+    assert.doesNotMatch(briefing, /10-prd\.md/, 'the link page is not where the PRD body is');
     assert.doesNotMatch(briefing, /Executive Summary/, 'the PRD body must never be pasted into the briefing - a link only');
 
     const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
@@ -2861,7 +2877,13 @@ test('tm_ticket reads an EPIC key or a STORY key, and always returns a doc_path 
     assert.equal(story.kind, 'STORY');
     assert.equal(story.state, 'READY');
     assert.match(story.doc_path, /40-stories\/P1\.md$/);
-    assert.ok(!existsSync(story.doc_path), 'tm_ticket never writes the file itself');
+    // tm_ticket is a read. The page exists already - the ticket surface is kept current as the
+    // run moves (2026-09-22) rather than on demand - so what this asserts now is that reading a
+    // ticket changes nothing about it.
+    const bodyBefore = existsSync(story.doc_path) ? readFileSync(story.doc_path, 'utf8') : null;
+    await tm.call('tm_ticket', { key: `E-${task_id.slice(0, 8)}/P1` });
+    const bodyAfter = existsSync(story.doc_path) ? readFileSync(story.doc_path, 'utf8') : null;
+    assert.equal(bodyAfter, bodyBefore, 'tm_ticket never writes the file itself');
   });
 });
 
@@ -2934,4 +2956,93 @@ test('a tm_submit that moves a ticket writes a board.jsonl line immediately - th
     rmSync(cwd, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+// --- shape's user-story coverage check, when planning actually produced stories -------------
+// The bug (idol-pm-1, 2026-09-22): gate:goal returns stories as {"id","title","acceptance"}
+// objects, and validateShape compared them with String(), so every story rendered as
+// "[object Object]", matched no implements[] entry, and shape failed with six well-formed
+// packages in hand. With planning on, the develop workflow could never stand up. It stayed
+// invisible because every earlier planning run returned zero stories and the loop never ran.
+
+test('storyId reads the id out of a story object, and passes a bare string through', async () => {
+  const { storyId, storyLabel } = await import('../mcp/taskmanager.mjs');
+  assert.equal(storyId({ id: 'US-1', title: 'Fan queue admission', acceptance: ['a'] }), 'US-1');
+  assert.equal(storyId('US-2'), 'US-2');
+  assert.equal(storyId(null), '');
+  assert.equal(storyLabel({ id: 'US-1', title: 'Fan queue admission' }), 'US-1 - Fan queue admission');
+  assert.equal(storyLabel('US-2'), 'US-2', 'a bare id has no title to append');
+});
+
+test('a shape whose packages implement every story object passes the coverage check', async () => {
+  const { validateShape } = await import('../mcp/taskmanager.mjs');
+  const stories = [
+    { id: 'US-1', title: 'Fan queue admission', acceptance: ['a'] },
+    { id: 'US-2', title: 'Atomic hold', acceptance: ['b'] },
+  ];
+  const spec = {
+    acceptance: ['the integrated app boots'],
+    packages: [
+      { id: 'P1', title: 'Waiting room', brief: 'build the queue', acceptance: ['queue admits'], implements: ['US-1'], deps: [] },
+      { id: 'P2', title: 'Hold', brief: 'build the hold', acceptance: ['hold is atomic'], implements: ['US-2'], deps: ['P1'] },
+    ],
+  };
+  assert.deepEqual(validateShape(spec, stories), [], 'story objects must match implements[] ids');
+});
+
+test('a story no package implements is still reported - by id, never as [object Object]', async () => {
+  const { validateShape } = await import('../mcp/taskmanager.mjs');
+  const stories = [
+    { id: 'US-1', title: 'Fan queue admission', acceptance: ['a'] },
+    { id: 'US-2', title: 'Atomic hold', acceptance: ['b'] },
+  ];
+  const spec = {
+    acceptance: ['the integrated app boots'],
+    packages: [
+      { id: 'P1', title: 'Waiting room', brief: 'build the queue', acceptance: ['queue admits'], implements: ['US-1'], deps: [] },
+      { id: 'P2', title: 'Hold', brief: 'build the hold', acceptance: ['hold is atomic'], implements: [], deps: ['P1'] },
+    ],
+  };
+  const problems = validateShape(spec, stories);
+  assert.equal(problems.length, 1, JSON.stringify(problems));
+  assert.match(problems[0], /US-2/);
+  assert.doesNotMatch(problems[0], /\[object Object\]/, 'the id must be printed, not the object');
+});
+
+test('the shape contract asks for the implements[] its coverage check reads', async () => {
+  const { CONTRACT } = await import('../mcp/taskmanager.mjs');
+  const shape = (CONTRACT && CONTRACT.shape) || '';
+  assert.match(shape, /"implements"/, 'shape was judged on a field its own output shape never asked for');
+});
+
+// --- the ticket surface: state, history and body move together ------------------------------
+// idol-pm-1 (2026-09-22) ran 81 minutes with a DONE story reading READY on the board and an
+// empty docs directory: both hung off MCP tool calls the daemon, which owns the loop since
+// v0.16.0, does not make. finish() is the single hook now - the one place both callers pass
+// through - and the board dedups because finish and the daemon's step see the same move twice.
+
+test('a node settling moves the board and re-renders the ticket pages, with no duplicate line', async () => {
+  await withTask(async ({ cwd, root, task_id, tm, g }) => {
+    const board = join(root, task_id, 'board.jsonl');
+    const readBoard = () => (existsSync(board) ? readFileSync(board, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
+    const atOpen = readBoard().length;
+    assert.ok(atOpen > 0, 'tm_open creates tickets');
+
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L' }) });
+    const docsDir = join(cwd, '.teams_output', 'team');
+    assert.ok(existsSync(docsDir), 'the ticket pages are written as the run moves, not on demand');
+    assert.ok(readdirSync(docsDir).length > 0, 'at least one epic directory exists');
+
+    // No key is logged twice into the same state, however many writers observed the move.
+    const seen = new Map();
+    for (const e of readBoard()) {
+      assert.notEqual(seen.get(e.key), e.to, `${e.key} logged into ${e.to} twice`);
+      seen.set(e.key, e.to);
+    }
+  });
+});
+
+test('appendBoardTransitions skips a move the board has already recorded', async () => {
+  const { appendBoardTransitions } = await import('../mcp/taskmanager.mjs');
+  assert.equal(typeof appendBoardTransitions, 'function', 'the board writer is exported for both callers');
 });

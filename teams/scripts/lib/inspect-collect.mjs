@@ -13,6 +13,7 @@ import { join, basename, dirname } from 'node:path';
 import { loadRunAt, runState, kindSkills, kindOf, KINDS } from '../../mcp/graph.mjs';
 import { graphStageSkills } from '../../mcp/mounts.mjs';
 import { STAGE_SKILLS } from '../../mcp/taskmanager.mjs';
+import { epicKey, storyKey, epicTicketState, storyTicketState } from '../../mcp/tickets.mjs';
 
 const REASONING_VERDICT = { critique: 'sound', dispatch: 'accept', accept: 'accept', integrate: 'verified', gate: 'accept' };
 
@@ -197,6 +198,32 @@ export function skillsAudit(model) {
   };
 }
 
+
+// The ticket surface a person asked for: current state from tickets.mjs's pure functions over
+// task.json (the ground truth), plus board.jsonl's transition history (the JIRA-style log). Both
+// were already written; nothing surfaced either, so "where do I see the ticket move" had no
+// answer but reading raw JSONL.
+function tickets(taskDirPath, task) {
+  const rows = [];
+  try {
+    rows.push({ key: epicKey(task.run_id), kind: 'EPIC', state: epicTicketState(task), title: String(task.request || '').slice(0, 60) });
+    for (const p of [task.planning_pkg, ...((task.spec && task.spec.packages) || []), task.qa_pkg, task.audit_pkg]) {
+      if (!p) continue;
+      rows.push({ key: storyKey(task.run_id, p.id), kind: 'STORY', state: storyTicketState(task, String(p.id)), title: String(p.title || p.id) });
+    }
+  } catch { /* a partial task still renders the history below */ }
+  const seen = new Set();
+  const current = rows.filter((t) => !seen.has(t.key) && seen.add(t.key));
+  const history = [];
+  try {
+    for (const line of readFileSync(join(taskDirPath, 'board.jsonl'), 'utf8').trim().split('\n')) {
+      if (!line) continue;
+      try { history.push(JSON.parse(line)); } catch { /* a torn line is not a reason to show none */ }
+    }
+  } catch { /* no board yet */ }
+  return { current, history };
+}
+
 export function collect(taskDirPath, task) {
   const managerNodes = task.nodes.map((n) => nodeRow(n, managerSkillsAsked(task, n), nodeFiles({ taskDir: taskDirPath, n })));
   const children = [];
@@ -220,6 +247,7 @@ export function collect(taskDirPath, task) {
     manager: { nodes: managerNodes },
     children,
     docs: docs(task),
+    tickets: tickets(taskDirPath, task),
   };
   model.artifacts = artifacts(children);
   model.skills = skillsAudit(model);

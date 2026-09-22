@@ -119,10 +119,10 @@ function stageSkills(task, n) {
   return (list || []).map(String).filter(Boolean);
 }
 
-const CONTRACT = {
+export const CONTRACT = {
   size: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "handoff": "<what shape needs to know>", "evidence": "..."}
 S means one graph run in one worktree can carry the whole request. L means it spans independent modules, packages or repositories that each need their own run and worktree, integrated afterwards. Decide from what commands show - file and module counts, ownership boundaries, build units - and put those commands in "sizing". The default is S: a manager layer exists, and the temptation is to use it. Over-sizing costs a worktree, a run and an integration per package; under-sizing costs one retry.`,
-  shape: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "acceptance": ["goal-level criteria for the integrated result"], "packages": [{"id": "P1", "title": "...", "flow": "develop|document", "skills": ["plugin:skill"], "brief": "<the request this package's own graph run will receive - self-contained>", "acceptance": ["what the package must deliver, checkable inside its worktree"], "touches": ["paths or modules this package changes"], "deps": ["P0"], "split": false}], "handoff": "...", "evidence": "..."}
+  shape: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "acceptance": ["goal-level criteria for the integrated result"], "packages": [{"id": "P1", "title": "...", "flow": "develop|document", "skills": ["plugin:skill"], "brief": "<the request this package's own graph run will receive - self-contained>", "acceptance": ["what the package must deliver, checkable inside its worktree"], "touches": ["paths or modules this package changes"], "deps": ["P0"], "implements": ["US-1"], "split": false}], "handoff": "...", "evidence": "..."}
 "skills" is optional and is method for the package, not for you: you are the stage that knows what each package IS, and a CLI package and a reference-document package want different method. Name the skills that package's own nodes should work by, and they travel into its child run; leave it out when the brief is method enough. Do not name a skill that asks its reader questions - the child's nodes run headless too.
 Each package becomes one graph run in its own worktree. A package with no deps branches from the current HEAD; a package with deps branches from its first dependency's delivered branch with the others merged in, so it builds on what they delivered - not on stubs. Two packages that touch the same path will conflict at integration: split by ownership, not by phase. A dependency means the package needs another's delivered result; it receives that package's report as context and starts from its tree. Every package must be size S on its own - if one still needs splitting, the shape is wrong. Two to six packages is the usual range. "split": true (or "size": "L") is the one exception to that rule - the rare package whose own scope still needs its own shape/dispatch cycle inside its child run; leave it false for the ordinary package, whose child run opens with this shape's own acceptance already decided and no plan/setgoal/critique/gate:goal of its own to redo (§3, docs/plans/2026-09-21-teams-server-owns-the-loop.md).`,
   critique: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "sound": true|false, "blocking": ["..."], "problems": ["..."], "handoff": "...", "evidence": "..."}
@@ -300,7 +300,23 @@ export function mustFindTask(a) {
 // userStories is task.planning_pkg's dispatch:PLAN:1 result.user_stories, passed only for a
 // task planning ran on - finish() decides that, so this stays a pure function of what it is
 // handed. undefined/null skips the check entirely (planning off: nothing to be complete against).
-function validateShape(spec, userStories) {
+// A user story arrives from gate:goal as {"id": "US-1", "title": "...", "acceptance": [...]} -
+// the shape its own contract asks for. `String(story)` on that gives "[object Object]", which
+// matched no packages[].implements[] entry, so with planning on shape could never pass and the
+// develop workflow could not stand up at all (idol-pm-1, 2026-09-22). Invisible until then only
+// because every earlier planning run returned zero stories and the loop never ran.
+export function storyId(story) {
+  if (story && typeof story === 'object') return String(story.id || story.US || story.story_id || '').trim();
+  return String(story == null ? '' : story).trim();
+}
+
+export function storyLabel(story) {
+  const id = storyId(story);
+  const title = story && typeof story === 'object' ? String(story.title || '').trim() : '';
+  return title ? `${id} - ${title}` : id;
+}
+
+export function validateShape(spec, userStories) {
   const problems = [];
   if (!spec || typeof spec !== 'object') return ['shape returned no packages object'];
   if (!Array.isArray(spec.acceptance) || !spec.acceptance.length) problems.push('shape has no goal-level acceptance criteria');
@@ -353,7 +369,7 @@ function validateShape(spec, userStories) {
   // scheduled it". Only checked when planning actually ran (userStories is an array, not null).
   if (Array.isArray(userStories)) {
     const covered = new Set(packages.flatMap((p) => (Array.isArray(p && p.implements) ? p.implements.map(String) : [])));
-    const missing = userStories.map(String).filter((u) => !covered.has(u));
+    const missing = userStories.map(storyId).filter((u) => u && !covered.has(u));
     if (missing.length) problems.push(`user stories not implemented by any package: ${missing.join(', ')}`);
   }
   return problems;
@@ -1749,7 +1765,12 @@ export function foldChild(task, n) {
     evidence: `child ${child.run_id}: ${cs.counts.done} done, ${cs.counts.failed} failed, ${cs.counts.unreachable} unreachable`,
     // The planning phase-Team's structured bridge (§0.4 finding 2): shape's implements[]
     // completeness check needs the ID list, not the PRD body, which stays in the child run.
-    ...(pkg && pkg.phase === 'planning' ? { user_stories: Array.isArray(g.user_stories) ? g.user_stories : [] } : {}),
+    ...(pkg && pkg.phase === 'planning' ? {
+      user_stories: Array.isArray(g.user_stories) ? g.user_stories : [],
+      // Where the PRD actually is. The child's own nodes recorded it; nothing else knows, and
+      // shape's briefing has no other way to name a file a reader can open.
+      prd_paths: [...new Set((child.nodes || []).flatMap((x) => (x.result && x.result.changed_files) || []).map(String))],
+    } : {}),
   };
 }
 
@@ -1836,9 +1857,16 @@ export function composeTaskPrompt(task, n) {
     L.push(`## Planning phase-Team`);
     // A link, never the PRD body itself (§7c "payload를 main에 올리지 않는다"): the body stays
     // in the child run and its rendered doc, not in this briefing.
-    L.push(`A planning phase-Team ran ahead of this stage and wrote the PRD to ${join(docPaths(task).dir, '10-prd.md')}. Read it there if you need the reasoning; its body is not repeated here.`);
-    L.push(`User stories it produced - every "packages[].implements[]" this stage returns must together cover all of these:`);
-    L.push(bullets(userStories));
+    // The path the planning run actually wrote, not docPaths()'s 10-prd.md: that file is a link
+    // page rendered by tm_docs at report time, so at shape time it does not exist yet and never
+    // carries the PRD body at all. Pointing shape at it left it with no PRD to read (R1, 2026-09-18).
+    const prdPaths = (planDispatch && planDispatch.result && Array.isArray(planDispatch.result.prd_paths))
+      ? planDispatch.result.prd_paths : [];
+    L.push(prdPaths.length
+      ? `A planning phase-Team ran ahead of this stage and wrote the PRD to ${prdPaths.join(', ')}. Read it there - it is the reasoning behind the stories below, and its body is not repeated here.`
+      : `A planning phase-Team ran ahead of this stage, but reported no document path. Its user stories are below; there is no PRD body to read.`);
+    L.push(`User stories it produced - every "packages[].implements[]" this stage returns must together cover all of these, by id:`);
+    L.push(bullets(userStories.map(storyLabel)));
   }
   if (task.spec && ['critique', 'integrate', 'gate', 'report'].includes(n.stage)) {
     L.push('');
@@ -2009,6 +2037,10 @@ function verdict(task, n) {
 }
 
 export function finish(task, n, result) {
+  // A node settling is what moves a ticket, and it is the one place both callers pass through -
+  // tm_submit and the daemon alike. Hooking the caller instead left the whole surface stale
+  // between steps, and a daemon step is a whole judge call long (2026-09-22).
+  const ticketsBefore = ticketSnapshot(task);
   // The merges the manager made are part of the integrate node's account.
   if (n.stage === 'integrate' && n.integration) {
     result = { ...result, integration_branch: n.integration.branch, integration_cwd: n.integration.cwd,
@@ -2132,6 +2164,7 @@ export function finish(task, n, result) {
   }
   saveRun(task);
   record(task, { event: 'node_finish', task_id: task.run_id, node_id: n.node_id, stage: n.stage, stage_ok: n.result.stage_ok === true, state: n.state });
+  try { syncTickets(task, ticketsBefore, n.node_id); } catch { /* evidence, not a dependency */ }
   return verdict(task, n);
 }
 
@@ -2382,12 +2415,44 @@ function toolWait(a) {
 // BACKLOG/READY exactly like tm_retry opening a repair package does.
 const BOARD_TOOLS = new Set(['tm_open', 'tm_run', 'tm_next', 'tm_submit', 'tm_retry', 'tm_file']);
 
-function appendBoardTransitions(task, before, by) {
+// The last state board.jsonl recorded for each key. Read rather than remembered: the two
+// writers are in different processes, so an in-memory guard would not see the other's line.
+function lastLoggedStates(path) {
+  const last = new Map();
+  try {
+    for (const line of readFileSync(path, 'utf8').split('\n')) {
+      if (!line.trim()) continue;
+      try { const e = JSON.parse(line); if (e && e.key) last.set(String(e.key), String(e.to)); } catch { /* torn line */ }
+    }
+  } catch { /* no board yet */ }
+  return last;
+}
+
+// A ticket is three things and they have to agree: its state (tickets.mjs over task.json), its
+// history (board.jsonl) and its body (docs.mjs's pages). Until now only the first was ever
+// right - board.jsonl froze at tm_open and not one page was written, because both hung off MCP
+// tool calls that the daemon, which owns the loop since v0.16.0, does not make. idol-pm-1
+// (2026-09-22) ran 81 minutes with a DONE story still reading READY and an empty docs directory.
+// This is the one place the whole surface is brought forward, called from the tool boundary and
+// from the daemon's step alike. writeDocs is a pure re-render, so calling it often is cheap and
+// idempotent; a failure to write evidence never fails the run that produced it.
+export function syncTickets(task, before, by) {
+  appendBoardTransitions(task, before, by);
+  try { writeDocs(task); } catch { /* evidence, not a dependency - same rule as record() */ }
+}
+
+export function appendBoardTransitions(task, before, by) {
   const after = ticketSnapshot(task);
   const path = join(taskDir(task.run_id), 'board.jsonl');
+  // Two writers now reach this: finish(), which snapshots around one node settling, and the
+  // daemon, which snapshots around a whole step containing it. Their windows overlap, so the
+  // same move is seen twice. The board is the ground truth for what it has already said, so a
+  // transition into a state a key is already logged at is a re-observation, not a new move.
+  const logged = lastLoggedStates(path);
   for (const [key, to] of Object.entries(after)) {
     const from = before[key] || null;
     if (from === to) continue;
+    if (logged.get(key) === to) continue;
     try {
       mkdirSync(taskDir(task.run_id), { recursive: true });
       appendFileSync(path, JSON.stringify({ ts: Date.now(), key, from, to, by: String(by || 'tm') }) + '\n');
@@ -2938,7 +3003,7 @@ function callTool(name, args) {
   const out = dispatch(name, a);
   const taskId = (out && out.task_id) || a.task_id;
   if (taskId) {
-    try { appendBoardTransitions(mustFindTask({ task_id: taskId }), before, a.node_id || name); } catch { /* best-effort, like record() */ }
+    try { syncTickets(mustFindTask({ task_id: taskId }), before, a.node_id || name); } catch { /* best-effort, like record() */ }
     // A mutation may have just turned a blocked task running again (tm_retry, tm_file) or opened
     // a brand-new one (tm_open, tm_run): re-check right after, not only on the NEXT call in, so a
     // caller that never polls again still leaves the task with a live daemon behind it.

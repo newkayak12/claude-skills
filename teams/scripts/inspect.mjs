@@ -5,6 +5,7 @@
 //
 //     (no option)     the report: manager chain, every child run, artifacts, skills audit
 //     --skills        the skills audit alone - asked vs actually loaded, per skill
+//     --tickets       the ticket board alone - each ticket's state now, then every transition
 //     --node <id>     one node in full: its prompt path, its result JSON, what it wrote
 //     --docs          the phase-document tree and which pages exist yet
 //     --json          the whole model as JSON, for a script rather than a person
@@ -27,6 +28,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const v = argv[i];
     if (v === '--skills') a.skills = true;
+    else if (v === '--tickets') a.tickets = true;
     else if (v === '--docs') a.docs = true;
     else if (v === '--json') a.json = true;
     else if (v === '--node') a.node = argv[++i];
@@ -97,6 +99,23 @@ function renderNodeDetail(model, nodeId) {
   return out.join('\n');
 }
 
+
+function renderTickets(model) {
+  const t = model.tickets || { current: [], history: [] };
+  const out = [`TICKETS  ${t.current.length} ticket(s), ${t.history.length} transition(s) logged`];
+  for (const row of t.current) out.push(`  ${pad(row.key, 22)} ${pad(row.kind, 6)} ${pad(row.state, 12)} ${trunc(row.title, 50)}`);
+  if (!t.history.length) {
+    out.push('  (no transitions logged - the board records a ticket move only when something writes one)');
+    return out.join('\n');
+  }
+  out.push('  HISTORY');
+  for (const h of t.history) {
+    const at = new Date(h.ts || 0).toISOString().slice(11, 19);
+    out.push(`    ${at}  ${pad(String(h.key || '?'), 22)} ${pad(String(h.from || '-'), 12)} -> ${pad(String(h.to || '?'), 12)} by ${h.by || '?'}`);
+  }
+  return out.join('\n');
+}
+
 export function renderReport(model) {
   const out = [];
   const roles = Object.entries(model.roles).map(([k, v]) => `${k}=${v ? 'on' : 'off'}`).join(' ') || '(none)';
@@ -121,6 +140,8 @@ export function renderReport(model) {
     for (const a of model.artifacts) out.push(`  ${a.exists ? 'OK' : '??'} ${pad(a.path, 52)} ${a.by.join(' ')}`);
   }
   out.push('');
+  out.push(renderTickets(model));
+  out.push('');
   out.push(renderDocs(model));
   out.push('');
   out.push(renderSkills(model));
@@ -130,7 +151,7 @@ export function renderReport(model) {
 function main() {
   const a = parseArgs(process.argv.slice(2));
   if (!a.path) {
-    process.stderr.write('usage: node scripts/inspect.mjs <workspace|tasks-dir|task-dir> [--skills] [--docs] [--node <id>] [--task <id>] [--json]\n');
+    process.stderr.write('usage: node scripts/inspect.mjs <workspace|tasks-dir|task-dir> [--skills] [--tickets] [--docs] [--node <id>] [--task <id>] [--json]\n');
     process.exit(2);
   }
   const found = findTasks(a.path);
@@ -146,6 +167,7 @@ function main() {
     if (a.json) chunks.push(JSON.stringify(model, null, 2));
     else if (a.node) chunks.push(renderNodeDetail(model, a.node));
     else if (a.skills) chunks.push(renderSkills(model));
+    else if (a.tickets) chunks.push(renderTickets(model));
     else if (a.docs) chunks.push(renderDocs(model));
     else chunks.push(renderReport(model));
   }
