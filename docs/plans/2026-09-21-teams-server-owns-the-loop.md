@@ -289,6 +289,8 @@ gate 반려              -               14  (P1×1, P2×2, P3×2, integrate×1 
 
 결과는 여기 아래에 추가.
 
+**P1 첫 시도 (00:06Z 시작, 메모리 압박으로 드라이버·데몬 함께 종료됨) — 기획 하네스 버그 1:** PLAN 자식 런이 `flow: plan`인데 노드가 `implement:U1/test:U1/gate:U1, implement:U2, draft:U3`였다. 자식 런을 여는 `openChild`가 모든 패키지에 `mixed: true`를 주어 plan 노드가 "구현하라"는 요청을 develop 서브골로 분해했고, `childContext`에 planning 분기가 없어 "이건 계획할 대상"이라는 말이 어디에도 없었다. 0.17.1: phase-Team 런은 `mixed:false`, planning context 추가, 회귀 테스트. P1 재시작.
+
 ## 9. 반론과 리스크
 
 - **"서버가 `claude -p`를 노드마다 띄우면 프로세스 기동 비용이 있다."** 지금도 driver마다 띄운다. 노드 수만큼 띄우면 횟수는 늘지만 각 호출이 짧고, 릴레이 3턴이 사라진 순감소가 더 크다. 실측으로 확인(단계 5).

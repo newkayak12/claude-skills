@@ -1077,6 +1077,12 @@ function childContext(task, pkg) {
     lines.push(`The goal-level integration checks were run on this tree and FAILED. What failed is in your request above. Your job is to make those checks pass.`);
     lines.push(`Every package's files are yours to touch - that is the point of this package. The defect lives in the seam between packages, which is why no package could repair it in its own worktree.`);
     lines.push(`Do not undo another package's work to get the checks green. Reconcile them: change the least that makes the combined tree true.`);
+  } else if (pkg.phase === 'planning') {
+    // Without this the planning run reads a request that says "implement ..." and does exactly
+    // that (first real-vendor run, 2026-09-22: the PLAN child opened implement/test/gate chains
+    // and started building the CLI). The request is the thing to PLAN, not the thing to do.
+    lines.push(`This is the planning phase-Team. The request above describes work that OTHER packages will build later; your deliverable is the PRD for it - the problem, the users, user stories with acceptance criteria an engineer can build from, scope and non-goals, risks and open questions - not the implementation.`);
+    lines.push(`Change no source files. This run works directly in the project root, and nothing you write besides the PRD document itself is kept. The user_stories[] you return are what the manager hands to the shape stage that splits the work into packages.`);
   } else if (pkg.phase === 'qa') {
     lines.push(`This worktree is the COMBINED tree of every package in this task: all of their branches are already merged here, on the integration branch itself.`);
     lines.push(`This is the goal-level QA pass, run once over the integrated result. Exercise it the way a user would and report what you find.`);
@@ -1537,7 +1543,10 @@ export function openChild(task, n) {
     context: childContext(task, pkg),
     isolated: true,
     flow,
-    mixed: true,
+    // A phase-Team run is pinned to its flow's kind: a planning run writes a PRD, a qa run
+    // runs cases, an audit run audits. mixed:true here let the first real planning run's own
+    // plan node decompose the request into develop subgoals and start implementing it.
+    mixed: !(pkg.phase === 'planning' || pkg.phase === 'qa' || pkg.phase === 'audit'),
     parent_shaped: parentShaped,
     goal: pkg.title || pkg.brief,
     acceptance: Array.isArray(pkg.acceptance) && pkg.acceptance.length ? pkg.acceptance : null,
