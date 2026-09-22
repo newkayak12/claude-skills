@@ -1046,7 +1046,18 @@ export function runState(run) {
   // let a spec retry that rebuilt no nodes report itself complete having implemented
   // nothing - the worst kind of failure, because it looks like success.
   const reports = run.nodes.filter((n) => n.stage === 'report');
-  if (reports.some((n) => n.state === 'done')) return withVerdict({ state: 'complete', counts });
+  if (reports.some((n) => n.state === 'done')) {
+    // `complete` says the graph terminated normally; on its own it does not say the run
+    // delivered. A report is also written over a settled failure - a retry budget ran out,
+    // settleFailure released everything downstream as unreachable, and the report says plainly
+    // what did not ship (idol-pm-1, 2026-09-22: three shaping attempts, zero packages
+    // dispatched, and every machine-readable surface above the prose reading success). `settled`
+    // carries that distinction without changing the state string, so no caller switching on
+    // 'complete' flips behaviour while every surface that wants the truth can ask for it. The
+    // ticket layer's SETTLED is the same fact, named for a board.
+    const settled = counts.unreachable > 0;
+    return withVerdict(settled ? { state: 'complete', settled: true, counts } : { state: 'complete', counts });
+  }
   if (run.routing_blocked && !counts.running) return withVerdict({ state: 'blocked', counts });
   // Blocked means nothing can proceed - not merely that nothing is pending. A node
   // waiting on a dependency that failed is still pending and still stuck.

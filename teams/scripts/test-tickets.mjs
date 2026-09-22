@@ -460,6 +460,46 @@ test('TASK ticket state generalizes to the planning kind (investigate/draft/revi
 
 // ---------- helpers used by tm_board/tm_ticket/docs.mjs ----------
 
+test('EPIC SETTLED is read off delivery, not off whether a failure left an unreachable node', () => {
+  // The idol-pm-1 shape: a report written over a run that accepted nothing. The first version of
+  // this rule asked whether any node was `unreachable`, which is the wreckage a failure happens
+  // to leave rather than the question that matters.
+  const shaped = (nodes, packages) => {
+    const t = baseTask(nodes);
+    t.spec = { packages };
+    return t;
+  };
+  const reportDone = [
+    node('size', 'size', [], { state: 'done', result: {} }),
+    node('shape', 'shape', ['size'], { state: 'done', result: {} }),
+    node('report', 'report', [], { state: 'done', result: {} }),
+  ];
+
+  // Two declared packages, neither accepted, nothing marked unreachable: still SETTLED.
+  assert.equal(epicTicketState(shaped([
+    ...reportDone,
+    node('accept:P1:1', 'accept', [], { subgoal_id: 'P1', state: 'failed', result: { accept: false } }),
+    node('accept:P2:1', 'accept', [], { subgoal_id: 'P2', state: 'pending' }),
+  ], [{ id: 'P1' }, { id: 'P2' }])), 'SETTLED');
+
+  // One of the two accepted is delivery: the EPIC finished with something to show.
+  assert.equal(epicTicketState(shaped([
+    ...reportDone,
+    node('accept:P1:1', 'accept', [], { subgoal_id: 'P1', state: 'done', result: { accept: true } }),
+    node('accept:P2:1', 'accept', [], { subgoal_id: 'P2', state: 'failed', result: { accept: false } }),
+  ], [{ id: 'P1' }, { id: 'P2' }])), 'DONE');
+
+  // An unreachable node still settles it, whatever else is true - that path is unchanged.
+  assert.equal(epicTicketState(shaped([
+    ...reportDone,
+    node('accept:P1:1', 'accept', [], { subgoal_id: 'P1', state: 'done', result: { accept: true } }),
+    node('accept:P2:1', 'accept', [], { subgoal_id: 'P2', state: 'unreachable' }),
+  ], [{ id: 'P1' }, { id: 'P2' }])), 'SETTLED');
+
+  // A task that declared no packages had nothing to deliver and is not judged this way.
+  assert.equal(epicTicketState(shaped(reportDone, [])), 'DONE');
+});
+
 test('epicPhase follows §6\'s phase table: plan/setgoal before shape, impl while only dispatch exists, qualitygate once integrate/gate:goal exists, null once done', () => {
   assert.equal(epicPhase(baseTask([node('size', 'size', [])])), 'plan');
   assert.equal(epicPhase(baseTask([

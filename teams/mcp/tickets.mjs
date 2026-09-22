@@ -193,7 +193,17 @@ export function epicTicketState(task) {
     // The report's prose was honest; every machine-readable surface above it said success, which
     // is the one failure mode runState's own comment calls the worst kind. SETTLED is "finished,
     // and it did not deliver": a terminal state like DONE, never confused with it.
-    return task.nodes.some((n) => n.state === 'unreachable') ? 'SETTLED' : 'DONE';
+    //
+    // Delivery is the test, not the wreckage. Reading SETTLED off the presence of an
+    // `unreachable` node asks whether a failure left a trace, and a run that reaches report
+    // having accepted nothing by some other route leaves none - it reads DONE again. So ask the
+    // question directly: did any package the shape declared come back accepted? A task whose
+    // spec declared no packages at all is not judged this way - there was nothing to deliver.
+    const declared = (task.spec && task.spec.packages || []).length > 0;
+    const delivered = task.nodes.some((n) => n.stage === 'accept' && n.state === 'done'
+      && n.result && n.result.accept === true);
+    if (task.nodes.some((n) => n.state === 'unreachable')) return 'SETTLED';
+    return declared && !delivered ? 'SETTLED' : 'DONE';
   }
   if (runState(task).state === 'blocked') return 'BLOCKED';
   if (!task.spec) return 'READY';
