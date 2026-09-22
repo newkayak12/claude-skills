@@ -775,6 +775,12 @@ test('roles.qa inserts a QA phase-Team between integrate and gate:goal, reusing 
     assert.equal(qa.package_id, 'QA');
     assert.equal(qa.cwd, integ.node.integration.cwd, "QA reuses integrate's worktree, not a fresh one");
 
+    // Pinned the same way the PLAN child run is (see "the PLAN child run is pinned to the plan
+    // flow (mixed:false)" above): a QA phase-Team run may not mix in develop subgoals either -
+    // its own plan node must not be free to decompose the request into implementation work.
+    const qaRun = JSON.parse(readFileSync(join(qa.cwd, '.teams_output', 'broker', 'runs', `${qa.run_id}.json`), 'utf8'));
+    assert.equal(qaRun.mixed, false, 'the QA child run may not mix in develop subgoals');
+
     const sub = (node_id, payload) => g.call('team_submit', { run_id: qa.run_id, cwd: qa.cwd, node_id, payload: ok(payload) });
     await sub('plan', { handoff: 'p', flow: 'qa', size: 'S' });
     await sub('setgoal', { spec: { goal: 'QA', acceptance: ['no regressions'], subgoals: [{ id: 'Q1', title: 'run cases', acceptance: ['cases run'], deps: [] }] } });
@@ -930,24 +936,48 @@ test('tm_file lets a user file a STORY directly, reporter: "you", never checked 
   await withTask(async ({ tm, g, root, task_id }) => {
     await toIntegrate(tm, g, task_id);
     await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
-    let nx = await tm.call('tm_next', { task_id });
-    assert.deepEqual(nx.ready.map((n) => n.node_id), ['gate:goal:1']);
 
+    // Drive the task past qa_rounds:0 first: the very first QA round's own defect is already
+    // over the cap, so the accept:QA:1 hook records it (task.unresolved_defects) instead of
+    // filing it as a package. This proves the cap is live on this task before tm_file is asked
+    // to prove it does not apply to tm_file at all.
+    let nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children.length, 1);
+    const qa1 = nx.children[0];
+    assert.equal(qa1.package_id, 'QA');
+    await completeQaChild(g, qa1, { accept: true, match_pct: 95 });
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:QA:1' });
+    const accepted1 = await tm.call('tm_submit', { task_id, node_id: 'accept:QA:1', payload: ok({
+      accept: true, match_pct: 95,
+      defects: [{ title: 'checkout crashes on empty cart', touches: [], deps: [], evidence: 'e', severity: 'high' }],
+    }) });
+    assert.equal(accepted1.state, 'done', JSON.stringify(accepted1));
+
+    let task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.deepEqual(task.spec.packages.map((p) => p.id), ['P1', 'P2'], 'qa_rounds:0 caps the very first QA round - no defect package is filed from it');
+    assert.deepEqual(task.unresolved_defects, [{ title: 'checkout crashes on empty cart', touches: [], deps: [], evidence: 'e', severity: 'high', round: 1 }]);
+
+    nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['gate:goal:1'], 'the capped QA round still lets the EPIC proceed to the goal gate');
+
+    // A user files a STORY at exactly the point a QA-reported defect was just refused - tm_file
+    // must file it anyway, uncapped.
     const filed = await tm.call('tm_file', { task_id, stories: [
       { title: 'add a missing edge case', touches: ['b.txt'], deps: [], evidence: 'manual repro', severity: 'medium' },
     ] });
     assert.deepEqual(filed.filed, ['D1']);
     assert.equal(filed.integrate, 'integrate:2');
 
-    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
     const d1 = task.spec.packages.find((p) => p.id === 'D1');
+    assert.ok(d1, 'tm_file must file the STORY even though qa_rounds is already spent on this task');
     assert.equal(d1.reporter, 'you');
     assert.deepEqual(task.nodes.find((n) => n.node_id === 'gate:goal:1').deps, ['integrate:2']);
 
     nx = await tm.call('tm_next', { task_id });
     assert.equal(nx.children.length, 1);
     assert.equal(nx.children[0].package_id, 'D1');
-  });
+  }, { roles: { qa: true }, qa_rounds: 0 });
 });
 
 test('tm_file refuses before the task has a shape, and refuses an empty stories[]', async () => {
@@ -1190,6 +1220,38 @@ test('below the cap, independent ready dispatches still open at once (regression
     assert.equal(nx.children.length, 2, 'the default max_parallel_teams (2) is not exceeded, so both open immediately, exactly as before this change');
   });
 });
+
+// advanceDispatches' phase-Team exemption (taskmanager.mjs: `if (!isPhaseTeam(n)) continue;`
+// before max_parallel_teams/runningStories are even computed) is deliberately untested here for
+// concurrency, and that is a considered choice, not an oversight - proven live: replacing that
+// function's body with `() => false` leaves this entire suite green (checked by mutation while
+// writing these tests; reverted, not committed). The exemption is unreachable through every real
+// surface (tm_open, tm_submit, tm_next, tm_file, tm_retry) as this codebase stands today, for a
+// structural reason documented at its two load-bearing sites:
+//
+//   1. PLAN's dispatch is ready off `size` alone (taskmanager.mjs's expandPackages/shape wiring),
+//      before `shape` has ever run - no develop package exists yet, so there is nothing running
+//      for it to be concurrent with.
+//   2. QA's and AUDIT's dispatches only ever open from the "integrate just finished" hook
+//      (taskmanager.mjs, the `n.stage === 'integrate' && n.state === 'done'` block) or the
+//      analogous accept:QA-driven reopen - and every integrate node's own deps are exactly the
+//      accept nodes of the packages that fed it (expandPackages for the first integrate,
+//      reintegrateBehind for every later one fileDefects/openRepair opens). reintegrateBehind
+//      does not add a parallel path: it REWRITES every node that depended on the old integrate,
+//      goal.deps included, to depend on the fresh one instead. So by the time any integrate
+//      reaches 'done', every develop dispatch it depended on is already done, not running - the
+//      phase-Team dispatch this opens next can never find a develop STORY dispatch still
+//      in-flight beside it. fileDefects's own comment (above `function fileDefects`) and the
+//      integrate-done hook's comment (above the QA reopen) both spell out this same argument from
+//      the production side; this note is its test-side mirror, recorded so a mutation audit does
+//      not mistake "no test exercises this branch" for "no one decided that on purpose".
+//
+// What would have to change for this to become reachable: a second, independent join point - some
+// way for a develop STORY dispatch to still be 'running' at the moment a DIFFERENT integrate (one
+// that dispatch is not a dependency of) reaches 'done' and opens a phase-Team round. Nothing in
+// tm_open/tm_submit/tm_next/tm_file/tm_retry creates two independent integrates over
+// non-overlapping package sets today; the day one does, this exemption needs a real concurrency
+// test, and this comment stops being the reason one does not exist.
 
 // ---------- the manager's own goal gate has the same floor as the graph engine's ----------
 

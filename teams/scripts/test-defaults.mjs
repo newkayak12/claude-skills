@@ -556,3 +556,85 @@ test('proof: guard D flags the pre-fix toolNext line that re-typed max_parallel_
   const hits = collect(preFix, /\? task\.team\.opts\.max_parallel_teams : (\d+)/g, 'teamsTaskmanager');
   assert.deepStrictEqual(hits.map((x) => x.label), ['teamsTaskmanager']);
 });
+
+// ---------- Guard F: TEAM_DEFAULTS's own declared VALUES, pinned directly ----------
+//
+// Guards A-E above all compare a default against something else - another declared site (A),
+// a delegation shape (B), a documented split (C), a schema's own field list (E). None of them
+// ever reads TEAM_DEFAULTS's own literal and checks it is the value the docs (and every caller
+// who reads them) believe it is. That gap is invisible as long as at least one test somewhere
+// exercises a key's real, un-overridden default - but a key whose every consuming test passes
+// its own explicit override never does, and then a wrong literal ships silently.
+//
+// Proven live during the coverage audit that motivated this guard: changing
+// TEAM_DEFAULTS.qa_rounds from 2 to 3 (teamconfig.mjs) left this whole file green AND left every
+// qa_rounds-sensitive test in test-taskmanager.mjs green, because each one passes qa_rounds
+// explicitly (1 or 0). Changing TEAM_DEFAULTS.roles.qa from true to false did the same to every
+// roles-sensitive test there (each pins roles itself) and to test-teamconfig.mjs's "defaults
+// alone" test (compared the resolved object back against the very TEAM_DEFAULTS object it was
+// built from - a tautology, fixed alongside this guard). The one test that does exercise the real
+// default without overriding it - test-taskmanager.mjs's "tm_open with no roles argument defaults
+// BOTH planning and qa on" - is a real behavioral proof and stays; this guard pins the same fact
+// textually too, so it does not depend on that one test surviving unedited.
+//
+// max_depth and plugin_dirs are the same shape: max_depth's only other reader (taskmanager.mjs's
+// openChild) delegates to TEAM_DEFAULTS.max_depth already (no second literal to agree or
+// disagree with, so guard A does not apply), and today task.depth is always 0, so any default
+// >= 1 is behaviourally identical to any other - a test-taskmanager.mjs test does catch a default
+// of exactly 0 (split:true no longer escaping parent_shaped), but nothing catches a drift to, say,
+// 5. plugin_dirs's only readers (daemon.mjs, taskmanager.mjs) fall back to a re-typed `[]` on a
+// missing task.team/opts, which is harmless only because `[] || []` never actually reaches the
+// fallback - but the shipped default value itself, `[]`, is asserted nowhere.
+//
+// This is a literal source-text extraction of TEAM_DEFAULTS's own declaration, evaluated once
+// (the same `new Function` trick guard E's schemaKeys uses, safe because the literal has no free
+// variables) - not a resolved runtime object, which is exactly what made the teamconfig.mjs test
+// above vacuous.
+function teamDefaultsObject(teamconfigSrc) {
+  // Comment-stripped first: TEAM_DEFAULTS's own comments contain contractions
+  // ("taskmanager.mjs's", "it's") whose odd apostrophe counts would desync extractBalanced's
+  // string-literal tracking if left in - the same reason checkSchemaReachability strips
+  // comments before treating a match as a boundary, even though it reads keys from the
+  // original text.
+  const stripped = stripComments(teamconfigSrc);
+  const m = /const TEAM_DEFAULTS\s*=\s*Object\.freeze\(\s*(\{)/.exec(stripped);
+  if (!m) throw new Error('"const TEAM_DEFAULTS = Object.freeze({" not found - teamconfig.mjs restructured; update this guard');
+  const literal = extractBalanced(stripped, m.index + m[0].length - 1);
+  // TEAM_DEFAULTS.max_parallel_teams reads the named PROVISIONAL_MAX_PARALLEL_TEAMS constant,
+  // not a bare literal - not this guard's concern (it pins qa_rounds/roles/max_depth/plugin_dirs
+  // only), but the literal still has to evaluate, so the identifier is resolved the same way
+  // guard E's schemaKeys already relies on the literal having no OTHER free variables.
+  const pm = /const PROVISIONAL_MAX_PARALLEL_TEAMS\s*=\s*(\d+);/.exec(stripped);
+  if (!pm) throw new Error('"const PROVISIONAL_MAX_PARALLEL_TEAMS = <N>;" not found - teamconfig.mjs restructured; update this guard');
+  // docs_dir's own literal calls join(...) (teamconfig.mjs imports it from node:path) - the same
+  // free-variable situation as PROVISIONAL_MAX_PARALLEL_TEAMS above, resolved the same way.
+  return new Function('PROVISIONAL_MAX_PARALLEL_TEAMS', 'join', `return ${literal}`)(Number(pm[1]), join);
+}
+
+test('TEAM_DEFAULTS pins its own documented default VALUES for the keys no test exercises un-overridden: qa_rounds, roles, max_depth, plugin_dirs', () => {
+  const d = teamDefaultsObject(src('teamconfig'));
+  assert.deepStrictEqual(d.qa_rounds, 2, `qa_rounds default drifted to ${JSON.stringify(d.qa_rounds)} (expected 2)`);
+  assert.deepStrictEqual(d.roles, { planning: true, qa: true }, `roles default drifted to ${JSON.stringify(d.roles)} (expected {planning: true, qa: true})`);
+  assert.deepStrictEqual(d.max_depth, 2, `max_depth default drifted to ${JSON.stringify(d.max_depth)} (expected 2)`);
+  assert.deepStrictEqual(d.plugin_dirs, [], `plugin_dirs default drifted to ${JSON.stringify(d.plugin_dirs)} (expected [])`);
+});
+
+test('proof: guard F catches the qa_rounds 2->3 drift that the coverage audit found live; the real source passes', () => {
+  const real = src('teamconfig');
+  assert.deepStrictEqual(teamDefaultsObject(real).qa_rounds, 2, 'sanity: real source must pass before mutating it');
+
+  const mutated = real.replace('qa_rounds: 2,', 'qa_rounds: 3,');
+  assert.notEqual(mutated, real, 'mutation target text was not found in teams/mcp/teamconfig.mjs - update this proof to match current source');
+
+  assert.notDeepEqual(teamDefaultsObject(mutated).qa_rounds, 2, 'guard F should have caught qa_rounds drifting off 2 - it did not');
+});
+
+test('proof: guard F catches the roles.qa true->false drift that the coverage audit found live; the real source passes', () => {
+  const real = src('teamconfig');
+  assert.deepStrictEqual(teamDefaultsObject(real).roles, { planning: true, qa: true }, 'sanity: real source must pass before mutating it');
+
+  const mutated = real.replace('roles: { planning: true, qa: true },', 'roles: { planning: true, qa: false },');
+  assert.notEqual(mutated, real, 'mutation target text was not found in teams/mcp/teamconfig.mjs - update this proof to match current source');
+
+  assert.notDeepEqual(teamDefaultsObject(mutated).roles, { planning: true, qa: true }, 'guard F should have caught roles.qa drifting off true - it did not');
+});
