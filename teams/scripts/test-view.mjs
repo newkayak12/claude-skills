@@ -37,6 +37,20 @@ function renderIndexHtml(rows, tasksDir) {
   return out.indexBody(rows, tasksDir);
 }
 
+// Same extraction trick as renderIndexHtml, for pkgCard(p, idx) - the per-package card the HTML
+// page renders on a task's own view. Used to pin that the browser and the CLI/text renderer
+// show the SAME storyLinks() facts (view-render-text.mjs's formatLinksLine renders the identical
+// model field, p.links, for the --once/terminal path).
+function renderPkgCardHtml(p, idx = 0) {
+  const html = readFileSync(PAGE_HTML, 'utf8');
+  const body = html.match(/\(function \(\) \{([\s\S]*)\}\)\(\);/)[1].replace(/tick\(\);\s*setInterval\(tick, 3000\);/, '');
+  const sandbox = { location: { search: '' }, URLSearchParams, document: { getElementById: () => null } };
+  const fn = new Function('location', 'URLSearchParams', 'document', 'exportsObj', `${body}\nexportsObj.pkgCard = pkgCard;`);
+  const out = {};
+  fn(sandbox.location, sandbox.URLSearchParams, sandbox.document, out);
+  return out.pkgCard(p, idx);
+}
+
 // ---------- the same fixture recipe test-taskmanager.mjs uses ----------
 
 class Client {
@@ -327,6 +341,20 @@ test('collect() on an L task with one dispatched, accepted child: state derivati
     const p1 = model.packages.find((p) => p.id === 'P1');
     const p2 = model.packages.find((p) => p.id === 'P2');
     assert.ok(p1 && p2, 'both packages appear even though only P1 was dispatched');
+
+    // storyLinks (tickets.mjs), read straight through packageModel (view-collect.mjs) - pinned
+    // exactly, both directions: P2's shape-declared `deps: ['P1']` shows up on P2 as blocked_by
+    // P1 (already DONE) and, the computed inverse, on P1 as blocks P2 - P2's dispatch node is
+    // pending but its own dep (accept:P1:1) is already done, so storyTicketState reads it READY,
+    // not BACKLOG.
+    const epicKeyHere = `E-${task_id.slice(0, 8)}`;
+    assert.deepEqual(p1.links, {
+      blocked_by: [], blocks: [{ key: `${epicKeyHere}/P2`, id: 'P2', state: 'READY' }], implements: [], filed_by: null,
+    });
+    assert.deepEqual(p2.links, {
+      blocked_by: [{ key: `${epicKeyHere}/P1`, id: 'P1', state: 'DONE' }], blocks: [], implements: [], filed_by: null,
+    });
+
     assert.equal(p1.dispatch.state, 'done');
     assert.equal(p1.accept.state, 'done');
     assert.equal(p1.accept.verdict, true);
@@ -667,11 +695,26 @@ test('collect() renders an audit round that found an unmet user story and the ST
     assert.ok(d1, `D1 missing from packages: ${model.packages.map((p) => p.id).join(', ')}`);
     assert.equal(d1.reporter, 'planning-audit');
 
+    // storyLinks end to end: P1/P2 were shaped with implements[] (SHAPE_WITH_IMPLEMENTS, this
+    // fixture's own shape payload), and D1 is the STORY the audit round filed - its own
+    // links.filed_by must read 'planning-audit' straight through packageModel, the same value
+    // d1.reporter already carries (one source, two fields reading it).
+    const p1 = model.packages.find((p) => p.id === 'P1');
+    const p2 = model.packages.find((p) => p.id === 'P2');
+    assert.deepEqual(p1.links.implements, ['US-1']);
+    assert.deepEqual(p2.links.implements, ['US-2']);
+    assert.equal(d1.links.filed_by, 'planning-audit');
+    assert.deepEqual(d1.links.blocked_by, [], 'fileDefects only wires named deps - none were named here');
+
     const text = renderText(model);
     for (const id of everyNodeId(model)) assert.ok(text.includes(id), `renderText output is missing node_id ${id}`);
     assert.match(text, /AUDIT:1[^\n]*unmet=1/);
     assert.match(text, /US-2 -> b\.txt was never wired to the exported path/);
     assert.match(text, /D1[^\n]*\[filed by planning-audit\]/);
+    // P1 has no blocked_by of its own but IS a dep of P2 (TWO_PKG_SHAPE), so it also carries
+    // the computed "blocks" side, on the same compact line as implements.
+    assert.match(text, /P1[^\n]*\n\s+blocks P2 \(DONE\) · implements US-1/);
+    assert.match(text, /P2[^\n]*\n\s+blocked by P1 \(DONE\) · implements US-2/);
   });
 });
 
@@ -723,6 +766,42 @@ test('/state.json carries model.qa for a task with a QA round (the HTML page and
 });
 
 // ---------- text renderer ----------
+
+// A minimal hand-built model (renderModelBody only reads a handful of top-level fields) rather
+// than a real collectTask() fixture - storyLinks' own exact object shape is already pinned in
+// test-tickets.mjs; this only pins how view-render-text.mjs's formatLinksLine turns THAT shape
+// into one line, and that it prints nothing extra when a package carries none of these relations.
+function minimalModel(packages) {
+  return {
+    task_id: 't1', request: 'r', state: 'running', size: 'L', flow: 'develop',
+    cost: {}, elapsed_ms: null, daemon: null, manager_stages: [], packages, qa: null, audit: null, events: [],
+  };
+}
+
+test('renderText(): a package with no relations prints no extra line under its title', () => {
+  const text = renderText(minimalModel([
+    { id: 'P1', title: 'module a', links: { blocked_by: [], blocks: [], implements: [], filed_by: null } },
+  ]));
+  assert.doesNotMatch(text, /blocked by|blocks |implements /);
+});
+
+test('renderText(): blocked_by/blocks/implements render as one compact "·"-joined line; filed_by is not repeated there (already shown as "[filed by X]" on the title line)', () => {
+  const text = renderText(minimalModel([
+    {
+      id: 'P2', title: 'module b', reporter: 'qa',
+      links: {
+        blocked_by: [{ key: 'E-aaaaaaaa/P1', id: 'P1', state: 'DONE' }],
+        blocks: [{ key: 'E-aaaaaaaa/P3', id: 'P3', state: 'BACKLOG' }],
+        implements: ['US-1'],
+        filed_by: 'qa',
+      },
+    },
+  ]));
+  assert.match(text, /P2 - module b \[filed by qa\]/);
+  assert.match(text, /blocked by P1 \(DONE\) · blocks P3 \(BACKLOG\) · implements US-1/);
+  // filed_by must not produce a SECOND "filed by" occurrence - the title line's own is the only one.
+  assert.equal((text.match(/filed by/g) || []).length, 1);
+});
 
 test('renderText() names every node_id the model carries', async () => {
   await withTask(TWO_PKG_SHAPE, async ({ tm, g, root, task_id }) => {
@@ -878,6 +957,42 @@ test('the HTML index page renders one card per EPIC, headlined by epic_key + tit
   // an unreadable task.json still gets a card and a working link, not a crash
   assert.match(html, /<a class="epic-card" href="\/\?task=bbbbbbbb-1111-2222-3333-444444444444">/);
   assert.match(html, /could not read task\.json: missing/);
+});
+
+// The index card intentionally carries NO per-STORY relation detail (blocked by/blocks/
+// implements/filed by) - listTasks()'s row is one EPIC-wide summary (stories done/total, open
+// defect count; see view-collect.mjs's storyProgress), never a per-package breakdown. A STORY's
+// own relations only make sense read against its OWN state, which the index row does not carry
+// at all (epicTicketState is the EPIC's, not any one package's) - showing them here would mean
+// re-deriving per-package facts on a card that has no room to render them meaningfully. They
+// belong on the task view's package cards (pkgCard), where each package already has its own row.
+test('the HTML index card renders no per-STORY link detail (blocked by/blocks/implements/filed by belong on the task view, not the index)', () => {
+  const rows = [
+    { task_id: 'aaaaaaaa-1111-2222-3333-444444444444', epic_key: 'E-aaaaaaaa', title: 'ship the thing', state: 'IN_PROGRESS', phase: 'impl', size: 'L', created_at: Date.now(), elapsed_ms: 60000, cost_usd: 1.23, stories_done: 1, stories_total: 3, open_defects: 2 },
+  ];
+  const html = renderIndexHtml(rows, '/tmp/x');
+  assert.doesNotMatch(html, /blocked by|blocks |implements |filed by/);
+});
+
+// pkgCard (view-page.html) reads the SAME p.links field view-render-text.mjs's formatLinksLine
+// does - pinned here so the browser and the terminal can never quietly disagree about a
+// package's relations.
+test('pkgCard (HTML): no relations -> no extra line; blocked_by/blocks/implements -> one compact line, filed_by left to the existing "[filed by X]" title fragment', () => {
+  const noLinks = renderPkgCardHtml({ id: 'P1', title: 'module a', links: { blocked_by: [], blocks: [], implements: [], filed_by: null } });
+  assert.doesNotMatch(noLinks, /blocked by|blocks |implements /);
+
+  const withLinks = renderPkgCardHtml({
+    id: 'P2', title: 'module b', reporter: 'qa',
+    links: {
+      blocked_by: [{ key: 'E-aaaaaaaa/P1', id: 'P1', state: 'DONE' }],
+      blocks: [{ key: 'E-aaaaaaaa/P3', id: 'P3', state: 'BACKLOG' }],
+      implements: ['US-1'],
+      filed_by: 'qa',
+    },
+  });
+  assert.match(withLinks, /\[filed by qa\]/);
+  assert.match(withLinks, /<div class="muted mono">blocked by P1 \(DONE\) · blocks P3 \(BACKLOG\) · implements US-1<\/div>/);
+  assert.equal((withLinks.match(/filed by/g) || []).length, 1);
 });
 
 test('view.mjs never writes to task.json (read-only)', async () => {

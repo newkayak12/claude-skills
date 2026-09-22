@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { node, pushChain, KINDS, saveRun } from '../mcp/graph.mjs';
 import {
   epicKey, storyKey, docPaths, latestBySubgoal, storyTicketState, epicTicketState,
-  taskTicketState, epicPhase, storyTaskProgress, epicBoardRows, ticketSnapshot,
+  taskTicketState, epicPhase, storyTaskProgress, epicBoardRows, ticketSnapshot, storyLinks,
 } from '../mcp/tickets.mjs';
 
 const TASK_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -447,7 +447,11 @@ test('epicBoardRows renders one row per develop package with role "develop" when
   );
   const rows = epicBoardRows(t);
   assert.equal(rows.length, 1);
-  assert.deepEqual(rows[0], { key: 'E-aaaaaaaa/P1', id: 'P1', title: 'module a', role: 'develop', state: 'DONE', tasks: null, last_verdict: 'accept 91', reporter: 'shape' });
+  assert.deepEqual(rows[0], {
+    key: 'E-aaaaaaaa/P1', id: 'P1', title: 'module a', role: 'develop', state: 'DONE', tasks: null,
+    last_verdict: 'accept 91', reporter: 'shape',
+    links: { blocked_by: [], blocks: [], implements: [], filed_by: null },
+  });
 });
 
 // v0.12.1 Task 1: fileDefects (taskmanager.mjs) sets p.reporter on a filed defect STORY instead
@@ -492,13 +496,17 @@ test('epicBoardRows puts the planning phase-Team row first and the qa phase-Team
   );
   const rows = epicBoardRows(t);
   assert.deepEqual(rows.map((r) => [r.id, r.role]), [['PLAN', 'planning'], ['P1', 'develop'], ['QA', 'qa']]);
-  assert.deepEqual(rows[1], { key: 'E-aaaaaaaa/P1', id: 'P1', title: 'module a', role: 'develop', state: 'DONE', tasks: null, last_verdict: 'accept 91', reporter: 'shape' });
+  assert.deepEqual(rows[1], {
+    key: 'E-aaaaaaaa/P1', id: 'P1', title: 'module a', role: 'develop', state: 'DONE', tasks: null,
+    last_verdict: 'accept 91', reporter: 'shape',
+    links: { blocked_by: [], blocks: [], implements: [], filed_by: null },
+  });
 });
 
 // v0.12.1 Task 2 adds a third phase-Team, the audit - planning's own second pass, opened after
 // integration (and after QA when it is on). It sits last of all: the audit is the final judgement
 // before the goal gate, and a STORY it files is an ordinary develop row in the middle.
-test('epicBoardRows renders the audit phase-Team last, with role "audit", and every phase-Team package carries its own phase as reporter (never "shape")', () => {
+test('epicBoardRows renders the audit phase-Team last, with role "audit", and every phase-Team package reports "engine" (never "shape", never its own phase name)', () => {
   const t = baseTask(
     [
       dispatchNode('PLAN', { state: 'done', result: {} }), acceptNode('PLAN', { state: 'done', result: { accept: true, match_pct: 95 } }),
@@ -515,7 +523,118 @@ test('epicBoardRows renders the audit phase-Team last, with role "audit", and ev
   );
   const rows = epicBoardRows(t);
   assert.deepEqual(rows.map((r) => [r.id, r.role]), [['PLAN', 'planning'], ['P1', 'develop'], ['D1', 'develop'], ['QA', 'qa'], ['AUDIT', 'audit']]);
-  assert.deepEqual(rows.map((r) => [r.id, r.reporter]), [['PLAN', 'planning'], ['P1', 'shape'], ['D1', 'planning-audit'], ['QA', 'qa'], ['AUDIT', 'audit']]);
+  // 'engine' for every phase-Team row - never its own phase name (that would still collide with
+  // a QA-filed defect's reporter 'qa'; see the reporter-collision test below), never 'shape'
+  // (that row never ran through shape at all). D1's own reporter ('planning-audit') is unaffected
+  // - it is a develop STORY the audit filed, not a phase-Team row.
+  assert.deepEqual(rows.map((r) => [r.id, r.reporter]), [['PLAN', 'engine'], ['P1', 'shape'], ['D1', 'planning-audit'], ['QA', 'engine'], ['AUDIT', 'engine']]);
+});
+
+// Since d24b9bb, epicBoardRows gave the QA phase-Team's own row (role: qa) and a develop STORY
+// QA filed (role: develop) the identical reporter string 'qa' - a person reading `reporter`
+// alone (as tm_ticket's own STORY card invites, see toolTicket/tm_ticket) could not tell "the QA
+// run itself" from "a defect QA found" apart. Fixed above by reporting 'engine' for every
+// phase-Team row regardless of which phase; pinned here so the two rows are provably distinct.
+test('a phase-Team row and a filed defect STORY never share a reporter token, even when the phase is "qa"', () => {
+  const t = baseTask(
+    [
+      dispatchNode('QA', { state: 'done', result: {} }), acceptNode('QA', { state: 'done', result: { accept: true, match_pct: 93 } }),
+      dispatchNode('D1', { state: 'done', result: {} }), acceptNode('D1', { state: 'done', result: { accept: true, match_pct: 92 } }),
+    ],
+    {
+      spec: { packages: [{ id: 'D1', title: 'checkout crashes', reporter: 'qa' }] },
+      qa_pkg: { id: 'QA', phase: 'qa', title: 'QA' },
+    },
+  );
+  const rows = epicBoardRows(t);
+  const qaRow = rows.find((r) => r.id === 'QA');
+  const d1Row = rows.find((r) => r.id === 'D1');
+  assert.equal(qaRow.role, 'qa');
+  assert.equal(d1Row.role, 'develop');
+  assert.equal(d1Row.reporter, 'qa', 'a QA-filed defect STORY still reports \'qa\' - FILED_REPORTERS is load-bearing elsewhere (view-collect.mjs, docs, tests)');
+  assert.notEqual(qaRow.reporter, d1Row.reporter, 'the QA phase-Team row must not share reporter \'qa\' with a STORY QA filed');
+  assert.equal(qaRow.reporter, 'engine');
+});
+
+// ---------- storyLinks: blocked by / blocks / implements / filed by ----------
+
+// "blocked by" reads a package's own p.deps (shape's own field), each resolved to that
+// sibling's CURRENT storyTicketState - not merely that a dep was declared. "blocks" is the
+// inverse, computed by scanning every OTHER package for a dep naming this one - never stored.
+test('storyLinks: blocked_by/blocks resolve to the sibling\'s own current storyTicketState, and blocks is the computed inverse of blocked_by', () => {
+  const t = baseTask(
+    [
+      dispatchNode('P1', { state: 'done', result: {} }), acceptNode('P1', { state: 'done', result: { accept: true, match_pct: 91 } }),
+      dispatchNode('P2', { deps: ['accept:P1:1'] }),
+    ],
+    { spec: { packages: [{ id: 'P1', title: 'module a' }, { id: 'P2', title: 'module b', deps: ['P1'] }] } },
+  );
+  assert.deepEqual(storyLinks(t, 'P1'), {
+    blocked_by: [],
+    blocks: [{ key: 'E-aaaaaaaa/P2', id: 'P2', state: 'READY' }],
+    implements: [],
+    filed_by: null,
+  });
+  assert.deepEqual(storyLinks(t, 'P2'), {
+    blocked_by: [{ key: 'E-aaaaaaaa/P1', id: 'P1', state: 'DONE' }],
+    blocks: [],
+    implements: [],
+    filed_by: null,
+  });
+});
+
+// A dep that has NOT cleared yet must still show up in blocked_by/blocks - the whole point of
+// naming the relation is showing what a BACKLOG STORY is waiting on, not only a cleared one.
+test('storyLinks: an unmet dep still appears in blocked_by/blocks, with the sibling\'s own (not-yet-DONE) state', () => {
+  const t = baseTask(
+    [dispatchNode('P1', { state: 'running' }), dispatchNode('P2', { deps: ['accept:P1:1'] })],
+    { spec: { packages: [{ id: 'P1', title: 'module a' }, { id: 'P2', title: 'module b', deps: ['P1'] }] } },
+  );
+  assert.deepEqual(storyLinks(t, 'P2').blocked_by, [{ key: 'E-aaaaaaaa/P1', id: 'P1', state: 'IN_PROGRESS' }]);
+  assert.deepEqual(storyLinks(t, 'P1').blocks, [{ key: 'E-aaaaaaaa/P2', id: 'P2', state: 'BACKLOG' }]);
+});
+
+test('storyLinks: implements is p.implements verbatim (planning\'s PRD user-story ids), [] when shape declared none', () => {
+  const t = baseTask(
+    [dispatchNode('P1', { state: 'done', result: {} }), acceptNode('P1', { state: 'done', result: { accept: true, match_pct: 91 } })],
+    { spec: { packages: [{ id: 'P1', title: 'module a', implements: ['US-1', 'US-2'] }] } },
+  );
+  assert.deepEqual(storyLinks(t, 'P1').implements, ['US-1', 'US-2']);
+  const t2 = baseTask(
+    [dispatchNode('P1', { state: 'done', result: {} }), acceptNode('P1', { state: 'done', result: { accept: true, match_pct: 91 } })],
+    { spec: { packages: [{ id: 'P1', title: 'module a' }] } },
+  );
+  assert.deepEqual(storyLinks(t2, 'P1').implements, []);
+});
+
+test('storyLinks: filed_by is p.reporter (\'qa\'/\'you\'/\'planning-audit\'), null for a package shape declared itself', () => {
+  const t = baseTask(
+    [
+      dispatchNode('P1', { state: 'done', result: {} }), acceptNode('P1', { state: 'done', result: { accept: true, match_pct: 91 } }),
+      dispatchNode('D1', { state: 'done', result: {} }), acceptNode('D1', { state: 'done', result: { accept: true, match_pct: 92 } }),
+    ],
+    { spec: { packages: [{ id: 'P1', title: 'module a' }, { id: 'D1', title: 'checkout crashes', reporter: 'qa' }] } },
+  );
+  assert.equal(storyLinks(t, 'P1').filed_by, null);
+  assert.equal(storyLinks(t, 'D1').filed_by, 'qa');
+});
+
+// epicBoardRows must expose storyLinks as `links` on every row it renders - one source of truth
+// both tm_board and view.mjs read, not two computations that could drift apart.
+test('epicBoardRows exposes storyLinks() as `links` on every row, matching storyLinks() called directly', () => {
+  const t = baseTask(
+    [
+      dispatchNode('P1', { state: 'done', result: {} }), acceptNode('P1', { state: 'done', result: { accept: true, match_pct: 91 } }),
+      dispatchNode('P2', { deps: ['accept:P1:1'] }),
+    ],
+    { spec: { packages: [{ id: 'P1', title: 'module a' }, { id: 'P2', title: 'module b', deps: ['P1'], implements: ['US-1'] }] } },
+  );
+  const rows = epicBoardRows(t);
+  assert.deepEqual(rows.find((r) => r.id === 'P1').links, storyLinks(t, 'P1'));
+  assert.deepEqual(rows.find((r) => r.id === 'P2').links, storyLinks(t, 'P2'));
+  assert.deepEqual(rows.find((r) => r.id === 'P2').links, {
+    blocked_by: [{ key: 'E-aaaaaaaa/P1', id: 'P1', state: 'DONE' }], blocks: [], implements: ['US-1'], filed_by: null,
+  });
 });
 
 test('ticketSnapshot maps every known key (EPIC + each STORY) to its current state - the input a board.jsonl diff is taken over', () => {

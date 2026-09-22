@@ -14,7 +14,7 @@ import { driverCostOf, collectDriverCosts } from '../bench/lib/drivercost.mjs';
 // STORY rows) rather than inventing a second one - the same words tm_board and tm_ticket already
 // use, so a person moving between the index and those MCP tools never has to re-learn what
 // "IN_PROGRESS" or "E-d0ee9043" means.
-import { epicKey, epicTicketState, epicPhase, epicBoardRows } from '../../mcp/tickets.mjs';
+import { epicKey, epicTicketState, epicPhase, epicBoardRows, storyLinks } from '../../mcp/tickets.mjs';
 
 // ---------- small read helpers, all fail soft ----------
 
@@ -145,7 +145,11 @@ function collectNestedTasks(cwd, visiting) {
   return out;
 }
 
-function packageModel(pkg, dispatchNode, acceptNode, visiting) {
+// `links` is tickets.mjs's own storyLinks(task, pkg.id) - the one source of truth for "blocked
+// by / blocks / implements / filed by" (see that function's comment). Read here, not
+// re-derived: a second computation of the same relations from pkg.deps is exactly the kind of
+// split default this codebase's own tests exist to catch (see test-defaults.mjs).
+function packageModel(task, pkg, dispatchNode, acceptNode, visiting) {
   const child = dispatchNode && dispatchNode.child
     ? {
       run_id: dispatchNode.child.run_id,
@@ -166,6 +170,7 @@ function packageModel(pkg, dispatchNode, acceptNode, visiting) {
     // way a human looking at the board can tell "this STORY exists because QA/audit found
     // something" apart from "this STORY is part of the original plan".
     reporter: pkg.reporter || null,
+    links: storyLinks(task, pkg.id),
     dispatch: dispatchNode ? nodeSummary(dispatchNode) : null,
     accept: acceptNode ? nodeSummary(acceptNode) : null,
     child,
@@ -191,7 +196,7 @@ function collectPhaseRounds(task, pkg, subgoalId, visiting) {
     const attempt = dispatchNode.attempt || 1;
     const accepts = task.nodes.filter((n) => n.stage === 'accept' && n.subgoal_id === subgoalId && (n.attempt || 1) === attempt);
     const acceptNode = accepts[accepts.length - 1] || null;
-    const pm = packageModel(pkg, dispatchNode, acceptNode, visiting);
+    const pm = packageModel(task, pkg, dispatchNode, acceptNode, visiting);
     const r = (acceptNode && acceptNode.result) || {};
     // 'defects' (QA) and 'unmet' (audit) are the two shapes fileDefects() itself reads off a
     // finished accept node (taskmanager.mjs) - counted here, not left buried in accept.result,
@@ -267,7 +272,7 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
       const accepts = task.nodes.filter((n) => n.stage === 'accept' && n.subgoal_id === pkg.id)
         .sort((a, b) => (a.attempt || 1) - (b.attempt || 1));
       const acceptNode = accepts[accepts.length - 1] || null;
-      packages.push(packageModel(pkg, dispatchNode, acceptNode, visiting));
+      packages.push(packageModel(task, pkg, dispatchNode, acceptNode, visiting));
     }
   }
 

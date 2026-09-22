@@ -33,6 +33,29 @@ function indentBlock(indent, text) {
   return String(text).split('\n').map((l) => line(indent, l)).join('\n');
 }
 
+// storyLinks (tickets.mjs), compacted onto one optional line per package card: "blocked by"/
+// "blocks" name a sibling STORY id plus its OWN current ticket state (not just that a dep
+// exists - whether it has actually cleared), "implements" names the PRD user stories this
+// package satisfies. `filed_by` is deliberately left out of this line - the package header
+// line already prints it as "[filed by X]" (see renderModelBody below); repeating it here
+// would be the same fact twice on the same card. Empty string (never a line with nothing on
+// it) when a package has none of these - an ordinary, unblocked, unrelated package with no PRD
+// story renders no extra line at all.
+function formatLinksLine(links) {
+  if (!links) return '';
+  const bits = [];
+  if (links.blocked_by && links.blocked_by.length) {
+    bits.push(`blocked by ${links.blocked_by.map((l) => `${l.id} (${l.state})`).join(', ')}`);
+  }
+  if (links.blocks && links.blocks.length) {
+    bits.push(`blocks ${links.blocks.map((l) => `${l.id} (${l.state})`).join(', ')}`);
+  }
+  if (links.implements && links.implements.length) {
+    bits.push(`implements ${links.implements.join(', ')}`);
+  }
+  return bits.join(' · ');
+}
+
 function renderNode(n, indent, out) {
   const bits = [`[${mark(n.state)}] ${n.node_id}`, `(${n.stage})`];
   if (n.elapsed_ms != null) bits.push(fmtMs(n.elapsed_ms));
@@ -71,6 +94,8 @@ function renderModelBody(m, indent, out) {
   out.push(line(indent, 'packages:'));
   for (const p of m.packages || []) {
     out.push(line(indent + 1, `${p.id}${p.title ? ' - ' + p.title : ''}${p.phase ? ` (${p.phase})` : ''}${p.reporter ? ` [filed by ${p.reporter}]` : ''}`));
+    const linksLine = formatLinksLine(p.links);
+    if (linksLine) out.push(line(indent + 2, linksLine));
     if (p.brief) out.push(indentBlock(indent + 2, p.brief));
     if (p.dispatch) renderNode(p.dispatch, indent + 2, out);
     if (p.accept) renderNode(p.accept, indent + 2, out);

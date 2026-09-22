@@ -73,13 +73,21 @@ started a child run.
 `reporter` says where a row came from. For a `develop` row: `shape` is original scope, `repair`
 is an integration seam, and `qa`, `planning-audit` and `you` are filed stories — a defect QA
 found, a user story the audit found unmet, and one filed by hand through `tm_file`. A
-`planning`/`qa`/`audit` row (its `role` reads the same) reports itself the same way — that row IS
-the phase-Team run, not shape's output. That means `reporter: qa` shows up on two different kinds
-of row: the QA phase-Team's own run (`role: qa`) and a `develop` STORY that QA filed as a defect
-(`role: develop`) — read `role` alongside `reporter` to tell them apart, never `reporter` alone.
-Anything but `shape` (and not a phase-Team's own row) is work the EPIC grew after shaping; call it
-out in prose under the table.
+`planning`/`qa`/`audit` row always reports `engine` — it exists because that role switch is on,
+not because anything was filed, and `role` already says which phase it is. `reporter` and `role`
+never collide: `engine` is never a valid filed-story reporter, so `reporter: qa` always means a
+`develop` STORY QA filed, never the QA phase-Team's own row. Anything but `shape` (and not a
+phase-Team's own row) is work the EPIC grew after shaping; call it out in prose under the table.
 `daemon` prints `none` when the task has none yet.
+
+Each STORY row also carries its relations to every other STORY (`links`, from `tickets.mjs`'s
+`storyLinks`): `blocked_by`/`blocks` name a sibling STORY key plus that sibling's OWN current
+state (not just that a dep was declared — whether it has actually cleared; `blocks` is the
+computed inverse of `blocked_by`, never a separate source of truth), `implements` names the PRD
+user-story ids (`US-1`, …) this STORY was shaped to satisfy when `roles.planning` is on, and
+`filed_by` repeats `reporter` under the same name `tickets.mjs` uses elsewhere. Render them only
+when the human asks for a STORY's detail (see `ticket`) or when something is actually waiting on
+something else — an ordinary row with none of these needs no extra text in the table above.
 
 ## What Claude Does
 

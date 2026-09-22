@@ -298,6 +298,48 @@ function boardPackages(task) {
   ];
 }
 
+// storyLinks(): the relations §4/§7c never surfaced anywhere a human looks - one STORY's own
+// state answers "is it done", never "what is it waiting on, what is waiting on it, what PRD
+// story it satisfies, or who filed it".
+//
+// "blocked_by" is this package's own p.deps (the sibling package ids shape - or fileDefects, via
+// its own `deps` field - wired onto it; see the packages[] schema in taskmanager.mjs), each
+// resolved to THAT sibling's own storyTicketState. This is not a new fact: expandPackages wires
+// the very same ids onto the dispatch node's own `.deps`, and storyTicketState's
+// `unmetDeps(task, dispatch).length ? 'BACKLOG' : 'READY'` already reads them to decide whether
+// the STORY itself can run - storyLinks only names, per sibling, the fact that check already
+// collapses into one BACKLOG/READY bit.
+//
+// "blocks" is the inverse, computed by scanning every OTHER package (boardPackages - the same
+// stitched-in planning/qa/audit list epicBoardRows and ticketSnapshot already share) for a dep
+// naming this one. Never stored: storing it would make it a second copy of what p.deps already
+// says, exactly the "second source of truth" this module's own header rules out.
+//
+// "implements" is p.implements - the PRD user-story ids (US-1, ...) shape wired a package to when
+// roles.planning is on (see the packages[].implements schema, taskmanager.mjs); [] when planning
+// is off or shape declared none for this package.
+//
+// "filed_by" is p.reporter - the same field epicBoardRows' own `reporter` column reads to tell a
+// filed defect/unmet-story STORY (fileDefects, taskmanager.mjs) from shape's original scope; null
+// for a package shape declared itself (the same falsy epicBoardRows already treats as "nothing to
+// report").
+export function storyLinks(task, pkgId) {
+  const id = String(pkgId);
+  const all = boardPackages(task);
+  const pkg = all.find((p) => String(p.id) === id) || null;
+  const linkOf = (otherId) => ({ key: storyKey(task.run_id, otherId), id: otherId, state: storyTicketState(task, otherId) });
+  const blocked_by = ((pkg && pkg.deps) || []).map(String).map(linkOf);
+  const blocks = all
+    .filter((p) => String(p.id) !== id && (p.deps || []).map(String).includes(id))
+    .map((p) => linkOf(String(p.id)));
+  return {
+    blocked_by,
+    blocks,
+    implements: (pkg && Array.isArray(pkg.implements)) ? pkg.implements.map(String) : [],
+    filed_by: (pkg && pkg.reporter) || null,
+  };
+}
+
 // One row per package, for tm_board's STORY table. role is p.phase || 'develop'.
 export function epicBoardRows(task) {
   return boardPackages(task).map((p) => {
@@ -315,11 +357,16 @@ export function epicBoardRows(task) {
       last_verdict: last,
       // A filed defect STORY (fileDefects, taskmanager.mjs - QA-found or tm_file) carries its own
       // reporter ('qa'/'you'/'planning-audit'); a phase-Team package (PLAN/QA/AUDIT) carries
-      // p.phase but never p.reporter, and reported itself, not shape - falling through to 'shape'
-      // mislabeled it as if the shape stage had produced it (it never runs through shape at all;
-      // see boardPackages above). Everything genuinely left is either a repair package (its
-      // worktree IS the integration tree, never filed as a STORY) or shape's own original scope.
-      reporter: p.reporter || (p.repair ? 'repair' : (p.phase || 'shape')),
+      // p.phase but never p.reporter, and reported itself, not shape - falling through to p.phase
+      // used to mislabel it 'qa' for the QA phase-Team row, the exact same string a QA-filed
+      // defect STORY's own reporter carries (see FILED_REPORTERS, view-collect.mjs) - two
+      // different kinds of row, one token, no way to tell them apart by reporter alone. 'engine'
+      // is honest instead of a phase name: this row exists because a role (roles.planning/
+      // roles.qa) is on, not because anything was filed - `role` (above) already carries which
+      // phase it is. Everything genuinely left is either a repair package (its worktree IS the
+      // integration tree, never filed as a STORY) or shape's own original scope.
+      reporter: p.reporter || (p.repair ? 'repair' : (p.phase ? 'engine' : 'shape')),
+      links: storyLinks(task, id),
     };
   });
 }
