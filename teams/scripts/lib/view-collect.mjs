@@ -330,24 +330,6 @@ export function deriveTitle(request) {
   return `${clause.slice(0, TITLE_MAX - 1).trimEnd()}…`;
 }
 
-// tickets.mjs's epicTicketState()/epicPhase() both gate on task.spec, which a size-S task
-// (task.s_run set, openSRun's single run stands in for the whole manager graph - see
-// collectTaskFromValue's own `isS` branch above) never has: neither function has an S-run
-// variant, so calling them on one would read task.spec as permanently absent and report every
-// S-run task 'READY' forever, even complete ones. Handled by hand here, onto the SAME
-// DONE/BLOCKED/IN_PROGRESS words epicTicketState already uses (never a fourth vocabulary) -
-// phase is left null because an S run is one linear chain with no plan/setgoal/impl/qualitygate
-// breakdown of its own to name.
-function sRunTicketState(task) {
-  let engineState = 'blocked';
-  try {
-    const run = loadRunAt(join(task.s_run.cwd, '.teams_output', 'broker', 'runs', `${task.s_run.run_id}.json`));
-    engineState = run ? runState(run).state : 'blocked';
-  } catch { /* leave 'blocked' */ }
-  const state = engineState === 'complete' ? 'DONE' : engineState === 'blocked' ? 'BLOCKED' : 'IN_PROGRESS';
-  return { state, phase: null };
-}
-
 // epicBoardRows' own `reporter` field (tickets.mjs) is not itself "was this filed as a defect" -
 // it defaults to 'shape' for an ordinary package and 'repair' for a repair package precisely so
 // tm_board always has SOME reporter to print. A filed defect/unmet-story STORY is the one whose
@@ -386,9 +368,12 @@ export function listTasks(tasksDir) {
     const task = read.value;
     let state = 'unknown', phase = null, stories = { storiesDone: null, storiesTotal: null, openDefects: 0 };
     try {
-      const ticket = task.s_run ? sRunTicketState(task) : { state: epicTicketState(task), phase: epicPhase(task) };
-      state = ticket.state;
-      phase = ticket.phase;
+      // epicTicketState/epicPhase (tickets.mjs) now read task.s_run themselves - a size-S
+      // task's own state/phase come from the child run they point at, not from task.spec,
+      // which a size-S task never sets. storyProgress still only makes sense for a task that
+      // shaped packages (epicBoardRows reads task.spec.packages), so it stays skipped for one.
+      state = epicTicketState(task);
+      phase = epicPhase(task);
       if (!task.s_run) stories = storyProgress(task);
     } catch { /* leave 'unknown' / no progress - a torn task.json should not crash the index */ }
     const driverTotal = collectDriverCosts(join(tasksDir, id));

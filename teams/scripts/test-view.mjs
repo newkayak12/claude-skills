@@ -446,7 +446,16 @@ test('listTasks() before shape: no packages yet reads READY/plan with null story
   }
 });
 
-test('listTasks() on a size-S task (task.s_run, no task.spec) reads IN_PROGRESS/DONE by hand rather than falling into epicTicketState\'s spec-less READY default forever', async () => {
+// Defect 1: epicTicketState()/epicPhase() (tickets.mjs) had no branch for task.s_run, so they
+// read a size-S task's frozen 3-node manager graph ([size:done, shape:skipped,
+// critique:skipped]) instead of the one child run task.s_run actually points at. Live repro via
+// tm_board on this exact fixture, pre-fix: state 'BLOCKED', phase 'setgoal' - on a COMPLETED S
+// run, because runState() on that frozen graph reads 'blocked' the instant delegateIfSmall skips
+// shape/critique. view-collect.mjs's own listTasks() carried a local workaround
+// (sRunTicketState) that covered only DONE/BLOCKED/IN_PROGRESS and never READY/IN_REVIEW or a
+// real phase - this test now drives every leg of the real mapping through tickets.mjs's fixed
+// epicTicketState/epicPhase, which listTasks() calls directly (no local copy left).
+test('listTasks() on a size-S task (task.s_run, no task.spec) reads the real state/phase off the child run at every stage - READY/plan through DONE/null', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'view-test-root-'));
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
@@ -454,10 +463,49 @@ test('listTasks() on a size-S task (task.s_run, no task.spec) reads IN_PROGRESS/
   try {
     const open = await tm.call('tm_open', { request: 'small request', cwd, vendor: 'self', flow: 'develop', size: 'S', roles: { planning: false, qa: false } });
     assert.equal(open.task_state, 's_run');
-    let row = listTasks(root)[0];
-    assert.deepStrictEqual({ state: row.state, phase: row.phase }, { state: 'IN_PROGRESS', phase: null });
+    const { run_id } = open;
+    const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
 
-    await completeChild(g, { cwd, run_id: open.run_id });
+    // Freshly opened: plan/setgoal/critique all pending, no spec yet -> READY/plan.
+    let row = listTasks(root)[0];
+    assert.deepStrictEqual({ state: row.state, phase: row.phase }, { state: 'READY', phase: 'plan' });
+
+    // plan done, setgoal not yet submitted: critique still pending -> still READY/plan (the
+    // 'setgoal' phase this same 'READY' state covers - critique started, still no spec - is
+    // real (test-tickets.mjs pins it directly) but not independently observable through a live
+    // drive of this flow: broker.mjs sets run.spec (and expandSubgoals) the instant setgoal's
+    // own submission lands, one tm_submit call before critique is even opened - so a live run's
+    // spec appears in the SAME call that would otherwise let a caller catch it critique-running-
+    // but-spec-still-null).
+    await sub('plan', { handoff: 'p', flow: 'develop', size: 'S' });
+    row = listTasks(root)[0];
+    assert.deepStrictEqual({ state: row.state, phase: row.phase }, { state: 'READY', phase: 'plan' });
+
+    // setgoal done: spec set (and the subgoal chain pushed, gated on critique via its own deps)
+    // -> already IN_PROGRESS/impl, even though critique has not run yet - epicPhase reads
+    // "spec exists" as having left plan/setgoal for good, the same instant an ordinary task's
+    // task.spec is set on shape's own completion, before its critique runs either.
+    await sub('setgoal', { spec: CHILD_SPEC });
+    row = listTasks(root)[0];
+    assert.deepStrictEqual({ state: row.state, phase: row.phase }, { state: 'IN_PROGRESS', phase: 'impl' });
+
+    // critique done, subgoal chain now unblocked and running -> still IN_PROGRESS/impl.
+    await sub('critique', { sound: true });
+    appendFileSync(join(cwd, 'a.txt'), 'changed\n');
+    await sub('implement:U1:1', { changed_files: ['a.txt'], handoff: 'built' });
+    row = listTasks(root)[0];
+    assert.deepStrictEqual({ state: row.state, phase: row.phase }, { state: 'IN_PROGRESS', phase: 'impl' });
+
+    // subgoal gate accepted, goal gate reached (ready, not yet judged) -> IN_REVIEW/qualitygate.
+    await sub('test:U1:1', { verified: true });
+    await sub('gate:U1:1', { accept: true, match_pct: 95 });
+    row = listTasks(root)[0];
+    assert.deepStrictEqual({ state: row.state, phase: row.phase }, { state: 'IN_REVIEW', phase: 'qualitygate' });
+
+    // goal gate accepted and reported -> DONE/null.
+    await sub('gate:goal:1', { accept: true, match_pct: 95 });
+    await g.call('team_next', { run_id, cwd });
+    await sub('report', { handoff: 'child report' });
     row = listTasks(root)[0];
     assert.deepStrictEqual({ state: row.state, phase: row.phase }, { state: 'DONE', phase: null });
   } finally {
