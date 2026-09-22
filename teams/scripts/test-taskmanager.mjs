@@ -3162,16 +3162,51 @@ test('a story no package implements is still reported - by id, never as [object 
       { id: 'P2', title: 'Hold', brief: 'build the hold', acceptance: ['hold is atomic'], implements: [], deps: ['P1'] },
     ],
   };
+  // P2 claiming nothing now draws its own problem (the ownership checks below), so read the
+  // coverage complaint by name rather than by being the only thing in the list.
   const problems = validateShape(spec, stories);
-  assert.equal(problems.length, 1, JSON.stringify(problems));
-  assert.match(problems[0], /US-2/);
-  assert.doesNotMatch(problems[0], /\[object Object\]/, 'the id must be printed, not the object');
+  const missing = problems.filter((p) => /not implemented by any package/.test(p));
+  assert.equal(missing.length, 1, JSON.stringify(problems));
+  assert.match(missing[0], /US-2/);
+  assert.doesNotMatch(missing[0], /\[object Object\]/, 'the id must be printed, not the object');
 });
 
 test('the shape contract asks for the implements[] its coverage check reads', async () => {
   const { CONTRACT } = await import('../mcp/taskmanager.mjs');
   const shape = (CONTRACT && CONTRACT.shape) || '';
   assert.match(shape, /"implements"/, 'shape was judged on a field its own output shape never asked for');
+});
+
+// Union coverage is satisfied by a shape where everyone claims everything, and a real one did
+// exactly that: idol-pm-2 (2026-09-22) had P1 and P6 each claim all four stories. implements[]
+// is meant to say what a package DELIVERS - these two hold it to that.
+test('implements[] must be an ownership claim: not empty, and not all of them', async () => {
+  const { validateShape } = await import('../mcp/taskmanager.mjs');
+  const stories = [{ id: 'US-1', title: 'a', acceptance: ['x'] }, { id: 'US-2', title: 'b', acceptance: ['y'] }];
+  const pkg = (id, impl) => ({ id, title: id, brief: 'b', acceptance: ['a'], implements: impl, deps: [] });
+  const base = { acceptance: ['the integrated app boots'] };
+
+  const claimsAll = validateShape({ ...base, packages: [pkg('P1', ['US-1', 'US-2']), pkg('P2', ['US-2'])] }, stories);
+  assert.equal(claimsAll.filter((x) => /P1 claims every user story/.test(x)).length, 1, JSON.stringify(claimsAll));
+  assert.equal(claimsAll.filter((x) => /P2/.test(x)).length, 0, 'a package that claims a subset is the normal case');
+
+  const claimsNone = validateShape({ ...base, packages: [pkg('P1', ['US-1']), pkg('P2', ['US-2']), pkg('P3', [])] }, stories);
+  assert.equal(claimsNone.filter((x) => /P3 implements no user story/.test(x)).length, 1, JSON.stringify(claimsNone));
+
+  // A clean split stays clean, and a task planning never ran on (userStories null) is untouched.
+  assert.deepEqual(validateShape({ ...base, packages: [pkg('P1', ['US-1']), pkg('P2', ['US-2'])] }, stories), []);
+  assert.deepEqual(validateShape({ ...base, packages: [pkg('P1', []), pkg('P2', [])] }, null), []);
+});
+
+// The three rules critique refused four real shapes over. A bar a judge enforces and the
+// contract never states is a test with an unpublished syllabus.
+test('the shape contract states the rules critique refuses shapes over', async () => {
+  const { CONTRACT } = await import('../mcp/taskmanager.mjs');
+  const shape = (CONTRACT && CONTRACT.shape) || '';
+  assert.match(shape, /owned by exactly one package/, 'a shared primitive with no owner is what critique blocked on every time');
+  assert.match(shape, /composition root|app assembly/, 'nothing being runnable after the merge was the single most repeated blocker');
+  assert.match(shape, /checkable by the integration step/, 'a goal criterion no integration step can check is a blocker too');
+  assert.match(shape, /satisfiable from that package's deps\[\] alone/, "a package judged on a sibling's result cannot pass");
 });
 
 // --- the ticket surface: state, history and body move together ------------------------------
@@ -3263,6 +3298,83 @@ test('a failed critique is reshaped by the engine, carrying the verdict that ref
   });
 });
 
+// A judge that could not judge is not a verdict on the shape. autoRejudge deliberately waits a
+// minute (or a usage-limit reset) before reopening such a node, and autoReshape runs later in
+// the same daemon step - so without this guard the wait window was a free reshape attempt, with
+// the timeout text standing in for a critique. idol-pm-1 (2026-09-22) hit the 45m judge timeout
+// twice in 247 minutes: two of three shaping attempts.
+test('a judge that timed out does not spend a shaping attempt - until its rejudge budget is gone', async () => {
+  const { autoReshape } = await import('../mcp/taskmanager.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'tm-rejudge-'));
+  const mk = (judgeAttempts) => ({
+    run_id: 'probe', cwd: dir, max_retries: 2, store_path: join(dir, 'task.json'),
+    nodes: [
+      { node_id: 'size', stage: 'size', deps: [], after: [], state: 'done' },
+      { node_id: 'shape', stage: 'shape', deps: ['size'], after: [], state: 'done', result: { stage_ok: true, packages: [] } },
+      {
+        node_id: 'critique', stage: 'critique', deps: ['shape'], after: [], state: 'failed',
+        finished_at: Date.now(), judge_attempts: judgeAttempts,
+        result: { stage_ok: false, judge_failed: true, reason: 'judge process for critique did not finish within 45m and was killed.' },
+      },
+    ],
+  });
+  try {
+    const waiting = mk(0);
+    assert.equal(autoReshape(waiting), false, 'a rejudgeable judge failure belongs to autoRejudge, not to a reshape');
+    assert.equal(waiting.nodes.find((n) => n.node_id === 'shape:2'), undefined);
+
+    // Once the rejudge budget is spent no verdict is coming, and reshaping is the only move left.
+    const spent = mk(2);
+    assert.ok(autoReshape(spent), 'a judge failure with no rejudge left must not wedge the task');
+    assert.ok(spent.nodes.find((n) => n.node_id === 'shape:2'), 'the next shape attempt opens');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// match_pct was decorative on every accept node: the floor goal_threshold sets was applied to
+// `gate` alone. idol-pm-1's PRD was accepted at 88% by a judgement whose own text said the
+// document named nothing specific to the domain - the number was recorded, and nothing acted on
+// it. The rejection is not the end of the package: it buys the retry max_retries budgets.
+test('an accept under goal_threshold is a rejection, and the phase-Team package gets its retry', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', handoff: 'x' }) });
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children[0];
+    const sub = (node_id, payload) => g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id, payload: ok(payload) });
+    await sub('plan', { handoff: 'p', flow: 'plan', size: 'S' });
+    await sub('setgoal', { spec: { goal: 'PRD', acceptance: ['a'], subgoals: [{ id: 'U1', title: 'draft PRD', acceptance: ['written'], deps: [] }] } });
+    await sub('critique', { sound: true });
+    mkdirSync(join(cwd, 'docs'), { recursive: true });
+    writeFileSync(join(cwd, 'docs', 'PRD.md'), `# PRD\n\n${PRD_FIXTURE}`);
+    await sub('draft:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'd' });
+    await sub('revise:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'r' });
+    await sub('gate:U1:1', { accept: true, match_pct: 95 });
+    await sub('gate:goal:1', { accept: true, match_pct: 95, user_stories: [{ id: 'US-1', title: 'a story', acceptance: ['x'] }] });
+    await sub('report', { handoff: 'done' });
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:PLAN:1' });
+    await tm.call('tm_submit', {
+      task_id, node_id: 'accept:PLAN:1',
+      payload: ok({ accept: true, match_pct: 88, checks: ['read the PRD'], gaps: ['nothing in it is specific to this domain'] }),
+    });
+
+    const read = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const task = read();
+    assert.equal(task.nodes.find((n) => n.node_id === 'accept:PLAN:1').state, 'failed', '88 is under the 90 floor');
+    assert.equal(task.nodes.find((n) => n.node_id === 'shape').state, 'pending', 'shape stays shut behind a rejected PRD');
+    const ready = await tm.call('tm_next', { task_id });
+    assert.equal((ready.ready || []).filter((n) => n.node_id === 'shape').length, 0, 'and it is not handed out to be judged');
+
+    // A phase-Team package is not in task.spec.packages, so autoRetryPackages used to walk
+    // straight past it and the daemon would record daemon_done on an untouched retry budget.
+    const { autoRetryPackages } = await import('../mcp/taskmanager.mjs');
+    assert.ok(autoRetryPackages(task), 'the PLAN package must get the retry max_retries budgets');
+    const retry = task.nodes.find((n) => n.node_id === 'dispatch:PLAN:2');
+    assert.ok(retry, 'a second PLAN attempt opens');
+    assert.match(String(retry.feedback || ''), /specific to this domain/, 'the gap that cost it the points travels into the retry');
+  }, { roles: { planning: true } });
+});
+
 test('a planning fold returning no user stories is rejected, and says why', async () => {
   await withTask(async ({ tm, g, cwd, root, task_id }) => {
     await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', handoff: 'x' }) });
@@ -3310,7 +3422,9 @@ test("shape is told the gaps the PRD was accepted with, not only the stories", a
     await tm.call('tm_submit', { task_id, node_id: 'dispatch:PLAN:1' });
     await tm.call('tm_submit', {
       task_id, node_id: 'accept:PLAN:1',
-      payload: ok({ accept: true, match_pct: 88, gaps: ['no idol-concert domain particulars anywhere'], observations: ['14 open items have no owner'] }),
+      // 92, not the real run's 88: an accept under goal_threshold is now a rejection, and this
+      // test is about a gap travelling on an accept that stands, not about the floor.
+      payload: ok({ accept: true, match_pct: 92, gaps: ['no idol-concert domain particulars anywhere'], observations: ['14 open items have no owner'] }),
     });
     const after = await tm.call('tm_next', { task_id });
     const briefing = readFileSync(after.ready[0].briefing_path, 'utf8');
