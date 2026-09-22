@@ -788,6 +788,21 @@ test('roles.qa inserts a QA phase-Team between integrate and gate:goal, reusing 
     assert.equal(folded.state, 'done', JSON.stringify(folded));
     const goalGateStatus = await tm.call('tm_status', { task_id, node_id: 'gate:goal:1' });
     assert.deepEqual(goalGateStatus.nodes[0].deps, ['accept:QA:1'], 'gate:goal must wait on QA, not on integrate directly, once roles.qa is on');
+
+    // The QA judge's only basis for a verdict used to be QA's own generic package acceptance
+    // ("the integrated result has been exercised end to end...") plus the QA child's own
+    // self-report - nothing that named what was actually built, so an under-delivered QA pass
+    // and a real one read the same. The briefing must now carry the task's goal-level acceptance
+    // and what each develop package specifically promised to deliver and touch.
+    const qaAcceptReady = (await tm.call('tm_next', { task_id })).ready.find((r) => r.node_id === 'accept:QA:1');
+    const qaAcceptBriefing = readFileSync(qaAcceptReady.briefing_path, 'utf8');
+    assert.match(qaAcceptBriefing, /## Goal-level acceptance\n- both modules build together/,
+      "the QA judge sees the task's own goal-level acceptance, not just QA's generic one-liner");
+    assert.match(qaAcceptBriefing, /## What the develop packages promised\n### P1 — module a\nTouches: a\.txt\nAcceptance:\n- a\.txt says a/,
+      'and what P1 specifically promised to deliver and touch');
+    assert.match(qaAcceptBriefing, /### P2 — module b\nTouches: b\.txt\nAcceptance:\n- b\.txt says b/,
+      'and P2 too - not just the first package');
+
     const accepted = await tm.call('tm_submit', { task_id, node_id: 'accept:QA:1', payload: ok({ accept: true, match_pct: 95 }) });
     assert.equal(accepted.state, 'done', JSON.stringify(accepted));
     const after = await tm.call('tm_next', { task_id });
@@ -1060,7 +1075,16 @@ test('with both roles on the audit follows QA, consumes its report, and an unmet
     nx = await tm.call('tm_next', { task_id });
     const auditAccept = nx.ready.find((r) => r.node_id === 'accept:AUDIT:1');
     assert.ok(auditAccept, JSON.stringify(nx.ready));
-    assert.match(readFileSync(auditAccept.briefing_path, 'utf8'), /"unmet"/);
+    const auditBriefing = readFileSync(auditAccept.briefing_path, 'utf8');
+    assert.match(auditBriefing, /"unmet"/);
+    // Same fix as accept:QA's: the audit judge must be able to tell a real completeness sweep
+    // from a rubber stamp, which needs the goal-level acceptance, what the develop packages
+    // promised, AND the PRD's own user stories (audit's job is specifically to judge against
+    // those, so its own generic pkg.acceptance alone cannot tell the difference).
+    assert.match(auditBriefing, /## Goal-level acceptance\n- both modules build together/);
+    assert.match(auditBriefing, /## What the develop packages promised\n### P1 — module a\nTouches: a\.txt\nAcceptance:\n- a\.txt says a/);
+    assert.match(auditBriefing, /### P2 — module b\nTouches: b\.txt\nAcceptance:\n- b\.txt says b/);
+    assert.match(auditBriefing, /## User stories from the PRD\n- US-1\n- US-2/);
 
     const accepted = await tm.call('tm_submit', { task_id, node_id: 'accept:AUDIT:1', payload: ok({
       accept: true, match_pct: 91, checks: ['reread the PRD against the tree -> US-2 unmet'],

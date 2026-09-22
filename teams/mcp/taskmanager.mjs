@@ -1898,6 +1898,44 @@ export function composeTaskPrompt(task, n) {
       L.push(bullets(pkg.acceptance));
       if ((pkg.touches || []).length) L.push(`Touches: ${pkg.touches.join(', ')}`);
     }
+    // QA and AUDIT judge the INTEGRATED result against the whole task, not one package of their
+    // own - pkg.acceptance above is deliberately a generic one-liner ("exercise it end to end")
+    // because their scope is everything, not a slice. Left at that, this judge's only basis for
+    // a verdict was that one-liner plus the child's own self-report below: structurally unable to
+    // tell a QA pass that ran three trivial cases and declared no defects from one that actually
+    // exercised the goal. What it needs to tell the difference is what the task actually promised
+    // and what the develop packages themselves claimed they would deliver - the same facts
+    // critique/integrate/gate already see (line ~1871), scoped here to QA/AUDIT alone rather than
+    // widening that stage gate onto every accept: an ordinary package's own accept (P1, a repair)
+    // is already handed exactly the package it is judging and needs nothing about its siblings to
+    // do that job, and accept is the highest-frequency node type in this task - drowning all of
+    // them in a full sibling-package dump would make each judge less, not more.
+    // Deliberately NOT included: every package's branch/child_run_id/dispatch state (routing
+    // plumbing, not a check the judge can act on), other accept nodes' own verdicts (one judge's
+    // opinion is not evidence for another), and critique's or integrate's full transcripts (a
+    // different question than "did QA/AUDIT do their job", answered by the report/gate stages
+    // that already exist for it).
+    if (task.spec && pkg && (pkg.phase === 'qa' || pkg.phase === 'audit')) {
+      L.push('');
+      L.push(`## Goal-level acceptance`);
+      L.push(bullets(task.spec.acceptance));
+      L.push('');
+      L.push(`## What the develop packages promised`);
+      for (const p of task.spec.packages || []) {
+        L.push(`### ${p.id} — ${p.title}`);
+        if ((p.touches || []).length) L.push(`Touches: ${p.touches.join(', ')}`);
+        L.push(`Acceptance:`);
+        L.push(bullets(p.acceptance));
+        L.push('');
+      }
+      if (pkg.phase === 'audit') {
+        const planDispatch = latestBySubgoal(task, 'PLAN', 'dispatch');
+        const userStories = (planDispatch && planDispatch.result && Array.isArray(planDispatch.result.user_stories))
+          ? planDispatch.result.user_stories : [];
+        L.push(`## User stories from the PRD`);
+        L.push(bullets(userStories.map(storyLabel)));
+      }
+    }
     if (d && d.result) {
       const r = d.result;
       L.push('');
@@ -2135,6 +2173,16 @@ export function finish(task, n, result) {
   // round that ended in defects - fileDefects (above) has already rerouted gate:goal to a fresh
   // integrate by the time this runs, so the audit waits for the fix instead of auditing a tree
   // that is about to be rebuilt.
+  // The `&& !roles.qa` on the integrate branch below looks like it is keeping this from firing
+  // on an integrate that QA still needs to see, but it is dead: verified by mutation (removed it,
+  // the full suite - including the roles.qa-on tests above - stayed green). When roles.qa is on,
+  // the QA-reopen hook just above ALWAYS runs first for the same finishing integrate node and
+  // rewrites goal.deps to a fresh accept:QA:N before this line ever reads it, so the `goal.deps[0]
+  // === n.node_id` check two lines down is already false by the time it matters - the `!roles.qa`
+  // never gets to be the reason. When roles.qa is off, `!roles.qa` was true anyway, so it changes
+  // nothing there either. Left in (not deleted) because it reads as documentation of intent - "do
+  // not open the audit out from under a pending QA round" - even though the reopen hook's own
+  // side effect on goal.deps is what actually enforces that.
   const roles = (task.team && task.team.opts && task.team.opts.roles) || {};
   if (roles.planning && n.state === 'done'
     && ((n.stage === 'accept' && n.subgoal_id === 'QA') || (n.stage === 'integrate' && !roles.qa))) {
