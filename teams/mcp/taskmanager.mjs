@@ -41,6 +41,7 @@ import { writeDocs } from './docs.mjs';
 import { conventionsBlock } from './conventions.mjs';
 import { readTeamConfig, resolveTeamOptions, TEAM_DEFAULTS } from './teamconfig.mjs';
 import { pluginDirArgs } from './pluginroots.mjs';
+import { ensureViewer, readViewRecord, viewUrl } from './viewserver.mjs';
 import {
   node,
   pushChain,
@@ -2363,6 +2364,7 @@ const NEXT_SCHEMA = {
       node_id: { type: 'string' }, package_id: { type: 'string' }, cwd: { type: 'string' }, run_id: { type: 'string' },
       branch: { type: 'string' }, child_state: { type: 'string' }, next: { type: 'string' },
     } } },
+    view_url: { type: 'string', description: 'the one browser window for this tasks root (scripts/view.mjs, ensureViewer): open it to watch the run. Absent when TEAMS_VIEW=0 or the viewer could not start - never required, a task opens the same either way.' },
   },
   required: ['task_id', 'state'],
 };
@@ -2429,7 +2431,7 @@ const TOOLS = [
       },
       required: ['request', 'cwd'],
     },
-    outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, run_id: { type: 'string' }, docs_dir: { type: 'string' }, state: { type: 'string' } }, required: ['task_id', 'run_id', 'docs_dir'] },
+    outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, run_id: { type: 'string' }, docs_dir: { type: 'string' }, state: { type: 'string' }, view_url: { type: 'string', description: 'see tm_open({view_url}) - same viewer, same tasks root.' } }, required: ['task_id', 'run_id', 'docs_dir'] },
   },
   {
     name: 'tm_next',
@@ -2762,14 +2764,22 @@ export function requireRunnable(task, nodeId) {
 }
 
 // Shared by tm_open and tm_run: create the task and, when the caller pinned size, resolve the
-// size node right away exactly like a measured S/L would. Returns {task, delegated} - delegated
-// is delegateIfSmall's own return (already carrying task_state: 's_run' and the S run's own
-// tm_next-shaped fields) when the pin was S, null otherwise so the caller decides what to do
-// next with an L (or unmeasured) task.
-function openTaskAndMaybePin(a, eventName) {
+// size node right away exactly like a measured S/L would. Returns {task, delegated, view} -
+// delegated is delegateIfSmall's own return (already carrying task_state: 's_run' and the S
+// run's own tm_next-shaped fields) when the pin was S, null otherwise so the caller decides what
+// to do next with an L (or unmeasured) task. view is ensureViewer's {url, port, pid, started} or
+// null - the one call site for the one human window a tasks root gets, made right here because
+// this is the only place tm_open and tm_run's task-creation paths meet; a call added separately
+// in each of them is exactly the split-default shape this file's tests (test-defaults.mjs) exist
+// to catch. Called after record() above, so the task directory already exists on disk. The
+// await is wrapped for the same reason ensureViewer already swallows its own errors: this call
+// must never be able to fail the open, even on a throw ensureViewer did not anticipate.
+async function openTaskAndMaybePin(a, eventName) {
   const task = createTask(a);
   record(task, { event: eventName, task_id: task.run_id, cwd: task.cwd, flow: task.flow, size_pinned: task.size_pinned });
-  if (!task.size_pinned) return { task, delegated: null };
+  let view = null;
+  try { view = await ensureViewer(tasksRoot(), task.run_id); } catch { view = null; }
+  if (!task.size_pinned) return { task, delegated: null, view };
   const n = task.nodes.find((x) => x.node_id === 'size');
   const out = finish(task, n, {
     stage_ok: true, size: task.size_pinned, size_source: 'pinned', sizing: [],
@@ -2780,7 +2790,7 @@ function openTaskAndMaybePin(a, eventName) {
   });
   const delegated = delegateIfSmall(task, n, out);
   if (!delegated) saveRun(task);
-  return { task, delegated };
+  return { task, delegated, view };
 }
 
 // tm_open: kept for the existing skill path and this whole test suite, byte-for-byte compatible
@@ -2790,11 +2800,12 @@ function openTaskAndMaybePin(a, eventName) {
 // diverge on purpose: noDaemon() gets the old, fully-driven reply (ready[]/children[]); a real
 // daemon gets a thin pointer, and the caller reads progress with tm_status/tm_board/tm_wait
 // instead - the daemon and package drivers do the rest.
-function toolOpen(a) {
-  const { task, delegated } = openTaskAndMaybePin(a, 'tm_open');
-  if (delegated) return { ...delegated, docs_dir: docPaths(task).dir };
-  if (noDaemon()) return toolNext({ task_id: task.run_id });
-  return { task_id: task.run_id, state: runState(task).state, docs_dir: docPaths(task).dir };
+async function toolOpen(a) {
+  const { task, delegated, view } = await openTaskAndMaybePin(a, 'tm_open');
+  const viewFields = view && view.url ? { view_url: view.url } : {};
+  if (delegated) return { ...delegated, docs_dir: docPaths(task).dir, ...viewFields };
+  if (noDaemon()) return { ...toolNext({ task_id: task.run_id }), ...viewFields };
+  return { task_id: task.run_id, state: runState(task).state, docs_dir: docPaths(task).dir, ...viewFields };
 }
 
 // tm_run: the non-driving entry point §4/§10-1 of the design doc asks for - open, spawn the
@@ -2802,13 +2813,15 @@ function toolOpen(a) {
 // spawned or not (noDaemon() only stops the process from actually starting; a test that wants
 // to drive a tm_run-created task by hand still can, through tm_next/tm_submit, exactly as it
 // would for a tm_open-created one).
-function toolRun(a) {
-  const { task, delegated } = openTaskAndMaybePin(a, 'tm_run');
+async function toolRun(a) {
+  const { task, delegated, view } = await openTaskAndMaybePin(a, 'tm_run');
+  const viewFields = view && view.url ? { view_url: view.url } : {};
   return {
     task_id: task.run_id,
     run_id: task.run_id,
     docs_dir: docPaths(task).dir,
     state: delegated ? delegated.state : runState(task).state,
+    ...viewFields,
   };
 }
 
@@ -3136,6 +3149,11 @@ function toolStatus(a) {
     if (a.node_id) { const n = getNode(task, String(a.node_id)); if (!n) throw new Error(`unknown node ${a.node_id}`); return { task_id: task.run_id, node: n }; }
     return task;
   }
+  // Read the existing record, never spawn one: tm_status is how a caller who joined a running
+  // task after tm_open/tm_run returned finds the same link - it must not have the side effect of
+  // starting a viewer just because someone polled status.
+  const viewRecord = readViewRecord(tasksRoot());
+  const viewFields = viewRecord ? { view_url: viewUrl(viewRecord.port, task.run_id) } : {};
   if (task.s_run) {
     const run = loadRun(task.s_run.cwd, task.s_run.run_id);
     const cs = run ? runState(run) : { state: 'missing', counts: {} };
@@ -3152,6 +3170,7 @@ function toolStatus(a) {
       packages: [],
       daemon: task.daemon ? { pid: task.daemon.pid, alive: driverAlive(task.daemon), log: task.daemon.log, stderr: task.daemon.stderr, spawn_count: task.daemon.spawn_count, restarts: task.daemon.restarts || 0, exhausted: !!task.daemon.exhausted, stderr_tail: driverStderrTail(task.daemon) } : null,
       team: task.team || null,
+      ...viewFields,
     };
   }
   const state = runState(task);
@@ -3169,6 +3188,7 @@ function toolStatus(a) {
       : verdict(task, n))),
     daemon: task.daemon ? { pid: task.daemon.pid, alive: driverAlive(task.daemon), log: task.daemon.log, stderr: task.daemon.stderr, spawn_count: task.daemon.spawn_count, restarts: task.daemon.restarts || 0, exhausted: !!task.daemon.exhausted, stderr_tail: driverStderrTail(task.daemon) } : null,
     team: task.team || null,
+    ...viewFields,
   };
 }
 
@@ -3192,7 +3212,10 @@ function dispatch(name, a) {
   }
 }
 
-function callTool(name, args) {
+// async because dispatch('tm_open'|'tm_run', ...) now returns a promise (openTaskAndMaybePin
+// awaits ensureViewer) - every other tool still resolves synchronously, `await` just passes
+// those straight through.
+async function callTool(name, args) {
   const a = args || {};
   // Re-raise a dead daemon before doing anything else, on every tool that already has a task to
   // raise one for. No gate here beyond that: any caller may read or mutate the task at any time -
@@ -3204,7 +3227,7 @@ function callTool(name, args) {
   // board.jsonl: taken as a before/after diff of the tools that can move a ticket.
   if (!BOARD_TOOLS.has(name)) return dispatch(name, a);
   const before = a.task_id ? ticketSnapshot(mustFindTask(a)) : {};
-  const out = dispatch(name, a);
+  const out = await dispatch(name, a);
   const taskId = (out && out.task_id) || a.task_id;
   if (taskId) {
     try { syncTickets(mustFindTask({ task_id: taskId }), before, a.node_id || name); } catch { /* best-effort, like record() */ }
@@ -3220,7 +3243,7 @@ function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + '\n');
 }
 
-function handle(msg) {
+async function handle(msg) {
   const { id, method, params } = msg;
   const reply = (result) => ({ jsonrpc: '2.0', id, result });
   switch (method) {
@@ -3234,7 +3257,7 @@ function handle(msg) {
     case 'tools/list': return reply({ tools: TOOLS });
     case 'tools/call': {
       try {
-        const out = callTool(params && params.name, params && params.arguments);
+        const out = await callTool(params && params.name, params && params.arguments);
         return reply({ content: [{ type: 'text', text: JSON.stringify(out, null, 2) }], structuredContent: out, isError: false });
       } catch (e) {
         return reply({ content: [{ type: 'text', text: String((e && e.message) || e) }], isError: true });
@@ -3258,6 +3281,11 @@ const isMain = (() => {
 
 if (isMain) {
   let buf = '';
+  // handle() is async (tools/call can now await callTool -> dispatch -> tm_open/tm_run's own
+  // await on ensureViewer). Chaining each line onto `queue` keeps replies in the same order
+  // requests arrived - the same guarantee the old fully-synchronous loop gave for free - instead
+  // of however their individual promises happen to settle.
+  let queue = Promise.resolve();
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', (chunk) => {
     buf += chunk;
@@ -3266,14 +3294,16 @@ if (isMain) {
       const line = buf.slice(0, nl).trim();
       buf = buf.slice(nl + 1);
       if (!line) continue;
-      let msg;
-      try { msg = JSON.parse(line); } catch { continue; }
-      let out;
-      try { out = handle(msg); } catch (e) {
-        out = typeof msg.id === 'undefined' ? null : { jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: String((e && e.message) || e) } };
-      }
-      if (out) emit(out);
+      queue = queue.then(async () => {
+        let msg;
+        try { msg = JSON.parse(line); } catch { return; }
+        let out;
+        try { out = await handle(msg); } catch (e) {
+          out = typeof msg.id === 'undefined' ? null : { jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: String((e && e.message) || e) } };
+        }
+        if (out) emit(out);
+      });
     }
   });
-  process.stdin.on('end', () => process.exit(0));
+  process.stdin.on('end', () => { queue.then(() => process.exit(0)); });
 }
