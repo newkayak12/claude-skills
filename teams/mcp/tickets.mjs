@@ -254,10 +254,12 @@ export function epicBoardRows(task) {
       tasks: storyTaskProgress(task, id),
       last_verdict: last,
       // A filed defect STORY (fileDefects, taskmanager.mjs - QA-found or tm_file) carries its own
-      // reporter ('qa'/'you'/'planning-audit'); everything else is either a
-      // repair package (its worktree IS the integration tree, never filed as a STORY) or
-      // shape's own original scope.
-      reporter: p.reporter || (p.repair ? 'repair' : 'shape'),
+      // reporter ('qa'/'you'/'planning-audit'); a phase-Team package (PLAN/QA/AUDIT) carries
+      // p.phase but never p.reporter, and reported itself, not shape - falling through to 'shape'
+      // mislabeled it as if the shape stage had produced it (it never runs through shape at all;
+      // see boardPackages above). Everything genuinely left is either a repair package (its
+      // worktree IS the integration tree, never filed as a STORY) or shape's own original scope.
+      reporter: p.reporter || (p.repair ? 'repair' : (p.phase || 'shape')),
     };
   });
 }
