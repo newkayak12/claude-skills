@@ -83,7 +83,10 @@ export const KINDS = {
     chain: ['draft', 'revise', 'gate'],
     reasoning: [],
     skills: {
-      draft: ['pm:prd-development', 'write:doc-coauthoring'],
+      // No PM plugin is named here: pm is unpublished, so 'pm:prd-development' could never
+      // mount and left every planning draft with no method at all. The PRD method now lives
+      // in prompts.mjs's PRD_CONTRACT, inside the draft contract itself.
+      draft: ['write:doc-coauthoring'],
       revise: ['write:writer-verification', 'think:devils-advocate'],
       gate: ['think:devils-advocate'],
     },

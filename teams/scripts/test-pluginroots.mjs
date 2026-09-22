@@ -47,9 +47,12 @@ test('pluginOf splits plugin:skill, and ignores anything that is not one', () =>
 
 test('referencedPlugins covers every built-in method table, including the manager stages when handed them', () => {
   const builtin = referencedPlugins();
-  for (const name of ['develop', 'think', 'write', 'completion', 'pm', 'agents']) {
+  for (const name of ['develop', 'think', 'write', 'completion', 'agents']) {
     assert.ok(builtin.includes(name), `${name} is named by a KINDS/mounts table but was not collected: ${builtin}`);
   }
+  // pm is unpublished, so naming it could never mount anything; the PRD method is inlined in
+  // prompts.mjs's PRD_CONTRACT instead. test-skillrefs.mjs guards the whole class.
+  assert.ok(!builtin.includes('pm'), `pm must not be named by any method table: ${builtin}`);
   assert.ok(!builtin.includes('cognition'), 'cognition is only in the manager table, not the graph ones');
   const withManager = referencedPlugins([Object.values(STAGE_SKILLS)]);
   assert.ok(withManager.includes('cognition'), `manager stage skills must contribute: ${withManager}`);

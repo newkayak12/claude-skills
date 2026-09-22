@@ -20,7 +20,7 @@ import {
 test('planning kind: chain, no reasoning stage, and skills by stage', () => {
   assert.deepEqual(KINDS.planning.chain, ['draft', 'revise', 'gate']);
   assert.deepEqual(KINDS.planning.reasoning, []);
-  assert.deepEqual(kindSkills('planning', 'draft'), ['pm:prd-development', 'write:doc-coauthoring']);
+  assert.deepEqual(kindSkills('planning', 'draft'), ['write:doc-coauthoring']);
   assert.deepEqual(kindSkills('planning', 'revise'), ['write:writer-verification', 'think:devils-advocate']);
   assert.deepEqual(kindSkills('planning', 'gate'), ['think:devils-advocate']);
   assert.equal(authorStage('planning'), 'draft');

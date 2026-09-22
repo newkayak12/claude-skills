@@ -45,7 +45,7 @@ function workspace({ childNodes, taskNodes, roles = { planning: true, qa: false 
     spec: { goal: 'write the PRD', acceptance: ['covers it'], subgoals: [{ id: 'U1', kind: 'planning', title: 'rules', acceptance: ['a'], files: ['PRD.md'] }] },
     nodes: childNodes || [
       { node_id: 'plan', stage: 'plan', state: 'done', result: { stage_ok: true } },
-      { node_id: 'draft:U1:1', stage: 'draft', state: 'done', result: { stage_ok: true, changed_files: ['PRD.md'], skills_used: ['pm:prd-development'] } },
+      { node_id: 'draft:U1:1', stage: 'draft', state: 'done', result: { stage_ok: true, changed_files: ['PRD.md'], skills_used: ['write:doc-coauthoring'] } },
       { node_id: 'gate:U1:1', stage: 'gate', state: 'done', result: { accept: true, match_pct: 90, skills_used: ['none'] } },
     ],
   };
@@ -74,12 +74,12 @@ test('the report names, per node, the method it was told to load and the method 
     assert.equal(shape.files.prompt, join(taskDir, 'briefings', 'shape.md'), 'its briefing on disk is named');
 
     const draft = model.children[0].nodes.find((n) => n.node_id === 'draft:U1:1');
-    assert.ok(draft.skills_asked.includes('pm:prd-development'), `${draft.skills_asked}`);
-    assert.deepEqual(draft.skills_used, ['pm:prd-development']);
+    assert.ok(draft.skills_asked.includes('write:doc-coauthoring'), `${draft.skills_asked}`);
+    assert.deepEqual(draft.skills_used, ['write:doc-coauthoring']);
     assert.deepEqual(draft.changed_files, ['PRD.md']);
 
     const text = renderReport(model);
-    assert.match(text, /pm:prd-development/);
+    assert.match(text, /write:doc-coauthoring/);
     assert.match(text, /PRD\.md/);
   } finally { rmSync(ws, { recursive: true, force: true }); }
 });
@@ -93,7 +93,7 @@ test('the skills audit reports a named-but-never-loaded skill, which is the 0.18
     assert.equal(dda.asked, 1);
     assert.equal(dda.used, 0);
     assert.ok(audit.never_loaded.includes('develop:domain-driven-design'));
-    assert.ok(!audit.never_loaded.includes('pm:prd-development'), 'a skill a node did load is not reported as never loaded');
+    assert.ok(!audit.never_loaded.includes('write:doc-coauthoring'), 'a skill a node did load is not reported as never loaded');
   } finally { rmSync(ws, { recursive: true, force: true }); }
 });
 
