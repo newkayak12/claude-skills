@@ -518,6 +518,11 @@ export function getNode(run, nodeId) {
 // spec left the graph at three nodes; a spec with zero subgoals made the goal gate
 // immediately ready over no work at all; a dep naming a subgoal that does not exist left
 // its node waiting on a gate that could never be created.
+// Kinds whose product is a written document, never a change to source. Their subgoals may
+// only name document paths in files[] (validateSpec), and their authoring stages are told so
+// in as many words (prompts.mjs).
+export const DOCUMENT_ONLY_KINDS = new Set(['planning', 'planning-audit']);
+
 export function validateSpec(spec, opts = {}) {
   const problems = [];
   if (!spec || typeof spec !== 'object') return ['setgoal returned no spec object'];
@@ -544,6 +549,18 @@ export function validateSpec(spec, opts = {}) {
     if (!KINDS[kindOf(sg)]) problems.push(`subgoal ${id} has unknown kind ${kindOf(sg)}`);
     else if (opts.mixed === false && opts.kind && kindOf(sg) !== opts.kind) {
       problems.push(`subgoal ${id} has kind ${kindOf(sg)}, but this run is flow ${opts.flow || opts.kind} with mixed=false`);
+    }
+    // A planning or audit subgoal produces a document and nothing else. Without this rule
+    // setgoal named source files in `files` and the draft node wrote its PRD sections INTO
+    // them - measured, 2026-09-22, P1: a "Time and Clock resolution rules" subgoal whose
+    // files[] were packages/queue/src/index.mjs and packages/cli/src/index.mjs, both duly
+    // edited. A planning run has no worktree of its own, so that lands in the real tree.
+    if (DOCUMENT_ONLY_KINDS.has(kindOf(sg))) {
+      for (const f of (sg && sg.files) || []) {
+        if (!/\.(md|markdown|txt|rst|adoc)$/i.test(String(f))) {
+          problems.push(`subgoal ${id} is ${kindOf(sg)} work, which writes a document - "${f}" is not a document path. Name the markdown file this section belongs in.`);
+        }
+      }
     }
   }
   for (const sg of subgoals) {

@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import {
   KINDS, VERDICT_FIELD, REASONING_STAGES, FLOWS, kindSkills, kindOf, authorStage,
   createRun, runState, retrySubgoal, retrySpec, getNode, readyNodes, parentShapedTerminal,
+  validateSpec,
 } from '../mcp/graph.mjs';
 
 test('planning kind: chain, no reasoning stage, and skills by stage', () => {
@@ -230,4 +231,28 @@ test('retrySpec on a parent_shaped run has no setgoal to redo - it delegates to 
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+// ---------- planning subgoals write documents, not source (2026-09-22, P1) ----------
+
+test('a planning subgoal may not name a source file in files[] - it writes a document', () => {
+  const spec = {
+    goal: 'PRD',
+    acceptance: ['covers the request'],
+    subgoals: [{ id: 'U1', kind: 'planning', title: 'time rules', acceptance: ['states the rule'], files: ['packages/cli/src/index.mjs'] }],
+  };
+  const problems = validateSpec(spec, { kind: 'planning', mixed: false, flow: 'plan' });
+  assert.equal(problems.length, 1, JSON.stringify(problems));
+  assert.match(problems[0], /not a document path/);
+});
+
+test('a planning subgoal naming a markdown document passes, and an audit subgoal is held to the same rule', () => {
+  const ok = (files, kind) => validateSpec({
+    goal: 'g', acceptance: ['a'],
+    subgoals: [{ id: 'U1', kind, title: 't', acceptance: ['a'], files }],
+  }, { kind, mixed: false });
+  assert.deepEqual(ok(['docs/PRD.md'], 'planning'), []);
+  assert.deepEqual(ok([], 'planning'), [], 'naming no file at all is still allowed');
+  assert.equal(ok(['src/thing.mjs'], 'planning-audit').length, 1, 'the audit writes nothing either');
+  assert.deepEqual(ok(['src/thing.mjs'], 'subgoal'), [], 'ordinary code work is untouched by the rule');
 });
