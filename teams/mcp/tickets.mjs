@@ -9,7 +9,7 @@
 // needs it takes an injectable `{ alive }` predicate defaulting to a real process.kill(pid, 0)
 // check, so a unit test can fix it without a real pid and the module stays otherwise pure.
 import { join } from 'node:path';
-import { loadRun, unmetDeps, runState, nodeKind, KINDS } from './graph.mjs';
+import { loadRun, loadRunAt, unmetDeps, runState, nodeKind, KINDS } from './graph.mjs';
 import { TEAM_DEFAULTS } from './teamconfig.mjs';
 
 export function epicKey(taskId) {
@@ -121,11 +121,70 @@ export function storyTicketState(task, pkgId, opts = {}) {
   return 'REJECTED'; // accept 'failed' (e.g. the no-evidence guard) is still a rejection, no evidence of its own needed
 }
 
+// A size-S task's own manager graph (task.nodes) settles the instant `size` resolves - three
+// nodes, none of them ever touching task.spec (delegateIfSmall, taskmanager.mjs, skips shape/
+// critique outright). The real work is the ONE graph run task.s_run points at. Every function
+// above this point reads task.nodes/task.spec directly, so calling one of them on a size-S task
+// sees a task frozen at its very first instant forever - epicTicketState/epicPhase would report
+// READY/plan on a completed or blocked S run exactly as they would on one still queued. Loaded
+// the same way taskState() (taskmanager.mjs) and view-collect.mjs's own listTasks() used to -
+// this is now the one place that read happens, not a third copy of it.
+function loadSRun(task) {
+  if (!task.s_run) return null;
+  return loadRunAt(join(task.s_run.cwd, '.teams_output', 'broker', 'runs', `${task.s_run.run_id}.json`));
+}
+
+// The S-run's own goal-level gate, reached the same way goalLevelReached (above) reads a
+// manager task's integrate node - except a plain graph.mjs run (createRun, not parent_shaped)
+// never gets an integrate node at all: its goal-level gate IS a 'gate' node with subgoal_id
+// null (expandSubgoals/pushGoalGateRound), and a repair can reopen a fresh round - so "current"
+// means latest by push order, the same rule latestGoalNode already applies to a manager task's
+// integrate/gate:goal.
+function sRunGoalGateReached(run) {
+  const goalGates = run.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id === null);
+  const gate = goalGates.length ? goalGates[goalGates.length - 1] : null;
+  return !!gate && reached(run, gate);
+}
+
+// epicTicketState's own rule, read off the child run instead of the task: report done -> DONE,
+// runState blocked -> BLOCKED (checked before spec - a run stuck before setgoal is still
+// BLOCKED, never READY), no spec yet (still in plan/setgoal/critique) -> READY, spec set ->
+// IN_PROGRESS until the goal gate is reached, then IN_REVIEW - the exact same four words
+// epicTicketState uses for an ordinary task, never a fifth invented for the S run. A run this
+// could not load (task.s_run unset, or the file has not landed on disk yet) counts as BLOCKED,
+// the same "nothing to show" default the old view-collect.mjs workaround used - not READY,
+// which would claim a readiness this function has no evidence for.
+function sRunTicketState(run) {
+  if (!run) return 'BLOCKED';
+  if (run.nodes.some((n) => n.stage === 'report' && n.state === 'done')) return 'DONE';
+  if (runState(run).state === 'blocked') return 'BLOCKED';
+  if (!run.spec) return 'READY';
+  return sRunGoalGateReached(run) ? 'IN_REVIEW' : 'IN_PROGRESS';
+}
+
+// epicPhase's own §6 table, read off the child run instead of the task: its own plan/setgoal
+// nodes map onto plan/setgoal directly (they are literally named that - graph.mjs's createRun
+// bootstraps a non-parent_shaped run with exactly those three node ids), its subgoal chains are
+// impl, and its own gate:goal/report are qualitygate - the same four words §6 already names,
+// never a new one for the S run. A run this could not load reads as 'plan' - the same "nothing
+// has happened yet" reading a fresh, never-driven run would give honestly.
+function sRunPhase(run) {
+  if (!run) return 'plan';
+  if (run.nodes.some((n) => n.stage === 'report' && n.state === 'done')) return null;
+  if (!run.spec) {
+    const critique = run.nodes.find((n) => n.node_id === 'critique' || n.stage === 'critique');
+    return critique && critique.state !== 'pending' ? 'setgoal' : 'plan';
+  }
+  return sRunGoalGateReached(run) ? 'qualitygate' : 'impl';
+}
+
 // §4's EPIC row (shape 전 -> READY / dispatch 진행 -> IN_PROGRESS / integrate·gate:goal ->
 // IN_REVIEW / report -> DONE), plus BLOCKED - not in §4's table, added because runState() already
 // knows when nothing can proceed and showing READY/IN_PROGRESS for a stuck EPIC would defeat the
-// board's own point (see the plan's 발견 3).
+// board's own point (see the plan's 발견 3). A size-S task (task.s_run set) delegates the whole
+// question to sRunTicketState - see its own comment for why task.spec can never answer it.
 export function epicTicketState(task) {
+  if (task.s_run) return sRunTicketState(loadSRun(task));
   if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) return 'DONE';
   if (runState(task).state === 'blocked') return 'BLOCKED';
   if (!task.spec) return 'READY';
@@ -134,8 +193,9 @@ export function epicTicketState(task) {
 
 // §6's phase table: plan (size, shape) / setgoal (critique) / impl (dispatch:Pn) / qualitygate
 // (accept:Pn, integrate, gate:goal, report). null once the report is done - there is no phase
-// left to name.
+// left to name. A size-S task delegates to sRunPhase, same reason as epicTicketState above.
 export function epicPhase(task) {
+  if (task.s_run) return sRunPhase(loadSRun(task));
   if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) return null;
   if (!task.spec) {
     const critique = task.nodes.find((n) => n.node_id === 'critique' || n.stage === 'critique');
