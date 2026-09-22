@@ -428,3 +428,48 @@ test('gate:goal contract requires user_stories[] (ids + acceptance[]) back in it
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+// A PRD governs the whole tree, so selecting conventions by the paths a subgoal touches was the
+// wrong filter for it: a rule about how a domain works matches no source path, so it appeared as
+// a title only. idol-pm-1 (2026-09-22) produced a domain-empty PRD with the mechanism right
+// there. The manager's judging stages had no conventions wiring at all.
+
+test('a planning subgoal gets every convention in full, not the ones its paths matched', () => {
+  const cwd = tmpProject();
+  try {
+    mkdirSync(join(cwd, '.claude', 'conventions'), { recursive: true });
+    writeFileSync(join(cwd, '.claude', 'conventions', 'domain.md'),
+      '# Ticketing domain\nFan-club presale tiers decide priority before anything else.\n');
+
+    const planning = conventionsBlock(cwd, { stage: 'planning' });
+    assert.match(planning, /Fan-club presale tiers decide priority/, 'the body, not just the title');
+    assert.match(planning, /requirements on what you write/);
+    assert.match(planning, /named in Out of scope with the reason/, 'skipping a rule must be recorded');
+
+    // What the path filter does instead: matchesFiles compares the file's extension and
+    // directory names as substrings of the convention's path and title, so whether a domain rule
+    // reaches the PRD is luck. ".md" happens to match ".../domain.md"; a subgoal writing
+    // anything else drops the same rule to a title.
+    const byPath = conventionsBlock(cwd, { stage: 'draft', files: ['a.py'] });
+    assert.doesNotMatch(byPath, /Fan-club presale tiers decide priority/, 'the path filter drops it');
+    assert.match(byPath, /domain\.md: Ticketing domain/, 'leaving only the title');
+    // The planning stage does not depend on that luck: same call, files that match nothing.
+    assert.match(conventionsBlock(cwd, { stage: 'planning', files: ['a.py'] }), /Fan-club presale tiers decide priority/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('the manager stages are told to judge and shape against the project rules', () => {
+  const cwd = tmpProject();
+  try {
+    mkdirSync(join(cwd, '.claude', 'conventions'), { recursive: true });
+    writeFileSync(join(cwd, '.claude', 'conventions', 'domain.md'), '# Ticketing domain\nFan-club presale tiers decide priority.\n');
+    const manager = conventionsBlock(cwd, { stage: 'manager' });
+    assert.match(manager, /Fan-club presale tiers decide priority/);
+    assert.match(manager, /Judge and shape against them/);
+    assert.match(manager, /a result that ignores one has a gap/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});

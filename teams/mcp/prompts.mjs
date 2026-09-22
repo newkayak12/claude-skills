@@ -53,7 +53,8 @@ The document must carry these sections, in this order, each as a "## " heading:
   User stories - headed exactly "## User stories", listing every story as "US-1", "US-2", ... in document order, each with its own acceptance[]. audit and gate:goal have no other source for them, and a PRD with none is rejected.
   Out of scope - what is deliberately not being built, and why.
   Open questions - decisions this document could not settle, each with the recommendation you would make.
-A section you cannot fill from the request or the tree is written with what you do know plus the gap stated plainly; it is never dropped, and never padded by restating the request.`
+A section you cannot fill from the request or the tree is written with what you do know plus the gap stated plainly; it is never dropped, and never padded by restating the request.
+Before any of that, name the domain the request belongs to and what is specific to it. The general version of a problem is the one you already know, and it is the one you will write if nobody stops you: a ticketing PRD about queues and bots, a payments PRD about retries, a chat PRD about delivery receipts. Those are real, and they are not the point. Ask what the people in THIS domain actually do that the generic version has no idea about - who gets priority and on what basis, what an established customer expects that a first-time one does not, which rule exists because of that industry's history or regulation, what everyone in it would notice missing on the first read. Write those into Problem, Target users and the stories, with the domain's own vocabulary rather than a neutral paraphrase of it. A domain practice you decide not to build is named in Out of scope, so that skipping it is a decision on the record; one you never mention has not been scoped, it has been overlooked - and it is the reason a reader in that industry puts the document down.`
 
 const CONTRACT = {
   plan: `Return JSON: {"plan": "<the decomposition>", "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "dependencies": ["unit -> its real ordering dependency, or \\"none\\""], "verification": ["unit -> command or inspection that would deterministically verify it"], "conventions": ["path -> the rule it states, if .claude/conventions/** applies"], "handoff": "<what the next node needs>", "evidence": "<how you checked the request is actually satisfiable here>"}
@@ -214,8 +215,11 @@ export function composePrompt(run, n, briefing) {
       lines.push(SKILLS_USED_FIELD);
     }
     if (sg.files?.length) lines.push(`Required paths:\n${bullets(sg.files)}`);
-    if (['implement', 'draft'].includes(n.stage)) {
-      const conv = conventionsBlock(run.cwd, { stage: n.stage, files: sg.files });
+    if (['implement', 'draft', 'revise'].includes(n.stage)) {
+      // A planning subgoal writes the PRD, which governs the whole tree - its conventions are
+      // not selected by the paths it touches.
+      const planning = kindOf(sg) === 'planning';
+      const conv = conventionsBlock(run.cwd, { stage: planning ? 'planning' : n.stage, files: sg.files });
       if (conv) {
         lines.push('');
         lines.push(conv);

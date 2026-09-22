@@ -33,7 +33,7 @@ import {
   advanceDispatches, serviceRunningDispatches, prepareReadyIntegrations,
   dispatchSettled, foldChild, serviceSRun, delegateIfSmall,
   finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages, autoRejudge, autoResumeCapacity,
-  STAGE_SKILLS, syncTickets,
+  STAGE_SKILLS, syncTickets, autoReshape,
 } from './taskmanager.mjs';
 import { ticketSnapshot } from './tickets.mjs';
 import { pluginDirArgs } from './pluginroots.mjs';
@@ -318,6 +318,9 @@ async function stepOnceInner(task) {
   // A package whose attempt failed (dispatch folded blocked, or accept rejected) gets its next
   // attempt the way tm_retry({package_id}) would give it, while max_retries allows.
   if (autoRetryPackages(task)) progressed = true;
+  // A shape or critique that failed gets its next attempt the same way, carrying the verdict
+  // that refused it - otherwise the loop stops at a critique it could act on.
+  if (autoReshape(task)) progressed = true;
 
   return progressed;
 }
