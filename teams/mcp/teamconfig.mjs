@@ -29,7 +29,7 @@ export const TEAM_DEFAULTS = Object.freeze({
   // that exists; it is threaded through task.child_opts.depth now so it is ready when it does.
   max_depth: 2,
   qa_rounds: 2,
-  roles: { planning: false, qa: false },
+  roles: { planning: true, qa: true },
   goal_threshold: 90,
   max_retries: 2,
   driver_restarts: 2,

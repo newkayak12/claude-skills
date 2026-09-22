@@ -42,13 +42,13 @@ test('defaults alone: every key sourced "default"', () => {
 test('team.json overrides defaults, explicit args override team.json', () => {
   const { opts, sources } = resolveTeamOptions(
     { goal_threshold: 80 },
-    { goal_threshold: 95, max_retries: 5, roles: { qa: true } },
+    { goal_threshold: 95, max_retries: 5, roles: { qa: false } },
   );
   assert.equal(opts.goal_threshold, 80);
   assert.equal(sources.goal_threshold, 'args');
   assert.equal(opts.max_retries, 5);
   assert.equal(sources.max_retries, 'team.json');
-  assert.deepEqual(opts.roles, { planning: false, qa: true }, 'roles merge key by key');
+  assert.deepEqual(opts.roles, { planning: true, qa: false }, 'roles merge key by key (defaults are both on since 0.17.0)');
   assert.equal(sources.roles, 'team.json');
 });
 

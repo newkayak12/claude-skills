@@ -266,6 +266,29 @@ gate 반려              -               14  (P1×1, P2×2, P3×2, integrate×1 
 
 판정 방향(§9로): 이 크기에서 오케스트레이션 엔진은 정당화되지 않는다. 그러나 **실행 기반 gate 자체는 값이 있다** — teams의 gate가 P1의 JSON-검증기 오독, P2의 우선순위 위반, P3의 self-report 착오를 모두 실행으로 잡았다. 다음은 이 gate를 plain 실행 뒤에 붙이는 얇은 층("plain이 만들고, 적대적 gate가 실행으로 깬다")과 전체 오케스트레이션을 같은 함정 세트로 나란히 재는 것이다. 그 비교가 "엔진이냐 gate냐"를 정한다.
 
+### 8g. 재정의된 목표 대비 점검 — 기획·QA 하네스는 있으나 한 번도 돌지 않았다 (2026-09-22)
+
+사용자가 목표를 다시 명시했다: **기획 하네스, QA 하네스, 그 둘의 오케스트레이션, 태스크 관리** — "plain보다 나은가"가 아니다. §8f의 "엔진 보류" 권고는 그 잣대(plain 대비 승부)로 내린 것이므로 철회한다.
+
+네 요구 대비 점검 결과:
+
+| 요구 | 상태 | 근거 |
+|---|---|---|
+| 기획 하네스 | 구현·단위 테스트 있음, **실측 0회** | `roles.planning` → PLAN phase-Team(draft→revise→gate) → shape `implements[]` 완전성 검사 → 통합 뒤 planning-audit(audit→gate, `unmet[]`→STORY). 테스트 8건. 벤치 seam/trap 전부 기본값 off로 돌아 `spec_present=false` |
+| QA 하네스 | 구현·단위 테스트 있음, **실측 0회** | `roles.qa` → QA phase-Team(cases→execute→gate, 통합 트리 위) → `defects[]`→STORY→재통합(`qa_rounds` 상한). 테스트 5건 + audit 4건 |
+| 오케스트레이션 | 실측 완주 | T2: 5패키지, 수리 1, 한도 정지 후 자동 재개, 14/14 |
+| 태스크 관리 | 실측 완주 | 데몬이 루프 소유, `tm_*`로 수동 개입(T2에서 `tm_retry reset_capacity` 실사용) |
+
+발견한 공백 둘:
+1. **기본값 off.** 개발 흐름이면 기획·QA를 항상 거치는 것이 목표이므로 0.17.0에서 `roles` 기본을 `{planning:true, qa:true}`로 뒤집었다. 벤치는 `TEAM_ROLES`로 개별 제어.
+2. **size S는 roles를 켜도 건너뛴다.** `delegateIfSmall`이 pending 매니저 노드(PLAN 포함)를 전부 skipped 처리하고 단일 graph 런에 위임하며, QA는 `expandPackages`에서만 연결되므로 S에서는 생기지 않는다. 즉 "항상 거친다"는 현재 L에서만 참이다. S 경로에 PLAN 앞·QA 뒤 래핑을 두는 것이 다음 엔진 작업 — 이건 §8f의 "엔진 보류"와 달리 요구 항목 자체이므로 한다.
+
+첫 실측(진행 중, trap, beta arm, 각각 단독):
+- P1: `TEAM_ROLES='{"planning":true,"qa":false}'` — PRD가 나오는가, user story가 shape에 실리는가, audit이 미충족을 잡는가.
+- Q1: `TEAM_ROLES='{"planning":false,"qa":true}'` — QA가 §8f의 실제 결함(SIGKILL 원자성 테스트가 쓰기 구간을 못 맞춤)을 찾는가. 사후 감사와 같은 결함을 QA phase-Team이 빌드 안에서 잡으면 QA 하네스의 값이 처음으로 증명된다.
+
+결과는 여기 아래에 추가.
+
 ## 9. 반론과 리스크
 
 - **"서버가 `claude -p`를 노드마다 띄우면 프로세스 기동 비용이 있다."** 지금도 driver마다 띄운다. 노드 수만큼 띄우면 횟수는 늘지만 각 호출이 짧고, 릴레이 3턴이 사라진 순감소가 더 크다. 실측으로 확인(단계 5).

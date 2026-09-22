@@ -138,7 +138,7 @@ async function withTask(shape, fn) {
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
   const g = await new Client(BROKER).init();
   try {
-    const open = await tm.call('tm_open', { request: 'a request for the view test', cwd, vendor: 'self' });
+    const open = await tm.call('tm_open', { request: 'a request for the view test', cwd, vendor: 'self', roles: { planning: false, qa: false } });
     await throughCritique(tm, open.task_id, shape);
     await fn({ tm, g, cwd, root, task_id: open.task_id });
   } finally {
@@ -347,8 +347,8 @@ test('/state.json serves an index when several tasks exist and no --task is give
   const tm1 = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
   let proc;
   try {
-    const a = await tm1.call('tm_open', { request: 'task A', cwd: cwd1, vendor: 'self' });
-    const b = await tm1.call('tm_open', { request: 'task B', cwd: cwd2, vendor: 'self' });
+    const a = await tm1.call('tm_open', { request: 'task A', cwd: cwd1, vendor: 'self', roles: { planning: false, qa: false } });
+    const b = await tm1.call('tm_open', { request: 'task B', cwd: cwd2, vendor: 'self', roles: { planning: false, qa: false } });
     tm1.close();
 
     proc = spawn('node', [VIEW, '--tasks-dir', root, '--port', '0'], { stdio: ['ignore', 'pipe', 'pipe'] });
