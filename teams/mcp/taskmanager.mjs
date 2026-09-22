@@ -36,11 +36,12 @@ import { touchMarker } from './engage.mjs';
 import {
   epicKey, storyKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
   storyTicketState, storyTaskProgress, epicBoardRows, ticketSnapshot,
+  storyLinks, packageReporter,
 } from './tickets.mjs';
 import { writeDocs } from './docs.mjs';
 import { conventionsBlock } from './conventions.mjs';
 import { readTeamConfig, resolveTeamOptions, TEAM_DEFAULTS } from './teamconfig.mjs';
-import { pluginDirArgs } from './pluginroots.mjs';
+import { pluginDirArgs, isEntryPoint } from './pluginroots.mjs';
 import { ensureViewer, readViewRecord, viewUrl } from './viewserver.mjs';
 import {
   node,
@@ -2736,7 +2737,8 @@ function toolTicket(a) {
     tasks: storyTaskProgress(task, pkgId),
     worktree: dispatch && dispatch.child ? { cwd: dispatch.child.cwd, branch: dispatch.child.branch } : null,
     last_verdict: accept && accept.result ? { accept: accept.result.accept, match_pct: accept.result.match_pct, gaps: accept.result.gaps || [] } : null,
-    reporter: pkg.reporter || (pkg.repair ? 'repair' : 'shape'),
+    reporter: packageReporter(pkg),
+    links: storyLinks(task, pkgId),
     doc_path: docPaths(task).story(pkgId),
   };
 }
@@ -3275,9 +3277,13 @@ async function handle(msg) {
 // closed (spawnDaemon's stdio: ['ignore', ...]), and an ignored stream emits 'end' as soon as
 // Node looks at it - so without this guard, importing taskmanager.mjs would call process.exit(0)
 // on the daemon within its first tick, before it ever read the task it was told to drive.
-const isMain = (() => {
-  try { return fileURLToPath(import.meta.url) === resolve(process.argv[1] || ''); } catch { return false; }
-})();
+//
+// isEntryPoint (pluginroots.mjs) realpath-resolves both sides of the comparison rather than
+// comparing raw strings - a symlinked plugin path (macOS's $TMPDIR -> /private/var, or an
+// installed-marketplace layout) must still count as "this file is argv[1]" when it names the
+// same real file. The raw-string version of this guard shipped in 3c5ad0c8 and exited silently,
+// starting nothing, the first time a real path actually went through a symlink.
+const isMain = isEntryPoint(import.meta.url);
 
 if (isMain) {
   let buf = '';
