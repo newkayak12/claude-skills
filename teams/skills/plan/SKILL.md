@@ -23,9 +23,18 @@ related:
 
 Same engine, same loop, one difference: the user has told you the deliverable is a PRD, so the
 run does not ask the decomposition stage to choose a flow. Every subgoal that names no `kind` is
-`planning` — `draft → revise → gate` — and the personas setgoal draws from are a PO who owns
+`planning` — `investigate → draft → revise → gate` — and the personas setgoal draws from are a PO who owns
 value and scope, a domain expert who owns terminology and rules, and an implementation lead
 reading for feasibility.
+
+`investigate` runs before a word is written and is the only stage in the chain that reads anything
+outside its briefing: the project tree, whatever the request names or attaches, prior documents,
+and the domain's public sources where a search tool is actually available. It writes a findings
+file and returns two lists that stay separate on purpose — `findings`, each with the source that
+says so, and `unknowns`, the decisions no source it reached answers, each with an owner. `draft`
+writes from the findings and carries every unknown into the document as an open question; it may
+recommend, but answering one from nothing is the failure this stage exists to stop. A short,
+honest findings list is a success — the unknowns are half the deliverable.
 
 `revise` is a different identity from `draft` - the broker refuses a revise routed to the vendor
 + model that drafted, the same way it refuses a mismatched `document` review. Unlike `document`'s
@@ -37,7 +46,8 @@ The deliverable is a **set** of planning documents, and the run decides what is 
 vocabulary an engineer would get wrong, rules people will argue about later, or a stated load
 condition, those become documents of their own rather than sections compressed into the PRD or
 lines in its Out of scope. `setgoal` makes that call; each document is one subgoal with its own
-`files[]` path. Every one is a node-written original - the method is the engine's own
+`files[]` path — and `files[]` should also name what that document's investigator ought to open,
+not only the path it writes. Every one is a node-written original - the method is the engine's own
 `PRD_CONTRACT`, not a plugin template. The PRD's conventional home is
 `<docs_dir>/E-<first 8 chars of task_id>/10-prd.md` (`docs_dir` defaults to `.teams_output/team`;
 `team.json`'s key of the same name overrides it); name it, and every other document's path, in the
@@ -45,7 +55,7 @@ planning subgoals' `files[]` when the goal-spec is authored - there is no automa
 only the plain `files[]` mechanism every subgoal already has.
 
 This is the standalone route, where the whole run is the PRD. `.claude/team.json`'s
-`roles.planning` switch (see `install`) is a second route to the same `draft → revise → gate`
+`roles.planning` switch (see `install`) is a second route to the same `investigate → draft → revise → gate`
 work: a planning phase-Team the EPIC flow inserts before `shape` on its own, inside an ordinary
 `develop`/`document`/`orchestrate` run, writing that same set with `10-prd.md` at its floor. Use
 this skill when the deliverable IS the planning work; turn `roles.planning` on instead when a PRD should precede every EPIC

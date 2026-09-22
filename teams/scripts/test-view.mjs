@@ -270,6 +270,7 @@ async function completePlanning(tm, g, task_id, userStories) {
   await sub('plan', { handoff: 'p', flow: 'plan', size: 'S' });
   await sub('setgoal', { spec: { goal: 'PRD', acceptance: ['PRD covers the request'], subgoals: [{ id: 'U1', title: 'draft PRD', acceptance: ['PRD written'], deps: [] }] } });
   await sub('critique', { sound: true });
+  await sub('investigate:U1:1', { changed_files: [], handoff: 'findings' });
   await sub('draft:U1:1', { changed_files: [], handoff: 'drafted' });
   await sub('revise:U1:1', { changed_files: [], handoff: 'revised' });
   await sub('gate:U1:1', { accept: true, match_pct: 95 });

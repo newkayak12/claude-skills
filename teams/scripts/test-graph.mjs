@@ -18,11 +18,14 @@ import {
 } from '../mcp/graph.mjs';
 
 test('planning kind: chain, no reasoning stage, and skills by stage', () => {
-  assert.deepEqual(KINDS.planning.chain, ['draft', 'revise', 'gate']);
+  assert.deepEqual(KINDS.planning.chain, ['investigate', 'draft', 'revise', 'gate']);
   assert.deepEqual(KINDS.planning.reasoning, []);
+  assert.deepEqual(kindSkills('planning', 'investigate'), ['develop:domain-driven-design', 'cognition:assumption-extractor']);
   assert.deepEqual(kindSkills('planning', 'draft'), ['write:doc-coauthoring']);
   assert.deepEqual(kindSkills('planning', 'revise'), ['write:writer-verification', 'think:devils-advocate']);
   assert.deepEqual(kindSkills('planning', 'gate'), ['think:devils-advocate']);
+  // investigate leads the chain but does not author the document; revise must be independent
+  // of draft, not of the investigator.
   assert.equal(authorStage('planning'), 'draft');
 });
 
@@ -35,8 +38,8 @@ test('qa kind: chain, no reasoning stage, and skills by stage', () => {
   assert.equal(authorStage('qa'), 'cases');
 });
 
-test('neither draft/revise (planning) nor cases/execute (qa) is a reasoning stage - both mutate; only gate judges', () => {
-  for (const s of ['draft', 'revise', 'cases', 'execute']) {
+test('neither investigate/draft/revise (planning) nor cases/execute (qa) is a reasoning stage - all mutate; only gate judges', () => {
+  for (const s of ['investigate', 'draft', 'revise', 'cases', 'execute']) {
     assert.equal(REASONING_STAGES.has(s), false, `${s} should not be reasoning`);
   }
   assert.equal(REASONING_STAGES.has('gate'), true, 'gate stays reasoning, from BASE_REASONING');

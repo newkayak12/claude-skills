@@ -394,6 +394,7 @@ test("planning phase-Team's PRD and user_stories flow into shape's input, verbat
     // actually be there - which is also what makes prd_paths real rather than a claim.
     mkdirSync(join(cwd, 'docs'), { recursive: true });
     writeFileSync(join(cwd, 'docs', 'PRD.md'), `# PRD\n\n${PRD_FIXTURE}`);
+    await sub('investigate:U1:1', { changed_files: [], handoff: 'findings' });
     await sub('draft:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'drafted' });
     await sub('revise:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'revised' });
     await sub('gate:U1:1', { accept: true, match_pct: 95 });
@@ -522,6 +523,7 @@ async function completePlanning(tm, g, task_id, cwd, userStories) {
   await sub('plan', { handoff: 'p', flow: 'plan', size: 'S' });
   await sub('setgoal', { spec: { goal: 'PRD', acceptance: ['PRD covers the request'], subgoals: [{ id: 'U1', title: 'draft PRD', acceptance: ['PRD written'], deps: [] }] } });
   await sub('critique', { sound: true });
+  await sub('investigate:U1:1', { changed_files: [], handoff: 'findings' });
   await sub('draft:U1:1', { changed_files: [], handoff: 'drafted' });
   await sub('revise:U1:1', { changed_files: [], handoff: 'revised' });
   await sub('gate:U1:1', { accept: true, match_pct: 95 });
@@ -3487,6 +3489,7 @@ test('an accept under goal_threshold is a rejection, and the phase-Team package 
     await sub('critique', { sound: true });
     mkdirSync(join(cwd, 'docs'), { recursive: true });
     writeFileSync(join(cwd, 'docs', 'PRD.md'), `# PRD\n\n${PRD_FIXTURE}`);
+    await sub('investigate:U1:1', { changed_files: [], handoff: 'findings' });
     await sub('draft:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'd' });
     await sub('revise:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'r' });
     await sub('gate:U1:1', { accept: true, match_pct: 95 });
@@ -3526,6 +3529,7 @@ test('a planning fold returning no user stories is rejected, and says why', asyn
     await sub('critique', { sound: true });
     mkdirSync(join(cwd, 'docs'), { recursive: true });
     writeFileSync(join(cwd, 'docs', 'PRD.md'), '# PRD\n\nno stories here\n');
+    await sub('investigate:U1:1', { changed_files: [], handoff: 'findings' });
     await sub('draft:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'drafted' });
     await sub('revise:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'revised' });
     await sub('gate:U1:1', { accept: true, match_pct: 95 });
@@ -3554,6 +3558,7 @@ test("shape is told the gaps the PRD was accepted with, not only the stories", a
     await sub('critique', { sound: true });
     mkdirSync(join(cwd, 'docs'), { recursive: true });
     writeFileSync(join(cwd, 'docs', 'PRD.md'), `# PRD\n\n${PRD_FIXTURE}`);
+    await sub('investigate:U1:1', { changed_files: [], handoff: 'findings' });
     await sub('draft:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'd' });
     await sub('revise:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'r' });
     await sub('gate:U1:1', { accept: true, match_pct: 95 });

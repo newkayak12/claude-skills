@@ -286,6 +286,36 @@ test('revise, cases and execute each get their own Required output contract, not
   }
 });
 
+test('investigate contract demands sourced findings, separates them from unknowns, and refuses to punish an honest blank', () => {
+  const cwd = tmpProject();
+  try {
+    const prompt = composePrompt(baseRun(cwd), baseNode({ stage: 'investigate' }), baseBriefing());
+    assert.ok(prompt.includes('## Required output'));
+    assert.doesNotMatch(prompt, /"handoff": "<paths, names, interfaces the dependent work needs>"/,
+      'investigate must not fall back to CONTRACT.implement');
+    assert.match(prompt, /"sources"/);
+    assert.match(prompt, /"findings"/);
+    assert.match(prompt, /"unknowns"/);
+    // The distinction is the stage's whole point: an unsourced claim is an unknown, and a
+    // stage that comes back mostly unknowns has still succeeded.
+    assert.match(prompt, /a FINDING is something a source you opened says/);
+    assert.match(prompt, /the unknowns ARE the deliverable/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('the planning draft is told to write from investigate findings and to carry its unknowns rather than answer them', () => {
+  const cwd = tmpProject();
+  try {
+    const prompt = composePrompt(baseRun(cwd), baseNode({ stage: 'draft' }), baseBriefing());
+    assert.match(prompt, /the investigate stage above is your source/);
+    assert.match(prompt, /carry every one of its unknowns into the document as an open question/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('revise contract allows editing and asks for claim-vs-evidence checks, unlike review', () => {
   const cwd = tmpProject();
   try {

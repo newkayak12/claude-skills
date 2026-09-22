@@ -53,7 +53,9 @@ test('referencedPlugins covers every built-in method table, including the manage
   // pm is unpublished, so naming it could never mount anything; the PRD method is inlined in
   // prompts.mjs's PRD_CONTRACT instead. test-skillrefs.mjs guards the whole class.
   assert.ok(!builtin.includes('pm'), `pm must not be named by any method table: ${builtin}`);
-  assert.ok(!builtin.includes('cognition'), 'cognition is only in the manager table, not the graph ones');
+  // cognition used to be manager-only; planning's investigate stage now names
+  // cognition:assumption-extractor, so a KINDS table contributes it too.
+  assert.ok(builtin.includes('cognition'), `planning's investigate stage names cognition: ${builtin}`);
   const withManager = referencedPlugins([Object.values(STAGE_SKILLS)]);
   assert.ok(withManager.includes('cognition'), `manager stage skills must contribute: ${withManager}`);
 });

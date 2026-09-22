@@ -80,12 +80,22 @@ export const KINDS = {
   // describing it as having edit rights - a contradiction; this follows document's precedent
   // instead: the mutating stage is never reasoning.)
   planning: {
-    chain: ['draft', 'revise', 'gate'],
+    // `investigate` leads because the two real planning runs (idol-pm-1/2, 2026-09-22) had no
+    // stage that ever touched a source: draft wrote from the request alone, revise rewrote what
+    // draft had written, gate scored it. Every other kind meets reality somewhere - subgoal's
+    // test runs commands, qa's execute runs the case set - and planning met it nowhere, so a
+    // domain's own rules (a presale's eligibility, a cancellation window, a per-person limit)
+    // could only be invented or omitted. No amount of contract wording fixes a stage with zero
+    // input; a stage that reads first does. Its second job is naming what no source could
+    // answer, so draft carries those as open questions instead of inventing them.
+    chain: ['investigate', 'draft', 'revise', 'gate'],
     reasoning: [],
+    author: 'draft',
     skills: {
       // No PM plugin is named here: pm is unpublished, so 'pm:prd-development' could never
       // mount and left every planning draft with no method at all. The PRD method now lives
       // in prompts.mjs's PRD_CONTRACT, inside the draft contract itself.
+      investigate: ['develop:domain-driven-design', 'cognition:assumption-extractor'],
       draft: ['write:doc-coauthoring'],
       revise: ['write:writer-verification', 'think:devils-advocate'],
       gate: ['think:devils-advocate'],
@@ -203,9 +213,15 @@ export function normalizeSpec(run, spec) {
   return { ...spec, subgoals: spec.subgoals.map((sg) => (sg && typeof sg === 'object' && sg.kind == null ? { ...sg, kind: dflt } : sg)) };
 }
 
-// The stage a kind's chain opens with - the one whose author a later stage must not be.
+// The stage that AUTHORS the artifact - the identity a later reviewing stage must not be.
+// This was chain[0] until planning grew an `investigate` stage in front of `draft`: the
+// investigator reads sources and writes findings, it does not write the document, so
+// comparing revise against it would have let the drafter revise their own draft. A kind
+// may name its author explicitly; chain[0] remains the default, which is still correct for
+// every other kind (implement, draft, cases).
 export function authorStage(kind) {
-  return (KINDS[kind] || KINDS[DEFAULT_KIND]).chain[0];
+  const k = KINDS[kind] || KINDS[DEFAULT_KIND];
+  return k.author || k.chain[0];
 }
 
 // The kind of the subgoal a node belongs to, from the run's spec. Run-level nodes have none.

@@ -417,17 +417,41 @@ test('TASK ticket state: gate stage - pending-but-ready/running -> IN_REVIEW, do
   assert.equal(taskTicketState(unreachable, 'U1'), 'UNREACHABLE');
 });
 
-test('TASK ticket state generalizes to the planning kind (draft/revise/gate) with no special-casing', () => {
+test('a four-stage chain does not read its gate slot off the wrong stage: revise done, gate still pending, is IN_REVIEW not DONE', () => {
+  // The bug this guards: taskTicketState destructured the chain as a fixed [author, mid, gate]
+  // triple, so planning's four-stage chain put `revise` in the gate slot - a finished revise
+  // reported the TASK DONE and a failed gate could never be REJECTED.
+  const midway = childRun('planning', 'U1');
+  finish(midway, 'U1', 'investigate');
+  finish(midway, 'U1', 'draft');
+  finish(midway, 'U1', 'revise');
+  assert.equal(stageNode(midway, 'U1', 'gate').state, 'pending');
+  assert.equal(taskTicketState(midway, 'U1'), 'IN_REVIEW');
+
+  // And the stage before the author is still authoring, not reviewing: investigate running is
+  // IN_PROGRESS, and a draft merely waiting its turn behind a finished investigate is too.
+  const researching = childRun('planning', 'U1');
+  stageNode(researching, 'U1', 'investigate').state = 'running';
+  assert.equal(taskTicketState(researching, 'U1'), 'IN_PROGRESS');
+
+  const drafting = childRun('planning', 'U1');
+  finish(drafting, 'U1', 'investigate');
+  assert.equal(taskTicketState(drafting, 'U1'), 'IN_PROGRESS');
+});
+
+test('TASK ticket state generalizes to the planning kind (investigate/draft/revise/gate) with no special-casing', () => {
   const running = childRun('planning', 'U1');
-  stageNode(running, 'U1', 'draft').state = 'running';
+  stageNode(running, 'U1', 'investigate').state = 'running';
   assert.equal(taskTicketState(running, 'U1'), 'IN_PROGRESS');
 
   const inReview = childRun('planning', 'U1');
+  finish(inReview, 'U1', 'investigate');
   finish(inReview, 'U1', 'draft');
   stageNode(inReview, 'U1', 'revise').state = 'running';
   assert.equal(taskTicketState(inReview, 'U1'), 'IN_REVIEW');
 
   const rejected = childRun('planning', 'U1');
+  finish(rejected, 'U1', 'investigate');
   finish(rejected, 'U1', 'draft');
   finish(rejected, 'U1', 'revise');
   Object.assign(stageNode(rejected, 'U1', 'gate'), { state: 'failed', result: { stage_ok: false } });
