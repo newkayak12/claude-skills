@@ -74,13 +74,13 @@ tm_open({
   request, cwd, isolated, flow: "auto",
   vendor: "auto", allocation: "balanced",
   host_vendor, host_model, native_models
-})                                               -> task_id, state, docs_dir
+})                                               -> task_id, state, docs_dir, view_url
 ```
 
 That is the whole of your job to start it: size, shape, critique, every package's dispatch and
 fold, integrate, the goal gate, the report — or, for a size-S request, the one run it opens —
 all happen on their own from here. Prefer `tm_run` over `tm_open` when you do not even want the
-`state` field back, only a pointer: same open, same daemon, `{task_id, run_id, docs_dir}`.
+`state` field back, only a pointer: same open, same daemon, `{task_id, run_id, docs_dir, view_url}` - open `view_url` in a browser to watch the run.
 
 After this you watch; you never drive.
 
