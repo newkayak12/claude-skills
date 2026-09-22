@@ -64,7 +64,7 @@ test('the engine names no PM plugin - the PRD method is inlined instead', () => 
   for (const [skill] of everySkillReference()) {
     assert.notEqual(skill.split(':')[0], 'pm', `${skill} is back; pm is unpublished and can never mount`);
   }
-  assert.match(PRD_CONTRACT, /You are writing a PRD/);
+  assert.match(PRD_CONTRACT, /You are writing this request's planning documents/);
 });
 
 test('PRD_CONTRACT names every section the PRD must carry', () => {
@@ -84,7 +84,35 @@ test('the planning draft contract carries the PRD contract', async () => {
   const run = { run_id: 'r1', flow: 'plan', goal: 'Produce a PRD for X', cwd: '/tmp/x', allocation: 'balanced', nodes: [] };
   const n = { node_id: 'draft:U1:1', stage: 'draft', subgoal_id: 'U1', attempt: 1 };
   const briefing = { subgoal: { id: 'U1', title: 'PRD', kind: 'planning', acceptance: ['a'], files: ['PRD.md'] }, upstream: [], problems: [] };
-  assert.ok(composePrompt(run, n, briefing).includes('You are writing a PRD'));
+  assert.ok(composePrompt(run, n, briefing).includes("You are writing this request's planning documents"));
+});
+
+// Both real planning runs wrote one PRD in sections and filed the domain's own rules under Out
+// of scope or an open question (idol-pm-2, 2026-09-22: fan-club presale "assumed to exist" with
+// no story; refunds, transfers and the price catalog all excluded). Nobody asked for one
+// document - setgoal simply never heard that deciding the set was its job.
+test('a planning setgoal is told to decide its own document set', async () => {
+  const { composePrompt, PLANNING_SETGOAL } = await import('../mcp/prompts.mjs');
+  assert.match(PLANNING_SETGOAL, /SET of planning documents/);
+  assert.match(PLANNING_SETGOAL, /floor, never the ceiling/);
+  assert.match(PLANNING_SETGOAL, /do not produce four documents because that sentence lists four/);
+
+  const run = { run_id: 'r1', flow: 'plan', goal: 'Produce a PRD for X', cwd: '/tmp/x', allocation: 'balanced', nodes: [] };
+  const setgoal = composePrompt(run, { node_id: 'setgoal', stage: 'setgoal' }, { upstream: [], problems: [], flow: 'plan', default_kind: 'planning' });
+  assert.ok(setgoal.includes('SET of planning documents'), 'the planning setgoal hears it');
+
+  // Not a document run, not a develop run - this is planning's own instruction.
+  const docRun = { ...run, flow: 'document' };
+  const docSetgoal = composePrompt(docRun, { node_id: 'setgoal', stage: 'setgoal' }, { upstream: [], problems: [], flow: 'document', default_kind: 'document' });
+  assert.ok(!docSetgoal.includes('SET of planning documents'), 'a document run is not handed planning\'s set rule');
+});
+
+// Out of scope had become the cheapest way past the domain clause: name the practice, exclude
+// it, pass. A rule a user story rests on is decided or owned, never filed.
+test('PRD_CONTRACT closes the Out-of-scope escape hatch for undecided rules', () => {
+  assert.match(PRD_CONTRACT, /not a place to put a rule you did not decide/);
+  assert.match(PRD_CONTRACT, /Open question with a named owner/);
+  assert.match(PRD_CONTRACT, /an omission wearing a heading/);
 });
 
 // idol-pm-1 (2026-09-22) produced a PRD whose own accept node called it "a generic high-demand
