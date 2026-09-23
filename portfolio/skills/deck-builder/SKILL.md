@@ -15,6 +15,14 @@ scenarios:
 compatibility:
   required:
     - python 3.9+ (stdlib only — zipfile, xml.etree, re; no python-pptx, no PyYAML)
+  recommended:
+    - LibreOffice (soffice on PATH) — `render` and SVG picture slots need it; catalog, check and build do not
+  remote_mcp_note: >-
+    LibreOffice가 없으면 `build`까지는 그대로 동작하고 `render`만 멈춥니다. 덱은 사람이 보는
+    물건이므로 가능하면 설치해서 마지막에 페이지를 확인하세요 — macOS는
+    `brew install --cask libreoffice`. 템플릿이 쓰는 폰트는 렌더하는 컴퓨터에 깔려 있어야
+    합니다. 없으면 LibreOffice가 조용히 대체 폰트를 써서 줄바꿈이 전부 달라지고, `render`가
+    그 사실을 먼저 알려줍니다.
 ---
 
 ## What this skill does
