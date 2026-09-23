@@ -15,6 +15,7 @@ import {
   KINDS, VERDICT_FIELD, REASONING_STAGES, FLOWS, kindSkills, kindOf, authorStage,
   createRun, runState, retrySubgoal, retrySpec, getNode, readyNodes, parentShapedTerminal,
   validateSpec,
+  expandSubgoals, node,
 } from '../mcp/graph.mjs';
 
 test('planning kind: chain, no reasoning stage, and skills by stage', () => {
@@ -198,6 +199,61 @@ test('runState on a parent_shaped run: a rejected gate with no retry called leav
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+test('reduce: the fold a multi-subgoal run gets, and the single-subgoal run that does not', () => {
+  // expandSubgoals saves, so each fixture needs its own store - a shared run_id under one cwd
+  // merges with whatever a sibling test left behind.
+  const dir = mkdtempSync(join(tmpdir(), 'reduce-'));
+  const run = (n) => ({
+    run_id: `r${n}`, cwd: dir, goal_judges: 1, max_retries: 2,
+    nodes: [node('critique', 'critique', [], { state: 'done', result: {} })],
+    spec: { subgoals: Array.from({ length: n }, (_, i) => ({ id: `U${i + 1}`, deps: [] })) },
+  });
+
+  const many = run(3);
+  expandSubgoals(many, many.spec.subgoals);
+  const red = many.nodes.find((x) => x.node_id === 'reduce');
+  assert.ok(red, 'three subgoals get a fold');
+  assert.deepEqual(red.deps.slice().sort(), ['gate:U1:1', 'gate:U2:1', 'gate:U3:1']);
+  const goal = many.nodes.find((x) => x.node_id === 'gate:goal:1');
+  assert.deepEqual(goal.deps, ['reduce'], 'the data edge runs through the fold');
+  // Sight must not narrow with the data edge: nodeBriefing walks deps AND after, so the gate
+  // keeps every subgoal gate as an order-only edge or it judges work it was never shown.
+  assert.deepEqual((goal.after || []).slice().sort(), ['gate:U1:1', 'gate:U2:1', 'gate:U3:1']);
+
+  const one = run(1);
+  expandSubgoals(one, one.spec.subgoals);
+  assert.equal(one.nodes.some((x) => x.stage === 'reduce'), false, 'one subgoal has nothing to fold');
+  assert.deepEqual(one.nodes.find((x) => x.node_id === 'gate:goal:1').deps, ['gate:U1:1']);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('reduce reports and does not repair: it is a reasoning stage', () => {
+  // The level above decides what happens to a collision or an orphan - a stage that observed
+  // the set and then acted on it would be deciding at the level that was asked to look.
+  assert.equal(REASONING_STAGES.has('reduce'), true);
+});
+
+test('a retry reopens the fold it already ran, bumping reopened so mergeOnto lets it back', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'refold-'));
+  const run = {
+    run_id: 'refold', cwd: dir, max_retries: 2,
+    spec: { subgoals: [{ id: 'U1' }, { id: 'U2' }] },
+    nodes: [
+      node('gate:U1:1', 'gate', [], { subgoal_id: 'U1', state: 'done', result: {} }),
+      node('gate:U2:1', 'gate', [], { subgoal_id: 'U2', state: 'failed', result: {} }),
+      node('reduce', 'reduce', ['gate:U1:1', 'gate:U2:1'], { state: 'done', result: { handoff: 'stale' } }),
+      node('gate:goal:1', 'gate', ['reduce'], { subgoal_id: null, after: ['gate:U1:1', 'gate:U2:1'], state: 'failed', result: {} }),
+    ],
+  };
+  retrySubgoal(run, 'U2', '');
+  const red = run.nodes.find((n) => n.node_id === 'reduce');
+  assert.equal(red.state, 'pending', 'a fold that ran before the retry folded a set that no longer exists');
+  assert.equal(red.result, null);
+  assert.equal(red.reopened, 1, 'mergeOnto refuses done -> pending without this, and the reset is merged away');
+  assert.ok(red.deps.includes('gate:U2:2'), 'and it now waits on the live attempt');
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('a report written over a settled failure completes with settled:true, and a clean one does not', () => {
   const clean = { nodes: [
     { node_id: 'report', stage: 'report', subgoal_id: null, state: 'done', deps: [] },

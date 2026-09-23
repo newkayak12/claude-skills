@@ -286,6 +286,27 @@ test('revise, cases and execute each get their own Required output contract, not
   }
 });
 
+test('reduce contract folds the set, reports every mismatch, and repairs nothing', () => {
+  const cwd = tmpProject();
+  try {
+    const prompt = composePrompt(baseRun(cwd), baseNode({ stage: 'reduce' }), baseBriefing());
+    assert.ok(prompt.includes('## Required output'));
+    assert.doesNotMatch(prompt, /"handoff": "<paths, names, interfaces the dependent work needs>"/,
+      'reduce must not fall back to CONTRACT.implement');
+    for (const f of ['"declared"', '"undeclared"', '"collisions"', '"orphans"', '"repairs_needed"']) {
+      assert.ok(prompt.includes(f), `${f} must be in the required output`);
+    }
+    // The level above decides; this stage only looks. A reduce that repaired what it found
+    // would be deciding at the level that was asked to observe, and would hide the defect
+    // from the gate that should have seen it.
+    assert.match(prompt, /You report; you do not repair/);
+    assert.match(prompt, /Change no files at all/);
+    assert.doesNotMatch(prompt, /"changed_files"/, 'a stage that writes nothing claims no files');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('investigate contract demands sourced findings, separates them from unknowns, and refuses to punish an honest blank', () => {
   const cwd = tmpProject();
   try {
