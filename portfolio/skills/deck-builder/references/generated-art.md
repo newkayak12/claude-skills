@@ -23,6 +23,9 @@ builds do not re-render. This is the one step that needs the renderer at **build
 
 ## Two rules make it merge with the reference
 
+`check` enforces both: it names any hex in the SVG that is far from every color the
+template uses, and warns when the art's aspect would make the build crop it.
+
 **Write it in the template's colors.** `catalog` prints a Palette section — the theme
 slots and the colors the slides actually use. Use those hexes, not ones that merely look
 close. The reference supplies the design; the generated source supplies only the content.

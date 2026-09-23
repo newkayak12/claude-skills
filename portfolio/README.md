@@ -323,6 +323,13 @@ carries raster images — SVG does not render the same in PowerPoint, Keynote, G
 PDF export, and older PowerPoint shows nothing for it, so the vector stays in the source tree and
 the build asserts that nothing vector reached the package. That closes the gap where
 everything in a deck is text a model can write except the one diagram someone still has to draw.
+Pictures carry a fit mode — `| fit` keeps the whole image by shrinking the frame to its shape,
+the default `| fill` crops to the frame, and `| fill top` chooses what survives. `check` reports
+how much any crop discards, the image's effective dpi against its frame, whether generated art
+strayed off the template's palette, and whether an image's border will read as a pasted box on
+that slide's background. A picture losing half of itself is treated as the same defect as a table
+row falling off the slide: the engine does not lose content quietly.
+
 `catalog` prints the template's palette and its type — theme slots, the colors the slides actually
 use, the theme fonts, and the pt sizes in play — plus each picture frame's exact size in points. Author
 an SVG at that pt size and `font-size="16"` in the art is the same 16pt as the body text beside it, so

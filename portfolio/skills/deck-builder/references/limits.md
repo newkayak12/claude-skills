@@ -10,6 +10,7 @@ Stated here rather than discovered in a PDF. Report the ones that bite on a give
 | **The package is raster only** | SVG is rasterized on the way in; other vector formats (`.emf`, `.wmf`, `.pdf`, `.eps`, `.ai`) are refused — export them to PNG. A deck must look the same in PowerPoint, Keynote and a PDF export. |
 | **SVG assets need the renderer at build time** | PNG and JPEG assets need nothing. An `.svg` has to be rasterized, so `build` needs LibreOffice for that slot. |
 | **Layout truth needs a renderer** | `check` estimates from frame width ÷ font size. Only `render` sees what actually collides, and it needs LibreOffice. |
+| **Color checks are approximate** | Palette conformance reads hexes out of SVG text; the pasted-box check decodes PNG borders only (not JPEG) and compares against the slide, layout or master background — not against a shape sitting behind the frame. |
 | **Capacity is an estimate** | Overflow warnings come from frame width ÷ font size, not real text metrics. Treat them as a prompt to look, not a verdict. |
 | **Nesting is only as visible as the template makes it** | A nested item is written at outline level 1. If the template's own body text defines no indent for level 1, it renders flush with the rest — the level is correct, the template just doesn't show it. |
 | **Formatting follows the template** | A replaced run inherits the template run's font, size and color. `**bold**`, `*italic*` and `` `code` `` flip those attributes on a copy; anything beyond that (per-word color, size) is not expressible. |
@@ -27,3 +28,7 @@ Stated here rather than discovered in a PDF. Report the ones that bite on a give
 | An SVG with no renderer | `check`, as an error |
 | A template that moved under the deck | `check` and `build`, via `template_hash` |
 | A chart slot | `catalog` lists it; `build` says it left the numbers alone |
+| An image `fill` would crop | `check` warns with the percentage; `build` repeats it |
+| An image too low- or high-resolution for its frame | `check`, as a warning with the effective dpi |
+| Generated art off the template's palette | `check`, naming each stray hex and its nearest template color |
+| An image whose border clashes with the slide | `check`, as a warning (PNG only) |

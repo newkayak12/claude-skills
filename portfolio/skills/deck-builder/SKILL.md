@@ -43,6 +43,7 @@ Engine: `scripts/deck.py` (invoke with an absolute path).
 - **Catalog before writing.** Never author `deck.mdx` from a guess about the template. Run `catalog` and write against the slot ids it prints.
 - **Never hand-edit the output pptx.** It is regenerated on the next build. Corrections go into `deck.mdx`.
 - **Run `check` before `build`, and show the user the warnings.** Overflow warnings are what stands between crowded text and a slide nobody can read.
+- **Never crop away content without saying so.** `check` reports the percentage; repeat it to the user and offer `| fit`. A picture losing half of itself is the same defect as a table row falling off the slide.
 - **Never hand-author a picture slot's art as a binary.** Write the SVG so the deck stays reproducible from text. A PNG someone pasted in cannot be regenerated, re-colored, or reviewed in a diff.
 - **A deck is read by people, so look at it.** When a renderer is available, finish with `render`, not `build` — the layout audit and the page previews are the only place text collisions show up. If no renderer is available, say so plainly in the report instead of implying the layout was checked.
 - **Never invent an archetype.** If no template slide fits the content, say so and ask whether to reshape the content or extend the template — do not approximate.
@@ -107,7 +108,8 @@ notes: 숫자의 출처를 먼저 말할 것
 text5: !drop
 ```
 
-Slots you leave out keep the template's content. Full syntax — slot forms, `!drop`,
+Pictures take a fit mode — `pic1: shot.png | fit` keeps the whole image, the default
+`fill` crops it to the frame. Slots you leave out keep the template's content. Full syntax — slot forms, `!drop`,
 `notes:`, inline emphasis, outline levels, and what `template_hash` protects against —
 is in `references/mdx-syntax.md`. Read it before writing the first slide.
 
@@ -128,9 +130,12 @@ See `references/generated-art.md` for the rules and a worked example.
 python3 /abs/path/scripts/deck.py check --deck deck.mdx
 ```
 
-Errors (unknown archetype, unknown slot, missing image, wrong value shape) must be fixed.
-Warnings (text longer than the frame fits, more list items than the template shows,
-untouched slots still holding template copy) are judgment calls — surface them.
+Errors (unknown archetype, unknown slot, missing image, wrong value shape, a table taller
+than the slide, a moved template) must be fixed. Warnings are judgment calls — surface
+them: text longer than its frame, more list items than the template shows, untouched slots
+still holding template copy, and for every picture how much `fill` would crop away, whether
+its resolution holds up at that size, whether generated art left the template's palette,
+and whether its border will read as a pasted box on that slide.
 
 ### Step 5 · Build
 

@@ -24,6 +24,7 @@ import hashlib
 import os
 import re
 import shutil
+import zlib
 import statistics
 import struct
 import subprocess
@@ -681,19 +682,268 @@ def image_size(path):
     return None
 
 
-def center_crop(src_ratio, frame_ratio):
-    """a:srcRect percentages (l, t, r, b in 1/1000 %) for a fill-without-distortion crop."""
+FIT_MODES = ("fill", "fit", "stretch")
+ANCHORS = ("center", "top", "bottom", "left", "right")
+
+
+def parse_picture_value(value):
+    """`path/to.png | fit` -> (path, mode, anchor). Bare paths keep the default."""
+    path, mode, anchor = value, "fill", "center"
+    if "|" in value:
+        path, _, opts = value.rpartition("|")
+        path = path.strip()
+        for word in opts.split():
+            word = word.lower()
+            if word in FIT_MODES:
+                mode = word
+            elif word in ANCHORS:
+                anchor = word
+            else:
+                return value.strip(), None, word   # unknown: caller reports it
+    return path.strip(), mode, anchor
+
+
+def crop_rect(src_ratio, frame_ratio, anchor="center"):
+    """a:srcRect (l, t, r, b in 1/1000 %) for a fill crop, plus the fraction discarded.
+
+    A crop throws content away, so the caller is told how much — the same rule the table
+    overflow follows: the engine may not lose content quietly.
+    """
     if not src_ratio or not frame_ratio:
-        return None
-    if abs(src_ratio - frame_ratio) < 1e-3:
-        return None
-    if src_ratio > frame_ratio:      # source too wide: trim left/right
+        return None, 0.0
+    if abs(src_ratio - frame_ratio) / frame_ratio < 0.005:
+        return None, 0.0
+    if src_ratio > frame_ratio:                 # wider than the frame: trim the sides
         keep = frame_ratio / src_ratio
-        cut = int(round((1 - keep) / 2 * 100000))
-        return {"l": cut, "r": cut}
-    keep = src_ratio / frame_ratio   # source too tall: trim top/bottom
-    cut = int(round((1 - keep) / 2 * 100000))
-    return {"t": cut, "b": cut}
+        cut = int(round((1 - keep) * 100000))
+        if anchor == "left":
+            rect = {"r": cut}
+        elif anchor == "right":
+            rect = {"l": cut}
+        else:
+            rect = {"l": cut // 2, "r": cut - cut // 2}
+    else:                                       # taller than the frame: trim top/bottom
+        keep = src_ratio / frame_ratio
+        cut = int(round((1 - keep) * 100000))
+        if anchor == "top":
+            rect = {"b": cut}
+        elif anchor == "bottom":
+            rect = {"t": cut}
+        else:
+            rect = {"t": cut // 2, "b": cut - cut // 2}
+    return rect, (1 - keep)
+
+
+def fit_frame(off, ext, src_ratio):
+    """Shrink the frame to the image's shape, centred in the box the template drew.
+
+    `fit` keeps the whole image at the cost of leaving slide background inside the
+    template's box — the opposite trade from `fill`, and the right one for a diagram
+    or a screenshot where the edges carry meaning.
+    """
+    if not off or not ext or not src_ratio:
+        return None
+    cx, cy = ext
+    frame_ratio = cx / cy if cy else src_ratio
+    if src_ratio > frame_ratio:
+        ncx, ncy = cx, int(round(cx / src_ratio))
+    else:
+        ncy, ncx = cy, int(round(cy * src_ratio))
+    return (off[0] + (cx - ncx) // 2, off[1] + (cy - ncy) // 2), (ncx, ncy)
+
+
+def set_frame(el, off, ext):
+    spPr = el.find(q("p:spPr"))
+    if spPr is None:
+        return False
+    xfrm = spPr.find(q("a:xfrm"))
+    if xfrm is None:
+        return False
+    o, e = xfrm.find(q("a:off")), xfrm.find(q("a:ext"))
+    if o is None or e is None:
+        return False
+    o.set("x", str(off[0]))
+    o.set("y", str(off[1]))
+    e.set("cx", str(ext[0]))
+    e.set("cy", str(ext[1]))
+    return True
+
+
+# ── Color ────────────────────────────────────────────────────────────────────
+
+HEX_RE = re.compile(r"#([0-9A-Fa-f]{6})\b|#([0-9A-Fa-f]{3})\b")
+
+
+def svg_colors(path):
+    """Every hex the SVG paints with, uppercased and expanded from shorthand."""
+    text = Path(path).read_text(encoding="utf-8", errors="replace")
+    out = []
+    for long_, short in HEX_RE.findall(text):
+        if long_:
+            out.append(long_.upper())
+        elif short:
+            out.append("".join(c * 2 for c in short).upper())
+    seen = []
+    for c in out:
+        if c not in seen:
+            seen.append(c)
+    return seen
+
+
+def rgb(hexv):
+    h = hexv.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+def color_distance(a, b):
+    """Rough perceptual distance, 0-100. Good enough to tell 'clashes' from 'close'."""
+    ra, ga, ba = rgb(a)
+    rb, gb, bb = rgb(b)
+    rm = (ra + rb) / 2
+    d = ((2 + rm / 256) * (ra - rb) ** 2 + 4 * (ga - gb) ** 2
+         + (2 + (255 - rm) / 256) * (ba - bb) ** 2) ** 0.5
+    return min(100.0, d / 765 * 100)
+
+
+def nearest(hexv, palette):
+    if not palette:
+        return None, 100.0
+    best = min(palette, key=lambda c: color_distance(hexv, c))
+    return best, color_distance(hexv, best)
+
+
+def read_png(path, max_pixels=8_000_000):
+    """(width, height, rows) for a plain PNG. rows are lists of (r,g,b,a).
+
+    stdlib only — enough to look at an image's edges, not a general decoder.
+    Interlaced or 16-bit-with-oddities files return None rather than a wrong answer.
+    """
+    data = Path(path).read_bytes()
+    if data[:8] != PNG_MAGIC:
+        return None
+    pos, idat, pal, trns = 8, [], None, None
+    w = h = depth = ctype = interlace = None
+    while pos < len(data) - 8:
+        ln = int.from_bytes(data[pos:pos + 4], "big")
+        tag = data[pos + 4:pos + 8]
+        body = data[pos + 8:pos + 8 + ln]
+        if tag == b"IHDR":
+            w, h, depth, ctype, _, _, interlace = struct.unpack(">IIBBBBB", body)
+        elif tag == b"PLTE":
+            pal = body
+        elif tag == b"tRNS":
+            trns = body
+        elif tag == b"IDAT":
+            idat.append(body)
+        elif tag == b"IEND":
+            break
+        pos += 12 + ln
+    if not w or interlace or depth not in (8, 16) or ctype not in (0, 2, 3, 4, 6):
+        return None
+    if w * h > max_pixels:
+        return None
+    channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[ctype]
+    bpp = channels * (depth // 8)
+    stride = w * bpp
+    raw = zlib.decompress(b"".join(idat))
+    if len(raw) < (stride + 1) * h:
+        return None
+
+    rows, prev = [], bytearray(stride)
+    at = 0
+    for _ in range(h):
+        ft = raw[at]
+        line = bytearray(raw[at + 1:at + 1 + stride])
+        at += 1 + stride
+        for i in range(stride):
+            a = line[i - bpp] if i >= bpp else 0
+            b = prev[i]
+            c = prev[i - bpp] if i >= bpp else 0
+            if ft == 1:
+                line[i] = (line[i] + a) & 0xFF
+            elif ft == 2:
+                line[i] = (line[i] + b) & 0xFF
+            elif ft == 3:
+                line[i] = (line[i] + (a + b) // 2) & 0xFF
+            elif ft == 4:
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                line[i] = (line[i] + pr) & 0xFF
+        prev = line
+        step = depth // 8
+        px = []
+        for x in range(w):
+            o = x * bpp
+            v = [line[o + i * step] for i in range(channels)]
+            if ctype == 0:
+                px.append((v[0], v[0], v[0], 255))
+            elif ctype == 4:
+                px.append((v[0], v[0], v[0], v[1]))
+            elif ctype == 2:
+                px.append((v[0], v[1], v[2], 255))
+            elif ctype == 6:
+                px.append((v[0], v[1], v[2], v[3]))
+            else:
+                i = v[0] * 3
+                alpha = trns[v[0]] if trns and v[0] < len(trns) else 255
+                px.append((pal[i], pal[i + 1], pal[i + 2], alpha) if pal else (0, 0, 0, 255))
+        rows.append(px)
+    return w, h, rows
+
+
+def png_edge(path):
+    """(dominant border hex, transparent fraction) — what the image's frame looks like."""
+    got = read_png(path)
+    if not got:
+        return None
+    w, h, rows = got
+    edge = list(rows[0]) + list(rows[-1])
+    for row in rows:
+        edge.append(row[0])
+        edge.append(row[-1])
+    clear = sum(1 for p in edge if p[3] < 16)
+    opaque = [p for p in edge if p[3] >= 16]
+    if not opaque:
+        return None, 1.0
+    buckets = {}
+    for r, g, b, _ in opaque:
+        buckets.setdefault((r // 16, g // 16, b // 16), []).append((r, g, b))
+    top = buckets[max(buckets, key=lambda k: len(buckets[k]))]
+    avg = tuple(round(sum(c[i] for c in top) / len(top)) for i in range(3))
+    return "%02X%02X%02X" % avg, clear / len(edge)
+
+
+def slide_background(pkg, slide_part):
+    """The solid color behind a slide, following slide -> layout -> master."""
+    def bg_of(part):
+        if part not in pkg.parts:
+            return None
+        bg = ET.fromstring(pkg.parts[part]).find(q("p:cSld") + "/" + q("p:bg"))
+        if bg is None:
+            return None
+        srgb = bg.find(".//" + q("a:srgbClr"))
+        return srgb.get("val").upper() if srgb is not None else None
+
+    here = bg_of(slide_part)
+    if here:
+        return here
+    chain = [slide_part]
+    for rel_type in ("/slideLayout", "/slideMaster"):
+        rn = rels_name(chain[-1])
+        if rn not in pkg.parts:
+            break
+        nxt = None
+        for rel in ET.fromstring(pkg.parts[rn]):
+            if rel.get("Type", "").endswith(rel_type):
+                nxt = "ppt/" + rel.get("Target").replace("../", "")
+        if not nxt:
+            break
+        chain.append(nxt)
+        found = bg_of(nxt)
+        if found:
+            return found
+    return None
 
 
 # ── SVG assets ───────────────────────────────────────────────────────────────
@@ -1193,7 +1443,20 @@ def slot_frame_cx(el):
     return ext[0] if ext else None
 
 
-def _swap_picture(el, path, imgctx, problems, where, slot):
+def effective_dpi(px, emu):
+    """How many pixels the image actually has per inch of slide."""
+    if not px or not emu:
+        return None
+    return px / (emu / 914400)
+
+
+def _swap_picture(el, raw_value, imgctx, problems, where, slot):
+    path, mode, anchor = parse_picture_value(raw_value)
+    if mode is None:
+        problems.append("%s: slot '%s' — unknown picture option %r. Use one of %s, "
+                        "optionally with %s." % (where, slot.id, anchor,
+                                                 "/".join(FIT_MODES), "/".join(ANCHORS)))
+        return
     src = (imgctx["base"] / path).resolve() if not Path(path).is_absolute() else Path(path)
     if not src.is_file():
         problems.append("%s: image not found: %s" % (where, src))
@@ -1238,16 +1501,33 @@ def _swap_picture(el, path, imgctx, problems, where, slot):
         return
     blip.set(q("r:embed"), rid)
     fill = el.find(q("p:blipFill"))
-    if fill is not None:
-        for old in fill.findall(q("a:srcRect")):
-            fill.remove(old)
-        size = image_size(src)
-        crop = center_crop(size[0] / size[1] if size and size[1] else None, slot.ratio)
-        if crop:
-            rect = ET.Element(q("a:srcRect"))
-            for k, v in crop.items():
-                rect.set(k, str(v))
-            fill.insert(list(fill).index(blip) + 1, rect)
+    if fill is None:
+        return
+    for old in fill.findall(q("a:srcRect")):
+        fill.remove(old)
+    size = image_size(src)
+    src_ratio = size[0] / size[1] if size and size[1] else None
+    ext, off = extent(el), offset(el)
+    frame_ratio = (ext[0] / ext[1]) if ext and ext[1] else slot.ratio
+
+    if mode == "stretch" or src_ratio is None:
+        return
+    if mode == "fit":
+        fitted = fit_frame(off, ext, src_ratio)
+        if fitted is None:
+            problems.append("%s: slot '%s' inherits its position from the layout, so `fit` "
+                            "has no box to fit inside — falling back to fill"
+                            % (where, slot.id))
+        else:
+            set_frame(el, *fitted)
+            return
+    rect, lost = crop_rect(src_ratio, frame_ratio, anchor)
+    if rect:
+        el_rect = ET.Element(q("a:srcRect"))
+        for k, v in rect.items():
+            el_rect.set(k, str(v))
+        fill.insert(list(fill).index(blip) + 1, el_rect)
+        imgctx["cropped"].append((where, slot.id, src.name, lost, anchor))
 
 
 # ── Build ────────────────────────────────────────────────────────────────────
@@ -1293,7 +1573,7 @@ def cmd_build(args):
     imgctx = {"pkg": pkg, "base": md_path.parent.resolve(), "n": 0,
               "by_src": {}, "exts": set(), "add_rel": None,
               "renderer": Renderer(), "cache": md_path.parent / ".deckcache",
-              "rasterized": 0}
+              "rasterized": 0, "cropped": []}
     problems = list(errors) + drift
     new_parts = []
     notes_parts = []
@@ -1382,6 +1662,11 @@ def cmd_build(args):
         print("  ! %s" % p)
     if notes_parts:
         print("  %d slide(s) carry speaker notes" % len(notes_parts))
+    for where, slot_id, name, lost, anchor in imgctx["cropped"]:
+        if lost >= 0.10:
+            print("  ! %s: %s was cropped to fill %s — %.0f%% of the image is not on the "
+                  "slide. `| fit` keeps all of it; `| fill top` moves what survives."
+                  % (where, name, slot_id, lost * 100))
     if imgctx["n"]:
         print("  %d image(s) embedded%s"
               % (imgctx["n"], ", %d rasterized from SVG" % imgctx["rasterized"]
@@ -1451,6 +1736,67 @@ def _rewrite_content_types(pkg, new_parts, exts, notes_parts=(), notes_master=No
 
 # ── Check ────────────────────────────────────────────────────────────────────
 
+def _check_picture_color(path, tag, slot_id, line, warns, palette, background):
+    """Two ways a picture clashes: off the template's palette, or a box on the slide."""
+    if path.suffix.lower() == ".svg":
+        strays = []
+        for hexv in svg_colors(path):
+            near, dist = nearest(hexv, palette)
+            if dist > 12:
+                strays.append("#%s (nearest template color #%s)" % (hexv, near))
+        if strays:
+            warns.append("line %d: %s.%s — %s paints with colors the template does not "
+                         "use: %s. Generated art carries content; the reference carries "
+                         "the design." % (line, tag, slot_id, path.name, "; ".join(strays[:4])))
+        return
+    if path.suffix.lower() != ".png" or not background:
+        return
+    got = png_edge(path)
+    if not got or got[0] is None:
+        return
+    border, clear = got
+    if clear > 0.5:
+        return                              # transparent edges sit on any background
+    dist = color_distance(border, background)
+    if dist > 35:
+        warns.append("line %d: %s.%s — %s has a #%s border on a #%s slide, so it will read "
+                     "as a pasted box. Match the background, or give the image a "
+                     "transparent one." % (line, tag, slot_id, path.name, border, background))
+
+
+def _check_picture_size(path, slot, tag, slot_id, line, warns, mode="fill"):
+    """Two ways a picture disappoints: it loses content, or it looks soft."""
+    size = image_size(path) if path.suffix.lower() in IMAGE_CT else None
+    if path.suffix.lower() == ".svg":
+        a = svg_aspect(path)
+        size = (round(a * 1000), 1000) if a else None
+    if not size or not size[1]:
+        return
+    src_ratio = size[0] / size[1]
+    if mode == "fill" and slot.ratio:
+        _, lost = crop_rect(src_ratio, slot.ratio)
+        if lost >= 0.10:
+            fix = ("Author it at the frame's shape instead." if path.suffix.lower() == ".svg"
+                   else "`| fit` keeps all of it; `| fill top` chooses what survives.")
+            warns.append("line %d: %s.%s — %s is %.2f:1 in a %.2f:1 frame, so filling it "
+                         "crops %.0f%% of the image away. %s"
+                         % (line, tag, slot_id, path.name, src_ratio, slot.ratio,
+                            lost * 100, fix))
+    if slot.frame_pt and path.suffix.lower() != ".svg":
+        dpi_w = effective_dpi(size[0], slot.frame_pt[0] * EMU_PER_PT)
+        if dpi_w and dpi_w < 110:
+            warns.append("line %d: %s.%s — %s is %dpx across a %dpt frame (%.0f dpi). It "
+                         "will look soft on a projector; %dpx or more is comfortable."
+                         % (line, tag, slot_id, path.name, size[0], slot.frame_pt[0], dpi_w,
+                            int(slot.frame_pt[0] / 72 * 150)))
+        elif dpi_w and dpi_w > 400:
+            kb = path.stat().st_size // 1024
+            warns.append("line %d: %s.%s — %s is %dpx across a %dpt frame (%.0f dpi, %dKB). "
+                         "Nothing above ~300 dpi reaches the screen; it is file size only."
+                         % (line, tag, slot_id, path.name, size[0], slot.frame_pt[0],
+                            dpi_w, kb))
+
+
 def cmd_check(args):
     md_path = require_deck(args.deck)
     front, specs, errors = parse_deck(md_path.read_text(encoding="utf-8"))
@@ -1460,6 +1806,10 @@ def cmd_check(args):
     slide_cy = slide_size(pkg)[1]
     catalog = {"s%d" % i: analyze_slide(ET.fromstring(pkg.parts[n]), slide_cy)
                for i, n in enumerate(protos, 1)}
+
+    theme_colors, used_colors = template_palette(pkg, protos)
+    palette = [v for _, v in theme_colors] + [c for c, _ in used_colors]
+    backgrounds = {"s%d" % i: slide_background(pkg, n) for i, n in enumerate(protos, 1)}
 
     errs, warns = list(errors), []
     verify_signature(front, pkg, protos, slide_cy, errs)
@@ -1485,25 +1835,29 @@ def cmd_check(args):
                             % (line, tag, slot_id, ", ".join(by_id)))
                 continue
             if slot.type == "picture" and kind == "scalar" and value.strip() != "!drop":
-                p = Path(value)
+                path, mode, anchor = parse_picture_value(value)
+                if mode is None:
+                    errs.append("line %d: %s.%s — unknown picture option %r; use one of %s"
+                                % (line, tag, slot_id, anchor, "/".join(FIT_MODES)))
+                    continue
+                p = Path(path)
                 p = p if p.is_absolute() else md_path.parent / p
+                ext = p.suffix.lower()
                 if not p.is_file():
                     errs.append("line %d: %s.%s — image not found: %s"
                                 % (line, tag, slot_id, p))
-                elif p.suffix.lower() not in UNIVERSAL_EXT | RASTERIZABLE:
-                    warns.append("line %d: %s.%s — %s embeds, but older PowerPoint shows "
-                                 "nothing for it. PNG or JPEG is the safe choice."
-                                 % (line, tag, slot_id, p.suffix.lower()))
-                elif p.suffix.lower() == ".svg":
-                    if not Renderer().available:
+                else:
+                    if ext == ".svg" and not Renderer().available:
                         errs.append("line %d: %s.%s — %s is an SVG and needs a renderer to "
                                     "become a picture; install LibreOffice or set "
                                     "DECK_RENDER_DOCKER" % (line, tag, slot_id, p.name))
-                    a = svg_aspect(p)
-                    if a and slot.ratio and abs(a - slot.ratio) > 0.04:
-                        warns.append("line %d: %s.%s — the SVG is %.2f:1 but the frame is "
-                                     "%.2f:1, so it will be centre-cropped. Author it at the "
-                                     "frame's shape instead." % (line, tag, slot_id, a, slot.ratio))
+                    elif ext not in UNIVERSAL_EXT and ext != ".svg":
+                        warns.append("line %d: %s.%s — %s embeds, but older PowerPoint shows "
+                                     "nothing for it. PNG or JPEG is the safe choice."
+                                     % (line, tag, slot_id, ext))
+                    _check_picture_size(p, slot, tag, slot_id, line, warns, mode)
+                    _check_picture_color(p, tag, slot_id, line, warns, palette,
+                                         backgrounds.get(spec.archetype))
             if slot.type == "table" and kind != "table":
                 errs.append("line %d: %s.%s is a table — use `| a | b |` rows"
                             % (line, tag, slot_id))
