@@ -20,6 +20,7 @@ Python stdlib only: zipfile, xml.etree, re. No python-pptx, no PyYAML.
 
 import argparse
 import copy
+import hashlib
 import os
 import re
 import shutil
@@ -52,6 +53,7 @@ CT_SLIDE = "application/vnd.openxmlformats-officedocument.presentationml.slide+x
 
 EMU_PER_PT = 12700
 DECK_EXT = ".mdx"
+ZIP_EPOCH = (1980, 1, 1, 0, 0, 0)   # fixed so identical sources give identical bytes
 
 
 def q(name):
@@ -126,16 +128,23 @@ class Package:
         self.parts[name] = ET.tostring(root, encoding="UTF-8", xml_declaration=True)
 
     def write(self, out_path):
+        """Write the package with fixed entry timestamps.
+
+        zipfile stamps entries with the wall clock, which would make two builds of the
+        same source differ in bytes for no reason anyone can act on. Pinning the zip
+        epoch is what makes "the same deck.mdx gives the same pptx" a real guarantee
+        rather than one that only holds inside a single second.
+        """
         seen = set()
         with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as z:
-            for name in self.order:
-                if name in self.parts and name not in seen:
-                    z.writestr(name, self.parts[name])
-                    seen.add(name)
-            for name, data in self.parts.items():
-                if name not in seen:
-                    z.writestr(name, data)
-                    seen.add(name)
+            for name in list(self.order) + list(self.parts):
+                if name not in self.parts or name in seen:
+                    continue
+                info = zipfile.ZipInfo(name, date_time=ZIP_EPOCH)
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.external_attr = 0o600 << 16
+                z.writestr(info, self.parts[name])
+                seen.add(name)
 
     def drop(self, name):
         self.parts.pop(name, None)
@@ -634,6 +643,58 @@ def center_crop(src_ratio, frame_ratio):
     return {"t": cut, "b": cut}
 
 
+# ── SVG assets ───────────────────────────────────────────────────────────────
+
+def svg_aspect(path):
+    """Width/height of an SVG from its own attributes; None when it declares neither."""
+    head = Path(path).read_text(encoding="utf-8", errors="replace")[:4000]
+    w = re.search(r'\bwidth="([\d.]+)', head)
+    h = re.search(r'\bheight="([\d.]+)', head)
+    if w and h and float(h.group(1)):
+        return float(w.group(1)) / float(h.group(1))
+    vb = re.search(r'viewBox="\s*[-\d.]+[,\s]+[-\d.]+[,\s]+([\d.]+)[,\s]+([\d.]+)', head)
+    if vb and float(vb.group(2)):
+        return float(vb.group(1)) / float(vb.group(2))
+    return None
+
+
+def rasterize_svg(src, frame_cx, cache_dir, renderer, dpi=200):
+    """SVG source -> PNG, sized for the frame it goes into and cached by content.
+
+    Generated art is source too, so the same .svg must always produce the same bytes:
+    the cache is keyed on the file's content and the target size, and LibreOffice's PNG
+    export is itself byte-stable, so a cold cache reproduces a warm one.
+    """
+    data = Path(src).read_bytes()
+    width = int(min(4000, max(400, (frame_cx or 5000000) / 914400 * dpi)))
+    aspect = svg_aspect(src) or 16 / 9
+    height = max(1, int(round(width / aspect)))
+    key = hashlib.sha256(data + b"|%dx%d" % (width, height)).hexdigest()[:16]
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    out = cache_dir / ("%s.png" % key)
+    if out.is_file():
+        return out, False
+    (cache_dir / ("%s.svg" % key)).write_bytes(data)
+    opts = ('{"PixelWidth":{"type":"long","value":%d},'
+            '"PixelHeight":{"type":"long","value":%d}}' % (width, height))
+    r = renderer.sh(cache_dir,
+                    "export HOME=/tmp/lohome; mkdir -p $HOME; "
+                    "soffice --headless -env:UserInstallation=file:///tmp/loprof "
+                    "--convert-to 'png:draw_png_Export:%s' --outdir . %s.svg 2>&1 | tail -2; "
+                    "chmod -R a+rwX . 2>/dev/null || true" % (opts, key))
+    (cache_dir / ("%s.svg" % key)).unlink(missing_ok=True)
+    if not out.is_file():
+        hint = ""
+        if not renderer.local:
+            hint = ("\n  the renderer runs in a container, and its daemon has to be able to "
+                    "bind-mount\n  %s — a snap or rootless docker cannot see /tmp. Keep the "
+                    "deck under your home\n  directory, or install LibreOffice locally."
+                    % cache_dir)
+        raise SystemExit("error: could not rasterize %s\n  %s%s"
+                         % (src, (r.stdout + r.stderr).strip(), hint))
+    return out, True
+
+
 IMAGE_CT = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
     ".gif": "image/gif", ".bmp": "image/bmp", ".svg": "image/svg+xml",
@@ -705,6 +766,41 @@ def stub_for(archetype, slots, title):
     return "\n".join(out)
 
 
+THEME_SLOTS = ("dk1", "lt1", "dk2", "lt2", "accent1", "accent2", "accent3",
+               "accent4", "accent5", "accent6")
+
+
+def template_palette(pkg, slide_parts):
+    """The template's own colors — theme slots, plus what the slides actually use.
+
+    Generated art has to be written in the reference's colors, not in colors that
+    merely look similar, so the catalog hands them over explicitly.
+    """
+    theme = []
+    for name in sorted(n for n in pkg.parts if n.startswith("ppt/theme/theme")):
+        scheme = ET.fromstring(pkg.parts[name]).find(
+            ".//" + q("a:clrScheme"))
+        if scheme is None:
+            continue
+        for slot in THEME_SLOTS:
+            el = scheme.find(q("a:" + slot))
+            if el is None:
+                continue
+            srgb = el.find(q("a:srgbClr"))
+            sys_ = el.find(q("a:sysClr"))
+            val = (srgb.get("val") if srgb is not None
+                   else sys_.get("lastClr") if sys_ is not None else None)
+            if val:
+                theme.append((slot, val.upper()))
+        break
+    counts = {}
+    for part in slide_parts:
+        for hexv in re.findall(r'srgbClr val="([0-9A-Fa-f]{6})"', pkg.parts[part].decode()):
+            counts[hexv.upper()] = counts.get(hexv.upper(), 0) + 1
+    used = sorted(counts.items(), key=lambda kv: -kv[1])[:10]
+    return theme, used
+
+
 def cmd_catalog(args):
     require_template(args.template)
     pkg = Package(args.template)
@@ -727,6 +823,21 @@ def cmd_catalog(args):
         "```",
         "",
     ]
+    theme, used = template_palette(pkg, parts)
+    if theme or used:
+        lines += ["## Palette", "",
+                  "Art you generate for a picture slot must be written in these colors — "
+                  "the reference supplies the design, the generated source supplies only "
+                  "the content.", ""]
+        if theme:
+            lines.append("| theme slot | hex |")
+            lines.append("|---|---|")
+            lines += ["| `%s` | `#%s` |" % (k, v) for k, v in theme]
+            lines.append("")
+        if used:
+            lines.append("Most used in the slides themselves: "
+                         + ", ".join("`#%s` (%d)" % (k, n) for k, n in used))
+            lines.append("")
     for idx, part in enumerate(parts, 1):
         slots = analyze_slide(ET.fromstring(pkg.parts[part]), slide_cy)
         title = slide_title(slots)
@@ -807,11 +918,26 @@ def apply_value(spTree, slot, kind, value, imgctx, problems, where):
                         "template values kept" % (where, slot.id))
 
 
+def slot_frame_cx(el):
+    ext = extent(el)
+    return ext[0] if ext else None
+
+
 def _swap_picture(el, path, imgctx, problems, where, slot):
     src = (imgctx["base"] / path).resolve() if not Path(path).is_absolute() else Path(path)
     if not src.is_file():
         problems.append("%s: image not found: %s" % (where, src))
         return
+    if src.suffix.lower() == ".svg":
+        r = imgctx["renderer"]
+        if not r.available:
+            problems.append("%s: slot '%s' points at an SVG (%s) but there is no renderer to "
+                            "turn it into a picture — install LibreOffice (soffice on PATH) "
+                            "or set DECK_RENDER_DOCKER=<image>" % (where, slot.id, src.name))
+            return
+        src, fresh = rasterize_svg(src, slot_frame_cx(el), imgctx["cache"], r)
+        if fresh:
+            imgctx["rasterized"] += 1
     ext = src.suffix.lower()
     if ext not in IMAGE_CT:
         problems.append("%s: unsupported image type %s" % (where, ext))
@@ -879,7 +1005,9 @@ def cmd_build(args):
         pkg.drop(n)
 
     imgctx = {"pkg": pkg, "base": md_path.parent.resolve(), "n": 0,
-              "by_src": {}, "exts": set(), "add_rel": None}
+              "by_src": {}, "exts": set(), "add_rel": None,
+              "renderer": Renderer(), "cache": md_path.parent / ".deckcache",
+              "rasterized": 0}
     problems = list(errors)
     new_parts = []
 
@@ -938,7 +1066,9 @@ def cmd_build(args):
     for p in problems:
         print("  ! %s" % p)
     if imgctx["n"]:
-        print("  %d image(s) embedded" % imgctx["n"])
+        print("  %d image(s) embedded%s"
+              % (imgctx["n"], ", %d rasterized from SVG" % imgctx["rasterized"]
+                 if imgctx["rasterized"] else ""))
     return 1 if fatal and args.strict else 0
 
 
@@ -1021,6 +1151,16 @@ def cmd_check(args):
                 if not p.is_file():
                     errs.append("line %d: %s.%s — image not found: %s"
                                 % (line, tag, slot_id, p))
+                elif p.suffix.lower() == ".svg":
+                    if not Renderer().available:
+                        errs.append("line %d: %s.%s — %s is an SVG and needs a renderer to "
+                                    "become a picture; install LibreOffice or set "
+                                    "DECK_RENDER_DOCKER" % (line, tag, slot_id, p.name))
+                    a = svg_aspect(p)
+                    if a and slot.ratio and abs(a - slot.ratio) > 0.04:
+                        warns.append("line %d: %s.%s — the SVG is %.2f:1 but the frame is "
+                                     "%.2f:1, so it will be centre-cropped. Author it at the "
+                                     "frame's shape instead." % (line, tag, slot_id, a, slot.ratio))
             if slot.type == "table" and kind != "table":
                 errs.append("line %d: %s.%s is a table — use `| a | b |` rows"
                             % (line, tag, slot_id))

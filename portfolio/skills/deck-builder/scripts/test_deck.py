@@ -3,6 +3,7 @@
     python3 test_deck.py
 """
 
+import os
 import shutil
 import struct
 import sys
@@ -301,9 +302,15 @@ def run(tmp):
 
     # 4 — determinism
     print("determinism")
+    import time
+    time.sleep(1.1)   # the bug this guards against only shows across a second boundary
     deck.main(["build", "--deck", str(tmp / "deck.mdx"), "--output", str(tmp / "again.pptx")])
     check((tmp / "again.pptx").read_bytes() == out.read_bytes(),
-          "same source builds byte-identical output")
+          "same source builds byte-identical output, a second apart")
+    with zipfile.ZipFile(out) as z:
+        stamps = {i.date_time for i in z.infolist()}
+    check(stamps == {deck.ZIP_EPOCH},
+          "every entry carries the fixed epoch, not the wall clock: %s" % stamps)
 
     # 5 — check
     print("check")
@@ -355,6 +362,35 @@ def geometry(tmp):
           "a table that fits raises nothing")
 
 
+def svg_assets(tmp):
+    """Generated art is source too: an .svg in a picture slot, rasterized at build."""
+    print("svg assets")
+    (tmp / "art.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200" '
+        'viewBox="0 0 300 200"><rect width="300" height="200" fill="#10243F"/></svg>',
+        encoding="utf-8")
+    check(abs(deck.svg_aspect(tmp / "art.svg") - 1.5) < 1e-6, "aspect read from width/height")
+    (tmp / "vb.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450"><rect/></svg>',
+        encoding="utf-8")
+    check(abs(deck.svg_aspect(tmp / "vb.svg") - 800 / 450) < 1e-6, "aspect falls back to viewBox")
+
+    (tmp / "svg.mdx").write_text(
+        "---\ntemplate: template.pptx\noutput: svg.pptx\n---\n\n"
+        "## @s2\npic1: art.svg\n", encoding="utf-8")
+    rc = deck.main(["check", "--deck", str(tmp / "svg.mdx")])
+    if deck.Renderer().available:
+        check(rc == 0, "an SVG asset checks clean when a renderer is present")
+        deck.main(["build", "--deck", str(tmp / "svg.mdx")])
+        cached = list((tmp / ".deckcache").glob("*.png"))
+        check(len(cached) == 1, "the rasterized PNG is cached by content, got %s" % cached)
+        with zipfile.ZipFile(tmp / "svg.pptx") as z:
+            check(any("deckbuilder" in n and n.endswith(".png") for n in z.namelist()),
+                  "the rasterized image is embedded as a PNG, not an SVG")
+    else:
+        check(rc == 1, "an SVG asset is an error when nothing can rasterize it")
+
+
 def guards(tmp):
     """The two non-negotiables: .mdx source, and a real reference template."""
     print("guards")
@@ -403,11 +439,22 @@ def guards(tmp):
           "catalog tells you to save the source as deck.mdx")
 
 
+def workdir():
+    """A container renderer's daemon may not see /tmp, so mirror test_render.py there."""
+    if os.environ.get("DECK_RENDER_DOCKER") and not shutil.which("soffice"):
+        d = Path.home() / ".cache" / "deckbuilder-test"
+        shutil.rmtree(d, ignore_errors=True)
+        d.mkdir(parents=True)
+        return d
+    return Path(tempfile.mkdtemp(prefix="deckbuilder-test-"))
+
+
 def main():
-    tmp = Path(tempfile.mkdtemp(prefix="deckbuilder-test-"))
+    tmp = workdir()
     try:
         run(tmp)
         geometry(tmp)
+        svg_assets(tmp)
         guards(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

@@ -317,7 +317,15 @@ Treats a deck as a build rather than a document. `template.pptx` is the toolchai
 the archetype catalog; `deck.mdx` is the source, the only file anyone edits; the output pptx is a
 build artifact, regenerated in full each time. Every output slide is a clone of a template slide
 with its content swapped, so the template's design survives byte for byte and nothing is laid out
-from scratch. A reference template is mandatory — there is no built-in deck design and no fallback, so without
+from scratch. Art can be source too: a picture slot accepts an `.svg`, which is rasterized at build time to
+a PNG sized for its frame and cached by content hash in `.deckcache/`. That closes the gap where
+everything in a deck is text a model can write except the one diagram someone still has to draw.
+`catalog` prints the template's palette — theme slots and the colors the slides actually use — so
+generated art is written in the reference's colors rather than colors that merely look close: the
+reference supplies the design, the generated source supplies only the content. SVG assets are the
+one thing that needs the renderer at *build* time; PNG and JPEG need nothing.
+
+A reference template is mandatory — there is no built-in deck design and no fallback, so without
 a `.pptx` the engine exits with an error rather than inventing slides. The source file is
 `deck.mdx`, not `deck.md`: it is compiled, not read, and any other extension is rejected.
 Requires Python 3.9+ (stdlib only — no python-pptx, no PyYAML).
@@ -353,6 +361,7 @@ Known limits, reported explicitly rather than hidden:
 | **A template is mandatory** | Without a reference `.pptx` the engine exits with an error and produces nothing. |
 | **No new layouts** | Output slides are clones of template slides. Content with no matching archetype needs the template extended in PowerPoint first. |
 | **Charts are not writable** | Series values live in an embedded xlsx plus cached XML. `catalog` lists chart slots; `build` leaves them at template values. |
+| **SVG assets need a renderer at build time** | PNG/JPEG need nothing; an `.svg` must be rasterized. |
 | **Layout truth needs a renderer** | `check` estimates from frame width ÷ font size; only `render` sees real collisions, and that needs LibreOffice. |
 | **Capacity is an estimate** | Overflow warnings come from frame width ÷ font size, not real text metrics — a prompt to look, not a verdict. |
 | **Formatting follows the template** | A replaced run inherits the template run's font, size and color; per-word emphasis is not expressible in `deck.mdx`. |
