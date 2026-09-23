@@ -323,6 +323,19 @@ export function storyLabel(story) {
   return title ? `${id} - ${title}` : id;
 }
 
+// A touches entry as the path it claims: a trailing /** or /* claims the directory, so
+// "src/a/**", "src/a/*" and "src/a" are one scope. Any other wildcard is left as written and
+// only ever matches itself - guessing what "src/*.test.ts" covers would fail good shapes.
+function touchScope(t) {
+  return t.replace(/\/\*\*?$/, '');
+}
+
+function scopesOverlap(a, b) {
+  if (a === b) return true;
+  if (/[*?[]/.test(a) || /[*?[]/.test(b)) return false;
+  return a.startsWith(b + '/') || b.startsWith(a + '/');
+}
+
 export function validateShape(spec, userStories) {
   const problems = [];
   if (!spec || typeof spec !== 'object') return ['shape returned no packages object'];
@@ -353,12 +366,20 @@ export function validateShape(spec, userStories) {
     }
   }
   // Overlapping touches is what integration conflicts are made of; say so before dispatch.
-  const owners = new Map();
+  // Containment counts, not only equality: idol-pm-4 (2026-09-23) passed with P1 owning
+  // src/identity/module.ts and P2 owning src/identity/**, one file claimed twice in two spellings.
+  const claimsOf = new Map();
   for (const p of packages) {
     for (const t of (p && p.touches) || []) {
-      const key = String(t).replace(/\/+$/, '');
-      if (owners.has(key) && owners.get(key) !== String(p.id)) problems.push(`packages ${owners.get(key)} and ${p.id} both touch ${key}`);
-      owners.set(key, String(p.id));
+      const raw = String(t).replace(/\/+$/, '');
+      const key = touchScope(raw);
+      for (const [other, [oid, oraw]] of claimsOf) {
+        if (oid === String(p.id) || !scopesOverlap(key, other)) continue;
+        problems.push(raw === oraw
+          ? `packages ${oid} and ${p.id} both touch ${raw}`
+          : `packages ${oid} and ${p.id} both touch ${key.length >= other.length ? raw : oraw}: ${oid}'s ${oraw} and ${p.id}'s ${raw} overlap - narrow one so each path has one owner`);
+      }
+      if (!claimsOf.has(key)) claimsOf.set(key, [String(p.id), raw]);
     }
   }
   const edges = new Map(packages.map((p) => [String(p.id), ((p.deps || []).map(String)).filter((d) => ids.has(d))]));

@@ -488,6 +488,27 @@ test('a pinned flow survives sizing and reaches the single run the manager opens
   }
 });
 
+// idol-pm-4 (2026-09-23): P1 owned src/identity/module.ts, P2 owned src/identity/**, and the
+// check compared strings, so one file with two owners passed.
+test('touches overlap by containment, not only by equal strings', async () => {
+  const { validateShape } = await import('../mcp/taskmanager.mjs');
+  const shape = (a, b) => validateShape({
+    acceptance: ['x'],
+    packages: [
+      { id: 'P1', title: 'a', brief: 'b', acceptance: ['a'], touches: a, deps: [] },
+      { id: 'P2', title: 'b', brief: 'b', acceptance: ['a'], touches: b, deps: [] },
+    ],
+  }, []).filter((m) => /both touch/.test(m));
+  const hit = shape(['src/identity/module.ts'], ['src/identity/**']);
+  assert.equal(hit.length, 1, JSON.stringify(hit));
+  assert.match(hit[0], /both touch src\/identity\/module\.ts: P1's src\/identity\/module\.ts and P2's src\/identity\/\*\* overlap/);
+  assert.equal(shape(['src/a'], ['src/a/b.ts']).length, 1, 'a bare directory claims what is under it');
+  assert.equal(shape(['src/a/*'], ['src/a/**']).length, 1, 'two spellings of one directory');
+  assert.deepEqual(shape(['src/a/**'], ['src/ab/**']), [], 'a shared name prefix is not containment');
+  assert.deepEqual(shape(['src/*.test.ts'], ['src/index.ts']), [], 'an inner wildcard is not guessed at');
+  assert.deepEqual(shape(['src/queue/**'], ['src/reservation/**']), []);
+});
+
 test('a shape is validated: one package, overlapping touches, dangling deps and cycles fail it', async () => {
   await withTask(async ({ tm, task_id }) => {
     await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop' }) });
