@@ -206,6 +206,12 @@ test('scores every fusion weight in one pass and refuses to call a tie a winner'
 
   const flat = await sweepFusionWeights(root, { k: 5, sweep: [1, 1] });
   assert.equal(flat.decisive, false, 'identical weights cannot produce a winner');
+
+  // Two questions cannot separate anything: even if every question moved one
+  // way, a paired sign test gives p = 0.5. Any difference is not a decision.
+  const wide = await sweepFusionWeights(root, { k: 5, sweep: [1, 0] });
+  assert.equal(wide.decisive, false);
+  assert.ok(wide.p_value === null || wide.p_value >= 0.5, `p = ${wide.p_value}`);
 }));
 
 test('reuses embeddings for unchanged documents and re-embeds the ones that moved', async () => fixture(async (root) => {

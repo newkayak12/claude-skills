@@ -1704,6 +1704,7 @@ async function sweepFusionWeights(inputRoot, options = {}) {
   // Rank by hits, then MRR — a tie on answered questions is broken by how high
   // the first correct answer sits.
   const best = [...points].sort((left, right) => right.hits - left.hits || right.mrr - left.mrr)[0];
+  const pValue = best.reference ? null : signTestPValue(best.improvements.length, best.regressions.length);
   return {
     root: reference.root,
     database: reference.database,
@@ -1715,10 +1716,32 @@ async function sweepFusionWeights(inputRoot, options = {}) {
     embedding_queries_cached: cache.size,
     sweep: points,
     best_lexical_weight: best.lexical_weight,
+    p_value: pValue,
     // A sweep that names a winner it cannot separate from the reference is a
-    // tie, and reporting it as a win is how a guess becomes a default.
-    decisive: best.hits !== reference.hits || best.mrr !== reference.mrr,
+    // tie, and reporting it as a win is how a guess becomes a default. "Differs"
+    // is not "separable": one question out of sixty moving is noise, so the
+    // winner's per-question moves against the reference must pass a paired
+    // sign test. The winner is still picked on the same questions, so this is
+    // a floor, not a guarantee — confirm on the holdout once.
+    decisive: pValue !== null && pValue < DECISIVE_P,
   };
+}
+
+const DECISIVE_P = 0.05;
+
+// Exact two-sided sign test: under "no difference" each moved question is a
+// fair coin. Questions that did not move carry no information and are dropped.
+function signTestPValue(wins, losses) {
+  const n = wins + losses;
+  if (!n) return null;
+  const tail = Math.min(wins, losses);
+  let probability = 0;
+  let term = 0.5 ** n;
+  for (let index = 0; index <= tail; index += 1) {
+    if (index > 0) term = term * (n - index + 1) / index;
+    probability += term;
+  }
+  return Math.min(1, Number((2 * probability).toFixed(6)));
 }
 
 function getDocument(inputRoot, id, options = {}) {
