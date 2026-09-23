@@ -1032,18 +1032,34 @@ export function harnessPathsUnder(cwd) {
   return paths;
 }
 
-function commitWorktree(cwd, message) {
-  const add = git(cwd, ['add', '-A', '--', '.']);
+// `git add`/`rm --cached`/`commit` each take the worktree's index.lock. Two processes folding
+// the same child at the same moment - daemon.mjs's fold loop against a direct tm_submit, a race
+// the daemon's header explicitly allows - make the loser fail on "index.lock: File exists" for
+// a few milliseconds. That is contention, not a broken tree: wait it out, briefly and boundedly,
+// rather than turn a passed package into a failed dispatch.
+const INDEX_LOCK_RETRIES = 8;
+const INDEX_LOCK_WAIT_MS = 150;
+function gitIndexed(cwd, args) {
+  let r = git(cwd, args);
+  for (let i = 0; !r.ok && /index\.lock/.test(r.err) && i < INDEX_LOCK_RETRIES; i++) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, INDEX_LOCK_WAIT_MS);
+    r = git(cwd, args);
+  }
+  return r;
+}
+
+export function commitWorktree(cwd, message) {
+  const add = gitIndexed(cwd, ['add', '-A', '--', '.']);
   if (!add.ok) return { ok: false, reason: add.err || 'git add failed' };
   // .claude/.harness-markers/ gets the same treatment for the same reason, plus one of its own:
   // every worktree writes its own marker with its own timestamp (engage.mjs), so committing it
   // would make every package branch differ in that one file and every integrate merge conflict
   // on it. install.mjs gitignores it in a real project; a project without it must not break.
-  const drop = git(cwd, ['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', ...harnessPathsUnder(cwd)]);
+  const drop = gitIndexed(cwd, ['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', ...harnessPathsUnder(cwd)]);
   if (!drop.ok) return { ok: false, reason: drop.err || 'could not leave the harness state out of the commit' };
   const staged = git(cwd, ['diff', '--cached', '--quiet']);
   if (staged.ok) return { ok: true, commit: null }; // nothing to commit is not an error
-  const c = git(cwd, ['-c', 'user.email=harness@local', '-c', 'user.name=harness', 'commit', '-q', '-m', message]);
+  const c = gitIndexed(cwd, ['-c', 'user.email=harness@local', '-c', 'user.name=harness', 'commit', '-q', '-m', message]);
   if (!c.ok) return { ok: false, reason: c.err || 'git commit failed' };
   return { ok: true, commit: git(cwd, ['rev-parse', 'HEAD']).out };
 }
