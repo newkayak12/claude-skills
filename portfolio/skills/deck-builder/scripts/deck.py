@@ -46,6 +46,12 @@ for _p, _u in NS.items():
         ET.register_namespace(_p, _u)
 ET.register_namespace("", NS["pr"])  # default ns for .rels documents
 
+REL_NOTESMASTER = ("http://schemas.openxmlformats.org/officeDocument/2006/"
+                   "relationships/notesMaster")
+CT_NOTES = "application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"
+CT_NOTESMASTER = ("application/vnd.openxmlformats-officedocument.presentationml."
+                  "notesMaster+xml")
+RESERVED_KEYS = ("notes",)
 REL_SLIDE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide"
 REL_NOTES = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide"
 REL_IMAGE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
@@ -297,6 +303,8 @@ class Slot:
         self.row_h = None        # table row height in EMU
         self.line_h = None       # estimated line height in EMU
         self.fits = None         # rows/lines that clear the slide edge
+        self.size_pt = None      # font size the template sets here
+        self.frame_pt = None     # picture frame size in points
 
 
 def _is_autofield(txBody):
@@ -354,6 +362,7 @@ def analyze_slide(root, slide_cy=None):
             if ext:
                 cx_pt = ext[0] / EMU_PER_PT
                 slot.max_chars = max(4, int(cx_pt / (size * 0.55)))
+            slot.size_pt = first_font_size(txBody)
             slot.line_h = int(size * 1.2 * EMU_PER_PT)
             if off:
                 slot.off_y = off[1]
@@ -365,6 +374,7 @@ def analyze_slide(root, slide_cy=None):
             ext = extent(el)
             if ext and ext[1]:
                 slot.ratio = round(ext[0] / ext[1], 3)
+                slot.frame_pt = (round(pt(ext[0])), round(pt(ext[1])))
             slots.append(slot)
         elif el.tag == q("p:graphicFrame"):
             tbl = el.find(".//" + q("a:tbl"))
@@ -702,6 +712,109 @@ IMAGE_CT = {
 }
 
 
+# ── Speaker notes ────────────────────────────────────────────────────────────
+
+_NS_DECL = ('xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+            'xmlns:r="%s" '
+            'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"' % NS["r"])
+
+BLANK_NOTES = (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    '<p:notes %s><p:cSld><p:spTree>'
+    '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>'
+    '<p:sp><p:nvSpPr><p:cNvPr id="2" name="Slide Image Placeholder 1"/>'
+    '<p:cNvSpPr><a:spLocks noGrp="1" noRot="1" noChangeAspect="1"/></p:cNvSpPr>'
+    '<p:nvPr><p:ph type="sldImg"/></p:nvPr></p:nvSpPr><p:spPr/></p:sp>'
+    '<p:sp><p:nvSpPr><p:cNvPr id="3" name="Notes Placeholder 2"/>'
+    '<p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>'
+    '<p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr><p:spPr/>'
+    '<p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" dirty="0"/>'
+    '<a:t></a:t></a:r></a:p></p:txBody></p:sp>'
+    '</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:notes>' % _NS_DECL)
+
+BLANK_NOTESMASTER = (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    '<p:notesMaster %s><p:cSld><p:bg><p:bgPr>'
+    '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:effectLst/></p:bgPr></p:bg>'
+    '<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>'
+    '<p:grpSpPr/>'
+    '<p:sp><p:nvSpPr><p:cNvPr id="2" name="Slide Image Placeholder 1"/>'
+    '<p:cNvSpPr><a:spLocks noGrp="1" noRot="1" noChangeAspect="1"/></p:cNvSpPr>'
+    '<p:nvPr><p:ph type="sldImg"/></p:nvPr></p:nvSpPr>'
+    '<p:spPr><a:xfrm><a:off x="1143000" y="685800"/><a:ext cx="4572000" cy="3429000"/></a:xfrm>'
+    '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:sp>'
+    '<p:sp><p:nvSpPr><p:cNvPr id="3" name="Notes Placeholder 2"/>'
+    '<p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>'
+    '<p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr>'
+    '<p:spPr><a:xfrm><a:off x="685800" y="4343400"/><a:ext cx="5486400" cy="4114800"/></a:xfrm>'
+    '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>'
+    '<p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="en-US"/></a:p></p:txBody>'
+    '</p:sp></p:spTree></p:cSld>'
+    '<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" '
+    'accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" '
+    'folHlink="folHlink"/><p:notesStyle/></p:notesMaster>' % _NS_DECL)
+
+
+def notes_body(root):
+    """The notes placeholder inside a notesSlide, or None."""
+    for sp in root.iter(q("p:sp")):
+        nv = sp.find(q("p:nvSpPr"))
+        if nv is None:
+            continue
+        nvPr = nv.find(q("p:nvPr"))
+        ph = nvPr.find(q("p:ph")) if nvPr is not None else None
+        if ph is not None and ph.get("type") == "body":
+            return sp.find(q("p:txBody"))
+    return None
+
+
+def ensure_notes_master(pkg):
+    """Return the notesMaster part name, creating a plain one when the template has none.
+
+    A notesMaster is scaffolding, not design — it never shows on a slide — so synthesising
+    one does not put the engine in the business of inventing a look.
+    """
+    existing = sorted(n for n in pkg.parts if n.startswith("ppt/notesMasters/notesMaster"))
+    if existing:
+        return existing[0], False
+    part = "ppt/notesMasters/notesMaster1.xml"
+    pkg.parts[part] = BLANK_NOTESMASTER.encode("utf-8")
+    themes = sorted(n for n in pkg.parts if n.startswith("ppt/theme/theme"))
+    pkg.parts[rels_name(part)] = ET.tostring(
+        _rels_root([("rId1", REL_THEME, "../" + themes[0].split("ppt/")[1])] if themes else []),
+        encoding="UTF-8", xml_declaration=True)
+
+    pres = pkg.xml("ppt/presentation.xml")
+    prels = pkg.xml(rels_name("ppt/presentation.xml"))
+    used = {int(re.sub(r"\D", "", r.get("Id")) or 0) for r in prels}
+    rid = "rId%d" % ((max(used) if used else 0) + 1)
+    rel = ET.SubElement(prels, q("pr:Relationship"))
+    rel.set("Id", rid)
+    rel.set("Type", REL_NOTESMASTER)
+    rel.set("Target", "notesMasters/notesMaster1.xml")
+    lst = ET.Element(q("p:notesMasterIdLst"))
+    nid = ET.SubElement(lst, q("p:notesMasterId"))
+    nid.set(q("r:id"), rid)
+    anchor = pres.find(q("p:sldMasterIdLst"))
+    pres.insert(list(pres).index(anchor) + 1 if anchor is not None else 0, lst)
+    pkg.set_xml("ppt/presentation.xml", pres)
+    pkg.set_xml(rels_name("ppt/presentation.xml"), prels)
+    return part, True
+
+
+def _rels_root(items):
+    root = ET.Element(q("pr:Relationships"))
+    for rid, rtype, target in items:
+        el = ET.SubElement(root, q("pr:Relationship"))
+        el.set("Id", rid)
+        el.set("Type", rtype)
+        el.set("Target", target)
+    return root
+
+
+REL_THEME = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme"
+
+
 # ── Catalog ──────────────────────────────────────────────────────────────────
 
 def ratio_label(r):
@@ -801,6 +914,53 @@ def template_palette(pkg, slide_parts):
     return theme, used
 
 
+def template_typography(pkg, slide_parts):
+    """The template's type: theme fonts, and the sizes the slides actually set.
+
+    Art generated for a picture slot has to sit in the same type system as the text
+    beside it, so the catalog hands over the families and the real pt sizes rather
+    than leaving a model to guess at "looks about right".
+    """
+    theme = {}
+    for name in sorted(n for n in pkg.parts if n.startswith("ppt/theme/theme")):
+        scheme = ET.fromstring(pkg.parts[name]).find(".//" + q("a:fontScheme"))
+        if scheme is None:
+            continue
+        for role, tag in (("major", "a:majorFont"), ("minor", "a:minorFont")):
+            font = scheme.find(q(tag))
+            if font is None:
+                continue
+            latin = font.find(q("a:latin"))
+            ea = font.find(q("a:ea"))
+            theme[role] = (latin.get("typeface") if latin is not None else "",
+                           ea.get("typeface") if ea is not None else "")
+        break
+
+    sizes, faces = {}, {}
+    for part in slide_parts:
+        root = ET.fromstring(pkg.parts[part])
+        for sp in root.iter(q("p:sp")):
+            txBody = sp.find(q("p:txBody"))
+            if txBody is None or _is_autofield(txBody):
+                continue
+            text = "".join(para_text(x) for x in txBody.findall(q("a:p"))).strip()
+            if not text:
+                continue
+            size = first_font_size(txBody)
+            if size:
+                sizes[size] = sizes.get(size, 0) + 1
+            for latin in txBody.iter(q("a:latin")):
+                if latin.get("typeface"):
+                    faces[latin.get("typeface")] = faces.get(latin.get("typeface"), 0) + 1
+                break
+    return theme, sorted(sizes.items(), key=lambda kv: -kv[0]), \
+        sorted(faces.items(), key=lambda kv: -kv[1])
+
+
+def pt(emu):
+    return emu / EMU_PER_PT
+
+
 def cmd_catalog(args):
     require_template(args.template)
     pkg = Package(args.template)
@@ -838,6 +998,28 @@ def cmd_catalog(args):
             lines.append("Most used in the slides themselves: "
                          + ", ".join("`#%s` (%d)" % (k, n) for k, n in used))
             lines.append("")
+
+    theme_fonts, sizes, faces = template_typography(pkg, parts)
+    if theme_fonts or sizes or faces:
+        cx, cy = slide_size(pkg)
+        lines += ["## Type", "",
+                  "The slide canvas is **%.0f × %.0f pt**. Author SVG art at its frame's pt "
+                  "size (given per picture slot below) and `font-size` in the SVG is the same "
+                  "number as a pt size here — the art then sits in the deck's own type scale "
+                  "instead of near it." % (pt(cx), pt(cy)), ""]
+        if theme_fonts:
+            lines.append("| theme font | latin | east asian |")
+            lines.append("|---|---|---|")
+            for role, (latin, ea) in theme_fonts.items():
+                lines.append("| `%s` | %s | %s |" % (role, latin or "—", ea or "—"))
+            lines.append("")
+        if faces:
+            lines.append("Typefaces set on the slides: "
+                         + ", ".join("%s (%d)" % (k, n) for k, n in faces))
+        if sizes:
+            lines.append("Sizes in use, largest first: "
+                         + ", ".join("**%gpt** (%d)" % (k, n) for k, n in sizes))
+        lines.append("")
     for idx, part in enumerate(parts, 1):
         slots = analyze_slide(ET.fromstring(pkg.parts[part]), slide_cy)
         title = slide_title(slots)
@@ -853,9 +1035,13 @@ def cmd_catalog(args):
             if s.type == "text":
                 shows = '"%s"' % truncate(s.sample[0] if s.sample else "")
                 cap = "~%d chars/line" % s.max_chars if s.max_chars else "inherited"
+                if s.size_pt:
+                    cap = "%gpt · %s" % (s.size_pt, cap)
             elif s.type == "list":
                 shows = "%d items · %s" % (s.max_items, truncate(s.sample[0] if s.sample else "", 28))
                 cap = "~%d chars/line" % s.max_chars if s.max_chars else "inherited"
+                if s.size_pt:
+                    cap = "%gpt · %s" % (s.size_pt, cap)
                 if s.fits:
                     cap += ", %d lines before the slide edge" % s.fits
             elif s.type == "table":
@@ -865,6 +1051,8 @@ def cmd_catalog(args):
             elif s.type == "picture":
                 shows = s.label or "picture"
                 cap = ratio_label(s.ratio)
+                if s.frame_pt:
+                    cap += " · author at %.0f×%.0f pt" % s.frame_pt
             else:
                 shows = s.label or "chart"
                 cap = "not writable"
@@ -1001,6 +1189,11 @@ def cmd_build(args):
     for n in protos:
         pkg.drop(n)
         pkg.drop(rels_name(n))
+    proto_notes = None
+    for n in sorted(k for k in pkg.parts if k.startswith("ppt/notesSlides/notesSlide")):
+        if proto_notes is None:
+            proto_notes = pkg.parts[n]
+        break
     for n in [k for k in list(pkg.parts) if k.startswith("ppt/notesSlides/")]:
         pkg.drop(n)
 
@@ -1010,6 +1203,8 @@ def cmd_build(args):
               "rasterized": 0}
     problems = list(errors)
     new_parts = []
+    notes_parts = []
+    notes_master = None
 
     for i, spec in enumerate(specs, 1):
         m = re.fullmatch(r"s(\d+)", spec.archetype)
@@ -1041,8 +1236,12 @@ def cmd_build(args):
 
         imgctx["add_rel"] = add_rel
 
+        note_text = None
         for slot_id, kind, value, line in spec.values:
             where = "line %d" % line
+            if slot_id == "notes":
+                note_text = "\n".join(t for _, t in as_items(kind, value))
+                continue
             if slot_id not in slots:
                 problems.append("%s: '@%s' has no slot '%s' (has: %s)"
                                 % (where, spec.archetype, slot_id,
@@ -1051,13 +1250,35 @@ def cmd_build(args):
             apply_value(spTree, slots[slot_id], kind, value, imgctx, problems, where)
 
         part = "ppt/slides/slide%d.xml" % i
+        if note_text is not None:
+            if notes_master is None:
+                notes_master, made = ensure_notes_master(pkg)
+                if made:
+                    problems.append("the template carries no notes master, so a plain one "
+                                    "was added to hold the speaker notes")
+            npart = "ppt/notesSlides/notesSlide%d.xml" % (len(notes_parts) + 1)
+            nroot = ET.fromstring(proto_notes or BLANK_NOTES.encode("utf-8"))
+            body = notes_body(nroot)
+            if body is None:
+                problems.append("%s: the template's notes layout has no notes placeholder, "
+                                "so notes were dropped" % ("@" + spec.archetype))
+            else:
+                _write_paragraphs(body, [(0, t) for t in note_text.split("\n")])
+                pkg.parts[npart] = ET.tostring(nroot, encoding="UTF-8", xml_declaration=True)
+                pkg.parts[rels_name(npart)] = ET.tostring(_rels_root([
+                    ("rId1", REL_NOTESMASTER,
+                     "../" + notes_master.split("ppt/")[1]),
+                    ("rId2", REL_SLIDE, "../slides/%s" % Path(part).name)]),
+                    encoding="UTF-8", xml_declaration=True)
+                add_rel(REL_NOTES, "../notesSlides/%s" % Path(npart).name)
+                notes_parts.append(npart)
         pkg.parts[part] = ET.tostring(root, encoding="UTF-8", xml_declaration=True)
         pkg.parts[rels_name(part)] = ET.tostring(rels_root, encoding="UTF-8",
                                                  xml_declaration=True)
         new_parts.append(part)
 
     _rewrite_presentation(pkg, new_parts)
-    _rewrite_content_types(pkg, new_parts, imgctx["exts"])
+    _rewrite_content_types(pkg, new_parts, imgctx["exts"], notes_parts, notes_master)
     out.parent.mkdir(parents=True, exist_ok=True)
     pkg.write(out)
 
@@ -1065,6 +1286,8 @@ def cmd_build(args):
     print("build -> %s  (%d slides from %s)" % (out, len(new_parts), template.name))
     for p in problems:
         print("  ! %s" % p)
+    if notes_parts:
+        print("  %d slide(s) carry speaker notes" % len(notes_parts))
     if imgctx["n"]:
         print("  %d image(s) embedded%s"
               % (imgctx["n"], ", %d rasterized from SVG" % imgctx["rasterized"]
@@ -1103,7 +1326,7 @@ def _rewrite_presentation(pkg, new_parts):
     pkg.set_xml(rels_name("ppt/presentation.xml"), rels)
 
 
-def _rewrite_content_types(pkg, new_parts, exts):
+def _rewrite_content_types(pkg, new_parts, exts, notes_parts=(), notes_master=None):
     text = pkg.parts["[Content_Types].xml"].decode("utf-8")
     text = re.sub(r'<Override[^>]*PartName="/ppt/(?:slides|notesSlides)/[^"]*"[^>]*/>', "", text)
     defaults = ""
@@ -1113,6 +1336,11 @@ def _rewrite_content_types(pkg, new_parts, exts):
             defaults += '<Default Extension="%s" ContentType="%s"/>' % (bare, IMAGE_CT[ext])
     overrides = "".join(
         '<Override PartName="/%s" ContentType="%s"/>' % (p, CT_SLIDE) for p in new_parts)
+    overrides += "".join(
+        '<Override PartName="/%s" ContentType="%s"/>' % (p, CT_NOTES) for p in notes_parts)
+    if notes_master and ('/%s"' % notes_master) not in text:
+        overrides += ('<Override PartName="/%s" ContentType="%s"/>'
+                      % (notes_master, CT_NOTESMASTER))
     text = text.replace("</Types>", defaults + overrides + "</Types>")
     pkg.parts["[Content_Types].xml"] = text.encode("utf-8")
 
