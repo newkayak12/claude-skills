@@ -4,6 +4,7 @@
 """
 
 import os
+import re
 import shutil
 import struct
 import sys
@@ -362,6 +363,109 @@ def geometry(tmp):
           "a table that fits raises nothing")
 
 
+def emphasis(tmp):
+    """**bold**, *italic* and `code` become runs, without losing the template's type."""
+    print("inline emphasis")
+    check(deck.split_emphasis("plain") == [("plain", False, False, False)],
+          "plain text is one run")
+    check(deck.split_emphasis("a **b** c") ==
+          [("a ", False, False, False), ("b", True, False, False), (" c", False, False, False)],
+          "bold splits into three runs")
+    check(deck.split_emphasis("no *close") == [("no *close", False, False, False)],
+          "an unmatched marker is literal text")
+
+    (tmp / "emph.mdx").write_text(
+        "---\ntemplate: template.pptx\noutput: emph.pptx\n---\n\n"
+        "## @s2\ntitle: a **bold** word\n"
+        "text1:\n  - an *italic* one\n  - a `code` one\n", encoding="utf-8")
+    deck.main(["build", "--deck", str(tmp / "emph.mdx")])
+    with zipfile.ZipFile(tmp / "emph.pptx") as z:
+        x = z.read("ppt/slides/slide1.xml").decode()
+    check(x.count('b="1"') >= 1, "a bold run was written")
+    check(x.count('i="1"') >= 1, "an italic run was written")
+    check("Consolas" in x, "a code run switched typeface")
+    check("**" not in x and "`" not in x, "the markers themselves do not reach the slide")
+    root = ET.fromstring(x)
+    sizes = {r.find(A + "rPr").get("sz") for r in root.iter(A + "r")
+             if r.find(A + "rPr") is not None and r.find(A + "rPr").get("sz")}
+    check(len(sizes) <= 1, "emphasis did not change the size the template set: %s" % sizes)
+
+
+def drift(tmp):
+    """`@sN` must not silently point somewhere else after the template moves."""
+    print("template drift")
+    pkg = deck.Package(tmp / "template.pptx")
+    parts = deck.slide_order(pkg)
+    sig = deck.template_signature(pkg, parts, 6858000)
+    check(len(sig) == 12, "signature is a short stable hash, got %r" % sig)
+
+    src = (tmp / "template.pptx").read_bytes()
+    reworded = tmp / "reworded.pptx"
+    with zipfile.ZipFile(tmp / "template.pptx") as z:
+        keep = {n: z.read(n) for n in z.namelist()}
+    keep["ppt/slides/slide2.xml"] = keep["ppt/slides/slide2.xml"].replace(b"Agenda", b"Plan")
+    with zipfile.ZipFile(reworded, "w", zipfile.ZIP_DEFLATED) as o:
+        for n, d in keep.items():
+            o.writestr(n, d)
+    rw = deck.Package(reworded)
+    check(deck.template_signature(rw, deck.slide_order(rw), 6858000) == sig,
+          "changing the template's words does not move the signature")
+
+    swapped = tmp / "swapped.pptx"
+    with zipfile.ZipFile(tmp / "template.pptx") as z:
+        keep = {n: z.read(n) for n in z.namelist()}
+    x = keep["ppt/presentation.xml"].decode()
+    ids = re.findall(r"<p:sldId [^/]*/>", x)
+    keep["ppt/presentation.xml"] = x.replace(
+        "".join(ids), "".join([ids[1], ids[0]])).encode()
+    with zipfile.ZipFile(swapped, "w", zipfile.ZIP_DEFLATED) as o:
+        for n, d in keep.items():
+            o.writestr(n, d)
+    sw = deck.Package(swapped)
+    check(deck.template_signature(sw, deck.slide_order(sw), 6858000) != sig,
+          "reordering slides does move the signature")
+
+    (tmp / "pinned.mdx").write_text(
+        "---\ntemplate: template.pptx\ntemplate_hash: %s\noutput: pinned.pptx\n---\n\n"
+        "## @s1\ntitle: x\n" % sig, encoding="utf-8")
+    check(deck.main(["check", "--deck", str(tmp / "pinned.mdx")]) == 0,
+          "a matching hash passes")
+    check(deck.main(["check", "--deck", str(tmp / "pinned.mdx"),
+                     "--template", str(swapped)]) == 1,
+          "a moved template is an error, not a surprise in the output")
+    check(src == (tmp / "template.pptx").read_bytes(), "the template itself was not touched")
+
+
+def notes(tmp):
+    """Speaker notes: a deck is presented, not just looked at."""
+    print("speaker notes")
+    (tmp / "notes.mdx").write_text(
+        "---\ntemplate: template.pptx\noutput: notes.pptx\n---\n\n"
+        "## @s1\ntitle: t\nnotes: 여기서 숫자의 출처를 먼저 말할 것\n\n"
+        "## @s2\ntitle: u\n", encoding="utf-8")
+    check(deck.main(["check", "--deck", str(tmp / "notes.mdx")]) == 0,
+          "notes are a reserved key, not an unknown slot")
+    deck.main(["build", "--deck", str(tmp / "notes.mdx")])
+    with zipfile.ZipFile(tmp / "notes.pptx") as z:
+        names = z.namelist()
+        notes_parts = [n for n in names if n.startswith("ppt/notesSlides/notesSlide")
+                       and n.endswith(".xml")]
+        check(len(notes_parts) == 1, "only the slide with notes gets a notes part")
+        text = "".join(t.text or "" for t in ET.fromstring(z.read(notes_parts[0])).iter(A + "t"))
+        check("여기서 숫자의 출처" in text, "the note text is in the notes part")
+        check(any("notesMaster" in n for n in names),
+              "a notes master exists for it to hang from")
+        ct = z.read("[Content_Types].xml").decode()
+        check(('/%s"' % notes_parts[0]) in ct, "the notes part is declared in content types")
+        rels = ET.fromstring(z.read("ppt/slides/_rels/slide1.xml.rels"))
+        check(any(r.get("Type") == deck.REL_NOTES for r in rels),
+              "slide 1 points at its notes")
+        rels2 = ET.fromstring(z.read("ppt/slides/_rels/slide2.xml.rels"))
+        check(not any(r.get("Type") == deck.REL_NOTES for r in rels2),
+              "slide 2 does not")
+    check(integrity(tmp / "notes.pptx") == [], "notes keep the package valid")
+
+
 def svg_assets(tmp):
     """Generated art is source too: an .svg in a picture slot, rasterized at build."""
     print("svg assets")
@@ -454,6 +558,9 @@ def main():
     try:
         run(tmp)
         geometry(tmp)
+        emphasis(tmp)
+        drift(tmp)
+        notes(tmp)
         svg_assets(tmp)
         guards(tmp)
     finally:

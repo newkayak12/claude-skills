@@ -320,7 +320,9 @@ with its content swapped, so the template's design survives byte for byte and no
 from scratch. Art can be source too: a picture slot accepts an `.svg`, which is rasterized at build time to
 a PNG sized for its frame and cached by content hash in `.deckcache/`. That closes the gap where
 everything in a deck is text a model can write except the one diagram someone still has to draw.
-`catalog` prints the template's palette — theme slots and the colors the slides actually use — so
+`catalog` prints the template's palette and its type — theme slots, the colors the slides actually
+use, the theme fonts, and the pt sizes in play — plus each picture frame's exact size in points. Author
+an SVG at that pt size and `font-size="16"` in the art is the same 16pt as the body text beside it, so
 generated art is written in the reference's colors rather than colors that merely look close: the
 reference supplies the design, the generated source supplies only the content. SVG assets are the
 one thing that needs the renderer at *build* time; PNG and JPEG need nothing.
@@ -346,6 +348,13 @@ python3 /abs/path/to/skills/deck-builder/scripts/deck.py check --deck deck.mdx
 # 3 — build: the same deck.mdx always produces a byte-identical pptx
 python3 /abs/path/to/skills/deck-builder/scripts/deck.py build --deck deck.mdx
 ```
+
+`deck.mdx` also carries `notes:` for speaker notes on any slide, `**bold**` / `*italic*` / `` `code` ``
+for inline emphasis that flips attributes on a copy of the template's own run rather than replacing its
+type, and a `template_hash` from `catalog` that pins the deck to the template's structure. That last one
+guards the failure this design would otherwise have: insert or reorder a template slide and `@s3` starts
+meaning a different slide, which without the pin shows up as a strange-looking deck instead of an error.
+Editing the template's wording does not move the hash — only structure does.
 
 `deck.mdx` is markdown with a small, self-parsed syntax — `## @s3` starts a slide from template
 slide 3, `key: value` fills a text slot, indented `- ` lines fill a list, indented `| a | b |`
