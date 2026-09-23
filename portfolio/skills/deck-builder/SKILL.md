@@ -164,6 +164,10 @@ sit closer than that frame's own norm, so text has outgrown its box), `off-slide
 renderer cut it). Clean means clean: the audit compares across frames and measures pitch
 against each frame's median, so CJK fonts whose em box exceeds a 100% line do not trip it.
 
+Read the previews for layout, not for spacing. LibreOffice pads the join between CJK and
+Latin by default, so `평균 42분` renders as `평균  42 분` in the preview while the pptx holds
+the original string. Check `<a:t>` in the built file before treating spacing as a defect.
+
 Renderer is `soffice` on PATH or `DECK_RENDER_DOCKER=<image>`. With neither, `render`
 refuses rather than pretending the layout was checked — say so and fall back to `build`.
 

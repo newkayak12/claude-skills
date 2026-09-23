@@ -18,6 +18,7 @@ Stated here rather than discovered in a PDF. Report the ones that bite on a give
 | **Nesting is only as visible as the template makes it** | A nested item is written at outline level 1. If the template's own body text defines no indent for level 1, it renders flush with the rest — the level is correct, the template just doesn't show it. |
 | **Formatting follows the template** | A replaced run inherits the template run's font, size and color. `**bold**`, `*italic*` and `` `code` `` flip those attributes on a copy; anything beyond that (per-word color, size) is not expressible. |
 | **Notes come from `deck.mdx`, not the template** | A template slide's own notes are not carried over; write what you want in `notes:`. If the template has no notes master, a plain one is added and the build says so. |
+| **Previews are LibreOffice's typography, not PowerPoint's** | The PDF and PNG previews come from LibreOffice, which pads the CJK/Latin join by default — `평균 42분` shows as `평균  42 분`. The pptx string is unchanged; use the previews to judge layout, and the built file to judge text. |
 | **Autofit is not recalculated** | PowerPoint reflows shrink-to-fit text when the file is opened, so the on-screen result can differ slightly from the capacity estimate. |
 
 ## Where each one shows up
