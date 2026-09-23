@@ -90,81 +90,35 @@ Get a nod on the plan. Wrong archetype choice is the expensive mistake, not wron
 ```markdown
 ---
 template: template.pptx
-template_hash: 5f84440a3521
+template_hash: 5f84440a3521      # from catalog — pins the deck to the template's structure
 output: deck.pptx
 ---
-
-## @s1
-title: 신뢰성 플랫폼 2026 리뷰
-subtitle: 배포 파이프라인을 다시 세우고 얻은 것
-notes: 첫 30초는 왜 이걸 했는지에만 쓸 것
 
 ## @s3
 title: 분기 요약
 text1:
-  - 응답 p99 2.1s → 340ms
+  - 응답 p99 **2.1s → 340ms**
   - 배포 실패율 12% → 0.4%
-    - 롤백 경로 단순화가 컸다
 table1:
   | 지표 | 이전 | 이후 |
   | p99 | 2.1s | 340ms |
-pic1: assets/arch.png
+pic1: assets/arch.svg
+notes: 숫자의 출처를 먼저 말할 것
 text5: !drop
 ```
 
-Syntax, in full:
-
-| Form | Meaning |
-|---|---|
-| `## @s3` | start a slide from template slide 3 (trailing text is a comment) |
-| `key: value` | text slot |
-| `key:` + indented `- ` lines | list slot; two extra spaces = one outline level deeper |
-| `key:` + indented `\| a \| b \|` lines | table rows; first row fills the header when the template has one |
-| `key:` + indented plain lines | multi-line text, one paragraph per line |
-| `key: path/to.png` | picture slot; relative paths resolve from `deck.mdx` |
-| `key: path/to.svg` | same, but the SVG is rasterized at build time and cached in `.deckcache/` |
-| `key: !drop` | delete that shape from the slide |
-| `notes:` | speaker notes for the slide — reserved, works on any archetype |
-| `**bold**` `*italic*` `` `code` `` | inline emphasis inside any text or list value |
-| slot omitted | keeps the template's own content |
+Slots you leave out keep the template's content. Full syntax — slot forms, `!drop`,
+`notes:`, inline emphasis, outline levels, and what `template_hash` protects against —
+is in `references/mdx-syntax.md`. Read it before writing the first slide.
 
 ### Step 3b · Generate the art the deck needs
 
-A picture slot with no source is where the pipeline usually breaks — everything else is
-text a model can write, and then someone has to go make a diagram by hand. Write the art
-as an `.svg` instead, and it becomes source like the rest of the deck.
+A picture slot with no source is where the pipeline breaks: everything else is text a
+model can write, and then someone has to draw a diagram by hand. Write it as an `.svg`
+instead, in the template's colors and at the frame's exact pt size — both printed by
+`catalog` — and it becomes source like the rest of the deck, rasterized at build time.
 
-Two rules make it merge cleanly with the reference:
-
-1. **Write it in the template's palette.** `catalog` prints a Palette section — theme slots
-   and the colors the slides actually use. Use those hexes, not ones that merely look close.
-   The reference supplies the design; the generated source supplies only the content. The
-   same goes for type: use the template's families and its real pt sizes, both printed by
-   `catalog`, rather than something that merely looks close.
-2. **Author it at the frame's exact pt size.** The catalog gives it (`author at 441×248 pt`).
-   Use those numbers as the SVG's `width`/`height`/`viewBox`, and then `font-size="16"` in
-   the SVG is the same 16pt as the body text beside it — the catalog's Type section lists
-   the sizes the template actually uses. Matching the frame also means nothing is cropped;
-   miss the aspect ratio and `check` warns before you see a trimmed diagram.
-
-```markdown
-pic1: assets/latency.svg
-```
-
-At build the SVG is rasterized to a PNG sized for its frame and embedded. It is cached by
-content hash in `.deckcache/`, so the same SVG always yields the same bytes and repeated
-builds do not re-render. This is the one step that needs the renderer at **build** time —
-`check` reports it as an error if an SVG is used and nothing can rasterize it.
-
-### Step 3c · Pin the template
-
-`catalog` prints a `template_hash` — a fingerprint of the archetypes and their slots.
-Copy it into the front matter. `check` and `build` then refuse quietly-wrong output: if
-someone inserts, deletes or reorders a template slide, `@s3` starts meaning a different
-slide, and without the pin that shows up as a strange-looking deck rather than an error.
-
-Editing the template's own wording does not move the hash — only structure does, because
-structure is what `deck.mdx` depends on.
+See `references/generated-art.md` for the rules and a worked example.
 
 ### Step 4 · Check
 
@@ -191,21 +145,13 @@ python3 /abs/path/scripts/deck.py render --deck deck.mdx
 ```
 
 Builds, converts through LibreOffice, writes PNG previews of every page, and audits the
-rendered geometry:
+rendered geometry — `overlap` (two text frames clash), `bunched` (lines inside one frame
+sit closer than that frame's own norm, so text has outgrown its box), `off-slide` (the
+renderer cut it). Clean means clean: the audit compares across frames and measures pitch
+against each frame's median, so CJK fonts whose em box exceeds a 100% line do not trip it.
 
-| Finding | Means |
-|---|---|
-| `overlap` | two text frames physically clash on the page |
-| `bunched` | lines inside one frame sit closer than that frame's own norm — text has outgrown its box |
-| `off-slide` | text is outside the page box; the renderer cut it |
-
-Clean means clean: the audit compares text across frames and measures line pitch against
-each frame's median, so it does not cry wolf over CJK fonts whose em box is taller than a
-100% line.
-
-The renderer is `soffice` on PATH, or `DECK_RENDER_DOCKER=<image>` for a container. With
-neither, `render` refuses rather than pretending the layout was checked — report that to
-the user and fall back to `build`.
+Renderer is `soffice` on PATH or `DECK_RENDER_DOCKER=<image>`. With neither, `render`
+refuses rather than pretending the layout was checked — say so and fall back to `build`.
 
 ---
 
@@ -246,20 +192,19 @@ Report after a build:
 
 ## Limitations
 
-| Limitation | Detail |
-|---|---|
-| **A template is mandatory** | There is no built-in design. Without a reference `.pptx` the engine exits with an error and produces nothing. |
-| **No new layouts** | Output slides are clones of template slides. Content with no matching archetype needs the template extended in PowerPoint first. |
-| **Charts are not writable** | Series values live in an embedded xlsx plus cached XML. `catalog` lists chart slots; `build` leaves them at template values. |
-| **SVG assets need the renderer at build time** | PNG and JPEG assets need nothing. An `.svg` has to be rasterized, so `build` needs LibreOffice for that slot. |
-| **Layout truth needs a renderer** | `check` estimates from frame width ÷ font size. Only `render` sees what actually collides, and it needs LibreOffice. |
-| **Capacity is an estimate** | Overflow warnings come from frame width ÷ font size, not real text metrics. Treat them as a prompt to look, not a verdict. |
-| **Nesting is only as visible as the template makes it** | A nested item is written at outline level 1. If the template's own body text defines no indent for level 1, it renders flush with the rest — the level is correct, the template just doesn't show it. |
-| **Formatting follows the template** | A replaced run inherits the template run's font, size and color. `**bold**`, `*italic*` and `` `code` `` flip those attributes on a copy; anything beyond that (per-word color, size) is not expressible. |
-| **Notes come from `deck.mdx`, not the template** | A template slide's own notes are not carried over; write what you want in `notes:`. If the template has no notes master, a plain one is added and the build says so. |
-| **Autofit is not recalculated** | PowerPoint reflows shrink-to-fit text when the file is opened, so the on-screen result can differ slightly from the capacity estimate. |
+The five that change what you can promise:
 
----
+- **No new layouts.** Every output slide is a clone of a template slide. Content with no
+  matching archetype needs the template extended in PowerPoint first — say so rather than
+  approximating.
+- **A reference template is mandatory.** There is no built-in design and no fallback.
+- **Charts are not writable.** `catalog` lists chart slots; `build` leaves the template's
+  numbers. Generate an SVG into a picture slot instead.
+- **Layout truth needs a renderer.** `check` estimates; only `render` sees what collides.
+- **Formatting follows the template.** Emphasis flips attributes on the template's own run;
+  per-word color or size is not expressible.
+
+Full table, and which step catches each one: `references/limits.md`.
 
 ## Related Skills
 
