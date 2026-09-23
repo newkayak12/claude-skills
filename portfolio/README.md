@@ -343,6 +343,14 @@ words. A picture drawn *after* the text it covers is an error rather than a warn
 end up behind the image. The render suite checks the prediction against the page: on a pale sky
 backdrop `check` reports `#D2E1F8` behind the title, and that is the color pdftoppm paints there.
 
+Capacity is measured in em rather than characters, because counting characters makes a Hangul
+line look 1.8x shorter than it is and lets an overflowing title through. The template
+calibrates it: most slots hold text that already wraps by design, so an absolute width is
+noise — what `check` reports is a slot the template keeps to one line dropping onto a second,
+or content far longer than the template's own. And `render` names the typefaces the renderer
+does not have before showing the preview, because a substituted font rewraps every line and
+turns the preview into a story about the substitute.
+
 `catalog` prints the template's palette and its type — theme slots, the colors the slides actually
 use, the theme fonts, and the pt sizes in play — plus each picture frame's exact size in points. Author
 an SVG at that pt size and `font-size="16"` in the art is the same 16pt as the body text beside it, so

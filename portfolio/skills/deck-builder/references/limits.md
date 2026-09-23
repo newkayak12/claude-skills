@@ -14,10 +14,12 @@ Stated here rather than discovered in a PDF. Report the ones that bite on a give
 | **Color checks are approximate** | Palette conformance reads hexes out of SVG text; the pasted-box check decodes PNG borders only (not JPEG) and compares against the slide, layout or master background — not against a shape sitting behind the frame. |
 | **Legibility scoring is PNG only** | Text over a picture is measured against the decoded PNG behind it. A JPEG or SVG backdrop is not scored, and a text color the template inherits rather than states is skipped rather than guessed at. |
 | **Contrast is area, not glyphs** | The score is the fraction of the text box's area below the threshold, not per-letter. A busy image can pass on average and still swallow one word. |
-| **Capacity is an estimate** | Overflow warnings come from frame width ÷ font size, not real text metrics. Treat them as a prompt to look, not a verdict. |
+| **Capacity is an estimate** | Widths come from frame width ÷ font size with a per-script em model (full-width for CJK, ~0.55 em for Latin), not the real font's metrics. It is calibrated against the template's own text — a slot whose own content already wraps is treated as a wrapping slot — so it is a prompt to look, not a verdict. |
+| **A missing font makes the preview lie** | LibreOffice substitutes silently and a substitute rewraps every line. `render` names the typefaces it could not find; until they are installed, judge content from the pptx and only layout that survives substitution from the preview. |
 | **Nesting is only as visible as the template makes it** | A nested item is written at outline level 1. If the template's own body text defines no indent for level 1, it renders flush with the rest — the level is correct, the template just doesn't show it. |
 | **Formatting follows the template** | A replaced run inherits the template run's font, size and color. `**bold**`, `*italic*` and `` `code` `` flip those attributes on a copy; anything beyond that (per-word color, size) is not expressible. |
 | **Notes come from `deck.mdx`, not the template** | A template slide's own notes are not carried over; write what you want in `notes:`. If the template has no notes master, a plain one is added and the build says so. |
+| **The template's own vector media stays** | PowerPoint stores an SVG beside a PNG fallback, so real templates ship vector media. The raster-only invariant applies to what the build adds, not to what the template already carried. |
 | **Previews are LibreOffice's typography, not PowerPoint's** | The PDF and PNG previews come from LibreOffice, which pads the CJK/Latin join by default — `평균 42분` shows as `평균  42 분`. The pptx string is unchanged; use the previews to judge layout, and the built file to judge text. |
 | **Autofit is not recalculated** | PowerPoint reflows shrink-to-fit text when the file is opened, so the on-screen result can differ slightly from the capacity estimate. |
 
@@ -27,7 +29,9 @@ Stated here rather than discovered in a PDF. Report the ones that bite on a give
 |---|---|
 | Content with no matching archetype | you, at Step 2 — the engine cannot tell |
 | A table taller than the slide | `check`, as an error naming the rows that would be lost |
-| Text too long for its frame | `check` warns from an estimate; `render` sees the real collision |
+| Text too wide for a one-line slot | `check`, measured in em against the template's own line |
+| Text far longer than the template's own | `check`, as a warning with the percentage |
+| A typeface the renderer does not have | `render`, before the preview it would otherwise mislead you with |
 | An SVG at the wrong aspect ratio | `check`, as a warning |
 | An SVG with no renderer | `check`, as an error |
 | A template that moved under the deck | `check` and `build`, via `template_hash` |

@@ -3,6 +3,8 @@
     python3 test_deck.py
 """
 
+import contextlib
+import io
 import os
 import re
 import shutil
@@ -713,13 +715,22 @@ def guards(tmp):
     fails_with(["catalog", "--template", str(tmp / "nowhere.pptx")],
                "not found", "catalog refuses a missing template")
 
-    import io
-    import contextlib
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         rc = deck.main(["catalog", "--template", str(tmp / "template.pptx")])
     check(rc == 0 and "deck.mdx" in buf.getvalue(),
           "catalog tells you to save the source as deck.mdx")
+
+
+def run_cmd(argv):
+    """deck.main with stdout captured, so a test can read what the user would see."""
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        try:
+            deck.main(argv)
+        except SystemExit as e:
+            buf.write(str(e))
+    return buf.getvalue()
 
 
 def make_split_png(path, w, h, left=(20, 20, 20), right=(240, 240, 240)):
@@ -849,6 +860,103 @@ def legibility(tmp):
     check(not errs, "the same pair is fine when the picture is drawn first")
 
 
+def widths(tmp):
+    """Korean is full-width: counting characters makes a line look 1.8x shorter."""
+    print("how wide a line really is")
+    check(deck.char_em("A") == deck.LATIN_EM and deck.char_em("가") == deck.WIDE_EM,
+          "a Latin glyph is half an em, a Hangul one fills it")
+    check(deck.char_em("漢") == deck.WIDE_EM and deck.char_em("、") == deck.WIDE_EM,
+          "Han and full-width punctuation are wide too")
+    ko, en = "한글열글자입니다만", "abcdefghi"
+    check(len(ko) == len(en) and deck.text_em(ko) > deck.text_em(en) * 1.7,
+          "same character count, %.1f em against %.1f — the old count was off by that much"
+          % (deck.text_em(ko), deck.text_em(en)))
+    check(abs(deck.mean_em("abc") - deck.LATIN_EM) < 1e-9
+          and abs(deck.mean_em(["가나"]) - deck.WIDE_EM) < 1e-9,
+          "the reported char budget follows the script the template itself uses")
+
+    print("the template calibrates its own capacity")
+    # A slot whose own text already wraps is a wrapping slot; one that fits is a one-liner.
+    make_png(tmp / "cap.png", 40, 40)
+    make_template(tmp / "w.pptx", tmp / "cap.png")
+    pkg = deck.Package(tmp / "w.pptx")
+    protos = deck.slide_order(pkg)
+    slots = deck.analyze_slide(ET.fromstring(pkg.parts[protos[0]]), deck.slide_size(pkg)[1])
+    got = [s for s in slots if s.max_em]
+    check(got and all(s.proto_em is not None for s in got),
+          "every measured slot records the widest line the template puts in it")
+
+
+def vector_invariant(tmp):
+    """A real template ships SVG next to a PNG fallback. Refusing it refuses the template."""
+    print("the template's own vector media is the template's own affair")
+    make_png(tmp / "v.png", 40, 40)
+    make_template(tmp / "v.pptx", tmp / "v.png")
+    pkg = deck.Package(tmp / "v.pptx")
+    pkg.parts["ppt/media/logo.svg"] = b"<svg xmlns='http://www.w3.org/2000/svg'/>"
+    preexisting = frozenset(["ppt/media/logo.svg"])
+    ok = True
+    try:
+        deck.assert_raster_only(pkg, preexisting)
+    except SystemExit:
+        ok = False
+    check(ok, "an SVG the template already carried does not fail the build")
+    blew = False
+    try:
+        deck.assert_raster_only(pkg, frozenset())
+    except SystemExit as e:
+        blew = "logo.svg" in str(e)
+    check(blew, "an SVG the build introduced still fails loudly, naming the part")
+
+
+def one_line_slots(tmp):
+    """The warning that matters is a one-line slot dropping onto a second line."""
+    print("a slot the template keeps to one line")
+    make_png(tmp / "o.png", 40, 40)
+    make_template(tmp / "o.pptx", tmp / "o.png")
+    pkg = deck.Package(tmp / "o.pptx")
+    protos = deck.slide_order(pkg)
+    slots = deck.analyze_slide(ET.fromstring(pkg.parts[protos[1]]), deck.slide_size(pkg)[1])
+    body = next(s for s in slots if s.id == "text1")
+    check(body.max_em and body.proto_em is not None,
+          "the slot carries both its frame width and the template's own widest line")
+    fits = body.proto_em <= body.max_em
+    check(fits, "the fixture's own body text fits its frame, so this is a one-line slot")
+
+    src = (tmp / "o.mdx")
+    long_ko = "가" * int(body.max_em * 1.4)
+    src.write_text("---\ntemplate: o.pptx\noutput: o.pptx\n---\n\n## @s2\n"
+                   "text1: %s\n" % long_ko, encoding="utf-8")
+    out = run_cmd(["check", "--deck", str(src)])
+    check("one line" in out and "too wide" in out,
+          "a Hangul line 40%% past the frame is reported: %s"
+          % next((l.strip() for l in out.splitlines() if "one line" in l), out[:90]))
+    src.write_text("---\ntemplate: o.pptx\noutput: o.pptx\n---\n\n## @s2\ntext1: 짧다\n",
+                   encoding="utf-8")
+    check("one line" not in run_cmd(["check", "--deck", str(src)]),
+          "a short line says nothing")
+
+
+def fonts(tmp):
+    """A substituted font rewraps every line, so the render must say when one is missing."""
+    print("fonts the renderer does not have")
+    make_png(tmp / "fnt.png", 40, 40)
+    make_template(tmp / "f.pptx", tmp / "fnt.png")
+    pkg = deck.Package(tmp / "f.pptx")
+    protos = deck.slide_order(pkg)
+    _, _, faces = deck.template_typography(pkg, protos)
+    check(deck.missing_fonts(pkg, protos, None) is None,
+          "a renderer that cannot list its fonts reports nothing rather than guessing")
+    have = {n.lower() for n, _ in faces}
+    check(deck.missing_fonts(pkg, protos, have) == [],
+          "nothing is missing when the renderer has every face the slides set")
+    check(deck.missing_fonts(pkg, protos, set()) == sorted(n for n, _ in faces)
+          or not faces,
+          "every face the slides set is named when the renderer has none")
+    check(deck.missing_fonts(pkg, protos, {"nanumsquare"}) == [],
+          "a weight suffix resolves to its family: NanumSquare Bold needs NanumSquare")
+
+
 def workdir():
     """A container renderer's daemon may not see /tmp, so mirror test_render.py there."""
     if os.environ.get("DECK_RENDER_DOCKER") and not shutil.which("soffice"):
@@ -866,6 +974,10 @@ def main():
         geometry(tmp)
         sizing(tmp)
         color(tmp)
+        widths(tmp)
+        vector_invariant(tmp)
+        one_line_slots(tmp)
+        fonts(tmp)
         legibility(tmp)
         emphasis(tmp)
         drift(tmp)
