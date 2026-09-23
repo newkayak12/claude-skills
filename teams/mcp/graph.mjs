@@ -805,10 +805,32 @@ export function expandSubgoals(run, subgoals) {
     const after = (sg.after || []).map((d) => `gate:${d}:${round}`);
     gateIds.push(pushChain(run, (KINDS[kindOf(sg)] || KINDS[DEFAULT_KIND]).chain, id, round, [critiqueDep, ...deps], after, {}));
   }
+  // Where parallel subgoals converge. Until this node existed the only place they met was
+  // the goal gate, which is a judging node and writes nothing - so nothing ever looked at
+  // the artifacts as a set. What held that seam together was a convention: the setgoal
+  // contract tells subgoals sharing one file to each name the heading they own. A
+  // convention breaks quietly and nobody checks it, and idol-plan-2 (2026-09-23) is what
+  // that looks like in practice - five sibling investigate stages, told to name their
+  // findings file after their subgoal, produced U1-investigate.md,
+  // U3-1-investigate-notes.md, investigate-U4-findings.md, investigate-U2-findings.md and
+  // decisions/investigate_U5_1-findings.md, and a retry left investigate_U5_2 beside its
+  // own first attempt as an orphan. `reduce` is the leader that folds the set: it reads
+  // what the subgoals actually wrote and reports what does not line up. It does not judge
+  // - that stays the goal gate's job.
+  //
+  // Only pushed when there is more than one subgoal: a single-subgoal run has nothing to
+  // fold, and inserting a node there would add a model call that can only say "nothing to
+  // do".
+  let gateDeps = gateIds;
+  if (subgoals.length > 1) {
+    const reduceId = round === 1 ? 'reduce' : `reduce:${round}`;
+    run.nodes.push(node(reduceId, 'reduce', gateIds, {}));
+    gateDeps = [reduceId];
+  }
   // Multi-judge consensus (Step 9 / D-goal-consensus): a fresh round of `run.goal_judges`
   // sibling gates over the same subgoal gates, instead of the single node this used to
   // push directly. goal_judges:1 is exactly the old shape - one node named `gate:goal:N`.
-  const { ids: goalGates } = pushGoalGateRound(run, gateIds, {}, run.goal_judges || 1);
+  const { ids: goalGates } = pushGoalGateRound(run, gateDeps, {}, run.goal_judges || 1);
   const reportId = round === 1 ? 'report' : `report:${round}`;
   // Order-only: the report waits for every judge in the round to be settled, not to
   // pass. A run whose subgoal ran out of retries used to end `blocked` with the

@@ -575,7 +575,7 @@ test('an exhausted critique retry budget settles the run and releases the report
     assert.equal(v.state, 'failed');
     assert.equal(v.reassigned.attempt, null, 'the budget is gone - no third attempt opens');
     assert.deepEqual(v.reassigned.unreachable.slice().sort(), [
-      'gate:U1:2', 'gate:U2:2', 'gate:goal:2', 'implement:U1:2', 'implement:U2:2', 'test:U1:2', 'test:U2:2',
+      'gate:U1:2', 'gate:U2:2', 'gate:goal:2', 'implement:U1:2', 'implement:U2:2', 'reduce:2', 'test:U1:2', 'test:U2:2',
     ], 'the dead generation is settled, not left pending forever');
 
     const nx = await c.call('team_next', { run_id: runId, cwd });
@@ -831,6 +831,7 @@ test('a clean run reaches report', async () => {
       await c.call('team_submit', { run_id: runId, cwd, node_id: `test:${sg}:1`, payload: ok({ verified: true }) });
       await c.call('team_submit', { run_id: runId, cwd, node_id: `gate:${sg}:1`, payload: ok({ accept: true, match_pct: 95 }) });
     }
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'reduce', payload: ok({ changed_files: [], handoff: 'set folded' }) });
     await c.call('team_submit', { run_id: runId, cwd, node_id: 'gate:goal:1', payload: ok({ accept: true, match_pct: 95 }) });
     const v = await c.call('team_submit', { run_id: runId, cwd, node_id: 'report', payload: ok({ handoff: 'done' }) });
     assert.equal(v.state, 'done');
@@ -1082,6 +1083,7 @@ test('a rejected goal gate is re-judged after the subgoal retry, instead of wedg
     await throughCritiqueWith(c, cwd, runId, INDEPENDENT);
     await passSubgoal(c, cwd, runId, 'U1');
     await passSubgoal(c, cwd, runId, 'U2');
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'reduce', payload: ok({ changed_files: [], handoff: 'set folded' }) });
     const g = await c.call('team_submit', { run_id: runId, cwd, node_id: 'gate:goal:1', payload: ok({ accept: false, match_pct: 50, gaps: ['U2 never wired to U1'], reason: 'halves do not meet' }) });
     assert.equal(g.state, 'failed');
     let nx = await c.call('team_next', { run_id: runId, cwd });
@@ -1100,6 +1102,7 @@ test('a rejected goal gate is re-judged after the subgoal retry, instead of wedg
     assert.deepEqual(st.nodes.find((n) => n.node_id === 'report').after, ['gate:goal:2']);
     const gatePrompt = readFileSync(nx.ready[0].briefing_path, 'utf8');
     assert.match(gatePrompt, /Previous attempt was rejected[\s\S]*U2 never wired to U1/);
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'reduce:2', payload: ok({ changed_files: [], handoff: 'set folded' }) });
     await c.call('team_submit', { run_id: runId, cwd, node_id: 'gate:goal:2', payload: ok({ accept: true, match_pct: 90 }) });
     nx = await c.call('team_next', { run_id: runId, cwd });
     assert.deepEqual(nx.ready.map((n) => n.node_id), ['report']);
@@ -1143,6 +1146,7 @@ test('a mixed spec expands each subgoal by its kind and reaches the report', asy
     assert.equal(r.verified, true);
     assert.equal(r.reviewer_independence, 'unverifiable-self', 'self cannot be checked, and the verdict says so');
     await c.call('team_submit', { run_id: runId, cwd, node_id: 'gate:D1:1', payload: ok({ accept: true, match_pct: 90 }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'reduce', payload: ok({ changed_files: [], handoff: 'set folded' }) });
     await c.call('team_submit', { run_id: runId, cwd, node_id: 'gate:goal:1', payload: ok({ accept: true, match_pct: 90 }) });
     const nx = await c.call('team_next', { run_id: runId, cwd });
     assert.deepEqual(nx.ready.map((n) => n.node_id), ['report']);
@@ -1188,6 +1192,7 @@ test('a mixed spec expands a planning subgoal into investigate->draft->revise->g
     const ex = await c.call('team_submit', { run_id: runId, cwd, node_id: 'execute:Q1:1', payload: ok({ verified: true }) });
     assert.equal(ex.state, 'done', JSON.stringify(ex));
     await c.call('team_submit', { run_id: runId, cwd, node_id: 'gate:Q1:1', payload: ok({ accept: true, match_pct: 95 }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'reduce', payload: ok({ changed_files: [], handoff: 'set folded' }) });
     await c.call('team_submit', { run_id: runId, cwd, node_id: 'gate:goal:1', payload: ok({ accept: true, match_pct: 95 }) });
     const nx = await c.call('team_next', { run_id: runId, cwd });
     assert.deepEqual(nx.ready.map((n) => n.node_id), ['report']);
