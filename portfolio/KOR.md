@@ -330,10 +330,25 @@ python3 /abs/path/to/skills/deck-builder/scripts/deck.py build --deck deck.mdx
 | **차트는 쓰기 불가** | 시리즈 값이 내장 xlsx와 캐시 XML에 나뉘어 있습니다. `catalog`은 차트 슬롯을 보여주고, `build`는 템플릿 값 그대로 둡니다. |
 | **용량은 추정치** | 오버플로 경고는 실제 텍스트 메트릭이 아니라 프레임 너비 ÷ 폰트 크기에서 나옵니다 — 판정이 아니라 확인하라는 신호입니다. |
 | **서식은 템플릿을 따름** | 교체된 run은 템플릿 run의 폰트·크기·색을 물려받습니다. 단어 단위 강조는 `deck.mdx`로 표현할 수 없습니다. |
+| **중첩은 템플릿이 들여쓸 때만 보임** | 중첩 항목은 아웃라인 레벨 1로 쓰입니다. 템플릿이 레벨 1 들여쓰기를 정의하지 않았다면 나머지와 같은 줄에서 시작합니다. |
 | **발표자 노트 삭제** | 노트 슬라이드는 빌드에 실리지 않습니다. |
 
-테스트: `python3 portfolio/skills/deck-builder/scripts/test_deck.py` — 최소 pptx를 스스로 만들어
-돌기 때문에 픽스처 파일이 필요 없습니다.
+테스트 스위트는 둘이고, 둘 다 리포에 픽스처 파일을 두지 않습니다:
+
+```bash
+# 단위 — 패키지 구조, 파싱, 슬롯 쓰기. 최소 pptx를 스스로 만듭니다.
+python3 portfolio/skills/deck-builder/scripts/test_deck.py
+
+# 렌더 왕복 — mdx -> pptx -> PDF를 셋 다 대조. 렌더러가 필요합니다:
+# PATH의 soffice, 또는 DECK_RENDER_DOCKER=<soffice가 든 이미지>. 없으면 깔끔히 skip합니다.
+python3 portfolio/skills/deck-builder/scripts/test_render.py
+```
+
+렌더 스위트는 5개 아키타입짜리 디자인된 템플릿을 직접 작성하고(`fixture_template.py`), 거기서
+한국어 6슬라이드 덱을 빌드하고, PDF로 뽑은 다음, `.mdx`의 모든 값이 pptx와 PDF 양쪽에 도달했는지,
+템플릿 자리표시 문구가 새어나오지 않았는지, 브랜드 색과 장식 도형이 살아남았는지, 프레임보다 넓은
+이미지가 늘어나지 않고 크롭됐는지를 확인합니다. `fixture_template.py`는 테스트 픽스처일 뿐 폴백이
+아닙니다 — 엔진에는 내장 템플릿이 없고, 앞으로도 생기면 안 됩니다.
 
 ### `ppt-keycolor-changer`
 
