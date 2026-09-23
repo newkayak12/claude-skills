@@ -523,29 +523,72 @@ def _classify_block(block):
 
 # ── Text writing ─────────────────────────────────────────────────────────────
 
+EMPHASIS_RE = re.compile(r"\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`")
+
+
+def split_emphasis(text):
+    """[(text, bold, italic, mono)] from **bold**, *italic* and `code`.
+
+    The run's own formatting is the template's; emphasis only flips attributes on a
+    copy of it, so a bolded phrase keeps the font, size and color it was going to have.
+    """
+    out, pos = [], 0
+    for m in EMPHASIS_RE.finditer(text):
+        if m.start() > pos:
+            out.append((text[pos:m.start()], False, False, False))
+        bold, italic, mono = m.group(1), m.group(2), m.group(3)
+        out.append((bold or italic or mono, bool(bold), bool(italic), bool(mono)))
+        pos = m.end()
+    if pos < len(text):
+        out.append((text[pos:], False, False, False))
+    return out or [(text, False, False, False)]
+
+
 def _set_para_text(p, text):
-    """Replace a paragraph's runs with a single run carrying `text`."""
+    """Replace a paragraph's runs with runs carrying `text`, honouring inline emphasis."""
     runs = p.findall(q("a:r"))
-    keep = runs[0] if runs else None
+    base = copy.deepcopy(runs[0]) if runs else None
     for child in list(p):
-        if child.tag in (q("a:r"), q("a:br"), q("a:fld")) and child is not keep:
+        if child.tag in (q("a:r"), q("a:br"), q("a:fld")):
             p.remove(child)
-    if keep is None:
-        keep = ET.SubElement(p, q("a:r"))
+    if base is None:
+        base = ET.Element(q("a:r"))
         endPr = p.find(q("a:endParaRPr"))
         if endPr is not None:
-            rPr = ET.SubElement(keep, q("a:rPr"))
+            rPr = ET.SubElement(base, q("a:rPr"))
             for k, v in endPr.attrib.items():
                 rPr.set(k, v)
             for sub in list(endPr):
                 rPr.append(copy.deepcopy(sub))
-        ET.SubElement(keep, q("a:t"))
-    t = keep.find(q("a:t"))
-    if t is None:
-        t = ET.SubElement(keep, q("a:t"))
-    t.text = text
-    if text != text.strip():
-        t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+        ET.SubElement(base, q("a:t"))
+
+    anchor = p.find(q("a:endParaRPr"))
+    for chunk, bold, italic, mono in split_emphasis(text):
+        run = copy.deepcopy(base)
+        rPr = run.find(q("a:rPr"))
+        if rPr is None:
+            rPr = ET.Element(q("a:rPr"))
+            run.insert(0, rPr)
+        if bold:
+            rPr.set("b", "1")
+        if italic:
+            rPr.set("i", "1")
+        if mono:
+            for tag in ("a:latin", "a:cs"):
+                for old in rPr.findall(q(tag)):
+                    rPr.remove(old)
+            latin = ET.SubElement(rPr, q("a:latin"))
+            latin.set("typeface", "Consolas")
+        t = run.find(q("a:t"))
+        if t is None:
+            t = ET.SubElement(run, q("a:t"))
+        t.text = chunk
+        if chunk != chunk.strip():
+            t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+        if anchor is not None:
+            p.insert(list(p).index(anchor), run)
+        else:
+            p.append(run)
 
 
 def _write_paragraphs(txBody, items):
@@ -914,6 +957,35 @@ def template_palette(pkg, slide_parts):
     return theme, used
 
 
+def template_signature(pkg, slide_parts, slide_cy=None):
+    """A hash of what deck.mdx actually depends on: the archetypes and their slots.
+
+    Editing the template's own words must not trip this, or nobody will trust it;
+    inserting, deleting or reordering a slide must, because then `@s3` silently means
+    a different slide and the deck rots without a single error.
+    """
+    sig = []
+    for n, part in enumerate(slide_parts, 1):
+        slots = analyze_slide(ET.fromstring(pkg.parts[part]), slide_cy)
+        sig.append("s%d:%s" % (n, ",".join("%s=%s" % (s.id, s.type) for s in slots)))
+    blob = "|".join(sig).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()[:12]
+
+
+def verify_signature(front, pkg, slide_parts, slide_cy, errs):
+    declared = front.get("template_hash")
+    if not declared:
+        return
+    actual = template_signature(pkg, slide_parts, slide_cy)
+    if declared == actual:
+        return
+    errs.append(
+        "the template no longer matches this deck: front matter says template_hash %s, "
+        "the template is %s. Slides were added, removed or reordered, so `@sN` now points "
+        "somewhere else. Re-run catalog, check every archetype this deck uses, then update "
+        "template_hash." % (declared, actual))
+
+
 def template_typography(pkg, slide_parts):
     """The template's type: theme fonts, and the sizes the slides actually set.
 
@@ -972,12 +1044,14 @@ def cmd_catalog(args):
         "%d archetypes. In `deck.mdx`, start a slide with `## @<archetype>` and set slots by id."
         % len(parts),
         "Slots you leave out keep the template's own content. `slot: !drop` removes the shape.",
+        "`notes:` works on any slide and becomes that slide's speaker notes.",
         "",
         "Save the source as `deck%s` and start it with:" % DECK_EXT,
         "",
         "```",
         "---",
         "template: %s" % args.template,
+        "template_hash: %s" % template_signature(pkg, parts, slide_cy),
         "output: deck.pptx",
         "---",
         "```",
@@ -1183,6 +1257,8 @@ def cmd_build(args):
 
     pkg = Package(template)
     protos = slide_order(pkg)
+    drift = []
+    verify_signature(front, pkg, protos, slide_size(pkg)[1], drift)
     proto_xml = {n: pkg.parts[n] for n in protos}
     proto_rels = {n: pkg.parts.get(rels_name(n)) for n in protos}
 
@@ -1201,7 +1277,7 @@ def cmd_build(args):
               "by_src": {}, "exts": set(), "add_rel": None,
               "renderer": Renderer(), "cache": md_path.parent / ".deckcache",
               "rasterized": 0}
-    problems = list(errors)
+    problems = list(errors) + drift
     new_parts = []
     notes_parts = []
     notes_master = None
@@ -1358,6 +1434,7 @@ def cmd_check(args):
                for i, n in enumerate(protos, 1)}
 
     errs, warns = list(errors), []
+    verify_signature(front, pkg, protos, slide_cy, errs)
     for spec in specs:
         tag = "@%s (line %d)" % (spec.archetype, spec.line)
         slots = catalog.get(spec.archetype)
@@ -1367,6 +1444,12 @@ def cmd_check(args):
         by_id = {s.id: s for s in slots}
         seen = set()
         for slot_id, kind, value, line in spec.values:
+            if slot_id in RESERVED_KEYS:
+                if not any(n.startswith("ppt/notesMasters/") for n in pkg.parts):
+                    warns.append("line %d: %s has notes, and the template carries no notes "
+                                 "master — a plain one will be added to hold them"
+                                 % (line, tag))
+                continue
             seen.add(slot_id)
             slot = by_id.get(slot_id)
             if slot is None:

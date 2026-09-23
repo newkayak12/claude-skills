@@ -90,12 +90,14 @@ Get a nod on the plan. Wrong archetype choice is the expensive mistake, not wron
 ```markdown
 ---
 template: template.pptx
+template_hash: 5f84440a3521
 output: deck.pptx
 ---
 
 ## @s1
 title: 신뢰성 플랫폼 2026 리뷰
 subtitle: 배포 파이프라인을 다시 세우고 얻은 것
+notes: 첫 30초는 왜 이걸 했는지에만 쓸 것
 
 ## @s3
 title: 분기 요약
@@ -122,6 +124,8 @@ Syntax, in full:
 | `key: path/to.png` | picture slot; relative paths resolve from `deck.mdx` |
 | `key: path/to.svg` | same, but the SVG is rasterized at build time and cached in `.deckcache/` |
 | `key: !drop` | delete that shape from the slide |
+| `notes:` | speaker notes for the slide — reserved, works on any archetype |
+| `**bold**` `*italic*` `` `code` `` | inline emphasis inside any text or list value |
 | slot omitted | keeps the template's own content |
 
 ### Step 3b · Generate the art the deck needs
@@ -134,9 +138,14 @@ Two rules make it merge cleanly with the reference:
 
 1. **Write it in the template's palette.** `catalog` prints a Palette section — theme slots
    and the colors the slides actually use. Use those hexes, not ones that merely look close.
-   The reference supplies the design; the generated source supplies only the content.
-2. **Author it at the frame's aspect ratio.** The catalog gives it (`16:9 frame`). Match it
-   and nothing is cropped; miss it and `check` warns before you see a trimmed diagram.
+   The reference supplies the design; the generated source supplies only the content. The
+   same goes for type: use the template's families and its real pt sizes, both printed by
+   `catalog`, rather than something that merely looks close.
+2. **Author it at the frame's exact pt size.** The catalog gives it (`author at 441×248 pt`).
+   Use those numbers as the SVG's `width`/`height`/`viewBox`, and then `font-size="16"` in
+   the SVG is the same 16pt as the body text beside it — the catalog's Type section lists
+   the sizes the template actually uses. Matching the frame also means nothing is cropped;
+   miss the aspect ratio and `check` warns before you see a trimmed diagram.
 
 ```markdown
 pic1: assets/latency.svg
@@ -146,6 +155,16 @@ At build the SVG is rasterized to a PNG sized for its frame and embedded. It is 
 content hash in `.deckcache/`, so the same SVG always yields the same bytes and repeated
 builds do not re-render. This is the one step that needs the renderer at **build** time —
 `check` reports it as an error if an SVG is used and nothing can rasterize it.
+
+### Step 3c · Pin the template
+
+`catalog` prints a `template_hash` — a fingerprint of the archetypes and their slots.
+Copy it into the front matter. `check` and `build` then refuse quietly-wrong output: if
+someone inserts, deletes or reorders a template slide, `@s3` starts meaning a different
+slide, and without the pin that shows up as a strange-looking deck rather than an error.
+
+Editing the template's own wording does not move the hash — only structure does, because
+structure is what `deck.mdx` depends on.
 
 ### Step 4 · Check
 
@@ -236,8 +255,8 @@ Report after a build:
 | **Layout truth needs a renderer** | `check` estimates from frame width ÷ font size. Only `render` sees what actually collides, and it needs LibreOffice. |
 | **Capacity is an estimate** | Overflow warnings come from frame width ÷ font size, not real text metrics. Treat them as a prompt to look, not a verdict. |
 | **Nesting is only as visible as the template makes it** | A nested item is written at outline level 1. If the template's own body text defines no indent for level 1, it renders flush with the rest — the level is correct, the template just doesn't show it. |
-| **Formatting follows the template** | A replaced run inherits the template run's font, size and color. Per-word bold or color inside a slot is not expressible in `deck.mdx`. |
-| **Speaker notes are dropped** | Notes slides are not carried into the build. |
+| **Formatting follows the template** | A replaced run inherits the template run's font, size and color. `**bold**`, `*italic*` and `` `code` `` flip those attributes on a copy; anything beyond that (per-word color, size) is not expressible. |
+| **Notes come from `deck.mdx`, not the template** | A template slide's own notes are not carried over; write what you want in `notes:`. If the template has no notes master, a plain one is added and the build says so. |
 | **Autofit is not recalculated** | PowerPoint reflows shrink-to-fit text when the file is opened, so the on-screen result can differ slightly from the capacity estimate. |
 
 ---
