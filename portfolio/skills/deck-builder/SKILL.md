@@ -25,6 +25,7 @@ Treats a deck as a build, not a document:
 |---|---|
 | `template.pptx` | the toolchain — its slides are the archetype catalog. **Always required.** |
 | `deck.mdx` | the source — the only file anyone edits |
+| `assets/*.svg` | generated art, also source — content only, no design |
 | `deck.pptx` | the build artifact — regenerated in full every time |
 | `deck.pdf` + page previews | what a person actually looks at — the only place layout is |
 
@@ -42,6 +43,7 @@ Engine: `scripts/deck.py` (invoke with an absolute path).
 - **Catalog before writing.** Never author `deck.mdx` from a guess about the template. Run `catalog` and write against the slot ids it prints.
 - **Never hand-edit the output pptx.** It is regenerated on the next build. Corrections go into `deck.mdx`.
 - **Run `check` before `build`, and show the user the warnings.** Overflow warnings are what stands between crowded text and a slide nobody can read.
+- **Never hand-author a picture slot's art as a binary.** Write the SVG so the deck stays reproducible from text. A PNG someone pasted in cannot be regenerated, re-colored, or reviewed in a diff.
 - **A deck is read by people, so look at it.** When a renderer is available, finish with `render`, not `build` — the layout audit and the page previews are the only place text collisions show up. If no renderer is available, say so plainly in the report instead of implying the layout was checked.
 - **Never invent an archetype.** If no template slide fits the content, say so and ask whether to reshape the content or extend the template — do not approximate.
 - **Report the warnings you chose to ignore.** An overflow warning you decided was fine still belongs in the final report — the user is the one who will see the slide.
@@ -118,8 +120,32 @@ Syntax, in full:
 | `key:` + indented `\| a \| b \|` lines | table rows; first row fills the header when the template has one |
 | `key:` + indented plain lines | multi-line text, one paragraph per line |
 | `key: path/to.png` | picture slot; relative paths resolve from `deck.mdx` |
+| `key: path/to.svg` | same, but the SVG is rasterized at build time and cached in `.deckcache/` |
 | `key: !drop` | delete that shape from the slide |
 | slot omitted | keeps the template's own content |
+
+### Step 3b · Generate the art the deck needs
+
+A picture slot with no source is where the pipeline usually breaks — everything else is
+text a model can write, and then someone has to go make a diagram by hand. Write the art
+as an `.svg` instead, and it becomes source like the rest of the deck.
+
+Two rules make it merge cleanly with the reference:
+
+1. **Write it in the template's palette.** `catalog` prints a Palette section — theme slots
+   and the colors the slides actually use. Use those hexes, not ones that merely look close.
+   The reference supplies the design; the generated source supplies only the content.
+2. **Author it at the frame's aspect ratio.** The catalog gives it (`16:9 frame`). Match it
+   and nothing is cropped; miss it and `check` warns before you see a trimmed diagram.
+
+```markdown
+pic1: assets/latency.svg
+```
+
+At build the SVG is rasterized to a PNG sized for its frame and embedded. It is cached by
+content hash in `.deckcache/`, so the same SVG always yields the same bytes and repeated
+builds do not re-render. This is the one step that needs the renderer at **build** time —
+`check` reports it as an error if an SVG is used and nothing can rasterize it.
 
 ### Step 4 · Check
 
@@ -206,6 +232,7 @@ Report after a build:
 | **A template is mandatory** | There is no built-in design. Without a reference `.pptx` the engine exits with an error and produces nothing. |
 | **No new layouts** | Output slides are clones of template slides. Content with no matching archetype needs the template extended in PowerPoint first. |
 | **Charts are not writable** | Series values live in an embedded xlsx plus cached XML. `catalog` lists chart slots; `build` leaves them at template values. |
+| **SVG assets need the renderer at build time** | PNG and JPEG assets need nothing. An `.svg` has to be rasterized, so `build` needs LibreOffice for that slot. |
 | **Layout truth needs a renderer** | `check` estimates from frame width ÷ font size. Only `render` sees what actually collides, and it needs LibreOffice. |
 | **Capacity is an estimate** | Overflow warnings come from frame width ÷ font size, not real text metrics. Treat them as a prompt to look, not a verdict. |
 | **Nesting is only as visible as the template makes it** | A nested item is written at outline level 1. If the template's own body text defines no indent for level 1, it renders flush with the rest — the level is correct, the template just doesn't show it. |

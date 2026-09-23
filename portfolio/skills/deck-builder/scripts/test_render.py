@@ -119,7 +119,7 @@ table1:
 
 ## @s5
 text1: 파이프라인 구조
-pic1: content.png
+pic1: assets/latency.svg
 text2:
   - 빌드와 배포를 분리해 캐시가 실제로 먹게 했다
   - 롤백은 이전 아티팩트 재지정 한 단계로 줄였다
@@ -168,8 +168,15 @@ STALE = ("Decktitlegoeshere", "Onelinethatsayswhy", "Pointoftheslide",
 BRAND = (("navy", "10243F"), ("accent", "E0533D"), ("paper", "FBFAF7"),
          ("ink", "1A1A1A"), ("muted", "6B7785"))
 
-# content image: 1200x500 is 2.4:1, deliberately wider than the 16:9 frame it goes into
+# Generated art, written in the template's own palette — deliberately 2.4:1, wider than
+# the 16:9 frame, so the crop path is exercised on a rasterized asset too.
 IMG_W, IMG_H = 1200, 500
+SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">
+  <rect width="%d" height="%d" fill="#FBFAF7"/>
+  <rect x="60" y="60" width="700" height="60" fill="#10243F"/>
+  <rect x="60" y="200" width="100" height="60" fill="#E0533D"/>
+  <text x="60" y="400" font-family="sans-serif" font-size="40" fill="#1A1A1A">42분 → 6분</text>
+</svg>""" % (IMG_W, IMG_H, IMG_W, IMG_H, IMG_W, IMG_H)
 
 
 def slide_text(z, part):
@@ -194,8 +201,8 @@ def run(work, r):
     print("fixture")
     fixture_template.build(work / "template.pptx",
                            fixture_template.placeholder_png(64, 36, (200, 200, 200)))
-    (work / "content.png").write_bytes(
-        fixture_template.placeholder_png(IMG_W, IMG_H, (224, 83, 61)))
+    (work / "assets").mkdir(exist_ok=True)
+    (work / "assets" / "latency.svg").write_text(SVG, encoding="utf-8")
     (work / "deck.mdx").write_text(DECK, encoding="utf-8")
 
     print("build")
@@ -279,6 +286,13 @@ def run(work, r):
     check(norm("무엇이 문제였나") in norm(pages[1]) and norm("다음 분기") in norm(pages[5])
           and norm("다음 분기") not in norm(pages[1]),
           "one archetype used twice produced two independent slides")
+
+    print("determinism survives a cold cache")
+    deck.main(["build", "--deck", str(work / "deck.mdx"), "--output", str(work / "warm.pptx")])
+    shutil.rmtree(work / ".deckcache", ignore_errors=True)
+    deck.main(["build", "--deck", str(work / "deck.mdx"), "--output", str(work / "cold.pptx")])
+    check((work / "warm.pptx").read_bytes() == (work / "cold.pptx").read_bytes(),
+          "re-rasterizing from scratch reproduces the same bytes")
 
     print("nothing collides on the page")
     bbox = r.bbox(work, "deck.pdf")
