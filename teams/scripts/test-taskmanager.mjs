@@ -1838,7 +1838,12 @@ test('kill and restart the manager: the tree resumes from files and no running d
     await throughCritique(tm, task_id);
     const before = await tm.call('tm_next', { task_id });
     tm.close();
-    const tm2 = await new Client(TM, { HARNESS_TASKS_DIR: root }).init();
+    // The restarted manager needs the same seam the first one had. Without it, tm2's first tm_*
+    // call raised a real daemon (serviceDaemon -> node daemon.mjs) that folded dispatch:P1:1 in
+    // parallel with the tm_submit below - two `git add`s in one worktree, and whichever lost saw
+    // index.lock and marked a passed package failed (4 of 15 runs) - and then went on to judge
+    // accept:P1:1 with a real `claude -p`, from inside `node --test`.
+    const tm2 = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
     try {
       const list = await tm2.call('tm_status', {});
       assert.equal(list.tasks.length, 1);
@@ -3583,6 +3588,42 @@ test("shape is told the gaps the PRD was accepted with, not only the stories", a
 // idol-pm-2 (2026-09-22) restructured the PRD: two required sections renamed, one dropped
 // entirely, and gate:goal accepted it at 95%. The contract states the section list in words; a
 // judge will not check that reliably and does not need to, because it is a grep.
+
+// daemon.mjs's fold loop and a direct tm_submit are allowed to race on the same child (its
+// header says so), and the loser used to see index.lock and mark a passed package failed.
+test('commitWorktree waits out a transient index.lock instead of failing the fold', async () => {
+  const { commitWorktree } = await import('../mcp/taskmanager.mjs');
+  const cwd = repo();
+  try {
+    writeFileSync(join(cwd, 'c.txt'), 'z\n');
+    const lock = join(cwd, '.git', 'index.lock');
+    writeFileSync(lock, '');
+    // Another process holds the lock for ~400ms and lets go, as a concurrent `git add` does.
+    spawn('sh', ['-c', `sleep 0.4; rm -f "${lock}"`], { detached: true, stdio: 'ignore' }).unref();
+    const r = commitWorktree(cwd, 'fold under contention');
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.ok(r.commit, 'committed once the lock cleared');
+    assert.equal(spawnSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf8' }).stdout.trim(), '', 'tree clean after the commit');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('commitWorktree gives up on an index.lock nobody releases, with the reason and in bounded time', async () => {
+  const { commitWorktree } = await import('../mcp/taskmanager.mjs');
+  const cwd = repo();
+  try {
+    writeFileSync(join(cwd, 'c.txt'), 'z\n');
+    writeFileSync(join(cwd, '.git', 'index.lock'), '');
+    const t0 = Date.now();
+    const r = commitWorktree(cwd, 'fold under a stuck lock');
+    assert.equal(r.ok, false, JSON.stringify(r));
+    assert.match(r.reason, /index\.lock/);
+    assert.ok(Date.now() - t0 < 5000, 'a bounded wait, not a hang');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
 
 test('missingPrdSections accepts the renames a reader would accept, and nothing further', async () => {
   const { missingPrdSections } = await import('../mcp/taskmanager.mjs');
