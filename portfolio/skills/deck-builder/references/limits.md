@@ -14,6 +14,7 @@ Stated here rather than discovered in a PDF. Report the ones that bite on a give
 | **Color checks are approximate** | Palette conformance reads hexes out of SVG text; the pasted-box check decodes PNG borders only (not JPEG) and compares against the slide, layout or master background — not against a shape sitting behind the frame. |
 | **Legibility scoring is PNG only** | Text over a picture is measured against the decoded PNG behind it. A JPEG or SVG backdrop is not scored, and a text color the template inherits rather than states is skipped rather than guessed at. |
 | **Contrast is area, not glyphs** | The score is the fraction of the text box's area below the threshold, not per-letter. A busy image can pass on average and still swallow one word. |
+| **Frames do not move** | Every frame keeps the position and size the template gave it. Writing less than the template holds leaves the gap where the rest would have been; `check` reports it, but only the template can fix it. |
 | **Capacity is an estimate** | Widths come from frame width ÷ font size with a per-script em model (full-width for CJK, ~0.55 em for Latin), not the real font's metrics. It is calibrated against the template's own text — a slot whose own content already wraps is treated as a wrapping slot — so it is a prompt to look, not a verdict. |
 | **A missing font makes the preview lie** | LibreOffice substitutes silently and a substitute rewraps every line. `render` names the typefaces it could not find; until they are installed, judge content from the pptx and only layout that survives substitution from the preview. |
 | **Nesting is only as visible as the template makes it** | A nested item is written at outline level 1. If the template's own body text defines no indent for level 1, it renders flush with the rest — the level is correct, the template just doesn't show it. |
@@ -29,6 +30,7 @@ Stated here rather than discovered in a PDF. Report the ones that bite on a give
 |---|---|
 | Content with no matching archetype | you, at Step 2 — the engine cannot tell |
 | A table taller than the slide | `check`, as an error naming the rows that would be lost |
+| A frame holding far less than it was drawn for | `check`, with the percentage of the template's own volume |
 | Text too wide for a one-line slot | `check`, measured in em against the template's own line |
 | Text far longer than the template's own | `check`, as a warning with the percentage |
 | A typeface the renderer does not have | `render`, before the preview it would otherwise mislead you with |

@@ -325,6 +325,7 @@ class Slot:
         self.max_chars = None    # per line, in the script the template itself uses
         self.max_em = None       # per line, in em — the measure that does not lie
         self.proto_em = None     # the widest line the template itself puts here
+        self.proto_vol = None    # total width of everything the template puts here
         self.max_items = None    # paragraphs / rows the template shows
         self.ratio = None        # picture aspect "16:9"
         self.cols = None         # table columns
@@ -421,6 +422,7 @@ def analyze_slide(root, slide_cy=None):
                 slot.max_em = max(2.0, cx_pt / size)
                 slot.max_chars = max(4, int(slot.max_em / mean_em(slot.sample)))
                 slot.proto_em = max([text_em(t) for t in slot.sample] or [0.0])
+                slot.proto_vol = sum(text_em(t) for t in slot.sample)
             slot.size_pt = first_font_size(txBody)
             slot.line_h = int(size * 1.2 * EMU_PER_PT)
             slot.box, slot.z = shape_box(el), z
@@ -746,6 +748,8 @@ def image_size(path):
 FIT_MODES = ("fill", "fit", "stretch")
 ANCHORS = ("center", "top", "bottom", "left", "right")
 FLAGS = ("transparent",)
+UNDERFILL_FLOOR = 60.0   # em — below this the slot is a label, and emptiness means nothing
+UNDERFILL_RATIO = 0.55   # of the template's own volume
 
 
 def parse_picture_value(value):
@@ -2285,7 +2289,7 @@ def cmd_check(args):
                                      "onto a second: %r"
                                      % (line, tag, slot_id, (wide / slot.max_em - 1) * 100,
                                         truncate(text, 34)))
-                    elif slot.proto_em and wide > slot.proto_em * 1.6:
+                    elif slot.proto_em and wide > slot.proto_em * 1.6:  # noqa: E501
                         warns.append("line %d: %s.%s — %.0f%% longer than the longest line "
                                      "the template puts here, so it takes more lines than "
                                      "the design allows for: %r"
@@ -2308,6 +2312,14 @@ def cmd_check(args):
                                  "clear the bottom of the slide; the rest is cut off unless "
                                  "the shape shrinks text to fit"
                                  % (line, tag, slot_id, nlines, slot.fits))
+            if slot.type in ("text", "list") and (slot.proto_vol or 0) >= UNDERFILL_FLOOR:
+                mine = sum(text_em(t) for _, t in as_items(kind, value))
+                if mine < slot.proto_vol * UNDERFILL_RATIO:
+                    warns.append("line %d: %s.%s — %.0f%% of the text the template puts "
+                                 "here. The frame was drawn for that much, so the slide "
+                                 "opens a hole where the rest was. Write to the frame, or "
+                                 "choose an archetype shaped for less."
+                                 % (line, tag, slot_id, mine / slot.proto_vol * 100))
             if slot.type == "list" and slot.max_items and kind == "list" \
                     and len(value) > slot.max_items:
                 warns.append("line %d: %s.%s — %d items vs %d in the template; extra items "

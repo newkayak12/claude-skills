@@ -937,6 +937,47 @@ def one_line_slots(tmp):
           "a short line says nothing")
 
 
+def underfill(tmp):
+    """A frame drawn for four paragraphs holding one is a layout defect too."""
+    print("a frame emptier than it was drawn for")
+    make_png(tmp / "u.png", 40, 40)
+    make_template(tmp / "u.pptx", tmp / "u.png")
+    # The minimal fixture's slots hold three words; give one of them a body with the
+    # volume a real template's body has, or the floor makes every assertion vacuous.
+    pkg = deck.Package(tmp / "u.pptx")
+    part = deck.slide_order(pkg)[1]
+    long_paras = [(0, "가" * 40), (0, "나" * 40), (0, "다" * 40), (0, "라" * 40)]
+    pkg.parts[part] = _slide([
+        _sp("Title 1", "title", [(0, "Agenda")]),
+        _sp("Body 2", "body", long_paras, cx=6000000, cy=3000000),
+    ]).encode("utf-8")
+    pkg.write(tmp / "u.pptx")
+
+    pkg = deck.Package(tmp / "u.pptx")
+    slots = deck.analyze_slide(ET.fromstring(pkg.parts[deck.slide_order(pkg)[1]]),
+                               deck.slide_size(pkg)[1])
+    body = next(s for s in slots if s.id == "text1")
+    check(body.proto_vol >= deck.UNDERFILL_FLOOR,
+          "the rebuilt slot carries a real body: %.0f em against a %.0f floor"
+          % (body.proto_vol, deck.UNDERFILL_FLOOR))
+    check(body.proto_vol > body.proto_em,
+          "volume is everything the template puts here, not just its widest line")
+
+    src = tmp / "u.mdx"
+    head = "---\ntemplate: u.pptx\noutput: u.pptx\n---\n\n## @s2\n"
+    full = "가" * int(body.proto_vol / deck.WIDE_EM)
+    src.write_text(head + "text1: %s\n" % full, encoding="utf-8")
+    check("opens a hole" not in run_cmd(["check", "--deck", str(src)]),
+          "filling the frame says nothing")
+    src.write_text(head + "text1: 한 줄\n", encoding="utf-8")
+    out = run_cmd(["check", "--deck", str(src)])
+    check("opens a hole" in out,
+          "a near-empty frame is reported: %s"
+          % next((l.strip() for l in out.splitlines() if "hole" in l), out[:100]))
+    check(deck.UNDERFILL_FLOOR > 0 and 0 < deck.UNDERFILL_RATIO < 1,
+          "the floor keeps short labels out of it — emptiness in a 5-em title means nothing")
+
+
 def fonts(tmp):
     """A substituted font rewraps every line, so the render must say when one is missing."""
     print("fonts the renderer does not have")
@@ -977,6 +1018,7 @@ def main():
         widths(tmp)
         vector_invariant(tmp)
         one_line_slots(tmp)
+        underfill(tmp)
         fonts(tmp)
         legibility(tmp)
         emphasis(tmp)
