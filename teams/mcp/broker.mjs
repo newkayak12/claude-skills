@@ -967,7 +967,10 @@ function finishNode(run, n, result, vendorName) {
     const decidable = (Array.isArray(result.unknowns) ? result.unknowns : [])
       .filter((u) => u && (u.question || u.unknown) && Array.isArray(u.options) && u.options.length > 1);
     if (decidable.length) {
-      if (run.interactive) openAsk(run, n, decidable);
+      if (run.interactive) {
+        const askId = openAsk(run, n, decidable);
+        if (askId) writeHumanBriefing(run, getNode(run, askId));
+      }
       else run.unasked = [...(run.unasked || []), ...decidable.map((u) => ({
         subgoal_id: n.subgoal_id, question: u.question || u.unknown, owner: u.owner || null, options: u.options,
       }))];
@@ -1323,6 +1326,21 @@ async function toolGraphOpen(a) {
   return { run_id: run.run_id, cwd, ...(await toolGraphNext({ run_id: run.run_id, cwd })) };
 }
 
+// The card a person reads. Shared by the two ways a node reaches waiting_human: promoted here
+// when a pin becomes ready, or born there by openAsk at the moment its investigate dep is
+// submitted. tm_inbox has to point the main session at SOMETHING readable, and it is the same
+// briefing a fresh agent would have read - not a second document invented for a human.
+function writeHumanBriefing(run, n) {
+  const briefingPath = join(brokerDir(run.cwd), run.run_id, 'briefings', `${n.node_id.replace(/[^A-Za-z0-9._-]/g, '_')}.md`);
+  try {
+    mkdirSync(dirname(briefingPath), { recursive: true });
+    writeFileSync(briefingPath, composePrompt(run, n, nodeBriefing(run, n)));
+    n.briefing_path = briefingPath;
+  } catch {
+    /* tm_inbox falls back to team_status full:true */
+  }
+}
+
 async function toolGraphNext(a) {
   const run = mustFindRun(a);
   reclaimAbandoned(run);
@@ -1333,16 +1351,7 @@ async function toolGraphNext(a) {
   // agent would have read, not a second document invented for a human.
   const promoted = promoteWaitingHuman(run);
   if (promoted.length) {
-    for (const n of promoted) {
-      const briefingPath = join(brokerDir(run.cwd), run.run_id, 'briefings', `${n.node_id.replace(/[^A-Za-z0-9._-]/g, '_')}.md`);
-      try {
-        mkdirSync(dirname(briefingPath), { recursive: true });
-        writeFileSync(briefingPath, composePrompt(run, n, nodeBriefing(run, n)));
-        n.briefing_path = briefingPath;
-      } catch {
-        /* tm_inbox falls back to team_status full:true */
-      }
-    }
+    for (const n of promoted) writeHumanBriefing(run, n);
     saveRun(run);
     record(run.cwd, { event: 'node_waiting_human', run_id: run.run_id, nodes: promoted.map((n) => n.node_id) });
   }

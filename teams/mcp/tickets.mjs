@@ -292,6 +292,11 @@ export function taskTicketState(childRun, subgoalId) {
     const list = childRun.nodes.filter((n) => n.subgoal_id === String(subgoalId) && n.stage === stage);
     return list.length ? list[list.length - 1] : null;
   };
+  // A card waiting on a person outranks every stage reading below, and it need not be a stage
+  // in the chain at all: `ask` (graph.mjs's openAsk) sits between investigate and draft without
+  // being either. Reading it off the state rather than off a named stage is what keeps this
+  // from having to learn each new kind of human card.
+  if (childRun.nodes.some((n) => n.subgoal_id === String(subgoalId) && n.state === 'waiting_human')) return 'WAITING_HUMAN';
   const gate = byStage(gateStage);
   if (gate && reached(childRun, gate)) {
     if (gate.state === 'done') return 'DONE';

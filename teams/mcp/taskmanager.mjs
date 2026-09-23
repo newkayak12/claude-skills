@@ -2488,6 +2488,7 @@ const TOOLS = [
         isolated: { type: 'boolean', description: 'Passed to the graph run this task opens (the single run of a size-S request, or each package child run). true only when you created or were handed a private worktree holding this run alone.' },
         mixed: { type: 'boolean', description: 'Passed the same way isolated is, to the same size-S run. Default true. false forbids the other kind of work entirely - a develop-flow request with a document subgoal fails at setgoal instead of quietly running one. Has no effect on an L task: every package is already mixed:true.' },
         driver_restarts: { type: 'integer', description: 'default 2: how many times a package or size-S driver that died mid-run is respawned on the SAME run_id before the dispatch folds blocked. A usage-limit death never spends this - it parks on waiting_capacity for tm_retry({reset_capacity:true}) instead.' },
+        interactive: { type: 'boolean', description: 'default false, also settable in .claude/team.json. Passed to every child run. When a planning subgoal\'s investigate stage comes back with a decision it could not settle from any source but CAN name candidates for, true opens an `ask` card between investigate and draft and parks that run in waiting_human until a person picks - tm_inbox lists it (with its questions and options), tm_submit({key, payload:{decisions}}) answers it. false decides by default and records the questions on the run instead, so the report can show what nobody was asked.' },
         goal_threshold: { type: 'integer', description: 'default 90: the manager\'s own goal gate must report match_pct at or above this to accept, and it is passed through to every child run as its own goal_threshold. A gate that says accept with 40% match is reporting a partial result as a pass. 0 accepts on the verdict alone.' },
         goal_judges: { type: 'integer', description: 'default 1: independent judges on EVERY child run\'s own goal gate (each package\'s dispatch, and the one run a size-S task opens). >1 opens that many sibling gate nodes per round, routed to different identities where possible, and accepts only if every judge accepts at or above goal_threshold - the same mechanism team_open documents (default 2 there). The default stays 1 here, matching every run this manager has ever opened, so an existing project sees no change in judge count or cost unless it asks for more. This is the child run\'s own gate, not the manager\'s own top-level gate:goal, which is a separate, single-judge mechanism unaffected by this option.' },
       },
@@ -2973,8 +2974,14 @@ function toolInbox(a) {
           key: taskKey(task.run_id, pid, n.subgoal_id),
           task_id: task.run_id,
           node_id: n.node_id,
+          // Two kinds of card park here now and they ask for different things: a pinned author
+          // stage wants the work done (0.27.3), an `ask` node wants one decision picked from
+          // named candidates (graph.mjs's openAsk). `stage` is what tells them apart, and
+          // `questions` is only ever present on the second.
+          stage: n.stage,
           title: (sg && sg.title) || String(n.subgoal_id),
           acceptance: (sg && sg.acceptance) || [],
+          ...(n.stage === 'ask' ? { questions: n.questions || [] } : {}),
           briefing_path: n.briefing_path || null,
           who: (n.assignment && n.assignment.who) || null,
           since: n.waiting_since || null,
@@ -3328,11 +3335,26 @@ function toolSubmitHuman(task, a) {
   if (!child) throw new Error(`${key}'s child run file is missing`);
   const sg = child.spec && (child.spec.subgoals || []).find((s) => String(s.id) === subgoalId);
   if (!sg) throw new Error(`no subgoal ${subgoalId} in ${key}'s child run`);
+  // The waiting node, not the predicted one. authorStage answered this while a pinned author
+  // stage was the only thing that could park here; an `ask` node (graph.mjs's openAsk) is not
+  // in the kind's chain at all, so computing its id was never possible. A subgoal has at most
+  // one card open at a time by construction - ask sits on draft's dep edge, so the two can
+  // never be waiting together - and authorStage stays as the name used to explain an empty
+  // inbox for this key.
   const attempt = currentAttempt(child, subgoalId);
-  const nodeId = `${authorStage(kindOf(sg))}:${subgoalId}:${attempt}`;
-  const n = getNode(child, nodeId);
-  if (!n) throw new Error(`unknown node ${nodeId} for ${key}`);
-  if (n.state !== 'waiting_human') throw new Error(`${key}'s card (${nodeId}) is ${n.state}, not waiting_human - nothing to submit`);
+  const waiting = child.nodes.filter((x) => String(x.subgoal_id) === subgoalId && x.state === 'waiting_human');
+  if (!waiting.length) {
+    const predicted = `${authorStage(kindOf(sg))}:${subgoalId}:${attempt}`;
+    const n0 = getNode(child, predicted);
+    throw new Error(n0
+      ? `${key}'s card (${predicted}) is ${n0.state}, not waiting_human - nothing to submit`
+      : `${key} has no card waiting on a human`);
+  }
+  const n = waiting[waiting.length - 1];
+  const nodeId = n.node_id;
+  if (n.stage === 'ask' && !Array.isArray((a.payload || {}).decisions)) {
+    throw new Error(`${key}'s card (${nodeId}) is a decision: payload needs decisions[], one {question, chose} per question in tm_inbox`);
+  }
 
   const payload = a.payload || {};
   n.result = { ...payload, stage_ok: payload.stage_ok !== false };

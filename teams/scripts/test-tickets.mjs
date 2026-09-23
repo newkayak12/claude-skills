@@ -143,6 +143,21 @@ test('STORY ticket state: a dispatch whose child run is waiting_human reads WAIT
   }
 });
 
+test('TASK ticket state: an ask card reads WAITING_HUMAN although no chain stage is waiting', () => {
+  // `ask` (graph.mjs's openAsk) is not in the planning chain at all - it sits on draft's dep
+  // edge. Read off a named stage, this TASK would have shown as READY/IN_PROGRESS while in
+  // fact nothing could move until a person answered.
+  const run = childRun('planning', 'U1');
+  finish(run, 'U1', 'investigate');
+  run.nodes.push(node('ask:U1:1', 'ask', ['investigate:U1:1'], {
+    subgoal_id: 'U1', attempt: 1, state: 'waiting_human', waiting_since: Date.now(),
+    questions: [{ question: 'how many?', options: [{ option: 'two' }, { option: 'four' }] }],
+    assignment: { executor: 'human', vendor: 'human', who: 'Product/policy' },
+  }));
+  stageNode(run, 'U1', 'draft').deps = ['ask:U1:1'];
+  assert.equal(taskTicketState(run, 'U1'), 'WAITING_HUMAN');
+});
+
 test('TASK ticket state: the author stage waiting_human reads WAITING_HUMAN', () => {
   const run = childRun('subgoal', 'U1');
   const n = stageNode(run, 'U1', 'implement');

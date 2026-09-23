@@ -3914,3 +3914,91 @@ test('dispatchSettled treats a waiting_human child exactly like a running one - 
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+// ---------- a person decides, as a node (ask / D2 step 2) ----------
+
+// One planning package, so its child run's one subgoal is kind `planning` and opens with the
+// investigate stage that can produce a decision.
+const SHAPE_PLAN = {
+  acceptance: ['the PRD names the per-person limit', 'b.txt says b'],
+  packages: [
+    { id: 'P1', title: 'the PRD', flow: 'plan', brief: 'write the PRD', acceptance: ['the PRD names the per-person limit'], touches: ['docs/prd.md'], deps: [] },
+    { id: 'P2', title: 'module b', flow: 'develop', brief: 'change b.txt', acceptance: ['b.txt says b'], touches: ['b.txt'], deps: [] },
+  ],
+};
+
+const LIMIT_QUESTION = [{
+  question: 'How many tickets may one account hold?',
+  owner: 'Product/policy',
+  options: [
+    { option: '2 across presale and general combined', consequence: 'scalpers open two accounts' },
+    { option: '2 per sale phase', consequence: 'one person can hold four' },
+  ],
+}];
+
+async function toAskCard(tm, g, task_id) {
+  await throughCritique(tm, task_id, SHAPE_PLAN);
+  const nx = await tm.call('tm_next', { task_id });
+  const child = nx.children.find((c) => c.node_id === 'dispatch:P1:1') || nx.children[0];
+  await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+  const v = await g.call('team_submit', {
+    run_id: child.run_id, cwd: child.cwd, node_id: 'investigate:U1:1',
+    payload: ok({ changed_files: [], handoff: 'docs/prd-findings.md', findings: [], unknowns: LIMIT_QUESTION }),
+  });
+  assert.equal(v.state, 'done', JSON.stringify(v));
+  return child;
+}
+
+test('an interactive run opens an ask card and tm_inbox hands the person the choice, not a blank question', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    const child = await toAskCard(tm, g, task_id);
+    assert.equal((await g.call('team_next', { run_id: child.run_id, cwd: child.cwd })).state, 'waiting_human');
+
+    const inbox = await tm.call('tm_inbox', { task_id });
+    assert.equal(inbox.cards.length, 1, JSON.stringify(inbox));
+    const card = inbox.cards[0];
+    assert.equal(card.node_id, 'ask:U1:1');
+    assert.equal(card.stage, 'ask', 'a decision card and an authoring card are told apart by stage');
+    assert.equal(card.who, 'Product/policy', 'the owner the investigation named is who it is waiting on');
+    assert.equal(card.questions.length, 1);
+    assert.equal(card.questions[0].options.length, 2);
+    assert.ok(card.briefing_path && existsSync(card.briefing_path));
+    assert.match(readFileSync(card.briefing_path, 'utf8'), /Decisions waiting on you/);
+
+    assert.equal((await tm.call('tm_ticket', { key: `E-${task_id.slice(0, 8)}/P1` })).state, 'WAITING_HUMAN');
+  }, { interactive: true });
+});
+
+test('tm_submit({key}) answers the decision and draft runs on the answer - the chain continues as if a driver had', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    const child = await toAskCard(tm, g, task_id);
+    const key = `E-${task_id.slice(0, 8)}/P1/U1`;
+
+    // A decision card is not an authoring card: handing it a bare stage_ok is a submission with
+    // no answer in it, and the chain below would run on nothing.
+    const bad = await tm.call('tm_submit', { task_id, key, payload: ok({}) });
+    assert.match(bad.error || '', /decisions\[\]/);
+
+    const v = await tm.call('tm_submit', { task_id, key, payload: ok({
+      decisions: [{ question: LIMIT_QUESTION[0].question, chose: '2 across presale and general combined', because: 'legal asked for the tighter cap' }],
+    }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    assert.equal(v.node_id, 'ask:U1:1');
+
+    // draft is now what the run offers, and the decision is in its briefing - the answer
+    // reaches the document, which is the only reason any of this exists.
+    const next = await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+    const draft = (next.ready || []).find((n) => n.node_id === 'draft:U1:1');
+    assert.ok(draft, JSON.stringify(next.ready));
+    assert.match(readFileSync(draft.briefing_path, 'utf8'), /2 across presale and general combined/);
+  }, { interactive: true });
+});
+
+test('a run that was never told to ask does not park: it records the question and drafts on', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    const child = await toAskCard(tm, g, task_id);
+    const next = await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+    assert.ok((next.ready || []).some((n) => n.node_id === 'draft:U1:1'), JSON.stringify(next));
+    assert.deepEqual((await tm.call('tm_inbox', { task_id })).cards, []);
+  });
+});

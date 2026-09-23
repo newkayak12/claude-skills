@@ -876,6 +876,12 @@ export function openAsk(run, n, questions) {
     attempt: n.attempt || 1,
     questions: qs,
     assignment: { executor: 'human', vendor: 'human', who, reason: 'a decision no source could answer (investigate.unknowns)' },
+    // Parked here rather than left for promoteWaitingHuman to find on the next team_next. Its
+    // one dep is the node whose own submission is creating it, so it is ready by construction -
+    // and a card that only becomes visible once somebody polls is a card tm_inbox cannot be
+    // trusted to list.
+    state: 'waiting_human',
+    waiting_since: Date.now(),
   }));
   for (const c of consumers) c.deps = [...c.deps.filter((d) => d !== n.node_id), askId];
   return askId;
@@ -1280,6 +1286,10 @@ export function nodeBriefing(run, n) {
       stage: x.stage,
       state: x.state,
       handoff: x.result.handoff || '',
+      // A person's answers on an `ask` card. Carried explicitly because none of the ordinary
+      // fields hold them - a decision is not a handoff, a check or a changed file - and the
+      // stage below (draft) exists to write the answer down.
+      decisions: Array.isArray(x.result.decisions) ? x.result.decisions : [],
       evidence: x.result.evidence || '',
       checks: x.result.checks || [],
       changed_files: x.result.changed_files || [],

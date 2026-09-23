@@ -83,16 +83,21 @@ A spec you would merely improve is not a spec you should reject. Wording you wou
 stage_ok=false when required work or checks could not run. Do not report a file as changed unless you changed it.`,
   test: `Return JSON: {"stage_ok": true|false, "verified": true|false, "checks": ["command -> observed output"], "evidence": "..."}
 stage_ok=false means a required check could not run at all (sandbox, missing tool). verified=false with stage_ok=true means the checks ran and found a genuine failure. Do not edit implementation files. Do not trust the implement narrative - run the checks or inspect the artifacts yourself.`,
-  investigate: `Return JSON: {"stage_ok": true|false, "handoff": "<the findings path, then the one paragraph the drafter most needs>", "changed_files": ["..."], "sources": ["<path, document or URL you actually opened> -> what it settled"], "findings": ["<term or rule> -> <what it is, stated so a drafter can write from it> -> <the source that says so>"], "unknowns": ["<the decision no source you reached answers> -> who would own it"], "checks": ["<command or read> -> <what it showed>"], "evidence": "..."}
+  investigate: `Return JSON: {"stage_ok": true|false, "handoff": "<the findings path, then the one paragraph the drafter most needs>", "changed_files": ["..."], "sources": ["<path, document or URL you actually opened> -> what it settled"], "findings": ["<term or rule> -> <what it is, stated so a drafter can write from it> -> <the source that says so>"], "unknowns": [{"question": "<the decision no source you reached answers>", "owner": "<the role that would decide it>", "options": [{"option": "<a candidate answer>", "consequence": "<what follows if it is chosen>"}]}], "checks": ["<command or read> -> <what it showed>"], "evidence": "..."}
 You are the only stage in this chain that reads anything outside this briefing. Draft, revise and gate see the request, your findings file, and each other - nothing else. What you do not bring back does not exist downstream.
 Read in this order, and stop at what is actually reachable: the project tree this run was opened against, whatever sources the request names or attaches, the conventions above, prior documents under the docs path. Then, only if a search tool is actually available to you, the domain's public sources. Write what you found to exactly one path, and that path is derived, not chosen: take this subgoal's own output path from Required paths, drop its extension, and append \`-findings.md\`. \`docs/policy.md\` gives \`docs/policy-findings.md\`. Do not invent a name, do not add a suffix of your own, do not put it in another directory, and name it in "handoff". A real planning run let five sibling investigators name their own files and got five different conventions plus an orphan when one of them retried under a new name - the rule is fixed here so that your siblings and your own later attempts land on the same path, which is also how the fold tells an expected file from an undeclared one.
 One distinction is the whole point of this stage: a FINDING is something a source you opened says, and an UNKNOWN is something no source you reached says. Never move the second into the first. A sentence about the domain that sounds right and that you cannot attribute is an unknown, not a finding, however confident it reads.
 Every rule a user story will rest on - who is entitled to a thing, what the limit is, how long a window lasts, what happens when something is cancelled, what follows when someone abuses it - comes back as a finding with its source or as an unknown with an owner. There is no third answer. "Assumed to exist" is an unknown wearing a finding's clothes, and a planning run that wrote 588 lines that way (idol-pm-2, 2026-09-22) passed its own gate at 93 while naming none of its domain's actual rules.
-stage_ok=false only when you could read nothing at all. A stage that reached few sources and comes back mostly unknowns has succeeded: the unknowns ARE the deliverable, and they are what keeps the drafter from inventing. Returning a short honest findings list is right; padding it is the one failure this stage can hide.`,
+stage_ok=false only when you could read nothing at all. A stage that reached few sources and comes back mostly unknowns has succeeded: the unknowns ARE the deliverable, and they are what keeps the drafter from inventing. Returning a short honest findings list is right; padding it is the one failure this stage can hide.
+An unknown carries "options" whenever the decision has namable candidates - two to four of them, the one you would recommend first, each with the consequence that follows from choosing it. Leave "options" out when you genuinely cannot name candidates; an empty or single-entry list is the same as leaving it out. This is not you deciding: naming what could be chosen is still research, and the person who owns the decision needs candidates far more than they need a blank question. Where the run is interactive, an unknown with options becomes a card that stops the chain and puts the choice to that person before anything is drafted; where it is not, the question is recorded against the document so the report can show what was decided by default.`,
+  ask: `Return JSON: {"stage_ok": true|false, "decisions": [{"question": "<the question, as it was asked>", "chose": "<the option you picked, in full>", "because": "<optional: why, or a condition on it>"}], "evidence": "who decided, and when"}
+This card is for a person, not a model. Nothing polls it and nothing times it out; the chain below it does not move until you hand it back with tm_submit({task_id, key, payload}).
+One entry per question above, using the option text rather than its letter, so the answer still reads correctly if the list is ever renumbered. You are not bound to the candidates: an answer none of them names is a valid "chose", and so is "leave this open" - written out, it becomes an open question with your name on it instead of an assumption with nobody's.
+stage_ok=false only if the decision is not yours to make and you are handing it back unanswered.`,
   draft: `Return JSON: {"stage_ok": true|false, "handoff": "<paths written, then a one-paragraph abstract of what the document now says>", "changed_files": ["..."], "checks": ["what you verified about the artifact - structure, cross-references, examples - and how"], "evidence": "..."}
 Write the artifact the acceptance describes, at the path the subgoal names. Every acceptance item must be answerable by pointing at a passage. stage_ok=false when the artifact could not be produced. Do not report a file as changed unless you changed it.
 ${PRD_CONTRACT}
-For a planning-kind subgoal, the investigate stage above is your source: write from its findings, cite them where a rule comes from one, and carry every one of its unknowns into the document as an open question with the owner it named. An unknown you answer yourself, from nothing, is the failure this chain was rebuilt to stop - you may recommend, but say that is what it is. A planning-kind subgoal writes its section into a markdown document and touches nothing else. Source files are evidence to read, never a place to put the document: a rule written into the file it governs is not a PRD, and this run has no worktree of its own, so an edit there lands in the real project tree. If the subgoal names a path that is not a document, write the document beside it and say so in "handoff" rather than editing source.`,
+For a planning-kind subgoal, the investigate stage above is your source: write from its findings, cite them where a rule comes from one, and carry every one of its unknowns into the document as an open question with the owner it named. An unknown a person has since ANSWERED arrives above as an \`ask\` stage's decisions[]: that is settled, not open - write it into the document as the rule it now is, say who decided it, and do not also list it among the open questions. An unknown you answer yourself, from nothing, is the failure this chain was rebuilt to stop - you may recommend, but say that is what it is. A planning-kind subgoal writes its section into a markdown document and touches nothing else. Source files are evidence to read, never a place to put the document: a rule written into the file it governs is not a PRD, and this run has no worktree of its own, so an edit there lands in the real project tree. If the subgoal names a path that is not a document, write the document beside it and say so in "handoff" rather than editing source.`,
   review: `Return JSON: {"stage_ok": true|false, "verified": true|false, "checks": ["<acceptance item> -> \"<the passage that meets it>\" (path:line) | MISSING: <what the text lacks>"], "evidence": "..."}
 You are the reader, not the author. Open the artifact at the paths the draft reported and read it; do not judge from the draft's abstract. One entry per acceptance item, in order. verified=true only when every item has a quoted passage. stage_ok=false only when the artifact could not be read at all. Do not edit the artifact.`,
   revise: `Return JSON: {"stage_ok": true|false, "handoff": "<what changed, then a one-paragraph abstract of what the document now says>", "changed_files": ["..."], "checks": ["claim -> the evidence you checked it against, or the passage you rewrote and why"], "evidence": "..."}
@@ -328,6 +333,10 @@ export function composePrompt(run, n, briefing) {
         lines.push(`Commands actually observed by the adapter:`);
         lines.push(bullets(u.commands.map((cmd) => String(cmd).slice(0, 300))));
       }
+      if (u.decisions && u.decisions.length) {
+        lines.push(`Decided by a person — these are settled, write them as rules, not as open questions:`);
+        lines.push(bullets(u.decisions.map((d) => `${d.question} -> ${d.chose}${d.because ? ` (${d.because})` : ''}`)));
+      }
       if (u.handoff) lines.push(capHandoff(u.handoff));
       if (u.evidence) lines.push(`Evidence: ${u.evidence}`);
       lines.push('');
@@ -345,6 +354,25 @@ export function composePrompt(run, n, briefing) {
       lines.push('');
     }
     lines.push(briefing.prior_feedback);
+  }
+
+  // An `ask` node's briefing is read by a PERSON (tm_inbox hands them this path), not by a
+  // model - it is the only briefing in this file with that audience, and the questions live on
+  // the node rather than in a dep's result, so nothing above would have printed them.
+  if (n.stage === 'ask' && Array.isArray(n.questions) && n.questions.length) {
+    lines.push('');
+    lines.push(`## Decisions waiting on you`);
+    lines.push(`The investigation could not settle these from any source it reached. Nothing downstream is written until they are answered.`);
+    n.questions.forEach((q, i) => {
+      lines.push('');
+      lines.push(`### ${i + 1}. ${q.question || q.unknown}`);
+      if (q.owner) lines.push(`Owner: ${q.owner}`);
+      lines.push(bullets((q.options || []).map((o, j) => {
+        const label = typeof o === 'string' ? o : (o.option || '');
+        const why = typeof o === 'string' ? '' : (o.consequence ? ` — ${o.consequence}` : '');
+        return `${String.fromCharCode(97 + j)}) ${label}${why}${j === 0 ? '  [what the investigation would recommend]' : ''}`;
+      })));
+    });
   }
 
   lines.push(mountBlock(run, n));
