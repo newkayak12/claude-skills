@@ -93,6 +93,13 @@ record per question:
 {"id":"stock-table-differences","question":"재고 수불부 / 현황표 / 변동표 차이가 뭔가?","lookup_job":"compare operator-facing stock reports","kind":"comparison","required_note_ids":["stock-table-contrast"],"required_user_terms":["재고 수불부","재고 현황표","재고 변동표"],"required_source_symbols":["getStockGoodsListVer2","selectStockStatusDataTables","getStockChangeGridVer2"],"graph_check":true,"required_graph_node_ids":["stock-ledger","stock-status","stock-change"]}
 ```
 
+`required_user_terms` and `required_source_symbols` are checked against the required notes'
+`user_terms` and `source_symbols`, so they are a claim about vocabulary that exists in the
+source — a UI label, a statement id — not a list of words lifted from the question. Record them
+from the screen, code, or operator transcript they came from. A required term that exists only
+in the question text forces that text into the catalog and turns the question into its own
+answer key.
+
 Choose questions from actual lookup jobs. For each important lookup job include the applicable
 shapes: direct lookup, synonym or operator-language lookup, comparison, cross-layer lookup,
 multi-source synthesis, and freshness-sensitive lookup. Do not satisfy the gate with a fixed

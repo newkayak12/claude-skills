@@ -177,11 +177,14 @@ the top *k* is a retrieval defect, not a clean build.
 Missed questions get a repair loop rather than a shrug. `repair_targets` ranks the unretrieved
 notes by how many questions they block and classifies each gap as `missing-note` (an extraction
 job), `no-lookup-vocabulary` (no aliases, user terms, or source symbols), or `ranking`. Two
-guards keep the repair from grading itself: `--split dev|holdout` reserves a third of the
-questions — the bucket is derived from the question id, so it is stable across runs and cannot
+guards keep the repair from grading itself: `--split dev|holdout` reserves 35% of the
+questions by default (`--holdout`; on a small set the realised share drifts by several points) — the bucket is derived from the question id, so it is stable across runs and cannot
 drift while vocabulary is being edited — and `--baseline before.json` compares per question, so
 a run that lifts three questions and sinks one reports `verdict: regressed` instead of a higher
-average. Vocabulary must be grounded in the source material; a term copied out of the question
+average. The comparison also counts how many required notes each question retrieved, so a
+multi-note question losing one side is a regression even while it still fails, and a baseline
+scored at a different `k`, split, or holdout ratio yields `verdict: incomparable` instead of a
+verdict; provider, fusion, and reranker differences are named in `differences`. Vocabulary must be grounded in the source material; a term copied out of the question
 set guarantees its own retrieval and measures nothing.
 
 ```json
@@ -247,9 +250,13 @@ Retrieval is **rank-fused, lexical-first**:
    source symbols), `body` — and the three rank lists are fused, so a title or alias match beats a
    passing body mention regardless of note length.
 2. An exact-token index (`unicode61`) and a trigram index handle Korean inflection
-   ("재시도" finds "재시도한").
+   ("재시도" finds "재시도한"). Two-syllable nouns — 재고, 출고, 결제 — are too short for trigrams,
+   so Hangul query words match as prefixes ("재고" finds "재고가") and a trailing particle is
+   stripped into a second prefix beside the word ("재고를" finds "재고").
 3. Relation notes are promoted when the query matches two or more of their declared
-   `participants` — declared participants only, never co-occurrence. The reverse also holds:
+   `participants` — declared participants only, never co-occurrence. The promotion bonus scales
+   with the lexical weight, so under a semantic-heavy split it still cannot put a relation note
+   that matched none of the query's words above notes that did. The reverse also holds:
    when a relation note ranks near the top and its declared participants would not be returned,
    those participants are added to the **end** of the result window. A comparison question is
    usually phrased in the language of the contrast, so without this the contrast note is the
@@ -288,7 +295,8 @@ Retrieval is **rank-fused, lexical-first**:
    `eval --sweep 0.3,0.4,0.5` scores every weight in one pass — the query vectors do not depend
    on the weights, so the extra points cost SQL, not embeddings — and reports each weight's
    per-question improvements and regressions against the first one, plus a `decisive` flag that
-   is false when the winner cannot be separated from the reference.
+   is true only when the winner's per-question moves pass a paired sign test (`p_value` < 0.05).
+   The winner is still chosen on the questions it is tested on, so confirm it on the holdout.
 7. Embedding models trained for asymmetric retrieval encode a question and a stored passage
    differently, and Ollama's `/api/embed` does not add the instruction for you. `embeddinggemma`
    documents are embedded as `title: … | text: …` and queries as
@@ -298,7 +306,8 @@ Retrieval is **rank-fused, lexical-first**:
    prompt rather than a guessed one.
 8. A document longer than the model's context window would be indexed by its opening alone,
    with the rest invisible to semantic search while full-text still matches it. Documents past
-   the budget are embedded in **overlapping windows** and mean-pooled into one vector, so a long
+   the budget are embedded in **overlapping windows**, each wrapped in the document prompt, and
+   mean-pooled into one vector, so a long
    note stays one result and nothing downstream changes. The budget is measured in characters
    (`embeddinggemma`: 1800) because the tokenizer is not available locally; `--embed-chars`
    overrides it and the build reports `embedding_context_chars` and `documents_windowed`. A model
@@ -308,7 +317,10 @@ Retrieval is **rank-fused, lexical-first**:
    attached the way Ollama is — `--reranker-url` / `--reranker-model`, nothing installed, nothing
    required — speaks the Cohere/Jina `/v1/rerank` shape that llama.cpp and text-embeddings-
    inference both serve, and falls back to fused order with `rerank_error` set when the endpoint
-   fails. Its ceiling is measurable in advance: a reranker cannot beat `recall@50 − recall@10`.
+   fails. Its ceiling is measurable in advance: reordering alone cannot beat
+   `recall@50 − recall@10`. The one exception is relation promotion — a reranker that lifts a
+   relation note into the top eight also appends its sides from any depth — so treat the number
+   as the ceiling for the notes that are not participants of a relation.
 
 Every search result carries diagnostics — `lexical_candidates`, `lexical_word_matches`,
 `lexical_trigram_matches`, `lexical_matches_returned`, `relation_promotions`, `relation_participant_promotions`, `distinct_notes` — so a ranking miss
