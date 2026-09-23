@@ -1049,8 +1049,11 @@ function relationRanks(db, lexicalRanks, rowsById) {
 // not appear at all. Their declared membership in a matched relation is the same
 // evidence that justifies forward promotion, read the other way.
 function relationParticipantRanks(db, provisional, relationPromotions, rowsById, limit) {
+  // A zero score means the query never reached the note — in a small vault it
+  // sits in the top eight by tie order alone — and it has nothing to vouch with.
   const sourceRowids = provisional
     .slice(0, RELATION_SOURCE_RANK_LIMIT)
+    .filter((item) => item.score > 0)
     .map((item) => item.rowid)
     .filter((rowid) => rowsById.has(rowid));
   if (!sourceRowids.length) return new Map();
