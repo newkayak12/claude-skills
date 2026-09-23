@@ -99,7 +99,7 @@
     {
       "name": "portfolio",
       "description": "Portfolio and career skills: JD analysis, portfolio rewriting, company research, feedback, pattern extraction, interview prep, resume tailoring, job-application-workflow, ppt-keycolor-changer, and deck-builder (reference template.pptx + deck.mdx → pptx as a repeatable build).",
-      "version": "1.22.0",
+      "version": "1.23.0",
       "author": {
         "name": "newkayak12"
       },

@@ -12,6 +12,8 @@ Stated here rather than discovered in a PDF. Report the ones that bite on a give
 | **Layout truth needs a renderer** | `check` estimates from frame width ÷ font size. Only `render` sees what actually collides, and it needs LibreOffice. |
 | **Transparency is PNG only** | The knockout decodes PNG; JPEG cannot be decoded here, so convert first. Interlaced PNG is declined rather than guessed at. |
 | **Color checks are approximate** | Palette conformance reads hexes out of SVG text; the pasted-box check decodes PNG borders only (not JPEG) and compares against the slide, layout or master background — not against a shape sitting behind the frame. |
+| **Legibility scoring is PNG only** | Text over a picture is measured against the decoded PNG behind it. A JPEG or SVG backdrop is not scored, and a text color the template inherits rather than states is skipped rather than guessed at. |
+| **Contrast is area, not glyphs** | The score is the fraction of the text box's area below the threshold, not per-letter. A busy image can pass on average and still swallow one word. |
 | **Capacity is an estimate** | Overflow warnings come from frame width ÷ font size, not real text metrics. Treat them as a prompt to look, not a verdict. |
 | **Nesting is only as visible as the template makes it** | A nested item is written at outline level 1. If the template's own body text defines no indent for level 1, it renders flush with the rest — the level is correct, the template just doesn't show it. |
 | **Formatting follows the template** | A replaced run inherits the template run's font, size and color. `**bold**`, `*italic*` and `` `code` `` flip those attributes on a copy; anything beyond that (per-word color, size) is not expressible. |
@@ -33,5 +35,7 @@ Stated here rather than discovered in a PDF. Report the ones that bite on a give
 | An image too low- or high-resolution for its frame | `check`, as a warning with the effective dpi |
 | Generated art off the template's palette | `check`, naming each stray hex and its nearest template color |
 | An image whose border clashes with the slide | `check`, as a warning (PNG only), pointing at `\| transparent` |
+| Text that will not read against the picture under it | `check`, with the failing area fraction and the average color behind the words |
+| A picture drawn over the text it covers | `check`, as an error naming the buried slot |
 | A knockout that would leave the content invisible | `check`, before you build it |
 | A knockout with nothing to remove, or nothing left | `build`, refusing with the reason |

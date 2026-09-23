@@ -306,6 +306,9 @@ class Slot:
         self.fits = None         # rows/lines that clear the slide edge
         self.size_pt = None      # font size the template sets here
         self.frame_pt = None     # picture frame size in points
+        self.box = None          # (x, y, cx, cy) in EMU, when the shape carries one
+        self.z = 0               # document order: later shapes paint over earlier ones
+        self.color_ref = None    # ("srgb", hex) | ("scheme", name) for the first run
 
 
 def _is_autofield(txBody):
@@ -315,6 +318,31 @@ def _is_autofield(txBody):
         return False
     runs = txBody.findall(q("a:p") + "/" + q("a:r"))
     return not any((para_text_of_run(r) or "").strip() for r in runs)
+
+
+def shape_box(el):
+    """(x, y, cx, cy) in EMU, or None when the shape inherits its geometry."""
+    off, ext = offset(el), extent(el)
+    return (off[0], off[1], ext[0], ext[1]) if off and ext else None
+
+
+def text_color_ref(txBody):
+    """How the first run asks for its colour, unresolved: ("srgb", hex) | ("scheme", name).
+
+    Unresolved on purpose — a scheme reference only means something next to a theme,
+    and analyze_slide does not have one.
+    """
+    for holder in list(txBody.iter(q("a:rPr"))) + list(txBody.iter(q("a:defRPr"))):
+        fill = holder.find(q("a:solidFill"))
+        if fill is None:
+            continue
+        srgb = fill.find(q("a:srgbClr"))
+        if srgb is not None:
+            return ("srgb", srgb.get("val", "").upper())
+        scheme = fill.find(q("a:schemeClr"))
+        if scheme is not None:
+            return ("scheme", scheme.get("val", ""))
+    return None
 
 
 def para_text_of_run(r):
@@ -338,7 +366,7 @@ def analyze_slide(root, slide_cy=None):
             return kind if n == 1 else "%s%d" % (kind, n)
         return "%s%d" % (kind, n)
 
-    for el, path in walk_shapes(spTree):
+    for z, (el, path) in enumerate(walk_shapes(spTree)):
         name = shape_name(el)
         if el.tag == q("p:sp"):
             txBody = el.find(q("p:txBody"))
@@ -365,6 +393,8 @@ def analyze_slide(root, slide_cy=None):
                 slot.max_chars = max(4, int(cx_pt / (size * 0.55)))
             slot.size_pt = first_font_size(txBody)
             slot.line_h = int(size * 1.2 * EMU_PER_PT)
+            slot.box, slot.z = shape_box(el), z
+            slot.color_ref = text_color_ref(txBody)
             if off:
                 slot.off_y = off[1]
                 if slide_cy:
@@ -376,6 +406,7 @@ def analyze_slide(root, slide_cy=None):
             if ext and ext[1]:
                 slot.ratio = round(ext[0] / ext[1], 3)
                 slot.frame_pt = (round(pt(ext[0])), round(pt(ext[1])))
+            slot.box, slot.z = shape_box(el), z
             slots.append(slot)
         elif el.tag == q("p:graphicFrame"):
             tbl = el.find(".//" + q("a:tbl"))
@@ -1023,6 +1054,133 @@ def make_transparent(src, cache_dir, tol=14.0):
                       % (Path(src).name, (1 - frac) * 100))
     write_png(out, w, h, rows)
     return out, None
+
+
+# ── Text over a picture ──────────────────────────────────────────────────────
+
+def resolve_color_ref(ref, theme):
+    """A slot's colour reference against a theme map, or None when it is inherited."""
+    if not ref:
+        return None
+    kind, val = ref
+    if kind == "srgb":
+        return val or None
+    alias = {"tx1": "dk1", "bg1": "lt1", "tx2": "dk2", "bg2": "lt2"}
+    return theme.get(alias.get(val, val))
+
+
+def relative_luminance(hexv):
+    """WCAG 2.x relative luminance for #RRGGBB."""
+    out = []
+    for c in rgb(hexv):
+        c = c / 255.0
+        out.append(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * out[0] + 0.7152 * out[1] + 0.0722 * out[2]
+
+
+def contrast_ratio(a, b):
+    la, lb = relative_luminance(a), relative_luminance(b)
+    hi, lo = max(la, lb), min(la, lb)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def box_intersection(a, b):
+    """The shared rectangle of two (x, y, cx, cy) boxes, or None."""
+    x0, y0 = max(a[0], b[0]), max(a[1], b[1])
+    x1, y1 = min(a[0] + a[2], b[0] + b[2]), min(a[1] + a[3], b[1] + b[3])
+    return (x0, y0, x1 - x0, y1 - y0) if x1 > x0 and y1 > y0 else None
+
+
+def covered_fraction(inner, outer):
+    """How much of `inner` the box `outer` sits on."""
+    got = box_intersection(inner, outer)
+    if not got or not inner[2] or not inner[3]:
+        return 0.0
+    return (got[2] * got[3]) / float(inner[2] * inner[3])
+
+
+def covers_slide(slot, size, tol=0.97):
+    """True when a picture frame is effectively the whole canvas."""
+    if not slot.box or not size or not size[0] or not size[1]:
+        return False
+    return (slot.box[2] / float(size[0]) >= tol and slot.box[3] / float(size[1]) >= tol)
+
+
+def text_over_pictures(slots, min_frac=0.12):
+    """[(text_slot, picture_slot, covered fraction)] for text that shares a picture's box.
+
+    Only geometry — whether it is actually hard to read depends on the image that
+    lands there, which the template does not know.
+    """
+    pics = [s for s in slots if s.type == "picture" and s.box]
+    out = []
+    for slot in slots:
+        if slot.type not in ("text", "list") or not slot.box:
+            continue
+        for pic in pics:
+            frac = covered_fraction(slot.box, pic.box)
+            if frac >= min_frac:
+                out.append((slot, pic, frac))
+    return out
+
+
+def source_window(text_box, pic_box, crop):
+    """The part of the SOURCE image that ends up under a text box, as (l, t, r, b) in 0..1.
+
+    `crop` is the a:srcRect fractions already thrown away on each side, so the window is
+    measured against what survives rather than against the original file.
+    """
+    hit = box_intersection(text_box, pic_box)
+    if not hit:
+        return None
+    cl, ct, cr, cb = crop
+    keep_x, keep_y = 1.0 - cl - cr, 1.0 - ct - cb
+    if keep_x <= 0 or keep_y <= 0 or not pic_box[2] or not pic_box[3]:
+        return None
+    fx0 = (hit[0] - pic_box[0]) / float(pic_box[2])
+    fy0 = (hit[1] - pic_box[1]) / float(pic_box[3])
+    fx1 = fx0 + hit[2] / float(pic_box[2])
+    fy1 = fy0 + hit[3] / float(pic_box[3])
+    return (cl + fx0 * keep_x, ct + fy0 * keep_y,
+            cl + fx1 * keep_x, ct + fy1 * keep_y)
+
+
+def window_contrast(rows, w, h, win, text_hex, background, threshold, samples=4000):
+    """(mean colour, fraction of the area below `threshold`) under one text box.
+
+    Pixels the image leaves transparent show the slide instead, so they are scored
+    against the background rather than dropped — otherwise a knocked-out PNG would
+    always look safe.
+    """
+    x0, y0 = int(win[0] * w), int(win[1] * h)
+    x1, y1 = max(x0 + 1, int(win[2] * w)), max(y0 + 1, int(win[3] * h))
+    x0, y0 = max(0, x0), max(0, y0)
+    x1, y1 = min(w, x1), min(h, y1)
+    if x1 <= x0 or y1 <= y0:
+        return None
+    total = (x1 - x0) * (y1 - y0)
+    step = max(1, int((total / float(samples)) ** 0.5))
+    acc, n, bad = [0, 0, 0], 0, 0
+    for y in range(y0, y1, step):
+        row = rows[y]
+        for x in range(x0, x1, step):
+            px = row[x]
+            here = background if px[3] < 16 else "%02X%02X%02X" % px[:3]
+            if here is None:
+                continue
+            for i in range(3):
+                acc[i] += rgb(here)[i]
+            n += 1
+            if contrast_ratio(here, text_hex) < threshold:
+                bad += 1
+    if not n:
+        return None
+    return "%02X%02X%02X" % tuple(round(v / n) for v in acc), bad / float(n)
+
+
+def legibility_threshold(size_pt):
+    """WCAG: 3:1 is enough for large text, 4.5:1 for body."""
+    return 3.0 if (size_pt or 18.0) >= 18.0 else 4.5
 
 
 def slide_background(pkg, slide_part):
@@ -1862,7 +2020,7 @@ def _rewrite_content_types(pkg, new_parts, exts, notes_parts=(), notes_master=No
 # ── Check ────────────────────────────────────────────────────────────────────
 
 def _check_picture_color(path, tag, slot_id, line, warns, palette, background,
-                         flags=frozenset()):
+                         flags=frozenset(), full_bleed=False):
     """Two ways a picture clashes: off the template's palette, or a box on the slide."""
     if path.suffix.lower() == ".svg":
         strays = []
@@ -1875,8 +2033,8 @@ def _check_picture_color(path, tag, slot_id, line, warns, palette, background,
                          "use: %s. Generated art carries content; the reference carries "
                          "the design." % (line, tag, slot_id, path.name, "; ".join(strays[:4])))
         return
-    if path.suffix.lower() != ".png" or not background:
-        return
+    if path.suffix.lower() != ".png" or not background or full_bleed:
+        return                              # full bleed: there is no slide left to sit on
     got = png_edge(path)
     if not got or got[0] is None:
         return
@@ -1940,6 +2098,67 @@ def _check_picture_size(path, slot, tag, slot_id, line, warns, mode="fill"):
                             dpi_w, kb))
 
 
+def _check_picture_legibility(path, slot, slots, tag, slot_id, line, warns, errs,
+                             mode, anchor, flags, background, theme):
+    """Can the words on top of this picture still be read?
+
+    `check` otherwise looks at the image alone and at the text alone. Where a template
+    lays type over a picture, neither is wrong on its own and the slide is still
+    unreadable, so this measures the actual pixels that land behind each text box.
+    """
+    pairs = [(t, f) for t, pic, f in text_over_pictures(slots) if pic is slot]
+    if not pairs:
+        return
+    for text_slot, frac in pairs:
+        if text_slot.z < slot.z and frac >= 0.5:
+            errs.append("line %d: %s.%s — the picture is drawn after %s and covers %.0f%% "
+                        "of it, so the words end up behind the image. Reorder them in the "
+                        "template, or leave this slot to `!drop`."
+                        % (line, tag, slot_id, text_slot.id, frac * 100))
+
+    if path.suffix.lower() != ".png":
+        return
+    got = read_png(path)
+    if not got:
+        return
+    w, h, rows = got
+    if "transparent" in flags:
+        rows, _, _ = knockout_background(rows, w, h)
+    src_ratio = w / float(h) if h else None
+
+    pic_box = slot.box
+    crop = (0.0, 0.0, 0.0, 0.0)
+    if mode == "fit":
+        fitted = fit_frame((slot.box[0], slot.box[1]), (slot.box[2], slot.box[3]), src_ratio)
+        if fitted:
+            pic_box = (fitted[0][0], fitted[0][1], fitted[1][0], fitted[1][1])
+    elif mode == "fill" and slot.ratio:
+        rect, _ = crop_rect(src_ratio, slot.ratio, anchor)
+        if rect:
+            crop = tuple(rect.get(k, 0) / 100000.0 for k in ("l", "t", "r", "b"))
+
+    for text_slot, _ in pairs:
+        text_hex = resolve_color_ref(text_slot.color_ref, theme)
+        if not text_hex:
+            continue                      # colour is inherited; guessing would be worse
+        win = source_window(text_slot.box, pic_box, crop)
+        if not win:
+            continue
+        threshold = legibility_threshold(text_slot.size_pt)
+        measured = window_contrast(rows, w, h, win, text_hex, background, threshold)
+        if not measured:
+            continue
+        mean, bad = measured
+        if bad > 0.20:
+            warns.append("line %d: %s.%s — %s sits under %s (%s), and %.0f%% of the image "
+                         "behind it falls below %.1f:1 against #%s text (the area averages "
+                         "#%s). A scrim behind the words, a darker crop, or a quieter "
+                         "part of the image under them."
+                         % (line, tag, slot_id, path.name, text_slot.id,
+                            ("%gpt" % text_slot.size_pt) if text_slot.size_pt else "size "
+                            "inherited", bad * 100, threshold, text_hex, mean))
+
+
 def cmd_check(args):
     md_path = require_deck(args.deck)
     front, specs, errors = parse_deck(md_path.read_text(encoding="utf-8"))
@@ -1951,6 +2170,7 @@ def cmd_check(args):
                for i, n in enumerate(protos, 1)}
 
     theme_colors, used_colors = template_palette(pkg, protos)
+    theme = dict(theme_colors)
     palette = [v for _, v in theme_colors] + [c for c, _ in used_colors]
     backgrounds = {"s%d" % i: slide_background(pkg, n) for i, n in enumerate(protos, 1)}
 
@@ -2002,7 +2222,12 @@ def cmd_check(args):
                                      % (line, tag, slot_id, ext))
                     _check_picture_size(p, slot, tag, slot_id, line, warns, mode)
                     _check_picture_color(p, tag, slot_id, line, warns, palette,
-                                         backgrounds.get(spec.archetype), flags)
+                                         backgrounds.get(spec.archetype), flags,
+                                         full_bleed=covers_slide(slot, slide_size(pkg)))
+                    if slot.box:
+                        _check_picture_legibility(
+                            p, slot, slots, tag, slot_id, line, warns, errs, mode, anchor,
+                            flags, backgrounds.get(spec.archetype), theme)
             if slot.type == "table" and kind != "table":
                 errs.append("line %d: %s.%s is a table — use `| a | b |` rows"
                             % (line, tag, slot_id))
