@@ -213,6 +213,9 @@ function createTask(a) {
     // The floor the manager's own goal gate's match_pct must clear - same meaning, same
     // default, as the graph engine's run.goal_threshold.
     goal_threshold: T.goal_threshold,
+    // Whether this EPIC's runs may stop and ask a person. Carried on the task as well as in
+    // child_opts so tm_status can show it without opening a child run.
+    interactive: T.interactive === true,
     // Set once a daemon is spawned for this task (serviceDaemon/spawnDaemon): {pid, started_at,
     // log, stderr, exit, command, spawn_count, restarts, exhausted}. null under noDaemon().
     daemon: null,
@@ -241,6 +244,11 @@ function createTask(a) {
       max_retries: T.max_retries,
       auto_reassign: a.auto_reassign !== false,
       goal_threshold: T.goal_threshold,
+      // Read from T, not `a`, for the same reason max_retries/goal_threshold above are: a
+      // project that pinned interactive in team.json means every child run, not just the
+      // manager. This is the value graph.mjs's createRun turns into run.interactive, which is
+      // what openAsk consults.
+      interactive: T.interactive === true,
       // team_open's own tool boundary (broker.mjs) defaults this to 2; createRun's own bare
       // default is 1, deliberately - see graph.mjs's createRun and the commit that introduced
       // goal_judges, 858e0b9: "createRun itself still defaults goal_judges to 1, so a caller

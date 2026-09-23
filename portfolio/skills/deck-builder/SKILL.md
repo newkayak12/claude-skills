@@ -117,22 +117,21 @@ notes: 숫자의 출처를 먼저 말할 것
 text5: !drop
 ```
 
-Pictures take a fit mode — `pic1: shot.png | fit` keeps the whole image, the default
-`fill` crops it to the frame — and `| transparent` knocks a PNG's background out so a
-white-backed screenshot stops reading as a pasted box on a dark slide. Slots you leave out keep the template's content. Full syntax — slot forms, `!drop`,
-`notes:`, inline emphasis, outline levels, and what `template_hash` protects against —
-is in `references/mdx-syntax.md`. Read it before writing the first slide.
+Pictures take a fit mode — `| fit` keeps the whole image, the default `fill` crops it —
+and `| transparent` knocks a PNG's background out. Slots you leave out keep the template's
+content.
+
+Full syntax — slot forms, `!drop`, `notes:`, inline emphasis, outline levels, and what
+`template_hash` protects against — is in `references/mdx-syntax.md`. Read it before
+writing the first slide.
 
 ### Step 3b · Generate the art the deck needs
 
-A picture slot with no source is where the pipeline breaks: everything else is text a
-model can write, and then someone has to draw a diagram by hand. Write it as an `.svg`
-instead, in the template's colors and at the frame's exact pt size — both printed by
-`catalog` — and it becomes source like the rest of the deck. It is rasterized at build
-time: the pptx only ever carries PNG, because SVG does not render the same everywhere and
-older PowerPoint shows nothing for it.
+Write a picture slot's art as an `.svg`, in the template's colors and at the frame's exact
+pt size — both printed by `catalog`. It becomes source like the rest of the deck and is
+rasterized to PNG at build time.
 
-See `references/generated-art.md` for the rules and a worked example.
+Rules, rationale and a worked example: `references/generated-art.md`.
 
 ### Step 4 · Check
 
@@ -140,21 +139,23 @@ See `references/generated-art.md` for the rules and a worked example.
 python3 /abs/path/scripts/deck.py check --deck deck.mdx
 ```
 
-Errors (unknown archetype, unknown slot, missing image, wrong value shape, a table taller
-than the slide, a moved template) must be fixed. Warnings are judgment calls — surface
-them: a slot holding far less than the template puts there — the frame was drawn for that
-much and the slide opens a hole where the rest was, which is the same defect as overflow
-seen from the other side — text too wide for a slot the template keeps to one line (measured in em, so a Hangul
-line is not counted as if it were Latin), text far longer than the template's own, more list
-items than the template shows, untouched slots
-still holding template copy, and for every picture how much `fill` would crop away, whether
-its resolution holds up at that size, whether generated art left the template's palette,
-and whether its border will read as a pasted box on that slide.
+Errors must be fixed. Warnings are judgment calls — surface every one, including the ones
+you decide to ignore.
 
-Where a template lays type over a picture, `check` decodes the pixels that land behind
-each text box and measures them against that text's own color: below 3:1 for large type
-or 4.5:1 for body, over more than a fifth of the area, it says so. A picture drawn *after*
-the words it covers is an error — they end up behind the image.
+| What it measures | Against |
+|---|---|
+| A table or text running off the slide | the slide edge — an error, naming the rows lost |
+| A line too wide for a slot the template keeps to one line | that slot's own frame, in em, so Hangul is not counted as Latin |
+| A slot holding far less than the template puts there | the template's own volume — the frame was drawn for that much and the slide opens a hole |
+| Text running lower than the design puts it | the template's own line count, and what sits below |
+| Crop loss, effective dpi, palette strays, pasted-box borders | the frame, the screen, and the template's palette |
+| Text over a picture | the pixels actually behind it: 3:1 for large type, 4.5:1 for body |
+
+A picture drawn *after* the words it covers is an error — they end up behind the image.
+
+Every estimate here is calibrated against the template's own content rather than an
+absolute, because most frames are drawn to hold text that already wraps. Margins under
+about one line are past what a static estimate can resolve: only Step 6 settles those.
 
 ### Step 5 · Build
 
@@ -229,17 +230,14 @@ Report after a build:
 
 The six that change what you can promise:
 
-- **No new layouts.** Every output slide is a clone of a template slide. Content with no
-  matching archetype needs the template extended in PowerPoint first — say so rather than
-  approximating.
-- **A reference template is mandatory.** There is no built-in design and no fallback.
-- **Charts are not writable.** `catalog` lists chart slots; `build` leaves the template's
-  numbers. Generate an SVG into a picture slot instead.
-- **Layout truth needs a renderer.** `check` estimates; only `render` sees what collides.
-- **Legibility is measured on PNG only.** Type over a JPEG or an SVG backdrop is not
-  scored, and inherited text colors are left alone rather than guessed at.
-- **Formatting follows the template.** Emphasis flips attributes on the template's own run;
-  per-word color or size is not expressible.
+| Limit | Consequence |
+|---|---|
+| **No new layouts** | Every slide is a clone. Content with no archetype needs the template extended in PowerPoint — say so rather than approximating. |
+| **A template is mandatory** | No built-in design, no fallback. |
+| **Charts are not writable** | `build` leaves the template's numbers. Use an SVG in a picture slot. |
+| **Frames never move** | Write short and the gap stays; `check` reports it, only the template can close it. |
+| **Layout truth needs a renderer** | `check` estimates and cannot resolve margins under a line. Only `render` sees what collides. |
+| **Legibility is PNG only** | Type over a JPEG or SVG backdrop is unscored; inherited text colors are left alone. |
 
 Full table, and which step catches each one: `references/limits.md`.
 

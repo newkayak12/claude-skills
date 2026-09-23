@@ -343,6 +343,13 @@ words. A picture drawn *after* the text it covers is an error rather than a warn
 end up behind the image. The render suite checks the prediction against the page: on a pale sky
 backdrop `check` reports `#D2E1F8` behind the title, and that is the color pdftoppm paints there.
 
+Overrun is measured the same way. Where text takes more lines than the template's own does,
+`check` says how far below the design it now sits and what it runs into — an error when that
+reaches another shape. It reports only what clears the estimate's own error bar: predicting
+wrapping from an em model is worth about a line, and a designed frame often has less slack
+than that, so the margins belong to `render`. Calibrating against the template rather than
+the frame took a 46% false-positive rate on the designer's own slides down to zero.
+
 Underfill counts as a defect too. A frame drawn for four paragraphs holding one leaves a
 hole exactly where the rest would have been, and nothing used to say so — `check` only ever
 looked at too much. It now reports a slot holding less than about half the template's own

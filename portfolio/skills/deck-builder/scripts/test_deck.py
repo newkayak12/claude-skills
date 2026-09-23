@@ -33,16 +33,16 @@ def check(cond, label):
 
 # ── Minimal template construction ────────────────────────────────────────────
 
-def _sp(name, ph, paras, cx=4000000, cy=600000):
+def _sp(name, ph, paras, cx=4000000, cy=600000, x=0, y=0):
     ph_xml = '<p:ph type="%s"/>' % ph if ph else ""
     body = "".join(
         '<a:p><a:pPr lvl="%d"/><a:r><a:rPr lang="en" sz="1800"/><a:t>%s</a:t></a:r></a:p>'
         % (lvl, t) for lvl, t in paras)
     return (
         '<p:sp><p:nvSpPr><p:cNvPr id="%d" name="%s"/><p:cNvSpPr/><p:nvPr>%s</p:nvPr>'
-        '</p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="%d" cy="%d"/></a:xfrm>'
+        '</p:nvSpPr><p:spPr><a:xfrm><a:off x="%d" y="%d"/><a:ext cx="%d" cy="%d"/></a:xfrm>'
         '</p:spPr><p:txBody><a:bodyPr/>%s</p:txBody></p:sp>'
-        % (abs(hash(name)) % 900 + 2, name, ph_xml, cx, cy, body))
+        % (abs(hash(name)) % 900 + 2, name, ph_xml, x, y, cx, cy, body))
 
 
 def _pic(name, rid, cx, cy):
@@ -978,6 +978,49 @@ def underfill(tmp):
           "the floor keeps short labels out of it — emptiness in a 5-em title means nothing")
 
 
+def spilling(tmp):
+    """Text running lower than the design put it — measured against the template, not a box."""
+    print("text that runs past where the design put it")
+    make_png(tmp / "s.png", 40, 40)
+    make_template(tmp / "s.pptx", tmp / "s.png")
+    pkg = deck.Package(tmp / "s.pptx")
+    part = deck.slide_order(pkg)[1]
+    pkg.parts[part] = _slide([
+        _sp("Body 2", "body", [(0, "가" * 30), (0, "나" * 30)],
+            cx=3000000, cy=600000, x=0, y=1000000),
+        _sp("Below 3", "body", [(0, "아래")],
+            cx=3000000, cy=400000, x=0, y=2000000),
+    ]).encode("utf-8")
+    pkg.write(tmp / "s.pptx")
+    pkg = deck.Package(tmp / "s.pptx")
+    slots = deck.analyze_slide(ET.fromstring(pkg.parts[deck.slide_order(pkg)[1]]),
+                               deck.slide_size(pkg)[1])
+    body = slots[0]
+    check(body.proto_lines and body.proto_lines >= 1,
+          "the template's own content sets the baseline (%s lines)" % body.proto_lines)
+    same = deck.spill(body, [t for t in body.sample])
+    check(same and same[0] == 0,
+          "the template's own text never spills against itself: %s" % (same,))
+    one_more = deck.spill(body, list(body.sample) + ["다다"])
+    check(one_more and one_more[0] == 0,
+          "one extra line is inside the estimate's own error and stays quiet: %s"
+          % (one_more,))
+    lots = deck.spill(body, list(body.sample) + ["다다"] * 5)
+    check(lots and lots[0] > 0,
+          "five extra lines is past any rounding and is reported: %.0fpt lower"
+          % deck.pt(lots[0]))
+    check(deck.SPILL_SLACK >= 1,
+          "the slack is stated in the engine, not hidden in a comparison")
+
+    print("what the overrun runs into")
+    hit = deck.shapes_below(body, slots, 2000000)
+    check(any(o is not body for o in hit),
+          "a shape under the frame is named when the overrun reaches it: %s"
+          % [o.id for o in hit])
+    check(deck.shapes_below(body, slots, 0) == [],
+          "nothing is named when nothing spills")
+
+
 def fonts(tmp):
     """A substituted font rewraps every line, so the render must say when one is missing."""
     print("fonts the renderer does not have")
@@ -1019,6 +1062,7 @@ def main():
         vector_invariant(tmp)
         one_line_slots(tmp)
         underfill(tmp)
+        spilling(tmp)
         fonts(tmp)
         legibility(tmp)
         emphasis(tmp)

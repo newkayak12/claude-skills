@@ -154,7 +154,7 @@ export function kindOf(sg) {
 // TASK is a card a sub picks up and the level above it owns the outcome. A reduce that
 // deleted an orphan on its own authority would be deciding at the level that observed,
 // which is exactly the confusion the engine keeps out of its judging stages.
-const BASE_REASONING = ['plan', 'setgoal', 'critique', 'gate', 'report', 'reduce'];
+const BASE_REASONING = ['plan', 'setgoal', 'critique', 'gate', 'report', 'reduce', 'ask'];
 export const REASONING_STAGES = new Set([
   ...BASE_REASONING,
   ...Object.values(KINDS).flatMap((k) => k.reasoning || []),
@@ -462,6 +462,10 @@ export function createRun(opts) {
     candidates: opts.candidates || null,
     sandbox: opts.sandbox || null,
     isolated: opts.isolated === true,
+    // Whether a decision this run cannot settle from sources is put to a person (openAsk) or
+    // decided by default and merely recorded (run.unasked). Off unless asked for: a run opened
+    // by a daemon nobody is watching must still be able to finish.
+    interactive: opts.interactive === true,
     // A rejected subgoal gate opens its own next attempt. false makes a rejection advisory
     // again: the run blocks and waits for team_retry, which a caller may simply never call.
     auto_reassign: opts.auto_reassign !== false,
@@ -835,6 +839,46 @@ export function openRepair(run, round, feedback, judges) {
     n.after = [...new Set([...n.after.filter((d) => !oldIds.has(d)), ...freshIds])];
   }
   return { run: saveRun(run), attempt, repair_id: repairId, gate_ids: freshIds };
+}
+
+// The one place this graph stops and asks a person. `investigate` (0.26.0) names what no source
+// could answer; until now every one of those went into the document as an open question and the
+// run finished without ever having asked anybody. An unknown whose owner is a person and whose
+// answer is a choice between named candidates is not a gap in the research - it is a decision
+// waiting on someone, and a plan that ships it unasked is a plan that decided by default.
+//
+// Shape: `ask:<subgoal>:<attempt>` sits between investigate and whatever consumed it (draft),
+// carrying `questions[]` straight from investigate's own unknowns. It is born with the same
+// human pin applyHumanPin writes, so promoteWaitingHuman parks it in `waiting_human` the moment
+// its dep is done and NOTHING here polls a model for it - tm_inbox is the only reader,
+// tm_submit({key}) the only writer, exactly as for a pinned author stage (0.27.3). That is why
+// this needed no new state, no new inbox and no new resume path: the human-card machinery was
+// already there, and an asked decision is just another card.
+//
+// Only inserted when the run is `interactive`. v0.13.0's default (interactive: false) is to
+// decide automatically and record what it WOULD have asked - broker.mjs keeps those on
+// run.unasked so the report can show the questions nobody answered, which reads better than a
+// document quietly full of assumptions.
+export function openAsk(run, n, questions) {
+  if (!n || !n.subgoal_id) return null;
+  const qs = (questions || []).filter((q) => q && (q.question || q.unknown) && Array.isArray(q.options) && q.options.length > 1);
+  if (!qs.length) return null;
+  const askId = `ask:${n.subgoal_id}:${n.attempt || 1}`;
+  if (run.nodes.some((x) => x.node_id === askId)) return null;
+  // Whoever consumed investigate now consumes the answer instead. One consumer by
+  // construction (pushChain is a straight line), but written as a filter so an inserted
+  // node can never silently orphan a second one.
+  const consumers = run.nodes.filter((x) => (x.deps || []).includes(n.node_id));
+  if (!consumers.length) return null;
+  const who = qs.map((q) => q.owner).find((o) => typeof o === 'string' && o.trim()) || null;
+  run.nodes.push(node(askId, 'ask', [n.node_id], {
+    subgoal_id: n.subgoal_id,
+    attempt: n.attempt || 1,
+    questions: qs,
+    assignment: { executor: 'human', vendor: 'human', who, reason: 'a decision no source could answer (investigate.unknowns)' },
+  }));
+  for (const c of consumers) c.deps = [...c.deps.filter((d) => d !== n.node_id), askId];
+  return askId;
 }
 
 export function expandSubgoals(run, subgoals) {

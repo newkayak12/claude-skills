@@ -5,8 +5,10 @@
 // (taskmanager.mjs); a key still resolved and recorded with nothing reading it yet stays that way
 // on purpose - the file is the contract, a later round fills in the behaviour.
 //
-// Human-as-a-node (interactive, human_gates, human_scope) was removed here - see the note above
-// PROVISIONAL_MAX_PARALLEL_TEAMS's neighbour, max_depth, for where that design now lives.
+// Human-as-a-node came back one key at a time as the machinery landed: `interactive` is live
+// (0.28.0 - it is what decides whether a planning run opens an `ask` card for a decision its
+// investigate stage could not settle, graph.mjs's openAsk). human_gates/human_scope are still
+// only design - see the note above PROVISIONAL_MAX_PARALLEL_TEAMS's neighbour, max_depth.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -28,6 +30,12 @@ export const TEAM_DEFAULTS = Object.freeze({
   // - nothing in this codebase opens a nested tm_open yet - so this cap has no live effect until
   // that exists; it is threaded through task.child_opts.depth now so it is ready when it does.
   max_depth: 2,
+  // Does this project want to be asked? false decides by default and records the questions it
+  // would have put to a person (run.unasked, surfaced in the report); true opens an `ask` card
+  // per decision and parks the run on it. false is the default because a run nobody is watching
+  // must still finish, and because v0.13.0 §0.2 argued the recorded question is more useful than
+  // a silent assumption either way.
+  interactive: false,
   qa_rounds: 2,
   roles: { planning: true, qa: true },
   goal_threshold: 90,
@@ -64,6 +72,7 @@ const CHECK = {
   qa_rounds: (v) => Number.isInteger(v) && v >= 0,
   roles: (v) => v && typeof v === 'object' && !Array.isArray(v)
     && Object.entries(v).every(([k, b]) => k in TEAM_DEFAULTS.roles && typeof b === 'boolean'),
+  interactive: (v) => typeof v === 'boolean',
   goal_threshold: (v) => Number.isInteger(v) && v >= 0 && v <= 100,
   max_retries: (v) => Number.isInteger(v) && v >= 0,
   driver_restarts: (v) => Number.isInteger(v) && v >= 0,
