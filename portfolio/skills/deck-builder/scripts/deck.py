@@ -1,14 +1,15 @@
 """
 Deck Builder — a compiler for PowerPoint decks.
 
-  template.pptx   the toolchain: a catalog of slide archetypes
-  deck.md         the source: what goes on each slide
+  template.pptx   the toolchain: a catalog of slide archetypes. Always required —
+                  there is no built-in template and no default deck design.
+  deck.mdx        the source: what goes on each slide
   deck.pptx       the build artifact: regenerated in full, never hand-edited
 
 Subcommands:
   catalog   template.pptx -> deck.catalog.md  (archetypes, slots, capacity hints)
-  check     deck.md       -> diagnostics      (unknown slots, overflow, missing files)
-  build     deck.md       -> deck.pptx        (clone archetype slides, swap content)
+  check     deck.mdx      -> diagnostics      (unknown slots, overflow, missing files)
+  build     deck.mdx      -> deck.pptx        (clone archetype slides, swap content)
 
 Python stdlib only: zipfile, xml.etree, re. No python-pptx, no PyYAML.
 """
@@ -44,6 +45,7 @@ REL_IMAGE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships
 CT_SLIDE = "application/vnd.openxmlformats-officedocument.presentationml.slide+xml"
 
 EMU_PER_PT = 12700
+DECK_EXT = ".mdx"
 
 
 def q(name):
@@ -53,6 +55,51 @@ def q(name):
 
 
 # ── Package I/O ──────────────────────────────────────────────────────────────
+
+class TemplateError(SystemExit):
+    pass
+
+
+def require_template(path):
+    """A reference template is mandatory. Fail loudly and early, never guess one."""
+    if path is None:
+        raise TemplateError(
+            "error: no reference template.\n"
+            "  deck-builder never invents a deck design — every slide is a clone of a\n"
+            "  slide that already exists in a template. Put `template: <file>.pptx` in the\n"
+            "  front matter of your %s, or pass --template." % DECK_EXT)
+    path = Path(path)
+    if not path.exists():
+        raise TemplateError("error: reference template not found: %s" % path)
+    if not path.is_file():
+        raise TemplateError("error: reference template is not a file: %s" % path)
+    if path.suffix.lower() not in (".pptx", ".pptm"):
+        raise TemplateError(
+            "error: reference template must be .pptx or .pptm, got %s: %s"
+            % (path.suffix or "no extension", path))
+    try:
+        with zipfile.ZipFile(path) as z:
+            names = set(z.namelist())
+    except zipfile.BadZipFile:
+        raise TemplateError(
+            "error: %s is not a readable pptx (password-protected or corrupt?)" % path)
+    if "ppt/presentation.xml" not in names:
+        raise TemplateError("error: %s has no ppt/presentation.xml — not a presentation" % path)
+    return path
+
+
+def require_deck(path):
+    """Deck sources are .mdx: a source file, not a document someone reads as markdown."""
+    path = Path(path)
+    if path.suffix.lower() != DECK_EXT:
+        raise SystemExit(
+            "error: deck source must be a %s file, got %s\n"
+            "  the deck source is compiled, not read — rename it:  mv %s %s"
+            % (DECK_EXT, path.name, path.name, path.with_suffix(DECK_EXT).name))
+    if not path.is_file():
+        raise SystemExit("error: deck source not found: %s" % path)
+    return path
+
 
 class Package:
     """A .pptx read fully into memory as {part_name: bytes}."""
@@ -290,7 +337,7 @@ def analyze_slide(root):
     return slots
 
 
-# ── deck.md parsing ──────────────────────────────────────────────────────────
+# ── deck.mdx parsing ──────────────────────────────────────────────────────────
 
 class SlideSpec:
     def __init__(self, archetype, line, comment=""):
@@ -305,7 +352,7 @@ KEY_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*):\s?(.*)$")
 
 
 def parse_deck(text):
-    """Parse deck.md -> (front_matter dict, [SlideSpec], [error strings])."""
+    """Parse deck.mdx -> (front_matter dict, [SlideSpec], [error strings])."""
     lines = text.splitlines()
     front, errors, slides = {}, [], []
     i = 0
@@ -611,14 +658,17 @@ def stub_for(archetype, slots, title):
 
 
 def cmd_catalog(args):
+    require_template(args.template)
     pkg = Package(args.template)
     parts = slide_order(pkg)
     lines = [
         "# Deck catalog — %s" % Path(args.template).name,
         "",
-        "%d archetypes. In `deck.md`, start a slide with `## @<archetype>` and set slots by id."
+        "%d archetypes. In `deck.mdx`, start a slide with `## @<archetype>` and set slots by id."
         % len(parts),
         "Slots you leave out keep the template's own content. `slot: !drop` removes the shape.",
+        "",
+        "Save the source as `deck%s` and start it with:" % DECK_EXT,
         "",
         "```",
         "---",
@@ -747,24 +797,23 @@ def _swap_picture(el, path, imgctx, problems, where, slot):
 
 def resolve_template(front, args, md_path):
     if args.template:
-        return Path(args.template)
+        return require_template(args.template)
     t = front.get("template")
     if not t:
-        raise SystemExit("error: no template — put `template: path.pptx` in the front matter "
-                         "or pass --template")
+        require_template(None)
     p = Path(t)
-    return p if p.is_absolute() else (md_path.parent / p)
+    return require_template(p if p.is_absolute() else (md_path.parent / p))
 
 
 def cmd_build(args):
-    md_path = Path(args.deck)
+    md_path = require_deck(args.deck)
     front, specs, errors = parse_deck(md_path.read_text(encoding="utf-8"))
     template = resolve_template(front, args, md_path)
     out = Path(args.output or front.get("output") or md_path.with_suffix(".pptx"))
     if not out.is_absolute():
         out = md_path.parent / out
     if not specs:
-        raise SystemExit("error: deck.md has no slides (no `## @archetype` headers)")
+        raise SystemExit("error: %s has no slides (no `## @archetype` headers)" % md_path.name)
 
     pkg = Package(template)
     protos = slide_order(pkg)
@@ -889,7 +938,7 @@ def _rewrite_content_types(pkg, new_parts, exts):
 # ── Check ────────────────────────────────────────────────────────────────────
 
 def cmd_check(args):
-    md_path = Path(args.deck)
+    md_path = require_deck(args.deck)
     front, specs, errors = parse_deck(md_path.read_text(encoding="utf-8"))
     template = resolve_template(front, args, md_path)
     pkg = Package(template)
@@ -957,18 +1006,18 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     c = sub.add_parser("catalog", help="template.pptx -> catalog markdown")
-    c.add_argument("--template", required=True)
+    c.add_argument("--template", required=True, help="reference .pptx (mandatory)")
     c.add_argument("--output")
     c.set_defaults(func=cmd_catalog)
 
-    k = sub.add_parser("check", help="validate deck.md against the template")
-    k.add_argument("--deck", required=True)
-    k.add_argument("--template")
+    k = sub.add_parser("check", help="validate deck.mdx against the reference template")
+    k.add_argument("--deck", required=True, metavar="deck" + DECK_EXT)
+    k.add_argument("--template", help="overrides the front matter; one is always required")
     k.set_defaults(func=cmd_check)
 
-    b = sub.add_parser("build", help="deck.md -> deck.pptx")
-    b.add_argument("--deck", required=True)
-    b.add_argument("--template")
+    b = sub.add_parser("build", help="deck.mdx -> deck.pptx")
+    b.add_argument("--deck", required=True, metavar="deck" + DECK_EXT)
+    b.add_argument("--template", help="overrides the front matter; one is always required")
     b.add_argument("--output")
     b.add_argument("--strict", action="store_true", help="exit nonzero on any problem")
     b.set_defaults(func=cmd_build)

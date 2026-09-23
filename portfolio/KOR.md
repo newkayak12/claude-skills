@@ -290,9 +290,12 @@ ATS 키워드 규칙과 회사 유형별 컬처 시그널: `references/ats-rules
 ### `deck-builder`
 
 발표자료를 문서가 아니라 빌드로 다룹니다. `template.pptx`는 툴체인 — 그 슬라이드들이 아키타입
-카탈로그입니다. `deck.md`는 소스 — 사람이 고치는 유일한 파일입니다. 출력 pptx는 빌드 산출물로
+카탈로그입니다. `deck.mdx`는 소스 — 사람이 고치는 유일한 파일입니다. 출력 pptx는 빌드 산출물로
 매번 통째로 다시 만들어집니다. 출력 슬라이드는 전부 템플릿 슬라이드의 복제본이고 내용만
 갈아끼우기 때문에, 템플릿 디자인이 바이트 단위로 보존되고 레이아웃을 새로 짜는 일이 없습니다.
+레퍼런스 템플릿은 필수입니다 — 내장 디자인도 폴백도 없어서, `.pptx`가 없으면 슬라이드를 지어내는
+대신 에러로 끝냅니다. 소스 파일은 `deck.md`가 아니라 `deck.mdx`입니다. 읽는 문서가 아니라
+컴파일되는 소스이고, 다른 확장자는 거부됩니다.
 Python 3.9+ 필요(표준 라이브러리만 — python-pptx도 PyYAML도 안 씁니다).
 
 ```
@@ -306,13 +309,13 @@ python3 /abs/path/to/skills/deck-builder/scripts/deck.py catalog \
   --template "template.pptx" --output "deck.catalog.md"
 
 # 2 — check: 없는 슬롯, 없는 이미지, 프레임을 넘칠 텍스트
-python3 /abs/path/to/skills/deck-builder/scripts/deck.py check --deck deck.md
+python3 /abs/path/to/skills/deck-builder/scripts/deck.py check --deck deck.mdx
 
-# 3 — build: 같은 deck.md는 항상 바이트까지 같은 pptx를 냅니다
-python3 /abs/path/to/skills/deck-builder/scripts/deck.py build --deck deck.md
+# 3 — build: 같은 deck.mdx는 항상 바이트까지 같은 pptx를 냅니다
+python3 /abs/path/to/skills/deck-builder/scripts/deck.py build --deck deck.mdx
 ```
 
-`deck.md`는 자체 파싱되는 최소 문법의 마크다운입니다 — `## @s3`은 템플릿 3번 슬라이드로 슬라이드를
+`deck.mdx`는 자체 파싱되는 최소 문법의 마크다운입니다 — `## @s3`은 템플릿 3번 슬라이드로 슬라이드를
 시작하고, `key: value`는 텍스트 슬롯, 들여쓴 `- ` 줄은 리스트, 들여쓴 `| a | b |` 줄은 표 행,
 경로는 이미지, `!drop`은 도형 삭제, 빠뜨린 슬롯은 템플릿 내용을 그대로 둡니다. 리스트와 표 행은
 자유롭게 늘고 줄어듭니다 — 불릿 3개짜리 아키타입에 4개를 넣으면 서식을 지닌 문단을 복제합니다.
@@ -322,10 +325,11 @@ python3 /abs/path/to/skills/deck-builder/scripts/deck.py build --deck deck.md
 
 | 한계 | 내용 |
 |---|---|
+| **템플릿 필수** | 레퍼런스 `.pptx`가 없으면 엔진은 에러로 끝내고 아무것도 만들지 않습니다. |
 | **새 레이아웃 없음** | 출력 슬라이드는 템플릿 슬라이드의 복제본입니다. 맞는 아키타입이 없는 내용은 먼저 PowerPoint에서 템플릿을 늘려야 합니다. |
 | **차트는 쓰기 불가** | 시리즈 값이 내장 xlsx와 캐시 XML에 나뉘어 있습니다. `catalog`은 차트 슬롯을 보여주고, `build`는 템플릿 값 그대로 둡니다. |
 | **용량은 추정치** | 오버플로 경고는 실제 텍스트 메트릭이 아니라 프레임 너비 ÷ 폰트 크기에서 나옵니다 — 판정이 아니라 확인하라는 신호입니다. |
-| **서식은 템플릿을 따름** | 교체된 run은 템플릿 run의 폰트·크기·색을 물려받습니다. 단어 단위 강조는 `deck.md`로 표현할 수 없습니다. |
+| **서식은 템플릿을 따름** | 교체된 run은 템플릿 run의 폰트·크기·색을 물려받습니다. 단어 단위 강조는 `deck.mdx`로 표현할 수 없습니다. |
 | **발표자 노트 삭제** | 노트 슬라이드는 빌드에 실리지 않습니다. |
 
 테스트: `python3 portfolio/skills/deck-builder/scripts/test_deck.py` — 최소 pptx를 스스로 만들어

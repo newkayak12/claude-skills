@@ -249,7 +249,7 @@ def run(tmp):
     check(s2["table1"].type == "table" and s2["table1"].cols == 2, "table slot with column count")
     check(abs(s2["pic1"].ratio - 1.5) < 0.01, "picture aspect read from the frame")
 
-    # 2 — deck.md parsing
+    # 2 — deck.mdx parsing
     print("parse")
     front, specs, errs = deck.parse_deck(
         "---\ntemplate: t.pptx\n---\n\n## @s2 note\n"
@@ -267,7 +267,7 @@ def run(tmp):
 
     # 3 — build
     print("build")
-    (tmp / "deck.md").write_text(
+    (tmp / "deck.mdx").write_text(
         "---\ntemplate: template.pptx\noutput: out.pptx\n---\n\n"
         "## @s1\ntitle: 신뢰성 리뷰\nsubtitle: 두 번째 줄\n\n"
         "## @s2\ntitle: Agenda\n"
@@ -275,7 +275,7 @@ def run(tmp):
         "table1:\n  | H1 | H2 |\n  | x | y |\n"
         "pic1: shot.png\n\n"
         "## @s2\ntitle: dropped picture\npic1: !drop\n", encoding="utf-8")
-    rc = deck.main(["build", "--deck", str(tmp / "deck.md")])
+    rc = deck.main(["build", "--deck", str(tmp / "deck.mdx")])
     out = tmp / "out.pptx"
     check(rc == 0 and out.is_file(), "build exits clean and writes the file")
     check(integrity(out) == [], "package integrity: %s" % integrity(out))
@@ -301,35 +301,84 @@ def run(tmp):
 
     # 4 — determinism
     print("determinism")
-    deck.main(["build", "--deck", str(tmp / "deck.md"), "--output", str(tmp / "again.pptx")])
+    deck.main(["build", "--deck", str(tmp / "deck.mdx"), "--output", str(tmp / "again.pptx")])
     check((tmp / "again.pptx").read_bytes() == out.read_bytes(),
           "same source builds byte-identical output")
 
     # 5 — check
     print("check")
-    (tmp / "bad.md").write_text(
+    (tmp / "bad.mdx").write_text(
         "---\ntemplate: template.pptx\n---\n\n"
         "## @s9\ntitle: nope\n\n"
         "## @s2\nnosuch: x\npic1: missing.png\ntable1: not a table\n"
         "title: %s\n" % ("긴" * 200), encoding="utf-8")
-    rc = deck.main(["check", "--deck", str(tmp / "bad.md")])
+    rc = deck.main(["check", "--deck", str(tmp / "bad.mdx")])
     check(rc == 1, "check exits 1 when there are errors")
 
     # 6 — unknown slot does not abort the build
     print("resilience")
-    (tmp / "partial.md").write_text(
+    (tmp / "partial.mdx").write_text(
         "---\ntemplate: template.pptx\noutput: partial.pptx\n---\n\n"
         "## @s2\nnosuch: x\ntitle: still built\n", encoding="utf-8")
-    deck.main(["build", "--deck", str(tmp / "partial.md")])
+    deck.main(["build", "--deck", str(tmp / "partial.mdx")])
     check("still built" in slide_texts(tmp / "partial.pptx", "ppt/slides/slide1.xml"),
           "a bad slot is reported but the rest of the slide still renders")
     check(integrity(tmp / "partial.pptx") == [], "partial build is still a valid package")
+
+
+def guards(tmp):
+    """The two non-negotiables: .mdx source, and a real reference template."""
+    print("guards")
+
+    def fails_with(argv, needle, label):
+        try:
+            deck.main(argv)
+        except SystemExit as e:
+            msg = str(e)
+            check(needle in msg, "%s — got: %s" % (label, msg.splitlines()[0][:70]))
+            return
+        check(False, "%s — no error raised" % label)
+
+    (tmp / "wrong.md").write_text(
+        "---\ntemplate: template.pptx\n---\n\n## @s1\ntitle: x\n", encoding="utf-8")
+    fails_with(["build", "--deck", str(tmp / "wrong.md")],
+               "must be a .mdx file", "a .md source is rejected")
+    fails_with(["check", "--deck", str(tmp / "wrong.md")],
+               "must be a .mdx file", "check rejects .md too")
+
+    (tmp / "notemplate.mdx").write_text("## @s1\ntitle: x\n", encoding="utf-8")
+    fails_with(["build", "--deck", str(tmp / "notemplate.mdx")],
+               "no reference template", "a deck with no template is refused")
+
+    (tmp / "gone.mdx").write_text(
+        "---\ntemplate: nosuch.pptx\n---\n\n## @s1\ntitle: x\n", encoding="utf-8")
+    fails_with(["build", "--deck", str(tmp / "gone.mdx")],
+               "not found", "a missing template path is refused")
+
+    (tmp / "fake.pptx").write_text("not a zip at all", encoding="utf-8")
+    fails_with(["build", "--deck", str(tmp / "gone.mdx"), "--template", str(tmp / "fake.pptx")],
+               "not a readable pptx", "a non-zip template is refused")
+
+    (tmp / "notes.txt").write_text("hello", encoding="utf-8")
+    fails_with(["catalog", "--template", str(tmp / "notes.txt")],
+               "must be .pptx", "catalog refuses a non-pptx template")
+    fails_with(["catalog", "--template", str(tmp / "nowhere.pptx")],
+               "not found", "catalog refuses a missing template")
+
+    import io
+    import contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = deck.main(["catalog", "--template", str(tmp / "template.pptx")])
+    check(rc == 0 and "deck.mdx" in buf.getvalue(),
+          "catalog tells you to save the source as deck.mdx")
 
 
 def main():
     tmp = Path(tempfile.mkdtemp(prefix="deckbuilder-test-"))
     try:
         run(tmp)
+        guards(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     print()
