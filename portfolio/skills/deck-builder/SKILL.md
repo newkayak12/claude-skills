@@ -10,7 +10,7 @@ scenarios:
   - "발표자료 초안을 md로 쓰고 템플릿에 렌더해줘"
   - "슬라이드 내용만 고쳐서 다시 뽑아줘"
   - "Read this template and build a 12-slide deck from my notes"
-  - "Turn deck.md into a pptx using the brand template"
+  - "Turn deck.mdx into a pptx using the brand template"
   - "Regenerate the deck — I changed three bullets"
 compatibility:
   required:
@@ -23,8 +23,8 @@ Treats a deck as a build, not a document:
 
 | Artifact | Role |
 |---|---|
-| `template.pptx` | the toolchain — its slides are the archetype catalog |
-| `deck.md` | the source — the only file anyone edits |
+| `template.pptx` | the toolchain — its slides are the archetype catalog. **Always required.** |
+| `deck.mdx` | the source — the only file anyone edits |
 | `deck.pptx` | the build artifact — regenerated in full every time |
 
 Each output slide is a **clone of a template slide** with its content swapped, so the
@@ -36,8 +36,10 @@ Engine: `scripts/deck.py` (invoke with an absolute path).
 
 ## Standing Mandates
 
-- **Catalog before writing.** Never author `deck.md` from a guess about the template. Run `catalog` and write against the slot ids it prints.
-- **Never hand-edit the output pptx.** It is regenerated on the next build. Corrections go into `deck.md`.
+- **Never build without a reference template.** There is no built-in deck design and no fallback. If the user has not given you a `.pptx`, stop and ask for one — do not assemble slides some other way, do not offer a generic deck, do not fabricate a template. The engine refuses too, but the ask belongs to you, before any work.
+- **The source file is `deck.mdx`, never `deck.md`.** It is compiled, not read. The engine rejects any other extension.
+- **Catalog before writing.** Never author `deck.mdx` from a guess about the template. Run `catalog` and write against the slot ids it prints.
+- **Never hand-edit the output pptx.** It is regenerated on the next build. Corrections go into `deck.mdx`.
 - **Run `check` before `build`, and show the user the warnings.** Overflow warnings are the only signal that text will spill — there is no renderer to see it.
 - **Never invent an archetype.** If no template slide fits the content, say so and ask whether to reshape the content or extend the template — do not approximate.
 - **Charts are read-only.** Say this out loud when the chosen archetype has one; the template's numbers ship unless the user edits the chart in PowerPoint.
@@ -45,6 +47,15 @@ Engine: `scripts/deck.py` (invoke with an absolute path).
 ---
 
 ## Process
+
+### Step 0 · Get the reference template
+
+Ask for the `.pptx` before anything else if you don't have one:
+
+> "레퍼런스 템플릿 pptx를 주세요. deck-builder는 템플릿 슬라이드를 복제하는 방식이라, 템플릿 없이는 만들 수 있는 슬라이드가 없습니다."
+
+Do not proceed on a description of a template, a similar-looking deck, or a promise to
+supply one later.
 
 ### Step 1 · Catalog the template
 
@@ -69,7 +80,7 @@ one-line-per-slide plan:
 
 Get a nod on the plan. Wrong archetype choice is the expensive mistake, not wrong wording.
 
-### Step 3 · Write `deck.md`
+### Step 3 · Write `deck.mdx`
 
 ```markdown
 ---
@@ -103,14 +114,14 @@ Syntax, in full:
 | `key:` + indented `- ` lines | list slot; two extra spaces = one outline level deeper |
 | `key:` + indented `\| a \| b \|` lines | table rows; first row fills the header when the template has one |
 | `key:` + indented plain lines | multi-line text, one paragraph per line |
-| `key: path/to.png` | picture slot; relative paths resolve from `deck.md` |
+| `key: path/to.png` | picture slot; relative paths resolve from `deck.mdx` |
 | `key: !drop` | delete that shape from the slide |
 | slot omitted | keeps the template's own content |
 
 ### Step 4 · Check
 
 ```bash
-python3 /abs/path/scripts/deck.py check --deck deck.md
+python3 /abs/path/scripts/deck.py check --deck deck.mdx
 ```
 
 Errors (unknown archetype, unknown slot, missing image, wrong value shape) must be fixed.
@@ -120,10 +131,10 @@ untouched slots still holding template copy) are judgment calls — surface them
 ### Step 5 · Build
 
 ```bash
-python3 /abs/path/scripts/deck.py build --deck deck.md [--output out.pptx] [--strict]
+python3 /abs/path/scripts/deck.py build --deck deck.mdx [--output out.pptx] [--strict]
 ```
 
-The same `deck.md` always produces a byte-identical pptx.
+The same `deck.mdx` always produces a byte-identical pptx.
 
 ---
 
@@ -143,7 +154,7 @@ Report after a build:
   · 3번 슬라이드 title 58자 (프레임 ~39자/줄) — 두 줄로 넘어갑니다
   · 5번 슬라이드 chart1 — 차트 수치는 템플릿 값 그대로입니다
 
-다음 수정은 deck.md만 고치고 다시 build 하세요. 출력 pptx는 손대면 날아갑니다.
+다음 수정은 deck.mdx만 고치고 다시 build 하세요. 출력 pptx는 손대면 날아갑니다.
 ```
 
 ---
@@ -152,9 +163,10 @@ Report after a build:
 
 | Claude | You |
 |---|---|
-| Runs `catalog`, reads the slot map | Provides the template and the raw content |
+| Asks for the reference pptx, refuses to proceed without it | Provides the template — mandatory — and the raw content |
+| Runs `catalog`, reads the slot map | Reviews the archetype list |
 | Proposes the archetype-per-slide plan | Approves or rearranges the plan |
-| Writes and revises `deck.md` | Edits `deck.md` directly whenever you prefer |
+| Writes and revises `deck.mdx` | Edits `deck.mdx` directly whenever you prefer |
 | Runs `check`, reports every warning | Decides whether an overflow warning matters |
 | Runs `build`, reports the result | Opens the pptx, edits charts if needed |
 
@@ -164,10 +176,11 @@ Report after a build:
 
 | Limitation | Detail |
 |---|---|
+| **A template is mandatory** | There is no built-in design. Without a reference `.pptx` the engine exits with an error and produces nothing. |
 | **No new layouts** | Output slides are clones of template slides. Content with no matching archetype needs the template extended in PowerPoint first. |
 | **Charts are not writable** | Series values live in an embedded xlsx plus cached XML. `catalog` lists chart slots; `build` leaves them at template values. |
 | **Capacity is an estimate** | Overflow warnings come from frame width ÷ font size, not real text metrics. Treat them as a prompt to look, not a verdict. |
-| **Formatting follows the template** | A replaced run inherits the template run's font, size and color. Per-word bold or color inside a slot is not expressible in `deck.md`. |
+| **Formatting follows the template** | A replaced run inherits the template run's font, size and color. Per-word bold or color inside a slot is not expressible in `deck.mdx`. |
 | **Speaker notes are dropped** | Notes slides are not carried into the build. |
 | **Autofit is not recalculated** | PowerPoint reflows shrink-to-fit text when the file is opened, so the on-screen result can differ slightly from the capacity estimate. |
 

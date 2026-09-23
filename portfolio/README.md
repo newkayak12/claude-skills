@@ -314,10 +314,13 @@ answers, and the one thing to work on before the real interview.
 ### `deck-builder`
 
 Treats a deck as a build rather than a document. `template.pptx` is the toolchain — its slides are
-the archetype catalog; `deck.md` is the source, the only file anyone edits; the output pptx is a
+the archetype catalog; `deck.mdx` is the source, the only file anyone edits; the output pptx is a
 build artifact, regenerated in full each time. Every output slide is a clone of a template slide
 with its content swapped, so the template's design survives byte for byte and nothing is laid out
-from scratch. Requires Python 3.9+ (stdlib only — no python-pptx, no PyYAML).
+from scratch. A reference template is mandatory — there is no built-in deck design and no fallback, so without
+a `.pptx` the engine exits with an error rather than inventing slides. The source file is
+`deck.mdx`, not `deck.md`: it is compiled, not read, and any other extension is rejected.
+Requires Python 3.9+ (stdlib only — no python-pptx, no PyYAML).
 
 ```
 이 템플릿 읽고 분기 리뷰 내용으로 PPT 만들어줘.
@@ -330,13 +333,13 @@ python3 /abs/path/to/skills/deck-builder/scripts/deck.py catalog \
   --template "template.pptx" --output "deck.catalog.md"
 
 # 2 — check: unknown slots, missing images, text that will overflow its frame
-python3 /abs/path/to/skills/deck-builder/scripts/deck.py check --deck deck.md
+python3 /abs/path/to/skills/deck-builder/scripts/deck.py check --deck deck.mdx
 
-# 3 — build: the same deck.md always produces a byte-identical pptx
-python3 /abs/path/to/skills/deck-builder/scripts/deck.py build --deck deck.md
+# 3 — build: the same deck.mdx always produces a byte-identical pptx
+python3 /abs/path/to/skills/deck-builder/scripts/deck.py build --deck deck.mdx
 ```
 
-`deck.md` is markdown with a small, self-parsed syntax — `## @s3` starts a slide from template
+`deck.mdx` is markdown with a small, self-parsed syntax — `## @s3` starts a slide from template
 slide 3, `key: value` fills a text slot, indented `- ` lines fill a list, indented `| a | b |`
 lines fill table rows, a path fills a picture, `!drop` deletes a shape, and an omitted slot keeps
 the template's own content. Lists and table rows grow and shrink freely: four bullets go into a
@@ -347,10 +350,11 @@ Known limits, reported explicitly rather than hidden:
 
 | Limit | Detail |
 |---|---|
+| **A template is mandatory** | Without a reference `.pptx` the engine exits with an error and produces nothing. |
 | **No new layouts** | Output slides are clones of template slides. Content with no matching archetype needs the template extended in PowerPoint first. |
 | **Charts are not writable** | Series values live in an embedded xlsx plus cached XML. `catalog` lists chart slots; `build` leaves them at template values. |
 | **Capacity is an estimate** | Overflow warnings come from frame width ÷ font size, not real text metrics — a prompt to look, not a verdict. |
-| **Formatting follows the template** | A replaced run inherits the template run's font, size and color; per-word emphasis is not expressible in `deck.md`. |
+| **Formatting follows the template** | A replaced run inherits the template run's font, size and color; per-word emphasis is not expressible in `deck.mdx`. |
 | **Speaker notes are dropped** | Notes slides are not carried into the build. |
 
 Tests: `python3 portfolio/skills/deck-builder/scripts/test_deck.py` — builds its own minimal pptx,
