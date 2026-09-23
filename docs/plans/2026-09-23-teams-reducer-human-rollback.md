@@ -60,30 +60,67 @@ v0.13.0 §0.2가 `ask:N`을 "질문"으로만 설계했다. 이 계획은 거기
 무효화하고 나머지 분할은 유지한 채 shape을 다시 돌린다 — 전체 폐기가 아니라 부분 롤백. §8h의 선택지
 1(critique를 종착역에서 내린다)보다 되돌리기 쉽고, 선택지 3(재측정)과 배타적이지 않다.
 
-**검토 필요 표시를 남기는 이유**: critique의 `blocking[]` 항목이 패키지 id를 신뢰할 만하게 담는지
-아직 실측으로 확인하지 않았다. idol-pm-1/2의 critique 결과 4건을 읽어 확인하는 것이 이 항목의
-첫 태스크다 — 담지 않는다면 이 제안 전체가 성립하지 않는다.
+**선행 확인 완료 (2026-09-23), 그리고 이 제안은 접는다.** idol-pm-1/2의 critique 노드 4건에서
+`blocking[]` 9항목을 읽었다. 패키지 특정은 통과한다 — "P5's acceptance is not satisfiable from P5's
+dependency set"처럼 어느 패키지에 대한 지적인지 정확히 말한다. 그런데 유형을 나누면 부분 롤백이
+닿지 않는 쪽이 더 많다:
+
+| 유형 | 건수 | 예시 | 부분 롤백 |
+|---|---|---|---|
+| A. 특정 패키지의 결함 | 4 | "P6's first acceptance criterion … is unsatisfiable", "P5's acceptance is not satisfiable from P5's dependency set" | 가능 |
+| B. 소유자 없는 공유물 | 3 | "**No package owns** the composition root / final assembly", "The shared admission token has no owner" | 불가 — 패키지를 **추가**하는 일 |
+| C. 목표 기준 자체의 결함 | 2 | "Goal-level criterion 1 and P6's acceptance **contradict each other**", "Goal-level criterion 2 asks for something no integration step can check" | 불가 — 패키지 층이 아님 |
+
+B는 무효화가 아니라 추가를 요구하고, C는 애초에 패키지에 대한 지적이 아니다. 부분 롤백은 9건 중
+4건만 건드린다. 비용 대비 효과가 §8h의 다른 선택지보다 낫다고 말할 근거가 없다.
+
+### 0.3b 대신 확인된 것 — 매 회차가 같은 조건에서 같은 실수를 다시 한다 (가설, 측정 필요)
+
+`retryShape()` (`taskmanager.mjs:430`)를 읽으면 `task.spec = null`로 스펙을 통째로 버리고
+`shape:N`/`critique:N`을 새로 민다. `size`만 건너뛰고 나머지 pending/failed는 전부 skipped다.
+**목표 기준(goal acceptance)도 `task.spec` 안에 있으므로 같이 버려지고, 같은 요청·같은 shape
+프롬프트에서 다시 만들어진다.** 다음 시도로 전달되는 것은 `feedback` 문자열 하나뿐이다.
+
+C 유형(목표 기준 모순/검증 불가)은 그래서 회차마다 **새로 생성될 수 있다**. idol-pm-1이 3회 시도를
+모두 같은 부류로 실패한 것과 정합한다. 비수렴의 원인이 "부분을 못 살려서"가 아니라 "매번 처음부터
+다시, 같은 조건에서"일 가능성이 이쪽이 더 크다.
+
+**대체 제안 — critique 지적을 유형별로 다르게 처리한다:**
+
+- **C** → 목표 기준을 재작성 대상에서 빼고, 지적된 기준만 고쳐 다음 시도에 **고정 전달**한다.
+  새로 만들어지지 않게 하는 것이 요점이다.
+- **B** → "이 패키지를 추가하라"는 지시로 변환해 다음 shape에 싣는다. 0.24.0이 `CONTRACT.shape`에
+  넣은 3규칙(공유 산출물 소유 / 목표 기준 검증가능성 / 패키지 acceptance 자족성)이 정확히 B와 C를
+  막으려던 것인데 **아직 한 번도 측정되지 않았다**.
+- **A** → 부분 롤백이 의미 있는 유일한 유형. 다만 4/9이므로 단독으로는 수렴을 바꾸지 못한다.
+
+**선행 측정**: 위 어느 것도 코드로 옮기기 전에, 0.24.0의 계약 3규칙이 B·C를 얼마나 줄이는지
+`flow: develop` 실런 한 판으로 잰다. 이미 들어가 있는 변경의 효과를 모른 채 그 위에 더 쌓는 것이
+0.24.0~0.26.0에서 반복한 실수다(§8i).
 
 ## 1. 이 계획에 들어가는 것
 
 - `reduce` 스테이지: 병렬 서브골의 산출물을 하나로 접는 leader 노드. kind별 병합 규칙 선언.
 - `ask:N`의 선택지 필드(`options[]`), `investigate.unknowns[]`를 두 번째 삽입 원천으로 추가.
 - `waiting_human` 상태와 메인 세션 경로(`tm_inbox` / `tm_answer`) — v0.13.0 Task 1·5·6의 범위.
-- `retryShape`의 부분 롤백 — 선행 확인이 통과할 때만.
+- critique 지적의 유형별 처리(C: 목표 기준 고정 전달 / B: 패키지 추가 지시) — 선행 측정 결과에 따라.
 
 ## 2. 이 계획이 하지 않는 것
 
 - v0.13.0의 `gate:human:spec`, `tm_assign`, `tm_log`, `15-spec-gate.md`. 그쪽 계획이 이미 소유한다.
 - reducer를 handoff(노드 간 문자열 전달)에까지 적용하는 것. 지금 `HANDOFF_CAP`이 자르는 방식은
   병합이 아니라 절단이고, 이것을 reduce로 바꾸는 것은 별개 사안이다.
-- time travel 일반화. 이 계획의 롤백은 shape 한 자리에만 적용한다.
+- time travel 일반화, 그리고 `retryShape`의 부분 롤백 — §0.3에서 접었다.
 
 ## 3. 순서
 
-1. **선행 확인** — idol-pm-1/2의 critique 4건에서 `blocking[]`이 패키지를 특정하는지 읽는다. 30분.
-2. **reduce 스테이지** — 가장 독립적이고, 지금 규약으로 버티는 자리를 검사 가능한 것으로 바꾼다.
-3. **human 노드** — v0.13.0 Task 1·5·6 + 이 문서 §0.2의 두 추가.
-4. **부분 롤백** — 1이 통과할 때만.
+1. ~~선행 확인~~ — **완료**(§0.3). 부분 롤백은 접고, 유형별 처리 + 선행 측정으로 대체한다.
+2. **선행 측정** — `flow: develop` 실런 한 판으로 0.24.0 계약 3규칙의 효과를 잰다. 성공 기준은
+   report가 아니라 **critique의 B·C 유형 건수가 줄어드는가**. 1시간.
+3. **reduce 스테이지** — 가장 독립적이고, 지금 규약으로 버티는 자리를 검사 가능한 것으로 바꾼다.
+   2와 병렬로 갈 수 있다.
+4. **human 노드** — v0.13.0 Task 1·5·6 + 이 문서 §0.2의 두 추가.
+5. **critique 유형별 처리** — 2의 결과를 보고 C·B 중 남은 쪽만 손댄다.
 
 ## 4. 열린 논점
 

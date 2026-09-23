@@ -140,6 +140,14 @@ def rels_name(part):
     return str(p.parent / "_rels" / (p.name + ".rels")).replace(os.sep, "/")
 
 
+def slide_size(pkg):
+    """(cx, cy) of the slide canvas in EMU."""
+    sz = pkg.xml("ppt/presentation.xml").find(q("p:sldSz"))
+    if sz is None:
+        return 12192000, 6858000
+    return int(sz.get("cx", 12192000)), int(sz.get("cy", 6858000))
+
+
 def slide_order(pkg):
     """Template slide part names, in presentation order."""
     pres = pkg.xml("ppt/presentation.xml")
@@ -223,6 +231,21 @@ def extent(el):
     return None
 
 
+def offset(el):
+    """(x, y) in EMU from the shape's own xfrm, or None when inherited."""
+    for tag in ("p:spPr", "p:xfrm", "p:grpSpPr"):
+        holder = el.find(q(tag))
+        if holder is None:
+            continue
+        xfrm = holder if tag == "p:xfrm" else holder.find(q("a:xfrm"))
+        if xfrm is None:
+            continue
+        off = xfrm.find(q("a:off"))
+        if off is not None:
+            return int(off.get("x", 0)), int(off.get("y", 0))
+    return None
+
+
 def para_text(p):
     return "".join(t.text or "" for t in p.iter(q("a:t")))
 
@@ -255,6 +278,10 @@ class Slot:
         self.max_items = None    # paragraphs / rows the template shows
         self.ratio = None        # picture aspect "16:9"
         self.cols = None         # table columns
+        self.off_y = None        # frame top in EMU
+        self.row_h = None        # table row height in EMU
+        self.line_h = None       # estimated line height in EMU
+        self.fits = None         # rows/lines that clear the slide edge
 
 
 def _is_autofield(txBody):
@@ -271,8 +298,11 @@ def para_text_of_run(r):
     return t.text if t is not None else ""
 
 
-def analyze_slide(root):
-    """Return the slot list for one slide XML root."""
+def analyze_slide(root, slide_cy=None):
+    """Return the slot list for one slide XML root.
+
+    With slide_cy given, each stacking slot also reports how many rows or lines
+    clear the bottom of the slide — past that, the renderer simply cuts them off."""
     spTree = root.find(q("p:cSld") + "/" + q("p:spTree"))
     slots = []
     counters = {"text": 0, "pic": 0, "table": 0, "chart": 0, "title": 0, "subtitle": 0}
@@ -304,11 +334,16 @@ def analyze_slide(root):
             slot = Slot(sid, stype, path, name)
             slot.sample = [para_text(p) for p in paras]
             slot.max_items = len(paras)
-            ext = extent(el)
+            ext, off = extent(el), offset(el)
             size = first_font_size(txBody) or 18.0
             if ext:
                 cx_pt = ext[0] / EMU_PER_PT
                 slot.max_chars = max(4, int(cx_pt / (size * 0.55)))
+            slot.line_h = int(size * 1.2 * EMU_PER_PT)
+            if off:
+                slot.off_y = off[1]
+                if slide_cy:
+                    slot.fits = max(1, (slide_cy - slot.off_y) // slot.line_h)
             slots.append(slot)
         elif el.tag == q("p:pic"):
             slot = Slot(next_id("pic"), "picture", path, name)
@@ -324,6 +359,13 @@ def analyze_slide(root):
                 grid = tbl.find(q("a:tblGrid"))
                 slot.cols = len(grid.findall(q("a:gridCol"))) if grid is not None else 0
                 slot.max_items = len(rows)
+                heights = [int(tr.get("h", 0)) for tr in rows if tr.get("h")]
+                slot.row_h = max(heights) if heights else None
+                off = offset(el)
+                if off:
+                    slot.off_y = off[1]
+                    if slide_cy and slot.row_h:
+                        slot.fits = max(1, (slide_cy - slot.off_y) // slot.row_h)
                 slot.sample = [
                     [para_text(p) for tc in tr.findall(q("a:tc"))
                      for p in tc.find(q("a:txBody")).findall(q("a:p"))][: slot.cols]
@@ -661,6 +703,7 @@ def cmd_catalog(args):
     require_template(args.template)
     pkg = Package(args.template)
     parts = slide_order(pkg)
+    slide_cy = slide_size(pkg)[1]
     lines = [
         "# Deck catalog — %s" % Path(args.template).name,
         "",
@@ -679,7 +722,7 @@ def cmd_catalog(args):
         "",
     ]
     for idx, part in enumerate(parts, 1):
-        slots = analyze_slide(ET.fromstring(pkg.parts[part]))
+        slots = analyze_slide(ET.fromstring(pkg.parts[part]), slide_cy)
         title = slide_title(slots)
         layout = layout_of(pkg, part)
         lines.append("## @s%d · %s%s" % (idx, title, "  (layout: %s)" % layout if layout else ""))
@@ -696,9 +739,12 @@ def cmd_catalog(args):
             elif s.type == "list":
                 shows = "%d items · %s" % (s.max_items, truncate(s.sample[0] if s.sample else "", 28))
                 cap = "~%d chars/line" % s.max_chars if s.max_chars else "inherited"
+                if s.fits:
+                    cap += ", %d lines before the slide edge" % s.fits
             elif s.type == "table":
                 shows = "%d rows × %d cols" % (s.max_items, s.cols or 0)
-                cap = "header row kept" 
+                cap = ("%d rows before the slide edge" % s.fits) if s.fits \
+                    else "header row kept"
             elif s.type == "picture":
                 shows = s.label or "picture"
                 cap = ratio_label(s.ratio)
@@ -943,7 +989,8 @@ def cmd_check(args):
     template = resolve_template(front, args, md_path)
     pkg = Package(template)
     protos = slide_order(pkg)
-    catalog = {"s%d" % i: analyze_slide(ET.fromstring(pkg.parts[n]))
+    slide_cy = slide_size(pkg)[1]
+    catalog = {"s%d" % i: analyze_slide(ET.fromstring(pkg.parts[n]), slide_cy)
                for i, n in enumerate(protos, 1)}
 
     errs, warns = list(errors), []
@@ -980,6 +1027,23 @@ def cmd_check(args):
                         warns.append("line %d: %s.%s — %d chars vs ~%d/line, will wrap or "
                                      "overflow: %r" % (line, tag, slot_id, len(text),
                                                        slot.max_chars, truncate(text, 34)))
+            if slot.type == "table" and kind == "table" and slot.fits \
+                    and len(value) > slot.fits:
+                lost = [r[0] if r else "" for r in value[slot.fits:]]
+                errs.append("line %d: %s.%s — %d rows, but only %d clear the bottom of the "
+                            "slide. These are cut off and their content is lost: %s"
+                            % (line, tag, slot_id, len(value), slot.fits,
+                               ", ".join(truncate(x, 14) for x in lost)))
+            if slot.type in ("text", "list") and slot.fits:
+                nlines = len(as_items(kind, value))
+                if slot.max_chars:
+                    nlines = sum(max(1, -(-len(t) // slot.max_chars))
+                                 for _, t in as_items(kind, value))
+                if nlines > slot.fits:
+                    warns.append("line %d: %s.%s — about %d lines once wrapped, but only %d "
+                                 "clear the bottom of the slide; the rest is cut off unless "
+                                 "the shape shrinks text to fit"
+                                 % (line, tag, slot_id, nlines, slot.fits))
             if slot.type == "list" and slot.max_items and kind == "list" \
                     and len(value) > slot.max_items:
                 warns.append("line %d: %s.%s — %d items vs %d in the template; extra items "

@@ -18,6 +18,7 @@ stays green.
 
 import os
 import re
+import statistics
 import shutil
 import subprocess
 import sys
@@ -89,12 +90,84 @@ class Renderer:
     def has_poppler(self, workdir):
         return self.sh(workdir, "command -v pdftotext >/dev/null && echo yes").stdout.strip() == "yes"
 
+    def bbox(self, workdir, pdf):
+        self.sh(workdir, "pdftotext -bbox-layout %s out.bbox.html && chmod a+rw out.bbox.html"
+                % pdf)
+        f = workdir / "out.bbox.html"
+        return f.read_text(encoding="utf-8") if f.is_file() else None
+
     def page_texts(self, workdir, pdf, pages):
         out = []
         for i in range(1, pages + 1):
             r = self.sh(workdir, "pdftotext -f %d -l %d -layout %s -" % (i, i, pdf))
             out.append(r.stdout)
         return out
+
+
+# ── Geometric audit ──────────────────────────────────────────────────────────
+
+XH = "{http://www.w3.org/1999/xhtml}"
+
+
+def _bbox_pages(xml_text):
+    root = ET.fromstring(xml_text)
+    out = []
+    for page in root.iter(XH + "page"):
+        pw, ph = float(page.get("width")), float(page.get("height"))
+        blocks = []
+        for block in page.iter(XH + "block"):
+            lines = []
+            for line in block.iter(XH + "line"):
+                ws = [w for w in line.iter(XH + "word") if (w.text or "").strip()]
+                if not ws:
+                    continue
+                lines.append(((min(float(w.get("xMin")) for w in ws),
+                               min(float(w.get("yMin")) for w in ws),
+                               max(float(w.get("xMax")) for w in ws),
+                               max(float(w.get("yMax")) for w in ws)),
+                              " ".join(w.text for w in ws)))
+            if lines:
+                blocks.append(lines)
+        out.append((pw, ph, blocks))
+    return out
+
+
+def collisions(xml_text, cross_tol=0.05, bunch_tol=0.70):
+    """Text that physically clashes on the page.
+
+    Plain box intersection is useless for CJK — Noto's em box is taller than a 100%
+    line, so stacked lines always overlap without a glyph touching. So compare only
+    ACROSS blocks, and within a block look for bunching against its own median pitch.
+    """
+    def area(b):
+        return max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
+
+    def inter(a, b):
+        return area((max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])))
+
+    found = []
+    for pi, (pw, ph, blocks) in enumerate(_bbox_pages(xml_text), 1):
+        for lines in blocks:
+            for box, text in lines:
+                if box[0] < -1 or box[1] < -1 or box[2] > pw + 1 or box[3] > ph + 1:
+                    found.append("p%d off-slide %r" % (pi, text[:24]))
+        for i in range(len(blocks)):
+            for j in range(i + 1, len(blocks)):
+                for b1, t1 in blocks[i]:
+                    for b2, t2 in blocks[j]:
+                        ov = inter(b1, b2)
+                        if ov > 0 and ov / max(1e-6, min(area(b1), area(b2))) > cross_tol:
+                            found.append("p%d %r × %r" % (pi, t1[:20], t2[:20]))
+        for lines in blocks:
+            if len(lines) < 3:
+                continue
+            tops = [b[1] for b, _ in lines]
+            pitches = [b - a for a, b in zip(tops, tops[1:])]
+            med = statistics.median(pitches)
+            for k, pitch in enumerate(pitches):
+                if med > 0 and pitch < med * bunch_tol:
+                    found.append("p%d bunched %r" % (pi, lines[k + 1][1][:20]))
+    return found
 
 
 def pdf_page_count(path):
@@ -149,6 +222,40 @@ text2:
 ## @s2
 text2: 02
 text3: 다음 분기
+"""
+
+STRESS = """---
+template: template.pptx
+output: stress.pptx
+---
+
+## @s3
+text1: 이 제목은 프레임이 감당할 수 있는 길이를 한참 넘어서도록 일부러 아주 길게 쓴 문장이며 두 줄 이상으로 흐를 것이 확실합니다
+text2:
+  - 첫 번째 항목입니다 이것도 한 줄에 들어가지 않을 만큼 길게 써서 줄바꿈을 유도합니다
+  - 두 번째 항목
+  - 세 번째 항목
+text4: 4200000000%
+text5: 스탯 패널 안에 들어가기에는 지나치게 긴 설명 문장을 넣어서 패널 밖으로 흘러나가게 만듭니다
+
+## @s4
+text1: 표 스트레스
+table1:
+  | 지표 | 이전 | 이후 |
+  | 행1 | 0 | 0 |
+  | 행2 | 0 | 0 |
+  | 행3 | 0 | 0 |
+  | 행4 | 0 | 0 |
+  | 행5 | 0 | 0 |
+  | 행6 | 0 | 0 |
+  | 행7 | 0 | 0 |
+  | 행8 | 0 | 0 |
+  | 행9 | 0 | 0 |
+  | 행10 | 0 | 0 |
+  | 행11 | 0 | 0 |
+  | 행12 | 0 | 0 |
+  | 행13 | 0 | 0 |
+  | 행14 | 0 | 0 |
 """
 
 STALE = ("Decktitlegoeshere", "Onelinethatsayswhy", "Pointoftheslide",
@@ -267,6 +374,28 @@ def run(work, r):
     check(norm("무엇이 문제였나") in norm(pages[1]) and norm("다음 분기") in norm(pages[5])
           and norm("다음 분기") not in norm(pages[1]),
           "one archetype used twice produced two independent slides")
+
+    print("nothing collides on the page")
+    bbox = r.bbox(work, "deck.pdf")
+    if bbox is None:
+        skip("geometric audit (pdftotext -bbox-layout unavailable)")
+        return
+    hits = collisions(bbox)
+    check(not hits, "no text collides or runs off a slide (%s)" % (hits or "clean"))
+
+    print("and the audit is not vacuous — a deck that overflows must fail it")
+    (work / "stress.mdx").write_text(STRESS, encoding="utf-8")
+    check(deck.main(["check", "--deck", str(work / "stress.mdx")]) == 1,
+          "check refuses a deck whose table runs off the slide")
+    deck.main(["build", "--deck", str(work / "stress.mdx")])
+    r.to_pdf(work, "stress.pptx")
+    sbox = r.bbox(work, "stress.pdf")
+    shits = collisions(sbox) if sbox else []
+    check(len(shits) >= 2,
+          "the same audit finds the deliberate overflow (%d hit(s))" % len(shits))
+    stext = r.page_texts(work, "stress.pdf", 2)
+    check(norm("행14") not in norm(stext[1]),
+          "rows past the slide edge really are lost — which is why check errors on them")
 
 
 def main():
