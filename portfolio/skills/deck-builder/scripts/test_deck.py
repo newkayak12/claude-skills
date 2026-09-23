@@ -469,11 +469,13 @@ def notes(tmp):
 def sizing(tmp):
     """A picture may not lose half of itself without saying so."""
     print("image sizing")
-    check(deck.parse_picture_value("a.png") == ("a.png", "fill", "center"),
+    check(deck.parse_picture_value("a.png") == ("a.png", "fill", "center", set()),
           "a bare path keeps the default")
     check(deck.parse_picture_value("a.png | fit")[1] == "fit", "| fit selects the mode")
     check(deck.parse_picture_value("a.png | fill top")[2] == "top", "an anchor can follow")
     check(deck.parse_picture_value("a.png | nope")[1] is None, "an unknown option is refused")
+    check(deck.parse_picture_value("a.png | fit transparent")[3] == {"transparent"},
+          "a flag rides alongside the mode")
 
     rect, lost = deck.crop_rect(0.75, 16 / 9)
     check(set(rect) == {"t", "b"} and 0.55 < lost < 0.60,
@@ -553,6 +555,52 @@ def color(tmp):
     deck._check_picture_color(tmp / "white.png", "@s2", "pic1", 3, warns, [], "FFFFFF")
     check(dark == 1 and len(warns) == 1,
           "a light image warns on a dark slide and not on a light one")
+
+    print("background knockout")
+    w, h = 120, 80
+    rows = [[(255, 255, 255, 255)] * w for _ in range(h)]
+    for y in range(20, 60):
+        for x in range(20, 100):
+            rows[y][x] = (16, 36, 63, 255)          # a navy block
+    for y in range(35, 45):
+        for x in range(40, 80):
+            rows[y][x] = (255, 255, 255, 255)       # white *inside* it
+    deck.write_png(tmp / "diagram.png", w, h, rows)
+
+    got = deck.read_png(tmp / "diagram.png")
+    check(got is not None and got[0] == w, "the png we wrote reads back")
+    out, frac, content = deck.knockout_background(got[2], w, h)
+    check(out[0][0][3] == 0, "the outside background is cleared")
+    check(out[40][60][3] == 255,
+          "white inside the diagram survives — the flood starts at the edges")
+    check(out[25][30][3] == 255, "the content itself is untouched")
+    check(0.3 < frac < 0.9, "a sensible fraction was removed: %.2f" % frac)
+    check(content is not None and deck.color_distance(content, "10243F") < 40,
+          "what survives is reported, for the visibility check: #%s" % content)
+
+    a, _ = deck.make_transparent(tmp / "diagram.png", tmp / ".kc")
+    b, _ = deck.make_transparent(tmp / "diagram.png", tmp / ".kc")
+    check(a == b and a.read_bytes()[:8] == deck.PNG_MAGIC,
+          "the knocked-out copy is cached and is a PNG")
+    shutil.rmtree(tmp / ".kc")
+    c, _ = deck.make_transparent(tmp / "diagram.png", tmp / ".kc")
+    check(c.read_bytes() == a.read_bytes(), "a cold cache reproduces the same bytes")
+
+    flat = tmp / "flat.png"
+    make_png(flat, 40, 30, (255, 255, 255))
+    none_, why = deck.make_transparent(flat, tmp / ".kc")
+    check(none_ is None and "nothing to look at" in why,
+          "an image that is nothing but background is refused, not emptied: %s" % why)
+
+    warns = []
+    deck._check_picture_color(tmp / "diagram.png", "@s6", "pic1", 3, warns, [], "10243F",
+                              {"transparent"})
+    check(len(warns) == 1 and "hard to see" in warns[0],
+          "dark content knocked onto a dark slide is called out")
+    warns = []
+    deck._check_picture_color(tmp / "diagram.png", "@s6", "pic1", 3, warns, [], "FFFFFF",
+                              {"transparent"})
+    check(not warns, "the same image on a light slide is fine")
 
     pkg = deck.Package(tmp / "template.pptx")
     bgs = [deck.slide_background(pkg, n) for n in deck.slide_order(pkg)]

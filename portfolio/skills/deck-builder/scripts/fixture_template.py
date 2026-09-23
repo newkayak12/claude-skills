@@ -3,7 +3,7 @@
 A TEST FIXTURE, not a fallback. deck.py never calls this and must never acquire a
 built-in template: a deck is built from the user's own reference pptx or not at all.
 It exists so the render round-trip has a designed deck to work on — brand colors, a
-type scale, five archetypes — without shipping a binary fixture in the repo.
+type scale, six archetypes — without shipping a binary fixture in the repo.
 
     python3 fixture_template.py out.pptx
 """
@@ -192,6 +192,17 @@ def build(out_path, image_bytes):
            [(0, "A point about the picture"), (0, "Another point")], color=INK, size=1600),
     ]))
 
+    # s6 — dark slide with a picture: the case where a white-backed image reads as a
+    # pasted box, and where `| transparent` has to prove itself.
+    slides.append(slide([
+        tx("Title", M, 700000, 7000000, 700000,
+           [(0, "Dark slide with a visual")], color="FFFFFF", size=2800, bold=1),
+        pic("Visual", "rId2", M, 1900000, 5600000, 3150000),
+        tx("Body", 6900000, 1900000, 4450000, 3150000,
+           [(0, "A point about the picture"), (0, "Another point")],
+           color="C7D3E2", size=1600),
+    ], bg=NAVY))
+
     parts = {
         "_rels/.rels": rels([("rId1", "officeDocument", "ppt/presentation.xml")]),
         "ppt/presentation.xml":
@@ -233,7 +244,7 @@ def build(out_path, image_bytes):
     for i, s in enumerate(slides, 1):
         parts["ppt/slides/slide%d.xml" % i] = s
         r = [("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml")]
-        if i == 5:
+        if i in (5, 6):
             r.append(("rId2", "image", "../media/image1.png"))
         parts["ppt/slides/_rels/slide%d.xml.rels" % i] = rels(r)
 

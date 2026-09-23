@@ -43,6 +43,7 @@ Engine: `scripts/deck.py` (invoke with an absolute path).
 - **Catalog before writing.** Never author `deck.mdx` from a guess about the template. Run `catalog` and write against the slot ids it prints.
 - **Never hand-edit the output pptx.** It is regenerated on the next build. Corrections go into `deck.mdx`.
 - **Run `check` before `build`, and show the user the warnings.** Overflow warnings are what stands between crowded text and a slide nobody can read.
+- **Visibility decides, not tidiness.** `| transparent` is right when the image's content stays legible against the slide; `check` says when it would not, and a panel behind the image is the better answer there. Don't reach for transparency because it sounds cleaner.
 - **Never crop away content without saying so.** `check` reports the percentage; repeat it to the user and offer `| fit`. A picture losing half of itself is the same defect as a table row falling off the slide.
 - **Never hand-author a picture slot's art as a binary.** Write the SVG so the deck stays reproducible from text. A PNG someone pasted in cannot be regenerated, re-colored, or reviewed in a diff.
 - **A deck is read by people, so look at it.** When a renderer is available, finish with `render`, not `build` — the layout audit and the page previews are the only place text collisions show up. If no renderer is available, say so plainly in the report instead of implying the layout was checked.
@@ -109,7 +110,8 @@ text5: !drop
 ```
 
 Pictures take a fit mode — `pic1: shot.png | fit` keeps the whole image, the default
-`fill` crops it to the frame. Slots you leave out keep the template's content. Full syntax — slot forms, `!drop`,
+`fill` crops it to the frame — and `| transparent` knocks a PNG's background out so a
+white-backed screenshot stops reading as a pasted box on a dark slide. Slots you leave out keep the template's content. Full syntax — slot forms, `!drop`,
 `notes:`, inline emphasis, outline levels, and what `template_hash` protects against —
 is in `references/mdx-syntax.md`. Read it before writing the first slide.
 
