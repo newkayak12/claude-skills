@@ -343,6 +343,11 @@ words. A picture drawn *after* the text it covers is an error rather than a warn
 end up behind the image. The render suite checks the prediction against the page: on a pale sky
 backdrop `check` reports `#D2E1F8` behind the title, and that is the color pdftoppm paints there.
 
+Underfill counts as a defect too. A frame drawn for four paragraphs holding one leaves a
+hole exactly where the rest would have been, and nothing used to say so — `check` only ever
+looked at too much. It now reports a slot holding less than about half the template's own
+volume, with the percentage, because frames never move and the gap is the author's to close.
+
 Capacity is measured in em rather than characters, because counting characters makes a Hangul
 line look 1.8x shorter than it is and lets an overflowing title through. The template
 calibrates it: most slots hold text that already wraps by design, so an absolute width is

@@ -142,7 +142,9 @@ python3 /abs/path/scripts/deck.py check --deck deck.mdx
 
 Errors (unknown archetype, unknown slot, missing image, wrong value shape, a table taller
 than the slide, a moved template) must be fixed. Warnings are judgment calls — surface
-them: text too wide for a slot the template keeps to one line (measured in em, so a Hangul
+them: a slot holding far less than the template puts there — the frame was drawn for that
+much and the slide opens a hole where the rest was, which is the same defect as overflow
+seen from the other side — text too wide for a slot the template keeps to one line (measured in em, so a Hangul
 line is not counted as if it were Latin), text far longer than the template's own, more list
 items than the template shows, untouched slots
 still holding template copy, and for every picture how much `fill` would crop away, whether
