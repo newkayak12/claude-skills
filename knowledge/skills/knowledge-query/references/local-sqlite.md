@@ -110,7 +110,7 @@ node --no-warnings knowledge/scripts/sqlite-knowledge.mjs search "출고 취소 
 - Reranking runs **before** the result window is built, so relation-participant promotion still decides retrievability on the order a reader sees.
 - A failing endpoint falls back to fused order and sets `rerank_error`. Search keeps working, but a run scored with a reranker is not comparable to one without — `eval` records the reranker in its output for that reason.
 
-**Before attaching one, measure its ceiling.** A reranker can only reorder what retrieval already returned, so its maximum possible gain is `recall@50 − recall@10`. Run `eval --k 10` and `eval --k 50` on the same index: if the required notes missing at k=10 are also missing at k=50, a reranker cannot recover them and the gap is a retrieval or catalog problem, not a ranking one.
+**Before attaching one, measure its ceiling.** A reranker can only reorder what retrieval already returned, so its maximum possible gain is `recall@50 − recall@10` — except for relation participants, which a reranker can pull in from any depth by lifting their relation note into the top eight. Run `eval --k 10` and `eval --k 50` on the same index: if the required notes missing at k=10 are also missing at k=50, a reranker cannot recover them and the gap is a retrieval or catalog problem, not a ranking one.
 
 ## CLI
 

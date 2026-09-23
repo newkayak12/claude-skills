@@ -99,8 +99,8 @@ Run this when eval reports missed questions. It is a measurement loop, not an ed
 danger is not a failed question, it is a fix that scores well because it was tuned against the
 same questions used to judge it.
 
-1. **Split before touching anything.** `eval --split holdout` scores the reserved third of the
-   question set; `--split dev` scores the rest. Buckets are derived from each question id, so
+1. **Split before touching anything.** `eval --split holdout` scores the reserved share of the
+   question set (35% by default, `--holdout`); `--split dev` scores the rest. Buckets are derived from each question id, so
    they are stable across runs and cannot drift while vocabulary is being edited. Repair against
    `dev` only, and record the holdout number first — a holdout measured after the repair proves
    nothing.
@@ -124,7 +124,9 @@ same questions used to judge it.
    re-indexing, comparing each against the first weight per question. Judge a sweep on the whole
    question set, not on the label questions that motivated it, and treat `decisive: false` as a
    tie — adopting a winner that cannot be separated from the reference is how a guess becomes a
-   default.
+   default. `decisive` needs the winner's per-question moves to pass a paired sign test
+   (`p_value` < 0.05), and even then the winner was picked on the same questions: confirm it on
+   the holdout before changing a default.
 
 ```bash
 node --no-warnings "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval \
@@ -137,7 +139,12 @@ node --no-warnings "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval \
   --root /path/to/vault --split dev --k 10 --sweep 0.3,0.4,0.5
 ```
 
-The `baseline` block reports `improvements`, `regressions`, and a `verdict`. **Revert on any
+The `baseline` block reports `improvements`, `regressions`, and a `verdict`. A multi-note
+question that retrieves fewer required notes than before is a regression even while it still
+fails (`found_before` / `found_after`). `verdict: incomparable` means the baseline was scored at a
+different `k`, split, or holdout ratio — re-score the baseline under the same conditions rather
+than reading the moves; `differences` names provider, fusion, and reranker changes, which are
+comparable experiments. **Revert on any
 regression**, even when `recall_at_k` rose. Competency sets are small enough that one question
 moves recall by several points, so an aggregate gain routinely hides a question that stopped
 working; `regressions` names it. This rule scopes to vocabulary and catalog edits at a fixed engine and provider, where a
@@ -148,7 +155,9 @@ regressions rather than reverting on their existence. Only after `dev` is stable
 report that plainly instead of citing the dev gain.
 
 6. **Measure a reranker's ceiling before attaching one.** A cross-encoder can only reorder what
-   retrieval already returned, so its maximum gain is `recall@50 − recall@10`. Score `eval --k 10`
+   retrieval already returned, so its maximum gain is `recall@50 − recall@10` for every note that is not a relation
+   participant (a reranker that lifts a relation note into the top eight also appends its sides
+   from any depth). Score `eval --k 10`
    and `eval --k 50` on the same index: required notes missing at both depths are a retrieval or
    catalog problem that no reranker can fix. When the headroom is real and the user has an
    endpoint, pass `--reranker-url` and re-score — and record in the report that the run had a
