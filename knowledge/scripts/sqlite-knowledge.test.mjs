@@ -274,6 +274,31 @@ test('embeds a note past the model context in overlapping windows instead of dro
   assert.ok(found.results.every((item) => item.semantic_score === null || Number.isFinite(item.semantic_score)));
 }));
 
+test('gives every window of a long note the document prompt and title, not just the first', async () => fixture(async (root) => {
+  // The prompt was glued on before splitting, so windows two onward reached the
+  // model as bare text with no title — and were pooled with the prompted one.
+  const inputs = [];
+  const ollama = await rerankerStub((body) => {
+    inputs.push(...body.input);
+    return { status: 200, body: { embeddings: body.input.map(() => [1, 0, 0, 0]) } };
+  });
+  try {
+    write(join(root, 'notes', 'long.md'), `# 장기 보관 정책\n\n${'재고 실사 절차 문단. '.repeat(200)}\n`);
+    write(join(root, '_knowledge', 'catalog.jsonl'), jsonl([
+      { id: 'long-policy', path: 'notes/long.md', title: '장기 보관 정책' },
+    ]));
+    const built = await buildIndex(root, { provider: 'ollama', model: 'embeddinggemma', ollamaUrl: ollama.url, embedChars: 400 });
+    assert.ok(built.documents_windowed >= 1);
+    assert.ok(inputs.length > 1);
+    for (const input of inputs) {
+      assert.ok(input.startsWith('title: 장기 보관 정책 | text: '), JSON.stringify(input.slice(0, 40)));
+      assert.ok(input.length <= 400, `window of ${input.length} chars exceeds the budget`);
+    }
+  } finally {
+    await ollama.close();
+  }
+}));
+
 test('encodes questions and passages with the prompts the model was trained on', async () => fixture(async (root) => {
   const prompt = embeddingPrompt('ollama', 'embeddinggemma:300m');
   assert.equal(prompt.id, 'embeddinggemma-v1');

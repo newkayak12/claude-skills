@@ -694,12 +694,17 @@ async function buildIndex(inputRoot, options = {}) {
   }
   const prompt = embeddingPrompt(provider, model);
   const contextChars = embeddingContextChars(provider, model, options.embedChars ?? null);
+  // With a prompt, the body is windowed first and every window is wrapped:
+  // the model expects `title: … | text: …` on each input, and a window sent as
+  // bare text would be encoded as something else and pooled with the rest.
   const windows = data.documents.map((document) => {
+    if (!prompt) {
+      return textWindows([document.title, document.section, document.text].filter(Boolean).join('\n'), contextChars);
+    }
     const body = [document.section, document.text].filter(Boolean).join('\n');
-    const text = prompt
-      ? prompt.document(document.title, body)
-      : [document.title, document.section, document.text].filter(Boolean).join('\n');
-    return textWindows(text, contextChars);
+    const wrapperChars = prompt.document(document.title, '').length;
+    const budget = contextChars ? Math.max(1, contextChars - wrapperChars) : contextChars;
+    return textWindows(body, budget).map((window) => prompt.document(document.title, window));
   });
   // The hash covers the exact text that was embedded, prompt prefix included, so
   // a document whose title, section, or body changed misses the cache and is
