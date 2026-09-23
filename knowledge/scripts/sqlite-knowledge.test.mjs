@@ -609,6 +609,37 @@ test('calls a run regressed when any question loses ground against a baseline', 
   assert.equal(regressed.baseline.unmatched, 0);
 }));
 
+test('sees a multi-note question lose or gain a required note it still fails', async () => fixture(async (root) => {
+  // Hit and first rank cannot move while a question that needs four notes goes
+  // from three retrieved to two — and those are the questions that score worst.
+  seed(root);
+  write(join(root, '_knowledge', 'questions.jsonl'), jsonl([
+    { id: 'payment-sides', question: '결제 승인 재시도', required_note_ids: ['payments', 'shipping', 'not-written-yet'] },
+  ]));
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+  const now = await evalQuestions(root, { k: 1 });
+  const question = now.questions[0];
+  assert.equal(question.hit, false);
+  const found = question.required_notes.filter((item) => item.rank !== null).length;
+  const baselinePath = join(root, 'baseline.json');
+
+  const better = structuredClone(now);
+  better.questions[0].required_notes = question.required_notes
+    .map((item) => (item.rank === null && item.note_id === 'shipping' ? { ...item, rank: 1 } : item));
+  writeFileSync(baselinePath, JSON.stringify(better));
+  const lost = await evalQuestions(root, { k: 1, baseline: baselinePath });
+  assert.equal(lost.baseline.verdict, 'regressed');
+  assert.equal(lost.baseline.regressions[0].found_before, found + 1);
+  assert.equal(lost.baseline.regressions[0].found_after, found);
+
+  const worse = structuredClone(now);
+  worse.questions[0].required_notes = question.required_notes.map((item) => ({ ...item, rank: null }));
+  worse.questions[0].first_rank = question.first_rank;
+  writeFileSync(baselinePath, JSON.stringify(worse));
+  const gained = await evalQuestions(root, { k: 1, baseline: baselinePath });
+  assert.equal(gained.baseline.verdict, 'improved');
+}));
+
 test('bounds the eval depth and requires a declared question set', async () => fixture(async (root) => {
   assert.equal(parseArgs(['eval', '--k', '3']).k, 3);
   assert.throws(() => parseArgs(['eval', '--k', '99']), /--k/);
