@@ -90,8 +90,8 @@ def _rels(items):
             'relationships">%s</Relationships>' % body)
 
 
-def make_png(path, w, h):
-    raw = b"".join(b"\x00" + bytes((30, 120, 220)) * w for _ in range(h))
+def make_png(path, w, h, rgb=(30, 120, 220)):
+    raw = b"".join(b"\x00" + bytes(rgb) * w for _ in range(h))
 
     def chunk(tag, data):
         c = tag + data
@@ -466,6 +466,108 @@ def notes(tmp):
     check(integrity(tmp / "notes.pptx") == [], "notes keep the package valid")
 
 
+def sizing(tmp):
+    """A picture may not lose half of itself without saying so."""
+    print("image sizing")
+    check(deck.parse_picture_value("a.png") == ("a.png", "fill", "center"),
+          "a bare path keeps the default")
+    check(deck.parse_picture_value("a.png | fit")[1] == "fit", "| fit selects the mode")
+    check(deck.parse_picture_value("a.png | fill top")[2] == "top", "an anchor can follow")
+    check(deck.parse_picture_value("a.png | nope")[1] is None, "an unknown option is refused")
+
+    rect, lost = deck.crop_rect(0.75, 16 / 9)
+    check(set(rect) == {"t", "b"} and 0.55 < lost < 0.60,
+          "a portrait in a 16:9 frame loses ~58%%, measured: %.2f" % lost)
+    rect, _ = deck.crop_rect(0.75, 16 / 9, "top")
+    check(set(rect) == {"b"}, "anchoring top trims only the bottom")
+    check(deck.crop_rect(16 / 9, 16 / 9)[0] is None, "a matching aspect is not cropped")
+
+    off, ext = deck.fit_frame((100, 200), (1600, 900), 0.75)
+    check(ext == (675, 900) and off[1] == 200, "fit shrinks width, keeps the box's height")
+    check(off[0] == 100 + (1600 - 675) // 2, "and centres what is left")
+
+    make_png(tmp / "portrait.png", 300, 400)
+    make_png(tmp / "wide.png", 1600, 900)
+    (tmp / "size.mdx").write_text(
+        "---\ntemplate: template.pptx\noutput: size.pptx\n---\n\n"
+        "## @s2\npic1: portrait.png\n\n"
+        "## @s2\npic1: portrait.png | fit\n\n"
+        "## @s2\npic1: portrait.png | bogus\n", encoding="utf-8")
+    rc = deck.main(["check", "--deck", str(tmp / "size.mdx")])
+    check(rc == 1, "a bogus picture option is an error")
+
+    (tmp / "size.mdx").write_text(
+        "---\ntemplate: template.pptx\noutput: size.pptx\n---\n\n"
+        "## @s2\npic1: portrait.png\n\n"
+        "## @s2\npic1: portrait.png | fit\n", encoding="utf-8")
+    deck.main(["build", "--deck", str(tmp / "size.mdx")])
+    with zipfile.ZipFile(tmp / "size.pptx") as z:
+        a = z.read("ppt/slides/slide1.xml").decode()
+        b = z.read("ppt/slides/slide2.xml").decode()
+    check("<a:srcRect" in a, "fill writes a crop")
+    check("<a:srcRect" not in b, "fit writes no crop")
+    pa = ET.fromstring(a).find(".//" + P + "pic/" + P + "spPr/" + A + "xfrm/" + A + "ext")
+    pb = ET.fromstring(b).find(".//" + P + "pic/" + P + "spPr/" + A + "xfrm/" + A + "ext")
+    check(pa.attrib != pb.attrib, "fit resized the frame, fill did not: %s vs %s"
+          % (pa.attrib, pb.attrib))
+    check(abs(int(pb.get("cx")) / int(pb.get("cy")) - 0.75) < 0.01,
+          "the fitted frame carries the image's own shape")
+
+    check(round(deck.effective_dpi(300, 441 * 12700)) == 49,
+          "effective dpi is measured against the frame, not the file")
+
+
+def color(tmp):
+    """Two ways a picture clashes: off-palette, or a pasted box."""
+    print("image color")
+    (tmp / "art.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="225" '
+        'viewBox="0 0 400 225"><rect fill="#10243F"/><rect fill="#ff00aa"/>'
+        '<text fill="#abc">x</text></svg>', encoding="utf-8")
+    cols = deck.svg_colors(tmp / "art.svg")
+    check(cols == ["10243F", "FF00AA", "AABBCC"],
+          "every hex is found and shorthand expanded, got %s" % cols)
+
+    check(deck.color_distance("FFFFFF", "10243F") > 60, "white and navy are far apart")
+    check(deck.color_distance("10243F", "11253F") < 5, "near-identical navies are close")
+
+    warns = []
+    deck._check_picture_color(tmp / "art.svg", "@s1", "pic1", 3, warns, ["10243F"], None)
+    strays = warns[0].split("use:")[1] if warns else ""
+    check(len(warns) == 1 and "#FF00AA (" in strays and "#AABBCC (" in strays
+          and "#10243F (" not in strays,
+          "the off-palette colors are listed and the on-palette one is not: %s" % strays.strip())
+    warns = []
+    (tmp / "clean.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="225" '
+        'viewBox="0 0 400 225"><rect fill="#10243F"/></svg>', encoding="utf-8")
+    deck._check_picture_color(tmp / "clean.svg", "@s1", "pic1", 3, warns, ["10243F"], None)
+    check(not warns, "art written entirely in the template's colors says nothing")
+
+    make_png(tmp / "white.png", 60, 40, (255, 255, 255))
+    edge = deck.png_edge(tmp / "white.png")
+    check(edge is not None and edge[1] == 0.0, "an opaque png reports an opaque border")
+    warns = []
+    deck._check_picture_color(tmp / "white.png", "@s1", "pic1", 3, warns, [], "10243F")
+    dark = len(warns)
+    deck._check_picture_color(tmp / "white.png", "@s2", "pic1", 3, warns, [], "FFFFFF")
+    check(dark == 1 and len(warns) == 1,
+          "a light image warns on a dark slide and not on a light one")
+
+    pkg = deck.Package(tmp / "template.pptx")
+    bgs = [deck.slide_background(pkg, n) for n in deck.slide_order(pkg)]
+    check(all(b is None for b in bgs),
+          "a template that declares no background reports none rather than guessing: %s" % bgs)
+
+    import fixture_template
+    fixture_template.build(tmp / "designed.pptx", fixture_template.placeholder_png(8, 8, (0, 0, 0)))
+    fx = deck.Package(tmp / "designed.pptx")
+    fbgs = [deck.slide_background(fx, n) for n in deck.slide_order(fx)]
+    check(fbgs[0] == "10243F", "a slide's own background wins, got %s" % fbgs[0])
+    check(fbgs[1] == "FFFFFF",
+          "a slide without one inherits the master's through the layout, got %s" % fbgs[1])
+
+
 def svg_assets(tmp):
     """Generated art is source too: an .svg in a picture slot, rasterized at build."""
     print("svg assets")
@@ -587,6 +689,8 @@ def main():
     try:
         run(tmp)
         geometry(tmp)
+        sizing(tmp)
+        color(tmp)
         emphasis(tmp)
         drift(tmp)
         notes(tmp)

@@ -47,6 +47,7 @@ text5: !drop
 | `key:` + indented `\| a \| b \|` lines | table rows; the first fills the header when the template has one |
 | `key:` + indented plain lines | multi-line text, one paragraph per line |
 | `key: path/to.png` | picture slot; relative paths resolve from `deck.mdx` |
+| `key: path/to.png \| fit` | how the image meets the frame — see below |
 | `key: path/to.svg` | same, rasterized at build time and cached in `.deckcache/` |
 | `key: !drop` | delete that shape from the slide |
 | `notes:` | speaker notes; reserved, works on any archetype |
@@ -64,3 +65,28 @@ unmatched marker stays literal text.
 Indenting a list item two extra spaces writes it at outline level 1. It only *looks*
 nested if the template defines an indent for that level; the level is set correctly
 either way.
+
+## How an image meets its frame
+
+| Mode | What it does | When |
+|---|---|---|
+| `fill` (default) | scales to cover the frame and crops the overflow, centred | photos, backgrounds — anything whose edges carry no meaning |
+| `fit` | shrinks the frame to the image's own shape, centred in the box the template drew | diagrams, screenshots, charts, logos — where cropping destroys the point |
+| `stretch` | fills the frame exactly, distorting | almost never; say it out loud when you use it |
+
+`fill` takes an anchor: `| fill top`, `bottom`, `left`, `right`. A screenshot whose
+content sits at the top survives `| fill top` where a centred crop would behead it.
+
+A crop discards content, so `check` warns whenever `fill` would throw away 10% or more,
+with the number, and the build repeats it. The engine does not lose content quietly —
+the same rule that makes an over-long table an error.
+
+## What `check` says about a picture
+
+| Warning | Why |
+|---|---|
+| crops N% of the image away | `fill` on a mismatched aspect; use `fit` or an anchor |
+| Npx across an Mpt frame (D dpi) | below ~110 dpi it looks soft on a projector |
+| D dpi, N KB | above ~400 dpi nothing more reaches the screen; it is file size only |
+| paints with colors the template does not use | generated art drifting off the reference's palette |
+| has a #X border on a #Y slide | the image will read as a pasted box; match the background or make it transparent |

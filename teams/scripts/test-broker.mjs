@@ -2052,6 +2052,8 @@ async function toGoalGate(c, cwd, runId, subgoalPct = 95) {
     await c.call('team_submit', { run_id: runId, cwd, node_id: `test:${sg}:1`, payload: ok({ verified: true }) });
     await c.call('team_submit', { run_id: runId, cwd, node_id: `gate:${sg}:1`, payload: ok({ accept: true, match_pct: subgoalPct }) });
   }
+  // This spec has two subgoals, so `reduce` sits between their gates and the goal gate.
+  await c.call('team_submit', { run_id: runId, cwd, node_id: 'reduce', payload: ok({ handoff: 'set folded' }) });
   const nx = await c.call('team_next', { run_id: runId, cwd });
   return nx.ready.find((n) => n.node_id.startsWith('gate:goal')).node_id;
 }
