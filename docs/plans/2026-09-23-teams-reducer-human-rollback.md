@@ -139,7 +139,7 @@ C 유형(목표 기준 모순/검증 불가)은 그래서 회차마다 **새로 
 
 | # | 차이 | 상태 | 태스크 |
 |---|---|---|---|
-| **D1** | **reducer** — `foldChild`/`integrate`는 있고 런 안 병렬 층은 규약. `idol-plan-2` 실런이 findings 파일명 5종을 제각각 낸 것이 증거 | **✅ 0.27.0** | Task 1 완료 / Task 2(경로 고정) 남음 |
+| **D1** | **reducer** — `foldChild`/`integrate`는 있고 런 안 병렬 층은 규약. `idol-plan-2` 실런이 findings 파일명 5종을 제각각 낸 것이 증거 | **✅ 0.27.0 / 0.27.1** | Task 1·2 완료 |
 | **D2** | **time travel** — `waiting_human`이 설계만 있고 미구현, 롤백 개념 없음 | **1단계 ✅ 0.27.3** — 사람이 카드를 가져간다(`tm_assign`·`assignee:"human"` 핀, `waiting_human`, `tm_inbox`, `tm_submit({key})`). 남음: `ask`/`gate:human`, 롤백 | Task 3, 4, 5 |
 | **D3** | **멱등성** — 재시도가 at-least-once인데 멱등 키가 없고, "다시 하면 같은 자리에 얹힌다"는 가정으로 때우고 있다 | TODO (부분 완화만 이 계획에서) | Task 2가 경로 고정으로 한 구멍을 막는다. 멱등 키 자체는 범위 밖 |
 

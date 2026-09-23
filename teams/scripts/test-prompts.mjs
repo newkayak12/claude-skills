@@ -326,6 +326,26 @@ test('investigate contract demands sourced findings, separates them from unknown
   }
 });
 
+test('the findings path is derived from the subgoal path, not chosen by the investigator', () => {
+  const cwd = tmpProject();
+  try {
+    // Five sibling investigators naming their own files produced five conventions and an
+    // orphan (idol-plan-2, 2026-09-23). The rule is fixed in the contract so that siblings and
+    // later attempts land on one path, which is also what lets reduce tell an expected file
+    // from an undeclared one.
+    const prompt = composePrompt(baseRun(cwd), baseNode({ stage: 'investigate' }), baseBriefing());
+    assert.match(prompt, /that path is derived, not chosen/);
+    assert.match(prompt, /drop its extension, and append/);
+    assert.match(prompt, /docs\/policy-findings\.md/);
+
+    const red = composePrompt(baseRun(cwd), baseNode({ stage: 'reduce' }), baseBriefing());
+    assert.match(red, /One file is expected without being declared/);
+    assert.match(red, /a findings file under any OTHER name is/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('the planning draft is told to write from investigate findings and to carry its unknowns rather than answer them', () => {
   const cwd = tmpProject();
   try {
