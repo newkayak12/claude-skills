@@ -355,10 +355,26 @@ Known limits, reported explicitly rather than hidden:
 | **Charts are not writable** | Series values live in an embedded xlsx plus cached XML. `catalog` lists chart slots; `build` leaves them at template values. |
 | **Capacity is an estimate** | Overflow warnings come from frame width ÷ font size, not real text metrics — a prompt to look, not a verdict. |
 | **Formatting follows the template** | A replaced run inherits the template run's font, size and color; per-word emphasis is not expressible in `deck.mdx`. |
+| **Nesting shows only if the template indents** | A nested item is written at outline level 1; a template that defines no level-1 indent renders it flush. |
 | **Speaker notes are dropped** | Notes slides are not carried into the build. |
 
-Tests: `python3 portfolio/skills/deck-builder/scripts/test_deck.py` — builds its own minimal pptx,
-so it needs no fixture file.
+Two test suites, neither needing a fixture file in the repo:
+
+```bash
+# unit — package structure, parsing, slot writing. Builds its own minimal pptx.
+python3 portfolio/skills/deck-builder/scripts/test_deck.py
+
+# render round-trip — mdx -> pptx -> PDF, checked against all three. Needs a renderer:
+# soffice on PATH, or DECK_RENDER_DOCKER=<image with soffice>. Skips cleanly without one.
+python3 portfolio/skills/deck-builder/scripts/test_render.py
+```
+
+The render suite authors a designed five-archetype template (`fixture_template.py`), builds a
+six-slide Korean deck from it, exports a PDF, and then checks that every value in the `.mdx`
+reaches both the pptx and the PDF, that no template placeholder copy leaked through, that the
+brand colors and decorative shapes survived, and that a picture wider than its frame was cropped
+rather than stretched. `fixture_template.py` is a test fixture, never a fallback — the engine has
+no built-in template and must not acquire one.
 
 ### `ppt-keycolor-changer`
 

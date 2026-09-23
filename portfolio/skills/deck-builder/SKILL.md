@@ -42,6 +42,7 @@ Engine: `scripts/deck.py` (invoke with an absolute path).
 - **Never hand-edit the output pptx.** It is regenerated on the next build. Corrections go into `deck.mdx`.
 - **Run `check` before `build`, and show the user the warnings.** Overflow warnings are the only signal that text will spill — there is no renderer to see it.
 - **Never invent an archetype.** If no template slide fits the content, say so and ask whether to reshape the content or extend the template — do not approximate.
+- **Report the warnings you chose to ignore.** An overflow warning you decided was fine still belongs in the final report — the user is the one who will see the slide.
 - **Charts are read-only.** Say this out loud when the chosen archetype has one; the template's numbers ship unless the user edits the chart in PowerPoint.
 
 ---
@@ -180,6 +181,7 @@ Report after a build:
 | **No new layouts** | Output slides are clones of template slides. Content with no matching archetype needs the template extended in PowerPoint first. |
 | **Charts are not writable** | Series values live in an embedded xlsx plus cached XML. `catalog` lists chart slots; `build` leaves them at template values. |
 | **Capacity is an estimate** | Overflow warnings come from frame width ÷ font size, not real text metrics. Treat them as a prompt to look, not a verdict. |
+| **Nesting is only as visible as the template makes it** | A nested item is written at outline level 1. If the template's own body text defines no indent for level 1, it renders flush with the rest — the level is correct, the template just doesn't show it. |
 | **Formatting follows the template** | A replaced run inherits the template run's font, size and color. Per-word bold or color inside a slot is not expressible in `deck.mdx`. |
 | **Speaker notes are dropped** | Notes slides are not carried into the build. |
 | **Autofit is not recalculated** | PowerPoint reflows shrink-to-fit text when the file is opened, so the on-screen result can differ slightly from the capacity estimate. |
