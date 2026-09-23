@@ -3366,6 +3366,24 @@ test('implements[] must be an ownership claim: not empty, and not all of them', 
   assert.deepEqual(validateShape({ ...base, packages: [pkg('P1', []), pkg('P2', [])] }, null), []);
 });
 
+// Rule one asks for a package that owns the composition root; the coverage check then refused
+// it for delivering no story. idol-pm-4 (2026-09-23): shape pinned US-7 on its foundation to
+// pass, and shape:2, which did not, was rejected for P1 and P7 having no story.
+test('a foundation package names the stories it enables instead of claiming one', async () => {
+  const { validateShape, CONTRACT } = await import('../mcp/taskmanager.mjs');
+  assert.match(CONTRACT.shape, /"enables"/);
+  assert.match(CONTRACT.shape, /never claim a story in implements\[\] to get it past coverage/);
+  const stories = [{ id: 'US-1', title: 'a', acceptance: ['x'] }, { id: 'US-2', title: 'b', acceptance: ['y'] }];
+  const pkg = (id, impl, enables) => ({ id, title: id, brief: 'b', acceptance: ['a'], implements: impl, enables, deps: [] });
+  const base = { acceptance: ['the integrated app boots'] };
+  assert.deepEqual(validateShape({ ...base, packages: [pkg('P0', [], ['US-1', 'US-2']), pkg('P1', ['US-1']), pkg('P2', ['US-2'])] }, stories), [],
+    'enabling every story is what a composition root does, and is not claiming them all');
+  const bogus = validateShape({ ...base, packages: [pkg('P0', [], ['US-9']), pkg('P1', ['US-1']), pkg('P2', ['US-2'])] }, stories);
+  assert.equal(bogus.filter((x) => /P0 implements no user story/.test(x)).length, 1, 'enables[] must name real stories');
+  const only = validateShape({ ...base, packages: [pkg('P0', [], ['US-1', 'US-2']), pkg('P1', [])] }, stories);
+  assert.match(only.join('; '), /user stories not implemented by any package: US-1, US-2/, 'enabling is not delivering');
+});
+
 // The three rules critique refused four real shapes over. A bar a judge enforces and the
 // contract never states is a test with an unpublished syllabus.
 test('the shape contract states the rules critique refuses shapes over', async () => {
