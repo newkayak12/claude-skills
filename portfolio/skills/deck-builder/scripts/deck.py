@@ -684,11 +684,12 @@ def image_size(path):
 
 FIT_MODES = ("fill", "fit", "stretch")
 ANCHORS = ("center", "top", "bottom", "left", "right")
+FLAGS = ("transparent",)
 
 
 def parse_picture_value(value):
-    """`path/to.png | fit` -> (path, mode, anchor). Bare paths keep the default."""
-    path, mode, anchor = value, "fill", "center"
+    """`path.png | fit transparent` -> (path, mode, anchor, flags)."""
+    path, mode, anchor, flags = value, "fill", "center", set()
     if "|" in value:
         path, _, opts = value.rpartition("|")
         path = path.strip()
@@ -698,9 +699,11 @@ def parse_picture_value(value):
                 mode = word
             elif word in ANCHORS:
                 anchor = word
+            elif word in FLAGS:
+                flags.add(word)
             else:
-                return value.strip(), None, word   # unknown: caller reports it
-    return path.strip(), mode, anchor
+                return value.strip(), None, word, flags   # unknown: caller reports it
+    return path.strip(), mode, anchor, flags
 
 
 def crop_rect(src_ratio, frame_ratio, anchor="center"):
@@ -912,6 +915,114 @@ def png_edge(path):
     top = buckets[max(buckets, key=lambda k: len(buckets[k]))]
     avg = tuple(round(sum(c[i] for c in top) / len(top)) for i in range(3))
     return "%02X%02X%02X" % avg, clear / len(edge)
+
+
+def write_png(path, w, h, rows):
+    """RGBA PNG, unfiltered scanlines. Deterministic: same pixels, same bytes."""
+    raw = bytearray()
+    for row in rows:
+        raw.append(0)
+        for r, g, b, a in row:
+            raw += bytes((r, g, b, a))
+
+    def chunk(tag, body):
+        c = tag + body
+        return struct.pack(">I", len(body)) + c + struct.pack(">I", zlib.crc32(c))
+
+    Path(path).write_bytes(
+        PNG_MAGIC
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(bytes(raw), 9))
+        + chunk(b"IEND", b""))
+
+
+def knockout_background(rows, w, h, tol=14.0):
+    """Flood the border colour away from the edges inward, leaving alpha 0 behind.
+
+    Flooding from the edges rather than replacing every matching pixel is the whole
+    point: a diagram full of white boxes keeps them, and only the background that
+    actually touches the outside is removed.
+    """
+    corners = [rows[0][0], rows[0][-1], rows[-1][0], rows[-1][-1]]
+    opaque = [c for c in corners if c[3] >= 16]
+    if not opaque:
+        return rows, 0.0, None
+    base = tuple(round(sum(c[i] for c in opaque) / len(opaque)) for i in range(3))
+    base_hex = "%02X%02X%02X" % base
+
+    def matches(px):
+        return px[3] >= 16 and color_distance("%02X%02X%02X" % px[:3], base_hex) <= tol
+
+    out = [list(r) for r in rows]
+    seen = bytearray(w * h)
+    stack = []
+    for x in range(w):
+        stack.append((x, 0))
+        stack.append((x, h - 1))
+    for y in range(h):
+        stack.append((0, y))
+        stack.append((w - 1, y))
+    removed = 0
+    while stack:
+        x, y = stack.pop()
+        if x < 0 or y < 0 or x >= w or y >= h:
+            continue
+        i = y * w + x
+        if seen[i]:
+            continue
+        seen[i] = 1
+        if not matches(out[y][x]):
+            continue
+        r, g, b, _ = out[y][x]
+        out[y][x] = (r, g, b, 0)
+        removed += 1
+        stack.append((x + 1, y))
+        stack.append((x - 1, y))
+        stack.append((x, y + 1))
+        stack.append((x, y - 1))
+
+    kept = [px for row in out for px in row if px[3] >= 16]
+    content = None
+    if kept:
+        content = "%02X%02X%02X" % tuple(
+            round(sum(px[i] for px in kept) / len(kept)) for i in range(3))
+    return out, removed / (w * h), content
+
+
+def analyse_knockout(path, tol=14.0):
+    """(border hex, transparent fraction, mean colour of what survives) without writing."""
+    got = read_png(path)
+    if not got:
+        return None
+    w, h, rows = got
+    edge = png_edge(path)
+    out, frac, content = knockout_background(rows, w, h, tol)
+    return (edge[0] if edge else None), frac, content
+
+
+def make_transparent(src, cache_dir, tol=14.0):
+    """Write a knocked-out copy into the cache; same source, same bytes, every time."""
+    data = Path(src).read_bytes()
+    key = hashlib.sha256(data + b"|knockout|%.1f" % tol).hexdigest()[:16]
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    out = cache_dir / ("%s.png" % key)
+    if out.is_file():
+        return out, None
+    got = read_png(src)
+    if not got:
+        return None, ("%s could not be decoded, so its background cannot be removed — "
+                      "transparency needs a plain (non-interlaced) PNG" % Path(src).name)
+    w, h, rows = got
+    rows, frac, content = knockout_background(rows, w, h, tol)
+    if frac < 0.01:
+        return None, ("%s has no uniform border to remove — its edges are already varied "
+                      "or transparent" % Path(src).name)
+    if frac > 0.98:
+        return None, ("%s is background nearly all the way through — knocking it out "
+                      "would leave %.0f%% of the image, which is nothing to look at"
+                      % (Path(src).name, (1 - frac) * 100))
+    write_png(out, w, h, rows)
+    return out, None
 
 
 def slide_background(pkg, slide_part):
@@ -1451,7 +1562,7 @@ def effective_dpi(px, emu):
 
 
 def _swap_picture(el, raw_value, imgctx, problems, where, slot):
-    path, mode, anchor = parse_picture_value(raw_value)
+    path, mode, anchor, flags = parse_picture_value(raw_value)
     if mode is None:
         problems.append("%s: slot '%s' — unknown picture option %r. Use one of %s, "
                         "optionally with %s." % (where, slot.id, anchor,
@@ -1475,6 +1586,18 @@ def _swap_picture(el, raw_value, imgctx, problems, where, slot):
             problems.append("%s: the renderer did not return a PNG for %s"
                             % (where, slot.id))
             return
+    if "transparent" in flags:
+        if src.suffix.lower() != ".png":
+            problems.append("%s: slot '%s' — `transparent` needs a PNG; %s cannot be "
+                            "decoded here. Convert it first."
+                            % (where, slot.id, src.name))
+            return
+        knocked, why = make_transparent(src, imgctx["cache"])
+        if knocked is None:
+            problems.append("%s: slot '%s' — %s" % (where, slot.id, why))
+        else:
+            src = knocked
+            imgctx["knocked"] += 1
     ext = src.suffix.lower()
     if ext in VECTOR_EXT:
         problems.append("%s: %s is a vector file, and a deck has to look the same in "
@@ -1573,7 +1696,7 @@ def cmd_build(args):
     imgctx = {"pkg": pkg, "base": md_path.parent.resolve(), "n": 0,
               "by_src": {}, "exts": set(), "add_rel": None,
               "renderer": Renderer(), "cache": md_path.parent / ".deckcache",
-              "rasterized": 0, "cropped": []}
+              "rasterized": 0, "cropped": [], "knocked": 0}
     problems = list(errors) + drift
     new_parts = []
     notes_parts = []
@@ -1667,6 +1790,8 @@ def cmd_build(args):
             print("  ! %s: %s was cropped to fill %s — %.0f%% of the image is not on the "
                   "slide. `| fit` keeps all of it; `| fill top` moves what survives."
                   % (where, name, slot_id, lost * 100))
+    if imgctx["knocked"]:
+        print("  %d image background(s) made transparent" % imgctx["knocked"])
     if imgctx["n"]:
         print("  %d image(s) embedded%s"
               % (imgctx["n"], ", %d rasterized from SVG" % imgctx["rasterized"]
@@ -1736,7 +1861,8 @@ def _rewrite_content_types(pkg, new_parts, exts, notes_parts=(), notes_master=No
 
 # ── Check ────────────────────────────────────────────────────────────────────
 
-def _check_picture_color(path, tag, slot_id, line, warns, palette, background):
+def _check_picture_color(path, tag, slot_id, line, warns, palette, background,
+                         flags=frozenset()):
     """Two ways a picture clashes: off the template's palette, or a box on the slide."""
     if path.suffix.lower() == ".svg":
         strays = []
@@ -1757,11 +1883,28 @@ def _check_picture_color(path, tag, slot_id, line, warns, palette, background):
     border, clear = got
     if clear > 0.5:
         return                              # transparent edges sit on any background
+
+    if "transparent" in flags:
+        looked = analyse_knockout(path)
+        if not looked or looked[1] < 0.01:
+            warns.append("line %d: %s.%s — %s was asked for `transparent` but has no "
+                         "uniform border to remove; the build will say so and embed it "
+                         "as it is." % (line, tag, slot_id, path.name))
+            return
+        _, frac, content = looked
+        if content and color_distance(content, background) < 25:
+            warns.append("line %d: %s.%s — removing %s's background clears %.0f%% of it, "
+                         "but what is left averages #%s against a #%s slide. It will be "
+                         "hard to see. A panel behind it, or a lighter version of the "
+                         "image, beats transparency here."
+                         % (line, tag, slot_id, path.name, frac * 100, content, background))
+        return
+
     dist = color_distance(border, background)
     if dist > 35:
         warns.append("line %d: %s.%s — %s has a #%s border on a #%s slide, so it will read "
-                     "as a pasted box. Match the background, or give the image a "
-                     "transparent one." % (line, tag, slot_id, path.name, border, background))
+                     "as a pasted box. Add `| transparent` to knock the background out, or "
+                     "match it." % (line, tag, slot_id, path.name, border, background))
 
 
 def _check_picture_size(path, slot, tag, slot_id, line, warns, mode="fill"):
@@ -1835,10 +1978,12 @@ def cmd_check(args):
                             % (line, tag, slot_id, ", ".join(by_id)))
                 continue
             if slot.type == "picture" and kind == "scalar" and value.strip() != "!drop":
-                path, mode, anchor = parse_picture_value(value)
+                path, mode, anchor, flags = parse_picture_value(value)
                 if mode is None:
-                    errs.append("line %d: %s.%s — unknown picture option %r; use one of %s"
-                                % (line, tag, slot_id, anchor, "/".join(FIT_MODES)))
+                    errs.append("line %d: %s.%s — unknown picture option %r; use one of "
+                                "%s, an anchor (%s), or %s"
+                                % (line, tag, slot_id, anchor, "/".join(FIT_MODES),
+                                   "/".join(ANCHORS), "/".join(FLAGS)))
                     continue
                 p = Path(path)
                 p = p if p.is_absolute() else md_path.parent / p
@@ -1857,7 +2002,7 @@ def cmd_check(args):
                                      % (line, tag, slot_id, ext))
                     _check_picture_size(p, slot, tag, slot_id, line, warns, mode)
                     _check_picture_color(p, tag, slot_id, line, warns, palette,
-                                         backgrounds.get(spec.archetype))
+                                         backgrounds.get(spec.archetype), flags)
             if slot.type == "table" and kind != "table":
                 errs.append("line %d: %s.%s is a table — use `| a | b |` rows"
                             % (line, tag, slot_id))

@@ -827,15 +827,22 @@ export function expandSubgoals(run, subgoals) {
   // fold, and inserting a node there would add a model call that can only say "nothing to
   // do".
   let gateDeps = gateIds;
+  let gateAfter = [];
   if (subgoals.length > 1) {
     const reduceId = round === 1 ? 'reduce' : `reduce:${round}`;
     run.nodes.push(node(reduceId, 'reduce', gateIds, {}));
+    // The goal gate's data edge moves to reduce, but its SIGHT must not narrow with it:
+    // nodeBriefing walks deps and after, so a gate whose deps are ['reduce'] alone would be
+    // handed one node's lists and none of the work it is judging. The subgoal gates stay on
+    // as order-only edges, which is what `after` is for - they are already satisfied by the
+    // time reduce is, so this adds no waiting, only visibility.
     gateDeps = [reduceId];
+    gateAfter = gateIds.slice();
   }
   // Multi-judge consensus (Step 9 / D-goal-consensus): a fresh round of `run.goal_judges`
   // sibling gates over the same subgoal gates, instead of the single node this used to
   // push directly. goal_judges:1 is exactly the old shape - one node named `gate:goal:N`.
-  const { ids: goalGates } = pushGoalGateRound(run, gateDeps, {}, run.goal_judges || 1);
+  const { ids: goalGates } = pushGoalGateRound(run, gateDeps, gateAfter.length ? { after: gateAfter } : {}, run.goal_judges || 1);
   const reportId = round === 1 ? 'report' : `report:${round}`;
   // Order-only: the report waits for every judge in the round to be settled, not to
   // pass. A run whose subgoal ran out of retries used to end `blocked` with the

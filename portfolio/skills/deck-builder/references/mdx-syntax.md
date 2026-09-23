@@ -74,6 +74,17 @@ either way.
 | `fit` | shrinks the frame to the image's own shape, centred in the box the template drew | diagrams, screenshots, charts, logos — where cropping destroys the point |
 | `stretch` | fills the frame exactly, distorting | almost never; say it out loud when you use it |
 
+`| transparent` rides alongside any mode: `| fit transparent`. It knocks a PNG's
+background out by flooding inward **from the edges**, so white inside a diagram survives
+and only the background that touches the outside is removed. The result is cached by
+content, so the same file always yields the same bytes. It is refused — with a reason,
+not silently — when there is no uniform border to remove, when removing it would leave
+almost nothing, or when the file is not a decodable PNG.
+
+Visibility is the point, not transparency: if what survives the knockout averages close
+to the slide's own background, `check` says so and tells you a panel behind the image
+beats transparency there.
+
 `fill` takes an anchor: `| fill top`, `bottom`, `left`, `right`. A screenshot whose
 content sits at the top survives `| fill top` where a centred crop would behead it.
 
@@ -89,4 +100,5 @@ the same rule that makes an over-long table an error.
 | Npx across an Mpt frame (D dpi) | below ~110 dpi it looks soft on a projector |
 | D dpi, N KB | above ~400 dpi nothing more reaches the screen; it is file size only |
 | paints with colors the template does not use | generated art drifting off the reference's palette |
-| has a #X border on a #Y slide | the image will read as a pasted box; match the background or make it transparent |
+| has a #X border on a #Y slide | the image will read as a pasted box; add `\| transparent` or match the background |
+| what is left averages #X against a #Y slide | `\| transparent` would work but leave the content nearly invisible |
