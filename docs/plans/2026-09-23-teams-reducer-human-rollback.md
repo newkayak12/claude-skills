@@ -7,6 +7,27 @@
 - `2026-09-17-teams-team-v0.13.0.md` — human 실행자 설계. **미구현**, 버전 번호만 다른 작업에 재사용됨.
 - `2026-09-21-teams-server-owns-the-loop.md` §8h~8i — shape/critique 수렴 실패, 조사 스테이지 도입.
 
+## 0'. 외부 이론 대조표 (2026-09-23)
+
+아래 세 갈래는 이 대조에서 나왔다. 대조 자체를 여기 남긴다 — 다음 사람이 같은 검색을 다시 하지
+않도록, 그리고 "우리가 독립적으로 도달한 것"과 "업계가 이미 정리해 둔 것"을 구분할 수 있도록.
+
+| 외부 개념 | 출처 | 우리 쪽 대응 | 판정 |
+|---|---|---|---|
+| DAG 스케줄러 모델 — dependency resolution / readiness / termination / failure handling을 형식화 | Hu Wei, *From Agent Loops to Structured Graphs: A Scheduler-Theoretic Framework for LLM Agent Execution* (arXiv 2604.11378) | `readyNodes()` · `unmetDeps()` · `runState()` | **일치.** 논문이 형식화한 넷을 코드로 먼저 갖고 있었다 |
+| Durable execution — append-only event history, 크래시 후 replay로 재개 | Temporal (vs Airflow 비교: zenml.io/blog/temporal-vs-airflow) | `ledger.jsonl` + `saveRun` write-then-rename + 데몬 재기동 복구(0.13.2) | **일치** |
+| exactly-once workflow / at-least-once activity, 멱등성은 호출자 책임 | 같은 출처 | 노드 재시도는 at-least-once. 멱등 키 없음 | **차이.** 우리는 재시도가 작업을 다시 하는 것으로 때운다 |
+| Supervisor 패턴 — 오케스트레이터 하나가 워커 서브그래프에 배분 (network=혼돈, hierarchical=대개 과함) | LangGraph supervisor 패턴 정리 (callsphere.ai/blog/langgraph-supervisor-multi-agent-orchestration-2026) | 매니저 그래프 → 자식 런 | **일치**, 단 우리는 매니저→패키지→서브골 3층(hierarchical) — 그쪽 기준으로는 과한 쪽 |
+| Reducer — 병렬 노드 출력을 상태 스키마가 병합(`Annotated[list, add]`), 덮어쓰기가 기본이 아님 | LangGraph 상태 스키마 | `foldChild`/`integrate`는 있고, **런 안 병렬 서브골 층은 규약** | **차이 → §0.1** |
+| Interrupt가 일급 상태 + 체크포인트 = time travel(임의 시점 롤백 후 다른 결정으로 재개) | LangGraph interrupts (docs.langchain.com/oss/python/langgraph/interrupts) | `waiting_human`은 설계만 있고 미구현. time travel 없음 | **차이 → §0.2, §0.3** |
+| 진짜 suspension의 세 조건: ① 대기 중 컴퓨트 0 ② 내구성 있는 체크포인트 ③ 이벤트 기반 재개 | Render, *Human in the Loop, Without the Hacks* (render.com/articles/human-in-the-loop-without-the-hacks-...) | v0.13.0 Task 5(드라이버 종료·`tm_answer` 재기동), run store, `tm_answer` | **셋 다 일치.** 설계가 업계 합의와 독립적으로 같은 결론에 도달했다 |
+| "각 체크포인트를 **명명된 소유자와 SLA**를 가진 재개 가능 단계로 다루지 않으면, 승인자가 잠든 첫날 패턴이 무너진다" | 같은 출처 | `ask_timeout`(v0.13.0) + `investigate.unknowns[]`의 소유자 필드(0.26.0) | **일치** |
+
+대조에서 확인된 것 하나 더: 우리가 "정해야 할 셋"으로 꼽았던 것(만료 / 도달 경로 / 무인 지속)이
+v0.13.0 설계 안에 전부 있고, 그 설계의 `interactive: false` 기본값(자동 결정 + **무엇을 물으려
+했는지까지 기록**)은 이 문서가 앞서 제안했던 "만료되면 unanswered로 닫기"보다 낫다 — 조사가 못
+채운 칸이 보고서에 드러나기 때문이다.
+
 ## 0. 외부 이론과의 대조에서 확정된 것
 
 ### 0.1 우리에게 없는 것은 reducer가 아니라 reducer의 **선언**이다 (확인됨)
