@@ -25,6 +25,9 @@
 #           seam-silent fixtures/seam-mono  + requests/seam-silent.txt (byte-identical to seam.txt minus the two
 #                      sentences that spell out the answer - "import it from there" and the import.meta.url/macOS
 #                      warning - so seam_detected measures coordination instead of instruction-following; size L
+#           idol       fixtures/empty       + requests/idol.txt (one line: idol-concert ticketing at 200k
+#                      reservations/sec into an empty repository - the PM path's case (idol-pm-1/2, §8h);
+#                      run with TEAM_ROLES='{"planning":true}', size pinned L by the idol SPLIT below
 #           trap       fixtures/trap-mono   + requests/trap.txt (3 packages - core/queue/cli - a rate-limited
 #                      job scheduler CLI; eight execution-only traps: cap/rate-limit precedence, an inclusive/
 #                      exclusive rate-limit boundary, idempotent replay, a stable priority tie-break, an atomic
@@ -43,7 +46,7 @@
 set -euo pipefail
 
 ARM=${1:?arm: beta|betas|skills|stable|none}
-CASE=${2:?case: code|docs|code-flat|docs-flat|goal-code|goal-docs|seam|seam-flat|seam-silent|trap}
+CASE=${2:?case: code|docs|code-flat|docs-flat|goal-code|goal-docs|seam|seam-flat|seam-silent|trap|idol}
 LABEL=${3:-$(date +%Y%m%d-%H%M%S)}
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../../.." && pwd)
@@ -61,6 +64,7 @@ case "$CASE" in
   seam-flat) FIX=seam ;;          # same domain, empty single-package repo -> size S (delegate path)
   seam-silent) FIX=seam-mono ;;   # same fixture and task as seam, request silent on the seam's answer
   trap)      FIX=trap-mono ;;     # 3 workspace packages (core/queue/cli), 8 execution-only traps -> size L
+  idol)      FIX=empty ;;         # empty repo, one-line product goal: planning -> shape -> critique
   *) echo "unknown case $CASE" >&2; exit 2 ;;
 esac
 
@@ -87,6 +91,8 @@ ROUTING='Pass host_vendor "claude", the model you are actually running as host_m
 # round's size agents said so with sound reasons. The beta arm therefore carries the user's
 # own words that the work must be split, which the entry skills turn into size: "L".
 SPLIT='The user has said, in their own words: "split this by workspace package — one package per worktree, integrated at the end" — so pin size: "L" in tm_open.'
+# An empty repository has no workspace packages to split by; the idol case pins L in words that fit it.
+[ "$CASE" = idol ] && SPLIT='The user has said, in their own words: "this is a large system - split it into packages, one per worktree, integrated at the end" - so pin size: "L" in tm_open.'
 PLUGIN=()
 case "$ARM" in
   beta|betas|skills)
@@ -109,7 +115,7 @@ case "$ARM" in
         [ -d "$REPO/$p" ] && PLUGIN+=(--plugin-dir "$REPO/$p")
       done
     fi
-    if [[ "$CASE" == code* || "$CASE" == goal-code || "$CASE" == seam* || "$CASE" == trap ]]; then
+    if [[ "$CASE" == code* || "$CASE" == goal-code || "$CASE" == seam* || "$CASE" == trap || "$CASE" == idol ]]; then
       PROMPT="Use the teams:develop skill to run the following request through the harness. Follow the skill exactly: start with tm_open, drive whatever it hands back (a single graph run or a task of child runs), and end with the skill's output template. $ROUTING $SPLIT Request: $REQ"
     else
       PROMPT="Use the teams:orchestrate skill to run the following request through the harness. Follow the skill exactly: start with tm_open with flow \"auto\", drive whatever it hands back (a single graph run or a task of child runs), and end with the skill's output template. $ROUTING $SPLIT Request: $REQ"

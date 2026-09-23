@@ -1,0 +1,1 @@
+Build an idol concert ticket reservation system. At the moment tickets open, 200,000 people try to reserve in the same second. The repository is empty; the product definition, the split and the implementation are the harness's to decide.
