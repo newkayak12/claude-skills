@@ -9,6 +9,13 @@ regenerable, reviewable.
 pic1: assets/latency.svg
 ```
 
+**The pptx never carries the SVG — only a PNG.** A deck has to look the same in
+PowerPoint, Keynote, Google Slides and a PDF export, and SVG does not: older PowerPoint
+renders nothing for it. So the vector file stays in your source tree and the package gets
+raster. The build asserts this, and `.emf`, `.wmf`, `.pdf` and friends are refused outright
+with a note to export them to PNG first — `.svg` is the one vector format converted on the
+way in.
+
 At build the SVG is rasterized to a PNG sized for its frame and embedded. It is cached by
 content hash in `.deckcache/`, so the same SVG always yields the same bytes and repeated
 builds do not re-render. This is the one step that needs the renderer at **build** time;

@@ -748,11 +748,19 @@ def rasterize_svg(src, frame_cx, cache_dir, renderer, dpi=200):
     return out, True
 
 
+# What may be embedded. Vector formats are deliberately absent: a slide has to render
+# the same in PowerPoint, Keynote, Google Slides and a PDF export, and SVG does not —
+# so an .svg source is rasterized on the way in and the package only ever carries raster.
 IMAGE_CT = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-    ".gif": "image/gif", ".bmp": "image/bmp", ".svg": "image/svg+xml",
+    ".gif": "image/gif", ".bmp": "image/bmp",
     ".webp": "image/webp", ".tif": "image/tiff", ".tiff": "image/tiff",
 }
+VECTOR_EXT = {".svg", ".svgz", ".emf", ".wmf", ".eps", ".pdf", ".ai"}
+RASTERIZABLE = {".svg"}
+# Renders everywhere. The rest embed, but old PowerPoint may show nothing.
+UNIVERSAL_EXT = {".png", ".jpg", ".jpeg", ".gif", ".bmp"}
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 
 # ── Speaker notes ────────────────────────────────────────────────────────────
@@ -1190,7 +1198,7 @@ def _swap_picture(el, path, imgctx, problems, where, slot):
     if not src.is_file():
         problems.append("%s: image not found: %s" % (where, src))
         return
-    if src.suffix.lower() == ".svg":
+    if src.suffix.lower() in RASTERIZABLE:
         r = imgctx["renderer"]
         if not r.available:
             problems.append("%s: slot '%s' points at an SVG (%s) but there is no renderer to "
@@ -1200,7 +1208,16 @@ def _swap_picture(el, path, imgctx, problems, where, slot):
         src, fresh = rasterize_svg(src, slot_frame_cx(el), imgctx["cache"], r)
         if fresh:
             imgctx["rasterized"] += 1
+        if src.read_bytes()[:8] != PNG_MAGIC:
+            problems.append("%s: the renderer did not return a PNG for %s"
+                            % (where, slot.id))
+            return
     ext = src.suffix.lower()
+    if ext in VECTOR_EXT:
+        problems.append("%s: %s is a vector file, and a deck has to look the same in "
+                        "PowerPoint, Keynote and a PDF export. Only .svg can be converted "
+                        "on the way in — export this to PNG first." % (where, src.name))
+        return
     if ext not in IMAGE_CT:
         problems.append("%s: unsupported image type %s" % (where, ext))
         return
@@ -1353,6 +1370,7 @@ def cmd_build(args):
                                                  xml_declaration=True)
         new_parts.append(part)
 
+    assert_raster_only(pkg)
     _rewrite_presentation(pkg, new_parts)
     _rewrite_content_types(pkg, new_parts, imgctx["exts"], notes_parts, notes_master)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -1369,6 +1387,16 @@ def cmd_build(args):
               % (imgctx["n"], ", %d rasterized from SVG" % imgctx["rasterized"]
                  if imgctx["rasterized"] else ""))
     return 1 if fatal and args.strict else 0
+
+
+def assert_raster_only(pkg):
+    """Nothing vector may reach the package. Cheap, and it fails loudly if it ever does."""
+    bad = [n for n in pkg.parts
+           if n.startswith("ppt/media/") and Path(n).suffix.lower() in VECTOR_EXT]
+    if bad:
+        raise SystemExit("error: a vector file reached the package: %s\n"
+                         "  this is a bug — images are rasterized before embedding."
+                         % ", ".join(bad))
 
 
 def _rewrite_presentation(pkg, new_parts):
@@ -1462,6 +1490,10 @@ def cmd_check(args):
                 if not p.is_file():
                     errs.append("line %d: %s.%s — image not found: %s"
                                 % (line, tag, slot_id, p))
+                elif p.suffix.lower() not in UNIVERSAL_EXT | RASTERIZABLE:
+                    warns.append("line %d: %s.%s — %s embeds, but older PowerPoint shows "
+                                 "nothing for it. PNG or JPEG is the safe choice."
+                                 % (line, tag, slot_id, p.suffix.lower()))
                 elif p.suffix.lower() == ".svg":
                     if not Renderer().available:
                         errs.append("line %d: %s.%s — %s is an SVG and needs a renderer to "

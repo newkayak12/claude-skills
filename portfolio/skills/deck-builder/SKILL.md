@@ -116,7 +116,9 @@ is in `references/mdx-syntax.md`. Read it before writing the first slide.
 A picture slot with no source is where the pipeline breaks: everything else is text a
 model can write, and then someone has to draw a diagram by hand. Write it as an `.svg`
 instead, in the template's colors and at the frame's exact pt size — both printed by
-`catalog` — and it becomes source like the rest of the deck, rasterized at build time.
+`catalog` — and it becomes source like the rest of the deck. It is rasterized at build
+time: the pptx only ever carries PNG, because SVG does not render the same everywhere and
+older PowerPoint shows nothing for it.
 
 See `references/generated-art.md` for the rules and a worked example.
 

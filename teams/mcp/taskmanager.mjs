@@ -1765,6 +1765,20 @@ export function foldChild(task, n) {
   const raw = (goalGate && goalGate.result) || {};
   const gv = cs.goal_verdict;
   const g = gv ? { ...raw, accept: gv.accept, match_pct: gv.match_pct, gaps: gv.gaps, spec_drift: gv.spec_drift } : raw;
+  // The child's `reduce` observed its subgoals' artifacts as a set and reported what did not
+  // line up, without repairing any of it - deciding is the level above's job, and this is that
+  // level. Carrying it into the fold is what makes that true: without this the findings die
+  // inside the child run, and the manager integrates a tree whose seams nobody named.
+  const reduceNode = child.nodes.filter((x) => x.stage === 'reduce' && x.result).pop();
+  const rd = (reduceNode && reduceNode.result) || null;
+  const setFindings = rd
+    ? {
+      undeclared: rd.undeclared || [],
+      collisions: rd.collisions || [],
+      orphans: rd.orphans || [],
+      repairs_needed: rd.repairs_needed || [],
+    }
+    : null;
   const base = {
     child_run_id: child.run_id,
     child_cwd: n.child.cwd,
@@ -1772,6 +1786,7 @@ export function foldChild(task, n) {
     child_state: cs.state,
     child_counts: cs.counts,
     changed_files: changed,
+    ...(setFindings ? { set_findings: setFindings } : {}),
     report: report ? String(report.result.handoff || '') : (chainAuthored ? String(chainAuthored.result.handoff || '') : ''),
   };
   if (cs.state === 'running') {

@@ -479,6 +479,24 @@ def svg_assets(tmp):
         encoding="utf-8")
     check(abs(deck.svg_aspect(tmp / "vb.svg") - 800 / 450) < 1e-6, "aspect falls back to viewBox")
 
+    check(".svg" not in deck.IMAGE_CT,
+          "no vector type is embeddable at all — the package cannot carry one")
+    check(deck.VECTOR_EXT >= {".svg", ".emf", ".wmf", ".pdf"},
+          "the vector list covers what people actually hand over")
+
+    (tmp / "logo.emf").write_bytes(b"\x01\x00\x00\x00 not really an emf")
+    (tmp / "vec.mdx").write_text(
+        "---\ntemplate: template.pptx\noutput: vec.pptx\n---\n\n"
+        "## @s2\npic1: logo.emf\n", encoding="utf-8")
+    out = []
+    try:
+        deck.main(["build", "--deck", str(tmp / "vec.mdx")])
+        with zipfile.ZipFile(tmp / "vec.pptx") as z:
+            out = [n for n in z.namelist() if Path(n).suffix.lower() in deck.VECTOR_EXT]
+    except SystemExit:
+        pass
+    check(not out, "a vector nobody can rasterize never reaches the package: %s" % out)
+
     (tmp / "svg.mdx").write_text(
         "---\ntemplate: template.pptx\noutput: svg.pptx\n---\n\n"
         "## @s2\npic1: art.svg\n", encoding="utf-8")
@@ -489,8 +507,19 @@ def svg_assets(tmp):
         cached = list((tmp / ".deckcache").glob("*.png"))
         check(len(cached) == 1, "the rasterized PNG is cached by content, got %s" % cached)
         with zipfile.ZipFile(tmp / "svg.pptx") as z:
-            check(any("deckbuilder" in n and n.endswith(".png") for n in z.namelist()),
+            names = z.namelist()
+            media = [n for n in names if n.startswith("ppt/media/")]
+            check(any("deckbuilder" in n and n.endswith(".png") for n in media),
                   "the rasterized image is embedded as a PNG, not an SVG")
+            check(not [n for n in names if Path(n).suffix.lower() in deck.VECTOR_EXT],
+                  "the package carries no vector file at all")
+            check("svg" not in z.read("[Content_Types].xml").decode().lower(),
+                  "no image/svg+xml content type is declared")
+            check(all(z.read(n)[:8] == deck.PNG_MAGIC for n in media if n.endswith(".png")),
+                  "every embedded PNG really is a PNG")
+            check(sum(z.read(n).decode("utf-8", "replace").count("svgBlip")
+                      for n in names if n.startswith("ppt/slides/slide")) == 0,
+                  "no slide references an SVG blip")
     else:
         check(rc == 1, "an SVG asset is an error when nothing can rasterize it")
 
