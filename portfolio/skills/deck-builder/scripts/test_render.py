@@ -1,5 +1,8 @@
 """Render round-trip: deck.mdx -> pptx -> PDF, verified against all three artifacts.
 
+The audit itself is the engine's (deck.collisions) — the same code `deck.py render` runs,
+so this suite tests what users get rather than a parallel copy of it.
+
 test_deck.py proves the package we write is well-formed. This proves a real renderer
 agrees — that the pptx opens, the template's design is still on the page, and the
 content from the .mdx is the content in the PDF.
@@ -18,9 +21,7 @@ stays green.
 
 import os
 import re
-import statistics
 import shutil
-import subprocess
 import sys
 import zipfile
 import xml.etree.ElementTree as ET
@@ -53,17 +54,10 @@ def norm(s):
 
 # ── Renderer ─────────────────────────────────────────────────────────────────
 
-class Renderer:
-    """soffice, either on PATH or inside a container."""
-
-    def __init__(self):
-        self.image = os.environ.get("DECK_RENDER_DOCKER")
-        self.local = shutil.which("soffice") or shutil.which("libreoffice")
-        self.available = bool(self.local or (self.image and shutil.which("docker")))
+class Renderer(deck.Renderer):
+    """The engine's renderer, plus a workspace the container daemon can actually see."""
 
     def workdir(self):
-        # A container's daemon may not see /tmp (snap docker does not), so in docker
-        # mode the workspace has to live somewhere the daemon can bind-mount.
         if self.local:
             import tempfile
             return Path(tempfile.mkdtemp(prefix="deck-render-"))
@@ -72,102 +66,13 @@ class Renderer:
         d.mkdir(parents=True)
         return d
 
-    def sh(self, workdir, script):
-        if self.local:
-            return subprocess.run(["bash", "-c", script], cwd=workdir,
-                                  capture_output=True, text=True, timeout=600)
-        return subprocess.run(
-            ["docker", "run", "--rm", "--entrypoint", "bash", "-u", "0",
-             "-v", "%s:/work" % workdir, "-w", "/work", self.image, "-c", script],
-            capture_output=True, text=True, timeout=900)
-
-    def to_pdf(self, workdir, name):
-        r = self.sh(workdir, "export HOME=/tmp/lohome; mkdir -p $HOME; "
-                             "soffice --headless -env:UserInstallation=file:///tmp/loprof "
-                             "--convert-to pdf %s 2>&1 | tail -2" % name)
-        return r.stdout + r.stderr
-
     def has_poppler(self, workdir):
-        return self.sh(workdir, "command -v pdftotext >/dev/null && echo yes").stdout.strip() == "yes"
-
-    def bbox(self, workdir, pdf):
-        self.sh(workdir, "pdftotext -bbox-layout %s out.bbox.html && chmod a+rw out.bbox.html"
-                % pdf)
-        f = workdir / "out.bbox.html"
-        return f.read_text(encoding="utf-8") if f.is_file() else None
+        return self.sh(workdir, "command -v pdftotext >/dev/null && echo yes"
+                       ).stdout.strip() == "yes"
 
     def page_texts(self, workdir, pdf, pages):
-        out = []
-        for i in range(1, pages + 1):
-            r = self.sh(workdir, "pdftotext -f %d -l %d -layout %s -" % (i, i, pdf))
-            out.append(r.stdout)
-        return out
-
-
-# ── Geometric audit ──────────────────────────────────────────────────────────
-
-XH = "{http://www.w3.org/1999/xhtml}"
-
-
-def _bbox_pages(xml_text):
-    root = ET.fromstring(xml_text)
-    out = []
-    for page in root.iter(XH + "page"):
-        pw, ph = float(page.get("width")), float(page.get("height"))
-        blocks = []
-        for block in page.iter(XH + "block"):
-            lines = []
-            for line in block.iter(XH + "line"):
-                ws = [w for w in line.iter(XH + "word") if (w.text or "").strip()]
-                if not ws:
-                    continue
-                lines.append(((min(float(w.get("xMin")) for w in ws),
-                               min(float(w.get("yMin")) for w in ws),
-                               max(float(w.get("xMax")) for w in ws),
-                               max(float(w.get("yMax")) for w in ws)),
-                              " ".join(w.text for w in ws)))
-            if lines:
-                blocks.append(lines)
-        out.append((pw, ph, blocks))
-    return out
-
-
-def collisions(xml_text, cross_tol=0.05, bunch_tol=0.70):
-    """Text that physically clashes on the page.
-
-    Plain box intersection is useless for CJK — Noto's em box is taller than a 100%
-    line, so stacked lines always overlap without a glyph touching. So compare only
-    ACROSS blocks, and within a block look for bunching against its own median pitch.
-    """
-    def area(b):
-        return max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
-
-    def inter(a, b):
-        return area((max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])))
-
-    found = []
-    for pi, (pw, ph, blocks) in enumerate(_bbox_pages(xml_text), 1):
-        for lines in blocks:
-            for box, text in lines:
-                if box[0] < -1 or box[1] < -1 or box[2] > pw + 1 or box[3] > ph + 1:
-                    found.append("p%d off-slide %r" % (pi, text[:24]))
-        for i in range(len(blocks)):
-            for j in range(i + 1, len(blocks)):
-                for b1, t1 in blocks[i]:
-                    for b2, t2 in blocks[j]:
-                        ov = inter(b1, b2)
-                        if ov > 0 and ov / max(1e-6, min(area(b1), area(b2))) > cross_tol:
-                            found.append("p%d %r × %r" % (pi, t1[:20], t2[:20]))
-        for lines in blocks:
-            if len(lines) < 3:
-                continue
-            tops = [b[1] for b, _ in lines]
-            pitches = [b - a for a, b in zip(tops, tops[1:])]
-            med = statistics.median(pitches)
-            for k, pitch in enumerate(pitches):
-                if med > 0 and pitch < med * bunch_tol:
-                    found.append("p%d bunched %r" % (pi, lines[k + 1][1][:20]))
-    return found
+        return [self.sh(workdir, "pdftotext -f %d -l %d -layout %s -" % (i, i, pdf)).stdout
+                for i in range(1, pages + 1)]
 
 
 def pdf_page_count(path):
@@ -380,7 +285,7 @@ def run(work, r):
     if bbox is None:
         skip("geometric audit (pdftotext -bbox-layout unavailable)")
         return
-    hits = collisions(bbox)
+    hits = deck.collisions(bbox)
     check(not hits, "no text collides or runs off a slide (%s)" % (hits or "clean"))
 
     print("and the audit is not vacuous — a deck that overflows must fail it")
@@ -390,7 +295,7 @@ def run(work, r):
     deck.main(["build", "--deck", str(work / "stress.mdx")])
     r.to_pdf(work, "stress.pptx")
     sbox = r.bbox(work, "stress.pdf")
-    shits = collisions(sbox) if sbox else []
+    shits = deck.collisions(sbox) if sbox else []
     check(len(shits) >= 2,
           "the same audit finds the deliberate overflow (%d hit(s))" % len(shits))
     stext = r.page_texts(work, "stress.pdf", 2)

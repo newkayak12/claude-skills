@@ -326,6 +326,35 @@ def run(tmp):
     check(integrity(tmp / "partial.pptx") == [], "partial build is still a valid package")
 
 
+def geometry(tmp):
+    """Content that would fall off the slide is an error, not a surprise at render time."""
+    print("slide-edge overflow")
+    pkg = deck.Package(tmp / "template.pptx")
+    check(deck.slide_size(pkg) == (12192000, 6858000), "slide size read from presentation.xml")
+    parts = deck.slide_order(pkg)
+    slots = {s.id: s for s in deck.analyze_slide(ET.fromstring(pkg.parts[parts[1]]), 6858000)}
+    t = slots["table1"]
+    check(t.row_h == 370000, "table row height read from the template, got %s" % t.row_h)
+    check(t.fits == (6858000 - t.off_y) // t.row_h,
+          "row capacity measured to the slide edge, got %s" % t.fits)
+    check(slots["text1"].fits and slots["text1"].fits > 1,
+          "text slots also know how many lines clear the edge")
+
+    rows = "\n".join("  | r%d | x |" % i for i in range(t.fits + 3))
+    (tmp / "over.mdx").write_text(
+        "---\ntemplate: template.pptx\noutput: over.pptx\n---\n\n"
+        "## @s2\ntable1:\n" + rows + "\n", encoding="utf-8")
+    check(deck.main(["check", "--deck", str(tmp / "over.mdx")]) == 1,
+          "a table taller than the slide is an error, not a warning")
+
+    fits_rows = "\n".join("  | r%d | x |" % i for i in range(t.fits - 1))
+    (tmp / "fits.mdx").write_text(
+        "---\ntemplate: template.pptx\noutput: fits.pptx\n---\n\n"
+        "## @s2\ntable1:\n" + fits_rows + "\n", encoding="utf-8")
+    check(deck.main(["check", "--deck", str(tmp / "fits.mdx")]) == 0,
+          "a table that fits raises nothing")
+
+
 def guards(tmp):
     """The two non-negotiables: .mdx source, and a real reference template."""
     print("guards")
@@ -378,6 +407,7 @@ def main():
     tmp = Path(tempfile.mkdtemp(prefix="deckbuilder-test-"))
     try:
         run(tmp)
+        geometry(tmp)
         guards(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
