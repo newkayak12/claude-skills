@@ -909,6 +909,25 @@ test('pulls the declared participants in when only the relation note matches', a
   assert.equal(scored.recall_at_k, 1);
 }));
 
+test('does not let a relation note the query never reached vouch for its sides', async () => fixture(async (root) => {
+  // In a small vault a zero-score relation note still sits inside the top eight
+  // by tie order. It did not match the query, so it has nothing to vouch with.
+  seedContrastOnly(root);
+  write(join(root, 'notes', 'refund.md'), '# 환불 규정\n\n환불은 7일 이내 접수한다.\n');
+  const catalog = readFileSync(join(root, '_knowledge', 'catalog.jsonl'), 'utf8').trim().split('\n')
+    .map((line) => JSON.parse(line))
+    .filter((record) => !record.id.startsWith('filler-'));
+  catalog.push({ id: 'refund', path: 'notes/refund.md', title: '환불 규정', summary: '환불 접수 기한' });
+  write(join(root, '_knowledge', 'catalog.jsonl'), jsonl(catalog));
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+
+  const found = await searchIndex(root, '환불 규정', { limit: 5 });
+  assert.equal(found.results[0].id, 'refund');
+  assert.equal(found.relation_participant_promotions, 0,
+    `promoted: ${found.relation_participant_promoted_ids.join(', ')}`);
+  assert.ok(found.results.every((item) => item.relation_promotion !== 'relation-matched'));
+}));
+
 test('promotes a participant that matched only weakly, below a wall of distractors', async () => fixture(async (root) => {
   // The case a "did it match at all" guard gets wrong: the sides do match, and
   // are still unreachable. Every distractor answers more of the query's words
