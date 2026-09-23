@@ -678,6 +678,30 @@ test('ranks a curated alias or user term above a passing body mention', async ()
   assert.equal(found.results[0].id, 'ops-digest');
 }));
 
+test('matches two-syllable Korean nouns through attached particles on either side', async () => fixture(async (root) => {
+  // 재고, 출고, 결제 — the commonest nouns are two syllables. The trigram index
+  // cannot see them (it needs three characters) and exact tokens stop at the
+  // particle, so "재고" missed "재고가" and "재고를 확인" missed "재고 수불부".
+  write(join(root, 'notes', 'cancel.md'), '# 출하 취소\n\n출하를 취소하면 재고가 복원된다.\n');
+  write(join(root, 'notes', 'ledger.md'), '# 재고 수불부\n\n기간별 입출고 누적.\n');
+  write(join(root, 'notes', 'refund.md'), '# 환불 규정\n\n환불은 7일 이내 접수한다.\n');
+  write(join(root, '_knowledge', 'catalog.jsonl'), jsonl([
+    { id: 'cancel', path: 'notes/cancel.md', title: '출하 취소' },
+    { id: 'ledger', path: 'notes/ledger.md', title: '재고 수불부' },
+    { id: 'refund', path: 'notes/refund.md', title: '환불 규정' },
+  ]));
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+
+  const bare = await searchIndex(root, '재고', { limit: 3 });
+  const bareMatched = bare.results.filter((item) => item.lexical_match).map((item) => item.id).sort();
+  assert.deepEqual(bareMatched, ['cancel', 'ledger']);
+
+  const inflected = await searchIndex(root, '재고를 확인', { limit: 3 });
+  assert.equal(inflected.results[0].id, 'ledger', inflected.results.map((item) => item.id).join(', '));
+  assert.equal(inflected.results[0].lexical_match, true);
+  assert.ok(!inflected.results.find((item) => item.id === 'refund')?.lexical_match);
+}));
+
 test('still matches an inflected Korean body term the title does not contain', async () => fixture(async (root) => {
   write(join(root, 'notes', 'approval.md'), '# 승인 정책\n\n승인 실패는 세 번 재시도한 뒤 수동 검토 큐로 보낸다.\n');
   write(join(root, '_knowledge', 'catalog.jsonl'), jsonl([
@@ -689,7 +713,6 @@ test('still matches an inflected Korean body term the title does not contain', a
   assert.equal(found.results[0].id, 'approval');
   assert.equal(found.results[0].lexical_match, true);
   assert.ok(found.lexical_trigram_matches > 0);
-  assert.equal(found.lexical_word_matches, 0);
 }));
 
 test('ranks a long title-and-alias match above many short body mentions', async () => fixture(async (root) => {
@@ -982,13 +1005,16 @@ test('promotes a participant that matched only weakly, below a wall of distracto
   for (const id of ['hanjin', 'cj']) {
     assert.ok(order.includes(id), `${id} missing: ${order.join(', ')}`);
   }
-  // Only the side that would not have come back is promoted, and it enters at
-  // the tail of the window — retrievable, not ranked second.
+  // The sides did match, just too weakly to survive the wall, and they enter at
+  // the tail of the window — retrievable, not ranked second. (Leaving a side
+  // alone when it would come back on its own is covered by the cap test below.)
   const promoted = found.results.filter((item) => item.relation_promotion === 'relation-matched');
-  assert.equal(found.relation_participant_promotions, 1);
-  assert.equal(promoted.length, 1);
-  assert.equal(promoted[0].lexical_match, true, 'the promoted side did match, just too weakly');
-  assert.equal(order.at(-1), promoted[0].id, `unexpected order: ${order.join(', ')}`);
+  assert.ok(promoted.length >= 1);
+  assert.equal(found.relation_participant_promotions, promoted.length);
+  for (const item of promoted) {
+    assert.equal(item.lexical_match, true, `${item.id} did match, just too weakly`);
+  }
+  assert.deepEqual(order.slice(-promoted.length), promoted.map((item) => item.id), `unexpected order: ${order.join(', ')}`);
 
   const scored = await evalQuestions(root, { k: 5 });
   assert.equal(scored.questions[0].hit, true);
