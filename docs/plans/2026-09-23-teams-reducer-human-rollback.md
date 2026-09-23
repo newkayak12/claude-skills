@@ -147,10 +147,14 @@ C 유형(목표 기준 모순/검증 불가)은 그래서 회차마다 **새로 
 
 - **선행 측정** — `flow: develop` 실런 한 판으로 0.24.0 계약 3규칙의 효과를 잰다. 성공 기준은
   report가 아니라 **critique의 B·C 유형 건수가 줄어드는가**(§0.3). D1과 병렬로 갈 수 있다.
-  **진행 중 (2026-09-23, idol-pm-3)** — 로컬 세션이 잡았다. `bench.sh beta idol pm3`에
-  `TEAM_ROLES='{"planning":true}'`, 기준 커밋 e1aa56f(0.26.3 + D1 wip). 새 bench 케이스 `idol`
-  (`fixtures/empty` + `requests/idol.txt`)은 idol-pm-1/2의 요청을 한 줄로 고정한 것이다. 결과는
-  critique 노드마다 `blocking[]`을 A/B/C로 분류해 §0.3 표와 나란히 여기에 적는다.
+  **idol-pm-3 (2026-09-23) — 측정 전에 죽었다.** 기획 자식 런의 `setgoal`이 `PLAN` 시도 두 번 모두에서
+  3회씩 spec 거절: 1·3회차는 `PLANNING_SETGOAL`의 "document subgoal" 표현대로 kind `document`
+  (plan 흐름 `mixed=false`는 `planning`만 허용), 2회차는 같은 프롬프트의 "files[]에 조사자가 열 것을
+  적어라"대로 `.claude/team.json`을 넣어 문서 경로 규칙에 걸림. 0.25.0/0.26.0이 들여온 프롬프트가
+  검사기와 두 군데서 모순이었고, 0.26.0 이후 기획 런은 한 번도 shape에 닿지 못하는 상태였다.
+  0.26.4(78b2d28)에서 수정 — kind 명시, 읽을 것은 `sources[]`. 런은 세 번째 PLAN 시도 중에 중단했다.
+  **진행 중 (2026-09-23, idol-pm-4)** — 같은 설정으로 78b2d28에서 재측정. 결과는 critique 노드마다
+  `blocking[]`을 A/B/C로 분류해 §0.3 표와 나란히 여기에 적는다.
 - **critique 유형별 처리** — 선행 측정 결과를 보고 C·B 중 남은 쪽만 손댄다.
 
 ## 4. 열린 논점
