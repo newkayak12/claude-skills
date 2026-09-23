@@ -22,6 +22,56 @@ Installing registers the `knowledge-local` MCP server against the current projec
 makes the hook available. Nothing runs until a skill is invoked or a Markdown file inside a
 knowledge workspace is edited.
 
+## Core concepts
+
+Eight ideas carry the whole plugin. Each borrows from an established theory and bends it where
+measurement said to; [docs/theory.md](docs/theory.md) has the sources and the exact departures.
+
+**1. A vault is finished when it can answer, not when it looks tidy.**
+Ontology engineering has long judged a model by *competency questions* — the questions it must be
+able to answer (Grüninger & Fox, 1995). Here those questions are a build gate: every question in
+`_knowledge/questions.jsonl` must be answered `complete` from cited notes, or the build is not
+done. A 583-note vault with perfect links still failed this test, which is why the gate exists.
+
+**2. The unit of knowledge is a claim, not a thing.**
+"One note, one idea" (Zettelkasten, evergreen notes) is the starting point. But "A and B differ in
+X" belongs to neither A nor B — split by entity, it disappears. So a *relation note* (contrast,
+equivalence, sequence) is a first-class note, and it carries evidence for every side.
+
+**3. Search people's words, not just the author's.**
+An operator says "결제 승인 화면"; the code says `PaymentService.authorize`. Neither is an alias of
+the other, so the catalog keeps them in separate fields — `user_terms`, `source_symbols` — and
+search can walk from one layer to the other.
+
+**4. Several rankings, merged by rank, not by score.**
+Keyword search (BM25 over SQLite FTS5) finds exact labels; embedding search finds paraphrases.
+Their scores are not comparable, so the plugin merges their *orders* with Reciprocal Rank Fusion
+(Cormack et al., 2009): each list contributes `1 / (60 + rank)`. Korean needs one more step:
+two-syllable nouns such as 재고 are matched as prefixes so particles (재고가, 재고를) do not hide them.
+
+**5. A comparison needs every side in the results.**
+Multi-hop QA research (HotpotQA) shows that some questions need facts from several documents at
+once. When a contrast note ranks near the top, its declared participants are appended to the end
+of the result window — enough to be *retrievable*, never enough to take the best slots. Only
+declared membership counts; co-occurrence never does.
+
+**6. Measure retrieval with numbers, against a set you did not tune on.**
+`eval` reports MRR and recall@k (the TREC QA metrics) per question. Repairs are made against a
+*dev* split and confirmed once on a *holdout* the loop never looked at — reusing a holdout while
+tuning quietly turns it into training data (Dwork et al., 2015). A sweep winner has to pass a
+paired sign test before it is called `decisive`.
+
+**7. Never copy the exam into the answer key.**
+Adding a question's own words to a note guarantees that question retrieves the note and proves
+nothing — *leakage* in data-mining terms (Kaufman et al., 2012). Every added term must exist in
+the source material: the UI, the code, or the operator's own words.
+
+**8. "Complete" is a checklist, not a feeling.**
+Models are over-confident (Guo et al., 2017): answers here declared `complete` 69–80 times out of
+94 and were right 22–38 times. So an answer splits the question into parts, names the note it
+*opened* for each part, and downgrades to `partial` the moment one part rests on a snippet or a
+guess.
+
 ## Which skill do I want?
 
 | I want to… | Skill |
