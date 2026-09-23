@@ -603,9 +603,15 @@ test('a retry retires the dead attempt, rewires dependents, and yields a ready n
     const st = await c.call('team_status', { run_id: runId, cwd });
     const stale = st.nodes.filter((n) => ['test:U1:1', 'gate:U1:1'].includes(n.node_id));
     assert.ok(stale.every((n) => n.state === 'skipped'), 'the dead attempt must be retired');
+    // With `reduce` between the subgoal gates and the goal gate, the live attempt is followed
+    // through it: reduce carries the data edge, the goal gate keeps the gates as order-only
+    // `after` so its briefing still sees the work.
+    const red = st.nodes.find((n) => n.node_id === 'reduce');
+    assert.ok(red.deps.includes('gate:U1:2'), 'reduce must follow the live attempt');
+    assert.equal(red.deps.includes('gate:U1:1'), false);
     const goal = st.nodes.find((n) => n.node_id === 'gate:goal:1');
-    assert.ok(goal.deps.includes('gate:U1:2'), 'the goal gate must follow the live attempt');
-    assert.equal(goal.deps.includes('gate:U1:1'), false);
+    assert.deepEqual(goal.deps, ['reduce'], 'the goal gate depends on the fold, not on each gate');
+    assert.ok((goal.after || []).includes('gate:U1:2'), 'and still sees the live attempt');
   }, { isolated: true });
 });
 
@@ -662,16 +668,18 @@ test('exhausting a subgoal settles it: its downstream is unreachable and the rep
     const r = await c.call('team_retry', { run_id: runId, cwd, subgoal_id: 'U1' });
     assert.equal(r.retried, false);
     assert.match(r.reason, /budget/);
-    assert.deepEqual(r.unreachable.sort(), ['gate:U1:1', 'gate:goal:1', 'test:U1:1'],
-      'everything that needed the dead implement through a data edge is written off - transitively');
+    assert.deepEqual(r.unreachable.sort(), ['gate:U1:1', 'gate:goal:1', 'reduce', 'test:U1:1'],
+      'everything that needed the dead implement through a data edge is written off - transitively '
+      + '(reduce included: it is the fold that the dead subgoal gate feeds)');
     assert.equal(r.state, 'running', 'the run is not blocked: the report can run');
     assert.deepEqual(r.ready.map((n) => n.node_id), ['report']);
 
     const st = await c.call('team_status', { run_id: runId, cwd });
-    assert.equal(st.counts.unreachable, 3);
+    assert.equal(st.counts.unreachable, 4, 'test:U1:1, gate:U1:1, reduce, gate:goal:1');
     const goal = st.nodes.find((n) => n.node_id === 'gate:goal:1');
     assert.equal(goal.state, 'unreachable');
-    assert.match(goal.reason, /gate:U1:1 is unreachable/);
+    // The goal gate now reaches the dead subgoal through reduce, so that is what its reason names.
+    assert.match(goal.reason, /reduce is unreachable/);
 
     nx = await c.call('team_next', { run_id: runId, cwd });
     const brief = readFileSync(nx.ready.find((n) => n.stage === 'report').briefing_path, 'utf8');
@@ -831,6 +839,7 @@ test('a clean run reaches report', async () => {
       await c.call('team_submit', { run_id: runId, cwd, node_id: `test:${sg}:1`, payload: ok({ verified: true }) });
       await c.call('team_submit', { run_id: runId, cwd, node_id: `gate:${sg}:1`, payload: ok({ accept: true, match_pct: 95 }) });
     }
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'reduce', payload: ok({ handoff: 'set folded' }) });
     await c.call('team_submit', { run_id: runId, cwd, node_id: 'reduce', payload: ok({ changed_files: [], handoff: 'set folded' }) });
     await c.call('team_submit', { run_id: runId, cwd, node_id: 'gate:goal:1', payload: ok({ accept: true, match_pct: 95 }) });
     const v = await c.call('team_submit', { run_id: runId, cwd, node_id: 'report', payload: ok({ handoff: 'done' }) });
@@ -973,6 +982,7 @@ test('report and the goal gate are briefed with every finished node', async () =
       await c.call('team_submit', { run_id: runId, cwd, node_id: `test:${sg}:1`, payload: ok({ verified: true, checks: [`checked ${sg}`] }) });
       await c.call('team_submit', { run_id: runId, cwd, node_id: `gate:${sg}:1`, payload: ok({ accept: true, match_pct: 95 }) });
     }
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'reduce', payload: ok({ handoff: 'set folded' }) });
     let nx = await c.call('team_next', { run_id: runId, cwd });
     const goalGate = nx.ready.find((n) => n.node_id.startsWith('gate:goal'));
     const gateBrief = readFileSync(goalGate.briefing_path, 'utf8');
@@ -1001,6 +1011,7 @@ test('the report briefing carries failures, not just successes', async () => {
       await c.call('team_submit', { run_id: runId, cwd, node_id: `test:${sg[0]}:${sg[1]}`, payload: ok({ verified: true }) });
       await c.call('team_submit', { run_id: runId, cwd, node_id: `gate:${sg[0]}:${sg[1]}`, payload: ok({ accept: true, match_pct: 90 }) });
     }
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'reduce', payload: ok({ handoff: 'set folded' }) });
     const nx = await c.call('team_next', { run_id: runId, cwd });
     const goalGate = nx.ready.find((n) => n.node_id.startsWith('gate:goal'));
     const brief = readFileSync(goalGate.briefing_path, 'utf8');
@@ -1095,14 +1106,19 @@ test('a rejected goal gate is re-judged after the subgoal retry, instead of wedg
     assert.match(prompt, /U2 never wired to U1/);
     await passSubgoal(c, cwd, runId, 'U2', 2);
     nx = await c.call('team_next', { run_id: runId, cwd });
+    // reduce folds the rebuilt set first; the fresh goal gate is behind it.
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['reduce'], 'the fold runs first over the rebuilt whole');
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'reduce', payload: ok({ handoff: 'set folded' }) });
+    nx = await c.call('team_next', { run_id: runId, cwd });
     assert.deepEqual(nx.ready.map((n) => n.node_id), ['gate:goal:2'], 'a fresh goal gate judges the rebuilt whole');
     const st = await c.call('team_status', { run_id: runId, cwd });
     assert.equal(st.nodes.find((n) => n.node_id === 'gate:goal:1').state, 'failed', 'the rejection stays as evidence');
-    assert.deepEqual(st.nodes.find((n) => n.node_id === 'gate:goal:2').deps.sort(), ['gate:U1:1', 'gate:U2:2']);
+    const g2 = st.nodes.find((n) => n.node_id === 'gate:goal:2');
+    assert.deepEqual(g2.deps, ['reduce'], 'the fresh round judges behind the same fold');
+    assert.deepEqual((g2.after || []).slice().sort(), ['gate:U1:1', 'gate:U2:2'], 'and still sees both live attempts');
     assert.deepEqual(st.nodes.find((n) => n.node_id === 'report').after, ['gate:goal:2']);
     const gatePrompt = readFileSync(nx.ready[0].briefing_path, 'utf8');
     assert.match(gatePrompt, /Previous attempt was rejected[\s\S]*U2 never wired to U1/);
-    await c.call('team_submit', { run_id: runId, cwd, node_id: 'reduce:2', payload: ok({ changed_files: [], handoff: 'set folded' }) });
     await c.call('team_submit', { run_id: runId, cwd, node_id: 'gate:goal:2', payload: ok({ accept: true, match_pct: 90 }) });
     nx = await c.call('team_next', { run_id: runId, cwd });
     assert.deepEqual(nx.ready.map((n) => n.node_id), ['report']);
@@ -1134,7 +1150,12 @@ test('a mixed spec expands each subgoal by its kind and reaches the report', asy
     const draft = st.nodes.find((n) => n.node_id === 'draft:D1:1');
     assert.deepEqual(draft.deps, ['critique', 'gate:U1:1'], 'the chain head carries the subgoal deps');
     assert.deepEqual(st.nodes.find((n) => n.node_id === 'review:D1:1').deps, ['draft:D1:1']);
-    assert.ok(st.nodes.find((n) => n.node_id === 'gate:goal:1').deps.includes('gate:D1:1'), 'the goal gate collects the document gate');
+    // Collected through reduce now: the fold carries the data edge, the goal gate keeps every
+    // subgoal gate as an order-only edge so its briefing still sees each one's work.
+    const gg = st.nodes.find((n) => n.node_id === 'gate:goal:1');
+    assert.deepEqual(gg.deps, ['reduce'], 'the goal gate depends on the fold');
+    assert.ok((gg.after || []).includes('gate:D1:1'), 'and still collects the document gate');
+    assert.ok(st.nodes.find((n) => n.node_id === 'reduce').deps.includes('gate:D1:1'), 'the fold collects it by data edge');
 
     await passSubgoal(c, cwd, runId, 'U1');
     await passSubgoal(c, cwd, runId, 'U2');
@@ -1996,6 +2017,7 @@ test('the goal gate is briefed to judge against the request, not only the spec',
       await c.call('team_submit', { run_id: runId, cwd, node_id: `test:${sg}:1`, payload: ok({ verified: true }) });
       await c.call('team_submit', { run_id: runId, cwd, node_id: `gate:${sg}:1`, payload: ok({ accept: true, match_pct: 95 }) });
     }
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'reduce', payload: ok({ handoff: 'set folded' }) });
     const nx = await c.call('team_next', { run_id: runId, cwd });
     const goalGate = nx.ready.find((n) => n.node_id.startsWith('gate:goal'));
     const brief = readFileSync(goalGate.briefing_path, 'utf8');
@@ -2027,6 +2049,7 @@ test('observations and spec drift are surfaced but never block acceptance', asyn
       await c.call('team_submit', { run_id: runId, cwd, node_id: `test:${sg}:1`, payload: ok({ verified: true }) });
       await c.call('team_submit', { run_id: runId, cwd, node_id: `gate:${sg}:1`, payload: ok({ accept: true, match_pct: 90 }) });
     }
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'reduce', payload: ok({ handoff: 'set folded' }) });
     const nx = await c.call('team_next', { run_id: runId, cwd });
     const goalGate = nx.ready.find((n) => n.node_id.startsWith('gate:goal'));
     const v = await c.call('team_submit', {
@@ -2052,6 +2075,7 @@ async function toGoalGate(c, cwd, runId, subgoalPct = 95) {
     await c.call('team_submit', { run_id: runId, cwd, node_id: `test:${sg}:1`, payload: ok({ verified: true }) });
     await c.call('team_submit', { run_id: runId, cwd, node_id: `gate:${sg}:1`, payload: ok({ accept: true, match_pct: subgoalPct }) });
   }
+  await c.call('team_submit', { run_id: runId, cwd, node_id: 'reduce', payload: ok({ handoff: 'set folded' }) });
   // This spec has two subgoals, so `reduce` sits between their gates and the goal gate.
   await c.call('team_submit', { run_id: runId, cwd, node_id: 'reduce', payload: ok({ handoff: 'set folded' }) });
   const nx = await c.call('team_next', { run_id: runId, cwd });
@@ -2620,6 +2644,7 @@ test('gate:goal can be policied separately from the per-subgoal gates', async ()
       assert.equal(gate.model, 'gate-model', 'a subgoal gate uses the gate policy');
       await c.call('team_submit', { run_id, cwd, node_id: gate.node_id, payload: ok({ accept: true, match_pct: 95 }) });
     }
+    await c.call('team_submit', { run_id, cwd, node_id: 'reduce', payload: ok({ handoff: 'set folded' }) });
     const nx = await c.call('team_next', { run_id, cwd });
     const goalGate = nx.ready.find((n) => n.node_id.startsWith('gate:goal'));
     assert.equal(goalGate.model, 'goal-gate-model', 'the goal gate may be judged by a different model');

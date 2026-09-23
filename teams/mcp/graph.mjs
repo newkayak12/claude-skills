@@ -938,15 +938,35 @@ export function retrySubgoal(run, subgoalId, feedback) {
       n.result = null;
     }
   }
+  // A fold that already ran folded the set as it was BEFORE this retry, and the rewire above
+  // just moved its data edge onto an attempt it has never seen. Leaving it `done` hands the
+  // goal gate a stale reading of the artifacts and, worse, one that looks current. Send it
+  // back to pending so it folds what is actually on disk now.
+  for (const n of run.nodes) {
+    if (n.stage === 'reduce' && n.state === 'done' && n.deps.includes(gate)) {
+      n.state = 'pending';
+      n.result = null;
+      // mergeOnto refuses done -> pending unless `reopened` outruns the disk copy, which is
+      // how it keeps one broker from undoing another's progress. This is the same deliberate
+      // reopen autoRejudge makes, so it says so the same way; without the bump the reset is
+      // written and silently merged away, and the fold stays stale.
+      n.reopened = (n.reopened || 0) + 1;
+    }
+  }
   // A goal gate that REJECTED is a different case: it ran, and its verdict is evidence. The
   // retried subgoal will pass or fail on its own, but nothing re-judged the whole - the old
   // gate stayed `failed`, the report stayed behind it, and the run wedged with the fix in
   // place. Open a fresh goal-gate ROUND (every judge, not just the one whose deps happen to
   // name this gate) over the live subgoal gates, carrying the rejection as feedback, and move
   // the report behind it. The old round stays, as every failed attempt does.
+  // Matched on `after` as well as `deps` since `reduce` began carrying the data edge: a goal
+  // gate over a multi-subgoal run now depends on the fold and keeps the subgoal gates as
+  // order-only edges, so a deps-only lookup found no stale round and silently opened none -
+  // the retried subgoal rebuilt the tree and nothing re-judged it.
   const staleRounds = [...new Set(
     run.nodes
-      .filter((n) => n.stage === 'gate' && n.subgoal_id === null && !n.final && n.deps.includes(gate))
+      .filter((n) => n.stage === 'gate' && n.subgoal_id === null && !n.final
+        && (n.deps.includes(gate) || (n.after || []).includes(gate)))
       .map((n) => goalRoundOf(n.node_id))
       .filter((r) => r != null),
   )];
@@ -958,7 +978,7 @@ export function retrySubgoal(run, subgoalId, feedback) {
     const fb = rejecting
       .flatMap((old) => [old.result && old.result.reason, ...((old.result && old.result.gaps) || [])])
       .filter(Boolean).join('\n- ');
-    const { ids: fresh } = pushGoalGateRound(run, siblings[0].deps.slice(), { feedback: fb, supersedes: siblings.map((s) => s.node_id) }, run.goal_judges || siblings.length);
+    const { ids: fresh } = pushGoalGateRound(run, siblings[0].deps.slice(), { feedback: fb, supersedes: siblings.map((s) => s.node_id), ...((siblings[0].after || []).length ? { after: siblings[0].after.slice() } : {}) }, run.goal_judges || siblings.length);
     const oldIds = new Set(siblings.map((s) => s.node_id));
     for (const n of run.nodes) {
       if (!n.after || !n.after.some((d) => oldIds.has(d))) continue;
