@@ -36,6 +36,7 @@ import {
   listRuns,
   getNode,
   expandSubgoals,
+  openAsk,
   validateSpec,
   retrySubgoal,
   retrySpec,
@@ -955,6 +956,23 @@ function finishNode(run, n, result, vendorName) {
       expandSubgoals(run, spec.subgoals);
     }
   }
+  // investigate is the second node that can change the shape of the graph, and for the same
+  // reason setgoal is the first: it produces something the rest of the chain has to be built
+  // around. An unknown that names candidate answers is a decision, not a research gap - so an
+  // interactive run opens an `ask` card for it (parked on a human, never polled for a model)
+  // and draft consumes the answer instead of the question. A non-interactive run records the
+  // same questions on run.unasked, which is what makes "we decided this by default, and here
+  // is what we would have asked" legible in the report instead of invisible in the document.
+  if (n.stage === 'investigate' && n.state === 'done') {
+    const decidable = (Array.isArray(result.unknowns) ? result.unknowns : [])
+      .filter((u) => u && (u.question || u.unknown) && Array.isArray(u.options) && u.options.length > 1);
+    if (decidable.length) {
+      if (run.interactive) openAsk(run, n, decidable);
+      else run.unasked = [...(run.unasked || []), ...decidable.map((u) => ({
+        subgoal_id: n.subgoal_id, question: u.question || u.unknown, owner: u.owner || null, options: u.options,
+      }))];
+    }
+  }
   // One save, after autoReassign: a rejected gate and the retry chain it opens must land on
   // disk together. Saved separately, the run is 'blocked' on disk for the gap between the two
   // writes, and a reader woken by fs.watch on the first rename (the task-manager daemon's
@@ -1142,6 +1160,7 @@ const TOOLS = [
         candidates: { type: 'array', items: { type: 'string' }, description: 'vendor preference order for "auto"' },
         sandbox: { type: 'string' },
         isolated: { type: 'boolean', description: 'cwd is a private worktree with only this run in it' },
+        interactive: { type: 'boolean', description: 'default false, also settable in .claude/team.json. When a planning subgoal\'s investigate stage returns an unknown that names candidate answers, true opens an `ask` card (ask:<subgoal>:<attempt>) between investigate and draft and parks the run in waiting_human until a person picks - tm_inbox lists it, tm_submit({key, payload:{decisions}}) answers it, exactly like any other human card. false decides by default and records what it would have asked on run.unasked instead, so the report can show the questions nobody was asked.' },
         goal_threshold: { type: 'integer', description: 'default 90: the goal gate must report match_pct at or above this to accept. A gate that says accept with 70% match is reporting a partial result as a pass; the number it already returns is made to mean something. 0 accepts on the verdict alone.' },
         goal_judges: { type: 'integer', description: 'default 2: independent judges on the goal gate. Each round opens that many sibling gate nodes (gate:goal:<round>, gate:goal:<round>b, ...) over the same subgoal gates, routed to different identities where possible. The run accepts only if EVERY judge accepts at or above goal_threshold; gaps and spec_drift are the union. 1 reproduces the single-judge behaviour every earlier run had. A rejected round opens a repair pass over the assembled result (team_retry({repair:true}) forces one) rather than reassigning a subgoal.' },
         auto_reassign: { type: 'boolean', description: 'default true: a rejected subgoal gate, review or test opens the next attempt itself, carrying the rejection feedback, and settles when the budget is gone. false leaves the next attempt to team_retry, which makes a rejection advisory - a caller that never retries simply stops.' },
@@ -1257,9 +1276,9 @@ async function toolGraphOpen(a) {
   knownCwds.add(cwd);
   // .claude/team.json layers under an explicit team_open argument of the same name -
   // the same precedence tm_open's own resolveTeamOptions call gives it (teamconfig.mjs).
-  // Only vendor/allocation/goal_threshold/max_retries are both a TEAM_DEFAULTS key and a
+  // Only vendor/allocation/goal_threshold/max_retries/interactive are both a TEAM_DEFAULTS key and a
   // team_open argument that createRun actually consumes on a single run; the other nine
-  // TEAM_DEFAULTS keys (interactive, human_gates, human_scope, max_parallel_teams,
+  // TEAM_DEFAULTS keys (human_gates, human_scope, max_parallel_teams,
   // max_depth, qa_rounds, roles, driver_restarts, docs_dir) belong to tm_open's
   // multi-team/TaskManager layer and are not team_open arguments at all.
   const team = resolveTeamOptions(a, readTeamConfig(cwd).config);
@@ -1278,6 +1297,7 @@ async function toolGraphOpen(a) {
     candidates: a.candidates || null,
     sandbox: a.sandbox || null,
     isolated: a.isolated === true,
+    interactive: T.interactive === true,
     auto_reassign: a.auto_reassign !== false,
     goal_threshold: T.goal_threshold,
     // goal_judges is not a TEAM_DEFAULTS key, so resolveTeamOptions never touches it - it

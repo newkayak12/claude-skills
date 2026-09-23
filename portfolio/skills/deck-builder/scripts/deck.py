@@ -326,6 +326,7 @@ class Slot:
         self.max_em = None       # per line, in em — the measure that does not lie
         self.proto_em = None     # the widest line the template itself puts here
         self.proto_vol = None    # total width of everything the template puts here
+        self.proto_lines = None  # rendered lines the template's own content takes
         self.max_items = None    # paragraphs / rows the template shows
         self.ratio = None        # picture aspect "16:9"
         self.cols = None         # table columns
@@ -423,6 +424,8 @@ def analyze_slide(root, slide_cy=None):
                 slot.max_chars = max(4, int(slot.max_em / mean_em(slot.sample)))
                 slot.proto_em = max([text_em(t) for t in slot.sample] or [0.0])
                 slot.proto_vol = sum(text_em(t) for t in slot.sample)
+                slot.proto_lines = sum(max(1, math.ceil(text_em(t) / slot.max_em))
+                                       for t in slot.sample)
             slot.size_pt = first_font_size(txBody)
             slot.line_h = int(size * 1.2 * EMU_PER_PT)
             slot.box, slot.z = shape_box(el), z
@@ -750,6 +753,9 @@ ANCHORS = ("center", "top", "bottom", "left", "right")
 FLAGS = ("transparent",)
 UNDERFILL_FLOOR = 60.0   # em — below this the slot is a label, and emptiness means nothing
 UNDERFILL_RATIO = 0.55   # of the template's own volume
+SPILL_SLACK = 1          # lines — the wrap estimate is worth about this much, and a
+                         # designed frame often carries less slack than that, so only a
+                         # gross overrun is knowable here. `render` settles the rest.
 
 
 def parse_picture_value(value):
@@ -1138,6 +1144,44 @@ def covers_slide(slot, size, tol=0.97):
     if not slot.box or not size or not size[0] or not size[1]:
         return False
     return (slot.box[2] / float(size[0]) >= tol and slot.box[3] / float(size[1]) >= tol)
+
+
+def wrapped_lines(slot, items):
+    """How many rendered lines the items take in this slot's frame."""
+    if not slot.max_em:
+        return len(items)
+    return sum(max(1, math.ceil(text_em(t) / slot.max_em)) for t in items)
+
+
+def spill(slot, items):
+    """(EMU this text runs lower than the template's own did, lines, template lines).
+
+    Not "does it fit the box": line spacing, autofit and the em model together put an
+    absolute answer out of reach — measured against this template it calls 46% of the
+    designer's own text overflowing. What is knowable is the difference. The template's
+    own content sits where the designer accepted it, so lines beyond that many are the
+    ones pushing down the slide, and how far is (extra lines x line height).
+    """
+    if not slot.box or not slot.line_h or not slot.max_em or slot.proto_lines is None:
+        return None
+    lines = wrapped_lines(slot, items)
+    extra = lines - slot.proto_lines - SPILL_SLACK
+    return (max(0, extra) * slot.line_h, lines, slot.proto_lines)
+
+
+def shapes_below(slot, slots, over_emu):
+    """Slots the spilled text runs into, nearest first."""
+    if not slot.box or over_emu <= 0:
+        return []
+    bottom = slot.box[1] + slot.box[3]
+    reach = (slot.box[0], bottom, slot.box[2], over_emu)
+    hit = []
+    for other in slots:
+        if other is slot or not other.box:
+            continue
+        if box_intersection(reach, other.box):
+            hit.append((other.box[1], other))
+    return [o for _, o in sorted(hit, key=lambda kv: kv[0])]
 
 
 def text_over_pictures(slots, min_frac=0.12):
@@ -2320,8 +2364,20 @@ def cmd_check(args):
                                  "opens a hole where the rest was. Write to the frame, or "
                                  "choose an archetype shaped for less."
                                  % (line, tag, slot_id, mine / slot.proto_vol * 100))
+            if slot.type in ("text", "list"):
+                got = spill(slot, [t for _, t in as_items(kind, value)])
+                if got and got[0] > 0:
+                    over, lines, was = got
+                    into = shapes_below(slot, slots, over)
+                    where = (" straight into %s" % ", ".join(o.id for o in into[:2])
+                             if into else " into the space below it")
+                    say = errs if into else warns
+                    say.append("line %d: %s.%s — %d lines where the template has %d, so it "
+                               "runs %.0fpt lower than the design puts it%s. Cut it to %d "
+                               "lines, or use an archetype with room."
+                               % (line, tag, slot_id, lines, was, pt(over), where, was))
             if slot.type == "list" and slot.max_items and kind == "list" \
-                    and len(value) > slot.max_items:
+                    and len(value) > slot.max_items and not slot.box:
                 warns.append("line %d: %s.%s — %d items vs %d in the template; extra items "
                              "are cloned and may run past the frame"
                              % (line, tag, slot_id, len(value), slot.max_items))
