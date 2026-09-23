@@ -337,6 +337,9 @@ docker compose -f knowledge/compose.yaml run --rm knowledge-index
 [ROADMAP.md](ROADMAP.md) — what is measured, what is queued, and what is deliberately not being
 done, ordered by measured lever size rather than by what is easiest to edit.
 
+[docs/theory.md](docs/theory.md) — the papers and principles behind the rules (RRF, BM25, competency
+questions, reusable holdout, leakage, cross-encoder reranking), and where this plugin departs from them.
+
 ## Hook
 
 `hooks/knowledge-delta-check.mjs` runs after `Write`/`Edit` and activates only when the changed

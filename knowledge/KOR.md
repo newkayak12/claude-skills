@@ -325,6 +325,9 @@ docker compose -f knowledge/compose.yaml run --rm knowledge-index
 [ROADMAP.md](ROADMAP.md) — 무엇을 측정 중이고, 무엇이 대기 중이며, 무엇을 의도적으로
 하지 않는지. 고치기 쉬운 순서가 아니라 측정된 레버 크기 순입니다.
 
+[docs/theory.md](docs/theory.md) — 규칙 뒤에 있는 논문과 원리(RRF, BM25, 컴피턴시 질문,
+재사용 holdout, 누수, 크로스인코더 리랭킹)와, 이 플러그인이 그것과 다르게 간 지점.
+
 ## 훅
 
 `hooks/knowledge-delta-check.mjs`는 `Write`/`Edit` 뒤에 돌며, 바뀐 Markdown이 기존 지식
