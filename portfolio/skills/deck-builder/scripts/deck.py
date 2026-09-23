@@ -10,6 +10,10 @@ Subcommands:
   catalog   template.pptx -> deck.catalog.md  (archetypes, slots, capacity hints)
   check     deck.mdx      -> diagnostics      (unknown slots, overflow, missing files)
   build     deck.mdx      -> deck.pptx        (clone archetype slides, swap content)
+  render    deck.mdx      -> pdf + previews   (build, then look: collisions, off-slide)
+
+A deck is read by people, so "the text is in the file" is not the bar. `render` puts the
+deck through a real renderer and reports what physically collides on the page.
 
 Python stdlib only: zipfile, xml.etree, re. No python-pptx, no PyYAML.
 """
@@ -19,7 +23,9 @@ import copy
 import os
 import re
 import shutil
+import statistics
 import struct
+import subprocess
 import sys
 import zipfile
 import xml.etree.ElementTree as ET
@@ -1062,6 +1068,165 @@ def cmd_check(args):
     return 1 if errs else 0
 
 
+# ── Rendering and the geometric audit ────────────────────────────────────────
+
+XH = "{http://www.w3.org/1999/xhtml}"
+
+
+class Renderer:
+    """LibreOffice, on PATH or in a container.
+
+    DECK_RENDER_DOCKER=<image> uses that image instead. A container's daemon may not
+    see /tmp, so in docker mode the deck has to live somewhere it can bind-mount —
+    the deck's own directory, which is where the user put it.
+    """
+
+    def __init__(self):
+        self.image = os.environ.get("DECK_RENDER_DOCKER")
+        self.local = shutil.which("soffice") or shutil.which("libreoffice")
+        self.available = bool(self.local or (self.image and shutil.which("docker")))
+
+    def describe(self):
+        return self.local if self.local else "docker %s" % self.image
+
+    def sh(self, workdir, script):
+        if self.local:
+            return subprocess.run(["bash", "-c", script], cwd=str(workdir),
+                                  capture_output=True, text=True, timeout=900)
+        return subprocess.run(
+            ["docker", "run", "--rm", "--entrypoint", "bash", "-u", "0",
+             "-v", "%s:/work" % workdir, "-w", "/work", self.image, "-c", script],
+            capture_output=True, text=True, timeout=1800)
+
+    def to_pdf(self, workdir, name):
+        r = self.sh(workdir, "export HOME=/tmp/lohome; mkdir -p $HOME; "
+                             "soffice --headless -env:UserInstallation=file:///tmp/loprof "
+                             "--convert-to pdf %s 2>&1 | tail -2" % name)
+        return (r.stdout + r.stderr).strip()
+
+    def bbox(self, workdir, pdf):
+        out = Path(pdf).with_suffix(".bbox.html").name
+        self.sh(workdir, "command -v pdftotext >/dev/null || exit 0; "
+                         "pdftotext -bbox-layout %s %s && chmod a+rw %s" % (pdf, out, out))
+        f = workdir / out
+        return f.read_text(encoding="utf-8") if f.is_file() else None
+
+    def previews(self, workdir, pdf, dpi=72):
+        stem = Path(pdf).stem
+        self.sh(workdir, "command -v pdftoppm >/dev/null || exit 0; mkdir -p %s-pages && "
+                         "pdftoppm -r %d -png %s %s-pages/p && chmod -R a+rwX %s-pages"
+                % (stem, dpi, pdf, stem, stem))
+        d = workdir / ("%s-pages" % stem)
+        return sorted(d.glob("p*.png")) if d.is_dir() else []
+
+
+def _bbox_pages(xml_text):
+    root = ET.fromstring(xml_text)
+    out = []
+    for page in root.iter(XH + "page"):
+        pw, ph = float(page.get("width")), float(page.get("height"))
+        blocks = []
+        for block in page.iter(XH + "block"):
+            lines = []
+            for line in block.iter(XH + "line"):
+                ws = [w for w in line.iter(XH + "word") if (w.text or "").strip()]
+                if not ws:
+                    continue
+                lines.append(((min(float(w.get("xMin")) for w in ws),
+                               min(float(w.get("yMin")) for w in ws),
+                               max(float(w.get("xMax")) for w in ws),
+                               max(float(w.get("yMax")) for w in ws)),
+                              " ".join(w.text for w in ws)))
+            if lines:
+                blocks.append(lines)
+        out.append((pw, ph, blocks))
+    return out
+
+
+def collisions(xml_text, cross_tol=0.05, bunch_tol=0.70):
+    """What physically clashes on the page.
+
+    Plain box intersection does not work for CJK: Noto's em box is taller than a 100%
+    line, so stacked lines always overlap without a glyph ever touching. So compare
+    only ACROSS text blocks, and within a block look for bunching against the block's
+    own median line pitch. Anything outside the page box is clipped, not merely tight.
+    """
+    def area(b):
+        return max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
+
+    def inter(a, b):
+        return area((max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])))
+
+    found = []
+    for pi, (pw, ph, blocks) in enumerate(_bbox_pages(xml_text), 1):
+        for lines in blocks:
+            for box, text in lines:
+                if box[0] < -1 or box[1] < -1 or box[2] > pw + 1 or box[3] > ph + 1:
+                    found.append((pi, "off-slide", "%r sits outside the %.0fx%.0f page"
+                                  % (text[:34], pw, ph)))
+        for i in range(len(blocks)):
+            for j in range(i + 1, len(blocks)):
+                for b1, t1 in blocks[i]:
+                    for b2, t2 in blocks[j]:
+                        ov = inter(b1, b2)
+                        if ov <= 0:
+                            continue
+                        frac = ov / max(1e-6, min(area(b1), area(b2)))
+                        if frac > cross_tol:
+                            found.append((pi, "overlap", "%r overlaps %r by %.0f%%"
+                                          % (t1[:26], t2[:26], frac * 100)))
+        for lines in blocks:
+            if len(lines) < 3:
+                continue
+            tops = [b[1] for b, _ in lines]
+            pitches = [b - a for a, b in zip(tops, tops[1:])]
+            med = statistics.median(pitches)
+            for k, pitch in enumerate(pitches):
+                if med > 0 and pitch < med * bunch_tol:
+                    found.append((pi, "bunched", "%r sits %.1fpt below the previous line, "
+                                  "against a %.1fpt norm" % (lines[k + 1][1][:26], pitch, med)))
+    return found
+
+
+def cmd_render(args):
+    r = Renderer()
+    if not r.available:
+        raise SystemExit(
+            "error: no renderer.\n"
+            "  a deck is read by people, so this step looks at the page rather than the file.\n"
+            "  install LibreOffice (soffice on PATH), or set DECK_RENDER_DOCKER=<image>.")
+    rc = cmd_build(args)
+    md_path = Path(args.deck)
+    front, _, _ = parse_deck(md_path.read_text(encoding="utf-8"))
+    out = Path(args.output or front.get("output") or md_path.with_suffix(".pptx"))
+    if not out.is_absolute():
+        out = md_path.parent / out
+    work = out.parent
+
+    print("render via %s" % r.describe())
+    log = r.to_pdf(work, out.name)
+    pdf = out.with_suffix(".pdf")
+    if not pdf.is_file():
+        raise SystemExit("error: the renderer did not produce a PDF\n  %s" % log)
+    print("  pdf -> %s" % pdf)
+    pages = r.previews(work, pdf.name)
+    if pages:
+        print("  %d page preview(s) -> %s/" % (len(pages), pages[0].parent))
+
+    box = r.bbox(work, pdf.name)
+    if box is None:
+        print("  ! no pdftotext in the renderer — skipping the collision audit")
+        return rc
+    hits = collisions(box)
+    if not hits:
+        print("  layout: clean — nothing overlaps or runs off a slide")
+        return rc
+    print("  layout: %d problem(s) — look at these pages before you present" % len(hits))
+    for page, kind, detail in hits:
+        print("    page %d  %-9s %s" % (page, kind, detail))
+    return 1 if args.strict else rc
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 def main(argv=None):
@@ -1085,6 +1250,13 @@ def main(argv=None):
     b.add_argument("--output")
     b.add_argument("--strict", action="store_true", help="exit nonzero on any problem")
     b.set_defaults(func=cmd_build)
+
+    d = sub.add_parser("render", help="build, then render and look for collisions")
+    d.add_argument("--deck", required=True, metavar="deck" + DECK_EXT)
+    d.add_argument("--template", help="overrides the front matter; one is always required")
+    d.add_argument("--output")
+    d.add_argument("--strict", action="store_true", help="exit nonzero on any problem")
+    d.set_defaults(func=cmd_render)
 
     args = ap.parse_args(argv)
     return args.func(args)

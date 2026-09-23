@@ -353,6 +353,7 @@ Known limits, reported explicitly rather than hidden:
 | **A template is mandatory** | Without a reference `.pptx` the engine exits with an error and produces nothing. |
 | **No new layouts** | Output slides are clones of template slides. Content with no matching archetype needs the template extended in PowerPoint first. |
 | **Charts are not writable** | Series values live in an embedded xlsx plus cached XML. `catalog` lists chart slots; `build` leaves them at template values. |
+| **Layout truth needs a renderer** | `check` estimates from frame width ÷ font size; only `render` sees real collisions, and that needs LibreOffice. |
 | **Capacity is an estimate** | Overflow warnings come from frame width ÷ font size, not real text metrics — a prompt to look, not a verdict. |
 | **Formatting follows the template** | A replaced run inherits the template run's font, size and color; per-word emphasis is not expressible in `deck.mdx`. |
 | **Nesting shows only if the template indents** | A nested item is written at outline level 1; a template that defines no level-1 indent renders it flush. |

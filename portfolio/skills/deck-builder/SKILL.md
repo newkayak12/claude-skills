@@ -26,6 +26,7 @@ Treats a deck as a build, not a document:
 | `template.pptx` | the toolchain — its slides are the archetype catalog. **Always required.** |
 | `deck.mdx` | the source — the only file anyone edits |
 | `deck.pptx` | the build artifact — regenerated in full every time |
+| `deck.pdf` + page previews | what a person actually looks at — the only place layout is |
 
 Each output slide is a **clone of a template slide** with its content swapped, so the
 template's design survives byte for byte. Nothing is laid out from scratch.
@@ -40,7 +41,8 @@ Engine: `scripts/deck.py` (invoke with an absolute path).
 - **The source file is `deck.mdx`, never `deck.md`.** It is compiled, not read. The engine rejects any other extension.
 - **Catalog before writing.** Never author `deck.mdx` from a guess about the template. Run `catalog` and write against the slot ids it prints.
 - **Never hand-edit the output pptx.** It is regenerated on the next build. Corrections go into `deck.mdx`.
-- **Run `check` before `build`, and show the user the warnings.** Overflow warnings are the only signal that text will spill — there is no renderer to see it.
+- **Run `check` before `build`, and show the user the warnings.** Overflow warnings are what stands between crowded text and a slide nobody can read.
+- **A deck is read by people, so look at it.** When a renderer is available, finish with `render`, not `build` — the layout audit and the page previews are the only place text collisions show up. If no renderer is available, say so plainly in the report instead of implying the layout was checked.
 - **Never invent an archetype.** If no template slide fits the content, say so and ask whether to reshape the content or extend the template — do not approximate.
 - **Report the warnings you chose to ignore.** An overflow warning you decided was fine still belongs in the final report — the user is the one who will see the slide.
 - **Charts are read-only.** Say this out loud when the chosen archetype has one; the template's numbers ship unless the user edits the chart in PowerPoint.
@@ -137,6 +139,29 @@ python3 /abs/path/scripts/deck.py build --deck deck.mdx [--output out.pptx] [--s
 
 The same `deck.mdx` always produces a byte-identical pptx.
 
+### Step 6 · Render and look
+
+```bash
+python3 /abs/path/scripts/deck.py render --deck deck.mdx
+```
+
+Builds, converts through LibreOffice, writes PNG previews of every page, and audits the
+rendered geometry:
+
+| Finding | Means |
+|---|---|
+| `overlap` | two text frames physically clash on the page |
+| `bunched` | lines inside one frame sit closer than that frame's own norm — text has outgrown its box |
+| `off-slide` | text is outside the page box; the renderer cut it |
+
+Clean means clean: the audit compares text across frames and measures line pitch against
+each frame's median, so it does not cry wolf over CJK fonts whose em box is taller than a
+100% line.
+
+The renderer is `soffice` on PATH, or `DECK_RENDER_DOCKER=<image>` for a container. With
+neither, `render` refuses rather than pretending the layout was checked — report that to
+the user and fall back to `build`.
+
 ---
 
 ## Output Template
@@ -146,6 +171,7 @@ Report after a build:
 ```
 빌드 완료 — <출력 경로>
   슬라이드 <N>개 · 템플릿 <이름> · 이미지 <M>개 삽입
+  렌더 검사 — 겹침 0건 (또는: 3페이지 제목이 본문과 겹칩니다)
 
 아키타입 사용
   @s1 ×1  표지
@@ -169,7 +195,7 @@ Report after a build:
 | Proposes the archetype-per-slide plan | Approves or rearranges the plan |
 | Writes and revises `deck.mdx` | Edits `deck.mdx` directly whenever you prefer |
 | Runs `check`, reports every warning | Decides whether an overflow warning matters |
-| Runs `build`, reports the result | Opens the pptx, edits charts if needed |
+| Runs `render`, looks at the previews, reports collisions | Opens the pptx, edits charts if needed |
 
 ---
 
@@ -180,6 +206,7 @@ Report after a build:
 | **A template is mandatory** | There is no built-in design. Without a reference `.pptx` the engine exits with an error and produces nothing. |
 | **No new layouts** | Output slides are clones of template slides. Content with no matching archetype needs the template extended in PowerPoint first. |
 | **Charts are not writable** | Series values live in an embedded xlsx plus cached XML. `catalog` lists chart slots; `build` leaves them at template values. |
+| **Layout truth needs a renderer** | `check` estimates from frame width ÷ font size. Only `render` sees what actually collides, and it needs LibreOffice. |
 | **Capacity is an estimate** | Overflow warnings come from frame width ÷ font size, not real text metrics. Treat them as a prompt to look, not a verdict. |
 | **Nesting is only as visible as the template makes it** | A nested item is written at outline level 1. If the template's own body text defines no indent for level 1, it renders flush with the rest — the level is correct, the template just doesn't show it. |
 | **Formatting follows the template** | A replaced run inherits the template run's font, size and color. Per-word bold or color inside a slot is not expressible in `deck.mdx`. |

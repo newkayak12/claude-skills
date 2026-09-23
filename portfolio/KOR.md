@@ -313,7 +313,17 @@ python3 /abs/path/to/skills/deck-builder/scripts/deck.py check --deck deck.mdx
 
 # 3 — build: 같은 deck.mdx는 항상 바이트까지 같은 pptx를 냅니다
 python3 /abs/path/to/skills/deck-builder/scripts/deck.py build --deck deck.mdx
+
+# 4 — render: 빌드하고 LibreOffice로 렌더해서 실제 지면을 검사합니다
+python3 /abs/path/to/skills/deck-builder/scripts/deck.py render --deck deck.mdx
 ```
+
+발표자료는 사람이 읽는 물건이라 `render`가 실질적인 마지막 단계입니다. PDF와 페이지 PNG
+미리보기를 내놓고, 렌더된 지면에서 텍스트 프레임끼리 겹치는 곳, 한 프레임 안에서 행간이
+자기 기준보다 좁아진 곳, 슬라이드 끝에서 잘려나간 텍스트를 찾아냅니다. 원시 박스를 교차시키는
+대신 프레임 사이를 비교하는데, CJK 폰트의 em 박스가 행간 100%보다 커서 글자가 닿지 않아도
+지면상으로는 항상 겹치기 때문입니다. `soffice`가 PATH에 있거나 `DECK_RENDER_DOCKER=<이미지>`가
+필요하고, 없으면 검사한 척하지 않고 거부합니다.
 
 `deck.mdx`는 자체 파싱되는 최소 문법의 마크다운입니다 — `## @s3`은 템플릿 3번 슬라이드로 슬라이드를
 시작하고, `key: value`는 텍스트 슬롯, 들여쓴 `- ` 줄은 리스트, 들여쓴 `| a | b |` 줄은 표 행,
@@ -328,6 +338,7 @@ python3 /abs/path/to/skills/deck-builder/scripts/deck.py build --deck deck.mdx
 | **템플릿 필수** | 레퍼런스 `.pptx`가 없으면 엔진은 에러로 끝내고 아무것도 만들지 않습니다. |
 | **새 레이아웃 없음** | 출력 슬라이드는 템플릿 슬라이드의 복제본입니다. 맞는 아키타입이 없는 내용은 먼저 PowerPoint에서 템플릿을 늘려야 합니다. |
 | **차트는 쓰기 불가** | 시리즈 값이 내장 xlsx와 캐시 XML에 나뉘어 있습니다. `catalog`은 차트 슬롯을 보여주고, `build`는 템플릿 값 그대로 둡니다. |
+| **레이아웃의 진실은 렌더러에만 있음** | `check`는 프레임 너비 ÷ 폰트 크기로 추정합니다. 실제 겹침은 `render`만 보고, 그건 LibreOffice가 필요합니다. |
 | **용량은 추정치** | 오버플로 경고는 실제 텍스트 메트릭이 아니라 프레임 너비 ÷ 폰트 크기에서 나옵니다 — 판정이 아니라 확인하라는 신호입니다. |
 | **서식은 템플릿을 따름** | 교체된 run은 템플릿 run의 폰트·크기·색을 물려받습니다. 단어 단위 강조는 `deck.mdx`로 표현할 수 없습니다. |
 | **중첩은 템플릿이 들여쓸 때만 보임** | 중첩 항목은 아웃라인 레벨 1로 쓰입니다. 템플릿이 레벨 1 들여쓰기를 정의하지 않았다면 나머지와 같은 줄에서 시작합니다. |
