@@ -139,6 +139,11 @@ still holding template copy, and for every picture how much `fill` would crop aw
 its resolution holds up at that size, whether generated art left the template's palette,
 and whether its border will read as a pasted box on that slide.
 
+Where a template lays type over a picture, `check` decodes the pixels that land behind
+each text box and measures them against that text's own color: below 3:1 for large type
+or 4.5:1 for body, over more than a fifth of the area, it says so. A picture drawn *after*
+the words it covers is an error — they end up behind the image.
+
 ### Step 5 · Build
 
 ```bash
@@ -201,7 +206,7 @@ Report after a build:
 
 ## Limitations
 
-The five that change what you can promise:
+The six that change what you can promise:
 
 - **No new layouts.** Every output slide is a clone of a template slide. Content with no
   matching archetype needs the template extended in PowerPoint first — say so rather than
@@ -210,6 +215,8 @@ The five that change what you can promise:
 - **Charts are not writable.** `catalog` lists chart slots; `build` leaves the template's
   numbers. Generate an SVG into a picture slot instead.
 - **Layout truth needs a renderer.** `check` estimates; only `render` sees what collides.
+- **Legibility is measured on PNG only.** Type over a JPEG or an SVG backdrop is not
+  scored, and inherited text colors are left alone rather than guessed at.
 - **Formatting follows the template.** Emphasis flips attributes on the template's own run;
   per-word color or size is not expressible.
 

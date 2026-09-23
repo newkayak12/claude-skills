@@ -19,8 +19,12 @@ stays green.
     python3 test_render.py
 """
 
+import contextlib
+import io
 import os
 import re
+import struct
+import zlib
 import shutil
 import sys
 import zipfile
@@ -73,6 +77,22 @@ class Renderer(deck.Renderer):
     def page_texts(self, workdir, pdf, pages):
         return [self.sh(workdir, "pdftotext -f %d -l %d -layout %s -" % (i, i, pdf)).stdout
                 for i in range(1, pages + 1)]
+
+
+def make_backdrop(path, tone, w=1920, h=1080):
+    """A full-bleed PNG whose tone varies down the page."""
+    raw = b""
+    for y in range(h):
+        raw += b"\x00" + bytes(tone(y, h)) * w
+
+    def chunk(tag, data):
+        c = tag + data
+        return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c))
+
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
 
 
 def pdf_page_count(path):
@@ -315,6 +335,89 @@ def run(work, r):
     stext = r.page_texts(work, "stress.pdf", 2)
     check(norm("행14") not in norm(stext[1]),
           "rows past the slide edge really are lost — which is why check errors on them")
+
+    legibility(work, r)
+
+
+def band_median(png, frac_top, frac_bottom, frac_left=0.05, frac_right=0.95):
+    """Median colour of a horizontal band of a rendered page.
+
+    The median, not the mean: the band contains the glyphs as well as the backdrop,
+    and the glyphs are the minority of its area, so the median is what sits behind
+    them — which is exactly what `check` claims to have measured.
+    """
+    got = deck.read_png(png)
+    if not got:
+        return None
+    w, h, rows = got
+    vals = []
+    for y in range(int(h * frac_top), max(int(h * frac_top) + 1, int(h * frac_bottom))):
+        row = rows[y]
+        for x in range(int(w * frac_left), int(w * frac_right), 3):
+            px = row[x]
+            vals.append((0.2126 * px[0] + 0.7152 * px[1] + 0.0722 * px[2], px))
+    if not vals:
+        return None
+    vals.sort(key=lambda v: v[0])
+    px = vals[len(vals) // 2][1]
+    return "%02X%02X%02X" % px[:3]
+
+
+LEGIBILITY = """---
+template: template.pptx
+output: legible.pptx
+---
+
+## @s7
+pic1: bright.png
+text1: 읽히지 않는 제목
+text2: 뒤에 깔린 하늘이 거의 흰색이기 때문이다
+
+## @s7
+pic1: dark.png
+text1: 읽히는 제목
+text2: 배경이 흰 글자를 받아줄 만큼 어둡기 때문이다
+"""
+
+
+def legibility(work, r):
+    """What `check` predicts about text over a picture is what the renderer paints."""
+    print("white type over a picture — prediction vs the page")
+    make_backdrop(work / "bright.png", lambda y, h: (230 - int(30 * y / h),
+                                                     238 - int(20 * y / h), 248))
+    make_backdrop(work / "dark.png", lambda y, h: (12 + int(20 * y / h),
+                                                   26 + int(18 * y / h), 52))
+    (work / "legible.mdx").write_text(LEGIBILITY, encoding="utf-8")
+
+    warns = []
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        deck.main(["check", "--deck", str(work / "legible.mdx")])
+    warns = [ln for ln in out.getvalue().splitlines()
+             if "falls below" in ln]
+    bright = [w for w in warns if "bright.png" in w]
+    dark = [w for w in warns if "dark.png" in w]
+    check(len(bright) == 2 and not dark,
+          "check warns for both text slots on the bright backdrop and neither on the dark")
+    check(any("3.0:1" in w for w in bright) and any("4.5:1" in w for w in bright),
+          "the 40pt title is held to 3:1 and the 16pt line to 4.5:1: %s"
+          % [w.split("falls below")[1][:6] for w in bright])
+
+    deck.main(["build", "--deck", str(work / "legible.mdx")])
+    r.to_pdf(work, "legible.pptx")
+    pages = r.previews(work, "legible.pdf", dpi=96)
+    if len(pages) < 2:
+        skip("rendered legibility band (pdftoppm unavailable)")
+        return
+    # the 40pt title sits at y = 4200000 of 6858000 EMU, 900000 tall
+    top, bot = 4200000 / 6858000.0, 5100000 / 6858000.0
+    lit = band_median(pages[0], top, bot)
+    shade = band_median(pages[1], top, bot)
+    check(lit and shade and deck.contrast_ratio(lit, "FFFFFF") < 3.0
+          <= deck.contrast_ratio(shade, "FFFFFF"),
+          "the page agrees: #%s behind the bright title (%.1f:1), #%s behind the dark one "
+          "(%.1f:1)" % (lit, deck.contrast_ratio(lit, "FFFFFF"), shade,
+                        deck.contrast_ratio(shade, "FFFFFF")))
 
 
 def main():

@@ -111,10 +111,10 @@ def make_template(path, media):
         _sp("Slide Number", None, [(0, "")]),
     ])
     slide2 = _slide([
+        _pic("Picture 4", "rId9", 3000000, 2000000),   # behind the text, as a design does
         _sp("Title 1", "title", [(0, "Agenda")]),
         _sp("Body 2", "body", [(0, "one"), (0, "two"), (1, "nested")]),
         _tbl("Table 3", 3, 2),
-        _pic("Picture 4", "rId9", 3000000, 2000000),
     ])
     parts = {
         "[Content_Types].xml":
@@ -722,6 +722,133 @@ def guards(tmp):
           "catalog tells you to save the source as deck.mdx")
 
 
+def make_split_png(path, w, h, left=(20, 20, 20), right=(240, 240, 240)):
+    """Dark on the left, light on the right — so a window that picks a side shows it."""
+    raw = b""
+    for _ in range(h):
+        raw += b"\x00" + bytes(left) * (w // 2) + bytes(right) * (w - w // 2)
+
+    def chunk(tag, data):
+        c = tag + data
+        return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c))
+
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b""))
+
+
+def _slot(sid, stype, box, z, color=None, size=None, sample=()):
+    s = deck.Slot(sid, stype, str(z))
+    s.box, s.z, s.color_ref, s.size_pt = box, z, color, size
+    s.sample = list(sample)
+    if stype == "picture" and box[3]:
+        s.ratio = round(box[2] / box[3], 3)
+    return s
+
+
+def legibility(tmp):
+    """Type laid over a picture: is it still readable, and is it even visible?"""
+    print("text over a picture")
+    check(abs(deck.contrast_ratio("FFFFFF", "000000") - 21.0) < 0.01,
+          "black on white is 21:1")
+    check(abs(deck.contrast_ratio("777777", "777777") - 1.0) < 1e-6,
+          "a colour against itself is 1:1")
+    check(deck.contrast_ratio("FFFFFF", "000000") == deck.contrast_ratio("000000", "FFFFFF"),
+          "contrast does not care which is the text")
+    check(deck.legibility_threshold(24) == 3.0 and deck.legibility_threshold(12) == 4.5,
+          "large text is held to 3:1 and body text to 4.5:1")
+
+    pic = _slot("pic1", "picture", (0, 0, 1000, 1000), 0)
+    over = _slot("text1", "text", (0, 0, 500, 1000), 1, ("srgb", "FFFFFF"), 24, ["Over it"])
+    away = _slot("text2", "text", (2000, 0, 500, 500), 2, ("srgb", "FFFFFF"), 24)
+    pairs = deck.text_over_pictures([pic, over, away])
+    check(len(pairs) == 1 and pairs[0][0] is over and abs(pairs[0][2] - 1.0) < 1e-6,
+          "only the text box sharing the picture's box is paired, and it is fully covered")
+
+    win = deck.source_window(over.box, pic.box, (0.0, 0.0, 0.0, 0.0))
+    check(win == (0.0, 0.0, 0.5, 1.0),
+          "a text box on the left half maps to the left half of the source: %s" % (win,))
+    win2 = deck.source_window(over.box, pic.box, (0.2, 0.0, 0.0, 0.0))
+    check(abs(win2[0] - 0.2) < 1e-9 and abs(win2[2] - 0.6) < 1e-9,
+          "a fill crop shifts the window into what survives: %s" % (win2,))
+    check(deck.source_window((5000, 0, 100, 100), pic.box, (0, 0, 0, 0)) is None,
+          "text nowhere near the picture has no window")
+
+    w, h = 40, 20
+    rows = [[(20, 20, 20, 255)] * (w // 2) + [(240, 240, 240, 255)] * (w // 2)
+            for _ in range(h)]
+    dark = deck.window_contrast(rows, w, h, (0.0, 0.0, 0.5, 1.0), "FFFFFF", None, 4.5)
+    light = deck.window_contrast(rows, w, h, (0.5, 0.0, 1.0, 1.0), "FFFFFF", None, 4.5)
+    check(dark and dark[1] == 0.0 and light and light[1] == 1.0,
+          "white text is safe over the dark half and fails over the light half: %s / %s"
+          % (dark, light))
+    check(dark[0] == "141414" and light[0] == "F0F0F0",
+          "each window reports its own average, not the whole image's")
+    clear = [[(240, 240, 240, 0)] * w for _ in range(h)]
+    on_dark = deck.window_contrast(clear, w, h, (0, 0, 1, 1), "FFFFFF", "10243F", 4.5)
+    check(on_dark and on_dark[1] == 0.0,
+          "transparent pixels are scored against the slide behind them, not skipped")
+
+    make_split_png(tmp / "split.png", 40, 20)
+    full = _slot("text1", "text", (0, 0, 1000, 1000), 1, ("srgb", "FFFFFF"), 24, ["Title"])
+    warns, errs = [], []
+    deck._check_picture_legibility(tmp / "split.png", pic, [pic, full], "@s1", "pic1", 4,
+                                   warns, errs, "stretch", "center", frozenset(),
+                                   "10243F", {})
+    check(not errs and len(warns) == 1 and "50%" in warns[0] and "text1 (24pt)" in warns[0],
+          "half the area behind the white title is too light, and it says so: %s"
+          % (warns[0] if warns else warns))
+    warns, errs = [], []
+    left_only = _slot("text1", "text", (0, 0, 400, 1000), 1, ("srgb", "FFFFFF"), 24)
+    deck._check_picture_legibility(tmp / "split.png", pic, [pic, left_only], "@s1", "pic1",
+                                   4, warns, errs, "stretch", "center", frozenset(),
+                                   "10243F", {})
+    check(not warns and not errs,
+          "the same image says nothing when the text sits over its dark side: %s" % warns)
+
+    warns, errs = [], []
+    inherited = _slot("text1", "text", (0, 0, 1000, 1000), 1, None, 24)
+    deck._check_picture_legibility(tmp / "split.png", pic, [pic, inherited], "@s1", "pic1",
+                                   4, warns, errs, "stretch", "center", frozenset(), None, {})
+    check(not warns, "an inherited text colour is left alone rather than guessed at")
+    warns, errs = [], []
+    themed = _slot("text1", "text", (0, 0, 1000, 1000), 1, ("scheme", "lt1"), 24)
+    deck._check_picture_legibility(tmp / "split.png", pic, [pic, themed], "@s1", "pic1", 4,
+                                   warns, errs, "stretch", "center", frozenset(), None,
+                                   {"lt1": "FFFFFF"})
+    check(len(warns) == 1, "a scheme colour resolves through the theme: %s" % warns)
+    check(deck.resolve_color_ref(("scheme", "tx1"), {"dk1": "1A1A1A"}) == "1A1A1A",
+          "tx1 follows the colour map to dk1")
+
+    check(deck.covers_slide(_slot("p", "picture", (0, 0, 12192000, 6858000), 0),
+                            (12192000, 6858000)),
+          "a frame the size of the canvas is full bleed")
+    check(not deck.covers_slide(_slot("p", "picture", (0, 0, 5600000, 3150000), 0),
+                                (12192000, 6858000)),
+          "a frame beside the text is not")
+    warns = []
+    deck._check_picture_color(tmp / "white.png", "@s1", "pic1", 3, warns, [], "10243F",
+                              full_bleed=True)
+    check(not warns,
+          "a picture that fills the slide cannot read as a box pasted onto it: %s" % warns)
+
+    print("a picture on top of the words")
+    buried = _slot("text1", "text", (0, 0, 800, 800), 0, ("srgb", "FFFFFF"), 24)
+    on_top = _slot("pic1", "picture", (0, 0, 1000, 1000), 1)
+    warns, errs = [], []
+    deck._check_picture_legibility(tmp / "split.png", on_top, [buried, on_top], "@s1",
+                                   "pic1", 4, warns, errs, "stretch", "center",
+                                   frozenset(), None, {})
+    check(any("behind the image" in e for e in errs),
+          "a picture drawn after the text it covers is an error: %s" % errs)
+    warns, errs = [], []
+    deck._check_picture_legibility(tmp / "split.png", pic, [pic, over], "@s1", "pic1", 4,
+                                   warns, errs, "stretch", "center", frozenset(), None, {})
+    check(not errs, "the same pair is fine when the picture is drawn first")
+
+
 def workdir():
     """A container renderer's daemon may not see /tmp, so mirror test_render.py there."""
     if os.environ.get("DECK_RENDER_DOCKER") and not shutil.which("soffice"):
@@ -739,6 +866,7 @@ def main():
         geometry(tmp)
         sizing(tmp)
         color(tmp)
+        legibility(tmp)
         emphasis(tmp)
         drift(tmp)
         notes(tmp)

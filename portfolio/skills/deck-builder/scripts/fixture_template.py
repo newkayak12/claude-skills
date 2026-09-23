@@ -3,7 +3,7 @@
 A TEST FIXTURE, not a fallback. deck.py never calls this and must never acquire a
 built-in template: a deck is built from the user's own reference pptx or not at all.
 It exists so the render round-trip has a designed deck to work on — brand colors, a
-type scale, six archetypes — without shipping a binary fixture in the repo.
+type scale, seven archetypes — without shipping a binary fixture in the repo.
 
     python3 fixture_template.py out.pptx
 """
@@ -202,6 +202,16 @@ def build(out_path, image_bytes):
            [(0, "A point about the picture"), (0, "Another point")],
            color="C7D3E2", size=1600),
     ], bg=NAVY))
+
+    # s7 — full-bleed picture with the title laid over it: the one layout where the
+    # image and the words compete for the same pixels, so `check` has to measure them.
+    slides.append(slide([
+        pic("Backdrop", "rId2", 0, 0, W, H),
+        tx("Title", M, 4200000, 7000000, 900000,
+           [(0, "Words over a picture")], color="FFFFFF", size=4000, bold=1),
+        tx("Kicker", M, 5300000, 7000000, 400000,
+           [(0, "and they still have to be readable")], color="FFFFFF", size=1600),
+    ]))
 
     parts = {
         "_rels/.rels": rels([("rId1", "officeDocument", "ppt/presentation.xml")]),

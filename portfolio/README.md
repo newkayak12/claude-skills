@@ -334,6 +334,15 @@ strayed off the template's palette, and whether an image's border will read as a
 that slide's background. A picture losing half of itself is treated as the same defect as a table
 row falling off the slide: the engine does not lose content quietly.
 
+Where the template lays type over a picture — a full-bleed backdrop with a title on it — neither
+the image nor the text is wrong on its own and the slide is still unreadable, so `check` decodes
+the pixels that actually land behind each text box (following the crop, the fit mode and any
+knockout) and scores them against that text's own color: WCAG 3:1 for large type, 4.5:1 for body.
+More than a fifth of the area below the line and it says so, with the average color behind the
+words. A picture drawn *after* the text it covers is an error rather than a warning — the words
+end up behind the image. The render suite checks the prediction against the page: on a pale sky
+backdrop `check` reports `#D2E1F8` behind the title, and that is the color pdftoppm paints there.
+
 `catalog` prints the template's palette and its type — theme slots, the colors the slides actually
 use, the theme fonts, and the pt sizes in play — plus each picture frame's exact size in points. Author
 an SVG at that pt size and `font-size="16"` in the art is the same 16pt as the body text beside it, so
