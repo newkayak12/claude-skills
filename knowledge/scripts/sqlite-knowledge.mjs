@@ -870,19 +870,48 @@ function openIndex(inputRoot, dbPath = null) {
   return { root, database, db };
 }
 
+// Korean attaches particles to the noun, and the commonest nouns — 재고, 출고,
+// 결제 — are two syllables: too short for the trigram index, and cut off from
+// their inflected forms by exact tokens. A Hangul query word is matched as a
+// prefix ("재고" reaches "재고가"), and a trailing particle is stripped into a
+// second prefix ("재고를" reaches "재고"). Particles are ambiguous — 재시도 ends
+// in 도 — so the stem is added beside the word, never instead of it: an
+// over-strip widens recall, and the unstripped word still ranks the true match.
+const KOREAN_PARTICLES = ['에서는', '에서', '으로', '에게', '까지', '부터', '와', '과', '을', '를', '이', '가', '은', '는', '의', '에', '로', '도', '만']
+  .sort((left, right) => right.length - left.length);
+const HANGUL_WORD = /^\p{Script=Hangul}+$/u;
+const MAX_QUERY_TOKENS = 24;
+
+function koreanForms(token) {
+  if (!HANGUL_WORD.test(token)) return [token];
+  const particle = KOREAN_PARTICLES.find((item) => token.endsWith(item) && [...token].length - [...item].length >= 2);
+  return particle ? [token, token.slice(0, -particle.length)] : [token];
+}
+
+function queryWords(text) {
+  return [...new Set(tokenize(text).filter((token) => !token.startsWith('~')))];
+}
+
+// A token ending in `*` is an FTS5 prefix query; every other token is exact.
 function ftsTokens(text) {
-  return [...new Set(tokenize(text).filter((token) => !token.startsWith('~')))].slice(0, 16);
+  return [...new Set(queryWords(text).flatMap((token) => (HANGUL_WORD.test(token)
+    ? koreanForms(token).filter((form) => [...form].length >= 2).map((form) => `${form}*`)
+    : [token])))].slice(0, MAX_QUERY_TOKENS);
 }
 
 // The trigram tokenizer cannot match terms shorter than three characters.
 function trigramTokens(text) {
-  return [...new Set(tokenize(text).filter((token) => !token.startsWith('~')))]
+  return [...new Set(queryWords(text).flatMap(koreanForms))]
     .filter((token) => [...token].length >= 3)
-    .slice(0, 16);
+    .slice(0, MAX_QUERY_TOKENS);
 }
 
 function columnMatch(column, tokens) {
-  return tokens.map((token) => `${column}:"${token.replaceAll('"', '""')}"`).join(' OR ');
+  return tokens.map((token) => {
+    const prefix = token.endsWith('*');
+    const text = prefix ? token.slice(0, -1) : token;
+    return `${column}:"${text.replaceAll('"', '""')}"${prefix ? '*' : ''}`;
+  }).join(' OR ');
 }
 
 function snippet(text, query, maxLength = 700) {
