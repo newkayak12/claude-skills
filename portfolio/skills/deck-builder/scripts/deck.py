@@ -22,7 +22,9 @@ import argparse
 import copy
 import hashlib
 import os
+import math
 import re
+import unicodedata
 import shutil
 import zlib
 import statistics
@@ -268,6 +270,30 @@ def offset(el):
     return None
 
 
+LATIN_EM = 0.55          # average advance of a Latin glyph, in em
+WIDE_EM = 1.0            # a full-width CJK glyph occupies the whole em box
+
+
+def char_em(ch):
+    """Advance width of one character in em.
+
+    A Hangul or Han glyph fills its em box; a Latin one averages just over half.
+    Counting characters instead of width makes a Korean line look 1.8x shorter
+    than it is, which is exactly how an overflowing title passes `check`.
+    """
+    return WIDE_EM if unicodedata.east_asian_width(ch) in ("W", "F") else LATIN_EM
+
+
+def text_em(s):
+    return sum(char_em(c) for c in s)
+
+
+def mean_em(samples):
+    """Average glyph width across some sample lines, for reporting a char budget."""
+    joined = "".join(s for s in samples if s)
+    return (text_em(joined) / len(joined)) if joined else LATIN_EM
+
+
 def para_text(p):
     return "".join(t.text or "" for t in p.iter(q("a:t")))
 
@@ -296,7 +322,9 @@ class Slot:
         self.path = path
         self.label = label
         self.sample = []         # sample lines / rows from the template
-        self.max_chars = None    # per line (text/list) estimate
+        self.max_chars = None    # per line, in the script the template itself uses
+        self.max_em = None       # per line, in em — the measure that does not lie
+        self.proto_em = None     # the widest line the template itself puts here
         self.max_items = None    # paragraphs / rows the template shows
         self.ratio = None        # picture aspect "16:9"
         self.cols = None         # table columns
@@ -390,7 +418,9 @@ def analyze_slide(root, slide_cy=None):
             size = first_font_size(txBody) or 18.0
             if ext:
                 cx_pt = ext[0] / EMU_PER_PT
-                slot.max_chars = max(4, int(cx_pt / (size * 0.55)))
+                slot.max_em = max(2.0, cx_pt / size)
+                slot.max_chars = max(4, int(slot.max_em / mean_em(slot.sample)))
+                slot.proto_em = max([text_em(t) for t in slot.sample] or [0.0])
             slot.size_pt = first_font_size(txBody)
             slot.line_h = int(size * 1.2 * EMU_PER_PT)
             slot.box, slot.z = shape_box(el), z
@@ -1834,6 +1864,7 @@ def cmd_build(args):
         raise SystemExit("error: %s has no slides (no `## @archetype` headers)" % md_path.name)
 
     pkg = Package(template)
+    template_media = frozenset(n for n in pkg.parts if n.startswith("ppt/media/"))
     protos = slide_order(pkg)
     drift = []
     verify_signature(front, pkg, protos, slide_size(pkg)[1], drift)
@@ -1931,7 +1962,7 @@ def cmd_build(args):
                                                  xml_declaration=True)
         new_parts.append(part)
 
-    assert_raster_only(pkg)
+    assert_raster_only(pkg, template_media)
     _rewrite_presentation(pkg, new_parts)
     _rewrite_content_types(pkg, new_parts, imgctx["exts"], notes_parts, notes_master)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -1957,10 +1988,17 @@ def cmd_build(args):
     return 1 if fatal and args.strict else 0
 
 
-def assert_raster_only(pkg):
-    """Nothing vector may reach the package. Cheap, and it fails loudly if it ever does."""
+def assert_raster_only(pkg, preexisting=()):
+    """The build may not ADD a vector. What the template already carried is its own affair.
+
+    PowerPoint stores an SVG next to a PNG fallback of the same picture, so a real
+    template legitimately ships vector media; refusing to build against one would be
+    refusing the template, not enforcing anything. The invariant that matters is that
+    nothing *this build* embeds is vector, because that is the part the engine controls.
+    """
     bad = [n for n in pkg.parts
-           if n.startswith("ppt/media/") and Path(n).suffix.lower() in VECTOR_EXT]
+           if n.startswith("ppt/media/") and Path(n).suffix.lower() in VECTOR_EXT
+           and n not in preexisting]
     if bad:
         raise SystemExit("error: a vector file reached the package: %s\n"
                          "  this is a bug — images are rasterized before embedding."
@@ -2234,12 +2272,25 @@ def cmd_check(args):
             if slot.type == "chart":
                 warns.append("line %d: %s.%s is a chart — not writable, template data kept"
                              % (line, tag, slot_id))
-            if slot.type in ("text", "list") and slot.max_chars:
+            if slot.type in ("text", "list") and slot.max_em:
+                # The template calibrates itself: most slots hold text that already wraps,
+                # so an absolute width is noise. What matters is a slot the designer kept
+                # to one line, or content far longer than the slot was drawn for.
+                one_line = slot.proto_em is not None and 0 < slot.proto_em <= slot.max_em
                 for lvl, text in as_items(kind, value):
-                    if len(text) > slot.max_chars:
-                        warns.append("line %d: %s.%s — %d chars vs ~%d/line, will wrap or "
-                                     "overflow: %r" % (line, tag, slot_id, len(text),
-                                                       slot.max_chars, truncate(text, 34)))
+                    wide = text_em(text)
+                    if one_line and wide > slot.max_em * 1.05:
+                        warns.append("line %d: %s.%s — the template keeps this slot to one "
+                                     "line and this is %.0f%% too wide for it, so it drops "
+                                     "onto a second: %r"
+                                     % (line, tag, slot_id, (wide / slot.max_em - 1) * 100,
+                                        truncate(text, 34)))
+                    elif slot.proto_em and wide > slot.proto_em * 1.6:
+                        warns.append("line %d: %s.%s — %.0f%% longer than the longest line "
+                                     "the template puts here, so it takes more lines than "
+                                     "the design allows for: %r"
+                                     % (line, tag, slot_id, (wide / slot.proto_em - 1) * 100,
+                                        truncate(text, 34)))
             if slot.type == "table" and kind == "table" and slot.fits \
                     and len(value) > slot.fits:
                 lost = [r[0] if r else "" for r in value[slot.fits:]]
@@ -2249,8 +2300,8 @@ def cmd_check(args):
                                ", ".join(truncate(x, 14) for x in lost)))
             if slot.type in ("text", "list") and slot.fits:
                 nlines = len(as_items(kind, value))
-                if slot.max_chars:
-                    nlines = sum(max(1, -(-len(t) // slot.max_chars))
+                if slot.max_em:
+                    nlines = sum(max(1, math.ceil(text_em(t) / slot.max_em))
                                  for _, t in as_items(kind, value))
                 if nlines > slot.fits:
                     warns.append("line %d: %s.%s — about %d lines once wrapped, but only %d "
@@ -2317,6 +2368,19 @@ class Renderer:
                          "pdftotext -bbox-layout %s %s && chmod a+rw %s" % (pdf, out, out))
         f = workdir / out
         return f.read_text(encoding="utf-8") if f.is_file() else None
+
+    def fonts(self, workdir):
+        """Font families the renderer can actually see, lowercased. None if unknown."""
+        r = self.sh(workdir, "command -v fc-list >/dev/null || exit 9; fc-list --format "
+                             "'%{family}\\n'")
+        if r.returncode == 9 or not r.stdout.strip():
+            return None
+        out = set()
+        for line in r.stdout.splitlines():
+            for alias in line.split(","):
+                if alias.strip():
+                    out.add(alias.strip().lower())
+        return out
 
     def previews(self, workdir, pdf, dpi=72):
         stem = Path(pdf).stem
@@ -2395,6 +2459,31 @@ def collisions(xml_text, cross_tol=0.05, bunch_tol=0.70):
     return found
 
 
+def missing_fonts(pkg, slide_parts, available):
+    """Typefaces the template asks for that the renderer does not have.
+
+    Substitution is silent and it changes line breaks, so every wrap in the preview
+    becomes untrustworthy — a title that fits in PowerPoint looks broken here, and
+    the fix is to install the font, not to shorten the words.
+    """
+    if available is None:
+        return None
+    theme, _, faces = template_typography(pkg, slide_parts)
+    # What the slides actually set is what the reader sees. The theme fonts are only a
+    # fallback, and naming a missing one no slide uses is noise — Calibri on every deck.
+    want = {name for name, _ in faces}
+    if not want:
+        for latin, ea in theme.values():
+            want.update(x for x in (latin, ea) if x)
+    missing = []
+    for name in sorted(want):
+        base = name.lower()
+        stem = base.split(" light")[0].split(" bold")[0].split(" extrabold")[0].strip()
+        if not any(base == a or stem == a or a.startswith(stem + " ") for a in available):
+            missing.append(name)
+    return missing
+
+
 def cmd_render(args):
     r = Renderer()
     if not r.available:
@@ -2411,6 +2500,13 @@ def cmd_render(args):
     work = out.parent
 
     print("render via %s" % r.describe())
+    built = Package(out)
+    gone = missing_fonts(built, slide_order(built), r.fonts(work))
+    if gone:
+        print("  ! the renderer has no %s — it will substitute, and a substitute font "
+              "wraps lines differently." % ", ".join(gone[:4]))
+        print("    Judge layout from this render only after installing them; the pptx "
+              "itself names the right faces.")
     log = r.to_pdf(work, out.name)
     pdf = out.with_suffix(".pdf")
     if not pdf.is_file():
