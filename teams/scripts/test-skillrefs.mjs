@@ -107,6 +107,36 @@ test('a planning setgoal is told to decide its own document set', async () => {
   assert.ok(!docSetgoal.includes('SET of planning documents'), 'a document run is not handed planning\'s set rule');
 });
 
+// idol-pm-3 (2026-09-23): the planning child died at setgoal three times over. Attempts 1 and 3
+// returned every subgoal as kind "document", because PLANNING_SETGOAL said "one document subgoal"
+// and "add a document subgoal" in a flow whose mixed=false rule admits only "planning". Attempt 2
+// got the kind right and put .claude/team.json in files[] - the sentence told it files[] should
+// name what the investigator ought to open - and the document-path rule rejected that. The prompt
+// now names the kind and gives reading its own field; validateSpec and reduce are unchanged.
+test('a planning setgoal is told its kind is planning and that files[] is only what it writes', async () => {
+  const { composePrompt, PLANNING_SETGOAL } = await import('../mcp/prompts.mjs');
+  const { validateSpec } = await import('../mcp/graph.mjs');
+  assert.match(PLANNING_SETGOAL, /Every subgoal in this run is kind "planning"/);
+  assert.doesNotMatch(PLANNING_SETGOAL, /document subgoal/, 'the words that produced kind "document"');
+  assert.match(PLANNING_SETGOAL, /files\[\] is the markdown path this subgoal WRITES and nothing else/);
+  assert.match(PLANNING_SETGOAL, /sources\[\] field/);
+
+  // What the prompt now asks for passes the spec check it used to trip.
+  const spec = {
+    goal: 'PRD', acceptance: ['covers the request'],
+    subgoals: [{ id: 'U1', kind: 'planning', title: 'PRD', acceptance: ['a'], files: ['docs/PRD.md'], sources: ['.claude/team.json', 'src/'] }],
+  };
+  assert.deepEqual(validateSpec(spec, { kind: 'planning', mixed: false, flow: 'plan' }), []);
+
+  const run = { run_id: 'r1', flow: 'plan', goal: 'Produce a PRD for X', cwd: '/tmp/x', allocation: 'balanced', nodes: [] };
+  const sg = spec.subgoals[0];
+  const briefing = { upstream: [], problems: [], flow: 'plan', default_kind: 'planning', subgoal: sg };
+  const investigate = composePrompt(run, { node_id: 'investigate:U1', stage: 'investigate', subgoal_id: 'U1' }, briefing);
+  assert.match(investigate, /Sources to open first:\n- \.claude\/team\.json/);
+  const draft = composePrompt(run, { node_id: 'draft:U1', stage: 'draft', subgoal_id: 'U1' }, briefing);
+  assert.doesNotMatch(draft, /Sources to open first/, 'only the investigator reads outside the briefing');
+});
+
 // Out of scope had become the cheapest way past the domain clause: name the practice, exclude
 // it, pass. A rule a user story rests on is decided or owned, never filed.
 test('PRD_CONTRACT closes the Out-of-scope escape hatch for undecided rules', () => {
