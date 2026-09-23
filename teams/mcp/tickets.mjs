@@ -22,6 +22,19 @@ export function taskKey(taskId, pkgId, subgoalId) {
   return `${storyKey(taskId, pkgId)}/${subgoalId}`;
 }
 
+// One key parser for every EPIC/STORY/TASK key this module and tm_ticket/tm_assign resolve -
+// `E-xxxxxxxx`, `E-xxxxxxxx/Pn`, or `E-xxxxxxxx/Pn/subgoalId`. Before this, tm_ticket's own regex
+// (taskmanager.mjs's toolTicket) captured everything past the STORY segment as one greedy group,
+// so a TASK-shaped key silently became a STORY lookup for a package id that could never exist
+// ("Pn/subgoalId"). tm_assign needs the same three-way split tm_ticket does (STORY for a
+// package, TASK for a subgoal - see the plugin's tm_assign spec), so it lives here once and both
+// tools resolve a key identically.
+export function parseTicketKey(key) {
+  const m = /^E-([0-9a-f]{8})(?:\/([^/]+)(?:\/(.+))?)?$/.exec(String(key || ''));
+  if (!m) return null;
+  return { epic8: m[1], pkgId: m[2] || null, subgoalId: m[3] || null };
+}
+
 // §7c: the project's own docs_dir (team.json, default .teams_output/team - already resolved onto
 // every task by teamconfig.mjs's TEAM_DEFAULTS) holds one directory per EPIC. story() is a
 // function because a STORY's file lives one level deeper, under 40-stories/.
@@ -103,6 +116,15 @@ export function storyTicketState(task, pkgId, opts = {}) {
   if (dispatch.state === 'pending') return unmetDeps(task, dispatch).length ? 'BACKLOG' : 'READY';
   if (dispatch.state === 'running') {
     if (dispatch.child && dispatch.child.waiting_capacity) return 'WAITING_CAPACITY';
+    // A package whose child run is parked on a human card looks, from the task-level dispatch
+    // node alone, exactly like a dead driver: the driver already exited cleanly the moment
+    // team_next found nothing left to offer it (zero compute while waiting - see graph.mjs's
+    // promoteWaitingHuman), so `alive(driver.pid)` reads false either way. Reading the child's
+    // own runState() is what tells the two apart - the same distinction runState() itself
+    // draws between `waiting_human` and `blocked`.
+    const child = dispatch.child && dispatch.child.cwd && dispatch.child.run_id
+      ? loadRun(dispatch.child.cwd, dispatch.child.run_id) : null;
+    if (child && runState(child).state === 'waiting_human') return 'WAITING_HUMAN';
     const driver = dispatch.child && dispatch.child.driver;
     if (driver && !alive(driver.pid)) return 'BLOCKED';
     return 'IN_PROGRESS';
@@ -297,6 +319,7 @@ export function taskTicketState(childRun, subgoalId) {
     if (!first && !reached(childRun, author)) continue;
     if (author.state === 'skipped') return 'CANCELLED';
     if (author.state === 'unreachable') return 'UNREACHABLE';
+    if (author.state === 'waiting_human') return 'WAITING_HUMAN';
     if (author.state === 'pending') {
       if (!first) return 'IN_PROGRESS';
       return unmetDeps(childRun, author).length ? 'BACKLOG' : 'READY';

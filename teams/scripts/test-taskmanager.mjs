@@ -98,6 +98,38 @@ const SHAPE = {
   ],
 };
 
+// A package shape itself pinned to a human, the spec pin path (§ tm_assign spec): `assignee`
+// survives verbatim from the shape payload into task.spec.packages[i] (the shape node's own
+// `finish()` spreads `...p`), and openChild carries it into createRun's `subgoal_assignee` for
+// the common parent_shaped case - one package, one synthetic subgoal, so "the package" and "its
+// one subgoal" are the same card.
+const SHAPE_HUMAN = {
+  acceptance: ['a.txt says a', 'b.txt says b'],
+  packages: [
+    { id: 'P1', title: 'module a', flow: 'develop', brief: 'change a.txt', acceptance: ['a.txt says a'], touches: ['a.txt'], deps: [], assignee: 'human' },
+    { id: 'P2', title: 'module b', flow: 'develop', brief: 'change b.txt', acceptance: ['b.txt says b'], touches: ['b.txt'], deps: [] },
+  ],
+};
+
+// A package shape marked split: true never becomes parent_shaped - openChild gives it its own
+// plan/setgoal/critique instead, exactly like the !parentShaped branch of completeChild above.
+// Used only to get a child run with MORE than one subgoal, so a STORY-vs-TASK tm_assign test can
+// tell "every subgoal" apart from "just one" - a parent_shaped package only ever has the one.
+const SHAPE_SPLIT = {
+  acceptance: ['both subgoals land', 'b.txt says b'],
+  packages: [
+    { id: 'P1', title: 'module a', flow: 'develop', brief: 'two subgoals', acceptance: ['a.txt says a'], touches: ['a.txt'], deps: [], split: true },
+    { id: 'P2', title: 'module b', flow: 'develop', brief: 'change b.txt', acceptance: ['b.txt says b'], touches: ['b.txt'], deps: [] },
+  ],
+};
+const TWO_SUBGOAL_SPEC = {
+  goal: 'G', acceptance: ['A'],
+  subgoals: [
+    { id: 'U1', kind: 'subgoal', title: 'a', acceptance: ['a'], test: ['x'], deps: [] },
+    { id: 'U2', kind: 'subgoal', title: 'b', acceptance: ['b'], test: ['y'], deps: [] },
+  ],
+};
+
 const PRD_FIXTURE = ['Problem', 'Target users', 'Solution overview', 'Success criteria', 'User stories', 'Out of scope', 'Open questions']
   .map((h) => `## ${h}\n\nbody\n`).join('\n');
 
@@ -190,11 +222,11 @@ async function withTask(fn, extra) {
   }
 }
 
-test('serves the MCP handshake and the twelve manager tools', async () => {
+test('serves the MCP handshake and the fourteen manager tools', async () => {
   const c = await new Client(TM).init();
   try {
     const r = await c.send('tools/list', {});
-    assert.deepEqual(r.result.tools.map((t) => t.name).sort(), ['tm_board', 'tm_docs', 'tm_events', 'tm_file', 'tm_next', 'tm_open', 'tm_retry', 'tm_run', 'tm_status', 'tm_submit', 'tm_ticket', 'tm_wait']);
+    assert.deepEqual(r.result.tools.map((t) => t.name).sort(), ['tm_assign', 'tm_board', 'tm_docs', 'tm_events', 'tm_file', 'tm_inbox', 'tm_next', 'tm_open', 'tm_retry', 'tm_run', 'tm_status', 'tm_submit', 'tm_ticket', 'tm_wait']);
   } finally {
     c.close();
   }
@@ -3688,4 +3720,197 @@ test('missingPrdSections accepts the renames a reader would accept, and nothing 
     assert.deepEqual(missingPrdSections(cwd, ['nope.md']), []);
     assert.deepEqual(missingPrdSections(cwd, []), []);
   } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+// ---------- a human can pick up a card (tm_assign / tm_inbox / tm_submit(key)) ----------
+
+test('a shape-level assignee: "human" pin on a package parks its one subgoal in waiting_human once its child run is polled - and the dispatch itself is untouched', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE_HUMAN);
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children[0];
+    const next = await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+    assert.equal(next.state, 'waiting_human');
+    assert.equal(next.ready.length, 0);
+
+    const key = `E-${task_id.slice(0, 8)}/P1`;
+    const ticket = await tm.call('tm_ticket', { key });
+    assert.equal(ticket.state, 'WAITING_HUMAN');
+    assert.deepEqual(ticket.human_assignments, [{ subgoal_id: 'U1', who: null }]);
+
+    // the task-level dispatch node itself: still 'running', not folded to blocked/failed - the
+    // human's wait is not a package failure and must not be read as one.
+    const status = await tm.call('tm_status', { task_id, full: true });
+    const dispatch = status.nodes.find((n) => n.node_id === 'dispatch:P1:1');
+    assert.equal(dispatch.state, 'running');
+  });
+});
+
+test('tm_inbox lists a waiting_human card: key, title, acceptance, briefing_path, who, since - scoped to one task or every task', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE_HUMAN);
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children[0];
+    await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+
+    const scoped = await tm.call('tm_inbox', { task_id });
+    assert.equal(scoped.cards.length, 1);
+    const card = scoped.cards[0];
+    assert.equal(card.key, `E-${task_id.slice(0, 8)}/P1/U1`);
+    assert.equal(card.task_id, task_id);
+    assert.equal(card.node_id, 'implement:U1:1');
+    assert.deepEqual(card.acceptance, ['a.txt says a']);
+    assert.ok(card.briefing_path && existsSync(card.briefing_path), 'tm_inbox must point at a readable briefing');
+    assert.equal(card.who, null);
+    assert.ok(Number.isInteger(card.since));
+
+    const all = await tm.call('tm_inbox', {});
+    assert.ok(all.cards.some((c) => c.key === card.key), 'scanning every task still finds it');
+  });
+});
+
+test('tm_submit({key}) completes a waiting_human card, and the flow continues exactly as a driver would have - test then gate, through the real graph', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE_HUMAN);
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children[0];
+    await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+
+    const key = `E-${task_id.slice(0, 8)}/P1/U1`;
+    appendFileSync(join(child.cwd, 'a.txt'), 'changed\n');
+    const v = await tm.call('tm_submit', { task_id, key, payload: ok({ changed_files: ['a.txt'] }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    assert.equal(v.node_id, 'implement:U1:1');
+
+    // A second submission of the same card has nothing left to do.
+    const again = await tm.call('tm_submit', { task_id, key, payload: ok({ changed_files: ['a.txt'] }) });
+    assert.match(again.error || '', /not waiting_human/);
+
+    await g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    await g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id: 'gate:U1:1', payload: ok({ accept: true, match_pct: 95 }) });
+    assert.equal((await g.call('team_status', { run_id: child.run_id, cwd: child.cwd })).state, 'complete');
+  });
+});
+
+test('a gate rejection on a human-authored card reopens the next attempt pinned to the same human - waiting_human again, and the task-level dispatch never folds or retries while it waits', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE_HUMAN);
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children[0];
+    await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+    const key = `E-${task_id.slice(0, 8)}/P1/U1`;
+    appendFileSync(join(child.cwd, 'a.txt'), 'changed\n');
+    await tm.call('tm_submit', { task_id, key, payload: ok({ changed_files: ['a.txt'] }) });
+    await g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    await g.call('team_submit', {
+      run_id: child.run_id, cwd: child.cwd, node_id: 'gate:U1:1',
+      payload: ok({ accept: false, match_pct: 40, gaps: ['missing half'], reason: 'short' }),
+    });
+
+    const next2 = await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+    assert.equal(next2.state, 'waiting_human');
+    assert.equal(next2.ready.length, 0, 'the retry goes back to the human, never to a vendor');
+
+    // tm_next, called the way a live loop would poll it, must not fold the dispatch or spend a
+    // retry while the child sits on this new waiting_human attempt.
+    for (let i = 0; i < 3; i++) await tm.call('tm_next', { task_id });
+    const status = await tm.call('tm_status', { task_id, full: true });
+    const dispatch = status.nodes.find((n) => n.node_id === 'dispatch:P1:1');
+    assert.equal(dispatch.state, 'running', 'still open - a human turnaround is not a package failure');
+    assert.equal(dispatch.attempt, 1, 'no fresh dispatch attempt was opened');
+  });
+});
+
+test('tm_assign({to: "human"}) on a STORY key pins every subgoal in its child run; a TASK key pins just one; to: "auto" releases and dispatches normally again', async () => {
+  await withTask(async ({ tm, g, cwd, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE_SPLIT);
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children[0];
+    await g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id: 'plan', payload: ok({ handoff: 'p', flow: 'develop', size: 'S' }) });
+    await g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id: 'setgoal', payload: ok({ spec: TWO_SUBGOAL_SPEC }) });
+    await g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id: 'critique', payload: ok({ sound: true }) });
+
+    const storyKeyStr = `E-${task_id.slice(0, 8)}/P1`;
+    const story = await tm.call('tm_assign', { task_id, key: storyKeyStr, to: 'human', who: 'sanghyeon' });
+    assert.equal(story.kind, 'STORY');
+    assert.deepEqual(story.assigned.map((x) => x.node_id).sort(), ['implement:U1:1', 'implement:U2:1']);
+    for (const x of story.assigned) assert.equal(x.assignment.who, 'sanghyeon');
+
+    const released = await tm.call('tm_assign', { task_id, key: storyKeyStr, to: 'auto' });
+    assert.ok(released.assigned.every((x) => x.assignment === null));
+
+    const taskKeyStr = `E-${task_id.slice(0, 8)}/P1/U1`;
+    const one = await tm.call('tm_assign', { task_id, key: taskKeyStr, to: 'human' });
+    assert.deepEqual(one.assigned.map((x) => x.node_id), ['implement:U1:1']);
+    assert.equal(one.kind, 'TASK');
+
+    const next = await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+    assert.equal(next.state, 'running', 'U2 is not pinned - still dispatched normally');
+    assert.ok(next.ready.some((n) => n.node_id === 'implement:U2:1' && n.vendor === 'self'));
+    assert.ok(!next.ready.some((n) => n.node_id === 'implement:U1:1'), 'U1 is parked waiting_human, not offered');
+    const full = await g.call('team_status', { run_id: child.run_id, cwd: child.cwd, full: true, node_id: 'implement:U1:1' });
+    assert.equal(full.node.state, 'waiting_human');
+  });
+});
+
+test('tm_assign refuses an unrecognized key, an unknown "to", and a STORY that has not been dispatched yet', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    const bad = await tm.call('tm_assign', { task_id, key: 'not-a-key', to: 'human' });
+    assert.match(bad.error || '', /STORY or TASK key/);
+    const badTo = await tm.call('tm_assign', { task_id, key: `E-${task_id.slice(0, 8)}/P1`, to: 'someone-else' });
+    assert.match(badTo.error || '', /must be "human"/);
+    const notYet = await tm.call('tm_assign', { task_id, key: `E-${task_id.slice(0, 8)}/P1/U1`, to: 'human' });
+    assert.match(notYet.error || '', /has no child run yet - pin its STORY/);
+  });
+});
+
+// A READY card is the one a person picks up off the board. The first cut refused a STORY until a
+// driver was already on it; the pin now rides on the package and reaches the child run it opens.
+test('a STORY taken before it dispatches opens its child run already waiting on that human', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    let v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2 modules'], handoff: 'two modules' }) });
+    v = await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({ ...SHAPE, handoff: 's' }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    const key = `E-${task_id.slice(0, 8)}/P1`;
+    const taken = await tm.call('tm_assign', { task_id, key, to: 'human', who: 'sanghyeon' });
+    assert.deepEqual(taken.assigned, [], 'nothing to pin inside a run that does not exist yet');
+    v = await tm.call('tm_submit', { task_id, node_id: 'critique', payload: ok({ sound: true }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children.find((c) => c.node_id === 'dispatch:P1:1') || nx.children[0];
+    const next = await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+    assert.equal(next.state, 'waiting_human');
+    const inbox = await tm.call('tm_inbox', { task_id });
+    assert.equal(inbox.cards.length, 1);
+    assert.equal(inbox.cards[0].who, 'sanghyeon');
+
+    // Released before it ever dispatched, P2 stays an ordinary automatic card.
+    const p2 = `E-${task_id.slice(0, 8)}/P2`;
+    await tm.call('tm_assign', { task_id, key: p2, to: 'human' });
+    await tm.call('tm_assign', { task_id, key: p2, to: 'auto' });
+    const onDisk = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.equal(onDisk.spec.packages.find((p) => p.id === 'P1').assignee.who, 'sanghyeon');
+    assert.equal(onDisk.spec.packages.find((p) => p.id === 'P2').assignee, undefined);
+  });
+});
+
+// dispatchSettled (exported, and shared by the daemon and tm_next) is the one guard that keeps a
+// waiting_human child from being folded as though its driver had died for good - a direct,
+// lighter-weight check than driving the whole graph through both MCP clients above.
+test('dispatchSettled treats a waiting_human child exactly like a running one - never settled, regardless of the driver', async () => {
+  const tmMod = await import('../mcp/taskmanager.mjs');
+  const graphMod = await import('../mcp/graph.mjs');
+  const cwd = mkdtempSync(join(tmpdir(), 'dispatch-settled-'));
+  try {
+    const child = { cwd, run_id: 'child-1', spec: { subgoals: [{ id: 'U1', kind: 'subgoal', assignee: 'human' }] },
+      nodes: [graphMod.node('implement:U1:1', 'implement', [], { subgoal_id: 'U1', attempt: 1, state: 'waiting_human', waiting_since: Date.now() })] };
+    graphMod.saveRun(child);
+    const n = { node_id: 'dispatch:P1:1', stage: 'dispatch', state: 'running', child: { cwd, run_id: 'child-1' } };
+    assert.equal(tmMod.dispatchSettled({}, n), false, 'waiting_human is not settled, with no driver info at all');
+    n.child.driver = { pid: 999999999 }; // certainly not alive
+    assert.equal(tmMod.dispatchSettled({}, n), false, 'still not settled even with a dead driver on record');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });

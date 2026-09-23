@@ -2986,3 +2986,84 @@ test('a subgoal reassigned after a spec retry waits on the live generation, not 
     assert.ok(nx.ready.some((n) => n.node_id === 'implement:U1:3'), 'and so it is actually offered');
   }, { isolated: true });
 });
+
+// ---------- a human can pick up a card (waiting_human) ----------
+
+test('a subgoal spec\'s assignee: "human" pin parks its author stage in waiting_human at team_next - never offered, never routed, never counted as a failure', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    const spec = {
+      goal: 'G', acceptance: ['A'],
+      subgoals: [{ id: 'U1', kind: 'subgoal', title: 'a', acceptance: ['a'], test: ['x'], deps: [], assignee: { who: 'sanghyeon' } }],
+    };
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'setgoal', payload: ok({ spec, handoff: 's' }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+
+    const nx = await c.call('team_next', { run_id: runId, cwd });
+    assert.equal(nx.state, 'waiting_human');
+    assert.equal(nx.ready.length, 0, 'the only ready-by-deps node is the human-pinned one, and it is never offered');
+
+    const node = (await c.call('team_status', { run_id: runId, cwd, full: true, node_id: 'implement:U1:1' })).node;
+    assert.equal(node.state, 'waiting_human');
+    assert.deepEqual(node.assignment, { executor: 'human', vendor: 'human', who: 'sanghyeon', reason: 'pinned by the subgoal spec (assignee)' });
+    assert.ok(Number.isInteger(node.waiting_since));
+    assert.ok(node.briefing_path, 'tm_inbox needs a briefing to point the main session at');
+    assert.match(readFileSync(node.briefing_path, 'utf8'), /U1/, 'the same briefing a fresh agent would have read');
+
+    // A second team_next (the way a live driver loop would poll again) must not spawn a
+    // vendor probe, retry anything, or change the outcome - zero compute while waiting.
+    const again = await c.call('team_next', { run_id: runId, cwd });
+    assert.equal(again.state, 'waiting_human');
+    assert.equal(again.ready.length, 0);
+  });
+});
+
+test('team_run refuses a human-pinned node directly, rather than handing "human" to loadVendors as if it were a real vendor', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    const spec = {
+      goal: 'G', acceptance: ['A'],
+      subgoals: [{ id: 'U1', kind: 'subgoal', title: 'a', acceptance: ['a'], test: ['x'], deps: [], assignee: 'human' }],
+    };
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'setgoal', payload: ok({ spec, handoff: 's' }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+    // Called directly, before any team_next has had a chance to promote it to waiting_human.
+    const r = await c.call('team_run', { run_id: runId, cwd, node_id: 'implement:U1:1' });
+    assert.match(r.error || '', /pinned to a human executor/);
+  });
+});
+
+test('team_submit also refuses a waiting_human node directly - a human\'s own submission goes through tm_submit (taskmanager.mjs), not team_submit', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    const spec = {
+      goal: 'G', acceptance: ['A'],
+      subgoals: [{ id: 'U1', kind: 'subgoal', title: 'a', acceptance: ['a'], test: ['x'], deps: [], assignee: 'human' }],
+    };
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'setgoal', payload: ok({ spec, handoff: 's' }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+    await c.call('team_next', { run_id: runId, cwd }); // promotes implement:U1:1 to waiting_human
+
+    const f = dirty(cwd);
+    const r = await c.call('team_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [f] }) });
+    assert.match(r.error || '', /waiting_human, not pending/);
+  });
+});
+
+test('judging stages are never pinned - only the kind\'s author stage carries the human assignment', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    const spec = {
+      goal: 'G', acceptance: ['A'],
+      subgoals: [{ id: 'D1', kind: 'document', title: 'd', acceptance: ['a'], deps: [], assignee: 'human' }],
+    };
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'setgoal', payload: ok({ spec, handoff: 's' }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+    const draft = (await c.call('team_status', { run_id: runId, cwd, full: true, node_id: 'draft:D1:1' })).node;
+    const review = (await c.call('team_status', { run_id: runId, cwd, full: true, node_id: 'review:D1:1' })).node;
+    const gate = (await c.call('team_status', { run_id: runId, cwd, full: true, node_id: 'gate:D1:1' })).node;
+    assert.equal(draft.assignment.executor, 'human');
+    assert.equal(review.assignment, undefined, 'review judges the human\'s draft - never the same identity');
+    assert.equal(gate.assignment, undefined);
+  });
+});

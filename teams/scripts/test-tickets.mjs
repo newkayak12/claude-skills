@@ -14,6 +14,7 @@ import { node, pushChain, KINDS, saveRun } from '../mcp/graph.mjs';
 import {
   epicKey, storyKey, docPaths, latestBySubgoal, storyTicketState, epicTicketState,
   taskTicketState, epicPhase, storyTaskProgress, epicBoardRows, ticketSnapshot, storyLinks,
+  parseTicketKey, taskKey,
 } from '../mcp/tickets.mjs';
 
 const TASK_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -113,6 +114,69 @@ test('a retried STORY is read from its LATEST attempt, not the failed prior one'
 test('a package with no dispatch node at all reads BACKLOG (defensive - not reachable via expandPackages today)', () => {
   const t = baseTask([], { spec: { packages: [{ id: 'P9', title: 't' }] } });
   assert.equal(storyTicketState(t, 'P9'), 'BACKLOG');
+});
+
+// A package whose child run is parked on a human card looks, from the dispatch node alone,
+// exactly like a dead driver (the driver already exited cleanly - zero compute while waiting).
+// storyTicketState has to read the CHILD's own runState() to tell "waiting on a human" apart
+// from "genuinely stuck" - the same distinction graph.mjs's runState() draws for the run itself.
+test('STORY ticket state: a dispatch whose child run is waiting_human reads WAITING_HUMAN, not BLOCKED - even with a dead driver', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'tickets-waiting-human-'));
+  try {
+    const childRunId = 'child-wh-1';
+    saveRun({
+      cwd, run_id: childRunId, spec: { subgoals: [{ id: 'U1', kind: 'subgoal', assignee: 'human' }] },
+      nodes: [node('implement:U1:1', 'implement', [], {
+        subgoal_id: 'U1', attempt: 1, state: 'waiting_human', waiting_since: Date.now(),
+        assignment: { executor: 'human', vendor: 'human', who: null },
+      })],
+    });
+    const t = baseTask(
+      [dispatchNode('P1', { state: 'running', child: { cwd, run_id: childRunId, driver: { pid: 999999 } } })],
+      { spec: { packages: [{ id: 'P1', title: 't' }] } },
+    );
+    // alive() would say false for this pid regardless - the point is that WAITING_HUMAN wins
+    // before the driver-aliveness check is even reached.
+    assert.equal(storyTicketState(t, 'P1', { alive: () => false }), 'WAITING_HUMAN');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('TASK ticket state: the author stage waiting_human reads WAITING_HUMAN', () => {
+  const run = childRun('subgoal', 'U1');
+  const n = stageNode(run, 'U1', 'implement');
+  n.state = 'waiting_human';
+  n.waiting_since = Date.now();
+  n.assignment = { executor: 'human', vendor: 'human', who: null };
+  assert.equal(taskTicketState(run, 'U1'), 'WAITING_HUMAN');
+});
+
+test('TASK ticket state: planning\'s waiting_human lands on draft (its own author), not investigate', () => {
+  const run = childRun('planning', 'U1');
+  const draft = stageNode(run, 'U1', 'draft');
+  draft.state = 'waiting_human';
+  draft.assignment = { executor: 'human', vendor: 'human', who: null };
+  assert.equal(taskTicketState(run, 'U1'), 'WAITING_HUMAN');
+});
+
+// ---------- ticket key resolution (shared by tm_ticket and tm_assign) ----------
+
+test('parseTicketKey splits E-xxxxxxxx[/Pn[/subgoalId]] into epic8/pkgId/subgoalId', () => {
+  assert.deepEqual(parseTicketKey('E-aaaaaaaa'), { epic8: 'aaaaaaaa', pkgId: null, subgoalId: null });
+  assert.deepEqual(parseTicketKey('E-aaaaaaaa/P1'), { epic8: 'aaaaaaaa', pkgId: 'P1', subgoalId: null });
+  assert.deepEqual(parseTicketKey('E-aaaaaaaa/P1/U1'), { epic8: 'aaaaaaaa', pkgId: 'P1', subgoalId: 'U1' });
+  // Before this parser, tm_ticket's own regex captured "P1/U1" as one greedy pkgId group - a
+  // TASK-shaped key silently became a lookup for a package id that could never exist.
+  assert.notEqual(parseTicketKey('E-aaaaaaaa/P1/U1').pkgId, 'P1/U1');
+  assert.equal(parseTicketKey('not-a-key'), null);
+  assert.equal(parseTicketKey(''), null);
+});
+
+test('taskKey composes the same three segments parseTicketKey reads back', () => {
+  const key = taskKey(TASK_ID, 'P1', 'U1');
+  assert.equal(key, 'E-aaaaaaaa/P1/U1');
+  assert.deepEqual(parseTicketKey(key), { epic8: 'aaaaaaaa', pkgId: 'P1', subgoalId: 'U1' });
 });
 
 // ---------- §4 EPIC mapping ----------

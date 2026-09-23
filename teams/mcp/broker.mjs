@@ -56,6 +56,7 @@ import {
   openRepair,
   defaultKind,
   normalizeSpec,
+  promoteWaitingHuman,
 } from './graph.mjs';
 import { composePrompt } from './prompts.mjs';
 import { readTeamConfig, resolveTeamOptions } from './teamconfig.mjs';
@@ -431,11 +432,17 @@ async function route(run, node) {
   const want = String(pol.vendor || 'auto').toLowerCase();
   const balanced = run.allocation === 'balanced';
   const isSelf = ['self', 'off', 'none'].includes(want) || (!balanced && want === 'claude');
-  const order = isSelf
+  // 'human' never enters the automatic candidate pool, even if a caller's own policy names it
+  // (team_open({candidates: ['human', 'claude']}) among them) - §0.3 of docs/plans/2026-09-17-
+  // teams-team-v0.13.0.md fixes this: the only way a node goes to a human is the pin
+  // (node.assignment, honored by this function's early return above), never a ranked choice.
+  // vendors[name] already has no 'human' entry, so ranking never PICKED it either - this is
+  // belt and suspenders, not a bug fix, and keeps it that way on purpose.
+  const order = (isSelf
     ? []
     : want === 'auto'
       ? (pol.candidates || (balanced ? ['claude', 'codex'] : AUTO_CANDIDATES(run.host_vendor)))
-      : [want];
+      : [want]).filter((v) => v !== 'human');
 
   const attempts = [];
   const ranked = balanced && want === 'auto' ? rankCandidates(run, node, order)
@@ -1299,6 +1306,26 @@ async function toolGraphOpen(a) {
 async function toolGraphNext(a) {
   const run = mustFindRun(a);
   reclaimAbandoned(run);
+  // A human-pinned node that just became ready parks in waiting_human here, before readyNodes()
+  // is even read - the same reason reclaimAbandoned runs first: this is where "ready" is decided
+  // for real. Write its briefing exactly like a self node's (below), because tm_inbox has to
+  // point the main session at SOMETHING readable - "what is asked" is the same briefing a fresh
+  // agent would have read, not a second document invented for a human.
+  const promoted = promoteWaitingHuman(run);
+  if (promoted.length) {
+    for (const n of promoted) {
+      const briefingPath = join(brokerDir(run.cwd), run.run_id, 'briefings', `${n.node_id.replace(/[^A-Za-z0-9._-]/g, '_')}.md`);
+      try {
+        mkdirSync(dirname(briefingPath), { recursive: true });
+        writeFileSync(briefingPath, composePrompt(run, n, nodeBriefing(run, n)));
+        n.briefing_path = briefingPath;
+      } catch {
+        /* tm_inbox falls back to team_status full:true */
+      }
+    }
+    saveRun(run);
+    record(run.cwd, { event: 'node_waiting_human', run_id: run.run_id, nodes: promoted.map((n) => n.node_id) });
+  }
   let ready = readyNodes(run);
 
   // `isolated` is the broker's own claim that one node had the worktree to itself, and
@@ -1365,6 +1392,15 @@ async function toolGraphNext(a) {
 async function toolGraphRun(a) {
   const run = mustFindRun(a);
   let n = requireRunnable(run, String(a.node_id));
+  // team_next never offers this node (promoteWaitingHuman parks it in waiting_human first), but
+  // a caller who already has the node_id can still reach team_run directly before that happens -
+  // §0.3 of docs/plans/2026-09-17-teams-team-v0.13.0.md fixes human OUT of the routing pool
+  // entirely, and without this guard route()'s own early return (line ~427, honoring
+  // node.assignment as-is) would hand this node's vendor straight through as 'human', which
+  // loadVendors(run.cwd) has no entry for.
+  if (n.assignment && n.assignment.executor === 'human') {
+    throw new Error(`node ${n.node_id} is pinned to a human executor; call team_next to move it to waiting_human, then tm_inbox/tm_submit from the main session`);
+  }
 
   const r = await route(run, n);
   if (r.vendor === 'self') throw new Error(`node ${n.node_id} is routed to self - use team_submit`);
