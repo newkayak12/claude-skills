@@ -149,7 +149,12 @@ export function kindOf(sg) {
 // still adjudicated, but a claimed file list is not what makes them true, so the
 // worktree cross-check has nothing to contradict. The run-level stages are fixed; the
 // per-subgoal ones come from the kind table so a new kind cannot forget to declare them.
-const BASE_REASONING = ['plan', 'setgoal', 'critique', 'gate', 'report'];
+// `reduce` is here because it reports and does not repair. The level above decides what to
+// do about what it finds - that is the same rule the ticket model already runs on, where a
+// TASK is a card a sub picks up and the level above it owns the outcome. A reduce that
+// deleted an orphan on its own authority would be deciding at the level that observed,
+// which is exactly the confusion the engine keeps out of its judging stages.
+const BASE_REASONING = ['plan', 'setgoal', 'critique', 'gate', 'report', 'reduce'];
 export const REASONING_STAGES = new Set([
   ...BASE_REASONING,
   ...Object.values(KINDS).flatMap((k) => k.reasoning || []),

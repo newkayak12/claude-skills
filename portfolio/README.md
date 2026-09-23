@@ -318,7 +318,10 @@ the archetype catalog; `deck.mdx` is the source, the only file anyone edits; the
 build artifact, regenerated in full each time. Every output slide is a clone of a template slide
 with its content swapped, so the template's design survives byte for byte and nothing is laid out
 from scratch. Art can be source too: a picture slot accepts an `.svg`, which is rasterized at build time to
-a PNG sized for its frame and cached by content hash in `.deckcache/`. That closes the gap where
+a PNG sized for its frame and cached by content hash in `.deckcache/`. The pptx itself only ever
+carries raster images — SVG does not render the same in PowerPoint, Keynote, Google Slides and a
+PDF export, and older PowerPoint shows nothing for it, so the vector stays in the source tree and
+the build asserts that nothing vector reached the package. That closes the gap where
 everything in a deck is text a model can write except the one diagram someone still has to draw.
 `catalog` prints the template's palette and its type — theme slots, the colors the slides actually
 use, the theme fonts, and the pt sizes in play — plus each picture frame's exact size in points. Author

@@ -7,6 +7,7 @@ Stated here rather than discovered in a PDF. Report the ones that bite on a give
 | **A template is mandatory** | There is no built-in design. Without a reference `.pptx` the engine exits with an error and produces nothing. |
 | **No new layouts** | Output slides are clones of template slides. Content with no matching archetype needs the template extended in PowerPoint first. |
 | **Charts are not writable** | Series values live in an embedded xlsx plus cached XML. `catalog` lists chart slots; `build` leaves them at template values. |
+| **The package is raster only** | SVG is rasterized on the way in; other vector formats (`.emf`, `.wmf`, `.pdf`, `.eps`, `.ai`) are refused — export them to PNG. A deck must look the same in PowerPoint, Keynote and a PDF export. |
 | **SVG assets need the renderer at build time** | PNG and JPEG assets need nothing. An `.svg` has to be rasterized, so `build` needs LibreOffice for that slot. |
 | **Layout truth needs a renderer** | `check` estimates from frame width ÷ font size. Only `render` sees what actually collides, and it needs LibreOffice. |
 | **Capacity is an estimate** | Overflow warnings come from frame width ÷ font size, not real text metrics. Treat them as a prompt to look, not a verdict. |
