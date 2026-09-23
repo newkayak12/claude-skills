@@ -821,6 +821,21 @@ test('promotes a relation note above its participants when the query names two o
   assert.equal(found.results[0].relation_promoted, 2);
 }));
 
+test('never lets promotion alone put an unmatched relation note on top, at any fusion split', async () => fixture(async (root) => {
+  // The query names both sides but not a word of the contrast note. Promotion
+  // may lift it into the window; it may not outrank the notes that matched.
+  // The bonus is measured against the lexical signal, so a semantic-heavy split
+  // must shrink it too — at 0.7 / 0.3 a fixed bonus outweighed a top lexical hit.
+  seedStockTables(root);
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+  for (const lexicalWeight of [null, 0.3]) {
+    const found = await searchIndex(root, '수불부 변동표', { limit: 5, lexicalWeight });
+    const order = found.results.map((item) => item.id);
+    assert.equal(found.relation_promotions, 1);
+    assert.notEqual(order[0], 'stock-contrast', `lexical ${lexicalWeight}: ${order.join(', ')}`);
+  }
+}));
+
 test('leaves a relation note unpromoted when the query reaches only one participant', async () => fixture(async (root) => {
   seedStockTables(root);
   await buildIndex(root, { provider: 'hash', dimensions: 128 });

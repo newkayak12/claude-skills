@@ -1263,8 +1263,11 @@ async function searchIndex(inputRoot, query, options = {}) {
         semantic: semanticHit ? semanticHit.score : null,
         lexicalRank,
         promotion,
+        // Promotion is lexical evidence read through declared membership, so it
+        // scales with the lexical weight. A fixed bonus stays below a top lexical
+        // hit only while lexical weight is 1; at 0.7 / 0.3 it outranked one.
         score: (weights.semantic * semanticRrf) + (weights.lexical * lexicalRrf)
-          + (RELATION_RRF_WEIGHT * relationRrf),
+          + (weights.lexical * RELATION_RRF_WEIGHT * relationRrf),
       };
     }).sort((left, right) => (right.score - left.score)
       || ((right.semantic ?? -1) - (left.semantic ?? -1)));
