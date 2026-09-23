@@ -16,7 +16,7 @@ import {
   createRun, runState, retrySubgoal, retrySpec, getNode, readyNodes, parentShapedTerminal,
   validateSpec,
   expandSubgoals, node,
-  applyHumanPin, releaseHumanPin, currentAttempt, promoteWaitingHuman,
+  applyHumanPin, releaseHumanPin, currentAttempt, promoteWaitingHuman, openAsk,
 } from '../mcp/graph.mjs';
 
 test('planning kind: chain, no reasoning stage, and skills by stage', () => {
@@ -490,4 +490,68 @@ test('currentAttempt reads the live attempt number straight off the nodes', () =
   ] };
   assert.equal(currentAttempt(run, 'U1'), 2);
   assert.equal(currentAttempt(run, 'nope'), 1, 'a subgoal with no nodes yet defaults to attempt 1');
+});
+
+// --- ask: the decision a person makes, as a node (D2 step 2) ---
+
+const askRun = () => ({
+  run_id: 'ask', cwd: '/tmp', max_retries: 2, interactive: true,
+  spec: { subgoals: [{ id: 'U1', kind: 'planning' }] },
+  nodes: [
+    node('investigate:U1:1', 'investigate', [], { subgoal_id: 'U1', attempt: 1, state: 'done', result: {} }),
+    node('draft:U1:1', 'draft', ['investigate:U1:1'], { subgoal_id: 'U1', attempt: 1 }),
+    node('revise:U1:1', 'revise', ['draft:U1:1'], { subgoal_id: 'U1', attempt: 1 }),
+  ],
+});
+
+const twoOptions = [{
+  question: 'How many tickets may one account hold?',
+  owner: 'Product/policy',
+  options: [{ option: '2 across presale and general combined' }, { option: '2 per sale phase' }],
+}];
+
+test('ask: the node lands between investigate and draft, and draft consumes the answer', () => {
+  const run = askRun();
+  const id = openAsk(run, run.nodes[0], twoOptions);
+  assert.equal(id, 'ask:U1:1');
+  const ask = run.nodes.find((n) => n.node_id === 'ask:U1:1');
+  assert.deepEqual(ask.deps, ['investigate:U1:1']);
+  assert.equal(ask.questions.length, 1);
+  // The whole point: draft no longer reads investigate directly, so it cannot start before the
+  // decision exists, and the decision is what it reads.
+  assert.deepEqual(run.nodes.find((n) => n.node_id === 'draft:U1:1').deps, ['ask:U1:1']);
+  assert.equal(ask.assignment.executor, 'human', 'born pinned - nothing may route it to a model');
+  assert.equal(ask.assignment.who, 'Product/policy', 'the owner the investigation named');
+});
+
+test('ask parks on a human and stops the run, reusing 0.27.3 machinery unchanged', () => {
+  const run = askRun();
+  openAsk(run, run.nodes[0], twoOptions);
+  // Born waiting, not left for the next poll to promote: its one dep is the node whose own
+  // submission created it, so a card that needed a team_next to become visible would be a card
+  // tm_inbox could not be trusted to list.
+  assert.equal(run.nodes.find((n) => n.node_id === 'ask:U1:1').state, 'waiting_human');
+  assert.deepEqual(promoteWaitingHuman(run), [], 'nothing left for the promoter to do');
+  assert.equal(runState(run).state, 'waiting_human');
+  assert.equal(readyNodes(run).length, 0, 'draft is not offered to anyone while the card is open');
+  // No new state, no new reasoning class: a node that decides and writes nothing.
+  assert.equal(REASONING_STAGES.has('ask'), true);
+});
+
+test('ask is not opened for a question with nothing to choose between, or twice', () => {
+  const run = askRun();
+  assert.equal(openAsk(run, run.nodes[0], []), null, 'no unknowns, no card');
+  assert.equal(openAsk(run, run.nodes[0], [{ question: 'q', options: [{ option: 'only one' }] }]), null,
+    'one candidate is not a choice');
+  assert.equal(openAsk(run, run.nodes[0], [{ question: 'q' }]), null, 'a question with no candidates stays an open question');
+  assert.equal(openAsk(run, run.nodes[0], twoOptions), 'ask:U1:1');
+  assert.equal(openAsk(run, run.nodes[0], twoOptions), null, 'the same attempt asks once');
+  assert.equal(run.nodes.filter((n) => n.stage === 'ask').length, 1);
+});
+
+test('createRun does not ask unless the run was told to', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ask-'));
+  assert.equal(createRun({ cwd: dir, request: 'x' }).interactive, false);
+  assert.equal(createRun({ cwd: dir, request: 'x', interactive: true }).interactive, true);
+  rmSync(dir, { recursive: true, force: true });
 });

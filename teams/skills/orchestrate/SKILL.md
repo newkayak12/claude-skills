@@ -170,7 +170,7 @@ Everything past the entry lives in `references/`:
 |---|---|
 | the loop itself: dispatch, retries, progress mirror, verdicts, rules | `references/loop.md` |
 | following a task the daemon is driving: worktrees, folds, `tm_retry`, integrate | `tm_status`/`tm_board`/`tm_ticket`/`tm_events` — read-only, safe from any session |
-| a card pinned to a human (`assignee: "human"` in the shape/spec, or `tm_assign`) | `tm_inbox` lists every one waiting — read-only, safe from any session. `tm_assign` (pin/release) and `tm_submit({task_id, key, payload})` (answer one) both write, but only to the one card named — never to a node the daemon or a package driver is itself working, so both are safe to call alongside a running daemon too. |
+| a card waiting on a person — pinned work (`assignee: "human"`, `tm_assign`) or, on an `interactive` run, a decision (`ask`) | `tm_inbox` lists every one waiting — read-only, safe from any session. `tm_assign` (pin/release) and `tm_submit({task_id, key, payload})` (answer one) both write, but only to the one card named — never to a node the daemon or a package driver is itself working, so both are safe to call alongside a running daemon too. |
 | a live visual of the same task instead of tool replies | `node teams/scripts/view.mjs --task <task_id>` — read-only HTTP page or `--once` text tree |
 | legacy `ordered` mode, per-stage `policy`, `native_models`, provenance | `references/routing.md` |
 | working directory, snapshot identity, briefing scope | `references/handoffs.md` |

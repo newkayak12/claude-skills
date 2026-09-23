@@ -36,6 +36,16 @@ writes from the findings and carries every unknown into the document as an open 
 recommend, but answering one from nothing is the failure this stage exists to stop. A short,
 honest findings list is a success — the unknowns are half the deliverable.
 
+An unknown that names candidate answers can be put to a person instead of shipped as an open
+question. Open the run with `interactive: true` (a `tm_open` argument, or `interactive` in
+`.claude/team.json`) and the engine inserts an `ask` card between `investigate` and `draft`: the
+run parks in `waiting_human`, `tm_inbox` lists the question with its candidates and the owner the
+investigation named, and `tm_submit({task_id, key, payload: {decisions: [{question, chose}]}})`
+answers it — the answer then reaches `draft` as a settled rule rather than an open question. The
+answer need not be one of the candidates, and "leave this open" is a valid one. Left off (the
+default), the run decides by default and records the questions it would have asked, so the report
+can show them rather than the document quietly absorbing them.
+
 `revise` is a different identity from `draft` - the broker refuses a revise routed to the vendor
 + model that drafted, the same way it refuses a mismatched `document` review. Unlike `document`'s
 `review`, `revise` may edit the artifact: it rewrites for the reader and checks every claim

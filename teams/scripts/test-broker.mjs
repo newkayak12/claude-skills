@@ -1187,6 +1187,51 @@ const PLANNING_QA_MIX = {
   ],
 };
 
+// --- ask: the decision a person makes, as a node (D2 step 2) ---
+
+const PLANNING_ONLY = {
+  goal: 'a PRD for the reservation system',
+  acceptance: ['names the per-person limit'],
+  subgoals: [{ id: 'P1', kind: 'planning', title: 'PRD', acceptance: ['names the per-person limit'], files: ['.teams_output/team/E-deadbeef/10-prd.md'], deps: [] }],
+};
+
+const OPTIONED = [{
+  question: 'How many tickets may one account hold?',
+  owner: 'Product/policy',
+  options: [{ option: '2 across presale and general combined', consequence: 'scalpers buy two accounts' }, { option: '2 per phase' }],
+}];
+
+test('an interactive run stops at the decision its investigation could not settle', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, PLANNING_ONLY);
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'investigate:P1:1',
+      payload: ok({ changed_files: [], handoff: 'findings.md', findings: [], unknowns: OPTIONED }) });
+    const st = await c.call('team_status', { run_id: runId, cwd });
+    const ask = st.nodes.find((n) => n.node_id === 'ask:P1:1');
+    assert.ok(ask, 'the card exists: ' + st.nodes.map((n) => n.node_id).join(','));
+    assert.deepEqual(st.nodes.find((n) => n.node_id === 'draft:P1:1').deps, ['ask:P1:1']);
+    const nx = await c.call('team_next', { run_id: runId, cwd });
+    assert.equal(nx.state, 'waiting_human', JSON.stringify(nx));
+    assert.equal((nx.ready || []).length, 0, 'nothing is handed to a model while a person owes an answer');
+  }, { interactive: true });
+});
+
+test('a run nobody is watching decides by default, and records what it would have asked', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, PLANNING_ONLY);
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'investigate:P1:1',
+      payload: ok({ changed_files: [], handoff: 'findings.md', findings: [], unknowns: OPTIONED }) });
+    const st = await c.call('team_status', { run_id: runId, cwd });
+    assert.equal(st.nodes.some((n) => n.stage === 'ask'), false, 'default is off');
+    assert.deepEqual(st.nodes.find((n) => n.node_id === 'draft:P1:1').deps, ['investigate:P1:1']);
+    // The question is not lost, which is the whole difference from before this existed.
+    const run = JSON.parse(readFileSync(join(cwd, '.teams_output', 'broker', 'runs', `${runId}.json`), 'utf8'));
+    assert.equal(run.unasked.length, 1);
+    assert.equal(run.unasked[0].owner, 'Product/policy');
+    assert.equal(run.unasked[0].subgoal_id, 'P1');
+  });
+});
+
 test('a mixed spec expands a planning subgoal into investigate->draft->revise->gate and a qa subgoal into cases->execute->gate', async () => {
   await withRun(async ({ c, cwd, runId }) => {
     await throughCritiqueWith(c, cwd, runId, PLANNING_QA_MIX);

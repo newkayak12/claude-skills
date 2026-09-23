@@ -556,3 +556,51 @@ test('the setgoal contract defines deps as start-order, not subject-matter order
   // Removing the deps must not create a shared-file conflict instead.
   assert.match(setgoal, /give each one the section it owns, by heading/);
 });
+
+// --- ask: the one briefing in this file written for a person (D2 step 2) ---
+
+test('an ask card prints the choice, its consequences and who owns it', () => {
+  const cwd = tmpProject();
+  try {
+    const n = baseNode({
+      node_id: 'ask:P1:1', stage: 'ask', subgoal_id: 'P1',
+      questions: [{
+        question: 'How many tickets may one account hold?',
+        owner: 'Product/policy',
+        options: [
+          { option: '2 across presale and general combined', consequence: 'scalpers buy two accounts' },
+          { option: '2 per sale phase', consequence: 'one person can hold four' },
+        ],
+      }],
+    });
+    const prompt = composePrompt(baseRun(cwd), n, baseBriefing());
+    assert.ok(prompt.includes('## Decisions waiting on you'));
+    assert.ok(prompt.includes('How many tickets may one account hold?'));
+    assert.ok(prompt.includes('Owner: Product/policy'));
+    assert.ok(prompt.includes('2 across presale and general combined'));
+    assert.ok(prompt.includes('scalpers buy two accounts'), 'a candidate without its consequence is not a choice');
+    assert.match(prompt, /\[what the investigation would recommend\]/, 'the first candidate is the recommendation');
+    // Its own contract, not implement's: this card is handed to a human, and the fallback
+    // would ask them for changed_files.
+    assert.ok(prompt.includes('"decisions"'));
+    assert.doesNotMatch(prompt, /"handoff": "<paths, names, interfaces the dependent work needs>"/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('the ask contract lets the answer be none of the candidates, and lets it be handed back', () => {
+  assert.match(CONTRACT.ask, /not bound to the candidates/);
+  assert.match(CONTRACT.ask, /leave this open/);
+  assert.match(CONTRACT.ask, /nothing times it out/, 'zero compute while waiting is the promise, not a deadline');
+});
+
+test('investigate asks for candidates but is told that naming them is not deciding', () => {
+  assert.match(CONTRACT.investigate, /"options"/);
+  assert.match(CONTRACT.investigate, /two to four/);
+  assert.match(CONTRACT.investigate, /This is not you deciding/);
+});
+
+test('draft is told an answered unknown is a rule, not an open question', () => {
+  assert.match(CONTRACT.draft, /settled, not open/);
+});

@@ -12,7 +12,9 @@ task) reads the run file with `tm_next`/`tm_submit` and folds it. You never call
 yourself.
 
 A run can also reach `waiting_human`: a subgoal the shape/spec (or `tm_assign`) pinned to a
-person has become ready. You have no surface to reach a person — end exactly like `blocked`,
+person has become ready, or — on an `interactive` run — a planning subgoal's investigation came
+back with a decision it could name candidates for but no source could settle, and the engine
+opened an `ask` card between `investigate` and `draft`. You have no surface to reach a person — end exactly like `blocked`,
 with the output template and no workaround, and say which card is waiting. Do not poll `team_next`
 again hoping it changes; it will not until the human answers through `tm_submit({task_id, key,
 payload})` (found via `tm_inbox`), which resumes a fresh driver for you. `while state == "running"`
