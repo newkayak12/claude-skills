@@ -1498,6 +1498,12 @@ function repairTargets(questions, bridges) {
 // questions and sinks two reads as progress. Comparing per question against a
 // saved run makes the sunk ones the decision, which is the only safe rule when
 // the question set is small enough that one question moves recall by points.
+function foundCount(question) {
+  return Array.isArray(question.required_notes)
+    ? question.required_notes.filter((item) => item.rank !== null && item.rank !== undefined).length
+    : null;
+}
+
 function compareQuestionSets(questions, priorQuestions) {
   const before = new Map((priorQuestions ?? []).map((item) => [item.question_id, item]));
   const improvements = [];
@@ -1509,16 +1515,27 @@ function compareQuestionSets(questions, priorQuestions) {
     compared += 1;
     const priorRank = prior.first_rank ?? null;
     const rank = question.first_rank ?? null;
+    // A question that needs several notes can lose one while its hit stays false
+    // and its first rank stays put, so the retrieved count is compared too. A
+    // baseline written before required_notes existed has no count to compare.
+    const priorFound = foundCount(prior);
+    const found = foundCount(question);
     const move = {
       question_id: question.question_id,
       first_rank_before: priorRank,
       first_rank_after: rank,
       hit_before: prior.hit === true,
       hit_after: question.hit === true,
+      found_before: priorFound,
+      found_after: found,
     };
+    const fewer = priorFound !== null && found !== null && found < priorFound;
+    const more = priorFound !== null && found !== null && found > priorFound;
     if (prior.hit === true && question.hit !== true) regressions.push(move);
+    else if (fewer) regressions.push(move);
     else if (priorRank !== null && (rank === null || rank > priorRank)) regressions.push(move);
     else if (prior.hit !== true && question.hit === true) improvements.push(move);
+    else if (more) improvements.push(move);
     else if (rank !== null && (priorRank === null || rank < priorRank)) improvements.push(move);
   }
   return {
