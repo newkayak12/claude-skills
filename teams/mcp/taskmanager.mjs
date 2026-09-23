@@ -34,9 +34,9 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { touchMarker } from './engage.mjs';
 import {
-  epicKey, storyKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
+  epicKey, storyKey, taskKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
   storyTicketState, storyTaskProgress, epicBoardRows, ticketSnapshot,
-  storyLinks, packageReporter,
+  storyLinks, packageReporter, parseTicketKey,
 } from './tickets.mjs';
 import { writeDocs } from './docs.mjs';
 import { conventionsBlock } from './conventions.mjs';
@@ -61,6 +61,10 @@ import {
   DEFAULT_KIND,
   kindOf,
   REASONING_STAGES,
+  authorStage,
+  applyHumanPin,
+  releaseHumanPin,
+  currentAttempt,
 } from './graph.mjs';
 
 const SERVER = { name: 'task-manager', version: '0.7.0' };
@@ -1687,6 +1691,13 @@ export function openChild(task, n) {
     parent_shaped: parentShaped,
     goal: pkg.title || pkg.brief,
     acceptance: Array.isArray(pkg.acceptance) && pkg.acceptance.length ? pkg.acceptance : null,
+    // A STORY-level pin (shape's own `assignee: "human"` on the package, or tm_assign called
+    // before this package ever dispatched) - only reaches the child run on the common
+    // parent_shaped path (createRun's own parent_shaped branch is the only place that reads it):
+    // the run IS the one subgoal's chain, so "the package" and "its one subgoal" are the same
+    // card. A package that still needs its own shape/setgoal (needsSplit) has no single subgoal
+    // yet to pin - tm_assign on a STORY like that has nothing to touch until it is (re-)shaped.
+    subgoal_assignee: pkg.assignee || null,
   });
   n.state = 'running';
   n.started_at = Date.now();
@@ -1718,7 +1729,12 @@ export function dispatchSettled(task, n) {
     return !existsSync(join(n.child.cwd, '.teams_output', 'broker', 'runs', `${n.child.run_id}.json`));
   }
   const st = runState(child).state;
-  if (st === 'running') return false;
+  // waiting_human is not a settled child any more than 'running' is - the package's driver
+  // already exited (zero compute while it waits, see graph.mjs's promoteWaitingHuman), but the
+  // package itself is not done, not blocked, and not this attempt's failure: folding it here
+  // would count a human's turnaround time as a package failure and spend a retry nobody asked
+  // for. It stays open until the human answers (tm_submit) and the child moves on its own.
+  if (st === 'running' || st === 'waiting_human') return false;
   if (st === 'complete') return true;
   // Blocked or missing-report with a live driver: the driver's own broker may be about to open
   // the next attempt (auto_reassign), or is about to exit having reported the block. Either way
@@ -2517,11 +2533,11 @@ const TOOLS = [
   },
   {
     name: 'tm_submit',
-    description: 'Record a manager node. For size/shape/critique/accept/integrate/gate/report pass the payload the fresh agent returned. For a dispatch node pass no payload: the manager reads the child run file and folds its goal-gate verdict and report into the node. Refused while the child is still running and its driver alive, or waiting_capacity (a usage-limit death; use tm_retry({reset_capacity:true})); a child whose driver died mid-run and spent its whole restart budget folds as blocked, with every attempt\'s stderr.',
+    description: 'Record a manager node. For size/shape/critique/accept/integrate/gate/report pass the payload the fresh agent returned. For a dispatch node pass no payload: the manager reads the child run file and folds its goal-gate verdict and report into the node. Refused while the child is still running and its driver alive, or waiting_capacity (a usage-limit death; use tm_retry({reset_capacity:true})); a child whose driver died mid-run and spent its whole restart budget folds as blocked, with every attempt\'s stderr. Pass `key` (a TASK ticket key from tm_inbox) instead of node_id to submit a human\'s own answer for a waiting_human card - the flow continues exactly as if a driver had submitted it (its child run\'s driver resumes automatically); a later gate rejection sends the next attempt back to waiting_human for the same human, never to a model.',
     inputSchema: {
       type: 'object',
-      properties: { task_id: { type: 'string' }, node_id: { type: 'string' }, payload: { type: 'object' } },
-      required: ['task_id', 'node_id'],
+      properties: { task_id: { type: 'string' }, node_id: { type: 'string' }, key: { type: 'string', description: 'a TASK key (E-xxxxxxxx/Pn/subgoalId) naming a waiting_human card, in place of node_id' }, payload: { type: 'object' } },
+      required: ['task_id'],
     },
     outputSchema: VERDICT_SCHEMA,
   },
@@ -2573,6 +2589,34 @@ const TOOLS = [
     description: 'One ticket by key: E-xxxxxxxx for the EPIC, E-xxxxxxxx/Pn for a STORY. State, worktree/branch, task progress (x/y) and the last accept verdict, plus a doc_path. Read-only; a doc_path is always returned, even before tm_docs has written anything there.',
     inputSchema: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] },
     outputSchema: { type: 'object' },
+  },
+  {
+    name: 'tm_assign',
+    description: 'Pin a card to a human, or release it back to auto. `key` is a STORY (E-xxxxxxxx/Pn, every subgoal in that package\'s child run) or TASK (E-xxxxxxxx/Pn/subgoalId, just that one) ticket key. `to: "human"` (optionally `who`, or `to: {executor: "human", who}`) pins the subgoal\'s AUTHOR stage only (implement/draft/cases - see graph.mjs\'s authorStage) - a judging stage (test/review/gate/critique) is never assigned to the human who did the work. `to: "auto"` releases it: a card already parked waiting_human goes back to pending and dispatches normally on the next team_next. The pin lives on the child run\'s own spec (the same `assignee` field setgoal itself may write), so a rejected human-authored subgoal\'s next attempt is pinned again automatically. A STORY may be taken before it dispatches: the pin rides on the package and reaches its child run when it opens. A TASK key needs the child run to exist.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string' },
+        key: { type: 'string', description: 'E-xxxxxxxx/Pn (STORY) or E-xxxxxxxx/Pn/subgoalId (TASK)' },
+        to: { description: '"human", {executor: "human", who: "<name>"}, or "auto" to release' },
+        who: { type: 'string', description: 'shorthand for to: {executor: "human", who}' },
+      },
+      required: ['task_id', 'key', 'to'],
+    },
+    outputSchema: { type: 'object', properties: {
+      key: { type: 'string' }, kind: { type: 'string', enum: ['STORY', 'TASK'] }, to: { type: 'string' }, who: { type: ['string', 'null'] },
+      assigned: { type: 'array', items: { type: 'object', properties: { subgoal_id: { type: 'string' }, node_id: { type: 'string' }, state: { type: 'string' }, assignment: { type: ['object', 'null'] } } } },
+    }, required: ['key', 'kind', 'to', 'assigned'] },
+  },
+  {
+    name: 'tm_inbox',
+    description: 'Every waiting_human card, across every task (or one, with task_id) - a headless driver cannot reach a human, so this is how the main session finds work a human pinned to themselves. For each: its TASK ticket key, title, what is asked (acceptance criteria and a briefing_path with the full brief), who it is assigned to, and since when. Complete one with tm_submit({task_id, key, payload}). Read-only; safe from any session.',
+    inputSchema: { type: 'object', properties: { task_id: { type: 'string' } } },
+    outputSchema: { type: 'object', properties: { cards: { type: 'array', items: { type: 'object', properties: {
+      key: { type: 'string' }, task_id: { type: 'string' }, node_id: { type: 'string' }, title: { type: 'string' },
+      acceptance: { type: 'array', items: { type: 'string' } }, briefing_path: { type: ['string', 'null'] },
+      who: { type: ['string', 'null'] }, since: { type: ['number', 'null'] },
+    } } } }, required: ['cards'] },
   },
   {
     name: 'tm_docs',
@@ -2768,13 +2812,22 @@ function resolveTaskRef(raw) {
   return m ? findEpicByPrefix(m[1]) : s;
 }
 
+// Resolves a ticket key into its task and, when present, package/subgoal segments - the same
+// three-way split tm_assign needs (STORY for a package, TASK for a subgoal). One parser
+// (tickets.mjs's parseTicketKey) plus one EPIC lookup, so tm_ticket and tm_assign can never
+// again resolve the same key two different ways - the bug parseTicketKey's own header
+// documents (a TASK key's "Pn/subgoalId" silently read as one greedy STORY pkgId).
+function resolveTicketRef(key) {
+  const parsed = parseTicketKey(key);
+  if (!parsed) throw new Error(`unrecognized ticket key "${key}": expected E-xxxxxxxx, E-xxxxxxxx/Pn, or E-xxxxxxxx/Pn/subgoalId`);
+  const found = findEpicByPrefix(parsed.epic8);
+  const task = mustFindTask({ task_id: found });
+  return { task, pkgId: parsed.pkgId, subgoalId: parsed.subgoalId };
+}
+
 function toolTicket(a) {
   const key = String(a.key || '');
-  const m = /^E-([0-9a-f]{8})(?:\/(.+))?$/.exec(key);
-  if (!m) throw new Error(`unrecognized ticket key "${key}": expected E-xxxxxxxx or E-xxxxxxxx/Pn`);
-  const [, epic8, pkgId] = m;
-  const found = findEpicByPrefix(epic8);
-  const task = mustFindTask({ task_id: found });
+  const { task, pkgId, subgoalId } = resolveTicketRef(key);
   if (!pkgId) {
     return {
       key: epicKey(task.run_id), task_id: task.run_id, kind: 'EPIC',
@@ -2786,6 +2839,12 @@ function toolTicket(a) {
   }
   const pkg = packageOf(task, pkgId);
   if (!pkg) throw new Error(`no package ${pkgId} in ${epicKey(task.run_id)} (packages: ${((task.spec && task.spec.packages) || []).map((p) => p.id).join(', ') || 'none yet'})`);
+  // A TASK key resolves the package it belongs to (§8's tm_ticket table has no TASK row of its
+  // own yet) - the card itself is reachable through tm_inbox (waiting on a human) or the child
+  // run's own team_status, not this tool.
+  if (subgoalId) {
+    throw new Error(`tm_ticket does not render a TASK key ("${key}") yet - see its STORY (${storyKey(task.run_id, pkgId)}) instead, or tm_inbox if ${key} is waiting on a human`);
+  }
   const dispatch = latestBySubgoal(task, pkgId, 'dispatch');
   const accept = latestBySubgoal(task, pkgId, 'accept');
   return {
@@ -2797,8 +2856,126 @@ function toolTicket(a) {
     last_verdict: accept && accept.result ? { accept: accept.result.accept, match_pct: accept.result.match_pct, gaps: accept.result.gaps || [] } : null,
     reporter: packageReporter(pkg),
     links: storyLinks(task, pkgId),
+    // Which of this STORY's subgoals a human owns right now - tm_assign's own read-back, and
+    // the only place a card's `who` is visible outside tm_inbox (which only lists a card once
+    // it is actually waiting_human, not merely pinned for a future attempt).
+    human_assignments: humanAssignments(task, pkgId),
     doc_path: docPaths(task).story(pkgId),
   };
+}
+
+// Which of a STORY's subgoals a human owns, read off the child run's own spec (tm_ticket's
+// human_assignments field). [] before the package has a child run/spec at all - nothing to pin
+// to a human yet, the same guard tm_assign itself has to make.
+function humanAssignments(task, pkgId) {
+  const dispatch = latestBySubgoal(task, pkgId, 'dispatch');
+  if (!dispatch || !dispatch.child) return [];
+  const child = loadRun(dispatch.child.cwd, dispatch.child.run_id);
+  if (!child || !child.spec) return [];
+  return (child.spec.subgoals || [])
+    .filter((s) => s.assignee)
+    .map((s) => ({ subgoal_id: String(s.id), who: (s.assignee && typeof s.assignee === 'object' ? s.assignee.who : null) || null }));
+}
+
+// tm_assign({task_id, key, to}): the pin path, at runtime, for the same `assignee` field a
+// shape/spec can already carry (graph.mjs's applyHumanPin/releaseHumanPin, shared with
+// expandSubgoals/retrySubgoal so a rejected human-authored subgoal's next attempt is pinned
+// again automatically - see graph.mjs's own comment on why). A STORY key (E-xxxxxxxx/Pn) pins
+// every subgoal currently in that package's child run; a TASK key (E-xxxxxxxx/Pn/subgoalId)
+// pins just the one. Only the kind's AUTHOR stage ever carries the pin - applyHumanPin enforces
+// that, not this function - so a judging stage can never be assigned to the human who did the
+// work being judged.
+function toolAssign(a) {
+  const task = mustFindTask(a);
+  const key = String(a.key || '');
+  const parsed = parseTicketKey(key);
+  if (!parsed || !parsed.pkgId) throw new Error(`tm_assign needs a STORY or TASK key (E-xxxxxxxx/Pn[/subgoalId]), got "${key}"`);
+  const { pkgId, subgoalId } = parsed;
+
+  const toRaw = a.to;
+  const toHuman = toRaw === 'human' || (toRaw && typeof toRaw === 'object' && toRaw.executor === 'human');
+  const toAuto = toRaw === 'auto';
+  if (!toHuman && !toAuto) throw new Error(`tm_assign({to}) must be "human", {executor: "human", who}, or "auto" to release - got ${JSON.stringify(toRaw)}`);
+  const who = a.who || (toRaw && typeof toRaw === 'object' ? toRaw.who : null) || null;
+
+  // A STORY pin also lives on the package itself, so the card stays the human's across a
+  // re-dispatch and can be taken before it ever dispatched - a READY card is the one a person
+  // picks up off the board, and refusing it until a driver was already on it was backwards.
+  // openChild hands pkg.assignee to the child run it opens.
+  const pkg = !subgoalId ? packageOf(task, pkgId) : null;
+  if (!subgoalId && !pkg) throw new Error(`no package ${pkgId} in ${epicKey(task.run_id)}`);
+  if (pkg) {
+    if (toAuto) delete pkg.assignee;
+    else pkg.assignee = who ? { who } : 'human';
+    saveRun(task);
+  }
+  const dispatch = latestBySubgoal(task, pkgId, 'dispatch');
+  if (!dispatch || !dispatch.child) {
+    if (subgoalId) throw new Error(`${key} has no child run yet - pin its STORY (${storyKey(task.run_id, pkgId)}) instead, which holds until it dispatches`);
+    record(task, { event: 'tm_assign', task_id: task.run_id, key, to: toAuto ? 'auto' : 'human', who, nodes: [] });
+    return { key, kind: 'STORY', to: toAuto ? 'auto' : 'human', who, assigned: [] };
+  }
+  const child = loadRun(dispatch.child.cwd, dispatch.child.run_id);
+  if (!child || !child.spec) throw new Error(`${key}'s child run has no spec yet - shape/setgoal has not produced subgoals to pin`);
+
+  const ids = subgoalId ? [subgoalId] : (child.spec.subgoals || []).map((s) => String(s.id));
+  if (subgoalId && !ids.some((id) => id === subgoalId)) throw new Error(`no subgoal ${subgoalId} in ${storyKey(task.run_id, pkgId)}'s child run`);
+
+  const assigned = [];
+  for (const sid of ids) {
+    const sg = child.spec.subgoals.find((s) => String(s.id) === sid);
+    if (!sg) throw new Error(`no subgoal ${sid} in ${storyKey(task.run_id, pkgId)}'s child run`);
+    const attempt = currentAttempt(child, sid);
+    if (toAuto) {
+      releaseHumanPin(child, sg, sid, attempt);
+    } else {
+      sg.assignee = who ? { who } : 'human';
+      applyHumanPin(child, sg, sid, attempt);
+    }
+    const nodeId = `${authorStage(kindOf(sg))}:${sid}:${attempt}`;
+    const live = getNode(child, nodeId);
+    assigned.push({ subgoal_id: sid, node_id: nodeId, state: live ? live.state : null, assignment: (live && live.assignment) || null });
+  }
+  saveRun(child);
+  record(task, { event: 'tm_assign', task_id: task.run_id, key, to: toAuto ? 'auto' : 'human', who, nodes: assigned.map((x) => x.node_id) });
+  return { key, kind: subgoalId ? 'TASK' : 'STORY', to: toAuto ? 'auto' : 'human', who, assigned };
+}
+
+// tm_inbox({task_id?}): every waiting_human card, read straight off the state graph.mjs's
+// promoteWaitingHuman already parked - no second list to keep in sync. Scans every package's
+// child run (dispatch.child) for a node in that state; a task with no packages dispatched yet
+// simply contributes none. Sorted oldest-first, so the longest-waiting card leads.
+function toolInbox(a) {
+  const ids = a.task_id ? [String(a.task_id)] : (() => { try { return readdirSync(tasksRoot()); } catch { return []; } })();
+  const cards = [];
+  for (const tid of ids) {
+    const task = loadRunAt(taskPath(tid));
+    if (!task) continue;
+    const packages = [task.planning_pkg, task.qa_pkg, task.audit_pkg, ...((task.spec && task.spec.packages) || [])].filter(Boolean);
+    for (const pkg of packages) {
+      const pid = String(pkg.id);
+      const dispatch = latestBySubgoal(task, pid, 'dispatch');
+      if (!dispatch || !dispatch.child) continue;
+      const child = loadRun(dispatch.child.cwd, dispatch.child.run_id);
+      if (!child) continue;
+      for (const n of child.nodes) {
+        if (n.state !== 'waiting_human') continue;
+        const sg = child.spec && (child.spec.subgoals || []).find((s) => String(s.id) === String(n.subgoal_id));
+        cards.push({
+          key: taskKey(task.run_id, pid, n.subgoal_id),
+          task_id: task.run_id,
+          node_id: n.node_id,
+          title: (sg && sg.title) || String(n.subgoal_id),
+          acceptance: (sg && sg.acceptance) || [],
+          briefing_path: n.briefing_path || null,
+          who: (n.assignment && n.assignment.who) || null,
+          since: n.waiting_since || null,
+        });
+      }
+    }
+  }
+  cards.sort((x, y) => (x.since || 0) - (y.since || 0));
+  return { cards };
 }
 
 // tm_docs's whole job: call docs.mjs's single write site. No rendering logic lives here, and no
@@ -3105,6 +3282,7 @@ function toolNext(a) {
 
 function toolSubmit(a) {
   const task = mustFindTask(a);
+  if (a.key) return toolSubmitHuman(task, a);
   record(task, { event: 'tm_submit', task_id: task.run_id, node_id: String(a.node_id) });
   const n = requireRunnable(task, String(a.node_id));
   if (n.stage === 'dispatch') {
@@ -3116,6 +3294,62 @@ function toolSubmit(a) {
   const result = { ...payload, stage_ok: payload.stage_ok !== false };
   const out = finish(task, n, result);
   return delegateIfSmall(task, n, out) || out;
+}
+
+// tm_submit({task_id, key, payload}): the human's own answer for a waiting_human card - the one
+// write this file ever makes to a child run. Every other node this file "READS child run files
+// and never writes them" (this file's own header, rule 2) about is folded through the broker, by
+// a driver session relaying a fresh agent's JSON; a waiting_human node exists BECAUSE a headless
+// driver cannot reach a human at all (docs/plans/2026-09-23-teams-reducer-human-rollback.md
+// §0.2), so nothing else can make this one write. Deliberately narrow: applyHumanPin only ever
+// pins a subgoal's AUTHOR stage (implement/draft/cases/investigate's own author), never a
+// judging one, so this never has to replicate the broker's cross-check-against-git or goal-gate
+// consensus machinery - stage_ok is taken at face value, the same trust a human's own report
+// already gets everywhere else in this file (toolSubmit's ordinary payload above does the same).
+// Everything downstream (test, review, gate, and a rejection's own retry back to waiting_human -
+// graph.mjs's applyHumanPin, called again by retrySubgoal) runs through the real broker once the
+// child's driver resumes, exactly as it always has.
+function toolSubmitHuman(task, a) {
+  const key = String(a.key);
+  const parsed = parseTicketKey(key);
+  if (!parsed || !parsed.pkgId || !parsed.subgoalId) throw new Error(`tm_submit({key}) needs a TASK key (E-xxxxxxxx/Pn/subgoalId), got "${key}"`);
+  const { pkgId, subgoalId } = parsed;
+  const dispatch = latestBySubgoal(task, pkgId, 'dispatch');
+  if (!dispatch || !dispatch.child) throw new Error(`${key} has no child run yet`);
+  const child = loadRun(dispatch.child.cwd, dispatch.child.run_id);
+  if (!child) throw new Error(`${key}'s child run file is missing`);
+  const sg = child.spec && (child.spec.subgoals || []).find((s) => String(s.id) === subgoalId);
+  if (!sg) throw new Error(`no subgoal ${subgoalId} in ${key}'s child run`);
+  const attempt = currentAttempt(child, subgoalId);
+  const nodeId = `${authorStage(kindOf(sg))}:${subgoalId}:${attempt}`;
+  const n = getNode(child, nodeId);
+  if (!n) throw new Error(`unknown node ${nodeId} for ${key}`);
+  if (n.state !== 'waiting_human') throw new Error(`${key}'s card (${nodeId}) is ${n.state}, not waiting_human - nothing to submit`);
+
+  const payload = a.payload || {};
+  n.result = { ...payload, stage_ok: payload.stage_ok !== false };
+  n.state = n.result.stage_ok ? 'done' : 'failed';
+  n.answered_at = Date.now();
+  saveRun(child);
+  record(task, { event: 'tm_submit_human', task_id: task.run_id, key, node_id: nodeId, stage_ok: n.result.stage_ok });
+
+  // The driver already exited the moment nothing was left ready for it (zero compute while
+  // waiting - graph.mjs's promoteWaitingHuman). Resume it now, the same shape clearCapacity
+  // already uses for its own "not a crash, don't spend a restart" respawn: restarts carries
+  // over untouched, because this is exactly what the driver was always going to do next, not a
+  // failure it is recovering from.
+  // Only when nothing is driving the run: a sibling subgoal still in flight keeps its driver
+  // alive, and that driver picks the answered node up on its next team_next. A second driver on
+  // the same run would dispatch the same ready nodes twice.
+  if (!noDriver() && !driverAlive(dispatch.child.driver)) {
+    const restarts = (dispatch.child.driver && dispatch.child.driver.restarts) || [];
+    const fresh = spawnChildDriver(task, dispatch.node_id, dispatch.child, { resume: true, attempt: nextSpawnAttempt(dispatch.child) });
+    fresh.restarts = restarts;
+    dispatch.child.driver = fresh;
+    saveRun(task);
+    record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: dispatch.node_id, pid: fresh.pid, reason: 'human_submitted' });
+  }
+  return { task_id: task.run_id, key, node_id: nodeId, state: n.state, result: n.result };
 }
 
 function toolRetry(a) {
@@ -3267,6 +3501,8 @@ function dispatch(name, a) {
     case 'tm_events': return toolEvents(a);
     case 'tm_board': return toolBoard(a);
     case 'tm_ticket': return toolTicket(a);
+    case 'tm_assign': return toolAssign(a);
+    case 'tm_inbox': return toolInbox(a);
     case 'tm_docs': return toolDocs(a);
     default: throw new Error('unknown tool: ' + name);
   }

@@ -229,6 +229,51 @@ export function authorStage(kind) {
   return k.author || k.chain[0];
 }
 
+// The human pin: a subgoal's own `assignee` field (written into the spec by setgoal itself, or
+// at runtime by tm_assign) lands on exactly one node - the kind's author stage, never a judging
+// one. A gate/review/test/critique judging the very work a human just did must stay automatic:
+// pinning a judge to the same human it is meant to check would be the same same-actor mistake
+// routing.mjs's AUTHOR_OF guards against for AI identities, just unguarded because a human was
+// never in that table at all. Called right after pushChain creates the attempt - expandSubgoals'
+// first attempt and retrySubgoal's every later one both call it, so a rejected human-authored
+// subgoal comes back to a human again, not a model (docs/plans/2026-09-23-teams-reducer-human-
+// rollback.md §0.2: a headless driver has no surface to reach one). A node already past
+// 'pending' (running or done before the pin landed) is left alone - the spec's `assignee` still
+// updates, so the NEXT attempt, if this one is rejected, picks it up.
+export function applyHumanPin(run, sg, subgoalId, attempt) {
+  const pin = sg && sg.assignee;
+  if (!pin) return null;
+  const n = getNode(run, `${authorStage(kindOf(sg))}:${subgoalId}:${attempt}`);
+  if (!n || n.state !== 'pending') return null;
+  const who = pin && typeof pin === 'object' ? (pin.who || null) : null;
+  n.assignment = { executor: 'human', vendor: 'human', who, reason: 'pinned by the subgoal spec (assignee)' };
+  return n;
+}
+
+// The release half of the same pin (tm_assign({to: 'auto'})): drops the spec's own `assignee`
+// and, when the node has not been picked up yet, whatever it already carries. A node still
+// `waiting_human` goes back to `pending` so the very next team_next offers it to the ordinary
+// candidate pool like any other node - "release with to: auto dispatches normally" is this line.
+export function releaseHumanPin(run, sg, subgoalId, attempt) {
+  if (sg) delete sg.assignee;
+  const n = getNode(run, `${authorStage(kindOf(sg))}:${subgoalId}:${attempt}`);
+  if (!n) return null;
+  if (n.state === 'waiting_human') {
+    n.state = 'pending';
+    delete n.waiting_since;
+  }
+  if (n.assignment && n.assignment.executor === 'human') delete n.assignment;
+  return n;
+}
+
+// The attempt a subgoal is currently on, read back from the nodes themselves - what tm_assign
+// has (a subgoal id, resolved from a ticket key) instead of the round number expandSubgoals and
+// retrySubgoal already track as they go.
+export function currentAttempt(run, subgoalId) {
+  const mine = run.nodes.filter((n) => n.subgoal_id === String(subgoalId));
+  return mine.length ? Math.max(...mine.map((n) => n.attempt || 1)) : 1;
+}
+
 // The kind of the subgoal a node belongs to, from the run's spec. Run-level nodes have none.
 export function nodeKind(run, n) {
   if (!n || !n.subgoal_id || !run.spec) return null;
@@ -469,9 +514,10 @@ export function createRun(opts) {
     run.spec = {
       goal: opts.goal || opts.request,
       acceptance,
-      subgoals: [{ id: 'U1', title: opts.goal || 'the package', kind, acceptance: acceptance.slice(), deps: [], after: [] }],
+      subgoals: [{ id: 'U1', title: opts.goal || 'the package', kind, acceptance: acceptance.slice(), deps: [], after: [], ...(opts.subgoal_assignee ? { assignee: opts.subgoal_assignee } : {}) }],
     };
     pushChain(run, (KINDS[kind] || KINDS[DEFAULT_KIND]).chain, 'U1', 1, [], [], {});
+    applyHumanPin(run, run.spec.subgoals[0], 'U1', 1);
   } else {
     run.nodes.push(
       node('plan', 'plan', []),
@@ -809,6 +855,7 @@ export function expandSubgoals(run, subgoals) {
     const deps = (sg.deps || []).map((d) => `gate:${d}:${round}`);
     const after = (sg.after || []).map((d) => `gate:${d}:${round}`);
     gateIds.push(pushChain(run, (KINDS[kindOf(sg)] || KINDS[DEFAULT_KIND]).chain, id, round, [critiqueDep, ...deps], after, {}));
+    applyHumanPin(run, sg, id, round);
   }
   // Where parallel subgoals converge. Until this node existed the only place they met was
   // the goal gate, which is a judging node and writes nothing - so nothing ever looked at
@@ -924,6 +971,9 @@ export function retrySubgoal(run, subgoalId, feedback) {
   const baseAfter = head ? (head.after || []).slice() : [];
 
   const gate = pushChain(run, (KINDS[kind] || KINDS[DEFAULT_KIND]).chain, subgoalId, attempt, baseDeps, baseAfter, { feedback: feedback || '' });
+  // A subgoal the spec pinned to a human stays pinned on its next attempt too - a rejection
+  // must send the SAME card back to waiting_human, never quietly hand the retry to a model.
+  applyHumanPin(run, sg, subgoalId, attempt);
 
   // Anything that waited on the old attempt's gate must wait on the new one.
   for (const n of run.nodes) {
@@ -1055,6 +1105,29 @@ export function readyNodes(run) {
   return run.nodes.filter((n) => n.state === 'pending' && depsSatisfied(run, n));
 }
 
+// A human-pinned node that has just become ready parks here instead of ever being offered to a
+// driver: docs/plans/2026-09-17-teams-team-v0.13.0.md §0.1 fixes `waiting_human` as a node
+// state, not a vendor, and §0.3 fixes human OUT of the routing pool entirely - the only way in
+// is this pin (`node.assignment.executor === 'human'`, written by the spec's own `assignee`
+// field via applyHumanPin, or by tm_assign at runtime). Nothing in this engine polls a model for
+// a node in this state: the MAIN session's tm_inbox is the only reader, and a human's own
+// tm_submit (taskmanager.mjs) is the only writer that ever clears it. Same shape as
+// settleFailure - a pure mutation over run.nodes, called at the one place readiness is computed
+// for a driver (broker.mjs's team_next), not hidden inside readyNodes itself so a caller that
+// only wants to READ readiness (tickets.mjs, runState below) never mutates by accident.
+export function promoteWaitingHuman(run) {
+  const touched = [];
+  for (const n of run.nodes) {
+    if (n.state !== 'pending') continue;
+    if (!n.assignment || n.assignment.executor !== 'human') continue;
+    if (unmetDeps(run, n).length) continue;
+    n.state = 'waiting_human';
+    n.waiting_since = Date.now();
+    touched.push(n);
+  }
+  return touched;
+}
+
 // The public shape of goal-gate consensus, trimmed of internal bookkeeping
 // (`routing_failure` stays out - it means "not decided yet", not a verdict).
 function publicGoalVerdict(c) {
@@ -1063,7 +1136,7 @@ function publicGoalVerdict(c) {
 }
 
 export function runState(run) {
-  const counts = { pending: 0, running: 0, done: 0, failed: 0, skipped: 0, unreachable: 0 };
+  const counts = { pending: 0, running: 0, done: 0, failed: 0, skipped: 0, unreachable: 0, waiting_human: 0 };
   for (const n of run.nodes) counts[n.state] = (counts[n.state] || 0) + 1;
 
   // The most recently SETTLED goal-gate round's consensus, once one exists - surfaced
@@ -1091,6 +1164,16 @@ export function runState(run) {
   if (run.parent_shaped) {
     const terminal = parentShapedTerminal(run);
     if (terminal && terminal.state === 'done') return withVerdict({ state: 'complete', counts });
+    // Checked exactly where `blocked` would otherwise fire, not before it: readyNodes() already
+    // excludes a waiting_human node (it left 'pending' the moment promoteWaitingHuman parked
+    // it), so without this a run with NOTHING ELSE ready reads exactly like a genuine deadlock -
+    // the sizing document's own §4.2 risk. A sibling subgoal still being offered or worked is a
+    // different fact - the run is still `running`, same as it would be blocked on nothing at
+    // all; only the "otherwise blocked" case gets the more honest word. See graph.mjs's
+    // promoteWaitingHuman for who sets the node state this reads.
+    if (!readyNodes(run).length && !counts.running && run.nodes.some((n) => n.state === 'waiting_human')) {
+      return withVerdict({ state: 'waiting_human', counts });
+    }
     if (run.routing_blocked && !counts.running) return withVerdict({ state: 'blocked', counts });
     if (!readyNodes(run).length && !counts.running) return withVerdict({ state: 'blocked', counts });
     return withVerdict({ state: 'running', counts });
@@ -1111,6 +1194,14 @@ export function runState(run) {
     // ticket layer's SETTLED is the same fact, named for a board.
     const settled = counts.unreachable > 0;
     return withVerdict(settled ? { state: 'complete', settled: true, counts } : { state: 'complete', counts });
+  }
+  // Same reuse the parent_shaped branch above relies on - tickets.mjs's epicTicketState and
+  // taskmanager.mjs's task-level runState(task) call this same function (task.json is itself a
+  // "run" with a .nodes array), so this one branch fixes both levels at once. Gated on "nothing
+  // else ready or running" for the same reason the parent_shaped branch is: a sibling subgoal
+  // still moving means the run is still `running`, not waiting on anything as a whole.
+  if (!readyNodes(run).length && !counts.running && run.nodes.some((n) => n.state === 'waiting_human')) {
+    return withVerdict({ state: 'waiting_human', counts });
   }
   if (run.routing_blocked && !counts.running) return withVerdict({ state: 'blocked', counts });
   // Blocked means nothing can proceed - not merely that nothing is pending. A node

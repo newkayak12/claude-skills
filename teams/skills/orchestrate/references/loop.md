@@ -11,6 +11,13 @@ session owns nothing else: the manager (a different session — the top-level on
 task) reads the run file with `tm_next`/`tm_submit` and folds it. You never call `tm_submit`
 yourself.
 
+A run can also reach `waiting_human`: a subgoal the shape/spec (or `tm_assign`) pinned to a
+person has become ready. You have no surface to reach a person — end exactly like `blocked`,
+with the output template and no workaround, and say which card is waiting. Do not poll `team_next`
+again hoping it changes; it will not until the human answers through `tm_submit({task_id, key,
+payload})` (found via `tm_inbox`), which resumes a fresh driver for you. `while state == "running"`
+below already stops the loop here on its own — nothing in the loop needs to name the word.
+
 ## The loop
 
 ```

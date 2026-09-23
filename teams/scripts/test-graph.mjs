@@ -16,6 +16,7 @@ import {
   createRun, runState, retrySubgoal, retrySpec, getNode, readyNodes, parentShapedTerminal,
   validateSpec,
   expandSubgoals, node,
+  applyHumanPin, releaseHumanPin, currentAttempt, promoteWaitingHuman,
 } from '../mcp/graph.mjs';
 
 test('planning kind: chain, no reasoning stage, and skills by stage', () => {
@@ -334,4 +335,159 @@ test('a planning subgoal naming a markdown document passes, and an audit subgoal
   assert.deepEqual(ok([], 'planning'), [], 'naming no file at all is still allowed');
   assert.equal(ok(['src/thing.mjs'], 'planning-audit').length, 1, 'the audit writes nothing either');
   assert.deepEqual(ok(['src/thing.mjs'], 'subgoal'), [], 'ordinary code work is untouched by the rule');
+});
+
+// ---------- a human can pick up a card (waiting_human, the assignee pin) ----------
+
+test('expandSubgoals applies a spec subgoal\'s assignee pin to the AUTHOR stage node only, never a judging stage', () => {
+  const cwd = scratchCwd();
+  try {
+    const run = { cwd, run_id: 'r1', spec: null, nodes: [node('critique', 'critique', [])], goal_judges: 1 };
+    getNode(run, 'critique').state = 'done';
+    expandSubgoals(run, [
+      { id: 'U1', kind: 'subgoal', title: 't', acceptance: ['a'], assignee: 'human', deps: [] },
+      { id: 'U2', kind: 'document', title: 'd', acceptance: ['a'], assignee: { who: 'sanghyeon' }, deps: [] },
+      { id: 'U3', kind: 'subgoal', title: 'auto', acceptance: ['a'], deps: [] },
+    ]);
+    const implU1 = getNode(run, 'implement:U1:1');
+    assert.deepEqual(implU1.assignment, { executor: 'human', vendor: 'human', who: null, reason: 'pinned by the subgoal spec (assignee)' });
+    assert.equal(getNode(run, 'test:U1:1').assignment, undefined, 'test is a judging stage - never pinned');
+    assert.equal(getNode(run, 'gate:U1:1').assignment, undefined, 'gate is a judging stage - never pinned');
+    const draftU2 = getNode(run, 'draft:U2:1');
+    assert.equal(draftU2.assignment.executor, 'human');
+    assert.equal(draftU2.assignment.who, 'sanghyeon');
+    assert.equal(getNode(run, 'review:U2:1').assignment, undefined, 'review is document\'s judging stage');
+    assert.equal(getNode(run, 'implement:U3:1').assignment, undefined, 'no assignee in the spec - nothing pinned');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('applyHumanPin lands planning\'s pin on draft (the kind\'s own author), not chain[0] investigate', () => {
+  const run = { spec: null, nodes: [] };
+  const sg = { id: 'U1', kind: 'planning', assignee: 'human' };
+  const chainNodes = KINDS.planning.chain;
+  for (let i = 0, prev = null; i < chainNodes.length; i++) {
+    const id = `${chainNodes[i]}:U1:1`;
+    run.nodes.push(node(id, chainNodes[i], prev ? [prev] : [], { subgoal_id: 'U1', attempt: 1 }));
+    prev = id;
+  }
+  applyHumanPin(run, sg, 'U1', 1);
+  assert.equal(getNode(run, 'investigate:U1:1').assignment, undefined);
+  assert.equal(getNode(run, 'draft:U1:1').assignment.executor, 'human');
+  assert.equal(getNode(run, 'revise:U1:1').assignment, undefined);
+  assert.equal(getNode(run, 'gate:U1:1').assignment, undefined);
+});
+
+test('applyHumanPin only touches a still-pending node - work already running or done is left alone', () => {
+  const run = { spec: null, nodes: [node('implement:U1:1', 'implement', [], { subgoal_id: 'U1', attempt: 1, state: 'done' })] };
+  applyHumanPin(run, { id: 'U1', kind: 'subgoal', assignee: 'human' }, 'U1', 1);
+  assert.equal(getNode(run, 'implement:U1:1').assignment, undefined, 'a finished node is not retroactively pinned');
+});
+
+test('promoteWaitingHuman parks a ready, human-pinned pending node - and only once its deps are met', () => {
+  const run = {
+    nodes: [
+      node('gate:U0:1', 'gate', [], { subgoal_id: 'U0', state: 'done', result: { stage_ok: true } }),
+      node('implement:U1:1', 'implement', ['gate:U0:1'], {
+        subgoal_id: 'U1', attempt: 1, assignment: { executor: 'human', vendor: 'human', who: null },
+      }),
+      node('implement:U2:1', 'implement', ['gate:U0:1', 'gate:never:1'], {
+        subgoal_id: 'U2', attempt: 1, assignment: { executor: 'human', vendor: 'human', who: null },
+      }),
+    ],
+  };
+  const touched = promoteWaitingHuman(run);
+  assert.deepEqual(touched.map((n) => n.node_id), ['implement:U1:1'], 'U2 is still waiting on an unmet dep - not ready yet');
+  const u1 = getNode(run, 'implement:U1:1');
+  assert.equal(u1.state, 'waiting_human');
+  assert.ok(Number.isInteger(u1.waiting_since));
+  assert.equal(getNode(run, 'implement:U2:1').state, 'pending', 'not promoted until its own deps are met');
+  assert.deepEqual(readyNodes(run).map((n) => n.node_id), [], 'a waiting_human node is never offered by readyNodes');
+});
+
+test('runState reports waiting_human distinctly from blocked, and a settled report still wins', () => {
+  const waiting = { nodes: [
+    node('gate:U0:1', 'gate', [], { subgoal_id: 'U0', state: 'done', result: { stage_ok: true } }),
+    node('implement:U1:1', 'implement', ['gate:U0:1'], { subgoal_id: 'U1', attempt: 1, state: 'waiting_human', waiting_since: Date.now() }),
+  ] };
+  const st = runState(waiting);
+  assert.equal(st.state, 'waiting_human');
+  assert.equal(st.counts.waiting_human, 1);
+
+  const genuinelyStuck = { nodes: [
+    node('implement:U1:1', 'implement', ['never'], { subgoal_id: 'U1', attempt: 1 }),
+  ] };
+  assert.equal(runState(genuinelyStuck).state, 'blocked', 'no waiting_human node here - an ordinary deadlock reads blocked, unchanged');
+
+  const doneAnyway = { nodes: [
+    node('report', 'report', [], { state: 'done' }),
+    node('implement:U1:1', 'implement', [], { subgoal_id: 'U1', attempt: 1, state: 'waiting_human' }),
+  ] };
+  assert.equal(runState(doneAnyway).state, 'complete', 'a finished report outranks a stray waiting_human leftover');
+});
+
+test('runState on a parent_shaped run reports waiting_human the same way', () => {
+  const cwd = scratchCwd();
+  try {
+    const run = createRun({ cwd, request: 'r', flow: 'develop', vendor: 'self', parent_shaped: true, goal: 'g', acceptance: ['a'], subgoal_assignee: 'human' });
+    assert.equal(getNode(run, 'implement:U1:1').assignment.executor, 'human', 'subgoal_assignee wires the pin through createRun for the common parent_shaped case');
+    promoteWaitingHuman(run);
+    assert.equal(runState(run).state, 'waiting_human');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('releaseHumanPin (tm_assign to: "auto") returns a waiting_human node to pending, and it dispatches normally again', () => {
+  const run = {
+    spec: { subgoals: [{ id: 'U1', kind: 'subgoal', assignee: 'human' }] },
+    nodes: [
+      node('implement:U1:1', 'implement', [], {
+        subgoal_id: 'U1', attempt: 1, state: 'waiting_human', waiting_since: Date.now(),
+        assignment: { executor: 'human', vendor: 'human', who: null },
+      }),
+    ],
+  };
+  releaseHumanPin(run, run.spec.subgoals[0], 'U1', 1);
+  const n = getNode(run, 'implement:U1:1');
+  assert.equal(n.state, 'pending');
+  assert.equal(n.waiting_since, undefined);
+  assert.equal(n.assignment, undefined);
+  assert.equal(run.spec.subgoals[0].assignee, undefined);
+  assert.deepEqual(readyNodes(run).map((x) => x.node_id), ['implement:U1:1'], 'released back into the ordinary ready pool');
+});
+
+test('a rejected human-authored subgoal reassigns to a fresh attempt that is pinned again - not to a model', () => {
+  const cwd = scratchCwd();
+  try {
+    const run = createRun({ cwd, request: 'r', flow: 'develop', vendor: 'self', parent_shaped: true, goal: 'g', acceptance: ['a'], subgoal_assignee: 'human' });
+    for (const id of ['implement:U1:1', 'test:U1:1']) { getNode(run, id).state = 'done'; getNode(run, id).result = { stage_ok: true }; }
+    const gate = getNode(run, 'gate:U1:1');
+    gate.state = 'failed';
+    gate.result = { stage_ok: true, accept: false, match_pct: 40, gaps: ['missing X'], reason: 'short' };
+    const out = retrySubgoal(run, 'U1', 'fix it');
+    assert.equal(out.attempt, 2);
+    const again = getNode(out.run, 'implement:U1:2');
+    assert.equal(again.assignment.executor, 'human', 'the retry lands back on the human, per the spec pin');
+    // readyNodes() itself does not know about the pin - it is a plain dependency-readiness
+    // filter, so the fresh attempt shows up there exactly like any other ready node. What keeps
+    // it off a driver is the promotion step (broker.mjs's team_next calls promoteWaitingHuman
+    // BEFORE reading readyNodes) - the same order this asserts directly.
+    assert.deepEqual(readyNodes(out.run).map((n) => n.node_id), ['implement:U1:2']);
+    promoteWaitingHuman(out.run);
+    assert.equal(getNode(out.run, 'implement:U1:2').state, 'waiting_human');
+    assert.deepEqual(readyNodes(out.run).map((n) => n.node_id), [], 'once promoted, no longer offered to a driver');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('currentAttempt reads the live attempt number straight off the nodes', () => {
+  const run = { nodes: [
+    node('implement:U1:1', 'implement', [], { subgoal_id: 'U1', attempt: 1 }),
+    node('implement:U1:2', 'implement', [], { subgoal_id: 'U1', attempt: 2 }),
+  ] };
+  assert.equal(currentAttempt(run, 'U1'), 2);
+  assert.equal(currentAttempt(run, 'nope'), 1, 'a subgoal with no nodes yet defaults to attempt 1');
 });
