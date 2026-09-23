@@ -1547,9 +1547,31 @@ function compareQuestionSets(questions, priorQuestions) {
   };
 }
 
-function compareToBaseline(questions, baselinePath) {
+// Depth, split, and holdout ratio change what is being measured: a k=50
+// baseline against a k=1 run regresses by construction, and a different ratio
+// moves questions between dev and holdout. Those block the verdict. Provider,
+// fusion, and reranker changes are the experiments the loop exists to judge, so
+// they are named rather than refused. A field the baseline predates is skipped.
+const BASELINE_MUST_MATCH = ['k', 'split', 'holdout_ratio'];
+const BASELINE_NAMED = ['fusion_weights', 'reranker', 'embedding'];
+
+function baselineFieldDiffs(fields, current, prior) {
+  return fields
+    .filter((field) => field in prior && JSON.stringify(prior[field] ?? null) !== JSON.stringify(current[field] ?? null))
+    .map((field) => ({ field, baseline: prior[field] ?? null, current: current[field] ?? null }));
+}
+
+function compareToBaseline(questions, baselinePath, conditions = {}) {
   const raw = JSON.parse(readFileSync(baselinePath, 'utf8'));
-  return { path: baselinePath, ...compareQuestionSets(questions, raw.questions) };
+  const compared = compareQuestionSets(questions, raw.questions);
+  const mismatches = baselineFieldDiffs(BASELINE_MUST_MATCH, conditions, raw);
+  return {
+    path: baselinePath,
+    ...compared,
+    verdict: mismatches.length ? 'incomparable' : compared.verdict,
+    mismatches,
+    differences: baselineFieldDiffs(BASELINE_NAMED, conditions, raw),
+  };
 }
 
 async function evalQuestions(inputRoot, options = {}) {
@@ -1570,6 +1592,7 @@ async function evalQuestions(inputRoot, options = {}) {
   let reciprocalSum = 0;
   let skipped = 0;
   let fusionUsed = null;
+  let embeddingUsed = null;
   let rerankApplied = 0;
   let rerankError = null;
   for (const [index, record] of records.entries()) {
@@ -1585,6 +1608,7 @@ async function evalQuestions(inputRoot, options = {}) {
     const requiredNoteIds = asStrings(record.required_note_ids);
     const found = await searchIndex(root, question, { ...options, limit: k });
     fusionUsed = found.fusion_weights;
+    embeddingUsed = { provider: found.embedding_provider, model: found.embedding_model, prompt: found.embedding_prompt };
     if (found.reranked) rerankApplied += 1;
     if (found.rerank_error && !rerankError) rerankError = found.rerank_error;
     const required = requiredNoteRanks(found.results, requiredNoteIds);
@@ -1607,20 +1631,24 @@ async function evalQuestions(inputRoot, options = {}) {
     });
   }
 
-  return {
-    root,
-    database: resolveDbPath(root, options.db),
-    questions_path: questionsPath,
+  const conditions = {
     k,
-    kind: options.kind || null,
+    split,
+    holdout_ratio: holdoutRatio,
     fusion_weights: fusionUsed,
     // A run scored with a reranker attached is not comparable to one without,
     // so the baseline comparison has to be able to see which it was.
     reranker: options.rerankerUrl
       ? { model: options.rerankerModel || null, depth: options.rerankDepth ?? null, applied: rerankApplied, error: rerankError }
       : null,
-    split,
-    holdout_ratio: holdoutRatio,
+    embedding: embeddingUsed,
+  };
+  return {
+    root,
+    database: resolveDbPath(root, options.db),
+    questions_path: questionsPath,
+    kind: options.kind || null,
+    ...conditions,
     evaluated: questions.length,
     skipped_by_split: skipped,
     total: questions.length,
@@ -1633,7 +1661,7 @@ async function evalQuestions(inputRoot, options = {}) {
       : 0,
     mrr: questions.length ? Number((reciprocalSum / questions.length).toFixed(6)) : 0,
     repair_targets: repairTargets(questions, bridges),
-    baseline: options.baseline ? compareToBaseline(questions, options.baseline) : null,
+    baseline: options.baseline ? compareToBaseline(questions, options.baseline, conditions) : null,
     questions,
   };
 }

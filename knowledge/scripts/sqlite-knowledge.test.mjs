@@ -640,6 +640,29 @@ test('sees a multi-note question lose or gain a required note it still fails', a
   assert.equal(gained.baseline.verdict, 'improved');
 }));
 
+test('refuses a verdict against a baseline scored under different conditions', async () => fixture(async (root) => {
+  // A k=50 baseline against a k=1 run "regresses" by construction. Depth, split,
+  // and holdout ratio change what is being measured, so they block the verdict;
+  // provider and fusion changes are legitimate experiments and are only named.
+  seed(root);
+  write(join(root, '_knowledge', 'questions.jsonl'), jsonl([
+    { id: 'payment-retry-policy', question: '결제 승인 재시도', required_note_ids: ['payments'] },
+  ]));
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+  const baselinePath = join(root, 'baseline.json');
+
+  writeFileSync(baselinePath, JSON.stringify(await evalQuestions(root, { k: 50 })));
+  const deeper = await evalQuestions(root, { k: 1, baseline: baselinePath });
+  assert.equal(deeper.baseline.verdict, 'incomparable');
+  assert.ok(deeper.baseline.mismatches.some((item) => item.field === 'k'));
+
+  writeFileSync(baselinePath, JSON.stringify(await evalQuestions(root, { k: 5 })));
+  const swept = await evalQuestions(root, { k: 5, lexicalWeight: 0.4, baseline: baselinePath });
+  assert.notEqual(swept.baseline.verdict, 'incomparable');
+  assert.ok(swept.baseline.differences.some((item) => item.field === 'fusion_weights'));
+  assert.equal(swept.embedding.provider, 'hash');
+}));
+
 test('bounds the eval depth and requires a declared question set', async () => fixture(async (root) => {
   assert.equal(parseArgs(['eval', '--k', '3']).k, 3);
   assert.throws(() => parseArgs(['eval', '--k', '99']), /--k/);
