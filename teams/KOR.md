@@ -49,6 +49,7 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 설계와 단계 목록: [`docs/plans/2026-09-11-teams-taskmanager.md`](../docs/plans/2026-09-11-teams-taskmanager.md).
 
 ## 상태
+- v0.28.5 — 칸반 이론 기반 티켓 개선: blocked_reason(미해결 의존성/용량 대기/재시작 소진/사람 대기), 대기 경과시간, board.jsonl 기반 플로우 지표(WIP/처리량/사이클·리드타임), 오래된 중첩 태스크 복사본이 live로 표시되던 문제 수정
 - v0.28.4 — 드라이버 liveness에 진행 신호가 추가되고(stall_minutes가 진행 없는 드라이버를 먼저 플래그한 뒤 죽임) driver_restarts가 평평한 영원 카운터 대신 슬라이딩 윈도우(restart_period_minutes)가 될 수 있습니다
 - v0.28.3 — board/ticket의 WAITING_HUMAN 드리프트와 human_assignments 누락을 고치고, 사람이 waiting_human 카드를 집어들 진입점(inbox/take/submit, tm_inbox/tm_assign/tm_submit)을 새로 추가
 - v0.28.2 — **reshape 뒤의 재시도가 끝나지 않을 노드를 기다렸다**: idol-pm-4(2026-09-23)는 예산이 남은 패키지 재시도 넷을 pending으로 둔 채 `blocked`로 끝났습니다. `retryPackage`가 그 패키지의 첫 dispatch에서 deps를 복사했는데, reshape 두 번 뒤의 첫 dispatch는 버려진 회차의 것이라 deps가 둘 다 skipped인 `critique`와 `accept:P1:1`이었습니다. 재시도는 ready가 될 수 없었고 daemon은 할 일이 없다고 봤습니다. 이제 deps는 현재 shape 회차의 dispatch(살아 있는 critique를 기다리는 것)에서 가져옵니다. 재시도 예산도 그 회차 안에서 셉니다. 지금까지 넣은 accept를 전부 세면 reshape 한 번마다 모든 패키지의 재시도가 하나씩 사라졌기 때문입니다. 벤치: `idol` 케이스는 이름 때문에 문서 체크리스트로 채점되던 것을 전용 기준(기획 문서·스토리·critique 통과·패키지 dispatch와 수용·통합·통합 트리 테스트)으로 채점합니다. 새 `awake` 케이스(Claude Code가 일하는 동안에만 맥을 깨워 두는 SwiftPM 메뉴바 앱)가 다음 레퍼런스 실행입니다. `drive.sh`는 자기가 살아 있는 동안만 `caffeinate -i -w $`를 걸고 실제 시각 기준으로 잡니다. idol-pm-4가 잠든 노트북에 5시간을 잃었기 때문입니다. 테스트 1개 추가.
