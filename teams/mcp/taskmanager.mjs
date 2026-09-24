@@ -150,7 +150,8 @@ S means one graph run in one worktree can carry the whole request. L means it sp
 Three rules critique will refuse the shape over, so decide them here rather than letting it find them. One: every shared artifact two or more packages depend on - the composition root or app assembly that makes the merged tree runnable, a cross-package contract, an auth or admission token and its verifier, a shared schema or type - is owned by exactly one package, named in that package's touches[] AND in its acceptance[]. A package may not be judged on a primitive no package was told to build. A package that owns only such artifacts delivers no story by itself: leave its implements[] empty and list in enables[] the stories that cannot be delivered without it - never claim a story in implements[] to get it past coverage. Two: every goal-level criterion must be checkable by the integration step from the merged tree alone, and no two of them may contradict each other; a criterion that needs an environment this harness cannot produce states the achievable measurement and what it extrapolates from, rather than naming a number no run can reach. Three: a package's own acceptance must be satisfiable from that package's deps[] alone - if proving it needs a sibling's delivered result, that sibling is a dependency or the criterion belongs to whoever has it.
 Each package becomes one graph run in its own worktree. A package with no deps branches from the current HEAD; a package with deps branches from its first dependency's delivered branch with the others merged in, so it builds on what they delivered - not on stubs. Two packages that touch the same path will conflict at integration: split by ownership, not by phase. A dependency means the package needs another's delivered result; it receives that package's report as context and starts from its tree. Every package must be size S on its own - if one still needs splitting, the shape is wrong. Two to six packages is the usual range. "split": true (or "size": "L") is the one exception to that rule - the rare package whose own scope still needs its own shape/dispatch cycle inside its child run; leave it false for the ordinary package, whose child run opens with this shape's own acceptance already decided and no plan/setgoal/critique/gate:goal of its own to redo (§3, docs/plans/2026-09-21-teams-server-owns-the-loop.md).`,
   critique: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "sound": true|false, "blocking": ["..."], "problems": ["..."], "handoff": "...", "evidence": "..."}
-Attack the shape: packages that overlap in touches[], a dependency the brief does not actually need, a package too large to be one run, a goal-level criterion no integration step could check, and - above all - a request that was S sized as L. Set sound=false only for defects in "blocking" that make the packages impossible to run or impossible to integrate. Everything else is a problem, carried forward as advice.`,
+Attack the shape: packages that overlap in touches[], a dependency the brief does not actually need, a package too large to be one run, a goal-level criterion no integration step could check, and - above all - a request that was S sized as L. Set sound=false only for defects in "blocking" that make the packages impossible to run or impossible to integrate. Everything else is a problem, carried forward as advice.
+Blocking defects come in three types - name the type inline in the "blocking" entry itself (e.g. "type A - ..."), so the type is legible without a second pass. Type A - shape-quality: the "## Shape analysis" facts above are signals, not verdicts - a genuinely small app can be one linear chain, and one package can legitimately hold the shared contract - so decide with evidence from the brief, not from the numbers alone. A foundation or shared package that owns, in touches[], more than the contracts/types/protocols/interfaces the other packages build against (bloated in the analysis, or simply the one everything else deps on) is type A unless the shape says why that extra scope cannot be split out. A fully serial shape (max_parallel_width 1 across more than one package) is type A unless a real data dependency the brief itself names - not convenience, not habit, not "it was easier to write in order" - requires every edge; a chain that only avoids coordination is blocking, not a problem carried forward as advice. Type B - impossible to run: packages that overlap in touches[], a dependency cycle, a dependency the brief does not need, a package too large to be one run. Type C - impossible to integrate or judge: a goal-level criterion no integration step could check, criteria that contradict each other, or a request that was S sized as L. sound=false whenever "blocking" holds any type A, B or C entry - "blocking" is not optional just because the finding is type A.`,
   accept: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "accept": true|false, "match_pct": 0-100, "checks": ["<what you verified in the worktree or the report, and what it showed>"], "gaps": ["what the package did not deliver"], "observations": ["weaknesses that do not block"], "reason": "...", "evidence": "..."}
 You are the judge, not the actor. The child run's own goal gate and report are below; judge them against THIS package's acceptance, which the child never saw in full. A child that passed its own gate but delivered less than the package asked for is a gap here. Absent evidence is a gap, not a pass.
 accept:true with an empty checks[] is refused by the engine - a judgement with no evidence is a guess.`,
@@ -450,6 +451,60 @@ export function validateShape(spec, userStories) {
     }
   }
   return problems;
+}
+
+// Signals, not a validator: the shapes validateShape lets through can still be a foundation
+// package holding nine scopes while its siblings hold two, or a strict chain no sibling could
+// have started earlier - a real small app can legitimately be one linear chain, so this never
+// fails the shape itself. It only computes facts for critique to weigh against the brief.
+// Evidence: awake-beta-ref1 (P1<-P2<-P3<-P4, P1 owned contracts+policy+tests, 3 attempts) and
+// idol-beta-pm4 (P1 owned kernel+contracts+app+a whole catalog domain) both passed validateShape
+// clean; critique named the frozen-contract risk in ref1's problems[] but never blocking[].
+//
+// touches breadth is `touches[].length` - how many scopes a package claims. bloat fires when a
+// package's breadth is >= 2x the sibling median AND >= BLOAT_FLOOR, so a 2-vs-1 split on a
+// two-package task (median 1, floor unmet) does not trip it - only a package that is really
+// carrying disproportionate scope does.
+const BLOAT_FLOOR = 4;
+
+function median(nums) {
+  if (!nums.length) return 0;
+  const s = [...nums].sort((a, b) => a - b);
+  const mid = s.length >> 1;
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+// max_parallel_width: the DAG's widest round, the same readiness graph.mjs itself would compute
+// - a package is ready once every package it deps on has already been placed in an earlier
+// round. phase-Teams (QA/audit) are never in `packages` (expandPackages adds task.qa_pkg
+// separately, after shape/critique have already reasoned about the shape), so nothing here
+// needs to exclude them by hand. A cycle (already a validateShape problem) just stops the walk
+// early - this is a signal, not a second validator, so it degrades rather than throws.
+export function shapeAnalysis(packages) {
+  const pkgs = Array.isArray(packages) ? packages : [];
+  const ids = new Set(pkgs.map((p) => String(p && p.id)));
+  const touches = pkgs.map((p) => (Array.isArray(p && p.touches) ? p.touches.length : 0));
+  const m = median(touches);
+  const bloated = pkgs
+    .map((p, i) => ({ id: p && p.id != null ? String(p.id) : `#${i}`, touches: touches[i] }))
+    .filter((p) => p.touches >= BLOAT_FLOOR && p.touches >= 2 * m);
+
+  const deps = new Map(pkgs.map((p) => [String(p.id), ((p && p.deps) || []).map(String).filter((d) => ids.has(d) && d !== String(p.id))]));
+  const placed = new Set();
+  let width = 0;
+  for (let round = 0; placed.size < deps.size && round <= deps.size; round += 1) {
+    const ready = [...deps.keys()].filter((id) => !placed.has(id) && deps.get(id).every((d) => placed.has(d)));
+    if (!ready.length) break; // a cycle - validateShape already reports it
+    width = Math.max(width, ready.length);
+    for (const id of ready) placed.add(id);
+  }
+  return {
+    package_count: pkgs.length,
+    touches_median: m,
+    max_parallel_width: pkgs.length ? width : 0,
+    bloated,
+    fully_serial: pkgs.length > 1 && width === 1,
+  };
 }
 
 function expandPackages(task, packages) {
@@ -2262,6 +2317,20 @@ export function composeTaskPrompt(task, n) {
       if (d && d.result) L.push(`Branch: ${d.result.branch || '?'} · child ${d.result.child_run_id || '?'} · ${d.state}${d.result.accept === undefined ? '' : ` accept=${d.result.accept}`}`);
       L.push('');
     }
+    // Facts, not a verdict (§ shapeAnalysis) - handed to critique so it sees, unprompted, exactly
+    // what the audit found only after the fact: awake-beta-ref1's P1 owning 9 scopes on a
+    // strictly serial chain, named in problems[] but never blocking[]. Shown only to critique -
+    // integrate/gate/report already have the merged tree or the child reports to judge from, and
+    // repeating package-count-and-width facts there would be noise, not evidence.
+    if (n.stage === 'critique') {
+      const sa = shapeAnalysis(task.spec.packages || []);
+      L.push(`## Shape analysis`);
+      L.push(`${sa.package_count} packages, touches median ${sa.touches_median}, max parallel width ${sa.max_parallel_width}${sa.fully_serial ? ' — fully serial: every package waits on the one before it' : ''}.`);
+      L.push(sa.bloated.length
+        ? `Bloated: ${sa.bloated.map((b) => `${b.id} owns ${b.touches} scopes (touches median is ${sa.touches_median})`).join('; ')}.`
+        : `No package's touches breadth is 2x the sibling median or more.`);
+      L.push('');
+    }
   }
   if (n.stage === 'accept') {
     const pkg = packageOf(task, n.subgoal_id);
@@ -3767,6 +3836,12 @@ function toolStatus(a) {
     size: task.size,
     flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),
     packages: task.spec ? task.spec.packages.map((p) => p.id) : [],
+    // Same facts critique's briefing sees, surfaced here too - so a human polling status catches
+    // a bloated foundation package or a fully-serial shape without opening the briefing file.
+    ...(task.spec ? (() => {
+      const sa = shapeAnalysis(task.spec.packages || []);
+      return { shape: { max_parallel_width: sa.max_parallel_width, fully_serial: sa.fully_serial, touches_median: sa.touches_median, bloated: sa.bloated } };
+    })() : {}),
     nodes: task.nodes.filter((n) => (a.node_id ? n.node_id === a.node_id : true)).map((n) => (n.state === 'pending' || n.state === 'running'
       ? { node_id: n.node_id, stage: n.stage, state: n.state, deps: n.deps, after: n.after || [],
           ...(n.child ? { child: { ...n.child, ...(n.child.driver ? { driver: { ...n.child.driver, alive: driverAlive(n.child.driver) } } : {}) } } : {}) }
