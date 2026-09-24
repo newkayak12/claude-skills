@@ -229,6 +229,16 @@ export function authorStage(kind) {
   return k.author || k.chain[0];
 }
 
+// Is this node the one that MUTATES the worktree for its subgoal (implement/draft/cases/audit -
+// whatever authorStage(kind) names)? The checkpoint/rollback mechanism (broker.mjs) only cares
+// about these: a judging stage (test/review/gate/critique) reads the tree, it does not write it,
+// so there is nothing on its own attempt worth snapshotting.
+export function isAuthorNode(run, n) {
+  if (!n || !n.subgoal_id) return false;
+  const sg = ((run.spec && run.spec.subgoals) || []).find((s) => String(s.id) === String(n.subgoal_id));
+  return n.stage === authorStage(kindOf(sg));
+}
+
 // The human pin: a subgoal's own `assignee` field (written into the spec by setgoal itself, or
 // at runtime by tm_assign) lands on exactly one node - the kind's author stage, never a judging
 // one. A gate/review/test/critique judging the very work a human just did must stay automatic:
@@ -607,6 +617,10 @@ export function createRun(opts) {
     // asks for more judges.
     goal_judges: Number.isInteger(opts.goal_judges) && opts.goal_judges > 0 ? opts.goal_judges : 1,
     max_retries: Number.isInteger(opts.max_retries) ? opts.max_retries : 2,
+    // continue (default) or rollback - docs/plans/2026-09-23-teams-reducer-human-rollback.md §5.
+    // Read by retrySubgoal below to decide whether a rejected attempt's worktree edits stay (as
+    // every retry has always left them) or are reset to the attempt's own pre-checkpoint first.
+    retry_policy: opts.retry_policy === 'rollback' ? 'rollback' : 'continue',
     // `auto` lets plan pick the flow; an entry skill pins it. `mixed` false turns the pin
     // into a rule every subgoal must follow.
     flow: FLOWS[opts.flow] ? opts.flow : 'auto',
@@ -1173,6 +1187,25 @@ export function retrySubgoal(run, subgoalId, feedback) {
   const baseDeps = head ? head.deps.slice() : ['critique'];
   const baseAfter = head ? (head.after || []).slice() : [];
 
+  // rollback (docs/plans/2026-09-23-teams-reducer-human-rollback.md §5): reset the worktree to
+  // the checkpoint broker.mjs recorded before this subgoal's OWN first attempt touched it, i.e.
+  // the state that had already cleared every gate upstream of this subgoal - not a checkpoint
+  // from any later attempt, which would itself carry a still-uncommitted, still-failing edit.
+  // Guarded to a run with exactly one subgoal: a shared worktree with siblings still working in
+  // it cannot be reset for one subgoal without also discarding theirs (no per-subgoal commit
+  // exists to reset around - nothing commits until the whole package folds, taskmanager.mjs's
+  // commitWorktree). The caller (broker.mjs's team_retry) performs the actual git reset; this
+  // function only decides and reports the target, staying pure like the rest of this file.
+  const authorNodesFor = (att) => run.nodes.filter((x) => x.subgoal_id === subgoalId && x.stage === authorStage(kind) && (x.attempt || 1) === att);
+  const soleSubgoal = ((run.spec && run.spec.subgoals) || []).length <= 1;
+  const firstAuthor = authorNodesFor(1)[0];
+  let rollback = null;
+  if (run.retry_policy === 'rollback') {
+    if (!soleSubgoal) rollback = { skipped: true, reason: `run has ${(run.spec.subgoals || []).length} subgoals sharing one worktree; rollback would also discard their work, so this retry continues instead` };
+    else if (!firstAuthor || !firstAuthor.checkpoint) rollback = { skipped: true, reason: 'no checkpoint was recorded for this subgoal\'s first attempt; continuing instead' };
+    else rollback = { checkpoint: firstAuthor.checkpoint, node_id: firstAuthor.node_id };
+  }
+
   const gate = pushChain(run, (KINDS[kind] || KINDS[DEFAULT_KIND]).chain, subgoalId, attempt, baseDeps, baseAfter, { feedback: feedback || '' });
   // A subgoal the spec pinned to a human stays pinned on its next attempt too - a rejection
   // must send the SAME card back to waiting_human, never quietly hand the retry to a model.
@@ -1238,7 +1271,7 @@ export function retrySubgoal(run, subgoalId, feedback) {
       n.after = [...new Set([...n.after.filter((d) => !oldIds.has(d)), ...fresh])];
     }
   }
-  return { run: saveRun(run), attempt, reason: '' };
+  return { run: saveRun(run), attempt, reason: '', rollback };
 }
 
 // A critique that rejects the spec has nowhere to go otherwise: team_retry only knows
