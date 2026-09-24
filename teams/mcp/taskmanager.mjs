@@ -3909,35 +3909,17 @@ function toolNextSRun(task) {
 // ---------- budget / timebox (the Sprint's missing box - no prior stop condition bounded
 // either cost or time; a task ran until its graph naturally finished or someone intervened) ----
 
-// Every driver this task has ever spawned writes its own `claude -p --output-format
-// stream-json` NDJSON to <taskDir>/drivers/<label>[.restartN].stream.jsonl (spawnChildDriver) -
-// the SAME format judge()'s own lastResultText (daemon.mjs) already reads, one file per package
-// (and per restart - a respawned driver is a fresh process with its own bill, not a
-// continuation of the dead one's) instead of one inline call. total_cost_usd lives on the
-// stream's own closing `result` event, the same field the CLI reports at the end of any
-// session; a stream with more than one (a resumed conversation) is summed at its LAST one, not
-// added twice, since total_cost_usd is already cumulative for that one process's lifetime.
-function driverSpend(logPath) {
-  let text;
-  try { text = readFileSync(logPath, 'utf8'); } catch { return 0; }
-  let cost = 0;
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue;
-    let e;
-    try { e = JSON.parse(line); } catch { continue; }
-    if (e && e.type === 'result' && Number.isFinite(e.total_cost_usd)) cost = e.total_cost_usd;
-  }
-  return cost;
-}
-
 // The task's total spend across every driver it has ever spawned - a size-L task's package
 // drivers AND a size-S task's own single s_run driver both write under the same drivers/
 // directory (spawnChildDriver's nodeIdLabel is "S" for the latter), so one glob covers both.
+// Reuses collectDriverCosts (drivercost.mjs) - the SAME driver-stream reader tm_status/tm_board/
+// view.mjs's RESOURCE view already read this task's cost through - rather than a second parser
+// that walks drivers/*.stream.jsonl itself: that would not only duplicate the "last result
+// event wins" parsing rule, it would also drop the dedup collectDriverCosts does by (task_id,
+// driver filename) for a driver stream a worktree checked out a copy of, silently double-
+// counting spend budgetStatus/enforceBudget rely on to stop a run at 100%.
 export function taskSpend(task) {
-  const dir = join(taskDir(task.run_id), 'drivers');
-  let files;
-  try { files = readdirSync(dir); } catch { return 0; }
-  return files.filter((f) => f.endsWith('.stream.jsonl')).reduce((sum, f) => sum + driverSpend(join(dir, f)), 0);
+  return collectDriverCosts(taskDir(task.run_id)).cost_usd;
 }
 
 export function taskElapsedMinutes(task) {
