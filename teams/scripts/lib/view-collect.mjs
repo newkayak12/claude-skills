@@ -222,11 +222,29 @@ function collectNestedTasks(cwd, visiting) {
 // re-derived: a second computation of the same relations from pkg.deps is exactly the kind of
 // split default this codebase's own tests exist to catch (see test-defaults.mjs).
 function packageModel(task, pkg, dispatchNode, acceptNode, visiting) {
-  const child = dispatchNode && dispatchNode.child
+  // A retried STORY's newest dispatch node (dispatches[dispatches.length - 1], the caller's own
+  // "latest attempt wins" pick) has no `.child` yet the instant it goes pending/running and
+  // before the daemon has actually opened its worktree - a real, ordinary window between
+  // retries, not an error. Falling straight to `child: null` here loses BOTH the worktree the
+  // PREVIOUS attempt already opened and whatever it already spent, exactly the RESOURCE view
+  // regression Team P2 reproduced (--task <id> --view resources printing "(not dispatched yet -
+  // no worktree)" for a package that plainly has one, from a prior attempt). So: when the
+  // CURRENT attempt has no child, fall back to the latest EARLIER attempt of the SAME subgoal
+  // that does have one - same worktree, same driver, same cost - tagged retry_pending so a
+  // renderer can say plainly "this is the last attempt's team, a new one has not opened yet"
+  // rather than silently passing off stale data as current.
+  const dispatches = dispatchNode
+    ? task.nodes.filter((n) => n.stage === 'dispatch' && n.subgoal_id === dispatchNode.subgoal_id
+      && (n.attempt || 1) < (dispatchNode.attempt || 1) && n.child)
+      .sort((a, b) => (a.attempt || 1) - (b.attempt || 1))
+    : [];
+  const retrySource = (!dispatchNode || dispatchNode.child) ? null : dispatches[dispatches.length - 1] || null;
+  const childSource = dispatchNode && dispatchNode.child ? dispatchNode : retrySource;
+  const child = childSource && childSource.child
     ? {
-      run_id: dispatchNode.child.run_id,
-      cwd: dispatchNode.child.cwd,
-      branch: dispatchNode.child.branch,
+      run_id: childSource.child.run_id,
+      cwd: childSource.child.cwd,
+      branch: childSource.child.branch,
       // The RESOURCE view's "waiting_capacity if any" - set on the dispatch node's own child
       // record by serviceDeadDriver (taskmanager.mjs) after a usage-limit death, cleared by the
       // same code once the quota window passes. Not on driverInfo(): it is a fact about the
@@ -235,11 +253,15 @@ function packageModel(task, pkg, dispatchNode, acceptNode, visiting) {
       // elapsed_ms is derived here (not stored) off the same `.since` serviceDeadDriver writes -
       // "how long has this STORY been parked" is exactly what a person watching WAITING_CAPACITY
       // wants and today's board never showed.
-      waiting_capacity: dispatchNode.child.waiting_capacity
-        ? { ...dispatchNode.child.waiting_capacity, elapsed_ms: elapsedMs(dispatchNode.child.waiting_capacity.since) }
+      waiting_capacity: childSource.child.waiting_capacity
+        ? { ...childSource.child.waiting_capacity, elapsed_ms: elapsedMs(childSource.child.waiting_capacity.since) }
         : null,
-      driver: driverInfo(dispatchNode.child.driver, pidAliveFromDriver),
-      ...collectChildRun(dispatchNode.child.cwd, dispatchNode.child.run_id, visiting, { taskRunId: task.run_id, pkgId: pkg.id }),
+      driver: driverInfo(childSource.child.driver, pidAliveFromDriver),
+      ...collectChildRun(childSource.child.cwd, childSource.child.run_id, visiting, { taskRunId: task.run_id, pkgId: pkg.id }),
+      // Only set once the CURRENT dispatch node is the one missing a child - never on the
+      // ordinary "this attempt's own child" path, so a ticket already fully re-dispatched never
+      // carries a stale flag forward.
+      ...(retrySource ? { retry_pending: true, retry_pending_attempt: retrySource.attempt || 1 } : {}),
     }
     : null;
   // The TICKET view's per-card "who, if anyone, is holding this" - a node already
