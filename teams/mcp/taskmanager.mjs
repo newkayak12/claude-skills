@@ -79,6 +79,10 @@ import {
   currentAttempt,
 } from './graph.mjs';
 import { computeSubmitResult } from './broker.mjs';
+// The same driver-stream reader view.mjs's RESOURCE view already uses (see drivercost.mjs's own
+// header comment) - reused here, not re-parsed, so tm_status/tm_board/the report briefing can
+// never disagree with what the view surface already shows for the same task.
+import { collectDriverCosts } from '../scripts/bench/lib/drivercost.mjs';
 
 const SERVER = { name: 'task-manager', version: '0.7.0' };
 const DEFAULT_PROTOCOL = '2025-06-18';
@@ -2408,6 +2412,17 @@ export function composeTaskPrompt(task, n) {
     L.push(bullets((n.integration.merged || []).map((m) => `${m.package}: ${m.branch} -> ${m.commit}`)));
     L.push(`Run the goal-level checks there. Read the seams: where one package's output meets another's input.`);
   }
+  if (n.stage === 'report') {
+    // The same account tm_status/tm_board and view.mjs's header now show (collectDriverCosts,
+    // drivercost.mjs) - stated here explicitly so 80-report.md (docs.mjs's renderReport, which
+    // relays this node's own `report` string verbatim) actually says what the task cost instead
+    // of that number sitting only in the raw drivers/*.stream.jsonl logs.
+    const reportCost = collectDriverCosts(taskDir(task.run_id));
+    L.push('');
+    L.push(`## Cost and turns`);
+    L.push(`Total across every driver session this task spawned: $${reportCost.cost_usd.toFixed(2)}, ${reportCost.turns} turns, ${reportCost.sessions} sessions.`);
+    L.push(`State this in the report - it is the one place a person reads it without opening a raw driver log.`);
+  }
   if (['gate', 'report'].includes(n.stage)) {
     L.push('');
     L.push(`## Every node in this task`);
@@ -3063,6 +3078,9 @@ function toolBoard(a) {
     return { epics };
   }
   const task = mustFindTask(a);
+  // One collectDriverCosts call per task_id lookup - cheap (drivers/ is a handful of files even
+  // on a large task), the same reason tm_status now pays it too.
+  const driverTotal = collectDriverCosts(taskDir(task.run_id));
   return {
     key: epicKey(task.run_id),
     task_id: task.run_id,
@@ -3070,6 +3088,7 @@ function toolBoard(a) {
     state: epicTicketState(task),
     phase: epicPhase(task),
     daemon: task.daemon ? { pid: task.daemon.pid, alive: driverAlive(task.daemon) } : null,
+    cost: { usd: driverTotal.cost_usd, turns: driverTotal.turns, sessions: driverTotal.sessions },
     stories: epicBoardRows(task),
     doc_path: docPaths(task).index,
   };
@@ -3788,6 +3807,22 @@ function toolFile(a) {
   return { task_id: task.run_id, filed: out.filed, integrate: out.integrate };
 }
 
+// Every package dispatch (and its restarts) logs to <taskDir>/drivers/dispatch_<node_id>_*.
+// spawnChildDriver's own nodeIdLabel is the dispatch node_id itself (e.g. "dispatch:P1:1"),
+// sanitized to "dispatch_P1_1" - so a package's OWN total, across every attempt a retry ever
+// opened, is exactly the streams collectDriverCosts already found whose filename starts with
+// "dispatch_<pkgId>_". Reused, not re-derived: this is the same accounting driverCostOf/
+// collectDriverCosts do for the RESOURCE view (drivercost.mjs), just grouped one level up.
+function packageCostRollup(driverTotal, pkgId) {
+  const prefix = `dispatch_${String(pkgId).replace(/[^A-Za-z0-9._-]/g, '_')}_`;
+  const matches = driverTotal.streams.filter((s) => (String(s.stream).split(/[\\/]/).pop() || '').startsWith(prefix));
+  return {
+    id: pkgId,
+    cost_usd: +matches.reduce((a, s) => a + s.cost_usd, 0).toFixed(4),
+    turns: matches.reduce((a, s) => a + s.turns, 0),
+  };
+}
+
 function toolStatus(a) {
   if (!a.task_id) {
     let ids = [];
@@ -3807,6 +3842,11 @@ function toolStatus(a) {
   // starting a viewer just because someone polled status.
   const viewRecord = readViewRecord(tasksRoot());
   const viewFields = viewRecord ? { view_url: viewUrl(viewRecord.port, task.run_id) } : {};
+  // The same account view.mjs's header already shows (view-collect.mjs's collectTask, same
+  // collectDriverCosts call) - a caller polling tm_status only never had this at all, so a run
+  // like awake-beta-ref1's $53.93 / 222 turns sat visible only in the raw driver logs.
+  const driverTotal = collectDriverCosts(taskDir(task.run_id));
+  const costFields = { cost: { usd: driverTotal.cost_usd, turns: driverTotal.turns, sessions: driverTotal.sessions } };
   if (task.s_run) {
     const run = loadRun(task.s_run.cwd, task.s_run.run_id);
     const cs = run ? runState(run) : { state: 'missing', counts: {} };
@@ -3822,6 +3862,7 @@ function toolStatus(a) {
         ...(task.s_run.waiting_capacity ? { waiting_capacity: task.s_run.waiting_capacity } : {}),
         ...(task.s_run.stalled_since ? { stalled_since: task.s_run.stalled_since } : {}) },
       packages: [],
+      ...costFields,
       daemon: task.daemon ? { pid: task.daemon.pid, alive: driverAlive(task.daemon), log: task.daemon.log, stderr: task.daemon.stderr, spawn_count: task.daemon.spawn_count, restarts: task.daemon.restarts || 0, exhausted: !!task.daemon.exhausted, stderr_tail: driverStderrTail(task.daemon) } : null,
       team: task.team || null,
       ...viewFields,
@@ -3842,6 +3883,11 @@ function toolStatus(a) {
       const sa = shapeAnalysis(task.spec.packages || []);
       return { shape: { max_parallel_width: sa.max_parallel_width, fully_serial: sa.fully_serial, touches_median: sa.touches_median, bloated: sa.bloated } };
     })() : {}),
+    // Per-package total (every attempt/restart that package ever spawned), separate from
+    // `packages` above so that field - already pinned elsewhere as a plain id list - never
+    // changes shape.
+    package_costs: task.spec ? task.spec.packages.map((p) => packageCostRollup(driverTotal, p.id)) : [],
+    ...costFields,
     nodes: task.nodes.filter((n) => (a.node_id ? n.node_id === a.node_id : true)).map((n) => (n.state === 'pending' || n.state === 'running'
       ? { node_id: n.node_id, stage: n.stage, state: n.state, deps: n.deps, after: n.after || [],
           ...(n.child ? { child: { ...n.child, ...(n.child.driver ? { driver: { ...n.child.driver, alive: driverAlive(n.child.driver) } } : {}) } } : {}) }
