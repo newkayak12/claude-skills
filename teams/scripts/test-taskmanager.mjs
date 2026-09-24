@@ -885,6 +885,28 @@ test('roles.qa left at its default (false) leaves gate:goal depending directly o
   });
 });
 
+test('manager-level reduce (item 4): integrate\'s own result carries a per-package fold through the same registry foldChild uses', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    const v = await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    assert.equal(v.state, 'done');
+    const st = await tm.call('tm_status', { task_id, node_id: 'integrate:1', full: true });
+    const fold = st.node.result.package_fold;
+    assert.ok(fold, 'integrate\'s own persisted result carries package_fold');
+    assert.deepEqual(Object.keys(fold).sort(), ['P1', 'P2']);
+    assert.equal(fold.P1.accept, true, 'each package\'s own dispatch history, folded - not the manager accept node\'s own separate verdict');
+    assert.equal(fold.P1.attempts, 1);
+    assert.deepEqual(fold.P1.changed_files, ['a.txt']);
+    assert.equal(fold.P2.accept, true);
+
+    // gate:goal's own briefing shows the folded per-package history, not only the latest
+    // dispatch's own snapshot (the "## Packages" block already carried before this change).
+    const nx = await tm.call('tm_next', { task_id });
+    const gate = readFileSync(nx.ready[0].briefing_path, 'utf8');
+    assert.match(gate, /Folded across 1 attempt\(s\): accept=true/);
+  });
+});
+
 test('roles.qa inserts a QA phase-Team between integrate and gate:goal, reusing the repair-style worktree (§2, §3)', async () => {
   await withTask(async ({ tm, g, task_id }) => {
     await toIntegrate(tm, g, task_id);
