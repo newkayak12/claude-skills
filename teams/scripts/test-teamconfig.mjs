@@ -59,7 +59,7 @@ test('team.json overrides defaults, explicit args override team.json', () => {
   assert.equal(sources.goal_threshold, 'args');
   assert.equal(opts.max_retries, 5);
   assert.equal(sources.max_retries, 'team.json');
-  assert.deepEqual(opts.roles, { planning: true, qa: false }, 'roles merge key by key (defaults are both on since 0.17.0)');
+  assert.deepEqual(opts.roles, { planning: true, qa: false, audit: true }, 'roles merge key by key (defaults are both on since 0.17.0)');
   assert.equal(sources.roles, 'team.json');
 });
 

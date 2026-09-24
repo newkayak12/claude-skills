@@ -628,6 +628,13 @@ export function createRun(opts) {
     // field existed - gets 0, which max_depth (default 2) never trips.
     depth: Number.isInteger(opts.depth) ? opts.depth : 0,
     nodes: [],
+    // Cross-run author identity ({executor, vendor, model} or null), for a run whose judging
+    // stage's author never ran in ITS OWN nodes[] - today only the planning-audit kind's `audit`
+    // stage, whose author is the PLAN package's draft/revise, folded away in a sibling run
+    // before this one opens (taskmanager.mjs's openAudit/planAuthorIdentity). routing.mjs's
+    // externalAuthorOf and broker.mjs's reviewIndependence both read this field; every run that
+    // is not an audit child simply carries null, same as opts.external_author being absent.
+    external_author: opts.external_author || null,
   };
   // A parent that already shaped and critiqued this run's one subgoal (docs/plans/
   // 2026-09-21-teams-server-owns-the-loop.md §3) hands it down already decided: run-level
