@@ -87,12 +87,12 @@ function fixtureTask(cwd) {
 function goldenPath(name) { return join(GOLDEN, name); }
 function readGolden(name) { return readFileSync(goldenPath(name), 'utf8'); }
 
-test('renderAll produces exactly the files this fixture has data for (12/13 - only 15-spec-gate.md excluded), matching the golden fixtures byte for byte', () => {
+test('renderAll produces exactly the files this fixture has data for (13/14 - only 15-spec-gate.md excluded), matching the golden fixtures byte for byte', () => {
   const task = fixtureTask('/proj');
   const files = renderAll(task);
-  const expectedNames = ['INDEX.md', '00-request.md', '10-planning.md', '10-prd.md', '20-shape.md', '30-critique.md', '40-stories/P1.md', '40-stories/P2.md', '40-stories/D1.md', '50-integrate.md', '60-qa.md', '65-audit.md', '70-goal-gate.md', '80-report.md'];
+  const expectedNames = ['INDEX.md', '00-request.md', '10-planning.md', '10-prd.md', '20-shape.md', '30-critique.md', '40-stories/P1.md', '40-stories/P2.md', '40-stories/D1.md', '50-integrate.md', '60-qa.md', '65-audit.md', '70-goal-gate.md', '80-report.md', 'retro.json'];
   const paths = docPaths(task);
-  const expectedPaths = new Set([paths.index, paths.request, paths.planning, paths.prd, paths.shape, paths.critique, paths.story('P1'), paths.story('P2'), paths.story('D1'), paths.integrate, paths.qa, paths.audit, paths.goalGate, paths.report]);
+  const expectedPaths = new Set([paths.index, paths.request, paths.planning, paths.prd, paths.shape, paths.critique, paths.story('P1'), paths.story('P2'), paths.story('D1'), paths.integrate, paths.qa, paths.audit, paths.goalGate, paths.report, paths.retro]);
   assert.deepEqual(new Set(Object.keys(files)), expectedPaths);
   for (const name of expectedNames) {
     assert.equal(files[join(paths.dir, name)], readGolden(name), `${name} did not match its golden file`);

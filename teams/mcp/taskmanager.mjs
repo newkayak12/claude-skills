@@ -182,9 +182,55 @@ function bullets(list) {
 
 // ---------- task creation ----------
 
+// requests[]: a backlog instead of one request (§B.3) - several EPIC-level items, priority =
+// array order (index 0 highest). task.requests carries the raw array (the retro and shape's own
+// briefing both read it by index); task.request stays the ONE string every size/shape/PLAN
+// briefing already reads - this is a second way to WRITE it, not a second thing anything
+// downstream has to understand. Single `request` is untouched: this only runs when `requests`
+// was actually given.
+function composeBacklogRequest(requests) {
+  return requests.map((r, i) => `[backlog priority ${i}] ${r}`).join('\n\n');
+}
+
+// tm_open({context_from: <prior task id or ticket key>}) (§B.2): folds a finished task's own
+// retro.json - the Retrospective and Next backlog its report stage wrote (docs.mjs's
+// renderRetro) - into this task's context, so a new Sprint opens already knowing what the last
+// one left unresolved. Best-effort: a prior task with no report yet, an unreadable retro.json,
+// or a ref that does not resolve at all leaves context untouched rather than failing tm_open
+// over a document that is evidence, not a dependency (the same rule record()/writeDocs already
+// follow elsewhere in this file).
+function priorRetroContext(contextFrom) {
+  if (!contextFrom) return '';
+  try {
+    const id = resolveTaskRef(contextFrom);
+    const prior = id && loadRunAt(taskPath(id));
+    if (!prior) return '';
+    const retroPath = docPaths(prior).retro;
+    const retro = JSON.parse(readFileSync(retroPath, 'utf8'));
+    const L = [`Context from the prior task ${prior.run_id} (${epicKey(prior.run_id)}), "${String(prior.request || '').slice(0, 160)}":`, ''];
+    L.push('Retrospective - what failed and why:');
+    L.push(bullets((retro.retrospective.what_failed || []).map((f) => `${f.node_id} (${f.stage}): ${f.reason}`)));
+    if ((retro.retrospective.retries || []).length) L.push('', 'Retries:', bullets(retro.retrospective.retries.map((r) => `${r.package_id}: ${r.attempts} attempts`)));
+    L.push('', 'Next backlog - unaccepted packages:');
+    L.push(bullets((retro.next_backlog.unaccepted_packages || []).map((p) => `${p.id} (${p.title}): ${p.reason}`)));
+    if ((retro.next_backlog.unresolved_defects || []).length) L.push('', 'Unresolved defects:', bullets(retro.next_backlog.unresolved_defects.map((d) => d.title)));
+    if ((retro.next_backlog.open_questions || []).length) L.push('', 'Open questions nobody answered:', bullets(retro.next_backlog.open_questions.map((q) => q.question || JSON.stringify(q))));
+    return L.join('\n');
+  } catch {
+    return '';
+  }
+}
+
 function createTask(a) {
   if (a.child_driver !== undefined || a.s_driver !== undefined) {
     throw new Error('child_driver and s_driver were removed in 0.10.0: the driving session never drives a child run or the manager loop. Open the task and watch tm_status / tm_events; the daemon and package drivers do the rest.');
+  }
+  const requests = Array.isArray(a.requests) && a.requests.length ? a.requests.map(String) : null;
+  if (!requests && (a.request == null || String(a.request).trim() === '')) {
+    throw new Error('tm_open needs either request (a string) or requests (a non-empty array of strings), not neither');
+  }
+  if (requests && a.request != null && String(a.request).trim() !== '') {
+    throw new Error('tm_open takes request OR requests, not both - requests: [...] IS the several-item form of request');
   }
   const cwd = resolve(String(a.cwd));
   const teamFile = readTeamConfig(cwd);
@@ -192,13 +238,15 @@ function createTask(a) {
   const T = team.opts;
   const taskId = randomUUID();
   const depth = Number.isInteger(a.depth) ? a.depth : 0;
+  const priorRetro = priorRetroContext(a.context_from);
   const task = {
     run_id: taskId,
     kind: 'task',
     store_path: taskPath(taskId),
     cwd,
-    request: String(a.request),
-    context: a.context || '',
+    request: requests ? composeBacklogRequest(requests) : String(a.request),
+    requests, // null for the ordinary single-request task - the byte-for-byte compat case.
+    context: [priorRetro, a.context || ''].filter(Boolean).join('\n\n'),
     flow: FLOWS[a.flow] ? a.flow : 'auto',
     flow_chosen: null,
     size: null,
@@ -2292,6 +2340,17 @@ export function composeTaskPrompt(task, n) {
   L.push(`## Request`);
   L.push(task.request);
   if (task.context) { L.push(''); L.push(`## Context from the requester`); L.push(task.context); }
+  // requests[] (§B.3): the request above is already the whole backlog, "[backlog priority N] ..."
+  // per item, N=0 highest - shape is the one stage that has to act on the ordering, by setting
+  // each package's own `priority` (its existing field: array position already decides dispatch
+  // order, advanceDispatches' own sort) consistent with which backlog item it implements. Nothing
+  // downstream needs telling twice: critique/accept/gate:goal only ever read the packages shape
+  // already ordered.
+  if (n.stage === 'shape' && Array.isArray(task.requests) && task.requests.length) {
+    L.push('');
+    L.push(`## Backlog priority`);
+    L.push(`This request is a backlog of ${task.requests.length} items in priority order (item 0 is highest). Give every package a \`priority\` consistent with which backlog item(s) it implements - a package serving only a low-priority item gets a high priority NUMBER, so it is the one left undispatched if budget_usd/timebox_minutes runs out before everything ships (advanceDispatches dispatches ascending priority first).`);
+  }
   if (task.size || task.flow_chosen || task.flow !== 'auto') {
     L.push('');
     L.push(`## Sizing`);
