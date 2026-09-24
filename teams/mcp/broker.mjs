@@ -58,9 +58,12 @@ import {
   defaultKind,
   normalizeSpec,
   promoteWaitingHuman,
+  applyPinAction,
+  drainHumanActions,
 } from './graph.mjs';
 import { composePrompt } from './prompts.mjs';
 import { readTeamConfig, resolveTeamOptions } from './teamconfig.mjs';
+import { isEntryPoint } from './pluginroots.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER = { name: 'teams-engineering', version: '1.0.0' };
@@ -420,7 +423,39 @@ function mustFindRun(a) {
   const run = (cwd && loadRun(cwd, String(a.run_id))) || findRun(String(a.run_id), knownCwds);
   if (!run) throw new Error(`unknown run ${a.run_id} - pass cwd, or call team_open first`);
   knownCwds.add(run.cwd);
+  // Every entry point below funnels through here, so this is "the next step" a queued human
+  // pin/submission (tm_assign, tm_submit({key}) - taskmanager.mjs) takes to become real: drained
+  // and applied before anything else about this run is read. team_next is the common case - its
+  // own promoteWaitingHuman (below, in toolGraphNext) is what parks a freshly-pinned card, right
+  // after a pin ingested here sets its assignment.
+  ingestHandoff(run);
   return run;
+}
+
+// See graph.mjs's queueHumanAction/drainHumanActions for why this queue exists at all instead
+// of the manager writing the child run directly (the 0.27.3 bug this replaces). Applies each
+// action through the exact functions tm_assign/tm_submit's own read-only preview already ran -
+// applyPinAction for a pin, computeSubmitResult+finishNode for a submission - so a human's
+// report gets the identical worktree cross-check and autoReassign retry/escalate path any other
+// executor's does, not a second implementation of either.
+function ingestHandoff(run) {
+  const queue = drainHumanActions(run.cwd, run.run_id);
+  if (!queue.length) return;
+  let touched = false;
+  for (const action of queue) {
+    if (action.kind === 'pin') {
+      if (applyPinAction(run, action)) touched = true;
+    } else if (action.kind === 'submit') {
+      const n = getNode(run, action.node_id);
+      if (!n || n.state !== 'waiting_human') continue; // already resolved (or stale), nothing to apply
+      if (action.answered_at) n.answered_at = action.answered_at;
+      submitResult(run, n, action.payload, 'human');
+      touched = true;
+    }
+  }
+  // finishNode (called by submitResult) already saves; a pin-only queue does not touch saveRun
+  // anywhere else, so it needs its own here.
+  if (touched) saveRun(run);
 }
 
 // ---------- routing ----------
@@ -1555,18 +1590,16 @@ async function toolGraphRun(a) {
   return finishNode(run, n, result, r.vendor);
 }
 
-function toolGraphSubmit(a) {
-  const run = mustFindRun(a);
-  const n = requireRunnable(run, String(a.node_id));
-  const payload = a.payload || {};
-  if (run.allocation === 'balanced') {
-    if (!n.assignment || n.assignment.vendor !== 'self') throw new Error('balanced node must be assigned to a native executor by team_next before submit');
-    n.executor = n.assignment.executor || 'self';
-    n.model = n.assignment.model || null;
-    if (payload.stage_ok === false && capacityFailure(payload)) return checkpointInterruption(run, n, n.executor, payload, 'quota');
-  }
-
-  const independence = reviewIndependence(run, n, n.executor || 'self', n.model);
+// Pure: the result and pass/fail verdict a node's payload earns, worktree cross-check included
+// - no write, not even to `run` on disk (mutating the node's in-memory object is fine; nothing
+// here calls saveRun). team_submit's own body below is this plus finishNode's apply-and-persist
+// step; the TaskManager's tm_submit({key}) (taskmanager.mjs) imports this SAME function to
+// preview a human's submission - a claimed changed_files gets the identical cross-check an AI's
+// would - without ever writing the child run itself (design §7: "changed_files는 워크트리 대조로
+// 똑같이 검증"; the 0.27.3 review, 2026-09-24, is what this replaced - see graph.mjs's
+// queueHumanAction for the mechanism).
+export function computeSubmitResult(run, n, payload, vendorName) {
+  const independence = reviewIndependence(run, n, n.executor || vendorName, n.model);
   let result;
   if (REASONING_STAGES.has(n.stage)) {
     result = { ...payload, stage_ok: payload.stage_ok !== false, ...(independence ? { reviewer_independence: independence.independence } : {}) };
@@ -1583,7 +1616,28 @@ function toolGraphSubmit(a) {
         : '',
     };
   }
-  return finishNode(run, n, result, 'self');
+  return { result, done: nodeSucceeded(run, n, result) };
+}
+
+// The apply-and-persist half: computeSubmitResult plus finishNode's state transition, autoReassign
+// and saveRun. team_submit calls this for a self-executed node; ingestHandoff (mustFindRun, above)
+// calls it for a human's queued submission - same function either way.
+function submitResult(run, n, payload, vendorName) {
+  const { result } = computeSubmitResult(run, n, payload, vendorName);
+  return finishNode(run, n, result, vendorName);
+}
+
+function toolGraphSubmit(a) {
+  const run = mustFindRun(a);
+  const n = requireRunnable(run, String(a.node_id));
+  const payload = a.payload || {};
+  if (run.allocation === 'balanced') {
+    if (!n.assignment || n.assignment.vendor !== 'self') throw new Error('balanced node must be assigned to a native executor by team_next before submit');
+    n.executor = n.assignment.executor || 'self';
+    n.model = n.assignment.model || null;
+    if (payload.stage_ok === false && capacityFailure(payload)) return checkpointInterruption(run, n, n.executor, payload, 'quota');
+  }
+  return submitResult(run, n, payload, 'self');
 }
 
 async function toolGraphRetry(a) {
@@ -1876,31 +1930,44 @@ async function handle(msg) {
   }
 }
 
-let buf = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (chunk) => {
-  buf += chunk;
-  let nl;
-  while ((nl = buf.indexOf('\n')) >= 0) {
-    const line = buf.slice(0, nl).trim();
-    buf = buf.slice(nl + 1);
-    if (!line) continue;
-    let msg;
-    try {
-      msg = JSON.parse(line);
-    } catch {
-      continue;
+// Only run the stdio server when this file is the process entry point - the same guard
+// taskmanager.mjs (`isMain`) and daemon.mjs (`RUN_AS_MAIN`) already use, from the one module all
+// three now import it from (pluginroots.mjs's isEntryPoint) rather than each carrying its own
+// copy. Needed here for a new reason as of 0.27.4: taskmanager.mjs imports this module directly,
+// for computeSubmitResult - a human's tm_submit({key}) gets the exact worktree cross-check
+// team_submit gives anyone else, read-only, without re-implementing it (see that function's own
+// comment, and graph.mjs's queueHumanAction for what replaced the direct child-run writes the
+// 2026-09-24 review caught). An import must never also bind stdin, or the TaskManager process
+// would start a second, silently-conflicting JSON-RPC loop reading ITS OWN stdin as this file's.
+const isMain = isEntryPoint(import.meta.url);
+
+if (isMain) {
+  let buf = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (chunk) => {
+    buf += chunk;
+    let nl;
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line) continue;
+      let msg;
+      try {
+        msg = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      // Dispatch without awaiting: a node run must not stop the server from answering
+      // ping, status, or a cancellation for that very node.
+      Promise.resolve()
+        .then(() => handle(msg))
+        .catch((e) =>
+          typeof msg.id === 'undefined'
+            ? null
+            : { jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: String((e && e.message) || e) } },
+        )
+        .then((out) => { if (out) emit(out); });
     }
-    // Dispatch without awaiting: a node run must not stop the server from answering
-    // ping, status, or a cancellation for that very node.
-    Promise.resolve()
-      .then(() => handle(msg))
-      .catch((e) =>
-        typeof msg.id === 'undefined'
-          ? null
-          : { jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: String((e && e.message) || e) } },
-      )
-      .then((out) => { if (out) emit(out); });
-  }
-});
-process.stdin.on('end', () => process.exit(0));
+  });
+  process.stdin.on('end', () => process.exit(0));
+}

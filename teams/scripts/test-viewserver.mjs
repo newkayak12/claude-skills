@@ -98,6 +98,32 @@ test('the first call starts a viewer that actually serves the page and /state.js
   rmSync(dir, { recursive: true, force: true });
 });
 
+// The TICKET/RESOURCE views (view-collect.mjs's own model additions, view-render-text.mjs's
+// renderTicketsText/renderResourcesText, view-page.html's viewTabs/ticketsBody/resourcesBody)
+// ride the exact same view.mjs process ensureViewer spawns here - this pins that the page this
+// module hands a caller's URL to is the updated page (the tab strip, not a stale copy), and that
+// the extra `view=` query param a tab click adds to the URL does not upset the server route.
+test('the viewer ensureViewer starts serves the TICKET/RESOURCE tab strip, and tolerates a ?view= query param on the page route', async () => {
+  const dir = scratch();
+  const v = await viewer(dir, 'E-views');
+  assert.ok(v && v.started);
+
+  let served = null;
+  for (let i = 0; i < 100 && !served; i++) {
+    try { served = await get(`${v.url.split('/?')[0]}/state.json`); } catch { await new Promise((r) => setTimeout(r, 50)); }
+  }
+  assert.ok(served, `nothing answered on ${v.url} within 5s`);
+
+  const page = await get(v.url);
+  assert.equal(page.status, 200);
+  assert.match(page.body, /view-tabs/, 'the served page must carry the pipeline/tickets/resources switcher');
+  assert.match(page.body, /ticketsBody|resourcesBody/, 'the served page must carry the new views\' own renderers, not a stale cached copy');
+
+  const withView = await get(`${v.url}&view=tickets`);
+  assert.equal(withView.status, 200, 'an unrecognized-by-the-server query param must not break the page route - the view switch is client-side only');
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('a second task under the same root reuses the running viewer - one port per root, not per task', async () => {
   const dir = scratch();
   const first = await viewer(dir, 'E-one');

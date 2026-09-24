@@ -7,7 +7,10 @@
 //
 // Human-as-a-node came back one key at a time as the machinery landed: `interactive` is live
 // (0.28.0 - it is what decides whether a planning run opens an `ask` card for a decision its
-// investigate stage could not settle, graph.mjs's openAsk). human_gates/human_scope are still
+// investigate stage could not settle, graph.mjs's openAsk; this same key also decides, per the
+// 0.27.3 review, whether a MODEL-written `assignee` pin - a shape package's own field or a
+// setgoal subgoal's own field, as opposed to a user's tm_assign - parks a node in waiting_human
+// or is auto-decided past it, graph.mjs's applyHumanPin). human_gates/human_scope are still
 // only design - see the note above PROVISIONAL_MAX_PARALLEL_TEAMS's neighbour, max_depth.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -34,7 +37,10 @@ export const TEAM_DEFAULTS = Object.freeze({
   // would have put to a person (run.unasked, surfaced in the report); true opens an `ask` card
   // per decision and parks the run on it. false is the default because a run nobody is watching
   // must still finish, and because v0.13.0 §0.2 argued the recorded question is more useful than
-  // a silent assumption either way.
+  // a silent assumption either way. Also gates a MODEL-written `assignee` pin the same way (a
+  // shape/setgoal field, never tm_assign - that one always parks): off, it is auto-decided
+  // (dispatched to an AI, recorded on the node, listed in tm_inbox's `decided`) instead of
+  // parking forever with nobody watching to notice (0.27.3 review, 2026-09-24).
   interactive: false,
   qa_rounds: 2,
   roles: { planning: true, qa: true },
