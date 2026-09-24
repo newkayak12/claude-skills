@@ -514,9 +514,11 @@ export function deriveTitle(request) {
 // epicBoardRows' own `reporter` field (tickets.mjs) is not itself "was this filed as a defect" -
 // it defaults to 'shape' for an ordinary package and 'repair' for a repair package precisely so
 // tm_board always has SOME reporter to print. A filed defect/unmet-story STORY is the one whose
-// reporter is one of these three - fileDefects (taskmanager.mjs) never writes any other value -
-// the same set epicBoardRows' own comment names.
-const FILED_REPORTERS = ['qa', 'you', 'planning-audit'];
+// reporter is one of these four - fileDefects (taskmanager.mjs) never writes any other value -
+// the same set epicBoardRows' own comment names. 'upstream' is fileUpstreamDefects' own reporter
+// (taskmanager.mjs, §upstream_defects): a fix STORY a downstream package's dispatch/accept filed
+// against an upstream dependency it deps on, same fileDefects machinery, different filer.
+const FILED_REPORTERS = ['qa', 'you', 'planning-audit', 'upstream'];
 
 // A task's STORY rows that are develop work (epicBoardRows' `role` is 'develop' for a plan
 // package and any filed defect/unmet-story STORY; PLAN/QA/AUDIT phase-Team packages carry their

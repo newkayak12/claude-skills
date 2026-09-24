@@ -1159,6 +1159,162 @@ test('a failed QA dispatch whose child recorded defects files them instead of bl
   }, { roles: { qa: true } });
 });
 
+// awake-beta-ref2 (2026-09-25): P3 (upstream) was ACCEPTED identifying Claude Code processes by
+// kernel comm=='claude', but on P4's own host the real CLI's kernel comm is a version string -
+// P4 proved it with its own probe, but had no route except to fail an attempt no retry could
+// ever fix (P3's contract, not P4's, was wrong), and the daemon just reopened the identical
+// impossible retry. These tests cover the fix-forward route at the task-manager level, using the
+// plain P1<-P2 SHAPE fixture (P2 deps: ['P1']) in place of P3/P4.
+test('a downstream package\'s implement reports an upstream_defects outside its own touches[]; the fold carries it through to accept:P2 regardless of the gate\'s own verdict', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    let nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' })).state, 'done');
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) })).state, 'done');
+
+    nx = await tm.call('tm_next', { task_id });
+    const p2 = nx.children[0];
+    assert.equal(p2.package_id, 'P2');
+    const { cwd, run_id } = p2;
+    const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
+    const upstreamDefect = {
+      package: 'P1', title: 'a.txt assumes a kernel comm string this host never produces',
+      evidence: 'a helper probe named like the real process makes the check hold', touches: ['a.txt'],
+    };
+    appendFileSync(join(cwd, 'b.txt'), 'changed by P2\n');
+    // implement alone carries it - test/gate below say nothing about it, proving foldChild reads
+    // it straight off the implement node (like defectsFound already does for an execute node),
+    // not off whichever node happened to restate it last.
+    await sub('implement:U1:1', { changed_files: ['b.txt'], handoff: 'built', upstream_defects: [upstreamDefect] });
+    await sub('test:U1:1', { verified: true });
+    await sub('gate:U1:1', { accept: true, match_pct: 95 });
+    const teamNx = await g.call('team_next', { run_id, cwd });
+    assert.equal(teamNx.state, 'complete');
+
+    const folded = await tm.call('tm_submit', { task_id, node_id: 'dispatch:P2:1' });
+    assert.equal(folded.state, 'done', JSON.stringify(folded));
+    const task1 = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.deepEqual(task1.nodes.find((n) => n.node_id === 'dispatch:P2:1').result.upstream_defects, [upstreamDefect]);
+
+    const acceptReady = (await tm.call('tm_next', { task_id })).ready.find((r) => r.node_id === 'accept:P2:1');
+    const briefing = readFileSync(acceptReady.briefing_path, 'utf8');
+    assert.match(briefing, /Upstream defects it reported:\n- P1: a\.txt assumes a kernel comm string this host never produces/,
+      'the accept:P2 agent must see the raw upstream_defects list under "What the child run delivered"');
+  });
+});
+
+test('a failed downstream dispatch carrying upstream_defects files a fix STORY owned by the upstream package\'s scope and rewires the downstream package\'s next attempt onto it, instead of a blind retry against the same broken upstream', async () => {
+  const { autoRetryPackages } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    let nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' })).state, 'done');
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) })).state, 'done');
+
+    nx = await tm.call('tm_next', { task_id });
+    const p2 = nx.children[0];
+    const { cwd, run_id } = p2;
+    const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
+    const upstreamDefect = {
+      package: 'P1', title: 'a.txt assumes a kernel comm string this host never produces',
+      evidence: 'a helper probe named like the real process makes the check hold', touches: ['a.txt'],
+    };
+    appendFileSync(join(cwd, 'b.txt'), 'changed by P2\n');
+    await sub('implement:U1:1', { changed_files: ['b.txt'], handoff: 'built', upstream_defects: [upstreamDefect] });
+    await sub('test:U1:1', { verified: true });
+    await sub('gate:U1:1', { accept: true, match_pct: 95 });
+    await g.call('team_next', { run_id, cwd });
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P2:1' })).state, 'done');
+
+    // P2's own scope was done, but its work cannot actually be verified while P1's upstream
+    // defect holds - fold this attempt as failed the way a real one can (an environment its own
+    // acceptance could not pass while the upstream bug holds), exactly as the existing QA test
+    // above folds an unrelated integration conflict onto an otherwise-successful case run.
+    const taskPath = join(root, task_id, 'task.json');
+    const raw = JSON.parse(readFileSync(taskPath, 'utf8'));
+    const dispatchNode = raw.nodes.find((n) => n.node_id === 'dispatch:P2:1');
+    assert.deepEqual(dispatchNode.result.upstream_defects, [upstreamDefect]);
+    dispatchNode.state = 'failed';
+    dispatchNode.result = { ...dispatchNode.result, accept: false, reason: 'cannot verify against a host where the upstream kernel-detection assumption does not hold' };
+    writeFileSync(taskPath, JSON.stringify(raw));
+
+    const load = () => JSON.parse(readFileSync(taskPath, 'utf8'));
+    const prevRoot = process.env.HARNESS_TASKS_DIR;
+    const withRoot = (fn) => { process.env.HARNESS_TASKS_DIR = root; try { return fn(); } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; } };
+
+    const changed = withRoot(() => autoRetryPackages(load()));
+    assert.equal(changed, true, 'the daemon acts on the failed dispatch');
+
+    const after = load();
+    assert.equal(after.nodes.find((n) => n.node_id === 'accept:P2:1').state, 'skipped',
+      'the accept node stuck behind the failed dispatch is retired in place, not left pending forever');
+    assert.deepEqual(after.spec.packages.map((p) => p.id), ['P1', 'P2', 'D1'], 'the upstream defect is filed as a fix STORY, owned by the upstream package');
+    const d1 = after.spec.packages.find((p) => p.id === 'D1');
+    assert.equal(d1.reporter, 'upstream');
+    assert.deepEqual(d1.deps, ['P1'], 'the fix package deps on the upstream package it fixes, not on P2 that found it');
+    assert.deepEqual(d1.touches, ['a.txt'], 'the fix package is scoped to the upstream package\'s own touches, not to P2\'s');
+    assert.equal(d1.title, upstreamDefect.title);
+
+    const p2next = after.nodes.find((n) => n.node_id === 'dispatch:P2:2');
+    assert.ok(p2next, 'P2 gets a fresh attempt instead of settling permanently failed');
+    assert.ok(!p2next.deps.includes('accept:P1:1'), 'no blind retry: the stale accept it depended on before is gone from its deps');
+    assert.ok(p2next.deps.includes('accept:D1:1'), 'P2\'s next attempt waits on the fix\'s own accept instead');
+
+    const goal = after.nodes.find((n) => n.node_id === 'gate:goal:1');
+    assert.deepEqual(goal.deps, ['integrate:2'], 'gate:goal reroutes behind a fresh integrate to re-verify the fix, same as a QA-found defect');
+  });
+});
+
+test('upstream_fix_rounds caps the loop: past the cap, an upstream defect is recorded as unresolved rather than filed again, and the downstream package falls back to an ordinary retry', async () => {
+  const { autoRetryPackages } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    let nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' })).state, 'done');
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) })).state, 'done');
+
+    nx = await tm.call('tm_next', { task_id });
+    const p2 = nx.children[0];
+    const { cwd, run_id } = p2;
+    const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
+    const upstreamDefect = { package: 'P1', title: 'kernel comm mismatch', evidence: 'probe reproduces a HOLD', touches: ['a.txt'] };
+    appendFileSync(join(cwd, 'b.txt'), 'changed by P2\n');
+    await sub('implement:U1:1', { changed_files: ['b.txt'], handoff: 'built', upstream_defects: [upstreamDefect] });
+    await sub('test:U1:1', { verified: true });
+    await sub('gate:U1:1', { accept: true, match_pct: 95 });
+    await g.call('team_next', { run_id, cwd });
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P2:1' })).state, 'done');
+
+    const taskPath = join(root, task_id, 'task.json');
+    const raw = JSON.parse(readFileSync(taskPath, 'utf8'));
+    const dispatchNode = raw.nodes.find((n) => n.node_id === 'dispatch:P2:1');
+    dispatchNode.state = 'failed';
+    dispatchNode.result = { ...dispatchNode.result, accept: false, reason: 'blocked on the same upstream bug' };
+    writeFileSync(taskPath, JSON.stringify(raw));
+
+    const load = () => JSON.parse(readFileSync(taskPath, 'utf8'));
+    const prevRoot = process.env.HARNESS_TASKS_DIR;
+    const withRoot = (fn) => { process.env.HARNESS_TASKS_DIR = root; try { return fn(); } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; } };
+
+    // upstream_fix_rounds: 0 - the very first round against P1 is already over the cap, the same
+    // shape the qa_rounds:0 test above uses for QA's own cap.
+    const changed = withRoot(() => autoRetryPackages(load()));
+    assert.equal(changed, true, 'the daemon still acts on the failed dispatch - a blind retry, this time');
+
+    const after = load();
+    assert.deepEqual(after.spec.packages.map((p) => p.id), ['P1', 'P2'], 'upstream_fix_rounds:0 caps the very first round - no fix STORY is filed');
+    assert.deepEqual(after.unresolved_defects, [{
+      title: upstreamDefect.title, evidence: upstreamDefect.evidence, reporter: 'upstream', upstream: 'P1', reported_by: 'P2', round: 1,
+    }]);
+    const p2next = after.nodes.find((n) => n.node_id === 'dispatch:P2:2');
+    assert.ok(p2next, 'the capped package still gets an ordinary retry, not a settled failure');
+    assert.ok(p2next.deps.includes('accept:P1:1'), 'capped - falls back to the SAME dependency as before, a blind retry against the unfixed upstream');
+  }, { upstream_fix_rounds: 0 });
+});
+
 test('a QA-found defect files a develop STORY and reroutes gate:goal to a fresh integrate; a second defect beyond qa_rounds is recorded, not filed (§5b, decision #2)', async () => {
   await withTask(async ({ tm, g, root, task_id }) => {
     await toIntegrate(tm, g, task_id);

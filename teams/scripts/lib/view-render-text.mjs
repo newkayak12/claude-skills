@@ -76,12 +76,13 @@ function renderNode(n, indent, out) {
   if (n.waiting_elapsed_ms != null) out.push(line(indent + 1, `waiting: ${fmtMs(n.waiting_elapsed_ms)}`));
 }
 
-// storyBlockedReason (tickets.mjs), rendered as one line: which of the four kinds of "why" this
+// storyBlockedReason (tickets.mjs), rendered as one line: which of the five kinds of "why" this
 // STORY is stuck on, plus whatever detail that kind carries (the dep node ids, a restart count,
 // or how long it has been parked) - the "why is it waiting" the pipeline/tickets view had no
 // answer for beyond the bare ticket state.
 const BLOCKED_REASON_LABEL = {
   unmet_deps: 'unmet deps',
+  upstream_defect: 'waiting on a fix it filed against an upstream package',
   capacity: 'waiting on provider capacity',
   restart_exhausted: 'driver restart budget exhausted',
   human_wait: 'waiting on a human',
@@ -91,6 +92,7 @@ function formatBlockedReason(br) {
   if (!br) return '';
   const bits = [BLOCKED_REASON_LABEL[br.reason] || br.reason];
   if (br.reason === 'unmet_deps' && br.node_ids && br.node_ids.length) bits.push(`(${br.node_ids.join(', ')})`);
+  if (br.reason === 'upstream_defect' && br.upstream && br.upstream.length) bits.push(`(${br.upstream.join(', ')})`);
   if (br.reason === 'restart_exhausted' && br.restarts != null) bits.push(`(${br.restarts} restart${br.restarts === 1 ? '' : 's'})`);
   if (br.elapsed_ms != null) bits.push(`(${fmtMs(br.elapsed_ms)})`);
   return bits.join(' ');

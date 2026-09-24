@@ -74,6 +74,24 @@ const eventsPath = opts.eventsOutput ? resolve(opts.eventsOutput) : null;
 mkdirSync(dirname(outputPath), { recursive: true });
 if (eventsPath) mkdirSync(dirname(eventsPath), { recursive: true });
 
+// A package's implement/test finding a defect OUTSIDE its own scope, in an upstream package it
+// deps on, is reported here rather than failed over (prompts.mjs's UPSTREAM_DEFECT_CONTRACT) -
+// optional on both stage schemas below, never required, so an ordinary result with nothing
+// upstream to report is unchanged.
+const UPSTREAM_DEFECTS_PROPERTY = {
+  type: 'array',
+  items: {
+    type: 'object',
+    properties: {
+      package: { type: 'string' },
+      title: { type: 'string' },
+      evidence: { type: 'string' },
+      touches: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['package', 'title'],
+  },
+};
+
 const STAGE_SCHEMAS = {
   implement: {
     type: 'object',
@@ -83,6 +101,7 @@ const STAGE_SCHEMAS = {
       changed_files: { type: 'array', items: { type: 'string' } },
       checks: { type: 'array', items: { type: 'string' } },
       evidence: { type: 'string' },
+      upstream_defects: UPSTREAM_DEFECTS_PROPERTY,
     },
     required: ['stage_ok', 'handoff', 'changed_files', 'checks', 'evidence'],
     additionalProperties: false,
@@ -94,6 +113,7 @@ const STAGE_SCHEMAS = {
       verified: { type: 'boolean' },
       checks: { type: 'array', items: { type: 'string' } },
       evidence: { type: 'string' },
+      upstream_defects: UPSTREAM_DEFECTS_PROPERTY,
     },
     required: ['stage_ok', 'verified', 'checks', 'evidence'],
     additionalProperties: false,

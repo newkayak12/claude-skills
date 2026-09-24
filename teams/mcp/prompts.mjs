@@ -67,6 +67,16 @@ Out of scope is for capability you decided not to build, and it is not a place t
 // stage below already carries its own full contract.
 const QUESTIONS_CONTRACT = `Optional: "questions": [{"question": "...", "to": "<role or person who owns this, if you can name one>", "options": [{"option": "...", "consequence": "..."}], "default": "<what you decide if nobody answers - required whenever "options" is>", "why": "<why this is not yours to decide alone>"}]. Only for a decision with a real owner other than you - not a hedge on ordinary judgment. An interactive run stops and asks; otherwise "default" is used and the question is recorded on the report as decided-for-you.`;
 
+// A downstream package's implement/test/gate finding something wrong OUTSIDE its own scope, in
+// a package it deps on (its own worktree started from that package's delivered branch - see
+// "Delivered by package ..." above), used to have no honest route: fail your own stage over a
+// contract you cannot touch, and the next attempt reruns against the SAME broken upstream
+// forever (awake-beta-ref2, 2026-09-25 - a downstream package's own C probe proved an upstream
+// package's kernel-detection assumption did not hold on this host, and the only routes were to
+// silently work around it or to fail an attempt no retry could ever fix). This is the other
+// route: report it, and keep working your own scope.
+const UPSTREAM_DEFECT_CONTRACT = `Optional: "upstream_defects": [{"package": "<the id of the upstream package this belongs to, exactly as named in "Delivered by package ..." above>", "title": "...", "evidence": "<what you observed, and how to reproduce it>", "touches": ["path inside the upstream package"]}]. Only for something wrong in a package you depend on, outside your OWN touches[] - not a gap in what this package itself was asked to build, and not yours to fix (that package's files are not in scope here). Do not fail stage_ok or withhold acceptance for this alone: finish everything that IS in your own scope, report the upstream defect, and let the manager route the fix.`;
+
 export const CONTRACT = {
   plan: `Return JSON: {"plan": "<the decomposition>", "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "dependencies": ["unit -> its real ordering dependency, or \\"none\\""], "verification": ["unit -> command or inspection that would deterministically verify it"], "conventions": ["path -> the rule it states, if .claude/conventions/** applies"], "handoff": "<what the next node needs>", "evidence": "<how you checked the request is actually satisfiable here>"}
 size is S when one run in one worktree can carry the whole request; L when it spans independent modules, packages or repositories that would each need their own run. Decide it from what commands show - file count, module boundaries, owners - and put those commands in "sizing". The default is S; a manager layer exists, and the temptation is to use it.
@@ -90,9 +100,11 @@ Set sound=false ONLY for defects in "blocking": something that makes the work im
 A spec you would merely improve is not a spec you should reject. Wording you would tighten, a check you would add, a scope note you would sharpen: those are problems, not blockers. An unbounded refutation always finds something, and a gate nothing can pass is not a gate - it is a dead end.
 ${QUESTIONS_CONTRACT}`,
   implement: `Return JSON: {"stage_ok": true|false, "handoff": "<paths, names, interfaces the dependent work needs>", "changed_files": ["..."], "checks": ["what you ran and what it printed"], "evidence": "..."}
-stage_ok=false when required work or checks could not run. Do not report a file as changed unless you changed it.`,
+stage_ok=false when required work or checks could not run. Do not report a file as changed unless you changed it.
+${UPSTREAM_DEFECT_CONTRACT}`,
   test: `Return JSON: {"stage_ok": true|false, "verified": true|false, "checks": ["command -> observed output"], "evidence": "..."}
-stage_ok=false means a required check could not run at all (sandbox, missing tool). verified=false with stage_ok=true means the checks ran and found a genuine failure. Do not edit implementation files. Do not trust the implement narrative - run the checks or inspect the artifacts yourself.`,
+stage_ok=false means a required check could not run at all (sandbox, missing tool). verified=false with stage_ok=true means the checks ran and found a genuine failure. Do not edit implementation files. Do not trust the implement narrative - run the checks or inspect the artifacts yourself.
+${UPSTREAM_DEFECT_CONTRACT}`,
   investigate: `Return JSON: {"stage_ok": true|false, "handoff": "<the findings path, then the one paragraph the drafter most needs>", "changed_files": ["..."], "sources": ["<path, document or URL you actually opened> -> what it settled"], "findings": ["<term or rule> -> <what it is, stated so a drafter can write from it> -> <the source that says so>"], "unknowns": [{"question": "<the decision no source you reached answers>", "owner": "<the role that would decide it>", "options": [{"option": "<a candidate answer>", "consequence": "<what follows if it is chosen>"}]}], "checks": ["<command or read> -> <what it showed>"], "evidence": "..."}
 You are the only stage in this chain that reads anything outside this briefing. Draft, revise and gate see the request, your findings file, and each other - nothing else. What you do not bring back does not exist downstream.
 Read in this order, and stop at what is actually reachable: the project tree this run was opened against, whatever sources the request names or attaches, the conventions above, prior documents under the docs path. Then, only if a search tool is actually available to you, the domain's public sources. Write what you found to exactly one path, and that path is derived, not chosen: take this subgoal's own output path from Required paths, drop its extension, and append \`-findings.md\`. \`docs/policy.md\` gives \`docs/policy-findings.md\`. Do not invent a name, do not add a suffix of your own, do not put it in another directory, and name it in "handoff". A real planning run let five sibling investigators name their own files and got five different conventions plus an orphan when one of them retried under a new name - the rule is fixed here so that your siblings and your own later attempts land on the same path, which is also how the fold tells an expected file from an undeclared one.
@@ -131,6 +143,7 @@ stage_ok=false only when the output paths could not be read at all. Finding noth
 You are the judge, not the actor. Judge only what the evidence below shows. Absent evidence is a gap, not a pass - "the previous node said so" is not evidence.
 Put anything that falls short but does not block into "observations" rather than inflating the score past it. A run that met its bar with known weaknesses is not a 100.
 accept:true with an empty checks[] is refused by the engine - a judgement with no evidence is a guess.
+If implement or test above reported "upstream_defects" (see "Defects it reported" or their own handoff), copy every one of them through verbatim into your own "upstream_defects": [...] - this gate is the one node the manager's own accept reads for them, so dropping one here loses it for good. Judge this package's own acceptance on its own scope regardless: an upstream defect is not a gap in what THIS package delivered, and must not by itself cost accept or match_pct.
 ${QUESTIONS_CONTRACT}`,
 
   'gate:goal': `Return JSON: {"stage_ok": true, "accept": true|false, "match_pct": 0-100, "checks": ["<command or read> -> <what it showed>"], "attacks": ["<command run from OUTSIDE this tree, the way the requester will invoke it> -> <what it showed>"], "gaps": ["what blocks acceptance"], "observations": ["weaknesses that do not block"], "spec_drift": ["where the spec asked for less than the request did"], "reason": "...", "evidence": "..."}
@@ -322,6 +335,7 @@ export function composePrompt(run, n, briefing) {
       // defects. The goal gate and the report must carry these forward, not fold them into
       // gaps: a QA run that found defects still did its job - the defects are the point.
       if ((x.defects || []).length) lines.push(`Defects it reported:\n${bullets(x.defects)}`);
+      if ((x.upstream_defects || []).length) lines.push(`Upstream defects it reported:\n${bullets(x.upstream_defects.map((d) => `${d && d.package ? `${d.package}: ` : ''}${(d && d.title) || String(d)}`))}`);
       if (x.handoff) lines.push(capHandoff(x.handoff));
       if (x.evidence) lines.push(`Evidence: ${x.evidence}`);
       if (x.gaps.length) lines.push(`Gaps:\n${bullets(x.gaps)}`);
@@ -350,6 +364,10 @@ export function composePrompt(run, n, briefing) {
       if ((u.defects || []).length) {
         lines.push(`Defects it reported:`);
         lines.push(bullets(u.defects));
+      }
+      if ((u.upstream_defects || []).length) {
+        lines.push(`Upstream defects it reported:`);
+        lines.push(bullets(u.upstream_defects.map((d) => `${d && d.package ? `${d.package}: ` : ''}${(d && d.title) || String(d)}`)));
       }
       if (u.commands.length) {
         lines.push(`Commands actually observed by the adapter:`);

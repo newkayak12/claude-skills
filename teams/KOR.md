@@ -531,7 +531,7 @@ modes" 절이 두 항목을 모두 보여줍니다.
 `team_open` 경로에서는 `team_status`의 `config_notes`(노트가 하나라도 있을 때만 나타나며,
 `resolveTeamOptions`의 노트를 런에 영구 저장해둔 사본입니다 — 실시간 재검사가 아닙니다).
 스키마는 [`mcp/teamconfig.mjs`](mcp/teamconfig.mjs)의
-`TEAM_DEFAULTS`/`CHECK`입니다 — 18개 키 중 실제로 동작에 반영되는 건 열여섯이고, 각 키가
+`TEAM_DEFAULTS`/`CHECK`입니다 — 19개 키 중 실제로 동작에 반영되는 건 열일곱이고, 각 키가
 `tm_open`, `team_open`, 또는 둘 다에 닿는지 보여주는 리더 열이 추가되었습니다. `team_open`의
 `inputSchema`는 애초에 `TEAM_DEFAULTS` 이름 중 일부만 인자로 받습니다 — 인자로조차 받지 않는
 키는 `resolveTeamOptions`가 무엇을 계산해내든 그 경로에서는 `team.json`으로 닿을 수 없습니다.
@@ -556,6 +556,7 @@ modes" 절이 두 항목을 모두 보여줍니다.
 | `timebox_minutes` | `null` | 예 | `tm_open`만 | `budget_usd`와 같은 정지 조건을, 금액 대신 시계로 — `tm_open` 이후 경과 분. 80%/100%가 정확히 무엇을 하는지는 `budget_usd` 행 참고. `budget_usd`와 같은 이유로 `team_open`의 인자가 아닙니다. |
 | `max_depth` | `2` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — 선언되고 검증만 될 뿐 아무것도 강제하지 않습니다. 자식 런이 스스로 다시 쪼갤 때의 깊이 캡이 될 자리입니다 — `docs/plans/2026-09-21-teams-server-owns-the-loop.md` §3 참고. `team_open`의 인자가 아닙니다. |
 | `qa_rounds` | `2` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — 어디서도 읽지 않습니다. `team_open`의 인자가 아닙니다. |
+| `upstream_fix_rounds` | `2` | 예 | `tm_open`만 | 다운스트림 패키지 자신의 fix-forward 루프에 상한을 겁니다(§upstream_defects, `taskmanager.mjs`의 `fileUpstreamDefects`): 패키지의 implement/test/gate, 또는 그것을 판정하는 매니저 자신의 `accept`가 자기 `touches[]` 바깥, 즉 자신이 `deps`로 의존하는 패키지 안에서 결함을 신고할 수 있습니다 — `awake-beta-ref2`(2026-09-25): P3는 커널 `comm` 문자열로 Claude Code를 식별하도록 승인되었지만 P4 자신의 호스트에서는 그 가정이 성립하지 않았고, P4는 어떤 재시도로도 고칠 수 없는 시도를 실패시키는 것 말고는 경로가 없었습니다. (QA가 낸 결함이 이미 거치는 것과 같은 메커니즘인) `fileDefects`/`reintegrateBehind`를 재사용해 UPSTREAM 패키지 자신의 스코프로 귀속되는 fix STORY를 발행하고(그 패키지의 `touches`/`deps`, `reporter: "upstream"`), 그다음 DOWNSTREAM 패키지 자신의 다음 시도를 열어 `accept:<upstream>:N` 의존을 그 fix의 accept로 다시 연결합니다 — 그래서 같은 고장난 upstream에 맹목적으로 재시도하는 대신 fix를 기다렸다가 그 위에서 다시 돕니다. `qa_rounds`가 `dispatch:QA` 노드 수를 세는 것과 같은 방식으로, 해당 upstream 패키지에 이미 발행된 모든 fix STORY 수(어느 다운스트림 패키지가 다음 것을 찾았는지와 무관하게)로 셉니다; 상한을 넘으면 발행 대신 `task.unresolved_defects`(`reporter: "upstream"`)에 기록되고, 다운스트림 패키지는 평소의 재시도/settle 경로로 돌아갑니다. `team_open`의 인자가 아닙니다 — `team_open`은 패키지/`deps`/upstream 개념이 없는 단일 graph 런을 엽니다. |
 
 `goal_judges`(goal gate의 독립 판정자 수)와 `auto_reassign`(거부된 판정의 자동 재시도)는
 실재하는 런 단위 옵션입니다 — `tm_open`/`team_open` 자신의 인자 설명 참고 — 하지만 이 스키마에는

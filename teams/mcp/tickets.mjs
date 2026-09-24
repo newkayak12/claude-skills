@@ -414,9 +414,13 @@ export function storyLinks(task, pkgId) {
 // own - a STORY sitting in BACKLOG because a sibling dep has not cleared is a different fact
 // from a STORY sitting in BACKLOG because nobody has looked at it yet, and §4's ticket state
 // alone cannot say which. storyBlockedReason names the one fact storyTicketState's own branches
-// already computed and threw away: which of the four things actually holds this STORY back -
+// already computed and threw away: which of the five things actually holds this STORY back -
 // 'unmet_deps' (BACKLOG: the sibling dep ids themselves, straight off unmetDeps - the same
-// dependency read storyTicketState's own BACKLOG branch already makes), 'capacity'
+// dependency read storyTicketState's own BACKLOG branch already makes), 'upstream_defect'
+// (BACKLOG: the same unmet dep ids, but at least one of them is a fix STORY this package's own
+// dispatch/accept found and filed against an upstream dependency - fileUpstreamDefects,
+// taskmanager.mjs - so the "upstream" field also names the ORIGINAL upstream package ids the
+// fix(es) target, not the fix STORYs' own ids), 'capacity'
 // (WAITING_CAPACITY: since/elapsed off the same dispatch.child.waiting_capacity storyTicketState
 // reads), 'human_wait' (WAITING_HUMAN: since/elapsed off the child run's own waiting_human node),
 // or 'restart_exhausted' (BLOCKED, once the driver's restart budget is actually spent and
@@ -431,7 +435,22 @@ export function storyBlockedReason(task, pkgId) {
   if (!dispatch) return null;
   if (dispatch.state === 'pending') {
     const deps = unmetDeps(task, dispatch);
-    return deps.length ? { reason: 'unmet_deps', node_ids: deps } : null;
+    if (!deps.length) return null;
+    // §upstream_defects: this package's own next attempt was rewired (fileUpstreamDefects,
+    // taskmanager.mjs) to wait on a fix STORY's accept instead of blindly retrying - a more
+    // specific fact than plain 'unmet_deps', and the one a person reading tm_ticket/tm_status
+    // actually wants: not "waiting on a sibling", but "waiting on a fix it itself filed".
+    // Detected the same way storyLinks/epicBoardRows already tell a filed defect STORY apart
+    // from shape's own scope: p.reporter, set to 'upstream' only by fileUpstreamDefects.
+    const packages = (task.spec && task.spec.packages) || [];
+    const upstream = deps
+      .map((d) => /^accept:(.+):\d+$/.exec(String(d)))
+      .filter(Boolean)
+      .map((m) => packages.find((p) => String(p.id) === m[1]))
+      .filter((p) => p && p.reporter === 'upstream')
+      .map((p) => String((p.deps || [])[0] || p.id));
+    if (upstream.length) return { reason: 'upstream_defect', node_ids: deps, upstream: [...new Set(upstream)] };
+    return { reason: 'unmet_deps', node_ids: deps };
   }
   if (dispatch.state === 'running') {
     if (dispatch.child && dispatch.child.waiting_capacity) {

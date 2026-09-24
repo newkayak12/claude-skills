@@ -587,7 +587,7 @@ validator is ignored rather than applied, and recorded as a note — `tm_status`
 the `tm_open` path, `team_status`'s `config_notes` on the `team_open` path (present only when
 there is at least one note; it is the run's own persisted copy of `resolveTeamOptions`' notes,
 not a live re-check). The schema is `TEAM_DEFAULTS`/`CHECK` in
-[`mcp/teamconfig.mjs`](mcp/teamconfig.mjs) — 18 keys, sixteen of which actually change behavior
+[`mcp/teamconfig.mjs`](mcp/teamconfig.mjs) — 19 keys, seventeen of which actually change behavior
 today, plus a reader-status column: whether each key reaches `tm_open`, `team_open`, or both.
 `team_open`'s `inputSchema` only accepts a subset of `TEAM_DEFAULTS`' names in the first place —
 a key it does not accept as an argument at all cannot be reached from `team.json` on that path
@@ -613,6 +613,7 @@ either, no matter what `resolveTeamOptions` resolves.
 | `timebox_minutes` | `null` | yes | `tm_open` only | The same stop condition `budget_usd` is, on a clock instead of a dollar figure — minutes since `tm_open`. See `budget_usd`'s own row for exactly what 80%/100% do. Not a `team_open` argument, for the same reason `budget_usd` is not. |
 | `max_depth` | `2` | no | `tm_open` only | recorded-but-inert — declared and validated, but nothing enforces it yet. This becomes the depth cap on a child run re-decomposing itself; see `docs/plans/2026-09-21-teams-server-owns-the-loop.md` §3. Not a `team_open` argument. |
 | `qa_rounds` | `2` | no | `tm_open` only | recorded-but-inert — not read anywhere. Not a `team_open` argument. |
+| `upstream_fix_rounds` | `2` | yes | `tm_open` only | Caps a downstream package's own fix-forward loop (§upstream_defects, `taskmanager.mjs`'s `fileUpstreamDefects`): a package's implement/test/gate, or the manager's own `accept` judging it, can report a defect OUTSIDE its own `touches[]`, in a package it `deps` on — `awake-beta-ref2` (2026-09-25): P3 was accepted identifying Claude Code by a kernel `comm` string that did not hold on P4's own host, and P4 had no route but to fail an attempt no retry could fix. Reused `fileDefects`/`reintegrateBehind` (the same machinery a QA-found defect already takes) files a fix STORY owned by the UPSTREAM package's own scope (`touches`/`deps` from that package, `reporter: "upstream"`), then reopens the DOWNSTREAM package's own next attempt with its `accept:<upstream>:N` dep rewritten onto the fix's accept — so it waits for the fix and re-runs against it instead of retrying blind against the same broken upstream. Counted per upstream package (every fix STORY already filed against it, regardless of which downstream package found the next one) the same way `qa_rounds` counts `dispatch:QA` nodes; past the cap, recorded onto `task.unresolved_defects` (`reporter: "upstream"`) instead of filed, and the downstream package falls back to its ordinary retry/settle path. Not a `team_open` argument — `team_open` opens a single graph run with no package/`deps`/upstream concept of its own. |
 
 `goal_judges` (independent judges on the goal gate) and `auto_reassign` (auto-retry on a
 rejected verdict) are real per-run options — see `tm_open`'s/`team_open`'s own argument

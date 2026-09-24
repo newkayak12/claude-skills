@@ -52,6 +52,18 @@ export const TEAM_DEFAULTS = Object.freeze({
   // autoPassHumanGateResult) rather than blocking a run nobody is watching.
   human_gates: [],
   qa_rounds: 2,
+  // A downstream package's dispatch (implement/test/gate, or the manager's own accept) can name
+  // a defect it found OUTSIDE its own touches[], in a package it deps on - a frozen-contract
+  // problem no downstream package may fix itself (taskmanager.mjs's upstream_defects handling,
+  // the fix-forward route the QA/audit defect machinery lacked for this case: awake-beta-ref2,
+  // 2026-09-25, P3 accepted at 93 on a kernel-detection assumption that did not hold on P4's own
+  // host, and P4 had no route but to fail its own dispatch against an upstream package it could
+  // not touch). Capped the same way qa_rounds caps a QA round that keeps finding the same
+  // defect: once a fix has already been filed against the SAME upstream package this many
+  // times, a further upstream_defects report against it is recorded onto
+  // task.unresolved_defects instead of filed as another fix STORY, and the downstream package is
+  // left to the ordinary retry/settle path.
+  upstream_fix_rounds: 2,
   // audit used to ride on roles.planning alone (taskmanager.mjs's openAudit was gated on
   // `roles.planning`, nothing else - the audit pass is planning's own second pass, so it had no
   // independent switch). It is still ON by default whenever planning is - that pairing is
@@ -134,6 +146,7 @@ const CHECK = {
   max_parallel_teams: (v) => Number.isInteger(v) && v >= 1,
   max_depth: (v) => Number.isInteger(v) && v >= 0,
   qa_rounds: (v) => Number.isInteger(v) && v >= 0,
+  upstream_fix_rounds: (v) => Number.isInteger(v) && v >= 0,
   roles: (v) => v && typeof v === 'object' && !Array.isArray(v)
     && Object.entries(v).every(([k, b]) => k in TEAM_DEFAULTS.roles && typeof b === 'boolean'),
   interactive: (v) => typeof v === 'boolean',
