@@ -24,7 +24,7 @@ knowledge workspace is edited.
 
 ## Core concepts
 
-Eight ideas carry the whole plugin. Each borrows from an established theory and bends it where
+Nine ideas carry the whole plugin. Each borrows from an established theory and bends it where
 measurement said to; [docs/theory.md](docs/theory.md) has the sources and the exact departures.
 
 **1. A vault is finished when it can answer, not when it looks tidy.**
@@ -71,6 +71,15 @@ Models are over-confident (Guo et al., 2017): answers here declared `complete` 6
 94 and were right 22–38 times. So an answer splits the question into parts, names the note it
 *opened* for each part, and downgrades to `partial` the moment one part rests on a snippet or a
 guess.
+
+**9. Search small, read big — and tell each piece where it came from.**
+Finer retrieval units retrieve better (Dense X Retrieval, 2024), but a passage cut out of a note
+forgets what it is about: "revenue grew 3%" — whose, when? So chunks are cut on the structure the
+source already has (embedding-based "semantic chunking" has not repaid its cost — Qu et al., 2025),
+each chunk inherits its parent note's title and lookup vocabulary, and an authored `context`
+sentence is prepended before both keyword and embedding indexing (Contextual Retrieval, Anthropic
+2024: −49% retrieval failures). Search returns one result per note, and the answer opens the whole
+note.
 
 ## Which skill do I want?
 
