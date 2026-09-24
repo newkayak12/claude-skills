@@ -1483,6 +1483,99 @@ test('an audit round is capped like a QA round: past qa_rounds an unmet story is
 });
 
 
+// ---------- budget / timebox (§B.1: the Sprint's own missing box) ----------
+
+function writeDriverSpend(root, task_id, label, total_cost_usd) {
+  const dir = join(root, task_id, 'drivers');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${label}.stream.jsonl`), `${JSON.stringify({ type: 'result', total_cost_usd })}\n`);
+}
+
+test('budget_usd: spend is summed from every drivers/*.stream.jsonl result event, restarts included', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    writeDriverSpend(root, task_id, 'a', 3.5);
+    writeDriverSpend(root, task_id, 'a.restart1', 1.25); // a respawned driver is its own bill
+    writeDriverSpend(root, task_id, 'b', 2);
+    const st = await tm.call('tm_status', { task_id });
+    assert.equal(st.budget, undefined, 'no budget_usd/timebox_minutes set - the field is absent entirely, not zeroed');
+  });
+});
+
+test('budget_usd at 80% records one warning; below it, nothing is recorded', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await toIntegrate(tm, g, task_id); // P1 and P2 both accepted, integrate:1 ready
+    writeDriverSpend(root, task_id, 'p1', 8); // 8 / 10 = 80%
+    await tm.call('tm_next', { task_id });
+    const st = await tm.call('tm_status', { task_id });
+    assert.equal(st.budget.warn, true);
+    assert.equal(st.budget.over, false);
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.equal(task.budget_warned, true);
+    assert.equal(task.budget_stopped, undefined);
+  }, { budget_usd: 10 });
+});
+
+test('budget_usd at 100%: no new package dispatches, an in-flight one still finishes, and a fresh integrate opens over just what accepted - the rest named "not done"', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id); // SHAPE: P1 (no deps), P2 (deps: [P1])
+    let nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children[0].package_id, 'P1', 'P2 depends on P1 - only P1 is ready yet');
+    await completeChild(g, nx.children[0]);
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) });
+
+    // P1's own driver cost the whole budget - tripped only after it finished, so P1 itself
+    // was never blocked ("finishes in-flight" has nothing left to prove for a node already done,
+    // but P2, ready right after P1 accepted, must never get its own dispatch).
+    writeDriverSpend(root, task_id, 'p1', 10);
+    nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children.length, 0, 'P2 became ready this same poll but the budget is already spent');
+
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.equal(task.budget_stopped != null, true);
+    assert.deepEqual(task.budget_stopped.skipped_packages, ['P2']);
+    const p2dispatch = task.nodes.find((n) => n.node_id === 'dispatch:P2:1');
+    assert.equal(p2dispatch.state, 'skipped');
+    assert.match(p2dispatch.result.reason, /budget\/timebox exhausted/);
+    const p2accept = task.nodes.find((n) => n.node_id === 'accept:P2:1');
+    assert.equal(p2accept.state, 'skipped');
+
+    // A fresh integrate opened behind the accepted subset alone (reintegrateBehind, the same
+    // mechanism a filed defect or a repair already uses) - the original integrate:1 is
+    // superseded, and gate:goal now points at integrate:2.
+    const freshIntegrate = task.nodes.find((n) => n.stage === 'integrate' && n.supersedes === 'integrate:1');
+    assert.ok(freshIntegrate, JSON.stringify(task.nodes.filter((n) => n.stage === 'integrate')));
+    assert.deepEqual(freshIntegrate.deps, ['accept:P1:1']);
+    assert.match(freshIntegrate.feedback || '', /not done: P2/);
+    assert.deepEqual(nx.ready.map((n) => n.node_id), [freshIntegrate.node_id]);
+
+    const st = await tm.call('tm_status', { task_id });
+    assert.equal(st.budget.over, true);
+  }, { budget_usd: 10 });
+});
+
+test('timebox_minutes at 100% (created_at in the past) stops dispatching the same way budget_usd does', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    let nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) });
+
+    const taskPath = join(root, task_id, 'task.json');
+    const task = JSON.parse(readFileSync(taskPath, 'utf8'));
+    task.created_at = Date.now() - 11 * 60 * 1000; // 11 minutes ago against a 10-minute timebox
+    writeFileSync(taskPath, JSON.stringify(task));
+
+    nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children.length, 0);
+    const after = JSON.parse(readFileSync(taskPath, 'utf8'));
+    assert.deepEqual(after.budget_stopped.skipped_packages, ['P2']);
+    assert.equal(after.budget_stopped.timebox_minutes, 10);
+    assert.equal(after.budget_stopped.budget_usd, null);
+  }, { timebox_minutes: 10 });
+});
+
 test('max_parallel_teams:1 opens only the lowest-priority ready dispatch; the rest stay pending', async () => {
   await withTask(async ({ tm, root, task_id }) => {
     let v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop' }) });
