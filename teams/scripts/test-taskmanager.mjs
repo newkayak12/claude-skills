@@ -4879,3 +4879,108 @@ test('a correct human submission still flows to test -> gate exactly as before -
     assert.equal((await g.call('team_status', { run_id: child.run_id, cwd: child.cwd })).state, 'complete');
   }, { interactive: true });
 });
+
+// ---------- D2 slice 3 (0.29.0): questions[] generalized to the manager graph's own stages ----------
+//
+// The manager's own critique node (task.nodes, not a package's child run) is what this exercises -
+// a run-level judging node has no subgoal to key a card off (graph.mjs's openAsk falls back to the
+// node's own node_id), and tm_inbox/tm_submit need a key that works when there is no package at
+// all: the pseudo-package 'TASK' (taskKey(task.run_id, 'TASK', node_id), inboxEntry's own scheme).
+
+const CRITIQUE_QUESTION = [{
+  question: 'Which flow does module a use?',
+  to: 'Tech lead',
+  options: [{ option: 'develop' }, { option: 'document' }],
+  default: 'develop',
+  why: 'the request never says',
+}];
+
+test('a manager critique that returns questions[] opens an ask card when interactive - tm_inbox keys it under the TASK pseudo-package', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2 modules'], handoff: 'two modules' }) });
+    await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({ ...SHAPE, handoff: 's' }) });
+    const v = await tm.call('tm_submit', { task_id, node_id: 'critique', payload: ok({ sound: true, questions: CRITIQUE_QUESTION }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+
+    const inbox = await tm.call('tm_inbox', { task_id });
+    assert.equal(inbox.cards.length, 1, JSON.stringify(inbox));
+    const card = inbox.cards[0];
+    assert.equal(card.key, `E-${task_id.slice(0, 8)}/TASK/ask:critique:1`);
+    assert.equal(card.node_id, 'ask:critique:1');
+    assert.equal(card.stage, 'ask');
+    assert.equal(card.who, 'Tech lead');
+    assert.equal(card.questions.length, 1);
+
+    const answered = await tm.call('tm_submit', {
+      task_id, key: card.key,
+      payload: { decisions: [{ question: CRITIQUE_QUESTION[0].question, chose: 'develop', because: 'confirmed with the lead' }] },
+    });
+    assert.equal(answered.state, 'done', JSON.stringify(answered));
+    assert.deepEqual((await tm.call('tm_inbox', { task_id })).cards, [], 'answered card no longer waits');
+  }, { interactive: true });
+});
+
+test('a manager critique that returns questions[] auto-decides on the default when not interactive, and records decided-for-you', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2 modules'], handoff: 'two modules' }) });
+    await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({ ...SHAPE, handoff: 's' }) });
+    const v = await tm.call('tm_submit', { task_id, node_id: 'critique', payload: ok({ sound: true, questions: CRITIQUE_QUESTION }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+
+    const inbox = await tm.call('tm_inbox', { task_id });
+    assert.deepEqual(inbox.cards, [], 'nobody is watching - no card parks');
+    // Not a runtime pin (auto_decided_pin, decided[]) - a question the run answered by default
+    // has no node to attach that record to at critique's own moment, so it lands on the task
+    // report surface instead (run.unasked's own twin).
+  }, {});
+});
+
+// ---------- gate:human (D2 Task 4) ----------
+
+test('gate:human parks the manager critique for a person instead of a model, and a reject feeds gaps into the retry', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2 modules'], handoff: 'two modules' }) });
+    await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({ ...SHAPE, handoff: 's' }) });
+
+    // critique is now ready, but human_gates names it: tm_next must never offer it to a driver.
+    const nx = await tm.call('tm_next', { task_id });
+    assert.ok(!(nx.ready || []).some((n) => n.node_id === 'critique'), JSON.stringify(nx.ready));
+
+    const inbox = await tm.call('tm_inbox', { task_id });
+    assert.equal(inbox.cards.length, 1, JSON.stringify(inbox));
+    const card = inbox.cards[0];
+    assert.equal(card.node_id, 'critique');
+    assert.equal(card.human_gate, true);
+    assert.equal(card.key, `E-${task_id.slice(0, 8)}/TASK/critique`);
+
+    const rejected = await tm.call('tm_submit', {
+      task_id, key: card.key,
+      payload: { accept: false, reason: 'P1 and P2 both touch a.txt', gaps: ['ownership overlap between P1 and P2'] },
+    });
+    assert.equal(rejected.state, 'failed', JSON.stringify(rejected));
+    assert.equal(rejected.result.sound, false);
+    assert.deepEqual(rejected.result.gaps, ['ownership overlap between P1 and P2']);
+    assert.match(rejected.result.reason, /P1 and P2 both touch a\.txt/);
+  }, { interactive: true, human_gates: ['critique'] });
+});
+
+test('gate:human auto-passes the manager critique when not interactive, recorded as decided-for-you', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2 modules'], handoff: 'two modules' }) });
+    await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({ ...SHAPE, handoff: 's' }) });
+
+    const nx = await tm.call('tm_next', { task_id });
+    assert.ok(!(nx.ready || []).some((n) => n.node_id === 'critique'), 'never offered to a driver even non-interactive');
+
+    const inbox = await tm.call('tm_inbox', { task_id });
+    assert.deepEqual(inbox.cards, [], 'nobody is watching - no card parks');
+    assert.equal(inbox.decided.length, 1, JSON.stringify(inbox));
+    assert.equal(inbox.decided[0].node_id, 'critique');
+    assert.match(inbox.decided[0].reason, /not interactive/);
+
+    const full = await tm.call('tm_status', { task_id, full: true });
+    const critiqueNode = full.nodes.find((n) => n.node_id === 'critique');
+    assert.equal(critiqueNode.state, 'done');
+    assert.equal(critiqueNode.result.sound, true, 'auto-pass, not auto-reject - a gate nobody is watching must not block the run');
+  }, { human_gates: ['critique'] });
+});

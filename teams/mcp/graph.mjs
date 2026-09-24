@@ -604,6 +604,10 @@ export function createRun(opts) {
     // decided by default and merely recorded (run.unasked). Off unless asked for: a run opened
     // by a daemon nobody is watching must still be able to finish.
     interactive: opts.interactive === true,
+    // gate:human (D2 Task 4): which judging stages this run must stop and have a person
+    // accept/reject, by name ('critique', 'gate', 'gate:goal', ...) - see promoteHumanGates.
+    // Threaded the same way `interactive` is (teamconfig.mjs -> task.child_opts -> here).
+    human_gates: Array.isArray(opts.human_gates) ? opts.human_gates.slice() : [],
     // A rejected subgoal gate opens its own next attempt. false makes a rejection advisory
     // again: the run blocks and waits for team_retry, which a caller may simply never call.
     auto_reassign: opts.auto_reassign !== false,
@@ -1011,17 +1015,31 @@ export function openRepair(run, round, feedback, judges) {
 // decide automatically and record what it WOULD have asked - broker.mjs keeps those on
 // run.unasked so the report can show the questions nobody answered, which reads better than a
 // document quietly full of assumptions.
+// D2 slice 3 (0.29.0, docs/plans/2026-09-23-teams-reducer-human-rollback.md §1): `questions[]`
+// is no longer investigate's `unknowns[]` alone - any judging/deciding stage's own contract
+// (setgoal, plan, critique, shape, gate, accept, gate:goal, a QA cases set) may return the same
+// shape ({question, to/owner, options?, default, why}), and the engine treats it identically.
+// Two relaxations from the investigate-only version made that possible:
+// - decidability no longer requires >1 named options: a question with a stated `default` is
+//   decidable on its own (the non-interactive path needs exactly that to auto-decide), options
+//   remain how a person is offered more than the default to pick from.
+// - the card's owner key falls back to the node's own node_id when it has no subgoal_id - every
+//   run/task-level judging node (setgoal, plan, critique, gate:goal, and shape/accept/integrate
+//   at the manager layer) has none, and investigate was the only stage with one to begin with.
 export function openAsk(run, n, questions) {
-  if (!n || !n.subgoal_id) return [];
-  const qs = (questions || []).filter((q) => q && (q.question || q.unknown) && Array.isArray(q.options) && q.options.length > 1);
+  if (!n) return [];
+  const qs = (questions || []).filter((q) => q && (q.question || q.unknown)
+    && ((Array.isArray(q.options) && q.options.length > 1) || q.default !== undefined));
   if (!qs.length) return [];
   const attempt = n.attempt || 1;
-  if (run.nodes.some((x) => x.node_id === `ask:${n.subgoal_id}:${attempt}`)) return [];
-  // Whoever consumed investigate now consumes the answers instead. One consumer by
-  // construction (pushChain is a straight line), but written as a filter so an inserted
-  // node can never silently orphan a second one.
-  const consumers = run.nodes.filter((x) => (x.deps || []).includes(n.node_id));
-  if (!consumers.length) return [];
+  const owner = n.subgoal_id || n.node_id;
+  if (run.nodes.some((x) => x.node_id === `ask:${owner}:${attempt}`)) return [];
+  // Whoever consumed the node now consumes the answers instead. Order-only (`after`) edges
+  // count as consumers too, not just data (`deps`) ones - gate:goal's only downstream is
+  // `report` via `after` (expandSubgoals leaves the subgoal gates as `after`, not `deps`, once
+  // `reduce` takes the data edge), and a report written before a gate:goal question is settled
+  // would omit the very decision it is meant to state as a rule.
+  const consumers = run.nodes.filter((x) => (x.deps || []).includes(n.node_id) || (x.after || []).includes(n.node_id));
 
   // One card per owner, not one card per subgoal. The first real interactive run (idol-beta-ask1,
   // 2026-09-24) came back with seven questions on one card owned by five different roles - the PO,
@@ -1033,21 +1051,24 @@ export function openAsk(run, n, questions) {
   // there is only one owner - which is the common case and every test written before this.
   const groups = new Map();
   for (const q of qs) {
-    const key = (typeof q.owner === 'string' && q.owner.trim()) || '';
+    // `to` is the generalized contract's field name (docs/plans/2026-09-23-teams-reducer-
+    // human-rollback.md §1); `owner` is investigate's own, kept so its existing unknowns[]
+    // still group exactly as before.
+    const key = (typeof q.to === 'string' && q.to.trim()) || (typeof q.owner === 'string' && q.owner.trim()) || '';
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(q);
   }
   const ids = [];
   let i = 0;
-  for (const [who, questions] of groups) {
+  for (const [who, groupQs] of groups) {
     // `ask:U1:1`, `ask:U1:1b`, `ask:U1:1c` - the same suffixing pushGoalGateRound uses for
     // sibling judges, so nothing downstream has to learn a second id shape.
-    const askId = `ask:${n.subgoal_id}:${attempt}${i === 0 ? '' : String.fromCharCode(97 + i)}`;
+    const askId = `ask:${owner}:${attempt}${i === 0 ? '' : String.fromCharCode(97 + i)}`;
     run.nodes.push(node(askId, 'ask', [n.node_id], {
       subgoal_id: n.subgoal_id,
       attempt,
-      questions,
-      assignment: { executor: 'human', vendor: 'human', who: who || null, reason: 'a decision no source could answer (investigate.unknowns)' },
+      questions: groupQs,
+      assignment: { executor: 'human', vendor: 'human', who: who || null, reason: `a decision no source could answer (${n.stage} questions)` },
       // Parked here rather than left for promoteWaitingHuman to find on the next team_next. Its
       // one dep is the node whose own submission is creating it, so it is ready by construction -
       // and a card that only becomes visible once somebody polls is a card tm_inbox cannot be
@@ -1058,9 +1079,14 @@ export function openAsk(run, n, questions) {
     ids.push(askId);
     i += 1;
   }
-  // draft waits for every owner: a document written while one of them is still deciding would
+  // The consumer waits for every owner: work written while one of them is still deciding would
   // carry that decision as an open question and the answer would arrive too late to be a rule.
-  for (const c of consumers) c.deps = [...c.deps.filter((d) => d !== n.node_id), ...ids];
+  // Rewired into whichever list originally named the node - a data (`deps`) consumer stays a
+  // data consumer, an order-only (`after`) one stays order-only.
+  for (const c of consumers) {
+    if (c.deps.includes(n.node_id)) c.deps = [...c.deps.filter((d) => d !== n.node_id), ...ids];
+    if ((c.after || []).includes(n.node_id)) c.after = [...c.after.filter((d) => d !== n.node_id), ...ids];
+  }
   return ids;
 }
 
@@ -1404,6 +1430,115 @@ export function promoteWaitingHuman(run) {
     touched.push(n);
   }
   return touched;
+}
+
+// gate:human (D2 Task 4, docs/plans/2026-09-23-teams-reducer-human-rollback.md §1): a
+// configurable human approval gate over a judging stage, set with the team option
+// `human_gates: ['critique', 'gate', 'gate:goal', ...]` (run.human_gates, threaded the same way
+// run.interactive is - teamconfig.mjs, task.child_opts, createRun). Only a VERDICT-bearing
+// judging stage can be gated this way - one whose contract already reduces to a single
+// accept/reject boolean the engine can act on (HUMAN_GATE_VERDICT_FIELD below); an authoring
+// stage (implement, draft, shape's own package proposal) has no such field and is left alone
+// even if named in human_gates by mistake.
+//
+// A gated node never reaches a driver: the human's own accept/reject IS the node's result,
+// submitted through the exact same tm_submit({key, payload}) path a pinned author stage uses,
+// so every downstream hook that already reads a stage's result (autoReassign's retry, shape's
+// expandPackages, a package's own accept feeding the manager) keeps working unmodified - a
+// human's verdict and a model's verdict are the same shape once they land on the node.
+export const HUMAN_GATE_VERDICT_FIELD = { gate: 'accept', critique: 'sound', accept: 'accept', integrate: 'verified' };
+
+// gate:goal is `stage: 'gate'` with `subgoal_id: null` on both the child-run graph
+// (expandSubgoals' pushGoalGateRound) and the manager graph (taskmanager.mjs's own
+// pushGoalGateRound) - composeTaskPrompt already tells the two apart this same way (by
+// node_id prefix, not by stage) to pick the right CONTRACT text, so this reuses that test
+// rather than inventing a second one.
+export function humanGateIdentity(n) {
+  return n.node_id.startsWith('gate:goal') ? 'gate:goal' : n.stage;
+}
+
+export function humanGateVerdictField(n) {
+  return humanGateIdentity(n) === 'gate:goal' ? 'accept' : (HUMAN_GATE_VERDICT_FIELD[n.stage] || null);
+}
+
+// The default result for a human_gates node when nobody is watching (run.interactive is
+// false): auto-pass, recorded as decided-for-you rather than left to block a run nobody can
+// unblock. Mirrors applyHumanPin's own non-interactive default (dispatch instead of park) in
+// spirit, but a gate has no AI fallback to dispatch to - the whole point of naming a stage in
+// human_gates is that a person, not a model, judges it - so the only non-blocking default is
+// to pass it, exactly as an ungated run would if nobody had configured a gate here at all.
+export function autoPassHumanGateResult(n) {
+  const field = humanGateVerdictField(n);
+  return {
+    stage_ok: true,
+    ...(field ? { [field]: true } : {}),
+    // match_pct/attacks only matter to a 'gate'/'gate:goal' node (nodeSucceeded's own floor and
+    // no-attacks-no-pass checks, broker.mjs) - harmless extra fields on critique/accept/integrate.
+    ...(field === 'accept' ? { match_pct: 100, attacks: ['gate:human: not interactive, auto-passed - no invocation was made'] } : {}),
+    checks: ['human_gates named this stage but the run is not interactive - auto-passed'],
+    gaps: [],
+    reason: 'auto-passed (decided for you, not interactive)',
+    evidence: 'gate:human default: a non-interactive run cannot block on a person, so it passes',
+  };
+}
+
+// Parks a human_gates node in waiting_human (interactive) or marks it for the caller to
+// auto-pass (not interactive) the moment it becomes ready - the same "called at the one place
+// readiness is computed for a driver" seam promoteWaitingHuman documents above, but kept as its
+// own function rather than folded into it: promoteWaitingHuman's pin is written by someone
+// upstream (a spec, tm_assign) before this runs, while a human_gates pin is decided HERE, from
+// team config, the first time the node is seen - `human_gate_seen` marks that decision made so
+// a later poll (this runs on every team_next) never re-decides a node already parked or
+// auto-passed. Works over any run-shaped object with `.nodes`/`.human_gates`/`.interactive` -
+// task.json (the manager graph) qualifies exactly as a graph.mjs run does.
+export function promoteHumanGates(run) {
+  const gates = new Set(run.human_gates || []);
+  const parked = [];
+  const autoPass = [];
+  if (!gates.size) return { parked, autoPass };
+  for (const n of run.nodes) {
+    if (n.state !== 'pending' || n.human_gate_seen) continue;
+    if (!humanGateVerdictField(n)) continue;
+    if (!gates.has(humanGateIdentity(n))) continue;
+    if (unmetDeps(run, n).length) continue;
+    n.human_gate_seen = true;
+    n.human_gate = true;
+    if (run.interactive) {
+      n.assignment = { executor: 'human', vendor: 'human', who: null, reason: 'human_gates (team config)' };
+      n.state = 'waiting_human';
+      n.waiting_since = Date.now();
+      parked.push(n);
+    } else {
+      n.auto_decided_pin = {
+        by: 'auto',
+        reason: `${humanGateIdentity(n)} is in human_gates but this run is not interactive - auto-passed instead of parking`,
+        at: Date.now(),
+      };
+      autoPass.push(n);
+    }
+  }
+  return { parked, autoPass };
+}
+
+// The human's own accept/reject, in the same shape a driver's JSON would have been. `gaps`
+// rides straight into the retry path unchanged - a rejected `gate`/`gate:goal` already reads
+// `result.gaps` to brief the next attempt, so a human's reasons reach it exactly the way a
+// model gate's own gaps[] would, with no separate wiring needed.
+export function humanGateResultFromPayload(n, payload) {
+  const field = humanGateVerdictField(n);
+  const p = payload && typeof payload === 'object' ? payload : {};
+  const accept = p.accept === true;
+  const reason = (typeof p.reason === 'string' && p.reason) || (accept ? 'approved by a person (gate:human)' : 'rejected by a person (gate:human)');
+  return {
+    stage_ok: true,
+    ...(field ? { [field]: accept } : {}),
+    ...(field === 'accept' ? { match_pct: accept ? 100 : 0, attacks: [`gate:human: ${reason}`] } : {}),
+    checks: [`human accept/reject: ${reason}`],
+    gaps: Array.isArray(p.gaps) ? p.gaps : [],
+    observations: [],
+    reason,
+    evidence: 'gate:human: a person judged this node directly, not a model',
+  };
 }
 
 // The public shape of goal-gate consensus, trimmed of internal bookkeeping

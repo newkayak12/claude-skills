@@ -59,6 +59,8 @@ import {
   defaultKind,
   normalizeSpec,
   promoteWaitingHuman,
+  promoteHumanGates,
+  autoPassHumanGateResult,
   applyPinAction,
   drainHumanActions,
   computeWriteScope,
@@ -995,7 +997,7 @@ function autoReassign(run, n) {
   return out;
 }
 
-function finishNode(run, n, result, vendorName) {
+export function finishNode(run, n, result, vendorName) {
   delete n.recovery; // historical interruptions remain in n.interruptions
   // A gate that says accept with nothing in checks[] did not fail the work - it failed to
   // do its own job. That is a defect in the judging, not a verdict on the subgoal, so it
@@ -1091,6 +1093,26 @@ function finishNode(run, n, result, vendorName) {
   // model noticed the same thing in prose.
   if (n.stage === 'reduce' && n.state === 'done') {
     n.result = { ...n.result, write_scope: computeWriteScope(run, n) };
+  }
+  // D2 slice 3 (0.29.0): the same treatment, generalized past investigate's own unknowns[] -
+  // any stage's contract may return `questions[]` ({question, to, options?, default, why}, see
+  // openAsk's own comment) and the engine opens the same kind of card for it. Kept as a second
+  // block, not folded into the one above, so investigate's own unknowns[] (and its report shape
+  // on run.unasked) stay exactly as they were for every existing caller and test.
+  if (n.state === 'done' && Array.isArray(result.questions) && result.questions.length) {
+    const decidable = result.questions.filter((q) => q && q.question
+      && ((Array.isArray(q.options) && q.options.length > 1) || q.default !== undefined));
+    if (decidable.length) {
+      if (run.interactive) {
+        for (const askId of openAsk(run, n, decidable)) writeHumanBriefing(run, getNode(run, askId));
+      } else {
+        run.unasked = [...(run.unasked || []), ...decidable.map((q) => ({
+          subgoal_id: n.subgoal_id, node_id: n.node_id, stage: n.stage,
+          question: q.question, owner: q.to || null, options: q.options || null,
+          decided: q.default !== undefined ? q.default : null, why: q.why || null,
+        }))];
+      }
+    }
   }
   // One save, after autoReassign: a rejected gate and the retry chain it opens must land on
   // disk together. Saved separately, the run is 'blocked' on disk for the gap between the two
@@ -1398,9 +1420,9 @@ async function toolGraphOpen(a) {
   knownCwds.add(cwd);
   // .claude/team.json layers under an explicit team_open argument of the same name -
   // the same precedence tm_open's own resolveTeamOptions call gives it (teamconfig.mjs).
-  // Only vendor/allocation/goal_threshold/max_retries/interactive/retry_policy are both a
-  // TEAM_DEFAULTS key and a team_open argument that createRun actually consumes on a single run;
-  // the other eight TEAM_DEFAULTS keys (human_gates, human_scope, max_parallel_teams,
+  // Only vendor/allocation/goal_threshold/max_retries/interactive/retry_policy/human_gates
+  // are both a TEAM_DEFAULTS key and a team_open argument that createRun actually consumes
+  // on a single run; the other seven TEAM_DEFAULTS keys (human_scope, max_parallel_teams,
   // max_depth, qa_rounds, roles, driver_restarts, docs_dir) belong to tm_open's
   // multi-team/TaskManager layer and are not team_open arguments at all.
   const team = resolveTeamOptions(a, readTeamConfig(cwd).config);
@@ -1420,6 +1442,7 @@ async function toolGraphOpen(a) {
     sandbox: a.sandbox || null,
     isolated: a.isolated === true,
     interactive: T.interactive === true,
+    human_gates: Array.isArray(T.human_gates) ? T.human_gates.slice() : [],
     auto_reassign: a.auto_reassign !== false,
     goal_threshold: T.goal_threshold,
     // goal_judges is not a TEAM_DEFAULTS key, so resolveTeamOptions never touches it - it
@@ -1470,10 +1493,17 @@ async function toolGraphNext(a) {
   // point the main session at SOMETHING readable - "what is asked" is the same briefing a fresh
   // agent would have read, not a second document invented for a human.
   const promoted = promoteWaitingHuman(run);
-  if (promoted.length) {
-    for (const n of promoted) writeHumanBriefing(run, n);
+  // gate:human (D2 Task 4): a node whose stage is in run.human_gates never reaches a driver -
+  // interactive parks it exactly like the pin above (same briefing, same tm_inbox/tm_submit
+  // path); non-interactive auto-passes it here and now through the same finishNode every other
+  // submission goes through, so autoReassign and every stage-specific completion hook still run.
+  const { parked: gateParked, autoPass } = promoteHumanGates(run);
+  for (const n of autoPass) finishNode(run, n, autoPassHumanGateResult(n), 'auto');
+  const allParked = [...promoted, ...gateParked];
+  if (allParked.length) {
+    for (const n of allParked) writeHumanBriefing(run, n);
     saveRun(run);
-    record(run.cwd, { event: 'node_waiting_human', run_id: run.run_id, nodes: promoted.map((n) => n.node_id) });
+    record(run.cwd, { event: 'node_waiting_human', run_id: run.run_id, nodes: allParked.map((n) => n.node_id) });
   }
   let ready = readyNodes(run);
 

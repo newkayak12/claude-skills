@@ -10,8 +10,9 @@
 // investigate stage could not settle, graph.mjs's openAsk; this same key also decides, per the
 // 0.27.3 review, whether a MODEL-written `assignee` pin - a shape package's own field or a
 // setgoal subgoal's own field, as opposed to a user's tm_assign - parks a node in waiting_human
-// or is auto-decided past it, graph.mjs's applyHumanPin). human_gates/human_scope are still
-// only design - see the note above PROVISIONAL_MAX_PARALLEL_TEAMS's neighbour, max_depth.
+// or is auto-decided past it, graph.mjs's applyHumanPin). `human_gates` is live as of 0.29.0
+// (graph.mjs's promoteHumanGates) - a list of judging stages a person must accept/reject
+// instead of a model. `human_scope` remains only design.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -42,6 +43,14 @@ export const TEAM_DEFAULTS = Object.freeze({
   // (dispatched to an AI, recorded on the node, listed in tm_inbox's `decided`) instead of
   // parking forever with nobody watching to notice (0.27.3 review, 2026-09-24).
   interactive: false,
+  // gate:human (0.29.0): which judging stages must stop and have a person accept/reject
+  // instead of a model - 'critique', 'gate', 'gate:goal' (or, at the manager layer, 'accept',
+  // 'integrate'). Empty means no gate is configured; naming a non-judging stage (e.g.
+  // 'shape', 'implement') is accepted here but has no effect - promoteHumanGates (graph.mjs)
+  // only acts on a stage with a VERDICT field. Interactive parks the node in waiting_human for
+  // tm_inbox/tm_submit exactly like an ask card; non-interactive auto-passes it (see
+  // autoPassHumanGateResult) rather than blocking a run nobody is watching.
+  human_gates: [],
   qa_rounds: 2,
   roles: { planning: true, qa: true },
   goal_threshold: 90,
@@ -112,6 +121,7 @@ const CHECK = {
   roles: (v) => v && typeof v === 'object' && !Array.isArray(v)
     && Object.entries(v).every(([k, b]) => k in TEAM_DEFAULTS.roles && typeof b === 'boolean'),
   interactive: (v) => typeof v === 'boolean',
+  human_gates: (v) => Array.isArray(v) && v.every((s) => typeof s === 'string' && s.length > 0),
   goal_threshold: (v) => Number.isInteger(v) && v >= 0 && v <= 100,
   max_retries: (v) => Number.isInteger(v) && v >= 0,
   driver_restarts: (v) => Number.isInteger(v) && v >= 0,

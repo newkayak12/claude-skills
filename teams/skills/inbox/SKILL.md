@@ -32,9 +32,22 @@ does. This skill calls it and prints the Output Template below; it makes no deci
 2. Render `cards` first — these are actually parked, waiting on a person right now — then
    `decided` underneath, clearly separated: a `decided` entry never blocks anything, it is a
    record of what the engine chose instead of asking.
-3. Print only what the reply carries. `cards[].acceptance` and `briefing_path` are the full
+3. Three kinds of card park, told apart by `stage`/`human_gate`, and each wants a different
+   `submit` payload: a pinned author stage (`stage` is `implement`/`draft`/`cases`) wants the
+   work done; an `ask` card (`stage: "ask"`) wants one decision per `questions[]` entry
+   (`decisions: [{question, chose}]`); a `human_gate: true` card wants an accept/reject
+   (`{accept: true|false, reason?, gaps?}`) — say which kind a card is before naming what to do
+   with it.
+4. A card's `key` is a TASK ticket (`E-xxxxxxxx/Pn/subgoalId`) for a package's own child-run
+   node, same as ever. A run/task-level judging node has no subgoal to key off (`setgoal`,
+   `plan`, `critique`, `gate:goal`, or — at the manager layer — `shape`/`critique`/`accept`/
+   `integrate`/`gate`/`gate:goal`), so its key's last segment is that node's own `node_id`
+   instead (e.g. `E-xxxxxxxx/P1/critique`, or `E-xxxxxxxx/TASK/critique` for the manager's own
+   graph, `TASK` standing in for "no package" rather than a real STORY id) — pass it to `submit`
+   exactly as given either way.
+5. Print only what the reply carries. `cards[].acceptance` and `briefing_path` are the full
    brief — name the path, don't paste its contents into the conversation.
-4. Empty `cards` and empty `decided` is a normal answer ("nothing waiting"), not an error.
+6. Empty `cards` and empty `decided` is a normal answer ("nothing waiting"), not an error.
 
 ## Output Template
 
@@ -45,6 +58,7 @@ does. This skill calls it and prints the Output Template below; it makes no deci
 |---------------------|--------------------------|--------|-------|
 | E-a1b2c3d4/P2/U1    | ask: which retry policy | shkim  | 10:32 |
 | E-a1b2c3d4/P3/U2    | implement: payment retry | —      | 09:58 |
+| E-a1b2c3d4/TASK/critique | human_gate: critique | —  | 10:40 |
 
 E-a1b2c3d4/P2/U1
   acceptance:
