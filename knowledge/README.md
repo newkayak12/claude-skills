@@ -401,6 +401,12 @@ done, ordered by measured lever size rather than by what is easiest to edit.
 
 [docs/theory.md](docs/theory.md) — the papers and principles behind the rules (RRF, BM25, competency
 questions, reusable holdout, leakage, cross-encoder reranking), and where this plugin departs from them.
+Its §9 compares the engine against [Hindsight](https://github.com/vectorize-io/hindsight): the retrieval
+layer matches point for point (and is stricter in three places), the write layer does not. Two gaps came
+out of it — no time axis on a note, and no notion of a belief strengthening rather than being overwritten —
+and both are parked, because the measured bottleneck is the generation layer's citation discipline, not
+recall. The one live lever is §9.4: `questions.jsonl` is already "the question defined once", so a stored,
+background-rewritten answer per competency question is a shorter path than the chatbot Phase 4 described.
 
 ## Hook
 
