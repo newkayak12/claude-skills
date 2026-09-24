@@ -121,3 +121,25 @@ test('test goes to whichever vendor did not implement the subgoal', () => {
     assert.equal(rankCandidates(run, { node_id: 'test:U1:1', stage: 'test', subgoal_id: 'U1' }, ['claude', 'codex'])[0].vendor, other);
   }
 });
+
+// Gap 1 (judge≠author): audit's author never ran in this run at all - it is the PLAN
+// package's draft/revise, folded away in a sibling child run before the audit run ever
+// opens (taskmanager.mjs's openAudit/planAuthorIdentity). AUTHOR_OF's in-run peer lookup
+// cannot see it, so this run carries it as `external_author` instead - routing.mjs's own
+// half of that plumbing, tested here without any TaskManager involved.
+test('audit routes away from external_author - the PRD author, carried in from a different run - when a peer vendor is free', () => {
+  for (const host of ['claude', 'codex']) {
+    const other = host === 'claude' ? 'codex' : 'claude';
+    const run = { host_vendor: host, host_model: 'm', nodes: [], external_author: { executor: null, vendor: host, model: 'm' } };
+    const ranked = rankCandidates(run, { node_id: 'audit:A1:1', stage: 'audit', subgoal_id: 'A1' }, ['claude', 'codex']);
+    assert.equal(ranked[0].vendor, other, `PRD authored on ${host} -> audit prefers ${other}`);
+    assert.match(ranked.find((r) => r.vendor === host).reason, /same_actor=true/);
+    assert.match(ranked.find((r) => r.vendor === other).reason, /same_actor=false/);
+  }
+});
+
+test('audit with no external_author (a run opened outside the TaskManager) is unaffected', () => {
+  const run = { host_vendor: 'claude', host_model: 'm', nodes: [] };
+  const ranked = rankCandidates(run, { node_id: 'audit:A1:1', stage: 'audit', subgoal_id: 'A1' }, ['claude', 'codex']);
+  assert.ok(ranked.every((r) => /same_actor=false/.test(r.reason)));
+});

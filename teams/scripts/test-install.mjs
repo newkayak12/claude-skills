@@ -31,7 +31,7 @@ test('first install creates team.json (defaults), CLAUDE.md block, conventions, 
     assert.equal(report.actions.team, 'created');
     const team = JSON.parse(readFileSync(join(dir, '.claude', 'team.json'), 'utf8'));
     assert.equal(team.goal_threshold, 90);
-    assert.deepEqual(team.roles, { planning: true, qa: true });
+    assert.deepEqual(team.roles, { planning: true, qa: true, audit: true });
     assert.equal(report.actions.dispatch, 'skipped');
     assert.equal(report.actions.claudeMd, 'created');
     assert.match(readFileSync(join(dir, 'CLAUDE.md'), 'utf8'), /<!-- teams:begin/);
@@ -64,7 +64,7 @@ test('dispatch patterns write teams-dispatch.json once; team overrides land in t
     assert.deepEqual(JSON.parse(readFileSync(join(dir, '.claude', 'teams-dispatch.json'), 'utf8')), { paths: ['src/**'], min_chars: 400 });
     const team = JSON.parse(readFileSync(join(dir, '.claude', 'team.json'), 'utf8'));
     assert.equal(team.goal_threshold, 95);
-    assert.deepEqual(team.roles, { planning: true, qa: false });
+    assert.deepEqual(team.roles, { planning: true, qa: false, audit: true });
     assert.equal(run(dir, home, { dispatch: { paths: ['lib/**'] } }).report.actions.dispatch, 'kept');
   } finally { cleanup(); }
 });
