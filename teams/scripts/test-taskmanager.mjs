@@ -10,7 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, existsSync, readdirSync, realpathSync, symlinkSync, statSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, existsSync, readdirSync, realpathSync, symlinkSync, statSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -2372,6 +2372,200 @@ test('a usage-limit death parks the dispatch on waiting_capacity, spends no rest
     rmSync(f.root, { recursive: true, force: true });
     rmSync(f.drv, { recursive: true, force: true });
   }
+});
+
+// ---------- stall detection: a live driver making no progress (§1, teamconfig.mjs's stall_minutes) ----------
+//
+// stall_minutes reads the mtime of the child's own run file (and ledger) as its progress signal
+// - the same files daemon.mjs's own waitForProgress already watches for this exact child. These
+// tests fake that signal with fs.utimesSync (backdating the file, never waiting real minutes)
+// and fake the driver's own liveness with a real, disposable process (a `sleep` child) whose pid
+// answers process.kill(pid,0) exactly like a wedged driver's would, without this suite waiting
+// on anything it does. serviceStalledDriver/serviceDeadDriver are called directly (imported),
+// the same seam test-taskmanager.mjs already uses for dispatchSettled/autoResumeCapacity/
+// autoRetryPackages above - withTask's HARNESS_TEST_NO_DRIVER means nothing else is writing
+// task.json while these run, so mutating the loaded object and calling the pure function in
+// process is safe.
+
+function aliveSleeper(pid) {
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
+test('a live driver with no progress is flagged once at stall_minutes, not before, and the flag clears the moment progress resumes', async () => {
+  const { serviceStalledDriver } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    await tm.call('tm_next', { task_id }); // opens dispatch:P1:1's child run; no driver spawned under HARNESS_TEST_NO_DRIVER
+    const load = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const prevRoot = process.env.HARNESS_TASKS_DIR;
+    const withRoot = (fn) => { process.env.HARNESS_TASKS_DIR = root; try { return fn(); } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; } };
+
+    const task = load();
+    task.stall_minutes = 1;
+    const n = task.nodes.find((x) => x.node_id === 'dispatch:P1:1');
+    n.child.driver = { pid: process.pid, started_at: Date.now() }; // an always-alive pid: this test process itself
+    const runFile = join(n.child.cwd, '.teams_output', 'broker', 'runs', `${n.child.run_id}.json`);
+    assert.ok(existsSync(runFile), 'the child run file exists the moment the dispatch opened, before any driver touches it');
+
+    // 30s idle against a 1-minute stall_minutes: short of the threshold.
+    const t30 = new Date(Date.now() - 30 * 1000);
+    utimesSync(runFile, t30, t30);
+    assert.equal(withRoot(() => serviceStalledDriver(task, n.child, n.node_id)), false, 'not idle long enough yet');
+    assert.equal(n.child.stalled_since, undefined);
+
+    // 90s idle: past 1x stall_minutes, short of 3x (180s) - flagged once.
+    const t90 = new Date(Date.now() - 90 * 1000);
+    utimesSync(runFile, t90, t90);
+    assert.equal(withRoot(() => serviceStalledDriver(task, n.child, n.node_id)), true, 'past stall_minutes: flagged');
+    assert.ok(Number.isInteger(n.child.stalled_since), 'stalled_since recorded');
+    const firstFlag = n.child.stalled_since;
+
+    // Polled again with the same stale mtime: no duplicate flag, no duplicate ledger event.
+    assert.equal(withRoot(() => serviceStalledDriver(task, n.child, n.node_id)), false, 'already flagged: this poll is a no-op');
+    assert.equal(n.child.stalled_since, firstFlag, 'unchanged');
+
+    const events = await tm.call('tm_events', { task_id });
+    assert.equal(events.events.filter((e) => e.event === 'child_driver_stalled').length, 1, 'recorded once, not once per poll');
+
+    // Progress resumes: touch the run file back to now.
+    utimesSync(runFile, new Date(), new Date());
+    assert.equal(withRoot(() => serviceStalledDriver(task, n.child, n.node_id)), true, 'progress resumed: cleared');
+    assert.equal(n.child.stalled_since, undefined);
+    const events2 = await tm.call('tm_events', { task_id });
+    assert.ok(events2.events.some((e) => e.event === 'child_driver_progress_resumed' && e.node_id === 'dispatch:P1:1'));
+  });
+});
+
+test('a stalled driver is left alone before 3x stall_minutes, and killed (never respawned directly) past it', async () => {
+  const { serviceStalledDriver } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    await tm.call('tm_next', { task_id });
+    const load = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const prevRoot = process.env.HARNESS_TASKS_DIR;
+    const withRoot = (fn) => { process.env.HARNESS_TASKS_DIR = root; try { return fn(); } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; } };
+
+    const task = load();
+    task.stall_minutes = 1;
+    const n = task.nodes.find((x) => x.node_id === 'dispatch:P1:1');
+    // idol-pm-4's own gap was inside a live driver, not a dead one - a real, disposable process
+    // fakes exactly that: a pid this test can kill without killing itself.
+    const sleeper = spawn('sleep', ['300'], { detached: true, stdio: 'ignore' });
+    sleeper.unref();
+    n.child.driver = { pid: sleeper.pid, started_at: Date.now() };
+    const runFile = join(n.child.cwd, '.teams_output', 'broker', 'runs', `${n.child.run_id}.json`);
+    try {
+      // 100s idle: past 1x (60s), short of 3x (180s) - flagged, but the driver stays untouched.
+      const t100 = new Date(Date.now() - 100 * 1000);
+      utimesSync(runFile, t100, t100);
+      assert.equal(withRoot(() => serviceStalledDriver(task, n.child, n.node_id)), true, 'flagged');
+      assert.ok(aliveSleeper(sleeper.pid), 'short of 3x: the driver is left alone');
+      const midEvents = await tm.call('tm_events', { task_id });
+      assert.equal(midEvents.events.filter((e) => e.event === 'child_driver_killed').length, 0, 'no kill yet');
+
+      // 200s idle: past 3x (180s) - killed.
+      const t200 = new Date(Date.now() - 200 * 1000);
+      utimesSync(runFile, t200, t200);
+      assert.equal(withRoot(() => serviceStalledDriver(task, n.child, n.node_id)), true, 'past 3x: killed');
+      await waitFor(() => !aliveSleeper(sleeper.pid), 'the stalled driver to actually exit after SIGTERM');
+
+      const events = await tm.call('tm_events', { task_id });
+      const killed = events.events.filter((e) => e.event === 'child_driver_killed');
+      assert.equal(killed.length, 1);
+      assert.equal(killed[0].reason, 'stalled');
+      assert.equal(killed[0].node_id, 'dispatch:P1:1');
+      assert.equal(events.events.filter((e) => e.event === 'child_driver_stalled').length, 1, 'still just the one stall record from the first poll');
+    } finally {
+      try { process.kill(sleeper.pid, 'SIGKILL'); } catch { /* already gone, or never started */ }
+    }
+  });
+});
+
+test('once a stalled driver is killed, the ordinary dead-driver path respawns it and spends a restart like any other death', async () => {
+  const { serviceStalledDriver, serviceDeadDriver } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    await tm.call('tm_next', { task_id });
+    const load = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const prevRoot = process.env.HARNESS_TASKS_DIR;
+    const withRoot = (fn) => { process.env.HARNESS_TASKS_DIR = root; try { return fn(); } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; } };
+    const prevDriver = process.env.HARNESS_CHILD_DRIVER;
+    const drv = mkdtempSync(join(tmpdir(), 'tm-stall-drv-'));
+    const scriptPath = join(drv, 'fake-driver.mjs');
+    writeFileSync(scriptPath, FAKE_DRIVER_ALIVE); // stays up: this test only checks a fresh one was spawned
+    process.env.HARNESS_CHILD_DRIVER = `node ${scriptPath}`;
+
+    const task = load();
+    task.stall_minutes = 1;
+    const n = task.nodes.find((x) => x.node_id === 'dispatch:P1:1');
+    const sleeper = spawn('sleep', ['300'], { detached: true, stdio: 'ignore' });
+    sleeper.unref();
+    n.child.driver = { pid: sleeper.pid, started_at: Date.now() };
+    const runFile = join(n.child.cwd, '.teams_output', 'broker', 'runs', `${n.child.run_id}.json`);
+    try {
+      const t200 = new Date(Date.now() - 200 * 1000);
+      utimesSync(runFile, t200, t200);
+      assert.equal(withRoot(() => serviceStalledDriver(task, n.child, n.node_id)), true, 'killed for stalling');
+      await waitFor(() => !aliveSleeper(sleeper.pid), 'the stalled driver to exit');
+
+      assert.equal(withRoot(() => serviceDeadDriver(task, n.child, n.node_id)), true, 'the ordinary dead-driver path treats this exactly like any other death');
+      assert.ok(Number.isInteger(n.child.driver.pid) && n.child.driver.pid !== sleeper.pid, 'a fresh driver process');
+      assert.equal(n.child.driver.restarts.length, 1, 'the stall-kill spent a restart, same as a crash');
+      assert.equal(n.child.stalled_since, undefined, 'the fresh driver starts unstalled');
+
+      const events = await tm.call('tm_events', { task_id });
+      assert.ok(events.events.some((e) => e.event === 'child_driver_restarted' && e.node_id === 'dispatch:P1:1' && e.restart === 1));
+    } finally {
+      try { process.kill(sleeper.pid, 'SIGKILL'); } catch { /* already gone */ }
+      try { if (n.child.driver && n.child.driver.pid) process.kill(n.child.driver.pid, 'SIGKILL'); } catch { /* best-effort cleanup */ }
+      if (prevDriver === undefined) delete process.env.HARNESS_CHILD_DRIVER; else process.env.HARNESS_CHILD_DRIVER = prevDriver;
+      rmSync(drv, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------- restart_period_minutes: OTP-style restart intensity (§2) ----------
+
+test('restart_period_minutes: a sliding window forgets old restarts; the default (0) stays a flat, forever counter', async () => {
+  const { serviceDeadDriver } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    await tm.call('tm_next', { task_id });
+    const load = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const prevRoot = process.env.HARNESS_TASKS_DIR;
+    const withRoot = (fn) => { process.env.HARNESS_TASKS_DIR = root; try { return fn(); } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; } };
+    const prevDriver = process.env.HARNESS_CHILD_DRIVER;
+    const drv = mkdtempSync(join(tmpdir(), 'tm-window-drv-'));
+    const scriptPath = join(drv, 'fake-driver.mjs');
+    writeFileSync(scriptPath, FAKE_DRIVER_ALIVE);
+    process.env.HARNESS_CHILD_DRIVER = `node ${scriptPath}`;
+
+    const task = load();
+    task.driver_restarts = 1;
+    task.restart_period_minutes = 1; // a 1-minute sliding window
+    const n = task.nodes.find((x) => x.node_id === 'dispatch:P1:1');
+    const oldRestart = { pid: 999, at: Date.now() - 5 * 60 * 1000, stderr_tail: 'old death' }; // 5 minutes ago: outside the window
+    n.child.driver = { pid: 2147483646, restarts: [oldRestart] }; // a pid nothing holds: dead already, no real kill needed
+    try {
+      const changed = withRoot(() => serviceDeadDriver(task, n.child, n.node_id));
+      assert.equal(changed, true, 'the one prior restart is outside the window: the budget (1) is not yet spent');
+      assert.ok(Number.isInteger(n.child.driver.pid), 'respawned');
+      assert.equal(n.child.driver.restarts.length, 2, 'the old restart is kept on record even though it no longer counts toward the budget');
+
+      // The same history, but flat counting (restart_period_minutes: 0, the default): the old
+      // restart still spends the budget regardless of age - no window to forget it in.
+      const flatTask = load();
+      flatTask.driver_restarts = 1;
+      flatTask.restart_period_minutes = 0;
+      const flatChild = { cwd: n.child.cwd, run_id: n.child.run_id, driver: { pid: 2147483646, restarts: [oldRestart] } };
+      const changedFlat = withRoot(() => serviceDeadDriver(flatTask, flatChild, n.node_id));
+      assert.equal(changedFlat, false, 'flat counting: the same old restart still spends the budget');
+    } finally {
+      try { if (n.child.driver && n.child.driver.pid) process.kill(n.child.driver.pid, 'SIGKILL'); } catch { /* best-effort */ }
+      if (prevDriver === undefined) delete process.env.HARNESS_CHILD_DRIVER; else process.env.HARNESS_CHILD_DRIVER = prevDriver;
+      rmSync(drv, { recursive: true, force: true });
+    }
+  });
 });
 
 test('a driver that exits only after its child run finished folds normally: a crash and an ordinary ending are not the same thing', async () => {

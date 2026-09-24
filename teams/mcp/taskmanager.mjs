@@ -217,6 +217,12 @@ function createTask(a) {
     // dispatch is folded blocked. A usage-limit death never spends this budget - see
     // serviceDeadDriver.
     driver_restarts: T.driver_restarts,
+    // See serviceStalledDriver/serviceDeadDriver and teamconfig.mjs's own comments: stall_minutes
+    // flags (then, at 3x, kills) a driver that is alive but making no progress;
+    // restart_period_minutes turns driver_restarts from a flat forever counter into a sliding
+    // window.
+    stall_minutes: T.stall_minutes,
+    restart_period_minutes: T.restart_period_minutes,
     // Whether the single run a size-S request becomes is opened isolated. It is a tm_open
     // argument because the manager, not the entry skill, is what opens that run.
     isolated: a.isolated === true,
@@ -758,6 +764,7 @@ export function clearCapacity(task, packageId) {
         const fresh = spawnChildDriver(task, 'S', task.s_run, { resume: true, attempt: nextSpawnAttempt(task.s_run) });
         fresh.restarts = restarts;
         task.s_run.driver = fresh;
+        delete task.s_run.stalled_since;
         record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: 'S', pid: fresh.pid, reason: 'reset_capacity' });
       }
       resumed.push('S');
@@ -772,6 +779,7 @@ export function clearCapacity(task, packageId) {
         const fresh = spawnChildDriver(task, n.node_id, n.child, { resume: true, attempt: nextSpawnAttempt(n.child) });
         fresh.restarts = restarts;
         n.child.driver = fresh;
+        delete n.child.stalled_since;
         record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: n.node_id, pid: fresh.pid, reason: 'reset_capacity' });
       }
       resumed.push(n.node_id);
@@ -1520,12 +1528,91 @@ export function serviceDeadDriver(task, child, nodeId) {
   }
   const budget = Number.isInteger(task.driver_restarts) ? task.driver_restarts : 2;
   const priorRestarts = driver.restarts || [];
-  if (priorRestarts.length >= budget) return false; // budget spent: fold it, do not respawn again
+  // OTP-style restart intensity: driver_restarts is a flat, forever counter by default
+  // (restart_period_minutes 0, teamconfig.mjs) - every death this run has ever had counts
+  // against the budget, same as always. >0 makes it a sliding window: only the restarts whose
+  // own `at` (recorded on every entry above) falls inside the last restart_period_minutes count,
+  // so a package that dies once an hour for a week never exhausts a budget sized for "how many
+  // deaths in a row", which is what this was always measuring.
+  const periodMinutes = Number.isInteger(task.restart_period_minutes) ? task.restart_period_minutes : TEAM_DEFAULTS.restart_period_minutes;
+  const countedRestarts = periodMinutes > 0
+    ? priorRestarts.filter((r) => Number.isInteger(r.at) && Date.now() - r.at <= periodMinutes * 60000)
+    : priorRestarts;
+  if (countedRestarts.length >= budget) return false; // budget spent (within the window, if any): fold it, do not respawn again
   const restarts = [...priorRestarts, entry];
   const fresh = spawnChildDriver(task, nodeId, child, { resume: true, attempt: nextSpawnAttempt(child) });
   fresh.restarts = restarts;
   child.driver = fresh;
+  delete child.stalled_since; // a fresh driver has made no progress yet, but it has also not stalled
   record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: nodeId, pid: fresh.pid, restart: restarts.length, budget });
+  return true;
+}
+
+// The mtime of whatever this child's own driver most recently touched - the same directory
+// daemon.mjs's own waitForProgress already watches for this exact child (the broker's run file
+// under .teams_output/broker/runs/), plus its ledger, which is cheap to stat and moves on every
+// node the child's driver finishes even on a poll where the run file itself does not change
+// (queueHumanAction and a few other paths append to the ledger without touching the run's own
+// mtime). board.jsonl is TASK-level, not per-child (taskmanager.mjs's own board.jsonl, not a
+// broker concept), so it is not read here. null when nothing has been written yet.
+function childProgressMtime(child) {
+  if (!child || !child.cwd || !child.run_id) return null;
+  const candidates = [
+    join(child.cwd, '.teams_output', 'broker', 'runs', `${child.run_id}.json`),
+    join(child.cwd, '.teams_output', 'broker', 'ledger.jsonl'),
+  ];
+  let latest = null;
+  for (const p of candidates) {
+    try {
+      const t = statSync(p).mtimeMs;
+      if (latest === null || t > latest) latest = t;
+    } catch { /* not written yet - fine, another candidate (or driver.started_at) covers it */ }
+  }
+  return latest;
+}
+
+// Driver LIVENESS is not driver PROGRESS: a pid that still answers process.kill(pid,0) can be a
+// wedged model, a provider hang with no error text, or a tool call that never returns - none of
+// which serviceDeadDriver ever sees, because it only runs once the pid is actually gone. This is
+// the Temporal-heartbeat analogue for a driver this server does not control the inside of:
+// stall_minutes (teamconfig.mjs, default 20, 0 disables) is read against childProgressMtime, the
+// same files daemon.mjs's waitForProgress already watches for this child.
+//
+// idol-pm-4 (2026-09-2x) had a legitimate 16-minute gap between tool calls mid-run - killing on
+// the first sign of quiet would have cut off a driver that was still working. So the first
+// threshold only RECORDS the stall once (child_driver_stalled; child.stalled_since guards the
+// repeat) and does nothing else. Only past 3x stall_minutes with STILL no progress does this
+// kill the driver (child_driver_killed, reason 'stalled') - and it stops there. It does not
+// respawn: the very next poll finds driverAlive() false and serviceDeadDriver's own path takes
+// over, exactly as it would for a crash, spending a restart the same way.
+//
+// Returns true when it changed anything (so the caller knows to persist the task), same
+// contract as serviceDeadDriver.
+export function serviceStalledDriver(task, child, nodeId) {
+  const driver = child.driver;
+  if (!driver || !driverAlive(driver)) return false; // dead is serviceDeadDriver's job, not this one
+  const stallMinutes = Number.isInteger(task.stall_minutes) ? task.stall_minutes : TEAM_DEFAULTS.stall_minutes;
+  if (!stallMinutes) return false; // 0 disables the check
+  const run = loadRun(child.cwd, child.run_id);
+  const cs = run ? runState(run) : { state: 'missing' };
+  if (cs.state !== 'running') return false; // nothing left to make progress on
+  const progressAt = childProgressMtime(child) ?? driver.started_at ?? Date.now();
+  const idleMs = Date.now() - progressAt;
+  const stallMs = stallMinutes * 60000;
+  if (idleMs < stallMs) {
+    if (!child.stalled_since) return false; // never flagged: nothing to clear
+    delete child.stalled_since;
+    record(task, { event: 'child_driver_progress_resumed', task_id: task.run_id, node_id: nodeId, pid: driver.pid });
+    return true;
+  }
+  if (idleMs >= stallMs * 3) {
+    killDriver(driver);
+    record(task, { event: 'child_driver_killed', task_id: task.run_id, node_id: nodeId, pid: driver.pid, reason: 'stalled', idle_minutes: Math.round(idleMs / 60000) });
+    return true;
+  }
+  if (child.stalled_since) return false; // already recorded once; wait for a resume or the kill threshold
+  child.stalled_since = Date.now();
+  record(task, { event: 'child_driver_stalled', task_id: task.run_id, node_id: nodeId, pid: driver.pid, idle_minutes: Math.round(idleMs / 60000) });
   return true;
 }
 
@@ -1797,7 +1884,7 @@ export function dispatchSettled(task, n) {
 // convention.
 export function serviceSRun(task) {
   if (!task.s_run || !task.s_run.driver) return false;
-  return serviceDeadDriver(task, task.s_run, 'S');
+  return serviceDeadDriver(task, task.s_run, 'S') || serviceStalledDriver(task, task.s_run, 'S');
 }
 
 // The child's account, read from its file. This is the only place the manager touches a
@@ -2534,6 +2621,8 @@ const TOOLS = [
         isolated: { type: 'boolean', description: 'Passed to the graph run this task opens (the single run of a size-S request, or each package child run). true only when you created or were handed a private worktree holding this run alone.' },
         mixed: { type: 'boolean', description: 'Passed the same way isolated is, to the same size-S run. Default true. false forbids the other kind of work entirely - a develop-flow request with a document subgoal fails at setgoal instead of quietly running one. Has no effect on an L task: every package is already mixed:true.' },
         driver_restarts: { type: 'integer', description: 'default 2: how many times a package or size-S driver that died mid-run is respawned on the SAME run_id before the dispatch folds blocked. A usage-limit death never spends this - it parks on waiting_capacity for tm_retry({reset_capacity:true}) instead.' },
+        stall_minutes: { type: 'integer', description: 'default 20, also settable in .claude/team.json. A driver can be alive (its pid answers) and still be making no progress - this is the "no progress" signal, read against the mtime of the files this child\'s own run writes. Idle this long flags the dispatch once (stalled_since, cleared the moment progress resumes); idle 3x this long kills the driver and lets the ordinary dead-driver path respawn it, spending a restart. 0 disables the whole check.' },
+        restart_period_minutes: { type: 'integer', description: 'default 0 (a flat, forever counter - today\'s behavior), also settable in .claude/team.json. >0 turns driver_restarts into a sliding window in minutes: only restarts within the last restart_period_minutes count toward the budget, so a driver that dies rarely never exhausts a budget sized for "how many deaths in a row".' },
         interactive: { type: 'boolean', description: 'default false, also settable in .claude/team.json. Passed to every child run. When a planning subgoal\'s investigate stage comes back with a decision it could not settle from any source but CAN name candidates for, true opens an `ask` card between investigate and draft and parks that run in waiting_human until a person picks - tm_inbox lists it (with its questions and options), tm_submit({key, payload:{decisions}}) answers it. false decides by default and records the questions on the run instead, so the report can show what nobody was asked.' },
         goal_threshold: { type: 'integer', description: 'default 90: the manager\'s own goal gate must report match_pct at or above this to accept, and it is passed through to every child run as its own goal_threshold. A gate that says accept with 40% match is reporting a partial result as a pass. 0 accepts on the verdict alone.' },
         goal_judges: { type: 'integer', description: 'default 1: independent judges on EVERY child run\'s own goal gate (each package\'s dispatch, and the one run a size-S task opens). >1 opens that many sibling gate nodes per round, routed to different identities where possible, and accepts only if every judge accepts at or above goal_threshold - the same mechanism team_open documents (default 2 there). The default stays 1 here, matching every run this manager has ever opened, so an existing project sees no change in judge count or cost unless it asks for more. This is the child run\'s own gate, not the manager\'s own top-level gate:goal, which is a separate, single-judge mechanism unaffected by this option.' },
@@ -2558,6 +2647,7 @@ const TOOLS = [
         sandbox: { type: 'string' }, max_retries: { type: 'number' },
         isolated: { type: 'boolean' }, mixed: { type: 'boolean' },
         driver_restarts: { type: 'integer' }, goal_threshold: { type: 'integer' }, goal_judges: { type: 'integer' },
+        stall_minutes: { type: 'integer' }, restart_period_minutes: { type: 'integer' },
       },
       required: ['request', 'cwd'],
     },
@@ -3220,8 +3310,9 @@ function toolNextSRun(task) {
   const s = task.s_run;
   const run = loadRun(s.cwd, s.run_id);
   const cs = run ? runState(run) : { state: 'missing', counts: {} };
-  if (cs.state === 'running' && s.driver && !driverAlive(s.driver)) {
-    if (serviceDeadDriver(task, s, 'S')) saveRun(task);
+  if (cs.state === 'running' && s.driver) {
+    if (!driverAlive(s.driver)) { if (serviceDeadDriver(task, s, 'S')) saveRun(task); }
+    else if (serviceStalledDriver(task, s, 'S')) saveRun(task);
   }
   const driver = s.driver || null;
   const out = {
@@ -3237,6 +3328,7 @@ function toolNextSRun(task) {
   };
   if (driver) out.driver = { pid: driver.pid, alive: driverAlive(driver), log: driver.log, ...((driver.restarts || []).length ? { restarts: driver.restarts.length } : {}) };
   if (s.waiting_capacity) out.waiting_capacity = s.waiting_capacity;
+  if (s.stalled_since) out.stalled_since = s.stalled_since;
   if (cs.state !== 'running') {
     out.nodes = run ? run.nodes.filter((x) => x.result).map((x) => ({
       node_id: x.node_id,
@@ -3307,6 +3399,7 @@ export function serviceRunningDispatches(task) {
   for (const n of task.nodes) {
     if (n.stage !== 'dispatch' || n.state !== 'running' || !n.child || !n.child.driver) continue;
     if (serviceDeadDriver(task, n.child, n.node_id)) serviced++;
+    else if (serviceStalledDriver(task, n.child, n.node_id)) serviced++;
   }
   return serviced;
 }
@@ -3354,12 +3447,14 @@ function toolNext(a) {
     const driver = n.child.driver || null;
     const alive = driverAlive(driver);
     const waiting = n.child.waiting_capacity || null;
+    const stalled = n.child.stalled_since || null;
     const restarts = (driver && driver.restarts) || [];
     const fold = `tm_submit({task_id, node_id: "${n.node_id}"})`;
     let next;
     if (childState !== 'running') next = fold;
     else if (!driver) next = `team_next({run_id: "${n.child.run_id}", cwd: "${n.child.cwd}"}) and drive it; tm_submit this node when complete`;
     else if (waiting) next = `waiting on provider capacity (${waiting.reason.slice(0, 160)}); tell the user the reset time and stop. tm_retry({task_id, package_id: "${n.subgoal_id}", reset_capacity:true}) resumes it`;
+    else if (alive && stalled) next = `its driver process (pid ${driver.pid}) is alive but has made no progress since ${new Date(stalled).toISOString()} (stall_minutes); poll tm_next - past 3x stall_minutes it is killed and respawned on its own`;
     else if (alive) next = `its driver process (pid ${driver.pid}) is running this child: wait; poll tm_next; do not drive this child yourself`;
     else next = `driver died and the restart budget (${budget}) is spent: ${fold} folds it as blocked with every attempt's stderr, then tm_retry({package_id: "${n.subgoal_id}"}) reopens it (or reopen the task with child_driver "inline" to drive children yourself)`;
     return {
@@ -3371,6 +3466,7 @@ function toolNext(a) {
       child_state: childState,
       ...(driver ? { driver: { pid: driver.pid, alive, log: driver.log, ...(restarts.length ? { restarts: restarts.length } : {}) } } : {}),
       ...(waiting ? { waiting_capacity: waiting } : {}),
+      ...(stalled ? { stalled_since: stalled } : {}),
       next,
     };
   });
@@ -3474,6 +3570,7 @@ function toolSubmitHuman(task, a) {
     const fresh = spawnChildDriver(task, dispatch.node_id, dispatch.child, { resume: true, attempt: nextSpawnAttempt(dispatch.child) });
     fresh.restarts = restarts;
     dispatch.child.driver = fresh;
+    delete dispatch.child.stalled_since;
     saveRun(task);
     record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: dispatch.node_id, pid: fresh.pid, reason: 'human_submitted' });
   }
@@ -3588,7 +3685,8 @@ function toolStatus(a) {
       flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),
       s_run: { cwd: task.s_run.cwd, run_id: task.s_run.run_id,
         ...(task.s_run.driver ? { driver: { ...task.s_run.driver, alive: driverAlive(task.s_run.driver) } } : {}),
-        ...(task.s_run.waiting_capacity ? { waiting_capacity: task.s_run.waiting_capacity } : {}) },
+        ...(task.s_run.waiting_capacity ? { waiting_capacity: task.s_run.waiting_capacity } : {}),
+        ...(task.s_run.stalled_since ? { stalled_since: task.s_run.stalled_since } : {}) },
       packages: [],
       daemon: task.daemon ? { pid: task.daemon.pid, alive: driverAlive(task.daemon), log: task.daemon.log, stderr: task.daemon.stderr, spawn_count: task.daemon.spawn_count, restarts: task.daemon.restarts || 0, exhausted: !!task.daemon.exhausted, stderr_tail: driverStderrTail(task.daemon) } : null,
       team: task.team || null,
