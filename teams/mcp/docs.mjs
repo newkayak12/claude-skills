@@ -12,6 +12,7 @@
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { storyLabel } from './taskmanager.mjs';
+import { loadRun } from './graph.mjs';
 import {
   epicKey, storyKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
   storyTicketState, storyTaskProgress, epicBoardRows,
@@ -203,11 +204,82 @@ export function renderGoalGate(task) {
   return L.join('\n') + '\n';
 }
 
+function packageTitle(task, id) {
+  const pkg = ((task.spec && task.spec.packages) || []).find((p) => String(p.id) === String(id));
+  return pkg ? pkg.title : String(id);
+}
+
+// §B.2 (Scrum Guide mapping audit: no retro) - the retro bridge. Pure, like every other builder
+// in this file: reads task.nodes/task.spec and, best-effort, every dispatch's own child run for
+// its unasked[] (graph.mjs's openAsk/reviewIndependence sibling mechanism - a run that decided a
+// question by default rather than asking records it there), and returns the same
+// {retrospective, next_backlog} shape both renderReport's prose and renderRetro's JSON build
+// from, so the two can never say something different about the same task.
+export function buildRetro(task) {
+  const packageIds = [...new Set(task.nodes.filter((n) => n.stage === 'dispatch').map((n) => n.subgoal_id))];
+  const whatFailed = task.nodes
+    .filter((n) => ['failed', 'skipped', 'unreachable'].includes(n.state) && n.result)
+    .map((n) => ({ node_id: n.node_id, stage: n.stage, package_id: n.subgoal_id || null, reason: String((n.result && n.result.reason) || '').slice(0, 300) }));
+  const retries = packageIds
+    .map((id) => ({ package_id: id, attempts: task.nodes.filter((n) => n.stage === 'dispatch' && n.subgoal_id === id).length }))
+    .filter((r) => r.attempts > 1);
+  const defectsLeft = (task.unresolved_defects || []).map((d) => ({ title: d.title, evidence: d.evidence || '', reporter: d.reporter || '' }));
+  const unaccepted = [];
+  for (const id of packageIds) {
+    const accepts = task.nodes.filter((n) => n.stage === 'accept' && n.subgoal_id === id);
+    const latest = accepts[accepts.length - 1];
+    const ok = !!(latest && latest.state === 'done' && latest.result && latest.result.accept === true);
+    if (!ok) {
+      unaccepted.push({
+        id, title: packageTitle(task, id),
+        reason: latest ? String((latest.result && latest.result.reason) || `state: ${latest.state}`) : 'never dispatched',
+      });
+    }
+  }
+  const openQuestions = [];
+  for (const n of task.nodes.filter((x) => x.stage === 'dispatch' && x.child)) {
+    try {
+      const child = loadRun(n.child.cwd, n.child.run_id);
+      for (const q of (child && Array.isArray(child.unasked) ? child.unasked : [])) openQuestions.push({ package_id: n.subgoal_id, ...q });
+    } catch { /* worktree may be long gone by report time - evidence, not a dependency */ }
+  }
+  return {
+    task_id: task.run_id,
+    epic_key: epicKey(task.run_id),
+    request: String(task.request || ''),
+    ...(Array.isArray(task.requests) ? { requests: task.requests } : {}),
+    retrospective: {
+      what_failed: whatFailed,
+      retries,
+      defects_left: defectsLeft,
+      ...(task.budget_stopped ? { budget_stopped: task.budget_stopped } : {}),
+    },
+    next_backlog: {
+      unaccepted_packages: unaccepted,
+      unresolved_defects: defectsLeft,
+      open_questions: openQuestions,
+    },
+  };
+}
+
+export function renderRetro(task) {
+  return `${JSON.stringify(buildRetro(task), null, 2)}\n`;
+}
+
 export function renderReport(task) {
   const n = task.nodes.find((x) => x.stage === 'report' && x.state === 'done');
   const key = epicKey(task.run_id);
   const L = [frontmatter(key, 'DONE', task), '# Report', ''];
   L.push(String((n.result && n.result.handoff) || ''));
+  const retro = buildRetro(task);
+  L.push('', '## Retrospective', '', 'What failed and why:');
+  L.push(bullets(retro.retrospective.what_failed.map((f) => `${f.node_id} (${f.stage}): ${f.reason}`)));
+  L.push('', 'Retries:', bullets(retro.retrospective.retries.map((r) => `${r.package_id}: ${r.attempts} attempts`)));
+  L.push('', 'Defects left:', bullets(retro.retrospective.defects_left.map((d) => d.title)));
+  L.push('', '## Next backlog', '', 'Unaccepted packages:');
+  L.push(bullets(retro.next_backlog.unaccepted_packages.map((p) => `${p.id} (${p.title}): ${p.reason}`)));
+  L.push('', 'Unresolved defects:', bullets(retro.next_backlog.unresolved_defects.map((d) => d.title)));
+  L.push('', 'Open questions:', bullets(retro.next_backlog.open_questions.map((q) => q.question || JSON.stringify(q))));
   return L.join('\n') + '\n';
 }
 
@@ -230,7 +302,10 @@ export function renderAll(task) {
   if (task.qa_pkg) files[paths.qa] = renderQa(task);
   if (task.audit_pkg) files[paths.audit] = renderAudit(task);
   if (task.nodes.some((n) => n.stage === 'gate' && n.subgoal_id === null && n.result)) files[paths.goalGate] = renderGoalGate(task);
-  if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) files[paths.report] = renderReport(task);
+  if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) {
+    files[paths.report] = renderReport(task);
+    files[paths.retro] = renderRetro(task);
+  }
   return files;
 }
 

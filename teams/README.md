@@ -587,8 +587,8 @@ validator is ignored rather than applied, and recorded as a note — `tm_status`
 the `tm_open` path, `team_status`'s `config_notes` on the `team_open` path (present only when
 there is at least one note; it is the run's own persisted copy of `resolveTeamOptions`' notes,
 not a live re-check). The schema is `TEAM_DEFAULTS`/`CHECK` in
-[`mcp/teamconfig.mjs`](mcp/teamconfig.mjs) — 12 keys, nine of which actually change behavior
-today, plus a reader-status column: whether each key reaches `tm_open`, `team_open`, or both.
+[`mcp/teamconfig.mjs`](mcp/teamconfig.mjs) — 16 keys, plus a reader-status column: whether each
+key reaches `tm_open`, `team_open`, or both.
 `team_open`'s `inputSchema` only accepts a subset of `TEAM_DEFAULTS`' names in the first place —
 a key it does not accept as an argument at all cannot be reached from `team.json` on that path
 either, no matter what `resolveTeamOptions` resolves.
@@ -603,8 +603,11 @@ either, no matter what `resolveTeamOptions` resolves.
 | `stall_minutes` | `20` | yes | `tm_open` only | A driver can be alive (its pid answers `process.kill(pid,0)`) and still be making no progress — a wedged model, a provider hang with no error, a tool call that never returns. `serviceStalledDriver` (`taskmanager.mjs`) reads this against the mtime of the same files `daemon.mjs`'s own `waitForProgress` already watches for that child (its broker run file, plus its ledger). Idle this long flags the dispatch once (`stalled_since`, recorded as `child_driver_stalled`, cleared — `child_driver_progress_resumed` — the moment progress resumes); idle 3x this long kills the driver (`child_driver_killed`, `reason: 'stalled'`) and leaves the respawn to the ordinary dead-driver path (`serviceDeadDriver`), which spends a restart exactly as it would for a crash. The first threshold never kills on its own — idol-pm-4 had a legitimate 16-minute gap between tool calls mid-run. `0` disables the whole check. Not a `team_open` argument — `team_open` has no driver-restart concept either, same as `driver_restarts`. |
 | `restart_period_minutes` | `0` | yes | `tm_open` only | `driver_restarts` is a flat, forever counter by default (`0` here — today's behavior: every death this run has ever had counts against the budget). `>0` makes it an OTP-style sliding window in minutes: `serviceDeadDriver` only counts restarts whose own timestamp (`driver.restarts[].at`, already recorded on every death) falls inside the last `restart_period_minutes`, so a package that dies once an hour for a week never exhausts a budget sized for "how many deaths in a row". Not a `team_open` argument, for the same reason `driver_restarts` is not. |
 | `docs_dir` | `.teams_output/team` | yes | `tm_open` only | Where `tm_docs`/`tickets.mjs` render the phase-document tree (`INDEX.md` and friends). Not a `team_open` argument or concept — `team_open` writes no phase-document tree. |
+| `plugin_dirs` | `[]` | yes | `tm_open` only | Extra `--plugin-dir` paths every child driver and judge session is given (`driverArgv`/`judgeArgv`), on top of the ones `pluginroots.mjs` resolves for the skills the method tables name (v0.18.0). Not a `team_open` argument — `team_open` runs entirely inside the caller's own session, with no child driver or judge process of its own to hand a plugin dir to. |
 | `max_parallel_teams` | `2` | yes | `tm_open` only | Caps how many develop STORY dispatches `tm_next` opens at once (`taskmanager.mjs`'s `toolNext`, ~line 2256/2268); phase-Team packages (PLAN/QA/audit) are exempt. `2` is a provisional default, not a measurement — see `PROVISIONAL_MAX_PARALLEL_TEAMS` in `teamconfig.mjs`. Not a `team_open` argument. |
-| `roles` | `{planning:true, qa:true}` | yes | `tm_open` only | Both ON by default since 0.17.0. `planning` opens the PLAN phase-Team (draft → revise → gate) before `shape` and the planning-audit phase-Team after integration; `qa` opens the QA phase-Team (cases → execute → gate) between `integrate` and `gate:goal`. Only a size-L task runs them — a size-S task delegates to one graph run and skips both (known gap, see v0.17.0). Not a `team_open` argument. |
+| `roles` | `{planning:true, qa:true, audit:true}` | yes | `tm_open` only | `planning`/`qa` ON by default since 0.17.0. `planning` opens the PLAN phase-Team (draft → revise → gate) before `shape`; `qa` opens the QA phase-Team (cases → execute → gate) between `integrate` and `gate:goal`. `audit` (new) is its own switch on the planning-audit phase-Team, which used to ride entirely on `roles.planning` — still ON by default and still requires `roles.planning` too (the audit is planning's own second pass, so it can never run without it), but a project can now keep the PRD without the post-integration cross-check via `{"roles": {"audit": false}}`. Only a size-L task runs any of the three — a size-S task delegates to one graph run and skips them all (known gap, see v0.17.0). Not a `team_open` argument. |
+| `budget_usd` | `null` | yes | `tm_open` only | Unlimited by default. Spend is summed each daemon tick from every driver's own `claude -p --output-format stream-json` log under this task (`drivers/*.stream.jsonl`, the `result` events' `total_cost_usd`, restarts included). At 80% spent, `enforceBudget` (`taskmanager.mjs`) records one warning (`tm_status`'s `budget.warn`); at 100%, no new package is dispatched — a package already running still finishes — and once nothing is left running, a fresh `integrate` opens over just the accepted packages (`reintegrateBehind`, the same mechanism a filed defect or a repair already uses), naming the rest in the report's "Next backlog" instead of dropping them silently. Whichever of `budget_usd`/`timebox_minutes` is closer to its own limit decides the stop; either alone is a real one. Not a `team_open` argument — `team_open` opens a single graph run with no package/driver concept of its own for this to bound. |
+| `timebox_minutes` | `null` | yes | `tm_open` only | The same stop condition `budget_usd` is, on a clock instead of a dollar figure — minutes since `tm_open`. See `budget_usd`'s own row for exactly what 80%/100% do. Not a `team_open` argument, for the same reason `budget_usd` is not. |
 | `interactive` | `false` | yes | `tm_open` + `team_open` | Whether this run stops and waits for a person, or decides by default and records what it would have asked. Gates two things: `investigate`'s `ask` card (0.28.0, `graph.mjs`'s `openAsk`), and — as of the 0.27.3 review — a MODEL-written `assignee` pin (a shape package's own field, reaching `tm_open`'s child runs via `subgoal_assignee`, or a setgoal subgoal's own field on either path). `true` parks the pinned node in `waiting_human`; `false` (the default) auto-decides it instead — the node dispatches to an AI as if nothing had been written, and the would-be pin is recorded on the node (`auto_decided_pin`) and surfaced in `tm_inbox`'s `decided` section. A person's own `tm_assign` pin is a different source (marked `{by: 'user'}`, `graph.mjs`'s `applyHumanPin`) and always parks regardless of this key - the user is present by definition. |
 | `max_depth` | `2` | no | `tm_open` only | recorded-but-inert — declared and validated, but nothing enforces it yet. This becomes the depth cap on a child run re-decomposing itself; see `docs/plans/2026-09-21-teams-server-owns-the-loop.md` §3. Not a `team_open` argument. |
 | `qa_rounds` | `2` | no | `tm_open` only | recorded-but-inert — not read anywhere. Not a `team_open` argument. |
@@ -615,6 +618,36 @@ descriptions — but are not part of this schema: as of this writing they can on
 explicit call argument each time, never pinned in `.claude/team.json`. `team_open` keeps its
 own `goal_judges` default of 2 regardless of what a project's `team.json` contains — a
 `goal_judges` key in that file is simply an unrecognized key, ignored like any other.
+
+## Sprint: backlog, budget/timebox, retro
+
+The `sprint` skill wraps `tm_open` plus the pieces below into one Scrum-shaped run - `requests`
+for the backlog, `budget_usd`/`timebox_minutes` for the box, the existing `tm_board`/viewer for
+the daily look, the report for the review, and `retro.json` plus `context_from` for the retro.
+None of it is new mechanism outside `tm_open` itself; this section is what each piece does.
+
+- **`requests: [...]`** — `tm_open` takes `request` (one string) XOR `requests` (an array of
+  strings, priority = array order, item 0 highest); passing both, or neither, is refused.
+  `requests` becomes the task's single composed `request` text (`"[backlog priority N] ..."` per
+  item) that size/shape/PLAN already read, plus the raw array on `task.requests` for shape's own
+  briefing and the retro. `shape` is told to set each package's existing `priority` field
+  consistent with backlog order — a package serving only a low-priority item should get dispatched
+  last, so it is the one left un-dispatched if the budget/timebox runs out first
+  (`advanceDispatches` already dispatches ascending `priority` first). Single `request` is
+  unchanged: this whole path only runs when `requests` was actually given.
+- **`budget_usd` / `timebox_minutes`** — see the Configuration table above. `tm_status`'s
+  `budget` field (present only when either is set) carries `{pct, over, warn, spend,
+  elapsed_minutes}` live.
+- **the retro bridge** — once `report` is done, `docs.mjs`'s `renderRetro` writes `retro.json`
+  beside `80-report.md` (same `docs_dir`): `retrospective` (what failed and why, retries, defects
+  left) and `next_backlog` (unaccepted packages, unresolved defects, open questions nobody
+  answered - read, best-effort, off every dispatched package's own child run's `unasked[]`).
+  `80-report.md` carries the same two sections in prose. `tm_open({context_from: "<prior
+  task_id or E-xxxxxxxx>"})` reads that prior task's `retro.json` and folds it into the new
+  task's `context` (`priorRetroContext`, `taskmanager.mjs`) - best-effort: a prior task with no
+  report yet, or a ref that does not resolve, leaves `context` untouched rather than failing
+  `tm_open`. The new task's own `requests` still has to be written in the caller's own words;
+  `context_from` hands over what happened, not a ready-made backlog.
 
 ## Watching a task
 
