@@ -499,10 +499,23 @@ function retryShape(task, feedback) {
   return { task: saveRun(task), attempt, reason: '' };
 }
 
+// The dispatch that opened this package in the CURRENT shape round: expandPackages gives every
+// first dispatch of a round the live critique as a dep. A reshape leaves the old round's nodes
+// skipped in place, so "the first dispatch of this package" is the discarded round's.
+function roundDispatch(task, pkgId) {
+  const critique = task.nodes.filter((n) => n.stage === 'critique' && n.state !== 'skipped').pop();
+  const mine = task.nodes.filter((x) => x.subgoal_id === pkgId && x.stage === 'dispatch');
+  return (critique && mine.find((x) => x.deps.includes(critique.node_id))) || mine[0] || null;
+}
+
 function retryPackage(task, pkgId, feedback) {
   const prior = task.nodes.filter((n) => n.subgoal_id === pkgId && n.stage === 'accept');
-  const attempt = prior.length + 1;
-  if (attempt > task.max_retries + 1) {
+  const attempt = Math.max(0, ...prior.map((n) => n.attempt || 1)) + 1;
+  // The budget is per shape round. idol-pm-4 (2026-09-23) reshaped twice, and counting every
+  // accept node ever pushed spent a retry of each package on rounds it never ran in.
+  const first = roundDispatch(task, pkgId);
+  const spent = attempt - ((first && first.attempt) || 1);
+  if (spent > task.max_retries) {
     const dead = task.nodes.filter((n) => n.subgoal_id === pkgId && n.state === 'failed' && !n.final);
     // Settle first, save second: an object literal evaluates left to right, and a save that
     // runs before the settling writes the unsettled graph.
@@ -522,7 +535,9 @@ function retryPackage(task, pkgId, feedback) {
       n.result = { stage_ok: false, reason: `superseded by attempt ${attempt}` };
     }
   }
-  const first = task.nodes.find((x) => x.subgoal_id === pkgId && x.stage === 'dispatch');
+  // Deps come from this round's dispatch. Copying the package's first-ever dispatch wired
+  // idol-pm-4's retries to `critique` and `accept:P1:1` - both skipped by the reshape - so four
+  // retries sat pending forever and the daemon ended the task blocked with budget left.
   const baseDeps = first ? first.deps.slice() : ['critique'];
   const accept = pushChain(task, PACKAGE_CHAIN, pkgId, attempt, baseDeps, [], { feedback: feedback || '' });
   for (const n of task.nodes) {

@@ -26,7 +26,9 @@ const WS = resolve(WS_ARG);
 const GOAL = CASE.startsWith('goal-');
 const SEAM = CASE === 'seam' || CASE === 'seam-flat' || CASE === 'seam-silent';
 const TRAP = CASE === 'trap';
-const KIND = /code/.test(CASE) ? 'code' : 'docs';
+// The planning case: an empty repository and a one-line product goal (bench.sh `idol`).
+const PM = CASE === 'idol' || CASE === 'awake';
+const KIND = /code/.test(CASE) || PM ? 'code' : 'docs';
 const MONO = !CASE.endsWith('-flat');
 
 const env = { ...process.env }; delete env.CLAUDECODE;
@@ -599,6 +601,43 @@ if (SEAM) {
     const r3 = runCli(['status', 'doesnotexist', '--state', st]);
     return r1.code === 0 && r2.code === 0 && /already queued h1/.test(r2.out) && r3.code === 6;
   })();
+} else if (PM) {
+  // The planning path, stage by stage, from the manager's own record: every idol run until
+  // idol-pm-4 was scored against the docs criteria (api_exports, adr_shape...) because the case
+  // name carries no "code" - a 4/9 that measured nothing the case exists for. What is asked here
+  // is how far down planning -> shape -> critique -> packages -> integrate the run got, and
+  // whether what it integrated runs.
+  const root = join(WS, '.harness-tasks');
+  let task = null;
+  for (const id of ls(root)) { try { task = JSON.parse(read(join(root, id, 'task.json'))); } catch { /* not written yet */ } if (task) break; }
+  const nodes = (task && task.nodes) || [];
+  const latest = (pred) => nodes.filter(pred).at(-1);
+  const plan = latest((n) => n.stage === 'dispatch' && n.subgoal_id === 'PLAN' && n.state === 'done');
+  const stories = (plan && plan.result && plan.result.user_stories) || [];
+  const docs = ((plan && plan.result && plan.result.prd_paths) || []).filter((f) => !/investigate/i.test(f));
+  crit.planning_docs = docs.length > 0 && docs.some((f) => /^##\s+User stories/im.test(read(join(WS, f)) || ''));
+  crit.user_stories = stories.length > 0;
+  crit.critique_passed = nodes.some((n) => n.stage === 'critique' && n.state === 'done' && n.result && n.result.sound === true);
+  const pkgs = ((task && task.spec && task.spec.packages) || []).map((p) => String(p.id));
+  const acceptedOf = (id) => { const a = latest((n) => n.stage === 'accept' && n.subgoal_id === id && n.state !== 'skipped'); return !!(a && a.state === 'done'); };
+  const dispatched = pkgs.filter((id) => nodes.some((n) => n.stage === 'dispatch' && n.subgoal_id === id && ['done', 'failed'].includes(n.state)));
+  const accepted = pkgs.filter(acceptedOf);
+  crit.packages_dispatched = dispatched.length > 0;
+  crit.packages_accepted = pkgs.length > 0 && accepted.length === pkgs.length;
+  crit.integrated = nodes.some((n) => n.stage === 'integrate' && n.state === 'done');
+  const pj = read(join(TREE, 'package.json'));
+  let testScript = null; try { testScript = pj && JSON.parse(pj).scripts && JSON.parse(pj).scripts.test; } catch { /* not JSON */ }
+  if (crit.integrated && existsSync(join(TREE, 'Package.swift'))) {
+    // awake: SwiftPM only - the Command Line Tools are all the request allows.
+    crit.tests_pass = sh('swift', ['build'], TREE, undefined, 900_000).code === 0 && sh('swift', ['test'], TREE, undefined, 900_000).code === 0;
+  } else if (crit.integrated && testScript) {
+    sh('npm', ['install', '--no-audit', '--no-fund', '--silent'], TREE, undefined, 300_000);
+    crit.tests_pass = sh('npm', ['test', '--silent'], TREE, undefined, 600_000).code === 0;
+  } else crit.tests_pass = crit.integrated ? 'n/a (no test script)' : 'n/a (nothing integrated)';
+  crit.pm_detail = {
+    stories: stories.length, planning_docs: docs, shape_attempts: nodes.filter((n) => n.stage === 'shape').length,
+    packages: pkgs.length, dispatched: dispatched.length, accepted, not_accepted: pkgs.filter((id) => !acceptedOf(id)),
+  };
 } else if (GOAL) {
   // A one-line goal: the harness decided the split, the contracts and the document set, so
   // nothing here names a path. What is checked: the tree works, the goal is met (judged), and

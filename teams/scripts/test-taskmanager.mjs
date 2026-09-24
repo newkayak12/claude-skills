@@ -1861,6 +1861,46 @@ test('a child whose goal gate rejected fails the dispatch; tm_retry reopens it i
   }, { auto_reassign: false });
 });
 
+// idol-pm-4 (2026-09-23): after two reshapes, every package retry was wired to the FIRST
+// round's `critique` and `accept:P1:1` - skipped nodes that never finish - and each reshape had
+// already spent a retry of every package. Four retries sat pending and the task ended blocked.
+test('a package retry after a reshape waits on the live round and keeps its full budget', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2 modules'], handoff: 'two modules' }) });
+    await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({ ...SHAPE, handoff: 's' }) });
+    await tm.call('tm_submit', { task_id, node_id: 'critique', payload: ok({ sound: false, blocking: ['P2 cannot be verified'] }) });
+    const re = await tm.call('tm_retry', { task_id });
+    assert.equal(re.retried, true, JSON.stringify(re));
+    await tm.call('tm_submit', { task_id, node_id: 'shape:2', payload: ok({ ...SHAPE, handoff: 's2' }) });
+    await tm.call('tm_submit', { task_id, node_id: 'critique:2', payload: ok({ sound: true }) });
+
+    let nx = await tm.call('tm_next', { task_id });
+    const child = nx.children.find((c) => c.node_id.startsWith('dispatch:P1:'));
+    assert.ok(child, JSON.stringify(nx));
+    await completeChild(g, child, { accept: false });
+    const v = await tm.call('tm_submit', { task_id, node_id: child.node_id });
+    assert.equal(v.state, 'failed');
+
+    const rt = await tm.call('tm_retry', { task_id, package_id: 'P1' });
+    assert.equal(rt.retried, true, JSON.stringify(rt));
+    const st = await tm.call('tm_status', { task_id, full: true });
+    const retry = st.nodes.find((n) => n.node_id === `dispatch:P1:${rt.attempt}`);
+    assert.ok(retry.deps.includes('critique:2'), `the retry waits on the live critique, not the discarded one: ${retry.deps}`);
+    assert.ok(!retry.deps.includes('critique'), `${retry.deps}`);
+    assert.equal(rt.children.length, 1, 'and it is dispatched, not left pending behind a skipped node');
+    const p2 = st.nodes.find((n) => n.stage === 'dispatch' && n.subgoal_id === 'P2' && n.state !== 'skipped');
+    assert.ok(p2.deps.includes(`accept:P1:${rt.attempt}`), `P2 waits on the retry: ${p2.deps}`);
+
+    // Budget: the discarded round did not spend one of P1's retries.
+    const { autoRetryPackages } = await import('../mcp/taskmanager.mjs');
+    assert.equal(typeof autoRetryPackages, 'function');
+    const again = await completeChild(g, rt.children[0], { accept: false }).then(() => tm.call('tm_submit', { task_id, node_id: rt.children[0].node_id }));
+    assert.equal(again.state, 'failed');
+    const rt2 = await tm.call('tm_retry', { task_id, package_id: 'P1' });
+    assert.equal(rt2.retried, true, `max_retries is per shape round: ${JSON.stringify(rt2)}`);
+  }, { auto_reassign: false });
+});
+
 test('the package retry budget settles: downstream becomes unreachable and the report is released', async () => {
   // Same reason as above: auto_reassign:false keeps the rejected children's own goal
   // gates from opening a repair pass, so the dispatch fold sees a plain rejection.
