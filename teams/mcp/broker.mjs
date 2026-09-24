@@ -648,7 +648,17 @@ function nodeSucceeded(run, n, result) {
   // answers for the whole thing - and a run may set its own number, or 0 to go by verdict alone.
   if (n.stage === 'gate' && !n.subgoal_id && Number.isFinite(result.match_pct)) {
     const floor = Number.isInteger(run.goal_threshold) ? run.goal_threshold : 90;
-    if (result.match_pct < floor) return false;
+    // Below the floor fails only when the judge named what is missing - the rule the manager's
+    // own accept floor already follows (taskmanager.mjs succeeded()). awake-beta-ref2's planning
+    // gate:goal:1 accepted at 88 with gaps:[] ("the remaining weaknesses are disclosed and do not
+    // block"); the floor failed it anyway, the forced repair:1 added a detection signal to close a
+    // weakness nobody had called blocking, and that signal became the blocker gate:goal:2 and :3
+    // rejected - two repairs and a whole planning round spent on a defect the floor manufactured.
+    // The pass without named gaps is a band, not a waiver: an accept at 70 with gaps:[] is a judge
+    // contradicting itself, and still fails.
+    const named = Array.isArray(result.gaps) && result.gaps.length > 0;
+    const nearFloor = result.accept === true && !named && result.match_pct >= floor - 5;
+    if (result.match_pct < floor && !nearFloor) return false;
   }
   // A rejection needs no evidence - "it does not meet the bar" stands on its own. An
   // acceptance does: today every gate in a run returned match_pct within a few points of
