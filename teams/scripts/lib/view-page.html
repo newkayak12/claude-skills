@@ -10,12 +10,14 @@
     --bg: #f7f7f8; --panel: #ffffff; --text: #1b1d1f; --muted: #6b7280; --border: #e2e4e8;
     --pending: #9aa1ac; --running: #2563eb; --done: #16a34a; --failed: #dc2626;
     --skipped: #9aa1ac; --blocked: #d97706; --accent: #2563eb; --code-bg: #f0f1f3;
+    --unreachable: #7c3aed;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #111317; --panel: #1a1d22; --text: #e6e8eb; --muted: #9aa3ad; --border: #2a2e35;
       --pending: #6b7280; --running: #60a5fa; --done: #4ade80; --failed: #f87171;
       --skipped: #6b7280; --blocked: #fbbf24; --accent: #60a5fa; --code-bg: #22262d;
+      --unreachable: #a78bfa;
     }
   }
   * { box-sizing: border-box; }
@@ -51,6 +53,10 @@
   .dot.failed { background: var(--failed); }
   .dot.skipped { background: var(--skipped); border: 1px dashed var(--skipped); background: transparent; }
   .dot.blocked, .dot.missing { background: var(--blocked); }
+  /* unreachable: a node downstream of a failure with no retry left (graph.mjs's settleFailure) -
+     distinct from failed (this node itself errored) and from blocked/missing (still might move),
+     so it gets its own color rather than silently inheriting no rule at all (an invisible dot). */
+  .dot.unreachable { background: var(--unreachable); }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 
   .pkg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; margin-top: 8px; }
@@ -68,6 +74,7 @@
   .badge.failed { background: color-mix(in srgb, var(--failed) 18%, transparent); color: var(--failed); }
   .badge.skipped { background: transparent; color: var(--skipped); border: 1px dashed var(--skipped); }
   .badge.blocked, .badge.missing { background: color-mix(in srgb, var(--blocked) 18%, transparent); color: var(--blocked); }
+  .badge.unreachable { background: color-mix(in srgb, var(--unreachable) 18%, transparent); color: var(--unreachable); }
   /* stale: a task-level state (view-collect.mjs's collectTaskFromValue) for a graph that still
      reads 'running' at the node level but has nothing left alive to move it - a worktree's
      frozen copy of an ancestor's own task.json, most often. Styled like skipped/cancelled
@@ -382,6 +389,11 @@
     var out = ['<div class="res-node"><div class="res-label">Team ' + esc(label) + '</div>'];
     if (!teamLike) { out.push('<div class="muted">not dispatched yet</div></div>'); return out.join(''); }
     if (teamLike.missing) { out.push('<div class="reason">child run file missing at ' + esc(teamLike.cwd) + '</div></div>'); return out.join(''); }
+    // Same fallback as the text renderer: packageModel() (view-collect.mjs) hands back the last
+    // attempt's own child/cost when the current one has not opened a worktree yet.
+    if (teamLike.retry_pending) {
+      out.push('<div class="reason">retry pending - showing attempt ' + esc(teamLike.retry_pending_attempt) + '\'s worktree/cost, a new one has not opened yet</div>');
+    }
     out.push('<div class="mono muted">' + esc(teamLike.cwd) + (teamLike.branch ? ' (' + esc(teamLike.branch) + ')' : '') + '</div>');
     var d = teamLike.driver;
     if (d) {

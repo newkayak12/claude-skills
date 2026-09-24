@@ -1559,6 +1559,47 @@ test('tm_open({goal_threshold: 80}) lets the same 85% accept', async () => {
   }, { goal_threshold: 80 });
 });
 
+// Sprint audit: a driver stream's own `result` event (total_cost_usd/num_turns) is the ONLY
+// place a task's real spend lived - view.mjs's RESOURCE view already read it (drivercost.mjs),
+// but tm_status/tm_board/the report briefing never aggregated it at all, so a run like
+// awake-beta-ref1's $53.93 / 222 turns sat visible only in the raw drivers/*.stream.jsonl logs.
+// Fixture writes the stream files by hand (HARNESS_TEST_NO_DRIVER means nothing else ever
+// would) at the exact paths spawnChildDriver itself names them:
+// <taskDir>/drivers/dispatch_<pkg>_<attempt>.stream.jsonl.
+test('tm_status and tm_board aggregate driver cost/turns across every package dispatch, and the manager report stage briefing states the total (Sprint audit)', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await toManagerGoalGate(tm, g, task_id);
+
+    const driversDir = join(root, task_id, 'drivers');
+    mkdirSync(driversDir, { recursive: true });
+    writeFileSync(join(driversDir, 'dispatch_P1_1.stream.jsonl'),
+      JSON.stringify({ type: 'result', total_cost_usd: 1.5, num_turns: 10 }) + '\n');
+    writeFileSync(join(driversDir, 'dispatch_P2_1.stream.jsonl'),
+      JSON.stringify({ type: 'result', total_cost_usd: 0.5, num_turns: 4 }) + '\n');
+
+    const st = await tm.call('tm_status', { task_id });
+    assert.equal(st.cost.usd, 2, JSON.stringify(st.cost));
+    assert.equal(st.cost.turns, 14);
+    assert.deepEqual(st.packages, ['P1', 'P2'], 'the plain id list tm_status has always returned is untouched');
+    assert.deepEqual(
+      st.package_costs.sort((a, b) => a.id.localeCompare(b.id)),
+      [{ id: 'P1', cost_usd: 1.5, turns: 10 }, { id: 'P2', cost_usd: 0.5, turns: 4 }],
+    );
+
+    const board = await tm.call('tm_board', { task_id });
+    assert.equal(board.cost.usd, 2);
+    assert.equal(board.cost.turns, 14);
+
+    const v = await tm.call('tm_submit', { task_id, node_id: 'gate:goal:1', payload: ok({ accept: true, match_pct: 95 }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    const nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['report']);
+    const briefing = readFileSync(nx.ready[0].briefing_path, 'utf8');
+    assert.match(briefing, /## Cost and turns/);
+    assert.match(briefing, /\$2\.00, 14 turns, 2 sessions/, `report briefing did not state the cost total: ${briefing}`);
+  });
+});
+
 test('tm_open({goal_threshold}) is stored on the task and reaches every child through child_opts and the actual dispatched run', async () => {
   await withTask(async ({ tm, g, root, task_id }) => {
     const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
