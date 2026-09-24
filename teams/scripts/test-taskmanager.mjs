@@ -2016,6 +2016,46 @@ test('a child whose goal gate rejected fails the dispatch; tm_retry reopens it i
   }, { auto_reassign: false });
 });
 
+// ---------- checkpoint / rollback (docs/plans/2026-09-23-teams-reducer-human-rollback.md §5, item 3) ----------
+
+test('retry_policy "rollback": a package retried before any of its attempts was ever accepted resets to its worktree\'s base commit, still keeps the gaps', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id);
+    let nx = await tm.call('tm_next', { task_id });
+    const first = nx.children[0];
+    await completeChild(g, first, { accept: false }); // dirties a.txt: "x\nchanged by P1\n"
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    const rt = await tm.call('tm_retry', { task_id, package_id: 'P1' });
+    assert.equal(rt.retried, true);
+    const second = rt.children[0];
+    assert.equal(second.cwd, first.cwd, 'still the same worktree - rollback resets it, it does not replace it');
+    // No attempt of P1 has ever been accepted, so there is nothing to roll back TO but the
+    // worktree's own base commit - the pristine tree from before P1 ever ran.
+    assert.equal(readFileSync(join(second.cwd, 'a.txt'), 'utf8'), 'x\n', 'reset to base, discarding the rejected attempt\'s edit entirely');
+    const child = await g.call('team_status', { run_id: second.run_id, cwd: second.cwd, full: true });
+    assert.match(child.request, /missing the b half/, 'the gate\'s gaps still reach the new attempt - rollback resets the TREE, not the feedback');
+  }, { auto_reassign: false, retry_policy: 'rollback' });
+});
+
+test('retry_policy "rollback": a package retried after one of its attempts WAS accepted resets to that commit, not to base', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id);
+    let nx = await tm.call('tm_next', { task_id });
+    const first = nx.children[0];
+    await completeChild(g, first, { accept: true }); // commits a.txt: "x\nchanged by P1\n"
+    const folded = await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    assert.equal(folded.state, 'done');
+    assert.ok(folded.child.commit, 'accept:true commits the worktree (commitWorktree)');
+    // Force a second attempt of an already-accepted package (tm_retry has no guard requiring
+    // failure - the same surface a filed defect or a blamed integrate uses). rollback_to must
+    // prefer this commit over the worktree's base - the base is now stale evidence, not the
+    // last good state.
+    const rt = await tm.call('tm_retry', { task_id, package_id: 'P1' });
+    assert.equal(rt.retried, true);
+    assert.equal(readFileSync(join(rt.children[0].cwd, 'a.txt'), 'utf8'), 'x\nchanged by P1\n', 'reset to the last ACCEPTED commit, not to the pristine base');
+  });
+});
+
 // idol-pm-4 (2026-09-23): after two reshapes, every package retry was wired to the FIRST
 // round's `critique` and `accept:P1:1` - skipped nodes that never finish - and each reshape had
 // already spent a retry of every package. Four retries sat pending and the task ended blocked.
@@ -2957,17 +2997,23 @@ test('tm_wait returns a bounded delta of node transitions and times out cleanly 
   });
 });
 
-test('a tm_submit for a node the daemon already finished is rejected outright, not re-applied', async () => {
+test('a duplicate tm_submit for a node already finished is a no-op that returns the stored verdict, not re-applied', async () => {
   await withTask(async ({ tm, task_id }) => {
     const v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2 modules'], handoff: 'h' }) });
     assert.equal(v.state, 'done', JSON.stringify(v));
-    // requireRunnable re-reads the node's state from the task this call loads fresh off disk on
+    // idempotentSubmit re-reads the node's state from the task this call loads fresh off disk on
     // every call, so a second writer racing in after the first already finished the node - the
-    // daemon's own loop, or any other caller - is refused, not silently re-run.
+    // daemon's own loop, a retried MCP call, any other caller - gets back the STORED verdict
+    // (docs/plans/2026-09-23-teams-reducer-human-rollback.md §5, at-least-once delivery), not a
+    // re-run on its own (different) payload and not an error.
     const again = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'develop' }) });
-    assert.match(again.error, /is done, not pending/);
+    assert.equal(again.idempotent, true);
+    assert.equal(again.size, 'L', 'the stored verdict, not the second payload');
     const status = await tm.call('tm_status', { task_id });
     assert.equal(status.size, 'L', 'the first verdict stands; the second attempt changed nothing');
+    // A wrong attempt number is a real mismatch, not a duplicate - still refused outright.
+    const wrongAttempt = await tm.call('tm_submit', { task_id, node_id: 'size', attempt: 99, payload: ok({ size: 'S' }) });
+    assert.match(wrongAttempt.error, /is done, not pending/);
   });
 });
 

@@ -85,6 +85,22 @@ export const TEAM_DEFAULTS = Object.freeze({
   // Extra plugin directories every child driver and judge session is given with --plugin-dir,
   // on top of the ones pluginroots.mjs finds for the skills the method tables name.
   plugin_dirs: [],
+  // What a retry (a subgoal's implement/draft re-attempt after its own gate rejects it, or a
+  // package's dispatch re-attempt after retryPackage) does with the worktree the failed attempt
+  // left behind. `continue` (default) builds the next attempt on top of it, exactly as every
+  // retry has always worked - ensureWorktree/graph.mjs's retrySubgoal already keep the same tree
+  // across attempts, this key only makes that a declared policy rather than the only option.
+  // `rollback` resets the worktree to the last checkpoint that passed its gate (this subgoal's
+  // pre-attempt state at the node level; the package's last accepted commit, or its base commit
+  // if none, at the retryPackage level) before the new attempt opens, then carries the failed
+  // gate's gaps forward as feedback exactly as continue does. docs/plans/
+  // 2026-09-23-teams-reducer-human-rollback.md §5 measured two real runs before picking a
+  // default: both showed a retried implement CONVERGING on its own gate's feedback across
+  // attempts (52%->60%->78%, 74%->78%) rather than repeating the same mistake, so continue - the
+  // existing, tested behaviour - stays the default; rollback is here for a team that hits the
+  // OTHER failure mode the measurement also saw (a structural collapse - "reduce is unreachable"
+  // - where continuing has nothing coherent to build on).
+  retry_policy: 'continue',
 });
 
 // One validator per key. A value that fails is ignored (the lower layer's value stays) and
@@ -105,6 +121,7 @@ const CHECK = {
   allocation: (v) => typeof v === 'string' && v.length > 0,
   docs_dir: (v) => typeof v === 'string' && v.length > 0,
   plugin_dirs: (v) => Array.isArray(v) && v.every((d) => typeof d === 'string' && d.length > 0),
+  retry_policy: (v) => v === 'continue' || v === 'rollback',
 };
 
 export function readTeamConfig(cwd) {
