@@ -15,6 +15,8 @@ compatibility:
 related:
   - board
   - orchestrate
+  - inbox
+  - take
 ---
 
 # ticket — tm_ticket, rendered as a card
@@ -51,6 +53,7 @@ tasks: 2/5
 worktree: /proj/.worktrees/P2 @ team/E-a1b2c3d4/P2
 last verdict: accept 94                 (or: rejected — <reason>; gaps: <gap, gap>; or —)
 reporter: shape                          (qa/planning-audit/you = filed defect; repair = integration seam)
+human: U1 -> shkim                       (omit this line when human_assignments is empty)
 doc: .teams_output/team/E-a1b2c3d4/40-stories/P2.md
 ```
 
@@ -58,7 +61,10 @@ doc: .teams_output/team/E-a1b2c3d4/40-stories/P2.md
 run. `tasks` is `—` when no dispatch has started a child run to measure. `reporter` is `shape` for
 original scope, `repair` for an integration seam, or `qa`/`planning-audit`/`you` for a filed
 defect (QA, audit, or `tm_file`) — see `board`'s own explanation for how a PLAN/QA/AUDIT
-phase-Team package's ticket reads instead.
+phase-Team package's ticket reads instead. `human_assignments` (`[{subgoal_id, who}]`) names
+which of this STORY's subgoals a human currently owns — `[]` before the package has a child run
+to pin against. Render one `subgoal_id -> who` pair per entry (join multiple with `, `); a
+`WAITING_HUMAN` state with no entry here just hasn't been claimed yet — point at `take`.
 
 A STORY's reply also carries `links` (`tickets.mjs`'s `storyLinks`): `blocked_by`/`blocks` name a
 sibling STORY key plus that sibling's own current state, `implements` names the PRD user-story
@@ -78,3 +84,5 @@ paste it into the conversation.
 
 - `board` — every EPIC, or one EPIC's STORY kanban
 - `orchestrate` — drives the run this ticket reports on
+- `inbox` — `human_assignments`'s owner's actual card, and everything else waiting on a person
+- `take` — claim an unassigned subgoal for yourself
