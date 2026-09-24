@@ -135,6 +135,17 @@ test('a planning setgoal is told its kind is planning and that files[] is only w
   assert.match(investigate, /Sources to open first:\n- \.claude\/team\.json/);
   const draft = composePrompt(run, { node_id: 'draft:U1', stage: 'draft', subgoal_id: 'U1' }, briefing);
   assert.doesNotMatch(draft, /Sources to open first/, 'only the investigator reads outside the briefing');
+
+  // planning-audit (awake-beta-ref2 AUDIT:2): the code it inspects goes in sources[], reaches the
+  // audit stage's briefing, and the spec that does so passes the document-path rule.
+  const audSpec = {
+    goal: 'audit', acceptance: ['stories judged'],
+    subgoals: [{ id: 'U1', kind: 'planning-audit', title: 'audit', acceptance: ['a'], files: ['docs/audit.md'], sources: ['Sources/Awake/main.swift'] }],
+  };
+  assert.deepEqual(validateSpec(audSpec, { kind: 'planning-audit', mixed: false, flow: 'audit' }), []);
+  const audit = composePrompt({ ...run, flow: 'audit' }, { node_id: 'audit:U1', stage: 'audit', subgoal_id: 'U1' },
+    { upstream: [], problems: [], flow: 'audit', default_kind: 'planning-audit', subgoal: audSpec.subgoals[0] });
+  assert.match(audit, /Sources to open first:\n- Sources\/Awake\/main\.swift/);
 });
 
 // Out of scope had become the cheapest way past the domain clause: name the practice, exclude
