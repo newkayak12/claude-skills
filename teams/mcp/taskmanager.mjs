@@ -2437,7 +2437,13 @@ export function succeeded(task, n, result) {
   if ((n.stage === 'gate' || n.stage === 'accept') && Number.isFinite(result.match_pct)) {
     const floor = Number.isInteger(task.goal_threshold) ? task.goal_threshold : 90;
     const named = Array.isArray(result.gaps) && result.gaps.length > 0;
-    if (result.match_pct < floor && (n.stage === 'gate' || named)) return false;
+    // accept:QA is the exception: its points are docked for the defects it files, and filing them
+    // is what fixes them. Failing it on the floor dropped the defects (the file hook runs only on
+    // 'done') and reran the whole QA on the same tree (awake-beta-ref1: accept:QA:2 accepted at
+    // 72 with a real defect filed, failed on the floor, dispatch:QA:3 reopened over the same bug).
+    const filesDefects = n.stage === 'accept' && n.subgoal_id === 'QA'
+      && Array.isArray(result.defects) && result.defects.length > 0;
+    if (result.match_pct < floor && (n.stage === 'gate' || named) && !filesDefects) return false;
   }
   // A rejection needs no evidence of its own. A positive verdict does: dispatch's accept
   // is computed by the manager itself from the folded child and is exempt, but gate,
