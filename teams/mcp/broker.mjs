@@ -1015,8 +1015,7 @@ function finishNode(run, n, result, vendorName) {
       .filter((u) => u && (u.question || u.unknown) && Array.isArray(u.options) && u.options.length > 1);
     if (decidable.length) {
       if (run.interactive) {
-        const askId = openAsk(run, n, decidable);
-        if (askId) writeHumanBriefing(run, getNode(run, askId));
+        for (const askId of openAsk(run, n, decidable)) writeHumanBriefing(run, getNode(run, askId));
       }
       else run.unasked = [...(run.unasked || []), ...decidable.map((u) => ({
         subgoal_id: n.subgoal_id, question: u.question || u.unknown, owner: u.owner || null, options: u.options,

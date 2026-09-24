@@ -974,8 +974,9 @@ export function openRepair(run, round, feedback, judges) {
 // answer is a choice between named candidates is not a gap in the research - it is a decision
 // waiting on someone, and a plan that ships it unasked is a plan that decided by default.
 //
-// Shape: `ask:<subgoal>:<attempt>` sits between investigate and whatever consumed it (draft),
-// carrying `questions[]` straight from investigate's own unknowns. It is born with the same
+// Shape: `ask:<subgoal>:<attempt>` (one per distinct owner - see the grouping below) sits
+// between investigate and whatever consumed it (draft), carrying `questions[]` straight from
+// investigate's own unknowns. It is born with the same
 // human pin applyHumanPin writes, so promoteWaitingHuman parks it in `waiting_human` the moment
 // its dep is done and NOTHING here polls a model for it - tm_inbox is the only reader,
 // tm_submit({key}) the only writer, exactly as for a pinned author stage (0.27.3). That is why
@@ -987,31 +988,56 @@ export function openRepair(run, round, feedback, judges) {
 // run.unasked so the report can show the questions nobody answered, which reads better than a
 // document quietly full of assumptions.
 export function openAsk(run, n, questions) {
-  if (!n || !n.subgoal_id) return null;
+  if (!n || !n.subgoal_id) return [];
   const qs = (questions || []).filter((q) => q && (q.question || q.unknown) && Array.isArray(q.options) && q.options.length > 1);
-  if (!qs.length) return null;
-  const askId = `ask:${n.subgoal_id}:${n.attempt || 1}`;
-  if (run.nodes.some((x) => x.node_id === askId)) return null;
-  // Whoever consumed investigate now consumes the answer instead. One consumer by
+  if (!qs.length) return [];
+  const attempt = n.attempt || 1;
+  if (run.nodes.some((x) => x.node_id === `ask:${n.subgoal_id}:${attempt}`)) return [];
+  // Whoever consumed investigate now consumes the answers instead. One consumer by
   // construction (pushChain is a straight line), but written as a filter so an inserted
   // node can never silently orphan a second one.
   const consumers = run.nodes.filter((x) => (x.deps || []).includes(n.node_id));
-  if (!consumers.length) return null;
-  const who = qs.map((q) => q.owner).find((o) => typeof o === 'string' && o.trim()) || null;
-  run.nodes.push(node(askId, 'ask', [n.node_id], {
-    subgoal_id: n.subgoal_id,
-    attempt: n.attempt || 1,
-    questions: qs,
-    assignment: { executor: 'human', vendor: 'human', who, reason: 'a decision no source could answer (investigate.unknowns)' },
-    // Parked here rather than left for promoteWaitingHuman to find on the next team_next. Its
-    // one dep is the node whose own submission is creating it, so it is ready by construction -
-    // and a card that only becomes visible once somebody polls is a card tm_inbox cannot be
-    // trusted to list.
-    state: 'waiting_human',
-    waiting_since: Date.now(),
-  }));
-  for (const c of consumers) c.deps = [...c.deps.filter((d) => d !== n.node_id), askId];
-  return askId;
+  if (!consumers.length) return [];
+
+  // One card per owner, not one card per subgoal. The first real interactive run (idol-beta-ask1,
+  // 2026-09-24) came back with seven questions on one card owned by five different roles - the PO,
+  // a capacity lead, Legal/Finance, SRE and Security - addressed to whichever happened to be first.
+  // Nobody can answer that card: it is five people's work in one envelope, and the design this
+  // came from is explicit that a checkpoint without a named owner is where the pattern breaks
+  // (docs/plans/2026-09-23-teams-reducer-human-rollback.md §0'). Grouped in first-appearance
+  // order so the leading card stays `ask:<sg>:<attempt>` and reads the same as before whenever
+  // there is only one owner - which is the common case and every test written before this.
+  const groups = new Map();
+  for (const q of qs) {
+    const key = (typeof q.owner === 'string' && q.owner.trim()) || '';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(q);
+  }
+  const ids = [];
+  let i = 0;
+  for (const [who, questions] of groups) {
+    // `ask:U1:1`, `ask:U1:1b`, `ask:U1:1c` - the same suffixing pushGoalGateRound uses for
+    // sibling judges, so nothing downstream has to learn a second id shape.
+    const askId = `ask:${n.subgoal_id}:${attempt}${i === 0 ? '' : String.fromCharCode(97 + i)}`;
+    run.nodes.push(node(askId, 'ask', [n.node_id], {
+      subgoal_id: n.subgoal_id,
+      attempt,
+      questions,
+      assignment: { executor: 'human', vendor: 'human', who: who || null, reason: 'a decision no source could answer (investigate.unknowns)' },
+      // Parked here rather than left for promoteWaitingHuman to find on the next team_next. Its
+      // one dep is the node whose own submission is creating it, so it is ready by construction -
+      // and a card that only becomes visible once somebody polls is a card tm_inbox cannot be
+      // trusted to list.
+      state: 'waiting_human',
+      waiting_since: Date.now(),
+    }));
+    ids.push(askId);
+    i += 1;
+  }
+  // draft waits for every owner: a document written while one of them is still deciding would
+  // carry that decision as an open question and the answer would arrive too late to be a rule.
+  for (const c of consumers) c.deps = [...c.deps.filter((d) => d !== n.node_id), ...ids];
+  return ids;
 }
 
 export function expandSubgoals(run, subgoals) {

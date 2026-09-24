@@ -632,8 +632,7 @@ const twoOptions = [{
 
 test('ask: the node lands between investigate and draft, and draft consumes the answer', () => {
   const run = askRun();
-  const id = openAsk(run, run.nodes[0], twoOptions);
-  assert.equal(id, 'ask:U1:1');
+  assert.deepEqual(openAsk(run, run.nodes[0], twoOptions), ['ask:U1:1']);
   const ask = run.nodes.find((n) => n.node_id === 'ask:U1:1');
   assert.deepEqual(ask.deps, ['investigate:U1:1']);
   assert.equal(ask.questions.length, 1);
@@ -660,12 +659,12 @@ test('ask parks on a human and stops the run, reusing 0.27.3 machinery unchanged
 
 test('ask is not opened for a question with nothing to choose between, or twice', () => {
   const run = askRun();
-  assert.equal(openAsk(run, run.nodes[0], []), null, 'no unknowns, no card');
-  assert.equal(openAsk(run, run.nodes[0], [{ question: 'q', options: [{ option: 'only one' }] }]), null,
+  assert.deepEqual(openAsk(run, run.nodes[0], []), [], 'no unknowns, no card');
+  assert.deepEqual(openAsk(run, run.nodes[0], [{ question: 'q', options: [{ option: 'only one' }] }]), [],
     'one candidate is not a choice');
-  assert.equal(openAsk(run, run.nodes[0], [{ question: 'q' }]), null, 'a question with no candidates stays an open question');
-  assert.equal(openAsk(run, run.nodes[0], twoOptions), 'ask:U1:1');
-  assert.equal(openAsk(run, run.nodes[0], twoOptions), null, 'the same attempt asks once');
+  assert.deepEqual(openAsk(run, run.nodes[0], [{ question: 'q' }]), [], 'a question with no candidates stays an open question');
+  assert.deepEqual(openAsk(run, run.nodes[0], twoOptions), ['ask:U1:1']);
+  assert.deepEqual(openAsk(run, run.nodes[0], twoOptions), [], 'the same attempt asks once');
   assert.equal(run.nodes.filter((n) => n.stage === 'ask').length, 1);
 });
 
@@ -674,4 +673,37 @@ test('createRun does not ask unless the run was told to', () => {
   assert.equal(createRun({ cwd: dir, request: 'x' }).interactive, false);
   assert.equal(createRun({ cwd: dir, request: 'x', interactive: true }).interactive, true);
   rmSync(dir, { recursive: true, force: true });
+});
+
+test('a card goes to one owner: five roles in one envelope is nobody\'s card', () => {
+  // idol-beta-ask1 (2026-09-24), the first real interactive run: seven questions, five owners,
+  // all addressed to whoever came first. Nobody can answer that.
+  const run = askRun();
+  const qs = [
+    { question: 'tier order?', owner: 'PO', options: [{ option: 'a' }, { option: 'b' }] },
+    { question: 'refund window?', owner: 'Legal', options: [{ option: 'a' }, { option: 'b' }] },
+    { question: 'per-person cap?', owner: 'PO', options: [{ option: 'a' }, { option: 'b' }] },
+    { question: 'SLA?', owner: 'SRE', options: [{ option: 'a' }, { option: 'b' }] },
+  ];
+  const ids = openAsk(run, run.nodes[0], qs);
+  assert.deepEqual(ids, ['ask:U1:1', 'ask:U1:1b', 'ask:U1:1c'], 'one card per owner, first-appearance order');
+  const card = (id) => run.nodes.find((n) => n.node_id === id);
+  assert.equal(card('ask:U1:1').assignment.who, 'PO');
+  assert.deepEqual(card('ask:U1:1').questions.map((q) => q.question), ['tier order?', 'per-person cap?']);
+  assert.equal(card('ask:U1:1b').assignment.who, 'Legal');
+  assert.equal(card('ask:U1:1c').assignment.who, 'SRE');
+  // draft waits for all of them, or it writes a rule one owner has not decided yet.
+  assert.deepEqual(run.nodes.find((n) => n.node_id === 'draft:U1:1').deps, ids);
+  assert.equal(promoteWaitingHuman(run).length, 0, 'all three are already parked');
+  assert.equal(run.nodes.filter((n) => n.state === 'waiting_human').length, 3);
+});
+
+test('a question with no owner still gets its own card rather than someone else\'s', () => {
+  const run = askRun();
+  const ids = openAsk(run, run.nodes[0], [
+    { question: 'whose?', options: [{ option: 'a' }, { option: 'b' }] },
+    { question: 'tier?', owner: 'PO', options: [{ option: 'a' }, { option: 'b' }] },
+  ]);
+  assert.equal(ids.length, 2);
+  assert.equal(run.nodes.find((n) => n.node_id === ids[0]).assignment.who, null);
 });

@@ -140,7 +140,7 @@ C 유형(목표 기준 모순/검증 불가)은 그래서 회차마다 **새로 
 | # | 차이 | 상태 | 태스크 |
 |---|---|---|---|
 | **D1** | **reducer** — `foldChild`/`integrate`는 있고 런 안 병렬 층은 규약. `idol-plan-2` 실런이 findings 파일명 5종을 제각각 낸 것이 증거 | **✅ 0.27.0 / 0.27.1** | Task 1·2 완료 |
-| **D2** | **time travel** — `waiting_human`이 설계만 있고 미구현, 롤백 개념 없음 | **1단계 ✅ 0.27.3** 사람이 카드를 가져간다 / **2단계 ✅ 0.28.0** 사람이 **고른다** — `investigate.unknowns[].options[]`, `ask:<서브골>:<시도>` 노드, `interactive` 스위치, `tm_inbox`가 선택지를 건네고 `tm_submit({key, payload:{decisions}})`가 답한다. 남음: `gate:human`, 롤백 | Task 3 ✅, Task 4·5 |
+| **D2** | **time travel** — `waiting_human`이 설계만 있고 미구현, 롤백 개념 없음 | **1단계 ✅ 0.27.3** 사람이 카드를 가져간다 / **2단계 ✅ 0.28.0, 실런 검증 0.28.7** 사람이 **고른다** — `investigate.unknowns[].options[]`, `ask:<서브골>:<시도>` 노드, `interactive` 스위치, `tm_inbox`가 선택지를 건네고 `tm_submit({key, payload:{decisions}})`가 답한다. 남음: `gate:human`, 롤백 | Task 3 ✅, Task 4·5 |
 | **D3** | **멱등성** — 재시도가 at-least-once인데 멱등 키가 없고, "다시 하면 같은 자리에 얹힌다"는 가정으로 때우고 있다 | TODO (부분 완화만 이 계획에서) | Task 2가 경로 고정으로 한 구멍을 막는다. 멱등 키 자체는 범위 밖 |
 
 그 밖에:
@@ -180,6 +180,30 @@ C 유형(목표 기준 모순/검증 불가)은 그래서 회차마다 **새로 
   - 매니저 상태 8개 파일이 P1의 제품 브랜치에 커밋됐다. macOS `/var`↔`/private/var` 표기 차이로
     `harnessPathsUnder`가 tasks 루트를 트리 밖으로 봤다. realpath로 비교.
 - **critique 유형별 처리** — 선행 측정 결과를 보고 C·B 중 남은 쪽만 손댄다.
+
+### 0.2b 실런 검증 — idol-beta-ask1 (2026-09-24)
+
+`ask`를 실모델로 처음 돌린 판입니다. `TEAM_JSON='{"roles":{"planning":true},"interactive":true}'`,
+`beta/idol` 픽스처. **경로 전체가 닫혔습니다:**
+
+| 관문 | 결과 |
+|---|---|
+| `interactive`가 team.json → task → 자식 런까지 전파 | ✅ `CHILD dispatch:PLAN:1 interactive=True flow=plan` |
+| `setgoal`이 기획 서브골을 펼치고 `reduce`가 함께 섬 | ✅ U1~U4 + `reduce` (0.26.0 investigate와 0.27.0 fold가 한 실런에 처음 공존) |
+| **`investigate`가 실모델에서 `options[]`를 채움** | ✅ 7문항, 각 3후보, 후보마다 결과 문장, 문항마다 소유자 |
+| 런이 `waiting_human`으로 멈춤 | ✅ `ask:U1:1=waiting_human`, 대기 중 컴퓨트 0 |
+| `tm_inbox`가 메인 세션에 카드를 건넴 | ✅ questions·options·owner·briefing_path |
+| `tm_submit({key, payload:{decisions}})` | ✅ `state: done` |
+| **답이 `draft` 브리핑에 확정 규칙으로 도착** | ✅ "Decided by a person — these are settled, write them as rules, not as open questions" |
+
+질문 내용도 허수가 아니었습니다 — 1인 구매 상한, 환불 스케줄, 결제 홀드 시간, 선예매 등급 구조,
+200k/s가 실제 RPS인지, SLA, 안티봇. **idol-pm-2가 지어내거나 Non-Goals로 밀어냈던 바로 그 규칙들입니다.**
+
+**드러난 결함 하나 (0.28.7에서 수정)**: 문항 7개의 소유자가 5종(PO / 용량 리드 / Legal·Finance /
+SRE / Security)인데 전부 한 카드에, 첫 번째 사람 앞으로 갔습니다. 그 카드는 한 사람이 답할 수
+없습니다 — §0'가 **일치**로 적어 둔 원칙("명명된 소유자를 갖는 재개 가능 단계로 다루지 않으면
+승인자가 잠든 첫날 패턴이 무너진다")을 우리가 어기고 있었던 것이고, 실런 없이는 보이지 않았습니다.
+`openAsk`가 소유자별로 카드를 쪼개고 `draft`가 전부를 기다립니다.
 
 ## 4. 열린 논점
 
