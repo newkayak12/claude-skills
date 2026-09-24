@@ -1,0 +1,35 @@
+{
+  "task_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+  "epic_key": "E-aaaaaaaa",
+  "request": "change a.txt and b.txt together",
+  "retrospective": {
+    "what_failed": [
+      {
+        "node_id": "accept:P1:1",
+        "stage": "accept",
+        "package_id": "P1",
+        "reason": "no test coverage"
+      }
+    ],
+    "retries": [
+      {
+        "package_id": "P1",
+        "attempts": 2
+      },
+      {
+        "package_id": "QA",
+        "attempts": 2
+      },
+      {
+        "package_id": "AUDIT",
+        "attempts": 2
+      }
+    ],
+    "defects_left": []
+  },
+  "next_backlog": {
+    "unaccepted_packages": [],
+    "unresolved_defects": [],
+    "open_questions": []
+  }
+}

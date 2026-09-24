@@ -55,15 +55,31 @@ export const EXECUTION_STAGES = new Set(['implement', 'test', 'draft', 'repair']
 // already is with whoever implemented or drafted the subgoal it is judging.
 const AUTHOR_OF = { critique: 'setgoal', gate: ['implement', 'draft', 'repair'], review: 'draft', test: 'implement' };
 
+// audit (planning-audit's own kind) cannot appear in AUTHOR_OF above: that table's actor lookup
+// walks `run.nodes` for a peer sharing this node's subgoal_id, and audit's author - the PLAN
+// package's draft/revise - never ran in this run at all. It ran in a sibling child run the
+// TaskManager opened earlier and folded away (taskmanager.mjs's openAudit), a run this one
+// has no nodes from. openAudit reads that run once, up front, and stashes its author's
+// identity here, on the audit run itself, as `external_author: {executor, vendor, model}` -
+// the cross-run equivalent of the same-run `actor` lookup every other judging stage uses.
+function externalAuthorOf(run, node) {
+  return node.stage === 'audit' ? run.external_author : null;
+}
+
 export function rankCandidates(run, node, candidates) {
   const execution = EXECUTION_STAGES.has(node.stage);
   const cross = CROSS_VENDOR_STAGES.has(node.stage);
   const peers = run.nodes.filter(n => n.subgoal_id === node.subgoal_id && n.node_id !== node.node_id);
+  const externalAuthor = externalAuthorOf(run, node);
   // test's preference is "not the implementer", wherever the implementer ended up: a peer that
   // fell back to the host still leaves the same blind spot in author and tester if test follows
-  // the static cross-vendor rule to the same vendor.
+  // the static cross-vendor rule to the same vendor. audit's own author never left a peer in
+  // THIS run to find (externalAuthorOf above) - same preference, same reason, sourced from the
+  // other run's identity instead of this run's own nodes.
   const implementer = node.stage === 'test' ? peers.filter(n => n.stage === 'implement' && n.state === 'done').at(-1) : null;
-  const implVendor = implementer ? (implementer.executor || implementer.vendor) : null;
+  const implVendor = implementer
+    ? (implementer.executor || implementer.vendor)
+    : (externalAuthor ? (externalAuthor.executor || externalAuthor.vendor) : null);
   const other = (v) => (v === 'claude' ? 'codex' : 'claude');
   const preferred = implVendor
     ? other(implVendor)
@@ -80,8 +96,9 @@ export function rankCandidates(run, node, candidates) {
     const completed = history.filter(n => n.state === 'done').length;
     // A negative gate verdict is useful judging work, not a failure of its vendor.
     const errors = history.filter(n => n.stage === node.stage && n.result?.stage_ok === false).length;
-    const sameActor = Boolean(AUTHOR_OF[node.stage])
-      && actor && (actor.executor || actor.vendor) === vendor;
+    const sameActor = (Boolean(AUTHOR_OF[node.stage])
+      && actor && (actor.executor || actor.vendor) === vendor)
+      || Boolean(externalAuthor && (externalAuthor.executor || externalAuthor.vendor) === vendor);
     // A retry that hands the work back to the identity whose attempt was just rejected
     // tends to get the same work back. goal-docs spent its entire budget that way: the
     // same author, in the same worktree, reached the same conclusion three times.

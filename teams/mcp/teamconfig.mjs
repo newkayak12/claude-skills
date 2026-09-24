@@ -52,7 +52,13 @@ export const TEAM_DEFAULTS = Object.freeze({
   // autoPassHumanGateResult) rather than blocking a run nobody is watching.
   human_gates: [],
   qa_rounds: 2,
-  roles: { planning: true, qa: true },
+  // audit used to ride on roles.planning alone (taskmanager.mjs's openAudit was gated on
+  // `roles.planning`, nothing else - the audit pass is planning's own second pass, so it had no
+  // independent switch). It is still ON by default whenever planning is - that pairing is
+  // unchanged, so a project that never heard of this key keeps today's behaviour byte for byte -
+  // but a project may now turn audit off while keeping the rest of planning (a PRD without the
+  // post-integration cross-check), which `roles.planning` alone could never express.
+  roles: { planning: true, qa: true, audit: true },
   goal_threshold: 90,
   max_retries: 2,
   driver_restarts: 2,
@@ -110,6 +116,16 @@ export const TEAM_DEFAULTS = Object.freeze({
   // OTHER failure mode the measurement also saw (a structural collapse - "reduce is unreachable"
   // - where continuing has nothing coherent to build on).
   retry_policy: 'continue',
+  // The Sprint's own missing box (docs/plans' Scrum Guide mapping audit: no backlog, no
+  // timebox/budget, no retro - this is the second of those three). null is unlimited, today's
+  // behaviour byte for byte: a task that never sets either keeps running exactly as it always
+  // has. Set, taskmanager.mjs's budgetStatus reads whichever is tighter as a fraction spent (a
+  // dollar figure and a clock both cap the same run, and either alone is real) - at 80%
+  // enforceBudget records one warning; at 100% it stops advanceDispatches from opening another
+  // package, lets whatever is already running finish, and reintegrates over just what accepted,
+  // the unopened packages named in the report as "not done" rather than silently dropped.
+  budget_usd: null,
+  timebox_minutes: null,
 });
 
 // One validator per key. A value that fails is ignored (the lower layer's value stays) and
@@ -130,6 +146,8 @@ const CHECK = {
   vendor: (v) => typeof v === 'string' && v.length > 0,
   allocation: (v) => typeof v === 'string' && v.length > 0,
   docs_dir: (v) => typeof v === 'string' && v.length > 0,
+  budget_usd: (v) => v === null || (typeof v === 'number' && Number.isFinite(v) && v >= 0),
+  timebox_minutes: (v) => v === null || (typeof v === 'number' && Number.isFinite(v) && v >= 0),
   plugin_dirs: (v) => Array.isArray(v) && v.every((d) => typeof d === 'string' && d.length > 0),
   retry_policy: (v) => v === 'continue' || v === 'rollback',
 };

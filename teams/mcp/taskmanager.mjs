@@ -211,9 +211,55 @@ function bullets(list) {
 
 // ---------- task creation ----------
 
+// requests[]: a backlog instead of one request (§B.3) - several EPIC-level items, priority =
+// array order (index 0 highest). task.requests carries the raw array (the retro and shape's own
+// briefing both read it by index); task.request stays the ONE string every size/shape/PLAN
+// briefing already reads - this is a second way to WRITE it, not a second thing anything
+// downstream has to understand. Single `request` is untouched: this only runs when `requests`
+// was actually given.
+function composeBacklogRequest(requests) {
+  return requests.map((r, i) => `[backlog priority ${i}] ${r}`).join('\n\n');
+}
+
+// tm_open({context_from: <prior task id or ticket key>}) (§B.2): folds a finished task's own
+// retro.json - the Retrospective and Next backlog its report stage wrote (docs.mjs's
+// renderRetro) - into this task's context, so a new Sprint opens already knowing what the last
+// one left unresolved. Best-effort: a prior task with no report yet, an unreadable retro.json,
+// or a ref that does not resolve at all leaves context untouched rather than failing tm_open
+// over a document that is evidence, not a dependency (the same rule record()/writeDocs already
+// follow elsewhere in this file).
+function priorRetroContext(contextFrom) {
+  if (!contextFrom) return '';
+  try {
+    const id = resolveTaskRef(contextFrom);
+    const prior = id && loadRunAt(taskPath(id));
+    if (!prior) return '';
+    const retroPath = docPaths(prior).retro;
+    const retro = JSON.parse(readFileSync(retroPath, 'utf8'));
+    const L = [`Context from the prior task ${prior.run_id} (${epicKey(prior.run_id)}), "${String(prior.request || '').slice(0, 160)}":`, ''];
+    L.push('Retrospective - what failed and why:');
+    L.push(bullets((retro.retrospective.what_failed || []).map((f) => `${f.node_id} (${f.stage}): ${f.reason}`)));
+    if ((retro.retrospective.retries || []).length) L.push('', 'Retries:', bullets(retro.retrospective.retries.map((r) => `${r.package_id}: ${r.attempts} attempts`)));
+    L.push('', 'Next backlog - unaccepted packages:');
+    L.push(bullets((retro.next_backlog.unaccepted_packages || []).map((p) => `${p.id} (${p.title}): ${p.reason}`)));
+    if ((retro.next_backlog.unresolved_defects || []).length) L.push('', 'Unresolved defects:', bullets(retro.next_backlog.unresolved_defects.map((d) => d.title)));
+    if ((retro.next_backlog.open_questions || []).length) L.push('', 'Open questions nobody answered:', bullets(retro.next_backlog.open_questions.map((q) => q.question || JSON.stringify(q))));
+    return L.join('\n');
+  } catch {
+    return '';
+  }
+}
+
 function createTask(a) {
   if (a.child_driver !== undefined || a.s_driver !== undefined) {
     throw new Error('child_driver and s_driver were removed in 0.10.0: the driving session never drives a child run or the manager loop. Open the task and watch tm_status / tm_events; the daemon and package drivers do the rest.');
+  }
+  const requests = Array.isArray(a.requests) && a.requests.length ? a.requests.map(String) : null;
+  if (!requests && (a.request == null || String(a.request).trim() === '')) {
+    throw new Error('tm_open needs either request (a string) or requests (a non-empty array of strings), not neither');
+  }
+  if (requests && a.request != null && String(a.request).trim() !== '') {
+    throw new Error('tm_open takes request OR requests, not both - requests: [...] IS the several-item form of request');
   }
   const cwd = resolve(String(a.cwd));
   const teamFile = readTeamConfig(cwd);
@@ -221,13 +267,15 @@ function createTask(a) {
   const T = team.opts;
   const taskId = randomUUID();
   const depth = Number.isInteger(a.depth) ? a.depth : 0;
+  const priorRetro = priorRetroContext(a.context_from);
   const task = {
     run_id: taskId,
     kind: 'task',
     store_path: taskPath(taskId),
     cwd,
-    request: String(a.request),
-    context: a.context || '',
+    request: requests ? composeBacklogRequest(requests) : String(a.request),
+    requests, // null for the ordinary single-request task - the byte-for-byte compat case.
+    context: [priorRetro, a.context || ''].filter(Boolean).join('\n\n'),
     flow: FLOWS[a.flow] ? a.flow : 'auto',
     flow_chosen: null,
     size: null,
@@ -1114,6 +1162,24 @@ function fileDefects(task, defects, opts) {
 // planning stage the user never asked to turn off. The QA report is consumed when one exists and
 // is simply absent when it does not - which is also why the brief is built here, at open time,
 // rather than at shape: only now is there an integrated result and (maybe) a QA verdict to name.
+// routing.mjs's AUTHOR_OF cannot see this run's author: audit's author - the PLAN package's
+// draft/revise - ran in a sibling child run, folded away before this one ever opens, so there
+// is no in-run peer sharing a subgoal_id the way every other judging stage's actor lookup finds
+// one. Read that run once, here, before it is gone (it stays on disk, but there is no reason to
+// re-open it every time audit routes a candidate) - revise's identity wins over draft's when
+// both exist, the same precedence parentShapedChild gives revise's handoff over draft's, because
+// revise is the last hand that actually wrote what audit is now reading.
+function planAuthorIdentity(task) {
+  const planDispatch = latestBySubgoal(task, 'PLAN', 'dispatch');
+  if (!planDispatch || !planDispatch.child) return null;
+  const planRun = loadRun(planDispatch.child.cwd, planDispatch.child.run_id);
+  if (!planRun || !Array.isArray(planRun.nodes)) return null;
+  const author = planRun.nodes.filter((x) => x.stage === 'revise' && x.state === 'done').pop()
+    || planRun.nodes.filter((x) => x.stage === 'draft' && x.state === 'done').pop();
+  if (!author) return null;
+  return { executor: author.executor || null, vendor: author.vendor || null, model: author.model || null };
+}
+
 function openAudit(task, afterNodeId) {
   const integ = task.nodes.filter((x) => x.stage === 'integrate' && x.state === 'done' && x.integration).pop();
   const planDispatch = latestBySubgoal(task, 'PLAN', 'dispatch');
@@ -1139,6 +1205,12 @@ function openAudit(task, afterNodeId) {
     brief: L.join('\n'),
     acceptance: ['every user story in the PRD is judged against the integrated result, and the unmet ones are named'],
     deps: [], touches: [],
+    // Threaded into the audit child run by openChild as `external_author` - routing.mjs's
+    // externalAuthorOf reads it to route audit away from this identity when a peer vendor is
+    // available, and broker.mjs's reviewIndependence records reviewer_independence on the audit
+    // node's result either way, the same "route away where possible, record it regardless"
+    // pattern review/revise already runs for their own in-run author.
+    author_identity: planAuthorIdentity(task),
   };
   const accept = pushChain(task, PACKAGE_CHAIN, 'AUDIT', nextIndex(task, 'dispatch:AUDIT'), [afterNodeId], [], {});
   const goal = task.nodes.filter((x) => x.stage === 'gate' && x.subgoal_id == null).pop();
@@ -2013,6 +2085,10 @@ export function openChild(task, n) {
     // card. A package that still needs its own shape/setgoal (needsSplit) has no single subgoal
     // yet to pin - tm_assign on a STORY like that has nothing to touch until it is (re-)shaped.
     subgoal_assignee: pkg.assignee || null,
+    // The audit phase-Team's own judge≠author gap (routing.mjs's externalAuthorOf, broker.mjs's
+    // reviewIndependence): only openAudit's package ever sets this field, so every other package
+    // threads a plain null through, unchanged.
+    external_author: pkg.author_identity || null,
   });
   n.state = 'running';
   n.started_at = Date.now();
@@ -2301,7 +2377,13 @@ export function prepareIntegration(task, n) {
     return;
   }
   const merged = repair ? [{ package: repair.package, branch: repair.branch, commit: repair.commit }] : [];
-  const ordered = dependencyOrder((task.spec.packages || []).filter((p) => !p.repair));
+  // A package whose dispatch was permanently skipped (§B.1: budget/timebox exhausted before it
+  // ever got a driver) never has a delivered branch and never will - unlike an ordinary pending
+  // retry, which this integrate would simply wait for. Read its LATEST attempt, not "any": a
+  // package that was skipped once and later retried (not today's budget path, but a state this
+  // general check should not misread) has a real delivered branch by its later attempt.
+  const skippedForBudget = (id) => { const d = latestBySubgoal(task, String(id), 'dispatch'); return !!d && d.state === 'skipped'; };
+  const ordered = dependencyOrder((task.spec.packages || []).filter((p) => !p.repair && !skippedForBudget(p.id)));
   for (const p of ordered) {
     const branch = deliveredBranch(task, p.id);
     if (!branch) {
@@ -2418,6 +2500,17 @@ export function composeTaskPrompt(task, n) {
   L.push(`## Request`);
   L.push(task.request);
   if (task.context) { L.push(''); L.push(`## Context from the requester`); L.push(task.context); }
+  // requests[] (§B.3): the request above is already the whole backlog, "[backlog priority N] ..."
+  // per item, N=0 highest - shape is the one stage that has to act on the ordering, by setting
+  // each package's own `priority` (its existing field: array position already decides dispatch
+  // order, advanceDispatches' own sort) consistent with which backlog item it implements. Nothing
+  // downstream needs telling twice: critique/accept/gate:goal only ever read the packages shape
+  // already ordered.
+  if (n.stage === 'shape' && Array.isArray(task.requests) && task.requests.length) {
+    L.push('');
+    L.push(`## Backlog priority`);
+    L.push(`This request is a backlog of ${task.requests.length} items in priority order (item 0 is highest). Give every package a \`priority\` consistent with which backlog item(s) it implements - a package serving only a low-priority item gets a high priority NUMBER, so it is the one left undispatched if budget_usd/timebox_minutes runs out before everything ships (advanceDispatches dispatches ascending priority first).`);
+  }
   if (task.size || task.flow_chosen || task.flow !== 'auto') {
     L.push('');
     L.push(`## Sizing`);
@@ -2752,6 +2845,48 @@ function verdict(task, n) {
   return out;
 }
 
+// Gap 2 (judge≠author): the manager's own reasoning nodes - shape, critique, accept, integrate,
+// gate, gate:goal - all run through daemon.mjs's judge(), one identical `claude -p` invocation
+// per node (that file's own comment on judge()): no vendor is ever selected among candidates and
+// no executor/vendor is ever recorded on a manager node, unlike a package's dispatch/accept
+// chain, which broker.mjs routes and tags normally. routing.mjs's AUTHOR_OF same-actor penalty
+// only nudges a CHOICE among ranked candidates, and judge() offers no choice to nudge - "route
+// it away" (the same phrase openAudit's own gap answers with externalAuthorOf) has no move to
+// make here today, since nothing stands ready to run critique or accept on a second identity.
+// What is still owed, and what this gives, is the honest half of broker.mjs's own
+// reviewIndependence pattern: recording reviewer_independence rather than asserting an
+// independence this path cannot back up. Both sides of a manager judgement are the same
+// untracked host identity by construction (`self`, the same word broker.mjs's own identityOf
+// falls back to for an executor it cannot see), so this always reads 'unverifiable-self' -
+// never 'distinct-identity', because nothing here could prove that even when accept's own
+// package really did land on a peer vendor (broker.mjs's normal cross-vendor routing still
+// applies to a package's own dispatch/accept chain - only the MANAGER's own nodes are exempt
+// from it): the manager's own side of the comparison has no identity of its own to compare
+// with, so "unverifiable" is the honest word regardless of what the other side turns out to be.
+function managerReviewerIndependence(task, n) {
+  if (n.stage === 'critique') {
+    const shape = task.nodes.filter((x) => x.stage === 'shape' && x.state === 'done').pop();
+    return shape ? 'unverifiable-self' : null;
+  }
+  if (n.stage === 'accept') {
+    const dispatch = task.nodes.find((x) => x.stage === 'dispatch' && x.subgoal_id === n.subgoal_id
+      && x.node_id === n.node_id.replace(/^accept:/, 'dispatch:'));
+    const child = dispatch && dispatch.child ? loadRun(dispatch.child.cwd, dispatch.child.run_id) : null;
+    if (!child) return null;
+    const sg = child.spec && Array.isArray(child.spec.subgoals) ? child.spec.subgoals[0] : null;
+    if (!sg) return null;
+    const chain = (KINDS[kindOf(sg)] || KINDS[DEFAULT_KIND]).chain;
+    // Any mutating (non-final) stage of the chain having a done node is enough to say
+    // "this package was authored" - which specific stage (implement/draft/execute) does not
+    // matter here, unlike planAuthorIdentity's audit-side need for the actual identity: accept
+    // has no identity of its own to compare against, so only "was there an author" is asked.
+    const authored = chain.slice(0, -1).some((stage) => child.nodes.some((x) => x.stage === stage
+      && x.subgoal_id === String(sg.id) && x.state === 'done'));
+    return authored ? 'unverifiable-self' : null;
+  }
+  return null;
+}
+
 export function finish(task, n, result) {
   // A node settling is what moves a ticket, and it is the one place both callers pass through -
   // tm_submit and the daemon alike. Hooking the caller instead left the whole surface stale
@@ -2762,6 +2897,8 @@ export function finish(task, n, result) {
     result = { ...result, integration_branch: n.integration.branch, integration_cwd: n.integration.cwd,
       merged: (n.integration.merged || []).map((m) => `${m.package} ${m.branch} -> ${m.commit}`) };
   }
+  const reviewerIndependence = managerReviewerIndependence(task, n);
+  if (reviewerIndependence) result = { ...result, reviewer_independence: reviewerIndependence };
   const f = VERDICT[n.stage];
   const floor = Number.isInteger(task.goal_threshold) ? task.goal_threshold : 90;
   const belowFloor = n.stage === 'gate' && f && result[f] === true
@@ -2870,7 +3007,10 @@ export function finish(task, n, result) {
   // not open the audit out from under a pending QA round" - even though the reopen hook's own
   // side effect on goal.deps is what actually enforces that.
   const roles = (task.team && task.team.opts && task.team.opts.roles) || {};
-  if (roles.planning && n.state === 'done'
+  // roles.audit defaults true, paired with roles.planning exactly like before this key existed
+  // (teamconfig.mjs) - so a project that never sets it keeps today's behaviour, and one that
+  // sets `roles: {audit: false}` keeps the rest of planning without the post-integration pass.
+  if (roles.planning && roles.audit !== false && n.state === 'done'
     && ((n.stage === 'accept' && n.subgoal_id === 'QA') || (n.stage === 'integrate' && !roles.qa))) {
     const goal = task.nodes.filter((x) => x.stage === 'gate' && x.subgoal_id == null).pop();
     if (goal && goal.deps.length === 1 && goal.deps[0] === n.node_id) openAudit(task, n.node_id);
@@ -2993,6 +3133,10 @@ const TOOLS = [
         goal_threshold: { type: 'integer', description: 'default 90: the manager\'s own goal gate must report match_pct at or above this to accept, and it is passed through to every child run as its own goal_threshold. A gate that says accept with 40% match is reporting a partial result as a pass. 0 accepts on the verdict alone.' },
         goal_judges: { type: 'integer', description: 'default 1: independent judges on EVERY child run\'s own goal gate (each package\'s dispatch, and the one run a size-S task opens). >1 opens that many sibling gate nodes per round, routed to different identities where possible, and accepts only if every judge accepts at or above goal_threshold - the same mechanism team_open documents (default 2 there). The default stays 1 here, matching every run this manager has ever opened, so an existing project sees no change in judge count or cost unless it asks for more. This is the child run\'s own gate, not the manager\'s own top-level gate:goal, which is a separate, single-judge mechanism unaffected by this option.' },
         retry_policy: { type: 'string', enum: ['continue', 'rollback'], description: 'default "continue", also settable in .claude/team.json. What a retried attempt does with the worktree the failed one left: "continue" (default, today\'s only behavior) builds the next attempt on top of it. "rollback" resets the worktree first - a subgoal\'s own implement/draft to the checkpoint recorded before ITS first attempt touched it (single-subgoal child runs only; a shared worktree with a sibling subgoal still in flight cannot be reset for one of them, so it falls back to continue and says why), a package\'s own retry (tm_retry/retryPackage) to its last ACCEPTED commit, or the worktree\'s base commit if none of its attempts ever passed - then re-runs with the failed gate\'s gaps as feedback either way. docs/plans/2026-09-23-teams-reducer-human-rollback.md §5 measured two real runs before defaulting to continue: both showed a retried implement CONVERGING on gate feedback across attempts rather than repeating the same mistake, so there is no evidence yet that discarding an attempt\'s work helps more than it loses.' },
+        budget_usd: { type: ['number', 'null'], description: 'default null (unlimited), also settable in .claude/team.json. Spend is summed from every driver\'s own stream log under this task (drivers/*.stream.jsonl result events\' total_cost_usd) each daemon tick. At 80% of this a warning is recorded once (tm_status shows it); at 100% no NEW package is dispatched - a package already running finishes - and once nothing is left running, a fresh integrate opens over just what accepted, naming the rest "not done" in the report rather than dropping them silently. Whichever of budget_usd/timebox_minutes is closer to its own limit decides; either alone is a real stop.' },
+        timebox_minutes: { type: ['number', 'null'], description: 'default null (unlimited), also settable in .claude/team.json. Minutes since tm_open, the same stop condition budget_usd is, on the same clock - see its own description for exactly what 80% and 100% do.' },
+        requests: { type: 'array', items: { type: 'string' }, description: 'A backlog instead of one request: several EPIC-level items, priority = array order (first is highest). shape treats each as its own story set; with budget_usd/timebox_minutes in play, the lowest-priority items still unshaped or undispatched when the stop trips are exactly what the report names "Next backlog". Mutually exclusive with `request` - send one or the other, never both.' },
+        context_from: { type: 'string', description: 'A prior task_id (or its ticket key). Its retro.json - the Retrospective and Next backlog a finished task\'s report stage writes - is read and folded into this task\'s own context: what failed and why, retries, defects left, and any unaccepted packages or unresolved questions the prior task ran out of budget/timebox to reach. The prior task\'s own Next backlog is NOT auto-added to `requests` - naming it here is a decision this task\'s own request should still make in its own words.' },
       },
       required: ['request', 'cwd'],
     },
@@ -3015,6 +3159,10 @@ const TOOLS = [
         isolated: { type: 'boolean' }, mixed: { type: 'boolean' },
         driver_restarts: { type: 'integer' }, goal_threshold: { type: 'integer' }, goal_judges: { type: 'integer' },
         stall_minutes: { type: 'integer' }, restart_period_minutes: { type: 'integer' },
+        budget_usd: { type: ['number', 'null'], description: 'Same meaning as tm_open({budget_usd}).' },
+        timebox_minutes: { type: ['number', 'null'], description: 'Same meaning as tm_open({timebox_minutes}).' },
+        requests: { type: 'array', items: { type: 'string' }, description: 'Same meaning as tm_open({requests}) - mutually exclusive with `request`.' },
+        context_from: { type: 'string', description: 'Same meaning as tm_open({context_from}).' },
       },
       required: ['request', 'cwd'],
     },
@@ -3758,11 +3906,130 @@ function toolNextSRun(task) {
   return out;
 }
 
+// ---------- budget / timebox (the Sprint's missing box - no prior stop condition bounded
+// either cost or time; a task ran until its graph naturally finished or someone intervened) ----
+
+// Every driver this task has ever spawned writes its own `claude -p --output-format
+// stream-json` NDJSON to <taskDir>/drivers/<label>[.restartN].stream.jsonl (spawnChildDriver) -
+// the SAME format judge()'s own lastResultText (daemon.mjs) already reads, one file per package
+// (and per restart - a respawned driver is a fresh process with its own bill, not a
+// continuation of the dead one's) instead of one inline call. total_cost_usd lives on the
+// stream's own closing `result` event, the same field the CLI reports at the end of any
+// session; a stream with more than one (a resumed conversation) is summed at its LAST one, not
+// added twice, since total_cost_usd is already cumulative for that one process's lifetime.
+function driverSpend(logPath) {
+  let text;
+  try { text = readFileSync(logPath, 'utf8'); } catch { return 0; }
+  let cost = 0;
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    let e;
+    try { e = JSON.parse(line); } catch { continue; }
+    if (e && e.type === 'result' && Number.isFinite(e.total_cost_usd)) cost = e.total_cost_usd;
+  }
+  return cost;
+}
+
+// The task's total spend across every driver it has ever spawned - a size-L task's package
+// drivers AND a size-S task's own single s_run driver both write under the same drivers/
+// directory (spawnChildDriver's nodeIdLabel is "S" for the latter), so one glob covers both.
+export function taskSpend(task) {
+  const dir = join(taskDir(task.run_id), 'drivers');
+  let files;
+  try { files = readdirSync(dir); } catch { return 0; }
+  return files.filter((f) => f.endsWith('.stream.jsonl')).reduce((sum, f) => sum + driverSpend(join(dir, f)), 0);
+}
+
+export function taskElapsedMinutes(task) {
+  return (Date.now() - (task.created_at || Date.now())) / 60000;
+}
+
+// {pct, over, warn, spend, elapsed_minutes}. Neither budget_usd nor timebox_minutes set:
+// unlimited, today's behaviour exactly (pct 0, never over). Either set: pct is the WORSE
+// (larger) of the two fractions spent, since a dollar figure and a clock both cap the same run
+// and either alone is a real stop condition - not "both must be exhausted". A limit of exactly
+// 0 with any spend/elapsed at all reads as already over (Infinity), rather than a division that
+// hides a misconfigured "stop immediately" as 0/0.
+export function budgetStatus(task) {
+  const opts = (task.team && task.team.opts) || {};
+  const budget = Number.isFinite(opts.budget_usd) ? opts.budget_usd : null;
+  const timebox = Number.isFinite(opts.timebox_minutes) ? opts.timebox_minutes : null;
+  const spend = (budget != null) ? taskSpend(task) : 0;
+  const elapsed = taskElapsedMinutes(task);
+  if (budget == null && timebox == null) return { pct: 0, over: false, warn: false, spend: 0, elapsed_minutes: elapsed };
+  const frac = (used, limit) => (limit == null ? 0 : (limit > 0 ? used / limit : (used > 0 ? Infinity : 0)));
+  const pct = Math.max(frac(spend, budget), frac(elapsed, timebox));
+  return {
+    pct, over: pct >= 1, warn: pct >= 0.8, spend, elapsed_minutes: elapsed,
+    ...(budget != null ? { budget_usd: budget } : {}), ...(timebox != null ? { timebox_minutes: timebox } : {}),
+  };
+}
+
+// Called every daemon tick (daemon.mjs's stepOnceInner) and by tm_next's own toolNext - the same
+// two call sites advanceDispatches/autoRepair/autoRetryPackages/autoReshape already share, so a
+// hand-driven test and the daemon can never disagree about when the stop trips. Records the 80%
+// warning once (task.budget_warned); at 100% sets task.budget_stopped once, which
+// advanceDispatches itself checks at its own top to refuse opening another package - checked
+// there, not duplicated here, the same way every other "is this allowed" question in this file
+// lives at its one call site. "Finishes in-flight" is exactly what NOT killing a running dispatch
+// means: this function only ever settles a package whose dispatch node is still 'pending',
+// meaning no driver was ever spawned for it. Once nothing is left running, the pending packages
+// still blocking the current integrate are marked 'skipped' (an established terminal state -
+// see VERDICT_SCHEMA's own state enum) and a fresh integrate opens over just the accepted set,
+// reusing reintegrateBehind - the exact mechanism a filed defect or a repair already opens a
+// fresh integrate with, just handed the accepted subset instead of the full one.
+export function enforceBudget(task) {
+  const status = budgetStatus(task);
+  let progressed = false;
+  if (status.warn && !task.budget_warned) {
+    task.budget_warned = true;
+    record(task, { event: 'budget_warning', task_id: task.run_id, pct: Math.round(status.pct * 100), spend: status.spend, elapsed_minutes: Math.round(status.elapsed_minutes) });
+    progressed = true;
+  }
+  if (!status.over) return progressed;
+  if (!task.budget_stopped) {
+    task.budget_stopped = {
+      at: Date.now(), spend: status.spend, elapsed_minutes: Math.round(status.elapsed_minutes),
+      budget_usd: status.budget_usd == null ? null : status.budget_usd,
+      timebox_minutes: status.timebox_minutes == null ? null : status.timebox_minutes,
+      skipped_packages: [],
+    };
+    record(task, { event: 'budget_stopped', task_id: task.run_id, ...task.budget_stopped });
+    progressed = true;
+  }
+  // Nothing to sweep until shape has actually produced packages, and nothing to sweep while a
+  // dispatch this task already opened is still running.
+  if (!task.spec || !Array.isArray(task.spec.packages)) return progressed;
+  if (task.nodes.some((n) => n.stage === 'dispatch' && n.state === 'running')) return progressed;
+  const currentIntegrate = task.nodes.filter((n) => n.stage === 'integrate' && n.state !== 'done' && !n.final).pop();
+  if (!currentIntegrate) return progressed; // no integrate left pending on a never-run package
+  const neverRan = task.nodes.filter((n) => n.stage === 'dispatch' && n.state === 'pending'
+    && currentIntegrate.deps.some((d) => d.startsWith(`accept:${n.subgoal_id}:`)));
+  if (!neverRan.length) return progressed;
+  const skipped = [];
+  for (const dn of neverRan) {
+    dn.state = 'skipped';
+    dn.final = true;
+    dn.result = { stage_ok: false, reason: 'skipped: budget/timebox exhausted before this package could dispatch' };
+    const an = task.nodes.find((x) => x.node_id === dn.node_id.replace(/^dispatch:/, 'accept:'));
+    if (an) { an.state = 'skipped'; an.final = true; an.result = { stage_ok: false, reason: 'skipped: budget/timebox exhausted' }; }
+    skipped.push(dn.subgoal_id);
+  }
+  const keptAccepts = currentIntegrate.deps.filter((d) => { const x = task.nodes.find((y) => y.node_id === d); return x && x.state === 'done'; });
+  task.budget_stopped.skipped_packages = [...new Set([...(task.budget_stopped.skipped_packages || []), ...skipped])];
+  reintegrateBehind(task, currentIntegrate.node_id, keptAccepts, `budget/timebox exhausted; not done: ${skipped.join(', ')}`);
+  record(task, { event: 'budget_swept', task_id: task.run_id, skipped });
+  return true;
+}
+
 // Opens every ready dispatch node this poll is allowed to - the phase-Team exemption and
 // max_parallel_teams for ordinary STORY packages - and returns how many it opened. Shared by
 // tm_next (a caller driving the graph by hand, chiefly tests) and the daemon's own loop, so the
 // two can never disagree about which dispatch is allowed to open when.
 export function advanceDispatches(task) {
+  // budget/timebox stop: no NEW package opens once the task is over budget - a running one
+  // (this check never sees, since it never touches state 'running') still finishes.
+  if (task.budget_stopped) return 0;
   // max_parallel_teams caps how many develop STORY dispatches run at once - phase-Team
   // packages (PLAN/QA/AUDIT) are exempt, both from the count and from the cap itself: the design
   // already limits each to at most one at a time (§2 "v0.12.0이 하지 않는 것"), so throttling
@@ -3856,6 +4123,7 @@ function toolNext(a) {
   // a separate call means a caller driving the graph by hand cannot forget to, and cannot do it
   // twice - the same three steps the daemon's own loop runs, shared through the exports above so
   // the two never diverge on what "ready" means.
+  if (enforceBudget(task)) saveRun(task);
   if (advanceDispatches(task)) saveRun(task);
   if (serviceRunningDispatches(task)) saveRun(task);
   prepareReadyIntegrations(task);
@@ -4236,6 +4504,9 @@ function toolStatus(a) {
       : verdict(task, n))),
     daemon: task.daemon ? { pid: task.daemon.pid, alive: driverAlive(task.daemon), log: task.daemon.log, stderr: task.daemon.stderr, spawn_count: task.daemon.spawn_count, restarts: task.daemon.restarts || 0, exhausted: !!task.daemon.exhausted, stderr_tail: driverStderrTail(task.daemon) } : null,
     team: task.team || null,
+    // Only present when either knob is actually set - a task that never asked for a budget or
+    // timebox reads exactly as it did before this existed.
+    ...((task.team && task.team.opts && (task.team.opts.budget_usd != null || task.team.opts.timebox_minutes != null)) ? { budget: budgetStatus(task) } : {}),
     ...viewFields,
   };
 }

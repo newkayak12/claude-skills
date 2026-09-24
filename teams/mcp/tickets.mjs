@@ -61,6 +61,9 @@ export function docPaths(task) {
     audit: join(base, '65-audit.md'),
     goalGate: join(base, '70-goal-gate.md'),
     report: join(base, '80-report.md'),
+    // §B.2: the Retrospective + Next backlog the report stage writes, machine-readable and kept
+    // beside the human-readable 80-report.md that carries the same two sections in prose.
+    retro: join(base, 'retro.json'),
   };
 }
 
