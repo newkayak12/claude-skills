@@ -3839,6 +3839,103 @@ test('the shape contract states the rules critique refuses shapes over', async (
   assert.match(shape, /satisfiable from that package's deps\[\] alone/, "a package judged on a sibling's result cannot pass");
 });
 
+// --- shape analysis: bloat and width signals -------------------------------------------------
+// Two real shapes passed validateShape clean and were never caught: awake-beta-ref1
+// (P1<-P2<-P3<-P4, P1 owned contracts+policy+tests, 3 attempts) and idol-beta-pm4 (P1 owned
+// kernel+contracts+app+a whole catalog domain). shapeAnalysis computes the facts a critic needs
+// to catch these next time - it is a signal, not a second validator, so none of this rejects a
+// shape by itself.
+
+const chainPkg = (id, touches, dep) => ({ id, title: id, brief: 'b', acceptance: ['a'], touches, deps: dep ? [dep] : [] });
+
+test('shapeAnalysis: a strict 4-package chain is width 1 and fully serial, with no bloat when touches are even', async () => {
+  const { shapeAnalysis } = await import('../mcp/taskmanager.mjs');
+  const packages = [
+    chainPkg('P1', ['a']),
+    chainPkg('P2', ['b'], 'P1'),
+    chainPkg('P3', ['c'], 'P2'),
+    chainPkg('P4', ['d'], 'P3'),
+  ];
+  const sa = shapeAnalysis(packages);
+  assert.equal(sa.package_count, 4);
+  assert.equal(sa.max_parallel_width, 1);
+  assert.equal(sa.fully_serial, true);
+  assert.deepEqual(sa.bloated, [], 'even touches counts are not bloat, just a serial shape');
+});
+
+test('shapeAnalysis: a foundation package holding many more scopes than its siblings is flagged bloated', async () => {
+  const { shapeAnalysis } = await import('../mcp/taskmanager.mjs');
+  // awake-beta-ref1's shape: P1 owns contracts+policy+tests+two more scopes, P2-P4 own one each.
+  const packages = [
+    chainPkg('P1', ['contracts', 'policy', 'tests', 'schema', 'wiring']),
+    chainPkg('P2', ['a'], 'P1'),
+    chainPkg('P3', ['b'], 'P2'),
+    chainPkg('P4', ['c'], 'P3'),
+  ];
+  const sa = shapeAnalysis(packages);
+  assert.equal(sa.touches_median, 1);
+  assert.deepEqual(sa.bloated.map((b) => b.id), ['P1']);
+  assert.equal(sa.bloated[0].touches, 5);
+});
+
+test('shapeAnalysis: a two-package 2-vs-1 split is not bloat - below the floor', async () => {
+  const { shapeAnalysis } = await import('../mcp/taskmanager.mjs');
+  const sa = shapeAnalysis([chainPkg('P1', ['a', 'b']), chainPkg('P2', ['c'])]);
+  assert.deepEqual(sa.bloated, [], 'touches counts this small are noise, not a real signal');
+});
+
+test('shapeAnalysis: independent packages that could run the same round give width > 1', async () => {
+  const { shapeAnalysis } = await import('../mcp/taskmanager.mjs');
+  const packages = [chainPkg('P1', ['a']), chainPkg('P2', ['b']), chainPkg('P3', ['c'], 'P1')];
+  const sa = shapeAnalysis(packages);
+  assert.equal(sa.max_parallel_width, 2, 'P1 and P2 are both ready in round one');
+  assert.equal(sa.fully_serial, false);
+});
+
+test('the critique contract asks for blocking type A on an unnamed bloated foundation or an unjustified serial shape', async () => {
+  const { CONTRACT } = await import('../mcp/taskmanager.mjs');
+  const critique = CONTRACT.critique;
+  assert.match(critique, /Shape analysis/, 'the contract must point at the facts the briefing hands it');
+  assert.match(critique, /Type A/);
+  assert.match(critique, /owns, in touches\[\], more than the contracts/);
+  assert.match(critique, /max_parallel_width 1/);
+  assert.match(critique, /real data dependency/);
+  assert.match(critique, /Type B/);
+  assert.match(critique, /Type C/);
+});
+
+test('the critique briefing carries the shape analysis facts for a serial chain with a bloated P1', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    let v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 4 modules'], handoff: 'four modules' }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    const CHAIN_SHAPE = {
+      acceptance: ['every module builds together'],
+      packages: [
+        { id: 'P1', title: 'foundation', flow: 'develop', brief: 'contracts, policy, tests', acceptance: ['a'], touches: ['contracts', 'policy', 'tests', 'schema', 'wiring'], deps: [] },
+        { id: 'P2', title: 'module b', flow: 'develop', brief: 'b', acceptance: ['b'], touches: ['b.txt'], deps: ['P1'] },
+        { id: 'P3', title: 'module c', flow: 'develop', brief: 'c', acceptance: ['c'], touches: ['c.txt'], deps: ['P2'] },
+        { id: 'P4', title: 'module d', flow: 'develop', brief: 'd', acceptance: ['d'], touches: ['d.txt'], deps: ['P3'] },
+      ],
+    };
+    v = await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({ ...CHAIN_SHAPE, handoff: 's' }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+
+    const nx = await tm.call('tm_next', { task_id });
+    const critiqueNode = nx.ready.find((n) => n.node_id === 'critique');
+    assert.ok(critiqueNode, JSON.stringify(nx));
+    const briefing = readFileSync(critiqueNode.briefing_path, 'utf8');
+    assert.match(briefing, /## Shape analysis/);
+    assert.match(briefing, /max parallel width 1/);
+    assert.match(briefing, /fully serial/);
+    assert.match(briefing, /Bloated: P1 owns 5 scopes/);
+
+    const status = await tm.call('tm_status', { task_id });
+    assert.equal(status.shape.max_parallel_width, 1);
+    assert.equal(status.shape.fully_serial, true);
+    assert.deepEqual(status.shape.bloated.map((b) => b.id), ['P1']);
+  }, { roles: { planning: false, qa: false } });
+});
+
 // --- the ticket surface: state, history and body move together ------------------------------
 // idol-pm-1 (2026-09-22) ran 81 minutes with a DONE story reading READY on the board and an
 // empty docs directory: both hung off MCP tool calls the daemon, which owns the loop since
