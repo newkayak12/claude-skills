@@ -1666,6 +1666,11 @@ export function nodeBriefing(run, n) {
       // this is what a QA subgoal's own gate must see to judge whether the case set was run and
       // reported, not just its checks[] summary of pass/fail per case.
       defects: Array.isArray(x.result.defects) ? x.result.defects : [],
+      // A defect implement/test found OUTSIDE this package's own scope, in an upstream package
+      // it deps on (prompts.mjs's UPSTREAM_DEFECT_CONTRACT) - this package's own gate must see
+      // every one of them to carry them through into its own "upstream_defects", the same way it
+      // already carries an execute node's `defects` through for a QA subgoal.
+      upstream_defects: Array.isArray(x.result.upstream_defects) ? x.result.upstream_defects : [],
       changed_files: x.result.changed_files || [],
       changed_files_verified: x.result.changed_files_verified,
       verified: x.result.verified,
@@ -1710,6 +1715,7 @@ export function nodeBriefing(run, n) {
           // both read every finished node here (not just deps), so an execute node's defects
           // must be visible in this list too, not only to the subgoal gate beside it.
           defects: Array.isArray(x.result.defects) ? x.result.defects : [],
+          upstream_defects: Array.isArray(x.result.upstream_defects) ? x.result.upstream_defects : [],
           changed_files: x.result.changed_files || [],
           changed_files_verified: x.result.changed_files_verified,
           verified: x.result.verified,

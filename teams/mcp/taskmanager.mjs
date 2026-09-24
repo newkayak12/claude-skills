@@ -175,6 +175,7 @@ ${QUESTIONS_CONTRACT}`,
   accept: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "accept": true|false, "match_pct": 0-100, "checks": ["<what you verified in the worktree or the report, and what it showed>"], "gaps": ["what the package did not deliver"], "observations": ["weaknesses that do not block"], "reason": "...", "evidence": "..."}
 You are the judge, not the actor. The child run's own goal gate and report are below; judge them against THIS package's acceptance, which the child never saw in full. A child that passed its own gate but delivered less than the package asked for is a gap here. Absent evidence is a gap, not a pass.
 accept:true with an empty checks[] is refused by the engine - a judgement with no evidence is a guess.
+If "What the child run delivered" below has an "Upstream defects it reported" list, the child found something wrong OUTSIDE this package's own touches[], in a package it deps on - not a gap in what THIS package delivered. Copy every one of them through verbatim into your own JSON as "upstream_defects": [{"package": "...", "title": "...", "evidence": "...", "touches": ["..."]}] - the manager files each one as a fix STORY owned by the upstream package's own scope, the same way a QA-found defect is filed. Do not judge this package down, and do not put an upstream defect only in "gaps": it is not this package's fault and is not this package's fix.
 ${QUESTIONS_CONTRACT}`,
   integrate: `Return JSON: {"stage_ok": true|false, "skills_used": ["<skill or none>"], "verified": true|false, "checks": ["command -> observed output"], "unowned": ["requirement -> the package that delivered it, NONE if no package did, or <package> -> did not deliver its own stated scope"], "duplication": ["responsibility built more than once -> the packages that each built it, and what shared module it should have been"], "volume": ["package -> files/LOC/tests it delivered -> plausible for its stated scope, or looks like a card was closed rather than a job finished, and why"], "evidence": "..."}
 The package branches are already merged into the integration worktree named below - the manager did that and recorded each merge commit. Your job is what no package could do alone: run the goal-level checks the shape's acceptance implies against the combined tree, and read the seams between packages. stage_ok=false when a check could not run at all. verified=false when the combined tree fails a check the packages passed separately. Do not fix package work here: a failing seam is a gap for the gate and a repackage for the manager.
@@ -943,6 +944,27 @@ export function autoRetryPackages(task) {
       changed = true;
       continue;
     }
+    // §upstream_defects: a package whose dispatch failed (its own acceptance could not pass
+    // while an upstream dependency was broken - not the QA case above, but the same wedge for an
+    // ordinary develop package: awake-beta-ref2, 2026-09-25) carries them the same way foldChild
+    // carries QA's defects through regardless of the fold's own accept/reject verdict. File the
+    // fix and reopen this package's own next attempt wired onto it, instead of the blind retry
+    // below reopening the SAME impossible attempt against the SAME broken upstream a third time.
+    if (failed.stage === 'dispatch' && Array.isArray(failed.result.upstream_defects) && failed.result.upstream_defects.length) {
+      const out = fileUpstreamDefects(task, pid, failed.result.upstream_defects);
+      if (out.downstream_attempt) {
+        record(task, {
+          event: 'daemon_upstream_defects_filed', task_id: task.run_id, package_id: pid,
+          filed: out.filed, targeted: out.targeted, downstream_attempt: out.downstream_attempt, failed_node: failed.node_id,
+        });
+        changed = true;
+        continue;
+      }
+      // Every upstream package this attempt named was already at its own upstream_fix_rounds
+      // cap (recorded onto task.unresolved_defects by fileUpstreamDefects), or named no real
+      // package id at all - nothing left to file or wire. Fall through to the ordinary retry
+      // below, same as before this existed.
+    }
     const fb = [failed.result.reason || '', ...(failed.result.gaps || [])].filter(Boolean).join('\n- ');
     const out = retryPackage(task, pid, fb);
     record(task, {
@@ -1150,7 +1172,105 @@ function fileDefects(task, defects, opts) {
   }
   const feedback = defects.map((d) => `${(d && d.title) || ''}${d && d.evidence ? `: ${d.evidence}` : ''}`).filter(Boolean).join('\n- ');
   const fresh = reintegrateBehind(task, oldDep, acceptIds, feedback);
-  return { task: saveRun(task), filed: filed.map((p) => p.id), integrate: fresh };
+  // acceptIds (parallel to `filed`, same order) is what fileUpstreamDefects reads to rewire a
+  // downstream package's own next attempt onto the fix instead of the upstream package's stale
+  // accept - every other caller ignores the extra key.
+  return { task: saveRun(task), filed: filed.map((p) => p.id), acceptIds: acceptIds.slice(), integrate: fresh };
+}
+
+// ---------- upstream defects: a downstream package's own fix-forward route (§upstream_defects) ----------
+//
+// A package's dispatch (implement/test/gate, or the manager's own accept judging it) can name a
+// defect it found OUTSIDE its own touches[], in a package it deps on - a frozen-contract problem
+// no downstream package may fix in its own worktree (this package's files are not in scope
+// there). awake-beta-ref2 (2026-09-25): P3 (adapters) was ACCEPTED at 93 identifying Claude Code
+// processes by kernel comm=='claude', but on P4's host the real CLI's kernel comm is a version
+// string; P4 proved it, but had no route but to fail its own dispatch against a package it could
+// not touch, twice, and the daemon just reopened the identical, impossible retry a third time.
+//
+// This is the fix-forward route: file a fix STORY owned by the UPSTREAM package's own scope
+// (touches from that package, deps on that package - reusing fileDefects/reintegrateBehind, the
+// same machinery a QA-found defect already takes), then reopen the DOWNSTREAM package's own next
+// attempt with its deps rewired onto the fix's accept instead of the upstream package's now-
+// superseded one - so it waits for the fix and re-runs against it, instead of retrying blind
+// against the same broken upstream. Capped per upstream package by team.opts.upstream_fix_rounds
+// (teamconfig.mjs), the same way qa_rounds caps a QA round that keeps finding the same defect:
+// beyond it, recorded onto task.unresolved_defects instead of filed, and the caller (finish()'s
+// accept hook, or autoRetryPackages' failed-dispatch branch) falls back to its own ordinary path.
+//
+// Returns {filed, targeted, downstream_attempt} - `targeted` is the upstream package ids a fix
+// was actually filed against this call (empty when every one of them was already at cap), and
+// `downstream_attempt` is the new dispatch:<downstreamPid>:N this opened, or null when nothing
+// was filed (nothing to wire the downstream package behind).
+function fileUpstreamDefects(task, downstreamPid, defects) {
+  const cap = Number.isInteger(task.team && task.team.opts && task.team.opts.upstream_fix_rounds)
+    ? task.team.opts.upstream_fix_rounds : TEAM_DEFAULTS.upstream_fix_rounds;
+  const byUpstream = new Map();
+  for (const d of Array.isArray(defects) ? defects : []) {
+    const upstreamId = d && d.package != null ? String(d.package) : '';
+    if (!upstreamId || upstreamId === String(downstreamPid)) continue; // no id, or a package naming itself
+    if (!byUpstream.has(upstreamId)) byUpstream.set(upstreamId, []);
+    byUpstream.get(upstreamId).push(d);
+  }
+  const records = [];
+  const targeted = [];
+  for (const [upstreamId, group] of byUpstream) {
+    const upstreamPkg = packageOf(task, upstreamId);
+    if (!upstreamPkg) continue; // not a real package id in this task - nothing to file against
+    // Rounds already run against THIS upstream package - every prior fix STORY fileUpstreamDefects
+    // itself filed, regardless of which downstream package found the next one. Read off the
+    // packages list, the same way qaAttempts (autoRetryPackages) counts dispatch:QA nodes: a
+    // filed fix package's own deps names the upstream id it was filed against (see `records`
+    // below), so this needs no extra bookkeeping field of its own.
+    const priorRounds = (task.spec.packages || []).filter((p) => p.reporter === 'upstream' && (p.deps || []).map(String).includes(upstreamId)).length;
+    if (priorRounds >= cap) {
+      task.unresolved_defects = (task.unresolved_defects || []).concat(group.map((d) => ({
+        title: (d && d.title) || `upstream defect in ${upstreamId}`, evidence: (d && d.evidence) || '',
+        reporter: 'upstream', upstream: upstreamId, reported_by: String(downstreamPid), round: priorRounds + 1,
+      })));
+      record(task, { event: 'upstream_fix_rounds_exhausted', task_id: task.run_id, package_id: String(downstreamPid), upstream: upstreamId, filed: priorRounds });
+      continue;
+    }
+    targeted.push(upstreamId);
+    for (const d of group) {
+      records.push({
+        title: (d && d.title) || `upstream defect in ${upstreamId}`,
+        evidence: (d && d.evidence) || '',
+        // The upstream package's OWN scope, not the downstream reporter's: the fix has to land
+        // in the files the defect actually lives in, and touches[] is what shape's own rule
+        // (CONTRACT.shape) already uses to say who owns what.
+        touches: (d && Array.isArray(d.touches) && d.touches.length ? d.touches : upstreamPkg.touches) || [],
+        deps: [upstreamId],
+      });
+    }
+  }
+  if (!records.length) return { filed: [], targeted: [], downstream_attempt: null };
+  const out = fileDefects(task, records, { reporter: 'upstream' });
+  const fixAcceptsByUpstream = {};
+  out.acceptIds.forEach((accId, i) => {
+    const upstreamId = records[i].deps[0];
+    (fixAcceptsByUpstream[upstreamId] = fixAcceptsByUpstream[upstreamId] || []).push(accId);
+  });
+  // Reopen the downstream package's own next attempt - retryPackage's usual move (supersede the
+  // open attempt, keep its retry budget, reopen a failed integrate that blamed it) EXCEPT for its
+  // deps: retryPackage would copy the package's very FIRST dispatch's deps unchanged, which is
+  // exactly the stale accept:<upstream>:N this whole mechanism exists to stop retrying against.
+  const feedback = `blocked on a defect this package found outside its own scope, in ${targeted.join(', ')}: waiting for the fix package(s) filed against ${targeted.join(', ')} to be accepted before retrying.`;
+  const retried = retryPackage(task, downstreamPid, feedback);
+  if (retried.attempt) {
+    const dispatchNode = task.nodes.find((x) => x.node_id === `dispatch:${downstreamPid}:${retried.attempt}`);
+    if (dispatchNode) {
+      const rewritten = [];
+      for (const dep of dispatchNode.deps) {
+        const m = /^accept:(.+):\d+$/.exec(dep);
+        if (m && fixAcceptsByUpstream[m[1]]) rewritten.push(...fixAcceptsByUpstream[m[1]]);
+        else rewritten.push(dep);
+      }
+      dispatchNode.deps = [...new Set(rewritten)];
+      saveRun(task);
+    }
+  }
+  return { task, filed: out.filed, targeted, downstream_attempt: retried.attempt || null };
 }
 
 // ---------- the audit phase-Team: planning's second pass (v0.12.1 Task 2, §2, §3) ----------
@@ -2237,6 +2357,32 @@ export function foldChild(task, n) {
       .flatMap((x) => x.result.defects.map((d) => String(d).trim()))
       .filter(Boolean),
   )];
+  // §upstream_defects: a defect this package's own implement/test/gate found OUTSIDE its own
+  // scope, in an upstream package it deps on (prompts.mjs's UPSTREAM_DEFECT_CONTRACT) - read
+  // straight off every node in the child that can carry one, the same "regardless of whether the
+  // child ever reached a goal-gate verdict" reasoning defectsFound above already uses, so a child
+  // that never reached its own gate:U1 (folded blocked, not just done) still surfaces what
+  // implement/test already found. Deduped by (package, title): a retried attempt that reports the
+  // same upstream defect twice must not file it twice.
+  const upstreamDefectsFound = (() => {
+    const seen = new Map();
+    for (const x of child.nodes) {
+      const list = x.result && Array.isArray(x.result.upstream_defects) ? x.result.upstream_defects : [];
+      for (const d of list) {
+        if (!d || !d.package) continue;
+        const key = `${d.package}::${d.title || ''}`;
+        if (!seen.has(key)) {
+          seen.set(key, {
+            package: String(d.package),
+            title: String(d.title || `upstream defect in ${d.package}`),
+            evidence: String(d.evidence || ''),
+            touches: Array.isArray(d.touches) ? d.touches.map(String) : [],
+          });
+        }
+      }
+    }
+    return [...seen.values()];
+  })();
   const base = {
     child_run_id: child.run_id,
     child_cwd: n.child.cwd,
@@ -2245,6 +2391,7 @@ export function foldChild(task, n) {
     child_counts: cs.counts,
     changed_files: changed,
     ...(defectsFound.length ? { defects: defectsFound } : {}),
+    ...(upstreamDefectsFound.length ? { upstream_defects: upstreamDefectsFound } : {}),
     ...(setFindings ? { set_findings: setFindings } : {}),
     report: report ? String(report.result.handoff || '') : (chainAuthored ? String(chainAuthored.result.handoff || '') : ''),
   };
@@ -2678,6 +2825,12 @@ export function composeTaskPrompt(task, n) {
       // them. The qa accept contract (below) tells this agent to relay every one of these into
       // its own "defects" field - this is the list it must not drop any of.
       if ((r.defects || []).length) L.push(`Defects it reported:\n${bullets(r.defects)}`);
+      // §upstream_defects: foldChild carries these through regardless of which package's child
+      // reported them (not QA/audit-only, unlike r.defects above) - the accept contract (above)
+      // tells this judge to relay every one of them into its own JSON verbatim.
+      if ((r.upstream_defects || []).length) {
+        L.push(`Upstream defects it reported:\n${bullets(r.upstream_defects.map((d) => `${d && d.package ? `${d.package}: ` : ''}${(d && d.title) || String(d)}${d && d.evidence ? ` -> ${d.evidence}` : ''}`))}`);
+      }
       if ((r.changed_files || []).length) L.push(`Files it reported changing:\n${bullets(r.changed_files)}`);
       L.push(`Its report:`);
       L.push(r.report || '(no report)');
@@ -2970,6 +3123,14 @@ export function finish(task, n, result) {
         fileDefects(task, defects, { reporter: 'qa' });
       }
     }
+  }
+  // §upstream_defects: ANY package's accept (not just QA/AUDIT) can carry these - foldChild reads
+  // them off the child's own implement/test/gate regardless of package phase, and the base accept
+  // contract (above) tells every judge to relay them through. File each as a fix STORY owned by
+  // the upstream package's own scope, and reopen THIS package's own next attempt wired onto the
+  // fix instead of blindly repeating what just passed against a still-broken dependency.
+  if (n.stage === 'accept' && n.state === 'done' && Array.isArray(result.upstream_defects) && result.upstream_defects.length) {
+    fileUpstreamDefects(task, n.subgoal_id, result.upstream_defects);
   }
   // Every integrate that finishes reroutes gate:goal behind it (see fileDefects/reintegrateBehind
   // above and retryPackage's own re-integrate loop) - so "an integrate just finished" is the one
@@ -4479,6 +4640,16 @@ function toolStatus(a) {
     // `packages` above so that field - already pinned elsewhere as a plain id list - never
     // changes shape.
     package_costs: task.spec ? task.spec.packages.map((p) => packageCostRollup(driverTotal, p.id)) : [],
+    // Why a package with nothing running is not making progress - tm_ticket already surfaces
+    // this per-STORY (storyBlockedReason, tickets.mjs); tm_status lists every package that IS
+    // blocked, in one place, without a caller having to poll tm_ticket per package id. Includes
+    // 'upstream_defect' (§upstream_defects) - a package rewired to wait on a fix STORY it itself
+    // filed against an upstream dependency, not a blind retry - alongside the existing
+    // unmet_deps/capacity/human_wait/restart_exhausted reasons. Only entries that ARE blocked;
+    // an unblocked task reads exactly as it did before this field existed.
+    blocked: task.spec ? task.spec.packages
+      .map((p) => ({ package_id: p.id, blocked_reason: storyBlockedReason(task, p.id) }))
+      .filter((b) => b.blocked_reason) : [],
     ...costFields,
     nodes: task.nodes.filter((n) => (a.node_id ? n.node_id === a.node_id : true)).map((n) => (n.state === 'pending' || n.state === 'running'
       ? { node_id: n.node_id, stage: n.stage, state: n.state, deps: n.deps, after: n.after || [],
