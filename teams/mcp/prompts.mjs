@@ -274,7 +274,7 @@ export function composePrompt(run, n, briefing) {
     // files[], which is what the subgoal writes. The two shared one field until idol-pm-3
     // (2026-09-23): setgoal put .claude/team.json in files[] as a source to read, and the
     // document-path rule rejected the spec for it.
-    if (sg.sources?.length && n.stage === 'investigate') lines.push(`Sources to open first:\n${bullets(sg.sources)}`);
+    if (sg.sources?.length && (n.stage === 'investigate' || n.stage === 'audit')) lines.push(`Sources to open first:\n${bullets(sg.sources)}`);
     if (['implement', 'investigate', 'draft', 'revise'].includes(n.stage)) {
       // A planning subgoal writes the PRD, which governs the whole tree - its conventions are
       // not selected by the paths it touches.

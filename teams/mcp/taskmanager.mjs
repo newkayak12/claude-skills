@@ -1309,6 +1309,11 @@ function openAudit(task, afterNodeId) {
   const L = [
     `This is planning's second pass over this task: cross-check what was actually built against the PRD this same Team wrote, and say which user stories are still unmet.`,
     '',
+    // awake-beta-ref2 AUDIT:2 (2026-09-25): after a fix round, setgoal listed the source files it
+    // meant to inspect in files[], the document-path rule rejected the spec, and the audit ended
+    // blocked - the same split planning's own setgoal learned in idol-pm-3.
+    `Each audit subgoal's files[] is only the markdown report it writes. The code, tests and documents it must inspect go in that subgoal's sources[] - never in files[].`,
+    '',
     'User stories the PRD produced:',
     bullets(stories),
   ];
