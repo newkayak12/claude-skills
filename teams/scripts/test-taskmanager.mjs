@@ -372,7 +372,7 @@ test('tm_open with no roles argument defaults BOTH planning and qa on (0.17.0): 
   try {
     const open = await tm.call('tm_open', { request: 'big request', cwd, vendor: 'self' });
     const task = JSON.parse(readFileSync(join(root, open.task_id, 'task.json'), 'utf8'));
-    assert.deepEqual(task.team.opts.roles, { planning: true, qa: true });
+    assert.deepEqual(task.team.opts.roles, { planning: true, qa: true, audit: true });
     assert.ok(task.planning_pkg && task.planning_pkg.id === 'PLAN');
     assert.deepEqual(task.nodes.find((n) => n.node_id === 'shape').deps, ['accept:PLAN:1']);
   } finally {
@@ -1426,6 +1426,42 @@ test('roles.planning off: no audit phase-Team is ever opened (regression)', asyn
   });
 });
 
+test('roles.audit:false keeps the rest of planning but skips the audit phase-Team, even with roles.planning on (the new independent switch)', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    await toIntegrateWithPlanning(tm, g, task_id, cwd);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.equal(task.audit_pkg == null, true, 'roles.audit:false must skip openAudit even though the PRD (roles.planning) ran');
+    assert.deepEqual(task.nodes.find((n) => n.node_id === 'gate:goal:1').deps, ['integrate:1']);
+    assert.ok(!task.nodes.some((n) => n.subgoal_id === 'AUDIT'));
+  }, { roles: { planning: true, audit: false } });
+});
+
+// Gap 1 (judge≠author): audit's author is the PLAN package's draft/revise, which ran in a
+// sibling child run folded away before the audit child ever opens - routing.mjs's AUTHOR_OF
+// table has no peer node to find it from. openAudit reads that run once and stashes the
+// identity as task.audit_pkg.author_identity, threaded into the audit child run as
+// run.external_author (graph.mjs's createRun); this test checks both hops of that plumbing.
+test('the audit phase-Team carries the PRD author\'s identity across the run boundary as external_author', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    await toIntegrateWithPlanning(tm, g, task_id, cwd);
+    const planTask = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const planDispatch = planTask.nodes.find((n) => n.node_id === 'dispatch:PLAN:1');
+    const planRun = await g.call('team_status', { run_id: planDispatch.child.run_id, cwd: planDispatch.child.cwd, full: true });
+    const revise = planRun.nodes.find((n) => n.node_id === 'revise:U1:1');
+    assert.ok(revise, 'completePlanning always submits revise:U1:1');
+
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.deepEqual(task.audit_pkg.author_identity, { executor: revise.executor || null, vendor: revise.vendor || null, model: revise.model || null });
+
+    const nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children[0].package_id, 'AUDIT');
+    const auditRun = await g.call('team_status', { run_id: nx.children[0].run_id, cwd: nx.children[0].cwd, full: true });
+    assert.deepEqual(auditRun.external_author, task.audit_pkg.author_identity, 'the audit child run carries the PRD author forward');
+  }, { roles: { planning: true } });
+});
+
 test('an audit round is capped like a QA round: past qa_rounds an unmet story is recorded, not filed', async () => {
   await withTask(async ({ tm, g, cwd, root, task_id }) => {
     await toIntegrateWithPlanning(tm, g, task_id, cwd);
@@ -1767,6 +1803,27 @@ async function toIntegrate(tm, g, task_id) {
   assert.deepEqual(nx.ready.map((n) => n.node_id), ['integrate:1']);
   return nx;
 }
+
+// Gap 2 (judge≠author): critique judges shape, and accept judges a package's own dispatch,
+// but both run through daemon.mjs's judge() - one identical `claude -p` call for every manager
+// node, with no vendor ever selected and no executor/vendor ever tagged onto these nodes. There
+// is nothing to route critique or accept away TO (unlike audit's cross-run case, where a peer
+// vendor may genuinely be free), so the honest move is recording reviewer_independence rather
+// than asserting one - and it always reads 'unverifiable-self', because the manager's own side
+// of the comparison never has a tracked identity to be anything else.
+test('critique and accept record reviewer_independence: unverifiable-self - the manager judges through one untracked host identity, never a routed one', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    const nx = await toIntegrate(tm, g, task_id);
+    void nx;
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const critique = task.nodes.find((n) => n.node_id === 'critique');
+    assert.equal(critique.result.reviewer_independence, 'unverifiable-self');
+    const acceptP1 = task.nodes.find((n) => n.node_id === 'accept:P1:1');
+    assert.equal(acceptP1.result.reviewer_independence, 'unverifiable-self');
+    const acceptP2 = task.nodes.find((n) => n.node_id === 'accept:P2:1');
+    assert.equal(acceptP2.result.reviewer_independence, 'unverifiable-self');
+  });
+});
 
 test('a failed integrate reopens once the package it blamed is retried; an unknown package id is refused', async () => {
   // The first docs task to finish its packages ended here: integrate ran the README examples,
@@ -3432,7 +3489,7 @@ test('tm_open reads .claude/team.json as defaults and an explicit argument still
     assert.equal(sa.team.opts.goal_threshold, 95);
     assert.equal(sa.team.sources.goal_threshold, 'team.json');
     assert.equal(sa.team.opts.max_retries, 4);
-    assert.deepEqual(sa.team.opts.roles, { planning: false, qa: true });
+    assert.deepEqual(sa.team.opts.roles, { planning: false, qa: true, audit: true });
     assert.equal(sa.team.file_status, 'ok');
     const taskFile = JSON.parse(readFileSync(join(tasks, a.task_id, 'task.json'), 'utf8'));
     assert.equal(taskFile.goal_threshold, 95, 'the value the manager actually gates with');

@@ -43,7 +43,13 @@ export const TEAM_DEFAULTS = Object.freeze({
   // parking forever with nobody watching to notice (0.27.3 review, 2026-09-24).
   interactive: false,
   qa_rounds: 2,
-  roles: { planning: true, qa: true },
+  // audit used to ride on roles.planning alone (taskmanager.mjs's openAudit was gated on
+  // `roles.planning`, nothing else - the audit pass is planning's own second pass, so it had no
+  // independent switch). It is still ON by default whenever planning is - that pairing is
+  // unchanged, so a project that never heard of this key keeps today's behaviour byte for byte -
+  // but a project may now turn audit off while keeping the rest of planning (a PRD without the
+  // post-integration cross-check), which `roles.planning` alone could never express.
+  roles: { planning: true, qa: true, audit: true },
   goal_threshold: 90,
   max_retries: 2,
   driver_restarts: 2,

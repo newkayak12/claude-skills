@@ -1051,6 +1051,24 @@ function fileDefects(task, defects, opts) {
 // planning stage the user never asked to turn off. The QA report is consumed when one exists and
 // is simply absent when it does not - which is also why the brief is built here, at open time,
 // rather than at shape: only now is there an integrated result and (maybe) a QA verdict to name.
+// routing.mjs's AUTHOR_OF cannot see this run's author: audit's author - the PLAN package's
+// draft/revise - ran in a sibling child run, folded away before this one ever opens, so there
+// is no in-run peer sharing a subgoal_id the way every other judging stage's actor lookup finds
+// one. Read that run once, here, before it is gone (it stays on disk, but there is no reason to
+// re-open it every time audit routes a candidate) - revise's identity wins over draft's when
+// both exist, the same precedence parentShapedChild gives revise's handoff over draft's, because
+// revise is the last hand that actually wrote what audit is now reading.
+function planAuthorIdentity(task) {
+  const planDispatch = latestBySubgoal(task, 'PLAN', 'dispatch');
+  if (!planDispatch || !planDispatch.child) return null;
+  const planRun = loadRun(planDispatch.child.cwd, planDispatch.child.run_id);
+  if (!planRun || !Array.isArray(planRun.nodes)) return null;
+  const author = planRun.nodes.filter((x) => x.stage === 'revise' && x.state === 'done').pop()
+    || planRun.nodes.filter((x) => x.stage === 'draft' && x.state === 'done').pop();
+  if (!author) return null;
+  return { executor: author.executor || null, vendor: author.vendor || null, model: author.model || null };
+}
+
 function openAudit(task, afterNodeId) {
   const integ = task.nodes.filter((x) => x.stage === 'integrate' && x.state === 'done' && x.integration).pop();
   const planDispatch = latestBySubgoal(task, 'PLAN', 'dispatch');
@@ -1076,6 +1094,12 @@ function openAudit(task, afterNodeId) {
     brief: L.join('\n'),
     acceptance: ['every user story in the PRD is judged against the integrated result, and the unmet ones are named'],
     deps: [], touches: [],
+    // Threaded into the audit child run by openChild as `external_author` - routing.mjs's
+    // externalAuthorOf reads it to route audit away from this identity when a peer vendor is
+    // available, and broker.mjs's reviewIndependence records reviewer_independence on the audit
+    // node's result either way, the same "route away where possible, record it regardless"
+    // pattern review/revise already runs for their own in-run author.
+    author_identity: planAuthorIdentity(task),
   };
   const accept = pushChain(task, PACKAGE_CHAIN, 'AUDIT', nextIndex(task, 'dispatch:AUDIT'), [afterNodeId], [], {});
   const goal = task.nodes.filter((x) => x.stage === 'gate' && x.subgoal_id == null).pop();
@@ -1925,6 +1949,10 @@ export function openChild(task, n) {
     // card. A package that still needs its own shape/setgoal (needsSplit) has no single subgoal
     // yet to pin - tm_assign on a STORY like that has nothing to touch until it is (re-)shaped.
     subgoal_assignee: pkg.assignee || null,
+    // The audit phase-Team's own judge≠author gap (routing.mjs's externalAuthorOf, broker.mjs's
+    // reviewIndependence): only openAudit's package ever sets this field, so every other package
+    // threads a plain null through, unchanged.
+    external_author: pkg.author_identity || null,
   });
   n.state = 'running';
   n.started_at = Date.now();
@@ -2549,6 +2577,48 @@ function verdict(task, n) {
   return out;
 }
 
+// Gap 2 (judge≠author): the manager's own reasoning nodes - shape, critique, accept, integrate,
+// gate, gate:goal - all run through daemon.mjs's judge(), one identical `claude -p` invocation
+// per node (that file's own comment on judge()): no vendor is ever selected among candidates and
+// no executor/vendor is ever recorded on a manager node, unlike a package's dispatch/accept
+// chain, which broker.mjs routes and tags normally. routing.mjs's AUTHOR_OF same-actor penalty
+// only nudges a CHOICE among ranked candidates, and judge() offers no choice to nudge - "route
+// it away" (the same phrase openAudit's own gap answers with externalAuthorOf) has no move to
+// make here today, since nothing stands ready to run critique or accept on a second identity.
+// What is still owed, and what this gives, is the honest half of broker.mjs's own
+// reviewIndependence pattern: recording reviewer_independence rather than asserting an
+// independence this path cannot back up. Both sides of a manager judgement are the same
+// untracked host identity by construction (`self`, the same word broker.mjs's own identityOf
+// falls back to for an executor it cannot see), so this always reads 'unverifiable-self' -
+// never 'distinct-identity', because nothing here could prove that even when accept's own
+// package really did land on a peer vendor (broker.mjs's normal cross-vendor routing still
+// applies to a package's own dispatch/accept chain - only the MANAGER's own nodes are exempt
+// from it): the manager's own side of the comparison has no identity of its own to compare
+// with, so "unverifiable" is the honest word regardless of what the other side turns out to be.
+function managerReviewerIndependence(task, n) {
+  if (n.stage === 'critique') {
+    const shape = task.nodes.filter((x) => x.stage === 'shape' && x.state === 'done').pop();
+    return shape ? 'unverifiable-self' : null;
+  }
+  if (n.stage === 'accept') {
+    const dispatch = task.nodes.find((x) => x.stage === 'dispatch' && x.subgoal_id === n.subgoal_id
+      && x.node_id === n.node_id.replace(/^accept:/, 'dispatch:'));
+    const child = dispatch && dispatch.child ? loadRun(dispatch.child.cwd, dispatch.child.run_id) : null;
+    if (!child) return null;
+    const sg = child.spec && Array.isArray(child.spec.subgoals) ? child.spec.subgoals[0] : null;
+    if (!sg) return null;
+    const chain = (KINDS[kindOf(sg)] || KINDS[DEFAULT_KIND]).chain;
+    // Any mutating (non-final) stage of the chain having a done node is enough to say
+    // "this package was authored" - which specific stage (implement/draft/execute) does not
+    // matter here, unlike planAuthorIdentity's audit-side need for the actual identity: accept
+    // has no identity of its own to compare against, so only "was there an author" is asked.
+    const authored = chain.slice(0, -1).some((stage) => child.nodes.some((x) => x.stage === stage
+      && x.subgoal_id === String(sg.id) && x.state === 'done'));
+    return authored ? 'unverifiable-self' : null;
+  }
+  return null;
+}
+
 export function finish(task, n, result) {
   // A node settling is what moves a ticket, and it is the one place both callers pass through -
   // tm_submit and the daemon alike. Hooking the caller instead left the whole surface stale
@@ -2559,6 +2629,8 @@ export function finish(task, n, result) {
     result = { ...result, integration_branch: n.integration.branch, integration_cwd: n.integration.cwd,
       merged: (n.integration.merged || []).map((m) => `${m.package} ${m.branch} -> ${m.commit}`) };
   }
+  const reviewerIndependence = managerReviewerIndependence(task, n);
+  if (reviewerIndependence) result = { ...result, reviewer_independence: reviewerIndependence };
   const f = VERDICT[n.stage];
   const floor = Number.isInteger(task.goal_threshold) ? task.goal_threshold : 90;
   const belowFloor = n.stage === 'gate' && f && result[f] === true
@@ -2659,7 +2731,10 @@ export function finish(task, n, result) {
   // not open the audit out from under a pending QA round" - even though the reopen hook's own
   // side effect on goal.deps is what actually enforces that.
   const roles = (task.team && task.team.opts && task.team.opts.roles) || {};
-  if (roles.planning && n.state === 'done'
+  // roles.audit defaults true, paired with roles.planning exactly like before this key existed
+  // (teamconfig.mjs) - so a project that never sets it keeps today's behaviour, and one that
+  // sets `roles: {audit: false}` keeps the rest of planning without the post-integration pass.
+  if (roles.planning && roles.audit !== false && n.state === 'done'
     && ((n.stage === 'accept' && n.subgoal_id === 'QA') || (n.stage === 'integrate' && !roles.qa))) {
     const goal = task.nodes.filter((x) => x.stage === 'gate' && x.subgoal_id == null).pop();
     if (goal && goal.deps.length === 1 && goal.deps[0] === n.node_id) openAudit(task, n.node_id);

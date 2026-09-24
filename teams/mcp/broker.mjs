@@ -703,6 +703,27 @@ function reviewerModel(run, node, chosen) {
 }
 
 function reviewIndependence(run, n, executor, model) {
+  // audit (planning-audit's own kind) makes the same demand review/revise do, but its author -
+  // the PLAN package's draft/revise - never ran in THIS run: it ran in a sibling child run the
+  // TaskManager folded away before this one ever opened (taskmanager.mjs's openAudit). There is
+  // no in-run peer to look up, so openAudit reads that other run once, up front, and stashes its
+  // author's identity here as `run.external_author` - this branch is the audit-side half of
+  // that same cross-run independence check, recording rather than refusing: unlike review/revise
+  // this never throws, because a caller who already committed to opening this run as its own
+  // child (openChild) has no in-loop reroute the way team_run's retry-within-a-run does; a
+  // routed-away vendor (routing.mjs's externalAuthorOf) is the "where possible" half, and this
+  // is the "record it either way" half.
+  if (n.stage === 'audit') {
+    const ext = run.external_author;
+    if (!ext) return null;
+    const mine = identityOf(executor, model);
+    const theirs = identityOf(ext.executor || ext.vendor, ext.model);
+    if ((executor || 'self') === 'self' || (ext.executor || ext.vendor || 'self') === 'self') {
+      return { independence: 'unverifiable-self', author: theirs, reviewer: mine };
+    }
+    if (mine === theirs) return { independence: 'unverifiable-same-host', author: theirs, reviewer: mine };
+    return { independence: 'distinct-identity', author: theirs, reviewer: mine };
+  }
   // revise (planning kind) makes the same "not the same identity as the author" demand
   // review does - the design doc's decision that a different identity revises. The
   // reviewer_independence field is still merged into the result only on the reasoning
@@ -1596,6 +1617,11 @@ async function toolGraphRun(a) {
       verification_error: contradicted
         ? `claimed changed_files not present in the worktree: ${check.contradicted_files.join(', ')}`
         : report.verification_error || '',
+      // audit is not a REASONING_STAGES member (graph.mjs's planning-audit table keeps every
+      // non-final chain stage "mutating" on purpose - see that table's own comment), so it
+      // never reaches the reasoning branch above. Its cross-run independence check still
+      // belongs on the result; merged here instead of gating a whole extra branch on one stage.
+      ...(independence ? { reviewer_independence: independence.independence } : {}),
     };
   }
   return finishNode(run, n, result, r.vendor);
@@ -1625,6 +1651,7 @@ export function computeSubmitResult(run, n, payload, vendorName) {
       verification_error: contradicted
         ? `claimed changed_files not present in the worktree: ${check.contradicted_files.join(', ')}`
         : '',
+      ...(independence ? { reviewer_independence: independence.independence } : {}),
     };
   }
   return { result, done: nodeSucceeded(run, n, result) };
