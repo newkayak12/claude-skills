@@ -1265,17 +1265,63 @@ test('a mixed spec expands a planning subgoal into investigate->draft->revise->g
   });
 });
 
-test('a rejected qa execute gets a fresh cases/execute pair, the same reassignment review gets for a rejected document', async () => {
+// awake-beta-ref1 (2026-09-24): verified:false with stage_ok:true meant "the case set ran and
+// found a real defect" (prompts.mjs's execute contract says so plainly), but nodeSucceeded
+// treated it exactly like a failed `test` node and reassigned the subgoal - retrying `cases`
+// and `execute` against the SAME unchanged tree for a bug neither of them could fix (there is
+// no implement stage in this chain). Three identical retries later the subgoal's budget was
+// spent, `gate`/`reduce` were unreachable, and the child run ended blocked with its defects
+// nowhere to go. This replaces that test: execute finding a defect is now a successful
+// execution, not a failure to retry.
+test('a qa execute that ran and found a real defect (verified:false, stage_ok:true) succeeds - it is not reassigned, and its defects carry into the subgoal gate briefing', async () => {
   await withRun(async ({ c, cwd, runId }) => {
     await throughCritiqueWith(c, cwd, runId, {
       goal: 'G', acceptance: ['A'],
       subgoals: [{ id: 'Q1', kind: 'qa', title: 'qa pass', acceptance: ['a'], deps: [] }],
     });
     await c.call('team_submit', { run_id: runId, cwd, node_id: 'cases:Q1:1', payload: ok({ changed_files: [], handoff: 'cases v1' }) });
-    const rv = await c.call('team_submit', { run_id: runId, cwd, node_id: 'execute:Q1:1', payload: ok({ verified: false, defects: ['double-processed a retried job -> reproduce with 2 workers and a forced retry'] }) });
-    assert.deepEqual(rv.reassigned, { target: 'subgoal', subgoal_id: 'Q1', attempt: 2 });
+    const rv = await c.call('team_submit', {
+      run_id: runId, cwd, node_id: 'execute:Q1:1',
+      payload: ok({ verified: false, defects: ['double-processed a retried job -> reproduce with 2 workers and a forced retry'] }),
+    });
+    assert.equal(rv.state, 'done', JSON.stringify(rv));
+    assert.equal(rv.reassigned, undefined, 'stage_ok:true means the run succeeded even though verified is false');
     const ids = (await c.call('team_status', { run_id: runId, cwd })).nodes.map((n) => n.node_id);
-    assert.ok(ids.includes('cases:Q1:2') && ids.includes('execute:Q1:2'));
+    assert.ok(!ids.includes('cases:Q1:2') && !ids.includes('execute:Q1:2'), 'no retry was opened - there is nothing a second cases/execute pair would change');
+
+    const nx = await c.call('team_next', { run_id: runId, cwd });
+    const gateReady = nx.ready.find((n) => n.node_id === 'gate:Q1:1');
+    assert.ok(gateReady, `gate:Q1:1 must be reachable, not blocked behind a phantom retry: ${JSON.stringify(nx)}`);
+    const gateBrief = readFileSync(gateReady.briefing_path, 'utf8');
+    assert.match(gateBrief, /Defects it reported:\n- double-processed a retried job -> reproduce with 2 workers and a forced retry/,
+      "the subgoal gate must see execute's defects directly, not just its checks[] pass/fail summary");
+  });
+});
+
+test('a qa execute that could NOT run at all (stage_ok:false) still fails, and is still retryable - only a genuine execution failure needs one', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, {
+      goal: 'G', acceptance: ['A'],
+      subgoals: [{ id: 'Q1', kind: 'qa', title: 'qa pass', acceptance: ['a'], deps: [] }],
+    });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'cases:Q1:1', payload: ok({ changed_files: [], handoff: 'cases v1' }) });
+    const rv = await c.call('team_submit', {
+      run_id: runId, cwd, node_id: 'execute:Q1:1',
+      payload: ok({ stage_ok: false, verified: false, reason: 'sandbox denied network access; the case set could not be run at all' }),
+    });
+    assert.equal(rv.state, 'failed', JSON.stringify(rv));
+    // stage_ok:false is not a rejected verdict - it is "the work did not run" - and
+    // autoReassign's own rule (broker.mjs: "Only the verdict reassigns... a different failure
+    // and keeps its existing path") deliberately does not auto-open a fresh attempt for it,
+    // exactly as it does not for a stage_ok:false implement or test. What this test protects
+    // is narrower and just as real: unlike a verified:false execute (now a success, see the
+    // test above), this failure is still retryable at all - team_retry still rebuilds the
+    // chain for it, the same way it would for any other genuine execution failure.
+    assert.equal(rv.reassigned, undefined, 'a could-not-run failure is not auto-reassigned - same rule as implement/test');
+    const retried = await c.call('team_retry', { run_id: runId, cwd, subgoal_id: 'Q1' });
+    assert.equal(retried.retried, true, JSON.stringify(retried));
+    const ids = (await c.call('team_status', { run_id: runId, cwd })).nodes.map((n) => n.node_id);
+    assert.ok(ids.includes('cases:Q1:2') && ids.includes('execute:Q1:2'), 'a genuine "could not run" failure can still be retried');
   });
 });
 

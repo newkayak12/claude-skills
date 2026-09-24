@@ -1419,6 +1419,10 @@ export function nodeBriefing(run, n) {
       decisions: Array.isArray(x.result.decisions) ? x.result.decisions : [],
       evidence: x.result.evidence || '',
       checks: x.result.checks || [],
+      // An execute node's own deliverable when verified:false (prompts.mjs's execute contract):
+      // this is what a QA subgoal's own gate must see to judge whether the case set was run and
+      // reported, not just its checks[] summary of pass/fail per case.
+      defects: Array.isArray(x.result.defects) ? x.result.defects : [],
       changed_files: x.result.changed_files || [],
       changed_files_verified: x.result.changed_files_verified,
       verified: x.result.verified,
@@ -1459,6 +1463,10 @@ export function nodeBriefing(run, n) {
           handoff: x.result.handoff || '',
           evidence: x.result.evidence || '',
           checks: x.result.checks || [],
+          // Same reasoning as upstream's own `defects` above - the report and the goal gate
+          // both read every finished node here (not just deps), so an execute node's defects
+          // must be visible in this list too, not only to the subgoal gate beside it.
+          defects: Array.isArray(x.result.defects) ? x.result.defects : [],
           changed_files: x.result.changed_files || [],
           changed_files_verified: x.result.changed_files_verified,
           verified: x.result.verified,

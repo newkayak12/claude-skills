@@ -629,7 +629,19 @@ function nodeSucceeded(run, n, result) {
   // gate that returned no verdict at all, sailed through. Absent evidence is not a pass -
   // which is exactly what these nodes are told.
   const field = VERDICT_FIELD[n.stage];
-  if (field && result[field] !== true) return false;
+  // execute (the qa kind's chain only - graph.mjs's KINDS.qa) is the exception: its contract
+  // (prompts.mjs) says plainly "verified=false with stage_ok=true means one or more cases
+  // failed - list each in defects" - that is a successful execution of the case set, carrying
+  // real defects forward to gate/reduce/report, not a failed check to retry. There is no
+  // implement stage in this chain for a retry to fix, so treating verified:false as failure
+  // retried `execute` against the SAME unchanged tree three times over (execute:U2:1..3,
+  // execute:U5:1..3 in awake-beta-ref1, 2026-09-24) for the same real bug, exhausted the
+  // subgoal's retry budget, left `gate` and `reduce` unreachable, and ended the whole QA child
+  // run `blocked` with the defects it found nowhere to go. Only stage_ok:false - the case set
+  // could not be run at all - is a genuine execute failure. Every other VERDICT_FIELD stage
+  // (test, review, gate, critique) keeps the ordinary rule below: the verdict must be present
+  // and affirmative, because for those a false verdict really does mean the work must be redone.
+  if (field && n.stage !== 'execute' && result[field] !== true) return false;
   // A gate that accepts at 70% is reporting a partial result as a pass. The percentage was
   // already being collected and shown; the threshold is what makes it mean something. Only
   // the goal gate is held to it - a subgoal gate answers for its own slice, the goal gate
