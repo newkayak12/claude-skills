@@ -3,7 +3,7 @@
 
 const STATE_MARK = {
   pending: '.', running: '>', done: 'v', failed: 'x', skipped: '-', blocked: '!',
-  complete: 'v', missing: '?', unknown: '?',
+  complete: 'v', missing: '?', unknown: '?', waiting_human: 'H',
 };
 
 function mark(state) { return STATE_MARK[state] || '?'; }
@@ -140,6 +140,132 @@ export function renderText(model) {
       out.push(line(1, `${ts} ${event} ${JSON.stringify(rest)}`));
     }
   }
+  return out.join('\n') + '\n';
+}
+
+function fmtTime(ts) { return ts ? new Date(ts).toISOString() : '?'; }
+
+// ---------- TICKET view: a JIRA-like board for one task ----------
+//
+// Every card this draws is a package already collected by packageModel() (view-collect.mjs) -
+// an ordinary STORY (model.packages) or the LATEST round of a QA/audit phase-Team package
+// (model.qa.rounds / model.audit.rounds). Earlier QA/audit rounds are history, not a live board
+// column - storyTicketState (which ticket_state carries) always reads the latest attempt for a
+// subgoal_id anyway, so a stale round would just repeat the same state as a duplicate card.
+function boardCards(m) {
+  const cards = (m.packages || []).slice();
+  if (m.qa && m.qa.rounds.length) cards.push(m.qa.rounds[m.qa.rounds.length - 1]);
+  if (m.audit && m.audit.rounds.length) cards.push(m.audit.rounds[m.audit.rounds.length - 1]);
+  return cards;
+}
+
+// The full set storyTicketState (tickets.mjs) can return, in the order its own workflow diagram
+// draws them (§4) - "show only non-empty columns" (the spec) is done by the caller skipping an
+// empty list, not by shrinking this order, so the columns that DO appear are always in the same
+// left-to-right sequence run to run.
+const TICKET_STATE_ORDER = [
+  'BACKLOG', 'READY', 'IN_PROGRESS', 'WAITING_HUMAN', 'WAITING_CAPACITY',
+  'IN_REVIEW', 'DONE', 'REJECTED', 'BLOCKED', 'CANCELLED', 'UNREACHABLE',
+];
+
+function renderTicketCard(c, indent, out) {
+  const role = c.phase || 'develop';
+  const head = [`[${c.ticket_key || c.id}]`, c.id, c.title ? `- ${c.title}` : '', `(${role})`].filter(Boolean).join(' ');
+  out.push(line(indent, head));
+  const bits = [];
+  if (c.reporter) bits.push(`filed by ${c.reporter}`);
+  if (c.attempt != null) bits.push(`attempt=${c.attempt}`);
+  if (c.deps && c.deps.length) bits.push(`deps=${c.deps.join(',')}`);
+  if (bits.length) out.push(line(indent + 1, bits.join(' ')));
+  if (c.links && c.links.implements && c.links.implements.length) out.push(line(indent + 1, `implements ${c.links.implements.join(', ')}`));
+  // enables[]: not a field any package carries today (grep the repo - it does not exist yet),
+  // but the spec asks for it "if present" - defensive, not a new field this file invents.
+  if (c.links && Array.isArray(c.links.enables) && c.links.enables.length) out.push(line(indent + 1, `enables ${c.links.enables.join(', ')}`));
+  // The clear human marker the spec asks for: either the ticket state itself is WAITING_HUMAN
+  // (storyTicketState, tickets.mjs) or a STORY-level pin (pkg.assignee) is set even before any
+  // node has actually parked - both read off packageModel's own `assignee`/`ticket_state`.
+  if (c.ticket_state === 'WAITING_HUMAN' || c.assignee) {
+    out.push(line(indent + 1, `>>> WAITING ON HUMAN${c.assignee ? `: ${c.assignee}` : ''} <<<`));
+  }
+  const tasks = c.child && c.child.tasks;
+  if (tasks && tasks.length) {
+    out.push(line(indent + 1, 'tasks:'));
+    for (const t of tasks) out.push(line(indent + 2, `[${t.state}] ${t.key}${t.title ? ' - ' + t.title : ''}`));
+  }
+}
+
+export function renderTicketsText(model) {
+  const out = [];
+  if (model.error) { out.push(`task ${model.task_id}`, `ERROR: ${model.error}`); return out.join('\n') + '\n'; }
+  const t = model.ticket || {};
+  out.push(`${t.key || model.task_id}  ${t.state || '?'}${t.phase ? ' · ' + t.phase : ''}  ${t.title || ''}`);
+  if (model.request) out.push(`request: ${model.request.length > 300 ? model.request.slice(0, 300) + '...' : model.request}`);
+  const columns = {};
+  for (const c of boardCards(model)) {
+    const st = c.ticket_state || 'BACKLOG';
+    (columns[st] = columns[st] || []).push(c);
+  }
+  for (const st of TICKET_STATE_ORDER) {
+    const list = columns[st];
+    if (!list || !list.length) continue;
+    out.push('', `${st}:`);
+    for (const c of list) renderTicketCard(c, 1, out);
+  }
+  return out.join('\n') + '\n';
+}
+
+// ---------- RESOURCE view: the team hierarchy as it is actually resourced right now ----------
+//
+// TaskLeader (task.daemon) -> one Team per STORY (a package's own child run - worktree, branch,
+// TeamLeader = the child's driver) -> workers per TASK (the child run's own chain nodes, each
+// with executor/vendor/model/state/timing - nodeSummary already carries all of it). Every field
+// this reads already exists on the SAME collect() model the pipeline view renders; nothing here
+// re-derives liveness, cost, or state a second way.
+function renderTeam(label, teamLike, indent, out) {
+  out.push(line(indent, `Team ${label}`));
+  if (!teamLike) { out.push(line(indent + 1, '(not dispatched yet - no worktree)')); return; }
+  if (teamLike.missing) { out.push(line(indent + 1, `child run file missing at ${teamLike.cwd}`)); return; }
+  out.push(line(indent + 1, `worktree: ${teamLike.cwd}${teamLike.branch ? ` (${teamLike.branch})` : ''}`));
+  const d = teamLike.driver;
+  if (d) {
+    const cost = d.cost ? ` cost=${fmtUsd(d.cost.cost_usd)} turns=${d.cost.turns}` : '';
+    out.push(line(indent + 1, `TeamLeader pid=${d.pid} alive=${d.alive} restarts=${d.restarts}${cost}`));
+  }
+  if (teamLike.waiting_capacity) out.push(line(indent + 1, `waiting_capacity: ${teamLike.waiting_capacity.reason || ''}`));
+  const nodes = teamLike.nodes || [];
+  if (nodes.length) {
+    out.push(line(indent + 1, 'workers:'));
+    for (const n of nodes) {
+      const bits = [`[${mark(n.state)}] ${n.node_id}`, `(${n.stage})`];
+      if (n.executor) bits.push(`executor=${n.executor}`);
+      if (n.model) bits.push(`model=${n.model}`);
+      if (n.elapsed_ms != null) bits.push(fmtMs(n.elapsed_ms));
+      if (n.assignee) bits.push(`human=${n.assignee}`);
+      out.push(line(indent + 2, bits.join(' ')));
+    }
+  }
+  for (const nested of teamLike.nested || []) {
+    out.push(line(indent + 1, `nested task ${nested.task_id} at ${nested.tasks_dir}`));
+    renderResourcesBody(nested, indent + 2, out);
+  }
+}
+
+function renderResourcesBody(m, indent, out) {
+  if (m.error) { out.push(line(indent, `ERROR: ${m.error}`)); return; }
+  const d = m.daemon;
+  out.push(line(indent, 'TaskLeader'));
+  out.push(line(indent + 1, d
+    ? `pid=${d.pid} alive=${d.alive} started=${fmtTime(d.started_at)} restarts=${d.restarts}${d.exhausted ? ' EXHAUSTED' : ''}`
+    : '(no daemon - driven by hand or an MCP client)'));
+  if (m.s_run) { renderTeam('S', m.s_run, indent, out); return; }
+  for (const p of m.packages || []) renderTeam(`${p.id}${p.title ? ' - ' + p.title : ''}`, p.child, indent, out);
+  for (const r of (m.qa && m.qa.rounds) || []) renderTeam(`QA:${r.round}`, r.child, indent, out);
+  for (const r of (m.audit && m.audit.rounds) || []) renderTeam(`AUDIT:${r.round}`, r.child, indent, out);
+}
+
+export function renderResourcesText(model) {
+  const out = [`task ${model.task_id}`];
+  renderResourcesBody(model, 0, out);
   return out.join('\n') + '\n';
 }
 

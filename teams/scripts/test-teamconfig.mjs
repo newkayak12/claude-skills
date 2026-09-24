@@ -71,6 +71,31 @@ test('a wrongly typed key is ignored with a note, not applied', () => {
   assert.match(notes[0], /goal_threshold/);
 });
 
+// `interactive` (0.28.0) is what graph.mjs's openAsk AND applyHumanPin both read off run.
+// interactive - a run nobody told to ask must still default a MODEL-written assignee pin
+// forward instead of parking on it forever (the 0.27.3 review, 2026-09-24). Its own defaulting/
+// validation deserves the same direct coverage every other key gets here, not just the
+// behavioral tests in test-graph.mjs/test-broker.mjs/test-taskmanager.mjs that exercise it
+// indirectly through a run.
+test('interactive: defaults false and sourced "default", team.json can turn it on, and a non-boolean is ignored with a note', () => {
+  assert.equal(TEAM_DEFAULTS.interactive, false);
+  const bare = resolveTeamOptions({}, {});
+  assert.equal(bare.opts.interactive, false);
+  assert.equal(bare.sources.interactive, 'default');
+
+  const onViaFile = resolveTeamOptions({}, { interactive: true });
+  assert.equal(onViaFile.opts.interactive, true);
+  assert.equal(onViaFile.sources.interactive, 'team.json');
+
+  const onViaArgs = resolveTeamOptions({ interactive: true }, { interactive: false });
+  assert.equal(onViaArgs.opts.interactive, true, 'an explicit arg outranks team.json, same precedence as every other key');
+  assert.equal(onViaArgs.sources.interactive, 'args');
+
+  const bad = resolveTeamOptions({}, { interactive: 'yes' });
+  assert.equal(bad.opts.interactive, false, 'a non-boolean is ignored - the default survives');
+  assert.match(bad.notes[0], /interactive/);
+});
+
 test('unknown keys are reported, not merged', () => {
   const { opts, notes } = resolveTeamOptions({}, { colour: 'blue' });
   assert.equal('colour' in opts, false);

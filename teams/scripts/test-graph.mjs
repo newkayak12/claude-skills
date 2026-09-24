@@ -342,7 +342,12 @@ test('a planning subgoal naming a markdown document passes, and an audit subgoal
 test('expandSubgoals applies a spec subgoal\'s assignee pin to the AUTHOR stage node only, never a judging stage', () => {
   const cwd = scratchCwd();
   try {
-    const run = { cwd, run_id: 'r1', spec: null, nodes: [node('critique', 'critique', [])], goal_judges: 1 };
+    // A spec subgoal's own assignee is the MODEL's pin (setgoal wrote it, not tm_assign), so it
+    // only parks when the run is interactive - see applyHumanPin's source distinction, added
+    // for the 0.27.3 review. interactive:true here is what makes THIS test about the pin
+    // landing on the right node, not about the interactive gate itself (that gate has its own
+    // tests below).
+    const run = { cwd, run_id: 'r1', spec: null, nodes: [node('critique', 'critique', [])], goal_judges: 1, interactive: true };
     getNode(run, 'critique').state = 'done';
     expandSubgoals(run, [
       { id: 'U1', kind: 'subgoal', title: 't', acceptance: ['a'], assignee: 'human', deps: [] },
@@ -364,7 +369,9 @@ test('expandSubgoals applies a spec subgoal\'s assignee pin to the AUTHOR stage 
 });
 
 test('applyHumanPin lands planning\'s pin on draft (the kind\'s own author), not chain[0] investigate', () => {
-  const run = { spec: null, nodes: [] };
+  // A bare sg.assignee (no {by: 'user'}) is a MODEL pin, so this run must be interactive for it
+  // to park at all - see the "source" tests below for the off case.
+  const run = { spec: null, nodes: [], interactive: true };
   const sg = { id: 'U1', kind: 'planning', assignee: 'human' };
   const chainNodes = KINDS.planning.chain;
   for (let i = 0, prev = null; i < chainNodes.length; i++) {
@@ -430,7 +437,9 @@ test('runState reports waiting_human distinctly from blocked, and a settled repo
 test('runState on a parent_shaped run reports waiting_human the same way', () => {
   const cwd = scratchCwd();
   try {
-    const run = createRun({ cwd, request: 'r', flow: 'develop', vendor: 'self', parent_shaped: true, goal: 'g', acceptance: ['a'], subgoal_assignee: 'human' });
+    // subgoal_assignee is the shape's own field (openChild's pkg.assignee) - a MODEL pin, so
+    // interactive:true is what makes it park here rather than being auto-decided.
+    const run = createRun({ cwd, request: 'r', flow: 'develop', vendor: 'self', parent_shaped: true, goal: 'g', acceptance: ['a'], subgoal_assignee: 'human', interactive: true });
     assert.equal(getNode(run, 'implement:U1:1').assignment.executor, 'human', 'subgoal_assignee wires the pin through createRun for the common parent_shaped case');
     promoteWaitingHuman(run);
     assert.equal(runState(run).state, 'waiting_human');
@@ -461,7 +470,7 @@ test('releaseHumanPin (tm_assign to: "auto") returns a waiting_human node to pen
 test('a rejected human-authored subgoal reassigns to a fresh attempt that is pinned again - not to a model', () => {
   const cwd = scratchCwd();
   try {
-    const run = createRun({ cwd, request: 'r', flow: 'develop', vendor: 'self', parent_shaped: true, goal: 'g', acceptance: ['a'], subgoal_assignee: 'human' });
+    const run = createRun({ cwd, request: 'r', flow: 'develop', vendor: 'self', parent_shaped: true, goal: 'g', acceptance: ['a'], subgoal_assignee: 'human', interactive: true });
     for (const id of ['implement:U1:1', 'test:U1:1']) { getNode(run, id).state = 'done'; getNode(run, id).result = { stage_ok: true }; }
     const gate = getNode(run, 'gate:U1:1');
     gate.state = 'failed';
@@ -478,6 +487,117 @@ test('a rejected human-authored subgoal reassigns to a fresh attempt that is pin
     promoteWaitingHuman(out.run);
     assert.equal(getNode(out.run, 'implement:U1:2').state, 'waiting_human');
     assert.deepEqual(readyNodes(out.run).map((n) => n.node_id), [], 'once promoted, no longer offered to a driver');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// ---------- a pin's SOURCE decides whether it parks (0.27.3 review, 2026-09-24) ----------
+//
+// design §7's rule: a user's tm_assign (marked {by: 'user'}) always parks - the user is present
+// by definition. A MODEL's own assignee (a bare 'human' string or {who} object, no `by` field -
+// a shape package or a setgoal subgoal writing it, never tm_assign) only parks when the run is
+// interactive; a non-interactive run auto-decides it instead, leaving the node pending (so it
+// dispatches to an AI like any other node) and recording what would have parked it.
+
+test('applyHumanPin: a MODEL pin (bare "human", no {by}) on a non-interactive run does not park - the node stays pending and carries an auto_decided_pin record', () => {
+  const run = { spec: null, nodes: [node('implement:U1:1', 'implement', [], { subgoal_id: 'U1', attempt: 1 })], interactive: false };
+  const out = applyHumanPin(run, { id: 'U1', kind: 'subgoal', assignee: 'human' }, 'U1', 1);
+  assert.equal(out, null, 'nothing was pinned - the caller (expandSubgoals/retrySubgoal) proceeds as if assignee had been absent');
+  const n = getNode(run, 'implement:U1:1');
+  assert.equal(n.state, 'pending', 'still pending - not parked, so it is offered to a driver like any other node');
+  assert.equal(n.assignment, undefined);
+  assert.deepEqual(n.auto_decided_pin, {
+    by: 'auto', who: null, pin: 'human',
+    reason: 'assignee:"human" came from the shape/spec, not tm_assign, and this run is not interactive - dispatched to an AI instead of parking (§7)',
+    at: n.auto_decided_pin.at,
+  });
+  assert.ok(Number.isInteger(n.auto_decided_pin.at));
+});
+
+test('applyHumanPin: a MODEL pin with a {who} carries who into the auto_decided_pin record, not into assignment', () => {
+  const run = { spec: null, nodes: [node('draft:U2:1', 'draft', [], { subgoal_id: 'U2', attempt: 1 })], interactive: false };
+  applyHumanPin(run, { id: 'U2', kind: 'document', assignee: { who: 'sanghyeon' } }, 'U2', 1);
+  const n = getNode(run, 'draft:U2:1');
+  assert.equal(n.assignment, undefined);
+  assert.equal(n.auto_decided_pin.who, 'sanghyeon');
+  assert.deepEqual(n.auto_decided_pin.pin, { who: 'sanghyeon' });
+});
+
+test('applyHumanPin: run.interactive undefined (the ordinary default, never explicitly false) still auto-decides a MODEL pin - the gate is "not true", not "===false"', () => {
+  const run = { spec: null, nodes: [node('implement:U1:1', 'implement', [], { subgoal_id: 'U1', attempt: 1 })] };
+  applyHumanPin(run, { id: 'U1', kind: 'subgoal', assignee: 'human' }, 'U1', 1);
+  assert.equal(getNode(run, 'implement:U1:1').assignment, undefined);
+  assert.ok(getNode(run, 'implement:U1:1').auto_decided_pin);
+});
+
+test('applyHumanPin: a MODEL pin on an interactive run parks exactly as 0.27.3 always did', () => {
+  const run = { spec: null, nodes: [node('implement:U1:1', 'implement', [], { subgoal_id: 'U1', attempt: 1 })], interactive: true };
+  applyHumanPin(run, { id: 'U1', kind: 'subgoal', assignee: 'human' }, 'U1', 1);
+  const n = getNode(run, 'implement:U1:1');
+  assert.equal(n.assignment.executor, 'human');
+  assert.equal(n.auto_decided_pin, undefined, 'parked, so nothing was auto-decided');
+});
+
+test('applyHumanPin: a USER pin ({by: "user"}, tm_assign\'s own marker) parks regardless of interactive - the user is present by definition', () => {
+  const run = { spec: null, nodes: [node('implement:U1:1', 'implement', [], { subgoal_id: 'U1', attempt: 1 })], interactive: false };
+  const n = applyHumanPin(run, { id: 'U1', kind: 'subgoal', assignee: { by: 'user', who: 'sanghyeon' } }, 'U1', 1);
+  assert.equal(n.assignment.executor, 'human');
+  assert.equal(n.assignment.who, 'sanghyeon');
+  assert.equal(n.assignment.reason, 'pinned by tm_assign');
+  assert.equal(getNode(run, 'implement:U1:1').auto_decided_pin, undefined);
+});
+
+test('expandSubgoals: on a non-interactive run, a spec subgoal\'s own assignee dispatches to an AI - readyNodes offers it, promoteWaitingHuman never parks it', () => {
+  const cwd = scratchCwd();
+  try {
+    const run = { cwd, run_id: 'r2', spec: null, nodes: [node('critique', 'critique', [])], goal_judges: 1, interactive: false };
+    getNode(run, 'critique').state = 'done';
+    expandSubgoals(run, [{ id: 'U1', kind: 'subgoal', title: 't', acceptance: ['a'], assignee: 'human', deps: [] }]);
+    const n = getNode(run, 'implement:U1:1');
+    assert.equal(n.assignment, undefined);
+    assert.ok(n.auto_decided_pin, 'the record design §7 requires - what would have parked it, and that nobody was interactive');
+    promoteWaitingHuman(run);
+    assert.equal(n.state, 'pending', 'promoteWaitingHuman has nothing to promote - it was never assigned to a human');
+    assert.ok(readyNodes(run).some((x) => x.node_id === 'implement:U1:1'), 'offered to a driver exactly like an unpinned subgoal');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('retrySubgoal: a rejected MODEL-pinned subgoal on a non-interactive run reassigns to a fresh attempt that is ALSO auto-decided, never parked', () => {
+  const cwd = scratchCwd();
+  try {
+    // parent_shaped + subgoal_assignee mirrors openChild's own path (a shape package's
+    // assignee), with interactive left at its default (false) - the run never asked to be
+    // interrupted, so neither attempt 1 nor its retry may park.
+    const run = createRun({ cwd, request: 'r', flow: 'develop', vendor: 'self', parent_shaped: true, goal: 'g', acceptance: ['a'], subgoal_assignee: 'human' });
+    assert.equal(getNode(run, 'implement:U1:1').assignment, undefined, 'attempt 1 was already auto-decided at createRun time');
+    assert.ok(getNode(run, 'implement:U1:1').auto_decided_pin);
+    for (const id of ['implement:U1:1', 'test:U1:1']) { getNode(run, id).state = 'done'; getNode(run, id).result = { stage_ok: true }; }
+    const gate = getNode(run, 'gate:U1:1');
+    gate.state = 'failed';
+    gate.result = { stage_ok: true, accept: false, match_pct: 40, gaps: ['missing X'], reason: 'short' };
+    const out = retrySubgoal(run, 'U1', 'fix it');
+    const again = getNode(out.run, 'implement:U1:2');
+    assert.equal(again.assignment, undefined, 'the retry is not handed to a human either - same non-interactive run, same rule');
+    assert.ok(again.auto_decided_pin, 'attempt 2 gets its own record');
+    assert.deepEqual(readyNodes(out.run).map((n) => n.node_id), ['implement:U1:2'], 'offered to a driver, unlike the parked case (test-graph.mjs\'s interactive:true sibling of this test)');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('createRun(parent_shaped, subgoal_assignee) on a non-interactive run does not park at open - runState is "running"/"blocked" territory, never waiting_human, until interactive says otherwise', () => {
+  const cwd = scratchCwd();
+  try {
+    const run = createRun({ cwd, request: 'r', flow: 'develop', vendor: 'self', parent_shaped: true, goal: 'g', acceptance: ['a'], subgoal_assignee: { who: 'sanghyeon' } });
+    assert.equal(run.interactive, false, 'createRun\'s own default - opts.interactive was not passed');
+    const n = getNode(run, 'implement:U1:1');
+    assert.equal(n.assignment, undefined);
+    assert.equal(n.auto_decided_pin.who, 'sanghyeon');
+    promoteWaitingHuman(run);
+    assert.notEqual(runState(run).state, 'waiting_human');
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

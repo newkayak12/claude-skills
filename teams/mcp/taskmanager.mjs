@@ -13,11 +13,22 @@
 //   1. It reuses graph.mjs as a library - nodes, typed edges, readiness, retries, settled
 //      failure - and adds no second DAG. Its own stage names are the only thing new.
 //   2. It READS child run files and never writes them. The graph broker is the one writer
-//      of a run file; a second writer is the race mergeOnto exists to paper over.
-//   3. It does not call the graph broker. MCP has no server-to-server channel, and the
-//      driving session is already the relay: `tm_next` hands back a child pointer
+//      of a run file; a second writer is the race mergeOnto exists to paper over. A human's pin
+//      (tm_assign) or card answer (tm_submit({key})) is an exception that proves the rule, not a
+//      hole in it: both preview their effect against a read-only loadRun (applyPinAction /
+//      broker.mjs's computeSubmitResult - the SAME functions the broker itself applies for real)
+//      and then queueHumanAction the actual instruction - graph.mjs's own handoff, drained by
+//      the broker's mustFindRun the next time anything touches the run. 0.27.3 broke rule 2
+//      here, loadRun+saveRun'ing the child directly from this process (2026-09-24 review, against
+//      this header and design §7's "changed_files는 워크트리 대조로 똑같이 검증" - a human's
+//      report was taken at face value, with no cross-check at all).
+//   3. It does not call the graph broker over MCP. There is no server-to-server JSON-RPC channel,
+//      and the driving session is already the relay: `tm_next` hands back a child pointer
 //      {cwd, run_id}, the session drives the child with team_next/team_run/team_submit,
-//      and calls `tm_submit` on the dispatch node when the child's report is done.
+//      and calls `tm_submit` on the dispatch node when the child's report is done. Importing
+//      broker.mjs as a library for computeSubmitResult (below) is not that channel - it is a
+//      pure, read-only function call, made possible only because broker.mjs is import-safe
+//      (isEntryPoint guards its stdio loop the same way this file's own `isMain` does).
 //
 // The child run is opened HERE, by the server, on a dispatch node - never by a model inside
 // a node. The "do not re-enter the harness" rule in every node prompt stays true.
@@ -27,9 +38,9 @@
 // Zero dependencies: MCP's stdio transport is newline-delimited JSON-RPC 2.0.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, readdirSync, openSync, closeSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, readdirSync, openSync, closeSync, statSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve, dirname, relative, isAbsolute } from 'node:path';
+import { join, resolve, dirname, basename, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { touchMarker } from './engage.mjs';
@@ -62,10 +73,12 @@ import {
   kindOf,
   REASONING_STAGES,
   authorStage,
-  applyHumanPin,
-  releaseHumanPin,
+  applyPinAction,
+  queueHumanAction,
+  peekHumanActions,
   currentAttempt,
 } from './graph.mjs';
+import { computeSubmitResult } from './broker.mjs';
 
 const SERVER = { name: 'task-manager', version: '0.7.0' };
 const DEFAULT_PROTOCOL = '2025-06-18';
@@ -1063,8 +1076,19 @@ function ensureWorktree(task, name, base = 'HEAD') {
 // 220-line PRD that was the only thing anyone wanted.
 export function harnessPathsUnder(cwd) {
   const paths = ['.teams_output', '.claude/.harness-markers'];
+  // Both sides as realpaths. On macOS $TMPDIR is /var/..., which is /private/var/...; a package's
+  // cwd arrives as the realpath and HARNESS_TASKS_DIR as given, so relative() walked out through
+  // `..` and called the manager's own state outside the tree. idol-pm-4 (2026-09-23) committed
+  // eight .harness-tasks files into P1's product branch that way - the same /var trap 0.8.1 hit.
+  // A path that does not exist yet resolves through its nearest existing ancestor.
+  const real = (p) => {
+    const abs = resolve(p);
+    try { return realpathSync(abs); } catch { /* not there yet */ }
+    const up = dirname(abs);
+    return up === abs ? abs : join(real(up), basename(abs));
+  };
   try {
-    const rel = relative(resolve(cwd), tasksRoot());
+    const rel = relative(real(cwd), real(tasksRoot()));
     if (rel && !rel.startsWith('..') && !isAbsolute(rel)) paths.push(rel);
   } catch { /* an unresolvable root is simply not inside this tree */ }
   return paths;
@@ -2230,7 +2254,7 @@ export function composeTaskPrompt(task, n) {
 
 // ---------- verdicts ----------
 
-function succeeded(task, n, result) {
+export function succeeded(task, n, result) {
   if (result.stage_ok !== true) return false;
   const f = VERDICT[n.stage];
   if (!f) return true;
@@ -2244,9 +2268,16 @@ function succeeded(task, n, result) {
   // ("fan-club"/"팬클럽"/"presale" zero times) - the number was recorded and nothing acted on it.
   // A rejection here is not the end of the package: it buys the retry max_retries already
   // budgets, with the gaps that cost it the points carried into the next attempt.
+  // An accept below the floor fails only when the judge named something missing. The gate
+  // contract tells a judge that a run which met its bar with known weaknesses is not a 100, and
+  // observations never block - so an accept:true with gaps[] empty lands at 87-88 by design, and
+  // the floor was turning those points into a rejection the judge never made. idol-pm-4
+  // (2026-09-23): P2 and P5 accepted at 88 with no gaps, both failed, both rebuilt from scratch.
+  // idol-pm-1's PRD, the case the floor exists for, named its gap - it still fails.
   if ((n.stage === 'gate' || n.stage === 'accept') && Number.isFinite(result.match_pct)) {
     const floor = Number.isInteger(task.goal_threshold) ? task.goal_threshold : 90;
-    if (result.match_pct < floor) return false;
+    const named = Array.isArray(result.gaps) && result.gaps.length > 0;
+    if (result.match_pct < floor && (n.stage === 'gate' || named)) return false;
   }
   // A rejection needs no evidence of its own. A positive verdict does: dispatch's accept
   // is computed by the manager itself from the folded child and is exempt, but gate,
@@ -2601,7 +2632,7 @@ const TOOLS = [
   },
   {
     name: 'tm_assign',
-    description: 'Pin a card to a human, or release it back to auto. `key` is a STORY (E-xxxxxxxx/Pn, every subgoal in that package\'s child run) or TASK (E-xxxxxxxx/Pn/subgoalId, just that one) ticket key. `to: "human"` (optionally `who`, or `to: {executor: "human", who}`) pins the subgoal\'s AUTHOR stage only (implement/draft/cases - see graph.mjs\'s authorStage) - a judging stage (test/review/gate/critique) is never assigned to the human who did the work. `to: "auto"` releases it: a card already parked waiting_human goes back to pending and dispatches normally on the next team_next. The pin lives on the child run\'s own spec (the same `assignee` field setgoal itself may write), so a rejected human-authored subgoal\'s next attempt is pinned again automatically. A STORY may be taken before it dispatches: the pin rides on the package and reaches its child run when it opens. A TASK key needs the child run to exist.',
+    description: 'Pin a card to a human, or release it back to auto. `key` is a STORY (E-xxxxxxxx/Pn, every subgoal in that package\'s child run) or TASK (E-xxxxxxxx/Pn/subgoalId, just that one) ticket key. `to: "human"` (optionally `who`, or `to: {executor: "human", who}`) pins the subgoal\'s AUTHOR stage only (implement/draft/cases - see graph.mjs\'s authorStage) - a judging stage (test/review/gate/critique) is never assigned to the human who did the work. `to: "auto"` releases it: a card already parked waiting_human goes back to pending and dispatches normally on the next team_next. The pin lives on the child run\'s own spec (the same `assignee` field setgoal itself may write), so a rejected human-authored subgoal\'s next attempt is pinned again automatically. Called here, by the user, the pin always parks the node in waiting_human regardless of the run\'s interactive setting - the user is present by definition. The SAME field, written by a shape/setgoal instead, only parks when the run is interactive; otherwise it is auto-decided (dispatched to an AI, recorded, listed in tm_inbox\'s `decided`) - see graph.mjs\'s applyHumanPin. A STORY may be taken before it dispatches: the pin rides on the package and reaches its child run when it opens. A TASK key needs the child run to exist.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -2619,13 +2650,19 @@ const TOOLS = [
   },
   {
     name: 'tm_inbox',
-    description: 'Every waiting_human card, across every task (or one, with task_id) - a headless driver cannot reach a human, so this is how the main session finds work a human pinned to themselves. For each: its TASK ticket key, title, what is asked (acceptance criteria and a briefing_path with the full brief), who it is assigned to, and since when. Complete one with tm_submit({task_id, key, payload}). Read-only; safe from any session.',
+    description: 'Two sections (design §7): `cards` is every waiting_human card, across every task (or one, with task_id) - a headless driver cannot reach a human, so this is how the main session finds work a human pinned to themselves (tm_assign, always honoured) or that this run is interactive about. For each: its TASK ticket key, title, what is asked (acceptance criteria and a briefing_path with the full brief), who it is assigned to, and since when. Complete one with tm_submit({task_id, key, payload}). `decided` is every card a MODEL tried to pin (a shape package or setgoal subgoal writing its own assignee) that this run auto-decided instead of parking, because the run is not interactive - dispatched to an AI as normal, with why recorded; object to one by tm_assign-ing it to a human yourself. Read-only; safe from any session.',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' } } },
-    outputSchema: { type: 'object', properties: { cards: { type: 'array', items: { type: 'object', properties: {
-      key: { type: 'string' }, task_id: { type: 'string' }, node_id: { type: 'string' }, title: { type: 'string' },
-      acceptance: { type: 'array', items: { type: 'string' } }, briefing_path: { type: ['string', 'null'] },
-      who: { type: ['string', 'null'] }, since: { type: ['number', 'null'] },
-    } } } }, required: ['cards'] },
+    outputSchema: { type: 'object', properties: {
+      cards: { type: 'array', items: { type: 'object', properties: {
+        key: { type: 'string' }, task_id: { type: 'string' }, node_id: { type: 'string' }, title: { type: 'string' },
+        acceptance: { type: 'array', items: { type: 'string' } }, briefing_path: { type: ['string', 'null'] },
+        who: { type: ['string', 'null'] }, since: { type: ['number', 'null'] },
+      } } },
+      decided: { type: 'array', items: { type: 'object', properties: {
+        key: { type: 'string' }, task_id: { type: 'string' }, node_id: { type: 'string' }, title: { type: 'string' },
+        who: { type: ['string', 'null'] }, reason: { type: 'string' }, since: { type: ['number', 'null'] },
+      } } },
+    }, required: ['cards', 'decided'] },
   },
   {
     name: 'tm_docs',
@@ -2893,7 +2930,10 @@ function humanAssignments(task, pkgId) {
 // every subgoal currently in that package's child run; a TASK key (E-xxxxxxxx/Pn/subgoalId)
 // pins just the one. Only the kind's AUTHOR stage ever carries the pin - applyHumanPin enforces
 // that, not this function - so a judging stage can never be assigned to the human who did the
-// work being judged.
+// work being judged. The child itself is never saved here: this function only PREVIEWS the pin
+// (against a read-only loadRun, through applyPinAction - the same function the broker uses to
+// apply it for real) and queues the instruction for the broker to pick up - see graph.mjs's
+// queueHumanAction and this file's own header, rule 2.
 function toolAssign(a) {
   const task = mustFindTask(a);
   const key = String(a.key || '');
@@ -2915,7 +2955,10 @@ function toolAssign(a) {
   if (!subgoalId && !pkg) throw new Error(`no package ${pkgId} in ${epicKey(task.run_id)}`);
   if (pkg) {
     if (toAuto) delete pkg.assignee;
-    else pkg.assignee = who ? { who } : 'human';
+    // {by: 'user'} is what applyHumanPin (graph.mjs) reads to tell this pin apart from the
+    // SAME field a shape/setgoal writes on its own - the user just called tm_assign, so this
+    // one always parks regardless of run.interactive (§7); an unmarked assignee is the model's.
+    else pkg.assignee = { by: 'user', ...(who ? { who } : {}) };
     saveRun(task);
   }
   const dispatch = latestBySubgoal(task, pkgId, 'dispatch');
@@ -2927,6 +2970,15 @@ function toolAssign(a) {
   const child = loadRun(dispatch.child.cwd, dispatch.child.run_id);
   if (!child || !child.spec) throw new Error(`${key}'s child run has no spec yet - shape/setgoal has not produced subgoals to pin`);
 
+  // Anything this task already queued for the broker but has not drained yet (a prior tm_assign
+  // this same tick, before any team_next/team_submit/team_status touched the run) is replayed
+  // onto this read-only copy first, through the same applyPinAction the loop below uses for its
+  // own pin - otherwise this call's preview would be computed against a child that is stale by
+  // exactly the pins this task itself just queued.
+  for (const pending of peekHumanActions(dispatch.child.cwd, dispatch.child.run_id)) {
+    if (pending.kind === 'pin') applyPinAction(child, pending);
+  }
+
   const ids = subgoalId ? [subgoalId] : (child.spec.subgoals || []).map((s) => String(s.id));
   if (subgoalId && !ids.some((id) => id === subgoalId)) throw new Error(`no subgoal ${subgoalId} in ${storyKey(task.run_id, pkgId)}'s child run`);
 
@@ -2935,28 +2987,38 @@ function toolAssign(a) {
     const sg = child.spec.subgoals.find((s) => String(s.id) === sid);
     if (!sg) throw new Error(`no subgoal ${sid} in ${storyKey(task.run_id, pkgId)}'s child run`);
     const attempt = currentAttempt(child, sid);
-    if (toAuto) {
-      releaseHumanPin(child, sg, sid, attempt);
-    } else {
-      sg.assignee = who ? { who } : 'human';
-      applyHumanPin(child, sg, sid, attempt);
-    }
+    const action = { kind: 'pin', subgoal_id: sid, attempt, to: toAuto ? 'auto' : 'human', who };
+    applyPinAction(child, action); // preview only - child is never saved, see below
+    queueHumanAction(dispatch.child.cwd, dispatch.child.run_id, action);
     const nodeId = `${authorStage(kindOf(sg))}:${sid}:${attempt}`;
     const live = getNode(child, nodeId);
     assigned.push({ subgoal_id: sid, node_id: nodeId, state: live ? live.state : null, assignment: (live && live.assignment) || null });
   }
-  saveRun(child);
+  // Not saveRun(child): the broker is the one writer of a child run file (this file's own header,
+  // rule 2). queueHumanAction leaves the pin as a manager-owned handoff instead of writing it here
+  // directly - the 0.27.3 review (2026-09-24) caught this saveRun(child) writing the child from
+  // the manager's process. The broker applies it for real, through applyPinAction (the exact
+  // function the preview above just ran), the next time anything calls mustFindRun for this run -
+  // team_next's own promoteWaitingHuman is what actually parks the card once ingestHandoff has
+  // set its assignment (broker.mjs).
   record(task, { event: 'tm_assign', task_id: task.run_id, key, to: toAuto ? 'auto' : 'human', who, nodes: assigned.map((x) => x.node_id) });
   return { key, kind: subgoalId ? 'TASK' : 'STORY', to: toAuto ? 'auto' : 'human', who, assigned };
 }
 
-// tm_inbox({task_id?}): every waiting_human card, read straight off the state graph.mjs's
-// promoteWaitingHuman already parked - no second list to keep in sync. Scans every package's
-// child run (dispatch.child) for a node in that state; a task with no packages dispatched yet
-// simply contributes none. Sorted oldest-first, so the longest-waiting card leads.
+// tm_inbox({task_id?}): the two sections design §7 names - waiting (I must act) and
+// decided-for-you (auto-decided, with a way to object). `cards` is every waiting_human node,
+// read straight off the state graph.mjs's promoteWaitingHuman already parked - no second list
+// to keep in sync. `decided` is every node applyHumanPin (graph.mjs) routed to an AI instead of
+// parking because the pin was the MODEL's (a shape/setgoal assignee, not tm_assign) and the run
+// was not interactive - graph.mjs's own auto_decided_pin record on the node, surfaced here so a
+// person can see what was defaulted and object (tm_assign it to themselves) instead of the
+// decision being invisible. Scans every package's child run (dispatch.child) for a node in
+// either state; a task with no packages dispatched yet simply contributes none. Both sorted
+// oldest-first.
 function toolInbox(a) {
   const ids = a.task_id ? [String(a.task_id)] : (() => { try { return readdirSync(tasksRoot()); } catch { return []; } })();
   const cards = [];
+  const decided = [];
   for (const tid of ids) {
     const task = loadRunAt(taskPath(tid));
     if (!task) continue;
@@ -2968,29 +3030,42 @@ function toolInbox(a) {
       const child = loadRun(dispatch.child.cwd, dispatch.child.run_id);
       if (!child) continue;
       for (const n of child.nodes) {
-        if (n.state !== 'waiting_human') continue;
         const sg = child.spec && (child.spec.subgoals || []).find((s) => String(s.id) === String(n.subgoal_id));
-        cards.push({
-          key: taskKey(task.run_id, pid, n.subgoal_id),
-          task_id: task.run_id,
-          node_id: n.node_id,
-          // Two kinds of card park here now and they ask for different things: a pinned author
-          // stage wants the work done (0.27.3), an `ask` node wants one decision picked from
-          // named candidates (graph.mjs's openAsk). `stage` is what tells them apart, and
-          // `questions` is only ever present on the second.
-          stage: n.stage,
-          title: (sg && sg.title) || String(n.subgoal_id),
-          acceptance: (sg && sg.acceptance) || [],
-          ...(n.stage === 'ask' ? { questions: n.questions || [] } : {}),
-          briefing_path: n.briefing_path || null,
-          who: (n.assignment && n.assignment.who) || null,
-          since: n.waiting_since || null,
-        });
+        if (n.state === 'waiting_human') {
+          cards.push({
+            key: taskKey(task.run_id, pid, n.subgoal_id),
+            task_id: task.run_id,
+            node_id: n.node_id,
+            // Two kinds of card park here now and they ask for different things: a pinned author
+            // stage wants the work done (0.27.3), an `ask` node wants one decision picked from
+            // named candidates (graph.mjs's openAsk). `stage` is what tells them apart, and
+            // `questions` is only ever present on the second.
+            stage: n.stage,
+            title: (sg && sg.title) || String(n.subgoal_id),
+            acceptance: (sg && sg.acceptance) || [],
+            ...(n.stage === 'ask' ? { questions: n.questions || [] } : {}),
+            briefing_path: n.briefing_path || null,
+            who: (n.assignment && n.assignment.who) || null,
+            since: n.waiting_since || null,
+          });
+        } else if (n.auto_decided_pin) {
+          decided.push({
+            key: taskKey(task.run_id, pid, n.subgoal_id),
+            task_id: task.run_id,
+            node_id: n.node_id,
+            stage: n.stage,
+            title: (sg && sg.title) || String(n.subgoal_id),
+            who: n.auto_decided_pin.who || null,
+            reason: n.auto_decided_pin.reason,
+            since: n.auto_decided_pin.at || null,
+          });
+        }
       }
     }
   }
   cards.sort((x, y) => (x.since || 0) - (y.since || 0));
-  return { cards };
+  decided.sort((x, y) => (x.since || 0) - (y.since || 0));
+  return { cards, decided };
 }
 
 // tm_docs's whole job: call docs.mjs's single write site. No rendering logic lives here, and no
@@ -3311,19 +3386,21 @@ function toolSubmit(a) {
   return delegateIfSmall(task, n, out) || out;
 }
 
-// tm_submit({task_id, key, payload}): the human's own answer for a waiting_human card - the one
-// write this file ever makes to a child run. Every other node this file "READS child run files
-// and never writes them" (this file's own header, rule 2) about is folded through the broker, by
-// a driver session relaying a fresh agent's JSON; a waiting_human node exists BECAUSE a headless
-// driver cannot reach a human at all (docs/plans/2026-09-23-teams-reducer-human-rollback.md
-// §0.2), so nothing else can make this one write. Deliberately narrow: applyHumanPin only ever
-// pins a subgoal's AUTHOR stage (implement/draft/cases/investigate's own author), never a
-// judging one, so this never has to replicate the broker's cross-check-against-git or goal-gate
-// consensus machinery - stage_ok is taken at face value, the same trust a human's own report
-// already gets everywhere else in this file (toolSubmit's ordinary payload above does the same).
-// Everything downstream (test, review, gate, and a rejection's own retry back to waiting_human -
-// graph.mjs's applyHumanPin, called again by retrySubgoal) runs through the real broker once the
-// child's driver resumes, exactly as it always has.
+// tm_submit({task_id, key, payload}): the human's own answer for a waiting_human card. Through
+// 0.27.2 this was the one write this file ever made to a child run, and 0.27.3 kept it that way
+// (loadRun+saveRun'd the child directly) - a violation of this file's own header, rule 2, and of
+// design §7 (a human's implement/draft/cases is supposed to get "changed_files는 워크트리 대조로
+// 똑같이 검증", the same worktree cross-check an AI's report gets; 0.27.3 took stage_ok at face
+// value instead, no cross-check at all). Caught by the 2026-09-24 review. Fixed the same way
+// tm_assign above is: computeSubmitResult (broker.mjs, imported - see this file's header, rule 3)
+// runs the real cross-check and verdict logic read-only, against a loadRun'd copy of the child
+// that is never saved, so this call can still answer synchronously and correctly without writing
+// anything; queueHumanAction leaves the actual payload as a manager-owned handoff, and the broker
+// applies it for real - through that SAME function, plus finishNode - the next time anything
+// calls mustFindRun for this run. Everything downstream of a real "done" (test, review, gate, and
+// a rejection's own retry back to waiting_human - graph.mjs's applyHumanPin, called again by
+// retrySubgoal) still runs through the real broker once the child's driver resumes, exactly as it
+// always has; only WHO performs the verdict on THIS node's own payload changed.
 function toolSubmitHuman(task, a) {
   const key = String(a.key);
   const parsed = parseTicketKey(key);
@@ -3342,12 +3419,18 @@ function toolSubmitHuman(task, a) {
   // never be waiting together - and authorStage stays as the name used to explain an empty
   // inbox for this key.
   const attempt = currentAttempt(child, subgoalId);
-  const waiting = child.nodes.filter((x) => String(x.subgoal_id) === subgoalId && x.state === 'waiting_human');
+  // A card this same task already queued an answer for (this tick's own earlier tm_submit, not
+  // yet drained by the broker) is not `waiting_human` on disk yet either - queueHumanAction below
+  // never flips it. Without this, a second submission of the same card would see the same stale
+  // waiting_human node the first call did and be accepted twice.
+  const alreadyQueued = new Set(peekHumanActions(dispatch.child.cwd, dispatch.child.run_id)
+    .filter((x) => x.kind === 'submit').map((x) => x.node_id));
+  const waiting = child.nodes.filter((x) => String(x.subgoal_id) === subgoalId && x.state === 'waiting_human' && !alreadyQueued.has(x.node_id));
   if (!waiting.length) {
     const predicted = `${authorStage(kindOf(sg))}:${subgoalId}:${attempt}`;
     const n0 = getNode(child, predicted);
     throw new Error(n0
-      ? `${key}'s card (${predicted}) is ${n0.state}, not waiting_human - nothing to submit`
+      ? `${key}'s card (${predicted}) is ${alreadyQueued.has(predicted) ? 'submitted, awaiting the broker' : n0.state}, not waiting_human - nothing to submit`
       : `${key} has no card waiting on a human`);
   }
   const n = waiting[waiting.length - 1];
@@ -3357,17 +3440,17 @@ function toolSubmitHuman(task, a) {
   }
 
   const payload = a.payload || {};
-  n.result = { ...payload, stage_ok: payload.stage_ok !== false };
-  n.state = n.result.stage_ok ? 'done' : 'failed';
-  n.answered_at = Date.now();
-  saveRun(child);
-  record(task, { event: 'tm_submit_human', task_id: task.run_id, key, node_id: nodeId, stage_ok: n.result.stage_ok });
+  const { result, done } = computeSubmitResult(child, n, payload, 'human');
+  const answeredAt = Date.now();
+  queueHumanAction(dispatch.child.cwd, dispatch.child.run_id, { kind: 'submit', node_id: nodeId, payload, answered_at: answeredAt });
+  record(task, { event: 'tm_submit_human', task_id: task.run_id, key, node_id: nodeId, stage_ok: result.stage_ok });
 
   // The driver already exited the moment nothing was left ready for it (zero compute while
   // waiting - graph.mjs's promoteWaitingHuman). Resume it now, the same shape clearCapacity
   // already uses for its own "not a crash, don't spend a restart" respawn: restarts carries
   // over untouched, because this is exactly what the driver was always going to do next, not a
-  // failure it is recovering from.
+  // failure it is recovering from. This is task.json's own dispatch node, this file's to write
+  // either way (rule 2 is about the CHILD run, not the task's own).
   // Only when nothing is driving the run: a sibling subgoal still in flight keeps its driver
   // alive, and that driver picks the answered node up on its next team_next. A second driver on
   // the same run would dispatch the same ready nodes twice.
@@ -3379,7 +3462,7 @@ function toolSubmitHuman(task, a) {
     saveRun(task);
     record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: dispatch.node_id, pid: fresh.pid, reason: 'human_submitted' });
   }
-  return { task_id: task.run_id, key, node_id: nodeId, state: n.state, result: n.result };
+  return { task_id: task.run_id, key, node_id: nodeId, state: done ? 'done' : 'failed', result };
 }
 
 function toolRetry(a) {

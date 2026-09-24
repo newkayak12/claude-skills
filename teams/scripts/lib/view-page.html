@@ -77,6 +77,12 @@
   .badge.REJECTED { background: color-mix(in srgb, var(--failed) 18%, transparent); color: var(--failed); }
   .badge.CANCELLED { background: transparent; color: var(--skipped); border: 1px dashed var(--skipped); }
   .badge.BLOCKED, .badge.UNREACHABLE { background: color-mix(in srgb, var(--blocked) 18%, transparent); color: var(--blocked); }
+  /* WAITING_HUMAN (STORY/TASK ticket state, tickets.mjs's storyTicketState/taskTicketState) and
+     its node-level twin (.dot.waiting_human) share the same amber as BLOCKED - both mean
+     "nothing will move here without outside action" - but stay visually distinct via the badge
+     text, never confused for one another since the two states never print in the same place. */
+  .badge.WAITING_HUMAN { background: color-mix(in srgb, var(--blocked) 18%, transparent); color: var(--blocked); }
+  .dot.waiting_human { background: var(--blocked); }
 
   .ledger { list-style: none; margin: 8px 0 0; padding: 0; max-height: 360px; overflow: auto; }
   .ledger li { padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
@@ -94,6 +100,30 @@
   .epic-card .defects { color: var(--failed); font-weight: 600; }
   code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
   #err { color: var(--failed); margin-top: 10px; }
+
+  /* view switcher (pipeline/tickets/resources) - a tab strip next to the task header, matching
+     the badge/panel look already defined above rather than introducing a new visual language. */
+  .view-tabs { display: flex; gap: 8px; margin: 10px 0 0; }
+  .view-tab { cursor: pointer; padding: 4px 12px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; color: var(--muted); user-select: none; }
+  .view-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  /* TICKET view: reuses .pkg-grid/.pkg-card's board look; .ticket-tasks lists a card's own TASK
+     children (E-.../Pn/Un), one line each with the same state badge vocabulary as everywhere
+     else on this page. */
+  .ticket-card { border: 1px solid var(--border); border-radius: 10px; background: var(--panel); padding: 10px 12px; }
+  .ticket-card .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .ticket-card .title { font-weight: 600; }
+  .ticket-card .meta { display: flex; gap: 10px; margin-top: 8px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+  .ticket-tasks { list-style: none; margin: 8px 0 0; padding: 0; }
+  .ticket-tasks li { font-size: 12px; margin-top: 4px; }
+  .ticket-tasks .badge { margin-right: 6px; }
+
+  /* RESOURCE view: an indented tree (TaskLeader -> Team -> workers), drawn as a left border
+     rather than a table - depth is the one thing this view exists to show at a glance. */
+  .res-node { border-left: 2px solid var(--border); padding: 4px 0 4px 12px; margin: 6px 0 6px 4px; }
+  .res-label { font-weight: 600; }
+  .res-worker { font-size: 12px; color: var(--muted); padding: 2px 0 2px 10px; }
+  .res-worker .dot { margin-right: 6px; }
 </style>
 </head>
 <body>
@@ -106,6 +136,11 @@
   var taskParam = qs.get('task');
   var app = document.getElementById('app');
   var openPkgs = new Set();
+  // Which of the three renderers draws a task's own body - pipeline (default), tickets,
+  // resources. All three read the SAME /state.json model; switching tabs re-renders instantly
+  // from the last poll rather than waiting on the next one (see attachInteractions below).
+  var currentView = qs.get('view') || 'pipeline';
+  var lastData = null;
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -200,6 +235,132 @@
       '<div class="pkg-detail">' + childStrip(p.child) + '</div>' +
       '</div>'
     );
+  }
+
+  function viewTabs() {
+    var views = ['pipeline', 'tickets', 'resources'];
+    return '<div class="view-tabs">' + views.map(function (v) {
+      return '<span class="view-tab' + (v === currentView ? ' active' : '') + '" data-view="' + v + '">' + v + '</span>';
+    }).join('') + '</div>';
+  }
+
+  // ---------- TICKET view: a JIRA-like board for one task ----------
+  //
+  // Cards come straight off view-collect.mjs's packageModel() - model.packages plus the LATEST
+  // round of model.qa/model.audit (earlier rounds are history, not a live board column; see
+  // view-render-text.mjs's own boardCards for why).
+  function boardCards(m) {
+    var cards = (m.packages || []).slice();
+    if (m.qa && m.qa.rounds.length) cards.push(m.qa.rounds[m.qa.rounds.length - 1]);
+    if (m.audit && m.audit.rounds.length) cards.push(m.audit.rounds[m.audit.rounds.length - 1]);
+    return cards;
+  }
+
+  var TICKET_STATE_ORDER = [
+    'BACKLOG', 'READY', 'IN_PROGRESS', 'WAITING_HUMAN', 'WAITING_CAPACITY',
+    'IN_REVIEW', 'DONE', 'REJECTED', 'BLOCKED', 'CANCELLED', 'UNREACHABLE',
+  ];
+
+  function ticketCard(c) {
+    var role = c.phase || 'develop';
+    // A distinct class, not .pkg-card: that class carries the pipeline view's click-to-expand
+    // handler (attachInteractions), which a ticket card has no matching .pkg-detail for - reusing
+    // it would make every card look clickable and toggle a CSS class to no visible effect.
+    var out = ['<div class="ticket-card">'];
+    out.push('<div class="top"><span class="title">' + esc(c.ticket_key || c.id) + (c.title ? ' – ' + esc(c.title) : '') + '</span>' +
+      '<span class="badge ' + esc(c.ticket_state || '') + '">' + esc(c.ticket_state || '?') + '</span></div>');
+    var meta = ['<span>' + esc(role) + '</span>'];
+    if (c.reporter) meta.push('<span>filed by ' + esc(c.reporter) + '</span>');
+    if (c.attempt != null) meta.push('<span>attempt ' + esc(c.attempt) + '</span>');
+    out.push('<div class="meta">' + meta.join('') + '</div>');
+    var linksLine = formatLinksLine(c.links);
+    if (linksLine) out.push('<div class="muted mono">' + esc(linksLine) + '</div>');
+    // enables[]: no package carries this field today - rendered only "if present" (the spec's
+    // own words), so an absent one costs nothing here.
+    if (c.links && c.links.enables && c.links.enables.length) {
+      out.push('<div class="muted mono">enables ' + esc(c.links.enables.join(', ')) + '</div>');
+    }
+    if (c.ticket_state === 'WAITING_HUMAN' || c.assignee) {
+      out.push('<div class="reason">waiting on human' + (c.assignee ? ': ' + esc(c.assignee) : '') + '</div>');
+    }
+    var tasks = c.child && c.child.tasks;
+    if (tasks && tasks.length) {
+      out.push('<ul class="ticket-tasks">' + tasks.map(function (t) {
+        return '<li><span class="badge ' + esc(t.state) + '">' + esc(t.state) + '</span>' + esc(t.key) + (t.title ? ' – ' + esc(t.title) : '') + '</li>';
+      }).join('') + '</ul>');
+    }
+    out.push('</div>');
+    return out.join('');
+  }
+
+  function ticketsBody(m) {
+    if (m.error) return '<p class="reason">' + esc(m.error) + '</p>';
+    var t = m.ticket || {};
+    var out = ['<div class="panel"><h1>' + esc(t.key || m.task_id) + '</h1>',
+      '<div class="request-box">' + esc(m.request) + '</div>',
+      '<div class="header-grid">',
+      '<div class="stat"><div class="label">state</div><div class="value"><span class="badge ' + esc(t.state || '') + '">' + esc(t.state || '–') + '</span></div></div>',
+      '<div class="stat"><div class="label">phase</div><div class="value">' + esc(t.phase || '–') + '</div></div>',
+      '</div></div>'];
+    var cards = boardCards(m);
+    var cols = {};
+    cards.forEach(function (c) { var st = c.ticket_state || 'BACKLOG'; (cols[st] = cols[st] || []).push(c); });
+    TICKET_STATE_ORDER.forEach(function (st) {
+      var list = cols[st];
+      if (!list || !list.length) return;
+      out.push('<h2>' + esc(st) + ' (' + list.length + ')</h2><div class="pkg-grid">');
+      list.forEach(function (c) { out.push(ticketCard(c)); });
+      out.push('</div>');
+    });
+    return out.join('');
+  }
+
+  // ---------- RESOURCE view: the team hierarchy as it is actually resourced right now ----------
+  //
+  // TaskLeader (task.daemon) -> one Team per STORY (a package's own child run) -> workers per
+  // TASK (the child run's own chain nodes). Same fields the pipeline view's childStrip/chip
+  // already read (cwd, branch, driver, nodes) plus what nodeSummary now also carries
+  // (executor/model/assignee) - no second read of anything.
+  function resWorker(n) {
+    var bits = [esc(n.node_id), '(' + esc(n.stage) + ')'];
+    if (n.executor) bits.push(esc(n.executor));
+    if (n.model) bits.push(esc(n.model));
+    if (n.elapsed_ms != null) bits.push(fmtMs(n.elapsed_ms));
+    if (n.assignee) bits.push('human: ' + esc(n.assignee));
+    return '<div class="res-worker"><span class="dot ' + esc(n.state || 'pending') + '"></span>' + bits.join(' · ') + '</div>';
+  }
+
+  function resTeam(label, teamLike) {
+    var out = ['<div class="res-node"><div class="res-label">Team ' + esc(label) + '</div>'];
+    if (!teamLike) { out.push('<div class="muted">not dispatched yet</div></div>'); return out.join(''); }
+    if (teamLike.missing) { out.push('<div class="reason">child run file missing at ' + esc(teamLike.cwd) + '</div></div>'); return out.join(''); }
+    out.push('<div class="mono muted">' + esc(teamLike.cwd) + (teamLike.branch ? ' (' + esc(teamLike.branch) + ')' : '') + '</div>');
+    var d = teamLike.driver;
+    if (d) {
+      var cost = d.cost ? (' · ' + fmtUsd(d.cost.cost_usd) + ' · ' + d.cost.turns + ' turns') : '';
+      out.push('<div class="mono">TeamLeader pid=' + esc(d.pid) + ' ' + (d.alive ? 'alive' : 'dead') + ' restarts=' + esc(d.restarts) + cost + '</div>');
+    }
+    if (teamLike.waiting_capacity) out.push('<div class="reason">waiting_capacity: ' + esc(teamLike.waiting_capacity.reason || '') + '</div>');
+    (teamLike.nodes || []).forEach(function (n) { out.push(resWorker(n)); });
+    (teamLike.nested || []).forEach(function (nt) {
+      out.push('<div class="muted">nested task ' + esc(nt.task_id) + '</div>');
+      out.push(resourcesBody(nt));
+    });
+    out.push('</div>');
+    return out.join('');
+  }
+
+  function resourcesBody(m) {
+    if (m.error) return '<p class="reason">' + esc(m.error) + '</p>';
+    var d = m.daemon;
+    var out = ['<div class="res-node"><div class="res-label">TaskLeader</div>' +
+      (d ? '<div class="mono">pid=' + esc(d.pid) + ' ' + (d.alive ? 'alive' : 'dead') + ' started=' + fmtTime(d.started_at) + ' restarts=' + esc(d.restarts) + (d.exhausted ? ' EXHAUSTED' : '') + '</div>'
+        : '<div class="muted">no daemon - driven by hand or an MCP client</div>') + '</div>'];
+    if (m.s_run) { out.push(resTeam('S', m.s_run)); return out.join(''); }
+    (m.packages || []).forEach(function (p) { out.push(resTeam(p.id + (p.title ? ' – ' + p.title : ''), p.child)); });
+    if (m.qa) m.qa.rounds.forEach(function (r) { out.push(resTeam('QA:' + r.round, r.child)); });
+    if (m.audit) m.audit.rounds.forEach(function (r) { out.push(resTeam('AUDIT:' + r.round, r.child)); });
+    return out.join('');
   }
 
   function taskBody(m) {
@@ -311,14 +472,29 @@
         card.classList.toggle('open');
       });
     });
+    Array.prototype.forEach.call(document.querySelectorAll('.view-tab'), function (tab) {
+      tab.addEventListener('click', function () {
+        currentView = tab.getAttribute('data-view');
+        // Re-render from the last poll immediately - a tab switch should feel instant, not wait
+        // up to 3s for the next /state.json tick.
+        if (lastData) render(lastData);
+      });
+    });
+  }
+
+  function viewBody(m) {
+    if (currentView === 'tickets') return ticketsBody(m);
+    if (currentView === 'resources') return resourcesBody(m);
+    return taskBody(m);
   }
 
   function render(data) {
+    lastData = data;
     if (data.mode === 'index') {
       app.innerHTML = indexBody(data.tasks, data.tasks_dir);
       return;
     }
-    app.innerHTML = taskBody(data.model);
+    app.innerHTML = viewTabs() + viewBody(data.model);
     attachInteractions();
   }
 

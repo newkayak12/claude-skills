@@ -10,7 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, existsSync, readdirSync, realpathSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, existsSync, readdirSync, realpathSync, symlinkSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -102,7 +102,10 @@ const SHAPE = {
 // survives verbatim from the shape payload into task.spec.packages[i] (the shape node's own
 // `finish()` spreads `...p`), and openChild carries it into createRun's `subgoal_assignee` for
 // the common parent_shaped case - one package, one synthetic subgoal, so "the package" and "its
-// one subgoal" are the same card.
+// one subgoal" are the same card. This is a MODEL pin (the shape wrote it, not a person calling
+// tm_assign), so every test below opens its task with interactive:true - see graph.mjs's
+// applyHumanPin for the source distinction and the non-interactive, auto-decided tests further
+// down this file for the off case (the 0.27.3 review, 2026-09-24).
 const SHAPE_HUMAN = {
   acceptance: ['a.txt says a', 'b.txt says b'],
   packages: [
@@ -3487,6 +3490,19 @@ test('a tasks root inside the worktree is left out of the commit; one outside it
     process.env.HARNESS_TASKS_DIR = `${cwd}-other`;
     paths = harnessPathsUnder(cwd);
     assert.equal(paths.length, 2, `a sibling is not inside the tree: ${paths}`);
+
+    // The same tree under two spellings. idol-pm-4 (2026-09-23): cwd came in as the realpath
+    // (/private/var/...) and the root as given (/var/...), and eight state files reached P1.
+    const link = `${cwd}-link`;
+    symlinkSync(cwd, link);
+    try {
+      process.env.HARNESS_TASKS_DIR = join(link, '.harness-tasks');
+      assert.ok(harnessPathsUnder(realpathSync(cwd)).includes('.harness-tasks'), 'root spelled through a link, cwd as its realpath');
+      process.env.HARNESS_TASKS_DIR = join(cwd, '.harness-tasks');
+      assert.ok(harnessPathsUnder(link).includes('.harness-tasks'), 'and the other way round');
+    } finally {
+      rmSync(link, { force: true });
+    }
   } finally {
     if (prior === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prior;
     rmSync(cwd, { recursive: true, force: true });
@@ -3592,6 +3608,20 @@ test('an accept under goal_threshold is a rejection, and the phase-Team package 
     assert.ok(retry, 'a second PLAN attempt opens');
     assert.match(String(retry.feedback || ''), /specific to this domain/, 'the gap that cost it the points travels into the retry');
   }, { roles: { planning: true } });
+});
+
+// idol-pm-4 (2026-09-23): P2 and P5 accepted at 88 with gaps[] empty and failed on the number
+// alone - the judge had found nothing blocking, and each package was rebuilt from scratch. The
+// floor now needs a named gap on accept. The manager's own goal gate keeps the plain floor.
+test('an accept under the floor fails only when the judge named a gap', async () => {
+  const { succeeded } = await import('../mcp/taskmanager.mjs');
+  const task = { goal_threshold: 90 };
+  const accept = { stage: 'accept', node_id: 'accept:P2:2' };
+  const r = (extra) => ({ stage_ok: true, accept: true, checks: ['npm test -> 79/79'], ...extra });
+  assert.equal(succeeded(task, accept, r({ match_pct: 88, gaps: [], observations: ['a small scope overlap'] })), true, 'weaknesses that do not block are not a rejection');
+  assert.equal(succeeded(task, accept, r({ match_pct: 87, gaps: ['the export path is not exercised end to end'] })), false, 'a named gap under the floor still is');
+  assert.equal(succeeded(task, accept, r({ match_pct: 95, gaps: ['minor'] })), true, 'at the floor a gap is carried, not refused');
+  assert.equal(succeeded(task, { stage: 'gate', node_id: 'gate:goal:1' }, r({ match_pct: 88, gaps: [] })), false, 'the goal gate keeps the plain floor');
 });
 
 test('a planning fold returning no user stories is rejected, and says why', async () => {
@@ -3743,7 +3773,7 @@ test('a shape-level assignee: "human" pin on a package parks its one subgoal in 
     const status = await tm.call('tm_status', { task_id, full: true });
     const dispatch = status.nodes.find((n) => n.node_id === 'dispatch:P1:1');
     assert.equal(dispatch.state, 'running');
-  });
+  }, { interactive: true });
 });
 
 test('tm_inbox lists a waiting_human card: key, title, acceptance, briefing_path, who, since - scoped to one task or every task', async () => {
@@ -3766,7 +3796,7 @@ test('tm_inbox lists a waiting_human card: key, title, acceptance, briefing_path
 
     const all = await tm.call('tm_inbox', {});
     assert.ok(all.cards.some((c) => c.key === card.key), 'scanning every task still finds it');
-  });
+  }, { interactive: true });
 });
 
 test('tm_submit({key}) completes a waiting_human card, and the flow continues exactly as a driver would have - test then gate, through the real graph', async () => {
@@ -3789,7 +3819,7 @@ test('tm_submit({key}) completes a waiting_human card, and the flow continues ex
     await g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
     await g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id: 'gate:U1:1', payload: ok({ accept: true, match_pct: 95 }) });
     assert.equal((await g.call('team_status', { run_id: child.run_id, cwd: child.cwd })).state, 'complete');
-  });
+  }, { interactive: true });
 });
 
 test('a gate rejection on a human-authored card reopens the next attempt pinned to the same human - waiting_human again, and the task-level dispatch never folds or retries while it waits', async () => {
@@ -3818,6 +3848,75 @@ test('a gate rejection on a human-authored card reopens the next attempt pinned 
     const dispatch = status.nodes.find((n) => n.node_id === 'dispatch:P1:1');
     assert.equal(dispatch.state, 'running', 'still open - a human turnaround is not a package failure');
     assert.equal(dispatch.attempt, 1, 'no fresh dispatch attempt was opened');
+  }, { interactive: true });
+});
+
+// ---------- a MODEL's own assignee pin only parks when the run is interactive (0.27.3 review) ----------
+
+test('a shape-level assignee: "human" pin on a NON-interactive task (the default) does not park - it dispatches to an AI, and tm_inbox lists it under `decided`, not `cards`', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE_HUMAN);
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children[0];
+    const next = await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+    // Not parked: the node is offered to the self vendor exactly like an unpinned one.
+    assert.equal(next.state, 'running', JSON.stringify(next));
+    assert.ok(next.ready.some((n) => n.node_id === 'implement:U1:1' && n.vendor === 'self'));
+
+    const inbox = await tm.call('tm_inbox', { task_id });
+    assert.deepEqual(inbox.cards, [], 'nothing is waiting on a human - the pin was auto-decided, not parked');
+    assert.equal(inbox.decided.length, 1);
+    const d = inbox.decided[0];
+    assert.equal(d.key, `E-${task_id.slice(0, 8)}/P1/U1`);
+    assert.equal(d.task_id, task_id);
+    assert.equal(d.node_id, 'implement:U1:1');
+    assert.equal(d.who, null);
+    assert.match(d.reason, /not interactive/);
+    assert.ok(Number.isInteger(d.since));
+
+    // The task-level dispatch and the node itself both proceed as if nothing had been pinned -
+    // no waiting_human anywhere, no ticket parked on a human.
+    const key = `E-${task_id.slice(0, 8)}/P1`;
+    const ticket = await tm.call('tm_ticket', { key });
+    assert.notEqual(ticket.state, 'WAITING_HUMAN');
+  });
+  // withTask's default (no `extra.interactive`) is what this test is about: the task never
+  // asked to be interactive, so a model's own pin must not deadlock it.
+});
+
+test('the SAME shape-level pin, on an interactive task, still parks exactly as 0.27.3 introduced it - and does not also appear in `decided`', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE_HUMAN);
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children[0];
+    const next = await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+    assert.equal(next.state, 'waiting_human');
+
+    const inbox = await tm.call('tm_inbox', { task_id });
+    assert.equal(inbox.cards.length, 1);
+    assert.deepEqual(inbox.decided, [], 'parked, not auto-decided - it must not double-list');
+  }, { interactive: true });
+});
+
+test('tm_assign parks a card regardless of the task\'s own interactive setting - the user is present by definition, unlike a shape\'s own pin', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    // SHAPE (no assignee at all) + tm_assign, on a task that never set interactive - proves
+    // tm_assign's pin is a different source from the shape's own field, not just "interactive
+    // was on anyway".
+    await throughCritique(tm, task_id, SHAPE);
+    const key = `E-${task_id.slice(0, 8)}/P1`;
+    const taken = await tm.call('tm_assign', { task_id, key, to: 'human', who: 'sanghyeon' });
+    assert.deepEqual(taken.assigned, [], 'not dispatched yet - the pin rides on the package');
+
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children.find((c) => c.node_id === 'dispatch:P1:1') || nx.children[0];
+    const next = await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+    assert.equal(next.state, 'waiting_human', 'tm_assign always parks, interactive or not');
+
+    const inbox = await tm.call('tm_inbox', { task_id });
+    assert.equal(inbox.cards.length, 1);
+    assert.equal(inbox.cards[0].who, 'sanghyeon');
+    assert.deepEqual(inbox.decided, []);
   });
 });
 
@@ -4001,4 +4100,167 @@ test('a run that was never told to ask does not park: it records the question an
     assert.ok((next.ready || []).some((n) => n.node_id === 'draft:U1:1'), JSON.stringify(next));
     assert.deepEqual((await tm.call('tm_inbox', { task_id })).cards, []);
   });
+});
+
+// ---------- 0.27.4: the manager never writes a child run itself ----------
+//
+// The 2026-09-24 review: 0.27.3's tm_assign and tm_submit({key}) loaded the child run and
+// saveRun()'d it directly from this process - a violation of this file's own header (rule 2,
+// "reads child run files and never writes them") and of design §7 (a human's implement/draft/
+// cases report is supposed to get "changed_files는 워크트리 대조로 똑같이 검증", the same
+// worktree cross-check an AI's does; 0.27.3 took stage_ok at face value instead). Fixed by
+// queueHumanAction (graph.mjs): tm_assign/tm_submit preview the effect read-only, through the
+// same applyPinAction/computeSubmitResult the broker itself uses, and queue the instruction as a
+// manager-owned handoff. Only the broker (mustFindRun -> ingestHandoff, broker.mjs) ever
+// saveRun()s the child - the next time team_next/team_submit/team_status touches it.
+
+function childRunFile(child) {
+  return join(child.cwd, '.teams_output', 'broker', 'runs', `${child.run_id}.json`);
+}
+
+test('tm_assign never writes the child run file - a STORY pin, a release, and a TASK pin all leave it untouched until team_next drains the queue', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE_SPLIT);
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children[0];
+    await g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id: 'plan', payload: ok({ handoff: 'p', flow: 'develop', size: 'S' }) });
+    await g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id: 'setgoal', payload: ok({ spec: TWO_SUBGOAL_SPEC }) });
+    await g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id: 'critique', payload: ok({ sound: true }) });
+
+    const runFile = childRunFile(child);
+    const before = readFileSync(runFile, 'utf8');
+    const mtimeBefore = statSync(runFile).mtimeMs;
+
+    const storyKeyStr = `E-${task_id.slice(0, 8)}/P1`;
+    const story = await tm.call('tm_assign', { task_id, key: storyKeyStr, to: 'human', who: 'sanghyeon' });
+    assert.equal(story.kind, 'STORY');
+    assert.equal(readFileSync(runFile, 'utf8'), before, 'tm_assign(to: human) must not write the child run file');
+    assert.equal(statSync(runFile).mtimeMs, mtimeBefore, 'tm_assign(to: human) must not touch the child run file mtime');
+
+    const released = await tm.call('tm_assign', { task_id, key: storyKeyStr, to: 'auto' });
+    assert.ok(released.assigned.every((x) => x.assignment === null));
+    assert.equal(readFileSync(runFile, 'utf8'), before, 'tm_assign(to: auto) must not write the child run file either');
+    assert.equal(statSync(runFile).mtimeMs, mtimeBefore, 'tm_assign(to: auto) must not touch the child run file mtime');
+
+    const taskKeyStr = `E-${task_id.slice(0, 8)}/P1/U1`;
+    const one = await tm.call('tm_assign', { task_id, key: taskKeyStr, to: 'human' });
+    assert.equal(one.kind, 'TASK');
+    assert.equal(readFileSync(runFile, 'utf8'), before, 'a TASK-key tm_assign must not write the child run file');
+    assert.equal(statSync(runFile).mtimeMs, mtimeBefore, 'a TASK-key tm_assign must not touch the child run file mtime');
+
+    // The broker's own next step is what actually applies the three queued pins - and it does,
+    // proving the queue was not simply lost.
+    const next = await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+    assert.notEqual(readFileSync(runFile, 'utf8'), before, 'team_next (the broker) is the one call that writes the child run');
+    assert.ok(!next.ready.some((n) => n.node_id === 'implement:U1:1'), 'U1 landed pinned, exactly as tm_assign previewed');
+  });
+});
+
+test("tm_submit({key}) never writes the child run file - a human's card answer waits for the broker's own team_next/team_submit/team_status to apply it", async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE_HUMAN);
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children[0];
+    await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+
+    const runFile = childRunFile(child);
+    const before = readFileSync(runFile, 'utf8');
+    const mtimeBefore = statSync(runFile).mtimeMs;
+
+    const key = `E-${task_id.slice(0, 8)}/P1/U1`;
+    appendFileSync(join(child.cwd, 'a.txt'), 'changed\n');
+    const v = await tm.call('tm_submit', { task_id, key, payload: ok({ changed_files: ['a.txt'] }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+
+    assert.equal(readFileSync(runFile, 'utf8'), before, 'tm_submit({key}) must not write the child run file');
+    assert.equal(statSync(runFile).mtimeMs, mtimeBefore, 'tm_submit({key}) must not touch the child run file mtime');
+
+    // A second submission of the same card sees it as already answered (queued, not yet
+    // drained) - not as a stale waiting_human node it could answer twice.
+    const again = await tm.call('tm_submit', { task_id, key, payload: ok({ changed_files: ['a.txt'] }) });
+    assert.match(again.error || '', /not waiting_human/);
+    assert.equal(readFileSync(runFile, 'utf8'), before, 'the refused second submission must not write either');
+
+    // The broker's own next step (team_status here, not just team_next - any mustFindRun caller
+    // must drain the same queue) is what actually applies the answer.
+    const full = await g.call('team_status', { run_id: child.run_id, cwd: child.cwd, full: true, node_id: 'implement:U1:1' });
+    assert.equal(full.node.state, 'done');
+    assert.notEqual(readFileSync(runFile, 'utf8'), before, 'team_status (the broker) is the one call that writes the child run');
+  }, { interactive: true });
+});
+
+test("tm_submit({key, payload:{decisions}}) answering an ask card never writes the child run file either - decisions carry no changed_files, so only the no-direct-write rule applies, not the cross-check", async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    const child = await toAskCard(tm, g, task_id);
+    await g.call('team_next', { run_id: child.run_id, cwd: child.cwd }); // parks the ask card
+
+    const runFile = childRunFile(child);
+    const before = readFileSync(runFile, 'utf8');
+    const mtimeBefore = statSync(runFile).mtimeMs;
+
+    const key = `E-${task_id.slice(0, 8)}/P1/U1`;
+    const v = await tm.call('tm_submit', { task_id, key, payload: ok({
+      decisions: [{ question: LIMIT_QUESTION[0].question, chose: '2 across presale and general combined', because: 'legal asked for the tighter cap' }],
+    }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    assert.equal(v.node_id, 'ask:U1:1');
+
+    assert.equal(readFileSync(runFile, 'utf8'), before, 'tm_submit({key}) on an ask card must not write the child run file');
+    assert.equal(statSync(runFile).mtimeMs, mtimeBefore, 'tm_submit({key}) on an ask card must not touch the child run file mtime');
+
+    // The broker's own next step is what actually resolves the ask and moves draft onto the
+    // answer - team_next here, exactly as an ordinary implement/draft/cases submission does.
+    const next = await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+    assert.notEqual(readFileSync(runFile, 'utf8'), before, 'team_next (the broker) is the one call that writes the child run');
+    const draft = (next.ready || []).find((n) => n.node_id === 'draft:U1:1');
+    assert.ok(draft, JSON.stringify(next.ready));
+    assert.match(readFileSync(draft.briefing_path, 'utf8'), /2 across presale and general combined/);
+  }, { interactive: true });
+});
+
+// ---------- a human's report is cross-checked exactly like an AI's ----------
+
+test('a human submission claiming a changed file that did not change in the worktree is caught by the same worktree cross-check an AI report gets - both in the preview and after the broker applies it for real', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE_HUMAN);
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children[0];
+    await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+
+    const key = `E-${task_id.slice(0, 8)}/P1/U1`;
+    // a.txt is NOT touched this time - the claim below is false.
+    const v = await tm.call('tm_submit', { task_id, key, payload: ok({ changed_files: ['a.txt'] }) });
+    assert.equal(v.state, 'failed', JSON.stringify(v));
+    assert.equal(v.result.stage_ok, false);
+    assert.deepEqual(v.result.contradicted_files, ['a.txt']);
+    assert.match(v.result.verification_error || '', /claimed changed_files not present in the worktree/);
+
+    // Not a preview-only guess: the broker's own real ingestion (computeSubmitResult, applied
+    // for real by finishNode via team_next's mustFindRun) agrees, against the same worktree.
+    await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+    const full = await g.call('team_status', { run_id: child.run_id, cwd: child.cwd, full: true, node_id: 'implement:U1:1' });
+    assert.equal(full.node.state, 'failed');
+    assert.equal(full.node.result.stage_ok, false);
+    assert.deepEqual(full.node.result.contradicted_files, ['a.txt']);
+  }, { interactive: true });
+});
+
+test('a correct human submission still flows to test -> gate exactly as before - the cross-check does not get in the way of a truthful report', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE_HUMAN);
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children[0];
+    await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+
+    const key = `E-${task_id.slice(0, 8)}/P1/U1`;
+    appendFileSync(join(child.cwd, 'a.txt'), 'changed\n');
+    const v = await tm.call('tm_submit', { task_id, key, payload: ok({ changed_files: ['a.txt'] }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    assert.equal(v.result.stage_ok, true);
+    assert.deepEqual(v.result.contradicted_files, []);
+
+    await g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    await g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id: 'gate:U1:1', payload: ok({ accept: true, match_pct: 95 }) });
+    assert.equal((await g.call('team_status', { run_id: child.run_id, cwd: child.cwd })).state, 'complete');
+  }, { interactive: true });
 });

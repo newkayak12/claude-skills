@@ -8,7 +8,7 @@
 //
 // Runs live at <cwd>/.teams_output/broker/runs/<run_id>.json.
 
-import { mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, statSync, renameSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, statSync, renameSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_MODELS } from './routing.mjs';
@@ -240,13 +240,49 @@ export function authorStage(kind) {
 // rollback.md §0.2: a headless driver has no surface to reach one). A node already past
 // 'pending' (running or done before the pin landed) is left alone - the spec's `assignee` still
 // updates, so the NEXT attempt, if this one is rejected, picks it up.
+//
+// Two different hands write `assignee`, and docs/plans/2026-09-17-teams-team.md §7 ("사용자 =
+// 그래프 노드") treats them differently. tm_assign marks its own writes {by: 'user'}
+// (taskmanager.mjs's toolAssign, both the STORY-level pkg.assignee and the TASK-level
+// sg.assignee) - the user is present by definition (they just called the tool), so that pin
+// always parks the node in waiting_human, interactive or not. Anything else - a shape package's
+// own `assignee` field (openChild's subgoal_assignee, itself the model's SHAPE output) or a
+// setgoal subgoal's own `assignee` field - is the MODEL writing, not the user, and §7's
+// "실행 규칙" is explicit that a model-authored pin is a decision the run defaults on its own
+// unless the team asked to be interrupted: honoured as a parking pin only when run.interactive
+// is true. This is the fix for the 0.27.3 review (2026-09-24): 0.27.3 parked ANY assignee:
+// "human" unconditionally, so a model that wrote one into a shape or setgoal spec during a
+// headless/bench run (nobody watching, interactive's own default is false) deadlocked the node
+// in waiting_human forever - a flag nobody set was read as a question nobody could answer.
+// Non-interactive now routes the node to an AI exactly as if nothing had been written, and
+// records what would have parked it on the node itself (auto_decided_pin) - tm_inbox's
+// `decided` section is exactly that record surfaced. "플래그 없는 실행은 '질문 없는 실행'이
+// 아니라 '질문에 default로 답한 실행'이다. 차이는 기록에 있다." (§7).
+function pinSource(pin) {
+  return pin && typeof pin === 'object' && pin.by === 'user' ? 'user' : 'model';
+}
+
 export function applyHumanPin(run, sg, subgoalId, attempt) {
   const pin = sg && sg.assignee;
   if (!pin) return null;
   const n = getNode(run, `${authorStage(kindOf(sg))}:${subgoalId}:${attempt}`);
   if (!n || n.state !== 'pending') return null;
   const who = pin && typeof pin === 'object' ? (pin.who || null) : null;
-  n.assignment = { executor: 'human', vendor: 'human', who, reason: 'pinned by the subgoal spec (assignee)' };
+  const source = pinSource(pin);
+  if (source === 'model' && !run.interactive) {
+    n.auto_decided_pin = {
+      by: 'auto',
+      who,
+      pin: typeof pin === 'object' ? { ...pin } : pin,
+      reason: 'assignee:"human" came from the shape/spec, not tm_assign, and this run is not interactive - dispatched to an AI instead of parking (§7)',
+      at: Date.now(),
+    };
+    return null;
+  }
+  n.assignment = {
+    executor: 'human', vendor: 'human', who,
+    reason: source === 'user' ? 'pinned by tm_assign' : 'pinned by the subgoal spec (assignee)',
+  };
   return n;
 }
 
@@ -264,6 +300,25 @@ export function releaseHumanPin(run, sg, subgoalId, attempt) {
   }
   if (n.assignment && n.assignment.executor === 'human') delete n.assignment;
   return n;
+}
+
+// One action ({subgoal_id, attempt, to: 'human'|'auto', who}), one place it is applied: tm_assign's
+// own read-only preview (taskmanager.mjs, never saved) and the broker's real ingestion
+// (mustFindRun -> drainHumanActions, broker.mjs) both call this, rather than each re-deciding
+// "which of applyHumanPin/releaseHumanPin, with what assignee" on its own - that duplication is
+// exactly how the preview and the real write could drift apart. See queueHumanAction below for
+// why the write is queued at all instead of landing here directly.
+export function applyPinAction(run, action) {
+  const sg = run.spec && (run.spec.subgoals || []).find((s) => String(s.id) === action.subgoal_id);
+  if (!sg) return null;
+  if (action.to === 'auto') {
+    delete sg.assignee;
+    return releaseHumanPin(run, sg, action.subgoal_id, action.attempt);
+  }
+  // Only tm_assign queues a pin action, so this pin is the user's own - it parks whatever
+  // `interactive` says (a model-written assignee is the one that needs interactive, §7).
+  sg.assignee = { by: 'user', ...(action.who ? { who: action.who } : {}) };
+  return applyHumanPin(run, sg, action.subgoal_id, action.attempt);
 }
 
 // The attempt a subgoal is currently on, read back from the nodes themselves - what tm_assign
@@ -287,6 +342,78 @@ function runsDir(cwd) {
 
 function runPath(cwd, runId) {
   return join(runsDir(cwd), runId + '.json');
+}
+
+// A human's pin (tm_assign) or card answer (tm_submit({key})) crosses from the TaskManager's
+// process into a child run it does not own. This directory is NOT runsDir - queueHumanAction
+// never touches a run file - so the manager can record the human's intent without being the
+// one who writes the child's graph (README: "a child graph run is written only by its own
+// broker... the broker opens it, never a node"). The broker drains it (broker.mjs's
+// ingestHandoff, called from mustFindRun) and applies each action for real, through the exact
+// functions - applyPinAction above, computeSubmitResult+finishNode in broker.mjs - the
+// manager's own preview already ran read-only. Before 0.27.4 this queue did not exist:
+// taskmanager.mjs loadRun+saveRun'd the child directly, because broker.mjs bound process.stdin
+// at module scope and could not be imported for its real logic at all (2026-09-24 review
+// against this file's own header and design §7's "changed_files는 워크트리 대조로 똑같이 검증").
+function handoffDir(cwd) {
+  return join(cwd, '.teams_output', 'broker', 'handoffs');
+}
+
+function handoffPath(cwd, runId) {
+  return join(handoffDir(cwd), runId + '.json');
+}
+
+function readHandoffQueue(cwd, runId) {
+  try {
+    const queue = JSON.parse(readFileSync(handoffPath(cwd, runId), 'utf8'));
+    return Array.isArray(queue) ? queue : [];
+  } catch {
+    return [];
+  }
+}
+
+// The manager's own write - appends, never touches runPath. Write-then-rename for the same
+// torn-read reason saveRun uses it: a broker mid-drainHumanActions must never see a half-written
+// queue.
+export function queueHumanAction(cwd, runId, action) {
+  const path = handoffPath(cwd, runId);
+  mkdirSync(dirname(path), { recursive: true });
+  // Under the same lock the drain takes. Unlocked, a drain landing between this read and this
+  // rename either lost the action pushed here or applied the one it had just drained twice.
+  const lock = acquire(path);
+  try {
+    const queue = readHandoffQueue(cwd, runId);
+    queue.push(action);
+    const tmp = `${path}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
+    writeFileSync(tmp, JSON.stringify(queue));
+    renameSync(tmp, path);
+  } finally {
+    release(lock);
+  }
+}
+
+// The manager's own read of what it has queued but the broker has not drained yet, so a second
+// tm_assign/tm_submit in the same tick previews against its own prior call instead of the stale
+// on-disk child - peekHumanActions never deletes; only drainHumanActions (the broker's read) does.
+export function peekHumanActions(cwd, runId) {
+  return readHandoffQueue(cwd, runId);
+}
+
+// The broker's own read: drains (reads, then removes) so the same action is never applied
+// twice. Only ever called from mustFindRun (broker.mjs) - see the header comment above.
+export function drainHumanActions(cwd, runId) {
+  const path = handoffPath(cwd, runId);
+  if (!existsSync(path)) return [];
+  const lock = acquire(path);
+  try {
+    const queue = readHandoffQueue(cwd, runId);
+    if (queue.length) {
+      try { rmSync(path, { force: true }); } catch { /* already gone */ }
+    }
+    return queue;
+  } finally {
+    release(lock);
+  }
 }
 
 // A run file is read-modify-written by every mutation, and a node can be held open for

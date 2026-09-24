@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { collectTask, listTasks, deriveTitle } from './lib/view-collect.mjs';
-import { renderText, renderIndexText } from './lib/view-render-text.mjs';
+import { renderText, renderIndexText, renderTicketsText, renderResourcesText } from './lib/view-render-text.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TM = join(HERE, '..', 'mcp', 'taskmanager.mjs');
@@ -49,6 +49,20 @@ function renderPkgCardHtml(p, idx = 0) {
   const out = {};
   fn(sandbox.location, sandbox.URLSearchParams, sandbox.document, out);
   return out.pkgCard(p, idx);
+}
+
+// Same extraction trick as renderIndexHtml/renderPkgCardHtml, for the TICKET/RESOURCE view's own
+// client-side renderers - pins that the browser and the CLI/text renderer (view-render-text.mjs)
+// draw the SAME collect() fields into the SAME shape, not two quietly-diverging surfaces.
+function extractPageFns(names) {
+  const html = readFileSync(PAGE_HTML, 'utf8');
+  const body = html.match(/\(function \(\) \{([\s\S]*)\}\)\(\);/)[1].replace(/tick\(\);\s*setInterval\(tick, 3000\);/, '');
+  const sandbox = { location: { search: '' }, URLSearchParams, document: { getElementById: () => null, querySelectorAll: () => [] } };
+  const fn = new Function('location', 'URLSearchParams', 'document', 'exportsObj',
+    `${body}\n${names.map((n) => `exportsObj.${n} = ${n};`).join('\n')}`);
+  const out = {};
+  fn(sandbox.location, sandbox.URLSearchParams, sandbox.document, out);
+  return out;
 }
 
 // ---------- the same fixture recipe test-taskmanager.mjs uses ----------
@@ -760,6 +774,290 @@ test('/state.json carries model.qa for a task with a QA round (the HTML page and
       assert.equal(data.model.qa.rounds.length, 1);
       assert.equal(data.model.qa.rounds[0].defects_count, 1);
       assert.equal(data.model.packages.find((p) => p.id === 'D1').reporter, 'qa');
+    } finally {
+      proc.kill();
+    }
+  });
+});
+
+// ---------- TICKET and RESOURCE views ----------
+
+test('collect() adds ticket_key/ticket_state/attempt to each package (tickets.mjs\'s own storyTicketState, not a second derivation) and model.ticket for the EPIC header', async () => {
+  await withTask(TWO_PKG_SHAPE, async ({ tm, g, root, task_id }) => {
+    const nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) });
+
+    const model = collectTask(root, task_id);
+    const epicKeyHere = `E-${task_id.slice(0, 8)}`;
+    const p1 = model.packages.find((p) => p.id === 'P1');
+    const p2 = model.packages.find((p) => p.id === 'P2');
+    assert.equal(p1.ticket_key, `${epicKeyHere}/P1`);
+    assert.equal(p1.ticket_state, 'DONE');
+    assert.equal(p1.attempt, 1);
+    assert.equal(p1.assignee, null, 'no pin was ever placed on P1');
+    assert.equal(p2.ticket_state, 'READY', 'P2\'s only dep (P1) is already DONE');
+    assert.deepEqual(model.ticket, {
+      key: epicKeyHere, title: 'a request for the view test', state: 'IN_PROGRESS', phase: 'impl',
+    });
+  });
+});
+
+// The 0.27.3 human-pickup path end to end: tm_assign pins P1's STORY to a human before its own
+// author node has run; team_next (promoteWaitingHuman, graph.mjs) then parks that node
+// waiting_human - collect() must show the same three facts tm_inbox/tm_ticket would: the STORY's
+// ticket_state, who is holding it, and the TASK row underneath it.
+test('collect() surfaces a human pin through to a promoted waiting_human node: packages[].assignee, ticket_state WAITING_HUMAN, and the TASK child\'s own WAITING_HUMAN state', async () => {
+  await withOpenTask({ planning: false, qa: false }, async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id, TWO_PKG_SHAPE);
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children.find((c) => c.package_id === 'P1');
+    const epicKeyHere = `E-${task_id.slice(0, 8)}`;
+
+    const assigned = await tm.call('tm_assign', { task_id, key: `${epicKeyHere}/P1`, to: { executor: 'human', who: 'sanghyeon' } });
+    assert.equal(assigned.to, 'human');
+    await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+
+    const model = collectTask(root, task_id);
+    const p1 = model.packages.find((p) => p.id === 'P1');
+    assert.equal(p1.ticket_state, 'WAITING_HUMAN');
+    assert.equal(p1.assignee, 'sanghyeon');
+    const u1Node = p1.child.nodes.find((n) => n.node_id === 'implement:U1:1');
+    assert.equal(u1Node.state, 'waiting_human');
+    assert.equal(u1Node.assignee, 'sanghyeon');
+    assert.deepEqual(p1.child.tasks, [{ id: 'U1', key: `${epicKeyHere}/P1/U1`, title: 'module a', state: 'WAITING_HUMAN' }]);
+
+    const text = renderTicketsText(model);
+    assert.match(text, /WAITING_HUMAN:\n {2}\[E-[0-9a-f]{8}\/P1\] P1 - module a \(develop\)/);
+    assert.match(text, />>> WAITING ON HUMAN: sanghyeon <<</);
+    assert.match(text, new RegExp(`\\[WAITING_HUMAN\\] ${epicKeyHere}/P1/U1 - module a`));
+
+    const resText = renderResourcesText(model);
+    assert.match(resText, /human=sanghyeon/);
+  });
+});
+
+// A hand-built model (like renderText's own minimalModel tests below) - storyTicketState's exact
+// column vocabulary is pinned in test-tickets.mjs; this only pins how the TICKET view turns
+// packageModel's own fields into columns/cards, and that an empty column never prints.
+function minimalTicketModel(packages, extra = {}) {
+  return {
+    task_id: 't1', request: 'r', error: null,
+    ticket: { key: 'E-aaaaaaaa', title: 'ship the thing', state: 'IN_PROGRESS', phase: 'impl' },
+    packages, qa: null, audit: null,
+    ...extra,
+  };
+}
+
+test('renderTicketsText(): only non-empty state columns print, in tickets.mjs\'s own workflow order', () => {
+  const text = renderTicketsText(minimalTicketModel([
+    { id: 'P1', title: 'a', phase: null, reporter: null, attempt: 1, ticket_key: 'E-aaaaaaaa/P1', ticket_state: 'DONE', assignee: null, deps: [], links: { blocked_by: [], blocks: [], implements: [], filed_by: null }, child: null },
+    { id: 'P2', title: 'b', phase: null, reporter: null, attempt: 1, ticket_key: 'E-aaaaaaaa/P2', ticket_state: 'BACKLOG', assignee: null, deps: ['P1'], links: { blocked_by: [], blocks: [], implements: [], filed_by: null }, child: null },
+  ]));
+  assert.match(text, /BACKLOG:/);
+  assert.match(text, /DONE:/);
+  assert.doesNotMatch(text, /READY:|IN_PROGRESS:|WAITING_HUMAN:|IN_REVIEW:|REJECTED:|BLOCKED:|CANCELLED:|UNREACHABLE:/);
+  // BACKLOG prints before DONE - tickets.mjs §4's own workflow order, not insertion order (P2 is
+  // declared after P1 above, but BACKLOG still comes first).
+  assert.ok(text.indexOf('BACKLOG:') < text.indexOf('DONE:'));
+});
+
+test('renderTicketsText(): a card prints filed-by/attempt/deps, implements[], and (only when present) enables[]', () => {
+  const text = renderTicketsText(minimalTicketModel([
+    {
+      id: 'P3', title: 'c', phase: null, reporter: 'qa', attempt: 3, ticket_key: 'E-aaaaaaaa/P3', ticket_state: 'BLOCKED', assignee: null,
+      deps: ['P1', 'P2'], links: { blocked_by: [], blocks: [], implements: ['US-1'], enables: ['US-9'], filed_by: 'qa' }, child: null,
+    },
+  ]));
+  assert.match(text, /filed by qa attempt=3 deps=P1,P2/);
+  assert.match(text, /implements US-1/);
+  assert.match(text, /enables US-9/);
+});
+
+test('renderTicketsText(): no relations, no pin -> no WAITING ON HUMAN marker and no tasks: block', () => {
+  const text = renderTicketsText(minimalTicketModel([
+    { id: 'P1', title: 'a', phase: null, reporter: null, attempt: 1, ticket_key: 'E-aaaaaaaa/P1', ticket_state: 'READY', assignee: null, deps: [], links: { blocked_by: [], blocks: [], implements: [], filed_by: null }, child: null },
+  ]));
+  assert.doesNotMatch(text, /WAITING ON HUMAN|tasks:/);
+});
+
+test('renderTicketsText(): the LATEST QA/audit round, not every historical round, becomes a board card', () => {
+  const text = renderTicketsText(minimalTicketModel([], {
+    qa: {
+      id: 'QA',
+      rounds: [
+        { id: 'QA:1', title: null, phase: 'qa', reporter: null, attempt: 1, ticket_key: 'E-aaaaaaaa/QA', ticket_state: 'DONE', assignee: null, deps: [], links: { blocked_by: [], blocks: [], implements: [], filed_by: null }, child: null },
+        { id: 'QA:2', title: null, phase: 'qa', reporter: null, attempt: 2, ticket_key: 'E-aaaaaaaa/QA', ticket_state: 'IN_REVIEW', assignee: null, deps: [], links: { blocked_by: [], blocks: [], implements: [], filed_by: null }, child: null },
+      ],
+    },
+  }));
+  // The round's own `.id` is "QA:2" (collectPhaseRounds overrides packageModel's `id: pkg.id`
+  // with "<subgoal_id>:<attempt>" so a person can tell which round produced this card) - the
+  // ticket_key stays the real STORY key (E-.../QA), unaffected by that override.
+  assert.match(text, /IN_REVIEW:\n {2}\[E-aaaaaaaa\/QA\] QA:2 \(qa\)/);
+  assert.doesNotMatch(text, /DONE:/);
+});
+
+// ---------- RESOURCE view ----------
+
+function minimalResourceModel(overrides = {}) {
+  return {
+    task_id: 't1', tasks_dir: '/tmp/nested-root', error: null,
+    daemon: { pid: 111, alive: true, started_at: 1000, restarts: 0, exhausted: false },
+    s_run: null, packages: [], qa: null, audit: null,
+    ...overrides,
+  };
+}
+
+test('renderResourcesText(): TaskLeader row, a Team with a dead driver + cost, and its workers with executor/model/duration', () => {
+  const model = minimalResourceModel({
+    packages: [{
+      id: 'P1', title: 'module a',
+      child: {
+        cwd: '/tmp/w1', branch: 'harness/x/P1', waiting_capacity: null,
+        driver: { pid: 4242, alive: false, restarts: 2, cost: { cost_usd: 3.5, turns: 12 } },
+        nodes: [
+          { node_id: 'implement:U1:1', stage: 'implement', state: 'done', executor: 'claude', model: 'sonnet', elapsed_ms: 30000 },
+          { node_id: 'test:U1:1', stage: 'test', state: 'failed', executor: 'codex', model: 'gpt', elapsed_ms: 5000 },
+        ],
+        nested: [],
+      },
+    }],
+  });
+  const text = renderResourcesText(model);
+  assert.match(text, /TaskLeader\n {2}pid=111 alive=true started=1970-01-01T00:00:01\.000Z restarts=0/);
+  assert.match(text, /Team P1 - module a/);
+  assert.match(text, /worktree: \/tmp\/w1 \(harness\/x\/P1\)/);
+  assert.match(text, /TeamLeader pid=4242 alive=false restarts=2 cost=\$3\.50 turns=12/);
+  assert.match(text, /\[v\] implement:U1:1 \(implement\) executor=claude model=sonnet 30s/);
+  assert.match(text, /\[x\] test:U1:1 \(test\) executor=codex model=gpt 5s/);
+});
+
+test('renderResourcesText(): no daemon prints a plain line, never a null pid', () => {
+  assert.match(renderResourcesText(minimalResourceModel({ daemon: null })), /\(no daemon - driven by hand or an MCP client\)/);
+});
+
+test('renderResourcesText(): a STORY not yet dispatched has no worktree - "not dispatched yet", not a crash on a null child', () => {
+  const text = renderResourcesText(minimalResourceModel({ packages: [{ id: 'P2', title: null, child: null }] }));
+  assert.match(text, /Team P2\n {2}\(not dispatched yet - no worktree\)/);
+});
+
+test('renderResourcesText(): waiting_capacity on a Team\'s child prints its reason', () => {
+  const text = renderResourcesText(minimalResourceModel({
+    packages: [{ id: 'P1', title: null, child: { cwd: '/tmp/w1', branch: null, waiting_capacity: { reason: 'usage limit hit', since: 1 }, driver: null, nodes: [], nested: [] } }],
+  }));
+  assert.match(text, /waiting_capacity: usage limit hit/);
+});
+
+test('renderResourcesText(): a nested task inside a package worktree recurses as its own TaskLeader sub-tree', () => {
+  const text = renderResourcesText(minimalResourceModel({
+    packages: [{
+      id: 'P1', title: null,
+      child: {
+        cwd: '/tmp/w1', branch: null, waiting_capacity: null, driver: null, nodes: [],
+        nested: [minimalResourceModel({ task_id: 'nested-1' })],
+      },
+    }],
+  }));
+  assert.match(text, /nested task nested-1 at \/tmp\/nested-root/);
+  const lines = text.split('\n');
+  const nestedIdx = lines.findIndex((l) => l.includes('nested task nested-1'));
+  assert.ok(nestedIdx >= 0);
+  assert.match(lines[nestedIdx + 1], /TaskLeader/, 'the nested task gets its own TaskLeader row, not a flattened list');
+});
+
+test('renderResourcesText(): a size-S task renders one Team "S" instead of a packages loop', () => {
+  const text = renderResourcesText(minimalResourceModel({
+    s_run: { cwd: '/tmp/s1', driver: { pid: 9, alive: true, restarts: 0, cost: null }, nodes: [{ node_id: 'implement:U1:1', stage: 'implement', state: 'running' }] },
+  }));
+  assert.match(text, /Team S/);
+  assert.match(text, /worktree: \/tmp\/s1/);
+  assert.match(text, /\[>\] implement:U1:1 \(implement\)/);
+});
+
+// ---------- both views, through the HTML page's own client-side renderers ----------
+
+test('ticketsBody (HTML): a WAITING_HUMAN card gets a badge, the reason line, and its TASK children as a list - the same facts renderTicketsText prints, as HTML', () => {
+  const { ticketsBody } = extractPageFns(['ticketsBody']);
+  const html = ticketsBody(minimalTicketModel([
+    {
+      id: 'P1', title: 'module a', phase: null, reporter: null, attempt: 2, ticket_key: 'E-aaaaaaaa/P1', ticket_state: 'WAITING_HUMAN', assignee: 'sanghyeon',
+      deps: [], links: { blocked_by: [], blocks: [], implements: ['US-1'], filed_by: null },
+      child: { tasks: [{ id: 'U1', key: 'E-aaaaaaaa/P1/U1', title: 'do it', state: 'WAITING_HUMAN' }] },
+    },
+  ]));
+  assert.match(html, /<span class="badge WAITING_HUMAN">WAITING_HUMAN<\/span>/);
+  assert.match(html, /<div class="reason">waiting on human: sanghyeon<\/div>/);
+  assert.match(html, /<ul class="ticket-tasks"><li><span class="badge WAITING_HUMAN">WAITING_HUMAN<\/span>E-aaaaaaaa\/P1\/U1 – do it<\/li><\/ul>/);
+  assert.match(html, /<h2>WAITING_HUMAN \(1\)<\/h2>/);
+});
+
+test('resourcesBody (HTML): TaskLeader + Team + worker rows, dot classed by node state', () => {
+  const { resourcesBody } = extractPageFns(['resourcesBody']);
+  const html = resourcesBody(minimalResourceModel({
+    packages: [{
+      id: 'P1', title: 'module a',
+      child: {
+        cwd: '/tmp/w1', branch: 'b1', waiting_capacity: null,
+        driver: { pid: 4242, alive: false, restarts: 2, cost: { cost_usd: 3.5, turns: 12 } },
+        nodes: [{ node_id: 'implement:U1:1', stage: 'implement', state: 'waiting_human', assignee: 'sanghyeon' }],
+        nested: [],
+      },
+    }],
+  }));
+  assert.match(html, /<div class="res-label">TaskLeader<\/div>/);
+  assert.match(html, /<div class="res-label">Team P1 – module a<\/div>/);
+  assert.match(html, /TeamLeader pid=4242 dead restarts=2/);
+  assert.match(html, /<span class="dot waiting_human"><\/span>/);
+  assert.match(html, /human: sanghyeon/);
+});
+
+test('viewTabs (HTML): all three views are offered, "pipeline" marked active with no ?view= in the URL', () => {
+  const { viewTabs } = extractPageFns(['viewTabs']);
+  const html = viewTabs();
+  assert.match(html, /<span class="view-tab active" data-view="pipeline">pipeline<\/span>/);
+  assert.match(html, /<span class="view-tab" data-view="tickets">tickets<\/span>/);
+  assert.match(html, /<span class="view-tab" data-view="resources">resources<\/span>/);
+});
+
+// ---------- --view (the CLI's own selector) ----------
+
+test('--once --view tickets renders the ticket board; --view resources renders the team tree; --view pipeline (or no flag) is unchanged', async () => {
+  await withTask(TWO_PKG_SHAPE, async ({ root, task_id }) => {
+    const tickets = spawnSync('node', [VIEW, '--tasks-dir', root, '--task', task_id, '--once', '--view', 'tickets'], { encoding: 'utf8' });
+    assert.equal(tickets.status, 0, tickets.stderr);
+    assert.match(tickets.stdout, /BACKLOG:|READY:/);
+    assert.match(tickets.stdout, new RegExp(`E-${task_id.slice(0, 8)}`));
+
+    const resources = spawnSync('node', [VIEW, '--tasks-dir', root, '--task', task_id, '--once', '--view', 'resources'], { encoding: 'utf8' });
+    assert.equal(resources.status, 0, resources.stderr);
+    assert.match(resources.stdout, /TaskLeader/);
+    assert.match(resources.stdout, /Team P1/);
+
+    const pipeline = spawnSync('node', [VIEW, '--tasks-dir', root, '--task', task_id, '--once'], { encoding: 'utf8' });
+    assert.equal(pipeline.status, 0, pipeline.stderr);
+    assert.match(pipeline.stdout, /manager pipeline:/);
+  });
+});
+
+test('--view rejects an unknown value rather than silently falling back', async () => {
+  await withTask(TWO_PKG_SHAPE, async ({ root, task_id }) => {
+    const r = spawnSync('node', [VIEW, '--tasks-dir', root, '--task', task_id, '--once', '--view', 'bogus'], { encoding: 'utf8' });
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /unknown --view 'bogus'/);
+  });
+});
+
+test('/state.json carries model.ticket and packages[].ticket_state - the TICKET/RESOURCE views read the SAME poll the pipeline view already does', async () => {
+  await withTask(TWO_PKG_SHAPE, async ({ root, task_id }) => {
+    const proc = spawn('node', [VIEW, '--tasks-dir', root, '--task', task_id, '--port', '0'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    try {
+      const base = await waitForListen(proc);
+      const data = await (await fetch(`${base}/state.json`)).json();
+      assert.equal(data.model.ticket.key, `E-${task_id.slice(0, 8)}`);
+      assert.ok(data.model.packages.every((p) => typeof p.ticket_state === 'string'));
+      assert.equal(data.model.daemon, null, 'this fixture was never put under a daemon');
     } finally {
       proc.kill();
     }

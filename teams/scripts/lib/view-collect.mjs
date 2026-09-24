@@ -14,7 +14,13 @@ import { driverCostOf, collectDriverCosts } from '../bench/lib/drivercost.mjs';
 // STORY rows) rather than inventing a second one - the same words tm_board and tm_ticket already
 // use, so a person moving between the index and those MCP tools never has to re-learn what
 // "IN_PROGRESS" or "E-d0ee9043" means.
-import { epicKey, epicTicketState, epicPhase, epicBoardRows, storyLinks } from '../../mcp/tickets.mjs';
+// storyTicketState/storyKey/taskKey/taskTicketState (§4/§8 - the ticket view) are read here for
+// exactly the same reason epicTicketState etc. already were: one derivation, no second copy of
+// "what state is this STORY/TASK in" living in view-collect.mjs.
+import {
+  epicKey, epicTicketState, epicPhase, epicBoardRows, storyLinks,
+  storyTicketState, storyKey, taskKey, taskTicketState,
+} from '../../mcp/tickets.mjs';
 
 // ---------- small read helpers, all fail soft ----------
 
@@ -73,10 +79,14 @@ function driverInfo(driver, driverAliveFn) {
 
 // Best-effort "is this pid alive" without importing taskmanager.mjs (which spawns processes
 // and touches engagement markers at import time in test mode) - view.mjs is read-only, so it
-// gets its own trivial liveness probe identical in effect to taskmanager's driverAlive().
+// gets its own trivial liveness probe identical in effect to taskmanager's driverAlive(): EPERM
+// (the pid exists and belongs to someone else - a real, common case for a TaskLeader/TeamLeader
+// spawned by a daemon running as a different user, e.g. under sudo or in a container) counts as
+// alive, the same distinction driverAlive draws and tickets.mjs's own processAlive already makes
+// - a plain try/catch->false here would read every such process as dead on the RESOURCE view.
 function pidAlive(pid) {
   if (!pid) return false;
-  try { process.kill(pid, 0); return true; } catch { return false; }
+  try { process.kill(pid, 0); return true; } catch (e) { return !!(e && e.code === 'EPERM'); }
 }
 
 function elapsedMs(startedAt, endedAt) {
@@ -103,6 +113,17 @@ function nodeSummary(n) {
   if (Array.isArray(r.gaps) && r.gaps.length) out.gaps = r.gaps.slice(0, 5);
   const verdictField = { critique: 'sound', dispatch: 'accept', accept: 'accept', integrate: 'verified', gate: 'accept' }[n.stage];
   if (verdictField && r[verdictField] !== undefined) out.verdict = r[verdictField];
+  // executor/model: set on a child run's own chain node once it actually ran (broker.mjs's
+  // finish()/submit() write n.executor/n.model off the routing decision - see stagePolicy).
+  // The RESOURCE view's "workers per TASK" is this, verbatim - a second lookup would just be
+  // this same field re-read from a different door.
+  out.executor = n.executor || null;
+  out.model = n.model || null;
+  // A human-pinned node (graph.mjs's applyHumanPin / openAsk) carries n.assignment.executor
+  // 'human' and, once someone is actually holding it, n.state 'waiting_human'. Surfaced here
+  // (not just on the package) so both the TICKET view's per-TASK rows and the RESOURCE view's
+  // worker strip can show who without either re-deriving it from n.assignment themselves.
+  if (n.assignment && n.assignment.executor === 'human') out.assignee = n.assignment.who || 'human';
   return out;
 }
 
@@ -110,11 +131,25 @@ function nodeSummary(n) {
 // -> gate:goal -> report, or the cases/execute KIND for a test-writing flow) plus, recursively,
 // any nested task-manager task found under <cwd>/.harness-tasks/ - a package worktree that
 // itself opened a task-manager task rather than a plain graph run.
-function collectChildRun(cwd, runId, visiting) {
+//
+// `ticketCtx` ({taskRunId, pkgId}), when given, also derives this STORY's TASK children -
+// E-xxxxxxxx/Pn/Un keyed rows (id/key/title/state) for the TICKET view's board card - straight
+// off the SAME run object already loaded above, not a second read of it. Only the caller that
+// builds a top-level packageModel passes it; a recursive call for a nested sub-EPIC's own child
+// run does not (that run's TASK children belong to ITS OWN ticket board, not this one's).
+function collectChildRun(cwd, runId, visiting, ticketCtx) {
   const run = loadRunAt(join(cwd, '.teams_output', 'broker', 'runs', `${runId}.json`));
   if (!run) return { run_id: runId, cwd, missing: true };
   const state = runState(run);
   const nested = collectNestedTasks(cwd, visiting);
+  const tasks = ticketCtx && run.spec && Array.isArray(run.spec.subgoals)
+    ? run.spec.subgoals.map((s) => ({
+      id: String(s.id),
+      key: taskKey(ticketCtx.taskRunId, ticketCtx.pkgId, String(s.id)),
+      title: s.title || null,
+      state: taskTicketState(run, String(s.id)),
+    }))
+    : [];
   return {
     run_id: run.run_id,
     cwd,
@@ -124,6 +159,7 @@ function collectChildRun(cwd, runId, visiting) {
     goal_verdict: state.goal_verdict || null,
     nodes: run.nodes.map(nodeSummary),
     nested,
+    tasks,
   };
 }
 
@@ -155,10 +191,24 @@ function packageModel(task, pkg, dispatchNode, acceptNode, visiting) {
       run_id: dispatchNode.child.run_id,
       cwd: dispatchNode.child.cwd,
       branch: dispatchNode.child.branch,
+      // The RESOURCE view's "waiting_capacity if any" - set on the dispatch node's own child
+      // record by serviceDeadDriver (taskmanager.mjs) after a usage-limit death, cleared by the
+      // same code once the quota window passes. Not on driverInfo(): it is a fact about the
+      // STORY's dispatch, not about the driver process itself (a parked driver has already
+      // exited - see storyTicketState's own comment on why this and driver.alive disagree).
+      waiting_capacity: dispatchNode.child.waiting_capacity || null,
       driver: driverInfo(dispatchNode.child.driver, pidAliveFromDriver),
-      ...collectChildRun(dispatchNode.child.cwd, dispatchNode.child.run_id, visiting),
+      ...collectChildRun(dispatchNode.child.cwd, dispatchNode.child.run_id, visiting, { taskRunId: task.run_id, pkgId: pkg.id }),
     }
     : null;
+  // The TICKET view's per-card "who, if anyone, is holding this" - a node already
+  // waiting_human (nodeSummary's own `assignee`) outranks the STORY-level pin (pkg.assignee,
+  // tm_assign/shape's own `assignee` field): a pin can sit on a package for its NEXT attempt
+  // without anyone waiting on it right now, but a node actually parked waiting_human always
+  // names a real card in tm_inbox today.
+  const waitingNode = child && Array.isArray(child.nodes) ? child.nodes.find((n) => n.state === 'waiting_human') : null;
+  const pinWho = pkg.assignee && typeof pkg.assignee === 'object' ? (pkg.assignee.who || 'human') : (pkg.assignee ? 'human' : null);
+  const assignee = (waitingNode && waitingNode.assignee) || pinWho || null;
   return {
     id: pkg.id,
     title: pkg.title || null,
@@ -174,6 +224,16 @@ function packageModel(task, pkg, dispatchNode, acceptNode, visiting) {
     dispatch: dispatchNode ? nodeSummary(dispatchNode) : null,
     accept: acceptNode ? nodeSummary(acceptNode) : null,
     child,
+    // ticket_key/ticket_state: the TICKET view's board column and card header - storyTicketState
+    // (tickets.mjs), the exact same derivation tm_board/tm_ticket use, so this surface can never
+    // show a STORY in a column those MCP tools would disagree with.
+    ticket_key: storyKey(task.run_id, pkg.id),
+    ticket_state: storyTicketState(task, String(pkg.id)),
+    // attempt: the latest dispatch node's own `.attempt` - a retried STORY's Nth dispatch IS the
+    // attempt count (pushChain/openRepair increment it in place; see tickets.mjs's
+    // latestBySubgoal), not something this file has to count nodes to derive.
+    attempt: dispatchNode ? (dispatchNode.attempt || 1) : null,
+    assignee,
   };
 }
 
@@ -289,6 +349,11 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
   const daemon = task.daemon ? {
     pid: task.daemon.pid,
     alive: pidAlive(task.daemon.pid),
+    // The RESOURCE view's TaskLeader row: when this process (spawnDaemon, taskmanager.mjs) was
+    // started. Present on every task.daemon taskmanager.mjs itself writes (spawnDaemon sets it
+    // on both the fresh-spawn and the respawn-after-death branches) - null only for a task never
+    // put under a daemon at all (driven by hand / an MCP client polling tm_next directly).
+    started_at: task.daemon.started_at || null,
     restarts: task.daemon.restarts || 0,
     exhausted: !!task.daemon.exhausted,
     log: task.daemon.log || null,
@@ -302,6 +367,11 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     tasks_dir: tasksDir,
     cwd: task.cwd,
     request: String(task.request || ''),
+    // The TICKET view's EPIC header - tickets.mjs's own JIRA vocabulary (READY/IN_PROGRESS/...,
+    // plan/setgoal/impl/qualitygate), never `state`/`flow` below (the engine's own run-state
+    // words) - the two are deliberately different vocabularies for different audiences (see
+    // tickets.mjs's header comment), and this surface shows both rather than picking one.
+    ticket: { key: epicKey(task.run_id || taskId), title: deriveTitle(task.request), state: epicTicketState(task), phase: epicPhase(task) },
     size: task.size || null,
     flow: task.flow && task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),
     kind: task.kind || 'task',
