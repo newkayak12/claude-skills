@@ -531,7 +531,7 @@ modes" 절이 두 항목을 모두 보여줍니다.
 `team_open` 경로에서는 `team_status`의 `config_notes`(노트가 하나라도 있을 때만 나타나며,
 `resolveTeamOptions`의 노트를 런에 영구 저장해둔 사본입니다 — 실시간 재검사가 아닙니다).
 스키마는 [`mcp/teamconfig.mjs`](mcp/teamconfig.mjs)의
-`TEAM_DEFAULTS`/`CHECK`입니다 — 12개 키 중 실제로 동작에 반영되는 건 아홉이고, 각 키가
+`TEAM_DEFAULTS`/`CHECK`입니다 — 16개 키이고, 각 키가
 `tm_open`, `team_open`, 또는 둘 다에 닿는지 보여주는 리더 열이 추가되었습니다. `team_open`의
 `inputSchema`는 애초에 `TEAM_DEFAULTS` 이름 중 일부만 인자로 받습니다 — 인자로조차 받지 않는
 키는 `resolveTeamOptions`가 무엇을 계산해내든 그 경로에서는 `team.json`으로 닿을 수 없습니다.
@@ -546,8 +546,10 @@ modes" 절이 두 항목을 모두 보여줍니다.
 | `stall_minutes` | `20` | 예 | `tm_open`만 | 드라이버가 살아있어도(pid가 `process.kill(pid,0)`에 응답해도) 진행이 없을 수 있습니다 — 멈춰버린 모델, 에러 없는 provider hang, 끝나지 않는 tool call. `serviceStalledDriver`(`taskmanager.mjs`)는 이 값을 `daemon.mjs`의 `waitForProgress`가 그 자식에 대해 이미 지켜보는 것과 같은 파일들(브로커 런 파일과 그 ledger)의 mtime에 대조해 읽습니다. 이만큼 idle이면 dispatch를 한 번 플래그하고(`stalled_since`, `child_driver_stalled`로 기록, 진행이 재개되는 순간 `child_driver_progress_resumed`로 해제), 3배만큼 idle이면 드라이버를 죽이고(`child_driver_killed`, `reason: 'stalled'`) 재기동은 기존 dead-driver 경로(`serviceDeadDriver`)에 맡깁니다 — 이 경로는 크래시 때와 똑같이 재시작 예산을 소비합니다. 첫 번째 임계값은 그 자체로는 절대 죽이지 않습니다 — idol-pm-4는 런 도중 정당하게 16분짜리 tool-call 간격을 가진 적이 있습니다. `0`이면 이 검사 전체가 꺼집니다. `team_open`의 인자가 아닙니다 — `driver_restarts`와 같은 이유로 `team_open`에는 드라이버 재기동 개념 자체가 없습니다. |
 | `restart_period_minutes` | `0` | 예 | `tm_open`만 | `driver_restarts`는 기본적으로 평평한, 영원한 카운터입니다(여기 `0` — 오늘의 동작: 이 런이 겪은 모든 죽음이 예산에 반영됩니다). `0`보다 크면 분 단위의 OTP 스타일 슬라이딩 윈도우가 됩니다 — `serviceDeadDriver`는 자신의 타임스탬프(`driver.restarts[].at`, 모든 죽음마다 이미 기록됨)가 최근 `restart_period_minutes` 안에 드는 재기동만 셉니다. 그래서 매주 한 시간에 한 번씩 죽는 패키지가 "연속으로 몇 번 죽었는가"를 재려고 만든 예산을 결코 소진하지 않습니다. `driver_restarts`와 같은 이유로 `team_open`의 인자가 아닙니다. |
 | `docs_dir` | `.teams_output/team` | 예 | `tm_open`만 | `tm_docs`/`tickets.mjs`가 phase 문서 트리(`INDEX.md` 등)를 렌더링하는 위치. `team_open`의 인자도 개념도 아닙니다 — `team_open`은 phase 문서 트리를 쓰지 않습니다. |
-| `max_parallel_teams` | `2` | 예 | `tm_open`만 | `tm_next`(`taskmanager.mjs`의 `toolNext`, ~2256/2268행)가 한 번에 여는 develop STORY dispatch 수를 제한합니다 — phase-Team 패키지(PLAN/QA/audit)는 예외입니다. `2`는 측정값이 아니라 잠정 기본값입니다 — `teamconfig.mjs`의 `PROVISIONAL_MAX_PARALLEL_TEAMS` 참고. `team_open`의 인자가 아닙니다. |
-| `roles` | `{planning:true, qa:true}` | 예 | `tm_open`만 | 0.17.0부터 둘 다 기본 ON. `planning`은 `shape` 앞에 PLAN phase-Team(draft → revise → gate)을, 통합 뒤에 planning-audit phase-Team을 엽니다. `qa`는 `integrate`와 `gate:goal` 사이에 QA phase-Team(cases → execute → gate)을 엽니다. size L 태스크만 이를 거칩니다 — size S 태스크는 단일 graph 런에 위임하며 둘 다 건너뜁니다(알려진 공백, v0.17.0 참고). `team_open`의 인자가 아닙니다. |
+| `plugin_dirs` | `[]` | 예 | `tm_open`만 | 모든 자식 드라이버와 judge 세션에 추가로 주어지는 `--plugin-dir` 경로들(`driverArgv`/`judgeArgv`) — 메서드 테이블이 이름을 붙인 스킬을 위해 `pluginroots.mjs`가 이미 찾아낸 경로 위에 더해집니다(v0.18.0). `team_open`의 인자가 아닙니다 — `team_open`은 호출자 자신의 세션 안에서만 돌아가며, plugin dir을 건네줄 자식 드라이버나 judge 프로세스가 아예 없습니다. |
+| `roles` | `{planning:true, qa:true, audit:true}` | 예 | `tm_open`만 | 0.17.0부터 `planning`/`qa` 기본 ON. `planning`은 `shape` 앞에 PLAN phase-Team(draft → revise → gate)을 엽니다. `qa`는 `integrate`와 `gate:goal` 사이에 QA phase-Team(cases → execute → gate)을 엽니다. `audit`(신규)은 이전까지 `roles.planning` 하나에 완전히 얹혀 있던 planning-audit phase-Team의 독립 스위치입니다 — 여전히 기본 ON이고 여전히 `roles.planning`도 함께 켜져 있어야 하지만(audit은 planning 자신의 두 번째 패스이므로 planning 없이는 결코 돌 수 없습니다), 이제 `{"roles": {"audit": false}}`로 통합 후 재검토 없이 PRD만 유지할 수 있습니다. 세 가지 모두 size L 태스크에서만 돕니다 — size S 태스크는 단일 graph 런에 위임하며 셋 다 건너뜁니다(알려진 공백, v0.17.0 참고). `team_open`의 인자가 아닙니다. |
+| `budget_usd` | `null` | 예 | `tm_open`만 | 기본은 무제한. 이 태스크의 모든 드라이버가 쓴 `claude -p --output-format stream-json` 로그(`drivers/*.stream.jsonl`, `result` 이벤트의 `total_cost_usd`, 재기동 포함)에서 매 데몬 tick마다 지출을 합산합니다. 80% 지점에서 `enforceBudget`(`taskmanager.mjs`)이 경고를 한 번 기록하고(`tm_status`의 `budget.warn`), 100% 지점에서는 새 패키지를 더 이상 디스패치하지 않습니다 — 이미 돌고 있는 패키지는 끝까지 돕니다 — 그리고 더 이상 돌고 있는 게 없으면, 수락된 패키지만으로 새 `integrate`를 엽니다(`reintegrateBehind` — 결함 신고나 repair가 이미 쓰는 것과 같은 메커니즘), 나머지는 조용히 버리는 대신 리포트의 "Next backlog"에 이름을 남깁니다. `budget_usd`/`timebox_minutes` 중 자기 한도에 더 가까운 쪽이 정지를 결정합니다 — 둘 중 하나만 있어도 실제 정지 조건입니다. `team_open`의 인자가 아닙니다 — `team_open`은 이걸 묶어줄 패키지/드라이버 개념이 없는 단일 graph 런을 엽니다. |
+| `timebox_minutes` | `null` | 예 | `tm_open`만 | `budget_usd`와 같은 정지 조건을, 금액 대신 시계로 — `tm_open` 이후 경과 분. 80%/100%가 정확히 무엇을 하는지는 `budget_usd` 행 참고. `budget_usd`와 같은 이유로 `team_open`의 인자가 아닙니다. |
 | `interactive` | `false` | 예 | `tm_open` + `team_open` | 이 런이 사람을 기다리며 멈출지, 아니면 기본값으로 결정하고 무엇을 물었을지 기록만 할지. 두 가지를 통제합니다: `investigate`의 `ask` 카드(0.28.0, `graph.mjs`의 `openAsk`), 그리고 — 0.27.3 리뷰 이후로는 — MODEL이 직접 쓴 `assignee` 핀(shape 패키지 자신의 필드 — `tm_open`에서는 `subgoal_assignee`로 자식 런에 전달됩니다 — 또는 setgoal subgoal 자신의 필드, 양쪽 경로 모두). `true`면 핀이 걸린 노드가 `waiting_human`에 멈춥니다; `false`(기본값)면 대신 자동으로 결정됩니다 — 노드는 아무것도 쓰이지 않은 것처럼 AI에게 그대로 디스패치되고, 걸렸을 핀은 노드에 기록되어(`auto_decided_pin`) `tm_inbox`의 `decided` 섹션에 나타납니다. 사람이 직접 부른 `tm_assign` 핀은 출처가 다르고(`{by: 'user'}`로 표시, `graph.mjs`의 `applyHumanPin`) 이 키와 무관하게 항상 멈춥니다 — 사람은 정의상 이미 그 자리에 있으니까요. |
 | `max_depth` | `2` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — 선언되고 검증만 될 뿐 아무것도 강제하지 않습니다. 자식 런이 스스로 다시 쪼갤 때의 깊이 캡이 될 자리입니다 — `docs/plans/2026-09-21-teams-server-owns-the-loop.md` §3 참고. `team_open`의 인자가 아닙니다. |
 | `qa_rounds` | `2` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — 어디서도 읽지 않습니다. `team_open`의 인자가 아닙니다. |
@@ -558,6 +560,36 @@ modes" 절이 두 항목을 모두 보여줍니다.
 고정할 수는 없습니다. `team_open`은 프로젝트의 `team.json`에 무엇이 있든 자신의 `goal_judges`
 기본값 2를 그대로 유지합니다 — 그 파일 안의 `goal_judges` 키는 다른 미지의 키와 마찬가지로
 그냥 무시됩니다.
+
+## 스프린트: 백로그, 예산/타임박스, 회고
+
+`sprint` 스킬은 `tm_open`과 아래 조각들을 하나의 스크럼 형태 런으로 묶습니다 — 백로그를 위한
+`requests`, 박스를 위한 `budget_usd`/`timebox_minutes`, 데일리를 위한 기존
+`tm_board`/뷰어, 리뷰를 위한 리포트, 회고를 위한 `retro.json`과 `context_from`. `tm_open`
+자체 밖에 새로운 메커니즘은 없습니다 — 이 절은 각 조각이 무엇을 하는지 설명할 뿐입니다.
+
+- **`requests: [...]`** — `tm_open`은 `request`(문자열 하나) 또는 `requests`(문자열 배열,
+  우선순위 = 배열 순서, 0번이 최우선) 중 하나만 받습니다 — 둘 다 주거나 둘 다 안 주면 거부됩니다.
+  `requests`는 size/shape/PLAN이 이미 읽는 태스크의 단일 합성 `request` 텍스트("[backlog
+  priority N] ...")가 되고, 원본 배열은 shape의 브리핑과 회고를 위해 `task.requests`에 그대로
+  남습니다. `shape`는 각 패키지의 기존 `priority` 필드를 백로그 순서에 맞춰 설정하라는 지시를
+  받습니다 — 낮은 우선순위 항목만 담당하는 패키지는 나중에 디스패치되어야, 예산/타임박스가
+  먼저 바닥나더라도 디스패치되지 못한 채 남는 쪽이 되기 때문입니다(`advanceDispatches`는 이미
+  `priority` 오름차순으로 먼저 디스패치합니다). 단일 `request`는 그대로입니다 — 이 경로 전체는
+  `requests`가 실제로 주어졌을 때만 돕니다.
+- **`budget_usd` / `timebox_minutes`** — 위 설정 표 참고. `tm_status`의 `budget` 필드(둘 중
+  하나라도 설정됐을 때만 존재)가 `{pct, over, warn, spend, elapsed_minutes}`를 실시간으로
+  담습니다.
+- **회고 다리** — `report`가 완료되면 `docs.mjs`의 `renderRetro`가 `80-report.md` 옆에(같은
+  `docs_dir`) `retro.json`을 씁니다: `retrospective`(무엇이 왜 실패했는지, 재시도, 남은 결함)와
+  `next_backlog`(수락되지 못한 패키지, 미해결 결함, 아무도 답하지 않은 열린 질문 — 디스패치된
+  각 패키지 자신의 자식 런이 가진 `unasked[]`에서 best-effort로 읽습니다). `80-report.md`도
+  같은 두 절을 산문으로 담습니다. `tm_open({context_from: "<이전 task_id 또는
+  E-xxxxxxxx>"})`는 그 이전 태스크의 `retro.json`을 읽어 새 태스크의 `context`에 접어 넣습니다
+  (`priorRetroContext`, `taskmanager.mjs`) — best-effort입니다: 아직 리포트가 없는 이전
+  태스크나 풀리지 않는 참조는 `tm_open`을 실패시키는 대신 `context`를 그대로 둡니다. 새
+  태스크의 `requests`는 여전히 호출자 자신의 말로 써야 합니다 — `context_from`은 무슨 일이
+  있었는지를 건네줄 뿐, 완성된 백로그를 건네주지 않습니다.
 
 ## 태스크 지켜보기
 
