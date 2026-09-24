@@ -386,6 +386,12 @@ docker compose -f knowledge/compose.yaml run --rm knowledge-index
 
 [docs/theory.md](docs/theory.md) — 규칙 뒤에 있는 논문과 원리(RRF, BM25, 컴피턴시 질문,
 재사용 holdout, 누수, 크로스인코더 리랭킹)와, 이 플러그인이 그것과 다르게 간 지점.
+그 문서 §9는 엔진을 [Hindsight](https://github.com/vectorize-io/hindsight)와 대조합니다 —
+검색 층은 항목마다 일치하고(세 군데는 우리가 더 엄격), 쓰기 층은 다릅니다. 거기서 격차 둘이
+나왔고(노트에 시간 축 없음, 믿음이 덮어쓰이는 대신 강화된다는 개념 없음) 둘 다 보류입니다.
+측정된 병목이 회수가 아니라 생성층의 인용 규율이기 때문입니다. 살아 있는 레버는 §9.4 하나 —
+`questions.jsonl`이 이미 "한 번 정의한 질문"이므로, 컴피턴시 질문마다 **저장되고 배경에서
+다시 쓰이는 답변**이 Phase 4가 적어 둔 챗봇보다 짧은 길입니다.
 
 ## 훅
 
