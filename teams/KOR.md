@@ -531,7 +531,7 @@ modes" 절이 두 항목을 모두 보여줍니다.
 `team_open` 경로에서는 `team_status`의 `config_notes`(노트가 하나라도 있을 때만 나타나며,
 `resolveTeamOptions`의 노트를 런에 영구 저장해둔 사본입니다 — 실시간 재검사가 아닙니다).
 스키마는 [`mcp/teamconfig.mjs`](mcp/teamconfig.mjs)의
-`TEAM_DEFAULTS`/`CHECK`입니다 — 12개 키 중 실제로 동작에 반영되는 건 아홉이고, 각 키가
+`TEAM_DEFAULTS`/`CHECK`입니다 — 13개 키 중 실제로 동작에 반영되는 건 열이고, 각 키가
 `tm_open`, `team_open`, 또는 둘 다에 닿는지 보여주는 리더 열이 추가되었습니다. `team_open`의
 `inputSchema`는 애초에 `TEAM_DEFAULTS` 이름 중 일부만 인자로 받습니다 — 인자로조차 받지 않는
 키는 `resolveTeamOptions`가 무엇을 계산해내든 그 경로에서는 `team.json`으로 닿을 수 없습니다.
@@ -549,6 +549,7 @@ modes" 절이 두 항목을 모두 보여줍니다.
 | `max_parallel_teams` | `2` | 예 | `tm_open`만 | `tm_next`(`taskmanager.mjs`의 `toolNext`, ~2256/2268행)가 한 번에 여는 develop STORY dispatch 수를 제한합니다 — phase-Team 패키지(PLAN/QA/audit)는 예외입니다. `2`는 측정값이 아니라 잠정 기본값입니다 — `teamconfig.mjs`의 `PROVISIONAL_MAX_PARALLEL_TEAMS` 참고. `team_open`의 인자가 아닙니다. |
 | `roles` | `{planning:true, qa:true}` | 예 | `tm_open`만 | 0.17.0부터 둘 다 기본 ON. `planning`은 `shape` 앞에 PLAN phase-Team(draft → revise → gate)을, 통합 뒤에 planning-audit phase-Team을 엽니다. `qa`는 `integrate`와 `gate:goal` 사이에 QA phase-Team(cases → execute → gate)을 엽니다. size L 태스크만 이를 거칩니다 — size S 태스크는 단일 graph 런에 위임하며 둘 다 건너뜁니다(알려진 공백, v0.17.0 참고). `team_open`의 인자가 아닙니다. |
 | `interactive` | `false` | 예 | `tm_open` + `team_open` | 이 런이 사람을 기다리며 멈출지, 아니면 기본값으로 결정하고 무엇을 물었을지 기록만 할지. 두 가지를 통제합니다: `investigate`의 `ask` 카드(0.28.0, `graph.mjs`의 `openAsk`), 그리고 — 0.27.3 리뷰 이후로는 — MODEL이 직접 쓴 `assignee` 핀(shape 패키지 자신의 필드 — `tm_open`에서는 `subgoal_assignee`로 자식 런에 전달됩니다 — 또는 setgoal subgoal 자신의 필드, 양쪽 경로 모두). `true`면 핀이 걸린 노드가 `waiting_human`에 멈춥니다; `false`(기본값)면 대신 자동으로 결정됩니다 — 노드는 아무것도 쓰이지 않은 것처럼 AI에게 그대로 디스패치되고, 걸렸을 핀은 노드에 기록되어(`auto_decided_pin`) `tm_inbox`의 `decided` 섹션에 나타납니다. 사람이 직접 부른 `tm_assign` 핀은 출처가 다르고(`{by: 'user'}`로 표시, `graph.mjs`의 `applyHumanPin`) 이 키와 무관하게 항상 멈춥니다 — 사람은 정의상 이미 그 자리에 있으니까요. |
+| `retry_policy` | `"continue"` | 예 | `tm_open` + `team_open` | 재시도가 실패한 시도가 남긴 워크트리를 어떻게 다룰지. `"continue"`(기본값, 이 키가 생기기 전까지 유일했던 동작)는 그 위에 다음 시도를 이어 붙입니다 — `ensureWorktree`/`retrySubgoal`은 이미 시도 전체에 걸쳐 같은 트리를 유지해 왔고, 이 키는 그것을 규약으로 선언할 뿐입니다. `"rollback"`은 먼저 워크트리를 되돌린 뒤, `"continue"`와 똑같이 실패한 gate의 gaps를 피드백으로 넘겨 다시 돌립니다: 노드 레벨(`team_open`, 그리고 `tm_open`이 여는 모든 자식 런 — `child_opts.retry_policy`)에서는 `retrySubgoal`이 서브골의 `implement`/`draft`/`cases`/`audit`를 그 서브골의 **첫** 시도가 손대기 전에 `broker.mjs`가 기록한 체크포인트로 되돌립니다 — 런에 서브골이 정확히 하나일 때만입니다(다른 서브골이 아직 같은 워크트리에서 작업 중이면 그쪽 진행 상황까지 지우지 않고는 되돌릴 수 없으므로, 이 가드에 걸리면 `team_retry`의 응답이 `rollback: {skipped: true, reason}`으로 왜 `"continue"`로 대신했는지 알려줍니다). 패키지 레벨(`tm_open`만, `retryPackage`)에서는 반려된 패키지 재시도가 마지막으로 **승인된** 커밋으로 되돌립니다(`commitWorktree`는 `accept:true`일 때만 커밋합니다) — 그 패키지의 어떤 시도도 통과한 적이 없다면 워크트리 자신의 base 커밋으로. `docs/plans/2026-09-23-teams-reducer-human-rollback.md` §5가 기본값을 정하기 전에 실제 런 둘을 측정했습니다: 둘 다 재시도된 `implement`가 같은 실수를 반복하는 대신 자기 gate의 피드백에 **수렴**하는 것을 보여줬고(52%→60%→78%, 74%→78%), 그래서 시도가 만든 작업을 버리는 쪽이 더 낫다는 근거는 아직 없습니다. |
 | `max_depth` | `2` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — 선언되고 검증만 될 뿐 아무것도 강제하지 않습니다. 자식 런이 스스로 다시 쪼갤 때의 깊이 캡이 될 자리입니다 — `docs/plans/2026-09-21-teams-server-owns-the-loop.md` §3 참고. `team_open`의 인자가 아닙니다. |
 | `qa_rounds` | `2` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — 어디서도 읽지 않습니다. `team_open`의 인자가 아닙니다. |
 

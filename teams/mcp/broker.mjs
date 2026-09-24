@@ -47,6 +47,7 @@ import {
   stagePolicy,
   VERDICT_FIELD,
   authorStage,
+  isAuthorNode,
   nodeKind,
   FLOWS,
   DEFAULT_FLOW,
@@ -327,6 +328,55 @@ function gitChanged(cwd) {
     .map((l) => l.slice(3).trim())
     .filter(Boolean)
     .map((p) => (p.includes(' -> ') ? p.split(' -> ').pop() : p));
+}
+
+// ---------- checkpoint / rollback (docs/plans/2026-09-23-teams-reducer-human-rollback.md §5) ----------
+
+function gitHead(cwd) {
+  const r = spawnSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' });
+  return r.status === 0 ? r.stdout.trim() : null;
+}
+
+// `git stash create` writes a commit object holding the dirty state WITHOUT touching the
+// working tree or the stash ref (unlike `git stash push`/`save`) - a read, not a mutation, so it
+// is safe to call on every dispatch even though most of them are never rolled back to. Empty
+// output (clean tree) is not an error; there is simply nothing to snapshot beyond HEAD.
+function gitStashCreate(cwd) {
+  const r = spawnSync('git', ['stash', 'create'], { cwd, encoding: 'utf8' });
+  const out = (r.stdout || '').trim();
+  return r.status === 0 && out ? out : null;
+}
+
+// Called once per node, right before its attempt starts doing work (team_run's vendor path,
+// team_next's self-vendor offer). A no-git cwd (isolated:false test fixtures, mostly) leaves
+// n.checkpoint unset - rollback then has nothing to target and retrySubgoal's own guard reports
+// why, exactly like the no-git branch of crossCheck reports 'no-git' rather than failing.
+function recordCheckpoint(run, n) {
+  if (n.checkpoint) return false;
+  const head = gitHead(run.cwd);
+  if (!head) return false;
+  n.checkpoint = { head, stash: gitStashCreate(run.cwd), at: Date.now() };
+  return true;
+}
+
+// The other half of retrySubgoal's `rollback` decision: it names the checkpoint, this performs
+// it. Reset discards the failed attempt's edits (tracked and untracked alike - clean -fd, the
+// same reach `git status --porcelain --untracked-files=all` already gives crossCheck) and returns
+// to the head recorded before that attempt began. The stash object is not popped: reset --hard
+// already puts the tree at that exact commit, and popping on top of it would reapply the very
+// edits rollback exists to discard - the stash ref is kept only as an inspectable record of what
+// was thrown away (`git stash show/apply <sha>` if a person wants to look).
+function applyRollback(run, rollback, subgoalId) {
+  if (!rollback || rollback.skipped || !rollback.checkpoint) return rollback || null;
+  const { head } = rollback.checkpoint;
+  const reset = spawnSync('git', ['reset', '--hard', head], { cwd: run.cwd, encoding: 'utf8' });
+  if (reset.status !== 0) {
+    record(run.cwd, { event: 'rollback_failed', run_id: run.run_id, subgoal_id: subgoalId, node_id: rollback.node_id, reason: (reset.stderr || '').trim() });
+    return { skipped: true, reason: `git reset --hard ${head} failed: ${(reset.stderr || '').trim()}` };
+  }
+  spawnSync('git', ['clean', '-fd'], { cwd: run.cwd, encoding: 'utf8' });
+  record(run.cwd, { event: 'rollback_applied', run_id: run.run_id, subgoal_id: subgoalId, node_id: rollback.node_id, checkpoint: head });
+  return { ...rollback, applied: true };
 }
 
 // Positive attribution is only sound when this node had the worktree to itself.
@@ -935,6 +985,7 @@ function autoReassign(run, n) {
   }
 
   const out = retrySubgoal(run, sid, subgoalFeedback(run, sid));
+  if (out.attempt) out.rollback = applyRollback(out.run, out.rollback, sid);
   record(run.cwd, {
     event: out.attempt ? 'team_reassign' : 'team_settle',
     run_id: run.run_id, subgoal_id: n.subgoal_id, rejected_by: n.node_id,
@@ -1060,6 +1111,7 @@ function finishNode(run, n, result, vendorName) {
             ...(reassigned.escalated ? { reason: 'the same rejection twice: reshaped rather than retried' } : {}) }
         : { target: where, subgoal_id: n.subgoal_id, attempt: null, reason: reassigned.reason, unreachable: reassigned.unreachable };
     }
+    if (reassigned.rollback) out.rollback = reassigned.rollback;
   }
   return out;
 }
@@ -1228,6 +1280,7 @@ const TOOLS = [
         mixed: { type: 'boolean', description: 'default true. false: every subgoal must be the flow\'s kind; a spec that mixes kinds fails at setgoal.' },
         skills: { description: 'Method per engine stage, overriding the defaults: {"plan": ["agents:agent-task-decomposer"], "critique": []}. Keys are plan, critique, test, review, gate, plus the optional gate:goal. false runs every one of those stages on its contract alone. A skill named here must be analytic and non-dialogic - a node runs headless and cannot answer a skill that asks it something.' },
         mounts: { description: 'Advisory MCP tools per engine stage, overriding the defaults: {"plan": ["mcp__sequential-thinking__sequentialthinking"]}. Keys are plan, setgoal, plus the optional gate:goal. false offers none of them. A tool named here that is not connected is skipped in silence, never searched for.' },
+        retry_policy: { type: 'string', enum: ['continue', 'rollback'], description: 'default "continue", also settable in .claude/team.json. What team_retry (or autoReassign\'s own automatic retry) does with the worktree a rejected implement/draft/cases/audit attempt left. "continue" (default, today\'s only behavior) builds the next attempt on top of it. "rollback" resets the worktree to the checkpoint broker.mjs recorded before that subgoal\'s OWN FIRST attempt touched it, then re-runs with the failed gate\'s gaps as feedback - only when this run has exactly one subgoal (a shared worktree with a sibling subgoal still working in it cannot be reset for one of them without discarding the other\'s progress too; team_retry\'s reply names why it fell back to continue when that guard trips). docs/plans/2026-09-23-teams-reducer-human-rollback.md §5 measured two real runs before defaulting to continue: both showed a retried implement CONVERGING on gate feedback across attempts (52%->60%->78%) rather than repeating the same mistake.' },
       },
       required: ['request', 'cwd'],
     },
@@ -1264,13 +1317,14 @@ const TOOLS = [
   {
     name: 'team_submit',
     description:
-      'Record a node you executed yourself. Same adjudication a vendor result gets: claimed changed_files are cross-checked against the worktree, and stage_ok comes back adjudicated, never raised.',
+      'Record a node you executed yourself. Same adjudication a vendor result gets: claimed changed_files are cross-checked against the worktree, and stage_ok comes back adjudicated, never raised. Idempotent per {run_id, node_id, attempt}: a node_id already carries its attempt number in most stages (implement:U1:2), so a duplicate call for a node that has already finished - the same request arriving twice, a retried MCP call - is a no-op that returns the stored verdict (`idempotent: true`) instead of erroring or re-adjudicating. Pass `attempt` when you have it for a stricter check (rejected if it does not match the node\'s own attempt).',
     inputSchema: {
       type: 'object',
       properties: {
         run_id: { type: 'string' },
         node_id: { type: 'string' },
         cwd: { type: 'string' },
+        attempt: { type: 'integer', description: 'this node\'s attempt number, for the idempotency check above. Optional - node_id already disambiguates attempts for every retryable stage.' },
         payload: {
           type: 'object',
           description:
@@ -1335,9 +1389,9 @@ async function toolGraphOpen(a) {
   knownCwds.add(cwd);
   // .claude/team.json layers under an explicit team_open argument of the same name -
   // the same precedence tm_open's own resolveTeamOptions call gives it (teamconfig.mjs).
-  // Only vendor/allocation/goal_threshold/max_retries/interactive are both a TEAM_DEFAULTS key and a
-  // team_open argument that createRun actually consumes on a single run; the other nine
-  // TEAM_DEFAULTS keys (human_gates, human_scope, max_parallel_teams,
+  // Only vendor/allocation/goal_threshold/max_retries/interactive/retry_policy are both a
+  // TEAM_DEFAULTS key and a team_open argument that createRun actually consumes on a single run;
+  // the other eight TEAM_DEFAULTS keys (human_gates, human_scope, max_parallel_teams,
   // max_depth, qa_rounds, roles, driver_restarts, docs_dir) belong to tm_open's
   // multi-team/TaskManager layer and are not team_open arguments at all.
   const team = resolveTeamOptions(a, readTeamConfig(cwd).config);
@@ -1366,6 +1420,7 @@ async function toolGraphOpen(a) {
     // behaviour unless it asks otherwise.
     goal_judges: Number.isInteger(a.goal_judges) && a.goal_judges > 0 ? a.goal_judges : 2,
     max_retries: T.max_retries,
+    retry_policy: T.retry_policy,
     flow: a.flow,
     mixed: a.mixed,
     skills: a.skills,
@@ -1446,6 +1501,12 @@ async function toolGraphNext(a) {
       }
       const briefingPath = join(brokerDir(run.cwd), run.run_id, 'briefings', `${n.node_id.replace(/[^A-Za-z0-9._-]/g, '_')}.md`);
       if (r.vendor === 'self') {
+        // A self-executed node never passes through team_run's own n.state='running' checkpoint
+        // hook (there is no team_run call - the native agent does the work itself, then
+        // team_submit's), so this is the only place its attempt begins from the broker's point
+        // of view. Idempotent (recordCheckpoint no-ops once n.checkpoint is set), so re-offering
+        // the same ready node on a later poll costs nothing.
+        if (isAuthorNode(run, n) && recordCheckpoint(run, n)) saveRun(run);
         try {
           mkdirSync(dirname(briefingPath), { recursive: true });
           writeFileSync(briefingPath, composePrompt(run, n, nodeBriefing(run, n)));
@@ -1508,6 +1569,7 @@ async function toolGraphRun(a) {
   n.model = r.model || null;
   n.state = 'running';
   n.started_at = Date.now();
+  if (isAuthorNode(run, n)) recordCheckpoint(run, n);
   saveRun(run);
   syncOpenNodes(run);
   const activeKey = `${run.run_id}:${n.node_id}`;
@@ -1648,8 +1710,23 @@ function submitResult(run, n, payload, vendorName) {
   return finishNode(run, n, result, vendorName);
 }
 
+// At-least-once delivery (docs/plans/2026-09-23-teams-reducer-human-rollback.md §5): a caller
+// that submits the same node twice - a retried MCP call, two drivers racing on one node - must
+// not have its second call re-adjudicate (or, for a dispatch-shaped node, redo a git commit) what
+// the first already settled. node_id already disambiguates ATTEMPT for every stage this engine
+// retries (implement:U1:2, gate:goal:3, shape:2 all carry the round in the id), so {run_id,
+// node_id} is already the idempotency key in the common case; `attempt`, when the caller has it,
+// is one more check rather than the whole of it.
+function idempotentSubmit(run, n, a) {
+  if (!n || n.state === 'pending' || n.state === 'running' || !n.result) return null;
+  if (a.attempt != null && Number(a.attempt) !== (n.attempt || 1)) return null;
+  return { ...verdict(run, n), idempotent: true, note: `node ${n.node_id} already ${n.state}; returning the stored result, no work repeated` };
+}
+
 function toolGraphSubmit(a) {
   const run = mustFindRun(a);
+  const already = idempotentSubmit(run, getNode(run, String(a.node_id)), a);
+  if (already) return already;
   const n = requireRunnable(run, String(a.node_id));
   const payload = a.payload || {};
   if (run.allocation === 'balanced') {
@@ -1749,8 +1826,9 @@ async function toolGraphRetry(a) {
     record(run.cwd, { event: 'team_settle', run_id: run.run_id, subgoal_id: sid, unreachable: out.unreachable.length });
     return { run_id: run.run_id, target: sid, subgoal_id: sid, retried: false, reason: out.reason, unreachable: out.unreachable, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
   }
+  const rollback = applyRollback(out.run, out.rollback, sid);
   record(run.cwd, { event: 'team_retry', run_id: run.run_id, subgoal_id: sid, attempt: out.attempt });
-  return { run_id: run.run_id, target: sid, subgoal_id: sid, retried: true, attempt: out.attempt, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
+  return { run_id: run.run_id, target: sid, subgoal_id: sid, retried: true, attempt: out.attempt, ...(rollback ? { rollback } : {}), ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
 }
 
 // What is happening right now, without a run_id in hand. A lead that lost the id - a

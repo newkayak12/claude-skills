@@ -141,7 +141,7 @@ C 유형(목표 기준 모순/검증 불가)은 그래서 회차마다 **새로 
 |---|---|---|---|
 | **D1** | **reducer** — `foldChild`/`integrate`는 있고 런 안 병렬 층은 규약. `idol-plan-2` 실런이 findings 파일명 5종을 제각각 낸 것이 증거 | **✅ 0.27.0 / 0.27.1** | Task 1·2 완료 |
 | **D2** | **time travel** — `waiting_human`이 설계만 있고 미구현, 롤백 개념 없음 | **1단계 ✅ 0.27.3** 사람이 카드를 가져간다 / **2단계 ✅ 0.28.0, 실런 검증 0.28.7** 사람이 **고른다** — `investigate.unknowns[].options[]`, `ask:<서브골>:<시도>` 노드, `interactive` 스위치, `tm_inbox`가 선택지를 건네고 `tm_submit({key, payload:{decisions}})`가 답한다. 남음: `gate:human`, 롤백 | Task 3 ✅, Task 4·5 |
-| **D3** | **멱등성** — 재시도가 at-least-once인데 멱등 키가 없고, "다시 하면 같은 자리에 얹힌다"는 가정으로 때우고 있다 | TODO (부분 완화만 이 계획에서) | Task 2가 경로 고정으로 한 구멍을 막는다. 멱등 키 자체는 범위 밖 |
+| **D3** | **멱등성 / 체크포인트 롤백** — 재시도가 at-least-once인데 멱등 키가 없고, "다시 하면 같은 자리에 얹힌다"는 가정으로 때우고 있다 | **✅ 구현 완료, 릴리스 대기** (버전 번호 없음 — 이 세션은 patch.mjs를 돌리지 않았다, `teams/<topic>` 브랜치에 커밋) | §4가 선행 측정. 멱등 키 `{run_id, node_id, attempt}` (`node_id`가 이미 대부분의 스테이지에서 attempt를 포함) — `team_submit`/`tm_submit` 모두 중복 제출을 저장된 결과를 돌려주는 no-op으로 처리(`idempotentSubmit`, broker.mjs/taskmanager.mjs). 체크포인트: `broker.mjs`가 서브골의 author 스테이지(`implement`/`draft`/`cases`/`audit`) 시도 시작 전 워크트리 HEAD+stash를 노드에 기록(`recordCheckpoint`); `retry_policy: "continue"\|"rollback"`(teamconfig.mjs, 기본 continue) — rollback은 노드 레벨(`retrySubgoal`, 서브골 하나뿐인 런으로 가드)과 패키지 레벨(`retryPackage`, 마지막 승인 커밋 또는 base로) 둘 다 구현. 테스트: test-broker.mjs·test-taskmanager.mjs에 duplicate-submit no-op, rollback resets+keeps gaps, continue unchanged, multi-subgoal fallback. |
 
 그 밖에:
 
@@ -205,7 +205,41 @@ SRE / Security)인데 전부 한 카드에, 첫 번째 사람 앞으로 갔습�
 승인자가 잠든 첫날 패턴이 무너진다")을 우리가 어기고 있었던 것이고, 실런 없이는 보이지 않았습니다.
 `openAsk`가 소유자별로 카드를 쪼개고 `draft`가 전부를 기다립니다.
 
-## 4. 열린 논점
+## 4. D3 선행 측정 (2026-09-24) — continue의 실제 패턴은 "같은 실수 반복"이 아니라 수렴이었다
+
+§0.3b의 가설("매 회차가 같은 조건에서 같은 실수를 다시 한다")은 `retryShape`(패키지 그래프 전체 폐기)를
+근거로 세운 것이었다. 그런데 D3가 다루는 것은 그보다 좁은 재시도 - 한 서브골의 `implement`가 자기
+gate에 거부당해 같은 워크트리 위에서 다시 도는 것(`retrySubgoal`, continue가 이미 기본이자 유일한
+정책) - 이고, 이 재시도가 실제로 같은 실수를 반복하는지는 측정된 적이 없었다. 두 실런의 워크트리를
+읽었다(읽기 전용 - `.harness-tasks/*/worktrees/*/.teams_output/broker/runs/*.json`).
+
+**awake-beta-ref1, P1 (`implement:U1`)** - gate가 3회 모두 다른 이유로 거부/승인했고 숫자가 매 회
+올랐다: 52%(1차, "표면적으로만 통과") → 60%(2차, "swift test/build 통과하지만 여전히 부족") →
+78%(3차, **accept**, "명시된 모든 acceptance bullet을 직접 증거로 확인"). 세 번의 implement가 같은
+워크트리 위에 이어 붙었고(continue), gate의 피드백을 실제로 반영해 수렴했다.
+
+**idol-beta-pm4, P3 (`implement:U1`)** - 74%(1차) → 78%(2차, 개선) → 3차는 gate가 아니라 **implement
+자체가 실패**(`test:U1:3`/`gate:U1:3`는 unreachable, "구현 자체가 재시도 예산 없이 실패")해서 budget
+소진으로 끝났다. 같은 실수의 반복이 아니라, 개선 중이던 시도가 (이유가 기록에 없는) implement 단계의
+실패로 끊긴 것이다.
+
+**읽는 법**: 표본 둘 다 "같은 조건에서 같은 실수"가 아니라 **점진적 수렴**을 보였다 - gate의 피드백이
+`feedback` 문자열로 다음 시도에 전달되고(`retrySubgoal`), 모델이 그걸 실제로 반영했다. P3가 예산을
+다 쓴 것은 반복된 실수가 아니라 개선 중이던 흐름이 별개 원인(구현 단계 자체 실패)으로 끊긴 것이라 -
+rollback이 있었어도 74%/78%를 만든 작업을 지우고 처음부터 다시 시키는 것이 더 나았을 근거가 없다.
+
+같은 태스크 레벨에서 다른 실패 모드 하나도 보인다: `dispatch:QA:1`이 gate 거부가 아니라 **구조적
+붕괴**(`reduce is unreachable`, 7 failed/10 unreachable)로 끝났다 - 이런 경우는 "이어 붙이기"가 무엇을
+이어 붙이는지조차 불분명해서, rollback이 의미를 가질 수 있는 쪽은 오히려 이런 붕괴 케이스일 가능성이
+있다 - 이번 표본에 없어서 측정하지 못했다.
+
+**결정과 근거**: `retry_policy` 기본값은 **`continue`** (지금 동작 그대로). 두 표본 모두 continue가
+실제로 수렴하는 것을 보여줬고, rollback이 우월하다는 근거가 없다 - 있지도 않은 문제를 기본값으로
+고치는 것은 §8i가 반복하지 말라고 적어 둔 실수다. `rollback`은 옵션으로 넣는다: 붕괴형 실패(구조적
+unreachable, 반복된 동일 gap)를 겪는 팀이 켜서 쓸 자리이고, 다음 측정이 그 경우를 표본에 넣을 때
+기본값을 재검토한다.
+
+## 5. 열린 논점
 
 - `reduce`가 새 스테이지인가, 아니면 `gate:goal`이 그 일을 겸하는가? 겸하면 판정과 병합이 한 노드에
   섞인다 — 엔진이 그동안 지켜온 "판정 노드는 쓰지 않는다" 규칙에 어긋난다. 새 스테이지 쪽이 맞아

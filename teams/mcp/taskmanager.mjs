@@ -288,6 +288,11 @@ function createTask(a) {
       // explicit tm_open({goal_judges}) argument reach every child run for the first time. Not
       // yet a team.json key - teamconfig.mjs's TEAM_DEFAULTS is out of scope for this change.
       goal_judges: Number.isInteger(a.goal_judges) && a.goal_judges > 0 ? a.goal_judges : 1,
+      // Read from T for the same reason interactive/goal_threshold above are: a project that
+      // pins retry_policy in team.json means every child run's own retrySubgoal, not just this
+      // task's own retryPackage (which reads task.team.opts.retry_policy directly - see
+      // retryPackage). graph.mjs's createRun turns this into run.retry_policy.
+      retry_policy: T.retry_policy === 'rollback' ? 'rollback' : 'continue',
     },
     created_at: Date.now(),
     spec: null,
@@ -604,7 +609,27 @@ function retryPackage(task, pkgId, feedback) {
   // idol-pm-4's retries to `critique` and `accept:P1:1` - both skipped by the reshape - so four
   // retries sat pending forever and the daemon ended the task blocked with budget left.
   const baseDeps = first ? first.deps.slice() : ['critique'];
+  // rollback (docs/plans/2026-09-23-teams-reducer-human-rollback.md §5, item 3): the new
+  // dispatch's worktree (openChild, ensureWorktree) is the SAME one every attempt of this
+  // package ever ran in - "continue" is what happens if rollback_to is left unset here, exactly
+  // as it always has. When the task's retry_policy is 'rollback', point the new attempt at the
+  // last commit this package actually had accepted (commitWorktree only ever commits on
+  // accept:true - taskmanager.mjs's foldChild), or its worktree's own base commit if none of its
+  // attempts ever passed. openChild performs the actual reset when it sees this field on a
+  // reused worktree.
+  const policy = (task.team && task.team.opts && task.team.opts.retry_policy) === 'rollback' ? 'rollback' : 'continue';
+  let rollbackTo = null;
+  if (policy === 'rollback') {
+    const goodAccepts = task.nodes.filter((n) => n.subgoal_id === pkgId && n.stage === 'accept' && n.state === 'done' && n.result && n.result.commit);
+    const lastGood = goodAccepts.sort((a, b) => (a.attempt || 1) - (b.attempt || 1)).pop();
+    const anyDispatch = task.nodes.find((n) => n.subgoal_id === pkgId && n.stage === 'dispatch' && n.base_commit);
+    rollbackTo = (lastGood && lastGood.result.commit) || (anyDispatch && anyDispatch.base_commit) || null;
+  }
   const accept = pushChain(task, PACKAGE_CHAIN, pkgId, attempt, baseDeps, [], { feedback: feedback || '' });
+  if (rollbackTo) {
+    const dispatchNode = task.nodes.find((x) => x.node_id === `dispatch:${pkgId}:${attempt}`);
+    if (dispatchNode) dispatchNode.rollback_to = rollbackTo;
+  }
   for (const n of task.nodes) {
     if (n.node_id === accept) continue;
     n.deps = n.deps.map((d) => (d === prevAccept ? accept : d));
@@ -626,7 +651,7 @@ function retryPackage(task, pkgId, feedback) {
       n.after = (n.after || []).map((d) => (d === old.node_id ? fresh : d));
     }
   }
-  return { task: saveRun(task), attempt, reason: '' };
+  return { task: saveRun(task), attempt, reason: '', ...(rollbackTo ? { rollback_to: rollbackTo } : {}) };
 }
 
 // ---------- repair: the package whose worktree is the integration tree ----------
@@ -1871,6 +1896,31 @@ export function openChild(task, n) {
     record(task, { event: 'dispatch_failed', task_id: task.run_id, node_id: n.node_id, reason: n.result.reason });
     return;
   }
+  // rollback (docs/plans/2026-09-23-teams-reducer-human-rollback.md §5, item 3): only a package
+  // with a worktree of its own (not repair/qa/audit/planning, which all reuse someone else's
+  // tree) has a branch retryPackage can reset. The first time this package id ever creates the
+  // worktree, its HEAD is the base every later attempt would roll back to if none of them are
+  // ever accepted; retryPackage reads it back via n.base_commit on whichever dispatch node set
+  // it, across shape rounds - ensureWorktree keeps ONE worktree per package id forever, so this
+  // is written at most once.
+  const ownWorktree = !pkg.repair && pkg.phase !== 'qa' && pkg.phase !== 'audit' && pkg.phase !== 'planning';
+  if (ownWorktree && wt.created) {
+    const head = git(wt.path, ['rev-parse', 'HEAD']);
+    if (head.ok) n.base_commit = head.out;
+  }
+  // retryPackage (below) stamped n.rollback_to on THIS dispatch node when it opened, if the
+  // task's retry_policy is 'rollback' and it found a commit to roll back to. Reused worktree
+  // (wt.created false is exactly "a retry continuing where the last attempt left it") is the
+  // only case this applies - a fresh worktree has nothing on it yet to discard.
+  if (ownWorktree && !wt.created && n.rollback_to) {
+    const reset = git(wt.path, ['reset', '--hard', n.rollback_to]);
+    if (reset.ok) {
+      git(wt.path, ['clean', '-fd']);
+      record(task, { event: 'worktree_rolled_back', task_id: task.run_id, node_id: n.node_id, package_id: String(pkg.id), checkpoint: n.rollback_to });
+    } else {
+      record(task, { event: 'rollback_failed', task_id: task.run_id, node_id: n.node_id, package_id: String(pkg.id), reason: reset.err || reset.out || 'git reset --hard failed' });
+    }
+  }
   const based_on = [];
   if (wt.created) {
     if (depBranches[0]) based_on.push(depBranches[0]);
@@ -2774,6 +2824,7 @@ const TOOLS = [
         interactive: { type: 'boolean', description: 'default false, also settable in .claude/team.json. Passed to every child run. When a planning subgoal\'s investigate stage comes back with a decision it could not settle from any source but CAN name candidates for, true opens an `ask` card between investigate and draft and parks that run in waiting_human until a person picks - tm_inbox lists it (with its questions and options), tm_submit({key, payload:{decisions}}) answers it. false decides by default and records the questions on the run instead, so the report can show what nobody was asked.' },
         goal_threshold: { type: 'integer', description: 'default 90: the manager\'s own goal gate must report match_pct at or above this to accept, and it is passed through to every child run as its own goal_threshold. A gate that says accept with 40% match is reporting a partial result as a pass. 0 accepts on the verdict alone.' },
         goal_judges: { type: 'integer', description: 'default 1: independent judges on EVERY child run\'s own goal gate (each package\'s dispatch, and the one run a size-S task opens). >1 opens that many sibling gate nodes per round, routed to different identities where possible, and accepts only if every judge accepts at or above goal_threshold - the same mechanism team_open documents (default 2 there). The default stays 1 here, matching every run this manager has ever opened, so an existing project sees no change in judge count or cost unless it asks for more. This is the child run\'s own gate, not the manager\'s own top-level gate:goal, which is a separate, single-judge mechanism unaffected by this option.' },
+        retry_policy: { type: 'string', enum: ['continue', 'rollback'], description: 'default "continue", also settable in .claude/team.json. What a retried attempt does with the worktree the failed one left: "continue" (default, today\'s only behavior) builds the next attempt on top of it. "rollback" resets the worktree first - a subgoal\'s own implement/draft to the checkpoint recorded before ITS first attempt touched it (single-subgoal child runs only; a shared worktree with a sibling subgoal still in flight cannot be reset for one of them, so it falls back to continue and says why), a package\'s own retry (tm_retry/retryPackage) to its last ACCEPTED commit, or the worktree\'s base commit if none of its attempts ever passed - then re-runs with the failed gate\'s gaps as feedback either way. docs/plans/2026-09-23-teams-reducer-human-rollback.md §5 measured two real runs before defaulting to continue: both showed a retried implement CONVERGING on gate feedback across attempts rather than repeating the same mistake, so there is no evidence yet that discarding an attempt\'s work helps more than it loses.' },
       },
       required: ['request', 'cwd'],
     },
@@ -2826,10 +2877,10 @@ const TOOLS = [
   },
   {
     name: 'tm_submit',
-    description: 'Record a manager node. For size/shape/critique/accept/integrate/gate/report pass the payload the fresh agent returned. For a dispatch node pass no payload: the manager reads the child run file and folds its goal-gate verdict and report into the node. Refused while the child is still running and its driver alive, or waiting_capacity (a usage-limit death; use tm_retry({reset_capacity:true})); a child whose driver died mid-run and spent its whole restart budget folds as blocked, with every attempt\'s stderr. Pass `key` (a TASK ticket key from tm_inbox) instead of node_id to submit a human\'s own answer for a waiting_human card - the flow continues exactly as if a driver had submitted it (its child run\'s driver resumes automatically); a later gate rejection sends the next attempt back to waiting_human for the same human, never to a model.',
+    description: 'Record a manager node. For size/shape/critique/accept/integrate/gate/report pass the payload the fresh agent returned. For a dispatch node pass no payload: the manager reads the child run file and folds its goal-gate verdict and report into the node. Refused while the child is still running and its driver alive, or waiting_capacity (a usage-limit death; use tm_retry({reset_capacity:true})); a child whose driver died mid-run and spent its whole restart budget folds as blocked, with every attempt\'s stderr. Pass `key` (a TASK ticket key from tm_inbox) instead of node_id to submit a human\'s own answer for a waiting_human card - the flow continues exactly as if a driver had submitted it (its child run\'s driver resumes automatically); a later gate rejection sends the next attempt back to waiting_human for the same human, never to a model. Idempotent per {task_id, node_id, attempt}: node_id already carries the round for every retryable stage (dispatch:P1:2, shape:2), so a duplicate submit of a node that already finished is a no-op returning the stored verdict (`idempotent: true`) - it does not re-fold a dispatch (no second git commit) or re-run finish()\'s side effects. Pass `attempt` for a stricter check.',
     inputSchema: {
       type: 'object',
-      properties: { task_id: { type: 'string' }, node_id: { type: 'string' }, key: { type: 'string', description: 'a TASK key (E-xxxxxxxx/Pn/subgoalId) naming a waiting_human card, in place of node_id' }, payload: { type: 'object' } },
+      properties: { task_id: { type: 'string' }, node_id: { type: 'string' }, key: { type: 'string', description: 'a TASK key (E-xxxxxxxx/Pn/subgoalId) naming a waiting_human card, in place of node_id' }, attempt: { type: 'integer', description: 'this node\'s attempt number, for the idempotency check above. Optional - node_id already disambiguates attempts for every retryable stage.' }, payload: { type: 'object' } },
       required: ['task_id'],
     },
     outputSchema: VERDICT_SCHEMA,
@@ -3634,9 +3685,24 @@ function toolNext(a) {
   };
 }
 
+// At-least-once delivery, this layer's own copy of broker.mjs's idempotentSubmit (same reasoning:
+// docs/plans/2026-09-23-teams-reducer-human-rollback.md §5). Matters more here than at the
+// node layer - a dispatch node's fold (foldChild) commits the package's worktree on accept
+// (taskmanager.mjs's commitWorktree), and finish() runs shape validation, QA/audit defect
+// filing and much else besides; none of it is safe to run twice on the same node. node_id
+// already carries the round/attempt for every stage that retries (dispatch:P1:2, shape:2,
+// gate:goal:3), so {task_id, node_id} is the key in the common case; `attempt` is one more check.
+function idempotentSubmit(task, n, a) {
+  if (!n || n.state === 'pending' || n.state === 'running' || !n.result) return null;
+  if (a.attempt != null && Number(a.attempt) !== (n.attempt || 1)) return null;
+  return { ...verdict(task, n), idempotent: true, note: `node ${n.node_id} already ${n.state}; returning the stored result, no work repeated` };
+}
+
 function toolSubmit(a) {
   const task = mustFindTask(a);
   if (a.key) return toolSubmitHuman(task, a);
+  const already = idempotentSubmit(task, getNode(task, String(a.node_id)), a);
+  if (already) return already;
   record(task, { event: 'tm_submit', task_id: task.run_id, node_id: String(a.node_id) });
   const n = requireRunnable(task, String(a.node_id));
   if (n.stage === 'dispatch') {
