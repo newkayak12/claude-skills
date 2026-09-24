@@ -15,6 +15,8 @@ compatibility:
 related:
   - ticket
   - orchestrate
+  - inbox
+  - take
 ---
 
 # board — tm_board, rendered as a table
@@ -55,7 +57,7 @@ One EPIC (named):
 | PLAN | planning | DONE         | 1/1   | accept 92    |
 | P1   | develop  | DONE         | 3/3   | accept 94    |
 | P2   | develop  | IN_PROGRESS  | 2/5   | —            |
-| P3   | develop  | WAITING_USER | —     | —            |
+| P3   | develop  | WAITING_HUMAN | —     | —            |
 | QA   | qa       | READY        | —     | —            |
 
 doc: .teams_output/team/E-a1b2c3d4/INDEX.md
@@ -107,3 +109,5 @@ run's node chain, and the event ledger, polling every ~3s in a browser — run
 
 - `ticket` — one ticket's full detail, EPIC or STORY
 - `orchestrate` — drives the run this board reports on
+- `inbox` — a WAITING_HUMAN row's actual card, and everything else waiting on a person
+- `take` — claim a WAITING_HUMAN row for yourself
