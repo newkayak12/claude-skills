@@ -36,6 +36,9 @@
 #                      state-file write under a mid-write kill, invocation invariance, clock injection across a
 #                      DST transition, and an "already exists" success-not-error exit code; size L
 #
+# TEAM_JSON='{"roles":{"planning":true},"interactive":true}' writes .claude/team.json verbatim,
+#   for any key the bench needs (interactive, goal_threshold, ...). TEAM_ROLES below is the
+#   roles-only shorthand it supersedes.
 # TEAM_ROLES='{"planning":true,"qa":true}' seeds .claude/team.json into the workspace before the
 #   session. Roles are project configuration rather than a tm_open argument, so this is the only
 #   way to reach the planning/QA/audit phase-Teams from here - without it that whole path had
@@ -78,7 +81,14 @@ cp -R "$HERE/fixtures/$FIX/." "$WS/"
 # without this the whole roles path was unreachable from the bench and had never run against a
 # real vendor at all. Value is the roles object as JSON, e.g. TEAM_ROLES='{"planning":true}'.
 # Committed with the seed so the run starts from a clean tree, exactly like every other file.
-if [ -n "${TEAM_ROLES:-}" ]; then
+# TEAM_JSON writes the whole file verbatim, for any other team.json key the bench needs to
+# reach - `interactive` among them, which is the only way to exercise the `ask` card here for
+# the same reason TEAM_ROLES exists: it is project configuration, not a tm_open argument. Takes
+# precedence over TEAM_ROLES; set one or the other.
+if [ -n "${TEAM_JSON:-}" ]; then
+  mkdir -p "$WS/.claude"
+  printf '%s\n' "$TEAM_JSON" > "$WS/.claude/team.json"
+elif [ -n "${TEAM_ROLES:-}" ]; then
   mkdir -p "$WS/.claude"
   printf '{"roles": %s}\n' "$TEAM_ROLES" > "$WS/.claude/team.json"
 fi
