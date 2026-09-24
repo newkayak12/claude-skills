@@ -263,13 +263,23 @@ test('team_submit refuses a node whose deps are unmet', async () => {
   });
 });
 
-test('team_submit refuses an unknown node and a finished one', async () => {
+test('team_submit refuses an unknown node; a duplicate submit of a finished one is a no-op that returns the stored verdict', async () => {
   await withRun(async ({ c, cwd, runId }) => {
     const unknown = await c.call('team_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({}) });
     assert.match(unknown.error, /unknown node/);
-    await c.call('team_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
-    const again = await c.call('team_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({}) });
-    assert.match(again.error, /is done, not pending/);
+    const first = await c.call('team_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    assert.equal(first.state, 'done');
+    // At-least-once delivery (docs/plans/2026-09-23-teams-reducer-human-rollback.md §5): a
+    // second submit of the same {run_id, node_id} - the request retried, two callers racing -
+    // must not re-adjudicate. It gets back exactly the first verdict, flagged idempotent, never
+    // an error.
+    const again = await c.call('team_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'DIFFERENT - must be ignored' }) });
+    assert.equal(again.idempotent, true);
+    assert.equal(again.state, 'done');
+    assert.equal(again.stage_ok, first.stage_ok);
+    // A wrong attempt number is a real mismatch, not a duplicate - still refused.
+    const wrongAttempt = await c.call('team_submit', { run_id: runId, cwd, node_id: 'plan', attempt: 99, payload: ok({}) });
+    assert.match(wrongAttempt.error, /is done, not pending/);
   });
 });
 
@@ -3159,4 +3169,62 @@ test('judging stages are never pinned - only the kind\'s author stage carries th
     assert.equal(review.assignment, undefined, 'review judges the human\'s draft - never the same identity');
     assert.equal(gate.assignment, undefined);
   }, { interactive: true });
+});
+
+// ---------- checkpoint / rollback (docs/plans/2026-09-23-teams-reducer-human-rollback.md §5) ----------
+
+const SOLE = {
+  goal: 'G', acceptance: ['A'],
+  subgoals: [{ id: 'U1', title: 'only one', acceptance: ['a'], test: ['t'], deps: [] }],
+};
+
+test('retry_policy default "continue" leaves a rejected attempt\'s edits in place - today\'s only behavior, unchanged', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, SOLE);
+    await c.call('team_next', { run_id: runId, cwd }); // records implement:U1:1's checkpoint
+    const bad = dirty(cwd, 'bad.txt');
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [bad], handoff: 'h' }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    const rejected = await c.call('team_submit', { run_id: runId, cwd, node_id: 'gate:U1:1', payload: ok({ accept: false, match_pct: 40, gaps: ['fix the widget'] }) });
+    assert.equal(rejected.rollback, undefined, 'continue does not even compute a rollback target');
+    assert.ok(readFileSync(join(cwd, 'bad.txt'), 'utf8').includes('changed'), 'the failed attempt\'s edit is still there - the next attempt builds on top of it');
+    const st = await c.call('team_status', { run_id: runId, cwd, full: true, node_id: 'implement:U1:2' });
+    assert.equal(st.node.state, 'pending', 'a fresh attempt opened, on the same dirty tree');
+  });
+});
+
+test('retry_policy "rollback" resets the worktree to the checkpoint before the failed attempt, keeps the gate\'s gaps as feedback', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, SOLE);
+    const before = await c.call('team_next', { run_id: runId, cwd }); // records implement:U1:1's checkpoint
+    assert.equal(before.ready[0].node_id, 'implement:U1:1');
+    // a.txt is TRACKED (repo()'s own init commit): appending to it, then resetting, proves the
+    // rollback reverts CONTENT, not merely deletes an untracked file - a stronger claim than
+    // "the new file is gone".
+    const bad = dirty(cwd);
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [bad], handoff: 'h' }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    const rejected = await c.call('team_submit', { run_id: runId, cwd, node_id: 'gate:U1:1', payload: ok({ accept: false, match_pct: 40, gaps: ['fix the widget'] }) });
+    assert.equal(rejected.rollback.applied, true);
+    // The reset discarded the failed attempt's edit - the checkpoint predates it.
+    assert.equal(readFileSync(join(cwd, 'a.txt'), 'utf8'), 'x\n', 'reset to the pre-attempt checkpoint, not just left dirty');
+    // The rejection's gaps still reach the next attempt - rollback resets the TREE, not the feedback.
+    const st = await c.call('team_status', { run_id: runId, cwd, full: true, node_id: 'implement:U1:2' });
+    assert.equal(st.node.state, 'pending');
+    assert.match(st.node.feedback, /fix the widget/);
+  }, { retry_policy: 'rollback' });
+});
+
+test('retry_policy "rollback" falls back to continue when a run has more than one subgoal sharing the worktree', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId); // the default 2-subgoal SPEC (U1 -> U2)
+    await c.call('team_next', { run_id: runId, cwd });
+    const bad = dirty(cwd, 'bad.txt');
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [bad], handoff: 'h' }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    const rejected = await c.call('team_submit', { run_id: runId, cwd, node_id: 'gate:U1:1', payload: ok({ accept: false, match_pct: 40, gaps: ['fix it'] }) });
+    assert.equal(rejected.rollback.skipped, true);
+    assert.match(rejected.rollback.reason, /subgoals sharing one worktree/);
+    assert.ok(readFileSync(join(cwd, 'bad.txt'), 'utf8').includes('changed'), 'nothing was reset - U2 may still be working in the same tree');
+  }, { retry_policy: 'rollback' });
 });
