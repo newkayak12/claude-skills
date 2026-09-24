@@ -79,6 +79,7 @@ import {
   currentAttempt,
 } from './graph.mjs';
 import { computeSubmitResult } from './broker.mjs';
+import { applyMerge, foldRecords } from './reducers.mjs';
 
 const SERVER = { name: 'task-manager', version: '0.7.0' };
 const DEFAULT_PROTOCOL = '2025-06-18';
@@ -2020,7 +2021,14 @@ export function foldChild(task, n) {
   const { gate: chainGate, authored: chainAuthored } = parentShapedChild(child);
   const goalGate = chainGate || child.nodes.filter((x) => x.stage === 'gate' && x.subgoal_id === null && x.result).pop();
   const report = child.nodes.filter((x) => x.stage === 'report' && x.state === 'done' && x.result).pop();
-  const changed = [...new Set(child.nodes.flatMap((x) => (x.result && Array.isArray(x.result.changed_files) ? x.result.changed_files : [])))];
+  // Through the declared registry (reducers.mjs), not an inline Set literal: the same union
+  // merge goalConsensus and the run's own `reduce` node use, named once instead of copied.
+  // Keyed by (node_id, attempt) - a node this loop sees twice (unlikely here since `child.nodes`
+  // is read fresh each call, but the registry does not get to assume that of every caller)
+  // still folds to the same set, which is the idempotence property item 1 asks for.
+  const changed = applyMerge('union', child.nodes
+    .filter((x) => x.result && Array.isArray(x.result.changed_files))
+    .map((x) => ({ node_id: x.node_id, attempt: x.attempt || 1, value: x.result.changed_files })));
   // A round may have more than one judge (goal_judges > 1, the default above): the round's
   // consensus - every judge accepting, not any one sibling's own verdict - decides whether it
   // accepted. Reading the last gate node in node order (as this used to, unconditionally) picks
@@ -2046,6 +2054,10 @@ export function foldChild(task, n) {
       collisions: rd.collisions || [],
       orphans: rd.orphans || [],
       repairs_needed: rd.repairs_needed || [],
+      // The deterministic check (item 2), recorded onto the reduce node's own result by
+      // broker.mjs's finishNode - carried up here so the manager's own accept/gate:goal sees a
+      // file or heading collision even when the child's LLM reduce pass did not report it.
+      write_scope: rd.write_scope || null,
     }
     : null;
   // Read directly off every execute node in the child (graph.mjs's KINDS.qa chain), not off
@@ -2236,6 +2248,53 @@ export function prepareIntegration(task, n) {
   record(task, { event: 'integrated', task_id: task.run_id, node_id: n.node_id, merged: merged.length, ...(repair ? { based_on: 'repair' } : {}) });
 }
 
+// The manager-level reduce (item 4): a package's own dispatch attempts are its RETRY history,
+// not siblings - a rejected attempt 1 must not veto an accepted attempt 3 the way a dissenting
+// SIBLING judge should. So every field folds through the same registry foldChild and the
+// run-level `reduce` node use (reducers.mjs), except `accept` itself, which this function
+// deliberately overrides to last-by-attempt instead of the registry's and-consensus default -
+// the registry's `accept` rule is for consensus among SIBLINGS in one round (graph.mjs's
+// goalConsensus), and a package's retry history is not that.
+function packageReducerKind(pkg) {
+  if (!pkg) return DEFAULT_KIND;
+  if (pkg.phase === 'planning') return 'planning';
+  if (pkg.phase === 'qa') return 'qa';
+  if (pkg.phase === 'audit') return 'planning-audit';
+  return DEFAULT_KIND;
+}
+
+export function foldPackageHistory(task) {
+  const out = {};
+  for (const pkg of (task.spec && task.spec.packages) || []) {
+    const dispatches = task.nodes.filter((x) => x.stage === 'dispatch' && x.subgoal_id === String(pkg.id) && x.result);
+    if (!dispatches.length) continue;
+    const records = dispatches.map((x) => {
+      const r = x.result;
+      const fields = {
+        changed_files: r.changed_files || [],
+        gaps: r.gaps || [],
+        reason: r.reason || '',
+      };
+      if (Array.isArray(r.defects)) fields.defects = r.defects;
+      if (Number.isFinite(r.match_pct)) fields.match_pct = r.match_pct;
+      // Not tracked anywhere in this codebase today (see reducers.mjs's DEFAULT_FIELDS
+      // comment) - carried through untouched, for whenever a dispatch result starts
+      // reporting one, rather than requiring a registry change to pick it up.
+      if (r.cost !== undefined) fields.cost = r.cost;
+      return { node_id: x.node_id, attempt: x.attempt || 1, fields };
+    });
+    const acceptEntries = dispatches
+      .filter((x) => x.result.accept !== undefined)
+      .map((x) => ({ node_id: x.node_id, attempt: x.attempt || 1, value: x.result.accept === true }));
+    out[String(pkg.id)] = {
+      ...foldRecords(packageReducerKind(pkg), records),
+      accept: acceptEntries.length ? applyMerge('last-by-attempt', acceptEntries) : undefined,
+      attempts: records.length,
+    };
+  }
+  return out;
+}
+
 // ---------- briefings ----------
 
 export function briefingPath(task, n) {
@@ -2304,6 +2363,13 @@ export function composeTaskPrompt(task, n) {
     L.push(bullets(task.spec.acceptance));
     L.push('');
     L.push(`## Packages`);
+    // The manager-level reduce (item 4): the most recent integrate's declared per-package fold -
+    // every attempt a package went through, folded through the same registry foldChild uses, not
+    // just the latest dispatch's own snapshot below. Present once at least one integrate has
+    // settled; gate:goal and report are exactly the stages that need a package's whole history,
+    // not only where it landed.
+    const foldedIntegrate = task.nodes.filter((x) => x.stage === 'integrate' && x.result && x.result.package_fold).pop();
+    const fold = foldedIntegrate ? foldedIntegrate.result.package_fold : null;
     for (const p of task.spec.packages || []) {
       L.push(`### ${p.id} — ${p.title}${p.flow ? ` (${p.flow})` : ''}`);
       if ((p.deps || []).length) L.push(`Depends on: ${p.deps.join(', ')}`);
@@ -2315,6 +2381,13 @@ export function composeTaskPrompt(task, n) {
       L.push(bullets(p.acceptance));
       const d = task.nodes.filter((x) => x.subgoal_id === String(p.id) && x.stage === 'dispatch' && x.result).pop();
       if (d && d.result) L.push(`Branch: ${d.result.branch || '?'} · child ${d.result.child_run_id || '?'} · ${d.state}${d.result.accept === undefined ? '' : ` accept=${d.result.accept}`}`);
+      const f = fold && fold[String(p.id)];
+      if (f) {
+        L.push(`Folded across ${f.attempts} attempt(s): accept=${f.accept === undefined ? '?' : f.accept}`
+          + `${f.match_pct !== undefined ? ` match=${f.match_pct}%` : ''}`
+          + `${(f.changed_files || []).length ? ` · ${f.changed_files.length} file(s) changed` : ''}`
+          + `${(f.defects || []).length ? ` · ${f.defects.length} defect(s)` : ''}`);
+      }
       L.push('');
     }
     // Facts, not a verdict (§ shapeAnalysis) - handed to critique so it sees, unprompted, exactly
@@ -2388,6 +2461,24 @@ export function composeTaskPrompt(task, n) {
       L.push(`Its goal gate: accept=${r.accept} match=${r.match_pct === undefined ? '?' : r.match_pct + '%'}`);
       if ((r.gaps || []).length) L.push(`Gaps it named:\n${bullets(r.gaps)}`);
       if ((r.spec_drift || []).length) L.push(`Spec drift it named:\n${bullets(r.spec_drift)}`);
+      // The child's set fold (its own `reduce` node, plus the deterministic write-scope check
+      // recorded onto it - item 1/2 of the reducer plan): what its parallel subgoals collided
+      // on, carried up from foldChild's set_findings so this package's own accept sees it too.
+      if (r.set_findings) {
+        const sf = r.set_findings;
+        if ((sf.collisions || []).length) L.push(`Files its subgoals both wrote with no single owner:\n${bullets(sf.collisions.map((c) => `${c.file || c}`))}`);
+        if ((sf.undeclared || []).length) L.push(`Files on disk no subgoal declared:\n${bullets(sf.undeclared)}`);
+        if ((sf.orphans || []).length) L.push(`Artifacts left by a superseded attempt:\n${bullets(sf.orphans)}`);
+        const ws = sf.write_scope;
+        if (ws && ((ws.collisions || []).length || (ws.undeclared_writers || []).length || (ws.heading_collisions || []).length)) {
+          L.push(`Deterministic write-scope check also found:`);
+          L.push(bullets([
+            ...ws.collisions.map((c) => `${c.file}: written by ${c.written_by.join(', ')}, declared by ${c.declared_by.length ? c.declared_by.join(', ') : '(nobody)'}`),
+            ...ws.undeclared_writers.map((u) => `${u.subgoal_id} wrote ${u.file}, declared by ${u.declared_owners.join(', ')}`),
+            ...ws.heading_collisions.map((h) => `${h.file}: ${h.subgoals.join(' & ')} — ${h.reason}`),
+          ]));
+        }
+      }
       // §5b: a QA package's own execute node(s), read directly off the child run (foldChild's
       // defectsFound) regardless of whether the child ever reached a goal-gate verdict about
       // them. The qa accept contract (below) tells this agent to relay every one of these into
@@ -2577,6 +2668,14 @@ export function finish(task, n, result) {
   }
   n.result = result;
   n.finished_at = Date.now();
+
+  // Manager-level reduce (item 4): every package's declared fold - who changed what, its
+  // verdicts across attempts, defects, cost if a dispatch ever reports one - carried through
+  // the same registry foldChild and the run-level reduce use. Attached once integrate settles,
+  // since that is the point every package this round touches has a dispatch result to fold.
+  if (n.stage === 'integrate' && n.state === 'done') {
+    n.result = { ...n.result, package_fold: foldPackageHistory(task) };
+  }
 
   if (n.stage === 'size' && n.state === 'done') {
     if (!['S', 'L'].includes(result.size)) {

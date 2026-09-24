@@ -207,10 +207,61 @@ SRE / Security)인데 전부 한 카드에, 첫 번째 사람 앞으로 갔습�
 
 ## 4. 열린 논점
 
-- `reduce`가 새 스테이지인가, 아니면 `gate:goal`이 그 일을 겸하는가? 겸하면 판정과 병합이 한 노드에
-  섞인다 — 엔진이 그동안 지켜온 "판정 노드는 쓰지 않는다" 규칙에 어긋난다. 새 스테이지 쪽이 맞아
-  보이나, 모든 kind가 reduce를 필요로 하지는 않는다(서브골 하나짜리 런에는 접을 것이 없다).
+- ~~`reduce`가 새 스테이지인가, 아니면 `gate:goal`이 그 일을 겸하는가?~~ **결정됨 (2026-09-24
+  reducer-registry 세션).** 코드를 다시 읽으니 이 질문은 이미 답이 나 있었다: `expandSubgoals`
+  (`graph.mjs`)의 `if (subgoals.length > 1)` 분기는 kind를 전혀 보지 않는다 — `reduce`는 서브골이
+  둘 이상이면 code(`subgoal`)든 document든 무조건 삽입되고, `gate:goal`은 항상 별도 노드(`gate`
+  스테이지, `subgoal_id: null`)로 남아 판정과 병합이 한 번도 섞인 적이 없다. `test-broker.mjs`의
+  기존 코드 픽스처(`implement:U1:2`/`implement:U2:2`와 나란히 `reduce:2`가 있는 회귀 테스트, "an
+  exhausted critique retry budget…")가 이미 이것을 검증하고 있었다 — 이 세션이 찾아낸 게 아니라
+  진작부터 참이었던 사실이다. 이 세션이 감사에서 "graph.mjs reduce node ~1082 for document runs"라고
+  적은 것은 과소평가였다: `reduce`의 주석과 예시가 document(특히 `investigate` findings 파일)
+  위주라 그렇게 읽혔을 뿐, 게이팅 조건 자체는 늘 kind에 무관했다. **결정: 새 스테이지 쪽을 그대로
+  유지한다 — 이미 그렇게 동작하고 있고, "판정 노드는 쓰지 않는다" 규칙을 어긴 적이 없다.** 이번
+  세션은 이 자리(서브골이 둘 이상인 모든 run의 `reduce` 노드)에 결정론적 sibling write-scope 검사
+  (item 2 — 아래)를 얹었다: code kind가 index/registry/README 같은 공유 산출물에 부딪히는 경우도
+  document가 heading을 공유하는 경우와 같은 자리, 같은 코드 경로에서 잡힌다. 별도의 code 전용 분기는
+  두지 않았다 — 이미 하나의 자리였다.
 - ~~선택지를 누가 만드는가?~~ **0.28.0에서 `investigate`로 정했다.** 0.26.0이 그은 선("권고는 하되
   답하지 말라")과 모순되지 않는다: 고를 수 있는 것을 **나열하는 것**은 여전히 조사이고, 계약에도
   그렇게 적었다("naming what could be chosen is still research"). 답하는 것은 카드를 받은 사람이다.
   0.26.0이 이미 unknown에 소유자를 달게 해 두었으므로, 후보만 더하면 그 사람에게 필요한 형태가 된다.
+
+## 5. 이 세션이 구현한 것 (2026-09-24, reducer-registry)
+
+D1("reducer는 있지만 선언되지 않았다")을 마저 닫는다. §0.1이 지적한 세 자리 — `foldChild`의 인라인
+`changed_files` 합집합, 런의 `goal_verdict` AND-consensus, 그리고 §1이 "이 계획에 들어가는 것"으로
+적어 둔 "kind별 병합 규칙 선언" — 를 `teams/mcp/reducers.mjs` 하나로 옮겼다.
+
+- **선언된 reducer 레지스트리** (`reducers.mjs`): 계획이 이름댄 여섯 병합(`union`,
+  `concat-dedup`, `and-consensus`, `min`, `max`, `last-by-attempt`) 각각이 순수 함수이고, 전부
+  `applyMerge`를 통해서만 불린다 — 입력을 `(node_id, attempt)`로 dedupe하고 정렬한 뒤에야 병합
+  함수에 넘기므로, 어느 병합이든 개별적으로 조심하지 않아도 순서 무관·재입력 멱등을 공짜로 얻는다.
+  `test-reducers.mjs`의 property 테스트(셔플 + 이중 폴드 → 동일 결과)가 이것을 검증한다. kind별
+  테이블(`REGISTRY`)은 `subgoal`/`document`/`planning`/`qa`/`planning-audit` 다섯을 공유
+  기본값(`DEFAULT_FIELDS`) 위에 선언한다.
+- **재사용**: `graph.mjs`의 `goalConsensus`(라운드 내 형제 판정자 간 합의)와
+  `taskmanager.mjs`의 `foldChild`(자식 런의 `changed_files` 합집합)가 이 레지스트리를 통하도록
+  바뀌었다 — 인라인 `Set`/`Math.min` 리터럴이 사라졌다.
+- **sibling write-scope 검사** (item 2, `writeScopeFindings` + `computeWriteScope`): 서브골의
+  선언(`files[]`, `title`/`acceptance[]`의 heading 언급)과 실제 산출물(각 서브골의 author 스테이지
+  결과 `changed_files`)을 대조하는 결정론적 함수. `reduce` 노드가 `done`으로 끝나는 순간
+  (`broker.mjs`의 `finishNode`) 그 결과에 `write_scope`로 기록되고, `foldChild`가 `set_findings`로
+  끌어올리며, `nodeBriefing`이 `reduce`와 `gate:goal` 양쪽 브리핑에 노출한다 — LLM `reduce` 패스가
+  같은 것을 놓쳐도 디스크에 남는다.
+- **매니저 층 reduce** (item 4, `foldPackageHistory`): 패키지 하나가 연 모든 `dispatch` 시도를
+  같은 레지스트리로 접는다. `accept` 필드만은 레지스트리 기본값(형제 합의용 and-consensus) 대신
+  `last-by-attempt`로 명시적으로 덮어쓴다 — 패키지의 재시도 이력은 형제가 아니라 순차 이력이므로,
+  1회차의 거절이 3회차의 수용을 무효로 만들면 안 된다는 것이 이 세션이 명시적으로 갈라 둔 지점이다.
+  `integrate` 노드가 `done`이 되는 순간 `n.result.package_fold`에 기록되고, `gate:goal`/`report`
+  브리핑의 "## Packages" 절이 각 패키지 옆에 접힌 이력을 보여준다.
+- **비용(cost) 필드**: 어느 계약도 아직 코드 노드별 비용을 보고하지 않는다 — 레지스트리에는
+  `last-by-attempt`로 이름만 올려 두었다("있으면"이라는 item 4의 표현대로). 실제로 리포트하는
+  계약이 생기면 레지스트리 변경 없이 그대로 접힌다.
+- **미룬 것**: heading 소유권은 여전히 `title`/`acceptance[]`의 자유 텍스트에서 정규식으로 추출한다
+  — 구조화된 `owns` 필드는 spec 스키마 변경이라 이번 세션 범위 밖으로 남겨 두었다. 멱등 키
+  자체(D3, 노드 재시도의 at-least-once 재현) 역시 원래 계획대로 범위 밖이다.
+
+테스트: `teams/scripts/test-reducers.mjs`(신규, 27개) + `test-graph.mjs`/`test-broker.mjs`/
+`test-taskmanager.mjs`에 추가한 통합 테스트. 전체 `node --test teams/scripts/test-*.mjs`
+652개 통과, `python3 scripts/validate_plugins.py` 통과.
