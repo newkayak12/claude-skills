@@ -30,12 +30,19 @@ payload as given and prints the Output Template below; it never authors or softe
 1. Do the work first, in the worktree named on the card (`inbox`/`take` gave you its
    `briefing_path` and, for a STORY, the worktree path is on `ticket`). Submitting before the
    work exists on disk is exactly what the cross-check below catches.
-2. Take the TASK key (`E-xxxxxxxx/Pn/subgoalId`) from `inbox` or `take` — a STORY key has no
-   single card to submit.
-3. Build `payload` the same shape a driver returns for that stage: at minimum `stage_ok`, plus
-   `changed_files` for an authoring stage (implement/draft/cases). A decision card (`ask`) needs
-   `decisions: [{question, chose}]`, one per question `inbox` listed — nothing else is accepted
-   for that kind.
+2. Take the key (`E-xxxxxxxx/Pn/subgoalId`, or `E-xxxxxxxx/Pn/<node_id>`/`E-xxxxxxxx/TASK/<node_id>`
+   for a run/task-level card — `inbox` explains the difference) from `inbox` or `take` — a STORY
+   key has no single card to submit.
+3. Build `payload` by kind (`inbox` names which one a card is):
+   - An authoring stage (implement/draft/cases): the same shape a driver returns — at minimum
+     `stage_ok`, plus `changed_files`.
+   - A decision card (`stage: "ask"`): `decisions: [{question, chose, because?}]`, one per
+     question `inbox` listed — nothing else is accepted for that kind.
+   - A `human_gate: true` card (gate:human — a judging stage the team configured a person into,
+     e.g. `critique`/`gate`/`gate:goal`): `{accept: true|false, reason?, gaps?}`. This is the
+     node's own verdict, not a report on work you did — `accept:false` fails the node exactly
+     like a model's own rejection would, and `gaps[]` reaches the retry the same way a model
+     gate's `gaps[]` does. `changed_files`/cross-check do not apply to this kind either.
 4. Call `tm_submit({task_id, key, payload})` and render the reply's `result`.
 5. **The cross-check**: for anything but a decision card, `payload.changed_files` is compared
    against what actually changed in that node's own worktree (`git status`, the same check a
@@ -66,6 +73,14 @@ A decision card prints just the verdict line — `changed_files_verified` never 
 
 ```
 E-a1b2c3d4/P2/ask:1   stage: ask   state: done   stage_ok: true
+```
+
+A `human_gate` card prints the same bare verdict line, plus the verdict field the stage judges
+on (`accept`/`sound`/`verified`, whichever the stage has) and, on a reject, `gaps`:
+
+```
+E-a1b2c3d4/TASK/critique   stage: critique   state: failed   sound: false
+gaps: ownership overlap between P1 and P2
 ```
 
 ## What Claude Does

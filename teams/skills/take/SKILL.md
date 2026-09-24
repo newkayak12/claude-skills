@@ -41,6 +41,11 @@ Template below; it makes no decisions about what work exists.
    yet; there is nothing to open.
 5. To hand a card back, call this again with `to: "auto"` — a card already parked goes back to
    pending and dispatches normally on the next tick.
+6. An `ask` card (a decision, `inbox`'s `questions[]`) or a `human_gate` card (an accept/reject,
+   `inbox`'s `human_gate: true`) is never taken with this skill — neither is an author stage
+   `tm_assign` can pin. An `ask` card is already addressed to the owner its questions named (or
+   to nobody, if none was given); a `human_gate` card is addressed to whoever is watching. Both
+   go straight to `submit` once you see them in `inbox`.
 
 ## Output Template
 
