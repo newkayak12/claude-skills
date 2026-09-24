@@ -47,7 +47,7 @@ import { touchMarker } from './engage.mjs';
 import {
   epicKey, storyKey, taskKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
   storyTicketState, storyTaskProgress, epicBoardRows, ticketSnapshot,
-  storyLinks, packageReporter, parseTicketKey,
+  storyLinks, packageReporter, parseTicketKey, storyBlockedReason,
 } from './tickets.mjs';
 import { writeDocs } from './docs.mjs';
 import { conventionsBlock } from './conventions.mjs';
@@ -3002,6 +3002,7 @@ function toolTicket(a) {
     key: storyKey(task.run_id, pkgId), task_id: task.run_id, kind: 'STORY',
     title: pkg.title,
     state: storyTicketState(task, pkgId),
+    blocked_reason: storyBlockedReason(task, pkgId),
     tasks: storyTaskProgress(task, pkgId),
     worktree: dispatch && dispatch.child ? { cwd: dispatch.child.cwd, branch: dispatch.child.branch } : null,
     last_verdict: accept && accept.result ? { accept: accept.result.accept, match_pct: accept.result.match_pct, gaps: accept.result.gaps || [] } : null,

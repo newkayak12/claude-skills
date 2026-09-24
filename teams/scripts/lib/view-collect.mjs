@@ -7,7 +7,7 @@
 // broker). A parse failure is tolerated, not fatal: it is reported on the model as
 // `error` / a node's own `read_error`, never thrown past collect().
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { loadRunAt, runState } from '../../mcp/graph.mjs';
 import { driverCostOf, collectDriverCosts } from '../bench/lib/drivercost.mjs';
 // listTasks()'s card model speaks tickets.mjs's own vocabulary (EPIC key, ticket state, phase,
@@ -19,7 +19,7 @@ import { driverCostOf, collectDriverCosts } from '../bench/lib/drivercost.mjs';
 // "what state is this STORY/TASK in" living in view-collect.mjs.
 import {
   epicKey, epicTicketState, epicPhase, epicBoardRows, storyLinks,
-  storyTicketState, storyKey, taskKey, taskTicketState,
+  storyTicketState, storyKey, taskKey, taskTicketState, storyBlockedReason, flowMetrics,
 } from '../../mcp/tickets.mjs';
 
 // ---------- small read helpers, all fail soft ----------
@@ -124,6 +124,16 @@ function nodeSummary(n) {
   // (not just on the package) so both the TICKET view's per-TASK rows and the RESOURCE view's
   // worker strip can show who without either re-deriving it from n.assignment themselves.
   if (n.assignment && n.assignment.executor === 'human') out.assignee = n.assignment.who || 'human';
+  // waiting_since (graph.mjs's promoteWaitingHuman/openAsk) is the ONLY timestamp a node parked
+  // straight from 'pending' ever gets - it never ran, so started_at (set only once a driver
+  // actually picks a node up) stays null and elapsed_ms above reads null too. Gated on the node
+  // CURRENTLY reading waiting_human, not merely having waiting_since set: a card a human already
+  // answered keeps the field (nothing clears it), and showing a stale "waiting Xh" on a resolved
+  // card would be the same error runState's own waiting_human branch exists to avoid.
+  if (n.state === 'waiting_human' && n.waiting_since) {
+    out.waiting_since = n.waiting_since;
+    out.waiting_elapsed_ms = elapsedMs(n.waiting_since);
+  }
   return out;
 }
 
@@ -167,6 +177,20 @@ function collectChildRun(cwd, runId, visiting, ticketCtx) {
 // <cwd>/.harness-tasks/<task-id>/ - the same daemon-driven size->shape->critique->... shape,
 // one level down. Recursion is capped and cycle-guarded: the fixture the live example on disk
 // shows one where a worktree's nested task dir reused the SAME task id as an ancestor.
+//
+// A worktree whose branch happened to commit .harness-tasks/ (idol-beta-pm4's worktrees/P1 and
+// P4, 2026-09-24) checks out a frozen COPY of an ancestor's own task.json at this exact nested
+// path - same run_id, same store_path (taskmanager.mjs's createTask writes it once, pointing at
+// the file's own canonical location), still pointing straight back at the ancestor's real file.
+// That is not a second, real nested task: it is a snapshot, and the old `${dir}::${id}` cycle
+// guard never caught it because `dir` (a different worktree each time) makes the key different
+// every time, even for the identical id. Two independent tells, either enough to skip it: the id
+// itself already names an ancestor (renders the SAME top-level graph again, a level deeper), or
+// the file's own store_path resolves to an ancestor's task.json rather than to where it is
+// actually sitting (catches a copy that also got a fresh id some renaming step assigned it).
+// visiting.ancestorIds/ancestorPaths are seeded with the CURRENT task's own id/path by
+// collectTaskFromValue below before this ever runs, so "ancestor" always includes the immediate
+// parent, not just the ones above it.
 function collectNestedTasks(cwd, visiting) {
   const dir = join(cwd, '.harness-tasks');
   if (!existsSync(dir) || visiting.depth > 6) return [];
@@ -176,7 +200,19 @@ function collectNestedTasks(cwd, visiting) {
     const key = `${dir}::${id}`;
     if (visiting.seen.has(key)) continue;
     visiting.seen.add(key);
-    out.push(collectTask(dir, id, { depth: visiting.depth + 1, seen: visiting.seen }));
+    if (visiting.ancestorIds.has(id)) continue; // stale self-copy: an ancestor's own run_id
+    const path = taskPathOf(dir, id);
+    const read = readJsonRetry(path);
+    if (read.ok && read.value && read.value.store_path
+      && visiting.ancestorPaths.has(resolve(String(read.value.store_path)))) {
+      continue; // stale self-copy: its own store_path still points at an ancestor's task.json
+    }
+    out.push(collectTask(dir, id, {
+      depth: visiting.depth + 1,
+      seen: visiting.seen,
+      ancestorIds: visiting.ancestorIds,
+      ancestorPaths: visiting.ancestorPaths,
+    }));
   }
   return out;
 }
@@ -196,7 +232,12 @@ function packageModel(task, pkg, dispatchNode, acceptNode, visiting) {
       // same code once the quota window passes. Not on driverInfo(): it is a fact about the
       // STORY's dispatch, not about the driver process itself (a parked driver has already
       // exited - see storyTicketState's own comment on why this and driver.alive disagree).
-      waiting_capacity: dispatchNode.child.waiting_capacity || null,
+      // elapsed_ms is derived here (not stored) off the same `.since` serviceDeadDriver writes -
+      // "how long has this STORY been parked" is exactly what a person watching WAITING_CAPACITY
+      // wants and today's board never showed.
+      waiting_capacity: dispatchNode.child.waiting_capacity
+        ? { ...dispatchNode.child.waiting_capacity, elapsed_ms: elapsedMs(dispatchNode.child.waiting_capacity.since) }
+        : null,
       driver: driverInfo(dispatchNode.child.driver, pidAliveFromDriver),
       ...collectChildRun(dispatchNode.child.cwd, dispatchNode.child.run_id, visiting, { taskRunId: task.run_id, pkgId: pkg.id }),
     }
@@ -229,6 +270,11 @@ function packageModel(task, pkg, dispatchNode, acceptNode, visiting) {
     // show a STORY in a column those MCP tools would disagree with.
     ticket_key: storyKey(task.run_id, pkg.id),
     ticket_state: storyTicketState(task, String(pkg.id)),
+    // "Why is it waiting" - tickets.mjs's own storyBlockedReason, the same reads
+    // storyTicketState already makes (unmet deps' node ids, a capacity/human park's since, a
+    // spent restart budget's count) named instead of thrown away. null for anything not
+    // actually blocked - a STORY merely queued (READY) or moving (IN_PROGRESS) has none.
+    blocked_reason: storyBlockedReason(task, String(pkg.id)),
     // attempt: the latest dispatch node's own `.attempt` - a retried STORY's Nth dispatch IS the
     // attempt count (pushChain/openRepair increment it in place; see tickets.mjs's
     // latestBySubgoal), not something this file has to count nodes to derive.
@@ -301,7 +347,15 @@ export function collectTask(tasksDir, taskId, opts = {}) {
 }
 
 function collectTaskFromValue(tasksDir, taskId, task, opts) {
-  const visiting = { depth: opts.depth || 0, seen: opts.seen || new Set() };
+  // Every level adds ITS OWN id/path before recursing into its own packages/s_run, so a nested
+  // task discovered one level down already sees its immediate parent as an ancestor, not only
+  // the ones further up - see collectNestedTasks' own comment for what this catches.
+  const visiting = {
+    depth: opts.depth || 0,
+    seen: opts.seen || new Set(),
+    ancestorIds: new Set([...(opts.ancestorIds || []), taskId]),
+    ancestorPaths: new Set([...(opts.ancestorPaths || []), resolve(taskPathOf(tasksDir, taskId))]),
+  };
   const isS = !!task.s_run;
   let state, counts, sRun = null;
   if (isS) {
@@ -359,8 +413,37 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     log: task.daemon.log || null,
   } : null;
 
+  // A NESTED run (visiting.depth > 0 - reached through collectNestedTasks, one level under some
+  // package worktree) whose own graph still reads 'running' is only actually running while
+  // something down there is alive to move it - its own TaskLeader, a size-S driver, or a
+  // package's own TeamLeader. A worktree checked out from a branch that committed its
+  // .harness-tasks/ snapshot (see collectNestedTasks' own comment) freezes that reading forever:
+  // every pid it names has long since exited, nothing will ever move it again, and showing
+  // `running` on it looks exactly like a live task still working. 'stale' names that honestly -
+  // the same graph, the same counts, just nothing left alive to act on them.
+  //
+  // Gated on depth > 0, not applied to every task this function ever collects: a TOP-LEVEL task
+  // driven by hand (an MCP client polling tm_next directly, never put under a daemon - the exact
+  // case renderResourcesText's own "(no daemon - driven by hand or an MCP client)" line already
+  // names as ordinary, not stale) legitimately reads 'running' with no daemon and no driver
+  // fields at all under the test seam (HARNESS_TEST_NO_DRIVER) - not a frozen snapshot, just not
+  // resourced with a driver process. Only a NESTED copy earns the extra suspicion, because only
+  // a nested copy can be the kind of frozen worktree artifact this exists to catch.
+  if (visiting.depth > 0 && state === 'running') {
+    const anyDriverAlive = (daemon && daemon.alive)
+      || (sRun && sRun.driver && sRun.driver.alive)
+      || [...packages, ...qaRounds, ...auditRounds].some((p) => p.child && p.child.driver && p.child.driver.alive);
+    if (!anyDriverAlive) state = 'stale';
+  }
+
   const ledgerPath = join(tasksDir, taskId, 'ledger.jsonl');
   const events = readJsonl(ledgerPath, 50);
+  // flow_metrics: Kanban's other half (tickets.mjs's own flowMetrics) - board.jsonl's transition
+  // log read once here, the one place this file already reads a task's own JSONL evidence
+  // (ledger.jsonl, one line up), and handed to a pure function rather than re-derived from
+  // task.nodes, which only ever knows "now".
+  const boardEntries = readJsonl(join(tasksDir, taskId, 'board.jsonl'));
+  const flow_metrics = flowMetrics(task, boardEntries);
 
   return {
     task_id: task.run_id || taskId,
@@ -387,6 +470,7 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     audit: task.audit_pkg ? { id: task.audit_pkg.id, rounds: auditRounds } : null,
     s_run: sRun,
     events,
+    flow_metrics,
     error: null,
   };
 }

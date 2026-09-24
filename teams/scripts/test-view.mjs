@@ -9,10 +9,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, appendFileSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, appendFileSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { node, saveRun } from '../mcp/graph.mjs';
 import { collectTask, listTasks, deriveTitle } from './lib/view-collect.mjs';
 import { renderText, renderIndexText, renderTicketsText, renderResourcesText } from './lib/view-render-text.mjs';
 
@@ -421,6 +422,71 @@ test('collect() tolerates a missing task.json (never throws)', async () => {
     const model = collectTask(root, 'no-such-task');
     assert.match(model.error, /could not read task\.json/);
     assert.equal(model.task_id, 'no-such-task');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// idol-beta-pm4 (2026-09-24): worktrees/P1/.harness-tasks/<top-level task id>/task.json (and
+// P4's) were stale early snapshots of the TOP-LEVEL task - the worktree's own branch had
+// committed .harness-tasks/ at some point, so checking it out brought along a frozen copy of the
+// ancestor's own task.json, same run_id, its own store_path still pointing straight back at the
+// ancestor's real file. collectNestedTasks used to render that whole tree again under P1, still
+// reading `running` off pids that had long since exited. Built entirely by hand (no MCP servers,
+// no vendor CLI) - fast, and it pins the exact fixture shape the live bug had: a stale self-copy
+// alongside one genuinely different nested task, so the fix can be shown to drop only the former.
+test('collect(): a nested task.json that is a stale self-copy of an ancestor (same id, or store_path pointing at the ancestor) is skipped - a genuinely different nested task is not', () => {
+  const root = mkdtempSync(join(tmpdir(), 'view-test-stale-nested-'));
+  try {
+    const taskId = 'aaaaaaaa-0000-0000-0000-000000000000';
+    const taskDir = join(root, taskId);
+    const taskPath = join(taskDir, 'task.json');
+    mkdirSync(taskDir, { recursive: true });
+    const worktree = join(taskDir, 'worktrees', 'P1');
+    mkdirSync(worktree, { recursive: true });
+
+    // The package's own child run file - collectChildRun only ever looks for nested tasks once
+    // this loads (its own early return on a missing run never reaches collectNestedTasks).
+    const childRunId = 'child-1';
+    saveRun({ run_id: childRunId, cwd: worktree, spec: null, nodes: [] });
+
+    // The stale copy: same run_id as the ancestor, store_path pointing straight back at it -
+    // not its own location (join(worktree, '.harness-tasks', taskId, 'task.json')).
+    const staleDir = join(worktree, '.harness-tasks', taskId);
+    mkdirSync(staleDir, { recursive: true });
+    writeFileSync(join(staleDir, 'task.json'), JSON.stringify({
+      run_id: taskId, cwd: root, request: 'top-level request', created_at: 1, store_path: taskPath,
+      nodes: [node('dispatch:P1:1', 'dispatch', [], { subgoal_id: 'P1', state: 'running' })],
+    }));
+
+    // A genuinely different nested task (its own id, its own store_path) - nothing alive under
+    // it (no daemon, no driver on its one node), so it should collect normally but read 'stale'
+    // rather than 'running', per the general rule.
+    const nestedId = 'bbbbbbbb-0000-0000-0000-000000000000';
+    const nestedDir = join(worktree, '.harness-tasks', nestedId);
+    mkdirSync(nestedDir, { recursive: true });
+    writeFileSync(join(nestedDir, 'task.json'), JSON.stringify({
+      run_id: nestedId, cwd: worktree, request: 'nested real work', created_at: 2,
+      store_path: join(nestedDir, 'task.json'),
+      nodes: [node('size', 'size', [], { state: 'running' })],
+    }));
+
+    writeFileSync(taskPath, JSON.stringify({
+      run_id: taskId, cwd: root, request: 'top-level request', created_at: 1, store_path: taskPath,
+      spec: { packages: [{ id: 'P1', title: 'module a' }] },
+      nodes: [node('dispatch:P1:1', 'dispatch', [], {
+        subgoal_id: 'P1', state: 'running', child: { cwd: worktree, run_id: childRunId },
+      })],
+    }));
+
+    const model = collectTask(root, taskId);
+    assert.equal(model.error, null);
+    assert.equal(model.state, 'running', 'the TOP-LEVEL task itself is untouched - only a NESTED copy earns the stale check');
+    const p1 = model.packages.find((p) => p.id === 'P1');
+    assert.ok(p1.child && !p1.child.missing, 'the package child run itself still collects normally');
+    assert.equal(p1.child.nested.length, 1, 'the stale self-copy is dropped; the genuinely different nested task is not');
+    assert.equal(p1.child.nested[0].task_id, nestedId);
+    assert.equal(p1.child.nested[0].state, 'stale', 'nothing alive under it (no daemon, no driver) - not shown as running');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -875,6 +941,58 @@ test('renderTicketsText(): a card prints filed-by/attempt/deps, implements[], an
   assert.match(text, /enables US-9/);
 });
 
+test('renderTicketsText(): a card with a blocked_reason prints "blocked: ..." with the reason\'s own detail', () => {
+  const unmet = renderTicketsText(minimalTicketModel([
+    {
+      id: 'P2', title: 'b', phase: null, reporter: null, attempt: 1, ticket_key: 'E-aaaaaaaa/P2', ticket_state: 'BACKLOG', assignee: null,
+      deps: ['P1'], links: { blocked_by: [], blocks: [], implements: [], filed_by: null }, child: null,
+      blocked_reason: { reason: 'unmet_deps', node_ids: ['dispatch:P1:1'] },
+    },
+  ]));
+  assert.match(unmet, /blocked: unmet deps \(dispatch:P1:1\)/);
+
+  const restarts = renderTicketsText(minimalTicketModel([
+    {
+      id: 'P3', title: 'c', phase: null, reporter: null, attempt: 2, ticket_key: 'E-aaaaaaaa/P3', ticket_state: 'BLOCKED', assignee: null,
+      deps: [], links: { blocked_by: [], blocks: [], implements: [], filed_by: null }, child: null,
+      blocked_reason: { reason: 'restart_exhausted', restarts: 2 },
+    },
+  ]));
+  assert.match(restarts, /blocked: driver restart budget exhausted \(2 restarts\)/);
+
+  const capacity = renderTicketsText(minimalTicketModel([
+    {
+      id: 'P4', title: 'd', phase: null, reporter: null, attempt: 1, ticket_key: 'E-aaaaaaaa/P4', ticket_state: 'WAITING_CAPACITY', assignee: null,
+      deps: [], links: { blocked_by: [], blocks: [], implements: [], filed_by: null }, child: null,
+      blocked_reason: { reason: 'capacity', since: 1000, elapsed_ms: 90000 },
+    },
+  ]));
+  assert.match(capacity, /blocked: waiting on provider capacity \(1m30s\)/);
+});
+
+test('renderTicketsText(): a card with no blocked_reason prints no "blocked:" line', () => {
+  const text = renderTicketsText(minimalTicketModel([
+    { id: 'P1', title: 'a', phase: null, reporter: null, attempt: 1, ticket_key: 'E-aaaaaaaa/P1', ticket_state: 'READY', assignee: null, deps: [], links: { blocked_by: [], blocks: [], implements: [], filed_by: null }, child: null, blocked_reason: null },
+  ]));
+  assert.doesNotMatch(text, /blocked:/);
+});
+
+test('renderTicketsText(): flow_metrics prints one summary line (WIP, throughput, mean age, cycle/lead time)', () => {
+  const withMetrics = renderTicketsText(minimalTicketModel([], {
+    flow_metrics: {
+      wip: 2,
+      throughput: { done: 3, elapsed_ms: 86400000 * 2, per_day: 1.5 },
+      mean_work_item_age_ms: 3600000,
+      cycle_time_ms: { mean: 1800000, by_story: {} },
+      lead_time_ms: { mean: 7200000, by_story: {} },
+    },
+  }));
+  assert.match(withMetrics, /WIP=2 {2}throughput=1\.50\/day \(3 done\) {2}mean age=1h0m {2}cycle=30m0s {2}lead=2h0m/);
+
+  const noMetrics = renderTicketsText(minimalTicketModel([], { flow_metrics: null }));
+  assert.doesNotMatch(noMetrics, /WIP=|throughput=/);
+});
+
 test('renderTicketsText(): no relations, no pin -> no WAITING ON HUMAN marker and no tasks: block', () => {
   const text = renderTicketsText(minimalTicketModel([
     { id: 'P1', title: 'a', phase: null, reporter: null, attempt: 1, ticket_key: 'E-aaaaaaaa/P1', ticket_state: 'READY', assignee: null, deps: [], links: { blocked_by: [], blocks: [], implements: [], filed_by: null }, child: null },
@@ -950,6 +1068,26 @@ test('renderResourcesText(): waiting_capacity on a Team\'s child prints its reas
   assert.match(text, /waiting_capacity: usage limit hit/);
 });
 
+test('renderResourcesText(): waiting_capacity with elapsed_ms (view-collect.mjs\'s packageModel) prints "reason (elapsed)"', () => {
+  const text = renderResourcesText(minimalResourceModel({
+    packages: [{ id: 'P1', title: null, child: { cwd: '/tmp/w1', branch: null, waiting_capacity: { reason: 'usage limit hit', since: 1, elapsed_ms: 125000 }, driver: null, nodes: [], nested: [] } }],
+  }));
+  assert.match(text, /waiting_capacity: usage limit hit \(2m5s\)/);
+});
+
+test('renderResourcesText(): a worker\'s waiting_elapsed_ms (a node parked waiting_human straight from pending) prints "waiting=..."', () => {
+  const text = renderResourcesText(minimalResourceModel({
+    packages: [{
+      id: 'P1', title: null,
+      child: {
+        cwd: '/tmp/w1', branch: null, waiting_capacity: null, driver: null, nested: [],
+        nodes: [{ node_id: 'ask:U1:1', stage: 'ask', state: 'waiting_human', assignee: 'sanghyeon', waiting_elapsed_ms: 65000 }],
+      },
+    }],
+  }));
+  assert.match(text, /\[H\] ask:U1:1 \(ask\) human=sanghyeon waiting=1m5s/);
+});
+
 test('renderResourcesText(): a nested task inside a package worktree recurses as its own TaskLeader sub-tree', () => {
   const text = renderResourcesText(minimalResourceModel({
     packages: [{
@@ -991,6 +1129,36 @@ test('ticketsBody (HTML): a WAITING_HUMAN card gets a badge, the reason line, an
   assert.match(html, /<div class="reason">waiting on human: sanghyeon<\/div>/);
   assert.match(html, /<ul class="ticket-tasks"><li><span class="badge WAITING_HUMAN">WAITING_HUMAN<\/span>E-aaaaaaaa\/P1\/U1 – do it<\/li><\/ul>/);
   assert.match(html, /<h2>WAITING_HUMAN \(1\)<\/h2>/);
+});
+
+test('ticketCard (HTML): a blocked_reason prints its own "blocked: ..." reason line, the same text formatBlockedReason renders for the CLI', () => {
+  const { ticketsBody } = extractPageFns(['ticketsBody']);
+  const html = ticketsBody(minimalTicketModel([
+    {
+      id: 'P2', title: 'b', phase: null, reporter: null, attempt: 1, ticket_key: 'E-aaaaaaaa/P2', ticket_state: 'BACKLOG', assignee: null,
+      deps: ['P1'], links: { blocked_by: [], blocks: [], implements: [], filed_by: null }, child: null,
+      blocked_reason: { reason: 'unmet_deps', node_ids: ['dispatch:P1:1'] },
+    },
+  ]));
+  assert.match(html, /<div class="reason">blocked: unmet deps \(dispatch:P1:1\)<\/div>/);
+});
+
+test('ticketsBody (HTML): flow_metrics renders a stat row (WIP/throughput/mean age/cycle/lead), absent when the model has none', () => {
+  const { ticketsBody } = extractPageFns(['ticketsBody']);
+  const withMetrics = ticketsBody(minimalTicketModel([], {
+    flow_metrics: {
+      wip: 2, throughput: { done: 3, elapsed_ms: 1, per_day: 1.5 },
+      mean_work_item_age_ms: 3600000, cycle_time_ms: { mean: 1800000, by_story: {} }, lead_time_ms: { mean: 7200000, by_story: {} },
+    },
+  }));
+  assert.match(withMetrics, /<div class="label">WIP<\/div><div class="value">2<\/div>/);
+  assert.match(withMetrics, /<div class="label">throughput<\/div><div class="value">1\.50\/day \(3 done\)<\/div>/);
+  assert.match(withMetrics, /<div class="label">mean age<\/div><div class="value">1h0m<\/div>/);
+  assert.match(withMetrics, /<div class="label">cycle time<\/div><div class="value">30m0s<\/div>/);
+  assert.match(withMetrics, /<div class="label">lead time<\/div><div class="value">2h0m<\/div>/);
+
+  const noMetrics = ticketsBody(minimalTicketModel([], { flow_metrics: null }));
+  assert.doesNotMatch(noMetrics, /label">WIP</);
 });
 
 test('resourcesBody (HTML): TaskLeader + Team + worker rows, dot classed by node state', () => {

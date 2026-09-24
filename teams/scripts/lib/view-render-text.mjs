@@ -64,6 +64,30 @@ function renderNode(n, indent, out) {
   out.push(line(indent, bits.join(' ')));
   if (n.reason) out.push(line(indent + 1, `reason: ${n.reason}`));
   if (n.gaps && n.gaps.length) out.push(line(indent + 1, `gaps: ${n.gaps.join('; ')}`));
+  // waiting_elapsed_ms (view-collect.mjs's nodeSummary) - the one timestamp a node parked
+  // straight from 'pending' into waiting_human ever gets, since it never ran (started_at stays
+  // null). "how long has this been sitting" is the whole point of showing it at all.
+  if (n.waiting_elapsed_ms != null) out.push(line(indent + 1, `waiting: ${fmtMs(n.waiting_elapsed_ms)}`));
+}
+
+// storyBlockedReason (tickets.mjs), rendered as one line: which of the four kinds of "why" this
+// STORY is stuck on, plus whatever detail that kind carries (the dep node ids, a restart count,
+// or how long it has been parked) - the "why is it waiting" the pipeline/tickets view had no
+// answer for beyond the bare ticket state.
+const BLOCKED_REASON_LABEL = {
+  unmet_deps: 'unmet deps',
+  capacity: 'waiting on provider capacity',
+  restart_exhausted: 'driver restart budget exhausted',
+  human_wait: 'waiting on a human',
+};
+
+function formatBlockedReason(br) {
+  if (!br) return '';
+  const bits = [BLOCKED_REASON_LABEL[br.reason] || br.reason];
+  if (br.reason === 'unmet_deps' && br.node_ids && br.node_ids.length) bits.push(`(${br.node_ids.join(', ')})`);
+  if (br.reason === 'restart_exhausted' && br.restarts != null) bits.push(`(${br.restarts} restart${br.restarts === 1 ? '' : 's'})`);
+  if (br.elapsed_ms != null) bits.push(`(${fmtMs(br.elapsed_ms)})`);
+  return bits.join(' ');
 }
 
 function renderChild(child, indent, out) {
@@ -96,6 +120,8 @@ function renderModelBody(m, indent, out) {
     out.push(line(indent + 1, `${p.id}${p.title ? ' - ' + p.title : ''}${p.phase ? ` (${p.phase})` : ''}${p.reporter ? ` [filed by ${p.reporter}]` : ''}`));
     const linksLine = formatLinksLine(p.links);
     if (linksLine) out.push(line(indent + 2, linksLine));
+    const blockedLine = formatBlockedReason(p.blocked_reason);
+    if (blockedLine) out.push(line(indent + 2, `blocked: ${blockedLine}`));
     if (p.brief) out.push(indentBlock(indent + 2, p.brief));
     if (p.dispatch) renderNode(p.dispatch, indent + 2, out);
     if (p.accept) renderNode(p.accept, indent + 2, out);
@@ -181,6 +207,8 @@ function renderTicketCard(c, indent, out) {
   // enables[]: not a field any package carries today (grep the repo - it does not exist yet),
   // but the spec asks for it "if present" - defensive, not a new field this file invents.
   if (c.links && Array.isArray(c.links.enables) && c.links.enables.length) out.push(line(indent + 1, `enables ${c.links.enables.join(', ')}`));
+  const blockedLine = formatBlockedReason(c.blocked_reason);
+  if (blockedLine) out.push(line(indent + 1, `blocked: ${blockedLine}`));
   // The clear human marker the spec asks for: either the ticket state itself is WAITING_HUMAN
   // (storyTicketState, tickets.mjs) or a STORY-level pin (pkg.assignee) is set even before any
   // node has actually parked - both read off packageModel's own `assignee`/`ticket_state`.
@@ -194,12 +222,27 @@ function renderTicketCard(c, indent, out) {
   }
 }
 
+// tickets.mjs's own flowMetrics(), one summary line: WIP, throughput (done count and a per-day
+// rate), mean Work Item Age of everything still open, and the mean cycle/lead time of whatever
+// has reached DONE so far. Any field flowMetrics could not compute yet (an empty board.jsonl, or
+// nothing has reached DONE) prints '?'/is left off rather than a misleading 0.
+function formatFlowMetricsLine(fm) {
+  const bits = [`WIP=${fm.wip}`];
+  const perDay = fm.throughput.per_day != null ? fm.throughput.per_day.toFixed(2) : '?';
+  bits.push(`throughput=${perDay}/day (${fm.throughput.done} done)`);
+  if (fm.mean_work_item_age_ms != null) bits.push(`mean age=${fmtMs(fm.mean_work_item_age_ms)}`);
+  if (fm.cycle_time_ms.mean != null) bits.push(`cycle=${fmtMs(fm.cycle_time_ms.mean)}`);
+  if (fm.lead_time_ms.mean != null) bits.push(`lead=${fmtMs(fm.lead_time_ms.mean)}`);
+  return bits.join('  ');
+}
+
 export function renderTicketsText(model) {
   const out = [];
   if (model.error) { out.push(`task ${model.task_id}`, `ERROR: ${model.error}`); return out.join('\n') + '\n'; }
   const t = model.ticket || {};
   out.push(`${t.key || model.task_id}  ${t.state || '?'}${t.phase ? ' · ' + t.phase : ''}  ${t.title || ''}`);
   if (model.request) out.push(`request: ${model.request.length > 300 ? model.request.slice(0, 300) + '...' : model.request}`);
+  if (model.flow_metrics) out.push(formatFlowMetricsLine(model.flow_metrics));
   const columns = {};
   for (const c of boardCards(model)) {
     const st = c.ticket_state || 'BACKLOG';
@@ -231,7 +274,10 @@ function renderTeam(label, teamLike, indent, out) {
     const cost = d.cost ? ` cost=${fmtUsd(d.cost.cost_usd)} turns=${d.cost.turns}` : '';
     out.push(line(indent + 1, `TeamLeader pid=${d.pid} alive=${d.alive} restarts=${d.restarts}${cost}`));
   }
-  if (teamLike.waiting_capacity) out.push(line(indent + 1, `waiting_capacity: ${teamLike.waiting_capacity.reason || ''}`));
+  if (teamLike.waiting_capacity) {
+    const elapsed = teamLike.waiting_capacity.elapsed_ms != null ? ` (${fmtMs(teamLike.waiting_capacity.elapsed_ms)})` : '';
+    out.push(line(indent + 1, `waiting_capacity: ${teamLike.waiting_capacity.reason || ''}${elapsed}`));
+  }
   const nodes = teamLike.nodes || [];
   if (nodes.length) {
     out.push(line(indent + 1, 'workers:'));
@@ -241,6 +287,7 @@ function renderTeam(label, teamLike, indent, out) {
       if (n.model) bits.push(`model=${n.model}`);
       if (n.elapsed_ms != null) bits.push(fmtMs(n.elapsed_ms));
       if (n.assignee) bits.push(`human=${n.assignee}`);
+      if (n.waiting_elapsed_ms != null) bits.push(`waiting=${fmtMs(n.waiting_elapsed_ms)}`);
       out.push(line(indent + 2, bits.join(' ')));
     }
   }

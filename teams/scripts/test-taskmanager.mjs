@@ -3400,6 +3400,26 @@ test('tm_ticket reads an EPIC key or a STORY key, and always returns a doc_path 
   });
 });
 
+// storyBlockedReason (tickets.mjs) wired onto tm_ticket's own STORY branch - P2 (deps: ['P1'])
+// has not been dispatched yet, so it reads BACKLOG with blocked_reason naming the unmet dep by
+// its dispatch node id, straight off unmetDeps(). P1 itself has nothing holding it back.
+test('tm_ticket exposes blocked_reason on a STORY: unmet_deps for a package waiting on a sibling, null once nothing blocks it', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    await throughCritique(tm, task_id);
+    const epicKeyStr = `E-${task_id.slice(0, 8)}`;
+    const p1 = await tm.call('tm_ticket', { key: `${epicKeyStr}/P1` });
+    assert.equal(p1.state, 'READY');
+    assert.equal(p1.blocked_reason, null);
+    const p2 = await tm.call('tm_ticket', { key: `${epicKeyStr}/P2` });
+    assert.equal(p2.state, 'BACKLOG');
+    assert.equal(p2.blocked_reason.reason, 'unmet_deps');
+    // expandPackages wires a sibling dep onto the dispatch node's OWN `.deps` as that sibling's
+    // accept id, not its dispatch id (storyLinks' own comment above explains why) - unmetDeps
+    // reads that literally, so the node id named here is accept:P1:1.
+    assert.deepEqual(p2.blocked_reason.node_ids, ['accept:P1:1']);
+  });
+});
+
 test('tm_ticket refuses an unknown EPIC prefix or a package not in the shape', async () => {
   await withTask(async ({ tm, task_id }) => {
     await throughCritique(tm, task_id);
