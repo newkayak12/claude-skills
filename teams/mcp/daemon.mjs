@@ -32,7 +32,7 @@ import {
   advanceDispatches, serviceRunningDispatches, prepareReadyIntegrations,
   dispatchSettled, foldChild, serviceSRun, delegateIfSmall,
   finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages, autoRejudge, autoResumeCapacity,
-  STAGE_SKILLS, syncTickets, autoReshape,
+  STAGE_SKILLS, syncTickets, autoReshape, enforceBudget,
 } from './taskmanager.mjs';
 import { ticketSnapshot } from './tickets.mjs';
 import { pluginDirArgs, isEntryPoint } from './pluginroots.mjs';
@@ -281,6 +281,9 @@ async function stepOnceInner(task) {
   // refusal; a driver parked on a provider's reset time is respawned once that time has passed.
   if (autoRejudge(task)) progressed = true;
   if (autoResumeCapacity(task)) progressed = true;
+  // Budget/timebox (§B.1): checked before advanceDispatches so a stop that trips THIS tick
+  // already refuses THIS tick's dispatch, not just the next one.
+  if (enforceBudget(task)) { saveRun(task); progressed = true; }
   if (advanceDispatches(task)) { saveRun(task); progressed = true; }
   if (serviceRunningDispatches(task)) saveRun(task);
   if (prepareReadyIntegrations(task)) progressed = true;
