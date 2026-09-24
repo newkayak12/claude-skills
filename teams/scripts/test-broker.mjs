@@ -3035,6 +3035,8 @@ test('a subgoal reassigned after a spec retry waits on the live generation, not 
 // ---------- a human can pick up a card (waiting_human) ----------
 
 test('a subgoal spec\'s assignee: "human" pin parks its author stage in waiting_human at team_next - never offered, never routed, never counted as a failure', async () => {
+  // setgoal's own spec.assignee is a MODEL pin, so this needs interactive:true to park at all
+  // (see the source-distinction tests below for the non-interactive, auto-decided case).
   await withRun(async ({ c, cwd, runId }) => {
     const spec = {
       goal: 'G', acceptance: ['A'],
@@ -3060,7 +3062,7 @@ test('a subgoal spec\'s assignee: "human" pin parks its author stage in waiting_
     const again = await c.call('team_next', { run_id: runId, cwd });
     assert.equal(again.state, 'waiting_human');
     assert.equal(again.ready.length, 0);
-  });
+  }, { interactive: true });
 });
 
 test('team_run refuses a human-pinned node directly, rather than handing "human" to loadVendors as if it were a real vendor', async () => {
@@ -3075,7 +3077,7 @@ test('team_run refuses a human-pinned node directly, rather than handing "human"
     // Called directly, before any team_next has had a chance to promote it to waiting_human.
     const r = await c.call('team_run', { run_id: runId, cwd, node_id: 'implement:U1:1' });
     assert.match(r.error || '', /pinned to a human executor/);
-  });
+  }, { interactive: true });
 });
 
 test('team_submit also refuses a waiting_human node directly - a human\'s own submission goes through tm_submit (taskmanager.mjs), not team_submit', async () => {
@@ -3092,7 +3094,7 @@ test('team_submit also refuses a waiting_human node directly - a human\'s own su
     const f = dirty(cwd);
     const r = await c.call('team_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [f] }) });
     assert.match(r.error || '', /waiting_human, not pending/);
-  });
+  }, { interactive: true });
 });
 
 test('judging stages are never pinned - only the kind\'s author stage carries the human assignment', async () => {
@@ -3110,5 +3112,5 @@ test('judging stages are never pinned - only the kind\'s author stage carries th
     assert.equal(draft.assignment.executor, 'human');
     assert.equal(review.assignment, undefined, 'review judges the human\'s draft - never the same identity');
     assert.equal(gate.assignment, undefined);
-  });
+  }, { interactive: true });
 });

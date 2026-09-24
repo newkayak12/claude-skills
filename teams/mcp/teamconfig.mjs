@@ -7,7 +7,10 @@
 //
 // Human-as-a-node came back one key at a time as the machinery landed: `interactive` is live
 // (0.28.0 - it is what decides whether a planning run opens an `ask` card for a decision its
-// investigate stage could not settle, graph.mjs's openAsk). human_gates/human_scope are still
+// investigate stage could not settle, graph.mjs's openAsk; this same key also decides, per the
+// 0.27.3 review, whether a MODEL-written `assignee` pin - a shape package's own field or a
+// setgoal subgoal's own field, as opposed to a user's tm_assign - parks a node in waiting_human
+// or is auto-decided past it, graph.mjs's applyHumanPin). human_gates/human_scope are still
 // only design - see the note above PROVISIONAL_MAX_PARALLEL_TEAMS's neighbour, max_depth.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -34,13 +37,33 @@ export const TEAM_DEFAULTS = Object.freeze({
   // would have put to a person (run.unasked, surfaced in the report); true opens an `ask` card
   // per decision and parks the run on it. false is the default because a run nobody is watching
   // must still finish, and because v0.13.0 §0.2 argued the recorded question is more useful than
-  // a silent assumption either way.
+  // a silent assumption either way. Also gates a MODEL-written `assignee` pin the same way (a
+  // shape/setgoal field, never tm_assign - that one always parks): off, it is auto-decided
+  // (dispatched to an AI, recorded on the node, listed in tm_inbox's `decided`) instead of
+  // parking forever with nobody watching to notice (0.27.3 review, 2026-09-24).
   interactive: false,
   qa_rounds: 2,
   roles: { planning: true, qa: true },
   goal_threshold: 90,
   max_retries: 2,
   driver_restarts: 2,
+  // A driver can answer process.kill(pid,0) and still be doing nothing - a wedged model, a
+  // provider hang with no error, a tool call that never returns. stall_minutes is the "no
+  // progress" signal for that: the mtime of the files daemon.mjs's own waitForProgress already
+  // watches for this child (its broker run file, plus its ledger) idle this long marks the
+  // dispatch stalled (once, recorded, taskmanager.mjs's serviceStalledDriver); idle 3x this long
+  // kills the driver and lets the ordinary dead-driver path (serviceDeadDriver) respawn it,
+  // spending a restart like any other death. 0 disables the whole check - a project whose own
+  // work legitimately goes quiet for stretches (idol-pm-4's 16-minute tool-call gaps) should
+  // raise this rather than disable it, since the first threshold only records, it never kills.
+  stall_minutes: 20,
+  // driver_restarts is a flat, forever counter by default (0 here) - the OTP "flat" restart
+  // strategy. >0 makes it a sliding window in minutes: only restarts whose own timestamp
+  // (driver.restarts[].at, already recorded by serviceDeadDriver) falls inside the last
+  // restart_period_minutes count toward driver_restarts, so a package that dies once every hour
+  // for a week never exhausts its budget the way a flat counter would - see serviceDeadDriver's
+  // own windowing.
+  restart_period_minutes: 0,
   vendor: 'auto',
   allocation: 'ordered',
   // The DEFAULT lives under .teams_output/, but this key is user-settable, so docs_dir is not
@@ -76,6 +99,8 @@ const CHECK = {
   goal_threshold: (v) => Number.isInteger(v) && v >= 0 && v <= 100,
   max_retries: (v) => Number.isInteger(v) && v >= 0,
   driver_restarts: (v) => Number.isInteger(v) && v >= 0,
+  stall_minutes: (v) => Number.isInteger(v) && v >= 0,
+  restart_period_minutes: (v) => Number.isInteger(v) && v >= 0,
   vendor: (v) => typeof v === 'string' && v.length > 0,
   allocation: (v) => typeof v === 'string' && v.length > 0,
   docs_dir: (v) => typeof v === 'string' && v.length > 0,

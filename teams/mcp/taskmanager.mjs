@@ -13,11 +13,22 @@
 //   1. It reuses graph.mjs as a library - nodes, typed edges, readiness, retries, settled
 //      failure - and adds no second DAG. Its own stage names are the only thing new.
 //   2. It READS child run files and never writes them. The graph broker is the one writer
-//      of a run file; a second writer is the race mergeOnto exists to paper over.
-//   3. It does not call the graph broker. MCP has no server-to-server channel, and the
-//      driving session is already the relay: `tm_next` hands back a child pointer
+//      of a run file; a second writer is the race mergeOnto exists to paper over. A human's pin
+//      (tm_assign) or card answer (tm_submit({key})) is an exception that proves the rule, not a
+//      hole in it: both preview their effect against a read-only loadRun (applyPinAction /
+//      broker.mjs's computeSubmitResult - the SAME functions the broker itself applies for real)
+//      and then queueHumanAction the actual instruction - graph.mjs's own handoff, drained by
+//      the broker's mustFindRun the next time anything touches the run. 0.27.3 broke rule 2
+//      here, loadRun+saveRun'ing the child directly from this process (2026-09-24 review, against
+//      this header and design §7's "changed_files는 워크트리 대조로 똑같이 검증" - a human's
+//      report was taken at face value, with no cross-check at all).
+//   3. It does not call the graph broker over MCP. There is no server-to-server JSON-RPC channel,
+//      and the driving session is already the relay: `tm_next` hands back a child pointer
 //      {cwd, run_id}, the session drives the child with team_next/team_run/team_submit,
-//      and calls `tm_submit` on the dispatch node when the child's report is done.
+//      and calls `tm_submit` on the dispatch node when the child's report is done. Importing
+//      broker.mjs as a library for computeSubmitResult (below) is not that channel - it is a
+//      pure, read-only function call, made possible only because broker.mjs is import-safe
+//      (isEntryPoint guards its stdio loop the same way this file's own `isMain` does).
 //
 // The child run is opened HERE, by the server, on a dispatch node - never by a model inside
 // a node. The "do not re-enter the harness" rule in every node prompt stays true.
@@ -27,16 +38,16 @@
 // Zero dependencies: MCP's stdio transport is newline-delimited JSON-RPC 2.0.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, readdirSync, openSync, closeSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, readdirSync, openSync, closeSync, statSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve, dirname, relative, isAbsolute } from 'node:path';
+import { join, resolve, dirname, basename, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { touchMarker } from './engage.mjs';
 import {
   epicKey, storyKey, taskKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
   storyTicketState, storyTaskProgress, epicBoardRows, ticketSnapshot,
-  storyLinks, packageReporter, parseTicketKey,
+  storyLinks, packageReporter, parseTicketKey, storyBlockedReason,
 } from './tickets.mjs';
 import { writeDocs } from './docs.mjs';
 import { conventionsBlock } from './conventions.mjs';
@@ -62,10 +73,12 @@ import {
   kindOf,
   REASONING_STAGES,
   authorStage,
-  applyHumanPin,
-  releaseHumanPin,
+  applyPinAction,
+  queueHumanAction,
+  peekHumanActions,
   currentAttempt,
 } from './graph.mjs';
+import { computeSubmitResult } from './broker.mjs';
 
 const SERVER = { name: 'task-manager', version: '0.7.0' };
 const DEFAULT_PROTOCOL = '2025-06-18';
@@ -204,6 +217,12 @@ function createTask(a) {
     // dispatch is folded blocked. A usage-limit death never spends this budget - see
     // serviceDeadDriver.
     driver_restarts: T.driver_restarts,
+    // See serviceStalledDriver/serviceDeadDriver and teamconfig.mjs's own comments: stall_minutes
+    // flags (then, at 3x, kills) a driver that is alive but making no progress;
+    // restart_period_minutes turns driver_restarts from a flat forever counter into a sliding
+    // window.
+    stall_minutes: T.stall_minutes,
+    restart_period_minutes: T.restart_period_minutes,
     // Whether the single run a size-S request becomes is opened isolated. It is a tm_open
     // argument because the manager, not the entry skill, is what opens that run.
     isolated: a.isolated === true,
@@ -486,10 +505,23 @@ function retryShape(task, feedback) {
   return { task: saveRun(task), attempt, reason: '' };
 }
 
+// The dispatch that opened this package in the CURRENT shape round: expandPackages gives every
+// first dispatch of a round the live critique as a dep. A reshape leaves the old round's nodes
+// skipped in place, so "the first dispatch of this package" is the discarded round's.
+function roundDispatch(task, pkgId) {
+  const critique = task.nodes.filter((n) => n.stage === 'critique' && n.state !== 'skipped').pop();
+  const mine = task.nodes.filter((x) => x.subgoal_id === pkgId && x.stage === 'dispatch');
+  return (critique && mine.find((x) => x.deps.includes(critique.node_id))) || mine[0] || null;
+}
+
 function retryPackage(task, pkgId, feedback) {
   const prior = task.nodes.filter((n) => n.subgoal_id === pkgId && n.stage === 'accept');
-  const attempt = prior.length + 1;
-  if (attempt > task.max_retries + 1) {
+  const attempt = Math.max(0, ...prior.map((n) => n.attempt || 1)) + 1;
+  // The budget is per shape round. idol-pm-4 (2026-09-23) reshaped twice, and counting every
+  // accept node ever pushed spent a retry of each package on rounds it never ran in.
+  const first = roundDispatch(task, pkgId);
+  const spent = attempt - ((first && first.attempt) || 1);
+  if (spent > task.max_retries) {
     const dead = task.nodes.filter((n) => n.subgoal_id === pkgId && n.state === 'failed' && !n.final);
     // Settle first, save second: an object literal evaluates left to right, and a save that
     // runs before the settling writes the unsettled graph.
@@ -509,7 +541,9 @@ function retryPackage(task, pkgId, feedback) {
       n.result = { stage_ok: false, reason: `superseded by attempt ${attempt}` };
     }
   }
-  const first = task.nodes.find((x) => x.subgoal_id === pkgId && x.stage === 'dispatch');
+  // Deps come from this round's dispatch. Copying the package's first-ever dispatch wired
+  // idol-pm-4's retries to `critique` and `accept:P1:1` - both skipped by the reshape - so four
+  // retries sat pending forever and the daemon ended the task blocked with budget left.
   const baseDeps = first ? first.deps.slice() : ['critique'];
   const accept = pushChain(task, PACKAGE_CHAIN, pkgId, attempt, baseDeps, [], { feedback: feedback || '' });
   for (const n of task.nodes) {
@@ -730,6 +764,7 @@ export function clearCapacity(task, packageId) {
         const fresh = spawnChildDriver(task, 'S', task.s_run, { resume: true, attempt: nextSpawnAttempt(task.s_run) });
         fresh.restarts = restarts;
         task.s_run.driver = fresh;
+        delete task.s_run.stalled_since;
         record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: 'S', pid: fresh.pid, reason: 'reset_capacity' });
       }
       resumed.push('S');
@@ -744,6 +779,7 @@ export function clearCapacity(task, packageId) {
         const fresh = spawnChildDriver(task, n.node_id, n.child, { resume: true, attempt: nextSpawnAttempt(n.child) });
         fresh.restarts = restarts;
         n.child.driver = fresh;
+        delete n.child.stalled_since;
         record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: n.node_id, pid: fresh.pid, reason: 'reset_capacity' });
       }
       resumed.push(n.node_id);
@@ -1063,8 +1099,19 @@ function ensureWorktree(task, name, base = 'HEAD') {
 // 220-line PRD that was the only thing anyone wanted.
 export function harnessPathsUnder(cwd) {
   const paths = ['.teams_output', '.claude/.harness-markers'];
+  // Both sides as realpaths. On macOS $TMPDIR is /var/..., which is /private/var/...; a package's
+  // cwd arrives as the realpath and HARNESS_TASKS_DIR as given, so relative() walked out through
+  // `..` and called the manager's own state outside the tree. idol-pm-4 (2026-09-23) committed
+  // eight .harness-tasks files into P1's product branch that way - the same /var trap 0.8.1 hit.
+  // A path that does not exist yet resolves through its nearest existing ancestor.
+  const real = (p) => {
+    const abs = resolve(p);
+    try { return realpathSync(abs); } catch { /* not there yet */ }
+    const up = dirname(abs);
+    return up === abs ? abs : join(real(up), basename(abs));
+  };
   try {
-    const rel = relative(resolve(cwd), tasksRoot());
+    const rel = relative(real(cwd), real(tasksRoot()));
     if (rel && !rel.startsWith('..') && !isAbsolute(rel)) paths.push(rel);
   } catch { /* an unresolvable root is simply not inside this tree */ }
   return paths;
@@ -1481,12 +1528,91 @@ export function serviceDeadDriver(task, child, nodeId) {
   }
   const budget = Number.isInteger(task.driver_restarts) ? task.driver_restarts : 2;
   const priorRestarts = driver.restarts || [];
-  if (priorRestarts.length >= budget) return false; // budget spent: fold it, do not respawn again
+  // OTP-style restart intensity: driver_restarts is a flat, forever counter by default
+  // (restart_period_minutes 0, teamconfig.mjs) - every death this run has ever had counts
+  // against the budget, same as always. >0 makes it a sliding window: only the restarts whose
+  // own `at` (recorded on every entry above) falls inside the last restart_period_minutes count,
+  // so a package that dies once an hour for a week never exhausts a budget sized for "how many
+  // deaths in a row", which is what this was always measuring.
+  const periodMinutes = Number.isInteger(task.restart_period_minutes) ? task.restart_period_minutes : TEAM_DEFAULTS.restart_period_minutes;
+  const countedRestarts = periodMinutes > 0
+    ? priorRestarts.filter((r) => Number.isInteger(r.at) && Date.now() - r.at <= periodMinutes * 60000)
+    : priorRestarts;
+  if (countedRestarts.length >= budget) return false; // budget spent (within the window, if any): fold it, do not respawn again
   const restarts = [...priorRestarts, entry];
   const fresh = spawnChildDriver(task, nodeId, child, { resume: true, attempt: nextSpawnAttempt(child) });
   fresh.restarts = restarts;
   child.driver = fresh;
+  delete child.stalled_since; // a fresh driver has made no progress yet, but it has also not stalled
   record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: nodeId, pid: fresh.pid, restart: restarts.length, budget });
+  return true;
+}
+
+// The mtime of whatever this child's own driver most recently touched - the same directory
+// daemon.mjs's own waitForProgress already watches for this exact child (the broker's run file
+// under .teams_output/broker/runs/), plus its ledger, which is cheap to stat and moves on every
+// node the child's driver finishes even on a poll where the run file itself does not change
+// (queueHumanAction and a few other paths append to the ledger without touching the run's own
+// mtime). board.jsonl is TASK-level, not per-child (taskmanager.mjs's own board.jsonl, not a
+// broker concept), so it is not read here. null when nothing has been written yet.
+function childProgressMtime(child) {
+  if (!child || !child.cwd || !child.run_id) return null;
+  const candidates = [
+    join(child.cwd, '.teams_output', 'broker', 'runs', `${child.run_id}.json`),
+    join(child.cwd, '.teams_output', 'broker', 'ledger.jsonl'),
+  ];
+  let latest = null;
+  for (const p of candidates) {
+    try {
+      const t = statSync(p).mtimeMs;
+      if (latest === null || t > latest) latest = t;
+    } catch { /* not written yet - fine, another candidate (or driver.started_at) covers it */ }
+  }
+  return latest;
+}
+
+// Driver LIVENESS is not driver PROGRESS: a pid that still answers process.kill(pid,0) can be a
+// wedged model, a provider hang with no error text, or a tool call that never returns - none of
+// which serviceDeadDriver ever sees, because it only runs once the pid is actually gone. This is
+// the Temporal-heartbeat analogue for a driver this server does not control the inside of:
+// stall_minutes (teamconfig.mjs, default 20, 0 disables) is read against childProgressMtime, the
+// same files daemon.mjs's waitForProgress already watches for this child.
+//
+// idol-pm-4 (2026-09-2x) had a legitimate 16-minute gap between tool calls mid-run - killing on
+// the first sign of quiet would have cut off a driver that was still working. So the first
+// threshold only RECORDS the stall once (child_driver_stalled; child.stalled_since guards the
+// repeat) and does nothing else. Only past 3x stall_minutes with STILL no progress does this
+// kill the driver (child_driver_killed, reason 'stalled') - and it stops there. It does not
+// respawn: the very next poll finds driverAlive() false and serviceDeadDriver's own path takes
+// over, exactly as it would for a crash, spending a restart the same way.
+//
+// Returns true when it changed anything (so the caller knows to persist the task), same
+// contract as serviceDeadDriver.
+export function serviceStalledDriver(task, child, nodeId) {
+  const driver = child.driver;
+  if (!driver || !driverAlive(driver)) return false; // dead is serviceDeadDriver's job, not this one
+  const stallMinutes = Number.isInteger(task.stall_minutes) ? task.stall_minutes : TEAM_DEFAULTS.stall_minutes;
+  if (!stallMinutes) return false; // 0 disables the check
+  const run = loadRun(child.cwd, child.run_id);
+  const cs = run ? runState(run) : { state: 'missing' };
+  if (cs.state !== 'running') return false; // nothing left to make progress on
+  const progressAt = childProgressMtime(child) ?? driver.started_at ?? Date.now();
+  const idleMs = Date.now() - progressAt;
+  const stallMs = stallMinutes * 60000;
+  if (idleMs < stallMs) {
+    if (!child.stalled_since) return false; // never flagged: nothing to clear
+    delete child.stalled_since;
+    record(task, { event: 'child_driver_progress_resumed', task_id: task.run_id, node_id: nodeId, pid: driver.pid });
+    return true;
+  }
+  if (idleMs >= stallMs * 3) {
+    killDriver(driver);
+    record(task, { event: 'child_driver_killed', task_id: task.run_id, node_id: nodeId, pid: driver.pid, reason: 'stalled', idle_minutes: Math.round(idleMs / 60000) });
+    return true;
+  }
+  if (child.stalled_since) return false; // already recorded once; wait for a resume or the kill threshold
+  child.stalled_since = Date.now();
+  record(task, { event: 'child_driver_stalled', task_id: task.run_id, node_id: nodeId, pid: driver.pid, idle_minutes: Math.round(idleMs / 60000) });
   return true;
 }
 
@@ -1758,7 +1884,7 @@ export function dispatchSettled(task, n) {
 // convention.
 export function serviceSRun(task) {
   if (!task.s_run || !task.s_run.driver) return false;
-  return serviceDeadDriver(task, task.s_run, 'S');
+  return serviceDeadDriver(task, task.s_run, 'S') || serviceStalledDriver(task, task.s_run, 'S');
 }
 
 // The child's account, read from its file. This is the only place the manager touches a
@@ -2230,7 +2356,7 @@ export function composeTaskPrompt(task, n) {
 
 // ---------- verdicts ----------
 
-function succeeded(task, n, result) {
+export function succeeded(task, n, result) {
   if (result.stage_ok !== true) return false;
   const f = VERDICT[n.stage];
   if (!f) return true;
@@ -2244,9 +2370,16 @@ function succeeded(task, n, result) {
   // ("fan-club"/"팬클럽"/"presale" zero times) - the number was recorded and nothing acted on it.
   // A rejection here is not the end of the package: it buys the retry max_retries already
   // budgets, with the gaps that cost it the points carried into the next attempt.
+  // An accept below the floor fails only when the judge named something missing. The gate
+  // contract tells a judge that a run which met its bar with known weaknesses is not a 100, and
+  // observations never block - so an accept:true with gaps[] empty lands at 87-88 by design, and
+  // the floor was turning those points into a rejection the judge never made. idol-pm-4
+  // (2026-09-23): P2 and P5 accepted at 88 with no gaps, both failed, both rebuilt from scratch.
+  // idol-pm-1's PRD, the case the floor exists for, named its gap - it still fails.
   if ((n.stage === 'gate' || n.stage === 'accept') && Number.isFinite(result.match_pct)) {
     const floor = Number.isInteger(task.goal_threshold) ? task.goal_threshold : 90;
-    if (result.match_pct < floor) return false;
+    const named = Array.isArray(result.gaps) && result.gaps.length > 0;
+    if (result.match_pct < floor && (n.stage === 'gate' || named)) return false;
   }
   // A rejection needs no evidence of its own. A positive verdict does: dispatch's accept
   // is computed by the manager itself from the folded child and is exempt, but gate,
@@ -2488,6 +2621,8 @@ const TOOLS = [
         isolated: { type: 'boolean', description: 'Passed to the graph run this task opens (the single run of a size-S request, or each package child run). true only when you created or were handed a private worktree holding this run alone.' },
         mixed: { type: 'boolean', description: 'Passed the same way isolated is, to the same size-S run. Default true. false forbids the other kind of work entirely - a develop-flow request with a document subgoal fails at setgoal instead of quietly running one. Has no effect on an L task: every package is already mixed:true.' },
         driver_restarts: { type: 'integer', description: 'default 2: how many times a package or size-S driver that died mid-run is respawned on the SAME run_id before the dispatch folds blocked. A usage-limit death never spends this - it parks on waiting_capacity for tm_retry({reset_capacity:true}) instead.' },
+        stall_minutes: { type: 'integer', description: 'default 20, also settable in .claude/team.json. A driver can be alive (its pid answers) and still be making no progress - this is the "no progress" signal, read against the mtime of the files this child\'s own run writes. Idle this long flags the dispatch once (stalled_since, cleared the moment progress resumes); idle 3x this long kills the driver and lets the ordinary dead-driver path respawn it, spending a restart. 0 disables the whole check.' },
+        restart_period_minutes: { type: 'integer', description: 'default 0 (a flat, forever counter - today\'s behavior), also settable in .claude/team.json. >0 turns driver_restarts into a sliding window in minutes: only restarts within the last restart_period_minutes count toward the budget, so a driver that dies rarely never exhausts a budget sized for "how many deaths in a row".' },
         interactive: { type: 'boolean', description: 'default false, also settable in .claude/team.json. Passed to every child run. When a planning subgoal\'s investigate stage comes back with a decision it could not settle from any source but CAN name candidates for, true opens an `ask` card between investigate and draft and parks that run in waiting_human until a person picks - tm_inbox lists it (with its questions and options), tm_submit({key, payload:{decisions}}) answers it. false decides by default and records the questions on the run instead, so the report can show what nobody was asked.' },
         goal_threshold: { type: 'integer', description: 'default 90: the manager\'s own goal gate must report match_pct at or above this to accept, and it is passed through to every child run as its own goal_threshold. A gate that says accept with 40% match is reporting a partial result as a pass. 0 accepts on the verdict alone.' },
         goal_judges: { type: 'integer', description: 'default 1: independent judges on EVERY child run\'s own goal gate (each package\'s dispatch, and the one run a size-S task opens). >1 opens that many sibling gate nodes per round, routed to different identities where possible, and accepts only if every judge accepts at or above goal_threshold - the same mechanism team_open documents (default 2 there). The default stays 1 here, matching every run this manager has ever opened, so an existing project sees no change in judge count or cost unless it asks for more. This is the child run\'s own gate, not the manager\'s own top-level gate:goal, which is a separate, single-judge mechanism unaffected by this option.' },
@@ -2512,6 +2647,7 @@ const TOOLS = [
         sandbox: { type: 'string' }, max_retries: { type: 'number' },
         isolated: { type: 'boolean' }, mixed: { type: 'boolean' },
         driver_restarts: { type: 'integer' }, goal_threshold: { type: 'integer' }, goal_judges: { type: 'integer' },
+        stall_minutes: { type: 'integer' }, restart_period_minutes: { type: 'integer' },
       },
       required: ['request', 'cwd'],
     },
@@ -2601,7 +2737,7 @@ const TOOLS = [
   },
   {
     name: 'tm_assign',
-    description: 'Pin a card to a human, or release it back to auto. `key` is a STORY (E-xxxxxxxx/Pn, every subgoal in that package\'s child run) or TASK (E-xxxxxxxx/Pn/subgoalId, just that one) ticket key. `to: "human"` (optionally `who`, or `to: {executor: "human", who}`) pins the subgoal\'s AUTHOR stage only (implement/draft/cases - see graph.mjs\'s authorStage) - a judging stage (test/review/gate/critique) is never assigned to the human who did the work. `to: "auto"` releases it: a card already parked waiting_human goes back to pending and dispatches normally on the next team_next. The pin lives on the child run\'s own spec (the same `assignee` field setgoal itself may write), so a rejected human-authored subgoal\'s next attempt is pinned again automatically. A STORY may be taken before it dispatches: the pin rides on the package and reaches its child run when it opens. A TASK key needs the child run to exist.',
+    description: 'Pin a card to a human, or release it back to auto. `key` is a STORY (E-xxxxxxxx/Pn, every subgoal in that package\'s child run) or TASK (E-xxxxxxxx/Pn/subgoalId, just that one) ticket key. `to: "human"` (optionally `who`, or `to: {executor: "human", who}`) pins the subgoal\'s AUTHOR stage only (implement/draft/cases - see graph.mjs\'s authorStage) - a judging stage (test/review/gate/critique) is never assigned to the human who did the work. `to: "auto"` releases it: a card already parked waiting_human goes back to pending and dispatches normally on the next team_next. The pin lives on the child run\'s own spec (the same `assignee` field setgoal itself may write), so a rejected human-authored subgoal\'s next attempt is pinned again automatically. Called here, by the user, the pin always parks the node in waiting_human regardless of the run\'s interactive setting - the user is present by definition. The SAME field, written by a shape/setgoal instead, only parks when the run is interactive; otherwise it is auto-decided (dispatched to an AI, recorded, listed in tm_inbox\'s `decided`) - see graph.mjs\'s applyHumanPin. A STORY may be taken before it dispatches: the pin rides on the package and reaches its child run when it opens. A TASK key needs the child run to exist.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -2619,13 +2755,19 @@ const TOOLS = [
   },
   {
     name: 'tm_inbox',
-    description: 'Every waiting_human card, across every task (or one, with task_id) - a headless driver cannot reach a human, so this is how the main session finds work a human pinned to themselves. For each: its TASK ticket key, title, what is asked (acceptance criteria and a briefing_path with the full brief), who it is assigned to, and since when. Complete one with tm_submit({task_id, key, payload}). Read-only; safe from any session.',
+    description: 'Two sections (design §7): `cards` is every waiting_human card, across every task (or one, with task_id) - a headless driver cannot reach a human, so this is how the main session finds work a human pinned to themselves (tm_assign, always honoured) or that this run is interactive about. For each: its TASK ticket key, title, what is asked (acceptance criteria and a briefing_path with the full brief), who it is assigned to, and since when. Complete one with tm_submit({task_id, key, payload}). `decided` is every card a MODEL tried to pin (a shape package or setgoal subgoal writing its own assignee) that this run auto-decided instead of parking, because the run is not interactive - dispatched to an AI as normal, with why recorded; object to one by tm_assign-ing it to a human yourself. Read-only; safe from any session.',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' } } },
-    outputSchema: { type: 'object', properties: { cards: { type: 'array', items: { type: 'object', properties: {
-      key: { type: 'string' }, task_id: { type: 'string' }, node_id: { type: 'string' }, title: { type: 'string' },
-      acceptance: { type: 'array', items: { type: 'string' } }, briefing_path: { type: ['string', 'null'] },
-      who: { type: ['string', 'null'] }, since: { type: ['number', 'null'] },
-    } } } }, required: ['cards'] },
+    outputSchema: { type: 'object', properties: {
+      cards: { type: 'array', items: { type: 'object', properties: {
+        key: { type: 'string' }, task_id: { type: 'string' }, node_id: { type: 'string' }, title: { type: 'string' },
+        acceptance: { type: 'array', items: { type: 'string' } }, briefing_path: { type: ['string', 'null'] },
+        who: { type: ['string', 'null'] }, since: { type: ['number', 'null'] },
+      } } },
+      decided: { type: 'array', items: { type: 'object', properties: {
+        key: { type: 'string' }, task_id: { type: 'string' }, node_id: { type: 'string' }, title: { type: 'string' },
+        who: { type: ['string', 'null'] }, reason: { type: 'string' }, since: { type: ['number', 'null'] },
+      } } },
+    }, required: ['cards', 'decided'] },
   },
   {
     name: 'tm_docs',
@@ -2860,6 +3002,7 @@ function toolTicket(a) {
     key: storyKey(task.run_id, pkgId), task_id: task.run_id, kind: 'STORY',
     title: pkg.title,
     state: storyTicketState(task, pkgId),
+    blocked_reason: storyBlockedReason(task, pkgId),
     tasks: storyTaskProgress(task, pkgId),
     worktree: dispatch && dispatch.child ? { cwd: dispatch.child.cwd, branch: dispatch.child.branch } : null,
     last_verdict: accept && accept.result ? { accept: accept.result.accept, match_pct: accept.result.match_pct, gaps: accept.result.gaps || [] } : null,
@@ -2893,7 +3036,10 @@ function humanAssignments(task, pkgId) {
 // every subgoal currently in that package's child run; a TASK key (E-xxxxxxxx/Pn/subgoalId)
 // pins just the one. Only the kind's AUTHOR stage ever carries the pin - applyHumanPin enforces
 // that, not this function - so a judging stage can never be assigned to the human who did the
-// work being judged.
+// work being judged. The child itself is never saved here: this function only PREVIEWS the pin
+// (against a read-only loadRun, through applyPinAction - the same function the broker uses to
+// apply it for real) and queues the instruction for the broker to pick up - see graph.mjs's
+// queueHumanAction and this file's own header, rule 2.
 function toolAssign(a) {
   const task = mustFindTask(a);
   const key = String(a.key || '');
@@ -2915,7 +3061,10 @@ function toolAssign(a) {
   if (!subgoalId && !pkg) throw new Error(`no package ${pkgId} in ${epicKey(task.run_id)}`);
   if (pkg) {
     if (toAuto) delete pkg.assignee;
-    else pkg.assignee = who ? { who } : 'human';
+    // {by: 'user'} is what applyHumanPin (graph.mjs) reads to tell this pin apart from the
+    // SAME field a shape/setgoal writes on its own - the user just called tm_assign, so this
+    // one always parks regardless of run.interactive (§7); an unmarked assignee is the model's.
+    else pkg.assignee = { by: 'user', ...(who ? { who } : {}) };
     saveRun(task);
   }
   const dispatch = latestBySubgoal(task, pkgId, 'dispatch');
@@ -2927,6 +3076,15 @@ function toolAssign(a) {
   const child = loadRun(dispatch.child.cwd, dispatch.child.run_id);
   if (!child || !child.spec) throw new Error(`${key}'s child run has no spec yet - shape/setgoal has not produced subgoals to pin`);
 
+  // Anything this task already queued for the broker but has not drained yet (a prior tm_assign
+  // this same tick, before any team_next/team_submit/team_status touched the run) is replayed
+  // onto this read-only copy first, through the same applyPinAction the loop below uses for its
+  // own pin - otherwise this call's preview would be computed against a child that is stale by
+  // exactly the pins this task itself just queued.
+  for (const pending of peekHumanActions(dispatch.child.cwd, dispatch.child.run_id)) {
+    if (pending.kind === 'pin') applyPinAction(child, pending);
+  }
+
   const ids = subgoalId ? [subgoalId] : (child.spec.subgoals || []).map((s) => String(s.id));
   if (subgoalId && !ids.some((id) => id === subgoalId)) throw new Error(`no subgoal ${subgoalId} in ${storyKey(task.run_id, pkgId)}'s child run`);
 
@@ -2935,28 +3093,38 @@ function toolAssign(a) {
     const sg = child.spec.subgoals.find((s) => String(s.id) === sid);
     if (!sg) throw new Error(`no subgoal ${sid} in ${storyKey(task.run_id, pkgId)}'s child run`);
     const attempt = currentAttempt(child, sid);
-    if (toAuto) {
-      releaseHumanPin(child, sg, sid, attempt);
-    } else {
-      sg.assignee = who ? { who } : 'human';
-      applyHumanPin(child, sg, sid, attempt);
-    }
+    const action = { kind: 'pin', subgoal_id: sid, attempt, to: toAuto ? 'auto' : 'human', who };
+    applyPinAction(child, action); // preview only - child is never saved, see below
+    queueHumanAction(dispatch.child.cwd, dispatch.child.run_id, action);
     const nodeId = `${authorStage(kindOf(sg))}:${sid}:${attempt}`;
     const live = getNode(child, nodeId);
     assigned.push({ subgoal_id: sid, node_id: nodeId, state: live ? live.state : null, assignment: (live && live.assignment) || null });
   }
-  saveRun(child);
+  // Not saveRun(child): the broker is the one writer of a child run file (this file's own header,
+  // rule 2). queueHumanAction leaves the pin as a manager-owned handoff instead of writing it here
+  // directly - the 0.27.3 review (2026-09-24) caught this saveRun(child) writing the child from
+  // the manager's process. The broker applies it for real, through applyPinAction (the exact
+  // function the preview above just ran), the next time anything calls mustFindRun for this run -
+  // team_next's own promoteWaitingHuman is what actually parks the card once ingestHandoff has
+  // set its assignment (broker.mjs).
   record(task, { event: 'tm_assign', task_id: task.run_id, key, to: toAuto ? 'auto' : 'human', who, nodes: assigned.map((x) => x.node_id) });
   return { key, kind: subgoalId ? 'TASK' : 'STORY', to: toAuto ? 'auto' : 'human', who, assigned };
 }
 
-// tm_inbox({task_id?}): every waiting_human card, read straight off the state graph.mjs's
-// promoteWaitingHuman already parked - no second list to keep in sync. Scans every package's
-// child run (dispatch.child) for a node in that state; a task with no packages dispatched yet
-// simply contributes none. Sorted oldest-first, so the longest-waiting card leads.
+// tm_inbox({task_id?}): the two sections design §7 names - waiting (I must act) and
+// decided-for-you (auto-decided, with a way to object). `cards` is every waiting_human node,
+// read straight off the state graph.mjs's promoteWaitingHuman already parked - no second list
+// to keep in sync. `decided` is every node applyHumanPin (graph.mjs) routed to an AI instead of
+// parking because the pin was the MODEL's (a shape/setgoal assignee, not tm_assign) and the run
+// was not interactive - graph.mjs's own auto_decided_pin record on the node, surfaced here so a
+// person can see what was defaulted and object (tm_assign it to themselves) instead of the
+// decision being invisible. Scans every package's child run (dispatch.child) for a node in
+// either state; a task with no packages dispatched yet simply contributes none. Both sorted
+// oldest-first.
 function toolInbox(a) {
   const ids = a.task_id ? [String(a.task_id)] : (() => { try { return readdirSync(tasksRoot()); } catch { return []; } })();
   const cards = [];
+  const decided = [];
   for (const tid of ids) {
     const task = loadRunAt(taskPath(tid));
     if (!task) continue;
@@ -2968,29 +3136,42 @@ function toolInbox(a) {
       const child = loadRun(dispatch.child.cwd, dispatch.child.run_id);
       if (!child) continue;
       for (const n of child.nodes) {
-        if (n.state !== 'waiting_human') continue;
         const sg = child.spec && (child.spec.subgoals || []).find((s) => String(s.id) === String(n.subgoal_id));
-        cards.push({
-          key: taskKey(task.run_id, pid, n.subgoal_id),
-          task_id: task.run_id,
-          node_id: n.node_id,
-          // Two kinds of card park here now and they ask for different things: a pinned author
-          // stage wants the work done (0.27.3), an `ask` node wants one decision picked from
-          // named candidates (graph.mjs's openAsk). `stage` is what tells them apart, and
-          // `questions` is only ever present on the second.
-          stage: n.stage,
-          title: (sg && sg.title) || String(n.subgoal_id),
-          acceptance: (sg && sg.acceptance) || [],
-          ...(n.stage === 'ask' ? { questions: n.questions || [] } : {}),
-          briefing_path: n.briefing_path || null,
-          who: (n.assignment && n.assignment.who) || null,
-          since: n.waiting_since || null,
-        });
+        if (n.state === 'waiting_human') {
+          cards.push({
+            key: taskKey(task.run_id, pid, n.subgoal_id),
+            task_id: task.run_id,
+            node_id: n.node_id,
+            // Two kinds of card park here now and they ask for different things: a pinned author
+            // stage wants the work done (0.27.3), an `ask` node wants one decision picked from
+            // named candidates (graph.mjs's openAsk). `stage` is what tells them apart, and
+            // `questions` is only ever present on the second.
+            stage: n.stage,
+            title: (sg && sg.title) || String(n.subgoal_id),
+            acceptance: (sg && sg.acceptance) || [],
+            ...(n.stage === 'ask' ? { questions: n.questions || [] } : {}),
+            briefing_path: n.briefing_path || null,
+            who: (n.assignment && n.assignment.who) || null,
+            since: n.waiting_since || null,
+          });
+        } else if (n.auto_decided_pin) {
+          decided.push({
+            key: taskKey(task.run_id, pid, n.subgoal_id),
+            task_id: task.run_id,
+            node_id: n.node_id,
+            stage: n.stage,
+            title: (sg && sg.title) || String(n.subgoal_id),
+            who: n.auto_decided_pin.who || null,
+            reason: n.auto_decided_pin.reason,
+            since: n.auto_decided_pin.at || null,
+          });
+        }
       }
     }
   }
   cards.sort((x, y) => (x.since || 0) - (y.since || 0));
-  return { cards };
+  decided.sort((x, y) => (x.since || 0) - (y.since || 0));
+  return { cards, decided };
 }
 
 // tm_docs's whole job: call docs.mjs's single write site. No rendering logic lives here, and no
@@ -3130,8 +3311,9 @@ function toolNextSRun(task) {
   const s = task.s_run;
   const run = loadRun(s.cwd, s.run_id);
   const cs = run ? runState(run) : { state: 'missing', counts: {} };
-  if (cs.state === 'running' && s.driver && !driverAlive(s.driver)) {
-    if (serviceDeadDriver(task, s, 'S')) saveRun(task);
+  if (cs.state === 'running' && s.driver) {
+    if (!driverAlive(s.driver)) { if (serviceDeadDriver(task, s, 'S')) saveRun(task); }
+    else if (serviceStalledDriver(task, s, 'S')) saveRun(task);
   }
   const driver = s.driver || null;
   const out = {
@@ -3147,6 +3329,7 @@ function toolNextSRun(task) {
   };
   if (driver) out.driver = { pid: driver.pid, alive: driverAlive(driver), log: driver.log, ...((driver.restarts || []).length ? { restarts: driver.restarts.length } : {}) };
   if (s.waiting_capacity) out.waiting_capacity = s.waiting_capacity;
+  if (s.stalled_since) out.stalled_since = s.stalled_since;
   if (cs.state !== 'running') {
     out.nodes = run ? run.nodes.filter((x) => x.result).map((x) => ({
       node_id: x.node_id,
@@ -3217,6 +3400,7 @@ export function serviceRunningDispatches(task) {
   for (const n of task.nodes) {
     if (n.stage !== 'dispatch' || n.state !== 'running' || !n.child || !n.child.driver) continue;
     if (serviceDeadDriver(task, n.child, n.node_id)) serviced++;
+    else if (serviceStalledDriver(task, n.child, n.node_id)) serviced++;
   }
   return serviced;
 }
@@ -3264,12 +3448,14 @@ function toolNext(a) {
     const driver = n.child.driver || null;
     const alive = driverAlive(driver);
     const waiting = n.child.waiting_capacity || null;
+    const stalled = n.child.stalled_since || null;
     const restarts = (driver && driver.restarts) || [];
     const fold = `tm_submit({task_id, node_id: "${n.node_id}"})`;
     let next;
     if (childState !== 'running') next = fold;
     else if (!driver) next = `team_next({run_id: "${n.child.run_id}", cwd: "${n.child.cwd}"}) and drive it; tm_submit this node when complete`;
     else if (waiting) next = `waiting on provider capacity (${waiting.reason.slice(0, 160)}); tell the user the reset time and stop. tm_retry({task_id, package_id: "${n.subgoal_id}", reset_capacity:true}) resumes it`;
+    else if (alive && stalled) next = `its driver process (pid ${driver.pid}) is alive but has made no progress since ${new Date(stalled).toISOString()} (stall_minutes); poll tm_next - past 3x stall_minutes it is killed and respawned on its own`;
     else if (alive) next = `its driver process (pid ${driver.pid}) is running this child: wait; poll tm_next; do not drive this child yourself`;
     else next = `driver died and the restart budget (${budget}) is spent: ${fold} folds it as blocked with every attempt's stderr, then tm_retry({package_id: "${n.subgoal_id}"}) reopens it (or reopen the task with child_driver "inline" to drive children yourself)`;
     return {
@@ -3281,6 +3467,7 @@ function toolNext(a) {
       child_state: childState,
       ...(driver ? { driver: { pid: driver.pid, alive, log: driver.log, ...(restarts.length ? { restarts: restarts.length } : {}) } } : {}),
       ...(waiting ? { waiting_capacity: waiting } : {}),
+      ...(stalled ? { stalled_since: stalled } : {}),
       next,
     };
   });
@@ -3311,19 +3498,21 @@ function toolSubmit(a) {
   return delegateIfSmall(task, n, out) || out;
 }
 
-// tm_submit({task_id, key, payload}): the human's own answer for a waiting_human card - the one
-// write this file ever makes to a child run. Every other node this file "READS child run files
-// and never writes them" (this file's own header, rule 2) about is folded through the broker, by
-// a driver session relaying a fresh agent's JSON; a waiting_human node exists BECAUSE a headless
-// driver cannot reach a human at all (docs/plans/2026-09-23-teams-reducer-human-rollback.md
-// §0.2), so nothing else can make this one write. Deliberately narrow: applyHumanPin only ever
-// pins a subgoal's AUTHOR stage (implement/draft/cases/investigate's own author), never a
-// judging one, so this never has to replicate the broker's cross-check-against-git or goal-gate
-// consensus machinery - stage_ok is taken at face value, the same trust a human's own report
-// already gets everywhere else in this file (toolSubmit's ordinary payload above does the same).
-// Everything downstream (test, review, gate, and a rejection's own retry back to waiting_human -
-// graph.mjs's applyHumanPin, called again by retrySubgoal) runs through the real broker once the
-// child's driver resumes, exactly as it always has.
+// tm_submit({task_id, key, payload}): the human's own answer for a waiting_human card. Through
+// 0.27.2 this was the one write this file ever made to a child run, and 0.27.3 kept it that way
+// (loadRun+saveRun'd the child directly) - a violation of this file's own header, rule 2, and of
+// design §7 (a human's implement/draft/cases is supposed to get "changed_files는 워크트리 대조로
+// 똑같이 검증", the same worktree cross-check an AI's report gets; 0.27.3 took stage_ok at face
+// value instead, no cross-check at all). Caught by the 2026-09-24 review. Fixed the same way
+// tm_assign above is: computeSubmitResult (broker.mjs, imported - see this file's header, rule 3)
+// runs the real cross-check and verdict logic read-only, against a loadRun'd copy of the child
+// that is never saved, so this call can still answer synchronously and correctly without writing
+// anything; queueHumanAction leaves the actual payload as a manager-owned handoff, and the broker
+// applies it for real - through that SAME function, plus finishNode - the next time anything
+// calls mustFindRun for this run. Everything downstream of a real "done" (test, review, gate, and
+// a rejection's own retry back to waiting_human - graph.mjs's applyHumanPin, called again by
+// retrySubgoal) still runs through the real broker once the child's driver resumes, exactly as it
+// always has; only WHO performs the verdict on THIS node's own payload changed.
 function toolSubmitHuman(task, a) {
   const key = String(a.key);
   const parsed = parseTicketKey(key);
@@ -3342,12 +3531,18 @@ function toolSubmitHuman(task, a) {
   // never be waiting together - and authorStage stays as the name used to explain an empty
   // inbox for this key.
   const attempt = currentAttempt(child, subgoalId);
-  const waiting = child.nodes.filter((x) => String(x.subgoal_id) === subgoalId && x.state === 'waiting_human');
+  // A card this same task already queued an answer for (this tick's own earlier tm_submit, not
+  // yet drained by the broker) is not `waiting_human` on disk yet either - queueHumanAction below
+  // never flips it. Without this, a second submission of the same card would see the same stale
+  // waiting_human node the first call did and be accepted twice.
+  const alreadyQueued = new Set(peekHumanActions(dispatch.child.cwd, dispatch.child.run_id)
+    .filter((x) => x.kind === 'submit').map((x) => x.node_id));
+  const waiting = child.nodes.filter((x) => String(x.subgoal_id) === subgoalId && x.state === 'waiting_human' && !alreadyQueued.has(x.node_id));
   if (!waiting.length) {
     const predicted = `${authorStage(kindOf(sg))}:${subgoalId}:${attempt}`;
     const n0 = getNode(child, predicted);
     throw new Error(n0
-      ? `${key}'s card (${predicted}) is ${n0.state}, not waiting_human - nothing to submit`
+      ? `${key}'s card (${predicted}) is ${alreadyQueued.has(predicted) ? 'submitted, awaiting the broker' : n0.state}, not waiting_human - nothing to submit`
       : `${key} has no card waiting on a human`);
   }
   const n = waiting[waiting.length - 1];
@@ -3357,17 +3552,17 @@ function toolSubmitHuman(task, a) {
   }
 
   const payload = a.payload || {};
-  n.result = { ...payload, stage_ok: payload.stage_ok !== false };
-  n.state = n.result.stage_ok ? 'done' : 'failed';
-  n.answered_at = Date.now();
-  saveRun(child);
-  record(task, { event: 'tm_submit_human', task_id: task.run_id, key, node_id: nodeId, stage_ok: n.result.stage_ok });
+  const { result, done } = computeSubmitResult(child, n, payload, 'human');
+  const answeredAt = Date.now();
+  queueHumanAction(dispatch.child.cwd, dispatch.child.run_id, { kind: 'submit', node_id: nodeId, payload, answered_at: answeredAt });
+  record(task, { event: 'tm_submit_human', task_id: task.run_id, key, node_id: nodeId, stage_ok: result.stage_ok });
 
   // The driver already exited the moment nothing was left ready for it (zero compute while
   // waiting - graph.mjs's promoteWaitingHuman). Resume it now, the same shape clearCapacity
   // already uses for its own "not a crash, don't spend a restart" respawn: restarts carries
   // over untouched, because this is exactly what the driver was always going to do next, not a
-  // failure it is recovering from.
+  // failure it is recovering from. This is task.json's own dispatch node, this file's to write
+  // either way (rule 2 is about the CHILD run, not the task's own).
   // Only when nothing is driving the run: a sibling subgoal still in flight keeps its driver
   // alive, and that driver picks the answered node up on its next team_next. A second driver on
   // the same run would dispatch the same ready nodes twice.
@@ -3376,10 +3571,11 @@ function toolSubmitHuman(task, a) {
     const fresh = spawnChildDriver(task, dispatch.node_id, dispatch.child, { resume: true, attempt: nextSpawnAttempt(dispatch.child) });
     fresh.restarts = restarts;
     dispatch.child.driver = fresh;
+    delete dispatch.child.stalled_since;
     saveRun(task);
     record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: dispatch.node_id, pid: fresh.pid, reason: 'human_submitted' });
   }
-  return { task_id: task.run_id, key, node_id: nodeId, state: n.state, result: n.result };
+  return { task_id: task.run_id, key, node_id: nodeId, state: done ? 'done' : 'failed', result };
 }
 
 function toolRetry(a) {
@@ -3490,7 +3686,8 @@ function toolStatus(a) {
       flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),
       s_run: { cwd: task.s_run.cwd, run_id: task.s_run.run_id,
         ...(task.s_run.driver ? { driver: { ...task.s_run.driver, alive: driverAlive(task.s_run.driver) } } : {}),
-        ...(task.s_run.waiting_capacity ? { waiting_capacity: task.s_run.waiting_capacity } : {}) },
+        ...(task.s_run.waiting_capacity ? { waiting_capacity: task.s_run.waiting_capacity } : {}),
+        ...(task.s_run.stalled_since ? { stalled_since: task.s_run.stalled_since } : {}) },
       packages: [],
       daemon: task.daemon ? { pid: task.daemon.pid, alive: driverAlive(task.daemon), log: task.daemon.log, stderr: task.daemon.stderr, spawn_count: task.daemon.spawn_count, restarts: task.daemon.restarts || 0, exhausted: !!task.daemon.exhausted, stderr_tail: driverStderrTail(task.daemon) } : null,
       team: task.team || null,

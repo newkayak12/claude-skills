@@ -15,7 +15,7 @@
 |---|---|---|
 | MCP 서버 | `graph-engineering` (`graph_*` 도구) | `teams-engineering` (`team_*`) + `task-manager` (`tm_*`) |
 | 런 파일 | `.harness-run/broker/` | `.teams_output/broker/` |
-| 스킬 | `graph:install`, `graph:orchestrate` | `teams:install`, `teams:remove`, `teams:patch`, `teams:orchestrate`, `teams:develop`, `teams:document`, `teams:plan`, `teams:qa`, `teams:board`, `teams:ticket` |
+| 스킬 | `graph:install`, `graph:orchestrate` | `teams:install`, `teams:remove`, `teams:patch`, `teams:orchestrate`, `teams:develop`, `teams:document`, `teams:plan`, `teams:qa`, `teams:board`, `teams:ticket`, `teams:inbox`, `teams:take`, `teams:submit` |
 | 버전 | 1.x | 0.x |
 
 두 플러그인은 한 프로젝트에 함께 켜도 됩니다: 도구 접두사가 다르고(`graph_*` vs.
@@ -49,6 +49,11 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 설계와 단계 목록: [`docs/plans/2026-09-11-teams-taskmanager.md`](../docs/plans/2026-09-11-teams-taskmanager.md).
 
 ## 상태
+- v0.28.5 — 칸반 이론 기반 티켓 개선: blocked_reason(미해결 의존성/용량 대기/재시작 소진/사람 대기), 대기 경과시간, board.jsonl 기반 플로우 지표(WIP/처리량/사이클·리드타임), 오래된 중첩 태스크 복사본이 live로 표시되던 문제 수정
+- v0.28.4 — 드라이버 liveness에 진행 신호가 추가되고(stall_minutes가 진행 없는 드라이버를 먼저 플래그한 뒤 죽임) driver_restarts가 평평한 영원 카운터 대신 슬라이딩 윈도우(restart_period_minutes)가 될 수 있습니다
+- v0.28.3 — board/ticket의 WAITING_HUMAN 드리프트와 human_assignments 누락을 고치고, 사람이 waiting_human 카드를 집어들 진입점(inbox/take/submit, tm_inbox/tm_assign/tm_submit)을 새로 추가
+- v0.28.2 — **reshape 뒤의 재시도가 끝나지 않을 노드를 기다렸다**: idol-pm-4(2026-09-23)는 예산이 남은 패키지 재시도 넷을 pending으로 둔 채 `blocked`로 끝났습니다. `retryPackage`가 그 패키지의 첫 dispatch에서 deps를 복사했는데, reshape 두 번 뒤의 첫 dispatch는 버려진 회차의 것이라 deps가 둘 다 skipped인 `critique`와 `accept:P1:1`이었습니다. 재시도는 ready가 될 수 없었고 daemon은 할 일이 없다고 봤습니다. 이제 deps는 현재 shape 회차의 dispatch(살아 있는 critique를 기다리는 것)에서 가져옵니다. 재시도 예산도 그 회차 안에서 셉니다. 지금까지 넣은 accept를 전부 세면 reshape 한 번마다 모든 패키지의 재시도가 하나씩 사라졌기 때문입니다. 벤치: `idol` 케이스는 이름 때문에 문서 체크리스트로 채점되던 것을 전용 기준(기획 문서·스토리·critique 통과·패키지 dispatch와 수용·통합·통합 트리 테스트)으로 채점합니다. 새 `awake` 케이스(Claude Code가 일하는 동안에만 맥을 깨워 두는 SwiftPM 메뉴바 앱)가 다음 레퍼런스 실행입니다. `drive.sh`는 자기가 살아 있는 동안만 `caffeinate -i -w $`를 걸고 실제 시각 기준으로 잡니다. idol-pm-4가 잠든 노트북에 5시간을 잃었기 때문입니다. 테스트 1개 추가.
+- v0.28.1 — **사람이 가져간 카드도 엔진 규칙을 그대로 따르고, 실런 결함 둘이 사라졌다**. 0.27.3을 설계와 대조한 리뷰, 그리고 처음으로 패키지를 빌드한 기획 런 idol-pm-4(2026-09-23)에서 나온 변경 넷입니다. (1) 매니저가 자식 런 파일에 쓰지 않습니다. README는 자식 런을 읽기만 하고 쓰지 않는다고 적는데, 0.27.3의 `tm_assign`·`tm_submit({key})`가 직접 썼습니다. 이제 사람의 핀·제출·`ask` 답은 자식 broker 디렉터리 아래 handoff 파일(run 파일과 같은 락)에 쌓이고, 자식 broker가 다음 호출 때 `team_submit`과 같은 코드로 비웁니다. `broker.mjs`는 import해도 안전해졌습니다. (2) 사람의 `changed_files`도 AI와 같은 워크트리 대조를 거칩니다(설계 §7). 바뀌지 않은 파일을 바꿨다고 하면 잡힙니다. (3) 무조건 사람을 기다리는 것은 사용자가 직접 한 `tm_assign`뿐입니다. shape나 setgoal 모델이 적은 `assignee`는 `interactive`가 켜져 있을 때만 기다리고, 아니면 AI에게 가면서 노드에 `auto_decided_pin`을 남기며 `tm_inbox`의 `decided`에 뜹니다. (4) `view.mjs`에 TICKET 뷰(STORY 카드를 상태 열로, TASK 자식·담당자·사람 대기 표시)와 RESOURCE 뷰(TaskLeader → Team → worker: pid·생존·재시작·비용·턴)가 생겼습니다. 페이지 탭이나 `--once --view tickets|resources`로 봅니다. idol-pm-4에서 나온 것: `accept`의 90% 하한(0.24.0)이 판정자가 막지 않는 약점에 깎은 점수까지 거절로 바꿨습니다. P2·P5는 gap 없이 88%로 수용됐는데 처음부터 다시 빌드됐습니다. 이제 하한 미달 accept는 gap을 명시했을 때만 떨어집니다(`gate:goal`은 그대로). 그리고 `.harness-tasks` 파일 8개가 P1의 제품 브랜치에 커밋됐습니다. 패키지 cwd는 `/private/var/...`, tasks 루트는 `/var/...`로 들어와 `harnessPathsUnder`가 한 트리의 두 표기를 비교했습니다. 이제 양쪽을 realpath로 봅니다.
 - v0.28.0 — **사람이 내리는 결정을, 노드로**: 0.26.0의 `investigate`는 어떤 출처도 답하지 못한 것을 이름 붙여 내놓지만, 그것들은 전부 문서의 열린 질문으로 들어갔고 런은 **아무에게도 묻지 않은 채** 끝났습니다 — 신중해 보이지만 실은 기본값으로 결정한 것입니다. 이제 unknown은 `options[]`를 답니다: 후보 2~4개, 권고안이 첫 번째, 각각 그것을 고르면 따라오는 결과와 함께. 후보를 나열하는 것은 여전히 조사이지 결정이 아닙니다 — 결정권자에게 필요한 건 백지가 아니라 선택지입니다. `interactive: true`로 연 런(`tm_open`/`team_open` 인자, 또는 `.claude/team.json`의 `interactive`)에서는 그런 unknown이 `investigate`와 `draft` 사이에 `ask` 카드를 엽니다. `draft`의 데이터 엣지가 그리로 옮겨가므로 **선택이 존재하기 전에는 아무것도 쓰이지 않습니다.** 새 기계장치는 필요 없었습니다 — 카드는 0.27.3이 들여온 사람 핀을 달고 태어나 `waiting_human`에 멈추고, `tm_inbox`가 질문·선택지·조사가 지목한 담당자와 함께 목록에 올리며, `tm_submit({task_id, key, payload: {decisions}})`가 답합니다. 부수적으로 둘을 고쳤습니다: `tm_submit({key})`가 노드를 `authorStage`로 계산해서 kind의 체인에 없는 스테이지는 애초에 지목할 수 없었고(이제 실제로 기다리고 있는 노드를 지목합니다), `taskTicketState`가 WAITING_HUMAN을 이름 붙은 스테이지에서만 읽어 `ask` 카드가 떠 있는데 READY로 보였습니다. 답은 열린 질문이 아니라 **확정된 규칙**으로 `draft`에 닿습니다. 끄면(기본값입니다 — 아무도 안 보는 런도 끝나야 하니까) 질문은 `run.unasked`에 기록되어 보고서가 무엇이 기본값으로 결정됐는지 보일 수 있습니다. 테스트 13개 추가.
 - v0.27.4 — **findings 경로는 배정되는 것이지 고르는 것이 아니다**: 0.26.0은 각 `investigate`에게 "형제가 서로 덮어쓰지 않도록 이 서브골 이름을 따서" findings 파일명을 지으라고 했습니다 — 규약이고, 같은 지시를 받은 형제 다섯이 `U1-investigate.md`, `U3-1-investigate-notes.md`, `investigate-U4-findings.md`, `investigate-U2-findings.md`, `decisions/investigate_U5_1-findings.md`를 냈으며, 하나가 재시도하면서 새 이름을 골라 고아까지 남겼습니다. 이제 경로는 파생됩니다: 서브골 자신의 출력 경로에서 확장자를 떼고 `-findings.md`를 붙입니다. `files[]`에는 넣지 않습니다 — 0.26.4가 그것을 "서브골이 쓰는 경로 하나"로 엄격히 좁히고 스펙 검사로 다른 경로를 거부하게 했습니다 — 대신 `reduce`에게 그 파생 이름은 예상된 것이고 **다른 이름의 findings 파일이야말로 잡아야 할 미선언 사례**라고 알려줍니다. D1의 후반부와 D3의 일부(재시도가 같은 산출물에 두 번째 이름을 붙이지 못함)가 이것으로 닫힙니다. 테스트 1개 추가.
 - v0.27.3 — **사람이 카드를 가져간다**: 보드의 모든 카드는 지금까지 모델만 할 수 있는 일이었습니다. `tm_assign({task_id, key, to: "human", who})`가 STORY(패키지)나 TASK(서브골 하나)를 사람에게 붙이고 — dispatch 전이든 후든 — `to: "auto"`가 되돌립니다. 같은 핀을 shape의 패키지에 `assignee: "human"`으로 적을 수도 있습니다. 사람에게 가는 것은 쓰는 단계(implement / draft / cases)뿐이고, test·review·gate는 자동으로 남아 누구도 자기 일을 스스로 판정하지 않습니다. 핀된 노드는 드라이버로 가지 않고 새 노드 상태 `waiting_human`에서 멈춥니다 — 재시도 예산도 컴퓨트도 쓰지 않고, `dispatchSettled`는 그것을 죽은 것으로 읽지 않으며, 티켓은 `WAITING_HUMAN`을 보입니다. 헤드리스 드라이버는 사람에게 닿을 수 없으므로 메인 세션이 `tm_inbox`(key, 제목, acceptance, briefing 경로, 담당자, 대기 시작)로 일을 찾고 `tm_submit({task_id, key, payload})`로 제출합니다. 그 뒤 흐름은 드라이버가 제출한 것과 똑같이 이어지고, gate가 거절하면 다음 시도는 모델이 아니라 같은 사람에게 다시 열립니다. 제출 후 드라이버는 그 자식 런을 돌리는 드라이버가 없을 때만 재기동합니다. 아직 아닌 것: 질문(`ask`), `gate:human`, 롤백. 테스트 29개 추가.
@@ -522,7 +527,7 @@ modes" 절이 두 항목을 모두 보여줍니다.
 `team_open` 경로에서는 `team_status`의 `config_notes`(노트가 하나라도 있을 때만 나타나며,
 `resolveTeamOptions`의 노트를 런에 영구 저장해둔 사본입니다 — 실시간 재검사가 아닙니다).
 스키마는 [`mcp/teamconfig.mjs`](mcp/teamconfig.mjs)의
-`TEAM_DEFAULTS`/`CHECK`입니다 — 10개 키 중 실제로 동작에 반영되는 건 일곱이고, 각 키가
+`TEAM_DEFAULTS`/`CHECK`입니다 — 12개 키 중 실제로 동작에 반영되는 건 아홉이고, 각 키가
 `tm_open`, `team_open`, 또는 둘 다에 닿는지 보여주는 리더 열이 추가되었습니다. `team_open`의
 `inputSchema`는 애초에 `TEAM_DEFAULTS` 이름 중 일부만 인자로 받습니다 — 인자로조차 받지 않는
 키는 `resolveTeamOptions`가 무엇을 계산해내든 그 경로에서는 `team.json`으로 닿을 수 없습니다.
@@ -534,9 +539,12 @@ modes" 절이 두 항목을 모두 보여줍니다.
 | `goal_threshold` | `90` | 예 | `tm_open` + `team_open` | goal-gate 바닥값. `tm_open`: 매니저 자신의 바닥값, 그리고 — 커밋 `f765c03` 이후 — 모든 자식 런이 자기 goal gate를 여는 바닥값(`child_opts.goal_threshold`); 그 커밋 전에는 프로젝트가 고정한 값이 모든 패키지에서 조용히 버려져 `team.json`이 뭐라 하든 모든 자식은 하드코딩된 90으로 돌았습니다. `team_open`: 런 자신의 goal-gate 바닥값(`run.goal_threshold`) — 같은 부류의 버그를, 같은 방식으로, 한 라운드 늦게 고쳤습니다. |
 | `max_retries` | `2` | 예 | `tm_open` + `team_open` | 재시도 예산. `tm_open`: 매니저 자신의 subgoal/패키지 예산, 그리고 — `f765c03` 이후 — 모든 자식 런이 여는 예산(`child_opts.max_retries`), `goal_threshold`와 같은 `f765c03` 이전 문제를 겪었습니다. `team_open`: 런 자신의 재시도 예산(`run.max_retries`) — `TEAM_DEFAULTS.max_retries`(2)가 이미 `createRun`의 기본값과 같았기 때문에, `team.json`이 없는 프로젝트는 이 배선으로 동작이 전혀 바뀌지 않았습니다. |
 | `driver_restarts` | `2` | 예 | `tm_open`만 | 죽은 패키지 또는 size-S 드라이버가 같은 run_id로 몇 번 재기동되는지 — 그 다음엔 dispatch가 `blocked`로 접힙니다. `team_open`의 인자가 아닙니다 — `team_open`은 드라이버 재기동 개념이 없는 단일 그래프 런을 열 뿐이라, `team.json` 고정값이 그 경로에는 닿을 수 없습니다. |
+| `stall_minutes` | `20` | 예 | `tm_open`만 | 드라이버가 살아있어도(pid가 `process.kill(pid,0)`에 응답해도) 진행이 없을 수 있습니다 — 멈춰버린 모델, 에러 없는 provider hang, 끝나지 않는 tool call. `serviceStalledDriver`(`taskmanager.mjs`)는 이 값을 `daemon.mjs`의 `waitForProgress`가 그 자식에 대해 이미 지켜보는 것과 같은 파일들(브로커 런 파일과 그 ledger)의 mtime에 대조해 읽습니다. 이만큼 idle이면 dispatch를 한 번 플래그하고(`stalled_since`, `child_driver_stalled`로 기록, 진행이 재개되는 순간 `child_driver_progress_resumed`로 해제), 3배만큼 idle이면 드라이버를 죽이고(`child_driver_killed`, `reason: 'stalled'`) 재기동은 기존 dead-driver 경로(`serviceDeadDriver`)에 맡깁니다 — 이 경로는 크래시 때와 똑같이 재시작 예산을 소비합니다. 첫 번째 임계값은 그 자체로는 절대 죽이지 않습니다 — idol-pm-4는 런 도중 정당하게 16분짜리 tool-call 간격을 가진 적이 있습니다. `0`이면 이 검사 전체가 꺼집니다. `team_open`의 인자가 아닙니다 — `driver_restarts`와 같은 이유로 `team_open`에는 드라이버 재기동 개념 자체가 없습니다. |
+| `restart_period_minutes` | `0` | 예 | `tm_open`만 | `driver_restarts`는 기본적으로 평평한, 영원한 카운터입니다(여기 `0` — 오늘의 동작: 이 런이 겪은 모든 죽음이 예산에 반영됩니다). `0`보다 크면 분 단위의 OTP 스타일 슬라이딩 윈도우가 됩니다 — `serviceDeadDriver`는 자신의 타임스탬프(`driver.restarts[].at`, 모든 죽음마다 이미 기록됨)가 최근 `restart_period_minutes` 안에 드는 재기동만 셉니다. 그래서 매주 한 시간에 한 번씩 죽는 패키지가 "연속으로 몇 번 죽었는가"를 재려고 만든 예산을 결코 소진하지 않습니다. `driver_restarts`와 같은 이유로 `team_open`의 인자가 아닙니다. |
 | `docs_dir` | `.teams_output/team` | 예 | `tm_open`만 | `tm_docs`/`tickets.mjs`가 phase 문서 트리(`INDEX.md` 등)를 렌더링하는 위치. `team_open`의 인자도 개념도 아닙니다 — `team_open`은 phase 문서 트리를 쓰지 않습니다. |
 | `max_parallel_teams` | `2` | 예 | `tm_open`만 | `tm_next`(`taskmanager.mjs`의 `toolNext`, ~2256/2268행)가 한 번에 여는 develop STORY dispatch 수를 제한합니다 — phase-Team 패키지(PLAN/QA/audit)는 예외입니다. `2`는 측정값이 아니라 잠정 기본값입니다 — `teamconfig.mjs`의 `PROVISIONAL_MAX_PARALLEL_TEAMS` 참고. `team_open`의 인자가 아닙니다. |
 | `roles` | `{planning:true, qa:true}` | 예 | `tm_open`만 | 0.17.0부터 둘 다 기본 ON. `planning`은 `shape` 앞에 PLAN phase-Team(draft → revise → gate)을, 통합 뒤에 planning-audit phase-Team을 엽니다. `qa`는 `integrate`와 `gate:goal` 사이에 QA phase-Team(cases → execute → gate)을 엽니다. size L 태스크만 이를 거칩니다 — size S 태스크는 단일 graph 런에 위임하며 둘 다 건너뜁니다(알려진 공백, v0.17.0 참고). `team_open`의 인자가 아닙니다. |
+| `interactive` | `false` | 예 | `tm_open` + `team_open` | 이 런이 사람을 기다리며 멈출지, 아니면 기본값으로 결정하고 무엇을 물었을지 기록만 할지. 두 가지를 통제합니다: `investigate`의 `ask` 카드(0.28.0, `graph.mjs`의 `openAsk`), 그리고 — 0.27.3 리뷰 이후로는 — MODEL이 직접 쓴 `assignee` 핀(shape 패키지 자신의 필드 — `tm_open`에서는 `subgoal_assignee`로 자식 런에 전달됩니다 — 또는 setgoal subgoal 자신의 필드, 양쪽 경로 모두). `true`면 핀이 걸린 노드가 `waiting_human`에 멈춥니다; `false`(기본값)면 대신 자동으로 결정됩니다 — 노드는 아무것도 쓰이지 않은 것처럼 AI에게 그대로 디스패치되고, 걸렸을 핀은 노드에 기록되어(`auto_decided_pin`) `tm_inbox`의 `decided` 섹션에 나타납니다. 사람이 직접 부른 `tm_assign` 핀은 출처가 다르고(`{by: 'user'}`로 표시, `graph.mjs`의 `applyHumanPin`) 이 키와 무관하게 항상 멈춥니다 — 사람은 정의상 이미 그 자리에 있으니까요. |
 | `max_depth` | `2` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — 선언되고 검증만 될 뿐 아무것도 강제하지 않습니다. 자식 런이 스스로 다시 쪼갤 때의 깊이 캡이 될 자리입니다 — `docs/plans/2026-09-21-teams-server-owns-the-loop.md` §3 참고. `team_open`의 인자가 아닙니다. |
 | `qa_rounds` | `2` | 아니요 | `tm_open`만 | 기록만 되고 아직 무동작 — 어디서도 읽지 않습니다. `team_open`의 인자가 아닙니다. |
 
@@ -555,18 +563,34 @@ modes" 절이 두 항목을 모두 보여줍니다.
 그려줍니다 — 이 도구들이 이미 읽는 것과 같은 `task.json`과 자식 런 파일에서 만들어집니다.
 
 ```
-node teams/scripts/view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--once]
+node teams/scripts/view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--once] [--view pipeline|tickets|resources]
 ```
 
 `--once` 없이 실행하면 `127.0.0.1`에 로컬 HTTP 서버를 띄우고 URL을 출력합니다: 열어보면
-~3초마다 폴링하는 실시간 화면을 볼 수 있습니다 — request, size/flow/state, 지금까지의
-비용과 턴 수, 매니저 파이프라인(size → shape → critique → 디스패치된 패키지마다 카드 하나
-→ integrate → gate:goal → report)이며 각 패키지 카드는 펼치면 그 자식 런의 노드 체인(그리고
-패키지 워크트리 안에 중첩된 태스크가 있다면 재귀적으로 그것까지)을 보여줍니다. 여기에
-원장 이벤트 최근 50개도 함께 표시됩니다. `--tasks-dir`은 기본으로 `tasksRoot()`
-(`HARNESS_TASKS_DIR`, 없으면 `~/.harness/tasks`)를 쓰고, `--task`를 생략했는데 디스크에
-태스크가 여러 개 있으면 인덱스 화면을 대신 보여줍니다. `--once`는 서버 없이 같은 모델을
-평문 텍스트 트리로 출력합니다 — 터미널이나 CI 로그용입니다.
+~3초마다 폴링하는 실시간 화면을 볼 수 있고, 뷰가 세 개입니다 (탭으로 즉시 전환되며, 추가
+요청 없이 같은 폴링 결과를 그대로 씁니다):
+
+- **pipeline**(기본값) — request, size/flow/state, 지금까지의 비용과 턴 수, 매니저 파이프라인
+  (size → shape → critique → 디스패치된 패키지마다 카드 하나 → integrate → gate:goal →
+  report)이며 각 패키지 카드는 펼치면 그 자식 런의 노드 체인(그리고 패키지 워크트리 안에
+  중첩된 태스크가 있다면 재귀적으로 그것까지)을 보여줍니다. 원장 이벤트 최근 50개도 함께
+  표시됩니다.
+- **tickets** — 그 태스크의 JIRA식 보드입니다: EPIC 헤더(키, 제목, 티켓 상태, phase —
+  `tm_board`/`tm_ticket`과 같은 어휘), 그리고 패키지마다 STORY 카드 하나씩을 상태 컬럼으로
+  묶어 보여줍니다(빈 컬럼은 생략). 카드마다 키, role, reporter/filed-by, `implements[]`/
+  `enables[]`, deps, 시도 횟수, 그 TASK 자식들(`E-xxxxxxxx/Pn/Un`)의 상태, 그리고 사람이
+  잡고 있거나 핀이 걸린 카드에는 뚜렷한 표시가 붙습니다.
+- **resources** — 지금 실제로 배정된 팀 계층입니다: TaskLeader(그 태스크의 daemon — pid,
+  생존 여부, 시작 시각) → STORY마다 Team 하나(워크트리, 브랜치, TeamLeader = 그 자식 런의
+  driver — pid, 생존 여부, 재시작 횟수, 비용/턴, `waiting_capacity`가 있으면 그것까지) →
+  TASK 노드마다 worker(stage, executor/model, 상태, 소요 시간, 사람이 잡고 있다면 누구인지),
+  패키지 워크트리 안에 중첩된 태스크는 자기 자신의 하위 트리로 나타납니다.
+
+`--tasks-dir`은 기본으로 `tasksRoot()`(`HARNESS_TASKS_DIR`, 없으면 `~/.harness/tasks`)를
+쓰고, `--task`를 생략했는데 디스크에 태스크가 여러 개 있으면 인덱스 화면을 대신 보여줍니다.
+`--once`는 서버 없이 뷰 하나를 평문 텍스트 트리/보드로 출력합니다 — 터미널이나 CI 로그용이며,
+`--view`로 어느 것을 고를지 정합니다(기본 `pipeline`) — `tickets`/`resources`는 태스크 하나로
+좁혀지지 않으면 같은 태스크 인덱스로 대신합니다.
 
 ## 나머지 전부
 

@@ -162,12 +162,20 @@ sleep_until_reset() {  # "resets 11:50pm (Asia/Seoul)" -> sleep until then (+3 m
     if [ "$target" -le "$now" ] && [ $((now - target)) -le 3600 ]; then echo "$(date -u +%FT%TZ) limit hit; reset time already passed, resuming"; return 0; fi
     [ "$target" -le "$now" ] && target=$((target + 86400))
     echo "$(date -u +%FT%TZ) limit hit; sleeping until $(date -r $((target + 180)) '+%H:%M')"
-    sleep $((target + 180 - now))
+    # In one-minute steps against the wall clock: macOS does not count time asleep toward a
+    # single `sleep N`, and idol-pm4 (2026-09-23) resumed five hours after its 18:33 reset.
+    while [ "$(date +%s)" -lt $((target + 180)) ]; do sleep 60; done
   else
     echo "$(date -u +%FT%TZ) limit hit; no reset time parsed, sleeping 30 min"
-    sleep 1800
+    local wake=$(( $(date +%s) + 1800 ))
+    while [ "$(date +%s)" -lt "$wake" ]; do sleep 60; done
   fi
 }
+
+# Keep the Mac from idle-sleeping for exactly as long as this driver lives, and not a second
+# longer: idol-pm4 (2026-09-23) lost five hours to a sleeping laptop. `-w $$` ties the assertion to
+# this process, so a killed driver cannot leave the machine stuck awake.
+command -v caffeinate >/dev/null && caffeinate -i -w $$ &
 
 for job in "$@"; do
   read -r arm case label <<<"$job"
