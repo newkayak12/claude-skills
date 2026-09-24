@@ -14,7 +14,7 @@ import { node, pushChain, KINDS, saveRun } from '../mcp/graph.mjs';
 import {
   epicKey, storyKey, docPaths, latestBySubgoal, storyTicketState, epicTicketState,
   taskTicketState, epicPhase, storyTaskProgress, epicBoardRows, ticketSnapshot, storyLinks,
-  parseTicketKey, taskKey,
+  parseTicketKey, taskKey, storyBlockedReason, flowMetrics,
 } from '../mcp/tickets.mjs';
 
 const TASK_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -842,4 +842,153 @@ test('a board.jsonl diff over a planning/qa phase-Team package logs its transiti
   assert.equal(after['E-aaaaaaaa/QA'], 'BACKLOG'); // tracked (unmet dep on integrate:1), just unchanged - not merely absent
   const events = boardEvents(before, after);
   assert.deepEqual(events, [{ key: 'E-aaaaaaaa/PLAN', from: 'READY', to: 'IN_PROGRESS' }]);
+});
+
+// ---------- storyBlockedReason: "why is it waiting", not just "what state" ----------
+//
+// Kanban theory's own point - blocked is a flag orthogonal to state, not a fifth column. Every
+// row here pairs a fixture already proven against §4's own STORY_ROWS table above (same
+// dispatch/accept shapes) with the reason storyBlockedReason should name for it - null wherever
+// nothing is actually blocking the STORY (READY, IN_PROGRESS, IN_REVIEW, DONE, REJECTED,
+// CANCELLED, UNREACHABLE, and the transient BLOCKED-while-running window before a dead driver
+// has been serviced).
+const BLOCKED_REASON_ROWS = [
+  ['BACKLOG (unmet dep)', [dispatchNode('P1', { deps: ['dispatch:P0:1'] })], { reason: 'unmet_deps', node_ids: ['dispatch:P0:1'] }],
+  ['READY (deps satisfied)', [dispatchNode('P1')], null],
+  ['IN_PROGRESS (driver alive)', [dispatchNode('P1', { state: 'running', child: { driver: { pid: 1 } } })], null],
+  ['WAITING_CAPACITY', [dispatchNode('P1', { state: 'running', child: { waiting_capacity: { reason: 'usage limit', since: 1000 } } })], { reason: 'capacity' }],
+  ['BLOCKED while running (dead driver, not yet serviced)', [dispatchNode('P1', { state: 'running', child: { driver: { pid: 2 } } })], null],
+  ['BLOCKED, folded (worktree/merge failure - no driver_restarts)', [dispatchNode('P1', { state: 'failed', result: { stage_ok: false } })], null],
+  ['BLOCKED, folded (driver restart budget spent)', [dispatchNode('P1', { state: 'failed', result: { stage_ok: false, driver_restarts: [{ pid: 1 }, { pid: 1 }] } })], { reason: 'restart_exhausted', restarts: 2 }],
+  ['IN_REVIEW (accept pending)', [dispatchNode('P1', { state: 'done', result: {} }), acceptNode('P1')], null],
+  ['DONE', [dispatchNode('P1', { state: 'done', result: {} }), acceptNode('P1', { state: 'done', result: { accept: true, match_pct: 94 } })], null],
+  ['REJECTED', [dispatchNode('P1', { state: 'done', result: {} }), acceptNode('P1', { state: 'done', result: { accept: false } })], null],
+  ['CANCELLED', [dispatchNode('P1', { state: 'skipped' })], null],
+  ['UNREACHABLE', [dispatchNode('P1', { state: 'unreachable' })], null],
+];
+
+test('storyBlockedReason: names which of the four kinds of block holds a STORY, row by row - null wherever nothing does', () => {
+  for (const [label, nodes, expected] of BLOCKED_REASON_ROWS) {
+    const t = baseTask(nodes, { spec: { packages: [{ id: 'P1', title: 't' }] } });
+    const got = storyBlockedReason(t, 'P1');
+    if (expected === null) { assert.equal(got, null, label); continue; }
+    assert.equal(got.reason, expected.reason, label);
+    if (expected.node_ids) assert.deepEqual(got.node_ids, expected.node_ids, label);
+    if (expected.restarts != null) assert.equal(got.restarts, expected.restarts, label);
+  }
+});
+
+test('storyBlockedReason: a package with no dispatch node at all reads null (defensive, matches storyTicketState\'s own BACKLOG fallback)', () => {
+  const t = baseTask([], { spec: { packages: [{ id: 'P9', title: 't' }] } });
+  assert.equal(storyBlockedReason(t, 'P9'), null);
+});
+
+test('storyBlockedReason: WAITING_CAPACITY carries the same `since` serviceDeadDriver wrote, plus a derived non-negative elapsed_ms', () => {
+  const t = baseTask(
+    [dispatchNode('P1', { state: 'running', child: { waiting_capacity: { reason: 'usage limit', since: 1000 } } })],
+    { spec: { packages: [{ id: 'P1', title: 't' }] } },
+  );
+  const br = storyBlockedReason(t, 'P1');
+  assert.equal(br.reason, 'capacity');
+  assert.equal(br.since, 1000);
+  assert.ok(typeof br.elapsed_ms === 'number' && br.elapsed_ms >= 0);
+});
+
+// A dispatch whose child run is parked waiting_human looks, from the dispatch node alone,
+// exactly like a dead driver (storyTicketState's own comment above explains why) - the same
+// child-run read that resolves WAITING_HUMAN has to resolve storyBlockedReason's `human_wait`
+// too, including the waiting node's own `waiting_since`.
+test('storyBlockedReason: human_wait carries the child run\'s own waiting_since as `since`, plus elapsed_ms', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'tickets-blocked-human-'));
+  try {
+    const childRunId = 'child-blocked-human-1';
+    saveRun({
+      cwd, run_id: childRunId, spec: { subgoals: [{ id: 'U1', kind: 'subgoal', assignee: 'human' }] },
+      nodes: [node('implement:U1:1', 'implement', [], {
+        subgoal_id: 'U1', attempt: 1, state: 'waiting_human', waiting_since: 5000,
+        assignment: { executor: 'human', vendor: 'human', who: null },
+      })],
+    });
+    const t = baseTask(
+      [dispatchNode('P1', { state: 'running', child: { cwd, run_id: childRunId, driver: { pid: 999999 } } })],
+      { spec: { packages: [{ id: 'P1', title: 't' }] } },
+    );
+    const br = storyBlockedReason(t, 'P1');
+    assert.equal(br.reason, 'human_wait');
+    assert.equal(br.since, 5000);
+    assert.ok(typeof br.elapsed_ms === 'number' && br.elapsed_ms >= 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// ---------- flowMetrics: Kanban's other half, read off a synthetic board.jsonl ----------
+
+const EPIC = 'E-aaaaaaaa';
+
+test('flowMetrics: per-STORY cycle time (first IN_PROGRESS -> DONE) and lead time (first BACKLOG -> DONE), from known timestamps', () => {
+  const entries = [
+    { ts: 1000, key: `${EPIC}/P1`, from: null, to: 'BACKLOG' },
+    { ts: 2000, key: `${EPIC}/P1`, from: 'BACKLOG', to: 'READY' },
+    { ts: 3000, key: `${EPIC}/P1`, from: 'READY', to: 'IN_PROGRESS' },
+    { ts: 5000, key: `${EPIC}/P1`, from: 'IN_PROGRESS', to: 'IN_REVIEW' },
+    { ts: 6000, key: `${EPIC}/P1`, from: 'IN_REVIEW', to: 'DONE' },
+  ];
+  const fm = flowMetrics(baseTask([], { created_at: 500 }), entries, { now: 10000 });
+  assert.deepEqual(fm.cycle_time_ms.by_story, { [`${EPIC}/P1`]: 3000 }); // 6000 - 3000
+  assert.equal(fm.cycle_time_ms.mean, 3000);
+  assert.deepEqual(fm.lead_time_ms.by_story, { [`${EPIC}/P1`]: 5000 }); // 6000 - 1000
+  assert.equal(fm.lead_time_ms.mean, 5000);
+  assert.equal(fm.throughput.done, 1);
+  assert.equal(fm.wip, 0); // P1 is DONE - terminal, not WIP
+});
+
+test('flowMetrics: current WIP, mean Work Item Age of open items, and throughput/day - a second STORY still open', () => {
+  const done = [
+    { ts: 1000, key: `${EPIC}/P1`, from: null, to: 'BACKLOG' },
+    { ts: 3000, key: `${EPIC}/P1`, from: 'BACKLOG', to: 'IN_PROGRESS' },
+    { ts: 6000, key: `${EPIC}/P1`, from: 'IN_PROGRESS', to: 'DONE' },
+  ];
+  const open = [
+    { ts: 1500, key: `${EPIC}/P2`, from: null, to: 'BACKLOG' },
+    { ts: 2500, key: `${EPIC}/P2`, from: 'BACKLOG', to: 'READY' },
+    { ts: 4000, key: `${EPIC}/P2`, from: 'READY', to: 'IN_PROGRESS' },
+  ];
+  // An EPIC key and a TASK key in the same log must be ignored, not crash or count as a STORY.
+  const noise = [
+    { ts: 900, key: EPIC, from: null, to: 'READY' },
+    { ts: 4500, key: `${EPIC}/P2/U1`, from: null, to: 'IN_PROGRESS' },
+  ];
+  const fm = flowMetrics(baseTask([], { created_at: 500 }), [...done, ...open, ...noise], { now: 10000 });
+  assert.equal(fm.wip, 1); // only P2 (IN_PROGRESS) - P1 is DONE, terminal
+  assert.equal(fm.mean_work_item_age_ms, 6000); // now(10000) - P2's own first IN_PROGRESS (4000)
+  assert.equal(fm.throughput.done, 1);
+  const expectedElapsed = 10000 - 500; // task.created_at anchors the window, earlier than any board entry
+  assert.equal(fm.throughput.elapsed_ms, expectedElapsed);
+  assert.equal(fm.throughput.per_day, 1 / (expectedElapsed / 86400000));
+});
+
+test('flowMetrics: an empty board.jsonl reads a well-formed, all-null/zero result - never throws', () => {
+  const fm = flowMetrics(baseTask([], { created_at: 1000 }), [], { now: 2000 });
+  assert.deepEqual(fm, {
+    wip: 0,
+    // per_day is 0, not null: zero STORYs done over a real elapsed window is an honest rate,
+    // not an unmeasurable one - null is reserved for when the window itself is unknown (see the
+    // next test, task.created_at null and no board entries to fall back on).
+    throughput: { done: 0, elapsed_ms: 1000, per_day: 0 },
+    mean_work_item_age_ms: null,
+    cycle_time_ms: { mean: null, by_story: {} },
+    lead_time_ms: { mean: null, by_story: {} },
+  });
+});
+
+test('flowMetrics: a STORY that never logged an explicit BACKLOG line (deps already met at dispatch time) falls back to its first logged transition as "created"', () => {
+  const entries = [
+    { ts: 2000, key: `${EPIC}/P1`, from: null, to: 'READY' }, // no BACKLOG line at all
+    { ts: 3000, key: `${EPIC}/P1`, from: 'READY', to: 'IN_PROGRESS' },
+    { ts: 4000, key: `${EPIC}/P1`, from: 'IN_PROGRESS', to: 'DONE' },
+  ];
+  const fm = flowMetrics(baseTask([], { created_at: null }), entries, { now: 9000 });
+  assert.equal(fm.lead_time_ms.by_story[`${EPIC}/P1`], 2000); // 4000 - 2000 (first logged line, not a real BACKLOG)
+  assert.equal(fm.cycle_time_ms.by_story[`${EPIC}/P1`], 1000); // 4000 - 3000
 });

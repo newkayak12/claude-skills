@@ -407,6 +407,49 @@ export function storyLinks(task, pkgId) {
   };
 }
 
+// Kanban theory treats "blocked" as a flag orthogonal to a card's column, not a column of its
+// own - a STORY sitting in BACKLOG because a sibling dep has not cleared is a different fact
+// from a STORY sitting in BACKLOG because nobody has looked at it yet, and §4's ticket state
+// alone cannot say which. storyBlockedReason names the one fact storyTicketState's own branches
+// already computed and threw away: which of the four things actually holds this STORY back -
+// 'unmet_deps' (BACKLOG: the sibling dep ids themselves, straight off unmetDeps - the same
+// dependency read storyTicketState's own BACKLOG branch already makes), 'capacity'
+// (WAITING_CAPACITY: since/elapsed off the same dispatch.child.waiting_capacity storyTicketState
+// reads), 'human_wait' (WAITING_HUMAN: since/elapsed off the child run's own waiting_human node),
+// or 'restart_exhausted' (BLOCKED, once the driver's restart budget is actually spent and
+// foldChild has folded the dispatch 'failed' - taskmanager.mjs's foldChild only sets
+// result.driver_restarts on exactly that path, never on the transient "driver just died, still
+// being serviced" BLOCKED reading storyTicketState also returns while state is still 'running').
+// null everywhere else - a STORY that is READY/IN_PROGRESS/IN_REVIEW/DONE/... is not blocked on
+// anything this function names, and the transient BLOCKED-while-running window has no settled
+// reason yet either.
+export function storyBlockedReason(task, pkgId) {
+  const dispatch = latestBySubgoal(task, pkgId, 'dispatch');
+  if (!dispatch) return null;
+  if (dispatch.state === 'pending') {
+    const deps = unmetDeps(task, dispatch);
+    return deps.length ? { reason: 'unmet_deps', node_ids: deps } : null;
+  }
+  if (dispatch.state === 'running') {
+    if (dispatch.child && dispatch.child.waiting_capacity) {
+      const since = dispatch.child.waiting_capacity.since || null;
+      return { reason: 'capacity', since, elapsed_ms: since ? Date.now() - since : null };
+    }
+    const child = dispatch.child && dispatch.child.cwd && dispatch.child.run_id
+      ? loadRun(dispatch.child.cwd, dispatch.child.run_id) : null;
+    const waitingNode = child ? child.nodes.find((n) => n.state === 'waiting_human') : null;
+    if (waitingNode) {
+      const since = waitingNode.waiting_since || null;
+      return { reason: 'human_wait', since, elapsed_ms: since ? Date.now() - since : null };
+    }
+    return null; // IN_PROGRESS, or a dead driver not yet serviced - no settled reason yet
+  }
+  if (dispatch.state === 'failed' && dispatch.result && Array.isArray(dispatch.result.driver_restarts)) {
+    return { reason: 'restart_exhausted', restarts: dispatch.result.driver_restarts.length };
+  }
+  return null;
+}
+
 // A filed defect STORY (fileDefects, taskmanager.mjs - QA-found or tm_file) carries its own
 // reporter ('qa'/'you'/'planning-audit'); a phase-Team package (PLAN/QA/AUDIT) carries
 // p.phase but never p.reporter, and reported itself, not shape - falling through to p.phase
@@ -459,4 +502,87 @@ export function ticketSnapshot(task, opts = {}) {
     snap[storyKey(task.run_id, p.id)] = storyTicketState(task, String(p.id), opts);
   }
   return snap;
+}
+
+// ---------- flow metrics: Kanban's other half, read off board.jsonl's own history ----------
+//
+// Every state function above answers "what is this ticket RIGHT NOW" off task.nodes - the
+// engine's live graph. A STORY's cycle time, lead time, or a task's throughput are not facts
+// about right now; they are facts about WHEN a key crossed a line, and the only place that is
+// recorded is board.jsonl's own transition log (appendBoardTransitions, taskmanager.mjs -
+// {ts,key,from,to}, one line per state a key actually moved through). This module owns no
+// filesystem reads of its own (see this file's header) - boardEntries is whatever the caller
+// already read off <taskDir>/board.jsonl, in that exact shape; a fixture in a test is exactly as
+// valid an input as a real file's parsed lines.
+//
+// Only STORY keys are counted: parseTicketKey's own three-way split (pkgId set, subgoalId not)
+// is what already tells a STORY key apart from an EPIC key (neither set) or a TASK key (both
+// set, never logged to board.jsonl today) - reused here rather than a second regex over the
+// same key shape.
+const FLOW_TERMINAL_STATES = new Set(['DONE', 'REJECTED', 'CANCELLED', 'UNREACHABLE']);
+const FLOW_WIP_STATES = new Set(['IN_PROGRESS', 'IN_REVIEW', 'WAITING_HUMAN', 'WAITING_CAPACITY', 'BLOCKED']);
+
+function mean(values) {
+  return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+}
+
+// One run through board.jsonl's transitions for a single STORY key, oldest first: when it first
+// entered BACKLOG (falling back to its very first logged transition - a package whose deps were
+// already met at dispatch time never gets a BACKLOG line at all, so "created" is the honest
+// fallback), when it first entered IN_PROGRESS (work actually starting, §4's own first "moving"
+// state), when it first reached DONE, and what it reads as right now (the last line logged).
+function storyHistory(entries) {
+  const sorted = entries.slice().sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  return {
+    backlogAt: (sorted.find((e) => e.to === 'BACKLOG') || sorted[0]).ts,
+    inProgressAt: (sorted.find((e) => e.to === 'IN_PROGRESS') || {}).ts,
+    doneAt: (sorted.find((e) => e.to === 'DONE') || {}).ts,
+    current: sorted[sorted.length - 1].to,
+  };
+}
+
+// task.created_at anchors throughput's own elapsed window and a never-started open item's age
+// (opts.now defaults to Date.now(), overridable so a test can fix "now" instead of racing the
+// clock).
+export function flowMetrics(task, boardEntries, opts = {}) {
+  const now = opts.now || Date.now();
+  const byKey = new Map();
+  for (const e of boardEntries || []) {
+    if (!e || !e.key) continue;
+    const parsed = parseTicketKey(e.key);
+    if (!parsed || !parsed.pkgId || parsed.subgoalId) continue; // STORY keys only
+    if (!byKey.has(e.key)) byKey.set(e.key, []);
+    byKey.get(e.key).push(e);
+  }
+
+  const cycleByStory = {};
+  const leadByStory = {};
+  let doneCount = 0;
+  let wip = 0;
+  const openAges = [];
+  let earliestTs = task && task.created_at ? task.created_at : null;
+
+  for (const [key, entries] of byKey) {
+    const h = storyHistory(entries);
+    if (earliestTs == null || (h.backlogAt != null && h.backlogAt < earliestTs)) earliestTs = h.backlogAt;
+    if (h.inProgressAt != null && h.doneAt != null) cycleByStory[key] = h.doneAt - h.inProgressAt;
+    if (h.backlogAt != null && h.doneAt != null) leadByStory[key] = h.doneAt - h.backlogAt;
+    if (h.doneAt != null) doneCount += 1;
+    if (FLOW_WIP_STATES.has(h.current)) wip += 1;
+    if (!FLOW_TERMINAL_STATES.has(h.current)) {
+      const startedAt = h.inProgressAt != null ? h.inProgressAt : h.backlogAt;
+      if (startedAt != null) openAges.push(now - startedAt);
+    }
+  }
+
+  const elapsedMs = earliestTs != null ? Math.max(0, now - earliestTs) : null;
+  const perDay = elapsedMs != null && elapsedMs > 0 ? doneCount / (elapsedMs / 86400000) : null;
+
+  return {
+    wip,
+    throughput: { done: doneCount, elapsed_ms: elapsedMs, per_day: perDay },
+    mean_work_item_age_ms: mean(openAges),
+    cycle_time_ms: { mean: mean(Object.values(cycleByStory)), by_story: cycleByStory },
+    lead_time_ms: { mean: mean(Object.values(leadByStory)), by_story: leadByStory },
+  };
 }

@@ -1197,6 +1197,49 @@ test('does not re-promote participants the query already matched', async () => f
   );
 }));
 
+function seedSettlementChunk(root, chunk) {
+  write(join(root, 'notes', 'settlement.md'), '# 정산 정책\n\n정산은 일 단위로 처리한다.\n');
+  write(join(root, 'notes', 'shipping.md'), '# 배송\n\n배송 추적.\n');
+  write(join(root, '_knowledge', 'catalog.jsonl'), jsonl([
+    { id: 'settlement', path: 'notes/settlement.md', title: '정산 정책', user_terms: ['정산 마감 화면'], source_symbols: ['SettlementJob.close'] },
+    { id: 'shipping', path: 'notes/shipping.md', title: '배송' },
+  ]));
+  write(join(root, '_rag', 'chunks.jsonl'), jsonl([{ id: 'settlement#cutoff', note_id: 'settlement', text: '매일 23시에 확정하고 이후 수정은 익일 반영한다.', ...chunk }]));
+}
+
+test('lets a chunk be found by its parent note vocabulary and its own', async () => fixture(async (root) => {
+  // A chunk is a passage cut out of a note, and the words that name the note —
+  // the screen label, the job symbol — are rarely repeated inside the passage.
+  // Contextual BM25 puts that context back; the catalog already holds it.
+  seedSettlementChunk(root, { user_terms: ['야간 확정'] });
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+  for (const query of ['정산 마감 화면', 'SettlementJob.close', '야간 확정']) {
+    const found = await searchIndex(root, query, { limit: 5, group: 'none' });
+    const chunk = found.results.find((item) => item.id === 'settlement#cutoff');
+    assert.ok(chunk?.lexical_match, `${query}: ${found.results.map((item) => `${item.id}:${item.lexical_match}`).join(', ')}`);
+  }
+}));
+
+test('prepends a chunk context and names the parent note as its embedding title', async () => fixture(async (root) => {
+  const inputs = [];
+  const ollama = await rerankerStub((body) => {
+    inputs.push(...body.input);
+    return { status: 200, body: { embeddings: body.input.map(() => [1, 0, 0, 0]) } };
+  });
+  try {
+    seedSettlementChunk(root, { context: '정산 정책 중 일 마감 시각을 정한 부분이다.' });
+    await buildIndex(root, { provider: 'ollama', model: 'embeddinggemma', ollamaUrl: ollama.url });
+    const chunkInput = inputs.find((input) => input.includes('23시'));
+    assert.ok(chunkInput.startsWith('title: 정산 정책 | text: '), chunkInput);
+    assert.ok(chunkInput.indexOf('일 마감 시각') < chunkInput.indexOf('23시'), chunkInput);
+  } finally {
+    await ollama.close();
+  }
+  await buildIndex(root, { provider: 'hash', dimensions: 128 });
+  const lexical = await searchIndex(root, '마감 시각', { limit: 5, group: 'none' });
+  assert.ok(lexical.results.find((item) => item.id === 'settlement#cutoff')?.lexical_match);
+}));
+
 test('keeps one result per note so chunks do not crowd out sibling notes', async () => fixture(async (root) => {
   // A multi-note question needs its siblings in the top k; without grouping,
   // one heavily chunked note fills the slots with copies of itself.

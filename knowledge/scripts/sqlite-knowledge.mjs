@@ -257,6 +257,19 @@ function relationOf(record) {
   };
 }
 
+// The curated lookup vocabulary of a catalog or chunk record: what a person or
+// a program calls the thing, as opposed to what its body says.
+function vocabularyOf(record) {
+  return [
+    record.summary,
+    ...asStrings(record.tags),
+    ...asStrings(record.aliases),
+    ...asStrings(record.user_terms),
+    ...asStrings(record.source_symbols),
+    ...asStrings(record.entities),
+  ].filter(Boolean);
+}
+
 function collectKnowledge(root) {
   const documents = [];
   const catalogPath = artifactPath(root, 'catalog');
@@ -268,19 +281,14 @@ function collectKnowledge(root) {
   const nodes = readJsonl(nodesPath);
   const edges = readJsonl(edgesPath);
 
+  const catalogById = new Map();
   catalog.forEach((record, index) => {
     const id = String(record.id || '').trim();
     if (!id) throw new Error(`${catalogPath}:${index + 1}: missing id`);
+    catalogById.set(id, record);
     const notePath = String(record.path || '').trim();
     const body = safeRead(root, notePath);
-    const metadataText = [
-      record.summary,
-      ...asStrings(record.tags),
-      ...asStrings(record.aliases),
-      ...asStrings(record.user_terms),
-      ...asStrings(record.source_symbols),
-      ...asStrings(record.entities),
-    ].filter(Boolean).join('\n');
+    const metadataText = vocabularyOf(record).join('\n');
     documents.push(normalizeDocument({
       kind: 'note',
       id,
@@ -305,15 +313,31 @@ function collectKnowledge(root) {
       throw new Error(`${chunksPath}:${index + 1}: missing text`);
     }
     const metadata = record.metadata && typeof record.metadata === 'object' ? record.metadata : {};
+    // A chunk is a passage cut out of a note, and the words that name the note —
+    // its title, screen label, job symbol — are rarely repeated inside it.
+    // Contextual retrieval puts that context back before indexing. The catalog
+    // already holds it, so the chunk inherits its parent's vocabulary into the
+    // curated-terms column, keeps its own, and an authored `context` sentence
+    // (see rag-corpus-builder) is prepended to the text that is matched and
+    // embedded. The parent title names the chunk when it has none of its own.
+    const noteId = record.note_id ?? metadata.note_id;
+    const parent = noteId ? catalogById.get(String(noteId)) : null;
+    const context = String(record.context ?? metadata.context ?? '').trim();
+    const passage = [context, text].filter(Boolean).join('\n\n');
+    const terms = [...new Set([
+      ...vocabularyOf({ ...metadata, ...record }),
+      ...(parent ? [parent.title, ...vocabularyOf(parent)] : []),
+    ].filter(Boolean))].join('\n');
     documents.push(normalizeDocument({
       kind: 'chunk',
       id,
-      noteId: record.note_id ?? metadata.note_id,
-      path: record.path ?? metadata.path,
-      title: record.title,
+      noteId,
+      path: record.path ?? metadata.path ?? parent?.path,
+      title: record.title || parent?.title,
       section: record.section ?? metadata.section,
-      text,
-      body: text,
+      text: passage,
+      terms,
+      body: passage,
       sourceRef: record.source_ref ?? metadata.source_ref,
       domain: record.domain ?? metadata.domain,
       metadata: record,

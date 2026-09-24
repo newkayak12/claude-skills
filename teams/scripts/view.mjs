@@ -24,25 +24,32 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tasksRoot } from '../mcp/taskmanager.mjs';
 import { collectTask, listTasks } from './lib/view-collect.mjs';
-import { renderText, renderIndexText } from './lib/view-render-text.mjs';
+import { renderText, renderIndexText, renderTicketsText, renderResourcesText } from './lib/view-render-text.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
+// --view picks which of the three renderers --once prints for a single task; the HTML page (the
+// non---once path) always ships the full model and lets the browser switch between all three
+// with no extra request - see view-page.html's own view-tabs. Default 'pipeline': the surface
+// this file has always shown, unchanged for anyone not passing the flag.
+const VIEWS = { pipeline: renderText, tickets: renderTicketsText, resources: renderResourcesText };
+
 function parseArgs(argv) {
-  const a = { port: 0 };
+  const a = { port: 0, view: 'pipeline' };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--tasks-dir') a.tasksDir = argv[++i];
     else if (arg === '--task') a.task = argv[++i];
     else if (arg === '--port') a.port = Number(argv[++i]) || 0;
     else if (arg === '--once') a.once = true;
+    else if (arg === '--view') a.view = argv[++i];
     else if (arg === '--help' || arg === '-h') a.help = true;
   }
   return a;
 }
 
 function usage() {
-  return 'usage: node view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--once]\n';
+  return 'usage: node view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--once] [--view pipeline|tickets|resources]\n';
 }
 
 // ---------- HTML page (inline CSS/JS, no CDN; polls /state.json) ----------
@@ -85,18 +92,27 @@ function startServer(tasksDir, taskId, port) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) { process.stdout.write(usage()); return; }
+  const render = VIEWS[args.view];
+  if (!render) {
+    process.stderr.write(`unknown --view '${args.view}' (expected one of: ${Object.keys(VIEWS).join(', ')})\n`);
+    process.exitCode = 1;
+    return;
+  }
   const tasksDir = args.tasksDir ? args.tasksDir : tasksRoot();
 
   if (args.once) {
     if (args.task) {
-      process.stdout.write(renderText(collectTask(tasksDir, args.task)));
+      process.stdout.write(render(collectTask(tasksDir, args.task)));
       return;
     }
     const rows = listTasks(tasksDir);
     if (rows.length === 1) {
-      process.stdout.write(renderText(collectTask(tasksDir, rows[0].task_id)));
+      process.stdout.write(render(collectTask(tasksDir, rows[0].task_id)));
       return;
     }
+    // tickets/resources need one specific task to draw a board/tree for - an index of several
+    // tasks falls back to the same plain task list every --view does, rather than a board with
+    // nothing on it.
     process.stdout.write(renderIndexText(rows, tasksDir));
     return;
   }
