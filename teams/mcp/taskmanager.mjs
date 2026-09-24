@@ -2230,7 +2230,13 @@ export function prepareIntegration(task, n) {
     return;
   }
   const merged = repair ? [{ package: repair.package, branch: repair.branch, commit: repair.commit }] : [];
-  const ordered = dependencyOrder((task.spec.packages || []).filter((p) => !p.repair));
+  // A package whose dispatch was permanently skipped (§B.1: budget/timebox exhausted before it
+  // ever got a driver) never has a delivered branch and never will - unlike an ordinary pending
+  // retry, which this integrate would simply wait for. Read its LATEST attempt, not "any": a
+  // package that was skipped once and later retried (not today's budget path, but a state this
+  // general check should not misread) has a real delivered branch by its later attempt.
+  const skippedForBudget = (id) => { const d = latestBySubgoal(task, String(id), 'dispatch'); return !!d && d.state === 'skipped'; };
+  const ordered = dependencyOrder((task.spec.packages || []).filter((p) => !p.repair && !skippedForBudget(p.id)));
   for (const p of ordered) {
     const branch = deliveredBranch(task, p.id);
     if (!branch) {
@@ -2834,6 +2840,10 @@ const TOOLS = [
         interactive: { type: 'boolean', description: 'default false, also settable in .claude/team.json. Passed to every child run. When a planning subgoal\'s investigate stage comes back with a decision it could not settle from any source but CAN name candidates for, true opens an `ask` card between investigate and draft and parks that run in waiting_human until a person picks - tm_inbox lists it (with its questions and options), tm_submit({key, payload:{decisions}}) answers it. false decides by default and records the questions on the run instead, so the report can show what nobody was asked.' },
         goal_threshold: { type: 'integer', description: 'default 90: the manager\'s own goal gate must report match_pct at or above this to accept, and it is passed through to every child run as its own goal_threshold. A gate that says accept with 40% match is reporting a partial result as a pass. 0 accepts on the verdict alone.' },
         goal_judges: { type: 'integer', description: 'default 1: independent judges on EVERY child run\'s own goal gate (each package\'s dispatch, and the one run a size-S task opens). >1 opens that many sibling gate nodes per round, routed to different identities where possible, and accepts only if every judge accepts at or above goal_threshold - the same mechanism team_open documents (default 2 there). The default stays 1 here, matching every run this manager has ever opened, so an existing project sees no change in judge count or cost unless it asks for more. This is the child run\'s own gate, not the manager\'s own top-level gate:goal, which is a separate, single-judge mechanism unaffected by this option.' },
+        budget_usd: { type: ['number', 'null'], description: 'default null (unlimited), also settable in .claude/team.json. Spend is summed from every driver\'s own stream log under this task (drivers/*.stream.jsonl result events\' total_cost_usd) each daemon tick. At 80% of this a warning is recorded once (tm_status shows it); at 100% no NEW package is dispatched - a package already running finishes - and once nothing is left running, a fresh integrate opens over just what accepted, naming the rest "not done" in the report rather than dropping them silently. Whichever of budget_usd/timebox_minutes is closer to its own limit decides; either alone is a real stop.' },
+        timebox_minutes: { type: ['number', 'null'], description: 'default null (unlimited), also settable in .claude/team.json. Minutes since tm_open, the same stop condition budget_usd is, on the same clock - see its own description for exactly what 80% and 100% do.' },
+        requests: { type: 'array', items: { type: 'string' }, description: 'A backlog instead of one request: several EPIC-level items, priority = array order (first is highest). shape treats each as its own story set; with budget_usd/timebox_minutes in play, the lowest-priority items still unshaped or undispatched when the stop trips are exactly what the report names "Next backlog". Mutually exclusive with `request` - send one or the other, never both.' },
+        context_from: { type: 'string', description: 'A prior task_id (or its ticket key). Its retro.json - the Retrospective and Next backlog a finished task\'s report stage writes - is read and folded into this task\'s own context: what failed and why, retries, defects left, and any unaccepted packages or unresolved questions the prior task ran out of budget/timebox to reach. The prior task\'s own Next backlog is NOT auto-added to `requests` - naming it here is a decision this task\'s own request should still make in its own words.' },
       },
       required: ['request', 'cwd'],
     },
@@ -3562,11 +3572,130 @@ function toolNextSRun(task) {
   return out;
 }
 
+// ---------- budget / timebox (the Sprint's missing box - no prior stop condition bounded
+// either cost or time; a task ran until its graph naturally finished or someone intervened) ----
+
+// Every driver this task has ever spawned writes its own `claude -p --output-format
+// stream-json` NDJSON to <taskDir>/drivers/<label>[.restartN].stream.jsonl (spawnChildDriver) -
+// the SAME format judge()'s own lastResultText (daemon.mjs) already reads, one file per package
+// (and per restart - a respawned driver is a fresh process with its own bill, not a
+// continuation of the dead one's) instead of one inline call. total_cost_usd lives on the
+// stream's own closing `result` event, the same field the CLI reports at the end of any
+// session; a stream with more than one (a resumed conversation) is summed at its LAST one, not
+// added twice, since total_cost_usd is already cumulative for that one process's lifetime.
+function driverSpend(logPath) {
+  let text;
+  try { text = readFileSync(logPath, 'utf8'); } catch { return 0; }
+  let cost = 0;
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    let e;
+    try { e = JSON.parse(line); } catch { continue; }
+    if (e && e.type === 'result' && Number.isFinite(e.total_cost_usd)) cost = e.total_cost_usd;
+  }
+  return cost;
+}
+
+// The task's total spend across every driver it has ever spawned - a size-L task's package
+// drivers AND a size-S task's own single s_run driver both write under the same drivers/
+// directory (spawnChildDriver's nodeIdLabel is "S" for the latter), so one glob covers both.
+export function taskSpend(task) {
+  const dir = join(taskDir(task.run_id), 'drivers');
+  let files;
+  try { files = readdirSync(dir); } catch { return 0; }
+  return files.filter((f) => f.endsWith('.stream.jsonl')).reduce((sum, f) => sum + driverSpend(join(dir, f)), 0);
+}
+
+export function taskElapsedMinutes(task) {
+  return (Date.now() - (task.created_at || Date.now())) / 60000;
+}
+
+// {pct, over, warn, spend, elapsed_minutes}. Neither budget_usd nor timebox_minutes set:
+// unlimited, today's behaviour exactly (pct 0, never over). Either set: pct is the WORSE
+// (larger) of the two fractions spent, since a dollar figure and a clock both cap the same run
+// and either alone is a real stop condition - not "both must be exhausted". A limit of exactly
+// 0 with any spend/elapsed at all reads as already over (Infinity), rather than a division that
+// hides a misconfigured "stop immediately" as 0/0.
+export function budgetStatus(task) {
+  const opts = (task.team && task.team.opts) || {};
+  const budget = Number.isFinite(opts.budget_usd) ? opts.budget_usd : null;
+  const timebox = Number.isFinite(opts.timebox_minutes) ? opts.timebox_minutes : null;
+  const spend = (budget != null) ? taskSpend(task) : 0;
+  const elapsed = taskElapsedMinutes(task);
+  if (budget == null && timebox == null) return { pct: 0, over: false, warn: false, spend: 0, elapsed_minutes: elapsed };
+  const frac = (used, limit) => (limit == null ? 0 : (limit > 0 ? used / limit : (used > 0 ? Infinity : 0)));
+  const pct = Math.max(frac(spend, budget), frac(elapsed, timebox));
+  return {
+    pct, over: pct >= 1, warn: pct >= 0.8, spend, elapsed_minutes: elapsed,
+    ...(budget != null ? { budget_usd: budget } : {}), ...(timebox != null ? { timebox_minutes: timebox } : {}),
+  };
+}
+
+// Called every daemon tick (daemon.mjs's stepOnceInner) and by tm_next's own toolNext - the same
+// two call sites advanceDispatches/autoRepair/autoRetryPackages/autoReshape already share, so a
+// hand-driven test and the daemon can never disagree about when the stop trips. Records the 80%
+// warning once (task.budget_warned); at 100% sets task.budget_stopped once, which
+// advanceDispatches itself checks at its own top to refuse opening another package - checked
+// there, not duplicated here, the same way every other "is this allowed" question in this file
+// lives at its one call site. "Finishes in-flight" is exactly what NOT killing a running dispatch
+// means: this function only ever settles a package whose dispatch node is still 'pending',
+// meaning no driver was ever spawned for it. Once nothing is left running, the pending packages
+// still blocking the current integrate are marked 'skipped' (an established terminal state -
+// see VERDICT_SCHEMA's own state enum) and a fresh integrate opens over just the accepted set,
+// reusing reintegrateBehind - the exact mechanism a filed defect or a repair already opens a
+// fresh integrate with, just handed the accepted subset instead of the full one.
+export function enforceBudget(task) {
+  const status = budgetStatus(task);
+  let progressed = false;
+  if (status.warn && !task.budget_warned) {
+    task.budget_warned = true;
+    record(task, { event: 'budget_warning', task_id: task.run_id, pct: Math.round(status.pct * 100), spend: status.spend, elapsed_minutes: Math.round(status.elapsed_minutes) });
+    progressed = true;
+  }
+  if (!status.over) return progressed;
+  if (!task.budget_stopped) {
+    task.budget_stopped = {
+      at: Date.now(), spend: status.spend, elapsed_minutes: Math.round(status.elapsed_minutes),
+      budget_usd: status.budget_usd == null ? null : status.budget_usd,
+      timebox_minutes: status.timebox_minutes == null ? null : status.timebox_minutes,
+      skipped_packages: [],
+    };
+    record(task, { event: 'budget_stopped', task_id: task.run_id, ...task.budget_stopped });
+    progressed = true;
+  }
+  // Nothing to sweep until shape has actually produced packages, and nothing to sweep while a
+  // dispatch this task already opened is still running.
+  if (!task.spec || !Array.isArray(task.spec.packages)) return progressed;
+  if (task.nodes.some((n) => n.stage === 'dispatch' && n.state === 'running')) return progressed;
+  const currentIntegrate = task.nodes.filter((n) => n.stage === 'integrate' && n.state !== 'done' && !n.final).pop();
+  if (!currentIntegrate) return progressed; // no integrate left pending on a never-run package
+  const neverRan = task.nodes.filter((n) => n.stage === 'dispatch' && n.state === 'pending'
+    && currentIntegrate.deps.some((d) => d.startsWith(`accept:${n.subgoal_id}:`)));
+  if (!neverRan.length) return progressed;
+  const skipped = [];
+  for (const dn of neverRan) {
+    dn.state = 'skipped';
+    dn.final = true;
+    dn.result = { stage_ok: false, reason: 'skipped: budget/timebox exhausted before this package could dispatch' };
+    const an = task.nodes.find((x) => x.node_id === dn.node_id.replace(/^dispatch:/, 'accept:'));
+    if (an) { an.state = 'skipped'; an.final = true; an.result = { stage_ok: false, reason: 'skipped: budget/timebox exhausted' }; }
+    skipped.push(dn.subgoal_id);
+  }
+  const keptAccepts = currentIntegrate.deps.filter((d) => { const x = task.nodes.find((y) => y.node_id === d); return x && x.state === 'done'; });
+  task.budget_stopped.skipped_packages = [...new Set([...(task.budget_stopped.skipped_packages || []), ...skipped])];
+  reintegrateBehind(task, currentIntegrate.node_id, keptAccepts, `budget/timebox exhausted; not done: ${skipped.join(', ')}`);
+  record(task, { event: 'budget_swept', task_id: task.run_id, skipped });
+  return true;
+}
+
 // Opens every ready dispatch node this poll is allowed to - the phase-Team exemption and
 // max_parallel_teams for ordinary STORY packages - and returns how many it opened. Shared by
 // tm_next (a caller driving the graph by hand, chiefly tests) and the daemon's own loop, so the
 // two can never disagree about which dispatch is allowed to open when.
 export function advanceDispatches(task) {
+  // budget/timebox stop: no NEW package opens once the task is over budget - a running one
+  // (this check never sees, since it never touches state 'running') still finishes.
+  if (task.budget_stopped) return 0;
   // max_parallel_teams caps how many develop STORY dispatches run at once - phase-Team
   // packages (PLAN/QA/AUDIT) are exempt, both from the count and from the cap itself: the design
   // already limits each to at most one at a time (§2 "v0.12.0이 하지 않는 것"), so throttling
@@ -3640,6 +3769,7 @@ function toolNext(a) {
   // a separate call means a caller driving the graph by hand cannot forget to, and cannot do it
   // twice - the same three steps the daemon's own loop runs, shared through the exports above so
   // the two never diverge on what "ready" means.
+  if (enforceBudget(task)) saveRun(task);
   if (advanceDispatches(task)) saveRun(task);
   if (serviceRunningDispatches(task)) saveRun(task);
   prepareReadyIntegrations(task);
@@ -3923,6 +4053,9 @@ function toolStatus(a) {
       : verdict(task, n))),
     daemon: task.daemon ? { pid: task.daemon.pid, alive: driverAlive(task.daemon), log: task.daemon.log, stderr: task.daemon.stderr, spawn_count: task.daemon.spawn_count, restarts: task.daemon.restarts || 0, exhausted: !!task.daemon.exhausted, stderr_tail: driverStderrTail(task.daemon) } : null,
     team: task.team || null,
+    // Only present when either knob is actually set - a task that never asked for a budget or
+    // timebox reads exactly as it did before this existed.
+    ...((task.team && task.team.opts && (task.team.opts.budget_usd != null || task.team.opts.timebox_minutes != null)) ? { budget: budgetStatus(task) } : {}),
     ...viewFields,
   };
 }
