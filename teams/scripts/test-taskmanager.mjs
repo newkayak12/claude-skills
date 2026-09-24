@@ -3892,16 +3892,16 @@ test('shapeAnalysis: independent packages that could run the same round give wid
   assert.equal(sa.fully_serial, false);
 });
 
-test('the critique contract asks for blocking type A on an unnamed bloated foundation or an unjustified serial shape', async () => {
+test('the critique contract names a blocking shape defect for an unnamed bloated foundation or an unjustified serial shape', async () => {
   const { CONTRACT } = await import('../mcp/taskmanager.mjs');
   const critique = CONTRACT.critique;
   assert.match(critique, /Shape analysis/, 'the contract must point at the facts the briefing hands it');
-  assert.match(critique, /Type A/);
+  assert.match(critique, /shape:/);
   assert.match(critique, /owns, in touches\[\], more than the contracts/);
   assert.match(critique, /max_parallel_width 1/);
   assert.match(critique, /real data dependency/);
-  assert.match(critique, /Type B/);
-  assert.match(critique, /Type C/);
+  assert.match(critique, /unrunnable:/);
+  assert.match(critique, /unjudgeable:/);
 });
 
 test('the critique briefing carries the shape analysis facts for a serial chain with a bloated P1', async () => {
