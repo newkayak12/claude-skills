@@ -4,6 +4,12 @@
 const STATE_MARK = {
   pending: '.', running: '>', done: 'v', failed: 'x', skipped: '-', blocked: '!',
   complete: 'v', missing: '?', unknown: '?', waiting_human: 'H',
+  // 'unreachable' (graph.mjs's settleFailure - a node downstream of a failure with no retry
+  // left, released so the run can still settle instead of hanging pending forever) used to fall
+  // through to the same '?' as missing/unknown - indistinguishable from "collect() could not
+  // read this" on the strip. Its own glyph so a person scanning marks can tell "will never run
+  // because something upstream died" from "unknown" at a glance.
+  unreachable: 'u',
 };
 
 function mark(state) { return STATE_MARK[state] || '?'; }
@@ -268,6 +274,12 @@ function renderTeam(label, teamLike, indent, out) {
   out.push(line(indent, `Team ${label}`));
   if (!teamLike) { out.push(line(indent + 1, '(not dispatched yet - no worktree)')); return; }
   if (teamLike.missing) { out.push(line(indent + 1, `child run file missing at ${teamLike.cwd}`)); return; }
+  // packageModel() (view-collect.mjs) falls back to the latest earlier attempt's own child/cost
+  // when the CURRENT attempt has not opened a worktree yet - say so plainly, so this never reads
+  // as the live attempt's own team.
+  if (teamLike.retry_pending) {
+    out.push(line(indent + 1, `(retry pending - showing attempt ${teamLike.retry_pending_attempt}'s worktree/cost, a new one has not opened yet)`));
+  }
   out.push(line(indent + 1, `worktree: ${teamLike.cwd}${teamLike.branch ? ` (${teamLike.branch})` : ''}`));
   const d = teamLike.driver;
   if (d) {

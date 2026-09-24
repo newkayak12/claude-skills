@@ -492,6 +492,102 @@ test('collect(): a nested task.json that is a stale self-copy of an ancestor (sa
   }
 });
 
+test('collect(): a package between retries (a fresh dispatch node with no child yet) falls back to the LATEST EARLIER attempt\'s own child/cost, tagged retry_pending - Team P2\'s "(not dispatched yet - no worktree)" regression', () => {
+  const root = mkdtempSync(join(tmpdir(), 'view-test-retry-pending-'));
+  try {
+    const taskId = 'cccccccc-0000-0000-0000-000000000000';
+    const taskDir = join(root, taskId);
+    const taskPath = join(taskDir, 'task.json');
+    mkdirSync(taskDir, { recursive: true });
+    const worktree1 = join(taskDir, 'worktrees', 'P2-attempt1');
+    mkdirSync(worktree1, { recursive: true });
+
+    // attempt 1's own child run + a driver stream carrying real cost/turns - exactly what a live
+    // package worktree leaves behind once its driver finishes (or dies and is retried).
+    const childRunId = 'child-attempt-1';
+    saveRun({ run_id: childRunId, cwd: worktree1, spec: null, nodes: [] });
+    const driversDir = join(taskDir, 'drivers');
+    mkdirSync(driversDir, { recursive: true });
+    const streamPath = join(driversDir, 'dispatch_P2_1.stream.jsonl');
+    writeFileSync(streamPath, JSON.stringify({ type: 'result', total_cost_usd: 1.23, num_turns: 7 }) + '\n');
+
+    writeFileSync(taskPath, JSON.stringify({
+      run_id: taskId, cwd: root, request: 'a request with a retried package', created_at: 1, store_path: taskPath,
+      spec: { packages: [{ id: 'P2', title: 'flaky module' }] },
+      nodes: [
+        node('dispatch:P2:1', 'dispatch', [], {
+          subgoal_id: 'P2', attempt: 1, state: 'failed',
+          child: { cwd: worktree1, run_id: childRunId, branch: 'p2-attempt1', driver: { pid: 111, log: streamPath } },
+        }),
+        node('accept:P2:1', 'accept', [], { subgoal_id: 'P2', attempt: 1, state: 'failed', result: { accept: false } }),
+        // The retry: a fresh attempt-2 dispatch, pending, with no child yet - the exact window
+        // the bug report reproduced against Team P2's live task.
+        node('dispatch:P2:2', 'dispatch', [], { subgoal_id: 'P2', attempt: 2, state: 'pending' }),
+      ],
+    }));
+
+    const model = collectTask(root, taskId);
+    assert.equal(model.error, null);
+    const p2 = model.packages.find((p) => p.id === 'P2');
+    assert.ok(p2.child, 'the worktree/cost from attempt 1 is not lost just because attempt 2 has not opened one yet');
+    assert.equal(p2.child.retry_pending, true);
+    assert.equal(p2.child.retry_pending_attempt, 1);
+    assert.equal(p2.child.cwd, worktree1);
+    assert.equal(p2.child.run_id, childRunId);
+    assert.equal(p2.child.branch, 'p2-attempt1');
+    assert.equal(p2.child.driver.cost.cost_usd, 1.23, 'attempt 1\'s spend is still visible, not silently dropped');
+    assert.equal(p2.child.driver.cost.turns, 7);
+    // attempt is still read off the CURRENT (latest) dispatch node, not the fallback - a person
+    // asking "what attempt is this" should see 2, same as before this fix.
+    assert.equal(p2.attempt, 2);
+
+    const text = renderResourcesText(model);
+    assert.doesNotMatch(text, /not dispatched yet - no worktree/, 'the fallback worktree renders instead of the old "no worktree" line');
+    assert.match(text, /retry pending - showing attempt 1's worktree\/cost/);
+    assert.match(text, new RegExp(worktree1.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('collect(): an ordinary package whose latest dispatch already has its own child never carries retry_pending', () => {
+  const root = mkdtempSync(join(tmpdir(), 'view-test-no-retry-pending-'));
+  try {
+    const taskId = 'dddddddd-0000-0000-0000-000000000000';
+    const taskDir = join(root, taskId);
+    const taskPath = join(taskDir, 'task.json');
+    mkdirSync(taskDir, { recursive: true });
+    const worktree = join(taskDir, 'worktrees', 'P1');
+    mkdirSync(worktree, { recursive: true });
+    saveRun({ run_id: 'child-1', cwd: worktree, spec: null, nodes: [] });
+
+    writeFileSync(taskPath, JSON.stringify({
+      run_id: taskId, cwd: root, request: 'a request', created_at: 1, store_path: taskPath,
+      spec: { packages: [{ id: 'P1', title: 'module a' }] },
+      nodes: [node('dispatch:P1:1', 'dispatch', [], {
+        subgoal_id: 'P1', attempt: 1, state: 'running', child: { cwd: worktree, run_id: 'child-1' },
+      })],
+    }));
+
+    const model = collectTask(root, taskId);
+    const p1 = model.packages.find((p) => p.id === 'P1');
+    assert.ok(p1.child && !p1.child.retry_pending);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('renderText()/renderResourcesText(): a node state of "unreachable" gets its own mark, distinct from missing/unknown\'s "?"', () => {
+  const model = {
+    task_id: 'x', state: 'blocked', size: 'M', flow: 'develop', cost: { usd: 0, turns: 0 }, elapsed_ms: 0,
+    manager_stages: [{ node_id: 'gate:goal:1', stage: 'gate', state: 'unreachable' }],
+    packages: [],
+  };
+  const text = renderText(model);
+  assert.match(text, /\[u\] gate:goal:1/, 'unreachable gets its own glyph, not the "?" missing/unknown already use');
+  assert.doesNotMatch(text, /\[\?\] gate:goal:1/);
+});
+
 test('listTasks() lists every task dir under tasksRoot, newest first', async () => {
   await withTask(TWO_PKG_SHAPE, async ({ root, task_id }) => {
     const rows = listTasks(root);
