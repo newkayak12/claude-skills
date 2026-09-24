@@ -1040,6 +1040,53 @@ test('a QA execute that runs and finds a real defect completes the child normall
   }, { roles: { qa: true } });
 });
 
+test('an accept:QA below the floor that files a defect still finishes done and files it, instead of rerunning QA (awake-beta-ref1 accept:QA:2)', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+
+    const nx = await tm.call('tm_next', { task_id });
+    const qa1 = nx.children[0];
+    assert.equal(qa1.package_id, 'QA');
+    const defectText = 'POST /reset accepts an unknown CLI flag and silently starts the real app -> pass --unknown-flag and observe the live process, not a rejection';
+    // verified:false, stage_ok:true is exactly the shape that used to fail the node and burn
+    // the subgoal's retry budget on an unchanged tree. Under the fix this is a successful
+    // execute - the chain runs on to gate, reduce, gate:goal and report exactly like a clean
+    // pass would (completeQaChild asserts the child reaches 'report' either way).
+    await completeQaChild(g, qa1, { accept: true, match_pct: 95 }, {
+      verified: false, stage_ok: true, handoff: 'cases run', defects: [defectText],
+    });
+    const folded = await tm.call('tm_submit', { task_id, node_id: 'dispatch:QA:1' });
+    assert.equal(folded.state, 'done', JSON.stringify(folded));
+
+    // The fold must carry the defect through mechanically (foldChild's defectsFound reads every
+    // execute node in the child directly), not depend on any judge having faithfully restated
+    // it in prose - this is what makes it visible to accept:QA below regardless of what the
+    // child's own gate:goal said.
+    const task1 = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.deepEqual(task1.nodes.find((n) => n.node_id === 'dispatch:QA:1').result.defects, [defectText]);
+
+    const qaAcceptReady = (await tm.call('tm_next', { task_id })).ready.find((r) => r.node_id === 'accept:QA:1');
+    const qaAcceptBriefing = readFileSync(qaAcceptReady.briefing_path, 'utf8');
+    assert.match(qaAcceptBriefing, /Defects it reported:\n- POST \/reset accepts an unknown CLI flag/,
+      'the accept:QA agent must see the raw defect list under "What the child run delivered", not just the free-text report');
+
+    const accepted = await tm.call('tm_submit', { task_id, node_id: 'accept:QA:1', payload: ok({
+      accept: true, match_pct: 72, gaps: ['the menu was never exercised live'],
+      defects: [{ title: 'POST /reset accepts an unknown CLI flag and silently starts the real app', touches: [], deps: [], evidence: defectText, severity: 'high' }],
+    }) });
+    assert.equal(accepted.state, 'done', JSON.stringify(accepted));
+
+    const task2 = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.deepEqual(task2.spec.packages.map((p) => p.id), ['P1', 'P2', 'D1'], 'the defect is filed as a fix STORY');
+    const d1 = task2.spec.packages.find((p) => p.id === 'D1');
+    assert.equal(d1.reporter, 'qa');
+    assert.equal(d1.title, 'POST /reset accepts an unknown CLI flag and silently starts the real app');
+    const goal = task2.nodes.find((n) => n.node_id === 'gate:goal:1');
+    assert.deepEqual(goal.deps, ['integrate:2'], 'gate:goal reroutes behind a fresh integrate to re-verify the fix');
+  }, { roles: { qa: true } });
+});
+
 test('a failed QA dispatch whose child recorded defects files them instead of blindly retrying the whole QA package (autoRetryPackages)', async () => {
   const { autoRetryPackages } = await import('../mcp/taskmanager.mjs');
   await withTask(async ({ tm, g, root, task_id }) => {
