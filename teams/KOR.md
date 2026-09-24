@@ -49,6 +49,7 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 설계와 단계 목록: [`docs/plans/2026-09-11-teams-taskmanager.md`](../docs/plans/2026-09-11-teams-taskmanager.md).
 
 ## 상태
+- v0.28.6 — QA execute가 결함을 발견해도 성공으로 처리되어 동일한 코드로 재시도하지 않고, 결함이 dispatch 결과와 브리핑을 통해 accept:QA와 fileDefects로 흐르며, 결함을 기록한 채 실패한 QA dispatch는 무조건 재시도 대신 결함으로 파일링됩니다
 - v0.28.5 — 칸반 이론 기반 티켓 개선: blocked_reason(미해결 의존성/용량 대기/재시작 소진/사람 대기), 대기 경과시간, board.jsonl 기반 플로우 지표(WIP/처리량/사이클·리드타임), 오래된 중첩 태스크 복사본이 live로 표시되던 문제 수정
 - v0.28.4 — 드라이버 liveness에 진행 신호가 추가되고(stall_minutes가 진행 없는 드라이버를 먼저 플래그한 뒤 죽임) driver_restarts가 평평한 영원 카운터 대신 슬라이딩 윈도우(restart_period_minutes)가 될 수 있습니다
 - v0.28.3 — board/ticket의 WAITING_HUMAN 드리프트와 human_assignments 누락을 고치고, 사람이 waiting_human 카드를 집어들 진입점(inbox/take/submit, tm_inbox/tm_assign/tm_submit)을 새로 추가

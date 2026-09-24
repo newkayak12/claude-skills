@@ -171,7 +171,7 @@ Synthesize from the node results below only: which packages ran, what each deliv
 // return the field returns a verdict the hook has nothing to act on - so the field is named
 // here, in the same breath as the contract it extends, rather than left to the child's report.
 const ACCEPT_EXTRA = {
-  qa: `This package is the goal-level QA pass, so your JSON carries one more field: "defects": [{"title": "...", "touches": ["path"], "deps": ["P1"], "evidence": "<how to reproduce>", "severity": "high|medium|low"}]. Every defect the QA report substantiates goes there, whether or not you accept the package - the manager files each one as its own STORY and loops the task back through integration. An empty list is the right answer when QA found nothing; do not invent one, and do not put a defect only in "gaps".`,
+  qa: `This package is the goal-level QA pass, so your JSON carries one more field: "defects": [{"title": "...", "touches": ["path"], "deps": ["P1"], "evidence": "<how to reproduce>", "severity": "high|medium|low"}]. Every defect the QA report substantiates goes there, whether or not you accept the package - the manager files each one as its own STORY and loops the task back through integration. An empty list is the right answer when QA found nothing; do not invent one, and do not put a defect only in "gaps". If the briefing below has a "Defects it reported" list under "What the child run delivered", every entry there came from the case set actually being run and MUST turn into one object in your own "defects" array (title + evidence at minimum) - dropping one because the package also gets accepted is exactly the failure this field exists to prevent.`,
   audit: `This package is planning's audit pass, so your JSON carries one more field: "unmet": ["US-n -> what the integrated result still does not do"]. Put every user story the audit showed is unsatisfied there, one entry each, whether or not you accept the package - the manager files each as its own STORY. An empty list is the right answer when every story is met.`,
 };
 
@@ -739,6 +739,44 @@ export function autoRetryPackages(task) {
     if ((failed.result.conflicts || []).length) continue;
     if (failed.result.waiting_capacity) continue;
     if (failed.result.judge_failed === true) continue; // no verdict yet - autoRejudge owns it
+    // A failed dispatch:QA whose child actually ran execute and recorded defects (foldChild's
+    // defectsFound, carried onto this node as result.defects) is not a package to retry - its
+    // case set already found what it was sent to find. Before this check, a rejected or
+    // blocked dispatch:QA looped straight back into retryPackage, opening a fresh dispatch:QA
+    // on the SAME integrated tree to run the SAME case set again - accept:QA (the only place
+    // that normally files a defect, see finish()'s accept:QA hook above) never runs because its
+    // data dep is a failed, not done, dispatch (awake-beta-ref1, 2026-09-24: dispatch:QA:1
+    // failed with gaps:[] and the defects nowhere to go, and the daemon opened dispatch:QA:2
+    // over the identical bug). File them here instead, capped by qa_rounds the same way
+    // accept:QA's own hook caps a passing accept that reports defects - a dispatch that never
+    // reached accept must not get a second, uncapped route to the same file.
+    if (pkg.phase === 'qa' && failed.stage === 'dispatch' && Array.isArray(failed.result.defects) && failed.result.defects.length) {
+      const qaAttempts = task.nodes.filter((x) => x.stage === 'dispatch' && x.subgoal_id === 'QA').length;
+      const cap = Number.isInteger(task.team && task.team.opts && task.team.opts.qa_rounds)
+        ? task.team.opts.qa_rounds : TEAM_DEFAULTS.qa_rounds;
+      // The accept node this failed dispatch was gating can never become ready now - its one
+      // data dep is a failed dispatch, and `settled` (graph.mjs) never counts a plain `failed`
+      // as done. Retire it in place, the same words retryPackage uses for a superseded attempt,
+      // so it does not sit `pending` forever confusing tm_status/tm_board.
+      for (const sib of latest) {
+        if (sib.state === 'pending') {
+          sib.state = 'skipped';
+          sib.result = { stage_ok: false, reason: 'its dispatch found defects; filed directly instead of judged' };
+        }
+      }
+      failed.final = true;
+      const records = failed.result.defects.map((d) => ({ title: d.length > 120 ? `${d.slice(0, 117)}...` : d, evidence: d }));
+      if (qaAttempts > cap) {
+        task.unresolved_defects = (task.unresolved_defects || []).concat(records.map((d) => ({ ...d, round: qaAttempts })));
+        saveRun(task);
+        record(task, { event: 'daemon_retry_settled', task_id: task.run_id, package_id: pid, reason: 'qa_rounds exhausted with unresolved defects', failed_node: failed.node_id });
+      } else {
+        const out = fileDefects(task, records, { reporter: 'qa' });
+        record(task, { event: 'daemon_defects_filed', task_id: task.run_id, package_id: pid, filed: out.filed, failed_node: failed.node_id });
+      }
+      changed = true;
+      continue;
+    }
     const fb = [failed.result.reason || '', ...(failed.result.gaps || [])].filter(Boolean).join('\n- ');
     const out = retryPackage(task, pid, fb);
     record(task, {
@@ -1955,6 +1993,20 @@ export function foldChild(task, n) {
       repairs_needed: rd.repairs_needed || [],
     }
     : null;
+  // Read directly off every execute node in the child (graph.mjs's KINDS.qa chain), not off
+  // the run's own gate:goal verdict - a defect the QA case set found is real evidence
+  // regardless of whether the child run ever reached its goal gate at all (a blocked child,
+  // an integration conflict on THIS attempt) or of whether a judging LLM faithfully restated
+  // it there. Deduped because a subgoal that retried (a genuine stage_ok:false execute
+  // failure, then a clean rerun) can otherwise report the same defect twice. This is what
+  // autoRetryPackages (below) reads to decide "file it" over "retry the whole QA package",
+  // and what composeTaskPrompt shows the accept:QA agent as "Defects it reported".
+  const defectsFound = [...new Set(
+    child.nodes
+      .filter((x) => x.stage === 'execute' && x.result && Array.isArray(x.result.defects))
+      .flatMap((x) => x.result.defects.map((d) => String(d).trim()))
+      .filter(Boolean),
+  )];
   const base = {
     child_run_id: child.run_id,
     child_cwd: n.child.cwd,
@@ -1962,6 +2014,7 @@ export function foldChild(task, n) {
     child_state: cs.state,
     child_counts: cs.counts,
     changed_files: changed,
+    ...(defectsFound.length ? { defects: defectsFound } : {}),
     ...(setFindings ? { set_findings: setFindings } : {}),
     report: report ? String(report.result.handoff || '') : (chainAuthored ? String(chainAuthored.result.handoff || '') : ''),
   };
@@ -2266,6 +2319,11 @@ export function composeTaskPrompt(task, n) {
       L.push(`Its goal gate: accept=${r.accept} match=${r.match_pct === undefined ? '?' : r.match_pct + '%'}`);
       if ((r.gaps || []).length) L.push(`Gaps it named:\n${bullets(r.gaps)}`);
       if ((r.spec_drift || []).length) L.push(`Spec drift it named:\n${bullets(r.spec_drift)}`);
+      // §5b: a QA package's own execute node(s), read directly off the child run (foldChild's
+      // defectsFound) regardless of whether the child ever reached a goal-gate verdict about
+      // them. The qa accept contract (below) tells this agent to relay every one of these into
+      // its own "defects" field - this is the list it must not drop any of.
+      if ((r.defects || []).length) L.push(`Defects it reported:\n${bullets(r.defects)}`);
       if ((r.changed_files || []).length) L.push(`Files it reported changing:\n${bullets(r.changed_files)}`);
       L.push(`Its report:`);
       L.push(r.report || '(no report)');

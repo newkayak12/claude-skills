@@ -52,6 +52,7 @@ Three things this plugin adds, in this order, each behind the previous one's tes
 Design and step list: [`docs/plans/2026-09-11-teams-taskmanager.md`](../docs/plans/2026-09-11-teams-taskmanager.md).
 
 ## Status
+- v0.28.6 — QA execute finding real defects now completes the child instead of retrying against unchanged code; defects flow through the dispatch fold and briefings to accept:QA and fileDefects, and a failed QA dispatch that recorded defects is filed rather than blindly retried
 - v0.28.5 — Kanban-theory ticket improvements: blocked_reason (unmet deps/capacity/restart budget/human wait), waiting elapsed, board.jsonl flow metrics (WIP/throughput/cycle/lead time), and a fix for stale nested task copies rendering as live
 - v0.28.4 — driver liveness gets a progress signal (stall_minutes flags then kills a wedged-but-alive driver) and driver_restarts can become a sliding window (restart_period_minutes) instead of a flat forever counter
 - v0.28.3 — board/ticket fixed WAITING_HUMAN drift and human_assignments; new inbox/take/submit skills give a human an entry point onto a waiting_human card (tm_inbox/tm_assign/tm_submit)

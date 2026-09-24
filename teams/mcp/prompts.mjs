@@ -123,6 +123,7 @@ accept:true with an empty checks[] is refused by the engine - a judgement with n
 
   'gate:goal': `Return JSON: {"stage_ok": true, "accept": true|false, "match_pct": 0-100, "checks": ["<command or read> -> <what it showed>"], "attacks": ["<command run from OUTSIDE this tree, the way the requester will invoke it> -> <what it showed>"], "gaps": ["what blocks acceptance"], "observations": ["weaknesses that do not block"], "spec_drift": ["where the spec asked for less than the request did"], "reason": "...", "evidence": "..."}
 For a planning-kind run producing a PRD, also return "user_stories": [{"id": "US-1", "title": "...", "acceptance": ["..."]}, ...] - one entry per story in the document's "## User stories" section, ids in order; this is the only bridge the task manager has to the PRD's stories.
+For a qa-kind run, also return "defects": [...] - every defect any execute node above reported (see "Defects it reported" under each node), copied through verbatim. A QA run's defects are its deliverable, not a reason to withhold accept: the subgoal's job was to run the case set and report what it found, and it did. Do not fold a defect into "gaps" - gaps are what blocks THIS gate's own acceptance of the QA work, defects are what QA found wrong with the thing it was testing, and the task manager reads them from two different places.
 You are the judge, not the actor, and you are the only node that sees the original request again. Judge the assembled result against BOTH:
   1. the goal-level acceptance criteria, and
   2. the REQUEST as written at the top of this briefing.
@@ -304,6 +305,10 @@ export function composePrompt(run, n, briefing) {
       lines.push(`### ${x.node_id} (${x.stage}) — ${verdict}`);
       if (x.changed_files.length) lines.push(`Changed: ${x.changed_files.join(', ')}`);
       if (x.checks.length) lines.push(`Checks:\n${bullets(x.checks)}`);
+      // An execute node's own deliverable (prompts.mjs's execute contract) when it found real
+      // defects. The goal gate and the report must carry these forward, not fold them into
+      // gaps: a QA run that found defects still did its job - the defects are the point.
+      if ((x.defects || []).length) lines.push(`Defects it reported:\n${bullets(x.defects)}`);
       if (x.handoff) lines.push(capHandoff(x.handoff));
       if (x.evidence) lines.push(`Evidence: ${x.evidence}`);
       if (x.gaps.length) lines.push(`Gaps:\n${bullets(x.gaps)}`);
@@ -328,6 +333,10 @@ export function composePrompt(run, n, briefing) {
       if (u.checks.length) {
         lines.push(`Checks it reported running:`);
         lines.push(bullets(u.checks));
+      }
+      if ((u.defects || []).length) {
+        lines.push(`Defects it reported:`);
+        lines.push(bullets(u.defects));
       }
       if (u.commands.length) {
         lines.push(`Commands actually observed by the adapter:`);
