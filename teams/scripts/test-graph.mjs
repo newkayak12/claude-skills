@@ -17,6 +17,7 @@ import {
   validateSpec,
   expandSubgoals, node,
   applyHumanPin, releaseHumanPin, currentAttempt, promoteWaitingHuman, openAsk,
+  computeWriteScope, nodeBriefing, goalConsensus, pushGoalGateRound,
 } from '../mcp/graph.mjs';
 
 test('planning kind: chain, no reasoning stage, and skills by stage', () => {
@@ -706,4 +707,111 @@ test('a question with no owner still gets its own card rather than someone else\
   ]);
   assert.equal(ids.length, 2);
   assert.equal(run.nodes.find((n) => n.node_id === ids[0]).assignment.who, null);
+});
+
+// ---------- reducer registry (item 1/2/3 of the reducer plan) ----------
+
+test('computeWriteScope: an undeclared writer collision is caught for a code-kind (subgoal) run, not only document runs', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wscope-'));
+  const run = {
+    run_id: 'ws1', cwd: dir, goal_judges: 1, max_retries: 2,
+    nodes: [node('critique', 'critique', [], { state: 'done', result: {} })],
+    spec: {
+      subgoals: [
+        { id: 'U1', kind: 'subgoal', title: 'owns module A', acceptance: ['touches only module A'], files: ['src/index.js'], deps: [] },
+        { id: 'U2', kind: 'subgoal', title: 'owns module B', acceptance: ['touches only module B'], files: ['src/registry.js'], deps: [] },
+      ],
+    },
+  };
+  expandSubgoals(run, run.spec.subgoals);
+  const impl1 = getNode(run, 'implement:U1:1');
+  impl1.state = 'done'; impl1.result = { stage_ok: true, changed_files: ['src/index.js'] };
+  // U2 declared only src/registry.js but also wrote src/index.js - U1's own file.
+  const impl2 = getNode(run, 'implement:U2:1');
+  impl2.state = 'done'; impl2.result = { stage_ok: true, changed_files: ['src/registry.js', 'src/index.js'] };
+  const gate1 = getNode(run, 'gate:U1:1');
+  gate1.state = 'done'; gate1.result = { stage_ok: true, accept: true };
+  const gate2 = getNode(run, 'gate:U2:1');
+  gate2.state = 'done'; gate2.result = { stage_ok: true, accept: true };
+
+  const reduceNode = getNode(run, 'reduce');
+  const ws = computeWriteScope(run, reduceNode);
+  assert.equal(ws.undeclared_writers.length, 1);
+  assert.equal(ws.undeclared_writers[0].subgoal_id, 'U2');
+  assert.equal(ws.undeclared_writers[0].file, 'src/index.js');
+  assert.equal(ws.collisions.length, 0, 'src/index.js has exactly one declared owner (U1), so it is undeclared-writer, not a plain collision');
+
+  const briefing = nodeBriefing(run, reduceNode);
+  assert.deepEqual(briefing.write_scope, ws, 'the fold\'s own briefing surfaces the same deterministic check');
+
+  const goalGate = getNode(run, 'gate:goal:1');
+  const goalBriefing = nodeBriefing(run, goalGate);
+  assert.deepEqual(goalBriefing.write_scope, ws, 'the goal gate behind the fold sees it too, via its order-only after edges');
+
+  const otherStageBriefing = nodeBriefing(run, gate1);
+  assert.equal(otherStageBriefing.write_scope, null, 'a subgoal\'s own gate is not where this check applies');
+
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('computeWriteScope: two document subgoals sharing a file with distinct declared headings pass clean', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wscope-doc-'));
+  const run = {
+    run_id: 'ws2', cwd: dir, goal_judges: 1, max_retries: 2,
+    nodes: [node('critique', 'critique', [], { state: 'done', result: {} })],
+    spec: {
+      subgoals: [
+        { id: 'D1', kind: 'document', title: 'owns "## Rollout"', acceptance: ['writes only ## Rollout, touches no other section'], files: ['docs/prd.md'], deps: [] },
+        { id: 'D2', kind: 'document', title: 'owns "## Risks"', acceptance: ['writes only ## Risks, touches no other section'], files: ['docs/prd.md'], deps: [] },
+      ],
+    },
+  };
+  expandSubgoals(run, run.spec.subgoals);
+  for (const sg of ['D1', 'D2']) {
+    const draft = getNode(run, `draft:${sg}:1`);
+    draft.state = 'done'; draft.result = { stage_ok: true, changed_files: ['docs/prd.md'] };
+    const review = getNode(run, `review:${sg}:1`);
+    review.state = 'done'; review.result = { stage_ok: true, verified: true };
+    const gate = getNode(run, `gate:${sg}:1`);
+    gate.state = 'done'; gate.result = { stage_ok: true, accept: true };
+  }
+  const ws = computeWriteScope(run, getNode(run, 'reduce'));
+  assert.deepEqual(ws, { collisions: [], undeclared_writers: [], heading_collisions: [] });
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('goalConsensus: AND-consensus / min / concat-dedup come from the declared registry - order of the judges does not change the result', () => {
+  const build = (order) => {
+    const run = { run_id: `gc-${order.join('')}`, cwd: '/tmp', nodes: [] };
+    const { round, ids } = pushGoalGateRound(run, [], {}, 2);
+    const [a, b] = ids.map((id) => getNode(run, id));
+    const results = {
+      a: { stage_ok: true, accept: true, match_pct: 95, gaps: ['g1'], spec_drift: [] },
+      b: { stage_ok: true, accept: true, match_pct: 88, gaps: ['g2', 'g1'], spec_drift: ['d1'] },
+    };
+    for (const key of order) {
+      const target = key === 'a' ? a : b;
+      target.state = 'done';
+      target.result = results[key];
+    }
+    return goalConsensus(run, round);
+  };
+  const forward = build(['a', 'b']);
+  const reverse = build(['b', 'a']);
+  assert.deepEqual(forward, reverse, 'the order results were assigned in must not change the consensus');
+  assert.equal(forward.accept, true);
+  assert.equal(forward.match_pct, 88);
+  assert.deepEqual(forward.gaps, ['g1', 'g2']);
+  assert.deepEqual(forward.spec_drift, ['d1']);
+});
+
+test('goalConsensus: one dissenting judge still rejects the round (and-consensus, unchanged from before the registry refactor)', () => {
+  const run = { run_id: 'gc-dissent', cwd: '/tmp', nodes: [] };
+  const { round, ids } = pushGoalGateRound(run, [], {}, 2);
+  const [a, b] = ids.map((id) => getNode(run, id));
+  a.state = 'done'; a.result = { stage_ok: true, accept: true, match_pct: 95, gaps: [], spec_drift: [] };
+  b.state = 'failed'; b.result = { stage_ok: true, accept: false, match_pct: 60, gaps: ['half-built'], spec_drift: [] };
+  const c = goalConsensus(run, round);
+  assert.equal(c.accept, false);
+  assert.equal(c.match_pct, 60);
 });

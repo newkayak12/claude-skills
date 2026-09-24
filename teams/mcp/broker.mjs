@@ -61,6 +61,7 @@ import {
   promoteWaitingHuman,
   applyPinAction,
   drainHumanActions,
+  computeWriteScope,
 } from './graph.mjs';
 import { composePrompt } from './prompts.mjs';
 import { readTeamConfig, resolveTeamOptions } from './teamconfig.mjs';
@@ -1082,6 +1083,14 @@ function finishNode(run, n, result, vendorName) {
         subgoal_id: n.subgoal_id, question: u.question || u.unknown, owner: u.owner || null, options: u.options,
       }))];
     }
+  }
+  // Deterministic sibling write-scope check (item 2 of the reducer plan): recorded onto the
+  // fold's own persisted result, not only shown in the briefing gate:goal reads afterward - so
+  // a collision or undeclared writer this run's own `reduce` LLM pass missed is still on disk,
+  // and foldChild (taskmanager.mjs) can carry it up into set_findings regardless of whether the
+  // model noticed the same thing in prose.
+  if (n.stage === 'reduce' && n.state === 'done') {
+    n.result = { ...n.result, write_scope: computeWriteScope(run, n) };
   }
   // One save, after autoReassign: a rejected gate and the retry chain it opens must land on
   // disk together. Saved separately, the run is 'blocked' on disk for the gap between the two

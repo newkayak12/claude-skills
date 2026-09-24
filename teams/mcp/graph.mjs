@@ -12,6 +12,7 @@ import { mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, statSync, 
 import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_MODELS } from './routing.mjs';
+import { applyMerge, writeScopeFindings } from './reducers.mjs';
 
 export const STAGES = [
   'plan',      // decompose the raw request
@@ -922,17 +923,26 @@ export function goalConsensus(run, round) {
   if (!judges.length) return null;
   const routingFailure = judges.some((n) => n.result && n.result.stage_ok !== true);
   const settled = !routingFailure && judges.every((n) => n.state === 'done' || n.state === 'failed');
-  const matches = judges
-    .map((n) => (n.result && Number.isFinite(n.result.match_pct) ? n.result.match_pct : null))
-    .filter((x) => x != null);
+  // Through the declared registry (reducers.mjs), not an inline Set/Math.min: this is the same
+  // AND-consensus / min / concat-dedup merge foldChild and the run-level `reduce` node use, so a
+  // reader learns the rule once. Judges are true SIBLINGS (one round, several independent
+  // opinions), which is exactly what and-consensus/min/concat-dedup are for - unlike a
+  // package's own retry history (taskmanager.mjs's foldPackageHistory), where the same field
+  // names mean something else and are folded last-by-attempt instead.
+  const acceptEntries = judges.map((n) => ({ node_id: n.node_id, attempt: round, value: n.state === 'done' }));
+  const matchEntries = judges
+    .map((n) => ({ node_id: n.node_id, attempt: round, value: n.result && Number.isFinite(n.result.match_pct) ? n.result.match_pct : undefined }))
+    .filter((e) => e.value !== undefined);
+  const gapsEntries = judges.map((n) => ({ node_id: n.node_id, attempt: round, value: (n.result && n.result.gaps) || [] }));
+  const driftEntries = judges.map((n) => ({ node_id: n.node_id, attempt: round, value: (n.result && n.result.spec_drift) || [] }));
   return {
     round,
     settled,
     routing_failure: routingFailure,
-    accept: settled && judges.every((n) => n.state === 'done'),
-    match_pct: matches.length ? Math.min(...matches) : null,
-    gaps: [...new Set(judges.flatMap((n) => (n.result && n.result.gaps) || []))],
-    spec_drift: [...new Set(judges.flatMap((n) => (n.result && n.result.spec_drift) || []))],
+    accept: settled && applyMerge('and-consensus', acceptEntries),
+    match_pct: matchEntries.length ? applyMerge('min', matchEntries) : null,
+    gaps: applyMerge('concat-dedup', gapsEntries),
+    spec_drift: applyMerge('concat-dedup', driftEntries),
     judges: judges.map((n) => ({
       node_id: n.node_id,
       state: n.state,
@@ -1113,6 +1123,38 @@ export function expandSubgoals(run, subgoals) {
   // passing subgoals' work never reported - partial success was simply lost.
   run.nodes.push(node(reportId, 'report', [], { after: goalGates }));
   return saveRun(run);
+}
+
+// Deterministic sibling write-scope check (item 2 of the reducer plan, §0.1/§4 of
+// docs/plans/2026-09-23-teams-reducer-human-rollback.md): whether parallel subgoals collided
+// on a file - or, sharing one document, the same heading - without a single declared owner.
+// This is a pure function of run state, not a model call, so it runs whether or not the run's
+// own `reduce` LLM pass happened to notice the same thing (see broker.mjs's finishNode, which
+// records this onto the `reduce` node's own result) and whether or not a run even HAS a reduce
+// node - `n` may be the goal gate itself on a run with exactly one subgoal, where there is
+// nothing to collide and this returns three empty lists.
+//
+// `n`'s subgoal gates are wherever the caller put them: `reduce`'s own deps (the direct fold),
+// or `gate:goal`'s `after` (the goal gate depends on `reduce` alone but keeps every subgoal
+// gate as order-only sight - expandSubgoals's own comment on gateAfter explains why). Reading
+// both covers either caller without either needing to know how the other is wired.
+export function computeWriteScope(run, n) {
+  const subgoals = (run.spec && run.spec.subgoals) || [];
+  const ids = [...new Set([...(n.deps || []), ...(n.after || [])])];
+  const records = ids
+    .map((id) => getNode(run, id))
+    .filter((g) => g && g.stage === 'gate' && g.subgoal_id)
+    .map((g) => {
+      const sg = subgoals.find((s) => String(s.id) === String(g.subgoal_id));
+      const stage = authorStage(kindOf(sg));
+      const author = getNode(run, `${stage}:${g.subgoal_id}:${g.attempt || 1}`);
+      return {
+        subgoal_id: g.subgoal_id,
+        attempt: g.attempt || 1,
+        changed_files: (author && author.result && Array.isArray(author.result.changed_files)) ? author.result.changed_files : [],
+      };
+    });
+  return writeScopeFindings(subgoals, records);
 }
 
 // Failure becomes definitive at exactly one point: when the retry budget is gone.
@@ -1554,6 +1596,13 @@ export function nodeBriefing(run, n) {
     ? priorSetgoal.result.spec_problems
     : null;
 
+  // The deterministic sibling write-scope check (item 2): shown to the fold itself and to the
+  // goal gate that judges behind it, so a collision or an undeclared writer is visible before
+  // either has to trust the `reduce` LLM pass's own prose reading of the same disk state.
+  const writeScope = (n.stage === 'reduce' || (n.stage === 'gate' && n.subgoal_id == null))
+    ? computeWriteScope(run, n)
+    : null;
+
   return {
     run_id: run.run_id,
     node_id: n.node_id,
@@ -1575,6 +1624,7 @@ export function nodeBriefing(run, n) {
     prior_feedback: n.feedback || '',
     spec_problems: specProblems,
     upstream,
+    write_scope: writeScope,
     reasoning_stage: REASONING_STAGES.has(n.stage),
   };
 }

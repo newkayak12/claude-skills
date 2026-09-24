@@ -667,6 +667,59 @@ async function passSubgoal(c, cwd, runId, sg, attempt = 1) {
   await c.call('team_submit', { run_id: runId, cwd, node_id: `gate:${sg}:${attempt}`, payload: ok({ accept: true, match_pct: 95 }) });
 }
 
+// ---------- declared reducer registry / sibling write-scope check (item 1/2 of the reducer plan) ----------
+
+const OVERLAPPING = {
+  goal: 'G',
+  acceptance: ['A'],
+  subgoals: [
+    { id: 'U1', kind: 'subgoal', title: 'owns a.txt', acceptance: ['touches only a.txt'], files: ['a.txt'], deps: [] },
+    { id: 'U2', kind: 'subgoal', title: 'owns b.txt', acceptance: ['touches only b.txt'], files: ['b.txt'], deps: [] },
+  ],
+};
+
+test('the deterministic write-scope check is recorded onto reduce\'s own persisted result, and reaches the goal gate\'s briefing behind it', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, OVERLAPPING);
+    // U1 does what it declared (a.txt) and ALSO writes b.txt, which U2 - not U1 - declared as
+    // its own. That is the undeclared-writer case computeWriteScope exists to catch: a single
+    // declared owner (U2), but a sibling wrote it anyway.
+    dirty(cwd, 'a.txt');
+    dirty(cwd, 'b.txt');
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: ['a.txt', 'b.txt'], handoff: 'built U1' }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'gate:U1:1', payload: ok({ accept: true, match_pct: 95 }) });
+    // U2 does exactly what it declared - the clean side of the same check.
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'implement:U2:1', payload: ok({ changed_files: ['b.txt'], handoff: 'built U2' }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'test:U2:1', payload: ok({ verified: true }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'gate:U2:1', payload: ok({ accept: true, match_pct: 95 }) });
+
+    let nx = await c.call('team_next', { run_id: runId, cwd });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['reduce']);
+    // The `reduce` LLM pass reports the ordinary way - the deterministic check is layered on
+    // top of it, not a replacement for it.
+    const red = await c.call('team_submit', {
+      run_id: runId, cwd, node_id: 'reduce',
+      payload: ok({ handoff: 'set folded', declared: [], undeclared: [], collisions: [], orphans: [], repairs_needed: [] }),
+    });
+    assert.equal(red.state, 'done');
+
+    const st = await c.call('team_status', { run_id: runId, cwd, full: true });
+    const reduceNode = st.nodes.find((n) => n.node_id === 'reduce');
+    assert.ok(reduceNode.result.write_scope, 'computed and recorded onto the fold\'s own result, not only shown in a briefing');
+    assert.equal(reduceNode.result.write_scope.undeclared_writers.length, 1);
+    assert.equal(reduceNode.result.write_scope.undeclared_writers[0].subgoal_id, 'U1');
+    assert.equal(reduceNode.result.write_scope.undeclared_writers[0].file, 'b.txt');
+    assert.deepEqual(reduceNode.result.write_scope.collisions, []);
+
+    nx = await c.call('team_next', { run_id: runId, cwd });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['gate:goal:1']);
+    const goalBriefing = readFileSync(nx.ready[0].briefing_path, 'utf8');
+    assert.match(goalBriefing, /## Sibling write-scope check \(computed, not self-reported\)/);
+    assert.match(goalBriefing, /U1 wrote b\.txt, declared by U2/);
+  });
+});
+
 test('exhausting a subgoal settles it: its downstream is unreachable and the report is released', async () => {
   await withRun(async ({ c, cwd, runId }) => {
     await throughCritiqueWith(c, cwd, runId, INDEPENDENT);

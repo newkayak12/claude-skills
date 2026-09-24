@@ -352,6 +352,33 @@ export function composePrompt(run, n, briefing) {
     }
   }
 
+  // Deterministic, computed off run state (graph.mjs's computeWriteScope) - not this stage's
+  // own reading of the tree. Shown whenever it exists (reduce, and the goal gate behind it) so
+  // a collision the CONTRACT's "name the heading you own" convention missed is visible before
+  // either has to notice it in prose. An empty result is not omitted: "checked, found nothing"
+  // is itself worth a judge or a fold seeing, the same reasoning prompts.mjs's own reduce
+  // contract gives for its own findings lists.
+  if (briefing.write_scope) {
+    const ws = briefing.write_scope;
+    lines.push('');
+    lines.push(`## Sibling write-scope check (computed, not self-reported)`);
+    if (ws.collisions.length) {
+      lines.push(`Files more than one subgoal wrote with no single declared owner:`);
+      lines.push(bullets(ws.collisions.map((c) => `${c.file} -> written by ${c.written_by.join(', ')}; declared by ${c.declared_by.length ? c.declared_by.join(', ') : '(nobody)'} — ${c.reason}`)));
+    }
+    if (ws.undeclared_writers.length) {
+      lines.push(`Subgoals that wrote a file another subgoal declared as its own:`);
+      lines.push(bullets(ws.undeclared_writers.map((u) => `${u.subgoal_id} wrote ${u.file}, declared by ${u.declared_owners.join(', ')}`)));
+    }
+    if (ws.heading_collisions.length) {
+      lines.push(`Subgoals sharing one document without a clear per-heading split:`);
+      lines.push(bullets(ws.heading_collisions.map((h) => `${h.file}: ${h.subgoals.join(' & ')} — ${h.reason}`)));
+    }
+    if (!ws.collisions.length && !ws.undeclared_writers.length && !ws.heading_collisions.length) {
+      lines.push(`Checked: no undeclared file or heading collisions among these subgoals.`);
+    }
+  }
+
   if (briefing.prior_feedback) {
     lines.push('');
     lines.push(`## Previous attempt was rejected — fix this`);
