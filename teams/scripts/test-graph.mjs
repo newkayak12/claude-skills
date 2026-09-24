@@ -17,6 +17,8 @@ import {
   validateSpec,
   expandSubgoals, node,
   applyHumanPin, releaseHumanPin, currentAttempt, promoteWaitingHuman, openAsk,
+  nodeBriefing, promoteHumanGates, autoPassHumanGateResult, humanGateResultFromPayload,
+  humanGateIdentity, humanGateVerdictField,
 } from '../mcp/graph.mjs';
 
 test('planning kind: chain, no reasoning stage, and skills by stage', () => {
@@ -706,4 +708,144 @@ test('a question with no owner still gets its own card rather than someone else\
   ]);
   assert.equal(ids.length, 2);
   assert.equal(run.nodes.find((n) => n.node_id === ids[0]).assignment.who, null);
+});
+
+// --- D2 slice 3 (0.29.0): questions[] generalized past investigate's own unknowns[] ---
+
+// A run/task-level judging node (setgoal, plan, critique, gate:goal - subgoal_id is null for
+// all of them) has no subgoal to key an ask card off, unlike investigate's own U1/U2/... A run
+// with a top-level critique feeding two subgoal chains (mirrors createRun's own non-parent-
+// shaped shape) is what exercises that fallback and the `after`-edge consumer rewiring
+// gate:goal's own report depends through.
+const critiqueRun = () => ({
+  run_id: 'critique-ask', cwd: '/tmp', max_retries: 2, interactive: true,
+  spec: { subgoals: [{ id: 'U1', kind: 'code' }] },
+  nodes: [
+    node('critique', 'critique', ['setgoal'], { state: 'done', result: {} }),
+    node('implement:U1:1', 'implement', ['critique'], { subgoal_id: 'U1', attempt: 1 }),
+    node('gate:goal:1', 'gate', [], { subgoal_id: null, attempt: 1, after: ['critique'] }),
+    node('report', 'report', [], { after: ['gate:goal:1'] }),
+  ],
+});
+
+const defaultOnlyQuestion = [{
+  question: 'Which flow does this package use?',
+  to: 'Product',
+  default: 'develop',
+  why: 'no source in the request named one',
+}];
+
+test('openAsk keys a run-level node off its own node_id, and a `default` alone is decidable', () => {
+  const run = critiqueRun();
+  const ids = openAsk(run, run.nodes[0], defaultOnlyQuestion);
+  assert.deepEqual(ids, ['ask:critique:1'], 'no subgoal_id to key off, so the node_id is the owner');
+  const ask = getNode(run, 'ask:critique:1');
+  assert.equal(ask.questions[0].default, 'develop');
+  assert.equal(ask.assignment.who, 'Product', '`to` is read the same way investigate\'s own `owner` is');
+  // implement:U1:1 named critique in `deps` - rewired there.
+  assert.deepEqual(getNode(run, 'implement:U1:1').deps, ['ask:critique:1']);
+});
+
+test('openAsk rewires an `after` consumer too, not just `deps` - gate:goal -> report is order-only', () => {
+  const run = critiqueRun();
+  openAsk(run, run.nodes[0], defaultOnlyQuestion);
+  // gate:goal named critique in `after`, so it is rewired there, not into `deps` - a card
+  // parked between critique and the goal gate must not turn an order-only edge into a data one.
+  assert.deepEqual(getNode(run, 'gate:goal:1').after, ['ask:critique:1']);
+  assert.deepEqual(getNode(run, 'gate:goal:1').deps, []);
+});
+
+test('a bare question with neither options nor a default is still left as an open question, not a card', () => {
+  const run = critiqueRun();
+  assert.deepEqual(openAsk(run, run.nodes[0], [{ question: 'q', to: 'PO' }]), []);
+});
+
+test('the answer reaches the consumer\'s own briefing - nodeBriefing reads decisions off any upstream node in scope', () => {
+  const run = critiqueRun();
+  openAsk(run, run.nodes[0], defaultOnlyQuestion);
+  const ask = getNode(run, 'ask:critique:1');
+  ask.state = 'done';
+  ask.result = { stage_ok: true, decisions: [{ question: defaultOnlyQuestion[0].question, chose: 'develop', because: 'decided by a person' }] };
+  const briefing = nodeBriefing(run, getNode(run, 'implement:U1:1'));
+  const upstream = briefing.upstream.find((u) => u.node_id === 'ask:critique:1');
+  assert.ok(upstream, JSON.stringify(briefing.upstream));
+  assert.deepEqual(upstream.decisions, ask.result.decisions);
+});
+
+// --- gate:human (D2 Task 4) ---
+
+function gateHumanRun({ interactive = true, human_gates = ['critique', 'gate'] } = {}) {
+  return {
+    run_id: 'gate-human', cwd: '/tmp', max_retries: 2, interactive, human_gates,
+    spec: { subgoals: [{ id: 'U1', kind: 'code' }] },
+    nodes: [
+      node('critique', 'critique', [], {}),
+      node('gate:U1:1', 'gate', ['test:U1:1'], { subgoal_id: 'U1', attempt: 1 }),
+    ],
+  };
+}
+
+test('humanGateIdentity/humanGateVerdictField: gate:goal is told apart from a subgoal gate by node_id, not stage', () => {
+  const goal = node('gate:goal:1', 'gate', [], { subgoal_id: null });
+  const sub = node('gate:U1:1', 'gate', [], { subgoal_id: 'U1' });
+  assert.equal(humanGateIdentity(goal), 'gate:goal');
+  assert.equal(humanGateIdentity(sub), 'gate');
+  assert.equal(humanGateVerdictField(goal), 'accept');
+  assert.equal(humanGateVerdictField(sub), 'accept');
+  assert.equal(humanGateVerdictField(node('shape', 'shape', [])), null, 'an authoring stage has no verdict field - never gated');
+});
+
+test('promoteHumanGates parks a named judging stage in waiting_human when interactive, and only once', () => {
+  const run = gateHumanRun();
+  const { parked, autoPass } = promoteHumanGates(run);
+  assert.deepEqual(parked.map((n) => n.node_id), ['critique']);
+  assert.deepEqual(autoPass, []);
+  assert.equal(getNode(run, 'critique').state, 'waiting_human');
+  assert.equal(getNode(run, 'critique').human_gate, true);
+  assert.equal(getNode(run, 'critique').assignment.executor, 'human');
+  // gate:U1:1 is not ready yet (its dep test:U1:1 does not exist) - promoteHumanGates never
+  // parks a node before it is actually runnable, same as promoteWaitingHuman.
+  assert.equal(getNode(run, 'gate:U1:1').state, 'pending');
+  // A second poll must not re-decide an already-parked node.
+  assert.deepEqual(promoteHumanGates(run).parked, []);
+});
+
+test('promoteHumanGates ignores a stage not named in human_gates', () => {
+  const run = gateHumanRun({ human_gates: ['gate'] });
+  const { parked } = promoteHumanGates(run);
+  assert.deepEqual(parked, [], 'gate:U1:1 is not ready (deps unmet), critique is ready but not named');
+});
+
+test('promoteHumanGates auto-passes when not interactive, and records decided-for-you', () => {
+  const run = gateHumanRun({ interactive: false });
+  const { parked, autoPass } = promoteHumanGates(run);
+  assert.deepEqual(parked, []);
+  assert.deepEqual(autoPass.map((n) => n.node_id), ['critique']);
+  const n = getNode(run, 'critique');
+  assert.equal(n.state, 'pending', 'promoteHumanGates only marks it - the caller finalizes with autoPassHumanGateResult');
+  assert.ok(n.auto_decided_pin, 'tm_inbox\'s decided list reads this');
+  assert.match(n.auto_decided_pin.reason, /not interactive/);
+});
+
+test('autoPassHumanGateResult passes with evidence a "no evidence" guard accepts, per verdict field', () => {
+  const critiqueResult = autoPassHumanGateResult(node('critique', 'critique', []));
+  assert.equal(critiqueResult.stage_ok, true);
+  assert.equal(critiqueResult.sound, true);
+  assert.ok(critiqueResult.checks.length > 0);
+  const goalResult = autoPassHumanGateResult(node('gate:goal:1', 'gate', [], { subgoal_id: null }));
+  assert.equal(goalResult.accept, true);
+  assert.equal(goalResult.match_pct, 100);
+  assert.ok(Array.isArray(goalResult.attacks) && goalResult.attacks.length > 0, 'gate:goal needs attacks[] or nodeSucceeded refuses it (broker.mjs)');
+});
+
+test('humanGateResultFromPayload turns an accept/reject into the stage\'s own verdict shape, gaps included', () => {
+  const gateNode = node('gate:U1:1', 'gate', [], { subgoal_id: 'U1' });
+  const accepted = humanGateResultFromPayload(gateNode, { accept: true, reason: 'looks right' });
+  assert.equal(accepted.accept, true);
+  assert.equal(accepted.stage_ok, true);
+  assert.deepEqual(accepted.gaps, []);
+  const rejected = humanGateResultFromPayload(gateNode, { accept: false, reason: 'missing the b half', gaps: ['b.txt untouched'] });
+  assert.equal(rejected.accept, false);
+  assert.deepEqual(rejected.gaps, ['b.txt untouched'], 'rejection feeds gaps into the retry exactly like a model gate\'s own gaps[]');
+  assert.match(rejected.reason, /missing the b half/);
 });

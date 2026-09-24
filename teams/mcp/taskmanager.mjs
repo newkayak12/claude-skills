@@ -77,6 +77,11 @@ import {
   queueHumanAction,
   peekHumanActions,
   currentAttempt,
+  openAsk,
+  promoteHumanGates,
+  autoPassHumanGateResult,
+  humanGateResultFromPayload,
+  humanGateIdentity,
 } from './graph.mjs';
 import { computeSubmitResult } from './broker.mjs';
 
@@ -142,28 +147,47 @@ function stageSkills(task, n) {
 // Every manager stage that decides or judges. size only measures, and report only recounts.
 const MANAGER_CONVENTION_STAGES = new Set(['shape', 'critique', 'accept', 'integrate', 'gate', 'gate:goal']);
 
+// Same field, same short wording, as prompts.mjs's own QUESTIONS_CONTRACT (D2 slice 3, 0.29.0) -
+// this file's manager-level judging stages (shape/critique/accept/integrate/gate/gate:goal) get
+// the identical `questions[]` contract the child-run graph's stages do, generalized from
+// investigate's own unknowns[]. Kept as a second literal rather than importing prompts.mjs's
+// constant: the two files already diverge on every other line of these contracts, and importing
+// one string across that boundary would suggest a coupling that does not otherwise exist.
+const QUESTIONS_CONTRACT = `Optional: "questions": [{"question": "...", "to": "<role or person who owns this, if you can name one>", "options": [{"option": "...", "consequence": "..."}], "default": "<what you decide if nobody answers - required whenever "options" is>", "why": "<why this is not yours to decide alone>"}]. Only for a decision with a real owner other than you - not a hedge on ordinary judgment. An interactive run stops and asks; otherwise "default" is used and the question is recorded on the report as decided-for-you.`;
+
 export const CONTRACT = {
   size: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "handoff": "<what shape needs to know>", "evidence": "..."}
 S means one graph run in one worktree can carry the whole request. L means it spans independent modules, packages or repositories that each need their own run and worktree, integrated afterwards. Decide from what commands show - file and module counts, ownership boundaries, build units - and put those commands in "sizing". The default is S: a manager layer exists, and the temptation is to use it. Over-sizing costs a worktree, a run and an integration per package; under-sizing costs one retry.`,
   shape: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "acceptance": ["goal-level criteria for the integrated result"], "packages": [{"id": "P1", "title": "...", "flow": "develop|document", "skills": ["plugin:skill"], "brief": "<the request this package's own graph run will receive - self-contained>", "acceptance": ["what the package must deliver, checkable inside its worktree"], "touches": ["paths or modules this package changes"], "deps": ["P0"], "implements": ["US-1"], "enables": [], "split": false}], "handoff": "...", "evidence": "..."}
 "skills" is optional and is method for the package, not for you: you are the stage that knows what each package IS, and a CLI package and a reference-document package want different method. Name the skills that package's own nodes should work by, and they travel into its child run; leave it out when the brief is method enough. Do not name a skill that asks its reader questions - the child's nodes run headless too.
 Three rules critique will refuse the shape over, so decide them here rather than letting it find them. One: every shared artifact two or more packages depend on - the composition root or app assembly that makes the merged tree runnable, a cross-package contract, an auth or admission token and its verifier, a shared schema or type - is owned by exactly one package, named in that package's touches[] AND in its acceptance[]. A package may not be judged on a primitive no package was told to build. A package that owns only such artifacts delivers no story by itself: leave its implements[] empty and list in enables[] the stories that cannot be delivered without it - never claim a story in implements[] to get it past coverage. Two: every goal-level criterion must be checkable by the integration step from the merged tree alone, and no two of them may contradict each other; a criterion that needs an environment this harness cannot produce states the achievable measurement and what it extrapolates from, rather than naming a number no run can reach. Three: a package's own acceptance must be satisfiable from that package's deps[] alone - if proving it needs a sibling's delivered result, that sibling is a dependency or the criterion belongs to whoever has it.
-Each package becomes one graph run in its own worktree. A package with no deps branches from the current HEAD; a package with deps branches from its first dependency's delivered branch with the others merged in, so it builds on what they delivered - not on stubs. Two packages that touch the same path will conflict at integration: split by ownership, not by phase. A dependency means the package needs another's delivered result; it receives that package's report as context and starts from its tree. Every package must be size S on its own - if one still needs splitting, the shape is wrong. Two to six packages is the usual range. "split": true (or "size": "L") is the one exception to that rule - the rare package whose own scope still needs its own shape/dispatch cycle inside its child run; leave it false for the ordinary package, whose child run opens with this shape's own acceptance already decided and no plan/setgoal/critique/gate:goal of its own to redo (§3, docs/plans/2026-09-21-teams-server-owns-the-loop.md).`,
+Each package becomes one graph run in its own worktree. A package with no deps branches from the current HEAD; a package with deps branches from its first dependency's delivered branch with the others merged in, so it builds on what they delivered - not on stubs. Two packages that touch the same path will conflict at integration: split by ownership, not by phase. A dependency means the package needs another's delivered result; it receives that package's report as context and starts from its tree. Every package must be size S on its own - if one still needs splitting, the shape is wrong. Two to six packages is the usual range. "split": true (or "size": "L") is the one exception to that rule - the rare package whose own scope still needs its own shape/dispatch cycle inside its child run; leave it false for the ordinary package, whose child run opens with this shape's own acceptance already decided and no plan/setgoal/critique/gate:goal of its own to redo (§3, docs/plans/2026-09-21-teams-server-owns-the-loop.md).
+${QUESTIONS_CONTRACT}`,
   critique: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "sound": true|false, "blocking": ["..."], "problems": ["..."], "handoff": "...", "evidence": "..."}
 Attack the shape: packages that overlap in touches[], a dependency the brief does not actually need, a package too large to be one run, a goal-level criterion no integration step could check, and - above all - a request that was S sized as L. Set sound=false only for defects in "blocking" that make the packages impossible to run or impossible to integrate. Everything else is a problem, carried forward as advice.
-Blocking defects come in three types - name the type inline in the "blocking" entry itself (e.g. "type A - ..."), so the type is legible without a second pass. Type A - shape-quality: the "## Shape analysis" facts above are signals, not verdicts - a genuinely small app can be one linear chain, and one package can legitimately hold the shared contract - so decide with evidence from the brief, not from the numbers alone. A foundation or shared package that owns, in touches[], more than the contracts/types/protocols/interfaces the other packages build against (bloated in the analysis, or simply the one everything else deps on) is type A unless the shape says why that extra scope cannot be split out. A fully serial shape (max_parallel_width 1 across more than one package) is type A unless a real data dependency the brief itself names - not convenience, not habit, not "it was easier to write in order" - requires every edge; a chain that only avoids coordination is blocking, not a problem carried forward as advice. Type B - impossible to run: packages that overlap in touches[], a dependency cycle, a dependency the brief does not need, a package too large to be one run. Type C - impossible to integrate or judge: a goal-level criterion no integration step could check, criteria that contradict each other, or a request that was S sized as L. sound=false whenever "blocking" holds any type A, B or C entry - "blocking" is not optional just because the finding is type A.`,
+Blocking defects come in three types - name the type inline in the "blocking" entry itself (e.g. "type A - ..."), so the type is legible without a second pass. Type A - shape-quality: the "## Shape analysis" facts above are signals, not verdicts - a genuinely small app can be one linear chain, and one package can legitimately hold the shared contract - so decide with evidence from the brief, not from the numbers alone. A foundation or shared package that owns, in touches[], more than the contracts/types/protocols/interfaces the other packages build against (bloated in the analysis, or simply the one everything else deps on) is type A unless the shape says why that extra scope cannot be split out. A fully serial shape (max_parallel_width 1 across more than one package) is type A unless a real data dependency the brief itself names - not convenience, not habit, not "it was easier to write in order" - requires every edge; a chain that only avoids coordination is blocking, not a problem carried forward as advice. Type B - impossible to run: packages that overlap in touches[], a dependency cycle, a dependency the brief does not need, a package too large to be one run. Type C - impossible to integrate or judge: a goal-level criterion no integration step could check, criteria that contradict each other, or a request that was S sized as L. sound=false whenever "blocking" holds any type A, B or C entry - "blocking" is not optional just because the finding is type A.
+${QUESTIONS_CONTRACT}`,
   accept: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "accept": true|false, "match_pct": 0-100, "checks": ["<what you verified in the worktree or the report, and what it showed>"], "gaps": ["what the package did not deliver"], "observations": ["weaknesses that do not block"], "reason": "...", "evidence": "..."}
 You are the judge, not the actor. The child run's own goal gate and report are below; judge them against THIS package's acceptance, which the child never saw in full. A child that passed its own gate but delivered less than the package asked for is a gap here. Absent evidence is a gap, not a pass.
-accept:true with an empty checks[] is refused by the engine - a judgement with no evidence is a guess.`,
+accept:true with an empty checks[] is refused by the engine - a judgement with no evidence is a guess.
+${QUESTIONS_CONTRACT}`,
   integrate: `Return JSON: {"stage_ok": true|false, "skills_used": ["<skill or none>"], "verified": true|false, "checks": ["command -> observed output"], "unowned": ["requirement -> the package that delivered it, NONE if no package did, or <package> -> did not deliver its own stated scope"], "duplication": ["responsibility built more than once -> the packages that each built it, and what shared module it should have been"], "volume": ["package -> files/LOC/tests it delivered -> plausible for its stated scope, or looks like a card was closed rather than a job finished, and why"], "evidence": "..."}
 The package branches are already merged into the integration worktree named below - the manager did that and recorded each merge commit. Your job is what no package could do alone: run the goal-level checks the shape's acceptance implies against the combined tree, and read the seams between packages. stage_ok=false when a check could not run at all. verified=false when the combined tree fails a check the packages passed separately. Do not fix package work here: a failing seam is a gap for the gate and a repackage for the manager.
 Three more questions, answered with evidence, not vibes - the same product-owner pass planning's audit takes after integration, run here so it happens even when roles.planning is off (audit, when it does run, takes this as its own second pass - do not treat this as done because that one is coming): missing - map every requirement in the request or the shape's acceptance to the package that implemented it, name any with no owning package, and name any package whose stated scope it did not actually deliver, into "unowned". duplication - name any responsibility two or more packages each implemented, and any type or helper multiple packages each defined locally instead of sharing, into "duplication", saying what the shared module should be called. volume - for each package, give file/LOC/test counts and say whether that size is plausible for its stated scope, into "volume", with the reasoning that got you there, not just the numbers. An empty list in any of the three is a real finding, not something you skipped.
-verified:true with an empty checks[] is refused by the engine - a judgement with no evidence is a guess.`,
+verified:true with an empty checks[] is refused by the engine - a judgement with no evidence is a guess.
+${QUESTIONS_CONTRACT}`,
   'gate:goal': `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "accept": true|false, "match_pct": 0-100, "checks": ["<what you verified and what it showed>"], "gaps": ["what blocks acceptance"], "observations": ["weaknesses that do not block"], "spec_drift": ["where the shape asked for less than the request did"], "reason": "...", "evidence": "..."}
 You are the judge, not the actor, and the only node that sees the original request again. Judge the integrated result against BOTH the goal-level acceptance and the REQUEST as written. Anything the request asked for that no package delivered and no criterion named belongs in "spec_drift". Absent evidence is a gap, not a pass.
-accept:true with an empty checks[] is refused by the engine - a judgement with no evidence is a guess.`,
+accept:true with an empty checks[] is refused by the engine - a judgement with no evidence is a guess.
+${QUESTIONS_CONTRACT}`,
   report: `Return JSON: {"stage_ok": true, "handoff": "<the final report>", "evidence": "..."}
 Synthesize from the node results below only: which packages ran, what each delivered, what the integration showed, what the gate said. State plainly what was not done and why.`,
+  // A card the manager graph parks for a human the moment a `questions[]`-bearing stage
+  // completes (openAsk, generalized in graph.mjs - D2 slice 3). It never dispatches to a
+  // fresh agent - the same reason `ask` is not in MANAGER_CONVENTION_STAGES above - this entry
+  // exists only so composeTaskPrompt has contract text to show the PERSON reading the card
+  // (tm_inbox's briefing_path), not a model.
+  ask: `Return JSON: {"stage_ok": true|false, "decisions": [{"question": "<the question, as it was asked>", "chose": "<the option you picked, in full>", "because": "<optional: why, or a condition on it>"}], "evidence": "who decided, and when"}`,
 };
 
 // What an ordinary accept never has to say, and a phase-Team's accept does. Both of these pass
@@ -236,6 +260,12 @@ function createTask(a) {
     // Whether this EPIC's runs may stop and ask a person. Carried on the task as well as in
     // child_opts so tm_status can show it without opening a child run.
     interactive: T.interactive === true,
+    // gate:human (0.29.0): which judging stages of THIS task's own manager graph (shape,
+    // critique, accept, integrate, gate, gate:goal live in task.nodes - task.json is itself a
+    // run, graph.mjs's promoteHumanGates works over it unmodified) a person must accept or
+    // reject. Also threaded into child_opts below so every package's own child run gates the
+    // same stages inside its own chain.
+    human_gates: Array.isArray(T.human_gates) ? T.human_gates.slice() : [],
     // Set once a daemon is spawned for this task (serviceDaemon/spawnDaemon): {pid, started_at,
     // log, stderr, exit, command, spawn_count, restarts, exhausted}. null under noDaemon().
     daemon: null,
@@ -269,6 +299,9 @@ function createTask(a) {
       // manager. This is the value graph.mjs's createRun turns into run.interactive, which is
       // what openAsk consults.
       interactive: T.interactive === true,
+      // Same reasoning as interactive just above - a package's own child run gates the same
+      // stages createRun's own chain has (critique, gate, gate:goal) that the project named.
+      human_gates: Array.isArray(T.human_gates) ? T.human_gates.slice() : [],
       // team_open's own tool boundary (broker.mjs) defaults this to 2; createRun's own bare
       // default is 1, deliberately - see graph.mjs's createRun and the commit that introduced
       // goal_judges, 858e0b9: "createRun itself still defaults goal_judges to 1, so a caller
@@ -2242,6 +2275,20 @@ export function briefingPath(task, n) {
   return join(taskDir(task.run_id), 'briefings', `${n.node_id.replace(/[^A-Za-z0-9._-]/g, '_')}.md`);
 }
 
+// The manager-graph twin of broker.mjs's writeHumanBriefing: the card a person reads for a
+// node openAsk or promoteHumanGates just parked on task.nodes directly (shape/critique/accept/
+// integrate/gate/gate:goal - not a package's child run). Best-effort like its sibling - a
+// failed write leaves tm_inbox to fall back on the node's own fields, not a hard error.
+export function writeManagerBriefing(task, n) {
+  if (!n) return;
+  try {
+    const p = briefingPath(task, n);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, composeTaskPrompt(task, n));
+    n.briefing_path = p;
+  } catch { /* tm_inbox falls back to tm_status full:true */ }
+}
+
 export function composeTaskPrompt(task, n) {
   const L = [];
   L.push(`# ${n.stage} node ${n.node_id} (task manager)`);
@@ -2682,6 +2729,28 @@ export function finish(task, n, result) {
         // What 65-audit.md links. Kept on the node rather than recomputed from the package list
         // because a later round's STORYs would be indistinguishable from this one's.
         n.result = { ...n.result, filed: out.filed };
+      }
+    }
+  }
+  // D2 slice 3 (0.29.0): the manager graph's own judging/deciding stages (shape, critique,
+  // accept, integrate, gate, gate:goal) get the same `questions[]` treatment the child-run
+  // graph's stages do (broker.mjs's finishNode, its own comment explains the contract shape) -
+  // reused unmodified because task.json is itself a run (openAsk/getNode work over any
+  // object with `.nodes`). Manager-level cards get a briefing written explicitly, the way
+  // writeHumanBriefing does for a child run - toolNext's own ready-node loop never sees an
+  // `ask` node because openAsk parks it 'waiting_human' at birth, never 'pending'.
+  if (n.state === 'done' && Array.isArray(n.result.questions) && n.result.questions.length) {
+    const decidable = n.result.questions.filter((q) => q && q.question
+      && ((Array.isArray(q.options) && q.options.length > 1) || q.default !== undefined));
+    if (decidable.length) {
+      if (task.interactive) {
+        for (const askId of openAsk(task, n, decidable)) writeManagerBriefing(task, getNode(task, askId));
+      } else {
+        task.unasked = [...(task.unasked || []), ...decidable.map((q) => ({
+          subgoal_id: n.subgoal_id, node_id: n.node_id, stage: n.stage,
+          question: q.question, owner: q.to || null, options: q.options || null,
+          decided: q.default !== undefined ? q.default : null, why: q.why || null,
+        }))];
       }
     }
   }
@@ -3254,6 +3323,61 @@ function toolAssign(a) {
 // decision being invisible. Scans every package's child run (dispatch.child) for a node in
 // either state; a task with no packages dispatched yet simply contributes none. Both sorted
 // oldest-first.
+// One node -> one card/decided entry, shared by every run this scans (a package's child run
+// AND, since 0.29.0, the manager graph itself - task.json is a run too). `pid` is the STORY
+// this node's key sits under, or the literal 'TASK' for a manager-level node with no package.
+// A run-level node (subgoal_id null - setgoal/plan/critique/gate:goal, or the manager's own
+// shape/critique/accept/integrate/gate/gate:goal) has no subgoal id to key off, so the key's
+// last segment falls back to the node's own node_id - still unique, still a valid TASK key
+// (parseTicketKey only requires a third segment, never that it name a real subgoal).
+function inboxEntry(task, pid, run, n) {
+  const sg = run.spec && (run.spec.subgoals || []).find((s) => String(s.id) === String(n.subgoal_id));
+  const key = taskKey(task.run_id, pid, n.subgoal_id || n.node_id);
+  if (n.state === 'waiting_human') {
+    return { card: {
+      key,
+      task_id: task.run_id,
+      node_id: n.node_id,
+      // Three kinds of card park here and they ask for different things: a pinned author stage
+      // wants the work done (0.27.3), an `ask` node wants one decision picked from named
+      // candidates (graph.mjs's openAsk, generalized past investigate in 0.29.0), a `human_gate`
+      // node wants an accept/reject with reasons (graph.mjs's promoteHumanGates). `stage` and
+      // `human_gate` are what tell them apart; `questions` is only ever present on the second.
+      stage: n.stage,
+      ...(n.human_gate ? { human_gate: true } : {}),
+      title: (sg && sg.title) || String(n.subgoal_id || n.node_id),
+      acceptance: (sg && sg.acceptance) || [],
+      ...(n.stage === 'ask' ? { questions: n.questions || [] } : {}),
+      briefing_path: n.briefing_path || null,
+      who: (n.assignment && n.assignment.who) || null,
+      since: n.waiting_since || null,
+    } };
+  }
+  if (n.auto_decided_pin) {
+    return { decided: {
+      key,
+      task_id: task.run_id,
+      node_id: n.node_id,
+      stage: n.stage,
+      title: (sg && sg.title) || String(n.subgoal_id || n.node_id),
+      who: n.auto_decided_pin.who || null,
+      reason: n.auto_decided_pin.reason,
+      since: n.auto_decided_pin.at || null,
+    } };
+  }
+  return null;
+}
+
+// tm_inbox({task_id?}): the two sections design §7 names - waiting (I must act) and
+// decided-for-you (auto-decided, with a way to object). `cards` is every waiting_human node,
+// read straight off the state graph.mjs's promoteWaitingHuman/promoteHumanGates already parked
+// - no second list to keep in sync. `decided` is every node applyHumanPin/promoteHumanGates
+// (graph.mjs) routed past a person instead of parking, because the run is not interactive -
+// graph.mjs's own auto_decided_pin record on the node, surfaced here so a person can see what
+// was defaulted and object instead of the decision being invisible. Scans every package's
+// child run (dispatch.child) AND, since 0.29.0, the task's own manager graph (task.nodes) - a
+// task with no packages dispatched yet, and one with none of its own manager-level cards
+// either, simply contributes none. Both sorted oldest-first.
 function toolInbox(a) {
   const ids = a.task_id ? [String(a.task_id)] : (() => { try { return readdirSync(tasksRoot()); } catch { return []; } })();
   const cards = [];
@@ -3261,6 +3385,11 @@ function toolInbox(a) {
   for (const tid of ids) {
     const task = loadRunAt(taskPath(tid));
     if (!task) continue;
+    for (const n of task.nodes) {
+      const entry = inboxEntry(task, 'TASK', task, n);
+      if (entry && entry.card) cards.push(entry.card);
+      if (entry && entry.decided) decided.push(entry.decided);
+    }
     const packages = [task.planning_pkg, task.qa_pkg, task.audit_pkg, ...((task.spec && task.spec.packages) || [])].filter(Boolean);
     for (const pkg of packages) {
       const pid = String(pkg.id);
@@ -3269,36 +3398,9 @@ function toolInbox(a) {
       const child = loadRun(dispatch.child.cwd, dispatch.child.run_id);
       if (!child) continue;
       for (const n of child.nodes) {
-        const sg = child.spec && (child.spec.subgoals || []).find((s) => String(s.id) === String(n.subgoal_id));
-        if (n.state === 'waiting_human') {
-          cards.push({
-            key: taskKey(task.run_id, pid, n.subgoal_id),
-            task_id: task.run_id,
-            node_id: n.node_id,
-            // Two kinds of card park here now and they ask for different things: a pinned author
-            // stage wants the work done (0.27.3), an `ask` node wants one decision picked from
-            // named candidates (graph.mjs's openAsk). `stage` is what tells them apart, and
-            // `questions` is only ever present on the second.
-            stage: n.stage,
-            title: (sg && sg.title) || String(n.subgoal_id),
-            acceptance: (sg && sg.acceptance) || [],
-            ...(n.stage === 'ask' ? { questions: n.questions || [] } : {}),
-            briefing_path: n.briefing_path || null,
-            who: (n.assignment && n.assignment.who) || null,
-            since: n.waiting_since || null,
-          });
-        } else if (n.auto_decided_pin) {
-          decided.push({
-            key: taskKey(task.run_id, pid, n.subgoal_id),
-            task_id: task.run_id,
-            node_id: n.node_id,
-            stage: n.stage,
-            title: (sg && sg.title) || String(n.subgoal_id),
-            who: n.auto_decided_pin.who || null,
-            reason: n.auto_decided_pin.reason,
-            since: n.auto_decided_pin.at || null,
-          });
-        }
+        const entry = inboxEntry(task, pid, child, n);
+        if (entry && entry.card) cards.push(entry.card);
+        if (entry && entry.decided) decided.push(entry.decided);
       }
     }
   }
@@ -3552,6 +3654,26 @@ export function prepareReadyIntegrations(task) {
   return prepared;
 }
 
+// gate:human (D2 Task 4): a manager-graph judging node (shape/critique/accept/integrate/gate/
+// gate:goal) named in human_gates never reaches a driver - see graph.mjs's promoteHumanGates
+// for why this is safe to call on task.json unmodified (it is itself a run). Interactive parks
+// it for tm_inbox/tm_submit; non-interactive auto-passes it through the same finish() a
+// driver's own submission would take. Exported and called from both tm_next (toolNext, a
+// caller driving the graph by hand) and the daemon's own loop (daemon.mjs's stepOnceInner,
+// right before it judges every ready reasoning node) - same reason advanceDispatches/
+// prepareReadyIntegrations are shared rather than each caller deciding readiness on its own:
+// the daemon judges every ready node directly, with no tool boundary in between, so a hook
+// that only lived in toolNext would never fire on an autonomous run.
+export function promoteManagerHumanGates(task) {
+  const { parked, autoPass } = promoteHumanGates(task);
+  for (const n of autoPass) finish(task, n, autoPassHumanGateResult(n));
+  if (parked.length) {
+    for (const n of parked) writeManagerBriefing(task, n);
+    saveRun(task);
+  }
+  return { parked, autoPass };
+}
+
 function toolNext(a) {
   const task = mustFindTask(a);
   // Refresh the shared engagement marker in every tree a live driver is working in, so the
@@ -3568,6 +3690,7 @@ function toolNext(a) {
   if (advanceDispatches(task)) saveRun(task);
   if (serviceRunningDispatches(task)) saveRun(task);
   prepareReadyIntegrations(task);
+  promoteManagerHumanGates(task);
   const state = runState(task);
   const ready = readyNodes(task).map((n) => {
     const p = briefingPath(task, n);
@@ -3646,45 +3769,99 @@ function toolSubmit(a) {
 // a rejection's own retry back to waiting_human - graph.mjs's applyHumanPin, called again by
 // retrySubgoal) still runs through the real broker once the child's driver resumes, exactly as it
 // always has; only WHO performs the verdict on THIS node's own payload changed.
+// A human_gate card's payload is {accept, reason?, gaps?}, not driver-shaped JSON - converted
+// here, once, into the stage's own result shape (graph.mjs's humanGateResultFromPayload) before
+// it goes anywhere a driver's own submission would (computeSubmitResult/finish), so every
+// downstream reader sees the same shape regardless of who judged the node.
+function humanSubmitPayload(n, rawPayload) {
+  if (!n.human_gate) return rawPayload || {};
+  if (typeof (rawPayload || {}).accept !== 'boolean') {
+    throw new Error(`${n.node_id} is a human gate (gate:human): payload needs {accept: true|false, reason?, gaps?}`);
+  }
+  return humanGateResultFromPayload(n, rawPayload);
+}
+
+// The manager-graph twin of the child-run branch below: pkgId 'TASK' addresses task.nodes
+// directly (a run/task-level card - setgoal/plan/critique/gate:goal generalized questions, or
+// gate:human on shape/critique/accept/integrate/gate/gate:goal). task.json is this file's own
+// to write (unlike a child run, rule 2's "READS child run files and never writes them" does not
+// apply here), so this calls finish() directly instead of queueing through the broker - there
+// is no driver to resume, the manager graph has none of its own.
+function toolSubmitHumanManager(task, key, nodeId, rawPayload) {
+  const n = getNode(task, nodeId);
+  if (!n || n.state !== 'waiting_human') {
+    throw new Error(n ? `${key}'s card (${nodeId}) is ${n.state}, not waiting_human - nothing to submit` : `${key} has no card waiting on a human`);
+  }
+  if (n.stage === 'ask' && !Array.isArray((rawPayload || {}).decisions)) {
+    throw new Error(`${key}'s card (${nodeId}) is a decision: payload needs decisions[], one {question, chose} per question in tm_inbox`);
+  }
+  const shaped = humanSubmitPayload(n, rawPayload);
+  // finish() (unlike broker.mjs's computeSubmitResult) does not default stage_ok on a raw
+  // submission - a driver's own JSON always states it, but a person answering a decisions[]
+  // card typically does not. Same default computeSubmitResult gives the child-run path: absent
+  // means true, only an explicit false means false.
+  const payload = { ...shaped, stage_ok: shaped.stage_ok !== false };
+  const verdictOut = finish(task, n, payload);
+  record(task, { event: 'tm_submit_human', task_id: task.run_id, key, node_id: nodeId, stage_ok: verdictOut.stage_ok === true });
+  return { task_id: task.run_id, key, node_id: nodeId, state: n.state, result: n.result };
+}
+
 function toolSubmitHuman(task, a) {
   const key = String(a.key);
   const parsed = parseTicketKey(key);
   if (!parsed || !parsed.pkgId || !parsed.subgoalId) throw new Error(`tm_submit({key}) needs a TASK key (E-xxxxxxxx/Pn/subgoalId), got "${key}"`);
   const { pkgId, subgoalId } = parsed;
+  // 'TASK' is not a real package id (STORY keys are 'P1', 'P2', ... - shape's own package.id) -
+  // it is the pseudo-package this module's own toolInbox/inboxEntry key a manager-level node
+  // under, since such a node has no package to belong to at all.
+  if (pkgId === 'TASK') return toolSubmitHumanManager(task, key, subgoalId, a.payload || {});
   const dispatch = latestBySubgoal(task, pkgId, 'dispatch');
   if (!dispatch || !dispatch.child) throw new Error(`${key} has no child run yet`);
   const child = loadRun(dispatch.child.cwd, dispatch.child.run_id);
   if (!child) throw new Error(`${key}'s child run file is missing`);
   const sg = child.spec && (child.spec.subgoals || []).find((s) => String(s.id) === subgoalId);
-  if (!sg) throw new Error(`no subgoal ${subgoalId} in ${key}'s child run`);
-  // The waiting node, not the predicted one. authorStage answered this while a pinned author
-  // stage was the only thing that could park here; an `ask` node (graph.mjs's openAsk) is not
-  // in the kind's chain at all, so computing its id was never possible. A subgoal has at most
-  // one card open at a time by construction - ask sits on draft's dep edge, so the two can
-  // never be waiting together - and authorStage stays as the name used to explain an empty
-  // inbox for this key.
-  const attempt = currentAttempt(child, subgoalId);
   // A card this same task already queued an answer for (this tick's own earlier tm_submit, not
   // yet drained by the broker) is not `waiting_human` on disk yet either - queueHumanAction below
   // never flips it. Without this, a second submission of the same card would see the same stale
   // waiting_human node the first call did and be accepted twice.
   const alreadyQueued = new Set(peekHumanActions(dispatch.child.cwd, dispatch.child.run_id)
     .filter((x) => x.kind === 'submit').map((x) => x.node_id));
-  const waiting = child.nodes.filter((x) => String(x.subgoal_id) === subgoalId && x.state === 'waiting_human' && !alreadyQueued.has(x.node_id));
-  if (!waiting.length) {
-    const predicted = `${authorStage(kindOf(sg))}:${subgoalId}:${attempt}`;
-    const n0 = getNode(child, predicted);
-    throw new Error(n0
-      ? `${key}'s card (${predicted}) is ${alreadyQueued.has(predicted) ? 'submitted, awaiting the broker' : n0.state}, not waiting_human - nothing to submit`
-      : `${key} has no card waiting on a human`);
+  let n;
+  if (sg) {
+    // The waiting node, not the predicted one. authorStage answered this while a pinned author
+    // stage was the only thing that could park here; an `ask` node (graph.mjs's openAsk) is not
+    // in the kind's chain at all, so computing its id was never possible. A subgoal has at most
+    // one card open at a time by construction - ask sits on draft's dep edge, so the two can
+    // never be waiting together - and authorStage stays as the name used to explain an empty
+    // inbox for this key.
+    const attempt = currentAttempt(child, subgoalId);
+    const waiting = child.nodes.filter((x) => String(x.subgoal_id) === subgoalId && x.state === 'waiting_human' && !alreadyQueued.has(x.node_id));
+    if (!waiting.length) {
+      const predicted = `${authorStage(kindOf(sg))}:${subgoalId}:${attempt}`;
+      const n0 = getNode(child, predicted);
+      throw new Error(n0
+        ? `${key}'s card (${predicted}) is ${alreadyQueued.has(predicted) ? 'submitted, awaiting the broker' : n0.state}, not waiting_human - nothing to submit`
+        : `${key} has no card waiting on a human`);
+    }
+    n = waiting[waiting.length - 1];
+  } else {
+    // No subgoal by that id: the key's third segment is a run-level node's own node_id instead
+    // (setgoal/plan/critique/gate:goal - subgoal_id null, generalized questions or gate:human -
+    // see inboxEntry's key scheme, taskmanager.mjs). Same card machinery either way from here.
+    const n0 = getNode(child, subgoalId);
+    if (!n0 || n0.state !== 'waiting_human' || alreadyQueued.has(n0.node_id)) {
+      throw new Error(n0
+        ? `${key}'s card (${n0.node_id}) is ${alreadyQueued.has(n0.node_id) ? 'submitted, awaiting the broker' : n0.state}, not waiting_human - nothing to submit`
+        : `no subgoal or node ${subgoalId} in ${key}'s child run`);
+    }
+    n = n0;
   }
-  const n = waiting[waiting.length - 1];
   const nodeId = n.node_id;
   if (n.stage === 'ask' && !Array.isArray((a.payload || {}).decisions)) {
     throw new Error(`${key}'s card (${nodeId}) is a decision: payload needs decisions[], one {question, chose} per question in tm_inbox`);
   }
 
-  const payload = a.payload || {};
+  const payload = humanSubmitPayload(n, a.payload || {});
   const { result, done } = computeSubmitResult(child, n, payload, 'human');
   const answeredAt = Date.now();
   queueHumanAction(dispatch.child.cwd, dispatch.child.run_id, { kind: 'submit', node_id: nodeId, payload, answered_at: answeredAt });

@@ -32,7 +32,7 @@ import {
   advanceDispatches, serviceRunningDispatches, prepareReadyIntegrations,
   dispatchSettled, foldChild, serviceSRun, delegateIfSmall,
   finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages, autoRejudge, autoResumeCapacity,
-  STAGE_SKILLS, syncTickets, autoReshape,
+  STAGE_SKILLS, syncTickets, autoReshape, promoteManagerHumanGates,
 } from './taskmanager.mjs';
 import { ticketSnapshot } from './tickets.mjs';
 import { pluginDirArgs, isEntryPoint } from './pluginroots.mjs';
@@ -284,6 +284,12 @@ async function stepOnceInner(task) {
   if (advanceDispatches(task)) { saveRun(task); progressed = true; }
   if (serviceRunningDispatches(task)) saveRun(task);
   if (prepareReadyIntegrations(task)) progressed = true;
+  // gate:human (D2 Task 4): a judging node human_gates named must never reach judge() below -
+  // this daemon has no tool boundary a session's tm_next could have caught it at, so this is
+  // the one place that matters for an autonomous run. Interactive parks it (readyNodes no
+  // longer offers it, the same way a pinned author stage already does not); non-interactive
+  // auto-passes it through finish() directly, counted as progress like every other fold.
+  if (promoteManagerHumanGates(task).autoPass.length) progressed = true;
 
   // Fold every dispatch whose child has stopped running - foldChild + finish() is exactly what
   // tm_submit does for a dispatch node with no payload; this is that same call, made directly
