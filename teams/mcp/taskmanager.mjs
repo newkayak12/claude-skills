@@ -1869,7 +1869,19 @@ export function serviceDeadDriver(task, child, nodeId) {
   if (!driver || driverAlive(driver)) return false;
   const run = loadRun(child.cwd, child.run_id);
   const cs = run ? runState(run) : { state: 'missing' };
-  if (cs.state !== 'running') return false; // the run finished; an ordinary fold reads that
+  // A run parked on a human is not a dead run, and no driver is SUPPOSED to be alive while it
+  // waits - that is the whole point of waiting_human (zero compute while waiting). But an answer
+  // ALREADY QUEUED for it has nobody to apply it: the handoff queue is drained by the broker, the
+  // broker only runs inside a driver, and tm_submit's own revive fires only on the call that
+  // queues. idol-beta-ask1 (2026-09-25) is what that looks like - three answers accepted into the
+  // queue, the driver killed before it drained them, and no path left that would ever bring one
+  // back. So a parked child whose queue is not empty does need a driver; a parked child whose
+  // queue is empty correctly gets none.
+  if (cs.state === 'waiting_human') {
+    if (!peekHumanActions(child.cwd, child.run_id).length) return false;
+  } else if (cs.state !== 'running') {
+    return false; // the run finished; an ordinary fold reads that
+  }
   if (child.waiting_capacity) return false; // already parked; reset_capacity is the way out
   const tail = driverStderrTail(driver, 2000);
   const usage = driverUsageLimitText(driver);

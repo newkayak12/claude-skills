@@ -5375,3 +5375,57 @@ test('gate:human auto-passes the manager critique when not interactive, recorded
     assert.equal(critiqueNode.result.sound, true, 'auto-pass, not auto-reject - a gate nobody is watching must not block the run');
   }, { human_gates: ['critique'] });
 });
+
+test('a card answered while the driver is dead still gets applied: the parked child is revived for its queue', async () => {
+  // idol-beta-ask1 (2026-09-25). Three answers were accepted into the handoff queue, the child's
+  // driver was killed before draining them, and nothing brought one back: serviceDeadDriver read
+  // runState as waiting_human and treated it as "no driver is meant to be alive here" - true in
+  // general, false when an answer is already waiting to be applied. Reported as accepted, never
+  // applied, with no path left that would ever apply it.
+  const { serviceDeadDriver } = await import('../mcp/taskmanager.mjs');
+  const graphMod = await import('../mcp/graph.mjs');
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    await tm.call('tm_next', { task_id });
+    const load = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const prevRoot = process.env.HARNESS_TASKS_DIR;
+    const withRoot = (fn) => { process.env.HARNESS_TASKS_DIR = root; try { return fn(); } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; } };
+    const prevDriver = process.env.HARNESS_CHILD_DRIVER;
+    const drv = mkdtempSync(join(tmpdir(), 'tm-revive-drv-'));
+    writeFileSync(join(drv, 'fake-driver.mjs'), FAKE_DRIVER_ALIVE);
+    process.env.HARNESS_CHILD_DRIVER = `node ${join(drv, 'fake-driver.mjs')}`;
+    try {
+      const task = load();
+      const n = task.nodes.find((x) => x.node_id === 'dispatch:P1:1');
+      const child = n.child;
+      // Its own run id, so this writes a fresh file rather than merging onto the real child run
+      // tm_next just created (saveRun merges; the leftover pending nodes would keep runState at
+      // 'running' and the fixture would not be parked at all).
+      child.run_id = 'revive-1';
+      graphMod.saveRun({
+        cwd: child.cwd, run_id: child.run_id, max_retries: 2,
+        spec: { subgoals: [{ id: 'U1', kind: 'planning' }] },
+        nodes: [graphMod.node('ask:U1:1', 'ask', [], {
+          subgoal_id: 'U1', attempt: 1, state: 'waiting_human', waiting_since: Date.now(),
+          questions: [{ question: 'q', options: [{ option: 'a' }, { option: 'b' }] }],
+          assignment: { executor: 'human', vendor: 'human', who: 'PO' },
+        })],
+      });
+      child.driver = { pid: 2147483646, restarts: [] }; // a pid nothing holds: already dead
+
+      // Nothing queued: a parked child with no answer waiting correctly gets no driver.
+      assert.equal(withRoot(() => serviceDeadDriver(task, child, n.node_id)), false, 'zero compute while waiting');
+      assert.equal(child.driver.pid, 2147483646, 'and no respawn happened');
+
+      graphMod.queueHumanAction(child.cwd, child.run_id, {
+        kind: 'submit', node_id: 'ask:U1:1', payload: { stage_ok: true, decisions: [{ question: 'q', chose: 'a' }] },
+      });
+      // An answer is waiting: now it needs one, or the answer can never land.
+      assert.equal(withRoot(() => serviceDeadDriver(task, child, n.node_id)), true, 'revived for its queue');
+      assert.notEqual(child.driver.pid, 2147483646, 'a fresh driver');
+    } finally {
+      if (prevDriver === undefined) delete process.env.HARNESS_CHILD_DRIVER; else process.env.HARNESS_CHILD_DRIVER = prevDriver;
+      rmSync(drv, { recursive: true, force: true });
+    }
+  });
+});
