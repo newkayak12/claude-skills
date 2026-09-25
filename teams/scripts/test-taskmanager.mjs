@@ -5429,3 +5429,43 @@ test('a card answered while the driver is dead still gets applied: the parked ch
     }
   });
 });
+
+test('one subgoal, five owners: every card is addressable and an ambiguous key is refused', async () => {
+  // 0.28.7 splits a subgoal's questions into one card per owner - idol-beta-ask1 (2026-09-25)
+  // opened five for U4 alone, and every one of them advertised the SAME subgoal-keyed ticket.
+  // tm_submit resolved that by taking the last waiting card, so one owner's answers would have
+  // been applied to another owner's questions, silently.
+  const graphMod = await import('../mcp/graph.mjs');
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    await tm.call('tm_next', { task_id });
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const child = task.nodes.find((x) => x.node_id === 'dispatch:P1:1').child;
+    const card = (id, who, q) => graphMod.node(id, 'ask', [], {
+      subgoal_id: 'U1', ask_owner: 'U1', attempt: 1, state: 'waiting_human', waiting_since: Date.now(),
+      questions: [{ question: q, options: [{ option: 'a' }, { option: 'b' }] }],
+      assignment: { executor: 'human', vendor: 'human', who },
+    });
+    graphMod.saveRun({
+      cwd: child.cwd, run_id: child.run_id, max_retries: 2,
+      spec: { subgoals: [{ id: 'U1', kind: 'planning', title: 'scale' }] },
+      nodes: [card('ask:U1:1', 'SRE', 'what SLA?'), card('ask:U1:1b', 'Finance', 'what payment TPS?')],
+    });
+
+    const inbox = await tm.call('tm_inbox', { task_id });
+    const keys = inbox.cards.map((c) => c.key).sort();
+    assert.equal(new Set(keys).size, 2, 'two cards, two distinct keys: ' + keys.join(','));
+    assert.ok(keys.every((k) => k.endsWith('/ask:U1:1') || k.endsWith('/ask:U1:1b')), keys.join(','));
+
+    // The subgoal-keyed form is refused rather than resolved by guesswork - checked first,
+    // because answering one card removes it and the ambiguity with it.
+    const bad = await tm.call('tm_submit', { task_id, key: `E-${task_id.slice(0, 8)}/P1/U1`, payload: ok({ decisions: [] }) });
+    assert.match(bad.error || '', /2 cards waiting/, JSON.stringify(bad));
+    assert.match(bad.error || '', /ask:U1:1b/, 'and it names the keys that would work');
+
+    // Named by node: each answer reaches the card that asked for it.
+    const one = inbox.cards.find((c) => c.node_id === 'ask:U1:1b');
+    const v = await tm.call('tm_submit', { task_id, key: one.key, payload: ok({ decisions: [{ question: 'what payment TPS?', chose: 'a' }] }) });
+    assert.equal(v.node_id, 'ask:U1:1b', JSON.stringify(v));
+  });
+});

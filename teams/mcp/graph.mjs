@@ -1033,14 +1033,48 @@ export function openRepair(run, round, feedback, judges) {
 // - the card's owner key falls back to the node's own node_id when it has no subgoal_id - every
 //   run/task-level judging node (setgoal, plan, critique, gate:goal, and shape/accept/integrate
 //   at the manager layer) has none, and investigate was the only stage with one to begin with.
+// Every decision a person has already made for this owner (a subgoal id, or a manager node's own
+// id - the same key openAsk uses), read off the `ask` nodes themselves. Superseded attempts are
+// included on purpose: an answer does not stop being an answer because the attempt that asked for
+// it was retried. Read by openAsk (never ask twice) and by nodeBriefing (so the stage writing the
+// next round of questions knows what is settled).
+export function answeredDecisions(run, owner) {
+  const out = [];
+  const seen = new Set();
+  for (const x of run.nodes) {
+    if (x.stage !== 'ask') continue;
+    // ask_owner since 0.29.2; fall back to subgoal_id for a card written before it existed.
+    if (String(x.ask_owner || x.subgoal_id || '') !== String(owner)) continue;
+    for (const d of (x.result && x.result.decisions) || []) {
+      if (!d || !d.question || seen.has(d.question)) continue;
+      seen.add(d.question);
+      out.push(d);
+    }
+  }
+  return out;
+}
+
 export function openAsk(run, n, questions) {
   if (!n) return [];
-  const qs = (questions || []).filter((q) => q && (q.question || q.unknown)
+  let qs = (questions || []).filter((q) => q && (q.question || q.unknown)
     && ((Array.isArray(q.options) && q.options.length > 1) || q.default !== undefined));
   if (!qs.length) return [];
   const attempt = n.attempt || 1;
   const owner = n.subgoal_id || n.node_id;
   if (run.nodes.some((x) => x.node_id === `ask:${owner}:${attempt}`)) return [];
+  // A question a person already answered on an earlier attempt of this same owner is settled, and
+  // asking it again is asking them to decide twice. idol-beta-ask1 (2026-09-25) measured it: U4's
+  // draft failed twice, its third investigate raised six questions, and two were byte-identical to
+  // ones answered on ask:U4:1 - a node the retry superseded, so nothing downstream knew. Exact
+  // match only, because the engine stored both strings itself and needs no judgement to compare
+  // them. The other four were rewordings of the same decisions, which no string filter can catch -
+  // that is why answeredDecisions also reaches the next attempt's own briefing (nodeBriefing):
+  // the stage that writes the question is the one that should know it is already decided.
+  const settled = new Set(answeredDecisions(run, owner).map((d) => d.question));
+  if (settled.size) {
+    qs = qs.filter((q) => !settled.has(q.question || q.unknown));
+    if (!qs.length) return [];
+  }
   // Whoever consumed the node now consumes the answers instead. Order-only (`after`) edges
   // count as consumers too, not just data (`deps`) ones - gate:goal's only downstream is
   // `report` via `after` (expandSubgoals leaves the subgoal gates as `after`, not `deps`, once
@@ -1073,6 +1107,11 @@ export function openAsk(run, n, questions) {
     const askId = `ask:${owner}:${attempt}${i === 0 ? '' : String.fromCharCode(97 + i)}`;
     run.nodes.push(node(askId, 'ask', [n.node_id], {
       subgoal_id: n.subgoal_id,
+      // The key this card's questions belong to - a subgoal id, or a manager node's own id when
+      // the asking stage has no subgoal (0.29.0). Stored rather than re-derived: the card's own
+      // node_id is `ask:<owner>:<attempt>`, so reading the owner back out of it would mean
+      // parsing, and answeredDecisions has to match it exactly across attempts.
+      ask_owner: String(owner),
       attempt,
       questions: groupQs,
       assignment: { executor: 'human', vendor: 'human', who: who || null, reason: `a decision no source could answer (${n.stage} questions)` },
@@ -1679,6 +1718,14 @@ export function nodeBriefing(run, n) {
       commands_failed: x.result.event_evidence ? x.result.event_evidence.commands_failed : undefined,
     }));
 
+  // What a person has already decided for this owner, including on attempts this one superseded.
+  // A retry rebuilds the chain with fresh deps, so a superseded `ask` node is out of `upstream`'s
+  // scope entirely and the new attempt's investigate had no way to know a question was settled -
+  // idol-beta-ask1 (2026-09-25) re-raised six of them, two word for word. openAsk drops the exact
+  // repeats; this is what stops the rewordings, by telling the stage that writes the questions.
+  const priorDecisions = answeredDecisions(run, n.subgoal_id || n.node_id)
+    .filter((d) => !(n.stage === 'ask' && (n.questions || []).some((q) => (q.question || q.unknown) === d.question)));
+
   const sg = run.spec && n.subgoal_id
     ? (run.spec.subgoals || []).find((s) => String(s.id) === String(n.subgoal_id))
     : null;
@@ -1772,6 +1819,7 @@ export function nodeBriefing(run, n) {
     prior_feedback: n.feedback || '',
     spec_problems: specProblems,
     upstream,
+    prior_decisions: priorDecisions,
     write_scope: writeScope,
     reasoning_stage: REASONING_STAGES.has(n.stage),
   };
