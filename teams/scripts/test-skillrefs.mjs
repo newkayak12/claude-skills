@@ -146,6 +146,8 @@ test('a planning setgoal is told its kind is planning and that files[] is only w
   const audit = composePrompt({ ...run, flow: 'audit' }, { node_id: 'audit:U1', stage: 'audit', subgoal_id: 'U1' },
     { upstream: [], problems: [], flow: 'audit', default_kind: 'planning-audit', subgoal: audSpec.subgoals[0] });
   assert.match(audit, /Sources to open first:\n- Sources\/Awake\/main\.swift/);
+  assert.match(audit, /write your verdict to the report at your subgoal's files\[\] path/, 'the audit contract must let it write the report setgoal names');
+  assert.doesNotMatch(audit, /Do not modify any files/);
 });
 
 // Out of scope had become the cheapest way past the domain clause: name the practice, exclude
