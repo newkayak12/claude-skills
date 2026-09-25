@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { composePrompt } from '../mcp/prompts.mjs';
 import {
   KINDS, VERDICT_FIELD, REASONING_STAGES, FLOWS, kindSkills, kindOf, authorStage,
   createRun, runState, retrySubgoal, retrySpec, getNode, readyNodes, parentShapedTerminal,
@@ -956,4 +957,45 @@ test('humanGateResultFromPayload turns an accept/reject into the stage\'s own ve
   assert.equal(rejected.accept, false);
   assert.deepEqual(rejected.gaps, ['b.txt untouched'], 'rejection feeds gaps into the retry exactly like a model gate\'s own gaps[]');
   assert.match(rejected.reason, /missing the b half/);
+});
+
+test('a retry never asks a settled question again, and the next attempt is told what is settled', () => {
+  // idol-beta-ask1 (2026-09-25): U4's draft failed twice; its third investigate raised six
+  // questions, two of them byte-identical to ones answered on ask:U4:1 - a node the retry had
+  // superseded, so nothing downstream knew. Asking a person to decide the same thing twice is
+  // the failure; the other four were rewordings, which is why the briefing carries the decisions
+  // too rather than relying on this filter alone.
+  const run = askRun();
+  run.nodes.push(node('ask:U1:1', 'ask', ['investigate:U1:1'], {
+    subgoal_id: 'U1', ask_owner: 'U1', attempt: 1, state: 'done',
+    result: { stage_ok: true, decisions: [{ question: 'how many tickets?', chose: 'two', because: 'legal' }] },
+  }));
+  // Attempt 2: the same investigation, raising one settled question and one genuinely new.
+  const inv2 = node('investigate:U1:2', 'investigate', [], { subgoal_id: 'U1', attempt: 2, state: 'done', result: {} });
+  const draft2 = node('draft:U1:2', 'draft', ['investigate:U1:2'], { subgoal_id: 'U1', attempt: 2 });
+  run.nodes.push(inv2, draft2);
+  const ids = openAsk(run, inv2, [
+    { question: 'how many tickets?', options: [{ option: 'two' }, { option: 'four' }] },
+    { question: 'what is the refund window?', options: [{ option: '72h' }, { option: '7d' }] },
+  ]);
+  assert.deepEqual(ids, ['ask:U1:2']);
+  const card = run.nodes.find((x) => x.node_id === 'ask:U1:2');
+  assert.deepEqual(card.questions.map((q) => q.question), ['what is the refund window?'],
+    'the settled one is gone; only the new decision is put to anyone');
+
+  // And every stage on the new attempt is told what was settled, which is what a reworded
+  // repeat needs - no string filter can catch that one.
+  const b = nodeBriefing(run, draft2);
+  assert.deepEqual(b.prior_decisions.map((d) => d.chose), ['two']);
+  assert.match(composePrompt(run, draft2, b), /Already decided by a person/);
+  assert.match(composePrompt(run, draft2, b), /how many tickets\? -> two \(legal\)/);
+});
+
+test('a card does not print the questions it is itself asking as already decided', () => {
+  const run = askRun();
+  const ids = openAsk(run, run.nodes[0], twoOptions);
+  const card = run.nodes.find((x) => x.node_id === ids[0]);
+  card.result = { stage_ok: true, decisions: [{ question: twoOptions[0].question, chose: 'x' }] };
+  const b = nodeBriefing(run, card);
+  assert.deepEqual(b.prior_decisions, [], 'its own answer is not a prior decision to itself');
 });

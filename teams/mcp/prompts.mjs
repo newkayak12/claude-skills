@@ -111,6 +111,7 @@ Read in this order, and stop at what is actually reachable: the project tree thi
 One distinction is the whole point of this stage: a FINDING is something a source you opened says, and an UNKNOWN is something no source you reached says. Never move the second into the first. A sentence about the domain that sounds right and that you cannot attribute is an unknown, not a finding, however confident it reads.
 Every rule a user story will rest on - who is entitled to a thing, what the limit is, how long a window lasts, what happens when something is cancelled, what follows when someone abuses it - comes back as a finding with its source or as an unknown with an owner. There is no third answer. "Assumed to exist" is an unknown wearing a finding's clothes, and a planning run that wrote 588 lines that way (idol-pm-2, 2026-09-22) passed its own gate at 93 while naming none of its domain's actual rules.
 stage_ok=false only when you could read nothing at all. A stage that reached few sources and comes back mostly unknowns has succeeded: the unknowns ARE the deliverable, and they are what keeps the drafter from inventing. Returning a short honest findings list is right; padding it is the one failure this stage can hide.
+Anything listed above as already decided by a person is a FINDING, not an unknown: cite it as decided and by whom, and never raise it again - not in the same words and not reworded.
 An unknown carries "options" whenever the decision has namable candidates - two to four of them, the one you would recommend first, each with the consequence that follows from choosing it. Leave "options" out when you genuinely cannot name candidates; an empty or single-entry list is the same as leaving it out. This is not you deciding: naming what could be chosen is still research, and the person who owns the decision needs candidates far more than they need a blank question. Where the run is interactive, an unknown with options becomes a card that stops the chain and puts the choice to that person before anything is drafted; where it is not, the question is recorded against the document so the report can show what was decided by default.`,
   ask: `Return JSON: {"stage_ok": true|false, "decisions": [{"question": "<the question, as it was asked>", "chose": "<the option you picked, in full>", "because": "<optional: why, or a condition on it>"}], "evidence": "who decided, and when"}
 This card is for a person, not a model. Nothing polls it and nothing times it out; the chain below it does not move until you hand it back with tm_submit({task_id, key, payload}).
@@ -421,6 +422,16 @@ export function composePrompt(run, n, briefing) {
       lines.push('');
     }
     lines.push(briefing.prior_feedback);
+  }
+
+  // Decisions a person has already made for this subgoal, carried across a retry. Printed for
+  // every stage, not only investigate: a draft on attempt 3 needs them as much as the stage that
+  // decides what is still open.
+  if (briefing.prior_decisions && briefing.prior_decisions.length) {
+    lines.push('');
+    lines.push(`## Already decided by a person — settled, do not raise these again`);
+    lines.push(bullets(briefing.prior_decisions.map((d) => `${d.question} -> ${d.chose}${d.because ? ` (${d.because})` : ''}`)));
+    lines.push('A question above is answered. Write it as the rule it now is; do not list it as an open question, and do not ask it again in any form - a reworded repeat of a settled decision is the same defect as an identical one.');
   }
 
   // An `ask` node's briefing is read by a PERSON (tm_inbox hands them this path), not by a

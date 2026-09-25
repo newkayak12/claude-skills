@@ -3827,7 +3827,14 @@ function toolAssign(a) {
 // (parseTicketKey only requires a third segment, never that it name a real subgoal).
 function inboxEntry(task, pid, run, n) {
   const sg = run.spec && (run.spec.subgoals || []).find((s) => String(s.id) === String(n.subgoal_id));
-  const key = taskKey(task.run_id, pid, n.subgoal_id || n.node_id);
+  // An `ask` card is keyed by its own node id, never by its subgoal. Since 0.28.7 one subgoal's
+  // questions are split into one card per owner (idol-beta-ask1 raised five for U4 alone), so a
+  // subgoal-keyed card is ambiguous - and tm_submit, handed an ambiguous key, would apply one
+  // owner's answers to another owner's card. The third key segment already accepts a node id
+  // (toolSubmitHuman's own fallback branch), so this needs no new addressing scheme, only an
+  // unambiguous one. A pinned author card stays subgoal-keyed: there is only ever one per
+  // subgoal, and that is the key 0.27.3 documented.
+  const key = taskKey(task.run_id, pid, n.stage === 'ask' ? n.node_id : (n.subgoal_id || n.node_id));
   if (n.state === 'waiting_human') {
     return { card: {
       key,
@@ -4455,7 +4462,12 @@ function toolSubmitHuman(task, a) {
         ? `${key}'s card (${predicted}) is ${alreadyQueued.has(predicted) ? 'submitted, awaiting the broker' : n0.state}, not waiting_human - nothing to submit`
         : `${key} has no card waiting on a human`);
     }
-    n = waiting[waiting.length - 1];
+    // Ambiguity is refused, not resolved by picking. Answers belong to the card that asked for
+    // them; applying one owner's decisions to another owner's questions would be silent and wrong.
+    if (waiting.length > 1) {
+      throw new Error(`${key} has ${waiting.length} cards waiting (${waiting.map((x) => x.node_id).join(', ')}) - name one: ${waiting.map((x) => taskKey(task.run_id, pkgId, x.node_id)).join(' | ')}`);
+    }
+    n = waiting[0];
   } else {
     // No subgoal by that id: the key's third segment is a run-level node's own node_id instead
     // (setgoal/plan/critique/gate:goal - subgoal_id null, generalized questions or gate:human -
