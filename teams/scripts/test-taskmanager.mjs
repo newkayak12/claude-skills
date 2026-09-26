@@ -5779,3 +5779,15 @@ test('the integrate briefing tells the judge its job (0.30.2 dropped the line), 
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test('code-sprint-P2: a boxed Sprint\'s planning team is told the box exists and what it has to leave for building', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2'], handoff: 'h' }) });
+    const nx = await tm.call('tm_next', { task_id });
+    const plan = nx.children.find((c) => c.package_id === 'PLAN');
+    assert.ok(plan, JSON.stringify(nx.children));
+    const run = JSON.parse(readFileSync(join(plan.cwd, '.teams_output', 'broker', 'runs', `${plan.run_id}.json`), 'utf8'));
+    assert.match(run.context, /This Sprint is boxed at \$15 for everything/);
+    assert.match(run.context, /needs one PRD, not a set/);
+  }, { roles: { planning: true }, budget_usd: 15 });
+});
