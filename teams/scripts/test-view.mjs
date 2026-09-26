@@ -1651,3 +1651,31 @@ test('collectTaskCosts: node adapter sessions under each child run\'s .teams_out
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('a running session (no result event yet) is estimated from this task\'s finished sessions of the same kind, and marked estimated', async () => {
+  const { collectDriverCosts } = await import('./bench/lib/drivercost.mjs');
+  const root = mkdtempSync(join(tmpdir(), 'view-test-est-'));
+  try {
+    const dir = join(root, 't', 'drivers');
+    mkdirSync(dir, { recursive: true });
+    const msg = (id, u) => JSON.stringify({ type: 'assistant', message: { id, usage: u } });
+    // finished: 100k input-token units cost $0.50 -> 5e-6 per unit
+    writeFileSync(join(dir, 'dispatch_P1_1.stream.jsonl'), [msg('a', { input_tokens: 100000 }), JSON.stringify({ type: 'result', total_cost_usd: 0.5, num_turns: 3 })].join('\n') + '\n');
+    // running: output 20k (x5) + cache read 1M (x0.1) = 200k units -> ~$1.00; the repeated id counts once
+    writeFileSync(join(dir, 'dispatch_P2_1.stream.jsonl'), [msg('b', { output_tokens: 10000 }), msg('b', { output_tokens: 20000 }), msg('c', { cache_read_input_tokens: 1000000 })].join('\n') + '\n');
+    const c = collectDriverCosts(root);
+    assert.equal(c.estimated_sessions, 1);
+    assert.equal(c.estimated_usd, 1);
+    assert.equal(c.cost_usd, 1.5);
+    assert.ok(c.streams.find((x) => x.estimated && /P2/.test(x.stream)));
+    // No finished session to calibrate from: an unknown model stays uncounted rather than guessed;
+    // the measured model falls back to its measured rate, marked uncalibrated.
+    rmSync(join(dir, 'dispatch_P1_1.stream.jsonl'));
+    assert.equal(collectDriverCosts(root).cost_usd, 0);
+    const body = readFileSync(join(dir, 'dispatch_P2_1.stream.jsonl'), 'utf8');
+    writeFileSync(join(dir, 'dispatch_P2_1.stream.jsonl'), JSON.stringify({ type: 'system', model: 'claude-opus-5-5' }) + '\n' + body);
+    const fb = collectDriverCosts(root);
+    assert.equal(fb.cost_usd, 1.1);
+    assert.equal(fb.streams[0].uncalibrated, true);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

@@ -1831,6 +1831,7 @@ export function nodeBriefing(run, n) {
     // the same document called unresolved - a contradiction no revise could close while the
     // questions stayed open and unanswerable. Shown to authoring stages, not to investigate
     // (which decides what is open) or ask.
+    decide_by_default: !run.interactive && ['draft', 'revise', 'implement', 'cases'].includes(n.stage),
     default_decisions: !run.interactive && ['draft', 'revise', 'implement', 'cases'].includes(n.stage)
       ? (run.unasked || []).filter((u) => u && u.question && ((Array.isArray(u.options) && u.options.length) || u.decided != null))
         .map((u) => ({ question: u.question, chose: u.decided != null ? (typeof u.decided === 'string' ? u.decided : JSON.stringify(u.decided)) : String((u.options[0] && (u.options[0].option || u.options[0])) || ''), owner: u.owner || null, asked_under: u.subgoal_id || null }))
