@@ -94,3 +94,74 @@ export function driverCostOf(logPath) {
     is_error: !!last.is_error,
   };
 }
+
+// Every child graph run a task opened: each dispatch node's child and a size-S task's s_run,
+// as {cwd, run_id}. The broker writes one directory per node attempt under
+// <cwd>/.teams_output/broker/<run_id>/<node>/<attempt-uuid>/events.jsonl - the node's OWN
+// adapter session (investigate/draft/implement/gate/...), a `claude -p` stream-json like any
+// driver's. Pure function of the task object, so taskmanager.mjs and view-collect.mjs (which
+// only has task.json) derive the same list.
+export function taskRunDirs(task) {
+  const out = new Map();
+  const add = (c) => { if (c && c.cwd && c.run_id) out.set(`${c.cwd}\0${c.run_id}`, join(c.cwd, '.teams_output', 'broker', String(c.run_id))); };
+  for (const n of (task && task.nodes) || []) add(n.child);
+  add(task && task.s_run);
+  return [...out.values()];
+}
+
+// Node adapter sessions under one child run's broker directory, keyed run/node/attempt so a
+// directory seen twice (the same worktree reached by two dispatch attempts) counts once.
+export function collectNodeCosts(runDirs) {
+  const byKey = new Map();
+  for (const runDir of runDirs || []) {
+    for (const nodeDir of ls(runDir)) {
+      if (!nodeDir.isDirectory()) continue;
+      for (const att of ls(join(runDir, nodeDir.name))) {
+        if (!att.isDirectory()) continue;
+        const p = join(runDir, nodeDir.name, att.name, 'events.jsonl');
+        const last = lastResultEvent(p);
+        if (!last) continue;
+        const key = `${runDir.split(/[\\/]/).pop()}/${nodeDir.name}/${att.name}`;
+        byKey.set(key, { stream: key, path: p, cost_usd: last.total_cost_usd || 0, turns: last.num_turns || 0, duration_ms: last.duration_ms || 0, is_error: !!last.is_error });
+      }
+    }
+  }
+  return [...byKey.values()];
+}
+
+// The whole account for a task: its driver sessions (package drivers, the S driver, manager
+// judge_ calls) PLUS every node adapter session its child runs spawned. Before this, only the
+// first half was counted - code-sprint-S2 (2026-09-26) showed $0.88 against $3.78 actually
+// spent, so budget_usd could not stop anything and every bench cost figure was low.
+// Same shape as collectDriverCosts, plus drivers_usd / nodes_usd split out.
+export function collectTaskCosts(taskDirPath, task) {
+  const d = collectDriverCosts(taskDirPath);
+  const nodes = collectNodeCosts(taskRunDirs(task));
+  const nodesUsd = nodes.reduce((a, s) => a + s.cost_usd, 0);
+  return {
+    sessions: d.sessions + nodes.length,
+    cost_usd: +(d.cost_usd + nodesUsd).toFixed(4),
+    turns: d.turns + nodes.reduce((a, s) => a + s.turns, 0),
+    duration_ms: d.duration_ms + nodes.reduce((a, s) => a + s.duration_ms, 0),
+    drivers_usd: d.cost_usd,
+    nodes_usd: +nodesUsd.toFixed(4),
+    streams: d.streams,
+    node_streams: nodes,
+  };
+}
+
+// Every <...>/.teams_output/broker/<run_id> directory under a workspace, worktrees included -
+// score.mjs's view of the same node sessions, when it has a workspace rather than a task object.
+export function findBrokerRunDirs(dir, acc = [], depth = 0) {
+  if (depth > 14) return acc;
+  for (const e of ls(dir)) {
+    if (!e.isDirectory() || e.name === '.git' || e.name === 'node_modules') continue;
+    const p = join(dir, e.name);
+    if (e.name === 'broker' && dir.endsWith('.teams_output')) {
+      for (const r of ls(p)) if (r.isDirectory() && r.name !== 'runs') acc.push(join(p, r.name));
+      continue;
+    }
+    findBrokerRunDirs(p, acc, depth + 1);
+  }
+  return acc;
+}

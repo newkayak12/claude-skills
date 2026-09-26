@@ -1617,3 +1617,37 @@ test('collect()/renderText(): a Sprint shows its box (spend vs budget_usd, STOPP
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('collectTaskCosts: node adapter sessions under each child run\'s .teams_output/broker count toward cost and the box, once each', async () => {
+  const { collectTaskCosts } = await import('./bench/lib/drivercost.mjs');
+  const root = mkdtempSync(join(tmpdir(), 'view-test-nodecost-'));
+  try {
+    const taskId = 'eeeeeeee-0000-0000-0000-000000000000';
+    const taskDir = join(root, taskId);
+    const taskPath = join(taskDir, 'task.json');
+    const wt = join(root, 'wt');
+    mkdirSync(join(taskDir, 'drivers'), { recursive: true });
+    writeFileSync(join(taskDir, 'drivers', 'dispatch_P1_1.stream.jsonl'), JSON.stringify({ type: 'result', total_cost_usd: 1, num_turns: 3 }) + '\n');
+    for (const [nodeDir, cost] of [['draft_U1_1', 2], ['gate_U1_1', 0.5]]) {
+      const d = join(wt, '.teams_output', 'broker', 'child-1', nodeDir, 'att-1');
+      mkdirSync(d, { recursive: true });
+      writeFileSync(join(d, 'events.jsonl'), JSON.stringify({ type: 'result', total_cost_usd: cost, num_turns: 1 }) + '\n');
+    }
+    const child = { cwd: wt, run_id: 'child-1' };
+    const task = {
+      run_id: taskId, cwd: root, request: 'r', created_at: Date.now(), store_path: taskPath,
+      team: { opts: { budget_usd: 5 } }, spec: { packages: [{ id: 'P1', title: 'p' }] },
+      // Two nodes pointing at the same child run: its node sessions still count once.
+      nodes: [node('dispatch:P1:1', 'dispatch', [], { subgoal_id: 'P1', attempt: 1, state: 'running', child }),
+        node('dispatch:P1:2', 'dispatch', [], { subgoal_id: 'P1', attempt: 2, state: 'pending', child })],
+    };
+    writeFileSync(taskPath, JSON.stringify(task));
+    const c = collectTaskCosts(taskDir, task);
+    assert.equal(c.drivers_usd, 1);
+    assert.equal(c.nodes_usd, 2.5);
+    assert.equal(c.cost_usd, 3.5);
+    assert.equal(collectTask(root, taskId).budget.spend_usd, 3.5, 'the box sees node spend');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
