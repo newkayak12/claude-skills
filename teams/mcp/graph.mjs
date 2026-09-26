@@ -1038,17 +1038,22 @@ export function openRepair(run, round, feedback, judges) {
 // included on purpose: an answer does not stop being an answer because the attempt that asked for
 // it was retried. Read by openAsk (never ask twice) and by nodeBriefing (so the stage writing the
 // next round of questions knows what is settled).
+// owner === undefined: every decision a person made anywhere in this run, each tagged with the
+// owner it was made for. A decision is the run's, not one subgoal's: idol-beta-ask1 asked the
+// fan-club tier question under U1 (multi-tier), then again under U2 and U3 (single tier) - each
+// investigate only saw its own owner's settled answers, and the documents came out contradicting.
 export function answeredDecisions(run, owner) {
   const out = [];
   const seen = new Set();
   for (const x of run.nodes) {
     if (x.stage !== 'ask') continue;
     // ask_owner since 0.29.2; fall back to subgoal_id for a card written before it existed.
-    if (String(x.ask_owner || x.subgoal_id || '') !== String(owner)) continue;
+    const own = String(x.ask_owner || x.subgoal_id || '');
+    if (owner !== undefined && own !== String(owner)) continue;
     for (const d of (x.result && x.result.decisions) || []) {
       if (!d || !d.question || seen.has(d.question)) continue;
       seen.add(d.question);
-      out.push(d);
+      out.push(owner === undefined ? { ...d, decided_for: own } : d);
     }
   }
   return out;
@@ -1070,7 +1075,7 @@ export function openAsk(run, n, questions) {
   // them. The other four were rewordings of the same decisions, which no string filter can catch -
   // that is why answeredDecisions also reaches the next attempt's own briefing (nodeBriefing):
   // the stage that writes the question is the one that should know it is already decided.
-  const settled = new Set(answeredDecisions(run, owner).map((d) => d.question));
+  const settled = new Set(answeredDecisions(run).map((d) => d.question));
   if (settled.size) {
     qs = qs.filter((q) => !settled.has(q.question || q.unknown));
     if (!qs.length) return [];
@@ -1723,7 +1728,7 @@ export function nodeBriefing(run, n) {
   // scope entirely and the new attempt's investigate had no way to know a question was settled -
   // idol-beta-ask1 (2026-09-25) re-raised six of them, two word for word. openAsk drops the exact
   // repeats; this is what stops the rewordings, by telling the stage that writes the questions.
-  const priorDecisions = answeredDecisions(run, n.subgoal_id || n.node_id)
+  const priorDecisions = answeredDecisions(run)
     .filter((d) => !(n.stage === 'ask' && (n.questions || []).some((q) => (q.question || q.unknown) === d.question)));
 
   const sg = run.spec && n.subgoal_id

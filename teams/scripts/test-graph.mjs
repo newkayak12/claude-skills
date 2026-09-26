@@ -999,3 +999,24 @@ test('a card does not print the questions it is itself asking as already decided
   const b = nodeBriefing(run, card);
   assert.deepEqual(b.prior_decisions, [], 'its own answer is not a prior decision to itself');
 });
+
+test('a decision is the run\'s: a sibling subgoal is told it and never asks it again', () => {
+  // idol-beta-ask1: the fan-club tier question was decided under U1 (multi-tier), then asked
+  // again under U2 and U3 (single tier) - each investigate saw only its own owner's answers.
+  const run = askRun();
+  run.nodes.push(node('ask:U1:1', 'ask', ['investigate:U1:1'], {
+    subgoal_id: 'U1', ask_owner: 'U1', attempt: 1, state: 'done',
+    result: { stage_ok: true, decisions: [{ question: 'fan-club tiers?', chose: 'multi-tier' }] },
+  }));
+  const invU2 = node('investigate:U2:1', 'investigate', [], { subgoal_id: 'U2', attempt: 1, state: 'done', result: {} });
+  const draftU2 = node('draft:U2:1', 'draft', ['investigate:U2:1'], { subgoal_id: 'U2', attempt: 1 });
+  run.nodes.push(invU2, draftU2);
+  const ids = openAsk(run, invU2, [
+    { question: 'fan-club tiers?', options: [{ option: 'single' }, { option: 'multi-tier' }] },
+    { question: 'hold time?', options: [{ option: '5m' }, { option: '10m' }] },
+  ]);
+  assert.deepEqual(run.nodes.find((x) => x.node_id === ids[0]).questions.map((q) => q.question), ['hold time?']);
+  const b = nodeBriefing(run, draftU2);
+  assert.deepEqual(b.prior_decisions.map((d) => [d.chose, d.decided_for]), [['multi-tier', 'U1']]);
+  assert.match(composePrompt(run, draftU2, b), /fan-club tiers\? -> multi-tier \[decided under U1\]/);
+});

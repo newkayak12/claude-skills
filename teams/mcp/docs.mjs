@@ -12,7 +12,7 @@
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { storyLabel } from './taskmanager.mjs';
-import { loadRun } from './graph.mjs';
+import { loadRun, runState } from './graph.mjs';
 import {
   epicKey, storyKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
   storyTicketState, storyTaskProgress, epicBoardRows,
@@ -300,6 +300,34 @@ export function renderReport(task) {
   return L.join('\n') + '\n';
 }
 
+// A task that stopped short of its report still owes a person an account: what blocks it, and
+// the one call that would move it. Before this a blocked task left no 80-report.md at all
+// (idol-pm-1/2, seam-beta-D2, code-sprint-S5/S6) and the reason sat in task.json and the ledger.
+// Rendered only while blocked with no report done; a later report overwrites it.
+export function renderBlockedReport(task) {
+  const key = epicKey(task.run_id);
+  const L = [frontmatter(key, 'BLOCKED', task), '# Report — blocked', ''];
+  L.push('This task stopped before its report. Nothing below was judged by a report stage; it is read straight off the task.', '');
+  const blockers = task.nodes.filter((n) => (n.state === 'failed' || n.state === 'unreachable') && n.result);
+  L.push('## What blocks it', '');
+  L.push(bullets(blockers.map((n) => {
+    const r = n.result || {};
+    const why = String(r.reason || (Array.isArray(r.gaps) && r.gaps.length ? r.gaps.join('; ') : '') || (Array.isArray(r.blocking) && r.blocking.length ? r.blocking.join('; ') : '') || '(no reason recorded)');
+    return `${n.node_id} (${n.state}): ${why.slice(0, 400)}`;
+  })));
+  const pkgs = [...new Set(blockers.filter((n) => n.subgoal_id && (n.stage === 'dispatch' || n.stage === 'accept')).map((n) => n.subgoal_id))];
+  const moves = pkgs.map((id) => `tm_retry({task_id: "${task.run_id}", package_id: "${id}"}) - another attempt of ${id}`);
+  if (blockers.some((n) => n.stage === 'integrate' || String(n.node_id).startsWith('gate:goal'))) moves.push(`tm_retry({task_id: "${task.run_id}", package_id: "integration"}) - a repair pass over the integrated tree`);
+  if (blockers.some((n) => n.stage === 'shape' || n.stage === 'critique')) moves.push('the shape/critique problems above are decisions about the split itself - settle them and reopen the task (a person decides; the retries are spent)');
+  L.push('', '## What would move it', '');
+  L.push(bullets(moves.length ? moves : ['no retry route is left - read the reasons above and decide']));
+  const retro = buildRetro(task);
+  L.push('', '## Next backlog', '');
+  if (retro.next_backlog.unshipped_requests) L.push('Backlog items not shipped:', bullets(retro.next_backlog.unshipped_requests.map((r) => `[${r.priority}] ${r.request}`)), '');
+  L.push('Unaccepted packages:', bullets(retro.next_backlog.unaccepted_packages.map((p) => `${p.id} (${p.title}): ${p.reason}`)));
+  return L.join('\n') + '\n';
+}
+
 // Every file this task currently has data for, keyed by its full path. A shape not yet done
 // means only INDEX + request exist; a fresh gate:goal round adds the goal-gate file; and so on -
 // nothing is ever rendered ahead of the data that would back it.
@@ -321,6 +349,9 @@ export function renderAll(task) {
   if (task.nodes.some((n) => n.stage === 'gate' && n.subgoal_id === null && n.result)) files[paths.goalGate] = renderGoalGate(task);
   if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) {
     files[paths.report] = renderReport(task);
+    files[paths.retro] = renderRetro(task);
+  } else if (task.nodes.length > 1 && runState(task).state === 'blocked') {
+    files[paths.report] = renderBlockedReport(task);
     files[paths.retro] = renderRetro(task);
   }
   return files;

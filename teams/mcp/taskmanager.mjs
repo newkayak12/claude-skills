@@ -1654,6 +1654,19 @@ function packageSkills(pkg) {
 // What a package's child run is told beyond its own brief: the package contract, and the
 // reports of the packages it depends on. Not the whole request - that is what the brief
 // is for - and never another package's spec.
+// What the live critique said about ONE package. A critique that passes (sound: true) can still
+// name problems - idol-beta-ask1's critique:2 said "raise P4 to at least 10,000 hold+pay flows at
+// capacity 100", and P4 was dispatched with its acceptance unchanged at 5,000/50: problems[] was
+// read by nobody after the critique node finished. Matched by the package id as a whole word.
+export function critiqueNotesFor(task, pkgId) {
+  const c = task.nodes.filter((n) => n.stage === 'critique' && n.state === 'done' && n.result).pop();
+  if (!c || !pkgId) return [];
+  const re = new RegExp(`(^|[^A-Za-z0-9_])${String(pkgId).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Za-z0-9_]|$)`);
+  const all = [...(c.result.problems || []), ...(c.result.blocking || [])]
+    .map((x) => (typeof x === 'string' ? x : JSON.stringify(x)));
+  return all.filter((t) => re.test(t));
+}
+
 function childContext(task, pkg) {
   const lines = [];
   lines.push(`This run is package ${pkg.id} (${pkg.title}) of a larger task managed outside this worktree.`);
@@ -1686,6 +1699,12 @@ function childContext(task, pkg) {
   lines.push('');
   lines.push('Package acceptance - what the manager will judge this run against:');
   lines.push(bullets(pkg.acceptance));
+  const notes = critiqueNotesFor(task, pkg.id);
+  if (notes.length) {
+    lines.push('');
+    lines.push('The critique of the plan named this about your package. Address each one, or say in your handoff why not - the manager\'s accept reads the same list:');
+    lines.push(bullets(notes));
+  }
   if (pkg.repair && (pkg.touches || []).length) {
     lines.push('');
     lines.push('Paths the packages of this task own. All of them are in scope here:');
@@ -2839,6 +2858,11 @@ export function composeTaskPrompt(task, n) {
       L.push(`Acceptance:`);
       L.push(bullets(pkg.acceptance));
       if ((pkg.touches || []).length) L.push(`Touches: ${pkg.touches.join(', ')}`);
+      const notes = critiqueNotesFor(task, pkg.id);
+      if (notes.length) {
+        L.push(`The plan's critique named this about ${pkg.id} (the child was told the same). Check each was addressed or its handoff says why not; an unaddressed one with no reason is a gap:`);
+        L.push(bullets(notes));
+      }
     }
     // QA and AUDIT judge the INTEGRATED result against the whole task, not one package of their
     // own - pkg.acceptance above is deliberately a generic one-liner ("exercise it end to end")
