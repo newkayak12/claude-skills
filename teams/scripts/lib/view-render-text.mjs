@@ -115,6 +115,15 @@ function renderChild(child, indent, out) {
 function renderModelBody(m, indent, out) {
   if (m.error) { out.push(line(indent, `ERROR: ${m.error}`)); return; }
   out.push(line(indent, `state=${m.state} size=${m.size || '?'} flow=${m.flow || '?'} cost=${fmtUsd(m.cost && m.cost.usd)} turns=${m.cost && m.cost.turns} elapsed=${fmtMs(m.elapsed_ms)}`));
+  if (m.budget) {
+    const b = m.budget;
+    const bits = [];
+    if (b.budget_usd != null) bits.push(`budget ${fmtUsd(b.spend_usd)}/${fmtUsd(b.budget_usd)} (${Math.round(b.budget_pct * 100)}%)`);
+    if (b.timebox_minutes != null) bits.push(`timebox ${Math.round(b.elapsed_minutes)}/${b.timebox_minutes}m (${Math.round(b.timebox_pct * 100)}%)`);
+    if (b.stopped) bits.push(`STOPPED${b.stopped.skipped_packages.length ? ` - not done: ${b.stopped.skipped_packages.join(', ')}` : ''}`);
+    else if (b.warned) bits.push('WARN 80%');
+    out.push(line(indent, bits.join(' · ')));
+  }
   if (m.daemon) out.push(line(indent, `daemon pid=${m.daemon.pid} alive=${m.daemon.alive} restarts=${m.daemon.restarts}${m.daemon.exhausted ? ' EXHAUSTED' : ''}`));
   if (m.s_run) {
     out.push(line(indent, 'S run:'));
