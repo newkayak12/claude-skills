@@ -399,6 +399,10 @@ async function main() {
       }
     }
     if (taskState(fresh).state !== 'running') {
+      // The closers run at the TOP of a step; a node that failed at the end of this one (the goal
+      // gate, code-sprint-S6) left the task blocked before enforceBudget ever saw it, and the
+      // stopped Sprint ended with no report. Give them one look before calling it done.
+      if (enforceBudget(fresh)) { saveRun(fresh); continue; }
       // Not running is not finished while a failed judge still has a scheduled re-judge.
       const rejudgeAt = pendingRejudgeAt(fresh);
       if (rejudgeAt !== null) {
