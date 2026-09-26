@@ -17,6 +17,7 @@
 //
 //   TEAMS_VIEW=0          do not start a viewer at all (and do not reuse one)
 //   TEAMS_VIEW_PORT=<n>   pin the port instead of taking a free one
+import { pidAlive } from './proc.mjs';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { readFileSync, writeFileSync, unlinkSync } from 'node:fs';
@@ -32,7 +33,7 @@ export function viewDisabled() { return process.env.TEAMS_VIEW === '0'; }
 
 function alive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch { return false; }
+  return pidAlive(pid);
 }
 
 // The record is advisory, never authoritative: it is written by a process that may have been

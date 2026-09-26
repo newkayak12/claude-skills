@@ -8,6 +8,7 @@
 // cannot derive from task.json alone - task.json never stores it, only a pid. Every function that
 // needs it takes an injectable `{ alive }` predicate defaulting to a real process.kill(pid, 0)
 // check, so a unit test can fix it without a real pid and the module stays otherwise pure.
+import { pidAlive } from './proc.mjs';
 import { join } from 'node:path';
 import { loadRun, loadRunAt, unmetDeps, runState, nodeKind, authorStage, KINDS } from './graph.mjs';
 import { TEAM_DEFAULTS } from './teamconfig.mjs';
@@ -69,7 +70,7 @@ export function docPaths(task) {
 
 function processAlive(pid) {
   if (!pid) return false;
-  try { process.kill(pid, 0); return true; } catch (e) { return !!(e && e.code === 'EPERM'); }
+  return pidAlive(pid);
 }
 
 // The highest-attempt node for a package/stage pair, or null. A retried STORY always has to be
