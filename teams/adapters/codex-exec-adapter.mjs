@@ -343,14 +343,23 @@ function detectCodex() {
     cwd,
   ];
   if (opts.model) smokeArgs.push('-m', opts.model);
-  smokeArgs.push('Reply with exactly: CODEX_READY');
+  // Answering is not enough for a judge either: gate/test/review run commands to read the tree.
+  // On a host where the read-only sandbox cannot start (bubblewrap), codex still answered
+  // CODEX_READY, was routed every read-only stage, and a gate rejected at 0 because "the sole
+  // available filesystem command was blocked" (code-sprint-P1, 2026-09-26). The token below is in
+  // a file only a command can read; answering it proves a command ran.
+  const tokenName = `.codex-read-probe-${randomUUID()}`;
+  const token = `CODEX_READY_${randomUUID().slice(0, 8)}`;
+  try { writeFileSync(join(cwd, tokenName), token); } catch { /* unwritable cwd: the smoke fails below */ }
+  smokeArgs.push(`Run the shell command \`cat ${tokenName}\` and reply with exactly the text it prints. Do not guess.`);
   const probe = spawnSync('codex', smokeArgs, {
     cwd,
     encoding: 'utf8',
     maxBuffer: 10 * 1024 * 1024,
   });
+  try { rmSync(join(cwd, tokenName), { force: true }); } catch { /* best effort */ }
   const observed = `${probe.stdout || ''}\n${probe.stderr || ''}`;
-  const reachable = probe.status === 0 && /\bCODEX_READY\b/.test(observed);
+  const reachable = probe.status === 0 && observed.includes(token);
 
   // The read-only smoke proves the CLI answers; it does NOT prove Codex can write.
   // Implement nodes are useless without writes, and a sandbox that cannot start still
@@ -374,7 +383,7 @@ function detectCodex() {
       smoke: {
         exit_code: probe.status,
         signal: probe.signal,
-        matched_ready_token: /\bCODEX_READY\b/.test(observed),
+        matched_ready_token: observed.includes(token),
         stdout: probe.stdout || '',
         stderr: probe.stderr || '',
         error: probe.error ? String(probe.error.message || probe.error) : '',

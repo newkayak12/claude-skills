@@ -4806,7 +4806,7 @@ function toolStatus(a) {
   // collectDriverCosts call) - a caller polling tm_status only never had this at all, so a run
   // like awake-beta-ref1's $53.93 / 222 turns sat visible only in the raw driver logs.
   const driverTotal = collectTaskCosts(taskDir(task.run_id), task);
-  const costFields = { cost: { usd: driverTotal.cost_usd, turns: driverTotal.turns, sessions: driverTotal.sessions, drivers_usd: driverTotal.drivers_usd, nodes_usd: driverTotal.nodes_usd } };
+  const costFields = { cost: { usd: driverTotal.cost_usd, turns: driverTotal.turns, sessions: driverTotal.sessions, drivers_usd: driverTotal.drivers_usd, nodes_usd: driverTotal.nodes_usd, ...(driverTotal.estimated_usd ? { estimated_usd: driverTotal.estimated_usd } : {}) } };
   if (task.s_run) {
     const run = loadRun(task.s_run.cwd, task.s_run.run_id);
     const cs = run ? runState(run) : { state: 'missing', counts: {} };

@@ -427,6 +427,14 @@ export function composePrompt(run, n, briefing) {
   // Decisions a person has already made for this subgoal, carried across a retry. Printed for
   // every stage, not only investigate: a draft on attempt 3 needs them as much as the stage that
   // decides what is still open.
+  if (briefing.decide_by_default) {
+    // code-sprint-P1 (2026-09-26): with investigate's questions decided by default, the draft
+    // still minted nine NEW open questions of its own while writing, and the gate rejected at 94
+    // for not inventorying them - in a run where nobody would ever answer any of them.
+    lines.push('');
+    lines.push(`## Nobody will answer questions in this run`);
+    lines.push('This run is not interactive. A decision you discover while writing is decided the same way as the ones listed below: take the most conservative option the request and the findings support, state it as the rule, and mark it "(default - revisit)". Do not add it as an open question - an open question here is one nobody will ever close.');
+  }
   if (briefing.default_decisions && briefing.default_decisions.length) {
     lines.push('');
     lines.push(`## Decided by default — nobody is here to answer these`);

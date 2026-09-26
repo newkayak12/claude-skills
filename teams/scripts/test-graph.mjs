@@ -1035,8 +1035,10 @@ test('code-sprint-S2: a non-interactive run hands its unasked questions to the a
   assert.deepEqual(b.default_decisions.map((d) => [d.question, d.chose]), [['exit code on malformed rules?', '1'], ['top-3 ties?', 'alphabetical']]);
   const text = composePrompt(run, draft, b);
   assert.match(text, /Decided by default — nobody is here to answer these/);
+  assert.match(text, /A decision you discover while writing is decided the same way/);
   assert.match(text, /exit code on malformed rules\? -> 1 \[owner: CLI lead\]/);
   assert.deepEqual(nodeBriefing(run, inv).default_decisions, [], 'investigate still decides what is open');
+  assert.equal(nodeBriefing(run, inv).decide_by_default, false);
   run.interactive = true;
   assert.deepEqual(nodeBriefing(run, draft).default_decisions, [], 'an interactive run asks instead');
 });
