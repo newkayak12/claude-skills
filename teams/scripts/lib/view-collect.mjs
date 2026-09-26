@@ -6,6 +6,7 @@
 // task.json / a child run file can be caught mid-write by another process (the daemon, a
 // broker). A parse failure is tolerated, not fatal: it is reported on the model as
 // `error` / a node's own `read_error`, never thrown past collect().
+import { pidAlive } from '../../mcp/proc.mjs';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { loadRunAt, runState } from '../../mcp/graph.mjs';
@@ -84,10 +85,7 @@ function driverInfo(driver, driverAliveFn) {
 // spawned by a daemon running as a different user, e.g. under sudo or in a container) counts as
 // alive, the same distinction driverAlive draws and tickets.mjs's own processAlive already makes
 // - a plain try/catch->false here would read every such process as dead on the RESOURCE view.
-function pidAlive(pid) {
-  if (!pid) return false;
-  try { process.kill(pid, 0); return true; } catch (e) { return !!(e && e.code === 'EPERM'); }
-}
+// pidAlive (mcp/proc.mjs) is that one shared check.
 
 function elapsedMs(startedAt, endedAt) {
   if (!startedAt) return null;

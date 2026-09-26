@@ -87,6 +87,7 @@ import { computeSubmitResult } from './broker.mjs';
 // The same driver-stream reader view.mjs's RESOURCE view already uses (see drivercost.mjs's own
 // header comment) - reused here, not re-parsed, so tm_status/tm_board/the report briefing can
 // never disagree with what the view surface already shows for the same task.
+import { pidAlive } from './proc.mjs';
 import { collectDriverCosts, collectTaskCosts, collectNodeCosts } from '../scripts/bench/lib/drivercost.mjs';
 import { applyMerge, foldRecords } from './reducers.mjs';
 
@@ -1795,14 +1796,7 @@ function spawnChildDriver(task, nodeIdLabel, child, opts = {}) {
 }
 
 export function driverAlive(driver) {
-  if (!driver || !driver.pid) return false;
-  try {
-    process.kill(driver.pid, 0);
-    return true;
-  } catch (e) {
-    // EPERM: the process exists and is not ours to signal. Anything else: it is gone.
-    return !!(e && e.code === 'EPERM');
-  }
+  return !!(driver && driver.pid) && pidAlive(driver.pid);
 }
 
 function killDriver(driver) {
