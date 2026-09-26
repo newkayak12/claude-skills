@@ -252,7 +252,22 @@ function priorRetroContext(contextFrom) {
     L.push(bullets((retro.next_backlog.unaccepted_packages || []).map((p) => `${p.id} (${p.title}): ${p.reason}`)));
     if ((retro.next_backlog.unresolved_defects || []).length) L.push('', 'Unresolved defects:', bullets(retro.next_backlog.unresolved_defects.map((d) => d.title)));
     if ((retro.next_backlog.open_questions || []).length) L.push('', 'Open questions nobody answered:', bullets(retro.next_backlog.open_questions.map((q) => q.question || JSON.stringify(q))));
-    return { text: L.join('\n'), unresolved: null };
+    // The prior Sprint's accepted work lives on its last verified integration branch, which
+    // nothing merges into the project's own branch: code-sprint-S8's main was still at seed after
+    // P1+P2 shipped, so a follow-up Sprint branched from HEAD would rebuild on nothing. When that
+    // branch exists and HEAD does not already contain it, this task starts from it instead.
+    const integ = prior.nodes.filter((n) => n.stage === 'integrate' && n.state === 'done' && n.integration && n.integration.branch).pop();
+    let base_ref = null;
+    if (integ) {
+      const b = integ.integration.branch;
+      const exists = git(prior.cwd, ['rev-parse', '--verify', '--quiet', `refs/heads/${b}`]).ok;
+      const merged = exists && git(prior.cwd, ['merge-base', '--is-ancestor', b, 'HEAD']).ok;
+      if (exists && !merged) {
+        base_ref = b;
+        L.push('', `This task starts from the prior task's integration branch ${b} - its accepted work is not on the project's own branch yet. Build on it; do not rebuild it.`);
+      }
+    }
+    return { text: L.join('\n'), unresolved: null, base_ref };
   } catch (e) {
     return { text: '', unresolved: `retro.json of ${prior.run_id} could not be read: ${String((e && e.message) || e)}` };
   }
@@ -290,6 +305,8 @@ function createTask(a) {
     requests, // null for the ordinary single-request task - the byte-for-byte compat case.
     context: [priorRetro.text, a.context || ''].filter(Boolean).join('\n\n'),
     ...(priorRetro.unresolved ? { context_from_unresolved: priorRetro.unresolved } : {}),
+    // Where package and integration worktrees branch from (see priorRetroContext). null = HEAD.
+    base_ref: priorRetro.base_ref || null,
     flow: FLOWS[a.flow] ? a.flow : 'auto',
     flow_chosen: null,
     size: null,
@@ -1694,7 +1711,9 @@ function childContext(task, pkg) {
     lines.push(`This is planning's own second pass over this EPIC, taken after integration. Read the tree against the PRD's user stories in your request above and judge each one: satisfied, partially satisfied, or missing.`);
     lines.push(`You have no edit rights here - not over the tree and not over the PRD. Change no files. An unmet story is reported, not fixed: the manager files it as its own STORY.`);
   } else {
-    lines.push(`The worktree is private to this package and branched from the project's HEAD; integration happens later, elsewhere.`);
+    lines.push(task.base_ref
+      ? `The worktree is private to this package and branched from ${task.base_ref} - the prior Sprint's integrated work, which this task builds on; integration happens later, elsewhere.`
+      : `The worktree is private to this package and branched from the project's HEAD; integration happens later, elsewhere.`);
   }
   lines.push('');
   lines.push('Package acceptance - what the manager will judge this run against:');
@@ -2214,7 +2233,7 @@ export function openChild(task, n) {
     ? repairWorktree(task, pkg)
     : pkg.phase === 'planning'
       ? { ok: true, path: task.cwd, branch: null, created: false }
-      : ensureWorktree(task, String(pkg.id), depBranches[0] || 'HEAD');
+      : ensureWorktree(task, String(pkg.id), depBranches[0] || task.base_ref || 'HEAD');
   if (!wt.ok) {
     n.state = 'failed';
     n.result = { stage_ok: false, reason: `could not create a worktree for ${pkg.id}: ${wt.reason}` };
@@ -2620,7 +2639,7 @@ export function prepareIntegration(task, n) {
   // merges nothing: that branch already is every package branch merged, plus the repair. The
   // seam was fixed in the combined tree, and re-merging from HEAD would recreate it.
   const repair = repairBase(task, n);
-  const wt = ensureWorktree(task, round === 1 ? 'integration' : `integration-${round}`, repair ? repair.branch : 'HEAD');
+  const wt = ensureWorktree(task, round === 1 ? 'integration' : `integration-${round}`, repair ? repair.branch : (task.base_ref || 'HEAD'));
   if (!wt.ok) {
     n.state = 'failed';
     n.result = { stage_ok: false, verified: false, reason: `could not create the integration worktree: ${wt.reason}` };
