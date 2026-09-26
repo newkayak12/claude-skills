@@ -1695,6 +1695,42 @@ test('budget_usd at 80% records one warning; below it, nothing is recorded', asy
   }, { budget_usd: 10 });
 });
 
+test('budget_usd hit before shape: the pending graph is skipped, a report opens, and the retro carries the whole backlog forward (code-sprint-S2)', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    writeDriverSpend(root, task_id, 'dispatch_PLAN_1', 6.06); // the PLAN team spent it all
+    const nx = await tm.call('tm_next', { task_id });
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.equal(task.budget_stopped.before_shape, true);
+    assert.equal(task.nodes.find((n) => n.node_id === 'shape').state, 'skipped');
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['report'], JSON.stringify(nx.ready));
+    const v = await tm.call('tm_submit', { task_id, node_id: 'report', payload: ok({ handoff: 'budget spent before shape; nothing shipped' }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    const full = await tm.call('tm_status', { task_id, full: true });
+    const retro = JSON.parse(readFileSync(docPaths(full).retro, 'utf8'));
+    assert.deepEqual(retro.next_backlog.unshipped_requests.map((r) => r.priority), [0, 1, 2]);
+    assert.ok(retro.retrospective.budget_stopped.before_shape);
+    // ...and the next Sprint's context_from reads it back as backlog items, not just packages.
+    const next = await tm.call('tm_open', { requests: ['x'], cwd: full.cwd, vendor: 'self', roles: { planning: false, qa: false }, context_from: task_id });
+    const t2 = await tm.call('tm_status', { task_id: next.task_id, full: true });
+    assert.match(t2.context, /backlog items not shipped[\s\S]*\[0\] parse csv[\s\S]*\[2\] cli/);
+  }, { request: null, requests: ['parse csv', 'rules engine', 'cli'], budget_usd: 5 });
+});
+
+test('retro: a backlog item is shipped only when an accepted package declares it in `backlog`', async () => {
+  const { buildRetro } = await import('../mcp/docs.mjs');
+  const task = {
+    run_id: 't', request: 'r', requests: ['a', 'b', 'c'],
+    spec: { packages: [{ id: 'P1', title: 'a', backlog: [0] }, { id: 'P2', title: 'b', backlog: [1] }] },
+    nodes: [
+      { node_id: 'dispatch:P1:1', stage: 'dispatch', subgoal_id: 'P1', state: 'done' },
+      { node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', state: 'done', result: { accept: true } },
+      { node_id: 'dispatch:P2:1', stage: 'dispatch', subgoal_id: 'P2', state: 'failed' },
+      { node_id: 'accept:P2:1', stage: 'accept', subgoal_id: 'P2', state: 'failed', result: { accept: false, reason: 'no' } },
+    ],
+  };
+  assert.deepEqual(buildRetro(task).next_backlog.unshipped_requests.map((r) => r.priority), [1, 2]);
+});
+
 test('budget_usd at 100%: no new package dispatches, an in-flight one still finishes, and a fresh integrate opens over just what accepted - the rest named "not done"', async () => {
   await withTask(async ({ tm, g, root, task_id }) => {
     await throughCritique(tm, task_id); // SHAPE: P1 (no deps), P2 (deps: [P1])

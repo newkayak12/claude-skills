@@ -247,6 +247,7 @@ function priorRetroContext(contextFrom) {
     L.push('Retrospective - what failed and why:');
     L.push(bullets((retro.retrospective.what_failed || []).map((f) => `${f.node_id} (${f.stage}): ${f.reason}`)));
     if ((retro.retrospective.retries || []).length) L.push('', 'Retries:', bullets(retro.retrospective.retries.map((r) => `${r.package_id}: ${r.attempts} attempts`)));
+    if ((retro.next_backlog.unshipped_requests || []).length) L.push('', 'Next backlog - backlog items not shipped (priority order):', bullets(retro.next_backlog.unshipped_requests.map((r) => `[${r.priority}] ${r.request}`)));
     L.push('', 'Next backlog - unaccepted packages:');
     L.push(bullets((retro.next_backlog.unaccepted_packages || []).map((p) => `${p.id} (${p.title}): ${p.reason}`)));
     if ((retro.next_backlog.unresolved_defects || []).length) L.push('', 'Unresolved defects:', bullets(retro.next_backlog.unresolved_defects.map((d) => d.title)));
@@ -896,6 +897,10 @@ export function autoReshape(task) {
 }
 
 export function autoRetryPackages(task) {
+  // A stopped box dispatches nothing new (advanceDispatches), so a retry opened now could never
+  // run - code-sprint-S2 opened PLAN attempt 3 after budget_stopped, and it sat pending. The
+  // failure stands as this Sprint's outcome and enforceBudget carries the rest to the report.
+  if (task.budget_stopped) return false;
   let changed = false;
   // The phase-Team packages belong here for the same reason packageOf() has to know them: they
   // are dispatched and accepted exactly like a package, they just do not live in the list shape
@@ -2711,7 +2716,7 @@ export function composeTaskPrompt(task, n) {
   if (n.stage === 'shape' && Array.isArray(task.requests) && task.requests.length) {
     L.push('');
     L.push(`## Backlog priority`);
-    L.push(`This request is a backlog of ${task.requests.length} items in priority order (item 0 is highest). Give every package a \`priority\` consistent with which backlog item(s) it implements - a package serving only a low-priority item gets a high priority NUMBER, so it is the one left undispatched if budget_usd/timebox_minutes runs out before everything ships (advanceDispatches dispatches ascending priority first).`);
+    L.push(`This request is a backlog of ${task.requests.length} items in priority order (item 0 is highest). Give every package a \`priority\` consistent with which backlog item(s) it implements - a package serving only a low-priority item gets a high priority NUMBER, so it is the one left undispatched if budget_usd/timebox_minutes runs out before everything ships (advanceDispatches dispatches ascending priority first). Also give every package \`backlog: [N, ...]\` - the backlog priority numbers it implements - so the retro can name which backlog items shipped and which carry into the next Sprint.`);
   }
   if (task.size || task.flow_chosen || task.flow !== 'auto') {
     L.push('');
@@ -4204,9 +4209,29 @@ export function enforceBudget(task) {
     record(task, { event: 'budget_stopped', task_id: task.run_id, ...task.budget_stopped });
     progressed = true;
   }
-  // Nothing to sweep until shape has actually produced packages, and nothing to sweep while a
-  // dispatch this task already opened is still running.
-  if (!task.spec || !Array.isArray(task.spec.packages)) return progressed;
+  // Stopped before shape ever produced packages (code-sprint-S2, 2026-09-26: the whole $6 went
+  // on a PLAN team whose gate never passed). There is nothing to leave undispatched and no
+  // integrate to reopen, and the report node does not exist yet - so without this the task sat
+  // with a retry nobody would dispatch, no report and no retro.json, and the next Sprint had
+  // nothing to continue from. Once nothing is running: every pending node is skipped and a
+  // report opens on its own, which writes the retro with the whole backlog carried forward.
+  if (!task.spec || !Array.isArray(task.spec.packages)) {
+    if (task.nodes.some((n) => n.state === 'running')) return progressed;
+    if (task.nodes.some((n) => n.stage === 'report')) return progressed;
+    const skipped = [];
+    for (const n of task.nodes) {
+      if (n.state !== 'pending') continue;
+      n.state = 'skipped';
+      n.final = true;
+      n.result = { stage_ok: false, reason: 'skipped: budget/timebox exhausted before shape' };
+      skipped.push(n.node_id);
+    }
+    task.nodes.push(node('report', 'report', [], { subgoal_id: null }));
+    task.budget_stopped.before_shape = true;
+    record(task, { event: 'budget_swept', task_id: task.run_id, skipped, before_shape: true });
+    return true;
+  }
+  // Nothing to sweep while a dispatch this task already opened is still running.
   if (task.nodes.some((n) => n.stage === 'dispatch' && n.state === 'running')) return progressed;
   const currentIntegrate = task.nodes.filter((n) => n.stage === 'integrate' && n.state !== 'done' && !n.final).pop();
   if (!currentIntegrate) return progressed; // no integrate left pending on a never-run package
