@@ -15,6 +15,13 @@ export function capacityFailure(report, stderr = '') {
     !report?.result ? report?.last_message : '', ...(Array.isArray(report?.errors) ? report.errors : []), ...eventErrors].filter(Boolean).join('\n');
   return /(?:insufficient_quota|rate_limit_error|usage_limit_reached|quota (?:exceeded|exhausted)|(?:usage|rate|token|credit) limit (?:has been )?(?:reached|exceeded)|out of (?:credits|tokens)|hit your (?:usage )?limit|exceeded your current quota)/i.test(text);
 }
+// The provider's own words about a spent limit, so a reset time it named ("try again at Sep 27th,
+// 2026 12:00 AM", "resets 5:40pm (UTC)") survives into whatever parks on it. code-beta-X3: the
+// probe kept only "usage capacity exhausted at probe", and nothing downstream could tell when.
+export function capacityNotice(text) {
+  const line = String(text || '').split('\n').find(l => /(?:hit your (?:usage )?limit|usage_limit_reached|insufficient_quota|quota (?:exceeded|exhausted)|(?:usage|rate|token|credit) limit (?:has been )?(?:reached|exceeded)|out of (?:credits|tokens)|exceeded your current quota)/i.test(l));
+  return line ? line.replace(/^\s*ERROR:\s*/, '').trim().slice(0, 300) : '';
+}
 export function selectModel(run, node, vendor, explicit) {
   if (explicit) return explicit;
   // Measured, not assumed: a manager run's round-1 cost split was driving session ~55%,

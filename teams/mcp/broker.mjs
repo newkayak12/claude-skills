@@ -25,7 +25,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } fr
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
-import { capacityFailure, selectModel, rankCandidates } from './routing.mjs';
+import { capacityFailure, capacityNotice, selectModel, rankCandidates } from './routing.mjs';
 import {
   STAGES,
   REASONING_STAGES,
@@ -310,7 +310,10 @@ async function probe(name, vendor, cwd, sandbox, model) {
       reason: detail.reason || (r.status === 0 ? '' : `adapter exit ${r.status}: ${r.stderr.slice(-200)}`),
       quota,
     };
-    if (quota) out.reason = `usage capacity exhausted at probe${out.reason ? `; ${out.reason}` : ''}`;
+    if (quota) {
+      const notice = capacityNotice([r.stderr, flatten(report)].join('\n'));
+      out.reason = `usage capacity exhausted at probe${notice ? `: ${notice}` : out.reason ? `; ${out.reason}` : ''}`;
+    }
   }
   settle(out);
   probeCache.set(key, Promise.resolve(out));
@@ -582,7 +585,7 @@ async function route(run, node) {
     // Spent capacity is recorded on the run so the operator sees why the vendor dropped
     // out, the run stops re-probing it, and team_retry({reset_capacity:true}) is the way back.
     if (!usable && p.quota) {
-      run.unavailable_vendors = { ...(run.unavailable_vendors || {}), [name]: 'usage capacity exhausted at probe' };
+      run.unavailable_vendors = { ...(run.unavailable_vendors || {}), [name]: p.reason || 'usage capacity exhausted at probe' };
       saveRun(run);
     }
     attempts.push({ vendor: name, ready: usable, reason: usable ? '' : p.reason });
@@ -1590,6 +1593,13 @@ async function toolGraphNext(a) {
     })(),
   };
   run.routing_blocked = Boolean(response.ready.length && response.ready.every(n => n.vendor === 'vendor-failure'));
+  // Blocked only because every vendor a ready node may use is out of credit is a wait, not a
+  // failure: the manager parks the package until the reset instead of spending retries on a
+  // probe that will say the same thing (code-beta-X3 burned six dispatches in 70 seconds).
+  const spent = (x) => /^usage capacity exhausted/.test(String(x.reason || ''));
+  const capacityOnly = run.routing_blocked && response.ready.every(n => (n.attempts || []).length && n.attempts.every(spent));
+  if (capacityOnly) run.routing_blocked_capacity = response.ready.flatMap(n => n.attempts).map(x => x.reason)[0];
+  else run.routing_blocked_capacity = null; // assigned: saveRun's merge keeps a deleted key
   saveRun(run);
   response.state = runState(run).state;
   return response;
