@@ -352,6 +352,24 @@ function collectPhaseRounds(task, pkg, subgoalId, visiting) {
 // The one function both renderers call. `tasksDir` is where task.json lives directly under
 // <tasksDir>/<taskId>/ - the top-level tasks root for the outermost call, or a package
 // worktree's own .harness-tasks/ for a nested one.
+// A Sprint's box (budget_usd / timebox_minutes), the same fractions budgetStatus
+// (taskmanager.mjs) stops on, computed here from the spend this collect already summed rather
+// than a second walk of drivers/. null when neither is set - an unboxed task shows nothing.
+function sprintBox(task, spend) {
+  const o = (task.team && task.team.opts) || {};
+  const budget = Number.isFinite(o.budget_usd) ? o.budget_usd : null;
+  const timebox = Number.isFinite(o.timebox_minutes) ? o.timebox_minutes : null;
+  if (budget == null && timebox == null) return null;
+  const elapsedMin = elapsedMs(task.created_at) / 60000;
+  return {
+    budget_usd: budget, spend_usd: spend, timebox_minutes: timebox, elapsed_minutes: elapsedMin,
+    budget_pct: budget ? spend / budget : null,
+    timebox_pct: timebox ? elapsedMin / timebox : null,
+    warned: !!task.budget_warned,
+    stopped: task.budget_stopped ? { skipped_packages: task.budget_stopped.skipped_packages || [] } : null,
+  };
+}
+
 export function collectTask(tasksDir, taskId, opts = {}) {
   const path = taskPathOf(tasksDir, taskId);
   const read = readJsonRetry(path);
@@ -398,8 +416,11 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
   }
 
   const packages = [];
-  if (task.spec && Array.isArray(task.spec.packages)) {
-    const all = [...task.spec.packages, ...(task.planning_pkg ? [task.planning_pkg] : [])];
+  // planning_pkg dispatches BEFORE shape writes task.spec, so it is listed on its own: gated
+  // behind spec.packages, a running PLAN team left "packages:" empty for the whole planning
+  // phase (code-sprint-S2, 2026-09-26).
+  {
+    const all = [...((task.spec && Array.isArray(task.spec.packages)) ? task.spec.packages : []), ...(task.planning_pkg ? [task.planning_pkg] : [])];
     for (const pkg of all) {
       // A retried package can have several dispatch:<id>:<attempt> nodes; take the latest.
       const dispatches = task.nodes.filter((n) => n.stage === 'dispatch' && n.subgoal_id === pkg.id)
@@ -486,6 +507,7 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     counts,
     daemon,
     cost: { usd: driverTotal.cost_usd, turns: driverTotal.turns, sessions: driverTotal.sessions },
+    budget: sprintBox(task, driverTotal.cost_usd),
     manager_stages: managerStages,
     packages,
     qa: task.qa_pkg ? { id: task.qa_pkg.id, rounds: qaRounds } : null,

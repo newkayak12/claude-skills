@@ -1579,3 +1579,41 @@ test('view.mjs defaults --tasks-dir to tasksRoot() (HARNESS_TASKS_DIR) when omit
 test('lib/view-page.html exists next to view.mjs (the page view.mjs serves is a real file, not a stub)', () => {
   assert.ok(existsSync(join(HERE, 'lib', 'view-page.html')));
 });
+
+test('collect()/renderText(): a Sprint shows its box (spend vs budget_usd, STOPPED with what was left), and a PLAN team running before shape is listed', () => {
+  const root = mkdtempSync(join(tmpdir(), 'view-test-sprint-'));
+  try {
+    const taskId = 'dddddddd-0000-0000-0000-000000000000';
+    const taskDir = join(root, taskId);
+    const taskPath = join(taskDir, 'task.json');
+    mkdirSync(join(taskDir, 'drivers'), { recursive: true });
+    writeFileSync(join(taskDir, 'drivers', 'dispatch_PLAN_1.stream.jsonl'), JSON.stringify({ type: 'result', total_cost_usd: 4.5, num_turns: 9 }) + '\n');
+    writeFileSync(join(taskDir, 'drivers', 'judge_size.stream.jsonl'), JSON.stringify({ type: 'result', total_cost_usd: 0.5, num_turns: 1 }) + '\n');
+    writeFileSync(taskPath, JSON.stringify({
+      run_id: taskId, cwd: root, request: 'a boxed backlog', created_at: Date.now(), store_path: taskPath,
+      team: { opts: { budget_usd: 6 } },
+      budget_warned: true,
+      spec: null,
+      planning_pkg: { id: 'PLAN', title: 'PRD', phase: 'planning' },
+      nodes: [node('dispatch:PLAN:1', 'dispatch', [], { subgoal_id: 'PLAN', attempt: 1, state: 'running' })],
+    }));
+    let model = collectTask(root, taskId);
+    assert.equal(model.budget.budget_usd, 6);
+    assert.equal(model.budget.spend_usd, 5, 'judge_ logs count toward the box like any driver');
+    assert.ok(model.packages.some((p) => p.id === 'PLAN'), 'PLAN is listed before shape has written task.spec');
+    let text = renderText(model);
+    assert.match(text, /budget \$5\.00\/\$6\.00 \(83%\) · WARN 80%/);
+
+    const t = JSON.parse(readFileSync(taskPath, 'utf8'));
+    t.budget_stopped = { skipped_packages: ['P3', 'P4'] };
+    writeFileSync(taskPath, JSON.stringify(t));
+    text = renderText(collectTask(root, taskId));
+    assert.match(text, /STOPPED - not done: P3, P4/);
+
+    delete t.team; delete t.budget_stopped;
+    writeFileSync(taskPath, JSON.stringify(t));
+    assert.equal(collectTask(root, taskId).budget, null, 'an unboxed task shows no box');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
