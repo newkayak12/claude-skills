@@ -5750,3 +5750,32 @@ test('code-sprint-P2: a stopped box whose goal gate waits on a node nothing can 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the integrate briefing tells the judge its job (0.30.2 dropped the line), and each package\'s own tests are run as facts', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    const nx = await toIntegrate(tm, g, task_id);
+    const integ = nx.ready.find((n) => n.node_id === 'integrate:1');
+    assert.match(readFileSync(integ.briefing_path, 'utf8'), /Run the goal-level checks there\. Read the seams/);
+  });
+  const { runPackageTests } = await import('../mcp/taskmanager.mjs');
+  const cwd = mkdtempSync(join(tmpdir(), 'pkgtests-'));
+  const prev = process.env.HARNESS_PACKAGE_TESTS;
+  process.env.HARNESS_PACKAGE_TESTS = '1';
+  try {
+    for (const [dir, code] of [['packages/cli', 3], ['packages/csv', 0]]) {
+      mkdirSync(join(cwd, dir), { recursive: true });
+      writeFileSync(join(cwd, dir, 'package.json'), JSON.stringify({ name: dir.split('/')[1], scripts: { test: `node -e "console.log('# fail ${code}'); process.exit(${code})"` } }));
+    }
+    const task = { spec: { packages: [
+      { id: 'P1', touches: ['packages/csv/**'] },
+      { id: 'P2', touches: ['packages/cli/'] },
+      { id: 'P3', touches: ['README.md'] },
+    ] } };
+    const out = runPackageTests(task, cwd, ['P1', 'P2', 'P3']);
+    assert.deepEqual(out.map((t) => [t.package, t.exit]), [['P1', 0], ['P2', 3]], 'P3 has no test command and is not measured');
+    assert.match(out[1].summary, /# fail 3/);
+  } finally {
+    if (prev === undefined) delete process.env.HARNESS_PACKAGE_TESTS; else process.env.HARNESS_PACKAGE_TESTS = prev;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});

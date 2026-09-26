@@ -2682,8 +2682,35 @@ export function prepareIntegration(task, n) {
     }
     merged.push({ package: String(p.id), branch, commit: m.commit });
   }
-  n.integration = { cwd: wt.path, branch: wt.branch, merged, ...(repair ? { based_on: 'repair', repair_package: repair.package } : {}) };
-  record(task, { event: 'integrated', task_id: task.run_id, node_id: n.node_id, merged: merged.length, ...(repair ? { based_on: 'repair' } : {}) });
+  const packageTests = runPackageTests(task, wt.path, merged.map((m) => m.package));
+  n.integration = { cwd: wt.path, branch: wt.branch, merged, ...(repair ? { based_on: 'repair', repair_package: repair.package } : (task.base_ref ? { based_on: 'base_ref', base_ref: task.base_ref } : {})), ...(packageTests.length ? { package_tests: packageTests } : {}) };
+  record(task, { event: 'integrated', task_id: task.run_id, node_id: n.node_id, merged: merged.length, ...(repair ? { based_on: 'repair' } : {}), ...(packageTests.length ? { package_tests: packageTests.map((t) => `${t.package}:${t.exit}`) } : {}) });
+}
+
+// Each merged package's OWN test command, run by the manager in the combined tree, as facts for
+// the integrate judge. seam-beta-D2: cli's tests passed under the root runner and failed 0/10
+// run on their own, and no judge ever ran them that way. Mechanical and ecosystem-narrow on
+// purpose: a package whose declared touches hold a package.json with a `test` script is run with
+// `npm test --prefix <dir>` (120s cap); anything else is not measured here, and the judge still
+// runs its own checks.
+export function runPackageTests(task, cwd, pkgIds) {
+  if (noDriver() && !process.env.HARNESS_PACKAGE_TESTS) return []; // test seam: nothing is spawned
+  const out = [];
+  for (const id of pkgIds) {
+    const pkg = packageOf(task, id);
+    if (!pkg || pkg.repair) continue;
+    const dirs = [...new Set((pkg.touches || []).map((t) => String(t).replace(/\/\*.*$/, '').replace(/\/$/, '')).filter((t) => t && !/[*?]/.test(t)))];
+    for (const d of dirs) {
+      let scripts = null;
+      try { scripts = JSON.parse(readFileSync(join(cwd, d, 'package.json'), 'utf8')).scripts || null; } catch { continue; }
+      if (!scripts || !scripts.test) continue;
+      const r = spawnSync('npm', ['test', '--prefix', d], { cwd, encoding: 'utf8', timeout: 120000, env: { ...process.env, CI: '1' } });
+      const tail = `${r.stdout || ''}${r.stderr || ''}`.split('\n').filter((l) => /# (pass|fail|tests)|failing|passing|Error|not ok/i.test(l)).slice(-6).join(' | ');
+      out.push({ package: String(id), dir: d, command: `npm test --prefix ${d}`, exit: r.status == null ? (r.error ? 'error' : 'timeout') : r.status, summary: tail.slice(0, 400) });
+      break; // one test command per package
+    }
+  }
+  return out;
 }
 
 // The manager-level reduce (item 4): a package's own dispatch attempts are its RETRY history,
@@ -2968,14 +2995,21 @@ export function composeTaskPrompt(task, n) {
   if (n.stage === 'integrate' && n.integration) {
     L.push('');
     L.push(`## Integration worktree`);
-    L.push(`${n.integration.cwd} on branch ${n.integration.branch}, created from ${n.integration.based_on === 'repair' ? `the repaired integration branch of package ${n.integration.repair_package}` : `the project's HEAD`}.`);
+    L.push(`${n.integration.cwd} on branch ${n.integration.branch}, created from ${n.integration.based_on === 'repair' ? `the repaired integration branch of package ${n.integration.repair_package}` : n.integration.based_on === 'base_ref' ? `${n.integration.base_ref}, the prior Sprint's integrated work` : `the project's HEAD`}.`);
     L.push(`Already merged, in dependency order:`);
     L.push(bullets((n.integration.merged || []).map((m) => `${m.package}: ${m.branch} -> ${m.commit}`)));
-    // A budget/timebox sweep reintegrates over only what accepted. Judged against the whole goal
-    // that set can never verify - code-sprint-S5's integrate:2 refused because the skipped P3/P4's
-    // work was "unowned", which is exactly what the sweep already recorded, and the task ended
-    // blocked with no report. Here the question is whether the kept packages work together.
+    if ((n.integration.package_tests || []).length) {
+      L.push(`Each package's own test command, run by the manager in this combined tree before you were called - facts, not claims. A package whose own tests fail here is not integrated, whatever the root runner says:`);
+      L.push(bullets(n.integration.package_tests.map((t) => `${t.package}: \`${t.command}\` -> exit ${t.exit}${t.summary ? ` (${t.summary})` : ''}`)));
+    }
+    // Restored: 0.30.2 (06575cb) dropped this line while inserting the scope note below, and every
+    // integrate judge since ran without being told what its job was.
+    L.push(`Run the goal-level checks there. Read the seams: where one package's output meets another's input.`);
   }
+  // A budget/timebox sweep reintegrates over only what accepted. Judged against the whole goal
+  // that set can never verify - code-sprint-S5's integrate:2 refused because the skipped P3/P4's
+  // work was "unowned", which is exactly what the sweep already recorded, and the task ended
+  // blocked with no report. Here the question is whether the kept packages work together.
   // The same scope holds for the goal gate that judges that reintegration.
   if ((n.stage === 'integrate' || String(n.node_id).startsWith('gate:goal'))
       && task.budget_stopped && (task.budget_stopped.skipped_packages || []).length) {
