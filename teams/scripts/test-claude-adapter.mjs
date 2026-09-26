@@ -19,9 +19,13 @@ process.stdin.on('end', () => {
   fs.writeFileSync('observed.json', JSON.stringify({args, prompt, cwd:process.cwd()}));
   if(process.env.MOCK_QUOTA) { console.log(JSON.stringify({is_error:true, result:"You've hit your limit"})); process.exit(1); }
   if(process.env.MOCK_PROSE) { console.log(JSON.stringify({result:'cannot do that'})); return; }
-  const write = prompt.match(/Use Write to create (.+) containing exactly (.+)\\. Do not/);
+  const run = prompt.match(/then return (\\S+): node -e "(.+)" (".+") (\\S+)$/);
   const read = prompt.match(/Return exactly (.+)\\. Do not/);
-  if(write) { fs.writeFileSync(write[1], write[2]); console.log(JSON.stringify({result:write[2]})); return; }
+  if(run) {
+    // MOCK_NO_BASH: the session answers but its Bash call needs approval (acceptEdits, headless).
+    if(!process.env.MOCK_NO_BASH) require('node:child_process').execFileSync('node', ['-e', run[2], JSON.parse(run[3]), run[4]]);
+    console.log(JSON.stringify({result:run[1]})); return;
+  }
   if(read) { console.log(JSON.stringify({result:read[1]})); return; }
   console.log(JSON.stringify({result:JSON.stringify({stage_ok:true, verified:true, checks:['check -> passed'], evidence:'e'}), usage:{input_tokens:12,output_tokens:4}}));
 });
@@ -63,6 +67,17 @@ test('Claude probes real writes and restricts read-only tool profile', () => {
     const args = JSON.parse(readFileSync(join(f.dir, 'observed.json'))).args;
     assert.equal(args[args.indexOf('--tools') + 1], 'Read,Glob,Grep');
     assert.equal(args[args.indexOf('--model') + 1], 'explicit-model');
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('a workspace-write probe is ready only if the session can run a command, not just write a file', () => {
+  const f = fixture();
+  try {
+    assert.equal(f.run(['--detect']).report.vendor.ready, true);
+    const blocked = f.run(['--detect'], { MOCK_NO_BASH: '1' });
+    assert.equal(blocked.report.vendor.reachable, true);
+    assert.equal(blocked.report.vendor.ready, false, 'code-sprint-S3: Write worked, `node --test` needed approval');
+    assert.match(blocked.report.vendor.reason, /could not run a command/);
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
 
