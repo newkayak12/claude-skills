@@ -5706,3 +5706,47 @@ test('code-sprint-S8: a follow-up Sprint (context_from) builds on the prior task
     assert.equal((await tm.call('tm_status', { task_id: third.task_id, full: true })).base_ref, null);
   });
 });
+
+test('code-sprint-P2: a box that stops before any package is accepted skips integration and goes straight to the report', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    writeDriverSpend(root, task_id, 'dispatch_PLAN_1', 20);
+    const nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children.length, 0);
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.ok(!task.nodes.some((n) => n.stage === 'integrate' && n.state === 'pending'), 'no integrate over nothing');
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['report']);
+  }, { budget_usd: 10 });
+});
+
+test('code-sprint-P2: a stopped box whose goal gate waits on a node nothing can create (the audit) closes to its report instead of waiting forever', async () => {
+  const { enforceBudget } = await import('../mcp/taskmanager.mjs');
+  const prevRoot = process.env.HARNESS_TASKS_DIR;
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  process.env.HARNESS_TASKS_DIR = root;
+  try {
+    const task = {
+      run_id: 'p2', store_path: join(root, 'p2', 'task.json'), cwd: root, request: 'r', created_at: Date.now(),
+      team: { opts: { budget_usd: 1 } }, budget_stopped: { skipped_packages: ['P1'] },
+      spec: { packages: [{ id: 'P1', title: 'p' }] },
+      nodes: [
+        { node_id: 'size', stage: 'size', deps: [], state: 'done', result: {} },
+        { node_id: 'dispatch:P1:1', stage: 'dispatch', subgoal_id: 'P1', deps: [], state: 'skipped', final: true, result: {} },
+        { node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', deps: ['dispatch:P1:1'], state: 'skipped', final: true, result: {} },
+        { node_id: 'integrate:1', stage: 'integrate', deps: ['accept:P1:1'], state: 'pending' },
+        { node_id: 'dispatch:AUDIT:1', stage: 'dispatch', subgoal_id: 'AUDIT', deps: [], state: 'pending' },
+        { node_id: 'accept:AUDIT:1', stage: 'accept', subgoal_id: 'AUDIT', deps: ['dispatch:AUDIT:1'], state: 'pending' },
+        { node_id: 'gate:goal:1', stage: 'gate', deps: ['accept:AUDIT:1'], state: 'pending' },
+        { node_id: 'report', stage: 'report', deps: [], after: ['gate:goal:1'], state: 'pending' },
+      ],
+    };
+    mkdirSync(join(root, 'p2'), { recursive: true });
+    writeDriverSpend(root, 'p2', 'dispatch_PLAN_1', 5);
+    assert.equal(enforceBudget(task), true);
+    assert.equal(task.nodes.find((n) => n.node_id === 'gate:goal:1').state, 'skipped');
+    assert.equal(task.nodes.find((n) => n.node_id === 'report').state, 'pending');
+  } finally {
+    if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
