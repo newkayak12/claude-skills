@@ -5647,3 +5647,16 @@ test('one subgoal, five owners: every card is addressable and an ambiguous key i
     assert.equal(v.node_id, 'ask:U1:1b', JSON.stringify(v));
   });
 });
+
+test('code-sprint-S6: after a budget sweep the goal gate is not failed on the whole-goal floor; without a stop it still is', async () => {
+  const { succeeded } = await import('../mcp/taskmanager.mjs');
+  const gate = { node_id: 'gate:goal:2', stage: 'gate' };
+  const verdict = { stage_ok: true, accept: true, match_pct: 72, gaps: [], checks: ['npm test -> 3 packages pass'] };
+  assert.equal(succeeded({ goal_threshold: 90 }, gate, verdict), false, 'an unboxed task keeps its floor');
+  assert.equal(succeeded({ goal_threshold: 90, budget_stopped: { skipped_packages: ['P4'] } }, gate, verdict), true,
+    'three of four shipped by design: the judge\'s accept stands');
+  assert.equal(succeeded({ goal_threshold: 90, budget_stopped: { skipped_packages: [] } }, gate, verdict), false,
+    'a stop that skipped nothing waives nothing');
+  assert.equal(succeeded({ goal_threshold: 90, budget_stopped: { skipped_packages: ['P4'] } }, gate, { ...verdict, accept: false, gaps: ['x'] }), false,
+    'a refusal is still a refusal');
+});
