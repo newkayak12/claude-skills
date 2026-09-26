@@ -52,13 +52,63 @@ export function driverKey(root, p) {
   return m ? `${m[1]}/${m[2]}` : rel;
 }
 
+// A session's token use in input-token units (cache write 1.25x, cache read 0.1x, output 5x -
+// the ratios Claude pricing holds across models), summed over its assistant messages, each
+// message counted once at its last usage reading.
+export function usageUnits(streamPath) {
+  const txt = read(streamPath);
+  if (!txt) return 0;
+  const byMsg = new Map();
+  for (const line of txt.split('\n')) {
+    if (!line.trim()) continue;
+    let ev;
+    try { ev = JSON.parse(line); } catch { continue; }
+    if (ev.type === 'assistant' && ev.message && ev.message.id && ev.message.usage) byMsg.set(ev.message.id, ev.message.usage);
+  }
+  let units = 0;
+  for (const u of byMsg.values()) {
+    units += (u.input_tokens || 0) + 1.25 * (u.cache_creation_input_tokens || 0) + 0.1 * (u.cache_read_input_tokens || 0) + 5 * (u.output_tokens || 0);
+  }
+  return units;
+}
+
+// Used only when this task has no finished session to calibrate from yet (a PLAN team's first
+// session is often the only one for 40+ minutes). Measured 2026-09-26: dispatch sessions on
+// claude-opus-5-5 ran 5.2-5.7e-6 per unit across two runs. Keyed by model; any other model has
+// no fallback and stays uncounted until something finishes.
+const FALLBACK_RATES = { 'claude-opus-5-5': 5.5e-6 };
+
+function streamModel(streamPath) {
+  const txt = read(streamPath);
+  if (!txt) return null;
+  for (const line of txt.split('\n', 50)) {
+    try { const ev = JSON.parse(line); if (ev.type === 'system' && ev.model) return ev.model; } catch { /* keep looking */ }
+  }
+  return null;
+}
+
+const median = (xs) => { const a = [...xs].sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : null; };
+const streamClass = (p) => (String(p).split(/[\\/]/).pop() || '').split('_')[0];
+
 // The full account for everything under `root`: every driver stream, deduped, summed.
+// A session still running has no result event, so its cost used to read 0 until it ended - and
+// with execute stages running inside the package driver (vendor self), one package session is
+// most of a Sprint's spend: budget_usd could not see it until it was over. Such a session is now
+// ESTIMATED: its token units times the cost-per-unit of this task's own finished sessions of the
+// same kind (dispatch_/judge_; measured 5.2-5.7e-6 across dispatch sessions of two runs), marked
+// estimated. No finished session yet means no rate, and the running one stays uncounted.
 export function collectDriverCosts(root) {
   const paths = findDriverStreams(root).sort();
   const byKey = new Map();
+  const running = [];
+  const rates = new Map();
   for (const p of paths) {
     const last = lastResultEvent(p);
-    if (!last) continue;
+    if (!last) { running.push(p); continue; }
+    if (last.total_cost_usd > 0) {
+      const u = usageUnits(p);
+      if (u > 0) { const c = streamClass(p); rates.set(c, [...(rates.get(c) || []), last.total_cost_usd / u]); }
+    }
     const key = driverKey(root, p);
     const cost = last.total_cost_usd || 0;
     const prev = byKey.get(key);
@@ -72,8 +122,24 @@ export function collectDriverCosts(root) {
       is_error: !!last.is_error,
     });
   }
+  const allRates = [...rates.values()].flat();
+  for (const p of running) {
+    const key = driverKey(root, p);
+    if (byKey.has(key)) continue;
+    const calibrated = median(rates.get(streamClass(p)) || []) ?? median(allRates);
+    const rate = calibrated ?? FALLBACK_RATES[streamModel(p)] ?? null;
+    const units = usageUnits(p);
+    if (rate == null || !units) continue;
+    byKey.set(key, {
+      stream: p.startsWith(root) ? p.slice(root.length + 1) : p,
+      path: p, cost_usd: +(units * rate).toFixed(4), turns: 0, duration_ms: 0, is_error: false, estimated: true,
+      ...(calibrated == null ? { uncalibrated: true } : {}),
+    });
+  }
   const sessions = [...byKey.values()];
+  const estimated = sessions.filter((x) => x.estimated);
   return {
+    ...(estimated.length ? { estimated_usd: +estimated.reduce((a, x) => a + x.cost_usd, 0).toFixed(4), estimated_sessions: estimated.length } : {}),
     sessions: sessions.length,
     cost_usd: +sessions.reduce((a, s) => a + s.cost_usd, 0).toFixed(4),
     turns: sessions.reduce((a, s) => a + s.turns, 0),
@@ -144,6 +210,7 @@ export function collectTaskCosts(taskDirPath, task) {
     turns: d.turns + nodes.reduce((a, s) => a + s.turns, 0),
     duration_ms: d.duration_ms + nodes.reduce((a, s) => a + s.duration_ms, 0),
     drivers_usd: d.cost_usd,
+    ...(d.estimated_usd ? { estimated_usd: d.estimated_usd, estimated_sessions: d.estimated_sessions } : {}),
     nodes_usd: +nodesUsd.toFixed(4),
     streams: d.streams,
     node_streams: nodes,

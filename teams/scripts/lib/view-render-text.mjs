@@ -114,7 +114,7 @@ function renderChild(child, indent, out) {
 
 function renderModelBody(m, indent, out) {
   if (m.error) { out.push(line(indent, `ERROR: ${m.error}`)); return; }
-  out.push(line(indent, `state=${m.state} size=${m.size || '?'} flow=${m.flow || '?'} cost=${fmtUsd(m.cost && m.cost.usd)} turns=${m.cost && m.cost.turns} elapsed=${fmtMs(m.elapsed_ms)}`));
+  out.push(line(indent, `state=${m.state} size=${m.size || '?'} flow=${m.flow || '?'} cost=${fmtUsd(m.cost && m.cost.usd)}${m.cost && m.cost.estimated_usd ? ` (~${fmtUsd(m.cost.estimated_usd)} running, estimated)` : ''} turns=${m.cost && m.cost.turns} elapsed=${fmtMs(m.elapsed_ms)}`));
   if (m.budget) {
     const b = m.budget;
     const bits = [];

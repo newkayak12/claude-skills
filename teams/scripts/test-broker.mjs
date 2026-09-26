@@ -2751,7 +2751,12 @@ const args = process.argv.slice(2);
 appendFileSync(process.env.CODEX_ARGS_LOG, JSON.stringify(args) + '\\n');
 if (args.includes('--version')) process.exit(0);
 const prompt = args.at(-1) || '';
-if (prompt.includes('CODEX_READY')) process.stdout.write('CODEX_READY\\n');
+// The smoke asks for a file's contents via cat: answering needs the command to have run.
+const cat = prompt.match(/Run the shell command \`cat ([^\`]+)\`/);
+if (cat && !process.env.CODEX_NO_EXEC) {
+  const { readFileSync } = await import('node:fs');
+  process.stdout.write(readFileSync(join(args[args.indexOf('-C') + 1], cat[1]), 'utf8') + '\\n');
+} else if (cat) process.stdout.write('CODEX_READY\\n');
 const match = prompt.match(/Create a file named ([^ ]+)/);
 if (match) {
   const cwdArg = args[args.indexOf('-C') + 1];
@@ -2778,6 +2783,13 @@ process.exit(0);
     for (const call of calls) {
       assert.equal(call[call.indexOf('-m') + 1], 'probe-model');
     }
+    // code-sprint-P1: a codex that answers but cannot run a command (bubblewrap) is not reachable
+    // for a judge - the old smoke only asked it to say CODEX_READY.
+    const blocked = spawnSync('node', [CODEX_ADAPTER, '--detect', '--cwd', cwd, '--sandbox', 'workspace-write', '--output', output],
+      { cwd, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, CODEX_ARGS_LOG: log, CODEX_NO_EXEC: '1' } });
+    const rep = JSON.parse(readFileSync(output, 'utf8')).codex;
+    assert.equal(rep.reachable, false, blocked.stderr);
+    assert.equal(rep.test, false);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

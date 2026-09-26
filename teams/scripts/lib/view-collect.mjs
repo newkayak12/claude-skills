@@ -504,7 +504,7 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     state,
     counts,
     daemon,
-    cost: { usd: driverTotal.cost_usd, turns: driverTotal.turns, sessions: driverTotal.sessions },
+    cost: { usd: driverTotal.cost_usd, turns: driverTotal.turns, sessions: driverTotal.sessions, ...(driverTotal.estimated_usd ? { estimated_usd: driverTotal.estimated_usd } : {}) },
     budget: sprintBox(task, driverTotal.cost_usd),
     manager_stages: managerStages,
     packages,
