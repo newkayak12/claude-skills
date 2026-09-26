@@ -1679,3 +1679,24 @@ test('a running session (no result event yet) is estimated from this task\'s fin
     assert.equal(fb.streams[0].uncalibrated, true);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('a task whose daemon and drivers are all dead reads stalled, not running (idol-plan-2 read running 86h after daemon_done)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'view-test-stalled-'));
+  try {
+    const taskId = 'ffffffff-0000-0000-0000-000000000000';
+    const taskPath = join(root, taskId, 'task.json');
+    mkdirSync(join(root, taskId), { recursive: true });
+    const deadPid = 2 ** 22 + 777;
+    const base = {
+      run_id: taskId, cwd: root, request: 'r', created_at: Date.now(), store_path: taskPath,
+      spec: { packages: [{ id: 'P1', title: 'p' }] },
+      nodes: [node('dispatch:P1:1', 'dispatch', [], { subgoal_id: 'P1', attempt: 1, state: 'running', child: { cwd: root, run_id: 'c1', driver: { pid: deadPid } } })],
+    };
+    writeFileSync(taskPath, JSON.stringify({ ...base, daemon: { pid: deadPid, started_at: 1 } }));
+    assert.equal(collectTask(root, taskId).state, 'stalled');
+    writeFileSync(taskPath, JSON.stringify({ ...base, daemon: { pid: process.pid, started_at: 1 } }));
+    assert.equal(collectTask(root, taskId).state, 'running', 'a live daemon is still driving it');
+    writeFileSync(taskPath, JSON.stringify(base));
+    assert.equal(collectTask(root, taskId).state, 'running', 'no daemon ever: driven by hand, left alone');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
