@@ -92,6 +92,15 @@ export function referencedPlugins(extraSkillLists = []) {
   return [...names].sort();
 }
 
+// The teams plugin's own root: CLAUDE_PLUGIN_ROOT when the host set it, else this file's own
+// location (mcp/..), which is always true. Only the env var used to count: a driver respawned by
+// a process launched without it (a daemon or MCP server started from another shell) came up with
+// no teams MCP servers at all - idol-beta-ask1's PLAN restarts answered "team_* tools aren't
+// available" and quit, each one a spent restart.
+export function teamsPluginRoot() {
+  return process.env.CLAUDE_PLUGIN_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), '..');
+}
+
 // Where plugin `name` lives, relative to the teams plugin's own root. null when not found.
 export function resolvePluginDir(name, pluginRoot) {
   if (!pluginRoot || !name || /[\\/]/.test(name)) return null;
@@ -109,7 +118,7 @@ export function resolvePluginDir(name, pluginRoot) {
 // Plugin directories to pass alongside pluginRoot itself. `skills` are extra skill lists (see
 // referencedPlugins); `extraDirs` are explicit directories (team.json plugin_dirs), kept when
 // they exist. pluginRoot is never repeated. Order is stable: explicit dirs first, then names.
-export function skillPluginDirs({ pluginRoot = process.env.CLAUDE_PLUGIN_ROOT, skills = [], extraDirs = [] } = {}) {
+export function skillPluginDirs({ pluginRoot = teamsPluginRoot(), skills = [], extraDirs = [] } = {}) {
   const out = [];
   const seen = new Set(pluginRoot ? [resolve(pluginRoot)] : []);
   const push = (d) => { if (!d) return; const r = resolve(d); if (seen.has(r)) return; seen.add(r); out.push(r); };

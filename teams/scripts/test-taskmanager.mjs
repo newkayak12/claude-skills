@@ -3077,9 +3077,10 @@ test('a live driver with no progress is flagged once at stall_minutes, not befor
     const withRoot = (fn) => { process.env.HARNESS_TASKS_DIR = root; try { return fn(); } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; } };
 
     const task = load();
+    // Started an hour ago: idle is measured from the LATER of progress and the driver's own start.
     task.stall_minutes = 1;
     const n = task.nodes.find((x) => x.node_id === 'dispatch:P1:1');
-    n.child.driver = { pid: process.pid, started_at: Date.now() }; // an always-alive pid: this test process itself
+    n.child.driver = { pid: process.pid, started_at: Date.now() - 60 * 60 * 1000 }; // an always-alive pid: this test process itself
     const runFile = join(n.child.cwd, '.teams_output', 'broker', 'runs', `${n.child.run_id}.json`);
     assert.ok(existsSync(runFile), 'the child run file exists the moment the dispatch opened, before any driver touches it');
 
@@ -3112,6 +3113,39 @@ test('a live driver with no progress is flagged once at stall_minutes, not befor
   });
 });
 
+test('idol-beta-ask1 P6: a driver respawned after a long park is not stalled on its first poll, and a dead driver with its restart budget spent settles its dispatch', async () => {
+  const { serviceStalledDriver, dispatchSettled, capacityResetAt } = await import('../mcp/taskmanager.mjs');
+  // "resets 3pm (UTC)" - no minutes - fell through to the 30-minute fallback and resumed early.
+  const since = Date.UTC(2026, 8, 24, 14, 20);
+  assert.equal(new Date(capacityResetAt("You've hit your session limit · resets 3pm (UTC)", since)).toISOString(), '2026-09-24T15:00:00.000Z');
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    await tm.call('tm_next', { task_id });
+    const load = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const prevRoot = process.env.HARNESS_TASKS_DIR;
+    const withRoot = (fn) => { process.env.HARNESS_TASKS_DIR = root; try { return fn(); } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; } };
+    const task = load();
+    task.stall_minutes = 1;
+    const n = task.nodes.find((x) => x.node_id === 'dispatch:P1:1');
+    const runFile = join(n.child.cwd, '.teams_output', 'broker', 'runs', `${n.child.run_id}.json`);
+    const old = new Date(Date.now() - 79 * 60 * 1000); // the last progress, from before the park
+    utimesSync(runFile, old, old);
+    n.child.driver = { pid: process.pid, started_at: Date.now() }; // just respawned
+    assert.equal(withRoot(() => serviceStalledDriver(task, n.child, n.node_id)), false, 'a fresh driver is not 79 minutes idle');
+    const ev = await tm.call('tm_events', { task_id });
+    assert.equal(ev.events.filter((e) => e.event === 'child_driver_killed').length, 0);
+
+    // Dead, budget (2) spent, not parked on capacity: settled, so the daemon folds it.
+    n.child.driver = { pid: 2 ** 22 + 4321, started_at: Date.now(), restarts: [{ at: Date.now() }, { at: Date.now() }] };
+    assert.equal(withRoot(() => dispatchSettled(task, n)), true, 'a dispatch nobody will ever respawn is settled');
+    n.child.driver.restarts = [{ at: Date.now() }];
+    assert.equal(withRoot(() => dispatchSettled(task, n)), false, 'one restart left: not settled, serviceDeadDriver respawns it');
+    n.child.driver.restarts = [{ at: Date.now() }, { at: Date.now() }];
+    n.child.waiting_capacity = { reason: 'resets 3pm (UTC)', since: Date.now() };
+    assert.equal(withRoot(() => dispatchSettled(task, n)), false, 'parked on capacity: waiting, not settled');
+  });
+});
+
 test('a stalled driver is left alone before 3x stall_minutes, and killed (never respawned directly) past it', async () => {
   const { serviceStalledDriver } = await import('../mcp/taskmanager.mjs');
   await withTask(async ({ tm, root, task_id }) => {
@@ -3128,7 +3162,7 @@ test('a stalled driver is left alone before 3x stall_minutes, and killed (never 
     // fakes exactly that: a pid this test can kill without killing itself.
     const sleeper = spawn('sleep', ['300'], { detached: true, stdio: 'ignore' });
     sleeper.unref();
-    n.child.driver = { pid: sleeper.pid, started_at: Date.now() };
+    n.child.driver = { pid: sleeper.pid, started_at: Date.now() - 60 * 60 * 1000 };
     const runFile = join(n.child.cwd, '.teams_output', 'broker', 'runs', `${n.child.run_id}.json`);
     try {
       // 100s idle: past 1x (60s), short of 3x (180s) - flagged, but the driver stays untouched.
@@ -3176,7 +3210,7 @@ test('once a stalled driver is killed, the ordinary dead-driver path respawns it
     const n = task.nodes.find((x) => x.node_id === 'dispatch:P1:1');
     const sleeper = spawn('sleep', ['300'], { detached: true, stdio: 'ignore' });
     sleeper.unref();
-    n.child.driver = { pid: sleeper.pid, started_at: Date.now() };
+    n.child.driver = { pid: sleeper.pid, started_at: Date.now() - 60 * 60 * 1000 };
     const runFile = join(n.child.cwd, '.teams_output', 'broker', 'runs', `${n.child.run_id}.json`);
     try {
       const t200 = new Date(Date.now() - 200 * 1000);

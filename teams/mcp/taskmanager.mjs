@@ -52,7 +52,7 @@ import {
 import { writeDocs } from './docs.mjs';
 import { conventionsBlock } from './conventions.mjs';
 import { readTeamConfig, resolveTeamOptions, TEAM_DEFAULTS } from './teamconfig.mjs';
-import { pluginDirArgs, isEntryPoint } from './pluginroots.mjs';
+import { pluginDirArgs, isEntryPoint, teamsPluginRoot } from './pluginroots.mjs';
 import { ensureViewer, readViewRecord, viewUrl } from './viewserver.mjs';
 import {
   node,
@@ -982,7 +982,10 @@ export function autoRetryPackages(task) {
     const out = retryPackage(task, pid, fb);
     record(task, {
       event: out.attempt ? 'daemon_retry_opened' : 'daemon_retry_settled', task_id: task.run_id,
-      package_id: pid, attempt: out.attempt || null, reason: out.reason || '', failed_node: failed.node_id,
+      // The feedback the retry was opened ON, not just retryPackage's own settle reason (set only
+      // when it declines): every daemon_retry_opened read reason:"" before (trap, idol-beta-ask1),
+      // so a person reading tm_events saw a retry and never why.
+      package_id: pid, attempt: out.attempt || null, reason: String(out.reason || fb || '').slice(0, 400), failed_node: failed.node_id,
     });
     changed = true;
   }
@@ -1030,11 +1033,13 @@ export function clearCapacity(task, packageId) {
 // epoch ms of that wall-clock time in that zone, the first occurrence after `since`. Unparseable
 // -> since + 30 minutes, the same fallback drive.sh uses.
 export function capacityResetAt(reason, since) {
-  const m = /resets\s+(\d{1,2}):(\d{2})\s*(am|pm)(?:\s*\(([^)]+)\))?/i.exec(String(reason || ''));
+  // Minutes are optional: idol-beta-ask1's P6 read "resets 3pm (UTC)", fell to the 30-minute
+  // fallback, resumed an hour early and hit the limit again four seconds later.
+  const m = /resets\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)(?:\s*\(([^)]+)\))?/i.exec(String(reason || ''));
   const base = Number(since) || Date.now();
   if (!m) return base + 30 * 60 * 1000;
   let h = Number(m[1]) % 12; if (m[3].toLowerCase() === 'pm') h += 12;
-  const min = Number(m[2]);
+  const min = Number(m[2] || 0);
   const tz = m[4] || 'UTC';
   // Walk the zone's wall clock: find the offset at `since`, build the candidate, roll a day if past.
   const wall = (ms) => {
@@ -1707,7 +1712,7 @@ export function driverArgv(task = null) {
     '--dangerously-skip-permissions', '--setting-sources', 'project'];
   // This server is launched with CLAUDE_PLUGIN_ROOT when it runs from a --plugin-dir; the child
   // needs the same directory to see the same plugin. Without it the plugin is installed.
-  if (process.env.CLAUDE_PLUGIN_ROOT) argv.push('--plugin-dir', process.env.CLAUDE_PLUGIN_ROOT);
+  argv.push('--plugin-dir', teamsPluginRoot());
   // And every plugin the method tables name (pluginroots.mjs): --setting-sources project hides
   // the user's installed plugins, so without these the child's nodes never see a single skill
   // they are told to load - which is how every bench run before 0.18.0 ran (skills_used none).
@@ -1862,6 +1867,34 @@ function nextSpawnAttempt(child) {
   return n;
 }
 
+// The restart budget and the restarts that count against it (the sliding window when
+// restart_period_minutes > 0 - see serviceDeadDriver). Shared with dispatchSettled, which has to
+// know when a dead driver will never be respawned so the dispatch can fold instead of sitting
+// 'running' forever: idol-beta-ask1's P6 spent its budget and then stayed running 16h+, because
+// dispatchSettled only ever read the child run's own state, which a dead driver never advances.
+function restartBudget(task) {
+  return Number.isInteger(task.driver_restarts) ? task.driver_restarts : 2;
+}
+
+// OTP-style restart intensity: driver_restarts is a flat, forever counter by default
+// (restart_period_minutes 0, teamconfig.mjs) - every death this run has ever had counts
+// against the budget. >0 makes it a sliding window: only the restarts whose own `at` falls
+// inside the last restart_period_minutes count, so a package that dies once an hour for a week
+// never exhausts a budget sized for "how many deaths in a row".
+function countedDriverRestarts(task, driver) {
+  const prior = (driver && driver.restarts) || [];
+  const periodMinutes = Number.isInteger(task.restart_period_minutes) ? task.restart_period_minutes : TEAM_DEFAULTS.restart_period_minutes;
+  return periodMinutes > 0
+    ? prior.filter((r) => Number.isInteger(r.at) && Date.now() - r.at <= periodMinutes * 60000)
+    : prior;
+}
+
+export function driverRestartsSpent(task, child) {
+  const d = child && child.driver;
+  if (!d || driverAlive(d) || child.waiting_capacity) return false;
+  return countedDriverRestarts(task, d).length >= restartBudget(task);
+}
+
 // Called on every tm_next poll (and defensively from foldChild) for a package whose driver is
 // no longer alive while its child run is still `running`. Distinguishes three cases:
 //   - the driver died because a usage limit was hit: park it on `waiting_capacity`, spend no
@@ -1897,18 +1930,9 @@ export function serviceDeadDriver(task, child, nodeId) {
     record(task, { event: 'child_driver_capacity', task_id: task.run_id, node_id: nodeId, pid: driver.pid, reason: usage.slice(0, 300) });
     return true;
   }
-  const budget = Number.isInteger(task.driver_restarts) ? task.driver_restarts : 2;
+  const budget = restartBudget(task);
   const priorRestarts = driver.restarts || [];
-  // OTP-style restart intensity: driver_restarts is a flat, forever counter by default
-  // (restart_period_minutes 0, teamconfig.mjs) - every death this run has ever had counts
-  // against the budget, same as always. >0 makes it a sliding window: only the restarts whose
-  // own `at` (recorded on every entry above) falls inside the last restart_period_minutes count,
-  // so a package that dies once an hour for a week never exhausts a budget sized for "how many
-  // deaths in a row", which is what this was always measuring.
-  const periodMinutes = Number.isInteger(task.restart_period_minutes) ? task.restart_period_minutes : TEAM_DEFAULTS.restart_period_minutes;
-  const countedRestarts = periodMinutes > 0
-    ? priorRestarts.filter((r) => Number.isInteger(r.at) && Date.now() - r.at <= periodMinutes * 60000)
-    : priorRestarts;
+  const countedRestarts = countedDriverRestarts(task, driver);
   if (countedRestarts.length >= budget) return false; // budget spent (within the window, if any): fold it, do not respawn again
   const restarts = [...priorRestarts, entry];
   const fresh = spawnChildDriver(task, nodeId, child, { resume: true, attempt: nextSpawnAttempt(child) });
@@ -1967,7 +1991,11 @@ export function serviceStalledDriver(task, child, nodeId) {
   const run = loadRun(child.cwd, child.run_id);
   const cs = run ? runState(run) : { state: 'missing' };
   if (cs.state !== 'running') return false; // nothing left to make progress on
-  const progressAt = childProgressMtime(child) ?? driver.started_at ?? Date.now();
+  // The LATER of last progress and this driver's own start: a driver respawned after a long
+  // park (capacity, a dead predecessor) inherits the old progress mtime, and measured from that
+  // alone it read 79 minutes idle the moment it came up - idol-beta-ask1's P6 had eight fresh
+  // drivers killed as "stalled" within 68 ms and its whole restart budget spent.
+  const progressAt = Math.max(childProgressMtime(child) ?? 0, driver.started_at ?? 0) || Date.now();
   const idleMs = Date.now() - progressAt;
   const stallMs = stallMinutes * 60000;
   if (idleMs < stallMs) {
@@ -2268,6 +2296,10 @@ export function dispatchSettled(task, n) {
   // package itself is not done, not blocked, and not this attempt's failure: folding it here
   // would count a human's turnaround time as a package failure and spend a retry nobody asked
   // for. It stays open until the human answers (tm_submit) and the child moves on its own.
+  // A running child whose driver is dead for good (restart budget spent, not parked on
+  // capacity) will never advance on its own: that is settled, and foldChild folds it blocked
+  // with every attempt's stderr, so the package's retry (or a person) can take it from there.
+  if (st === 'running' && driverRestartsSpent(task, n.child)) return true;
   if (st === 'running' || st === 'waiting_human') return false;
   if (st === 'complete') return true;
   // Blocked or missing-report with a live driver: the driver's own broker may be about to open
