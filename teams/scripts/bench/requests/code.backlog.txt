@@ -1,0 +1,4 @@
+packages/csv — parse CSV expense rows (date, amount, merchant, memo) into records with validation and typed errors (bad date, bad amount, wrong column count), with real node:test tests under packages/csv/test/.
+packages/rules — a categorization rule engine: ordered rules {match: substring or regex on merchant, category}, first match wins, default "uncategorized", plus loading rules from a JSON file, with real node:test tests under packages/rules/test/.
+packages/report — monthly report over categorized records: totals per category per month, top 3 merchants by spend, and a plain-text table renderer, with real node:test tests under packages/report/test/.
+packages/cli — bin/ledger.mjs, the CLI `ledger report <csv> --rules <json> [--month YYYY-MM]` wiring csv, rules and report together, exit code 1 with a message on invalid input, with node:test tests, and the root README.md documenting usage with an example CSV and rules file.

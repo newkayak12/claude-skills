@@ -16,6 +16,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { viewRecordPath, readViewRecord } from '../mcp/viewserver.mjs';
 import { docPaths } from '../mcp/tickets.mjs';
+import { collectDriverCosts } from './bench/lib/drivercost.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TM = join(HERE, '..', 'mcp', 'taskmanager.mjs');
@@ -1817,6 +1818,11 @@ test('tm_open({context_from}) folds the prior task\'s retro into the new task\'s
     const third = await tm.call('tm_open', { request: 'no prior retro yet', cwd, vendor: 'self', roles: { planning: false, qa: false }, context_from: 'not-a-real-task-id' });
     const task3 = await tm.call('tm_status', { task_id: third.task_id, full: true });
     assert.equal(task3.context, '');
+    assert.match(third.context_from_unresolved, /no task not-a-real-task-id/, 'best-effort, but the caller is told it came up empty');
+    // A real task whose report has not run yet: named as such, not as a missing task.
+    const fourth = await tm.call('tm_open', { request: 'too early', cwd, vendor: 'self', roles: { planning: false, qa: false }, context_from: third.task_id });
+    assert.match(fourth.context_from_unresolved, /no retro\.json yet/);
+    assert.equal(second.context_from_unresolved, undefined);
   }, { roles: { planning: false, qa: false } });
 });
 
@@ -1836,6 +1842,27 @@ test('requests: [...] opens with a single composed request text (priority = arra
     assert.deepEqual(task.requests, ['build the API', 'write the docs']);
     assert.match(task.request, /\[backlog priority 0\] build the API/);
     assert.match(task.request, /\[backlog priority 1\] write the docs/);
+  });
+});
+
+test('a backlog held to a budget/timebox is pinned L - an S task has no packages for the box to leave undispatched', async () => {
+  await withTask(async ({ tm, cwd, root }) => {
+    const boxed = await tm.call('tm_open', { requests: ['build the API', 'write the docs'], budget_usd: 5, cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    const t1 = JSON.parse(readFileSync(join(root, boxed.task_id, 'task.json'), 'utf8'));
+    assert.equal(t1.size_pinned, 'L');
+    assert.equal(t1.size_pin_source, 'boxed-backlog');
+    assert.equal(t1.nodes.find((n) => n.node_id === 'size').result.size, 'L');
+    const timeboxed = await tm.call('tm_open', { requests: ['a', 'b'], timebox_minutes: 30, cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    assert.equal(JSON.parse(readFileSync(join(root, timeboxed.task_id, 'task.json'), 'utf8')).size_pinned, 'L');
+    // Unboxed, a single item, or a caller's own pin: size is measured (or pinned) as before.
+    const unboxed = await tm.call('tm_open', { requests: ['a', 'b'], cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    assert.equal(JSON.parse(readFileSync(join(root, unboxed.task_id, 'task.json'), 'utf8')).size_pinned, null);
+    const single = await tm.call('tm_open', { requests: ['a'], budget_usd: 5, cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    assert.equal(JSON.parse(readFileSync(join(root, single.task_id, 'task.json'), 'utf8')).size_pinned, null);
+    const callerS = await tm.call('tm_open', { requests: ['a', 'b'], budget_usd: 5, size: 'S', cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    const t5 = JSON.parse(readFileSync(join(root, callerS.task_id, 'task.json'), 'utf8'));
+    assert.equal(t5.size_pinned, 'S');
+    assert.equal(t5.size_pin_source, 'caller');
   });
 });
 
@@ -3582,6 +3609,48 @@ test('a judge call that never returns is killed on its timeout instead of wedgin
     tm.close();
     rmSync(cwd, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
+    rmSync(drv, { recursive: true, force: true });
+  }
+});
+
+test('a judge call leaves its stream under drivers/, so budget and the report count manager-level spend', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const drv = mkdtempSync(join(tmpdir(), 'tm-drv-'));
+  // A judge that answers size with one result event costing $1.25 - the shape a real
+  // `claude -p --output-format stream-json` call ends with. Before keepJudgeLog this stdout was
+  // parsed and dropped, so every manager-level call was invisible to budget_usd and the report.
+  const judgeJs = join(drv, 'judge.mjs');
+  writeFileSync(judgeJs, `process.stdout.write(JSON.stringify({ type: 'result', total_cost_usd: 1.25, num_turns: 2, result: JSON.stringify({ stage_ok: true, size: 'S', reason: 'small' }) }) + '\\n');\n`);
+  const hang = join(drv, 'hanging-driver.mjs');
+  writeFileSync(hang, 'setInterval(() => {}, 1000);\n');
+  const tm = await new Client(TM, {
+    HARNESS_TASKS_DIR: root,
+    HARNESS_JUDGE_DRIVER: `node ${judgeJs}`,
+    HARNESS_CHILD_DRIVER: `node ${hang}`,
+    CLAUDECODE: '1',
+  }).init();
+  try {
+    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'a request whose size must be judged', cwd, vendor: 'self' });
+    const log = join(root, open.task_id, 'drivers', 'judge_size.stream.jsonl');
+    await waitFor(() => existsSync(log), 'the size judge to leave its stream log', 30000);
+    await waitFor(async () => {
+      const st = await tm.call('tm_status', { task_id: open.task_id, full: true });
+      const n = (st.nodes || []).find((x) => x.stage === 'size');
+      return n && n.state === 'done';
+    }, 'the size node to take the judge verdict', 30000);
+    assert.equal(collectDriverCosts(join(root, open.task_id)).cost_usd >= 1.25, true, 'the judge call is counted like any driver session');
+  } finally {
+    tm.close();
+    // The daemon goes on to judge shape with the same fake; stop it before removing its cwd.
+    try {
+      for (const line of readFileSync(join(root, readdirSync(root)[0], 'ledger.jsonl'), 'utf8').split('\n')) {
+        const e = line.trim() ? JSON.parse(line) : null;
+        if (e && e.event === 'daemon_spawned') { try { process.kill(e.pid, 'SIGKILL'); } catch { /* gone */ } }
+      }
+    } catch { /* no ledger */ }
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     rmSync(drv, { recursive: true, force: true });
   }
 });
