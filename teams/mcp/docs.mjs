@@ -236,6 +236,20 @@ export function buildRetro(task) {
       });
     }
   }
+  // Which backlog items (requests[] indices) did not ship: an item is shipped when an accepted
+  // package declares it in its own `backlog` (shape's field). Without any declaration - or with
+  // no package at all, a Sprint stopped before shape - nothing can be shown shipped, so the whole
+  // backlog carries forward rather than silently vanishing from the next Sprint's context.
+  const unshippedRequests = [];
+  if (Array.isArray(task.requests) && task.requests.length) {
+    const shipped = new Set();
+    for (const p of ((task.spec && task.spec.packages) || [])) {
+      if (unaccepted.some((u) => String(u.id) === String(p.id))) continue;
+      if (!packageIds.includes(p.id)) continue;
+      for (const i of (Array.isArray(p.backlog) ? p.backlog : [])) if (Number.isInteger(i)) shipped.add(i);
+    }
+    task.requests.forEach((r, i) => { if (!shipped.has(i)) unshippedRequests.push({ priority: i, request: r }); });
+  }
   const openQuestions = [];
   for (const n of task.nodes.filter((x) => x.stage === 'dispatch' && x.child)) {
     try {
@@ -255,6 +269,7 @@ export function buildRetro(task) {
       ...(task.budget_stopped ? { budget_stopped: task.budget_stopped } : {}),
     },
     next_backlog: {
+      ...(Array.isArray(task.requests) ? { unshipped_requests: unshippedRequests } : {}),
       unaccepted_packages: unaccepted,
       unresolved_defects: defectsLeft,
       open_questions: openQuestions,
@@ -276,7 +291,9 @@ export function renderReport(task) {
   L.push(bullets(retro.retrospective.what_failed.map((f) => `${f.node_id} (${f.stage}): ${f.reason}`)));
   L.push('', 'Retries:', bullets(retro.retrospective.retries.map((r) => `${r.package_id}: ${r.attempts} attempts`)));
   L.push('', 'Defects left:', bullets(retro.retrospective.defects_left.map((d) => d.title)));
-  L.push('', '## Next backlog', '', 'Unaccepted packages:');
+  L.push('', '## Next backlog', '');
+  if (retro.next_backlog.unshipped_requests) L.push('Backlog items not shipped:', bullets(retro.next_backlog.unshipped_requests.map((r) => `[${r.priority}] ${r.request}`)), '');
+  L.push('Unaccepted packages:');
   L.push(bullets(retro.next_backlog.unaccepted_packages.map((p) => `${p.id} (${p.title}): ${p.reason}`)));
   L.push('', 'Unresolved defects:', bullets(retro.next_backlog.unresolved_defects.map((d) => d.title)));
   L.push('', 'Open questions:', bullets(retro.next_backlog.open_questions.map((q) => q.question || JSON.stringify(q))));
