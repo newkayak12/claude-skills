@@ -5,7 +5,7 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 
 const args = process.argv.slice(2);
 const opts = { sandbox: 'workspace-write', addDirs: [] };
@@ -69,7 +69,12 @@ try {
   const prompt = opts.detect
     ? opts.sandbox === 'read-only'
       ? `Return exactly ${marker}. Do not use any tools.`
-      : `Use Write to create ${probeFile} containing exactly ${marker}. Do not change anything else. Return ${marker}.`
+      // Writable is not enough: implement/test/gate run commands. acceptEdits (this profile's
+      // permission mode) lets Write through and leaves Bash to the project's settings, which
+      // headless denies unless they allow it - code-sprint-S3 (2026-09-26) had every claude node
+      // report "This command requires approval" for `node --test`, while this probe, asking only
+      // for Write, had said ready. The file must hold a sha256 only running node can produce.
+      : `Use Bash to run exactly this command, then return ${marker}: node -e "require('fs').writeFileSync(process.argv[1], require('crypto').createHash('sha256').update(process.argv[2]).digest('hex'))" ${JSON.stringify(probeFile)} ${marker}`
     : readFileSync(opts['prompt-file'], 'utf8');
   const proc = await invoke(prompt);
   if (opts['events-output']) {
@@ -82,10 +87,11 @@ try {
   let report;
   if (opts.detect) {
     let written = false;
-    try { written = readFileSync(probeFile, 'utf8') === marker; } catch { /* probe did not write */ }
+    const expected = createHash('sha256').update(marker).digest('hex');
+    try { written = readFileSync(probeFile, 'utf8').trim() === expected; } catch { /* probe did not run a command */ }
     const reachable = Boolean(ok && message.includes(marker));
     const ready = Boolean(ok && written);
-    report = { vendor: { reachable, ready, reason: (opts.sandbox === 'read-only' ? reachable : ready) ? '' : proc.stderr || 'Claude readiness probe failed' } };
+    report = { vendor: { reachable, ready, reason: (opts.sandbox === 'read-only' ? reachable : ready) ? '' : proc.stderr || (reachable ? 'Claude answered but could not run a command in this profile (Bash needs approval under the project permission settings)' : 'Claude readiness probe failed') } };
     process.exitCode = (opts.sandbox === 'read-only' ? reachable : ready) ? 0 : 1;
   } else {
     const result = envelope?.structured_output || parse(message) || parse(message.match(/```(?:json)?\s*([\s\S]*?)```/)?.[1] || '');
