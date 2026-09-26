@@ -406,18 +406,30 @@ function crossCheck(cwd, claimed, isolated, kind) {
     return (p.startsWith(base) ? p.slice(base.length) : p).replace(/^\.\//, '');
   };
   const list = Array.isArray(claimed) ? claimed.map(String) : [];
-  const missing = list.filter((f) => {
+  const unseen = list.filter((f) => {
     const r = toRel(f);
     return !r || !observed.some((o) => o === r || o.endsWith('/' + r));
   });
+  // git status never lists an ignored path, so a file written there is invisible to it - and
+  // the team's own documents live under .teams_output/, which the project ignores.
+  // code-sprint-P3: every investigate of the first PLAN run wrote its findings to
+  // .teams_output/team/E-*/..., was called a liar, and six nodes and $3.99 went nowhere. A claimed
+  // file that exists and is ignored is not contradicted; it is also not verified.
+  const ignored = unseen.filter((f) => {
+    const r = toRel(f);
+    return r && existsSync(join(cwd, r)) && spawnSync('git', ['check-ignore', '-q', '--', r], { cwd }).status === 0;
+  });
+  const missing = unseen.filter((f) => !ignored.includes(f));
+  const extra = ignored.length ? { ignored_files: ignored } : {};
   if (!isolated) {
     return {
       changed_files_verified: missing.length ? false : null,
       change_attribution: 'shared-worktree',
       contradicted_files: missing,
+      ...extra,
     };
   }
-  return { changed_files_verified: missing.length === 0, change_attribution: 'isolated', contradicted_files: missing };
+  return { changed_files_verified: missing.length ? false : ignored.length ? null : true, change_attribution: 'isolated', contradicted_files: missing, ...extra };
 }
 
 // ---------- run lookup ----------
@@ -1081,7 +1093,7 @@ export function finishNode(run, n, result, vendorName) {
   }
   if (n.stage === 'setgoal' && n.state === 'done') {
     const spec = normalizeSpec(run, result.spec);
-    const problems = validateSpec(spec, { kind: defaultKind(run), mixed: run.mixed, flow: flowOf(run) });
+    const problems = validateSpec(spec, { kind: defaultKind(run), mixed: run.mixed, flow: flowOf(run), max_subgoals: run.max_subgoals });
     if (problems.length) {
       n.state = 'failed';
       n.result = { ...result, stage_ok: false, spec_problems: problems, reason: `unusable spec: ${problems.join('; ')}` };

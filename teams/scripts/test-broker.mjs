@@ -3354,3 +3354,33 @@ test('code-beta-X3: a node pinned to a vendor out of credit blocks the run as a 
     }
   }
 });
+
+test('code-sprint-P3: a claimed file under a git-ignored path is not contradicted when it exists, and still is when it does not', async () => {
+  const cwd = repoWithFakeVendor();
+  const c = await new Client().init();
+  try {
+    writeFileSync(join(cwd, '.gitignore'), '.teams_output/\n');
+    mkdirSync(join(cwd, '.teams_output', 'team', 'E-1'), { recursive: true });
+    writeFileSync(join(cwd, '.teams_output', 'team', 'E-1', '10-prd-findings.md'), '# findings\n');
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'self', isolated: true });
+    for (const [node_id, payload] of [['plan', ok({ handoff: 'p' })], ['setgoal', ok({ spec: SPEC })], ['critique', ok({ sound: true })]]) {
+      await c.call('team_submit', { run_id, cwd, node_id, payload });
+    }
+    const r = await c.call('team_submit', { run_id, cwd, node_id: 'implement:U1:1',
+      payload: ok({ changed_files: ['.teams_output/team/E-1/10-prd-findings.md'] }) });
+    assert.equal(r.state, 'done', JSON.stringify(r));
+    assert.equal(r.changed_files_verified, null, 'git cannot see it, so it is not verified either');
+
+    const { run_id: run2 } = await c.call('team_open', { request: 'r', cwd, vendor: 'self', isolated: true });
+    for (const [node_id, payload] of [['plan', ok({ handoff: 'p' })], ['setgoal', ok({ spec: SPEC })], ['critique', ok({ sound: true })]]) {
+      await c.call('team_submit', { run_id: run2, cwd, node_id, payload });
+    }
+    const ghost = await c.call('team_submit', { run_id: run2, cwd, node_id: 'implement:U1:1',
+      payload: ok({ changed_files: ['.teams_output/team/E-1/never-written.md'] }) });
+    assert.equal(ghost.state, 'failed');
+    assert.deepEqual(ghost.contradicted_files, ['.teams_output/team/E-1/never-written.md']);
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});

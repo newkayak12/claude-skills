@@ -1060,3 +1060,11 @@ test('code-beta-X3: a report waits on a node still running even after its goal g
   getNode(run, 'accept:P2:3').state = 'done';
   assert.deepEqual(readyNodes(run).map((n) => n.node_id), ['report']);
 });
+
+test('code-sprint-P3: validateSpec holds a run to its max_subgoals', () => {
+  const sg = (id) => ({ id, title: id, kind: 'planning', acceptance: ['a'], files: [`docs/${id}.md`] });
+  const spec = { goal: 'g', acceptance: ['a'], subgoals: [sg('U1'), sg('U2')] };
+  assert.ok(validateSpec(spec, { max_subgoals: 1 }).some((p) => /2 subgoals; this run allows at most 1/.test(p)));
+  assert.ok(!validateSpec(spec, {}).some((p) => /allows at most/.test(p)));
+  assert.ok(!validateSpec({ ...spec, subgoals: [sg('U1')] }, { max_subgoals: 1 }).some((p) => /allows at most/.test(p)));
+});

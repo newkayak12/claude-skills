@@ -5789,7 +5789,21 @@ test('code-sprint-P2: a boxed Sprint\'s planning team is told the box exists and
     const run = JSON.parse(readFileSync(join(plan.cwd, '.teams_output', 'broker', 'runs', `${plan.run_id}.json`), 'utf8'));
     assert.match(run.context, /This Sprint is boxed at \$15 for everything/);
     assert.match(run.context, /needs one PRD, not a set/);
+    // code-sprint-P3: the words alone lost to "Nothing limits you to one document" two lines up.
+    assert.doesNotMatch(run.context, /Nothing limits you to one document/);
+    assert.equal(run.max_subgoals, 1, 'a boxed planning run may write one document');
   }, { roles: { planning: true }, budget_usd: 15 });
+});
+
+test('an unboxed planning run keeps its own document set', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2'], handoff: 'h' }) });
+    const nx = await tm.call('tm_next', { task_id });
+    const plan = nx.children.find((c) => c.package_id === 'PLAN');
+    const run = JSON.parse(readFileSync(join(plan.cwd, '.teams_output', 'broker', 'runs', `${plan.run_id}.json`), 'utf8'));
+    assert.match(run.context, /Nothing limits you to one document/);
+    assert.equal(run.max_subgoals, null);
+  }, { roles: { planning: true } });
 });
 
 test('code-beta-X3: a child blocked at probe on spent credit parks until the reset, and the resume reopens its routing', async () => {
@@ -5824,4 +5838,27 @@ test('code-beta-X3: a child blocked at probe on spent credit parks until the res
     assert.equal(reopened.routing_blocked_capacity, null);
     assert.equal(n.child.waiting_capacity, undefined);
   });
+});
+
+test('code-sprint-P3: a package that failed as the box ran out is left out of the reintegration, and the accepted one is still merged', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id); // P1, P2 (deps: [P1])
+    let nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) });
+    nx = await tm.call('tm_next', { task_id });
+    const p2 = nx.children.find((c) => c.package_id === 'P2');
+    assert.ok(p2, 'P2 dispatched before the box ran out');
+    assert.equal(await blockChild(g, p2), 'blocked');
+    writeDriverSpend(root, task_id, 'p2', 10);
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P2:1' });
+    nx = await tm.call('tm_next', { task_id });
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const fresh = task.nodes.find((n) => n.stage === 'integrate' && n.supersedes === 'integrate:1');
+    assert.ok(fresh, JSON.stringify(task.nodes.map((n) => [n.node_id, n.state])));
+    assert.match(fresh.feedback, /not done: P2/, 'a failed package is named too, not only swept ones');
+    assert.notEqual(fresh.state, 'failed', JSON.stringify(fresh.result));
+    assert.deepEqual(nx.ready.map((n) => n.node_id), [fresh.node_id]);
+  }, { budget_usd: 10 });
 });

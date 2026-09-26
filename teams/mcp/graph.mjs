@@ -621,6 +621,10 @@ export function createRun(opts) {
     // per-package child runs among them - keeps behaving exactly as before unless it
     // asks for more judges.
     goal_judges: Number.isInteger(opts.goal_judges) && opts.goal_judges > 0 ? opts.goal_judges : 1,
+    // A ceiling on setgoal's subgoal count, or null. The manager sets 1 on a boxed Sprint's
+    // planning run: told in words that one PRD would do, code-sprint-P3's planner still wrote two
+    // documents and spent $10.86 of $15 before a package ran.
+    max_subgoals: Number.isInteger(opts.max_subgoals) && opts.max_subgoals > 0 ? opts.max_subgoals : null,
     max_retries: Number.isInteger(opts.max_retries) ? opts.max_retries : 2,
     // continue (default) or rollback - docs/plans/2026-09-23-teams-reducer-human-rollback.md §5.
     // Read by retrySubgoal below to decide whether a rejected attempt's worktree edits stay (as
@@ -763,6 +767,9 @@ export function validateSpec(spec, opts = {}) {
     return problems;
   }
 
+  if (Number.isInteger(opts.max_subgoals) && subgoals.length > opts.max_subgoals) {
+    problems.push(`spec has ${subgoals.length} subgoals; this run allows at most ${opts.max_subgoals} - fold the rest into ${opts.max_subgoals === 1 ? 'the one' : 'those'}`);
+  }
   const ids = new Set();
   for (const sg of subgoals) {
     const id = sg && sg.id != null ? String(sg.id) : '';
