@@ -139,7 +139,7 @@
     {
       "name": "teams",
       "description": "A sibling of graph: the same broker/graph engine lineage, plus kinds (code / document / planning / qa), a TaskManager MCP for medium and large requests, and per-flow entry skills (teams:develop, teams:document, teams:plan, teams:qa). A ticket layer (tickets.mjs) derives EPIC/STORY/TASK board state from task.json as a pure function, board.jsonl logs the transitions, docs.mjs renders phase markdown, and tm_board/tm_ticket/tm_docs plus teams:board/teams:ticket skills surface it. Its own MCP servers (teams-engineering, task-manager), its own run directory (.teams_output/), and its own install/remove/patch skills with .claude/team.json project defaults; coexists with graph and with the harness plugin (shared engagement marker) in the same project. Wires planning/QA into the EPIC flow as phase-Teams (not peer STORYs), adds shape priority/implements[] and a max_parallel_teams cap. QA-found defects file a develop STORY and loop the EPIC back through integrate (capped by qa_rounds); a second planning pass (the planning-audit phase-Team) cross-checks the integrated result and QA report against the PRD and files STORYs on gaps; tm_file files one by hand.",
-      "version": "0.31.4",
+      "version": "0.31.5",
       "author": {
         "name": "newkayak12"
       },

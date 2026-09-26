@@ -78,19 +78,37 @@ if (eventsPath) mkdirSync(dirname(eventsPath), { recursive: true });
 // deps on, is reported here rather than failed over (prompts.mjs's UPSTREAM_DEFECT_CONTRACT) -
 // optional on both stage schemas below, never required, so an ordinary result with nothing
 // upstream to report is unchanged.
+//
+// OpenAI's structured outputs are strict: every object needs additionalProperties:false and
+// EVERY property listed in required - an optional field is spelled as required-but-nullable.
+// The first version of this (0.29.0) was neither, and the API refused the whole schema with a
+// 400 before codex did anything: code-beta-X2 (2026-09-26) failed every codex implement node
+// "adapter exit 1" until the package retries ran out. Nulls are stripped from the result below,
+// so callers see the same shape they always did.
 const UPSTREAM_DEFECTS_PROPERTY = {
-  type: 'array',
+  type: ['array', 'null'],
   items: {
     type: 'object',
     properties: {
       package: { type: 'string' },
       title: { type: 'string' },
-      evidence: { type: 'string' },
-      touches: { type: 'array', items: { type: 'string' } },
+      evidence: { type: ['string', 'null'] },
+      touches: { type: ['array', 'null'], items: { type: 'string' } },
     },
-    required: ['package', 'title'],
+    required: ['package', 'title', 'evidence', 'touches'],
+    additionalProperties: false,
   },
 };
+
+// The nullable spellings above, undone: an absent optional field is absent, not null.
+function stripNulls(value) {
+  if (!value || typeof value !== 'object') return value;
+  if (value.upstream_defects === null) delete value.upstream_defects;
+  for (const d of Array.isArray(value.upstream_defects) ? value.upstream_defects : []) {
+    for (const k of ['evidence', 'touches']) if (d && d[k] === null) delete d[k];
+  }
+  return value;
+}
 
 const STAGE_SCHEMAS = {
   implement: {
@@ -103,7 +121,7 @@ const STAGE_SCHEMAS = {
       evidence: { type: 'string' },
       upstream_defects: UPSTREAM_DEFECTS_PROPERTY,
     },
-    required: ['stage_ok', 'handoff', 'changed_files', 'checks', 'evidence'],
+    required: ['stage_ok', 'handoff', 'changed_files', 'checks', 'evidence', 'upstream_defects'],
     additionalProperties: false,
   },
   test: {
@@ -115,7 +133,7 @@ const STAGE_SCHEMAS = {
       evidence: { type: 'string' },
       upstream_defects: UPSTREAM_DEFECTS_PROPERTY,
     },
-    required: ['stage_ok', 'verified', 'checks', 'evidence'],
+    required: ['stage_ok', 'verified', 'checks', 'evidence', 'upstream_defects'],
     additionalProperties: false,
   },
 };
@@ -453,7 +471,7 @@ function runCodex() {
       let structuredError = '';
       if (opts.stage) {
         try {
-          result = JSON.parse(lastMessage);
+          result = stripNulls(JSON.parse(lastMessage));
           if (!validStageResult(opts.stage, result)) {
             structuredError = `Codex returned an invalid ${opts.stage} stage result`;
             result = null;
