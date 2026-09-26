@@ -13,6 +13,12 @@
 #                  measures whether the mounted skills change the outcome, not the engine itself
 #           stable graph 1.x (single graph run), skill graph:orchestrate
 #           none   no plugin — plain claude -p on the same request (baseline)
+#           sprint teams, skill teams:sprint: the case's requests/<case>.backlog.txt (one item per
+#                  line, priority = line order) opened as requests[] with the box SPRINT_BOX names
+#                  in the user's words (default "a budget of 6 dollars"). SPRINT_FROM=<workspace of
+#                  a finished sprint run> reuses that workspace and its .harness-tasks instead of
+#                  seeding a fresh one, and tells the session to continue from the prior task
+#                  (context_from) with the items its retro left in Next backlog.
 #     case  code       fixtures/ledger-mono + requests/code.txt  (4 packages: csv, rules, report, cli)
 #           docs       fixtures/tinyq-mono  + requests/docs.txt  (3 package READMEs + architecture + 3 ADRs + CONTRIBUTING + README)
 #           code-flat  fixtures/ledger      + requests/code-flat.txt (same work in one empty package: sizes S)
@@ -50,7 +56,7 @@
 # `timeout` is not available on macOS; a run ends when the session does.
 set -euo pipefail
 
-ARM=${1:?arm: beta|betas|skills|stable|none}
+ARM=${1:?arm: beta|betas|skills|stable|none|sprint}
 CASE=${2:?case: code|docs|code-flat|docs-flat|goal-code|goal-docs|seam|seam-flat|seam-silent|trap|idol|awake}
 LABEL=${3:-$(date +%Y%m%d-%H%M%S)}
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -74,6 +80,15 @@ case "$CASE" in
   *) echo "unknown case $CASE" >&2; exit 2 ;;
 esac
 
+# A follow-up sprint continues in the prior sprint's workspace: context_from resolves the prior
+# task inside HARNESS_TASKS_DIR, so a fresh workspace would have nothing to read back.
+if [ -n "${SPRINT_FROM:-}" ]; then
+  [ "$ARM" = sprint ] || { echo "SPRINT_FROM needs the sprint arm" >&2; exit 2; }
+  WS=$SPRINT_FROM
+  PRIOR_TASK=$(ls -t "$WS/.harness-tasks" | head -1)
+  SEEDED=1
+fi
+if [ -z "${SEEDED:-}" ]; then
 mkdir -p "$WS"
 cp -R "$HERE/fixtures/$FIX/." "$WS/"
 # TEAM_ROLES seeds .claude/team.json before the session, which is the only way to exercise the
@@ -97,6 +112,7 @@ git -C "$WS" config user.name bench
 git -C "$WS" config user.email bench@example.com
 git -C "$WS" add -A
 git -C "$WS" commit -q -m seed
+fi
 
 REQ=$(cat "$HERE/requests/$CASE.txt")
 ROUTING='Pass host_vendor "claude", the model you are actually running as host_model, and the native models you can select as native_models.'
@@ -133,6 +149,16 @@ case "$ARM" in
     else
       PROMPT="Use the teams:orchestrate skill to run the following request through the harness. Follow the skill exactly: start with tm_open with flow \"auto\", drive whatever it hands back (a single graph run or a task of child runs), and end with the skill's output template. $ROUTING $SPLIT Request: $REQ"
     fi ;;
+  sprint)
+    PLUGIN=(--plugin-dir "$REPO/teams")
+    BACKLOG=$(awk 'NF {printf "%d. %s\n", NR-1, $0}' "$HERE/requests/$CASE.backlog.txt")
+    BOX=${SPRINT_BOX:-a budget of 6 dollars}
+    if [ -n "${PRIOR_TASK:-}" ]; then
+      PROMPT="Use the teams:sprint skill to open the next Sprint. The prior Sprint's task is $PRIOR_TASK - continue from it with context_from, and make this Sprint's backlog the items its retro left undone, in the same priority order. Hold it to $BOX. Nobody is around to answer questions. Follow the skill exactly, drive it to the end, and end with the skill's output template. $ROUTING"
+    else
+      PROMPT="Use the teams:sprint skill to run this backlog as one Sprint, held to $BOX. Nobody is around to answer questions. Follow the skill exactly, drive it to the end, and end with the skill's output template. $ROUTING The repository is a Node 22 monorepo \`ledger\`: the root package.json declares workspaces packages/* and \`npm test\` runs \`node --test\` over every package; each package has its own package.json, a stub src/index.mjs and a smoke test. ES modules, no dependencies, relative imports between packages (no npm install). Backlog, highest priority first:
+$BACKLOG"
+    fi ;;
   stable)
     PLUGIN=(--plugin-dir "$REPO/graph")
     PROMPT="Use the graph:orchestrate skill to run the following request through the harness. Follow the skill exactly: start with graph_open, drive the loop to the end, and end with the skill's output template. $ROUTING Request: $REQ" ;;
@@ -141,14 +167,15 @@ case "$ARM" in
   *) echo "unknown arm $ARM" >&2; exit 2 ;;
 esac
 
-echo "$(date -u +%FT%TZ) start $ARM/$CASE -> $WS" | tee "$WS.start.txt"
+OUTB=$WS; [ -n "${PRIOR_TASK:-}" ] && OUTB="$WS.next"
+echo "$(date -u +%FT%TZ) start $ARM/$CASE -> $WS" | tee "$OUTB.start.txt"
 set +e
 ( cd "$WS" && HARNESS_TASKS_DIR="$WS/.harness-tasks" env -u CLAUDECODE claude -p \
     --setting-sources project ${PLUGIN[@]+"${PLUGIN[@]}"} --dangerously-skip-permissions \
     --output-format stream-json --verbose "$PROMPT" < /dev/null \
-    > "$WS.stream.jsonl" 2> "$WS.stderr.txt" )
+    > "$OUTB.stream.jsonl" 2> "$OUTB.stderr.txt" )
 EXIT=$?
 set -e
-echo "$(date -u +%FT%TZ) exit $EXIT" >> "$WS.start.txt"
+echo "$(date -u +%FT%TZ) exit $EXIT" >> "$OUTB.start.txt"
 
-node "$HERE/score.mjs" "$CASE" "$WS" "$WS.stream.jsonl" | tee "$WS.score.txt"
+node "$HERE/score.mjs" "$CASE" "$WS" "$OUTB.stream.jsonl" | tee "$OUTB.score.txt"

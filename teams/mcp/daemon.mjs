@@ -125,6 +125,24 @@ function extractJson(text) {
   return JSON.parse(s.slice(start, end + 1));
 }
 
+// A judge call's stdout is the same stream-json a package driver writes, so it is kept beside
+// theirs under <taskDir>/drivers/ as judge_<node>.stream.jsonl: collectDriverCosts then counts
+// shape/critique/accept/integrate/gate:goal the same way it counts a package - budget_usd's stop
+// and the report's cost line both undercounted by every manager-level call before this. The
+// judge_ prefix keeps packageCostRollup's dispatch_<pkg>_ grouping untouched. A second call for
+// the same node id gets its own file, since only a file's LAST result event is counted.
+function keepJudgeLog(task, n, out) {
+  if (!out) return;
+  try {
+    const dir = join(taskDir(task.run_id), 'drivers');
+    mkdirSync(dir, { recursive: true });
+    const base = `judge_${String(n.node_id).replace(/[^A-Za-z0-9._-]/g, '_')}`;
+    let p = join(dir, `${base}.stream.jsonl`);
+    for (let i = 1; existsSync(p); i++) p = join(dir, `${base}.r${i}.stream.jsonl`);
+    writeFileSync(p, out);
+  } catch { /* the verdict still stands without its log */ }
+}
+
 // One single-shot `claude -p` call for one judging node: the same briefing a fresh agent would
 // have been handed (briefing_path), the same Required-output contract, run headless and parsed
 // back into the JSON finish() expects. stage_ok:false on any failure to get one - a judge that
@@ -181,6 +199,7 @@ async function judge(task, n) {
     proc.stdout.on('data', (d) => { out += d; });
     proc.stderr.on('data', (d) => { err += d; });
     proc.on('close', () => {
+      keepJudgeLog(task, n, out);
       const text = lastResultText(out);
       try {
         settle(extractJson(text));

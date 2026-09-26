@@ -229,13 +229,18 @@ function composeBacklogRequest(requests) {
 // or a ref that does not resolve at all leaves context untouched rather than failing tm_open
 // over a document that is evidence, not a dependency (the same rule record()/writeDocs already
 // follow elsewhere in this file).
+// Best-effort by design - a follow-up Sprint still opens without its prior retro - but never
+// silent: {text, unresolved} names why nothing was folded in, and tm_open hands that back, so a
+// caller who asked for context_from learns it came up empty instead of assuming it did not.
 function priorRetroContext(contextFrom) {
-  if (!contextFrom) return '';
+  if (!contextFrom) return { text: '', unresolved: null };
+  let id = null;
+  try { id = resolveTaskRef(contextFrom); } catch { id = null; }
+  const prior = id && loadRunAt(taskPath(id));
+  if (!prior) return { text: '', unresolved: `no task ${contextFrom} under ${tasksRoot()}` };
+  const retroPath = docPaths(prior).retro;
+  if (!existsSync(retroPath)) return { text: '', unresolved: `task ${prior.run_id} has no retro.json yet - its report has not run (${retroPath})` };
   try {
-    const id = resolveTaskRef(contextFrom);
-    const prior = id && loadRunAt(taskPath(id));
-    if (!prior) return '';
-    const retroPath = docPaths(prior).retro;
     const retro = JSON.parse(readFileSync(retroPath, 'utf8'));
     const L = [`Context from the prior task ${prior.run_id} (${epicKey(prior.run_id)}), "${String(prior.request || '').slice(0, 160)}":`, ''];
     L.push('Retrospective - what failed and why:');
@@ -245,9 +250,9 @@ function priorRetroContext(contextFrom) {
     L.push(bullets((retro.next_backlog.unaccepted_packages || []).map((p) => `${p.id} (${p.title}): ${p.reason}`)));
     if ((retro.next_backlog.unresolved_defects || []).length) L.push('', 'Unresolved defects:', bullets(retro.next_backlog.unresolved_defects.map((d) => d.title)));
     if ((retro.next_backlog.open_questions || []).length) L.push('', 'Open questions nobody answered:', bullets(retro.next_backlog.open_questions.map((q) => q.question || JSON.stringify(q))));
-    return L.join('\n');
-  } catch {
-    return '';
+    return { text: L.join('\n'), unresolved: null };
+  } catch (e) {
+    return { text: '', unresolved: `retro.json of ${prior.run_id} could not be read: ${String((e && e.message) || e)}` };
   }
 }
 
@@ -269,6 +274,11 @@ function createTask(a) {
   const taskId = randomUUID();
   const depth = Number.isInteger(a.depth) ? a.depth : 0;
   const priorRetro = priorRetroContext(a.context_from);
+  // A backlog held to a box is only boxable as packages: enforceBudget stops by leaving the
+  // lowest-priority PACKAGES undispatched, and a size-S task has none, so an S backlog ran past
+  // its budget to the end (code-sprint-S1, 2026-09-26: the ledger backlog measured S, as the
+  // monorepo fixtures do). Pinned L here unless the caller pinned a size itself.
+  const boxedBacklog = !!(requests && requests.length > 1 && (T.budget_usd != null || T.timebox_minutes != null));
   const task = {
     run_id: taskId,
     kind: 'task',
@@ -276,7 +286,8 @@ function createTask(a) {
     cwd,
     request: requests ? composeBacklogRequest(requests) : String(a.request),
     requests, // null for the ordinary single-request task - the byte-for-byte compat case.
-    context: [priorRetro, a.context || ''].filter(Boolean).join('\n\n'),
+    context: [priorRetro.text, a.context || ''].filter(Boolean).join('\n\n'),
+    ...(priorRetro.unresolved ? { context_from_unresolved: priorRetro.unresolved } : {}),
     flow: FLOWS[a.flow] ? a.flow : 'auto',
     flow_chosen: null,
     size: null,
@@ -288,7 +299,8 @@ function createTask(a) {
     depth,
     // The user said, in their own words, that this must be split (L) or must stay one run
     // (S): the size node is recorded as pinned and never measured. Mirrors the flow pin.
-    size_pinned: ['S', 'L'].includes(a.size) ? a.size : null,
+    size_pinned: ['S', 'L'].includes(a.size) ? a.size : (boxedBacklog ? 'L' : null),
+    size_pin_source: ['S', 'L'].includes(a.size) ? 'caller' : (boxedBacklog ? 'boxed-backlog' : null),
     // false turns method off entirely; an object overrides STAGE_SKILLS per stage.
     stage_skills: a.skills === false ? false : (a.skills && typeof a.skills === 'object' ? a.skills : null),
     max_retries: T.max_retries,
@@ -3946,14 +3958,16 @@ export function requireRunnable(task, nodeId) {
 // must never be able to fail the open, even on a throw ensureViewer did not anticipate.
 async function openTaskAndMaybePin(a, eventName) {
   const task = createTask(a);
-  record(task, { event: eventName, task_id: task.run_id, cwd: task.cwd, flow: task.flow, size_pinned: task.size_pinned });
+  record(task, { event: eventName, task_id: task.run_id, cwd: task.cwd, flow: task.flow, size_pinned: task.size_pinned, ...(task.size_pin_source ? { size_pin_source: task.size_pin_source } : {}), ...(task.context_from_unresolved ? { context_from_unresolved: task.context_from_unresolved } : {}) });
   let view = null;
   try { view = await ensureViewer(tasksRoot(), task.run_id); } catch { view = null; }
   if (!task.size_pinned) return { task, delegated: null, view };
   const n = task.nodes.find((x) => x.node_id === 'size');
   const out = finish(task, n, {
     stage_ok: true, size: task.size_pinned, size_source: 'pinned', sizing: [],
-    handoff: task.size_pinned === 'L'
+    handoff: task.size_pin_source === 'boxed-backlog'
+      ? 'Size pinned L: this is a backlog held to a budget/timebox, and the box can only stop by leaving the lowest-priority packages undispatched. Nothing was measured; shape decides the packages from the backlog and the tree.'
+      : task.size_pinned === 'L'
       ? 'Size pinned L by the entry: the user said the request must be split into packages. Nothing was measured; shape decides the packages from the request and the tree.'
       : 'Size pinned S by the entry: the user said one run must carry it.',
     evidence: 'no measurement: pinned by the caller',
@@ -3972,7 +3986,7 @@ async function openTaskAndMaybePin(a, eventName) {
 // instead - the daemon and package drivers do the rest.
 async function toolOpen(a) {
   const { task, delegated, view } = await openTaskAndMaybePin(a, 'tm_open');
-  const viewFields = view && view.url ? { view_url: view.url } : {};
+  const viewFields = { ...(view && view.url ? { view_url: view.url } : {}), ...(task.context_from_unresolved ? { context_from_unresolved: task.context_from_unresolved } : {}) };
   if (delegated) return { ...delegated, docs_dir: docPaths(task).dir, ...viewFields };
   if (noDaemon()) return { ...toolNext({ task_id: task.run_id }), ...viewFields };
   return { task_id: task.run_id, state: runState(task).state, docs_dir: docPaths(task).dir, ...viewFields };
@@ -3985,7 +3999,7 @@ async function toolOpen(a) {
 // would for a tm_open-created one).
 async function toolRun(a) {
   const { task, delegated, view } = await openTaskAndMaybePin(a, 'tm_run');
-  const viewFields = view && view.url ? { view_url: view.url } : {};
+  const viewFields = { ...(view && view.url ? { view_url: view.url } : {}), ...(task.context_from_unresolved ? { context_from_unresolved: task.context_from_unresolved } : {}) };
   return {
     task_id: task.run_id,
     run_id: task.run_id,
