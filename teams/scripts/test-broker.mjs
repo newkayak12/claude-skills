@@ -2779,7 +2779,9 @@ process.exit(0);
     assert.equal(JSON.parse(readFileSync(output, 'utf8')).codex.ready, true);
     const calls = readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse)
       .filter((call) => call[0] === 'exec');
-    assert.equal(calls.length, 2, 'detect must run one read-only smoke and one write probe');
+    assert.equal(calls.length, 2, 'detect must run one smoke and one write probe');
+    assert.deepEqual(calls.map((c) => c[c.indexOf('-s') + 1]), ['workspace-write', 'workspace-write'],
+      'the smoke runs a command, so it runs under the sandbox the stage will use - a read-only smoke fails where bubblewrap cannot start even for a danger-full-access run');
     for (const call of calls) {
       assert.equal(call[call.indexOf('-m') + 1], 'probe-model');
     }
