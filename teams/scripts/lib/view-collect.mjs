@@ -9,7 +9,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { loadRunAt, runState } from '../../mcp/graph.mjs';
-import { driverCostOf, collectDriverCosts } from '../bench/lib/drivercost.mjs';
+import { driverCostOf, collectTaskCosts } from '../bench/lib/drivercost.mjs';
 // listTasks()'s card model speaks tickets.mjs's own vocabulary (EPIC key, ticket state, phase,
 // STORY rows) rather than inventing a second one - the same words tm_board and tm_ticket already
 // use, so a person moving between the index and those MCP tools never has to re-learn what
@@ -442,7 +442,7 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
 
   const managerStages = task.nodes.filter((n) => !['dispatch', 'accept'].includes(n.stage)).map(nodeSummary);
 
-  const driverTotal = collectDriverCosts(join(tasksDir, taskId));
+  const driverTotal = collectTaskCosts(join(tasksDir, taskId), task);
   const daemon = task.daemon ? {
     pid: task.daemon.pid,
     alive: pidAlive(task.daemon.pid),
@@ -581,7 +581,7 @@ export function listTasks(tasksDir) {
       phase = epicPhase(task);
       if (!task.s_run) stories = storyProgress(task);
     } catch { /* leave 'unknown' / no progress - a torn task.json should not crash the index */ }
-    const driverTotal = collectDriverCosts(join(tasksDir, id));
+    const driverTotal = collectTaskCosts(join(tasksDir, id), task);
     rows.push({
       task_id: id,
       epic_key: key,

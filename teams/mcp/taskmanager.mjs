@@ -87,7 +87,7 @@ import { computeSubmitResult } from './broker.mjs';
 // The same driver-stream reader view.mjs's RESOURCE view already uses (see drivercost.mjs's own
 // header comment) - reused here, not re-parsed, so tm_status/tm_board/the report briefing can
 // never disagree with what the view surface already shows for the same task.
-import { collectDriverCosts } from '../scripts/bench/lib/drivercost.mjs';
+import { collectDriverCosts, collectTaskCosts, collectNodeCosts } from '../scripts/bench/lib/drivercost.mjs';
 import { applyMerge, foldRecords } from './reducers.mjs';
 
 const SERVER = { name: 'task-manager', version: '0.7.0' };
@@ -2880,10 +2880,10 @@ export function composeTaskPrompt(task, n) {
     // drivercost.mjs) - stated here explicitly so 80-report.md (docs.mjs's renderReport, which
     // relays this node's own `report` string verbatim) actually says what the task cost instead
     // of that number sitting only in the raw drivers/*.stream.jsonl logs.
-    const reportCost = collectDriverCosts(taskDir(task.run_id));
+    const reportCost = collectTaskCosts(taskDir(task.run_id), task);
     L.push('');
     L.push(`## Cost and turns`);
-    L.push(`Total across every driver session this task spawned: $${reportCost.cost_usd.toFixed(2)}, ${reportCost.turns} turns, ${reportCost.sessions} sessions.`);
+    L.push(`Total across every session this task spawned: $${reportCost.cost_usd.toFixed(2)} ($${reportCost.drivers_usd.toFixed(2)} driver and manager sessions + $${reportCost.nodes_usd.toFixed(2)} node sessions), ${reportCost.turns} turns, ${reportCost.sessions} sessions.`);
     L.push(`State this in the report - it is the one place a person reads it without opening a raw driver log.`);
   }
   if (['gate', 'report'].includes(n.stage)) {
@@ -3637,7 +3637,7 @@ function toolBoard(a) {
   const task = mustFindTask(a);
   // One collectDriverCosts call per task_id lookup - cheap (drivers/ is a handful of files even
   // on a large task), the same reason tm_status now pays it too.
-  const driverTotal = collectDriverCosts(taskDir(task.run_id));
+  const driverTotal = collectTaskCosts(taskDir(task.run_id), task);
   return {
     key: epicKey(task.run_id),
     task_id: task.run_id,
@@ -4118,7 +4118,7 @@ function toolNextSRun(task) {
 // driver filename) for a driver stream a worktree checked out a copy of, silently double-
 // counting spend budgetStatus/enforceBudget rely on to stop a run at 100%.
 export function taskSpend(task) {
-  return collectDriverCosts(taskDir(task.run_id)).cost_usd;
+  return collectTaskCosts(taskDir(task.run_id), task).cost_usd;
 }
 
 export function taskElapsedMinutes(task) {
@@ -4609,13 +4609,18 @@ function toolFile(a) {
 // opened, is exactly the streams collectDriverCosts already found whose filename starts with
 // "dispatch_<pkgId>_". Reused, not re-derived: this is the same accounting driverCostOf/
 // collectDriverCosts do for the RESOURCE view (drivercost.mjs), just grouped one level up.
-function packageCostRollup(driverTotal, pkgId) {
+// Plus the node sessions of every child run this package's dispatches opened (node_streams
+// are keyed <child run_id>/<node>/<attempt>), since a package's work is mostly those.
+function packageCostRollup(driverTotal, pkgId, task) {
   const prefix = `dispatch_${String(pkgId).replace(/[^A-Za-z0-9._-]/g, '_')}_`;
   const matches = driverTotal.streams.filter((s) => (String(s.stream).split(/[\\/]/).pop() || '').startsWith(prefix));
+  const runIds = new Set(((task && task.nodes) || []).filter((n) => n.stage === 'dispatch' && n.subgoal_id === pkgId && n.child && n.child.run_id).map((n) => String(n.child.run_id)));
+  const nodeMatches = (driverTotal.node_streams || []).filter((s) => runIds.has(String(s.stream).split('/')[0]));
+  const all = [...matches, ...nodeMatches];
   return {
     id: pkgId,
-    cost_usd: +matches.reduce((a, s) => a + s.cost_usd, 0).toFixed(4),
-    turns: matches.reduce((a, s) => a + s.turns, 0),
+    cost_usd: +all.reduce((a, s) => a + s.cost_usd, 0).toFixed(4),
+    turns: all.reduce((a, s) => a + s.turns, 0),
   };
 }
 
@@ -4641,8 +4646,8 @@ function toolStatus(a) {
   // The same account view.mjs's header already shows (view-collect.mjs's collectTask, same
   // collectDriverCosts call) - a caller polling tm_status only never had this at all, so a run
   // like awake-beta-ref1's $53.93 / 222 turns sat visible only in the raw driver logs.
-  const driverTotal = collectDriverCosts(taskDir(task.run_id));
-  const costFields = { cost: { usd: driverTotal.cost_usd, turns: driverTotal.turns, sessions: driverTotal.sessions } };
+  const driverTotal = collectTaskCosts(taskDir(task.run_id), task);
+  const costFields = { cost: { usd: driverTotal.cost_usd, turns: driverTotal.turns, sessions: driverTotal.sessions, drivers_usd: driverTotal.drivers_usd, nodes_usd: driverTotal.nodes_usd } };
   if (task.s_run) {
     const run = loadRun(task.s_run.cwd, task.s_run.run_id);
     const cs = run ? runState(run) : { state: 'missing', counts: {} };
@@ -4682,7 +4687,7 @@ function toolStatus(a) {
     // Per-package total (every attempt/restart that package ever spawned), separate from
     // `packages` above so that field - already pinned elsewhere as a plain id list - never
     // changes shape.
-    package_costs: task.spec ? task.spec.packages.map((p) => packageCostRollup(driverTotal, p.id)) : [],
+    package_costs: task.spec ? task.spec.packages.map((p) => packageCostRollup(driverTotal, p.id, task)) : [],
     // Why a package with nothing running is not making progress - tm_ticket already surfaces
     // this per-STORY (storyBlockedReason, tickets.mjs); tm_status lists every package that IS
     // blocked, in one place, without a caller having to poll tm_ticket per package id. Includes
