@@ -1770,6 +1770,45 @@ test('budget_usd at 100%: no new package dispatches, an in-flight one still fini
   }, { budget_usd: 10 });
 });
 
+test('code-sprint-S5: after a budget stop the reintegration is judged on the kept packages, a refusal opens no repair, and the Sprint still closes to a report and retro', async () => {
+  const { autoRepair, pendingRejudgeAt } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    let nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) });
+    writeDriverSpend(root, task_id, 'p1', 10);
+    nx = await tm.call('tm_next', { task_id });
+    const integ = nx.ready.find((n) => n.stage === 'integrate');
+    assert.ok(integ, JSON.stringify(nx.ready));
+    const brief = readFileSync(integ.briefing_path, 'utf8');
+    assert.match(brief, /## Scope: the Sprint's box ran out/);
+    assert.match(brief, /P2 were never dispatched/);
+
+    // The judge refuses anyway, with a reason. No repair: the box forbids a new dispatch.
+    const v = await tm.call('tm_submit', { task_id, node_id: integ.node_id, payload: ok({ verified: false, gaps: ['report package absent'] }) });
+    assert.equal(v.state, 'failed', JSON.stringify(v));
+    const prevRoot = process.env.HARNESS_TASKS_DIR;
+    process.env.HARNESS_TASKS_DIR = root;
+    try {
+      const t = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+      assert.equal(autoRepair(t), false, 'no repair package once the box is stopped');
+      assert.equal(pendingRejudgeAt(t), null, 'a reasoned refusal is not a judge failure');
+    } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; }
+
+    nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['report'], 'the stopped Sprint closes to its report');
+    const ev = await tm.call('tm_events', { task_id });
+    assert.ok(ev.events.some((e) => e.event === 'budget_closed'));
+    const done = await tm.call('tm_submit', { task_id, node_id: 'report', payload: ok({ handoff: 'P1 shipped; P2 carried over' }) });
+    assert.equal(done.state, 'done', JSON.stringify(done));
+    const full = await tm.call('tm_status', { task_id, full: true });
+    const retro = JSON.parse(readFileSync(docPaths(full).retro, 'utf8'));
+    assert.ok(retro.next_backlog.unaccepted_packages.some((p) => p.id === 'P2'));
+  }, { budget_usd: 10 });
+});
+
 test('timebox_minutes at 100% (created_at in the past) stops dispatching the same way budget_usd does', async () => {
   await withTask(async ({ tm, g, root, task_id }) => {
     await throughCritique(tm, task_id);

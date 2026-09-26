@@ -874,6 +874,9 @@ function openRepair(task, integ) {
 // (2026-09-22) named three blocking defects in the shape and sat blocked with the fix in hand.
 // This is autoRepair/autoRetryPackages for the shaping pair, budgeted the same way.
 export function autoReshape(task) {
+  // A stopped box opens nothing new (see autoRetryPackages): a repair or reshape now would sit
+  // undispatched with the task reading running forever. enforceBudget closes it to the report.
+  if (task.budget_stopped) return false;
   if (task.s_run) return false;
   // A judge that could not judge is not a verdict on the shape, exactly as it is not one on a
   // package (autoRetryPackages skips the same result for the same reason). autoRejudge owns the
@@ -1092,6 +1095,24 @@ const JUDGE_ATTEMPTS_MAX = 2;
 // such results judge_failed:true; this reopens the node for another single-shot judge, at most
 // JUDGE_ATTEMPTS_MAX more times, after a usage-limit reset when the reply named one. trap-beta-T2:
 // integrate:1's judge hit the session limit and autoRepair opened a repair package on it.
+// The earliest time autoRejudge will reopen a failed judge that still has attempts left, or
+// null. The daemon's loop reads "not running" as done; a judge failure waiting out its 60s
+// back-off (or a usage-limit reset) is not done - code-sprint-S5's daemon recorded daemon_done
+// blocked seconds after integrate:2's re-judge was scheduled, so the re-judge never came.
+export function pendingRejudgeAt(task) {
+  let at = null;
+  for (const n of task.nodes) {
+    if (n.state !== 'failed' || !n.result || n.result.judge_failed !== true) continue;
+    if ((n.judge_attempts || 0) >= JUDGE_ATTEMPTS_MAX) continue;
+    const reason = String(n.result.reason || '');
+    const t = /session limit|usage limit|resets\s+\d/i.test(reason)
+      ? capacityResetAt(reason, n.finished_at || Date.now()) + CAPACITY_GRACE_MS
+      : (n.finished_at || 0) + 60 * 1000;
+    if (at === null || t < at) at = t;
+  }
+  return at;
+}
+
 export function autoRejudge(task, now = Date.now()) {
   let changed = false;
   for (const n of task.nodes) {
@@ -1123,6 +1144,9 @@ export function autoRejudge(task, now = Date.now()) {
 // packages one repair short of a report. Returns true when a repair package was opened (or the
 // budget was spent and the failure settled) so the daemon knows the graph changed.
 export function autoRepair(task) {
+  // A stopped box opens nothing new (see autoRetryPackages): a repair or reshape now would sit
+  // undispatched with the task reading running forever. enforceBudget closes it to the report.
+  if (task.budget_stopped) return false;
   const target = integrateToRepair(task);
   if (!target.node) return false;
   const out = openRepair(task, target.node);
@@ -2904,7 +2928,18 @@ export function composeTaskPrompt(task, n) {
     L.push(`${n.integration.cwd} on branch ${n.integration.branch}, created from ${n.integration.based_on === 'repair' ? `the repaired integration branch of package ${n.integration.repair_package}` : `the project's HEAD`}.`);
     L.push(`Already merged, in dependency order:`);
     L.push(bullets((n.integration.merged || []).map((m) => `${m.package}: ${m.branch} -> ${m.commit}`)));
-    L.push(`Run the goal-level checks there. Read the seams: where one package's output meets another's input.`);
+    // A budget/timebox sweep reintegrates over only what accepted. Judged against the whole goal
+    // that set can never verify - code-sprint-S5's integrate:2 refused because the skipped P3/P4's
+    // work was "unowned", which is exactly what the sweep already recorded, and the task ended
+    // blocked with no report. Here the question is whether the kept packages work together.
+  }
+  // The same scope holds for the goal gate that judges that reintegration.
+  if ((n.stage === 'integrate' || String(n.node_id).startsWith('gate:goal'))
+      && task.budget_stopped && (task.budget_stopped.skipped_packages || []).length) {
+    const verdictField = n.stage === 'integrate' ? 'verified' : 'accept';
+    L.push('');
+    L.push(`## Scope: the Sprint's box ran out`);
+    L.push(`budget_usd/timebox_minutes stopped this task. Packages ${task.budget_stopped.skipped_packages.join(', ')} were never dispatched and are carried to the next Sprint - their work is absent BY DESIGN, not a defect. Judge only the packages that were merged: that they work together and meet their own acceptance, and the goal-level criteria they alone can satisfy. Set ${verdictField} true if they do. Name the skipped work (in unowned or gaps) for the record, but it is not a reason to refuse.`);
   }
   if (n.stage === 'report') {
     // The same account tm_status/tm_board and view.mjs's header now show (collectDriverCosts,
@@ -4230,6 +4265,27 @@ export function enforceBudget(task) {
     task.budget_stopped.before_shape = true;
     record(task, { event: 'budget_swept', task_id: task.run_id, skipped, before_shape: true });
     return true;
+  }
+  // Stopped, nothing left running, and the graph blocked short of its report (code-sprint-S5:
+  // integrate:2 over the kept packages refused, a repair would need a dispatch the box forbids).
+  // A stopped Sprint still owes its review and retro: settle every pending node but the report,
+  // so the report's own `after` edge is satisfied and it runs. A pending re-judge is left to run.
+  if (!task.nodes.some((n) => n.state === 'running') && pendingRejudgeAt(task) === null
+      && runState(task).state === 'blocked') {
+    const report = task.nodes.filter((n) => n.stage === 'report' && n.state === 'pending').pop();
+    if (report) {
+      const settledIds = [];
+      for (const n of task.nodes) {
+        if (n === report || n.state !== 'pending') continue;
+        n.state = 'skipped';
+        n.final = true;
+        n.result = { stage_ok: false, reason: 'skipped: budget/timebox exhausted - the Sprint closes on what it has' };
+        settledIds.push(n.node_id);
+      }
+      for (const n of task.nodes) if (n.state === 'failed' && !n.final) n.final = true;
+      record(task, { event: 'budget_closed', task_id: task.run_id, skipped: settledIds });
+      return true;
+    }
   }
   // Nothing to sweep while a dispatch this task already opened is still running.
   if (task.nodes.some((n) => n.stage === 'dispatch' && n.state === 'running')) return progressed;
