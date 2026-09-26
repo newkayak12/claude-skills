@@ -475,6 +475,14 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
       || (sRun && sRun.driver && sRun.driver.alive)
       || [...packages, ...qaRounds, ...auditRounds].some((p) => p.child && p.child.driver && p.child.driver.alive);
     if (!anyDriverAlive) state = 'stale';
+  } else if (state === 'running' && daemon && !daemon.alive) {
+    // A task that WAS under a daemon, whose daemon is dead and whose drivers are all dead, is not
+    // running - nothing is. idol-plan-2's S run read 'running' 86h after daemon_done blocked,
+    // because a child run file a dead driver never finished still says running. (A task driven by
+    // hand has no task.daemon at all and is left alone, per the comment above.)
+    const anyDriverAlive = (sRun && sRun.driver && sRun.driver.alive)
+      || [...packages, ...qaRounds, ...auditRounds].some((p) => p.child && p.child.driver && p.child.driver.alive);
+    if (!anyDriverAlive) state = 'stalled';
   }
 
   const ledgerPath = join(tasksDir, taskId, 'ledger.jsonl');
