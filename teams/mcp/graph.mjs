@@ -1449,7 +1449,16 @@ function settled(dep) {
 export function unmetDeps(run, n) {
   const data = n.deps.filter((d) => (getNode(run, d) || {}).state !== 'done');
   const order = (n.after || []).filter((d) => { const dep = getNode(run, d); return !dep || !settled(dep); });
-  return [...data, ...order];
+  // A report is the run's last word, so it also waits on anything still live. Its `after` is
+  // only the goal gate, and a gate made unreachable by one package's settled failure released
+  // the report while another package was still running - code-beta-X3 wrote its report and
+  // closed the task with dispatch:P2:3's driver still at work. Pending nodes whose own deps are
+  // unmet are not waited on: they may never run, and nothing would release the report then.
+  const live = n.stage === 'report' && !data.length && !order.length
+    ? run.nodes.filter((x) => x !== n && x.stage !== 'report' && (x.state === 'running' || x.state === 'waiting_human'
+      || (x.state === 'pending' && !unmetDeps(run, x).length))).map((x) => x.node_id)
+    : [];
+  return [...data, ...order, ...live];
 }
 
 function depsSatisfied(run, n) {

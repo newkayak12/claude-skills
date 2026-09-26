@@ -3331,3 +3331,26 @@ test('retry_policy "rollback" falls back to continue when a run has more than on
     assert.ok(readFileSync(join(cwd, 'bad.txt'), 'utf8').includes('changed'), 'nothing was reset - U2 may still be working in the same tree');
   }, { retry_policy: 'rollback' });
 });
+
+test('code-beta-X3: a node pinned to a vendor out of credit blocks the run as a capacity wait, and a broken vendor does not', async () => {
+  for (const [fixture, capacity] of [[quotaProbeRepo, true], [brokenProbeRepo, false]]) {
+    const cwd = fixture();
+    const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+    try {
+      const { run_id } = await c.call('team_open', { request: 'r', cwd, host_vendor: 'claude', host_model: 'driving-model',
+        policy: { implement: { vendor: 'codex' } } });
+      for (const [node_id, payload] of [['plan', ok({ handoff: 'p' })], ['setgoal', ok({ spec: SPEC })], ['critique', ok({ sound: true })]]) {
+        await c.call('team_next', { run_id, cwd });
+        assert.equal((await c.call('team_submit', { run_id, cwd, node_id, payload })).state, 'done');
+      }
+      const next = await c.call('team_next', { run_id, cwd });
+      assert.equal(next.ready[0].vendor, 'vendor-failure', 'a pinned vendor never degrades silently');
+      const full = await c.call('team_status', { run_id, cwd, full: true });
+      if (capacity) assert.match(String(full.routing_blocked_capacity || ''), /^usage capacity exhausted at probe/);
+      else assert.ok(!full.routing_blocked_capacity, 'a broken vendor is a failure, not a wait');
+    } finally {
+      c.close();
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }
+});

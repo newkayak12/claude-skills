@@ -1042,3 +1042,21 @@ test('code-sprint-S2: a non-interactive run hands its unasked questions to the a
   run.interactive = true;
   assert.deepEqual(nodeBriefing(run, draft).default_decisions, [], 'an interactive run asks instead');
 });
+
+test('code-beta-X3: a report waits on a node still running even after its goal gate went unreachable', () => {
+  const run = {
+    run_id: 'x3', cwd: '/tmp', max_retries: 2, spec: { subgoals: [] },
+    nodes: [
+      node('accept:P1:3', 'accept', [], { subgoal_id: 'P1', state: 'failed', final: true, result: {} }),
+      node('dispatch:P2:3', 'dispatch', [], { subgoal_id: 'P2', state: 'running' }),
+      node('accept:P2:3', 'accept', ['dispatch:P2:3'], { subgoal_id: 'P2' }),
+      node('gate:goal:1', 'gate', ['accept:P1:3'], { subgoal_id: null, state: 'unreachable', result: {} }),
+      node('report', 'report', [], { after: ['gate:goal:1'] }),
+    ],
+  };
+  assert.deepEqual(readyNodes(run).map((n) => n.node_id), [], 'P2 still running: no report yet');
+  getNode(run, 'dispatch:P2:3').state = 'done';
+  assert.deepEqual(readyNodes(run).map((n) => n.node_id), ['accept:P2:3'], 'its accept runs first');
+  getNode(run, 'accept:P2:3').state = 'done';
+  assert.deepEqual(readyNodes(run).map((n) => n.node_id), ['report']);
+});

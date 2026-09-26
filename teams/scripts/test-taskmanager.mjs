@@ -5791,3 +5791,37 @@ test('code-sprint-P2: a boxed Sprint\'s planning team is told the box exists and
     assert.match(run.context, /needs one PRD, not a set/);
   }, { roles: { planning: true }, budget_usd: 15 });
 });
+
+test('code-beta-X3: a child blocked at probe on spent credit parks until the reset, and the resume reopens its routing', async () => {
+  const { serviceDeadDriver, dispatchSettled, capacityResetAt, clearCapacity } = await import('../mcp/taskmanager.mjs');
+  const { capacityNotice } = await import('../mcp/routing.mjs');
+  const codex = 'ERROR: You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro) or try again at Sep 27th, 2026 12:00 AM.';
+  assert.match(capacityNotice(`Reading additional input from stdin...\n${codex}\n`), /^You’ve hit your usage limit.*Sep 27th/);
+  const since = Date.parse('Sep 26, 2026 2:15 PM');
+  assert.equal(capacityResetAt(capacityNotice(codex), since), Date.parse('Sep 27, 2026 12:00 AM'), 'codex names a local date and time');
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    await tm.call('tm_next', { task_id });
+    const load = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const prevRoot = process.env.HARNESS_TASKS_DIR;
+    const withRoot = (fn) => { process.env.HARNESS_TASKS_DIR = root; try { return fn(); } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; } };
+    const task = load();
+    const n = task.nodes.find((x) => x.node_id === 'dispatch:P1:1');
+    const runFile = join(n.child.cwd, '.teams_output', 'broker', 'runs', `${n.child.run_id}.json`);
+    const child = JSON.parse(readFileSync(runFile, 'utf8'));
+    const reason = `usage capacity exhausted at probe: ${capacityNotice(codex)}`;
+    Object.assign(child, { routing_blocked: true, routing_blocked_capacity: reason, unavailable_vendors: { codex: reason } });
+    writeFileSync(runFile, JSON.stringify(child, null, 2));
+    n.child.driver = { pid: 2 ** 22 + 4322, started_at: Date.now() }; // exited after reporting blocked
+
+    assert.equal(withRoot(() => serviceDeadDriver(task, n.child, n.node_id)), true, 'parked');
+    assert.match(n.child.waiting_capacity.reason, /Sep 27th, 2026 12:00 AM/);
+    assert.equal(withRoot(() => dispatchSettled(task, n)), false, 'a parked dispatch is not folded - no retry is spent');
+
+    withRoot(() => clearCapacity(task, 'P1'));
+    const reopened = JSON.parse(readFileSync(runFile, 'utf8'));
+    assert.deepEqual(reopened.unavailable_vendors, {}, 'the resumed driver may probe codex again');
+    assert.equal(reopened.routing_blocked_capacity, null);
+    assert.equal(n.child.waiting_capacity, undefined);
+  });
+});

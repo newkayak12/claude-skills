@@ -1017,6 +1017,20 @@ export function autoRetryPackages(task) {
   return changed;
 }
 
+// A child run the broker blocked at probe time remembers the spent vendor (unavailable_vendors)
+// and would refuse it again on the resumed driver's first team_next. Same reset team_retry's
+// reset_capacity does, applied here because the resumed driver is told to continue, not reset.
+function reopenCapacity(child) {
+  const run = loadRun(child.cwd, child.run_id);
+  if (!run || !(run.routing_blocked_capacity || Object.keys(run.unavailable_vendors || {}).length)) return;
+  run.unavailable_vendors = {};
+  run.capacity_epoch = (run.capacity_epoch || 0) + 1;
+  for (const x of run.nodes) if (x.state === 'pending' && !x.ticket) delete x.assignment;
+  // Assigned, not deleted: saveRun merges onto the file, and a missing key keeps the file's value.
+  run.routing_blocked = false; run.routing_blocked_capacity = null;
+  saveRun(run);
+}
+
 // Clears a parked-on-capacity driver (every waiting child, or one package's, or the s_run)
 // and respawns it on the same run_id - none of it counts against driver_restarts. Shared by
 // tm_retry({reset_capacity:true}) and the daemon's own autoResumeCapacity.
@@ -1026,6 +1040,7 @@ export function clearCapacity(task, packageId) {
     if (task.s_run && task.s_run.waiting_capacity && (!a.package_id || String(a.package_id) === 'S')) {
       record(task, { event: 'child_driver_capacity_cleared', task_id: task.run_id, node_id: 'S', was: task.s_run.waiting_capacity });
       delete task.s_run.waiting_capacity;
+      reopenCapacity(task.s_run);
       if (!noDriver()) {
         const restarts = (task.s_run.driver && task.s_run.driver.restarts) || [];
         const fresh = spawnChildDriver(task, 'S', task.s_run, { resume: true, attempt: nextSpawnAttempt(task.s_run) });
@@ -1041,6 +1056,7 @@ export function clearCapacity(task, packageId) {
       if (a.package_id && n.subgoal_id !== String(a.package_id)) continue;
       record(task, { event: 'child_driver_capacity_cleared', task_id: task.run_id, node_id: n.node_id, was: n.child.waiting_capacity });
       delete n.child.waiting_capacity;
+      reopenCapacity(n.child);
       if (!noDriver()) {
         const restarts = (n.child.driver && n.child.driver.restarts) || [];
         const fresh = spawnChildDriver(task, n.node_id, n.child, { resume: true, attempt: nextSpawnAttempt(n.child) });
@@ -1062,7 +1078,13 @@ export function capacityResetAt(reason, since) {
   // fallback, resumed an hour early and hit the limit again four seconds later.
   const m = /resets\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)(?:\s*\(([^)]+)\))?/i.exec(String(reason || ''));
   const base = Number(since) || Date.now();
-  if (!m) return base + 30 * 60 * 1000;
+  if (!m) {
+    // Codex names a date in the host's local time: "try again at Sep 27th, 2026 12:00 AM".
+    const at = /try again at\s+([A-Z][a-z]{2,8})\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})\s+(\d{1,2}:\d{2}\s*[AP]M)/i.exec(String(reason || ''));
+    const t = at ? Date.parse(`${at[1]} ${at[2]}, ${at[3]} ${at[4]}`) : NaN;
+    if (Number.isFinite(t) && t > base) return t;
+    return base + 30 * 60 * 1000;
+  }
   let h = Number(m[1]) % 12; if (m[3].toLowerCase() === 'pm') h += 12;
   const min = Number(m[2] || 0);
   const tz = m[4] || 'UTC';
@@ -1992,6 +2014,12 @@ export function serviceDeadDriver(task, child, nodeId) {
   // queue is empty correctly gets none.
   if (cs.state === 'waiting_human') {
     if (!peekHumanActions(child.cwd, child.run_id).length) return false;
+  } else if (cs.state === 'blocked' && run.routing_blocked_capacity && !child.waiting_capacity) {
+    // Blocked only on spent vendor credit (the broker's routing_blocked_capacity): the same
+    // park a usage-limit death gets, not a fold - a retry would probe the same empty account.
+    child.waiting_capacity = { reason: String(run.routing_blocked_capacity).slice(0, 500), since: Date.now() };
+    record(task, { event: 'child_driver_capacity', task_id: task.run_id, node_id: nodeId, pid: driver.pid, reason: child.waiting_capacity.reason.slice(0, 300), at_probe: true });
+    return true;
   } else if (cs.state !== 'running') {
     return false; // the run finished; an ordinary fold reads that
   }
@@ -2358,6 +2386,7 @@ export function openChild(task, n) {
 // tries.
 export function dispatchSettled(task, n) {
   if (!n.child) return false;
+  if (n.child.waiting_capacity) return false; // parked until the reset; autoResumeCapacity reopens it
   const child = loadRun(n.child.cwd, n.child.run_id);
   if (!child) {
     // Missing file: foldChild will report that, and that IS a fold. Unparseable file: another
