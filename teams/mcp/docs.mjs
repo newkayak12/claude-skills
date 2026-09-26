@@ -215,11 +215,25 @@ function packageTitle(task, id) {
 // question by default rather than asking records it there), and returns the same
 // {retrospective, next_backlog} shape both renderReport's prose and renderRetro's JSON build
 // from, so the two can never say something different about the same task.
+// A node's own account of why, from whichever field its contract argues in: critique refuses in
+// blocking/problems, integrate in unowned, gates in gaps - reason alone left critique blank.
+function whyOf(r) {
+  if (!r) return '';
+  if (r.reason) return String(r.reason);
+  for (const k of ['blocking', 'gaps', 'problems', 'unowned']) {
+    if (Array.isArray(r[k]) && r[k].length) return r[k].map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join('; ');
+  }
+  return '';
+}
+
 export function buildRetro(task) {
   const packageIds = [...new Set(task.nodes.filter((n) => n.stage === 'dispatch').map((n) => n.subgoal_id))];
+  // A node superseded by a reshape or a newer attempt did not fail - it was replaced. Listing
+  // those (every package of a discarded shape round, code-sprint-S8) buried the real failures.
   const whatFailed = task.nodes
     .filter((n) => ['failed', 'skipped', 'unreachable'].includes(n.state) && n.result)
-    .map((n) => ({ node_id: n.node_id, stage: n.stage, package_id: n.subgoal_id || null, reason: String((n.result && n.result.reason) || '').slice(0, 300) }));
+    .filter((n) => !/^superseded\b/.test(String(n.result.reason || '')))
+    .map((n) => ({ node_id: n.node_id, stage: n.stage, package_id: n.subgoal_id || null, reason: whyOf(n.result).slice(0, 300) }));
   const retries = packageIds
     .map((id) => ({ package_id: id, attempts: task.nodes.filter((n) => n.stage === 'dispatch' && n.subgoal_id === id).length }))
     .filter((r) => r.attempts > 1);
@@ -262,6 +276,9 @@ export function buildRetro(task) {
     epic_key: epicKey(task.run_id),
     request: String(task.request || ''),
     ...(Array.isArray(task.requests) ? { requests: task.requests } : {}),
+    // Where this task's accepted work is: its last verified integration branch. Nothing merges it
+    // into the project's own branch, so a person (or the next Sprint's context_from) needs the name.
+    integration_branch: ((task.nodes.filter((n) => n.stage === 'integrate' && n.state === 'done' && n.integration).pop() || {}).integration || {}).branch || null,
     retrospective: {
       what_failed: whatFailed,
       retries,
@@ -291,6 +308,7 @@ export function renderReport(task) {
   L.push(bullets(retro.retrospective.what_failed.map((f) => `${f.node_id} (${f.stage}): ${f.reason}`)));
   L.push('', 'Retries:', bullets(retro.retrospective.retries.map((r) => `${r.package_id}: ${r.attempts} attempts`)));
   L.push('', 'Defects left:', bullets(retro.retrospective.defects_left.map((d) => d.title)));
+  if (retro.integration_branch) L.push('', `The accepted work is on branch \`${retro.integration_branch}\`. Nothing has merged it into the project's own branch - merge it to keep it; a follow-up Sprint opened with context_from builds on it either way.`);
   L.push('', '## Next backlog', '');
   if (retro.next_backlog.unshipped_requests) L.push('Backlog items not shipped:', bullets(retro.next_backlog.unshipped_requests.map((r) => `[${r.priority}] ${r.request}`)), '');
   L.push('Unaccepted packages:');

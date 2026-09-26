@@ -2,6 +2,7 @@
   "task_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
   "epic_key": "E-aaaaaaaa",
   "request": "change a.txt and b.txt together",
+  "integration_branch": "harness/aaaaaaaa/integration-2",
   "retrospective": {
     "what_failed": [
       {

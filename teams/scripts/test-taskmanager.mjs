@@ -5680,3 +5680,29 @@ test('idol-beta-ask1: a passing critique\'s problems about a package reach that 
     assert.match(readFileSync(acc.briefing_path, 'utf8'), /The plan's critique named this about P1[\s\S]*10,000 flows/);
   });
 });
+
+test('code-sprint-S8: a follow-up Sprint (context_from) builds on the prior task\'s unmerged integration branch, not on HEAD', async () => {
+  await withTask(async ({ tm, g, cwd, task_id }) => {
+    await toReport(tm, g, task_id, 'P1+P2 shipped on the integration branch');
+    const prior = await tm.call('tm_status', { task_id, full: true });
+    const branch = prior.nodes.find((n) => n.node_id === 'integrate:1').integration.branch;
+    const retro = JSON.parse(readFileSync(docPaths(prior).retro, 'utf8'));
+    assert.equal(retro.integration_branch, branch);
+    assert.match(readFileSync(docPaths(prior).report, 'utf8'), new RegExp(`accepted work is on branch \`${branch.replace(/[/.]/g, '\\$&')}\``));
+
+    const next = await tm.call('tm_open', { request: 'the next sprint', cwd, vendor: 'self', roles: { planning: false, qa: false }, context_from: task_id });
+    const t2 = await tm.call('tm_status', { task_id: next.task_id, full: true });
+    assert.equal(t2.base_ref, branch, 'HEAD does not contain the prior work, so this task starts from it');
+    assert.match(t2.context, /starts from the prior task's integration branch/);
+    await throughCritique(tm, next.task_id);
+    const nx = await tm.call('tm_next', { task_id: next.task_id });
+    const wt = nx.children[0].cwd;
+    const r = spawnSync('git', ['-C', wt, 'merge-base', '--is-ancestor', branch, 'HEAD']);
+    assert.equal(r.status, 0, 'the package worktree carries the prior Sprint\'s integrated work');
+
+    // Once the project's own branch has it, there is nothing to build on: HEAD again.
+    spawnSync('git', ['-C', cwd, 'merge', '-q', '--ff-only', branch]);
+    const third = await tm.call('tm_open', { request: 'after the merge', cwd, vendor: 'self', roles: { planning: false, qa: false }, context_from: task_id });
+    assert.equal((await tm.call('tm_status', { task_id: third.task_id, full: true })).base_ref, null);
+  });
+});

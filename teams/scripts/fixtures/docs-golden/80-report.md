@@ -21,6 +21,8 @@ Retries:
 Defects left:
 - (none)
 
+The accepted work is on branch `harness/aaaaaaaa/integration-2`. Nothing has merged it into the project's own branch - merge it to keep it; a follow-up Sprint opened with context_from builds on it either way.
+
 ## Next backlog
 
 Unaccepted packages:

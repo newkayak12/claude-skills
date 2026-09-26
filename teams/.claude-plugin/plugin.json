@@ -1,7 +1,7 @@
 {
   "name": "teams",
   "description": "A broker-driven node-graph engine, sibling to the graph plugin, with kinds (code / document), flows with develop/document entry skills, and a second MCP server, task-manager, that splits medium and large requests into packages, runs each as its own graph in its own worktree, integrates and reports. Runs are kept under .teams_output/ and ~/.harness/tasks/, separate from graph's own run directory. Zero runtime dependencies beyond Node 18+.",
-  "version": "0.31.0",
+  "version": "0.31.1",
   "author": {
     "name": "newkayak12"
   },
