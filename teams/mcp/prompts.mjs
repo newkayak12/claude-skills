@@ -427,6 +427,12 @@ export function composePrompt(run, n, briefing) {
   // Decisions a person has already made for this subgoal, carried across a retry. Printed for
   // every stage, not only investigate: a draft on attempt 3 needs them as much as the stage that
   // decides what is still open.
+  if (briefing.default_decisions && briefing.default_decisions.length) {
+    lines.push('');
+    lines.push(`## Decided by default — nobody is here to answer these`);
+    lines.push('This run is not interactive: each question below was taken as decided by its recommended option. Write it as the rule, marked "(default - revisit with <owner>)" where an owner is named, and keep every other part of the document consistent with it - a rule stated here must not also appear as an open question, and nothing may assert the opposite.');
+    lines.push(bullets(briefing.default_decisions.map((d) => `${d.question} -> ${d.chose}${d.owner ? ` [owner: ${d.owner}]` : ''}`)));
+  }
   if (briefing.prior_decisions && briefing.prior_decisions.length) {
     lines.push('');
     lines.push(`## Already decided by a person — settled, do not raise these again`);
