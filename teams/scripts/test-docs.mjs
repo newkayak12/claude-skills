@@ -6,7 +6,7 @@
 // then locked in - the usual way a golden test is bootstrapped.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, rmSync, readdirSync } from 'node:fs';
+import { writeFileSync, readFileSync, mkdtempSync, rmSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -95,6 +95,8 @@ test('renderAll produces exactly the files this fixture has data for (13/14 - on
   const expectedPaths = new Set([paths.index, paths.request, paths.planning, paths.prd, paths.shape, paths.critique, paths.story('P1'), paths.story('P2'), paths.story('D1'), paths.integrate, paths.qa, paths.audit, paths.goalGate, paths.report, paths.retro]);
   assert.deepEqual(new Set(Object.keys(files)), expectedPaths);
   for (const name of expectedNames) {
+    // UPDATE_GOLDEN=1 rewrites the fixtures from the renderer - for a deliberate format change only.
+    if (process.env.UPDATE_GOLDEN === '1') writeFileSync(goldenPath(name), files[join(paths.dir, name)]);
     assert.equal(files[join(paths.dir, name)], readGolden(name), `${name} did not match its golden file`);
   }
 });
