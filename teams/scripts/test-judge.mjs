@@ -20,6 +20,8 @@ test('a refusal with no reason and no gaps becomes a judge failure (re-judged), 
   assert.equal(unexplainedRefusal({ stage_ok: true, verified: false, gaps: ['cli.test.mjs:106 asserts status 2'] }), null);
   assert.equal(unexplainedRefusal({ stage_ok: true, accept: false, reason: 'P2 misses AC 3' }), null);
   assert.equal(unexplainedRefusal({ stage_ok: true, sound: false, problems: [{ kind: 'A', text: 'x' }] }), null);
+  assert.equal(unexplainedRefusal({ stage_ok: true, verified: false, unowned: ['report -> NONE'], evidence: 'P3 skipped' }), null,
+    'code-sprint-S5: integrate argues its refusal in unowned/evidence');
   assert.equal(unexplainedRefusal({ stage_ok: true, accept: true }), null, 'a pass needs no reason here');
   assert.equal(unexplainedRefusal({ stage_ok: false, judge_failed: true, reason: 'timeout' }), null, 'already a judge failure');
 });

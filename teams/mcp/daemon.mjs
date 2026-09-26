@@ -31,7 +31,7 @@ import {
   taskPath, taskDir, record, noDriver, taskState,
   advanceDispatches, serviceRunningDispatches, prepareReadyIntegrations,
   dispatchSettled, foldChild, serviceSRun, delegateIfSmall,
-  finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages, autoRejudge, autoResumeCapacity,
+  finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages, autoRejudge, autoResumeCapacity, pendingRejudgeAt,
   STAGE_SKILLS, syncTickets, autoReshape, promoteManagerHumanGates, enforceBudget,
 } from './taskmanager.mjs';
 import { ticketSnapshot } from './tickets.mjs';
@@ -152,7 +152,10 @@ export function unexplainedRefusal(result) {
   const refused = result.stage_ok === false || result.accept === false || result.verified === false || result.sound === false;
   if (!refused) return null;
   const said = (v) => (Array.isArray(v) ? v.some((x) => String(x == null ? '' : (typeof x === 'object' ? JSON.stringify(x) : x)).trim()) : String(v == null ? '' : v).trim() !== '');
-  if (said(result.reason) || said(result.gaps) || said(result.problems) || said(result.blocking)) return null;
+  // Every field a contract uses to say WHY: integrate's own refusal lives in unowned/evidence
+  // (code-sprint-S5's integrate:2 named P3/P4's missing work there, with reason and gaps absent) -
+  // reading only reason/gaps turned a well-argued refusal into a "no reason" re-judge.
+  if (['reason', 'gaps', 'problems', 'blocking', 'unowned', 'evidence', 'conflicts'].some((k) => said(result[k]))) return null;
   return { ...result, stage_ok: false, judge_failed: true, reason: 'the judge refused without a reason or gaps - a refusal nobody can act on; asked again' };
 }
 
@@ -396,6 +399,12 @@ async function main() {
       }
     }
     if (taskState(fresh).state !== 'running') {
+      // Not running is not finished while a failed judge still has a scheduled re-judge.
+      const rejudgeAt = pendingRejudgeAt(fresh);
+      if (rejudgeAt !== null) {
+        await new Promise((r) => setTimeout(r, Math.max(1000, Math.min(rejudgeAt - Date.now() + 500, 60 * 1000))));
+        continue;
+      }
       record(fresh, { event: 'daemon_done', task_id: TASK_ID, state: taskState(fresh).state });
       return;
     }
