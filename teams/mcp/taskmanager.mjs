@@ -3056,7 +3056,13 @@ export function succeeded(task, n, result) {
     // 72 with a real defect filed, failed on the floor, dispatch:QA:3 reopened over the same bug).
     const filesDefects = n.stage === 'accept' && n.subgoal_id === 'QA'
       && Array.isArray(result.defects) && result.defects.length > 0;
-    if (result.match_pct < floor && (n.stage === 'gate' || named) && !filesDefects) return false;
+    // A goal gate after a budget/timebox sweep judges a Sprint that deliberately left packages
+    // undone: its match against the WHOLE goal sits below the floor by construction (code-sprint-S6:
+    // accept:true at 72 with three of four backlog items shipped, failed on the floor, no report).
+    // The judge's own accept stands; the shortfall is what the retro's Next backlog carries.
+    const boxedGoal = n.stage === 'gate' && String(n.node_id).startsWith('gate:goal')
+      && task.budget_stopped && (task.budget_stopped.skipped_packages || []).length > 0;
+    if (result.match_pct < floor && (n.stage === 'gate' || named) && !filesDefects && !boxedGoal) return false;
   }
   // A rejection needs no evidence of its own. A positive verdict does: dispatch's accept
   // is computed by the manager itself from the folded child and is exempt, but gate,
@@ -3151,6 +3157,9 @@ export function finish(task, n, result) {
   const floor = Number.isInteger(task.goal_threshold) ? task.goal_threshold : 90;
   const belowFloor = n.stage === 'gate' && f && result[f] === true
     && Number.isFinite(result.match_pct) && result.match_pct < floor;
+  if (belowFloor && task.budget_stopped && (task.budget_stopped.skipped_packages || []).length && String(n.node_id).startsWith('gate:goal')) {
+    result = { ...result, goal_floor_waived: `budget/timebox stopped the Sprint with ${task.budget_stopped.skipped_packages.join(', ')} undone; match_pct ${result.match_pct} is judged against the whole goal` };
+  }
   const noEvidence = ['gate', 'accept', 'integrate'].includes(n.stage) && f && result[f] === true
     && !(Array.isArray(result.checks) && result.checks.length > 0);
   n.state = succeeded(task, n, result) ? 'done' : 'failed';
