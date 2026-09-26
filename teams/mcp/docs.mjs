@@ -172,6 +172,32 @@ export function renderStory(task, pkgId) {
   const L = [frontmatter(key, state, task), `# ${pkgId} — ${(pkg && pkg.title) || ''}`, ''];
   L.push(`state: ${state} · tasks: ${storyTaskProgress(task, pkgId) || '—'} · reporter: ${(pkg && pkg.reporter) || (pkg && pkg.repair ? 'repair' : 'shape')}`, '');
   if (dispatch && dispatch.child) L.push(`worktree: ${dispatch.child.cwd} on branch ${dispatch.child.branch}`, '');
+  // What this STORY is for and what it is judged against, then every attempt with the first
+  // thing that sank it: before this the page held only the LAST verdict, so a person could not
+  // follow a user story to the attempts that failed it (the sweep of idol-beta-ask1: P3's
+  // rejected attempt 1 and the commit that fixed it appeared nowhere a person would read).
+  const implementsIds = (pkg && Array.isArray(pkg.implements)) ? pkg.implements : [];
+  const backlog = (pkg && Array.isArray(pkg.backlog) && Array.isArray(task.requests))
+    ? pkg.backlog.filter((i) => Number.isInteger(i) && task.requests[i] != null).map((i) => `[${i}] ${task.requests[i]}`) : [];
+  if (implementsIds.length || backlog.length) {
+    L.push('## Implements');
+    if (implementsIds.length) L.push(`user stories: ${implementsIds.join(', ')}`);
+    if (backlog.length) L.push('backlog items:', bullets(backlog));
+    L.push('');
+  }
+  if (pkg && Array.isArray(pkg.acceptance) && pkg.acceptance.length) L.push('## Acceptance', bullets(pkg.acceptance), '');
+  const accepts = task.nodes.filter((n) => n.stage === 'accept' && String(n.subgoal_id) === String(pkgId) && n.result)
+    .sort((a, b) => (a.attempt || 1) - (b.attempt || 1));
+  if (accepts.length > 1 || (accepts[0] && accepts[0].result.accept !== true)) {
+    L.push('## Attempts');
+    for (const a of accepts) {
+      const ar = a.result || {};
+      const d = task.nodes.find((n) => n.node_id === a.node_id.replace(/^accept:/, 'dispatch:'));
+      const why = String(ar.reason || (Array.isArray(ar.gaps) && ar.gaps[0]) || (d && d.result && d.result.reason) || '').replace(/\s+/g, ' ').slice(0, 240);
+      L.push(`- attempt ${a.attempt || 1}: ${a.state === 'done' && ar.accept === true ? 'accepted' : a.state}${ar.match_pct != null ? ` (${ar.match_pct})` : ''}${ar.commit ? ` · ${String(ar.commit).slice(0, 7)}` : ''}${why && !(ar.accept === true) ? ` — ${why}` : ''}`);
+    }
+    L.push('');
+  }
   L.push('## Last verdict');
   if (r) {
     L.push(`accept: ${r.accept === true} · match_pct: ${r.match_pct == null ? '—' : r.match_pct}`, '');

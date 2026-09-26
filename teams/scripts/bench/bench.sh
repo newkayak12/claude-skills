@@ -168,6 +168,10 @@ $BACKLOG"
 esac
 
 OUTB=$WS; [ -n "${PRIOR_TASK:-}" ] && OUTB="$WS.next"
+# BENCH_POLICY='{"implement":{"vendor":"codex","sandbox":"danger-full-access"}}' asks the session to
+# pass that per-stage routing policy to tm_open - the only way to reach a vendor/sandbox opt-in
+# (graph v1.5.7's danger-full-access answer for a host whose bubblewrap cannot start) from here.
+[ -n "${BENCH_POLICY:-}" ] && PROMPT="$PROMPT The user asked for this routing: pass policy: $BENCH_POLICY in tm_open."
 echo "$(date -u +%FT%TZ) start $ARM/$CASE -> $WS" | tee "$OUTB.start.txt"
 set +e
 ( cd "$WS" && HARNESS_TASKS_DIR="$WS/.harness-tasks" env -u CLAUDECODE claude -p \
