@@ -334,11 +334,15 @@ function detectCodex() {
     return false;
   }
 
+  // Under the sandbox the stage will actually run with: since the smoke has to run a command,
+  // a hardcoded read-only smoke would fail on a host whose read-only sandbox cannot start
+  // (Ubuntu 24.04's apparmor_restrict_unprivileged_userns blocks bubblewrap) even when the run
+  // opted into danger-full-access - graph's own answer to that host (v1.5.7 / 1.6.0 E2E).
   const smokeArgs = [
     'exec',
     '--ephemeral',
     '-s',
-    'read-only',
+    opts.sandbox,
     '-C',
     cwd,
   ];
