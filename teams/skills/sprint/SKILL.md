@@ -35,7 +35,9 @@ exists as its own tool or field — nothing here is new mechanism, only the orde
 1. **Sprint Planning → `tm_open`.** Collect the Sprint's backlog as `requests: [...]` (priority =
    array order, item 0 highest — a single-item Sprint still works, but then `request` alone is
    simpler and unchanged). Set `budget_usd` and/or `timebox_minutes` to the Sprint's own box —
-   neither is required, but a Sprint with no box is not really timeboxed. Set `interactive: true`
+   neither is required, but a Sprint with no box is not really timeboxed. A backlog of two or
+   more items with a box is pinned size L without measuring: the box stops by leaving the
+   lowest-priority packages undispatched, and a one-run (S) task has no packages to leave. Set `interactive: true`
    if a person is actually around to answer an `ask` card during the Sprint; leave it `false` (the
    default) for a Sprint nobody is watching in real time — it still records what it would have
    asked (`tm_inbox`'s `decided`), which the retro surfaces either way. If this Sprint continues
