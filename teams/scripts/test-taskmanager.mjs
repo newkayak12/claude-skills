@@ -5660,3 +5660,23 @@ test('code-sprint-S6: after a budget sweep the goal gate is not failed on the wh
   assert.equal(succeeded({ goal_threshold: 90, budget_stopped: { skipped_packages: ['P4'] } }, gate, { ...verdict, accept: false, gaps: ['x'] }), false,
     'a refusal is still a refusal');
 });
+
+test('idol-beta-ask1: a passing critique\'s problems about a package reach that package\'s child run and its accept judge', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    let v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2 modules'], handoff: 'two modules' }) });
+    v = await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({ ...SHAPE, handoff: 's' }) });
+    v = await tm.call('tm_submit', { task_id, node_id: 'critique', payload: ok({ sound: true, problems: ['raise P1 to at least 10,000 flows', 'P2 names no error format'] }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    const nx = await tm.call('tm_next', { task_id });
+    const c = nx.children.find((x) => x.package_id === 'P1');
+    const run = JSON.parse(readFileSync(join(c.cwd, '.teams_output', 'broker', 'runs', `${c.run_id}.json`), 'utf8'));
+    assert.match(run.context, /critique of the plan named this about your package/);
+    assert.match(run.context, /10,000 flows/);
+    assert.doesNotMatch(run.context, /P2 names no error format/, 'only the notes about this package');
+    await completeChild(g, c);
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    const nx2 = await tm.call('tm_next', { task_id });
+    const acc = nx2.ready.find((n) => n.node_id === 'accept:P1:1');
+    assert.match(readFileSync(acc.briefing_path, 'utf8'), /The plan's critique named this about P1[\s\S]*10,000 flows/);
+  });
+});

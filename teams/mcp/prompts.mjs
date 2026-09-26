@@ -430,7 +430,8 @@ export function composePrompt(run, n, briefing) {
   if (briefing.prior_decisions && briefing.prior_decisions.length) {
     lines.push('');
     lines.push(`## Already decided by a person — settled, do not raise these again`);
-    lines.push(bullets(briefing.prior_decisions.map((d) => `${d.question} -> ${d.chose}${d.because ? ` (${d.because})` : ''}`)));
+    lines.push(`These hold for the whole run, whichever part of it they were asked under: your document must agree with them, and a question that is one of these in other words is not open.`);
+    lines.push(bullets(briefing.prior_decisions.map((d) => `${d.question} -> ${d.chose}${d.because ? ` (${d.because})` : ''}${d.decided_for ? ` [decided under ${d.decided_for}]` : ''}`)));
     lines.push('A question above is answered. Write it as the rule it now is; do not list it as an open question, and do not ask it again in any form - a reworded repeat of a settled decision is the same defect as an identical one.');
   }
 
