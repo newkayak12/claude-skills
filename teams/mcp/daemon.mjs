@@ -35,7 +35,7 @@ import {
   STAGE_SKILLS, syncTickets, autoReshape, promoteManagerHumanGates, enforceBudget,
 } from './taskmanager.mjs';
 import { ticketSnapshot } from './tickets.mjs';
-import { pluginDirArgs, isEntryPoint } from './pluginroots.mjs';
+import { pluginDirArgs, isEntryPoint, teamsPluginRoot } from './pluginroots.mjs';
 
 function parseArgs(argv) {
   const out = {};
@@ -87,7 +87,7 @@ export function judgeArgv(task = null) {
   if (override) return override.split(/\s+/);
   const argv = ['claude', '-p', '--output-format', 'stream-json', '--verbose',
     '--dangerously-skip-permissions', '--setting-sources', 'project'];
-  if (process.env.CLAUDE_PLUGIN_ROOT) argv.push('--plugin-dir', process.env.CLAUDE_PLUGIN_ROOT);
+  argv.push('--plugin-dir', teamsPluginRoot());
   // The manager's own stage skills (shape/critique/accept/integrate/gate:goal) live in other
   // plugins; without their directories the judge is told to load skills it cannot see.
   argv.push(...pluginDirArgs({
@@ -141,6 +141,19 @@ function keepJudgeLog(task, n, out) {
     for (let i = 1; existsSync(p); i++) p = join(dir, `${base}.r${i}.stream.jsonl`);
     writeFileSync(p, out);
   } catch { /* the verdict still stands without its log */ }
+}
+
+// A refusal nobody can act on is not a verdict. seam-beta-D2's integrate:1 refused with
+// reason:null, gaps:null: the repair it opened had nothing to fix from, and the session had to
+// tell the person "the integrate node reported no gap text". Such a reply is turned into a
+// judge failure, which autoRejudge already asks again (at most JUDGE_ATTEMPTS_MAX times).
+export function unexplainedRefusal(result) {
+  if (!result || typeof result !== 'object' || result.judge_failed) return null;
+  const refused = result.stage_ok === false || result.accept === false || result.verified === false || result.sound === false;
+  if (!refused) return null;
+  const said = (v) => (Array.isArray(v) ? v.some((x) => String(x == null ? '' : (typeof x === 'object' ? JSON.stringify(x) : x)).trim()) : String(v == null ? '' : v).trim() !== '');
+  if (said(result.reason) || said(result.gaps) || said(result.problems) || said(result.blocking)) return null;
+  return { ...result, stage_ok: false, judge_failed: true, reason: 'the judge refused without a reason or gaps - a refusal nobody can act on; asked again' };
 }
 
 // One single-shot `claude -p` call for one judging node: the same briefing a fresh agent would
@@ -202,7 +215,8 @@ async function judge(task, n) {
       keepJudgeLog(task, n, out);
       const text = lastResultText(out);
       try {
-        settle(extractJson(text));
+        const parsed = extractJson(text);
+        settle(unexplainedRefusal(parsed) || parsed);
       } catch (e) {
         settle({
           stage_ok: false,

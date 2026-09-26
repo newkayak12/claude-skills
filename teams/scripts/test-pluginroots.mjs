@@ -8,10 +8,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { referencedPlugins, resolvePluginDir, skillPluginDirs, pluginDirArgs, pluginOf } from '../mcp/pluginroots.mjs';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { referencedPlugins, resolvePluginDir, skillPluginDirs, pluginDirArgs, pluginOf, teamsPluginRoot } from '../mcp/pluginroots.mjs';
 import { driverArgv, STAGE_SKILLS } from '../mcp/taskmanager.mjs';
 import { judgeArgv } from '../mcp/daemon.mjs';
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 function plugin(dir) {
   mkdirSync(join(dir, '.claude-plugin'), { recursive: true });
@@ -88,9 +90,24 @@ test('skillPluginDirs never repeats the teams root itself and keeps explicit dir
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('no CLAUDE_PLUGIN_ROOT means no extra dirs - nothing is guessed from the filesystem', () => {
-  assert.deepEqual(skillPluginDirs({ pluginRoot: undefined }), []);
+test('an explicit null pluginRoot means no extra dirs; with no CLAUDE_PLUGIN_ROOT the root is this plugin\'s own location, not a guess', () => {
+  assert.deepEqual(skillPluginDirs({ pluginRoot: null }), []);
   assert.deepEqual(pluginDirArgs({ pluginRoot: null }), []);
+  const prev = process.env.CLAUDE_PLUGIN_ROOT;
+  const prevDriver = process.env.HARNESS_CHILD_DRIVER;
+  delete process.env.CLAUDE_PLUGIN_ROOT;
+  delete process.env.HARNESS_CHILD_DRIVER;
+  try {
+    const own = resolve(HERE, '..');
+    assert.equal(teamsPluginRoot(), own);
+    // idol-beta-ask1: a driver respawned by a process launched without CLAUDE_PLUGIN_ROOT came up
+    // with no teams MCP servers and quit. The teams root is always passed now.
+    const argv = driverArgv(null);
+    assert.ok(argv.some((a, i) => argv[i - 1] === '--plugin-dir' && a === own), argv.join(' '));
+  } finally {
+    if (prev !== undefined) process.env.CLAUDE_PLUGIN_ROOT = prev;
+    if (prevDriver !== undefined) process.env.HARNESS_CHILD_DRIVER = prevDriver;
+  }
 });
 
 test('a child driver and a judge are both spawned with the skill plugins, not just the teams root', () => {
