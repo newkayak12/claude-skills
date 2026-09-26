@@ -2015,7 +2015,7 @@ test('tm_status and tm_board aggregate driver cost/turns across every package di
     assert.deepEqual(nx.ready.map((n) => n.node_id), ['report']);
     const briefing = readFileSync(nx.ready[0].briefing_path, 'utf8');
     assert.match(briefing, /## Cost and turns/);
-    assert.match(briefing, /\$2\.00, 14 turns, 2 sessions/, `report briefing did not state the cost total: ${briefing}`);
+    assert.match(briefing, /\$2\.00 \(\$2\.00 driver and manager sessions \+ \$0\.00 node sessions\), 14 turns, 2 sessions/, `report briefing did not state the cost total: ${briefing}`);
   });
 });
 

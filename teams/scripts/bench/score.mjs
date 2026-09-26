@@ -15,7 +15,7 @@ import { spawnSync, spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { CHECK_ALLOW, splitCheck, claimedExit, impliesFailure, hasPlaceholder, isContentShowCmd, splitSlashCmd, fencedBlocksByLang, neededInputTokens, parseRequirements, requirementCovered, majorityVote } from './lib/claims.mjs';
-import { collectDriverCosts } from './lib/drivercost.mjs';
+import { collectDriverCosts, collectNodeCosts, findBrokerRunDirs } from './lib/drivercost.mjs';
 import { resolveTree } from './lib/tree.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -314,10 +314,16 @@ for (const streamPath of streams) {
 // logic lives in lib/drivercost.mjs so view.mjs (the human-readable task-status surface) reads
 // the exact same numbers instead of a second parser that could disagree.
 const { cost_usd: driversCostUsd, turns: driversTurns, duration_ms: driversDurationMs, streams: driverSessions } = collectDriverCosts(WS);
+// Node adapter sessions (each child run's investigate/implement/gate/... under
+// .teams_output/broker/<run>/<node>/<attempt>/events.jsonl) were never in this total: every teams
+// figure before 2026-09-26 counted drivers only - code-sprint-S2 read $0.88 against $3.78 spent.
+const nodeSessions = collectNodeCosts(findBrokerRunDirs(WS));
+const nodesCostUsd = nodeSessions.reduce((a, s) => a + s.cost_usd, 0);
 const drivers = {
-  sessions: driverSessions.length,
-  cost_usd: driversCostUsd,
-  turns: driversTurns,
+  sessions: driverSessions.length + nodeSessions.length,
+  cost_usd: +(driversCostUsd + nodesCostUsd).toFixed(4),
+  nodes_cost_usd: +nodesCostUsd.toFixed(4),
+  turns: driversTurns + nodeSessions.reduce((a, s) => a + s.turns, 0),
   duration_ms: driversDurationMs,
   streams: driverSessions.map((s) => ({ stream: s.stream, cost_usd: +s.cost_usd.toFixed(4), turns: s.turns, duration_ms: s.duration_ms })),
 };
