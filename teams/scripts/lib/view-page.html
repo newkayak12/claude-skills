@@ -440,6 +440,12 @@
     out.push('<div class="stat"><div class="label">elapsed</div><div class="value">' + fmtMs(m.elapsed_ms) + '</div></div>');
     out.push('<div class="stat"><div class="label">cost</div><div class="value">' + fmtUsd(m.cost && m.cost.usd) + '</div></div>');
     out.push('<div class="stat"><div class="label">turns</div><div class="value">' + ((m.cost && m.cost.turns) || 0) + '</div></div>');
+    if (m.budget) {
+      var b = m.budget;
+      if (b.budget_usd != null) out.push('<div class="stat"><div class="label">budget</div><div class="value">' + fmtUsd(b.spend_usd) + ' / ' + fmtUsd(b.budget_usd) + ' (' + Math.round(b.budget_pct * 100) + '%)</div></div>');
+      if (b.timebox_minutes != null) out.push('<div class="stat"><div class="label">timebox</div><div class="value">' + Math.round(b.elapsed_minutes) + ' / ' + esc(b.timebox_minutes) + 'm (' + Math.round(b.timebox_pct * 100) + '%)</div></div>');
+      if (b.stopped || b.warned) out.push('<div class="stat"><div class="label">box</div><div class="value">' + (b.stopped ? 'STOPPED' + (b.stopped.skipped_packages.length ? ' - not done: ' + esc(b.stopped.skipped_packages.join(', ')) : '') : 'WARN 80%') + '</div></div>');
+    }
     out.push('<div class="stat"><div class="label">daemon</div><div class="value">' + (m.daemon ? (m.daemon.alive ? 'alive' : 'dead') + (m.daemon.exhausted ? ' (exhausted)' : '') : '–') + '</div></div>');
     out.push('<div class="stat"><div class="label">created</div><div class="value">' + fmtTime(m.created_at) + '</div></div>');
     out.push('</div></div>');
