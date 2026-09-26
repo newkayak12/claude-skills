@@ -1694,8 +1694,17 @@ async function toolGraphRun(a) {
   }
 
   const transportOk = proc.status === 0;
-  if (run.allocation === 'balanced' && (!transportOk || report.stage_ok === false)
-      && capacityFailure(report, proc.stderr)) {
+  // A provider's usage limit is never a verdict on the work, under either allocation: code-sprint-S2's
+  // second PLAN run (allocation ordered) had every codex node exit 1 on "You've hit your usage
+  // limit", each counted as a failed attempt, until the package's retries were spent. The
+  // message lives only in the adapter's own event stream, so that is read too.
+  let eventsTail = '';
+  try {
+    const ev = report.events_output || '';
+    if (ev && existsSync(ev)) { const t = readFileSync(ev, 'utf8'); eventsTail = t.slice(-8192); }
+  } catch { /* no events file - stderr and the report are all there is */ }
+  if ((!transportOk || report.stage_ok === false)
+      && capacityFailure({ ...report, stdout: [report.stdout || '', eventsTail].join('\n') }, proc.stderr)) {
     return checkpointInterruption(run, n, r.executor || r.vendor, { ...report,
       transport: { status: proc.status, stderr: proc.stderr, stdout: proc.stdout } }, 'quota');
   }

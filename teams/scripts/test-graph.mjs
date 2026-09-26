@@ -1020,3 +1020,23 @@ test('a decision is the run\'s: a sibling subgoal is told it and never asks it a
   assert.deepEqual(b.prior_decisions.map((d) => [d.chose, d.decided_for]), [['multi-tier', 'U1']]);
   assert.match(composePrompt(run, draftU2, b), /fan-club tiers\? -> multi-tier \[decided under U1\]/);
 });
+
+test('code-sprint-S2: a non-interactive run hands its unasked questions to the author as decided by default', () => {
+  const run = askRun();
+  run.interactive = false;
+  run.unasked = [
+    { subgoal_id: 'U1', question: 'exit code on malformed rules?', owner: 'CLI lead', options: [{ option: '1' }, { option: '2' }] },
+    { subgoal_id: 'U2', question: 'top-3 ties?', owner: null, options: [{ option: 'alphabetical' }, { option: 'first seen' }] },
+  ];
+  const draft = node('draft:U2:1', 'draft', [], { subgoal_id: 'U2', attempt: 1 });
+  const inv = node('investigate:U2:1', 'investigate', [], { subgoal_id: 'U2', attempt: 1 });
+  run.nodes.push(draft, inv);
+  const b = nodeBriefing(run, draft);
+  assert.deepEqual(b.default_decisions.map((d) => [d.question, d.chose]), [['exit code on malformed rules?', '1'], ['top-3 ties?', 'alphabetical']]);
+  const text = composePrompt(run, draft, b);
+  assert.match(text, /Decided by default — nobody is here to answer these/);
+  assert.match(text, /exit code on malformed rules\? -> 1 \[owner: CLI lead\]/);
+  assert.deepEqual(nodeBriefing(run, inv).default_decisions, [], 'investigate still decides what is open');
+  run.interactive = true;
+  assert.deepEqual(nodeBriefing(run, draft).default_decisions, [], 'an interactive run asks instead');
+});

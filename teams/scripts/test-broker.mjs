@@ -2423,6 +2423,13 @@ if (a.includes('--detect')) {
   process.exit(ready ? 0 : 1);
 }
 const prompt = readFileSync(get('--prompt-file'), 'utf8');
+if (existsSync(join(cwd, 'quota-events-' + vendor))) {
+  // codex's own shape: the limit is only in the event stream, the report says nothing about it.
+  const ev = get('--events-output');
+  writeFileSync(ev, JSON.stringify({type:'turn.failed', error:{message:"You\u2019ve hit your usage limit. Upgrade to Pro or try again at 10:17 AM."}}) + '\\n');
+  writeFileSync(output, JSON.stringify({ok:false, stage_ok:false, exit_code:1, events_output:ev, stderr:'Reading additional input from stdin...\\n'}));
+  process.exit(1);
+}
 if (existsSync(join(cwd, 'quota-' + vendor))) {
   writeFileSync(join(cwd, 'partial.txt'), 'retained partial work');
   writeFileSync(output, JSON.stringify({stage_ok:false, failure_kind:'quota', stderr:'usage_limit_reached'}));
@@ -2523,6 +2530,22 @@ test('quota fallback preserves partial files and checkpoint across broker restar
     assert.ok(prompt.includes('original acceptance'));
     assert.equal(readFileSync(join(cwd, 'partial.txt'), 'utf8'), 'retained partial work');
     assert.ok((await c.call('team_retry', { run_id, cwd, node_id: 'plan' })).error, 'completed nodes cannot be reopened through recovery');
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('code-sprint-S2: a usage limit found only in the adapter\'s event stream is a fallback, not a failed attempt - under ordered allocation too', async () => {
+  const cwd = balancedRepo();
+  const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+  try {
+    writeFileSync(join(cwd, 'quota-events-claude'), '1');
+    const open = await c.call('team_open', { request: 'r', cwd, vendor: 'auto' });
+    const run_id = open.run_id;
+    assert.equal(open.ready[0].vendor, 'claude', JSON.stringify(open.ready[0]));
+    const r = await c.call('team_run', { run_id, cwd, node_id: 'plan' });
+    assert.equal(r.state, 'pending', JSON.stringify(r));
+    assert.equal(r.recoverable, true, 'the node is not spent - it goes back for another vendor');
+    const next = await c.call('team_next', { run_id, cwd });
+    assert.equal(next.ready[0].vendor, 'codex');
   } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
 });
 

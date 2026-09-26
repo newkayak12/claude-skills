@@ -1825,6 +1825,17 @@ export function nodeBriefing(run, n) {
     spec_problems: specProblems,
     upstream,
     prior_decisions: priorDecisions,
+    // Non-interactive only: questions nobody will ever answer, each decided by its recommended
+    // (first) option. code-sprint-S2's PLAN wrote them as open questions with owners, and its
+    // gate rejected three rounds at 93-95 because the validation matrix then asserted behaviour
+    // the same document called unresolved - a contradiction no revise could close while the
+    // questions stayed open and unanswerable. Shown to authoring stages, not to investigate
+    // (which decides what is open) or ask.
+    default_decisions: !run.interactive && ['draft', 'revise', 'implement', 'cases'].includes(n.stage)
+      ? (run.unasked || []).filter((u) => u && u.question && ((Array.isArray(u.options) && u.options.length) || u.decided != null))
+        .map((u) => ({ question: u.question, chose: u.decided != null ? (typeof u.decided === 'string' ? u.decided : JSON.stringify(u.decided)) : String((u.options[0] && (u.options[0].option || u.options[0])) || ''), owner: u.owner || null, asked_under: u.subgoal_id || null }))
+        .filter((d, i, all) => d.chose && all.findIndex((x) => x.question === d.question) === i)
+      : [],
     write_scope: writeScope,
     reasoning_stage: REASONING_STAGES.has(n.stage),
   };
