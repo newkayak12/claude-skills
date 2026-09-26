@@ -1706,6 +1706,12 @@ export function critiqueNotesFor(task, pkgId) {
   return all.filter((t) => re.test(t));
 }
 
+// The Sprint's box ({budget_usd, timebox_minutes}) when one is set, or null.
+function boxedOpts(task) {
+  const o = (task.team && task.team.opts) || {};
+  return Number.isFinite(o.budget_usd) || Number.isFinite(o.timebox_minutes) ? o : null;
+}
+
 function childContext(task, pkg) {
   const lines = [];
   lines.push(`This run is package ${pkg.id} (${pkg.title}) of a larger task managed outside this worktree.`);
@@ -1721,13 +1727,13 @@ function childContext(task, pkg) {
     // Without this the planning run reads a request that says "implement ..." and does exactly
     // that (first real-vendor run, 2026-09-22: the PLAN child opened implement/test/gate chains
     // and started building the CLI). The request is the thing to PLAN, not the thing to do.
-    lines.push(`This is the planning phase-Team. The request above describes work that OTHER packages will build later; your deliverable is this request's planning documents - not the implementation. The PRD is the floor of that set: the problem, the users, user stories with acceptance criteria an engineer can build from, scope and non-goals, risks and open questions. Nothing limits you to one document, and the run decides its own set: when this request's domain has a vocabulary, rules people will argue about, or a stated load condition, those belong in documents of their own rather than compressed into the PRD or dropped into its Out of scope.`);
+    lines.push(`This is the planning phase-Team. The request above describes work that OTHER packages will build later; your deliverable is this request's planning documents - not the implementation. The PRD is the floor of that set: the problem, the users, user stories with acceptance criteria an engineer can build from, scope and non-goals, risks and open questions. ${boxedOpts(task) ? 'This Sprint is boxed, so the set is the PRD alone: vocabulary, contested rules and load conditions go into sections of it rather than documents of their own.' : 'Nothing limits you to one document, and the run decides its own set: when this request\'s domain has a vocabulary, rules people will argue about, or a stated load condition, those belong in documents of their own rather than compressed into the PRD or dropped into its Out of scope.'}`);
     lines.push(`Each document in that set is investigated before it is written: its first stage reads the project tree, whatever material this request names or attaches, and the domain's own sources where they are reachable, and comes back with findings that cite where each one came from plus the decisions no source could answer. Those unanswered ones are carried into the documents as open questions with owners. Do not let them be answered by invention instead - a rule a user story rests on that nobody decided is missing whether it is written down or not, and this stage exists because the runs before it wrote hundreds of confident lines naming none of their domain's actual rules.`);
     lines.push(`Change no source files. This run works directly in the project root; the planning documents and the findings files written beside them are the deliverable, and nothing else you write is kept. The user_stories[] you return are what the manager hands to the shape stage that splits the work into packages.`);
     // The planner never knew a box existed: code-sprint-P2 wrote four planning documents for a
     // four-item code backlog and spent ~$14.5 of a $15 Sprint before a single package ran.
-    const box = (task.team && task.team.opts) || {};
-    if (Number.isFinite(box.budget_usd) || Number.isFinite(box.timebox_minutes)) {
+    const box = boxedOpts(task);
+    if (box) {
       const parts = [Number.isFinite(box.budget_usd) ? `$${box.budget_usd}` : null, Number.isFinite(box.timebox_minutes) ? `${box.timebox_minutes} minutes` : null].filter(Boolean).join(' and ');
       lines.push(`This Sprint is boxed at ${parts} for everything - planning is the first thing that box pays for, and every package is built out of what is left. Size the document set to what the packages need to be built right: a backlog whose items already state their behaviour and acceptance needs one PRD, not a set. Planning that spends the box leaves nothing built.`);
     }
@@ -2348,6 +2354,7 @@ export function openChild(task, n) {
     // runs cases, an audit run audits. mixed:true here let the first real planning run's own
     // plan node decompose the request into develop subgoals and start implementing it.
     mixed: !(pkg.phase === 'planning' || pkg.phase === 'qa' || pkg.phase === 'audit'),
+    max_subgoals: pkg.phase === 'planning' && boxedOpts(task) ? 1 : null,
     parent_shaped: parentShaped,
     goal: pkg.title || pkg.brief,
     acceptance: Array.isArray(pkg.acceptance) && pkg.acceptance.length ? pkg.acceptance : null,
@@ -2688,7 +2695,12 @@ export function prepareIntegration(task, n) {
   // package that was skipped once and later retried (not today's budget path, but a state this
   // general check should not misread) has a real delivered branch by its later attempt.
   const skippedForBudget = (id) => { const d = latestBySubgoal(task, String(id), 'dispatch'); return !!d && d.state === 'skipped'; };
-  const ordered = dependencyOrder((task.spec.packages || []).filter((p) => !p.repair && !skippedForBudget(p.id)));
+  // After a budget stop nothing will be retried, so a package that failed before the stop will
+  // not deliver either: the sweep's integrate depends on the accepted ones only, and this merges
+  // the same set. code-sprint-P3: P2's dispatch failed as the box ran out, integrate:2 refused
+  // "package P2 has no delivered branch", and P1 - accepted - never reached an integration tree.
+  const undeliverable = (id) => skippedForBudget(id) || (task.budget_stopped && !deliveredBranch(task, id));
+  const ordered = dependencyOrder((task.spec.packages || []).filter((p) => !p.repair && !undeliverable(p.id)));
   for (const p of ordered) {
     const branch = deliveredBranch(task, p.id);
     if (!branch) {
@@ -4428,7 +4440,13 @@ export function enforceBudget(task) {
   if (!currentIntegrate) return closeStoppedToReport(task) || progressed; // no integrate left pending on a never-run package
   const neverRan = task.nodes.filter((n) => n.stage === 'dispatch' && n.state === 'pending'
     && currentIntegrate.deps.some((d) => d.startsWith(`accept:${n.subgoal_id}:`)));
-  if (!neverRan.length) return closeStoppedToReport(task) || progressed;
+  // An accept that will never be done - its dispatch failed, and a stopped box retries nothing -
+  // leaves the integrate waiting forever just like a never-run package does. code-sprint-P3's
+  // P2 (and a two-package Sprint where it is the only one left) went to closeStoppedToReport,
+  // which skipped the integrate and the goal gate: P1, accepted, was never integrated.
+  const deadAccept = (d) => { const x = task.nodes.find((y) => y.node_id === d); return x && x.state !== 'done'
+    && !task.nodes.some((y) => y.node_id === d.replace(/^accept:/, 'dispatch:') && (y.state === 'running' || y.state === 'pending')); };
+  if (!neverRan.length && !currentIntegrate.deps.some(deadAccept)) return closeStoppedToReport(task) || progressed;
   const skipped = [];
   for (const dn of neverRan) {
     dn.state = 'skipped';
@@ -4453,7 +4471,10 @@ export function enforceBudget(task) {
     record(task, { event: 'budget_swept', task_id: task.run_id, skipped, nothing_accepted: true });
     return true;
   }
-  reintegrateBehind(task, currentIntegrate.node_id, keptAccepts, `budget/timebox exhausted; not done: ${skipped.join(', ')}`);
+  // Not done is every package this integrate drops, not only the swept ones: one that failed as
+  // the box ran out is dropped too, and code-sprint-P3's note named P3 and P4 but not P2.
+  const notDone = [...new Set(currentIntegrate.deps.filter((d) => !keptAccepts.includes(d)).map((d) => d.split(':')[1]))];
+  reintegrateBehind(task, currentIntegrate.node_id, keptAccepts, `budget/timebox exhausted; not done: ${notDone.join(', ')}`);
   record(task, { event: 'budget_swept', task_id: task.run_id, skipped });
   return true;
 }
