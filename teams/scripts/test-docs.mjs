@@ -171,3 +171,24 @@ test('the PRD page lists user stories by id, never as [object Object]', async ()
   assert.match(page, /US-1 - Fan queue admission/);
   assert.match(page, /US-2 - Atomic hold/);
 });
+
+test('a blocked task with no report still gets an 80-report.md: what blocks it, and the call that would move it', async () => {
+  const { renderAll, docPaths } = await import('../mcp/docs.mjs').then(async (d) => ({ ...d, docPaths: (await import('../mcp/tickets.mjs')).docPaths }));
+  const task = {
+    run_id: 'bbbbbbbb-0000-0000-0000-000000000000', cwd: '/tmp/x', request: 'r', rev: 3,
+    spec: { packages: [{ id: 'P1', title: 'csv', acceptance: ['a'] }], acceptance: ['g'] },
+    nodes: [
+      { node_id: 'size', stage: 'size', deps: [], state: 'done', result: { size: 'L' } },
+      { node_id: 'dispatch:P1:3', stage: 'dispatch', subgoal_id: 'P1', deps: [], state: 'failed', final: true, result: { reason: 'child run ended blocked: test:U1:3 failed' } },
+      { node_id: 'accept:P1:3', stage: 'accept', subgoal_id: 'P1', deps: ['dispatch:P1:3'], state: 'unreachable', result: { reason: 'upstream failed' } },
+      { node_id: 'integrate:1', stage: 'integrate', deps: ['accept:P1:3'], state: 'unreachable', result: { reason: 'upstream failed' } },
+    ],
+  };
+  const files = renderAll(task);
+  const report = files[docPaths(task).report];
+  assert.ok(report, Object.keys(files).join('\n'));
+  assert.match(report, /state: BLOCKED/);
+  assert.match(report, /dispatch:P1:3 \(failed\): child run ended blocked: test:U1:3 failed/);
+  assert.match(report, /tm_retry\(\{task_id: "bbbbbbbb-[^"]+", package_id: "P1"\}\)/);
+  assert.ok(files[docPaths(task).retro], 'retro.json too');
+});
