@@ -4277,6 +4277,40 @@ export function budgetStatus(task) {
 // see VERDICT_SCHEMA's own state enum) and a fresh integrate opens over just the accepted set,
 // reusing reintegrateBehind - the exact mechanism a filed defect or a repair already opens a
 // fresh integrate with, just handed the accepted subset instead of the full one.
+// The last resort of a stopped box, tried only once the package sweep below has nothing left to
+// do - run first, it closed a task whose ready dispatch the sweep was about to settle.
+function closeStoppedToReport(task) {
+  // Stopped, nothing left running, and the graph blocked short of its report (code-sprint-S5:
+  // integrate:2 over the kept packages refused, a repair would need a dispatch the box forbids).
+  // A stopped Sprint still owes its review and retro: settle every pending node but the report,
+  // so the report's own `after` edge is satisfied and it runs. A pending re-judge is left to run.
+  // Not only 'blocked': code-sprint-P2 (roles.planning) stopped after shape, and the goal gate
+  // waited on accept:AUDIT:1 - a node the audit phase-Team would create only by dispatching, which
+  // the box forbids. Pending nodes, none ready, nothing running: the task read 'running' and the
+  // daemon waited forever. Stuck is stuck, whatever runState calls it.
+  // A ready dispatch is as stuck as a waiting one here: advanceDispatches opens nothing once the
+  // box is stopped (P2's dispatch:AUDIT:1 sat ready for 25 minutes).
+  const stuck = !readyNodes(task).some((n) => n.stage !== 'report' && n.stage !== 'dispatch') && !task.nodes.some((n) => n.state === 'waiting_human');
+  if (!task.nodes.some((n) => n.state === 'running') && pendingRejudgeAt(task) === null
+      && (runState(task).state === 'blocked' || stuck)) {
+    const report = task.nodes.filter((n) => n.stage === 'report' && n.state === 'pending').pop();
+    if (report) {
+      const settledIds = [];
+      for (const n of task.nodes) {
+        if (n === report || n.state !== 'pending') continue;
+        n.state = 'skipped';
+        n.final = true;
+        n.result = { stage_ok: false, reason: 'skipped: budget/timebox exhausted - the Sprint closes on what it has' };
+        settledIds.push(n.node_id);
+      }
+      for (const n of task.nodes) if (n.state === 'failed' && !n.final) n.final = true;
+      record(task, { event: 'budget_closed', task_id: task.run_id, skipped: settledIds });
+      return true;
+    }
+  }
+  return false;
+}
+
 export function enforceBudget(task) {
   const status = budgetStatus(task);
   let progressed = false;
@@ -4318,34 +4352,13 @@ export function enforceBudget(task) {
     record(task, { event: 'budget_swept', task_id: task.run_id, skipped, before_shape: true });
     return true;
   }
-  // Stopped, nothing left running, and the graph blocked short of its report (code-sprint-S5:
-  // integrate:2 over the kept packages refused, a repair would need a dispatch the box forbids).
-  // A stopped Sprint still owes its review and retro: settle every pending node but the report,
-  // so the report's own `after` edge is satisfied and it runs. A pending re-judge is left to run.
-  if (!task.nodes.some((n) => n.state === 'running') && pendingRejudgeAt(task) === null
-      && runState(task).state === 'blocked') {
-    const report = task.nodes.filter((n) => n.stage === 'report' && n.state === 'pending').pop();
-    if (report) {
-      const settledIds = [];
-      for (const n of task.nodes) {
-        if (n === report || n.state !== 'pending') continue;
-        n.state = 'skipped';
-        n.final = true;
-        n.result = { stage_ok: false, reason: 'skipped: budget/timebox exhausted - the Sprint closes on what it has' };
-        settledIds.push(n.node_id);
-      }
-      for (const n of task.nodes) if (n.state === 'failed' && !n.final) n.final = true;
-      record(task, { event: 'budget_closed', task_id: task.run_id, skipped: settledIds });
-      return true;
-    }
-  }
   // Nothing to sweep while a dispatch this task already opened is still running.
   if (task.nodes.some((n) => n.stage === 'dispatch' && n.state === 'running')) return progressed;
   const currentIntegrate = task.nodes.filter((n) => n.stage === 'integrate' && n.state !== 'done' && !n.final).pop();
-  if (!currentIntegrate) return progressed; // no integrate left pending on a never-run package
+  if (!currentIntegrate) return closeStoppedToReport(task) || progressed; // no integrate left pending on a never-run package
   const neverRan = task.nodes.filter((n) => n.stage === 'dispatch' && n.state === 'pending'
     && currentIntegrate.deps.some((d) => d.startsWith(`accept:${n.subgoal_id}:`)));
-  if (!neverRan.length) return progressed;
+  if (!neverRan.length) return closeStoppedToReport(task) || progressed;
   const skipped = [];
   for (const dn of neverRan) {
     dn.state = 'skipped';
@@ -4357,6 +4370,19 @@ export function enforceBudget(task) {
   }
   const keptAccepts = currentIntegrate.deps.filter((d) => { const x = task.nodes.find((y) => y.node_id === d); return x && x.state === 'done'; });
   task.budget_stopped.skipped_packages = [...new Set([...(task.budget_stopped.skipped_packages || []), ...skipped])];
+  if (!keptAccepts.length) {
+    // Nothing accepted: an integrate over zero packages merges nothing and its judge (and the
+    // goal gate after it) is paid to look at an empty tree - code-sprint-P2 stopped right after
+    // shape and opened integrate:2 with merged 0. Settle the rest and let the report run.
+    for (const x of task.nodes) {
+      if (x.state !== 'pending' || x.stage === 'report') continue;
+      x.state = 'skipped';
+      x.final = true;
+      x.result = { stage_ok: false, reason: 'skipped: budget/timebox exhausted with no package accepted - nothing to integrate' };
+    }
+    record(task, { event: 'budget_swept', task_id: task.run_id, skipped, nothing_accepted: true });
+    return true;
+  }
   reintegrateBehind(task, currentIntegrate.node_id, keptAccepts, `budget/timebox exhausted; not done: ${skipped.join(', ')}`);
   record(task, { event: 'budget_swept', task_id: task.run_id, skipped });
   return true;
