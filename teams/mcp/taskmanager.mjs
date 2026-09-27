@@ -1845,7 +1845,7 @@ function childContext(task, pkg) {
   const notes = critiqueNotesFor(task, pkg.id);
   if (notes.length) {
     lines.push('');
-    lines.push('The critique of the plan named this about your package. Address each one, or say in your handoff why not - the manager\'s accept reads the same list:');
+    lines.push('The critique of the plan noted this about your package. They are advice, not acceptance: address each one that fits, or say in your handoff why not. The manager\'s accept reads the same list:');
     lines.push(bullets(notes));
   }
   if (pkg.repair && (pkg.touches || []).length) {
@@ -3054,7 +3054,11 @@ export function composeTaskPrompt(task, n) {
       if ((pkg.touches || []).length) L.push(`Touches: ${pkg.touches.join(', ')}`);
       const notes = critiqueNotesFor(task, pkg.id);
       if (notes.length) {
-        L.push(`The plan's critique named this about ${pkg.id} (the child was told the same). Check each was addressed or its handoff says why not; an unaddressed one with no reason is a gap:`);
+        // Advisory, not acceptance: a passing critique's problems[] are what it let through. Read as
+        // gaps they became a second acceptance list - code-beta-X5's P1 met every acceptance bullet,
+        // was rejected at 82 for an unwritten JSDoc critique had suggested, and the retry gates
+        // repeated it as "the explicitly-named blocking gap": three dispatches, 38 minutes.
+        L.push(`The plan's critique noted this about ${pkg.id} (the child was told the same). These are advisory - the package is judged against its Acceptance above. Name any left unaddressed without a reason in "observations"; do not reject for them alone:`);
         L.push(bullets(notes));
       }
     }

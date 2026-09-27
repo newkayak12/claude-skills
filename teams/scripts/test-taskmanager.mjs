@@ -5670,14 +5670,18 @@ test('idol-beta-ask1: a passing critique\'s problems about a package reach that 
     const nx = await tm.call('tm_next', { task_id });
     const c = nx.children.find((x) => x.package_id === 'P1');
     const run = JSON.parse(readFileSync(join(c.cwd, '.teams_output', 'broker', 'runs', `${c.run_id}.json`), 'utf8'));
-    assert.match(run.context, /critique of the plan named this about your package/);
+    assert.match(run.context, /critique of the plan noted this about your package. They are advice, not acceptance/);
     assert.match(run.context, /10,000 flows/);
     assert.doesNotMatch(run.context, /P2 names no error format/, 'only the notes about this package');
     await completeChild(g, c);
     await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
     const nx2 = await tm.call('tm_next', { task_id });
     const acc = nx2.ready.find((n) => n.node_id === 'accept:P1:1');
-    assert.match(readFileSync(acc.briefing_path, 'utf8'), /The plan's critique named this about P1[\s\S]*10,000 flows/);
+    const brief = readFileSync(acc.briefing_path, 'utf8');
+    assert.match(brief, /The plan's critique noted this about P1[\s\S]*10,000 flows/);
+    // code-beta-X5: read as gaps, advisory notes rejected a package that met all its acceptance.
+    assert.match(brief, /advisory - the package is judged against its Acceptance above/);
+    assert.doesNotMatch(brief, /an unaddressed one with no reason is a gap/);
   });
 });
 
