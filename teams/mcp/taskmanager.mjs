@@ -1400,8 +1400,13 @@ function openAudit(task, afterNodeId) {
     // blocked - the same split planning's own setgoal learned in idol-pm-3.
     `Each audit subgoal's files[] is only the markdown report it writes. The code, tests and documents it must inspect go in that subgoal's sources[] - never in files[].`,
     '',
-    'User stories the PRD produced:',
-    bullets(stories),
+    'User stories the PRD produced, each with the acceptance it is judged against:',
+    // Labels, not the objects: code-sprint-P5's audit read "[object Object]" four times and had
+    // to rebuild the stories from the PRD file itself.
+    stories.length ? stories.map((u) => {
+      const acc = u && typeof u === 'object' && Array.isArray(u.acceptance) ? u.acceptance : [];
+      return [`- ${storyLabel(u)}`, ...acc.map((a) => `  - ${a}`)].join('\n');
+    }).join('\n') : '- (none)',
   ];
   if (qaAccept) {
     const r = qaAccept.result;
@@ -3403,7 +3408,15 @@ export function finish(task, n, result) {
   if (roles.planning && roles.audit !== false && n.state === 'done'
     && ((n.stage === 'accept' && n.subgoal_id === 'QA') || (n.stage === 'integrate' && !roles.qa))) {
     const goal = task.nodes.filter((x) => x.stage === 'gate' && x.subgoal_id == null).pop();
-    if (goal && goal.deps.length === 1 && goal.deps[0] === n.node_id) openAudit(task, n.node_id);
+    if (goal && goal.deps.length === 1 && goal.deps[0] === n.node_id) {
+      // Past the box's warning line an audit is a new Team the box cannot pay for, and whatever
+      // it finds cannot be fixed inside it: code-sprint-P5 opened AUDIT:1 at ~95%, it cost $5.14
+      // after the stop, and its death took the goal gate with it.
+      const box = budgetStatus(task);
+      if (task.budget_stopped || box.warn) {
+        record(task, { event: 'audit_skipped', task_id: task.run_id, reason: 'budget', pct: Math.round(box.pct * 100) });
+      } else openAudit(task, n.node_id);
+    }
   }
   // An unmet user story the audit named is filed exactly like a QA-found defect - same STORY
   // path, same detour through a fresh integrate - under its own reporter, and capped by the same
@@ -4375,6 +4388,22 @@ function closeStoppedToReport(task) {
   const stuck = !readyNodes(task).some((n) => n.stage !== 'report' && n.stage !== 'dispatch') && !task.nodes.some((n) => n.state === 'waiting_human');
   if (!task.nodes.some((n) => n.state === 'running') && pendingRejudgeAt(task) === null
       && (runState(task).state === 'blocked' || stuck)) {
+    // A goal gate behind a verification pass (AUDIT, QA) that will not finish still has a done
+    // integrate to judge: put it back there instead of skipping it. code-sprint-P5 built all four
+    // packages and integrated them, AUDIT:1 failed after the stop, and the closer skipped the goal
+    // gate - a 9/9 Sprint read "not delivered".
+    const goal = task.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id == null && n.state === 'pending').pop();
+    const passOf = { AUDIT: task.audit_pkg, QA: task.qa_pkg };
+    if (goal && goal.deps.length === 1) {
+      const dep = task.nodes.find((x) => x.node_id === goal.deps[0]);
+      const pkg = dep && dep.stage === 'accept' && dep.state !== 'done' ? passOf[dep.subgoal_id] : null;
+      const integ = pkg && task.nodes.find((x) => x.node_id === pkg.integration_of && x.state === 'done');
+      if (integ) {
+        goal.deps = [integ.node_id];
+        record(task, { event: 'budget_goal_rewired', task_id: task.run_id, node_id: goal.node_id, from: dep.node_id, to: integ.node_id });
+        return true;
+      }
+    }
     const report = task.nodes.filter((n) => n.stage === 'report' && n.state === 'pending').pop();
     if (report) {
       const settledIds = [];

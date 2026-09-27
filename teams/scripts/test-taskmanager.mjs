@@ -5862,3 +5862,73 @@ test('code-sprint-P3: a package that failed as the box ran out is left out of th
     assert.deepEqual(nx.ready.map((n) => n.node_id), [fresh.node_id]);
   }, { budget_usd: 10 });
 });
+
+test('code-sprint-P5: past the box\'s warning line no audit is opened; the goal gate judges the integrate', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    await toIntegrateWithPlanning(tm, g, task_id, cwd);
+    writeDriverSpend(root, task_id, 'packages', 13); // 87% of 15
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.equal(task.audit_pkg, undefined, 'no audit phase-Team');
+    assert.deepEqual(task.nodes.find((n) => n.node_id === 'gate:goal:1').deps, ['integrate:1']);
+    const ev = await tm.call('tm_events', { task_id });
+    assert.ok(ev.events.some((e) => e.event === 'audit_skipped' && e.reason === 'budget'));
+  }, { roles: { planning: true }, budget_usd: 15 });
+});
+
+test('code-sprint-P5: an audit that dies after the stop gives the goal gate back to the integrate it was auditing, instead of skipping it', async () => {
+  const { enforceBudget } = await import('../mcp/taskmanager.mjs');
+  const prevRoot = process.env.HARNESS_TASKS_DIR;
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  process.env.HARNESS_TASKS_DIR = root;
+  try {
+    const task = {
+      run_id: 'p5', store_path: join(root, 'p5', 'task.json'), cwd: root, request: 'r', created_at: Date.now(),
+      team: { opts: { budget_usd: 1 } }, budget_stopped: { skipped_packages: [] },
+      spec: { packages: [{ id: 'P1', title: 'p' }] },
+      audit_pkg: { id: 'AUDIT', phase: 'audit', integration_of: 'integrate:1' },
+      nodes: [
+        { node_id: 'size', stage: 'size', deps: [], state: 'done', result: {} },
+        { node_id: 'dispatch:P1:1', stage: 'dispatch', subgoal_id: 'P1', deps: [], state: 'done', result: {} },
+        { node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', deps: ['dispatch:P1:1'], state: 'done', result: {} },
+        { node_id: 'integrate:1', stage: 'integrate', deps: ['accept:P1:1'], state: 'done', result: { verified: true } },
+        { node_id: 'dispatch:AUDIT:1', stage: 'dispatch', subgoal_id: 'AUDIT', deps: ['integrate:1'], state: 'failed', result: { stage_ok: true } },
+        { node_id: 'accept:AUDIT:1', stage: 'accept', subgoal_id: 'AUDIT', deps: ['dispatch:AUDIT:1'], state: 'pending' },
+        { node_id: 'gate:goal:1', stage: 'gate', deps: ['accept:AUDIT:1'], state: 'pending' },
+        { node_id: 'report', stage: 'report', deps: [], after: ['gate:goal:1'], state: 'pending' },
+      ],
+    };
+    mkdirSync(join(root, 'p5'), { recursive: true });
+    writeDriverSpend(root, 'p5', 'dispatch_AUDIT_1', 5);
+    assert.equal(enforceBudget(task), true);
+    const goal = task.nodes.find((n) => n.node_id === 'gate:goal:1');
+    assert.equal(goal.state, 'pending', 'the goal gate still runs');
+    assert.deepEqual(goal.deps, ['integrate:1']);
+  } finally {
+    if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('code-sprint-P5: the audit brief lists each user story by label with its acceptance, never "[object Object]"', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    let v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2'], handoff: 'h' }) });
+    await completePlanning(tm, g, task_id, cwd, [
+      { id: 'US-1', title: 'parse rows', acceptance: ['a row has four fields'] },
+      { id: 'US-2', title: 'categorize', acceptance: ['first match wins'] },
+    ]);
+    v = await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({ ...SHAPE_IMPLEMENTS, handoff: 's' }) });
+    await tm.call('tm_submit', { task_id, node_id: 'critique', payload: ok({ sound: true }) });
+    for (const p of ['P1', 'P2']) {
+      const nx = await tm.call('tm_next', { task_id });
+      await completeChild(g, nx.children.find((c) => c.package_id === p));
+      await tm.call('tm_submit', { task_id, node_id: `dispatch:${p}:1` });
+      await tm.call('tm_submit', { task_id, node_id: `accept:${p}:1`, payload: ok({ accept: true, match_pct: 90 }) });
+    }
+    await tm.call('tm_next', { task_id });
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const brief = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8')).audit_pkg.brief;
+    assert.doesNotMatch(brief, /\[object Object\]/);
+    assert.match(brief, /- US-1 - parse rows\n  - a row has four fields/);
+  }, { roles: { planning: true } });
+});
