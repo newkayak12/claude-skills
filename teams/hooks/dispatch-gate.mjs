@@ -18,7 +18,7 @@
 //
 // Fails open on every error, every ambiguity, every unreadable file. A hook that blocks
 // a session because it could not parse its own config is worse than no hook.
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 
 const ALLOW = 0;
@@ -48,17 +48,38 @@ function matches(pattern, path) {
   }
 }
 
-// Any task or run file on disk means the harness is engaged and its nodes are working.
+// Engaged means a task for THIS project is still open, or a run in this project moved recently -
+// not that some task ever ran on this machine. The old test (any file under ~/.harness/tasks)
+// was true forever after a machine's first task, and the gate never fired again.
+const RUN_FRESH_MS = 2 * 60 * 60 * 1000;
+function taskOpenFor(cwd, tasksRoot) {
+  let ids = [];
+  try { ids = readdirSync(tasksRoot); } catch { return false; }
+  const here = resolve(cwd);
+  for (const id of ids) {
+    let task;
+    try { task = JSON.parse(readFileSync(join(tasksRoot, id, 'task.json'), 'utf8')); } catch { continue; }
+    if (!task || resolve(String(task.cwd || '')) !== here) continue;
+    let ledger = '';
+    try { ledger = readFileSync(join(tasksRoot, id, 'ledger.jsonl'), 'utf8'); } catch { /* no ledger yet: just opened */ }
+    const last = ledger.trim().split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
+      .filter((e) => e.event === 'daemon_done' || e.event === 'tm_open' || e.event === 'tm_retry' || e.event === 'daemon_spawned').pop();
+    if (!last || last.event !== 'daemon_done') return true;
+  }
+  return false;
+}
+
 function harnessEngaged(cwd) {
   const tasksRoot = process.env.HARNESS_TASKS_DIR
     ? resolve(process.env.HARNESS_TASKS_DIR)
     : join(process.env.HOME || '', '.harness', 'tasks');
-  for (const dir of [tasksRoot, join(cwd, '.teams_output', 'broker', 'runs')]) {
-    try {
-      if (existsSync(dir) && readdirSync(dir).length) return true;
-    } catch {
-      /* unreadable is not engaged */
-    }
+  if (taskOpenFor(cwd, tasksRoot)) return true;
+  try {
+    const runs = join(cwd, '.teams_output', 'broker', 'runs');
+    const now = Date.now();
+    for (const f of readdirSync(runs)) if (now - statSync(join(runs, f)).mtimeMs <= RUN_FRESH_MS) return true;
+  } catch {
+    /* no runs here */
   }
   // The harness plugin's own gate writes .claude/.harness-markers/<session> (content Date.now())
   // while it is engaged; a recent one means its nodes are the ones writing here.
@@ -67,7 +88,7 @@ function harnessEngaged(cwd) {
     const now = Date.now();
     for (const f of readdirSync(dir)) {
       const ts = parseInt(readFileSync(join(dir, f), 'utf8'), 10) || 0;
-      if (now - ts <= 2 * 60 * 60 * 1000) return true;
+      if (now - ts <= RUN_FRESH_MS) return true;
     }
   } catch {
     /* no markers dir: not engaged this way */
@@ -127,13 +148,15 @@ function main() {
 
   if (harnessEngaged(cwd)) return ALLOW; // nodes are running; they are the ones writing
 
+  // The instruction is a skill, not a bare tm_open: the entry skill is what sizes the request,
+  // picks the flow, drives the run and ends with its report - a bare tm_open skips all of that.
   process.stderr.write(
-    `teams: ${rel} is under dispatch control, and no task or run is open yet.\n` +
-      `This session drives the work, it does not do the work: open one first and let a node write this.\n` +
-      `  tm_open({request: "<the user's request, in their words>", cwd: "${cwd}"})\n` +
-      `tm_open sizes the request itself - a small one comes straight back as a single graph run to drive,\n` +
-      `a large one becomes packages with their own worktrees. Either way the writing happens in a node,\n` +
-      `where it is gated, reviewed by a different identity, and committed on its own branch.\n` +
+    `teams: ${rel} is under dispatch control, and no task is open for this project.\n` +
+      `This session dispatches the work; a node writes it. Do not write this file. Invoke the teams entry skill now with the user's request, in their words:\n` +
+      `  Skill({skill: "teams:orchestrate", args: "<the user's request>"})\n` +
+      `  - a backlog, a budget or a timebox -> Skill({skill: "teams:sprint", ...}) instead\n` +
+      `The skill opens the task (tm_open) and drives it: a small request runs as one graph, a large one as packages with their own worktrees,\n` +
+      `each change gated, reviewed by a different identity, and committed on its own branch.\n` +
       `To edit directly instead, remove .claude/teams-dispatch.json or add "${rel}" to its "allow".\n`,
   );
   return DENY;

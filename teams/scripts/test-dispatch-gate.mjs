@@ -39,7 +39,7 @@ test('a gated write with nothing open is denied, and the message says what to ca
   try {
     const r = run(dir, { file_path: join(dir, 'src/a.mjs'), content: 'x'.repeat(5000) });
     assert.equal(r.status, 2);
-    assert.match(r.stderr, /tm_open/);
+    assert.match(r.stderr, /Skill\(\{skill: "teams:orchestrate"/);
     assert.match(r.stderr, /src\/a\.mjs/);
     assert.match(r.stderr, /remove \.claude\/teams-dispatch\.json/, 'a gate must say how to get out of it');
   } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -108,5 +108,20 @@ test('a stale harness marker does not open the gate', () => {
     mkdirSync(join(dir, '.claude', '.harness-markers'), { recursive: true });
     writeFileSync(join(dir, '.claude', '.harness-markers', 'sess-1'), String(Date.now() - 3 * 60 * 60 * 1000));
     assert.equal(run(dir, { file_path: join(dir, 'src/a.mjs'), content: 'x'.repeat(5000) }).status, 2);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a task that finished long ago, for this or another project, does not open the gate forever', () => {
+  const dir = project({ paths: ['src/**'] });
+  const tasks = join(dir, '.tasks');
+  try {
+    for (const [id, cwd, done] of [['a', dir, true], ['b', '/elsewhere', false]]) {
+      mkdirSync(join(tasks, id), { recursive: true });
+      writeFileSync(join(tasks, id, 'task.json'), JSON.stringify({ cwd }));
+      writeFileSync(join(tasks, id, 'ledger.jsonl'), JSON.stringify({ event: 'tm_open' }) + '\n' + (done ? JSON.stringify({ event: 'daemon_done' }) + '\n' : ''));
+    }
+    assert.equal(run(dir, { file_path: join(dir, 'src/a.mjs'), content: 'x'.repeat(5000) }, 'Write', { HARNESS_TASKS_DIR: tasks }).status, 2);
+    writeFileSync(join(tasks, 'a', 'ledger.jsonl'), JSON.stringify({ event: 'tm_open' }) + '\n');
+    assert.equal(run(dir, { file_path: join(dir, 'src/a.mjs'), content: 'x'.repeat(5000) }, 'Write', { HARNESS_TASKS_DIR: tasks }).status, 0, 'this project\'s open task: nodes write');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
