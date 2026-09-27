@@ -1,12 +1,9 @@
 ---
 name: architecture-designer
 description: >-
-  Use when someone needs to make or document architectural decisions from
-  scratch — choosing between system topologies (monolith vs. microservices),
-  writing ADRs, evaluating scalability trade-offs, selecting database and
-  infrastructure patterns, or drawing a system as an interactive diagram
-  (architecture, data flow, workflow, lifecycle, sequence). Triggers: "아키텍처
-  그려줘", "다이어그램으로 보여줘", "시퀀스 다이어그램", "diagram this system".
+  Use when designing or documenting system architecture — topology, trade-offs,
+  ADRs, database choice — or drawing it as a shareable interactive diagram
+  ("아키텍처 그려줘", "시퀀스 다이어그램", "diagram this system").
 license: MIT
 metadata:
   author: https://github.com/Jeffallan
