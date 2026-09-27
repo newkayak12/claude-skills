@@ -124,6 +124,7 @@ function renderModelBody(m, indent, out) {
     else if (b.warned) bits.push('WARN 80%');
     out.push(line(indent, bits.join(' · ')));
   }
+  if (m.package_map) out.push(line(indent, `package map (${m.package_map.source === 'shape' ? 'drawn by shape' : 'from deps'}): ${m.package_map.path}`));
   if (m.daemon) out.push(line(indent, `daemon pid=${m.daemon.pid} alive=${m.daemon.alive} restarts=${m.daemon.restarts}${m.daemon.exhausted ? ' EXHAUSTED' : ''}`));
   if (m.s_run) {
     out.push(line(indent, 'S run:'));

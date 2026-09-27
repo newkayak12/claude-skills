@@ -440,6 +440,7 @@
     out.push('<div class="stat"><div class="label">elapsed</div><div class="value">' + fmtMs(m.elapsed_ms) + '</div></div>');
     out.push('<div class="stat"><div class="label">cost</div><div class="value">' + fmtUsd(m.cost && m.cost.usd) + '</div></div>');
     out.push('<div class="stat"><div class="label">turns</div><div class="value">' + ((m.cost && m.cost.turns) || 0) + '</div></div>');
+    if (m.package_map) out.push('<div class="stat"><div class="label">package map</div><div class="value"><a href="/package-map?task=' + encodeURIComponent(m.task_id || '') + '" target="_blank" rel="noopener">' + (m.package_map.source === 'shape' ? 'drawn by shape' : 'from deps') + '</a></div></div>');
     if (m.budget) {
       var b = m.budget;
       if (b.budget_usd != null) out.push('<div class="stat"><div class="label">budget</div><div class="value">' + fmtUsd(b.spend_usd) + ' / ' + fmtUsd(b.budget_usd) + ' (' + Math.round(b.budget_pct * 100) + '%)</div></div>');

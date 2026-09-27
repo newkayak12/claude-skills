@@ -19,7 +19,7 @@
 // Both the HTML page's /state.json and --once's text tree come from ONE collect() function
 // (teams/scripts/lib/view-collect.mjs) - this file only renders it two ways.
 import { createServer } from 'node:http';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tasksRoot } from '../mcp/taskmanager.mjs';
@@ -76,6 +76,17 @@ function startServer(tasksDir, taskId, port) {
       const effectiveTask = taskId || url.searchParams.get('task') || null;
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
       res.end(stateJson(tasksDir, effectiveTask));
+      return;
+    }
+    // The task's own package map (shape's diagram, or the dependency map). The path comes from
+    // the task file, never from the query, so this serves nothing but that one drawing.
+    if (url.pathname === '/package-map') {
+      const id = taskId || url.searchParams.get('task') || (listTasks(tasksDir)[0] || {}).task_id;
+      const m = id ? collectTask(tasksDir, id) : null;
+      const p = m && m.package_map && m.package_map.path;
+      if (!p || !existsSync(p)) { res.writeHead(404, { 'content-type': 'text/plain' }); res.end('no package map yet - it is drawn when shape finishes'); return; }
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+      res.end(readFileSync(p));
       return;
     }
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
