@@ -225,7 +225,8 @@ function observedChanges(before, after) {
 // relative to a --cwd that is a subdirectory. Observed paths are always repo-root
 // relative with forward slashes, so normalize claims into that space.
 function normalizeClaim(root, claim) {
-  const raw = String(claim || '').trim();
+  // "test/smoke.test.mjs (deleted)": the note is not part of the path (code-sprint-P4).
+  const raw = String(claim || '').replace(/\s+\([^)]*\)?.*$/, '').trim();
   if (!raw) return raw;
   const abs = isAbsolute(raw) ? resolve(raw) : resolve(cwd, raw.replace(/^\.\/+/, ''));
   const rel = relative(root, abs);
@@ -493,7 +494,8 @@ function runCodex() {
       // nothing. Positive attribution is therefore sound only under --isolated. Without
       // it we still trust the one conclusion concurrency cannot fabricate: if NOTHING
       // changed anywhere, this node changed nothing.
-      const snap = observedChanges(beforeSnapshot, gitSnapshot());
+      const afterSnapshot = gitSnapshot();
+      const snap = observedChanges(beforeSnapshot, afterSnapshot);
       const observed = snap ? snap.changed : null;
       const claimedRaw = result && Array.isArray(result.changed_files) ? result.changed_files : [];
       const claimed = snap ? claimedRaw.map((c) => normalizeClaim(snap.root, c)) : claimedRaw;
@@ -504,11 +506,21 @@ function runCodex() {
           ? 'degraded'
           : opts.isolated ? 'isolated' : 'shared-worktree';
 
+      // A retry runs in the worktree its earlier attempt left dirty. A file that attempt wrote is
+      // this package's work, uncommitted, and Codex rightly claims it - but this session did not
+      // change it, so it is not observed. code-beta-X4: every P2 retry claimed src/index.mjs from
+      // its first attempt, was called a liar ("adapter exit 1") and the package spent all three
+      // dispatches that way. A claim dirty against HEAD both before and after is carried, not false.
+      let carried = [];
       if (opts.stage === 'implement' && stageOk && snap) {
-        const unobserved = claimed.filter((path) => !observed.includes(path));
+        carried = claimed.filter((path) => !observed.includes(path)
+          && beforeSnapshot.paths.has(path) && afterSnapshot && afterSnapshot.paths.has(path));
+        const unobserved = claimed.filter((path) => !observed.includes(path) && !carried.includes(path));
         if (claimedRaw.length === 0) {
           changedFilesVerified = false;
           structuredError = 'Codex reported stage_ok=true for an implement node with no changed_files';
+        } else if (observed.length === 0 && carried.length === claimed.length) {
+          changedFilesVerified = null; // all of it carried from an earlier attempt; nothing new to attribute
         } else if (observed.length === 0) {
           changedFilesVerified = false;
           structuredError = `Codex claimed changed_files but the worktree shows no change at all: ${claimed.join(', ')}`;
@@ -545,6 +557,7 @@ function runCodex() {
         result.changed_files_verified = changedFilesVerified;
         result.change_attribution = attribution;
         result.observed_changed_files = observed;
+        if (carried.length) result.carried_files = carried;
         if (eventEvidence) result.event_evidence = eventEvidence;
         if (structuredError) result.verification_error = structuredError;
       }

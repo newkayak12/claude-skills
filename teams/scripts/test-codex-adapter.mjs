@@ -65,3 +65,30 @@ for (const stage of ['implement', 'test']) {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 }
+
+test('code-beta-X4: a retry claiming the file its earlier attempt left dirty is carried, not contradicted; a file nobody touched still is', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'codex-carry-'));
+  try {
+    const git = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' });
+    git('init', '-q'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't');
+    writeFileSync(join(dir, 'src.mjs'), 'export {};\n');
+    writeFileSync(join(dir, 'b.mjs'), 'export {};\n');
+    git('add', '.'); git('commit', '-qm', 'stub');
+    writeFileSync(join(dir, 'src.mjs'), 'export const a = 1;\n'); // attempt 1's work, uncommitted
+    const run = (claim) => {
+      const bin = fakeCodex(dir, { stage_ok: true, handoff: 'h', changed_files: claim, checks: ['node --test -> 1 pass'], evidence: 'e', upstream_defects: null });
+      // this attempt's own write
+      writeFileSync(join(bin, 'codex'), readFileSync(join(bin, 'codex'), 'utf8').replace("process.exit(0);\n`", '').replace(/process\.exit\(0\);\s*$/, `fs.writeFileSync(${JSON.stringify(join(dir, 'b.mjs'))}, 'export const b = ' + Date.now() + ';\\n');\nprocess.exit(0);\n`));
+      writeFileSync(join(dir, 'prompt.md'), 'do it');
+      spawnSync('node', [ADAPTER, '--stage', 'implement', '--cwd', dir, '--prompt-file', join(dir, 'prompt.md'), '--output', join(dir, 'out.json'), '--sandbox', 'danger-full-access', '--isolated'],
+        { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+      return JSON.parse(readFileSync(join(dir, 'out.json'), 'utf8'));
+    };
+    const ok = run(['src.mjs', 'b.mjs (modified)']);
+    assert.equal(ok.ok, true, JSON.stringify(ok.result && ok.result.verification_error));
+    assert.deepEqual(ok.result.carried_files, ['src.mjs']);
+    const ghost = run(['b.mjs', 'ghost.mjs']);
+    assert.equal(ghost.ok, false);
+    assert.match(ghost.result.verification_error, /ghost\.mjs/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
