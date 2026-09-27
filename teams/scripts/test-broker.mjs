@@ -3384,3 +3384,27 @@ test('code-sprint-P3: a claimed file under a git-ignored path is not contradicte
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test('code-sprint-P4: a changed_files claim with a note after the path, a glob, or a space in it matches what git lists', async () => {
+  const cwd = repoWithFakeVendor();
+  const c = await new Client().init();
+  try {
+    const tracked = spawnSync('git', ['ls-files'], { cwd, encoding: 'utf8' }).stdout.split('\n').filter(Boolean)[0];
+    rmSync(join(cwd, tracked));
+    mkdirSync(join(cwd, 'fx'), { recursive: true });
+    writeFileSync(join(cwd, 'fx', 'a.json'), '{}');
+    writeFileSync(join(cwd, 'fx', 'b.json'), '{}');
+    writeFileSync(join(cwd, 'with space.md'), 'x');
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'self', isolated: true });
+    for (const [node_id, payload] of [['plan', ok({ handoff: 'p' })], ['setgoal', ok({ spec: SPEC })], ['critique', ok({ sound: true })]]) {
+      await c.call('team_submit', { run_id, cwd, node_id, payload });
+    }
+    const r = await c.call('team_submit', { run_id, cwd, node_id: 'implement:U1:1',
+      payload: ok({ changed_files: [`${tracked} (deleted)`, 'fx/*.json (2 fixtures: a, b (empty))', 'with space.md'] }) });
+    assert.equal(r.state, 'done', JSON.stringify(r));
+    assert.equal(r.changed_files_verified, true);
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
