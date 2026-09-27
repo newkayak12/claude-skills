@@ -125,7 +125,7 @@ const CW = 290, CH = 124, NW = 188, NH = 64, PAD = 40;
 
 // Up to two lines of at most ~24 characters, broken at spaces or slashes; what does not fit is
 // cut with an ellipsis (the full label stays in the node's hover title).
-function wrap(label, width = 24) {
+function wrap(label, width = 22) {
   const words = String(label).split(/(?<=[\s/])/);
   const lines = [''];
   for (const w of words) {
@@ -179,8 +179,12 @@ function renderGrid(ir) {
     const [ax, ay] = center(a), [bx, by] = center(b);
     const [sx, sy] = exit(ax, ay, bx, by), [tx, ty] = exit(bx, by, ax, ay);
     const style = e.style || 'sync';
+    // A label fits the line it sits on (about 6px a character at 11px); the whole text is the
+    // edge's hover title, so a short seam between neighbours never hides its label under a box.
+    const room = Math.max(6, Math.floor(Math.hypot(tx - sx, ty - sy) / 6.2));
+    const shown = e.label && e.label.length > room ? `${e.label.slice(0, room - 1)}…` : e.label;
     out.push(`<g class="edge ${style}" data-from="${esc(e.from)}" data-to="${esc(e.to)}"><line x1="${sx.toFixed(1)}" y1="${sy.toFixed(1)}" x2="${tx.toFixed(1)}" y2="${ty.toFixed(1)}" marker-end="url(#arrow-${style})"/>`
-      + (e.label ? `<text x="${((sx + tx) / 2).toFixed(1)}" y="${((sy + ty) / 2 - 6).toFixed(1)}" text-anchor="middle">${esc(e.label)}</text>` : '') + `</g>`);
+      + (e.label ? `<text x="${((sx + tx) / 2).toFixed(1)}" y="${((sy + ty) / 2 - 6).toFixed(1)}" text-anchor="middle">${esc(shown)}</text><title>${esc(e.label)}</title>` : '') + `</g>`);
     void i;
   });
   for (const n of nodes) {
