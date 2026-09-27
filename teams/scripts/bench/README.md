@@ -288,6 +288,29 @@ block, unit-tested in `test-score.mjs` against the pure helpers in `lib/claims.m
   `unverifiable`, if the node logged no checks at all) on their own — they were never wrong
   themselves, only downstream of a `checks[]` entry that was.
 
+## Keep and triage (harvest.mjs, triage.mjs)
+
+`/tmp/graph-bench` does not survive a reboot, and each run's defects were found by reading its
+ledger and child runs by hand. `bench.sh` now ends with `harvest.mjs`, which keeps the record under
+`~/.local/share/teams-runs/<label>/` (`TEAMS_RUNS_DIR`): `summary.json` (score, the teams version the
+run ran - the last commit before its `tm_open` - cost by stream kind, and every failed or refused
+node as a classified record: `cross-check`, `adapter-exit`, `judge-failed`, `rejection`,
+`integrate-refused`, `critique-blocked`, `failed`), plus the task, ledger, briefings, docs and every
+child run with each node's adapter result (tails only; driver streams are summarized, not copied).
+Run it again by hand if the daemon outlived the bench session.
+
+```bash
+node harvest.mjs /tmp/graph-bench/code-sprint-P6            # one workspace
+node triage.mjs                                             # every kept run
+node triage.mjs --since 0.32.0 --kind rejection --top 30    # narrower
+```
+
+`triage.mjs` groups the records by kind and a signature that ignores paths, numbers, ids and
+quoted values, so one defect seen in five runs is one row, with the versions it was seen on. A
+group absent from the newest version reads `not since <v>` (probably fixed); one still present is
+the next thing to read. It ends with where the money went, by stream kind. Seeded 2026-09-27 with
+30 earlier workspaces (0.12.3 .. 0.31.11, $419.50).
+
 ## Post-hoc audit (defects_shipped)
 
 `teams` is an adversarial-verification flow — spec → build → gate-by-execution → integrate →

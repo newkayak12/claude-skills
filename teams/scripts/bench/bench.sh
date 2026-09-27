@@ -183,3 +183,7 @@ set -e
 echo "$(date -u +%FT%TZ) exit $EXIT" >> "$OUTB.start.txt"
 
 node "$HERE/score.mjs" "$CASE" "$WS" "$OUTB.stream.jsonl" | tee "$OUTB.score.txt"
+# Keep what the run found once /tmp is gone: summary + failure records under
+# ~/.local/share/teams-runs/<label>/ (TEAMS_RUNS_DIR), read across runs by triage.mjs.
+# Re-run harvest.mjs by hand if the daemon outlived this session.
+node "$HERE/harvest.mjs" "$WS" --label "$(basename "$OUTB")" || true
