@@ -323,17 +323,24 @@ async function probe(name, vendor, cwd, sandbox, model) {
 // ---------- worktree cross-check ----------
 
 function gitChanged(cwd) {
-  const r = spawnSync('git', ['status', '--porcelain=v1', '--untracked-files=all'], {
+  // -z: paths verbatim - the default output quotes any path with a space or non-ASCII byte,
+  // and a quoted path never equals the claim. A rename is "R  new\0old", so the entry after a
+  // rename/copy is its source and is skipped.
+  const r = spawnSync('git', ['-c', 'core.quotePath=false', 'status', '--porcelain=v1', '-z', '--untracked-files=all'], {
     cwd,
     encoding: 'utf8',
     maxBuffer: 16 * 1024 * 1024,
   });
   if (r.status !== 0) return null;
-  return r.stdout
-    .split('\n')
-    .map((l) => l.slice(3).trim())
-    .filter(Boolean)
-    .map((p) => (p.includes(' -> ') ? p.split(' -> ').pop() : p));
+  const parts = r.stdout.split('\0');
+  const out = [];
+  for (let i = 0; i < parts.length; i++) {
+    const e = parts[i];
+    if (e.length < 4) continue;
+    out.push(e.slice(3));
+    if (e[0] === 'R' || e[0] === 'C') i++;
+  }
+  return out;
 }
 
 // ---------- checkpoint / rollback (docs/plans/2026-09-23-teams-reducer-human-rollback.md §5) ----------
@@ -401,14 +408,20 @@ function crossCheck(cwd, claimed, isolated, kind) {
   // while git reports them relative to cwd. Compare in one space. A path outside cwd is
   // left as-is rather than trimmed, so it stays unmatched instead of matching by suffix.
   const base = String(cwd).replace(/\\/g, '/').replace(/\/+$/, '') + '/';
+  // A claim is a path, sometimes with a note after it: "test/smoke.test.mjs (deleted)",
+  // "test/fixtures/*.json (23 fixtures: ...)". code-sprint-P4 lost the first attempt of three
+  // packages - nine implement nodes - to "(deleted)" alone: git listed the deletion, the note
+  // made the claim a different string. The note is dropped; a glob matches what git lists.
   const toRel = (f) => {
-    const p = String(f).replace(/\\/g, '/');
+    const p = String(f).replace(/\s+\([^)]*\)?.*$/, '').trim().replace(/\\/g, '/');
     return (p.startsWith(base) ? p.slice(base.length) : p).replace(/^\.\//, '');
   };
+  const globRe = (g) => new RegExp('(^|/)' + g.split('*').map((x) => x.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*') + '$');
+  const seen = (r) => (r.includes('*') ? observed.some((o) => globRe(r).test(o)) : observed.some((o) => o === r || o.endsWith('/' + r)));
   const list = Array.isArray(claimed) ? claimed.map(String) : [];
   const unseen = list.filter((f) => {
     const r = toRel(f);
-    return !r || !observed.some((o) => o === r || o.endsWith('/' + r));
+    return !r || !seen(r);
   });
   // git status never lists an ignored path, so a file written there is invisible to it - and
   // the team's own documents live under .teams_output/, which the project ignores.
