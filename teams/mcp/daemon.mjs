@@ -35,6 +35,7 @@ import {
   STAGE_SKILLS, syncTickets, autoReshape, promoteManagerHumanGates, enforceBudget,
 } from './taskmanager.mjs';
 import { ticketSnapshot } from './tickets.mjs';
+import { harvestTask } from './runlog.mjs';
 import { pluginDirArgs, isEntryPoint, teamsPluginRoot } from './pluginroots.mjs';
 
 function parseArgs(argv) {
@@ -410,6 +411,16 @@ async function main() {
         continue;
       }
       record(fresh, { event: 'daemon_done', task_id: TASK_ID, state: taskState(fresh).state });
+      // Every task leaves a record past its project's .teams_output and /tmp (mcp/runlog.mjs,
+      // read across runs by scripts/bench/triage.mjs). A failure to keep it never fails the task.
+      if (!noDriver() || process.env.TEAMS_RUNS_DIR) {
+        try {
+          const kept = harvestTask({ taskDir: dirname(taskPath(TASK_ID)), cwd: fresh.cwd });
+          if (kept) record(fresh, { event: 'run_logged', task_id: TASK_ID, path: kept.out, failures: kept.summary.failures.length });
+        } catch (e) {
+          record(fresh, { event: 'run_log_failed', task_id: TASK_ID, error: String(e && e.message || e).slice(0, 300) });
+        }
+      }
       return;
     }
     if (!progressed) await waitForProgress(fresh);

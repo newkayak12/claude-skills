@@ -4,6 +4,8 @@
 // rather than one only true under a test harness's fixed clock). The golden fixtures under
 // teams/scripts/fixtures/docs-golden/ are generated once by running the real renderer and are
 // then locked in - the usual way a golden test is bootstrapped.
+// A test task must not land in the real run archive (mcp/runlog.mjs); spawned daemons inherit this.
+process.env.TEAMS_RUNS_DIR ??= 'off';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync, readFileSync, mkdtempSync, rmSync, readdirSync } from 'node:fs';

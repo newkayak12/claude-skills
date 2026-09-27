@@ -5,6 +5,8 @@
 // size-S EPIC fixtures below, which need one real run file on disk: epicTicketState/epicPhase's
 // S-run branch reads task.s_run's own file (tickets.mjs's loadSRun), the same as taskState()
 // (taskmanager.mjs) always has, and there is nothing to inject it with.
+// A test task must not land in the real run archive (mcp/runlog.mjs); spawned daemons inherit this.
+process.env.TEAMS_RUNS_DIR ??= 'off';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';

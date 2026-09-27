@@ -1,5 +1,7 @@
 // pidAlive (mcp/proc.mjs): a zombie is dead. code-sprint-S2's daemon sat <defunct> after it
 // was killed and read alive to kill(pid, 0), so nothing ever re-raised it.
+// A test task must not land in the real run archive (mcp/runlog.mjs); spawned daemons inherit this.
+process.env.TEAMS_RUNS_DIR ??= 'off';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';

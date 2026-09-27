@@ -1,3 +1,5 @@
+// A test task must not land in the real run archive (mcp/runlog.mjs); spawned daemons inherit this.
+process.env.TEAMS_RUNS_DIR ??= 'off';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { graphStageSkills, graphStageMounts, mountBlock } from '../mcp/mounts.mjs';

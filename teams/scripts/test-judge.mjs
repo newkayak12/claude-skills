@@ -1,6 +1,8 @@
 // unexplainedRefusal (daemon.mjs): a judge that refuses with no reason and no gaps has not
 // judged. seam-beta-D2's integrate:1 refused with reason:null, gaps:null, and the repair it
 // opened had nothing to fix from.
+// A test task must not land in the real run archive (mcp/runlog.mjs); spawned daemons inherit this.
+process.env.TEAMS_RUNS_DIR ??= 'off';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { unexplainedRefusal } from '../mcp/daemon.mjs';

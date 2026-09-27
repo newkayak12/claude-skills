@@ -1,166 +1,32 @@
 #!/usr/bin/env node
-// Keeps what a real run found after /tmp is gone. bench.sh calls it after scoring; it can also be
-// run by hand on any workspace (again later, if the daemon outlived the bench session).
+// A bench workspace's record, kept past /tmp - the same harvest the daemon does at daemon_done
+// (mcp/runlog.mjs), plus the bench's score. Same default label as the daemon's
+// (<workspace>-<task id>), so this overwrites that record with the scored one instead of adding a
+// second copy for triage.mjs to count twice.
 //
-//   node harvest.mjs <workspace> [--label L] [--root DIR]
-//
-// Writes <root>/<label>/ (default root ~/.local/share/teams-runs, or TEAMS_RUNS_DIR):
-//   summary.json   - score line, versions, state, cost by stream kind, and every failure as a
-//                    classified record (what triage.mjs groups across runs)
-//   task.json, ledger.jsonl, briefings/, docs/     - the manager's own record
-//   runs/<pkg>/<run>.json, nodes/<pkg>/<run>/<node>.json - every child run and each node's
-//                    adapter result (stdout/stderr tails only)
-// and appends one line to <root>/index.jsonl. Driver streams are not copied (they run to tens of
-// MB); their costs are summarized instead.
+//   node harvest.mjs <workspace> [--label L] [--root DIR] [--score-prefix PATH]
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync, copyFileSync, appendFileSync, cpSync } from 'node:fs';
-import { join, basename, dirname, resolve } from 'node:path';
-import { homedir } from 'node:os';
-import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import { collectTaskCosts } from './lib/drivercost.mjs';
+import { readdirSync, statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { harvestTask, signature, classify } from '../../mcp/runlog.mjs';
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO = resolve(HERE, '..', '..', '..');
+export { signature, classify };
 
-const readJson = (p) => { try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; } };
-const readText = (p) => { try { return readFileSync(p, 'utf8'); } catch { return ''; } };
-const dirs = (p) => { try { return readdirSync(p).filter((x) => statSync(join(p, x)).isDirectory()); } catch { return []; } };
-const files = (p) => { try { return readdirSync(p).filter((x) => statSync(join(p, x)).isFile()); } catch { return []; } };
-
-// One comparable shape for a message: paths, numbers, ids and quoted values collapsed, so the
-// same defect in two runs groups together.
-export function signature(text) {
-  return String(text || '')
-    .replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, '<id>')
-    .replace(/(?:\b[\w.@-]+)?(?:\/[\w.@*-]+)+\/?/g, '<path>')
-    .replace(/"[^"]{1,80}"|'[^']{1,80}'|`[^`]{1,80}`/g, '<q>')
-    .replace(/\d+(\.\d+)?/g, '<n>')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 110);
-}
-
-// Every node that did not end well, as a record triage can count. Kinds, most specific first.
-export function classify(n, where) {
-  const r = n.result || {};
-  const base = { ...where, node_id: n.node_id, stage: n.stage, executor: n.executor || n.vendor || null, state: n.state };
-  if (r.judge_failed) return { ...base, kind: 'judge-failed', message: r.reason || '' };
-  if (r.verification_error) return { ...base, kind: 'cross-check', message: r.verification_error };
-  if (/adapter exit/.test(r.reason || '')) return { ...base, kind: 'adapter-exit', message: r.reason };
-  if ((n.stage === 'gate' || n.stage === 'accept') && r.accept === false) {
-    return { ...base, kind: 'rejection', message: (r.gaps || [])[0] || r.reason || '', match_pct: r.match_pct ?? null };
-  }
-  if (n.stage === 'integrate' && r.verified === false) return { ...base, kind: 'integrate-refused', message: (r.gaps || [])[0] || r.reason || '' };
-  if (n.stage === 'critique' && r.sound === false) return { ...base, kind: 'critique-blocked', message: (r.blocking || [])[0] || r.reason || '' };
-  return { ...base, kind: 'failed', message: r.reason || '' };
-}
-
-function trimResult(res) {
-  if (!res || typeof res !== 'object') return res;
-  const out = { ...res };
-  for (const k of ['stdout', 'stderr']) if (typeof out[k] === 'string' && out[k].length > 2000) out[k] = `...${out[k].slice(-2000)}`;
-  return out;
-}
-
-export function harvest(ws, { label, root } = {}) {
+export function harvest(ws, { label, root, scorePrefix } = {}) {
   ws = resolve(ws);
   const tasksDir = join(ws, '.harness-tasks');
-  const taskId = dirs(tasksDir)[0] || null;
-  const taskDir = taskId ? join(tasksDir, taskId) : null;
-  label = label || basename(ws);
-  root = root || process.env.TEAMS_RUNS_DIR || join(homedir(), '.local', 'share', 'teams-runs');
-  const out = join(root, label);
-  mkdirSync(out, { recursive: true });
-
-  const task = taskDir ? readJson(join(taskDir, 'task.json')) : null;
-  const ledger = taskDir ? readText(join(taskDir, 'ledger.jsonl')) : '';
-  const events = ledger.split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-  if (taskDir) {
-    for (const f of ['task.json', 'ledger.jsonl', 'board.jsonl']) if (existsSync(join(taskDir, f))) copyFileSync(join(taskDir, f), join(out, f));
-    if (existsSync(join(taskDir, 'briefings'))) cpSync(join(taskDir, 'briefings'), join(out, 'briefings'), { recursive: true });
-    mkdirSync(join(out, 'drivers'), { recursive: true });
-    for (const f of files(join(taskDir, 'drivers'))) if (/\.(exit\.json|stderr\.txt)$/.test(f)) copyFileSync(join(taskDir, 'drivers', f), join(out, 'drivers', f));
-  }
-  const docs = join(ws, '.teams_output', 'team');
-  if (existsSync(docs)) cpSync(docs, join(out, 'docs'), { recursive: true });
-  for (const suffix of ['score.txt', 'start.txt']) {
-    for (const p of [`${ws}.${suffix}`, `${ws}.next.${suffix}`]) if (existsSync(p)) copyFileSync(p, join(out, basename(p).replace(basename(ws), 'bench')));
-  }
-
-  // Child runs: the project root's (planning) and every package worktree's.
-  const failures = [];
-  const runRoots = [['root', ws], ...(taskDir ? dirs(join(taskDir, 'worktrees')).map((w) => [w, join(taskDir, 'worktrees', w)]) : [])];
-  let childRuns = 0;
-  for (const [pkg, cwd] of runRoots) {
-    const broker = join(cwd, '.teams_output', 'broker');
-    for (const f of files(join(broker, 'runs')).filter((x) => x.endsWith('.json'))) {
-      const run = readJson(join(broker, 'runs', f));
-      if (!run) continue;
-      childRuns++;
-      mkdirSync(join(out, 'runs', pkg), { recursive: true });
-      copyFileSync(join(broker, 'runs', f), join(out, 'runs', pkg, f));
-      for (const n of run.nodes || []) {
-        if (n.state === 'failed' || (n.result && (n.result.accept === false || n.result.verified === false))) failures.push(classify(n, { level: 'child', package: pkg, run_id: run.run_id }));
-      }
-      // Each node attempt's adapter result, tails only.
-      for (const nodeDir of dirs(join(broker, run.run_id))) {
-        for (const attempt of dirs(join(broker, run.run_id, nodeDir))) {
-          const res = readJson(join(broker, run.run_id, nodeDir, attempt, 'result.json'));
-          if (!res) continue;
-          mkdirSync(join(out, 'nodes', pkg, run.run_id), { recursive: true });
-          writeFileSync(join(out, 'nodes', pkg, run.run_id, `${nodeDir}.${attempt.slice(0, 8)}.json`), JSON.stringify(trimResult(res), null, 2));
-        }
-      }
-    }
-  }
-  for (const n of (task && task.nodes) || []) {
-    const r = n.result || {};
-    if (n.state === 'failed' || r.accept === false || r.verified === false || r.sound === false || r.judge_failed) failures.push(classify(n, { level: 'manager' }));
-  }
-
-  let costs = null;
-  try { costs = taskDir ? collectTaskCosts(taskDir, task) : null; } catch { costs = null; }
-  const byKind = {};
-  for (const s of (costs && costs.streams) || []) {
-    const k = basename(String(s.stream || s.path || '')).replace(/\.stream\.jsonl$/, '').replace(/_\d+$/, '').replace(/^judge_(\w+?)(_P\w+|\.r\d+)?$/, 'judge_$1').replace(/^dispatch_(PLAN|AUDIT|QA)$/, 'dispatch_$1').replace(/^dispatch_P\d+\w*$/, 'dispatch_package');
-    byKind[k] = +((byKind[k] || 0) + (s.cost_usd || 0)).toFixed(4);
-  }
-  const score = readText(join(out, 'bench.score.txt')).split('\n').find((l) => / \| \d+\/\d+ \| /.test(l)) || null;
-  // The code the run ran, not the code at harvest time: the last commit before the task opened.
-  const opened = (events.find((e) => e.event === 'tm_open') || {}).ts;
-  const git = opened
-    ? spawnSync('git', ['log', '-1', `--before=${new Date(opened).toISOString()}`, '--format=%h'], { cwd: REPO, encoding: 'utf8' })
-    : spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: REPO, encoding: 'utf8' });
-  const commit = git.status === 0 ? git.stdout.trim() : null;
-  const pluginAt = commit ? spawnSync('git', ['show', `${commit}:teams/.claude-plugin/plugin.json`], { cwd: REPO, encoding: 'utf8' }) : null;
-  const versionAt = pluginAt && pluginAt.status === 0 ? (() => { try { return JSON.parse(pluginAt.stdout).version; } catch { return null; } })() : null;
-  const summary = {
-    label, harvested_at: new Date().toISOString(), workspace: ws, task_id: taskId,
-    teams_version: versionAt || (readJson(join(REPO, 'teams', '.claude-plugin', 'plugin.json')) || {}).version || null,
-    repo_commit: commit,
-    score,
-    state: task ? (events.filter((e) => e.event === 'daemon_done').pop() || {}).state || 'unfinished' : 'no-task',
-    size: task && task.size, packages: ((task && task.spec && task.spec.packages) || []).map((p) => p.id),
-    budget: task && task.team && task.team.opts ? { budget_usd: task.team.opts.budget_usd ?? null, timebox_minutes: task.team.opts.timebox_minutes ?? null, stopped: !!task.budget_stopped } : null,
-    cost_usd: costs ? +(costs.cost_usd || 0).toFixed(4) : null, cost_by_kind: byKind,
-    child_runs: childRuns,
-    retries: events.filter((e) => e.event === 'daemon_retry_opened').length,
-    rejudges: events.filter((e) => e.event === 'daemon_rejudge').length,
-    events: Object.fromEntries(Object.entries(events.reduce((m, e) => ((m[e.event] = (m[e.event] || 0) + 1), m), {})).filter(([k]) => /budget|capacity|rejudge|retry|audit|diagram|closed|rewired|stalled|killed|restart/.test(k))),
-    failures: failures.map((f) => ({ ...f, message: String(f.message || '').slice(0, 400), signature: signature(f.message) })),
-  };
-  writeFileSync(join(out, 'summary.json'), JSON.stringify(summary, null, 2));
-  mkdirSync(root, { recursive: true });
-  appendFileSync(join(root, 'index.jsonl'), JSON.stringify({ label, harvested_at: summary.harvested_at, teams_version: summary.teams_version, score: summary.score, state: summary.state, cost_usd: summary.cost_usd, failures: summary.failures.length, dir: out }) + '\n');
-  return { out, summary };
+  let ids = [];
+  try { ids = readdirSync(tasksDir).filter((x) => statSync(join(tasksDir, x)).isDirectory()); } catch { ids = []; }
+  return harvestTask({ taskDir: ids[0] ? join(tasksDir, ids[0]) : null, cwd: ws, label, root, scorePrefix: scorePrefix || ws });
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const a = process.argv.slice(2);
-  const ws = a.find((x) => !x.startsWith('--') && a[a.indexOf(x) - 1] !== '--label' && a[a.indexOf(x) - 1] !== '--root');
+  const flags = new Set(['--label', '--root', '--score-prefix']);
+  const ws = a.find((x, i) => !x.startsWith('--') && !flags.has(a[i - 1]));
   const opt = (k) => (a.includes(k) ? a[a.indexOf(k) + 1] : undefined);
-  if (!ws) { process.stderr.write('usage: harvest.mjs <workspace> [--label L] [--root DIR]\n'); process.exit(2); }
-  const { out, summary } = harvest(ws, { label: opt('--label'), root: opt('--root') });
-  process.stdout.write(`harvested ${summary.label} -> ${out} (${summary.failures.length} failure records, ${summary.child_runs} child runs, state ${summary.state})\n`);
+  if (!ws) { process.stderr.write('usage: harvest.mjs <workspace> [--label L] [--root DIR] [--score-prefix PATH]\n'); process.exit(2); }
+  const r = harvest(ws, { label: opt('--label'), root: opt('--root'), scorePrefix: opt('--score-prefix') });
+  if (!r) { process.stdout.write('TEAMS_RUNS_DIR=off - nothing kept\n'); process.exit(0); }
+  process.stdout.write(`harvested ${r.summary.label} -> ${r.out} (${r.summary.failures.length} failure records, ${r.summary.child_runs} child runs, state ${r.summary.state})\n`);
 }
