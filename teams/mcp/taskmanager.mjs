@@ -2221,8 +2221,19 @@ function spawnDaemon(task, opts = {}) {
 // know "is there still work here", not just "what does the manager's own node list say", reads
 // THIS instead of runState(task) directly. serviceDaemon and tm_wait both need it; daemon.mjs
 // imports it for the same reason rather than re-deriving its own copy.
+// The manager graph's own state, except that a judge failure the daemon will re-judge is not a
+// block: code-beta-X4's shape judge replied with broken JSON, the daemon scheduled the re-judge,
+// and tm_wait told the driving session "blocked" - which wrote its final report and exited two
+// minutes in, while the task went on without anyone watching.
+export function managerState(task) {
+  const st = runState(task);
+  if (st.state !== 'blocked') return st;
+  const at = pendingRejudgeAt(task);
+  return at === null ? st : { ...st, state: 'running', rejudge_at: at };
+}
+
 export function taskState(task) {
-  if (!task.s_run) return runState(task);
+  if (!task.s_run) return managerState(task);
   const run = loadRun(task.s_run.cwd, task.s_run.run_id);
   const cs = run ? runState(run) : { state: 'missing', counts: {} };
   return {
@@ -3748,6 +3759,7 @@ function toolWait(a) {
     task_id: task.run_id,
     state: st.state,
     counts: st.counts,
+    ...(st.rejudge_at ? { rejudge_at: new Date(st.rejudge_at).toISOString(), note: 'a judge could not judge; the daemon re-judges it then - keep waiting, the task is not blocked' } : {}),
     cursor,
     timed_out: events.length === 0 && st.state === 'running',
     transitions: events.map((e) => ({ node_id: e.node_id, stage: e.stage, state: e.state, stage_ok: e.stage_ok === true, ts: e.ts })),
@@ -4202,7 +4214,7 @@ async function toolOpen(a) {
   const viewFields = { ...(view && view.url ? { view_url: view.url } : {}), ...(task.context_from_unresolved ? { context_from_unresolved: task.context_from_unresolved } : {}) };
   if (delegated) return { ...delegated, docs_dir: docPaths(task).dir, ...viewFields };
   if (noDaemon()) return { ...toolNext({ task_id: task.run_id }), ...viewFields };
-  return { task_id: task.run_id, state: runState(task).state, docs_dir: docPaths(task).dir, ...viewFields };
+  return { task_id: task.run_id, state: managerState(task).state, docs_dir: docPaths(task).dir, ...viewFields };
 }
 
 // tm_run: the non-driving entry point §4/§10-1 of the design doc asks for - open, spawn the
@@ -4217,7 +4229,7 @@ async function toolRun(a) {
     task_id: task.run_id,
     run_id: task.run_id,
     docs_dir: docPaths(task).dir,
-    state: delegated ? delegated.state : runState(task).state,
+    state: delegated ? delegated.state : managerState(task).state,
     ...viewFields,
   };
 }
@@ -4974,7 +4986,7 @@ function toolStatus(a) {
       ...viewFields,
     };
   }
-  const state = runState(task);
+  const state = managerState(task);
   return {
     task_id: task.run_id,
     cwd: task.cwd,
