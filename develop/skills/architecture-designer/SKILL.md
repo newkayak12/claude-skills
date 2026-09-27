@@ -3,12 +3,14 @@ name: architecture-designer
 description: >-
   Use when someone needs to make or document architectural decisions from
   scratch — choosing between system topologies (monolith vs. microservices),
-  writing ADRs, evaluating scalability trade-offs, or selecting database and
-  infrastructure patterns.
+  writing ADRs, evaluating scalability trade-offs, selecting database and
+  infrastructure patterns, or drawing a system as an interactive diagram
+  (architecture, data flow, workflow, lifecycle, sequence). Triggers: "아키텍처
+  그려줘", "다이어그램으로 보여줘", "시퀀스 다이어그램", "diagram this system".
 license: MIT
 metadata:
   author: https://github.com/Jeffallan
-  version: "1.1.0"
+  version: "1.2.0"
   domain: api-architecture
   role: expert
   scope: design
@@ -20,6 +22,8 @@ scenarios:
   - "시스템 아키텍처 설계해줘"
   - "마이크로서비스 vs 모놀리스 어떻게 선택해?"
   - "이 아키텍처 결정에 대한 ADR 써줘"
+  - "diagram a web request: browser, API, Redis cache, Postgres on a miss"
+  - "이 결제 흐름을 시퀀스 다이어그램으로 그려서 공유할 수 있게 해줘"
 compatibility:
   recommended:
     - think-tool
@@ -48,7 +52,7 @@ Senior software architect specializing in system design, design patterns, and ar
 
 1. **Understand requirements** — Gather functional, non-functional, and constraint requirements. Verify full requirements coverage before proceeding.
 2. **Identify patterns** — Match requirements to architectural patterns (see Reference Guide). Use think-tool to weigh trade-offs explicitly when two or more patterns plausibly fit.
-3. **Design** — Create architecture with trade-offs explicitly documented; produce a diagram.
+3. **Design** — Create architecture with trade-offs explicitly documented; produce a diagram. For one a person will open or share, write the diagram IR (`references/diagram-ir.md`), run `node scripts/diagram.mjs check`, apply every repair it prints, then `render` to one HTML file. You place every node - layout is part of the argument.
 4. **Document** — Write ADRs for all key decisions.
 5. **Review** — Validate with stakeholders. If review fails, return to step 3 with recorded feedback.
 
@@ -61,6 +65,7 @@ Senior software architect specializing in system design, design patterns, and ar
 | System Design | `references/system-design.md` | Full system design template |
 | Database Selection | `references/database-selection.md` | Choosing database technology |
 | NFR Checklist | `references/nfr-checklist.md` | Gathering non-functional requirements |
+| Diagram IR | `references/diagram-ir.md` | Drawing a system as an interactive, shareable HTML diagram |
 
 ## Constraints
 
@@ -78,12 +83,13 @@ Senior software architect specializing in system design, design patterns, and ar
 - Ignore operational costs
 - Design without understanding requirements
 - Skip security considerations
+- Hand over a diagram HTML that `scripts/diagram.mjs check` has not passed
 
 ## Output Template
 
 When designing architecture, provide:
 1. Requirements summary (functional + non-functional)
-2. High-level architecture diagram (Mermaid preferred — see example below)
+2. High-level architecture diagram — Mermaid inline in a markdown doc; the IR + `diagram.mjs render` HTML (and its `.json` source) when it will be opened or shared
 3. Key decisions with trade-offs (ADR format — see `references/adr-template.md`)
 4. Technology recommendations with rationale
 5. Risks and mitigation strategies
@@ -106,7 +112,7 @@ For a worked ADR example and full template, see `references/adr-template.md`.
 
 | Claude | You |
 |--------|-----|
-| Produces architecture diagrams and component descriptions | Share requirements and constraints |
+| Produces architecture diagrams (Mermaid, or a validated interactive HTML) and component descriptions | Share requirements and constraints |
 | Writes ADRs with alternatives and trade-offs | Validate with domain experts and stakeholders |
 | Evaluates technology options with rationale | Make final technology decisions |
 | Identifies risks and mitigation strategies | Confirm operational capacity for chosen approach |

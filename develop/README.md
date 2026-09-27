@@ -328,6 +328,23 @@ Output: requirements summary (functional + non-functional) → Mermaid architect
 decisions in ADR format with trade-offs → technology recommendations with rationale → risks and
 mitigations.
 
+It also draws a system as an interactive diagram someone can open and share — architecture, data
+flow, workflow, lifecycle or sequence (the approach of [archify](https://github.com/tt-a1i/archify),
+folded in without a dependency). The agent writes a typed JSON IR and places every node itself
+(`references/diagram-ir.md`); `scripts/diagram.mjs check` refuses what cannot be read — two nodes in
+one cell, a node inside a boundary it does not belong to, an unconnected node, an overlong label —
+and phrases each problem as its repair; `render` writes one self-contained HTML file (inline SVG,
+hover a node to light its edges, light/dark) only when the check passes, so a bad revision never
+replaces the last good one. Mermaid stays the choice inside a markdown doc.
+
+```
+Diagram a web request: the browser calls the API, the API checks Redis, and a cache miss
+queries PostgreSQL and fills the cache. I want to share it.
+```
+
+teams uses it too: shape returns its package map in this IR, the manager renders it beside the
+docs, and critique and integrate read its seams.
+
 ### `event-storming`
 
 Facilitates domain discovery through events, in three levels: Big Picture (whole domain, bounded

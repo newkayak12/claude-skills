@@ -5955,3 +5955,28 @@ test('code-beta-X4: a judge failure waiting on its re-judge reads running in tm_
     assert.equal((await tm.call('tm_wait', { task_id, max_ms: 50 })).state, 'blocked');
   });
 });
+
+test('shape\'s package map is drawn beside the docs and critique reads its seams; an invalid one falls back to the dependency map', async () => {
+  const drawn = { type: 'architecture', title: 'modules', nodes: [
+    { id: 'P1', label: 'module a', kind: 'package', row: 0, col: 0 },
+    { id: 'contract', label: 'a.txt format', kind: 'store', row: 0, col: 1 },
+    { id: 'P2', label: 'module b', kind: 'package', row: 0, col: 2 },
+  ], edges: [{ from: 'P1', to: 'contract', label: 'writes' }, { from: 'contract', to: 'P2', label: 'reads', style: 'data' }] };
+  for (const [diagram, source] of [[drawn, 'shape'], [{ ...drawn, nodes: drawn.nodes.map((n) => ({ ...n, row: 0, col: 0 })) }, 'auto'], [undefined, 'auto']]) {
+    await withTask(async ({ tm, root, task_id }) => {
+      await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2'], handoff: 'h' }) });
+      const v = await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({ ...SHAPE, ...(diagram ? { diagram } : {}), handoff: 's' }) });
+      assert.equal(v.state, 'done', 'a picture never fails a shape');
+      const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+      assert.equal(task.shape_diagram.source, source);
+      assert.ok(existsSync(task.shape_diagram.path) && /<svg class="d"/.test(readFileSync(task.shape_diagram.path, 'utf8')));
+      if (diagram && source === 'auto') assert.ok(task.shape_diagram.problems.some((p) => /both sit at row 0, col 0/.test(p)), 'the repairs are kept');
+      const nx = await tm.call('tm_next', { task_id });
+      const critique = nx.ready.find((n) => n.stage === 'critique');
+      const brief = readFileSync(critique.briefing_path, 'utf8');
+      assert.match(brief, /## Package map/);
+      if (source === 'shape') assert.match(brief, /- contract -> P2: reads \(data\)/);
+      else assert.match(brief, /- P1 -> P2: builds on/);
+    });
+  }
+});

@@ -50,6 +50,7 @@ import {
   storyLinks, packageReporter, parseTicketKey, storyBlockedReason,
 } from './tickets.mjs';
 import { writeDocs } from './docs.mjs';
+import { validate as validateDiagram, renderToFile as renderDiagram } from './diagram.mjs';
 import { conventionsBlock } from './conventions.mjs';
 import { readTeamConfig, resolveTeamOptions, TEAM_DEFAULTS } from './teamconfig.mjs';
 import { pluginDirArgs, isEntryPoint, teamsPluginRoot } from './pluginroots.mjs';
@@ -125,6 +126,88 @@ const PACKAGE_CHAIN = ['dispatch', 'accept'];
 // A judging node's verdict field; stage_ok alone never completes one of these.
 const VERDICT = { critique: 'sound', dispatch: 'accept', accept: 'accept', integrate: 'verified', gate: 'accept' };
 
+// The package map, drawn once per shape round beside the docs (20-shape.html + its .json IR).
+// Shape's own diagram when it gave a valid one - its seams, its shared contracts - and otherwise
+// the plain dependency map read off packages[].deps, so critique and integrate always have one.
+// Drawing never fails a shape: a picture is evidence for the judges, not a gate.
+export function autoPackageDiagram(packages) {
+  const pkgs = (packages || []).filter((p) => !p.repair);
+  const byId = new Map(pkgs.map((p) => [String(p.id), p]));
+  const depth = new Map();
+  const d = (id, seen = new Set()) => {
+    if (depth.has(id)) return depth.get(id);
+    if (seen.has(id)) return 0;
+    seen.add(id);
+    const deps = ((byId.get(id) || {}).deps || []).map(String).filter((x) => byId.has(x));
+    const v = deps.length ? 1 + Math.max(...deps.map((x) => d(x, seen))) : 0;
+    depth.set(id, v);
+    return v;
+  };
+  const rowAt = new Map();
+  const nodes = pkgs.map((p) => {
+    const col = Math.min(d(String(p.id)), 11);
+    const row = rowAt.get(col) || 0;
+    rowAt.set(col, row + 1);
+    const title = String(p.title || p.id);
+    return { id: String(p.id), label: title.length > 48 ? `${title.slice(0, 45)}...` : title, sublabel: String(p.id), kind: 'package', row: Math.min(row, 20), col,
+      ...(Array.isArray(p.touches) && p.touches.length ? { note: `touches: ${p.touches.join(', ')}`.slice(0, 400) } : {}) };
+  });
+  const lastCol = Math.min(Math.max(0, ...nodes.map((n) => n.col)) + 1, 12);
+  const edges = [];
+  // Transitive edges dropped: P4 -> P3 -> P1 already says P4 builds on P1, and the direct line
+  // would run straight through P3's box.
+  const reach = (from, to, seen = new Set()) => {
+    for (const x of ((byId.get(from) || {}).deps || []).map(String)) {
+      if (x === to) return true;
+      if (!seen.has(x) && byId.has(x)) { seen.add(x); if (reach(x, to, seen)) return true; }
+    }
+    return false;
+  };
+  for (const p of pkgs) {
+    const deps = (p.deps || []).map(String).filter((x) => byId.has(x));
+    for (const dep of deps) if (!deps.some((o) => o !== dep && reach(o, dep))) edges.push({ from: dep, to: String(p.id), label: 'builds on' });
+  }
+  nodes.push({ id: 'integration', label: 'integration', kind: 'service', row: 0, col: lastCol });
+  // Only the ends of each chain: a package something builds on reaches integration through it.
+  const built = new Set(pkgs.flatMap((p) => (p.deps || []).map(String)));
+  let ends = pkgs.filter((p) => !built.has(String(p.id))).map((p) => String(p.id));
+  const pkgNodes = nodes.filter((n) => n.id !== 'integration');
+  if (!ends.length && pkgNodes.length) ends = [pkgNodes.reduce((a, b) => (b.col > a.col ? b : a)).id]; // a cycle has no end
+  for (const id of ends) edges.push({ from: id, to: 'integration', label: 'merged', style: 'data' });
+  return { type: 'architecture', title: 'Package map', description: 'Read off packages[].deps - shape drew no valid diagram of its own.', nodes, edges };
+}
+
+function drawShape(task, result) {
+  let ir = result && result.diagram && typeof result.diagram === 'object' ? result.diagram : null;
+  let problems = ir ? validateDiagram(ir) : [];
+  const source = ir && !problems.length ? 'shape' : 'auto';
+  if (source === 'auto') ir = autoPackageDiagram(task.spec && task.spec.packages);
+  try {
+    const dir = docPaths(task).dir;
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, '20-shape.diagram.json'), JSON.stringify(ir, null, 2) + '\n');
+    renderDiagram(ir, join(dir, '20-shape.html'));
+    task.shape_diagram = { path: join(dir, '20-shape.html'), ir_path: join(dir, '20-shape.diagram.json'), source, ...(problems.length ? { problems: problems.slice(0, 20) } : {}) };
+  } catch (e) {
+    task.shape_diagram = { source, error: String(e && e.message || e).slice(0, 300), ...(problems.length ? { problems: problems.slice(0, 20) } : {}) };
+  }
+  record(task, { event: 'shape_diagram', task_id: task.run_id, source, path: task.shape_diagram.path || null, problems: problems.length });
+}
+
+// The seams as the drawing states them, in words a judge reads without opening the HTML.
+function shapeDiagramLines(task) {
+  const sd = task.shape_diagram;
+  if (!sd || !sd.ir_path) return [];
+  let ir;
+  try { ir = JSON.parse(readFileSync(sd.ir_path, 'utf8')); } catch { return []; }
+  const label = new Map((ir.nodes || []).map((n) => [n.id, n.label]));
+  const L = ['', '## Package map', `${sd.source === 'shape' ? 'Shape drew this map of the packages and what crosses between them' : 'Shape drew no valid map; this one is read off packages[].deps'} - ${sd.path}. Each line below is a seam: check that both sides agree on what crosses it.`];
+  for (const e of ir.edges || []) L.push(`- ${e.from} -> ${e.to}${e.label ? `: ${e.label}` : ''}${e.style && e.style !== 'sync' ? ` (${e.style})` : ''}`);
+  const shared = (ir.nodes || []).filter((n) => !/^P\d|^integration$/.test(n.id) && n.kind !== 'package');
+  if (shared.length) L.push(`Shared between packages: ${shared.map((n) => `${n.id} (${label.get(n.id)})`).join(', ')}`);
+  return L;
+}
+
 // Method a stage may load before it works. A skill named here must be analytic and
 // non-dialogic: it reasons about material it is handed and never asks the operator
 // anything - a node runs headless, so a skill with a "What You Do" half has no one to do
@@ -168,6 +251,7 @@ S means one graph run in one worktree can carry the whole request. L means it sp
 "skills" is optional and is method for the package, not for you: you are the stage that knows what each package IS, and a CLI package and a reference-document package want different method. Name the skills that package's own nodes should work by, and they travel into its child run; leave it out when the brief is method enough. Do not name a skill that asks its reader questions - the child's nodes run headless too.
 Three rules critique will refuse the shape over, so decide them here rather than letting it find them. One: every shared artifact two or more packages depend on - the composition root or app assembly that makes the merged tree runnable, a cross-package contract, an auth or admission token and its verifier, a shared schema or type - is owned by exactly one package, named in that package's touches[] AND in its acceptance[]. A package may not be judged on a primitive no package was told to build. A package that owns only such artifacts delivers no story by itself: leave its implements[] empty and list in enables[] the stories that cannot be delivered without it - never claim a story in implements[] to get it past coverage. Two: every goal-level criterion must be checkable by the integration step from the merged tree alone, and no two of them may contradict each other; a criterion that needs an environment this harness cannot produce states the achievable measurement and what it extrapolates from, rather than naming a number no run can reach. Three: a package's own acceptance must be satisfiable from that package's deps[] alone - if proving it needs a sibling's delivered result, that sibling is a dependency or the criterion belongs to whoever has it.
 Each package becomes one graph run in its own worktree. A package with no deps branches from the current HEAD; a package with deps branches from its first dependency's delivered branch with the others merged in, so it builds on what they delivered - not on stubs. Two packages that touch the same path will conflict at integration: split by ownership, not by phase. A dependency means the package needs another's delivered result; it receives that package's report as context and starts from its tree. Every package must be size S on its own - if one still needs splitting, the shape is wrong. Two to six packages is the usual range. "split": true (or "size": "L") is the one exception to that rule - the rare package whose own scope still needs its own shape/dispatch cycle inside its child run; leave it false for the ordinary package, whose child run opens with this shape's own acceptance already decided and no plan/setgoal/critique/gate:goal of its own to redo (§3, docs/plans/2026-09-21-teams-server-owns-the-loop.md).
+Optional: "diagram" - the package map as you see it, so critique and integrate judge the seams you drew rather than guess them: {"type": "architecture", "title": "...", "nodes": [{"id": "P1", "label": "<= 48 chars", "kind": "package|service|store|queue|external|actor", "row": 0, "col": 0, "note": "..."}], "edges": [{"from": "P1", "to": "P2", "label": "what crosses: the contract, file or call", "style": "sync|async|data|fail"}], "groups": [{"id": "g", "label": "...", "nodes": ["P1"]}]}. One node per package (id = the package id), plus a node for each thing two packages share - a contract, a schema, a store, the composition root. You place every node: row/col, one per cell, entry point at the left. Every node needs an edge. The manager validates it (develop:architecture-designer's diagram IR) and renders it beside the docs; one that fails is replaced by the plain dependency map and the repairs are recorded.
 ${QUESTIONS_CONTRACT}`,
   critique: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "sound": true|false, "blocking": ["..."], "problems": ["..."], "handoff": "...", "evidence": "..."}
 Attack the shape: packages that overlap in touches[], a dependency the brief does not actually need, a package too large to be one run, a goal-level criterion no integration step could check, and - above all - a request that was S sized as L. Set sound=false only for defects in "blocking" that make the packages impossible to run or impossible to integrate. Everything else is a problem, carried forward as advice.
@@ -3131,7 +3215,9 @@ export function composeTaskPrompt(task, n) {
     }
     const shape = n.stage === 'critique' ? task.nodes.filter((x) => x.stage === 'shape' && x.result && x.state === 'done').pop() : null;
     if (shape && shape.result && shape.result.handoff) { L.push(''); L.push(`## From shape`); L.push(shape.result.handoff); }
+    if (n.stage === 'critique') L.push(...shapeDiagramLines(task));
   }
+  if (n.stage === 'integrate') L.push(...shapeDiagramLines(task));
   // The project's own rules reach the manager's judging stages too: shape splits the work and
   // accept/gate judge the result, and until now neither could see a project rule at all -
   // conventions.mjs was wired into the child graph's stages only (2026-09-22).
@@ -3348,6 +3434,7 @@ export function finish(task, n, result) {
         packages: result.packages.map((p, i) => ({ ...p, id: String(p.id), priority: Number.isInteger(p.priority) ? p.priority : i })),
       };
       expandPackages(task, task.spec.packages);
+      drawShape(task, result);
     }
   }
   // The QA phase-Team's gate result carries defects (§5b), not a pass/fail on the QA package
