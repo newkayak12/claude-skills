@@ -5932,3 +5932,26 @@ test('code-sprint-P5: the audit brief lists each user story by label with its ac
     assert.match(brief, /- US-1 - parse rows\n  - a row has four fields/);
   }, { roles: { planning: true } });
 });
+
+test('code-beta-X4: a judge failure waiting on its re-judge reads running in tm_wait and tm_status, not blocked', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2'], handoff: 'h' }) });
+    const path = join(root, task_id, 'task.json');
+    const task = JSON.parse(readFileSync(path, 'utf8'));
+    const shape = task.nodes.find((n) => n.node_id === 'shape');
+    Object.assign(shape, { state: 'failed', finished_at: Date.now(),
+      result: { stage_ok: false, judge_failed: true, reason: "judge reply for shape was not valid JSON: Expected ',' or '}'" } });
+    writeFileSync(path, JSON.stringify(task, null, 2));
+    const w = await tm.call('tm_wait', { task_id, max_ms: 50 });
+    assert.equal(w.state, 'running', JSON.stringify(w));
+    assert.ok(w.rejudge_at);
+    assert.match(w.note, /not blocked/);
+    assert.equal((await tm.call('tm_status', { task_id })).state, 'running');
+
+    // Out of re-judges: now it is blocked.
+    const t2 = JSON.parse(readFileSync(path, 'utf8'));
+    t2.nodes.find((n) => n.node_id === 'shape').judge_attempts = 2;
+    writeFileSync(path, JSON.stringify(t2, null, 2));
+    assert.equal((await tm.call('tm_wait', { task_id, max_ms: 50 })).state, 'blocked');
+  });
+});
