@@ -239,7 +239,7 @@ main 세션이 할 수 있는 일의 전부:
 | 호출 | 성격 |
 |---|---|
 | `tm_open` | EPIC 열기 → leader 프로세스 spawn → `task_id` 받고 끝 |
-| `tm_board` `tm_ticket` `tm_events` `tm_status` `tm_docs` `tm_inbox`(**미구현** — human 노드가 있어야 채울 게 생긴다, v0.13.0) `tm_log`(**미구현** — v0.11.0 범위에서 의도적으로 뺐다, §8) | 읽기. 뒤 둘은 이 자리를 노리고 설계됐지만 지금은 없다(§8 도구 표 참고) |
+| `tm_board` `tm_ticket` `tm_events` `tm_status` `tm_docs` `tm_inbox`(**미구현** — human 노드가 있어야 채울 게 생긴다, v0.13.0) `tm_log`(구현됨, 2026-09-28 — `teams/mcp/tasklog.mjs`, §8) | 읽기. 뒤 둘은 이 자리를 노리고 설계됐지만 지금은 없다(§8 도구 표 참고) |
 | `tm_answer`(**미구현**, v0.13.0) `tm_assign`(**미구현**, v0.13.0) `tm_retry`(구현됨) `tm_file`(**미구현** — §11 어느 단계에도 아직 배정 안 됐다, `docs/plans/2026-09-17-teams-roadmap-sizing.md`의 미배치 일감 목록 참고) | inbox에 요청 파일 하나 떨어뜨림 (§7b). 적용은 leader — 지금 실제로 있는 건 `tm_retry`뿐 |
 | `tm_clean`(**미구현** — 위와 같음, §11 어느 단계에도 아직 배정 안 됐다) | EPIC DONE 뒤 정리 (계획) |
 
@@ -470,7 +470,7 @@ the ticket key..." 케이스로 회귀를 잡는다.
 | `tm_ticket({key})` | 티켓 1개. EPIC 키면 `state, phase, leader, doc_path`. STORY 키(`E-xxx/Pn`)면 `state, tasks, worktree, last_verdict, reporter, doc_path`. **담당(vendor/model), 전이 이력, 열린 질문, 가정은 반환하지 않는다** — 아래 human 관련 도구와 같은 이유(§7, v0.13.0 전까지 만들 데이터가 없다) |
 | `tm_docs({task_id, rebuild?})` | §7c 문서를 task.json에서 다시 렌더. 실제로는 13종 중 **8종**(INDEX·request·shape·critique·STORY별·integrate·goal-gate·report) — planning/qa Team이 아직 EPIC 흐름에 안 붙어서(§11 v0.11.0 행, v0.12.0+) `10-planning`/`10-prd`/`15-spec-gate`/`60-qa`/`65-audit` 5종은 만들지 않는다. `task_id`는 위와 같이 티켓 키도 받는다 |
 | `tm_events({task_id, since?})` | **`board.jsonl`이 아니라 `ledger.jsonl`(일반 이벤트 로그, v0.10.0부터 있음)의 꼬리를 반환한다** — 티켓 전이만 담는 `board.jsonl`을 읽어 돌려주는 도구는 아직 없다. `task_id`는 위와 같이 티켓 키도 받는다 |
-| `tm_log({key, tail?})` | **미구현.** v0.11.0 범위에서 의도적으로 뺐다 |
+| `tm_log({key, tail?, since?, raw?})` | **구현됨**(2026-09-28, `teams/mcp/tasklog.mjs`). 읽기 전용. STORY 키(`E-xxx/Pn`)면 최신 dispatch의 `child.driver.log`(stream-json)를, EPIC 키면 `ledger.jsonl`을 파일 끝에서부터 마지막 `tail`줄(기본 50, 최대 500)만 읽어 이벤트당 한 줄로 렌더해 반환. `since`는 직전 응답의 `cursor`(바이트 오프셋) — 그 뒤에 덧붙은 줄만. 새 저장소 없음 |
 | `tm_answer({key, payload})` | **미구현.** §7의 human 노드(`ask`/`gate:human`/`waiting_human`)가 없으면 제출할 대상이 없다 — v0.13.0 |
 | `tm_assign({key, vendor})` | **미구현.** 위와 같음 — v0.13.0 |
 | `tm_inbox({task_id?})` | **미구현.** 위와 같음 — v0.13.0 |
@@ -481,7 +481,7 @@ the ticket key..." 케이스로 회귀를 잡는다.
 |---|---|
 | `/teams:board [E-xxx]` | **구현됨**(`teams/skills/board`). `tm_board` → 아래 표. `E-xxx`는 짧은 티켓 키로 받는다 — `tm_board`만이 아니라 `task_id`를 받는 도구 전부가 같은 방식으로 해석한다(위 도구 표 참고) |
 | `/teams:ticket E-xxx/P2` | **구현됨**(`teams/skills/ticket`). `tm_ticket` → 한 티켓 |
-| `/teams:log E-xxx/P2` | **미구현** — `tm_log` 자체가 없다 |
+| `/teams:log E-xxx/P2` | **구현됨**(`teams/skills/log`). `tm_log` → 꼬리 몇 줄 |
 | `/teams:inbox` | **미구현** — `tm_inbox` 자체가 없다 |
 | `/teams:answer E-xxx/ask:1 '{...}'` | **미구현** — `tm_answer` 자체가 없다 |
 | `/teams:take E-xxx/P2/U1` | **미구현** — `tm_assign` 자체가 없다 |

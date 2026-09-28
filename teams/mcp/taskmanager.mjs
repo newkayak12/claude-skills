@@ -50,6 +50,7 @@ import {
   storyLinks, packageFiling, parseTicketKey, storyBlockedReason,
 } from './tickets.mjs';
 import { writeDocs } from './docs.mjs';
+import { logReply, renderStreamLine, renderLedgerLine } from './tasklog.mjs';
 import { validate as validateDiagram, renderToFile as renderDiagram } from './diagram.mjs';
 import { conventionsBlock } from './conventions.mjs';
 import { EXERCISE_RULE } from './prompts.mjs';
@@ -3996,6 +3997,21 @@ const TOOLS = [
     outputSchema: { type: 'object' },
   },
   {
+    name: 'tm_log',
+    description: 'Follow one ticket\'s own log as readable lines, newest last (design §8). key E-xxxxxxxx/Pn: the STORY\'s latest dispatch driver stream (child.driver.log - drivers/<node>.stream.jsonl; E-xxxxxxxx/S for a size-S task\'s single run), one line per stream event (init, assistant text, -> tool call, <- tool result, result with turns/cost). key E-xxxxxxxx: the task ledger (the same records tm_events returns as JSON), one "HH:MM:SS event k=v" line each. Only the last `tail` lines are read (default 50, max 500) - the file is read from its end, never whole. since: pass the previous reply\'s `cursor` (a byte offset) to get only lines appended after it. raw:true returns the exact log lines instead. Read-only; safe from any session.',
+    inputSchema: { type: 'object', properties: {
+      key: { type: 'string', description: 'E-xxxxxxxx (EPIC ledger) or E-xxxxxxxx/Pn (STORY driver log)' },
+      tail: { type: 'integer', description: 'default 50, max 500' },
+      since: { type: 'integer', description: 'byte cursor from a previous reply' },
+      raw: { type: 'boolean', description: 'default false' },
+    }, required: ['key'] },
+    outputSchema: { type: 'object', properties: {
+      key: { type: 'string' }, task_id: { type: 'string' }, kind: { type: 'string', enum: ['EPIC', 'STORY'] }, source: { type: 'string', enum: ['ledger', 'driver'] },
+      node_id: { type: ['string', 'null'] }, log: { type: ['string', 'null'] }, exists: { type: 'boolean' }, alive: { type: ['boolean', 'null'] },
+      count: { type: 'integer' }, truncated: { type: 'boolean' }, cursor: { type: 'integer' }, lines: { type: 'array', items: { type: 'string' } },
+    }, required: ['key', 'kind', 'source', 'lines', 'cursor'] },
+  },
+  {
     name: 'tm_assign',
     description: 'Pin a card to a human, or release it back to auto. `key` is a STORY (E-xxxxxxxx/Pn, every subgoal in that package\'s child run) or TASK (E-xxxxxxxx/Pn/subgoalId, just that one) ticket key. `to: "human"` (optionally `who`, or `to: {executor: "human", who}`) pins the subgoal\'s AUTHOR stage only (implement/draft/cases - see graph.mjs\'s authorStage) - a judging stage (test/review/gate/critique) is never assigned to the human who did the work. `to: "auto"` releases it: a card already parked waiting_human goes back to pending and dispatches normally on the next team_next. The pin lives on the child run\'s own spec (the same `assignee` field setgoal itself may write), so a rejected human-authored subgoal\'s next attempt is pinned again automatically. Called here, by the user, the pin always parks the node in waiting_human regardless of the run\'s interactive setting - the user is present by definition. The SAME field, written by a shape/setgoal instead, only parks when the run is interactive; otherwise it is auto-decided (dispatched to an AI, recorded, listed in tm_inbox\'s `decided`) - see graph.mjs\'s applyHumanPin. A STORY may be taken before it dispatches: the pin rides on the package and reaches its child run when it opens. A TASK key needs the child run to exist.',
     inputSchema: {
@@ -4367,6 +4383,36 @@ function toolTicket(a) {
     human_assignments: humanAssignments(task, pkgId),
     doc_path: docPaths(task).story(pkgId),
   };
+}
+
+// tm_log({key, tail?, since?, raw?}): the log a ticket key already points at, tailed and rendered
+// (tasklog.mjs). EPIC -> ledger.jsonl; STORY -> its latest dispatch's child.driver.log (S -> the
+// size-S task's s_run driver). No dispatch yet is not an error: an empty reply naming why.
+function toolLog(a) {
+  const key = String(a.key || '');
+  const { task, pkgId, subgoalId } = resolveTicketRef(key);
+  const opts = { tail: a.tail, since: a.since, raw: a.raw === true };
+  if (!pkgId) {
+    return { key: epicKey(task.run_id), task_id: task.run_id, kind: 'EPIC', source: 'ledger', node_id: null, alive: task.daemon ? driverAlive(task.daemon) : null,
+      ...logReply(join(taskDir(task.run_id), 'ledger.jsonl'), { ...opts, render: renderLedgerLine }) };
+  }
+  if (subgoalId) throw new Error(`tm_log does not follow a TASK key ("${key}") - its STORY's driver log (${storyKey(task.run_id, pkgId)}) carries every stage of that child run`);
+  let child = null;
+  let nodeId = null;
+  if (pkgId === 'S' && task.s_run) {
+    child = task.s_run; nodeId = 'S';
+  } else {
+    if (!packageOf(task, pkgId)) throw new Error(`no package ${pkgId} in ${epicKey(task.run_id)} (packages: ${((task.spec && task.spec.packages) || []).map((p) => p.id).join(', ') || 'none yet'})`);
+    const dispatch = latestBySubgoal(task, pkgId, 'dispatch');
+    child = dispatch && dispatch.child; nodeId = dispatch ? dispatch.node_id : null;
+  }
+  const driver = child && child.driver;
+  const head = { key: pkgId === 'S' ? `${epicKey(task.run_id)}/S` : storyKey(task.run_id, pkgId), task_id: task.run_id, kind: 'STORY', source: 'driver', node_id: nodeId };
+  if (!driver || !driver.log) {
+    return { ...head, log: null, exists: false, alive: null, count: 0, truncated: false, cursor: 0, lines: [],
+      note: `no driver has started for ${head.key} yet - nothing to follow until its dispatch opens` };
+  }
+  return { ...head, alive: driverAlive(driver), ...logReply(driver.log, { ...opts, render: renderStreamLine }) };
 }
 
 // Which of a STORY's subgoals a human owns, read off the child run's own spec (tm_ticket's
@@ -5735,6 +5781,7 @@ function dispatch(name, a) {
     case 'tm_events': return toolEvents(a);
     case 'tm_board': return toolBoard(a);
     case 'tm_ticket': return toolTicket(a);
+    case 'tm_log': return toolLog(a);
     case 'tm_assign': return toolAssign(a);
     case 'tm_inbox': return toolInbox(a);
     case 'tm_docs': return toolDocs(a);

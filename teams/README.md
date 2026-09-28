@@ -15,7 +15,7 @@ Same broker, same six core tools, same skill shape as `graph` — with these dif
 |---|---|---|
 | MCP servers | `graph-engineering` (`graph_*` tools) | `teams-engineering` (`team_*`) + `task-manager` (`tm_*`) |
 | Run files | `.harness-run/broker/` | `.teams_output/broker/` |
-| Skills | `graph:install`, `graph:orchestrate` | `teams:install`, `teams:remove`, `teams:patch`, `teams:orchestrate`, `teams:develop`, `teams:document`, `teams:plan`, `teams:qa`, `teams:board`, `teams:ticket`, `teams:inbox`, `teams:take`, `teams:submit` |
+| Skills | `graph:install`, `graph:orchestrate` | `teams:install`, `teams:remove`, `teams:patch`, `teams:orchestrate`, `teams:develop`, `teams:document`, `teams:plan`, `teams:qa`, `teams:board`, `teams:ticket`, `teams:inbox`, `teams:take`, `teams:submit`, `teams:log` |
 | Version line | 1.x | 0.x |
 
 Both plugins can be enabled in the same project: distinct tool prefixes (`graph_*` vs.
@@ -741,6 +741,14 @@ no extra request — all three read the same poll):
 server and prints one view as a plain-text tree/board, for a terminal or a CI log — `--view`
 picks which (`pipeline` by default); `tickets`/`resources` fall back to the same task index when
 no single task can be resolved.
+
+To follow one ticket from a session instead, `tm_log({key, tail?, since?})` (and the thin
+`teams:log` skill, `/teams:log E-xxxxxxxx/P2`) tails the log that key already points at, as
+readable lines: a STORY key reads its latest dispatch's driver stream (`child.driver.log`, one
+line per stream event — assistant text, `-> Tool what`, `<- result`, the final `result` with
+turns/cost), an EPIC key reads the task ledger (`HH:MM:SS event k=v`). Only the last `tail`
+lines (default 50, max 500) are read, from the file's end — never the whole stream; pass the
+reply's `cursor` back as `since` to get only what was appended after it.
 
 ## Headless
 
