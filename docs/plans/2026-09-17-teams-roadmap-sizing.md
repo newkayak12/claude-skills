@@ -15,10 +15,10 @@
 > `2026-09-17-teams-team.md` §11의 해당 행 노트). 남은 일감 중 실제로 살아 있는 것만 다시 적으면:
 > `tm_clean`, `teams run` CLI, `max_parallel_teams` 적응형 사이징 셋은 브랜치
 > `teams/tm-clean`, `teams/run-cli`, `teams/adaptive-parallel`에서 각각 진행 중이다(2026-09-28
-> 기준, 아직 머지·릴리스 전). `tm_log`와 `human_scope`는 여전히 설계로만 남아 있다 —
-> `teams/mcp/teamconfig.mjs`의 주석이 그대로("`human_scope` remains only design", `tm_log`는
-> 코드베이스 어디에도 구현이 없음). 다만 `human_scope`가 원래 풀려던 문제(사람이 임의 카드를
-> 맡는 것) 상당 부분은 v0.27.3의 `tm_assign`(카드 단위 pin, `to: "human"`)이 이미 별도 경로로
+> 기준, 아직 머지·릴리스 전). `human_scope`는 여전히 설계로만 남아 있다 —
+> `teams/mcp/teamconfig.mjs`의 주석이 그대로("`human_scope` remains only design"). `tm_log`는
+> 브랜치 `teams/tm-log`에서 구현됐다(`teams/mcp/tasklog.mjs`, `/teams:log` 스킬 — 머지 전).
+> 다만 `human_scope`가 원래 풀려던 문제(사람이 임의 카드를 맡는 것) 상당 부분은 v0.27.3의 `tm_assign`(카드 단위 pin, `to: "human"`)이 이미 별도 경로로
 > 덮는다 — `human_scope: "all"`이 남기는 차이는 "TeamLeader가 알아서 human 노드를 여는가"뿐이고,
 > 그건 여전히 미배치다.
 
