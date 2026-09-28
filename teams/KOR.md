@@ -72,7 +72,7 @@ flowchart TD
   PLAN --> SHAPE["shape: split into packages"]
   SHAPE --> CRIT{"critique"}
   CRIT -->|"unsound"| SHAPE
-  CRIT -->|"sound"| DISP["develop: each package builds in its own worktree<br/>implement → test → gate, in parallel where deps allow"]
+  CRIT -->|"sound"| DISP["develop: each package runs the full harness in its own worktree<br/>plan → setgoal → critique → implement → test → gate → gate:goal → report<br/>in parallel where deps allow"]
   DISP --> ACC{"accept, per package"}
   ACC -->|"rejected"| DISP
   ACC -->|"all accepted"| INT{"integrate"}
@@ -95,7 +95,7 @@ flowchart TD
 | `brainstorm` | 의도, 범위, 접근을 다시 정리합니다. `interactive`일 때만 사람에게 묻습니다. 세션에서 이미 `decisions`를 넘겼다면 건너뜁니다. | `brainstorm` |
 | PLAN | 기획 팀이 프로젝트를 조사하고 PRD를 씁니다. 요청에 인수 기준이 이미 적혀 있으면 가벼운 체인으로 돕니다. | `roles.planning` |
 | `shape` → `critique` | `shape`가 작업을 `touches[]`와 `deps`가 달린 패키지로 나누고, `critique`가 그 분할을 검토합니다. 부실하면 다시 나눕니다. | — |
-| 개발 (dispatch) | 실제 개발 단계입니다. 패키지마다 git 워크트리와 드라이버 세션이 붙어 그 패키지의 자식 런을 돌립니다. 코드는 `implement → test → gate`(변경 작성, 테스트 실행, 별도 심사자의 확인), 문서는 `draft → review → gate`입니다. `deps`가 풀린 패키지끼리는 병렬로 돕니다. [패키지 하나의 내부](#패키지-하나의-내부) 참고. | `max_parallel_teams`, `vendor` |
+| 개발 (dispatch) | 실제 개발 단계입니다. 패키지마다 git 워크트리와 드라이버 세션이 붙어 그 패키지의 자식 런을 전체 하네스로 돌립니다: `plan → setgoal → critique → implement → test → gate → gate:goal → report`. 여기서 `plan`은 다시 쪼개는 일이 아니라 그 패키지 하나를 만드는 개발 계획(파일, 인터페이스, 작업 순서, 테스트 계획, 위험)이고, `setgoal`은 패키지의 acceptance를 그대로 옮기며 `critique`가 계획을 그 기준으로 검토합니다. 문서 패키지는 `implement → test → gate` 대신 `draft → review → gate`를 씁니다. `deps`가 풀린 패키지끼리는 병렬로 돕니다. [패키지 하나의 내부](#패키지-하나의-내부) 참고. | `max_parallel_teams`, `vendor` |
 | accept | 패키지 런이 끝나면 심사자가 결과를 받아들이거나 반려합니다. 반려되면 사유를 달아 그 패키지를 다시 돌립니다. | `max_retries` |
 | `integrate` | 받아들여진 브랜치를 합치고 검사를 돌립니다. 어느 패키지 혼자서는 보이지 않는 이음새 문제는 합쳐진 트리 위에서 일하는 repair 패키지가 맡습니다. | — |
 | QA | QA 팀이 합쳐진 트리를 대상으로 테스트 케이스를 쓰고 실행합니다. 결함마다 수정 STORY가 생기고 다시 통합합니다. | `roles.qa`, `qa_rounds` |
@@ -114,8 +114,25 @@ flowchart TD
 
 ## 패키지 하나의 내부
 
-자식 런은 서브골마다 그 서브골의 **kind**에 맞는 노드 체인을 펼칩니다(`mcp/graph.mjs`의
-`KINDS`). 한 단계를 쓴 쪽이 그 단계를 심사하는 일은 없습니다.
+모든 패키지는 자기 자식 런 안에서 전체 하네스를 돕니다. 태스크가 바깥에서 도는 네 단계(계획,
+목표 설정, 검토, 구현과 심사)를 패키지 안에서도 똑같이 돕니다. 페이즈 팀(PLAN, QA, audit),
+repair 패키지, 크기 S 태스크의 단일 런도 같은 모양입니다:
+
+```mermaid
+flowchart LR
+  PLN["plan"] --> SG["setgoal"] --> CR["critique"] --> CH["one chain per subgoal"] --> RD["reduce, if more than one subgoal"] --> GG["gate:goal"] --> RE["report"]
+```
+
+develop 패키지라면 `shape`가 이미 EPIC을 패키지로 나눴고 `critique`가 그 분할을 검토했으므로,
+패키지 자신의 `plan`은 이 패키지를 어떻게 만들지에 대한 **개발 계획**입니다: 건드릴 파일과 모듈,
+인터페이스와 데이터 형태, 작업 순서, 테스트 계획, 위험. EPIC을 다시 쪼개지 않습니다. `setgoal`은
+대개 서브골 하나를 두고 패키지의 acceptance를 스펙에 글자 그대로 옮기며, `critique`는 계획과
+스펙을 패키지의 브리프와 acceptance에 비춰 심사합니다. 매니저의 `accept`는 이 패키지의
+`gate:goal` 판정과 `report` 인계를 읽습니다. STORY에 건 사람 지정(`tm_assign`, 또는 shape의
+`assignee`)은 패키지의 `setgoal`이 만든 모든 서브골에 적용됩니다.
+
+서브골은 그 서브골의 **kind**에 맞는 노드 체인으로 펼쳐집니다(`mcp/graph.mjs`의 `KINDS`).
+한 단계를 쓴 쪽이 그 단계를 심사하는 일은 없습니다.
 
 ```mermaid
 flowchart LR
@@ -144,14 +161,6 @@ flowchart LR
 
 어떤 체인을 쓸지는 런의 **flow**가 정합니다. `develop` → code, `document` → document,
 `plan` → planning(또는 planning-light), `qa` → qa, 그리고 QA 뒤의 audit → planning-audit입니다.
-`shape`가 이미 계획을 세운 develop 패키지는 *체인만* 돕니다. 페이즈 팀(PLAN, QA, audit),
-repair 패키지, shape가 더 쪼개야 한다고 표시한 패키지, 그리고 크기 S 태스크의 단일 런은 체인을
-감싸는 전체 런을 돕니다:
-
-```mermaid
-flowchart LR
-  PLN["plan"] --> SG["setgoal"] --> CR["critique"] --> CH["one chain per subgoal"] --> RD["reduce, if more than one subgoal"] --> GG["gate:goal"] --> RE["report"]
-```
 
 ## 태스크가 끝나는 방식
 
@@ -261,7 +270,7 @@ node teams/scripts/run.mjs --resume <task_id>
 | `budget_grace_minutes` | `5` | 멈춘 뒤 돌고 있던 디스패치가 죽기 전까지 더 쓸 수 있는 시간. |
 | `qa_rounds` | `2` | QA나 audit 라운드가 수정 STORY를 낼 수 있는 횟수. 넘으면 `unresolved_defects`로 갑니다. |
 | `upstream_fix_rounds` | `2` | 패키지 하나에 등록할 수 있는 업스트림 수정 횟수. |
-| `max_depth` | `2` | 중첩 한도. 이 깊이에서는 패키지가 자기 하위 태스크로 쪼개지지 않습니다. |
+| `max_depth` | `2` | 패키지가 자기 하위 태스크를 열 때 쓸 중첩 한도(예약). 기록만 되고 아직 강제되지 않습니다. |
 | `docs_dir` | `.teams_output/team` | 페이즈 문서(`INDEX.md`, STORY별 페이지, 보고서)를 쓰는 곳. |
 | `plugin_dirs` | `[]` | 모든 드라이버와 심사 세션에 더 넘길 `--plugin-dir` 경로. |
 | `initiative` | `null` | 여러 EPIC을 보드에서 묶는 라벨. 표시용일 뿐입니다. |

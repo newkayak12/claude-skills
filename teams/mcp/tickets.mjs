@@ -173,7 +173,7 @@ function loadSRun(task) {
 }
 
 // The S-run's own goal-level gate, reached the same way goalLevelReached (above) reads a
-// manager task's integrate node - except a plain graph.mjs run (createRun, not parent_shaped)
+// manager task's integrate node - except a plain graph.mjs run (createRun)
 // never gets an integrate node at all: its goal-level gate IS a 'gate' node with subgoal_id
 // null (expandSubgoals/pushGoalGateRound), and a repair can reopen a fresh round - so "current"
 // means latest by push order, the same rule latestGoalNode already applies to a manager task's
@@ -202,7 +202,7 @@ function sRunTicketState(run) {
 
 // epicPhase's own §6 table, read off the child run instead of the task: its own plan/setgoal
 // nodes map onto plan/setgoal directly (they are literally named that - graph.mjs's createRun
-// bootstraps a non-parent_shaped run with exactly those three node ids), its subgoal chains are
+// bootstraps every run with exactly those three node ids), its subgoal chains are
 // impl, and its own gate:goal/report are qualitygate - the same four words §6 already names,
 // never a new one for the S run. A run this could not load reads as 'plan' - the same "nothing
 // has happened yet" reading a fresh, never-driven run would give honestly.
