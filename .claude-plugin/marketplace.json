@@ -99,7 +99,7 @@
     {
       "name": "portfolio",
       "description": "Portfolio and career skills: JD fit (jd-fit), portfolio rewriting, company-type fit, feedback, pattern analysis, mock interview, interview plan, resume tailoring, job-application-workflow, and deck-builder (reference template.pptx + deck.mdx → pptx as a repeatable build; recolors a pptx to a brand palette).",
-      "version": "2.1.0",
+      "version": "2.1.1",
       "author": {
         "name": "newkayak12"
       },
