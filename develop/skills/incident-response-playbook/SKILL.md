@@ -202,6 +202,10 @@ Specific, technical explanation. Not "human error" — explain what made the err
 | Add canary deploy for Z service | @person | YYYY-MM-DD | High |
 ```
 
+### When Root Cause Traces to a Product Decision
+
+If the timeline shows the trigger was a feature behaving as designed (a rollout that hit an untested segment, a launch assumption that didn't hold), the Action Items above won't stop a recurrence. Add one RCA line instead: `Product decision to revisit: [decision] — flag to [feature owner] for the next planning cycle.` This skill stops at naming the decision; validating the hypothesis and deciding iterate-vs-pivot is a product-side call.
+
 ### Blameless Culture
 
 **Document**: what systems failed, what processes were missing, what made the failure possible.
@@ -236,4 +240,4 @@ People make mistakes. Systems should make mistakes hard to cause and easy to det
 | Observability gaps, SLO/alerting setup | [`../sre-engineer/SKILL.md`](../sre-engineer/SKILL.md) |
 | Understanding failure modes before they happen | [`../chaos-engineer/SKILL.md`](../chaos-engineer/SKILL.md) |
 | Writing and storing the RCA | [`../documentation-strategy/SKILL.md`](../documentation-strategy/SKILL.md) |
-| Product-level retrospective on why the incident happened (hypothesis/feature decision) | `pm:post-launch-retrospective` skill — that skill owns product hypothesis validation; this skill owns technical RCA |
+| Root cause traces to a feature/rollout decision, not a technical defect | See "When Root Cause Traces to a Product Decision" above — flag to the feature owner; this skill's RCA covers technical root cause only |
