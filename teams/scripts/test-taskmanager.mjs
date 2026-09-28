@@ -19,6 +19,8 @@ import { fileURLToPath } from 'node:url';
 import { viewRecordPath, readViewRecord } from '../mcp/viewserver.mjs';
 import { docPaths } from '../mcp/tickets.mjs';
 import { collectDriverCosts } from './bench/lib/drivercost.mjs';
+import { hasDeclaredAcceptance, detectDeclaredAcceptance, resolvePlanningMode, renderAcceptanceTemplate } from '../mcp/acceptance.mjs';
+import { hasDeclaredAcceptance as tmHasDeclaredAcceptance } from '../mcp/taskmanager.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TM = join(HERE, '..', 'mcp', 'taskmanager.mjs');
@@ -376,7 +378,10 @@ test('tm_open with no roles argument defaults BOTH planning and qa on (0.17.0): 
   try {
     const open = await tm.call('tm_open', { request: 'big request', cwd, vendor: 'self' });
     const task = JSON.parse(readFileSync(join(root, open.task_id, 'task.json'), 'utf8'));
-    assert.deepEqual(task.team.opts.roles, { planning: true, qa: true, audit: true });
+    // planning defaults to 'auto' since the light PLAN mode (2026-09-28); a free-text request
+    // with no declared acceptance resolves to the full chain - auto never turns PLAN off.
+    assert.deepEqual(task.team.opts.roles, { planning: 'auto', qa: true, audit: true });
+    assert.equal(task.planning_mode, 'full');
     assert.ok(task.planning_pkg && task.planning_pkg.id === 'PLAN');
     assert.deepEqual(task.nodes.find((n) => n.node_id === 'shape').deps, ['accept:PLAN:1']);
   } finally {
@@ -412,6 +417,175 @@ test('the PLAN child run is pinned to the plan flow (mixed:false) and its contex
     assert.match(run.context, /Change no source files/);
     assert.doesNotMatch(run.context, /private to this package/, 'the ordinary-package worktree line does not apply to planning');
   }, { roles: { planning: true } });
+});
+
+// Light PLAN mode (docs/plans/2026-09-28-teams-light-plan.md §2): roles.planning 'auto' reads
+// the backlog's structure and runs investigate -> template-fill -> gate when its acceptance is
+// already declared. The request below is the portfolio-refresh-80ec931a shape: a numbered
+// 8-item backlog plus one shared "Acceptance for every item:" block.
+const LIGHT_BACKLOG = [
+  'Bring the portfolio skills up to the portfolio-feedback (1.13-1.14) standard.',
+  '',
+  '1. portfolio-rewrite',
+  '2. portfolio-pattern',
+  '3. portfolio-jd',
+  '4. portfolio-company',
+  '5. portfolio-interview',
+  '6. portfolio-story',
+  '7. portfolio-review',
+  '8. portfolio-summary',
+  '',
+  'Acceptance for every item:',
+  '- R1 a [confirmed] ledger where the skill runs multi-turn sessions',
+  '- R2 boundary-value rules stated with their thresholds',
+  '- R3 EN + KR scenarios, 2-3 each',
+  '- R4 Process -> Output Template -> What Claude Does -> Related Skills',
+  '- R5 no background explanation sections',
+  '- R6 version bumped and README/KOR updated together',
+].join('\n');
+
+async function withOpen(args, fn) {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
+  try {
+    const open = await tm.call('tm_open', { cwd, vendor: 'self', ...args });
+    const task = JSON.parse(readFileSync(join(root, open.task_id, 'task.json'), 'utf8'));
+    await fn({ tm, cwd, root, task_id: open.task_id, task });
+  } finally {
+    tm.close();
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test('light PLAN: roles.planning "auto" + a numbered backlog with a shared "Acceptance for every item:" block resolves light, and the PLAN child runs light with the numbered checklist', async () => {
+  await withOpen({ request: LIGHT_BACKLOG, roles: { qa: false } }, async ({ tm, root, task_id, task }) => {
+    assert.equal(task.team.opts.roles.planning, 'auto');
+    assert.equal(task.planning_mode, 'light');
+    assert.match(task.planning_mode_reason, /auto/);
+    assert.equal(task.planning_pkg.planning_mode, 'light');
+    assert.equal(task.declared_acceptance.items.length, 8);
+    assert.equal(task.declared_acceptance.shared.length, 6);
+    // Same PLAN package chain as the full mode - light changes what runs INSIDE the child.
+    assert.deepEqual(task.nodes.find((n) => n.node_id === 'shape').deps, ['accept:PLAN:1']);
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', sizing: ['x'] }) });
+    await tm.call('tm_next', { task_id });
+    const t2 = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const d = t2.nodes.find((n) => n.node_id === 'dispatch:PLAN:1');
+    const run = JSON.parse(readFileSync(join(d.child.cwd, '.teams_output', 'broker', 'runs', `${d.child.run_id}.json`), 'utf8'));
+    assert.equal(run.flow, 'plan');
+    assert.equal(run.mixed, false);
+    assert.equal(run.planning_mode, 'light');
+    assert.equal(run.max_subgoals, 1, 'light mode is one PRD whose stories are the backlog items');
+    assert.match(run.context, /LIGHT mode/);
+    assert.match(run.context, /Declared acceptance/);
+    assert.match(run.context, /- R1: a \[confirmed\] ledger/);
+    assert.match(run.context, /Item 8: portfolio-summary/);
+    assert.match(run.context, /- applies: R1, R2, R3, R4, R5, R6/);
+  });
+});
+
+test('light PLAN: structured requests[].acceptance and shared_acceptance resolve light and are written into the request text; partial coverage falls back to full', async () => {
+  await withOpen({ requests: [{ request: 'build the API', acceptance: ['GET /x returns 200'] }, { request: 'write the docs', acceptance: ['README names every flag'] }], roles: { qa: false } }, async ({ task }) => {
+    assert.equal(task.planning_mode, 'light');
+    assert.equal(task.declared_acceptance.via, 'structured');
+    assert.deepEqual(task.requests, ['build the API\nAcceptance:\n- GET /x returns 200', 'write the docs\nAcceptance:\n- README names every flag']);
+    assert.match(task.request, /\[backlog priority 1\] write the docs\nAcceptance:\n- README names every flag/);
+  });
+  await withOpen({ request: 'refresh three skills', shared_acceptance: ['EN + KR scenarios'], roles: { qa: false } }, async ({ task }) => {
+    assert.equal(task.planning_mode, 'light');
+    assert.match(task.request, /refresh three skills\n\nAcceptance for every item:\n- EN \+ KR scenarios$/);
+  });
+  await withOpen({ requests: [{ request: 'a', acceptance: ['x'] }, 'b'], roles: { qa: false } }, async ({ task }) => {
+    assert.equal(task.planning_mode, 'full', 'one item without acceptance is ambiguous - the heavier chain');
+    assert.equal(task.declared_acceptance, undefined);
+  });
+});
+
+test('light PLAN: roles.planning true stays full even on a declared backlog, "light" forces light, false stays off - and auto on free text is full, never off', async () => {
+  await withOpen({ request: LIGHT_BACKLOG, roles: { planning: true, qa: false } }, async ({ task }) => {
+    assert.equal(task.planning_mode, 'full');
+  });
+  await withOpen({ request: 'big request', roles: { planning: 'light', qa: false } }, async ({ task }) => {
+    assert.equal(task.planning_mode, 'light');
+    assert.equal(task.planning_pkg.planning_mode, 'light');
+  });
+  await withOpen({ request: LIGHT_BACKLOG, roles: { planning: false, qa: false } }, async ({ task }) => {
+    assert.equal(task.planning_mode, null);
+    assert.equal(task.planning_pkg, null);
+  });
+  await withOpen({ request: 'big request', roles: { planning: 'auto', qa: false } }, async ({ task }) => {
+    assert.equal(task.planning_mode, 'full');
+    assert.ok(task.planning_pkg, 'auto never turns PLAN off');
+  });
+});
+
+// hasDeclaredAcceptance (acceptance.mjs, re-exported from taskmanager.mjs by that name - the
+// brainstorm step §6.5-4 imports the same function): pure and structural. Ambiguous -> false.
+test('hasDeclaredAcceptance: the portfolio-refresh backlog (numbered 8 items + shared "Acceptance for every item:") is declared; so are structured fields and per-item blocks', () => {
+  assert.equal(typeof tmHasDeclaredAcceptance, 'function', 'taskmanager.mjs re-exports hasDeclaredAcceptance by name');
+  assert.equal(tmHasDeclaredAcceptance({ request: LIGHT_BACKLOG }), true);
+  assert.equal(hasDeclaredAcceptance(LIGHT_BACKLOG), true, 'a bare string is read as the request');
+  const d = detectDeclaredAcceptance({ request: LIGHT_BACKLOG });
+  assert.equal(d.via, 'parser');
+  assert.deepEqual(d.items.map((it) => it.text), ['portfolio-rewrite', 'portfolio-pattern', 'portfolio-jd', 'portfolio-company', 'portfolio-interview', 'portfolio-story', 'portfolio-review', 'portfolio-summary']);
+  assert.equal(d.shared.length, 6);
+  assert.match(d.shared[0], /^R1 a \[confirmed\] ledger/);
+  // Markdown heading form, `1)` numbering, `*` bullets.
+  assert.equal(hasDeclaredAcceptance('1) a\n2) b\n\n## Acceptance for each item\n* one\n* two'), true);
+  // Per-item blocks under every item.
+  assert.equal(hasDeclaredAcceptance('1. a\n   Acceptance:\n   - a works\n2. b\n   Acceptance:\n   - b works'), true);
+  assert.equal(hasDeclaredAcceptance('1. a\nAcceptance:\n- a works\n2. b\nAcceptance:\n- b works'), true, 'column-0 per-item blocks: "2. b" is the next item, not a bullet');
+  assert.deepEqual(detectDeclaredAcceptance('1. a\nAcceptance:\n- a works\n2. b\nAcceptance:\n- b works').items.map((it) => it.acceptance), [['a works'], ['b works']]);
+  // The composed requests[] form taskmanager.mjs itself writes.
+  assert.equal(hasDeclaredAcceptance('[backlog priority 0] a\n\n[backlog priority 1] b\n\nAcceptance for every item:\n- x'), true);
+  // Structured (§2.1a).
+  assert.equal(hasDeclaredAcceptance({ requests: [{ request: 'a', acceptance: ['x'] }, { request: 'b', acceptance: ['y'] }] }), true);
+  assert.equal(hasDeclaredAcceptance({ requests: ['a', 'b'], shared_acceptance: ['x'] }), true);
+  assert.equal(hasDeclaredAcceptance({ request: 'one thing', shared_acceptance: ['x'] }), true);
+  assert.equal(hasDeclaredAcceptance({ requests: ['a\nAcceptance:\n- x', { request: 'b', acceptance: ['y'] }] }), true, 'structured and in-text acceptance may mix');
+});
+
+test('hasDeclaredAcceptance: ambiguous or absent acceptance is false (the heavier chain)', () => {
+  const cases = {
+    'free text': 'Refactor the ledger module and make it faster.',
+    'numbered list, no acceptance': '1. a\n2. b\n3. c',
+    'acceptance with no backlog': 'Improve the skill.\n\nAcceptance:\n- EN + KR scenarios',
+    'single numbered item': '1. only one\n\nAcceptance for every item:\n- x',
+    'heading with no bullets': '1. a\n2. b\n\nAcceptance for every item:\nsee the doc',
+    'numbering skips': '1. a\n3. b\n\nAcceptance for every item:\n- x',
+    'numbering restarts': '1. a\n2. b\n1. c\n\nAcceptance for every item:\n- x',
+    'shared block above the list': 'Acceptance for every item:\n- x\n\n1. a\n2. b',
+    'two shared blocks': '1. a\n2. b\n\nAcceptance for every item:\n- x\n\nAcceptance for every item:\n- y',
+    'per-item blocks on some items only': '1. a\n   Acceptance:\n   - a works\n2. b\n3. c\n   Acceptance:\n   - c works',
+    'inline acceptance, not a heading': '1. a - Acceptance: tests pass\n2. b - Acceptance: docs updated',
+    empty: '',
+  };
+  for (const [name, text] of Object.entries(cases)) assert.equal(hasDeclaredAcceptance({ request: text }), false, name);
+  assert.equal(hasDeclaredAcceptance({ requests: [{ request: 'a', acceptance: ['x'] }, 'b'] }), false, 'one requests[] item without acceptance');
+  assert.equal(hasDeclaredAcceptance({ requests: [{ request: 'a', acceptance: [] }, { request: 'b', acceptance: ['  '] }] }), false, 'empty/blank acceptance arrays declare nothing');
+  assert.equal(hasDeclaredAcceptance({ request: LIGHT_BACKLOG, shared_acceptance: [] }), true, 'an empty shared_acceptance falls through to the parser');
+  assert.equal(hasDeclaredAcceptance(null), false);
+  assert.equal(hasDeclaredAcceptance({}), false);
+});
+
+test('resolvePlanningMode: true->full, false->off, "light"->light, "auto"->light|full by detection and never off; renderAcceptanceTemplate numbers the rules', () => {
+  assert.equal(resolvePlanningMode(true, { request: LIGHT_BACKLOG }).mode, 'full');
+  assert.equal(resolvePlanningMode(false, { request: LIGHT_BACKLOG }).mode, 'off');
+  assert.equal(resolvePlanningMode('light', { request: 'free text' }).mode, 'light');
+  assert.equal(resolvePlanningMode('auto', { request: LIGHT_BACKLOG }).mode, 'light');
+  for (const input of [{ request: 'free text' }, {}, null, { request: '' }]) {
+    const r = resolvePlanningMode('auto', input);
+    assert.equal(r.mode, 'full', JSON.stringify(input));
+    assert.equal(r.source, 'auto');
+  }
+  assert.equal(resolvePlanningMode(undefined, { request: 'x' }).mode, 'full', 'unset reads as auto');
+  const tpl = renderAcceptanceTemplate(detectDeclaredAcceptance({ requests: [{ request: 'a', acceptance: ['a1'] }, 'b'], shared_acceptance: ['keep tests green', 'R7 docs updated'] }));
+  assert.match(tpl, /- R1: keep tests green/);
+  assert.match(tpl, /- R7: docs updated/, 'an existing R-label is kept');
+  assert.match(tpl, /Item 1: a\n- A1\.1: a1\n- applies: R1, R7/);
+  assert.match(tpl, /Item 2: b\n- applies: R1, R7/);
 });
 
 test("planning phase-Team's PRD and user_stories flow into shape's input, verbatim body never leaves the child run", async () => {
