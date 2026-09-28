@@ -15,7 +15,7 @@ import { storyLabel } from './taskmanager.mjs';
 import { loadRun, runState } from './graph.mjs';
 import {
   epicKey, storyKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
-  storyTicketState, storyTaskProgress, epicBoardRows,
+  storyTicketState, storyTaskProgress, epicBoardRows, packageFiling,
 } from './tickets.mjs';
 
 function bullets(list) {
@@ -170,7 +170,12 @@ export function renderStory(task, pkgId) {
   const accept = latestBySubgoal(task, pkgId, 'accept');
   const r = accept && accept.result;
   const L = [frontmatter(key, state, task), `# ${pkgId} — ${(pkg && pkg.title) || ''}`, ''];
-  L.push(`state: ${state} · tasks: ${storyTaskProgress(task, pkgId) || '—'} · reporter: ${(pkg && pkg.reporter) || (pkg && pkg.repair ? 'repair' : 'shape')}`, '');
+  // packageFiling (tickets.mjs) - the same reporter/origin epicBoardRows and tm_ticket render -
+  // rather than a second, narrower re-derivation (this used to inline (pkg && pkg.reporter) ||
+  // (pkg && pkg.repair ? 'repair' : 'shape'), which never named a phase-Team package's 'engine'
+  // default at all).
+  const filing = packageFiling(pkg || {});
+  L.push(`state: ${state} · tasks: ${storyTaskProgress(task, pkgId) || '—'} · reporter: ${filing.reporter}${filing.origin ? ` (${filing.origin})` : ''}`, '');
   if (dispatch && dispatch.child) L.push(`worktree: ${dispatch.child.cwd} on branch ${dispatch.child.branch}`, '');
   // What this STORY is for and what it is judged against, then every attempt with the first
   // thing that sank it: before this the page held only the LAST verdict, so a person could not

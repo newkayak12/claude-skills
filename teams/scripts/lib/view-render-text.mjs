@@ -358,6 +358,7 @@ export function renderIndexText(rows, tasksDir) {
     if (r.error) { out.push(`  ${r.epic_key}  ERROR: ${r.error}  (task ${r.task_id})`); continue; }
     out.push(`  ${r.epic_key}  ${statusLabel(r)}  ${r.title}`);
     const bits = [`task=${r.task_id}`, `size=${r.size || '?'}`];
+    if (r.initiative) bits.push(`initiative=${r.initiative}`);
     const stories = storiesLabel(r);
     if (stories) bits.push(stories);
     if (r.open_defects) bits.push(`open defects=${r.open_defects}`);
