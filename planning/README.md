@@ -84,7 +84,9 @@ Standing mandates: always map dependencies between epics before sequencing; alwa
 committed from aspirational; never build a roadmap without the team's real capacity constraints;
 never sequence without stakeholder alignment on top-level outcomes. Supporting files:
 `template.md` (fill-in structure), `examples/sample.md`, `references/roadmap-types.md`,
-`references/anti-patterns.md`, and `agents/roadmap-coordinator.md` for guided facilitation.
+`references/anti-patterns.md`, `references/validating-customer-problems.md` (pattern vs. anecdote
+check for Phase 1), `references/prioritization-frameworks.md` (RICE + MoSCoW for Phase 3), and
+`agents/roadmap-coordinator.md` for guided facilitation.
 
 ## Related plugins
 

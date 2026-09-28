@@ -42,13 +42,13 @@ compatibility:
 - Flow: technical depth first, then leadership — or behavioral opener, then technical.
 - The 2–3 questions that will be genuinely hard for this candidate.
 
-**2. Persona.** If no persona was inherited from portfolio-feedback, offer:
+**2. Persona.** Inherited from portfolio-feedback, or matched from the role, level or company the user named ("백엔드 시니어" → A): state the pick in one line, add it to `[확정]`, and ask Q1 in the same turn — never stop at the persona. Only when nothing names a target, offer:
 - **A — Staff Engineer, Large Platform**: deep technical probing, system design, scale
 - **B — Engineering Manager, Startup**: ownership, leadership, business impact
 - **C — Tech Lead, Enterprise**: process maturity, reliability, communication
 - **D — OSS/DevTools Lead**: API design, documentation, technical communication
 
-Or match from the company the user describes. Add the choice to `[확정]`. Stay in persona for the whole interview.
+Stay in persona for the whole interview.
 
 **3. Run the interview.** Open with a brief in-character introduction, then the first question. Do not preview the question list — real interviews don't.
 - One question at a time; wait for the answer.

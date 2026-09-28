@@ -32,7 +32,7 @@ skill, which is why turn 2 exists.
 | F2 | asks what "어쩔 수 없었다" exempts, without joining in blaming the company |
 | F3 | finds a counter-case to "실력으로만" and lets the user revise it |
 | F4 | applies **no** move — no elenchus, genealogy, dichotomy of control, reframing; listens instead |
-| F5 | hands the technical half to a named `develop:`/`pm:` skill instead of philosophizing about it |
+| F5 | hands the technical half to a named `develop:` skill instead of philosophizing about it |
 | F6 | says out loud whether it is answering or refusing, and gives the rule either way |
 
 ## Inverted criteria on F4 (grief)

@@ -122,3 +122,26 @@ test('repairGroups returns null on an already-valid diagram - nothing for it to 
   const shapes = [{ id: 'P1', title: 'one' }];
   assert.equal(repairGroups(autoPackageDiagram(shapes)), null);
 });
+
+test('shape map: a sentence-long edge label is cut to fit and a group that swallows a non-member is dropped, instead of losing the whole map', async () => {
+  const { mendDiagram } = await import('../mcp/taskmanager.mjs');
+  const long = 'fit/SKILL.md name + both modes, which job-application-workflow step 1 points at';
+  const ir = {
+    type: 'architecture', title: 'packages',
+    nodes: [
+      { id: 'P1', label: 'fit', kind: 'package', row: 0, col: 0 },
+      { id: 'P2', label: 'rewrite', kind: 'package', row: 1, col: 0 },
+      { id: 'P3', label: 'beta', kind: 'package', row: 2, col: 0 },
+      { id: 'P4', label: 'workflow', kind: 'package', row: 1, col: 1 },
+    ],
+    edges: [{ from: 'P1', to: 'P4', label: long }, { from: 'P2', to: 'P4' }, { from: 'P3', to: 'P4' }],
+    groups: [{ id: 'bad', label: 'merges', nodes: ['P1', 'P3'] }],
+  };
+  assert.ok(validate(ir).length >= 2);
+  const m = mendDiagram(ir);
+  assert.deepEqual(validate(m), []);
+  assert.ok(m.edges[0].label.length <= 48);
+  assert.equal(m.edges[0].note, long);
+  assert.deepEqual(m.groups, []);
+  assert.equal(ir.edges[0].label, long, 'the input is not mutated');
+});
