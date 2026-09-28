@@ -6050,6 +6050,153 @@ test('code-sprint-P5: an audit that dies after the stop gives the goal gate back
   }
 });
 
+// portfolio-refresh-80ec931a (2026-09-28): budget_stopped fired at spend $25.18 with
+// dispatch:QA:2 still running (subgoal_id 'QA'), and enforceBudget did nothing about it -
+// "nothing to sweep while a dispatch is still running" bailed every tick - until QA:2 died on
+// its own 12 minutes later; the ledger then shows budget_goal_rewired away from accept:QA:2 and
+// budget_closed skipping it. The result was never going to be read either way: closeStoppedToReport
+// only ever rewires the goal gate AROUND a phase-Team pass (passOf: AUDIT/QA), never onto it, once
+// the box is over. settleRunningDispatchesAtStop now kills a running QA/AUDIT dispatch immediately,
+// no grace, and the goal gate still rewires around it exactly as it would have once QA folded.
+test('a phase-Team pass (QA) still running when the box trips is killed immediately, not waited on', async () => {
+  const { enforceBudget } = await import('../mcp/taskmanager.mjs');
+  const prevRoot = process.env.HARNESS_TASKS_DIR;
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  process.env.HARNESS_TASKS_DIR = root;
+  const sleeper = spawn('sleep', ['300'], { detached: true, stdio: 'ignore' });
+  sleeper.unref();
+  try {
+    const task = {
+      run_id: 'qk', store_path: join(root, 'qk', 'task.json'), cwd: root, request: 'r', created_at: Date.now(),
+      budget_warned: true, team: { opts: { budget_usd: 1 } }, budget_stopped: { at: Date.now(), spend: 1.2, skipped_packages: [] },
+      spec: { packages: [{ id: 'P1', title: 'p' }] }, qa_pkg: { id: 'QA', phase: 'qa', integration_of: 'integrate:1' },
+      nodes: [
+        { node_id: 'size', stage: 'size', deps: [], state: 'done', result: {} },
+        { node_id: 'dispatch:P1:1', stage: 'dispatch', subgoal_id: 'P1', deps: [], state: 'done', result: {} },
+        { node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', deps: ['dispatch:P1:1'], state: 'done', result: {} },
+        { node_id: 'integrate:1', stage: 'integrate', deps: ['accept:P1:1'], state: 'done', result: { verified: true } },
+        {
+          node_id: 'dispatch:QA:2', stage: 'dispatch', subgoal_id: 'QA', deps: ['integrate:1'], state: 'running',
+          child: { cwd: root, run_id: 'qarun', driver: { pid: sleeper.pid, started_at: Date.now() } },
+        },
+        { node_id: 'accept:QA:2', stage: 'accept', subgoal_id: 'QA', deps: ['dispatch:QA:2'], state: 'pending' },
+        { node_id: 'gate:goal:1', stage: 'gate', deps: ['accept:QA:2'], state: 'pending' },
+        { node_id: 'report', stage: 'report', deps: [], after: ['gate:goal:1'], state: 'pending' },
+      ],
+    };
+    mkdirSync(join(root, 'qk'), { recursive: true });
+    writeDriverSpend(root, 'qk', 'dispatch_QA_2', 1.2);
+    assert.equal(enforceBudget(task), true);
+    const dq = task.nodes.find((n) => n.node_id === 'dispatch:QA:2');
+    assert.equal(dq.state, 'skipped');
+    assert.match(dq.result.reason, /bypassed by the close path/);
+    const aq = task.nodes.find((n) => n.node_id === 'accept:QA:2');
+    assert.equal(aq.state, 'skipped');
+    const goal = task.nodes.find((n) => n.node_id === 'gate:goal:1');
+    assert.equal(goal.state, 'pending', 'the goal gate still runs');
+    assert.deepEqual(goal.deps, ['integrate:1'], 'rewired around the killed QA pass, same as if it had folded on its own');
+    await waitFor(() => !aliveSleeper(sleeper.pid), 'the killed QA driver to actually exit after SIGTERM');
+    const ledger = readFileSync(join(root, 'qk', 'ledger.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    const killed = ledger.filter((e) => e.event === 'budget_killed');
+    assert.equal(killed.length, 1);
+    assert.equal(killed[0].node_id, 'dispatch:QA:2');
+    assert.match(killed[0].reason, /bypassed/);
+    assert.equal(typeof killed[0].spend_at_kill, 'number');
+  } finally {
+    try { process.kill(sleeper.pid, 'SIGKILL'); } catch { /* already gone */ }
+    if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a package dispatch still running within its grace is left to finish, not killed', async () => {
+  const { enforceBudget } = await import('../mcp/taskmanager.mjs');
+  const prevRoot = process.env.HARNESS_TASKS_DIR;
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  process.env.HARNESS_TASKS_DIR = root;
+  try {
+    const task = {
+      run_id: 'gr1', store_path: join(root, 'gr1', 'task.json'), cwd: root, request: 'r', created_at: Date.now(),
+      budget_warned: true, team: { opts: { budget_usd: 1 } }, budget_stopped: { at: Date.now(), spend: 1.05, skipped_packages: [] },
+      spec: { packages: [{ id: 'P1', title: 'p' }] },
+      nodes: [
+        { node_id: 'size', stage: 'size', deps: [], state: 'done', result: {} },
+        {
+          node_id: 'dispatch:P1:1', stage: 'dispatch', subgoal_id: 'P1', deps: [], state: 'running',
+          // A fake, presumably-dead pid: within grace this must never even try to kill it.
+          child: { cwd: root, run_id: 'p1run', driver: { pid: 2 ** 22 + 4321, started_at: Date.now() } },
+        },
+        { node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', deps: ['dispatch:P1:1'], state: 'pending' },
+        { node_id: 'integrate:1', stage: 'integrate', deps: ['accept:P1:1'], state: 'pending' },
+        { node_id: 'gate:goal:1', stage: 'gate', deps: ['integrate:1'], state: 'pending' },
+        { node_id: 'report', stage: 'report', deps: [], after: ['gate:goal:1'], state: 'pending' },
+      ],
+    };
+    mkdirSync(join(root, 'gr1'), { recursive: true });
+    writeDriverSpend(root, 'gr1', 'dispatch_PLAN_1', 1.05);
+    assert.equal(enforceBudget(task), false, 'nothing to sweep yet - P1 is a needed dispatch, still within grace');
+    const d1 = task.nodes.find((n) => n.node_id === 'dispatch:P1:1');
+    assert.equal(d1.state, 'running', 'not killed - budget_grace_minutes/_usd has not elapsed');
+    const ledgerPath = join(root, 'gr1', 'ledger.jsonl');
+    const ledger = existsSync(ledgerPath) ? readFileSync(ledgerPath, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+    assert.equal(ledger.filter((e) => e.event === 'budget_killed').length, 0);
+  } finally {
+    if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a package dispatch still running past its grace is killed too, and the box reintegrates without it', async () => {
+  const { enforceBudget } = await import('../mcp/taskmanager.mjs');
+  const prevRoot = process.env.HARNESS_TASKS_DIR;
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  process.env.HARNESS_TASKS_DIR = root;
+  const sleeper = spawn('sleep', ['300'], { detached: true, stdio: 'ignore' });
+  sleeper.unref();
+  try {
+    const task = {
+      run_id: 'gr2', store_path: join(root, 'gr2', 'task.json'), cwd: root, request: 'r', created_at: Date.now(),
+      budget_warned: true, team: { opts: { budget_usd: 1 } },
+      // budget_grace_minutes defaults to 5; 6 minutes since the stop is past it.
+      budget_stopped: { at: Date.now() - 6 * 60 * 1000, spend: 1.05, skipped_packages: [] },
+      spec: { packages: [{ id: 'P1', title: 'p' }] },
+      nodes: [
+        { node_id: 'size', stage: 'size', deps: [], state: 'done', result: {} },
+        {
+          node_id: 'dispatch:P1:1', stage: 'dispatch', subgoal_id: 'P1', deps: [], state: 'running',
+          child: { cwd: root, run_id: 'p1run', driver: { pid: sleeper.pid, started_at: Date.now() } },
+        },
+        { node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', deps: ['dispatch:P1:1'], state: 'pending' },
+        { node_id: 'integrate:1', stage: 'integrate', deps: ['accept:P1:1'], state: 'pending' },
+        { node_id: 'gate:goal:1', stage: 'gate', deps: ['integrate:1'], state: 'pending' },
+        { node_id: 'report', stage: 'report', deps: [], after: ['gate:goal:1'], state: 'pending' },
+      ],
+    };
+    mkdirSync(join(root, 'gr2'), { recursive: true });
+    writeDriverSpend(root, 'gr2', 'dispatch_PLAN_1', 1.05);
+    assert.equal(enforceBudget(task), true);
+    const d1 = task.nodes.find((n) => n.node_id === 'dispatch:P1:1');
+    assert.equal(d1.state, 'skipped');
+    assert.match(d1.result.reason, /grace exhausted/);
+    const a1 = task.nodes.find((n) => n.node_id === 'accept:P1:1');
+    assert.equal(a1.state, 'skipped');
+    await waitFor(() => !aliveSleeper(sleeper.pid), 'the grace-killed P1 driver to actually exit after SIGTERM');
+    const ledger = readFileSync(join(root, 'gr2', 'ledger.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    const killed = ledger.filter((e) => e.event === 'budget_killed');
+    assert.equal(killed.length, 1);
+    assert.equal(killed[0].node_id, 'dispatch:P1:1');
+    assert.match(killed[0].reason, /grace exhausted/);
+    // Nothing accepted (P1 was the only package, and it was killed, not folded): the report still
+    // opens on its own rather than an integrate over zero packages.
+    assert.ok(ledger.some((e) => e.event === 'budget_swept' && e.nothing_accepted === true));
+    assert.equal(task.nodes.find((n) => n.node_id === 'report').state, 'pending');
+  } finally {
+    try { process.kill(sleeper.pid, 'SIGKILL'); } catch { /* already gone */ }
+    if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('code-sprint-P5: the audit brief lists each user story by label with its acceptance, never "[object Object]"', async () => {
   await withTask(async ({ tm, g, cwd, root, task_id }) => {
     let v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2'], handoff: 'h' }) });
