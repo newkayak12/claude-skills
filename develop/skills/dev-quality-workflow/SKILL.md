@@ -143,4 +143,4 @@ compatibility:
 
 - Peer: `develop:microservices-architect`, `develop:event-storming`, `develop:clean-architecture`
 - Before: `think:deep-thinking-workflow` (for design decisions)
-- After: `pm:roadmap-communication` (when shipping)
+- After: `planning:roadmap-planning` (Phase 5 — Communicate Roadmap; audience-specific stakeholder messaging when shipping)
