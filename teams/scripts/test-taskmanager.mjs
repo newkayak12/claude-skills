@@ -1976,6 +1976,21 @@ test('max_parallel_teams:1 opens only the lowest-priority ready dispatch; the re
   }, { max_parallel_teams: 1 });
 });
 
+test('tm_status: auto_parallel is surfaced when max_parallel_teams is "auto" (the default), and absent when pinned to a fixed number', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    const st = await tm.call('tm_status', { task_id });
+    assert.equal(st.team.opts.max_parallel_teams, 'auto');
+    assert.ok(st.auto_parallel, 'auto_parallel must be present when max_parallel_teams is "auto"');
+    assert.equal(st.auto_parallel.current, 2, 'starts at 2, the same number this cap used to be pinned at forever');
+    assert.equal(st.auto_parallel.streak, 0);
+  });
+  await withTask(async ({ tm, task_id }) => {
+    const st = await tm.call('tm_status', { task_id });
+    assert.equal(st.team.opts.max_parallel_teams, 3);
+    assert.equal(st.auto_parallel, undefined, 'a fixed max_parallel_teams must not show auto-controller state');
+  }, { max_parallel_teams: 3 });
+});
+
 test('below the cap, independent ready dispatches still open at once (regression)', async () => {
   await withTask(async ({ tm, task_id }) => {
     let v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop' }) });
@@ -1991,7 +2006,7 @@ test('below the cap, independent ready dispatches still open at once (regression
     assert.equal(v.state, 'done', JSON.stringify(v));
     await tm.call('tm_submit', { task_id, node_id: 'critique', payload: ok({ sound: true }) });
     const nx = await tm.call('tm_next', { task_id });
-    assert.equal(nx.children.length, 2, 'the default max_parallel_teams (2) is not exceeded, so both open immediately, exactly as before this change');
+    assert.equal(nx.children.length, 2, 'the default max_parallel_teams ("auto", starting at 2) is not exceeded, so both open immediately, exactly as before this change');
   });
 });
 
@@ -2323,6 +2338,27 @@ test('critique and accept record reviewer_independence: unverifiable-self - the 
     assert.equal(acceptP1.result.reviewer_independence, 'unverifiable-self');
     const acceptP2 = task.nodes.find((n) => n.node_id === 'accept:P2:1');
     assert.equal(acceptP2.result.reviewer_independence, 'unverifiable-self');
+  });
+});
+
+// End-to-end wiring for max_parallel_teams: 'auto' - toolSubmit's own dispatch-fold branch calls
+// updateAutoParallel (taskmanager.mjs) right before finish(), the same call daemon.mjs's loop
+// makes for an autonomous run. scripts/test-autoparallel.mjs covers the controller's own
+// increase/decrease/floor/ceiling logic as a pure function; this test only proves the two real
+// call sites actually reach it - toIntegrate folds P1 then P2, two clean develop-STORY dispatches
+// with no driver (HARNESS_TEST_NO_DRIVER) and so no capacity signal, which is exactly one AIMD
+// window (AIMD_WINDOW=2).
+test('max_parallel_teams "auto": two clean develop-STORY dispatch folds (toIntegrate: P1 then P2) advance the real task from 2 to 3, and the ledger records it', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    const st = await tm.call('tm_status', { task_id });
+    assert.equal(st.auto_parallel.current, 3, 'one full window (2 clean STORY folds) completed: 2 -> 3');
+    assert.equal(st.auto_parallel.streak, 0);
+    const ledger = readFileSync(join(root, task_id, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    const inc = ledger.find((e) => e.event === 'auto_parallel_increased');
+    assert.ok(inc, 'the increase must be recorded in the ledger, not just reflected in task.json');
+    assert.equal(inc.from, 2);
+    assert.equal(inc.to, 3);
   });
 });
 
