@@ -21,7 +21,9 @@ const GOLDEN = join(HERE, 'fixtures', 'docs-golden');
 
 // A task well past goal-gate, with a rejected-then-retried P1 and an accepted P2, PLUS all three
 // phase-Teams turned on - exercises every renderer renderAll would reach for a task this far
-// along, v0.12.0's three (10-planning/10-prd/60-qa) and v0.12.1's 65-audit.md included.
+// along, v0.12.0's three (10-planning/10-prd/60-qa) and v0.12.1's 65-audit.md included. Planning
+// and QA run on cards (docs/plans/2026-09-28-teams-cards-everywhere.md): two feature areas, so two
+// planning cards merged by plan-integrate:1, and two QA cards per QA round.
 //
 // The tail follows a full v0.12.1 loop rather than stopping at the first goal gate: audit round 1
 // found US-2 unmet and filed D1, D1 was delivered, integrate:2 rebuilt the tree, and QA and the
@@ -37,22 +39,33 @@ function fixtureTask(cwd) {
     team: { opts: { docs_dir: '.teams_output/team', max_parallel_teams: 2, roles: { planning: true, qa: true }, goal_threshold: 90 } },
     size: 'L', size_pinned: null, flow: 'develop', flow_chosen: 'develop',
     daemon: { pid: 4242 },
-    planning_pkg: { id: 'PLAN', phase: 'planning', flow: 'plan', title: 'PRD', brief: 'change a.txt and b.txt together', acceptance: ['PRD covers the request'], deps: [], touches: [] },
-    qa_pkg: { id: 'QA', phase: 'qa', flow: 'qa', integration_of: 'integrate:1', title: 'QA', brief: 'Run the goal-level QA pass over the integrated result.', acceptance: ['the integrated result has been exercised end to end'], deps: [], touches: [] },
+    areas: [{ id: 'F1', title: 'module a', brief: 'a.txt' }, { id: 'F2', title: 'module b', brief: 'b.txt' }],
+    planning_pkgs: [
+      { id: 'PLAN-F1', area: 'F1', area_title: 'module a', phase: 'planning', flow: 'plan', title: 'PRD: module a', brief: 'Feature area F1 - module a', acceptance: ['the PRD section for feature area F1 is complete'], deps: [], touches: [] },
+      { id: 'PLAN-F2', area: 'F2', area_title: 'module b', phase: 'planning', flow: 'plan', title: 'PRD: module b', brief: 'Feature area F2 - module b', acceptance: ['the PRD section for feature area F2 is complete'], deps: [], touches: [] },
+    ],
+    qa_pkgs: [
+      { id: 'QA-F1', area: 'F1', area_title: 'module a', phase: 'qa', flow: 'qa', integration_of: 'integrate:2', title: 'QA: module a', brief: 'Run the QA pass for feature area F1.', acceptance: ['every user story of feature area F1 has been exercised end to end'], deps: [], touches: [] },
+      { id: 'QA-F2', area: 'F2', area_title: 'module b', phase: 'qa', flow: 'qa', integration_of: 'integrate:2', title: 'QA: module b', brief: 'Run the QA pass for feature area F2.', acceptance: ['every user story of feature area F2 has been exercised end to end'], deps: [], touches: [] },
+    ],
     audit_pkg: { id: 'AUDIT', phase: 'audit', flow: 'audit', integration_of: 'integrate:2', title: 'planning audit', brief: 'Cross-check what was built against the PRD.', acceptance: ['every user story in the PRD is judged against the integrated result'], deps: [], touches: [] },
     spec: {
       acceptance: ['both modules build together'],
       packages: [
-        { id: 'P1', title: 'module a', flow: 'develop', deps: [], touches: ['a.txt'], implements: ['US-1'], priority: 0 },
-        { id: 'P2', title: 'module b', flow: 'develop', deps: ['P1'], touches: ['b.txt'], implements: ['US-2'], priority: 1 },
-        { id: 'D1', title: 'US-2 -> b.txt was never wired to the exported path', flow: 'develop', reporter: 'planning-audit', deps: [], touches: ['b.txt'] },
+        { id: 'P1', title: 'module a', flow: 'develop', deps: [], touches: ['a.txt'], implements: ['F1-US-1'], priority: 0 },
+        { id: 'P2', title: 'module b', flow: 'develop', deps: ['P1'], touches: ['b.txt'], implements: ['F2-US-1'], priority: 1 },
+        { id: 'D1', title: 'F2-US-1 -> b.txt was never wired to the exported path', flow: 'develop', reporter: 'planning-audit', deps: [], touches: ['b.txt'] },
       ],
     },
     nodes: [
       node('size', 'size', [], { state: 'done', result: { stage_ok: true, size: 'L' } }),
-      node('dispatch:PLAN:1', 'dispatch', ['size'], { subgoal_id: 'PLAN', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 95, checks: ['PRD written -> covers the request'], gaps: [], user_stories: ['US-1', 'US-2'] }, child: { cwd, run_id: 'plan1', branch: null, driver: { pid: 9, log: '/log/PLAN.jsonl' } } }),
-      node('accept:PLAN:1', 'accept', ['dispatch:PLAN:1'], { subgoal_id: 'PLAN', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 95, checks: ['PRD reviewed -> covers the request'], gaps: [] } }),
-      node('shape', 'shape', ['accept:PLAN:1'], { state: 'done', result: { stage_ok: true } }),
+      node('areas', 'areas', ['size'], { state: 'done', result: { stage_ok: true, areas: [{ title: 'module a', brief: 'a.txt' }, { title: 'module b', brief: 'b.txt' }] } }),
+      node('dispatch:PLAN-F1:1', 'dispatch', ['areas'], { subgoal_id: 'PLAN-F1', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 95, checks: ['PRD written -> covers the request'], gaps: [], user_stories: [{ id: 'F1-US-1', title: 'a.txt says a', acceptance: ['a.txt reads a'] }] }, child: { cwd: '/wt/PLAN-F1', run_id: 'plan1', branch: 'harness/aaaaaaaa/PLAN-F1', driver: { pid: 9, log: '/log/PLAN-F1.jsonl' } } }),
+      node('accept:PLAN-F1:1', 'accept', ['dispatch:PLAN-F1:1'], { subgoal_id: 'PLAN-F1', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 95, checks: ['PRD reviewed -> covers the request'], gaps: [] } }),
+      node('dispatch:PLAN-F2:1', 'dispatch', ['areas'], { subgoal_id: 'PLAN-F2', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 94, checks: ['PRD written -> covers the request'], gaps: [], user_stories: [{ id: 'F2-US-1', title: 'b.txt says b', acceptance: ['b.txt reads b'] }] }, child: { cwd: '/wt/PLAN-F2', run_id: 'plan2', branch: 'harness/aaaaaaaa/PLAN-F2', driver: { pid: 8, log: '/log/PLAN-F2.jsonl' } } }),
+      node('accept:PLAN-F2:1', 'accept', ['dispatch:PLAN-F2:1'], { subgoal_id: 'PLAN-F2', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 94, checks: ['PRD reviewed -> covers the request'], gaps: [] } }),
+      node('plan-integrate:1', 'plan-integrate', ['accept:PLAN-F1:1', 'accept:PLAN-F2:1'], { subgoal_id: null, state: 'done', result: { stage_ok: true, accept: true, checks: ['read the merged PRD -> ids unique, no contradiction, every feature covered'], duplicates: [], contradictions: [], uncovered: [] } }),
+      node('shape', 'shape', ['plan-integrate:1'], { state: 'done', result: { stage_ok: true } }),
       node('critique', 'critique', ['shape'], { state: 'done', result: { stage_ok: true, sound: true, blocking: [], problems: ['P1 and P2 could be one package'] } }),
       node('dispatch:P1:1', 'dispatch', ['critique'], { subgoal_id: 'P1', attempt: 1, state: 'done', result: { stage_ok: true }, child: { cwd: '/wt/P1', run_id: 'c1', branch: 'harness/aaaaaaaa/P1', driver: { pid: 1, log: '/log/P1.jsonl' } } }),
       node('accept:P1:1', 'accept', ['dispatch:P1:1'], { subgoal_id: 'P1', attempt: 1, state: 'failed', result: { stage_ok: true, accept: false, match_pct: 60, checks: ['built -> missing tests'], gaps: ['no test coverage'], reason: 'no test coverage' } }),
@@ -65,10 +78,12 @@ function fixtureTask(cwd) {
         result: { stage_ok: true, verified: true, checks: ['build -> ok'], conflicts: [] },
         integration: { cwd: '/wt/integration', branch: 'harness/aaaaaaaa/integration', merged: [{ package: 'P1', branch: 'harness/aaaaaaaa/P1', commit: 'c0ffee1' }, { package: 'P2', branch: 'harness/aaaaaaaa/P2', commit: 'c0ffee2' }] },
       }),
-      node('dispatch:QA:1', 'dispatch', ['integrate:1'], { subgoal_id: 'QA', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 93, checks: ['exercised the integrated tree -> no defects found'], gaps: [] }, child: { cwd: '/wt/integration', run_id: 'qa1', branch: 'harness/aaaaaaaa/integration', driver: { pid: 10, log: '/log/QA.jsonl' } } }),
-      node('accept:QA:1', 'accept', ['dispatch:QA:1'], { subgoal_id: 'QA', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 93, checks: ['QA report reviewed -> no defects'], gaps: [] } }),
-      node('dispatch:AUDIT:1', 'dispatch', ['accept:QA:1'], { subgoal_id: 'AUDIT', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 91, checks: ['read the PRD against the tree -> US-2 unmet'], gaps: [] }, child: { cwd: '/wt/integration', run_id: 'audit1', branch: 'harness/aaaaaaaa/integration', driver: { pid: 11, log: '/log/AUDIT.jsonl' } } }),
-      node('accept:AUDIT:1', 'accept', ['dispatch:AUDIT:1'], { subgoal_id: 'AUDIT', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 91, checks: ['audit report reviewed -> one story unmet'], gaps: [], unmet: ['US-2 -> b.txt was never wired to the exported path'], filed: ['D1'] } }),
+      node('dispatch:QA-F1:1', 'dispatch', ['integrate:1'], { subgoal_id: 'QA-F1', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 93, checks: ['exercised F1 on the integrated tree -> no defects found'], gaps: [] }, child: { cwd: '/wt/integration', run_id: 'qa1', branch: 'harness/aaaaaaaa/integration', driver: { pid: 10, log: '/log/QA-F1.jsonl' } } }),
+      node('accept:QA-F1:1', 'accept', ['dispatch:QA-F1:1'], { subgoal_id: 'QA-F1', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 93, checks: ['QA report reviewed -> no defects'], gaps: [] } }),
+      node('dispatch:QA-F2:1', 'dispatch', ['integrate:1'], { subgoal_id: 'QA-F2', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 92, checks: ['exercised F2 on the integrated tree -> no defects found'], gaps: [] }, child: { cwd: '/wt/integration', run_id: 'qa1b', branch: 'harness/aaaaaaaa/integration', driver: { pid: 15, log: '/log/QA-F2.jsonl' } } }),
+      node('accept:QA-F2:1', 'accept', ['dispatch:QA-F2:1'], { subgoal_id: 'QA-F2', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 92, checks: ['QA report reviewed -> no defects'], gaps: [] } }),
+      node('dispatch:AUDIT:1', 'dispatch', ['accept:QA-F1:1', 'accept:QA-F2:1'], { subgoal_id: 'AUDIT', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 91, checks: ['read the PRD against the tree -> US-2 unmet'], gaps: [] }, child: { cwd: '/wt/integration', run_id: 'audit1', branch: 'harness/aaaaaaaa/integration', driver: { pid: 11, log: '/log/AUDIT.jsonl' } } }),
+      node('accept:AUDIT:1', 'accept', ['dispatch:AUDIT:1'], { subgoal_id: 'AUDIT', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 91, checks: ['audit report reviewed -> one story unmet'], gaps: [], unmet: ['F2-US-1 -> b.txt was never wired to the exported path'], filed: ['D1'] } }),
       node('dispatch:D1:1', 'dispatch', [], { subgoal_id: 'D1', attempt: 1, state: 'done', result: { stage_ok: true }, child: { cwd: '/wt/D1', run_id: 'd1', branch: 'harness/aaaaaaaa/D1', driver: { pid: 12, log: '/log/D1.jsonl' } } }),
       node('accept:D1:1', 'accept', ['dispatch:D1:1'], { subgoal_id: 'D1', attempt: 1, state: 'done', result: { stage_ok: true, accept: true, match_pct: 94, checks: ['the reproduction no longer reproduces'], gaps: [] } }),
       node('integrate:2', 'integrate', ['accept:D1:1'], {
@@ -76,9 +91,11 @@ function fixtureTask(cwd) {
         result: { stage_ok: true, verified: true, checks: ['build -> ok'], conflicts: [] },
         integration: { cwd: '/wt/integration-2', branch: 'harness/aaaaaaaa/integration-2', merged: [{ package: 'P1', branch: 'harness/aaaaaaaa/P1', commit: 'c0ffee1' }, { package: 'P2', branch: 'harness/aaaaaaaa/P2', commit: 'c0ffee2' }, { package: 'D1', branch: 'harness/aaaaaaaa/D1', commit: 'c0ffee3' }] },
       }),
-      node('dispatch:QA:2', 'dispatch', ['integrate:2'], { subgoal_id: 'QA', attempt: 2, state: 'done', result: { stage_ok: true, accept: true, match_pct: 94, checks: ['re-exercised the integrated tree -> no defects'], gaps: [] }, child: { cwd: '/wt/integration-2', run_id: 'qa2', branch: 'harness/aaaaaaaa/integration-2', driver: { pid: 13, log: '/log/QA.restart1.jsonl' } } }),
-      node('accept:QA:2', 'accept', ['dispatch:QA:2'], { subgoal_id: 'QA', attempt: 2, state: 'done', result: { stage_ok: true, accept: true, match_pct: 94, checks: ['QA report reviewed -> no defects'], gaps: [] } }),
-      node('dispatch:AUDIT:2', 'dispatch', ['accept:QA:2'], { subgoal_id: 'AUDIT', attempt: 2, state: 'done', result: { stage_ok: true, accept: true, match_pct: 96, checks: ['reread the PRD against the rebuilt tree -> every story met'], gaps: [] }, child: { cwd: '/wt/integration-2', run_id: 'audit2', branch: 'harness/aaaaaaaa/integration-2', driver: { pid: 14, log: '/log/AUDIT.restart1.jsonl' } } }),
+      node('dispatch:QA-F1:2', 'dispatch', ['integrate:2'], { subgoal_id: 'QA-F1', attempt: 2, state: 'done', result: { stage_ok: true, accept: true, match_pct: 94, checks: ['re-exercised F1 on the integrated tree -> no defects'], gaps: [] }, child: { cwd: '/wt/integration-2', run_id: 'qa2', branch: 'harness/aaaaaaaa/integration-2', driver: { pid: 13, log: '/log/QA-F1.restart1.jsonl' } } }),
+      node('accept:QA-F1:2', 'accept', ['dispatch:QA-F1:2'], { subgoal_id: 'QA-F1', attempt: 2, state: 'done', result: { stage_ok: true, accept: true, match_pct: 94, checks: ['QA report reviewed -> no defects'], gaps: [] } }),
+      node('dispatch:QA-F2:2', 'dispatch', ['integrate:2'], { subgoal_id: 'QA-F2', attempt: 2, state: 'done', result: { stage_ok: true, accept: true, match_pct: 95, checks: ['re-exercised F2 on the integrated tree -> no defects'], gaps: [] }, child: { cwd: '/wt/integration-2', run_id: 'qa2b', branch: 'harness/aaaaaaaa/integration-2', driver: { pid: 16, log: '/log/QA-F2.restart1.jsonl' } } }),
+      node('accept:QA-F2:2', 'accept', ['dispatch:QA-F2:2'], { subgoal_id: 'QA-F2', attempt: 2, state: 'done', result: { stage_ok: true, accept: true, match_pct: 95, checks: ['QA report reviewed -> no defects'], gaps: [] } }),
+      node('dispatch:AUDIT:2', 'dispatch', ['accept:QA-F1:2', 'accept:QA-F2:2'], { subgoal_id: 'AUDIT', attempt: 2, state: 'done', result: { stage_ok: true, accept: true, match_pct: 96, checks: ['reread the PRD against the rebuilt tree -> every story met'], gaps: [] }, child: { cwd: '/wt/integration-2', run_id: 'audit2', branch: 'harness/aaaaaaaa/integration-2', driver: { pid: 14, log: '/log/AUDIT.restart1.jsonl' } } }),
       node('accept:AUDIT:2', 'accept', ['dispatch:AUDIT:2'], { subgoal_id: 'AUDIT', attempt: 2, state: 'done', result: { stage_ok: true, accept: true, match_pct: 96, checks: ['audit report reviewed -> every story met'], gaps: [], unmet: [], filed: [] } }),
       node('gate:goal:1', 'gate', ['accept:AUDIT:2'], { subgoal_id: null, state: 'done', result: { stage_ok: true, accept: true, match_pct: 96, checks: ['reread the request -> matches'], gaps: [], spec_drift: [] } }),
       node('report', 'report', [], { after: ['gate:goal:1'], state: 'done', result: { stage_ok: true, handoff: 'Both modules delivered and integrated; goal gate accepted at 96%.' } }),
@@ -157,23 +174,82 @@ test('the PRD page lists user stories by id, never as [object Object]', async ()
     run_id: 'aaaaaaaa-1111-2222-3333-444444444444',
     cwd: '/tmp/x',
     request: 'build a thing',
-    planning_pkg: { id: 'PLAN', title: 'PRD', phase: 'planning' },
+    planning_pkgs: [{ id: 'PLAN-F1', area: 'F1', area_title: 'queue', title: 'PRD: queue', phase: 'planning' }],
     nodes: [{
-      node_id: 'dispatch:PLAN:1', stage: 'dispatch', subgoal_id: 'PLAN', state: 'done',
+      node_id: 'dispatch:PLAN-F1:1', stage: 'dispatch', subgoal_id: 'PLAN-F1', state: 'done',
       child: { run_id: 'cccccccc-1111-2222-3333-444444444444', cwd: '/tmp/x' },
       result: {
         accept: true,
         user_stories: [
-          { id: 'US-1', title: 'Fan queue admission', acceptance: ['a'] },
-          { id: 'US-2', title: 'Atomic hold', acceptance: ['b'] },
+          { id: 'F1-US-1', title: 'Fan queue admission', acceptance: ['a'] },
+          { id: 'F1-US-2', title: 'Atomic hold', acceptance: ['b'] },
         ],
       },
     }],
   };
   const page = renderPrd(task);
   assert.doesNotMatch(page, /\[object Object\]/, page);
-  assert.match(page, /US-1 - Fan queue admission/);
-  assert.match(page, /US-2 - Atomic hold/);
+  assert.match(page, /F1-US-1 - Fan queue admission \(PLAN-F1\)/);
+  assert.match(page, /F1-US-2 - Atomic hold/);
+});
+
+// C4 (docs/plans/2026-09-28-teams-cards-everywhere.md): 10-prd.md is the ONE merged PRD - every
+// planning card's accepted section, read from its own worktree, under its feature area's heading,
+// with every story of the EPIC listed first and the card that owns it named.
+test('10-prd.md merges every planning card\'s accepted section into one PRD, under its area\'s heading (C4)', async () => {
+  const { renderPrd } = await import('../mcp/docs.mjs');
+  const wt1 = mkdtempSync(join(tmpdir(), 'prd-f1-'));
+  const wt2 = mkdtempSync(join(tmpdir(), 'prd-f2-'));
+  try {
+    writeFileSync(join(wt1, 'prd.md'), '# PRD\n\n## Goal\n\nsign-up works\n\n## User stories\n\n### F1-US-1 — sign up\n');
+    writeFileSync(join(wt1, 'prd-findings.md'), 'working notes, not the PRD');
+    writeFileSync(join(wt2, 'prd.md'), '# PRD\n\n## Goal\n\nbilling works\n\n## Out of scope\n\nrefunds\n');
+    const dispatch = (id, cwd, attempt, stories, prd) => ({ node_id: `dispatch:${id}:${attempt}`, stage: 'dispatch', subgoal_id: id, attempt, state: 'done', child: { run_id: `r-${id}-${attempt}`, cwd }, result: { accept: true, user_stories: stories, prd_paths: prd } });
+    const accept = (id, attempt, state) => ({ node_id: `accept:${id}:${attempt}`, stage: 'accept', subgoal_id: id, attempt, state, result: { accept: state === 'done' } });
+    const task = {
+      run_id: 'aaaaaaaa-1111-2222-3333-555555555555', cwd: '/tmp/x', request: 'sign-up and billing',
+      planning_pkgs: [
+        { id: 'PLAN-F1', area: 'F1', area_title: 'sign-up', title: 'PRD: sign-up', phase: 'planning' },
+        { id: 'PLAN-F2', area: 'F2', area_title: 'billing', title: 'PRD: billing', phase: 'planning' },
+      ],
+      nodes: [
+        dispatch('PLAN-F1', wt1, 1, [{ id: 'F1-US-1', title: 'sign up' }], ['prd.md', 'prd-findings.md']), accept('PLAN-F1', 1, 'done'),
+        // PLAN-F2's first attempt was refused; its accepted second attempt is the one merged.
+        dispatch('PLAN-F2', wt2, 1, [{ id: 'F2-US-9', title: 'refused story' }], []), accept('PLAN-F2', 1, 'failed'),
+        dispatch('PLAN-F2', wt2, 2, [{ id: 'F2-US-1', title: 'pay' }], ['prd.md']), accept('PLAN-F2', 2, 'done'),
+      ],
+    };
+    const page = renderPrd(task);
+    assert.match(page, /^# PRD$/m);
+    assert.match(page, /Merged from 2 planning card\(s\), one per feature area: PLAN-F1 \(sign-up\), PLAN-F2 \(billing\)/);
+    assert.match(page, /## User stories\n- F1-US-1 - sign up \(PLAN-F1\)\n- F2-US-1 - pay \(PLAN-F2\)/);
+    assert.doesNotMatch(page, /F2-US-9/, 'a refused attempt\'s stories are not merged');
+    assert.match(page, /## F1 — sign-up[\s\S]*### Goal\n\nsign-up works/, 'the card\'s own headings sit one level under its area');
+    assert.match(page, /## F2 — billing[\s\S]*### Out of scope\n\nrefunds/);
+    assert.doesNotMatch(page, /working notes/, 'findings files stay in the card\'s tree');
+  } finally {
+    rmSync(wt1, { recursive: true, force: true });
+    rmSync(wt2, { recursive: true, force: true });
+  }
+});
+
+// tm_clean removes a planning card's worktree once the task is done; the merged PRD is kept by the
+// snapshot the planning integrate took of every card's section (n.prd.docs), read first.
+test('10-prd.md renders from the planning integrate\'s snapshot when a card\'s worktree is gone', async () => {
+  const { renderPrd } = await import('../mcp/docs.mjs');
+  const task = {
+    run_id: 'aaaaaaaa-1111-2222-3333-666666666666', cwd: '/tmp/x', request: 'r',
+    planning_pkgs: [{ id: 'PLAN-F1', area: 'F1', area_title: 'sign-up', title: 'PRD: sign-up', phase: 'planning' }],
+    nodes: [
+      { node_id: 'dispatch:PLAN-F1:1', stage: 'dispatch', subgoal_id: 'PLAN-F1', attempt: 1, state: 'done', child: { run_id: 'r1', cwd: '/nonexistent/worktree' }, result: { accept: true, user_stories: [{ id: 'F1-US-1', title: 'sign up' }], prd_paths: ['prd.md'] } },
+      { node_id: 'accept:PLAN-F1:1', stage: 'accept', subgoal_id: 'PLAN-F1', attempt: 1, state: 'done', result: { accept: true } },
+      { node_id: 'plan-integrate:1', stage: 'plan-integrate', subgoal_id: null, state: 'done', result: { accept: true },
+        prd: { docs: [{ card: 'PLAN-F1', dispatch: 'dispatch:PLAN-F1:1', path: 'prd.md', text: '# PRD\n\n## Goal\n\nkept by the snapshot\n' }] } },
+    ],
+  };
+  const page = renderPrd(task);
+  assert.match(page, /## F1 — sign-up[\s\S]*### Goal\n\nkept by the snapshot/);
+  assert.doesNotMatch(page, /no readable PRD document/);
 });
 
 test('a blocked task with no report still gets an 80-report.md: what blocks it, and the call that would move it', async () => {
@@ -197,7 +273,7 @@ test('a blocked task with no report still gets an 80-report.md: what blocks it, 
   assert.ok(files[docPaths(task).retro], 'retro.json too');
 });
 
-test('slack-list: a size-S task reports from its run, not BLOCKED off the skipped manager graph, and says what S does not do', async () => {
+test('slack-list: a size-S task reports from its run, not BLOCKED off the skipped manager graph, names its planning, and says what S does not do', async () => {
   const { createRun, saveRun } = await import('../mcp/graph.mjs');
   const cwd = mkdtempSync(join(tmpdir(), 'docs-s-'));
   try {
@@ -208,15 +284,21 @@ test('slack-list: a size-S task reports from its run, not BLOCKED off the skippe
     ];
     saveRun(run);
     const task = { run_id: 'de907a66-0000', cwd, request: 'r', created_at: 0, size: 'S', s_run: { cwd, run_id: run.run_id },
-      team: { opts: { roles: { planning: true, qa: true, audit: true } } }, planning_pkg: { id: 'PLAN' },
+      team: { opts: { roles: { planning: true, qa: true, audit: true } } },
+      // C6: a size-S task is planned too - one card, accepted, before its run.
+      planning_pkgs: [{ id: 'PLAN-F1', area: 'F1', area_title: 'the whole request', title: 'PRD: the whole request', phase: 'planning' }],
       nodes: [node('size', 'size', [], { state: 'done', result: { size: 'S' } }),
-        node('dispatch:PLAN:1', 'dispatch', [], { subgoal_id: 'PLAN', state: 'skipped', result: { reason: 'size S' } })] };
+        node('dispatch:PLAN-F1:1', 'dispatch', ['size'], { subgoal_id: 'PLAN-F1', attempt: 1, state: 'done', result: { accept: true, user_stories: [{ id: 'F1-US-1', title: 'flatten lists' }] } }),
+        node('accept:PLAN-F1:1', 'accept', ['dispatch:PLAN-F1:1'], { subgoal_id: 'PLAN-F1', attempt: 1, state: 'done', result: { accept: true } }),
+        node('plan-integrate:1', 'plan-integrate', ['accept:PLAN-F1:1'], { subgoal_id: null, state: 'done', result: { accept: true } })] };
     const report = renderAll(task)[docPaths(task).report];
     assert.ok(report, 'a report is written');
     assert.doesNotMatch(report, /BLOCKED|blocked/);
     assert.match(report, /flattening fixed/);
     assert.match(report, /spec drift[\s\S]*labelled links lose their URL/);
-    assert.match(report, /roles planning, qa, audit are on, but phase-Teams run only on a size-L task/);
+    assert.match(report, /## Planning\n\nPLAN-F1 planned this run; the PRD it built from is \[10-prd\.md\]\(\.\/10-prd\.md\), with 1 user story\./);
+    assert.match(report, /roles qa, audit are on, but QA and the planning audit run only on a size-L task/);
+    assert.ok(renderAll(task)[docPaths(task).prd], 'a size-S task has its 10-prd.md');
     assert.match(report, /no worktree, no branch, nothing committed/);
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });

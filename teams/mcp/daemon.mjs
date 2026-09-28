@@ -13,7 +13,8 @@
 // process is not a client of that server at all. It imports taskmanager.mjs as a library and
 // calls the functions a tool handler calls - advanceDispatches, finish, foldChild - directly, in
 // process. The only thing here that still costs a model call is judge(): one single-shot
-// `claude -p` per judging node (size, shape, critique, accept, integrate, gate, report), fed the
+// `claude -p` per judging node (size, areas, shape, critique, accept, integrate, plan-integrate,
+// gate, report), fed the
 // exact briefing composeTaskPrompt already builds and required to return the exact JSON contract
 // CONTRACT already asks for - the same work a "fresh agent" node the old leader spawned did.
 //
@@ -157,7 +158,9 @@ export function unexplainedRefusal(result) {
   // Every field a contract uses to say WHY: integrate's own refusal lives in unowned/evidence
   // (code-sprint-S5's integrate:2 named P3/P4's missing work there, with reason and gaps absent) -
   // reading only reason/gaps turned a well-argued refusal into a "no reason" re-judge.
-  if (['reason', 'gaps', 'problems', 'blocking', 'unowned', 'evidence', 'conflicts'].some((k) => said(result[k]))) return null;
+  // plan-integrate's refusal (cards-everywhere C4) names its cards and features in retry/
+  // contradictions/uncovered/duplicates/new_areas, each of which finish() acts on directly.
+  if (['reason', 'gaps', 'problems', 'blocking', 'unowned', 'evidence', 'conflicts', 'retry', 'contradictions', 'uncovered', 'duplicates', 'new_areas'].some((k) => said(result[k]))) return null;
   return { ...result, stage_ok: false, judge_failed: true, reason: 'the judge refused without a reason or gaps - a refusal nobody can act on; asked again' };
 }
 

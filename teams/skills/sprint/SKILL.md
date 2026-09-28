@@ -50,12 +50,15 @@ exists as its own tool or field — nothing here is new mechanism, only the orde
    asked (`tm_inbox`'s `decided`), which the retro surfaces either way. If this Sprint continues
    work a prior one left unfinished, add `context_from: "<prior task_id or E-xxxxxxxx>"` — see
    step 5.
-   Decide PLAN here too: `roles.planning` defaults to `'auto'`. A backlog whose items already
-   state their acceptance (numbered items plus an `Acceptance for every item:` block, or
-   `requests[].acceptance` / `shared_acceptance`) runs light PLAN (investigate → template-fill →
-   gate); anything else runs full PLAN (investigate → draft → revise → gate). Pass `'light'` or
-   `true` to force either. `false` drops PLAN entirely — only when you have checked the premises
-   yourself, since investigate is what corrects wrong premises and uneven criteria.
+   Planning always runs, on cards: the plan stage splits the backlog by feature area (each area
+   names the backlog items it covers), one planning card per area writes that area's PRD
+   section, and `plan-integrate` merges them before `shape`. `roles.planning` (default `'auto'`)
+   picks each card's chain: a backlog whose items already state their acceptance (numbered items
+   plus an `Acceptance for every item:` block, or `requests[].acceptance` / `shared_acceptance`)
+   runs light (investigate → template-fill → gate, each card handed only its own items); anything
+   else runs full (investigate → draft → revise → gate). Pass `'light'` or `true` to force either.
+   `false` is refused with a note - investigate is what corrects wrong premises and uneven
+   criteria, and no setting skips it.
 2. **Confirm the plan.** Read back `tm_status({task_id})`'s `team.opts` (budget_usd,
    timebox_minutes, roles) and, once shape has run, `tm_status`'s `shape` block (max_parallel_width,
    fully_serial, bloated) — the same signals `critique` itself judges the shape against. This is

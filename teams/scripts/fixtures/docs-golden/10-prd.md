@@ -1,15 +1,28 @@
 ---
-key: E-aaaaaaaa/PLAN
+key: E-aaaaaaaa
 state: DONE
-source: task.json@25
+source: task.json@33
 ---
 
 # PRD
 
-The PRD itself lives in the planning phase-Team's own child run; this page links to it and never repeats its body.
-
-- run: plan1 at /proj
+Merged from 2 planning card(s), one per feature area: PLAN-F1 (module a), PLAN-F2 (module b).
 
 ## User stories
-- US-1
-- US-2
+- F1-US-1 - a.txt says a (PLAN-F1)
+- F2-US-1 - b.txt says b (PLAN-F2)
+
+## F1 — module a
+
+card: E-aaaaaaaa/PLAN-F1 · DONE · run plan1 at /wt/PLAN-F1
+
+(no readable PRD document in this card's worktree - its stories as it returned them:)
+- F1-US-1 - a.txt says a
+
+## F2 — module b
+
+card: E-aaaaaaaa/PLAN-F2 · DONE · run plan2 at /wt/PLAN-F2
+
+(no readable PRD document in this card's worktree - its stories as it returned them:)
+- F2-US-1 - b.txt says b
+

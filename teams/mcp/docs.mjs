@@ -2,20 +2,24 @@
 // one impure function (writeDocs) that writes them - the engine never reads any of this back
 // (md is a rendered view, never a second source of truth, same principle as tickets.mjs's §4).
 //
-// v0.12.0 wires planning/qa into the EPIC flow as phase-Teams (taskmanager.mjs's task.planning_pkg
-// and task.qa_pkg), and renders three more of §7c's 13: 10-planning.md, 10-prd.md, 60-qa.md.
+// v0.12.0 wires planning/qa into the EPIC flow as phase-Teams, and renders three more of §7c's
+// 13: 10-planning.md, 10-prd.md, 60-qa.md. Since cards-everywhere (docs/plans/2026-09-28-teams-
+// cards-everywhere.md) planning and QA run as one card per feature area (tickets.mjs's
+// planningPkgs/qaPkgs): 10-planning.md and 60-qa.md list every card, and 10-prd.md is the MERGED
+// PRD plan-integrate judges - every card's accepted section under its area's heading.
 // v0.12.1 adds the third phase-Team, the audit (task.audit_pkg), and with it 65-audit.md - which
 // says more than the other two phase-Team pages because an audit's output is a list the manager
 // acted on: the unmet user stories it named, and the STORYs those became. 15-spec-gate.md
 // (v0.13.0's human gate) is the one file of §7c's 13 still without data behind it, and is not
 // rendered - an empty file would claim a feature that does not exist.
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { storyLabel, unfinishedWork } from './taskmanager.mjs';
 import { loadRun, runState } from './graph.mjs';
 import {
   epicKey, storyKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
   storyTicketState, storyTaskProgress, epicBoardRows, packageFiling,
+  planningPkgs, qaPkgs, planningStories,
 } from './tickets.mjs';
 
 function bullets(list) {
@@ -45,14 +49,14 @@ export function renderIndex(task) {
   L.push('| key | role | state | tasks | last verdict |', '|---|---|---|---|---|');
   for (const r of rows) L.push(`| ${r.id} | ${r.role} | ${r.state} | ${r.tasks || '—'} | ${r.last_verdict} |`);
   L.push('', '## Sections', '', '- [Request](./00-request.md)');
-  if (task.planning_pkg) L.push('- [Planning](./10-planning.md)', '- [PRD](./10-prd.md)');
+  if (planningPkgs(task).length) L.push('- [Planning](./10-planning.md)', '- [PRD](./10-prd.md)');
   if (task.spec) {
     L.push('- [Shape](./20-shape.md)');
     if (task.nodes.some((n) => n.stage === 'critique' && n.result)) L.push('- [Critique](./30-critique.md)');
     for (const p of task.spec.packages) L.push(`- [${p.id}](./40-stories/${p.id}.md)`);
   }
   if (task.nodes.some((n) => n.stage === 'integrate' && n.result)) L.push('- [Integrate](./50-integrate.md)');
-  if (task.qa_pkg) L.push('- [QA](./60-qa.md)');
+  if (qaPkgs(task).length) L.push('- [QA](./60-qa.md)');
   if (task.audit_pkg) L.push('- [Planning audit](./65-audit.md)');
   if (task.nodes.some((n) => n.stage === 'gate' && n.subgoal_id === null && n.result)) L.push('- [Goal gate](./70-goal-gate.md)');
   if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) L.push('- [Report](./80-report.md)');
@@ -98,31 +102,105 @@ function phaseTeamLines(task, pkg, title, worktreeLine) {
   return L;
 }
 
+// One section per card, sharing phaseTeamLines' "how did this card's run go" block, so a page
+// over three planning (or QA) cards reads as three short verdicts under one heading.
+function cardsPage(task, cards, title, worktreeLine, intro) {
+  const key = epicKey(task.run_id);
+  const L = [frontmatter(key, epicTicketState(task), task), `# ${title}`, ''];
+  if (intro) L.push(intro, '');
+  L.push('| card | area | state |', '|---|---|---|');
+  for (const p of cards) L.push(`| ${p.id} | ${p.area_title || p.title || ''} | ${storyTicketState(task, String(p.id))} |`);
+  for (const p of cards) {
+    const heading = `${p.id} — ${p.area_title || p.title || ''}`;
+    const lines = phaseTeamLines(task, p, heading, worktreeLine);
+    // phaseTeamLines opens with its own frontmatter for a standalone page; one page, one header,
+    // and each card's headings one level down under the page's own.
+    L.push('', ...lines.slice(lines.indexOf(`# ${heading}`)).map((x) => (/^#{1,5} /.test(x) ? `#${x}` : x)));
+  }
+  return L;
+}
+
 export function renderPlanning(task) {
-  const L = phaseTeamLines(task, task.planning_pkg, 'Planning phase-Team', (child) => `run: ${child.run_id} at ${child.cwd}`);
-  L.push('', 'The PRD itself is rendered separately - see [PRD](./10-prd.md).');
+  const cards = planningPkgs(task);
+  const pis = task.nodes.filter((n) => n.stage === 'plan-integrate');
+  const L = cardsPage(task, cards, 'Planning', (child) => `run: ${child.run_id} at ${child.cwd}`,
+    `${cards.length} planning card(s), one per feature area, each running the full harness in its own worktree; the planning integrate merges their sections into [the PRD](./10-prd.md) and judges it.`);
+  L.push('', '## Planning integrate', '');
+  if (!pis.length) L.push('(not opened yet)');
+  for (const n of pis) {
+    const r = n.result || {};
+    L.push(`- ${n.node_id}: ${n.state}${r.accept === undefined ? '' : ` · accept=${r.accept === true}`}${r.reason ? ` · ${String(r.reason).slice(0, 160)}` : ''}`);
+    for (const d of r.duplicates || []) L.push(`  - duplicate: ${d}`);
+    for (const c of r.contradictions || []) L.push(`  - contradiction: ${c}`);
+    for (const u of r.uncovered || []) L.push(`  - uncovered: ${u}`);
+  }
   return L.join('\n') + '\n';
 }
 
-// Link/citation only (§7c verbatim rule): the PRD's own body lives in the planning phase-Team's
-// child run, never copied here or into shape's briefing (taskmanager.mjs's composeTaskPrompt
-// makes the same choice for the same reason).
+// The planning card's own PRD files, read from its worktree - the latest dispatch its accept let
+// through (or the latest with a result, before any accept). Findings files are the investigate
+// stage's working notes, not the PRD; they stay in the card's tree.
+// The merge a planning integrate made is snapshotted on its node (taskmanager.mjs's
+// preparePlanIntegration, n.prd.docs, keyed by the dispatch it read): a card's worktree is a
+// package worktree tm_clean removes once the task is done, and 10-prd.md must still say what the
+// merged PRD was. The snapshot wins for the dispatch it was taken from; anything newer is read live.
+export function cardDocuments(task, p) {
+  const id = String(p.id);
+  const dispatches = task.nodes.filter((n) => n.stage === 'dispatch' && n.subgoal_id === id && n.result && n.child);
+  const accepted = dispatches.filter((d) => { const a = task.nodes.find((x) => x.stage === 'accept' && x.subgoal_id === id && (x.attempt || 1) === (d.attempt || 1)); return a && a.state === 'done'; });
+  const d = accepted.length ? accepted[accepted.length - 1] : dispatches[dispatches.length - 1];
+  if (!d) return { dispatch: null, docs: [] };
+  for (const pi of task.nodes.filter((n) => n.stage === 'plan-integrate' && n.prd && Array.isArray(n.prd.docs)).reverse()) {
+    const snap = pi.prd.docs.filter((x) => x.dispatch === d.node_id);
+    if (snap.length) return { dispatch: d, docs: snap.map((x) => ({ path: x.path, text: x.text })) };
+  }
+  const docs = [];
+  for (const rel of d.result.prd_paths || []) {
+    if (!/\.md$/i.test(String(rel)) || /-findings\.md$/i.test(String(rel))) continue;
+    try { docs.push({ path: String(rel), text: readFileSync(resolve(d.child.cwd, String(rel)), 'utf8') }); } catch { /* not readable: its stories are listed instead */ }
+  }
+  return { dispatch: d, docs };
+}
+
+// C4: the ONE PRD of this EPIC - every planning card's accepted section, merged under its feature
+// area's heading (each card's own headings demoted one level), with the whole EPIC's user stories
+// listed first so a reader and plan-integrate's judge see every id and the card that owns it in
+// one place. Written by preparePlanIntegration before the planning integrate is judged, and
+// re-rendered with every other page as the run moves; a card's documents stay in its own worktree
+// and are read from there.
 export function renderPrd(task) {
-  const pkg = task.planning_pkg;
-  const key = storyKey(task.run_id, pkg.id);
-  const dispatch = latestBySubgoal(task, pkg.id, 'dispatch');
-  const userStories = (dispatch && dispatch.result && Array.isArray(dispatch.result.user_stories)) ? dispatch.result.user_stories : [];
-  const L = [frontmatter(key, storyTicketState(task, pkg.id), task), '# PRD', ''];
-  L.push('The PRD itself lives in the planning phase-Team\'s own child run; this page links to it and never repeats its body.', '');
-  if (dispatch && dispatch.child) L.push(`- run: ${dispatch.child.run_id} at ${dispatch.child.cwd}`, '');
+  const cards = planningPkgs(task);
+  const key = epicKey(task.run_id);
+  const stories = planningStories(task);
+  const L = [frontmatter(key, epicTicketState(task), task), '# PRD', ''];
+  L.push(`Merged from ${cards.length} planning card(s), one per feature area: ${cards.map((p) => `${p.id} (${p.area_title || p.title})`).join(', ') || '(none)'}.`, '');
   // Stories arrive as {id, title, acceptance} objects; bullets(String(obj)) printed
   // "[object Object]" on this page long after the same bug was fixed in shape's path (2026-09-22).
-  L.push('## User stories', bullets(userStories.map(storyLabel)));
+  L.push('## User stories', bullets(stories.map((u) => `${storyLabel(u)} (${u.card})`)), '');
+  for (const p of cards) {
+    const { dispatch, docs } = cardDocuments(task, p);
+    L.push(`## ${p.area || p.id} — ${p.area_title || p.title}`, '');
+    L.push(`card: ${storyKey(task.run_id, p.id)} · ${storyTicketState(task, String(p.id))}${dispatch && dispatch.child ? ` · run ${dispatch.child.run_id} at ${dispatch.child.cwd}` : ''}`, '');
+    if (!docs.length) {
+      const mine = stories.filter((u) => u.card === String(p.id));
+      L.push(dispatch ? '(no readable PRD document in this card\'s worktree - its stories as it returned them:)' : '(not planned yet)');
+      if (mine.length) L.push(bullets(mine.map(storyLabel)));
+      L.push('');
+      continue;
+    }
+    for (const doc of docs) {
+      if (docs.length > 1) L.push(`### ${doc.path}`, '');
+      const depth = docs.length > 1 ? '##' : '#';
+      L.push(doc.text.replace(/^---\n[\s\S]*?\n---\n/, '').split('\n').map((x) => (/^#{1,4} /.test(x) ? `${depth}${x}` : x)).join('\n').trim(), '');
+    }
+  }
   return L.join('\n') + '\n';
 }
 
 export function renderQa(task) {
-  return phaseTeamLines(task, task.qa_pkg, 'QA', (child) => `worktree: ${child.cwd} (the integration tree)`).join('\n') + '\n';
+  const cards = qaPkgs(task);
+  return cardsPage(task, cards, 'QA', (child) => `worktree: ${child.cwd} (the integration tree)`,
+    `${cards.length} QA card(s), one per feature area, run in parallel over the integrated tree; their defects are filed together as fix STORYs once the whole round has settled.`).join('\n') + '\n';
 }
 
 // The audit's own page. phaseTeamLines carries the shared "how did the phase-Team's run go"
@@ -385,8 +463,8 @@ export function renderBlockedReport(task) {
 // all skipped by design. slack-list (2026-09-27) read BLOCKED with "(none)" as the blocker while
 // tm_status said complete, because the blocked branch read the manager graph. This reads the
 // run - its state, its report, its goal verdict and drift - and says plainly what a size-S task
-// does not do: phase-Teams (planning/qa/audit) do not run, and the run writes straight into the
-// project's working tree, uncommitted, with no worktree or branch.
+// does not do: QA and the audit do not run (planning does - one card, C6), and the run writes
+// straight into the project's working tree, uncommitted, with no worktree or branch.
 export function renderSReport(task) {
   const key = epicKey(task.run_id);
   const run = loadRun(task.s_run.cwd, task.s_run.run_id);
@@ -405,11 +483,15 @@ export function renderSReport(task) {
     if ((r.observations || []).length) L.push('', 'Observations:', bullets(r.observations));
     L.push('');
   }
+  // C6: a size-S task is planned like any other - its planning card and PRD are its own pages.
+  if (planningPkgs(task).length) {
+    L.push('## Planning', '', `${planningPkgs(task).map((p) => p.id).join(', ')} planned this run; the PRD it built from is [10-prd.md](./10-prd.md), with ${planningStories(task).length} user stor${planningStories(task).length === 1 ? 'y' : 'ies'}.`, '');
+  }
   L.push('## What a size-S task does not do', '');
   const roles = (task.team && task.team.opts && task.team.opts.roles) || {};
-  const on = ['planning', 'qa', 'audit'].filter((r) => roles[r] === true || (r === 'planning' && typeof roles.planning === 'string') || (r === 'audit' && roles.planning && roles.audit !== false));
+  const on = ['qa', 'audit'].filter((r) => roles[r] === true || (r === 'audit' && roles.planning && roles.audit !== false));
   const notes = [];
-  if (on.length) notes.push(`roles ${on.join(', ')} are on, but phase-Teams run only on a size-L task - none of them ran here. Pin size L (tm_open size: "L") to have them.`);
+  if (on.length) notes.push(`roles ${on.join(', ')} are on, but QA and the planning audit run only on a size-L task (after integration) - neither ran here. Pin size L (tm_open size: "L") to have them.`);
   notes.push(`the run wrote straight into ${task.s_run.cwd}: no worktree, no branch, nothing committed - review and commit it yourself.`);
   L.push(bullets(notes));
   return L.join('\n') + '\n';
@@ -421,7 +503,7 @@ export function renderSReport(task) {
 export function renderAll(task) {
   const paths = docPaths(task);
   const files = { [paths.index]: renderIndex(task), [paths.request]: renderRequest(task) };
-  if (task.planning_pkg) {
+  if (planningPkgs(task).length) {
     files[paths.planning] = renderPlanning(task);
     files[paths.prd] = renderPrd(task);
   }
@@ -431,7 +513,7 @@ export function renderAll(task) {
     for (const p of task.spec.packages) files[paths.story(p.id)] = renderStory(task, String(p.id));
   }
   if (task.nodes.some((n) => n.stage === 'integrate' && n.result)) files[paths.integrate] = renderIntegrate(task);
-  if (task.qa_pkg) files[paths.qa] = renderQa(task);
+  if (qaPkgs(task).length) files[paths.qa] = renderQa(task);
   if (task.audit_pkg) files[paths.audit] = renderAudit(task);
   if (task.nodes.some((n) => n.stage === 'gate' && n.subgoal_id === null && n.result)) files[paths.goalGate] = renderGoalGate(task);
   const sReport = task.s_run && task.s_run.run_id ? renderSReport(task) : null;

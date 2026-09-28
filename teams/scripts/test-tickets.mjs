@@ -1118,3 +1118,31 @@ test('flowMetrics: a STORY that never logged an explicit BACKLOG line (deps alre
   assert.equal(fm.lead_time_ms.by_story[`${EPIC}/P1`], 2000); // 4000 - 2000 (first logged line, not a real BACKLOG)
   assert.equal(fm.cycle_time_ms.by_story[`${EPIC}/P1`], 1000); // 4000 - 3000
 });
+
+// Cards everywhere (docs/plans/2026-09-28-teams-cards-everywhere.md C2/C7): planning and QA are one
+// card per feature area. Every reader goes through planningPkgs/qaPkgs, which also read a task.json
+// written before the split (a single planning_pkg/qa_pkg) as a one-card list.
+test('planningPkgs/qaPkgs/phaseOfId read the card lists, and a pre-split task.json as one card each', async () => {
+  const { planningPkgs, qaPkgs, phaseOfId, planningStories, ticketSnapshot, epicBoardRows } = await import('../mcp/tickets.mjs');
+  const legacy = { run_id: 'legacy00-0000', nodes: [], planning_pkg: { id: 'PLAN', phase: 'planning' }, qa_pkg: { id: 'QA', phase: 'qa' } };
+  assert.deepEqual(planningPkgs(legacy).map((p) => p.id), ['PLAN']);
+  assert.deepEqual(qaPkgs(legacy).map((p) => p.id), ['QA']);
+  assert.equal(phaseOfId(legacy, 'QA'), 'qa');
+  const cards = {
+    run_id: 'cards000-0000', planning_pkgs: [{ id: 'PLAN-F1', phase: 'planning' }, { id: 'PLAN-F2', phase: 'planning' }],
+    qa_pkgs: [{ id: 'QA-F1', phase: 'qa' }, { id: 'QA-F2', phase: 'qa' }], audit_pkg: { id: 'AUDIT', phase: 'audit' },
+    spec: { packages: [{ id: 'P1' }] },
+    nodes: [
+      node('dispatch:PLAN-F1:1', 'dispatch', [], { subgoal_id: 'PLAN-F1', attempt: 1, state: 'done', result: { user_stories: [{ id: 'F1-US-1' }] } }),
+      node('accept:PLAN-F1:1', 'accept', ['dispatch:PLAN-F1:1'], { subgoal_id: 'PLAN-F1', attempt: 1, state: 'done' }),
+      node('dispatch:PLAN-F2:1', 'dispatch', [], { subgoal_id: 'PLAN-F2', attempt: 1, state: 'done', result: { user_stories: ['refused'] } }),
+      node('accept:PLAN-F2:1', 'accept', ['dispatch:PLAN-F2:1'], { subgoal_id: 'PLAN-F2', attempt: 1, state: 'failed' }),
+      node('dispatch:PLAN-F2:2', 'dispatch', [], { subgoal_id: 'PLAN-F2', attempt: 2, state: 'done', result: { user_stories: ['F2-US-1'] } }),
+      node('accept:PLAN-F2:2', 'accept', ['dispatch:PLAN-F2:2'], { subgoal_id: 'PLAN-F2', attempt: 2, state: 'done' }),
+    ],
+  };
+  assert.deepEqual([phaseOfId(cards, 'PLAN-F2'), phaseOfId(cards, 'QA-F1'), phaseOfId(cards, 'AUDIT'), phaseOfId(cards, 'P1')], ['planning', 'qa', 'audit', null]);
+  assert.deepEqual(planningStories(cards), [{ id: 'F1-US-1', card: 'PLAN-F1' }, { id: 'F2-US-1', card: 'PLAN-F2' }], 'each card\'s accepted attempt, tagged with the card');
+  assert.deepEqual(epicBoardRows(cards).map((r) => [r.id, r.role]), [['PLAN-F1', 'planning'], ['PLAN-F2', 'planning'], ['P1', 'develop'], ['QA-F1', 'qa'], ['QA-F2', 'qa'], ['AUDIT', 'audit']]);
+  assert.deepEqual(Object.keys(ticketSnapshot(cards)), ['E-cards000', 'E-cards000/PLAN-F1', 'E-cards000/PLAN-F2', 'E-cards000/P1', 'E-cards000/QA-F1', 'E-cards000/QA-F2', 'E-cards000/AUDIT']);
+});

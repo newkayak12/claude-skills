@@ -255,9 +255,21 @@ const DEPRECATED = {
   human_scope: 'no-op: replaced by task.decisions (session brainstorm / brainstorm node / EPIC-level blocking questions)',
 };
 
+// roles.planning: false is refused (docs/plans/2026-09-28-teams-cards-everywhere.md C5,
+// principle 4 "planning always produces its deliverables - no setting skips them"). Only that one
+// entry is dropped, with a note naming the value that stands instead; the rest of the roles object
+// (qa, audit) still applies, so a team.json that also turned QA off keeps that.
+export const PLANNING_OFF_REFUSED = 'roles.planning: false is refused - planning always produces its PRD and user stories (cards-everywhere principle 4)';
+
 function applyLayer(opts, sources, notes, layer, name) {
-  for (const [k, v] of Object.entries(layer || {})) {
+  for (let [k, v] of Object.entries(layer || {})) {
     if (k in DEPRECATED) { notes.push(`${name}: "${k}" is deprecated, ${DEPRECATED[k]}`); continue; }
+    if (k === 'roles' && v && typeof v === 'object' && !Array.isArray(v) && v.planning === false) {
+      notes.push(`${name}: ${PLANNING_OFF_REFUSED}; roles.planning stays ${JSON.stringify(opts.roles.planning)}`);
+      const { planning, ...rest } = v;
+      if (!Object.keys(rest).length) continue;
+      v = rest;
+    }
     if (!(k in CHECK)) { notes.push(`${name}: unknown key "${k}" ignored`); continue; }
     if (!CHECK[k](v)) { notes.push(`${name}: "${k}" has the wrong type or range, ignored`); continue; }
     opts[k] = k === 'roles' ? { ...opts.roles, ...v } : (Array.isArray(v) ? v.slice() : v);

@@ -54,23 +54,26 @@ One EPIC (named):
 
 | key  | role     | state        | tasks | last verdict |
 |------|----------|--------------|-------|--------------|
-| PLAN | planning | DONE         | 1/1   | accept 92    |
-| P1   | develop  | DONE         | 3/3   | accept 94    |
-| P2   | develop  | IN_PROGRESS  | 2/5   | —            |
-| P3   | develop  | WAITING_HUMAN | —     | —            |
-| QA   | qa       | READY        | —     | —            |
+| PLAN-F1 | planning | DONE      | 1/1   | accept 92    |
+| PLAN-F2 | planning | DONE      | 1/1   | accept 95    |
+| P1      | develop  | DONE      | 3/3   | accept 94    |
+| P2      | develop  | IN_PROGRESS | 2/5 | —            |
+| P3      | develop  | WAITING_HUMAN | — | —            |
+| QA-F1   | qa       | READY     | —     | —            |
+| QA-F2   | qa       | READY     | —     | —            |
 
 doc: .teams_output/team/E-a1b2c3d4/INDEX.md
 ```
 
-`role` is `develop` for an ordinary package. `planning`, `qa` and `audit` are the phase-Team rows
-that `.claude/team.json`'s `roles.planning`/`roles.qa` switches insert into the EPIC flow, each
-appearing only when its switch is on: `planning` (key `PLAN`) is always the first row — it drafts
-the PRD `shape` reads, before `shape` runs at all. `qa` (key `QA`) runs between `integrate` and
-`gate:goal`, reusing the repair worktree. `audit` (key `AUDIT`, `roles.planning` again) is always
-the last row — planning's second pass, cross-checking the integrated result against its own PRD
-after QA, or straight after `integrate` when `qa` is off. `tasks` is `—` when no dispatch has
-started a child run.
+`role` is `develop` for an ordinary package. `planning`, `qa` and `audit` are the phase-Team rows,
+and planning and QA run as one card per feature area (docs/plans/2026-09-28-teams-cards-everywhere.md):
+the `planning` rows (keys `PLAN-F1`, `PLAN-F2`, ...) always come first - every EPIC has at least
+one, since planning cannot be turned off - each writing its area's PRD section, merged into the one
+PRD `shape` reads. The `qa` rows (keys `QA-F1`, `QA-F2`, ..., `roles.qa`) run between `integrate`
+and `gate:goal`, one per feature area, on the integration tree. `audit` (key `AUDIT`,
+`roles.audit`) is always the last row — planning's second pass, cross-checking the integrated
+result against the merged PRD after QA, or straight after `integrate` when `qa` is off. `tasks` is
+`—` when no dispatch has started a child run.
 
 `reporter` says where a row came from. For a `develop` row: `shape` is original scope, `repair`
 is an integration seam, and `qa`, `planning-audit` and `you` are filed stories — a defect QA
@@ -86,7 +89,7 @@ Each STORY row also carries its relations to every other STORY (`links`, from `t
 `storyLinks`): `blocked_by`/`blocks` name a sibling STORY key plus that sibling's OWN current
 state (not just that a dep was declared — whether it has actually cleared; `blocks` is the
 computed inverse of `blocked_by`, never a separate source of truth), `implements` names the PRD
-user-story ids (`US-1`, …) this STORY was shaped to satisfy when `roles.planning` is on, and
+user-story ids (`F1-US-1`, …, from every planning card) this STORY was shaped to satisfy, and
 `filed_by` repeats `reporter` under the same name `tickets.mjs` uses elsewhere. Render them only
 when the human asks for a STORY's detail (see `ticket`) or when something is actually waiting on
 something else — an ordinary row with none of these needs no extra text in the table above.
