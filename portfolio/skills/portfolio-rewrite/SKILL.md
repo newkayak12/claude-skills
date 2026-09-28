@@ -22,110 +22,93 @@ compatibility:
 
 # Portfolio Section Rewriter
 
-## When to Use / When Not to Use
-
-**Use when:**
-- Acting on specific improvement areas from portfolio-feedback
-- Rewriting sentences that are vague, passive, or junior-sounding
-- Turning impact claims without numbers into specific, measurable statements
-
-**Not for:**
-- Overall portfolio scoring (use portfolio-feedback)
-- Understanding writing patterns holistically (use portfolio-pattern)
-- Keyword matching to a JD (use resume-tailorer)
+**Not for** overall scoring (`portfolio-feedback`), holistic writing patterns (`portfolio-pattern`), or JD keyword matching (`resume-tailorer`).
 
 ## Process
 
-1. **Diagnose what's weak** — not just "vague" but specifically: missing numbers, passive ownership, no context, no tradeoff, no outcome
-2. **Ask for missing facts** — if numbers or role scope are absent, request them before rewriting
-3. **Produce Before/After** — verbatim original + rewritten version + 2-4 sentence explanation of what changed and why
-4. **Apply techniques** — specificity, ownership language (저는 → 제가 설계했습니다), decision visibility, outcome framing, conflict-and-resolution
-5. **Offer continuation** — invite the user to paste additional sections
+**0. Ledger.** In a continuing session, restate the `[확정]` list before any new work: excluded items, kept wording, numbers already judged over-claimed, and a pattern already called out. Check every proposal against it; nothing on the list is re-proposed or reopened. Add each decision the user makes to it.
 
-## Standalone Inputs
+**1. Diagnose (think-tool).** Before rewriting, call `think` if available:
+- What is the candidate actually trying to say?
+- Which element is weakest: missing numbers, passive ownership, vague outcome, no context, no tradeoff? Which XYZ+S letter is absent?
+- What is implied but unstated, and is it fixable by phrasing or does it need facts only the candidate has?
 
-Paste the specific portfolio passage(s) you want rewritten. If numbers or role context are missing, Claude will ask before rewriting.
+**2. Rewrite with markers.** Produce the rewrite now, not after asking. Where a number, cause, date, context or role scope is missing, write `[확인 필요: ○○]` in its place — never invent, estimate or back-calculate it, and offer no candidate values. `API 응답속도 개선` becomes `API 응답속도 [확인 필요: 개선 전/후 수치] 개선`, not `40% 개선`. List the questions after the rewrite.
 
-## What Claude Does / What You Do
+**3. Apply the techniques** below, then explain what changed and why.
 
-| Claude | You |
-|--------|-----|
-| Diagnoses what is actually weak in the original (not just "it's vague") | Provides missing facts: actual numbers, your specific role, what changed |
-| Produces Before/After with explanation of what changed and why | Validates the rewrite is factually accurate |
-| Applies techniques: specificity, ownership language, decision visibility, outcome framing | Decides which version to use |
-| Flags when a rewrite needs facts you haven't provided yet | Supplies those facts so rewrites are honest, not fabricated |
+**4. Pattern once.** If the whole portfolio is weak the same way, call it out once as a pattern and record it in `[확정]` so later turns do not repeat it.
 
-## Related Skills
+**5. Offer continuation**: "이 외에 고치고 싶은 섹션이 있으면 붙여넣어 주세요."
 
-- `../portfolio-pattern/SKILL.md` — diagnose patterns before targeted rewriting
-- `../portfolio-feedback/SKILL.md` — understand which sections to prioritize for rewriting
+Write in the language of the original (Korean input → Korean output).
 
----
+### Rewriting Principles
 
-## Stage 1 — Understand What's There (Think Tool)
+Every pair below holds the same facts on both sides; what the Weak side lacks stays a marker.
 
-Before rewriting anything, call `think` to assess:
-- What is the candidate actually trying to say here?
-- What is the weakest element: missing numbers, passive ownership, vague outcome, no context, no tradeoff?
-- What information might be implied but not stated that the candidate probably *has* and just didn't include?
-- Is this fixable with better phrasing, or does it need the candidate to supply missing facts?
+**XYZ+S — the bullet-level target shape**
+`Accomplished X, measured by Y, by doing Z — in context S.` Most weak bullets are missing Y (the metric) or S (why the context made it hard). A bullet with all four rarely needs more words, it needs the right four.
+- Weak: `배포 파이프라인 개선 (빌드 캐시 분리, 카나리 자동화, 30분 → 4분, 정산 서비스 일 40회 배포)`
+- Strong: `배포 소요 30분 → 4분 (X, Y) — 빌드 캐시 분리와 카나리 자동화로 (Z), 일 40회 배포하는 정산 서비스에서 (S)`
 
-If key facts are missing (numbers, your specific role, what changed after), ask for them before rewriting. A well-phrased version of a vague claim is still a vague claim.
+**Specificity over generality**
+- Weak: "성능 개선"
+- Strong: "[확인 필요: 적용한 조치]로 p99 응답시간 [확인 필요: 개선 전/후 수치] 단축"
 
-> 🧠 **Rewriter note**: Record the diagnosis here if it's non-obvious — what was actually wrong with the original, beyond "it's weak."
+**Ownership language**
+- Weak: "구현되었습니다", "팀에서 진행했습니다"
+- Strong: "제가 [확인 필요: 직접 맡은 범위 — 설계/제안/주도 중 무엇]을 맡아 진행했습니다"
 
----
+**Decision, not just action**
+- Weak: "메시지 유실 방지를 위해 Kafka(파티션 순서 보장, 리플레이)로 비동기 처리를 구현했습니다. RabbitMQ도 검토했습니다"
+- Strong: "메시지 유실 없는 비동기 처리가 필요했고, RabbitMQ 대신 Kafka를 선택한 이유는 파티션 기반 순서 보장과 리플레이 가능성 때문이었습니다"
 
-## Stage 2 — Rewrite
+**Outcomes, not activities**
+- Weak: "Grafana + Prometheus로 모니터링 시스템을 구축했습니다"
+- Strong: "Grafana + Prometheus 모니터링을 도입해 [확인 필요: 도입 전/후 달라진 지표와 수치]"
 
-For each passage, produce:
+**Conflict and resolution**
+Perfectly smooth portfolios feel rehearsed; what went wrong and how it was resolved is more credible than pure success — but both come from the candidate, or stay `[확인 필요: ○○]`.
 
----
+### Rules
+
+- Rewrite, then ask: questions follow the rewrite, never replace it.
+- The writing-mode guard of `portfolio-feedback` is not imported; this skill rewrites by purpose, bounded by the marker rule (default - revisit).
+
+## Output Template
+
+For each passage, in this order:
+
+**진단 / Diagnosis** — one line: the weakest element (e.g. "Y 없음 — 성과가 수치 없이 활동으로만 적힘").
 
 **Before:**
 > [original text, verbatim]
 
 **After:**
-> [rewritten version]
+> [rewritten version, missing facts as `[확인 필요: ○○]`]
 
 **왜 더 강해졌는가:**
-Explain in 2–4 sentences: what changed and why it matters to an interviewer. Be specific about the technique used (added metric, changed subject from "we" to "I", surfaced the decision not just the outcome, added failure-and-recovery arc, etc.)
+2–4 sentences: what changed and why it matters to an interviewer, naming the technique (changed subject from "we" to "I", surfaced the decision, reshaped to XYZ+S, added failure-and-recovery arc).
 
-> 🧠 **Rewriter note**: [only if the reasoning behind the rewrite was non-obvious or required a real judgment call]
+> 🧠 **Rewriter note**: [only if the diagnosis or rewrite needed a real judgment call]
 
----
+**[확인 필요 질문]** *(omit when none)* — one question per marker, in the order they appear.
 
-## Rewriting Principles
+**[확정]** *(continuing session)* — the restated list plus anything settled this turn, including a pattern call-out already made.
 
-**XYZ+S — the bullet-level target shape**
-`Accomplished X, measured by Y, by doing Z — in context S.` Most weak bullets are missing Y (the metric) or S (why the context made it hard). Diagnose which letter is absent before rewriting; a bullet with all four rarely needs more words, it needs the right four.
-- Weak: `배포 파이프라인 개선`
-- Strong: `배포 소요 30분 → 4분 (X, Y) — 빌드 캐시 분리와 카나리 자동화로 (Z), 일 40회 배포하는 정산 서비스에서 (S)`
+Close with the continuation offer.
 
-**Specificity over generality**
-- Weak: "성능 개선"
-- Strong: "DB 풀 사이즈 튜닝 및 N+1 쿼리 제거로 p99 응답시간 900ms → 140ms 단축"
+## What Claude Does / What You Do
 
-**Ownership language**
-- Weak: "구현되었습니다", "팀에서 진행했습니다"
-- Strong: "제가 설계하고 주도했습니다", "직접 제안하여 도입했습니다"
+| Claude | You |
+|--------|-----|
+| Diagnoses what is actually weak in the original (not just "it's vague") | Fill each `[확인 필요]` with real numbers, your specific role, what changed |
+| Produces Before/After with explanation of what changed and why | Validate the rewrite is factually accurate |
+| Applies techniques: specificity, ownership language, decision visibility, outcome framing | Decide which version to use |
+| Keeps the `[확정]` list and never re-proposes what is on it | Say what is settled, excluded or kept |
 
-**Decision, not just action**
-- Weak: "Kafka를 사용하여 비동기 처리를 구현했습니다"
-- Strong: "메시지 유실 없는 비동기 처리가 필요했고, RabbitMQ 대신 Kafka를 선택한 이유는 파티션 기반 순서 보장과 리플레이 가능성 때문이었습니다"
+## Related Skills
 
-**Outcomes, not activities**
-- Weak: "모니터링 시스템을 구축했습니다"
-- Strong: "Grafana + Prometheus 기반 모니터링을 도입해 장애 평균 감지 시간을 40분 → 3분으로 단축했습니다"
-
-**Conflict and resolution**
-Senior portfolios that read perfectly smooth feel rehearsed. A sentence that includes what went wrong and how it was resolved is more credible than one that only describes success.
-
----
-
-## Rules
-
-- If the user hasn't provided the numbers or context to make the rewrite specific, ask first. Don't make up metrics.
-- Rewrite in the same language the original was written in (Korean input → Korean output).
-- After rewriting, offer: "이 외에 고치고 싶은 섹션이 있으면 붙여넣어 주세요."
-- If the entire portfolio is weak in the same way, call it out once as a pattern rather than repeating the same note on every item.
+- `../portfolio-pattern/SKILL.md` — diagnose patterns before targeted rewriting
+- `../portfolio-feedback/SKILL.md` — understand which sections to prioritize for rewriting
