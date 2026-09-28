@@ -1,5 +1,5 @@
 ---
-name: portfolio-jd
+name: jd-fit
 effort: high
 description: >-
   Use when someone provides both a portfolio and a specific job description and

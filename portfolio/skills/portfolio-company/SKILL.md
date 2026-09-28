@@ -39,7 +39,7 @@ compatibility:
 - Needing honest feedback on where this portfolio would struggle
 
 **Not for:**
-- You have a specific job posting (use portfolio-jd)
+- You have a specific job posting (use jd-fit)
 - You want to rewrite portfolio sections (use portfolio-rewrite)
 - You want overall feedback on portfolio quality (use portfolio-feedback)
 
@@ -66,7 +66,7 @@ Provide: your portfolio (paste or describe key sections), and optionally any spe
 
 ## Related Skills
 
-- `../portfolio-jd/SKILL.md` — once you've chosen a target, do JD-specific gap analysis
+- `../jd-fit/SKILL.md` — once you've chosen a target, do JD-specific gap analysis
 - `../portfolio-rewrite/SKILL.md` — improve weak sections after identifying positioning gaps
 - `../portfolio-feedback/SKILL.md` — overall assessment before company fit analysis
 

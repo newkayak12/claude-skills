@@ -1,5 +1,5 @@
 ---
-name: portfolio-interview
+name: mock-interview
 description: >-
   Use when someone wants to practice defending their work in a realistic mock
   interview — the interviewer asks questions grounded in the actual portfolio,
@@ -32,7 +32,7 @@ compatibility:
 - After receiving portfolio-feedback and wanting to rehearse difficult questions
 
 **Not for:**
-- Building a prep plan from scratch (use interview-prep)
+- Building a prep plan from scratch (use interview-plan)
 - Overall portfolio quality assessment (use portfolio-feedback)
 - Resume tailoring to a JD (use resume-tailorer)
 
@@ -63,7 +63,7 @@ If arriving here without prior portfolio-feedback, provide:
 ## Related Skills
 
 - `../portfolio-feedback/SKILL.md` — get overall assessment before mock interview
-- `../interview-prep/SKILL.md` — build study plan covering topics exposed in this mock
+- `../interview-plan/SKILL.md` — build study plan covering topics exposed in this mock
 - `../portfolio-rewrite/SKILL.md` — improve weak portfolio sections that came up in the interview
 
 ---

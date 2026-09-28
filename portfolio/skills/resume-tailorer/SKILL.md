@@ -39,7 +39,7 @@ compatibility:
 
 **Not for:**
 - General resume improvement without a JD (use portfolio-rewrite)
-- Assessing how well you fit a role (use portfolio-jd)
+- Assessing how well you fit a role (use jd-fit)
 - Understanding which companies to target (use portfolio-company)
 
 ## Process
@@ -69,7 +69,7 @@ Also useful: company name/stage, role level, why you want this specific role.
 
 ## Related Skills
 
-- `../portfolio-jd/SKILL.md` — fit assessment before deciding to tailor
+- `../jd-fit/SKILL.md` — fit assessment before deciding to tailor
 - `../portfolio-rewrite/SKILL.md` — general improvement not tied to a specific JD
 
 ## Why Generic Resumes Fail

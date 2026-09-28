@@ -54,7 +54,7 @@ compatibility:
 ## Steps
 
 ### Step 1 — Job Description Analysis
-**Skill:** `portfolio-jd`
+**Skill:** `jd-fit`
 **Goal:** Decode what the JD is really asking for beneath the surface language
 **Output:** Must-have vs nice-to-have breakdown, hidden signals, fit gap analysis
 **Input needed:** Paste the JD text
@@ -85,7 +85,7 @@ compatibility:
 ---
 
 ### Step 4 — Interview Preparation
-**Skill:** `interview-prep`
+**Skill:** `interview-plan`
 **Goal:** Prepare stories, answers, and questions for each interview stage
 **Input:** JD analysis + company research + your experience
 **Output:** STAR story bank, likely questions + answers, questions to ask
@@ -122,6 +122,6 @@ compatibility:
 
 ## Related Skills
 
-- Individual: `portfolio-jd`, `portfolio-company`, `resume-tailorer`, `interview-prep`
+- Individual: `jd-fit`, `portfolio-company`, `resume-tailorer`, `interview-plan`
 - Adjacent: `portfolio-feedback` (external review of materials before applying)
 - After: `think:negotiation` (for offer negotiation)
