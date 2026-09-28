@@ -149,8 +149,13 @@ function binaryPresent(name) {
 
 // ---------- ledger ----------
 
+// Everything the harness itself writes while a node runs - the ledger, probe caches, and
+// every node's own prompt/result files - lives here. Never attributable to the node under
+// judgment (verifySnapshot/verifyRestore below read this same constant).
+const HARNESS_ROOT = '.teams_output';
+
 function brokerDir(cwd) {
-  return join(cwd, '.teams_output', 'broker');
+  return join(cwd, HARNESS_ROOT, 'broker');
 }
 
 function record(cwd, entry) {
@@ -449,65 +454,121 @@ function crossCheck(cwd, claimed, isolated, kind) {
 // behind it for this vendor (the claude adapter's own top comment says so) - a denylist of
 // mutating git/fs verbs helps, but does not catch a redirect (`echo x > path`), `tee`, or a
 // scripting language writing a file directly. This pair is the actual backstop: fingerprint
-// what the node is allowed to touch before it runs, and if it differs after, restore it and
+// the whole worktree before the node runs, and if anything differs after, restore it and
 // void the node's own verdict - "read-only" holds because the work is put back, not only
 // because the model was asked nicely.
 //
-// Scope matters: a subgoal's own declared files[] is what verifySnapshot fingerprints, byte
-// for byte, never a whole-tree git status. Two sibling subgoals can share one cwd when the
-// run is not isolated ("isolated" means only this RUN has the cwd, not that each subgoal
-// does - team_open's own schema says so) and each legitimately writes its OWN files while
-// this one's gate is judging; a whole-tree diff would call that a violation of a node that
-// touched nothing. A node with no subgoal (gate:goal) has no files[] to scope to and falls
-// back to a whole-tree git status - by the time it runs every subgoal gate is already
-// settled (the graph's own deps), so nothing else should be writing here, and a git-based
-// restore (checkout/clean) is safe because there is no earlier "uncommitted work in
-// progress" state a checkout could clobber, the way there would be for a subgoal still
-// mid-chain.
-function verifySnapshot(run, n) {
-  if (n.subgoal_id) {
-    const sg = (run.spec?.subgoals || []).find((s) => String(s.id) === String(n.subgoal_id));
-    const files = (Array.isArray(sg?.files) ? sg.files : [])
-      .filter((f) => typeof f === 'string' && !f.includes('*'));
-    const data = {};
-    for (const f of files) {
-      try { data[f] = readFileSync(join(run.cwd, f.replace(/^\.\//, ''))); } catch { data[f] = null; }
+// This used to fingerprint only the node's own subgoal's declared files[], byte for byte,
+// never a whole-tree git status - on the theory (still true) that two sibling subgoals can
+// share one cwd when the run is not isolated ("isolated" means only this RUN has the cwd, not
+// that each subgoal does - team_open's own schema says so), and each legitimately writes its
+// OWN files while this one's gate is judging. But that scope was also the gap: a verify-mode
+// node could write ANY file NOT in its own subgoal's files[] - another subgoal's tracked
+// file, a brand-new untracked file, a build artifact - and the fingerprint never looked
+// there, so nothing caught it.
+//
+// The fix watches every path `git status` reports (tracked or not) and narrows only two ways:
+//   - isHarnessPath: the harness's own writes while a node runs (the ledger, probe caches,
+//     every node's own prompt/result files, all under HARNESS_ROOT) are never the node's doing.
+//   - concurrentWriterFiles: a SIBLING subgoal whose own author node is genuinely `running`
+//     right now may touch its own declared files without blame - the concurrency the old
+//     scoping was built for. A sibling that is not concurrently running (finished, not yet
+//     started, or this is a whole-tree gate:goal with no sibling gates still open) earns no
+//     such cover; a change to its file is attributed to this node like any other.
+// Everything else that changes - including this node's own subgoal's files, the original
+// scope, still covered - is a violation.
+function isHarnessPath(rel) {
+  return rel === HARNESS_ROOT || rel.startsWith(HARNESS_ROOT + '/');
+}
+
+// The same glob shape crossCheck uses for a claimed file against git's observed list,
+// factored out so a declared files[] pattern can be tested against an observed path here too.
+function fileGlobRe(g) {
+  return new RegExp('(^|/)' + g.split('*').map((x) => x.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*') + '$');
+}
+function declaresPath(patterns, rel) {
+  return patterns.some((p) => {
+    const q = String(p).replace(/^\.\//, '');
+    return q.includes('*') ? fileGlobRe(q).test(rel) : (rel === q || rel.endsWith('/' + q));
+  });
+}
+
+// Every OTHER node's declared files[], but only for a subgoal whose own node is actually in
+// state 'running' right now - read fresh by the caller at both ends of the window (before
+// dispatch, and again at restore time) and unioned there, since a sibling can start or finish
+// while this node runs. A subgoal that merely exists in the spec earns no cover; only a node
+// genuinely mid-flight does, which is exactly the concurrency the whole-tree check must not
+// misattribute.
+function concurrentWriterFiles(run, n) {
+  const subgoals = (run.spec && run.spec.subgoals) || [];
+  const files = [];
+  for (const other of run.nodes) {
+    if (other.node_id === n.node_id || other.state !== 'running' || !other.subgoal_id) continue;
+    const sg = subgoals.find((s) => String(s.id) === String(other.subgoal_id));
+    for (const f of (Array.isArray(sg?.files) ? sg.files : [])) {
+      if (typeof f === 'string') files.push(f);
     }
-    return { scope: 'files', files, data };
   }
-  return { scope: 'tree', tree: gitChanged(run.cwd) };
+  return files;
+}
+
+function verifySnapshot(run, n) {
+  const changed = gitChanged(run.cwd);
+  if (changed === null) return { noGit: true };
+  const paths = changed.filter((p) => !isHarnessPath(p));
+  const data = {};
+  for (const p of paths) {
+    try { data[p] = readFileSync(join(run.cwd, p)); } catch { data[p] = null; }
+  }
+  return { paths, data, writers: concurrentWriterFiles(run, n) };
 }
 
 // Returns the paths that changed and had to be put back - an empty array means the node's
 // own verdict stands. Best-effort restore: a failure to write back is still reported, so the
 // caller voids the verdict either way rather than trusting a tree it could not confirm.
 function verifyRestore(run, n, before) {
-  if (before.scope === 'files') {
-    const changed = [];
-    for (const f of before.files) {
-      const abs = join(run.cwd, f.replace(/^\.\//, ''));
-      let now;
-      try { now = readFileSync(abs); } catch { now = null; }
-      const was = before.data[f];
-      const same = now === null ? was === null : was !== null && Buffer.compare(now, was) === 0;
-      if (same) continue;
-      changed.push(f);
-      try {
-        if (was === null) rmSync(abs, { force: true });
-        else { mkdirSync(dirname(abs), { recursive: true }); writeFileSync(abs, was); }
-      } catch { /* reported regardless - the caller voids the verdict either way */ }
-    }
-    return changed;
-  }
+  if (before.noGit) return [];
   const after = gitChanged(run.cwd);
-  if (after === null || before.tree === null) return [];
-  const beforeSet = new Set(before.tree);
-  const newPaths = after.filter((p) => !beforeSet.has(p));
-  for (const p of newPaths) {
-    spawnSync('git', ['checkout', '--', p], { cwd: run.cwd });
-    spawnSync('git', ['clean', '-fq', '--', p], { cwd: run.cwd });
+  if (after === null) return [];
+  const writers = [...new Set([...(before.writers || []), ...concurrentWriterFiles(run, n)])];
+  const beforeMap = before.data || {};
+  const beforeSet = new Set(before.paths || []);
+  const all = new Set([...beforeSet, ...after.filter((p) => !isHarnessPath(p))]);
+  const changed = [];
+  for (const p of all) {
+    if (declaresPath(writers, p)) continue; // a concurrently-running sibling's own file - not this node's doing
+    const abs = join(run.cwd, p);
+    let now;
+    try { now = readFileSync(abs); } catch { now = null; }
+    if (!beforeSet.has(p)) {
+      // Clean (or nonexistent) before this node ran, and different now: entirely this
+      // node's own doing. Tracked -> a git checkout restores exactly the pre-node state,
+      // since "clean" means that state IS what HEAD holds. Untracked -> it did not exist
+      // at all before this node ran; remove it outright.
+      if (now === null) continue; // vanished on its own; nothing to restore
+      changed.push(p);
+      const tracked = spawnSync('git', ['ls-files', '--error-unmatch', '--', p], { cwd: run.cwd }).status === 0;
+      if (tracked) {
+        spawnSync('git', ['checkout', '--', p], { cwd: run.cwd });
+      } else {
+        try { rmSync(abs, { force: true }); } catch { /* best-effort */ }
+        spawnSync('git', ['clean', '-fq', '--', p], { cwd: run.cwd });
+      }
+      continue;
+    }
+    // Already dirty (or untracked) before this node ran - a git checkout would blow away
+    // whatever legitimate uncommitted work put it in that state (the subgoal's own
+    // implement, most commonly). Restore the exact bytes captured before dispatch instead.
+    const was = beforeMap[p];
+    const same = now === null ? was === null : was !== null && Buffer.compare(now, was) === 0;
+    if (same) continue;
+    changed.push(p);
+    try {
+      if (was === null) rmSync(abs, { force: true });
+      else { mkdirSync(dirname(abs), { recursive: true }); writeFileSync(abs, was); }
+    } catch { /* reported regardless - the caller voids the verdict either way */ }
   }
-  return newPaths;
+  return changed;
 }
 
 // ---------- run lookup ----------
@@ -1905,6 +1966,7 @@ async function toolGraphRun(a) {
         stage_ok: false,
         reason: `${entry(n)} used its --verify Bash access to change ${mutated.join(', ')} while judging read-only. Restored; this attempt is void - a ${n.stage} node's verdict on a tree it edited itself is not evidence.`,
       };
+      record(run.cwd, { event: 'verify_write_guard_violation', run_id: run.run_id, node_id: n.node_id, stage: n.stage, paths: mutated });
     }
   }
   return finishNode(run, n, result, r.vendor);
