@@ -604,3 +604,13 @@ test('investigate asks for candidates but is told that naming them is not decidi
 test('draft is told an answered unknown is a rule, not an open question', () => {
   assert.match(CONTRACT.draft, /settled, not open/);
 });
+
+test('slack-list: a result that contradicts the request or regresses is a gap at the goal gate and a blocker at critique, not drift', () => {
+  assert.match(CONTRACT['gate:goal'], /Narrowing is drift; contradicting is not/);
+  assert.match(CONTRACT['gate:goal'], /breaks behaviour that worked before this run, it is a gap even when the spec asked for it/);
+  assert.match(CONTRACT.critique, /a criterion that contradicts the request, or would break behaviour that works today/);
+});
+
+test('slack-list: the subgoal gate reads the comments the change wrote against its own evidence', () => {
+  assert.match(CONTRACT.gate, /a cause or a behaviour the code, or this run's own evidence, contradicts is a gap/);
+});

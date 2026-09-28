@@ -106,6 +106,11 @@ export function harvestTask({ taskDir, cwd, label, root, scorePrefix } = {}) {
       copyFileSync(join(broker, 'runs', f), join(out, 'runs', pkg, f));
       for (const n of run.nodes || []) {
         if (n.state === 'failed' || (n.result && (n.result.accept === false || n.result.verified === false))) failures.push(classify(n, { level: 'child', package: pkg, run_id: run.run_id }));
+        // Accepted, but the request asked for something the spec dropped: not a failure of the
+        // node, and exactly what slack-list shipped without anyone noticing until the diff was read.
+        else if (String(n.node_id).startsWith('gate:goal') && n.result && n.result.accept === true && (n.result.spec_drift || []).length) {
+          failures.push({ level: 'child', package: pkg, run_id: run.run_id, node_id: n.node_id, stage: n.stage, executor: n.executor || null, state: n.state, kind: 'drift-accepted', message: n.result.spec_drift[0] });
+        }
       }
       // Each node attempt's adapter result, tails only.
       for (const nodeDir of dirs(join(broker, run.run_id))) {
