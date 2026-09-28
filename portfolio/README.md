@@ -28,13 +28,13 @@ classification). Connect them under Claude settings → MCP Servers as remote SS
 | I want to… | Skill |
 |---|---|
 | Run a whole application from JD to interview day | `job-application-workflow` |
-| Know how well I match one specific posting | `jd-fit` |
-| Decide where to apply when I have no posting yet | `portfolio-company` |
+| Know how well I match one specific posting — or where to apply with no posting | `fit` |
 | Get an honest interviewer's read on my portfolio | `portfolio-feedback` |
 | Check whether my numbers, skills, dates — and claimed level — hold up | `portfolio-feedback` |
 | Find out why my portfolio doesn't read as "ownership" | `portfolio-pattern` |
 | Rewrite specific weak sentences to senior level | `portfolio-rewrite` |
-| Rewrite my resume to match one JD's vocabulary | `resume-tailorer` |
+| Rewrite my resume to match one JD's vocabulary | `portfolio-rewrite` (with a JD) |
+| Draft a 자기소개서 from my own material only | `job-application-workflow` Step 4 (`write:writer-verification`) |
 | Get a week-by-week study plan before interviews | `interview-plan` |
 | Practice defending my work in a mock interview | `mock-interview` |
 | Swap the key colors in a PPTX across every slide | `deck-builder` (recolor) |
@@ -44,74 +44,61 @@ classification). Connect them under Claude settings → MCP Servers as remote SS
 
 ### `job-application-workflow`
 
-The entry point. Four steps for one specific role: JD analysis → company research → resume and
-portfolio tailoring → interview preparation. Use it when you have a target company and posting in
-hand. Skip it for open-ended "what should I do with my career" questions, or when you have already
+The entry point. Six steps for one specific role: fit → review → tailoring → 자기소개서 →
+interview plan → mock interview. Use it when you have a target company and posting in hand.
+Skip it for open-ended "what should I do with my career" questions, or when you have already
 passed interviews and are negotiating an offer.
 
 ```
 Coupang backend engineer posting, applying next week. JD is pasted below —
-run the whole process with me from JD analysis through interview prep.
+run the whole process with me from fit through a mock interview.
 ```
 
 ```
-[1] jd-fit          JD decoding, must-have vs nice-to-have, fit gaps
+[1] fit                       서류 통과 가능성, gaps by severity, apply or not
       ↓
-[2] portfolio-company     culture signals, talking points, red flags
+[2] portfolio-feedback        interviewer-grade verdict on the materials
       ↓
-[3] resume-tailorer (+ portfolio-rewrite)   tailored resume
+[3] portfolio-rewrite         Before/After, tailored to the JD
       ↓
-[4] interview-plan        STAR story bank, likely questions, questions to ask
+[4] write:writer-verification 자기소개서 drafts from your material only
+      ↓
+[5] interview-plan            study plan, STAR prompts you fill
+      ↓
+[6] mock-interview            live interview with coaching
 ```
 
-Each step has a skip condition and a standalone-input fallback, so you can start at Step 4 with
-just a JD and a company name. Estimated 3–10 hours for the full run, 30–90 minutes per step.
+Each step has a skip condition and a standalone-input fallback. The 자기소개서 step needs the
+`write` plugin and does not count characters — check each 문항's limit yourself. Nothing is
+researched about the company: fit reasons only from what you give it. Every step carries the
+`[확정]` list forward and marks missing facts `[확인 필요]`.
 
-### `jd-fit`
+### `fit`
 
-Parses the JD and the portfolio *independently* — comparing too early biases the read toward the
-portfolio's own framing — then scores fit across five dimensions: tech stack, experience scale,
-role scope, domain, and soft signals. Each gap is classified 치명적 / 보완 가능 / 마이너 with the
-reason for that severity. It ends with an honest pass / borderline / screen-out call and the one
-factor that would most shift it. Every match and gap cites the line on both sides, a
-technology named only in a Skills list counts as a gap rather than a match, and a missing
-fact stays `[확인 필요]` instead of being filled in. Closes with one re-checkable tally line:
-verdict, five dimension scores, gap counts by severity, unmet must-haves. Not for
-company-type matching without a posting (`portfolio-company`) or resume keyword work
-(`resume-tailorer`).
+One skill for "does my portfolio fit", with or without a posting. **With a JD**, it parses the JD
+and the portfolio independently, then judges must-haves line by line (both sides quoted; a
+technology only in a Skills list is a gap), classifies gaps 치명적 / 보완 가능 / 마이너, and opens
+with 서류 통과 / 경계 / 스크린아웃 plus the one factor that would most shift it. **Without a JD**,
+it characterizes what engineer the portfolio signals and scores it against Korean company types
+(대형 플랫폼, 성장기 스타트업, 핀테크/엔터프라이즈, 글로벌 테크, 개발도구/OSS) — Top 2 fits and the
+type to avoid, each with evidence, mismatch and one fix. Company signals come only from what you
+give; a missing fact stays `[확인 필요]`. Checked against the two skills it replaced on the same
+resume and JD (`evals/`, `docs/plans/portfolio-consolidate/fit-comparison.md`).
 
 ```
 Here's my portfolio and the full JD for a senior backend role at a Series C fintech.
-Score the fit, tell me which gaps are fatal, and be honest about whether I'd pass screening.
+Tell me which gaps are fatal, and be honest about whether I'd pass screening.
 ```
 
 ```
-[종합 매칭 점수]  7 / 10
-- 기술 스택 8/10   - 경험 스케일 6/10   - 역할 범위 7/10
-- 도메인 5/10      - 소프트 시그널 8/10
-
-[갭 분석]
-갭: 결제 도메인 경험 없음
-심각도: 보완 가능
-대응 방법: 이력서·포트폴리오에서 정산 배치 경험을 도메인 인접성으로 프레이밍
+[서류 통과 가능성]
+통과. 자격요건 5개가 모두 근거가 있는 불릿과 연결되고, 치명적 갭은 없습니다.
+시니어 신호(G5)입니다. 코드 리뷰나 멘토링을 한 실제 경험이 한 줄 들어가면 확실한 통과 쪽으로 기웁니다.
+…
+"API 응답속도 개선" 한 줄은 수치 없이 다음 불릿과 중복됩니다 [확인 필요: 별개 개선이라면 개선 전/후 수치]
+…
+판정 통과 · 5개 차원 6.2/10 · 치명적 0 · 보완 가능 5 · 마이너 3 · must-have 미충족 0/5
 ```
-
-### `portfolio-company`
-
-For when you have no specific posting. Characterizes what kind of engineer the portfolio signals,
-then scores fit against Korean company types — 대형 플랫폼, 성장기 스타트업, 핀테크/엔터프라이즈,
-글로벌 테크, 개발도구/OSS — each with what they *actually* look for versus what they say, plus
-green flags and red flags. Names your Top 2 fits and the types where you would struggle. It never
-scores fit on name recognition alone, and it asks for your non-negotiables (location, domain,
-stack) first.
-
-```
-Five years backend, mostly internal platform work at a mid-size company.
-No specific posting yet — where would this portfolio actually be competitive?
-```
-
-Each company type gets a fit score, the specific portfolio evidence behind it, the specific
-mismatch, and one concrete thing to fix before applying there.
 
 ### `portfolio-feedback`
 
@@ -120,7 +107,7 @@ what's *missing*, not just what's present. You pick one of four reviewer persona
 Startup EM / Enterprise Tech Lead / OSS-DevTools Lead) and it stays in that persona throughout.
 Scores five dimensions, then challenges every score of 7 or above with the objection a skeptical
 interviewer would raise; only scores that survive stay high. Not for rewriting sentences
-(`portfolio-rewrite`) or JD matching (`jd-fit`).
+(`portfolio-rewrite`) or JD matching (`fit`).
 
 ```
 Review my portfolio as a staff engineer at a large platform company.
@@ -211,6 +198,8 @@ decision the candidate has settled goes on a `[확정]` list and is not reopened
 candidate writes their own sentence, only typos, misused terms, and cross-document contradictions
 are checked — the reviewer posture does not follow into their writing.
 
+**Beta lane — `portfolio-feedback-beta`.** portfolio-feedback plus portfolio-pattern's four measures in one pass: `피동 n` and `팀 주어 n` join the tally, number density is reported over 완전 주장's denominator as a reading (never a second penalty), and decision visibility is an appendix note. Triggers only on an explicit beta request; the stable `portfolio-feedback` and `portfolio-pattern` are unchanged. Promotion is decided after comparison runs (`evals/`).
+
 ### `portfolio-pattern`
 
 Not what your portfolio says but how it reads. Audits six dimensions: decision-verb ratio
@@ -233,9 +222,12 @@ experience is a problem. Complete absence of failure or difficulty is itself a s
 
 Takes specific passages and produces Before / After with a 2–4 sentence explanation of what changed
 and why it lands differently with an interviewer. It diagnoses the actual weakness first — missing
-numbers, passive ownership, no context, no tradeoff, no outcome — and if the facts needed to make
-the rewrite specific are missing, it asks rather than inventing metrics. Output is in the same
-language as the input.
+numbers, passive ownership, no context, no tradeoff, no outcome — and writes the rewrite with
+`[확인 필요: ○○]` where a fact is missing instead of inventing one. **Give it a JD** and it
+tailors the resume to that posting: required skills and responsibility verbs from the JD, a
+Missing / Weak / Strong gap table, rewritten text per section, and a list of what NOT to change —
+achievement numbers, scope and dates are never altered. Output is in the same language as the
+input. Checked against the resume-tailorer it absorbed on the same resume and JD (`evals/`).
 
 ```
 "모니터링 시스템을 구축했습니다" — rewrite this and the three bullets under it
@@ -244,45 +236,22 @@ so they read at senior level.
 
 | Principle | Weak | Strong |
 |---|---|---|
-| Specificity | 성능 개선 | N+1 제거로 p99 900ms → 140ms |
-| Ownership | 팀에서 진행했습니다 | 제가 설계하고 주도했습니다 |
-| Decision, not action | Kafka로 비동기 처리 구현 | RabbitMQ 대신 Kafka를 택한 이유는 순서 보장과 리플레이 |
-| Outcome, not activity | 모니터링 구축 | 장애 감지 시간 40분 → 3분 |
-
-### `resume-tailorer`
-
-Resume plus one specific JD. Extracts the JD's required skills (frequency signals emphasis), soft
-skill signals, responsibility verbs, and implicit culture cues; runs a gap analysis table
-(Missing / Weak / Strong); then produces actual rewritten text — not suggestions — per section,
-plus a list of what NOT to change. It never alters achievement numbers, scope claims, or timeline
-facts. Tailoring is translation, not embellishment.
-
-```
-My resume and this Naver JD. The experience is there but I think I'm describing it
-in the wrong vocabulary — align it and tell me what to leave alone.
-```
-
-```
-## Gap Analysis
-| JD requires | Resume shows | Gap? |
-|---|---|---|
-| 대용량 트래픽 (1M+ DAU) | "백엔드 API 개발" | Weak |
-
-## Section Rewrites
-Before: 백엔드 API 개발 및 성능 최적화
-After:  일 활성 사용자 150만 규모 서비스의 백엔드 API 설계 및 병목 구간 35 % 개선
-```
+| Specificity | 성능 개선 | [확인 필요: 지표] [확인 필요: 전 → 후] 개선 — 원인·방법 한 줄 |
+| Ownership | 팀에서 진행했습니다 | 제가 설계하고 주도했습니다 (본인 역할이 맞을 때) |
+| Decision, not action | Kafka로 비동기 처리 구현 | Kafka를 택한 이유 — [확인 필요: 비교한 대안과 기준] |
+| Outcome, not activity | 모니터링 구축 | 장애 감지 시간 [확인 필요: 전 → 후] |
 
 ATS keyword rules and per-company-type culture signals: `references/ats-rules-korea.md`,
-`references/korea-company-culture-signals.md`.
+`references/korea-company-culture-signals.md`; JD tailoring procedure:
+`skills/portfolio-rewrite/references/jd-tailoring.md`.
 
 ### `interview-plan`
 
 Planning, not practice. Gathers your background, target, timeline and biggest worry; calibrates to
 company type (FAANG, Korean Tier-1, growth startup, enterprise — each tests materially
 differently); identifies gaps across coding, system design, and behavioral; then produces a
-week-by-week plan where every week has a measurable milestone, plus a 6–8 prompt STAR story bank.
-It will not produce a plan without knowing your interview date, and it runs gap analysis before
+week-by-week plan where every week has a measurable milestone, plus 6–8 STAR prompts you answer from your own experience.
+Without an interview date it marks `[확인 필요: 면접 날짜]` and invents no week count; it runs gap analysis before
 planning — skipping that is the most common failure.
 
 ```
