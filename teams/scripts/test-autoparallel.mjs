@@ -206,3 +206,204 @@ for (const phase of ['planning', 'qa', 'audit']) {
     assert.deepEqual(task.auto_parallel, cleanBefore, 'a pushed-back phase-Team fold must not halve the cap either');
   });
 }
+
+// ---------- real-run false positives: routine claude -p telemetry must not misread as pushback ----------
+//
+// Verified against $TMPDIR/pr-log/teams-log-portfolio-refresh-80ec931a (0.34.0, fixed cap 2, so
+// the controller never actually ran against this data - these are the real driver logs replayed
+// through 'auto' after the fact). Every one of that run's 9 real STORY dispatch folds
+// (dispatch_P1_1 .. dispatch_P8_1, dispatch_P2_2) matched the PRE-FIX PUSHBACK_RE on TWO
+// completely healthy, unrelated grounds: a `rate_limit_event` usage-telemetry line the CLI emits
+// on every session (status "allowed" - capacity is fine), and an `"api_error_status":null` field
+// the CLI's own `result` event carries on every run (null - no error). Unfixed, 'auto' would have
+// halved on its very first real fold and stayed floored forever against any real claude driver.
+test('no false decrease: a routine rate_limit_event ping with status "allowed" is not pushback', () => {
+  const task = makeTask({ max_parallel_ceiling: 6 });
+  ensureAutoParallel(task).current = 4;
+  // A trimmed but structurally real line, same shape as every dispatch_P*.stream.jsonl in the
+  // portfolio-refresh run.
+  const log = '{"type":"assistant","message":{"content":[{"type":"text","text":"working"}]}}\n'
+    + '{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":1790571000,'
+    + '"rateLimitType":"five_hour","unifiedWindows":{"five_hour":{"utilization":0.22}}}}\n';
+  const n = dispatchNode('dispatch:P1:1', 'P1', { driver: driverWithLog(log) });
+  updateAutoParallel(task, n, { stage_ok: true });
+  assert.equal(task.auto_parallel.current, 4, 'status:"allowed" is capacity being fine, not pushback - must not halve');
+  assert.equal(task.auto_parallel.streak, 1, 'and it still counts as a clean fold toward growth');
+});
+
+test('decrease still fires: a rate_limit_event whose status is NOT "allowed" is real pushback', () => {
+  const task = makeTask({ max_parallel_ceiling: 6 });
+  ensureAutoParallel(task).current = 4;
+  const log = '{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","rateLimitType":"five_hour"}}\n';
+  const n = dispatchNode('dispatch:P1:1', 'P1', { driver: driverWithLog(log) });
+  updateAutoParallel(task, n, { stage_ok: false });
+  assert.equal(task.auto_parallel.current, 2, 'a non-"allowed" status is the vendor actually throttling - still halves');
+});
+
+test('no false decrease: the routine "api_error_status":null field on every result event is not pushback', () => {
+  const task = makeTask({ max_parallel_ceiling: 6 });
+  ensureAutoParallel(task).current = 4;
+  // The exact tail shape of every real dispatch_P*.stream.jsonl's final line in that run.
+  const log = '{"type":"result","subtype":"success","is_error":false,"num_turns":14,'
+    + '"api_error_status":null,"result":"## resume-tailorer SKILL.md rewrite (package P1)"}\n';
+  const n = dispatchNode('dispatch:P1:1', 'P1', { driver: driverWithLog(log) });
+  updateAutoParallel(task, n, { stage_ok: true });
+  assert.equal(task.auto_parallel.current, 4, '"api_error_status":null is the FIELD NAME, not a real api_error - must not halve');
+});
+
+test('decrease still fires: a non-null api_error_status is a real API error', () => {
+  const task = makeTask({ max_parallel_ceiling: 6 });
+  ensureAutoParallel(task).current = 4;
+  const log = '{"type":"result","subtype":"error","is_error":true,"api_error_status":"overloaded_error"}\n';
+  const n = dispatchNode('dispatch:P1:1', 'P1', { driver: driverWithLog(log) });
+  updateAutoParallel(task, n, { stage_ok: false });
+  assert.equal(task.auto_parallel.current, 2, 'a non-null api_error_status is the vendor actually erroring - still halves');
+});
+
+test('phase-Team exemption + real QA:1 text: a malformed-JSON adapter failure never reaches the controller', () => {
+  // The real shape of dispatch_QA_1.stream.jsonl's failure: driver exit 0 (empty stderr), but
+  // the CHILD run's own `plan` node reports adapter exit 1 on malformed JSON, alongside the same
+  // routine rate_limit_event/api_error_status noise every log carries. QA is phase-exempt, so
+  // none of this - real failure text included - should ever reach PUSHBACK_RE.
+  const task = makeTask({ max_parallel_ceiling: 6 }, [{ id: 'P1' }, { id: 'QA', phase: 'qa' }]);
+  ensureAutoParallel(task).current = 4;
+  const log = '{"type":"tool_result","content":"{\\"run_id\\":\\"1eef1fc5\\",\\"node_id\\":\\"plan\\",'
+    + '\\"stage\\":\\"plan\\",\\"state\\":\\"failed\\",\\"stage_ok\\":false,\\"reason\\":\\"adapter exit 1\\"}"}\n'
+    + '{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"}}\n'
+    + '{"type":"result","is_error":false,"api_error_status":null}\n';
+  const n = dispatchNode('dispatch:QA:1', 'QA', { driver: driverWithLog(log) });
+  updateAutoParallel(task, n, { stage_ok: false });
+  assert.equal(task.auto_parallel.current, 4, 'a phase-Team fold is exempt before PUSHBACK_RE ever runs over its text');
+});
+
+// ---------- budget_warned freezes growth, never triggers a decrease ----------
+
+test('growth freezes once task.budget_warned is set: streak still advances, current does not', () => {
+  const task = makeTask({ max_parallel_ceiling: 6 });
+  ensureAutoParallel(task).current = 3;
+  task.budget_warned = true;
+  updateAutoParallel(task, dispatchNode('dispatch:P1:1', 'P1'), { stage_ok: true });
+  updateAutoParallel(task, dispatchNode('dispatch:P1:2', 'P1'), { stage_ok: true });
+  assert.equal(task.auto_parallel.streak, 2, 'the window still completes - a clean fold is still a clean fold');
+  assert.equal(task.auto_parallel.current, 3, 'but budget_warned holds it at 3: more parallelism only burns the box faster');
+});
+
+test('growth resumes once budget_warned is cleared: the streak already earned is spent on the very next clean fold', () => {
+  const task = makeTask({ max_parallel_ceiling: 6 });
+  ensureAutoParallel(task).current = 3;
+  task.budget_warned = true;
+  updateAutoParallel(task, dispatchNode('dispatch:P1:1', 'P1'), { stage_ok: true });
+  updateAutoParallel(task, dispatchNode('dispatch:P1:2', 'P1'), { stage_ok: true });
+  assert.equal(task.auto_parallel.streak, 2, 'a full window already accrued while frozen');
+  assert.equal(task.auto_parallel.current, 3, 'but spending it was blocked by budget_warned');
+  task.budget_warned = false;
+  updateAutoParallel(task, dispatchNode('dispatch:P1:3', 'P1'), { stage_ok: true });
+  assert.equal(task.auto_parallel.current, 4, 'the streak (now 3, still >= AIMD_WINDOW) is a debt this fold pays off the moment it is unblocked');
+  assert.equal(task.auto_parallel.streak, 0, 'and it resets exactly as any other increase would');
+});
+
+test('a pushback still halves even while budget_warned is set - capacity signals are never frozen out', () => {
+  const task = makeTask({ max_parallel_ceiling: 6 });
+  ensureAutoParallel(task).current = 4;
+  task.budget_warned = true;
+  const n = dispatchNode('dispatch:P1:1', 'P1', { driver: driverWithLog('overloaded_error') });
+  updateAutoParallel(task, n, { stage_ok: false });
+  assert.equal(task.auto_parallel.current, 2, 'budget_warned freezes growth, never the emergency brake');
+});
+
+// ---------- replay: the portfolio-refresh run's real fold sequence, in real fold order ----------
+//
+// Extracted from $TMPDIR/pr-log/teams-log-portfolio-refresh-80ec931a/raw/task/ledger.jsonl: every
+// `node_finish` with stage "dispatch" (a develop-STORY fold), ordered by when it actually folded
+// (that run used a fixed cap of 2, so this is the real interleaving two-at-a-time produced - PLAN
+// and QA are omitted, both phase-exempt). All 9 folds were clean in that run (every dispatch's
+// child completed; none crashed) - confirmed above that their real driver-log text, routine
+// telemetry included, does not read as pushback once the false positives are fixed. budget_warning
+// fired at +44.72m (task.budget_warned flips true there, mid-sequence, before P6:1 and P8:1 fold).
+const REAL_FOLD_SEQUENCE = [
+  { node_id: 'dispatch:P2:1', pkg: 'P2', end_min: 25.59, duration_min: 5.33 },
+  { node_id: 'dispatch:P1:1', pkg: 'P1', end_min: 26.43, duration_min: 6.17 },
+  { node_id: 'dispatch:P3:1', pkg: 'P3', end_min: 30.75, duration_min: 3.79 },
+  { node_id: 'dispatch:P2:2', pkg: 'P2', end_min: 32.90, duration_min: 6.68 },
+  { node_id: 'dispatch:P5:1', pkg: 'P5', end_min: 37.93, duration_min: 4.55 },
+  { node_id: 'dispatch:P4:1', pkg: 'P4', end_min: 39.86, duration_min: 8.63 },
+  { node_id: 'dispatch:P7:1', pkg: 'P7', end_min: 44.14, duration_min: 3.86 },
+  // --- budget_warning at +44.72m: task.budget_warned flips true before these two fold ---
+  { node_id: 'dispatch:P6:1', pkg: 'P6', end_min: 49.27, duration_min: 10.90 },
+  { node_id: 'dispatch:P8:1', pkg: 'P8', end_min: 50.00, duration_min: 5.28 },
+];
+const BUDGET_WARNING_AT_MIN = 44.72;
+
+test('replay: the real fold sequence drives current 2 -> 3 -> 4 -> 5, then freezes at budget_warning', () => {
+  const task = makeTask({ max_parallel_ceiling: 6 });
+  const trajectory = [];
+  for (const fold of REAL_FOLD_SEQUENCE) {
+    if (fold.end_min >= BUDGET_WARNING_AT_MIN) task.budget_warned = true;
+    updateAutoParallel(task, dispatchNode(fold.node_id, fold.pkg), { stage_ok: true });
+    trajectory.push(task.auto_parallel.current);
+  }
+  assert.deepEqual(
+    trajectory,
+    [2, 3, 3, 4, 4, 5, 5, 5, 5],
+    'current after each of the 9 real folds, in real fold order',
+  );
+  assert.equal(task.auto_parallel.streak, 3, 'two more clean folds accrued past the last increase, frozen by budget_warned');
+});
+
+// ---------- wall-time: a rough estimate, auto vs fixed 2, from the real per-package durations ----------
+//
+// A simple greedy list-scheduling simulation, not a re-run of the real dispatcher: `limit` fixed
+// slots (fixed policy) or a limit that grows the same way updateAutoParallel's AIMD_WINDOW=2 does
+// (auto policy, starting at AIMD_START=2), assigning P1..P8 in priority order to the
+// earliest-available slot. P2's own two attempts (real reject-at-accept, real redispatch) are one
+// back-to-back duration (5.33+6.68=12.01) since the real ledger shows ~0 gap between accept:P2:1's
+// rejection and dispatch:P2:2 opening - a package retry occupies one continuous slot, not two
+// arrivals. This is "rough" by design (item 1 of the task): real capacity growth depends on the
+// very fold order this simulates, so the two are coupled - good enough for an order-of-magnitude
+// wall-time comparison, not a claim of exact minutes.
+const PACKAGE_DURATIONS_MIN = { P1: 6.17, P2: 5.33 + 6.68, P3: 3.79, P4: 8.63, P5: 4.55, P6: 10.90, P7: 3.86, P8: 5.28 };
+const PRIORITY_ORDER = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8'];
+
+function simulateMakespan({ startLimit, growWindow = null, ceiling = 6 }) {
+  const queue = [...PRIORITY_ORDER];
+  let limit = startLimit;
+  let streak = 0;
+  // Event-driven loop tracking absolute time: assign up to `limit` packages (priority order) at
+  // time 0, then repeatedly jump to the next completion, grow `limit` if growWindow applies, and
+  // backfill any now-open slots from the queue.
+  let now = 0;
+  const active = [];
+  const assign = () => {
+    while (active.length < limit && queue.length) {
+      const pkg = queue.shift();
+      active.push({ pkg, end: now + PACKAGE_DURATIONS_MIN[pkg] });
+    }
+  };
+  assign();
+  let makespan = 0;
+  while (active.length) {
+    active.sort((a, b) => a.end - b.end);
+    const next = active.shift();
+    now = next.end;
+    makespan = Math.max(makespan, now);
+    if (growWindow) {
+      streak += 1;
+      if (streak % growWindow === 0 && limit < ceiling) limit += 1;
+    }
+    assign();
+  }
+  return +makespan.toFixed(2);
+}
+
+test('rough wall-time: auto (growing from 2) finishes the same 8 packages faster than a fixed cap of 2', () => {
+  const fixed = simulateMakespan({ startLimit: 2, growWindow: null });
+  const auto = simulateMakespan({ startLimit: 2, growWindow: 2, ceiling: 6 });
+  assert.equal(fixed, 27.73, 'fixed cap 2, greedy list scheduling over the real durations');
+  assert.equal(auto, 22.91, 'auto, growing +1 every 2 clean completions, same durations and priority order');
+  assert.ok(auto < fixed, 'auto must not be slower than the fixed cap it replaces');
+  // Real observed wall time for this phase (dispatch:P1:1's start to dispatch:P8:1's fold) was
+  // 50.00 - 20.26 = 29.74 minutes - this simulation's fixed-2 estimate (27.73) is in the same
+  // ballpark, the gap being real dispatch-open/accept overhead this model does not simulate.
+  const realObservedMin = 50.00 - 20.26;
+  assert.ok(Math.abs(fixed - realObservedMin) < 3, 'the simulated fixed-cap makespan should track the real observed wall time reasonably closely');
+});
