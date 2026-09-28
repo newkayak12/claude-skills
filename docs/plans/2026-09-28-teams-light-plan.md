@@ -115,7 +115,7 @@ roles.planning: true | false | 'light' | 'auto'   (기본값 변경: true → 'a
 2. `'light'` kind 이름을 `KINDS.planning`의 새 필드(`chain_light`)로 할지 별도 kind(`planning-light`)로 할지 — reducer 레지스트리(`reducers.mjs`)가 kind 문자열로 병합 규칙을 찾으므로(09-23 문서 §5) 이름 선택이 그쪽에도 영향을 준다. 구현 세션에서 결정.
 3. §2.4 측정에서 하류 판정이 갈리는 사례가 나오면 light를 얼마나 더 보수적으로 만들지(예: template-fill 뒤에 draft 없는 추가 검증 스테이지를 하나 더 넣을지) — 측정 전에는 답할 수 없다.
 
-## 6. PLAN에서 묻고, 실행은 묻지 않는다 — 결정을 앞으로 당긴다
+## 6. 기획에서 묻고, 실행은 묻지 않는다 — 결정을 앞으로 당긴다
 
 ### 6.1 확인한 사실 (코드)
 
@@ -137,7 +137,7 @@ roles.planning: true | false | 'light' | 'auto'   (기본값 변경: true → 'a
 
 **§14 결정 기록에 추가할 제안 행(이 문서는 §14를 직접 고치지 않는다 — 다음에 그 문서를 여는 사람이 옮겨 적을 텍스트만 여기 남긴다):**
 
-> | 17(제안) | **PLAN의 ask 결정이 실행 패키지로 전파된다.** `task.decisions[]`(PLAN accept 시점에 1회 기록) → 모든 패키지 자식 런의 `openAsk` 걸러내기 집합에 합류. 실행 단계의 새 질문은 `interactive`와 무관하게 기본값으로 결정되고 기록되며, `task.decisions`와 구조적으로 모순되거나(`contradicts_decision` 필드) 안전한 기본값이 없는 경우만 EPIC 레벨에 1회 park한다. **`human_scope`(`leader`/`all`, 미구현)를 대체한다** — 사람이 언제 불려가는지는 이제 "리더냐 전부냐"가 아니라 "PLAN이냐 실행이냐 + blocking이냐"로 갈린다 | §4 childContext, graph.mjs openAsk, taskmanager.mjs task.decisions |
+> | 18(제안) | **PLAN의 ask 결정이 실행 패키지로 전파된다.** `task.decisions[]`(PLAN accept 시점에 1회 기록) → 모든 패키지 자식 런의 `openAsk` 걸러내기 집합에 합류. 실행 단계의 새 질문은 `interactive`와 무관하게 기본값으로 결정되고 기록되며, `task.decisions`와 구조적으로 모순되거나(`contradicts_decision` 필드) 안전한 기본값이 없는 경우만 EPIC 레벨에 1회 park한다. **`human_scope`(`leader`/`all`, 미구현)를 대체한다** — 사람이 언제 불려가는지는 이제 "리더냐 전부냐"가 아니라 "PLAN이냐 실행이냐 + blocking이냐"로 갈린다 | §4 childContext, graph.mjs openAsk, taskmanager.mjs task.decisions |
 
 ### 6.3 light 모드와의 상호작용
 
@@ -148,6 +148,20 @@ roles.planning: true | false | 'light' | 'auto'   (기본값 변경: true → 'a
 - **ask 카드 수 — 전(현행) 대 후(§6.2 적용).** 전: PLAN 카드 + 각 패키지가 독립적으로 내는 카드(같은 질문 중복 포함, idol-beta-ask1이 U2·U3·U4에서 실측한 중복 패턴, 09-23 문서 §0.2b). 후: PLAN 카드(불변) + 패키지 카드는 `task.decisions`와 정확히 겹치는 것만큼 감소 — 목표는 패키지 카드 0에 근접, 남는 것은 진짜 blocking뿐.
 - **패키지 간 모순 건수.** 산출 문서·리포트에서 같은 질문에 다른 값을 쓴 쌍이 있는지(09-23 문서 §0.2e가 사후에 `gate:goal`+`repair`로 잡은 것과 같은 부류 — U1의 결정을 U2-U4가 뒤집었는데 PRD가 재작성되지 않아 문서 간 불일치가 난 사례). §6.2 적용 후 이 건수가 0에 가까워야 배선이 값을 한 것이다 — 0이 안 되면 `contradicts_decision` 신고가 놓친 사례이므로 (a) 검사를 다시 본다.
 
+### 6.5 사람이 들어가는 1차 시점은 PLAN이 아니라 `tm_open` 전의 brainstorming이다 (2026-09-28 사용자 정정)
+
+§6.2는 PLAN의 `ask`를 사람이 불리는 자리로 두었다. 그런데 PLAN은 detached daemon 안에서 돈다 — 그 순간 사람이 있는지 엔진은 모른다(그래서 `interactive: false`가 기본이고, 없으면 기본값으로 넘어가거나 `waiting_human`에 선다). **사람이 있다고 확실한 유일한 순간은 진입 스킬(`teams:develop` / `teams:plan` / `teams:sprint`)이 사용자 세션 안에서 `tm_open`을 부르기 직전이다** — 사용자의 `tm_assign`이 `interactive`와 무관하게 항상 park하는 것(`graph.mjs`의 `applyHumanPin`, `{by:'user'}`)과 같은 근거. 지금 세 진입 스킬은 모두 곧장 `tm_open`을 부르고, 그 앞에 사용자와 합의하는 단계가 없다(확인: `teams/skills/*/SKILL.md`에 brainstorming/clarify 단계 0건).
+
+결정:
+1. **진입 스킬에 brainstorming 단계를 둔다.** 프로젝트 맥락을 먼저 읽고(사람에게 사실을 묻지 않기 위해), 의도·범위·선택지를 한 번에 하나씩 묻고, 선택지마다 추천을 붙인다. 묻는 대상은 **사람만 답할 수 있는 것**(무엇을 원하나, 무엇을 빼나, A/B 중 어느 쪽)이다 — 근거로 풀리는 사실 빈칸은 PLAN의 investigate 몫이다.
+2. **`tm_open({decisions: [{question, chose, because?}]})`** — 합의한 결정을 인자로 받아 `task.decisions`의 **첫 항목들**로 쓴다(`source: 'brainstorm'`, `decided_in: 'session'`). §6.2-1의 PLAN 결정은 그 뒤에 덧붙는다. PLAN의 investigate·draft도 이 목록을 `prior_decisions`로 받는다 — 즉 전파 경로는 §6.2-2 그대로이고, 시작점만 PLAN accept에서 `tm_open`으로 당겨진다.
+3. **PLAN 안의 `ask`는 예외로 격하한다.** investigate의 `unknowns[]`는 기본값 + 기록이 기본이고, §6.2-3의 blocking(brainstorming/PLAN 결정과 `contradicts_decision`으로 충돌하거나 안전한 기본값이 없음)만 EPIC 레벨에 1회 park한다. 결과적으로 사람이 불리는 시점은 **세션(brainstorming) 1회 + blocking 예외**로 줄어든다.
+4. **brainstorming 생략 조건 = light PLAN 감지 조건(§2.1)과 같다.** 백로그와 인수조건이 이미 구조로 주어진 요청(portfolio-refresh-80ec931a가 그랬다)은 brainstorming이 확인 1~2문항으로 끝나거나 생략된다 — 같은 감지 함수를 쓴다, 두 번 정의하지 않는다.
+
+측정(§6.4에 추가): 런당 사람에게 간 질문 수를 **세션 질문 / 실행 중 park**로 나눠 센다. 목표는 실행 중 park ≈ 0, 세션 질문은 요청의 모호함에 비례.
+
+§14 제안 행 18의 마지막 문장을 이렇게 바꾼다: "사람이 언제 불려가는지는 이제 '리더냐 전부냐'가 아니라 **'`tm_open` 전 brainstorming(1차) → blocking 예외(EPIC에서 1회)'**로 갈린다."
+
 ## 7. 한 줄
 
-> PLAN을 끄고 켜는 스위치 하나로는 안 된다 — 이미 답이 있는 백로그엔 절반만 켜고(§2), PLAN이 낸 답은 실행이 다시 묻지 않게 한 번 정한 걸 계속 정한 걸로 취급해야 한다(§6). 둘 다 investigate 하나를 축으로 돈다.
+> 사람은 `tm_open` 전 brainstorming에서 한 번 부르고, 그 답을 태스크 전체가 정해진 것으로 쓴다(§6.5). PLAN을 끄고 켜는 스위치 하나로는 안 된다 — 이미 답이 있는 백로그엔 절반만 켜고(§2), PLAN이 낸 답은 실행이 다시 묻지 않게 한 번 정한 걸 계속 정한 걸로 취급해야 한다(§6). 둘 다 investigate 하나를 축으로 돈다.
