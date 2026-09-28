@@ -142,6 +142,17 @@ You are the reader, not the author. Open the artifact at the paths the draft rep
 ${UNVERIFIABLE_RULE}`,
   revise: `Return JSON: {"stage_ok": true|false, "handoff": "<what changed, then a one-paragraph abstract of what the document now says>", "changed_files": ["..."], "checks": ["claim -> the evidence you checked it against, or the passage you rewrote and why"], "evidence": "..."}
 You are a different identity from draft, and unlike review you may edit the artifact - this is a second pass, not only a judgment. Rewrite for the reader who will actually use this document, and check every claim it makes against the evidence for it; a claim you cannot verify gets fixed or removed, not passed through. stage_ok=false when the artifact could not be revised. Do not report a file as changed unless you changed it.`,
+  // The light PLAN chain's one authoring stage (docs/plans/2026-09-28-teams-light-plan.md §2.2),
+  // in place of draft+revise, for a backlog whose acceptance criteria were already declared: it
+  // moves existing sentences and cites their sources, so it has neither draft's licence to
+  // compose nor revise's to rewrite. The assembly it copies from is deterministic (acceptance.mjs's
+  // renderAcceptanceTemplate, in the run's context); this call places it and checks itself.
+  'template-fill': `Return JSON: {"stage_ok": true|false, "handoff": "<paths written, then one paragraph: how many backlog items, which rules applied where, how many open questions>", "changed_files": ["..."], "checks": ["Item <n> -> <every R-number: applied | N/A (the finding that says why)> -> <its own A-numbers: copied>", "self-check: <items present once each, none duplicated, every unknown carried> -> <what you found>"], "evidence": "..."}
+This backlog already declared its acceptance criteria - they are laid out, numbered, under "Declared acceptance" in the context above. Your job is to transfer them, not to write new ones: copy each criterion verbatim, keep backlog order, and change no wording. There is no draft or revise stage after you; the gate after you checks the transfer item by item.
+Write the document at the subgoal's path with these "## " sections, in this order: Problem (one paragraph from the request, with any premise investigate's findings corrected - say what the request assumed and what the finding shows instead), User stories, Open questions.
+"## User stories" holds one story per backlog item, in backlog order, each headed "### US-<n> — <the item as written>", then a line "**Acceptance**" and one bullet per criterion: the item's own A-numbers first, then EVERY shared R-number, each copied verbatim with its label. A shared rule that genuinely does not apply to this item stays in the list as "R<k>: N/A - <why>" citing the finding that shows it; a rule silently dropped from one item is the defect this chain exists to catch. Beside a criterion a finding bears on, cite it ("finding: <the finding> (<findings path>)").
+"## Open questions" carries every unknown investigate returned (listed above under "Investigate unknowns" when there are any), word for word, with its owner. An unknown a person answered, or one decided by default, is written as the rule it now is under the item it governs - not dropped.
+Before returning, check your own document: every backlog item appears exactly once, no item is duplicated or merged, every item lists every R-number, every unknown is accounted for. Put that per-item table in "checks". Change no other file; source files are evidence to read, never a place to write. stage_ok=false only when the document could not be written.`,
   cases: `Return JSON: {"stage_ok": true|false, "handoff": "<path written, then a one-paragraph summary of what the case set covers>", "changed_files": ["..."], "checks": ["how you derived this case from the acceptance criteria, not from reading the implementation"], "evidence": "..."}
 Write the scenario/case specification the acceptance describes, at the path the subgoal names - one case per behavior a user or an attacker could hit, not one per line of implementation. stage_ok=false when the case set could not be produced. Do not report a file as changed unless you changed it.
 ${QUESTIONS_CONTRACT}`,
@@ -184,6 +195,15 @@ The goal gate's consensus rejected the assembled result, not any one subgoal - t
   report: `Return JSON: {"stage_ok": true, "handoff": "<the final report>", "evidence": "..."}
 Synthesize from the node results below only. State plainly what was not done and why.`,
 };
+
+// The light PLAN chain's gate (docs/plans/2026-09-28-teams-light-plan.md §2.3): the ordinary
+// gate contract plus the two checks the folded draft/revise no longer stand behind. Appended to
+// CONTRACT.gate only for a planning-light subgoal (composePrompt), so every other gate reads
+// exactly what it did before. portfolio-refresh-80ec931a's own report already noted doing the
+// first one "individually verified (not via OR-alternation grep)"; this makes it the contract.
+export const PLANNING_LIGHT_GATE = `This subgoal ran the light PLAN chain: its acceptance criteria were declared by the backlog itself ("Declared acceptance" in the context above) and template-fill transferred them without a draft or revise pass. Two more checks are yours, and each failure is a gap, not an observation:
+  1. Per-item rule coverage. For EACH backlog item separately, open its user story and confirm every one of its own A-numbers and every shared R-number is present - copied, or marked "N/A" with a reason that cites a finding. Check item by item, never with one search over the whole file: an OR-alternation grep passes a document that dropped one rule from one item. Record the table in "checks" as "Item <n> -> R1 ok, R2 N/A(<finding>), R3 MISSING ...". An item absent from User stories, merged into another, or a criterion reworded so it no longer says what the backlog said, is a gap.
+  2. No unknown lost. Every unknown under "Investigate unknowns" above must appear in the document's Open questions with its owner, or be written as a rule decided by a person or by default. One that appears in neither is a gap: the investigation found it and the document dropped it.`;
 
 function bullets(list) {
   return (list || []).map((x) => `- ${x}`).join('\n') || '- (none)';
@@ -246,6 +266,11 @@ export function composePrompt(run, n, briefing) {
       // did (idol-pm-1/2, 2026-09-22), and why the domain's own rules ended up in Out of scope
       // or in an open question rather than in a document of their own.
       if (f === 'plan' && ['plan', 'setgoal'].includes(n.stage)) lines.push(PLANNING_SETGOAL);
+      // Light mode (docs/plans/2026-09-28-teams-light-plan.md §2.2) overrides the set-deciding
+      // half of the text above: the backlog is the set, already written.
+      if (f === 'plan' && briefing.default_kind === 'planning-light' && ['plan', 'setgoal'].includes(n.stage)) {
+        lines.push(`This PLAN run is in LIGHT mode: the backlog already declares its acceptance criteria (see "Declared acceptance" in the context above), so the document set is ONE PRD whose user stories are the backlog items - one planning subgoal, not a set. Every planning subgoal here runs investigate -> template-fill -> gate (not draft -> revise); kind "planning" is read as "planning-light" in this run.`);
+      }
     }
     if (briefing.size) lines.push(`size: ${briefing.size}`);
   }
@@ -297,10 +322,10 @@ export function composePrompt(run, n, briefing) {
     // (2026-09-23): setgoal put .claude/team.json in files[] as a source to read, and the
     // document-path rule rejected the spec for it.
     if (sg.sources?.length && (n.stage === 'investigate' || n.stage === 'audit')) lines.push(`Sources to open first:\n${bullets(sg.sources)}`);
-    if (['implement', 'investigate', 'draft', 'revise'].includes(n.stage)) {
+    if (['implement', 'investigate', 'draft', 'revise', 'template-fill'].includes(n.stage)) {
       // A planning subgoal writes the PRD, which governs the whole tree - its conventions are
       // not selected by the paths it touches.
-      const planning = kindOf(sg) === 'planning';
+      const planning = kindOf(sg) === 'planning' || kindOf(sg) === 'planning-light';
       const conv = conventionsBlock(run.cwd, { stage: planning ? 'planning' : n.stage, files: sg.files });
       if (conv) {
         lines.push('');
@@ -489,12 +514,23 @@ export function composePrompt(run, n, briefing) {
     });
   }
 
+  // planning-light only (graph.mjs's nodeBriefing sets it for template-fill and gate).
+  if (Array.isArray(briefing.investigate_unknowns)) {
+    lines.push('');
+    lines.push(`## Investigate unknowns`);
+    lines.push(`What this subgoal's investigate stage could not settle from any source. Each one must reach the document - as an open question with its owner, or as the rule a person or the default decided.`);
+    lines.push(bullets(briefing.investigate_unknowns.map((u) => `${u.question}${u.owner ? ` [owner: ${u.owner}]` : ''}`)));
+  }
+
   lines.push(mountBlock(run, n));
 
   lines.push('');
   lines.push(`## Required output`);
   const contract = n.node_id.startsWith('gate:goal') ? CONTRACT['gate:goal'] : CONTRACT[n.stage];
   lines.push(contract || CONTRACT.implement);
+  if (n.stage === 'gate' && briefing.subgoal && kindOf(briefing.subgoal) === 'planning-light') {
+    lines.push(PLANNING_LIGHT_GATE);
+  }
   lines.push('');
   lines.push(`Return that JSON object and nothing else.`);
   return lines.join('\n');

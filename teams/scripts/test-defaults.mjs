@@ -625,7 +625,7 @@ function teamDefaultsObject(teamconfigSrc) {
 test('TEAM_DEFAULTS pins its own documented default VALUES for the keys no test exercises un-overridden: qa_rounds, roles, max_depth, plugin_dirs', () => {
   const d = teamDefaultsObject(src('teamconfig'));
   assert.deepStrictEqual(d.qa_rounds, 2, `qa_rounds default drifted to ${JSON.stringify(d.qa_rounds)} (expected 2)`);
-  assert.deepStrictEqual(d.roles, { planning: true, qa: true, audit: true }, `roles default drifted to ${JSON.stringify(d.roles)} (expected {planning: true, qa: true, audit: true})`);
+  assert.deepStrictEqual(d.roles, { planning: 'auto', qa: true, audit: true }, `roles default drifted to ${JSON.stringify(d.roles)} (expected {planning: 'auto', qa: true, audit: true} - light PLAN mode, docs/plans/2026-09-28-teams-light-plan.md §2.5)`);
   assert.deepStrictEqual(d.max_depth, 2, `max_depth default drifted to ${JSON.stringify(d.max_depth)} (expected 2)`);
   assert.deepStrictEqual(d.plugin_dirs, [], `plugin_dirs default drifted to ${JSON.stringify(d.plugin_dirs)} (expected [])`);
   assert.deepStrictEqual(d.max_parallel_teams, 'auto', `max_parallel_teams default drifted to ${JSON.stringify(d.max_parallel_teams)} (expected 'auto' - see taskmanager.mjs's AIMD controller)`);
@@ -644,10 +644,10 @@ test('proof: guard F catches the qa_rounds 2->3 drift that the coverage audit fo
 
 test('proof: guard F catches the roles.qa true->false drift that the coverage audit found live; the real source passes', () => {
   const real = src('teamconfig');
-  assert.deepStrictEqual(teamDefaultsObject(real).roles, { planning: true, qa: true, audit: true }, 'sanity: real source must pass before mutating it');
+  assert.deepStrictEqual(teamDefaultsObject(real).roles, { planning: 'auto', qa: true, audit: true }, 'sanity: real source must pass before mutating it');
 
-  const mutated = real.replace('roles: { planning: true, qa: true, audit: true },', 'roles: { planning: true, qa: false, audit: true },');
+  const mutated = real.replace("roles: { planning: 'auto', qa: true, audit: true },", "roles: { planning: 'auto', qa: false, audit: true },");
   assert.notEqual(mutated, real, 'mutation target text was not found in teams/mcp/teamconfig.mjs - update this proof to match current source');
 
-  assert.notDeepEqual(teamDefaultsObject(mutated).roles, { planning: true, qa: true, audit: true }, 'guard F should have caught roles.qa drifting off true - it did not');
+  assert.notDeepEqual(teamDefaultsObject(mutated).roles, { planning: 'auto', qa: true, audit: true }, 'guard F should have caught roles.qa drifting off true - it did not');
 });

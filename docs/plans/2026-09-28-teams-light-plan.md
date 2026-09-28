@@ -1,6 +1,8 @@
 # teams — 가벼운 PLAN 모드 (검토용 초안)
 
-> 상태: **검토용**. 코드 변경 없음. 2026-09-28.
+> 상태: **§3 단계 1–5 구현됨** (브랜치 `teams/light-plan`, 2026-09-28). §2.4/§3-6 측정은 실제 런이 필요해 미실행, §3-7(`task.decisions`)·§6은 별도 작업.
+> 구현 요약: 감지 `hasDeclaredAcceptance`는 `teams/mcp/acceptance.mjs`(순수 함수, `taskmanager.mjs`에서도 re-export — §6.5-4의 brainstorm이 같은 이름으로 import). `tm_open`이 `requests[].acceptance`/`shared_acceptance`를 받고 요청 텍스트에 `Acceptance:` 블록으로 합성. `graph.mjs` `KINDS['planning-light']` = `investigate → template-fill → gate`(§5-2: **별도 kind**로 결정 — chain/author/gate/skills/`reducers.mjs` REGISTRY가 전부 kind 문자열로 조회되므로 run-aware 변형이 필요 없음; light 런은 `run.planning_mode === 'light'`일 때 `normalizeSpec`이 `planning`을 `planning-light`로 바꿈). template-fill 계약·light gate 추가 계약(항목별 R-번호 커버리지, unknown 유실 금지)은 `prompts.mjs`. `roles.planning: true|false|'light'|'auto'`, 기본값 `'auto'`(`teamconfig.mjs`), `'auto'`는 `false`를 고르지 않음. §5-1 파서 규칙: 번호 1..n(n≥2) 연속 + 목록 아래 `Acceptance( for every item)?:` 헤딩과 불릿(공유) 또는 항목마다 헤딩(항목별); 목록 위 블록·번호 건너뜀/재시작·불릿 없는 헤딩·일부 항목만 커버·공유 블록 2개 이상은 전부 false. light 모드는 PRD 하나(`max_subgoals: 1`).
+> 원래 상태: **검토용**. 코드 변경 없음. 2026-09-28.
 > 선행: `2026-09-21-teams-server-owns-the-loop.md` §8g~8i (PLAN 하네스 도입, investigate 스테이지 신설),
 > `2026-09-23-teams-reducer-human-rollback.md` (ask 경로, reducer, 이 문서가 다시 쓰는 `human_scope`).
 > 대상: `roles.planning`이 이미 기본 켬인 지금, PLAN이 **필요 없는 게 아니라 무겁게 필요한** 경우를 가른다.

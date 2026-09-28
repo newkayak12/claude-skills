@@ -30,6 +30,9 @@ export const AUTO_MAX_PARALLEL_TEAMS = 'auto';
 
 export const TEAM_FILE = join('.claude', 'team.json');
 
+// The string values roles.planning takes besides true/false (see TEAM_DEFAULTS.roles).
+export const PLANNING_MODES = ['light', 'auto'];
+
 export const TEAM_DEFAULTS = Object.freeze({
   max_parallel_teams: AUTO_MAX_PARALLEL_TEAMS,
   // Only consulted by the auto controller above (ensureAutoParallel), and only when THIS is not
@@ -88,7 +91,14 @@ export const TEAM_DEFAULTS = Object.freeze({
   // unchanged, so a project that never heard of this key keeps today's behaviour byte for byte -
   // but a project may now turn audit off while keeping the rest of planning (a PRD without the
   // post-integration cross-check), which `roles.planning` alone could never express.
-  roles: { planning: true, qa: true, audit: true },
+  // roles.planning takes true | false | 'light' | 'auto' (docs/plans/2026-09-28-teams-light-plan.md
+  // §2.5). 'auto' (the default since 2026-09-28, was true) picks the light PLAN chain
+  // (investigate -> template-fill -> gate) when the backlog already declares its acceptance -
+  // acceptance.mjs's hasDeclaredAcceptance - and the full one otherwise. It never picks false:
+  // dropping PLAN is always a person's explicit choice. true stays the full chain, as before.
+  // This changes what an unconfigured caller runs, so it is recorded as its own decision in
+  // that plan doc; audit still rides on planning being on at all, whichever chain it runs.
+  roles: { planning: 'auto', qa: true, audit: true },
   goal_threshold: 90,
   max_retries: 2,
   driver_restarts: 2,
@@ -186,7 +196,8 @@ const CHECK = {
   qa_rounds: (v) => Number.isInteger(v) && v >= 0,
   upstream_fix_rounds: (v) => Number.isInteger(v) && v >= 0,
   roles: (v) => v && typeof v === 'object' && !Array.isArray(v)
-    && Object.entries(v).every(([k, b]) => k in TEAM_DEFAULTS.roles && typeof b === 'boolean'),
+    && Object.entries(v).every(([k, b]) => k in TEAM_DEFAULTS.roles
+      && (typeof b === 'boolean' || (k === 'planning' && PLANNING_MODES.includes(b)))),
   interactive: (v) => typeof v === 'boolean',
   ask_timeout: (v) => v === null || (Number.isInteger(v) && v > 0),
   human_gates: (v) => Array.isArray(v) && v.every((s) => typeof s === 'string' && s.length > 0),
