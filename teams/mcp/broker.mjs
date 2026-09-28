@@ -1895,6 +1895,10 @@ async function toolGraphRun(a) {
   if (fresh) {
     run.nodes = fresh.nodes;
     run.spec = fresh.spec;
+    // A STORY pin another process drained meanwhile lives on the run, not on a node (M5): carry
+    // it, so what this node expands (setgoal's subgoals) is pinned the way the person asked.
+    if (fresh.subgoal_assignee) run.subgoal_assignee = fresh.subgoal_assignee;
+    else delete run.subgoal_assignee;
     const again = getNode(run, n.node_id);
     if (again) {
       again.ticket = n.ticket;
@@ -1903,6 +1907,12 @@ async function toolGraphRun(a) {
       n = again;
     }
   }
+  // Whatever a person queued while this vendor ran (tm_assign, tm_submit({key})) is applied now,
+  // before this node's result expands anything - the same drain every tool entry point makes
+  // (mustFindRun). A STORY pin queued during setgoal otherwise waited for the next team_next and
+  // missed the subgoals this very result creates (M5).
+  ingestHandoff(run);
+  n = getNode(run, n.node_id) || n;
 
   const transportOk = proc.status === 0;
   // A provider's usage limit is never a verdict on the work, under either allocation: code-sprint-S2's

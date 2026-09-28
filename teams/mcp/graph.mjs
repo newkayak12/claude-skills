@@ -400,13 +400,28 @@ export function applyPinAction(run, action) {
 // ahead of any subgoal, so a STORY pinned after dispatch but before setgoal has no subgoal to
 // pin yet - this is what makes it land when they appear (and on a later spec retry). Subgoals
 // that already exist are pinned by tm_assign's own per-subgoal `pin` actions.
+// A STORY pin can also land AFTER setgoal produced subgoals (M5): tm_assign saw none while
+// setgoal was running, queued only this run-level pin, and setgoal then expanded its subgoals
+// unpinned. So the pin is applied to every subgoal that exists by now, at its current attempt,
+// as well as to the ones setgoal will still produce; a release lets go of the user pins the
+// STORY pin put there, leaving a model-written assignee alone.
 export function applyStoryPin(run, action) {
+  const subgoals = (run.spec && Array.isArray(run.spec.subgoals)) ? run.spec.subgoals : [];
   if (action.to === 'auto') {
-    if (!run.subgoal_assignee) return false;
+    let changed = !!run.subgoal_assignee;
     delete run.subgoal_assignee;
-    return true;
+    for (const sg of subgoals) {
+      if (!(sg.assignee && typeof sg.assignee === 'object' && sg.assignee.by === 'user')) continue;
+      releaseHumanPin(run, sg, String(sg.id), currentAttempt(run, sg.id));
+      changed = true;
+    }
+    return changed;
   }
   run.subgoal_assignee = { by: 'user', ...(action.who ? { who: action.who } : {}) };
+  for (const sg of subgoals) {
+    sg.assignee = { ...run.subgoal_assignee };
+    applyHumanPin(run, sg, String(sg.id), currentAttempt(run, sg.id));
+  }
   return true;
 }
 
