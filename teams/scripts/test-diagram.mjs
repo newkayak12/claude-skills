@@ -58,3 +58,26 @@ test('the plain package map validates for any shape: no deps, a chain, a diamond
   assert.ok(!diamond.edges.some((e) => e.from === 'P1' && e.to === 'P4'), 'P4 builds on P1 through P3 - no line through P3\'s box');
   assert.deepEqual(diamond.edges.filter((e) => e.to === 'integration').map((e) => e.from), ['P4'], 'only chain ends are merged directly');
 });
+
+test('shape map: a sentence-long edge label is cut to fit and a group that swallows a non-member is dropped, instead of losing the whole map', async () => {
+  const { mendDiagram } = await import('../mcp/taskmanager.mjs');
+  const long = 'fit/SKILL.md name + both modes, which job-application-workflow step 1 points at';
+  const ir = {
+    type: 'architecture', title: 'packages',
+    nodes: [
+      { id: 'P1', label: 'fit', kind: 'package', row: 0, col: 0 },
+      { id: 'P2', label: 'rewrite', kind: 'package', row: 1, col: 0 },
+      { id: 'P3', label: 'beta', kind: 'package', row: 2, col: 0 },
+      { id: 'P4', label: 'workflow', kind: 'package', row: 1, col: 1 },
+    ],
+    edges: [{ from: 'P1', to: 'P4', label: long }, { from: 'P2', to: 'P4' }, { from: 'P3', to: 'P4' }],
+    groups: [{ id: 'bad', label: 'merges', nodes: ['P1', 'P3'] }],
+  };
+  assert.ok(validate(ir).length >= 2);
+  const m = mendDiagram(ir);
+  assert.deepEqual(validate(m), []);
+  assert.ok(m.edges[0].label.length <= 48);
+  assert.equal(m.edges[0].note, long);
+  assert.deepEqual(m.groups, []);
+  assert.equal(ir.edges[0].label, long, 'the input is not mutated');
+});
