@@ -59,7 +59,7 @@ run the whole process with me from JD analysis through interview prep.
       ↓
 [2] portfolio-company     culture signals, talking points, red flags
       ↓
-[3] resume-tailorer (+ portfolio-rewrite)   tailored resume, cover letter draft
+[3] resume-tailorer (+ portfolio-rewrite)   tailored resume
       ↓
 [4] interview-plan        STAR story bank, likely questions, questions to ask
 ```
@@ -93,7 +93,7 @@ Score the fit, tell me which gaps are fatal, and be honest about whether I'd pas
 [갭 분석]
 갭: 결제 도메인 경험 없음
 심각도: 보완 가능
-대응 방법: 커버레터에서 정산 배치 경험을 도메인 인접성으로 프레이밍
+대응 방법: 이력서·포트폴리오에서 정산 배치 경험을 도메인 인접성으로 프레이밍
 ```
 
 ### `portfolio-company`

@@ -3,8 +3,8 @@ name: resume-tailorer
 effort: high
 description: >-
   Use when someone has a resume and a specific job description and wants the
-  resume rewritten to match that JD — keyword alignment, achievement reframing,
-  and skills reordering. Triggers on: "이력서 맞춰줘", "공고에 맞게 고쳐줘", "이력서 최적화".
+  resume rewritten to fit that JD. Triggers on: "이력서 맞춰줘", "공고에 맞게 고쳐줘",
+  "이력서 최적화", "tailor my resume to this JD".
 scenarios:
   - "Tailor my resume to match this job description — keyword alignment and achievement reframing"
   - "Rewrite my resume summary and experience bullets to fit this JD"
@@ -23,181 +23,94 @@ compatibility:
 ## Standing Mandates
 
 - ALWAYS run JD keyword analysis before rewriting any section.
-- ALWAYS preserve factual accuracy — never invent or inflate achievements.
 - NEVER rewrite without a gap analysis between the current resume and JD requirements.
-- NEVER alter achievement numbers, scope claims, or timeline facts.
-
+- NEVER supply a fact the user did not give. A missing number, cause, date, tool, scope or context is written `[확인 필요: ○○]` and left for the user. No invention, no estimate, no 역산, no candidate values. "API 응답속도 개선" with no metric comes out as "API 응답속도 개선 [확인 필요: 개선 전/후 수치]", never "40% 개선".
+- NEVER alter achievement numbers, scope claims, or timeline facts the resume already states.
+- ALWAYS lead with the JD-fit verdict; every later block cites it rather than restating it.
+- This skill rewrites by purpose — vocabulary, emphasis, order, shape. The rule above is its only bound; it is not limited to typo/terminology fixes.
 
 # Resume Tailorer
 
-## When to Use / When Not to Use
-
-**Use when:**
-- You have a specific JD and want the resume vocabulary to match it
-- Hidden strengths are described with different terms than the JD uses
-- You need to reorder skills and achievements to front-load what this company cares about
-
-**Not for:**
-- General resume improvement without a JD (use portfolio-rewrite)
-- Assessing how well you fit a role (use jd-fit)
-- Understanding which companies to target (use portfolio-company)
+**Not for:** general resume improvement without a JD (`portfolio-rewrite`), assessing fit for a role (`jd-fit`), scoring the portfolio's overall strength (`portfolio-feedback`), or choosing target companies (`portfolio-company`). Every rewrite here is grounded in the JD provided; redirect anything broader.
 
 ## Process
 
-1. **Gather inputs** — current resume + full JD; company name/stage and role level useful
-2. **Analyze the JD** — required tech skills (frequency = emphasis), soft skill signals, responsibility keywords, implicit culture signals
-3. **Gap analysis** — JD requirements vs. resume coverage in a table: Missing / Weak / Strong
-4. **Produce section rewrites** — Before/After for every section needing change; keyword alignment, achievement reframing, skills reordering
-5. **Name what NOT to change** — sections already well-aligned; don't touch them
+If `sequential-thinking` is available, use it: (1) analyze JD → (2) gap analysis → (3) rewrite sections. Rewrites produced before the gap analysis are unfocused. After the gap analysis, individual section rewrites are independent and can be generated in parallel.
 
-## Standalone Inputs
+### 1. Gather Inputs
 
-Provide both:
-1. Current resume (paste or describe key sections)
-2. Full JD text
-
-Also useful: company name/stage, role level, why you want this specific role.
-
-## What Claude Does / What You Do
-
-| Claude | You |
-|--------|-----|
-| Decodes JD: required vs. aspirational; vocabulary signals; cultural cues | Validates that rewrites accurately reflect your real experience |
-| Gap analysis: JD requirements vs. resume coverage (table format) | Provides missing context (actual numbers, role scope) |
-| Produces Before/After rewrites for each section needing change | Decides which rewrites to use |
-| Identifies sections to deemphasize or move for this JD | Applies changes to the actual document |
-
-## Related Skills
-
-- `../jd-fit/SKILL.md` — fit assessment before deciding to tailor
-- `../portfolio-rewrite/SKILL.md` — general improvement not tied to a specific JD
-
-## Why Generic Resumes Fail
-
-A resume written for everyone is optimized for no one. Recruiters and ATS systems screen against the language of the job description — not against abstract quality. A candidate with the right experience but the wrong vocabulary gets filtered before a human ever reads the file.
-
-Tailoring is not embellishment. It is translation: the same real experience, surfaced in the terms and emphasis the target company uses to describe what they need.
-
----
-
-## Workflow Note — Sequential Thinking and Parallelization
-
-If `sequential-thinking` is available, use it: (1) analyze JD → (2) gap analysis → (3) rewrite sections. Performing rewrites before completing gap analysis produces unfocused changes.
-
-After gap analysis (Step 2), individual section rewrites (Step 3) are independent and can be generated in parallel.
-
----
-
-## Step 1 — Gather Inputs
-
-Collect two things before any analysis:
+Collect both before any analysis:
 1. The current resume (paste, upload, or describe key sections)
-2. The target job description (full JD text preferred — the more specific, the better)
+2. The full JD text — the more specific, the better
 
-Also useful:
-- Company name and approximate size/stage (chaebol, startup, mid-size, global tech)
-- Role level targeted (junior, mid, senior, staff, lead)
-- Any notes on why they want this specific company or role
+Also useful: company name and size/stage (chaebol, startup, mid-size, global tech), targeted role level (junior → lead), why this company or role. If the resume or the JD is missing, ask for it before proceeding.
 
-If either the resume or the JD is missing, ask for it before proceeding.
+### 2. Analyze the JD
 
----
+- **Required technical skills** — every technology, language, framework, or tool named. Frequency signals emphasis.
+- **Soft skill and leadership signals** — "자기주도적", "협업", "오너십", "빠른 실행력". Not filler: they reveal what the hiring manager values.
+- **Responsibility keywords** — the verbs ("설계", "운영", "개선", "리딩", "분석"). The resume uses the same verbs wherever accurate.
+- **Implicit culture signals**
+  - Formal, process-heavy → enterprise / chaebol: stability, documentation, cross-team coordination
+  - Brief, result-focused → startup: ownership, speed, measurable outcomes
+  - Mentions scale (DAU, TPS, data volume) → emphasize where the candidate operated at scale — only as far as the resume says
 
-## Step 2 — Analyze the JD
+Per-company-type signal table: `../../references/korea-company-culture-signals.md`.
 
-Extract and categorize what the JD is actually asking for:
-
-### Required Technical Skills
-List every specific technology, language, framework, or tool named. Note which appear multiple times — frequency signals emphasis.
-
-### Soft Skill and Leadership Signals
-What language does the JD use? ("취업규칙 준수", "자기주도적", "협업", "오너십", "빠른 실행력") — these are not filler. They reveal the culture and what the hiring manager actually values.
-
-### Responsibility Keywords
-What verbs does the JD use? ("설계", "운영", "개선", "리딩", "분석") — the resume should use the same verbs to describe the candidate's experience wherever accurate.
-
-### Implicit Signals
-- Is the JD formal and process-heavy? → enterprise / chaebol: emphasize stability, documentation, cross-team coordination
-- Is it brief and result-focused? → startup: emphasize ownership, speed, measurable outcomes
-- Does it mention scale (DAU, TPS, data volume)? → emphasize where the candidate has operated at scale
-
----
-
-## Step 3 — Gap Analysis
-
-Compare the JD requirements against the current resume:
+### 3. Gap Analysis
 
 | JD requires | Resume shows | Gap? |
 |-------------|--------------|------|
 | [skill/keyword] | [what's there now] | Missing / Weak / Strong |
 
 Identify:
-- **High-priority gaps:** skills or keywords the JD emphasizes and the resume does not mention at all
-- **Hidden strengths:** experience the candidate has that matches JD requirements but is described with different vocabulary
-- **Deemphasis candidates:** resume sections that are strong but irrelevant to this JD — they take space from what matters
+- **High-priority gaps** — skills or keywords the JD emphasizes that the resume never mentions
+- **Hidden strengths** — matching experience described in different vocabulary
+- **De-emphasis candidates** — strong sections irrelevant to this JD that take space from what matters
 
----
+### 4. Produce Specific Rewrites
 
-## Step 4 — Produce Specific Rewrites
+For each section needing change, give a Before/After with the actual rewritten text — not suggestions.
 
-For each section that needs change, produce a Before/After. Do not give suggestions — give the actual rewritten text.
-
-### Keyword Alignment
-Where the candidate has the experience but the wrong vocabulary, translate it.
-
-Example:
+**Keyword Alignment** — where the candidate has the experience but the wrong vocabulary, translate it. Translation changes words, not facts.
 - JD says: "대용량 트래픽 처리 경험 (1M+ DAU)"
 - Before: "백엔드 API 개발 및 성능 최적화"
-- After: "일 활성 사용자 150만 규모 서비스의 백엔드 API 설계 및 병목 구간 35% 개선"
+- After: "[확인 필요: 서비스 규모(DAU)] 서비스의 백엔드 API 개발 및 성능 병목 개선 [확인 필요: 개선 전/후 수치]"
 
-### Achievement Reframing (XYZ / STAR Format)
-Achievements buried in job-description language need to be surfaced as results.
-
-XYZ format: "X를 Y만큼 달성했다, Z를 통해"
+**Achievement Reframing (XYZ / STAR)** — surface results buried in job-description language. XYZ: "X를 Y만큼 달성했다, Z를 통해".
 - Before: "레거시 시스템 마이그레이션 참여"
-- After: "레거시 모놀리식 시스템을 마이크로서비스로 마이그레이션, 배포 주기를 2주에서 하루로 단축 (Jenkins CI/CD 파이프라인 구축)"
+- After: "레거시 시스템 마이그레이션에서 [확인 필요: 본인 담당 범위] 수행, [확인 필요: 마이그레이션 전/후로 달라진 지표·수치]"
 
-Reframe every achievement that:
-- Uses passive voice ("참여했다", "기여했다")
-- Lacks a number
-- Does not say what changed because of this person's work
+Reframe the shape of every achievement that uses passive voice ("참여했다", "기여했다"), does not say what changed because of this person's work, or lacks a number — a missing number is `[확인 필요: ○○]`, never filled in.
 
-### Skills Section
-Reorder skills to front-load what the JD explicitly names. Remove or deprioritize skills not mentioned in the JD if space is constrained.
+**Skills Section** — reorder to front-load what the JD names. Deprioritize or drop skills the JD does not mention if space is constrained.
 
-### Summary / Profile Section
-If the resume has a top summary, rewrite it to mirror the JD's framing of the ideal candidate. This is the highest-leverage single edit — recruiters read it first.
+**Summary / Profile** — rewrite the top summary to mirror the JD's framing of the ideal candidate, using only facts the resume gives. The highest-leverage single edit; recruiters read it first.
 
----
+**ATS** — keyword matching rules and formatting for the Korean market: `../../references/ats-rules-korea.md`.
 
-## Culture-Fit Signal Adjustment
+### 5. Name What NOT to Change
 
-For the full per-company-type signal table (Chaebol, Korean tech unicorn, Global tech, Early-stage startup), read `../../references/korea-company-culture-signals.md`.
+Sections already well-aligned stay untouched.
 
----
+## Output Template
 
-## ATS Considerations
-
-For full ATS keyword matching rules and formatting guidance for the Korean job market, read `../../references/ats-rules-korea.md`.
-
----
-
-## Output Format
-
-Produce the tailored output as:
+Write in the user's language.
 
 ```
+**JD 적합도 판정:** must-have n개 중 Missing n · Weak n — 최우선 변경: [one change]
+
 ## JD Analysis Summary
 [Key requirements, emphasis areas, culture signals in 5–8 bullets]
 
 ## Gap Analysis
-[Table of JD requirements vs. current resume coverage]
+[Missing / Weak / Strong table; hidden strengths; de-emphasis candidates]
 
 ## Section Rewrites
 
 ### Profile / Summary
 Before: [current text]
-After:  [rewritten text]
+After:  [rewritten text; gaps as [확인 필요: ○○]]
 
 ### Experience — [Company / Role]
 Before: [current bullets]
@@ -209,17 +122,20 @@ After:  [rewritten bullets]
 Reordered priority: [new ordering]
 
 ## What NOT to Change
-[Sections that are already well-aligned — leave them as-is]
+[Sections already well-aligned — leave as-is]
 ```
 
----
+## What Claude Does / What You Do
 
-## What This Skill Does Not Do
+| Claude | You |
+|--------|-----|
+| Decodes JD: required vs. aspirational; vocabulary signals; cultural cues | Validate that rewrites reflect your real experience |
+| Gap analysis: JD requirements vs. resume coverage (table) | Fill each `[확인 필요]` — actual numbers, role scope |
+| Before/After rewrites per section, missing facts left as `[확인 필요]` | Decide which rewrites to use |
+| Names sections to de-emphasize, move, or leave alone | Apply changes to the actual document |
 
-This skill does not improve general writing quality regardless of JD — that is portfolio-rewrite.
+## Related Skills
 
-This skill does not assess the portfolio's overall strength or score it — that is portfolio-feedback.
-
-This skill does not help select which companies to target — that is portfolio-company.
-
-Every rewrite here is grounded in the specific JD provided. If the user wants a more general improvement, redirect to the appropriate skill.
+- `../jd-fit/SKILL.md` — fit assessment before deciding to tailor
+- `../portfolio-rewrite/SKILL.md` — general improvement not tied to a specific JD
+- `../portfolio-feedback/SKILL.md` — overall strength and screen verdict
