@@ -186,6 +186,33 @@ export const REASONING_STAGES = new Set([
 // to count as done. A stage absent here has no verdict beyond stage_ok.
 export const VERDICT_FIELD = { gate: 'accept', critique: 'sound', test: 'verified', review: 'verified', execute: 'verified' };
 
+// Why a judging node said no, when it never said so in a `reason`. review's and test's schema
+// have no reason field at all, and a manager integrate/accept/critique can come back
+// verified/accept/sound:false with empty gaps/blocking - only `checks`/`evidence` explain it.
+// The first check reading as a failure, else the evidence summary, else every check. '' when
+// the result already carries its own reason (or gaps/blocking for the fields that have them),
+// or has nothing to synthesize from. Shared by the broker (child nodes), taskmanager.finish
+// (manager nodes) and runlog.classify (records written before either filled it).
+export function reasonFromVerdict(result, field) {
+  const r = result || {};
+  if (!field || r[field] !== false) return '';
+  if (r.reason || r.verification_error) return '';
+  if (field === 'accept' && (r.gaps || []).length) return '';
+  if (field === 'sound' && (r.blocking || []).length) return '';
+  const checks = Array.isArray(r.checks) ? r.checks : [];
+  // Read a check's outcome (after its last "->"), quoted text removed: a passing check that
+  // quotes the rule it verified ("-> 'does NOT move the score'") is not a failure.
+  const readsAsFailure = (c) => {
+    const s = String(c);
+    const outcome = s.includes('->') ? s.slice(s.lastIndexOf('->') + 2) : s;
+    // An in-word apostrophe (주장's, don't) is not a quote mark.
+    const unquoted = outcome.replace(/([^\s'"`])'(?=[a-z])/gi, '$1').replace(/"[^"]{0,200}"|'[^']{0,200}'|`[^`]{0,200}`/g, '');
+    return /\b(missing|fail(ed|ing|s)?|not met|unmet|does not|refused)\b/i.test(unquoted);
+  };
+  const flagged = checks.find(readsAsFailure);
+  return String(flagged || (r.evidence ? String(r.evidence) : '') || checks.join('; ')).slice(0, 300);
+}
+
 // A flow is what the user-facing entry chose - or, under `auto`, what the plan node decided
 // from the request. It sets the kind a subgoal gets when setgoal names none, and gives
 // setgoal a persona set to draw from. With `mixed: false` it also forbids the other kinds,

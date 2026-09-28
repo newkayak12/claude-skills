@@ -2665,6 +2665,25 @@ test('max_parallel_teams "auto": two clean develop-STORY dispatch folds (toInteg
   }, { max_parallel_ceiling: 6 });
 });
 
+// portfolio-consolidate-8518d5dd: integrate:6 came back verified:false with checks/evidence/
+// unowned and no reason or gaps - the ledger, the report and triage all showed "integrate:6: "
+// with nothing after the colon. The manager now synthesizes one the way the broker does for a
+// child review/test rejection.
+test('an integrate refusal with no reason or gaps gets one synthesized from its checks/evidence', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    const v = await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({
+      verified: false,
+      checks: ['git log -> P1 and P2 merged', 'ls skills -> beta/ is ABSENT, so G1 is only partly met'],
+      evidence: 'G1, G3 and G7 are unmet because P3 failed and P4 was not dispatched.',
+    }) });
+    assert.equal(v.state, 'failed');
+    assert.match(v.reason || '', /G1 is only partly met|G1, G3 and G7 are unmet/, JSON.stringify(v));
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.ok(task.nodes.find((n) => n.node_id === 'integrate:1').result.reason, 'the stored result carries it too, for harvest');
+  });
+});
+
 test('a failed integrate reopens once the package it blamed is retried; an unknown package id is refused', async () => {
   // The first docs task to finish its packages ended here: integrate ran the README examples,
   // one package's failed, the package was retried and accepted - and integrate stayed failed

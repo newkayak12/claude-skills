@@ -87,6 +87,7 @@ import {
   autoPassHumanGateResult,
   humanGateResultFromPayload,
   humanGateIdentity,
+  reasonFromVerdict,
 } from './graph.mjs';
 import { computeSubmitResult } from './broker.mjs';
 // The same driver-stream reader view.mjs's RESOURCE view already uses (see drivercost.mjs's own
@@ -3832,6 +3833,12 @@ export function finish(task, n, result) {
     // A rejection needs no evidence of its own; a positive verdict does. This is the
     // manager's own judging failing to do its job, not a verdict on the work it judged.
     result = { ...result, stage_ok: false, reason: `${n.stage} returned a positive verdict without a check; a judgement with no evidence is a guess` };
+  } else if (n.state === 'failed' && result.stage_ok === true && f) {
+    // A real rejection that named no reason (and no gaps/blocking): integrate's schema has only
+    // checks/evidence/unowned, so portfolio-consolidate-8518d5dd's integrate:6 reached the
+    // ledger, report and triage as "integrate:6: " - the broker's own rule, at manager level.
+    const synthesized = reasonFromVerdict(result, f);
+    if (synthesized) result = { ...result, reason: synthesized };
   }
   n.result = result;
   n.finished_at = Date.now();
