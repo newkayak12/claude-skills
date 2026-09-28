@@ -17,6 +17,22 @@
 //     [--budget-usd <n>] [--timebox-minutes <n>] [--vendor <v>] [--allocation ordered|balanced]
 //     [--size S|L] [--context <text>] [--poll-ms <n>] [--initiative <slug>] [--json]
 //   node teams/scripts/run.mjs --resume <task_id> [--json]
+//   (either form) [--resume-on-limit] [--max-resumes <n>]
+//
+// --resume-on-limit (opt-in) is what scripts/bench/drive.sh used to do around a `claude -p`
+// session, moved to where the task itself can be asked: when the task settles `blocked` and
+// the cause is a provider usage limit ("You've hit your 5-hour limit · resets 11:50pm
+// (Asia/Seoul)"), this reads the reset time out of the notice (taskmanager.mjs's own
+// capacityResetAt - the parser the daemon already uses), sleeps until it has passed plus three
+// minutes' grace, resumes the task (tm_retry reset_capacity for a parked driver, else a fresh
+// attempt of the package the limit killed) and keeps waiting. At most --max-resumes (default 6)
+// resumes; a limit on anything that has no resume route (a manager judge that already spent its
+// re-judges) is given up on and exits 1 like any other blocked task. The daemon already resumes
+// a parked PACKAGE driver on its own (autoResumeCapacity) while the task is still running; what
+// it cannot do is come back after the task as a whole has read `blocked` - a size-S task whose
+// one run parked on capacity, or a package folded failed on a limit - since its loop ends there.
+// drive.sh's other case, a session killed with no result event, has no counterpart here: there
+// is no session, and tm_wait re-raises a dead daemon on its own.
 //
 // --initiative is tm_run's own `initiative` argument (optional grouping ABOVE the EPIC,
 // display/grouping only - see tm_open's own description and teamconfig.mjs's `initiative` key).
@@ -42,7 +58,7 @@
 
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { callTool as realCallTool, mustFindTask as realMustFindTask } from '../mcp/taskmanager.mjs';
+import { callTool as realCallTool, mustFindTask as realMustFindTask, capacityResetAt } from '../mcp/taskmanager.mjs';
 import { docPaths as realDocPaths } from '../mcp/tickets.mjs';
 
 export const EXIT = {
@@ -57,18 +73,22 @@ const FLOW_VALUES = new Set(['auto', 'develop', 'document']);
 const ALLOCATION_VALUES = new Set(['ordered', 'balanced']);
 const SIZE_VALUES = new Set(['S', 'L']);
 const DEFAULT_POLL_MS = 5000;
+const DEFAULT_MAX_RESUMES = 6;         // drive.sh's MAX_RESUMES default
+export const RESET_GRACE_MS = 3 * 60 * 1000; // drive.sh's "+3 min", the daemon's CAPACITY_GRACE_MS
+const SLEEP_STEP_MS = 60 * 1000;       // wake at least once a minute (see sleepUntil)
 
 export const USAGE = `usage:
   node teams/scripts/run.mjs "<request>" [--kind auto|develop|document] [--cwd <path>]
     [--budget-usd <n>] [--timebox-minutes <n>] [--vendor <v>] [--allocation ordered|balanced]
     [--size S|L] [--context <text>] [--poll-ms <n>] [--initiative <slug>] [--json]
-  node teams/scripts/run.mjs --resume <task_id> [--json]
+    [--resume-on-limit] [--max-resumes <n>]
+  node teams/scripts/run.mjs --resume <task_id> [--json] [--resume-on-limit] [--max-resumes <n>]
 `;
 
 // Pure and side-effect free on purpose - test-run.mjs exercises this directly, no task layer
 // involved at all.
 export function parseArgs(argv) {
-  const a = { json: false, pollMs: DEFAULT_POLL_MS };
+  const a = { json: false, pollMs: DEFAULT_POLL_MS, resumeOnLimit: false, maxResumes: DEFAULT_MAX_RESUMES };
   const positional = [];
   const list = argv || [];
   for (let i = 0; i < list.length; i++) {
@@ -88,6 +108,8 @@ export function parseArgs(argv) {
       case '--poll-ms': a.pollMs = Number(next()); break;
       case '-h': case '--help': a.help = true; break;
       case '--json': a.json = true; break;
+      case '--resume-on-limit': a.resumeOnLimit = true; break;
+      case '--max-resumes': a.maxResumes = Number(next()); break;
       default:
         if (String(v).startsWith('--')) return { error: `unknown option ${v}` };
         positional.push(v);
@@ -113,6 +135,7 @@ export function parseArgs(argv) {
     a.timeboxMinutes = n;
   }
   if (!Number.isFinite(a.pollMs) || a.pollMs <= 0) return { error: '--poll-ms must be a positive number' };
+  if (!Number.isInteger(a.maxResumes) || a.maxResumes < 0) return { error: '--max-resumes must be a non-negative integer' };
   return a;
 }
 
@@ -139,6 +162,84 @@ export function exitCodeForState(state) {
   return EXIT.NOT_COMPLETE; // blocked, missing, or anything else that is not still running
 }
 
+// ---------- usage limits (--resume-on-limit) ----------
+
+// Limit notices name their window - "session limit", "usage limit", "weekly limit", "5-hour
+// limit" - and drive.sh once matched only two of them and read a weekly limit as a clean ending.
+// Codex's own wording is "usage_limit_reached" / "hit your usage limit".
+const LIMIT_RE = /hit your (?:[a-z0-9-]+ )?limit|usage[ _]limit|session limit/i;
+
+export function isLimitNotice(text) {
+  return LIMIT_RE.test(String(text || ''));
+}
+
+// The epoch ms after which a resume is worth trying: the reset the notice names (first
+// occurrence after `since`, the moment the limit was hit) plus the grace. A notice with no
+// parseable time falls back to since + 30 min, as drive.sh and the daemon both do. A notice
+// read late (the reset already passed) yields a time in the past - resume at once, drive.sh's
+// "stale limit message" case, without needing its separate "fresh" flag.
+export function limitResumeAt(reason, since) {
+  return capacityResetAt(reason, since) + RESET_GRACE_MS;
+}
+
+function textOf(result) {
+  if (!result) return '';
+  if (typeof result === 'string') return result;
+  try { return JSON.stringify(result); } catch { return ''; }
+}
+
+// Every usage-limit reason a settled task carries, on the task object alone (pure - the test
+// hands it a literal). Parked drivers (waiting_capacity) are limits whatever their text says;
+// a failed node counts only when its result reads like a limit notice.
+//   { reason, since, parked: true, package_id? }   - tm_retry({reset_capacity}) resumes it
+//   { reason, since, package_id }                  - a failed dispatch: tm_retry({package_id})
+//   { reason, since, node_id }                     - any other failed node: no resume route
+export function findLimitNotices(task) {
+  const out = [];
+  if (!task) return out;
+  const s = task.s_run;
+  if (s && s.waiting_capacity) {
+    out.push({ reason: String(s.waiting_capacity.reason || ''), since: s.waiting_capacity.since, parked: true, package_id: 'S' });
+  }
+  for (const n of task.nodes || []) {
+    if (n.stage === 'dispatch' && n.child && n.child.waiting_capacity) {
+      out.push({ reason: String(n.child.waiting_capacity.reason || ''), since: n.child.waiting_capacity.since, parked: true, package_id: String(n.subgoal_id) });
+      continue;
+    }
+    if (n.state !== 'failed' || !n.result) continue;
+    const text = textOf(n.result);
+    if (!isLimitNotice(text)) continue;
+    const reason = String(n.result.reason || text).slice(0, 500);
+    if (n.stage === 'dispatch' && n.subgoal_id != null) out.push({ reason, since: n.finished_at, package_id: String(n.subgoal_id) });
+    else out.push({ reason, since: n.finished_at, node_id: n.node_id });
+  }
+  // A package retried after a limit leaves its failed first attempt behind: only the newest
+  // notice per package matters, and a package that has since been parked is the parked one.
+  const seen = new Map();
+  for (const x of out) {
+    const k = x.package_id != null ? `p:${x.package_id}` : `n:${x.node_id}`;
+    const prev = seen.get(k);
+    if (!prev || x.parked || (!prev.parked && (Number(x.since) || 0) >= (Number(prev.since) || 0))) seen.set(k, x);
+  }
+  return [...seen.values()];
+}
+
+// Sleeps until `until` in steps of at most a minute against the clock `now()`, not one long
+// timer: macOS does not count time asleep toward a single sleep, and idol-pm4 (2026-09-23)
+// resumed five hours after its reset (drive.sh's lesson). Returns false when `shouldStop` fired.
+export async function sleepUntil(until, { now = Date.now, sleep = defaultSleep, shouldStop = () => false } = {}) {
+  for (;;) {
+    if (shouldStop()) return false;
+    const left = until - now();
+    if (left <= 0) return true;
+    await sleep(Math.min(SLEEP_STEP_MS, left));
+  }
+}
+
+function defaultSleep(ms) {
+  return new Promise((r) => { setTimeout(r, ms); });
+}
+
 function fmtCounts(counts) {
   return Object.entries(counts || {}).filter(([, n]) => n).map(([k, n]) => `${k}:${n}`).join(' ');
 }
@@ -151,6 +252,53 @@ function questionText(q) {
 function emit(json, obj, prose, out) {
   const w = out || process.stdout;
   w.write(json ? `${JSON.stringify(obj)}\n` : `${prose}\n`);
+}
+
+// One --resume-on-limit step over a task that just settled `blocked`: 'none' (not a limit -
+// the blocked verdict stands), 'gave_up', 'detached' (SIGINT during the wait) or 'resumed'.
+async function resumeAfterLimit({ a, taskId, deps, ct, mft, shouldStop, out, resumes, maxResumes }) {
+  const now = deps.now || Date.now;
+  let task = null;
+  try { task = mft({ task_id: taskId }); } catch { task = null; }
+  const notices = findLimitNotices(task);
+  if (!notices.length) return 'none';
+  const giveUp = (why) => {
+    emit(a.json, { event: 'limit_gave_up', task_id: taskId, resumes, reason: why },
+      `[teams run] usage limit: gave up at resume ${resumes} - ${why}`, out);
+    return 'gave_up';
+  };
+  if (resumes >= maxResumes) return giveUp(`--max-resumes ${maxResumes} reached`);
+  const resumable = notices.filter((x) => x.parked || x.package_id != null);
+  if (!resumable.length) {
+    return giveUp(`no resume route for ${notices.map((x) => x.node_id || x.package_id).join(', ')} (${notices[0].reason.slice(0, 120)})`);
+  }
+  // Wait for the latest reset among them: resuming one window early only hits the limit again.
+  const at = Math.max(...resumable.map((x) => limitResumeAt(x.reason, Number(x.since) || now())));
+  const wait = Math.max(0, at - now());
+  emit(a.json, { event: 'limit', task_id: taskId, resume_at: new Date(at).toISOString(), wait_ms: wait, reason: resumable[0].reason.slice(0, 300) },
+    wait > 0
+      ? `[teams run] usage limit (${resumable[0].reason.slice(0, 120)}); sleeping until ${new Date(at).toISOString()}`
+      : `[teams run] usage limit (${resumable[0].reason.slice(0, 120)}); reset already passed, resuming`,
+    out);
+  const woke = await sleepUntil(at, { now, sleep: deps.sleep || defaultSleep, shouldStop });
+  if (!woke) return 'detached';
+
+  // Parked drivers first: reset_capacity respawns them on the same run_id and spends no retry.
+  const done = [];
+  if (resumable.some((x) => x.parked)) {
+    const r = await ct('tm_retry', { task_id: taskId, reset_capacity: true });
+    if (r && r.retried) done.push(...(r.resumed || []));
+  }
+  for (const x of resumable.filter((y) => !y.parked && y.package_id !== 'S')) {
+    try {
+      const r = await ct('tm_retry', { task_id: taskId, package_id: x.package_id });
+      if (r && r.retried) done.push(x.package_id);
+    } catch { /* a package the shape no longer names, or a settled failure: not resumable */ }
+  }
+  if (!done.length) return giveUp('tm_retry resumed nothing');
+  emit(a.json, { event: 'limit_resumed', task_id: taskId, resume: resumes + 1, resumed: done },
+    `[teams run] resume ${resumes + 1} of ${taskId}: ${done.join(', ')}`, out);
+  return 'resumed';
 }
 
 // The whole run: open (or resume), wait, print, decide the exit code. Split out of main() so
@@ -173,29 +321,42 @@ export async function runHeadless(a, deps = {}, shouldStop = () => false, out = 
     emit(a.json, { event: 'resume', task_id: taskId }, `[teams run] resuming ${taskId}`, out);
   }
 
+  const detach = (waitingOnLimit = false) => {
+    emit(a.json, { event: 'detached', task_id: taskId, ...(waitingOnLimit ? { waiting_on_limit: true } : {}) },
+      (waitingOnLimit
+        ? `[teams run] detached while waiting out a usage limit - ${taskId} stays blocked until resumed.\n`
+        : `[teams run] detached - the daemon keeps driving ${taskId} on its own.\n`) +
+      `  resume:  node teams/scripts/run.mjs --resume ${taskId}${a.resumeOnLimit ? ' --resume-on-limit' : ''}\n` +
+      `  inspect: node teams/scripts/inspect.mjs ${a.cwd || process.cwd()} --task ${taskId}`,
+      out);
+    return { exitCode: EXIT.SIGINT, taskId, final: null };
+  };
+
   let cursor = 0;
   let final = null;
+  let resumes = 0;
+  const maxResumes = Number.isInteger(a.maxResumes) ? a.maxResumes : DEFAULT_MAX_RESUMES;
   for (;;) {
-    if (shouldStop()) {
-      emit(a.json, { event: 'detached', task_id: taskId },
-        `[teams run] detached - the daemon keeps driving ${taskId} on its own.\n` +
-        `  resume:  node teams/scripts/run.mjs --resume ${taskId}\n` +
-        `  inspect: node teams/scripts/inspect.mjs ${a.cwd || process.cwd()} --task ${taskId}`,
-        out);
-      return { exitCode: EXIT.SIGINT, taskId, final: null };
+    for (;;) {
+      if (shouldStop()) return detach();
+      const reply = await ct('tm_wait', { task_id: taskId, cursor, max_ms: a.pollMs });
+      cursor = reply.cursor;
+      const transitions = reply.transitions || [];
+      for (const t of transitions) {
+        emit(a.json, { event: 'transition', task_id: taskId, ...t },
+          `[teams run] ${t.node_id} (${t.stage}) -> ${t.state}${t.stage_ok === false ? ' FAILED' : ''}`, out);
+      }
+      if (!transitions.length) {
+        emit(a.json, { event: 'heartbeat', task_id: taskId, state: reply.state, counts: reply.counts },
+          `[teams run] ${reply.state} ${fmtCounts(reply.counts)}`.trimEnd(), out);
+      }
+      if (reply.state !== 'running') { final = reply; break; }
     }
-    const reply = await ct('tm_wait', { task_id: taskId, cursor, max_ms: a.pollMs });
-    cursor = reply.cursor;
-    const transitions = reply.transitions || [];
-    for (const t of transitions) {
-      emit(a.json, { event: 'transition', task_id: taskId, ...t },
-        `[teams run] ${t.node_id} (${t.stage}) -> ${t.state}${t.stage_ok === false ? ' FAILED' : ''}`, out);
-    }
-    if (!transitions.length) {
-      emit(a.json, { event: 'heartbeat', task_id: taskId, state: reply.state, counts: reply.counts },
-        `[teams run] ${reply.state} ${fmtCounts(reply.counts)}`.trimEnd(), out);
-    }
-    if (reply.state !== 'running') { final = reply; break; }
+    if (!a.resumeOnLimit || final.state !== 'blocked') break;
+    const step = await resumeAfterLimit({ a, taskId, deps, ct, mft, shouldStop, out, resumes, maxResumes });
+    if (step === 'detached') return detach(true);
+    if (step !== 'resumed') break;
+    resumes += 1;
   }
 
   const exitCode = exitCodeForState(final.state);
@@ -215,12 +376,13 @@ export async function runHeadless(a, deps = {}, shouldStop = () => false, out = 
 
   emit(a.json,
     { event: 'final', task_id: taskId, state: final.state, counts: final.counts, exit_code: exitCode,
-      report, ...(final.goal_verdict ? { goal_verdict: final.goal_verdict } : {}) },
+      report, ...(final.goal_verdict ? { goal_verdict: final.goal_verdict } : {}),
+      ...(resumes ? { limit_resumes: resumes } : {}) },
     `[teams run] ${String(final.state).toUpperCase()} ${fmtCounts(final.counts)}`.trimEnd() +
       (report ? `\n  report: ${report}` : ''),
     out);
 
-  return { exitCode, taskId, final };
+  return { exitCode, taskId, final, resumes };
 }
 
 async function main() {
