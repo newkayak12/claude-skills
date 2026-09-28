@@ -88,8 +88,8 @@ account under it, no flattery, and no repetition of the hard thing once it has b
 once. Aporia is an allowed outcome — ending in confusion sharper than the confusion you arrived
 with beats a tidy conclusion you don't own. It routes across the whole repo (`cognition:` for
 premises and grounds, `self:` for values and avoidance, `leadership:`/`portfolio:` for career
-questions) and hands a technical question to `develop:`/`pm:` entirely rather than philosophizing
-about it.
+questions) and hands a technical or product question to `develop:`/`planning:` entirely rather than
+philosophizing about it.
 
 Closing shape, when the conversation reaches one:
 
@@ -281,7 +281,8 @@ Add the remote SSE endpoints in Claude settings → MCP Servers.
 - Before Step 1, `problem-reframer` if the question itself feels wrong.
 - `mentor` when the thing needing examination is your own judgment; it hands over to
   `deep-thinking-workflow` once the question is stated right and a deliverable is what's left.
-- After a decision, feed it into `pm:pm-strategy-workflow` or `develop:dev-quality-workflow`.
+- After a decision, feed it into `develop:dev-quality-workflow` (engineering handoff) or
+  `planning:roadmap-planning` (sequencing a product/strategy decision into a roadmap).
 - `technique-write:design-review-writer` turns the divergence and stress-test output into a
   reviewable design doc.
 
