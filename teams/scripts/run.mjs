@@ -44,6 +44,8 @@
 //   0   complete                       - the daemon's report node finished
 //   1   blocked (or anything else that is not "running" and not the two above) - nothing left
 //       to drive; see the printed final state and, when there is one, the report path
+//   3   partial                        - the report is written, but work was left undone (a
+//       package not accepted, integrate refused, QA/goal gate not passed); see partial_reasons
 //   2   waiting_human                  - a card needs a person; headless cannot answer it, so
 //       this does not hang forever. The pending card(s) are printed. Answer with tm_submit (or
 //       tm_assign) from a session, then resume: --resume <task_id>
@@ -65,6 +67,7 @@ export const EXIT = {
   COMPLETE: 0,
   NOT_COMPLETE: 1,
   WAITING_HUMAN: 2,
+  PARTIAL: 3,
   ARG_ERROR: 64,
   SIGINT: 130,
 };
@@ -159,6 +162,7 @@ function tmRunArgs(a) {
 export function exitCodeForState(state) {
   if (state === 'complete') return EXIT.COMPLETE;
   if (state === 'waiting_human') return EXIT.WAITING_HUMAN;
+  if (state === 'partial') return EXIT.PARTIAL;
   return EXIT.NOT_COMPLETE; // blocked, missing, or anything else that is not still running
 }
 

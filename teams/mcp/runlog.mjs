@@ -177,8 +177,8 @@ export function harvestTask({ taskDir, cwd, label, root, scorePrefix } = {}) {
     repo_commit: commit,
     score,
     state: task ? (events.filter((e) => e.event === 'daemon_done').pop() || {}).state || 'unfinished' : 'no-task',
-    // daemon_done's partial flag (taskmanager.mjs budgetPartial): a budget-closed `complete` that
-    // is short of work - absent on every task that is not.
+    // daemon_done's partial flag (taskmanager.mjs unfinishedWork): a `partial` task's reasons
+    // for being short of work - absent on every task that is not.
     ...((events.filter((e) => e.event === 'daemon_done').pop() || {}).partial
       ? { partial: true, partial_reasons: events.filter((e) => e.event === 'daemon_done').pop().partial_reasons || [] } : {}),
     size: task && task.size, packages: ((task && task.spec && task.spec.packages) || []).map((p) => p.id),

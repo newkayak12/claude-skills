@@ -2687,16 +2687,16 @@ function spawnDaemon(task, opts = {}) {
 // block: code-beta-X4's shape judge replied with broken JSON, the daemon scheduled the re-judge,
 // and tm_wait told the driving session "blocked" - which wrote its final report and exited two
 // minutes in, while the task went on without anyone watching.
-// What a budget/timebox-stopped task left undone, or null when it delivered everything it had.
+// What a finished task left undone, or null when it delivered everything it set out to.
 // portfolio-consolidate-8518d5dd closed `complete` with integrate:6 refused, P3 unaccepted, P4
-// never dispatched and QA and gate:goal skipped - every machine-readable surface said success.
-// `complete` stays the state string (the report ran; nothing switching on it flips, the same
-// choice runState's `settled` made); `partial: true` + `partial_reasons` say what it is short of.
-export function budgetPartial(task) {
-  if (!task || !task.budget_stopped) return null;
+// never dispatched and QA and gate:goal skipped - every machine-readable surface said success,
+// and a settled retry budget (idol-pm-1) read the same. One rule, whatever stopped it (budget,
+// timebox, a spent retry budget): a written report over any of these is `partial`, not `complete`.
+export function unfinishedWork(task) {
+  if (!task || !Array.isArray(task.nodes)) return null;
   const reasons = [];
   const last = (pred) => task.nodes.filter(pred).pop();
-  const skippedPkgs = task.budget_stopped.skipped_packages || [];
+  const skippedPkgs = (task.budget_stopped && task.budget_stopped.skipped_packages) || [];
   for (const p of ((task.spec && task.spec.packages) || [])) {
     const id = String(p.id);
     if (last((n) => n.stage === 'accept' && n.subgoal_id === id && n.state === 'done')) continue;
@@ -2716,14 +2716,16 @@ export function budgetPartial(task) {
   }
   const goal = last((n) => n.stage === 'gate' && n.subgoal_id == null && String(n.node_id).startsWith('gate:goal'));
   if (goal && goal.state !== 'done') reasons.push(`${goal.node_id} ${goal.state}`);
+  const unreachable = task.nodes.filter((n) => n.state === 'unreachable').length;
+  if (unreachable && !reasons.length) reasons.push(`${unreachable} node(s) unreachable after a spent retry budget`);
   return reasons.length ? { partial: true, partial_reasons: reasons } : null;
 }
 
 export function managerState(task) {
   const st = runState(task);
   if (st.state === 'complete') {
-    const partial = budgetPartial(task);
-    return partial ? { ...st, ...partial } : st;
+    const partial = unfinishedWork(task);
+    return partial ? { ...st, state: 'partial', ...partial } : st;
   }
   if (st.state !== 'blocked') return st;
   const at = pendingRejudgeAt(task);
@@ -2734,10 +2736,17 @@ export function taskState(task) {
   if (!task.s_run) return managerState(task);
   const run = loadRun(task.s_run.cwd, task.s_run.run_id);
   const cs = run ? runState(run) : { state: 'missing', counts: {} };
-  return {
-    state: cs.state === 'running' ? 'running' : (cs.state === 'complete' ? 'complete' : 'blocked'),
-    counts: cs.counts || {},
-  };
+  return { ...sState(cs), counts: cs.counts || {} };
+}
+
+// A size-S run's graph state as a task state: a report over a spent retry budget (runState's
+// `settled`) is `partial`, the same rule unfinishedWork applies to a size-L task.
+function sState(cs) {
+  if (cs.state === 'running') return { state: 'running' };
+  if (cs.state !== 'complete') return { state: 'blocked' };
+  return cs.settled
+    ? { state: 'partial', partial: true, partial_reasons: [`${cs.counts.unreachable} node(s) unreachable after a spent retry budget`] }
+    : { state: 'complete' };
 }
 
 // Called at the top of (and again after) every tm_* entry that has a task_id. No gate, no
@@ -2747,7 +2756,7 @@ export function taskState(task) {
 function serviceDaemon(task) {
   if (noDaemon()) return false;
   const st = taskState(task).state;
-  if (st === 'complete' || st === 'blocked') return false;
+  if (st === 'complete' || st === 'partial' || st === 'blocked') return false;
   if (task.daemon && driverAlive(task.daemon)) return false;
   if (task.daemon && task.daemon.exhausted) return false;
   const budget = Number.isInteger(task.driver_restarts) ? task.driver_restarts : 2;
@@ -3625,11 +3634,11 @@ export function composeTaskPrompt(task, n) {
       : `Record it in gaps - "${task.budget_stopped.qa_not_run.map((q) => q.pass).join('/')}: not run (budget/timebox)" - even though it is not a reason by itself to refuse. Do not treat the absence of a ${task.budget_stopped.qa_not_run.map((q) => q.pass).join('/')} verdict as equivalent to a passing one.`);
   }
   // The same facts tm_status/tm_wait/daemon_done carry as partial_reasons once this report is done.
-  const partial = n.stage === 'report' ? budgetPartial(task) : null;
+  const partial = n.stage === 'report' ? unfinishedWork(task) : null;
   if (partial) {
     L.push('');
-    L.push('## This Sprint closes partial');
-    L.push('budget/timebox stopped it short of the goal. The task will read `complete` with `partial: true`; open the report by saying so, and list each of these under what did not ship:');
+    L.push('## This task closes partial');
+    L.push('It stopped short of the goal. The task will read `partial`, not `complete`; open the report by saying so, and list each of these under what did not ship:');
     for (const r of partial.partial_reasons) L.push(`- ${r}`);
   }
   if (n.stage === 'report') {
@@ -4100,7 +4109,7 @@ const NEXT_SCHEMA = {
     // 'delegated' has no producer: a size-S task always opens its own run via openSRun and
     // reports task_state: 's_run' (delegateIfSmall) - see the removed `delegate` field below,
     // same story.
-    state: { type: 'string', enum: ['running', 'blocked', 'complete'] },
+    state: { type: 'string', enum: ['running', 'blocked', 'complete', 'partial'] },
     counts: { type: 'object' },
     size: { type: 'string', enum: ['S', 'L'] },
     flow: { type: 'string' },
@@ -5106,7 +5115,7 @@ function toolNextSRun(task) {
   const driver = s.driver || null;
   const out = {
     task_id: task.run_id,
-    state: cs.state === 'running' ? 'running' : (cs.state === 'complete' ? 'complete' : 'blocked'),
+    ...sState(cs),
     counts: cs.counts || {},
     ...(task.size ? { size: task.size } : {}),
     flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),
