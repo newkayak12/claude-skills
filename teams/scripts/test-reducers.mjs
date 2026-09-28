@@ -164,6 +164,7 @@ test('reducersFor: every real kind starts from the shared defaults and only adds
     assert.equal(table.gaps, 'concat-dedup');
   }
   assert.equal(reducersFor('planning').user_stories, 'union');
+  assert.deepEqual(reducersFor('planning-light'), reducersFor('planning'), 'the light PLAN kind folds exactly like planning (docs/plans/2026-09-28-teams-light-plan.md §5-2)');
   assert.equal(reducersFor('qa').defects, 'concat-dedup');
   assert.equal(reducersFor('subgoal').user_stories, undefined, 'subgoal-kind work never returns user_stories');
   assert.equal(reducersFor('nonexistent-kind'), REGISTRY._default, 'an unknown kind falls back to the shared defaults');

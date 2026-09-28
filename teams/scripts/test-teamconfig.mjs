@@ -59,7 +59,7 @@ test('team.json overrides defaults, explicit args override team.json', () => {
   assert.equal(sources.goal_threshold, 'args');
   assert.equal(opts.max_retries, 5);
   assert.equal(sources.max_retries, 'team.json');
-  assert.deepEqual(opts.roles, { planning: true, qa: false, audit: true }, 'roles merge key by key (defaults are both on since 0.17.0)');
+  assert.deepEqual(opts.roles, { planning: 'auto', qa: false, audit: true }, 'roles merge key by key (planning defaults to "auto" since the light PLAN mode, qa/audit on since 0.17.0)');
   assert.equal(sources.roles, 'team.json');
 });
 
@@ -69,6 +69,24 @@ test('a wrongly typed key is ignored with a note, not applied', () => {
   assert.equal(opts.max_depth, TEAM_DEFAULTS.max_depth);
   assert.equal(notes.length, 2);
   assert.match(notes[0], /goal_threshold/);
+});
+
+// roles.planning (docs/plans/2026-09-28-teams-light-plan.md §2.5): true | false | 'light' | 'auto'.
+// The other roles stay boolean-only; any other string is a note, not a value.
+test('roles.planning accepts true/false/"light"/"auto", defaults to "auto"; other strings and non-boolean qa/audit are ignored with a note', () => {
+  assert.equal(TEAM_DEFAULTS.roles.planning, 'auto');
+  for (const v of [true, false, 'light', 'auto']) {
+    const r = resolveTeamOptions({}, { roles: { planning: v } });
+    assert.equal(r.opts.roles.planning, v, `roles.planning ${JSON.stringify(v)} must be accepted`);
+    assert.equal(r.notes.length, 0, JSON.stringify(r.notes));
+  }
+  const viaArgs = resolveTeamOptions({ roles: { planning: 'light' } }, { roles: { planning: true } });
+  assert.equal(viaArgs.opts.roles.planning, 'light', 'an explicit arg outranks team.json');
+  for (const bad of [{ planning: 'heavy' }, { planning: 1 }, { qa: 'auto' }, { audit: 'light' }]) {
+    const r = resolveTeamOptions({}, { roles: bad });
+    assert.deepEqual(r.opts.roles, TEAM_DEFAULTS.roles, `${JSON.stringify(bad)} must be ignored`);
+    assert.match(r.notes[0], /roles/);
+  }
 });
 
 // `interactive` (0.28.0) is what graph.mjs's openAsk AND applyHumanPin both read off run.

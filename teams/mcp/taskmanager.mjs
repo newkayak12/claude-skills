@@ -92,6 +92,11 @@ import { computeSubmitResult } from './broker.mjs';
 import { pidAlive } from './proc.mjs';
 import { collectDriverCosts, collectTaskCosts, collectNodeCosts } from '../scripts/bench/lib/drivercost.mjs';
 import { applyMerge, foldRecords } from './reducers.mjs';
+// Light PLAN mode (docs/plans/2026-09-28-teams-light-plan.md): the structural "is acceptance
+// already declared?" check and the roles.planning resolution it drives. Re-exported so a caller
+// that already imports this module can reach the one detection function by name.
+import { detectDeclaredAcceptance, resolvePlanningMode, renderAcceptanceTemplate } from './acceptance.mjs';
+export { hasDeclaredAcceptance } from './acceptance.mjs';
 
 const SERVER = { name: 'task-manager', version: '0.7.0' };
 const DEFAULT_PROTOCOL = '2025-06-18';
@@ -381,6 +386,24 @@ function composeBacklogRequest(requests) {
   return requests.map((r, i) => `[backlog priority ${i}] ${r}`).join('\n\n');
 }
 
+// Light PLAN mode §2.1a: requests[] items may be {request, acceptance: [...]} objects, and
+// shared_acceptance: [...] may cover the whole backlog. The criteria are written into the ONE
+// request string (as "Acceptance:" blocks, the same layout the free-text parser reads) so every
+// briefing that already reads task.request sees them; a call that sends neither field composes
+// byte for byte what it always did.
+function requestText(r) {
+  if (r && typeof r === 'object') {
+    const text = String(r.request != null ? r.request : (r.text != null ? r.text : (r.title != null ? r.title : '')));
+    const acc = Array.isArray(r.acceptance) ? r.acceptance.map((s) => String(s).trim()).filter(Boolean) : [];
+    return acc.length ? `${text}\nAcceptance:\n${acc.map((s) => `- ${s}`).join('\n')}` : text;
+  }
+  return String(r);
+}
+function withSharedAcceptance(request, shared) {
+  const list = Array.isArray(shared) ? shared.map((s) => String(s).trim()).filter(Boolean) : [];
+  return list.length ? `${request}\n\nAcceptance for every item:\n${list.map((s) => `- ${s}`).join('\n')}` : request;
+}
+
 // tm_open({context_from: <prior task id or ticket key>}) (§B.2): folds a finished task's own
 // retro.json - the Retrospective and Next backlog its report stage wrote (docs.mjs's
 // renderRetro) - into this task's context, so a new Sprint opens already knowing what the last
@@ -435,7 +458,7 @@ function createTask(a) {
   if (a.child_driver !== undefined || a.s_driver !== undefined) {
     throw new Error('child_driver and s_driver were removed in 0.10.0: the driving session never drives a child run or the manager loop. Open the task and watch tm_status / tm_events; the daemon and package drivers do the rest.');
   }
-  const requests = Array.isArray(a.requests) && a.requests.length ? a.requests.map(String) : null;
+  const requests = Array.isArray(a.requests) && a.requests.length ? a.requests.map(requestText) : null;
   if (!requests && (a.request == null || String(a.request).trim() === '')) {
     throw new Error('tm_open needs either request (a string) or requests (a non-empty array of strings), not neither');
   }
@@ -454,6 +477,11 @@ function createTask(a) {
   // its budget to the end (code-sprint-S1, 2026-09-26: the ledger backlog measured S, as the
   // monorepo fixtures do). Pinned L here unless the caller pinned a size itself.
   const boxedBacklog = !!(requests && requests.length > 1 && (T.budget_usd != null || T.timebox_minutes != null));
+  // roles.planning: true | false | 'light' | 'auto' (docs/plans/2026-09-28-teams-light-plan.md
+  // §2.5) -> which PLAN chain runs, if any. 'auto' reads the raw arguments (structured fields
+  // first, the free-text parser second) and picks light or full - never off.
+  const planning = resolvePlanningMode(T.roles.planning, a);
+  const planningOn = planning.mode !== 'off';
   const task = {
     run_id: taskId,
     kind: 'task',
@@ -464,7 +492,7 @@ function createTask(a) {
     // scheduling or execution ever reads it. null (the default) keeps every EPIC ungrouped,
     // exactly today's behaviour.
     initiative: T.initiative,
-    request: requests ? composeBacklogRequest(requests) : String(a.request),
+    request: withSharedAcceptance(requests ? composeBacklogRequest(requests) : String(a.request), a.shared_acceptance),
     requests, // null for the ordinary single-request task - the byte-for-byte compat case.
     context: [priorRetro.text, a.context || ''].filter(Boolean).join('\n\n'),
     ...(priorRetro.unresolved ? { context_from_unresolved: priorRetro.unresolved } : {}),
@@ -583,7 +611,14 @@ function createTask(a) {
     // task.spec.packages; docs/board render them from these fields instead (Task 6).
     // null when roles.planning is off - the default, and the byte-for-byte compat case.
     planning_pkg: null,
-    nodes: T.roles.planning
+    // 'full' | 'light' | null (planning off), and why - tm_status/the docs read these. The
+    // declared criteria are kept only for a light run: its PLAN context renders them.
+    planning_mode: planningOn ? planning.mode : null,
+    planning_mode_reason: planning.reason,
+    ...(planning.mode === 'light' && planning.detection && planning.detection.declared
+      ? { declared_acceptance: { via: planning.detection.via, items: planning.detection.items, shared: planning.detection.shared } }
+      : {}),
+    nodes: planningOn
       ? [node('size', 'size', [])]
       : [
         node('size', 'size', []),
@@ -591,11 +626,12 @@ function createTask(a) {
         node('critique', 'critique', ['shape']),
       ],
   };
-  if (T.roles.planning) {
+  if (planningOn) {
     task.planning_pkg = {
       id: 'PLAN',
       phase: 'planning',
       flow: 'plan',
+      planning_mode: planning.mode,
       title: 'PRD',
       brief: task.request,
       acceptance: ['PRD covers the request'],
@@ -1566,7 +1602,9 @@ function planAuthorIdentity(task) {
   const planRun = loadRun(planDispatch.child.cwd, planDispatch.child.run_id);
   if (!planRun || !Array.isArray(planRun.nodes)) return null;
   const author = planRun.nodes.filter((x) => x.stage === 'revise' && x.state === 'done').pop()
-    || planRun.nodes.filter((x) => x.stage === 'draft' && x.state === 'done').pop();
+    || planRun.nodes.filter((x) => x.stage === 'draft' && x.state === 'done').pop()
+    // a light PLAN run (planning-light kind) has one authoring hand: template-fill.
+    || planRun.nodes.filter((x) => x.stage === 'template-fill' && x.state === 'done').pop();
   if (!author) return null;
   return { executor: author.executor || null, vendor: author.vendor || null, model: author.model || null };
 }
@@ -2037,6 +2075,19 @@ function childContext(task, pkg) {
     if (box) {
       const parts = [Number.isFinite(box.budget_usd) ? `$${box.budget_usd}` : null, Number.isFinite(box.timebox_minutes) ? `${box.timebox_minutes} minutes` : null].filter(Boolean).join(' and ');
       lines.push(`This Sprint is boxed at ${parts} for everything - planning is the first thing that box pays for, and every package is built out of what is left. Size the document set to what the packages need to be built right: a backlog whose items already state their behaviour and acceptance needs one PRD, not a set. Planning that spends the box leaves nothing built.`);
+    }
+    // Light PLAN mode (docs/plans/2026-09-28-teams-light-plan.md §2.2): the backlog already
+    // declared its acceptance, so the PRD is a transfer of it, laid out here deterministically
+    // for template-fill to place and for the gate to check coverage against.
+    if (pkg.planning_mode === 'light') {
+      lines.push(`This PLAN runs in LIGHT mode (${task.planning_mode_reason || 'roles.planning'}): the backlog already declares its acceptance criteria, so there is no draft or revise stage. investigate still reads the sources first and still names every unknown; template-fill then copies the criteria below into ONE PRD - one user story per backlog item, in order, every shared rule applied to every item or marked N/A with the finding that says why - and the gate checks that transfer item by item.`);
+      // roles.planning: 'light' set by hand skips detection at tm_open; parse the request once
+      // here so a backlog the parser can read still gets its numbered checklist.
+      const parsed = task.declared_acceptance ? null : detectDeclaredAcceptance({ request: task.request });
+      const tpl = renderAcceptanceTemplate(task.declared_acceptance || (parsed && parsed.declared ? parsed : null));
+      lines.push(tpl
+        ? `Declared acceptance (copy verbatim; the R- and A-numbers are the gate's checklist):\n${tpl}`
+        : `Declared acceptance: light mode was set explicitly and no structured criteria were found in the request - transfer the acceptance the request states, in its own words, item by item.`);
     }
   } else if (pkg.phase === 'qa') {
     lines.push(`This worktree is the COMBINED tree of every package in this task: all of their branches are already merged here, on the integration branch itself.`);
@@ -2667,7 +2718,10 @@ export function openChild(task, n) {
     // runs cases, an audit run audits. mixed:true here let the first real planning run's own
     // plan node decompose the request into develop subgoals and start implementing it.
     mixed: !(pkg.phase === 'planning' || pkg.phase === 'qa' || pkg.phase === 'audit'),
-    max_subgoals: pkg.phase === 'planning' && boxedOpts(task) ? 1 : null,
+    // Light PLAN mode is one PRD whose stories are the backlog items (§2.2), so it is capped the
+    // same way a boxed Sprint's planning run is.
+    max_subgoals: pkg.phase === 'planning' && (boxedOpts(task) || pkg.planning_mode === 'light') ? 1 : null,
+    planning_mode: pkg.phase === 'planning' && pkg.planning_mode === 'light' ? 'light' : null,
     parent_shaped: parentShaped,
     goal: pkg.title || pkg.brief,
     acceptance: Array.isArray(pkg.acceptance) && pkg.acceptance.length ? pkg.acceptance : null,
@@ -3878,7 +3932,8 @@ const TOOLS = [
         timebox_minutes: { type: ['number', 'null'], description: 'default null (unlimited), also settable in .claude/team.json. Minutes since tm_open, the same stop condition budget_usd is, on the same clock - see its own description for exactly what 80% and 100% do.' },
         budget_grace_usd: { type: ['number', 'null'], description: 'default null (10% of budget_usd when budget_usd is set, else no dollar grace), also settable in .claude/team.json. At 100% a dispatch already running whose accept the closing path still needs (a package, PLAN, or a size-S run) is let finish, but not forever: past this much MORE spend since the stop (or budget_grace_minutes, whichever first) it is killed too (killDriver, the same stop retryPackage/serviceStalledDriver already use) and its accept is skipped like a package that never ran. A phase-Team pass (QA, AUDIT) gets none of this grace - it is killed the moment the box trips, since the goal-gate rewire already never reads its accept once stopped.' },
         budget_grace_minutes: { type: 'integer', description: 'default 5, also settable in .claude/team.json. See budget_grace_usd - whichever of the two limits a still-running, still-needed dispatch reaches first stops it.' },
-        requests: { type: 'array', items: { type: 'string' }, description: 'A backlog instead of one request: several EPIC-level items, priority = array order (first is highest). shape treats each as its own story set; with budget_usd/timebox_minutes in play, the lowest-priority items still unshaped or undispatched when the stop trips are exactly what the report names "Next backlog". Mutually exclusive with `request` - send one or the other, never both.' },
+        requests: { type: 'array', items: { anyOf: [{ type: 'string' }, { type: 'object', properties: { request: { type: 'string' }, acceptance: { type: 'array', items: { type: 'string' } } }, required: ['request'] }] }, description: 'A backlog instead of one request: several EPIC-level items, priority = array order (first is highest). An item may be {request, acceptance: ["..."]} to declare that item\'s own acceptance criteria - when every item declares them (or shared_acceptance is given), roles.planning "auto" runs the light PLAN chain (investigate -> template-fill -> gate) instead of the full one. shape treats each as its own story set; with budget_usd/timebox_minutes in play, the lowest-priority items still unshaped or undispatched when the stop trips are exactly what the report names "Next backlog". Mutually exclusive with `request` - send one or the other, never both.' },
+        shared_acceptance: { type: 'array', items: { type: 'string' }, description: 'Acceptance criteria that apply to EVERY backlog item (or to the single request) - the structured form of an "Acceptance for every item:" block. Written into the request text and, when non-empty, makes roles.planning "auto" pick the light PLAN chain (docs/plans/2026-09-28-teams-light-plan.md). roles.planning itself (team.json or a roles argument) takes true (full chain), false (no PLAN), "light" (force light) or "auto" (default: light when acceptance is declared - structured fields, or a numbered backlog with an "Acceptance:" heading and bullets - else full; never off).' },
         context_from: { type: 'string', description: 'A prior task_id (or its ticket key). Its retro.json - the Retrospective and Next backlog a finished task\'s report stage writes - is read and folded into this task\'s own context: what failed and why, retries, defects left, and any unaccepted packages or unresolved questions the prior task ran out of budget/timebox to reach. The prior task\'s own Next backlog is NOT auto-added to `requests` - naming it here is a decision this task\'s own request should still make in its own words.' },
         initiative: { type: 'string', description: 'default null, also settable in .claude/team.json. An optional label ABOVE this EPIC - several EPICs toward one outcome (a slug-normalized "I-<slug>" key: lowercased, non-alphanumeric runs collapsed to one "-"). Display/grouping only: tm_board groups every EPIC by it once any task has one, and tm_ticket("I-<slug>") lists that group\'s EPICs with state and cost. Never read by scheduling or execution, and never nests a task inside another - EPICs under the same initiative are still independent tasks.' },
       },
@@ -3905,7 +3960,8 @@ const TOOLS = [
         stall_minutes: { type: 'integer' }, restart_period_minutes: { type: 'integer' },
         budget_usd: { type: ['number', 'null'], description: 'Same meaning as tm_open({budget_usd}).' },
         timebox_minutes: { type: ['number', 'null'], description: 'Same meaning as tm_open({timebox_minutes}).' },
-        requests: { type: 'array', items: { type: 'string' }, description: 'Same meaning as tm_open({requests}) - mutually exclusive with `request`.' },
+        requests: { type: 'array', items: { anyOf: [{ type: 'string' }, { type: 'object', properties: { request: { type: 'string' }, acceptance: { type: 'array', items: { type: 'string' } } }, required: ['request'] }] }, description: 'Same meaning as tm_open({requests}) - mutually exclusive with `request`.' },
+        shared_acceptance: { type: 'array', items: { type: 'string' }, description: 'Same meaning as tm_open({shared_acceptance}).' },
         context_from: { type: 'string', description: 'Same meaning as tm_open({context_from}).' },
         initiative: { type: 'string', description: 'Same meaning as tm_open({initiative}).' },
       },
