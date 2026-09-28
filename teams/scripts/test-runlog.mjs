@@ -41,3 +41,16 @@ test('TEAMS_RUNS_DIR=off keeps nothing', () => {
   try { assert.equal(harvestTask({ taskDir: td, cwd }), null); }
   finally { if (prev === undefined) delete process.env.TEAMS_RUNS_DIR; else process.env.TEAMS_RUNS_DIR = prev; for (const d of [cwd, tasks]) rmSync(d, { recursive: true, force: true }); }
 });
+
+test('slack-list: a goal gate that accepted with spec drift is recorded, though nothing failed', () => {
+  const { cwd, tasks, td } = fixture();
+  const root = mkdtempSync(join(tmpdir(), 'runlog-root-'));
+  try {
+    const runs = join(cwd, '.teams_output', 'broker', 'runs');
+    mkdirSync(runs, { recursive: true });
+    writeFileSync(join(runs, 'r.json'), JSON.stringify({ run_id: 'r', nodes: [{ node_id: 'gate:goal:2', stage: 'gate', state: 'done', result: { accept: true, spec_drift: ['labelled links lose their URL'] } }] }));
+    const r = harvestTask({ taskDir: td, cwd, root });
+    const d = r.summary.failures.find((f) => f.kind === 'drift-accepted');
+    assert.ok(d && /URL/.test(d.message));
+  } finally { for (const x of [cwd, tasks, root]) rmSync(x, { recursive: true, force: true }); }
+});

@@ -196,3 +196,27 @@ test('a blocked task with no report still gets an 80-report.md: what blocks it, 
   assert.match(report, /tm_retry\(\{task_id: "bbbbbbbb-[^"]+", package_id: "P1"\}\)/);
   assert.ok(files[docPaths(task).retro], 'retro.json too');
 });
+
+test('slack-list: a size-S task reports from its run, not BLOCKED off the skipped manager graph, and says what S does not do', async () => {
+  const { createRun, saveRun } = await import('../mcp/graph.mjs');
+  const cwd = mkdtempSync(join(tmpdir(), 'docs-s-'));
+  try {
+    const run = createRun({ cwd, request: 'r' });
+    run.nodes = [
+      node('gate:goal:2', 'gate', [], { subgoal_id: null, state: 'done', result: { accept: true, match_pct: 90, spec_drift: ['labelled links lose their URL'], observations: ['false indent'] } }),
+      node('report:2', 'report', [], { state: 'done', result: { handoff: 'flattening fixed' } }),
+    ];
+    saveRun(run);
+    const task = { run_id: 'de907a66-0000', cwd, request: 'r', created_at: 0, size: 'S', s_run: { cwd, run_id: run.run_id },
+      team: { opts: { roles: { planning: true, qa: true, audit: true } } }, planning_pkg: { id: 'PLAN' },
+      nodes: [node('size', 'size', [], { state: 'done', result: { size: 'S' } }),
+        node('dispatch:PLAN:1', 'dispatch', [], { subgoal_id: 'PLAN', state: 'skipped', result: { reason: 'size S' } })] };
+    const report = renderAll(task)[docPaths(task).report];
+    assert.ok(report, 'a report is written');
+    assert.doesNotMatch(report, /BLOCKED|blocked/);
+    assert.match(report, /flattening fixed/);
+    assert.match(report, /spec drift[\s\S]*labelled links lose their URL/);
+    assert.match(report, /roles planning, qa, audit are on, but phase-Teams run only on a size-L task/);
+    assert.match(report, /no worktree, no branch, nothing committed/);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});

@@ -372,6 +372,40 @@ export function renderBlockedReport(task) {
   return L.join('\n') + '\n';
 }
 
+// A size-S task's work is its one child run, not the manager graph: the manager's own nodes are
+// all skipped by design. slack-list (2026-09-27) read BLOCKED with "(none)" as the blocker while
+// tm_status said complete, because the blocked branch read the manager graph. This reads the
+// run - its state, its report, its goal verdict and drift - and says plainly what a size-S task
+// does not do: phase-Teams (planning/qa/audit) do not run, and the run writes straight into the
+// project's working tree, uncommitted, with no worktree or branch.
+export function renderSReport(task) {
+  const key = epicKey(task.run_id);
+  const run = loadRun(task.s_run.cwd, task.s_run.run_id);
+  if (!run) return null;
+  const st = runState(run).state;
+  const L = [frontmatter(key, st === 'complete' ? 'DONE' : st.toUpperCase(), task), `# Report — size S (${st})`, ''];
+  const report = run.nodes.filter((n) => n.stage === 'report' && n.state === 'done' && n.result).pop();
+  if (report) L.push(String(report.result.handoff || report.result.summary || report.result.reason || '').trim() || '(the run\'s report stage returned no text)', '');
+  const goals = run.nodes.filter((n) => String(n.node_id).startsWith('gate:goal') && n.result);
+  const last = goals[goals.length - 1];
+  if (last) {
+    const r = last.result;
+    L.push('## Goal gate', '', `${last.node_id}: ${r.accept ? 'accepted' : 'refused'}${r.match_pct != null ? ` at ${r.match_pct}` : ''}`);
+    if ((r.gaps || []).length) L.push('', 'Gaps:', bullets(r.gaps));
+    if ((r.spec_drift || []).length) L.push('', 'Asked for by the request, not delivered (spec drift):', bullets(r.spec_drift));
+    if ((r.observations || []).length) L.push('', 'Observations:', bullets(r.observations));
+    L.push('');
+  }
+  L.push('## What a size-S task does not do', '');
+  const roles = (task.team && task.team.opts && task.team.opts.roles) || {};
+  const on = ['planning', 'qa', 'audit'].filter((r) => roles[r] === true || (r === 'audit' && roles.planning && roles.audit !== false));
+  const notes = [];
+  if (on.length) notes.push(`roles ${on.join(', ')} are on, but phase-Teams run only on a size-L task - none of them ran here. Pin size L (tm_open size: "L") to have them.`);
+  notes.push(`the run wrote straight into ${task.s_run.cwd}: no worktree, no branch, nothing committed - review and commit it yourself.`);
+  L.push(bullets(notes));
+  return L.join('\n') + '\n';
+}
+
 // Every file this task currently has data for, keyed by its full path. A shape not yet done
 // means only INDEX + request exist; a fresh gate:goal round adds the goal-gate file; and so on -
 // nothing is ever rendered ahead of the data that would back it.
@@ -391,7 +425,10 @@ export function renderAll(task) {
   if (task.qa_pkg) files[paths.qa] = renderQa(task);
   if (task.audit_pkg) files[paths.audit] = renderAudit(task);
   if (task.nodes.some((n) => n.stage === 'gate' && n.subgoal_id === null && n.result)) files[paths.goalGate] = renderGoalGate(task);
-  if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) {
+  const sReport = task.s_run && task.s_run.run_id ? renderSReport(task) : null;
+  if (sReport) {
+    files[paths.report] = sReport;
+  } else if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) {
     files[paths.report] = renderReport(task);
     files[paths.retro] = renderRetro(task);
   } else if (task.nodes.length > 1 && runState(task).state === 'blocked') {
