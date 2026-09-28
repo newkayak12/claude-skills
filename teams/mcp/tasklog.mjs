@@ -73,7 +73,7 @@ const hhmmss = (ts) => {
 // What a tool call was about, in a few words: the one input field that names it.
 function toolUseSummary(b) {
   const inp = (b && b.input) || {};
-  const key = ['command', 'file_path', 'path', 'pattern', 'url', 'description', 'prompt', 'query'].find((k) => typeof inp[k] === 'string' && inp[k]);
+  const key = ['command', 'file_path', 'path', 'pattern', 'url', 'skill', 'description', 'prompt', 'query'].find((k) => typeof inp[k] === 'string' && inp[k]);
   return `${b.name || 'tool'}${key ? ` ${oneLine(inp[key], 160)}` : ''}`;
 }
 
@@ -91,10 +91,26 @@ export function renderStreamLine(line) {
   if (!e || typeof e !== 'object') return oneLine(line);
   const content = (e.message && Array.isArray(e.message.content)) ? e.message.content : [];
   switch (e.type) {
-    case 'system':
-      return e.subtype === 'init'
-        ? `init model=${e.model || '?'} session=${String(e.session_id || '?').slice(0, 8)}${e.cwd ? ` cwd=${e.cwd}` : ''}`
-        : `system ${e.subtype || ''}`.trim();
+    case 'system': {
+      // Subagent (Task/Agent) and background events: a third of a real package driver's stream
+      // (portfolio-consolidate-8518d5dd), each saying which subagent did what.
+      const sub = `subagent ${String(e.task_id || '?').slice(0, 8)}`;
+      switch (e.subtype) {
+        case 'init': return `init model=${e.model || '?'} session=${String(e.session_id || '?').slice(0, 8)}${e.cwd ? ` cwd=${e.cwd}` : ''}`;
+        case 'task_started': return `${sub} started${e.description ? `: ${oneLine(e.description, 160)}` : ''}`;
+        case 'task_progress': return `${sub}${e.description ? `: ${oneLine(e.description, 160)}` : ' progress'}`;
+        case 'task_updated': return `${sub} ${(e.patch && e.patch.status) || 'updated'}`;
+        case 'task_notification': return `${sub} ${e.status || 'notified'}${e.summary ? `: ${oneLine(e.summary, 160)}` : ''}`;
+        case 'thinking_tokens': return `thinking ~${Number(e.estimated_tokens) || 0} tokens`;
+        case 'background_tasks_changed': {
+          const ts = Array.isArray(e.tasks) ? e.tasks : [];
+          return `background tasks (${ts.length})${ts.length ? `: ${oneLine(ts.map((t) => (t && t.description) || (t && t.task_id) || '?').join('; '), 160)}` : ''}`;
+        }
+        default: return `system ${e.subtype || ''}`.trim();
+      }
+    }
+    case 'tool_progress':
+      return `tool_progress ${e.tool_name || '?'}${Number.isFinite(e.elapsed_time_seconds) ? ` ${e.elapsed_time_seconds}s` : ''}`;
     case 'assistant': {
       const parts = content.map((b) => {
         if (b.type === 'text') return `says: ${oneLine(b.text)}`;
@@ -113,11 +129,17 @@ export function renderStreamLine(line) {
     case 'result': {
       const cost = typeof e.total_cost_usd === 'number' ? ` cost=$${e.total_cost_usd.toFixed(4)}` : '';
       const turns = Number.isInteger(e.num_turns) ? ` turns=${e.num_turns}` : '';
-      return `result ${e.subtype || ''}${e.is_error ? ' ERROR' : ''}${turns}${cost}${e.result ? `: ${oneLine(e.result)}` : ''}`.replace(/\s+/g, ' ');
+      // A usage-limit death arrives as subtype "success" with is_error true; "result success
+      // ERROR" read as both. An error names itself first, and its subtype only when it says more.
+      const head = e.is_error ? `ERROR${e.subtype && e.subtype !== 'success' ? ` ${e.subtype}` : ''}` : (e.subtype || '');
+      return `result ${head}${turns}${cost}${e.result ? `: ${oneLine(e.result)}` : ''}`.replace(/\s+/g, ' ');
     }
     case 'rate_limit_event': {
       const info = e.rate_limit_info || {};
-      return `rate_limit ${info.status || ''}${info.rateLimitType ? ` ${info.rateLimitType}` : ''}`.trim();
+      // When it resets matters only once it is not plain "allowed".
+      const resets = info.status && info.status !== 'allowed' && Number.isFinite(info.resetsAt)
+        ? ` resets=${new Date(info.resetsAt * 1000).toISOString().slice(11, 16)}Z` : '';
+      return `rate_limit ${info.status || ''}${info.rateLimitType ? ` ${info.rateLimitType}` : ''}${resets}`.trim();
     }
     default:
       return oneLine(`${e.type || 'event'}${e.subtype ? ` ${e.subtype}` : ''}`);

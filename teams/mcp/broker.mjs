@@ -47,6 +47,7 @@ import {
   nodeBriefing,
   stagePolicy,
   VERDICT_FIELD,
+  reasonFromVerdict,
   authorStage,
   isAuthorNode,
   nodeKind,
@@ -1229,16 +1230,8 @@ export function finishNode(run, n, result, vendorName) {
   // a real rejection with no visible cause. execute is excluded: its own verified:false is a
   // passing case-set run carrying defects forward, not a failure (see nodeSucceeded above).
   if (n.state === 'failed' && result.stage_ok === true && n.stage !== 'execute') {
-    const field = VERDICT_FIELD[n.stage];
-    const hasOwnReason = result.reason || result.verification_error
-      || (field === 'accept' && (result.gaps || []).length)
-      || (field === 'sound' && (result.blocking || []).length);
-    if (field && result[field] === false && !hasOwnReason) {
-      const checks = Array.isArray(result.checks) ? result.checks : [];
-      const flagged = checks.find((c) => /\b(missing|fail(ed|ing|s)?|not met|does not|refused)\b/i.test(String(c)));
-      const synthesized = flagged || (result.evidence ? String(result.evidence) : '') || checks.join('; ');
-      if (synthesized) result = { ...result, reason: synthesized.slice(0, 300) };
-    }
+    const synthesized = reasonFromVerdict(result, VERDICT_FIELD[n.stage]);
+    if (synthesized) result = { ...result, reason: synthesized };
   }
   n.result = result;
   n.vendor = vendorName;

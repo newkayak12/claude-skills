@@ -122,3 +122,54 @@ test('an unstopped task carries no post_stop_usd', () => {
     assert.equal('post_stop_usd' in r.summary.budget, false);
   } finally { for (const x of [cwd, tasks, root]) rmSync(x, { recursive: true, force: true }); }
 });
+
+// portfolio-consolidate-8518d5dd (teams 0.35.1): a restarted package driver
+// (dispatch_P1_1.restart1) and a re-judged accept (judge_accept_P2_1.r1) each landed in a bucket
+// of their own - "dispatch_P1_1.restart1", "judge_accept_P2_1" - instead of dispatch_package /
+// judge_accept, so triage's per-kind table split one kind of spend over per-run names. A driver
+// with no result event yet (dispatch_PLAN_1 there) is estimated and still bucketed.
+test('restart and re-judge streams fold into their own kind, and every bucket sums to cost_usd', () => {
+  const { cwd, tasks, td } = fixture();
+  const root = mkdtempSync(join(tmpdir(), 'runlog-root-'));
+  try {
+    const res = (c) => `${JSON.stringify({ type: 'result', total_cost_usd: c, num_turns: 1 })}\n`;
+    writeFileSync(join(td, 'drivers', 'dispatch_P1_1.stream.jsonl'), res(12));
+    writeFileSync(join(td, 'drivers', 'dispatch_P1_1.restart1.stream.jsonl'), res(3.5));
+    writeFileSync(join(td, 'drivers', 'dispatch_PLAN_3.stream.jsonl'), res(2.5));
+    writeFileSync(join(td, 'drivers', 'dispatch_PLAN_1.restart2.stream.jsonl'), res(1));
+    writeFileSync(join(td, 'drivers', 'judge_accept_P2_1.stream.jsonl'), res(1.5));
+    writeFileSync(join(td, 'drivers', 'judge_accept_P2_1.r1.stream.jsonl'), res(0.75));
+    writeFileSync(join(td, 'drivers', 'judge_integrate_6.stream.jsonl'), res(2));
+    const r = harvestTask({ taskDir: td, cwd, root });
+    assert.deepEqual(r.summary.cost_by_kind, { dispatch_package: 15.5, dispatch_PLAN: 3.5, judge_accept: 2.25, judge_integrate: 2 });
+    const bucketed = Object.values(r.summary.cost_by_kind).reduce((a, v) => a + v, 0);
+    assert.equal(+bucketed.toFixed(4), r.summary.cost_usd);
+  } finally { for (const x of [cwd, tasks, root]) rmSync(x, { recursive: true, force: true }); }
+});
+
+// Same run: child test:U1:1 (P1, P3) and manager integrate:6 rejected with verified:false and
+// only checks/evidence - no reason - so every record read "P3 test:U1:1: " in triage. A record
+// written before the engine synthesized one is filled at harvest time, from the same rule; a
+// test/review rejection is a rejection (grouped by stage), not an unexplained failure.
+test('a verdict-false record with no reason gets one from its checks/evidence at harvest', () => {
+  const { cwd, tasks, td } = fixture();
+  const root = mkdtempSync(join(tmpdir(), 'runlog-root-'));
+  try {
+    const task = JSON.parse(readFileSync(join(td, 'task.json'), 'utf8'));
+    task.nodes = [{ node_id: 'integrate:6', stage: 'integrate', state: 'failed', result: { stage_ok: true, verified: false,
+      checks: ['git log -> P1 and P2 merged', 'ls -> beta/ is ABSENT, so G1 is only partly met'], evidence: 'G1, G3 are unmet.', unowned: ['G1 -> P3'] } }];
+    writeFileSync(join(td, 'task.json'), JSON.stringify(task));
+    const runs = join(cwd, '.teams_output', 'broker', 'runs');
+    mkdirSync(runs, { recursive: true });
+    writeFileSync(join(runs, 'r.json'), JSON.stringify({ run_id: 'r', nodes: [{ node_id: 'test:U1:1', stage: 'test', state: 'failed', vendor: 'self',
+      result: { stage_ok: true, verified: false, checks: ['wc -l -> 195', "SKILL.md -> density over 주장's denominator and 'does NOT move the score'"], evidence: 'The run-it criterion fails: no [확인 필요] marker.', verification_error: '' } }] }));
+    const r = harvestTask({ taskDir: td, cwd, root });
+    const t = r.summary.failures.find((f) => f.node_id === 'test:U1:1');
+    assert.equal(t.kind, 'rejection');
+    assert.match(t.message, /run-it criterion fails/);
+    assert.equal(t.executor, 'self');
+    const i = r.summary.failures.find((f) => f.node_id === 'integrate:6');
+    assert.equal(i.kind, 'integrate-refused');
+    assert.match(i.message, /G1, G3 are unmet/, 'no check reads as a failure, so the evidence summary');
+  } finally { for (const x of [cwd, tasks, root]) rmSync(x, { recursive: true, force: true }); }
+});
