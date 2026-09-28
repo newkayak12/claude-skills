@@ -72,7 +72,7 @@ flowchart TD
   PLAN --> SHAPE["shape: split into packages"]
   SHAPE --> CRIT{"critique"}
   CRIT -->|"unsound"| SHAPE
-  CRIT -->|"sound"| DISP["dispatch each package, in parallel where deps allow"]
+  CRIT -->|"sound"| DISP["develop: each package builds in its own worktree<br/>implement → test → gate, in parallel where deps allow"]
   DISP --> ACC{"accept, per package"}
   ACC -->|"rejected"| DISP
   ACC -->|"all accepted"| INT{"integrate"}
@@ -95,7 +95,8 @@ What each step does:
 | `brainstorm` | Restates intent, scope and approach; asks you questions only when `interactive`. Skipped when your session already passed `decisions`. | `brainstorm` |
 | PLAN | A planning team investigates the project and writes a PRD. With acceptance already declared in the request it runs a lighter chain. | `roles.planning` |
 | `shape` → `critique` | `shape` splits the work into packages with `touches[]` and `deps`; `critique` checks the split. An unsound shape is reshaped. | — |
-| dispatch → accept | Each package gets a worktree, a child run and a driver. When it finishes, a judge accepts or rejects it; a rejection retries the package with the reasons attached. | `max_retries`, `max_parallel_teams` |
+| develop (dispatch) | The actual development. Each package gets its own git worktree and a driver session that runs the package's child run: for code `implement → test → gate` (write the change, run the tests, a separate judge checks it), for a document `draft → review → gate`. Packages whose `deps` are met run in parallel. See [Inside one package](#inside-one-package). | `max_parallel_teams`, `vendor` |
+| accept | When a package's run finishes, a judge accepts or rejects its result. A rejection retries the package with the reasons attached. | `max_retries` |
 | `integrate` | Merges the accepted branches and runs the checks. A seam no single package can see gets a repair package that works on the merged tree. | — |
 | QA | A QA team writes and runs test cases against the merged tree. Each defect becomes a fix STORY, and the loop re-integrates. | `roles.qa`, `qa_rounds` |
 | audit | Planning checks the merged result against its own PRD. Unmet stories are filed like QA defects. | `roles.audit` |
