@@ -16,16 +16,27 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-// 2 is a guess, not a measurement, and a measured cause of slowness (docs/plans/
-// 2026-09-21-teams-server-owns-the-loop.md §0/§7). It stays the default until a capacity-based
-// rule (same plan, §7) replaces it - named here so that replacement is a one-line edit, not a
-// grep for a bare "2" among max_depth/qa_rounds/driver_restarts's own 2s.
-const PROVISIONAL_MAX_PARALLEL_TEAMS = 2;
+// A fixed 2 used to be the only option here, and it was a guess, not a measurement - a measured
+// cause of slowness (docs/plans/2026-09-21-teams-server-owns-the-loop.md §0/§7), left in place
+// until "a capacity-based rule (same plan, §7)" replaced it. This is that rule: 'auto' (the
+// default since 2026-09-28) hands the cap to an AIMD controller (taskmanager.mjs's
+// ensureAutoParallel/updateAutoParallel, applied in advanceDispatches) that starts at 2 - the
+// same number this used to be pinned at forever - and adjusts it from there per develop-STORY
+// dispatch outcome: +1 after a window of clean settles, halved the moment a dispatch's own
+// driver shows the vendor/host pushing back. A project that still wants a fixed number sets one
+// (an integer here, in team.json, or as a tm_open argument) exactly as before; only the DEFAULT
+// changed, not the numeric path - CHECK.max_parallel_teams below still accepts either shape.
+export const AUTO_MAX_PARALLEL_TEAMS = 'auto';
 
 export const TEAM_FILE = join('.claude', 'team.json');
 
 export const TEAM_DEFAULTS = Object.freeze({
-  max_parallel_teams: PROVISIONAL_MAX_PARALLEL_TEAMS,
+  max_parallel_teams: AUTO_MAX_PARALLEL_TEAMS,
+  // Only consulted by the auto controller above (ensureAutoParallel), and only when THIS is not
+  // set: null derives the ceiling from the host itself (min(os.availableParallelism()/2, 6)) so a
+  // small dev box and a big CI runner do not probe to the same number. Set it to pin the ceiling
+  // instead - a project that knows its own vendor/rate-limit headroom better than a core count can.
+  max_parallel_ceiling: null,
   // The depth cap on a package re-decomposing itself (a STORY that, inside its own child run,
   // still needs its own shape/dispatch cycle - pkg.split:true or pkg.size:'L', taskmanager.mjs's
   // openChild). Enforced there: a package opened at task.depth >= this value is always
@@ -143,7 +154,8 @@ export const TEAM_DEFAULTS = Object.freeze({
 // One validator per key. A value that fails is ignored (the lower layer's value stays) and
 // the caller gets a note; nothing here ever throws.
 const CHECK = {
-  max_parallel_teams: (v) => Number.isInteger(v) && v >= 1,
+  max_parallel_teams: (v) => v === 'auto' || (Number.isInteger(v) && v >= 1),
+  max_parallel_ceiling: (v) => v === null || (Number.isInteger(v) && v >= 1),
   max_depth: (v) => Number.isInteger(v) && v >= 0,
   qa_rounds: (v) => Number.isInteger(v) && v >= 0,
   upstream_fix_rounds: (v) => Number.isInteger(v) && v >= 0,

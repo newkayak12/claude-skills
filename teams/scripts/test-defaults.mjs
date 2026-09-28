@@ -534,21 +534,30 @@ test('proof: guard D flags the pre-fix docPaths line that re-typed docs_dir', ()
 // teams/mcp - so this guard matches the exact ternary SHAPE the bug took
 // (`? task.team.opts.max_parallel_teams : <N>`), not the digit alone.
 //
-// Neither max_parallel_teams nor docs_dir was tracked by any guard in this file before today -
-// that gap is why both survived a week of this exact defect class being hunted elsewhere.
+// The default became 'auto' (2026-09-28, the AIMD controller) so advanceDispatches no longer
+// falls back through TEAM_DEFAULTS.max_parallel_teams itself - that default is now the string
+// 'auto', not a number, so re-typing IT as a fallback would be its own new bug. What must not
+// recur is the ORIGINAL shape: a bare numeric literal standing in for a shared default. The
+// fallback's target moved to ensureAutoParallel(task).current (taskmanager.mjs), which itself
+// reads AIMD_START - one named constant, not a re-typed digit at the call site - so this guard
+// now checks THAT delegation instead.
+//
+// Neither max_parallel_teams nor docs_dir was tracked by any guard in this file before the week
+// this comment describes - that gap is why both survived a week of this exact defect class
+// being hunted elsewhere.
 
 function maxParallelTeamsLiteralSites() {
   return TEAMS_MCP_FOR_SOLE_OWNERSHIP
     .flatMap((k) => collect(src(k), /\? task\.team\.opts\.max_parallel_teams : (\d+)/g, k));
 }
 
-test('max_parallel_teams: toolNext falls back to TEAM_DEFAULTS.max_parallel_teams, not a re-typed literal', () => {
+test('max_parallel_teams: advanceDispatches falls back to the auto-parallel controller, not a re-typed literal', () => {
   const sites = maxParallelTeamsLiteralSites();
   assert.deepStrictEqual(
     sites, [],
-    `max_parallel_teams fallback re-types a literal instead of reading TEAM_DEFAULTS at: ${sites.map((x) => x.label).join(', ')}`,
+    `max_parallel_teams fallback re-types a literal instead of delegating to the auto-parallel controller at: ${sites.map((x) => x.label).join(', ')}`,
   );
-  assert.match(src('teamsTaskmanager'), /: TEAM_DEFAULTS\.max_parallel_teams;/, 'toolNext must fall back through TEAM_DEFAULTS.max_parallel_teams');
+  assert.match(src('teamsTaskmanager'), /: ensureAutoParallel\(task\)\.current;/, 'advanceDispatches must fall back to ensureAutoParallel(task).current, not a re-typed literal or TEAM_DEFAULTS.max_parallel_teams (now the string \'auto\', not a number)');
 });
 
 test('proof: guard D flags the pre-fix toolNext line that re-typed max_parallel_teams', () => {
@@ -602,15 +611,15 @@ function teamDefaultsObject(teamconfigSrc) {
   const m = /const TEAM_DEFAULTS\s*=\s*Object\.freeze\(\s*(\{)/.exec(stripped);
   if (!m) throw new Error('"const TEAM_DEFAULTS = Object.freeze({" not found - teamconfig.mjs restructured; update this guard');
   const literal = extractBalanced(stripped, m.index + m[0].length - 1);
-  // TEAM_DEFAULTS.max_parallel_teams reads the named PROVISIONAL_MAX_PARALLEL_TEAMS constant,
-  // not a bare literal - not this guard's concern (it pins qa_rounds/roles/max_depth/plugin_dirs
+  // TEAM_DEFAULTS.max_parallel_teams reads the named AUTO_MAX_PARALLEL_TEAMS constant, not a
+  // bare literal - not this guard's concern (it pins qa_rounds/roles/max_depth/plugin_dirs
   // only), but the literal still has to evaluate, so the identifier is resolved the same way
   // guard E's schemaKeys already relies on the literal having no OTHER free variables.
-  const pm = /const PROVISIONAL_MAX_PARALLEL_TEAMS\s*=\s*(\d+);/.exec(stripped);
-  if (!pm) throw new Error('"const PROVISIONAL_MAX_PARALLEL_TEAMS = <N>;" not found - teamconfig.mjs restructured; update this guard');
+  const am = /const AUTO_MAX_PARALLEL_TEAMS\s*=\s*('[^']*');/.exec(stripped);
+  if (!am) throw new Error('"const AUTO_MAX_PARALLEL_TEAMS = \'<value>\';" not found - teamconfig.mjs restructured; update this guard');
   // docs_dir's own literal calls join(...) (teamconfig.mjs imports it from node:path) - the same
-  // free-variable situation as PROVISIONAL_MAX_PARALLEL_TEAMS above, resolved the same way.
-  return new Function('PROVISIONAL_MAX_PARALLEL_TEAMS', 'join', `return ${literal}`)(Number(pm[1]), join);
+  // free-variable situation as AUTO_MAX_PARALLEL_TEAMS above, resolved the same way.
+  return new Function('AUTO_MAX_PARALLEL_TEAMS', 'join', `return ${literal}`)(new Function(`return ${am[1]}`)(), join);
 }
 
 test('TEAM_DEFAULTS pins its own documented default VALUES for the keys no test exercises un-overridden: qa_rounds, roles, max_depth, plugin_dirs', () => {
@@ -619,6 +628,8 @@ test('TEAM_DEFAULTS pins its own documented default VALUES for the keys no test 
   assert.deepStrictEqual(d.roles, { planning: true, qa: true, audit: true }, `roles default drifted to ${JSON.stringify(d.roles)} (expected {planning: true, qa: true, audit: true})`);
   assert.deepStrictEqual(d.max_depth, 2, `max_depth default drifted to ${JSON.stringify(d.max_depth)} (expected 2)`);
   assert.deepStrictEqual(d.plugin_dirs, [], `plugin_dirs default drifted to ${JSON.stringify(d.plugin_dirs)} (expected [])`);
+  assert.deepStrictEqual(d.max_parallel_teams, 'auto', `max_parallel_teams default drifted to ${JSON.stringify(d.max_parallel_teams)} (expected 'auto' - see taskmanager.mjs's AIMD controller)`);
+  assert.deepStrictEqual(d.max_parallel_ceiling, null, `max_parallel_ceiling default drifted to ${JSON.stringify(d.max_parallel_ceiling)} (expected null - the AIMD controller derives one from the host when unset)`);
 });
 
 test('proof: guard F catches the qa_rounds 2->3 drift that the coverage audit found live; the real source passes', () => {
