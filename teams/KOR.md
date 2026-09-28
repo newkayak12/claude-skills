@@ -72,7 +72,7 @@ flowchart TD
   PLAN --> SHAPE["shape: split into packages"]
   SHAPE --> CRIT{"critique"}
   CRIT -->|"unsound"| SHAPE
-  CRIT -->|"sound"| DISP["dispatch each package, in parallel where deps allow"]
+  CRIT -->|"sound"| DISP["develop: each package builds in its own worktree<br/>implement → test → gate, in parallel where deps allow"]
   DISP --> ACC{"accept, per package"}
   ACC -->|"rejected"| DISP
   ACC -->|"all accepted"| INT{"integrate"}
@@ -95,7 +95,8 @@ flowchart TD
 | `brainstorm` | 의도, 범위, 접근을 다시 정리합니다. `interactive`일 때만 사람에게 묻습니다. 세션에서 이미 `decisions`를 넘겼다면 건너뜁니다. | `brainstorm` |
 | PLAN | 기획 팀이 프로젝트를 조사하고 PRD를 씁니다. 요청에 인수 기준이 이미 적혀 있으면 가벼운 체인으로 돕니다. | `roles.planning` |
 | `shape` → `critique` | `shape`가 작업을 `touches[]`와 `deps`가 달린 패키지로 나누고, `critique`가 그 분할을 검토합니다. 부실하면 다시 나눕니다. | — |
-| dispatch → accept | 패키지마다 워크트리, 자식 런, 드라이버가 붙습니다. 끝나면 심사자가 받아들이거나 반려하고, 반려되면 사유를 달아 그 패키지를 다시 돌립니다. | `max_retries`, `max_parallel_teams` |
+| 개발 (dispatch) | 실제 개발 단계입니다. 패키지마다 git 워크트리와 드라이버 세션이 붙어 그 패키지의 자식 런을 돌립니다. 코드는 `implement → test → gate`(변경 작성, 테스트 실행, 별도 심사자의 확인), 문서는 `draft → review → gate`입니다. `deps`가 풀린 패키지끼리는 병렬로 돕니다. [패키지 하나의 내부](#패키지-하나의-내부) 참고. | `max_parallel_teams`, `vendor` |
+| accept | 패키지 런이 끝나면 심사자가 결과를 받아들이거나 반려합니다. 반려되면 사유를 달아 그 패키지를 다시 돌립니다. | `max_retries` |
 | `integrate` | 받아들여진 브랜치를 합치고 검사를 돌립니다. 어느 패키지 혼자서는 보이지 않는 이음새 문제는 합쳐진 트리 위에서 일하는 repair 패키지가 맡습니다. | — |
 | QA | QA 팀이 합쳐진 트리를 대상으로 테스트 케이스를 쓰고 실행합니다. 결함마다 수정 STORY가 생기고 다시 통합합니다. | `roles.qa`, `qa_rounds` |
 | audit | 기획 팀이 합쳐진 결과를 자기가 쓴 PRD와 대조합니다. 충족 못 한 스토리는 QA 결함처럼 등록됩니다. | `roles.audit` |
