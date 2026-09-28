@@ -1,0 +1,8 @@
+{
+  "patterns": [
+    "\\.m?js$",
+    "/SKILL\\.md$",
+    "/hooks/hooks\\.json$"
+  ],
+  "window_hours": 2
+}
