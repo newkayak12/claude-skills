@@ -57,7 +57,7 @@ JD 분석부터 면접 준비까지 전체 프로세스 같이 돌려줘.
       ↓
 [2] portfolio-company     컬처 시그널, 대화 소재, 레드 플래그
       ↓
-[3] resume-tailorer (+ portfolio-rewrite)   맞춤 이력서, 커버레터 초안
+[3] resume-tailorer (+ portfolio-rewrite)   맞춤 이력서
       ↓
 [4] interview-plan        STAR 스토리 뱅크, 예상 질문, 역질문
 ```
@@ -89,7 +89,7 @@ JD와 포트폴리오 양쪽 문장을 함께 인용하고, Skills 목록에만 
 [갭 분석]
 갭: 결제 도메인 경험 없음
 심각도: 보완 가능
-대응 방법: 커버레터에서 정산 배치 경험을 도메인 인접성으로 프레이밍
+대응 방법: 이력서·포트폴리오에서 정산 배치 경험을 도메인 인접성으로 프레이밍
 ```
 
 ### `portfolio-company`
