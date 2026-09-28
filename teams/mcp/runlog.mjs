@@ -17,6 +17,7 @@ import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { collectTaskCosts } from '../scripts/bench/lib/drivercost.mjs';
 import { teamsPluginRoot } from './pluginroots.mjs';
+import { reasonFromVerdict } from './graph.mjs';
 
 const PLUGIN = teamsPluginRoot();
 
@@ -48,14 +49,23 @@ export function signature(text) {
 export function classify(n, where) {
   const r = n.result || {};
   const base = { ...where, node_id: n.node_id, stage: n.stage, executor: n.executor || n.vendor || null, state: n.state };
+  // A record written before the engine synthesized a reason for a bare verdict-false (broker
+  // 0.36.0, manager 0.37.1) - or by any path that still skips it - gets one from the same rule:
+  // portfolio-consolidate-8518d5dd's test:U1:n and integrate:6 read "<node>: " with nothing after.
+  const why = (field) => r.reason || reasonFromVerdict(r, field);
   if (r.judge_failed) return { ...base, kind: 'judge-failed', message: r.reason || '' };
   if (r.verification_error) return { ...base, kind: 'cross-check', message: r.verification_error };
   if (/adapter exit/.test(r.reason || '')) return { ...base, kind: 'adapter-exit', message: r.reason };
   if ((n.stage === 'gate' || n.stage === 'accept') && r.accept === false) {
-    return { ...base, kind: 'rejection', message: (r.gaps || [])[0] || r.reason || '', match_pct: r.match_pct ?? null };
+    return { ...base, kind: 'rejection', message: (r.gaps || [])[0] || why('accept'), match_pct: r.match_pct ?? null };
   }
-  if (n.stage === 'integrate' && r.verified === false) return { ...base, kind: 'integrate-refused', message: (r.gaps || [])[0] || r.reason || '' };
-  if (n.stage === 'critique' && r.sound === false) return { ...base, kind: 'critique-blocked', message: (r.blocking || [])[0] || r.reason || '' };
+  // A review/test that judged the work and said no is a rejection too (grouped by stage in
+  // triage, since its text varies word by word), not an unexplained failure.
+  if ((n.stage === 'review' || n.stage === 'test') && r.stage_ok !== false && r.verified === false) {
+    return { ...base, kind: 'rejection', message: why('verified'), match_pct: null };
+  }
+  if (n.stage === 'integrate' && r.verified === false) return { ...base, kind: 'integrate-refused', message: (r.gaps || [])[0] || why('verified') };
+  if (n.stage === 'critique' && r.sound === false) return { ...base, kind: 'critique-blocked', message: (r.blocking || [])[0] || why('sound') };
   return { ...base, kind: 'failed', message: r.reason || '' };
 }
 
@@ -132,7 +142,9 @@ export function harvestTask({ taskDir, cwd, label, root, scorePrefix } = {}) {
   try { costs = taskDir ? collectTaskCosts(taskDir, task) : null; } catch { costs = null; }
   const byKind = {};
   for (const s of (costs && costs.streams) || []) {
-    const k = basename(String(s.stream || s.path || '')).replace(/\.stream\.jsonl$/, '').replace(/_\d+$/, '').replace(/^judge_(\w+?)(_P\w+|\.r\d+)?$/, 'judge_$1').replace(/^dispatch_(PLAN|AUDIT|QA)$/, 'dispatch_$1').replace(/^dispatch_P\d+\w*$/, 'dispatch_package');
+    // A respawned driver (<name>.restart1) or a re-judge (<name>.r1) is the same kind of spend
+    // as its first session - portfolio-consolidate-8518d5dd bucketed them apart, one per run name.
+    const k = basename(String(s.stream || s.path || '')).replace(/\.stream\.jsonl$/, '').replace(/\.(restart|r)\d+$/, '').replace(/_\d+$/, '').replace(/^judge_(\w+?)(_P\w+|\.r\d+)?$/, 'judge_$1').replace(/^dispatch_(PLAN|AUDIT|QA)$/, 'dispatch_$1').replace(/^dispatch_P\d+\w*$/, 'dispatch_package');
     byKind[k] = +((byKind[k] || 0) + (s.cost_usd || 0)).toFixed(4);
   }
   // collectTaskCosts splits its total into driver streams (above, the manager's own
