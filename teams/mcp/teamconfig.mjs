@@ -54,6 +54,13 @@ export const TEAM_DEFAULTS = Object.freeze({
   // (dispatched to an AI, recorded on the node, listed in tm_inbox's `decided`) instead of
   // parking forever with nobody watching to notice (0.27.3 review, 2026-09-24).
   interactive: false,
+  // How long (ms) an interactive `ask` card may wait on a person before the engine answers it
+  // itself with each question's `default` (else its first, recommended option - the same pick a
+  // non-interactive run makes), recorded `by: 'timeout'` (design §7). null = wait forever,
+  // today's behaviour. tm_open only - team_open has no human-wait concept of its own. Read off
+  // task.ask_timeout (createTask copies it from the resolved layer), never from raw args; see
+  // taskmanager.mjs's expireAsks for who checks the deadline.
+  ask_timeout: null,
   // gate:human (0.29.0): which judging stages must stop and have a person accept/reject
   // instead of a model - 'critique', 'gate', 'gate:goal' (or, at the manager layer, 'accept',
   // 'integrate'). Empty means no gate is configured; naming a non-judging stage (e.g.
@@ -181,6 +188,7 @@ const CHECK = {
   roles: (v) => v && typeof v === 'object' && !Array.isArray(v)
     && Object.entries(v).every(([k, b]) => k in TEAM_DEFAULTS.roles && typeof b === 'boolean'),
   interactive: (v) => typeof v === 'boolean',
+  ask_timeout: (v) => v === null || (Number.isInteger(v) && v > 0),
   human_gates: (v) => Array.isArray(v) && v.every((s) => typeof s === 'string' && s.length > 0),
   goal_threshold: (v) => Number.isInteger(v) && v >= 0 && v <= 100,
   max_retries: (v) => Number.isInteger(v) && v >= 0,
