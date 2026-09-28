@@ -2131,9 +2131,15 @@ test('retro: a backlog item is shipped only when an accepted package declares it
       { node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', state: 'done', result: { accept: true } },
       { node_id: 'dispatch:P2:1', stage: 'dispatch', subgoal_id: 'P2', state: 'failed' },
       { node_id: 'accept:P2:1', stage: 'accept', subgoal_id: 'P2', state: 'failed', result: { accept: false, reason: 'no' } },
+      // M8: what shipped is what the final integration holds - the integrate over both accepts.
+      { node_id: 'integrate:1', stage: 'integrate', state: 'done', deps: ['accept:P1:1', 'accept:P2:1'] },
     ],
   };
+  for (const n of task.nodes) n.deps = n.deps || [];
   assert.deepEqual(buildRetro(task).next_backlog.unshipped_requests.map((r) => r.priority), [1, 2]);
+  // Accepted but never integrated ships nothing: the whole backlog carries.
+  task.nodes.pop();
+  assert.deepEqual(buildRetro(task).next_backlog.unshipped_requests.map((r) => r.priority), [0, 1, 2]);
 });
 
 test('retro: a user story ships only through an accepted package that implements it AND a done integrate; the rest carry into the next Sprint (sprint-not-sub-epic)', async () => {
@@ -2153,13 +2159,97 @@ test('retro: a user story ships only through an accepted package that implements
     { node_id: 'dispatch:P2:1', stage: 'dispatch', subgoal_id: 'P2', state: 'failed' },
     { node_id: 'accept:P2:1', stage: 'accept', subgoal_id: 'P2', state: 'failed', result: { accept: false, reason: 'no' } },
   ];
-  const integrated = buildRetro({ ...base, nodes: [...planning, ...devNodes, { node_id: 'integrate:1', stage: 'integrate', state: 'done' }] });
+  for (const n of [...planning, ...devNodes]) n.deps = [];
+  const integrated = buildRetro({ ...base, nodes: [...planning, ...devNodes, { node_id: 'integrate:1', stage: 'integrate', state: 'done', deps: ['accept:P1:1', 'accept:P2:1'] }] });
   assert.deepEqual(integrated.next_backlog.unfinished_stories, [{ id: 'F1-US-2', title: 'sign out', card: 'PLAN-F1', acceptance: ['session ends'] }]);
   // Accepted but never integrated: nothing shipped, both stories carry.
   const notIntegrated = buildRetro({ ...base, nodes: [...planning, ...devNodes] });
   assert.deepEqual(notIntegrated.next_backlog.unfinished_stories.map((u) => u.id), ['F1-US-1', 'F1-US-2']);
   // No planning cards at all: the field is present and empty, never missing.
   assert.deepEqual(buildRetro({ run_id: 't', request: 'r', nodes: [] }).next_backlog.unfinished_stories, []);
+});
+
+test('retro M7: a story two packages implement ships only when both shipped', async () => {
+  const { buildRetro } = await import('../mcp/docs.mjs');
+  const nodes = [
+    { node_id: 'dispatch:PLAN-F1:1', stage: 'dispatch', subgoal_id: 'PLAN-F1', state: 'done', attempt: 1, deps: [], result: { user_stories: [{ id: 'F1-US-1', title: 'both' }] } },
+    { node_id: 'accept:PLAN-F1:1', stage: 'accept', subgoal_id: 'PLAN-F1', state: 'done', attempt: 1, deps: [], result: { accept: true } },
+    { node_id: 'dispatch:P1:1', stage: 'dispatch', subgoal_id: 'P1', state: 'done', deps: [] },
+    { node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', state: 'done', deps: ['dispatch:P1:1'], result: { accept: true } },
+    { node_id: 'dispatch:P2:1', stage: 'dispatch', subgoal_id: 'P2', state: 'failed', deps: [] },
+    { node_id: 'accept:P2:1', stage: 'accept', subgoal_id: 'P2', state: 'failed', deps: ['dispatch:P2:1'], result: { accept: false, reason: 'no' } },
+    { node_id: 'integrate:1', stage: 'integrate', state: 'done', deps: ['accept:P1:1'] },
+  ];
+  const task = { run_id: 't', request: 'r', planning_pkgs: [{ id: 'PLAN-F1' }],
+    spec: { packages: [{ id: 'P1', title: 'a', implements: ['F1-US-1'] }, { id: 'P2', title: 'b', implements: ['F1-US-1'] }] }, nodes };
+  assert.deepEqual(buildRetro(task).next_backlog.unfinished_stories.map((u) => u.id), ['F1-US-1']);
+});
+
+test('retro M8: a later failed integrate is not overridden by an earlier pass; a repair or defect-fix integrate still reaches the packages before it', async () => {
+  const { buildRetro } = await import('../mcp/docs.mjs');
+  const planning = [
+    { node_id: 'dispatch:PLAN-F1:1', stage: 'dispatch', subgoal_id: 'PLAN-F1', state: 'done', attempt: 1, deps: [], result: { user_stories: [{ id: 'F1-US-1' }, { id: 'F1-US-2' }] } },
+    { node_id: 'accept:PLAN-F1:1', stage: 'accept', subgoal_id: 'PLAN-F1', state: 'done', attempt: 1, deps: [], result: { accept: true } },
+  ];
+  const pkgs = [
+    { node_id: 'dispatch:P1:1', stage: 'dispatch', subgoal_id: 'P1', state: 'done', deps: [] },
+    { node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', state: 'done', deps: ['dispatch:P1:1'], result: { accept: true } },
+    { node_id: 'dispatch:P2:1', stage: 'dispatch', subgoal_id: 'P2', state: 'done', deps: [] },
+    { node_id: 'accept:P2:1', stage: 'accept', subgoal_id: 'P2', state: 'done', deps: ['dispatch:P2:1'], result: { accept: true } },
+  ];
+  const spec = { packages: [{ id: 'P1', title: 'a', implements: ['F1-US-1'] }, { id: 'P2', title: 'b', implements: ['F1-US-2'] }] };
+  const base = { run_id: 't', request: 'r', planning_pkgs: [{ id: 'PLAN-F1' }], spec };
+  const clone = (xs) => JSON.parse(JSON.stringify(xs));
+  // integrate:1 passed, a defect fix's integrate:2 (superseding it) failed for good: nothing ships.
+  const failedLater = buildRetro({ ...base, nodes: [...clone(planning), ...clone(pkgs),
+    { node_id: 'integrate:1', stage: 'integrate', state: 'done', deps: ['accept:P1:1', 'accept:P2:1'] },
+    { node_id: 'integrate:2', stage: 'integrate', state: 'failed', final: true, supersedes: 'integrate:1', deps: [] }] });
+  assert.deepEqual(failedLater.next_backlog.unfinished_stories.map((u) => u.id), ['F1-US-1', 'F1-US-2']);
+  // A repair after a failed integrate: integrate:2 names only accept:R1:1; R1's chain reaches P1/P2.
+  const repaired = buildRetro({ ...base, spec: { packages: [...spec.packages, { id: 'R1', title: 'repair', repair: true }] }, nodes: [...clone(planning), ...clone(pkgs),
+    { node_id: 'integrate:1', stage: 'integrate', state: 'failed', deps: ['accept:P1:1', 'accept:P2:1'] },
+    { node_id: 'dispatch:R1:1', stage: 'dispatch', subgoal_id: 'R1', state: 'done', deps: ['accept:P1:1', 'accept:P2:1'] },
+    { node_id: 'accept:R1:1', stage: 'accept', subgoal_id: 'R1', state: 'done', deps: ['dispatch:R1:1'], result: { accept: true } },
+    { node_id: 'integrate:2', stage: 'integrate', state: 'done', supersedes: 'integrate:1', deps: ['accept:R1:1'] }] });
+  assert.deepEqual(repaired.next_backlog.unfinished_stories, []);
+  // A QA defect fix: integrate:2 names only accept:D1:1 (no deps); the done integrate:1 it superseded counts.
+  const fixed = buildRetro({ ...base, spec: { packages: [...spec.packages, { id: 'D1', title: 'fix' }] }, nodes: [...clone(planning), ...clone(pkgs),
+    { node_id: 'integrate:1', stage: 'integrate', state: 'done', deps: ['accept:P1:1', 'accept:P2:1'] },
+    { node_id: 'dispatch:D1:1', stage: 'dispatch', subgoal_id: 'D1', state: 'done', deps: [] },
+    { node_id: 'accept:D1:1', stage: 'accept', subgoal_id: 'D1', state: 'done', deps: ['dispatch:D1:1'], result: { accept: true } },
+    { node_id: 'integrate:2', stage: 'integrate', state: 'done', supersedes: 'integrate:1', deps: ['accept:D1:1'] }] });
+  assert.deepEqual(fixed.next_backlog.unfinished_stories, []);
+  // A package accepted after the last integrate is not in it.
+  const late = buildRetro({ ...base, nodes: [...clone(planning), ...clone(pkgs),
+    { node_id: 'integrate:1', stage: 'integrate', state: 'done', deps: ['accept:P1:1'] }] });
+  assert.deepEqual(late.next_backlog.unfinished_stories.map((u) => u.id), ['F1-US-2']);
+  // The integrate's own record wins: a round based on a repair merged only R1, and the repair's
+  // base (the integrate it worked on) merged P1 and P2.
+  const recorded = buildRetro({ ...base, spec: { packages: [...spec.packages, { id: 'R1', title: 'repair', repair: true, integration_of: 'integrate:1' }] }, nodes: [...clone(planning), ...clone(pkgs),
+    { node_id: 'integrate:1', stage: 'integrate', state: 'failed', deps: [], integration: { merged: [{ package: 'P1' }, { package: 'P2' }] } },
+    { node_id: 'accept:R1:1', stage: 'accept', subgoal_id: 'R1', state: 'done', deps: [], result: { accept: true } },
+    { node_id: 'integrate:2', stage: 'integrate', state: 'done', supersedes: 'integrate:1', deps: [], integration: { merged: [{ package: 'R1' }], based_on: 'repair', repair_package: 'R1' } }] });
+  assert.deepEqual(recorded.next_backlog.unfinished_stories, []);
+  // ...and a record that merged only P1 ships only P1, whatever the deps say.
+  const partial = buildRetro({ ...base, nodes: [...clone(planning), ...clone(pkgs),
+    { node_id: 'integrate:1', stage: 'integrate', state: 'done', deps: ['accept:P1:1', 'accept:P2:1'], integration: { merged: [{ package: 'P1' }] } }] });
+  assert.deepEqual(partial.next_backlog.unfinished_stories.map((u) => u.id), ['F1-US-2']);
+});
+
+test('retro m11: numeric package ids match; a bare null story is dropped, not named "null"', async () => {
+  const { buildRetro } = await import('../mcp/docs.mjs');
+  const task = { run_id: 't', request: 'r', requests: ['a'], planning_pkgs: [{ id: 'PLAN-F1' }],
+    spec: { packages: [{ id: 1, title: 'a', backlog: [0], implements: ['F1-US-1'] }] },
+    nodes: [
+      { node_id: 'dispatch:PLAN-F1:1', stage: 'dispatch', subgoal_id: 'PLAN-F1', state: 'done', attempt: 1, deps: [], result: { user_stories: [null, '', { id: 'F1-US-1' }] } },
+      { node_id: 'accept:PLAN-F1:1', stage: 'accept', subgoal_id: 'PLAN-F1', state: 'done', attempt: 1, deps: [], result: { accept: true } },
+      { node_id: 'dispatch:1:1', stage: 'dispatch', subgoal_id: '1', state: 'done', deps: [] },
+      { node_id: 'accept:1:1', stage: 'accept', subgoal_id: '1', state: 'done', deps: ['dispatch:1:1'], result: { accept: true } },
+      { node_id: 'integrate:1', stage: 'integrate', state: 'done', deps: ['accept:1:1'] },
+    ] };
+  const r = buildRetro(task);
+  assert.deepEqual(r.next_backlog.unshipped_requests, []);
+  assert.deepEqual(r.next_backlog.unfinished_stories, []);
 });
 
 test('budget_usd at 100%: no new package dispatches, an in-flight one still finishes, and a fresh integrate opens over just what accepted - the rest named "not done"', async () => {

@@ -274,7 +274,7 @@ test('a blocked task with no report still gets an 80-report.md: what blocks it, 
 });
 
 test('slack-list: a size-S task reports from its run, not BLOCKED off the skipped manager graph, names its planning, and says what S does not do', async () => {
-  const { createRun, saveRun } = await import('../mcp/graph.mjs');
+  const { createRun, saveRun, loadRun } = await import('../mcp/graph.mjs');
   const cwd = mkdtempSync(join(tmpdir(), 'docs-s-'));
   try {
     const run = createRun({ cwd, request: 'r' });
@@ -300,5 +300,14 @@ test('slack-list: a size-S task reports from its run, not BLOCKED off the skippe
     assert.match(report, /roles qa, audit are on, but QA and the planning audit run only on a size-L task/);
     assert.ok(renderAll(task)[docPaths(task).prd], 'a size-S task has its 10-prd.md');
     assert.match(report, /no worktree, no branch, nothing committed/);
+    // M6: a size-S task writes retro.json too; its run completed with the goal gate accepting,
+    // so its stories shipped. A refused goal gate carries them into the next Sprint.
+    const retro = JSON.parse(renderAll(task)[docPaths(task).retro]);
+    assert.deepEqual(retro.next_backlog.unfinished_stories, []);
+    const saved = loadRun(cwd, run.run_id);
+    saved.nodes.find((n) => n.node_id === 'gate:goal:2').result.accept = false;
+    saveRun(saved);
+    const refused = JSON.parse(renderAll(task)[docPaths(task).retro]);
+    assert.deepEqual(refused.next_backlog.unfinished_stories.map((u) => u.id), ['F1-US-1']);
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
