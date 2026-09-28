@@ -3753,6 +3753,8 @@ const TOOLS = [
         retry_policy: { type: 'string', enum: ['continue', 'rollback'], description: 'default "continue", also settable in .claude/team.json. What a retried attempt does with the worktree the failed one left: "continue" (default, today\'s only behavior) builds the next attempt on top of it. "rollback" resets the worktree first - a subgoal\'s own implement/draft to the checkpoint recorded before ITS first attempt touched it (single-subgoal child runs only; a shared worktree with a sibling subgoal still in flight cannot be reset for one of them, so it falls back to continue and says why), a package\'s own retry (tm_retry/retryPackage) to its last ACCEPTED commit, or the worktree\'s base commit if none of its attempts ever passed - then re-runs with the failed gate\'s gaps as feedback either way. docs/plans/2026-09-23-teams-reducer-human-rollback.md §5 measured two real runs before defaulting to continue: both showed a retried implement CONVERGING on gate feedback across attempts rather than repeating the same mistake, so there is no evidence yet that discarding an attempt\'s work helps more than it loses.' },
         budget_usd: { type: ['number', 'null'], description: 'default null (unlimited), also settable in .claude/team.json. Spend is the task\'s full cost (collectTaskCosts, taskSpend): every driver\'s own stream log under this task (drivers/*.stream.jsonl result events\' total_cost_usd) PLUS every child graph run\'s own node adapter sessions (each worktree\'s .teams_output/broker/<run_id>/<node>/<attempt>/events.jsonl), summed each daemon tick. At 80% of this a warning is recorded once (tm_status shows it); at 100% no NEW package is dispatched - a package already running finishes - and once nothing is left running, a fresh integrate opens over just what accepted, naming the rest "not done" in the report rather than dropping them silently. Whichever of budget_usd/timebox_minutes is closer to its own limit decides; either alone is a real stop. The stop never kills a running dispatch, and a stopped task still owes its goal gate and report - both continue to spend past the 100% mark. This is by design (a truncated report with no gate/retro is worse than a few dollars over), but it is real: budget a reserve above your real target for the in-flight package finishing plus goal-gate+report, and read the harvested summary\'s budget.post_stop_usd after the fact to see exactly how much that reserve needed to be.' },
         timebox_minutes: { type: ['number', 'null'], description: 'default null (unlimited), also settable in .claude/team.json. Minutes since tm_open, the same stop condition budget_usd is, on the same clock - see its own description for exactly what 80% and 100% do.' },
+        budget_grace_usd: { type: ['number', 'null'], description: 'default null (10% of budget_usd when budget_usd is set, else no dollar grace), also settable in .claude/team.json. At 100% a dispatch already running whose accept the closing path still needs (a package, PLAN, or a size-S run) is let finish, but not forever: past this much MORE spend since the stop (or budget_grace_minutes, whichever first) it is killed too (killDriver, the same stop retryPackage/serviceStalledDriver already use) and its accept is skipped like a package that never ran. A phase-Team pass (QA, AUDIT) gets none of this grace - it is killed the moment the box trips, since the goal-gate rewire already never reads its accept once stopped.' },
+        budget_grace_minutes: { type: 'integer', description: 'default 5, also settable in .claude/team.json. See budget_grace_usd - whichever of the two limits a still-running, still-needed dispatch reaches first stops it.' },
         requests: { type: 'array', items: { type: 'string' }, description: 'A backlog instead of one request: several EPIC-level items, priority = array order (first is highest). shape treats each as its own story set; with budget_usd/timebox_minutes in play, the lowest-priority items still unshaped or undispatched when the stop trips are exactly what the report names "Next backlog". Mutually exclusive with `request` - send one or the other, never both.' },
         context_from: { type: 'string', description: 'A prior task_id (or its ticket key). Its retro.json - the Retrospective and Next backlog a finished task\'s report stage writes - is read and folded into this task\'s own context: what failed and why, retries, defects left, and any unaccepted packages or unresolved questions the prior task ran out of budget/timebox to reach. The prior task\'s own Next backlog is NOT auto-added to `requests` - naming it here is a decision this task\'s own request should still make in its own words.' },
       },
@@ -4686,6 +4688,53 @@ function closeStoppedToReport(task) {
   return false;
 }
 
+// A dispatch already running when the box trips is not all equally worth paying for.
+// closeStoppedToReport's own goal-gate rewire (passOf: AUDIT/QA) means a phase-Team pass's
+// accept is never read again once the box is over - portfolio-refresh-80ec931a (2026-09-28,
+// ledger.jsonl) paid for dispatch:QA:2 to keep running 12 more minutes after budget_stopped,
+// then budget_closed skipped accept:QA:2 anyway. That dispatch is killed here immediately, no
+// grace - the same killDriver retryPackage's superseded-attempt cleanup and
+// serviceStalledDriver's stall-kill already use, not a new process control. A package (or
+// PLAN/S) dispatch IS still read by integrate/goal-gate, so it is let finish - but bounded: past
+// budget_grace_usd more spend since the stop, or budget_grace_minutes elapsed, whichever first,
+// it is killed the same way and its accept is skipped exactly like a package the box never let
+// dispatch at all (see the neverRan handling below). Settling the node directly here (state,
+// result, final) rather than going through dispatchSettled/serviceDeadDriver mirrors every other
+// budget-path sweep in this function - none of them wait for the ordinary fold/retry machinery
+// either, since a killed driver here is never meant to respawn.
+// Returns true when it changed anything, same contract as the rest of this file's `progressed`.
+function settleRunningDispatchesAtStop(task, status) {
+  const opts = (task.team && task.team.opts) || {};
+  const graceMinutes = Number.isFinite(opts.budget_grace_minutes) ? opts.budget_grace_minutes : 5;
+  const graceUsd = Number.isFinite(opts.budget_grace_usd) ? opts.budget_grace_usd
+    : (Number.isFinite(status.budget_usd) ? status.budget_usd * 0.10 : null);
+  const stoppedAt = task.budget_stopped.at;
+  const elapsedMinutes = (Date.now() - stoppedAt) / 60000;
+  const spendSinceStop = Math.max(0, (status.spend || 0) - (task.budget_stopped.spend || 0));
+  const graceSpent = elapsedMinutes >= graceMinutes || (graceUsd != null && spendSinceStop >= graceUsd);
+  let changed = false;
+  for (const n of task.nodes) {
+    if (n.stage !== 'dispatch' || n.state !== 'running') continue;
+    const bypassed = n.subgoal_id === 'QA' || n.subgoal_id === 'AUDIT';
+    if (!bypassed && !graceSpent) continue;
+    const reason = bypassed
+      ? 'skipped: bypassed by the close path - a phase-Team pass whose accept the goal-gate rewire never reads once the box is over'
+      : `skipped: budget grace exhausted (${Math.round(elapsedMinutes)}m / ${graceMinutes}m, $${spendSinceStop.toFixed(2)}${graceUsd != null ? ` / $${graceUsd.toFixed(2)}` : ''} since budget_stopped)`;
+    const killed = !!(n.child && killDriver(n.child.driver));
+    record(task, {
+      event: 'budget_killed', task_id: task.run_id, node_id: n.node_id, reason,
+      spend_at_kill: status.spend, killed_driver: killed, pid: (n.child && n.child.driver && n.child.driver.pid) || null,
+    });
+    n.state = 'skipped';
+    n.final = true;
+    n.result = { stage_ok: false, reason };
+    const an = task.nodes.find((x) => x.node_id === n.node_id.replace(/^dispatch:/, 'accept:'));
+    if (an && an.state !== 'done' && !an.final) { an.state = 'skipped'; an.final = true; an.result = { stage_ok: false, reason }; }
+    changed = true;
+  }
+  return changed;
+}
+
 export function enforceBudget(task) {
   const status = budgetStatus(task);
   let progressed = false;
@@ -4727,8 +4776,13 @@ export function enforceBudget(task) {
     record(task, { event: 'budget_swept', task_id: task.run_id, skipped, before_shape: true });
     return true;
   }
-  // Nothing to sweep while a dispatch this task already opened is still running.
-  if (task.nodes.some((n) => n.stage === 'dispatch' && n.state === 'running')) return progressed;
+  // Nothing to sweep while a dispatch this task already opened is still running - except
+  // whatever settleRunningDispatchesAtStop itself just decided to stop (a bypassed phase-Team
+  // pass, or a needed one past its grace): those are settled above, not waited on here.
+  if (task.nodes.some((n) => n.stage === 'dispatch' && n.state === 'running')) {
+    progressed = settleRunningDispatchesAtStop(task, status) || progressed;
+    if (task.nodes.some((n) => n.stage === 'dispatch' && n.state === 'running')) return progressed;
+  }
   const currentIntegrate = task.nodes.filter((n) => n.stage === 'integrate' && n.state !== 'done' && !n.final).pop();
   if (!currentIntegrate) return closeStoppedToReport(task) || progressed; // no integrate left pending on a never-run package
   const neverRan = task.nodes.filter((n) => n.stage === 'dispatch' && n.state === 'pending'
