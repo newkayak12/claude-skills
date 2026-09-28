@@ -206,8 +206,9 @@ Y" needs a `-` line that shows X — and a `[why]` fix quotes the reason the mat
 Give it 2–5 texts you wrote alone in the same genre (Slack, email, blog, PR, cover letter) and it
 builds a counted voice profile — sentence length and spread, 종결어미 distribution, 존댓말 level,
 opener/closer habits, recurring words, punctuation, formatting, hedging, code-switched terms — and
-shows it to you before rewriting. You correct the profile; it rewrites content-preserving against it,
-re-checks each row against a tolerance, then runs the `writer-verification` humanizer pass. A tell
+shows it to you before rewriting. Detection and writing are split: `writer-verification` runs first
+and only its findings are kept — its generic fixes are discarded — then this skill closes each 🔴🟡
+in your words, brings the rest onto the profile, and re-checks each row against a tolerance. A tell
 your own samples use counts as voice, not a finding. It refuses to profile from one sample or from
 AI-assisted text, and never imports typos as style.
 
