@@ -97,3 +97,22 @@ So an edit needs plan, setgoal and critique on disk first, as `CLAUDE.md`'s Desi
   - M4 retiring cards touches every `planningPkgs` reader. Mitigation: a raw accessor for id allocation, and a live one for everything else.
   - G4 is heuristic. Its holes are documented, not hidden.
   - m4 (S QA) runs QA over an uncommitted working tree. The QA card reads that tree and writes nothing to it.
+
+## Revision after critique (critic verdict `sound:false`, 14 problems — all taken)
+
+| Item | Revised mechanism |
+|---|---|
+| G1(c) | An open fallback run also needs `02-critique.json` with `sound === true`, no older than `02-goal-spec.json`. The README lists the remaining hole: a session can write its own run files. |
+| G1(a) | A `tool_use` counts only if its `tool_result` is not an error and it falls within `window_hours`. |
+| G2 | When no config ancestor exists, the root is resolved through `git rev-parse --git-common-dir`, so a sibling worktree of a gated repo is gated. The ledger and markers are read from that root. |
+| G4 | README design rule amended: "deny edit tools, and Bash commands that write gated paths". It stays fail-open. `git checkout/restore/apply/stash` and `patch` that name a gated path are denied too. What remains a hole is listed. |
+| G6 | `Bash` goes into the matcher in `harness/hooks/hooks.json`, `harness/skills/install/templates/settings-hook.json` and `.claude/settings.json`. `remove.mjs` undoes the new `.gitignore` lines. Done-when gains `cmp harness/hooks/goal-gate.mjs .claude/hooks/goal-gate.mjs`. |
+| M2 | The close path waits until nothing runs. It treats `unreachable` and `pending` alike, skipping them with reason `planning failed`. It writes `10-prd.md` with `renderPrd` itself whenever at least one card accepted. |
+| M3 | Called from the exhaustion path, not only a QA accept. It restores the whole set `settleFailure` made unreachable behind the goal gate (the goal gate and the report) to `pending`. |
+| M4 retire | `planning_pkgs` stays raw, with `retired: true` on the retired cards. So `phaseOfId`, the board, tickets and id allocation are unchanged. Only the PRD, stories, QA and shape-coverage readers skip retired cards (`livePlanningPkgs`). |
+| M4 resplit | A resplit `plan-integrate` is marked failed (`resplit`), not done, so shape never becomes ready. `areas:N+1` expands with `withShape:false`: a new `plan-integrate` supersedes the old one, and shape's deps are rewired to it. The card-opening guard becomes "no live card". |
+| M4 areas-critique | Cards open only after `areas-critique` accepts. A refusal is a failed critique: `retryAreas` treats a failed critique like a failed split and settles both when exhausted, which triggers M2. Routing keeps the critic's vendor@model away from the `areas` author (m3's rule). The human verdict is `sound`: false → re-split. A human `plan-integrate` refusal may carry `resplit: true` in its payload. |
+| M8 | A package ships if its accept is in the transitive dep closure of the latest non-superseded integrate, and that integrate is done. This covers repair and defect-fix reintegrates. |
+| m4 | When the S run completes: `git stash create` snapshots the working tree without touching it, and a worktree opened on that commit is the QA card's tree. Its defects go to `task.unresolved_defects`, since S has no packages to file fixes onto. The S report lists them. The report waits on the QA card. |
+| m10 | `planAuthorIdentity` returns an array. `reviewIndependence` and the audit caller are updated and tested. |
+| SetGoal | Golden files: `80-report.md` and `retro.json` under `teams/scripts/fixtures/golden/`. Expected hunks: the new report/retro lines only (checked by reading `git diff` of those two files). Added criteria: G5 ledger test, G6 matcher and gitignore tests in `test-lifecycle.mjs`, and a hook-copy `cmp`. |
