@@ -1,10 +1,8 @@
 ---
 name: log
 description: >-
-  Use when the user wants to follow what one teams ticket is actually doing via tm_log — a
-  STORY's driver log (E-xxxxxxxx/Pn) or an EPIC's event ledger (E-xxxxxxxx), as readable lines.
-  Triggers: "P2 지금 뭐 하고 있어", "로그 보여줘", "tail the log for E-xxx/P2", "what is this
-  story doing right now". Read-only, last N lines only, never the whole file.
+  Use when following what one teams ticket is doing right now (tm_log). Triggers: "P2 지금 뭐 하고 있어",
+  "로그 보여줘", "tail the log for E-xxx/P2", "what is this story doing".
 scenarios:
   - "Show me the last 30 lines of what E-a1b2c3d4/P2's driver is doing"
   - "Tail the EPIC's event log and show me only what's new since last time"

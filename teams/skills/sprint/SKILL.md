@@ -32,6 +32,13 @@ exists as its own tool or field — nothing here is new mechanism, only the orde
 
 ## Process
 
+0. **Brainstorm (optional) → `decisions`.** Before `tm_open`, while the user is here: read the
+   project and the backlog first, then ask one question at a time - only what the user alone can
+   answer (what they want, what to leave out, A or B), each with your recommendation. A backlog
+   whose items already state their acceptance needs one or two confirmations, not an interview.
+   Pass what was settled as `tm_open({decisions: [{question, chose, because?}]})`; every package
+   reads them as rules. If the user skips it, the engine brainstorms from the backlog itself (a
+   `brainstorm` node after size) and the report leads with what it decided on its own.
 1. **Sprint Planning → `tm_open`.** Collect the Sprint's backlog as `requests: [...]` (priority =
    array order, item 0 highest — a single-item Sprint still works, but then `request` alone is
    simpler and unchanged). Set `budget_usd` and/or `timebox_minutes` to the Sprint's own box —
@@ -43,13 +50,12 @@ exists as its own tool or field — nothing here is new mechanism, only the orde
    asked (`tm_inbox`'s `decided`), which the retro surfaces either way. If this Sprint continues
    work a prior one left unfinished, add `context_from: "<prior task_id or E-xxxxxxxx>"` — see
    step 5.
-   Decide PLAN here too: `roles.planning` is on by default and runs a full PLAN phase-Team
-   (investigate → draft → revise → gate) before shape. If every backlog item already states its
-   own acceptance criteria, pass `roles: {planning: false}` — portfolio-refresh-80ec931a spent
-   16.9 of 70 minutes and $3.39 there restating a backlog that arrived with criteria. Keep it on
-   when the backlog rests on a premise nobody has checked or one criterion applies unevenly across
-   items: that is what PLAN's investigate is for (the same run's PLAN corrected two wrong premises
-   and split one shared criterion list per item).
+   Decide PLAN here too: `roles.planning` defaults to `'auto'`. A backlog whose items already
+   state their acceptance (numbered items plus an `Acceptance for every item:` block, or
+   `requests[].acceptance` / `shared_acceptance`) runs light PLAN (investigate → template-fill →
+   gate); anything else runs full PLAN (investigate → draft → revise → gate). Pass `'light'` or
+   `true` to force either. `false` drops PLAN entirely — only when you have checked the premises
+   yourself, since investigate is what corrects wrong premises and uneven criteria.
 2. **Confirm the plan.** Read back `tm_status({task_id})`'s `team.opts` (budget_usd,
    timebox_minutes, roles) and, once shape has run, `tm_status`'s `shape` block (max_parallel_width,
    fully_serial, bloated) — the same signals `critique` itself judges the shape against. This is
@@ -103,8 +109,8 @@ Next backlog (carries into context_from):
 
 ## What Claude Does
 
-Opens the task with `requests`/`budget_usd`/`timebox_minutes`/`interactive` set from what the
-human actually said (never invents a budget or timebox nobody asked for); reads `tm_board`/
+Offers the brainstorm (step 0) and passes what was settled as `decisions`; opens the task with
+`requests`/`budget_usd`/`timebox_minutes`/`interactive` set from what the human actually said (never invents a budget or timebox nobody asked for); reads `tm_board`/
 `tm_status` for the daily check and names a budget warning or stop plainly when the fields say
 so; reads the report and `retro.json` at close, rather than reconstructing either from raw node
 state; on a follow-up Sprint, passes `context_from` instead of restating the prior task's retro

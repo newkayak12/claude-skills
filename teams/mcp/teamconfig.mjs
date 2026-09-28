@@ -12,7 +12,11 @@
 // setgoal subgoal's own field, as opposed to a user's tm_assign - parks a node in waiting_human
 // or is auto-decided past it, graph.mjs's applyHumanPin). `human_gates` is live as of 0.29.0
 // (graph.mjs's promoteHumanGates) - a list of judging stages a person must accept/reject
-// instead of a model. `human_scope` remains only design.
+// instead of a model. `human_scope` (leader/all) never shipped and is retired: when a person is
+// called is now decided by task.decisions (docs/plans/2026-09-28-teams-light-plan.md §6) - the
+// session brainstorm before tm_open, else the engine's own `brainstorm` node (one ask when
+// interactive), and during execution only a blocking question, once, at EPIC level. A team.json
+// that still names it is accepted with a note, never an error (DEPRECATED below).
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -64,6 +68,10 @@ export const TEAM_DEFAULTS = Object.freeze({
   // task.ask_timeout (createTask copies it from the resolved layer), never from raw args; see
   // taskmanager.mjs's expireAsks for who checks the deadline.
   ask_timeout: null,
+  // §6.5-3: whether the engine holds its own brainstorm (a `brainstorm` node after size, ahead of
+  // PLAN/shape) when tm_open got no decisions[] from a session brainstorm. false skips it; a
+  // decisions[] argument skips it regardless.
+  brainstorm: true,
   // gate:human (0.29.0): which judging stages must stop and have a person accept/reject
   // instead of a model - 'critique', 'gate', 'gate:goal' (or, at the manager layer, 'accept',
   // 'integrate'). Empty means no gate is configured; naming a non-judging stage (e.g.
@@ -200,6 +208,7 @@ const CHECK = {
       && (typeof b === 'boolean' || (k === 'planning' && PLANNING_MODES.includes(b)))),
   interactive: (v) => typeof v === 'boolean',
   ask_timeout: (v) => v === null || (Number.isInteger(v) && v > 0),
+  brainstorm: (v) => typeof v === 'boolean',
   human_gates: (v) => Array.isArray(v) && v.every((s) => typeof s === 'string' && s.length > 0),
   goal_threshold: (v) => Number.isInteger(v) && v >= 0 && v <= 100,
   max_retries: (v) => Number.isInteger(v) && v >= 0,
@@ -241,8 +250,15 @@ export function readTeamConfig(cwd) {
   }
 }
 
+// Keys a team.json may still carry from an older design, accepted and ignored with a note that
+// says why rather than the generic "unknown key".
+const DEPRECATED = {
+  human_scope: 'no-op: replaced by task.decisions (session brainstorm / brainstorm node / EPIC-level blocking questions)',
+};
+
 function applyLayer(opts, sources, notes, layer, name) {
   for (const [k, v] of Object.entries(layer || {})) {
+    if (k in DEPRECATED) { notes.push(`${name}: "${k}" is deprecated, ${DEPRECATED[k]}`); continue; }
     if (!(k in CHECK)) { notes.push(`${name}: unknown key "${k}" ignored`); continue; }
     if (!CHECK[k](v)) { notes.push(`${name}: "${k}" has the wrong type or range, ignored`); continue; }
     opts[k] = k === 'roles' ? { ...opts.roles, ...v } : (Array.isArray(v) ? v.slice() : v);

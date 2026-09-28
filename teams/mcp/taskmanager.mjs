@@ -81,6 +81,8 @@ import {
   peekHumanActions,
   currentAttempt,
   openAsk,
+  appendDecisions,
+  planDecisions,
   promoteHumanGates,
   autoPassHumanGateResult,
   humanGateResultFromPayload,
@@ -96,7 +98,7 @@ import { applyMerge, foldRecords } from './reducers.mjs';
 // Light PLAN mode (docs/plans/2026-09-28-teams-light-plan.md): the structural "is acceptance
 // already declared?" check and the roles.planning resolution it drives. Re-exported so a caller
 // that already imports this module can reach the one detection function by name.
-import { detectDeclaredAcceptance, resolvePlanningMode, renderAcceptanceTemplate } from './acceptance.mjs';
+import { detectDeclaredAcceptance, hasDeclaredAcceptance, resolvePlanningMode, renderAcceptanceTemplate } from './acceptance.mjs';
 export { hasDeclaredAcceptance } from './acceptance.mjs';
 
 const SERVER = { name: 'task-manager', version: '0.7.0' };
@@ -353,6 +355,13 @@ accept:true with an empty checks[] is refused by the engine - a judgement with n
 ${QUESTIONS_CONTRACT}`,
   report: `Return JSON: {"stage_ok": true, "handoff": "<the final report>", "evidence": "..."}
 Synthesize from the node results below only: which packages ran, what each delivered, what the integration showed, what the gate said. State plainly what was not done and why.`,
+  // §6.5-3 (docs/plans/2026-09-28-teams-light-plan.md): the brainstorm nobody held with the user
+  // before tm_open, held by the engine from the request instead. Opened only when tm_open got no
+  // decisions[] - its result becomes task.decisions (finish's foldBrainstorm), which PLAN and
+  // every package then read as settled.
+  brainstorm: `Return JSON: {"stage_ok": true, "intent": "<the request restated in one sentence>", "scope": {"in": ["..."], "out": ["..."]}, "approaches": [{"approach": "...", "tradeoff": "..."}], "chose": "<the approach you pick>", "because": "<why that one>", "assumptions": ["<what you had to assume because the request does not say>"], "questions": [{"question": "...", "options": [{"option": "...", "consequence": "..."}], "default": "<what you decide if nobody answers - required>", "why": "<why only the requester can answer this>"}], "handoff": "<one paragraph the planner most needs>", "evidence": "<what you read in the project and what it showed>"}
+Nobody held a brainstorm with the requester before this task opened, so you hold it for them, from the request and the project alone. Read the project first (read-only) so you never ask what the tree already answers. Then settle, in one pass: what the request is for (intent), what is in and what is out (scope), two or three real approaches with their trade-offs, the one you pick and why, and what you had to assume.
+"questions" is only for what the REQUESTER alone can answer and the request does not say - what they want, what to leave out, A or B. A fact the project or a source can settle is not a question: it is research, and PLAN's investigate does it. Every question carries two to four options, your recommended one first, and a "default" - nobody may be there to answer. An interactive task puts them to the requester on one card; otherwise your defaults stand. Either way, everything you return here is written down as decided for the whole task and every package reads it as a rule, so choose conservatively and say what you assumed.`,
   // A card the manager graph parks for a human the moment a `questions[]`-bearing stage
   // completes (openAsk, generalized in graph.mjs - D2 slice 3). It never dispatches to a
   // fresh agent - the same reason `ask` is not in MANAGER_CONVENTION_STAGES above - this entry
@@ -647,7 +656,92 @@ function createTask(a) {
     task.nodes.push(node('shape', 'shape', ['accept:PLAN:1']));
     task.nodes.push(node('critique', 'critique', ['shape']));
   }
+  openBrainstorm(task, a, T);
   return saveRun(task);
+}
+
+// §6.5 (docs/plans/2026-09-28-teams-light-plan.md): where the person comes in first is not
+// PLAN's ask - PLAN runs in a detached daemon that cannot know whether anyone is there - but the
+// entry skill's brainstorm with the user, just before it calls tm_open. What they settled
+// arrives as tm_open({decisions}) and becomes the first entries of task.decisions. When they
+// skipped it (no decisions[] at all), the engine holds the brainstorm itself: a `brainstorm`
+// judging node right after size, ahead of whatever size fed (PLAN, or shape with planning off).
+// Rewired by dep rather than by building a second node list, so it sits in front of whichever
+// chain createTask above built. A size-S task skips it with every other manager node
+// (delegateIfSmall) - its one run gets task.decisions directly (openSRun).
+// `brainstorm: false` (team.json or tm_open) turns the node off; decisions[] still apply.
+const BRAINSTORM_LIGHT = `LIGHT mode: the request already declares its backlog and acceptance criteria. Do not re-plan it - restate "intent" and "scope" only, return "approaches": [] and leave "chose"/"because" empty, list only assumptions the criteria leave open, and ask at most 2 questions (only what the criteria contradict or leave to the requester).`;
+
+function openBrainstorm(task, a, T) {
+  task.decisions = [];
+  const given = Array.isArray(a.decisions);
+  task.session_brainstorm = given;
+  if (given) appendDecisions(task.decisions, a.decisions, { owner: 'requester', decided_in: 'session', source: 'brainstorm' });
+  if (given || T.brainstorm === false) return;
+  for (const x of task.nodes) {
+    if (x.node_id !== 'size' && x.deps.includes('size')) x.deps = x.deps.map((d) => (d === 'size' ? 'brainstorm' : d));
+  }
+  const b = node('brainstorm', 'brainstorm', ['size']);
+  // §6.5-4: a backlog that already states its acceptance gets an intent/scope-only brainstorm -
+  // the same detector light PLAN uses, run on the raw arguments so it holds with planning off too.
+  if (task.declared_acceptance || hasDeclaredAcceptance(a)) b.brainstorm_mode = 'light';
+  task.nodes.splice(1, 0, b);
+}
+
+// The brainstorm node's result, written into task.decisions (§6.5-3). Everything the engine
+// settled on its own is source 'self-brainstorm'; the questions go to one ask card when the task
+// is interactive (finish's own questions[] block opens it - `to` is flattened here so the card is
+// ONE card, not one per owner) and are otherwise decided by their defaults right here.
+function foldBrainstorm(task, n, result) {
+  const self = { owner: 'engine', decided_in: 'brainstorm', source: 'self-brainstorm' };
+  const list = task.decisions || (task.decisions = []);
+  const entries = [];
+  if (result.intent) entries.push({ question: 'What is this task for (intent)?', chose: String(result.intent) });
+  const scope = result.scope && typeof result.scope === 'object' ? result.scope : {};
+  if (Array.isArray(scope.in) && scope.in.length) entries.push({ question: 'What is in scope?', chose: scope.in.map(String).join('; ') });
+  if (Array.isArray(scope.out) && scope.out.length) entries.push({ question: 'What is out of scope?', chose: scope.out.map(String).join('; ') });
+  if (result.chose) entries.push({ question: 'Which approach?', chose: String(result.chose), because: result.because || '' });
+  (Array.isArray(result.assumptions) ? result.assumptions : []).forEach((x, i) => entries.push({ question: `Assumption ${i + 1}`, chose: String(x) }));
+  appendDecisions(list, entries, self);
+  const qs = (Array.isArray(result.questions) ? result.questions : []).filter((q) => q && q.question);
+  if (!qs.length) return;
+  if (task.interactive) n.result = { ...n.result, questions: qs.map((q) => ({ ...q, to: 'requester' })) };
+  else appendDecisions(list, qs, self);
+}
+
+// §6.2-4: blocking questions a package child run could not decide (graph.mjs's
+// routeExecutionQuestions) stand ONCE for the whole EPIC, on a task-level card - never one card
+// per package. Exact-question dedup against every earlier EPIC card and task.decisions; a
+// question already on a card still waiting makes this package's accept wait on that same card.
+// Not interactive: nobody would ever answer the card, so the question is recorded on
+// task.unasked (the report's "decided for you" list) and nothing parks - the same rule
+// applyHumanPin and promoteHumanGates already follow for a headless run.
+function escalateBlocking(task, n, questions) {
+  const decided = new Set((task.decisions || []).map((d) => d.question));
+  const cards = task.nodes.filter((x) => x.stage === 'ask' && x.ask_owner === 'EPIC');
+  const onCard = new Map();
+  for (const c of cards) for (const q of c.questions || []) onCard.set(q.question || q.unknown, c);
+  const accept = task.nodes.find((x) => x.stage === 'accept' && x.subgoal_id === n.subgoal_id && (x.attempt || 1) === (n.attempt || 1));
+  const fresh = [];
+  for (const q of questions) {
+    if (!q || !q.question || decided.has(q.question)) continue;
+    const c = onCard.get(q.question);
+    if (c) {
+      if (c.state === 'waiting_human' && accept && !accept.deps.includes(c.node_id) && !(accept.after || []).includes(c.node_id)) {
+        accept.after = [...(accept.after || []), c.node_id];
+      }
+      continue;
+    }
+    if (!fresh.some((f) => f.question === q.question)) fresh.push({ ...q, raised_by: [String(n.subgoal_id)] });
+  }
+  if (!fresh.length) return [];
+  if (!task.interactive) {
+    task.unasked = [...(task.unasked || []), ...fresh.map((q) => ({ ...q, node_id: n.node_id, decided: q.default !== undefined ? q.default : null }))];
+    return [];
+  }
+  const ids = openAsk(task, { ...n, subgoal_id: undefined }, fresh.map((q) => ({ ...q, to: 'requester' })), { owner: 'EPIC', attempt: cards.length + 1, blocking: true });
+  for (const id of ids) writeManagerBriefing(task, getNode(task, id));
+  return ids;
 }
 
 export function mustFindTask(a) {
@@ -2111,6 +2205,15 @@ function childContext(task, pkg) {
   lines.push('');
   lines.push('Package acceptance - what the manager will judge this run against:');
   lines.push(bullets(pkg.acceptance));
+  // §6.2-2 (docs/plans/2026-09-28-teams-light-plan.md): what the task already decided, in the
+  // session, in the engine's own brainstorm, or in PLAN. Same tone 0.28.0's ask answers reached
+  // a draft with - a rule to write, not a question to reopen.
+  if ((task.decisions || []).length) {
+    lines.push('');
+    lines.push('Decided already — settled, write as rules, not open questions:');
+    lines.push(bullets(task.decisions.map((d) => `${d.question} -> ${d.chose}${d.because ? ` (${d.because})` : ''} [${d.decided_in || 'task'}, ${d.source || 'decided'}]`)));
+    if (pkg.phase !== 'planning') lines.push('If this package finds that one of these cannot hold, say so with "contradicts_decision" on the question you raise - never by quietly building the opposite.');
+  }
   const notes = critiqueNotesFor(task, pkg.id);
   if (notes.length) {
     lines.push('');
@@ -2741,6 +2844,15 @@ export function openChild(task, n) {
     // reviewIndependence): only openAudit's package ever sets this field, so every other package
     // threads a plain null through, unchanged.
     external_author: pkg.author_identity || null,
+    // §6.2-2: a snapshot of what the task already decided, for openAsk's filter and every
+    // stage's prior_decisions. §6.2-3: every package but PLAN is execution phase - it decides
+    // new questions by default and only escalates a blocking one.
+    // Only when a decision point ran BEFORE execution (§6.5's "when a person is called": a
+    // session brainstorm, the brainstorm node, or PLAN) - with none of them, a package is still
+    // the first place anyone could be asked, and it keeps asking exactly as before.
+    task_decisions: task.decisions || [],
+    execution_phase: pkg.phase !== 'planning'
+      && (!!task.planning_pkg || task.session_brainstorm === true || task.nodes.some((x) => x.stage === 'brainstorm')),
   });
   n.state = 'running';
   n.started_at = Date.now();
@@ -2930,6 +3042,11 @@ export function foldChild(task, n) {
     ...(defectsFound.length ? { defects: defectsFound } : {}),
     ...(upstreamDefectsFound.length ? { upstream_defects: upstreamDefectsFound } : {}),
     ...(setFindings ? { set_findings: setFindings } : {}),
+    // §6.2-3/4: what an execution-phase package could not decide by default - finish() parks it
+    // once at EPIC level (escalateBlocking).
+    ...(Array.isArray(child.blocking_questions) && child.blocking_questions.length ? { blocking_questions: child.blocking_questions } : {}),
+    // §6.2-1: what PLAN settled, carried to the accept:PLAN that writes it into task.decisions.
+    ...(pkg && pkg.phase === 'planning' ? { plan_decisions: planDecisions(child) } : {}),
     report: report ? String(report.result.handoff || '') : (chainAuthored ? String(chainAuthored.result.handoff || '') : ''),
   };
   if (cs.state === 'running') {
@@ -3517,6 +3634,23 @@ export function composeTaskPrompt(task, n) {
     if (n.stage === 'critique') L.push(...shapeDiagramLines(task));
   }
   if (n.stage === 'integrate') L.push(...shapeDiagramLines(task));
+  // task.decisions (§6.2/§6.5): shape splits the work and accept judges it, so both must hold
+  // the packages to what the task already settled.
+  if ((task.decisions || []).length && ['shape', 'critique', 'accept'].includes(n.stage)) {
+    L.push('');
+    L.push(`## Decided already`);
+    L.push(`Settled for this whole task - treat each as a rule, not an open question:`);
+    L.push(bullets(task.decisions.map((d) => `${d.question} -> ${d.chose}${d.because ? ` (${d.because})` : ''} [${d.decided_in || 'task'}, ${d.source || 'decided'}]`)));
+  }
+  // §6.5-3: the requester skipped the brainstorm, so the engine guessed - the report leads with
+  // what it guessed, so a person can overturn any of it at a glance.
+  const selfDecided = (task.decisions || []).filter((d) => d.source === 'self-brainstorm');
+  if (n.stage === 'report' && selfDecided.length) {
+    L.push('');
+    L.push(`## Decided by the engine itself`);
+    L.push(`Nobody brainstormed this request with the requester, so the engine settled these from the request alone. Open the report with this list, under the heading "Decided by the engine itself", before anything else:`);
+    L.push(bullets(selfDecided.map((d) => `${d.question} -> ${d.chose}${d.because ? ` (${d.because})` : ''}`)));
+  }
   // The project's own rules reach the manager's judging stages too: shape splits the work and
   // accept/gate judge the result, and until now neither could see a project rule at all -
   // conventions.mjs was wired into the child graph's stages only (2026-09-22).
@@ -3542,6 +3676,7 @@ export function composeTaskPrompt(task, n) {
   L.push('');
   L.push(`## Required output`);
   L.push(n.node_id.startsWith('gate:goal') ? CONTRACT['gate:goal'] : CONTRACT[n.stage]);
+  if (n.stage === 'brainstorm' && n.brainstorm_mode === 'light') L.push(BRAINSTORM_LIGHT);
   if (n.stage === 'accept') {
     const judged = packageOf(task, n.subgoal_id);
     if (judged && ACCEPT_EXTRA[judged.phase]) L.push(ACCEPT_EXTRA[judged.phase]);
@@ -3836,6 +3971,36 @@ export function finish(task, n, result) {
       }
     }
   }
+  // task.decisions (docs/plans/2026-09-28-teams-light-plan.md §6.2/§6.5). Before the questions[]
+  // block below: foldBrainstorm decides what reaches it.
+  // The brainstorm is advice the task can proceed without, not a gate: once it has no rejudge left
+  // (autoRejudge), a failed one is closed as done with nothing decided, rather than leaving
+  // PLAN/shape unreachable behind it.
+  if (n.stage === 'brainstorm' && n.state === 'failed'
+    && !(n.result.judge_failed === true && (n.judge_attempts || 0) < JUDGE_ATTEMPTS_MAX)) {
+    n.state = 'done';
+    n.result = { ...n.result, stage_ok: true, brainstorm_failed: n.result.reason || 'brainstorm returned stage_ok:false', questions: [] };
+  }
+  else if (n.stage === 'brainstorm' && n.state === 'done') foldBrainstorm(task, n, n.result);
+  // §6.2-1: PLAN's own decisions, written once, at the accept that ends PLAN - PLAN is never
+  // reopened after it, so no later package can see a different list. foldChild read them off the
+  // PLAN child run (planDecisions) onto this attempt's dispatch result.
+  if (n.stage === 'accept' && n.subgoal_id === 'PLAN' && n.state === 'done' && !task.plan_decisions_folded) {
+    const d = task.nodes.find((x) => x.stage === 'dispatch' && x.subgoal_id === 'PLAN' && (x.attempt || 1) === (n.attempt || 1));
+    appendDecisions(task.decisions || (task.decisions = []), (d && d.result && d.result.plan_decisions) || []);
+    task.plan_decisions_folded = true;
+  }
+  if (n.stage === 'dispatch' && n.state === 'done' && Array.isArray(result.blocking_questions) && result.blocking_questions.length) {
+    escalateBlocking(task, n, result.blocking_questions);
+  }
+  // A person's answer on any task-level card is the task's answer from here on - every package
+  // opened after this reads it as settled. A brainstorm question they left unanswered keeps the
+  // engine's default.
+  if (n.stage === 'ask' && n.state === 'done' && Array.isArray(n.result.decisions)) {
+    const list = task.decisions || (task.decisions = []);
+    appendDecisions(list, n.result.decisions, { owner: 'requester', decided_in: n.ask_owner === 'EPIC' ? 'EPIC' : (n.ask_owner || 'task'), source: 'ask' });
+    if (n.ask_owner === 'brainstorm') appendDecisions(list, n.questions || [], { owner: 'engine', decided_in: 'brainstorm', source: 'self-brainstorm' });
+  }
   // D2 slice 3 (0.29.0): the manager graph's own judging/deciding stages (shape, critique,
   // accept, integrate, gate, gate:goal) get the same `questions[]` treatment the child-run
   // graph's stages do (broker.mjs's finishNode, its own comment explains the contract shape) -
@@ -3942,6 +4107,8 @@ const TOOLS = [
         shared_acceptance: { type: 'array', items: { type: 'string' }, description: 'Acceptance criteria that apply to EVERY backlog item (or to the single request) - the structured form of an "Acceptance for every item:" block. Written into the request text and, when non-empty, makes roles.planning "auto" pick the light PLAN chain (docs/plans/2026-09-28-teams-light-plan.md). roles.planning itself (team.json or a roles argument) takes true (full chain), false (no PLAN), "light" (force light) or "auto" (default: light when acceptance is declared - structured fields, or a numbered backlog with an "Acceptance:" heading and bullets - else full; never off).' },
         context_from: { type: 'string', description: 'A prior task_id (or its ticket key). Its retro.json - the Retrospective and Next backlog a finished task\'s report stage writes - is read and folded into this task\'s own context: what failed and why, retries, defects left, and any unaccepted packages or unresolved questions the prior task ran out of budget/timebox to reach. The prior task\'s own Next backlog is NOT auto-added to `requests` - naming it here is a decision this task\'s own request should still make in its own words.' },
         initiative: { type: 'string', description: 'default null, also settable in .claude/team.json. An optional label ABOVE this EPIC - several EPICs toward one outcome (a slug-normalized "I-<slug>" key: lowercased, non-alphanumeric runs collapsed to one "-"). Display/grouping only: tm_board groups every EPIC by it once any task has one, and tm_ticket("I-<slug>") lists that group\'s EPICs with state and cost. Never read by scheduling or execution, and never nests a task inside another - EPICs under the same initiative are still independent tasks.' },
+        decisions: { type: 'array', items: { type: 'object', properties: { question: { type: 'string' }, chose: { type: 'string' }, because: { type: 'string' } }, required: ['question', 'chose'] }, description: 'What the entry skill settled with the user in its brainstorm before calling tm_open: [{question, chose, because?}]. Written as the first entries of task.decisions (source "brainstorm", decided_in "session"); PLAN and every package read them as settled rules, and an ask about the same question is never opened again. Passing it (even []) skips the engine\'s own brainstorm node.' },
+        brainstorm: { type: 'boolean', description: 'default true, also settable in .claude/team.json. With no decisions[], the engine holds the brainstorm itself: a `brainstorm` node after size, ahead of PLAN/shape, restates intent/scope/approach/assumptions from the request and asks the requester one card of questions when interactive (defaults otherwise). Its result becomes task.decisions (source "self-brainstorm", or "ask" where a person chose) and the report leads with what the engine decided on its own. false skips the node.' },
       },
       required: ['request', 'cwd'],
     },
@@ -3970,6 +4137,8 @@ const TOOLS = [
         shared_acceptance: { type: 'array', items: { type: 'string' }, description: 'Same meaning as tm_open({shared_acceptance}).' },
         context_from: { type: 'string', description: 'Same meaning as tm_open({context_from}).' },
         initiative: { type: 'string', description: 'Same meaning as tm_open({initiative}).' },
+        decisions: { type: 'array', items: { type: 'object' }, description: 'Same meaning as tm_open({decisions}).' },
+        brainstorm: { type: 'boolean', description: 'Same meaning as tm_open({brainstorm}).' },
       },
       required: ['request', 'cwd'],
     },
@@ -4824,6 +4993,9 @@ export function openSRun(task) {
     isolated: task.isolated === true,
     flow: FLOWS[flow] ? flow : 'auto',
     mixed: task.mixed !== false,
+    // tm_open({decisions}) reaches a size-S task's one run too (§6.5-2); it is its own PLAN, so
+    // it is not execution phase.
+    task_decisions: task.decisions || [],
   });
   task.s_run = { cwd: task.cwd, run_id: child.run_id };
   excludeMarkers(task.cwd);

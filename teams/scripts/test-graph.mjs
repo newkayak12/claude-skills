@@ -22,6 +22,7 @@ import {
   promoteHumanGates, autoPassHumanGateResult, humanGateResultFromPayload,
   humanGateIdentity, humanGateVerdictField,
   normalizeSpec, defaultKind, DOCUMENT_ONLY_KINDS,
+  routeExecutionQuestions, planDecisions, settledDecisions,
 } from '../mcp/graph.mjs';
 
 test('planning kind: chain, no reasoning stage, and skills by stage', () => {
@@ -1146,4 +1147,44 @@ test('code-sprint-P3: validateSpec holds a run to its max_subgoals', () => {
   assert.ok(validateSpec(spec, { max_subgoals: 1 }).some((p) => /2 subgoals; this run allows at most 1/.test(p)));
   assert.ok(!validateSpec(spec, {}).some((p) => /allows at most/.test(p)));
   assert.ok(!validateSpec({ ...spec, subgoals: [sg('U1')] }, { max_subgoals: 1 }).some((p) => /allows at most/.test(p)));
+});
+
+// ---------- task.decisions (docs/plans/2026-09-28-teams-light-plan.md §6) ----------
+
+test('§6.2-3: an execution-phase run decides a question with a safe default, and keeps as blocking only a contradiction or a question with no safe default', () => {
+  const run = { ...askRun(), execution_phase: true, task_decisions: [{ question: twoOptions[0].question, chose: '2 per sale phase', decided_in: 'PLAN', source: 'ask' }] };
+  const n = run.nodes[0];
+  const out = routeExecutionQuestions(run, n, [
+    ...twoOptions, // settled by task_decisions: dropped, not asked and not re-decided
+    { question: 'Log format?', options: [{ option: 'json' }, { option: 'text' }] },
+    { question: 'Retention?', default: '30 days' },
+    { question: 'Which region hosts it?' }, // (b) nothing to default to
+    { question: 'Presale enforces 4 - does 2 still hold?', options: [{ option: 'keep 2' }, { option: 'raise' }], default: 'keep 2', contradicts_decision: twoOptions[0].question }, // (a)
+  ]);
+  assert.deepEqual(out.decided.map((d) => [d.question, d.decided]), [['Log format?', null], ['Retention?', '30 days']]);
+  assert.deepEqual(out.blocking.map((b) => [b.question, b.blocking]), [
+    ['Which region hosts it?', 'no_safe_default'],
+    ['Presale enforces 4 - does 2 still hold?', 'contradicts_decision'],
+  ]);
+  assert.equal(run.blocking_questions.length, 2);
+  routeExecutionQuestions(run, n, [{ question: 'Which region hosts it?' }]);
+  assert.equal(run.blocking_questions.length, 2, 'the same blocking question is kept once per run');
+  assert.ok(!run.nodes.some((x) => x.stage === 'ask'), 'nothing is asked on the run itself');
+});
+
+test('§6.2-1: planDecisions folds a PLAN run\'s ask answers (every owner) and its defaults into one task.decisions list', () => {
+  const run = askRun();
+  openAsk(run, run.nodes[0], twoOptions);
+  run.nodes.find((x) => x.node_id === 'ask:U1:1').result = { decisions: [{ question: twoOptions[0].question, chose: '2 per sale phase', because: 'legal' }] };
+  run.unasked = [{ subgoal_id: 'U2', question: 'Refund window?', owner: 'Ops', options: [{ option: '7 days' }, { option: '14 days' }] }];
+  assert.deepEqual(planDecisions(run), [
+    { question: twoOptions[0].question, chose: '2 per sale phase', because: 'legal', owner: 'U1', decided_in: 'PLAN', source: 'ask' },
+    { question: 'Refund window?', chose: '7 days', owner: 'Ops', decided_in: 'PLAN', source: 'default' },
+  ]);
+  // settledDecisions is what openAsk and nodeBriefing now read: the run's own answers, then the task's.
+  run.task_decisions = [{ question: 'Session scope?', chose: 'MVP', decided_in: 'session', source: 'brainstorm' }];
+  assert.deepEqual(settledDecisions(run).map((d) => [d.question, d.decided_for]), [
+    [twoOptions[0].question, 'U1'], ['Session scope?', 'task/session (brainstorm)'],
+  ]);
+  assert.deepEqual(openAsk(run, { ...run.nodes[0], attempt: 2 }, [{ question: 'Session scope?', options: ['MVP', 'full'] }]), [], 'a task decision is never asked again');
 });
