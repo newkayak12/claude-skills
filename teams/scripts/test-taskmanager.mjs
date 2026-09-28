@@ -6022,3 +6022,26 @@ test('shape\'s package map is drawn beside the docs and critique reads its seams
     });
   }
 });
+
+test('portfolio-consolidate: stories are read from the PRD when the goal gate returns none', async () => {
+  const { prdStories } = await import('../mcp/taskmanager.mjs');
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'prd-'));
+  try {
+    writeFileSync(join(dir, 'PRD.md'), [
+      '# PRD', '## Problem', 'x', '## User stories', '',
+      '### US-1 — `fit`: one skill', '**Description.** d', '**Rules**', '- a rule, not acceptance',
+      '**Acceptance**', '- AC1.1 exists', '- AC1.2 runs', '',
+      '- **US-2**: bullet story', '  - only bullet', '## Out of scope', '- US-9 is not a story here',
+    ].join('\n'));
+    writeFileSync(join(dir, 'PRD-findings.md'), '## User stories\n### US-7 — findings are not the PRD\n');
+    const s = prdStories(dir, ['PRD.md', 'PRD-findings.md', 'src/a.js']);
+    assert.deepEqual(s.map((x) => x.id), ['US-1', 'US-2']);
+    assert.equal(s[0].title, '`fit`: one skill');
+    assert.deepEqual(s[0].acceptance, ['AC1.1 exists', 'AC1.2 runs']);
+    assert.deepEqual(s[1].acceptance, ['only bullet']);
+    assert.deepEqual(prdStories(dir, []), []);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
