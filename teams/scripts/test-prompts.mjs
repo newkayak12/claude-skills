@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { composePrompt, HANDOFF_CAP, DEGENERATE_SPEC_DIAGNOSIS, CONTRACT } from '../mcp/prompts.mjs';
+import { composePrompt, HANDOFF_CAP, DEGENERATE_SPEC_DIAGNOSIS, CONTRACT, EXERCISE_RULE } from '../mcp/prompts.mjs';
 import { loadConventions, conventionsBlock, CONVENTIONS_CAP } from '../mcp/conventions.mjs';
 import { nodeBriefing } from '../mcp/graph.mjs';
 
@@ -613,4 +613,20 @@ test('slack-list: a result that contradicts the request or regresses is a gap at
 
 test('slack-list: the subgoal gate reads the comments the change wrote against its own evidence', () => {
   assert.match(CONTRACT.gate, /a cause or a behaviour the code, or this run's own evidence, contradicts is a gap/);
+});
+
+test('portfolio-refresh: model instructions are run, not grepped - setgoal requires it, critique blocks without it', () => {
+  assert.match(EXERCISE_RULE, /it is code, not a document/);
+  assert.match(EXERCISE_RULE, /pre-change version run on the same input/);
+  assert.ok(CONTRACT.setgoal.includes(EXERCISE_RULE));
+  assert.match(CONTRACT.critique, /model instructions \(a skill, a prompt\) whose acceptance never runs them/);
+});
+
+test('portfolio-refresh: the manager shape, critique, accept and QA carry the same rule', async () => {
+  const tm = await import('../mcp/taskmanager.mjs');
+  const src = (await import('node:fs')).readFileSync(new URL('../mcp/taskmanager.mjs', import.meta.url), 'utf8');
+  assert.ok(tm.CONTRACT.shape.includes(EXERCISE_RULE));
+  assert.match(tm.CONTRACT.critique, /no acceptance item that runs them/);
+  assert.match(tm.CONTRACT.accept, /a grep that the words are there is absent evidence for it/);
+  assert.match(src, /Reading the file is a review, not QA\./);
 });
