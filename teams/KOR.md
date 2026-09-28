@@ -49,6 +49,7 @@ git 워크트리에 대해 **명령을 실행해** 검증합니다. 코드엔 �
 설계와 단계 목록: [`docs/plans/2026-09-11-teams-taskmanager.md`](../docs/plans/2026-09-11-teams-taskmanager.md).
 
 ## 상태
+- v0.35.4 — **shape가 그린 패키지 맵은 버리지 않고 고친다**: 두 런 연속으로 shape의 맵이 버려지고 deps만으로 만든 자동 맵으로 대체됐습니다. portfolio-refresh는 비회원 노드를 가로지르는 그룹 박스 때문에, portfolio-consolidate는 문장 길이의 연결선 라벨 네 개 때문이었습니다. 이제 긴 라벨은 48자로 자르고 전체 문장은 hover 노트로 남기며, 비회원을 삼키는 그룹은 뺍니다. 그 밖에 checker가 거부하는 것은 여전히 자동 맵으로 대체합니다. 테스트 1개 추가.
 - v0.35.3 — **검증에 걸린 spec은 스스로 다시 쓴다** (portfolio-consolidate PLAN:2): setgoal이 planning 런에 `document` 서브골 하나를 썼고, 검증은 결함을 정확히 짚었습니다. 그러나 자동으로 새 spec을 여는 건 critique 반려뿐이었고, 반려된 setgoal은 하위 드라이버가 끝내 부르지 않은 `team_retry`를 기다렸습니다. 하위 런은 재시도 예산을 남긴 채 1/3에서 막혔고, 매니저는 planning 런을 세 번째로 돌렸습니다. 이제 `spec_problems`로 실패한 setgoal은 그 문제를 피드백으로 다음 spec 시도를 직접 엽니다. 테스트 1개 수정.
 - v0.35.2 — **스토리는 PRD에서 읽는다** (portfolio-consolidate): planning 하위 런이 `## User stories` 아래 스토리 4개(US-1..US-4, 각각 Acceptance 목록 포함)를 갖춘 PRD를 썼습니다. 그런데 goal gate가 통과시키면서 `user_stories[]`를 돌려주지 않았고, 매니저는 planning 런 전체를 버리고 한 번 더 돌렸습니다. 이제 gate가 스토리를 빠뜨리면 PRD 자체에서 읽습니다(헤딩이나 불릿의 `US-n`, acceptance는 그 아래 "Acceptance" 불릿). 스토리가 정말 없는 PRD만 거부합니다. 테스트 1개 추가.
 - v0.35.1 — **JSON이 깨진 응답은 한 번 다시 시도** (portfolio-refresh QA): QA 하위 런의 plan이 완성된 계획을 쓰고 마지막 문자열 뒤에 `]`를 하나 더 붙였습니다. 어댑터가 exit 1로 끝나 하위 런이 0/3에서 막혔고, 매니저가 QA 패키지 전체를 다시 열었습니다. 그 재실행 비용이 스프린트를 예산 $25 밖으로 밀었습니다. 이제 응답은 완전한데 JSON만 파싱되지 않으면 같은 노드를 한 번 다시 시도하고, 두 번째도 깨지면 이전처럼 실패입니다. 테스트 1개 추가.
