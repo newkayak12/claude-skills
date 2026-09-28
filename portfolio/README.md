@@ -296,7 +296,7 @@ problems re-attempted, logistics settled. Topic sequencing and practice volume p
 
 ### `mock-interview`
 
-A live mock interview grounded in your actual portfolio, in one of four personas. Question types:
+A live mock interview grounded in your actual portfolio, in one of four personas — picked from the role or company you name, and the first question comes in the same turn. Question types:
 anchored (straight from your portfolio), gap probes (what's vague — "팀 전체가 한 건지 본인이
 주도한 건지"), depth drills (one level below what you wrote), failure/recovery, and hypothetical
 extension. One question at a time, no preview of the list, and it pushes back once on evasive
