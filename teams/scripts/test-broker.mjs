@@ -13,10 +13,11 @@ process.env.TEAMS_RUNS_DIR ??= 'off';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, utimesSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, existsSync, rmSync, utimesSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadRun, saveRun, getNode } from '../mcp/graph.mjs';
 
 const BROKER = join(dirname(fileURLToPath(import.meta.url)), '..', 'mcp', 'broker.mjs');
 const CODEX_ADAPTER = join(dirname(fileURLToPath(import.meta.url)), '..', 'adapters', 'codex-exec-adapter.mjs');
@@ -2913,7 +2914,11 @@ test('a policy can route reasoning and execution to different vendors in one run
 // must never see --verify, and review/gate must always see it, regardless of vendor.
 test('review and gate dispatch get --verify; every other reasoning stage does not', async () => {
   const cwd = repoWithFakeVendor();
-  const log = join(cwd, 'verify-args.jsonl');
+  // Outside cwd on purpose: the whole-tree write guard (verifySnapshot/verifyRestore) now
+  // watches every path git reports in cwd, and a log file dropped inside it by this test's
+  // OWN instrumentation would otherwise be indistinguishable from a real violation.
+  const logDir = mkdtempSync(join(tmpdir(), 'verify-log-'));
+  const log = join(logDir, 'verify-args.jsonl');
   process.env.FAKE_ARGS_LOG = log;
   // The broker server is one long-lived child process for this whole test (Client().init()
   // spawns it once); it inherits process.env at ITS OWN spawn time, so a FAKE_REPLY set AFTER
@@ -2978,6 +2983,7 @@ test('review and gate dispatch get --verify; every other reasoning stage does no
     delete process.env.FAKE_ARGS_LOG;
     delete process.env.FAKE_REPLY;
     rmSync(cwd, { recursive: true, force: true });
+    rmSync(logDir, { recursive: true, force: true });
   }
 });
 
@@ -3043,13 +3049,16 @@ test('a gate that uses --verify Bash to edit its own subgoal\'s declared file ha
   }
 });
 
-// The same mutation attempted by a SIBLING subgoal's own implement node, running concurrently
-// in the same shared (non-isolated) cwd, must never be blamed on this gate - verifySnapshot
-// scopes to the gate's OWN subgoal's declared files[], never the whole tree, for exactly this
-// reason (see that function's comment).
-test('a sibling subgoal writing its OWN declared file during a gate dispatch is not mistaken for the gate mutating anything', async () => {
+// The same mutation attempted against a SIBLING subgoal's declared file, with that sibling
+// NOT actually running - nothing else in this graph is touching sibling.txt at the same
+// time, so there is no legitimate concurrent writer to credit it to. The old scoping (a
+// subgoal's own files[] alone) missed this entirely: it never looked at sibling.txt because
+// U1's gate did not declare it. The whole-tree guard must catch it like any other file.
+test('a verify-mode node redirecting into a tracked file OUTSIDE its own subgoal is detected and restored when no sibling is concurrently running', async () => {
   const cwd = repoWithMutatingVendor();
   writeFileSync(join(cwd, 'sibling.txt'), 'sibling original\n');
+  spawnSync('git', ['add', '-A'], { cwd });
+  spawnSync('git', ['commit', '-qm', 'add sibling.txt'], { cwd });
   process.env.MUTATE_PATH = 'sibling.txt'; // U1's gate does not declare this file - U2 owns it
   const c = await new Client().init();
   try {
@@ -3071,13 +3080,167 @@ test('a sibling subgoal writing its OWN declared file during a gate dispatch is 
     await c.call('team_submit', { run_id, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [], handoff: 'i' }) });
     await c.call('team_submit', { run_id, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
 
+    // U2's own author node has not been dispatched at all here - it is still `pending`, not
+    // `running` - so nothing excuses a write to its file.
     const gateRun = await c.call('team_run', { run_id, cwd, node_id: 'gate:U1:1' });
-    assert.equal(gateRun.state, 'done', JSON.stringify(gateRun));
-    assert.equal(readFileSync(join(cwd, 'sibling.txt'), 'utf8'), 'sibling original\nMUTATED\n',
-      'U2 legitimately owns this file - the gate over U1 must not touch or revert it');
+    assert.equal(gateRun.state, 'failed', JSON.stringify(gateRun));
+    assert.match(gateRun.reason, /used its --verify Bash access to change sibling\.txt/);
+    assert.equal(readFileSync(join(cwd, 'sibling.txt'), 'utf8'), 'sibling original\n',
+      'no sibling was concurrently writing this file - the mutation is the gate\'s own and must be reverted');
   } finally {
     c.close();
     delete process.env.MUTATE_PATH;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// The identical write, but this time U2's own author node genuinely IS `running` for the
+// whole window the gate dispatches in - the concurrency computeWriteScope's own comment
+// describes (two sibling subgoals sharing one non-isolated cwd). Simulated by writing
+// `running` onto U2's node directly (loadRun/saveRun, the same file the broker itself reads
+// and writes) rather than by racing two real dispatches, so the timing is deterministic: the
+// state is in place before the gate is asked to run and is still in place when it finishes.
+test('the same write is not blamed on the gate when the sibling\'s own author node is genuinely running concurrently', async () => {
+  const cwd = repoWithMutatingVendor();
+  writeFileSync(join(cwd, 'sibling.txt'), 'sibling original\n');
+  spawnSync('git', ['add', '-A'], { cwd });
+  spawnSync('git', ['commit', '-qm', 'add sibling.txt'], { cwd });
+  process.env.MUTATE_PATH = 'sibling.txt';
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'mutator' });
+    await c.call('team_submit', { run_id, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('team_submit', {
+      run_id, cwd, node_id: 'setgoal',
+      payload: ok({
+        spec: {
+          goal: 'G', acceptance: ['A'],
+          subgoals: [
+            { id: 'U1', title: 'code', acceptance: ['a'], test: ['t'], files: ['out.txt'], deps: [] },
+            { id: 'U2', title: 'other', acceptance: ['b'], test: ['t'], files: ['sibling.txt'], deps: [] },
+          ],
+        },
+      }),
+    });
+    await c.call('team_submit', { run_id, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [], handoff: 'i' }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+
+    const run = loadRun(cwd, run_id);
+    const u2Implement = getNode(run, 'implement:U2:1');
+    assert.ok(u2Implement, 'U2 must have its own author node in the graph');
+    u2Implement.state = 'running';
+    u2Implement.started_at = Date.now();
+    saveRun(run);
+
+    const gateRun = await c.call('team_run', { run_id, cwd, node_id: 'gate:U1:1' });
+    assert.equal(gateRun.state, 'done', JSON.stringify(gateRun));
+    assert.equal(readFileSync(join(cwd, 'sibling.txt'), 'utf8'), 'sibling original\nMUTATED\n',
+      'U2 legitimately owns this file and its own node is genuinely running - the gate over U1 must not touch or revert it');
+  } finally {
+    c.close();
+    delete process.env.MUTATE_PATH;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// A brand-new untracked file - never declared by any subgoal, not the product of any
+// concurrent writer - is exactly the redirect/tee/`node -e` shape the --verify Bash denylist
+// cannot see: it is not a git/rm/mv verb at all. The old subgoal-scoped fingerprint never
+// looked at the whole tree, so a new file like this went entirely unnoticed.
+test('a verify-mode node writing a brand-new untracked file has it removed and its verdict voided', async () => {
+  const cwd = repoWithMutatingVendor();
+  process.env.MUTATE_PATH = 'exfil.txt'; // declared by no subgoal at all
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'mutator' });
+    await c.call('team_submit', { run_id, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('team_submit', {
+      run_id, cwd, node_id: 'setgoal',
+      payload: ok({
+        spec: {
+          goal: 'G', acceptance: ['A'],
+          subgoals: [{ id: 'U1', title: 'code', acceptance: ['a'], test: ['t'], files: ['out.txt'], deps: [] }],
+        },
+      }),
+    });
+    await c.call('team_submit', { run_id, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [], handoff: 'i' }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+
+    const gateRun = await c.call('team_run', { run_id, cwd, node_id: 'gate:U1:1' });
+    assert.equal(gateRun.state, 'failed', JSON.stringify(gateRun));
+    assert.match(gateRun.reason, /used its --verify Bash access to change exfil\.txt/);
+    assert.equal(existsSync(join(cwd, 'exfil.txt')), false, 'a file that did not exist before this node ran must be removed, not left behind');
+  } finally {
+    c.close();
+    delete process.env.MUTATE_PATH;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// The broker's own writes while a node runs - the ledger, probe caches, this very node's
+// prompt/result files - live under .teams_output/. A verify-mode node's dispatch always
+// touches that tree (the adapter's own --output/--events-output land there); none of it may
+// ever be attributed to the node under judgment.
+test('changes under .teams_output/ made during a verify-mode dispatch are never attributed to the node', async () => {
+  const cwd = repoWithMutatingVendor();
+  process.env.MUTATE_PATH = '.teams_output/side-channel.txt';
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'mutator' });
+    await c.call('team_submit', { run_id, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('team_submit', {
+      run_id, cwd, node_id: 'setgoal',
+      payload: ok({
+        spec: {
+          goal: 'G', acceptance: ['A'],
+          subgoals: [{ id: 'U1', title: 'code', acceptance: ['a'], test: ['t'], files: ['out.txt'], deps: [] }],
+        },
+      }),
+    });
+    await c.call('team_submit', { run_id, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [], handoff: 'i' }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+
+    const gateRun = await c.call('team_run', { run_id, cwd, node_id: 'gate:U1:1' });
+    assert.equal(gateRun.state, 'done', JSON.stringify(gateRun));
+    assert.equal(readFileSync(join(cwd, '.teams_output', 'side-channel.txt'), 'utf8'), 'MUTATED\n',
+      'the harness\'s own directory is out of scope for the write guard entirely');
+  } finally {
+    c.close();
+    delete process.env.MUTATE_PATH;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// A clean verify-mode dispatch - nothing redirected, no sibling, no harness noise - must
+// leave the tree exactly as it was and its own verdict untouched by the write guard.
+test('a clean verify-mode gate leaves the worktree untouched and its verdict stands', async () => {
+  const cwd = repoWithMutatingVendor();
+  // MUTATE_PATH intentionally unset: this adapter run writes nothing beyond its own report.
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'mutator' });
+    await c.call('team_submit', { run_id, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('team_submit', {
+      run_id, cwd, node_id: 'setgoal',
+      payload: ok({
+        spec: {
+          goal: 'G', acceptance: ['A'],
+          subgoals: [{ id: 'U1', title: 'code', acceptance: ['a'], test: ['t'], files: ['out.txt'], deps: [] }],
+        },
+      }),
+    });
+    await c.call('team_submit', { run_id, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [], handoff: 'i' }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+
+    const gateRun = await c.call('team_run', { run_id, cwd, node_id: 'gate:U1:1' });
+    assert.equal(gateRun.state, 'done', JSON.stringify(gateRun));
+    assert.equal(gateRun.reason, undefined, 'no write-guard reason should be attached to an untouched tree');
+  } finally {
+    c.close();
     rmSync(cwd, { recursive: true, force: true });
   }
 });
