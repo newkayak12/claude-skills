@@ -1,5 +1,5 @@
 ---
-name: voice-matcher
+name: write-like-me
 description: >-
   Use when text must sound like the user wrote it, not a generic human, given their own samples.
   Triggers on: "내 말투로", "내가 쓴 것처럼", "내 문체로", "write it in my voice", "sound like me".
@@ -28,7 +28,7 @@ compatibility:
 - ALWAYS finish with the `write:writer-verification` humanizer pass (`agents/humanizer.md`). The profile sets whose voice; the humanizer catches the generic-model gaps the profile didn't cover. A tell the samples themselves use is voice, not a finding — skip it.
 - Goal: someone who knows the user reads the output and doesn't notice anything.
 
-# Voice Matcher
+# Write Like Me
 
 ## Process
 

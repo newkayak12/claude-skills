@@ -25,7 +25,7 @@ run it alone, and a machine-readable spec when a `harness:harness` run is drivin
 | Write a technical blog post about something I built or fixed | `technical-blog-writer` |
 | Give a colleague feedback that lands instead of stinging | `sbi-writer` |
 | Review text, or draft a PR description / post that reads as human-written | `writer-verification` |
-| Rewrite text so it sounds like *me*, learned from my own samples | `voice-matcher` |
+| Rewrite text so it sounds like *me*, learned from my own samples | `write-like-me` |
 
 Knowledge-base, knowledge-graph, RAG corpus, and knowledge-query skills now live in the `knowledge`
 plugin.
@@ -200,7 +200,7 @@ that answers a `[why]` is re-read against the diff before the next round — eve
 Y" needs a `-` line that shows X — and a `[why]` fix quotes the reason the material gives or says
 "ask the author", never a cause the pass supplied.
 
-### `voice-matcher`
+### `write-like-me`
 
 `writer-verification` makes text read as *a* person wrote it; this makes it read as *you* wrote it.
 Give it 2–5 texts you wrote alone in the same genre (Slack, email, blog, PR, cover letter) and it
@@ -227,7 +227,7 @@ Every skill in this plugin lists MCP tools as optional or recommended, not requi
 | `technical-blog-writer` | think-tool | Fixing the core story and angle before drafting |
 | `sbi-writer` | think-tool | Ambiguous observation-vs-judgment cases |
 | `writer-verification` | think-tool, sequential-thinking, mcp-reasoner | Pass structuring; resolving conflicting findings; picking the summary lead |
-| `voice-matcher` | think-tool | Separating recurring habits from one-off noise in samples |
+| `write-like-me` | think-tool | Separating recurring habits from one-off noise in samples |
 
 Add the remote SSE endpoints in Claude settings → MCP Servers.
 
