@@ -54,7 +54,7 @@ Every pair below holds the same facts on both sides; what the Weak side lacks st
 
 **Specificity over generality**
 - Weak: "성능 개선"
-- Strong: "[확인 필요: 적용한 조치]로 p99 응답시간 [확인 필요: 개선 전/후 수치] 단축"
+- Strong: "[확인 필요: 적용한 조치]로 [확인 필요: 측정 지표와 개선 전/후 수치] 개선"
 
 **Ownership language**
 - Weak: "구현되었습니다", "팀에서 진행했습니다"
