@@ -1162,6 +1162,104 @@ test('a failed QA dispatch whose child recorded defects files them instead of bl
   }, { roles: { qa: true } });
 });
 
+// portfolio-refresh-80ec931a (2026-09-28): dispatch:QA:1 folded blocked on a malformed adapter
+// reply, the daemon reopened dispatch:QA:2, and that attempt was itself still running when the
+// box stopped - it ended blocked too, superseded mid-flight, and no accept:QA verdict ever
+// landed. closeStoppedToReport rewired gate:goal straight past accept:QA:2 onto integrate:1 so
+// the Sprint could still close (correct - a QA pass that never finishes must not wedge the task
+// forever), but nothing recorded that QA never reached a verdict: the real run's goal gate
+// accepted at 92% and the report read "complete" with no QA sign-off, discoverable only by a
+// judge noticing a failed dispatch buried in "every node in this task". These two tests cover the
+// fix: task.budget_stopped.qa_not_run is set when the rewire fires, and composeTaskPrompt puts
+// the fact in front of the goal gate and the report explicitly - the task still completes.
+test('a budget stop that rewires gate:goal past an incomplete QA pass records qa_not_run, and the goal gate/report briefings say so explicitly', async () => {
+  const { autoRetryPackages } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children[0].package_id, 'QA');
+
+    const taskPath = join(root, task_id, 'task.json');
+    const load = () => JSON.parse(readFileSync(taskPath, 'utf8'));
+    const save = (t) => writeFileSync(taskPath, JSON.stringify(t));
+    const prevRoot = process.env.HARNESS_TASKS_DIR;
+    const withRoot = (fn) => {
+      process.env.HARNESS_TASKS_DIR = root;
+      try { return fn(); } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; }
+    };
+
+    // dispatch:QA:1 folds blocked on a malformed adapter reply - a plain failure, no defects,
+    // the way an adapter exit 1 does (fixed in 0.35.1; this test is about what happens after).
+    let t = load();
+    t.nodes.find((n) => n.node_id === 'dispatch:QA:1').state = 'failed';
+    t.nodes.find((n) => n.node_id === 'dispatch:QA:1').result = {
+      stage_ok: false, reason: 'child run ended blocked. Its own verdicts:\nplan: adapter exit 1',
+    };
+    save(t);
+    assert.equal(withRoot(() => autoRetryPackages(load())), true, 'the daemon reopens QA as attempt 2');
+
+    t = load();
+    assert.ok(t.nodes.some((n) => n.node_id === 'dispatch:QA:2'), 'QA gets a second attempt');
+    assert.deepEqual(t.nodes.find((n) => n.node_id === 'gate:goal:1').deps, ['accept:QA:2'],
+      'the goal gate now waits on the retried attempt');
+
+    // dispatch:QA:2 is itself still running when the box stops in the real run - it ends
+    // blocked too (superseded mid-flight), and no accept:QA:2 verdict ever lands.
+    t.nodes.find((n) => n.node_id === 'dispatch:QA:2').state = 'failed';
+    t.nodes.find((n) => n.node_id === 'dispatch:QA:2').result = {
+      stage_ok: false, reason: 'child run ended blocked: superseded by spec attempt 3',
+    };
+    // enforceBudget reads elapsed time via task.created_at, not driver spend - push it into the
+    // past against the short timebox, same as the timebox_minutes test above, so no driver-spend
+    // fixture is needed to trip the stop.
+    t.created_at = Date.now() - 11 * 60 * 1000;
+    save(t);
+
+    const after = await tm.call('tm_next', { task_id });
+    t = load();
+    assert.ok(t.budget_stopped, 'the box is recorded as stopped');
+    assert.deepEqual(t.budget_stopped.qa_not_run, [
+      { pass: 'QA', node_id: 'accept:QA:2', reason: 'child run ended blocked: superseded by spec attempt 3' },
+    ]);
+    const goal = t.nodes.find((n) => n.node_id === 'gate:goal:1');
+    assert.deepEqual(goal.deps, ['integrate:1'], 'gate:goal is rewired past the incomplete QA pass onto integrate directly');
+    assert.equal(goal.state, 'pending');
+    assert.deepEqual(after.ready.map((n) => n.node_id), ['gate:goal:1'],
+      'the Sprint still proceeds to its goal gate rather than sitting blocked forever on a QA pass that will not finish');
+
+    const goalReady = after.ready.find((n) => n.node_id === 'gate:goal:1');
+    const goalBrief = readFileSync(goalReady.briefing_path, 'utf8');
+    assert.match(goalBrief, /## Scope: QA did not run/);
+    assert.match(goalBrief, /QA: not run - child run ended blocked: superseded by spec attempt 3 \(last attempt: accept:QA:2\)/);
+    assert.match(goalBrief, /Record it in gaps/);
+
+    const goalDone = await tm.call('tm_submit', {
+      task_id, node_id: 'gate:goal:1', payload: ok({ accept: true, match_pct: 92, gaps: ['QA: not run (budget/timebox)'] }),
+    });
+    assert.equal(goalDone.state, 'done', JSON.stringify(goalDone));
+
+    const nx2 = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx2.ready.map((n) => n.node_id), ['report'],
+      'the task still completes to a report - a missing QA verdict is disclosed, not a block');
+    const reportReady = nx2.ready.find((n) => n.node_id === 'report');
+    const reportBrief = readFileSync(reportReady.briefing_path, 'utf8');
+    assert.match(reportBrief, /## Scope: QA did not run/);
+    assert.match(reportBrief, /List this explicitly under an "unresolved" or "known gaps" section of the report/);
+
+    const done = await tm.call('tm_submit', {
+      task_id, node_id: 'report', payload: ok({ handoff: '8/8 packages accepted; QA did not run (budget/timebox) - see unresolved' }),
+    });
+    assert.equal(done.state, 'done', JSON.stringify(done));
+
+    const full = await tm.call('tm_status', { task_id, full: true });
+    const retro = JSON.parse(readFileSync(docPaths(full).retro, 'utf8'));
+    assert.deepEqual(retro.retrospective.budget_stopped.qa_not_run, [
+      { pass: 'QA', node_id: 'accept:QA:2', reason: 'child run ended blocked: superseded by spec attempt 3' },
+    ], 'qa_not_run reaches the retro/report doc, not just the in-memory task');
+  }, { roles: { qa: true }, timebox_minutes: 10 });
+});
+
 // awake-beta-ref2 (2026-09-25): P3 (upstream) was ACCEPTED identifying Claude Code processes by
 // kernel comm=='claude', but on P4's own host the real CLI's kernel comm is a version string -
 // P4 proved it with its own probe, but had no route except to fail an attempt no retry could
