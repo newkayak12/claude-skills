@@ -103,6 +103,36 @@ test('Claude accepts danger-full-access and bypasses the permission prompt there
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
 
+// P4:review:U1 (portfolio-refresh Sprint): a review node with no Bash split verified:true/
+// false across three attempts on the same evidence, because it could not re-run `wc -w` or
+// a validator script itself. --verify grants Bash under the read-only profile for exactly
+// that - broker.mjs decides which stages pass it (review, gate) - while a disallow list
+// keeps the mutating verbs off, since there is still no Edit/Write tool and no OS sandbox
+// backing "read-only" for this vendor (see the adapter's own top-of-file comment).
+test('--verify grants Bash under read-only, with a disallow list for the mutating verbs', () => {
+  const f = fixture();
+  try {
+    const r = f.run(['--detect', '--sandbox', 'read-only', '--verify']);
+    assert.equal(r.status, 0, r.stderr);
+    const args = JSON.parse(readFileSync(join(f.dir, 'observed.json'))).args;
+    assert.equal(args[args.indexOf('--tools') + 1], 'Read,Glob,Grep,Bash');
+    const disallowed = args[args.indexOf('--disallowedTools') + 1];
+    for (const verb of ['git commit', 'git push', 'git add', 'rm', 'mv', 'cp']) {
+      assert.match(disallowed, new RegExp(`Bash\\(${verb.replace(/ /g, '\\s')}:\\*\\)`), `${verb} must be disallowed`);
+    }
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('--verify without read-only changes nothing - workspace-write already has Bash', () => {
+  const f = fixture();
+  try {
+    f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'test', '--sandbox', 'workspace-write', '--verify']);
+    const observed = JSON.parse(readFileSync(join(f.dir, 'observed.json')));
+    assert.equal(observed.args[observed.args.indexOf('--tools') + 1], 'Read,Glob,Grep,Edit,Write,Bash');
+    assert.equal(observed.args.includes('--disallowedTools'), false);
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
 // The bypass must be something a run opts into, never what every stage silently gets.
 test('workspace-write still defers to the project permission layer', () => {
   const f = fixture();

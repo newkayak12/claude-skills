@@ -615,6 +615,27 @@ test('slack-list: the subgoal gate reads the comments the change wrote against i
   assert.match(CONTRACT.gate, /a cause or a behaviour the code, or this run's own evidence, contradicts is a gap/);
 });
 
+// P4:review:U1 (portfolio-refresh Sprint): a reviewer with no Bash rejected the same evidence
+// twice on verified:false ("no Bash tool available in this reasoning node"), then passed on
+// attempt 3 on the identical evidence - a tools gap read as a quality rejection because there
+// was no third way to record it. review/gate now carry Bash (broker.mjs's --verify) for
+// exactly the acceptance items a command names, and whatever --verify still cannot reach must
+// come back as "unverifiable: <why>", never MISSING or a failing check.
+test('P4:review:U1 - a tools gap is unverifiable, not a rejection, and review/gate can re-run what a command names', () => {
+  assert.match(CONTRACT.review, /unverifiable: <why>/);
+  assert.match(CONTRACT.review, /An acceptance item you have no tool to check is not a defect in the work/);
+  assert.match(CONTRACT.review, /must not by itself cost verified, accept, or stage_ok/);
+  assert.match(CONTRACT.review, /run it yourself with Bash rather than trusting the draft's report of it/);
+  assert.match(CONTRACT.review, /do not use Bash to write, move, or commit anything in this tree/);
+  assert.match(CONTRACT.review, /every item has a quoted passage or is marked unverifiable/);
+
+  assert.match(CONTRACT.gate, /Re-run a check that names a command yourself with Bash/);
+  assert.match(CONTRACT.gate, /An acceptance item you have no tool to check is not a defect in the work/);
+
+  assert.match(CONTRACT['gate:goal'], /This stage carries Bash to run "checks" and "attacks" yourself/);
+  assert.match(CONTRACT['gate:goal'], /An acceptance item you have no tool to check is not a defect in the work/);
+});
+
 test('portfolio-refresh: model instructions are run, not grepped - setgoal requires it, critique blocks without it', () => {
   assert.match(EXERCISE_RULE, /it is code, not a document/);
   assert.match(EXERCISE_RULE, /pre-change version run on the same input/);
