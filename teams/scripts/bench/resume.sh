@@ -10,6 +10,9 @@
 # again: tm_status/tm_next for a task, team_status({cwd})/team_next for a bare teams run
 # (graph_status({cwd})/graph_next for the stable graph arm). The stream goes to
 # <ws>.stream.resume<n>.jsonl; score.mjs sums every stream of a workspace.
+#
+# drive.sh uses this only for session arms now: a teams arm's task is resumed with
+# `node teams/scripts/run.mjs --resume <task_id> --resume-on-limit` - no session at all.
 set -euo pipefail
 
 WS=${1:?workspace}
