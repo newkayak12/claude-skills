@@ -150,3 +150,31 @@ test('renderers never throw: non-JSON, unknown types, rate limits, init', () => 
   assert.equal(clampTail(0), 50);
   assert.equal(clampTail(10 ** 6), LOG_TAIL_MAX);
 });
+
+// Lines shaped exactly like portfolio-consolidate-8518d5dd's real driver streams (teams 0.35.1):
+// a usage-limit death is a result with subtype "success" AND is_error true - it rendered
+// "result success ERROR ..." - and ~1250 of that run's ~3500 lines were subagent/background
+// events that rendered as bare "system task_progress" / "tool_progress" with nothing to read.
+test('real driver stream shapes: an errored result, subagent progress and heartbeats read as what happened', () => {
+  const r = (o) => renderStreamLine(JSON.stringify(o));
+  assert.equal(r({ type: 'result', subtype: 'success', is_error: true, num_turns: 1, total_cost_usd: 0, result: "You've hit your session limit · resets 4:50am (UTC)" }),
+    "result ERROR turns=1 cost=$0.0000: You've hit your session limit · resets 4:50am (UTC)");
+  assert.equal(r({ type: 'result', subtype: 'error_max_turns', is_error: true, num_turns: 50 }), 'result ERROR error_max_turns turns=50');
+  assert.equal(r({ type: 'result', subtype: 'success', num_turns: 13, total_cost_usd: 3.592, result: 'ok' }), 'result success turns=13 cost=$3.5920: ok');
+  assert.equal(r({ type: 'system', subtype: 'task_started', task_id: 'a8ff34dbe9d2f73e0', description: 'Run test:U1:2 node', subagent_type: 'general-purpose' }),
+    'subagent a8ff34db started: Run test:U1:2 node');
+  assert.equal(r({ type: 'system', subtype: 'task_progress', task_id: 'a8ff34dbe9d2f73e0', description: 'Reading briefings/test_U1_2.md', usage: { tool_uses: 1 }, last_tool_name: 'Read' }),
+    'subagent a8ff34db: Reading briefings/test_U1_2.md');
+  assert.equal(r({ type: 'system', subtype: 'task_updated', task_id: 'ac552d32594eaafb2', patch: { status: 'completed', end_time: 1 } }), 'subagent ac552d32 completed');
+  assert.equal(r({ type: 'system', subtype: 'task_notification', task_id: 'ac552d32594eaafb2', status: 'completed', summary: '**Top 1** 핀테크\n- x' }),
+    'subagent ac552d32 completed: **Top 1** 핀테크 - x');
+  assert.equal(r({ type: 'system', subtype: 'thinking_tokens', estimated_tokens: 252, estimated_tokens_delta: 202 }), 'thinking ~252 tokens');
+  assert.equal(r({ type: 'system', subtype: 'background_tasks_changed', tasks: [{ description: 'JD mode run: new fit' }, { description: 'No-JD run' }] }),
+    'background tasks (2): JD mode run: new fit; No-JD run');
+  assert.equal(r({ type: 'system', subtype: 'background_tasks_changed', tasks: [] }), 'background tasks (0)');
+  assert.equal(r({ type: 'tool_progress', tool_name: 'Agent', elapsed_time_seconds: 90, heartbeat: true }), 'tool_progress Agent 90s');
+  assert.equal(r({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Skill', input: { skill: 'teams:orchestrate' } }] } }), 'assistant -> Skill teams:orchestrate');
+  assert.equal(r({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed', resetsAt: 1790589000, rateLimitType: 'five_hour' } }), 'rate_limit allowed five_hour');
+  assert.equal(r({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', resetsAt: 1790589000, rateLimitType: 'five_hour' } }),
+    `rate_limit rejected five_hour resets=${new Date(1790589000 * 1000).toISOString().slice(11, 16)}Z`);
+});
