@@ -1,0 +1,125 @@
+{
+  "skill_name": "fit",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "제 경력기술서랑 이 채용공고 같이 드릴게요. 이 포지션 지원해도 될까요? 서류 붙을 수 있을지, 뭐가 부족한지 봐주세요.\n\n[첨부: resume-backend-kr.md, jd-fintech-senior-backend.md]",
+      "expected_output": "JD mode. Opens with [서류 통과 가능성] (통과/경계/스크린아웃 + swing factor) and ends with the 판정 tally line. Must-haves come from 자격요건, nice-to-haves from 우대사항; 결제·정산 domain and Kafka async design are matched with both sides quoted; Kotlin / 전자금융거래법 / MSA / 멘토링 are 우대사항 misses that do not move the verdict. 'API 응답속도 개선' is marked [확인 필요: 개선 전/후 수치] and never counted as a match; the p95 820ms → 310ms line may be. No number the resume lacks is suggested. Parity: same verdict and same must-have 미충족 count as the pre-merge JD-mode baseline (cbdfcd6), each dimension within ±1 — see docs/plans/portfolio-consolidate/fit-comparison.md.",
+      "files": [
+        "evals/files/resume-backend-kr.md",
+        "evals/files/jd-fintech-senior-backend.md"
+      ],
+      "assertions": [
+        {
+          "name": "opens-with-screen-verdict",
+          "description": "첫 블록이 [서류 통과 가능성]이고 통과/경계/스크린아웃 중 하나를 판정",
+          "type": "regex",
+          "pattern": "^\\s*(\\*\\*)?\\[?서류 통과 가능성[\\s\\S]{0,400}?(통과|경계|스크린아웃)"
+        },
+        {
+          "name": "swing-factor-present",
+          "description": "판정을 뒤집을 swing factor 하나를 명시",
+          "type": "contains_any",
+          "values": [
+            "Swing factor",
+            "swing factor",
+            "스윙 팩터"
+          ]
+        },
+        {
+          "name": "five-dimensions-scored",
+          "description": "5개 차원 모두 /10 점수",
+          "type": "contains_all",
+          "values": [
+            "기술 스택",
+            "경험 스케일",
+            "역할 범위",
+            "도메인",
+            "소프트 시그널"
+          ]
+        },
+        {
+          "name": "gap-ids-present",
+          "description": "갭 분석에 G1… ID와 심각도 분류",
+          "type": "regex",
+          "pattern": "G1[\\s\\S]*(치명적|보완 가능|마이너)"
+        },
+        {
+          "name": "unmeasured-line-flagged",
+          "description": "'API 응답속도 개선'을 인용한 바로 뒤에 [확인 필요: …]가 붙음 (같은 줄, 다른 문장의 marker는 인정하지 않음). 매칭으로 세지 않음",
+          "type": "regex",
+          "pattern": "API 응답속도 개선[\"”']?\\s*`?\\[확인 필요:"
+        },
+        {
+          "name": "ends-with-tally",
+          "description": "마지막 줄이 판정 집계 라인",
+          "type": "regex",
+          "pattern": "판정 (통과|경계|스크린아웃) · 5개 차원 \\d+(\\.\\d+)?/10 · 치명적 \\d+ · 보완 가능 \\d+ · 마이너 \\d+ · must-have 미충족 \\d+/\\d+`?\\s*$"
+        },
+        {
+          "name": "no-invented-improvement-number",
+          "description": "없는 개선 수치를 제안하지 않음 (예: '40% 개선')",
+          "type": "not_regex",
+          "pattern": "API 응답속도[^\\n]{0,40}\\d+\\s*%"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "제 경력기술서 드릴게요. 아직 지원할 공고는 없어요. 제 경력으로는 어떤 회사에 지원하는 게 잘 맞을까요?\n\n[첨부: resume-backend-kr.md]",
+      "expected_output": "Company-type mode (no posting, no company named — fixture condition c). Opens with Top 2 company types + the type to avoid, then 핵심 신호 with [확인 필요: 근무지 / 도메인 / 스택 조건], then per-type 핏 점수 / 강한 이유 / 약한 이유 / 지원 전 보완할 것, then 포지셔닝 제안. No 판정 tally line. No company fact absent from the input. Parity: the same Top 2 types (order free) and the same type to avoid as the pre-merge company-type baseline (cbdfcd6) — see docs/plans/portfolio-consolidate/fit-comparison.md.",
+      "files": [
+        "evals/files/resume-backend-kr.md"
+      ],
+      "assertions": [
+        {
+          "name": "opens-with-top2-and-avoid",
+          "description": "첫 블록이 Top 2 회사 유형 + 피해야 할 유형",
+          "type": "regex",
+          "pattern": "^\\s*(\\*\\*)?\\[?가장 잘 맞는 회사 유형 Top 2[\\s\\S]{0,1500}?피해야 할"
+        },
+        {
+          "name": "per-type-blocks",
+          "description": "유형별 핏 점수 / 강한 이유 / 약한 이유 / 지원 전 보완할 것",
+          "type": "contains_all",
+          "values": [
+            "핏 점수",
+            "강한 이유",
+            "약한 이유",
+            "지원 전 보완할 것"
+          ]
+        },
+        {
+          "name": "non-negotiables-marked",
+          "description": "조건 미제공 → [확인 필요: 근무지 / 도메인 / 스택 조건]",
+          "type": "contains_any",
+          "values": [
+            "[확인 필요: 근무지 / 도메인 / 스택 조건]",
+            "[확인 필요: 근무지"
+          ]
+        },
+        {
+          "name": "fintech-type-considered",
+          "description": "결제/정산 경력이 핀테크/엔터프라이즈 유형 판단에 쓰임",
+          "type": "contains_any",
+          "values": [
+            "핀테크 / 엔터프라이즈",
+            "핀테크/엔터프라이즈"
+          ]
+        },
+        {
+          "name": "no-tally-line",
+          "description": "회사 유형 모드에는 판정 집계 라인이 없음",
+          "type": "not_regex",
+          "pattern": "판정 (통과|경계|스크린아웃) · 5개 차원"
+        },
+        {
+          "name": "unmeasured-line-not-filled",
+          "description": "'API 응답속도 개선'에 수치를 만들어 넣지 않음",
+          "type": "not_regex",
+          "pattern": "API 응답속도[^\\n]{0,40}\\d+\\s*%"
+        }
+      ]
+    }
+  ]
+}
