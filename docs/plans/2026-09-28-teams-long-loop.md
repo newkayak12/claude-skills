@@ -6,7 +6,7 @@
 >
 > - **Changes:** `2026-09-28-teams-cards-everywhere.md` C6 ("a size-S task is planned too"), for S only. `2026-09-28-teams-adversarial-fixes.md` m4 (the S QA card) is withdrawn.
 > - **Keeps:** the S/L sizing, and every principle for L tasks.
-> - **L1b/L1c, decided by the user (2026-09-28):** a person-approval gate between Sprints. Non-interactive runs continue automatically; interactive runs park.
+> - **L1b/L1c, decided by the user (2026-09-28), revised:** "사람은 시키고 결과만 받으면 장땡이지 중간 확인(뷰) 하면 되고". The loop never waits on a person. Progress is watched in the view, and a person can step in but is never required.
 
 ## Plan
 
@@ -16,9 +16,9 @@
 | S2 | **Remove the S machinery.** This covers `openSRun`, S planning, `toolNextSRun`, the S driver and daemon branch, `renderSReport` and S QA (m4). An old task already holding an `s_run` still resolves its state read-only, so nothing on disk breaks. The docs drop the S paths. |
 | L1 | **Sprint auto-continuation (the long loop).** When a Sprint's report is done and `loop` is on (`tm_open({loop: {...}})` / team.json), the manager opens the next Sprint itself: `context_from` is the finished task and `requests` is chosen per L1b. |
 | L1a | **Stop conditions:** no carry-over left; the loop's total `budget_usd` / `timebox_minutes` spent; `max_sprints` reached; no progress (the same unfinished story carried N Sprints running, default 2); a person stops it (`tm_loop({stop})`). The loop records why it stopped. |
-| L1b | **Who picks the next backlog** (decided: approval gate). Between Sprints a `sprint-gate` card lists the carry-over candidates. A person approves them, edits them (drops or reorders) or stops the loop. |
-| L1c | **Default between Sprints** (decided): non-interactive auto-passes the gate with every candidate in priority order, recorded as decided-for-you; interactive parks it in `waiting_human` (tm_inbox / tm_submit). |
-| L2 | **A loop ledger:** `loop.json` beside the tasks lists Sprints in order, each with task_id, state, shipped/unfinished counts and spend. `tm_status` shows it. |
+| L1b | **Who picks the next backlog:** the loop. Every carry-over candidate goes in, in priority order. The pick is recorded on the loop ledger as decided-for-you and shown in the view, never parked for approval. A person *may* edit or stop from the view or the tools (`tm_loop({stop})`, `tm_loop({drop, reorder})`). The next Sprint picks that up, and nothing waits on it. |
+| L1c | **Between Sprints:** always continue, whatever `interactive` says; the loop does not park between Sprints. Inside a Sprint, the existing `interactive` / `human_gates` behaviour is unchanged. |
+| L2 | **Loop ledger and view:** `loop.json` beside the tasks lists the Sprints in order. Each entry has task_id, state, shipped/unfinished counts, spend and the backlog picked. The view (viewserver) shows the loop - its current Sprint, history, stop reason and spend - so a person can check progress mid-run. `tm_status` shows it too. |
 | G | **Gate follow-ups from QualityGate:** gate writes to the broker ledger (`.harness-run/broker/`); a write verb counts only in command position (`grep cp x.mjs` is a read); releasing a STORY pin restores a model-written assignee. Add tests for the m1 prefix rule, M2 request carry-over, and M5's broker path. |
 
 ## SetGoal — done when
