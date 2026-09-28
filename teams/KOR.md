@@ -661,6 +661,32 @@ node teams/scripts/view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--on
 `--view`로 어느 것을 고를지 정합니다(기본 `pipeline`) — `tickets`/`resources`는 태스크 하나로
 좁혀지지 않으면 같은 태스크 인덱스로 대신합니다.
 
+## 헤드리스
+
+`scripts/run.mjs`는 대기 모델 C입니다(`docs/plans/2026-09-21-teams-server-owns-the-loop.md`
+§4): `tm_run`이 여는 방식 그대로 태스크를 열고, `tm_wait`가 기다리는 방식 그대로 완료까지
+기다립니다 — 둘 다 재구현이 아니라 재사용이며, 세션이 루프에 없고 기다리는 동안 컨텍스트
+비용도 없습니다. 헤드리스로 teams를 공정하게 재는 방법이 이것입니다. 벤치는 지금까지 이걸
+`scripts/bench/drive.sh`/`resume.sh`로 바깥에서 즉흥적으로 해왔는데(태스크 자신에게 묻는
+대신 `claude -p` 세션이 끝나는 걸 지켜보는 방식), 당장은 그대로 둡니다. CI나, 태스크 하나가
+끝나기만 하면 되는 셸 스크립트에도 이 CLI가 맞는 진입점입니다.
+
+```
+node teams/scripts/run.mjs "<request>" [--kind auto|develop|document] [--cwd <path>]
+  [--budget-usd <n>] [--timebox-minutes <n>] [--vendor <v>] [--allocation ordered|balanced]
+  [--size S|L] [--context <text>] [--poll-ms <n>] [--json]
+node teams/scripts/run.mjs --resume <task_id> [--json]
+```
+
+노드 전이마다 한 줄, `tm_wait`가 새 소식 없이 타임아웃되면 하트비트 한 줄을 찍고, 마지막에
+리포트 경로를 담은 줄을 찍습니다. 종료 코드: `0` 완료; `2` `waiting_human`(헤드리스는 카드에
+답할 수 없으니 무한정 멈춰있지 않습니다 — 대기 중인 질문을 출력합니다; 세션에서 `tm_submit`로
+답한 뒤 `--resume`하세요); `1` 완료하지 못하고 멈춘 그 외 전부(`blocked` 등); `64` 잘못된
+인자. SIGINT는 런을 멈추지 않습니다 — 이 호출이 띄운(또는 `--resume`이 찾아낸) 데몬은 어차피
+detached + `unref()` 프로세스이므로, CLI는 지켜보기만 멈춥니다: 태스크 id와 `--resume`/조회
+방법을 출력하고 `130`으로 종료합니다. `--json`은 산문 대신 줄마다 JSON 객체 하나를 출력하고,
+`exit_code`와 `report`를 실은 `event: "final"` 줄로 끝납니다.
+
 ## 나머지 전부
 
 도구, 라우팅, 판정, 벤더, 용량 복구, 원장은 `graph`와 같은 브로커 메커니즘입니다 —
