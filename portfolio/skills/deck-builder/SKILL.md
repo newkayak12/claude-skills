@@ -3,7 +3,8 @@ name: deck-builder
 description: >-
   Use when a PPTX must be built from content instead of typed slide by slide — read a
   template, write the deck as markdown, render. Triggers: PPT 만들어줘, 템플릿에 내용
-  채워줘, 발표자료 생성, 슬라이드 자동 생성, md로 PPT 만들기, deck from markdown.
+  채워줘, 발표자료 생성, md로 PPT 만들기, deck from markdown,
+  PPT 키컬러 변경, 브랜드 컬러로 교체, recolor pptx.
 effort: medium
 scenarios:
   - "이 템플릿 읽고 우리 분기 리뷰 내용으로 PPT 만들어줘"
@@ -12,6 +13,7 @@ scenarios:
   - "Read this template and build a 12-slide deck from my notes"
   - "Turn deck.mdx into a pptx using the brand template"
   - "Regenerate the deck — I changed three bullets"
+  - "이 PPT 오렌지 계열을 전부 우리 브랜드 파란색으로 바꿔줘"
 compatibility:
   required:
     - python 3.9+ (stdlib only — zipfile, xml.etree, re; no python-pptx, no PyYAML)
@@ -42,7 +44,8 @@ template's design survives byte for byte. Nothing is laid out from scratch.
 
 Engine: `scripts/deck.py` (invoke with an absolute path).
 
----
+Recolor (any pptx; for a built deck, recolor `template.pptx` and rebuild): `scripts/ppt_keycolor_changer.py`,
+procedure and presets in `references/recolor.md` — discover, map by lightness, confirm, replace, verify.
 
 ## Standing Mandates
 
@@ -189,8 +192,6 @@ the original string. Check `<a:t>` in the built file before treating spacing as 
 Renderer is `soffice` on PATH or `DECK_RENDER_DOCKER=<image>`. With neither, `render`
 refuses rather than pretending the layout was checked — say so and fall back to `build`.
 
----
-
 ## Output Template
 
 Report after a build:
@@ -243,6 +244,5 @@ Full table, and which step catches each one: `references/limits.md`.
 
 ## Related Skills
 
-- `portfolio:ppt-keycolor-changer` — recolor the template (or the built deck) to a brand palette
 - `write:doc-coauthoring` — develop the content before mapping it onto slides
 - `think:thought-organizer` — turn scattered notes into the slide-by-slide structure Step 2 needs

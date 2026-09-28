@@ -28,16 +28,16 @@ classification). Connect them under Claude settings → MCP Servers as remote SS
 | I want to… | Skill |
 |---|---|
 | Run a whole application from JD to interview day | `job-application-workflow` |
-| Know how well I match one specific posting | `portfolio-jd` |
+| Know how well I match one specific posting | `jd-fit` |
 | Decide where to apply when I have no posting yet | `portfolio-company` |
 | Get an honest interviewer's read on my portfolio | `portfolio-feedback` |
 | Check whether my numbers, skills, dates — and claimed level — hold up | `portfolio-feedback` |
 | Find out why my portfolio doesn't read as "ownership" | `portfolio-pattern` |
 | Rewrite specific weak sentences to senior level | `portfolio-rewrite` |
 | Rewrite my resume to match one JD's vocabulary | `resume-tailorer` |
-| Get a week-by-week study plan before interviews | `interview-prep` |
-| Practice defending my work in a mock interview | `portfolio-interview` |
-| Swap the key colors in a PPTX across every slide | `ppt-keycolor-changer` |
+| Get a week-by-week study plan before interviews | `interview-plan` |
+| Practice defending my work in a mock interview | `mock-interview` |
+| Swap the key colors in a PPTX across every slide | `deck-builder` (recolor) |
 | Build a PPTX from a template plus content, as a repeatable build | `deck-builder` |
 
 ## Skills
@@ -55,19 +55,19 @@ run the whole process with me from JD analysis through interview prep.
 ```
 
 ```
-[1] portfolio-jd          JD decoding, must-have vs nice-to-have, fit gaps
+[1] jd-fit          JD decoding, must-have vs nice-to-have, fit gaps
       ↓
 [2] portfolio-company     culture signals, talking points, red flags
       ↓
-[3] resume-tailorer (+ portfolio-rewrite)   tailored resume, cover letter draft
+[3] resume-tailorer (+ portfolio-rewrite)   tailored resume
       ↓
-[4] interview-prep        STAR story bank, likely questions, questions to ask
+[4] interview-plan        STAR story bank, likely questions, questions to ask
 ```
 
 Each step has a skip condition and a standalone-input fallback, so you can start at Step 4 with
 just a JD and a company name. Estimated 3–10 hours for the full run, 30–90 minutes per step.
 
-### `portfolio-jd`
+### `jd-fit`
 
 Parses the JD and the portfolio *independently* — comparing too early biases the read toward the
 portfolio's own framing — then scores fit across five dimensions: tech stack, experience scale,
@@ -93,7 +93,7 @@ Score the fit, tell me which gaps are fatal, and be honest about whether I'd pas
 [갭 분석]
 갭: 결제 도메인 경험 없음
 심각도: 보완 가능
-대응 방법: 커버레터에서 정산 배치 경험을 도메인 인접성으로 프레이밍
+대응 방법: 이력서·포트폴리오에서 정산 배치 경험을 도메인 인접성으로 프레이밍
 ```
 
 ### `portfolio-company`
@@ -120,7 +120,7 @@ what's *missing*, not just what's present. You pick one of four reviewer persona
 Startup EM / Enterprise Tech Lead / OSS-DevTools Lead) and it stays in that persona throughout.
 Scores five dimensions, then challenges every score of 7 or above with the objection a skeptical
 interviewer would raise; only scores that survive stay high. Not for rewriting sentences
-(`portfolio-rewrite`) or JD matching (`portfolio-jd`).
+(`portfolio-rewrite`) or JD matching (`jd-fit`).
 
 ```
 Review my portfolio as a staff engineer at a large platform company.
@@ -276,7 +276,7 @@ After:  일 활성 사용자 150만 규모 서비스의 백엔드 API 설계 및
 ATS keyword rules and per-company-type culture signals: `references/ats-rules-korea.md`,
 `references/korea-company-culture-signals.md`.
 
-### `interview-prep`
+### `interview-plan`
 
 Planning, not practice. Gathers your background, target, timeline and biggest worry; calibrates to
 company type (FAANG, Korean Tier-1, growth startup, enterprise — each tests materially
@@ -294,14 +294,14 @@ Final-week rule: no new material. Two full mocks, STAR stories rehearsed aloud, 
 problems re-attempted, logistics settled. Topic sequencing and practice volume per domain:
 `references/study-domains.md`.
 
-### `portfolio-interview`
+### `mock-interview`
 
 A live mock interview grounded in your actual portfolio, in one of four personas. Question types:
 anchored (straight from your portfolio), gap probes (what's vague — "팀 전체가 한 건지 본인이
 주도한 건지"), depth drills (one level below what you wrote), failure/recovery, and hypothetical
 extension. One question at a time, no preview of the list, and it pushes back once on evasive
 answers. A coaching note follows each answer; the interview itself stays realistic rather than
-therapeutic. Not for building a study plan (`interview-prep`).
+therapeutic. Not for building a study plan (`interview-plan`).
 
 ```
 Mock interview me as an enterprise fintech tech lead, based on this portfolio.
@@ -438,7 +438,7 @@ brand colors and decorative shapes survived, and that a picture wider than its f
 rather than stretched. `fixture_template.py` is a test fixture, never a fallback — the engine has
 no built-in template and must not acquire one.
 
-### `ppt-keycolor-changer`
+#### Recolor — `deck-builder` (was `ppt-keycolor-changer`)
 
 Swaps key colors across an entire PPTX by scanning and replacing raw XML — which catches theme
 tokens, gradient stops, chart series, table cells, hyperlinks, and `schemeClr` mappings that the
@@ -454,11 +454,11 @@ presentation.pptx의 오렌지 계열 색을 전부 토스 파란색으로 바�
 
 ```bash
 # Step 1 — discover: frequency table of every hex in the file
-python /abs/path/to/skills/ppt-keycolor-changer/scripts/ppt_keycolor_changer.py discover \
+python /abs/path/to/skills/deck-builder/scripts/ppt_keycolor_changer.py discover \
   --input "deck.pptx"
 
 # Step 5 — replace, after you confirm the mapping table
-python /abs/path/to/skills/ppt-keycolor-changer/scripts/ppt_keycolor_changer.py replace \
+python /abs/path/to/skills/deck-builder/scripts/ppt_keycolor_changer.py replace \
   --input   "deck.pptx" \
   --mapping '{"E85E3A":"0064FF","FF8060":"4D96FF","FFB399":"99C2FF"}' \
   --exclude "336699" \

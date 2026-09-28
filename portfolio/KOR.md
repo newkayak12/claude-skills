@@ -27,16 +27,16 @@ remote SSE 엔드포인트로 추가하세요.
 | 하고 싶은 것 | 스킬 |
 |---|---|
 | JD부터 면접 당일까지 지원 전 과정 | `job-application-workflow` |
-| 특정 공고 하나에 얼마나 맞는지 | `portfolio-jd` |
+| 특정 공고 하나에 얼마나 맞는지 | `jd-fit` |
 | 공고 없이 어디에 지원할지 정하기 | `portfolio-company` |
 | 면접관 시각의 솔직한 포트폴리오 평가 | `portfolio-feedback` |
 | 숫자·스킬 목록·날짜, 그리고 주장하는 레벨이 앞뒤가 맞는지 | `portfolio-feedback` |
 | 포트폴리오가 왜 "오너십 없어 보이는지" 찾기 | `portfolio-pattern` |
 | 약한 문장을 시니어 수준으로 리라이팅 | `portfolio-rewrite` |
 | 특정 JD 어휘에 맞춰 이력서 최적화 | `resume-tailorer` |
-| 면접 전 주차별 학습 계획 | `interview-prep` |
-| 모의 면접으로 내 작업 방어 연습 | `portfolio-interview` |
-| PPTX 전체 슬라이드 키컬러 일괄 교체 | `ppt-keycolor-changer` |
+| 면접 전 주차별 학습 계획 | `interview-plan` |
+| 모의 면접으로 내 작업 방어 연습 | `mock-interview` |
+| PPTX 전체 슬라이드 키컬러 일괄 교체 | `deck-builder` (recolor) |
 | 템플릿 + 내용으로 PPTX를 반복 가능한 빌드로 생성 | `deck-builder` |
 
 ## 스킬
@@ -53,19 +53,19 @@ JD 분석부터 면접 준비까지 전체 프로세스 같이 돌려줘.
 ```
 
 ```
-[1] portfolio-jd          JD 해독, must-have vs nice-to-have, 핏 갭
+[1] jd-fit          JD 해독, must-have vs nice-to-have, 핏 갭
       ↓
 [2] portfolio-company     컬처 시그널, 대화 소재, 레드 플래그
       ↓
-[3] resume-tailorer (+ portfolio-rewrite)   맞춤 이력서, 커버레터 초안
+[3] resume-tailorer (+ portfolio-rewrite)   맞춤 이력서
       ↓
-[4] interview-prep        STAR 스토리 뱅크, 예상 질문, 역질문
+[4] interview-plan        STAR 스토리 뱅크, 예상 질문, 역질문
 ```
 
 각 단계에 skip 조건과 standalone 입력 대체안이 있어서, JD와 회사 이름만으로 Step 4부터 시작할
 수도 있습니다. 전체 3–10시간, 단계당 30–90분 정도입니다.
 
-### `portfolio-jd`
+### `jd-fit`
 
 JD와 포트폴리오를 *따로* 파싱합니다 — 너무 일찍 비교하면 포트폴리오 프레이밍 쪽으로 판단이
 쏠리기 때문입니다. 그다음 다섯 차원으로 핏을 채점합니다: 기술 스택, 경험 스케일, 역할 범위,
@@ -89,7 +89,7 @@ JD와 포트폴리오 양쪽 문장을 함께 인용하고, Skills 목록에만 
 [갭 분석]
 갭: 결제 도메인 경험 없음
 심각도: 보완 가능
-대응 방법: 커버레터에서 정산 배치 경험을 도메인 인접성으로 프레이밍
+대응 방법: 이력서·포트폴리오에서 정산 배치 경험을 도메인 인접성으로 프레이밍
 ```
 
 ### `portfolio-company`
@@ -114,7 +114,7 @@ red flag를 냅니다. 가장 잘 맞는 Top 2와 고전할 유형을 지목합�
 겁니다. 리뷰어 페르소나 넷 중 하나를 고르면(대형 플랫폼 Staff / 스타트업 EM / 엔터프라이즈 Tech
 Lead / OSS·DevTools Lead) 끝까지 그 시각을 유지합니다. 다섯 차원을 채점하고, 7점 이상은 전부
 "회의적인 면접관이라면 뭐라고 깎을까"로 반박을 겁니다. 그 반박을 견딘 점수만 살아남습니다.
-문장 리라이팅은 `portfolio-rewrite`, JD 매칭은 `portfolio-jd`.
+문장 리라이팅은 `portfolio-rewrite`, JD 매칭은 `jd-fit`.
 
 ```
 대형 플랫폼 스태프 엔지니어 시각으로 내 포트폴리오 평가해줘.
@@ -255,7 +255,7 @@ After:  일 활성 사용자 150만 규모 서비스의 백엔드 API 설계 및
 ATS 키워드 규칙과 회사 유형별 컬처 시그널: `references/ats-rules-korea.md`,
 `references/korea-company-culture-signals.md`.
 
-### `interview-prep`
+### `interview-plan`
 
 연습이 아니라 계획입니다. 배경·타깃·일정·가장 불안한 영역을 모으고, 회사 유형에 맞춰 보정하고
 (FAANG, 국내 Tier-1, 성장 스타트업, 엔터프라이즈 — 테스트하는 게 실질적으로 다릅니다), 코딩·
@@ -271,13 +271,13 @@ ATS 키워드 규칙과 회사 유형별 컬처 시그널: `references/ats-rules
 마지막 주 규칙: 새 자료 금지. 풀 모의면접 2회, STAR 스토리 소리 내어 리허설, 가장 어려웠던
 문제 3개 재도전, 로지스틱스 정리. 도메인별 주제 순서와 연습량: `references/study-domains.md`.
 
-### `portfolio-interview`
+### `mock-interview`
 
 실제 포트폴리오에 기반한 라이브 모의 면접을, 네 페르소나 중 하나로 진행합니다. 질문 유형:
 앵커 질문(포트폴리오에서 직접), 갭 프로브(모호한 부분 — "팀 전체가 한 건지 본인이 주도한
 건지"), 깊이 드릴(쓴 것보다 한 단계 아래), 실패/복구, 가정 확장. 한 번에 한 질문씩, 질문
 목록은 미리 보여주지 않고, 회피성 답변엔 한 번 되묻습니다. 답변마다 코칭 노트가 붙되 면접
-자체는 위로가 아니라 현실적으로 굴러갑니다. 학습 계획 수립은 `interview-prep`.
+자체는 위로가 아니라 현실적으로 굴러갑니다. 학습 계획 수립은 `interview-plan`.
 
 ```
 이 포트폴리오로 엔터프라이즈 핀테크 테크리드 페르소나 모의 면접 해줘.
@@ -416,7 +416,7 @@ python3 portfolio/skills/deck-builder/scripts/test_render.py
 이미지가 늘어나지 않고 크롭됐는지를 확인합니다. `fixture_template.py`는 테스트 픽스처일 뿐 폴백이
 아닙니다 — 엔진에는 내장 템플릿이 없고, 앞으로도 생기면 안 됩니다.
 
-### `ppt-keycolor-changer`
+#### 키컬러 교체 — `deck-builder` (구 `ppt-keycolor-changer`)
 
 원본 XML을 스캔·치환해 PPTX 전체의 키컬러를 바꿉니다 — python-pptx API가 놓치는 테마 토큰,
 그라디언트 스톱, 차트 시리즈, 표 셀, 하이퍼링크, `schemeClr` 매핑까지 잡습니다. hex를 이미
@@ -431,11 +431,11 @@ presentation.pptx의 오렌지 계열 색을 전부 토스 파란색으로 바�
 
 ```bash
 # Step 1 — discover: 파일 안 모든 hex의 빈도 표
-python /abs/path/to/skills/ppt-keycolor-changer/scripts/ppt_keycolor_changer.py discover \
+python /abs/path/to/skills/deck-builder/scripts/ppt_keycolor_changer.py discover \
   --input "deck.pptx"
 
 # Step 5 — replace: 매핑 표를 확인한 뒤에만
-python /abs/path/to/skills/ppt-keycolor-changer/scripts/ppt_keycolor_changer.py replace \
+python /abs/path/to/skills/deck-builder/scripts/ppt_keycolor_changer.py replace \
   --input   "deck.pptx" \
   --mapping '{"E85E3A":"0064FF","FF8060":"4D96FF","FFB399":"99C2FF"}' \
   --exclude "336699" \
