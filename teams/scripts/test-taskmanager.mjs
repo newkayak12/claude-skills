@@ -2452,6 +2452,9 @@ test('critique and accept record reviewer_independence: unverifiable-self - the 
 // call sites actually reach it - toIntegrate folds P1 then P2, two clean develop-STORY dispatches
 // with no driver (HARNESS_TEST_NO_DRIVER) and so no capacity signal, which is exactly one AIMD
 // window (AIMD_WINDOW=2).
+// max_parallel_ceiling is pinned: left null the ceiling is derived from the host
+// (min(availableParallelism()/2, 6), floored at the start value 2), so on a 4-core machine it is
+// 2 and the +1 this test asserts can never happen - the test measured the host, not the wiring.
 test('max_parallel_teams "auto": two clean develop-STORY dispatch folds (toIntegrate: P1 then P2) advance the real task from 2 to 3, and the ledger records it', async () => {
   await withTask(async ({ tm, g, root, task_id }) => {
     await toIntegrate(tm, g, task_id);
@@ -2463,7 +2466,7 @@ test('max_parallel_teams "auto": two clean develop-STORY dispatch folds (toInteg
     assert.ok(inc, 'the increase must be recorded in the ledger, not just reflected in task.json');
     assert.equal(inc.from, 2);
     assert.equal(inc.to, 3);
-  });
+  }, { max_parallel_ceiling: 6 });
 });
 
 test('a failed integrate reopens once the package it blamed is retried; an unknown package id is refused', async () => {
