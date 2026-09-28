@@ -281,7 +281,6 @@ node teams/scripts/run.mjs --resume <task_id>
   [`harness`](../harness/KOR.md)의 런타임 게이트 프로토콜에 다른 프로젝트와 똑같이 연동하며, 두
   플러그인 어느 쪽의 베타도 아닙니다.
 
-## 상태
+## 변경 이력
 
-`teams:patch`가 지난 정리 이후 추가한 릴리스 줄은 이 문장 위에 나타납니다. 전체 이력은
-[CHANGELOG.KOR.md](CHANGELOG.KOR.md)에 있습니다.
+모든 릴리스를 최신순으로: [CHANGELOG.KOR.md](CHANGELOG.KOR.md).
