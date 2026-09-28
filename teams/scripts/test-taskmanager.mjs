@@ -106,9 +106,9 @@ const SHAPE = {
 
 // A package shape itself pinned to a human, the spec pin path (§ tm_assign spec): `assignee`
 // survives verbatim from the shape payload into task.spec.packages[i] (the shape node's own
-// `finish()` spreads `...p`), and openChild carries it into createRun's `subgoal_assignee` for
-// the common parent_shaped case - one package, one synthetic subgoal, so "the package" and "its
-// one subgoal" are the same card. This is a MODEL pin (the shape wrote it, not a person calling
+// `finish()` spreads `...p`), and openChild carries it into createRun's `subgoal_assignee`,
+// which expandSubgoals applies to every subgoal the package's own setgoal produces - the STORY
+// is the human's, so its TASKs are too. This is a MODEL pin (the shape wrote it, not a person calling
 // tm_assign), so every test below opens its task with interactive:true - see graph.mjs's
 // applyHumanPin for the source distinction and the non-interactive, auto-decided tests further
 // down this file for the off case (the 0.27.3 review, 2026-09-24).
@@ -120,14 +120,12 @@ const SHAPE_HUMAN = {
   ],
 };
 
-// A package shape marked split: true never becomes parent_shaped - openChild gives it its own
-// plan/setgoal/critique instead, exactly like the !parentShaped branch of completeChild above.
-// Used only to get a child run with MORE than one subgoal, so a STORY-vs-TASK tm_assign test can
-// tell "every subgoal" apart from "just one" - a parent_shaped package only ever has the one.
+// A package whose own setgoal (TWO_SUBGOAL_SPEC) produces MORE than one subgoal, so a
+// STORY-vs-TASK tm_assign test can tell "every subgoal" apart from "just one".
 const SHAPE_SPLIT = {
   acceptance: ['both subgoals land', 'b.txt says b'],
   packages: [
-    { id: 'P1', title: 'module a', flow: 'develop', brief: 'two subgoals', acceptance: ['a.txt says a'], touches: ['a.txt'], deps: [], split: true },
+    { id: 'P1', title: 'module a', flow: 'develop', brief: 'two subgoals', acceptance: ['a.txt says a'], touches: ['a.txt'], deps: [] },
     { id: 'P2', title: 'module b', flow: 'develop', brief: 'change b.txt', acceptance: ['b.txt says b'], touches: ['b.txt'], deps: [] },
   ],
 };
@@ -147,44 +145,32 @@ const CHILD_SPEC = {
   subgoals: [{ id: 'U1', title: 'do it', acceptance: ['a'], test: ['t'], deps: [] }],
 };
 
-// Drive one child run from plan to report through the graph broker, exactly as the session
-// would - OR, when the parent already shaped and critiqued this package (§3, the default for
-// an ordinary SHAPE package below), straight through the subgoal chain: no plan/setgoal/
-// critique/gate:goal/report node exists on a parent_shaped run, so gate:U1 alone both
-// implements and judges. Which shape a given child run is takes reading the run itself - a
-// test SHAPE package with no split/size:'L' is parent_shaped by default now, but a repair,
-// phase-Team, or split package still gets the full graph.
-async function completeChild(g, child, { accept = true } = {}) {
+// A package's child run up to its subgoal chain: plan -> setgoal -> critique, the package's own
+// planning and quality gate. Every package child run starts here.
+async function throughChildSpec(g, child, spec = CHILD_SPEC) {
   const { cwd, run_id } = child;
   const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
-  const full = await g.call('team_status', { run_id, cwd, full: true });
-  const parentShaped = full.parent_shaped === true;
-  if (!parentShaped) {
-    let v = await sub('plan', { handoff: 'p', flow: 'develop', size: 'S' });
-    assert.equal(v.state, 'done', JSON.stringify(v));
-    await sub('setgoal', { spec: CHILD_SPEC });
-    await sub('critique', { sound: true });
-  }
+  const v = await sub('plan', { handoff: 'p', flow: child.flow || 'develop', size: 'S' });
+  assert.equal(v.state, 'done', JSON.stringify(v));
+  const sg = await sub('setgoal', { spec });
+  assert.equal(sg.state, 'done', JSON.stringify(sg));
+  await sub('critique', { sound: true });
+}
+
+// Drive one child run from plan to report through the graph broker, exactly as the session
+// would. Every package runs the full harness (plan -> setgoal -> critique -> implement -> test
+// -> gate -> gate:goal -> report) - the 2026-09-21 chain-only child run was reverted 2026-09-28.
+async function completeChild(g, child, { accept = true, skipTo = null } = {}) {
+  const { cwd, run_id } = child;
+  const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
+  let v;
+  if (!skipTo) await throughChildSpec(g, child);
+  else if (skipTo === 'critique') await sub('critique', { sound: true });
   // Distinct per package: git resolves identical hunks silently, and a conflict test needs a real one.
   appendFileSync(join(cwd, 'a.txt'), `changed by ${child.package_id || 'child'}\n`);
-  let v = await sub('implement:U1:1', { changed_files: ['a.txt'], handoff: 'built' });
+  v = await sub('implement:U1:1', { changed_files: ['a.txt'], handoff: 'built' });
   assert.equal(v.state, 'done', JSON.stringify(v));
   await sub('test:U1:1', { verified: true });
-  if (parentShaped) {
-    // gate:U1 alone is both the subgoal gate and the run's own verdict - there is no
-    // separate gate:goal round to reject.
-    await sub('gate:U1:1', { accept, match_pct: accept ? 95 : 40, gaps: accept ? [] : ['missing the b half'], reason: accept ? '' : 'short' });
-    const nx = await g.call('team_next', { run_id, cwd });
-    if (!accept) {
-      // Same caveat as the full-graph branch below: this assumes auto_reassign:false, or a
-      // rejected gate:U1 would open a fresh attempt of the chain on its own instead of
-      // leaving the run blocked for the caller to retry.
-      assert.equal(nx.state, 'blocked');
-      return;
-    }
-    assert.equal(nx.state, 'complete');
-    return;
-  }
   await sub('gate:U1:1', { accept: true, match_pct: 95 });
   await sub('gate:goal:1', { accept, match_pct: accept ? 95 : 40, gaps: accept ? [] : ['missing the b half'], reason: accept ? '' : 'short' });
   const nx = await g.call('team_next', { run_id, cwd });
@@ -863,13 +849,13 @@ test('a sound shape dispatches its root package: worktree created, child run ope
     // The child is a teams run the broker can pick up by (cwd, run_id): isolated, flowed, briefed.
     const st = await g.call('team_status', { run_id: c.run_id, cwd: c.cwd });
     assert.equal(st.state, 'running');
-    // P1 has no split/size:'L' - it opens parent_shaped (§3): its own chain directly, no
-    // run-level plan/setgoal/critique to redo what this task's shape+critique already did.
-    assert.deepEqual(st.nodes.map((n) => n.node_id), ['implement:U1:1', 'test:U1:1', 'gate:U1:1']);
+    // Every package runs the full harness in its own child run: plan/setgoal/critique first.
+    assert.deepEqual(st.nodes.map((n) => n.node_id), ['plan', 'setgoal', 'critique']);
     assert.equal(st.flow, 'develop');
     const full = await g.call('team_status', { run_id: c.run_id, cwd: c.cwd, full: true });
     assert.equal(full.isolated, true);
-    assert.equal(full.parent_shaped, true);
+    assert.equal(full.parent_shaped, undefined, 'the chain-only child run is gone (reverted 2026-09-28)');
+    assert.deepEqual(full.package, { id: 'P1', title: 'module a', acceptance: ['a.txt says a'] });
     assert.equal(full.request, 'change a.txt');
     assert.match(full.context, /package P1 \(module a\)/);
     assert.match(full.context, /a\.txt says a/);
@@ -881,80 +867,89 @@ test('a sound shape dispatches its root package: worktree created, child run ope
   });
 });
 
-// ---------- parent_shaped (§3 of docs/plans/2026-09-21-teams-server-owns-the-loop.md) ----------
+// ---------- every package runs the full harness (fractal rule; §3 chain-only reverted 2026-09-28) ----------
 //
-// openChild decides parent_shaped per package (default on for an ordinary STORY - test 14
-// above already pins that default's node list); these tests cover the two escape hatches
-// (pkg.split, depth >= max_depth) and foldChild reading a parent_shaped child back correctly.
+// docs/plans/2026-09-17-teams-team.md §2: each Team runs the four steps inside itself. A develop
+// package's child run is plan -> setgoal -> critique -> implement -> test -> gate -> gate:goal ->
+// report, like a phase Team's or a repair package's; its plan is a BUILD plan for the package
+// (not a re-split), and the package's own acceptance reaches the spec verbatim.
 
-test('pkg.split: true opts a package out of parent_shaped - its child run still opens the full plan/setgoal/critique/gate:goal graph', async () => {
-  await withTask(async ({ tm, g, task_id }) => {
-    await throughCritique(tm, task_id, {
-      ...SHAPE,
-      packages: SHAPE.packages.map((p) => (p.id === 'P1' ? { ...p, split: true } : p)),
-    });
-    const nx = await tm.call('tm_next', { task_id });
-    const c = nx.children[0];
-    const full = await g.call('team_status', { run_id: c.run_id, cwd: c.cwd, full: true });
-    assert.equal(full.parent_shaped, undefined, 'split:true keeps the run off the parent_shaped path');
-    assert.deepEqual(full.nodes.map((n) => n.node_id), ['plan', 'setgoal', 'critique']);
-    // Driven to completion the ordinary (non-parent_shaped) way, exactly like every
-    // pre-§3 fixture - completeChild's own team_status check picks this branch itself.
-    await completeChild(g, c);
-    const folded = await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
-    assert.equal(folded.state, 'done');
-    assert.equal(folded.accept, true);
-  });
-});
-
-test('pkg.size: "L" is the same opt-out as pkg.split - the size node\'s own letter, read on a package', async () => {
-  await withTask(async ({ tm, g, task_id }) => {
-    await throughCritique(tm, task_id, {
-      ...SHAPE,
-      packages: SHAPE.packages.map((p) => (p.id === 'P1' ? { ...p, size: 'L' } : p)),
-    });
-    const nx = await tm.call('tm_next', { task_id });
-    const full = await g.call('team_status', { run_id: nx.children[0].run_id, cwd: nx.children[0].cwd, full: true });
-    assert.equal(full.parent_shaped, undefined);
-  });
-});
-
-test('depth >= max_depth forces every package chain-only regardless of split - a package this deep may not open its own shape/dispatch cycle', async () => {
-  await withTask(async ({ tm, g, task_id }) => {
-    // max_depth:0 with this task's own depth 0 (the ordinary case: nothing opened it as a
-    // nested task) trips depth >= max_depth immediately.
-    await throughCritique(tm, task_id, {
-      ...SHAPE,
-      packages: SHAPE.packages.map((p) => (p.id === 'P1' ? { ...p, split: true } : p)),
-    });
-    const nx = await tm.call('tm_next', { task_id });
-    const full = await g.call('team_status', { run_id: nx.children[0].run_id, cwd: nx.children[0].cwd, full: true });
-    assert.equal(full.parent_shaped, true, 'depth >= max_depth overrides split:true');
-    assert.deepEqual(full.nodes.map((n) => n.node_id), ['implement:U1:1', 'test:U1:1', 'gate:U1:1']);
-  }, { max_depth: 0 });
-});
-
-test('foldChild folds an accepted parent_shaped child: its chain gate stands in for the goal gate, implement\'s handoff for the report', async () => {
+test('a develop package\'s child run has plan -> setgoal -> critique before implement, and gate:goal + report after', async () => {
   await withTask(async ({ tm, g, task_id }) => {
     await throughCritique(tm, task_id);
     const nx = await tm.call('tm_next', { task_id });
     const c = nx.children[0];
-    const full = await g.call('team_status', { run_id: c.run_id, cwd: c.cwd, full: true });
-    assert.equal(full.parent_shaped, true);
-    await completeChild(g, c);
+    const { cwd, run_id } = c;
+    const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
+    let st = await g.call('team_status', { run_id, cwd, full: true });
+    assert.deepEqual(st.nodes.map((n) => n.node_id), ['plan', 'setgoal', 'critique'], 'no implement before the package is planned');
+    await sub('plan', { handoff: 'p', flow: 'develop', size: 'S' });
+    await sub('setgoal', { spec: CHILD_SPEC });
+    st = await g.call('team_status', { run_id, cwd, full: true });
+    const impl = st.nodes.find((n) => n.node_id === 'implement:U1:1');
+    assert.ok(impl, 'setgoal expands the subgoal chain');
+    assert.deepEqual(impl.deps, ['critique'], 'implement waits on the package\'s own critique');
+    await completeChild(g, c, { skipTo: 'critique' });
+    st = await g.call('team_status', { run_id, cwd, full: true });
+    const ids = st.nodes.map((n) => n.node_id);
+    for (const id of ['plan', 'setgoal', 'critique', 'implement:U1:1', 'test:U1:1', 'gate:U1:1', 'gate:goal:1', 'report']) {
+      assert.ok(ids.includes(id), `${id} ran in the package's child run: ${ids.join(', ')}`);
+    }
+    assert.ok(ids.indexOf('critique') < ids.indexOf('implement:U1:1'));
+    assert.ok(ids.indexOf('gate:U1:1') < ids.indexOf('gate:goal:1') && ids.indexOf('gate:goal:1') < ids.indexOf('report'));
+    // The fold reads the full path's own verdict and handoff: gate:goal and report.
     const folded = await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
     assert.equal(folded.state, 'done');
-    assert.equal(folded.accept, true, 'gate:U1\'s own accept, read where a goal gate\'s used to be');
+    assert.equal(folded.accept, true, 'gate:goal:1\'s accept');
     assert.equal(folded.match_pct, 95);
-    // report and changed_files land on the node's own result (verdict() does not surface
-    // them at the tm_submit top level, so this reads the raw node) - the same place the
-    // 'accept' node's own briefing reads them from, which is what P2's childContext already
-    // asserted above via /built/.
-    const st = await tm.call('tm_status', { task_id, node_id: 'dispatch:P1:1', full: true });
-    const r = st.node.result;
-    assert.equal(r.report, 'built', 'implement:U1\'s handoff, read where a report node\'s handoff used to be');
+    const r = (await tm.call('tm_status', { task_id, node_id: 'dispatch:P1:1', full: true })).node.result;
+    assert.equal(r.report, `child report for ${cwd}`, 'the report node\'s handoff');
     assert.deepEqual(r.changed_files, ['a.txt']);
   });
+});
+
+test('a package\'s plan briefing is a build plan for that package, and its acceptance reaches the spec verbatim', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    const { cwd, run_id } = nx.children[0];
+    const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
+    let next = await g.call('team_next', { run_id, cwd });
+    const planNode = next.ready.find((n) => n.node_id === 'plan');
+    const planPrompt = readFileSync(planNode.briefing_path, 'utf8');
+    assert.match(planPrompt, /## This package \(P1\) — module a/);
+    assert.match(planPrompt, /already split the EPIC into packages \(shape\) and critiqued that split/);
+    assert.match(planPrompt, /Plan how to build THIS package: the files and modules to touch, the interfaces and data shapes .*the order of work, the test plan .*and the risks/);
+    assert.match(planPrompt, /Package acceptance[^\n]*\n- a\.txt says a/);
+    await sub('plan', { plan: 'edit a.txt, then check it', handoff: 'p', flow: 'develop', size: 'S' });
+    next = await g.call('team_next', { run_id, cwd });
+    const sgPrompt = readFileSync(next.ready.find((n) => n.node_id === 'setgoal').briefing_path, 'utf8');
+    assert.match(sgPrompt, /Keep one subgoal unless the package genuinely needs more/);
+    assert.match(sgPrompt, /into spec\.acceptance verbatim/);
+    // setgoal forgot the package's own criterion: the spec carries it anyway, verbatim.
+    await sub('setgoal', { spec: CHILD_SPEC });
+    const full = await g.call('team_status', { run_id, cwd, full: true });
+    assert.deepEqual(full.spec.acceptance, ['a.txt says a', 'A']);
+    next = await g.call('team_next', { run_id, cwd });
+    const crPrompt = readFileSync(next.ready.find((n) => n.node_id === 'critique').briefing_path, 'utf8');
+    assert.match(crPrompt, /Judge the plan and the spec against this package's brief/);
+    assert.match(crPrompt, /The build plan this spec came from:\nedit a\.txt, then check it/);
+  });
+});
+
+test('split / size:"L" / max_depth no longer change a package\'s child run - every package opens the same full harness', async () => {
+  for (const [extra, cfg] of [[{ split: true }, {}], [{ size: 'L' }, {}], [{ split: true }, { max_depth: 0 }]]) {
+    await withTask(async ({ tm, g, task_id }) => {
+      await throughCritique(tm, task_id, {
+        ...SHAPE,
+        packages: SHAPE.packages.map((p) => (p.id === 'P1' ? { ...p, ...extra } : p)),
+      });
+      const nx = await tm.call('tm_next', { task_id });
+      const full = await g.call('team_status', { run_id: nx.children[0].run_id, cwd: nx.children[0].cwd, full: true });
+      assert.equal(full.parent_shaped, undefined);
+      assert.deepEqual(full.nodes.map((n) => n.node_id), ['plan', 'setgoal', 'critique'], JSON.stringify({ extra, cfg }));
+    }, cfg);
+  }
 });
 
 // ---------- silent-ungated-worktree trap ----------
@@ -1018,10 +1013,8 @@ test('a parent with two dependent children runs to report; the second child sees
     const acceptPrompt = readFileSync(nx.ready[0].briefing_path, 'utf8');
     assert.match(acceptPrompt, /## Package P1 — module a/);
     assert.match(acceptPrompt, /Its goal gate: accept=true match=95%/);
-    // P1 is parent_shaped (§3): there is no report node to carry a custom string, so the
-    // "what this child delivered" text foldChild reads is implement:U1's own handoff instead
-    // - completeChild's fixed "built" (see its implement:U1:1 submission above).
-    assert.match(acceptPrompt, /built/);
+    // What this child delivered: its report node's handoff (completeChild's "child report for <cwd>").
+    assert.match(acceptPrompt, /child report for /);
     assert.match(acceptPrompt, /Files it reported changing:\n- a\.txt/);
     v = await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) });
     assert.equal(v.state, 'done');
@@ -1031,8 +1024,7 @@ test('a parent with two dependent children runs to report; the second child sees
     assert.equal(nx.children[0].node_id, 'dispatch:P2:1');
     const p2 = await g.call('team_status', { run_id: nx.children[0].run_id, cwd: nx.children[0].cwd, full: true });
     assert.match(p2.context, /Delivered by package P1/);
-    // Same parent_shaped caveat as the accept prompt above: P1's "report" is implement:U1's handoff.
-    assert.match(p2.context, /built/);
+    assert.match(p2.context, /child report for /);
     assert.equal(readFileSync(join(nx.children[0].cwd, 'a.txt'), 'utf8'), 'x\nchanged by P1\n', 'P2 starts from what P1 delivered, not from HEAD');
     assert.notEqual(nx.children[0].cwd, (await tm.call('tm_status', { task_id, node_id: 'dispatch:P1:1' })).nodes[0].child.cwd, 'each package has its own worktree');
     await completeChild(g, nx.children[0]);
@@ -1479,6 +1471,7 @@ test('a downstream package\'s implement reports an upstream_defects outside its 
       package: 'P1', title: 'a.txt assumes a kernel comm string this host never produces',
       evidence: 'a helper probe named like the real process makes the check hold', touches: ['a.txt'],
     };
+    await throughChildSpec(g, p2);
     appendFileSync(join(cwd, 'b.txt'), 'changed by P2\n');
     // implement alone carries it - test/gate below say nothing about it, proving foldChild reads
     // it straight off the implement node (like defectsFound already does for an execute node),
@@ -1486,6 +1479,8 @@ test('a downstream package\'s implement reports an upstream_defects outside its 
     await sub('implement:U1:1', { changed_files: ['b.txt'], handoff: 'built', upstream_defects: [upstreamDefect] });
     await sub('test:U1:1', { verified: true });
     await sub('gate:U1:1', { accept: true, match_pct: 95 });
+    await sub('gate:goal:1', { accept: true, match_pct: 95 });
+    await sub('report', { handoff: 'built' });
     const teamNx = await g.call('team_next', { run_id, cwd });
     assert.equal(teamNx.state, 'complete');
 
@@ -1518,10 +1513,13 @@ test('a failed downstream dispatch carrying upstream_defects files a fix STORY o
       package: 'P1', title: 'a.txt assumes a kernel comm string this host never produces',
       evidence: 'a helper probe named like the real process makes the check hold', touches: ['a.txt'],
     };
+    await throughChildSpec(g, p2);
     appendFileSync(join(cwd, 'b.txt'), 'changed by P2\n');
     await sub('implement:U1:1', { changed_files: ['b.txt'], handoff: 'built', upstream_defects: [upstreamDefect] });
     await sub('test:U1:1', { verified: true });
     await sub('gate:U1:1', { accept: true, match_pct: 95 });
+    await sub('gate:goal:1', { accept: true, match_pct: 95 });
+    await sub('report', { handoff: 'built' });
     await g.call('team_next', { run_id, cwd });
     assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P2:1' })).state, 'done');
 
@@ -1582,10 +1580,13 @@ test('upstream_fix_rounds caps the loop: past the cap, an upstream defect is rec
     const { cwd, run_id } = p2;
     const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
     const upstreamDefect = { package: 'P1', title: 'kernel comm mismatch', evidence: 'probe reproduces a HOLD', touches: ['a.txt'] };
+    await throughChildSpec(g, p2);
     appendFileSync(join(cwd, 'b.txt'), 'changed by P2\n');
     await sub('implement:U1:1', { changed_files: ['b.txt'], handoff: 'built', upstream_defects: [upstreamDefect] });
     await sub('test:U1:1', { verified: true });
     await sub('gate:U1:1', { accept: true, match_pct: 95 });
+    await sub('gate:goal:1', { accept: true, match_pct: 95 });
+    await sub('report', { handoff: 'built' });
     await g.call('team_next', { run_id, cwd });
     assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P2:1' })).state, 'done');
 
@@ -2451,13 +2452,9 @@ test('tm_open({goal_judges}) is stored in child_opts and reaches the actual disp
 
 test('a dispatched package with goal_judges:2 is folded by the true multi-judge consensus, not by whichever sibling node happens to sort last', async () => {
   await withTask(async ({ tm, g, task_id }) => {
-    // This test is about the goal-gate ROUND's own multi-judge consensus, which only exists
-    // on a full-graph child run - P1 opts out of parent_shaped (§3) with split:true so its
-    // child run still opens plan/setgoal/critique/gate:goal instead of running chain-only.
-    await throughCritique(tm, task_id, {
-      ...SHAPE,
-      packages: SHAPE.packages.map((p) => (p.id === 'P1' ? { ...p, split: true } : p)),
-    });
+    // This test is about the goal-gate ROUND's own multi-judge consensus inside a package's
+    // child run (every package runs the full harness, gate:goal included).
+    await throughCritique(tm, task_id);
     const nx = await tm.call('tm_next', { task_id });
     const c = nx.children[0];
     const { cwd, run_id } = c;
@@ -4254,15 +4251,10 @@ test('a blocked child whose driver is still alive is not settled: the driver may
     await throughCritique(tm, task_id);
     const nx = await tm.call('tm_next', { task_id });
     const child = nx.children[0];
-    // Reject the chain's gate with auto_reassign off, so the child is genuinely 'blocked' on disk.
-    await g.call('team_retry', { run_id: child.run_id, cwd: child.cwd, auto_reassign: false }).catch(() => {});
+    // Reject the chain's gate. team_retry takes no auto_reassign, so the child either reads
+    // 'blocked' on disk or has already opened attempt 2 - both branches are checked below.
     const sub = (node_id, payload) => g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id, payload: ok(payload) });
-    const full = await g.call('team_status', { run_id: child.run_id, cwd: child.cwd, full: true });
-    if (full.parent_shaped !== true) {
-      await sub('plan', { handoff: 'p', flow: 'develop', size: 'S' });
-      await sub('setgoal', { spec: CHILD_SPEC });
-      await sub('critique', { sound: true });
-    }
+    await throughChildSpec(g, child);
     appendFileSync(join(child.cwd, 'a.txt'), 'changed\n');
     await sub('implement:U1:1', { changed_files: ['a.txt'], handoff: 'built' });
     await sub('test:U1:1', { verified: true });
@@ -5375,6 +5367,7 @@ test('a shape-level assignee: "human" pin on a package parks its one subgoal in 
     await throughCritique(tm, task_id, SHAPE_HUMAN);
     const nx = await tm.call('tm_next', { task_id });
     const child = nx.children[0];
+    await throughChildSpec(g, child);
     const next = await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
     assert.equal(next.state, 'waiting_human');
     assert.equal(next.ready.length, 0);
@@ -5397,6 +5390,7 @@ test('tm_inbox lists a waiting_human card: key, title, acceptance, briefing_path
     await throughCritique(tm, task_id, SHAPE_HUMAN);
     const nx = await tm.call('tm_next', { task_id });
     const child = nx.children[0];
+    await throughChildSpec(g, child);
     await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
 
     const scoped = await tm.call('tm_inbox', { task_id });
@@ -5405,7 +5399,7 @@ test('tm_inbox lists a waiting_human card: key, title, acceptance, briefing_path
     assert.equal(card.key, `E-${task_id.slice(0, 8)}/P1/U1`);
     assert.equal(card.task_id, task_id);
     assert.equal(card.node_id, 'implement:U1:1');
-    assert.deepEqual(card.acceptance, ['a.txt says a']);
+    assert.deepEqual(card.acceptance, CHILD_SPEC.subgoals[0].acceptance, 'the card carries its subgoal\'s own acceptance, from the package\'s setgoal');
     assert.ok(card.briefing_path && existsSync(card.briefing_path), 'tm_inbox must point at a readable briefing');
     assert.equal(card.who, null);
     assert.ok(Number.isInteger(card.since));
@@ -5420,6 +5414,7 @@ test('tm_submit({key}) completes a waiting_human card, and the flow continues ex
     await throughCritique(tm, task_id, SHAPE_HUMAN);
     const nx = await tm.call('tm_next', { task_id });
     const child = nx.children[0];
+    await throughChildSpec(g, child);
     await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
 
     const key = `E-${task_id.slice(0, 8)}/P1/U1`;
@@ -5434,6 +5429,8 @@ test('tm_submit({key}) completes a waiting_human card, and the flow continues ex
 
     await g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
     await g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id: 'gate:U1:1', payload: ok({ accept: true, match_pct: 95 }) });
+    await g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id: 'gate:goal:1', payload: ok({ accept: true, match_pct: 95 }) });
+    await g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id: 'report', payload: ok({ handoff: 'done' }) });
     assert.equal((await g.call('team_status', { run_id: child.run_id, cwd: child.cwd })).state, 'complete');
   }, { interactive: true });
 });
@@ -5443,6 +5440,7 @@ test('a gate rejection on a human-authored card reopens the next attempt pinned 
     await throughCritique(tm, task_id, SHAPE_HUMAN);
     const nx = await tm.call('tm_next', { task_id });
     const child = nx.children[0];
+    await throughChildSpec(g, child);
     await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
     const key = `E-${task_id.slice(0, 8)}/P1/U1`;
     appendFileSync(join(child.cwd, 'a.txt'), 'changed\n');
@@ -5474,6 +5472,7 @@ test('a shape-level assignee: "human" pin on a NON-interactive task (the default
     await throughCritique(tm, task_id, SHAPE_HUMAN);
     const nx = await tm.call('tm_next', { task_id });
     const child = nx.children[0];
+    await throughChildSpec(g, child);
     const next = await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
     // Not parked: the node is offered to the self vendor exactly like an unpinned one.
     assert.equal(next.state, 'running', JSON.stringify(next));
@@ -5505,6 +5504,7 @@ test('the SAME shape-level pin, on an interactive task, still parks exactly as 0
     await throughCritique(tm, task_id, SHAPE_HUMAN);
     const nx = await tm.call('tm_next', { task_id });
     const child = nx.children[0];
+    await throughChildSpec(g, child);
     const next = await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
     assert.equal(next.state, 'waiting_human');
 
@@ -5526,6 +5526,7 @@ test('tm_assign parks a card regardless of the task\'s own interactive setting -
 
     const nx = await tm.call('tm_next', { task_id });
     const child = nx.children.find((c) => c.node_id === 'dispatch:P1:1') || nx.children[0];
+    await throughChildSpec(g, child);
     const next = await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
     assert.equal(next.state, 'waiting_human', 'tm_assign always parks, interactive or not');
 
@@ -5594,6 +5595,9 @@ test('a STORY taken before it dispatches opens its child run already waiting on 
 
     const nx = await tm.call('tm_next', { task_id });
     const child = nx.children.find((c) => c.node_id === 'dispatch:P1:1') || nx.children[0];
+    // The package plans itself first (plan/setgoal/critique are never pinned); the STORY pin
+    // lands on the subgoal its setgoal produces.
+    await throughChildSpec(g, child);
     const next = await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
     assert.equal(next.state, 'waiting_human');
     const inbox = await tm.call('tm_inbox', { task_id });
@@ -5608,6 +5612,40 @@ test('a STORY taken before it dispatches opens its child run already waiting on 
     assert.equal(onDisk.spec.packages.find((p) => p.id === 'P1').assignee.who, 'sanghyeon');
     assert.equal(onDisk.spec.packages.find((p) => p.id === 'P2').assignee, undefined);
   });
+});
+
+// On the full path a package's setgoal decides how many subgoals it has, so a STORY pin must
+// reach every one of them - whether it was taken before dispatch (pkg.assignee ->
+// subgoal_assignee) or after dispatch but before setgoal (tm_assign's story_pin action).
+test('a STORY pin reaches every subgoal the package\'s own setgoal produces - taken before dispatch, or after dispatch but before setgoal', async () => {
+  for (const when of ['before-dispatch', 'before-setgoal']) {
+    await withTask(async ({ tm, g, task_id }) => {
+      const key = `E-${task_id.slice(0, 8)}/P1`;
+      await throughCritique(tm, task_id, SHAPE_SPLIT);
+      if (when === 'before-dispatch') {
+        assert.deepEqual((await tm.call('tm_assign', { task_id, key, to: 'human', who: 'sanghyeon' })).assigned, []);
+      }
+      const nx = await tm.call('tm_next', { task_id });
+      const child = nx.children.find((c) => c.node_id === 'dispatch:P1:1');
+      if (when === 'before-setgoal') {
+        const taken = await tm.call('tm_assign', { task_id, key, to: 'human', who: 'sanghyeon' });
+        assert.deepEqual(taken.assigned, [], 'no subgoal exists yet');
+        assert.match(taken.note, /applies to them when its setgoal does/);
+      }
+      await throughChildSpec(g, child, TWO_SUBGOAL_SPEC);
+      const next = await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+      assert.equal(next.state, 'waiting_human', when);
+      const full = await g.call('team_status', { run_id: child.run_id, cwd: child.cwd, full: true });
+      for (const id of ['implement:U1:1', 'implement:U2:1']) {
+        const n = full.nodes.find((x) => x.node_id === id);
+        assert.equal(n.state, 'waiting_human', `${when}: ${id}`);
+        assert.equal(n.assignment.who, 'sanghyeon');
+      }
+      assert.ok(full.spec.subgoals.every((sg) => sg.assignee && sg.assignee.by === 'user'), 'the pin is on the spec, so a retry keeps it');
+      const inbox = await tm.call('tm_inbox', { task_id });
+      assert.equal(inbox.cards.length, 2);
+    });
+  }
 });
 
 // dispatchSettled (exported, and shared by the daemon and tm_next) is the one guard that keeps a
@@ -5651,10 +5689,16 @@ const LIMIT_QUESTION = [{
   ],
 }];
 
+const PLAN_CHILD_SPEC = {
+  goal: 'the PRD', acceptance: ['A'],
+  subgoals: [{ id: 'U1', kind: 'planning', title: 'the PRD', acceptance: ['the PRD names the per-person limit'], files: ['docs/prd.md'], deps: [] }],
+};
+
 async function toAskCard(tm, g, task_id) {
   await throughCritique(tm, task_id, SHAPE_PLAN);
   const nx = await tm.call('tm_next', { task_id });
   const child = nx.children.find((c) => c.node_id === 'dispatch:P1:1') || nx.children[0];
+  await throughChildSpec(g, child, PLAN_CHILD_SPEC);
   await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
   const v = await g.call('team_submit', {
     run_id: child.run_id, cwd: child.cwd, node_id: 'investigate:U1:1',
@@ -5849,6 +5893,7 @@ test("tm_submit({key}) never writes the child run file - a human's card answer w
     await throughCritique(tm, task_id, SHAPE_HUMAN);
     const nx = await tm.call('tm_next', { task_id });
     const child = nx.children[0];
+    await throughChildSpec(g, child);
     await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
 
     const runFile = childRunFile(child);
@@ -5913,6 +5958,7 @@ test('a human submission claiming a changed file that did not change in the work
     await throughCritique(tm, task_id, SHAPE_HUMAN);
     const nx = await tm.call('tm_next', { task_id });
     const child = nx.children[0];
+    await throughChildSpec(g, child);
     await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
 
     const key = `E-${task_id.slice(0, 8)}/P1/U1`;
@@ -5938,6 +5984,7 @@ test('a correct human submission still flows to test -> gate exactly as before -
     await throughCritique(tm, task_id, SHAPE_HUMAN);
     const nx = await tm.call('tm_next', { task_id });
     const child = nx.children[0];
+    await throughChildSpec(g, child);
     await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
 
     const key = `E-${task_id.slice(0, 8)}/P1/U1`;
@@ -5949,6 +5996,8 @@ test('a correct human submission still flows to test -> gate exactly as before -
 
     await g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
     await g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id: 'gate:U1:1', payload: ok({ accept: true, match_pct: 95 }) });
+    await g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id: 'gate:goal:1', payload: ok({ accept: true, match_pct: 95 }) });
+    await g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id: 'report', payload: ok({ handoff: 'done' }) });
     assert.equal((await g.call('team_status', { run_id: child.run_id, cwd: child.cwd })).state, 'complete');
   }, { interactive: true });
 });
@@ -6358,9 +6407,11 @@ test('code-sprint-P3: a package that failed as the box ran out is left out of th
     nx = await tm.call('tm_next', { task_id });
     const p2 = nx.children.find((c) => c.package_id === 'P2');
     assert.ok(p2, 'P2 dispatched before the box ran out');
-    assert.equal(await blockChild(g, p2), 'blocked');
+    // A full-harness child whose retries are spent writes its report over the settled failure
+    // (runState: complete, settled) - either way it did not deliver, and the fold fails it.
+    assert.ok(['blocked', 'complete'].includes(await blockChild(g, p2)));
     writeDriverSpend(root, task_id, 'p2', 10);
-    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P2:1' });
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P2:1' })).state, 'failed');
     nx = await tm.call('tm_next', { task_id });
     const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
     const fresh = task.nodes.find((n) => n.stage === 'integrate' && n.supersedes === 'integrate:1');
@@ -6703,7 +6754,8 @@ test('§6.2: PLAN decisions are written once at accept:PLAN and reach every pack
     // openAsk, inside the package run, treats the PLAN decision as answered - a different
     // question still opens a card.
     const graphMod = await import('../mcp/graph.mjs');
-    const gateNode = run.nodes.find((x) => x.stage === 'gate');
+    // A freshly opened package run has only plan/setgoal/critique - any judging node will do.
+    const gateNode = run.nodes.find((x) => x.stage === 'critique');
     assert.deepEqual(graphMod.openAsk(run, gateNode, LIMIT_QUESTION), [], 'a question PLAN settled is never asked again in a package');
     assert.equal(graphMod.openAsk(run, gateNode, [{ question: 'A new one?', options: ['a', 'b'] }]).length, 1);
   }, { roles: { planning: true } });
@@ -6726,11 +6778,14 @@ const CONTRADICTION = {
 
 async function packageWithQuestions(g, child, file, questions) {
   const sub = (node_id, payload) => g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id, payload: ok(payload) });
+  await throughChildSpec(g, child);
   appendFileSync(join(child.cwd, file), `changed by ${child.package_id}\n`);
   await sub('implement:U1:1', { changed_files: [file], handoff: 'built' });
   await sub('test:U1:1', { verified: true });
   const v = await sub('gate:U1:1', { accept: true, match_pct: 95, questions });
   assert.equal(v.state, 'done', JSON.stringify(v));
+  await sub('gate:goal:1', { accept: true, match_pct: 95 });
+  await sub('report', { handoff: 'built' });
   return g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
 }
 
