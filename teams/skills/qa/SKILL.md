@@ -33,10 +33,13 @@ the engine's changed-file check is for. A qa subgoal's `deps[]` should name the 
 checking, so it never runs before there is anything to check.
 
 This is the standalone route, where the whole run is the QA pass. `.claude/team.json`'s
-`roles.qa` switch (see `install`) is a second route to the same `cases → execute → gate` work: a
-QA phase-Team the EPIC flow inserts between `integrate` and `gate:goal` on its own, reusing the
-repair worktree, inside an ordinary `develop`/`document`/`orchestrate` run. Use this skill when
-the deliverable IS the QA pass; turn `roles.qa` on instead when every EPIC should get one
+`roles.qa` switch (see `install`, on by default) is a second route to the same `cases → execute →
+gate` work inside an ordinary `develop`/`document`/`orchestrate` run: one QA card per feature area
+the EPIC's planning split by (`QA-F1`, `QA-F2`, ...), each a full run on the integration tree
+between `integrate` and `gate:goal`, in parallel, exercising its own area's user stories; once every
+card of the round has settled their defects are filed together as fix STORYs and the next round
+reopens every card (docs/plans/2026-09-28-teams-cards-everywhere.md C7). Use this skill when the
+deliverable IS the QA pass; leave `roles.qa` on when every EPIC should get its QA cards
 automatically, gating its own `gate:goal`.
 
 ## Entry

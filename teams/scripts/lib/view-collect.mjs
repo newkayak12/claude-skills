@@ -21,6 +21,7 @@ import { driverCostOf, collectTaskCosts } from '../bench/lib/drivercost.mjs';
 import {
   epicKey, epicTicketState, epicPhase, epicBoardRows, storyLinks, packageFiling, FILED_ORIGINS,
   storyTicketState, storyKey, taskKey, taskTicketState, storyBlockedReason, flowMetrics,
+  planningPkgs, qaPkgs,
 } from '../../mcp/tickets.mjs';
 
 // ---------- small read helpers, all fail soft ----------
@@ -312,8 +313,8 @@ function packageModel(task, pkg, dispatchNode, acceptNode, visiting) {
 
 function pidAliveFromDriver(driver) { return pidAlive(driver && driver.pid); }
 
-// task.qa_pkg / task.audit_pkg (§2/§3 of the QA and planning-audit phase-Teams) are not part of
-// task.spec.packages - they are a single fixed package template (id 'QA' or 'AUDIT') that can be
+// The QA cards and task.audit_pkg (§2/§3 of the QA and planning-audit phase-Teams) are not part of
+// task.spec.packages - each is a fixed package template (id 'QA-F<n>' or 'AUDIT') that can be
 // dispatched more than once: a QA round that finds a defect reopens a fresh QA round once the
 // fix is integrated (capped by qa_rounds), and an audit round can do the same for an unmet user
 // story. Each round is its own dispatch:<id>:<attempt>/accept:<id>:<attempt> node pair sharing
@@ -421,11 +422,11 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
   }
 
   const packages = [];
-  // planning_pkg dispatches BEFORE shape writes task.spec, so it is listed on its own: gated
-  // behind spec.packages, a running PLAN team left "packages:" empty for the whole planning
-  // phase (code-sprint-S2, 2026-09-26).
+  // The planning cards (one per feature area, cards-everywhere C2) dispatch BEFORE shape writes
+  // task.spec, so they are listed on their own: gated behind spec.packages, a running PLAN team
+  // left "packages:" empty for the whole planning phase (code-sprint-S2, 2026-09-26).
   {
-    const all = [...((task.spec && Array.isArray(task.spec.packages)) ? task.spec.packages : []), ...(task.planning_pkg ? [task.planning_pkg] : [])];
+    const all = [...((task.spec && Array.isArray(task.spec.packages)) ? task.spec.packages : []), ...planningPkgs(task)];
     for (const pkg of all) {
       // A retried package can have several dispatch:<id>:<attempt> nodes; take the latest.
       const dispatches = task.nodes.filter((n) => n.stage === 'dispatch' && n.subgoal_id === pkg.id)
@@ -438,11 +439,13 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     }
   }
 
-  // task.qa_pkg / task.audit_pkg: the QA and planning-audit phase-Teams (view-collect.mjs's
-  // packages loop above only ever sees task.spec.packages + planning_pkg, so without this a
-  // task with QA or audit turned on drives every one of its rounds - defects found, STORYs
-  // filed, the audit's own verdict - with nothing on this surface ever showing it happened).
-  const qaRounds = collectPhaseRounds(task, task.qa_pkg, 'QA', visiting);
+  // The QA cards (one per feature area, cards-everywhere C7) and the planning audit (the packages
+  // loop above only ever sees task.spec.packages + the planning cards, so without this a task
+  // with QA or audit turned on drives every one of its rounds - defects found, STORYs filed, the
+  // audit's own verdict - with nothing on this surface ever showing it happened). qa.cards keeps
+  // each card's rounds apart; qa.rounds is all of them, card by card, for the round-by-round list.
+  const qaCards = qaPkgs(task).map((p) => ({ id: String(p.id), title: p.area_title || p.title || '', rounds: collectPhaseRounds(task, p, String(p.id), visiting) }));
+  const qaRounds = qaCards.flatMap((c) => c.rounds);
   const auditRounds = collectPhaseRounds(task, task.audit_pkg, 'AUDIT', visiting);
 
   const managerStages = task.nodes.filter((n) => !['dispatch', 'accept'].includes(n.stage)).map(nodeSummary);
@@ -524,7 +527,7 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     package_map: task.shape_diagram && task.shape_diagram.path ? { path: task.shape_diagram.path, source: task.shape_diagram.source } : null,
     manager_stages: managerStages,
     packages,
-    qa: task.qa_pkg ? { id: task.qa_pkg.id, rounds: qaRounds } : null,
+    qa: qaCards.length ? { id: qaCards.map((c) => c.id).join(', '), cards: qaCards, rounds: qaRounds } : null,
     audit: task.audit_pkg ? { id: task.audit_pkg.id, rounds: auditRounds } : null,
     s_run: sRun,
     events,

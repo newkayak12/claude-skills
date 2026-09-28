@@ -7,7 +7,8 @@ pass is sized, planned, split into **packages** (one per piece of work), and eac
 handed to its own worker in its own git worktree. Every result is judged before it is accepted,
 the accepted branches are merged into one integration tree, QA exercises the merged result, and a
 final goal gate decides whether the request was actually met. You get a report either way. A
-small request skips the whole manager layer and runs as one graph run.
+small request skips the split and runs as one graph run, but it is still planned first: every
+task, of any size, gets a PRD and user stories.
 
 Use `teams` when the work splits into parts, is not only code (a design doc, a PRD, a QA pass),
 or should keep running after you close the session. Use [`graph`](../graph/README.md) for a
@@ -32,7 +33,7 @@ flowchart TB
   CLI["scripts/run.mjs, headless"] -->|"same open and wait"| TM
   TM -->|"spawns, detached"| DM["Task daemon"]
   DM <--> TJ[("task.json and ledger in ~/.harness/tasks")]
-  DM -->|"one claude -p call per judging step"| J["Judge: size, shape, critique, accept, integrate, gate, report"]
+  DM -->|"one claude -p call per judging step"| J["Judge: size, areas, accept, plan-integrate, shape, critique, integrate, gate, report"]
   DM -->|"per package: worktree + driver"| P1
   DM -->|"per package: worktree + driver"| P2
   subgraph P1["Package P1: own worktree and branch"]
@@ -65,11 +66,18 @@ flowchart TB
 ```mermaid
 flowchart TD
   OPEN["tm_open"] --> SIZE{"size"}
-  SIZE -->|"S"| SRUN["one graph run in the project directory"]
+  SIZE -->|"S"| SPLAN["one planning card: PRD section and user stories"]
+  SPLAN --> SPI{"plan-integrate"}
+  SPI -->|"accepted"| SRUN["one graph run in the project directory, built from the PRD"]
   SRUN --> SREP["that run's report"]
   SIZE -->|"L"| BS["brainstorm"]
-  BS --> PLAN["PLAN phase-team: writes the PRD"]
-  PLAN --> SHAPE["shape: split into packages"]
+  BS --> AREAS["areas: split the request by feature"]
+  AREAS --> PCARDS["planning cards PLAN-F1, PLAN-F2, ...<br/>one per feature area, full run each, in parallel"]
+  PCARDS --> PACC{"accept, per card"}
+  PACC -->|"rejected"| PCARDS
+  PACC -->|"all accepted"| PI{"plan-integrate: merge into 10-prd.md and judge"}
+  PI -->|"id collision, contradiction, missing feature"| PCARDS
+  PI -->|"accepted"| SHAPE["shape: split the stories by ownership into packages"]
   SHAPE --> CRIT{"critique"}
   CRIT -->|"unsound"| SHAPE
   CRIT -->|"sound"| DISP["develop: each package runs the full harness in its own worktree<br/>plan → setgoal → critique → implement → test → gate → gate:goal → report<br/>in parallel where deps allow"]
@@ -78,7 +86,7 @@ flowchart TD
   ACC -->|"all accepted"| INT{"integrate"}
   INT -->|"not verified"| REPAIR["repair package on the merged tree"]
   REPAIR --> INT
-  INT -->|"verified"| QA{"QA phase-team"}
+  INT -->|"verified"| QA{"QA cards QA-F1, QA-F2, ...<br/>one per feature area, in parallel"}
   QA -->|"defects found"| FIX["fix STORYs, dispatched like packages"]
   FIX --> INT
   QA -->|"clean"| AUDIT{"planning audit"}
@@ -93,13 +101,15 @@ What each step does:
 |---|---|---|
 | `size` | A judge decides S (one run is enough) or L (split it). You can pin it with `size`. | — |
 | `brainstorm` | Restates intent, scope and approach; asks you questions only when `interactive`. Skipped when your session already passed `decisions`. | `brainstorm` |
-| PLAN | A planning team investigates the project and writes a PRD. With acceptance already declared in the request it runs a lighter chain. | `roles.planning` |
-| `shape` → `critique` | `shape` splits the work into packages with `touches[]` and `deps`; `critique` checks the split. An unsound shape is reshaped. | — |
+| `areas` | The EPIC's plan stage splits the request by **feature**: what a user must be able to do, grouped into feature areas. Each area becomes a planning card. A size-S task skips the split and gets one card. | — |
+| planning cards | One STORY card per feature area (`PLAN-F1`, `PLAN-F2`, ...), each a full run in its own worktree, in parallel. Each writes its PRD section - goal, scope and non-goals, user stories with acceptance criteria (ids prefixed by the area, `F1-US-1`), open questions - and returns its user stories. A card with no user stories is rejected; a rejected card is retried with the reasons. With acceptance already declared in the request each card runs a lighter chain. | `roles.planning` (`true`, `"light"`, `"auto"`; `false` is refused) |
+| `plan-integrate` | Merges every card's section into one `10-prd.md`, then a judge checks it: story ids that collide, areas that contradict each other, a feature the request names that no card covers. A rejection sends the offending cards back with the gaps (or opens a card for the missing feature). | `max_retries` |
+| `shape` → `critique` | `shape` splits the merged user stories again, this time by **ownership**, into packages with `touches[]` and `deps`; every story must be implemented by some package. `critique` checks the split. An unsound shape is reshaped. | — |
 | develop (dispatch) | The actual development. Each package gets its own git worktree and a driver session that runs the package's child run through the full harness: `plan → setgoal → critique → implement → test → gate → gate:goal → report`. `plan` is a build plan for that one package (files, interfaces, order of work, test plan, risks), not a re-split; `setgoal` carries the package's acceptance verbatim and `critique` checks the plan against it. A document package uses `draft → review → gate` in place of `implement → test → gate`. Packages whose `deps` are met run in parallel. See [Inside one package](#inside-one-package). | `max_parallel_teams`, `vendor` |
 | accept | When a package's run finishes, a judge accepts or rejects its result. A rejection retries the package with the reasons attached. | `max_retries` |
 | `integrate` | Merges the accepted branches and runs the checks. A seam no single package can see gets a repair package that works on the merged tree. | — |
-| QA | A QA team writes and runs test cases against the merged tree. Each defect becomes a fix STORY, and the loop re-integrates. | `roles.qa`, `qa_rounds` |
-| audit | Planning checks the merged result against its own PRD. Unmet stories are filed like QA defects. | `roles.audit` |
+| QA | One QA card per feature area (`QA-F1`, `QA-F2`, ...), each a full run on the merged tree, in parallel, exercising its area's user stories. Once every card of the round has settled, their defects are filed together as fix STORYs, and the loop re-integrates and reopens every QA card. | `roles.qa`, `qa_rounds` |
+| audit | Planning checks the merged result against the merged PRD. Unmet stories are filed like QA defects. | `roles.audit` |
 | `gate:goal` | Judges the whole result against the original request (`goal_threshold`, default 90%). | `goal_threshold` |
 | `report` | Always runs once the goal gate settles, pass or fail. Also writes `retro.json` for the next Sprint. | — |
 
@@ -115,7 +125,7 @@ package it depends on files an **upstream fix** there and waits for it (`upstrea
 ## Inside one package
 
 Every package runs the full harness inside its own child run, the same four steps the task
-runs around it (plan, set a goal, check it, build and judge). Phase teams (PLAN, QA, audit),
+runs around it (plan, set a goal, check it, build and judge). Planning cards (`PLAN-F1`, ...), QA cards (`QA-F1`, ...), the audit,
 repair packages and the single run of a size-S task run the same shape:
 
 ```mermaid
@@ -163,6 +173,12 @@ run can stop after `investigate` with an `ask` card for you.
 Which chain a subgoal gets depends on the run's **flow**: `develop` → code, `document` →
 document, `plan` → planning (or planning-light), `qa` → qa, and the post-QA audit →
 planning-audit.
+
+Planning and QA run on cards, and every card is a full run like this one: a planning card
+(`PLAN-F1`, ...) in a worktree of its own, a QA card (`QA-F1`, ...) on the integration tree. The
+task itself runs the same six stages around its cards - `areas` is its plan, `plan-integrate`,
+`accept` and `gate:goal` are its gates - so no team runs a chain without a plan before it and a
+gate after it (design: [`docs/plans/2026-09-28-teams-cards-everywhere.md`](../docs/plans/2026-09-28-teams-cards-everywhere.md)).
 
 ## How a task ends
 
@@ -220,7 +236,8 @@ bump for this repository's source).
 | A live page in the browser | `node teams/scripts/view.mjs` (pipeline, tickets and resources views; `--once` prints text) |
 
 Tickets follow `Initiative (optional) > EPIC > STORY > TASK`: `I-<slug>`, `E-xxxxxxxx` (the
-task), `E-xxxxxxxx/Pn` (a package), `E-xxxxxxxx/Pn/<subgoal>` (a node chain).
+task), `E-xxxxxxxx/Pn` (a package; also `E-xxxxxxxx/PLAN-F1` for a planning card and
+`E-xxxxxxxx/QA-F1` for a QA card), `E-xxxxxxxx/Pn/<subgoal>` (a node chain).
 
 **Headless / CI.** `scripts/run.mjs` opens a task and waits for it with no session in the loop:
 
@@ -256,7 +273,7 @@ explanation of every key is in [docs/configuration.md](docs/configuration.md#con
 | `goal_threshold` | `90` | Minimum match % for a goal gate to accept. |
 | `max_retries` | `2` | Retries per package, shape and subgoal before the failure is settled. |
 | `retry_policy` | `"continue"` | Whether a retry builds on the failed attempt's worktree or rolls it back first. |
-| `roles` | `{planning:"auto", qa:true, audit:true}` | Turns the PLAN, QA and audit phase teams on or off; `planning:"auto"` picks the light chain when acceptance is declared. |
+| `roles` | `{planning:"auto", qa:true, audit:true}` | Which chain the planning cards run (`true` full, `"light"`, `"auto"` light when acceptance is declared), and whether the QA cards and the audit run. `planning: false` is refused with a note: planning always runs. |
 | `brainstorm` | `true` | Runs the engine's own brainstorm step when no `decisions` were passed. |
 | `interactive` | `false` | Whether questions, pins and human gates wait for a person or are decided by default. |
 | `human_gates` | `[]` | Judging stages (`"critique"`, `"accept"`, `"gate:goal"`, ...) that a person decides instead of a model. |
@@ -287,7 +304,9 @@ explanation of every key is in [docs/configuration.md](docs/configuration.md#con
   details.
 - Design docs in [`docs/plans/`](../docs/plans/): start with
   [`2026-09-11-teams-taskmanager.md`](../docs/plans/2026-09-11-teams-taskmanager.md) and
-  [`2026-09-21-teams-server-owns-the-loop.md`](../docs/plans/2026-09-21-teams-server-owns-the-loop.md).
+  [`2026-09-21-teams-server-owns-the-loop.md`](../docs/plans/2026-09-21-teams-server-owns-the-loop.md);
+  the current principles are in
+  [`2026-09-28-teams-cards-everywhere.md`](../docs/plans/2026-09-28-teams-cards-everywhere.md).
 - [`graph/README.md`](../graph/README.md): the shared broker internals (tools, routing,
   adjudication, vendors, capacity recovery, the ledger). Fixes to that engine are ported
   between the two plugins. teams plugs into [`harness`](../harness/README.md)'s runtime gate
