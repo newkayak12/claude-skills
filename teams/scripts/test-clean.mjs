@@ -161,7 +161,7 @@ async function withTask(fn, extra) {
   const g = await new Client(BROKER).init();
   try {
     const roles = { planning: false, qa: false };
-    const open = await tm.call('tm_open', { request: 'big request', cwd, vendor: 'self', roles, ...extra });
+    const open = await tm.call('tm_open', { brainstorm: false, request: 'big request', cwd, vendor: 'self', roles, ...extra });
     await fn({ tm, g, cwd, root, task_id: open.task_id });
   } finally {
     tm.close();
@@ -267,7 +267,7 @@ test('tm_clean({}) without task_id sweeps every task under the tasks root, defau
     const cwdB = repo();
     const tmB = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
     try {
-      const openB = await tmB.call('tm_open', { request: 'second', cwd: cwdB, vendor: 'self', roles: { planning: false, qa: false } });
+      const openB = await tmB.call('tm_open', { brainstorm: false, request: 'second', cwd: cwdB, vendor: 'self', roles: { planning: false, qa: false } });
       const runningId = openB.task_id;
 
       const listed = await tmA.call('tm_clean', {});

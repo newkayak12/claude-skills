@@ -71,13 +71,29 @@ work: a planning phase-Team the EPIC flow inserts before `shape` on its own, ins
 this skill when the deliverable IS the planning work; turn `roles.planning` on instead when a PRD should precede every EPIC
 that also does code or writing work, without a separate run to ask for it.
 
+## Brainstorm first (optional)
+
+Before `tm_open` the user is in this session and the daemon's runs will not have them - this is the
+one moment a question is certain to reach a person. Offer a short brainstorm; if they skip it
+("그냥 돌려", "skip"), go straight to Entry and the engine brainstorms from the request on its own
+(its `brainstorm` node - the report then leads with "Decided by the engine itself").
+
+1. Read the project first - README, the tree, the files the request names. Never ask what the tree answers.
+2. Ask one question at a time, and only what the user alone can answer: what they want, what to
+   leave out, A or B. A fact a source can settle is PLAN's `investigate` job, not a question.
+3. Offer options with your recommendation on each ("추천: B - 이유").
+4. Pass what was settled as `decisions: [{question, chose, because?}]` to `tm_open`. Every package
+   reads them as rules and none is asked again; passing `decisions` (even `[]`) skips the engine's
+   own brainstorm node.
+
 ## Entry
 
 ```
 tm_open({
   request, cwd, isolated, mixed: true, flow: "plan",
   vendor: "auto", allocation: "balanced",
-  host_vendor, host_model, native_models
+  host_vendor, host_model, native_models,
+  decisions                                      # from the brainstorm above; omit if skipped
 })                                               -> task_id, state, docs_dir, view_url
 ```
 
@@ -118,7 +134,7 @@ install" note in `../orchestrate/SKILL.md` apply unchanged.
 
 ## What the current AI does
 
-Opens with the flow pinned, runs the loop, reports from verdicts.
+Offers the optional brainstorm and passes its `decisions`, opens with the flow pinned, runs the loop, reports from verdicts.
 
 ## What you do
 
