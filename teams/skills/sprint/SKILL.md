@@ -43,6 +43,13 @@ exists as its own tool or field — nothing here is new mechanism, only the orde
    asked (`tm_inbox`'s `decided`), which the retro surfaces either way. If this Sprint continues
    work a prior one left unfinished, add `context_from: "<prior task_id or E-xxxxxxxx>"` — see
    step 5.
+   Decide PLAN here too: `roles.planning` is on by default and runs a full PLAN phase-Team
+   (investigate → draft → revise → gate) before shape. If every backlog item already states its
+   own acceptance criteria, pass `roles: {planning: false}` — portfolio-refresh-80ec931a spent
+   16.9 of 70 minutes and $3.39 there restating a backlog that arrived with criteria. Keep it on
+   when the backlog rests on a premise nobody has checked or one criterion applies unevenly across
+   items: that is what PLAN's investigate is for (the same run's PLAN corrected two wrong premises
+   and split one shared criterion list per item).
 2. **Confirm the plan.** Read back `tm_status({task_id})`'s `team.opts` (budget_usd,
    timebox_minutes, roles) and, once shape has run, `tm_status`'s `shape` block (max_parallel_width,
    fully_serial, bloated) — the same signals `critique` itself judges the shape against. This is
