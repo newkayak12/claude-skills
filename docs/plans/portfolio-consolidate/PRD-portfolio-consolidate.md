@@ -25,7 +25,7 @@ The portfolio plugin (`portfolio/skills/`, 10 skills at HEAD) gives a job seeker
 
 Evidence: findings F§1-F§4. The request states the consolidation directly: "overlapping skills; this sprint consolidates them".
 
-## Users
+## Target users
 
 All users are job seekers. Most are Korean-speaking backend/software engineers with a 이력서 / 경력기술서 / 포트폴리오 in hand.
 
@@ -115,10 +115,10 @@ Run-it rule for every comparison: a *fresh* model (a new subagent that has not s
 - AC2.3 Without a JD, the output is per passage in PR7's block order, with no `JD 적합도 판정` line and no gap table.
 - AC2.4 Every ID RT1-17 and PR1-9 maps to a passage in `portfolio/skills/portfolio-rewrite/` (SKILL.md or its `references/`). The mapping table is delivered.
 - AC2.5 `portfolio/skills/resume-tailorer/` no longer exists. `portfolio-rewrite/SKILL.md` L25 ("Not for … JD keyword matching (`resume-tailorer`)") no longer names resume-tailorer; JD keyword matching is now in scope, so the clause is removed.
-- AC2.9 The merged frontmatter keeps both skills' entry points: the `description` covers portfolio-rewrite's triggers and resume-tailorer's ("이력서 맞춰줘", "공고에 맞게 고쳐줘", "이력서 최적화", "tailor my resume to this JD"), the scenarios include at least one JD-tailoring case in EN and in KR, and `effort: high` is set (RT17).
 - AC2.6 **Run-it, JD mode:** a fresh model given the merged skill + fixtures (a)+(b), and a fresh model given `cbdfcd6:resume-tailorer/SKILL.md` + the same fixtures, report the same Missing and Weak counts in the 판정 line and mark the same 최우선 변경 target area. In both, `API 응답속도 개선` is rewritten with `[확인 필요: …]` for the number, and the metric-bearing line keeps its original numbers unchanged.
 - AC2.7 **Run-it, no-JD mode:** a fresh model given the merged skill + fixture (a) under condition (c), and a fresh model given `cbdfcd6:portfolio-rewrite/SKILL.md` + the same input, name the same missing XYZ+S element for `API 응답속도 개선`. Neither run introduces a number, cause or scope absent from the fixture. The metric line's numbers are identical Before and After.
 - AC2.8 `portfolio-rewrite/evals/evals.json` holds the two runs above with assertions, and `evals/files/` holds (a) and (b).
+- AC2.9 The merged frontmatter keeps both skills' entry points: the `description` covers portfolio-rewrite's triggers and resume-tailorer's ("이력서 맞춰줘", "공고에 맞게 고쳐줘", "이력서 최적화", "tailor my resume to this JD"), the scenarios include at least one JD-tailoring case in EN and in KR, and `effort: high` is set (RT17).
 
 ### US-3 — `portfolio-feedback-beta`: feedback plus pattern's measures, each counted once
 
@@ -135,7 +135,7 @@ Run-it rule for every comparison: a *fresh* model (a new subagent that has not s
 - The copy includes feedback's `references/` (six files), since the SKILL.md links them relatively.
 - The copied SKILL.md inherits feedback's L48 (`jd-fit`) and L149 (`jd-fit`) references. In the beta they are re-pointed to `fit`. The beta is a new file, so the "unchanged" rule does not cover it, and leaving them would put two more dead names past the grep gate (AC4.4).
 
-**Capability keep-list.** Everything portfolio-feedback has at `cbdfcd6` (it is a copy), plus pattern's four named measures under the boundary above. Feedback's tally at HEAD: `XYZ+S n/m · 완전 주장 n/m · 스킬 근거율 n/m · 날짜 불일치 n · 레벨 갭 ±n · 의사결정 동사 n% · 불릿/롤 max n` (F§3).
+**Capability keep-list.** Everything portfolio-feedback has at `cbdfcd6` (it is a copy), plus pattern's four named measures under the boundary above. Feedback's tally at HEAD: `XYZ+S n/m · 완전 주장 n/m · 스킬 근거율 n/m · 날짜 불일치 n · 레벨 갭 ±n · 의사결정 동사 n% (국문일 때) · 불릿/롤 max n` (portfolio-feedback SKILL L42, L131; F§3).
 
 **Acceptance**
 - AC3.1 `portfolio/skills/portfolio-feedback-beta/` exists, containing a SKILL.md (frontmatter `name: portfolio-feedback-beta`, description triggered by explicit "beta" requests) and a copy of feedback's `references/`. `diff -r` against `portfolio-feedback/` shows only the changes this story names (frontmatter, the four measures, the L48/L149 re-pointing, evals).
@@ -161,8 +161,8 @@ Run-it rule for every comparison: a *fresh* model (a new subagent that has not s
 - `portfolio/skills/mock-interview/SKILL.md` L26 (jd-fit)
 - `portfolio/skills/portfolio-rewrite/SKILL.md` L25 (resume-tailorer), handled with US-2 (AC2.5)
 - `portfolio/references/ats-rules-korea.md` L3, `portfolio/references/korea-company-culture-signals.md` L3 (resume-tailorer)
-- `portfolio/README.md` L31, L32, L37 (which-skill table), L58-64 (workflow diagram), L70-97 (§jd-fit, incl. L80-81), L99-114 (§portfolio-company), L123 (jd-fit in §portfolio-feedback), L252-277 (§resume-tailorer), plus a beta-lane line for US-3
-- `portfolio/KOR.md` L30, L31, L36, L56-62, L68-77, L95- (§portfolio-company), L117, L232- (§resume-tailorer), mirroring README
+- `portfolio/README.md` L47-48 (§job-application-workflow prose: "Four steps … JD analysis → company research → …"; names no removed skill, so the grep misses it, but it promises an unproduced output and the wrong step count), L31, L32, L37 (which-skill table), L58-64 (workflow diagram), L70-97 (§jd-fit, incl. L80-81), L99-114 (§portfolio-company), L123 (jd-fit in §portfolio-feedback), L252-277 (§resume-tailorer), plus a beta-lane line for US-3
+- `portfolio/KOR.md` L46-47 (prose "네 단계: JD 분석 → 회사 리서치 → …", same reason as README L47-48), L30, L31, L36, L56-62, L68-77, L95- (§portfolio-company), L117, L232- (§resume-tailorer), mirroring README
 - `portfolio/skills/portfolio-feedback-beta/SKILL.md`: its copies of feedback L48 and L149, handled with US-3
 - **Whitelisted, not edited (the five lines AC4.4 allows):** `portfolio/skills/portfolio-feedback/SKILL.md` L48, L149; `portfolio/skills/portfolio-pattern/SKILL.md` L36, L141; `portfolio/.claude-plugin/plugin.json` L3
 - **Outside the grep, also not edited:** `.claude-plugin/marketplace.json` L101 carries the same description string as plugin.json L3 (default - revisit with requester; both updated with the post-sprint bump)
@@ -170,12 +170,12 @@ Run-it rule for every comparison: a *fresh* model (a new subagent that has not s
 **Acceptance**
 - AC4.1 Every step-table entry in `job-application-workflow/SKILL.md` names one of `fit`, `portfolio-feedback`, `portfolio-rewrite`, `write:writer-verification`, `interview-plan`, `mock-interview`, in the order above, each with a skip condition. No step names `jd-fit`, `portfolio-company` or `resume-tailorer`, including the Related Skills list (today L96).
 - AC4.2 The 자기소개서 / cover-letter step names `write:writer-verification` in draft mode, genre `doc`, lists its material (resume/portfolio, JD with 문항 text, fit result), and states the rule that every experience fact comes from the user's material, with missing ones marked `[확인 필요: ○○]`. Its skip condition covers the `write` plugin being absent.
-- AC4.3 For each step, the output the workflow promises is an output block of the named skill at the post-sprint tree. README/KOR no longer promise "company research" or a "STAR story bank" / written answers.
+- AC4.3 For each step, the output the workflow promises is an output block of the named skill at the post-sprint tree. In README/KOR, the §job-application-workflow prose and the workflow diagram (README L47-64, KOR L46-62 at `cbdfcd6`) state the new step count and no longer promise "company research" / "회사 리서치", or a written "STAR story bank" / "STAR 스토리 뱅크" as the interview step's output. interview-plan's own section, which describes 6-8 STAR *prompts* (README L284, KOR L263), is accurate and stays.
 - AC4.4 `grep -rn "jd-fit\|portfolio-company\|resume-tailorer" portfolio/` returns exactly the five whitelisted lines: portfolio-feedback L48, L149; portfolio-pattern L36, L141; `.claude-plugin/plugin.json` L3.
 - AC4.5 README.md and KOR.md change together: both have the same sections for `fit`, the merged `portfolio-rewrite`, and the beta-lane line, and neither has a section for a deleted skill.
 - AC4.6 `python3 scripts/validate_plugins.py` passes.
 
-## Scope and non-goals
+## Out of scope (scope and non-goals)
 
 **Scope boundaries (decided by the requester)**
 - **No version or manifest edits.** `.claude-plugin/marketplace.json` and `portfolio/.claude-plugin/plugin.json` are not touched this sprint. Versions (and, by default, the stale description strings) are bumped once after the sprint (D9). This overrides writing-skills step 8. The "update README + KOR" part of the repo update workflow still applies.
@@ -190,22 +190,25 @@ Run-it rule for every comparison: a *fresh* model (a new subagent that has not s
 - **영문 이력서 / global-application conventions** beyond what the existing skills already handle, 연봉 협상, and 레퍼런스 체크 prep are not in any story.
 - **Automated eval harness.** The run-it comparisons are run by a fresh subagent and recorded in evals.json. No runner script is built.
 
-## Risks and open questions
+## Open questions (risks and open questions)
 
-The run that wrote this PRD was not interactive, so every question the investigation raised (U1-U11 in the findings) was settled by its most conservative supported option and written as a rule marked "(default - revisit with <owner>)". None is left open. Each is listed here with its owner, so a reader who expects it as an open question finds where it was settled.
+The run that wrote this PRD was not interactive. Every question the investigation raised (U1-U11 in the findings) was settled by its most conservative supported option and is written in the story as a rule marked "(default - revisit with <owner>)". None is left open. The table lists each one with its owner and its default, so a reader who expects it as an open question can find where it was settled and who can reopen it.
 
-**Questions, settled by default** (owner can revisit)
-- Merged skill's directory/name: `portfolio/skills/fit`, `name: fit`, decided by the requester in the request text (D2). The request does not leave it ambiguous. Owner if revisited: PO.
-- Non-overlap boundary between pattern's four measures and feedback's tally: decided as the US-3 boundary (default - revisit with domain expert).
-- The UNCHANGED feedback/pattern vs "update every reference" conflict: whitelist (default - revisit with requester/PO).
-- plugin.json / marketplace.json description strings: untouched (default - revisit with requester).
-- fit's mode selection and output per mode: US-1 rules (default - revisit with domain expert).
-- Meaning of "beta matches feedback": AC3.4 (default - revisit with PO).
-- Workflow step order, and the 자기소개서 genre/material: US-4 rules (default - revisit with PO).
-- Fixture placement and SKILL.md length handling: one copy per skill, long detail in the skill's `references/` (default - revisit with implementation lead).
-- Beta listing and triggers: separate beta-lane line, explicit "beta" trigger only (default - revisit with PO).
-- Recording the run-it comparisons (U11): evals.json assertions, plus a comparison note in the package's commit/PR body quoting both runs' verdict and tally lines. The writing-skills step-6 gate skills (`skill-trigger-validator`, `skill-quality-assurance`) were recorded as not installed here by the portfolio-refresh PRD; a package that finds them absent skips them and says so (default - revisit with implementation lead).
-- Fixture (c) carries no company context (default - revisit with PO). Adding "핀테크 쪽 생각 중" would change which types lead and make the pre/post runs non-comparable unless both get it.
+| # | Question | Default in force | Owner | Where it is applied |
+|---|----------|------------------|-------|---------------------|
+| U1 | feedback/pattern must stay UNCHANGED (D4), but every reference must be updated (D8) | Both files stay byte-identical. Their four stale lines, plus plugin.json L3, are whitelisted in the grep gate and fixed at beta promotion | requester/PO | US-4 rules, AC4.4, SC4 |
+| U2 | Non-overlap boundary between pattern's four measures and feedback's tally | Subject audit reuses `의사결정 동사` and adds a team-subject count. `피동 n` joins the tally. Number density uses 완전 주장's denominator and does not move Impact or XYZ+S. Decision visibility is an appendix note | domain expert | US-3 boundary, AC3.2, AC3.5 |
+| U3 | Description strings in plugin.json / marketplace.json | Untouched. Updated with the post-sprint version bump | requester | US-4 reference sites, Out of scope |
+| U4 | fit's output per mode, and a JD plus a named company | JD presence picks the mode. JD mode = jd-fit blocks + tally. No-JD mode = portfolio-company blocks, Top 2 first, no tally. A JD with a company name runs JD mode | domain expert | US-1 rules, AC1.2, AC1.3 |
+| U5 | What "beta must not regress feedback's verdict" compares | Screen verdict and every shared tally equal, dimension scores within ±1, same model, one run each, one rerun on mismatch | PO | AC3.4, R1 |
+| U6 | Workflow step list and order | fit → portfolio-feedback → portfolio-rewrite (±JD) → 자기소개서 (writer-verification draft) → interview-plan → mock-interview, each with a skip condition | PO | US-4 rules, AC4.1 |
+| U7 | Where the shared fixtures live | One copy of (a) and (b) in each using skill's `evals/files/`. (c) is a prompt condition with no company context | implementation lead (placement), PO (content of c) | Fixtures table, AC1.8, AC2.8, AC3.6 |
+| U8 | Merged SKILL.md length vs the 250-line warning | Company-type profiles and tailorer's JD-analysis detail move to the skill's own `references/` | implementation lead | US-1 and US-2 rules, R3 |
+| U9 | writer-verification genre and material for the 자기소개서 step | Genre `doc`. Material = resume/portfolio + JD (with 문항) + fit result. The step itself states the `[확인 필요: ○○]` rule | PO | US-4 rules, AC4.2 |
+| U10 | Beta listing and triggers | Separate beta-lane line in README/KOR. Description triggers only on an explicit "beta" request | PO | US-3 rules, AC3.1, AC4.5 |
+| U11 | How the run-it comparisons are recorded, and whether the absent writing-skills gate skills are required | evals.json assertions, plus a comparison note in the package's commit/PR body quoting both runs' verdict and tally lines. A package that finds `skill-trigger-validator` / `skill-quality-assurance` absent skips them and says so | implementation lead | Success criteria, run-it rule |
+
+The merged skill's name (`portfolio/skills/fit`) is not in this table. The requester decided it in the request text (D2).
 
 **Risks**
 - R1. **Nondeterminism can mask or fake a regression.** One run each plus one rerun (AC3.4) can pass a real drift or fail on noise. Mitigation: same model, verdict and tallies compared exactly, dimension scores ±1. Owner: PO.
@@ -214,3 +217,30 @@ The run that wrote this PRD was not interactive, so every question the investiga
 - R4. **Cross-plugin dependency.** The workflow now depends on `write:writer-verification`. A user without the write plugin gets a step that cannot run; the US-4 skip condition (AC4.2) covers it, but only if the step checks for the skill instead of silently drafting ad hoc. Owner: PO.
 - R5. **Trigger collision.** If fit's description is too broad it may steal portfolio-feedback's "서류 통과할까?" triggers, and the beta may collide with stable feedback. The beta's explicit-"beta" trigger addresses the second collision only. Owner: domain expert.
 - R6. **Stale lines stay live until promotion.** portfolio-feedback and portfolio-pattern keep pointing at `jd-fit` (including `../jd-fit/SKILL.md`, a dead relative link) until beta promotion. Owner: requester/PO.
+
+## Appendix — sources investigated and decision trace
+
+**Sources investigated** (by the investigate stage, at `cbdfcd6`, cited in the findings file by section and ID):
+- Portfolio skill SKILL.md files: jd-fit, portfolio-company (F§1, JD1-17, PC1-15); resume-tailorer, portfolio-rewrite (F§2, RT1-17, PR1-9); portfolio-feedback and portfolio-pattern (F§3); job-application-workflow, interview-plan, mock-interview (F§4).
+- `portfolio/README.md` and `portfolio/KOR.md` sections for every affected skill (F§1, F§2, F§4 reference sites).
+- `references/`: portfolio-feedback's `resume-conventions.md`, `claim-and-consistency.md`, `revision-diff.md` (F§3); shared `portfolio/references/ats-rules-korea.md` and `korea-company-culture-signals.md` (F§2, F§4).
+- `portfolio/.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` description strings (F§4, U3).
+- `write/skills/writer-verification/SKILL.md` draft mode and genres (F§4); `write/skills/writing-skills/SKILL.md` authoring rules (F§5).
+- `scripts/validate_plugins.py` checks and warnings (F§5); `portfolio-feedback/evals/` as the fixture-format precedent (F§5).
+
+**Requester decisions (findings §0) and where this PRD reflects each**
+
+| Decision | PRD passage |
+|----------|-------------|
+| D1 four backlog items, priority 0-3 | User stories US-1 to US-4, in priority order |
+| D2 merged skill is `portfolio/skills/fit` | US-1 description; Open questions, note under the table |
+| D3 delete jd-fit, portfolio-company, resume-tailorer; keep every capability | SC1, SC2; AC1.4, AC1.5, AC2.4, AC2.5 and the keep-lists |
+| D4 feedback and pattern unchanged, beta lane, promotion later, no verdict regression | US-3 description; AC3.3, AC3.4; SC6; Out of scope, "No edits to portfolio-feedback…" and "Beta promotion…" |
+| D5 workflow names, 자기소개서 via writer-verification draft mode, fact rule, no unproduced outputs | US-4 rules; AC4.1-AC4.3; SC7 |
+| D6 judge by running: fresh model, changed vs pre-change skill on the same input | Success criteria, "Run-it rule"; AC1.6, AC1.7, AC2.6, AC2.7, AC3.4 |
+| D7 fixtures (a)/(b)/(c) under each skill's `evals/`, kept | Success criteria, "Fixtures" table and placement; AC1.8, AC2.8, AC3.6 |
+| D8 update every reference across portfolio/ | US-4, "Reference sites to update"; AC4.4, AC4.5; SC4 |
+| D9 no version edits to marketplace.json / plugin.json | Out of scope, "No version or manifest edits"; SC6 |
+| D10 `validate_plugins.py` must pass | SC5; AC4.6; Out of scope, "Gate carried into every build package" |
+| D11 the bar: portfolio-feedback Standing Mandates | Domain section; US-1 rules; US-2 fact rule; US-3 boundary rule; AC1.1 |
+| D12 one PRD for the document set | Header, "This is the only planning document for this sprint" |
