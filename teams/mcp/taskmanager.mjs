@@ -2732,15 +2732,19 @@ export function foldChild(task, n) {
   // says "(none)". goal-code-beta-R1 (2026-09-18) accepted exactly that at 93% and the run went
   // on to build from the request alone. The child's own gate cannot see this - it judges its
   // document, not what the manager needs from it - so the fold is where it has to be caught.
-  const planningStories = pkg && pkg.phase === 'planning'
+  const prdPaths = () => ((Array.isArray(g.prd_paths) ? g.prd_paths : []).length
+    ? g.prd_paths
+    : [...new Set((child.nodes || []).flatMap((x) => (x.result && x.result.changed_files) || []).map(String))]);
+  let planningStories = pkg && pkg.phase === 'planning'
     ? (Array.isArray(g.user_stories) ? g.user_stories : []).filter((u) => storyId(u))
     : null;
+  if (planningStories && g.accept === true && !planningStories.length) {
+    planningStories = prdStories(n.child ? n.child.cwd : task.cwd, prdPaths());
+  }
   // Same principle as the story check: a structural requirement the contract states in words is
   // verified here rather than trusted to a judge that accepted a PRD missing three of them.
   if (planningStories && g.accept === true && planningStories.length) {
-    const missing = missingPrdSections(n.child ? n.child.cwd : task.cwd, (Array.isArray(g.prd_paths) ? g.prd_paths : []).length
-      ? g.prd_paths
-      : [...new Set((child.nodes || []).flatMap((x) => (x.result && x.result.changed_files) || []).map(String))]);
+    const missing = missingPrdSections(n.child ? n.child.cwd : task.cwd, prdPaths());
     if (missing.length) {
       return {
         ...base, stage_ok: true, accept: false, match_pct: g.match_pct, user_stories: planningStories,
@@ -2770,7 +2774,7 @@ export function foldChild(task, n) {
     // The planning phase-Team's structured bridge (§0.4 finding 2): shape's implements[]
     // completeness check needs the ID list, not the PRD body, which stays in the child run.
     ...(pkg && pkg.phase === 'planning' ? {
-      user_stories: Array.isArray(g.user_stories) ? g.user_stories : [],
+      user_stories: planningStories && planningStories.length ? planningStories : (Array.isArray(g.user_stories) ? g.user_stories : []),
       // Where the PRD actually is. The child's own nodes recorded it; nothing else knows, and
       // shape's briefing has no other way to name a file a reader can open.
       prd_paths: [...new Set((child.nodes || []).flatMap((x) => (x.result && x.result.changed_files) || []).map(String))],
@@ -3899,6 +3903,37 @@ const PRD_SECTIONS = [
 // Headings the PRD does not carry, under any of the names above, at any level. Reads the files
 // the planning run reported writing; a file it cannot read is not evidence of absence, so an
 // unreadable PRD yields no complaint here (the zero-stories check already covers the empty case).
+// The stories a PRD carries, read from the document itself. The child's goal gate is asked to
+// return them as user_stories[], and portfolio-consolidate's (2026-09-28) did not - it accepted a
+// PRD with four well-formed stories under "## User stories" and returned none, so the fold threw
+// the whole planning run away and paid for a second one. The document is the source; the gate's
+// list is a convenience. Stories are "US-n" lines (heading or bullet) inside that section; each
+// one's acceptance is the bullets under its "Acceptance" label, or every bullet when it has none.
+export function prdStories(cwd, paths) {
+  let text = '';
+  for (const rel of paths || []) {
+    if (!/\.md$/i.test(String(rel)) || /-findings\.md$/i.test(String(rel))) continue;
+    try { text += `\n${readFileSync(resolve(cwd, String(rel)), 'utf8')}`; } catch { /* unreadable */ }
+  }
+  const sec = text.match(/^##\s+user stories[^\n]*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/im);
+  if (!sec) return [];
+  const stories = [];
+  let cur = null, inAcc = false;
+  for (const line of sec[1].split('\n')) {
+    const head = line.match(/^(?:#{2,6}\s*|[-*]\s*)?\**\s*(US-\d+)\b\**\s*[\u2014:\-\u2013]*\s*(.*)$/);
+    if (head) {
+      cur = { id: head[1], title: head[2].replace(/\*+/g, '').trim(), acceptance: [], all: [] };
+      stories.push(cur); inAcc = false; continue;
+    }
+    if (!cur) continue;
+    if (/^\s*\**\s*acceptance\b/i.test(line)) { inAcc = true; continue; }
+    if (/^\s*\*\*[^*]+\*\*/.test(line) && !/^\s*[-*]\s/.test(line)) { inAcc = false; continue; }
+    const b = line.match(/^\s*[-*]\s+(.*)$/);
+    if (b) { cur.all.push(b[1].trim()); if (inAcc) cur.acceptance.push(b[1].trim()); }
+  }
+  return stories.map(({ all, ...st }) => ({ ...st, acceptance: st.acceptance.length ? st.acceptance : all, source: 'prd' }));
+}
+
 export function missingPrdSections(cwd, paths) {
   let text = '';
   for (const rel of paths || []) {
