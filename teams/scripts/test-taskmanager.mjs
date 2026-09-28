@@ -218,7 +218,9 @@ async function withTask(fn, extra) {
     // roles default to both ON since 0.17.0 (a develop task always passes planning and QA). These
     // tests build the plain graph by hand, so they pin both off unless a test asks otherwise.
     const roles = { planning: false, qa: false, ...((extra && extra.roles) || {}) };
-    const open = await tm.call('tm_open', { request: 'big request', cwd, vendor: 'self', ...extra, roles });
+    // brainstorm (docs/plans/2026-09-28-teams-light-plan.md §6.5) is on by default too; pinned off
+    // for the same reason, so size still feeds PLAN/shape directly. Its own tests turn it on.
+    const open = await tm.call('tm_open', { request: 'big request', cwd, vendor: 'self', brainstorm: false, ...extra, roles });
     await fn({ tm, g, cwd, root, task_id: open.task_id, open });
   } finally {
     tm.close();
@@ -471,7 +473,7 @@ test('tm_open({size}) pins the size: L opens shape without measuring, S opens it
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
   try {
-    const L = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'big request', cwd, flow: 'develop', vendor: 'self', size: 'L' });
+    const L = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'big request', cwd, flow: 'develop', vendor: 'self', size: 'L' });
     assert.equal(L.state, 'running', JSON.stringify(L));
     assert.equal(L.size, 'L');
     assert.deepEqual(L.ready.map((r) => r.node_id), ['shape'], 'nothing was measured: shape is ready at once');
@@ -479,7 +481,7 @@ test('tm_open({size}) pins the size: L opens shape without measuring, S opens it
     const size = task.nodes.find((n) => n.node_id === 'size');
     assert.equal(size.state, 'done');
     assert.equal(size.result.size_source, 'pinned');
-    const S = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'small request', cwd, flow: 'document', vendor: 'self', size: 'S' });
+    const S = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'small request', cwd, flow: 'document', vendor: 'self', size: 'S' });
     assert.equal(S.task_state, 's_run');
     assert.ok(S.run_id, 'a pinned S opens its single graph run at once');
     const sTask = JSON.parse(readFileSync(join(root, S.task_id, 'task.json'), 'utf8'));
@@ -493,11 +495,11 @@ test('resolving size to S returns task_state: "s_run" and never the dead "delega
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
   try {
-    const pinned = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'small request', cwd, flow: 'document', vendor: 'self', size: 'S' });
+    const pinned = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'small request', cwd, flow: 'document', vendor: 'self', size: 'S' });
     assert.equal(pinned.task_state, 's_run');
     assert.equal('delegate' in pinned, false, JSON.stringify(pinned));
 
-    const { task_id } = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'r', cwd, flow: 'develop', vendor: 'self' });
+    const { task_id } = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'r', cwd, flow: 'develop', vendor: 'self' });
     const measured = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'develop' }) });
     assert.equal(measured.task_state, 's_run');
     assert.equal('delegate' in measured, false, JSON.stringify(measured));
@@ -510,7 +512,7 @@ test('a pinned flow survives sizing and reaches the single run the manager opens
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
   const g = await new Client(BROKER).init();
   try {
-    const { task_id } = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'r', cwd, flow: 'develop', vendor: 'self', max_retries: 1, isolated: true });
+    const { task_id } = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'r', cwd, flow: 'develop', vendor: 'self', max_retries: 1, isolated: true });
     // size says document; the entry pinned develop, and the entry wins.
     const v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'document' }) });
     assert.equal(v.task_state, 's_run');
@@ -1816,7 +1818,7 @@ test('budget_usd hit before shape: the pending graph is skipped, a report opens,
     assert.deepEqual(retro.next_backlog.unshipped_requests.map((r) => r.priority), [0, 1, 2]);
     assert.ok(retro.retrospective.budget_stopped.before_shape);
     // ...and the next Sprint's context_from reads it back as backlog items, not just packages.
-    const next = await tm.call('tm_open', { requests: ['x'], cwd: full.cwd, vendor: 'self', roles: { planning: false, qa: false }, context_from: task_id });
+    const next = await tm.call('tm_open', { requests: ['x'], cwd: full.cwd, vendor: 'self', roles: { planning: false, qa: false }, brainstorm: false, context_from: task_id });
     const t2 = await tm.call('tm_status', { task_id: next.task_id, full: true });
     assert.match(t2.context, /backlog items not shipped[\s\S]*\[0\] parse csv[\s\S]*\[2\] cli/);
   }, { request: null, requests: ['parse csv', 'rules engine', 'cli'], budget_usd: 5 });
@@ -1989,19 +1991,19 @@ test('tm_open({context_from}) folds the prior task\'s retro into the new task\'s
   await withTask(async ({ tm, g, cwd, root, task_id }) => {
     await toReport(tm, g, task_id, 'prior task done');
 
-    const second = await tm.call('tm_open', { request: 'follow-up work', cwd, vendor: 'self', roles: { planning: false, qa: false }, context_from: task_id });
+    const second = await tm.call('tm_open', { request: 'follow-up work', cwd, vendor: 'self', roles: { planning: false, qa: false }, brainstorm: false, context_from: task_id });
     const task2 = await tm.call('tm_status', { task_id: second.task_id, full: true });
     assert.match(task2.context, /Retrospective/);
     assert.match(task2.context, /Next backlog/);
     assert.match(task2.context, new RegExp(task_id));
 
     // A ref that resolves to nothing (no report/retro yet) is best-effort, not fatal.
-    const third = await tm.call('tm_open', { request: 'no prior retro yet', cwd, vendor: 'self', roles: { planning: false, qa: false }, context_from: 'not-a-real-task-id' });
+    const third = await tm.call('tm_open', { request: 'no prior retro yet', cwd, vendor: 'self', roles: { planning: false, qa: false }, brainstorm: false, context_from: 'not-a-real-task-id' });
     const task3 = await tm.call('tm_status', { task_id: third.task_id, full: true });
     assert.equal(task3.context, '');
     assert.match(third.context_from_unresolved, /no task not-a-real-task-id/, 'best-effort, but the caller is told it came up empty');
     // A real task whose report has not run yet: named as such, not as a missing task.
-    const fourth = await tm.call('tm_open', { request: 'too early', cwd, vendor: 'self', roles: { planning: false, qa: false }, context_from: third.task_id });
+    const fourth = await tm.call('tm_open', { request: 'too early', cwd, vendor: 'self', roles: { planning: false, qa: false }, brainstorm: false, context_from: third.task_id });
     assert.match(fourth.context_from_unresolved, /no retro\.json yet/);
     assert.equal(second.context_from_unresolved, undefined);
   }, { roles: { planning: false, qa: false } });
@@ -2018,7 +2020,7 @@ test('tm_open requires request XOR requests, and requests: [...] becomes the bac
 
 test('requests: [...] opens with a single composed request text (priority = array order) and task.requests carries the raw backlog for the retro', async () => {
   await withTask(async ({ tm, cwd, root }) => {
-    const open = await tm.call('tm_open', { requests: ['build the API', 'write the docs'], cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    const open = await tm.call('tm_open', { requests: ['build the API', 'write the docs'], cwd, vendor: 'self', roles: { planning: false, qa: false }, brainstorm: false });
     const task = JSON.parse(readFileSync(join(root, open.task_id, 'task.json'), 'utf8'));
     assert.deepEqual(task.requests, ['build the API', 'write the docs']);
     assert.match(task.request, /\[backlog priority 0\] build the API/);
@@ -2028,19 +2030,19 @@ test('requests: [...] opens with a single composed request text (priority = arra
 
 test('a backlog held to a budget/timebox is pinned L - an S task has no packages for the box to leave undispatched', async () => {
   await withTask(async ({ tm, cwd, root }) => {
-    const boxed = await tm.call('tm_open', { requests: ['build the API', 'write the docs'], budget_usd: 5, cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    const boxed = await tm.call('tm_open', { requests: ['build the API', 'write the docs'], budget_usd: 5, cwd, vendor: 'self', roles: { planning: false, qa: false }, brainstorm: false });
     const t1 = JSON.parse(readFileSync(join(root, boxed.task_id, 'task.json'), 'utf8'));
     assert.equal(t1.size_pinned, 'L');
     assert.equal(t1.size_pin_source, 'boxed-backlog');
     assert.equal(t1.nodes.find((n) => n.node_id === 'size').result.size, 'L');
-    const timeboxed = await tm.call('tm_open', { requests: ['a', 'b'], timebox_minutes: 30, cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    const timeboxed = await tm.call('tm_open', { requests: ['a', 'b'], timebox_minutes: 30, cwd, vendor: 'self', roles: { planning: false, qa: false }, brainstorm: false });
     assert.equal(JSON.parse(readFileSync(join(root, timeboxed.task_id, 'task.json'), 'utf8')).size_pinned, 'L');
     // Unboxed, a single item, or a caller's own pin: size is measured (or pinned) as before.
-    const unboxed = await tm.call('tm_open', { requests: ['a', 'b'], cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    const unboxed = await tm.call('tm_open', { requests: ['a', 'b'], cwd, vendor: 'self', roles: { planning: false, qa: false }, brainstorm: false });
     assert.equal(JSON.parse(readFileSync(join(root, unboxed.task_id, 'task.json'), 'utf8')).size_pinned, null);
-    const single = await tm.call('tm_open', { requests: ['a'], budget_usd: 5, cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    const single = await tm.call('tm_open', { requests: ['a'], budget_usd: 5, cwd, vendor: 'self', roles: { planning: false, qa: false }, brainstorm: false });
     assert.equal(JSON.parse(readFileSync(join(root, single.task_id, 'task.json'), 'utf8')).size_pinned, null);
-    const callerS = await tm.call('tm_open', { requests: ['a', 'b'], budget_usd: 5, size: 'S', cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    const callerS = await tm.call('tm_open', { requests: ['a', 'b'], budget_usd: 5, size: 'S', cwd, vendor: 'self', roles: { planning: false, qa: false }, brainstorm: false });
     const t5 = JSON.parse(readFileSync(join(root, callerS.task_id, 'task.json'), 'utf8'));
     assert.equal(t5.size_pinned, 'S');
     assert.equal(t5.size_pin_source, 'caller');
@@ -2320,7 +2322,7 @@ test('tm_open no longer accepts notify: dropped from the tool schema and never s
   try {
     // Passing notify is silently a no-op now, not an error - same as any other unrecognized
     // argument this hand-rolled schema does not validate against.
-    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'r', cwd, vendor: 'self', notify: 'some-agent' });
+    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'r', cwd, vendor: 'self', notify: 'some-agent' });
     const task = JSON.parse(readFileSync(join(root, open.task_id, 'task.json'), 'utf8'));
     assert.equal(Object.prototype.hasOwnProperty.call(task, 'notify'), false);
   } finally {
@@ -2336,7 +2338,7 @@ test('tm_open starts one viewer per tasks root and hands back its URL; .view.jso
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '1' }).init();
   const pids = [];
   try {
-    const open = await tm.call('tm_open', { request: 'r', cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    const open = await tm.call('tm_open', { request: 'r', cwd, vendor: 'self', roles: { planning: false, qa: false }, brainstorm: false });
     assert.match(open.view_url, new RegExp(`^http://127\\.0\\.0\\.1:\\d+/\\?task=${open.task_id}$`));
     const rec = readViewRecord(root);
     assert.ok(rec, '.view.json missing, unreadable, or its pid is already dead');
@@ -2356,12 +2358,12 @@ test('a second tm_open under the same tasks root reuses the first viewer - one w
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '1' }).init();
   const pids = [];
   try {
-    const open1 = await tm.call('tm_open', { request: 'r1', cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    const open1 = await tm.call('tm_open', { request: 'r1', cwd, vendor: 'self', roles: { planning: false, qa: false }, brainstorm: false });
     const rec1 = readViewRecord(root);
     assert.ok(rec1, '.view.json missing after the first tm_open');
     pids.push(rec1.pid);
 
-    const open2 = await tm.call('tm_open', { request: 'r2', cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    const open2 = await tm.call('tm_open', { request: 'r2', cwd, vendor: 'self', roles: { planning: false, qa: false }, brainstorm: false });
     const rec2 = readViewRecord(root);
     assert.ok(rec2, '.view.json missing after the second tm_open');
     assert.equal(rec2.pid, rec1.pid, 'the second tm_open must reuse the same viewer process, not spawn a second one');
@@ -2380,7 +2382,7 @@ test('TEAMS_VIEW=0 disables the viewer entirely: no view_url, no .view.json, and
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '0' }).init();
   try {
-    const open = await tm.call('tm_open', { request: 'r', cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    const open = await tm.call('tm_open', { request: 'r', cwd, vendor: 'self', roles: { planning: false, qa: false }, brainstorm: false });
     assert.ok(!open.view_url, 'view_url must be absent or null when TEAMS_VIEW=0');
     assert.ok(!existsSync(viewRecordPath(root)), '.view.json must not be written when TEAMS_VIEW=0');
     assert.equal(open.state, 'running');
@@ -2856,7 +2858,7 @@ test('a project that is not a git repository fails the dispatch with the reason,
   // spawn a real `claude` process for the TaskLeader the moment it is called.
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_LEADER: '1' }).init();
   try {
-    const { task_id } = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'r', cwd });
+    const { task_id } = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'r', cwd });
     await throughCritique(tm, task_id);
     const nx = await tm.call('tm_next', { task_id });
     assert.equal(nx.state, 'blocked');
@@ -2878,7 +2880,7 @@ test('a stage briefing carries its method, and the contract outranks what the me
   // spawn a real `claude` process for the TaskLeader the moment it is called.
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_LEADER: '1' }).init();
   try {
-    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'big request', cwd, vendor: 'self', size: 'L' });
+    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'big request', cwd, vendor: 'self', size: 'L' });
     // size is a measurement: it gets no method at all, and reaching for one is its failure mode.
     const sizing = readFileSync(open.ready.find((n) => n.stage === 'shape' || n.stage === 'size')?.briefing_path, 'utf8');
     const shape = open.ready.find((n) => n.stage === 'shape');
@@ -2905,7 +2907,7 @@ test('the shape contract asks each package for optional skills, and says why sha
   // spawn a real `claude` process for the TaskLeader the moment it is called.
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_LEADER: '1' }).init();
   try {
-    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'big request', cwd, vendor: 'self', size: 'L' });
+    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'big request', cwd, vendor: 'self', size: 'L' });
     const shape = readFileSync(open.ready.find((n) => n.stage === 'shape').briefing_path, 'utf8');
     assert.match(shape, /"skills": \["plugin:skill"\]/);
     assert.match(shape, /optional/);
@@ -2978,10 +2980,10 @@ test('skills: false runs every stage on its contract alone, and an override repl
   // spawn a real `claude` process for the TaskLeader the moment it is called.
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_LEADER: '1' }).init();
   try {
-    const off = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'big request', cwd, vendor: 'self', size: 'L', skills: false });
+    const off = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'big request', cwd, vendor: 'self', size: 'L', skills: false });
     assert.doesNotMatch(readFileSync(off.ready[0].briefing_path, 'utf8'), /## Method/);
     const mine = await tm.call('tm_open', {
-      request: 'big request', cwd, vendor: 'self', size: 'L', roles: { planning: false, qa: false },
+      request: 'big request', cwd, vendor: 'self', size: 'L', roles: { planning: false, qa: false }, brainstorm: false,
       skills: { shape: ['write:writing-plans'] },
     });
     const prompt = readFileSync(mine.ready[0].briefing_path, 'utf8');
@@ -3095,7 +3097,7 @@ test('a ready dispatch spawns a driver process in the package worktree, with the
   const tm = await f.client.init();
   try {
     const { task_id } = await tm.call('tm_open', {
-      request: 'big request', cwd: f.cwd, vendor: 'self', roles: { planning: false, qa: false },
+      request: 'big request', cwd: f.cwd, vendor: 'self', roles: { planning: false, qa: false }, brainstorm: false,
       host_vendor: 'claude', host_model: 'claude-opus-4', native_models: ['sonnet', 'haiku'],
     });
     await throughCritique(tm, task_id);
@@ -3138,7 +3140,7 @@ test('a driver that dies mid-run is respawned on the SAME run_id with a resume p
   const tm = await f.client.init();
   try {
     // Default driver_restarts (2): the first death must not fold anything.
-    const { task_id } = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'big request', cwd: f.cwd, vendor: 'self' });
+    const { task_id } = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'big request', cwd: f.cwd, vendor: 'self' });
     await throughCritique(tm, task_id);
     const first = await tm.call('tm_next', { task_id });
     const firstChild = first.children[0];
@@ -3188,7 +3190,7 @@ test('once the restart budget is spent, the dispatch folds blocked with every at
   const f = driverFixture(); // FAKE_DRIVER: dies immediately, every single time
   const tm = await f.client.init();
   try {
-    const { task_id } = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'big request', cwd: f.cwd, vendor: 'self', driver_restarts: 1 });
+    const { task_id } = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'big request', cwd: f.cwd, vendor: 'self', driver_restarts: 1 });
     await throughCritique(tm, task_id);
     await tm.call('tm_next', { task_id });
     const spent = await waitFor(async () => {
@@ -3226,7 +3228,7 @@ test('a usage-limit death parks the dispatch on waiting_capacity, spends no rest
   const f = driverFixture({}, FAKE_DRIVER_LIMIT);
   const tm = await f.client.init();
   try {
-    const { task_id } = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'big request', cwd: f.cwd, vendor: 'self' });
+    const { task_id } = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'big request', cwd: f.cwd, vendor: 'self' });
     await throughCritique(tm, task_id);
     await tm.call('tm_next', { task_id });
     const parked = await waitFor(async () => {
@@ -3500,7 +3502,7 @@ test('a driver that exits only after its child run finished folds normally: a cr
   const tm = await f.client.init();
   const g = await new Client(BROKER).init();
   try {
-    const { task_id } = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'big request', cwd: f.cwd, vendor: 'self' });
+    const { task_id } = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'big request', cwd: f.cwd, vendor: 'self' });
     await throughCritique(tm, task_id);
     const nx = await tm.call('tm_next', { task_id });
     const c = nx.children[0];
@@ -3529,7 +3531,7 @@ test('HARNESS_TEST_NO_DRIVER spawns nothing: the child is the test to drive, and
   const tm = await f.client.init();
   const g = await new Client(BROKER).init();
   try {
-    const { task_id } = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'big request', cwd: f.cwd, vendor: 'self' });
+    const { task_id } = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'big request', cwd: f.cwd, vendor: 'self' });
     await throughCritique(tm, task_id);
     const nx = await tm.call('tm_next', { task_id });
     const c = nx.children[0];
@@ -3557,7 +3559,7 @@ test('a size-S task spawns one headless driver, and tm_next relays its report on
   const tm = await f.client.init();
   const g = await new Client(BROKER).init();
   try {
-    const { task_id } = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'small request', cwd: f.cwd, vendor: 'self' });
+    const { task_id } = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'small request', cwd: f.cwd, vendor: 'self' });
     const v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'develop', sizing: ['ls -> one module'] }) });
     assert.equal(v.task_state, 's_run');
     assert.equal(v.delegate, undefined, 'process mode opens the run itself; there is nothing to delegate');
@@ -3615,7 +3617,7 @@ test('tm_open({mixed}) reaches the size-S run the same way isolated does', async
   const tm = await f.client.init();
   const g = await new Client(BROKER).init();
   try {
-    const proc = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'r', cwd: f.cwd, vendor: 'self', mixed: false, isolated: true });
+    const proc = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'r', cwd: f.cwd, vendor: 'self', mixed: false, isolated: true });
     const pv = await tm.call('tm_submit', { task_id: proc.task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'develop' }) });
     assert.equal(pv.task_state, 's_run');
     const full = await g.call('team_status', { run_id: pv.run_id, cwd: pv.cwd, full: true });
@@ -3635,7 +3637,7 @@ test('child_driver and s_driver are gone: passing either is an error that names 
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
   try {
     for (const bad of [{ child_driver: 'inline' }, { s_driver: 'process' }]) {
-      const r = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'r', cwd, vendor: 'self', ...bad });
+      const r = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'r', cwd, vendor: 'self', ...bad });
       assert.match(r.error, /removed in 0\.10\.0/);
       assert.match(r.error, /never drives/);
     }
@@ -3654,7 +3656,7 @@ test('tm_open spawns a daemon process whose argv names --task, and records it', 
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_DAEMON: `node ${fake}`, FAKE_DRIVER_OUT: out }).init();
   let pid;
   try {
-    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'lead me', cwd, vendor: 'self', size: 'L' });
+    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'lead me', cwd, vendor: 'self', size: 'L' });
     // tm_open itself only returns a thin pointer (task_id/state/docs_dir) once a daemon is in
     // play - it must not also self-drive via toolNext, which would race the daemon it just
     // spawned into opening the same node twice. Daemon bookkeeping is read back from tm_status.
@@ -3682,7 +3684,7 @@ test('a tm_submit is applied directly - there is no inbox to queue it behind any
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_LEADER: '1' }).init();
   try {
-    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'lead me', cwd, vendor: 'self', size: 'L' });
+    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'lead me', cwd, vendor: 'self', size: 'L' });
     const v = await tm.call('tm_submit', { task_id: open.task_id, node_id: 'shape', payload: { stage_ok: true } });
     assert.equal(v.queued, undefined, 'no queued reply - the old inbox is gone');
     // size was pinned L, so shape was already ready: this payload is applied immediately and
@@ -3698,7 +3700,7 @@ test('tm_next reads graph state directly: there is no watcher gate or driven_by 
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_LEADER: '1' }).init();
   try {
-    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'lead me', cwd, vendor: 'self', size: 'L' });
+    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'lead me', cwd, vendor: 'self', size: 'L' });
     const n = await tm.call('tm_next', { task_id: open.task_id });
     assert.equal(n.driven_by, undefined, 'driven_by does not exist any more');
     // size was pinned L, so it resolved at open time; shape is the next ready node. What matters
@@ -3756,7 +3758,7 @@ test('a dead daemon is respawned on any tm_* call up to driver_restarts, then re
   writeFileSync(fake, FAKE_DRIVER); // exits at once
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_DAEMON: `node ${fake}`, FAKE_DRIVER_OUT: join(root, 'o') }).init();
   try {
-    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'lead me', cwd, vendor: 'self', size: 'L', driver_restarts: 1 });
+    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'lead me', cwd, vendor: 'self', size: 'L', driver_restarts: 1 });
     await new Promise((r) => setTimeout(r, 400));
     let s = await tm.call('tm_status', { task_id: open.task_id });
     assert.equal(s.daemon.restarts, 1, 'first dead daemon respawned');
@@ -3786,7 +3788,7 @@ test('the daemon drives a size-S task to completion with no external tm_next cal
   const g = await new Client(BROKER).init();
   let daemonPid;
   try {
-    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'small request', cwd, vendor: 'self', size: 'S' });
+    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'small request', cwd, vendor: 'self', size: 'S' });
     const s0 = await waitFor(async () => {
       const s = await tm.call('tm_status', { task_id: open.task_id });
       return s.s_run && s.s_run.run_id ? s : null;
@@ -3844,7 +3846,7 @@ test('a judge call that never returns is killed on its timeout instead of wedgin
   }).init();
   try {
     // No size: the size node is ready, so the daemon's first act is to judge it.
-    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'a request whose size must be judged', cwd, vendor: 'self' });
+    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'a request whose size must be judged', cwd, vendor: 'self' });
     const sized = await waitFor(async () => {
       const s = await tm.call('tm_status', { task_id: open.task_id, full: true });
       const n = (s.nodes || []).find((x) => x.stage === 'size');
@@ -3882,7 +3884,7 @@ test('a judge call leaves its stream under drivers/, so budget and the report co
     CLAUDECODE: '1',
   }).init();
   try {
-    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'a request whose size must be judged', cwd, vendor: 'self' });
+    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'a request whose size must be judged', cwd, vendor: 'self' });
     const log = join(root, open.task_id, 'drivers', 'judge_size.stream.jsonl');
     await waitFor(() => existsSync(log), 'the size judge to leave its stream log', 30000);
     await waitFor(async () => {
@@ -3926,7 +3928,7 @@ test('the daemon stays alive while it only has a running child to wait on', asyn
   try {
     // size pinned S: no judge runs, the one child run opens at once, and the daemon's whole job
     // is to wait for that driver.
-    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'one small request', cwd, vendor: 'self', size: 'S' });
+    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'one small request', cwd, vendor: 'self', size: 'S' });
     const task = () => JSON.parse(readFileSync(join(root, open.task_id, 'task.json'), 'utf8'));
     const d = await waitFor(async () => (task().daemon && task().daemon.pid ? task().daemon : null), 'the daemon to be spawned', 10000);
     await new Promise((r) => setTimeout(r, 3000));
@@ -4276,7 +4278,7 @@ test('team.json-only goal_threshold and max_retries (no explicit tm_open args) r
     // Neither goal_threshold nor max_retries is passed as an explicit tm_open argument here -
     // team.json is the only source, so child_opts must pick it up the same way vendor/allocation
     // and the task-level gate fields already do.
-    const a = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'r', cwd: dir, vendor: 'self' });
+    const a = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'r', cwd: dir, vendor: 'self' });
     const task_id = a.task_id;
     const task = JSON.parse(readFileSync(join(tasks, task_id, 'task.json'), 'utf8'));
     assert.equal(task.goal_threshold, 95, 'task-level gate sees team.json');
@@ -4303,7 +4305,7 @@ test('a malformed team.json is reported on the task and the defaults apply', asy
   writeFileSync(join(dir, '.claude', 'team.json'), '{oops');
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: tasks, HARNESS_TEST_NO_LEADER: '1' }).init();
   try {
-    const a = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'split me', cwd: dir, size: 'L' });
+    const a = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'split me', cwd: dir, size: 'L' });
     const s = await tm.call('tm_status', { task_id: a.task_id });
     assert.equal(s.team.file_status, 'parse-error');
     assert.equal(s.team.opts.goal_threshold, 90);
@@ -4602,7 +4604,7 @@ test('a tm_submit that moves a ticket writes a board.jsonl line immediately - th
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_LEADER: '1' }).init();
   try {
-    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, request: 'r', cwd, vendor: 'self' });
+    const open = await tm.call('tm_open', { roles: { planning: false, qa: false }, brainstorm: false, request: 'r', cwd, vendor: 'self' });
     await tm.call('tm_submit', { task_id: open.task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop' }) });
     const boardPath = join(root, open.task_id, 'board.jsonl');
     const before = existsSync(boardPath) ? readFileSync(boardPath, 'utf8') : '';
@@ -5905,7 +5907,7 @@ test('code-sprint-S8: a follow-up Sprint (context_from) builds on the prior task
     assert.equal(retro.integration_branch, branch);
     assert.match(readFileSync(docPaths(prior).report, 'utf8'), new RegExp(`accepted work is on branch \`${branch.replace(/[/.]/g, '\\$&')}\``));
 
-    const next = await tm.call('tm_open', { request: 'the next sprint', cwd, vendor: 'self', roles: { planning: false, qa: false }, context_from: task_id });
+    const next = await tm.call('tm_open', { request: 'the next sprint', cwd, vendor: 'self', roles: { planning: false, qa: false }, brainstorm: false, context_from: task_id });
     const t2 = await tm.call('tm_status', { task_id: next.task_id, full: true });
     assert.equal(t2.base_ref, branch, 'HEAD does not contain the prior work, so this task starts from it');
     assert.match(t2.context, /starts from the prior task's integration branch/);
@@ -5917,7 +5919,7 @@ test('code-sprint-S8: a follow-up Sprint (context_from) builds on the prior task
 
     // Once the project's own branch has it, there is nothing to build on: HEAD again.
     spawnSync('git', ['-C', cwd, 'merge', '-q', '--ff-only', branch]);
-    const third = await tm.call('tm_open', { request: 'after the merge', cwd, vendor: 'self', roles: { planning: false, qa: false }, context_from: task_id });
+    const third = await tm.call('tm_open', { request: 'after the merge', cwd, vendor: 'self', roles: { planning: false, qa: false }, brainstorm: false, context_from: task_id });
     assert.equal((await tm.call('tm_status', { task_id: third.task_id, full: true })).base_ref, null);
   });
 });
@@ -6364,4 +6366,219 @@ test('portfolio-consolidate: stories are read from the PRD when the goal gate re
     assert.deepEqual(s[1].acceptance, ['only bullet']);
     assert.deepEqual(prdStories(dir, []), []);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ---------- task.decisions: decide once, before execution (docs/plans/2026-09-28-teams-light-plan.md §6) ----------
+
+const readTask = (root, task_id) => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+const readChild = (child) => JSON.parse(readFileSync(join(child.cwd, '.teams_output', 'broker', 'runs', `${child.run_id}.json`), 'utf8'));
+
+test('§6.2: PLAN decisions are written once at accept:PLAN and reach every package child run - its context, its snapshot, and openAsk\'s filter', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['x'], handoff: 'h' }) });
+    const nx = await tm.call('tm_next', { task_id });
+    const plan = nx.children.find((c) => c.package_id === 'PLAN');
+    const sub = (node_id, payload) => g.call('team_submit', { run_id: plan.run_id, cwd: plan.cwd, node_id, payload: ok(payload) });
+    await sub('plan', { handoff: 'p', flow: 'plan', size: 'S' });
+    await sub('setgoal', { spec: { goal: 'PRD', acceptance: ['PRD covers the request'], subgoals: [{ id: 'U1', title: 'draft PRD', acceptance: ['PRD written'], deps: [] }] } });
+    await sub('critique', { sound: true });
+    // Not interactive: PLAN decides the unknown by its recommended option and records it.
+    await sub('investigate:U1:1', { changed_files: [], handoff: 'findings', findings: [], unknowns: LIMIT_QUESTION });
+    await sub('draft:U1:1', { changed_files: [], handoff: 'drafted' });
+    await sub('revise:U1:1', { changed_files: [], handoff: 'revised' });
+    await sub('gate:U1:1', { accept: true, match_pct: 95 });
+    await sub('gate:goal:1', { accept: true, match_pct: 95, user_stories: ['US-1', 'US-2'] });
+    await g.call('team_next', { run_id: plan.run_id, cwd: plan.cwd });
+    await sub('report', { handoff: 'PRD complete' });
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:PLAN:1' });
+    assert.deepEqual(readTask(root, task_id).decisions, [], 'nothing is written before accept:PLAN');
+    await tm.call('tm_submit', { task_id, node_id: 'accept:PLAN:1', payload: ok({ accept: true, match_pct: 95 }) });
+
+    const decided = readTask(root, task_id).decisions;
+    assert.deepEqual(decided, [{
+      question: LIMIT_QUESTION[0].question, chose: '2 across presale and general combined',
+      owner: 'Product/policy', decided_in: 'PLAN', source: 'default',
+    }]);
+
+    await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({ ...SHAPE_IMPLEMENTS, handoff: 's' }) });
+    await tm.call('tm_submit', { task_id, node_id: 'critique', payload: ok({ sound: true }) });
+    const pk = (await tm.call('tm_next', { task_id })).children.find((c) => c.package_id === 'P1');
+    const run = readChild(pk);
+    assert.deepEqual(run.task_decisions, decided, 'the package run holds a snapshot of task.decisions');
+    assert.equal(run.execution_phase, true);
+    assert.match(run.context, /Decided already — settled, write as rules, not open questions/);
+    assert.match(run.context, /How many tickets may one account hold\? -> 2 across presale and general combined/);
+
+    // openAsk, inside the package run, treats the PLAN decision as answered - a different
+    // question still opens a card.
+    const graphMod = await import('../mcp/graph.mjs');
+    const gateNode = run.nodes.find((x) => x.stage === 'gate');
+    assert.deepEqual(graphMod.openAsk(run, gateNode, LIMIT_QUESTION), [], 'a question PLAN settled is never asked again in a package');
+    assert.equal(graphMod.openAsk(run, gateNode, [{ question: 'A new one?', options: ['a', 'b'] }]).length, 1);
+  }, { roles: { planning: true } });
+});
+
+const SHAPE_TWO_FREE = {
+  acceptance: ['a.txt says a', 'b.txt says b'],
+  packages: [
+    { id: 'P1', title: 'module a', flow: 'develop', brief: 'change a.txt', acceptance: ['a.txt says a'], touches: ['a.txt'], deps: [] },
+    { id: 'P2', title: 'module b', flow: 'develop', brief: 'change b.txt', acceptance: ['b.txt says b'], touches: ['b.txt'], deps: [] },
+  ],
+};
+const SESSION_DECISION = { question: 'How many tickets may one account hold?', chose: '2 across presale and general combined', because: 'legal' };
+const CONTRADICTION = {
+  question: 'The presale system already enforces 4 per account - does the 2-ticket cap still hold?',
+  contradicts_decision: SESSION_DECISION.question,
+  options: [{ option: 'keep 2', consequence: 'rework presale' }, { option: 'raise to 4', consequence: 'policy change' }],
+  default: 'keep 2',
+};
+
+async function packageWithQuestions(g, child, file, questions) {
+  const sub = (node_id, payload) => g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id, payload: ok(payload) });
+  appendFileSync(join(child.cwd, file), `changed by ${child.package_id}\n`);
+  await sub('implement:U1:1', { changed_files: [file], handoff: 'built' });
+  await sub('test:U1:1', { verified: true });
+  const v = await sub('gate:U1:1', { accept: true, match_pct: 95, questions });
+  assert.equal(v.state, 'done', JSON.stringify(v));
+  return g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+}
+
+test('§6.2-3/4: in execution, even interactive, a new question is decided by default; a contradicts_decision question parks ONCE at EPIC level for every package that raises it', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    assert.ok(!readTask(root, task_id).nodes.some((n) => n.stage === 'brainstorm'), 'session decisions skip the brainstorm node');
+    await throughCritique(tm, task_id, SHAPE_TWO_FREE);
+    const kids = (await tm.call('tm_next', { task_id })).children;
+    const p1 = kids.find((c) => c.package_id === 'P1');
+    const p2 = kids.find((c) => c.package_id === 'P2');
+
+    const ordinary = { question: 'Log format?', options: [{ option: 'json' }, { option: 'text' }], default: 'json' };
+    const nx1 = await packageWithQuestions(g, p1, 'a.txt', [ordinary, CONTRADICTION]);
+    assert.equal(nx1.state, 'complete', 'the package run parks on nothing of its own, interactive or not');
+    const run1 = readChild(p1);
+    assert.ok(!run1.nodes.some((x) => x.stage === 'ask'), 'no package-level ask card');
+    assert.deepEqual(run1.unasked.map((u) => [u.question, u.decided]), [['Log format?', 'json']]);
+    assert.deepEqual(run1.blocking_questions.map((b) => [b.question, b.blocking]), [[CONTRADICTION.question, 'contradicts_decision']]);
+
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    let task = readTask(root, task_id);
+    const cards = () => readTask(root, task_id).nodes.filter((x) => x.stage === 'ask' && x.ask_owner === 'EPIC');
+    assert.deepEqual(cards().map((c) => [c.node_id, c.state]), [['ask:EPIC:1', 'waiting_human']]);
+    assert.deepEqual(task.nodes.find((x) => x.node_id === 'accept:P1:1').deps, ['ask:EPIC:1'], 'P1\'s accept waits on the EPIC card');
+
+    await packageWithQuestions(g, p2, 'b.txt', [CONTRADICTION]);
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P2:1' });
+    assert.equal(cards().length, 1, 'the same blocking question from P2 does not open a second card');
+    task = readTask(root, task_id);
+    assert.ok(task.nodes.find((x) => x.node_id === 'accept:P2:1').after.includes('ask:EPIC:1'), 'P2\'s accept waits on the one card too');
+
+    const inbox = await tm.call('tm_inbox', { task_id });
+    const card = inbox.cards.find((c) => c.node_id === 'ask:EPIC:1');
+    assert.ok(card, JSON.stringify(inbox.cards));
+    const v = await tm.call('tm_submit', { task_id, key: card.key, payload: { decisions: [{ question: CONTRADICTION.question, chose: 'raise to 4' }] } });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    const last = readTask(root, task_id).decisions.pop();
+    assert.deepEqual(last, { question: CONTRADICTION.question, chose: 'raise to 4', owner: 'requester', decided_in: 'EPIC', source: 'ask' });
+    assert.deepEqual((await tm.call('tm_next', { task_id })).ready.map((n) => n.node_id).sort(), ['accept:P1:1', 'accept:P2:1']);
+  }, { interactive: true, brainstorm: true, decisions: [SESSION_DECISION] });
+});
+
+test('§6.5-2: tm_open({decisions}) writes the first task.decisions and skips the brainstorm node; without it the node sits between size and PLAN (or shape)', async () => {
+  await withTask(async ({ root, task_id }) => {
+    const task = readTask(root, task_id);
+    assert.ok(!task.nodes.some((n) => n.stage === 'brainstorm'));
+    assert.deepEqual(task.decisions, [{ ...SESSION_DECISION, owner: 'requester', decided_in: 'session', source: 'brainstorm' }]);
+    assert.deepEqual(task.nodes.find((n) => n.node_id === 'dispatch:PLAN:1').deps, ['size']);
+  }, { roles: { planning: true }, brainstorm: true, decisions: [SESSION_DECISION] });
+  await withTask(async ({ root, task_id }) => {
+    const task = readTask(root, task_id);
+    assert.deepEqual(task.nodes.slice(0, 2).map((n) => [n.node_id, n.deps]), [['size', []], ['brainstorm', ['size']]]);
+    assert.deepEqual(task.nodes.find((n) => n.node_id === 'dispatch:PLAN:1').deps, ['brainstorm']);
+  }, { roles: { planning: true }, brainstorm: true });
+  await withTask(async ({ root, task_id }) => {
+    const task = readTask(root, task_id);
+    assert.deepEqual(task.nodes.map((n) => [n.node_id, n.deps]), [['size', []], ['brainstorm', ['size']], ['shape', ['brainstorm']], ['critique', ['shape']]]);
+  }, { brainstorm: true });
+});
+
+const BRAINSTORM = {
+  intent: 'Cap ticket purchases per account',
+  scope: { in: ['purchase limit'], out: ['refunds'] },
+  approaches: [{ approach: 'server-side counter', tradeoff: 'one more table' }, { approach: 'client check', tradeoff: 'bypassable' }],
+  chose: 'server-side counter', because: 'cannot be bypassed',
+  assumptions: ['accounts are verified'],
+  questions: [
+    { question: 'Does the cap span presale?', to: 'Product', options: [{ option: 'yes' }, { option: 'no' }], default: 'yes' },
+    { question: 'Show remaining quota?', to: 'Design', options: [{ option: 'yes' }, { option: 'no' }], default: 'no' },
+  ],
+  handoff: 'h',
+};
+
+test('§6.5-3: the brainstorm node, not interactive, adopts its own defaults into task.decisions as self-brainstorm; packages read them and the report leads with them', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['x'], handoff: 'h' }) });
+    const nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['brainstorm']);
+    assert.match(readFileSync(nx.ready[0].briefing_path, 'utf8'), /"intent"/);
+    const v = await tm.call('tm_submit', { task_id, node_id: 'brainstorm', payload: ok(BRAINSTORM) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+
+    const task = readTask(root, task_id);
+    assert.ok(task.decisions.every((d) => d.source === 'self-brainstorm' && d.decided_in === 'brainstorm'), JSON.stringify(task.decisions));
+    const byQ = Object.fromEntries(task.decisions.map((d) => [d.question, d.chose]));
+    assert.equal(byQ['Which approach?'], 'server-side counter');
+    assert.equal(byQ['What is out of scope?'], 'refunds');
+    assert.equal(byQ['Assumption 1'], 'accounts are verified');
+    assert.equal(byQ['Does the cap span presale?'], 'yes');
+    assert.equal(byQ['Show remaining quota?'], 'no');
+    assert.ok(!task.nodes.some((n) => n.stage === 'ask'), 'not interactive: no card');
+
+    const shapeNx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(shapeNx.ready.map((n) => n.node_id), ['shape']);
+    assert.match(readFileSync(shapeNx.ready[0].briefing_path, 'utf8'), /## Decided already[\s\S]*server-side counter/);
+    await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({ ...SHAPE, handoff: 's' }) });
+    await tm.call('tm_submit', { task_id, node_id: 'critique', payload: ok({ sound: true }) });
+    const child = (await tm.call('tm_next', { task_id })).children[0];
+    const run = readChild(child);
+    assert.equal(run.execution_phase, true);
+    assert.match(run.context, /Does the cap span presale\? -> yes \[brainstorm, self-brainstorm\]/);
+
+    const tmMod = await import('../mcp/taskmanager.mjs');
+    const report = tmMod.composeTaskPrompt(readTask(root, task_id), { node_id: 'report', stage: 'report', deps: [] });
+    assert.match(report, /## Decided by the engine itself[\s\S]*Which approach\? -> server-side counter \(cannot be bypassed\)/);
+  }, { brainstorm: true });
+});
+
+test('§6.5-3: the brainstorm node, interactive, puts every question on ONE card; an answer is source ask, an unanswered question keeps the engine default', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['x'], handoff: 'h' }) });
+    await tm.call('tm_submit', { task_id, node_id: 'brainstorm', payload: ok(BRAINSTORM) });
+    const cards = readTask(root, task_id).nodes.filter((n) => n.stage === 'ask');
+    assert.deepEqual(cards.map((c) => [c.node_id, c.state, c.questions.length]), [['ask:brainstorm:1', 'waiting_human', 2]], 'two owners, still one card');
+    assert.equal(readTask(root, task_id).nodes.find((n) => n.node_id === 'shape').deps[0], 'ask:brainstorm:1');
+
+    const card = (await tm.call('tm_inbox', { task_id })).cards.find((c) => c.node_id === 'ask:brainstorm:1');
+    await tm.call('tm_submit', { task_id, key: card.key, payload: { decisions: [{ question: 'Does the cap span presale?', chose: 'no' }] } });
+    const d = Object.fromEntries(readTask(root, task_id).decisions.map((x) => [x.question, [x.chose, x.source]]));
+    assert.deepEqual(d['Does the cap span presale?'], ['no', 'ask']);
+    assert.deepEqual(d['Show remaining quota?'], ['no', 'self-brainstorm']);
+    assert.deepEqual((await tm.call('tm_next', { task_id })).ready.map((n) => n.node_id), ['shape']);
+  }, { brainstorm: true, interactive: true });
+});
+
+test('human_scope in team.json is accepted as a deprecated no-op, with a note - never an error', async () => {
+  const { resolveTeamOptions } = await import('../mcp/teamconfig.mjs');
+  const r = resolveTeamOptions({}, { human_scope: 'leader', interactive: true });
+  assert.equal(r.opts.interactive, true);
+  assert.ok(!('human_scope' in r.opts));
+  assert.ok(r.notes.some((n) => /human_scope.*deprecated/.test(n)), JSON.stringify(r.notes));
+});
+
+test('§6.5-3: a brainstorm that fails is closed as done with nothing decided - it advises, it does not gate', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['x'], handoff: 'h' }) });
+    const v = await tm.call('tm_submit', { task_id, node_id: 'brainstorm', payload: { stage_ok: false, reason: 'could not read the project' } });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    assert.deepEqual(readTask(root, task_id).decisions, []);
+    assert.deepEqual((await tm.call('tm_next', { task_id })).ready.map((n) => n.node_id), ['shape']);
+  }, { brainstorm: true });
 });

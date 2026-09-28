@@ -32,6 +32,13 @@ exists as its own tool or field — nothing here is new mechanism, only the orde
 
 ## Process
 
+0. **Brainstorm (optional) → `decisions`.** Before `tm_open`, while the user is here: read the
+   project and the backlog first, then ask one question at a time - only what the user alone can
+   answer (what they want, what to leave out, A or B), each with your recommendation. A backlog
+   whose items already state their acceptance needs one or two confirmations, not an interview.
+   Pass what was settled as `tm_open({decisions: [{question, chose, because?}]})`; every package
+   reads them as rules. If the user skips it, the engine brainstorms from the backlog itself (a
+   `brainstorm` node after size) and the report leads with what it decided on its own.
 1. **Sprint Planning → `tm_open`.** Collect the Sprint's backlog as `requests: [...]` (priority =
    array order, item 0 highest — a single-item Sprint still works, but then `request` alone is
    simpler and unchanged). Set `budget_usd` and/or `timebox_minutes` to the Sprint's own box —
@@ -103,8 +110,8 @@ Next backlog (carries into context_from):
 
 ## What Claude Does
 
-Opens the task with `requests`/`budget_usd`/`timebox_minutes`/`interactive` set from what the
-human actually said (never invents a budget or timebox nobody asked for); reads `tm_board`/
+Offers the brainstorm (step 0) and passes what was settled as `decisions`; opens the task with
+`requests`/`budget_usd`/`timebox_minutes`/`interactive` set from what the human actually said (never invents a budget or timebox nobody asked for); reads `tm_board`/
 `tm_status` for the daily check and names a budget warning or stop plainly when the fields say
 so; reads the report and `retro.json` at close, rather than reconstructing either from raw node
 state; on a follow-up Sprint, passes `context_from` instead of restating the prior task's retro

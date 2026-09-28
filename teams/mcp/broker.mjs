@@ -37,6 +37,7 @@ import {
   getNode,
   expandSubgoals,
   openAsk,
+  routeExecutionQuestions,
   validateSpec,
   retrySubgoal,
   retrySpec,
@@ -1277,7 +1278,16 @@ export function finishNode(run, n, result, vendorName) {
   // and draft consumes the answer instead of the question. A non-interactive run records the
   // same questions on run.unasked, which is what makes "we decided this by default, and here
   // is what we would have asked" legible in the report instead of invisible in the document.
-  if (n.stage === 'investigate' && n.state === 'done') {
+  // An execution-phase package run (§6.2-3, docs/plans/2026-09-28-teams-light-plan.md) asks no
+  // one on its own card, interactive or not: every new question is decided by default and
+  // recorded, and only a blocking one is kept for the task manager to park once at EPIC level.
+  if (run.execution_phase === true && n.state === 'done') {
+    const raw = [
+      ...(n.stage === 'investigate' && Array.isArray(result.unknowns) ? result.unknowns : []),
+      ...(Array.isArray(result.questions) ? result.questions : []),
+    ];
+    if (raw.length) routeExecutionQuestions(run, n, raw);
+  } else if (n.stage === 'investigate' && n.state === 'done') {
     const decidable = (Array.isArray(result.unknowns) ? result.unknowns : [])
       .filter((u) => u && (u.question || u.unknown) && Array.isArray(u.options) && u.options.length > 1);
     if (decidable.length) {
@@ -1302,7 +1312,7 @@ export function finishNode(run, n, result, vendorName) {
   // openAsk's own comment) and the engine opens the same kind of card for it. Kept as a second
   // block, not folded into the one above, so investigate's own unknowns[] (and its report shape
   // on run.unasked) stay exactly as they were for every existing caller and test.
-  if (n.state === 'done' && Array.isArray(result.questions) && result.questions.length) {
+  if (run.execution_phase !== true && n.state === 'done' && Array.isArray(result.questions) && result.questions.length) {
     const decidable = result.questions.filter((q) => q && q.question
       && ((Array.isArray(q.options) && q.options.length > 1) || q.default !== undefined));
     if (decidable.length) {
@@ -1625,7 +1635,7 @@ async function toolGraphOpen(a) {
   // the same precedence tm_open's own resolveTeamOptions call gives it (teamconfig.mjs).
   // Only vendor/allocation/goal_threshold/max_retries/interactive/retry_policy/human_gates
   // are both a TEAM_DEFAULTS key and a team_open argument that createRun actually consumes
-  // on a single run; the other TEAM_DEFAULTS keys (human_scope, max_parallel_teams,
+  // on a single run; the other TEAM_DEFAULTS keys (brainstorm, max_parallel_teams,
   // max_parallel_ceiling, max_depth, qa_rounds, roles, driver_restarts, docs_dir) belong to
   // tm_open's multi-team/TaskManager layer and are not team_open arguments at all.
   const team = resolveTeamOptions(a, readTeamConfig(cwd).config);

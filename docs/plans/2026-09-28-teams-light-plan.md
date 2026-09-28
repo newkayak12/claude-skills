@@ -1,6 +1,6 @@
 # teams — 가벼운 PLAN 모드 (검토용 초안)
 
-> 상태: **검토용**. 코드 변경 없음. 2026-09-28.
+> 상태: **검토용**. 2026-09-28. §6은 구현됨(§6.6), §2(light PLAN)는 별도 진행.
 > 선행: `2026-09-21-teams-server-owns-the-loop.md` §8g~8i (PLAN 하네스 도입, investigate 스테이지 신설),
 > `2026-09-23-teams-reducer-human-rollback.md` (ask 경로, reducer, 이 문서가 다시 쓰는 `human_scope`).
 > 대상: `roles.planning`이 이미 기본 켬인 지금, PLAN이 **필요 없는 게 아니라 무겁게 필요한** 경우를 가른다.
@@ -167,6 +167,17 @@ roles.planning: true | false | 'light' | 'auto'   (기본값 변경: true → 'a
 측정(§6.4에 추가): 런당 사람에게 간 질문 수를 **세션 질문 / 실행 중 park**로 나눠 센다. 목표는 실행 중 park ≈ 0, 세션 질문은 요청의 모호함에 비례.
 
 §14 제안 행 18의 마지막 문장을 이렇게 바꾼다: "사람이 언제 불려가는지는 이제 '리더냐 전부냐'가 아니라 **'`tm_open` 전 세션 brainstorming(선택) → 건너뛰면 엔진 `brainstorm` 노드가 프롬프트로 스스로(interactive면 여기서 1회 ask) → 실행 중엔 blocking 예외만(EPIC에서 1회)'**로 갈린다."
+
+### 6.6 구현 상태 (2026-09-28, 브랜치 `teams/decisions-brainstorm`)
+
+§6.2·§6.5-1~3 구현됨. §6.5-4(light 감지 연동)는 light PLAN 작업(`hasDeclaredAcceptance`)을 기다린다 — `taskmanager.mjs`의 `openBrainstorm`에 `TODO(light-plan)` 주석. §14 행 18은 `2026-09-17-teams-team.md` 결정 기록 표로 옮겨 적었다.
+
+- **task.decisions** — `{question, chose, because?, owner, decided_in, source}`. 쓰는 곳: `tm_open({decisions})`(`session`/`brainstorm`), `brainstorm` 노드(`brainstorm`/`self-brainstorm`, 사람이 고른 건 `ask`), `accept:PLAN`(`PLAN`/`ask`|`default`, `foldChild`가 `planDecisions(child)`로 싣고 accept에서 1회), task 레벨 ask 카드 답(`EPIC` 등/`ask`). 질문 정확 일치로 중복 제거 — 먼저 정해진 답이 이긴다.
+- **전파** — `openChild`가 `run.task_decisions`로 스냅샷 주입, `childContext`에 "Decided already" 블록, `graph.mjs`의 `settledDecisions(run)` = `answeredDecisions(run)` ∪ `run.task_decisions`를 `openAsk` 필터와 `nodeBriefing.prior_decisions`가 쓴다. shape/critique/accept 브리핑에도 같은 목록.
+- **실행 단계** — `run.execution_phase`(PLAN 아닌 패키지, 단 앞에 결정 지점 — PLAN·세션 brainstorm·brainstorm 노드 — 이 있었을 때만; 셋 다 없으면 패키지가 첫 질문 자리이므로 기존 ask 동작 유지). broker `finishNode`가 `routeExecutionQuestions`로 분기: 기본값 채택 + `run.unasked`, blocking(a `contradicts_decision` / b 선택지 ≤1·default 없음)은 `run.blocking_questions`. `foldChild`가 올리고 `finish()`의 `escalateBlocking`이 `openAsk(task, …, {owner:'EPIC', blocking:true})`로 `ask:EPIC:k` 카드 1장, 해당 패키지 accept가 그 카드를 기다린다. 같은 질문을 낸 후속 패키지는 새 카드 없이 기존 카드에 `after`로 묶인다. **비대화형 task는 park하지 않고 `task.unasked`에 기록만**(applyHumanPin·promoteHumanGates와 같은 원칙 — 아무도 없는 런을 멈추지 않는다).
+- **brainstorm** — `team.json`/`tm_open`의 `brainstorm`(기본 true) + `decisions[]` 부재일 때 `size` 뒤에 노드 삽입(size를 dep으로 갖던 노드를 재배선 — full/light/planning off 어느 체인이든). 크기 S면 다른 매니저 노드와 함께 skipped. `CONTRACT.brainstorm` §6.5-3 계약. interactive면 질문 전부 카드 1장(`to` 평탄화), 답 안 한 질문은 엔진 default. report 브리핑이 "Decided by the engine itself"로 시작.
+- **진입 스킬** — `develop`/`plan`/`sprint` SKILL.md에 선택적 brainstorming 단계(맥락 먼저 읽기, 한 번에 하나, 선택지별 추천, 사람만 답할 것, 건너뛰기 가능) → `decisions`.
+- **`human_scope`** — `teamconfig.mjs`가 deprecated no-op으로 받아 note만 남긴다.
 
 ## 7. 한 줄
 
