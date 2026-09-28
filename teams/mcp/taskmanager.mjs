@@ -4890,6 +4890,35 @@ export function ensureAutoParallel(task) {
 // wording either reader should catch never has to be taught to just one of them.
 const PUSHBACK_RE = /rate[_ -]?limit|\b429\b|\b529\b|overloaded|api_error|insufficient_quota|usage_limit_reached|quota (?:exceeded|exhausted)|hit your (?:usage )?limit|exceeded your current quota/i;
 
+// Two of PUSHBACK_RE's own terms are also substrings of routine claude -p stream-json telemetry
+// that appears on EVERY session regardless of health - verified against the portfolio-refresh
+// run's real driver logs (0.34.0, fixed cap 2, so the controller never saw them, but 'auto'
+// would): every dispatch's stream.jsonl carries at least one `{"type":"rate_limit_event",
+// "rate_limit_info":{"status":"allowed",...}}` usage ping (`rate_limit` alone would match it),
+// and every `result` event carries `"api_error_status":null` (`api_error` alone would match the
+// FIELD NAME regardless of its null value) - together they made PUSHBACK_RE true on 9/9 real
+// STORY dispatch folds in that run, none of which had anything actually wrong. Left unfixed,
+// 'auto' would halve on its very first fold, forever, against any real claude driver. Both are
+// stripped before PUSHBACK_RE ever sees the text; a rate_limit_event whose status is NOT
+// "allowed" (a throttled or exhausted window) and an api_error_status that is NOT null are left
+// alone and still read as real pushback.
+function stripRoutineTelemetryNoise(text) {
+  if (!text) return text;
+  let out = text;
+  if (out.includes('rate_limit_event')) {
+    out = out.split('\n').filter((line) => {
+      if (!line.includes('rate_limit_event')) return true;
+      try {
+        const parsed = JSON.parse(line);
+        return !(parsed && parsed.type === 'rate_limit_event' && parsed.rate_limit_info && parsed.rate_limit_info.status === 'allowed');
+      } catch {
+        return true; // not one clean JSON line - leave it for PUSHBACK_RE to judge
+      }
+    }).join('\n');
+  }
+  return out.replace(/"api_error_status"\s*:\s*null/g, '');
+}
+
 // Reads a dispatch's own driver log the same way driverUsageLimitText does (existence check,
 // plain readFileSync, no second NDJSON walk) rather than re-parsing the stream event-by-event -
 // PUSHBACK_RE runs over the raw text, which catches the same evidence whether it surfaces as a
@@ -4898,12 +4927,12 @@ const PUSHBACK_RE = /rate[_ -]?limit|\b429\b|\b529\b|overloaded|api_error|insuff
 // small and always available; the full log is only read when the tail alone said nothing.
 function dispatchPushbackText(driver) {
   if (!driver) return '';
-  const tail = driverStderrTail(driver, 2000);
+  const tail = stripRoutineTelemetryNoise(driverStderrTail(driver, 2000));
   if (PUSHBACK_RE.test(tail)) return tail;
   if (!driver.log) return '';
   try {
     if (!existsSync(driver.log)) return '';
-    const text = readFileSync(driver.log, 'utf8');
+    const text = stripRoutineTelemetryNoise(readFileSync(driver.log, 'utf8'));
     return PUSHBACK_RE.test(text) ? text.slice(-2000) : '';
   } catch {
     return '';
@@ -4935,6 +4964,19 @@ function crashesClustered(task) {
 // itself and so has nothing to teach this controller about ordinary STORY concurrency. A no-op
 // whenever max_parallel_teams is a fixed number: auto is opt-in, and a project that pins a number
 // gets exactly that number, unconditionally, exactly as before this existed.
+//
+// `result` (foldChild's own output - stage_ok, accept, reason, ...) is deliberately never read
+// here: an accept:false is a quality verdict a LATER node (`accept:<pkg>:<n>`, judged through the
+// readyNodes loop, see daemon.mjs) reaches, never through this function at all (grep confirms:
+// only the `dispatch` stage's own fold calls updateAutoParallel). The portfolio-refresh run's
+// real accept:P2:1 rejection is the worked example: dispatch:P2:1 folded clean (its child
+// completed, no pushback) and counted toward the streak exactly as any other clean fold would;
+// the SEPARATE accept:P2:1 node that rejected the package afterward never touched auto_parallel
+// at all, and the resulting redispatch (dispatch:P2:2) got its own, independent clean-or-pushback
+// read when IT folded. A rejection is real evidence about the package, not about whether the
+// concurrency level the run is probing is too high - counting the fold that produced it (but
+// never the verdict itself) is the intended split, not an oversight, and is exactly why this
+// parameter has no `result.accept` check anywhere below.
 export function updateAutoParallel(task, n, result) {
   const opts = task.team && task.team.opts;
   if (!opts || opts.max_parallel_teams !== 'auto') return;
@@ -4952,7 +4994,15 @@ export function updateAutoParallel(task, n, result) {
     return;
   }
   state.streak = (state.streak || 0) + 1;
-  if (state.streak >= AIMD_WINDOW && state.current < state.ceiling) {
+  // budget_warned (enforceBudget, task.budget_warned - the same top-level flag task.auto_parallel
+  // itself follows the pattern of) means the run already crossed its own warn threshold: growing
+  // concurrency from here on spends whatever budget is left faster for a payoff (finishing
+  // sooner) the run may never get to keep, since budget_stopped can close the task out from under
+  // it at any following fold. The streak still advances - so a fold folded the moment budget_warned
+  // flips does not lose a clean window it already earned - it is only ever spent on a +1 while
+  // budget_warned is NOT set. Growth resumes on its own if a future run clears the flag (it never
+  // does today; enforceBudget sets it once and it stays), never needs its own decrease/reset.
+  if (state.streak >= AIMD_WINDOW && state.current < state.ceiling && !task.budget_warned) {
     const before = state.current;
     state.current = Math.min(state.ceiling, state.current + 1);
     state.streak = 0;
