@@ -737,11 +737,6 @@ export function createRun(opts) {
     size: null,
     created_at: Date.now(),
     spec: null,
-    // How many packages deep this run was opened. 0 at the top; task.child_opts.depth =
-    // parent.depth + 1 for every package's child run. Recorded for the nested-task cap
-    // (teamconfig.mjs's max_depth, not enforced yet). A caller that never asks - the
-    // ordinary team_open path, every run before this field existed - gets 0.
-    depth: Number.isInteger(opts.depth) ? opts.depth : 0,
     nodes: [],
     // Cross-run author identity ({executor, vendor, model} or null), for a run whose judging
     // stage's author never ran in ITS OWN nodes[] - today only the planning-audit kind's `audit`

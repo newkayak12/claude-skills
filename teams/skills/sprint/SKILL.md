@@ -75,12 +75,16 @@ exists as its own tool or field — nothing here is new mechanism, only the orde
    of what shipped, worth reading over what the daemon merely logged.
 5. **Retro → `retro.json` → the next Sprint's context.** The same report stage already wrote
    `retro.json` beside `80-report.md` (docs.mjs's `renderRetro`): what failed and why, retries,
-   defects left (`retrospective`), and unaccepted packages / unresolved defects / open questions
-   nobody answered (`next_backlog`). Do not re-derive any of this by hand — read the file, or let
+   defects left (`retrospective`), and backlog items not shipped / user stories not shipped
+   (`unfinished_stories`) / unaccepted packages / unresolved defects / open questions nobody
+   answered (`next_backlog`). Work too big for this Sprint is not nested into a sub-EPIC - it
+   carries into the next Sprint. Do not re-derive any of this by hand — read the file, or let
    the next Sprint do it for you: `tm_open({..., context_from: "<this task_id>"})` folds it
    straight into the new task's `context` (`priorRetroContext`, taskmanager.mjs). The next
    Sprint's own `requests` still has to be written in the team's own words — `context_from` hands
-   over what happened, not a ready-made backlog.
+   over what happened, not a ready-made backlog. `tm_open` returns `carryover_candidates` (the
+   unshipped backlog items and user stories): put them to the person as a list and let them pick
+   what goes into the next `requests`; never add them yourself.
 
 ## Output Template
 

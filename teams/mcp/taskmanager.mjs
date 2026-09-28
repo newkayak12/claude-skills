@@ -464,6 +464,7 @@ function priorRetroContext(contextFrom) {
     L.push(bullets((retro.retrospective.what_failed || []).map((f) => `${f.node_id} (${f.stage}): ${f.reason}`)));
     if ((retro.retrospective.retries || []).length) L.push('', 'Retries:', bullets(retro.retrospective.retries.map((r) => `${r.package_id}: ${r.attempts} attempts`)));
     if ((retro.next_backlog.unshipped_requests || []).length) L.push('', 'Next backlog - backlog items not shipped (priority order):', bullets(retro.next_backlog.unshipped_requests.map((r) => `[${r.priority}] ${r.request}`)));
+    if ((retro.next_backlog.unfinished_stories || []).length) L.push('', 'Next backlog - user stories the prior Sprint did not ship:', bullets(retro.next_backlog.unfinished_stories.map((u) => `${u.id}${u.title ? ` ${u.title}` : ''}`)));
     L.push('', 'Next backlog - unaccepted packages:');
     L.push(bullets((retro.next_backlog.unaccepted_packages || []).map((p) => `${p.id} (${p.title}): ${p.reason}`)));
     if ((retro.next_backlog.unresolved_defects || []).length) L.push('', 'Unresolved defects:', bullets(retro.next_backlog.unresolved_defects.map((d) => d.title)));
@@ -483,7 +484,13 @@ function priorRetroContext(contextFrom) {
         L.push('', `This task starts from the prior task's integration branch ${b} - its accepted work is not on the project's own branch yet. Build on it; do not rebuild it.`);
       }
     }
-    return { text: L.join('\n'), unresolved: null, base_ref };
+    // Backlog candidates for this Sprint (sprint-not-sub-epic): handed back by tm_open so the
+    // caller can put them to the person - never added to requests on their own.
+    const carryover = [
+      ...(retro.next_backlog.unshipped_requests || []).map((r) => ({ kind: 'request', priority: r.priority, text: r.request })),
+      ...(retro.next_backlog.unfinished_stories || []).map((u) => ({ kind: 'story', id: u.id, text: u.title || u.id, ...(u.acceptance ? { acceptance: u.acceptance } : {}) })),
+    ];
+    return { text: L.join('\n'), unresolved: null, base_ref, carryover };
   } catch (e) {
     return { text: '', unresolved: `retro.json of ${prior.run_id} could not be read: ${String((e && e.message) || e)}` };
   }
@@ -505,7 +512,6 @@ function createTask(a) {
   const team = resolveTeamOptions(a, teamFile.config);
   const T = team.opts;
   const taskId = randomUUID();
-  const depth = Number.isInteger(a.depth) ? a.depth : 0;
   const priorRetro = priorRetroContext(a.context_from);
   // A backlog held to a box is only boxable as packages: enforceBudget stops by leaving the
   // lowest-priority PACKAGES undispatched, and a size-S task has none, so an S backlog ran past
@@ -532,16 +538,12 @@ function createTask(a) {
     requests, // null for the ordinary single-request task - the byte-for-byte compat case.
     context: [priorRetro.text, a.context || ''].filter(Boolean).join('\n\n'),
     ...(priorRetro.unresolved ? { context_from_unresolved: priorRetro.unresolved } : {}),
+    ...(priorRetro.carryover && priorRetro.carryover.length ? { carryover_candidates: priorRetro.carryover } : {}),
     // Where package and integration worktrees branch from (see priorRetroContext). null = HEAD.
     base_ref: priorRetro.base_ref || null,
     flow: FLOWS[a.flow] ? a.flow : 'auto',
     flow_chosen: null,
     size: null,
-    // How many packages deep this task was opened - 0 for a tm_open a caller drives directly.
-    // Nothing in this codebase opens a nested tm_open yet (a package's child is a graph.mjs
-    // run, never another task), so this is forward declared for when it does - max_depth
-    // (teamconfig.mjs) is the cap that nesting will check (docs/plans/2026-09-28-teams-sub-epic.md).
-    depth,
     // The user said, in their own words, that this must be split (L) or must stay one run
     // (S): the size node is recorded as pinned and never measured. Mirrors the flow pin.
     size_pinned: ['S', 'L'].includes(a.size) ? a.size : (boxedBacklog ? 'L' : null),
@@ -599,9 +601,6 @@ function createTask(a) {
       policy: a.policy && typeof a.policy === 'object' ? a.policy : {},
       candidates: a.candidates || null,
       sandbox: a.sandbox || null,
-      // One package's child run is one level deeper than the task that opens it - this task's
-      // own depth, since a package's child is a graph.mjs run, not another task.
-      depth: depth + 1,
       // T already layers team.json under an explicit tm_open arg (teamconfig.mjs's
       // resolveTeamOptions), the same precedence vendor/allocation above already rely on -
       // so reading T here, not `a` with its own hardcoded fallback, is what keeps a project's
@@ -4525,7 +4524,7 @@ const TOOLS = [
         budget_grace_minutes: { type: 'integer', description: 'default 5, also settable in .claude/team.json. See budget_grace_usd - whichever of the two limits a still-running, still-needed dispatch reaches first stops it.' },
         requests: { type: 'array', items: { anyOf: [{ type: 'string' }, { type: 'object', properties: { request: { type: 'string' }, acceptance: { type: 'array', items: { type: 'string' } } }, required: ['request'] }] }, description: 'A backlog instead of one request: several EPIC-level items, priority = array order (first is highest). An item may be {request, acceptance: ["..."]} to declare that item\'s own acceptance criteria - when every item declares them (or shared_acceptance is given), roles.planning "auto" runs the light PLAN chain (investigate -> template-fill -> gate) instead of the full one. shape treats each as its own story set; with budget_usd/timebox_minutes in play, the lowest-priority items still unshaped or undispatched when the stop trips are exactly what the report names "Next backlog". Mutually exclusive with `request` - send one or the other, never both.' },
         shared_acceptance: { type: 'array', items: { type: 'string' }, description: 'Acceptance criteria that apply to EVERY backlog item (or to the single request) - the structured form of an "Acceptance for every item:" block. Written into the request text and, when non-empty, makes roles.planning "auto" pick the light PLAN chain (docs/plans/2026-09-28-teams-light-plan.md). roles.planning itself (team.json or a roles argument) takes true (full chain), "light" (force light) or "auto" (default: light when acceptance is declared - structured fields, or a numbered backlog with an "Acceptance:" heading and bullets - else full). false is refused with a note: planning always runs, one card per feature area, and every task gets a PRD and user stories.' },
-        context_from: { type: 'string', description: 'A prior task_id (or its ticket key). Its retro.json - the Retrospective and Next backlog a finished task\'s report stage writes - is read and folded into this task\'s own context: what failed and why, retries, defects left, and any unaccepted packages or unresolved questions the prior task ran out of budget/timebox to reach. The prior task\'s own Next backlog is NOT auto-added to `requests` - naming it here is a decision this task\'s own request should still make in its own words.' },
+        context_from: { type: 'string', description: 'A prior task_id (or its ticket key). Its retro.json - the Retrospective and Next backlog a finished task\'s report stage writes - is read and folded into this task\'s own context: what failed and why, retries, defects left, and any unaccepted packages or unresolved questions the prior task ran out of budget/timebox to reach. The prior task\'s own Next backlog is NOT auto-added to `requests` - naming it here is a decision this task\'s own request should still make in its own words. tm_open returns carryover_candidates (backlog items and user stories the prior Sprint did not ship) for the person to choose from.' },
         initiative: { type: 'string', description: 'default null, also settable in .claude/team.json. An optional label ABOVE this EPIC - several EPICs toward one outcome (a slug-normalized "I-<slug>" key: lowercased, non-alphanumeric runs collapsed to one "-"). Display/grouping only: tm_board groups every EPIC by it once any task has one, and tm_ticket("I-<slug>") lists that group\'s EPICs with state and cost. Never read by scheduling or execution, and never nests a task inside another - EPICs under the same initiative are still independent tasks.' },
         decisions: { type: 'array', items: { type: 'object', properties: { question: { type: 'string' }, chose: { type: 'string' }, because: { type: 'string' } }, required: ['question', 'chose'] }, description: 'What the entry skill settled with the user in its brainstorm before calling tm_open: [{question, chose, because?}]. Written as the first entries of task.decisions (source "brainstorm", decided_in "session"); PLAN and every package read them as settled rules, and an ask about the same question is never opened again. Passing it (even []) skips the engine\'s own brainstorm node.' },
         brainstorm: { type: 'boolean', description: 'default true, also settable in .claude/team.json. With no decisions[], the engine holds the brainstorm itself: a `brainstorm` node after size, ahead of PLAN/shape, restates intent/scope/approach/assumptions from the request and asks the requester one card of questions when interactive (defaults otherwise). Its result becomes task.decisions (source "self-brainstorm", or "ask" where a person chose) and the report leads with what the engine decided on its own. false skips the node.' },
@@ -5396,7 +5395,7 @@ async function openTaskAndMaybePin(a, eventName) {
 // instead - the daemon and package drivers do the rest.
 async function toolOpen(a) {
   const { task, delegated, view } = await openTaskAndMaybePin(a, 'tm_open');
-  const viewFields = { ...(view && view.url ? { view_url: view.url } : {}), ...(task.context_from_unresolved ? { context_from_unresolved: task.context_from_unresolved } : {}) };
+  const viewFields = { ...(view && view.url ? { view_url: view.url } : {}), ...(task.context_from_unresolved ? { context_from_unresolved: task.context_from_unresolved } : {}), ...(task.carryover_candidates ? { carryover_candidates: task.carryover_candidates } : {}) };
   if (delegated) return { ...delegated, docs_dir: docPaths(task).dir, ...viewFields };
   if (noDaemon()) return { ...toolNext({ task_id: task.run_id }), ...viewFields };
   return { task_id: task.run_id, state: managerState(task).state, docs_dir: docPaths(task).dir, ...viewFields };
@@ -5409,7 +5408,7 @@ async function toolOpen(a) {
 // would for a tm_open-created one).
 async function toolRun(a) {
   const { task, delegated, view } = await openTaskAndMaybePin(a, 'tm_run');
-  const viewFields = { ...(view && view.url ? { view_url: view.url } : {}), ...(task.context_from_unresolved ? { context_from_unresolved: task.context_from_unresolved } : {}) };
+  const viewFields = { ...(view && view.url ? { view_url: view.url } : {}), ...(task.context_from_unresolved ? { context_from_unresolved: task.context_from_unresolved } : {}), ...(task.carryover_candidates ? { carryover_candidates: task.carryover_candidates } : {}) };
   return {
     task_id: task.run_id,
     run_id: task.run_id,

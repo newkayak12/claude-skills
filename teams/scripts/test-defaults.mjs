@@ -530,7 +530,7 @@ test('proof: guard D flags the pre-fix docPaths line that re-typed docs_dir', ()
 // re-typed TEAM_DEFAULTS.max_parallel_teams's literal (2) as its own `? ... : 2` ternary branch
 // instead of reading TEAM_DEFAULTS.max_parallel_teams. Unlike the docs_dir pair
 // ('.teams_output', 'team'), the bare digit 2 is not a distinctive literal on its own - it also
-// appears for max_depth, qa_rounds, driver_restarts and other unrelated defaults throughout
+// appears for qa_rounds, driver_restarts and other unrelated defaults throughout
 // teams/mcp - so this guard matches the exact ternary SHAPE the bug took
 // (`? task.team.opts.max_parallel_teams : <N>`), not the digit alone.
 //
@@ -588,9 +588,7 @@ test('proof: guard D flags the pre-fix toolNext line that re-typed max_parallel_
 // BOTH planning and qa on" - is a real behavioral proof and stays; this guard pins the same fact
 // textually too, so it does not depend on that one test surviving unedited.
 //
-// max_depth and plugin_dirs are the same shape: max_depth has no reader at all since 2026-09-28
-// (it is recorded but inert until nested tasks land - teamconfig.mjs), so nothing behavioural
-// catches a drift of its default. plugin_dirs's only readers (daemon.mjs, taskmanager.mjs) fall back to a re-typed `[]` on a
+// plugin_dirs is the same shape: its only readers (daemon.mjs, taskmanager.mjs) fall back to a re-typed `[]` on a
 // missing task.team/opts, which is harmless only because `[] || []` never actually reaches the
 // fallback - but the shipped default value itself, `[]`, is asserted nowhere.
 //
@@ -609,7 +607,7 @@ function teamDefaultsObject(teamconfigSrc) {
   if (!m) throw new Error('"const TEAM_DEFAULTS = Object.freeze({" not found - teamconfig.mjs restructured; update this guard');
   const literal = extractBalanced(stripped, m.index + m[0].length - 1);
   // TEAM_DEFAULTS.max_parallel_teams reads the named AUTO_MAX_PARALLEL_TEAMS constant, not a
-  // bare literal - not this guard's concern (it pins qa_rounds/roles/max_depth/plugin_dirs
+  // bare literal - not this guard's concern (it pins qa_rounds/roles/plugin_dirs
   // only), but the literal still has to evaluate, so the identifier is resolved the same way
   // guard E's schemaKeys already relies on the literal having no OTHER free variables.
   const am = /const AUTO_MAX_PARALLEL_TEAMS\s*=\s*('[^']*');/.exec(stripped);
@@ -619,11 +617,11 @@ function teamDefaultsObject(teamconfigSrc) {
   return new Function('AUTO_MAX_PARALLEL_TEAMS', 'join', `return ${literal}`)(new Function(`return ${am[1]}`)(), join);
 }
 
-test('TEAM_DEFAULTS pins its own documented default VALUES for the keys no test exercises un-overridden: qa_rounds, roles, max_depth, plugin_dirs', () => {
+test('TEAM_DEFAULTS pins its own documented default VALUES for the keys no test exercises un-overridden: qa_rounds, roles, plugin_dirs', () => {
   const d = teamDefaultsObject(src('teamconfig'));
   assert.deepStrictEqual(d.qa_rounds, 2, `qa_rounds default drifted to ${JSON.stringify(d.qa_rounds)} (expected 2)`);
   assert.deepStrictEqual(d.roles, { planning: 'auto', qa: true, audit: true }, `roles default drifted to ${JSON.stringify(d.roles)} (expected {planning: 'auto', qa: true, audit: true} - light PLAN mode, docs/plans/2026-09-28-teams-light-plan.md §2.5)`);
-  assert.deepStrictEqual(d.max_depth, 2, `max_depth default drifted to ${JSON.stringify(d.max_depth)} (expected 2)`);
+  assert.equal('max_depth' in d, false, 'max_depth is retired - no sub-EPIC (docs/plans/2026-09-28-teams-sprint-not-sub-epic.md)');
   assert.deepStrictEqual(d.plugin_dirs, [], `plugin_dirs default drifted to ${JSON.stringify(d.plugin_dirs)} (expected [])`);
   assert.deepStrictEqual(d.max_parallel_teams, 'auto', `max_parallel_teams default drifted to ${JSON.stringify(d.max_parallel_teams)} (expected 'auto' - see taskmanager.mjs's AIMD controller)`);
   assert.deepStrictEqual(d.max_parallel_ceiling, null, `max_parallel_ceiling default drifted to ${JSON.stringify(d.max_parallel_ceiling)} (expected null - the AIMD controller derives one from the host when unset)`);

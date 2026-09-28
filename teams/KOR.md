@@ -111,7 +111,7 @@ flowchart TD
 | QA | 기능 영역마다 QA 카드 하나(`QA-F1`, `QA-F2`, ...). 카드마다 합쳐진 트리 위에서 전체 런을 돌며 자기 영역의 유저 스토리를 병렬로 검증합니다. 한 라운드의 카드가 모두 끝나면 결함을 한꺼번에 수정 STORY로 등록하고, 다시 통합한 뒤 모든 QA 카드를 다시 엽니다. | `roles.qa`, `qa_rounds` |
 | audit | 기획 팀이 합쳐진 결과를 합쳐진 PRD와 대조합니다. 충족 못 한 스토리는 QA 결함처럼 등록됩니다. | `roles.audit` |
 | `gate:goal` | 결과 전체를 원래 요청에 비춰 판정합니다(`goal_threshold`, 기본 90%). | `goal_threshold` |
-| `report` | 목표 게이트가 끝나면 통과든 실패든 항상 돕니다. 다음 스프린트를 위한 `retro.json`도 씁니다. | — |
+| `report` | 목표 게이트가 끝나면 통과든 실패든 항상 돕니다. 다음 스프린트를 위한 `retro.json`도 씁니다. 여기에 끝내지 못한 유저 스토리도 들어갑니다. sub-EPIC은 없으므로 남은 일은 다음 스프린트로 이월됩니다(`tm_open({context_from})`이 `carryover_candidates`로 돌려줌). | — |
 
 모든 반복에는 예산이 있습니다(`max_retries`, `qa_rounds`, `upstream_fix_rounds`). 예산이 바닥나면
 그 실패는 *확정(settled)*됩니다. 거기에 기대던 노드는 도달 불가로 표시되고, 태스크는 멈춰 있지
@@ -287,7 +287,6 @@ node teams/scripts/run.mjs --resume <task_id>
 | `budget_grace_minutes` | `5` | 멈춘 뒤 돌고 있던 디스패치가 죽기 전까지 더 쓸 수 있는 시간. |
 | `qa_rounds` | `2` | QA나 audit 라운드가 수정 STORY를 낼 수 있는 횟수. 넘으면 `unresolved_defects`로 갑니다. |
 | `upstream_fix_rounds` | `2` | 패키지 하나에 등록할 수 있는 업스트림 수정 횟수. |
-| `max_depth` | `2` | 패키지가 자기 하위 태스크를 열 때 쓸 중첩 한도(예약). 기록만 되고 아직 강제되지 않습니다. |
 | `docs_dir` | `.teams_output/team` | 페이즈 문서(`INDEX.md`, STORY별 페이지, 보고서)를 쓰는 곳. |
 | `plugin_dirs` | `[]` | 모든 드라이버와 심사 세션에 더 넘길 `--plugin-dir` 경로. |
 | `initiative` | `null` | 여러 EPIC을 보드에서 묶는 라벨. 표시용일 뿐입니다. |

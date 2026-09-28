@@ -111,7 +111,7 @@ What each step does:
 | QA | One QA card per feature area (`QA-F1`, `QA-F2`, ...), each a full run on the merged tree, in parallel, exercising its area's user stories. Once every card of the round has settled, their defects are filed together as fix STORYs, and the loop re-integrates and reopens every QA card. | `roles.qa`, `qa_rounds` |
 | audit | Planning checks the merged result against the merged PRD. Unmet stories are filed like QA defects. | `roles.audit` |
 | `gate:goal` | Judges the whole result against the original request (`goal_threshold`, default 90%). | `goal_threshold` |
-| `report` | Always runs once the goal gate settles, pass or fail. Also writes `retro.json` for the next Sprint. | — |
+| `report` | Always runs once the goal gate settles, pass or fail. Also writes `retro.json` for the next Sprint, including the user stories that did not ship; there is no sub-EPIC, so unfinished work carries into the next Sprint (`tm_open({context_from})` returns them as `carryover_candidates`). | — |
 
 Every loop has a budget (`max_retries`, `qa_rounds`, `upstream_fix_rounds`). When one runs out,
 the failure is *settled*: what depends on it is marked unreachable and the task goes on to its
@@ -289,7 +289,6 @@ explanation of every key is in [docs/configuration.md](docs/configuration.md#con
 | `budget_grace_minutes` | `5` | Extra time a running dispatch may use after the stop before it is killed. |
 | `qa_rounds` | `2` | How many QA or audit rounds may file fix STORYs; further defects go to `unresolved_defects`. |
 | `upstream_fix_rounds` | `2` | How many upstream fixes may be filed against one package. |
-| `max_depth` | `2` | Reserved nesting limit for packages that open their own sub-task. Recorded, not enforced yet. |
 | `docs_dir` | `.teams_output/team` | Where the phase documents (`INDEX.md`, per-STORY pages, report) are written. |
 | `plugin_dirs` | `[]` | Extra `--plugin-dir` paths for every driver and judge session. |
 | `initiative` | `null` | A label that groups several EPICs on the board; display only. |

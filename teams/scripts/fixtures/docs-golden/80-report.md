@@ -26,6 +26,9 @@ The accepted work is on branch `harness/aaaaaaaa/integration-2`. Nothing has mer
 
 ## Next backlog
 
+User stories not shipped (carry into the next Sprint):
+- (none)
+
 Unaccepted packages:
 - (none)
 
