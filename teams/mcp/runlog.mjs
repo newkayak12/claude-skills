@@ -166,12 +166,19 @@ export function harvestTask({ taskDir, cwd, label, root, scorePrefix } = {}) {
     score,
     state: task ? (events.filter((e) => e.event === 'daemon_done').pop() || {}).state || 'unfinished' : 'no-task',
     size: task && task.size, packages: ((task && task.spec && task.spec.packages) || []).map((p) => p.id),
-    // enforceBudget never kills a dispatch already running when the box trips, and a stopped
-    // task still owes its goal gate and report (closeStoppedToReport) - both by design, so spend
-    // does not freeze at task.budget_stopped.spend. post_stop_usd is that gap made visible: the
-    // in-flight package finishing plus the mandatory closing stages, on top of what had already
-    // been spent at the moment the box tripped. Not a second box - nothing here stops anything -
-    // just the number an operator sizing budget_usd should hold in reserve above their real target.
+    // A stopped task still owes its goal gate and report (closeStoppedToReport) - both by
+    // design, mandatory, and paid for regardless - so spend does not freeze at
+    // task.budget_stopped.spend. settleRunningDispatchesAtStop (taskmanager.mjs) now bounds the
+    // rest: a phase-Team pass (QA, AUDIT) already running is killed immediately (its accept is
+    // never read once the goal gate rewires around it), and a package/PLAN/S dispatch the
+    // closing path still needs is killed once it has run budget_grace_usd/_minutes past the
+    // stop. post_stop_usd is that whole remainder made visible: the mandatory closing stages
+    // plus whatever grace a still-needed dispatch used, on top of what had already been spent at
+    // the moment the box tripped. Not a second box - nothing here stops anything on its own -
+    // just the number an operator sizing budget_usd should hold in reserve above their real
+    // target (bounded now, not open-ended: portfolio-refresh-80ec931a's own $3.08 gap was an
+    // in-flight QA child the close path discarded anyway, ledger.jsonl's budget_goal_rewired/
+    // budget_closed{skipped:["accept:QA:2"]} - fixed by killing exactly that case on sight).
     budget: task && task.team && task.team.opts ? {
       budget_usd: task.team.opts.budget_usd ?? null, timebox_minutes: task.team.opts.timebox_minutes ?? null, stopped: !!task.budget_stopped,
       ...(task.budget_stopped && costs ? { post_stop_usd: +Math.max(0, (costs.cost_usd || 0) - (task.budget_stopped.spend || 0)).toFixed(4) } : {}),
