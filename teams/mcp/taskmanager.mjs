@@ -3326,6 +3326,25 @@ export function composeTaskPrompt(task, n) {
     L.push(`## Scope: the Sprint's box ran out`);
     L.push(`budget_usd/timebox_minutes stopped this task. Packages ${task.budget_stopped.skipped_packages.join(', ')} were never dispatched and are carried to the next Sprint - their work is absent BY DESIGN, not a defect. Judge only the packages that were merged: that they work together and meet their own acceptance, and the goal-level criteria they alone can satisfy. Set ${verdictField} true if they do. Name the skipped work (in unowned or gaps) for the record, but it is not a reason to refuse.`);
   }
+  // Distinct from skipped_packages above: a QA/AUDIT pass that WAS dispatched (once, or through
+  // every retry the box allowed) but never produced a verdict before budget/timebox stopped the
+  // Sprint - the goal gate's dependency on its accept node was rewired straight to integrate
+  // (closeStoppedToReport), so nothing upstream of this node says QA/AUDIT is missing unless it
+  // is stated here. This is a fact, not a suggestion: a judge or report that stays silent about
+  // it is the exact silent-pass this note exists to prevent. The task still completes - roles.qa
+  // being on and QA not reaching a verdict is scope the box cut, the same way a skipped package
+  // is, not grounds by itself to refuse accept or withhold the report.
+  if (task.budget_stopped && (task.budget_stopped.qa_not_run || []).length
+      && (n.stage === 'integrate' || String(n.node_id).startsWith('gate:goal') || n.stage === 'report')) {
+    L.push('');
+    L.push(`## Scope: ${task.budget_stopped.qa_not_run.map((q) => q.pass).join(', ')} did not run`);
+    for (const q of task.budget_stopped.qa_not_run) {
+      L.push(`${q.pass}: not run - ${q.reason} (last attempt: ${q.node_id}). budget/timebox stopped the Sprint before ${q.pass} reached a verdict.`);
+    }
+    L.push(n.stage === 'report'
+      ? `List this explicitly under an "unresolved" or "known gaps" section of the report - not folded into the cost or retro line only. Do not describe the Sprint as fully verified.`
+      : `Record it in gaps - "${task.budget_stopped.qa_not_run.map((q) => q.pass).join('/')}: not run (budget/timebox)" - even though it is not a reason by itself to refuse. Do not treat the absence of a ${task.budget_stopped.qa_not_run.map((q) => q.pass).join('/')} verdict as equivalent to a passing one.`);
+  }
   if (n.stage === 'report') {
     // The same account tm_status/tm_board and view.mjs's header now show (collectDriverCosts,
     // drivercost.mjs) - stated here explicitly so 80-report.md (docs.mjs's renderReport, which
@@ -4738,7 +4757,21 @@ function closeStoppedToReport(task) {
       const integ = pkg && task.nodes.find((x) => x.node_id === pkg.integration_of && x.state === 'done');
       if (integ) {
         goal.deps = [integ.node_id];
-        record(task, { event: 'budget_goal_rewired', task_id: task.run_id, node_id: goal.node_id, from: dep.node_id, to: integ.node_id });
+        // The rewire routes the goal gate past a QA/AUDIT pass that was dispatched but never
+        // finished - not the "never dispatched" case skipped_packages already tracks below
+        // (portfolio-refresh-80ec931a: QA:1 failed on a malformed adapter reply, QA:2 was still
+        // running when the box stopped and ended blocked - the goal gate accepted at 92% with no
+        // QA verdict at all, and nothing had told it QA was missing). Record the fact here so
+        // composeTaskPrompt can put it in front of the goal gate and the report explicitly,
+        // instead of relying on a judge to notice a failed dispatch buried in "every node".
+        const passName = dep.subgoal_id;
+        const lastAttempt = task.nodes.filter((x) => x.stage === 'dispatch' && x.subgoal_id === passName).pop();
+        const why = (lastAttempt && lastAttempt.result && lastAttempt.result.reason) || 'budget/timebox stopped the Sprint before it could be retried';
+        task.budget_stopped.qa_not_run = [
+          ...(task.budget_stopped.qa_not_run || []),
+          { pass: passName, node_id: dep.node_id, reason: why },
+        ];
+        record(task, { event: 'budget_goal_rewired', task_id: task.run_id, node_id: goal.node_id, from: dep.node_id, to: integ.node_id, pass: passName });
         return true;
       }
     }
