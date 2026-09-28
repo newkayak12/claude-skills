@@ -21,6 +21,7 @@ import {
   computeWriteScope, nodeBriefing, goalConsensus, pushGoalGateRound,
   promoteHumanGates, autoPassHumanGateResult, humanGateResultFromPayload,
   humanGateIdentity, humanGateVerdictField,
+  normalizeSpec, defaultKind, DOCUMENT_ONLY_KINDS,
 } from '../mcp/graph.mjs';
 
 test('planning kind: chain, no reasoning stage, and skills by stage', () => {
@@ -98,6 +99,84 @@ test('flow audit supplies the planning-audit kind and reuses planning\'s own per
 
 test('kindOf resolves planning-audit', () => {
   assert.equal(kindOf({ id: 'A1', kind: 'planning-audit' }), 'planning-audit');
+});
+
+// ---------- light PLAN mode (docs/plans/2026-09-28-teams-light-plan.md §2.2-2.3) ----------
+
+test('planning-light kind: investigate -> template-fill -> gate, template-fill authors, document-only like planning', () => {
+  assert.deepEqual(KINDS['planning-light'].chain, ['investigate', 'template-fill', 'gate']);
+  assert.deepEqual(KINDS['planning-light'].reasoning, []);
+  assert.equal(authorStage('planning-light'), 'template-fill');
+  assert.deepEqual(kindSkills('planning-light', 'investigate'), kindSkills('planning', 'investigate'), 'investigate is the same stage in both chains');
+  assert.deepEqual(kindSkills('planning-light', 'gate'), ['think:devils-advocate']);
+  assert.ok(!REASONING_STAGES.has('template-fill'), 'template-fill writes the document - a mutating stage');
+  assert.ok(DOCUMENT_ONLY_KINDS.has('planning-light'));
+  const problems = validateSpec({ goal: 'g', acceptance: ['a'], subgoals: [{ id: 'U1', kind: 'planning-light', title: 't', acceptance: ['a'], files: ['src/index.mjs'] }] });
+  assert.ok(problems.some((p) => /not a document path/.test(p)), problems.join('; '));
+  // The full chain is untouched.
+  assert.deepEqual(KINDS.planning.chain, ['investigate', 'draft', 'revise', 'gate']);
+});
+
+test('a light PLAN run (planning_mode "light") defaults and rewrites planning subgoals to planning-light; setgoal\'s explicit "planning" passes mixed=false and expands the light chain', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'graph-light-'));
+  try {
+    const light = createRun({ cwd, request: 'r', flow: 'plan', mixed: false, vendor: 'self', planning_mode: 'light' });
+    assert.equal(light.planning_mode, 'light');
+    assert.equal(defaultKind(light), 'planning-light');
+    const spec = normalizeSpec(light, { goal: 'g', acceptance: ['a'], subgoals: [
+      { id: 'U1', kind: 'planning', title: 'PRD', acceptance: ['a'], files: ['docs/prd.md'] },
+    ] });
+    assert.equal(spec.subgoals[0].kind, 'planning-light');
+    assert.deepEqual(validateSpec(spec, { kind: defaultKind(light), mixed: false, flow: 'plan' }), []);
+    light.spec = spec;
+    expandSubgoals(light, spec.subgoals);
+    const chain = light.nodes.filter((n) => n.subgoal_id === 'U1').map((n) => n.stage);
+    assert.deepEqual(chain, ['investigate', 'template-fill', 'gate']);
+
+    const full = createRun({ cwd, request: 'r', flow: 'plan', mixed: false, vendor: 'self' });
+    assert.equal(full.planning_mode, undefined, 'a run nobody asked for light carries no field at all');
+    assert.equal(defaultKind(full), 'planning');
+    assert.equal(normalizeSpec(full, { goal: 'g', acceptance: ['a'], subgoals: [{ id: 'U1', kind: 'planning', title: 't', acceptance: ['a'] }] }).subgoals[0].kind, 'planning');
+    const dev = createRun({ cwd, request: 'r', flow: 'develop', vendor: 'self', planning_mode: 'light' });
+    assert.equal(defaultKind(dev), 'subgoal', 'planning_mode only touches the planning kind');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('planning-light gate: briefed with investigate\'s unknowns and handed the per-item coverage + unknowns-not-lost contract; the full chain\'s gate is not', () => {
+  const run = {
+    run_id: 'r', cwd: '/tmp', request: 'req', interactive: false, flow: 'plan', mixed: false, planning_mode: 'light',
+    spec: { goal: 'g', acceptance: ['a'], subgoals: [{ id: 'U1', kind: 'planning-light', title: 'PRD', acceptance: ['a'], files: ['docs/prd.md'] }] },
+    nodes: [
+      node('investigate:U1:1', 'investigate', [], { subgoal_id: 'U1', attempt: 1, state: 'done', result: { stage_ok: true, unknowns: [{ question: 'Which skills run multi-turn sessions?', owner: 'PO' }, { unknown: 'Is R6 per skill or per plugin?' }] } }),
+      node('template-fill:U1:1', 'template-fill', ['investigate:U1:1'], { subgoal_id: 'U1', attempt: 1, state: 'done', result: { stage_ok: true, handoff: 'docs/prd.md' } }),
+      node('gate:U1:1', 'gate', ['template-fill:U1:1'], { subgoal_id: 'U1', attempt: 1 }),
+    ],
+  };
+  const fill = getNode(run, 'template-fill:U1:1');
+  const fb = nodeBriefing(run, fill);
+  assert.deepEqual(fb.investigate_unknowns, [{ question: 'Which skills run multi-turn sessions?', owner: 'PO' }, { question: 'Is R6 per skill or per plugin?', owner: null }]);
+  assert.equal(fb.decide_by_default, true, 'template-fill is an authoring stage: non-interactive decides by default like draft');
+  const fp = composePrompt(run, fill, fb);
+  assert.match(fp, /## Investigate unknowns/);
+  assert.match(fp, /This backlog already declared its acceptance criteria/);
+
+  const gate = getNode(run, 'gate:U1:1');
+  const gp = composePrompt(run, gate, nodeBriefing(run, gate));
+  assert.match(gp, /Is R6 per skill or per plugin\?/);
+  assert.match(gp, /Per-item rule coverage/);
+  assert.match(gp, /never with one search over the whole file/);
+  assert.match(gp, /No unknown lost/);
+
+  // The same gate under the full planning kind reads exactly the ordinary gate contract.
+  const fullRun = { ...run, planning_mode: undefined, spec: { ...run.spec, subgoals: [{ ...run.spec.subgoals[0], kind: 'planning' }] } };
+  const fullGate = getNode(fullRun, 'gate:U1:1');
+  const fb2 = nodeBriefing(fullRun, fullGate);
+  assert.equal(fb2.investigate_unknowns, null);
+  const fullPrompt = composePrompt(fullRun, fullGate, fb2);
+  assert.doesNotMatch(fullPrompt, /Per-item rule coverage/);
+  assert.doesNotMatch(fullPrompt, /## Investigate unknowns/);
 });
 
 // ---------- parent_shaped (§3 of docs/plans/2026-09-21-teams-server-owns-the-loop.md) ----------

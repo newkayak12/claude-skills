@@ -102,6 +102,26 @@ export const KINDS = {
       gate: ['think:devils-advocate'],
     },
   },
+  // The light PLAN chain (docs/plans/2026-09-28-teams-light-plan.md §2.2): for a backlog whose
+  // acceptance criteria are already declared (acceptance.mjs's hasDeclaredAcceptance), draft
+  // and revise fold into one template-fill - copy the declared criteria into the document in
+  // backlog order, cite investigate's findings beside them, carry every unknown - and the gate
+  // additionally checks per-item rule coverage and that no unknown was lost (§2.3). investigate
+  // stays whole: it is the only stage that reads sources and the only route an unknown takes to
+  // an `ask` card. A separate kind rather than a `chain_light` field on `planning` (§5-2): every
+  // lookup here (chain, author, gate stage, skills) and reducers.mjs's REGISTRY are keyed by
+  // kind, so a kind of its own needs no run-aware variant of any of them. A light run gets it by
+  // run.planning_mode === 'light' (normalizeSpec below), never by setgoal naming it.
+  'planning-light': {
+    chain: ['investigate', 'template-fill', 'gate'],
+    reasoning: [],
+    author: 'template-fill',
+    skills: {
+      investigate: ['develop:domain-driven-design', 'cognition:assumption-extractor'],
+      'template-fill': ['write:doc-coauthoring'],
+      gate: ['think:devils-advocate'],
+    },
+  },
   qa: {
     chain: ['cases', 'execute', 'gate'],
     reasoning: [],
@@ -208,15 +228,21 @@ export function flowOf(run) {
 
 export function defaultKind(run) {
   const f = flowOf(run);
-  return f ? FLOWS[f].kind : DEFAULT_KIND;
+  const kind = f ? FLOWS[f].kind : DEFAULT_KIND;
+  // A PLAN run the manager opened in light mode (taskmanager.mjs's planning_mode) runs every
+  // planning subgoal as planning-light - same flow, same personas, shorter chain.
+  return kind === 'planning' && run.planning_mode === 'light' ? 'planning-light' : kind;
 }
 
 // Every subgoal leaves setgoal with an explicit kind, so nothing downstream - retries, the
 // author check, the cross-check - has to know what the run's default was at the time.
+// In a light PLAN run an explicit kind "planning" (what PLANNING_SETGOAL tells setgoal to write)
+// is read as planning-light too: the mode is the manager's decision, not setgoal's.
 export function normalizeSpec(run, spec) {
   if (!spec || typeof spec !== 'object' || !Array.isArray(spec.subgoals)) return spec;
   const dflt = defaultKind(run);
-  return { ...spec, subgoals: spec.subgoals.map((sg) => (sg && typeof sg === 'object' && sg.kind == null ? { ...sg, kind: dflt } : sg)) };
+  const light = dflt === 'planning-light';
+  return { ...spec, subgoals: spec.subgoals.map((sg) => (sg && typeof sg === 'object' && (sg.kind == null || (light && sg.kind === 'planning')) ? { ...sg, kind: dflt } : sg)) };
 }
 
 // The stage that AUTHORS the artifact - the identity a later reviewing stage must not be.
@@ -625,6 +651,9 @@ export function createRun(opts) {
     // planning run: told in words that one PRD would do, code-sprint-P3's planner still wrote two
     // documents and spent $10.86 of $15 before a package ran.
     max_subgoals: Number.isInteger(opts.max_subgoals) && opts.max_subgoals > 0 ? opts.max_subgoals : null,
+    // 'light' only on a PLAN child the manager resolved to the light chain (docs/plans/
+    // 2026-09-28-teams-light-plan.md §2.5); defaultKind/normalizeSpec read it. Absent otherwise.
+    ...(opts.planning_mode === 'light' ? { planning_mode: 'light' } : {}),
     max_retries: Number.isInteger(opts.max_retries) ? opts.max_retries : 2,
     // continue (default) or rollback - docs/plans/2026-09-23-teams-reducer-human-rollback.md §5.
     // Read by retrySubgoal below to decide whether a rejected attempt's worktree edits stay (as
@@ -752,7 +781,7 @@ export function getNode(run, nodeId) {
 // Kinds whose product is a written document, never a change to source. Their subgoals may
 // only name document paths in files[] (validateSpec), and their authoring stages are told so
 // in as many words (prompts.mjs).
-export const DOCUMENT_ONLY_KINDS = new Set(['planning', 'planning-audit']);
+export const DOCUMENT_ONLY_KINDS = new Set(['planning', 'planning-light', 'planning-audit']);
 
 export function validateSpec(spec, opts = {}) {
   const problems = [];
@@ -1847,13 +1876,29 @@ export function nodeBriefing(run, n) {
     // the same document called unresolved - a contradiction no revise could close while the
     // questions stayed open and unanswerable. Shown to authoring stages, not to investigate
     // (which decides what is open) or ask.
-    decide_by_default: !run.interactive && ['draft', 'revise', 'implement', 'cases'].includes(n.stage),
-    default_decisions: !run.interactive && ['draft', 'revise', 'implement', 'cases'].includes(n.stage)
+    decide_by_default: !run.interactive && ['draft', 'revise', 'template-fill', 'implement', 'cases'].includes(n.stage),
+    default_decisions: !run.interactive && ['draft', 'revise', 'template-fill', 'implement', 'cases'].includes(n.stage)
       ? (run.unasked || []).filter((u) => u && u.question && ((Array.isArray(u.options) && u.options.length) || u.decided != null))
         .map((u) => ({ question: u.question, chose: u.decided != null ? (typeof u.decided === 'string' ? u.decided : JSON.stringify(u.decided)) : String((u.options[0] && (u.options[0].option || u.options[0])) || ''), owner: u.owner || null, asked_under: u.subgoal_id || null }))
         .filter((d, i, all) => d.chose && all.findIndex((x) => x.question === d.question) === i)
       : [],
     write_scope: writeScope,
+    // planning-light (§2.3): investigate's unknowns, handed verbatim to template-fill (which
+    // must carry each one) and to the gate (which checks none was lost). The full chain's gate
+    // is two stages removed from investigate and never needed them; this one is the check.
+    investigate_unknowns: sg && kindOf(sg) === 'planning-light' && ['template-fill', 'gate'].includes(n.stage)
+      ? lightUnknowns(run, n)
+      : null,
     reasoning_stage: REASONING_STAGES.has(n.stage),
   };
+}
+
+// The unknowns the same attempt's investigate returned - the one this template-fill/gate
+// descends from, not an earlier attempt's.
+function lightUnknowns(run, n) {
+  const inv = run.nodes.filter((x) => x.stage === 'investigate' && x.subgoal_id === n.subgoal_id
+    && (x.attempt || 1) === (n.attempt || 1) && x.result).pop();
+  const us = inv && Array.isArray(inv.result.unknowns) ? inv.result.unknowns : [];
+  return us.filter((u) => u && (u.question || u.unknown))
+    .map((u) => ({ question: String(u.question || u.unknown), owner: u.owner || null }));
 }

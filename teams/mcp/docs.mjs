@@ -66,7 +66,9 @@ export function renderRequest(task) {
   L.push('## Context', task.context ? String(task.context) : '(none)', '');
   L.push('## Team snapshot');
   L.push(`- max_parallel_teams: ${T.max_parallel_teams == null ? '—' : T.max_parallel_teams}`);
-  L.push(`- roles: planning=${(T.roles && T.roles.planning) === true}, qa=${(T.roles && T.roles.qa) === true}`);
+  // roles.planning may also be 'light' or 'auto' (light PLAN mode): shown as set, with the mode it resolved to.
+  const P = T.roles ? T.roles.planning : undefined;
+  L.push(`- roles: planning=${typeof P === 'string' ? `${P}${task.planning_mode ? ` (${task.planning_mode})` : ''}` : P === true}, qa=${(T.roles && T.roles.qa) === true}`);
   L.push(`- goal_threshold: ${T.goal_threshold == null ? '—' : T.goal_threshold}`, '');
   L.push('## Size', `- pinned: ${task.size_pinned || '(not pinned)'}`, `- measured: ${task.size || '(pending)'}`);
   L.push(`- flow: ${task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto')}`);
@@ -403,7 +405,7 @@ export function renderSReport(task) {
   }
   L.push('## What a size-S task does not do', '');
   const roles = (task.team && task.team.opts && task.team.opts.roles) || {};
-  const on = ['planning', 'qa', 'audit'].filter((r) => roles[r] === true || (r === 'audit' && roles.planning && roles.audit !== false));
+  const on = ['planning', 'qa', 'audit'].filter((r) => roles[r] === true || (r === 'planning' && typeof roles.planning === 'string') || (r === 'audit' && roles.planning && roles.audit !== false));
   const notes = [];
   if (on.length) notes.push(`roles ${on.join(', ')} are on, but phase-Teams run only on a size-L task - none of them ran here. Pin size L (tm_open size: "L") to have them.`);
   notes.push(`the run wrote straight into ${task.s_run.cwd}: no worktree, no branch, nothing committed - review and commit it yourself.`);

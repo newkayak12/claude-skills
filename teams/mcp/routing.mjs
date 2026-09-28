@@ -60,7 +60,8 @@ export const EXECUTION_STAGES = new Set(['implement', 'test', 'draft', 'repair']
 // gate gains `repair`: the goal-gate round that follows a repair pass (Step 9) is soft-
 // discouraged from sharing an identity with whoever did the repair, the same way it
 // already is with whoever implemented or drafted the subgoal it is judging.
-const AUTHOR_OF = { critique: 'setgoal', gate: ['implement', 'draft', 'repair'], review: 'draft', test: 'implement' };
+// template-fill (the planning-light kind's author, graph.mjs) joins gate's list for the same reason draft is on it.
+const AUTHOR_OF = { critique: 'setgoal', gate: ['implement', 'draft', 'template-fill', 'repair'], review: 'draft', test: 'implement' };
 
 // audit (planning-audit's own kind) cannot appear in AUTHOR_OF above: that table's actor lookup
 // walks `run.nodes` for a peer sharing this node's subgoal_id, and audit's author - the PLAN
