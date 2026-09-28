@@ -59,7 +59,7 @@ For roadmap type descriptions (Now/Next/Later, Theme-Based, Timeline, Feature-Li
 
 ### When NOT to Use This
 - For tactical sprint planning (use backlog instead)
-- When strategy is unclear (run `pm:pm-strategy-workflow` first)
+- When product strategy itself is undefined (set business goals and target outcomes first — a roadmap can't sequence what strategy hasn't decided)
 - When stakeholders expect date commitments (address expectations first)
 
 ---
@@ -92,7 +92,7 @@ The four input-gathering activities below are fully independent — collect them
 
 **2. Review Customer Problems (Discovery Insights)**
 - **Source:** Discovery interviews, support tickets, NPS feedback, churn surveys
-- **Use:** Insights from `pm:product-discovery` or `pm:customer-research-synthesis` (if recently completed)
+- **Use:** Recent discovery or research synthesis output if it exists; otherwise pull directly from the raw sources and check each candidate problem against `references/validating-customer-problems.md` — pattern vs. anecdote, minimum sample size
 - **Output:** 3-5 validated customer problems
 
 **3. Review Technical Constraints & Opportunities**
@@ -119,8 +119,8 @@ The four input-gathering activities below are fully independent — collect them
 ### Activities
 
 **1. Define Epic Hypotheses**
-- **Use:** `pm:hypothesis-driven-dev` (hypothesis form)
-- **Format:** "We believe that [building X] for [persona] will achieve [outcome] because [assumption]."
+- **Format:** four-part hypothesis — "We believe that [building X] for [persona] will achieve [outcome] because [assumption]. We'll know we're right when [metric reaches level]."
+- **Also state:** the null hypothesis (what stops the bet — e.g., "if the metric doesn't move within one quarter, drop it") and the single riskiest assumption the epic depends on
 - **Output:** 10-15 epic hypotheses
 
 *See `examples/sample.md` — Example 3 for sample epic hypotheses*
@@ -149,8 +149,8 @@ The four input-gathering activities below are fully independent — collect them
 ### Activities
 
 **1. Choose Prioritization Framework**
-- **Use:** `pm:feature-prioritization` (interactive)
-- **Output:** Recommended framework (RICE, ICE, Value/Effort, etc.)
+- **Use:** RICE to rank epics, MoSCoW to draw the committed/aspirational line — see `references/prioritization-frameworks.md` for both, plus the forced-ranking technique for "everyone says P1"
+- **Output:** Scored and committed/aspirational-tagged epic list
 
 **2. Score Epics**
 - Apply framework to all epics
