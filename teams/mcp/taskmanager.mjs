@@ -1411,6 +1411,11 @@ const CAPACITY_GRACE_MS = 3 * 60 * 1000;
 // notice. trap-beta-T2 (2026-09-21) sat 1h51m on "resets 5:40pm (UTC)" after the reset because
 // nothing in the loop read the clock.
 export function autoResumeCapacity(task, now = Date.now()) {
+  // A stopped box respawns nothing: a resumed driver is new spend the box already refused, and
+  // enforceBudget settles the park instead (settleRunningDispatchesAtStop). Not refused at the
+  // warning line: a park the daemon never resumes would also never settle (nothing spends, so
+  // the box never trips), and portfolio-consolidate's P1 delivered accepted work after its resume.
+  if (task.budget_stopped) return false;
   const due = (w) => w && now >= capacityResetAt(w.reason, w.since) + CAPACITY_GRACE_MS;
   let resumed = [];
   if (task.s_run && due(task.s_run.waiting_capacity)) resumed = resumed.concat(clearCapacity(task, 'S'));
@@ -2681,8 +2686,44 @@ function spawnDaemon(task, opts = {}) {
 // block: code-beta-X4's shape judge replied with broken JSON, the daemon scheduled the re-judge,
 // and tm_wait told the driving session "blocked" - which wrote its final report and exited two
 // minutes in, while the task went on without anyone watching.
+// What a budget/timebox-stopped task left undone, or null when it delivered everything it had.
+// portfolio-consolidate-8518d5dd closed `complete` with integrate:6 refused, P3 unaccepted, P4
+// never dispatched and QA and gate:goal skipped - every machine-readable surface said success.
+// `complete` stays the state string (the report ran; nothing switching on it flips, the same
+// choice runState's `settled` made); `partial: true` + `partial_reasons` say what it is short of.
+export function budgetPartial(task) {
+  if (!task || !task.budget_stopped) return null;
+  const reasons = [];
+  const last = (pred) => task.nodes.filter(pred).pop();
+  const skippedPkgs = task.budget_stopped.skipped_packages || [];
+  for (const p of ((task.spec && task.spec.packages) || [])) {
+    const id = String(p.id);
+    if (last((n) => n.stage === 'accept' && n.subgoal_id === id && n.state === 'done')) continue;
+    const d = last((n) => n.stage === 'dispatch' && n.subgoal_id === id);
+    reasons.push(skippedPkgs.includes(id) || !d || d.state === 'pending'
+      ? `${id}: never dispatched (budget/timebox)`
+      : `${id}: not accepted (${d.node_id} ${d.state})`);
+  }
+  const integ = last((n) => n.stage === 'integrate' && n.state !== 'skipped');
+  if (!integ) reasons.push('no integrate ran');
+  else if (integ.state !== 'done') reasons.push(`${integ.node_id} ${integ.state}${integ.result && integ.result.verified === false ? ' (verified=false)' : ''}`);
+  for (const [pass, pkg] of [['QA', task.qa_pkg], ['AUDIT', task.audit_pkg]]) {
+    if (!pkg) continue;
+    const a = last((n) => n.stage === 'accept' && n.subgoal_id === pass);
+    if (a && a.state === 'done') continue;
+    reasons.push(`${pass}: no verdict (${a ? `${a.node_id} ${a.state}` : 'never opened'})`);
+  }
+  const goal = last((n) => n.stage === 'gate' && n.subgoal_id == null && String(n.node_id).startsWith('gate:goal'));
+  if (goal && goal.state !== 'done') reasons.push(`${goal.node_id} ${goal.state}`);
+  return reasons.length ? { partial: true, partial_reasons: reasons } : null;
+}
+
 export function managerState(task) {
   const st = runState(task);
+  if (st.state === 'complete') {
+    const partial = budgetPartial(task);
+    return partial ? { ...st, ...partial } : st;
+  }
   if (st.state !== 'blocked') return st;
   const at = pendingRejudgeAt(task);
   return at === null ? st : { ...st, state: 'running', rejudge_at: at };
@@ -3582,6 +3623,14 @@ export function composeTaskPrompt(task, n) {
       ? `List this explicitly under an "unresolved" or "known gaps" section of the report - not folded into the cost or retro line only. Do not describe the Sprint as fully verified.`
       : `Record it in gaps - "${task.budget_stopped.qa_not_run.map((q) => q.pass).join('/')}: not run (budget/timebox)" - even though it is not a reason by itself to refuse. Do not treat the absence of a ${task.budget_stopped.qa_not_run.map((q) => q.pass).join('/')} verdict as equivalent to a passing one.`);
   }
+  // The same facts tm_status/tm_wait/daemon_done carry as partial_reasons once this report is done.
+  const partial = n.stage === 'report' ? budgetPartial(task) : null;
+  if (partial) {
+    L.push('');
+    L.push('## This Sprint closes partial');
+    L.push('budget/timebox stopped it short of the goal. The task will read `complete` with `partial: true`; open the report by saying so, and list each of these under what did not ship:');
+    for (const r of partial.partial_reasons) L.push(`- ${r}`);
+  }
   if (n.stage === 'report') {
     // The same account tm_status/tm_board and view.mjs's header now show (collectDriverCosts,
     // drivercost.mjs) - stated here explicitly so 80-report.md (docs.mjs's renderReport, which
@@ -3909,8 +3958,14 @@ export function finish(task, n, result) {
   // develop STORY dispatch that fed into it.
   if (n.stage === 'integrate' && n.state === 'done'
     && task.team && task.team.opts && task.team.opts.roles && task.team.opts.roles.qa) {
+    // QA judges the tree THIS integrate built: its worktree (repairWorktree) and the budget
+    // close path's goal-gate rewire (closeStoppedToReport) both read integration_of, which used
+    // to stay on the first integrate forever - portfolio-consolidate's close found integrate:1
+    // (skipped) there and skipped gate:goal instead of rewiring it onto integrate:2.
+    if (task.qa_pkg) task.qa_pkg.integration_of = n.node_id;
     const alreadyWired = task.nodes.some((x) => x.stage === 'dispatch' && x.subgoal_id === 'QA' && x.deps.includes(n.node_id));
-    if (!alreadyWired) {
+    // A stopped box dispatches nothing, so a fresh QA round now could only ever be skipped.
+    if (!alreadyWired && !task.budget_stopped) {
       const goal = task.nodes.filter((x) => x.stage === 'gate' && x.subgoal_id == null).pop();
       const qaRound = nextIndex(task, 'dispatch:QA');
       const qaAccept = pushChain(task, PACKAGE_CHAIN, 'QA', qaRound, [n.node_id], [], {});
@@ -4352,6 +4407,7 @@ function toolWait(a) {
   return {
     task_id: task.run_id,
     state: st.state,
+    ...(st.partial ? { partial: true, partial_reasons: st.partial_reasons } : {}),
     counts: st.counts,
     ...(st.rejudge_at ? { rejudge_at: new Date(st.rejudge_at).toISOString(), note: 'a judge could not judge; the daemon re-judges it then - keep waiting, the task is not blocked' } : {}),
     cursor,
@@ -5225,9 +5281,13 @@ function settleRunningDispatchesAtStop(task, status) {
   for (const n of task.nodes) {
     if (n.stage !== 'dispatch' || n.state !== 'running') continue;
     const bypassed = n.subgoal_id === 'QA' || n.subgoal_id === 'AUDIT';
-    if (!bypassed && !graceSpent) continue;
+    // A driver parked on a provider's usage limit is not running and, the box stopped, is never
+    // respawned (autoResumeCapacity): no grace can buy it anything, so it settles now.
+    const parked = !!(n.child && n.child.waiting_capacity);
+    if (!bypassed && !parked && !graceSpent) continue;
     const reason = bypassed
       ? 'skipped: bypassed by the close path - a phase-Team pass whose accept the goal-gate rewire never reads once the box is over'
+      : parked ? `skipped: parked on provider capacity (${String(n.child.waiting_capacity.reason || '').slice(0, 120)}) when budget/timebox stopped - a stopped box resumes nothing`
       : `skipped: budget grace exhausted (${Math.round(elapsedMinutes)}m / ${graceMinutes}m, $${spendSinceStop.toFixed(2)}${graceUsd != null ? ` / $${graceUsd.toFixed(2)}` : ''} since budget_stopped)`;
     const killed = !!(n.child && killDriver(n.child.driver));
     record(task, {
@@ -5292,8 +5352,15 @@ export function enforceBudget(task) {
     progressed = settleRunningDispatchesAtStop(task, status) || progressed;
     if (task.nodes.some((n) => n.stage === 'dispatch' && n.state === 'running')) return progressed;
   }
-  const currentIntegrate = task.nodes.filter((n) => n.stage === 'integrate' && n.state !== 'done' && !n.final).pop();
+  // A superseded integrate is never current: portfolio-consolidate-8518d5dd left integrate:1
+  // pending under the sweep's integrate:2, and the moment integrate:2 finished this found
+  // integrate:1 again - P3's dead accept still under it - and swept it into integrate:3, :4, :5,
+  // :6 over the same two accepts (five judge sessions, $8.88). A stopped box integrates what it
+  // accepted once; budget_stopped.reintegrated is that once.
+  const superseded = (id) => task.nodes.some((x) => x.supersedes === id);
+  const currentIntegrate = task.nodes.filter((n) => n.stage === 'integrate' && n.state !== 'done' && !n.final && !superseded(n.node_id)).pop();
   if (!currentIntegrate) return closeStoppedToReport(task) || progressed; // no integrate left pending on a never-run package
+  if (task.budget_stopped.reintegrated) return closeStoppedToReport(task) || progressed;
   const neverRan = task.nodes.filter((n) => n.stage === 'dispatch' && n.state === 'pending'
     && currentIntegrate.deps.some((d) => d.startsWith(`accept:${n.subgoal_id}:`)));
   // An accept that will never be done - its dispatch failed, and a stopped box retries nothing -
@@ -5330,8 +5397,16 @@ export function enforceBudget(task) {
   // Not done is every package this integrate drops, not only the swept ones: one that failed as
   // the box ran out is dropped too, and code-sprint-P3's note named P3 and P4 but not P2.
   const notDone = [...new Set(currentIntegrate.deps.filter((d) => !keptAccepts.includes(d)).map((d) => d.split(':')[1]))];
-  reintegrateBehind(task, currentIntegrate.node_id, keptAccepts, `budget/timebox exhausted; not done: ${notDone.join(', ')}`);
-  record(task, { event: 'budget_swept', task_id: task.run_id, skipped });
+  const fresh = reintegrateBehind(task, currentIntegrate.node_id, keptAccepts, `budget/timebox exhausted; not done: ${notDone.join(', ')}`);
+  // The integrate it replaces waits on accepts that will never be done: settle it, so nothing
+  // (this sweep's next tick, closeStoppedToReport, runState) reads it as work still owed.
+  if (currentIntegrate.state === 'pending') {
+    currentIntegrate.state = 'skipped';
+    currentIntegrate.result = { stage_ok: false, reason: `superseded by ${fresh}: budget/timebox exhausted - integrating only the accepted packages` };
+  }
+  currentIntegrate.final = true;
+  task.budget_stopped.reintegrated = fresh;
+  record(task, { event: 'budget_swept', task_id: task.run_id, skipped, integrate: fresh });
   return true;
 }
 
@@ -6077,6 +6152,7 @@ function toolStatus(a) {
     task_id: task.run_id,
     cwd: task.cwd,
     state: state.state,
+    ...(state.partial ? { partial: true, partial_reasons: state.partial_reasons } : {}),
     counts: state.counts,
     size: task.size,
     flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),

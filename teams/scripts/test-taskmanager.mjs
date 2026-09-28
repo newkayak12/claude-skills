@@ -6851,3 +6851,173 @@ test('§6.5-3: a brainstorm that fails is closed as done with nothing decided - 
     assert.deepEqual((await tm.call('tm_next', { task_id })).ready.map((n) => n.node_id), ['shape']);
   }, { brainstorm: true });
 });
+
+// ---------- portfolio-consolidate-8518d5dd (teams 0.35.1, 2026-09-28): the budget close path ----------
+// budget_usd 40, roles planning/qa/audit on. The box stopped at $40.11 with P1/P2 accepted, P3's
+// dispatch still running (it failed at 05:18) and P4 never dispatched. The sweep opened integrate:2
+// over P1+P2 - and then integrate:3, :4, :5, :6 over the very same two accepts, five judge sessions
+// ($8.88) re-merging one tree, until integrate:6 refused and the task closed `complete` with
+// gate:goal and every QA round skipped. Node shapes below are the real task.json's, trimmed.
+function consolidateTask(root, id, over = {}) {
+  const pkg = (p) => ([
+    { node_id: `dispatch:${p}:1`, stage: 'dispatch', subgoal_id: p, deps: ['critique'], after: [], state: 'done', attempt: 1, result: { stage_ok: true, child_state: 'complete' } },
+    { node_id: `accept:${p}:1`, stage: 'accept', subgoal_id: p, deps: [`dispatch:${p}:1`], after: [], state: 'done', attempt: 1, result: { stage_ok: true, accept: true, match_pct: 90, checks: ['ok'] } },
+  ]);
+  return {
+    run_id: id, store_path: join(root, id, 'task.json'), cwd: root, request: 'consolidate', created_at: Date.now() - 90 * 60 * 1000,
+    team: { opts: { budget_usd: 40, roles: { planning: true, qa: true, audit: true } } },
+    budget_warned: true,
+    budget_stopped: { at: Date.now() - 20 * 60 * 1000, spend: 40.1124, elapsed_minutes: 84, budget_usd: 40, timebox_minutes: null, skipped_packages: [] },
+    spec: { packages: ['P1', 'P2', 'P3', 'P4'].map((p) => ({ id: p, title: p })) },
+    qa_pkg: { id: 'QA', phase: 'qa', flow: 'qa', integration_of: 'integrate:1', title: 'QA' },
+    nodes: [
+      { node_id: 'size', stage: 'size', deps: [], after: [], state: 'done', result: { stage_ok: true } },
+      { node_id: 'critique', stage: 'critique', deps: [], after: [], state: 'done', result: { stage_ok: true, sound: true } },
+      ...pkg('P1'), ...pkg('P2'),
+      { node_id: 'dispatch:P3:1', stage: 'dispatch', subgoal_id: 'P3', deps: ['critique'], after: [], state: 'failed', attempt: 1, final: true, result: { stage_ok: false, child_state: 'blocked' } },
+      { node_id: 'accept:P3:1', stage: 'accept', subgoal_id: 'P3', deps: ['dispatch:P3:1'], after: [], state: 'pending', attempt: 1 },
+      { node_id: 'dispatch:P4:1', stage: 'dispatch', subgoal_id: 'P4', deps: ['critique', 'accept:P1:1', 'accept:P2:1', 'accept:P3:1'], after: [], state: 'pending', attempt: 1 },
+      { node_id: 'accept:P4:1', stage: 'accept', subgoal_id: 'P4', deps: ['dispatch:P4:1'], after: [], state: 'pending', attempt: 1 },
+      { node_id: 'integrate:1', stage: 'integrate', deps: ['accept:P1:1', 'accept:P2:1', 'accept:P3:1', 'accept:P4:1'], after: [], state: 'pending', subgoal_id: null },
+      { node_id: 'dispatch:QA:1', stage: 'dispatch', subgoal_id: 'QA', deps: ['integrate:1'], after: [], state: 'pending', attempt: 1 },
+      { node_id: 'accept:QA:1', stage: 'accept', subgoal_id: 'QA', deps: ['dispatch:QA:1'], after: [], state: 'pending', attempt: 1 },
+      { node_id: 'gate:goal:1', stage: 'gate', deps: ['accept:QA:1'], after: [], state: 'pending', subgoal_id: null },
+      { node_id: 'report', stage: 'report', deps: [], after: ['gate:goal:1'], state: 'pending' },
+    ],
+    ...over,
+  };
+}
+
+async function withBoxRoot(fn) {
+  const prevRoot = process.env.HARNESS_TASKS_DIR;
+  const prevNoDriver = process.env.HARNESS_TEST_NO_DRIVER;
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  process.env.HARNESS_TASKS_DIR = root;
+  process.env.HARNESS_TEST_NO_DRIVER = '1';
+  try { return await fn(root); } finally {
+    if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot;
+    if (prevNoDriver === undefined) delete process.env.HARNESS_TEST_NO_DRIVER; else process.env.HARNESS_TEST_NO_DRIVER = prevNoDriver;
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test('portfolio-consolidate: a budget-stopped Sprint integrates its accepted work once - never a loop of re-merges', async () => {
+  const { enforceBudget, finish } = await import('../mcp/taskmanager.mjs');
+  await withBoxRoot(async (root) => {
+    const task = consolidateTask(root, 'pc1');
+    mkdirSync(join(root, 'pc1'), { recursive: true });
+    writeDriverSpend(root, 'pc1', 'dispatch_P3_1.restart1', 45);
+    // 05:18: P3's dispatch has failed, nothing is running. The sweep skips P4 and reintegrates P1+P2.
+    assert.equal(enforceBudget(task), true);
+    const i2 = task.nodes.find((n) => n.node_id === 'integrate:2');
+    assert.ok(i2, JSON.stringify(task.nodes.map((n) => [n.node_id, n.state])));
+    assert.deepEqual(i2.deps, ['accept:P1:1', 'accept:P2:1']);
+    assert.deepEqual(task.budget_stopped.skipped_packages, ['P4']);
+    const i1 = task.nodes.find((n) => n.node_id === 'integrate:1');
+    assert.notEqual(i1.state, 'pending', 'the superseded integrate is settled, not left pending for the next sweep to find again');
+    assert.equal(i1.final, true);
+    // integrate:2 runs and verifies.
+    i2.state = 'running';
+    i2.integration = { cwd: join(root, 'integration-2'), branch: 'harness/pc1/integration-2', merged: [{ package: 'P1', branch: 'b1', commit: 'bf5cb86' }, { package: 'P2', branch: 'b2', commit: '0f4442a' }] };
+    finish(task, i2, { stage_ok: true, verified: true, checks: ['git log -> integrate P2 on top of integrate P1'] });
+    assert.equal(i2.state, 'done');
+    // The real run's daemon ticked on: every tick reopened another integrate over the same accepts.
+    for (let i = 0; i < 5; i += 1) enforceBudget(task);
+    const integrates = task.nodes.filter((n) => n.stage === 'integrate').map((n) => n.node_id);
+    assert.deepEqual(integrates, ['integrate:1', 'integrate:2'], 'one integrate of the accepted work, no integrate:3..6');
+    assert.ok(!task.nodes.some((n) => n.node_id === 'dispatch:QA:2'), 'no QA round a stopped box could never dispatch');
+    // The goal gate still judges what was integrated (QA never ran, and says so).
+    const goal = task.nodes.find((n) => n.node_id === 'gate:goal:1');
+    assert.equal(goal.state, 'pending');
+    assert.deepEqual(goal.deps, ['integrate:2'], 'rewired past the QA pass onto the integrate that actually ran');
+    assert.deepEqual((task.budget_stopped.qa_not_run || []).map((q) => q.pass), ['QA']);
+  });
+});
+
+test('portfolio-consolidate: a QA round skipped by the budget is not a defect - it never reopens integrate', async () => {
+  const { enforceBudget, finish } = await import('../mcp/taskmanager.mjs');
+  await withBoxRoot(async (root) => {
+    // The real run's own later shape: integrate:2 running over P1+P2, integrate:1 left pending with
+    // P3's accept dead under it, QA:1 wired behind integrate:2 and never dispatched.
+    const task = consolidateTask(root, 'pc2');
+    task.budget_stopped.skipped_packages = ['P4'];
+    for (const id of ['dispatch:P4:1', 'accept:P4:1']) Object.assign(task.nodes.find((n) => n.node_id === id), { state: 'skipped', final: true, result: { stage_ok: false, reason: 'skipped: budget/timebox exhausted' } });
+    task.nodes.find((n) => n.node_id === 'dispatch:QA:1').deps = ['integrate:2'];
+    task.nodes.push({ node_id: 'integrate:2', stage: 'integrate', deps: ['accept:P1:1', 'accept:P2:1'], after: [], state: 'running', subgoal_id: null, supersedes: 'integrate:1', feedback: 'budget/timebox exhausted; not done: P3, P4',
+      integration: { cwd: join(root, 'integration-2'), branch: 'harness/pc2/integration-2', merged: [] } });
+    mkdirSync(join(root, 'pc2'), { recursive: true });
+    writeDriverSpend(root, 'pc2', 'dispatch_P3_1.restart1', 45);
+    finish(task, task.nodes.find((n) => n.node_id === 'integrate:2'), { stage_ok: true, verified: true, checks: ['ls portfolio/skills -> fit'] });
+    for (let i = 0; i < 5; i += 1) enforceBudget(task);
+    assert.deepEqual(task.nodes.filter((n) => n.stage === 'integrate').map((n) => n.node_id), ['integrate:1', 'integrate:2'],
+      JSON.stringify(task.nodes.map((n) => [n.node_id, n.state, n.deps])));
+    assert.deepEqual(task.nodes.find((n) => n.node_id === 'gate:goal:1').deps, ['integrate:2']);
+  });
+});
+
+test('portfolio-consolidate: once the box has stopped, a capacity-parked driver is not respawned - it is settled', async () => {
+  const { enforceBudget, autoResumeCapacity } = await import('../mcp/taskmanager.mjs');
+  await withBoxRoot(async (root) => {
+    const task = consolidateTask(root, 'pc3');
+    const d3 = task.nodes.find((n) => n.node_id === 'dispatch:P3:1');
+    const since = Date.now() - 60 * 60 * 1000;
+    Object.assign(d3, { state: 'running', final: undefined, result: undefined, child: {
+      cwd: root, run_id: 'p3run', branch: 'harness/pc3/P3',
+      driver: { pid: 2 ** 22 + 4323, started_at: since },
+      waiting_capacity: { reason: "You've hit your session limit · resets 4:50am (UTC)", since },
+    } });
+    task.budget_stopped.at = Date.now(); // stopped just now: well inside budget_grace_minutes
+    mkdirSync(join(root, 'pc3'), { recursive: true });
+    writeDriverSpend(root, 'pc3', 'dispatch_P2_1', 45);
+    // Well past any reset + grace: before the stop this resumes; after it, nothing may spend again.
+    assert.equal(autoResumeCapacity(task, since + 25 * 60 * 60 * 1000), false, 'a stopped box resumes nothing');
+    assert.ok(d3.child.waiting_capacity, 'still parked');
+    // And the park is settled at once - no grace to wait out for a driver that is not even running.
+    assert.equal(enforceBudget(task), true);
+    assert.equal(d3.state, 'skipped');
+    assert.match(d3.result.reason, /parked on provider capacity/);
+    assert.equal(task.nodes.find((n) => n.node_id === 'accept:P3:1').state, 'skipped');
+    const ledger = readFileSync(join(root, 'pc3', 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.ok(ledger.some((e) => e.event === 'budget_killed' && e.node_id === 'dispatch:P3:1'));
+  });
+});
+
+test('portfolio-consolidate: a budget-closed task with failed/skipped work reads complete but partial, with reasons', async () => {
+  const { managerState, taskState, budgetPartial } = await import('../mcp/taskmanager.mjs');
+  await withBoxRoot(async (root) => {
+    // The real run's final shape: integrate:6 failed verified=false, P3 never accepted, P4 never
+    // dispatched, QA and gate:goal skipped, report done - and the ledger said state complete.
+    const task = consolidateTask(root, 'pc4');
+    task.budget_stopped.skipped_packages = ['P4'];
+    const skip = (n) => Object.assign(n, { state: 'skipped', final: true, result: { stage_ok: false, reason: 'skipped: budget/timebox exhausted - the Sprint closes on what it has' } });
+    for (const n of task.nodes) {
+      if (['accept:P3:1', 'dispatch:P4:1', 'accept:P4:1', 'integrate:1', 'dispatch:QA:1', 'accept:QA:1', 'gate:goal:1'].includes(n.node_id)) skip(n);
+      if (n.node_id === 'report') Object.assign(n, { state: 'done', result: { stage_ok: true, handoff: 'r' } });
+    }
+    task.nodes.find((n) => n.node_id === 'dispatch:QA:1').deps = ['integrate:6'];
+    task.nodes.push({ node_id: 'integrate:6', stage: 'integrate', deps: ['accept:P1:1', 'accept:P2:1'], after: [], state: 'failed', final: true, subgoal_id: null, supersedes: 'integrate:1',
+      result: { stage_ok: true, verified: false, checks: ['git log (integration-6) -> e15e742'] } });
+    const st = managerState(task);
+    assert.equal(st.state, 'complete', 'the state string is unchanged - no caller switching on it flips');
+    assert.equal(st.partial, true);
+    const why = st.partial_reasons.join('\n');
+    assert.match(why, /P3/);
+    assert.match(why, /P4/);
+    assert.match(why, /integrate:6/);
+    assert.match(why, /QA/);
+    assert.match(why, /gate:goal:1/);
+    assert.equal(taskState(task).partial, true, 'tm_wait/daemon_done read taskState');
+    assert.deepEqual(budgetPartial(task).partial_reasons, st.partial_reasons);
+    // A stopped box that still delivered everything it had is not partial.
+    const whole = consolidateTask(root, 'pc5', { budget_stopped: { at: Date.now(), spend: 41, skipped_packages: [] } });
+    whole.spec.packages = whole.spec.packages.slice(0, 2);
+    delete whole.qa_pkg;
+    whole.nodes = whole.nodes.filter((n) => !/P3|P4|QA|integrate:1/.test(n.node_id));
+    whole.nodes.push({ node_id: 'integrate:1', stage: 'integrate', deps: ['accept:P1:1', 'accept:P2:1'], after: [], state: 'done', subgoal_id: null, result: { stage_ok: true, verified: true, checks: ['ok'] } });
+    Object.assign(whole.nodes.find((n) => n.node_id === 'gate:goal:1'), { deps: ['integrate:1'], state: 'done', result: { stage_ok: true, accept: true, match_pct: 95, checks: ['ok'] } });
+    Object.assign(whole.nodes.find((n) => n.node_id === 'report'), { state: 'done', result: { stage_ok: true } });
+    const ws = managerState(whole);
+    assert.equal(ws.state, 'complete');
+    assert.equal(ws.partial, undefined, JSON.stringify(ws));
+  });
+});
