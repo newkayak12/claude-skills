@@ -19,7 +19,7 @@ import { loadRun, runState } from './graph.mjs';
 import {
   epicKey, storyKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
   storyTicketState, storyTaskProgress, epicBoardRows, packageFiling,
-  planningPkgs, qaPkgs, planningStories,
+  planningPkgs, livePlanningPkgs, qaPkgs, planningStories,
 } from './tickets.mjs';
 
 function bullets(list) {
@@ -169,7 +169,7 @@ export function cardDocuments(task, p) {
 // re-rendered with every other page as the run moves; a card's documents stay in its own worktree
 // and are read from there.
 export function renderPrd(task) {
-  const cards = planningPkgs(task);
+  const cards = livePlanningPkgs(task);
   const key = epicKey(task.run_id);
   const stories = planningStories(task);
   const L = [frontmatter(key, epicTicketState(task), task), '# PRD', ''];

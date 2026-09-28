@@ -391,6 +391,12 @@ export function planningPkgs(task) {
   if (Array.isArray(task.planning_pkgs)) return task.planning_pkgs;
   return task.planning_pkg ? [task.planning_pkg] : [];
 }
+// The planning cards still standing: a re-split (plan-integrate's resplit, M4) retires the cards
+// of the split it replaced. They stay in planning_pkgs - their nodes, tickets and ids are history
+// - but no PRD, story, QA card or shape coverage reads them.
+export function livePlanningPkgs(task) {
+  return planningPkgs(task).filter((p) => !p.retired);
+}
 export function qaPkgs(task) {
   if (!task) return [];
   if (Array.isArray(task.qa_pkgs)) return task.qa_pkgs;
@@ -413,7 +419,7 @@ export function phaseOfId(task, id) {
 // the ones the integrate refused. Each story carries the card it came from as `card`.
 export function planningStories(task) {
   const out = [];
-  for (const p of planningPkgs(task)) {
+  for (const p of livePlanningPkgs(task)) {
     const id = String(p.id);
     const dispatches = task.nodes.filter((n) => n.stage === 'dispatch' && n.subgoal_id === id && n.result);
     const accepted = dispatches.filter((d) => {

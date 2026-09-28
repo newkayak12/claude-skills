@@ -1698,7 +1698,7 @@ export function promoteWaitingHuman(run) {
 // so every downstream hook that already reads a stage's result (autoReassign's retry, shape's
 // expandPackages, a package's own accept feeding the manager) keeps working unmodified - a
 // human's verdict and a model's verdict are the same shape once they land on the node.
-export const HUMAN_GATE_VERDICT_FIELD = { gate: 'accept', critique: 'sound', accept: 'accept', integrate: 'verified' };
+export const HUMAN_GATE_VERDICT_FIELD = { gate: 'accept', critique: 'sound', accept: 'accept', integrate: 'verified', 'areas-critique': 'sound', 'plan-integrate': 'accept' };
 
 // gate:goal is `stage: 'gate'` with `subgoal_id: null` on both the child-run graph
 // (expandSubgoals' pushGoalGateRound) and the manager graph (taskmanager.mjs's own
@@ -1787,6 +1787,9 @@ export function humanGateResultFromPayload(n, payload) {
     ...(field === 'accept' ? { match_pct: accept ? 100 : 0, attacks: [`gate:human: ${reason}`] } : {}),
     checks: [`human accept/reject: ${reason}`],
     gaps: Array.isArray(p.gaps) ? p.gaps : [],
+    // A person refusing the planning integrate can ask for the feature split itself to be redone
+    // (M4) - the one non-boolean a human verdict carries through.
+    ...(p.resplit === true ? { resplit: true } : {}),
     observations: [],
     reason,
     evidence: 'gate:human: a person judged this node directly, not a model',

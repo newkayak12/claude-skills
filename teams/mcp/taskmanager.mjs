@@ -55,7 +55,7 @@ import {
   epicKey, initiativeKey, storyKey, taskKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
   storyTicketState, storyTaskProgress, epicBoardRows, ticketSnapshot,
   storyLinks, packageFiling, parseTicketKey, storyBlockedReason,
-  planningPkgs, qaPkgs, phaseOfId, planningStories,
+  planningPkgs, livePlanningPkgs, qaPkgs, phaseOfId, planningStories,
 } from './tickets.mjs';
 import { writeDocs, renderPrd, cardDocuments } from './docs.mjs';
 import { logReply, renderStreamLine, renderLedgerLine } from './tasklog.mjs';
@@ -142,9 +142,9 @@ const MUTATING = new Set(['integrate']);
 // child run); accept is a reasoning node judging what the child delivered.
 const PACKAGE_CHAIN = ['dispatch', 'accept'];
 // A judging node's verdict field; stage_ok alone never completes one of these.
-const VERDICT = { critique: 'sound', dispatch: 'accept', accept: 'accept', integrate: 'verified', gate: 'accept', 'plan-integrate': 'accept' };
+const VERDICT = { critique: 'sound', 'areas-critique': 'sound', dispatch: 'accept', accept: 'accept', integrate: 'verified', gate: 'accept', 'plan-integrate': 'accept' };
 // Judging stages whose positive verdict needs evidence (checks[]): a verdict with none is a guess.
-const EVIDENCED = new Set(['gate', 'accept', 'integrate', 'plan-integrate']);
+const EVIDENCED = new Set(['gate', 'accept', 'integrate', 'plan-integrate', 'areas-critique']);
 
 // The package map, drawn once per shape round beside the docs (20-shape.html + its .json IR).
 // Shape's own diagram when it gave a valid one - its seams, its shared contracts - and otherwise
@@ -317,6 +317,7 @@ export const STAGE_SKILLS = {
   accept: ['cognition:epistemic-reasoner'],
   integrate: ['cognition:second-order-thinker'],
   'plan-integrate': ['think:devils-advocate'],
+  'areas-critique': ['think:devils-advocate'],
   'gate:goal': ['cognition:critical-thinking-workflow'],
 };
 
@@ -330,7 +331,7 @@ function stageSkills(task, n) {
 }
 
 // Every manager stage that decides or judges. size only measures, and report only recounts.
-const MANAGER_CONVENTION_STAGES = new Set(['areas', 'shape', 'critique', 'accept', 'integrate', 'plan-integrate', 'gate', 'gate:goal']);
+const MANAGER_CONVENTION_STAGES = new Set(['areas', 'areas-critique', 'shape', 'critique', 'accept', 'integrate', 'plan-integrate', 'gate', 'gate:goal']);
 
 // Same field, same short wording, as prompts.mjs's own QUESTIONS_CONTRACT (D2 slice 3, 0.29.0) -
 // this file's manager-level judging stages (shape/critique/accept/integrate/gate/gate:goal) get
@@ -350,9 +351,14 @@ S means one graph run in one worktree can carry the whole request. L means it sp
 You are the EPIC's plan stage. Split the request into FEATURE AREAS - what a user must be able to do, grouped so each group can be planned on its own. Each area becomes its own planning card: a child run with its own worktree that writes that area's PRD section (goal, scope and non-goals, user stories with acceptance criteria, open questions) and returns its user stories. Cards run in parallel.
 This is the first of two splits and its criterion is the FEATURE, not the code: shape later groups the stories by ownership (which tree, which team touches it) into develop cards. Do not split by module, layer, file or phase - an area is something a user would name. Every feature the request names falls in exactly one area: a planning integrate reads the merged PRD for a feature no card covers and for contradictions between areas, and sends the offending card back. One area is the right answer for a request that is one feature; do not pad the count. "deps" names an earlier area only when this area's planning cannot start without reading that one's PRD section - rare, and a chain that only orders the work is wrong. "items" is only for a backlog request ("[backlog priority N]" lines): the 1-based backlog item numbers (N+1) this area covers; every item in exactly one area. Omit it otherwise.
 ${QUESTIONS_CONTRACT}`,
+  // M4 (docs/plans/2026-09-28-teams-adversarial-fixes.md): the gate after the first split. The
+  // plan stage is not its own judge, and before this nothing judged the split before cards ran.
+  'areas-critique': `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "sound": true|false, "blocking": ["..."], "problems": ["..."], "checks": ["<what you compared and what it showed>"], "handoff": "...", "evidence": "..."}
+You judge the EPIC's feature split below - you did not write it. Each area becomes a planning card that writes that area's PRD section, in parallel, so a bad split is paid for by every card. Attack it on four points, from the request itself: (1) coverage - a feature the request names that falls in no area; (2) overlap - a feature two areas would both plan, so their stories collide or contradict; (3) criterion - an area cut by module, layer, file or phase instead of by what a user does; (4) granularity - one feature padded into several areas, or unrelated features forced into one, and an area whose brief is too thin for its card to plan from alone. Set sound=false only for defects in "blocking" - one of the four that would make the cards' PRD wrong or colliding; name the kind inline ("coverage - ..."). Everything else is a problem, carried to the next split attempt as advice. sound=true with an empty checks[] is refused by the engine.
+${QUESTIONS_CONTRACT}`,
   // C4: the planning cards' PRD sections, merged by the manager into one 10-prd.md, judged here.
   'plan-integrate': `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "accept": true|false, "checks": ["<what you read in the merged PRD and what it showed>"], "duplicates": ["<story id> -> the cards that both define it"], "contradictions": ["<card> vs <card>: what one requires that the other rules out"], "uncovered": ["<a feature the request names> -> no card's stories cover it"], "retry": [{"card": "PLAN-F1", "gaps": ["what that card must change in its section"]}], "new_areas": [{"title": "...", "brief": "<a feature no existing card should own>"}], "reason": "...", "evidence": "..."}
-You are the judge of the merged PRD, not an author of it: the manager already merged every planning card's section into the one document named below, and the cards' own gates already judged each section alone. Your job is what no card could see from inside its own area. Three checks, each answered from the merged document and the request: (1) every user story id is unique across the whole EPIC; (2) no two areas contradict each other - a rule, a limit, a flow or a non-goal one area states that another area's stories break; (3) every feature the REQUEST names is covered by some card's user stories. accept:false when any of the three fails. Name each card that must change, and what, in "retry" (by its card id, e.g. PLAN-F2) - both sides of a contradiction when both must move; put a feature no existing card should own in "new_areas" and the manager opens a planning card for it. A rejection that names neither a card nor a new area is one nobody can act on. accept:true with an empty checks[] is refused by the engine.
+You are the judge of the merged PRD, not an author of it: the manager already merged every planning card's section into the one document named below, and the cards' own gates already judged each section alone. Your job is what no card could see from inside its own area. Three checks, each answered from the merged document and the request: (1) every user story id is unique across the whole EPIC; (2) no two areas contradict each other - a rule, a limit, a flow or a non-goal one area states that another area's stories break; (3) every feature the REQUEST names is covered by some card's user stories. accept:false when any of the three fails. Name each card that must change, and what, in "retry" (by its card id, e.g. PLAN-F2) - both sides of a contradiction when both must move; put a feature no existing card should own in "new_areas" and the manager opens a planning card for it. A rejection that names neither a card nor a new area is one nobody can act on. When the feature split itself is wrong - the cards overlap so much, or are cut so badly, that fixing card by card cannot converge - return accept:false with "resplit": true and say why in "reason": the manager retires every card and the plan stage splits the request again, judged again before any card runs. accept:true with an empty checks[] is refused by the engine.
 ${QUESTIONS_CONTRACT}`,
   shape: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "acceptance": ["goal-level criteria for the integrated result"], "packages": [{"id": "P1", "title": "...", "flow": "develop|document", "skills": ["plugin:skill"], "brief": "<the request this package's own graph run will receive - self-contained>", "acceptance": ["what the package must deliver, checkable inside its worktree"], "touches": ["paths or modules this package changes"], "deps": ["P0"], "implements": ["US-1"], "enables": []}], "handoff": "...", "evidence": "..."}
 "skills" is optional and is method for the package, not for you: you are the stage that knows what each package IS, and a CLI package and a reference-document package want different method. Name the skills that package's own nodes should work by, and they travel into its child run; leave it out when the brief is method enough. Do not name a skill that asks its reader questions - the child's nodes run headless too.
@@ -661,7 +667,7 @@ function createTask(a) {
       : {}),
     // size, then the plan stage. Everything after `areas` - the planning cards, plan-integrate,
     // shape and critique - is pushed once the areas are known (expandPlanning).
-    nodes: [node('size', 'size', []), node('areas', 'areas', ['size'])],
+    nodes: [node('size', 'size', []), node('areas', 'areas', ['size']), node('areas-critique', 'areas-critique', ['areas'])],
   };
   openBrainstorm(task, a, T);
   return saveRun(task);
@@ -875,7 +881,7 @@ export function preparePlanIntegration(task, n) {
   const path = docPaths(task).prd;
   // The sections this integrate merges, kept on the node: a card's worktree does not outlive
   // tm_clean, and the merged PRD has to (docs.mjs's cardDocuments reads this first).
-  n.prd = { docs: planningPkgs(task).flatMap((p) => { const c = cardDocuments(task, p); return c.dispatch ? c.docs.map((x) => ({ card: String(p.id), dispatch: c.dispatch.node_id, path: x.path, text: x.text })) : []; }) };
+  n.prd = { docs: livePlanningPkgs(task).flatMap((p) => { const c = cardDocuments(task, p); return c.dispatch ? c.docs.map((x) => ({ card: String(p.id), dispatch: c.dispatch.node_id, path: x.path, text: x.text })) : []; }) };
   try {
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, renderPrd(task));
@@ -885,7 +891,7 @@ export function preparePlanIntegration(task, n) {
   n.prd = {
     ...n.prd,
     path,
-    cards: planningPkgs(task).map((p) => ({ id: String(p.id), title: p.area_title || p.title, stories: stories.filter((u) => u.card === String(p.id)).map(storyId) })),
+    cards: livePlanningPkgs(task).map((p) => ({ id: String(p.id), title: p.area_title || p.title, stories: stories.filter((u) => u.card === String(p.id)).map(storyId) })),
     stories: stories.map((u) => ({ id: storyId(u), title: (u && u.title) || '', card: u.card })),
     duplicates: storyDuplicates(stories),
   };
@@ -904,7 +910,7 @@ function replanPlanning(task, n) {
     return null;
   }
   const r = n.result || {};
-  const cards = new Set(planningPkgs(task).map((p) => String(p.id)));
+  const cards = new Set(livePlanningPkgs(task).map((p) => String(p.id)));
   const gapsByCard = new Map();
   const add = (card, gap) => { if (!cards.has(card) || !gap) return; if (!gapsByCard.has(card)) gapsByCard.set(card, []); gapsByCard.get(card).push(gap); };
   for (const d of r.duplicate_ids || []) {
@@ -929,11 +935,13 @@ function replanPlanning(task, n) {
   }
   // A new card waits on what the first cards waited on: the plan stage's split (or size, for a
   // size-S task, which has no split).
+  // Behind the split's own gate when it had one (M4): the card waits on what the first cards did.
   const split = task.nodes.filter((x) => x.stage === 'areas' && x.state === 'done').pop();
-  const opened = newAreas.length ? addPlanningCards(task, newAreas, [split ? split.node_id : 'size']) : [];
+  const judged = split && task.nodes.find((x) => x.stage === 'areas-critique' && x.state === 'done' && x.deps.includes(split.node_id));
+  const opened = newAreas.length ? addPlanningCards(task, newAreas, [judged ? judged.node_id : split ? split.node_id : 'size']) : [];
   // Nothing actionable at all still gets a fresh integrate: the same merge re-judged once more,
   // with the refusal as its feedback, inside the same round budget.
-  const accepts = planningPkgs(task).map((p) => { const acc = latestBySubgoal(task, String(p.id), 'accept'); return acc ? acc.node_id : null; }).filter(Boolean);
+  const accepts = livePlanningPkgs(task).map((p) => { const acc = latestBySubgoal(task, String(p.id), 'accept'); return acc ? acc.node_id : null; }).filter(Boolean);
   const fresh = `plan-integrate:${nextIndex(task, 'plan-integrate')}`;
   task.nodes.push(node(fresh, 'plan-integrate', accepts, {
     subgoal_id: null, supersedes: n.node_id,
@@ -954,13 +962,81 @@ function retryAreas(task, feedback) {
   const priors = task.nodes.filter((n) => n.stage === 'areas');
   const attempt = priors.length + 1;
   if (attempt > task.max_retries + 1) {
-    const dead = priors.filter((n) => n.state === 'failed' && !n.final);
+    // A refused split is a failed critique over a done split (M4): both settle.
+    const dead = task.nodes.filter((n) => (n.stage === 'areas' || n.stage === 'areas-critique') && n.state === 'failed' && !n.final);
     const unreachable = dead.flatMap((n) => settleFailure(task, n));
     return { attempt: null, reason: 'retry budget exhausted', unreachable };
   }
   const first = priors[0];
-  task.nodes.push(node(`areas:${attempt}`, 'areas', first ? first.deps.slice() : ['size'], { attempt, feedback: feedback || '' }));
+  const id = `areas:${attempt}`;
+  task.nodes.push(node(id, 'areas', first ? first.deps.slice() : ['size'], { attempt, feedback: feedback || '' }));
+  task.nodes.push(node(`areas-critique:${attempt}`, 'areas-critique', [id], { attempt }));
   return { attempt, reason: '' };
+}
+
+// The split an areas-critique judged: the areas node it waits on.
+function areasOf(task, critique) {
+  return task.nodes.find((x) => x.stage === 'areas' && critique.deps.includes(x.node_id)) || null;
+}
+
+// The planning integrate asked for the split itself to be redone (M4): every live card is retired
+// - kept as history, dropped from the PRD, the stories, QA and shape's coverage - and the plan
+// stage splits again, judged again by areas-critique before any new card runs. Its cards open
+// behind a fresh plan-integrate that supersedes this one, and shape moves behind that
+// (expandAcceptedSplit). Bounded by the areas budget: with no split attempt left the refusal is
+// handled like any other (replanPlanning).
+function resplitPlanning(task, n) {
+  const attempts = task.nodes.filter((x) => x.stage === 'areas').length;
+  if (attempts + 1 > task.max_retries + 1) return replanPlanning(task, n);
+  const retired = [];
+  for (const p of livePlanningPkgs(task)) {
+    p.retired = { by: n.node_id, at: Date.now() };
+    retired.push(String(p.id));
+  }
+  for (const a of (task.areas || [])) if (retired.includes(`PLAN-${a.id}`)) a.retired = true;
+  for (const x of task.nodes) {
+    if (!retired.includes(String(x.subgoal_id))) continue;
+    if (x.state === 'running' && x.child && killDriver(x.child.driver)) {
+      record(task, { event: 'child_driver_killed', task_id: task.run_id, node_id: x.node_id, reason: `retired by ${n.node_id} (resplit)` });
+    }
+    if (x.state === 'pending' || x.state === 'running') {
+      x.state = 'skipped';
+      x.result = { stage_ok: false, reason: `superseded: retired by ${n.node_id}, which asked for the feature split to be redone` };
+    }
+    if (x.state === 'failed') x.final = true;
+  }
+  n.resplit = { retired };
+  n.final = true;
+  task.resplit_from = n.node_id;
+  const fb = [`The planning integrate (${n.node_id}) refused the split itself - its cards were retired:`, n.result && n.result.reason,
+    ...((n.result && n.result.contradictions) || []).map((c) => `contradiction: ${c}`),
+    ...((n.result && n.result.uncovered) || []).map((u) => `uncovered: ${u}`)].filter(Boolean).join('\n- ');
+  const out = retryAreas(task, fb);
+  record(task, { event: 'plan_integrate_resplit', task_id: task.run_id, node_id: n.node_id, retired, attempt: out.attempt });
+  return out.attempt ? `areas:${out.attempt}` : null;
+}
+
+// A judged split's cards: the first open them with shape and critique behind; a re-split's open
+// behind a fresh plan-integrate that supersedes the refused one, and whatever waited on that one
+// (shape) waits on the fresh one.
+function expandAcceptedSplit(task, critique) {
+  const split = areasOf(task, critique);
+  if (!split || !split.result || livePlanningPkgs(task).length) return null;
+  const hasShape = task.nodes.some((x) => x.stage === 'shape');
+  const pi = expandPlanning(task, split.result.areas, [critique.node_id], { withShape: !hasShape });
+  const old = task.resplit_from;
+  if (old) {
+    const fresh = task.nodes.find((x) => x.node_id === pi);
+    fresh.supersedes = old;
+    for (const x of task.nodes) {
+      if (x.node_id === pi) continue;
+      x.deps = x.deps.map((d) => (d === old ? pi : d));
+      x.after = (x.after || []).map((d) => (d === old ? pi : d));
+    }
+    delete task.resplit_from;
+  }
+  record(task, { event: 'planning_cards_opened', task_id: task.run_id, node_id: critique.node_id, cards: livePlanningPkgs(task).map((p) => p.id), plan_integrate: pi });
+  return pi;
 }
 
 // What the merged PRD says, for a run or a judge that must build or check against it: where it
@@ -1179,10 +1255,12 @@ function expandPackages(task, packages) {
 // integrated tree. A task.json from before the split (no areas) still gets exactly one card.
 function qaCards(task, integrateId) {
   const stories = planningStories(task);
-  const cards = planningPkgs(task);
+  const cards = livePlanningPkgs(task);
   const areas = cards.length ? cards : [{ id: 'PLAN-F1', area: 'F1', area_title: 'the whole request' }];
-  return areas.map((p) => {
-    const f = p.area || String(p.id).replace(/^PLAN-/, '');
+  return areas.map((p, i) => {
+    // A task from before planning cards (one planning_pkg with id 'PLAN') has no area: its QA card
+    // is QA-F<n> by position, never QA-PLAN (m7).
+    const f = p.area || (/^PLAN-F\d+$/.test(String(p.id)) ? String(p.id).slice(5) : `F${i + 1}`);
     const mine = stories.filter((u) => u.card === String(p.id));
     return {
       id: `QA-${f}`, area: f, area_title: p.area_title || p.title || f, phase: 'qa', flow: 'qa', integration_of: integrateId,
@@ -1454,9 +1532,13 @@ export function autoReshape(task) {
   // split is split again with its problems as feedback; a planning integrate whose judge never
   // came back (finish() already replans a real refusal) is replanned once its rejudges are spent.
   if (!task.nodes.some((n) => n.state === 'running')) {
-    const split = task.nodes.filter((n) => n.stage === 'areas' && n.state === 'failed' && n.result && !n.final && !judgeStuck(n)).pop();
-    if (split && !task.nodes.some((n) => n.stage === 'areas' && n.state !== 'failed' && n.state !== 'skipped')) {
-      const out = retryAreas(task, [split.result.reason || '', ...(split.result.area_problems || [])].filter(Boolean).join('\n- '));
+    // The latest split attempt, refused by its own stage (validateAreas) or by its critique (M4).
+    const lastSplit = task.nodes.filter((n) => n.stage === 'areas').pop();
+    const lastCritique = lastSplit && task.nodes.find((n) => n.stage === 'areas-critique' && n.deps.includes(lastSplit.node_id));
+    const split = [lastSplit, lastCritique].find((n) => n && n.state === 'failed' && n.result && !n.final && !judgeStuck(n));
+    if (split) {
+      const r = split.result;
+      const out = retryAreas(task, [r.reason || '', ...(r.area_problems || []), ...(r.blocking || []), ...(r.problems || []).map((x) => `advice: ${x}`)].filter(Boolean).join('\n- '));
       saveRun(task);
       record(task, { event: out.attempt ? 'auto_resplit' : 'tm_settle', task_id: task.run_id, target: 'areas', attempt: out.attempt, from: split.node_id });
       return !!out.attempt;
@@ -3070,7 +3152,7 @@ export function unfinishedWork(task) {
   else if (integ.state !== 'done') reasons.push(`${integ.node_id} ${integ.state}${integ.result && integ.result.verified === false ? ' (verified=false)' : ''}`);
   // Every card of every pass: a planning card that never got accepted, and each QA card (C7),
   // each named on its own - "QA-F2: no verdict" says which area went unexercised.
-  for (const pkg of [...planningPkgs(task), ...qaPkgs(task), task.audit_pkg].filter(Boolean)) {
+  for (const pkg of [...livePlanningPkgs(task), ...qaPkgs(task), task.audit_pkg].filter(Boolean)) {
     const pass = String(pkg.id);
     const a = last((n) => n.stage === 'accept' && n.subgoal_id === pass);
     if (a && a.state === 'done') continue;
@@ -3320,7 +3402,9 @@ export function foldChild(task, n) {
   const child = loadRun(n.child.cwd, n.child.run_id);
   if (!child) return { stage_ok: false, reason: `child run ${n.child.run_id} has no file under ${n.child.cwd}` };
   const cs = runState(child);
-  const goalGate = child.nodes.filter((x) => x.stage === 'gate' && x.subgoal_id === null && x.result).pop();
+  // A goal-gate round a repair superseded is skipped with its old verdict still on it (m9): the
+  // live round is the one that judged the work as it now is.
+  const goalGate = child.nodes.filter((x) => x.stage === 'gate' && x.subgoal_id === null && x.result && x.state !== 'skipped').pop();
   const report = child.nodes.filter((x) => x.stage === 'report' && x.state === 'done' && x.result).pop();
   // Through the declared registry (reducers.mjs), not an inline Set literal: the same union
   // merge goalConsensus and the run's own `reduce` node use, named once instead of copied.
@@ -3732,14 +3816,14 @@ export function composeTaskPrompt(task, n) {
     if (task.size) L.push(`size: ${task.size}`);
     L.push(`flow: ${task.flow !== 'auto' ? `${task.flow} (fixed by the entry)` : task.flow_chosen ? `${task.flow_chosen} (chosen by size)` : 'auto'}`);
   }
-  if (n.stage === 'shape' && planningPkgs(task).length) {
+  if (n.stage === 'shape' && livePlanningPkgs(task).length) {
     const userStories = planningStories(task);
     const pi = task.nodes.filter((x) => x.stage === 'plan-integrate' && x.state === 'done').pop();
     L.push('');
     L.push(`## Planning`);
     // The merged PRD (C4): every planning card's section in one document, judged by the planning
     // integrate. A link, never the body (§7c "payload를 main에 올리지 않는다").
-    L.push(`${planningPkgs(task).length} planning card(s) - ${planningPkgs(task).map((p) => `${p.id} (${p.area_title || p.title})`).join(', ')} - ran ahead of this stage, one per feature area, and the planning integrate merged their sections into one PRD at ${docPaths(task).prd}${pi ? ` (${pi.node_id} accepted it)` : ''}. Read it there - it is the reasoning behind the stories below, and its body is not repeated here.`);
+    L.push(`${livePlanningPkgs(task).length} planning card(s) - ${livePlanningPkgs(task).map((p) => `${p.id} (${p.area_title || p.title})`).join(', ')} - ran ahead of this stage, one per feature area, and the planning integrate merged their sections into one PRD at ${docPaths(task).prd}${pi ? ` (${pi.node_id} accepted it)` : ''}. Read it there - it is the reasoning behind the stories below, and its body is not repeated here.`);
     L.push(`Planning split by FEATURE. Your split is the second one and its criterion is OWNERSHIP - which tree, which team touches it: one story may become two packages, or two stories one package.`);
     L.push(`User stories it produced - every "packages[].implements[]" this stage returns must together cover all of these, by id:`);
     L.push(bullets(userStories.map((u) => `${storyLabel(u)}${u.card ? ` (${u.card})` : ''}`)));
@@ -3748,7 +3832,7 @@ export function composeTaskPrompt(task, n) {
     // generic high-demand ticketing PRD with 'idol concert' in the title" (idol-pm-1,
     // 2026-09-22) reached no later stage and changed nothing about what got built.
     const carried = [];
-    for (const p of planningPkgs(task)) {
+    for (const p of livePlanningPkgs(task)) {
       const d = latestBySubgoal(task, String(p.id), 'dispatch');
       const acc = latestBySubgoal(task, String(p.id), 'accept');
       carried.push(...((d && d.result && d.result.gaps) || []), ...((acc && acc.result && acc.result.gaps) || []), ...((acc && acc.result && acc.result.observations) || []));
@@ -3772,6 +3856,21 @@ export function composeTaskPrompt(task, n) {
       L.push(renderAcceptanceTemplate(task.declared_acceptance));
     }
   }
+  // M4: the split this gate judges, as the plan stage returned it.
+  if (n.stage === 'areas-critique') {
+    const split = areasOf(task, n);
+    const areas = (split && split.result && Array.isArray(split.result.areas)) ? split.result.areas : [];
+    L.push('');
+    L.push(`## The feature split (${split ? split.node_id : 'missing'})`);
+    for (const [i, a] of areas.entries()) {
+      L.push(`### ${a.id || `F${i + 1}`} — ${a.title || '(no title)'}`);
+      L.push(String(a.brief || '(no brief)'));
+      if ((a.deps || []).length) L.push(`deps: ${a.deps.join(', ')}`);
+      if ((a.items || []).length) L.push(`backlog items: ${a.items.join(', ')}`);
+    }
+    if (split && split.result && split.result.handoff) { L.push(''); L.push(`Plan stage's handoff: ${split.result.handoff}`); }
+    if (split && split.feedback) { L.push(''); L.push(`This split is a retry. What the earlier one was refused for:`); L.push(split.feedback); }
+  }
   // The planning integrate (C4): the merge the manager made, and the facts no judge is trusted with.
   if (n.stage === 'plan-integrate') {
     const prd = n.prd || {};
@@ -3791,7 +3890,7 @@ export function composeTaskPrompt(task, n) {
     }
     L.push('');
     L.push(`## The feature split`);
-    L.push(bullets((task.areas || []).map((a) => `${a.id} - ${a.title}: ${String(a.brief || '').split('\n')[0].slice(0, 200)}`)));
+    L.push(bullets((task.areas || []).filter((a) => !a.retired).map((a) => `${a.id} - ${a.title}: ${String(a.brief || '').split('\n')[0].slice(0, 200)}`)));
   }
   if (task.spec && ['critique', 'integrate', 'gate', 'report'].includes(n.stage)) {
     L.push('');
@@ -4058,7 +4157,7 @@ export function composeTaskPrompt(task, n) {
   if (n.stage === 'integrate') L.push(...shapeDiagramLines(task));
   // task.decisions (§6.2/§6.5): shape splits the work and accept judges it, so both must hold
   // the packages to what the task already settled.
-  if ((task.decisions || []).length && ['areas', 'plan-integrate', 'shape', 'critique', 'accept'].includes(n.stage)) {
+  if ((task.decisions || []).length && ['areas', 'areas-critique', 'plan-integrate', 'shape', 'critique', 'accept'].includes(n.stage)) {
     L.push('');
     L.push(`## Decided already`);
     L.push(`Settled for this whole task - treat each as a rule, not an open question:`);
@@ -4289,11 +4388,14 @@ export function finish(task, n, result) {
     if (problems.length) {
       n.state = 'failed';
       n.result = { ...result, stage_ok: false, area_problems: problems, reason: `unusable feature split: ${problems.join('; ')}` };
-    } else if (!planningPkgs(task).length) {
+    } else if (!livePlanningPkgs(task).length && !task.nodes.some((x) => x.stage === 'areas-critique' && x.deps.includes(n.node_id))) {
       expandPlanning(task, result.areas, [n.node_id], { withShape: true });
       record(task, { event: 'planning_cards_opened', task_id: task.run_id, node_id: n.node_id, cards: planningPkgs(task).map((p) => p.id) });
     }
   }
+  // M4: the split's own gate. Accepted: its cards open. Refused: a failed critique, which
+  // autoReshape re-splits with the blocking defects as feedback (retryAreas, same budget).
+  if (n.stage === 'areas-critique' && n.state === 'done') expandAcceptedSplit(task, n);
   // The planning integrate (C4). Story ids that collide across cards are a fact the manager
   // counted (preparePlanIntegration), not a judgement: they refuse the merge whatever the judge
   // said. Accepted: a size-S task opens its one run now (C6), with the merged PRD as context; an
@@ -4315,12 +4417,13 @@ export function finish(task, n, result) {
     if (n.state === 'done' && task.size === 'S' && !task.s_run) {
       openSRun(task);
     } else if (n.state === 'failed' && n.result.judge_failed !== true) {
-      replanPlanning(task, n);
+      if (n.result.resplit === true) resplitPlanning(task, n);
+      else replanPlanning(task, n);
     }
   }
   if (n.stage === 'shape' && n.state === 'done') {
     // The merged PRD's stories, every planning card's (C4) - shape's implements[] must cover all.
-    const userStories = planningPkgs(task).length ? planningStories(task) : null;
+    const userStories = livePlanningPkgs(task).length ? planningStories(task) : null;
     const problems = validateShape(result, userStories);
     if (problems.length) {
       n.state = 'failed';
@@ -5721,8 +5824,11 @@ export function closeFailedPlanning(task) {
   if (task.nodes.some((n) => n.stage === 'report')) return false;
   if (task.nodes.some((n) => n.state === 'running')) return false;
   if (readyNodes(task).length || pendingRejudgeAt(task) !== null) return false;
-  const dead = task.nodes.find((n) => n.state === 'failed' && n.final
-    && (PRE_SHAPE_STAGES.has(n.stage) || phaseOfId(task, n.subgoal_id) === 'planning'));
+  // A planning integrate that asked for a re-split is final by design (resplitPlanning), and a
+  // retired card's nodes are history - neither is planning that failed.
+  const dead = task.nodes.find((n) => n.state === 'failed' && n.final && !n.resplit
+    && (PRE_SHAPE_STAGES.has(n.stage) || (phaseOfId(task, n.subgoal_id) === 'planning'
+      && livePlanningPkgs(task).some((p) => String(p.id) === String(n.subgoal_id)))));
   if (!dead) return false;
   const skipped = [];
   for (const n of task.nodes) {
@@ -6556,9 +6662,9 @@ function toolRetry(a) {
   }
   if (!a.package_id) {
     // Before shape exists, "retry the plan" means the plan stage's feature split (C2).
-    const split = task.nodes.filter((n) => n.stage === 'areas' && n.state === 'failed' && n.result && !n.final).pop();
+    const split = task.nodes.filter((n) => (n.stage === 'areas' || n.stage === 'areas-critique') && n.state === 'failed' && n.result && !n.final).pop();
     if (split && !task.nodes.some((n) => n.stage === 'shape')) {
-      const out = retryAreas(task, [split.result.reason || '', ...(split.result.area_problems || [])].filter(Boolean).join('\n- '));
+      const out = retryAreas(task, [split.result.reason || '', ...(split.result.area_problems || []), ...(split.result.blocking || [])].filter(Boolean).join('\n- '));
       saveRun(task);
       record(task, { event: out.attempt ? 'tm_retry' : 'tm_settle', task_id: task.run_id, target: 'areas', attempt: out.attempt });
       return { task_id: task.run_id, target: 'areas', retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable, ...toolNext({ task_id: task.run_id }) };
