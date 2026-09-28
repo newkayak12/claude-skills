@@ -28,7 +28,7 @@ compatibility:
 - ALWAYS lead with the one-line plan judgment — weeks available and the top-priority weak area — before the schedule.
 - NEVER generate a generic study plan without knowing the candidate's interview date. If it is missing, the plan header says `[확인 필요: 면접 날짜]` and no week count is invented.
 - NEVER supply a fact the user did not give. A missing interview date, company type, format, or weak area is written `[확인 필요: ○○]` — never guessed, back-calculated, or filled with a plausible default.
-- NEVER write the candidate's answers. STAR prompts ask for the candidate's own situation, action, and result; no example story, no sample answer, no invented metric.
+- NEVER write the candidate's answers. STAR prompts ask for the candidate's own situation, action, and result; no example story, no sample answer, no invented metric — and no description of what the situation was like (a tight deadline, a vague spec) that the candidate's material does not state.
 - NEVER conflate interview prep planning (this skill) with interview practice (mock-interview skill).
 
 # Interview Prep Planner
