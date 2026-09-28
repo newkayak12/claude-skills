@@ -716,6 +716,33 @@ server and prints one view as a plain-text tree/board, for a terminal or a CI lo
 picks which (`pipeline` by default); `tickets`/`resources` fall back to the same task index when
 no single task can be resolved.
 
+## Headless
+
+`scripts/run.mjs` is wait-model C (`docs/plans/2026-09-21-teams-server-owns-the-loop.md` §4): it
+opens a task exactly the way `tm_run` does and blocks until it settles exactly the way `tm_wait`
+does — reusing both, not reimplementing either — but with no session in the loop and no context
+cost while it waits. This is the fair way to measure teams headlessly; the bench used to
+improvise this externally with `scripts/bench/drive.sh`/`resume.sh` (which watch a `claude -p`
+session end rather than asking the task itself), left as-is for now. It is also the right entry
+point for CI or a shell script that just wants a task run to completion.
+
+```
+node teams/scripts/run.mjs "<request>" [--kind auto|develop|document] [--cwd <path>]
+  [--budget-usd <n>] [--timebox-minutes <n>] [--vendor <v>] [--allocation ordered|balanced]
+  [--size S|L] [--context <text>] [--poll-ms <n>] [--json]
+node teams/scripts/run.mjs --resume <task_id> [--json]
+```
+
+Prints one line per node transition, or a heartbeat when `tm_wait` timed out with nothing new,
+then a final line with the report path. Exit codes: `0` complete; `2` `waiting_human` (headless
+cannot answer a card, so it does not hang forever — the pending question is printed; answer it
+with `tm_submit` from a session, then `--resume`); `1` anything else that stopped without
+finishing (`blocked`, etc.); `64` bad arguments. SIGINT does not stop the run — the daemon
+(spawned by this call, or already running under `--resume`) is a detached, `unref()`'d process
+regardless, so the CLI only stops watching: it prints the task id and how to `--resume`/inspect
+it, then exits `130`. `--json` emits one JSON object per line instead of prose, ending in an
+`event: "final"` line carrying `exit_code` and `report`.
+
 ## Everything else
 
 Tools, routing, adjudication, vendors, capacity recovery and the ledger are the same broker
