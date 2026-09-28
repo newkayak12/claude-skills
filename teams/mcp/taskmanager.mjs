@@ -178,19 +178,58 @@ export function autoPackageDiagram(packages) {
   return { type: 'architecture', title: 'Package map', description: 'Read off packages[].deps - shape drew no valid diagram of its own.', nodes, edges };
 }
 
+// A group's box is drawn as the bounding rectangle of its own members' row/col cells
+// (diagram.mjs's validate()) - a node that only shares a row or column with the group, without
+// being listed as one of its members, reads as sitting inside that box. Shape sometimes groups
+// nodes semantically (e.g. "rewriters" vs "scorers") without noticing its own row/col placement
+// leaves one group's members interleaved with another's in the same column, which the bounding
+// box always turns into exactly this defect (2026-09-28 portfolio-refresh run: rewriters at
+// col 1 rows 0,1,3 bracket scorers' P3 at col 1 row 2, and vice versa). Rather than discard a
+// shape that got everything else right, try the repair the validator's own message already
+// names ("move it out"): give every flagged node a column past the diagram's current width,
+// where no existing group's box can reach it. Attempted only when EVERY problem reported is one
+// of these box-containment ones - a diagram with any other defect (a duplicate id, a missing
+// edge, a bad label) is not this function's to fix, and it returns null so the caller falls back
+// to the plain dependency map exactly as it did before this existed.
+const GROUP_BOX_RE = /^node (\S+) \(row \d+, col \d+\) sits inside group /;
+export function repairGroups(ir) {
+  if (!ir || !Array.isArray(ir.nodes)) return null;
+  const problems = validateDiagram(ir);
+  if (!problems.length || !problems.every((p) => GROUP_BOX_RE.test(p))) return null;
+  const repaired = JSON.parse(JSON.stringify(ir));
+  const byId = new Map(repaired.nodes.map((n) => [String(n.id), n]));
+  let col = Math.max(0, ...repaired.nodes.map((n) => Number(n.col) || 0));
+  const moved = [];
+  for (const p of problems) {
+    const m = GROUP_BOX_RE.exec(p);
+    const n = m && byId.get(m[1]);
+    if (!n || moved.includes(n.id)) continue;
+    col += 1;
+    if (col > 12) return null; // past the grid the renderer draws - give up, auto takes over
+    moved.push(n.id);
+    n.col = col;
+  }
+  return validateDiagram(repaired).length ? null : { ir: repaired, moved };
+}
+
 function drawShape(task, result) {
   let ir = result && result.diagram && typeof result.diagram === 'object' ? result.diagram : null;
   let problems = ir ? validateDiagram(ir) : [];
-  const source = ir && !problems.length ? 'shape' : 'auto';
-  if (source === 'auto') ir = autoPackageDiagram(task.spec && task.spec.packages);
+  let source = ir && !problems.length ? 'shape' : null;
+  let repaired = null;
+  if (!source && ir && problems.length) {
+    const repair = repairGroups(ir);
+    if (repair) { ir = repair.ir; source = 'shape-repaired'; repaired = repair.moved; }
+  }
+  if (!source) { source = 'auto'; ir = autoPackageDiagram(task.spec && task.spec.packages); }
   try {
     const dir = docPaths(task).dir;
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, '20-shape.diagram.json'), JSON.stringify(ir, null, 2) + '\n');
     renderDiagram(ir, join(dir, '20-shape.html'));
-    task.shape_diagram = { path: join(dir, '20-shape.html'), ir_path: join(dir, '20-shape.diagram.json'), source, ...(problems.length ? { problems: problems.slice(0, 20) } : {}) };
+    task.shape_diagram = { path: join(dir, '20-shape.html'), ir_path: join(dir, '20-shape.diagram.json'), source, ...(problems.length ? { problems: problems.slice(0, 20) } : {}), ...(repaired ? { repaired } : {}) };
   } catch (e) {
-    task.shape_diagram = { source, error: String(e && e.message || e).slice(0, 300), ...(problems.length ? { problems: problems.slice(0, 20) } : {}) };
+    task.shape_diagram = { source, error: String(e && e.message || e).slice(0, 300), ...(problems.length ? { problems: problems.slice(0, 20) } : {}), ...(repaired ? { repaired } : {}) };
   }
   record(task, { event: 'shape_diagram', task_id: task.run_id, source, path: task.shape_diagram.path || null, problems: problems.length });
 }
@@ -252,7 +291,7 @@ S means one graph run in one worktree can carry the whole request. L means it sp
 "skills" is optional and is method for the package, not for you: you are the stage that knows what each package IS, and a CLI package and a reference-document package want different method. Name the skills that package's own nodes should work by, and they travel into its child run; leave it out when the brief is method enough. Do not name a skill that asks its reader questions - the child's nodes run headless too.
 Three rules critique will refuse the shape over, so decide them here rather than letting it find them. One: every shared artifact two or more packages depend on - the composition root or app assembly that makes the merged tree runnable, a cross-package contract, an auth or admission token and its verifier, a shared schema or type - is owned by exactly one package, named in that package's touches[] AND in its acceptance[]. A package may not be judged on a primitive no package was told to build. A package that owns only such artifacts delivers no story by itself: leave its implements[] empty and list in enables[] the stories that cannot be delivered without it - never claim a story in implements[] to get it past coverage. Two: every goal-level criterion must be checkable by the integration step from the merged tree alone, and no two of them may contradict each other; a criterion that needs an environment this harness cannot produce states the achievable measurement and what it extrapolates from, rather than naming a number no run can reach. Three: a package's own acceptance must be satisfiable from that package's deps[] alone - if proving it needs a sibling's delivered result, that sibling is a dependency or the criterion belongs to whoever has it. Four: ${EXERCISE_RULE}
 Each package becomes one graph run in its own worktree. A package with no deps branches from the current HEAD; a package with deps branches from its first dependency's delivered branch with the others merged in, so it builds on what they delivered - not on stubs. Two packages that touch the same path will conflict at integration: split by ownership, not by phase. A dependency means the package needs another's delivered result; it receives that package's report as context and starts from its tree. Every package must be size S on its own - if one still needs splitting, the shape is wrong. Two to six packages is the usual range. "split": true (or "size": "L") is the one exception to that rule - the rare package whose own scope still needs its own shape/dispatch cycle inside its child run; leave it false for the ordinary package, whose child run opens with this shape's own acceptance already decided and no plan/setgoal/critique/gate:goal of its own to redo (§3, docs/plans/2026-09-21-teams-server-owns-the-loop.md).
-Optional: "diagram" - the package map as you see it, so critique and integrate judge the seams you drew rather than guess them: {"type": "architecture", "title": "...", "nodes": [{"id": "P1", "label": "<= 48 chars", "kind": "package|service|store|queue|external|actor", "row": 0, "col": 0, "note": "..."}], "edges": [{"from": "P1", "to": "P2", "label": "what crosses: the contract, file or call", "style": "sync|async|data|fail"}], "groups": [{"id": "g", "label": "...", "nodes": ["P1"]}]}. One node per package (id = the package id), plus a node for each thing two packages share - a contract, a schema, a store, the composition root. You place every node: row/col, one per cell, entry point at the left. Every node needs an edge. The manager validates it (develop:architecture-designer's diagram IR) and renders it beside the docs; one that fails is replaced by the plain dependency map and the repairs are recorded.
+Optional: "diagram" - the package map as you see it, so critique and integrate judge the seams you drew rather than guess them: {"type": "architecture", "title": "...", "nodes": [{"id": "P1", "label": "<= 48 chars", "kind": "package|service|store|queue|external|actor", "row": 0, "col": 0, "note": "..."}], "edges": [{"from": "P1", "to": "P2", "label": "what crosses: the contract, file or call", "style": "sync|async|data|fail"}], "groups": [{"id": "g", "label": "...", "nodes": ["P1"]}]}. One node per package (id = the package id), plus a node for each thing two packages share - a contract, a schema, a store, the composition root. You place every node: row/col, one per cell, entry point at the left. Every node needs an edge. If you use "groups", a group's box is drawn as the rectangle spanning the min/max row and min/max col of its own members - so give every group's members a row/col range that no other node, member of a different group or not, also falls inside. In practice: put a group's members in their own contiguous rows within one column, or their own columns, rather than interleaving two groups' members down the same column (a node from group A sitting between two rows of group B reads as inside group B's box even though you meant it for A). The manager validates it (develop:architecture-designer's diagram IR), tries to repair a group whose box only has this one defect by moving the stray node to a column of its own, and renders it beside the docs; one that still fails after repair is replaced by the plain dependency map and the problems are recorded.
 ${QUESTIONS_CONTRACT}`,
   critique: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "sound": true|false, "blocking": ["..."], "problems": ["..."], "handoff": "...", "evidence": "..."}
 Attack the shape: packages that overlap in touches[], a dependency the brief does not actually need, a package too large to be one run, a goal-level criterion no integration step could check, a package that changes model instructions (a skill, a prompt) with no acceptance item that runs them - blocking, since grep cannot verify behaviour - and - above all - a request that was S sized as L. Set sound=false only for defects in "blocking" that make the packages impossible to run, impossible to integrate, or impossible to verify. Everything else is a problem, carried forward as advice.
