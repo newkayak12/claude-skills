@@ -1,7 +1,7 @@
 ---
 key: E-aaaaaaaa
 state: DONE
-source: task.json@25
+source: task.json@33
 ---
 
 # Report
@@ -15,7 +15,8 @@ What failed and why:
 
 Retries:
 - P1: 2 attempts
-- QA: 2 attempts
+- QA-F1: 2 attempts
+- QA-F2: 2 attempts
 - AUDIT: 2 attempts
 
 Defects left:

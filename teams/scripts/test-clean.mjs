@@ -19,6 +19,8 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { beforeTmCall } from './lib/planning-drive.mjs';
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TM = join(HERE, '..', 'mcp', 'taskmanager.mjs');
 const BROKER = join(HERE, '..', 'mcp', 'broker.mjs');
@@ -26,6 +28,7 @@ const BROKER = join(HERE, '..', 'mcp', 'broker.mjs');
 // Same stdio JSON-RPC client test-taskmanager.mjs uses.
 class Client {
   constructor(script, env = {}) {
+    this.script = script;
     this.proc = spawn('node', [script], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, TEAMS_VIEW: '0', ...env } });
     this.buf = '';
     this.id = 0;
@@ -52,12 +55,26 @@ class Client {
     return this;
   }
   async call(name, args) {
+    // Every task plans now (cards-everywhere C5/C6): a task-manager client drives the planning a
+    // shape submission waits on first - lib/planning-drive.mjs says how, and why.
+    if (this.script === TM) args = await beforeTmCall(this, name, args, () => this.planningBroker());
+    return this.rawCall(name, args);
+  }
+  async rawCall(name, args) {
     const r = await this.send('tools/call', { name, arguments: args });
     const res = r.result || {};
     if (res.isError) return { error: res.content[0].text };
     return res.structuredContent;
   }
+  // The broker planning cards are driven through: the one the suite attached (client.broker), or
+  // one this client spawns on first need and closes with itself.
+  async planningBroker() {
+    if (this.broker) return this.broker;
+    if (!this.ownBroker) this.ownBroker = await new Client(BROKER).init();
+    return this.ownBroker;
+  }
   close() {
+    if (this.ownBroker) this.ownBroker.close();
     this.proc.stdin.end();
     this.proc.kill();
   }
@@ -159,8 +176,11 @@ async function withTask(fn, extra) {
   const root = mkdtempSync(join(tmpdir(), 'tm-clean-root-'));
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
   const g = await new Client(BROKER).init();
+  tm.broker = g;
   try {
-    const roles = { planning: false, qa: false };
+    // Planning always runs (cards-everywhere C5) - the client drives it ahead of shape
+    // (lib/planning-drive.mjs); QA and the planning audit are still pinned off for a plain graph.
+    const roles = { qa: false, audit: false };
     const open = await tm.call('tm_open', { brainstorm: false, request: 'big request', cwd, vendor: 'self', roles, ...extra });
     await fn({ tm, g, cwd, root, task_id: open.task_id });
   } finally {
@@ -179,10 +199,13 @@ test('tm_clean removes every package worktree and branch once merged into integr
     const integ = integration(task);
     assert.ok(existsSync(join(p1.cwd, '.git')) && existsSync(join(p2.cwd, '.git')), 'both package worktrees exist before cleaning');
 
+    const prdPath = join(cwd, '.teams_output', 'team', `E-${task_id.slice(0, 8)}`, '10-prd.md');
+    const prdBefore = readFileSync(prdPath, 'utf8');
     const r = await tm.call('tm_clean', { task_id });
     assert.equal(r.dry_run, false);
-    assert.deepEqual(r.removed_worktrees.map((x) => x.package_id).sort(), ['P1', 'P2']);
-    assert.deepEqual(r.removed_branches.map((x) => x.package_id).sort(), ['P1', 'P2']);
+    // The planning card's worktree is a package worktree too (cards-everywhere C2): cleaned alike.
+    assert.deepEqual(r.removed_worktrees.map((x) => x.package_id).sort(), ['P1', 'P2', 'PLAN-F1']);
+    assert.deepEqual(r.removed_branches.map((x) => x.package_id).sort(), ['P1', 'P2', 'PLAN-F1']);
     assert.deepEqual(r.kept_branches, []);
     assert.deepEqual(r.kept.map((k) => k.cwd), [integ.cwd]);
 
@@ -196,7 +219,11 @@ test('tm_clean removes every package worktree and branch once merged into integr
     const ledger = readFileSync(join(root, task_id, 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
     const cleanEvent = ledger.find((e) => e.event === 'clean');
     assert.ok(cleanEvent, 'a clean event is recorded in the task ledger');
-    assert.deepEqual(cleanEvent.removed_worktrees.sort(), ['P1', 'P2']);
+    assert.deepEqual(cleanEvent.removed_worktrees.sort(), ['P1', 'P2', 'PLAN-F1']);
+    // The merged PRD does not depend on the card's worktree still being there: a re-render after
+    // the clean reads the snapshot the planning integrate took (C4).
+    await tm.call('tm_docs', { task_id, rebuild: true });
+    assert.equal(readFileSync(prdPath, 'utf8'), prdBefore, '10-prd.md survives tm_clean unchanged');
   });
 });
 
@@ -204,11 +231,11 @@ test('tm_clean is idempotent: a second call finds everything already gone', asyn
   await withTask(async ({ tm, g, root, task_id }) => {
     await runFullEpic(tm, g, root, task_id);
     const first = await tm.call('tm_clean', { task_id });
-    assert.equal(first.removed_worktrees.length, 2);
+    assert.equal(first.removed_worktrees.length, 3, 'P1, P2 and the planning card PLAN-F1');
     const second = await tm.call('tm_clean', { task_id });
     assert.equal(second.removed_worktrees.length, 0);
     assert.equal(second.removed_branches.length, 0);
-    assert.deepEqual(second.already_clean.map((x) => x.package_id).sort(), ['P1', 'P2']);
+    assert.deepEqual(second.already_clean.map((x) => x.package_id).sort(), ['P1', 'P2', 'PLAN-F1']);
   });
 });
 
@@ -227,13 +254,13 @@ test('tm_clean({dry_run:true}) reports what it would remove and touches no git s
     const p1 = dispatchChild(task, 'P1');
     const r = await tm.call('tm_clean', { task_id, dry_run: true });
     assert.equal(r.dry_run, true);
-    assert.deepEqual(r.removed_worktrees.map((x) => x.package_id).sort(), ['P1', 'P2']);
-    assert.deepEqual(r.removed_branches.map((x) => x.package_id).sort(), ['P1', 'P2']);
+    assert.deepEqual(r.removed_worktrees.map((x) => x.package_id).sort(), ['P1', 'P2', 'PLAN-F1']);
+    assert.deepEqual(r.removed_branches.map((x) => x.package_id).sort(), ['P1', 'P2', 'PLAN-F1']);
     assert.ok(existsSync(join(p1.cwd, '.git')), 'dry_run never removes the worktree');
     assert.equal(branchExists(p1.cwd, p1.branch), true, 'dry_run never deletes the branch');
     // Nothing was actually removed, so a real clean afterwards still finds it all.
     const real = await tm.call('tm_clean', { task_id });
-    assert.equal(real.removed_worktrees.length, 2);
+    assert.equal(real.removed_worktrees.length, 3);
   });
 });
 
@@ -249,10 +276,10 @@ test('a package branch with commits made after integration is kept (reason given
     git(p1.cwd, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'work after integration']);
 
     const r = await tm.call('tm_clean', { task_id });
-    assert.deepEqual(r.removed_branches.map((x) => x.package_id), ['P2']);
+    assert.deepEqual(r.removed_branches.map((x) => x.package_id).sort(), ['P2', 'PLAN-F1']);
     assert.deepEqual(r.kept_branches.map((x) => x.package_id), ['P1']);
     assert.match(r.kept_branches[0].reason, /not reachable/);
-    assert.deepEqual(r.removed_worktrees.map((x) => x.package_id).sort(), ['P1', 'P2'], 'the worktree directory is removed either way - the branch ref alone keeps the commits');
+    assert.deepEqual(r.removed_worktrees.map((x) => x.package_id).sort(), ['P1', 'P2', 'PLAN-F1'], 'the worktree directory is removed either way - the branch ref alone keeps the commits');
 
     assert.ok(!existsSync(join(p1.cwd, '.git')), 'P1 worktree directory is still removed');
     assert.equal(branchExists(cwd, p1.branch), true, 'P1 branch is kept - its extra commit is not reachable from anywhere else');
@@ -267,7 +294,7 @@ test('tm_clean({}) without task_id sweeps every task under the tasks root, defau
     const cwdB = repo();
     const tmB = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
     try {
-      const openB = await tmB.call('tm_open', { brainstorm: false, request: 'second', cwd: cwdB, vendor: 'self', roles: { planning: false, qa: false } });
+      const openB = await tmB.call('tm_open', { brainstorm: false, request: 'second', cwd: cwdB, vendor: 'self', roles: { qa: false, audit: false } });
       const runningId = openB.task_id;
 
       const listed = await tmA.call('tm_clean', {});
@@ -276,7 +303,7 @@ test('tm_clean({}) without task_id sweeps every task under the tasks root, defau
       const runningRow = listed.tasks.find((t) => t.task_id === runningId);
       assert.ok(doneRow && runningRow);
       assert.equal(runningRow.skipped, true);
-      assert.deepEqual(doneRow.removed_worktrees.map((x) => x.package_id).sort(), ['P1', 'P2']);
+      assert.deepEqual(doneRow.removed_worktrees.map((x) => x.package_id).sort(), ['P1', 'P2', 'PLAN-F1']);
 
       const done = JSON.parse(readFileSync(join(root, doneId, 'task.json'), 'utf8'));
       const p1 = dispatchChild(done, 'P1');
@@ -284,7 +311,7 @@ test('tm_clean({}) without task_id sweeps every task under the tasks root, defau
 
       const swept = await tmA.call('tm_clean', { dry_run: false });
       const doneRow2 = swept.tasks.find((t) => t.task_id === doneId);
-      assert.equal(doneRow2.removed_worktrees.length, 2);
+      assert.equal(doneRow2.removed_worktrees.length, 3);
       assert.ok(!existsSync(join(p1.cwd, '.git')), 'the explicit sweep actually removed it');
       const runningRow2 = swept.tasks.find((t) => t.task_id === runningId);
       assert.equal(runningRow2.skipped, true, 'a running task is skipped, never refused, in sweep mode');

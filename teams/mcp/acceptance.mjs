@@ -168,7 +168,14 @@ export function hasDeclaredAcceptance(input) {
 // NEVER 'off': removing the safety net is always a person's explicit decision.
 // Returns {mode: 'full'|'light'|'off', source: 'explicit'|'auto', reason, detection?}.
 export function resolvePlanningMode(planning, input) {
-  if (planning === false) return { mode: 'off', source: 'explicit', reason: 'roles.planning: false' };
+  // roles.planning: false is refused (docs/plans/2026-09-28-teams-cards-everywhere.md C5): it
+  // resolves exactly like the default 'auto', and says so. There is no 'off' mode any more -
+  // teamconfig.mjs's applyLayer already dropped the value with a note before it could get here;
+  // this is the same rule for a caller that hands the raw value in directly.
+  if (planning === false) {
+    const auto = resolvePlanningMode('auto', input);
+    return { ...auto, source: 'refused', reason: `roles.planning: false is refused (planning always runs) - ${auto.reason}` };
+  }
   if (planning === true) return { mode: 'full', source: 'explicit', reason: 'roles.planning: true' };
   if (planning === 'light') return { mode: 'light', source: 'explicit', reason: "roles.planning: 'light'" };
   const detection = detectDeclaredAcceptance(input);
@@ -205,8 +212,11 @@ export function renderAcceptanceTemplate(det) {
     L.push('');
   }
   det.items.forEach((it, i) => {
-    L.push(`Item ${i + 1}: ${String(it.text || '').split('\n')[0].trim()}`);
-    (it.acceptance || []).forEach((c, j) => L.push(`- A${i + 1}.${j + 1}: ${c}`));
+    // `n` keeps an item's backlog number when a planning card is handed only its own area's
+    // items (taskmanager.mjs's childContext): Item 3 stays Item 3, A3.1 stays A3.1.
+    const k = Number.isInteger(it.n) ? it.n : i + 1;
+    L.push(`Item ${k}: ${String(it.text || '').split('\n')[0].trim()}`);
+    (it.acceptance || []).forEach((c, j) => L.push(`- A${k}.${j + 1}: ${c}`));
     if (rules.length) L.push(`- applies: ${rules.map((r) => r.id).join(', ')}`);
     L.push('');
   });
