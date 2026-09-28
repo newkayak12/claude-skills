@@ -147,6 +147,25 @@ test('restart and re-judge streams fold into their own kind, and every bucket su
   } finally { for (const x of [cwd, tasks, root]) rmSync(x, { recursive: true, force: true }); }
 });
 
+// m6: cards carry their area in the id - dispatch_PLAN-F2_1, judge_accept_QA-F1_1 - and the
+// manager's own dashed stages (plan-integrate, areas-critique) have a '-' that \w never matched.
+test('card and dashed-stage streams bucket by phase and by judging stage, not one bucket per card', () => {
+  const { cwd, tasks, td } = fixture();
+  const root = mkdtempSync(join(tmpdir(), 'runlog-root-'));
+  try {
+    const res = (c) => `${JSON.stringify({ type: 'result', total_cost_usd: c, num_turns: 1 })}\n`;
+    writeFileSync(join(td, 'drivers', 'dispatch_PLAN-F1_1.stream.jsonl'), res(1));
+    writeFileSync(join(td, 'drivers', 'dispatch_PLAN-F2_1.stream.jsonl'), res(2));
+    writeFileSync(join(td, 'drivers', 'dispatch_QA-F1_2.stream.jsonl'), res(3));
+    writeFileSync(join(td, 'drivers', 'judge_accept_PLAN-F1_1.stream.jsonl'), res(0.5));
+    writeFileSync(join(td, 'drivers', 'judge_accept_QA-F2_1.stream.jsonl'), res(0.25));
+    writeFileSync(join(td, 'drivers', 'judge_plan-integrate_1.stream.jsonl'), res(0.75));
+    writeFileSync(join(td, 'drivers', 'judge_areas-critique_2.stream.jsonl'), res(0.5));
+    const r = harvestTask({ taskDir: td, cwd, root });
+    assert.deepEqual(r.summary.cost_by_kind, { dispatch_PLAN: 3, dispatch_QA: 3, judge_accept: 0.75, 'judge_plan-integrate': 0.75, 'judge_areas-critique': 0.5 });
+  } finally { for (const x of [cwd, tasks, root]) rmSync(x, { recursive: true, force: true }); }
+});
+
 // Same run: child test:U1:1 (P1, P3) and manager integrate:6 rejected with verified:false and
 // only checks/evidence - no reason - so every record read "P3 test:U1:1: " in triage. A record
 // written before the engine synthesized one is filled at harvest time, from the same rule; a

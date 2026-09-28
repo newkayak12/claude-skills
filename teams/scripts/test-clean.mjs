@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { beforeTmCall } from './lib/planning-drive.mjs';
+import { afterTmCall, beforeTmCall } from './lib/planning-drive.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TM = join(HERE, '..', 'mcp', 'taskmanager.mjs');
@@ -58,7 +58,8 @@ class Client {
     // Every task plans now (cards-everywhere C5/C6): a task-manager client drives the planning a
     // shape submission waits on first - lib/planning-drive.mjs says how, and why.
     if (this.script === TM) args = await beforeTmCall(this, name, args, () => this.planningBroker());
-    return this.rawCall(name, args);
+    const out = await this.rawCall(name, args);
+    return this.script === TM ? afterTmCall(this, name, args, out) : out;
   }
   async rawCall(name, args) {
     const r = await this.send('tools/call', { name, arguments: args });

@@ -144,7 +144,9 @@ export function harvestTask({ taskDir, cwd, label, root, scorePrefix } = {}) {
   for (const s of (costs && costs.streams) || []) {
     // A respawned driver (<name>.restart1) or a re-judge (<name>.r1) is the same kind of spend
     // as its first session - portfolio-consolidate-8518d5dd bucketed them apart, one per run name.
-    const k = basename(String(s.stream || s.path || '')).replace(/\.stream\.jsonl$/, '').replace(/\.(restart|r)\d+$/, '').replace(/_\d+$/, '').replace(/^judge_(\w+?)(_P\w+|\.r\d+)?$/, 'judge_$1').replace(/^dispatch_(PLAN|AUDIT|QA)$/, 'dispatch_$1').replace(/^dispatch_P\d+\w*$/, 'dispatch_package');
+    // Cards carry their area (dispatch_PLAN-F2, judge_accept_QA-F1, judge_plan-integrate): one
+    // bucket per phase and per judging stage, not one per card (m6).
+    const k = basename(String(s.stream || s.path || '')).replace(/\.stream\.jsonl$/, '').replace(/\.(restart|r)\d+$/, '').replace(/_\d+$/, '').replace(/^judge_(\w+?)(_P\w+|\.r\d+)?$/, 'judge_$1').replace(/^judge_([a-z][a-z-]*)_[A-Z][\w-]*$/, 'judge_$1').replace(/^dispatch_(PLAN|AUDIT|QA)(-F\d+)?$/, 'dispatch_$1').replace(/^dispatch_P\d+\w*$/, 'dispatch_package');
     byKind[k] = +((byKind[k] || 0) + (s.cost_usd || 0)).toFixed(4);
   }
   // collectTaskCosts splits its total into driver streams (above, the manager's own

@@ -21,7 +21,7 @@ import { docPaths } from '../mcp/tickets.mjs';
 import { collectDriverCosts } from './bench/lib/drivercost.mjs';
 import { hasDeclaredAcceptance, detectDeclaredAcceptance, resolvePlanningMode, renderAcceptanceTemplate } from '../mcp/acceptance.mjs';
 import { hasDeclaredAcceptance as tmHasDeclaredAcceptance } from '../mcp/taskmanager.mjs';
-import { beforeTmCall, drivePlanning, completePlanningChild } from './lib/planning-drive.mjs';
+import { afterTmCall, beforeTmCall, drivePlanning, completePlanningChild } from './lib/planning-drive.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TM = join(HERE, '..', 'mcp', 'taskmanager.mjs');
@@ -66,7 +66,8 @@ class Client {
     // Every task plans now (cards-everywhere C5/C6): a task-manager client drives the planning a
     // shape submission waits on first - lib/planning-drive.mjs says how, and why.
     if (this.script === TM) args = await beforeTmCall(this, name, args, () => this.planningBroker());
-    return this.rawCall(name, args);
+    const out = await this.rawCall(name, args);
+    return this.script === TM ? afterTmCall(this, name, args, out) : out;
   }
   async rawCall(name, args) {
     const r = await this.send('tools/call', { name, arguments: args });
@@ -367,7 +368,8 @@ test('tm_open opens size -> areas; the areas result opens one planning card per 
     assert.deepEqual(task.nodes.map((n) => ({ node_id: n.node_id, deps: n.deps })), [
       { node_id: 'size', deps: [] },
       { node_id: 'areas', deps: ['size'] },
-    ], 'nothing past the plan stage exists before it has split the request');
+      { node_id: 'areas-critique', deps: ['areas'] },
+    ], 'nothing past the plan stage and its gate exists before it has split the request');
     assert.deepEqual(task.planning_pkgs, []);
     await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['x'] }) });
     const v = await tm.call('tm_submit', { task_id, node_id: 'areas', payload: ok({ areas: [
@@ -386,9 +388,9 @@ test('tm_open opens size -> areas; the areas result opens one planning card per 
     assert.match(task.planning_pkgs[1].brief, /^Feature area F2 - billing/);
     assert.deepEqual(task.planning_pkgs[1].deps, ['PLAN-F1'], 'an area dep becomes a card dep');
     const node = (id) => task.nodes.find((n) => n.node_id === id);
-    assert.deepEqual(node('dispatch:PLAN-F1:1').deps, ['areas']);
-    assert.deepEqual(node('dispatch:PLAN-F2:1').deps, ['areas', 'accept:PLAN-F1:1']);
-    assert.deepEqual(node('dispatch:PLAN-F3:1').deps, ['areas'], 'cards without deps run in parallel');
+    assert.deepEqual(node('dispatch:PLAN-F1:1').deps, ['areas-critique'], 'cards wait on the split\'s own gate (M4)');
+    assert.deepEqual(node('dispatch:PLAN-F2:1').deps, ['areas-critique', 'accept:PLAN-F1:1']);
+    assert.deepEqual(node('dispatch:PLAN-F3:1').deps, ['areas-critique'], 'cards without deps run in parallel');
     assert.deepEqual(node('plan-integrate:1').deps, ['accept:PLAN-F1:1', 'accept:PLAN-F2:1', 'accept:PLAN-F3:1']);
     assert.deepEqual(node('shape').deps, ['plan-integrate:1'], 'shape waits on the planning integrate, not on size or one card');
     assert.deepEqual(node('critique').deps, ['shape']);
@@ -413,7 +415,7 @@ test('tm_open with no roles argument defaults BOTH planning and qa on (0.17.0): 
     assert.deepEqual(task.team.opts.roles, { planning: 'auto', qa: true, audit: true });
     assert.equal(task.planning_mode, 'full');
     // The plan stage comes first (brainstorm, on by default, sits between it and size).
-    assert.deepEqual(task.nodes.map((n) => n.node_id), ['size', 'brainstorm', 'areas']);
+    assert.deepEqual(task.nodes.map((n) => n.node_id), ['size', 'brainstorm', 'areas', 'areas-critique']);
     assert.deepEqual(task.nodes.find((n) => n.node_id === 'areas').deps, ['brainstorm']);
   } finally {
     tm.close();
@@ -431,6 +433,7 @@ test('roles.planning:false is refused: the plan stage still opens, and a note re
     assert.deepEqual(task.nodes.map((n) => ({ node_id: n.node_id, deps: n.deps })), [
       { node_id: 'size', deps: [] },
       { node_id: 'areas', deps: ['size'] },
+      { node_id: 'areas-critique', deps: ['areas'] },
     ]);
     assert.equal(task.team.opts.roles.planning, 'auto', 'the refused value falls back to the default');
     assert.equal(task.team.opts.roles.qa, false, 'the rest of the roles object still applies');
@@ -7107,7 +7110,7 @@ test('§6.5-2: tm_open({decisions}) writes the first task.decisions and skips th
   }, { roles: { planning: true }, brainstorm: true, decisions: [SESSION_DECISION] });
   await withTask(async ({ root, task_id }) => {
     const task = readTask(root, task_id);
-    assert.deepEqual(task.nodes.map((n) => [n.node_id, n.deps]), [['size', []], ['brainstorm', ['size']], ['areas', ['brainstorm']]]);
+    assert.deepEqual(task.nodes.map((n) => [n.node_id, n.deps]), [['size', []], ['brainstorm', ['size']], ['areas', ['brainstorm']], ['areas-critique', ['areas']]]);
   }, { brainstorm: true });
 });
 
@@ -7471,7 +7474,7 @@ test('C4: a planning integrate that names cards and a missing feature sends thos
     assert.ok(!task.nodes.some((n) => n.node_id === 'dispatch:PLAN-F1:2'), 'a card the judge did not name is left alone');
     assert.deepEqual(task.planning_pkgs.map((p) => p.id), ['PLAN-F1', 'PLAN-F2', 'PLAN-F3'], 'the missing feature gets its own card');
     assert.equal(task.planning_pkgs[2].area_title, 'usage export');
-    assert.deepEqual(task.nodes.find((n) => n.node_id === 'dispatch:PLAN-F3:1').deps, ['areas']);
+    assert.deepEqual(task.nodes.find((n) => n.node_id === 'dispatch:PLAN-F3:1').deps, ['areas-critique']);
     assert.deepEqual(task.nodes.find((n) => n.node_id === 'plan-integrate:2').deps, ['accept:PLAN-F1:1', 'accept:PLAN-F2:2', 'accept:PLAN-F3:1']);
     assert.match(task.nodes.find((n) => n.node_id === 'plan-integrate:2').feedback, /disagree on refunds/);
     // Both reopened cards dispatch at once.
@@ -7568,6 +7571,106 @@ test('C2: a rejected planning card gets its retry, and the planning integrate wa
     assert.match(retry.feedback, /no acceptance on F2-US-1/);
     assert.deepEqual(task.nodes.find((n) => n.node_id === 'plan-integrate:1').deps, ['accept:PLAN-F1:1', 'accept:PLAN-F2:2']);
   });
+});
+
+// M4 (docs/plans/2026-09-28-teams-adversarial-fixes.md): the split has its own gate before any
+// card runs, a planning integrate can send the split itself back, and both are human-gateable.
+test('M4: areas-critique judges the split before any card opens; a refusal re-splits with its blocking defects, and past the budget planning closes to a report', async () => {
+  const { autoReshape } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, root, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['x'] }) });
+    await tm.rawCall('tm_submit', { task_id, node_id: 'areas', payload: ok({ areas: TWO_AREAS }) });
+    let task = readTask(root, task_id);
+    assert.deepEqual(task.planning_pkgs, [], 'no card opens before the split is judged');
+    const nx = await tm.rawCall('tm_next', { task_id });
+    assert.deepEqual(nx.ready.map((r) => r.node_id), ['areas-critique']);
+    const brief = readFileSync(nx.ready[0].briefing_path, 'utf8');
+    assert.match(brief, /## The feature split \(areas\)/);
+    assert.match(brief, new RegExp(TWO_AREAS[0].title));
+    const noCheck = await tm.rawCall('tm_submit', { task_id, node_id: 'areas-critique', payload: { stage_ok: true, sound: true, checks: [] } });
+    assert.equal(noCheck.state, 'failed', 'a sound verdict with no checks is refused');
+  }, { max_retries: 1 });
+  await withTask(async ({ tm, root, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['x'] }) });
+    await tm.rawCall('tm_submit', { task_id, node_id: 'areas', payload: ok({ areas: TWO_AREAS }) });
+    const v = await tm.rawCall('tm_submit', { task_id, node_id: 'areas-critique', payload: ok({ sound: false, blocking: ['overlap - both areas plan checkout'], problems: ['F2 brief is thin'] }) });
+    assert.equal(v.state, 'failed');
+    let task = readTask(root, task_id);
+    assert.ok(withTasksRoot(root, () => autoReshape(task)));
+    task = readTask(root, task_id);
+    const again = task.nodes.find((n) => n.node_id === 'areas:2');
+    assert.ok(again, 'the refused split is split again');
+    assert.match(again.feedback, /overlap - both areas plan checkout/);
+    assert.match(again.feedback, /advice: F2 brief is thin/);
+    assert.deepEqual(task.nodes.find((n) => n.node_id === 'areas-critique:2').deps, ['areas:2'], 'the new split is judged again');
+    assert.deepEqual(task.planning_pkgs, []);
+    // The second split is refused too; max_retries 1 leaves no third: both settle, planning closes.
+    await tm.rawCall('tm_submit', { task_id, node_id: 'areas:2', payload: ok({ areas: TWO_AREAS }) });
+    await tm.rawCall('tm_submit', { task_id, node_id: 'areas-critique:2', payload: ok({ sound: false, blocking: ['overlap - still'] }) });
+    task = readTask(root, task_id);
+    assert.equal(withTasksRoot(root, () => autoReshape(task)), false);
+    task = readTask(root, task_id);
+    assert.equal(task.nodes.find((n) => n.node_id === 'areas-critique:2').final, true);
+    const nx = await tm.rawCall('tm_next', { task_id });
+    assert.deepEqual(nx.ready.map((r) => r.node_id), ['report'], 'M2 closes it to a report');
+    assert.equal(readTask(root, task_id).planning_failed.stage, 'areas-critique');
+  }, { max_retries: 1 });
+});
+
+test('M4: a planning integrate that asks for resplit retires the cards and re-splits; the new cards open behind a fresh integrate that shape now waits on', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await twoCardsAccepted(tm, g, task_id, (id) => [`${id.replace('PLAN-', '')}-US-1`]);
+    await tm.call('tm_next', { task_id });
+    const v = await tm.rawCall('tm_submit', { task_id, node_id: 'plan-integrate:1', payload: ok({
+      accept: false, resplit: true, reason: 'the two areas are the same feature cut by layer', checks: ['read the PRD'],
+    }) });
+    assert.equal(v.state, 'failed');
+    let task = readTask(root, task_id);
+    assert.deepEqual(task.planning_pkgs.map((p) => [p.id, !!p.retired]), [['PLAN-F1', true], ['PLAN-F2', true]]);
+    assert.equal(task.nodes.find((n) => n.node_id === 'plan-integrate:1').final, true);
+    const again = task.nodes.find((n) => n.node_id === 'areas:2');
+    assert.ok(again);
+    assert.match(again.feedback, /cut by layer/);
+    assert.ok(!task.nodes.some((n) => n.node_id === 'plan-integrate:2'), 'no integrate before the new split is judged');
+    await tm.rawCall('tm_submit', { task_id, node_id: 'areas:2', payload: ok({ areas: [{ title: 'checkout', brief: 'a buyer can pay end to end' }] }) });
+    await tm.rawCall('tm_submit', { task_id, node_id: 'areas-critique:2', payload: ok({ sound: true, checks: ['one feature, one area'] }) });
+    task = readTask(root, task_id);
+    assert.deepEqual(task.planning_pkgs.map((p) => p.id), ['PLAN-F1', 'PLAN-F2', 'PLAN-F3'], 'the new card gets a fresh id');
+    assert.deepEqual(task.nodes.find((n) => n.node_id === 'dispatch:PLAN-F3:1').deps, ['areas-critique:2']);
+    const pi2 = task.nodes.find((n) => n.node_id === 'plan-integrate:2');
+    assert.deepEqual(pi2.deps, ['accept:PLAN-F3:1'], 'the fresh integrate merges only the live card');
+    assert.equal(pi2.supersedes, 'plan-integrate:1');
+    assert.equal(task.nodes.filter((n) => n.stage === 'shape').length, 1, 'no second shape');
+    assert.deepEqual(task.nodes.find((n) => n.node_id === 'shape').deps, ['plan-integrate:2']);
+    const nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.children.map((c) => c.package_id), ['PLAN-F3'], 'only the new card runs');
+    await completePlanningChild(g, nx.children[0], ['F3-US-1']);
+    await tm.call('tm_submit', { task_id, node_id: nx.children[0].node_id });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:PLAN-F3:1', payload: ok({ accept: true, match_pct: 95 }) });
+    const { planningStories } = await import('../mcp/tickets.mjs');
+    assert.deepEqual(planningStories(readTask(root, task_id)).map((u) => u.id), ['F3-US-1'], 'the retired cards\' stories are gone from the PRD');
+  });
+});
+
+test('M4: human_gates can name areas-critique and plan-integrate; a person\'s plan-integrate refusal can ask for a resplit', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['x'] }) });
+    await tm.rawCall('tm_submit', { task_id, node_id: 'areas', payload: ok({ areas: TWO_AREAS }) });
+    const nx = await tm.rawCall('tm_next', { task_id });
+    assert.ok(!(nx.ready || []).some((n) => n.node_id === 'areas-critique'), 'a gated critique is never offered to a model');
+    const inbox = await tm.rawCall('tm_inbox', { task_id });
+    const card = inbox.cards.find((c) => c.node_id === 'areas-critique');
+    assert.ok(card, JSON.stringify(inbox));
+    const out = await tm.rawCall('tm_submit', { task_id, key: card.key, payload: { accept: true, reason: 'the split is right' } });
+    assert.equal(out.state, 'done');
+    assert.deepEqual(readTask(root, task_id).planning_pkgs.map((p) => p.id), ['PLAN-F1', 'PLAN-F2']);
+  }, { interactive: true, human_gates: ['areas-critique', 'plan-integrate'] });
+  const { humanGateResultFromPayload, humanGateVerdictField } = await import('../mcp/graph.mjs');
+  const pi = { node_id: 'plan-integrate:1', stage: 'plan-integrate' };
+  assert.equal(humanGateVerdictField(pi), 'accept');
+  const r = humanGateResultFromPayload(pi, { accept: false, resplit: true, reason: 'cut by layer' });
+  assert.equal(r.accept, false);
+  assert.equal(r.resplit, true);
 });
 
 test('C2: a plan stage that returns no feature areas fails, and is split again with its problems as feedback', async () => {

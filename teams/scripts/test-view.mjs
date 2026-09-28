@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { node, saveRun } from '../mcp/graph.mjs';
 import { collectTask, listTasks, deriveTitle } from './lib/view-collect.mjs';
 import { renderText, renderIndexText, renderTicketsText, renderResourcesText } from './lib/view-render-text.mjs';
-import { beforeTmCall, drivePlanning } from './lib/planning-drive.mjs';
+import { afterTmCall, beforeTmCall, drivePlanning } from './lib/planning-drive.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TM = join(HERE, '..', 'mcp', 'taskmanager.mjs');
@@ -103,7 +103,8 @@ class Client {
     // Every task plans now (cards-everywhere C5/C6): a task-manager client drives the planning a
     // shape submission waits on first - lib/planning-drive.mjs says how, and why.
     if (this.script === TM) args = await beforeTmCall(this, name, args, () => this.planningBroker());
-    return this.rawCall(name, args);
+    const out = await this.rawCall(name, args);
+    return this.script === TM ? afterTmCall(this, name, args, out) : out;
   }
   async rawCall(name, args) {
     const r = await this.send('tools/call', { name, arguments: args });
@@ -386,7 +387,7 @@ test('collect() on an L task with one dispatched, accepted child: state derivati
 
     // manager stages exclude dispatch/accept (those live under packages instead)
     assert.deepEqual(model.manager_stages.map((n) => n.node_id).sort(),
-      ['areas', 'critique', 'gate:goal:1', 'integrate:1', 'plan-integrate:1', 'report', 'shape', 'size'].sort());
+      ['areas', 'areas-critique', 'critique', 'gate:goal:1', 'integrate:1', 'plan-integrate:1', 'report', 'shape', 'size'].sort());
 
     const ids = everyNodeId(model);
     assert.ok(ids.includes('dispatch:P1:1') && ids.includes('accept:P1:1') && ids.includes('implement:U1:1'));

@@ -76,7 +76,9 @@ export async function drivePlanning(call, g, task_id, opts = {}) {
       progressed = true;
     }
     for (const r of nx.ready || []) {
-      if (r.stage === 'areas') {
+      if (r.stage === 'areas-critique') {
+        await call('tm_submit', { task_id, node_id: r.node_id, payload: okPayload({ sound: true, blocking: [], problems: [], checks: ['every feature the request names is in exactly one area'] }) });
+      } else if (r.stage === 'areas') {
         await call('tm_submit', { task_id, node_id: r.node_id, payload: okPayload({ areas: opts.areas || [{ id: 'F1', title: 'the request', brief: 'everything the request asks for' }], handoff: 'areas' }) });
       } else if (r.stage === 'accept' && /^accept:PLAN-/.test(r.node_id)) {
         await call('tm_submit', { task_id, node_id: r.node_id, payload: okPayload({ accept: true, match_pct: 95 }) });
@@ -137,4 +139,17 @@ export async function beforeTmCall(client, name, args, getBroker) {
   if (!args.payload) return args;
   const stories = await mergedStoryIds(call, args.task_id);
   return { ...args, payload: fillImplements(args.payload, stories) };
+}
+
+// The split's own gate (areas-critique, M4) passes the way a sound split would, right after a test
+// submits the split - so a test about what the cards do is not a test about the critique. A test
+// about the critique submits through client.rawCall, which skips this.
+export async function afterTmCall(client, name, args, result) {
+  if (name !== 'tm_submit' || !args || args.key || !/^areas(:\d+)?$/.test(String(args.node_id || ''))) return result;
+  if (!result || result.state !== 'done') return result;
+  const task = await client.rawCall('tm_status', { task_id: args.task_id, full: true });
+  const crit = task && Array.isArray(task.nodes) ? task.nodes.find((n) => n.stage === 'areas-critique' && n.deps.includes(args.node_id) && n.state === 'pending') : null;
+  if (!crit) return result;
+  await client.rawCall('tm_submit', { task_id: args.task_id, node_id: crit.node_id, payload: okPayload({ sound: true, blocking: [], problems: [], checks: ['every feature the request names is in exactly one area'] }) });
+  return result;
 }
