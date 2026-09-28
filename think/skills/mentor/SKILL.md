@@ -48,7 +48,8 @@ constraint, an inherited standard treated as a fact. The first job is finding ou
 
 **Not for** producing a decision artifact
 (`deep-thinking-workflow`), auditing an argument's logic (`cognition:critical-thinking-workflow`),
-or any question that turns out to be technical (hand it to the `develop:` or `pm:` skill and say so).
+or any question that turns out to be technical or product-focused (hand it to the `develop:` or
+`planning:` skill and say so).
 
 ---
 
@@ -134,7 +135,7 @@ name the philosophical move.
 | what to say in a specific hard conversation | `think:negotiation` |
 | where they stand in their career and what's next | `portfolio:job-application-workflow` |
 | how their work reads to someone else | `portfolio:portfolio-feedback` |
-| a technical or product decision | the `develop:` / `pm:` skill — hand over entirely |
+| a technical or product decision | the `develop:` / `planning:` skill — hand over entirely |
 
 Values, avoidance, identity, motivation and shadow do not route anywhere: they are this skill's own
 territory, and the five moves added to the table above are what handles them. Carry them yourself.
