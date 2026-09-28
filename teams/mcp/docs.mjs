@@ -337,6 +337,71 @@ function whyOf(r) {
   return '';
 }
 
+// The packages the Sprint's final integration holds (buildRetro's comment says why): the latest
+// integrate nothing superseded, if it settled done. Its own record says what it merged
+// (prepareIntegration's integration.merged); a round based on a repair merged only the repair,
+// whose base is the integrate the repair worked on - that one's merged set is followed. An
+// integrate with no record (an older task) is read by its deps, transitively. A package counts
+// only while its latest accept stands (not in `unaccepted`).
+export function shippedPackages(task, unaccepted = []) {
+  const byId = new Map(task.nodes.map((n) => [n.node_id, n]));
+  const superseded = new Set(task.nodes.map((n) => n.supersedes).filter(Boolean));
+  const live = task.nodes.filter((n) => n.stage === 'integrate' && !superseded.has(n.node_id) && n.state !== 'skipped');
+  const last = live[live.length - 1];
+  const out = new Set();
+  if (!last || last.state !== 'done') return out;
+  const pkgs = ((task.spec && task.spec.packages) || []);
+  const held = new Set();
+  const seen = new Set();
+  const collect = (integ) => {
+    if (!integ || seen.has(integ.node_id)) return;
+    seen.add(integ.node_id);
+    const merged = integ.integration && Array.isArray(integ.integration.merged) ? integ.integration.merged : null;
+    if (merged) {
+      for (const m of merged) held.add(String(m.package));
+      if (integ.integration.based_on === 'repair') {
+        const rp = pkgs.find((p) => String(p.id) === String(integ.integration.repair_package));
+        collect(rp && byId.get(rp.integration_of));
+      }
+      return;
+    }
+    const queue = integ.deps.slice();
+    const reached = new Set();
+    while (queue.length) {
+      const id = queue.shift();
+      if (reached.has(id)) continue;
+      reached.add(id);
+      const x = byId.get(id);
+      if (!x) continue;
+      if (x.stage === 'accept' && x.state === 'done' && x.subgoal_id != null) held.add(String(x.subgoal_id));
+      queue.push(...x.deps);
+    }
+    // A fix-forward round (a filed defect) names only the fix's accept; the tree it rebuilt holds
+    // every package the round before it held.
+    const prior = byId.get(integ.supersedes);
+    if (prior && prior.stage === 'integrate' && prior.state === 'done') collect(prior);
+  };
+  collect(last);
+  const bad = new Set(unaccepted.map((u) => String(u.id)));
+  for (const id of held) if (!bad.has(id)) out.add(id);
+  return out;
+}
+
+// A size-S task's one run shipped when it completed without a settled failure and its goal gate
+// accepted - the same three facts renderSReport prints.
+function sRunShipped(task) {
+  try {
+    const run = loadRun(task.s_run.cwd, task.s_run.run_id);
+    if (!run) return false;
+    const st = runState(run);
+    const goals = run.nodes.filter((n) => String(n.node_id).startsWith('gate:goal') && n.state !== 'skipped' && n.result);
+    const last = goals[goals.length - 1];
+    return st.state === 'complete' && !st.settled && !!(last && last.result.accept === true);
+  } catch {
+    return false;
+  }
+}
+
 export function buildRetro(task) {
   const packageIds = [...new Set(task.nodes.filter((n) => n.stage === 'dispatch').map((n) => n.subgoal_id))];
   // A node superseded by a reshape or a newer attempt did not fail - it was replaced. Listing
@@ -361,35 +426,42 @@ export function buildRetro(task) {
       });
     }
   }
-  // Which backlog items (requests[] indices) did not ship: an item is shipped when an accepted
-  // package declares it in its own `backlog` (shape's field). Without any declaration - or with
-  // no package at all, a Sprint stopped before shape - nothing can be shown shipped, so the whole
-  // backlog carries forward rather than silently vanishing from the next Sprint's context.
+  // What shipped is what the Sprint's final integration holds (M7/M8,
+  // docs/plans/2026-09-28-teams-adversarial-fixes.md): the latest integrate nothing superseded,
+  // and only if it settled done - a later failed integrate is not overridden by an earlier pass.
+  // Its tree is cumulative, so the done integrates it superseded count too, and every accept its
+  // deps reach transitively (a repair's or a defect fix's integrate names only the new accept;
+  // the packages before it are reached through that chain). A package ships when it is accepted
+  // (its latest accept) and reached. Ids compare as strings: a shape may write numeric ids.
+  const shippedPkgs = shippedPackages(task, unaccepted);
   const unshippedRequests = [];
   if (Array.isArray(task.requests) && task.requests.length) {
     const shipped = new Set();
     for (const p of ((task.spec && task.spec.packages) || [])) {
-      if (unaccepted.some((u) => String(u.id) === String(p.id))) continue;
-      if (!packageIds.includes(p.id)) continue;
+      if (!shippedPkgs.has(String(p.id))) continue;
       for (const i of (Array.isArray(p.backlog) ? p.backlog : [])) if (Number.isInteger(i)) shipped.add(i);
     }
     task.requests.forEach((r, i) => { if (!shipped.has(i)) unshippedRequests.push({ priority: i, request: r }); });
   }
   // The user stories this task did not ship (docs/plans/2026-09-28-teams-sprint-not-sub-epic.md):
   // work too big for one Sprint is not nested into a sub-EPIC, it carries into the next Sprint as
-  // a backlog candidate. A story shipped when an accepted package implements it and an integrate
-  // settled done after it; a task with no packages (size S) shipped all or none of them.
+  // a backlog candidate. A story ships when every package implementing it shipped (one of two is
+  // not the story). A size-S task has no packages: its one run shipped all its stories when it
+  // completed unsettled with its goal gate accepting, or none.
   const stories = planningStories(task);
   const shippedStories = new Set();
-  const pkgs = (task.spec && Array.isArray(task.spec.packages)) ? task.spec.packages : [];
-  const integrated = task.nodes.some((n) => n.stage === 'integrate' && n.state === 'done');
-  if (!pkgs.length) {
-    if (!unfinishedWork(task) && runState(task).state === 'complete') for (const u of stories) shippedStories.add(storyId(u));
-  } else if (integrated) {
-    for (const p of pkgs) {
-      if (!packageIds.includes(p.id) || unaccepted.some((u) => String(u.id) === String(p.id))) continue;
-      for (const s of (Array.isArray(p.implements) ? p.implements : [])) shippedStories.add(String(s));
+  if (task.s_run && task.s_run.run_id) {
+    if (sRunShipped(task)) for (const u of stories) shippedStories.add(storyId(u));
+  } else {
+    const implementers = new Map();
+    for (const p of ((task.spec && task.spec.packages) || [])) {
+      for (const s of (Array.isArray(p.implements) ? p.implements : [])) {
+        const k = String(s);
+        if (!implementers.has(k)) implementers.set(k, []);
+        implementers.get(k).push(String(p.id));
+      }
     }
+    for (const [sid, ids] of implementers) if (ids.every((id) => shippedPkgs.has(id))) shippedStories.add(sid);
   }
   const unfinishedStories = stories
     .filter((u) => storyId(u) && !shippedStories.has(storyId(u)))
@@ -542,6 +614,8 @@ export function renderAll(task) {
   const sReport = task.s_run && task.s_run.run_id ? renderSReport(task) : null;
   if (sReport) {
     files[paths.report] = sReport;
+    // A size-S task owes the next Sprint the same retro an L task does (M6).
+    files[paths.retro] = renderRetro(task);
   } else if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) {
     files[paths.report] = renderReport(task);
     files[paths.retro] = renderRetro(task);

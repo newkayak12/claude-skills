@@ -422,7 +422,11 @@ export function planningStories(task) {
     });
     const d = accepted.length ? accepted[accepted.length - 1] : dispatches[dispatches.length - 1];
     const list = d && Array.isArray(d.result.user_stories) ? d.result.user_stories : [];
-    for (const u of list) out.push(u && typeof u === 'object' ? { ...u, card: id } : { id: String(u), card: id });
+    // A bare null/empty entry is no story: String(null) once gave it the id "null".
+    for (const u of list) {
+      if (u == null || (typeof u !== 'object' && !String(u).trim())) continue;
+      out.push(typeof u === 'object' ? { ...u, card: id } : { id: String(u).trim(), card: id });
+    }
   }
   return out;
 }
