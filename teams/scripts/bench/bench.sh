@@ -42,6 +42,9 @@
 #                      state-file write under a mid-write kill, invocation invariance, clock injection across a
 #                      DST transition, and an "already exists" success-not-error exit code; size L
 #
+# BENCH_VIA=run drives the teams arms (beta/betas/skills) through `teams run` (scripts/run.mjs
+#   --resume-on-limit) instead of a `claude -p` session: no session in the loop, usage limits
+#   waited out by the CLI. drive.sh sets it by default; bench.sh on its own stays `session`.
 # TEAM_JSON='{"roles":{"planning":true},"interactive":true}' writes .claude/team.json verbatim,
 #   for any key the bench needs (interactive, goal_threshold, ...). TEAM_ROLES below is the
 #   roles-only shorthand it supersedes.
@@ -174,11 +177,31 @@ OUTB=$WS; [ -n "${PRIOR_TASK:-}" ] && OUTB="$WS.next"
 [ -n "${BENCH_POLICY:-}" ] && PROMPT="$PROMPT The user asked for this routing: pass policy: $BENCH_POLICY in tm_open."
 echo "$(date -u +%FT%TZ) start $ARM/$CASE -> $WS" | tee "$OUTB.start.txt"
 set +e
+if [ "${BENCH_VIA:-session}" = run ] && [[ "$ARM" == beta || "$ARM" == betas || "$ARM" == skills ]]; then
+  # BENCH_VIA=run (drive.sh's default for the teams arms): no model session in the loop at all
+  # - `teams run` (scripts/run.mjs, wait-model C of docs/plans/2026-09-21-teams-server-owns-the-
+  # loop.md §4) opens the task the way tm_run does and blocks until it settles, waiting out usage
+  # limits itself (--resume-on-limit). The prompt's words become flags: the flow the entry skill
+  # would pick, and beta's "split this" as --size L. The daemon's drivers find the skill plugins
+  # on their own (mcp/pluginroots.mjs), so `skills` differs from `betas` only in name here. Its
+  # --json log goes to <ws>.run.jsonl; there is no top-level stream for score.mjs to sum, the
+  # drivers' own streams under .harness-tasks carry the cost.
+  [ -n "${BENCH_POLICY:-}" ] && { echo "BENCH_POLICY needs BENCH_VIA=session (teams run has no --policy)" >&2; exit 2; }
+  KIND=auto
+  [[ "$PROMPT" == *teams:develop* ]] && KIND=develop
+  RUN_ARGS=(--cwd "$WS" --kind "$KIND" --json --resume-on-limit --max-resumes "${MAX_RESUMES:-6}")
+  [ -n "$SPLIT" ] && RUN_ARGS+=(--size L)
+  ( cd "$WS" && HARNESS_TASKS_DIR="$WS/.harness-tasks" env -u CLAUDECODE \
+      node "$REPO/teams/scripts/run.mjs" "$REQ" "${RUN_ARGS[@]}" < /dev/null \
+      > "$OUTB.run.jsonl" 2> "$OUTB.stderr.txt" )
+  EXIT=$?
+else
 ( cd "$WS" && HARNESS_TASKS_DIR="$WS/.harness-tasks" env -u CLAUDECODE claude -p \
     --setting-sources project ${PLUGIN[@]+"${PLUGIN[@]}"} --dangerously-skip-permissions \
     --output-format stream-json --verbose "$PROMPT" < /dev/null \
     > "$OUTB.stream.jsonl" 2> "$OUTB.stderr.txt" )
 EXIT=$?
+fi
 set -e
 echo "$(date -u +%FT%TZ) exit $EXIT" >> "$OUTB.start.txt"
 

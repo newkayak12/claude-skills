@@ -691,17 +691,26 @@ node teams/scripts/view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--on
 `scripts/run.mjs`는 대기 모델 C입니다(`docs/plans/2026-09-21-teams-server-owns-the-loop.md`
 §4): `tm_run`이 여는 방식 그대로 태스크를 열고, `tm_wait`가 기다리는 방식 그대로 완료까지
 기다립니다 — 둘 다 재구현이 아니라 재사용이며, 세션이 루프에 없고 기다리는 동안 컨텍스트
-비용도 없습니다. 헤드리스로 teams를 공정하게 재는 방법이 이것입니다. 벤치는 지금까지 이걸
-`scripts/bench/drive.sh`/`resume.sh`로 바깥에서 즉흥적으로 해왔는데(태스크 자신에게 묻는
-대신 `claude -p` 세션이 끝나는 걸 지켜보는 방식), 당장은 그대로 둡니다. CI나, 태스크 하나가
+비용도 없습니다. 헤드리스로 teams를 공정하게 재는 방법이 이것입니다. 벤치의
+`scripts/bench/drive.sh`도 이제 teams arm(`beta`/`betas`/`skills`)을 `claude -p` 세션을
+지켜보는 대신 이 CLI로 돌립니다(`DRIVE_VIA=session`이면 예전 방식). CI나, 태스크 하나가
 끝나기만 하면 되는 셸 스크립트에도 이 CLI가 맞는 진입점입니다.
 
 ```
 node teams/scripts/run.mjs "<request>" [--kind auto|develop|document] [--cwd <path>]
   [--budget-usd <n>] [--timebox-minutes <n>] [--vendor <v>] [--allocation ordered|balanced]
-  [--size S|L] [--context <text>] [--poll-ms <n>] [--json]
-node teams/scripts/run.mjs --resume <task_id> [--json]
+  [--size S|L] [--context <text>] [--poll-ms <n>] [--json] [--resume-on-limit] [--max-resumes <n>]
+node teams/scripts/run.mjs --resume <task_id> [--json] [--resume-on-limit] [--max-resumes <n>]
 ```
+
+`--resume-on-limit`(opt-in)은 drive.sh가 세션 바깥에서 하던 사용 한도 대기를 옮겨온 것입니다.
+태스크가 사용 한도 때문에 `blocked`로 끝나면(용량 대기로 주차된 size-S 런, 한도로 실패한
+패키지) 한도 메시지의 리셋 시각("resets 11:50pm (Asia/Seoul)", 없으면 30분 뒤)을 데몬과 같은
+`capacityResetAt`로 읽어 3분 유예까지 1분 단위로 자고, `tm_retry({reset_capacity})`(주차된
+드라이버) 또는 `tm_retry({package_id})`(실패한 패키지)로 재개한 뒤 계속 기다립니다. 최대
+`--max-resumes`회(기본 6). 재개 경로가 없는 한도(재판정을 다 쓴 manager judge)나 아무것도
+재개되지 않으면 포기하고 `1`로 끝납니다. `--json`에는 `limit`/`limit_resumed`/`limit_gave_up`
+이벤트가 찍힙니다.
 
 노드 전이마다 한 줄, `tm_wait`가 새 소식 없이 타임아웃되면 하트비트 한 줄을 찍고, 마지막에
 리포트 경로를 담은 줄을 찍습니다. 종료 코드: `0` 완료; `2` `waiting_human`(헤드리스는 카드에

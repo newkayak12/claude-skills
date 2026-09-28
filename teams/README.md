@@ -747,17 +747,27 @@ no single task can be resolved.
 `scripts/run.mjs` is wait-model C (`docs/plans/2026-09-21-teams-server-owns-the-loop.md` §4): it
 opens a task exactly the way `tm_run` does and blocks until it settles exactly the way `tm_wait`
 does — reusing both, not reimplementing either — but with no session in the loop and no context
-cost while it waits. This is the fair way to measure teams headlessly; the bench used to
-improvise this externally with `scripts/bench/drive.sh`/`resume.sh` (which watch a `claude -p`
-session end rather than asking the task itself), left as-is for now. It is also the right entry
-point for CI or a shell script that just wants a task run to completion.
+cost while it waits. This is the fair way to measure teams headlessly, and the bench's
+`scripts/bench/drive.sh` now drives the teams arms (`beta`/`betas`/`skills`) through it instead
+of watching a `claude -p` session end (`DRIVE_VIA=session` restores that). It is also the right
+entry point for CI or a shell script that just wants a task run to completion.
 
 ```
 node teams/scripts/run.mjs "<request>" [--kind auto|develop|document] [--cwd <path>]
   [--budget-usd <n>] [--timebox-minutes <n>] [--vendor <v>] [--allocation ordered|balanced]
-  [--size S|L] [--context <text>] [--poll-ms <n>] [--json]
-node teams/scripts/run.mjs --resume <task_id> [--json]
+  [--size S|L] [--context <text>] [--poll-ms <n>] [--json] [--resume-on-limit] [--max-resumes <n>]
+node teams/scripts/run.mjs --resume <task_id> [--json] [--resume-on-limit] [--max-resumes <n>]
 ```
+
+`--resume-on-limit` (opt-in) is drive.sh's usage-limit wait, moved to where the task can be
+asked. When the task settles `blocked` on a usage limit (a size-S run parked on capacity, a
+package that failed on a limit), it reads the reset out of the notice ("resets 11:50pm
+(Asia/Seoul)"; none parsed → 30 min) with the daemon's own `capacityResetAt`, sleeps in
+one-minute steps until then plus 3 minutes, resumes with `tm_retry({reset_capacity})` (parked
+drivers) or `tm_retry({package_id})` (failed packages), and keeps waiting — at most
+`--max-resumes` times (default 6). A limit with no resume route (a manager judge that spent its
+re-judges), or a retry that resumes nothing, gives up and exits `1`. `--json` adds `limit`,
+`limit_resumed` and `limit_gave_up` events.
 
 Prints one line per node transition, or a heartbeat when `tm_wait` timed out with nothing new,
 then a final line with the report path. Exit codes: `0` complete; `2` `waiting_human` (headless
