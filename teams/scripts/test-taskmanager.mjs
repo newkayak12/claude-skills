@@ -1353,7 +1353,11 @@ test('a failed downstream dispatch carrying upstream_defects files a fix STORY o
       'the accept node stuck behind the failed dispatch is retired in place, not left pending forever');
     assert.deepEqual(after.spec.packages.map((p) => p.id), ['P1', 'P2', 'D1'], 'the upstream defect is filed as a fix STORY, owned by the upstream package');
     const d1 = after.spec.packages.find((p) => p.id === 'D1');
-    assert.equal(d1.reporter, 'upstream');
+    // reporter is the FILER's team - P2, the downstream package whose own dispatch/accept found
+    // the defect - never the literal 'upstream'; origin/link name the stage and the target.
+    assert.equal(d1.reporter, 'P2');
+    assert.equal(d1.origin, 'upstream');
+    assert.deepEqual(d1.link, { type: 'blocks', target: 'P1' });
     assert.deepEqual(d1.deps, ['P1'], 'the fix package deps on the upstream package it fixes, not on P2 that found it');
     assert.deepEqual(d1.touches, ['a.txt'], 'the fix package is scoped to the upstream package\'s own touches, not to P2\'s');
     assert.equal(d1.title, upstreamDefect.title);
@@ -1408,7 +1412,7 @@ test('upstream_fix_rounds caps the loop: past the cap, an upstream defect is rec
     const after = load();
     assert.deepEqual(after.spec.packages.map((p) => p.id), ['P1', 'P2'], 'upstream_fix_rounds:0 caps the very first round - no fix STORY is filed');
     assert.deepEqual(after.unresolved_defects, [{
-      title: upstreamDefect.title, evidence: upstreamDefect.evidence, reporter: 'upstream', upstream: 'P1', reported_by: 'P2', round: 1,
+      title: upstreamDefect.title, evidence: upstreamDefect.evidence, reporter: 'P2', origin: 'upstream', link: { type: 'blocks', target: 'P1' }, round: 1,
     }]);
     const p2next = after.nodes.find((n) => n.node_id === 'dispatch:P2:2');
     assert.ok(p2next, 'the capped package still gets an ordinary retry, not a settled failure');
@@ -1490,7 +1494,7 @@ test('a QA-found defect files a develop STORY and reroutes gate:goal to a fresh 
   }, { roles: { qa: true }, qa_rounds: 1 });
 });
 
-test('tm_file lets a user file a STORY directly, reporter: "you", never checked against qa_rounds (§5b, C-9)', async () => {
+test('tm_file lets a user file a STORY directly, reporter: "user" / origin: "tm_file", never checked against qa_rounds (§5b, C-9)', async () => {
   await withTask(async ({ tm, g, root, task_id }) => {
     await toIntegrate(tm, g, task_id);
     await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
@@ -1529,7 +1533,8 @@ test('tm_file lets a user file a STORY directly, reporter: "you", never checked 
     task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
     const d1 = task.spec.packages.find((p) => p.id === 'D1');
     assert.ok(d1, 'tm_file must file the STORY even though qa_rounds is already spent on this task');
-    assert.equal(d1.reporter, 'you');
+    assert.equal(d1.reporter, 'user');
+    assert.equal(d1.origin, 'tm_file');
     assert.deepEqual(task.nodes.find((n) => n.node_id === 'gate:goal:1').deps, ['integrate:2']);
 
     nx = await tm.call('tm_next', { task_id });
@@ -1636,7 +1641,7 @@ test('roles.planning opens an audit phase-Team after integrate when qa is off, a
   }, { roles: { planning: true } });
 });
 
-test('with both roles on the audit follows QA, consumes its report, and an unmet story files a STORY with reporter "planning-audit"', async () => {
+test('with both roles on the audit follows QA, consumes its report, and an unmet story files a STORY with reporter "audit" / origin "planning-audit"', async () => {
   await withTask(async ({ tm, g, cwd, root, task_id }) => {
     await toIntegrateWithPlanning(tm, g, task_id, cwd);
     await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
@@ -1686,7 +1691,8 @@ test('with both roles on the audit follows QA, consumes its report, and an unmet
     task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
     const d1 = task.spec.packages.find((p) => p.id === 'D1');
     assert.ok(d1, `an unmet story files a STORY: ${task.spec.packages.map((p) => p.id).join(', ')}`);
-    assert.equal(d1.reporter, 'planning-audit');
+    assert.equal(d1.reporter, 'audit');
+    assert.equal(d1.origin, 'planning-audit');
     assert.match(d1.title, /US-2/);
     assert.deepEqual(task.nodes.find((n) => n.node_id === 'gate:goal:1').deps, ['integrate:2'],
       'the EPIC loops back through a fresh integrate, exactly as a QA-found defect does');
@@ -1756,7 +1762,7 @@ test('an audit round is capped like a QA round: past qa_rounds an unmet story is
     }) });
     const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
     assert.deepEqual(task.spec.packages.map((p) => p.id), ['P1', 'P2'], 'the cap holds - no STORY is filed');
-    assert.deepEqual(task.unresolved_defects, [{ title: 'US-2 -> never wired', evidence: '', reporter: 'planning-audit', round: 1 }]);
+    assert.deepEqual(task.unresolved_defects, [{ title: 'US-2 -> never wired', evidence: '', reporter: 'audit', origin: 'planning-audit', round: 1 }]);
     const after = await tm.call('tm_next', { task_id });
     assert.deepEqual(after.ready.map((n) => n.node_id), ['gate:goal:1'], 'the EPIC proceeds past a capped audit');
   }, { roles: { planning: true }, qa_rounds: 0 });
@@ -4347,6 +4353,72 @@ test('tm_board refuses an unknown EPIC prefix the same way tm_ticket does', asyn
   });
 });
 
+// Grouping/display only - no scheduling or execution effect. Before ANY task has an initiative,
+// tm_board's no-task_id listing must be the exact flat `{epics}` shape it always was (no `groups`
+// key at all) - the byte-for-byte compat case every test that pins today's output relies on.
+// Once even one task on the same tasksRoot has one, every EPIC (including the initiative-less
+// ones) is also grouped.
+test('tm_board with no task_id: exactly {epics} (no groups key) while nothing has an initiative; groups by initiative, slug-normalized, the moment one task does', async () => {
+  await withTask(async ({ tm, cwd, task_id }) => {
+    const flat = await tm.call('tm_board', {});
+    assert.deepEqual(Object.keys(flat).sort(), ['epics'], 'no initiative anywhere yet - the exact old shape, nothing extra');
+    assert.ok(!('initiative' in flat.epics[0]), 'an epic row itself carries no initiative field either, in the ungrouped case');
+
+    const opened2 = await tm.call('tm_open', {
+      request: 'second request', cwd, vendor: 'self', roles: { planning: false, qa: false }, initiative: 'Q1 Roadmap',
+    });
+
+    const grouped = await tm.call('tm_board', {});
+    assert.ok(Array.isArray(grouped.groups), 'at least one task now has an initiative - groups must appear');
+    assert.equal(grouped.epics.find((e) => e.task_id === task_id).initiative, null, 'the original, initiative-less EPIC still lists, tagged null');
+    assert.equal(grouped.epics.find((e) => e.task_id === opened2.task_id).initiative, 'q1-roadmap', 'slug-normalized: "Q1 Roadmap" -> "q1-roadmap"');
+
+    const ungroup = grouped.groups.find((g) => g.initiative === null);
+    const q1group = grouped.groups.find((g) => g.initiative === 'q1-roadmap');
+    assert.ok(ungroup, 'an initiative-less EPIC is never silently dropped from the grouped view - it gets a null group');
+    assert.deepEqual(ungroup.epics.map((e) => e.task_id), [task_id]);
+    assert.equal(ungroup.key, null);
+    assert.ok(q1group);
+    assert.equal(q1group.key, 'I-q1-roadmap');
+    assert.deepEqual(q1group.epics.map((e) => e.task_id), [opened2.task_id]);
+  });
+});
+
+test('tm_ticket("I-<slug>") lists every EPIC under that initiative with state and cost; an unknown initiative errors', async () => {
+  await withTask(async ({ tm, cwd, task_id }) => {
+    const opened2 = await tm.call('tm_open', {
+      request: 'second request', cwd, vendor: 'self', roles: { planning: false, qa: false }, initiative: 'q1-roadmap',
+    });
+    const opened3 = await tm.call('tm_open', {
+      request: 'a third, unrelated request', cwd, vendor: 'self', roles: { planning: false, qa: false },
+    });
+
+    const ticket = await tm.call('tm_ticket', { key: 'I-q1-roadmap' });
+    assert.equal(ticket.kind, 'INITIATIVE');
+    assert.equal(ticket.key, 'I-q1-roadmap');
+    assert.equal(ticket.initiative, 'q1-roadmap');
+    assert.deepEqual(ticket.epics.map((e) => e.task_id), [opened2.task_id], 'only the EPIC actually opened under this initiative - not the original task, not the unrelated third one');
+    assert.equal(ticket.epics[0].state, 'READY');
+    assert.ok(ticket.epics[0].cost && typeof ticket.epics[0].cost.usd === 'number', 'each EPIC under the initiative carries its own cost, the same shape tm_board\'s single-task reply uses');
+
+    const missing = await tm.call('tm_ticket', { key: 'I-nope-at-all' });
+    assert.match(missing.error, /no EPIC found under initiative "nope-at-all"/);
+    void opened3;
+  });
+});
+
+// tm_assign's own key parser (parseTicketKey) already rejects anything with no pkgId - an
+// I-<slug> key never carries one, so it falls into the exact same "needs a STORY or TASK key"
+// refusal a bare EPIC key gets, with no dedicated branch of its own.
+test('tm_assign refuses an I-<slug> key the same way it refuses a bare EPIC key', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    const onInitiative = await tm.call('tm_assign', { task_id, key: 'I-q1-roadmap', to: 'human' });
+    const onEpic = await tm.call('tm_assign', { task_id, key: `E-${task_id.slice(0, 8)}`, to: 'human' });
+    assert.match(onInitiative.error, /needs a STORY or TASK key/);
+    assert.match(onEpic.error, /needs a STORY or TASK key/);
+  });
+});
+
 test('tm_ticket reads an EPIC key or a STORY key, and always returns a doc_path even before tm_docs has written anything', async () => {
   await withTask(async ({ tm, task_id }) => {
     await throughCritique(tm, task_id);
@@ -4447,9 +4519,9 @@ test('tm_ticket\'s links pins a non-trivial implements (SHAPE_IMPLEMENTS) alongs
 });
 
 // Same tm_file fixture "tm_file joins the board.jsonl tools" (above) already drives: a STORY
-// filed directly (not through QA) carries reporter/filed_by "you" - not null, not "qa" - the
-// non-trivial filed_by case.
-test('tm_ticket\'s links pins a non-trivial filed_by ("you") on a STORY tm_file filed directly', async () => {
+// filed directly (not through QA) carries reporter "user" / origin "tm_file" (and links.filed_by
+// "tm_file") - not null, not "qa" - the non-trivial filed_by case.
+test('tm_ticket\'s links pins a non-trivial filed_by ("tm_file") on a STORY tm_file filed directly', async () => {
   await withTask(async ({ tm, g, task_id }) => {
     await toIntegrate(tm, g, task_id);
     const filed = await tm.call('tm_file', { task_id, stories: [
@@ -4458,26 +4530,29 @@ test('tm_ticket\'s links pins a non-trivial filed_by ("you") on a STORY tm_file 
     assert.deepEqual(filed.filed, ['D1']);
     const epicKeyStr = `E-${task_id.slice(0, 8)}`;
     const d1 = await tm.call('tm_ticket', { key: `${epicKeyStr}/D1` });
-    assert.equal(d1.reporter, 'you');
-    assert.equal(d1.links.filed_by, 'you');
+    assert.equal(d1.reporter, 'user');
+    assert.equal(d1.origin, 'tm_file');
+    assert.equal(d1.links.filed_by, 'tm_file');
   });
 });
 
 // The reporter fix this test pins: toolTicket (tm_ticket) used to fall back to
 // `pkg.reporter || (pkg.repair ? 'repair' : 'shape')` - never checking pkg.phase - so a
 // phase-Team's own row (PLAN/QA/AUDIT, which carries p.phase but never p.reporter) still said
-// 'shape' from tm_ticket while tm_board's epicBoardRows (packageReporter, tickets.mjs) already
-// said 'engine' for the identical key. task.planning_pkg (id 'PLAN') exists the instant
+// 'shape' from tm_ticket while tm_board's epicBoardRows (packageFiling, tickets.mjs) already
+// said 'planning' for the identical key. task.planning_pkg (id 'PLAN') exists the instant
 // tm_open({roles:{planning:true}}) returns - no shape submission needed to exercise this.
-test('tm_ticket and tm_board agree on reporter for a phase-Team key (E-xxxx/PLAN): both report "engine"', async () => {
+test('tm_ticket and tm_board agree on reporter/origin for a phase-Team key (E-xxxx/PLAN): both report "planning" / "phase"', async () => {
   await withTask(async ({ tm, task_id }) => {
     const epicKeyStr = `E-${task_id.slice(0, 8)}`;
     const ticket = await tm.call('tm_ticket', { key: `${epicKeyStr}/PLAN` });
     const board = await tm.call('tm_board', { task_id });
     const planRow = board.stories.find((s) => s.id === 'PLAN');
     assert.ok(planRow, 'tm_board must carry a PLAN row once roles.planning is on');
-    assert.equal(ticket.reporter, 'engine');
-    assert.equal(planRow.reporter, 'engine');
+    assert.equal(ticket.reporter, 'planning');
+    assert.equal(planRow.reporter, 'planning');
+    assert.equal(ticket.origin, 'phase');
+    assert.equal(planRow.origin, 'phase');
     assert.equal(ticket.reporter, planRow.reporter, 'tm_ticket and tm_board must agree on reporter for the same key');
   }, { roles: { planning: true } });
 });

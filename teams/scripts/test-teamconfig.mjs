@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { TEAM_DEFAULTS, TEAM_FILE, readTeamConfig, resolveTeamOptions } from '../mcp/teamconfig.mjs';
+import { TEAM_DEFAULTS, TEAM_FILE, readTeamConfig, resolveTeamOptions, normalizeInitiative } from '../mcp/teamconfig.mjs';
 
 function project(json) {
   const dir = mkdtempSync(join(tmpdir(), 'teamconfig-'));
@@ -134,6 +134,38 @@ test('max_parallel_ceiling: defaults to null (the AIMD controller derives one fr
     const r = resolveTeamOptions({}, { max_parallel_ceiling: bad });
     assert.equal(r.opts.max_parallel_ceiling, null, `${JSON.stringify(bad)} must be rejected, the default survives`);
     assert.match(r.notes[0], /max_parallel_ceiling/);
+  }
+});
+
+test('normalizeInitiative: slugifies (lowercase, non-alphanumeric runs collapsed to one "-", trimmed), and null in is null out', () => {
+  assert.equal(normalizeInitiative(null), null);
+  assert.equal(normalizeInitiative(undefined), null);
+  assert.equal(normalizeInitiative('Q1 Roadmap'), 'q1-roadmap');
+  assert.equal(normalizeInitiative('q1-roadmap'), 'q1-roadmap');
+  assert.equal(normalizeInitiative('Q1_Roadmap!'), 'q1-roadmap');
+  assert.equal(normalizeInitiative('  spaced out  '), 'spaced-out');
+  assert.equal(normalizeInitiative('---'), null, 'a string with nothing alphanumeric in it normalizes to null, same as never setting one');
+});
+
+test('initiative: defaults null and sourced "default"; team.json/args are slug-normalized; a non-string/empty value is ignored with a note', () => {
+  assert.equal(TEAM_DEFAULTS.initiative, null);
+  const bare = resolveTeamOptions({}, {});
+  assert.equal(bare.opts.initiative, null);
+  assert.equal(bare.sources.initiative, 'default');
+
+  const fromFile = resolveTeamOptions({}, { initiative: 'Q1 Roadmap' });
+  assert.equal(fromFile.opts.initiative, 'q1-roadmap');
+  assert.equal(fromFile.sources.initiative, 'team.json');
+
+  // An explicit tm_open argument overrides team.json, same precedence every other key has.
+  const fromArgs = resolveTeamOptions({ initiative: 'Q2 Roadmap' }, { initiative: 'Q1 Roadmap' });
+  assert.equal(fromArgs.opts.initiative, 'q2-roadmap');
+  assert.equal(fromArgs.sources.initiative, 'args');
+
+  for (const bad of [42, true, {}, []]) {
+    const r = resolveTeamOptions({}, { initiative: bad });
+    assert.equal(r.opts.initiative, null, `${JSON.stringify(bad)} must be rejected, the default survives`);
+    assert.match(r.notes[0], /initiative/);
   }
 });
 

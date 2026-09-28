@@ -160,6 +160,14 @@ export const TEAM_DEFAULTS = Object.freeze({
   // 12 more minutes of a QA child whose result the report then named "superseded" for nothing.
   budget_grace_usd: null,
   budget_grace_minutes: 5,
+  // Optional grouping ABOVE the EPIC (`Initiative (optional) > Epic > Story > Sub-task`, the
+  // hierarchy tm_open's own caller uses) - a person's own label for "several EPICs toward one
+  // outcome", never read by scheduling or execution (createTask only stashes it on task.json;
+  // nothing branches on it). null (the default) is today's behaviour byte for byte: no EPIC has
+  // one, tm_board's all-epics listing stays exactly the flat list it always was. Slug-normalized
+  // (see normalizeInitiative below) so "Q1 Roadmap" and "q1-roadmap" group under the same
+  // `I-q1-roadmap` key regardless of which spelling a caller or a team.json default used.
+  initiative: null,
 });
 
 // One validator per key. A value that fails is ignored (the lower layer's value stays) and
@@ -188,7 +196,19 @@ const CHECK = {
   budget_grace_minutes: (v) => Number.isInteger(v) && v >= 0,
   plugin_dirs: (v) => Array.isArray(v) && v.every((d) => typeof d === 'string' && d.length > 0),
   retry_policy: (v) => v === 'continue' || v === 'rollback',
+  initiative: (v) => v === null || (typeof v === 'string' && v.trim().length > 0),
 };
+
+// The one place an initiative label becomes the slug its `I-<slug>` key and tm_board's grouping
+// both key off - lowercased, non-alphanumeric runs collapsed to a single '-', leading/trailing
+// '-' trimmed. Applied once, here, so "Q1 Roadmap", "q1-roadmap" and "Q1_Roadmap!" all resolve
+// to the identical group rather than three near-miss ones a raw string compare would keep apart.
+// null in, null out - a task that never set one stays byte-for-byte today's behaviour.
+export function normalizeInitiative(v) {
+  if (v == null) return null;
+  const slug = String(v).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return slug || null;
+}
 
 export function readTeamConfig(cwd) {
   const path = join(cwd, TEAM_FILE);
@@ -220,5 +240,6 @@ export function resolveTeamOptions(args, fileConfig) {
   applyLayer(opts, sources, notes, fileConfig, 'team.json');
   const fromArgs = Object.fromEntries(Object.entries(args || {}).filter(([k]) => k in TEAM_DEFAULTS));
   applyLayer(opts, sources, notes, fromArgs, 'args');
+  opts.initiative = normalizeInitiative(opts.initiative);
   return { opts, sources, notes };
 }

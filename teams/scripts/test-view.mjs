@@ -597,7 +597,7 @@ test('listTasks() lists every task dir under tasksRoot, newest first', async () 
     const row = rows[0];
     assert.equal(row.task_id, task_id);
     assert.deepStrictEqual(Object.keys(row).sort(), [
-      'cost_usd', 'created_at', 'elapsed_ms', 'epic_key', 'open_defects',
+      'cost_usd', 'created_at', 'elapsed_ms', 'epic_key', 'initiative', 'open_defects',
       'phase', 'size', 'state', 'stories_done', 'stories_total', 'task_id', 'title',
     ].sort());
     // Pinned exactly: row.state is tickets.mjs's epicTicketState() ('IN_PROGRESS'), never the
@@ -872,12 +872,15 @@ test('collect() renders an audit round that found an unmet user story and the ST
 
     const d1 = model.packages.find((p) => p.id === 'D1');
     assert.ok(d1, `D1 missing from packages: ${model.packages.map((p) => p.id).join(', ')}`);
-    assert.equal(d1.reporter, 'planning-audit');
+    // reporter is the issuing TEAM ('audit'); origin (below, via links.filed_by) is the STAGE
+    // ('planning-audit') - the pre-split single field used to conflate the two.
+    assert.equal(d1.reporter, 'audit');
+    assert.equal(d1.origin, 'planning-audit');
 
     // storyLinks end to end: P1/P2 were shaped with implements[] (SHAPE_WITH_IMPLEMENTS, this
     // fixture's own shape payload), and D1 is the STORY the audit round filed - its own
     // links.filed_by must read 'planning-audit' straight through packageModel, the same value
-    // d1.reporter already carries (one source, two fields reading it).
+    // d1.origin already carries (one source, two fields reading it).
     const p1 = model.packages.find((p) => p.id === 'P1');
     const p2 = model.packages.find((p) => p.id === 'P2');
     assert.deepEqual(p1.links.implements, ['US-1']);
@@ -889,7 +892,7 @@ test('collect() renders an audit round that found an unmet user story and the ST
     for (const id of everyNodeId(model)) assert.ok(text.includes(id), `renderText output is missing node_id ${id}`);
     assert.match(text, /AUDIT:1[^\n]*unmet=1/);
     assert.match(text, /US-2 -> b\.txt was never wired to the exported path/);
-    assert.match(text, /D1[^\n]*\[filed by planning-audit\]/);
+    assert.match(text, /D1[^\n]*\[filed by audit\]/);
     // P1 has no blocked_by of its own but IS a dep of P2 (TWO_PKG_SHAPE), so it also carries
     // the computed "blocks" side, on the same compact line as implements.
     assert.match(text, /P1[^\n]*\n\s+blocks P2 \(DONE\) · implements US-1/);
