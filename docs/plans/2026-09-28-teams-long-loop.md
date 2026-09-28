@@ -3,41 +3,74 @@
 > The user decided this on 2026-09-28. Their words:
 > - "사이즈 유지하지만 이 워크플로 자체는 기본 하네스와 함께 쓸거고 작은 사이즈는 하네스를 쓰는식이 맞을거임 / 이건 롱텀 루핑에 특화되어 있어야 함"
 > - "s는 바로 개발 하네스로 넘겨서 claude, codex 참여 처리하면 되니까"
+> - "사람은 시키고 결과만 받으면 장땡이지 중간 확인(뷰) 하면 되고"
 >
-> - **Changes:** `2026-09-28-teams-cards-everywhere.md` C6 ("a size-S task is planned too"), for S only. `2026-09-28-teams-adversarial-fixes.md` m4 (the S QA card) is withdrawn.
-> - **Keeps:** the S/L sizing, and every principle for L tasks.
-> - **L1b/L1c, decided by the user (2026-09-28), revised:** "사람은 시키고 결과만 받으면 장땡이지 중간 확인(뷰) 하면 되고". The loop never waits on a person. Progress is watched in the view, and a person can step in but is never required.
+> **Changes, approved by those words:**
+> - `2026-09-28-teams-cards-everywhere.md` C6 and its "every task has a PRD" done-criterion: for size S only.
+> - `2026-09-28-teams-sprint-not-sub-epic.md` S3 "the person chooses the carry-over": inside a loop the loop chooses, and a person may override from the view or tools.
+> - `2026-09-28-teams-adversarial-fixes.md` m4 (the S QA card): withdrawn.
+>
+> **Keeps:** the S/L sizing, and every principle and gate inside an L Sprint.
+>
+> Revised after critique (`sound:false`, 10 problems; the L1b/L1c gate problems are moot now that the loop never parks).
 
 ## Plan
 
+### S — size S runs on the development harness
+
 | # | Change |
 |---|---|
-| S1 | **Size S hands off to the development harness.** When `size` returns S (or `tm_open({size:"S"})`), teams opens no planning card, no S run and no QA. The task closes as `handed_off`. It returns a handoff: the request, context and decisions, plus the harness call to make. That call is the `graph` MCP `graph_open({request, cwd, allocation: "balanced", host_vendor, host_model})` when connected, otherwise the `harness` skill Workflow with `codex_provider: "auto"`. In both, claude and codex participate. The `teams` entry skill relays it and runs the harness. |
-| S2 | **Remove the S machinery.** This covers `openSRun`, S planning, `toolNextSRun`, the S driver and daemon branch, `renderSReport` and S QA (m4). An old task already holding an `s_run` still resolves its state read-only, so nothing on disk breaks. The docs drop the S paths. |
-| L1 | **Sprint auto-continuation (the long loop).** When a Sprint's report is done and `loop` is on (`tm_open({loop: {...}})` / team.json), the manager opens the next Sprint itself: `context_from` is the finished task and `requests` is chosen per L1b. |
-| L1a | **Stop conditions:** no carry-over left; the loop's total `budget_usd` / `timebox_minutes` spent; `max_sprints` reached; no progress (the same unfinished story carried N Sprints running, default 2); a person stops it (`tm_loop({stop})`). The loop records why it stopped. |
-| L1b | **Who picks the next backlog:** the loop. Every carry-over candidate goes in, in priority order. The pick is recorded on the loop ledger as decided-for-you and shown in the view, never parked for approval. A person *may* edit or stop from the view or the tools (`tm_loop({stop})`, `tm_loop({drop, reorder})`). The next Sprint picks that up, and nothing waits on it. |
-| L1c | **Between Sprints:** always continue, whatever `interactive` says; the loop does not park between Sprints. Inside a Sprint, the existing `interactive` / `human_gates` behaviour is unchanged. |
-| L2 | **Loop ledger and view:** `loop.json` beside the tasks lists the Sprints in order. Each entry has task_id, state, shipped/unfinished counts, spend and the backlog picked. The view (viewserver) shows the loop - its current Sprint, history, stop reason and spend - so a person can check progress mid-run. `tm_status` shows it too. |
-| G | **Gate follow-ups from QualityGate:** gate writes to the broker ledger (`.harness-run/broker/`); a write verb counts only in command position (`grep cp x.mjs` is a read); releasing a STORY pin restores a model-written assignee. Add tests for the m1 prefix rule, M2 request carry-over, and M5's broker path. |
+| S1 | **Who runs it:** the manager spawns one headless driver, the same `spawnChildDriver` process mechanism packages use, in the project cwd. Its prompt runs the development harness on the request (plus context and decisions) with claude and codex taking part. The first route is the `graph` MCP `graph_open({request, cwd, isolated: false, allocation: "balanced", host_vendor, host_model, native_models})`, driven to its report. When that MCP is absent, the fallback is the `harness` skill Workflow `harness/engine/pipeline.js` with `codex_provider: "auto"`. `auto` falls back to Claude when codex is not ready, and that fallback is recorded as such. The driver writes its report to `<taskDir>/harness-report.md` and the run pointer to `task.harness_run`. This works the same under `tm_run`, the daemon and CI: no session has to relay anything. |
+| S1a | **State:** the task state follows the driver. It is `running` while the driver is alive. It is `complete` when `harness-report.md` exists. It is `blocked` when the driver died past its restart budget with no report. No new state name is added, so every existing terminal-state check stays correct. `tm_status`/`tm_next`/`tm_wait` carry `harness: {route, run, report_path}`. |
+| S2 | **The teams S machinery goes:** S planning card, `openSRun`, the S run's own graph, S QA (m4), and `renderSReport`'s run reading. A task already on disk with `s_run` resolves through a **frozen read-only path**: state from its run file only, ignoring `s_qa`, and never respawned. The reader branches (tickets, view, inspect, run.mjs, remove.mjs, bench) stay for such tasks, and their tests switch to legacy fixtures instead of being deleted. |
+
+### L — the long loop
+
+| # | Change |
+|---|---|
+| L1 | **Turning it on:** `tm_open({loop: {...}})` (or team.json `loop`). Each Sprint is a normal L task and is **pinned L** (`size_pin_source: "loop"`), so a Sprint never hands off partway through the loop. |
+| L1b | **Who opens the next Sprint:** the finished Sprint's daemon, just before `daemon_done`, and only after its report is done. It takes an exclusive lock on the loop file and does a compare-and-set on `loop.sprints[i].next_task_id`, so there is only ever one opener. The next Sprint is `tm_open` with `context_from` set to the finished task and `requests` set to the carry-over candidates, in priority order. Candidates are `unshipped_requests`, then `unfinished_stories`, then `unaccepted_packages`: skipped and never-dispatched work is **included**, so a budget-stopped Sprint loses nothing. The pick is recorded on the loop file as decided-for-you. |
+| L1c | **Never parks:** the loop continues whatever `interactive` says. A person steps in only by choice: `tm_loop({loop_id, stop})`, `tm_loop({loop_id, drop: [...], reorder: [...]})`, or the view. These write control fields under the loop lock, and the next opener reads them. Nothing waits on them. Inside a Sprint, `interactive`/`human_gates` are unchanged. |
+| L1a | **Stops:** each stop records `loop.stopped = {reason, at}`. The reasons: `backlog_empty` (no candidates); `no_retro` (the Sprint ended without a `retro.json`, e.g. blocked); `max_sprints`; `budget` / `timebox`; `no_progress`, meaning `loop.no_progress_sprints` (default 2) consecutive Sprints shipped nothing (zero shipped stories and zero shipped packages by the retro's own measure); and `stopped_by_person`. |
+| L1d | **Budgets:** these live under `loop.*`: `loop.budget_usd`, `loop.timebox_minutes`, `loop.max_sprints`, `loop.no_progress_sprints`. They are separate from a Sprint's own `budget_usd`/`timebox_minutes`. Each Sprint's cap is `min(its own cap, what the loop has left)`, and loop spend is the sum of its Sprints' spend. |
+| L2 | **Loop file and view:** `<tasksRoot>/loops/<loop_id>.json` is written by atomic rename, only under the loop lock. It lists the Sprints in order, each with task_id, state, shipped/unfinished counts, spend and the backlog picked, plus the stop reason. The view gets a loop panel showing the current Sprint, history, spend against the loop caps and the stop reason. `tm_status` of any Sprint shows its loop. |
+| L3 | **Sprint skill:** `teams/skills/sprint/SKILL.md` step 5 changes from "never add them yourself" to: inside a loop the loop picks, and a person overrides with `tm_loop`; outside a loop the person still chooses. |
+
+### G — gate/QualityGate follow-ups (a separate commit)
+
+| # | Defect | Fix |
+|---|---|---|
+| G1 | A hand-written `.harness-run/broker/open-nodes.json` engages the gate. | Add `^/.harness-run/broker/` to `SELF` in `harness/hooks/goal-gate.mjs`. |
+| G2 | `grep -n cp x.mjs` is denied: `WRITE_CMD` matches a verb anywhere. | Match a verb only in command position (start, or after `; & \| && \|\| (`). |
+| G3 | Releasing a STORY pin (`teams/mcp/graph.mjs` `applyStoryPin`) drops a model-written assignee. | Save it on pin and restore it on release. |
+| G4 | Tests missing. | m1 prefix refusal (fold); M2 retro carries every request; M5 broker path, i.e. a `story_pin` queued while setgoal runs through `runNode` pins the subgoals setgoal's result creates. |
 
 ## SetGoal — done when
 
-- **S1:** a size-S task (judged or pinned) ends `handed_off`. Its reply carries the graph and harness calls with claude and codex participating. No worktree, child run or driver is created.
+- **S1/S1a:**
+  - A size-S task, judged or pinned, spawns exactly one harness driver in the project cwd, whose prompt names the `graph_open` balanced call and the Workflow fallback.
+  - The task reads `running`, then `complete` once `harness-report.md` exists, then `blocked` when the driver died past its budget.
+  - No worktree, planning card or teams child run is created.
+  - Tested with `HARNESS_TEST_NO_DRIVER` plus a fake driver.
 - **S2:**
   - No code path opens an S run.
-  - An old `s_run` task still reports its state.
-  - The S tests are replaced by handoff tests; no L test is deleted.
-- **L1/L1a:** with `loop` on, a Sprint whose retro has unfinished stories opens the next Sprint with `context_from`. Each stop condition is tested and records its reason.
-- **L2:** `loop.json` lists the Sprints in order, and `tm_status` shows it.
-- **G:** each follow-up has a test that fails without the fix.
+  - A legacy `s_run` task fixture (with `roles.qa` set and no `s_qa`) reads its run's state and is never respawned.
+  - The reader tests pass on legacy fixtures, and no L test is deleted.
+- **L1b/L1c:**
+  - With `loop` on, a Sprint whose report is done opens exactly one next Sprint, even when two openers race (tested), pinned L, with `context_from` set and `requests` set to the candidates, skipped packages included.
+  - `tm_loop` stop/drop/reorder is applied at the next open.
+  - Nothing parks.
+- **L1a/L1d:** each stop reason is tested, and a Sprint's cap is `min(own, loop remaining)`.
+- **L2:** the loop file lists the Sprints in order, the view shows the loop panel, and `tm_status` carries the loop.
+- **L3:** the sprint skill text is updated in EN, with its KOR mirror if one exists.
+- **G:** each item has a test that fails without the fix.
 - **Suite and release:**
   - The full suite passes.
-  - README/KOR (teams) and configuration docs are updated.
+  - teams (and harness for G) README/KOR and configuration docs are updated.
   - The version is bumped and validated.
 
 ## Critique (against the principles)
 
-- **P1–P5 for L:** unchanged. Every L Sprint still runs areas → areas-critique → cards → plan-integrate → shape/critique → develop → integrate → QA → audit → goal gate → report.
-- **C6 for S:** withdrawn by the user's decision. S is planned and gated by the harness's own six stages (plan → setgoal → critique → …), so no gate is lost. The teams PRD artifact is lost for S, and that loss is accepted.
-- **L1:** an automatic loop could spend without a person. The budget, timebox, `max_sprints` and no-progress stops bound it, and each Sprint keeps its own gates.
+- **Every L Sprint:** unchanged. It runs areas → areas-critique → cards → plan-integrate → shape/critique → develop → integrate → QA → audit → goal gate → report, all gates included.
+- **S:** teams' C6 and PRD are withdrawn for S by the user's decision. S is planned and gated by the harness's own six stages (plan → setgoal → critique → implement → test → gate → gate:goal → report), so no gate is lost. Claude and codex both take part through balanced allocation or codex delegation.
+- **Loop:** it spends without a person, which is the user's stated intent. The loop budget, timebox, `max_sprints` and no-progress stops bound it. Every Sprint keeps its own budget and gates, and a person can stop it at any time from the view or `tm_loop`.
