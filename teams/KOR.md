@@ -15,7 +15,7 @@
 |---|---|---|
 | MCP 서버 | `graph-engineering` (`graph_*` 도구) | `teams-engineering` (`team_*`) + `task-manager` (`tm_*`) |
 | 런 파일 | `.harness-run/broker/` | `.teams_output/broker/` |
-| 스킬 | `graph:install`, `graph:orchestrate` | `teams:install`, `teams:remove`, `teams:patch`, `teams:orchestrate`, `teams:develop`, `teams:document`, `teams:plan`, `teams:qa`, `teams:board`, `teams:ticket`, `teams:inbox`, `teams:take`, `teams:submit` |
+| 스킬 | `graph:install`, `graph:orchestrate` | `teams:install`, `teams:remove`, `teams:patch`, `teams:orchestrate`, `teams:develop`, `teams:document`, `teams:plan`, `teams:qa`, `teams:board`, `teams:ticket`, `teams:inbox`, `teams:take`, `teams:submit`, `teams:log` |
 | 버전 | 1.x | 0.x |
 
 두 플러그인은 한 프로젝트에 함께 켜도 됩니다: 도구 접두사가 다르고(`graph_*` vs.
@@ -685,6 +685,14 @@ node teams/scripts/view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--on
 `--once`는 서버 없이 뷰 하나를 평문 텍스트 트리/보드로 출력합니다 — 터미널이나 CI 로그용이며,
 `--view`로 어느 것을 고를지 정합니다(기본 `pipeline`) — `tickets`/`resources`는 태스크 하나로
 좁혀지지 않으면 같은 태스크 인덱스로 대신합니다.
+
+세션 안에서 티켓 하나를 따라가려면 `tm_log({key, tail?, since?})`(얇은 스킬 `teams:log`,
+`/teams:log E-xxxxxxxx/P2`)가 그 키가 이미 가리키는 로그의 꼬리를 읽기 쉬운 줄로 돌려줍니다:
+STORY 키는 최신 dispatch의 드라이버 스트림(`child.driver.log`, 스트림 이벤트 하나당 한 줄 —
+assistant 텍스트, `-> 도구 대상`, `<- 결과`, turns/cost가 붙은 마지막 `result`)을, EPIC 키는
+태스크 ledger(`HH:MM:SS event k=v`)를 읽습니다. 파일 끝에서부터 마지막 `tail`줄(기본 50,
+최대 500)만 읽고 스트림 전체는 읽지 않습니다. 응답의 `cursor`를 `since`로 다시 넘기면 그 뒤에
+덧붙은 줄만 돌아옵니다.
 
 ## 헤드리스
 
