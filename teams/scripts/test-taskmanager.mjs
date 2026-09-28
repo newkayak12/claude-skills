@@ -1032,7 +1032,7 @@ test('a package\'s plan briefing is a build plan for that package, and its accep
   });
 });
 
-test('split / size:"L" / max_depth no longer change a package\'s child run - every package opens the same full harness', async () => {
+test('split / size:"L" / a retired max_depth no longer change a package\'s child run - every package opens the same full harness', async () => {
   for (const [extra, cfg] of [[{ split: true }, {}], [{ size: 'L' }, {}], [{ split: true }, { max_depth: 0 }]]) {
     await withTask(async ({ tm, g, task_id }) => {
       await throughCritique(tm, task_id, {
@@ -2115,6 +2115,9 @@ test('budget_usd hit before shape: the pending graph is skipped, a report opens,
     const next = await tm.call('tm_open', { requests: ['x'], cwd: full.cwd, vendor: 'self', roles: { qa: false }, brainstorm: false, context_from: task_id });
     const t2 = await tm.call('tm_status', { task_id: next.task_id, full: true });
     assert.match(t2.context, /backlog items not shipped[\s\S]*\[0\] parse csv[\s\S]*\[2\] cli/);
+    // ...and hands them back as candidates for the person to choose from - not added to requests.
+    assert.deepEqual(next.carryover_candidates.map((c) => [c.kind, c.text]), [['request', 'parse csv'], ['request', 'rules engine'], ['request', 'cli']]);
+    assert.deepEqual(t2.requests, ['x']);
   }, { request: null, requests: ['parse csv', 'rules engine', 'cli'], budget_usd: 5 });
 });
 
@@ -2131,6 +2134,32 @@ test('retro: a backlog item is shipped only when an accepted package declares it
     ],
   };
   assert.deepEqual(buildRetro(task).next_backlog.unshipped_requests.map((r) => r.priority), [1, 2]);
+});
+
+test('retro: a user story ships only through an accepted package that implements it AND a done integrate; the rest carry into the next Sprint (sprint-not-sub-epic)', async () => {
+  const { buildRetro } = await import('../mcp/docs.mjs');
+  const planning = [
+    { node_id: 'dispatch:PLAN-F1:1', stage: 'dispatch', subgoal_id: 'PLAN-F1', state: 'done', attempt: 1,
+      result: { user_stories: [{ id: 'F1-US-1', title: 'sign in' }, { id: 'F1-US-2', title: 'sign out', acceptance: ['session ends'] }] } },
+    { node_id: 'accept:PLAN-F1:1', stage: 'accept', subgoal_id: 'PLAN-F1', state: 'done', attempt: 1, result: { accept: true } },
+  ];
+  const base = {
+    run_id: 't', request: 'r', planning_pkgs: [{ id: 'PLAN-F1' }],
+    spec: { packages: [{ id: 'P1', title: 'in', implements: ['F1-US-1'] }, { id: 'P2', title: 'out', implements: ['F1-US-2'] }] },
+  };
+  const devNodes = [
+    { node_id: 'dispatch:P1:1', stage: 'dispatch', subgoal_id: 'P1', state: 'done' },
+    { node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', state: 'done', result: { accept: true } },
+    { node_id: 'dispatch:P2:1', stage: 'dispatch', subgoal_id: 'P2', state: 'failed' },
+    { node_id: 'accept:P2:1', stage: 'accept', subgoal_id: 'P2', state: 'failed', result: { accept: false, reason: 'no' } },
+  ];
+  const integrated = buildRetro({ ...base, nodes: [...planning, ...devNodes, { node_id: 'integrate:1', stage: 'integrate', state: 'done' }] });
+  assert.deepEqual(integrated.next_backlog.unfinished_stories, [{ id: 'F1-US-2', title: 'sign out', card: 'PLAN-F1', acceptance: ['session ends'] }]);
+  // Accepted but never integrated: nothing shipped, both stories carry.
+  const notIntegrated = buildRetro({ ...base, nodes: [...planning, ...devNodes] });
+  assert.deepEqual(notIntegrated.next_backlog.unfinished_stories.map((u) => u.id), ['F1-US-1', 'F1-US-2']);
+  // No planning cards at all: the field is present and empty, never missing.
+  assert.deepEqual(buildRetro({ run_id: 't', request: 'r', nodes: [] }).next_backlog.unfinished_stories, []);
 });
 
 test('budget_usd at 100%: no new package dispatches, an in-flight one still finishes, and a fresh integrate opens over just what accepted - the rest named "not done"', async () => {

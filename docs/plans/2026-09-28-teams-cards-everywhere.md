@@ -3,6 +3,7 @@
 > Decided by the user, 2026-09-28. Supersedes: `2026-09-17-teams-team.md` §A "develop만 package"
 > and its "`roles`로 planning/qa를 끄면 그 단계가 생기지 않는다(하위 호환)";
 > `2026-09-21-teams-server-owns-the-loop.md` §3 (chain-only child runs).
+> Related: `2026-09-28-teams-sprint-not-sub-epic.md` (no sub-EPIC; too-big work carries into the next Sprint).
 > Keeps: `2026-09-17-teams-team.md` §2 fractal rule and "분할은 두 번, 기준이 다르다".
 
 ## Principles (fixed — changing any of these needs the user's approval first)

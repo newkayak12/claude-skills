@@ -14,7 +14,7 @@
 // rendered - an empty file would claim a feature that does not exist.
 import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { storyLabel, unfinishedWork } from './taskmanager.mjs';
+import { storyLabel, storyId, unfinishedWork } from './taskmanager.mjs';
 import { loadRun, runState } from './graph.mjs';
 import {
   epicKey, storyKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
@@ -375,6 +375,26 @@ export function buildRetro(task) {
     }
     task.requests.forEach((r, i) => { if (!shipped.has(i)) unshippedRequests.push({ priority: i, request: r }); });
   }
+  // The user stories this task did not ship (docs/plans/2026-09-28-teams-sprint-not-sub-epic.md):
+  // work too big for one Sprint is not nested into a sub-EPIC, it carries into the next Sprint as
+  // a backlog candidate. A story shipped when an accepted package implements it and an integrate
+  // settled done after it; a task with no packages (size S) shipped all or none of them.
+  const stories = planningStories(task);
+  const shippedStories = new Set();
+  const pkgs = (task.spec && Array.isArray(task.spec.packages)) ? task.spec.packages : [];
+  const integrated = task.nodes.some((n) => n.stage === 'integrate' && n.state === 'done');
+  if (!pkgs.length) {
+    if (!unfinishedWork(task) && runState(task).state === 'complete') for (const u of stories) shippedStories.add(storyId(u));
+  } else if (integrated) {
+    for (const p of pkgs) {
+      if (!packageIds.includes(p.id) || unaccepted.some((u) => String(u.id) === String(p.id))) continue;
+      for (const s of (Array.isArray(p.implements) ? p.implements : [])) shippedStories.add(String(s));
+    }
+  }
+  const unfinishedStories = stories
+    .filter((u) => storyId(u) && !shippedStories.has(storyId(u)))
+    .map((u) => ({ id: storyId(u), title: (u && typeof u === 'object' && u.title) ? String(u.title) : '', card: u.card || null,
+      ...(u && typeof u === 'object' && Array.isArray(u.acceptance) ? { acceptance: u.acceptance } : {}) }));
   const openQuestions = [];
   for (const n of task.nodes.filter((x) => x.stage === 'dispatch' && x.child)) {
     try {
@@ -400,6 +420,7 @@ export function buildRetro(task) {
     },
     next_backlog: {
       ...(Array.isArray(task.requests) ? { unshipped_requests: unshippedRequests } : {}),
+      unfinished_stories: unfinishedStories,
       unaccepted_packages: unaccepted,
       unresolved_defects: defectsLeft,
       open_questions: openQuestions,
@@ -424,6 +445,7 @@ export function renderReport(task) {
   if (retro.integration_branch) L.push('', `The accepted work is on branch \`${retro.integration_branch}\`. Nothing has merged it into the project's own branch - merge it to keep it; a follow-up Sprint opened with context_from builds on it either way.`);
   L.push('', '## Next backlog', '');
   if (retro.next_backlog.unshipped_requests) L.push('Backlog items not shipped:', bullets(retro.next_backlog.unshipped_requests.map((r) => `[${r.priority}] ${r.request}`)), '');
+  L.push('User stories not shipped (carry into the next Sprint):', bullets(retro.next_backlog.unfinished_stories.map((u) => `${u.id}${u.title ? ` ${u.title}` : ''}`)), '');
   L.push('Unaccepted packages:');
   L.push(bullets(retro.next_backlog.unaccepted_packages.map((p) => `${p.id} (${p.title}): ${p.reason}`)));
   L.push('', 'Unresolved defects:', bullets(retro.next_backlog.unresolved_defects.map((d) => d.title)));
@@ -455,6 +477,7 @@ export function renderBlockedReport(task) {
   const retro = buildRetro(task);
   L.push('', '## Next backlog', '');
   if (retro.next_backlog.unshipped_requests) L.push('Backlog items not shipped:', bullets(retro.next_backlog.unshipped_requests.map((r) => `[${r.priority}] ${r.request}`)), '');
+  L.push('User stories not shipped (carry into the next Sprint):', bullets(retro.next_backlog.unfinished_stories.map((u) => `${u.id}${u.title ? ` ${u.title}` : ''}`)), '');
   L.push('Unaccepted packages:', bullets(retro.next_backlog.unaccepted_packages.map((p) => `${p.id} (${p.title}): ${p.reason}`)));
   return L.join('\n') + '\n';
 }

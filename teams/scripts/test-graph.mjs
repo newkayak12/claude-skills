@@ -214,7 +214,7 @@ test('createRun({package}) opens the full harness: plan/setgoal/critique first, 
     assert.equal(run.spec, null, 'setgoal writes the spec - nothing is pre-decided into it');
     assert.equal(run.parent_shaped, undefined);
     assert.deepEqual(readyNodes(run).map((n) => n.node_id), ['plan']);
-    assert.equal(run.depth, 0, 'a caller that never asks gets depth 0');
+    assert.equal(run.depth, undefined, 'no depth field: there is no nested task');
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -246,17 +246,17 @@ test('createRun without package is unaffected: the ordinary plan/setgoal/critiqu
     assert.deepEqual(run.nodes.map((n) => n.node_id), ['plan', 'setgoal', 'critique']);
     assert.equal(run.package, undefined);
     assert.equal(run.subgoal_assignee, undefined);
-    assert.equal(run.depth, 0);
+    assert.equal(run.depth, undefined);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test('createRun({package, depth: 2}) records the depth the caller passed', () => {
+test('createRun({package, depth: 2}) ignores the retired depth option - there is no nested task to count', () => {
   const cwd = scratchCwd();
   try {
     const run = createRun({ cwd, request: 'r', vendor: 'self', package: { id: 'P1' }, depth: 2 });
-    assert.equal(run.depth, 2);
+    assert.equal(run.depth, undefined);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

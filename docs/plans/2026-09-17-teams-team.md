@@ -85,6 +85,8 @@ TaskLeader  gate:goal → report
 - `team.json.roles`로 planning/qa를 끄면 그 단계가 생기지 않는다. 둘 다 끄면 지금의 0.9.0 흐름과
   같다 — 하위 호환.
 
+> **폐기(2026-09-28)**: 아래 sub-EPIC 중첩과 `max_depth`는 폐기됐다. 한 EPIC에 안 끝나는 일은 다음 Sprint로 이월한다 (`2026-09-28-teams-sprint-not-sub-epic.md`). "모든 레벨이 plan→setgoal→impl→qualitygate" 부분은 유지된다.
+
 **프랙탈 규칙**: 모든 레벨이 *plan → setgoal → impl → qualitygate*를 반복한다. TeamLeader가
 STORY를 `plan`에서 **L**로 측정하면, 자기 STORY 아래에 **sub-EPIC**을 연다(`tm_open`을 자식이
 호출, `parent: {task_id, package_id}` 기록). 깊이 캡 `max_depth` 기본 **2** — 0.8.0에서 컨텍스트

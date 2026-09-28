@@ -64,11 +64,19 @@ test('team.json overrides defaults, explicit args override team.json', () => {
 });
 
 test('a wrongly typed key is ignored with a note, not applied', () => {
-  const { opts, notes } = resolveTeamOptions({}, { goal_threshold: 'ninety', max_depth: 'two' });
+  const { opts, notes } = resolveTeamOptions({}, { goal_threshold: 'ninety', qa_rounds: 'two' });
   assert.equal(opts.goal_threshold, TEAM_DEFAULTS.goal_threshold);
-  assert.equal(opts.max_depth, TEAM_DEFAULTS.max_depth);
+  assert.equal(opts.qa_rounds, TEAM_DEFAULTS.qa_rounds);
   assert.equal(notes.length, 2);
   assert.match(notes[0], /goal_threshold/);
+});
+
+test('max_depth is retired (no sub-EPIC; too-big work carries into the next Sprint): accepted with a deprecation note, never resolved', () => {
+  const { opts, notes } = resolveTeamOptions({}, { max_depth: 2 });
+  assert.equal('max_depth' in opts, false);
+  assert.equal('max_depth' in TEAM_DEFAULTS, false);
+  assert.equal(notes.length, 1);
+  assert.match(notes[0], /"max_depth" is deprecated.*next Sprint/);
 });
 
 // roles.planning (docs/plans/2026-09-28-teams-light-plan.md §2.5): true | false | 'light' | 'auto'.

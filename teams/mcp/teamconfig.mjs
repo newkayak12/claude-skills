@@ -2,8 +2,8 @@
 //
 // Precedence is built-in defaults < team.json < explicit tm_open arguments. Every resolved key
 // carries where it came from so tm_status can show it. roles is acted on (taskmanager.mjs);
-// max_depth is recorded but inert since 2026-09-28 (see its entry below); a key still resolved and recorded with nothing reading it yet stays that way
-// on purpose - the file is the contract, a later round fills in the behaviour.
+// a key still resolved and recorded with nothing reading it yet stays that way on purpose -
+// the file is the contract, a later round fills in the behaviour.
 //
 // Human-as-a-node came back one key at a time as the machinery landed: `interactive` is live
 // (0.28.0 - it is what decides whether a planning run opens an `ask` card for a decision its
@@ -44,13 +44,6 @@ export const TEAM_DEFAULTS = Object.freeze({
   // small dev box and a big CI runner do not probe to the same number. Set it to pin the ceiling
   // instead - a project that knows its own vendor/rate-limit headroom better than a core count can.
   max_parallel_ceiling: null,
-  // The depth cap on a package opening its own nested task (a sub-EPIC, docs/plans/
-  // 2026-09-28-teams-sub-epic.md). Recorded but inert: its only reader chose between the full
-  // harness and the chain-only child run, and that choice is gone since 2026-09-28 (every
-  // package runs the full harness). Kept as a key so an existing team.json that sets it is not
-  // told "unknown key", and so the nested-task cap has its name when it lands. task.depth is
-  // threaded through task.child_opts.depth for the same reason.
-  max_depth: 2,
   // Does this project want to be asked? false decides by default and records the questions it
   // would have put to a person (run.unasked, surfaced in the report); true opens an `ask` card
   // per decision and parks the run on it. false is the default because a run nobody is watching
@@ -199,7 +192,6 @@ export const TEAM_DEFAULTS = Object.freeze({
 const CHECK = {
   max_parallel_teams: (v) => v === 'auto' || (Number.isInteger(v) && v >= 1),
   max_parallel_ceiling: (v) => v === null || (Number.isInteger(v) && v >= 1),
-  max_depth: (v) => Number.isInteger(v) && v >= 0,
   qa_rounds: (v) => Number.isInteger(v) && v >= 0,
   upstream_fix_rounds: (v) => Number.isInteger(v) && v >= 0,
   roles: (v) => v && typeof v === 'object' && !Array.isArray(v)
@@ -253,6 +245,7 @@ export function readTeamConfig(cwd) {
 // says why rather than the generic "unknown key".
 const DEPRECATED = {
   human_scope: 'no-op: replaced by task.decisions (session brainstorm / brainstorm node / EPIC-level blocking questions)',
+  max_depth: 'no-op: there is no nested task (sub-EPIC) - work too big for one EPIC carries into the next Sprint (docs/plans/2026-09-28-teams-sprint-not-sub-epic.md)',
 };
 
 // roles.planning: false is refused (docs/plans/2026-09-28-teams-cards-everywhere.md C5,
