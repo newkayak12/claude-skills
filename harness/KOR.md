@@ -236,8 +236,10 @@ Implement 단계에서 plugin 모드로 Codex 돌려야 해 — 어댑터부터 
 
 **강제**는 opt-in PreToolUse 게이트입니다([`hooks/`](hooks/)). 프로젝트가
 `.claude/harness-gate.json`에 게이트 대상 경로를 적으면, 그 경로에 대한
-`Write|Edit|MultiEdit|NotebookEdit`는 하네스 사용을 요구합니다. 어디서든 fail-open이고
-(v0의 교훈), 보안이 아니라 넛지입니다.
+`Write|Edit|MultiEdit|NotebookEdit`와 그 경로에 쓰는 `Bash` 명령은 하네스 사용을 요구합니다.
+사용 여부는 기록으로만 판단합니다(실제로 실행된 Workflow/graph/teams 도구 호출, 열린 broker 노드,
+plan·goal-spec·sound critique가 디스크에 있는 fallback run). 대화 속 문자열은 인정하지 않습니다.
+게이트 자신의 설정·훅·settings는 항상 게이트 대상입니다. 어디서든 fail-open입니다(v0의 교훈).
 
 ## 라이프사이클 헬퍼
 
@@ -248,6 +250,7 @@ Implement 단계에서 plugin 모드로 Codex 돌려야 해 — 어댑터부터 
   버전이 어긋나거나 둘 중 한쪽 언어 노트가 빠지면 거부합니다.
 
 ## 상태
+- v1.22.3 — goal gate는 기록(실제 실행된 도구 호출, broker 노드, sound critique가 있는 fallback run)으로만 열림 - 대화 문자열 불인정; 루트를 대상 파일에서 찾음(하위 디렉터리, 형제 worktree); 자기 설정·훅·settings를 게이트; Bash 쓰기 판정; 미래 타임스탬프 무시; install이 기존 matcher 확장 및 .harness-run/ 무시
 - **이 지점 이전 항목**: 여기부터 새로 쌓이는 항목이 실제 릴리스 이력입니다. v1.22.2 이하의
   이전 변경 이력은 이 파일에 한국어로 없습니다 — 패치 도구(`patch.mjs`)가 최근까지 이 파일에는
   쓰지 않고 `README.md`에만 기록했기 때문입니다. 전체 이력은 영어

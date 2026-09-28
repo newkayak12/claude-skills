@@ -19,3 +19,5 @@ INSTRUCT.md
 **/.knowledge/knowledge.sqlite-shm
 **/.knowledge/knowledge.sqlite-wal
 .claude/.harness-markers/
+.harness-run/
+.claude/settings.local.json
