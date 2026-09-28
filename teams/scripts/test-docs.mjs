@@ -297,7 +297,9 @@ test('slack-list: a size-S task reports from its run, not BLOCKED off the skippe
     assert.match(report, /flattening fixed/);
     assert.match(report, /spec drift[\s\S]*labelled links lose their URL/);
     assert.match(report, /## Planning\n\nPLAN-F1 planned this run; the PRD it built from is \[10-prd\.md\]\(\.\/10-prd\.md\), with 1 user story\./);
-    assert.match(report, /roles qa, audit are on, but QA and the planning audit run only on a size-L task/);
+    // m4: QA runs on a size-S task too (over a snapshot); only the planning audit is L-only.
+    assert.match(report, /the planning audit runs only on a size-L task/);
+    assert.doesNotMatch(report, /QA and the planning audit run only on a size-L task/);
     assert.ok(renderAll(task)[docPaths(task).prd], 'a size-S task has its 10-prd.md');
     assert.match(report, /no worktree, no branch, nothing committed/);
     // M6: a size-S task writes retro.json too; its run completed with the goal gate accepting,

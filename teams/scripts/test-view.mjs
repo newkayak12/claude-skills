@@ -159,7 +159,7 @@ const CHILD_SPEC = {
 // check against the user stories the PRD produced, which plain TWO_PKG_SHAPE would fail.
 const SHAPE_WITH_IMPLEMENTS = {
   acceptance: TWO_PKG_SHAPE.acceptance,
-  packages: TWO_PKG_SHAPE.packages.map((p, i) => ({ ...p, implements: [`US-${i + 1}`] })),
+  packages: TWO_PKG_SHAPE.packages.map((p, i) => ({ ...p, implements: [`F1-US-${i + 1}`] })),
 };
 
 async function completeChild(g, child, { accept = true } = {}) {
@@ -797,7 +797,7 @@ async function driveQaRound2Clean(tm, g, task_id) {
 async function driveToAuditUnmetFound(tm, g, task_id) {
   let v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2 modules'], handoff: 'two modules' }) });
   assert.equal(v.state, 'done', JSON.stringify(v));
-  await completePlanning(tm, g, task_id, ['US-1', 'US-2']);
+  await completePlanning(tm, g, task_id, ['F1-US-1', 'F1-US-2']);
 
   v = await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({ ...SHAPE_WITH_IMPLEMENTS, handoff: 's' }) });
   assert.equal(v.state, 'done', JSON.stringify(v));
@@ -826,7 +826,7 @@ async function driveToAuditUnmetFound(tm, g, task_id) {
   await completeAuditChild(g, nx.children[0], { accept: true, match_pct: 95 });
   await tm.call('tm_submit', { task_id, node_id: 'dispatch:AUDIT:1' });
   await tm.call('tm_submit', { task_id, node_id: 'accept:AUDIT:1', payload: ok({
-    accept: true, match_pct: 91, unmet: ['US-2 -> b.txt was never wired to the exported path'],
+    accept: true, match_pct: 91, unmet: ['F1-US-2 -> b.txt was never wired to the exported path'],
   }) });
 }
 
@@ -873,7 +873,7 @@ test('collect() renders an audit round that found an unmet user story and the ST
     assert.deepEqual(model.audit.rounds.map((r) => r.round), [1]);
     assert.deepEqual(model.audit.rounds.map((r) => r.state), ['done']);
     assert.deepEqual(model.audit.rounds.map((r) => r.unmet_count), [1]);
-    assert.deepEqual(model.audit.rounds[0].unmet_titles, ['US-2 -> b.txt was never wired to the exported path']);
+    assert.deepEqual(model.audit.rounds[0].unmet_titles, ['F1-US-2 -> b.txt was never wired to the exported path']);
 
     const d1 = model.packages.find((p) => p.id === 'D1');
     assert.ok(d1, `D1 missing from packages: ${model.packages.map((p) => p.id).join(', ')}`);
@@ -888,20 +888,20 @@ test('collect() renders an audit round that found an unmet user story and the ST
     // d1.origin already carries (one source, two fields reading it).
     const p1 = model.packages.find((p) => p.id === 'P1');
     const p2 = model.packages.find((p) => p.id === 'P2');
-    assert.deepEqual(p1.links.implements, ['US-1']);
-    assert.deepEqual(p2.links.implements, ['US-2']);
+    assert.deepEqual(p1.links.implements, ['F1-US-1']);
+    assert.deepEqual(p2.links.implements, ['F1-US-2']);
     assert.equal(d1.links.filed_by, 'planning-audit');
     assert.deepEqual(d1.links.blocked_by, [], 'fileDefects only wires named deps - none were named here');
 
     const text = renderText(model);
     for (const id of everyNodeId(model)) assert.ok(text.includes(id), `renderText output is missing node_id ${id}`);
     assert.match(text, /AUDIT:1[^\n]*unmet=1/);
-    assert.match(text, /US-2 -> b\.txt was never wired to the exported path/);
+    assert.match(text, /F1-US-2 -> b\.txt was never wired to the exported path/);
     assert.match(text, /D1[^\n]*\[filed by audit\]/);
     // P1 has no blocked_by of its own but IS a dep of P2 (TWO_PKG_SHAPE), so it also carries
     // the computed "blocks" side, on the same compact line as implements.
-    assert.match(text, /P1[^\n]*\n\s+blocks P2 \(DONE\) · implements US-1/);
-    assert.match(text, /P2[^\n]*\n\s+blocked by P1 \(DONE\) · implements US-2/);
+    assert.match(text, /P1[^\n]*\n\s+blocks P2 \(DONE\) · implements F1-US-1/);
+    assert.match(text, /P2[^\n]*\n\s+blocked by P1 \(DONE\) · implements F1-US-2/);
   });
 });
 

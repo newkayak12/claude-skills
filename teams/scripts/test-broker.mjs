@@ -2526,6 +2526,34 @@ writeFileSync(output, JSON.stringify({stage_ok:true,result}));
   return cwd;
 }
 
+// m3 (docs/plans/2026-09-28-teams-adversarial-fixes.md): ordered allocation took the first ready
+// candidate for every stage, so critique ran as the very identity that wrote the spec it judges.
+test('ordered allocation: critique does not run on the vendor@model that ran setgoal when another is ready', async () => {
+  const cwd = balancedRepo();
+  const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+  try {
+    const open = await c.call('team_open', { request: 'r', cwd, host_vendor: 'claude', host_model: 'driving-model' });
+    const run_id = open.run_id;
+    // plan and setgoal run on the vendor the ordered list picks first - executed by it (team_run),
+    // not by the session, so the spec's author is that vendor.
+    for (const node_id of ['plan', 'setgoal']) {
+      const r = await c.call('team_run', { run_id, cwd, node_id });
+      assert.equal(r.state, 'done', JSON.stringify(r));
+    }
+    const full = await c.call('team_status', { run_id, cwd, full: true });
+    const setgoal = full.nodes.find((n) => n.node_id === 'setgoal');
+    const author = setgoal.executor || setgoal.vendor;
+    assert.ok(['claude', 'codex'].includes(author), JSON.stringify(setgoal));
+    const next = await c.call('team_next', { run_id, cwd });
+    assert.equal(next.ready[0].node_id, 'critique');
+    assert.notEqual(next.ready[0].executor || next.ready[0].vendor, author, `setgoal ran on ${author}; critique must not`);
+    assert.match(next.ready[0].routing_reason || '', /./);
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 for (const host_vendor of ['claude', 'codex']) {
   test(`balanced MCP flow: ${host_vendor} drives, peer implements, host tests and gates`, async () => {
     const cwd = balancedRepo();

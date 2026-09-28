@@ -773,6 +773,7 @@ export function createRun(opts) {
   if (opts.package && typeof opts.package === 'object') {
     run.package = {
       id: opts.package.id != null ? String(opts.package.id) : null,
+      origin: opts.package.origin ? String(opts.package.origin) : 'shape',
       title: String(opts.goal || opts.package.title || ''),
       acceptance: Array.isArray(opts.acceptance) ? opts.acceptance.map(String).filter(Boolean) : [],
     };

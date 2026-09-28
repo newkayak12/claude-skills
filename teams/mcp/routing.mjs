@@ -70,8 +70,51 @@ const AUTHOR_OF = { critique: 'setgoal', gate: ['implement', 'draft', 'template-
 // has no nodes from. openAudit reads that run once, up front, and stashes its author's
 // identity here, on the audit run itself, as `external_author: {executor, vendor, model}` -
 // the cross-run equivalent of the same-run `actor` lookup every other judging stage uses.
+// A PRD has one author per planning card (m10): external_author is a list; an older run's single
+// object is read as a list of one.
+function externalAuthorsOf(run, node) {
+  return node.stage === 'audit' ? [].concat(run.external_author || []).filter(Boolean) : [];
+}
 function externalAuthorOf(run, node) {
-  return node.stage === 'audit' ? run.external_author : null;
+  return externalAuthorsOf(run, node)[0] || null;
+}
+
+// Every identity (vendor, and model when recorded) that authored what this node judges (m3,
+// docs/plans/2026-09-28-teams-adversarial-fixes.md): the run's setgoal for critique; for the
+// run's goal gate, everyone who implemented, drafted, filled a template or repaired ANY subgoal
+// (its subgoal_id is null, so the per-subgoal peer lookup found nobody); for a subgoal's own
+// judges, its authoring peers; for an audit, the PRD's authors from the planning runs.
+export function authorIdentities(run, node) {
+  const out = [];
+  const add = (x) => {
+    // A node a session submitted by hand (team_submit) carries who it was routed to only on its
+    // assignment; a vendor run also stamps executor/vendor on the node itself.
+    const asg = (x && x.assignment) || {};
+    const v = x && (x.executor || x.vendor || asg.executor || asg.vendor);
+    if (!v || v === 'self' || v === 'human') return;
+    out.push({ vendor: v, model: (x.model || asg.model) || null });
+  };
+  const authored = [].concat(AUTHOR_OF[node.stage] || []);
+  if (node.stage === 'critique') {
+    add(run.nodes.filter((n) => n.stage === 'setgoal' && n.state === 'done').at(-1));
+  } else if (node.stage === 'gate' && node.subgoal_id == null) {
+    for (const n of run.nodes) if (authored.includes(n.stage) && n.state === 'done') add(n);
+  } else if (authored.length) {
+    for (const n of run.nodes) if (n.subgoal_id === node.subgoal_id && n.node_id !== node.node_id && authored.includes(n.stage) && n.state === 'done') add(n);
+  }
+  for (const e of externalAuthorsOf(run, node)) add(e);
+  return out;
+}
+
+// Stable: candidates that would judge as an identity other than the author's first, in their own
+// order, then the ones that would not. A candidate is the author when its vendor matches and the
+// model it would run is the author's (or the author's model is unknown). modelOf(vendor) is the
+// model route() would pick for it. The author still runs the judge when nothing else is ready.
+export function demoteAuthors(ranked, authors, modelOf = () => null) {
+  if (!authors || !authors.length) return ranked;
+  const isAuthor = (c) => authors.some((a) => a.vendor === c.vendor && (!a.model || !modelOf(c.vendor) || a.model === modelOf(c.vendor)));
+  const mark = (c) => ({ ...c, reason: `${c.reason}; authored the work it would judge - tried last` });
+  return [...ranked.filter((c) => !isAuthor(c)), ...ranked.filter(isAuthor).map(mark)];
 }
 
 export function rankCandidates(run, node, candidates) {
@@ -106,7 +149,7 @@ export function rankCandidates(run, node, candidates) {
     const errors = history.filter(n => n.stage === node.stage && n.result?.stage_ok === false).length;
     const sameActor = (Boolean(AUTHOR_OF[node.stage])
       && actor && (actor.executor || actor.vendor) === vendor)
-      || Boolean(externalAuthor && (externalAuthor.executor || externalAuthor.vendor) === vendor);
+      || externalAuthorsOf(run, node).some((e) => (e.executor || e.vendor) === vendor);
     // A retry that hands the work back to the identity whose attempt was just rejected
     // tends to get the same work back. goal-docs spent its entire budget that way: the
     // same author, in the same worktree, reached the same conclusion three times.

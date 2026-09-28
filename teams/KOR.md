@@ -69,14 +69,18 @@ flowchart TD
   SIZE -->|"S"| SPLAN["one planning card: PRD section and user stories"]
   SPLAN --> SPI{"plan-integrate"}
   SPI -->|"accepted"| SRUN["one graph run in the project directory, built from the PRD"]
-  SRUN --> SREP["that run's report"]
+  SRUN --> SQA{"QA card on a snapshot of the run's working tree"}
+  SQA --> SREP["report: the run's account + QA defects left unresolved"]
   SIZE -->|"L"| BS["brainstorm"]
   BS --> AREAS["areas: split the request by feature"]
-  AREAS --> PCARDS["planning cards PLAN-F1, PLAN-F2, ...<br/>one per feature area, full run each, in parallel"]
+  AREAS --> ACRIT{"areas-critique"}
+  ACRIT -->|"coverage, overlap, criterion, granularity"| AREAS
+  ACRIT -->|"sound"| PCARDS["planning cards PLAN-F1, PLAN-F2, ...<br/>one per feature area, full run each, in parallel"]
   PCARDS --> PACC{"accept, per card"}
   PACC -->|"rejected"| PCARDS
   PACC -->|"all accepted"| PI{"plan-integrate: merge into 10-prd.md and judge"}
   PI -->|"id collision, contradiction, missing feature"| PCARDS
+  PI -->|"resplit: the split itself is wrong"| AREAS
   PI -->|"accepted"| SHAPE["shape: split the stories by ownership into packages"]
   SHAPE --> CRIT{"critique"}
   CRIT -->|"unsound"| SHAPE
@@ -102,20 +106,22 @@ flowchart TD
 | `size` | 심사자가 S(런 하나로 충분)인지 L(쪼개야 함)인지 정합니다. `size` 인자로 고정할 수도 있습니다. | — |
 | `brainstorm` | 의도, 범위, 접근을 다시 정리합니다. `interactive`일 때만 사람에게 묻습니다. 세션에서 이미 `decisions`를 넘겼다면 건너뜁니다. | `brainstorm` |
 | `areas` | EPIC의 plan 단계가 요청을 **기능** 기준으로 나눕니다. 사용자가 무엇을 할 수 있어야 하는지를 기능 영역으로 묶고, 영역마다 기획 카드가 하나씩 생깁니다. 크기 S 태스크는 분할 없이 카드 하나를 받습니다. | — |
-| 기획 카드 | 기능 영역마다 STORY 카드 하나(`PLAN-F1`, `PLAN-F2`, ...). 카드마다 자기 워크트리에서 전체 런을 돌고, 서로 병렬로 돕니다. 카드는 자기 PRD 섹션(목표, 범위와 비목표, 인수 기준이 달린 유저 스토리 - id는 영역 접두사를 붙인 `F1-US-1` -, 미해결 질문)을 쓰고 유저 스토리를 돌려줍니다. 유저 스토리가 없는 카드는 반려되고, 반려된 카드는 사유를 달아 다시 돕니다. 요청에 인수 기준이 이미 적혀 있으면 카드마다 가벼운 체인으로 돕니다. | `roles.planning` (`true`, `"light"`, `"auto"`; `false`는 거부) |
-| `plan-integrate` | 카드들의 섹션을 `10-prd.md` 하나로 합친 뒤 심사자가 검사합니다. 스토리 id 충돌, 영역 사이의 모순, 요청에 있는데 어느 카드도 다루지 않은 기능. 반려되면 문제가 된 카드를 부족분과 함께 되돌려 보냅니다(빠진 기능은 새 카드를 엽니다). | `max_retries` |
+| `areas-critique` | **신규.** 카드가 돌기 전에 심사자가 분할을 공격합니다: 어느 영역에도 없는 기능, 같은 기능을 두 영역이 기획하는 경우, 사용자 기능이 아니라 모듈·계층으로 자른 영역, 부풀리거나 억지로 합친 영역. 반려되면 결함을 피드백으로 다시 나눕니다. | `max_retries`, `human_gates` |
+| 기획 카드 | 기능 영역마다 STORY 카드 하나(`PLAN-F1`, `PLAN-F2`, ...). 카드마다 자기 워크트리에서 전체 런을 돌고, 서로 병렬로 돕니다. 카드는 자기 PRD 섹션(목표, 범위와 비목표, 인수 기준이 달린 유저 스토리 - id는 영역 접두사를 붙인 `F1-US-1` -, 미해결 질문)을 쓰고 유저 스토리를 돌려줍니다. PRD를 쓰지 않았거나, 섹션이 빠졌거나, 유저 스토리가 없거나, 인수 기준 없는 스토리가 있거나, 스토리 id에 카드 접두사가 없으면 반려되고, 반려된 카드는 사유를 달아 다시 돕니다. 요청에 인수 기준이 이미 적혀 있으면 카드마다 가벼운 체인으로 돕니다. | `roles.planning` (`true`, `"light"`, `"auto"`; `false`는 거부) |
+| `plan-integrate` | 카드들의 섹션을 `10-prd.md` 하나로 합친 뒤 심사자가 검사합니다. 스토리 id 충돌, 영역 사이의 모순, 요청에 있는데 어느 카드도 다루지 않은 기능. 반려되면 문제가 된 카드를 부족분과 함께 되돌려 보냅니다(빠진 기능은 새 카드를 엽니다). 분할 자체가 틀렸으면 `resplit`을 돌려줍니다. 그러면 카드들은 폐기되고(기록으로 남되 PRD에서는 빠짐) `areas`가 다시 나눕니다. | `max_retries`, `human_gates` |
 | `shape` → `critique` | `shape`가 합쳐진 유저 스토리를 이번에는 **소유권** 기준으로 다시 나눠 `touches[]`와 `deps`가 달린 패키지로 만듭니다. 모든 스토리는 어느 패키지든 구현해야 합니다. `critique`가 그 분할을 검토하고, 부실하면 다시 나눕니다. | — |
 | 개발 (dispatch) | 실제 개발 단계입니다. 패키지마다 git 워크트리와 드라이버 세션이 붙어 그 패키지의 자식 런을 전체 하네스로 돌립니다: `plan → setgoal → critique → implement → test → gate → gate:goal → report`. 여기서 `plan`은 다시 쪼개는 일이 아니라 그 패키지 하나를 만드는 개발 계획(파일, 인터페이스, 작업 순서, 테스트 계획, 위험)이고, `setgoal`은 패키지의 acceptance를 그대로 옮기며 `critique`가 계획을 그 기준으로 검토합니다. 문서 패키지는 `implement → test → gate` 대신 `draft → review → gate`를 씁니다. `deps`가 풀린 패키지끼리는 병렬로 돕니다. [패키지 하나의 내부](#패키지-하나의-내부) 참고. | `max_parallel_teams`, `vendor` |
 | accept | 패키지 런이 끝나면 심사자가 결과를 받아들이거나 반려합니다. 반려되면 사유를 달아 그 패키지를 다시 돌립니다. | `max_retries` |
 | `integrate` | 받아들여진 브랜치를 합치고 검사를 돌립니다. 어느 패키지 혼자서는 보이지 않는 이음새 문제는 합쳐진 트리 위에서 일하는 repair 패키지가 맡습니다. | — |
-| QA | 기능 영역마다 QA 카드 하나(`QA-F1`, `QA-F2`, ...). 카드마다 합쳐진 트리 위에서 전체 런을 돌며 자기 영역의 유저 스토리를 병렬로 검증합니다. 한 라운드의 카드가 모두 끝나면 결함을 한꺼번에 수정 STORY로 등록하고, 다시 통합한 뒤 모든 QA 카드를 다시 엽니다. | `roles.qa`, `qa_rounds` |
+| QA | 기능 영역마다 QA 카드 하나(`QA-F1`, `QA-F2`, ...). 카드마다 합쳐진 트리 위에서 전체 런을 돌며 자기 영역의 유저 스토리를 병렬로 검증합니다. 한 라운드의 카드가 모두 끝나면 결함을 한꺼번에 수정 STORY로 등록하고, 다시 통합한 뒤 모든 QA 카드를 다시 엽니다. 재시도를 다 쓴 카드는 그 카드만 라운드에서 빠지고 라운드 전체가 무너지지는 않습니다. 다른 카드의 결함은 그대로 등록되고, goal gate에는 QA가 검증하지 못한 영역이 전달됩니다. 크기 S 태스크도 QA 카드를 받습니다. 런의 작업 트리 스냅샷 위에서 돌며, 찾은 결함은 고칠 패키지가 없으므로 미해결로 남기고 태스크는 `partial`이 됩니다. | `roles.qa`, `qa_rounds` |
 | audit | 기획 팀이 합쳐진 결과를 합쳐진 PRD와 대조합니다. 충족 못 한 스토리는 QA 결함처럼 등록됩니다. | `roles.audit` |
 | `gate:goal` | 결과 전체를 원래 요청에 비춰 판정합니다(`goal_threshold`, 기본 90%). | `goal_threshold` |
-| `report` | 목표 게이트가 끝나면 통과든 실패든 항상 돕니다. 다음 스프린트를 위한 `retro.json`도 씁니다. 여기에 끝내지 못한 유저 스토리도 들어갑니다. sub-EPIC은 없으므로 남은 일은 다음 스프린트로 이월됩니다(`tm_open({context_from})`이 `carryover_candidates`로 돌려줌). | — |
+| `report` | 목표 게이트가 끝나면 통과든 실패든 항상 돕니다. 다음 스프린트를 위한 `retro.json`도 씁니다. 여기에 끝내지 못한 유저 스토리도 들어갑니다. 스토리는 그것을 구현하는 패키지가 모두 최종 통합에 들어가고 그 통합이 통과해야 "나간" 것으로 칩니다. sub-EPIC은 없으므로 남은 일은 다음 스프린트로 이월됩니다(`tm_open({context_from})`이 `carryover_candidates`로 돌려줌). | — |
 
 모든 반복에는 예산이 있습니다(`max_retries`, `qa_rounds`, `upstream_fix_rounds`). 예산이 바닥나면
 그 실패는 *확정(settled)*됩니다. 거기에 기대던 노드는 도달 불가로 표시되고, 태스크는 멈춰 있지
-않고 보고서로 넘어갑니다. 비용 한도나 타임박스에 걸렸을 때도 같습니다. 새 패키지는 더 내보내지
+않고 보고서로 넘어갑니다. shape 이전도 같습니다. 분할, 기획 카드, 기획 통합 중 하나가 재시도를
+다 쓰면 태스크는 blocked로 남지 않고 보고서와 `retro.json`(카드들이 쓴 PRD 포함)으로 닫힙니다. 비용 한도나 타임박스에 걸렸을 때도 같습니다. 새 패키지는 더 내보내지
 않고, 받아들여진 패키지만 통합한 뒤, 나머지는 "Next backlog"로 넘깁니다.
 
 도식에서 뺀 반복이 두 가지 더 있습니다. 통합 *충돌*(두 패키지가 같은 것을 고친 경우)은
@@ -274,7 +280,7 @@ node teams/scripts/run.mjs --resume <task_id>
 | `roles` | `{planning:"auto", qa:true, audit:true}` | 기획 카드가 어떤 체인을 도는지(`true` 전체, `"light"`, `"auto"`는 인수 기준이 적혀 있으면 가벼운 체인), 그리고 QA 카드와 audit을 돌지. `planning: false`는 거부되고 노트로 남습니다. 기획은 항상 돕니다. |
 | `brainstorm` | `true` | `decisions`가 없을 때 엔진이 직접 brainstorm 단계를 돕니다. |
 | `interactive` | `false` | 질문, 지정, 사람 게이트가 사람을 기다릴지, 기본값으로 결정할지. |
-| `human_gates` | `[]` | 모델 대신 사람이 판정할 심사 단계(`"critique"`, `"accept"`, `"gate:goal"` 등). |
+| `human_gates` | `[]` | 모델 대신 사람이 판정할 심사 단계(`"critique"`, `"accept"`, `"gate:goal"`, `"areas-critique"`, `"plan-integrate"` 등). `plan-integrate`를 거절하는 사람은 `resplit: true`를 함께 보낼 수 있습니다. |
 | `ask_timeout` | `null` | 답 없는 `ask` 카드가 기본 답을 택하기까지의 밀리초. `null`이면 무한정 기다립니다. |
 | `max_parallel_teams` | `"auto"` | 동시에 돌리는 develop 패키지 수. `"auto"`는 사용량 제한과 크래시에 맞춰 조절합니다. |
 | `max_parallel_ceiling` | `null` | `"auto"` 조절기의 상한. `null`이면 CPU 수에서 계산합니다. |

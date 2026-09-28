@@ -143,3 +143,26 @@ test('audit with no external_author (a run opened outside the TaskManager) is un
   const ranked = rankCandidates(run, { node_id: 'audit:A1:1', stage: 'audit', subgoal_id: 'A1' }, ['claude', 'codex']);
   assert.ok(ranked.every((r) => /same_actor=false/.test(r.reason)));
 });
+
+// m3 (docs/plans/2026-09-28-teams-adversarial-fixes.md): author != judge holds under either
+// allocation - the author's vendor is tried last, not merely discounted.
+test('authorIdentities: critique <- setgoal, the goal gate <- every implementer, a subgoal gate <- its own author, an audit <- every PRD author', async () => {
+  const { authorIdentities, demoteAuthors } = await import('../mcp/routing.mjs');
+  const run = { nodes: [
+    { node_id: 'setgoal', stage: 'setgoal', state: 'done', executor: 'codex', model: 'm1' },
+    { node_id: 'implement:U1:1', stage: 'implement', subgoal_id: 'U1', state: 'done', executor: 'claude' },
+    { node_id: 'implement:U2:1', stage: 'implement', subgoal_id: 'U2', state: 'done', vendor: 'codex' },
+  ] };
+  const vendors = (node) => authorIdentities(run, node).map((a) => a.vendor).sort();
+  assert.deepEqual(vendors({ node_id: 'critique', stage: 'critique' }), ['codex']);
+  assert.deepEqual(vendors({ node_id: 'gate:goal:1', stage: 'gate', subgoal_id: null }), ['claude', 'codex']);
+  assert.deepEqual(vendors({ node_id: 'gate:U1:1', stage: 'gate', subgoal_id: 'U1' }), ['claude']);
+  const audit = { nodes: [], external_author: [{ executor: 'claude' }, { vendor: 'codex' }] };
+  assert.deepEqual(authorIdentities(audit, { node_id: 'audit:A:1', stage: 'audit' }).map((a) => a.vendor).sort(), ['claude', 'codex']);
+  const authors = authorIdentities(run, { node_id: 'critique', stage: 'critique' });
+  const cands = [{ vendor: 'codex', reason: 'r' }, { vendor: 'claude', reason: 'r' }];
+  const same = demoteAuthors(cands, authors, () => 'm1');
+  assert.deepEqual(same.map((c) => c.vendor), ['claude', 'codex'], 'setgoal\'s own vendor@model is tried last');
+  assert.match(same[1].reason, /tried last/);
+  assert.deepEqual(demoteAuthors(cands, authors, () => 'm2').map((c) => c.vendor), ['codex', 'claude'], 'the same vendor on another model is another identity');
+});

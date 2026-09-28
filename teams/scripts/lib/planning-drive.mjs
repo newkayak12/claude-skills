@@ -17,8 +17,25 @@ export const okPayload = (payload) => ({ stage_ok: true, evidence: 'e', checks: 
 // One planning card's child run, driven through the broker to its report: whatever team_next
 // offers, answered the way a passing node would. Light cards (investigate -> template-fill ->
 // gate) and full ones (investigate -> draft -> revise -> gate) both go through this one loop.
+// A card is held to its contract at fold (m1): a PRD document with every section, and stories
+// with acceptance. A test that hands bare ids gets each one a criterion, and the card's PRD is
+// written to its worktree the way a real card's draft writes it. opts.prd: false writes none.
+const PRD_BODY = (stories) => ['# PRD', '## Goal', 'g', '## Problem', 'p', '## Target users', 'u', '## Solution overview', 's',
+  '## Success criteria', 'c', '## User stories', ...stories.map((u) => `- ${typeof u === 'object' ? u.id : u}`), '## Out of scope', 'o', '## Open questions', 'q', ''].join('\n');
+function contractStories(stories) {
+  return (stories || []).map((u) => (u && typeof u === 'object'
+    ? (Array.isArray(u.acceptance) ? u : { ...u, acceptance: [`${u.id} works as described`] })
+    : { id: String(u), acceptance: [`${u} works as described`] }));
+}
 export async function completePlanningChild(g, child, stories, opts = {}) {
   const { run_id, cwd } = child;
+  const full = contractStories(stories);
+  if (opts.prd !== false) {
+    const { mkdirSync, writeFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    mkdirSync(join(cwd, 'docs'), { recursive: true });
+    writeFileSync(join(cwd, 'docs', 'prd.md'), PRD_BODY(full));
+  }
   const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: okPayload(payload) });
   for (let guard = 0; guard < 40; guard++) {
     const nx = await g.call('team_next', { run_id, cwd });
@@ -28,7 +45,7 @@ export async function completePlanningChild(g, child, stories, opts = {}) {
       if (id === 'plan') await sub(id, { handoff: 'p', flow: 'plan', size: 'S' });
       else if (id.startsWith('setgoal')) await sub(id, { spec: { goal: 'PRD', acceptance: ['PRD covers the request'], subgoals: [{ id: 'U1', title: 'draft PRD', acceptance: ['PRD written'], deps: [] }] } });
       else if (id.startsWith('critique')) await sub(id, { sound: true });
-      else if (id.startsWith('gate:goal')) await sub(id, { accept: opts.accept !== false, match_pct: opts.accept === false ? 40 : 95, user_stories: stories, ...(opts.accept === false ? { gaps: ['short'], reason: 'short' } : {}) });
+      else if (id.startsWith('gate:goal')) await sub(id, { accept: opts.accept !== false, match_pct: opts.accept === false ? 40 : 95, user_stories: full, ...(opts.prd !== false ? { prd_paths: ['docs/prd.md'] } : {}), ...(opts.accept === false ? { gaps: ['short'], reason: 'short' } : {}) });
       else if (id.startsWith('gate:')) await sub(id, { accept: true, match_pct: 95 });
       else if (id === 'report' || id.startsWith('report:')) await sub(id, { handoff: 'PRD complete' });
       else if (id.startsWith('reduce')) await sub(id, { undeclared: [], collisions: [], orphans: [], repairs_needed: [] });

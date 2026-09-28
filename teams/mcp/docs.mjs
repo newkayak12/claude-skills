@@ -564,7 +564,9 @@ export function renderSReport(task) {
   const key = epicKey(task.run_id);
   const run = loadRun(task.s_run.cwd, task.s_run.run_id);
   if (!run) return null;
-  const st = runState(run).state;
+  const raw = runState(run).state;
+  // QA left defects or reached no verdict (m4): the task delivered, but not verified clean.
+  const st = raw === 'complete' && ((task.unresolved_defects || []).length || (task.qa_not_run || []).length || (task.s_qa && task.s_qa.failed)) ? 'partial' : raw;
   const L = [frontmatter(key, st === 'complete' ? 'DONE' : st.toUpperCase(), task), `# Report — size S (${st})`, ''];
   const report = run.nodes.filter((n) => n.stage === 'report' && n.state === 'done' && n.result).pop();
   if (report) L.push(String(report.result.handoff || report.result.summary || report.result.reason || '').trim() || '(the run\'s report stage returned no text)', '');
@@ -582,14 +584,38 @@ export function renderSReport(task) {
   if (planningPkgs(task).length) {
     L.push('## Planning', '', `${planningPkgs(task).map((p) => p.id).join(', ')} planned this run; the PRD it built from is [10-prd.md](./10-prd.md), with ${planningStories(task).length} user stor${planningStories(task).length === 1 ? 'y' : 'ies'}.`, '');
   }
+  // m4: QA ran over a snapshot of the run's working tree; what it found is listed here, since a
+  // size-S task has no package to file a fix onto.
+  if (qaPkgs(task).length) {
+    L.push('## QA', '');
+    const lines = qaPkgs(task).map((q) => {
+      const acc = latestBySubgoal(task, String(q.id), 'accept');
+      const n = acc && acc.result && Array.isArray(acc.result.defects) ? acc.result.defects.length : 0;
+      return `${q.id}: ${acc ? acc.state : 'not run'}${n ? ` - ${n} defect(s)` : ''}`;
+    });
+    L.push(bullets(lines), '');
+    const left = task.unresolved_defects || [];
+    L.push('Defects QA found (unresolved - a size-S task has no package to fix them in; carry them into the next Sprint):', bullets(left.map((d) => `${d.title}${d.card ? ` (${d.card})` : ''}`)), '');
+    for (const q of task.qa_not_run || []) L.push(`- ${q.pass}: QA reached no verdict - ${q.reason}`);
+    if (task.s_qa && task.s_qa.failed) L.push(`QA could not run: ${task.s_qa.failed}`, '');
+  }
   L.push('## What a size-S task does not do', '');
   const roles = (task.team && task.team.opts && task.team.opts.roles) || {};
-  const on = ['qa', 'audit'].filter((r) => roles[r] === true || (r === 'audit' && roles.planning && roles.audit !== false));
   const notes = [];
-  if (on.length) notes.push(`roles ${on.join(', ')} are on, but QA and the planning audit run only on a size-L task (after integration) - neither ran here. Pin size L (tm_open size: "L") to have them.`);
+  if (roles.planning && roles.audit !== false) notes.push('the planning audit runs only on a size-L task (after integration) - it did not run here. Pin size L (tm_open size: "L") to have it.');
+  if (roles.qa !== true) notes.push('roles.qa is off, so no QA card ran.');
   notes.push(`the run wrote straight into ${task.s_run.cwd}: no worktree, no branch, nothing committed - review and commit it yourself.`);
   L.push(bullets(notes));
   return L.join('\n') + '\n';
+}
+
+// A size-S task's QA (m4) still running: open cards whose latest accept has not settled.
+function sQaPending(task) {
+  if (!task.s_qa || task.s_qa.failed) return false;
+  return qaPkgs(task).some((q) => {
+    const acc = latestBySubgoal(task, String(q.id), 'accept');
+    return !acc || !(acc.state === 'done' || acc.final || acc.state === 'skipped');
+  });
 }
 
 // Every file this task currently has data for, keyed by its full path. A shape not yet done
@@ -611,7 +637,9 @@ export function renderAll(task) {
   if (qaPkgs(task).length) files[paths.qa] = renderQa(task);
   if (task.audit_pkg) files[paths.audit] = renderAudit(task);
   if (task.nodes.some((n) => n.stage === 'gate' && n.subgoal_id === null && n.result)) files[paths.goalGate] = renderGoalGate(task);
-  const sReport = task.s_run && task.s_run.run_id ? renderSReport(task) : null;
+  // A size-S task's report and retro wait for its QA verdicts (m4): until then the run's own
+  // account is not the task's.
+  const sReport = task.s_run && task.s_run.run_id && !sQaPending(task) ? renderSReport(task) : null;
   if (sReport) {
     files[paths.report] = sReport;
     // A size-S task owes the next Sprint the same retro an L task does (M6).
