@@ -363,9 +363,9 @@ export function storyTaskProgress(task, pkgId) {
   return `${done}/${ids.length}`;
 }
 
-// The full package list a board walks: the planning phase-Team's package (task.planning_pkg)
-// first, ahead of shape's own task.spec.packages, then the qa phase-Team's package
-// (task.qa_pkg) last - the same order they run in (§2). Neither phase-Team package ever joins
+// The full package list a board walks: the planning cards (planningPkgs - one per feature area)
+// first, ahead of shape's own task.spec.packages, then the QA cards (qaPkgs) and the audit last -
+// the same order they run in (§2). No phase-Team package ever joins
 // task.spec.packages (taskmanager.mjs's packageOf reads them straight off these fields), so
 // they are stitched in here rather than found in `packages`. Shared by epicBoardRows (one row
 // per package) and ticketSnapshot (one key per package) - v0.12.0 gave epicBoardRows this list
@@ -374,11 +374,57 @@ export function storyTaskProgress(task, pkgId) {
 // that gap for good.
 function boardPackages(task) {
   return [
-    ...(task.planning_pkg ? [task.planning_pkg] : []),
+    ...planningPkgs(task),
     ...((task.spec && task.spec.packages) || []),
-    ...(task.qa_pkg ? [task.qa_pkg] : []),
+    ...qaPkgs(task),
     ...(task.audit_pkg ? [task.audit_pkg] : []),
   ];
+}
+
+// Cards everywhere (docs/plans/2026-09-28-teams-cards-everywhere.md C2/C7): planning and QA are
+// no longer one phase-Team package each but one STORY card per feature area - task.planning_pkgs
+// (PLAN-F1, PLAN-F2, ...) and task.qa_pkgs (QA-F1, QA-F2, ...). Every reader goes through these
+// two, never the fields directly: a task.json written before the split still carries the single
+// task.planning_pkg / task.qa_pkg, and reads back as a one-card list rather than as nothing.
+export function planningPkgs(task) {
+  if (!task) return [];
+  if (Array.isArray(task.planning_pkgs)) return task.planning_pkgs;
+  return task.planning_pkg ? [task.planning_pkg] : [];
+}
+export function qaPkgs(task) {
+  if (!task) return [];
+  if (Array.isArray(task.qa_pkgs)) return task.qa_pkgs;
+  return task.qa_pkg ? [task.qa_pkg] : [];
+}
+// The phase of the package a node's subgoal_id names ('planning' | 'qa' | 'audit'), or null for
+// a develop/repair/defect package - what every "is this a PLAN/QA/AUDIT node" check reads now
+// that the id is no longer the literal 'PLAN' or 'QA'.
+export function phaseOfId(task, id) {
+  const s = String(id);
+  if (planningPkgs(task).some((p) => String(p.id) === s)) return 'planning';
+  if (qaPkgs(task).some((p) => String(p.id) === s)) return 'qa';
+  if (task && task.audit_pkg && String(task.audit_pkg.id) === s) return 'audit';
+  return null;
+}
+
+// The user stories every planning card delivered, in card order - read off each card's latest
+// dispatch that its own accept let through (or, before any accept, the latest dispatch with a
+// result). A card retried after a planning-integrate rejection contributes its NEW stories, not
+// the ones the integrate refused. Each story carries the card it came from as `card`.
+export function planningStories(task) {
+  const out = [];
+  for (const p of planningPkgs(task)) {
+    const id = String(p.id);
+    const dispatches = task.nodes.filter((n) => n.stage === 'dispatch' && n.subgoal_id === id && n.result);
+    const accepted = dispatches.filter((d) => {
+      const acc = task.nodes.find((x) => x.stage === 'accept' && x.subgoal_id === id && (x.attempt || 1) === (d.attempt || 1));
+      return acc && acc.state === 'done';
+    });
+    const d = accepted.length ? accepted[accepted.length - 1] : dispatches[dispatches.length - 1];
+    const list = d && Array.isArray(d.result.user_stories) ? d.result.user_stories : [];
+    for (const u of list) out.push(u && typeof u === 'object' ? { ...u, card: id } : { id: String(u), card: id });
+  }
+  return out;
 }
 
 // storyLinks(): the relations §4/§7c never surfaced anywhere a human looks - one STORY's own

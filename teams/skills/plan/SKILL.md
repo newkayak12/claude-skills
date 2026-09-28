@@ -64,12 +64,16 @@ not only the path it writes. Every one is a node-written original - the method i
 planning subgoals' `files[]` when the goal-spec is authored - there is no automatic placement yet,
 only the plain `files[]` mechanism every subgoal already has.
 
-This is the standalone route, where the whole run is the PRD. `.claude/team.json`'s
-`roles.planning` switch (see `install`) is a second route to the same `investigate → draft → revise → gate`
-work: a planning phase-Team the EPIC flow inserts before `shape` on its own, inside an ordinary
-`develop`/`document`/`orchestrate` run, writing that same set with `10-prd.md` at its floor. Use
-this skill when the deliverable IS the planning work; turn `roles.planning` on instead when a PRD should precede every EPIC
-that also does code or writing work, without a separate run to ask for it.
+This is the standalone route, where the whole run is the PRD. Every EPIC already plans on its own,
+whatever it is for (docs/plans/2026-09-28-teams-cards-everywhere.md): its plan stage splits the
+request by feature, one planning card per feature area (`PLAN-F1`, `PLAN-F2`, ...) runs the same
+`investigate → draft → revise → gate` work in its own worktree and writes that area's section (goal,
+scope and non-goals, user stories with acceptance criteria - ids prefixed by the area, `F1-US-1` -
+and open questions), and `plan-integrate` merges the sections into one `10-prd.md` and judges it
+for colliding story ids, contradictions between areas and features no card covers before `shape`
+runs. `.claude/team.json`'s `roles.planning` (see `install`) only picks which chain the cards run
+(`true`, `"light"`, `"auto"`); `false` is refused. Use this skill when the deliverable IS the
+planning work, with no code or writing to follow it.
 
 ## Brainstorm first (optional)
 

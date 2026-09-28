@@ -73,13 +73,25 @@ test('a wrongly typed key is ignored with a note, not applied', () => {
 
 // roles.planning (docs/plans/2026-09-28-teams-light-plan.md §2.5): true | false | 'light' | 'auto'.
 // The other roles stay boolean-only; any other string is a note, not a value.
-test('roles.planning accepts true/false/"light"/"auto", defaults to "auto"; other strings and non-boolean qa/audit are ignored with a note', () => {
+test('roles.planning accepts true/"light"/"auto", defaults to "auto"; false is refused with a note; other strings and non-boolean qa/audit are ignored with a note', () => {
   assert.equal(TEAM_DEFAULTS.roles.planning, 'auto');
-  for (const v of [true, false, 'light', 'auto']) {
+  for (const v of [true, 'light', 'auto']) {
     const r = resolveTeamOptions({}, { roles: { planning: v } });
     assert.equal(r.opts.roles.planning, v, `roles.planning ${JSON.stringify(v)} must be accepted`);
     assert.equal(r.notes.length, 0, JSON.stringify(r.notes));
   }
+  // C5 (docs/plans/2026-09-28-teams-cards-everywhere.md): false is refused - planning always
+  // produces its deliverables. The layer's value falls back to the one below it, the note says so,
+  // and the rest of that roles object still applies.
+  const off = resolveTeamOptions({}, { roles: { planning: false, qa: false } });
+  assert.equal(off.opts.roles.planning, 'auto', 'roles.planning false falls back to the default');
+  assert.equal(off.opts.roles.qa, false, 'the rest of the roles object is not thrown away with it');
+  assert.equal(off.notes.length, 1, JSON.stringify(off.notes));
+  assert.match(off.notes[0], /team\.json: roles\.planning: false is refused/);
+  const overFile = resolveTeamOptions({ roles: { planning: false } }, { roles: { planning: true } });
+  assert.equal(overFile.opts.roles.planning, true, 'a refused arg leaves team.json\'s own value standing');
+  assert.match(overFile.notes[0], /^args: roles\.planning: false is refused.*stays true/);
+  assert.equal(resolveTeamOptions({}, { roles: { planning: false } }).sources.roles, 'default', 'nothing was applied from that layer');
   const viaArgs = resolveTeamOptions({ roles: { planning: 'light' } }, { roles: { planning: true } });
   assert.equal(viaArgs.opts.roles.planning, 'light', 'an explicit arg outranks team.json');
   for (const bad of [{ planning: 'heavy' }, { planning: 1 }, { qa: 'auto' }, { audit: 'light' }]) {

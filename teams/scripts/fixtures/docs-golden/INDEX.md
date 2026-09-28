@@ -1,7 +1,7 @@
 ---
 key: E-aaaaaaaa
 state: DONE
-source: task.json@25
+source: task.json@33
 ---
 
 # E-aaaaaaaa — change a.txt and b.txt together
@@ -10,11 +10,13 @@ state: DONE · phase: (done) · daemon: pid 4242
 
 | key | role | state | tasks | last verdict |
 |---|---|---|---|---|
-| PLAN | planning | DONE | — | accept 95 |
+| PLAN-F1 | planning | DONE | — | accept 95 |
+| PLAN-F2 | planning | DONE | — | accept 94 |
 | P1 | develop | DONE | — | accept 92 |
 | P2 | develop | DONE | — | accept 95 |
 | D1 | develop | DONE | — | accept 94 |
-| QA | qa | DONE | — | accept 94 |
+| QA-F1 | qa | DONE | — | accept 94 |
+| QA-F2 | qa | DONE | — | accept 95 |
 | AUDIT | audit | DONE | — | accept 96 |
 
 ## Sections

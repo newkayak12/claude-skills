@@ -13,7 +13,7 @@ import { join, basename, dirname } from 'node:path';
 import { loadRunAt, runState, kindSkills, kindOf, KINDS } from '../../mcp/graph.mjs';
 import { graphStageSkills } from '../../mcp/mounts.mjs';
 import { STAGE_SKILLS } from '../../mcp/taskmanager.mjs';
-import { epicKey, storyKey, epicTicketState, storyTicketState } from '../../mcp/tickets.mjs';
+import { epicKey, storyKey, epicTicketState, storyTicketState, planningPkgs, qaPkgs } from '../../mcp/tickets.mjs';
 
 const REASONING_VERDICT = { critique: 'sound', dispatch: 'accept', accept: 'accept', integrate: 'verified', gate: 'accept' };
 
@@ -207,7 +207,7 @@ function tickets(taskDirPath, task) {
   const rows = [];
   try {
     rows.push({ key: epicKey(task.run_id), kind: 'EPIC', state: epicTicketState(task), title: String(task.request || '').slice(0, 60) });
-    for (const p of [task.planning_pkg, ...((task.spec && task.spec.packages) || []), task.qa_pkg, task.audit_pkg]) {
+    for (const p of [...planningPkgs(task), ...((task.spec && task.spec.packages) || []), ...qaPkgs(task), task.audit_pkg]) {
       if (!p) continue;
       rows.push({ key: storyKey(task.run_id, p.id), kind: 'STORY', state: storyTicketState(task, String(p.id)), title: String(p.title || p.id) });
     }

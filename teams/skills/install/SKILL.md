@@ -41,14 +41,17 @@ precede a run; add it whenever the project is ready to commit to it.
 
 1. **Judgment, before running anything.** Inspect the project's languages and source roots and
    propose dispatch patterns (e.g. `src/**`, `packages/**`); confirm them with the user. Ask
-   which `roles` to keep on (`planning`, `qa`) — both default ON since 0.17.0; a develop task passes planning and QA unless the project turns one off. `planning` inserts a planning
-   phase-Team (PRD investigate → draft → revise → gate) before `shape`, and its PRD and user stories feed
-   shape's packages — and a second planning pass (`audit → gate`) after integration, which
-   cross-checks the built result against those user stories and files a STORY for each one still
-   unmet. `qa` inserts a QA phase-Team between `integrate` and `gate:goal`, reusing the repair
-   worktree, to run a QA pass over the integrated tree before the goal gate judges it; a defect it
-   finds is filed as a STORY too, and the EPIC loops back through integration (capped by
-   `qa_rounds`, which caps audit rounds as well).
+   which `roles` to keep on (`qa`, `audit`) — both default ON. Planning is not a choice: it
+   always runs (docs/plans/2026-09-28-teams-cards-everywhere.md C5; `planning: false` is refused
+   with a note). The EPIC's plan stage splits the request by feature, one planning card per area
+   (PRD investigate → draft → revise → gate) writes that area's section, and `plan-integrate`
+   merges them into one PRD whose user stories feed shape's packages; `roles.planning` only picks
+   the cards' chain (`true`, `"light"`, `"auto"`). `audit` adds a second planning pass
+   (`audit → gate`) after integration, which cross-checks the built result against the merged
+   user stories and files a STORY for each one still unmet. `qa` adds one QA card per feature
+   area between `integrate` and `gate:goal`, each on the integration tree, to run a QA pass before
+   the goal gate judges it; a round's defects are filed as STORYs too, and the EPIC loops back
+   through integration (capped by `qa_rounds`, which caps audit rounds as well).
    If harness is already installed in this project, say so: `.claude/conventions/` and the
    session-marker directory are shared between the two plugins.
 2. Run:

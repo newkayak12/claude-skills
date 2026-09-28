@@ -855,7 +855,8 @@ export function validateSpec(spec, opts = {}) {
     // setgoal named source files in `files` and the draft node wrote its PRD sections INTO
     // them - measured, 2026-09-22, P1: a "Time and Clock resolution rules" subgoal whose
     // files[] were packages/queue/src/index.mjs and packages/cli/src/index.mjs, both duly
-    // edited. A planning run has no worktree of its own, so that lands in the real tree.
+    // edited. (Planning cards now run in worktrees of their own - cards-everywhere C2 - but a
+    // PRD written into source is still not a PRD.)
     if (DOCUMENT_ONLY_KINDS.has(kindOf(sg))) {
       for (const f of (sg && sg.files) || []) {
         if (!/\.(md|markdown|txt|rst|adoc)$/i.test(String(f))) {
