@@ -35,7 +35,7 @@ compatibility:
 **Not for:**
 - Rewriting specific weak sections (use portfolio-rewrite)
 - Overall portfolio quality scoring (use portfolio-feedback)
-- JD-specific keyword matching (use portfolio-jd)
+- JD-specific keyword matching (use jd-fit)
 
 ## Process
 
@@ -62,7 +62,7 @@ Provide: your portfolio text (paste or upload). Korean-language portfolios are f
 
 - `../portfolio-rewrite/SKILL.md` — act on the patterns identified here
 - `../portfolio-feedback/SKILL.md` — overall assessment alongside pattern analysis
-- `../portfolio-jd/SKILL.md` — after improving patterns, check fit against a specific JD
+- `../jd-fit/SKILL.md` — after improving patterns, check fit against a specific JD
 
 ---
 

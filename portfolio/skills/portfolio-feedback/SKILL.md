@@ -45,7 +45,7 @@ compatibility:
 
 Interviewer-calibrated portfolio feedback with the screen-stage answer first: a two-reader screen verdict, red-flag catalog with interview defenses, AI-screener summary, and a tallied convention check including ATS/parser safety (`references/screen-models.md`, `references/resume-conventions.md`) — then three passes that ask whether the document agrees with itself (`references/claim-and-consistency.md`): **consistency** (dates, skills index vs. evidence, role claim vs. verbs), **claim audit** (does each number survive one question), and **level calibration** (does it read at the level it claims). Dimension scores, expected questions, and improvement priorities follow, in persona. Revision mode compares a v1/v2 pair (`references/revision-diff.md`).
 
-**Not for** rewriting flagged sentences (`portfolio-rewrite`), JD matching (`portfolio-jd`), interview simulation (`portfolio-interview`), or target companies (`portfolio-company`).
+**Not for** rewriting flagged sentences (`portfolio-rewrite`), JD matching (`jd-fit`), interview simulation (`mock-interview`), or target companies (`portfolio-company`).
 
 ---
 
@@ -145,5 +145,5 @@ Before/after tally table (`revision-diff.md` + §C rows) · one line on verdict 
 
 - `portfolio-rewrite` — act on the improvement priorities
 - `portfolio-pattern` — writing patterns behind the ownership read
-- `portfolio-interview` — rehearse the expected questions
-- `portfolio-jd` — match against a specific posting
+- `mock-interview` — rehearse the expected questions
+- `jd-fit` — match against a specific posting

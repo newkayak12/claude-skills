@@ -1,29 +1,6 @@
----
-name: ppt-keycolor-changer
-description: >-
-  Use when the user wants to change, swap, or replace colors in a PPTX/PPT file.
-  Also triggers on: PPT 키컬러 변경, 슬라이드 색상 교체, 브랜드 컬러로 교체, 색상 일괄 변경, ppt keycolor,
-  키컬러 교체, 브랜드 적용, 색상 전체 바꿔줘, 색상 스캔해줘, 팔레트 교체.
-effort: medium
-scenarios:
-  - "이 PPT에서 오렌지 계열 색을 전부 토스 파란색으로 바꿔줘"
-  - "presentation.pptx 키컬러를 새 브랜드 팔레트로 교체해줘"
-  - "PPT 파일에 어떤 색이 얼마나 쓰였는지 먼저 알아봐줄 수 있어?"
-  - "Change all #E85E3A and its tonal variants to our new brand blue in my pptx"
-  - "슬라이드 색상 전수 스캔해서 교체 후보 보여줘"
-compatibility:
-  required:
-    - python 3.9+ (stdlib only — zipfile, re, colorsys; no external packages needed)
----
+# Recolor a pptx (template or built deck)
 
-## What this skill does
-
-Discovers every color in a PPTX file by scanning raw XML, then replaces source colors
-with target colors via case-insensitive string replacement — capturing 100% of color
-references including theme tokens, gradient stops, chart series, table cells, hyperlinks,
-and schemeClr mappings that python-pptx's API misses.
-
----
+Engine: `scripts/ppt_keycolor_changer.py` (stdlib only; invoke with an absolute path). Scans every `.xml`/`.rels` in the zip, so theme tokens, gradient stops, chart series, table cells and hyperlinks all change — what python-pptx's API misses.
 
 ## Standing Mandates
 
@@ -41,7 +18,7 @@ and schemeClr mappings that python-pptx's API misses.
 - Accept `.pptx` or `.pptm` only. Reject `.pdf`, `.key`, `.odp`.
 - If the user provides a path that ends in `.pdf`, or a directory that contains both
   `foo.pdf` and `foo.pptx`, explicitly confirm: "PPTX 파일로 진행하겠습니다."
-- The bundled script is at `scripts/ppt_keycolor_changer.py` relative to this skill root.
+- The script is `scripts/ppt_keycolor_changer.py` under the deck-builder skill root.
   Always use an absolute path when invoking it.
 
 ---

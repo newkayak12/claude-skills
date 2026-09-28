@@ -1,6 +1,6 @@
 # Interview Prep — Study Domain Structures
 
-Shared reference for the interview-prep skill. Read this after completing Steps 1–4 of SKILL.md
+Shared reference for the interview-plan skill. Read this after completing Steps 1–4 of SKILL.md
 (context gathering, company calibration, gap analysis, plan generation). Use the structures
 here to fill in the domain-specific detail of the plan.
 
@@ -30,7 +30,7 @@ Recommended sequence for most candidates:
 
 Do at least 3 full mock interviews with a timer before the real interview. Mocks reveal
 communication habits that practice alone does not. Use a peer, interviewing.io, or role-play
-with Claude (use portfolio-interview skill).
+with Claude (use mock-interview skill).
 
 ---
 

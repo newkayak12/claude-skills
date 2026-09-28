@@ -1,5 +1,5 @@
 ---
-name: interview-prep
+name: interview-plan
 effort: high
 description: >-
   Use when someone needs a structured interview preparation plan before their
@@ -26,7 +26,7 @@ compatibility:
 - ALWAYS run gap analysis against the target role before generating the study plan.
 - ALWAYS calibrate the plan to the specific company, role, and timeline.
 - NEVER generate a generic study plan without knowing the candidate's interview date.
-- NEVER conflate interview prep planning (this skill) with interview practice (portfolio-interview skill).
+- NEVER conflate interview prep planning (this skill) with interview practice (mock-interview skill).
 
 
 # Interview Prep Planner
@@ -39,7 +39,7 @@ compatibility:
 - You need STAR story prompts calibrated to a specific company type
 
 **Not for:**
-- Live mock interview practice (use portfolio-interview)
+- Live mock interview practice (use mock-interview)
 - Resume tailoring to a specific JD (use resume-tailorer)
 - General portfolio improvement (use portfolio-feedback or portfolio-rewrite)
 
@@ -54,7 +54,7 @@ compatibility:
 
 ## Standalone Inputs
 
-If following portfolio-feedback, portfolio-jd, or portfolio-company, you can start here by providing:
+If following portfolio-feedback, jd-fit, or portfolio-company, you can start here by providing:
 - Your experience level and tech stack
 - Target company and role level
 - Interview timeline (weeks until interview)
@@ -80,9 +80,9 @@ For each prep session, Claude delivers:
 
 ## Related Skills
 
-- `../portfolio-interview/SKILL.md` — practice answering questions live after building this plan
+- `../mock-interview/SKILL.md` — practice answering questions live after building this plan
 - `../portfolio-feedback/SKILL.md` — overall portfolio assessment before targeting specific companies
-- `../portfolio-jd/SKILL.md` — JD-specific gap analysis if you have a posting
+- `../jd-fit/SKILL.md` — JD-specific gap analysis if you have a posting
 
 ## Why Generic Prep Fails
 
