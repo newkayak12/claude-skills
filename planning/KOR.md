@@ -79,7 +79,9 @@ Q2에 세 팀 걸쳐 이니셔티브 15개가 경쟁 중이야. epic 가설, RIC
 Standing mandates: 시퀀싱 전에 epic 간 의존성을 반드시 매핑한다, 확약 항목과 희망 항목을 반드시
 구분한다, 팀의 실제 캐파 제약 없이 로드맵을 만들지 않는다, 최상위 outcome 우선순위에 대한
 이해관계자 정렬 없이 순서를 잡지 않는다. 부속 파일: `template.md`(작성 양식),
-`examples/sample.md`, `references/roadmap-types.md`, `references/anti-patterns.md`, 가이드형
+`examples/sample.md`, `references/roadmap-types.md`, `references/anti-patterns.md`,
+`references/validating-customer-problems.md`(Phase 1 패턴 vs 일화 판정),
+`references/prioritization-frameworks.md`(Phase 3 RICE + MoSCoW), 가이드형
 진행에는 `agents/roadmap-coordinator.md`.
 
 ## 관련 플러그인
