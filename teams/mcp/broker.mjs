@@ -21,7 +21,7 @@
 // Zero dependencies: MCP's stdio transport is newline-delimited JSON-RPC 2.0.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
@@ -443,6 +443,71 @@ function crossCheck(cwd, claimed, isolated, kind) {
     };
   }
   return { changed_files_verified: missing.length ? false : ignored.length ? null : true, change_attribution: 'isolated', contradicted_files: missing, ...extra };
+}
+
+// review/gate's --verify grants Bash under a read-only tool profile that has no OS sandbox
+// behind it for this vendor (the claude adapter's own top comment says so) - a denylist of
+// mutating git/fs verbs helps, but does not catch a redirect (`echo x > path`), `tee`, or a
+// scripting language writing a file directly. This pair is the actual backstop: fingerprint
+// what the node is allowed to touch before it runs, and if it differs after, restore it and
+// void the node's own verdict - "read-only" holds because the work is put back, not only
+// because the model was asked nicely.
+//
+// Scope matters: a subgoal's own declared files[] is what verifySnapshot fingerprints, byte
+// for byte, never a whole-tree git status. Two sibling subgoals can share one cwd when the
+// run is not isolated ("isolated" means only this RUN has the cwd, not that each subgoal
+// does - team_open's own schema says so) and each legitimately writes its OWN files while
+// this one's gate is judging; a whole-tree diff would call that a violation of a node that
+// touched nothing. A node with no subgoal (gate:goal) has no files[] to scope to and falls
+// back to a whole-tree git status - by the time it runs every subgoal gate is already
+// settled (the graph's own deps), so nothing else should be writing here, and a git-based
+// restore (checkout/clean) is safe because there is no earlier "uncommitted work in
+// progress" state a checkout could clobber, the way there would be for a subgoal still
+// mid-chain.
+function verifySnapshot(run, n) {
+  if (n.subgoal_id) {
+    const sg = (run.spec?.subgoals || []).find((s) => String(s.id) === String(n.subgoal_id));
+    const files = (Array.isArray(sg?.files) ? sg.files : [])
+      .filter((f) => typeof f === 'string' && !f.includes('*'));
+    const data = {};
+    for (const f of files) {
+      try { data[f] = readFileSync(join(run.cwd, f.replace(/^\.\//, ''))); } catch { data[f] = null; }
+    }
+    return { scope: 'files', files, data };
+  }
+  return { scope: 'tree', tree: gitChanged(run.cwd) };
+}
+
+// Returns the paths that changed and had to be put back - an empty array means the node's
+// own verdict stands. Best-effort restore: a failure to write back is still reported, so the
+// caller voids the verdict either way rather than trusting a tree it could not confirm.
+function verifyRestore(run, n, before) {
+  if (before.scope === 'files') {
+    const changed = [];
+    for (const f of before.files) {
+      const abs = join(run.cwd, f.replace(/^\.\//, ''));
+      let now;
+      try { now = readFileSync(abs); } catch { now = null; }
+      const was = before.data[f];
+      const same = now === null ? was === null : was !== null && Buffer.compare(now, was) === 0;
+      if (same) continue;
+      changed.push(f);
+      try {
+        if (was === null) rmSync(abs, { force: true });
+        else { mkdirSync(dirname(abs), { recursive: true }); writeFileSync(abs, was); }
+      } catch { /* reported regardless - the caller voids the verdict either way */ }
+    }
+    return changed;
+  }
+  const after = gitChanged(run.cwd);
+  if (after === null || before.tree === null) return [];
+  const beforeSet = new Set(before.tree);
+  const newPaths = after.filter((p) => !beforeSet.has(p));
+  for (const p of newPaths) {
+    spawnSync('git', ['checkout', '--', p], { cwd: run.cwd });
+    spawnSync('git', ['clean', '-fq', '--', p], { cwd: run.cwd });
+  }
+  return newPaths;
 }
 
 // ---------- run lookup ----------
@@ -1716,6 +1781,16 @@ async function toolGraphRun(a) {
   // A draft is implement-shaped - it writes files and reports them - so it borrows that
   // schema; review is reasoning and runs unstaged like the other judging nodes.
   const reasoning = REASONING_STAGES.has(n.stage);
+  // review and gate are reasoning (read-only sandbox, no Edit/Write), but their own contract
+  // asks them to re-run the acceptance checks a command names - wc -w, a validator script,
+  // git diff --stat - not to trust the authoring node's report of them. A reasoning node with
+  // no Bash cannot do that (P4:review:U1, portfolio-refresh Sprint: rejected twice on
+  // `verified:false` for "no Bash tool available in this reasoning node", passed on attempt 3
+  // on the identical unverifiable evidence - the verdict was luck, not the work). --verify
+  // tells the adapter to grant Bash under the read-only profile anyway, for exactly these two
+  // stages; every other reasoning stage (plan, setgoal, critique, report, reduce, ask) is
+  // judgment over text and gets no Bash, unchanged.
+  const verifies = n.stage === 'review' || n.stage === 'gate';
   const args = [
     ...(reasoning ? [] : ['--stage', n.stage === 'test' ? 'test' : 'implement']),
     '--cwd', run.cwd,
@@ -1724,9 +1799,15 @@ async function toolGraphRun(a) {
     '--output', outPath,
     '--sandbox', r.sandbox,
   ];
+  if (verifies) args.push('--verify');
   if (run.isolated && !REASONING_STAGES.has(n.stage)) args.push('--isolated');
   for (const d of Array.isArray(a.add_dirs) ? a.add_dirs : []) args.push('--add-dir', String(d));
   if (chosenModel) args.push('--model', String(chosenModel));
+
+  // Taken before the adapter runs, so a --verify node's own Bash access can be checked
+  // against it afterward regardless of what the node itself claims (verifySnapshot/
+  // verifyRestore above).
+  const verifySnap = verifies ? verifySnapshot(run, n) : null;
 
   let proc;
   try {
@@ -1816,6 +1897,15 @@ async function toolGraphRun(a) {
       // belongs on the result; merged here instead of gating a whole extra branch on one stage.
       ...(independence ? { reviewer_independence: independence.independence } : {}),
     };
+  }
+  if (verifySnap) {
+    const mutated = verifyRestore(run, n, verifySnap);
+    if (mutated.length) {
+      result = {
+        stage_ok: false,
+        reason: `${entry(n)} used its --verify Bash access to change ${mutated.join(', ')} while judging read-only. Restored; this attempt is void - a ${n.stage} node's verdict on a tree it edited itself is not evidence.`,
+      };
+    }
   }
   return finishNode(run, n, result, r.vendor);
 }
