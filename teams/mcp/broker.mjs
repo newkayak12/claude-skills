@@ -64,6 +64,7 @@ import {
   promoteHumanGates,
   autoPassHumanGateResult,
   applyPinAction,
+  applyStoryPin,
   drainHumanActions,
   computeWriteScope,
 } from './graph.mjs';
@@ -654,6 +655,8 @@ function ingestHandoff(run) {
   for (const action of queue) {
     if (action.kind === 'pin') {
       if (applyPinAction(run, action)) touched = true;
+    } else if (action.kind === 'story_pin') {
+      if (applyStoryPin(run, action)) touched = true;
     } else if (action.kind === 'submit') {
       const n = getNode(run, action.node_id);
       if (!n || n.state !== 'waiting_human') continue; // already resolved (or stale), nothing to apply

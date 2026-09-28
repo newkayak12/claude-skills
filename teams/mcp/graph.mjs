@@ -269,7 +269,17 @@ export function normalizeSpec(run, spec) {
   if (!spec || typeof spec !== 'object' || !Array.isArray(spec.subgoals)) return spec;
   const dflt = defaultKind(run);
   const light = dflt === 'planning-light';
-  return { ...spec, subgoals: spec.subgoals.map((sg) => (sg && typeof sg === 'object' && (sg.kind == null || (light && sg.kind === 'planning')) ? { ...sg, kind: dflt } : sg)) };
+  // A package child run (run.package, opened by the task manager's openChild) is judged by its
+  // manager against the package's own acceptance - so its spec carries every item verbatim,
+  // whatever setgoal wrote. setgoal is told so (prompts.mjs's packageBlock); this is the
+  // deterministic half, so a dropped or reworded item cannot slip past gate:goal unjudged.
+  const pkgAcc = run && run.package && Array.isArray(run.package.acceptance) ? run.package.acceptance : [];
+  if (pkgAcc.length) {
+    const own = Array.isArray(spec.acceptance) ? spec.acceptance.map(String) : [];
+    const missing = pkgAcc.filter((a) => !own.includes(a));
+    if (missing.length) spec = { ...spec, acceptance: [...missing, ...own] };
+  }
+  return { ...spec, subgoals:spec.subgoals.map((sg) => (sg && typeof sg === 'object' && (sg.kind == null || (light && sg.kind === 'planning')) ? { ...sg, kind: dflt } : sg)) };
 }
 
 // The stage that AUTHORS the artifact - the identity a later reviewing stage must not be.
@@ -383,6 +393,21 @@ export function applyPinAction(run, action) {
   // `interactive` says (a model-written assignee is the one that needs interactive, §7).
   sg.assignee = { by: 'user', ...(action.who ? { who: action.who } : {}) };
   return applyHumanPin(run, sg, action.subgoal_id, action.attempt);
+}
+
+// The STORY half of tm_assign ({kind: 'story_pin', to, who}): the run-level pin expandSubgoals
+// hands to every subgoal setgoal produces. A package child run opens with plan/setgoal/critique
+// ahead of any subgoal, so a STORY pinned after dispatch but before setgoal has no subgoal to
+// pin yet - this is what makes it land when they appear (and on a later spec retry). Subgoals
+// that already exist are pinned by tm_assign's own per-subgoal `pin` actions.
+export function applyStoryPin(run, action) {
+  if (action.to === 'auto') {
+    if (!run.subgoal_assignee) return false;
+    delete run.subgoal_assignee;
+    return true;
+  }
+  run.subgoal_assignee = { by: 'user', ...(action.who ? { who: action.who } : {}) };
+  return true;
 }
 
 // The attempt a subgoal is currently on, read back from the nodes themselves - what tm_assign
@@ -713,9 +738,9 @@ export function createRun(opts) {
     created_at: Date.now(),
     spec: null,
     // How many packages deep this run was opened. 0 at the top; task.child_opts.depth =
-    // parent.depth + 1 for every package's child run (teamconfig.mjs's max_depth reads
-    // this). A caller that never asks - the ordinary team_open path, every run before this
-    // field existed - gets 0, which max_depth (default 2) never trips.
+    // parent.depth + 1 for every package's child run. Recorded for the nested-task cap
+    // (teamconfig.mjs's max_depth, not enforced yet). A caller that never asks - the
+    // ordinary team_open path, every run before this field existed - gets 0.
     depth: Number.isInteger(opts.depth) ? opts.depth : 0,
     nodes: [],
     // Cross-run author identity ({executor, vendor, model} or null), for a run whose judging
@@ -726,33 +751,28 @@ export function createRun(opts) {
     // is not an audit child simply carries null, same as opts.external_author being absent.
     external_author: opts.external_author || null,
   };
-  // A parent that already shaped and critiqued this run's one subgoal (docs/plans/
-  // 2026-09-21-teams-server-owns-the-loop.md §3) hands it down already decided: run-level
-  // plan/setgoal/critique would only re-derive what the parent's shape+critique already
-  // settled, and a goal-level gate would only re-judge what that one subgoal's own gate
-  // just judged. Skip both layers - this run IS the subgoal chain, nothing else. No plan
-  // node ever runs here, so run.flow (opts.flow - a package's child is always opened with a
-  // resolved flow, never 'auto') decides the kind directly instead of waiting on flow_chosen.
-  if (opts.parent_shaped === true) {
-    run.parent_shaped = true;
-    const kind = FLOWS[run.flow] ? FLOWS[run.flow].kind : DEFAULT_KIND;
-    const acceptance = Array.isArray(opts.acceptance) && opts.acceptance.length
-      ? opts.acceptance.slice()
-      : [String(opts.goal || opts.request || '').slice(0, 200) || 'the package meets its brief'];
-    run.spec = {
-      goal: opts.goal || opts.request,
-      acceptance,
-      subgoals: [{ id: 'U1', title: opts.goal || 'the package', kind, acceptance: acceptance.slice(), deps: [], after: [], ...(opts.subgoal_assignee ? { assignee: opts.subgoal_assignee } : {}) }],
+  // A package the task manager shaped and critiqued (openChild) still runs the full harness
+  // inside its own child run - plan -> setgoal -> critique -> <chain> -> gate:goal -> report -
+  // the fractal rule of docs/plans/2026-09-17-teams-team.md §2 (each Team runs the four steps
+  // inside itself). What the manager already settled travels down as data, not as skipped
+  // nodes: `package` tells plan it is writing a BUILD plan for this one package (not a re-split
+  // of the EPIC - prompts.mjs's packageBlock), and its acceptance is carried verbatim into the
+  // spec (normalizeSpec). `subgoal_assignee` is a STORY-level human pin (pkg.assignee, or
+  // tm_assign before dispatch), applied to the subgoals setgoal produces (expandSubgoals).
+  // The 2026-09-21 chain-only shortcut (`parent_shaped`) was reverted on 2026-09-28.
+  if (opts.package && typeof opts.package === 'object') {
+    run.package = {
+      id: opts.package.id != null ? String(opts.package.id) : null,
+      title: String(opts.goal || opts.package.title || ''),
+      acceptance: Array.isArray(opts.acceptance) ? opts.acceptance.map(String).filter(Boolean) : [],
     };
-    pushChain(run, (KINDS[kind] || KINDS[DEFAULT_KIND]).chain, 'U1', 1, [], [], {});
-    applyHumanPin(run, run.spec.subgoals[0], 'U1', 1);
-  } else {
-    run.nodes.push(
-      node('plan', 'plan', []),
-      node('setgoal', 'setgoal', ['plan']),
-      node('critique', 'critique', ['setgoal']),
-    );
   }
+  if (opts.subgoal_assignee) run.subgoal_assignee = opts.subgoal_assignee;
+  run.nodes.push(
+    node('plan', 'plan', []),
+    node('setgoal', 'setgoal', ['plan']),
+    node('critique', 'critique', ['setgoal']),
+  );
   return saveRun(run);
 }
 
@@ -928,19 +948,6 @@ export function pushChain(run, chain, subgoalId, attempt, headDeps, headAfter, h
 function gateStage(kind) {
   const { chain } = KINDS[kind] || KINDS[DEFAULT_KIND];
   return chain[chain.length - 1];
-}
-
-// A parent_shaped run's terminal node: the latest-attempt gate of its one subgoal. There is
-// no gate:goal and no report on this run, so runState (below) and any caller reading the
-// child's own account of itself (taskmanager.mjs's foldChild) read this instead. Latest
-// attempt is the last-pushed one, the same convention retrySubgoal's own `heads.at(-1)` and
-// `prior.length` counting rely on elsewhere in this file.
-export function parentShapedTerminal(run) {
-  const sg = run.spec && Array.isArray(run.spec.subgoals) ? run.spec.subgoals[0] : null;
-  if (!sg) return null;
-  const stage = gateStage(kindOf(sg));
-  const nodes = run.nodes.filter((n) => n.stage === stage && n.subgoal_id === String(sg.id));
-  return nodes.length ? nodes[nodes.length - 1] : null;
 }
 
 // ---------- goal-gate consensus and repair (Step 9) ----------
@@ -1348,6 +1355,14 @@ export function expandSubgoals(run, subgoals) {
     const deps = (sg.deps || []).map((d) => `gate:${d}:${round}`);
     const after = (sg.after || []).map((d) => `gate:${d}:${round}`);
     gateIds.push(pushChain(run, (KINDS[kindOf(sg)] || KINDS[DEFAULT_KIND]).chain, id, round, [critiqueDep, ...deps], after, {}));
+    // A STORY-level pin (run.subgoal_assignee: the package's own assignee from shape, or
+    // tm_assign on the STORY) covers every subgoal the package's setgoal produced - the STORY
+    // is the human's, so its TASKs are too. A subgoal setgoal already pinned keeps its own.
+    // Written onto the spec subgoal (not only the node) so retrySubgoal's later attempts
+    // re-apply it the same way.
+    if (run.subgoal_assignee && !sg.assignee) {
+      sg.assignee = typeof run.subgoal_assignee === 'object' ? { ...run.subgoal_assignee } : run.subgoal_assignee;
+    }
     applyHumanPin(run, sg, id, round);
   }
   // Where parallel subgoals converge. Until this node existed the only place they met was
@@ -1587,14 +1602,6 @@ export function retrySubgoal(run, subgoalId, feedback) {
 // setgoal with the critique's problems, and discard the subgoal graph the old spec
 // produced - a new spec may decompose differently.
 export function retrySpec(run, feedback) {
-  // A parent_shaped run has no setgoal/critique to redo - its "spec" IS the one subgoal the
-  // parent already shaped. A caller that asks for a spec-level retry anyway (autoReassign's
-  // twice-rejected-for-the-same-reason escalation, or a bare team_retry({run_id})) gets the
-  // one retry this run actually has: a fresh attempt of that subgoal's chain.
-  if (run.parent_shaped) {
-    const sg = run.spec && Array.isArray(run.spec.subgoals) ? run.spec.subgoals[0] : null;
-    if (sg) return retrySubgoal(run, sg.id, feedback);
-  }
   const priors = run.nodes.filter((n) => n.stage === 'setgoal');
   const attempt = priors.length + 1;
   if (attempt > run.max_retries + 1) {
@@ -1819,28 +1826,6 @@ export function runState(run) {
   }
   const withVerdict = (s) => (goalVerdict ? { ...s, goal_verdict: goalVerdict } : s);
 
-  // A parent_shaped run has no gate:goal and no report node (§3 of docs/plans/
-  // 2026-09-21-teams-server-owns-the-loop.md) - it IS the one subgoal's chain, so its
-  // terminal gate stands in for both: done means complete, and the ordinary blocked/running
-  // reads below still apply to everything short of that.
-  if (run.parent_shaped) {
-    const terminal = parentShapedTerminal(run);
-    if (terminal && terminal.state === 'done') return withVerdict({ state: 'complete', counts });
-    // Checked exactly where `blocked` would otherwise fire, not before it: readyNodes() already
-    // excludes a waiting_human node (it left 'pending' the moment promoteWaitingHuman parked
-    // it), so without this a run with NOTHING ELSE ready reads exactly like a genuine deadlock -
-    // the sizing document's own §4.2 risk. A sibling subgoal still being offered or worked is a
-    // different fact - the run is still `running`, same as it would be blocked on nothing at
-    // all; only the "otherwise blocked" case gets the more honest word. See graph.mjs's
-    // promoteWaitingHuman for who sets the node state this reads.
-    if (!readyNodes(run).length && !counts.running && run.nodes.some((n) => n.state === 'waiting_human')) {
-      return withVerdict({ state: 'waiting_human', counts });
-    }
-    if (run.routing_blocked && !counts.running) return withVerdict({ state: 'blocked', counts });
-    if (!readyNodes(run).length && !counts.running) return withVerdict({ state: 'blocked', counts });
-    return withVerdict({ state: 'running', counts });
-  }
-
   // Only a finished report means the run finished. Deciding on "nothing pending" once
   // let a spec retry that rebuilt no nodes report itself complete having implemented
   // nothing - the worst kind of failure, because it looks like success.
@@ -1857,11 +1842,12 @@ export function runState(run) {
     const settled = counts.unreachable > 0;
     return withVerdict(settled ? { state: 'complete', settled: true, counts } : { state: 'complete', counts });
   }
-  // Same reuse the parent_shaped branch above relies on - tickets.mjs's epicTicketState and
-  // taskmanager.mjs's task-level runState(task) call this same function (task.json is itself a
-  // "run" with a .nodes array), so this one branch fixes both levels at once. Gated on "nothing
-  // else ready or running" for the same reason the parent_shaped branch is: a sibling subgoal
-  // still moving means the run is still `running`, not waiting on anything as a whole.
+  // tickets.mjs's epicTicketState and taskmanager.mjs's task-level runState(task) call this
+  // same function (task.json is itself a "run" with a .nodes array), so this one branch fixes
+  // both levels at once. Gated on "nothing else ready or running": readyNodes() already excludes
+  // a waiting_human node, so without the gate a run with nothing else ready reads like a
+  // deadlock; a sibling subgoal still moving means the run is still `running`, not waiting on
+  // anything as a whole.
   if (!readyNodes(run).length && !counts.running && run.nodes.some((n) => n.state === 'waiting_human')) {
     return withVerdict({ state: 'waiting_human', counts });
   }

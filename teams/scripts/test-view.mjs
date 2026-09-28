@@ -148,26 +148,17 @@ const SHAPE_WITH_IMPLEMENTS = {
 async function completeChild(g, child, { accept = true } = {}) {
   const { cwd, run_id } = child;
   const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
-  // Since 0.14.0 an ordinary STORY child is parent_shaped: chain-only (implement -> test -> gate),
-  // no plan/setgoal/critique/gate:goal/report. Detect it the way test-taskmanager does.
-  const full = await g.call('team_status', { run_id, cwd, full: true });
-  const parentShaped = full.parent_shaped === true;
-  if (!parentShaped) {
-    const v = await sub('plan', { handoff: 'p', flow: 'develop', size: 'S' });
-    assert.equal(v.state, 'done', JSON.stringify(v));
-    await sub('setgoal', { spec: CHILD_SPEC });
-    await sub('critique', { sound: true });
-  }
+  // Every package runs the full harness in its own child run (the 0.14.0 chain-only child run
+  // was reverted 2026-09-28): plan -> setgoal -> critique -> implement -> test -> gate ->
+  // gate:goal -> report.
+  let v = await sub('plan', { handoff: 'p', flow: 'develop', size: 'S' });
+  assert.equal(v.state, 'done', JSON.stringify(v));
+  await sub('setgoal', { spec: CHILD_SPEC });
+  await sub('critique', { sound: true });
   appendFileSync(join(cwd, 'a.txt'), `changed by ${child.package_id || 'child'}\n`);
-  const v = await sub('implement:U1:1', { changed_files: ['a.txt'], handoff: 'built' });
+  v = await sub('implement:U1:1', { changed_files: ['a.txt'], handoff: 'built' });
   assert.equal(v.state, 'done', JSON.stringify(v));
   await sub('test:U1:1', { verified: true });
-  if (parentShaped) {
-    await sub('gate:U1:1', { accept, match_pct: accept ? 95 : 40, gaps: accept ? [] : ['missing the b half'], reason: accept ? '' : 'short' });
-    const nx = await g.call('team_next', { run_id, cwd });
-    assert.equal(nx.state, accept ? 'complete' : 'blocked');
-    return;
-  }
   await sub('gate:U1:1', { accept: true, match_pct: 95 });
   await sub('gate:goal:1', { accept, match_pct: accept ? 95 : 40, gaps: accept ? [] : ['missing the b half'], reason: accept ? '' : 'short' });
   const nx = await g.call('team_next', { run_id, cwd });
@@ -381,8 +372,8 @@ test('collect() on an L task with one dispatched, accepted child: state derivati
 
     assert.ok(p1.child, 'P1 has a child run');
     assert.equal(p1.child.state, 'complete');
-    // parent_shaped (0.14.0): the child carries only its KINDS chain.
-    assert.deepEqual(p1.child.nodes.map((n) => n.node_id), ['implement:U1:1', 'test:U1:1', 'gate:U1:1']);
+    // The full harness: the package's own plan/setgoal/critique, its chain, gate:goal and report.
+    assert.deepEqual(p1.child.nodes.map((n) => n.node_id), ['plan', 'setgoal', 'critique', 'implement:U1:1', 'test:U1:1', 'gate:U1:1', 'gate:goal:1', 'report']);
     assert.equal(p1.child.nodes.find((n) => n.node_id === 'gate:U1:1').match_pct, 95);
 
     // manager stages exclude dispatch/accept (those live under packages instead)
@@ -984,6 +975,11 @@ test('collect() surfaces a human pin through to a promoted waiting_human node: p
 
     const assigned = await tm.call('tm_assign', { task_id, key: `${epicKeyHere}/P1`, to: { executor: 'human', who: 'sanghyeon' } });
     assert.equal(assigned.to, 'human');
+    // The package plans itself first; the STORY pin lands on the subgoal its setgoal produces.
+    const sub = (node_id, payload) => g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id, payload: ok(payload) });
+    await sub('plan', { handoff: 'p', flow: 'develop', size: 'S' });
+    await sub('setgoal', { spec: { ...CHILD_SPEC, subgoals: [{ ...CHILD_SPEC.subgoals[0], title: 'module a' }] } });
+    await sub('critique', { sound: true });
     await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
 
     const model = collectTask(root, task_id);

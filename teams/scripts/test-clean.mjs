@@ -87,16 +87,25 @@ const SHAPE = {
   ],
 };
 
-// Same shape test-taskmanager.mjs's completeChild uses: a SHAPE package with no split/size:'L'
-// is parent_shaped by default, so gate:U1 alone is both the subgoal gate and the run's verdict.
+// Same shape test-taskmanager.mjs's completeChild uses: every package runs the full harness in
+// its own child run - plan -> setgoal -> critique -> implement -> test -> gate -> gate:goal -> report.
+const CHILD_SPEC = {
+  goal: 'G', acceptance: ['A'],
+  subgoals: [{ id: 'U1', title: 'do it', acceptance: ['a'], test: ['t'], deps: [] }],
+};
 async function completeChild(g, child) {
   const { cwd, run_id } = child;
   const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
+  await sub('plan', { handoff: 'p', flow: 'develop', size: 'S' });
+  await sub('setgoal', { spec: CHILD_SPEC });
+  await sub('critique', { sound: true });
   appendFileSync(join(cwd, 'a.txt'), `changed by ${child.package_id || 'child'}\n`);
   let v = await sub('implement:U1:1', { changed_files: ['a.txt'], handoff: 'built' });
   assert.equal(v.state, 'done', JSON.stringify(v));
   await sub('test:U1:1', { verified: true });
   await sub('gate:U1:1', { accept: true, match_pct: 95 });
+  await sub('gate:goal:1', { accept: true, match_pct: 95 });
+  await sub('report', { handoff: 'built' });
   const nx = await g.call('team_next', { run_id, cwd });
   assert.equal(nx.state, 'complete');
 }

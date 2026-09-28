@@ -72,7 +72,7 @@ flowchart TD
   PLAN --> SHAPE["shape: split into packages"]
   SHAPE --> CRIT{"critique"}
   CRIT -->|"unsound"| SHAPE
-  CRIT -->|"sound"| DISP["develop: each package builds in its own worktree<br/>implement → test → gate, in parallel where deps allow"]
+  CRIT -->|"sound"| DISP["develop: each package runs the full harness in its own worktree<br/>plan → setgoal → critique → implement → test → gate → gate:goal → report<br/>in parallel where deps allow"]
   DISP --> ACC{"accept, per package"}
   ACC -->|"rejected"| DISP
   ACC -->|"all accepted"| INT{"integrate"}
@@ -95,7 +95,7 @@ What each step does:
 | `brainstorm` | Restates intent, scope and approach; asks you questions only when `interactive`. Skipped when your session already passed `decisions`. | `brainstorm` |
 | PLAN | A planning team investigates the project and writes a PRD. With acceptance already declared in the request it runs a lighter chain. | `roles.planning` |
 | `shape` → `critique` | `shape` splits the work into packages with `touches[]` and `deps`; `critique` checks the split. An unsound shape is reshaped. | — |
-| develop (dispatch) | The actual development. Each package gets its own git worktree and a driver session that runs the package's child run: for code `implement → test → gate` (write the change, run the tests, a separate judge checks it), for a document `draft → review → gate`. Packages whose `deps` are met run in parallel. See [Inside one package](#inside-one-package). | `max_parallel_teams`, `vendor` |
+| develop (dispatch) | The actual development. Each package gets its own git worktree and a driver session that runs the package's child run through the full harness: `plan → setgoal → critique → implement → test → gate → gate:goal → report`. `plan` is a build plan for that one package (files, interfaces, order of work, test plan, risks), not a re-split; `setgoal` carries the package's acceptance verbatim and `critique` checks the plan against it. A document package uses `draft → review → gate` in place of `implement → test → gate`. Packages whose `deps` are met run in parallel. See [Inside one package](#inside-one-package). | `max_parallel_teams`, `vendor` |
 | accept | When a package's run finishes, a judge accepts or rejects its result. A rejection retries the package with the reasons attached. | `max_retries` |
 | `integrate` | Merges the accepted branches and runs the checks. A seam no single package can see gets a repair package that works on the merged tree. | — |
 | QA | A QA team writes and runs test cases against the merged tree. Each defect becomes a fix STORY, and the loop re-integrates. | `roles.qa`, `qa_rounds` |
@@ -114,8 +114,26 @@ package it depends on files an **upstream fix** there and waits for it (`upstrea
 
 ## Inside one package
 
-Each child run expands its subgoals into a node chain chosen by the subgoal's **kind**
-(`KINDS` in `mcp/graph.mjs`). The author of a stage is never the one who judges it.
+Every package runs the full harness inside its own child run, the same four steps the task
+runs around it (plan, set a goal, check it, build and judge). Phase teams (PLAN, QA, audit),
+repair packages and the single run of a size-S task run the same shape:
+
+```mermaid
+flowchart LR
+  PLN["plan"] --> SG["setgoal"] --> CR["critique"] --> CH["one chain per subgoal"] --> RD["reduce, if more than one subgoal"] --> GG["gate:goal"] --> RE["report"]
+```
+
+For a develop package, `shape` has already split the EPIC and `critique` has already checked
+that split, so the package's own `plan` is a **build plan** for this package: the files and
+modules to touch, the interfaces and data shapes, the order of work, the test plan and the
+risks. It does not split the EPIC again. `setgoal` usually keeps one subgoal and copies the
+package's acceptance into the spec word for word; `critique` judges the plan and spec against
+the package's brief and acceptance. The package's `gate:goal` verdict and `report` handoff are
+what the manager's `accept` reads. A human pin on the STORY (`tm_assign`, or `assignee` in the
+shape) applies to every subgoal the package's `setgoal` produces.
+
+Each subgoal expands into a node chain chosen by its **kind** (`KINDS` in `mcp/graph.mjs`).
+The author of a stage is never the one who judges it.
 
 ```mermaid
 flowchart LR
@@ -142,16 +160,9 @@ flowchart LR
 A rejected `gate` retries its subgoal with the gate's gaps as feedback. An interactive planning
 run can stop after `investigate` with an `ask` card for you.
 
-Which chain a run gets depends on its **flow**: `develop` → code, `document` → document,
-`plan` → planning (or planning-light), `qa` → qa, and the post-QA audit → planning-audit. A
-develop package that `shape` already planned runs *chain only*. Phase teams (PLAN, QA, audit),
-repair packages, packages that shape marked for a further split, and the single run of a size-S
-task get a full run around the chains:
-
-```mermaid
-flowchart LR
-  PLN["plan"] --> SG["setgoal"] --> CR["critique"] --> CH["one chain per subgoal"] --> RD["reduce, if more than one subgoal"] --> GG["gate:goal"] --> RE["report"]
-```
+Which chain a subgoal gets depends on the run's **flow**: `develop` → code, `document` →
+document, `plan` → planning (or planning-light), `qa` → qa, and the post-QA audit →
+planning-audit.
 
 ## How a task ends
 
@@ -261,7 +272,7 @@ explanation of every key is in [docs/configuration.md](docs/configuration.md#con
 | `budget_grace_minutes` | `5` | Extra time a running dispatch may use after the stop before it is killed. |
 | `qa_rounds` | `2` | How many QA or audit rounds may file fix STORYs; further defects go to `unresolved_defects`. |
 | `upstream_fix_rounds` | `2` | How many upstream fixes may be filed against one package. |
-| `max_depth` | `2` | Nesting limit: at this depth a package may not split into its own sub-task. |
+| `max_depth` | `2` | Reserved nesting limit for packages that open their own sub-task. Recorded, not enforced yet. |
 | `docs_dir` | `.teams_output/team` | Where the phase documents (`INDEX.md`, per-STORY pages, report) are written. |
 | `plugin_dirs` | `[]` | Extra `--plugin-dir` paths for every driver and judge session. |
 | `initiative` | `null` | A label that groups several EPICs on the board; display only. |
