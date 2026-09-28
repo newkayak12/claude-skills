@@ -229,11 +229,11 @@ async function withTask(fn, extra) {
   }
 }
 
-test('serves the MCP handshake and the fourteen manager tools', async () => {
+test('serves the MCP handshake and the fifteen manager tools', async () => {
   const c = await new Client(TM).init();
   try {
     const r = await c.send('tools/list', {});
-    assert.deepEqual(r.result.tools.map((t) => t.name).sort(), ['tm_assign', 'tm_board', 'tm_docs', 'tm_events', 'tm_file', 'tm_inbox', 'tm_next', 'tm_open', 'tm_retry', 'tm_run', 'tm_status', 'tm_submit', 'tm_ticket', 'tm_wait']);
+    assert.deepEqual(r.result.tools.map((t) => t.name).sort(), ['tm_assign', 'tm_board', 'tm_clean', 'tm_docs', 'tm_events', 'tm_file', 'tm_inbox', 'tm_next', 'tm_open', 'tm_retry', 'tm_run', 'tm_status', 'tm_submit', 'tm_ticket', 'tm_wait']);
   } finally {
     c.close();
   }
