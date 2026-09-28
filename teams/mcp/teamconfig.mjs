@@ -149,6 +149,17 @@ export const TEAM_DEFAULTS = Object.freeze({
   // the unopened packages named in the report as "not done" rather than silently dropped.
   budget_usd: null,
   timebox_minutes: null,
+  // The box tripping does not freeze every running dispatch: a package (or PLAN/S run) whose
+  // accept the closing path still needs is let finish, same as always, but not forever - only
+  // until it has spent this much more since budget_stopped (or budget_grace_minutes elapses,
+  // whichever first), then enforceBudget kills it the same way a stalled driver is killed and
+  // skips its accept like any package that never ran. null derives 10% of budget_usd (0 with no
+  // budget_usd set - a timebox alone gets no dollar grace, only the minutes one). A phase-Team
+  // pass (QA, AUDIT) gets no grace at all: closeStoppedToReport's own goal-gate rewire never
+  // reads its accept once the box is over, so portfolio-refresh-80ec931a (2026-09-28) paid for
+  // 12 more minutes of a QA child whose result the report then named "superseded" for nothing.
+  budget_grace_usd: null,
+  budget_grace_minutes: 5,
 });
 
 // One validator per key. A value that fails is ignored (the lower layer's value stays) and
@@ -173,6 +184,8 @@ const CHECK = {
   docs_dir: (v) => typeof v === 'string' && v.length > 0,
   budget_usd: (v) => v === null || (typeof v === 'number' && Number.isFinite(v) && v >= 0),
   timebox_minutes: (v) => v === null || (typeof v === 'number' && Number.isFinite(v) && v >= 0),
+  budget_grace_usd: (v) => v === null || (typeof v === 'number' && Number.isFinite(v) && v >= 0),
+  budget_grace_minutes: (v) => Number.isInteger(v) && v >= 0,
   plugin_dirs: (v) => Array.isArray(v) && v.every((d) => typeof d === 'string' && d.length > 0),
   retry_policy: (v) => v === 'continue' || v === 'rollback',
 };

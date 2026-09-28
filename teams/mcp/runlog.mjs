@@ -135,6 +135,21 @@ export function harvestTask({ taskDir, cwd, label, root, scorePrefix } = {}) {
     const k = basename(String(s.stream || s.path || '')).replace(/\.stream\.jsonl$/, '').replace(/_\d+$/, '').replace(/^judge_(\w+?)(_P\w+|\.r\d+)?$/, 'judge_$1').replace(/^dispatch_(PLAN|AUDIT|QA)$/, 'dispatch_$1').replace(/^dispatch_P\d+\w*$/, 'dispatch_package');
     byKind[k] = +((byKind[k] || 0) + (s.cost_usd || 0)).toFixed(4);
   }
+  // collectTaskCosts splits its total into driver streams (above, the manager's own
+  // dispatch_/judge_ sessions) and node_streams (each child graph run's own draft/review/gate/
+  // plan/setgoal/critique adapter session, broker/<run_id>/<node>/<attempt>/events.jsonl). Both
+  // halves feed cost_usd (drivers_usd + nodes_usd), so leaving node_streams out here means
+  // byKind silently undercounts cost_usd by exactly nodes_usd - the archive summary then reads
+  // as if a run cost far less than task.budget_stopped/enforceBudget (which reads cost_usd
+  // in full via taskSpend) ever saw. Bucketed by stage (attempt/subgoal suffix stripped) and
+  // prefixed node_ so a node session's cost is never mistaken for its manager-level counterpart
+  // (e.g. node_review vs a package's own dispatch_package).
+  for (const s of (costs && costs.node_streams) || []) {
+    const nodeDir = String(s.stream || s.path || '').split(/[\\/]/)[1] || '';
+    const stage = nodeDir.replace(/_U\d+(_\d+)?$/, '').replace(/_\d+$/, '') || 'node';
+    const k = `node_${stage}`;
+    byKind[k] = +((byKind[k] || 0) + (s.cost_usd || 0)).toFixed(4);
+  }
   const score = readText(join(out, 'bench.score.txt')).split('\n').find((l) => / \| \d+\/\d+ \| /.test(l)) || null;
   // The code the run ran, not the code at harvest time: the last commit before the task opened.
   const opened = (events.find((e) => e.event === 'tm_open') || {}).ts;
@@ -151,7 +166,23 @@ export function harvestTask({ taskDir, cwd, label, root, scorePrefix } = {}) {
     score,
     state: task ? (events.filter((e) => e.event === 'daemon_done').pop() || {}).state || 'unfinished' : 'no-task',
     size: task && task.size, packages: ((task && task.spec && task.spec.packages) || []).map((p) => p.id),
-    budget: task && task.team && task.team.opts ? { budget_usd: task.team.opts.budget_usd ?? null, timebox_minutes: task.team.opts.timebox_minutes ?? null, stopped: !!task.budget_stopped } : null,
+    // A stopped task still owes its goal gate and report (closeStoppedToReport) - both by
+    // design, mandatory, and paid for regardless - so spend does not freeze at
+    // task.budget_stopped.spend. settleRunningDispatchesAtStop (taskmanager.mjs) now bounds the
+    // rest: a phase-Team pass (QA, AUDIT) already running is killed immediately (its accept is
+    // never read once the goal gate rewires around it), and a package/PLAN/S dispatch the
+    // closing path still needs is killed once it has run budget_grace_usd/_minutes past the
+    // stop. post_stop_usd is that whole remainder made visible: the mandatory closing stages
+    // plus whatever grace a still-needed dispatch used, on top of what had already been spent at
+    // the moment the box tripped. Not a second box - nothing here stops anything on its own -
+    // just the number an operator sizing budget_usd should hold in reserve above their real
+    // target (bounded now, not open-ended: portfolio-refresh-80ec931a's own $3.08 gap was an
+    // in-flight QA child the close path discarded anyway, ledger.jsonl's budget_goal_rewired/
+    // budget_closed{skipped:["accept:QA:2"]} - fixed by killing exactly that case on sight).
+    budget: task && task.team && task.team.opts ? {
+      budget_usd: task.team.opts.budget_usd ?? null, timebox_minutes: task.team.opts.timebox_minutes ?? null, stopped: !!task.budget_stopped,
+      ...(task.budget_stopped && costs ? { post_stop_usd: +Math.max(0, (costs.cost_usd || 0) - (task.budget_stopped.spend || 0)).toFixed(4) } : {}),
+    } : null,
     cost_usd: costs ? +(costs.cost_usd || 0).toFixed(4) : null, cost_by_kind: byKind,
     child_runs: childRuns,
     retries: events.filter((e) => e.event === 'daemon_retry_opened').length,
