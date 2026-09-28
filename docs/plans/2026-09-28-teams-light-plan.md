@@ -155,13 +155,19 @@ roles.planning: true | false | 'light' | 'auto'   (기본값 변경: true → 'a
 결정:
 1. **진입 스킬에 brainstorming 단계를 둔다.** 프로젝트 맥락을 먼저 읽고(사람에게 사실을 묻지 않기 위해), 의도·범위·선택지를 한 번에 하나씩 묻고, 선택지마다 추천을 붙인다. 묻는 대상은 **사람만 답할 수 있는 것**(무엇을 원하나, 무엇을 빼나, A/B 중 어느 쪽)이다 — 근거로 풀리는 사실 빈칸은 PLAN의 investigate 몫이다.
 2. **`tm_open({decisions: [{question, chose, because?}]})`** — 합의한 결정을 인자로 받아 `task.decisions`의 **첫 항목들**로 쓴다(`source: 'brainstorm'`, `decided_in: 'session'`). §6.2-1의 PLAN 결정은 그 뒤에 덧붙는다. PLAN의 investigate·draft도 이 목록을 `prior_decisions`로 받는다 — 즉 전파 경로는 §6.2-2 그대로이고, 시작점만 PLAN accept에서 `tm_open`으로 당겨진다.
-3. **PLAN 안의 `ask`는 예외로 격하한다.** investigate의 `unknowns[]`는 기본값 + 기록이 기본이고, §6.2-3의 blocking(brainstorming/PLAN 결정과 `contradicts_decision`으로 충돌하거나 안전한 기본값이 없음)만 EPIC 레벨에 1회 park한다. 결과적으로 사람이 불리는 시점은 **세션(brainstorming) 1회 + blocking 예외**로 줄어든다.
-4. **brainstorming 생략 조건 = light PLAN 감지 조건(§2.1)과 같다.** 백로그와 인수조건이 이미 구조로 주어진 요청(portfolio-refresh-80ec931a가 그랬다)은 brainstorming이 확인 1~2문항으로 끝나거나 생략된다 — 같은 감지 함수를 쓴다, 두 번 정의하지 않는다.
+3. **사용자는 brainstorming을 건너뛸 수 있다 — 그러면 엔진이 사용자 프롬프트로 스스로 brainstorming한다** (2026-09-28 사용자 정정: "사용자가 스킵할 수도 있음", "자체적으로 brainstorming 해야함 사용자 prompt 바탕으로"). 새 판단 노드 `brainstorm`을 task의 첫 노드로 둔다(`size` 직후, PLAN 전; `tm_open`에 `decisions[]`가 이미 오면 열지 않는다).
+   - 입력: 사용자 요청 원문 + 프로젝트 맥락(investigate와 같은 읽기 권한, 읽기 전용).
+   - 출력 계약(구조, 한 번에): `intent`(요청을 한 문장으로 다시 씀), `scope: {in[], out[]}`, `approaches[]` 2–3개(각각 trade-off), `chose` + `because`, `assumptions[]`, 그리고 사람만 답할 수 있는데 요청이 말하지 않은 것 → `questions[]`(각 `options[]` + `default` 필수).
+   - `interactive: true`: `questions[]`가 `ask` 카드 하나로 선다 — 사람이 있다면 **여기서 한 번** 묻는다(선택지와 엔진의 추천이 이미 채워진 상태). `false`: 엔진의 `chose`/`default`를 채택하고 기록한다.
+   - 어느 경우든 결과는 `task.decisions`에 `source: 'self-brainstorm'`(사람이 고른 건 `'ask'`)으로 들어가고, 이후 PLAN·모든 패키지에 확정 사항으로 전파된다(§6.2-2). **보고서 첫머리에 "엔진이 스스로 정한 것" 목록**(intent, scope out, chose, assumptions)을 싣는다 — 사람이 건너뛴 대가로 무엇이 추측됐는지를 사후에 한눈에 뒤집을 수 있게.
+   - 그 결과 PLAN의 `ask`는 1차 창구가 아니라 **investigate가 사실 조사 중 새로 찾은 blocking 빈칸**용 예외로 남는다(§6.2-3 정의 그대로).
+   사람이 들어가는 시점 정리: ① 세션 brainstorming(사용자가 원하면) → 건너뛰면 ② 엔진 `brainstorm` 노드의 `ask` 한 번(`interactive: true`일 때만) → ③ 실행 중엔 blocking 예외만.
+4. **brainstorming을 가볍게 할 조건 = light PLAN 감지 조건(§2.1)과 같다.** 백로그와 인수조건이 이미 구조로 주어진 요청(portfolio-refresh-80ec931a가 그랬다)은 세션 brainstorming이 확인 1~2문항으로 끝나고, 엔진 `brainstorm` 노드도 intent/scope 확인만 하는 짧은 계약으로 돈다 — 같은 감지 함수를 쓴다, 두 번 정의하지 않는다.
 
 측정(§6.4에 추가): 런당 사람에게 간 질문 수를 **세션 질문 / 실행 중 park**로 나눠 센다. 목표는 실행 중 park ≈ 0, 세션 질문은 요청의 모호함에 비례.
 
-§14 제안 행 18의 마지막 문장을 이렇게 바꾼다: "사람이 언제 불려가는지는 이제 '리더냐 전부냐'가 아니라 **'`tm_open` 전 brainstorming(1차) → blocking 예외(EPIC에서 1회)'**로 갈린다."
+§14 제안 행 18의 마지막 문장을 이렇게 바꾼다: "사람이 언제 불려가는지는 이제 '리더냐 전부냐'가 아니라 **'`tm_open` 전 세션 brainstorming(선택) → 건너뛰면 엔진 `brainstorm` 노드가 프롬프트로 스스로(interactive면 여기서 1회 ask) → 실행 중엔 blocking 예외만(EPIC에서 1회)'**로 갈린다."
 
 ## 7. 한 줄
 
-> 사람은 `tm_open` 전 brainstorming에서 한 번 부르고, 그 답을 태스크 전체가 정해진 것으로 쓴다(§6.5). PLAN을 끄고 켜는 스위치 하나로는 안 된다 — 이미 답이 있는 백로그엔 절반만 켜고(§2), PLAN이 낸 답은 실행이 다시 묻지 않게 한 번 정한 걸 계속 정한 걸로 취급해야 한다(§6). 둘 다 investigate 하나를 축으로 돈다.
+> 사람은 `tm_open` 전 brainstorming에서 한 번 부르고, 건너뛰면 엔진이 프롬프트로 스스로 brainstorming해서 그 답을 태스크 전체가 정해진 것으로 쓴다(§6.5). PLAN을 끄고 켜는 스위치 하나로는 안 된다 — 이미 답이 있는 백로그엔 절반만 켜고(§2), PLAN이 낸 답은 실행이 다시 묻지 않게 한 번 정한 걸 계속 정한 걸로 취급해야 한다(§6). 둘 다 investigate 하나를 축으로 돈다.
