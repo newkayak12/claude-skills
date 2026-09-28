@@ -54,3 +54,71 @@ test('slack-list: a goal gate that accepted with spec drift is recorded, though 
     assert.ok(d && /URL/.test(d.message));
   } finally { for (const x of [cwd, tasks, root]) rmSync(x, { recursive: true, force: true }); }
 });
+
+// portfolio-refresh-80ec931a (2026-09-28, teams 0.34.0): archive summary.json read cost_by_kind
+// summing to $19.77 against a cost_usd of $28.26 - the $8.49 gap was every child graph run's own
+// node adapter session (review/gate/plan/... under broker/<run_id>/<node>/<attempt>/events.jsonl),
+// which collectTaskCosts already folds into cost_usd (nodes_usd) but the byKind loop here read
+// only costs.streams (driver sessions), never costs.node_streams. Fixture shaped like that run:
+// a package driver + a judge driver (bucketed today) plus a child run's own review/gate node
+// sessions (not bucketed before this fix).
+test('cost_by_kind buckets node adapter sessions too, so it sums to cost_usd (portfolio-refresh-80ec931a gap)', () => {
+  const { cwd, tasks, td } = fixture();
+  const root = mkdtempSync(join(tmpdir(), 'runlog-root-'));
+  const wt = mkdtempSync(join(tmpdir(), 'runlog-wt-'));
+  try {
+    writeFileSync(join(td, 'drivers', 'dispatch_P1_1.stream.jsonl'), `${JSON.stringify({ type: 'result', total_cost_usd: 2, num_turns: 4 })}\n`);
+    writeFileSync(join(td, 'drivers', 'judge_accept_P1_1.stream.jsonl'), `${JSON.stringify({ type: 'result', total_cost_usd: 0.5, num_turns: 1 })}\n`);
+    for (const [nodeDir, cost] of [['review_U1_1', 1.2], ['gate_U1_1', 0.3]]) {
+      const d = join(wt, '.teams_output', 'broker', 'child-1', nodeDir, 'att-1');
+      mkdirSync(d, { recursive: true });
+      writeFileSync(join(d, 'events.jsonl'), `${JSON.stringify({ type: 'result', total_cost_usd: cost, num_turns: 1 })}\n`);
+    }
+    const task = JSON.parse(readFileSync(join(td, 'task.json'), 'utf8'));
+    task.nodes.push({ node_id: 'dispatch:P1:1', stage: 'dispatch', subgoal_id: 'P1', state: 'done', child: { cwd: wt, run_id: 'child-1' } });
+    writeFileSync(join(td, 'task.json'), JSON.stringify(task));
+
+    const r = harvestTask({ taskDir: td, cwd, root });
+    assert.equal(r.summary.cost_usd, 4.0);
+    assert.deepEqual(r.summary.cost_by_kind, { dispatch_package: 2, judge_accept: 0.5, node_review: 1.2, node_gate: 0.3 });
+    const bucketed = Object.values(r.summary.cost_by_kind).reduce((a, v) => a + v, 0);
+    assert.equal(+bucketed.toFixed(4), r.summary.cost_usd, 'cost_by_kind must sum to the same total cost_usd reports');
+  } finally { for (const x of [cwd, tasks, root, wt]) rmSync(x, { recursive: true, force: true }); }
+});
+
+// Same run: budget_usd 25, budget_stopped fired at spend $25.18 (the in-flight QA:2 child was
+// already running and enforceBudget never kills a running dispatch), then the goal gate got
+// rewired and the report ran to close the task - both mandatory closing stages - landing at
+// cost_usd $28.26. That $3.08 post-stop spend is by design (closeStoppedToReport), but until now
+// was invisible outside diffing cost_usd against ledger.jsonl's budget_stopped.spend by hand.
+test('a budget-stopped task surfaces post_stop_usd: what the in-flight package plus goal-gate/report spent after the stop', () => {
+  const { cwd, tasks, td } = fixture();
+  const root = mkdtempSync(join(tmpdir(), 'runlog-root-'));
+  try {
+    writeFileSync(join(td, 'drivers', 'dispatch_QA_2.stream.jsonl'), `${JSON.stringify({ type: 'result', total_cost_usd: 25.1771, num_turns: 10 })}\n`);
+    writeFileSync(join(td, 'drivers', 'judge_gate_goal_1.stream.jsonl'), `${JSON.stringify({ type: 'result', total_cost_usd: 2.3939, num_turns: 2 })}\n`);
+    writeFileSync(join(td, 'drivers', 'judge_report.stream.jsonl'), `${JSON.stringify({ type: 'result', total_cost_usd: 0.69, num_turns: 1 })}\n`);
+    const task = JSON.parse(readFileSync(join(td, 'task.json'), 'utf8'));
+    task.team = { opts: { budget_usd: 25 } };
+    task.budget_stopped = { at: Date.now(), spend: 25.1771, elapsed_minutes: 56, budget_usd: 25, timebox_minutes: null, skipped_packages: [] };
+    writeFileSync(join(td, 'task.json'), JSON.stringify(task));
+
+    const r = harvestTask({ taskDir: td, cwd, root });
+    assert.equal(r.summary.cost_usd, 28.261);
+    assert.equal(r.summary.budget.stopped, true);
+    assert.equal(r.summary.budget.post_stop_usd, 3.0839, 'cost_usd minus the spend already recorded at budget_stopped');
+  } finally { for (const x of [cwd, tasks, root]) rmSync(x, { recursive: true, force: true }); }
+});
+
+test('an unstopped task carries no post_stop_usd', () => {
+  const { cwd, tasks, td } = fixture();
+  const root = mkdtempSync(join(tmpdir(), 'runlog-root-'));
+  try {
+    const task = JSON.parse(readFileSync(join(td, 'task.json'), 'utf8'));
+    task.team = { opts: { budget_usd: 25 } };
+    writeFileSync(join(td, 'task.json'), JSON.stringify(task));
+    const r = harvestTask({ taskDir: td, cwd, root });
+    assert.equal(r.summary.budget.stopped, false);
+    assert.equal('post_stop_usd' in r.summary.budget, false);
+  } finally { for (const x of [cwd, tasks, root]) rmSync(x, { recursive: true, force: true }); }
+});
