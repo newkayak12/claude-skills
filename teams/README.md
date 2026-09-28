@@ -281,7 +281,6 @@ explanation of every key is in [docs/configuration.md](docs/configuration.md#con
   between the two plugins. teams plugs into [`harness`](../harness/README.md)'s runtime gate
   protocol the same way any project can; it is not a beta of either plugin.
 
-## Status
+## Changelog
 
-Release lines added by `teams:patch` since the last sweep appear above this sentence; the full
-history is in [CHANGELOG.md](CHANGELOG.md).
+Every release, newest first: [CHANGELOG.md](CHANGELOG.md).

@@ -47,6 +47,18 @@ test('real run bumps both manifests and prepends both status logs', () => {
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('a plugin with CHANGELOG files gets its release lines there, README untouched', () => {
+  const root = repo();
+  try {
+    writeFileSync(join(root, 'teams', 'CHANGELOG.md'), '# log\n\n## Status\n- v0.9.0 — old\n');
+    writeFileSync(join(root, 'teams', 'CHANGELOG.KOR.md'), '# 이력\n\n## 상태\n- v0.9.0 — 이전\n');
+    assert.equal(run(root, { summary: 'fix b', summary_ko: 'b 수정' }).status, 0);
+    assert.match(readFileSync(join(root, 'teams', 'CHANGELOG.md'), 'utf8'), /## Status\n- v0\.9\.1 — fix b\n/);
+    assert.match(readFileSync(join(root, 'teams', 'CHANGELOG.KOR.md'), 'utf8'), /## 상태\n- v0\.9\.1 — b 수정\n/);
+    assert.doesNotMatch(readFileSync(join(root, 'teams', 'README.md'), 'utf8'), /fix b/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('refuses without summary_ko, and on a version mismatch', () => {
   const a = repo();
   const b = repo('0.9.0', '0.8.0');
