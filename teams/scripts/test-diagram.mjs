@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validate, render, renderToFile } from '../mcp/diagram.mjs';
-import { autoPackageDiagram } from '../mcp/taskmanager.mjs';
+import { autoPackageDiagram, repairGroups } from '../mcp/taskmanager.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -57,4 +57,68 @@ test('the plain package map validates for any shape: no deps, a chain, a diamond
   const diamond = autoPackageDiagram(shapes[2]);
   assert.ok(!diamond.edges.some((e) => e.from === 'P1' && e.to === 'P4'), 'P4 builds on P1 through P3 - no line through P3\'s box');
   assert.deepEqual(diamond.edges.filter((e) => e.to === 'integration').map((e) => e.from), ['P4'], 'only chain ends are merged directly');
+});
+
+// The exact spec shape submitted in the 2026-09-28 portfolio-refresh run (teams-log
+// portfolio-refresh-80ec931a, 20-shape.diagram.json / task.json's shape_diagram.problems):
+// two semantic groups (rewriters, scorers) whose members interleave down the same column, so
+// the bounding box of one group's cells always contains a member of the other.
+function portfolioRefreshDiagram() {
+  return {
+    type: 'architecture', title: 'portfolio-refresh: 8 disjoint skill rewrites against one read-only bar',
+    nodes: [
+      { id: 'BAR', label: 'portfolio-feedback bar + PRD R1-R9 (read-only)', kind: 'store', row: 0, col: 0 },
+      { id: 'P1', label: 'resume-tailorer', kind: 'package', row: 0, col: 1 },
+      { id: 'P2', label: 'portfolio-rewrite', kind: 'package', row: 1, col: 1 },
+      { id: 'P3', label: 'portfolio-jd', kind: 'package', row: 2, col: 1 },
+      { id: 'P4', label: 'portfolio-interview', kind: 'package', row: 3, col: 1 },
+      { id: 'P5', label: 'interview-prep', kind: 'package', row: 0, col: 2 },
+      { id: 'P6', label: 'portfolio-company', kind: 'package', row: 1, col: 2 },
+      { id: 'P7', label: 'portfolio-pattern', kind: 'package', row: 2, col: 2 },
+      { id: 'P8', label: 'job-application-workflow', kind: 'package', row: 3, col: 2 },
+    ],
+    edges: ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8'].map((id) => ({ from: 'BAR', to: id, label: 'R1-R9', style: 'data' })),
+    groups: [
+      { id: 'rewriters', label: 'line-rewriting skills', nodes: ['P1', 'P2', 'P4'] },
+      { id: 'scorers', label: 'scoring / planning skills', nodes: ['P3', 'P5', 'P6', 'P7', 'P8'] },
+    ],
+  };
+}
+
+test('reproduces the portfolio-refresh refusal: two groups interleaved down one column, each flags the other\'s member', () => {
+  const errs = validate(portfolioRefreshDiagram());
+  assert.equal(errs.length, 4);
+  assert.ok(errs.some((e) => /^node P3 \(row 2, col 1\) sits inside group rewriters's box \(rows 0-3, cols 1-1\) but is not a member/.test(e)));
+  assert.ok(errs.some((e) => /^node P1 \(row 0, col 1\) sits inside group scorers's box \(rows 0-3, cols 1-2\) but is not a member/.test(e)));
+  assert.ok(errs.some((e) => /^node P2 \(row 1, col 1\) sits inside group scorers's box/.test(e)));
+  assert.ok(errs.some((e) => /^node P4 \(row 3, col 1\) sits inside group scorers's box/.test(e)));
+});
+
+test('repairGroups fixes the portfolio-refresh spec by moving the flagged nodes to columns of their own', () => {
+  const ir = portfolioRefreshDiagram();
+  const repair = repairGroups(ir);
+  assert.ok(repair, 'expected a repair, not a null (fall back to auto)');
+  assert.deepEqual(new Set(repair.moved), new Set(['P1', 'P2', 'P3', 'P4']));
+  assert.deepEqual(validate(repair.ir), []);
+  assert.match(render(repair.ir), /<svg class="d"/);
+  // every node keeps its id, label and row - only the flagged ones move to a new column
+  for (const n of ir.nodes) {
+    const after = repair.ir.nodes.find((m) => m.id === n.id);
+    assert.equal(after.row, n.row);
+    assert.equal(after.label, n.label);
+  }
+  assert.deepEqual(repair.ir.nodes.find((n) => n.id === 'BAR'), ir.nodes.find((n) => n.id === 'BAR'), 'an unflagged node is untouched');
+});
+
+test('repairGroups refuses a diagram whose only problem is not a group/box one - a duplicate id is not its fix', () => {
+  const ir = { type: 'architecture', title: 't', nodes: [
+    { id: 'a', label: 'A', row: 0, col: 0 }, { id: 'b', label: 'B', row: 0, col: 0 },
+  ], edges: [{ from: 'a', to: 'b' }] };
+  assert.ok(validate(ir).length, 'sanity: this IR is invalid (a and b share a cell)');
+  assert.equal(repairGroups(ir), null);
+});
+
+test('repairGroups returns null on an already-valid diagram - nothing for it to do', () => {
+  const shapes = [{ id: 'P1', title: 'one' }];
+  assert.equal(repairGroups(autoPackageDiagram(shapes)), null);
 });
