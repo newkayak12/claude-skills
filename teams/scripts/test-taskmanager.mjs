@@ -7587,6 +7587,42 @@ test('C2: a plan stage that returns no feature areas fails, and is split again w
   });
 });
 
+test('M3: a QA card spent past its retries does not take the round down - its sibling\'s defects are filed and the goal gate still runs', async () => {
+  const { autoRetryPackages } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await twoAreasIntegrated(tm, g, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    const qa = Object.fromEntries(nx.children.map((c) => [c.package_id, c]));
+    const finishQa = async (id, defect) => {
+      const sub = (node_id, payload) => g.call('team_submit', { run_id: qa[id].run_id, cwd: qa[id].cwd, node_id, payload: ok(payload) });
+      await sub('plan', { handoff: 'p', flow: 'qa', size: 'S' });
+      await sub('setgoal', { spec: { goal: 'QA', acceptance: ['cases run'], subgoals: [{ id: 'Q1', title: 'run cases', acceptance: ['cases run'], deps: [] }] } });
+      await sub('critique', { sound: true });
+      await sub('cases:Q1:1', { changed_files: [], handoff: 'cases' });
+      await sub('execute:Q1:1', { verified: true, handoff: 'ran' });
+      await sub('gate:Q1:1', { accept: true, match_pct: 95 });
+      await sub('gate:goal:1', { accept: true, match_pct: 95 });
+      await g.call('team_next', { run_id: qa[id].run_id, cwd: qa[id].cwd });
+      await sub('report', { handoff: 'QA report' });
+      await tm.call('tm_submit', { task_id, node_id: `dispatch:${id}:1` });
+      return tm.call('tm_submit', { task_id, node_id: `accept:${id}:1`, payload: ok(defect
+        ? { accept: true, match_pct: 90, defects: [{ title: defect, evidence: defect, touches: [], deps: [] }] }
+        : { accept: false, match_pct: 30, reason: 'the QA report does not show the cases ran', gaps: ['no evidence'] }) });
+    };
+    assert.equal((await finishQa('QA-F1', 'a.txt loses its newline')).state, 'done');
+    assert.equal((await finishQa('QA-F2', null)).state, 'failed');
+    const task = readTask(root, task_id);
+    assert.ok(withTasksRoot(root, () => autoRetryPackages(task)));
+    const t = readTask(root, task_id);
+    assert.deepEqual(t.spec.packages.map((p) => p.id), ['P1', 'P2', 'D1'], 'QA-F1\'s defect is filed');
+    const goal = t.nodes.find((n) => n.node_id === 'gate:goal:1');
+    assert.notEqual(goal.state, 'unreachable', 'the goal gate is still reachable');
+    assert.ok(!goal.deps.some((d) => d.startsWith('accept:QA-F2')), 'the dead card is dropped from the goal gate');
+    assert.deepEqual(t.qa_not_run.map((q) => q.pass), ['QA-F2']);
+    assert.ok(!t.nodes.some((n) => n.state === 'unreachable' && n.subgoal_id !== 'QA-F2'), 'nothing outside the dead card stays written off');
+  }, { roles: { qa: true }, max_retries: 0 });
+});
+
 test('C7: QA runs one card per feature area in parallel, each a full-harness run over the integrated tree; a round\'s defects are filed together once every card has settled, and the next round reopens every card', async () => {
   await withTask(async ({ tm, g, root, task_id }) => {
     await twoAreasIntegrated(tm, g, task_id);

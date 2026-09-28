@@ -1562,6 +1562,7 @@ export function autoRetryPackages(task) {
     }
     const fb = [failed.result.reason || '', ...(failed.result.gaps || [])].filter(Boolean).join('\n- ');
     const out = retryPackage(task, pid, fb);
+    if (!out.attempt && pkg.phase === 'qa') rescueQaRound(task, pkg, out.unreachable || [], failed);
     record(task, {
       event: out.attempt ? 'daemon_retry_opened' : 'daemon_retry_settled', task_id: task.run_id,
       // The feedback the retry was opened ON, not just retryPackage's own settle reason (set only
@@ -1817,6 +1818,38 @@ function settleQaRound(task) {
   }
   const out = fileDefects(task, defects, { reporter: 'qa', origin: 'qa' });
   return { filed: out.filed, defects };
+}
+
+// A QA card spent past its retries (M3, docs/plans/2026-09-28-teams-adversarial-fixes.md): its
+// settleFailure made the goal gate unreachable, so the round's join never ran and a sibling
+// card's defects were neither filed nor listed. The dead card is dropped from the goal gate's
+// deps (onto the round's other QA accepts, or the integrate they judge), everything its failure
+// wrote off is put back to pending, and the join runs over the cards that did settle. The goal
+// gate and the report are told which card never reached a verdict (task.qa_not_run).
+function rescueQaRound(task, pkg, unreachable, failed) {
+  const pid = String(pkg.id);
+  const own = (id) => { const x = task.nodes.find((y) => y.node_id === id); return x && x.subgoal_id === pid; };
+  const goal = task.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id == null && String(n.node_id).startsWith('gate:goal')).pop();
+  if (!goal) return false;
+  const deadDeps = goal.deps.filter((d) => own(d));
+  if (!deadDeps.length) return false;
+  for (const id of unreachable) {
+    if (own(id)) continue;
+    const x = task.nodes.find((y) => y.node_id === id);
+    if (!x || x.state !== 'unreachable') continue;
+    x.state = 'pending';
+    delete x.result;
+    delete x.final;
+    // saveRun keeps a terminal state on disk over a pending one in memory unless the reopen is
+    // counted (graph.mjs's mergeOnto) - the same mark autoRejudge's reopen carries.
+    x.reopened = (x.reopened || 0) + 1;
+  }
+  const kept = goal.deps.filter((d) => !deadDeps.includes(d));
+  goal.deps = kept.length ? kept : (pkg.integration_of ? [pkg.integration_of] : kept);
+  task.qa_not_run = [...(task.qa_not_run || []), { pass: pid, node_id: deadDeps[0], reason: String((failed && failed.result && failed.result.reason) || 'retries exhausted').slice(0, 300) }];
+  record(task, { event: 'qa_card_dropped', task_id: task.run_id, package_id: pid, goal: goal.node_id, deps: goal.deps, restored: unreachable.filter((id) => !own(id)) });
+  settleQaRound(task);
+  return true;
 }
 
 function fileDefects(task, defects, opts) {
@@ -3951,6 +3984,17 @@ export function composeTaskPrompt(task, n) {
     L.push(n.stage === 'report'
       ? `List this explicitly under an "unresolved" or "known gaps" section of the report - not folded into the cost or retro line only. Do not describe the Sprint as fully verified.`
       : `Record it in gaps - "${task.budget_stopped.qa_not_run.map((q) => q.pass).join('/')}: not run (budget/timebox)" - even though it is not a reason by itself to refuse. Do not treat the absence of a ${task.budget_stopped.qa_not_run.map((q) => q.pass).join('/')} verdict as equivalent to a passing one.`);
+  }
+  // A QA card spent past its retries (rescueQaRound): the goal gate no longer waits on it, so
+  // nothing else says that area went unexercised.
+  if ((task.qa_not_run || []).length && (String(n.node_id).startsWith('gate:goal') || n.stage === 'report')) {
+    const names = task.qa_not_run.map((q) => q.pass).join(', ');
+    L.push('');
+    L.push(`## Scope: QA card ${names} reached no verdict`);
+    for (const q of task.qa_not_run) L.push(`${q.pass}: retries exhausted - ${q.reason} (last attempt: ${q.node_id}). Its feature area was not exercised by QA.`);
+    L.push(n.stage === 'report'
+      ? 'List this under what did not ship or was not verified. Do not describe the Sprint as fully QA-verified.'
+      : `Record "${names}: QA reached no verdict" in gaps. The absence of that verdict is not a pass.`);
   }
   // The same facts tm_status/tm_wait/daemon_done carry as partial_reasons once this report is done.
   const partial = n.stage === 'report' ? unfinishedWork(task) : null;
