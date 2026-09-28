@@ -1094,6 +1094,25 @@ export function finishNode(run, n, result, vendorName) {
       ? 'gate accepted without a check; a judgement with no evidence is a guess'
       : 'goal gate accepted without an attack; a judgement never invoked from outside the tree is a guess' };
   }
+  // A rejection the judging machinery itself produced (stage_ok:true, verdict field false) can
+  // still leave `reason` empty: review's and test's schema never had a reason field at all - only
+  // `checks`/`evidence` describe why verified came back false - and a gate or critique can in
+  // principle reject with empty gaps/blocking too. Downstream (runlog.mjs classify, triage.mjs
+  // groups) reads only `reason`, so an unfilled one surfaced as e.g. "P4 review:U1:1: (empty)" -
+  // a real rejection with no visible cause. execute is excluded: its own verified:false is a
+  // passing case-set run carrying defects forward, not a failure (see nodeSucceeded above).
+  if (n.state === 'failed' && result.stage_ok === true && n.stage !== 'execute') {
+    const field = VERDICT_FIELD[n.stage];
+    const hasOwnReason = result.reason || result.verification_error
+      || (field === 'accept' && (result.gaps || []).length)
+      || (field === 'sound' && (result.blocking || []).length);
+    if (field && result[field] === false && !hasOwnReason) {
+      const checks = Array.isArray(result.checks) ? result.checks : [];
+      const flagged = checks.find((c) => /\b(missing|fail(ed|ing|s)?|not met|does not|refused)\b/i.test(String(c)));
+      const synthesized = flagged || (result.evidence ? String(result.evidence) : '') || checks.join('; ');
+      if (synthesized) result = { ...result, reason: synthesized.slice(0, 300) };
+    }
+  }
   n.result = result;
   n.vendor = vendorName;
   n.finished_at = Date.now();

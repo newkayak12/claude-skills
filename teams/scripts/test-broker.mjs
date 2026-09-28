@@ -381,6 +381,7 @@ test('test verified=false fails the node and the engine reassigns the subgoal it
     });
     assert.equal(v.stage_ok, true, 'the checks did run');
     assert.equal(v.state, 'failed', 'but the subgoal did not pass');
+    assert.match(v.reason, /1 failing/, 'a test node has no reason field of its own; one is synthesized from its checks');
     assert.deepEqual(v.reassigned, { target: 'subgoal', subgoal_id: 'U1', attempt: 2 }, 'the rejection opens the next attempt by itself');
     const nx = await c.call('team_next', { run_id: runId, cwd });
     assert.equal(nx.state, 'running', 'a rejected gate is not a dead end the caller must notice');
@@ -1444,6 +1445,10 @@ test('a rejected document gets a fresh draft, and the goal gate waits for the ne
     });
     await c.call('team_submit', { run_id: runId, cwd, node_id: 'draft:D1:1', payload: ok({ changed_files: [], handoff: 'v1' }) });
     const rv = await c.call('team_submit', { run_id: runId, cwd, node_id: 'review:D1:1', payload: ok({ verified: false, checks: ['a -> MISSING: the invariant'] }) });
+    // review's own schema has checks/evidence but no reason field - portfolio-refresh-80ec931a's
+    // P4 review:U1:1/:2 rejected this way and left triage a failure record with an empty message
+    // ("P4 review:U1:1: "). One is synthesized from the check that reads as the failure.
+    assert.match(rv.reason, /MISSING: the invariant/, 'a review rejection with no reason gets one synthesized from its checks');
     // The engine reassigns on the rejection; team_retry is no longer the way here, and
     // calling it anyway would spend a second attempt on the same rejection.
     assert.deepEqual(rv.reassigned, { target: 'subgoal', subgoal_id: 'D1', attempt: 2 });
@@ -1456,6 +1461,56 @@ test('a rejected document gets a fresh draft, and the goal gate waits for the ne
     const prompt = readFileSync(nx.ready.find((n) => n.node_id === 'draft:D1:2').briefing_path, 'utf8');
     assert.match(prompt, /Previous attempt was rejected/, 'the review\'s gaps reach the second draft');
   });
+});
+
+test('a review that rejects with no check reading as a failure falls back to its evidence summary', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, {
+      goal: 'G', acceptance: ['A'],
+      subgoals: [{ id: 'D1', kind: 'document', title: 'note', acceptance: ['a'], deps: [] }],
+    });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'draft:D1:1', payload: ok({ changed_files: [], handoff: 'v1' }) });
+    const rv = await c.call('team_submit', {
+      run_id: runId, cwd, node_id: 'review:D1:1',
+      payload: ok({
+        verified: false,
+        checks: ['heading order -> Standing Mandates, Process, Rules'],
+        evidence: 'wc -w could not be re-run from this reasoning node (no Bash tool available)',
+      }),
+    });
+    assert.equal(rv.state, 'failed');
+    assert.match(rv.reason, /wc -w could not be re-run/, 'no check reads as a failure, so the evidence summary is the fallback reason');
+  });
+});
+
+test('a gate rejection with empty gaps still gets a reason, synthesized from its checks', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    const f = dirty(cwd);
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [f] }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    const v = await c.call('team_submit', {
+      run_id: runId, cwd, node_id: 'gate:U1:1',
+      payload: ok({ accept: false, match_pct: 60, gaps: [], checks: ['a.txt -> does not mention the runtime check'] }),
+    });
+    assert.equal(v.state, 'failed');
+    assert.match(v.reason, /does not mention the runtime check/);
+  }, { isolated: true });
+});
+
+test('a gate rejection that already names a gap is not overwritten by the synthesized reason', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    const f = dirty(cwd);
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [f] }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    const v = await c.call('team_submit', {
+      run_id: runId, cwd, node_id: 'gate:U1:1',
+      payload: ok({ accept: false, match_pct: 60, gaps: ['no runtime check'], checks: ['a.txt -> does not mention the runtime check'] }),
+    });
+    assert.equal(v.state, 'failed');
+    assert.equal(v.reason, undefined, 'a gate rejection is read from gaps, not reason - synthesis only fills a true gap');
+  }, { isolated: true });
 });
 
 // ---------- flow ----------
