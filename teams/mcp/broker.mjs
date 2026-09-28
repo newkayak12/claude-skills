@@ -991,12 +991,21 @@ function autoReassign(run, n) {
   // re-authored spec is critiqued again rather than waved through the way a one-shot
   // critic would. Budgeted the same way too - retrySpec caps at max_retries + 1 attempts
   // and settles, leaving the rejection for the caller, when that budget is gone.
-  if (n.stage === 'critique' && !n.final) {
+  // A setgoal whose spec failed validation is the same defect found one node earlier: the engine
+  // knows exactly what is wrong (spec_problems) and nothing else can fix it but a new spec.
+  // portfolio-consolidate's PLAN:2 (2026-09-28) wrote one "document" subgoal in a planning run;
+  // the child blocked at 1/3 with its retries unspent, and the manager paid for a third planning
+  // run from scratch.
+  const specRejected = n.stage === 'setgoal' && !n.final && n.state === 'failed'
+    && Array.isArray(n.result && n.result.spec_problems) && n.result.spec_problems.length > 0;
+  if (specRejected || (n.stage === 'critique' && !n.final)) {
     if (n.state !== 'failed') return null;
-    if (n.result && n.result.stage_ok !== true) return null;
-    if (!n.result || n.result.sound !== false) return null;
-    const feedback = [n.result.reason || '', ...(n.result.blocking || [])].filter(Boolean).join('\n- ')
-      || 'critique found the spec unsound (sound: false)';
+    if (!specRejected && n.result && n.result.stage_ok !== true) return null;
+    if (!specRejected && (!n.result || n.result.sound !== false)) return null;
+    const feedback = specRejected
+      ? [`the spec was rejected before critique: ${n.result.reason || ''}`, ...n.result.spec_problems].join('\n- ')
+      : [n.result.reason || '', ...(n.result.blocking || [])].filter(Boolean).join('\n- ')
+        || 'critique found the spec unsound (sound: false)';
     const out = retrySpec(run, feedback);
     // retrySpec's own cleanup sweeps every setgoal/critique node still `pending` or
     // `failed` to `skipped` as "superseded by spec attempt N" - including THIS node,
