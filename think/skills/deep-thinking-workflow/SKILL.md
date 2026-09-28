@@ -131,6 +131,7 @@ related:
 
 - `think:brainstorming`, `think:first-principles`, `think:devils-advocate`
 - Before: Use `think:problem-reframer` if the question itself feels wrong
-- After: Feed decision output into `pm:pm-strategy-workflow` or `develop:dev-quality-workflow`
+- After: Feed decision output into `develop:dev-quality-workflow` (engineering handoff) or
+  `planning:roadmap-planning` (sequencing a product/strategy decision into a roadmap)
 - `thought-organizer` — 워크플로 시작 전에 산발적 입력 재료를 구조화할 때
 - `problem-reframer` — Step 1 발산 전에 문제 정의 자체가 올바른지 점검하고 싶을 때
