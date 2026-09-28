@@ -5147,7 +5147,13 @@ function dispatch(name, a) {
 // async because dispatch('tm_open'|'tm_run', ...) now returns a promise (openTaskAndMaybePin
 // awaits ensureViewer) - every other tool still resolves synchronously, `await` just passes
 // those straight through.
-async function callTool(name, args) {
+//
+// Exported for teams/scripts/run.mjs (§4-C / §8 step 1 of docs/plans/
+// 2026-09-21-teams-server-owns-the-loop.md): the headless CLI imports THIS, the exact function
+// the JSON-RPC surface below calls for tools/call, rather than re-implementing tm_run's
+// open+spawn or tm_wait's poll loop a second time. Same reuse daemon.mjs already relies on for
+// advanceDispatches/finish/foldChild - one path, in-process, no stdio layer in between.
+export async function callTool(name, args) {
   const a = args || {};
   // Re-raise a dead daemon before doing anything else, on every tool that already has a task to
   // raise one for. No gate here beyond that: any caller may read or mutate the task at any time -
