@@ -154,5 +154,4 @@ Phase 4: RESPOND
 
 - Peer: `develop:dev-quality-workflow` (greenfield quality cycle, overlaps at Step 6)
 - Before: `develop:architecture-designer` (system boundaries before hardening)
-- After: `pm:post-launch-retrospective` (product-level retrospective after an incident)
-- Individual: `dockerfile-optimizer`, `sre-engineer`, `performance-profiling-optimization`, `circuit-breaker-tuner`, `chaos-engineer`, `incident-response-playbook`
+- Individual: `dockerfile-optimizer`, `sre-engineer`, `performance-profiling-optimization`, `circuit-breaker-tuner`, `chaos-engineer`, `incident-response-playbook` (Step 6's RCA flags product-decision root causes to the feature owner directly — see that skill's "When Root Cause Traces to a Product Decision")
