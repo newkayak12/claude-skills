@@ -1688,6 +1688,117 @@ function mergeInto(cwd, branch, message) {
   return { ok: false, conflicts, reason: r.err || r.out || 'merge failed' };
 }
 
+// ---------- tm_clean: EPIC teardown (§14 C-11) ----------
+//
+// A package worktree (ensureWorktree(task, pkg.id, ...)) accumulates forever once its dispatch
+// is done - nothing server-owned ever removes it. Only the tree, never the integration tree: a
+// repair/qa/audit package reuses the integration worktree wholesale (openChild), and a package
+// merges INTO it (prepareIntegration) - teams never merges an integration branch into the
+// project's own branch (v0.31.1's finding, still true), so that branch is the only place this
+// task's accepted work survives once package branches are gone. A planning phase-Team package
+// has no worktree of its own at all (branch: null, cwd is the project) - openChild's own
+// comment on the `pkg.phase === 'planning'` case explains why.
+//
+// One candidate per package id: ensureWorktree keeps exactly one worktree per id for the whole
+// task, reused by every attempt (retries included), so collecting every dispatch node's
+// n.child.cwd/branch and keying by cwd already de-duplicates across attempts.
+function dispatchWorktreeCandidates(task) {
+  const byCwd = new Map();
+  for (const n of task.nodes) {
+    if (n.stage === 'dispatch' && n.child && n.child.branch && n.child.cwd && n.child.cwd !== task.cwd) {
+      if (!byCwd.has(n.child.cwd)) byCwd.set(n.child.cwd, { package_id: n.subgoal_id, cwd: n.child.cwd, branch: n.child.branch });
+    }
+  }
+  return [...byCwd.values()];
+}
+
+// Every integration tree this task ever opened (integrate:1, integrate:2 after a conflict
+// reshape, a repair round that reused the prior one's tree) - the delivered result(s). Never a
+// clean target: see the header above.
+function integrationTrees(task) {
+  const out = [];
+  const seen = new Set();
+  for (const n of task.nodes) {
+    if (n.stage === 'integrate' && n.integration && n.integration.cwd && !seen.has(n.integration.cwd)) {
+      seen.add(n.integration.cwd);
+      out.push({ node_id: n.node_id, cwd: n.integration.cwd, branch: n.integration.branch });
+    }
+  }
+  return out;
+}
+
+// A package branch is safe to delete once every commit on it is reachable from somewhere the
+// work survives without it: an integration branch it was merged into, or the project's own HEAD
+// (a user may have merged or cherry-picked it there by hand). Returns the ref it is reachable
+// from, or null - never guessed, always checked with git itself.
+function branchReachableFrom(cwd, branch, refs) {
+  for (const ref of refs) {
+    if (!ref) continue;
+    if (!git(cwd, ['rev-parse', '--verify', '--quiet', ref]).ok) continue;
+    if (git(cwd, ['merge-base', '--is-ancestor', branch, ref]).ok) return ref;
+  }
+  return null;
+}
+
+// Runs (or, dry_run, plans) the teardown for one task already known to be terminal (see
+// toolClean). Removing a worktree never loses work - the branch ref keeps every commit whether
+// or not a tree is checked out against it - so the worktree directory is always removed once the
+// task is done; only the BRANCH is conditional on reachability, per the tool's own contract
+// ("never delete a branch with commits not reachable from the integrated result").
+function cleanTask(task, dryRun) {
+  const keep = integrationTrees(task);
+  const keepCwds = new Set([task.cwd, ...keep.map((k) => k.cwd)]);
+  const refs = [...keep.map((k) => k.branch), 'HEAD'];
+  const candidates = dispatchWorktreeCandidates(task).filter((c) => !keepCwds.has(c.cwd));
+  const removed_worktrees = [];
+  const removed_branches = [];
+  const kept_branches = [];
+  const already_clean = [];
+  for (const c of candidates) {
+    const branchRef = `refs/heads/${c.branch}`;
+    const branchExists = git(task.cwd, ['rev-parse', '--verify', '--quiet', branchRef]).ok;
+    const worktreeExists = existsSync(join(c.cwd, '.git'));
+    if (!branchExists && !worktreeExists) { already_clean.push({ package_id: c.package_id, cwd: c.cwd, branch: c.branch }); continue; }
+    const reachableVia = branchExists ? branchReachableFrom(task.cwd, c.branch, refs) : null;
+    if (dryRun) {
+      if (worktreeExists) removed_worktrees.push({ package_id: c.package_id, cwd: c.cwd, branch: c.branch });
+      if (branchExists) {
+        if (reachableVia) removed_branches.push({ package_id: c.package_id, branch: c.branch, reachable_via: reachableVia });
+        else kept_branches.push({ package_id: c.package_id, branch: c.branch, reason: 'not reachable from any integration branch or the project HEAD - would remove only the worktree directory and keep this branch' });
+      }
+      continue;
+    }
+    if (worktreeExists) {
+      const rm = git(task.cwd, ['worktree', 'remove', '--force', c.cwd]);
+      if (rm.ok || !existsSync(c.cwd)) removed_worktrees.push({ package_id: c.package_id, cwd: c.cwd, branch: c.branch });
+      else kept_branches.push({ package_id: c.package_id, branch: c.branch, cwd: c.cwd, reason: `could not remove the worktree: ${rm.err || rm.out}` });
+    }
+    if (branchExists) {
+      if (reachableVia) {
+        const del = git(task.cwd, ['branch', '-D', c.branch]);
+        if (del.ok) removed_branches.push({ package_id: c.package_id, branch: c.branch, reachable_via: reachableVia });
+        else kept_branches.push({ package_id: c.package_id, branch: c.branch, reason: `could not delete the branch: ${del.err || del.out}` });
+      } else {
+        kept_branches.push({ package_id: c.package_id, branch: c.branch, reason: 'not reachable from any integration branch or the project HEAD - kept, worktree directory removed' });
+      }
+    }
+  }
+  git(task.cwd, ['worktree', 'prune']);
+  if (!dryRun && (removed_worktrees.length || removed_branches.length)) {
+    record(task, {
+      event: 'clean', task_id: task.run_id,
+      removed_worktrees: removed_worktrees.map((x) => x.package_id),
+      removed_branches: removed_branches.map((x) => x.package_id),
+      kept_branches: kept_branches.map((x) => x.package_id),
+    });
+  }
+  return {
+    task_id: task.run_id, dry_run: dryRun,
+    kept: keep.map((k) => ({ node_id: k.node_id, cwd: k.cwd, branch: k.branch })),
+    removed_worktrees, removed_branches, kept_branches, already_clean,
+  };
+}
+
 // Packages in an order where every dependency comes before what depends on it.
 function dependencyOrder(packages) {
   const byId = new Map(packages.map((p) => [String(p.id), p]));
@@ -3797,6 +3908,23 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, rebuild: { type: 'boolean', description: 'default false. true deletes <docs_dir>/E-<task8>/ recursively before re-rendering - destructive, use to clear stale files left by a dropped package.' } }, required: ['task_id'] },
     outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, rebuild: { type: 'boolean' }, written: { type: 'array', items: { type: 'string' } } } },
   },
+  {
+    name: 'tm_clean',
+    description: 'EPIC teardown (§14 C-11): removes the git worktrees and local branches a task\'s packages created, once the task is done. With task_id: refused (throws) while the task is still running - a live daemon or dispatch means there is nothing settled yet to clean, check tm_status/tm_wait first. dry_run defaults false here - naming one task is already the decision to act. Without task_id: sweeps every task under the tasks root, silently skipping any still running rather than refusing the whole call; dry_run defaults true (list what each terminal task would lose, change nothing) since no single task was chosen. Never touches the integration worktree/branch - teams never merges it into the project\'s own branch, so it is the only place a task\'s accepted work survives once package branches are gone; a repair/qa/audit package\'s "worktree" already IS that tree and is filtered out the same way. A package branch is deleted only once every commit on it is reachable from an integration branch or the project\'s own HEAD (git merge-base --is-ancestor, actually checked, never assumed) - one that is not is reported under kept_branches with why, and only its worktree directory is removed (the branch ref alone still holds every commit). task.json, docs and driver logs are left alone; a `clean` event is appended to the task\'s own ledger. Idempotent: a worktree or branch already gone from an earlier call reads as already_clean.',
+    inputSchema: { type: 'object', properties: {
+      task_id: { type: 'string' },
+      dry_run: { type: 'boolean', description: 'default false with task_id (an explicit target), true without one (a sweep lists candidates by default). true reports removed_worktrees/removed_branches as a plan and touches no git state.' },
+    } },
+    outputSchema: { type: 'object', properties: {
+      task_id: { type: 'string' }, dry_run: { type: 'boolean' },
+      kept: { type: 'array', items: { type: 'object', properties: { node_id: { type: 'string' }, cwd: { type: 'string' }, branch: { type: ['string', 'null'] } } } },
+      removed_worktrees: { type: 'array', items: { type: 'object', properties: { package_id: { type: 'string' }, cwd: { type: 'string' }, branch: { type: 'string' } } } },
+      removed_branches: { type: 'array', items: { type: 'object', properties: { package_id: { type: 'string' }, branch: { type: 'string' }, reachable_via: { type: 'string' } } } },
+      kept_branches: { type: 'array', items: { type: 'object', properties: { package_id: { type: 'string' }, branch: { type: 'string' }, reason: { type: 'string' } } } },
+      already_clean: { type: 'array', items: { type: 'object' } },
+      tasks: { type: 'array', items: { type: 'object' }, description: 'present only when task_id is omitted - one entry per task under the tasks root' },
+    } },
+  },
 ];
 
 function toolEvents(a) {
@@ -4248,6 +4376,37 @@ function toolDocs(a) {
   const task = mustFindTask(a);
   const written = writeDocs(task, { rebuild: a.rebuild === true });
   return { task_id: task.run_id, rebuild: a.rebuild === true, written };
+}
+
+// tm_clean({task_id?, dry_run?}) — §14 C-11: "EPIC DONE 시 tm_clean({task_id}) 하나만 추가."
+// With task_id: refuses (throws) a task that is not yet in a terminal state - complete or
+// blocked, the same distinction serviceDaemon already reads off taskState/managerState. dry_run
+// defaults false there (an explicit target means the caller already decided). Without task_id:
+// every task under tasksRoot() is swept, a running one is skipped rather than refusing the whole
+// call, and dry_run defaults true (list candidates, change nothing) since nobody named one task
+// to act on. Idempotent either way: a worktree or branch already gone from a prior call reads as
+// already_clean, not an error.
+function toolClean(a) {
+  if (a.task_id) {
+    const task = mustFindTask(a);
+    const dryRun = a.dry_run === undefined ? false : !!a.dry_run;
+    const st = taskState(task).state;
+    if (st === 'running') {
+      const alive = task.daemon && driverAlive(task.daemon);
+      throw new Error(`task ${task.run_id} is running (daemon ${alive ? `alive, pid ${task.daemon.pid}` : 'not tracked as alive'}) - tm_clean only cleans a task in a terminal state (complete or blocked); check tm_status/tm_wait first`);
+    }
+    return cleanTask(task, dryRun);
+  }
+  const dryRun = a.dry_run === undefined ? true : !!a.dry_run;
+  let ids = [];
+  try { ids = readdirSync(tasksRoot()); } catch { ids = []; }
+  const tasks = ids.map((id) => loadRunAt(taskPath(id))).filter(Boolean);
+  const results = tasks.map((task) => {
+    const st = taskState(task).state;
+    if (st === 'running') return { task_id: task.run_id, state: st, skipped: true, reason: 'running' };
+    return { state: st, ...cleanTask(task, dryRun) };
+  });
+  return { dry_run: dryRun, tasks: results };
 }
 
 export function requireRunnable(task, nodeId) {
@@ -5140,6 +5299,7 @@ function dispatch(name, a) {
     case 'tm_assign': return toolAssign(a);
     case 'tm_inbox': return toolInbox(a);
     case 'tm_docs': return toolDocs(a);
+    case 'tm_clean': return toolClean(a);
     default: throw new Error('unknown tool: ' + name);
   }
 }
