@@ -2849,6 +2849,184 @@ test('a policy can route reasoning and execution to different vendors in one run
   }
 });
 
+// P4:review:U1 (portfolio-refresh Sprint) split verified:true/false across three attempts
+// on the identical evidence - the reviewer had no Bash, so "wc -w"/a validator script could
+// not be re-run, and whether that counted as a rejection was a coin flip. review and gate
+// are the two reasoning stages whose own contract asks them to re-run a command an
+// acceptance item names (see prompts.mjs); every other reasoning stage judges text only.
+// The adapter args each dispatch receives are the check: a stage other than review/gate
+// must never see --verify, and review/gate must always see it, regardless of vendor.
+test('review and gate dispatch get --verify; every other reasoning stage does not', async () => {
+  const cwd = repoWithFakeVendor();
+  const log = join(cwd, 'verify-args.jsonl');
+  process.env.FAKE_ARGS_LOG = log;
+  // The broker server is one long-lived child process for this whole test (Client().init()
+  // spawns it once); it inherits process.env at ITS OWN spawn time, so a FAKE_REPLY set AFTER
+  // that point never reaches the FAKE_ADAPTER it later spawns for critique/gate/review. One
+  // reply carrying every VERDICT_FIELD this test touches (sound, accept, verified) stands in
+  // for all three real dispatches below.
+  process.env.FAKE_REPLY = JSON.stringify(ok({
+    sound: true, accept: true, match_pct: 95, verified: true,
+  }));
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', {
+      request: 'r', cwd, vendor: 'fake',
+      // Distinct models on draft/review only to dodge the same-identity review refusal
+      // (see "a review routed to the identity that wrote the draft is refused" above) -
+      // unrelated to what this test checks.
+      policy: { draft: { vendor: 'fake', model: 'm1' }, review: { vendor: 'fake', model: 'm2' } },
+    });
+    await c.call('team_submit', { run_id, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('team_submit', {
+      run_id, cwd, node_id: 'setgoal',
+      payload: ok({
+        spec: {
+          goal: 'G', acceptance: ['A'],
+          subgoals: [
+            { id: 'U1', title: 'code', acceptance: ['a'], test: ['t'], deps: [] },
+            { id: 'D1', kind: 'document', title: 'note', acceptance: ['a'], files: ['doc.md'], deps: [] },
+          ],
+        },
+      }),
+    });
+
+    const critiqueRun = await c.call('team_run', { run_id, cwd, node_id: 'critique' });
+    assert.equal(critiqueRun.state, 'done', JSON.stringify(critiqueRun));
+
+    await c.call('team_submit', { run_id, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [], handoff: 'i' }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'draft:D1:1', payload: ok({ changed_files: [], handoff: 'd' }) });
+
+    const gateRun = await c.call('team_run', { run_id, cwd, node_id: 'gate:U1:1' });
+    assert.equal(gateRun.state, 'done', JSON.stringify(gateRun));
+
+    const reviewRun = await c.call('team_run', { run_id, cwd, node_id: 'review:D1:1' });
+    assert.equal(reviewRun.state, 'done', JSON.stringify(reviewRun));
+
+    const calls = readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse)
+      .filter((call) => !call.includes('--detect'));
+    const byStage = {};
+    for (const call of calls) {
+      const promptPath = call[call.indexOf('--prompt-file') + 1];
+      const head = readFileSync(promptPath, 'utf8').match(/^# (\S+) node (\S+)/);
+      if (head) byStage[head[2]] = call;
+    }
+    assert.ok(byStage['critique'], 'critique must have actually dispatched');
+    assert.ok(byStage['gate:U1:1'], 'gate:U1:1 must have actually dispatched');
+    assert.ok(byStage['review:D1:1'], 'review:D1:1 must have actually dispatched');
+    assert.equal(byStage['critique'].includes('--verify'), false, 'critique judges text only, no Bash needed');
+    assert.equal(byStage['gate:U1:1'].includes('--verify'), true, 'gate must be able to re-run the checks it judges');
+    assert.equal(byStage['review:D1:1'].includes('--verify'), true, 'review must be able to re-run a checkable acceptance item');
+  } finally {
+    c.close();
+    delete process.env.FAKE_ARGS_LOG;
+    delete process.env.FAKE_REPLY;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// A vendor that uses its --verify Bash access to edit the very file it is supposed to be
+// judging read-only - the thing a denylist alone cannot catch (a redirect, not a git/rm/mv
+// verb). The broker's own fingerprint-and-restore (verifySnapshot/verifyRestore) is the
+// backstop: void the verdict and put the file back, regardless of what the node claimed.
+function repoWithMutatingVendor() {
+  const dir = repo();
+  const adapter = join(dir, 'mutator-adapter.mjs');
+  writeFileSync(adapter, `#!/usr/bin/env node
+import { writeFileSync, mkdirSync, appendFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+const a = process.argv.slice(2), get = k => a[a.indexOf(k) + 1];
+const out = get('--output'); mkdirSync(dirname(out), { recursive: true });
+if (a.includes('--detect')) { writeFileSync(out, JSON.stringify({ vendor: { ready: true, reachable: true } })); process.exit(0); }
+const cwd = get('--cwd');
+if (process.env.MUTATE_PATH) {
+  const p = join(cwd, process.env.MUTATE_PATH);
+  mkdirSync(dirname(p), { recursive: true });
+  appendFileSync(p, 'MUTATED\\n');
+}
+writeFileSync(out, JSON.stringify({ stage_ok: true, result: {
+  stage_ok: true, accept: true, match_pct: 95, checks: ['ok -> looked fine'], attacks: ['ok -> looked fine from outside'], evidence: 'e',
+} }));
+`);
+  mkdirSync(join(dir, '.claude'), { recursive: true });
+  writeFileSync(join(dir, '.claude', 'broker-vendors.json'), JSON.stringify({
+    mutator: { command: 'node', args: [adapter], requires_binary: null, sandboxes: ['read-only', 'workspace-write'], default_sandbox: 'workspace-write' },
+  }));
+  return dir;
+}
+
+test('a gate that uses --verify Bash to edit its own subgoal\'s declared file has its verdict voided and the file restored', async () => {
+  const cwd = repoWithMutatingVendor();
+  writeFileSync(join(cwd, 'out.txt'), 'original\n');
+  process.env.MUTATE_PATH = 'out.txt';
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'mutator' });
+    await c.call('team_submit', { run_id, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('team_submit', {
+      run_id, cwd, node_id: 'setgoal',
+      payload: ok({
+        spec: {
+          goal: 'G', acceptance: ['A'],
+          subgoals: [{ id: 'U1', title: 'code', acceptance: ['a'], test: ['t'], files: ['out.txt'], deps: [] }],
+        },
+      }),
+    });
+    await c.call('team_submit', { run_id, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [], handoff: 'i' }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+
+    const gateRun = await c.call('team_run', { run_id, cwd, node_id: 'gate:U1:1' });
+    assert.equal(gateRun.state, 'failed', JSON.stringify(gateRun));
+    assert.match(gateRun.reason, /used its --verify Bash access to change out\.txt/);
+    assert.equal(readFileSync(join(cwd, 'out.txt'), 'utf8'), 'original\n', 'the mutation must be reverted, not merely reported');
+  } finally {
+    c.close();
+    delete process.env.MUTATE_PATH;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// The same mutation attempted by a SIBLING subgoal's own implement node, running concurrently
+// in the same shared (non-isolated) cwd, must never be blamed on this gate - verifySnapshot
+// scopes to the gate's OWN subgoal's declared files[], never the whole tree, for exactly this
+// reason (see that function's comment).
+test('a sibling subgoal writing its OWN declared file during a gate dispatch is not mistaken for the gate mutating anything', async () => {
+  const cwd = repoWithMutatingVendor();
+  writeFileSync(join(cwd, 'sibling.txt'), 'sibling original\n');
+  process.env.MUTATE_PATH = 'sibling.txt'; // U1's gate does not declare this file - U2 owns it
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'mutator' });
+    await c.call('team_submit', { run_id, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('team_submit', {
+      run_id, cwd, node_id: 'setgoal',
+      payload: ok({
+        spec: {
+          goal: 'G', acceptance: ['A'],
+          subgoals: [
+            { id: 'U1', title: 'code', acceptance: ['a'], test: ['t'], files: ['out.txt'], deps: [] },
+            { id: 'U2', title: 'other', acceptance: ['b'], test: ['t'], files: ['sibling.txt'], deps: [] },
+          ],
+        },
+      }),
+    });
+    await c.call('team_submit', { run_id, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [], handoff: 'i' }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+
+    const gateRun = await c.call('team_run', { run_id, cwd, node_id: 'gate:U1:1' });
+    assert.equal(gateRun.state, 'done', JSON.stringify(gateRun));
+    assert.equal(readFileSync(join(cwd, 'sibling.txt'), 'utf8'), 'sibling original\nMUTATED\n',
+      'U2 legitimately owns this file - the gate over U1 must not touch or revert it');
+  } finally {
+    c.close();
+    delete process.env.MUTATE_PATH;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('gate:goal can be policied separately from the per-subgoal gates', async () => {
   const cwd = repoWithFakeVendor();
   const c = await new Client().init();

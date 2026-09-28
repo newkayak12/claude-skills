@@ -11,7 +11,7 @@ const args = process.argv.slice(2);
 const opts = { sandbox: 'workspace-write', addDirs: [] };
 for (let i = 0; i < args.length; i++) {
   const key = args[i];
-  if (key === '--detect' || key === '--isolated') opts[key.slice(2)] = true;
+  if (key === '--detect' || key === '--isolated' || key === '--verify') opts[key.slice(2)] = true;
   else if (key === '--add-dir') opts.addDirs.push(args[++i]);
   else if (['--cwd', '--output', '--prompt-file', '--events-output', '--stage', '--sandbox', '--model'].includes(key)) opts[key.slice(2)] = args[++i];
   else throw new Error(`unknown argument ${key}`);
@@ -31,11 +31,31 @@ async function invoke(prompt) {
   const permissionMode = readOnly ? 'dontAsk'
     : opts.sandbox === 'danger-full-access' ? 'bypassPermissions'
       : 'acceptEdits';
+  // review/gate's contract asks them to re-run the command an acceptance item names, not
+  // trust the authoring node's report of it - impossible with no Bash, which is exactly why
+  // a review node kept splitting verified:true/false on identical evidence (P4:review:U1,
+  // portfolio-refresh Sprint: "no Bash tool available in this reasoning node"). --verify grants
+  // Bash under this profile for those two stages only (broker.mjs decides which). Edit and
+  // Write stay off the list regardless - there is no tool that writes a file - and
+  // --disallowedTools blocks the Bash verbs that mutate the tree or its history anyway (a
+  // `git commit` leaves the working tree clean, so "no Edit/Write tool" alone would not
+  // catch it). This is a tool-profile denylist, not an OS sandbox: a redirect into a tracked
+  // file (`echo x > path`) is not expressible as a command-prefix pattern and is not blocked
+  // by it - the review/gate prompt's own instruction not to write is the other half of this.
+  const verifyTools = readOnly && opts.verify;
   const cli = ['-p', '--output-format', 'json', '--no-session-persistence',
     '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
     '--model', opts.model || 'sonnet',
-    '--tools', readOnly ? 'Read,Glob,Grep' : 'Read,Glob,Grep,Edit,Write,Bash',
+    '--tools', readOnly ? (verifyTools ? 'Read,Glob,Grep,Bash' : 'Read,Glob,Grep') : 'Read,Glob,Grep,Edit,Write,Bash',
     '--permission-mode', permissionMode];
+  if (verifyTools) {
+    cli.push('--disallowedTools', [
+      'Bash(git commit:*)', 'Bash(git push:*)', 'Bash(git add:*)', 'Bash(git rm:*)',
+      'Bash(git reset:*)', 'Bash(git checkout:*)', 'Bash(git merge:*)', 'Bash(git stash:*)',
+      'Bash(git apply:*)', 'Bash(rm:*)', 'Bash(mv:*)', 'Bash(cp:*)', 'Bash(chmod:*)',
+      'Bash(sed -i:*)',
+    ].join(','));
+  }
   for (const dir of opts.addDirs) cli.push('--add-dir', dir);
   return await new Promise(resolveResult => {
     const child = spawn('claude', cli, { cwd: opts.cwd, stdio: ['pipe', 'pipe', 'pipe'] });
