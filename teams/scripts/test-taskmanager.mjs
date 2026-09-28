@@ -7489,6 +7489,63 @@ test('C4: planning integrates are budgeted like a reshape - past max_retries the
     assert.ok(!task.nodes.some((n) => n.node_id === 'plan-integrate:2'));
     assert.equal(task.nodes.find((n) => n.node_id === 'shape').state, 'unreachable');
     assert.equal((await tm.call('tm_status', { task_id })).state, 'blocked');
+    // M2: blocked is not the end - the next tick closes it to a report, with the PRD the cards
+    // wrote, and the retro carries the stories forward.
+    await planningClosesToReport(tm, root, task_id, { node: 'plan-integrate:1', prd: true, stories: ['F1-US-1', 'F2-US-1'] });
+  }, { max_retries: 0 });
+});
+
+// M2 (docs/plans/2026-09-28-teams-adversarial-fixes.md): a planning phase spent past its retries
+// closes to a report and a retro instead of ending blocked with neither.
+async function planningClosesToReport(tm, root, task_id, { node: deadId, prd, stories = [] }) {
+  const nx = await tm.call('tm_next', { task_id });
+  assert.deepEqual(nx.ready.map((r) => r.node_id), ['report'], JSON.stringify(nx));
+  let task = readTask(root, task_id);
+  assert.equal(task.planning_failed.node_id, deadId);
+  assert.equal(task.planning_failed.prd, prd);
+  assert.ok(!task.nodes.some((n) => n.state === 'pending' && n.stage !== 'report'), 'nothing is left pending behind the dead planning');
+  assert.ok(!task.nodes.some((n) => n.state === 'unreachable'));
+  const brief = readFileSync(nx.ready[0].briefing_path, 'utf8');
+  assert.match(brief, new RegExp(`planning stopped at ${deadId.replace(/[:.]/g, '\\$&')}`));
+  const done = await tm.call('tm_submit', { task_id, node_id: 'report', payload: ok({ handoff: 'planning never settled' }) });
+  assert.equal(done.state, 'done');
+  task = readTask(root, task_id);
+  assert.ok(existsSync(docPaths(task).report), '80-report.md is written');
+  const retro = JSON.parse(readFileSync(docPaths(task).retro, 'utf8'));
+  assert.deepEqual(retro.next_backlog.unfinished_stories.map((u) => u.id), stories);
+  assert.ok(retro.retrospective.partial_reasons.some((r) => r.startsWith(`planning stopped at ${deadId}`)));
+  assert.equal(existsSync(docPaths(task).prd), prd, prd ? 'the accepted cards\' PRD is kept' : 'no card accepted, no PRD');
+  assert.equal((await tm.call('tm_status', { task_id })).state, 'partial');
+}
+
+test('M2: an areas split spent past its retries closes to a report and retro, with no PRD', async () => {
+  const { autoReshape } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, root, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['x'] }) });
+    await tm.call('tm_submit', { task_id, node_id: 'areas', payload: ok({ areas: [] }) });
+    const task = readTask(root, task_id);
+    assert.equal(withTasksRoot(root, () => autoReshape(task)), false, 'no split attempt left');
+    assert.equal(readTask(root, task_id).nodes.find((n) => n.node_id === 'areas').final, true);
+    await planningClosesToReport(tm, root, task_id, { node: 'areas', prd: false });
+  }, { max_retries: 0 });
+});
+
+test('M2: a planning card spent past its retries closes to a report; the sibling card\'s PRD and stories carry', async () => {
+  const { autoRetryPackages } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['x'] }) });
+    await tm.call('tm_submit', { task_id, node_id: 'areas', payload: ok({ areas: TWO_AREAS }) });
+    const nx = await tm.call('tm_next', { task_id });
+    for (const c of nx.children) {
+      await completePlanningChild(g, c, [`${c.package_id.replace('PLAN-', '')}-US-1`]);
+      await tm.call('tm_submit', { task_id, node_id: c.node_id });
+      await tm.call('tm_submit', { task_id, node_id: `accept:${c.package_id}:1`, payload: ok(c.package_id === 'PLAN-F1'
+        ? { accept: true, match_pct: 95 } : { accept: false, match_pct: 40, reason: 'thin', gaps: ['no acceptance'] }) });
+    }
+    const task = readTask(root, task_id);
+    assert.equal(withTasksRoot(root, () => autoRetryPackages(task)), true);
+    assert.equal(readTask(root, task_id).nodes.find((n) => n.node_id === 'accept:PLAN-F2:1').final, true);
+    await planningClosesToReport(tm, root, task_id, { node: 'accept:PLAN-F2:1', prd: true, stories: ['F1-US-1', 'F2-US-1'] });
   }, { max_retries: 0 });
 });
 
