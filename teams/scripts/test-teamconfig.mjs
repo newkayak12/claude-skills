@@ -96,6 +96,27 @@ test('interactive: defaults false and sourced "default", team.json can turn it o
   assert.match(bad.notes[0], /interactive/);
 });
 
+test('ask_timeout: defaults null (wait forever), takes a positive integer of ms from team.json or args, rejects anything else with a note', () => {
+  assert.equal(TEAM_DEFAULTS.ask_timeout, null);
+  const bare = resolveTeamOptions({}, {});
+  assert.equal(bare.opts.ask_timeout, null);
+  assert.equal(bare.sources.ask_timeout, 'default');
+
+  const viaFile = resolveTeamOptions({}, { ask_timeout: 3600000 });
+  assert.equal(viaFile.opts.ask_timeout, 3600000);
+  assert.equal(viaFile.sources.ask_timeout, 'team.json');
+  const viaArgs = resolveTeamOptions({ ask_timeout: 100 }, { ask_timeout: 3600000 });
+  assert.equal(viaArgs.opts.ask_timeout, 100);
+  assert.equal(viaArgs.sources.ask_timeout, 'args');
+  assert.equal(resolveTeamOptions({ ask_timeout: null }, { ask_timeout: 5 }).opts.ask_timeout, null, 'an explicit null turns a team.json timeout back off');
+
+  for (const bad of [0, -1, 1.5, '100', true]) {
+    const r = resolveTeamOptions({}, { ask_timeout: bad });
+    assert.equal(r.opts.ask_timeout, null, `${JSON.stringify(bad)} is ignored`);
+    assert.match(r.notes[0], /ask_timeout/);
+  }
+});
+
 // max_parallel_teams: 'auto' (default since 2026-09-28) hands the cap to taskmanager.mjs's AIMD
 // controller; a project may still pin a fixed number instead, exactly as before that existed.
 // This file only proves the CONFIG LAYER accepts both shapes and rejects everything else - the

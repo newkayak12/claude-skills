@@ -5497,6 +5497,78 @@ test('a run that was never told to ask does not park: it records the question an
   });
 });
 
+// ---------- ask_timeout (design §7): an unanswered ask is answered by its defaults, by: 'timeout' ----------
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+test('ask_timeout: a child-run ask nobody answers is submitted with its recommended option, recorded by: "timeout", and draft runs on it', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    const child = await toAskCard(tm, g, task_id);
+    const before = await tm.call('tm_inbox', { task_id });
+    assert.equal(before.cards.length, 1, 'still waiting before the deadline');
+    assert.ok(before.cards[0].expires_at >= before.cards[0].since + 100, JSON.stringify(before.cards[0]));
+
+    await sleep(150);
+    // Any tm_* call for the task is a look at the clock (the daemon is the other; none runs here).
+    const after = await tm.call('tm_inbox', { task_id });
+    assert.deepEqual(after.cards, [], 'expired: no longer waiting on anybody');
+    const ledger = readFileSync(join(root, task_id, 'ledger.jsonl'), 'utf8');
+    assert.match(ledger, /"event":"ask_timeout".*"node_id":"ask:U1:1"/);
+
+    // The answer went through the same queue a person's does; the broker applies it.
+    const next = await g.call('team_next', { run_id: child.run_id, cwd: child.cwd });
+    const draft = (next.ready || []).find((n) => n.node_id === 'draft:U1:1');
+    assert.ok(draft, JSON.stringify(next.ready));
+    assert.match(readFileSync(draft.briefing_path, 'utf8'), /2 across presale and general combined/, 'no default given: the first (recommended) option');
+
+    const status = await g.call('team_status', { run_id: child.run_id, cwd: child.cwd, full: true });
+    const ask = status.nodes.find((n) => n.node_id === 'ask:U1:1');
+    assert.equal(ask.state, 'done');
+    assert.equal(ask.result.by, 'timeout');
+    assert.equal(ask.result.decisions[0].by, 'timeout');
+    const decided = (await tm.call('tm_inbox', { task_id })).decided;
+    assert.ok(decided.some((d) => d.node_id === 'ask:U1:1' && /ask_timeout/.test(d.reason)), JSON.stringify(decided));
+    // A person arriving late finds it already decided, not a second answer applied over it.
+    const late = await tm.call('tm_submit', { task_id, key: `E-${task_id.slice(0, 8)}/P1/ask:U1:1`, payload: ok({ decisions: [] }) });
+    assert.match(late.error || '', /not waiting_human/);
+  }, { interactive: true, ask_timeout: 100 });
+});
+
+test('ask_timeout: a manager-level ask takes its stated default on expiry; without ask_timeout (the default) it keeps waiting', async () => {
+  const toCritiqueAsk = async (tm, task_id) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2 modules'], handoff: 'two modules' }) });
+    await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({ ...SHAPE, handoff: 's' }) });
+    await tm.call('tm_submit', { task_id, node_id: 'critique', payload: ok({ sound: true, questions: [{ ...CRITIQUE_QUESTION[0], default: 'document' }] }) });
+  };
+  await withTask(async ({ tm, task_id }) => {
+    await toCritiqueAsk(tm, task_id);
+    await sleep(150);
+    assert.equal((await tm.call('tm_inbox', { task_id })).cards.length, 1, 'no ask_timeout: waits forever');
+  }, { interactive: true });
+  await withTask(async ({ tm, task_id }) => {
+    await toCritiqueAsk(tm, task_id);
+    await sleep(150);
+    const inbox = await tm.call('tm_inbox', { task_id });
+    assert.deepEqual(inbox.cards, []);
+    assert.equal(inbox.decided.length, 1, JSON.stringify(inbox));
+    const ask = (await tm.call('tm_status', { task_id, full: true })).nodes.find((n) => n.node_id === 'ask:critique:1');
+    assert.equal(ask.state, 'done');
+    assert.equal(ask.result.by, 'timeout');
+    assert.equal(ask.result.decisions[0].chose, 'document', 'the default wins over the first option');
+  }, { interactive: true, ask_timeout: 100 });
+});
+
+test('nextAskDeadline: the earliest waiting ask plus ask_timeout, null with no timeout or nothing waiting (fake clock, no I/O)', async () => {
+  const { nextAskDeadline, expireAsks } = await import('../mcp/taskmanager.mjs');
+  const ask = (id, since, state = 'waiting_human') => ({ node_id: id, stage: 'ask', state, waiting_since: since, questions: [{ question: 'q', default: 'a' }] });
+  const task = { ask_timeout: 100, nodes: [ask('ask:a:1', 5000), ask('ask:b:1', 1000), ask('ask:c:1', 0, 'done')] };
+  assert.equal(nextAskDeadline(task), 1100);
+  assert.equal(nextAskDeadline({ ...task, ask_timeout: null }), null);
+  assert.equal(nextAskDeadline({ ask_timeout: 100, nodes: [ask('ask:c:1', 0, 'done')] }), null);
+  assert.deepEqual(expireAsks(task, 1099), [], 'not before the deadline');
+  assert.deepEqual(expireAsks({ ...task, ask_timeout: null }, 1e12), [], 'never without a timeout');
+});
+
 // ---------- 0.27.4: the manager never writes a child run itself ----------
 //
 // The 2026-09-24 review: 0.27.3's tm_assign and tm_submit({key}) loaded the child run and
