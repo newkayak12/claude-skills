@@ -15,8 +15,11 @@
 //
 //   node teams/scripts/run.mjs "<request>" [--kind auto|develop|document] [--cwd <path>]
 //     [--budget-usd <n>] [--timebox-minutes <n>] [--vendor <v>] [--allocation ordered|balanced]
-//     [--size S|L] [--context <text>] [--poll-ms <n>] [--json]
+//     [--size S|L] [--context <text>] [--poll-ms <n>] [--initiative <slug>] [--json]
 //   node teams/scripts/run.mjs --resume <task_id> [--json]
+//
+// --initiative is tm_run's own `initiative` argument (optional grouping ABOVE the EPIC,
+// display/grouping only - see tm_open's own description and teamconfig.mjs's `initiative` key).
 //
 // --kind (alias --flow) is tm_run's own `flow` argument (auto/develop/document) - "kind" is
 // what the bench docs (teams/scripts/bench/README.md) call it; the field underneath is `flow`.
@@ -58,7 +61,7 @@ const DEFAULT_POLL_MS = 5000;
 export const USAGE = `usage:
   node teams/scripts/run.mjs "<request>" [--kind auto|develop|document] [--cwd <path>]
     [--budget-usd <n>] [--timebox-minutes <n>] [--vendor <v>] [--allocation ordered|balanced]
-    [--size S|L] [--context <text>] [--poll-ms <n>] [--json]
+    [--size S|L] [--context <text>] [--poll-ms <n>] [--initiative <slug>] [--json]
   node teams/scripts/run.mjs --resume <task_id> [--json]
 `;
 
@@ -81,6 +84,7 @@ export function parseArgs(argv) {
       case '--size': a.size = next(); break;
       case '--budget-usd': a.budgetUsd = next(); break;
       case '--timebox-minutes': a.timeboxMinutes = next(); break;
+      case '--initiative': a.initiative = next(); break;
       case '--poll-ms': a.pollMs = Number(next()); break;
       case '-h': case '--help': a.help = true; break;
       case '--json': a.json = true; break;
@@ -123,6 +127,7 @@ function tmRunArgs(a) {
   if (a.size !== undefined) out.size = a.size;
   if (a.budgetUsd !== undefined) out.budget_usd = a.budgetUsd;
   if (a.timeboxMinutes !== undefined) out.timebox_minutes = a.timeboxMinutes;
+  if (a.initiative !== undefined) out.initiative = a.initiative;
   return out;
 }
 

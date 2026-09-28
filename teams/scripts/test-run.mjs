@@ -68,6 +68,15 @@ test('parseArgs: a non-numeric --budget-usd is rejected', () => {
   assert.match(a.error, /--budget-usd must be a number/);
 });
 
+// --initiative is tm_run's own `initiative` argument (teamconfig.mjs slug-normalizes it
+// server-side - this CLI passes the raw string through unchanged, same as --context).
+test('parseArgs: --initiative is passed through as a plain string, unset when omitted', () => {
+  const a = parseArgs(['req', '--initiative', 'Q1 Roadmap']);
+  assert.equal(a.initiative, 'Q1 Roadmap');
+  const b = parseArgs(['req']);
+  assert.equal(b.initiative, undefined);
+});
+
 test('parseArgs: --size only accepts S or L', () => {
   assert.equal(parseArgs(['req', '--size', 'S']).size, 'S');
   assert.match(parseArgs(['req', '--size', 'M']).error, /--size must be S or L/);
@@ -143,6 +152,17 @@ test('runHeadless: opens via tm_run, polls tm_wait, exits 0 complete with a repo
   assert.match(text, /shape \(shape\) -> done/);
   assert.match(text, /COMPLETE/);
   assert.match(text, /80-report\.md/);
+});
+
+test('runHeadless: --initiative reaches tm_run\'s own args unchanged; omitted when not passed', async () => {
+  const { deps, calls } = fakeTaskLayer({ waitReplies: [{ state: 'complete', cursor: 1, counts: {}, transitions: [] }] });
+  await runHeadless({ request: 'build it', pollMs: 10, json: false, initiative: 'Q1 Roadmap' }, deps, () => false, sink());
+  assert.equal(calls[0].name, 'tm_run');
+  assert.equal(calls[0].args.initiative, 'Q1 Roadmap');
+
+  const { deps: deps2, calls: calls2 } = fakeTaskLayer({ waitReplies: [{ state: 'complete', cursor: 1, counts: {}, transitions: [] }] });
+  await runHeadless({ request: 'build it', pollMs: 10, json: false }, deps2, () => false, sink());
+  assert.equal('initiative' in calls2[0].args, false);
 });
 
 test('runHeadless: blocked is a non-zero exit', async () => {

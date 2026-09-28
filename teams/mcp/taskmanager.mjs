@@ -45,9 +45,9 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { touchMarker } from './engage.mjs';
 import {
-  epicKey, storyKey, taskKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
+  epicKey, initiativeKey, storyKey, taskKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
   storyTicketState, storyTaskProgress, epicBoardRows, ticketSnapshot,
-  storyLinks, packageReporter, parseTicketKey, storyBlockedReason,
+  storyLinks, packageFiling, parseTicketKey, storyBlockedReason,
 } from './tickets.mjs';
 import { writeDocs } from './docs.mjs';
 import { validate as validateDiagram, renderToFile as renderDiagram } from './diagram.mjs';
@@ -425,6 +425,11 @@ function createTask(a) {
     kind: 'task',
     store_path: taskPath(taskId),
     cwd,
+    // Optional grouping ABOVE the EPIC (teamconfig.mjs's own `initiative` key, already
+    // slug-normalized there) - display/grouping only (tm_board, tm_ticket's `I-<slug>` key); no
+    // scheduling or execution ever reads it. null (the default) keeps every EPIC ungrouped,
+    // exactly today's behaviour.
+    initiative: T.initiative,
     request: requests ? composeBacklogRequest(requests) : String(a.request),
     requests, // null for the ordinary single-request task - the byte-for-byte compat case.
     context: [priorRetro.text, a.context || ''].filter(Boolean).join('\n\n'),
@@ -1100,7 +1105,7 @@ export function autoRetryPackages(task) {
         saveRun(task);
         record(task, { event: 'daemon_retry_settled', task_id: task.run_id, package_id: pid, reason: 'qa_rounds exhausted with unresolved defects', failed_node: failed.node_id });
       } else {
-        const out = fileDefects(task, records, { reporter: 'qa' });
+        const out = fileDefects(task, records, { reporter: 'qa', origin: 'qa' });
         record(task, { event: 'daemon_defects_filed', task_id: task.run_id, package_id: pid, filed: out.filed, failed_node: failed.node_id });
       }
       changed = true;
@@ -1345,7 +1350,13 @@ export function autoRepair(task) {
 // checks it - a user-filed STORY is not a QA round (v0.12.1 self-review's open risk on tm_file
 // vs qa_rounds, resolved here: tm_file always proceeds, uncapped).
 function fileDefects(task, defects, opts) {
-  const reporter = (opts && opts.reporter) || 'you';
+  // reporter is the issuing TEAM ('qa'/'audit'/'user', or an actual develop package id like 'P4'
+  // for a fix fileUpstreamDefects files on that package's own behalf); origin is the STAGE that
+  // filed it ('qa'/'planning-audit'/'tm_file'/'upstream') - tickets.mjs's packageFiling reads
+  // both straight off the package, no recomputation. Defaulting to 'user'/'tm_file' matches
+  // tm_file's own call (the only caller that omits both).
+  const reporter = (opts && opts.reporter) || 'user';
+  const origin = (opts && opts.origin) || 'tm_file';
   const packages = task.spec.packages;
   const goal = task.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id == null).pop();
   if (!goal) throw new Error('this task has not reached goal level yet - there is no gate:goal to reroute a filed STORY behind');
@@ -1360,6 +1371,13 @@ function fileDefects(task, defects, opts) {
       id,
       title,
       reporter,
+      origin,
+      // Only an upstream fix ever gets a link - the fix STORY's own "what this blocks/targets"
+      // (§upstream_defects). d.upstream is fileUpstreamDefects' own explicit field (set beside
+      // deps:[upstreamId], never left to be inferred from deps alone - see that function).
+      ...(origin === 'upstream'
+        ? { link: { type: 'blocks', target: String((d && d.upstream) != null ? d.upstream : ((Array.isArray(d && d.deps) && d.deps[0]) || '')) } }
+        : {}),
       flow: task.flow_chosen || 'auto',
       brief: [
         `This package fixes a defect filed against this task's integrated result.`,
@@ -1431,12 +1449,14 @@ function fileUpstreamDefects(task, downstreamPid, defects) {
     // itself filed, regardless of which downstream package found the next one. Read off the
     // packages list, the same way qaAttempts (autoRetryPackages) counts dispatch:QA nodes: a
     // filed fix package's own deps names the upstream id it was filed against (see `records`
-    // below), so this needs no extra bookkeeping field of its own.
-    const priorRounds = (task.spec.packages || []).filter((p) => p.reporter === 'upstream' && (p.deps || []).map(String).includes(upstreamId)).length;
+    // below), so this needs no extra bookkeeping field of its own. packageFiling's own origin
+    // (not reporter, which is now the FILER's team id, never the literal 'upstream') is what
+    // marks a package as an upstream fix - see tickets.mjs's packageFiling.
+    const priorRounds = (task.spec.packages || []).filter((p) => packageFiling(p).origin === 'upstream' && (p.deps || []).map(String).includes(upstreamId)).length;
     if (priorRounds >= cap) {
       task.unresolved_defects = (task.unresolved_defects || []).concat(group.map((d) => ({
         title: (d && d.title) || `upstream defect in ${upstreamId}`, evidence: (d && d.evidence) || '',
-        reporter: 'upstream', upstream: upstreamId, reported_by: String(downstreamPid), round: priorRounds + 1,
+        reporter: String(downstreamPid), origin: 'upstream', link: { type: 'blocks', target: upstreamId }, round: priorRounds + 1,
       })));
       record(task, { event: 'upstream_fix_rounds_exhausted', task_id: task.run_id, package_id: String(downstreamPid), upstream: upstreamId, filed: priorRounds });
       continue;
@@ -1451,11 +1471,18 @@ function fileUpstreamDefects(task, downstreamPid, defects) {
         // (CONTRACT.shape) already uses to say who owns what.
         touches: (d && Array.isArray(d.touches) && d.touches.length ? d.touches : upstreamPkg.touches) || [],
         deps: [upstreamId],
+        // fileDefects' own link builder reads this - explicit, not inferred from deps[0], so a
+        // future caller with more than one dep can never silently point the link at the wrong one.
+        upstream: upstreamId,
       });
     }
   }
   if (!records.length) return { filed: [], targeted: [], downstream_attempt: null };
-  const out = fileDefects(task, records, { reporter: 'upstream' });
+  // reporter is the downstream package that FOUND the defect - an actual develop team id (e.g.
+  // 'P4'), never the literal 'upstream' a pre-reporter/origin-split package used to carry (see
+  // packageFiling's own back-compat comment for why a legacy upstream-filed package can no
+  // longer recover this fact at all).
+  const out = fileDefects(task, records, { reporter: String(downstreamPid), origin: 'upstream' });
   const fixAcceptsByUpstream = {};
   out.acceptIds.forEach((accId, i) => {
     const upstreamId = records[i].deps[0];
@@ -3631,7 +3658,7 @@ export function finish(task, n, result) {
       if (qaAttempts > cap) {
         task.unresolved_defects = (task.unresolved_defects || []).concat(defects.map((d) => ({ ...d, round: qaAttempts })));
       } else {
-        fileDefects(task, defects, { reporter: 'qa' });
+        fileDefects(task, defects, { reporter: 'qa', origin: 'qa' });
       }
     }
   }
@@ -3707,9 +3734,9 @@ export function finish(task, n, result) {
       const cap = Number.isInteger(task.team && task.team.opts && task.team.opts.qa_rounds)
         ? task.team.opts.qa_rounds : TEAM_DEFAULTS.qa_rounds;
       if (rounds > cap) {
-        task.unresolved_defects = (task.unresolved_defects || []).concat(unmet.map((u) => ({ ...u, reporter: 'planning-audit', round: rounds })));
+        task.unresolved_defects = (task.unresolved_defects || []).concat(unmet.map((u) => ({ ...u, reporter: 'audit', origin: 'planning-audit', round: rounds })));
       } else {
-        const out = fileDefects(task, unmet, { reporter: 'planning-audit' });
+        const out = fileDefects(task, unmet, { reporter: 'audit', origin: 'planning-audit' });
         // What 65-audit.md links. Kept on the node rather than recomputed from the package list
         // because a later round's STORYs would be indistinguishable from this one's.
         n.result = { ...n.result, filed: out.filed };
@@ -3819,6 +3846,7 @@ const TOOLS = [
         budget_grace_minutes: { type: 'integer', description: 'default 5, also settable in .claude/team.json. See budget_grace_usd - whichever of the two limits a still-running, still-needed dispatch reaches first stops it.' },
         requests: { type: 'array', items: { type: 'string' }, description: 'A backlog instead of one request: several EPIC-level items, priority = array order (first is highest). shape treats each as its own story set; with budget_usd/timebox_minutes in play, the lowest-priority items still unshaped or undispatched when the stop trips are exactly what the report names "Next backlog". Mutually exclusive with `request` - send one or the other, never both.' },
         context_from: { type: 'string', description: 'A prior task_id (or its ticket key). Its retro.json - the Retrospective and Next backlog a finished task\'s report stage writes - is read and folded into this task\'s own context: what failed and why, retries, defects left, and any unaccepted packages or unresolved questions the prior task ran out of budget/timebox to reach. The prior task\'s own Next backlog is NOT auto-added to `requests` - naming it here is a decision this task\'s own request should still make in its own words.' },
+        initiative: { type: 'string', description: 'default null, also settable in .claude/team.json. An optional label ABOVE this EPIC - several EPICs toward one outcome (a slug-normalized "I-<slug>" key: lowercased, non-alphanumeric runs collapsed to one "-"). Display/grouping only: tm_board groups every EPIC by it once any task has one, and tm_ticket("I-<slug>") lists that group\'s EPICs with state and cost. Never read by scheduling or execution, and never nests a task inside another - EPICs under the same initiative are still independent tasks.' },
       },
       required: ['request', 'cwd'],
     },
@@ -3845,6 +3873,7 @@ const TOOLS = [
         timebox_minutes: { type: ['number', 'null'], description: 'Same meaning as tm_open({timebox_minutes}).' },
         requests: { type: 'array', items: { type: 'string' }, description: 'Same meaning as tm_open({requests}) - mutually exclusive with `request`.' },
         context_from: { type: 'string', description: 'Same meaning as tm_open({context_from}).' },
+        initiative: { type: 'string', description: 'Same meaning as tm_open({initiative}).' },
       },
       required: ['request', 'cwd'],
     },
@@ -3891,7 +3920,7 @@ const TOOLS = [
   },
   {
     name: 'tm_file',
-    description: 'File one or more develop STORYs directly against a task that has already reached goal level (a gate:goal node exists) - the same path a QA-found defect takes (§5b: a fresh package per story, its own dispatch/accept chain, a fresh integrate opened behind it, gate:goal - and a fresh QA round if roles.qa is on - rerouted there), but reporter: "you" on the board instead of "qa". Never checked against qa_rounds: a user filing a STORY is not a QA round, so this always proceeds regardless of how many QA rounds this task has already run.',
+    description: 'File one or more develop STORYs directly against a task that has already reached goal level (a gate:goal node exists) - the same path a QA-found defect takes (§5b: a fresh package per story, its own dispatch/accept chain, a fresh integrate opened behind it, gate:goal - and a fresh QA round if roles.qa is on - rerouted there), but reporter: "user" / origin: "tm_file" on the board instead of reporter: "qa" / origin: "qa". Never checked against qa_rounds: a user filing a STORY is not a QA round, so this always proceeds regardless of how many QA rounds this task has already run.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -3922,13 +3951,13 @@ const TOOLS = [
   },
   {
     name: 'tm_board',
-    description: 'Ticket-shaped board (§4/§8 of the design doc). Omit task_id for every EPIC this manager knows (key, state, phase). With task_id: the EPIC header plus its STORY kanban - one row per package, its state derived from task.json the same way tm_status is, never a second source of truth - and a doc_path to the human-readable INDEX.md (which may not exist on disk yet; see tm_docs). task_id accepts a full run id or the ticket key E-xxxxxxxx (the same 8-hex-prefix resolution tm_ticket uses). Read-only.',
+    description: 'Ticket-shaped board (§4/§8 of the design doc). Omit task_id for every EPIC this manager knows (key, state, phase) - grouped by `initiative` (a `groups: [{initiative, key: "I-<slug>", epics}]` array, an initiative-less `null` group included) whenever at least one task has one set; with none set anywhere, exactly the flat `{epics}` list this always returned. With task_id: the EPIC header plus its STORY kanban - one row per package, its state derived from task.json the same way tm_status is, never a second source of truth - and a doc_path to the human-readable INDEX.md (which may not exist on disk yet; see tm_docs). task_id accepts a full run id or the ticket key E-xxxxxxxx (the same 8-hex-prefix resolution tm_ticket uses). Read-only.',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' } } },
     outputSchema: { type: 'object' },
   },
   {
     name: 'tm_ticket',
-    description: 'One ticket by key: E-xxxxxxxx for the EPIC, E-xxxxxxxx/Pn for a STORY. State, worktree/branch, task progress (x/y) and the last accept verdict, plus a doc_path. Read-only; a doc_path is always returned, even before tm_docs has written anything there.',
+    description: 'One ticket by key: I-<slug> for an initiative (every EPIC under it, with state and cost - see tm_open({initiative})), E-xxxxxxxx for the EPIC, E-xxxxxxxx/Pn for a STORY. State, worktree/branch, task progress (x/y) and the last accept verdict, plus a doc_path (EPIC/STORY only) and reporter/origin/link (STORY only - reporter is the issuing team, origin the stage that filed it, link only set for an upstream fix). Read-only; a doc_path is always returned for an EPIC/STORY, even before tm_docs has written anything there.',
     inputSchema: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] },
     outputSchema: { type: 'object' },
   },
@@ -4166,14 +4195,34 @@ export function appendBoardTransitions(task, before, by) {
   }
 }
 
+// A no-task_id tm_board row, shared by the flat listing and every initiative group below it -
+// one function so the two can never disagree about what an epic row looks like.
+function epicRow(t) {
+  return { key: epicKey(t.run_id), task_id: t.run_id, title: String(t.request).slice(0, 60), state: epicTicketState(t), phase: epicPhase(t) };
+}
+
 function toolBoard(a) {
   if (!a.task_id) {
     let ids = [];
     try { ids = readdirSync(tasksRoot()); } catch { ids = []; }
-    const epics = ids.map((id) => loadRunAt(taskPath(id))).filter(Boolean)
-      .sort((x, y) => (y.created_at || 0) - (x.created_at || 0))
-      .map((t) => ({ key: epicKey(t.run_id), task_id: t.run_id, title: String(t.request).slice(0, 60), state: epicTicketState(t), phase: epicPhase(t) }));
-    return { epics };
+    const tasks = ids.map((id) => loadRunAt(taskPath(id))).filter(Boolean)
+      .sort((x, y) => (y.created_at || 0) - (x.created_at || 0));
+    // Grouping/display only, and only when at least one task actually has one - a project that
+    // never sets `initiative` gets exactly today's flat `{epics}` shape, byte for byte (every
+    // test that pins it keeps passing unmodified). `groups` orders by first appearance in the
+    // (already created_at-desc) task list, an ungrouped `null` bucket included whenever any real
+    // EPIC has no initiative of its own, so no EPIC silently drops off the board either surface.
+    if (!tasks.some((t) => t.initiative)) return { epics: tasks.map(epicRow) };
+    const bySlug = new Map();
+    for (const t of tasks) {
+      const slug = t.initiative || null;
+      if (!bySlug.has(slug)) bySlug.set(slug, []);
+      bySlug.get(slug).push(epicRow(t));
+    }
+    return {
+      epics: tasks.map((t) => ({ ...epicRow(t), initiative: t.initiative || null })),
+      groups: [...bySlug.entries()].map(([slug, epics]) => ({ initiative: slug, key: slug ? initiativeKey(slug) : null, epics })),
+    };
   }
   const task = mustFindTask(a);
   // One collectDriverCosts call per task_id lookup - cheap (drivers/ is a handful of files even
@@ -4220,14 +4269,34 @@ function resolveTaskRef(raw) {
 // documents (a TASK key's "Pn/subgoalId" silently read as one greedy STORY pkgId).
 function resolveTicketRef(key) {
   const parsed = parseTicketKey(key);
-  if (!parsed) throw new Error(`unrecognized ticket key "${key}": expected E-xxxxxxxx, E-xxxxxxxx/Pn, or E-xxxxxxxx/Pn/subgoalId`);
+  if (!parsed || !parsed.epic8) throw new Error(`unrecognized ticket key "${key}": expected E-xxxxxxxx, E-xxxxxxxx/Pn, E-xxxxxxxx/Pn/subgoalId, or I-<slug>`);
   const found = findEpicByPrefix(parsed.epic8);
   const task = mustFindTask({ task_id: found });
   return { task, pkgId: parsed.pkgId, subgoalId: parsed.subgoalId };
 }
 
+// tm_ticket on an I-<slug> key: every EPIC under that initiative, same shape epicRow (tm_board)
+// already renders, plus each one's own cost - a person asking "how's this initiative doing"
+// wants the group's spend as much as its state. Throws on an initiative nothing was ever opened
+// under, the same "unknown key" treatment findEpicByPrefix gives an unrecognized EPIC prefix.
+function ticketForInitiative(slug) {
+  let ids = [];
+  try { ids = readdirSync(tasksRoot()); } catch { ids = []; }
+  const epics = ids.map((id) => loadRunAt(taskPath(id))).filter(Boolean)
+    .filter((t) => t.initiative === slug)
+    .sort((x, y) => (y.created_at || 0) - (x.created_at || 0))
+    .map((t) => {
+      const driverTotal = collectTaskCosts(taskDir(t.run_id), t);
+      return { ...epicRow(t), cost: { usd: driverTotal.cost_usd, turns: driverTotal.turns, sessions: driverTotal.sessions } };
+    });
+  if (!epics.length) throw new Error(`no EPIC found under initiative "${slug}"`);
+  return { key: initiativeKey(slug), kind: 'INITIATIVE', initiative: slug, epics };
+}
+
 function toolTicket(a) {
   const key = String(a.key || '');
+  const parsedForInitiative = parseTicketKey(key);
+  if (parsedForInitiative && parsedForInitiative.initiative) return ticketForInitiative(parsedForInitiative.initiative);
   const { task, pkgId, subgoalId } = resolveTicketRef(key);
   if (!pkgId) {
     return {
@@ -4256,7 +4325,7 @@ function toolTicket(a) {
     tasks: storyTaskProgress(task, pkgId),
     worktree: dispatch && dispatch.child ? { cwd: dispatch.child.cwd, branch: dispatch.child.branch } : null,
     last_verdict: accept && accept.result ? { accept: accept.result.accept, match_pct: accept.result.match_pct, gaps: accept.result.gaps || [] } : null,
-    reporter: packageReporter(pkg),
+    ...packageFiling(pkg),
     links: storyLinks(task, pkgId),
     // Which of this STORY's subgoals a human owns right now - tm_assign's own read-back, and
     // the only place a card's `who` is visible outside tm_inbox (which only lists a card once
@@ -5498,7 +5567,7 @@ function toolFile(a) {
   if (!task.spec || !Array.isArray(task.spec.packages)) throw new Error('this task has no shape yet - tm_file needs an existing package list to file a STORY beside');
   const stories = Array.isArray(a.stories) ? a.stories : [];
   if (!stories.length) throw new Error('tm_file needs at least one story in stories[]');
-  const out = fileDefects(task, stories, { reporter: 'you' });
+  const out = fileDefects(task, stories, { reporter: 'user', origin: 'tm_file' });
   record(task, { event: 'tm_file', task_id: task.run_id, filed: out.filed, integrate: out.integrate });
   return { task_id: task.run_id, filed: out.filed, integrate: out.integrate };
 }

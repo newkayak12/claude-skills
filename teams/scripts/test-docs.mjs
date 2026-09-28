@@ -113,7 +113,7 @@ test('65-audit.md links the STORY the audit filed in an earlier round, and shows
   assert.match(page, /## STORYs filed\n- \[D1\]\(\.\/40-stories\/D1\.md\)/);
   assert.match(page, /rounds: 2/);
   assert.match(page, /## Unmet user stories \(latest round\)\n- \(none\)/);
-  assert.match(renderAll(task)[docPaths(task).story('D1')], /reporter: planning-audit/);
+  assert.match(renderAll(task)[docPaths(task).story('D1')], /reporter: audit \(planning-audit\)/);
 });
 
 test('writeDocs({rebuild:true}) reproduces byte-identical files from engine state alone, with no clock passed - the actual production call shape', () => {

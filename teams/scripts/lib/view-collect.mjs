@@ -19,7 +19,7 @@ import { driverCostOf, collectTaskCosts } from '../bench/lib/drivercost.mjs';
 // exactly the same reason epicTicketState etc. already were: one derivation, no second copy of
 // "what state is this STORY/TASK in" living in view-collect.mjs.
 import {
-  epicKey, epicTicketState, epicPhase, epicBoardRows, storyLinks,
+  epicKey, epicTicketState, epicPhase, epicBoardRows, storyLinks, packageFiling, FILED_ORIGINS,
   storyTicketState, storyKey, taskKey, taskTicketState, storyBlockedReason, flowMetrics,
 } from '../../mcp/tickets.mjs';
 
@@ -277,10 +277,17 @@ function packageModel(task, pkg, dispatchNode, acceptNode, visiting) {
     phase: pkg.phase || null,
     deps: pkg.deps || [],
     // Set only on a package fileDefects() created (a QA-found defect, an audit-found unmet
-    // story, or a user's tm_file) - null for a package shape itself declared. This is the only
-    // way a human looking at the board can tell "this STORY exists because QA/audit found
-    // something" apart from "this STORY is part of the original plan".
-    reporter: pkg.reporter || null,
+    // story, a user's tm_file, or an upstream fix) - null for a package shape/repair/a
+    // phase-Team itself declared. This is the only way a human looking at the board can tell
+    // "this STORY exists because something was filed against already-integrated work" apart
+    // from "this STORY is part of the original plan" - packageFiling (tickets.mjs) normalizes
+    // an old on-disk package's overloaded `reporter` the same way epicBoardRows/tm_ticket do, so
+    // a task opened before the reporter/origin split still renders correctly here too.
+    ...(() => {
+      const filing = packageFiling(pkg);
+      const filed = FILED_ORIGINS.has(filing.origin);
+      return { reporter: filed ? filing.reporter : null, origin: filed ? filing.origin : null, link: filing.link };
+    })(),
     links: storyLinks(task, pkg.id),
     dispatch: dispatchNode ? nodeSummary(dispatchNode) : null,
     accept: acceptNode ? nodeSummary(acceptNode) : null,
@@ -540,24 +547,21 @@ export function deriveTitle(request) {
   return `${clause.slice(0, TITLE_MAX - 1).trimEnd()}…`;
 }
 
-// epicBoardRows' own `reporter` field (tickets.mjs) is not itself "was this filed as a defect" -
-// it defaults to 'shape' for an ordinary package and 'repair' for a repair package precisely so
-// tm_board always has SOME reporter to print. A filed defect/unmet-story STORY is the one whose
-// reporter is one of these four - fileDefects (taskmanager.mjs) never writes any other value -
-// the same set epicBoardRows' own comment names. 'upstream' is fileUpstreamDefects' own reporter
-// (taskmanager.mjs, §upstream_defects): a fix STORY a downstream package's dispatch/accept filed
-// against an upstream dependency it deps on, same fileDefects machinery, different filer.
-const FILED_REPORTERS = ['qa', 'you', 'planning-audit', 'upstream'];
-
+// epicBoardRows' own `origin` field (tickets.mjs) is not itself "was this filed as a defect" -
+// it defaults to 'shape' for an ordinary package, 'repair' for a repair package, and 'phase' for
+// a PLAN/QA/AUDIT phase-Team package, precisely so tm_board always has SOME origin to print. A
+// filed defect/unmet-story STORY is the one whose origin is in tickets.mjs's own FILED_ORIGINS -
+// fileDefects (taskmanager.mjs) never writes any other origin for an actually-filed package.
+//
 // A task's STORY rows that are develop work (epicBoardRows' `role` is 'develop' for a plan
 // package and any filed defect/unmet-story STORY; PLAN/QA/AUDIT phase-Team packages carry their
 // own phase as role instead) - what a person scanning the index means by "how much of the actual
 // work is done", and separately, how many of those rows a QA or planning-audit round filed
-// (reporter in FILED_REPORTERS) that have not yet reached DONE/CANCELLED/UNREACHABLE - still
-// open, still something to look at.
+// (origin in FILED_ORIGINS) that have not yet reached DONE/CANCELLED/UNREACHABLE - still open,
+// still something to look at.
 function storyProgress(task) {
   const rows = epicBoardRows(task).filter((r) => r.role === 'develop');
-  const openDefects = rows.filter((r) => FILED_REPORTERS.includes(r.reporter) && !['DONE', 'CANCELLED', 'UNREACHABLE'].includes(r.state)).length
+  const openDefects = rows.filter((r) => FILED_ORIGINS.has(r.origin) && !['DONE', 'CANCELLED', 'UNREACHABLE'].includes(r.state)).length
     // task.unresolved_defects: a defect/unmet-story found after the QA/planning-audit round cap
     // was already spent - never filed as a STORY at all (fileDefects is skipped for these; see
     // taskmanager.mjs), so epicBoardRows never sees them. Still a real, still-open problem this
@@ -595,6 +599,12 @@ export function listTasks(tasksDir) {
       title: deriveTitle(task.request),
       state,
       phase,
+      // Grouping/display only - a person-set label above the EPIC (teamconfig.mjs's own
+      // `initiative` key). null (the default, and every task opened before this existed) means
+      // "not part of any group" - the index and view-page.html render it as a plain tag, never a
+      // restructured layout, so the byte-for-byte "no initiative anywhere -> unchanged" contract
+      // tm_board's own grouping keeps is not something this surface has to re-derive.
+      initiative: task.initiative || null,
       size: task.size || null,
       created_at: task.created_at || null,
       elapsed_ms: elapsedMs(task.created_at),
