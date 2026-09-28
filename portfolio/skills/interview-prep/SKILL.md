@@ -4,8 +4,8 @@ effort: high
 description: >-
   Use when someone needs a structured interview preparation plan before their
   interview process begins — a study schedule, gap analysis by topic area, and
-  STAR story bank. This is planning, not practice. Triggers on: "interview prep
-  plan".
+  STAR story prompts. This is planning, not practice. Triggers on: "interview
+  prep plan", "면접 준비 계획".
 scenarios:
   - "I have 8 weeks until my Google interview — give me a structured prep plan"
   - "I'm preparing for Kakao backend engineer interviews — what should I study?"
@@ -25,23 +25,15 @@ compatibility:
 
 - ALWAYS run gap analysis against the target role before generating the study plan.
 - ALWAYS calibrate the plan to the specific company, role, and timeline.
-- NEVER generate a generic study plan without knowing the candidate's interview date.
+- ALWAYS lead with the one-line plan judgment — weeks available and the top-priority weak area — before the schedule.
+- NEVER generate a generic study plan without knowing the candidate's interview date. If it is missing, the plan header says `[확인 필요: 면접 날짜]` and no week count is invented.
+- NEVER supply a fact the user did not give. A missing interview date, company type, format, or weak area is written `[확인 필요: ○○]` — never guessed, back-calculated, or filled with a plausible default.
+- NEVER write the candidate's answers. STAR prompts ask for the candidate's own situation, action, and result; no example story, no sample answer, no invented metric.
 - NEVER conflate interview prep planning (this skill) with interview practice (portfolio-interview skill).
-
 
 # Interview Prep Planner
 
-## When to Use / When Not to Use
-
-**Use when:**
-- 2–12 weeks before an interview and you need a structured study plan
-- You want gap analysis across coding, system design, and behavioral topics
-- You need STAR story prompts calibrated to a specific company type
-
-**Not for:**
-- Live mock interview practice (use portfolio-interview)
-- Resume tailoring to a specific JD (use resume-tailorer)
-- General portfolio improvement (use portfolio-feedback or portfolio-rewrite)
+**Not for** live mock interview practice (`portfolio-interview`), resume tailoring to a JD (`resume-tailorer`), or general portfolio improvement (`portfolio-feedback`, `portfolio-rewrite`).
 
 ## Process
 
@@ -49,170 +41,116 @@ compatibility:
 2. **Calibrate to company type** — FAANG, Korean Tier-1, growth startup, or enterprise — each tests differently
 3. **Identify weak areas** — coding, system design, behavioral across specific topic areas
 4. **Produce week-by-week plan** — primary focus, daily practice, named resources, measurable weekly milestone
-5. **Generate STAR story bank** — 6-8 behavioral story prompts matched to common question areas
+5. **Write STAR story prompts** — 6-8 prompts matched to common behavioral areas, each asking for the candidate's own story
 6. **Final week guidance** — consolidation, mock interviews, logistics prep
 
-## Standalone Inputs
+If `sequential-thinking` is available, use it to enforce the order: (1) gather context → (2) calibrate by company type → (3) identify gaps → (4) generate plan. Skipping gap analysis before planning is the most common failure. Once Step 2 is complete, gap analysis (Step 3) and domain study structure generation (from `references/study-domains.md`) can run in parallel.
 
-If following portfolio-feedback, portfolio-jd, or portfolio-company, you can start here by providing:
-- Your experience level and tech stack
-- Target company and role level
-- Interview timeline (weeks until interview)
-- Known format (e.g., 2 coding rounds + system design + behavioral)
-- Your biggest area of concern
+### Step 1 — Gather Context
 
-## Output Template
+If following portfolio-feedback, portfolio-jd, or portfolio-company, start here. Before producing any plan, collect:
 
-For each prep session, Claude delivers:
-1. **Question bank** — 10-15 likely questions tailored to the role and company
-2. **STAR responses** — structured answers for behavioral questions with specific examples
-3. **Feedback** — scoring on clarity, specificity, and impact; suggestions for improvement
-4. **Improvement plan** — 3 targeted areas to practice before the interview
-
-## What Claude Does / What You Do
-
-| Claude | You |
-|--------|-----|
-| Calibrates study plan to company type (FAANG, Korean Tier-1, startup, enterprise) | Does the actual practice problems and mock interviews |
-| Identifies weak areas from your described background | Builds and refines your STAR story bank |
-| Produces week-by-week schedule with measurable milestones | Validates study plan with anyone who has done this interview |
-| Generates STAR story prompts for behavioral areas | Shows up rested and prepared on interview day |
-
-## Related Skills
-
-- `../portfolio-interview/SKILL.md` — practice answering questions live after building this plan
-- `../portfolio-feedback/SKILL.md` — overall portfolio assessment before targeting specific companies
-- `../portfolio-jd/SKILL.md` — JD-specific gap analysis if you have a posting
-
-## Why Generic Prep Fails
-
-"Study data structures and system design" is not a plan — it is a wish. Engineers who prepare without a structured plan study what they already know, avoid what they do not, and arrive underprepared in exactly the areas that matter for their target role.
-
-A good prep plan starts with two facts: what the company actually tests, and what the candidate's current gaps are. Everything else follows from those two inputs.
-
----
-
-## Workflow Note — Sequential Thinking and Parallelization
-
-If `sequential-thinking` is available, use it to enforce this sequence: (1) gather context → (2) calibrate by company type → (3) identify gaps → (4) generate plan. Skipping gap analysis before planning is the most common failure.
-
-Once Step 2 (company calibration) is complete, gap analysis (Step 3) and domain study structure generation (from `references/study-domains.md`) can be run in parallel.
-
----
-
-## Step 1 — Gather Context
-
-Before producing any plan, collect:
-
-1. **Background:** How many years of experience? What is the current/recent role and tech stack?
+1. **Background:** How many years of experience? Current/recent role and tech stack?
 2. **Target:** Which company or type of company? Which role level? (IC3 vs. Staff, for example)
 3. **Timeline:** How many weeks until the interview (or target application date)?
 4. **Interview format known?** (e.g., two coding rounds + system design + behavioral, or unknown)
 5. **Biggest worry:** What area feels most uncertain right now?
 
-If the user has already provided this, proceed directly to the plan. Do not ask for information already given.
+If the user has already provided this, proceed directly to the plan. Do not ask for information already given. Anything still missing after one ask is carried into the plan as `[확인 필요: ○○]` (e.g. `[확인 필요: 면접 형식]`) rather than assumed.
 
----
+### Step 2 — Company/Role Calibration
 
-## Step 2 — Company/Role Calibration
+Calibrate to the company type the user named. If none was given, write `[확인 필요: 목표 회사 유형]` and do not pick one for them.
 
-Different companies test materially differently. Calibrate the plan accordingly.
-
-### FAANG / Top-Tier (Google, Meta, Amazon, Apple, Netflix-style)
+**FAANG / Top-Tier (Google, Meta, Amazon, Apple, Netflix-style)**
 - Coding: LeetCode medium/hard, emphasis on optimal time/space complexity
 - System design: large-scale distributed systems, explicit tradeoff discussion expected
 - Behavioral: leadership principles, specific STAR stories required (Amazon especially)
-- Bar: correct solution is not enough — interviewers probe time complexity, edge cases, and alternative approaches
+- Bar: correct solution is not enough — interviewers probe complexity, edge cases, alternatives
 
-### Korean Tier-1 (Kakao, Naver, Line, Coupang)
-- Coding: algorithm-heavy, often includes implementation-level problems (graph, DP, BFS/DFS)
+**Korean Tier-1 (Kakao, Naver, Line, Coupang)**
+- Coding: algorithm-heavy, often implementation-level problems (graph, DP, BFS/DFS)
 - System design: architecture of real services, Korean-scale traffic considerations
 - Cultural fit: collaborative style, team contribution, communication quality
 
-### Growth-Stage Startups
+**Growth-Stage Startups**
 - Coding: practical problems, less focus on extreme optimization
 - System design: pragmatic choices, speed of delivery vs. scale tradeoff
 - Behavioral: ownership, autonomy, self-direction — what did you initiate?
 
-### Enterprise / B2B / Fintech
+**Enterprise / B2B / Fintech**
 - Coding: often take-home or lower difficulty
 - System design: reliability, observability, security
 - Cultural: process maturity, documentation, stability-oriented decisions
 
-Adjust topic weights based on the target. A perfect LeetCode hard solver who cannot discuss distributed systems tradeoffs will not pass a Google system design round.
+Adjust topic weights to the target. A LeetCode hard solver who cannot discuss distributed systems tradeoffs will not pass a Google system design round.
 
----
+### Step 3 — Weak Area Identification
 
-## Step 3 — Weak Area Identification
+Assess each area from the user's own description only:
 
-For each major area, assess based on the user's description:
+- **Coding** — Medium LeetCode consistently in 30 minutes? Comfortable with arrays/strings, hash maps, trees, graphs, dynamic programming, sliding window, two pointers, binary search? Communicates reasoning while coding?
+- **System Design** — Scopes a system from vague requirements to a concrete design in 45 minutes? Covers API design, data modeling, scalability bottlenecks, caching, failure modes, monitoring? Drives the conversation or waits to be led?
+- **Behavioral** — 5–7 distinct STAR stories ready covering ownership, conflict, failure, impact, leadership? Stories specific (numbers, outcomes, personal role) or generic ("we improved the system")?
 
-### Coding
-- Can they solve medium LeetCode problems consistently in 30 minutes?
-- Are they comfortable with: arrays/strings, hash maps, trees, graphs, dynamic programming, sliding window, two pointers, binary search?
-- Do they communicate reasoning while coding (not just the final solution)?
+Flag specific gaps; study time is allocated in proportion to gap severity. An area the user said nothing about is `[확인 필요: ○○ 수준]`, not rated.
 
-### System Design
-- Can they scope a system from vague requirements to a concrete design in 45 minutes?
-- Do they address: API design, data modeling, scalability bottlenecks, caching, failure modes, monitoring?
-- Do they drive the conversation or wait to be led?
+### Step 4 — Domain Study Structures
 
-### Behavioral
-- Do they have 5–7 distinct STAR stories ready covering: ownership, conflict, failure, impact, leadership?
-- Are stories specific (numbers, outcomes, personal role) or generic ("we improved the system")?
+For coding topic sequencing and practice volume, system design core concepts and practice format, and behavioral story coverage, read `references/study-domains.md` after completing Steps 1–3.
 
-Flag specific gaps. The prep plan allocates study time in proportion to gap severity.
+### Step 5 — Final Week
 
----
+No new material in the final week. Focus on:
+- Two full mock interviews (coding + system design)
+- Tell your STAR stories aloud — hear how they sound, not just how they read
+- Re-attempt your three hardest practice problems to rebuild confidence
+- Logistics: time zone, Zoom setup, whiteboard tool if virtual, rest
 
-## Step 4 — Produce the Prep Plan
+The final week is consolidation, not cramming.
 
-Structure the plan by week. Each week has:
-- Primary focus area
-- Specific resource or practice target
-- Measurable milestone to verify the week worked
-
-### Plan Template
+## Output Template
 
 ```
-## Interview Prep Plan
-Target: [Company] [Role] — [N] weeks
+# Interview Prep Plan
+**판단:** [N]주 확보 · 최우선 약점: [area] — [one clause why]
+(날짜 없으면: [확인 필요: 면접 날짜] · 최우선 약점: [area 또는 확인 필요: 약점 영역])
+Target: [Company type] [Role] — [N] weeks · Format: [format 또는 확인 필요: 면접 형식]
 
 ### Week-by-Week Schedule
-
 **Week 1: [Focus Area]**
 - Goal: [Measurable outcome]
 - Daily practice: [Specific activity]
 - Resources: [Named, specific resources]
 - Milestone: [How to verify the week was effective]
-
 [Repeat for each week]
 
 ### Topic Priority List (by urgency)
 1. [Highest gap / highest weight topic]
 2. ...
 
-### STAR Story Bank
-[6–8 prompts for stories to prepare, matched to common behavioral questions]
+### STAR Story Prompts (6–8)
+1. [Behavioral area] — "Recall a time you [situation type]. What was your role, what did you do, and what changed? Note the result in your own numbers; if you don't have one, mark it [확인 필요: 결과 수치]."
+[Prompts only — the candidate writes the stories]
 
 ### Final Week Checklist
-[Mock interview, review weak areas, logistics prep]
+- [ ] Two full mock interviews (coding + system design)
+- [ ] STAR stories told aloud
+- [ ] Three hardest problems re-attempted
+- [ ] Logistics: time zone, video setup, whiteboard tool, rest
 ```
 
----
+## What Claude Does / What You Do
 
-## Domain Study Structures
+| Claude | You |
+|--------|-----|
+| Calibrates the plan to company type (FAANG, Korean Tier-1, startup, enterprise) | Does the practice problems and mock interviews |
+| Identifies weak areas from your described background, marking unknowns `[확인 필요]` | Fills in the missing facts — date, company type, weak areas |
+| Produces the week-by-week schedule with measurable milestones | Validates the plan with anyone who has done this interview |
+| Writes STAR story prompts for behavioral areas | Writes your own stories from your own experience |
 
-For domain-specific study structures (coding topic sequencing and practice volume, system design core concepts and practice format, behavioral STAR story bank), read `references/study-domains.md` after completing Steps 1–4.
+## Related Skills
 
----
-
-## Final Week
-
-Do not study new material in the final week. Focus on:
-- Two full mock interviews (coding + system design)
-- Review your STAR stories aloud — hear how they sound, not just how they read
-- Re-attempt your three hardest practice problems to rebuild confidence
-- Logistics: time zone, Zoom setup, whiteboard tool if virtual, rest
-
-The final week is consolidation, not cramming.
+- `../portfolio-interview/SKILL.md` — practice answering questions live after building this plan
+- `../portfolio-feedback/SKILL.md` — overall portfolio assessment before targeting specific companies
+- `../portfolio-jd/SKILL.md` — JD-specific gap analysis if you have a posting
