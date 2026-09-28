@@ -12,6 +12,7 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 **Step 2: Install individual plugins**
 ```
 /plugin install agents@newkayak12-claude-skills
+/plugin install cognition@newkayak12-claude-skills
 /plugin install completion@newkayak12-claude-skills
 /plugin install develop@newkayak12-claude-skills
 /plugin install graph@newkayak12-claude-skills
@@ -20,6 +21,8 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 /plugin install planning@newkayak12-claude-skills
 /plugin install portfolio@newkayak12-claude-skills
 /plugin install skill@newkayak12-claude-skills
+/plugin install teams@newkayak12-claude-skills
+/plugin install technique-write@newkayak12-claude-skills
 /plugin install think@newkayak12-claude-skills
 /plugin install write@newkayak12-claude-skills
 ```
@@ -29,6 +32,7 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 | Plugin | Description |
 |--------|-------------|
 | [agents](./agents/README.md) · [한국어](./agents/KOR.md) | Agent orchestration: parallel agents, subagent-driven development |
+| [cognition](./cognition/README.md) · [한국어](./cognition/KOR.md) | Thinking quality: assumptions, biases, fallacies, mental models, trade-offs |
 | [completion](./completion/README.md) · [한국어](./completion/KOR.md) | Verification before completion |
 | [develop](./develop/README.md) · [한국어](./develop/KOR.md) | Engineering: CLI, SQL, architecture, Spring Boot, Kotlin, TDD, and more |
 | [graph](./graph/README.md) | Graph-owned harness orchestration, MCP installation, routing, and adjudication |
@@ -37,5 +41,7 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 | [planning](./planning/README.md) · [한국어](./planning/KOR.md) | Executing plans and roadmap planning |
 | [portfolio](./portfolio/README.md) · [한국어](./portfolio/KOR.md) | Portfolio and career: feedback, JD analysis, interview prep |
 | [skill](./skill/README.md) · [한국어](./skill/KOR.md) | Skill creation, improvement, and validation |
+| [teams](./teams/README.md) · [한국어](./teams/KOR.md) | TaskManager MCP and per-flow teams (develop, document, plan, qa) with an EPIC/STORY board |
+| [technique-write](./technique-write/README.md) · [한국어](./technique-write/KOR.md) | Fixed-template Design Reviews and ADRs |
 | [think](./think/README.md) · [한국어](./think/KOR.md) | Brainstorming, devil's advocate, problem reframing, and more |
 | [write](./write/README.md) · [한국어](./write/KOR.md) | Documentation, writing plans, and content review |
