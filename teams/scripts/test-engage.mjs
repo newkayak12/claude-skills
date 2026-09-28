@@ -48,7 +48,15 @@ test('touchMarker writes a Date.now() string under .claude/.harness-markers/team
 });
 
 test('touchMarker never throws on an unwritable cwd', () => {
-  assert.equal(touchMarker('/nonexistent/definitely/not/here', 'abc'), false);
+  // A cwd beneath a regular file: mkdir fails with ENOTDIR for every user. A missing absolute
+  // path was used here once, but root simply creates it (mkdir -p), so the test failed - and
+  // littered / - whenever the suite ran as root, e.g. in a container.
+  const dir = mkdtempSync(join(tmpdir(), 'engage-file-'));
+  try {
+    const file = join(dir, 'not-a-dir');
+    writeFileSync(file, 'x');
+    assert.equal(touchMarker(join(file, 'cwd'), 'abc'), false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('harness goal-gate denies a gated write in a fresh worktree, and passes once the team marker exists', (t) => {
