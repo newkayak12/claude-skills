@@ -630,6 +630,17 @@ export function createRun(opts) {
     // decided by default and merely recorded (run.unasked). Off unless asked for: a run opened
     // by a daemon nobody is watching must still be able to finish.
     interactive: opts.interactive === true,
+    // task.decisions (docs/plans/2026-09-28-teams-light-plan.md §6.2-2): what this task already
+    // decided before this run opened - the session brainstorm, the engine's own brainstorm node,
+    // PLAN's asks and defaults. A snapshot, not a reference: graph.mjs never sees the task, and
+    // the decisions it snapshots are written once, before any package opens. openAsk and
+    // nodeBriefing read it next to answeredDecisions(run). Absent (not []) when there is none,
+    // so a run opened by anything but the task manager is byte-for-byte what it was.
+    ...(Array.isArray(opts.task_decisions) && opts.task_decisions.length ? { task_decisions: opts.task_decisions.map((d) => ({ ...d })) } : {}),
+    // §6.2-3: a package child run past PLAN. Its new questions are decided by default and
+    // recorded even when `interactive` - only a blocking one (routeExecutionQuestions) is kept
+    // for the task manager to park once at EPIC level.
+    ...(opts.execution_phase === true ? { execution_phase: true } : {}),
     // gate:human (D2 Task 4): which judging stages this run must stop and have a person
     // accept/reject, by name ('critique', 'gate', 'gate:goal', ...) - see promoteHumanGates.
     // Threaded the same way `interactive` is (teamconfig.mjs -> task.child_opts -> here).
@@ -1095,13 +1106,125 @@ export function answeredDecisions(run, owner) {
   return out;
 }
 
-export function openAsk(run, n, questions) {
+// ---------- task.decisions (docs/plans/2026-09-28-teams-light-plan.md §6) ----------
+//
+// answeredDecisions is scoped to ONE run, and PLAN and every package are separate runs - so a
+// decision PLAN's ask settled reached no package, and each package's investigate either
+// rediscovered it or asked it again (the cross-run version of idol-beta-ask1's cross-attempt
+// bug). task.decisions is the task-level list those runs share: written by tm_open (a session
+// brainstorm), the engine's own `brainstorm` node, and accept:PLAN's fold, then snapshotted into
+// every child run as run.task_decisions. One entry shape everywhere:
+// {question, chose, because?, owner, decided_in, source}.
+
+// What an unasked record decided: its stated default, else its recommended (first) option - the
+// same reading nodeBriefing's default_decisions has always used.
+export function chosenOf(u) {
+  if (!u) return '';
+  if (u.decided != null) return typeof u.decided === 'string' ? u.decided : JSON.stringify(u.decided);
+  if (u.default != null) return typeof u.default === 'string' ? u.default : JSON.stringify(u.default);
+  const first = Array.isArray(u.options) && u.options.length ? u.options[0] : null;
+  return first == null ? '' : String((first && first.option) || first);
+}
+
+export function normalizeDecision(d, defaults = {}) {
+  if (!d || typeof d !== 'object') return null;
+  const question = String(d.question || d.unknown || '').trim();
+  const chose = d.chose != null ? (typeof d.chose === 'string' ? d.chose : JSON.stringify(d.chose)) : chosenOf(d);
+  if (!question || !String(chose).trim()) return null;
+  return {
+    question,
+    chose: String(chose),
+    ...(d.because ? { because: String(d.because) } : {}),
+    owner: d.owner != null ? d.owner : (defaults.owner != null ? defaults.owner : null),
+    decided_in: d.decided_in || defaults.decided_in || null,
+    source: d.source || defaults.source || null,
+  };
+}
+
+// Appends onto `list` (task.decisions), exact-question dedup: the first answer to a question is
+// the task's answer. Returns what was actually added.
+export function appendDecisions(list, entries, defaults = {}) {
+  const seen = new Set(list.map((d) => d.question));
+  const added = [];
+  for (const raw of entries || []) {
+    const d = normalizeDecision(raw, defaults);
+    if (!d || seen.has(d.question)) continue;
+    seen.add(d.question);
+    list.push(d);
+    added.push(d);
+  }
+  return added;
+}
+
+// §6.2-1: what a finished PLAN child run settled - every person's answer on its ask cards (all
+// owners) plus every question it decided by default because nobody was asked.
+export function planDecisions(planRun) {
+  if (!planRun) return [];
+  const out = [];
+  appendDecisions(out, answeredDecisions(planRun).map((d) => ({ ...d, owner: d.owner || d.decided_for || null })), { decided_in: 'PLAN', source: 'ask' });
+  appendDecisions(out, (planRun.unasked || []).filter((u) => u && u.question), { decided_in: 'PLAN', source: 'default' });
+  return out;
+}
+
+// Every decision this run must treat as settled: its own ask cards' answers, then the task's.
+export function settledDecisions(run) {
+  const out = answeredDecisions(run);
+  const seen = new Set(out.map((d) => d.question));
+  for (const d of run.task_decisions || []) {
+    if (!d || !d.question || seen.has(d.question)) continue;
+    seen.add(d.question);
+    out.push({ ...d, decided_for: `task${d.decided_in ? `/${d.decided_in}` : ''}${d.source ? ` (${d.source})` : ''}` });
+  }
+  return out;
+}
+
+// §6.2-3: a question raised inside an execution-phase run (run.execution_phase) is not put to a
+// person on that run's own card. It is decided by default and recorded (run.unasked) - unless it
+// is blocking, by one of two structural tests, never a model's judgement:
+//   (a) the stage set `contradicts_decision` on it - it says, in a field, that a settled
+//       decision does not hold;
+//   (b) there is no safe default - at most one option and no `default` (the very questions
+//       openAsk's own filter silently drops).
+// Blocking questions are kept on run.blocking_questions for the task manager, which parks them
+// once at EPIC level (taskmanager.mjs's escalateBlocking). A question already settled
+// (settledDecisions) is dropped outright unless it is itself a contradiction.
+export function routeExecutionQuestions(run, n, questions) {
+  const settled = new Set(settledDecisions(run).map((d) => d.question));
+  const blocking = [];
+  const decided = [];
+  for (const q of questions || []) {
+    const text = q && String(q.question || q.unknown || '').trim();
+    if (!text) continue;
+    const contradicts = typeof q.contradicts_decision === 'string' && q.contradicts_decision.trim() ? q.contradicts_decision.trim() : null;
+    if (!contradicts && settled.has(text)) continue;
+    const hasOptions = Array.isArray(q.options) && q.options.length > 1;
+    const hasDefault = q.default !== undefined && q.default !== null;
+    const base = { subgoal_id: n.subgoal_id, node_id: n.node_id, stage: n.stage, question: text, owner: q.to || q.owner || null, options: q.options || null, why: q.why || null };
+    if (contradicts || (!hasOptions && !hasDefault)) {
+      blocking.push({ ...base, ...(hasDefault ? { default: q.default } : {}), ...(contradicts ? { contradicts_decision: contradicts } : {}), blocking: contradicts ? 'contradicts_decision' : 'no_safe_default' });
+    } else {
+      decided.push({ ...base, decided: hasDefault ? q.default : null });
+    }
+  }
+  if (decided.length) run.unasked = [...(run.unasked || []), ...decided];
+  if (blocking.length) {
+    const have = new Set((run.blocking_questions || []).map((b) => b.question));
+    run.blocking_questions = [...(run.blocking_questions || []), ...blocking.filter((b) => !have.has(b.question) && have.add(b.question))];
+  }
+  return { decided, blocking };
+}
+
+// opts (§6.2-4, task-layer escalation only): `owner` replaces the subgoal/node owner key and
+// `attempt` its attempt number, so a card can stand for the EPIC rather than one package;
+// `blocking: true` keeps a question with no options and no default, which is exactly what makes
+// it blocking - the default filter below would drop it.
+export function openAsk(run, n, questions, opts = {}) {
   if (!n) return [];
   let qs = (questions || []).filter((q) => q && (q.question || q.unknown)
-    && ((Array.isArray(q.options) && q.options.length > 1) || q.default !== undefined));
+    && (opts.blocking === true || (Array.isArray(q.options) && q.options.length > 1) || q.default !== undefined));
   if (!qs.length) return [];
-  const attempt = n.attempt || 1;
-  const owner = n.subgoal_id || n.node_id;
+  const attempt = opts.attempt || n.attempt || 1;
+  const owner = opts.owner || n.subgoal_id || n.node_id;
   if (run.nodes.some((x) => x.node_id === `ask:${owner}:${attempt}`)) return [];
   // A question a person already answered on an earlier attempt of this same owner is settled, and
   // asking it again is asking them to decide twice. idol-beta-ask1 (2026-09-25) measured it: U4's
@@ -1111,7 +1234,10 @@ export function openAsk(run, n, questions) {
   // them. The other four were rewordings of the same decisions, which no string filter can catch -
   // that is why answeredDecisions also reaches the next attempt's own briefing (nodeBriefing):
   // the stage that writes the question is the one that should know it is already decided.
-  const settled = new Set(answeredDecisions(run).map((d) => d.question));
+  // run.task_decisions joins the set (§6.2-2): a question the task already settled - in the
+  // session, in the engine's brainstorm, in PLAN - is as answered here as one this run's own
+  // card answered.
+  const settled = new Set(settledDecisions(run).map((d) => d.question));
   if (settled.size) {
     qs = qs.filter((q) => !settled.has(q.question || q.unknown));
     if (!qs.length) return [];
@@ -1773,7 +1899,8 @@ export function nodeBriefing(run, n) {
   // scope entirely and the new attempt's investigate had no way to know a question was settled -
   // idol-beta-ask1 (2026-09-25) re-raised six of them, two word for word. openAsk drops the exact
   // repeats; this is what stops the rewordings, by telling the stage that writes the questions.
-  const priorDecisions = answeredDecisions(run)
+  // settledDecisions adds the task's own (run.task_decisions, §6.2-2/§6.5-2) after the run's.
+  const priorDecisions = settledDecisions(run)
     .filter((d) => !(n.stage === 'ask' && (n.questions || []).some((q) => (q.question || q.unknown) === d.question)));
 
   const sg = run.spec && n.subgoal_id
@@ -1876,8 +2003,9 @@ export function nodeBriefing(run, n) {
     // the same document called unresolved - a contradiction no revise could close while the
     // questions stayed open and unanswerable. Shown to authoring stages, not to investigate
     // (which decides what is open) or ask.
-    decide_by_default: !run.interactive && ['draft', 'revise', 'template-fill', 'implement', 'cases'].includes(n.stage),
-    default_decisions: !run.interactive && ['draft', 'revise', 'template-fill', 'implement', 'cases'].includes(n.stage)
+    // An execution-phase run (§6.2-3) decides by default even when interactive.
+    decide_by_default: (!run.interactive || run.execution_phase === true) && ['draft', 'revise', 'template-fill', 'implement', 'cases'].includes(n.stage),
+    default_decisions: (!run.interactive || run.execution_phase === true) && ['draft', 'revise', 'template-fill', 'implement', 'cases'].includes(n.stage)
       ? (run.unasked || []).filter((u) => u && u.question && ((Array.isArray(u.options) && u.options.length) || u.decided != null))
         .map((u) => ({ question: u.question, chose: u.decided != null ? (typeof u.decided === 'string' ? u.decided : JSON.stringify(u.decided)) : String((u.options[0] && (u.options[0].option || u.options[0])) || ''), owner: u.owner || null, asked_under: u.subgoal_id || null }))
         .filter((d, i, all) => d.chose && all.findIndex((x) => x.question === d.question) === i)

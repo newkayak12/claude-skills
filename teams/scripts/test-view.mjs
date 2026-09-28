@@ -192,7 +192,7 @@ async function withTask(shape, fn) {
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '0' }).init();
   const g = await new Client(BROKER).init();
   try {
-    const open = await tm.call('tm_open', { request: 'a request for the view test', cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    const open = await tm.call('tm_open', { brainstorm: false, request: 'a request for the view test', cwd, vendor: 'self', roles: { planning: false, qa: false } });
     await throughCritique(tm, open.task_id, shape);
     await fn({ tm, g, cwd, root, task_id: open.task_id });
   } finally {
@@ -213,7 +213,7 @@ async function withOpenTask(roles, fn) {
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '0' }).init();
   const g = await new Client(BROKER).init();
   try {
-    const open = await tm.call('tm_open', { request: 'a request for the view test', cwd, vendor: 'self', roles });
+    const open = await tm.call('tm_open', { brainstorm: false, request: 'a request for the view test', cwd, vendor: 'self', roles });
     await fn({ tm, g, cwd, root, task_id: open.task_id });
   } finally {
     tm.close();
@@ -639,7 +639,7 @@ test('listTasks() before shape: no packages yet reads READY/plan with null story
   const root = mkdtempSync(join(tmpdir(), 'view-test-root-'));
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '0' }).init();
   try {
-    const open = await tm.call('tm_open', { request: 'task A', cwd, vendor: 'self', roles: { planning: false, qa: false } });
+    const open = await tm.call('tm_open', { brainstorm: false, request: 'task A', cwd, vendor: 'self', roles: { planning: false, qa: false } });
     const row = listTasks(root)[0];
     assert.deepStrictEqual(
       { state: row.state, phase: row.phase, stories_done: row.stories_done, stories_total: row.stories_total, open_defects: row.open_defects },
@@ -668,7 +668,7 @@ test('listTasks() on a size-S task (task.s_run, no task.spec) reads the real sta
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '0' }).init();
   const g = await new Client(BROKER).init();
   try {
-    const open = await tm.call('tm_open', { request: 'small request', cwd, vendor: 'self', flow: 'develop', size: 'S', roles: { planning: false, qa: false } });
+    const open = await tm.call('tm_open', { brainstorm: false, request: 'small request', cwd, vendor: 'self', flow: 'develop', size: 'S', roles: { planning: false, qa: false } });
     assert.equal(open.task_state, 's_run');
     const { run_id } = open;
     const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
@@ -1472,8 +1472,8 @@ test('/state.json serves an index when several tasks exist and no --task is give
   const tm1 = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '0' }).init();
   let proc;
   try {
-    const a = await tm1.call('tm_open', { request: 'task A', cwd: cwd1, vendor: 'self', roles: { planning: false, qa: false } });
-    const b = await tm1.call('tm_open', { request: 'task B', cwd: cwd2, vendor: 'self', roles: { planning: false, qa: false } });
+    const a = await tm1.call('tm_open', { brainstorm: false, request: 'task A', cwd: cwd1, vendor: 'self', roles: { planning: false, qa: false } });
+    const b = await tm1.call('tm_open', { brainstorm: false, request: 'task B', cwd: cwd2, vendor: 'self', roles: { planning: false, qa: false } });
     tm1.close();
 
     proc = spawn('node', [VIEW, '--tasks-dir', root, '--port', '0'], { stdio: ['ignore', 'pipe', 'pipe'] });

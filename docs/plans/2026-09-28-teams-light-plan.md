@@ -1,6 +1,6 @@
 # teams — 가벼운 PLAN 모드 (검토용 초안)
 
-> 상태: **§3 단계 1–5 구현됨** (브랜치 `teams/light-plan`, 2026-09-28). §2.4/§3-6 측정은 실제 런이 필요해 미실행, §3-7(`task.decisions`)·§6은 별도 작업.
+> 상태: **§3 단계 1–5 구현됨** (teams 0.37.0, 2026-09-28). §2.4/§3-6 측정은 실제 런이 필요해 미실행, §6(`task.decisions`·brainstorming)도 구현됨(§6.6).
 > 구현 요약: 감지 `hasDeclaredAcceptance`는 `teams/mcp/acceptance.mjs`(순수 함수, `taskmanager.mjs`에서도 re-export — §6.5-4의 brainstorm이 같은 이름으로 import). `tm_open`이 `requests[].acceptance`/`shared_acceptance`를 받고 요청 텍스트에 `Acceptance:` 블록으로 합성. `graph.mjs` `KINDS['planning-light']` = `investigate → template-fill → gate`(§5-2: **별도 kind**로 결정 — chain/author/gate/skills/`reducers.mjs` REGISTRY가 전부 kind 문자열로 조회되므로 run-aware 변형이 필요 없음; light 런은 `run.planning_mode === 'light'`일 때 `normalizeSpec`이 `planning`을 `planning-light`로 바꿈). template-fill 계약·light gate 추가 계약(항목별 R-번호 커버리지, unknown 유실 금지)은 `prompts.mjs`. `roles.planning: true|false|'light'|'auto'`, 기본값 `'auto'`(`teamconfig.mjs`), `'auto'`는 `false`를 고르지 않음. §5-1 파서 규칙: 번호 1..n(n≥2) 연속 + 목록 아래 `Acceptance( for every item)?:` 헤딩과 불릿(공유) 또는 항목마다 헤딩(항목별); 목록 위 블록·번호 건너뜀/재시작·불릿 없는 헤딩·일부 항목만 커버·공유 블록 2개 이상은 전부 false. light 모드는 PRD 하나(`max_subgoals: 1`).
 > 원래 상태: **검토용**. 코드 변경 없음. 2026-09-28.
 > 선행: `2026-09-21-teams-server-owns-the-loop.md` §8g~8i (PLAN 하네스 도입, investigate 스테이지 신설),
@@ -169,6 +169,17 @@ roles.planning: true | false | 'light' | 'auto'   (기본값 변경: true → 'a
 측정(§6.4에 추가): 런당 사람에게 간 질문 수를 **세션 질문 / 실행 중 park**로 나눠 센다. 목표는 실행 중 park ≈ 0, 세션 질문은 요청의 모호함에 비례.
 
 §14 제안 행 18의 마지막 문장을 이렇게 바꾼다: "사람이 언제 불려가는지는 이제 '리더냐 전부냐'가 아니라 **'`tm_open` 전 세션 brainstorming(선택) → 건너뛰면 엔진 `brainstorm` 노드가 프롬프트로 스스로(interactive면 여기서 1회 ask) → 실행 중엔 blocking 예외만(EPIC에서 1회)'**로 갈린다."
+
+### 6.6 구현 상태 (2026-09-28, 브랜치 `teams/decisions-brainstorm`)
+
+§6.2·§6.5-1~4 구현됨. §6.5-4: `openBrainstorm`이 `hasDeclaredAcceptance`(planning 꺼져 있어도 원 인자로 판정)가 참이면 brainstorm 노드에 `brainstorm_mode: 'light'`를 달고, 브리핑에 intent/scope만·approaches 없음·질문 ≤2의 짧은 계약(`BRAINSTORM_LIGHT`)을 덧붙인다. §14 행 18은 `2026-09-17-teams-team.md` 결정 기록 표로 옮겨 적었다.
+
+- **task.decisions** — `{question, chose, because?, owner, decided_in, source}`. 쓰는 곳: `tm_open({decisions})`(`session`/`brainstorm`), `brainstorm` 노드(`brainstorm`/`self-brainstorm`, 사람이 고른 건 `ask`), `accept:PLAN`(`PLAN`/`ask`|`default`, `foldChild`가 `planDecisions(child)`로 싣고 accept에서 1회), task 레벨 ask 카드 답(`EPIC` 등/`ask`). 질문 정확 일치로 중복 제거 — 먼저 정해진 답이 이긴다.
+- **전파** — `openChild`가 `run.task_decisions`로 스냅샷 주입, `childContext`에 "Decided already" 블록, `graph.mjs`의 `settledDecisions(run)` = `answeredDecisions(run)` ∪ `run.task_decisions`를 `openAsk` 필터와 `nodeBriefing.prior_decisions`가 쓴다. shape/critique/accept 브리핑에도 같은 목록.
+- **실행 단계** — `run.execution_phase`(PLAN 아닌 패키지, 단 앞에 결정 지점 — PLAN·세션 brainstorm·brainstorm 노드 — 이 있었을 때만; 셋 다 없으면 패키지가 첫 질문 자리이므로 기존 ask 동작 유지). broker `finishNode`가 `routeExecutionQuestions`로 분기: 기본값 채택 + `run.unasked`, blocking(a `contradicts_decision` / b 선택지 ≤1·default 없음)은 `run.blocking_questions`. `foldChild`가 올리고 `finish()`의 `escalateBlocking`이 `openAsk(task, …, {owner:'EPIC', blocking:true})`로 `ask:EPIC:k` 카드 1장, 해당 패키지 accept가 그 카드를 기다린다. 같은 질문을 낸 후속 패키지는 새 카드 없이 기존 카드에 `after`로 묶인다. **비대화형 task는 park하지 않고 `task.unasked`에 기록만**(applyHumanPin·promoteHumanGates와 같은 원칙 — 아무도 없는 런을 멈추지 않는다).
+- **brainstorm** — `team.json`/`tm_open`의 `brainstorm`(기본 true) + `decisions[]` 부재일 때 `size` 뒤에 노드 삽입(size를 dep으로 갖던 노드를 재배선 — full/light/planning off 어느 체인이든). 크기 S면 다른 매니저 노드와 함께 skipped. `CONTRACT.brainstorm` §6.5-3 계약. interactive면 질문 전부 카드 1장(`to` 평탄화), 답 안 한 질문은 엔진 default. report 브리핑이 "Decided by the engine itself"로 시작.
+- **진입 스킬** — `develop`/`plan`/`sprint` SKILL.md에 선택적 brainstorming 단계(맥락 먼저 읽기, 한 번에 하나, 선택지별 추천, 사람만 답할 것, 건너뛰기 가능) → `decisions`.
+- **`human_scope`** — `teamconfig.mjs`가 deprecated no-op으로 받아 note만 남긴다.
 
 ## 7. 한 줄
 
