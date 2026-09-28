@@ -5923,6 +5923,29 @@ test('a STORY pin reaches every subgoal the package\'s own setgoal produces - ta
   }
 });
 
+// M5 (docs/plans/2026-09-28-teams-adversarial-fixes.md): a STORY pin drained after setgoal already
+// expanded the subgoals - tm_assign ran while setgoal was running and saw none - still pins them.
+test('M5: a STORY pin that lands after setgoal expanded pins every existing subgoal; a release lets go of them', async () => {
+  const { applyStoryPin, node: gnode } = await import('../mcp/graph.mjs');
+  const run = {
+    run_id: 'r', interactive: false,
+    spec: { subgoals: [{ id: 'U1', title: 'a', acceptance: ['x'] }, { id: 'U2', title: 'b', acceptance: ['y'], assignee: 'human' }] },
+    nodes: [gnode('implement:U1:1', 'implement', [], { subgoal_id: 'U1', attempt: 1 }), gnode('implement:U2:1', 'implement', [], { subgoal_id: 'U2', attempt: 1 })],
+  };
+  assert.equal(applyStoryPin(run, { kind: 'story_pin', to: 'human', who: 'sanghyeon' }), true);
+  for (const id of ['implement:U1:1', 'implement:U2:1']) {
+    const n = run.nodes.find((x) => x.node_id === id);
+    assert.equal(n.assignment && n.assignment.executor, 'human', id);
+    assert.equal(n.assignment.who, 'sanghyeon');
+  }
+  assert.ok(run.spec.subgoals.every((sg) => sg.assignee.by === 'user'), 'on the spec, so a retry keeps it');
+  assert.equal(run.subgoal_assignee.who, 'sanghyeon', 'and on the run, for subgoals a later setgoal produces');
+  assert.equal(applyStoryPin(run, { kind: 'story_pin', to: 'auto' }), true);
+  assert.ok(run.nodes.every((n) => !n.assignment), 'released');
+  assert.ok(run.spec.subgoals.every((sg) => !sg.assignee), 'the user pins are gone');
+  assert.equal(run.subgoal_assignee, undefined);
+});
+
 // dispatchSettled (exported, and shared by the daemon and tm_next) is the one guard that keeps a
 // waiting_human child from being folded as though its driver had died for good - a direct,
 // lighter-weight check than driving the whole graph through both MCP clients above.
