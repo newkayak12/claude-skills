@@ -33,7 +33,7 @@ import {
   advanceDispatches, serviceRunningDispatches, prepareReadyIntegrations,
   dispatchSettled, foldChild, updateAutoParallel, serviceSRun, delegateIfSmall,
   finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages, autoRejudge, autoResumeCapacity, pendingRejudgeAt,
-  STAGE_SKILLS, syncTickets, autoReshape, promoteManagerHumanGates, enforceBudget,
+  STAGE_SKILLS, syncTickets, autoReshape, closeFailedPlanning, promoteManagerHumanGates, enforceBudget,
   expireAsks, nextAskDeadline,
 } from './taskmanager.mjs';
 import { ticketSnapshot } from './tickets.mjs';
@@ -386,6 +386,8 @@ async function stepOnceInner(task) {
   // A shape or critique that failed gets its next attempt the same way, carrying the verdict
   // that refused it - otherwise the loop stops at a critique it could act on.
   if (autoReshape(task)) progressed = true;
+  // Planning or shaping that failed for good closes to a report, not to a silent block (M2).
+  if (closeFailedPlanning(task)) { saveRun(task); progressed = true; }
 
   return progressed;
 }

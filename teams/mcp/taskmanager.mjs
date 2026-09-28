@@ -3019,6 +3019,10 @@ export function unfinishedWork(task) {
   if (!task || !Array.isArray(task.nodes)) return null;
   const reasons = [];
   const last = (pred) => task.nodes.filter(pred).pop();
+  if (task.planning_failed) {
+    const f = task.planning_failed;
+    reasons.push(`planning stopped at ${f.node_id} with no retry left: ${String(f.reason || '').slice(0, 300)}${f.prd ? '' : ' - no planning card was accepted, so there is no PRD'}`);
+  }
   const skippedPkgs = (task.budget_stopped && task.budget_stopped.skipped_packages) || [];
   for (const p of ((task.spec && task.spec.packages) || [])) {
     const id = String(p.id);
@@ -5658,6 +5662,44 @@ function closeStoppedToReport(task) {
   return false;
 }
 
+// A task whose planning (or shaping) failed for good, before shape produced a package, still owes
+// a person its report and the next Sprint its retro (docs/plans/2026-09-28-teams-adversarial-
+// fixes.md M2). Nothing downstream of a spent areas split, planning card, planning integrate,
+// shape or critique can run - settleFailure marked it unreachable - and the report node does not
+// exist yet (expandPackages opens it). Once nothing is running, nothing is ready and no re-judge
+// is pending: every pending/unreachable node is skipped and a report opens with no deps, the way
+// a budget stop before shape closes (enforceBudget). The PRD any accepted card wrote is still
+// rendered (docs.mjs's renderPrd), and the retro carries the whole backlog forward.
+const PRE_SHAPE_STAGES = new Set(['areas', 'areas-critique', 'plan-integrate', 'shape', 'critique']);
+export function closeFailedPlanning(task) {
+  if (task.s_run || task.budget_stopped) return false;
+  if (task.spec && Array.isArray(task.spec.packages)) return false;
+  if (task.nodes.some((n) => n.stage === 'report')) return false;
+  if (task.nodes.some((n) => n.state === 'running')) return false;
+  if (readyNodes(task).length || pendingRejudgeAt(task) !== null) return false;
+  const dead = task.nodes.find((n) => n.state === 'failed' && n.final
+    && (PRE_SHAPE_STAGES.has(n.stage) || phaseOfId(task, n.subgoal_id) === 'planning'));
+  if (!dead) return false;
+  const skipped = [];
+  for (const n of task.nodes) {
+    if (n.state !== 'pending' && n.state !== 'unreachable') continue;
+    n.state = 'skipped';
+    n.final = true;
+    n.result = { stage_ok: false, reason: `skipped: planning stopped at ${dead.node_id} with no retry left` };
+    skipped.push(n.node_id);
+  }
+  const accepted = planningPkgs(task).some((p) => task.nodes.some((x) => x.stage === 'accept' && x.subgoal_id === String(p.id) && x.state === 'done'));
+  task.planning_failed = { node_id: dead.node_id, stage: dead.stage, reason: whyFailed(dead), prd: accepted };
+  task.nodes.push(node('report', 'report', [], { subgoal_id: null }));
+  record(task, { event: 'planning_closed', task_id: task.run_id, node_id: dead.node_id, skipped, prd: accepted });
+  return true;
+}
+
+function whyFailed(n) {
+  const r = n.result || {};
+  return String(r.reason || (Array.isArray(r.gaps) && r.gaps.join('; ')) || (Array.isArray(r.blocking) && r.blocking.join('; ')) || (Array.isArray(r.problems) && r.problems.join('; ')) || 'no reason recorded');
+}
+
 // A dispatch already running when the box trips is not all equally worth paying for.
 // closeStoppedToReport's own goal-gate rewire (passOf: AUDIT/QA) means a phase-Team pass's
 // accept is never read again once the box is over - portfolio-refresh-80ec931a (2026-09-28,
@@ -6096,6 +6138,7 @@ function toolNext(a) {
   // twice - the same three steps the daemon's own loop runs, shared through the exports above so
   // the two never diverge on what "ready" means.
   if (enforceBudget(task)) saveRun(task);
+  if (closeFailedPlanning(task)) saveRun(task);
   if (advanceDispatches(task)) saveRun(task);
   if (serviceRunningDispatches(task)) saveRun(task);
   prepareReadyIntegrations(task);
