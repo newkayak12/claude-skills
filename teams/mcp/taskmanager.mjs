@@ -39,7 +39,7 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, readdirSync, openSync, closeSync, statSync, realpathSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, availableParallelism } from 'node:os';
 import { join, resolve, dirname, basename, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -4772,6 +4772,122 @@ export function enforceBudget(task) {
   return true;
 }
 
+// ---------- max_parallel_teams: 'auto' - an AIMD controller over develop-STORY concurrency ----------
+//
+// A fixed max_parallel_teams was a guess (teamconfig.mjs's own header), not a measurement. 'auto'
+// (the default since 2026-09-28) replaces the guess with additive-increase/multiplicative-decrease,
+// the same shape TCP congestion control uses for the same reason: probe up slowly while nothing
+// complains, back off hard the moment something does. State lives on task.auto_parallel - a plain
+// top-level field, exactly like task.driver_restarts/task.budget_stopped, that saveRun's mergeOnto
+// (graph.mjs) already carries through untouched because it spreads the whole task object, not a
+// hand-picked field list.
+const AIMD_START = 2; // the same number max_parallel_teams used to be pinned at forever
+const AIMD_FLOOR = 1;
+const AIMD_WINDOW = 2; // this many consecutive clean develop-STORY settles before +1
+
+// min(cores/2, 6) unless team.opts.max_parallel_ceiling pins one: half the host's own reported
+// parallelism leaves room for the daemon, judge calls and whatever else runs beside the packages
+// themselves, and 6 is a cap on top of that for a very large host, where the vendor's own rate
+// limit - not local cores - is almost certainly the binding constraint anyway.
+function autoParallelCeiling(task) {
+  const pinned = task.team && task.team.opts && task.team.opts.max_parallel_ceiling;
+  if (Number.isInteger(pinned) && pinned >= 1) return pinned;
+  let cores = 4;
+  try { cores = availableParallelism(); } catch { /* an older Node, or a sandboxed host that refuses it - keep the fallback */ }
+  return Math.max(AIMD_START, Math.min(Math.floor(cores / 2) || 1, 6));
+}
+
+// Lazily initializes task.auto_parallel the first time anything asks for it - a task opened
+// before this existed, or one whose max_parallel_teams is a fixed number and never needed it, has
+// no such field until (if ever) it does. Idempotent: calling it again after saveRun has already
+// persisted a state leaves that state alone.
+export function ensureAutoParallel(task) {
+  if (!task.auto_parallel || !Number.isInteger(task.auto_parallel.current)) {
+    task.auto_parallel = { current: AIMD_START, streak: 0, ceiling: autoParallelCeiling(task), updated_at: Date.now() };
+  }
+  return task.auto_parallel;
+}
+
+// The same words driverUsageLimitText already looks for (a spent usage quota) plus the vendor/
+// host's own pushback codes that function does not name: a bare 429/529 or "overloaded" carries
+// no "usage limit" wording, so nothing parks the package on waiting_capacity for it (reset_capacity
+// would have nothing to reset), but it is still the vendor saying "slow down" - exactly what
+// max_parallel_teams: auto exists to hear. Kept as one regex, not a second one per caller, so a
+// wording either reader should catch never has to be taught to just one of them.
+const PUSHBACK_RE = /rate[_ -]?limit|\b429\b|\b529\b|overloaded|api_error|insufficient_quota|usage_limit_reached|quota (?:exceeded|exhausted)|hit your (?:usage )?limit|exceeded your current quota/i;
+
+// Reads a dispatch's own driver log the same way driverUsageLimitText does (existence check,
+// plain readFileSync, no second NDJSON walk) rather than re-parsing the stream event-by-event -
+// PUSHBACK_RE runs over the raw text, which catches the same evidence whether it surfaces as a
+// `result` event's own text, a stderr line from a driver SIGKILLed before its stream closed, or
+// any other shape a vendor's error happens to take. driverStderrTail is checked first since it is
+// small and always available; the full log is only read when the tail alone said nothing.
+function dispatchPushbackText(driver) {
+  if (!driver) return '';
+  const tail = driverStderrTail(driver, 2000);
+  if (PUSHBACK_RE.test(tail)) return tail;
+  if (!driver.log) return '';
+  try {
+    if (!existsSync(driver.log)) return '';
+    const text = readFileSync(driver.log, 'utf8');
+    return PUSHBACK_RE.test(text) ? text.slice(-2000) : '';
+  } catch {
+    return '';
+  }
+}
+
+// The other half of "capacity signal" the design asks for: not a named error at all, just several
+// develop-STORY dispatches' drivers dying close together - the same evidence serviceDeadDriver
+// already records onto each child's OWN driver.restarts (task-wide here, across every dispatch
+// node, not just the one being folded: two DIFFERENT packages each restarting once around the
+// same time is the host pushing back on concurrency, even though neither alone spent its own
+// restart budget - see restartBudget/countedDriverRestarts, which cap a single package's retries,
+// not this).
+const CLUSTER_WINDOW_MS = 5 * 60000;
+function crashesClustered(task) {
+  const restarts = task.nodes
+    .filter((n) => n.stage === 'dispatch' && n.child && n.child.driver && Array.isArray(n.child.driver.restarts))
+    .flatMap((n) => n.child.driver.restarts)
+    .map((r) => r && r.at)
+    .filter(Number.isInteger)
+    .sort((a, b) => a - b);
+  for (let i = 1; i < restarts.length; i++) if (restarts[i] - restarts[i - 1] <= CLUSTER_WINDOW_MS) return true;
+  return false;
+}
+
+// Called once per develop-STORY dispatch fold - both toolSubmit and the daemon's own loop call
+// this right before finish() (whose own saveRun then persists whatever this changed) - never for
+// a phase-Team (PLAN/QA/audit) package, which advanceDispatches already exempts from the cap
+// itself and so has nothing to teach this controller about ordinary STORY concurrency. A no-op
+// whenever max_parallel_teams is a fixed number: auto is opt-in, and a project that pins a number
+// gets exactly that number, unconditionally, exactly as before this existed.
+export function updateAutoParallel(task, n, result) {
+  const opts = task.team && task.team.opts;
+  if (!opts || opts.max_parallel_teams !== 'auto') return;
+  const pkg = packageOf(task, n.subgoal_id);
+  if (pkg && (pkg.phase === 'planning' || pkg.phase === 'qa' || pkg.phase === 'audit')) return;
+  const state = ensureAutoParallel(task);
+  const pushback = dispatchPushbackText(n.child && n.child.driver) || (crashesClustered(task) ? '(clustered driver restarts across dispatches)' : '');
+  if (pushback) {
+    const before = state.current;
+    state.current = Math.max(AIMD_FLOOR, Math.floor(state.current / 2));
+    state.streak = 0;
+    state.updated_at = Date.now();
+    state.reason = pushback.slice(0, 300);
+    if (state.current !== before) record(task, { event: 'auto_parallel_decreased', task_id: task.run_id, node_id: n.node_id, from: before, to: state.current, reason: state.reason });
+    return;
+  }
+  state.streak = (state.streak || 0) + 1;
+  if (state.streak >= AIMD_WINDOW && state.current < state.ceiling) {
+    const before = state.current;
+    state.current = Math.min(state.ceiling, state.current + 1);
+    state.streak = 0;
+    state.updated_at = Date.now();
+    state.reason = `${AIMD_WINDOW} clean dispatches since the last change`;
+    record(task, { event: 'auto_parallel_increased', task_id: task.run_id, node_id: n.node_id, from: before, to: state.current });
+  }
+}
+
 // Opens every ready dispatch node this poll is allowed to - the phase-Team exemption and
 // max_parallel_teams for ordinary STORY packages - and returns how many it opened. Shared by
 // tm_next (a caller driving the graph by hand, chiefly tests) and the daemon's own loop, so the
@@ -4792,12 +4908,15 @@ export function advanceDispatches(task) {
     openChild(task, n);
     opened++;
   }
-  // The fallback reads TEAM_DEFAULTS.max_parallel_teams rather than repeating its literal. It
-  // only fires for a task.json written before task.team existed - createTask has set task.team
-  // on every task since taskmanager.mjs:187, so a task created by the current code always has
-  // task.team.opts.max_parallel_teams and never reaches this branch.
-  const maxParallel = Number.isInteger(task.team && task.team.opts && task.team.opts.max_parallel_teams)
-    ? task.team.opts.max_parallel_teams : TEAM_DEFAULTS.max_parallel_teams;
+  // A fixed number (team.json, a tm_open argument, or - pre-0.36.0 - the only default there ever
+  // was) is used exactly as given, unconditionally: numeric max_parallel_teams is a promise to the
+  // caller, not a suggestion this controller is free to override. Anything else - 'auto' (the
+  // default now), or a task.json written before task.team existed at all (createTask has set
+  // task.team on every task since taskmanager.mjs:187, so only a pre-existing file on disk still
+  // reaches this) - falls through to the AIMD controller above, which self-initializes at
+  // AIMD_START the first time it is asked, the same number this cap used to be pinned at forever.
+  const configuredMax = task.team && task.team.opts && task.team.opts.max_parallel_teams;
+  const maxParallel = Number.isInteger(configuredMax) ? configuredMax : ensureAutoParallel(task).current;
   const runningStories = task.nodes.filter((n) => n.stage === 'dispatch' && n.state === 'running' && !isPhaseTeam(n)).length;
   const slots = Math.max(0, maxParallel - runningStories);
   const storyReady = readyDispatch.filter((n) => !isPhaseTeam(n))
@@ -4948,6 +5067,7 @@ function toolSubmit(a) {
   if (n.stage === 'dispatch') {
     if (a.payload && Object.keys(a.payload).length) throw new Error('a dispatch node takes no payload: the manager reads the child run itself');
     const result = foldChild(task, n);
+    updateAutoParallel(task, n, result);
     return finish(task, n, result);
   }
   const payload = a.payload || {};
@@ -5274,6 +5394,11 @@ function toolStatus(a) {
       : verdict(task, n))),
     daemon: task.daemon ? { pid: task.daemon.pid, alive: driverAlive(task.daemon), log: task.daemon.log, stderr: task.daemon.stderr, spawn_count: task.daemon.spawn_count, restarts: task.daemon.restarts || 0, exhausted: !!task.daemon.exhausted, stderr_tail: driverStderrTail(task.daemon) } : null,
     team: task.team || null,
+    // Only present when max_parallel_teams is actually 'auto' - a task pinned to a fixed number
+    // reads exactly as it did before this controller existed. `current` is the effective cap
+    // advanceDispatches is using RIGHT NOW; `reason` names why it last moved (a clean-streak
+    // window, or the pushback text/cluster that halved it - updateAutoParallel).
+    ...((task.team && task.team.opts && task.team.opts.max_parallel_teams === 'auto') ? { auto_parallel: ensureAutoParallel(task) } : {}),
     // Only present when either knob is actually set - a task that never asked for a budget or
     // timebox reads exactly as it did before this existed.
     ...((task.team && task.team.opts && (task.team.opts.budget_usd != null || task.team.opts.timebox_minutes != null)) ? { budget: budgetStatus(task) } : {}),

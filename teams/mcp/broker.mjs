@@ -1471,9 +1471,9 @@ async function toolGraphOpen(a) {
   // the same precedence tm_open's own resolveTeamOptions call gives it (teamconfig.mjs).
   // Only vendor/allocation/goal_threshold/max_retries/interactive/retry_policy/human_gates
   // are both a TEAM_DEFAULTS key and a team_open argument that createRun actually consumes
-  // on a single run; the other seven TEAM_DEFAULTS keys (human_scope, max_parallel_teams,
-  // max_depth, qa_rounds, roles, driver_restarts, docs_dir) belong to tm_open's
-  // multi-team/TaskManager layer and are not team_open arguments at all.
+  // on a single run; the other TEAM_DEFAULTS keys (human_scope, max_parallel_teams,
+  // max_parallel_ceiling, max_depth, qa_rounds, roles, driver_restarts, docs_dir) belong to
+  // tm_open's multi-team/TaskManager layer and are not team_open arguments at all.
   const team = resolveTeamOptions(a, readTeamConfig(cwd).config);
   const T = team.opts;
   const run = createRun({

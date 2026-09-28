@@ -96,6 +96,47 @@ test('interactive: defaults false and sourced "default", team.json can turn it o
   assert.match(bad.notes[0], /interactive/);
 });
 
+// max_parallel_teams: 'auto' (default since 2026-09-28) hands the cap to taskmanager.mjs's AIMD
+// controller; a project may still pin a fixed number instead, exactly as before that existed.
+// This file only proves the CONFIG LAYER accepts both shapes and rejects everything else - the
+// AIMD behaviour itself (increase/decrease/floor/ceiling) is scripts/test-autoparallel.mjs's job.
+test('max_parallel_teams: defaults to "auto", team.json/args may pin a fixed integer instead, and anything else is ignored with a note', () => {
+  assert.equal(TEAM_DEFAULTS.max_parallel_teams, 'auto');
+  const bare = resolveTeamOptions({}, {});
+  assert.equal(bare.opts.max_parallel_teams, 'auto');
+  assert.equal(bare.sources.max_parallel_teams, 'default');
+
+  const pinned = resolveTeamOptions({}, { max_parallel_teams: 4 });
+  assert.equal(pinned.opts.max_parallel_teams, 4);
+  assert.equal(pinned.sources.max_parallel_teams, 'team.json');
+
+  const viaArgs = resolveTeamOptions({ max_parallel_teams: 1 }, { max_parallel_teams: 4 });
+  assert.equal(viaArgs.opts.max_parallel_teams, 1, 'an explicit arg outranks team.json, same precedence as every other key');
+
+  for (const bad of [0, -1, 1.5, 'fast', null, true]) {
+    const r = resolveTeamOptions({}, { max_parallel_teams: bad });
+    assert.equal(r.opts.max_parallel_teams, 'auto', `${JSON.stringify(bad)} must be rejected, the default survives`);
+    assert.match(r.notes[0], /max_parallel_teams/);
+  }
+});
+
+test('max_parallel_ceiling: defaults to null (the AIMD controller derives one from the host), team.json/args may pin a positive integer, anything else is ignored', () => {
+  assert.equal(TEAM_DEFAULTS.max_parallel_ceiling, null);
+  const bare = resolveTeamOptions({}, {});
+  assert.equal(bare.opts.max_parallel_ceiling, null);
+  assert.equal(bare.sources.max_parallel_ceiling, 'default');
+
+  const pinned = resolveTeamOptions({}, { max_parallel_ceiling: 8 });
+  assert.equal(pinned.opts.max_parallel_ceiling, 8);
+  assert.equal(pinned.sources.max_parallel_ceiling, 'team.json');
+
+  for (const bad of [0, -1, 2.5, 'six']) {
+    const r = resolveTeamOptions({}, { max_parallel_ceiling: bad });
+    assert.equal(r.opts.max_parallel_ceiling, null, `${JSON.stringify(bad)} must be rejected, the default survives`);
+    assert.match(r.notes[0], /max_parallel_ceiling/);
+  }
+});
+
 test('unknown keys are reported, not merged', () => {
   const { opts, notes } = resolveTeamOptions({}, { colour: 'blue' });
   assert.equal('colour' in opts, false);

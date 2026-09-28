@@ -30,7 +30,7 @@ import {
 import {
   taskPath, taskDir, record, noDriver, taskState,
   advanceDispatches, serviceRunningDispatches, prepareReadyIntegrations,
-  dispatchSettled, foldChild, serviceSRun, delegateIfSmall,
+  dispatchSettled, foldChild, updateAutoParallel, serviceSRun, delegateIfSmall,
   finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages, autoRejudge, autoResumeCapacity, pendingRejudgeAt,
   STAGE_SKILLS, syncTickets, autoReshape, promoteManagerHumanGates, enforceBudget,
 } from './taskmanager.mjs';
@@ -347,6 +347,7 @@ async function stepOnceInner(task) {
       record(task, { event: 'daemon_fold_deferred', task_id: task.run_id, node_id: n.node_id, reason: String((e && e.message) || e).slice(0, 300) });
       continue;
     }
+    updateAutoParallel(task, n, result);
     finish(task, n, result);
     progressed = true;
   }
