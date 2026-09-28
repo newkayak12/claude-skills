@@ -427,7 +427,9 @@ async function main() {
         await new Promise((r) => setTimeout(r, Math.max(250, Math.min(askAt - Date.now() + 250, 60 * 1000))));
         continue;
       }
-      record(fresh, { event: 'daemon_done', task_id: TASK_ID, state: taskState(fresh).state });
+      const doneState = taskState(fresh);
+      record(fresh, { event: 'daemon_done', task_id: TASK_ID, state: doneState.state,
+        ...(doneState.partial ? { partial: true, partial_reasons: doneState.partial_reasons } : {}) });
       // Every task leaves a record past its project's .teams_output and /tmp (mcp/runlog.mjs,
       // read across runs by scripts/bench/triage.mjs). A failure to keep it never fails the task.
       if (!noDriver() || process.env.TEAMS_RUNS_DIR) {

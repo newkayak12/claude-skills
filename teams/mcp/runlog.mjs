@@ -165,6 +165,10 @@ export function harvestTask({ taskDir, cwd, label, root, scorePrefix } = {}) {
     repo_commit: commit,
     score,
     state: task ? (events.filter((e) => e.event === 'daemon_done').pop() || {}).state || 'unfinished' : 'no-task',
+    // daemon_done's partial flag (taskmanager.mjs budgetPartial): a budget-closed `complete` that
+    // is short of work - absent on every task that is not.
+    ...((events.filter((e) => e.event === 'daemon_done').pop() || {}).partial
+      ? { partial: true, partial_reasons: events.filter((e) => e.event === 'daemon_done').pop().partial_reasons || [] } : {}),
     size: task && task.size, packages: ((task && task.spec && task.spec.packages) || []).map((p) => p.id),
     // A stopped task still owes its goal gate and report (closeStoppedToReport) - both by
     // design, mandatory, and paid for regardless - so spend does not freeze at
@@ -192,7 +196,7 @@ export function harvestTask({ taskDir, cwd, label, root, scorePrefix } = {}) {
   };
   writeFileSync(join(out, 'summary.json'), JSON.stringify(summary, null, 2));
   mkdirSync(root, { recursive: true });
-  appendFileSync(join(root, 'index.jsonl'), JSON.stringify({ label, harvested_at: summary.harvested_at, teams_version: summary.teams_version, score: summary.score, state: summary.state, cost_usd: summary.cost_usd, failures: summary.failures.length, dir: out }) + '\n');
+  appendFileSync(join(root, 'index.jsonl'), JSON.stringify({ label, harvested_at: summary.harvested_at, teams_version: summary.teams_version, score: summary.score, state: summary.state, ...(summary.partial ? { partial: true } : {}), cost_usd: summary.cost_usd, failures: summary.failures.length, dir: out }) + '\n');
   return { out, summary };
 }
 
