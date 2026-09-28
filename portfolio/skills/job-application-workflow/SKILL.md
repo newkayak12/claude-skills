@@ -1,10 +1,10 @@
 ---
 name: job-application-workflow
 description: >-
-  Use when preparing for a job application or career transition end-to-end —
-  from analyzing a JD through to interview preparation. Triggers on: "job
-  application workflow", "이직 준비 전체", "취업 프로세스 시작", "career transition", "job
-  search process".
+  Use when preparing a job application or career transition end-to-end, from
+  JD match to interview preparation. Triggers on:
+  "job application workflow", "이직 준비 전체", "취업 프로세스 시작", "career
+  transition", "job search process".
 type: workflow
 theme: career
 scenarios:
@@ -12,6 +12,7 @@ scenarios:
   - "job application workflow 시작"
   - "취업 준비 처음부터 끝까지"
   - "career transition full process"
+  - "Take me from JD match to interview prep for this role"
 estimated_time: "3-10 hours (full), 30-90 min per step"
 compatibility:
   recommended:
@@ -19,109 +20,79 @@ compatibility:
   optional:
     - sequential-thinking
   remote_mcp_note: >-
-    think-tool이 있으면 JD 분석과 면접 준비에서 더 깊은 인사이트를 줍니다.
-    Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
+    think-tool이 있으면 JD 매칭과 면접 준비가 깊어집니다.
 ---
 
 # Job Application Workflow
 
-4-step career transition process: analyze → research → tailor → prepare.
+match → target → tailor → prepare. **Not for** open-ended career direction, offer negotiation (`think:negotiation`), or one document alone (use that step's skill).
 
-## When to Use / When Not to Use
+## Process
 
-| Use | Skip |
-|-----|------|
-| Specific role / company in mind | General "what should I do with my career" |
-| Active application in progress | Already passed interviews, negotiating offer |
-| Portfolio or resume needs work | Just need one specific document |
+**On entry, at any step or session:** restate the `[확정]` list (target role, excluded companies/projects, numbers already judged); never reopen a settled item. A fact a step needs but was not given (the JD for Step 1, a metric) is `[확인 필요: ○○]`, never assumed.
 
----
+**Step 1 — JD Match** · `portfolio-jd`
+Needs a portfolio and a JD. Judges fit: pass likelihood, gaps by severity, positioning, apply or not.
+> "Step 1 시작" / "JD랑 비교해줘"
 
-## Workflow Overview
+**Step 2 — Company-Type Fit** · `portfolio-company`
+Scores the portfolio against company types: best fits, types to avoid. No company research.
+**Skip if:** the target company is already fixed (internal transfer, referral).
+> "Step 2 시작" / "어느 회사에 잘 맞아?"
 
-```
-[1] JD Analysis
-        ↓
-[2] Company Research
-        ↓
-[3] Resume & Portfolio Tailoring
-        ↓
-[4] Interview Preparation
-```
+**Step 3 — Tailoring** · `resume-tailorer` (+ `portfolio-rewrite` when a 포트폴리오 is in play)
+From Step 1-2 results: tailored 이력서 sections; 포트폴리오 passages go to `portfolio-rewrite`.
+**Skip if:** materials already tailored to this role.
+> "Step 3 시작" / "이력서 맞춰줘" / "포트폴리오 다듬어줘"
 
----
+**Step 4 — Interview Preparation** · `interview-prep`
+A study plan by timeline and weak area, plus STAR prompts the candidate fills. Planning, not practice.
+**Skip if:** screening call only (a 5-min pitch is enough).
+> "Step 4 시작" / "면접 준비해줘"
 
-## Steps
+### State Tracking
 
-### Step 1 — Job Description Analysis
-**Skill:** `portfolio-jd`
-**Goal:** Decode what the JD is really asking for beneath the surface language
-**Output:** Must-have vs nice-to-have breakdown, hidden signals, fit gap analysis
-**Input needed:** Paste the JD text
+Say where you are; the workflow joins there:
+- "JD는 분석했어, 회사 유형부터" → Step 2
+- "면접 내일인데 prep만" → Step 4 (earlier outputs help if given)
 
-> "Step 1 시작" 또는 "JD 분석해줘" (JD 텍스트 붙여넣기)
+Carry `[확정]` forward on every hand-off; add only what the user settles.
 
----
+### Standalone Inputs
 
-### Step 2 — Company Research
-**Skill:** `portfolio-company`
-**Goal:** Understand culture, growth stage, pain points, and decision-makers
-**Output:** Company profile, culture signals, talking points, red flags
-**Input needed:** Company name + any public info (Glassdoor, LinkedIn, news)
-**Skip if:** Internal transfer or referral with strong inside knowledge
+| Skipped | Substitute input |
+|---------|------------------|
+| Step 1 before Step 3 | "이 역할에 필요한 스킬: [직접 나열]" |
+| Step 2 before Step 4 | "회사에 대해 아는 것: [요약 제공]" |
+| Steps 1-2 before Step 4 | JD + company name are enough |
 
-> "Step 2 시작" 또는 "company research 해줘"
+## Output Template
 
----
+User's language, judgment first.
 
-### Step 3 — Resume & Portfolio Tailoring
-**Skills:** `resume-tailorer` + `portfolio-rewrite` (if portfolio needed)
-**Goal:** Align your materials to Step 1 fit gaps and Step 2 culture signals
-**Output:** Tailored resume, updated portfolio sections, cover letter draft
-**Skip if:** Materials already tailored to this specific role
+**[현재 위치 / Where You Are]**
+Current step · next step and the decision it needs (e.g. "Step 1 done — 지원 권장, gap 2개; Step 3 needs: 이력서 원본").
 
-> "Step 3 시작" 또는 "이력서 맞춰줘" / "포트폴리오 다듬어줘"
+**[확정]**
+Target role · excluded companies/projects · numbers already judged.
 
----
+**[이번 단계 결과 / This Step]**
+The sub-skill's output.
 
-### Step 4 — Interview Preparation
-**Skill:** `interview-prep`
-**Goal:** Prepare stories, answers, and questions for each interview stage
-**Input:** JD analysis + company research + your experience
-**Output:** STAR story bank, likely questions + answers, questions to ask
-**Skip if:** Screening call only (just need a 5-min pitch)
-
-> "Step 4 시작" 또는 "면접 준비해줘"
-
----
-
-## State Tracking
-
-어느 단계에 있는지 알려주면 바로 합류합니다:
-- "JD는 분석했어, company research부터" → Step 2 바로 시작
-- "면접 내일인데 prep만" → Step 4로 직행 (이전 단계 output 간략 제공 시 더 좋음)
-
-## Standalone Inputs
-
-앞 단계 output 없이 중간부터 시작할 때:
-
-| Skip 단계 | 대체 입력 |
-|-----------|----------|
-| Step 1 없이 Step 3 | "이 역할에 필요한 스킬: [직접 나열]" |
-| Step 2 없이 Step 4 | "회사에 대해 아는 것: [요약 제공]" |
-| Steps 1-2 없이 Step 4 | JD + 회사 이름만 있으면 Step 4 진행 가능 |
+**[확인 필요]** *(omit when none)*
+One per line — what the next step cannot proceed without.
 
 ## What Claude Does / What You Do
 
 | Claude | You |
 |--------|-----|
-| JD decoding, signal extraction | Decide which roles to pursue |
-| Company profile synthesis | Conduct real informational interviews |
-| Resume/portfolio rewriting | Verify accuracy, add context I don't have |
-| Mock interview questions + answers | Actually go to the interviews |
+| JD fit judgment, gap severity | Decide which roles to pursue |
+| Company-type fit scoring | Research the actual company |
+| 이력서/포트폴리오 rewriting | Fill every `[확인 필요]` |
+| Study plan and STAR prompts | Write the stories, go to the interviews |
 
 ## Related Skills
 
-- Individual: `portfolio-jd`, `portfolio-company`, `resume-tailorer`, `interview-prep`
-- Adjacent: `portfolio-feedback` (external review of materials before applying)
-- After: `think:negotiation` (for offer negotiation)
+- Steps: `portfolio-jd`, `portfolio-company`, `resume-tailorer`, `portfolio-rewrite`, `interview-prep`
+- Adjacent: `portfolio-feedback` (review materials before applying), `portfolio-interview` (mock interview practice)
+- After: `think:negotiation` (offer negotiation)
