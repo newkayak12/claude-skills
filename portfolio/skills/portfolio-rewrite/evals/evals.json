@@ -1,0 +1,140 @@
+{
+  "skill_name": "portfolio-rewrite",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "이 공고에 맞게 이력서 고쳐줘.\n\n[Resume file: resume-backend-kr.md]\n[JD file: jd-fintech-senior-backend.md]",
+      "expected_output": "JD-tailoring mode. Opens with the one-line `JD 적합도 판정: must-have 5개 중 Missing 0 · Weak 1 — 최우선 변경: [Profile/Summary 신설]` (자격요건 5 lines are the must-haves; RDBMS 설계 is the Weak row). Then JD Analysis Summary, the gap table with Missing/Weak/Strong rows, Section Rewrites with actual Before/After text, and ends with What NOT to Change. 'API 응답속도 개선' is rewritten with `[확인 필요: …]` for the number; '820ms → 310ms' and '4시간 → 40분' appear unchanged. Baseline for parity: the pre-merge JD-tailoring skill at cbdfcd6 (path in docs/plans/portfolio-consolidate/rewrite-comparison.md) on the same files must report the same Missing/Weak counts and 최우선 변경 area (one rerun of both allowed on mismatch).",
+      "files": [
+        "evals/files/resume-backend-kr.md",
+        "evals/files/jd-fintech-senior-backend.md"
+      ],
+      "assertions": [
+        {
+          "name": "verdict-line-first",
+          "description": "출력의 첫 블록이 JD 적합도 판정 줄",
+          "type": "regex",
+          "pattern": "^\\s*\\**\\s*JD 적합도 판정"
+        },
+        {
+          "name": "verdict-counts",
+          "description": "자격요건 5개 기준 Missing 0 · Weak 1 (RDBMS 설계가 Weak)",
+          "type": "regex",
+          "pattern": "must-have\\s*5개 중 Missing 0\\s*·\\s*Weak 1"
+        },
+        {
+          "name": "priority-is-summary",
+          "description": "최우선 변경 대상이 Profile/Summary(요약) 신설",
+          "type": "regex",
+          "pattern": "최우선 변경:[^\\n]*(Profile|Summary|요약)"
+        },
+        {
+          "name": "gap-table",
+          "description": "Missing/Weak/Strong 행이 있는 갭 표",
+          "type": "contains_all",
+          "values": [
+            "| Missing |",
+            "| Weak |",
+            "| Strong |"
+          ]
+        },
+        {
+          "name": "api-line-marker",
+          "description": "'API 응답속도 개선'의 수치 자리가 [확인 필요: …]로 남음",
+          "type": "regex",
+          "pattern": "(응답(속도|시간)[^\\n]{0,40}\\[확인 필요:[^\\]]*수치|\\[확인 필요:[^\\]]*수치[^\\]]*\\][^\\n]{0,10}응답속도)"
+        },
+        {
+          "name": "stated-metrics-unchanged",
+          "description": "원문 수치가 그대로 유지됨",
+          "type": "contains_all",
+          "values": [
+            "820ms → 310ms",
+            "4시간 → 40분"
+          ]
+        },
+        {
+          "name": "no-invented-percent",
+          "description": "원문에 없는 퍼센트 수치를 만들지 않음",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*\\d+(\\.\\d+)?\\s*%)[\\s\\S]*$"
+        },
+        {
+          "name": "ends-with-what-not-to-change",
+          "description": "마지막 블록이 What NOT to Change",
+          "type": "regex",
+          "pattern": "#+\\s*(What NOT to Change|그대로 둘 부분|바꾸지 않을 부분)(?![\\s\\S]*\\n#+ )[\\s\\S]*$"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "이 경력기술서 문장들 더 임팩트 있게 고쳐줘.\n\n[Resume file: resume-backend-kr.md]\n(no job posting, no company named)",
+      "expected_output": "Passage mode (no JD). Per passage: 진단 → Before → After → 왜 더 강해졌는가 → Rewriter note → [확인 필요 질문] → [확정]. For 'API 응답속도 개선' the diagnosis names Y (the metric) as missing, with Z and S also absent; the After keeps the number as `[확인 필요: … 수치]`. No `JD 적합도 판정` line, no gap table, no number/cause/scope absent from the fixture; '820ms → 310ms' and '4시간 → 40분' identical Before and After. Baseline for parity: `git show cbdfcd6:portfolio/skills/portfolio-rewrite/SKILL.md` on the same input must name the same missing element.",
+      "files": [
+        "evals/files/resume-backend-kr.md"
+      ],
+      "assertions": [
+        {
+          "name": "no-verdict-line",
+          "description": "JD 없는 모드에는 JD 적합도 판정 줄이 없음",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*JD 적합도 판정)[\\s\\S]*$"
+        },
+        {
+          "name": "no-gap-table",
+          "description": "JD 없는 모드에는 갭 표가 없음",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*(JD requires|Resume shows|\\|\\s*(Missing|Weak|Strong)\\s*\\|))[\\s\\S]*$"
+        },
+        {
+          "name": "passage-blocks",
+          "description": "PR7 블록이 모두 있음",
+          "type": "contains_all",
+          "values": [
+            "진단",
+            "Before",
+            "After",
+            "왜 더 강해졌는가",
+            "[확인 필요 질문]"
+          ]
+        },
+        {
+          "name": "api-line-y-missing",
+          "description": "'API 응답속도 개선' 진단이 Y(수치) 부재를 지목",
+          "type": "regex",
+          "pattern": "API 응답속도 개선[\\s\\S]{0,300}?진단[^\\n]*(Y|수치)"
+        },
+        {
+          "name": "api-line-marker",
+          "description": "수치 자리가 [확인 필요: … 수치]로 남음",
+          "type": "regex",
+          "pattern": "응답(속도|시간) \\[확인 필요:[^\\]]*수치"
+        },
+        {
+          "name": "stated-metrics-unchanged",
+          "description": "원문 수치가 그대로 유지됨",
+          "type": "contains_all",
+          "values": [
+            "820ms → 310ms",
+            "4시간 → 40분"
+          ]
+        },
+        {
+          "name": "no-invented-percent",
+          "description": "원문에 없는 퍼센트 수치를 만들지 않음",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*\\d+(\\.\\d+)?\\s*%)[\\s\\S]*$"
+        },
+        {
+          "name": "continuation-offer",
+          "description": "계속 제안으로 마무리",
+          "type": "contains_any",
+          "values": [
+            "고치고 싶은 섹션이 있으면"
+          ]
+        }
+      ]
+    }
+  ]
+}
