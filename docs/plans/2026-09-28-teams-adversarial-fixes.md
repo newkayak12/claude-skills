@@ -115,4 +115,9 @@ So an edit needs plan, setgoal and critique on disk first, as `CLAUDE.md`'s Desi
 | M8 | A package ships if its accept is in the transitive dep closure of the latest non-superseded integrate, and that integrate is done. This covers repair and defect-fix reintegrates. |
 | m4 | When the S run completes: `git stash create` snapshots the working tree without touching it, and a worktree opened on that commit is the QA card's tree. Its defects go to `task.unresolved_defects`, since S has no packages to file fixes onto. The S report lists them. The report waits on the QA card. |
 | m10 | `planAuthorIdentity` returns an array. `reviewIndependence` and the audit caller are updated and tested. |
-| SetGoal | Golden files: `80-report.md` and `retro.json` under `teams/scripts/fixtures/golden/`. Expected hunks: the new report/retro lines only (checked by reading `git diff` of those two files). Added criteria: G5 ledger test, G6 matcher and gitignore tests in `test-lifecycle.mjs`, and a hook-copy `cmp`. |
+| SetGoal | Golden files: `80-report.md` and `retro.json` under `teams/scripts/fixtures/docs-golden/`. Expected hunks: the new report/retro lines only (checked by reading `git diff` of those two files). Added criteria: G5 ledger test, G6 matcher and gitignore tests in `test-lifecycle.mjs`, and a hook-copy `cmp`. |
+
+Re-critique: `sound:true`, with three implementation details taken:
+- **G2:** config, ledger and markers are read from the common-dir root. The pattern path comes from the file's own worktree (`--show-toplevel`).
+- **m4:** when `git stash create` prints nothing, fall back to HEAD. The task-level S report and retro wait on the QA accept.
+- **Golden:** the expected added lines are asserted in a test.
