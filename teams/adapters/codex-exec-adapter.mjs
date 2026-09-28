@@ -32,6 +32,13 @@ for (let i = 0; i < args.length; i++) {
     // Caller asserts this cwd is a private worktree with exactly one node running
     // in it, which is what makes positive change attribution sound.
     opts.isolated = true;
+  } else if (key === '--verify') {
+    // review/gate asking to re-run acceptance checks under read-only. Codex has no
+    // separate --tools gate the way the claude adapter does - exec always has a shell,
+    // and -s read-only already blocks writes at the OS sandbox level (bubblewrap), so a
+    // review or gate node here could already run `wc -w` or a validator with no code
+    // change. Recognized so broker.mjs can pass it to either vendor uniformly; no-op here.
+    opts.verify = true;
   } else if (key === '--cwd') {
     opts.cwd = val;
     i++;

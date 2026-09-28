@@ -66,6 +66,28 @@ for (const stage of ['implement', 'test']) {
   });
 }
 
+// broker.mjs passes --verify to whichever vendor's adapter runs a review/gate dispatch,
+// uniformly across vendors (see broker.mjs's `verifies` flag). The claude adapter needs it
+// to change its --tools profile; codex has no such flag - its -s sandbox already governs
+// writes at the OS level regardless of stage - so this only has to prove the codex adapter
+// recognizes the flag instead of calling usage() (exit 2) on an argument it does not know.
+test('the adapter accepts --verify as a recognized no-op (broker sends it to every vendor uniformly for review/gate)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'codex-verify-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: dir });
+    const reply = { stage_ok: true, verified: true, checks: ['c -> ok'], evidence: 'e' };
+    const bin = fakeCodex(dir, reply);
+    writeFileSync(join(dir, 'prompt.md'), 'do it');
+    // No --stage: this is exactly how broker.mjs dispatches a reasoning node (review/gate) -
+    // unstaged, so review's own shape is not forced through implement/test's strict schema.
+    const r = spawnSync('node', [
+      ADAPTER, '--cwd', dir, '--prompt-file', join(dir, 'prompt.md'),
+      '--output', join(dir, 'out.json'), '--sandbox', 'read-only', '--verify',
+    ], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+    assert.notEqual(r.status, 2, `--verify must not be treated as an unknown argument: ${r.stderr}`);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('code-beta-X4: a retry claiming the file its earlier attempt left dirty is carried, not contradicted; a file nobody touched still is', () => {
   const dir = mkdtempSync(join(tmpdir(), 'codex-carry-'));
   try {
