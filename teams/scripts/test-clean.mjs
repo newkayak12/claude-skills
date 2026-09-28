@@ -215,8 +215,11 @@ test('tm_clean removes every package worktree and branch once merged into integr
     assert.equal(r.dry_run, false);
     // The planning card's worktree is a package worktree too (cards-everywhere C2): cleaned alike.
     assert.deepEqual(r.removed_worktrees.map((x) => x.package_id).sort(), ['P1', 'P2', 'PLAN-F1']);
-    assert.deepEqual(r.removed_branches.map((x) => x.package_id).sort(), ['P1', 'P2', 'PLAN-F1']);
-    assert.deepEqual(r.kept_branches, []);
+    // A planning card's branch carries its PRD commit, which no integration branch holds (the PRD
+    // is merged into 10-prd.md, not into the tree): its worktree goes, its branch is kept.
+    assert.deepEqual(r.removed_branches.map((x) => x.package_id).sort(), ['P1', 'P2']);
+    assert.deepEqual(r.kept_branches.map((x) => x.package_id), ['PLAN-F1']);
+    assert.match(r.kept_branches[0].reason, /not reachable/);
     assert.deepEqual(r.kept.map((k) => k.cwd), [integ.cwd]);
 
     assert.ok(!existsSync(join(p1.cwd, '.git')), 'P1 worktree gone');
@@ -245,7 +248,8 @@ test('tm_clean is idempotent: a second call finds everything already gone', asyn
     const second = await tm.call('tm_clean', { task_id });
     assert.equal(second.removed_worktrees.length, 0);
     assert.equal(second.removed_branches.length, 0);
-    assert.deepEqual(second.already_clean.map((x) => x.package_id).sort(), ['P1', 'P2', 'PLAN-F1']);
+    assert.deepEqual(second.already_clean.map((x) => x.package_id).sort(), ['P1', 'P2']);
+    assert.deepEqual(second.kept_branches.map((x) => x.package_id), ['PLAN-F1'], 'the PRD branch is still kept, never deleted');
   });
 });
 
@@ -265,7 +269,8 @@ test('tm_clean({dry_run:true}) reports what it would remove and touches no git s
     const r = await tm.call('tm_clean', { task_id, dry_run: true });
     assert.equal(r.dry_run, true);
     assert.deepEqual(r.removed_worktrees.map((x) => x.package_id).sort(), ['P1', 'P2', 'PLAN-F1']);
-    assert.deepEqual(r.removed_branches.map((x) => x.package_id).sort(), ['P1', 'P2', 'PLAN-F1']);
+    assert.deepEqual(r.removed_branches.map((x) => x.package_id).sort(), ['P1', 'P2']);
+    assert.deepEqual(r.kept_branches.map((x) => x.package_id), ['PLAN-F1']);
     assert.ok(existsSync(join(p1.cwd, '.git')), 'dry_run never removes the worktree');
     assert.equal(branchExists(p1.cwd, p1.branch), true, 'dry_run never deletes the branch');
     // Nothing was actually removed, so a real clean afterwards still finds it all.
@@ -286,8 +291,8 @@ test('a package branch with commits made after integration is kept (reason given
     git(p1.cwd, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'work after integration']);
 
     const r = await tm.call('tm_clean', { task_id });
-    assert.deepEqual(r.removed_branches.map((x) => x.package_id).sort(), ['P2', 'PLAN-F1']);
-    assert.deepEqual(r.kept_branches.map((x) => x.package_id), ['P1']);
+    assert.deepEqual(r.removed_branches.map((x) => x.package_id).sort(), ['P2']);
+    assert.deepEqual(r.kept_branches.map((x) => x.package_id).sort(), ['P1', 'PLAN-F1']);
     assert.match(r.kept_branches[0].reason, /not reachable/);
     assert.deepEqual(r.removed_worktrees.map((x) => x.package_id).sort(), ['P1', 'P2', 'PLAN-F1'], 'the worktree directory is removed either way - the branch ref alone keeps the commits');
 

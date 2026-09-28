@@ -210,7 +210,7 @@ test('createRun({package}) opens the full harness: plan/setgoal/critique first, 
       package: { id: 'P1' }, goal: 'ship the one thing', acceptance: ['the one thing works'],
     });
     assert.deepEqual(run.nodes.map((n) => n.node_id), ['plan', 'setgoal', 'critique']);
-    assert.deepEqual(run.package, { id: 'P1', title: 'ship the one thing', acceptance: ['the one thing works'] });
+    assert.deepEqual(run.package, { id: 'P1', origin: 'shape', title: 'ship the one thing', acceptance: ['the one thing works'] });
     assert.equal(run.spec, null, 'setgoal writes the spec - nothing is pre-decided into it');
     assert.equal(run.parent_shaped, undefined);
     assert.deepEqual(readyNodes(run).map((n) => n.node_id), ['plan']);

@@ -217,17 +217,28 @@ function bullets(list) {
 // is how to BUILD this one package, and what the run is held to is the package's own acceptance.
 export const PACKAGE_PLAN_RULE = `The task manager already split the EPIC into packages (shape) and critiqued that split. This run builds ONE of those packages - the Request above is its brief. Do not re-split the EPIC or re-decide the package's scope. Plan how to build THIS package: the files and modules to touch, the interfaces and data shapes they expose or consume, the order of work, the test plan (the commands that will prove each acceptance item), and the risks.`;
 
+// Where a package that shape did NOT produce came from (m12): the same "one package, its own
+// acceptance" rule, without claiming a critique that never ran.
+const ORIGIN_RULE = {
+  repair: 'The task manager opened this run as a REPAIR package: its worktree is the integration tree, and its job is to make the integration checks pass. No critique judged it - the refused integrate is its brief.',
+  planning: 'The task manager opened this run as a PLANNING card: one feature area of the EPIC, split by the plan stage and judged by areas-critique. Write THIS area\'s PRD section; do not re-split the EPIC or plan other areas.',
+  qa: 'The task manager opened this run as a QA card: exercise ONE feature area of the integrated result against its user stories and report defects. Do not fix, re-plan or re-split anything.',
+  audit: 'The task manager opened this run as the planning AUDIT: judge the integrated result against the PRD\'s user stories. Do not fix or re-plan anything.',
+  filed: 'The task manager opened this run for a FILED fix (QA, the audit, a person, or a downstream package found it) - no shape or critique produced it; the Request above is the defect and its reproduction. Fix exactly that; do not re-split the EPIC or widen the scope.',
+};
+
 function packageBlock(run, n) {
   const pkg = run.package;
   const acc = Array.isArray(pkg.acceptance) ? pkg.acceptance : [];
-  const L = ['', `## This package${pkg.id ? ` (${pkg.id})` : ''}${pkg.title ? ` — ${pkg.title}` : ''}`, PACKAGE_PLAN_RULE];
+  const rule = ORIGIN_RULE[pkg.origin] || PACKAGE_PLAN_RULE;
+  const L = ['', `## This package${pkg.id ? ` (${pkg.id})` : ''}${pkg.title ? ` — ${pkg.title}` : ''}`, rule];
   if (acc.length) L.push(`Package acceptance (set by the manager; the manager accepts this package against exactly these):\n${bullets(acc)}`);
   if (n.stage === 'plan') {
-    L.push(`size is S: this package is already one run's worth of work. The decomposition is the build plan above, in order; name more than one unit only where the package genuinely needs it.`);
+    L.push(`size is S: this package is already one run's worth of work. The decomposition is the plan for it, in order; name more than one unit only where the package genuinely needs it.`);
   } else if (n.stage === 'setgoal') {
     L.push(`Keep one subgoal unless the package genuinely needs more (independent parts that can be built and checked on their own). Carry every package acceptance item above into spec.acceptance verbatim - word for word, none dropped or reworded; add your own criteria beside them, not instead of them. Turn the plan's test plan into each subgoal's test[].`);
   } else if (n.stage === 'critique') {
-    L.push(`Judge the plan and the spec against this package's brief (the Request above) and the package acceptance: a spec that drops or rewords a package acceptance item, or builds something the brief did not ask for, is blocking. Re-splitting the EPIC is not this run's job - do not ask for it.`);
+    L.push(`Judge the plan and the spec against this package's brief (the Request above) and the package acceptance: a spec that drops or rewords a package acceptance item, or does something the brief did not ask for, is blocking. Re-splitting the EPIC is not this run's job - do not ask for it.`);
     const plan = run.nodes.filter((x) => x.stage === 'plan' && x.state === 'done' && x.result).pop();
     if (plan && plan.result.plan) L.push(`The build plan this spec came from:\n${String(plan.result.plan)}`);
   }

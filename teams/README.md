@@ -69,14 +69,18 @@ flowchart TD
   SIZE -->|"S"| SPLAN["one planning card: PRD section and user stories"]
   SPLAN --> SPI{"plan-integrate"}
   SPI -->|"accepted"| SRUN["one graph run in the project directory, built from the PRD"]
-  SRUN --> SREP["that run's report"]
+  SRUN --> SQA{"QA card on a snapshot of the run's working tree"}
+  SQA --> SREP["report: the run's account + QA defects left unresolved"]
   SIZE -->|"L"| BS["brainstorm"]
   BS --> AREAS["areas: split the request by feature"]
-  AREAS --> PCARDS["planning cards PLAN-F1, PLAN-F2, ...<br/>one per feature area, full run each, in parallel"]
+  AREAS --> ACRIT{"areas-critique"}
+  ACRIT -->|"coverage, overlap, criterion, granularity"| AREAS
+  ACRIT -->|"sound"| PCARDS["planning cards PLAN-F1, PLAN-F2, ...<br/>one per feature area, full run each, in parallel"]
   PCARDS --> PACC{"accept, per card"}
   PACC -->|"rejected"| PCARDS
   PACC -->|"all accepted"| PI{"plan-integrate: merge into 10-prd.md and judge"}
   PI -->|"id collision, contradiction, missing feature"| PCARDS
+  PI -->|"resplit: the split itself is wrong"| AREAS
   PI -->|"accepted"| SHAPE["shape: split the stories by ownership into packages"]
   SHAPE --> CRIT{"critique"}
   CRIT -->|"unsound"| SHAPE
@@ -102,20 +106,23 @@ What each step does:
 | `size` | A judge decides S (one run is enough) or L (split it). You can pin it with `size`. | — |
 | `brainstorm` | Restates intent, scope and approach; asks you questions only when `interactive`. Skipped when your session already passed `decisions`. | `brainstorm` |
 | `areas` | The EPIC's plan stage splits the request by **feature**: what a user must be able to do, grouped into feature areas. Each area becomes a planning card. A size-S task skips the split and gets one card. | — |
-| planning cards | One STORY card per feature area (`PLAN-F1`, `PLAN-F2`, ...), each a full run in its own worktree, in parallel. Each writes its PRD section - goal, scope and non-goals, user stories with acceptance criteria (ids prefixed by the area, `F1-US-1`), open questions - and returns its user stories. A card with no user stories is rejected; a rejected card is retried with the reasons. With acceptance already declared in the request each card runs a lighter chain. | `roles.planning` (`true`, `"light"`, `"auto"`; `false` is refused) |
-| `plan-integrate` | Merges every card's section into one `10-prd.md`, then a judge checks it: story ids that collide, areas that contradict each other, a feature the request names that no card covers. A rejection sends the offending cards back with the gaps (or opens a card for the missing feature). | `max_retries` |
+| `areas-critique` | **New.** A judge attacks the split before any card runs: a feature in no area, two areas planning the same feature, an area cut by module or layer instead of by what a user does, padded or merged areas. A refusal splits again with the defects as feedback. | `max_retries`, `human_gates` |
+| planning cards | One STORY card per feature area (`PLAN-F1`, `PLAN-F2`, ...), each a full run in its own worktree, in parallel. Each writes its PRD section - goal, scope and non-goals, user stories with acceptance criteria (ids prefixed by the area, `F1-US-1`), open questions - and returns its user stories. A card is rejected when it wrote no PRD, a section is missing, it has no user stories, a story has no acceptance criteria, or a story id lacks the card's prefix; a rejected card is retried with the reasons. With acceptance already declared in the request each card runs a lighter chain. | `roles.planning` (`true`, `"light"`, `"auto"`; `false` is refused) |
+| `plan-integrate` | Merges every card's section into one `10-prd.md`, then a judge checks it: story ids that collide, areas that contradict each other, a feature the request names that no card covers. A rejection sends the offending cards back with the gaps (or opens a card for the missing feature). When the split itself is wrong it returns `resplit`: the cards are retired (kept as history, out of the PRD) and `areas` splits again. | `max_retries`, `human_gates` |
 | `shape` → `critique` | `shape` splits the merged user stories again, this time by **ownership**, into packages with `touches[]` and `deps`; every story must be implemented by some package. `critique` checks the split. An unsound shape is reshaped. | — |
 | develop (dispatch) | The actual development. Each package gets its own git worktree and a driver session that runs the package's child run through the full harness: `plan → setgoal → critique → implement → test → gate → gate:goal → report`. `plan` is a build plan for that one package (files, interfaces, order of work, test plan, risks), not a re-split; `setgoal` carries the package's acceptance verbatim and `critique` checks the plan against it. A document package uses `draft → review → gate` in place of `implement → test → gate`. Packages whose `deps` are met run in parallel. See [Inside one package](#inside-one-package). | `max_parallel_teams`, `vendor` |
 | accept | When a package's run finishes, a judge accepts or rejects its result. A rejection retries the package with the reasons attached. | `max_retries` |
 | `integrate` | Merges the accepted branches and runs the checks. A seam no single package can see gets a repair package that works on the merged tree. | — |
-| QA | One QA card per feature area (`QA-F1`, `QA-F2`, ...), each a full run on the merged tree, in parallel, exercising its area's user stories. Once every card of the round has settled, their defects are filed together as fix STORYs, and the loop re-integrates and reopens every QA card. | `roles.qa`, `qa_rounds` |
+| QA | One QA card per feature area (`QA-F1`, `QA-F2`, ...), each a full run on the merged tree, in parallel, exercising its area's user stories. Once every card of the round has settled, their defects are filed together as fix STORYs, and the loop re-integrates and reopens every QA card. A card that runs out of retries is dropped from the round, not the round with it: its siblings' defects are still filed and the goal gate is told which area QA did not verify. A size-S task gets a QA card too, on a snapshot of its run's working tree; what it finds is listed as unresolved (there is no package to fix it in) and the task reads `partial`. | `roles.qa`, `qa_rounds` |
 | audit | Planning checks the merged result against the merged PRD. Unmet stories are filed like QA defects. | `roles.audit` |
 | `gate:goal` | Judges the whole result against the original request (`goal_threshold`, default 90%). | `goal_threshold` |
-| `report` | Always runs once the goal gate settles, pass or fail. Also writes `retro.json` for the next Sprint, including the user stories that did not ship; there is no sub-EPIC, so unfinished work carries into the next Sprint (`tm_open({context_from})` returns them as `carryover_candidates`). | — |
+| `report` | Always runs once the goal gate settles, pass or fail. Also writes `retro.json` for the next Sprint, including the user stories that did not ship - a story ships only when every package implementing it is in the final integration, and that integrate passed; there is no sub-EPIC, so unfinished work carries into the next Sprint (`tm_open({context_from})` returns them as `carryover_candidates`). | — |
 
 Every loop has a budget (`max_retries`, `qa_rounds`, `upstream_fix_rounds`). When one runs out,
 the failure is *settled*: what depends on it is marked unreachable and the task goes on to its
-report instead of hanging. A budget or timebox stop works the same way: nothing new is
+report instead of hanging. That holds before shape too: a split, a planning card or a planning
+integrate out of retries closes the task to a report and `retro.json` (with whatever PRD the
+cards wrote) instead of leaving it blocked with neither. A budget or timebox stop works the same way: nothing new is
 dispatched, the accepted packages are integrated, and the rest is listed as "Next backlog".
 
 Two more loops exist but are left out of the diagram: an integrate *conflict* (two packages
@@ -276,7 +283,7 @@ explanation of every key is in [docs/configuration.md](docs/configuration.md#con
 | `roles` | `{planning:"auto", qa:true, audit:true}` | Which chain the planning cards run (`true` full, `"light"`, `"auto"` light when acceptance is declared), and whether the QA cards and the audit run. `planning: false` is refused with a note: planning always runs. |
 | `brainstorm` | `true` | Runs the engine's own brainstorm step when no `decisions` were passed. |
 | `interactive` | `false` | Whether questions, pins and human gates wait for a person or are decided by default. |
-| `human_gates` | `[]` | Judging stages (`"critique"`, `"accept"`, `"gate:goal"`, ...) that a person decides instead of a model. |
+| `human_gates` | `[]` | Judging stages (`"critique"`, `"accept"`, `"gate:goal"`, `"areas-critique"`, `"plan-integrate"`, ...) that a person decides instead of a model. A person refusing `plan-integrate` may pass `resplit: true`. |
 | `ask_timeout` | `null` | Milliseconds before an unanswered `ask` card takes its default answer; `null` waits forever. |
 | `max_parallel_teams` | `"auto"` | How many develop packages run at once; `"auto"` adapts to rate limits and crashes. |
 | `max_parallel_ceiling` | `null` | Upper limit for the `"auto"` controller; `null` derives one from the CPU count. |

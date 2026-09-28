@@ -494,7 +494,7 @@ function priorRetroContext(contextFrom) {
     // caller can put them to the person - never added to requests on their own.
     const carryover = [
       ...(retro.next_backlog.unshipped_requests || []).map((r) => ({ kind: 'request', priority: r.priority, text: r.request })),
-      ...(retro.next_backlog.unfinished_stories || []).map((u) => ({ kind: 'story', id: u.id, text: u.title || u.id, ...(u.acceptance ? { acceptance: u.acceptance } : {}) })),
+      ...(retro.next_backlog.unfinished_stories || []).map((u) => ({ kind: 'story', id: u.id, text: u.title || u.id, ...(u.card ? { card: u.card } : {}), ...(u.acceptance ? { acceptance: u.acceptance } : {}) })),
     ];
     return { text: L.join('\n'), unresolved: null, base_ref, carryover };
   } catch (e) {
@@ -1084,6 +1084,12 @@ function scopesOverlap(a, b) {
   return a.startsWith(b + '/') || b.startsWith(a + '/');
 }
 
+// Every id a STORY key can name, cards first (m8): tm_ticket's refusal listed only the shape's
+// packages and said "none yet" while planning cards were running.
+function knownIds(task) {
+  return [...planningPkgs(task), ...((task.spec && task.spec.packages) || []), ...qaPkgs(task), ...(task.audit_pkg ? [task.audit_pkg] : [])].map((p) => String(p.id));
+}
+
 export function validateShape(spec, userStories) {
   const problems = [];
   if (!spec || typeof spec !== 'object') return ['shape returned no packages object'];
@@ -1099,6 +1105,9 @@ export function validateShape(spec, userStories) {
     const id = p && p.id != null ? String(p.id) : '';
     if (!id) { problems.push('a package has no id'); continue; }
     if (ids.has(id)) problems.push(`duplicate package id ${id}`);
+    // The cards own these ids (m8): a develop package named PLAN-F1, QA-F2 or AUDIT would collide
+    // with a card's nodes, ticket key and worktree.
+    if (/^(PLAN|QA)(-|$)|^AUDIT$/i.test(id)) problems.push(`package id ${id} is reserved for the planning/QA/audit cards - name develop packages P1, P2, ...`);
     ids.add(id);
     if (!p.title) problems.push(`package ${id} has no title`);
     if (!p.brief) problems.push(`package ${id} has no brief - its child run would have no request`);
@@ -1253,7 +1262,7 @@ function expandPackages(task, packages) {
 
 // One QA card per feature area (C7): QA-F1 exercises what PLAN-F1's user stories promised, on the
 // integrated tree. A task.json from before the split (no areas) still gets exactly one card.
-function qaCards(task, integrateId) {
+export function qaCards(task, integrateId) {
   const stories = planningStories(task);
   const cards = livePlanningPkgs(task);
   const areas = cards.length ? cards : [{ id: 'PLAN-F1', area: 'F1', area_title: 'the whole request' }];
@@ -1875,6 +1884,7 @@ export function autoRepair(task) {
 // capped the single QA pass: the round number is the most attempts any one QA card has had.
 // Returns null while the round is still open, else {filed?, unresolved?, defects}.
 function settleQaRound(task) {
+  if (task.s_run) return settleSQa(task);
   const goal = task.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id == null).pop();
   if (!goal) return null;
   const round = goal.deps.map((d) => task.nodes.find((x) => x.node_id === d)).filter((x) => x && x.stage === 'accept' && phaseOfId(task, x.subgoal_id) === 'qa');
@@ -1910,6 +1920,10 @@ function settleQaRound(task) {
 // gate and the report are told which card never reached a verdict (task.qa_not_run).
 function rescueQaRound(task, pkg, unreachable, failed) {
   const pid = String(pkg.id);
+  if (task.s_run) {
+    task.qa_not_run = [...(task.qa_not_run || []), { pass: pid, node_id: `accept:${pid}`, reason: String((failed && failed.result && failed.result.reason) || 'retries exhausted').slice(0, 300) }];
+    return false;
+  }
   const own = (id) => { const x = task.nodes.find((y) => y.node_id === id); return x && x.subgoal_id === pid; };
   const goal = task.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id == null && String(n.node_id).startsWith('gate:goal')).pop();
   if (!goal) return false;
@@ -2117,7 +2131,10 @@ function fileUpstreamDefects(task, downstreamPid, defects) {
 // child_opts routing, so in practice they are one identity, and the audit's independence is
 // recorded either way (broker.mjs's reviewIndependence).
 function planAuthorIdentity(task) {
-  for (const card of planningPkgs(task)) {
+  // Every card's author, distinct (m10): the PRD has one per feature area, and the audit is
+  // routed away from, and judged independent of, all of them - not only the first card's.
+  const out = [];
+  for (const card of livePlanningPkgs(task)) {
     const planDispatch = latestBySubgoal(task, String(card.id), 'dispatch');
     if (!planDispatch || !planDispatch.child) continue;
     const planRun = loadRun(planDispatch.child.cwd, planDispatch.child.run_id);
@@ -2126,9 +2143,11 @@ function planAuthorIdentity(task) {
       || planRun.nodes.filter((x) => x.stage === 'draft' && x.state === 'done').pop()
       // a light PLAN run (planning-light kind) has one authoring hand: template-fill.
       || planRun.nodes.filter((x) => x.stage === 'template-fill' && x.state === 'done').pop();
-    if (author) return { executor: author.executor || null, vendor: author.vendor || null, model: author.model || null };
+    if (!author) continue;
+    const id = { executor: author.executor || null, vendor: author.vendor || null, model: author.model || null };
+    if (!out.some((x) => x.executor === id.executor && x.vendor === id.vendor && x.model === id.model)) out.push(id);
   }
-  return null;
+  return out.length ? out : null;
 }
 
 function openAudit(task, afterNodeIds) {
@@ -2631,7 +2650,9 @@ function childContext(task, pkg) {
         : `Declared acceptance: light mode was set explicitly and no structured criteria were found in the request - transfer the acceptance the request states, in its own words, item by item.`);
     }
   } else if (pkg.phase === 'qa') {
-    lines.push(`This worktree is the COMBINED tree of every package in this task: all of their branches are already merged here, on the integration branch itself.`);
+    lines.push(pkg.s_snapshot
+      ? `This worktree is a snapshot of the size-S run's working tree (commit ${String(pkg.s_snapshot).slice(0, 12)}): everything that run wrote, committed here so QA can exercise it without touching the project tree itself.`
+      : `This worktree is the COMBINED tree of every package in this task: all of their branches are already merged here, on the integration branch itself.`);
     lines.push(qaPkgs(task).length > 1
       ? `This is QA card ${pkg.id}, one of ${qaPkgs(task).length} run in parallel over the same integrated result - one per feature area (${qaPkgs(task).map((q) => q.id).join(', ')}). Yours is feature area ${pkg.area || '?'}: exercise its user stories (in your request above) the way a user would and report what you find.`
       : `This is the goal-level QA pass over the integrated result. Exercise it the way a user would and report what you find.`);
@@ -3180,7 +3201,18 @@ export function taskState(task) {
   if (!task.s_run) return managerState(task);
   const run = loadRun(task.s_run.cwd, task.s_run.run_id);
   const cs = run ? runState(run) : { state: 'missing', counts: {} };
-  return { ...sState(cs), counts: cs.counts || {} };
+  const st = { ...sState(cs), counts: cs.counts || {} };
+  // m4: a completed S run still owes its QA verdicts; once they are in, a defect QA found (and
+  // nothing can fix within this task) or a QA card with no verdict makes it partial.
+  if (st.state === 'complete' || st.state === 'partial') {
+    if (sQaActive(task) || (sQaWanted(task) && !task.s_qa)) return { ...st, state: 'running' };
+    const reasons = [...(st.partial_reasons || [])];
+    for (const d of task.unresolved_defects || []) reasons.push(`QA defect left unresolved: ${d.title}`);
+    for (const q of task.qa_not_run || []) reasons.push(`${q.pass}: QA reached no verdict (${q.reason})`);
+    if (task.s_qa && task.s_qa.failed) reasons.push(`QA could not run: ${task.s_qa.failed}`);
+    if (reasons.length) return { ...st, state: 'partial', partial: true, partial_reasons: reasons };
+  }
+  return st;
 }
 
 // A size-S run's graph state as a task state: a report over a spent retry budget (runState's
@@ -3238,9 +3270,12 @@ export function openChild(task, n) {
   // already does for a repair package (§0.3 finding 3 - same mechanism, no new function).
   // The audit phase-Team joins QA in that third exception, and for the same reason: it judges
   // the integrated tree, so its worktree IS the integration worktree.
-  const wt = pkg.repair || pkg.phase === 'qa' || pkg.phase === 'audit'
-    ? repairWorktree(task, pkg)
-    : ensureWorktree(task, String(pkg.id), depBranches[0] || task.base_ref || 'HEAD');
+  // A size-S task's QA card (m4) runs on a snapshot of the S run's working tree, never on the
+  // tree itself: the S run wrote straight into the project, uncommitted.
+  const wt = pkg.s_snapshot ? ensureWorktree(task, String(pkg.id), pkg.s_snapshot)
+    : pkg.repair || pkg.phase === 'qa' || pkg.phase === 'audit'
+      ? repairWorktree(task, pkg)
+      : ensureWorktree(task, String(pkg.id), depBranches[0] || task.base_ref || 'HEAD');
   if (!wt.ok) {
     n.state = 'failed';
     n.result = { stage_ok: false, reason: `could not create a worktree for ${pkg.id}: ${wt.reason}` };
@@ -3299,7 +3334,13 @@ export function openChild(task, n) {
   // this task's own shape produced and its critique passed (not a phase Team, not a repair) -
   // is opened with `package`, which turns its plan into a BUILD plan for this package instead of
   // a re-split (prompts.mjs's packageBlock) and carries its acceptance verbatim into its spec.
-  const shapedStory = !(pkg.repair || pkg.phase === 'planning' || pkg.phase === 'qa' || pkg.phase === 'audit');
+  // Every package carries its acceptance verbatim into its spec (m12, docs/plans/2026-09-28-teams-
+  // adversarial-fixes.md) - a repair, a planning/QA/audit card and a filed fix are judged against
+  // their acceptance exactly as a shaped STORY is. What differs is what the child is told about
+  // where the package came from: only a STORY shape produced has had a manager critique.
+  const origin = pkg.repair ? 'repair'
+    : ['planning', 'qa', 'audit'].includes(pkg.phase) ? pkg.phase
+      : pkg.reporter ? 'filed' : 'shape';
   const child = createRun({
     ...task.child_opts,
     cwd: wt.path,
@@ -3315,7 +3356,7 @@ export function openChild(task, n) {
     // same way a boxed Sprint's planning run is.
     max_subgoals: pkg.phase === 'planning' && (boxedOpts(task) || pkg.planning_mode === 'light') ? 1 : null,
     planning_mode: pkg.phase === 'planning' && pkg.planning_mode === 'light' ? 'light' : null,
-    ...(shapedStory ? { package: { id: String(pkg.id) } } : {}),
+    package: { id: String(pkg.id), origin },
     goal: pkg.title || pkg.brief,
     acceptance: Array.isArray(pkg.acceptance) && pkg.acceptance.length ? pkg.acceptance : null,
     // A STORY-level pin (shape's own `assignee: "human"` on the package, or tm_assign called
@@ -3598,6 +3639,25 @@ export function foldChild(task, n) {
         ...base, stage_ok: true, accept: false, match_pct: g.match_pct, user_stories: planningStories,
         gaps: [...(g.gaps || []), ...missing.map((m) => `the PRD has no "${m}" section`)],
         reason: `the PRD is missing required sections: ${missing.join(', ')}. Every one of them is a heading a reader looks for and this document does not answer`,
+      };
+    }
+  }
+  // Each story is held to what the card contract asks (m1): acceptance criteria of its own, and
+  // an id carrying the card's area prefix (F2-US-1) so ids stay unique across merged cards.
+  if (planningStories && g.accept === true && planningStories.length) {
+    const prefix = pkg && pkg.area ? `${pkg.area}-US-` : null;
+    const storyGaps = [];
+    for (const u of planningStories) {
+      const id = storyId(u);
+      const acc = u && typeof u === 'object' && Array.isArray(u.acceptance) ? u.acceptance.filter((x) => String(x).trim()) : [];
+      if (!acc.length) storyGaps.push(`user story ${id} has no acceptance criteria`);
+      if (prefix && !id.startsWith(prefix)) storyGaps.push(`user story ${id} does not carry this card's id prefix ${prefix}n`);
+    }
+    if (storyGaps.length) {
+      return {
+        ...base, stage_ok: true, accept: false, match_pct: g.match_pct, user_stories: planningStories,
+        gaps: [...(g.gaps || []), ...storyGaps],
+        reason: `the PRD's user stories do not meet the card contract: ${storyGaps.slice(0, 3).join('; ')}${storyGaps.length > 3 ? ` (+${storyGaps.length - 3} more)` : ''}`,
       };
     }
   }
@@ -5016,7 +5076,8 @@ export function missingPrdSections(cwd, paths, mode = 'full') {
   for (const rel of paths || []) {
     try { text += `\n${readFileSync(resolve(cwd, String(rel)), 'utf8')}`; } catch { /* unreadable */ }
   }
-  if (!text.trim()) return [];
+  // No PRD text at all is every section missing, not none (m1): a card that wrote no document
+  // was accepted because an empty text had no heading to find missing.
   const headings = (text.match(/^#{1,6} .*$/gm) || []).map((h) => h.replace(/^#+\s*/, '').replace(/[:：].*$/, '').trim().toLowerCase());
   return PRD_SECTIONS
     .filter(([canonical]) => mode !== 'light' || CARD_SECTIONS.has(canonical))
@@ -5170,7 +5231,7 @@ function toolTicket(a) {
     };
   }
   const pkg = packageOf(task, pkgId);
-  if (!pkg) throw new Error(`no package ${pkgId} in ${epicKey(task.run_id)} (packages: ${((task.spec && task.spec.packages) || []).map((p) => p.id).join(', ') || 'none yet'})`);
+  if (!pkg) throw new Error(`no package ${pkgId} in ${epicKey(task.run_id)} (cards and packages: ${knownIds(task).join(', ') || 'none yet'})`);
   // A TASK key resolves the package it belongs to (§8's tm_ticket table has no TASK row of its
   // own yet) - the card itself is reachable through tm_inbox (waiting on a human) or the child
   // run's own team_status, not this tool.
@@ -5214,7 +5275,7 @@ function toolLog(a) {
   if (pkgId === 'S' && task.s_run) {
     child = task.s_run; nodeId = 'S';
   } else {
-    if (!packageOf(task, pkgId)) throw new Error(`no package ${pkgId} in ${epicKey(task.run_id)} (packages: ${((task.spec && task.spec.packages) || []).map((p) => p.id).join(', ') || 'none yet'})`);
+    if (!packageOf(task, pkgId)) throw new Error(`no package ${pkgId} in ${epicKey(task.run_id)} (cards and packages: ${knownIds(task).join(', ') || 'none yet'})`);
     const dispatch = latestBySubgoal(task, pkgId, 'dispatch');
     child = dispatch && dispatch.child; nodeId = dispatch ? dispatch.node_id : null;
   }
@@ -5606,6 +5667,79 @@ export function openSRun(task) {
   }
 }
 
+// A size-S task gets its QA card too (m4, docs/plans/2026-09-28-teams-adversarial-fixes.md):
+// once its one run completed, the working tree it wrote is snapshotted into a commit - through a
+// throwaway index, so the person's own index and working tree are never touched, and untracked
+// files are in it - and each QA card runs on a worktree of that commit. There is no integrate and
+// no package to file a fix onto: what QA finds is recorded as unresolved defects, and the task's
+// report and retro wait for the QA verdicts (renderAll).
+export function snapshotWorkingTree(cwd) {
+  const idx = join(tasksRoot(), `.snapshot-index-${randomUUID().slice(0, 8)}`);
+  const env = { ...process.env, GIT_INDEX_FILE: idx };
+  const run = (args) => {
+    const r = spawnSync('git', ['-C', cwd, ...args], { env, encoding: 'utf8' });
+    return { ok: r.status === 0, out: String(r.stdout || '').trim(), err: String(r.stderr || '').trim() };
+  };
+  try {
+    mkdirSync(dirname(idx), { recursive: true });
+    const head = run(['rev-parse', '--verify', '--quiet', 'HEAD']);
+    if (head.ok) run(['read-tree', 'HEAD']);
+    const add = run(['add', '-A', '--', '.']);
+    if (!add.ok) return { ok: false, reason: add.err || 'git add failed' };
+    for (const p of harnessPathsUnder(cwd)) run(['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', p]);
+    const tree = run(['write-tree']);
+    if (!tree.ok) return { ok: false, reason: tree.err || 'git write-tree failed' };
+    const commit = run(['commit-tree', tree.out, ...(head.ok ? ['-p', head.out] : []), '-m', 'teams: size-S working tree snapshot for QA']);
+    if (!commit.ok) return { ok: false, reason: commit.err || 'git commit-tree failed' };
+    return { ok: true, commit: commit.out, base: head.ok ? head.out : null };
+  } finally {
+    try { rmSync(idx, { force: true }); } catch { /* best-effort */ }
+  }
+}
+
+function sQaWanted(task) {
+  const roles = (task.team && task.team.opts && task.team.opts.roles) || {};
+  return roles.qa === true && !task.budget_stopped;
+}
+
+// True while a size-S task's QA cards are open and not all settled - the S task is still running.
+export function sQaActive(task) {
+  return !!(task.s_run && task.s_qa && qaPkgs(task).some((q) => {
+    const acc = latestBySubgoal(task, String(q.id), 'accept');
+    return !acc || !(acc.state === 'done' || acc.final || acc.state === 'skipped');
+  }));
+}
+
+export function openSQa(task) {
+  if (!task.s_run || task.s_qa || !sQaWanted(task)) return false;
+  const run = loadRun(task.s_run.cwd, task.s_run.run_id);
+  if (!run || runState(run).state !== 'complete') return false;
+  const snap = snapshotWorkingTree(task.s_run.cwd);
+  if (!snap.ok) {
+    task.s_qa = { failed: snap.reason };
+    record(task, { event: 's_qa_snapshot_failed', task_id: task.run_id, reason: snap.reason });
+    return true;
+  }
+  task.s_qa = { snapshot: snap.commit, base: snap.base, at: Date.now() };
+  task.qa_pkgs = qaCards(task, null).map((q) => ({ ...q, s_snapshot: snap.commit, integration_of: null,
+    brief: q.brief.replace('over the integrated result', 'over the size-S run\'s working tree (a snapshot of it - the project tree itself is not touched)') }));
+  for (const q of task.qa_pkgs) pushChain(task, PACKAGE_CHAIN, String(q.id), 1, [], [], {});
+  record(task, { event: 's_qa_opened', task_id: task.run_id, snapshot: snap.commit, cards: task.qa_pkgs.map((q) => q.id) });
+  return true;
+}
+
+// A size-S QA card's defects (m4): nothing to file a fix onto, so every settled card's defects are
+// recorded as unresolved - the report lists them and the task closes partial.
+function settleSQa(task) {
+  const fresh = qaPkgs(task).map((q) => latestBySubgoal(task, String(q.id), 'accept'))
+    .filter((x) => x && x.result && !x.result.defects_settled && (x.state === 'done' || (x.state === 'skipped' && x.result.qa_direct)));
+  const defects = fresh.flatMap((x) => (Array.isArray(x.result.defects) ? x.result.defects : [])
+    .map((d) => ({ ...(d && typeof d === 'object' ? d : { title: String(d), evidence: String(d) }), reporter: 'qa', card: x.subgoal_id })));
+  for (const x of fresh) x.result = { ...x.result, defects_settled: true };
+  if (defects.length) task.unresolved_defects = (task.unresolved_defects || []).concat(defects);
+  return { unresolved: defects.length > 0, defects };
+}
+
 // Size S: this request needs no manager stage graph, only one run. The manager opens that run
 // here and drives it with its own headless session; the task stays on disk only as the pointer
 // to it, and the caller polls tm_next until the report arrives, exactly as it would for one L
@@ -5650,9 +5784,11 @@ function toolNextSRun(task) {
     else if (serviceStalledDriver(task, s, 'S')) saveRun(task);
   }
   const driver = s.driver || null;
+  const ts = taskState(task);
   const out = {
     task_id: task.run_id,
-    ...sState(cs),
+    state: ts.state,
+    ...(ts.partial ? { partial: true, partial_reasons: ts.partial_reasons } : {}),
     counts: cs.counts || {},
     ...(task.size ? { size: task.size } : {}),
     flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),
@@ -5926,7 +6062,13 @@ export function enforceBudget(task) {
   // with a retry nobody would dispatch, no report and no retro.json, and the next Sprint had
   // nothing to continue from. Once nothing is running: every pending node is skipped and a
   // report opens on its own, which writes the retro with the whole backlog carried forward.
+  // A size-S task's QA cards (m4) are phase passes: the stop settles them (no grace) and the S
+  // report closes on what the run delivered - there is no manager report node to open.
+  if (task.s_run) return settleRunningDispatchesAtStop(task, status) || progressed;
   if (!task.spec || !Array.isArray(task.spec.packages)) {
+    // A planning card still running when the box trips is let finish within the same grace a
+    // package gets, then settled - not waited on forever (m2).
+    if (task.nodes.some((n) => n.stage === 'dispatch' && n.state === 'running')) progressed = settleRunningDispatchesAtStop(task, status) || progressed;
     if (task.nodes.some((n) => n.state === 'running')) return progressed;
     if (task.nodes.some((n) => n.stage === 'report')) return progressed;
     const skipped = [];
@@ -6282,7 +6424,8 @@ function toolNext(a) {
     if (n.child && n.child.cwd && n.state === 'running') touchMarker(n.child.cwd, task.run_id);
   }
   if (task.s_run && task.s_run.cwd) touchMarker(task.s_run.cwd, task.run_id);
-  if (task.s_run) return toolNextSRun(task);
+  if (task.s_run && openSQa(task)) saveRun(task);
+  if (task.s_run && !sQaActive(task)) return toolNextSRun(task);
   // Dispatch nodes run here, the moment they are ready. Doing it in tm_next rather than in
   // a separate call means a caller driving the graph by hand cannot forget to, and cannot do it
   // twice - the same three steps the daemon's own loop runs, shared through the exports above so
@@ -6749,10 +6892,14 @@ function toolStatus(a) {
   if (task.s_run) {
     const run = loadRun(task.s_run.cwd, task.s_run.run_id);
     const cs = run ? runState(run) : { state: 'missing', counts: {} };
+    // The task's state, not only its run's (m4): QA verdicts still owed read running, and what QA
+    // left unresolved reads partial - the same answer tm_next and the daemon act on.
+    const ts = taskState(task);
     return {
       task_id: task.run_id,
       cwd: task.cwd,
-      state: cs.state,
+      state: ts.state,
+      ...(ts.partial_reasons ? { partial_reasons: ts.partial_reasons } : {}),
       counts: cs.counts,
       size: task.size,
       flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),

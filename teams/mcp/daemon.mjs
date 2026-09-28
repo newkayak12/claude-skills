@@ -33,7 +33,7 @@ import {
   advanceDispatches, serviceRunningDispatches, prepareReadyIntegrations,
   dispatchSettled, foldChild, updateAutoParallel, serviceSRun, delegateIfSmall,
   finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages, autoRejudge, autoResumeCapacity, pendingRejudgeAt,
-  STAGE_SKILLS, syncTickets, autoReshape, closeFailedPlanning, promoteManagerHumanGates, enforceBudget,
+  STAGE_SKILLS, syncTickets, autoReshape, closeFailedPlanning, openSQa, sQaActive, promoteManagerHumanGates, enforceBudget,
   expireAsks, nextAskDeadline,
 } from './taskmanager.mjs';
 import { ticketSnapshot } from './tickets.mjs';
@@ -321,7 +321,10 @@ async function stepOnceInner(task) {
   // this daemon's only job is keeping ITS driver alive.
   if (task.s_run) {
     if (serviceSRun(task)) saveRun(task);
-    return expired;
+    // m4: once the S run completed, its QA cards open on a snapshot and run through the same
+    // dispatch/fold/judge loop below as an L task's; until then the run is the whole task.
+    if (openSQa(task)) saveRun(task);
+    if (!sQaActive(task)) return expired;
   }
 
   let progressed = expired;

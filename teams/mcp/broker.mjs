@@ -25,7 +25,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, rmS
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
-import { capacityFailure, capacityNotice, selectModel, rankCandidates } from './routing.mjs';
+import { capacityFailure, capacityNotice, selectModel, rankCandidates, authorIdentities, demoteAuthors } from './routing.mjs';
 import {
   STAGES,
   REASONING_STAGES,
@@ -693,8 +693,12 @@ async function route(run, node) {
       : [want]).filter((v) => v !== 'human');
 
   const attempts = [];
-  const ranked = balanced && want === 'auto' ? rankCandidates(run, node, order)
-    : order.map(vendor => ({ vendor, reason: 'explicit vendor/candidate order' }));
+  // Author != judge under either allocation (m3): the balanced ranking only discounted the
+  // author, and the ordered one never looked - critique ran on setgoal's own vendor. A judging
+  // node's author goes last; it still runs there when nothing else is ready.
+  const predictModel = (name) => (balanced ? selectModel(run, node, name, pol.model) : pol.model) || null;
+  const ranked = demoteAuthors(balanced && want === 'auto' ? rankCandidates(run, node, order)
+    : order.map(vendor => ({ vendor, reason: 'explicit vendor/candidate order' })), authorIdentities(run, node), predictModel);
   for (const candidate of ranked) {
     const name = candidate.vendor;
     if ((run.unavailable_vendors || {})[name]) {
@@ -936,15 +940,17 @@ function reviewIndependence(run, n, executor, model) {
   // routed-away vendor (routing.mjs's externalAuthorOf) is the "where possible" half, and this
   // is the "record it either way" half.
   if (n.stage === 'audit') {
-    const ext = run.external_author;
-    if (!ext) return null;
+    // One author per planning card (m10): the audit is independent only of all of them.
+    const exts = [].concat(run.external_author || []).filter(Boolean);
+    if (!exts.length) return null;
     const mine = identityOf(executor, model);
-    const theirs = identityOf(ext.executor || ext.vendor, ext.model);
-    if ((executor || 'self') === 'self' || (ext.executor || ext.vendor || 'self') === 'self') {
-      return { independence: 'unverifiable-self', author: theirs, reviewer: mine };
+    const theirs = exts.map((ext) => identityOf(ext.executor || ext.vendor, ext.model));
+    const author = theirs.length === 1 ? theirs[0] : theirs;
+    if ((executor || 'self') === 'self' || exts.some((ext) => (ext.executor || ext.vendor || 'self') === 'self')) {
+      return { independence: 'unverifiable-self', author, reviewer: mine };
     }
-    if (mine === theirs) return { independence: 'unverifiable-same-host', author: theirs, reviewer: mine };
-    return { independence: 'distinct-identity', author: theirs, reviewer: mine };
+    if (theirs.includes(mine)) return { independence: 'unverifiable-same-host', author, reviewer: mine };
+    return { independence: 'distinct-identity', author, reviewer: mine };
   }
   // revise (planning kind) makes the same "not the same identity as the author" demand
   // review does - the design doc's decision that a different identity revises. The
