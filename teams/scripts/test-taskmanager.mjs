@@ -3036,7 +3036,10 @@ test('the package retry budget settles: downstream becomes unreachable and the r
     assert.match(prompt, /### dispatch:P1:3 \(dispatch\) — failed accept=false/);
     assert.match(prompt, /### integrate:1 \(integrate\) — unreachable/);
     await tm.call('tm_submit', { task_id, node_id: 'report', payload: ok({ handoff: 'partial' }) });
-    assert.equal((await tm.call('tm_status', { task_id })).state, 'complete');
+    // A report over a spent retry budget is not a delivery: no budget involved, same `partial`.
+    const fin = await tm.call('tm_status', { task_id });
+    assert.equal(fin.state, 'partial');
+    assert.match(fin.partial_reasons.join('\n'), /P1: not accepted/);
   }, { auto_reassign: false });
 });
 
@@ -7001,8 +7004,8 @@ test('portfolio-consolidate: once the box has stopped, a capacity-parked driver 
   });
 });
 
-test('portfolio-consolidate: a budget-closed task with failed/skipped work reads complete but partial, with reasons', async () => {
-  const { managerState, taskState, budgetPartial } = await import('../mcp/taskmanager.mjs');
+test('portfolio-consolidate: a budget-closed task with failed/skipped work reads partial, not complete, with reasons', async () => {
+  const { managerState, taskState, unfinishedWork } = await import('../mcp/taskmanager.mjs');
   await withBoxRoot(async (root) => {
     // The real run's final shape: integrate:6 failed verified=false, P3 never accepted, P4 never
     // dispatched, QA and gate:goal skipped, report done - and the ledger said state complete.
@@ -7017,7 +7020,7 @@ test('portfolio-consolidate: a budget-closed task with failed/skipped work reads
     task.nodes.push({ node_id: 'integrate:6', stage: 'integrate', deps: ['accept:P1:1', 'accept:P2:1'], after: [], state: 'failed', final: true, subgoal_id: null, supersedes: 'integrate:1',
       result: { stage_ok: true, verified: false, checks: ['git log (integration-6) -> e15e742'] } });
     const st = managerState(task);
-    assert.equal(st.state, 'complete', 'the state string is unchanged - no caller switching on it flips');
+    assert.equal(st.state, 'partial', 'a report over undone work is not `complete`');
     assert.equal(st.partial, true);
     const why = st.partial_reasons.join('\n');
     assert.match(why, /P3/);
@@ -7026,7 +7029,7 @@ test('portfolio-consolidate: a budget-closed task with failed/skipped work reads
     assert.match(why, /QA/);
     assert.match(why, /gate:goal:1/);
     assert.equal(taskState(task).partial, true, 'tm_wait/daemon_done read taskState');
-    assert.deepEqual(budgetPartial(task).partial_reasons, st.partial_reasons);
+    assert.deepEqual(unfinishedWork(task).partial_reasons, st.partial_reasons);
     // A stopped box that still delivered everything it had is not partial.
     const whole = consolidateTask(root, 'pc5', { budget_stopped: { at: Date.now(), spend: 41, skipped_packages: [] } });
     whole.spec.packages = whole.spec.packages.slice(0, 2);

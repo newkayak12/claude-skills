@@ -11,7 +11,7 @@
 // rendered - an empty file would claim a feature that does not exist.
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { storyLabel, budgetPartial } from './taskmanager.mjs';
+import { storyLabel, unfinishedWork } from './taskmanager.mjs';
 import { loadRun, runState } from './graph.mjs';
 import {
   epicKey, storyKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
@@ -317,8 +317,8 @@ export function buildRetro(task) {
       retries,
       defects_left: defectsLeft,
       ...(task.budget_stopped ? { budget_stopped: task.budget_stopped } : {}),
-      // What the box left undone (budgetPartial) - the next Sprint's context_from reads this.
-      ...((() => { const p = budgetPartial(task); return p ? { partial_reasons: p.partial_reasons } : {}; })()),
+      // What the box left undone (unfinishedWork) - the next Sprint's context_from reads this.
+      ...((() => { const p = unfinishedWork(task); return p ? { partial_reasons: p.partial_reasons } : {}; })()),
     },
     next_backlog: {
       ...(Array.isArray(task.requests) ? { unshipped_requests: unshippedRequests } : {}),

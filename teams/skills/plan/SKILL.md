@@ -109,6 +109,7 @@ After this you watch; you never drive.
 tm_wait({task_id, cursor, max_ms: 60000})   # bounded long-poll: node transitions since cursor, or a timeout
     state "running"  -> call it again, immediately, with the returned cursor. Nothing else.
     state "complete" -> relay the node table (tm_status) and the report
+    state "partial"  -> relay the table, the report, and partial_reasons (what did not ship)
     state "blocked"  -> a result: report what failed and stop there
 ```
 

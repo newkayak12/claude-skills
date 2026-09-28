@@ -108,8 +108,10 @@ test('parseArgs: --json and --help are plain booleans', () => {
 
 // ---------- exitCodeForState ----------
 
-test('exitCodeForState: complete is 0, waiting_human is 2, everything else is 1', () => {
+test('exitCodeForState: complete is 0, waiting_human is 2, partial is 3, everything else is 1', () => {
   assert.equal(exitCodeForState('complete'), EXIT.COMPLETE);
+  assert.equal(exitCodeForState('partial'), EXIT.PARTIAL);
+  assert.equal(EXIT.PARTIAL, 3);
   assert.equal(exitCodeForState('waiting_human'), EXIT.WAITING_HUMAN);
   assert.equal(exitCodeForState('blocked'), EXIT.NOT_COMPLETE);
   assert.equal(exitCodeForState('missing'), EXIT.NOT_COMPLETE);
