@@ -23,7 +23,7 @@ compatibility:
 
 # Portfolio-Based Mock Interview
 
-**Not for** a prep plan from scratch (`interview-plan`), overall portfolio assessment (`portfolio-feedback`), or JD tailoring (`jd-fit`).
+**Not for** a prep plan from scratch (`interview-plan`), overall portfolio assessment (`portfolio-feedback`), or JD fit analysis (`fit`).
 
 ## Standing Mandates
 
