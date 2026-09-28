@@ -1715,12 +1715,12 @@ test('duplicate subgoal ids and missing acceptance are caught', async () => {
   });
 });
 
-test('an unusable spec is retryable and its defects reach the next attempt', async () => {
+test('an unusable spec is retried on its own and its defects reach the next attempt', async () => {
+  // portfolio-consolidate PLAN:2 (2026-09-28): a rejected spec used to wait for someone to call
+  // team_retry; the child driver ended instead and the run blocked with its retries unspent.
   await withRun(async ({ c, cwd, runId }) => {
-    await setgoalWith(c, cwd, runId, { spec: { goal: 'G', acceptance: ['A'], subgoals: [] } });
-    const r = await c.call('team_retry', { run_id: runId, cwd });
-    assert.equal(r.retried, true);
-    assert.equal(r.target, 'spec');
+    const v = await setgoalWith(c, cwd, runId, { spec: { goal: 'G', acceptance: ['A'], subgoals: [] } });
+    assert.equal(v.state, 'failed');
     const nx = await c.call('team_next', { run_id: runId, cwd });
     const brief = readFileSync(nx.ready.find((n) => n.node_id === 'setgoal:2').briefing_path, 'utf8');
     assert.match(brief, /Previous attempt was rejected/);
@@ -1791,6 +1791,25 @@ async function runPlanWith(reply) {
     rmSync(cwd, { recursive: true, force: true });
   }
 }
+
+test('portfolio-refresh: a complete answer whose JSON has one stray bracket gets one fresh attempt, not a blocked run', async () => {
+  const cwd = repoWithFakeVendor();
+  process.env.FAKE_REPLY = '```json\n{"plan":"p","handoff":"h","evidence":"e"],"skills_used":[]}\n```';
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'fake' });
+    const first = await c.call('team_run', { run_id, cwd, node_id: 'plan' });
+    assert.equal(first.state, 'pending', JSON.stringify(first));
+    assert.equal(first.recoverable, true);
+    const second = await c.call('team_run', { run_id, cwd, node_id: 'plan' });
+    assert.equal(second.state, 'failed', 'one retry only - a vendor that keeps mistyping is a failure');
+    assert.match(second.reason, /no usable JSON/);
+  } finally {
+    c.close();
+    delete process.env.FAKE_REPLY;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
 
 test('a vendor that returns nothing fails the node', async () => {
   const { v } = await runPlanWith('');

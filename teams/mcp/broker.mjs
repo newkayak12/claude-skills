@@ -991,12 +991,21 @@ function autoReassign(run, n) {
   // re-authored spec is critiqued again rather than waved through the way a one-shot
   // critic would. Budgeted the same way too - retrySpec caps at max_retries + 1 attempts
   // and settles, leaving the rejection for the caller, when that budget is gone.
-  if (n.stage === 'critique' && !n.final) {
+  // A setgoal whose spec failed validation is the same defect found one node earlier: the engine
+  // knows exactly what is wrong (spec_problems) and nothing else can fix it but a new spec.
+  // portfolio-consolidate's PLAN:2 (2026-09-28) wrote one "document" subgoal in a planning run;
+  // the child blocked at 1/3 with its retries unspent, and the manager paid for a third planning
+  // run from scratch.
+  const specRejected = n.stage === 'setgoal' && !n.final && n.state === 'failed'
+    && Array.isArray(n.result && n.result.spec_problems) && n.result.spec_problems.length > 0;
+  if (specRejected || (n.stage === 'critique' && !n.final)) {
     if (n.state !== 'failed') return null;
-    if (n.result && n.result.stage_ok !== true) return null;
-    if (!n.result || n.result.sound !== false) return null;
-    const feedback = [n.result.reason || '', ...(n.result.blocking || [])].filter(Boolean).join('\n- ')
-      || 'critique found the spec unsound (sound: false)';
+    if (!specRejected && n.result && n.result.stage_ok !== true) return null;
+    if (!specRejected && (!n.result || n.result.sound !== false)) return null;
+    const feedback = specRejected
+      ? [`the spec was rejected before critique: ${n.result.reason || ''}`, ...n.result.spec_problems].join('\n- ')
+      : [n.result.reason || '', ...(n.result.blocking || [])].filter(Boolean).join('\n- ')
+        || 'critique found the spec unsound (sound: false)';
     const out = retrySpec(run, feedback);
     // retrySpec's own cleanup sweeps every setgoal/critique node still `pending` or
     // `failed` to `skipped` as "superseded by spec attempt N" - including THIS node,
@@ -1742,6 +1751,16 @@ async function toolGraphRun(a) {
       && capacityFailure({ ...report, stdout: [report.stdout || '', eventsTail].join('\n') }, proc.stderr)) {
     return checkpointInterruption(run, n, r.executor || r.vendor, { ...report,
       transport: { status: proc.status, stderr: proc.stderr, stdout: proc.stdout } }, 'quota');
+  }
+  // A vendor that answered in full but whose JSON does not parse has not failed the work - it
+  // mistyped the envelope. portfolio-refresh's QA (2026-09-28) wrote a complete plan with one
+  // stray `]` after its last string; the adapter exited 1, nothing retries a plan node, and the
+  // Sprint's only QA pass blocked at 0/3. One fresh attempt, same vendor; a second is a failure.
+  const malformed = !proc.killed_for && /[{[]/.test(String(report.last_message || ''))
+    && !report.result && (Object.keys(payload).length === 0 || payload._unparsed === true);
+  if (malformed && !(n.interruptions || []).some((i) => i.kind === 'malformed')) {
+    return checkpointInterruption(run, n, r.executor || r.vendor, { ...report,
+      transport: { status: proc.status, stderr: proc.stderr } }, 'malformed');
   }
   let result;
   if (!transportOk) {
