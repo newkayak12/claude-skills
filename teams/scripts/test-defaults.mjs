@@ -588,12 +588,9 @@ test('proof: guard D flags the pre-fix toolNext line that re-typed max_parallel_
 // BOTH planning and qa on" - is a real behavioral proof and stays; this guard pins the same fact
 // textually too, so it does not depend on that one test surviving unedited.
 //
-// max_depth and plugin_dirs are the same shape: max_depth's only other reader (taskmanager.mjs's
-// openChild) delegates to TEAM_DEFAULTS.max_depth already (no second literal to agree or
-// disagree with, so guard A does not apply), and today task.depth is always 0, so any default
-// >= 1 is behaviourally identical to any other - a test-taskmanager.mjs test does catch a default
-// of exactly 0 (split:true no longer escaping parent_shaped), but nothing catches a drift to, say,
-// 5. plugin_dirs's only readers (daemon.mjs, taskmanager.mjs) fall back to a re-typed `[]` on a
+// max_depth and plugin_dirs are the same shape: max_depth has no reader at all since 2026-09-28
+// (it is recorded but inert until nested tasks land - teamconfig.mjs), so nothing behavioural
+// catches a drift of its default. plugin_dirs's only readers (daemon.mjs, taskmanager.mjs) fall back to a re-typed `[]` on a
 // missing task.team/opts, which is harmless only because `[] || []` never actually reaches the
 // fallback - but the shipped default value itself, `[]`, is asserted nowhere.
 //

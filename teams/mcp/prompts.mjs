@@ -210,6 +210,29 @@ function bullets(list) {
   return (list || []).map((x) => `- ${x}`).join('\n') || '- (none)';
 }
 
+// A package's own child run (run.package, set by the task manager's openChild) runs the full
+// harness, but its plan is not a second decomposition of the EPIC: the manager's shape already
+// split the EPIC into packages and its critique already passed that split. What is left to plan
+// is how to BUILD this one package, and what the run is held to is the package's own acceptance.
+export const PACKAGE_PLAN_RULE = `The task manager already split the EPIC into packages (shape) and critiqued that split. This run builds ONE of those packages - the Request above is its brief. Do not re-split the EPIC or re-decide the package's scope. Plan how to build THIS package: the files and modules to touch, the interfaces and data shapes they expose or consume, the order of work, the test plan (the commands that will prove each acceptance item), and the risks.`;
+
+function packageBlock(run, n) {
+  const pkg = run.package;
+  const acc = Array.isArray(pkg.acceptance) ? pkg.acceptance : [];
+  const L = ['', `## This package${pkg.id ? ` (${pkg.id})` : ''}${pkg.title ? ` — ${pkg.title}` : ''}`, PACKAGE_PLAN_RULE];
+  if (acc.length) L.push(`Package acceptance (set by the manager; the manager accepts this package against exactly these):\n${bullets(acc)}`);
+  if (n.stage === 'plan') {
+    L.push(`size is S: this package is already one run's worth of work. The decomposition is the build plan above, in order; name more than one unit only where the package genuinely needs it.`);
+  } else if (n.stage === 'setgoal') {
+    L.push(`Keep one subgoal unless the package genuinely needs more (independent parts that can be built and checked on their own). Carry every package acceptance item above into spec.acceptance verbatim - word for word, none dropped or reworded; add your own criteria beside them, not instead of them. Turn the plan's test plan into each subgoal's test[].`);
+  } else if (n.stage === 'critique') {
+    L.push(`Judge the plan and the spec against this package's brief (the Request above) and the package acceptance: a spec that drops or rewords a package acceptance item, or builds something the brief did not ask for, is blocking. Re-splitting the EPIC is not this run's job - do not ask for it.`);
+    const plan = run.nodes.filter((x) => x.stage === 'plan' && x.state === 'done' && x.result).pop();
+    if (plan && plan.result.plan) L.push(`The build plan this spec came from:\n${String(plan.result.plan)}`);
+  }
+  return L;
+}
+
 export function composePrompt(run, n, briefing) {
   const scopedExecution = run.allocation === 'balanced' && ['implement', 'test', 'draft'].includes(n.stage) && briefing.subgoal;
   const lines = [];
@@ -275,6 +298,8 @@ export function composePrompt(run, n, briefing) {
     }
     if (briefing.size) lines.push(`size: ${briefing.size}`);
   }
+
+  if (run.package && ['plan', 'setgoal', 'critique'].includes(n.stage)) lines.push(...packageBlock(run, n));
 
   if (['plan', 'setgoal'].includes(n.stage)) {
     const conv = conventionsBlock(run.cwd, { stage: n.stage });
