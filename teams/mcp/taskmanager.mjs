@@ -508,6 +508,10 @@ function createTask(a) {
     // Whether this EPIC's runs may stop and ask a person. Carried on the task as well as in
     // child_opts so tm_status can show it without opening a child run.
     interactive: T.interactive === true,
+    // ms an `ask` card (this task's own or any child run's) may wait before expireAsks answers
+    // it with its defaults, `by: 'timeout'`. null = forever. Only the manager reads it - it owns
+    // the clock for every run under it, so it is not threaded into child_opts.
+    ask_timeout: T.ask_timeout,
     // gate:human (0.29.0): which judging stages of THIS task's own manager graph (shape,
     // critique, accept, integrate, gate, gate:goal live in task.nodes - task.json is itself a
     // run, graph.mjs's promoteHumanGates works over it unmodified) a person must accept or
@@ -3871,6 +3875,7 @@ const TOOLS = [
         stall_minutes: { type: 'integer', description: 'default 20, also settable in .claude/team.json. A driver can be alive (its pid answers) and still be making no progress - this is the "no progress" signal, read against the mtime of the files this child\'s own run writes. Idle this long flags the dispatch once (stalled_since, cleared the moment progress resumes); idle 3x this long kills the driver and lets the ordinary dead-driver path respawn it, spending a restart. 0 disables the whole check.' },
         restart_period_minutes: { type: 'integer', description: 'default 0 (a flat, forever counter - today\'s behavior), also settable in .claude/team.json. >0 turns driver_restarts into a sliding window in minutes: only restarts within the last restart_period_minutes count toward the budget, so a driver that dies rarely never exhausts a budget sized for "how many deaths in a row".' },
         interactive: { type: 'boolean', description: 'default false, also settable in .claude/team.json. Passed to every child run. When a planning subgoal\'s investigate stage comes back with a decision it could not settle from any source but CAN name candidates for, true opens an `ask` card between investigate and draft and parks that run in waiting_human until a person picks - tm_inbox lists it (with its questions and options), tm_submit({key, payload:{decisions}}) answers it. false decides by default and records the questions on the run instead, so the report can show what nobody was asked.' },
+        ask_timeout: { type: ['integer', 'null'], description: 'default null (wait forever), also settable in .claude/team.json. Milliseconds an interactive `ask` card may wait on a person; once it expires the engine answers it itself with each question\'s `default` (else its first, recommended option), recorded `by: "timeout"` and listed in tm_inbox\'s `decided`. Checked by the task daemon (and on any tm_* call for this task), so expiry lands within ~15s of the deadline.' },
         goal_threshold: { type: 'integer', description: 'default 90: the manager\'s own goal gate must report match_pct at or above this to accept, and it is passed through to every child run as its own goal_threshold. A gate that says accept with 40% match is reporting a partial result as a pass. 0 accepts on the verdict alone.' },
         goal_judges: { type: 'integer', description: 'default 1: independent judges on EVERY child run\'s own goal gate (each package\'s dispatch, and the one run a size-S task opens). >1 opens that many sibling gate nodes per round, routed to different identities where possible, and accepts only if every judge accepts at or above goal_threshold - the same mechanism team_open documents (default 2 there). The default stays 1 here, matching every run this manager has ever opened, so an existing project sees no change in judge count or cost unless it asks for more. This is the child run\'s own gate, not the manager\'s own top-level gate:goal, which is a separate, single-judge mechanism unaffected by this option.' },
         retry_policy: { type: 'string', enum: ['continue', 'rollback'], description: 'default "continue", also settable in .claude/team.json. What a retried attempt does with the worktree the failed one left: "continue" (default, today\'s only behavior) builds the next attempt on top of it. "rollback" resets the worktree first - a subgoal\'s own implement/draft to the checkpoint recorded before ITS first attempt touched it (single-subgoal child runs only; a shared worktree with a sibling subgoal still in flight cannot be reset for one of them, so it falls back to continue and says why), a package\'s own retry (tm_retry/retryPackage) to its last ACCEPTED commit, or the worktree\'s base commit if none of its attempts ever passed - then re-runs with the failed gate\'s gaps as feedback either way. docs/plans/2026-09-23-teams-reducer-human-rollback.md §5 measured two real runs before defaulting to continue: both showed a retried implement CONVERGING on gate feedback across attempts rather than repeating the same mistake, so there is no evidence yet that discarding an attempt\'s work helps more than it loses.' },
@@ -4509,6 +4514,22 @@ function inboxEntry(task, pid, run, n) {
       briefing_path: n.briefing_path || null,
       who: (n.assignment && n.assignment.who) || null,
       since: n.waiting_since || null,
+      ...(n.stage === 'ask' && askTimeoutMs(task) && n.waiting_since ? { expires_at: n.waiting_since + askTimeoutMs(task) } : {}),
+    } };
+  }
+  // An ask nobody answered before ask_timeout: decided for the person, so it is listed with the
+  // other decided-for-you entries (expireAsks) - object by re-deciding it yourself.
+  if (n.stage === 'ask' && n.result && n.result.by === 'timeout') {
+    return { decided: {
+      key,
+      task_id: task.run_id,
+      node_id: n.node_id,
+      stage: n.stage,
+      title: (sg && sg.title) || String(n.subgoal_id || n.node_id),
+      who: (n.assignment && n.assignment.who) || null,
+      reason: `ask_timeout: nobody answered within ${n.result.timed_out_after_ms}ms - defaults applied`,
+      decisions: n.result.decisions || [],
+      since: n.finished_at || null,
     } };
   }
   if (n.auto_decided_pin) {
@@ -4555,7 +4576,11 @@ function toolInbox(a) {
       if (!dispatch || !dispatch.child) continue;
       const child = loadRun(dispatch.child.cwd, dispatch.child.run_id);
       if (!child) continue;
+      // A card already answered (a person's tm_submit, or expireAsks) but not yet drained by the
+      // broker is not waiting on anybody any more.
+      const answered = new Set(peekHumanActions(dispatch.child.cwd, dispatch.child.run_id).filter((x) => x.kind === 'submit').map((x) => x.node_id));
       for (const n of child.nodes) {
+        if (answered.has(n.node_id)) continue;
         const entry = inboxEntry(task, pid, child, n);
         if (entry && entry.card) cards.push(entry.card);
         if (entry && entry.decided) decided.push(entry.decided);
@@ -5517,16 +5542,117 @@ function toolSubmitHuman(task, a) {
   // Only when nothing is driving the run: a sibling subgoal still in flight keeps its driver
   // alive, and that driver picks the answered node up on its next team_next. A second driver on
   // the same run would dispatch the same ready nodes twice.
-  if (!noDriver() && !driverAlive(dispatch.child.driver)) {
-    const restarts = (dispatch.child.driver && dispatch.child.driver.restarts) || [];
-    const fresh = spawnChildDriver(task, dispatch.node_id, dispatch.child, { resume: true, attempt: nextSpawnAttempt(dispatch.child) });
-    fresh.restarts = restarts;
-    dispatch.child.driver = fresh;
-    delete dispatch.child.stalled_since;
-    saveRun(task);
-    record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: dispatch.node_id, pid: fresh.pid, reason: 'human_submitted' });
-  }
+  if (resumeParkedDriver(task, dispatch.node_id, dispatch.child, 'human_submitted')) saveRun(task);
   return { task_id: task.run_id, key, node_id: nodeId, state: done ? 'done' : 'failed', result };
+}
+
+// Free respawn of a parked child's driver so it drains a queued human action - no restart spent.
+// Shared by tm_submit({key}) and expireAsks. Caller saves the task.
+function resumeParkedDriver(task, nodeId, childRef, reason) {
+  if (noDriver() || driverAlive(childRef.driver)) return false;
+  const restarts = (childRef.driver && childRef.driver.restarts) || [];
+  const fresh = spawnChildDriver(task, nodeId, childRef, { resume: true, attempt: nextSpawnAttempt(childRef) });
+  fresh.restarts = restarts;
+  childRef.driver = fresh;
+  delete childRef.stalled_since;
+  record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: nodeId, pid: fresh.pid, reason });
+  return true;
+}
+
+// ---------- ask_timeout (design §7: "만료 시 default로 자동 제출, by: timeout") ----------
+//
+// Who checks the deadline: the MANAGER, never a child driver - a child parked on a person has no
+// driver at all (zero compute while waiting), so it cannot notice its own clock. expireAsks runs
+// (1) on every daemon tick (daemon.mjs's stepOnceInner; the daemon stays alive, asleep, until the
+// earliest deadline when nothing else is left to drive - nextAskDeadline), and (2) at the top of
+// every tm_* call naming this task (callTool), so a task whose daemon is gone still expires on the
+// next look. Either way the answer takes the same path a person's does: a manager-level card is
+// finish()ed directly (task.json is ours to write), a child run's card is queued through
+// queueHumanAction and its driver resumed for free, exactly like tm_submit({key}).
+//
+// The answer is each question's `default`, else its first option - the recommended one by the
+// contract, and the same pick a non-interactive run makes (graph.mjs's default_decisions). A card
+// with a question that has neither stays parked (openAsk never admits one, so this is defensive).
+// Only `ask` cards expire: a pinned author stage or a gate:human card has no default to apply.
+function askTimeoutMs(task) {
+  const v = task && task.ask_timeout;
+  return Number.isInteger(v) && v > 0 ? v : null;
+}
+
+function timeoutDecisions(n, timeout) {
+  const out = [];
+  for (const q of n.questions || []) {
+    const question = q.question || q.unknown;
+    const first = Array.isArray(q.options) && q.options.length ? q.options[0] : undefined;
+    const pick = q.default !== undefined ? q.default : (first !== undefined ? (first && first.option !== undefined ? first.option : first) : undefined);
+    if (!question || pick === undefined) return null;
+    out.push({
+      question,
+      chose: typeof pick === 'string' ? pick : JSON.stringify(pick),
+      because: `ask_timeout: nobody answered within ${timeout}ms - ${q.default !== undefined ? 'its default' : 'its first (recommended) option'} was applied`,
+      by: 'timeout',
+    });
+  }
+  return out.length ? out : null;
+}
+
+// Every run whose `ask` cards this task owns the clock for: itself, each running dispatch's
+// child, and a size-S task's one run. `ref` is the task-side handle whose driver gets resumed.
+function askRuns(task) {
+  const out = [{ run: task, ref: null, nodeId: null }];
+  for (const n of task.nodes) {
+    if (n.stage !== 'dispatch' || n.state !== 'running' || !n.child) continue;
+    const run = loadRun(n.child.cwd, n.child.run_id);
+    if (run) out.push({ run, ref: n.child, nodeId: n.node_id });
+  }
+  if (task.s_run) {
+    const run = loadRun(task.s_run.cwd, task.s_run.run_id);
+    if (run) out.push({ run, ref: task.s_run, nodeId: 'S' });
+  }
+  return out;
+}
+
+function expiringAsks(run, ref) {
+  const queued = ref ? new Set(peekHumanActions(ref.cwd, run.run_id).filter((x) => x.kind === 'submit').map((x) => x.node_id)) : new Set();
+  return run.nodes.filter((x) => x.stage === 'ask' && x.state === 'waiting_human' && Number.isInteger(x.waiting_since) && !queued.has(x.node_id));
+}
+
+// Earliest pending deadline across every run above, or null (no timeout, or nothing waiting).
+export function nextAskDeadline(task) {
+  const timeout = askTimeoutMs(task);
+  if (!timeout) return null;
+  let at = null;
+  for (const { run, ref } of askRuns(task)) {
+    for (const x of expiringAsks(run, ref)) at = at === null ? x.waiting_since + timeout : Math.min(at, x.waiting_since + timeout);
+  }
+  return at;
+}
+
+// Answers every expired card. Returns the node ids it answered; the caller saves the task when
+// the list is non-empty (a manager-level finish() already saved it, a resumed driver has not).
+export function expireAsks(task, now = Date.now()) {
+  const timeout = askTimeoutMs(task);
+  if (!timeout) return [];
+  const answered = [];
+  for (const { run, ref, nodeId } of askRuns(task)) {
+    let queuedHere = false;
+    for (const n of expiringAsks(run, ref)) {
+      if (n.waiting_since + timeout > now) continue;
+      const decisions = timeoutDecisions(n, timeout);
+      if (!decisions) continue;
+      const payload = { stage_ok: true, decisions, by: 'timeout', timed_out_after_ms: timeout };
+      if (!ref) {
+        finish(task, n, payload);
+      } else {
+        queueHumanAction(ref.cwd, run.run_id, { kind: 'submit', node_id: n.node_id, payload, answered_at: now });
+        queuedHere = true;
+      }
+      record(task, { event: 'ask_timeout', task_id: task.run_id, node_id: n.node_id, ...(nodeId ? { dispatch: nodeId } : {}), waited_ms: now - n.waiting_since, timeout_ms: timeout });
+      answered.push(n.node_id);
+    }
+    if (queuedHere) resumeParkedDriver(task, nodeId, ref, 'ask_timeout');
+  }
+  return answered;
 }
 
 function toolRetry(a) {
@@ -5759,7 +5885,10 @@ export async function callTool(name, args) {
   // there is no leader to defer to and no inbox to queue behind. saveRun's own mkdir-lock is what
   // makes two writers (this call and the daemon's own loop) safe together.
   if (a.task_id && name !== 'tm_open' && name !== 'tm_run') {
-    serviceDaemon(mustFindTask(a));
+    const task = mustFindTask(a);
+    // An expired ask is answered on the next look even when no daemon is left to notice it.
+    if (expireAsks(task).length) saveRun(task);
+    serviceDaemon(task);
   }
   // board.jsonl: taken as a before/after diff of the tools that can move a ticket.
   if (!BOARD_TOOLS.has(name)) return dispatch(name, a);

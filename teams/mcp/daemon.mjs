@@ -33,6 +33,7 @@ import {
   dispatchSettled, foldChild, updateAutoParallel, serviceSRun, delegateIfSmall,
   finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages, autoRejudge, autoResumeCapacity, pendingRejudgeAt,
   STAGE_SKILLS, syncTickets, autoReshape, promoteManagerHumanGates, enforceBudget,
+  expireAsks, nextAskDeadline,
 } from './taskmanager.mjs';
 import { ticketSnapshot } from './tickets.mjs';
 import { harvestTask } from './runlog.mjs';
@@ -258,6 +259,9 @@ function watchDir(dir, onChange) {
 // exit file there the moment a driver process dies - §4's "child driver process exit"). Falls
 // back to FALLBACK_WAIT_MS if nothing fires first.
 function waitForProgress(task) {
+  // An ask deadline sooner than the fallback wakes the loop for it rather than up to 15s late.
+  const askAt = nextAskDeadline(task);
+  const waitMs = askAt === null ? FALLBACK_WAIT_MS : Math.max(250, Math.min(FALLBACK_WAIT_MS, askAt - Date.now() + 250));
   return new Promise((resolve) => {
     let settled = false;
     const watchers = [];
@@ -286,7 +290,7 @@ function waitForProgress(task) {
     // (2026-09-21) died exactly that way, one second after dispatching P1: an unref()'d timer here
     // was the only handle left, so the daemon "finished" mid-wait with nothing in stderr, and so
     // did both restarts. The child ran every node to done and nobody was left to fold it.
-    const timer = setTimeout(finishWait, FALLBACK_WAIT_MS);
+    const timer = setTimeout(finishWait, waitMs);
   });
 }
 
@@ -305,15 +309,19 @@ async function stepOnce(task) {
 }
 
 async function stepOnceInner(task) {
+  // ask_timeout: this daemon is the clock for every `ask` card under the task - a parked child
+  // has no driver to notice its own deadline (taskmanager.mjs's expireAsks).
+  let expired = false;
+  if (expireAsks(task).length) { saveRun(task); expired = true; }
   // Size S: no manager-level node is left to judge once `size` has resolved (delegateIfSmall
   // already skipped shape/critique) - the whole task is now the one child run at task.s_run, and
   // this daemon's only job is keeping ITS driver alive.
   if (task.s_run) {
     if (serviceSRun(task)) saveRun(task);
-    return false;
+    return expired;
   }
 
-  let progressed = false;
+  let progressed = expired;
   // A judge that could not judge is re-judged before anything reads its non-verdict as a
   // refusal; a driver parked on a provider's reset time is respawned once that time has passed.
   if (autoRejudge(task)) progressed = true;
@@ -409,6 +417,14 @@ async function main() {
       const rejudgeAt = pendingRejudgeAt(fresh);
       if (rejudgeAt !== null) {
         await new Promise((r) => setTimeout(r, Math.max(1000, Math.min(rejudgeAt - Date.now() + 500, 60 * 1000))));
+        continue;
+      }
+      // Nor while an `ask` card waits with an ask_timeout set: the whole graph parked on a person
+      // (manager-level card, or a size-S run) leaves nothing else to drive, and exiting here would
+      // leave nobody to answer it at its deadline. Sleep until then (capped, re-checked) instead.
+      const askAt = nextAskDeadline(fresh);
+      if (askAt !== null) {
+        await new Promise((r) => setTimeout(r, Math.max(250, Math.min(askAt - Date.now() + 250, 60 * 1000))));
         continue;
       }
       record(fresh, { event: 'daemon_done', task_id: TASK_ID, state: taskState(fresh).state });
