@@ -178,8 +178,29 @@ export function autoPackageDiagram(packages) {
   return { type: 'architecture', title: 'Package map', description: 'Read off packages[].deps - shape drew no valid diagram of its own.', nodes, edges };
 }
 
+// Shape's own map, with the two things the checker refused on real runs mended rather than
+// thrown away: a label over the limit (portfolio-consolidate, four edge labels that were whole
+// sentences) is cut to fit with the full text kept as the note, and a group whose box would
+// swallow a non-member (portfolio-refresh) is dropped - the seams are what the map is for, and
+// neither defect touches them. Anything else the checker refuses still falls back to auto.
+const LABEL_MAX = 48;
+export function mendDiagram(ir) {
+  if (!ir || typeof ir !== 'object') return ir;
+  const clip = (t) => (String(t).length > LABEL_MAX ? `${String(t).slice(0, LABEL_MAX - 1).trimEnd()}\u2026` : t);
+  const out = { ...ir };
+  out.nodes = (ir.nodes || []).map((n) => (n && typeof n.label === 'string' && n.label.length > LABEL_MAX
+    ? { ...n, label: clip(n.label), note: [n.note, n.label].filter(Boolean).join(' - ') } : n));
+  out.edges = (ir.edges || []).map((e) => (e && typeof e.label === 'string' && e.label.length > LABEL_MAX
+    ? { ...e, label: clip(e.label), note: [e.note, e.label].filter(Boolean).join(' - ') } : e));
+  if (Array.isArray(ir.groups) && ir.groups.length) {
+    const groupProblem = (g) => validateDiagram({ ...out, groups: [g] }).some((p) => p.includes(`group ${g.id}`));
+    out.groups = ir.groups.filter((g) => !groupProblem(g));
+  }
+  return out;
+}
+
 function drawShape(task, result) {
-  let ir = result && result.diagram && typeof result.diagram === 'object' ? result.diagram : null;
+  let ir = result && result.diagram && typeof result.diagram === 'object' ? mendDiagram(result.diagram) : null;
   let problems = ir ? validateDiagram(ir) : [];
   const source = ir && !problems.length ? 'shape' : 'auto';
   if (source === 'auto') ir = autoPackageDiagram(task.spec && task.spec.packages);
