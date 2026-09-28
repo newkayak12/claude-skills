@@ -17,7 +17,7 @@
 | L1 | **Sprint auto-continuation (the long loop).** When a Sprint's report is done and `loop` is on (`tm_open({loop: {...}})` / team.json), the manager opens the next Sprint itself: `context_from` is the finished task and `requests` is chosen per L1b. |
 | L1a | **Stop conditions:** no carry-over left; the loop's total `budget_usd` / `timebox_minutes` spent; `max_sprints` reached; no progress (the same unfinished story carried N Sprints running, default 2); a person stops it (`tm_loop({stop})`). The loop records why it stopped. |
 | L1b | **Who picks the next backlog** (pending). Options: (a) every candidate, in priority order; (b) the top N; (c) a person approves between Sprints (a `human_gates`-style card, auto-passed with (a) when not interactive). |
-| L1c | **Default between Sprints** (pending). Proposed: non-interactive continues automatically; interactive parks at the gate. |
+| L1c | **Default between Sprints** (decided): non-interactive auto-passes the gate with every candidate in priority order, recorded as decided-for-you; interactive parks it in `waiting_human` (tm_inbox / tm_submit). |
 | L2 | **A loop ledger:** `loop.json` beside the tasks lists Sprints in order, each with task_id, state, shipped/unfinished counts and spend. `tm_status` shows it. |
 | G | **Gate follow-ups from QualityGate:** gate writes to the broker ledger (`.harness-run/broker/`); a write verb counts only in command position (`grep cp x.mjs` is a read); releasing a STORY pin restores a model-written assignee. Add tests for the m1 prefix rule, M2 request carry-over, and M5's broker path. |
 
