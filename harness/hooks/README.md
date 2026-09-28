@@ -1,19 +1,53 @@
 # harness hooks — opt-in PreToolUse gate
 
-Denies `Write|Edit|MultiEdit|NotebookEdit` on gated paths unless the harness has been
-engaged in the session (or a recent subagent marker exists). **Opt-in per project**: the
-gate does nothing until the project creates `.claude/harness-gate.json`:
+Denies `Write|Edit|MultiEdit|NotebookEdit`, and `Bash` commands that write, on gated paths unless
+the harness is engaged. **Opt-in per project**: the gate does nothing until the project creates
+`.claude/harness-gate.json`:
 
 ```json
 { "patterns": ["src/.*\\.kt$"], "window_hours": 2 }
 ```
 
-- `patterns` — JS regexes matched against the `/`-normalized `file_path`.
-- `window_hours` — parallel-subagent marker window (default 2).
+- `patterns` — JS regexes, case-insensitive, matched against `/` + the path relative to the
+  project root (so `\.mjs$` never gates a scratch file in `/tmp`).
+- `window_hours` — how long an engagement record stays live (default 2).
+
+**Root.** The nearest ancestor of the target file holding `.claude/harness-gate.json`; else, for a
+sibling git worktree, the project of its common git dir (the pattern path is then taken from the
+worktree's own top level); else `CLAUDE_PROJECT_DIR`. A `cd` into a subdirectory changes nothing.
+
+**Engaged** means a record says so — never a string in the transcript (quoting the engine path,
+or this hook's own deny message, engages nothing):
+1. a `Workflow` tool call of `harness/engine/pipeline.js`, or an MCP `graph_open` / `tm_open` /
+   `tm_run` call, whose result was not an error, within `window_hours`;
+2. an open node in the broker ledger (`.harness-run/broker/open-nodes.json`);
+3. an open fallback run (`.harness-run/<slug>/`, `engine/fallback.md`): `manifest.json`, a
+   non-empty `01-plan.md`, a `02-goal-spec.json` with a subgoal, a `02-critique.json` with
+   `sound: true` no older than the spec, no `05-report.md`, and a change within the window;
+4. a live marker in `.claude/.harness-markers/` (parallel subagents; teams writes one into each
+   package worktree).
+
+Timestamps from the future are ignored, so a forged marker does not live forever.
+
+**Always gated**, whatever `patterns` says: `.claude/harness-gate.json`,
+`.claude/settings(.local).json`, `.claude/hooks/**`, `.claude/.harness-markers/**` — turning
+the gate off is itself a gated edit.
+
+**Bash** is judged by the paths it writes: redirect targets always; and when the command holds a
+write verb (`tee`, `sed -i`, `perl -i`, `cp`, `mv`, `rm`, `install`, `truncate`, `dd`, `patch`,
+`ln`, `touch`, `git checkout|restore|apply|stash|reset|mv|rm`) or an inline script (`node -e`,
+`python -c`, a heredoc), every path-like word in it, resolved against the cwd and every `cd` in
+the command.
 
 Design rules (from v0's failed hook experiments): PreToolUse only, fail-open on every
-error/ambiguity, deny only edit tools on opted-in paths, deny message teaches recovery.
-Known accepted holes (this is a nudge, not security): transcript-regex engagement is
-sticky per session and spoofable by mention; any session's marker within the window
-passes all sessions; `Bash` file edits bypass the gate. Markers live in
-`.claude/.harness-markers/` — add it to the project's `.gitignore`.
+error/ambiguity, deny only writes to opted-in paths, deny message teaches recovery.
+
+Known holes (this is a guard rail against skipping the process, not security):
+- a session can write its own fallback run files (`.harness-run/` is not gated — engaging is
+  meant to be possible); the gate then still requires plan, goal-spec and a sound critique;
+- Bash writes it cannot see: a script file run by path that writes a gated file, variables
+  (`f=a.mjs; echo > $f`), `git merge`/`pull`/`rebase`, and any tool other than the ones above;
+- any live marker passes every session in the window (parallel subagents need it).
+
+Add `.claude/.harness-markers/`, `.harness-run/` and `.claude/settings.local.json` to the
+project's `.gitignore` (`install` does).

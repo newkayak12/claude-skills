@@ -139,11 +139,14 @@ function removeClaudeBlock(claudeMdPath, notes) {
   return 'removed-block';
 }
 
+// The lines install.mjs adds (its GITIGNORE_LINES).
+const GITIGNORE_LINES = ['.claude/.harness-markers/', '.harness-run/', '.claude/settings.local.json'];
+
 function removeGitignoreLine(gitignorePath) {
   if (!existsSync(gitignorePath)) return 'absent';
   const current = readFileSync(gitignorePath, 'utf8');
   const lines = current.split(/\r?\n/);
-  const kept = lines.filter((line) => line.trim() !== '.claude/.harness-markers/');
+  const kept = lines.filter((line) => !GITIGNORE_LINES.includes(line.trim()));
   if (kept.length === lines.length) return 'absent';
 
   while (kept.length && kept.at(-1) === '') kept.pop();
