@@ -1792,6 +1792,25 @@ async function runPlanWith(reply) {
   }
 }
 
+test('portfolio-refresh: a complete answer whose JSON has one stray bracket gets one fresh attempt, not a blocked run', async () => {
+  const cwd = repoWithFakeVendor();
+  process.env.FAKE_REPLY = '```json\n{"plan":"p","handoff":"h","evidence":"e"],"skills_used":[]}\n```';
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'fake' });
+    const first = await c.call('team_run', { run_id, cwd, node_id: 'plan' });
+    assert.equal(first.state, 'pending', JSON.stringify(first));
+    assert.equal(first.recoverable, true);
+    const second = await c.call('team_run', { run_id, cwd, node_id: 'plan' });
+    assert.equal(second.state, 'failed', 'one retry only - a vendor that keeps mistyping is a failure');
+    assert.match(second.reason, /no usable JSON/);
+  } finally {
+    c.close();
+    delete process.env.FAKE_REPLY;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('a vendor that returns nothing fails the node', async () => {
   const { v } = await runPlanWith('');
   assert.equal(v.state, 'failed');

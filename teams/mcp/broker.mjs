@@ -1743,6 +1743,16 @@ async function toolGraphRun(a) {
     return checkpointInterruption(run, n, r.executor || r.vendor, { ...report,
       transport: { status: proc.status, stderr: proc.stderr, stdout: proc.stdout } }, 'quota');
   }
+  // A vendor that answered in full but whose JSON does not parse has not failed the work - it
+  // mistyped the envelope. portfolio-refresh's QA (2026-09-28) wrote a complete plan with one
+  // stray `]` after its last string; the adapter exited 1, nothing retries a plan node, and the
+  // Sprint's only QA pass blocked at 0/3. One fresh attempt, same vendor; a second is a failure.
+  const malformed = !proc.killed_for && /[{[]/.test(String(report.last_message || ''))
+    && !report.result && (Object.keys(payload).length === 0 || payload._unparsed === true);
+  if (malformed && !(n.interruptions || []).some((i) => i.kind === 'malformed')) {
+    return checkpointInterruption(run, n, r.executor || r.vendor, { ...report,
+      transport: { status: proc.status, stderr: proc.stderr } }, 'malformed');
+  }
   let result;
   if (!transportOk) {
     const why = proc.killed_for === 'timeout'
