@@ -735,7 +735,7 @@ test("planning cards' PRD sections and user_stories are merged into 10-prd.md an
   });
 });
 
-test('tm_open({size}) pins the size: L opens the plan stage without measuring, S opens its one planning card at once (C6)', async () => {
+test('tm_open({size}) pins the size: L opens the plan stage without measuring, S goes straight to the development harness (S1)', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
@@ -749,78 +749,180 @@ test('tm_open({size}) pins the size: L opens the plan stage without measuring, S
     assert.equal(size.state, 'done');
     assert.equal(size.result.size_source, 'pinned');
     const S = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'small request', cwd, flow: 'document', vendor: 'self', size: 'S' });
-    assert.equal(S.task_state, undefined, 'an S task plans before its run opens');
-    assert.deepEqual(S.children.map((c) => c.package_id), ['PLAN-F1'], 'a pinned S opens its one planning card at once');
+    assert.equal(S.task_state, 'harness', 'a pinned S goes straight to the development harness (S1)');
+    assert.deepEqual(S.children, [], 'no planning card, no teams child run');
     const sTask = JSON.parse(readFileSync(join(root, S.task_id, 'task.json'), 'utf8'));
     assert.equal(sTask.nodes.find((n) => n.node_id === 'size').result.size_source, 'pinned');
     assert.equal(sTask.s_run, null);
-    assert.equal(sTask.nodes.find((n) => n.node_id === 'areas').state, 'skipped', 'S has no feature split - one card is the whole request');
-    assert.equal(sTask.planning_pkgs[0].brief, 'small request');
+    assert.ok(sTask.harness_run && sTask.harness_run.cwd === cwd, JSON.stringify(sTask.harness_run));
+    assert.equal(sTask.nodes.find((n) => n.node_id === 'areas').state, 'skipped', 'S has no feature split');
+    assert.deepEqual(sTask.planning_pkgs || [], []);
   } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
 });
 
-// C6 (docs/plans/2026-09-28-teams-cards-everywhere.md): a size-S request is planned too. Its one
-// run opens only once its planning card is accepted and the planning integrate accepts the merge -
-// and that reply, not the size reply, is the one carrying task_state "s_run".
-test('size S plans first: one planning card, plan-integrate, then the single run opens with the PRD and its user stories as context; task_state "s_run" and never "delegate" (C6)', async () => {
+// S1 (docs/plans/2026-09-28-teams-long-loop.md): size S goes to the development harness - no
+// planning card, feature split, shape, critique, worktree or teams child run.
+function graphRunFixture(cwd, taskId, { report = false, accept = null, tagged = true, createdAt = Date.now(), runId } = {}) {
+  const run_id = runId || `g-${Math.random().toString(16).slice(2, 10)}`;
+  const nodes = [{ node_id: 'plan', stage: 'plan', state: 'done', deps: [], result: { stage_ok: true } }];
+  if (accept !== null) {
+    nodes.push({ node_id: 'gate:goal:1', stage: 'gate', subgoal_id: null, state: accept ? 'done' : 'failed', deps: [],
+      result: { stage_ok: accept, accept, match_pct: accept ? 95 : 60, gaps: accept ? [] : ['the export is missing'] } });
+  }
+  nodes.push({ node_id: 'report', stage: 'report', state: report ? 'done' : 'pending', deps: [], result: report ? { stage_ok: true, handoff: 'harness run report' } : null });
+  const dir = join(cwd, '.harness-run', 'broker', 'runs');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${run_id}.json`), JSON.stringify({ run_id, request: `${tagged ? `[teams-task ${taskId}] ` : ''}small request`, created_at: createdAt, nodes }));
+  return { route: 'graph', run_id, cwd };
+}
+
+function fallbackRunFixture(cwd, taskId, { pass = null, report = false, tagged = true, slug = 'small' } = {}) {
+  const dir = join(cwd, '.harness-run', slug);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ request: 'small request', ...(tagged ? { teams_task: taskId } : {}) }));
+  if (pass !== null) writeFileSync(join(dir, '04-goal-gate.json'), JSON.stringify({ match_pct: pass ? 93 : 70, pass, reason: pass ? 'met' : 'the export is missing' }));
+  if (report) writeFileSync(join(dir, '05-report.md'), '# fallback report\n');
+  return { route: 'fallback', run_dir: dir };
+}
+
+function writePointer(root, taskId, pointer) {
+  writeFileSync(join(root, taskId, 'harness-run.json'), JSON.stringify(pointer));
+}
+
+async function withSizeS(fn, extra = {}) {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
-  const g = await new Client(BROKER).init();
+  try {
+    const open = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'small request', cwd, vendor: 'self', size: 'S', ...extra });
+    await fn({ tm, cwd, root, task_id: open.task_id, open });
+  } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
+}
+
+test('S1: a measured size S hands the request to the development harness - no planning card, worktree or teams child run; task_state "harness"', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
   try {
     const { task_id } = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'r', cwd, flow: 'develop', vendor: 'self' });
     const measured = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'develop' }) });
-    assert.equal(measured.state, 'done');
-    assert.equal('task_state' in measured, false, 'nothing opens the run before planning');
+    assert.equal(measured.task_state, 'harness');
     assert.equal('delegate' in measured, false, JSON.stringify(measured));
-    let task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
-    assert.deepEqual(task.planning_pkgs.map((p) => p.id), ['PLAN-F1']);
-    assert.deepEqual(task.nodes.find((n) => n.node_id === 'dispatch:PLAN-F1:1').deps, ['size']);
-    assert.ok(!task.nodes.some((n) => n.stage === 'shape'), 'a size-S task has no shape');
-    const nx = await tm.call('tm_next', { task_id });
-    const card = nx.children.find((c) => c.package_id === 'PLAN-F1');
-    await completePlanningChild(g, card, ['F1-US-1']);
-    await tm.call('tm_submit', { task_id, node_id: 'dispatch:PLAN-F1:1' });
-    await tm.call('tm_submit', { task_id, node_id: 'accept:PLAN-F1:1', payload: ok({ accept: true, match_pct: 95 }) });
-    task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
-    assert.equal(task.s_run, null, 'the run waits on the planning integrate');
-    const v = await tm.call('tm_submit', { task_id, node_id: 'plan-integrate:1', payload: ok({ accept: true }) });
-    assert.equal(v.task_state, 's_run');
-    assert.equal('delegate' in v, false, JSON.stringify(v));
-    assert.ok(v.run_id, 'the accepted planning integrate opened the single run');
-    task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
-    assert.ok(existsSync(docPaths(task).prd), '10-prd.md exists for a size-S task');
-    const st = await g.call('team_status', { run_id: v.run_id, cwd, full: true });
-    assert.match(st.context, /Planning ran ahead of this run/);
-    assert.match(st.context, /F1-US-1/);
-    assert.ok(st.context.includes(docPaths(task).prd));
-  } finally { tm.close(); g.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
+    assert.equal(measured.state, 'running');
+    assert.equal(measured.harness.pointer, join(root, task_id, 'harness-run.json'));
+    assert.equal(measured.harness.report_path, join(root, task_id, 'harness-report.md'));
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.deepEqual(task.planning_pkgs || [], [], 'no planning card');
+    assert.ok(!task.nodes.some((n) => n.stage === 'dispatch'), 'no teams child run');
+    assert.ok(!task.nodes.some((n) => n.state === 'pending'), 'every other manager node is skipped');
+    assert.equal(task.s_run, null);
+    assert.ok(!existsSync(join(cwd, '.teams_output', 'worktrees')), 'no worktree');
+    assert.equal((await tm.call('tm_status', { task_id })).state, 'running');
+  } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
 });
 
-test('a pinned flow survives sizing and planning and reaches the single run the manager opens', async () => {
-  const cwd = repo();
-  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
-  const g = await new Client(BROKER).init();
+test('S1a: the graph route - running until the run reports, complete on its accepted goal gate, with the report relayed and a retro written', async () => {
+  await withSizeS(async ({ tm, cwd, root, task_id }) => {
+    const run = graphRunFixture(cwd, task_id);
+    writePointer(root, task_id, run);
+    let st = await tm.call('tm_status', { task_id });
+    assert.equal(st.state, 'running');
+    assert.deepEqual(st.harness.run, run);
+    assert.equal(st.harness.route, 'graph');
+    graphRunFixture(cwd, task_id, { runId: run.run_id, accept: true, report: true });
+    writeFileSync(join(root, task_id, 'harness-report.md'), 'what the harness delivered');
+    st = await tm.call('tm_status', { task_id });
+    assert.equal(st.state, 'complete');
+    const nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.state, 'complete');
+    assert.equal(nx.report, 'what the harness delivered');
+    const task = readTask(root, task_id);
+    assert.match(readFileSync(docPaths(task).report, 'utf8'), /size S on the development harness \(complete\)/);
+    const retro = JSON.parse(readFileSync(docPaths(task).retro, 'utf8'));
+    assert.deepEqual(retro.retrospective.what_failed, [], 'the skipped manager nodes are not failures');
+    assert.equal(retro.retrospective.partial_reasons, undefined);
+  });
+});
+
+test('S1a: the graph route - a run that reported past a refused goal gate reads partial, with the gate\'s gaps as the reason', async () => {
+  await withSizeS(async ({ tm, cwd, root, task_id }) => {
+    writePointer(root, task_id, graphRunFixture(cwd, task_id, { accept: false, report: true }));
+    const st = await tm.call('tm_status', { task_id });
+    assert.equal(st.state, 'partial');
+    assert.match(st.partial_reasons[0], /did not accept \(match 60\): the export is missing/);
+    const retro = JSON.parse(readFileSync(docPaths(readTask(root, task_id)).retro, 'utf8'));
+    assert.match(retro.retrospective.partial_reasons[0], /did not accept/);
+  });
+});
+
+test('S1a: the fallback route reads the run\'s own 05-report.md and 04-goal-gate.json - not anything the driver says', async () => {
+  await withSizeS(async ({ tm, cwd, root, task_id }) => {
+    const run = fallbackRunFixture(cwd, task_id);
+    writePointer(root, task_id, run);
+    assert.equal((await tm.call('tm_status', { task_id })).state, 'running');
+    fallbackRunFixture(cwd, task_id, { pass: false, report: true });
+    assert.equal((await tm.call('tm_status', { task_id })).state, 'partial');
+    fallbackRunFixture(cwd, task_id, { pass: true, report: true });
+    const st = await tm.call('tm_status', { task_id });
+    assert.equal(st.state, 'complete');
+    assert.equal(st.harness.route, 'fallback');
+  });
+});
+
+test('S1: a pointer to an untagged or older run is refused; the tagged run is found without a pointer', async () => {
+  await withSizeS(async ({ tm, cwd, root, task_id }) => {
+    // Someone else's accepted run, named by the pointer: refused, the task keeps running.
+    writePointer(root, task_id, graphRunFixture(cwd, task_id, { tagged: false, accept: true, report: true }));
+    let st = await tm.call('tm_status', { task_id });
+    assert.equal(st.state, 'running');
+    assert.ok(st.harness.refused_pointer, JSON.stringify(st.harness));
+    // This task's tag but created before the harness run opened: refused too.
+    writePointer(root, task_id, graphRunFixture(cwd, task_id, { accept: true, report: true, createdAt: Date.now() - 3600 * 1000 }));
+    st = await tm.call('tm_status', { task_id });
+    assert.equal(st.state, 'running');
+    // No pointer at all, but a run tagged with this task: found and read.
+    rmSync(join(root, task_id, 'harness-run.json'));
+    const mine = graphRunFixture(cwd, task_id, { accept: true, report: true });
+    st = await tm.call('tm_status', { task_id });
+    assert.equal(st.state, 'complete');
+    assert.equal(st.harness.run.run_id, mine.run_id);
+    const ledger = readFileSync(join(root, task_id, 'ledger.jsonl'), 'utf8');
+    assert.match(ledger, /"event":"harness_pointer_refused"/);
+  });
+});
+
+test('S1: the harness driver loads the graph and harness plugins', async () => {
+  const { driverArgv } = await import('../mcp/taskmanager.mjs');
+  const dirs = (argv) => argv.flatMap((a, i) => (argv[i - 1] === '--plugin-dir' ? [a] : []));
+  const harness = dirs(driverArgv(null, { harness: true }));
+  assert.ok(harness.some((d) => /[\\/]graph$/.test(d)), harness.join(' '));
+  assert.ok(harness.some((d) => /[\\/]harness$/.test(d)), harness.join(' '));
+});
+test('S1: the harness prompt carries the request, context and decisions, the tagged graph_open, the fallback manifest tag, the pointer and the report path - and no Workflow route', async () => {
+  const f = driverFixture({}, FAKE_DRIVER_RESPAWN);
+  const tm = await f.client.init();
   try {
-    const { task_id } = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'r', cwd, flow: 'develop', vendor: 'self', max_retries: 1, isolated: true });
-    // size says document; the entry pinned develop, and the entry wins.
-    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'document' }) });
-    await drivePlanning((n, a) => tm.rawCall(n, a), g, task_id);
-    const t = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
-    assert.ok(t.s_run && t.s_run.run_id, JSON.stringify(t.s_run));
-    const st = await g.call('team_status', { run_id: t.s_run.run_id, cwd, full: true });
-    assert.equal(st.flow, 'develop');
-    assert.equal(st.isolated, true);
-    assert.equal(st.max_retries, 1);
-    assert.equal(st.request, 'r');
+    const { task_id } = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'add the export button', context: 'the app is in src/', decisions: [{ question: 'CSV or JSON?', chose: 'CSV' }], cwd: f.cwd, vendor: 'self', size: 'S', host_vendor: 'claude', native_models: ['sonnet'] });
+    const ran = await waitFor(() => (existsSync(`${f.ran}.1`) ? JSON.parse(readFileSync(`${f.ran}.1`, 'utf8')) : null), 'the harness driver to run');
+    const prompt = ran.argv[ran.argv.length - 1];
+    assert.match(prompt, new RegExp(`graph_open\\(\\{request: "\\[teams-task ${task_id}\\] "`));
+    assert.match(prompt, /allocation: "balanced"/);
+    assert.match(prompt, /isolated: false/);
+    assert.match(prompt, /native_models: \["sonnet"\]/);
+    assert.match(prompt, new RegExp(`"teams_task": "${task_id}"`));
+    assert.match(prompt, /Do not use the Workflow route/);
+    assert.ok(prompt.includes(join(f.root, task_id, 'harness-run.json')));
+    assert.ok(prompt.includes(join(f.root, task_id, 'harness-report.md')));
+    assert.match(prompt, /add the export button/);
+    assert.match(prompt, /the app is in src\//);
+    assert.match(prompt, /CSV or JSON\?: CSV/);
   } finally {
-    tm.close(); g.close();
-    rmSync(cwd, { recursive: true, force: true });
-    rmSync(root, { recursive: true, force: true });
+    tm.close();
+    rmSync(f.cwd, { recursive: true, force: true });
+    rmSync(f.root, { recursive: true, force: true });
+    rmSync(f.drv, { recursive: true, force: true });
   }
 });
-
 // idol-pm-4 (2026-09-23): P1 owned src/identity/module.ts, P2 owned src/identity/**, and the
 // check compared strings, so one file with two owners passed.
 test('touches overlap by containment, not only by equal strings', async () => {
@@ -4113,147 +4215,116 @@ test('HARNESS_TEST_NO_DRIVER spawns nothing: the child is the test to drive, and
 
 // m4 (docs/plans/2026-09-28-teams-adversarial-fixes.md): a size-S task gets its QA card too - on a
 // snapshot of the run's working tree, never the tree itself; what it finds is unresolved.
-test('m4: a size-S task runs its QA card on a snapshot of the run\'s working tree; its defects are listed unresolved and the task closes partial', async () => {
-  await withTask(async ({ tm, g, cwd, root, task_id }) => {
-    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'develop', sizing: ['one module'] }) });
-    const v = (await drivePlanning((n, a) => tm.rawCall(n, a), g, task_id)).plan_integrate_reply;
-    assert.equal(v.task_state, 's_run');
-    const { run_id } = v;
-    const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
-    await sub('plan', { handoff: 'p', flow: 'develop', size: 'S' });
-    await sub('setgoal', { spec: CHILD_SPEC });
-    await sub('critique', { sound: true });
-    writeFileSync(join(cwd, 'new-by-s.txt'), 'untracked output of the S run\n');
-    await sub('implement:U1:1', { changed_files: ['new-by-s.txt'], handoff: 'built' });
-    await sub('test:U1:1', { verified: true });
-    await sub('gate:U1:1', { accept: true, match_pct: 95 });
-    await sub('gate:goal:1', { accept: true, match_pct: 95 });
-    await sub('report', { handoff: 'S run done' });
-    const statusBefore = execFileSync('git', ['-C', cwd, 'status', '--porcelain'], { encoding: 'utf8' });
-
-    const nx = await tm.call('tm_next', { task_id });
-    assert.equal(nx.state, 'running', 'a completed S run still owes its QA verdicts');
-    const qa = nx.children.find((c) => c.package_id === 'QA-F1');
-    assert.ok(qa, JSON.stringify(nx));
-    assert.notEqual(realpathSync(qa.cwd), realpathSync(cwd), 'QA never runs in the project tree');
-    assert.equal(readFileSync(join(qa.cwd, 'new-by-s.txt'), 'utf8'), 'untracked output of the S run\n', 'the snapshot holds even untracked output');
-    assert.equal(execFileSync('git', ['-C', cwd, 'status', '--porcelain'], { encoding: 'utf8' }), statusBefore, 'the project index and tree are untouched');
-    assert.match(readChild(qa).context, /snapshot of the size-S run's working tree/);
-    // m12: a QA card carries the verbatim-acceptance block too, told what it is - not a shaped STORY.
-    assert.equal(readChild(qa).package.origin, 'qa');
-    assert.ok(readChild(qa).package.acceptance.length > 0);
-
-    const qsub = (node_id, payload) => g.call('team_submit', { run_id: qa.run_id, cwd: qa.cwd, node_id, payload: ok(payload) });
-    await qsub('plan', { handoff: 'p', flow: 'qa', size: 'S' });
-    await qsub('setgoal', { spec: { goal: 'QA', acceptance: ['cases run'], subgoals: [{ id: 'Q1', title: 'run cases', acceptance: ['cases run'], deps: [] }] } });
-    await qsub('critique', { sound: true });
-    await qsub('cases:Q1:1', { changed_files: [], handoff: 'cases' });
-    await qsub('execute:Q1:1', { verified: false, handoff: 'ran', defects: ['new-by-s.txt has no trailing summary'] });
-    await qsub('gate:Q1:1', { accept: true, match_pct: 95 });
-    await qsub('gate:goal:1', { accept: true, match_pct: 95, defects: ['new-by-s.txt has no trailing summary'] });
-    await g.call('team_next', { run_id: qa.run_id, cwd: qa.cwd });
-    await qsub('report', { handoff: 'QA report' });
-    await tm.call('tm_submit', { task_id, node_id: 'dispatch:QA-F1:1' });
-    const acc = await tm.call('tm_submit', { task_id, node_id: 'accept:QA-F1:1', payload: ok({ accept: true, match_pct: 90, defects: [{ title: 'new-by-s.txt has no trailing summary', evidence: 'read it' }] }) });
-    assert.equal(acc.state, 'done', JSON.stringify(acc));
-
-    const t = readTask(root, task_id);
-    assert.deepEqual(t.unresolved_defects.map((d) => d.title), ['new-by-s.txt has no trailing summary']);
-    const st = await tm.call('tm_status', { task_id });
-    assert.equal(st.state, 'partial');
-    const full = await tm.call('tm_status', { task_id, full: true });
-    await tm.call('tm_docs', { task_id });
-    const report = readFileSync(docPaths(full).report, 'utf8');
-    assert.match(report, /## QA[\s\S]*QA-F1: done - 1 defect/);
-    assert.match(report, /new-by-s.txt has no trailing summary/);
-    const retro = JSON.parse(readFileSync(docPaths(full).retro, 'utf8'));
-    assert.deepEqual(retro.next_backlog.unresolved_defects.map((d) => d.title), ['new-by-s.txt has no trailing summary']);
-  }, { roles: { qa: true } });
-});
-
-// ---------- size-S process handoff: s_driver ----------
-
-test('a size-S task spawns one headless driver, and tm_next relays its report once it completes', async () => {
-  const f = driverFixture();
-  const tm = await f.client.init();
+// S2: a task written before S1 carries task.s_run. It is read through a frozen path - its run
+// file only, its QA cards ignored, never respawned; unfinished with no live driver, it is blocked.
+test('S2: a legacy s_run task reads its run\'s state, ignores roles.qa, is never respawned, and reads blocked once its driver is gone', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
   const g = await new Client(BROKER).init();
   try {
-    const { task_id } = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'small request', cwd: f.cwd, vendor: 'self' });
-    const sized = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'develop', sizing: ['ls -> one module'] }) });
-    assert.equal(sized.task_state, undefined, 'a size-S task plans before its run opens (C6)');
-    // Its one planning card, then the planning integrate - whose accepting reply opens the run.
-    const v = (await drivePlanning((n, a) => tm.rawCall(n, a), g, task_id)).plan_integrate_reply;
-    assert.equal(v.task_state, 's_run');
-    assert.equal(v.delegate, undefined, 'process mode opens the run itself; there is nothing to delegate');
-    assert.equal(v.state, 'running');
-    assert.ok(Number.isInteger(v.driver.pid), JSON.stringify(v));
-    assert.equal(v.driver.log, join(f.root, task_id, 'drivers', 'S.stream.jsonl'));
-    const { run_id, cwd } = v;
-    assert.equal(cwd, f.cwd, 'the single run opens directly in the project cwd, not a package worktree');
-    assert.ok(existsSync(join(f.root, task_id, 'task.json')), 'the task stays on disk as the pointer to this run');
+    const open = await tm.call('tm_open', { roles: { qa: true }, brainstorm: false, request: 'small request', cwd, vendor: 'self', size: 'S' });
+    const task_id = open.task_id;
+    const { run_id } = await g.call('team_open', { request: 'small request', cwd, vendor: 'self', flow: 'develop', mixed: true, goal_judges: 1 });
+    const taskFile = join(root, task_id, 'task.json');
+    const legacy = JSON.parse(readFileSync(taskFile, 'utf8'));
+    delete legacy.harness_run;
+    legacy.s_run = { cwd, run_id, driver: { pid: 999999999, started_at: Date.now(), log: join(root, 'gone.log') } };
+    writeFileSync(taskFile, JSON.stringify(legacy));
 
-    const ran = await waitFor(() => (existsSync(f.ran) ? JSON.parse(readFileSync(f.ran, 'utf8')) : null), 'the fake driver to run');
-    assert.match(ran.argv[ran.argv.length - 1], new RegExp(`run_id ${run_id}`));
-    assert.equal(realpathSync(ran.cwd), realpathSync(cwd));
+    let st = await tm.call('tm_status', { task_id });
+    assert.equal(st.state, 'blocked', 'unfinished, its driver gone: blocked, not running forever');
+    const nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.state, 'blocked');
+    assert.match(nx.next, /legacy size-S runs are not restarted/);
+    assert.equal(readTask(root, task_id).s_run.driver.pid, 999999999, 'never respawned');
 
-    // The fake driver drove nothing; drive the single run to completion directly, exactly as a
-    // real driver session would with team_next/team_run/team_submit.
     const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
     await sub('plan', { handoff: 'p', flow: 'develop', size: 'S' });
     await sub('setgoal', { spec: CHILD_SPEC });
     await sub('critique', { sound: true });
-    appendFileSync(join(cwd, 'a.txt'), 'changed by S\n');
+    appendFileSync(join(cwd, 'a.txt'), 'changed\n');
     await sub('implement:U1:1', { changed_files: ['a.txt'], handoff: 'built' });
     await sub('test:U1:1', { verified: true });
     await sub('gate:U1:1', { accept: true, match_pct: 95 });
     await sub('gate:goal:1', { accept: true, match_pct: 95 });
-    await sub('report', { handoff: 'S run done' });
+    await g.call('team_next', { run_id, cwd });
+    await sub('report', { handoff: 'legacy run done' });
+    st = await tm.call('tm_status', { task_id });
+    assert.equal(st.state, 'complete', 'roles.qa on a legacy task opens no QA card and is not waited on');
+    const ledger = readFileSync(join(root, task_id, 'ledger.jsonl'), 'utf8');
+    assert.doesNotMatch(ledger, /"event":"child_driver_restarted"/);
+    assert.doesNotMatch(ledger, /"event":"s_qa_opened"/);
+  } finally { tm.close(); g.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
+});
+// ---------- size-S process handoff: s_driver ----------
 
-    const done = await waitFor(async () => {
-      const nx = await tm.call('tm_next', { task_id });
-      return nx.state !== 'running' ? nx : null;
-    }, 'the S run to finish');
-    assert.equal(done.state, 'complete');
-    assert.equal(done.report, 'S run done');
-    assert.deepEqual(done.ready, []);
-    assert.deepEqual(done.children, []);
-    const reportRow = done.nodes.find((nd) => nd.node_id === 'report');
-    assert.ok(reportRow && reportRow.stage_ok === true, JSON.stringify(done.nodes));
-    const implRow = done.nodes.find((nd) => nd.node_id === 'implement:U1:1');
-    assert.ok(implRow, 'the table carries every node the entry skill\'s output template wants: node, vendor, stage_ok, note');
-
-    const status = await tm.call('tm_status', { task_id });
-    assert.equal(status.state, 'complete');
-    assert.equal(status.s_run.run_id, run_id);
+test('S1: one harness driver in the project cwd; a dead one is respawned with a prompt naming the recorded run; past its budget the task reads blocked and tm_retry gives it a fresh driver', async () => {
+  const f = driverFixture({}, FAKE_DRIVER_RESPAWN);
+  const tm = await f.client.init();
+  try {
+    const open = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'small request', cwd: f.cwd, vendor: 'self', size: 'S', driver_restarts: 1 });
+    const task_id = open.task_id;
+    assert.equal(open.task_state, 'harness');
+    assert.ok(Number.isInteger(open.driver.pid), JSON.stringify(open));
+    assert.equal(open.driver.log, join(f.root, task_id, 'drivers', 'S.stream.jsonl'));
+    const first = await waitFor(() => (existsSync(`${f.ran}.1`) ? JSON.parse(readFileSync(`${f.ran}.1`, 'utf8')) : null), 'the first driver');
+    assert.doesNotMatch(first.argv[first.argv.length - 1], /previous driver/);
+    // The first driver opened its run and wrote the pointer, then died (FAKE_DRIVER exits at once).
+    const run = graphRunFixture(f.cwd, task_id);
+    writePointer(f.root, task_id, run);
+    await waitFor(async () => { const t = readTask(f.root, task_id); return !driverAliveLocal(t.harness_run.driver.pid); }, 'the first driver to exit');
+    const nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.state, 'running');
+    const second = await waitFor(() => (existsSync(`${f.ran}.2`) ? JSON.parse(readFileSync(`${f.ran}.2`, 'utf8')) : null), 'the respawned driver');
+    const resume = second.argv[second.argv.length - 1];
+    assert.match(resume, new RegExp(`CONTINUE that run`));
+    assert.ok(resume.includes(run.run_id), resume.slice(0, 400));
+    assert.match(resume, /never open a second run/);
+    assert.equal(realpathSync(JSON.parse(readFileSync(`${f.ran}.2`, 'utf8')).argv.length ? f.cwd : f.cwd), realpathSync(f.cwd));
+    // The respawned one dies too (after 5s): the budget of 1 is spent - blocked, with a report.
+    await waitFor(async () => { const t = readTask(f.root, task_id); return !driverAliveLocal(t.harness_run.driver.pid); }, 'the second driver to exit', 20000);
+    const dead = await tm.call('tm_next', { task_id });
+    assert.equal(dead.state, 'blocked');
+    assert.match(dead.next, /tm_retry/);
+    assert.match(readFileSync(docPaths(readTask(f.root, task_id)).report, 'utf8'), /\(blocked\)/);
+    const retried = await tm.call('tm_retry', { task_id });
+    assert.equal(retried.retried, true);
+    assert.equal(retried.state, 'running');
+    // The run finishes: the task completes from the run's own files.
+    graphRunFixture(f.cwd, task_id, { runId: run.run_id, accept: true, report: true });
+    assert.equal((await tm.call('tm_status', { task_id })).state, 'complete');
   } finally {
     tm.close();
-    g.close();
     rmSync(f.cwd, { recursive: true, force: true });
     rmSync(f.root, { recursive: true, force: true });
     rmSync(f.drv, { recursive: true, force: true });
   }
 });
 
-test('tm_open({mixed}) reaches the size-S run the same way isolated does', async () => {
-  const f = driverFixture();
+function driverAliveLocal(pid) {
+  if (!pid) return false;
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+test('S1a: a harness driver that hit a usage limit parks on waiting_capacity without spending a restart; reset_capacity resumes it', async () => {
+  const f = driverFixture({}, FAKE_DRIVER_LIMIT);
   const tm = await f.client.init();
-  const g = await new Client(BROKER).init();
   try {
-    const proc = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'r', cwd: f.cwd, vendor: 'self', mixed: false, isolated: true });
-    await tm.call('tm_submit', { task_id: proc.task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'develop' }) });
-    const pv = (await drivePlanning((n, a) => tm.rawCall(n, a), g, proc.task_id)).plan_integrate_reply;
-    assert.equal(pv.task_state, 's_run');
-    const full = await g.call('team_status', { run_id: pv.run_id, cwd: pv.cwd, full: true });
-    assert.equal(full.mixed, false);
-    assert.equal(full.isolated, true);
+    const { task_id } = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'small request', cwd: f.cwd, vendor: 'self', size: 'S', driver_restarts: 0 });
+    await waitFor(async () => { const t = readTask(f.root, task_id); return !driverAliveLocal(t.harness_run.driver.pid); }, 'the driver to hit its limit');
+    const nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.state, 'running', 'a capacity park is not a death: no restart spent, not blocked');
+    assert.match(nx.waiting_capacity.reason, /hit your 5-hour limit/);
+    const r = await tm.call('tm_retry', { task_id, reset_capacity: true });
+    assert.deepEqual(r.resumed, ['S']);
+    assert.equal(readTask(f.root, task_id).harness_run.waiting_capacity, undefined);
   } finally {
-    tm.close(); g.close();
+    tm.close();
     rmSync(f.cwd, { recursive: true, force: true });
     rmSync(f.root, { recursive: true, force: true });
     rmSync(f.drv, { recursive: true, force: true });
   }
 });
-
 test('child_driver and s_driver are gone: passing either is an error that names the reason', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
@@ -4397,68 +4468,40 @@ test('a dead daemon is respawned on any tm_* call up to driver_restarts, then re
   } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
 });
 
-test('the daemon drives a size-S task to completion with no external tm_next caller', async () => {
+test('the daemon keeps a size-S harness task\'s driver and finishes once the harness run reports, with no external tm_next caller', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
   const drv = mkdtempSync(join(tmpdir(), 'tm-drv-'));
   const scriptPath = join(drv, 'fake-driver.mjs');
-  // A size-S task plans first (C6): its planning card's driver stays up while this test drives
-  // the card's child run through the broker, so the daemon has nothing to respawn meanwhile.
-  writeFileSync(scriptPath, `if (/[\\\\/]worktrees[\\\\/]PLAN-/.test(process.cwd())) setTimeout(() => process.exit(0), 30000);\n${FAKE_DRIVER}`);
-  // The card's accept and the planning integrate are judged by the daemon: a judge that accepts.
-  const judgeJs = join(drv, 'judge.mjs');
-  writeFileSync(judgeJs, `process.stdout.write(JSON.stringify({ type: 'result', result: JSON.stringify({ stage_ok: true, accept: true, match_pct: 95, checks: ['read it -> fine'] }) }) + '\\n');\n`);
-  // No HARNESS_TEST_NO_LEADER/HARNESS_TEST_NO_DAEMON: a real `node daemon.mjs --task <id>`
-  // process is spawned, exactly as it would be for a real user. HARNESS_CHILD_DRIVER still fakes
-  // out the S run's OWN driver (the same seam every other driver test in this file uses) so the
-  // test can drive that one child run directly through the broker instead of needing a real
-  // `claude -p` there too.
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_CHILD_DRIVER: `node ${scriptPath}`, HARNESS_JUDGE_DRIVER: `node ${judgeJs}`, CLAUDECODE: '1' }).init();
-  const g = await new Client(BROKER).init();
+  // The harness driver stays up while the test plays its run on disk.
+  writeFileSync(scriptPath, 'setTimeout(() => process.exit(0), 30000);\n');
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_CHILD_DRIVER: `node ${scriptPath}`, CLAUDECODE: '1' }).init();
   let daemonPid;
+  let driverPid;
   try {
     const open = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'small request', cwd, vendor: 'self', size: 'S' });
-    const card = await waitFor(async () => {
-      const t = await tm.call('tm_status', { task_id: open.task_id, full: true });
-      const d = (t.nodes || []).find((n) => n.node_id === 'dispatch:PLAN-F1:1');
-      return d && d.state === 'running' && d.child ? d.child : null;
-    }, 'the daemon to dispatch the planning card');
-    await completePlanningChild(g, card, ['F1-US-1']);
     const s0 = await waitFor(async () => {
       const s = await tm.call('tm_status', { task_id: open.task_id });
-      return s.s_run && s.s_run.run_id ? s : null;
-    }, 'the size-S run to open', 40000);
-    assert.ok(s0.daemon && Number.isInteger(s0.daemon.pid), 'a real daemon process is driving this task');
+      return s.daemon && Number.isInteger(s.daemon.pid) ? s : null;
+    }, 'a real daemon to start');
     daemonPid = s0.daemon.pid;
-    const { run_id, cwd: runCwd } = s0.s_run;
-
-    const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd: runCwd, node_id, payload: ok(payload) });
-    await sub('plan', { handoff: 'p', flow: 'develop', size: 'S' });
-    await sub('setgoal', { spec: CHILD_SPEC });
-    await sub('critique', { sound: true });
-    appendFileSync(join(runCwd, 'a.txt'), 'changed by S\n');
-    await sub('implement:U1:1', { changed_files: ['a.txt'], handoff: 'built' });
-    await sub('test:U1:1', { verified: true });
-    await sub('gate:U1:1', { accept: true, match_pct: 95 });
-    await sub('gate:goal:1', { accept: true, match_pct: 95 });
-    await sub('report', { handoff: 'S run done' });
-
-    // The daemon notices on its own (fs.watch on the run directory, or its fallback poll) and
-    // exits once the run is no longer running. Nobody here ever called tm_next.
-    await waitFor(() => { try { process.kill(daemonPid, 0); return false; } catch { return true; } }, 'the daemon process to exit on its own', 20000);
-
+    driverPid = s0.harness.driver && s0.harness.driver.pid;
+    const run = graphRunFixture(cwd, open.task_id);
+    writePointer(root, open.task_id, run);
+    graphRunFixture(cwd, open.task_id, { runId: run.run_id, accept: true, report: true });
+    await waitFor(() => !driverAliveLocal(daemonPid), 'the daemon process to exit on its own', 30000);
     const status = await tm.call('tm_status', { task_id: open.task_id });
     assert.equal(status.state, 'complete');
     const ledger = readFileSync(join(root, open.task_id, 'ledger.jsonl'), 'utf8');
     assert.match(ledger, /"event":"daemon_done"/);
   } finally {
-    tm.close(); g.close();
+    tm.close();
+    if (driverPid) { try { process.kill(driverPid); } catch { /* gone */ } }
     rmSync(cwd, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
     rmSync(drv, { recursive: true, force: true });
   }
 });
-
 test('a judge call that never returns is killed on its timeout instead of wedging the daemon', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));

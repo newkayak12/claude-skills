@@ -27,7 +27,7 @@ prints the Output Template below; it makes no decisions.
 ## Process
 
 1. Take the key as given: `E-xxxxxxxx/Pn` for a STORY's driver, `E-xxxxxxxx` for the EPIC
-   ledger (`E-xxxxxxxx/S` for a size-S task's single run). A TASK key (`.../Pn/U1`) is refused —
+   ledger (`E-xxxxxxxx/S` for a size-S task's harness driver). A TASK key (`.../Pn/U1`) is refused —
    use its STORY; that driver's stream covers every stage of the child run.
 2. Call `tm_log({key, tail})` — `tail` defaults to 50 (max 500). Pass a number only if the user
    named one.

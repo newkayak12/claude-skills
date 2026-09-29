@@ -6962,7 +6962,9 @@ function toolStatus(a) {
   const driverTotal = collectTaskCosts(taskDir(task.run_id), task);
   const costFields = { cost: { usd: driverTotal.cost_usd, turns: driverTotal.turns, sessions: driverTotal.sessions, drivers_usd: driverTotal.drivers_usd, nodes_usd: driverTotal.nodes_usd, ...(driverTotal.estimated_usd ? { estimated_usd: driverTotal.estimated_usd } : {}) } };
   if (task.harness_run) {
-    if (serviceHarnessRun(task)) saveRun(task);
+    // tm_status is not a board tool: a verdict first read here renders its report and retro here.
+    const before = ticketSnapshot(task);
+    if (serviceHarnessRun(task)) { saveRun(task); syncTickets(task, before, 'tm_status'); }
     const ts = taskState(task);
     return {
       task_id: task.run_id,

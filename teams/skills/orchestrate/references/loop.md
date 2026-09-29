@@ -1,14 +1,13 @@
 # The loop — shared by `orchestrate`, `develop`, and `document`
 
 You are a headless driver session, spawned by `tm_open`/`tm_next` to run one graph run to
-completion: `run_id` and `cwd` (the package worktree, or the project root for a size-S task) are
+completion: `run_id` and `cwd` (the package worktree) are
 already in your prompt, and the run itself is already open. Everything from here is the same for
 every flow: the graph decides what is ready, you dispatch it, the broker judges it. Nothing about
 the flow — code or document — changes a line below; only the node names you see differ
 (`implement/test` vs `draft/review`). Every call carries that `cwd`. When the run reaches
 `complete` or `blocked` you are finished — end with the output template and stop. A driver
-session owns nothing else: the manager (a different session — the top-level one, for a size-S
-task) reads the run file with `tm_next`/`tm_submit` and folds it. You never call `tm_submit`
+session owns nothing else: the manager (a different session) reads the run file with `tm_next`/`tm_submit` and folds it. You never call `tm_submit`
 yourself.
 
 A run can also reach `waiting_human`: a subgoal the shape/spec (or `tm_assign`) pinned to a
@@ -100,7 +99,7 @@ sibling's own verdict, which is only its own opinion.
 
 **A run `tm_open` opens for you defaults to one judge, not two.** `team_open({goal_judges})`
 above is what you get calling `team_open` yourself; every run `tm_open` opens on your behalf —
-the single run a size-S task drives, and every package's own `dispatch` under an L task — instead
+every package's own `dispatch` under an L task — instead
 defaults to `goal_judges: 1`, unless the task's own `tm_open({goal_judges})` argument says
 otherwise. That argument, when given, applies to every child run the task opens; it is not a
 `.claude/team.json` key, so it cannot be pinned project-wide. The split is deliberate, not an

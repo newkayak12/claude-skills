@@ -53,8 +53,8 @@ tm_open({
 ```
 
 That one call opens the task and spawns the daemon that drives it — size, shape, critique, every
-package's dispatch and fold, integrate, the goal gate, the report, or the one run a size-S
-request opens — end to end. You never see `size`'s own briefing or submit its payload; the daemon
+package's dispatch and fold, integrate, the goal gate, the report, or, for a size-S request, the
+development-harness run it hands the request to — end to end. You never see `size`'s own briefing or submit its payload; the daemon
 judges it itself. Prefer `tm_run` when you do not want even the `state` field back: same open,
 same daemon, `{task_id, run_id, docs_dir, view_url}` - open `view_url` in a browser to watch the run.
 
@@ -81,8 +81,8 @@ the user said nothing may change but the case set and its report.
 
 ## Then
 
-The `tm_wait({task_id, cursor})` loop above is the whole of your job either way — a size-S task or
-a task of runs — there is no manager loop left to read by hand: the daemon `tm_open` spawned is
+The `tm_wait({task_id, cursor})` loop above is the whole of your job either way — a size-S task on the
+development harness or a task of runs — there is no manager loop left to read by hand: the daemon `tm_open` spawned is
 what a relayed session used to run. Every graph run it opens is still driven by its own spawned
 headless session, never by you. The Standing Mandates, Output template, and "Running without
 install" note in `../orchestrate/SKILL.md` apply unchanged.
