@@ -1,5 +1,7 @@
 # teams (team) — Team / TeamLeader / Task / TaskLeader 구체화 (검토용 초안)
 
+> **현재 상태 (2026-09-29 점검):** 이 문서의 설계는 출시됐다. 머리말의 "검토용"과 아래 본문의 옛 상태 표시는 당시 기록이다. 정정: `tm_inbox`·`tm_assign`·`tm_file`은 "미구현"이 아니라 구현됨(`teams/mcp/taskmanager.mjs`). sub-EPIC은 open이 아니라 폐기(`2026-09-28-teams-sprint-not-sub-epic.md`). §11의 `tm_clean`은 미정이 아니라 v0.36.0 출시.
+
 > 상태: **검토용**. 코드 변경 없음. 2026-09-17.
 > 대상: `teams` 0.9.0 위에 얹는 다음 라운드.
 

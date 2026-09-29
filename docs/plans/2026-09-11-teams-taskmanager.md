@@ -1,5 +1,7 @@
 # teams: kinds, entry flows, TaskManager
 
+> **Status (checked 2026-09-29):** the steps marked "not started" are stale — repair shipped (`teams/mcp/graph.mjs`), and the 0.13.0 daemon took over Step 7's goal. "teams is deleted" is superseded by `2026-09-17-teams-team.md` §0. Still open: the cross-vendor scorer (nodes-per-vendor; not in `teams/scripts/bench/score.mjs`). Unrecorded: the graduation checks for the Step 7 bench under 3x baseline and an unpinned size-L run.
+
 > Design ledger for the `teams` plugin. Written 2026-09-11 from a design conversation;
 > every decision below has its reason next to it so a fresh session can tell which parts are
 > settled and which are still open. Steps use checkbox syntax. `graph` (stable) is not touched

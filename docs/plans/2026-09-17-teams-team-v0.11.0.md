@@ -1,5 +1,7 @@
 # teams (team) v0.11.0 — tickets.mjs 파생 + board.jsonl + docs.mjs phase md + tm_board/tm_ticket/tm_docs + 명령 스킬 구현 계획
 
+> **현재 상태 (2026-09-29 점검):** 출시됨(`teams/CHANGELOG.md`, `2026-09-17-teams-team.md` §11). 아래 `- [ ]` 체크박스는 진행 중에 갱신하지 않은 것이라 미완료 표시가 아니다.
+
 > Produced by write:writing-plans. Owner for execution routing: planning:executing-plans.
 > Steps use checkbox (`- [ ]`) syntax. 설계 근거: `2026-09-17-teams-team.md` §4·§5b·§6·§7b·§7c·§8·§9·§11.
 
