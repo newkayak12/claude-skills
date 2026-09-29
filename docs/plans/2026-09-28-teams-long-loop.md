@@ -31,15 +31,39 @@
 > - **The separate Dev→PM plan is dropped:** R1 is its whole function (the next Sprint's planning takes the contradiction). Per-role judgement criteria are shelved with it.
 > - S1/S1a/S2 and G1–G4 are unchanged and not yet done.
 
+> **Critique of the remaining scope (2026-09-29, `sound:false`, 9 problems, all taken):**
+> - **G2:**
+>   - An interpreter or shell anywhere in a simple command counts, not only as its first word. `timeout 5 python3 -c …`, `nice node -e …` and `env python3 - <<EOF` are judged like `python3 -c …`.
+>   - `rg --pre`, `rg --pre-glob`, `less -o` and `less --log-file` are not read-only.
+>   - Tests are added for `doas`, `stdbuf`, `ionice`, `parallel` and `watch`.
+> - **G2b:**
+>   - Heredocs are found with the quote-aware scanner. A heredoc that never closes means the whole command is judged as today.
+>   - A data heredoc counts its body's paths when its body holds a write verb or a write-capable call. It also counts them when the same command line runs the file it writes (`cat > x.sh <<EOF … EOF; bash x.sh`).
+>   - The write-capable list grows: `getattr`, `__builtins__`, `__dict__`, `globals`, `compile`, `Function`, `constructor`.
+> - **G3:** a subgoal created while a STORY pin is held takes the run's saved model assignee on release.
+> - **S1:**
+>   - The driver loads the `graph` and `harness` plugins (`pluginDirArgs` gets `graph:orchestrate` and `harness:harness`), so a real S run is harness-gated. The test asserts both `--plugin-dir` entries.
+>   - The driver never writes `task.json`. It writes the run pointer to `<taskDir>/harness-run.json` (`{route, run_id, cwd}` for graph; `{route: "fallback", run_dir}` for the fallback) as soon as the run exists. The manager copies it into `task.harness_run`.
+>   - A restarted driver gets an S-specific resume prompt that names the recorded run and never opens a second one.
+> - **S1a:**
+>   - The manager reads the verdict itself: the graph run file's latest `gate:goal` and `report`, or the fallback run's own `04-goal-gate.json` and `05-report.md`.
+>   - The driver's `harness-result.json` is dropped. A self-report is not the harness run's verdict.
+> - **Round 2 (`sound:false`, 3 problems, all taken):**
+>   - The Workflow route is dropped for the headless S driver: it leaves no goal-gate file on disk.
+>   - A pointer is taken only for a run tagged with this task's id and created after the harness run opened. Without a pointer, the manager finds the tagged run itself.
+>   - The S rows and SetGoal now say all of the above.
+>   - A note is taken too: a data heredoc's body is judged by shell write verbs only, plus the call list when the file it writes is a script or is run later. So a commit message that says "remove" stays allowed.
+> - **S2:** a legacy `s_run` whose run never finished and whose driver is dead reads `blocked` ("legacy size-S runs are not restarted"), never `running` forever.
+
 ## Plan
 
 ### S — size S runs on the development harness
 
 | # | Change |
 |---|---|
-| S1 | **Who runs it:** the manager spawns one headless driver, the same `spawnChildDriver` process mechanism packages use, in the project cwd. Its prompt runs the development harness on the request (plus context and decisions) with claude and codex taking part. The first route is the `graph` MCP `graph_open({request, cwd, isolated: false, allocation: "balanced", host_vendor, host_model, native_models})`, driven to its report. When that MCP is absent, the driver follows the `harness` skill's own Process instead. That is the Workflow `harness/engine/pipeline.js` with `codex_provider: "auto"`. A headless session without a Workflow tool uses the Agent Team fallback (`engine/fallback.md`), with codex routing through `codex-exec-adapter.mjs`. `auto` falls back to Claude when codex is not ready, and that fallback is recorded as such. The driver writes its report to `<taskDir>/harness-report.md` and the run pointer to `task.harness_run`. This works the same under `tm_run`, the daemon and CI: no session has to relay anything. |
-| S1a | **State:** the task state follows the harness run's own verdict, not the report file's existence. It is `running` while the driver is alive. On the graph route the manager reads the graph run's own state directly. On the fallback route, when the driver finishes it writes `<taskDir>/harness-result.json` = `{route, run_id, state, goal_accept, match_pct}`, read off the graph run's status or the fallback's `04-goal-gate.json`. The task reads `complete` when the goal gate accepted, `partial` when the run finished without that, and `blocked` when the driver died past its restart budget with no result. Codex spend under the graph run is added to the task's spend from the run's own node costs. No new state name is added, so every existing terminal-state check stays correct. `tm_status`/`tm_next`/`tm_wait` carry `harness: {route, run, report_path}`. |
-| S2 | **The teams S machinery goes:** S planning card, `openSRun`, the S run's own graph, S QA (m4), and `renderSReport`'s run reading. A task already on disk with `s_run` resolves through a **frozen read-only path**: state from its run file only, ignoring `s_qa`, and never respawned. The reader branches (tickets, view, inspect, run.mjs, remove.mjs, bench) stay for such tasks, and their tests switch to legacy fixtures instead of being deleted. |
+| S1 | **Who runs it:** the manager spawns one headless driver, using the same `spawnChildDriver` process mechanism packages use, in the project cwd. The driver loads the `graph` and `harness` plugin dirs (`graph:orchestrate`, `harness:harness`). Its prompt runs the development harness on the request (plus context and decisions), with claude and codex taking part.<br>**Route 1:** the `graph` MCP call `graph_open({request, cwd, isolated: false, allocation: "balanced", host_vendor, host_model, native_models})`, driven to its report.<br>**Route 2**, when that MCP is absent: the Agent Team fallback (`harness/engine/fallback.md`), with codex routing through `codex-exec-adapter.mjs`. `auto` falls back to Claude when codex is not ready, and that fallback is recorded as such.<br>The Workflow route is **not** used for a headless S driver, because it leaves no goal-gate verdict on disk.<br>**Tag:** the request passed to `graph_open` starts with `[teams-task <task_id>]`, and a fallback run's `manifest.json` carries `"teams_task": "<task_id>"`.<br>**Pointer:** the driver never writes `task.json`. As soon as its run exists, it writes `<taskDir>/harness-run.json`, either `{route:"graph", run_id, cwd}` or `{route:"fallback", run_dir}`. The manager takes a pointer only when the run it names carries this task's tag and was created after the harness run opened. Without a valid pointer, the manager finds the tagged run itself.<br>**Restart:** a restarted driver gets an S resume prompt that names the recorded (or found) run and forbids opening a second one.<br>The driver writes its final report to `<taskDir>/harness-report.md`. All of this works the same under `tm_run`, the daemon and CI. |
+| S1a | **State:** the task state follows the harness run's own verdict, as read by the manager, never the driver's word.<br>**Graph route:** the manager reads the graph run file (`<cwd>/.harness-run/broker/runs/<id>.json`) as JSON; teams never imports `graph/mcp`. The run is finished when its report stage is done, and accepted when its latest `gate:goal` accepted.<br>**Fallback route:** the run is finished when `05-report.md` exists, and accepted when `04-goal-gate.json` has `pass`.<br>**States:** `running` while the driver is alive or will be respawned; `complete` when finished and accepted; `partial` when finished without acceptance; `blocked` when the driver died past its restart budget, unfinished. A usage-limit death parks on `waiting_capacity`, as a package's does. No new state name is added.<br>**Spend:** the S driver's own stream counts toward spend as today; graph run nodes carry no cost of their own.<br>`tm_status`/`tm_next`/`tm_wait` carry `harness: {route, run, report_path}`. |
+| S2 | **The teams S machinery goes:** the S planning card, `openSRun`, the S run's own graph, S QA (m4), and `renderSReport`'s run reading.<br>A task already on disk with `s_run` resolves through a **frozen read-only path**: its state comes from its run file only, `s_qa` is ignored, and it is never respawned. A legacy run that never finished, with its driver dead, reads `blocked` ("legacy size-S runs are not restarted").<br>The reader branches (tickets, view, inspect, run.mjs, remove.mjs, bench) stay for such tasks. Their tests switch to legacy fixtures instead of being deleted. |
 
 ### L — the long loop
 
@@ -73,14 +97,26 @@
 ## SetGoal — done when
 
 - **S1/S1a:**
-  - A size-S task, judged or pinned, spawns exactly one harness driver in the project cwd, whose prompt names the `graph_open` balanced call and the Workflow fallback.
-  - The task reads `running` while the driver runs, `complete` on an accepted goal gate, `partial` on a finished run that did not pass, and `blocked` when the driver died past its budget.
+  - A size-S task, judged or pinned, spawns exactly one harness driver in the project cwd.
+    - Its prompt names the `graph_open` balanced call with the `[teams-task <id>]` tag, the Agent Team fallback with `teams_task` in the manifest, the pointer path and the report path.
+    - Its argv carries `--plugin-dir` for both `graph` and `harness` (tested on `driverArgv`).
+  - The task reads `running` while the driver runs, `complete` on a finished run whose goal gate accepted, `partial` on a finished run that did not pass, and `blocked` when the driver died past its budget. Each is tested on both routes, from the run's own files.
+  - A pointer is refused when its run lacks this task's tag or was created before the harness run opened. With no pointer, a tagged run is found and used. Both cases are tested.
+  - A restarted driver's prompt names the recorded run and says not to open another (tested).
   - No worktree, planning card or teams child run is created.
   - Tested with `HARNESS_TEST_NO_DRIVER` plus a fake driver.
 - **S2:**
   - No code path opens an S run.
   - A legacy `s_run` task fixture (with `roles.qa` set and no `s_qa`) reads its run's state and is never respawned.
+  - An unfinished legacy `s_run` whose driver is dead reads `blocked` (tested).
   - The reader tests pass on legacy fixtures, and no L test is deleted.
+- **G (from the critique):**
+  - **G2:** these are denied (tested): `timeout 5 python3 -c …`, `nice node -e …`, `env python3 - <<EOF` with a write call, `rg --pre`, `less -o`, `doas`, `stdbuf`, `ionice`, `parallel`, `watch`.
+  - **G2b** (each tested):
+    - A quoted `<<EOF` with no closing line does not swallow a later `cp`.
+    - A data heredoc counts its paths when its body holds a shell write verb, or when its file is a script or is run later in the line.
+    - A data heredoc of plain prose stays allowed, e.g. a commit message saying "remove stale teams/mcp/a.mjs".
+  - **G3:** a subgoal created while the pin was held takes the run's model assignee on release (tested).
 - **R1:** a test builds a non-interactive task whose `task.unasked` holds a `contradicts_decision` question and a plain one: `open_questions` lists both, the contradiction first with its field, and `priorRetroContext` text shows "contradicts". Fails without the fix.
 - **L3′:** sprint step 5 says the master picks and opens; the KOR mirror (if any) follows.
 - ~~**L1b/L1c:**~~ (dropped 2026-09-29)

@@ -725,6 +725,19 @@ test('applyStoryPin sets and releases the run-level STORY pin (tm_assign on a ST
   assert.equal(applyStoryPin(run, { kind: 'story_pin', to: 'auto' }), false, 'nothing to release');
 });
 
+test('G3: releasing a STORY pin restores the model-written assignee it replaced', async () => {
+  const { applyStoryPin } = await import('../mcp/graph.mjs');
+  const run = { nodes: [], subgoal_assignee: 'codex', spec: { subgoals: [{ id: 'U1', assignee: 'codex' }, { id: 'U2' }] } };
+  assert.equal(applyStoryPin(run, { kind: 'story_pin', to: 'human', who: 'sanghyeon' }), true);
+  assert.deepEqual(run.spec.subgoals[0].assignee, { by: 'user', who: 'sanghyeon' });
+  assert.equal(applyStoryPin(run, { kind: 'story_pin', to: 'auto' }), true);
+  assert.equal(run.spec.subgoals[0].assignee, 'codex', 'the model-written assignee is back');
+  assert.equal(run.spec.subgoals[1].assignee, undefined, 'a subgoal with none stays with none');
+  assert.equal(run.subgoal_assignee, 'codex', 'the run-level model assignee is back');
+  assert.equal(run.spec.subgoals[0].model_assignee, undefined);
+  assert.equal(run.model_subgoal_assignee, undefined);
+});
+
 test('a package run\'s plan/setgoal/critique briefings say: build this package, carry its acceptance, judge against it', () => {
   const cwd = scratchCwd();
   try {

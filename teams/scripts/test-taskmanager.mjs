@@ -7749,6 +7749,18 @@ test('M2: an areas split spent past its retries closes to a report and retro, wi
   }, { max_retries: 0 });
 });
 
+test('G4/M2: a Sprint whose planning failed carries every backlog request into the next one', async () => {
+  const { autoReshape } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, root, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['x'] }) });
+    await tm.call('tm_submit', { task_id, node_id: 'areas', payload: ok({ areas: [] }) });
+    withTasksRoot(root, () => autoReshape(readTask(root, task_id)));
+    await planningClosesToReport(tm, root, task_id, { node: 'areas', prd: false });
+    const retro = JSON.parse(readFileSync(docPaths(readTask(root, task_id)).retro, 'utf8'));
+    assert.deepEqual(retro.next_backlog.unshipped_requests.map((r) => r.request), ['sign in', 'sign out', 'reset password']);
+  }, { max_retries: 0, request: undefined, requests: ['sign in', 'sign out', 'reset password'] });
+});
+
 test('M2: a planning card spent past its retries closes to a report; the sibling card\'s PRD and stories carry', async () => {
   const { autoRetryPackages } = await import('../mcp/taskmanager.mjs');
   await withTask(async ({ tm, g, root, task_id }) => {
@@ -7908,6 +7920,7 @@ test('m1: a planning card that wrote no PRD, or a story with no acceptance crite
   for (const [label, stories, opts, why] of [
     ['no PRD', ['F1-US-1'], { prd: false }, /the PRD is missing required sections: Goal/],
     ['no acceptance', [{ id: 'F1-US-1', title: 'sign in', acceptance: [] }], {}, /user story F1-US-1 has no acceptance criteria/],
+    ['wrong prefix', [{ id: 'US-1', title: 'sign in', acceptance: ['signed in'] }], {}, /user story US-1 does not carry this card's id prefix F1-US-n/],
   ]) {
     await withTask(async ({ tm, g, task_id }) => {
       await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['x'] }) });

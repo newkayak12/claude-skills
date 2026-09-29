@@ -1867,6 +1867,38 @@ test('portfolio-refresh: a complete answer whose JSON has one stray bracket gets
   }
 });
 
+test('G4/M5: a STORY pin queued while setgoal runs through the vendor pins the subgoals setgoal\'s own result creates', async () => {
+  const cwd = repoWithFakeVendor();
+  const graphUrl = new URL('../mcp/graph.mjs', import.meta.url).href;
+  // Stands in for tm_assign landing mid-vendor-call: queued after the broker loaded the run,
+  // before its result comes back.
+  const pinning = join(cwd, 'pinning-adapter.mjs');
+  writeFileSync(pinning, FAKE_ADAPTER.replace("writeFileSync(out, JSON.stringify({ ok: true, last_message",
+    `const { queueHumanAction } = await import(${JSON.stringify(graphUrl)});
+queueHumanAction(get('--cwd'), out.split('/broker/')[1].split('/')[0], { kind: 'story_pin', to: 'human', who: 'sanghyeon' });
+writeFileSync(out, JSON.stringify({ ok: true, last_message`));
+  const vendors = JSON.parse(readFileSync(join(cwd, '.claude', 'broker-vendors.json'), 'utf8'));
+  vendors.fake.args = [pinning];
+  writeFileSync(join(cwd, '.claude', 'broker-vendors.json'), JSON.stringify(vendors));
+  process.env.FAKE_REPLY = JSON.stringify({ stage_ok: true, handoff: 'h', evidence: 'e', skills_used: [],
+    spec: { goal: 'g', acceptance: ['a'], subgoals: [{ id: 'U1', title: 't', acceptance: ['a'], deps: [] }] } });
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'fake' });
+    await c.call('team_submit', { run_id, cwd, node_id: 'plan', payload: { stage_ok: true, plan: 'p', handoff: 'h', evidence: 'e', skills_used: [] } });
+    const v = await c.call('team_run', { run_id, cwd, node_id: 'setgoal' });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    const run = loadRun(cwd, run_id);
+    assert.deepEqual(run.subgoal_assignee, { by: 'user', who: 'sanghyeon' });
+    const sg = run.spec.subgoals.find((x) => x.id === 'U1');
+    assert.equal(sg && sg.assignee && sg.assignee.by, 'user', JSON.stringify(run.spec));
+  } finally {
+    c.close();
+    delete process.env.FAKE_REPLY;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('a vendor that returns nothing fails the node', async () => {
   const { v } = await runPlanWith('');
   assert.equal(v.state, 'failed');
