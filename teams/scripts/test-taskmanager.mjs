@@ -6110,7 +6110,8 @@ test('M5: a STORY pin that lands after setgoal expanded pins every existing subg
   assert.equal(run.subgoal_assignee.who, 'sanghyeon', 'and on the run, for subgoals a later setgoal produces');
   assert.equal(applyStoryPin(run, { kind: 'story_pin', to: 'auto' }), true);
   assert.ok(run.nodes.every((n) => !n.assignment), 'released');
-  assert.ok(run.spec.subgoals.every((sg) => !sg.assignee), 'the user pins are gone');
+  assert.ok(run.spec.subgoals.every((sg) => !sg.assignee || sg.assignee.by !== 'user'), 'the user pins are gone');
+  assert.equal(run.spec.subgoals[1].assignee, 'human', 'U2\'s own model-written assignee is back (G3)');
   assert.equal(run.subgoal_assignee, undefined);
 });
 

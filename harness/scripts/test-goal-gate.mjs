@@ -264,6 +264,18 @@ test('LL-G2: a write verb is exempt only as a plain argument of a read-only comm
     'git log --output=a.mjs',
     'git diff --output a.mjs',
     'echo cp > a.mjs',
+    'doas cp x a.mjs',
+    'stdbuf -o0 cp x a.mjs',
+    'ionice cp x a.mjs',
+    'parallel cp x ::: a.mjs',
+    'watch cp x a.mjs',
+    'rg --pre rm x a.mjs',
+    'less -o a.mjs x',
+    // an interpreter or shell anywhere in the simple command, not only as its first word
+    'timeout 5 python3 -c "open(\'a.mjs\',\'w\').write(\'x\')"',
+    'nice node -e "require(\'fs\').writeFileSync(\'a.mjs\', \'x\')"',
+    'timeout 5 bash -c "echo > a.mjs"',
+    "env python3 - <<EOF\nopen('a.mjs','w')\nEOF",
   ];
   for (const c of deny) assert.equal(run(bash(dir, c)), 'deny', c);
 });
@@ -276,6 +288,8 @@ test('LL-G2b: an inline script that only mentions a gated path is allowed; one t
     'node -e "console.log(\'a.mjs\')"',
     "cat <<EOF > notes.txt\nsee teams/mcp/a.mjs\nEOF",
     "git commit -q -F - <<'EOF'\nfix teams/mcp/a.mjs\nEOF",
+    "git commit -q -F - <<'EOF'\nremove stale teams/mcp/a.mjs, open the rest\nEOF",
+    "cat > notes.txt <<EOF\nopen teams/mcp/a.mjs later\nEOF",
   ];
   for (const c of allow) assert.equal(run(bash(dir, c)), 'allow', c);
   const deny = [
@@ -288,6 +302,16 @@ test('LL-G2b: an inline script that only mentions a gated path is allowed; one t
     "cat <<EOF > a.mjs\nx\nEOF",
     'python3 -c "import os; os.replace(\'b\', \'a.mjs\')"',
     'node -e "require(\'child_process\').execSync(\'touch a.mjs\')"',
+    // a quoted <<EOF is not a heredoc and swallows nothing
+    'grep -n "<<EOF" x\ncp y a.mjs',
+    // a heredoc that never closes is judged as a whole command
+    'cat <<EOF\nrm a.mjs',
+    // a data heredoc whose body writes, or whose file is a script or is run later, counts
+    "cat > notes.txt <<EOF\nrm a.mjs\nEOF",
+    "cat > /tmp/gen.py <<EOF\nopen('a.mjs','w')\nEOF",
+    "cat > /tmp/x.sh <<EOF\necho hi > a.mjs.bak\ntouch a.mjs\nEOF\nbash /tmp/x.sh",
+    "cat > /tmp/run.txt <<EOF\nwriteFileSync a.mjs\nEOF\nnode /tmp/run.txt",
+    'python3 -c "getattr(__builtins__, \'op\'+\'en\')(\'a.mjs\', \'w\')"',
   ];
   for (const c of deny) assert.equal(run(bash(dir, c)), 'deny', c);
 });

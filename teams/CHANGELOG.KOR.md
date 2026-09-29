@@ -5,6 +5,7 @@
 `teams` 플러그인의 모든 릴리스를 최신순으로 적었습니다. 예전 KOR.md의 `## 상태` 절을 그대로 옮겨 온 것입니다. 새 릴리스 줄은 `teams:patch`가 아래 `## 상태` 맨 위에 추가합니다.
 
 ## 상태
+- v0.37.8 — STORY 핀을 풀면(tm_assign을 auto로) 그 핀이 덮었던 모델 작성 assignee가 돌아옵니다. 핀이 걸린 동안 setgoal이 만든 서브골도 포함하며, broker가 vendor 호출 뒤 다시 읽을 때도 유지합니다. m1 스토리 id 접두사 거절, 기획 실패 시 retro가 백로그 요청을 모두 이월, setgoal이 vendor로 도는 중 큐에 들어간 STORY 핀(M5)을 지키는 테스트를 추가했습니다.
 - v0.37.7 — 마스터 세션이 곧 롱 루프: 회고의 `open_questions`가 사람 없이 돈 태스크가 기본값으로 정한 태스크 수준 질문(`task.unasked`)도 담습니다. 패키지의 `contradicts_decision`이 맨 앞에 오고, 다음 스프린트 컨텍스트와 보고서에 "(contradicts: …)"로 표시됩니다. 그래서 Dev가 "정해진 결정이 성립하지 않는다"고 한 것이 사라지지 않고 다음 스프린트 기획으로 갑니다. `teams:sprint` 6단계: 스프린트를 연 세션이 이월 항목을 골라 `context_from`으로 다음 스프린트를 열고, 이월할 것이 없거나 두 스프린트 연속 아무것도 못 내면 멈춥니다. daemon 쪽 루프 설계(loop 파일, `tm_loop`, 루프 한도)는 폐기합니다.
 - v0.37.6 — 적대적 검증 수정: areas-critique가 기능 분할을 게이트하고 plan-integrate가 재분할 가능; 기획/shape 실패도 보고서와 retro로 종료; 죽은 QA 카드가 라운드를 무너뜨리지 않음; setgoal 중 STORY pin 유지; 이월은 최종 통합 기준; 크기 S도 retro.json과 스냅샷 QA 카드; 카드는 PRD/스토리 계약 검사; ordered 할당에서도 작성자≠심사자; 모든 카드에 acceptance 원문 블록
 - v0.37.5 — sub-EPIC 폐기: 한 EPIC에 안 끝나는 일은 다음 스프린트로 이월합니다. max_depth는 폐기(안내 메모)되고, 회고가 끝내지 못한 유저 스토리(next_backlog.unfinished_stories)를 기록하며, tm_open({context_from})이 이를 안 나간 백로그 항목과 함께 carryover_candidates로 돌려줘 사람이 고르게 합니다.

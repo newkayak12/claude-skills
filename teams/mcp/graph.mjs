@@ -412,17 +412,19 @@ export function applyStoryPin(run, action) {
   if (action.to === 'auto') {
     let changed = !!run.subgoal_assignee;
     delete run.subgoal_assignee;
-    if ('model_subgoal_assignee' in run) {
-      run.subgoal_assignee = run.model_subgoal_assignee;
-      delete run.model_subgoal_assignee;
-    }
+    const runModel = 'model_subgoal_assignee' in run ? run.model_subgoal_assignee : undefined;
+    delete run.model_subgoal_assignee;
+    if (runModel !== undefined) run.subgoal_assignee = runModel;
     for (const sg of subgoals) {
       if (!(sg.assignee && typeof sg.assignee === 'object' && sg.assignee.by === 'user')) continue;
       const attempt = currentAttempt(run, sg.id);
       releaseHumanPin(run, sg, String(sg.id), attempt);
-      if ('model_assignee' in sg) {
-        sg.assignee = sg.model_assignee;
-        delete sg.model_assignee;
+      // A subgoal setgoal created while the pin was held never had its own: it takes the run's
+      // model assignee, as expandSubgoals would have given it without the pin.
+      const back = 'model_assignee' in sg ? sg.model_assignee : runModel;
+      delete sg.model_assignee;
+      if (back !== undefined && back !== null) {
+        sg.assignee = back && typeof back === 'object' ? { ...back } : back;
         applyHumanPin(run, sg, String(sg.id), attempt);
       }
       changed = true;
@@ -432,7 +434,8 @@ export function applyStoryPin(run, action) {
   if (run.subgoal_assignee && pinSource(run.subgoal_assignee) === 'model') run.model_subgoal_assignee = run.subgoal_assignee;
   run.subgoal_assignee = { by: 'user', ...(action.who ? { who: action.who } : {}) };
   for (const sg of subgoals) {
-    if (sg.assignee && pinSource(sg.assignee) === 'model') sg.model_assignee = sg.assignee;
+    // What it had before this pin (null: nothing) - a subgoal with no key was created under it.
+    if (!(sg.assignee && pinSource(sg.assignee) === 'user')) sg.model_assignee = sg.assignee || null;
     sg.assignee = { ...run.subgoal_assignee };
     applyHumanPin(run, sg, String(sg.id), currentAttempt(run, sg.id));
   }

@@ -736,6 +736,11 @@ test('G3: releasing a STORY pin restores the model-written assignee it replaced'
   assert.equal(run.subgoal_assignee, 'codex', 'the run-level model assignee is back');
   assert.equal(run.spec.subgoals[0].model_assignee, undefined);
   assert.equal(run.model_subgoal_assignee, undefined);
+  // A subgoal setgoal created while the pin was held takes the run's model assignee on release.
+  applyStoryPin(run, { kind: 'story_pin', to: 'human' });
+  run.spec.subgoals.push({ id: 'U3', assignee: { ...run.subgoal_assignee } });
+  applyStoryPin(run, { kind: 'story_pin', to: 'auto' });
+  assert.equal(run.spec.subgoals[2].assignee, 'codex');
 });
 
 test('a package run\'s plan/setgoal/critique briefings say: build this package, carry its acceptance, judge against it', () => {
