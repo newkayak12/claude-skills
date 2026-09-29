@@ -16,6 +16,7 @@ import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { storyLabel, storyId, unfinishedWork } from './taskmanager.mjs';
 import { loadRun, runState } from './graph.mjs';
+import { harnessVerdict } from './harnessrun.mjs';
 import {
   epicKey, storyKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
   storyTicketState, storyTaskProgress, epicBoardRows, packageFiling,
@@ -409,6 +410,19 @@ function sRunShipped(task) {
   }
 }
 
+// A size-S task on the development harness (S1a): the verdict of the run the manager resolved
+// (task.harness_run.run), read from that run's own files - never the driver's word.
+function harnessOutcome(task) {
+  const h = task.harness_run;
+  if (!h || !h.run) return null;
+  return harnessVerdict(h.run);
+}
+
+function harnessShipped(task) {
+  const v = harnessOutcome(task);
+  return !!(v && v.finished && v.accept);
+}
+
 export function buildRetro(task) {
   const packageIds = [...new Set(task.nodes.filter((n) => n.stage === 'dispatch').map((n) => n.subgoal_id))];
   // A node superseded by a reshape or a newer attempt did not fail - it was replaced. Listing
@@ -416,6 +430,8 @@ export function buildRetro(task) {
   const whatFailed = task.nodes
     .filter((n) => ['failed', 'skipped', 'unreachable'].includes(n.state) && n.result)
     .filter((n) => !/^superseded\b/.test(String(n.result.reason || '')))
+    // A size-S task's manager nodes are skipped by design (delegateIfSmall), not failures.
+    .filter((n) => !/^size S:/.test(String(n.result.reason || '')))
     .map((n) => ({ node_id: n.node_id, stage: n.stage, package_id: n.subgoal_id || null, reason: whyOf(n.result).slice(0, 300) }));
   const retries = packageIds
     .map((id) => ({ package_id: id, attempts: task.nodes.filter((n) => n.stage === 'dispatch' && n.subgoal_id === id).length }))
@@ -444,6 +460,7 @@ export function buildRetro(task) {
   const unshippedRequests = [];
   if (Array.isArray(task.requests) && task.requests.length) {
     const shipped = new Set();
+    if (harnessShipped(task)) task.requests.forEach((_, i) => shipped.add(i));
     for (const p of ((task.spec && task.spec.packages) || [])) {
       if (!shippedPkgs.has(String(p.id))) continue;
       for (const i of (Array.isArray(p.backlog) ? p.backlog : [])) if (Number.isInteger(i)) shipped.add(i);
@@ -621,13 +638,32 @@ export function renderSReport(task) {
   return L.join('\n') + '\n';
 }
 
-// A size-S task's QA (m4) still running: open cards whose latest accept has not settled.
-function sQaPending(task) {
-  if (!task.s_qa || task.s_qa.failed) return false;
-  return qaPkgs(task).some((q) => {
-    const acc = latestBySubgoal(task, String(q.id), 'accept');
-    return !acc || !(acc.state === 'done' || acc.final || acc.state === 'skipped');
-  });
+// A size-S task's report on the development harness (S1/S1a): what the harness run itself
+// says - its report, its goal gate - once it finished, or why it stopped once its driver died past
+// its budget. null while it is still running: nothing is rendered ahead of the data.
+export function renderHarnessReport(task) {
+  const h = task.harness_run;
+  const v = harnessOutcome(task);
+  const finished = !!(v && v.finished);
+  if (!finished && !h.exhausted) return null;
+  const st = finished ? (v.accept ? 'complete' : 'partial') : 'blocked';
+  const L = [frontmatter(epicKey(task.run_id), st === 'complete' ? 'DONE' : st.toUpperCase(), task), `# Report — size S on the development harness (${st})`, ''];
+  let text = '';
+  try { text = readFileSync(h.report_path, 'utf8').trim(); } catch { /* the driver did not copy it */ }
+  if (!text && v) text = String(v.report_text || '').trim();
+  if (finished) L.push(text || '(the harness run wrote no report text)', '');
+  else L.push('The harness driver died past its restart budget before the run finished. tm_retry({task_id}) gives it a fresh driver on the same run.', '');
+  if (v && v.readable) {
+    L.push('## Goal gate', '', `${v.accept ? 'accepted' : 'not accepted'}${v.match_pct != null ? ` at ${v.match_pct}` : ''}`);
+    if ((v.gaps || []).length) L.push('', 'Gaps:', bullets(v.gaps));
+    L.push('');
+  }
+  const run = h.run;
+  L.push('## Harness run', '', bullets([
+    run ? (run.route === 'graph' ? `graph run ${run.run_id} at ${run.cwd}` : `Agent Team fallback run at ${run.run_dir}`) : 'no run was recorded',
+    `the run wrote straight into ${h.cwd}: no worktree, no branch, nothing committed - review and commit it yourself.`,
+  ]));
+  return L.join('\n') + '\n';
 }
 
 // Every file this task currently has data for, keyed by its full path. A shape not yet done
@@ -651,8 +687,15 @@ export function renderAll(task) {
   if (task.nodes.some((n) => n.stage === 'gate' && n.subgoal_id === null && n.result)) files[paths.goalGate] = renderGoalGate(task);
   // A size-S task's report and retro wait for its QA verdicts (m4): until then the run's own
   // account is not the task's.
-  const sReport = task.s_run && task.s_run.run_id && !sQaPending(task) ? renderSReport(task) : null;
-  if (sReport) {
+  // A legacy size-S task (S2) reports from its run alone; its QA cards are not waited on.
+  const hReport = task.harness_run ? renderHarnessReport(task) : null;
+  const sReport = !hReport && task.s_run && task.s_run.run_id ? renderSReport(task) : null;
+  if (hReport) {
+    files[paths.report] = hReport;
+    files[paths.retro] = renderRetro(task);
+  } else if (task.harness_run) {
+    // Still running: no report or retro yet.
+  } else if (sReport) {
     files[paths.report] = sReport;
     // A size-S task owes the next Sprint the same retro an L task does (M6).
     files[paths.retro] = renderRetro(task);

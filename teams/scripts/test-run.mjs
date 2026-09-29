@@ -294,7 +294,7 @@ test('limitResumeAt: no parseable time falls back to 30 minutes after the hit, a
 
 test('findLimitNotices: parked drivers (size-S and package) whatever their text; failed nodes only on limit wording', () => {
   const task = {
-    s_run: { waiting_capacity: { reason: 'codex credit spent', since: 5 } },
+    harness_run: { waiting_capacity: { reason: 'codex credit spent', since: 5 } },
     nodes: [
       { node_id: 'dispatch:P1:1', stage: 'dispatch', subgoal_id: 'P1', state: 'running', child: { waiting_capacity: { reason: 'resets 3pm (UTC)', since: 6 } } },
       { node_id: 'dispatch:P2:1', stage: 'dispatch', subgoal_id: 'P2', state: 'failed', finished_at: 7, result: { stage_ok: false, reason: "driver died: You've hit your weekly limit" } },
@@ -371,7 +371,7 @@ const COMPLETE = { state: 'complete', cursor: 9, counts: { done: 3 }, transition
 test('resume-on-limit: a size-S run parked on "resets 11:50pm (Asia/Seoul)" sleeps to the reset + grace, reset_capacity, then completes', async () => {
   const hit = Date.parse('2026-09-24T12:00:00Z'); // 21:00 in Seoul
   const clock = fakeClock(hit + 1000);
-  const parked = { s_run: { waiting_capacity: { reason: "You've hit your 5-hour limit · resets 11:50pm (Asia/Seoul)", since: hit } }, nodes: [] };
+  const parked = { harness_run: { waiting_capacity: { reason: "You've hit your 5-hour limit · resets 11:50pm (Asia/Seoul)", since: hit } }, nodes: [] };
   const { deps, calls } = limitTaskLayer({
     rounds: [[BLOCKED], [COMPLETE]],
     tasks: [parked, { nodes: [] }],
@@ -418,7 +418,7 @@ test('resume-on-limit: off by default - a limit-blocked task exits 1 with no wai
   const clock = fakeClock(T0);
   const { deps, calls } = limitTaskLayer({
     rounds: [[BLOCKED]],
-    tasks: [{ s_run: { waiting_capacity: { reason: 'resets 3pm (UTC)', since: T0 } }, nodes: [] }],
+    tasks: [{ harness_run: { waiting_capacity: { reason: 'resets 3pm (UTC)', since: T0 } }, nodes: [] }],
     retry: () => { throw new Error('must not retry'); },
   });
   const result = await runHeadless({ request: 'build it', pollMs: 10, json: false }, { ...deps, now: clock.now, sleep: clock.sleep }, () => false, sink());
@@ -442,7 +442,7 @@ test('resume-on-limit: a blocked task with no limit in it stays blocked - no wai
 
 test('resume-on-limit: gives up after --max-resumes and exits 1', async () => {
   const clock = fakeClock(T0);
-  const parked = { s_run: { waiting_capacity: { reason: "You've hit your limit", since: T0 } }, nodes: [] };
+  const parked = { harness_run: { waiting_capacity: { reason: "You've hit your limit", since: T0 } }, nodes: [] };
   const { deps, calls } = limitTaskLayer({
     rounds: [[BLOCKED]], // every round blocks on the limit again
     tasks: [parked],
@@ -469,7 +469,7 @@ test('resume-on-limit: gives up when the limit has no resume route (a manager ju
   assert.deepEqual(clock.sleeps, [], 'no point sleeping for something that cannot be resumed');
   assert.match(parseJsonLines(out1.lines).find((e) => e.event === 'limit_gave_up').reason, /no resume route for integrate:1/);
 
-  const parked = { s_run: { waiting_capacity: { reason: "You've hit your limit", since: T0 } }, nodes: [] };
+  const parked = { harness_run: { waiting_capacity: { reason: "You've hit your limit", since: T0 } }, nodes: [] };
   const two = limitTaskLayer({ rounds: [[BLOCKED]], tasks: [parked], retry: () => ({ retried: false, resumed: [] }) });
   const out2 = sink();
   const r2 = await runHeadless({ request: 'r', pollMs: 10, json: true, resumeOnLimit: true, maxResumes: 6 },
@@ -480,7 +480,7 @@ test('resume-on-limit: gives up when the limit has no resume route (a manager ju
 
 test('resume-on-limit: SIGINT during the reset wait detaches with 130 and says the task is still blocked', async () => {
   const clock = fakeClock(T0);
-  const parked = { s_run: { waiting_capacity: { reason: 'resets 3pm (UTC)', since: T0 } }, nodes: [] };
+  const parked = { harness_run: { waiting_capacity: { reason: 'resets 3pm (UTC)', since: T0 } }, nodes: [] };
   const { deps, calls } = limitTaskLayer({ rounds: [[BLOCKED]], tasks: [parked], retry: () => { throw new Error('must not retry'); } });
   let stop = false;
   const sleep = async (ms) => { clock.t += ms; stop = true; };

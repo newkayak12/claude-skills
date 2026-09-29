@@ -12,6 +12,7 @@ import { pidAlive } from './proc.mjs';
 import { join } from 'node:path';
 import { loadRun, loadRunAt, unmetDeps, runState, nodeKind, authorStage, KINDS } from './graph.mjs';
 import { TEAM_DEFAULTS } from './teamconfig.mjs';
+import { harnessVerdict } from './harnessrun.mjs';
 
 export function epicKey(taskId) {
   return `E-${String(taskId).slice(0, 8)}`;
@@ -221,7 +222,19 @@ function sRunPhase(run) {
 // knows when nothing can proceed and showing READY/IN_PROGRESS for a stuck EPIC would defeat the
 // board's own point (see the plan's 발견 3). A size-S task (task.s_run set) delegates the whole
 // question to sRunTicketState - see its own comment for why task.spec can never answer it.
+// A size-S task on the development harness (S1a): the run the manager resolved, read from its
+// own files. No run yet -> READY; running -> IN_PROGRESS; its report written -> DONE when its goal
+// gate accepted, else SETTLED (finished, not delivered); the driver exhausted -> BLOCKED.
+function harnessTicketState(task) {
+  const h = task.harness_run;
+  const v = h.run ? harnessVerdict(h.run) : null;
+  if (v && v.finished) return v.accept ? 'DONE' : 'SETTLED';
+  if (h.exhausted) return 'BLOCKED';
+  return h.run ? 'IN_PROGRESS' : 'READY';
+}
+
 export function epicTicketState(task) {
+  if (task.harness_run) return harnessTicketState(task);
   if (task.s_run) return sRunTicketState(loadSRun(task));
   if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) {
     // A report is also written over a settled failure: a retry budget ran out, settleFailure
@@ -252,6 +265,10 @@ export function epicTicketState(task) {
 // (accept:Pn, integrate, gate:goal, report). null once the report is done - there is no phase
 // left to name. A size-S task delegates to sRunPhase, same reason as epicTicketState above.
 export function epicPhase(task) {
+  if (task.harness_run) {
+    const st = harnessTicketState(task);
+    return st === 'DONE' || st === 'SETTLED' ? null : (task.harness_run.run ? 'impl' : 'plan');
+  }
   if (task.s_run) return sRunPhase(loadSRun(task));
   if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) return null;
   if (!task.spec) {

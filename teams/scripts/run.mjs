@@ -201,7 +201,8 @@ function textOf(result) {
 export function findLimitNotices(task) {
   const out = [];
   if (!task) return out;
-  const s = task.s_run;
+  // Only a harness run is resumed (a legacy s_run is never respawned, S2).
+  const s = task.harness_run;
   if (s && s.waiting_capacity) {
     out.push({ reason: String(s.waiting_capacity.reason || ''), since: s.waiting_capacity.since, parked: true, package_id: 'S' });
   }
