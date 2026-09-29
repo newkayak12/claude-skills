@@ -1,6 +1,6 @@
 # Korea Company Culture Signals — Resume Writing Reference
 
-Shared reference for portfolio/ skills (resume-tailorer, portfolio-rewrite, etc.).
+Shared reference for portfolio/ skills (portfolio-rewrite, etc.).
 Use this to adjust the tone, vocabulary, and emphasis of resume content based on the target company type.
 
 ---
