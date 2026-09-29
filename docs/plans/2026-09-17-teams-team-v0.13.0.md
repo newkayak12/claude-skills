@@ -1,5 +1,7 @@
 # teams (team) v0.13.0 — 사용자가 executor가 된다 (자동 결정 쪽)
 
+> **현재 상태 (2026-09-29 점검):** human 기능은 다른 형태로 출시됐다(tm_answer 대신 tm_submit, tm_assign, tm_inbox, tm_log, ask_timeout, human_gates). `human_scope`는 폐기. Task 7의 `15-spec-gate.md`는 렌더링되지 않는다(`teams/mcp/docs.mjs` 머리 주석). `gate:human:spec` 노드가 없어 필요 여부 미정.
+
 > Produced by write:writing-plans. Owner for execution routing: planning:executing-plans.
 > Steps use checkbox (`- [ ]`) syntax. 설계 근거: `2026-09-17-teams-team.md` §4·§6·§7·§7b·§7c·§9·§11·§14,
 > `2026-09-17-teams-roadmap-sizing.md` §4.2·§6.

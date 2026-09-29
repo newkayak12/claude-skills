@@ -1,5 +1,7 @@
 # teams: L-only long loop; size S goes to the development harness
 
+> **Status (2026-09-29):** done — R1/L3′ in teams 0.37.7, G1–G4 in 0.37.8 (harness 1.22.4), S1/S1a/S2 in 0.38.0. L1–L2 dropped.
+
 > The user decided this on 2026-09-28. Their words:
 > - "사이즈 유지하지만 이 워크플로 자체는 기본 하네스와 함께 쓸거고 작은 사이즈는 하네스를 쓰는식이 맞을거임 / 이건 롱텀 루핑에 특화되어 있어야 함"
 > - "s는 바로 개발 하네스로 넘겨서 claude, codex 참여 처리하면 되니까"
@@ -29,7 +31,7 @@
 > - **L3 kept, reworded:** the master picks the carry-over and opens the next Sprint; a person overrides only by choice.
 > - **R1 added:** the one real gap. A `contradicts_decision` a Dev package raises in a non-interactive task lands on `task.unasked` (`escalateBlocking`), but `buildRetro` gathered `open_questions` from child runs only, so the next Sprint never saw "the spec is wrong". `buildRetro` now also gathers `task.unasked`, contradictions first, and the context/report show what each contradicts.
 > - **The separate Dev→PM plan is dropped:** R1 is its whole function (the next Sprint's planning takes the contradiction). Per-role judgement criteria are shelved with it.
-> - S1/S1a/S2 and G1–G4 are unchanged and not yet done.
+> - S1/S1a/S2 and G1–G4 are unchanged. (Done since: G1–G4 in teams 0.37.8 / harness 1.22.4, S1/S1a/S2 in teams 0.38.0.)
 
 > **Critique of the remaining scope (2026-09-29, `sound:false`, 9 problems, all taken):**
 > - **G2:**
