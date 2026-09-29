@@ -83,7 +83,7 @@ tm_open({
 That is the whole of your job to start it: size, the feature split and one planning card per
 feature area, the planning integrate, shape, critique, every package's dispatch and fold,
 integrate, one QA card per feature area, the goal gate, the report — or, for a size-S request,
-its one planning card and then the one run it opens — all happen on their own from here. Prefer `tm_run` over `tm_open` when you do not even want the
+the development-harness run it hands the request to (claude and codex taking part) — all happen on their own from here. Prefer `tm_run` over `tm_open` when you do not even want the
 `state` field back, only a pointer: same open, same daemon, `{task_id, run_id, docs_dir, view_url}` - open `view_url` in a browser to watch the run.
 
 After this you watch; you never drive.
@@ -103,8 +103,8 @@ thing holding you open — a real run died at one minute saying "I'll check agai
 minutes", and everything it was waiting for finished long after it was gone.
 
 `isolated` is true only when you created or were handed a private worktree holding this run
-alone; it travels straight into whichever run the daemon ends up opening — the single run a
-size-S task drives, or each package's own dispatch under an L task. When the user has said, in
+alone; it travels straight into each package's own dispatch under an L task. A size-S task goes to
+the development harness, which runs in the project root. When the user has said, in
 their own words, that the request must be split — "패키지별로 나눠서", "one worktree per
 package", "these are separate deliverables" — pass `size: "L"` and `size` is recorded as pinned,
 not measured; "one run, don't split it" pins `size: "S"`. A monorepo with one test script and one
@@ -115,8 +115,9 @@ proceeds as one graph.
 
 There is no manager loop for you to read or run by hand any more — the daemon `tm_open`/`tm_run`
 spawned is what a relayed session used to do, now code instead of a relay. Every graph run it
-opens — the manager's own package dispatches, and a size-S task's single run — is still driven by
-its own spawned headless session running `references/loop.md`; you never call
+opens — the manager's own package dispatches — is still driven by
+its own spawned headless session running `references/loop.md` (a size-S task's harness driver runs
+the graph:orchestrate / harness skills instead); you never call
 `team_next`/`team_run`/`team_submit` yourself, and now you never call `tm_next`/`tm_submit` for a
 manager node either. `tm_next`/`tm_submit`/`tm_retry` still exist for the rare case you need to
 intervene by hand (a human decision the daemon cannot make), and stay safe to call alongside a
