@@ -58,6 +58,7 @@ import {
   planningPkgs, livePlanningPkgs, qaPkgs, phaseOfId, planningStories,
 } from './tickets.mjs';
 import { writeDocs, renderPrd, cardDocuments, questionLine } from './docs.mjs';
+import { readPointer, ownsRun, findTaggedRun, harnessVerdict, taskTag } from './harnessrun.mjs';
 import { logReply, renderStreamLine, renderLedgerLine } from './tasklog.mjs';
 import { validate as validateDiagram, renderToFile as renderDiagram } from './diagram.mjs';
 import { conventionsBlock } from './conventions.mjs';
@@ -681,7 +682,7 @@ function createTask(a) {
 // judging node right after size, ahead of whatever size fed (PLAN, or shape with planning off).
 // Rewired by dep rather than by building a second node list, so it sits in front of whichever
 // chain createTask above built. A size-S task skips it with every other manager node
-// (delegateIfSmall) - its one run gets task.decisions directly (openSRun).
+// (delegateIfSmall) - the development harness gets task.decisions in its driver's prompt.
 // `brainstorm: false` (team.json or tm_open) turns the node off; decisions[] still apply.
 const BRAINSTORM_LIGHT = `LIGHT mode: the request already declares its backlog and acceptance criteria. Do not re-plan it - restate "intent" and "scope" only, return "approaches": [] and leave "chose"/"because" empty, list only assumptions the criteria leave open, and ask at most 2 questions (only what the criteria contradict or leave to the requester).`;
 
@@ -1525,7 +1526,7 @@ export function autoReshape(task) {
   // A stopped box opens nothing new (see autoRetryPackages): a repair or reshape now would sit
   // undispatched with the task reading running forever. enforceBudget closes it to the report.
   if (task.budget_stopped) return false;
-  if (task.s_run) return false;
+  if (task.s_run || task.harness_run) return false;
   // A judge that could not judge is not a verdict on the shape, exactly as it is not one on a
   // package (autoRetryPackages skips the same result for the same reason). autoRejudge owns the
   // node while its rejudge budget lasts - and it deliberately waits a minute (or a usage-limit
@@ -1686,16 +1687,15 @@ function reopenCapacity(child) {
 export function clearCapacity(task, packageId) {
   const resumed = [];
   const a = { package_id: packageId };
-    if (task.s_run && task.s_run.waiting_capacity && (!a.package_id || String(a.package_id) === 'S')) {
-      record(task, { event: 'child_driver_capacity_cleared', task_id: task.run_id, node_id: 'S', was: task.s_run.waiting_capacity });
-      delete task.s_run.waiting_capacity;
-      reopenCapacity(task.s_run);
+    const h = task.harness_run;
+    if (h && h.waiting_capacity && (!a.package_id || String(a.package_id) === 'S')) {
+      record(task, { event: 'child_driver_capacity_cleared', task_id: task.run_id, node_id: 'S', was: h.waiting_capacity });
+      delete h.waiting_capacity;
       if (!noDriver()) {
-        const restarts = (task.s_run.driver && task.s_run.driver.restarts) || [];
-        const fresh = spawnChildDriver(task, 'S', task.s_run, { resume: true, attempt: nextSpawnAttempt(task.s_run) });
+        const restarts = (h.driver && h.driver.restarts) || [];
+        const fresh = spawnHarnessDriver(task, { resume: true, run: resolveHarnessRun(task), attempt: nextSpawnAttempt(h) });
         fresh.restarts = restarts;
-        task.s_run.driver = fresh;
-        delete task.s_run.stalled_since;
+        h.driver = fresh;
         record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: 'S', pid: fresh.pid, reason: 'reset_capacity' });
       }
       resumed.push('S');
@@ -1769,7 +1769,7 @@ export function autoResumeCapacity(task, now = Date.now()) {
   if (task.budget_stopped) return false;
   const due = (w) => w && now >= capacityResetAt(w.reason, w.since) + CAPACITY_GRACE_MS;
   let resumed = [];
-  if (task.s_run && due(task.s_run.waiting_capacity)) resumed = resumed.concat(clearCapacity(task, 'S'));
+  if (task.harness_run && due(task.harness_run.waiting_capacity)) resumed = resumed.concat(clearCapacity(task, 'S'));
   for (const n of task.nodes) {
     if (n.stage !== 'dispatch' || n.state !== 'running' || !n.child || !due(n.child.waiting_capacity)) continue;
     resumed = resumed.concat(clearCapacity(task, String(n.subgoal_id)));
@@ -1884,7 +1884,7 @@ export function autoRepair(task) {
 // capped the single QA pass: the round number is the most attempts any one QA card has had.
 // Returns null while the round is still open, else {filed?, unresolved?, defects}.
 function settleQaRound(task) {
-  if (task.s_run) return settleSQa(task);
+  if (task.s_run) return null; // S2: a legacy size-S task's QA cards are read, never settled
   const goal = task.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id == null).pop();
   if (!goal) return null;
   const round = goal.deps.map((d) => task.nodes.find((x) => x.node_id === d)).filter((x) => x && x.stage === 'accept' && phaseOfId(task, x.subgoal_id) === 'qa');
@@ -2731,7 +2731,7 @@ function childContext(task, pkg) {
 // graph loop to the end; the manager waits and folds the result. Manager context per package:
 // a few lines.
 
-export function driverArgv(task = null) {
+export function driverArgv(task = null, o = {}) {
   // Tests (and anyone with a different CLI) replace the whole command line here; the prompt is
   // always appended as the last argument.
   const override = String(process.env.HARNESS_CHILD_DRIVER || '').trim();
@@ -2745,7 +2745,7 @@ export function driverArgv(task = null) {
   // the user's installed plugins, so without these the child's nodes never see a single skill
   // they are told to load - which is how every bench run before 0.18.0 ran (skills_used none).
   argv.push(...pluginDirArgs({
-    skills: [task && task.child_opts && task.child_opts.skills, task && task.stage_skills, Object.values(STAGE_SKILLS)].filter(Boolean),
+    skills: [task && task.child_opts && task.child_opts.skills, task && task.stage_skills, Object.values(STAGE_SKILLS), o.harness ? HARNESS_SKILLS : null].filter(Boolean),
     extraDirs: (task && task.team && task.team.opts && task.team.opts.plugin_dirs) || [],
   }));
   return argv;
@@ -2789,7 +2789,7 @@ function spawnChildDriver(task, nodeIdLabel, child, opts = {}) {
   const log = join(dir, `${base}${suffix}.stream.jsonl`);
   const stderr = join(dir, `${base}${suffix}.stderr.txt`);
   const exitFile = join(dir, `${base}${suffix}.exit.json`);
-  const argv = driverArgv(task);
+  const argv = driverArgv(task, { harness: opts.harness === true });
   const command = argv.join(' ');
   let out = null;
   let err = null;
@@ -3153,6 +3153,12 @@ function spawnDaemon(task, opts = {}) {
 // timebox, a spent retry budget): a written report over any of these is `partial`, not `complete`.
 export function unfinishedWork(task) {
   if (!task || !Array.isArray(task.nodes)) return null;
+  // Size S on the development harness: what its own goal gate said, or why its driver stopped.
+  if (task.harness_run) {
+    const st = harnessState(task);
+    if (st.partial_reasons) return { partial: true, partial_reasons: st.partial_reasons };
+    return st.state === 'blocked' ? { partial: true, partial_reasons: [st.reason] } : null;
+  }
   const reasons = [];
   const last = (pred) => task.nodes.filter(pred).pop();
   if (task.planning_failed) {
@@ -3198,19 +3204,17 @@ export function managerState(task) {
 }
 
 export function taskState(task) {
+  if (task.harness_run) return harnessState(task);
   if (!task.s_run) return managerState(task);
+  // S2 (docs/plans/2026-09-28-teams-long-loop.md): a legacy size-S task is read through this
+  // frozen path - its run file only, its QA cards (s_qa) ignored, never respawned. A run that
+  // never finished and has no live driver will never finish: it reads blocked, not running
+  // forever (tm_wait would otherwise never return).
   const run = loadRun(task.s_run.cwd, task.s_run.run_id);
   const cs = run ? runState(run) : { state: 'missing', counts: {} };
   const st = { ...sState(cs), counts: cs.counts || {} };
-  // m4: a completed S run still owes its QA verdicts; once they are in, a defect QA found (and
-  // nothing can fix within this task) or a QA card with no verdict makes it partial.
-  if (st.state === 'complete' || st.state === 'partial') {
-    if (sQaActive(task) || (sQaWanted(task) && !task.s_qa)) return { ...st, state: 'running' };
-    const reasons = [...(st.partial_reasons || [])];
-    for (const d of task.unresolved_defects || []) reasons.push(`QA defect left unresolved: ${d.title}`);
-    for (const q of task.qa_not_run || []) reasons.push(`${q.pass}: QA reached no verdict (${q.reason})`);
-    if (task.s_qa && task.s_qa.failed) reasons.push(`QA could not run: ${task.s_qa.failed}`);
-    if (reasons.length) return { ...st, state: 'partial', partial: true, partial_reasons: reasons };
+  if (st.state === 'running' && !(task.s_run.driver && driverAlive(task.s_run.driver))) {
+    return { ...st, state: 'blocked', reason: 'legacy size-S runs are not restarted' };
   }
   return st;
 }
@@ -3432,8 +3436,7 @@ export function dispatchSettled(task, n) {
 // wrapper so the daemon's S-branch does not have to know serviceDeadDriver's node-shaped calling
 // convention.
 export function serviceSRun(task) {
-  if (!task.s_run || !task.s_run.driver) return false;
-  return serviceDeadDriver(task, task.s_run, 'S') || serviceStalledDriver(task, task.s_run, 'S');
+  return task.harness_run ? serviceHarnessRun(task) : false;
 }
 
 // The child's account, read from its file. This is the only place the manager touches a
@@ -4474,9 +4477,7 @@ export function finish(task, n, result) {
       }
       n.result = { ...n.result, duplicate_ids: dups, duplicates: [...new Set([...(n.result.duplicates || []), ...dups.map((x) => `${x.id} -> ${x.cards.join(', ')}`)])] };
     }
-    if (n.state === 'done' && task.size === 'S' && !task.s_run) {
-      openSRun(task);
-    } else if (n.state === 'failed' && n.result.judge_failed !== true) {
+    if (n.state === 'failed' && n.result.judge_failed !== true) {
       if (n.result.resplit === true) resplitPlanning(task, n);
       else replanPlanning(task, n);
     }
@@ -4665,9 +4666,8 @@ const NEXT_SCHEMA = {
   type: 'object',
   properties: {
     task_id: { type: 'string' },
-    // 'delegated' has no producer: a size-S task always opens its own run via openSRun, once its
-    // planning card is integrated, and reports task_state: 's_run' - see the removed `delegate`
-    // field below, same story.
+    // A size-S task hands the request to the development harness and reports task_state:
+    // 'harness' - see the removed `delegate` field below.
     state: { type: 'string', enum: ['running', 'blocked', 'complete', 'partial'] },
     counts: { type: 'object' },
     size: { type: 'string', enum: ['S', 'L'] },
@@ -4698,7 +4698,7 @@ const VERDICT_SCHEMA = {
     child: { type: 'object' }, integration: { type: 'object' }, conflicts: { type: 'array', items: { type: 'string' } },
     conflicting_packages: { type: 'array', items: { type: 'string' }, description: 'pass to tm_retry({repackage})' },
     missing_verdict: { type: 'string' }, reason: { type: 'string' },
-    task_state: { type: 'string', enum: ['s_run'], description: 'present, and always "s_run", on the tm_submit reply that accepts a size-S task\'s planning integrate: its one planning card is merged and judged, the task opened its own graph run (openSRun) and this reply already carries tm_next\'s own fields (ready/children/etc.) for that run. Absent for every other node, and for a size-L task, where those same fields describe the manager\'s own graph instead.' },
+    task_state: { type: 'string', enum: ['harness'], description: 'present, and always "harness", on the reply that sizes a task S (tm_submit of `size`, or tm_open/tm_run with size "S"): the task handed the request to one headless development-harness driver and this reply already carries tm_next\'s own fields (harness, driver, state) for it. Absent for every other node and for a size-L task.' },
   },
   required: ['task_id', 'node_id', 'stage', 'state', 'stage_ok'],
 };
@@ -5272,8 +5272,8 @@ function toolLog(a) {
   if (subgoalId) throw new Error(`tm_log does not follow a TASK key ("${key}") - its STORY's driver log (${storyKey(task.run_id, pkgId)}) carries every stage of that child run`);
   let child = null;
   let nodeId = null;
-  if (pkgId === 'S' && task.s_run) {
-    child = task.s_run; nodeId = 'S';
+  if (pkgId === 'S' && (task.harness_run || task.s_run)) {
+    child = task.harness_run || task.s_run; nodeId = 'S';
   } else {
     if (!packageOf(task, pkgId)) throw new Error(`no package ${pkgId} in ${epicKey(task.run_id)} (cards and packages: ${knownIds(task).join(', ') || 'none yet'})`);
     const dispatch = latestBySubgoal(task, pkgId, 'dispatch');
@@ -5630,145 +5630,206 @@ async function toolRun(a) {
   };
 }
 
-// Size S, s_driver 'process' (the default): open the one graph run this request needs, in the
-// project's own cwd - not a package worktree, there is no shape to make one - and spawn a
-// driver for it the same way a package's dispatch does. task.s_run mirrors n.child.
-export function openSRun(task) {
-  const flow = task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto');
-  const child = createRun({
-    ...task.child_opts,
-    cwd: task.cwd,
-    request: task.request,
-    // C6 (docs/plans/2026-09-28-teams-cards-everywhere.md): a size-S request is planned too - one
-    // planning card ran ahead of this run and plan-integrate merged it - so the run builds from
-    // the PRD and its user stories, not from the request alone.
-    context: [task.context || '', sRunPlanningContext(task)].filter(Boolean).join('\n\n'),
-    isolated: task.isolated === true,
-    flow: FLOWS[flow] ? flow : 'auto',
-    mixed: task.mixed !== false,
-    // tm_open({decisions}) and the planning card's own decisions reach a size-S task's one run
-    // (§6.5-2). Its planning already ran, so like any package after PLAN it is execution phase.
-    task_decisions: task.decisions || [],
-    execution_phase: planningPkgs(task).length > 0,
+// Size S goes to the development harness (docs/plans/2026-09-28-teams-long-loop.md S1): no
+// planning card, feature split, shape or critique - the harness plans, sets goals, critiques,
+// implements, tests and gates it with its own stages, claude and codex taking part. The task
+// stays on disk as the pointer to that run; the reply carries tm_next's harness fields.
+export function delegateIfSmall(task, n, out) {
+  if (!(n.stage === 'size' && n.state === 'done' && task.size === 'S')) return null;
+  if (task.harness_run || task.s_run) return null;
+  for (const x of task.nodes) {
+    if (x.node_id === 'size') continue;
+    if (x.state === 'pending') { x.state = 'skipped'; x.result = { stage_ok: false, reason: 'size S: the development harness runs it - no planning card, feature split, shape or critique stages' }; }
+  }
+  openHarnessRun(task);
+  saveRun(task);
+  return { ...out, task_state: 'harness', ...toolNextHarness(task) };
+}
+
+// ---------- size S on the development harness (S1/S1a) ----------
+
+const HARNESS_SKILLS = ['graph:orchestrate', 'harness:harness'];
+
+// The one headless session a size-S task gets. It runs the development harness on the request -
+// the graph MCP first, the Agent Team fallback when that MCP is absent (never the Workflow route:
+// it leaves no goal-gate verdict on disk) - tags the run with this task's id, and writes only the
+// pointer and the report. Everything the manager concludes is read from the run itself.
+function harnessPrompt(task, opts = {}) {
+  const h = task.harness_run;
+  const o = task.child_opts || {};
+  const tag = taskTag(task.run_id);
+  const routing = [
+    'isolated: false', 'allocation: "balanced"',
+    `host_vendor: "${o.host_vendor || 'claude'}"`,
+    o.host_model ? `host_model: "${o.host_model}"` : '',
+    Array.isArray(o.native_models) && o.native_models.length ? `native_models: ${JSON.stringify(o.native_models)}` : '',
+  ].filter(Boolean).join(', ');
+  const run = opts.run || null;
+  const resume = !opts.resume ? ''
+    : run ? `A previous driver for this task died. Its harness run is ${run.route === 'graph' ? `the graph run ${run.run_id} at cwd ${run.cwd}` : `the fallback run at ${run.run_dir}`}: CONTINUE that run - read its status first, redo nothing already done, settle or retry a blocked node - and never open a second run.`
+      : `A previous driver for this task died before its run was recorded. Look for a run tagged ${tag} (a graph run whose request starts with it, or .harness-run/*/manifest.json with "teams_task": "${task.run_id}") and continue it; open a new run only when there is none.`;
+  const decisions = (task.decisions || []).map((d) => `- ${d.question}: ${d.chose}${d.because ? ` (${d.because})` : ''}`);
+  return [
+    `Run the development harness on the request below, in cwd ${h.cwd}, with claude and codex taking part. Do not call tm_open, tm_run or team_open, and never write this task's task.json.`,
+    resume,
+    `Route 1, the graph MCP: graph_open({request: "${tag} " followed by the request, cwd: "${h.cwd}", ${routing}}), then drive it to its report exactly as the graph:orchestrate skill says.`,
+    `Route 2, only when the graph MCP is not available: the harness skill's Agent Team fallback (harness/engine/fallback.md), codex through codex-exec-adapter.mjs with codex_provider "auto" (a fallback to Claude is recorded as such). Its manifest.json carries "teams_task": "${task.run_id}". Do not use the Workflow route.`,
+    `As soon as the run exists, write ${h.pointer} as {"route":"graph","run_id":"<id>","cwd":"${h.cwd}"} or {"route":"fallback","run_dir":"<absolute run dir>"}.`,
+    `When the run has written its report, copy that report to ${h.report_path}. The task's verdict is read from the run itself, not from anything you write.`,
+    '',
+    'Request:',
+    String(task.request || ''),
+    task.context ? `\nContext:\n${task.context}` : '',
+    decisions.length ? `\nAlready decided (rules, not questions):\n${decisions.join('\n')}` : '',
+  ].filter((x) => x !== '').join('\n');
+}
+
+function spawnHarnessDriver(task, opts = {}) {
+  return spawnChildDriver(task, 'S', task.harness_run, {
+    prompt: harnessPrompt(task, opts), harness: true,
+    ...(Number.isInteger(opts.attempt) ? { attempt: opts.attempt } : {}),
   });
-  task.s_run = { cwd: task.cwd, run_id: child.run_id };
+}
+
+export function openHarnessRun(task) {
+  const dir = taskDir(task.run_id);
+  task.harness_run = {
+    cwd: task.cwd, opened_at: Date.now(), route: null, run: null,
+    pointer: join(dir, 'harness-run.json'), report_path: join(dir, 'harness-report.md'),
+  };
   excludeMarkers(task.cwd);
   touchMarker(task.cwd, task.run_id);
-  record(task, { event: 's_open', task_id: task.run_id, run_id: child.run_id, cwd: task.cwd });
-  if (!noDriver()) {
-    task.s_run.spawn_count = 0;
-    const driver = spawnChildDriver(task, 'S', task.s_run);
-    task.s_run.driver = driver;
-    record(task, {
-      event: 'child_driver_spawned', task_id: task.run_id, node_id: 'S', child_run_id: child.run_id,
-      pid: driver.pid, cwd: task.cwd, log: driver.log, command: driver.command,
-      ...(driver.error ? { error: driver.error } : {}),
-    });
+  record(task, { event: 'harness_open', task_id: task.run_id, cwd: task.cwd });
+  if (noDriver()) return;
+  task.harness_run.spawn_count = 0;
+  const driver = spawnHarnessDriver(task);
+  task.harness_run.driver = driver;
+  record(task, {
+    event: 'child_driver_spawned', task_id: task.run_id, node_id: 'S', pid: driver.pid, cwd: task.cwd,
+    log: driver.log, command: driver.command, ...(driver.error ? { error: driver.error } : {}),
+  });
+}
+
+// The run this task's harness driver opened: the pointer, when the run it names carries this
+// task's tag and was created after the open; else the tagged run found on disk. A pointer that
+// fails the check is refused (recorded once) - the driver's word is not the run.
+export function resolveHarnessRun(task) {
+  const h = task.harness_run;
+  if (!h) return null;
+  if (h.run && ownsRun(h.run, task.run_id, h.opened_at)) return h.run;
+  const p = readPointer(h.pointer, h.cwd);
+  let run = null;
+  if (p && ownsRun(p, task.run_id, h.opened_at)) run = p;
+  else if (p && JSON.stringify(p) !== JSON.stringify(h.refused_pointer || null)) {
+    h.refused_pointer = p;
+    record(task, { event: 'harness_pointer_refused', task_id: task.run_id, pointer: p, reason: `the run is not tagged ${taskTag(task.run_id)} or predates the open` });
   }
-}
-
-// A size-S task gets its QA card too (m4, docs/plans/2026-09-28-teams-adversarial-fixes.md):
-// once its one run completed, the working tree it wrote is snapshotted into a commit - through a
-// throwaway index, so the person's own index and working tree are never touched, and untracked
-// files are in it - and each QA card runs on a worktree of that commit. There is no integrate and
-// no package to file a fix onto: what QA finds is recorded as unresolved defects, and the task's
-// report and retro wait for the QA verdicts (renderAll).
-export function snapshotWorkingTree(cwd) {
-  const idx = join(tasksRoot(), `.snapshot-index-${randomUUID().slice(0, 8)}`);
-  const env = { ...process.env, GIT_INDEX_FILE: idx };
-  const run = (args) => {
-    const r = spawnSync('git', ['-C', cwd, ...args], { env, encoding: 'utf8' });
-    return { ok: r.status === 0, out: String(r.stdout || '').trim(), err: String(r.stderr || '').trim() };
-  };
-  try {
-    mkdirSync(dirname(idx), { recursive: true });
-    const head = run(['rev-parse', '--verify', '--quiet', 'HEAD']);
-    if (head.ok) run(['read-tree', 'HEAD']);
-    const add = run(['add', '-A', '--', '.']);
-    if (!add.ok) return { ok: false, reason: add.err || 'git add failed' };
-    for (const p of harnessPathsUnder(cwd)) run(['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', p]);
-    const tree = run(['write-tree']);
-    if (!tree.ok) return { ok: false, reason: tree.err || 'git write-tree failed' };
-    const commit = run(['commit-tree', tree.out, ...(head.ok ? ['-p', head.out] : []), '-m', 'teams: size-S working tree snapshot for QA']);
-    if (!commit.ok) return { ok: false, reason: commit.err || 'git commit-tree failed' };
-    return { ok: true, commit: commit.out, base: head.ok ? head.out : null };
-  } finally {
-    try { rmSync(idx, { force: true }); } catch { /* best-effort */ }
+  if (!run) run = findTaggedRun(h.cwd, task.run_id, h.opened_at);
+  if (run) {
+    h.run = run;
+    h.route = run.route;
   }
+  return run;
 }
 
-function sQaWanted(task) {
-  const roles = (task.team && task.team.opts && task.team.opts.roles) || {};
-  return roles.qa === true && !task.budget_stopped;
+// S1a: running while the driver lives or will be respawned; complete/partial once the run's own
+// report is written, by its own goal gate; blocked when the driver died past its budget unfinished.
+function harnessState(task) {
+  const h = task.harness_run;
+  const run = resolveHarnessRun(task);
+  const v = run ? harnessVerdict(run) : null;
+  if (v && v.finished) {
+    if (v.accept) return { state: 'complete', counts: {} };
+    const why = `the harness goal gate did not accept${v.match_pct != null ? ` (match ${v.match_pct})` : ''}${v.gaps.length ? `: ${v.gaps.slice(0, 3).join('; ')}` : ''}`;
+    return { state: 'partial', partial: true, partial_reasons: [why], counts: {} };
+  }
+  if (h.waiting_capacity || !h.driver || driverAlive(h.driver)) return { state: 'running', counts: {} };
+  if (countedDriverRestarts(task, h.driver).length >= restartBudget(task)) {
+    return { state: 'blocked', counts: {}, reason: 'the harness driver died past its restart budget with its run unfinished' };
+  }
+  return { state: 'running', counts: {} };
 }
 
-// True while a size-S task's QA cards are open and not all settled - the S task is still running.
-export function sQaActive(task) {
-  return !!(task.s_run && task.s_qa && qaPkgs(task).some((q) => {
-    const acc = latestBySubgoal(task, String(q.id), 'accept');
-    return !acc || !(acc.state === 'done' || acc.final || acc.state === 'skipped');
-  }));
-}
-
-export function openSQa(task) {
-  if (!task.s_run || task.s_qa || !sQaWanted(task)) return false;
-  const run = loadRun(task.s_run.cwd, task.s_run.run_id);
-  if (!run || runState(run).state !== 'complete') return false;
-  const snap = snapshotWorkingTree(task.s_run.cwd);
-  if (!snap.ok) {
-    task.s_qa = { failed: snap.reason };
-    record(task, { event: 's_qa_snapshot_failed', task_id: task.run_id, reason: snap.reason });
+// Keeps the harness driver alive: a usage-limit death parks on waiting_capacity (no restart
+// spent), any other death is respawned with a resume prompt naming the recorded run, up to the
+// restart budget. Returns true when it changed the task.
+export function serviceHarnessRun(task) {
+  const h = task.harness_run;
+  if (!h) return false;
+  const before = JSON.stringify([h.run || null, h.refused_pointer || null, !!h.finished_at, !!h.exhausted]);
+  const run = resolveHarnessRun(task);
+  const v = run ? harnessVerdict(run) : null;
+  if (v && v.finished && !h.finished_at) h.finished_at = Date.now();
+  const changed = () => JSON.stringify([h.run || null, h.refused_pointer || null, !!h.finished_at, !!h.exhausted]) !== before;
+  const d = h.driver;
+  if ((v && v.finished) || !d || driverAlive(d) || h.waiting_capacity || task.budget_stopped) return changed();
+  const usage = driverUsageLimitText(d);
+  if (usage) {
+    h.waiting_capacity = { reason: usage.slice(0, 500), since: Date.now() };
+    record(task, { event: 'child_driver_capacity', task_id: task.run_id, node_id: 'S', pid: d.pid, reason: usage.slice(0, 300) });
     return true;
   }
-  task.s_qa = { snapshot: snap.commit, base: snap.base, at: Date.now() };
-  task.qa_pkgs = qaCards(task, null).map((q) => ({ ...q, s_snapshot: snap.commit, integration_of: null,
-    brief: q.brief.replace('over the integrated result', 'over the size-S run\'s working tree (a snapshot of it - the project tree itself is not touched)') }));
-  for (const q of task.qa_pkgs) pushChain(task, PACKAGE_CHAIN, String(q.id), 1, [], [], {});
-  record(task, { event: 's_qa_opened', task_id: task.run_id, snapshot: snap.commit, cards: task.qa_pkgs.map((q) => q.id) });
+  if (countedDriverRestarts(task, d).length >= restartBudget(task)) {
+    if (!h.exhausted) {
+      h.exhausted = true;
+      record(task, { event: 'harness_driver_exhausted', task_id: task.run_id, pid: d.pid, stderr_tail: driverStderrTail(d) });
+    }
+    return changed();
+  }
+  const restarts = [...(d.restarts || []), { pid: d.pid, exit: driverExitInfo(d), at: Date.now(), stderr_tail: driverStderrTail(d, 300) }];
+  const fresh = spawnHarnessDriver(task, { resume: true, run, attempt: nextSpawnAttempt(h) });
+  fresh.restarts = restarts;
+  h.driver = fresh;
+  record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: 'S', pid: fresh.pid, restart: restarts.length, budget: restartBudget(task) });
   return true;
 }
 
-// A size-S QA card's defects (m4): nothing to file a fix onto, so every settled card's defects are
-// recorded as unresolved - the report lists them and the task closes partial.
-function settleSQa(task) {
-  const fresh = qaPkgs(task).map((q) => latestBySubgoal(task, String(q.id), 'accept'))
-    .filter((x) => x && x.result && !x.result.defects_settled && (x.state === 'done' || (x.state === 'skipped' && x.result.qa_direct)));
-  const defects = fresh.flatMap((x) => (Array.isArray(x.result.defects) ? x.result.defects : [])
-    .map((d) => ({ ...(d && typeof d === 'object' ? d : { title: String(d), evidence: String(d) }), reporter: 'qa', card: x.subgoal_id })));
-  for (const x of fresh) x.result = { ...x.result, defects_settled: true };
-  if (defects.length) task.unresolved_defects = (task.unresolved_defects || []).concat(defects);
-  return { unresolved: defects.length > 0, defects };
+function harnessInfo(task) {
+  const h = task.harness_run;
+  return {
+    route: h.route || null, run: h.run || null, report_path: h.report_path, pointer: h.pointer,
+    ...(h.driver ? { driver: { ...h.driver, alive: driverAlive(h.driver) } } : {}),
+    ...(h.waiting_capacity ? { waiting_capacity: h.waiting_capacity } : {}),
+    ...(h.refused_pointer ? { refused_pointer: h.refused_pointer } : {}),
+  };
 }
 
-// Size S: this request needs no manager stage graph, only one run. The manager opens that run
-// here and drives it with its own headless session; the task stays on disk only as the pointer
-// to it, and the caller polls tm_next until the report arrives, exactly as it would for one L
-// package. There is no shape in which the caller drives it instead.
-export function delegateIfSmall(task, n, out) {
-  if (!(n.stage === 'size' && n.state === 'done' && task.size === 'S')) return null;
-  if (planningPkgs(task).length || task.s_run) return null;
-  for (const x of task.nodes) {
-    if (x.node_id === 'size') continue;
-    if (x.state === 'pending') { x.state = 'skipped'; x.result = { stage_ok: false, reason: 'size S: one planning card, then the single run - no feature split, shape or critique stages' }; }
+function toolNextHarness(task) {
+  const h = task.harness_run;
+  if (serviceHarnessRun(task)) saveRun(task);
+  const ts = taskState(task);
+  const d = h.driver || null;
+  const out = {
+    task_id: task.run_id,
+    state: ts.state,
+    ...(ts.partial ? { partial: true, partial_reasons: ts.partial_reasons } : {}),
+    ...(ts.reason ? { reason: ts.reason } : {}),
+    counts: {},
+    ...(task.size ? { size: task.size } : {}),
+    flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),
+    cwd: h.cwd,
+    harness: harnessInfo(task),
+    ready: [],
+    children: [],
+  };
+  if (d) out.driver = { pid: d.pid, alive: driverAlive(d), log: d.log, ...((d.restarts || []).length ? { restarts: d.restarts.length } : {}) };
+  if (h.waiting_capacity) out.waiting_capacity = h.waiting_capacity;
+  if (ts.state === 'complete' || ts.state === 'partial') {
+    let report = '';
+    try { report = readFileSync(h.report_path, 'utf8'); } catch { /* the driver did not copy it */ }
+    const v = h.run ? harnessVerdict(h.run) : null;
+    out.report = report || (v && v.report_text) || '';
+    out.next = 'this task is finished: relay the harness report to the requester, exactly as the entry skill\'s output template asks';
+  } else if (ts.state === 'blocked') {
+    out.next = `${ts.reason}; tm_retry({task_id}) gives it a fresh driver on the same run`;
+  } else if (h.waiting_capacity) {
+    out.next = `waiting on provider capacity (${h.waiting_capacity.reason.slice(0, 160)}); tell the user the reset time and stop. tm_retry({task_id, reset_capacity:true}) resumes it`;
+  } else if (d && driverAlive(d)) {
+    out.next = `its driver process (pid ${d.pid}) is running the development harness: wait; poll tm_next; do not drive it yourself`;
+  } else {
+    out.next = 'no harness driver is running yet: poll tm_next';
   }
-  // C6: a size-S request still gets planning - one card, light when its acceptance is declared
-  // and full otherwise (task.planning_mode), then plan-integrate; finish() opens the single run
-  // once that integrate accepts, so 10-prd.md and user_stories[] exist for every task.
-  expandPlanning(task, [{ title: 'the whole request', brief: task.request, whole: true }], ['size'], { withShape: false });
-  record(task, { event: 'planning_cards_opened', task_id: task.run_id, node_id: n.node_id, cards: planningPkgs(task).map((p) => p.id), size: 'S' });
-  saveRun(task);
-  return null;
-}
-
-// What a size-S run is told about the planning that ran ahead of it (C6): where the merged PRD
-// is, and every user story it must deliver, with its acceptance.
-function sRunPlanningContext(task) {
-  if (!planningPkgs(task).length) return '';
-  return [
-    `Planning ran ahead of this run: ${planningPkgs(task).map((p) => p.id).join(', ')} wrote the PRD and the planning integrate accepted it. It is at ${docPaths(task).prd} - read it before you plan.`,
-    'Deliver every one of these user stories; each is judged against its own acceptance:',
-    planningStoryLines(planningStories(task)),
-  ].join('\n');
+  return out;
 }
 
 // tm_next for a size-S task driven by s_driver 'process': there is no manager node graph to
@@ -5779,10 +5840,6 @@ function toolNextSRun(task) {
   const s = task.s_run;
   const run = loadRun(s.cwd, s.run_id);
   const cs = run ? runState(run) : { state: 'missing', counts: {} };
-  if (cs.state === 'running' && s.driver) {
-    if (!driverAlive(s.driver)) { if (serviceDeadDriver(task, s, 'S')) saveRun(task); }
-    else if (serviceStalledDriver(task, s, 'S')) saveRun(task);
-  }
   const driver = s.driver || null;
   const ts = taskState(task);
   const out = {
@@ -5817,7 +5874,7 @@ function toolNextSRun(task) {
     out.next = `its driver process (pid ${driver.pid}) is running this run: wait; poll tm_next; do not drive it yourself`;
   } else if (driver) {
     const budget = Number.isInteger(task.driver_restarts) ? task.driver_restarts : 2;
-    out.next = `driver died and the restart budget (${budget}) is spent; team_status({run_id, cwd}) shows where it stopped, ; tm_retry({task_id}) gives it a fresh session where the dead one stopped`;
+    out.next = `its driver is gone and legacy size-S runs are not restarted (restart budget was ${budget}); team_status({run_id, cwd}) shows where it stopped - open a new task for what is left`;
   } else {
     out.next = `drive it yourself with team_next/team_run/team_submit at cwd ${s.cwd}, run_id ${s.run_id}`;
   }
@@ -5955,7 +6012,7 @@ function closeStoppedToReport(task) {
 // rendered (docs.mjs's renderPrd), and the retro carries the whole backlog forward.
 const PRE_SHAPE_STAGES = new Set(['areas', 'areas-critique', 'plan-integrate', 'shape', 'critique']);
 export function closeFailedPlanning(task) {
-  if (task.s_run || task.budget_stopped) return false;
+  if (task.s_run || task.harness_run || task.budget_stopped) return false;
   if (task.spec && Array.isArray(task.spec.packages)) return false;
   if (task.nodes.some((n) => n.stage === 'report')) return false;
   if (task.nodes.some((n) => n.state === 'running')) return false;
@@ -6064,7 +6121,7 @@ export function enforceBudget(task) {
   // report opens on its own, which writes the retro with the whole backlog carried forward.
   // A size-S task's QA cards (m4) are phase passes: the stop settles them (no grace) and the S
   // report closes on what the run delivered - there is no manager report node to open.
-  if (task.s_run) return settleRunningDispatchesAtStop(task, status) || progressed;
+  if (task.s_run || task.harness_run) return settleRunningDispatchesAtStop(task, status) || progressed;
   if (!task.spec || !Array.isArray(task.spec.packages)) {
     // A planning card still running when the box trips is let finish within the same grace a
     // package gets, then settled - not waited on forever (m2).
@@ -6423,9 +6480,11 @@ function toolNext(a) {
   for (const n of task.nodes) {
     if (n.child && n.child.cwd && n.state === 'running') touchMarker(n.child.cwd, task.run_id);
   }
-  if (task.s_run && task.s_run.cwd) touchMarker(task.s_run.cwd, task.run_id);
-  if (task.s_run && openSQa(task)) saveRun(task);
-  if (task.s_run && !sQaActive(task)) return toolNextSRun(task);
+  if (task.harness_run) {
+    touchMarker(task.harness_run.cwd, task.run_id);
+    return toolNextHarness(task);
+  }
+  if (task.s_run) return toolNextSRun(task);
   // Dispatch nodes run here, the moment they are ready. Doing it in tm_next rather than in
   // a separate call means a caller driving the graph by hand cannot forget to, and cannot do it
   // twice - the same three steps the daemon's own loop runs, shared through the exports above so
@@ -6512,9 +6571,6 @@ function toolSubmit(a) {
   const payload = a.payload || {};
   const result = { ...payload, stage_ok: payload.stage_ok !== false };
   const out = finish(task, n, result);
-  // A size-S task's one run opens when its planning integrate accepts (C6, openSRun in finish):
-  // the reply that caused it carries that run's tm_next fields, as the size reply used to.
-  if (n.stage === 'plan-integrate' && task.s_run && n.state === 'done') return { ...out, task_state: 's_run', ...toolNext({ task_id: task.run_id }) };
   return delegateIfSmall(task, n, out) || out;
 }
 
@@ -6770,6 +6826,22 @@ function toolRetry(a) {
     record(task, { event: 'tm_reset_capacity', task_id: task.run_id, resumed });
     return { task_id: task.run_id, retried: resumed.length > 0, resumed, reason: resumed.length ? '' : 'nothing in this task is waiting on provider capacity', ...toolNext({ task_id: task.run_id }) };
   }
+  // A size-S task whose harness driver died past its budget: a fresh driver on the same run,
+  // with a fresh restart budget - the same move tm_retry makes for a spent package.
+  if (task.harness_run && a.package_id == null) {
+    const h = task.harness_run;
+    const st = taskState(task);
+    if (st.state !== 'blocked') return { task_id: task.run_id, retried: false, reason: `the harness run is ${st.state}`, ...toolNext({ task_id: task.run_id }) };
+    delete h.exhausted;
+    if (!noDriver()) {
+      const fresh = spawnHarnessDriver(task, { resume: true, run: resolveHarnessRun(task), attempt: nextSpawnAttempt(h) });
+      fresh.restarts = [];
+      h.driver = fresh;
+    }
+    saveRun(task);
+    record(task, { event: 'tm_retry_harness', task_id: task.run_id, pid: h.driver && h.driver.pid });
+    return { task_id: task.run_id, retried: true, ...toolNext({ task_id: task.run_id }) };
+  }
   // Two children pass and the merge fails: that is nobody's failure but the shape's. The
   // packages that collided go back to shape as one instruction - make them one package, or
   // order them so the later one builds on the earlier - with the conflicting files as the
@@ -6889,11 +6961,31 @@ function toolStatus(a) {
   // like awake-beta-ref1's $53.93 / 222 turns sat visible only in the raw driver logs.
   const driverTotal = collectTaskCosts(taskDir(task.run_id), task);
   const costFields = { cost: { usd: driverTotal.cost_usd, turns: driverTotal.turns, sessions: driverTotal.sessions, drivers_usd: driverTotal.drivers_usd, nodes_usd: driverTotal.nodes_usd, ...(driverTotal.estimated_usd ? { estimated_usd: driverTotal.estimated_usd } : {}) } };
+  if (task.harness_run) {
+    if (serviceHarnessRun(task)) saveRun(task);
+    const ts = taskState(task);
+    return {
+      task_id: task.run_id,
+      cwd: task.cwd,
+      state: ts.state,
+      ...(ts.partial_reasons ? { partial: true, partial_reasons: ts.partial_reasons } : {}),
+      ...(ts.reason ? { reason: ts.reason } : {}),
+      counts: {},
+      size: task.size,
+      flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),
+      harness: harnessInfo(task),
+      packages: [],
+      cards: cardsStatus(task),
+      ...costFields,
+      daemon: task.daemon ? { pid: task.daemon.pid, alive: driverAlive(task.daemon), log: task.daemon.log, stderr: task.daemon.stderr, spawn_count: task.daemon.spawn_count, restarts: task.daemon.restarts || 0, exhausted: !!task.daemon.exhausted, stderr_tail: driverStderrTail(task.daemon) } : null,
+      team: task.team || null,
+      ...viewFields,
+    };
+  }
   if (task.s_run) {
     const run = loadRun(task.s_run.cwd, task.s_run.run_id);
     const cs = run ? runState(run) : { state: 'missing', counts: {} };
-    // The task's state, not only its run's (m4): QA verdicts still owed read running, and what QA
-    // left unresolved reads partial - the same answer tm_next and the daemon act on.
+    // A legacy size-S task (S2): read from its run file only.
     const ts = taskState(task);
     return {
       task_id: task.run_id,

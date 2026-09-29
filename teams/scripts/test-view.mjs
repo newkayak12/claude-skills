@@ -662,20 +662,23 @@ test('listTasks() before shape: no packages yet reads READY/plan with null story
 // (sRunTicketState) that covered only DONE/BLOCKED/IN_PROGRESS and never READY/IN_REVIEW or a
 // real phase - this test now drives every leg of the real mapping through tickets.mjs's fixed
 // epicTicketState/epicPhase, which listTasks() calls directly (no local copy left).
-test('listTasks() on a size-S task (task.s_run, no task.spec) reads the real state/phase off the child run at every stage - READY/plan through DONE/null', async () => {
+test('listTasks() on a legacy size-S task (task.s_run, no task.spec) reads the real state/phase off the child run at every stage - READY/plan through DONE/null (S2 frozen reader)', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'view-test-root-'));
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '0' }).init();
   const g = await new Client(BROKER).init();
   try {
     const open = await tm.call('tm_open', { brainstorm: false, request: 'small request', cwd, vendor: 'self', flow: 'develop', size: 'S', roles: { qa: false, audit: false } });
-    // C6: a size-S task plans first - its one planning card - and reads READY/plan meanwhile.
-    assert.equal(open.task_state, undefined);
-    let row = listTasks(root)[0];
-    assert.deepStrictEqual({ state: row.state, phase: row.phase }, { state: 'READY', phase: 'plan' });
-    const planned = await drivePlanning((n, a) => tm.rawCall(n, a), g, open.task_id);
-    assert.equal(planned.plan_integrate_reply.task_state, 's_run');
-    const { run_id } = planned.plan_integrate_reply;
+    assert.equal(open.task_state, 'harness', 'a new size-S task goes to the development harness (S1)');
+    // A task written before S1 carries task.s_run instead: the same task, rewritten on disk to the
+    // legacy shape, pointing at a teams graph run opened the way openSRun used to.
+    const { run_id } = await g.call('team_open', { request: 'small request', cwd, vendor: 'self', flow: 'develop', mixed: true, goal_judges: 1 });
+    const taskFile = join(root, open.task_id, 'task.json');
+    const legacy = JSON.parse(readFileSync(taskFile, 'utf8'));
+    delete legacy.harness_run;
+    legacy.s_run = { cwd, run_id };
+    writeFileSync(taskFile, JSON.stringify(legacy));
+    let row;
     const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
 
     // The run freshly opened: plan/setgoal/critique all pending, no spec yet -> READY/plan.
@@ -717,7 +720,8 @@ test('listTasks() on a size-S task (task.s_run, no task.spec) reads the real sta
     // goal gate accepted and reported -> DONE/null.
     await sub('gate:goal:1', { accept: true, match_pct: 95 });
     await g.call('team_next', { run_id, cwd });
-    await sub('report', { handoff: 'child report' });
+    const rep = await sub('report', { handoff: 'child report' });
+    assert.equal(rep.state, 'done', JSON.stringify(rep));
     row = listTasks(root)[0];
     assert.deepStrictEqual({ state: row.state, phase: row.phase }, { state: 'DONE', phase: null });
   } finally {

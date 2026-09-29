@@ -33,7 +33,7 @@ import {
   advanceDispatches, serviceRunningDispatches, prepareReadyIntegrations,
   dispatchSettled, foldChild, updateAutoParallel, serviceSRun, delegateIfSmall,
   finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages, autoRejudge, autoResumeCapacity, pendingRejudgeAt,
-  STAGE_SKILLS, syncTickets, autoReshape, closeFailedPlanning, openSQa, sQaActive, promoteManagerHumanGates, enforceBudget,
+  STAGE_SKILLS, syncTickets, autoReshape, closeFailedPlanning, promoteManagerHumanGates, enforceBudget,
   expireAsks, nextAskDeadline,
 } from './taskmanager.mjs';
 import { ticketSnapshot } from './tickets.mjs';
@@ -283,6 +283,11 @@ function waitForProgress(task) {
         if (w) watchers.push(w);
       }
     }
+    if (task.harness_run && task.harness_run.cwd) {
+      // The graph plugin's run files: a harness node finishing wakes the daemon to read it.
+      const w = watchDir(join(task.harness_run.cwd, '.harness-run', 'broker', 'runs'), finishWait);
+      if (w) watchers.push(w);
+    }
     if (task.s_run && task.s_run.cwd) {
       const w = watchDir(join(task.s_run.cwd, '.teams_output', 'broker', 'runs'), finishWait);
       if (w) watchers.push(w);
@@ -317,15 +322,16 @@ async function stepOnceInner(task) {
   let expired = false;
   if (expireAsks(task).length) { saveRun(task); expired = true; }
   // Size S: no manager-level node is left to judge once `size` has resolved (delegateIfSmall
-  // already skipped shape/critique) - the whole task is now the one child run at task.s_run, and
-  // this daemon's only job is keeping ITS driver alive.
-  if (task.s_run) {
-    if (serviceSRun(task)) saveRun(task);
-    // m4: once the S run completed, its QA cards open on a snapshot and run through the same
-    // dispatch/fold/judge loop below as an L task's; until then the run is the whole task.
-    if (openSQa(task)) saveRun(task);
-    if (!sQaActive(task)) return expired;
+  // skipped the rest) - the whole task is the development-harness run its one driver works, and
+  // this daemon's only job is keeping that driver alive (and resuming it after a capacity park).
+  // A legacy task.s_run (S2) is read, never driven: nothing to do here.
+  if (task.harness_run) {
+    let changed = serviceSRun(task);
+    if (autoResumeCapacity(task)) changed = true;
+    if (changed) saveRun(task);
+    return expired || changed;
   }
+  if (task.s_run) return expired;
 
   let progressed = expired;
   // A judge that could not judge is re-judged before anything reads its non-verdict as a
