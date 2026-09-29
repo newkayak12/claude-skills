@@ -26,7 +26,6 @@
 | 물려받은 가정을 걷어내고 바닥부터 재구성 | `first-principles` |
 | 내 계획을 가장 강한 반론으로 두들겨 맞기 | `devils-advocate` |
 | 흩어진 노트를 쓰거나 발표할 수 있는 구조로 | `thought-organizer` |
-| 토글·로딩·빈 화면 같은 UI 순간을 제대로 설계 | `microinteractions` |
 | 연봉·계약·어려운 대화 준비 | `negotiation` |
 
 ## 스킬
@@ -218,23 +217,6 @@ Position / Steel-man
 | 교차 링크가 있는 5개 이상 아이디어, 지식베이스 목적 | Zettelkasten 방식 링크 |
 | 핵심 메시지만 필요할 때 | Core claim extraction |
 
-### `microinteractions`
-
-토글, 비밀번호 필드, 로딩 인디케이터, pull-to-refresh, 좋아요 버튼 같은 작은 제품 순간을 Dan
-Saffer의 구조 — Trigger, Rules, Feedback, Loops & Modes — 에 signature moment와 축약을 더해
-설계합니다. 모션을 설계하기 전에 trigger → feedback → rules를 먼저 정의하고, 애니메이션 길이는
-행동의 체감 무게에 맞추며, 장식용 모션은 넣지 않습니다 — 모든 움직임은 상태 변화를 전달해야 합니다.
-0~10점으로 채점하고 빠진 부분을 지목합니다.
-
-```
-파일 업로드 버튼이 눌러도 반응이 없는 것처럼 느껴져.
-트리거부터 성공 피드백까지 어떻게 설계해야 할지 잡아줘.
-```
-
-영역마다 윤리 경계가 붙습니다 — 중요한 트리거를 보이는 대안 없이 제스처 뒤에 숨기지 않기, 가짜
-프로그레스 바나 조작적 카운트다운 금지, opt-out을 점점 어렵게 만드는 적응형 루프 금지, 그리고
-기능이 항상 즐거움보다 먼저.
-
 ### `negotiation`
 
 Chris Voss의 tactical empathy 프레임워크를, 대화 중 즉흥이 아니라 대화 전에 준비하는 형태로 씁니다:
@@ -263,7 +245,6 @@ Ackerman 사다리: 목표의 65 %로 열고 85 % → 95 % → 100 %, 마지막�
 | `first-principles` | think-tool (Lens A, Lens C) | mcp-reasoner |
 | `devils-advocate` | — | think-tool, mcp-reasoner, sequential-thinking |
 | `thought-organizer` | think-tool (빈틈 노출) | sequential-thinking |
-| `microinteractions` | — | think-tool |
 | `negotiation` | think-tool (상대 동기 분석, black swan 탐색) | sequential-thinking |
 
 Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.

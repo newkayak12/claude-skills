@@ -7,7 +7,7 @@ in the wrong place, a test that passes for the wrong reason, a pool sized by gue
 nobody wrote until the pager went off. Each skill takes one of those and gives it a process:
 diagnose before changing, name the trade-off, verify with evidence rather than assertion.
 
-Five of the 34 skills are **workflow entry points** — they don't do the work themselves, they drive
+Five of the 33 skills are **workflow entry points** — they don't do the work themselves, they drive
 the specialist skills in a fixed order and let you join mid-process.
 
 ## Install & Uninstall
@@ -84,7 +84,6 @@ the specialist skills in a fixed order and let you join mid-process.
 | I want to… | Skill |
 |---|---|
 | Get a readability review and a concrete refactor list | `clean-code` |
-| Diagnose codebase health and decide where technical debt starts | `pragmatic-programmer` |
 | Generate docstrings, JSDoc, or an OpenAPI spec for existing code | `code-documenter` |
 | Plan which docs should exist, for whom, and who keeps them current | `documentation-strategy` |
 
@@ -585,19 +584,6 @@ domain modeling (use `domain-driven-design`), or performance work (profile first
 ```
 Review this 300-line service class for readability. Give me the score, the specific
 smells, and the refactor in priority order — I only have an afternoon.
-```
-
-### `pragmatic-programmer`
-
-Diagnoses codebase and practice health across seven principles — DRY, orthogonality, technical debt
-strategy, estimation, knowledge portfolio and the rest — scores each 0–10, then ranks the
-highest-impact violations so debt work has a defensible starting point. Use it for engineering
-retrospectives and debt strategy. Not for code-level naming (use `clean-code`), structural
-architecture decisions (use `architecture-designer`), or domain modeling.
-
-```
-We have three years of accumulated debt and everyone has a different theory about what's
-worst. Score the codebase against the principles and tell me where to start.
 ```
 
 ### `code-documenter`

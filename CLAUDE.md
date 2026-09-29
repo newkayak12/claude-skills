@@ -72,5 +72,3 @@ teams principles: `docs/plans/2026-09-28-teams-cards-everywhere.md`.
 
 After any change: bump version in `.claude-plugin/marketplace.json` → update `<plugin>/README.md` **and** `<plugin>/KOR.md` (English default + Korean mirror; both must move together) → commit → `git push origin main`.
 
-See `INSTRUCT.md` for full details.
-

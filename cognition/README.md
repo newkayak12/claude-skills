@@ -34,7 +34,6 @@ judgment-heavy ones (`mental-model-toolkit`, and Steps 3 and 6 of the workflow) 
 | See the full cost of the option I'm leaning toward | `tradeoff-articulator` |
 | Get a different frame when the obvious solutions failed | `mental-model-toolkit` |
 | Cut noise, sharpen a vague goal, or stop looping | `clarity-toolkit` |
-| Understand my own characteristic thinking pattern | `thinking-style-profiler` |
 
 ## Skills
 
@@ -223,21 +222,3 @@ I'm supposed to do differently on Monday.
 ```
 
 Every run ends with one concrete step you can take in the next hour.
-
-### `thinking-style-profiler`
-
-Profiles you across five dimensions — systems vs detail, convergent vs divergent, abstract vs
-concrete, intuitive vs analytical, sequential vs non-linear — then matches learning and working
-strategies to the result. It asks one or two diagnostic questions at a time rather than
-administering all five at once, and treats style as contextual and developable, not as a fixed
-type. Not for simple study tips or bias diagnosis.
-
-```
-Collaborative sessions leave me flat but three hours alone with a hard problem
-energizes me. Help me name what my thinking actually does.
-```
-
-Output: profile summary, strengths, characteristic risk zones, top three matched strategies, and
-one developmental focus to actively practice.
-
----
