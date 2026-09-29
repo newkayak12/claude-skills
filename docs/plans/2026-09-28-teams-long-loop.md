@@ -14,6 +14,14 @@
 >
 > Revised after critique (`sound:false`, 10 problems; the L1b/L1c gate problems are moot now that the loop never parks), then again after re-critique (4 problems and 3 notes, all taken; G2b added from this session's own false positive).
 
+> **Roles and scope limit (2026-09-29, the user's decision):**
+> - The main session is the **master**: the interface that faces the user. It opens tasks and loops, reports results, and overrides with `tm_loop`.
+> - The daemon runs the loop as code. Judgement nodes judge. The role leads (PM / Dev / QA) are the per-STORY child drivers.
+> - Organisation is copied by **function, not form**. The only candidates are:
+>   - a Dev→PM send-back channel (a `spec_defect` verdict field that retries planning);
+>   - per-role judgement criteria for the leads.
+> - Those two go in a separate plan. **Nothing beyond them**: no debate rounds, no meetings, no further org mimicry.
+
 ## Plan
 
 ### S — size S runs on the development harness
