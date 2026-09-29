@@ -49,6 +49,8 @@ const SELF = [
   /^\/\.claude\/settings(\.local)?\.json$/i,
   /^\/\.claude\/hooks\//i,
   /^\/\.claude\/\.harness-markers\//i,
+  // A hand-written broker ledger would engage the gate by itself (anyOpenBrokerNode).
+  /^\/\.harness-run\/broker\//i,
 ];
 const ENGINE_RE = /(^|\/)harness\/engine\/pipeline\.js$/;
 const MCP_ENGAGE_RE = /(^|__)(graph_open|tm_open|tm_run)$/;
@@ -229,9 +231,103 @@ function refreshMarker(dir, sid) {
 
 // ---- Bash: which paths does this command write? ----
 
-const WRITE_CMD = /(^|[\s;&|(`])(tee|sed\s+(-[^\s]*\s+)*-i|perl\s+(-[^\s]*\s+)*-[a-z]*i|cp|mv|rm|install|truncate|dd|patch|ln|touch|git\s+(checkout|restore|apply|stash|reset|mv|rm))\b/;
-const INLINE_SCRIPT = /(^|[\s;&|(`])(node|deno|bun)\s+(-[^\s]*\s+)*(-e|--eval|-p|--print)\b|(^|[\s;&|(`])python3?\s+(-[^\s]*\s+)*-c\b|<<-?\s*['"]?\w+/;
+// A write verb, preceded by a command boundary or a quote (eval "cp ...", bash -c 'rm ...').
+const WRITE_CMD = /(^|[\s;&|(`"'])(tee|sed\s+(-[^\s]*\s+)*-i|perl\s+(-[^\s]*\s+)*-[a-z]*i|cp|mv|rm|install|truncate|dd|patch|ln|touch|git\s+(checkout|restore|apply|stash|reset|mv|rm))\b/;
+const INLINE_FLAG = /(^|\s)(-e|--eval|-p|--print|-c)\b/;
+// A git command with --output writes that file.
+const GIT_OUTPUT = /(?:^|\s)--output(?:=|\s+)("([^"]*)"|'([^']*)'|[^\s;&|<>()]+)/g;
+const HEREDOC = /(?<!<)<<(?!<)-?\s*(['"]?)([A-Za-z_]\w*)\1/g;
 const PATHLIKE = /[A-Za-z0-9_.\/~@+-]+/g;
+// Read-only commands whose plain arguments may name a write verb (grep -n cp x.mjs). Anything
+// else - sudo, env, nohup, xargs, find -exec, eval, command, exec, flock, a wrapper nobody listed
+// - is judged by its words (deny by default).
+const READ_ONLY = new Set(['grep', 'egrep', 'fgrep', 'rg', 'cat', 'head', 'tail', 'less', 'wc', 'ls', 'echo']);
+const GIT_READ = new Set(['log', 'show', 'diff', 'status']);
+const INTERP = /^(node|deno|bun|python[0-9.]*|perl|ruby|php)$/;
+const SHELLS = /^(bash|sh|zsh|dash|ksh|fish|eval|source|xargs)$/;
+// Anything in a script body that could write, run or load code. Deny by default: a read call
+// named here (open() for reading) still counts - only a script with none of these is text.
+const SCRIPT_WRITE = /\b(write\w*|append\w*|open\w*|copy\w*|rename\w*|replace|unlink\w*|remove\w*|rm\w*|mkdir\w*|makedirs|truncate|chmod|chown|symlink\w*|link\w*|exec\w*|spawn\w*|fork|subprocess|system|popen|shutil|eval|require|import|__import__|fs|pathlib|Path|os|child_process|Deno|Bun|File\w*|stream\w*|save\w*|dump\w*|to_csv|to_json)\b/;
+
+// Simple commands of a command line: split on ; & | && || and newlines outside quotes and
+// escapes (find -exec rm {} \; stays one). 2>&1 and &> are not separators.
+export function simpleCommands(text) {
+  const out = [];
+  let cur = '';
+  let q = null;
+  const s = String(text);
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q) {
+      cur += c;
+      if (c === '\\' && q === '"' && i + 1 < s.length) cur += s[++i];
+      else if (c === q) q = null;
+      continue;
+    }
+    if (c === '\\' && i + 1 < s.length) { cur += c + s[++i]; continue; }
+    if (c === '"' || c === "'") { q = c; cur += c; continue; }
+    if (c === '&' && (s[i - 1] === '>' || s[i + 1] === '>')) { cur += c; continue; }
+    if (c === ';' || c === '&' || c === '|' || c === '\n') {
+      if (cur.trim()) out.push(cur.trim());
+      cur = '';
+      continue;
+    }
+    cur += c;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+
+const firstWord = (seg) => (seg.match(/^\S+/) || [''])[0].replace(/^['"]|['"]$/g, '').replace(/^.*\//, '');
+
+// A read-only command that owns the whole simple command: its plain arguments write nothing.
+// Command substitution runs something else, so it never counts as read-only.
+function readOnly(seg) {
+  if (/\$\(|`/.test(seg)) return false;
+  const w = firstWord(seg);
+  if (w === 'echo') return !/>/.test(seg.replace(/[12]?>&[12]/g, ''));
+  if (READ_ONLY.has(w)) return true;
+  if (w === 'git') return GIT_READ.has(seg.split(/\s+/)[1]) && !/(^|\s)--output\b/.test(seg);
+  return false;
+}
+
+// The command line with every heredoc body cut out, and each heredoc classified by the
+// pipeline that consumes it: fed to a shell (a script), to an interpreter (a script, judged by
+// its body), or to anything else (data - only its redirect target is written).
+export function splitHeredocs(cmd) {
+  const lines = String(cmd).split('\n');
+  const head = [];
+  const docs = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    head.push(line);
+    const delims = [...line.matchAll(HEREDOC)].map((m) => m[2]);
+    if (!delims.length) continue;
+    const words = simpleCommands(line).map(firstWord);
+    const kind = words.some((w) => SHELLS.test(w)) ? 'shell' : words.some((w) => INTERP.test(w)) ? 'script' : 'data';
+    for (const d of delims) {
+      const body = [];
+      while (i + 1 < lines.length && lines[i + 1].trim() !== d) body.push(lines[++i]);
+      if (i + 1 < lines.length) i++; // the delimiter line
+      docs.push({ kind, body: body.join('\n') });
+    }
+  }
+  return { head: head.join('\n'), docs };
+}
+
+// Whether the paths a command names count as written: a write verb outside a read-only
+// command, a shell fed a script, or an inline/heredoc script with anything write-capable in it.
+function writesNamedPaths(head, docs) {
+  if (docs.some((d) => d.kind === 'shell' || (d.kind === 'script' && SCRIPT_WRITE.test(d.body)))) return true;
+  for (const seg of simpleCommands(head)) {
+    if (readOnly(seg)) continue;
+    if (WRITE_CMD.test(seg)) return true;
+    const w = firstWord(seg);
+    if (SHELLS.test(w) && INLINE_FLAG.test(seg)) return true;
+    if (INTERP.test(w) && INLINE_FLAG.test(seg) && SCRIPT_WRITE.test(seg.slice(seg.indexOf(' ')))) return true;
+  }
+  return false;
+}
 
 // The directories a command's paths are relative to: its cwd, and every `cd X` it runs.
 function bases(cmd, cwd) {
@@ -244,25 +340,27 @@ function bases(cmd, cwd) {
   return out;
 }
 
-// Paths the command writes: every redirect target, and - when the command holds a write verb or
-// an inline script - every path-like word in it, quoted or not (a script body names its target
-// inside a string: writeFileSync('x.mjs')). Each is resolved against every base it could be
-// relative to.
+// Paths the command writes: every redirect target and git --output file outside a heredoc body,
+// and - when writesNamedPaths - every path-like word in it, quoted or not, bodies included (a
+// script names its target inside a string: writeFileSync('x.mjs')). Each is resolved against
+// every base it could be relative to.
 export function bashWriteTargets(command, cwd) {
   const cmd = String(command || '');
+  const { head, docs } = splitHeredocs(cmd);
   const words = new Set();
-  for (const m of cmd.matchAll(/(?:^|[^<>&0-9])(?:[0-9]|&)?>>?\|?\s*("([^"]*)"|'([^']*)'|[^\s;&|<>()]+)/g)) {
+  for (const m of head.matchAll(/(?:^|[^<>&0-9])(?:[0-9]|&)?>>?\|?\s*("([^"]*)"|'([^']*)'|[^\s;&|<>()]+)/g)) {
     const t = m[2] ?? m[3] ?? m[1];
     if (t && !/^&\d$/.test(t) && t !== '/dev/null') words.add(t);
   }
-  if (WRITE_CMD.test(cmd) || INLINE_SCRIPT.test(cmd)) {
+  for (const m of head.matchAll(GIT_OUTPUT)) words.add(m[2] ?? m[3] ?? m[1]);
+  if (writesNamedPaths(head, docs)) {
     for (const t of cmd.match(PATHLIKE) || []) {
       if (t.startsWith('-') || !/[./]/.test(t) || /^\.+$/.test(t)) continue;
       words.add(t);
     }
   }
   const out = new Set();
-  for (const b of bases(cmd, cwd)) for (const w of words) out.add(resolve(b, w.replace(/^~(?=\/)/, process.env.HOME || '~')));
+  for (const b of bases(head, cwd)) for (const w of words) out.add(resolve(b, w.replace(/^~(?=\/)/, process.env.HOME || '~')));
   return [...out];
 }
 

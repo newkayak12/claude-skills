@@ -226,6 +226,72 @@ test('G4: Bash writes to a gated path are denied; reads and runs are allowed', (
   for (const c of allow) assert.equal(run(bash(dir, c)), 'allow', c);
 });
 
+// ---- long-loop G1/G2/G2b (docs/plans/2026-09-28-teams-long-loop.md) ----
+
+test('LL-G1: a hand-written broker ledger is gated - it would engage the gate itself', () => {
+  const dir = project();
+  assert.equal(run(edit(dir, join(dir, '.harness-run', 'broker', 'open-nodes.json'))), 'deny');
+  assert.equal(run(bash(dir, 'echo {} > .harness-run/broker/open-nodes.json')), 'deny');
+});
+
+test('LL-G2: a write verb is exempt only as a plain argument of a read-only command; wrappers stay denied', () => {
+  const dir = project();
+  const allow = [
+    'grep -n cp x.mjs',
+    'rg -n "rm" teams/mcp/a.mjs',
+    'cat a.mjs | grep -n mv',
+    'grep -n "a;cp" a.mjs',
+    'wc -l a.mjs && grep -c rm a.mjs',
+    'echo cp a.mjs',
+    'git log --oneline -- rm a.mjs',
+    'git diff -- a.mjs | grep rm',
+  ];
+  for (const c of allow) assert.equal(run(bash(dir, c)), 'allow', c);
+  const deny = [
+    'sudo cp x a.mjs',
+    'env cp x a.mjs',
+    'nohup cp x a.mjs',
+    'ls | xargs rm a.mjs',
+    'find . -name a.mjs -exec rm {} \\;',
+    'eval "cp x a.mjs"',
+    'bash -c "rm a.mjs"',
+    'command cp x a.mjs',
+    'exec cp x a.mjs',
+    'flock /tmp/l cp x a.mjs',
+    'grep x a.mjs; cp y a.mjs',
+    'grep $(rm a.mjs) x',
+    'grep `rm a.mjs` x',
+    'git log --output=a.mjs',
+    'git diff --output a.mjs',
+    'echo cp > a.mjs',
+  ];
+  for (const c of deny) assert.equal(run(bash(dir, c)), 'deny', c);
+});
+
+test('LL-G2b: an inline script that only mentions a gated path is allowed; one that can write is denied', () => {
+  const dir = project();
+  const allow = [
+    "python3 -c \"print(len('a.mjs'))\"",
+    "python3 - <<'EOF'\nprint('teams/mcp/a.mjs has', 3, 'lines')\nEOF",
+    'node -e "console.log(\'a.mjs\')"',
+    "cat <<EOF > notes.txt\nsee teams/mcp/a.mjs\nEOF",
+    "git commit -q -F - <<'EOF'\nfix teams/mcp/a.mjs\nEOF",
+  ];
+  for (const c of allow) assert.equal(run(bash(dir, c)), 'allow', c);
+  const deny = [
+    "python3 - <<'EOF'\nopen('a.mjs','w').write('x')\nEOF",
+    "python3 - <<'EOF'\nimport shutil; shutil.copy('b', 'a.mjs')\nEOF",
+    "node - <<'EOF'\nrequire('fs').writeFileSync('a.mjs', 'x')\nEOF",
+    "cat <<EOF | bash\nrm a.mjs\nEOF",
+    "cat <<EOF | python3\nopen('a.mjs','w')\nEOF",
+    "bash <<EOF\necho a.mjs\nEOF",
+    "cat <<EOF > a.mjs\nx\nEOF",
+    'python3 -c "import os; os.replace(\'b\', \'a.mjs\')"',
+    'node -e "require(\'child_process\').execSync(\'touch a.mjs\')"',
+  ];
+  for (const c of deny) assert.equal(run(bash(dir, c)), 'deny', c);
+});
+
 test('G4: Bash writes pass once engaged', () => {
   const dir = project();
   fallbackRun(dir);

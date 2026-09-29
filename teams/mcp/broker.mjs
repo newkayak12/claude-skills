@@ -1905,6 +1905,8 @@ async function toolGraphRun(a) {
     // it, so what this node expands (setgoal's subgoals) is pinned the way the person asked.
     if (fresh.subgoal_assignee) run.subgoal_assignee = fresh.subgoal_assignee;
     else delete run.subgoal_assignee;
+    if ('model_subgoal_assignee' in fresh) run.model_subgoal_assignee = fresh.model_subgoal_assignee;
+    else delete run.model_subgoal_assignee;
     const again = getNode(run, n.node_id);
     if (again) {
       again.ticket = n.ticket;

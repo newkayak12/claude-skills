@@ -407,18 +407,32 @@ export function applyPinAction(run, action) {
 // STORY pin put there, leaving a model-written assignee alone.
 export function applyStoryPin(run, action) {
   const subgoals = (run.spec && Array.isArray(run.spec.subgoals)) ? run.spec.subgoals : [];
+  // A model-written assignee (shape's package assignee, setgoal's subgoal assignee) that a user
+  // pin replaces is kept aside and put back on release, so a pin-then-release is a no-op.
   if (action.to === 'auto') {
     let changed = !!run.subgoal_assignee;
     delete run.subgoal_assignee;
+    if ('model_subgoal_assignee' in run) {
+      run.subgoal_assignee = run.model_subgoal_assignee;
+      delete run.model_subgoal_assignee;
+    }
     for (const sg of subgoals) {
       if (!(sg.assignee && typeof sg.assignee === 'object' && sg.assignee.by === 'user')) continue;
-      releaseHumanPin(run, sg, String(sg.id), currentAttempt(run, sg.id));
+      const attempt = currentAttempt(run, sg.id);
+      releaseHumanPin(run, sg, String(sg.id), attempt);
+      if ('model_assignee' in sg) {
+        sg.assignee = sg.model_assignee;
+        delete sg.model_assignee;
+        applyHumanPin(run, sg, String(sg.id), attempt);
+      }
       changed = true;
     }
     return changed;
   }
+  if (run.subgoal_assignee && pinSource(run.subgoal_assignee) === 'model') run.model_subgoal_assignee = run.subgoal_assignee;
   run.subgoal_assignee = { by: 'user', ...(action.who ? { who: action.who } : {}) };
   for (const sg of subgoals) {
+    if (sg.assignee && pinSource(sg.assignee) === 'model') sg.model_assignee = sg.assignee;
     sg.assignee = { ...run.subgoal_assignee };
     applyHumanPin(run, sg, String(sg.id), currentAttempt(run, sg.id));
   }
