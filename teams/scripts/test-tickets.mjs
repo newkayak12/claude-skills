@@ -14,9 +14,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { node, pushChain, KINDS, saveRun } from '../mcp/graph.mjs';
 import {
-  epicKey, storyKey, docPaths, latestBySubgoal, storyTicketState, epicTicketState,
+  epicKey, initiativeKey, storyKey, docPaths, latestBySubgoal, storyTicketState, epicTicketState,
   taskTicketState, epicPhase, storyTaskProgress, epicBoardRows, ticketSnapshot, storyLinks,
-  parseTicketKey, taskKey, storyBlockedReason, flowMetrics,
+  parseTicketKey, taskKey, storyBlockedReason, flowMetrics, packageFiling, FILED_ORIGINS,
 } from '../mcp/tickets.mjs';
 
 const TASK_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -194,6 +194,21 @@ test('taskKey composes the same three segments parseTicketKey reads back', () =>
   const key = taskKey(TASK_ID, 'P1', 'U1');
   assert.equal(key, 'E-aaaaaaaa/P1/U1');
   assert.deepEqual(parseTicketKey(key), { epic8: 'aaaaaaaa', pkgId: 'P1', subgoalId: 'U1' });
+});
+
+// An I-<slug> key names a group of EPICs, never a run of its own - epic8/pkgId/subgoalId are all
+// absent so tm_assign's own `!parsed.pkgId` guard rejects it exactly as it rejects a bare EPIC
+// key, with no extra branch of its own needed there (see parseTicketKey's own header).
+test('parseTicketKey splits I-<slug> into { initiative }, with no epic8/pkgId/subgoalId', () => {
+  assert.deepEqual(parseTicketKey('I-q1-roadmap'), { initiative: 'q1-roadmap' });
+  assert.deepEqual(parseTicketKey('I-a'), { initiative: 'a' });
+  assert.equal(parseTicketKey('I-q1-roadmap').epic8, undefined);
+  assert.equal(parseTicketKey('I-q1-roadmap').pkgId, undefined);
+});
+
+test('initiativeKey composes the same I-<slug> shape parseTicketKey reads back', () => {
+  assert.equal(initiativeKey('q1-roadmap'), 'I-q1-roadmap');
+  assert.deepEqual(parseTicketKey(initiativeKey('q1-roadmap')), { initiative: 'q1-roadmap' });
 });
 
 // ---------- §4 EPIC mapping ----------
@@ -619,15 +634,19 @@ test('epicBoardRows renders one row per develop package with role "develop" when
   assert.equal(rows.length, 1);
   assert.deepEqual(rows[0], {
     key: 'E-aaaaaaaa/P1', id: 'P1', title: 'module a', role: 'develop', state: 'DONE', tasks: null,
-    last_verdict: 'accept 91', reporter: 'shape',
+    last_verdict: 'accept 91', reporter: 'planning', origin: 'shape', link: null,
     links: { blocked_by: [], blocks: [], implements: [], filed_by: null },
   });
 });
 
-// v0.12.1 Task 1: fileDefects (taskmanager.mjs) sets p.reporter on a filed defect STORY instead
-// of p.repair - epicBoardRows must expose it (and keep falling back to 'repair'/'shape' for
-// packages fileDefects never touched, the byte-for-byte compat case).
-test('epicBoardRows exposes p.reporter for a filed defect STORY (\'qa\'/\'you\'), and still falls back to \'repair\'/\'shape\' otherwise', () => {
+// v0.12.1 Task 1: fileDefects (taskmanager.mjs) sets p.reporter/p.origin on a filed defect STORY
+// instead of p.repair - epicBoardRows must expose them (and keep falling back to
+// reporter:'planning'/origin:'repair'|'shape' for packages fileDefects never touched, the
+// byte-for-byte compat case). D1/D2 use the OLD, pre-reporter/origin-split shape (a bare
+// `reporter: 'qa'`/`reporter: 'you'`) on purpose - packageFiling's own back-compat normalizer is
+// what turns 'you' into 'user' here, exercised the same way a task.json written before this
+// change would be.
+test('epicBoardRows normalizes an old-style p.reporter (\'qa\'/\'you\') into reporter/origin, and reports \'planning\' for shape/repair otherwise', () => {
   const t = baseTask(
     [
       dispatchNode('P1', { state: 'done', result: {} }), acceptNode('P1', { state: 'done', result: { accept: true, match_pct: 91 } }),
@@ -645,7 +664,9 @@ test('epicBoardRows exposes p.reporter for a filed defect STORY (\'qa\'/\'you\')
     },
   );
   const rows = epicBoardRows(t);
-  assert.deepEqual(rows.map((r) => [r.id, r.reporter]), [['P1', 'shape'], ['R1', 'repair'], ['D1', 'qa'], ['D2', 'you']]);
+  assert.deepEqual(rows.map((r) => [r.id, r.reporter, r.origin]), [
+    ['P1', 'planning', 'shape'], ['R1', 'planning', 'repair'], ['D1', 'qa', 'qa'], ['D2', 'user', 'tm_file'],
+  ]);
 });
 
 // v0.12.0 wires planning/qa into the EPIC flow as phase-Teams: role becomes p.phase || 'develop',
@@ -668,7 +689,7 @@ test('epicBoardRows puts the planning phase-Team row first and the qa phase-Team
   assert.deepEqual(rows.map((r) => [r.id, r.role]), [['PLAN', 'planning'], ['P1', 'develop'], ['QA', 'qa']]);
   assert.deepEqual(rows[1], {
     key: 'E-aaaaaaaa/P1', id: 'P1', title: 'module a', role: 'develop', state: 'DONE', tasks: null,
-    last_verdict: 'accept 91', reporter: 'shape',
+    last_verdict: 'accept 91', reporter: 'planning', origin: 'shape', link: null,
     links: { blocked_by: [], blocks: [], implements: [], filed_by: null },
   });
 });
@@ -676,7 +697,7 @@ test('epicBoardRows puts the planning phase-Team row first and the qa phase-Team
 // v0.12.1 Task 2 adds a third phase-Team, the audit - planning's own second pass, opened after
 // integration (and after QA when it is on). It sits last of all: the audit is the final judgement
 // before the goal gate, and a STORY it files is an ordinary develop row in the middle.
-test('epicBoardRows renders the audit phase-Team last, with role "audit", and every phase-Team package reports "engine" (never "shape", never its own phase name)', () => {
+test('epicBoardRows renders the audit phase-Team last, with role "audit", and every phase-Team package reports "planning" (never "shape", never its own phase name)', () => {
   const t = baseTask(
     [
       dispatchNode('PLAN', { state: 'done', result: {} }), acceptNode('PLAN', { state: 'done', result: { accept: true, match_pct: 95 } }),
@@ -693,18 +714,21 @@ test('epicBoardRows renders the audit phase-Team last, with role "audit", and ev
   );
   const rows = epicBoardRows(t);
   assert.deepEqual(rows.map((r) => [r.id, r.role]), [['PLAN', 'planning'], ['P1', 'develop'], ['D1', 'develop'], ['QA', 'qa'], ['AUDIT', 'audit']]);
-  // 'engine' for every phase-Team row - never its own phase name (that would still collide with
-  // a QA-filed defect's reporter 'qa'; see the reporter-collision test below), never 'shape'
-  // (that row never ran through shape at all). D1's own reporter ('planning-audit') is unaffected
-  // - it is a develop STORY the audit filed, not a phase-Team row.
-  assert.deepEqual(rows.map((r) => [r.id, r.reporter]), [['PLAN', 'engine'], ['P1', 'shape'], ['D1', 'planning-audit'], ['QA', 'engine'], ['AUDIT', 'engine']]);
+  // 'planning' for every phase-Team row - never its own phase name (that would still collide
+  // with a QA-filed defect's reporter 'qa'; see the reporter-collision test below), never 'shape'
+  // (that row never ran through shape at all); `origin` (below) is what actually tells them
+  // apart. D1's own reporter (old-style `reporter: 'planning-audit'`) normalizes to 'audit' - it
+  // is a develop STORY the audit filed, not a phase-Team row.
+  assert.deepEqual(rows.map((r) => [r.id, r.reporter]), [['PLAN', 'planning'], ['P1', 'planning'], ['D1', 'audit'], ['QA', 'planning'], ['AUDIT', 'planning']]);
+  assert.deepEqual(rows.map((r) => [r.id, r.origin]), [['PLAN', 'phase'], ['P1', 'shape'], ['D1', 'planning-audit'], ['QA', 'phase'], ['AUDIT', 'phase']]);
 });
 
 // Since d24b9bb, epicBoardRows gave the QA phase-Team's own row (role: qa) and a develop STORY
 // QA filed (role: develop) the identical reporter string 'qa' - a person reading `reporter`
 // alone (as tm_ticket's own STORY card invites, see toolTicket/tm_ticket) could not tell "the QA
-// run itself" from "a defect QA found" apart. Fixed above by reporting 'engine' for every
-// phase-Team row regardless of which phase; pinned here so the two rows are provably distinct.
+// run itself" from "a defect QA found" apart. Fixed by reporting 'planning' for every phase-Team
+// row regardless of which phase (origin: 'phase' names which case it actually is); pinned here
+// so the two rows are provably distinct.
 test('a phase-Team row and a filed defect STORY never share a reporter token, even when the phase is "qa"', () => {
   const t = baseTask(
     [
@@ -721,9 +745,66 @@ test('a phase-Team row and a filed defect STORY never share a reporter token, ev
   const d1Row = rows.find((r) => r.id === 'D1');
   assert.equal(qaRow.role, 'qa');
   assert.equal(d1Row.role, 'develop');
-  assert.equal(d1Row.reporter, 'qa', 'a QA-filed defect STORY still reports \'qa\' - FILED_REPORTERS is load-bearing elsewhere (view-collect.mjs, docs, tests)');
+  assert.equal(d1Row.reporter, 'qa', 'a QA-filed defect STORY still reports \'qa\' - FILED_ORIGINS is load-bearing elsewhere (view-collect.mjs, docs, tests)');
+  assert.equal(d1Row.origin, 'qa');
   assert.notEqual(qaRow.reporter, d1Row.reporter, 'the QA phase-Team row must not share reporter \'qa\' with a STORY QA filed');
-  assert.equal(qaRow.reporter, 'engine');
+  assert.equal(qaRow.reporter, 'planning');
+  assert.equal(qaRow.origin, 'phase');
+});
+
+// ---------- packageFiling: reporter/origin/link, and the back-compat normalizer ----------
+//
+// The reporter/origin split (this round): reporter is the issuing TEAM ('planning' for the
+// engine's own shape/repair/phase-Team work, 'qa'/'audit' for the two review passes, 'user' for
+// tm_file, or an actual develop package id for an upstream fix); origin is the STAGE that
+// produced the package. Every branch below is exercised once, directly, independent of
+// epicBoardRows/tm_ticket (which already cover the same ground end to end above) - this is the
+// unit-level table for packageFiling itself, and the one place every OLD on-disk reporter value
+// is proven to still normalize correctly (task.json is never rewritten - see this module's own
+// header).
+test('packageFiling: a package with no reporter of its own defaults to reporter "planning", origin shape/repair/phase', () => {
+  assert.deepEqual(packageFiling({ id: 'P1' }), { reporter: 'planning', origin: 'shape', link: null });
+  assert.deepEqual(packageFiling({ id: 'R1', repair: true }), { reporter: 'planning', origin: 'repair', link: null });
+  assert.deepEqual(packageFiling({ id: 'QA', phase: 'qa' }), { reporter: 'planning', origin: 'phase', link: null });
+  assert.deepEqual(packageFiling({ id: 'PLAN', phase: 'planning' }), { reporter: 'planning', origin: 'phase', link: null });
+  assert.deepEqual(packageFiling({ id: 'AUDIT', phase: 'audit' }), { reporter: 'planning', origin: 'phase', link: null });
+});
+
+test('packageFiling: every OLD on-disk reporter value normalizes to its new reporter/origin (never rewritten - a pure read-time translation)', () => {
+  // 'qa' (QA-found defect) - the string itself is unchanged across the split.
+  assert.deepEqual(packageFiling({ id: 'D1', reporter: 'qa' }), { reporter: 'qa', origin: 'qa', link: null });
+  // 'you' (tm_file) -> reporter 'user', origin 'tm_file'.
+  assert.deepEqual(packageFiling({ id: 'D2', reporter: 'you' }), { reporter: 'user', origin: 'tm_file', link: null });
+  // 'planning-audit' (audit-found unmet story) -> reporter 'audit', origin unchanged.
+  assert.deepEqual(packageFiling({ id: 'D3', reporter: 'planning-audit' }), { reporter: 'audit', origin: 'planning-audit', link: null });
+  // 'upstream' - a pre-split package never stored reported_by/upstream on ITSELF (only
+  // task.unresolved_defects' own cap-exhausted fallback entries did), so the filer can no longer
+  // be named - only origin/link survive, off the package's own deps[0] (fileUpstreamDefects'
+  // pre-split shape: deps: [upstreamId], nothing else naming the upstream id).
+  assert.deepEqual(packageFiling({ id: 'D4', reporter: 'upstream', deps: ['P1'] }),
+    { reporter: null, origin: 'upstream', link: { type: 'blocks', target: 'P1' } });
+  // An unrecognized reporter value (neither legacy nor a real one this codebase ever wrote) is
+  // kept verbatim rather than silently dropped or defaulted.
+  assert.deepEqual(packageFiling({ id: 'D5', reporter: 'something-future' }), { reporter: 'something-future', origin: null, link: null });
+});
+
+test('packageFiling: a NEW-style package (reporter/origin/link written directly by fileDefects/fileUpstreamDefects) passes through unchanged', () => {
+  assert.deepEqual(packageFiling({ id: 'D1', reporter: 'qa', origin: 'qa' }), { reporter: 'qa', origin: 'qa', link: null });
+  assert.deepEqual(packageFiling({ id: 'D2', reporter: 'user', origin: 'tm_file' }), { reporter: 'user', origin: 'tm_file', link: null });
+  assert.deepEqual(packageFiling({ id: 'D3', reporter: 'audit', origin: 'planning-audit' }), { reporter: 'audit', origin: 'planning-audit', link: null });
+  // The upstream fix's own filer (an actual develop team id) and link both survive intact - this
+  // is the fact a pre-split package could never carry at all (see the legacy test above).
+  assert.deepEqual(
+    packageFiling({ id: 'D4', reporter: 'P4', origin: 'upstream', link: { type: 'blocks', target: 'P3' }, deps: ['P3'] }),
+    { reporter: 'P4', origin: 'upstream', link: { type: 'blocks', target: 'P3' } },
+  );
+});
+
+test('FILED_ORIGINS names exactly the four origins fileDefects ever writes for an actually-filed package', () => {
+  assert.deepEqual([...FILED_ORIGINS].sort(), ['planning-audit', 'qa', 'tm_file', 'upstream'].sort());
+  assert.equal(FILED_ORIGINS.has('shape'), false);
+  assert.equal(FILED_ORIGINS.has('repair'), false);
+  assert.equal(FILED_ORIGINS.has('phase'), false);
 });
 
 // ---------- storyLinks: blocked by / blocks / implements / filed by ----------
@@ -880,6 +961,49 @@ test('storyBlockedReason: names which of the four kinds of block holds a STORY, 
   }
 });
 
+// upstream_defect detection now reads packageFiling(p).origin === 'upstream' and p.link.target -
+// never the pre-split `p.reporter === 'upstream'` literal, since a NEW upstream-fix package's
+// own `reporter` is the FILER's team id (e.g. 'P2'), not the word 'upstream' at all. D1 is the
+// fix STORY fileUpstreamDefects filed against P1 (origin 'upstream', link -> P1); P2's own next
+// attempt waits on D1's accept, unmet - exactly the shape fileUpstreamDefects leaves behind.
+test('storyBlockedReason: upstream_defect is detected via origin/link, not the pre-split reporter literal', () => {
+  const t = baseTask(
+    [
+      dispatchNode('D1', { state: 'done', result: {} }), acceptNode('D1'),
+      dispatchNode('P2', { deps: ['accept:D1:1'] }),
+    ],
+    { spec: { packages: [
+      { id: 'P1', title: 'upstream package' },
+      { id: 'D1', title: 'fix for P1', reporter: 'P2', origin: 'upstream', link: { type: 'blocks', target: 'P1' }, deps: ['P1'] },
+      { id: 'P2', title: 'downstream package' },
+    ] } },
+  );
+  const br = storyBlockedReason(t, 'P2');
+  assert.equal(br.reason, 'upstream_defect');
+  assert.deepEqual(br.node_ids, ['accept:D1:1']);
+  assert.deepEqual(br.upstream, ['P1']);
+});
+
+// Back-compat: a legacy on-disk fix package (pre-split `reporter: 'upstream'`, no link at all)
+// is still detected, falling back to its own deps[0] for the upstream id - exactly what
+// packageFiling's own back-compat branch does.
+test('storyBlockedReason: upstream_defect still detected off a legacy pre-split package (reporter: \'upstream\', no origin/link)', () => {
+  const t = baseTask(
+    [
+      dispatchNode('D1', { state: 'done', result: {} }), acceptNode('D1'),
+      dispatchNode('P2', { deps: ['accept:D1:1'] }),
+    ],
+    { spec: { packages: [
+      { id: 'P1', title: 'upstream package' },
+      { id: 'D1', title: 'fix for P1', reporter: 'upstream', deps: ['P1'] },
+      { id: 'P2', title: 'downstream package' },
+    ] } },
+  );
+  const br = storyBlockedReason(t, 'P2');
+  assert.equal(br.reason, 'upstream_defect');
+  assert.deepEqual(br.upstream, ['P1']);
+});
+
 test('storyBlockedReason: a package with no dispatch node at all reads null (defensive, matches storyTicketState\'s own BACKLOG fallback)', () => {
   const t = baseTask([], { spec: { packages: [{ id: 'P9', title: 't' }] } });
   assert.equal(storyBlockedReason(t, 'P9'), null);
@@ -993,4 +1117,32 @@ test('flowMetrics: a STORY that never logged an explicit BACKLOG line (deps alre
   const fm = flowMetrics(baseTask([], { created_at: null }), entries, { now: 9000 });
   assert.equal(fm.lead_time_ms.by_story[`${EPIC}/P1`], 2000); // 4000 - 2000 (first logged line, not a real BACKLOG)
   assert.equal(fm.cycle_time_ms.by_story[`${EPIC}/P1`], 1000); // 4000 - 3000
+});
+
+// Cards everywhere (docs/plans/2026-09-28-teams-cards-everywhere.md C2/C7): planning and QA are one
+// card per feature area. Every reader goes through planningPkgs/qaPkgs, which also read a task.json
+// written before the split (a single planning_pkg/qa_pkg) as a one-card list.
+test('planningPkgs/qaPkgs/phaseOfId read the card lists, and a pre-split task.json as one card each', async () => {
+  const { planningPkgs, qaPkgs, phaseOfId, planningStories, ticketSnapshot, epicBoardRows } = await import('../mcp/tickets.mjs');
+  const legacy = { run_id: 'legacy00-0000', nodes: [], planning_pkg: { id: 'PLAN', phase: 'planning' }, qa_pkg: { id: 'QA', phase: 'qa' } };
+  assert.deepEqual(planningPkgs(legacy).map((p) => p.id), ['PLAN']);
+  assert.deepEqual(qaPkgs(legacy).map((p) => p.id), ['QA']);
+  assert.equal(phaseOfId(legacy, 'QA'), 'qa');
+  const cards = {
+    run_id: 'cards000-0000', planning_pkgs: [{ id: 'PLAN-F1', phase: 'planning' }, { id: 'PLAN-F2', phase: 'planning' }],
+    qa_pkgs: [{ id: 'QA-F1', phase: 'qa' }, { id: 'QA-F2', phase: 'qa' }], audit_pkg: { id: 'AUDIT', phase: 'audit' },
+    spec: { packages: [{ id: 'P1' }] },
+    nodes: [
+      node('dispatch:PLAN-F1:1', 'dispatch', [], { subgoal_id: 'PLAN-F1', attempt: 1, state: 'done', result: { user_stories: [{ id: 'F1-US-1' }] } }),
+      node('accept:PLAN-F1:1', 'accept', ['dispatch:PLAN-F1:1'], { subgoal_id: 'PLAN-F1', attempt: 1, state: 'done' }),
+      node('dispatch:PLAN-F2:1', 'dispatch', [], { subgoal_id: 'PLAN-F2', attempt: 1, state: 'done', result: { user_stories: ['refused'] } }),
+      node('accept:PLAN-F2:1', 'accept', ['dispatch:PLAN-F2:1'], { subgoal_id: 'PLAN-F2', attempt: 1, state: 'failed' }),
+      node('dispatch:PLAN-F2:2', 'dispatch', [], { subgoal_id: 'PLAN-F2', attempt: 2, state: 'done', result: { user_stories: ['F2-US-1'] } }),
+      node('accept:PLAN-F2:2', 'accept', ['dispatch:PLAN-F2:2'], { subgoal_id: 'PLAN-F2', attempt: 2, state: 'done' }),
+    ],
+  };
+  assert.deepEqual([phaseOfId(cards, 'PLAN-F2'), phaseOfId(cards, 'QA-F1'), phaseOfId(cards, 'AUDIT'), phaseOfId(cards, 'P1')], ['planning', 'qa', 'audit', null]);
+  assert.deepEqual(planningStories(cards), [{ id: 'F1-US-1', card: 'PLAN-F1' }, { id: 'F2-US-1', card: 'PLAN-F2' }], 'each card\'s accepted attempt, tagged with the card');
+  assert.deepEqual(epicBoardRows(cards).map((r) => [r.id, r.role]), [['PLAN-F1', 'planning'], ['PLAN-F2', 'planning'], ['P1', 'develop'], ['QA-F1', 'qa'], ['QA-F2', 'qa'], ['AUDIT', 'audit']]);
+  assert.deepEqual(Object.keys(ticketSnapshot(cards)), ['E-cards000', 'E-cards000/PLAN-F1', 'E-cards000/PLAN-F2', 'E-cards000/P1', 'E-cards000/QA-F1', 'E-cards000/QA-F2', 'E-cards000/AUDIT']);
 });

@@ -39,6 +39,9 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url)); // <plugin>/skills/install
 const PLUGIN_ROOT = resolve(HERE, '..', '..'); // <plugin> (harness/)
+// What a gated project must not commit: session markers, harness run directories (plan/spec/
+// critique scratch that engages the gate), and per-user settings.
+const GITIGNORE_LINES = ['.claude/.harness-markers/', '.harness-run/', '.claude/settings.local.json'];
 
 function parseArgs() {
   const raw = process.argv[2];
@@ -150,7 +153,19 @@ function main() {
         (g) => (g.hooks || []).some((h) => String(h.command || '').includes('goal-gate.mjs')),
       );
       if (alreadyRegistered) {
-        report.actions.settings = 'already';
+        // An install from before the gate judged Bash registered a matcher without it: widen it
+        // in place (the gate reads Bash commands for writes to gated paths).
+        let widened = false;
+        for (const g of arr) {
+          if (!(g.hooks || []).some((h) => String(h.command || '').includes('goal-gate.mjs'))) continue;
+          const parts = String(g.matcher || '').split('|').filter(Boolean);
+          if (parts.length && !parts.includes('Bash')) {
+            g.matcher = [...parts, 'Bash'].join('|');
+            widened = true;
+          }
+        }
+        if (widened) writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
+        report.actions.settings = widened ? 'widened' : 'already';
       } else {
         arr.push(...entries);
         ensureDir(claudeDir);
@@ -220,27 +235,26 @@ function main() {
         'dynamically by SetGoal and cannot be pre-enumerated — unembedded picks are absent ' +
         'in a plugin-less environment. If embedded, rewrite the Workflow scriptPath in the ' +
         'CLAUDE.md block to .claude/harness/engine/pipeline.js and codex_adapter_path to ' +
-        '.claude/harness/engine/codex-exec-adapter.mjs (engagement regex still matches).',
+        '.claude/harness/engine/codex-exec-adapter.mjs (the gate engages on the Workflow tool call, whichever path it names).',
     );
   } else {
     report.actions.embed = 'skipped';
   }
 
-  // ---- .gitignore: ensure the markers dir is ignored ----
+  // ---- .gitignore: the markers dir, the run directory and the per-user settings ----
   {
     const giPath = join(projectDir, '.gitignore');
-    const line = '.claude/.harness-markers/';
-    if (!existsSync(giPath)) {
-      writeFileSync(giPath, line + '\n');
+    const cur = existsSync(giPath) ? readFileSync(giPath, 'utf8') : null;
+    const have = new Set((cur || '').split(/\r?\n/).map((l) => l.trim()));
+    const missing = GITIGNORE_LINES.filter((l) => !have.has(l));
+    if (cur == null) {
+      writeFileSync(giPath, GITIGNORE_LINES.join('\n') + '\n');
       report.actions.gitignore = 'created';
+    } else if (!missing.length) {
+      report.actions.gitignore = 'present';
     } else {
-      const cur = readFileSync(giPath, 'utf8');
-      if (cur.split(/\r?\n/).some((l) => l.trim() === line)) {
-        report.actions.gitignore = 'present';
-      } else {
-        writeFileSync(giPath, cur + (cur.endsWith('\n') ? '' : '\n') + line + '\n');
-        report.actions.gitignore = 'appended';
-      }
+      writeFileSync(giPath, cur + (cur.endsWith('\n') || !cur ? '' : '\n') + missing.join('\n') + '\n');
+      report.actions.gitignore = 'appended';
     }
   }
 

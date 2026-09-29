@@ -19,8 +19,9 @@ import { driverCostOf, collectTaskCosts } from '../bench/lib/drivercost.mjs';
 // exactly the same reason epicTicketState etc. already were: one derivation, no second copy of
 // "what state is this STORY/TASK in" living in view-collect.mjs.
 import {
-  epicKey, epicTicketState, epicPhase, epicBoardRows, storyLinks,
+  epicKey, epicTicketState, epicPhase, epicBoardRows, storyLinks, packageFiling, FILED_ORIGINS,
   storyTicketState, storyKey, taskKey, taskTicketState, storyBlockedReason, flowMetrics,
+  planningPkgs, qaPkgs,
 } from '../../mcp/tickets.mjs';
 
 // ---------- small read helpers, all fail soft ----------
@@ -277,10 +278,17 @@ function packageModel(task, pkg, dispatchNode, acceptNode, visiting) {
     phase: pkg.phase || null,
     deps: pkg.deps || [],
     // Set only on a package fileDefects() created (a QA-found defect, an audit-found unmet
-    // story, or a user's tm_file) - null for a package shape itself declared. This is the only
-    // way a human looking at the board can tell "this STORY exists because QA/audit found
-    // something" apart from "this STORY is part of the original plan".
-    reporter: pkg.reporter || null,
+    // story, a user's tm_file, or an upstream fix) - null for a package shape/repair/a
+    // phase-Team itself declared. This is the only way a human looking at the board can tell
+    // "this STORY exists because something was filed against already-integrated work" apart
+    // from "this STORY is part of the original plan" - packageFiling (tickets.mjs) normalizes
+    // an old on-disk package's overloaded `reporter` the same way epicBoardRows/tm_ticket do, so
+    // a task opened before the reporter/origin split still renders correctly here too.
+    ...(() => {
+      const filing = packageFiling(pkg);
+      const filed = FILED_ORIGINS.has(filing.origin);
+      return { reporter: filed ? filing.reporter : null, origin: filed ? filing.origin : null, link: filing.link };
+    })(),
     links: storyLinks(task, pkg.id),
     dispatch: dispatchNode ? nodeSummary(dispatchNode) : null,
     accept: acceptNode ? nodeSummary(acceptNode) : null,
@@ -305,8 +313,8 @@ function packageModel(task, pkg, dispatchNode, acceptNode, visiting) {
 
 function pidAliveFromDriver(driver) { return pidAlive(driver && driver.pid); }
 
-// task.qa_pkg / task.audit_pkg (§2/§3 of the QA and planning-audit phase-Teams) are not part of
-// task.spec.packages - they are a single fixed package template (id 'QA' or 'AUDIT') that can be
+// The QA cards and task.audit_pkg (§2/§3 of the QA and planning-audit phase-Teams) are not part of
+// task.spec.packages - each is a fixed package template (id 'QA-F<n>' or 'AUDIT') that can be
 // dispatched more than once: a QA round that finds a defect reopens a fresh QA round once the
 // fix is integrated (capped by qa_rounds), and an audit round can do the same for an unmet user
 // story. Each round is its own dispatch:<id>:<attempt>/accept:<id>:<attempt> node pair sharing
@@ -414,11 +422,11 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
   }
 
   const packages = [];
-  // planning_pkg dispatches BEFORE shape writes task.spec, so it is listed on its own: gated
-  // behind spec.packages, a running PLAN team left "packages:" empty for the whole planning
-  // phase (code-sprint-S2, 2026-09-26).
+  // The planning cards (one per feature area, cards-everywhere C2) dispatch BEFORE shape writes
+  // task.spec, so they are listed on their own: gated behind spec.packages, a running PLAN team
+  // left "packages:" empty for the whole planning phase (code-sprint-S2, 2026-09-26).
   {
-    const all = [...((task.spec && Array.isArray(task.spec.packages)) ? task.spec.packages : []), ...(task.planning_pkg ? [task.planning_pkg] : [])];
+    const all = [...((task.spec && Array.isArray(task.spec.packages)) ? task.spec.packages : []), ...planningPkgs(task)];
     for (const pkg of all) {
       // A retried package can have several dispatch:<id>:<attempt> nodes; take the latest.
       const dispatches = task.nodes.filter((n) => n.stage === 'dispatch' && n.subgoal_id === pkg.id)
@@ -431,11 +439,13 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     }
   }
 
-  // task.qa_pkg / task.audit_pkg: the QA and planning-audit phase-Teams (view-collect.mjs's
-  // packages loop above only ever sees task.spec.packages + planning_pkg, so without this a
-  // task with QA or audit turned on drives every one of its rounds - defects found, STORYs
-  // filed, the audit's own verdict - with nothing on this surface ever showing it happened).
-  const qaRounds = collectPhaseRounds(task, task.qa_pkg, 'QA', visiting);
+  // The QA cards (one per feature area, cards-everywhere C7) and the planning audit (the packages
+  // loop above only ever sees task.spec.packages + the planning cards, so without this a task
+  // with QA or audit turned on drives every one of its rounds - defects found, STORYs filed, the
+  // audit's own verdict - with nothing on this surface ever showing it happened). qa.cards keeps
+  // each card's rounds apart; qa.rounds is all of them, card by card, for the round-by-round list.
+  const qaCards = qaPkgs(task).map((p) => ({ id: String(p.id), title: p.area_title || p.title || '', rounds: collectPhaseRounds(task, p, String(p.id), visiting) }));
+  const qaRounds = qaCards.flatMap((c) => c.rounds);
   const auditRounds = collectPhaseRounds(task, task.audit_pkg, 'AUDIT', visiting);
 
   const managerStages = task.nodes.filter((n) => !['dispatch', 'accept'].includes(n.stage)).map(nodeSummary);
@@ -517,7 +527,7 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     package_map: task.shape_diagram && task.shape_diagram.path ? { path: task.shape_diagram.path, source: task.shape_diagram.source } : null,
     manager_stages: managerStages,
     packages,
-    qa: task.qa_pkg ? { id: task.qa_pkg.id, rounds: qaRounds } : null,
+    qa: qaCards.length ? { id: qaCards.map((c) => c.id).join(', '), cards: qaCards, rounds: qaRounds } : null,
     audit: task.audit_pkg ? { id: task.audit_pkg.id, rounds: auditRounds } : null,
     s_run: sRun,
     events,
@@ -540,24 +550,21 @@ export function deriveTitle(request) {
   return `${clause.slice(0, TITLE_MAX - 1).trimEnd()}…`;
 }
 
-// epicBoardRows' own `reporter` field (tickets.mjs) is not itself "was this filed as a defect" -
-// it defaults to 'shape' for an ordinary package and 'repair' for a repair package precisely so
-// tm_board always has SOME reporter to print. A filed defect/unmet-story STORY is the one whose
-// reporter is one of these four - fileDefects (taskmanager.mjs) never writes any other value -
-// the same set epicBoardRows' own comment names. 'upstream' is fileUpstreamDefects' own reporter
-// (taskmanager.mjs, §upstream_defects): a fix STORY a downstream package's dispatch/accept filed
-// against an upstream dependency it deps on, same fileDefects machinery, different filer.
-const FILED_REPORTERS = ['qa', 'you', 'planning-audit', 'upstream'];
-
+// epicBoardRows' own `origin` field (tickets.mjs) is not itself "was this filed as a defect" -
+// it defaults to 'shape' for an ordinary package, 'repair' for a repair package, and 'phase' for
+// a PLAN/QA/AUDIT phase-Team package, precisely so tm_board always has SOME origin to print. A
+// filed defect/unmet-story STORY is the one whose origin is in tickets.mjs's own FILED_ORIGINS -
+// fileDefects (taskmanager.mjs) never writes any other origin for an actually-filed package.
+//
 // A task's STORY rows that are develop work (epicBoardRows' `role` is 'develop' for a plan
 // package and any filed defect/unmet-story STORY; PLAN/QA/AUDIT phase-Team packages carry their
 // own phase as role instead) - what a person scanning the index means by "how much of the actual
 // work is done", and separately, how many of those rows a QA or planning-audit round filed
-// (reporter in FILED_REPORTERS) that have not yet reached DONE/CANCELLED/UNREACHABLE - still
-// open, still something to look at.
+// (origin in FILED_ORIGINS) that have not yet reached DONE/CANCELLED/UNREACHABLE - still open,
+// still something to look at.
 function storyProgress(task) {
   const rows = epicBoardRows(task).filter((r) => r.role === 'develop');
-  const openDefects = rows.filter((r) => FILED_REPORTERS.includes(r.reporter) && !['DONE', 'CANCELLED', 'UNREACHABLE'].includes(r.state)).length
+  const openDefects = rows.filter((r) => FILED_ORIGINS.has(r.origin) && !['DONE', 'CANCELLED', 'UNREACHABLE'].includes(r.state)).length
     // task.unresolved_defects: a defect/unmet-story found after the QA/planning-audit round cap
     // was already spent - never filed as a STORY at all (fileDefects is skipped for these; see
     // taskmanager.mjs), so epicBoardRows never sees them. Still a real, still-open problem this
@@ -595,6 +602,12 @@ export function listTasks(tasksDir) {
       title: deriveTitle(task.request),
       state,
       phase,
+      // Grouping/display only - a person-set label above the EPIC (teamconfig.mjs's own
+      // `initiative` key). null (the default, and every task opened before this existed) means
+      // "not part of any group" - the index and view-page.html render it as a plain tag, never a
+      // restructured layout, so the byte-for-byte "no initiative anywhere -> unchanged" contract
+      // tm_board's own grouping keeps is not something this surface has to re-derive.
+      initiative: task.initiative || null,
       size: task.size || null,
       created_at: task.created_at || null,
       elapsed_ms: elapsedMs(task.created_at),

@@ -44,7 +44,7 @@ normal no-config case, not an error). What matters on a first run:
 
 | Key | Default with no `team.json` | Source |
 |---|---|---|
-| `roles` | `{planning: true, qa: true}` — both on | `teamconfig.mjs:32` |
+| `roles` | `{planning: "auto", qa: true, audit: true}` — planning always runs (one card per feature area; `false` is refused), QA cards and the audit on | `teamconfig.mjs` (`TEAM_DEFAULTS.roles`) |
 | `qa_rounds` | `2` | `teamconfig.mjs:31` |
 | `max_parallel_teams` | `2` | `teamconfig.mjs:22` |
 | `docs_dir` | `.teams_output/team` | `teamconfig.mjs:53` |
@@ -80,9 +80,10 @@ tm_open({
 })                                               -> task_id, state, docs_dir, view_url
 ```
 
-That is the whole of your job to start it: size, shape, critique, every package's dispatch and
-fold, integrate, the goal gate, the report — or, for a size-S request, the one run it opens —
-all happen on their own from here. Prefer `tm_run` over `tm_open` when you do not even want the
+That is the whole of your job to start it: size, the feature split and one planning card per
+feature area, the planning integrate, shape, critique, every package's dispatch and fold,
+integrate, one QA card per feature area, the goal gate, the report — or, for a size-S request,
+its one planning card and then the one run it opens — all happen on their own from here. Prefer `tm_run` over `tm_open` when you do not even want the
 `state` field back, only a pointer: same open, same daemon, `{task_id, run_id, docs_dir, view_url}` - open `view_url` in a browser to watch the run.
 
 After this you watch; you never drive.
@@ -91,6 +92,7 @@ After this you watch; you never drive.
 tm_wait({task_id, cursor, max_ms: 60000})   # bounded long-poll: node transitions since cursor, or a timeout
     state "running"  -> call it again, immediately, with the returned cursor. Nothing else.
     state "complete" -> relay the node table (tm_status) and the report
+    state "partial"  -> relay the table, the report, and partial_reasons (what did not ship)
     state "blocked"  -> a result: report what failed and stop there
 ```
 

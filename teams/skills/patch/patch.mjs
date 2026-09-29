@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Prepare a patch release for a plugin in this marketplace: bump x.y.Z in plugin.json and the
-// marketplace entry, and prepend one status line to README (## Status) AND KOR.md (## 상태) -
+// marketplace entry, and prepend one status line to CHANGELOG.md (else README) ## Status AND
+// CHANGELOG.KOR.md (else KOR.md) ## 상태 -
 // this repository moves the two together. For a source checkout only.
 // Usage: node patch.mjs '{"plugin":"teams","repoRoot":"/abs","summary":"...","summary_ko":"...","dryRun":true}'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -46,8 +47,11 @@ function main() {
   const pluginRoot = join(repoRoot, plugin);
   const pluginPath = join(pluginRoot, '.claude-plugin', 'plugin.json');
   const marketplacePath = join(repoRoot, '.claude-plugin', 'marketplace.json');
-  const readmePath = join(pluginRoot, 'README.md');
-  const korPath = join(pluginRoot, 'KOR.md');
+  // Release lines go to CHANGELOG.md/CHANGELOG.KOR.md when the plugin keeps one (teams since
+  // its README rewrite), else to README.md/KOR.md as before. Same headings either way.
+  const hasLog = existsSync(join(pluginRoot, 'CHANGELOG.md')) && existsSync(join(pluginRoot, 'CHANGELOG.KOR.md'));
+  const readmePath = join(pluginRoot, hasLog ? 'CHANGELOG.md' : 'README.md');
+  const korPath = join(pluginRoot, hasLog ? 'CHANGELOG.KOR.md' : 'KOR.md');
   const pluginJson = readJson(pluginPath, `${plugin} plugin.json`);
   const marketplace = readJson(marketplacePath, 'marketplace.json');
   if (!existsSync(readmePath)) fail(`README not found: ${readmePath}`);

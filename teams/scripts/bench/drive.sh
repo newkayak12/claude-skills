@@ -3,12 +3,20 @@
 #
 #   drive.sh "<arm> <case> <label>" ["<arm> <case> <label>" ...]
 #
-# A job whose workspace does not exist starts with bench.sh; one that exists is resumed with
-# resume.sh. After each session the newest stream is read for how it ended:
+# Teams arms (beta, betas, skills) go through `teams run` (scripts/run.mjs, wait-model C of
+# docs/plans/2026-09-21-teams-server-owns-the-loop.md §4): a new workspace is seeded and run by
+# `BENCH_VIA=run bench.sh`, an existing one is resumed with `run.mjs --resume <task_id>`, and in
+# both the CLI itself waits until the task settles and sleeps through a usage-limit reset
+# (--resume-on-limit, at most MAX_RESUMES resumes). No model session watches it, and none of the
+# session loop below runs for them (run_job). DRIVE_VIA=session puts them back on that loop.
+#
+# Every other arm (stable, none, sprint) is a `claude -p` session. A job whose workspace does not
+# exist starts with bench.sh; one that exists is resumed with resume.sh. After each session the
+# newest stream is read for how it ended:
 #   - no `result` event at all  -> the session was killed from outside (a memory kill, a SIGKILL,
 #     the terminal going away). Nothing to wait for: resume straight away.
-#   - a usage-limit message     -> "resets 11:50pm (Asia/Seoul)" is parsed, the driver sleeps
-#     until then plus a margin, then resumes.
+#   - a usage-limit message     -> lib/until-reset.mjs (run.mjs's own parser and minute-step
+#     sleep) waits until the reset it names plus a margin, then resumes.
 #   - anything else             -> the session ended on its own (complete or blocked are both
 #     results) and the job is done.
 # At most MAX_RESUMES (default 6) resumes per job.
@@ -130,9 +138,9 @@ EOF
 # the arm under test for turns spent polling, not for work (§3 of that plan: 125 polling turns,
 # $4.53, for one run). wait_for_settle is that whole waiting strategy behind one name - today it
 # polls task_settle_state (pure disk reads, zero model turns) on an interval up to a hard
-# ceiling. The `teams run` CLI in the daemon work referenced by that plan is meant to replace
-# this polling with a single blocking, zero-turn wait; when it exists, swap this function's body
-# for a call to it - nothing else in drive.sh should need to change.
+# ceiling. The teams arms no longer come through here: `teams run` is that single blocking,
+# zero-turn wait (run_job below). What still does is a session arm whose session opens a task
+# (sprint, or any teams arm under DRIVE_VIA=session).
 wait_for_settle() {
   local ws=$1 elapsed=0 poll=${SETTLE_POLL_SECONDS:-30} ceiling=$((${SETTLE_MAX_MINUTES:-60} * 60))
   local status reason
@@ -148,28 +156,12 @@ wait_for_settle() {
   done
 }
 
-sleep_until_reset() {  # "resets 11:50pm (Asia/Seoul)" -> sleep until then (+3 min); else 30 min
-  local text=$1 hm ap h m target now
-  if [[ $text =~ resets\ ([0-9]{1,2}):([0-9]{2})(am|pm) ]]; then
-    h=${BASH_REMATCH[1]}; m=${BASH_REMATCH[2]}; ap=${BASH_REMATCH[3]}
-    [ "$ap" = pm ] && [ "$h" -ne 12 ] && h=$((h + 12))
-    [ "$ap" = am ] && [ "$h" -eq 12 ] && h=0
-    target=$(date -j -f "%Y-%m-%d %H:%M" "$(date +%Y-%m-%d) $(printf '%02d:%02d' "$h" "$m")" +%s 2>/dev/null || echo 0)
-    now=$(date +%s)
-    # The message names the next reset. Read fresh it is ahead of us; read a little late (a
-    # driver restarted after the reset) it is minutes behind, and the window has reset: resume
-    # now. Hours behind means the clock time is tomorrow's - a message at 23:55 saying 4:50am.
-    if [ "$target" -le "$now" ] && [ $((now - target)) -le 3600 ]; then echo "$(date -u +%FT%TZ) limit hit; reset time already passed, resuming"; return 0; fi
-    [ "$target" -le "$now" ] && target=$((target + 86400))
-    echo "$(date -u +%FT%TZ) limit hit; sleeping until $(date -r $((target + 180)) '+%H:%M')"
-    # In one-minute steps against the wall clock: macOS does not count time asleep toward a
-    # single `sleep N`, and idol-pm4 (2026-09-23) resumed five hours after its 18:33 reset.
-    while [ "$(date +%s)" -lt $((target + 180)) ]; do sleep 60; done
-  else
-    echo "$(date -u +%FT%TZ) limit hit; no reset time parsed, sleeping 30 min"
-    local wake=$(( $(date +%s) + 1800 ))
-    while [ "$(date +%s)" -lt "$wake" ]; do sleep 60; done
-  fi
+# "<limit text>" <stream it came from> -> sleep until the named reset (+3 min); else 30 min.
+# The parser and the minute-step sleep are run.mjs's (--resume-on-limit), not a copy: the reset
+# is the first one after the stream's mtime (when the limit hit), so a notice read a little
+# late resumes at once and a 23:55 notice saying 4:50am means tomorrow.
+sleep_until_reset() {
+  node "$HERE/lib/until-reset.mjs" "$1" --since-file "$2"
 }
 
 # Keep the Mac from idle-sleeping for exactly as long as this driver lives, and not a second
@@ -177,9 +169,38 @@ sleep_until_reset() {  # "resets 11:50pm (Asia/Seoul)" -> sleep until then (+3 m
 # this process, so a killed driver cannot leave the machine stuck awake.
 command -v caffeinate >/dev/null && caffeinate -i -w $$ &
 
+# Teams arms: `teams run` opens (or resumes), waits for the task to settle and sleeps through
+# usage-limit resets itself; all that is left here is scoring and the audit.
+run_job() {
+  local job=$1 arm=$2 case=$3 label=$4 ws=$5 task streams
+  if [ ! -d "$ws" ]; then
+    echo "$(date -u +%FT%TZ) start $job (teams run)"
+    BENCH_VIA=run "$HERE/bench.sh" "$arm" "$case" "$label"   # seeds, runs to settle, scores, harvests
+  else
+    task=$(ls "$ws/.harness-tasks" 2>/dev/null | head -1 || true)
+    if [ -z "$task" ]; then echo "$(date -u +%FT%TZ) $job: no task under $ws/.harness-tasks to resume; stopping"; return 0; fi
+    echo "$(date -u +%FT%TZ) resume $job (teams run --resume $task)"
+    ( cd "$ws" && HARNESS_TASKS_DIR="$ws/.harness-tasks" env -u CLAUDECODE \
+        node "$HERE/../run.mjs" --resume "$task" --json --resume-on-limit --max-resumes "$MAX" < /dev/null \
+        >> "$ws.run.jsonl" 2>> "$ws.stderr.txt" )
+    echo "$(date -u +%FT%TZ) $job: teams run exit $?"
+    streams=$(ls "$ws".stream*.jsonl 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+    node "$HERE/score.mjs" "$case" "$ws" "$streams" | tee "$ws.score.txt"
+    node "$HERE/harvest.mjs" "$ws" --score-prefix "$ws" || true
+  fi
+  if [ "${GRAPH_BENCH_AUDIT:-1}" != 0 ]; then
+    node "$HERE/audit.mjs" "$case" "$ws" | tee -a "$ws.score.txt"
+  fi
+  echo "$(date -u +%FT%TZ) done $job"
+}
+
 for job in "$@"; do
   read -r arm case label <<<"$job"
   ws="$OUT/$case-$arm-$label"
+  if [ "${DRIVE_VIA:-run}" = run ] && [[ "$arm" == beta || "$arm" == betas || "$arm" == skills ]]; then
+    run_job "$job" "$arm" "$case" "$label" "$ws"
+    continue
+  fi
   # Resume streams are numbered from what is already on disk, not from zero: a second driver
   # over the same workspace used to reopen .stream.resume1.jsonl and overwrite the first
   # driver's session, losing its cost and turns from every later sum.
@@ -202,7 +223,7 @@ for job in "$@"; do
       if [ "$end" = killed ]; then
         echo "$(date -u +%FT%TZ) $job: session killed with no result event; resuming"
       # A limit message left by an earlier driver names a reset that has long passed: resume now.
-      elif [ "$fresh" = 1 ]; then sleep_until_reset "$text"
+      elif [ "$fresh" = 1 ]; then sleep_until_reset "$text" "$(ls -t "$ws".stream*.jsonl 2>/dev/null | head -1)"
       else echo "$(date -u +%FT%TZ) stale limit message from before this driver; resuming"; fi
       fresh=1
       n=$((n + 1))

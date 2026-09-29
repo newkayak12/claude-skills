@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { TEAM_DEFAULTS, TEAM_FILE, readTeamConfig, resolveTeamOptions } from '../mcp/teamconfig.mjs';
+import { TEAM_DEFAULTS, TEAM_FILE, readTeamConfig, resolveTeamOptions, normalizeInitiative } from '../mcp/teamconfig.mjs';
 
 function project(json) {
   const dir = mkdtempSync(join(tmpdir(), 'teamconfig-'));
@@ -59,16 +59,54 @@ test('team.json overrides defaults, explicit args override team.json', () => {
   assert.equal(sources.goal_threshold, 'args');
   assert.equal(opts.max_retries, 5);
   assert.equal(sources.max_retries, 'team.json');
-  assert.deepEqual(opts.roles, { planning: true, qa: false, audit: true }, 'roles merge key by key (defaults are both on since 0.17.0)');
+  assert.deepEqual(opts.roles, { planning: 'auto', qa: false, audit: true }, 'roles merge key by key (planning defaults to "auto" since the light PLAN mode, qa/audit on since 0.17.0)');
   assert.equal(sources.roles, 'team.json');
 });
 
 test('a wrongly typed key is ignored with a note, not applied', () => {
-  const { opts, notes } = resolveTeamOptions({}, { goal_threshold: 'ninety', max_depth: 'two' });
+  const { opts, notes } = resolveTeamOptions({}, { goal_threshold: 'ninety', qa_rounds: 'two' });
   assert.equal(opts.goal_threshold, TEAM_DEFAULTS.goal_threshold);
-  assert.equal(opts.max_depth, TEAM_DEFAULTS.max_depth);
+  assert.equal(opts.qa_rounds, TEAM_DEFAULTS.qa_rounds);
   assert.equal(notes.length, 2);
   assert.match(notes[0], /goal_threshold/);
+});
+
+test('max_depth is retired (no sub-EPIC; too-big work carries into the next Sprint): accepted with a deprecation note, never resolved', () => {
+  const { opts, notes } = resolveTeamOptions({}, { max_depth: 2 });
+  assert.equal('max_depth' in opts, false);
+  assert.equal('max_depth' in TEAM_DEFAULTS, false);
+  assert.equal(notes.length, 1);
+  assert.match(notes[0], /"max_depth" is deprecated.*next Sprint/);
+});
+
+// roles.planning (docs/plans/2026-09-28-teams-light-plan.md §2.5): true | false | 'light' | 'auto'.
+// The other roles stay boolean-only; any other string is a note, not a value.
+test('roles.planning accepts true/"light"/"auto", defaults to "auto"; false is refused with a note; other strings and non-boolean qa/audit are ignored with a note', () => {
+  assert.equal(TEAM_DEFAULTS.roles.planning, 'auto');
+  for (const v of [true, 'light', 'auto']) {
+    const r = resolveTeamOptions({}, { roles: { planning: v } });
+    assert.equal(r.opts.roles.planning, v, `roles.planning ${JSON.stringify(v)} must be accepted`);
+    assert.equal(r.notes.length, 0, JSON.stringify(r.notes));
+  }
+  // C5 (docs/plans/2026-09-28-teams-cards-everywhere.md): false is refused - planning always
+  // produces its deliverables. The layer's value falls back to the one below it, the note says so,
+  // and the rest of that roles object still applies.
+  const off = resolveTeamOptions({}, { roles: { planning: false, qa: false } });
+  assert.equal(off.opts.roles.planning, 'auto', 'roles.planning false falls back to the default');
+  assert.equal(off.opts.roles.qa, false, 'the rest of the roles object is not thrown away with it');
+  assert.equal(off.notes.length, 1, JSON.stringify(off.notes));
+  assert.match(off.notes[0], /team\.json: roles\.planning: false is refused/);
+  const overFile = resolveTeamOptions({ roles: { planning: false } }, { roles: { planning: true } });
+  assert.equal(overFile.opts.roles.planning, true, 'a refused arg leaves team.json\'s own value standing');
+  assert.match(overFile.notes[0], /^args: roles\.planning: false is refused.*stays true/);
+  assert.equal(resolveTeamOptions({}, { roles: { planning: false } }).sources.roles, 'default', 'nothing was applied from that layer');
+  const viaArgs = resolveTeamOptions({ roles: { planning: 'light' } }, { roles: { planning: true } });
+  assert.equal(viaArgs.opts.roles.planning, 'light', 'an explicit arg outranks team.json');
+  for (const bad of [{ planning: 'heavy' }, { planning: 1 }, { qa: 'auto' }, { audit: 'light' }]) {
+    const r = resolveTeamOptions({}, { roles: bad });
+    assert.deepEqual(r.opts.roles, TEAM_DEFAULTS.roles, `${JSON.stringify(bad)} must be ignored`);
+    assert.match(r.notes[0], /roles/);
+  }
 });
 
 // `interactive` (0.28.0) is what graph.mjs's openAsk AND applyHumanPin both read off run.
@@ -94,6 +132,100 @@ test('interactive: defaults false and sourced "default", team.json can turn it o
   const bad = resolveTeamOptions({}, { interactive: 'yes' });
   assert.equal(bad.opts.interactive, false, 'a non-boolean is ignored - the default survives');
   assert.match(bad.notes[0], /interactive/);
+});
+
+test('ask_timeout: defaults null (wait forever), takes a positive integer of ms from team.json or args, rejects anything else with a note', () => {
+  assert.equal(TEAM_DEFAULTS.ask_timeout, null);
+  const bare = resolveTeamOptions({}, {});
+  assert.equal(bare.opts.ask_timeout, null);
+  assert.equal(bare.sources.ask_timeout, 'default');
+
+  const viaFile = resolveTeamOptions({}, { ask_timeout: 3600000 });
+  assert.equal(viaFile.opts.ask_timeout, 3600000);
+  assert.equal(viaFile.sources.ask_timeout, 'team.json');
+  const viaArgs = resolveTeamOptions({ ask_timeout: 100 }, { ask_timeout: 3600000 });
+  assert.equal(viaArgs.opts.ask_timeout, 100);
+  assert.equal(viaArgs.sources.ask_timeout, 'args');
+  assert.equal(resolveTeamOptions({ ask_timeout: null }, { ask_timeout: 5 }).opts.ask_timeout, null, 'an explicit null turns a team.json timeout back off');
+
+  for (const bad of [0, -1, 1.5, '100', true]) {
+    const r = resolveTeamOptions({}, { ask_timeout: bad });
+    assert.equal(r.opts.ask_timeout, null, `${JSON.stringify(bad)} is ignored`);
+    assert.match(r.notes[0], /ask_timeout/);
+  }
+});
+
+// max_parallel_teams: 'auto' (default since 2026-09-28) hands the cap to taskmanager.mjs's AIMD
+// controller; a project may still pin a fixed number instead, exactly as before that existed.
+// This file only proves the CONFIG LAYER accepts both shapes and rejects everything else - the
+// AIMD behaviour itself (increase/decrease/floor/ceiling) is scripts/test-autoparallel.mjs's job.
+test('max_parallel_teams: defaults to "auto", team.json/args may pin a fixed integer instead, and anything else is ignored with a note', () => {
+  assert.equal(TEAM_DEFAULTS.max_parallel_teams, 'auto');
+  const bare = resolveTeamOptions({}, {});
+  assert.equal(bare.opts.max_parallel_teams, 'auto');
+  assert.equal(bare.sources.max_parallel_teams, 'default');
+
+  const pinned = resolveTeamOptions({}, { max_parallel_teams: 4 });
+  assert.equal(pinned.opts.max_parallel_teams, 4);
+  assert.equal(pinned.sources.max_parallel_teams, 'team.json');
+
+  const viaArgs = resolveTeamOptions({ max_parallel_teams: 1 }, { max_parallel_teams: 4 });
+  assert.equal(viaArgs.opts.max_parallel_teams, 1, 'an explicit arg outranks team.json, same precedence as every other key');
+
+  for (const bad of [0, -1, 1.5, 'fast', null, true]) {
+    const r = resolveTeamOptions({}, { max_parallel_teams: bad });
+    assert.equal(r.opts.max_parallel_teams, 'auto', `${JSON.stringify(bad)} must be rejected, the default survives`);
+    assert.match(r.notes[0], /max_parallel_teams/);
+  }
+});
+
+test('max_parallel_ceiling: defaults to null (the AIMD controller derives one from the host), team.json/args may pin a positive integer, anything else is ignored', () => {
+  assert.equal(TEAM_DEFAULTS.max_parallel_ceiling, null);
+  const bare = resolveTeamOptions({}, {});
+  assert.equal(bare.opts.max_parallel_ceiling, null);
+  assert.equal(bare.sources.max_parallel_ceiling, 'default');
+
+  const pinned = resolveTeamOptions({}, { max_parallel_ceiling: 8 });
+  assert.equal(pinned.opts.max_parallel_ceiling, 8);
+  assert.equal(pinned.sources.max_parallel_ceiling, 'team.json');
+
+  for (const bad of [0, -1, 2.5, 'six']) {
+    const r = resolveTeamOptions({}, { max_parallel_ceiling: bad });
+    assert.equal(r.opts.max_parallel_ceiling, null, `${JSON.stringify(bad)} must be rejected, the default survives`);
+    assert.match(r.notes[0], /max_parallel_ceiling/);
+  }
+});
+
+test('normalizeInitiative: slugifies (lowercase, non-alphanumeric runs collapsed to one "-", trimmed), and null in is null out', () => {
+  assert.equal(normalizeInitiative(null), null);
+  assert.equal(normalizeInitiative(undefined), null);
+  assert.equal(normalizeInitiative('Q1 Roadmap'), 'q1-roadmap');
+  assert.equal(normalizeInitiative('q1-roadmap'), 'q1-roadmap');
+  assert.equal(normalizeInitiative('Q1_Roadmap!'), 'q1-roadmap');
+  assert.equal(normalizeInitiative('  spaced out  '), 'spaced-out');
+  assert.equal(normalizeInitiative('---'), null, 'a string with nothing alphanumeric in it normalizes to null, same as never setting one');
+});
+
+test('initiative: defaults null and sourced "default"; team.json/args are slug-normalized; a non-string/empty value is ignored with a note', () => {
+  assert.equal(TEAM_DEFAULTS.initiative, null);
+  const bare = resolveTeamOptions({}, {});
+  assert.equal(bare.opts.initiative, null);
+  assert.equal(bare.sources.initiative, 'default');
+
+  const fromFile = resolveTeamOptions({}, { initiative: 'Q1 Roadmap' });
+  assert.equal(fromFile.opts.initiative, 'q1-roadmap');
+  assert.equal(fromFile.sources.initiative, 'team.json');
+
+  // An explicit tm_open argument overrides team.json, same precedence every other key has.
+  const fromArgs = resolveTeamOptions({ initiative: 'Q2 Roadmap' }, { initiative: 'Q1 Roadmap' });
+  assert.equal(fromArgs.opts.initiative, 'q2-roadmap');
+  assert.equal(fromArgs.sources.initiative, 'args');
+
+  for (const bad of [42, true, {}, []]) {
+    const r = resolveTeamOptions({}, { initiative: bad });
+    assert.equal(r.opts.initiative, null, `${JSON.stringify(bad)} must be rejected, the default survives`);
+    assert.match(r.notes[0], /initiative/);
+  }
 });
 
 test('unknown keys are reported, not merged', () => {

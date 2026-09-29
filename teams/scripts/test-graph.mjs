@@ -1,11 +1,10 @@
 // teams/scripts/test-graph.mjs - unit tests for graph.mjs's kind/flow tables: the shape
 // the engine reads to expand a chain, key it to a verdict field, and pick default personas.
 // Full round-trip behaviour (a real run expanding and judging a planning/qa subgoal) lives in
-// test-broker.mjs alongside the document-kind suite this mirrors. The parent_shaped tests
-// below (docs/plans/2026-09-21-teams-server-owns-the-loop.md §3) exercise createRun/runState/
-// retrySubgoal/retrySpec directly against real run files - taskmanager.mjs's own
-// parent_shaped coverage (openChild deciding it, foldChild reading it back) lives in
-// test-taskmanager.mjs instead, since that is where a package's shape/split flag exists.
+// test-broker.mjs alongside the document-kind suite this mirrors. The package-run tests below
+// exercise createRun/runState/retrySubgoal/retrySpec for a package's child run directly against
+// real run files - taskmanager.mjs's own coverage (openChild opening it, foldChild reading it
+// back) lives in test-taskmanager.mjs instead.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -14,13 +13,15 @@ import { join } from 'node:path';
 import { composePrompt } from '../mcp/prompts.mjs';
 import {
   KINDS, VERDICT_FIELD, REASONING_STAGES, FLOWS, kindSkills, kindOf, authorStage,
-  createRun, runState, retrySubgoal, retrySpec, getNode, readyNodes, parentShapedTerminal,
+  createRun, runState, retrySubgoal, retrySpec, getNode, readyNodes,
   validateSpec,
   expandSubgoals, node,
   applyHumanPin, releaseHumanPin, currentAttempt, promoteWaitingHuman, openAsk,
   computeWriteScope, nodeBriefing, goalConsensus, pushGoalGateRound,
   promoteHumanGates, autoPassHumanGateResult, humanGateResultFromPayload,
   humanGateIdentity, humanGateVerdictField,
+  normalizeSpec, defaultKind, DOCUMENT_ONLY_KINDS,
+  routeExecutionQuestions, planDecisions, settledDecisions,
 } from '../mcp/graph.mjs';
 
 test('planning kind: chain, no reasoning stage, and skills by stage', () => {
@@ -100,101 +101,194 @@ test('kindOf resolves planning-audit', () => {
   assert.equal(kindOf({ id: 'A1', kind: 'planning-audit' }), 'planning-audit');
 });
 
-// ---------- parent_shaped (§3 of docs/plans/2026-09-21-teams-server-owns-the-loop.md) ----------
+// ---------- light PLAN mode (docs/plans/2026-09-28-teams-light-plan.md §2.2-2.3) ----------
+
+test('planning-light kind: investigate -> template-fill -> gate, template-fill authors, document-only like planning', () => {
+  assert.deepEqual(KINDS['planning-light'].chain, ['investigate', 'template-fill', 'gate']);
+  assert.deepEqual(KINDS['planning-light'].reasoning, []);
+  assert.equal(authorStage('planning-light'), 'template-fill');
+  assert.deepEqual(kindSkills('planning-light', 'investigate'), kindSkills('planning', 'investigate'), 'investigate is the same stage in both chains');
+  assert.deepEqual(kindSkills('planning-light', 'gate'), ['think:devils-advocate']);
+  assert.ok(!REASONING_STAGES.has('template-fill'), 'template-fill writes the document - a mutating stage');
+  assert.ok(DOCUMENT_ONLY_KINDS.has('planning-light'));
+  const problems = validateSpec({ goal: 'g', acceptance: ['a'], subgoals: [{ id: 'U1', kind: 'planning-light', title: 't', acceptance: ['a'], files: ['src/index.mjs'] }] });
+  assert.ok(problems.some((p) => /not a document path/.test(p)), problems.join('; '));
+  // The full chain is untouched.
+  assert.deepEqual(KINDS.planning.chain, ['investigate', 'draft', 'revise', 'gate']);
+});
+
+test('a light PLAN run (planning_mode "light") defaults and rewrites planning subgoals to planning-light; setgoal\'s explicit "planning" passes mixed=false and expands the light chain', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'graph-light-'));
+  try {
+    const light = createRun({ cwd, request: 'r', flow: 'plan', mixed: false, vendor: 'self', planning_mode: 'light' });
+    assert.equal(light.planning_mode, 'light');
+    assert.equal(defaultKind(light), 'planning-light');
+    const spec = normalizeSpec(light, { goal: 'g', acceptance: ['a'], subgoals: [
+      { id: 'U1', kind: 'planning', title: 'PRD', acceptance: ['a'], files: ['docs/prd.md'] },
+    ] });
+    assert.equal(spec.subgoals[0].kind, 'planning-light');
+    assert.deepEqual(validateSpec(spec, { kind: defaultKind(light), mixed: false, flow: 'plan' }), []);
+    light.spec = spec;
+    expandSubgoals(light, spec.subgoals);
+    const chain = light.nodes.filter((n) => n.subgoal_id === 'U1').map((n) => n.stage);
+    assert.deepEqual(chain, ['investigate', 'template-fill', 'gate']);
+
+    const full = createRun({ cwd, request: 'r', flow: 'plan', mixed: false, vendor: 'self' });
+    assert.equal(full.planning_mode, undefined, 'a run nobody asked for light carries no field at all');
+    assert.equal(defaultKind(full), 'planning');
+    assert.equal(normalizeSpec(full, { goal: 'g', acceptance: ['a'], subgoals: [{ id: 'U1', kind: 'planning', title: 't', acceptance: ['a'] }] }).subgoals[0].kind, 'planning');
+    const dev = createRun({ cwd, request: 'r', flow: 'develop', vendor: 'self', planning_mode: 'light' });
+    assert.equal(defaultKind(dev), 'subgoal', 'planning_mode only touches the planning kind');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('planning-light gate: briefed with investigate\'s unknowns and handed the per-item coverage + unknowns-not-lost contract; the full chain\'s gate is not', () => {
+  const run = {
+    run_id: 'r', cwd: '/tmp', request: 'req', interactive: false, flow: 'plan', mixed: false, planning_mode: 'light',
+    spec: { goal: 'g', acceptance: ['a'], subgoals: [{ id: 'U1', kind: 'planning-light', title: 'PRD', acceptance: ['a'], files: ['docs/prd.md'] }] },
+    nodes: [
+      node('investigate:U1:1', 'investigate', [], { subgoal_id: 'U1', attempt: 1, state: 'done', result: { stage_ok: true, unknowns: [{ question: 'Which skills run multi-turn sessions?', owner: 'PO' }, { unknown: 'Is R6 per skill or per plugin?' }] } }),
+      node('template-fill:U1:1', 'template-fill', ['investigate:U1:1'], { subgoal_id: 'U1', attempt: 1, state: 'done', result: { stage_ok: true, handoff: 'docs/prd.md' } }),
+      node('gate:U1:1', 'gate', ['template-fill:U1:1'], { subgoal_id: 'U1', attempt: 1 }),
+    ],
+  };
+  const fill = getNode(run, 'template-fill:U1:1');
+  const fb = nodeBriefing(run, fill);
+  assert.deepEqual(fb.investigate_unknowns, [{ question: 'Which skills run multi-turn sessions?', owner: 'PO' }, { question: 'Is R6 per skill or per plugin?', owner: null }]);
+  assert.equal(fb.decide_by_default, true, 'template-fill is an authoring stage: non-interactive decides by default like draft');
+  const fp = composePrompt(run, fill, fb);
+  assert.match(fp, /## Investigate unknowns/);
+  assert.match(fp, /This backlog already declared its acceptance criteria/);
+
+  const gate = getNode(run, 'gate:U1:1');
+  const gp = composePrompt(run, gate, nodeBriefing(run, gate));
+  assert.match(gp, /Is R6 per skill or per plugin\?/);
+  assert.match(gp, /Per-item rule coverage/);
+  assert.match(gp, /never with one search over the whole file/);
+  assert.match(gp, /No unknown lost/);
+
+  // The same gate under the full planning kind reads exactly the ordinary gate contract.
+  const fullRun = { ...run, planning_mode: undefined, spec: { ...run.spec, subgoals: [{ ...run.spec.subgoals[0], kind: 'planning' }] } };
+  const fullGate = getNode(fullRun, 'gate:U1:1');
+  const fb2 = nodeBriefing(fullRun, fullGate);
+  assert.equal(fb2.investigate_unknowns, null);
+  const fullPrompt = composePrompt(fullRun, fullGate, fb2);
+  assert.doesNotMatch(fullPrompt, /Per-item rule coverage/);
+  assert.doesNotMatch(fullPrompt, /## Investigate unknowns/);
+});
+
+// ---------- a package's child run runs the full harness (§3 chain-only reverted 2026-09-28) ----------
 //
-// A parent that already shaped and critiqued a package's one subgoal opens its child run with
-// createRun({parent_shaped: true, ...}) instead of the ordinary plan/setgoal/critique start.
-// These tests exercise createRun/runState/retrySubgoal/retrySpec directly against real run
-// files, the same way test-goalgate.mjs exercises stagePolicy - no broker or taskmanager
-// process needed, since none of this reads or writes anything outside the run object itself.
+// The task manager opens every package's child run with createRun({package, goal, acceptance,
+// subgoal_assignee}) - the ordinary plan/setgoal/critique start, like any run. What the manager
+// already decided travels as data: run.package (the build-plan briefing, and the acceptance that
+// normalizeSpec carries into the spec verbatim) and run.subgoal_assignee (the STORY pin that
+// expandSubgoals applies to every subgoal). These tests exercise that directly against real run
+// files - no broker or taskmanager process needed.
 
 function scratchCwd() {
-  return mkdtempSync(join(tmpdir(), 'graph-parent-shaped-'));
+  return mkdtempSync(join(tmpdir(), 'graph-package-run-'));
 }
 
-test('createRun({parent_shaped: true}) opens exactly the subgoal chain - no plan/setgoal/critique/gate:goal/report', () => {
+// A package run past its own plan/setgoal/critique: the spec setgoal returned (normalized the way
+// broker.mjs's finishNode does), expanded into its chains.
+function packageRun(cwd, opts = {}, spec = { goal: 'g', acceptance: ['own'], subgoals: [{ id: 'U1', title: 't', acceptance: ['a'], deps: [] }] }) {
+  const run = createRun({ cwd, request: 'r', flow: 'develop', vendor: 'self', package: { id: 'P1' }, goal: 'g', acceptance: ['pkg acceptance'], ...opts });
+  for (const id of ['plan', 'setgoal', 'critique']) { getNode(run, id).state = 'done'; getNode(run, id).result = { stage_ok: true }; }
+  run.spec = normalizeSpec(run, spec);
+  expandSubgoals(run, run.spec.subgoals);
+  return run;
+}
+
+test('createRun({package}) opens the full harness: plan/setgoal/critique first, the package recorded as data', () => {
   const cwd = scratchCwd();
   try {
     const run = createRun({
       cwd, request: 'do the one thing', flow: 'develop', vendor: 'self',
-      parent_shaped: true, goal: 'ship the one thing', acceptance: ['the one thing works'],
+      package: { id: 'P1' }, goal: 'ship the one thing', acceptance: ['the one thing works'],
     });
-    assert.equal(run.parent_shaped, true);
-    assert.deepEqual(run.nodes.map((n) => n.node_id), ['implement:U1:1', 'test:U1:1', 'gate:U1:1']);
-    assert.equal(run.spec.goal, 'ship the one thing');
-    assert.deepEqual(run.spec.acceptance, ['the one thing works']);
-    assert.equal(run.spec.subgoals.length, 1);
-    assert.equal(run.spec.subgoals[0].kind, 'subgoal', 'develop flow supplies the subgoal kind');
-    // The head of the chain has no dep on a plan/setgoal/critique that was never created -
-    // it is ready from the moment the run opens.
-    assert.deepEqual(getNode(run, 'implement:U1:1').deps, []);
-    assert.deepEqual(readyNodes(run).map((n) => n.node_id), ['implement:U1:1']);
-    assert.equal(run.depth, 0, 'a caller that never asks gets depth 0');
+    assert.deepEqual(run.nodes.map((n) => n.node_id), ['plan', 'setgoal', 'critique']);
+    assert.deepEqual(run.package, { id: 'P1', origin: 'shape', title: 'ship the one thing', acceptance: ['the one thing works'] });
+    assert.equal(run.spec, null, 'setgoal writes the spec - nothing is pre-decided into it');
+    assert.equal(run.parent_shaped, undefined);
+    assert.deepEqual(readyNodes(run).map((n) => n.node_id), ['plan']);
+    assert.equal(run.depth, undefined, 'no depth field: there is no nested task');
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test('createRun({parent_shaped: true}) picks the kind from the run\'s own flow - a document package chains draft/review/gate', () => {
+test('the retired parent_shaped option is ignored: a caller still passing it gets the full harness', () => {
   const cwd = scratchCwd();
   try {
-    const run = createRun({
-      cwd, request: 'write the one page', flow: 'document', vendor: 'self',
-      parent_shaped: true, goal: 'the page exists', acceptance: ['a reader can find X'],
-    });
-    assert.deepEqual(run.nodes.map((n) => n.node_id), ['draft:U1:1', 'review:U1:1', 'gate:U1:1']);
-    assert.equal(run.spec.subgoals[0].kind, 'document');
+    const run = createRun({ cwd, request: 'r', flow: 'develop', vendor: 'self', parent_shaped: true, goal: 'g', acceptance: ['a'] });
+    assert.deepEqual(run.nodes.map((n) => n.node_id), ['plan', 'setgoal', 'critique']);
+    assert.equal(run.parent_shaped, undefined);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test('createRun without parent_shaped is unaffected: the ordinary plan/setgoal/critique start, parent_shaped left unset', () => {
+test('normalizeSpec carries a package\'s acceptance into the spec verbatim - missing items first, present ones not duplicated; a run with no package is untouched', () => {
+  const pkgRun = { package: { acceptance: ['a.txt says a', 'b is built'] } };
+  const spec = { goal: 'g', acceptance: ['b is built', 'own criterion'], subgoals: [{ id: 'U1' }] };
+  assert.deepEqual(normalizeSpec(pkgRun, spec).acceptance, ['a.txt says a', 'b is built', 'own criterion']);
+  assert.deepEqual(normalizeSpec(pkgRun, { goal: 'g', subgoals: [{ id: 'U1' }] }).acceptance, ['a.txt says a', 'b is built']);
+  assert.deepEqual(normalizeSpec({}, spec).acceptance, ['b is built', 'own criterion']);
+});
+
+test('createRun without package is unaffected: the ordinary plan/setgoal/critique start, no package recorded', () => {
   const cwd = scratchCwd();
   try {
     const run = createRun({ cwd, request: 'do a bigger thing', vendor: 'self' });
     assert.deepEqual(run.nodes.map((n) => n.node_id), ['plan', 'setgoal', 'critique']);
-    assert.equal(run.parent_shaped, undefined);
-    assert.equal(run.depth, 0);
+    assert.equal(run.package, undefined);
+    assert.equal(run.subgoal_assignee, undefined);
+    assert.equal(run.depth, undefined);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test('createRun({parent_shaped: true, depth: 2}) records the depth the caller passed', () => {
+test('createRun({package, depth: 2}) ignores the retired depth option - there is no nested task to count', () => {
   const cwd = scratchCwd();
   try {
-    const run = createRun({ cwd, request: 'r', vendor: 'self', parent_shaped: true, depth: 2 });
-    assert.equal(run.depth, 2);
+    const run = createRun({ cwd, request: 'r', vendor: 'self', package: { id: 'P1' }, depth: 2 });
+    assert.equal(run.depth, undefined);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test('runState on a parent_shaped run: running while the chain is open, complete the moment its gate is done', () => {
+test('runState on a package run: a done subgoal gate is not the end - complete only once gate:goal and report are done', () => {
   const cwd = scratchCwd();
   try {
-    let run = createRun({ cwd, request: 'r', flow: 'develop', vendor: 'self', parent_shaped: true, goal: 'g', acceptance: ['a'] });
+    const run = packageRun(cwd);
+    assert.deepEqual(run.nodes.map((n) => n.node_id), ['plan', 'setgoal', 'critique', 'implement:U1:1', 'test:U1:1', 'gate:U1:1', 'gate:goal:1', 'report']);
+    assert.deepEqual(getNode(run, 'implement:U1:1').deps, ['critique']);
     assert.equal(runState(run).state, 'running');
-    getNode(run, 'implement:U1:1').state = 'done';
-    getNode(run, 'implement:U1:1').result = { stage_ok: true, handoff: 'built', changed_files: ['a.txt'] };
-    getNode(run, 'test:U1:1').state = 'done';
-    getNode(run, 'test:U1:1').result = { stage_ok: true, verified: true };
-    assert.equal(runState(run).state, 'running', 'the chain gate is still pending');
+    for (const id of ['implement:U1:1', 'test:U1:1']) { getNode(run, id).state = 'done'; getNode(run, id).result = { stage_ok: true }; }
     const gate = getNode(run, 'gate:U1:1');
     gate.state = 'done';
     gate.result = { stage_ok: true, accept: true, match_pct: 95, checks: ['ok -> fine'] };
+    assert.equal(runState(run).state, 'running', 'the package\'s own gate:goal and report are still ahead');
+    getNode(run, 'gate:goal:1').state = 'done';
+    getNode(run, 'gate:goal:1').result = { stage_ok: true, accept: true, match_pct: 95 };
+    assert.equal(runState(run).state, 'running');
+    getNode(run, 'report').state = 'done';
+    getNode(run, 'report').result = { stage_ok: true, handoff: 'built' };
     assert.equal(runState(run).state, 'complete');
-    assert.equal(parentShapedTerminal(run).node_id, 'gate:U1:1');
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test('runState on a parent_shaped run: a rejected gate with no retry called leaves the run blocked, not complete', () => {
+test('runState on a package run: a rejected gate with no retry called leaves the run blocked, not complete', () => {
   const cwd = scratchCwd();
   try {
-    const run = createRun({ cwd, request: 'r', flow: 'develop', vendor: 'self', parent_shaped: true, goal: 'g', acceptance: ['a'] });
+    const run = packageRun(cwd);
     for (const id of ['implement:U1:1', 'test:U1:1']) { getNode(run, id).state = 'done'; getNode(run, id).result = { stage_ok: true }; }
     const gate = getNode(run, 'gate:U1:1');
     gate.state = 'failed';
@@ -280,10 +374,10 @@ test('a report written over a settled failure completes with settled:true, and a
 });
 
 
-test('retrySubgoal on a parent_shaped run opens a fresh chain attempt - there is no gate:goal round to reroute', () => {
+test('retrySubgoal on a package run opens a fresh chain attempt, and the goal gate waits on it', () => {
   const cwd = scratchCwd();
   try {
-    const run = createRun({ cwd, request: 'r', flow: 'develop', vendor: 'self', parent_shaped: true, goal: 'g', acceptance: ['a'] });
+    const run = packageRun(cwd);
     for (const id of ['implement:U1:1', 'test:U1:1']) { getNode(run, id).state = 'done'; getNode(run, id).result = { stage_ok: true }; }
     const gate = getNode(run, 'gate:U1:1');
     gate.state = 'failed';
@@ -291,27 +385,25 @@ test('retrySubgoal on a parent_shaped run opens a fresh chain attempt - there is
     const out = retrySubgoal(run, 'U1', 'fix it');
     assert.equal(out.attempt, 2);
     assert.deepEqual(readyNodes(out.run).map((n) => n.node_id), ['implement:U1:2']);
-    // No gate:goal node ever existed to reroute behind the new attempt - retrySubgoal's own
-    // staleRounds sweep (which only looks at subgoal_id === null gates) finds nothing and is
-    // a silent no-op here, exactly as intended.
-    assert.equal(out.run.nodes.some((n) => n.subgoal_id === null && n.stage === 'gate'), false);
+    assert.ok(getNode(out.run, 'gate:goal:1').deps.includes('gate:U1:2'), 'the package\'s goal gate judges the live attempt');
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test('retrySpec on a parent_shaped run has no setgoal to redo - it delegates to retrySubgoal on the run\'s one subgoal', () => {
+test('retrySpec on a package run redoes the package\'s own setgoal and critique - the package plans itself again', () => {
   const cwd = scratchCwd();
   try {
-    const run = createRun({ cwd, request: 'r', flow: 'develop', vendor: 'self', parent_shaped: true, goal: 'g', acceptance: ['a'] });
+    const run = packageRun(cwd);
     for (const id of ['implement:U1:1', 'test:U1:1']) { getNode(run, id).state = 'done'; getNode(run, id).result = { stage_ok: true }; }
     const gate = getNode(run, 'gate:U1:1');
     gate.state = 'failed';
     gate.result = { stage_ok: true, accept: false, match_pct: 40, gaps: ['missing X'], reason: 'twice the same reason' };
-    const out = retrySpec(run, 'the shape has to change');
-    assert.equal(out.attempt, 2, 'retrySpec falls back to a fresh chain attempt, not a fresh setgoal');
-    assert.equal(out.run.nodes.some((n) => n.stage === 'setgoal'), false, 'no setgoal node is ever created on a parent_shaped run');
-    assert.deepEqual(readyNodes(out.run).map((n) => n.node_id), ['implement:U1:2']);
+    const out = retrySpec(run, 'the spec has to change');
+    assert.equal(out.attempt, 2);
+    assert.deepEqual(readyNodes(out.run).map((n) => n.node_id), ['setgoal:2']);
+    assert.ok(getNode(out.run, 'critique:2'));
+    assert.equal(out.run.spec, null);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -438,13 +530,13 @@ test('runState reports waiting_human distinctly from blocked, and a settled repo
   assert.equal(runState(doneAnyway).state, 'complete', 'a finished report outranks a stray waiting_human leftover');
 });
 
-test('runState on a parent_shaped run reports waiting_human the same way', () => {
+test('runState on a package run reports waiting_human the same way', () => {
   const cwd = scratchCwd();
   try {
     // subgoal_assignee is the shape's own field (openChild's pkg.assignee) - a MODEL pin, so
     // interactive:true is what makes it park here rather than being auto-decided.
-    const run = createRun({ cwd, request: 'r', flow: 'develop', vendor: 'self', parent_shaped: true, goal: 'g', acceptance: ['a'], subgoal_assignee: 'human', interactive: true });
-    assert.equal(getNode(run, 'implement:U1:1').assignment.executor, 'human', 'subgoal_assignee wires the pin through createRun for the common parent_shaped case');
+    const run = packageRun(cwd, { subgoal_assignee: 'human', interactive: true });
+    assert.equal(getNode(run, 'implement:U1:1').assignment.executor, 'human', 'subgoal_assignee reaches the subgoal setgoal produced, through expandSubgoals');
     promoteWaitingHuman(run);
     assert.equal(runState(run).state, 'waiting_human');
   } finally {
@@ -474,7 +566,7 @@ test('releaseHumanPin (tm_assign to: "auto") returns a waiting_human node to pen
 test('a rejected human-authored subgoal reassigns to a fresh attempt that is pinned again - not to a model', () => {
   const cwd = scratchCwd();
   try {
-    const run = createRun({ cwd, request: 'r', flow: 'develop', vendor: 'self', parent_shaped: true, goal: 'g', acceptance: ['a'], subgoal_assignee: 'human', interactive: true });
+    const run = packageRun(cwd, { subgoal_assignee: 'human', interactive: true });
     for (const id of ['implement:U1:1', 'test:U1:1']) { getNode(run, id).state = 'done'; getNode(run, id).result = { stage_ok: true }; }
     const gate = getNode(run, 'gate:U1:1');
     gate.state = 'failed';
@@ -572,11 +664,11 @@ test('expandSubgoals: on a non-interactive run, a spec subgoal\'s own assignee d
 test('retrySubgoal: a rejected MODEL-pinned subgoal on a non-interactive run reassigns to a fresh attempt that is ALSO auto-decided, never parked', () => {
   const cwd = scratchCwd();
   try {
-    // parent_shaped + subgoal_assignee mirrors openChild's own path (a shape package's
-    // assignee), with interactive left at its default (false) - the run never asked to be
-    // interrupted, so neither attempt 1 nor its retry may park.
-    const run = createRun({ cwd, request: 'r', flow: 'develop', vendor: 'self', parent_shaped: true, goal: 'g', acceptance: ['a'], subgoal_assignee: 'human' });
-    assert.equal(getNode(run, 'implement:U1:1').assignment, undefined, 'attempt 1 was already auto-decided at createRun time');
+    // package + subgoal_assignee mirrors openChild's own path (a shape package's assignee),
+    // with interactive left at its default (false) - the run never asked to be interrupted, so
+    // neither attempt 1 nor its retry may park.
+    const run = packageRun(cwd, { subgoal_assignee: 'human' });
+    assert.equal(getNode(run, 'implement:U1:1').assignment, undefined, 'attempt 1 was already auto-decided when setgoal\'s subgoal was expanded');
     assert.ok(getNode(run, 'implement:U1:1').auto_decided_pin);
     for (const id of ['implement:U1:1', 'test:U1:1']) { getNode(run, id).state = 'done'; getNode(run, id).result = { stage_ok: true }; }
     const gate = getNode(run, 'gate:U1:1');
@@ -592,16 +684,68 @@ test('retrySubgoal: a rejected MODEL-pinned subgoal on a non-interactive run rea
   }
 });
 
-test('createRun(parent_shaped, subgoal_assignee) on a non-interactive run does not park at open - runState is "running"/"blocked" territory, never waiting_human, until interactive says otherwise', () => {
+test('a package run with subgoal_assignee on a non-interactive run does not park - runState is "running"/"blocked" territory, never waiting_human, until interactive says otherwise', () => {
   const cwd = scratchCwd();
   try {
-    const run = createRun({ cwd, request: 'r', flow: 'develop', vendor: 'self', parent_shaped: true, goal: 'g', acceptance: ['a'], subgoal_assignee: { who: 'sanghyeon' } });
+    const run = packageRun(cwd, { subgoal_assignee: { who: 'sanghyeon' } });
     assert.equal(run.interactive, false, 'createRun\'s own default - opts.interactive was not passed');
     const n = getNode(run, 'implement:U1:1');
     assert.equal(n.assignment, undefined);
     assert.equal(n.auto_decided_pin.who, 'sanghyeon');
     promoteWaitingHuman(run);
     assert.notEqual(runState(run).state, 'waiting_human');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('a STORY pin (subgoal_assignee) reaches every subgoal setgoal produces; a subgoal setgoal pinned itself keeps its own', () => {
+  const cwd = scratchCwd();
+  try {
+    const spec = { goal: 'g', acceptance: ['a'], subgoals: [
+      { id: 'U1', title: 'a', acceptance: ['a'], deps: [] },
+      { id: 'U2', title: 'b', acceptance: ['b'], deps: [], assignee: { by: 'user', who: 'other' } },
+    ] };
+    const run = packageRun(cwd, { subgoal_assignee: { by: 'user', who: 'sanghyeon' } }, spec);
+    assert.equal(getNode(run, 'implement:U1:1').assignment.who, 'sanghyeon');
+    assert.equal(getNode(run, 'implement:U2:1').assignment.who, 'other');
+    assert.deepEqual(run.spec.subgoals[0].assignee, { by: 'user', who: 'sanghyeon' }, 'on the spec, so retrySubgoal re-applies it');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('applyStoryPin sets and releases the run-level STORY pin (tm_assign on a STORY whose setgoal has not run yet)', async () => {
+  const { applyStoryPin } = await import('../mcp/graph.mjs');
+  const run = {};
+  assert.equal(applyStoryPin(run, { kind: 'story_pin', to: 'human', who: 'sanghyeon' }), true);
+  assert.deepEqual(run.subgoal_assignee, { by: 'user', who: 'sanghyeon' });
+  assert.equal(applyStoryPin(run, { kind: 'story_pin', to: 'auto' }), true);
+  assert.equal(run.subgoal_assignee, undefined);
+  assert.equal(applyStoryPin(run, { kind: 'story_pin', to: 'auto' }), false, 'nothing to release');
+});
+
+test('a package run\'s plan/setgoal/critique briefings say: build this package, carry its acceptance, judge against it', () => {
+  const cwd = scratchCwd();
+  try {
+    const run = createRun({ cwd, request: 'change a.txt', flow: 'develop', vendor: 'self', package: { id: 'P1' }, goal: 'module a', acceptance: ['a.txt says a'] });
+    const prompt = (id) => composePrompt(run, getNode(run, id), nodeBriefing(run, getNode(run, id)));
+    const plan = prompt('plan');
+    assert.match(plan, /## This package \(P1\) — module a/);
+    assert.match(plan, /already split the EPIC into packages \(shape\) and critiqued that split/);
+    assert.match(plan, /Do not re-split the EPIC/);
+    assert.match(plan, /files and modules to touch, the interfaces and data shapes .*order of work, the test plan .*risks/);
+    assert.match(plan, /Package acceptance[^\n]*\n- a\.txt says a/);
+    assert.match(prompt('setgoal'), /Keep one subgoal unless the package genuinely needs more/);
+    assert.match(prompt('setgoal'), /verbatim/);
+    getNode(run, 'plan').state = 'done';
+    getNode(run, 'plan').result = { stage_ok: true, plan: 'edit a.txt; run cat a.txt' };
+    const critique = prompt('critique');
+    assert.match(critique, /Judge the plan and the spec against this package's brief/);
+    assert.match(critique, /The build plan this spec came from:\nedit a\.txt; run cat a\.txt/);
+    // A run that is not a package gets none of it.
+    const plain = createRun({ cwd, request: 'r', vendor: 'self' });
+    assert.doesNotMatch(composePrompt(plain, getNode(plain, 'plan'), nodeBriefing(plain, getNode(plain, 'plan'))), /## This package/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -1067,4 +1211,44 @@ test('code-sprint-P3: validateSpec holds a run to its max_subgoals', () => {
   assert.ok(validateSpec(spec, { max_subgoals: 1 }).some((p) => /2 subgoals; this run allows at most 1/.test(p)));
   assert.ok(!validateSpec(spec, {}).some((p) => /allows at most/.test(p)));
   assert.ok(!validateSpec({ ...spec, subgoals: [sg('U1')] }, { max_subgoals: 1 }).some((p) => /allows at most/.test(p)));
+});
+
+// ---------- task.decisions (docs/plans/2026-09-28-teams-light-plan.md §6) ----------
+
+test('§6.2-3: an execution-phase run decides a question with a safe default, and keeps as blocking only a contradiction or a question with no safe default', () => {
+  const run = { ...askRun(), execution_phase: true, task_decisions: [{ question: twoOptions[0].question, chose: '2 per sale phase', decided_in: 'PLAN', source: 'ask' }] };
+  const n = run.nodes[0];
+  const out = routeExecutionQuestions(run, n, [
+    ...twoOptions, // settled by task_decisions: dropped, not asked and not re-decided
+    { question: 'Log format?', options: [{ option: 'json' }, { option: 'text' }] },
+    { question: 'Retention?', default: '30 days' },
+    { question: 'Which region hosts it?' }, // (b) nothing to default to
+    { question: 'Presale enforces 4 - does 2 still hold?', options: [{ option: 'keep 2' }, { option: 'raise' }], default: 'keep 2', contradicts_decision: twoOptions[0].question }, // (a)
+  ]);
+  assert.deepEqual(out.decided.map((d) => [d.question, d.decided]), [['Log format?', null], ['Retention?', '30 days']]);
+  assert.deepEqual(out.blocking.map((b) => [b.question, b.blocking]), [
+    ['Which region hosts it?', 'no_safe_default'],
+    ['Presale enforces 4 - does 2 still hold?', 'contradicts_decision'],
+  ]);
+  assert.equal(run.blocking_questions.length, 2);
+  routeExecutionQuestions(run, n, [{ question: 'Which region hosts it?' }]);
+  assert.equal(run.blocking_questions.length, 2, 'the same blocking question is kept once per run');
+  assert.ok(!run.nodes.some((x) => x.stage === 'ask'), 'nothing is asked on the run itself');
+});
+
+test('§6.2-1: planDecisions folds a PLAN run\'s ask answers (every owner) and its defaults into one task.decisions list', () => {
+  const run = askRun();
+  openAsk(run, run.nodes[0], twoOptions);
+  run.nodes.find((x) => x.node_id === 'ask:U1:1').result = { decisions: [{ question: twoOptions[0].question, chose: '2 per sale phase', because: 'legal' }] };
+  run.unasked = [{ subgoal_id: 'U2', question: 'Refund window?', owner: 'Ops', options: [{ option: '7 days' }, { option: '14 days' }] }];
+  assert.deepEqual(planDecisions(run), [
+    { question: twoOptions[0].question, chose: '2 per sale phase', because: 'legal', owner: 'U1', decided_in: 'PLAN', source: 'ask' },
+    { question: 'Refund window?', chose: '7 days', owner: 'Ops', decided_in: 'PLAN', source: 'default' },
+  ]);
+  // settledDecisions is what openAsk and nodeBriefing now read: the run's own answers, then the task's.
+  run.task_decisions = [{ question: 'Session scope?', chose: 'MVP', decided_in: 'session', source: 'brainstorm' }];
+  assert.deepEqual(settledDecisions(run).map((d) => [d.question, d.decided_for]), [
+    [twoOptions[0].question, 'U1'], ['Session scope?', 'task/session (brainstorm)'],
+  ]);
+  assert.deepEqual(openAsk(run, { ...run.nodes[0], attempt: 2 }, [{ question: 'Session scope?', options: ['MVP', 'full'] }]), [], 'a task decision is never asked again');
 });

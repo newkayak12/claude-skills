@@ -25,6 +25,7 @@ harness-aware입니다 — 혼자 돌리면 문서를 내고, `harness:harness` 
 | 만들거나 고친 것을 기술 블로그로 쓰기 | `technical-blog-writer` |
 | 동료에게 쏘지 않고 닿는 피드백 쓰기 | `sbi-writer` |
 | 글 검토, 또는 사람이 쓴 것처럼 읽히는 PR 설명·글 초안 | `writer-verification` |
+| 내 글 샘플로 배운 *내* 말투로 다시 쓰기 | `write-like-me` |
 
 knowledge-base, knowledge-graph, RAG corpus, knowledge-query 스킬은 이제 `knowledge` 플러그인에
 있습니다.
@@ -193,6 +194,21 @@ draft 루프의 설명, 스킬 없는 초안, 사람 원본을 섞어 diff와 �
 있어야 함 — `[why]` 수정안은 자료가 주는 이유를 인용하거나 "작성자에게 물어보라"고 하지, 패스가
 지어낸 원인은 절대 쓰지 않습니다.
 
+### `write-like-me`
+
+`writer-verification`은 글을 *사람이* 쓴 것처럼 만들고, 이 스킬은 *내가* 쓴 것처럼 만듭니다. 같은
+장르(슬랙, 메일, 블로그, PR, 자기소개서)로 직접 쓴 글 2~5개를 주면 수치로 된 문체 프로필을
+만듭니다 — 문장 길이와 편차, 종결어미 분포, 존댓말 수준, 첫 문장·끝 문장 습관, 자주 쓰는 말,
+문장부호, 서식, 헤지, 영어 그대로 쓰는 용어. 재작성 전에 프로필을 먼저 보여주고, 사용자가 고친
+프로필 기준으로 내용은 그대로 둔 채 다시 씁니다. 검출과 작성은 나뉩니다 — `writer-verification`을
+먼저 돌려 지적 목록만 가져오고(범용 수정안은 버림), 이 스킬이 🔴🟡를 내 말로 고친 뒤 나머지를
+프로필에 맞추고 행마다 허용 오차로 재확인합니다. 내 샘플에 원래 있는 습관은 티가 아니라 말투로
+봅니다. 샘플 하나나 AI가 도운 글로는 프로필을 만들지 않고, 오타를 문체로 옮기지 않습니다.
+
+```
+내가 평소 슬랙에 쓴 메시지 3개 줄게. 이 공지 내 말투로 바꿔줘.
+```
+
 ## MCP
 
 이 플러그인의 스킬은 모두 MCP 도구를 optional 또는 recommended로 둡니다. 필수는 없습니다:
@@ -205,5 +221,6 @@ draft 루프의 설명, 스킬 없는 초안, 사람 원본을 섞어 diff와 �
 | `technical-blog-writer` | think-tool | 초안 전에 핵심 스토리와 각도 확정 |
 | `sbi-writer` | think-tool | 관찰과 판단 구분이 애매한 케이스 |
 | `writer-verification` | think-tool, sequential-thinking, mcp-reasoner | 패스 구조화, 상충하는 지적 조정, Summary 선두 고르기 |
+| `write-like-me` | think-tool | 샘플에서 반복 습관과 일회성 노이즈 구분 |
 
 Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.

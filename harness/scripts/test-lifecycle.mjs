@@ -60,7 +60,7 @@ try {
     join(project, 'CLAUDE.md'),
     '# Project\n\nBefore.\n\n<!-- harness:begin v1 -->\n## Harness\nRules.\n<!-- harness:end -->\n\nAfter.\n',
   );
-  write(join(project, '.gitignore'), 'node_modules/\n.claude/.harness-markers/\ndist/\n');
+  write(join(project, '.gitignore'), 'node_modules/\n.claude/.harness-markers/\n.harness-run/\ndist/\n.claude/settings.local.json\n');
 
   const removed = run(REMOVE, { projectDir: project });
   assert.equal(removed.actions.hookScript, 'removed');
@@ -102,6 +102,25 @@ try {
     readFileSync(join(misordered, 'CLAUDE.md'), 'utf8'),
     '<!-- harness:end -->\nkeep\n<!-- harness:begin v1 -->\n',
   );
+
+  // install: an old registration without Bash is widened; .gitignore gets every harness line.
+  const INSTALL = join(HARNESS_ROOT, 'skills', 'install', 'install.mjs');
+  const old = join(scratch, 'old-install');
+  write(join(old, '.claude', 'settings.json'), JSON.stringify({ hooks: { PreToolUse: [{
+    matcher: 'Write|Edit|MultiEdit|NotebookEdit|Task|Agent',
+    hooks: [{ type: 'command', command: 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/goal-gate.mjs"' }],
+  }] } }, null, 2) + '\n');
+  write(join(old, '.gitignore'), 'node_modules/\n.claude/.harness-markers/\n');
+  const installed = run(INSTALL, { projectDir: old, gate: { patterns: ['\\.[cm]?js$'] } });
+  assert.equal(installed.actions.settings, 'widened');
+  assert.match(readJson(join(old, '.claude', 'settings.json')).hooks.PreToolUse[0].matcher, /\|Bash\|?/);
+  assert.equal(readFileSync(join(old, '.gitignore'), 'utf8'), 'node_modules/\n.claude/.harness-markers/\n.harness-run/\n.claude/settings.local.json\n');
+  const fresh = join(scratch, 'fresh-install');
+  mkdirSync(fresh, { recursive: true });
+  const freshReport = run(INSTALL, { projectDir: fresh, gate: { patterns: ['\\.[cm]?js$'] } });
+  assert.equal(freshReport.actions.settings, 'created');
+  assert.match(readJson(join(fresh, '.claude', 'settings.json')).hooks.PreToolUse[0].matcher, /Bash/);
+  assert.equal(run(INSTALL, { projectDir: fresh }).actions.gitignore, 'present');
 
   // patch: synchronized dry-run and write across both manifests + bilingual README/KOR status.
   const repo = join(scratch, 'repo');

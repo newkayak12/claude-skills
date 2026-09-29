@@ -7,6 +7,7 @@ be read and lifted; nothing routes to them.
 |---|---|---|---|
 | `self` | 12 | `fef3604` (2026-08-27), unlinked deliberately 2026-09-11 | self-understanding: values, fears, identity, motivation, shadow, `talk` counseling persona |
 | `leadership` | 5 | `fef3604` (2026-08-27), unlinked deliberately 2026-09-11 | IC/manager leveling and 1-on-1 preparation |
+| `pm` | 22 | `dab44e5` (2026-08-30, hidden); moved here 2026-09-28 | product management; think/planning/develop now carry what they used (planning 1.2.0 absorbed hypothesis, prioritization and problem-validation parts), teams inlined its PRD contract at 0.20.0 |
 | `harness-beta` | 2 | `d396f2d` (2026-09-08), its only commit | routing idea (classifier choosing Agent Team vs. Dynamic Workflow) absorbed into `graph` |
 
 They were absent from `.claude-plugin/marketplace.json` from `fef3604` onward — a release commit that
@@ -14,7 +15,7 @@ mentioned neither — and the removal was confirmed as intended on 2026-09-11.
 
 ## Rules
 
-- No live plugin references `self:`, `leadership:`, or `harness-beta:` any more. A skill that wants
+- No live plugin references `self:`, `leadership:`, `harness-beta:`, or `pm:` any more. A skill that wants
   one of these capabilities carries it directly instead of routing to a plugin the user cannot install.
 - `think:mentor` absorbed the parts that were load-bearing for it — values conflict, avoidance,
   identity, motivation, shadow, and the boundary that used to hand a painful session to `self:talk`.

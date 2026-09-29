@@ -13,10 +13,11 @@ process.env.TEAMS_RUNS_DIR ??= 'off';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, utimesSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, existsSync, rmSync, utimesSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadRun, saveRun, getNode } from '../mcp/graph.mjs';
 
 const BROKER = join(dirname(fileURLToPath(import.meta.url)), '..', 'mcp', 'broker.mjs');
 const CODEX_ADAPTER = join(dirname(fileURLToPath(import.meta.url)), '..', 'adapters', 'codex-exec-adapter.mjs');
@@ -381,6 +382,7 @@ test('test verified=false fails the node and the engine reassigns the subgoal it
     });
     assert.equal(v.stage_ok, true, 'the checks did run');
     assert.equal(v.state, 'failed', 'but the subgoal did not pass');
+    assert.match(v.reason, /1 failing/, 'a test node has no reason field of its own; one is synthesized from its checks');
     assert.deepEqual(v.reassigned, { target: 'subgoal', subgoal_id: 'U1', attempt: 2 }, 'the rejection opens the next attempt by itself');
     const nx = await c.call('team_next', { run_id: runId, cwd });
     assert.equal(nx.state, 'running', 'a rejected gate is not a dead end the caller must notice');
@@ -1444,6 +1446,10 @@ test('a rejected document gets a fresh draft, and the goal gate waits for the ne
     });
     await c.call('team_submit', { run_id: runId, cwd, node_id: 'draft:D1:1', payload: ok({ changed_files: [], handoff: 'v1' }) });
     const rv = await c.call('team_submit', { run_id: runId, cwd, node_id: 'review:D1:1', payload: ok({ verified: false, checks: ['a -> MISSING: the invariant'] }) });
+    // review's own schema has checks/evidence but no reason field - portfolio-refresh-80ec931a's
+    // P4 review:U1:1/:2 rejected this way and left triage a failure record with an empty message
+    // ("P4 review:U1:1: "). One is synthesized from the check that reads as the failure.
+    assert.match(rv.reason, /MISSING: the invariant/, 'a review rejection with no reason gets one synthesized from its checks');
     // The engine reassigns on the rejection; team_retry is no longer the way here, and
     // calling it anyway would spend a second attempt on the same rejection.
     assert.deepEqual(rv.reassigned, { target: 'subgoal', subgoal_id: 'D1', attempt: 2 });
@@ -1456,6 +1462,56 @@ test('a rejected document gets a fresh draft, and the goal gate waits for the ne
     const prompt = readFileSync(nx.ready.find((n) => n.node_id === 'draft:D1:2').briefing_path, 'utf8');
     assert.match(prompt, /Previous attempt was rejected/, 'the review\'s gaps reach the second draft');
   });
+});
+
+test('a review that rejects with no check reading as a failure falls back to its evidence summary', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, {
+      goal: 'G', acceptance: ['A'],
+      subgoals: [{ id: 'D1', kind: 'document', title: 'note', acceptance: ['a'], deps: [] }],
+    });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'draft:D1:1', payload: ok({ changed_files: [], handoff: 'v1' }) });
+    const rv = await c.call('team_submit', {
+      run_id: runId, cwd, node_id: 'review:D1:1',
+      payload: ok({
+        verified: false,
+        checks: ['heading order -> Standing Mandates, Process, Rules'],
+        evidence: 'wc -w could not be re-run from this reasoning node (no Bash tool available)',
+      }),
+    });
+    assert.equal(rv.state, 'failed');
+    assert.match(rv.reason, /wc -w could not be re-run/, 'no check reads as a failure, so the evidence summary is the fallback reason');
+  });
+});
+
+test('a gate rejection with empty gaps still gets a reason, synthesized from its checks', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    const f = dirty(cwd);
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [f] }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    const v = await c.call('team_submit', {
+      run_id: runId, cwd, node_id: 'gate:U1:1',
+      payload: ok({ accept: false, match_pct: 60, gaps: [], checks: ['a.txt -> does not mention the runtime check'] }),
+    });
+    assert.equal(v.state, 'failed');
+    assert.match(v.reason, /does not mention the runtime check/);
+  }, { isolated: true });
+});
+
+test('a gate rejection that already names a gap is not overwritten by the synthesized reason', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    const f = dirty(cwd);
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [f] }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    const v = await c.call('team_submit', {
+      run_id: runId, cwd, node_id: 'gate:U1:1',
+      payload: ok({ accept: false, match_pct: 60, gaps: ['no runtime check'], checks: ['a.txt -> does not mention the runtime check'] }),
+    });
+    assert.equal(v.state, 'failed');
+    assert.equal(v.reason, undefined, 'a gate rejection is read from gaps, not reason - synthesis only fills a true gap');
+  }, { isolated: true });
 });
 
 // ---------- flow ----------
@@ -2470,6 +2526,34 @@ writeFileSync(output, JSON.stringify({stage_ok:true,result}));
   return cwd;
 }
 
+// m3 (docs/plans/2026-09-28-teams-adversarial-fixes.md): ordered allocation took the first ready
+// candidate for every stage, so critique ran as the very identity that wrote the spec it judges.
+test('ordered allocation: critique does not run on the vendor@model that ran setgoal when another is ready', async () => {
+  const cwd = balancedRepo();
+  const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+  try {
+    const open = await c.call('team_open', { request: 'r', cwd, host_vendor: 'claude', host_model: 'driving-model' });
+    const run_id = open.run_id;
+    // plan and setgoal run on the vendor the ordered list picks first - executed by it (team_run),
+    // not by the session, so the spec's author is that vendor.
+    for (const node_id of ['plan', 'setgoal']) {
+      const r = await c.call('team_run', { run_id, cwd, node_id });
+      assert.equal(r.state, 'done', JSON.stringify(r));
+    }
+    const full = await c.call('team_status', { run_id, cwd, full: true });
+    const setgoal = full.nodes.find((n) => n.node_id === 'setgoal');
+    const author = setgoal.executor || setgoal.vendor;
+    assert.ok(['claude', 'codex'].includes(author), JSON.stringify(setgoal));
+    const next = await c.call('team_next', { run_id, cwd });
+    assert.equal(next.ready[0].node_id, 'critique');
+    assert.notEqual(next.ready[0].executor || next.ready[0].vendor, author, `setgoal ran on ${author}; critique must not`);
+    assert.match(next.ready[0].routing_reason || '', /./);
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 for (const host_vendor of ['claude', 'codex']) {
   test(`balanced MCP flow: ${host_vendor} drives, peer implements, host tests and gates`, async () => {
     const cwd = balancedRepo();
@@ -2845,6 +2929,346 @@ test('a policy can route reasoning and execution to different vendors in one run
   } finally {
     c.close();
     delete process.env.FAKE_REPLY;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// P4:review:U1 (portfolio-refresh Sprint) split verified:true/false across three attempts
+// on the identical evidence - the reviewer had no Bash, so "wc -w"/a validator script could
+// not be re-run, and whether that counted as a rejection was a coin flip. review and gate
+// are the two reasoning stages whose own contract asks them to re-run a command an
+// acceptance item names (see prompts.mjs); every other reasoning stage judges text only.
+// The adapter args each dispatch receives are the check: a stage other than review/gate
+// must never see --verify, and review/gate must always see it, regardless of vendor.
+test('review and gate dispatch get --verify; every other reasoning stage does not', async () => {
+  const cwd = repoWithFakeVendor();
+  // Outside cwd on purpose: the whole-tree write guard (verifySnapshot/verifyRestore) now
+  // watches every path git reports in cwd, and a log file dropped inside it by this test's
+  // OWN instrumentation would otherwise be indistinguishable from a real violation.
+  const logDir = mkdtempSync(join(tmpdir(), 'verify-log-'));
+  const log = join(logDir, 'verify-args.jsonl');
+  process.env.FAKE_ARGS_LOG = log;
+  // The broker server is one long-lived child process for this whole test (Client().init()
+  // spawns it once); it inherits process.env at ITS OWN spawn time, so a FAKE_REPLY set AFTER
+  // that point never reaches the FAKE_ADAPTER it later spawns for critique/gate/review. One
+  // reply carrying every VERDICT_FIELD this test touches (sound, accept, verified) stands in
+  // for all three real dispatches below.
+  process.env.FAKE_REPLY = JSON.stringify(ok({
+    sound: true, accept: true, match_pct: 95, verified: true,
+  }));
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', {
+      request: 'r', cwd, vendor: 'fake',
+      // Distinct models on draft/review only to dodge the same-identity review refusal
+      // (see "a review routed to the identity that wrote the draft is refused" above) -
+      // unrelated to what this test checks.
+      policy: { draft: { vendor: 'fake', model: 'm1' }, review: { vendor: 'fake', model: 'm2' } },
+    });
+    await c.call('team_submit', { run_id, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('team_submit', {
+      run_id, cwd, node_id: 'setgoal',
+      payload: ok({
+        spec: {
+          goal: 'G', acceptance: ['A'],
+          subgoals: [
+            { id: 'U1', title: 'code', acceptance: ['a'], test: ['t'], deps: [] },
+            { id: 'D1', kind: 'document', title: 'note', acceptance: ['a'], files: ['doc.md'], deps: [] },
+          ],
+        },
+      }),
+    });
+
+    const critiqueRun = await c.call('team_run', { run_id, cwd, node_id: 'critique' });
+    assert.equal(critiqueRun.state, 'done', JSON.stringify(critiqueRun));
+
+    await c.call('team_submit', { run_id, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [], handoff: 'i' }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'draft:D1:1', payload: ok({ changed_files: [], handoff: 'd' }) });
+
+    const gateRun = await c.call('team_run', { run_id, cwd, node_id: 'gate:U1:1' });
+    assert.equal(gateRun.state, 'done', JSON.stringify(gateRun));
+
+    const reviewRun = await c.call('team_run', { run_id, cwd, node_id: 'review:D1:1' });
+    assert.equal(reviewRun.state, 'done', JSON.stringify(reviewRun));
+
+    const calls = readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse)
+      .filter((call) => !call.includes('--detect'));
+    const byStage = {};
+    for (const call of calls) {
+      const promptPath = call[call.indexOf('--prompt-file') + 1];
+      const head = readFileSync(promptPath, 'utf8').match(/^# (\S+) node (\S+)/);
+      if (head) byStage[head[2]] = call;
+    }
+    assert.ok(byStage['critique'], 'critique must have actually dispatched');
+    assert.ok(byStage['gate:U1:1'], 'gate:U1:1 must have actually dispatched');
+    assert.ok(byStage['review:D1:1'], 'review:D1:1 must have actually dispatched');
+    assert.equal(byStage['critique'].includes('--verify'), false, 'critique judges text only, no Bash needed');
+    assert.equal(byStage['gate:U1:1'].includes('--verify'), true, 'gate must be able to re-run the checks it judges');
+    assert.equal(byStage['review:D1:1'].includes('--verify'), true, 'review must be able to re-run a checkable acceptance item');
+  } finally {
+    c.close();
+    delete process.env.FAKE_ARGS_LOG;
+    delete process.env.FAKE_REPLY;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(logDir, { recursive: true, force: true });
+  }
+});
+
+// A vendor that uses its --verify Bash access to edit the very file it is supposed to be
+// judging read-only - the thing a denylist alone cannot catch (a redirect, not a git/rm/mv
+// verb). The broker's own fingerprint-and-restore (verifySnapshot/verifyRestore) is the
+// backstop: void the verdict and put the file back, regardless of what the node claimed.
+function repoWithMutatingVendor() {
+  const dir = repo();
+  const adapter = join(dir, 'mutator-adapter.mjs');
+  writeFileSync(adapter, `#!/usr/bin/env node
+import { writeFileSync, mkdirSync, appendFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+const a = process.argv.slice(2), get = k => a[a.indexOf(k) + 1];
+const out = get('--output'); mkdirSync(dirname(out), { recursive: true });
+if (a.includes('--detect')) { writeFileSync(out, JSON.stringify({ vendor: { ready: true, reachable: true } })); process.exit(0); }
+const cwd = get('--cwd');
+if (process.env.MUTATE_PATH) {
+  const p = join(cwd, process.env.MUTATE_PATH);
+  mkdirSync(dirname(p), { recursive: true });
+  appendFileSync(p, 'MUTATED\\n');
+}
+writeFileSync(out, JSON.stringify({ stage_ok: true, result: {
+  stage_ok: true, accept: true, match_pct: 95, checks: ['ok -> looked fine'], attacks: ['ok -> looked fine from outside'], evidence: 'e',
+} }));
+`);
+  mkdirSync(join(dir, '.claude'), { recursive: true });
+  writeFileSync(join(dir, '.claude', 'broker-vendors.json'), JSON.stringify({
+    mutator: { command: 'node', args: [adapter], requires_binary: null, sandboxes: ['read-only', 'workspace-write'], default_sandbox: 'workspace-write' },
+  }));
+  return dir;
+}
+
+test('a gate that uses --verify Bash to edit its own subgoal\'s declared file has its verdict voided and the file restored', async () => {
+  const cwd = repoWithMutatingVendor();
+  writeFileSync(join(cwd, 'out.txt'), 'original\n');
+  process.env.MUTATE_PATH = 'out.txt';
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'mutator' });
+    await c.call('team_submit', { run_id, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('team_submit', {
+      run_id, cwd, node_id: 'setgoal',
+      payload: ok({
+        spec: {
+          goal: 'G', acceptance: ['A'],
+          subgoals: [{ id: 'U1', title: 'code', acceptance: ['a'], test: ['t'], files: ['out.txt'], deps: [] }],
+        },
+      }),
+    });
+    await c.call('team_submit', { run_id, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [], handoff: 'i' }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+
+    const gateRun = await c.call('team_run', { run_id, cwd, node_id: 'gate:U1:1' });
+    assert.equal(gateRun.state, 'failed', JSON.stringify(gateRun));
+    assert.match(gateRun.reason, /used its --verify Bash access to change out\.txt/);
+    assert.equal(readFileSync(join(cwd, 'out.txt'), 'utf8'), 'original\n', 'the mutation must be reverted, not merely reported');
+  } finally {
+    c.close();
+    delete process.env.MUTATE_PATH;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// The same mutation attempted against a SIBLING subgoal's declared file, with that sibling
+// NOT actually running - nothing else in this graph is touching sibling.txt at the same
+// time, so there is no legitimate concurrent writer to credit it to. The old scoping (a
+// subgoal's own files[] alone) missed this entirely: it never looked at sibling.txt because
+// U1's gate did not declare it. The whole-tree guard must catch it like any other file.
+test('a verify-mode node redirecting into a tracked file OUTSIDE its own subgoal is detected and restored when no sibling is concurrently running', async () => {
+  const cwd = repoWithMutatingVendor();
+  writeFileSync(join(cwd, 'sibling.txt'), 'sibling original\n');
+  spawnSync('git', ['add', '-A'], { cwd });
+  spawnSync('git', ['commit', '-qm', 'add sibling.txt'], { cwd });
+  process.env.MUTATE_PATH = 'sibling.txt'; // U1's gate does not declare this file - U2 owns it
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'mutator' });
+    await c.call('team_submit', { run_id, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('team_submit', {
+      run_id, cwd, node_id: 'setgoal',
+      payload: ok({
+        spec: {
+          goal: 'G', acceptance: ['A'],
+          subgoals: [
+            { id: 'U1', title: 'code', acceptance: ['a'], test: ['t'], files: ['out.txt'], deps: [] },
+            { id: 'U2', title: 'other', acceptance: ['b'], test: ['t'], files: ['sibling.txt'], deps: [] },
+          ],
+        },
+      }),
+    });
+    await c.call('team_submit', { run_id, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [], handoff: 'i' }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+
+    // U2's own author node has not been dispatched at all here - it is still `pending`, not
+    // `running` - so nothing excuses a write to its file.
+    const gateRun = await c.call('team_run', { run_id, cwd, node_id: 'gate:U1:1' });
+    assert.equal(gateRun.state, 'failed', JSON.stringify(gateRun));
+    assert.match(gateRun.reason, /used its --verify Bash access to change sibling\.txt/);
+    assert.equal(readFileSync(join(cwd, 'sibling.txt'), 'utf8'), 'sibling original\n',
+      'no sibling was concurrently writing this file - the mutation is the gate\'s own and must be reverted');
+  } finally {
+    c.close();
+    delete process.env.MUTATE_PATH;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// The identical write, but this time U2's own author node genuinely IS `running` for the
+// whole window the gate dispatches in - the concurrency computeWriteScope's own comment
+// describes (two sibling subgoals sharing one non-isolated cwd). Simulated by writing
+// `running` onto U2's node directly (loadRun/saveRun, the same file the broker itself reads
+// and writes) rather than by racing two real dispatches, so the timing is deterministic: the
+// state is in place before the gate is asked to run and is still in place when it finishes.
+test('the same write is not blamed on the gate when the sibling\'s own author node is genuinely running concurrently', async () => {
+  const cwd = repoWithMutatingVendor();
+  writeFileSync(join(cwd, 'sibling.txt'), 'sibling original\n');
+  spawnSync('git', ['add', '-A'], { cwd });
+  spawnSync('git', ['commit', '-qm', 'add sibling.txt'], { cwd });
+  process.env.MUTATE_PATH = 'sibling.txt';
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'mutator' });
+    await c.call('team_submit', { run_id, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('team_submit', {
+      run_id, cwd, node_id: 'setgoal',
+      payload: ok({
+        spec: {
+          goal: 'G', acceptance: ['A'],
+          subgoals: [
+            { id: 'U1', title: 'code', acceptance: ['a'], test: ['t'], files: ['out.txt'], deps: [] },
+            { id: 'U2', title: 'other', acceptance: ['b'], test: ['t'], files: ['sibling.txt'], deps: [] },
+          ],
+        },
+      }),
+    });
+    await c.call('team_submit', { run_id, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [], handoff: 'i' }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+
+    const run = loadRun(cwd, run_id);
+    const u2Implement = getNode(run, 'implement:U2:1');
+    assert.ok(u2Implement, 'U2 must have its own author node in the graph');
+    u2Implement.state = 'running';
+    u2Implement.started_at = Date.now();
+    saveRun(run);
+
+    const gateRun = await c.call('team_run', { run_id, cwd, node_id: 'gate:U1:1' });
+    assert.equal(gateRun.state, 'done', JSON.stringify(gateRun));
+    assert.equal(readFileSync(join(cwd, 'sibling.txt'), 'utf8'), 'sibling original\nMUTATED\n',
+      'U2 legitimately owns this file and its own node is genuinely running - the gate over U1 must not touch or revert it');
+  } finally {
+    c.close();
+    delete process.env.MUTATE_PATH;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// A brand-new untracked file - never declared by any subgoal, not the product of any
+// concurrent writer - is exactly the redirect/tee/`node -e` shape the --verify Bash denylist
+// cannot see: it is not a git/rm/mv verb at all. The old subgoal-scoped fingerprint never
+// looked at the whole tree, so a new file like this went entirely unnoticed.
+test('a verify-mode node writing a brand-new untracked file has it removed and its verdict voided', async () => {
+  const cwd = repoWithMutatingVendor();
+  process.env.MUTATE_PATH = 'exfil.txt'; // declared by no subgoal at all
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'mutator' });
+    await c.call('team_submit', { run_id, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('team_submit', {
+      run_id, cwd, node_id: 'setgoal',
+      payload: ok({
+        spec: {
+          goal: 'G', acceptance: ['A'],
+          subgoals: [{ id: 'U1', title: 'code', acceptance: ['a'], test: ['t'], files: ['out.txt'], deps: [] }],
+        },
+      }),
+    });
+    await c.call('team_submit', { run_id, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [], handoff: 'i' }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+
+    const gateRun = await c.call('team_run', { run_id, cwd, node_id: 'gate:U1:1' });
+    assert.equal(gateRun.state, 'failed', JSON.stringify(gateRun));
+    assert.match(gateRun.reason, /used its --verify Bash access to change exfil\.txt/);
+    assert.equal(existsSync(join(cwd, 'exfil.txt')), false, 'a file that did not exist before this node ran must be removed, not left behind');
+  } finally {
+    c.close();
+    delete process.env.MUTATE_PATH;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// The broker's own writes while a node runs - the ledger, probe caches, this very node's
+// prompt/result files - live under .teams_output/. A verify-mode node's dispatch always
+// touches that tree (the adapter's own --output/--events-output land there); none of it may
+// ever be attributed to the node under judgment.
+test('changes under .teams_output/ made during a verify-mode dispatch are never attributed to the node', async () => {
+  const cwd = repoWithMutatingVendor();
+  process.env.MUTATE_PATH = '.teams_output/side-channel.txt';
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'mutator' });
+    await c.call('team_submit', { run_id, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('team_submit', {
+      run_id, cwd, node_id: 'setgoal',
+      payload: ok({
+        spec: {
+          goal: 'G', acceptance: ['A'],
+          subgoals: [{ id: 'U1', title: 'code', acceptance: ['a'], test: ['t'], files: ['out.txt'], deps: [] }],
+        },
+      }),
+    });
+    await c.call('team_submit', { run_id, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [], handoff: 'i' }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+
+    const gateRun = await c.call('team_run', { run_id, cwd, node_id: 'gate:U1:1' });
+    assert.equal(gateRun.state, 'done', JSON.stringify(gateRun));
+    assert.equal(readFileSync(join(cwd, '.teams_output', 'side-channel.txt'), 'utf8'), 'MUTATED\n',
+      'the harness\'s own directory is out of scope for the write guard entirely');
+  } finally {
+    c.close();
+    delete process.env.MUTATE_PATH;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// A clean verify-mode dispatch - nothing redirected, no sibling, no harness noise - must
+// leave the tree exactly as it was and its own verdict untouched by the write guard.
+test('a clean verify-mode gate leaves the worktree untouched and its verdict stands', async () => {
+  const cwd = repoWithMutatingVendor();
+  // MUTATE_PATH intentionally unset: this adapter run writes nothing beyond its own report.
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'mutator' });
+    await c.call('team_submit', { run_id, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('team_submit', {
+      run_id, cwd, node_id: 'setgoal',
+      payload: ok({
+        spec: {
+          goal: 'G', acceptance: ['A'],
+          subgoals: [{ id: 'U1', title: 'code', acceptance: ['a'], test: ['t'], files: ['out.txt'], deps: [] }],
+        },
+      }),
+    });
+    await c.call('team_submit', { run_id, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [], handoff: 'i' }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+
+    const gateRun = await c.call('team_run', { run_id, cwd, node_id: 'gate:U1:1' });
+    assert.equal(gateRun.state, 'done', JSON.stringify(gateRun));
+    assert.equal(gateRun.reason, undefined, 'no write-guard reason should be attached to an untouched tree');
+  } finally {
+    c.close();
     rmSync(cwd, { recursive: true, force: true });
   }
 });

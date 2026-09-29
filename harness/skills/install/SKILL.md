@@ -82,12 +82,12 @@ idempotent and non-destructive: existing files are never overwritten.
      contradicts it (e.g. "never use hooks/subagents"), do NOT append — surface the conflict.
    - **If you embedded** (step 1), rewrite the Workflow `scriptPath` in the block to
      `.claude/harness/engine/pipeline.js` and `codex_adapter_path` to
-     `.claude/harness/engine/codex-exec-adapter.mjs` (the gate's engagement regex still
-     matches the `harness/engine/pipeline.js` substring).
+     `.claude/harness/engine/codex-exec-adapter.mjs` (the gate engages on a Workflow call
+     whose `scriptPath` ends in `harness/engine/pipeline.js`, so the embedded path counts).
 
 5. **Report** — from `install.mjs`'s JSON plus the convention/CLAUDE.md steps: list created /
-   kept / needs-user-input. Remind: the gate only blocks `Write|Edit|MultiEdit|NotebookEdit`
-   on the listed patterns and is fail-open. If embedding was declined and the plugin is
+   kept / needs-user-input. Remind: the gate blocks `Write|Edit|MultiEdit|NotebookEdit` and
+   `Bash` writes on the listed patterns (and on its own config/hook/settings) and is fail-open. If embedding was declined and the plugin is
    absent, flag the engine gap; if accepted, list what was embedded and the dynamic-`skills[]`
    boundary.
 

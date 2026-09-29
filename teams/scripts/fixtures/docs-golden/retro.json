@@ -18,7 +18,11 @@
         "attempts": 2
       },
       {
-        "package_id": "QA",
+        "package_id": "QA-F1",
+        "attempts": 2
+      },
+      {
+        "package_id": "QA-F2",
         "attempts": 2
       },
       {
@@ -29,6 +33,7 @@
     "defects_left": []
   },
   "next_backlog": {
+    "unfinished_stories": [],
     "unaccepted_packages": [],
     "unresolved_defects": [],
     "open_questions": []

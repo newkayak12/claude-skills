@@ -54,3 +54,141 @@ test('slack-list: a goal gate that accepted with spec drift is recorded, though 
     assert.ok(d && /URL/.test(d.message));
   } finally { for (const x of [cwd, tasks, root]) rmSync(x, { recursive: true, force: true }); }
 });
+
+// portfolio-refresh-80ec931a (2026-09-28, teams 0.34.0): archive summary.json read cost_by_kind
+// summing to $19.77 against a cost_usd of $28.26 - the $8.49 gap was every child graph run's own
+// node adapter session (review/gate/plan/... under broker/<run_id>/<node>/<attempt>/events.jsonl),
+// which collectTaskCosts already folds into cost_usd (nodes_usd) but the byKind loop here read
+// only costs.streams (driver sessions), never costs.node_streams. Fixture shaped like that run:
+// a package driver + a judge driver (bucketed today) plus a child run's own review/gate node
+// sessions (not bucketed before this fix).
+test('cost_by_kind buckets node adapter sessions too, so it sums to cost_usd (portfolio-refresh-80ec931a gap)', () => {
+  const { cwd, tasks, td } = fixture();
+  const root = mkdtempSync(join(tmpdir(), 'runlog-root-'));
+  const wt = mkdtempSync(join(tmpdir(), 'runlog-wt-'));
+  try {
+    writeFileSync(join(td, 'drivers', 'dispatch_P1_1.stream.jsonl'), `${JSON.stringify({ type: 'result', total_cost_usd: 2, num_turns: 4 })}\n`);
+    writeFileSync(join(td, 'drivers', 'judge_accept_P1_1.stream.jsonl'), `${JSON.stringify({ type: 'result', total_cost_usd: 0.5, num_turns: 1 })}\n`);
+    for (const [nodeDir, cost] of [['review_U1_1', 1.2], ['gate_U1_1', 0.3]]) {
+      const d = join(wt, '.teams_output', 'broker', 'child-1', nodeDir, 'att-1');
+      mkdirSync(d, { recursive: true });
+      writeFileSync(join(d, 'events.jsonl'), `${JSON.stringify({ type: 'result', total_cost_usd: cost, num_turns: 1 })}\n`);
+    }
+    const task = JSON.parse(readFileSync(join(td, 'task.json'), 'utf8'));
+    task.nodes.push({ node_id: 'dispatch:P1:1', stage: 'dispatch', subgoal_id: 'P1', state: 'done', child: { cwd: wt, run_id: 'child-1' } });
+    writeFileSync(join(td, 'task.json'), JSON.stringify(task));
+
+    const r = harvestTask({ taskDir: td, cwd, root });
+    assert.equal(r.summary.cost_usd, 4.0);
+    assert.deepEqual(r.summary.cost_by_kind, { dispatch_package: 2, judge_accept: 0.5, node_review: 1.2, node_gate: 0.3 });
+    const bucketed = Object.values(r.summary.cost_by_kind).reduce((a, v) => a + v, 0);
+    assert.equal(+bucketed.toFixed(4), r.summary.cost_usd, 'cost_by_kind must sum to the same total cost_usd reports');
+  } finally { for (const x of [cwd, tasks, root, wt]) rmSync(x, { recursive: true, force: true }); }
+});
+
+// Same run: budget_usd 25, budget_stopped fired at spend $25.18 (the in-flight QA:2 child was
+// already running and enforceBudget never kills a running dispatch), then the goal gate got
+// rewired and the report ran to close the task - both mandatory closing stages - landing at
+// cost_usd $28.26. That $3.08 post-stop spend is by design (closeStoppedToReport), but until now
+// was invisible outside diffing cost_usd against ledger.jsonl's budget_stopped.spend by hand.
+test('a budget-stopped task surfaces post_stop_usd: what the in-flight package plus goal-gate/report spent after the stop', () => {
+  const { cwd, tasks, td } = fixture();
+  const root = mkdtempSync(join(tmpdir(), 'runlog-root-'));
+  try {
+    writeFileSync(join(td, 'drivers', 'dispatch_QA_2.stream.jsonl'), `${JSON.stringify({ type: 'result', total_cost_usd: 25.1771, num_turns: 10 })}\n`);
+    writeFileSync(join(td, 'drivers', 'judge_gate_goal_1.stream.jsonl'), `${JSON.stringify({ type: 'result', total_cost_usd: 2.3939, num_turns: 2 })}\n`);
+    writeFileSync(join(td, 'drivers', 'judge_report.stream.jsonl'), `${JSON.stringify({ type: 'result', total_cost_usd: 0.69, num_turns: 1 })}\n`);
+    const task = JSON.parse(readFileSync(join(td, 'task.json'), 'utf8'));
+    task.team = { opts: { budget_usd: 25 } };
+    task.budget_stopped = { at: Date.now(), spend: 25.1771, elapsed_minutes: 56, budget_usd: 25, timebox_minutes: null, skipped_packages: [] };
+    writeFileSync(join(td, 'task.json'), JSON.stringify(task));
+
+    const r = harvestTask({ taskDir: td, cwd, root });
+    assert.equal(r.summary.cost_usd, 28.261);
+    assert.equal(r.summary.budget.stopped, true);
+    assert.equal(r.summary.budget.post_stop_usd, 3.0839, 'cost_usd minus the spend already recorded at budget_stopped');
+  } finally { for (const x of [cwd, tasks, root]) rmSync(x, { recursive: true, force: true }); }
+});
+
+test('an unstopped task carries no post_stop_usd', () => {
+  const { cwd, tasks, td } = fixture();
+  const root = mkdtempSync(join(tmpdir(), 'runlog-root-'));
+  try {
+    const task = JSON.parse(readFileSync(join(td, 'task.json'), 'utf8'));
+    task.team = { opts: { budget_usd: 25 } };
+    writeFileSync(join(td, 'task.json'), JSON.stringify(task));
+    const r = harvestTask({ taskDir: td, cwd, root });
+    assert.equal(r.summary.budget.stopped, false);
+    assert.equal('post_stop_usd' in r.summary.budget, false);
+  } finally { for (const x of [cwd, tasks, root]) rmSync(x, { recursive: true, force: true }); }
+});
+
+// portfolio-consolidate-8518d5dd (teams 0.35.1): a restarted package driver
+// (dispatch_P1_1.restart1) and a re-judged accept (judge_accept_P2_1.r1) each landed in a bucket
+// of their own - "dispatch_P1_1.restart1", "judge_accept_P2_1" - instead of dispatch_package /
+// judge_accept, so triage's per-kind table split one kind of spend over per-run names. A driver
+// with no result event yet (dispatch_PLAN_1 there) is estimated and still bucketed.
+test('restart and re-judge streams fold into their own kind, and every bucket sums to cost_usd', () => {
+  const { cwd, tasks, td } = fixture();
+  const root = mkdtempSync(join(tmpdir(), 'runlog-root-'));
+  try {
+    const res = (c) => `${JSON.stringify({ type: 'result', total_cost_usd: c, num_turns: 1 })}\n`;
+    writeFileSync(join(td, 'drivers', 'dispatch_P1_1.stream.jsonl'), res(12));
+    writeFileSync(join(td, 'drivers', 'dispatch_P1_1.restart1.stream.jsonl'), res(3.5));
+    writeFileSync(join(td, 'drivers', 'dispatch_PLAN_3.stream.jsonl'), res(2.5));
+    writeFileSync(join(td, 'drivers', 'dispatch_PLAN_1.restart2.stream.jsonl'), res(1));
+    writeFileSync(join(td, 'drivers', 'judge_accept_P2_1.stream.jsonl'), res(1.5));
+    writeFileSync(join(td, 'drivers', 'judge_accept_P2_1.r1.stream.jsonl'), res(0.75));
+    writeFileSync(join(td, 'drivers', 'judge_integrate_6.stream.jsonl'), res(2));
+    const r = harvestTask({ taskDir: td, cwd, root });
+    assert.deepEqual(r.summary.cost_by_kind, { dispatch_package: 15.5, dispatch_PLAN: 3.5, judge_accept: 2.25, judge_integrate: 2 });
+    const bucketed = Object.values(r.summary.cost_by_kind).reduce((a, v) => a + v, 0);
+    assert.equal(+bucketed.toFixed(4), r.summary.cost_usd);
+  } finally { for (const x of [cwd, tasks, root]) rmSync(x, { recursive: true, force: true }); }
+});
+
+// m6: cards carry their area in the id - dispatch_PLAN-F2_1, judge_accept_QA-F1_1 - and the
+// manager's own dashed stages (plan-integrate, areas-critique) have a '-' that \w never matched.
+test('card and dashed-stage streams bucket by phase and by judging stage, not one bucket per card', () => {
+  const { cwd, tasks, td } = fixture();
+  const root = mkdtempSync(join(tmpdir(), 'runlog-root-'));
+  try {
+    const res = (c) => `${JSON.stringify({ type: 'result', total_cost_usd: c, num_turns: 1 })}\n`;
+    writeFileSync(join(td, 'drivers', 'dispatch_PLAN-F1_1.stream.jsonl'), res(1));
+    writeFileSync(join(td, 'drivers', 'dispatch_PLAN-F2_1.stream.jsonl'), res(2));
+    writeFileSync(join(td, 'drivers', 'dispatch_QA-F1_2.stream.jsonl'), res(3));
+    writeFileSync(join(td, 'drivers', 'judge_accept_PLAN-F1_1.stream.jsonl'), res(0.5));
+    writeFileSync(join(td, 'drivers', 'judge_accept_QA-F2_1.stream.jsonl'), res(0.25));
+    writeFileSync(join(td, 'drivers', 'judge_plan-integrate_1.stream.jsonl'), res(0.75));
+    writeFileSync(join(td, 'drivers', 'judge_areas-critique_2.stream.jsonl'), res(0.5));
+    const r = harvestTask({ taskDir: td, cwd, root });
+    assert.deepEqual(r.summary.cost_by_kind, { dispatch_PLAN: 3, dispatch_QA: 3, judge_accept: 0.75, 'judge_plan-integrate': 0.75, 'judge_areas-critique': 0.5 });
+  } finally { for (const x of [cwd, tasks, root]) rmSync(x, { recursive: true, force: true }); }
+});
+
+// Same run: child test:U1:1 (P1, P3) and manager integrate:6 rejected with verified:false and
+// only checks/evidence - no reason - so every record read "P3 test:U1:1: " in triage. A record
+// written before the engine synthesized one is filled at harvest time, from the same rule; a
+// test/review rejection is a rejection (grouped by stage), not an unexplained failure.
+test('a verdict-false record with no reason gets one from its checks/evidence at harvest', () => {
+  const { cwd, tasks, td } = fixture();
+  const root = mkdtempSync(join(tmpdir(), 'runlog-root-'));
+  try {
+    const task = JSON.parse(readFileSync(join(td, 'task.json'), 'utf8'));
+    task.nodes = [{ node_id: 'integrate:6', stage: 'integrate', state: 'failed', result: { stage_ok: true, verified: false,
+      checks: ['git log -> P1 and P2 merged', 'ls -> beta/ is ABSENT, so G1 is only partly met'], evidence: 'G1, G3 are unmet.', unowned: ['G1 -> P3'] } }];
+    writeFileSync(join(td, 'task.json'), JSON.stringify(task));
+    const runs = join(cwd, '.teams_output', 'broker', 'runs');
+    mkdirSync(runs, { recursive: true });
+    writeFileSync(join(runs, 'r.json'), JSON.stringify({ run_id: 'r', nodes: [{ node_id: 'test:U1:1', stage: 'test', state: 'failed', vendor: 'self',
+      result: { stage_ok: true, verified: false, checks: ['wc -l -> 195', "SKILL.md -> density over 주장's denominator and 'does NOT move the score'"], evidence: 'The run-it criterion fails: no [확인 필요] marker.', verification_error: '' } }] }));
+    const r = harvestTask({ taskDir: td, cwd, root });
+    const t = r.summary.failures.find((f) => f.node_id === 'test:U1:1');
+    assert.equal(t.kind, 'rejection');
+    assert.match(t.message, /run-it criterion fails/);
+    assert.equal(t.executor, 'self');
+    const i = r.summary.failures.find((f) => f.node_id === 'integrate:6');
+    assert.equal(i.kind, 'integrate-refused');
+    assert.match(i.message, /G1, G3 are unmet/, 'no check reads as a failure, so the evidence summary');
+  } finally { for (const x of [cwd, tasks, root]) rmSync(x, { recursive: true, force: true }); }
+});

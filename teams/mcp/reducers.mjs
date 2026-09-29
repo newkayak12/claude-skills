@@ -149,6 +149,9 @@ export const REGISTRY = {
   subgoal: { ...DEFAULT_FIELDS },
   document: { ...DEFAULT_FIELDS, observations: 'concat-dedup' },
   planning: { ...DEFAULT_FIELDS, user_stories: 'union', observations: 'concat-dedup' },
+  // The light PLAN chain (graph.mjs KINDS['planning-light']) returns the same fields; its
+  // package-level fold still keys on 'planning' (taskmanager.mjs's packageReducerKind).
+  'planning-light': { ...DEFAULT_FIELDS, user_stories: 'union', observations: 'concat-dedup' },
   qa: { ...DEFAULT_FIELDS, defects: 'concat-dedup' },
   'planning-audit': { ...DEFAULT_FIELDS, unmet: 'union', defects: 'concat-dedup' },
   _default: { ...DEFAULT_FIELDS },
