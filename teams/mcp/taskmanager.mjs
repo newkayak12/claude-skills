@@ -57,7 +57,7 @@ import {
   storyLinks, packageFiling, parseTicketKey, storyBlockedReason,
   planningPkgs, livePlanningPkgs, qaPkgs, phaseOfId, planningStories,
 } from './tickets.mjs';
-import { writeDocs, renderPrd, cardDocuments } from './docs.mjs';
+import { writeDocs, renderPrd, cardDocuments, questionLine } from './docs.mjs';
 import { logReply, renderStreamLine, renderLedgerLine } from './tasklog.mjs';
 import { validate as validateDiagram, renderToFile as renderDiagram } from './diagram.mjs';
 import { conventionsBlock } from './conventions.mjs';
@@ -474,7 +474,7 @@ function priorRetroContext(contextFrom) {
     L.push('', 'Next backlog - unaccepted packages:');
     L.push(bullets((retro.next_backlog.unaccepted_packages || []).map((p) => `${p.id} (${p.title}): ${p.reason}`)));
     if ((retro.next_backlog.unresolved_defects || []).length) L.push('', 'Unresolved defects:', bullets(retro.next_backlog.unresolved_defects.map((d) => d.title)));
-    if ((retro.next_backlog.open_questions || []).length) L.push('', 'Open questions nobody answered:', bullets(retro.next_backlog.open_questions.map((q) => q.question || JSON.stringify(q))));
+    if ((retro.next_backlog.open_questions || []).length) L.push('', 'Open questions nobody answered:', bullets(retro.next_backlog.open_questions.map(questionLine)));
     // The prior Sprint's accepted work lives on its last verified integration branch, which
     // nothing merges into the project's own branch: code-sprint-S8's main was still at seed after
     // P1+P2 shipped, so a follow-up Sprint branched from HEAD would rebuild on nothing. When that

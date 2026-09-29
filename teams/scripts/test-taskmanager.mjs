@@ -2140,6 +2140,35 @@ test('m2: a budget stop before shape settles a running planning card past its gr
   }, { budget_usd: 5, budget_grace_minutes: 0 });
 });
 
+test('R1: retro open_questions carry task-level unasked questions, a Dev contradiction first, so the next Sprint sees "the spec is wrong"', async () => {
+  const { buildRetro, questionLine } = await import('../mcp/docs.mjs');
+  const task = {
+    run_id: 't', request: 'r', interactive: false, nodes: [],
+    unasked: [
+      { subgoal_id: 'P1', node_id: 'dispatch:P1:1', question: 'Which currency?', decided: 'KRW' },
+      { node_id: 'dispatch:P2:1', raised_by: ['P2'], question: 'Refund window?', decided: null, blocking: 'contradicts_decision', contradicts_decision: 'Refunds are instant' },
+    ],
+  };
+  const qs = buildRetro(task).next_backlog.open_questions;
+  assert.deepEqual(qs.map((q) => q.question), ['Refund window?', 'Which currency?']);
+  assert.equal(qs[0].contradicts_decision, 'Refunds are instant');
+  assert.equal(qs[0].package_id, 'P2');
+  assert.equal(questionLine(qs[0]), 'Refund window? (contradicts: Refunds are instant)');
+  assert.equal(questionLine(qs[1]), 'Which currency?');
+});
+
+test('R1: tm_open({context_from}) shows a prior Sprint\'s contradiction in the new task\'s context', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    const prior = await tm.call('tm_status', { task_id, full: true });
+    const path = docPaths(prior).retro;
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify({ task_id, next_backlog: { unfinished_stories: [], unaccepted_packages: [], unresolved_defects: [], open_questions: [{ question: 'Refund window?', contradicts_decision: 'Refunds are instant' }] }, retrospective: {} }));
+    const next = await tm.call('tm_open', { request: 'next sprint', cwd: prior.cwd, vendor: 'self', brainstorm: false, context_from: task_id });
+    const t2 = await tm.call('tm_status', { task_id: next.task_id, full: true });
+    assert.match(t2.context, /Refund window\? \(contradicts: Refunds are instant\)/);
+  });
+});
+
 test('m5: tm_open({context_from}) hands back unfinished user stories as candidates, card and acceptance kept, requests untouched', async () => {
   await withTask(async ({ tm, root, task_id }) => {
     const prior = await tm.call('tm_status', { task_id, full: true });

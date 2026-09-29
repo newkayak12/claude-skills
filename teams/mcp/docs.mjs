@@ -22,6 +22,13 @@ import {
   planningPkgs, livePlanningPkgs, qaPkgs, planningStories,
 } from './tickets.mjs';
 
+// One open question as a line: a package's contradicts_decision says which settled decision it
+// found cannot hold, so the next Sprint's planning takes it up instead of reading a bare question.
+export function questionLine(q) {
+  const text = (q && q.question) || JSON.stringify(q);
+  return q && q.contradicts_decision ? `${text} (contradicts: ${q.contradicts_decision})` : text;
+}
+
 function bullets(list) {
   return (list || []).map((x) => `- ${x}`).join('\n') || '- (none)';
 }
@@ -467,7 +474,12 @@ export function buildRetro(task) {
     .filter((u) => storyId(u) && !shippedStories.has(storyId(u)))
     .map((u) => ({ id: storyId(u), title: (u && typeof u === 'object' && u.title) ? String(u.title) : '', card: u.card || null,
       ...(u && typeof u === 'object' && Array.isArray(u.acceptance) ? { acceptance: u.acceptance } : {}) }));
-  const openQuestions = [];
+  // Task-level first (escalateBlocking/finishNode record a headless task's questions here, a
+  // Dev package's contradicts_decision among them), contradictions ahead: without them the next
+  // Sprint never learns that a package found the spec could not hold.
+  const taskLevel = (Array.isArray(task.unasked) ? task.unasked : []).filter((q) => q && q.question)
+    .map((q) => ({ package_id: q.subgoal_id || (Array.isArray(q.raised_by) ? q.raised_by[0] : null) || null, ...q }));
+  const openQuestions = [...taskLevel.filter((q) => q.contradicts_decision), ...taskLevel.filter((q) => !q.contradicts_decision)];
   for (const n of task.nodes.filter((x) => x.stage === 'dispatch' && x.child)) {
     try {
       const child = loadRun(n.child.cwd, n.child.run_id);
@@ -521,7 +533,7 @@ export function renderReport(task) {
   L.push('Unaccepted packages:');
   L.push(bullets(retro.next_backlog.unaccepted_packages.map((p) => `${p.id} (${p.title}): ${p.reason}`)));
   L.push('', 'Unresolved defects:', bullets(retro.next_backlog.unresolved_defects.map((d) => d.title)));
-  L.push('', 'Open questions:', bullets(retro.next_backlog.open_questions.map((q) => q.question || JSON.stringify(q))));
+  L.push('', 'Open questions:', bullets(retro.next_backlog.open_questions.map(questionLine)));
   return L.join('\n') + '\n';
 }
 

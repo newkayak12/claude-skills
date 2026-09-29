@@ -83,8 +83,13 @@ exists as its own tool or field — nothing here is new mechanism, only the orde
    straight into the new task's `context` (`priorRetroContext`, taskmanager.mjs). The next
    Sprint's own `requests` still has to be written in the team's own words — `context_from` hands
    over what happened, not a ready-made backlog. `tm_open` returns `carryover_candidates` (the
-   unshipped backlog items and user stories): put them to the person as a list and let them pick
-   what goes into the next `requests`; never add them yourself.
+   unshipped backlog items and user stories).
+6. **Next Sprint — you pick, the person may override.** You (the session that opened the Sprint)
+   are the loop: write the next `requests` from `carryover_candidates` in priority order, add each
+   open question marked "(contradicts: …)" as a planning item (a package found a settled decision
+   cannot hold), open it with `context_from`, and tell the person what you picked. A person
+   steps in only by choice. Stop, and say why, when nothing carries over or two Sprints in a row
+   shipped nothing.
 
 ## Output Template
 

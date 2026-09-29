@@ -22,6 +22,15 @@
 >   - per-role judgement criteria for the leads.
 > - Those two go in a separate plan. **Nothing beyond them**: no debate rounds, no meetings, no further org mimicry.
 
+> **Revision (2026-09-29, the user's decision): the master is the loop.**
+> - Their words: "ㄱ냥 돌리면 롱 루프고 / 이미 계속 세션을 할당하면서 가서 롱 루핑이 될텐데", then "고" to the revision below.
+> - Inside a Sprint the daemon already runs long (driver respawn, capacity park/resume). Between Sprints `retro.json` → `tm_open({context_from})` → `carryover_candidates` already exists (`priorRetroContext`). The master opening the next Sprint with those is the loop.
+> - **Dropped:** L1, L1a, L1b, L1c, L1d, L2 (loop option, loop file and lock, daemon-side open, loop caps, `tm_loop`, view panel). The master's own judgement and each Sprint's own box bound it.
+> - **L3 kept, reworded:** the master picks the carry-over and opens the next Sprint; a person overrides only by choice.
+> - **R1 added:** the one real gap. A `contradicts_decision` a Dev package raises in a non-interactive task lands on `task.unasked` (`escalateBlocking`), but `buildRetro` gathered `open_questions` from child runs only, so the next Sprint never saw "the spec is wrong". `buildRetro` now also gathers `task.unasked`, contradictions first, and the context/report show what each contradicts.
+> - **The separate Dev→PM plan is dropped:** R1 is its whole function (the next Sprint's planning takes the contradiction). Per-role judgement criteria are shelved with it.
+> - S1/S1a/S2 and G1–G4 are unchanged and not yet done.
+
 ## Plan
 
 ### S — size S runs on the development harness
@@ -34,7 +43,14 @@
 
 ### L — the long loop
 
+> L1–L2 are **dropped** by the 2026-09-29 revision above; kept here as the design history. L3 and R1 below are what ships.
+
 | # | Change |
+|---|---|
+| R1 | **Retro carries task-level unasked questions:** `buildRetro`'s `next_backlog.open_questions` = `task.unasked` (contradictions first, each with `contradicts_decision`) + every child run's `unasked`. `priorRetroContext` and `renderRetro` print "(contradicts: …)" beside such a question. |
+| L3′ | **Sprint skill step 5:** the master (the session that opened the Sprint) picks the next `requests` from `carryover_candidates` in priority order, treats every open question marked "contradicts" as a planning item for the next Sprint, opens it with `context_from`, and reports the pick. A person overrides only by choice. The master stops when nothing carries over or two Sprints in a row ship nothing, and says why. |
+
+| # | Change (dropped) |
 |---|---|
 | L1 | **Turning it on:** `tm_open({loop: {...}})` (or team.json `loop`). Each Sprint is a normal L task and is **pinned L** (`size_pin_source: "loop"`), so a Sprint never hands off partway through the loop. |
 | L1b | **Who opens the next Sprint:** the finished Sprint's daemon opens it, just before `daemon_done` and only after its report is done. So that a daemon that dies in between cannot stall the loop, `tm_status`/`tm_wait`/`tm_next` on a finished loop Sprint run the same locked open. It takes an exclusive lock on the loop file and does a compare-and-set on `loop.sprints[i].next_task_id`, so there is only ever one opener. The next Sprint is `tm_open` with `context_from` set to the finished task and `requests` set to the carry-over candidates, in priority order. Candidates are `unshipped_requests`, then `unfinished_stories`, then `unaccepted_packages`, then `unresolved_defects`: skipped and never-dispatched work is **included**, so a budget-stopped Sprint loses nothing. `open_questions` ride along as context. The pick is recorded on the loop file as decided-for-you. |
@@ -65,14 +81,16 @@
   - No code path opens an S run.
   - A legacy `s_run` task fixture (with `roles.qa` set and no `s_qa`) reads its run's state and is never respawned.
   - The reader tests pass on legacy fixtures, and no L test is deleted.
-- **L1b/L1c:**
+- **R1:** a test builds a non-interactive task whose `task.unasked` holds a `contradicts_decision` question and a plain one: `open_questions` lists both, the contradiction first with its field, and `priorRetroContext` text shows "contradicts". Fails without the fix.
+- **L3′:** sprint step 5 says the master picks and opens; the KOR mirror (if any) follows.
+- ~~**L1b/L1c:**~~ (dropped 2026-09-29)
   - With `loop` on, a Sprint whose report is done opens exactly one next Sprint, even when two openers race (tested), pinned L, with `context_from` set and `requests` set to the candidates, skipped packages included.
   - `tm_loop` stop/drop/reorder is applied at the next open.
   - A daemon killed between the report and the open does not stall the loop: `tm_status` opens the next Sprint (tested).
   - Nothing parks.
-- **L1a/L1d:** each stop reason is tested, a Sprint's cap is `min(own, loop remaining)`, and a loop with no caps stops at `max_sprints` 5.
-- **L2:** the loop file lists the Sprints in order, the view shows the loop panel, and `tm_status` carries the loop.
-- **L3:** the sprint skill text is updated in EN, with its KOR mirror if one exists.
+- ~~**L1a/L1d:**~~ (dropped) each stop reason is tested, a Sprint's cap is `min(own, loop remaining)`, and a loop with no caps stops at `max_sprints` 5.
+- ~~**L2:**~~ (dropped) the loop file lists the Sprints in order, the view shows the loop panel, and `tm_status` carries the loop.
+- ~~**L3:**~~ (superseded by L3′) the sprint skill text is updated in EN, with its KOR mirror if one exists.
 - **G:** each item has a test that fails without the fix.
 - **Suite and release:**
   - The full suite passes.
@@ -83,4 +101,5 @@
 
 - **Every L Sprint:** unchanged. It runs areas → areas-critique → cards → plan-integrate → shape/critique → develop → integrate → QA → audit → goal gate → report, all gates included.
 - **S:** teams' C6 and PRD are withdrawn for S by the user's decision. S is planned and gated by the harness's own six stages (plan → setgoal → critique → implement → test → gate → gate:goal → report), so no gate is lost. Claude and codex both take part through balanced allocation or codex delegation.
-- **Loop:** it spends without a person, which is the user's stated intent. The loop budget, timebox, `max_sprints` and no-progress stops bound it. Every Sprint keeps its own budget and gates, and a person can stop it at any time from the view or `tm_loop`.
+- **Loop (revised 2026-09-29):** the master opens each Sprint; every Sprint keeps its own box and every gate, and R1 keeps a Dev's contradiction from being lost between Sprints. No new mechanism, so no new failure mode. The text below is the dropped design's critique.
+- **Loop (dropped design):** it spends without a person, which is the user's stated intent. The loop budget, timebox, `max_sprints` and no-progress stops bound it. Every Sprint keeps its own budget and gates, and a person can stop it at any time from the view or `tm_loop`.
