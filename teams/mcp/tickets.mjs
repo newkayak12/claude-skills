@@ -16,6 +16,9 @@ import { TEAM_DEFAULTS } from './teamconfig.mjs';
 export function epicKey(taskId) {
   return `E-${String(taskId).slice(0, 8)}`;
 }
+export function initiativeKey(slug) {
+  return `I-${slug}`;
+}
 export function storyKey(taskId, pkgId) {
   return `${epicKey(taskId)}/${pkgId}`;
 }
@@ -23,15 +26,24 @@ export function taskKey(taskId, pkgId, subgoalId) {
   return `${storyKey(taskId, pkgId)}/${subgoalId}`;
 }
 
-// One key parser for every EPIC/STORY/TASK key this module and tm_ticket/tm_assign resolve -
-// `E-xxxxxxxx`, `E-xxxxxxxx/Pn`, or `E-xxxxxxxx/Pn/subgoalId`. Before this, tm_ticket's own regex
-// (taskmanager.mjs's toolTicket) captured everything past the STORY segment as one greedy group,
-// so a TASK-shaped key silently became a STORY lookup for a package id that could never exist
-// ("Pn/subgoalId"). tm_assign needs the same three-way split tm_ticket does (STORY for a
-// package, TASK for a subgoal - see the plugin's tm_assign spec), so it lives here once and both
-// tools resolve a key identically.
+// One key parser for every INITIATIVE/EPIC/STORY/TASK key this module and tm_ticket/tm_assign
+// resolve - `I-<slug>`, `E-xxxxxxxx`, `E-xxxxxxxx/Pn`, or `E-xxxxxxxx/Pn/subgoalId`. Before this,
+// tm_ticket's own regex (taskmanager.mjs's toolTicket) captured everything past the STORY segment
+// as one greedy group, so a TASK-shaped key silently became a STORY lookup for a package id that
+// could never exist ("Pn/subgoalId"). tm_assign needs the same three-way split tm_ticket does
+// (STORY for a package, TASK for a subgoal - see the plugin's tm_assign spec), so it lives here
+// once and both tools resolve a key identically.
+//
+// An `I-<slug>` key never carries epic8/pkgId/subgoalId - it names a group of EPICs, not a run -
+// so tm_assign's own `!parsed.pkgId` guard already rejects it exactly as it rejects a bare EPIC
+// key, with no extra branch of its own needed there. The slug charset matches
+// teamconfig.mjs's normalizeInitiative output (lowercase alphanumerics and single '-' runs, no
+// leading/trailing '-') - the only shape that function ever produces.
 export function parseTicketKey(key) {
-  const m = /^E-([0-9a-f]{8})(?:\/([^/]+)(?:\/(.+))?)?$/.exec(String(key || ''));
+  const s = String(key || '');
+  const mi = /^I-([a-z0-9]+(?:-[a-z0-9]+)*)$/.exec(s);
+  if (mi) return { initiative: mi[1] };
+  const m = /^E-([0-9a-f]{8})(?:\/([^/]+)(?:\/(.+))?)?$/.exec(s);
   if (!m) return null;
   return { epic8: m[1], pkgId: m[2] || null, subgoalId: m[3] || null };
 }
@@ -161,7 +173,7 @@ function loadSRun(task) {
 }
 
 // The S-run's own goal-level gate, reached the same way goalLevelReached (above) reads a
-// manager task's integrate node - except a plain graph.mjs run (createRun, not parent_shaped)
+// manager task's integrate node - except a plain graph.mjs run (createRun)
 // never gets an integrate node at all: its goal-level gate IS a 'gate' node with subgoal_id
 // null (expandSubgoals/pushGoalGateRound), and a repair can reopen a fresh round - so "current"
 // means latest by push order, the same rule latestGoalNode already applies to a manager task's
@@ -190,7 +202,7 @@ function sRunTicketState(run) {
 
 // epicPhase's own §6 table, read off the child run instead of the task: its own plan/setgoal
 // nodes map onto plan/setgoal directly (they are literally named that - graph.mjs's createRun
-// bootstraps a non-parent_shaped run with exactly those three node ids), its subgoal chains are
+// bootstraps every run with exactly those three node ids), its subgoal chains are
 // impl, and its own gate:goal/report are qualitygate - the same four words §6 already names,
 // never a new one for the S run. A run this could not load reads as 'plan' - the same "nothing
 // has happened yet" reading a fresh, never-driven run would give honestly.
@@ -351,9 +363,9 @@ export function storyTaskProgress(task, pkgId) {
   return `${done}/${ids.length}`;
 }
 
-// The full package list a board walks: the planning phase-Team's package (task.planning_pkg)
-// first, ahead of shape's own task.spec.packages, then the qa phase-Team's package
-// (task.qa_pkg) last - the same order they run in (§2). Neither phase-Team package ever joins
+// The full package list a board walks: the planning cards (planningPkgs - one per feature area)
+// first, ahead of shape's own task.spec.packages, then the QA cards (qaPkgs) and the audit last -
+// the same order they run in (§2). No phase-Team package ever joins
 // task.spec.packages (taskmanager.mjs's packageOf reads them straight off these fields), so
 // they are stitched in here rather than found in `packages`. Shared by epicBoardRows (one row
 // per package) and ticketSnapshot (one key per package) - v0.12.0 gave epicBoardRows this list
@@ -362,11 +374,67 @@ export function storyTaskProgress(task, pkgId) {
 // that gap for good.
 function boardPackages(task) {
   return [
-    ...(task.planning_pkg ? [task.planning_pkg] : []),
+    ...planningPkgs(task),
     ...((task.spec && task.spec.packages) || []),
-    ...(task.qa_pkg ? [task.qa_pkg] : []),
+    ...qaPkgs(task),
     ...(task.audit_pkg ? [task.audit_pkg] : []),
   ];
+}
+
+// Cards everywhere (docs/plans/2026-09-28-teams-cards-everywhere.md C2/C7): planning and QA are
+// no longer one phase-Team package each but one STORY card per feature area - task.planning_pkgs
+// (PLAN-F1, PLAN-F2, ...) and task.qa_pkgs (QA-F1, QA-F2, ...). Every reader goes through these
+// two, never the fields directly: a task.json written before the split still carries the single
+// task.planning_pkg / task.qa_pkg, and reads back as a one-card list rather than as nothing.
+export function planningPkgs(task) {
+  if (!task) return [];
+  if (Array.isArray(task.planning_pkgs)) return task.planning_pkgs;
+  return task.planning_pkg ? [task.planning_pkg] : [];
+}
+// The planning cards still standing: a re-split (plan-integrate's resplit, M4) retires the cards
+// of the split it replaced. They stay in planning_pkgs - their nodes, tickets and ids are history
+// - but no PRD, story, QA card or shape coverage reads them.
+export function livePlanningPkgs(task) {
+  return planningPkgs(task).filter((p) => !p.retired);
+}
+export function qaPkgs(task) {
+  if (!task) return [];
+  if (Array.isArray(task.qa_pkgs)) return task.qa_pkgs;
+  return task.qa_pkg ? [task.qa_pkg] : [];
+}
+// The phase of the package a node's subgoal_id names ('planning' | 'qa' | 'audit'), or null for
+// a develop/repair/defect package - what every "is this a PLAN/QA/AUDIT node" check reads now
+// that the id is no longer the literal 'PLAN' or 'QA'.
+export function phaseOfId(task, id) {
+  const s = String(id);
+  if (planningPkgs(task).some((p) => String(p.id) === s)) return 'planning';
+  if (qaPkgs(task).some((p) => String(p.id) === s)) return 'qa';
+  if (task && task.audit_pkg && String(task.audit_pkg.id) === s) return 'audit';
+  return null;
+}
+
+// The user stories every planning card delivered, in card order - read off each card's latest
+// dispatch that its own accept let through (or, before any accept, the latest dispatch with a
+// result). A card retried after a planning-integrate rejection contributes its NEW stories, not
+// the ones the integrate refused. Each story carries the card it came from as `card`.
+export function planningStories(task) {
+  const out = [];
+  for (const p of livePlanningPkgs(task)) {
+    const id = String(p.id);
+    const dispatches = task.nodes.filter((n) => n.stage === 'dispatch' && n.subgoal_id === id && n.result);
+    const accepted = dispatches.filter((d) => {
+      const acc = task.nodes.find((x) => x.stage === 'accept' && x.subgoal_id === id && (x.attempt || 1) === (d.attempt || 1));
+      return acc && acc.state === 'done';
+    });
+    const d = accepted.length ? accepted[accepted.length - 1] : dispatches[dispatches.length - 1];
+    const list = d && Array.isArray(d.result.user_stories) ? d.result.user_stories : [];
+    // A bare null/empty entry is no story: String(null) once gave it the id "null".
+    for (const u of list) {
+      if (u == null || (typeof u !== 'object' && !String(u).trim())) continue;
+      out.push(typeof u === 'object' ? { ...u, card: id } : { id: String(u).trim(), card: id });
+    }
+  }
+  return out;
 }
 
 // storyLinks(): the relations §4/§7c never surfaced anywhere a human looks - one STORY's own
@@ -390,10 +458,13 @@ function boardPackages(task) {
 // roles.planning is on (see the packages[].implements schema, taskmanager.mjs); [] when planning
 // is off or shape declared none for this package.
 //
-// "filed_by" is p.reporter - the same field epicBoardRows' own `reporter` column reads to tell a
-// filed defect/unmet-story STORY (fileDefects, taskmanager.mjs) from shape's original scope; null
-// for a package shape declared itself (the same falsy epicBoardRows already treats as "nothing to
-// report").
+// "filed_by" is packageFiling(pkg).origin, gated to FILED_ORIGINS - the same fact epicBoardRows'
+// own `origin` column carries, named here as "which stage filed this" rather than "what team is
+// on it" (storyLinks is about relations, not ownership - filed_by answers "was this filed, and
+// against what kind of finding", the same question the old overloaded reporter answered before
+// the reporter/origin split). null for a package shape declared itself, or a repair/phase-Team
+// package - none of those were ever "filed" against anything (the same falsy epicBoardRows
+// already treats as "nothing to report").
 export function storyLinks(task, pkgId) {
   const id = String(pkgId);
   const all = boardPackages(task);
@@ -403,11 +474,12 @@ export function storyLinks(task, pkgId) {
   const blocks = all
     .filter((p) => String(p.id) !== id && (p.deps || []).map(String).includes(id))
     .map((p) => linkOf(String(p.id)));
+  const filing = pkg ? packageFiling(pkg) : null;
   return {
     blocked_by,
     blocks,
     implements: (pkg && Array.isArray(pkg.implements)) ? pkg.implements.map(String) : [],
-    filed_by: (pkg && pkg.reporter) || null,
+    filed_by: (filing && FILED_ORIGINS.has(filing.origin)) ? filing.origin : null,
   };
 }
 
@@ -442,14 +514,20 @@ export function storyBlockedReason(task, pkgId) {
     // specific fact than plain 'unmet_deps', and the one a person reading tm_ticket/tm_status
     // actually wants: not "waiting on a sibling", but "waiting on a fix it itself filed".
     // Detected the same way storyLinks/epicBoardRows already tell a filed defect STORY apart
-    // from shape's own scope: p.reporter, set to 'upstream' only by fileUpstreamDefects.
+    // from shape's own scope: packageFiling(p).origin === 'upstream' (fileUpstreamDefects is the
+    // only writer of that origin), its link.target naming the upstream package id the fix
+    // targets - a legacy on-disk package with no link falls back to its own deps[0], exactly as
+    // packageFiling's own back-compat branch already does.
     const packages = (task.spec && task.spec.packages) || [];
     const upstream = deps
       .map((d) => /^accept:(.+):\d+$/.exec(String(d)))
       .filter(Boolean)
       .map((m) => packages.find((p) => String(p.id) === m[1]))
-      .filter((p) => p && p.reporter === 'upstream')
-      .map((p) => String((p.deps || [])[0] || p.id));
+      .filter((p) => p && packageFiling(p).origin === 'upstream')
+      .map((p) => {
+        const filing = packageFiling(p);
+        return (filing.link && filing.link.target) || String((p.deps || [])[0] || p.id);
+      });
     if (upstream.length) return { reason: 'upstream_defect', node_ids: deps, upstream: [...new Set(upstream)] };
     return { reason: 'unmet_deps', node_ids: deps };
   }
@@ -473,21 +551,59 @@ export function storyBlockedReason(task, pkgId) {
   return null;
 }
 
-// A filed defect STORY (fileDefects, taskmanager.mjs - QA-found or tm_file) carries its own
-// reporter ('qa'/'you'/'planning-audit'); a phase-Team package (PLAN/QA/AUDIT) carries
-// p.phase but never p.reporter, and reported itself, not shape - falling through to p.phase
-// used to mislabel it 'qa' for the QA phase-Team row, the exact same string a QA-filed
-// defect STORY's own reporter carries (see FILED_REPORTERS, view-collect.mjs) - two
-// different kinds of row, one token, no way to tell them apart by reporter alone. 'engine'
-// is honest instead of a phase name: this row exists because a role (roles.planning/
-// roles.qa) is on, not because anything was filed - the caller's own `role`/`phase` field
-// already carries which phase it is. Everything genuinely left is either a repair package
-// (its worktree IS the integration tree, never filed as a STORY) or shape's own original
-// scope. epicBoardRows (tm_board) and toolTicket (tm_ticket, taskmanager.mjs) both call this
-// one function so the two tools can never again report a different reporter for the same key.
-export function packageReporter(p) {
-  return p.reporter || (p.repair ? 'repair' : (p.phase ? 'engine' : 'shape'));
+// A filed defect STORY (fileDefects, taskmanager.mjs - QA-found, audit-found, tm_file, or an
+// upstream fix) carries its own `reporter` (a TEAM - 'qa'/'audit'/'user'/an actual develop
+// package id like 'P4') and `origin` (the STAGE that filed it - 'qa'/'planning-audit'/'tm_file'/
+// 'upstream'); a phase-Team package (PLAN/QA/AUDIT) carries p.phase but neither, and reported
+// itself, not shape - falling through to p.phase used to mislabel it 'qa' for the QA phase-Team
+// row, the exact same string a QA-filed defect STORY's own reporter used to carry before this
+// split (see FILED_ORIGINS below) - two different kinds of row, one token, no way to tell them
+// apart. `reporter: 'planning'` for a phase-Team/repair/shape-declared package is honest instead
+// of a phase name: this row exists because a role (roles.planning/roles.qa) is on, or shape
+// itself, not because anyone filed anything - `origin` ('phase'/'repair'/'shape') carries which
+// case it is, and the caller's own `role`/`phase` field already carries which phase. epicBoardRows
+// (tm_board) and toolTicket (tm_ticket, taskmanager.mjs) both call this one function so the two
+// tools can never again report a different reporter/origin for the same key.
+//
+// New packages (fileDefects/fileUpstreamDefects, taskmanager.mjs) write reporter/origin (and,
+// for an upstream fix, `link: {type:'blocks', target:<upstream package id>}`) directly - nothing
+// here recomputes them. An OLD task.json (written before this split existed) instead carries the
+// single overloaded `reporter` this function used to return by itself - 'qa'/'you'/
+// 'planning-audit'/'upstream' - and, for an upstream fix, never a `reported_by`/`upstream` field
+// on the package itself (only task.unresolved_defects' own cap-exhausted fallback entries ever
+// carried those - see fileUpstreamDefects) - so a legacy upstream-filed package's own filer can
+// no longer be named; only its origin and link (the upstream id, off its own `deps[0]`) survive.
+// Translated here, once, so a task opened before this change renders exactly as one opened after
+// it - never rewritten on disk (this module never writes, per its own header).
+const LEGACY_REPORTER = {
+  qa: { reporter: 'qa', origin: 'qa' },
+  you: { reporter: 'user', origin: 'tm_file' },
+  'planning-audit': { reporter: 'audit', origin: 'planning-audit' },
+};
+export function packageFiling(p) {
+  if (p.origin) return { reporter: p.reporter || null, origin: p.origin, link: p.link || null };
+  if (p.reporter === 'upstream') {
+    const target = p.upstream != null ? String(p.upstream)
+      : (Array.isArray(p.deps) && p.deps[0] != null ? String(p.deps[0]) : null);
+    return { reporter: p.reported_by ? String(p.reported_by) : null, origin: 'upstream', link: target ? { type: 'blocks', target } : null };
+  }
+  if (p.reporter && LEGACY_REPORTER[p.reporter]) {
+    const m = LEGACY_REPORTER[p.reporter];
+    return { reporter: m.reporter, origin: m.origin, link: null };
+  }
+  if (p.reporter) return { reporter: String(p.reporter), origin: null, link: null }; // unrecognized value, kept verbatim rather than dropped
+  if (p.repair) return { reporter: 'planning', origin: 'repair', link: null };
+  if (p.phase) return { reporter: 'planning', origin: 'phase', link: null };
+  return { reporter: 'planning', origin: 'shape', link: null };
 }
+
+// The origins that mean "this STORY was filed against already-integrated work", as opposed to
+// part of the original shape/repair/phase-Team scope - fileDefects (taskmanager.mjs) never
+// writes any other origin for an actually-filed package, and packageFiling's own LEGACY_REPORTER
+// table maps every pre-existing on-disk value onto one of these same four tokens. Shared by
+// storyLinks' filed_by (below) and view-collect.mjs's storyProgress so the two can never again
+// disagree about which rows count as "filed".
+export const FILED_ORIGINS = new Set(['qa', 'planning-audit', 'upstream', 'tm_file']);
 
 // One row per package, for tm_board's STORY table. role is p.phase || 'develop'.
 export function epicBoardRows(task) {
@@ -498,13 +614,16 @@ export function epicBoardRows(task) {
     const last = !r ? '—'
       : r.accept === true ? `accept ${r.match_pct == null ? '?' : r.match_pct}`
       : String(r.reason || 'rejected').slice(0, 60);
+    const filing = packageFiling(p);
     return {
       key: storyKey(task.run_id, id), id, title: p.title || '',
       role: p.phase || 'develop',
       state: storyTicketState(task, id),
       tasks: storyTaskProgress(task, id),
       last_verdict: last,
-      reporter: packageReporter(p),
+      reporter: filing.reporter,
+      origin: filing.origin,
+      link: filing.link,
       links: storyLinks(task, id),
     };
   });

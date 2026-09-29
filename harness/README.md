@@ -244,8 +244,11 @@ invoked: `install` with `refresh:true` refreshes plugin-owned copies, and `remov
 the installation.
 
 **Enforcement** is an opt-in PreToolUse gate ([`hooks/`](hooks/)): a project lists gated paths in
-`.claude/harness-gate.json`, and `Write|Edit|MultiEdit|NotebookEdit` there requires harness
-engagement. Fail-open everywhere (v0 lesson) — a nudge, not security.
+`.claude/harness-gate.json`, and `Write|Edit|MultiEdit|NotebookEdit` there — or a `Bash` command
+that writes there — requires harness engagement. Engagement is a record (a Workflow/graph/teams
+tool call that ran, an open broker node, or a fallback run with plan, goal-spec and a sound
+critique on disk), never a string in the transcript. The gate's own config, hook and settings
+are always gated. Fail-open everywhere (v0 lesson).
 
 ## Lifecycle helpers
 
@@ -258,6 +261,7 @@ engagement. Fail-open everywhere (v0 lesson) — a nudge, not security.
   dry-runs first and refuses mismatched versions or a release note supplied in only one language.
 
 ## Status
+- v1.22.3 — goal gate engages only on records (a tool call that ran, a broker node, a fallback run with a sound critique) - never transcript text; root from the target file (subdirs, sibling worktrees); gates its own config/hook/settings; judges Bash writes; ignores future timestamps; install widens old matchers and ignores .harness-run/
 - **v1.22.2 — graph path opens in balanced mode**: step 0 documented `graph_open({request,
   cwd, vendor, isolated})`, omitting `allocation`. The broker defaults it to `"ordered"`,
   where `vendor: "auto"` stays on `self` — so a caller following this signature silently ran

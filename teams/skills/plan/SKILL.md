@@ -64,12 +64,31 @@ not only the path it writes. Every one is a node-written original - the method i
 planning subgoals' `files[]` when the goal-spec is authored - there is no automatic placement yet,
 only the plain `files[]` mechanism every subgoal already has.
 
-This is the standalone route, where the whole run is the PRD. `.claude/team.json`'s
-`roles.planning` switch (see `install`) is a second route to the same `investigate → draft → revise → gate`
-work: a planning phase-Team the EPIC flow inserts before `shape` on its own, inside an ordinary
-`develop`/`document`/`orchestrate` run, writing that same set with `10-prd.md` at its floor. Use
-this skill when the deliverable IS the planning work; turn `roles.planning` on instead when a PRD should precede every EPIC
-that also does code or writing work, without a separate run to ask for it.
+This is the standalone route, where the whole run is the PRD. Every EPIC already plans on its own,
+whatever it is for (docs/plans/2026-09-28-teams-cards-everywhere.md): its plan stage splits the
+request by feature, one planning card per feature area (`PLAN-F1`, `PLAN-F2`, ...) runs the same
+`investigate → draft → revise → gate` work in its own worktree and writes that area's section (goal,
+scope and non-goals, user stories with acceptance criteria - ids prefixed by the area, `F1-US-1` -
+and open questions), and `plan-integrate` merges the sections into one `10-prd.md` and judges it
+for colliding story ids, contradictions between areas and features no card covers before `shape`
+runs. `.claude/team.json`'s `roles.planning` (see `install`) only picks which chain the cards run
+(`true`, `"light"`, `"auto"`); `false` is refused. Use this skill when the deliverable IS the
+planning work, with no code or writing to follow it.
+
+## Brainstorm first (optional)
+
+Before `tm_open` the user is in this session and the daemon's runs will not have them - this is the
+one moment a question is certain to reach a person. Offer a short brainstorm; if they skip it
+("그냥 돌려", "skip"), go straight to Entry and the engine brainstorms from the request on its own
+(its `brainstorm` node - the report then leads with "Decided by the engine itself").
+
+1. Read the project first - README, the tree, the files the request names. Never ask what the tree answers.
+2. Ask one question at a time, and only what the user alone can answer: what they want, what to
+   leave out, A or B. A fact a source can settle is PLAN's `investigate` job, not a question.
+3. Offer options with your recommendation on each ("추천: B - 이유").
+4. Pass what was settled as `decisions: [{question, chose, because?}]` to `tm_open`. Every package
+   reads them as rules and none is asked again; passing `decisions` (even `[]`) skips the engine's
+   own brainstorm node.
 
 ## Entry
 
@@ -77,7 +96,8 @@ that also does code or writing work, without a separate run to ask for it.
 tm_open({
   request, cwd, isolated, mixed: true, flow: "plan",
   vendor: "auto", allocation: "balanced",
-  host_vendor, host_model, native_models
+  host_vendor, host_model, native_models,
+  decisions                                      # from the brainstorm above; omit if skipped
 })                                               -> task_id, state, docs_dir, view_url
 ```
 
@@ -93,6 +113,7 @@ After this you watch; you never drive.
 tm_wait({task_id, cursor, max_ms: 60000})   # bounded long-poll: node transitions since cursor, or a timeout
     state "running"  -> call it again, immediately, with the returned cursor. Nothing else.
     state "complete" -> relay the node table (tm_status) and the report
+    state "partial"  -> relay the table, the report, and partial_reasons (what did not ship)
     state "blocked"  -> a result: report what failed and stop there
 ```
 
@@ -118,7 +139,7 @@ install" note in `../orchestrate/SKILL.md` apply unchanged.
 
 ## What the current AI does
 
-Opens with the flow pinned, runs the loop, reports from verdicts.
+Offers the optional brainstorm and passes its `decisions`, opens with the flow pinned, runs the loop, reports from verdicts.
 
 ## What you do
 

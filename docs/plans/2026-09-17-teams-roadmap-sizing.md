@@ -9,6 +9,18 @@
 > 갔고, 비율이 ~46%에서 ~38%로 내려갔다(§6). 단계 크기·미배치 목록·오차 규칙은 하나도 재산정하지
 > 않았다 — 이 문서의 요점은 숫자가 아니라 표에서 재현되는 도출 과정이므로, 바뀐 것이 상태 칸
 > 하나뿐일 때는 그 칸만 바꾸는 것이 맞다.
+>
+> **상태 갱신 (2026-09-28), 진행 중인 일감:** 이 문서 이후 `docs/plans/2026-09-21-teams-server-owns-the-loop.md`가
+> 나가며 v0.13.0/v0.14.0 자체가 이 문서가 사이징한 것과 다른 모양으로 출시됐다(자세한 사정은
+> `2026-09-17-teams-team.md` §11의 해당 행 노트). 남은 일감 중 실제로 살아 있는 것만 다시 적으면:
+> `tm_clean`, `teams run` CLI, `max_parallel_teams` 적응형 사이징 셋은 브랜치
+> `teams/tm-clean`, `teams/run-cli`, `teams/adaptive-parallel`에서 각각 진행 중이다(2026-09-28
+> 기준, 아직 머지·릴리스 전). `human_scope`는 여전히 설계로만 남아 있다 —
+> `teams/mcp/teamconfig.mjs`의 주석이 그대로("`human_scope` remains only design"). `tm_log`는
+> 브랜치 `teams/tm-log`에서 구현됐다(`teams/mcp/tasklog.mjs`, `/teams:log` 스킬 — 머지 전).
+> 다만 `human_scope`가 원래 풀려던 문제(사람이 임의 카드를 맡는 것) 상당 부분은 v0.27.3의 `tm_assign`(카드 단위 pin, `to: "human"`)이 이미 별도 경로로
+> 덮는다 — `human_scope: "all"`이 남기는 차이는 "TeamLeader가 알아서 human 노드를 여는가"뿐이고,
+> 그건 여전히 미배치다.
 
 ## 0. 이 문서가 무엇이고 무엇이 아닌가
 
@@ -346,3 +358,20 @@ Task 1–6(6개), v0.12.0 = Task 1–7(7개, `95dd8ee`로 출시 확인), v0.12.
    적어 두었다 — v0.12.1 계획서의 Task 1이 그 소비자가 된다.
 5. 티켓 파생은 사용자 대기 상태를 이미 쓸 줄 알지만 "그것을 만들 실행자가 없다"고 주석에
    적혀 있다 → v0.13.0 계획서 Task 1이 그 실행자를 만든다.
+
+## 부록 — 계획서 없이 나간 것 (2026-09-28 추가)
+
+이 문서와 `2026-09-17-teams-team.md`가 사이징·설계한 것 밖에서, 전용 계획서 없이(또는 이 두
+문서가 다루는 범위 밖에서) 실제로 출시된 기능들이다. 버전은 `teams/README.md` 변경 이력 기준.
+없는 것을 지어내지 않기 위해 한 줄씩만 남긴다 — 회고나 사이징은 하지 않는다.
+
+| 기능 | 버전 |
+|---|---|
+| Sprint box(budget/timebox/retro/backlog) | v0.29.0 |
+| judge-independence | v0.29.0 |
+| reducer registry | v0.29.0 |
+| checkpoint/rollback | v0.29.0 (`docs/plans/2026-09-23-teams-reducer-human-rollback.md` D3, 커밋 `edd29fc`) |
+| card-taking(`tm_assign`) | v0.27.3 |
+| idempotent submit | v0.29.0 |
+| diagram / `view.mjs` | diagram: v0.32.0, `view.mjs`: v0.14.0 |
+| upstream_defects | v0.29.0 |

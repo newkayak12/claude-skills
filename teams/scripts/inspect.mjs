@@ -118,7 +118,7 @@ function renderTickets(model) {
 
 export function renderReport(model) {
   const out = [];
-  const roles = Object.entries(model.roles).map(([k, v]) => `${k}=${v ? 'on' : 'off'}`).join(' ') || '(none)';
+  const roles = Object.entries(model.roles).map(([k, v]) => `${k}=${typeof v === 'string' ? v : (v ? 'on' : 'off')}`).join(' ') || '(none)';
   out.push(`TASK     ${model.task_id.slice(0, 8)}  ${model.name}  size ${model.size || '?'}  flow ${model.flow}  roles ${roles}`);
   out.push(`  cwd    ${model.cwd}`);
   out.push(`  ask    ${trunc(model.request, 150)}`);

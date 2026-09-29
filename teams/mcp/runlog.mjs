@@ -17,6 +17,7 @@ import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { collectTaskCosts } from '../scripts/bench/lib/drivercost.mjs';
 import { teamsPluginRoot } from './pluginroots.mjs';
+import { reasonFromVerdict } from './graph.mjs';
 
 const PLUGIN = teamsPluginRoot();
 
@@ -48,14 +49,23 @@ export function signature(text) {
 export function classify(n, where) {
   const r = n.result || {};
   const base = { ...where, node_id: n.node_id, stage: n.stage, executor: n.executor || n.vendor || null, state: n.state };
+  // A record written before the engine synthesized a reason for a bare verdict-false (broker
+  // 0.36.0, manager 0.37.1) - or by any path that still skips it - gets one from the same rule:
+  // portfolio-consolidate-8518d5dd's test:U1:n and integrate:6 read "<node>: " with nothing after.
+  const why = (field) => r.reason || reasonFromVerdict(r, field);
   if (r.judge_failed) return { ...base, kind: 'judge-failed', message: r.reason || '' };
   if (r.verification_error) return { ...base, kind: 'cross-check', message: r.verification_error };
   if (/adapter exit/.test(r.reason || '')) return { ...base, kind: 'adapter-exit', message: r.reason };
   if ((n.stage === 'gate' || n.stage === 'accept') && r.accept === false) {
-    return { ...base, kind: 'rejection', message: (r.gaps || [])[0] || r.reason || '', match_pct: r.match_pct ?? null };
+    return { ...base, kind: 'rejection', message: (r.gaps || [])[0] || why('accept'), match_pct: r.match_pct ?? null };
   }
-  if (n.stage === 'integrate' && r.verified === false) return { ...base, kind: 'integrate-refused', message: (r.gaps || [])[0] || r.reason || '' };
-  if (n.stage === 'critique' && r.sound === false) return { ...base, kind: 'critique-blocked', message: (r.blocking || [])[0] || r.reason || '' };
+  // A review/test that judged the work and said no is a rejection too (grouped by stage in
+  // triage, since its text varies word by word), not an unexplained failure.
+  if ((n.stage === 'review' || n.stage === 'test') && r.stage_ok !== false && r.verified === false) {
+    return { ...base, kind: 'rejection', message: why('verified'), match_pct: null };
+  }
+  if (n.stage === 'integrate' && r.verified === false) return { ...base, kind: 'integrate-refused', message: (r.gaps || [])[0] || why('verified') };
+  if (n.stage === 'critique' && r.sound === false) return { ...base, kind: 'critique-blocked', message: (r.blocking || [])[0] || why('sound') };
   return { ...base, kind: 'failed', message: r.reason || '' };
 }
 
@@ -132,7 +142,26 @@ export function harvestTask({ taskDir, cwd, label, root, scorePrefix } = {}) {
   try { costs = taskDir ? collectTaskCosts(taskDir, task) : null; } catch { costs = null; }
   const byKind = {};
   for (const s of (costs && costs.streams) || []) {
-    const k = basename(String(s.stream || s.path || '')).replace(/\.stream\.jsonl$/, '').replace(/_\d+$/, '').replace(/^judge_(\w+?)(_P\w+|\.r\d+)?$/, 'judge_$1').replace(/^dispatch_(PLAN|AUDIT|QA)$/, 'dispatch_$1').replace(/^dispatch_P\d+\w*$/, 'dispatch_package');
+    // A respawned driver (<name>.restart1) or a re-judge (<name>.r1) is the same kind of spend
+    // as its first session - portfolio-consolidate-8518d5dd bucketed them apart, one per run name.
+    // Cards carry their area (dispatch_PLAN-F2, judge_accept_QA-F1, judge_plan-integrate): one
+    // bucket per phase and per judging stage, not one per card (m6).
+    const k = basename(String(s.stream || s.path || '')).replace(/\.stream\.jsonl$/, '').replace(/\.(restart|r)\d+$/, '').replace(/_\d+$/, '').replace(/^judge_(\w+?)(_P\w+|\.r\d+)?$/, 'judge_$1').replace(/^judge_([a-z][a-z-]*)_[A-Z][\w-]*$/, 'judge_$1').replace(/^dispatch_(PLAN|AUDIT|QA)(-F\d+)?$/, 'dispatch_$1').replace(/^dispatch_P\d+\w*$/, 'dispatch_package');
+    byKind[k] = +((byKind[k] || 0) + (s.cost_usd || 0)).toFixed(4);
+  }
+  // collectTaskCosts splits its total into driver streams (above, the manager's own
+  // dispatch_/judge_ sessions) and node_streams (each child graph run's own draft/review/gate/
+  // plan/setgoal/critique adapter session, broker/<run_id>/<node>/<attempt>/events.jsonl). Both
+  // halves feed cost_usd (drivers_usd + nodes_usd), so leaving node_streams out here means
+  // byKind silently undercounts cost_usd by exactly nodes_usd - the archive summary then reads
+  // as if a run cost far less than task.budget_stopped/enforceBudget (which reads cost_usd
+  // in full via taskSpend) ever saw. Bucketed by stage (attempt/subgoal suffix stripped) and
+  // prefixed node_ so a node session's cost is never mistaken for its manager-level counterpart
+  // (e.g. node_review vs a package's own dispatch_package).
+  for (const s of (costs && costs.node_streams) || []) {
+    const nodeDir = String(s.stream || s.path || '').split(/[\\/]/)[1] || '';
+    const stage = nodeDir.replace(/_U\d+(_\d+)?$/, '').replace(/_\d+$/, '') || 'node';
+    const k = `node_${stage}`;
     byKind[k] = +((byKind[k] || 0) + (s.cost_usd || 0)).toFixed(4);
   }
   const score = readText(join(out, 'bench.score.txt')).split('\n').find((l) => / \| \d+\/\d+ \| /.test(l)) || null;
@@ -150,8 +179,28 @@ export function harvestTask({ taskDir, cwd, label, root, scorePrefix } = {}) {
     repo_commit: commit,
     score,
     state: task ? (events.filter((e) => e.event === 'daemon_done').pop() || {}).state || 'unfinished' : 'no-task',
+    // daemon_done's partial flag (taskmanager.mjs unfinishedWork): a `partial` task's reasons
+    // for being short of work - absent on every task that is not.
+    ...((events.filter((e) => e.event === 'daemon_done').pop() || {}).partial
+      ? { partial: true, partial_reasons: events.filter((e) => e.event === 'daemon_done').pop().partial_reasons || [] } : {}),
     size: task && task.size, packages: ((task && task.spec && task.spec.packages) || []).map((p) => p.id),
-    budget: task && task.team && task.team.opts ? { budget_usd: task.team.opts.budget_usd ?? null, timebox_minutes: task.team.opts.timebox_minutes ?? null, stopped: !!task.budget_stopped } : null,
+    // A stopped task still owes its goal gate and report (closeStoppedToReport) - both by
+    // design, mandatory, and paid for regardless - so spend does not freeze at
+    // task.budget_stopped.spend. settleRunningDispatchesAtStop (taskmanager.mjs) now bounds the
+    // rest: a phase-Team pass (QA, AUDIT) already running is killed immediately (its accept is
+    // never read once the goal gate rewires around it), and a package/PLAN/S dispatch the
+    // closing path still needs is killed once it has run budget_grace_usd/_minutes past the
+    // stop. post_stop_usd is that whole remainder made visible: the mandatory closing stages
+    // plus whatever grace a still-needed dispatch used, on top of what had already been spent at
+    // the moment the box tripped. Not a second box - nothing here stops anything on its own -
+    // just the number an operator sizing budget_usd should hold in reserve above their real
+    // target (bounded now, not open-ended: portfolio-refresh-80ec931a's own $3.08 gap was an
+    // in-flight QA child the close path discarded anyway, ledger.jsonl's budget_goal_rewired/
+    // budget_closed{skipped:["accept:QA:2"]} - fixed by killing exactly that case on sight).
+    budget: task && task.team && task.team.opts ? {
+      budget_usd: task.team.opts.budget_usd ?? null, timebox_minutes: task.team.opts.timebox_minutes ?? null, stopped: !!task.budget_stopped,
+      ...(task.budget_stopped && costs ? { post_stop_usd: +Math.max(0, (costs.cost_usd || 0) - (task.budget_stopped.spend || 0)).toFixed(4) } : {}),
+    } : null,
     cost_usd: costs ? +(costs.cost_usd || 0).toFixed(4) : null, cost_by_kind: byKind,
     child_runs: childRuns,
     retries: events.filter((e) => e.event === 'daemon_retry_opened').length,
@@ -161,7 +210,7 @@ export function harvestTask({ taskDir, cwd, label, root, scorePrefix } = {}) {
   };
   writeFileSync(join(out, 'summary.json'), JSON.stringify(summary, null, 2));
   mkdirSync(root, { recursive: true });
-  appendFileSync(join(root, 'index.jsonl'), JSON.stringify({ label, harvested_at: summary.harvested_at, teams_version: summary.teams_version, score: summary.score, state: summary.state, cost_usd: summary.cost_usd, failures: summary.failures.length, dir: out }) + '\n');
+  appendFileSync(join(root, 'index.jsonl'), JSON.stringify({ label, harvested_at: summary.harvested_at, teams_version: summary.teams_version, score: summary.score, state: summary.state, ...(summary.partial ? { partial: true } : {}), cost_usd: summary.cost_usd, failures: summary.failures.length, dir: out }) + '\n');
   return { out, summary };
 }
 

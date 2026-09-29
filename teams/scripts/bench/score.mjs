@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { CHECK_ALLOW, splitCheck, claimedExit, impliesFailure, hasPlaceholder, isContentShowCmd, splitSlashCmd, fencedBlocksByLang, neededInputTokens, parseRequirements, requirementCovered, majorityVote } from './lib/claims.mjs';
 import { collectDriverCosts, collectNodeCosts, findBrokerRunDirs } from './lib/drivercost.mjs';
 import { resolveTree } from './lib/tree.mjs';
+import { planningPkgs, planningStories } from '../../mcp/tickets.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -618,10 +619,13 @@ if (SEAM) {
   for (const id of ls(root)) { try { task = JSON.parse(read(join(root, id, 'task.json'))); } catch { /* not written yet */ } if (task) break; }
   const nodes = (task && task.nodes) || [];
   const latest = (pred) => nodes.filter(pred).at(-1);
-  const plan = latest((n) => n.stage === 'dispatch' && n.subgoal_id === 'PLAN' && n.state === 'done');
-  const stories = (plan && plan.result && plan.result.user_stories) || [];
-  const docs = ((plan && plan.result && plan.result.prd_paths) || []).filter((f) => !/investigate/i.test(f));
-  crit.planning_docs = docs.length > 0 && docs.some((f) => /^##\s+User stories/im.test(read(join(WS, f)) || ''));
+  // One planning card per feature area (cards-everywhere C2): every card's latest done dispatch,
+  // its documents read from the card's own worktree (the dispatch's child cwd), not the project.
+  const cardPlans = task ? planningPkgs(task).map((p) => latest((n) => n.stage === 'dispatch' && n.subgoal_id === String(p.id) && n.state === 'done')).filter(Boolean) : [];
+  const stories = task ? planningStories(task) : [];
+  const docPaths = cardPlans.flatMap((d) => ((d.result && d.result.prd_paths) || []).filter((f) => !/investigate|-findings\.md$/i.test(f)).map((f) => join((d.child && d.child.cwd) || WS, f)));
+  const docs = docPaths.map((f) => f.replace(`${WS}/`, ''));
+  crit.planning_docs = docPaths.length > 0 && docPaths.some((f) => /^##\s+User stories/im.test(read(f) || ''));
   crit.user_stories = stories.length > 0;
   crit.critique_passed = nodes.some((n) => n.stage === 'critique' && n.state === 'done' && n.result && n.result.sound === true);
   const pkgs = ((task && task.spec && task.spec.packages) || []).map((p) => String(p.id));

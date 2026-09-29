@@ -49,11 +49,12 @@ files[] is the markdown path this subgoal WRITES and nothing else - the spec che
 
 export const PRD_CONTRACT = `You are writing this request's planning documents, and a PRD is not a design spec. State the problem and who has it before any requirement, and keep "why we are building this" separate from "what we are building". Module contracts, package splits, file layouts and import rules are the shaping stage's job, not yours - naming them here pre-empts the stage that is supposed to decide them, and a document that opens at the data shapes has skipped the part only planning can do.
 How many documents the set holds was decided at setgoal; this contract governs the PRD itself, and a section below that another document in the set owns is cross-referenced by path rather than repeated. The PRD must carry these sections, in this order, each as a "## " heading:
+  Goal - the one outcome this document's feature area must achieve, in a sentence or two a user would recognise. When the manager split the request into feature areas, this PRD is one area's section of the whole and the Goal is that area's.
   Problem - what is wrong today, for whom, and the evidence in the request or the tree that says so.
   Target users - who this serves, what they are trying to get done, and what they do today instead.
   Solution overview - two or three paragraphs of what is being built, at the level of behaviour a user sees.
   Success criteria - what must be observably true for this to have worked, each one checkable.
-  User stories - headed exactly "## User stories", listing every story as "US-1", "US-2", ... in document order, each with its own acceptance[]. audit and gate:goal have no other source for them, and a PRD with none is rejected.
+  User stories - headed exactly "## User stories", listing every story as "US-1", "US-2", ... in document order - prefixed with your feature area when the context names one ("F2-US-1", "F2-US-2", ...), so ids stay unique once every area's section is merged - each with its own acceptance[]. audit and gate:goal have no other source for them, and a PRD with none is rejected.
   Out of scope - what is deliberately not being built, and why.
   Open questions - decisions this document could not settle, each with the recommendation you would make.
 A section you cannot fill from the request or the tree is written with what you do know plus the gap stated plainly; it is never dropped, and never padded by restating the request.
@@ -81,6 +82,16 @@ const QUESTIONS_CONTRACT = `Optional: "questions": [{"question": "...", "to": "<
 // silently work around it or to fail an attempt no retry could ever fix). This is the other
 // route: report it, and keep working your own scope.
 const UPSTREAM_DEFECT_CONTRACT = `Optional: "upstream_defects": [{"package": "<the id of the upstream package this belongs to, exactly as named in "Delivered by package ..." above>", "title": "...", "evidence": "<what you observed, and how to reproduce it>", "touches": ["path inside the upstream package"]}]. Only for something wrong in a package you depend on, outside your OWN touches[] - not a gap in what this package itself was asked to build, and not yours to fix (that package's files are not in scope here). Do not fail stage_ok or withhold acceptance for this alone: finish everything that IS in your own scope, report the upstream defect, and let the manager route the fix.`;
+
+// P4:review:U1 (portfolio-refresh Sprint) rejected the same document twice on `verified:false`
+// for a check it had no tool to re-run, then passed it on attempt 3 on the identical evidence -
+// whether a tooling gap counted as a rejection was a coin flip, not a judgment. A tools gap is
+// never a quality finding: name what you could not check and why, and it must not by itself
+// fail stage_ok, drop verified/accept, or read as a gap. (review and gate now also carry Bash
+// under their read-only sandbox for exactly the acceptance items a shell command names - see
+// each contract below - so this should be rare; it is the fallback for what --verify still
+// cannot reach: no network, no credential, a check the sandbox itself blocks.)
+const UNVERIFIABLE_RULE = `An acceptance item you have no tool to check is not a defect in the work: write it as "unverifiable: <the tool or access this stage lacks, and what it would have run>" instead of MISSING or a failing check, and it must not by itself cost verified, accept, or stage_ok.`;
 
 export const CONTRACT = {
   plan: `Return JSON: {"plan": "<the decomposition>", "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "dependencies": ["unit -> its real ordering dependency, or \\"none\\""], "verification": ["unit -> command or inspection that would deterministically verify it"], "conventions": ["path -> the rule it states, if .claude/conventions/** applies"], "handoff": "<what the next node needs>", "evidence": "<how you checked the request is actually satisfiable here>"}
@@ -118,7 +129,8 @@ One distinction is the whole point of this stage: a FINDING is something a sourc
 Every rule a user story will rest on - who is entitled to a thing, what the limit is, how long a window lasts, what happens when something is cancelled, what follows when someone abuses it - comes back as a finding with its source or as an unknown with an owner. There is no third answer. "Assumed to exist" is an unknown wearing a finding's clothes, and a planning run that wrote 588 lines that way (idol-pm-2, 2026-09-22) passed its own gate at 93 while naming none of its domain's actual rules.
 stage_ok=false only when you could read nothing at all. A stage that reached few sources and comes back mostly unknowns has succeeded: the unknowns ARE the deliverable, and they are what keeps the drafter from inventing. Returning a short honest findings list is right; padding it is the one failure this stage can hide.
 Anything listed above as already decided by a person is a FINDING, not an unknown: cite it as decided and by whom, and never raise it again - not in the same words and not reworded.
-An unknown carries "options" whenever the decision has namable candidates - two to four of them, the one you would recommend first, each with the consequence that follows from choosing it. Leave "options" out when you genuinely cannot name candidates; an empty or single-entry list is the same as leaving it out. This is not you deciding: naming what could be chosen is still research, and the person who owns the decision needs candidates far more than they need a blank question. Where the run is interactive, an unknown with options becomes a card that stops the chain and puts the choice to that person before anything is drafted; where it is not, the question is recorded against the document so the report can show what was decided by default.`,
+An unknown carries "options" whenever the decision has namable candidates - two to four of them, the one you would recommend first, each with the consequence that follows from choosing it. Leave "options" out when you genuinely cannot name candidates; an empty or single-entry list is the same as leaving it out. This is not you deciding: naming what could be chosen is still research, and the person who owns the decision needs candidates far more than they need a blank question. Where the run is interactive, an unknown with options becomes a card that stops the chain and puts the choice to that person before anything is drafted; where it is not, the question is recorded against the document so the report can show what was decided by default.
+If what you found shows that one of the decisions listed above as already settled cannot hold - a source contradicts it, or building on it would break something - do not quietly write around it and do not re-ask it in other words: raise an unknown with "contradicts_decision": "<that decision's question, verbatim>" and say in "question" what conflicts. That field is the only way a settled decision is reopened; the engine takes it to the task's owner instead of deciding it by default.`,
   ask: `Return JSON: {"stage_ok": true|false, "decisions": [{"question": "<the question, as it was asked>", "chose": "<the option you picked, in full>", "because": "<optional: why, or a condition on it>"}], "evidence": "who decided, and when"}
 This card is for a person, not a model. Nothing polls it and nothing times it out; the chain below it does not move until you hand it back with tm_submit({task_id, key, payload}).
 One entry per question above, using the option text rather than its letter, so the answer still reads correctly if the list is ever renumbered. You are not bound to the candidates: an answer none of them names is a valid "chose", and so is "leave this open" - written out, it becomes an open question with your name on it instead of an assumption with nobody's.
@@ -126,11 +138,23 @@ stage_ok=false only if the decision is not yours to make and you are handing it 
   draft: `Return JSON: {"stage_ok": true|false, "handoff": "<paths written, then a one-paragraph abstract of what the document now says>", "changed_files": ["..."], "checks": ["what you verified about the artifact - structure, cross-references, examples - and how"], "evidence": "..."}
 Write the artifact the acceptance describes, at the path the subgoal names. Every acceptance item must be answerable by pointing at a passage. stage_ok=false when the artifact could not be produced. Do not report a file as changed unless you changed it.
 ${PRD_CONTRACT}
-For a planning-kind subgoal, the investigate stage above is your source: write from its findings, cite them where a rule comes from one, and carry every one of its unknowns into the document as an open question with the owner it named. An unknown a person has since ANSWERED arrives above as an \`ask\` stage's decisions[]: that is settled, not open - write it into the document as the rule it now is, say who decided it, and do not also list it among the open questions. An unknown you answer yourself, from nothing, is the failure this chain was rebuilt to stop - you may recommend, but say that is what it is. A planning-kind subgoal writes its section into a markdown document and touches nothing else. Source files are evidence to read, never a place to put the document: a rule written into the file it governs is not a PRD, and this run has no worktree of its own, so an edit there lands in the real project tree. If the subgoal names a path that is not a document, write the document beside it and say so in "handoff" rather than editing source.`,
-  review: `Return JSON: {"stage_ok": true|false, "verified": true|false, "checks": ["<acceptance item> -> \"<the passage that meets it>\" (path:line) | MISSING: <what the text lacks>"], "evidence": "..."}
-You are the reader, not the author. Open the artifact at the paths the draft reported and read it; do not judge from the draft's abstract. One entry per acceptance item, in order. verified=true only when every item has a quoted passage. stage_ok=false only when the artifact could not be read at all. Do not edit the artifact.`,
+For a planning-kind subgoal, the investigate stage above is your source: write from its findings, cite them where a rule comes from one, and carry every one of its unknowns into the document as an open question with the owner it named. An unknown a person has since ANSWERED arrives above as an \`ask\` stage's decisions[]: that is settled, not open - write it into the document as the rule it now is, say who decided it, and do not also list it among the open questions. An unknown you answer yourself, from nothing, is the failure this chain was rebuilt to stop - you may recommend, but say that is what it is. A planning-kind subgoal writes its section into a markdown document and touches nothing else. Source files are evidence to read, never a place to put the document: a rule written into the file it governs is not a PRD, and only the documents this run writes are kept - an edit to source is lost at best, and at worst merged over another team's work. If the subgoal names a path that is not a document, write the document beside it and say so in "handoff" rather than editing source.`,
+  review: `Return JSON: {"stage_ok": true|false, "verified": true|false, "checks": ["<acceptance item> -> \"<the passage that meets it>\" (path:line) | MISSING: <what the text lacks> | unverifiable: <why>"], "evidence": "..."}
+You are the reader, not the author. Open the artifact at the paths the draft reported and read it; do not judge from the draft's abstract. One entry per acceptance item, in order. When an item names a command - a word count, a validator script, a grep count - run it yourself with Bash rather than trusting the draft's report of it: this stage carries Bash for exactly that. Do not edit the artifact, and do not use Bash to write, move, or commit anything in this tree - reading and re-checking only. verified=true only when every item has a quoted passage or is marked unverifiable; a MISSING item makes it false. stage_ok=false only when the artifact could not be read at all.
+${UNVERIFIABLE_RULE}`,
   revise: `Return JSON: {"stage_ok": true|false, "handoff": "<what changed, then a one-paragraph abstract of what the document now says>", "changed_files": ["..."], "checks": ["claim -> the evidence you checked it against, or the passage you rewrote and why"], "evidence": "..."}
 You are a different identity from draft, and unlike review you may edit the artifact - this is a second pass, not only a judgment. Rewrite for the reader who will actually use this document, and check every claim it makes against the evidence for it; a claim you cannot verify gets fixed or removed, not passed through. stage_ok=false when the artifact could not be revised. Do not report a file as changed unless you changed it.`,
+  // The light PLAN chain's one authoring stage (docs/plans/2026-09-28-teams-light-plan.md §2.2),
+  // in place of draft+revise, for a backlog whose acceptance criteria were already declared: it
+  // moves existing sentences and cites their sources, so it has neither draft's licence to
+  // compose nor revise's to rewrite. The assembly it copies from is deterministic (acceptance.mjs's
+  // renderAcceptanceTemplate, in the run's context); this call places it and checks itself.
+  'template-fill': `Return JSON: {"stage_ok": true|false, "handoff": "<paths written, then one paragraph: how many backlog items, which rules applied where, how many open questions>", "changed_files": ["..."], "checks": ["Item <n> -> <every R-number: applied | N/A (the finding that says why)> -> <its own A-numbers: copied>", "self-check: <items present once each, none duplicated, every unknown carried> -> <what you found>"], "evidence": "..."}
+This backlog already declared its acceptance criteria - they are laid out, numbered, under "Declared acceptance" in the context above. Your job is to transfer them, not to write new ones: copy each criterion verbatim, keep backlog order, and change no wording. There is no draft or revise stage after you; the gate after you checks the transfer item by item.
+Write the document at the subgoal's path with these "## " sections, in this order: Goal (the outcome these backlog items add up to, in a sentence or two), Problem (one paragraph from the request, with any premise investigate's findings corrected - say what the request assumed and what the finding shows instead), User stories, Out of scope (what these items deliberately leave out - at least what the request itself rules out), Open questions.
+"## User stories" holds one story per backlog item, in backlog order, each headed "### US-<n> — <the item as written>" (with your feature area's prefix when the context names one: "### F2-US-<n> — ..."), then a line "**Acceptance**" and one bullet per criterion: the item's own A-numbers first, then EVERY shared R-number, each copied verbatim with its label. A shared rule that genuinely does not apply to this item stays in the list as "R<k>: N/A - <why>" citing the finding that shows it; a rule silently dropped from one item is the defect this chain exists to catch. Beside a criterion a finding bears on, cite it ("finding: <the finding> (<findings path>)").
+"## Open questions" carries every unknown investigate returned (listed above under "Investigate unknowns" when there are any), word for word, with its owner. An unknown a person answered, or one decided by default, is written as the rule it now is under the item it governs - not dropped.
+Before returning, check your own document: every backlog item appears exactly once, no item is duplicated or merged, every item lists every R-number, every unknown is accounted for. Put that per-item table in "checks". Change no other file; source files are evidence to read, never a place to write. stage_ok=false only when the document could not be written.`,
   cases: `Return JSON: {"stage_ok": true|false, "handoff": "<path written, then a one-paragraph summary of what the case set covers>", "changed_files": ["..."], "checks": ["how you derived this case from the acceptance criteria, not from reading the implementation"], "evidence": "..."}
 Write the scenario/case specification the acceptance describes, at the path the subgoal names - one case per behavior a user or an attacker could hit, not one per line of implementation. stage_ok=false when the case set could not be produced. Do not report a file as changed unless you changed it.
 ${QUESTIONS_CONTRACT}`,
@@ -147,17 +171,18 @@ You report; you do not repair. Not the collision, not the orphan, not the undecl
 Change no files at all - not content, not names, not placement. This stage is about the set, never about the prose.
 stage_ok=false only when the output paths could not be read at all. Finding nothing wrong is a successful reduce, not a skipped one - say so with the paths you checked in "checks".`,
   gate: `Return JSON: {"stage_ok": true, "accept": true|false, "match_pct": 0-100, "checks": ["<command or read> -> <what it showed>"], "gaps": ["what blocks acceptance"], "observations": ["weaknesses that do not block"], "reason": "...", "evidence": "..."}
-You are the judge, not the actor. Judge only what the evidence below shows. Absent evidence is a gap, not a pass - "the previous node said so" is not evidence.
+You are the judge, not the actor. Judge only what the evidence below shows. Absent evidence is a gap, not a pass - "the previous node said so" is not evidence. Re-run a check that names a command yourself with Bash, which this stage carries for exactly that, rather than trusting implement or test's report of it - do not use it to write, move, or commit anything in this tree.
 Put anything that falls short but does not block into "observations" rather than inflating the score past it. A run that met its bar with known weaknesses is not a 100.
 Read the comments this change added or rewrote: one that states a cause or a behaviour the code, or this run's own evidence, contradicts is a gap - the next reader trusts it. (slack-list: three comments blamed event.text for the flattening after the run itself found the cause was a whitespace regex.)
 accept:true with an empty checks[] is refused by the engine - a judgement with no evidence is a guess.
 If implement or test above reported "upstream_defects" (see "Defects it reported" or their own handoff), copy every one of them through verbatim into your own "upstream_defects": [...] - this gate is the one node the manager's own accept reads for them, so dropping one here loses it for good. Judge this package's own acceptance on its own scope regardless: an upstream defect is not a gap in what THIS package delivered, and must not by itself cost accept or match_pct.
+${UNVERIFIABLE_RULE}
 ${QUESTIONS_CONTRACT}`,
 
   'gate:goal': `Return JSON: {"stage_ok": true, "accept": true|false, "match_pct": 0-100, "checks": ["<command or read> -> <what it showed>"], "attacks": ["<command run from OUTSIDE this tree, the way the requester will invoke it> -> <what it showed>"], "gaps": ["what blocks acceptance"], "observations": ["weaknesses that do not block"], "spec_drift": ["where the spec asked for less than the request did"], "reason": "...", "evidence": "..."}
-For a planning-kind run producing a PRD, also return "user_stories": [{"id": "US-1", "title": "...", "acceptance": ["..."]}, ...] - one entry per story in the document's "## User stories" section, ids in order; this is the only bridge the task manager has to the PRD's stories.
+For a planning-kind run producing a PRD, also return "user_stories": [{"id": "US-1", "title": "...", "acceptance": ["..."]}, ...] - one entry per story in the document's "## User stories" section, ids in order and exactly as the document writes them (area prefix included, e.g. "F2-US-1"); this is the only bridge the task manager has to the PRD's stories.
 For a qa-kind run, also return "defects": [...] - every defect any execute node above reported (see "Defects it reported" under each node), copied through verbatim. A QA run's defects are its deliverable, not a reason to withhold accept: the subgoal's job was to run the case set and report what it found, and it did. Do not fold a defect into "gaps" - gaps are what blocks THIS gate's own acceptance of the QA work, defects are what QA found wrong with the thing it was testing, and the task manager reads them from two different places.
-You are the judge, not the actor, and you are the only node that sees the original request again. Judge the assembled result against BOTH:
+You are the judge, not the actor, and you are the only node that sees the original request again. This stage carries Bash to run "checks" and "attacks" yourself, never to write, move, or commit anything in this tree. Judge the assembled result against BOTH:
   1. the goal-level acceptance criteria, and
   2. the REQUEST as written at the top of this briefing.
 The spec was authored from the request and may have narrowed it. Anything the request asked for that the spec never turned into a criterion belongs in "spec_drift" - the work cannot be faulted for it, but the run must not claim to have delivered it either.
@@ -165,6 +190,7 @@ Narrowing is drift; contradicting is not. Where the result does the OPPOSITE of 
 "checks" is not enough by itself: reading diffs and rerunning the subgoals' own test[] only rechecks what the subgoals already claimed to satisfy. "attacks" is invoking the assembled artifact the way the requester actually will - an absolute-path call from a fresh shell outside this tree, \`npm test\` (or whatever the project's real entry point is) run from the project root, the README read cold, as a stranger who has seen none of this run's history. A CLI's own "am I the main module" guard once compared import.meta.url against an unresolved argv path and broke under macOS's /var -> /private/var symlink; three separate gates with checks: [] and no attacks[] passed it, because none of them had ever called it the one way its own user would.
 Absent evidence is a gap, not a pass. Weaknesses that do not block go in "observations", not into a rounded-up score.
 accept:true with an empty checks[] OR an empty attacks[] is refused by the engine - a judgement with no evidence, or one never invoked from outside the tree, is a guess.
+${UNVERIFIABLE_RULE}
 ${QUESTIONS_CONTRACT}`,
   repair: `Return JSON: {"stage_ok": true|false, "handoff": "<what changed, and why, across the tree>", "changed_files": ["..."], "checks": ["what you ran and what it printed"], "evidence": "..."}
 The goal gate's consensus rejected the assembled result, not any one subgoal - the gaps below are usually in the seam between subgoals that each met their own acceptance, not inside any one of them. You may touch files several subgoals own; that is the point, not a boundary to respect. Fix across the tree. Do NOT restate or narrow the goal-level acceptance criteria to fit what already exists - the gate that follows judges them unchanged, so weakening them here only fails there instead. stage_ok=false when the required fix could not be made. Do not report a file as changed unless you changed it.`,
@@ -172,8 +198,51 @@ The goal gate's consensus rejected the assembled result, not any one subgoal - t
 Synthesize from the node results below only. State plainly what was not done and why.`,
 };
 
+// The light PLAN chain's gate (docs/plans/2026-09-28-teams-light-plan.md §2.3): the ordinary
+// gate contract plus the two checks the folded draft/revise no longer stand behind. Appended to
+// CONTRACT.gate only for a planning-light subgoal (composePrompt), so every other gate reads
+// exactly what it did before. portfolio-refresh-80ec931a's own report already noted doing the
+// first one "individually verified (not via OR-alternation grep)"; this makes it the contract.
+export const PLANNING_LIGHT_GATE = `This subgoal ran the light PLAN chain: its acceptance criteria were declared by the backlog itself ("Declared acceptance" in the context above) and template-fill transferred them without a draft or revise pass. Two more checks are yours, and each failure is a gap, not an observation:
+  1. Per-item rule coverage. For EACH backlog item separately, open its user story and confirm every one of its own A-numbers and every shared R-number is present - copied, or marked "N/A" with a reason that cites a finding. Check item by item, never with one search over the whole file: an OR-alternation grep passes a document that dropped one rule from one item. Record the table in "checks" as "Item <n> -> R1 ok, R2 N/A(<finding>), R3 MISSING ...". An item absent from User stories, merged into another, or a criterion reworded so it no longer says what the backlog said, is a gap.
+  2. No unknown lost. Every unknown under "Investigate unknowns" above must appear in the document's Open questions with its owner, or be written as a rule decided by a person or by default. One that appears in neither is a gap: the investigation found it and the document dropped it.`;
+
 function bullets(list) {
   return (list || []).map((x) => `- ${x}`).join('\n') || '- (none)';
+}
+
+// A package's own child run (run.package, set by the task manager's openChild) runs the full
+// harness, but its plan is not a second decomposition of the EPIC: the manager's shape already
+// split the EPIC into packages and its critique already passed that split. What is left to plan
+// is how to BUILD this one package, and what the run is held to is the package's own acceptance.
+export const PACKAGE_PLAN_RULE = `The task manager already split the EPIC into packages (shape) and critiqued that split. This run builds ONE of those packages - the Request above is its brief. Do not re-split the EPIC or re-decide the package's scope. Plan how to build THIS package: the files and modules to touch, the interfaces and data shapes they expose or consume, the order of work, the test plan (the commands that will prove each acceptance item), and the risks.`;
+
+// Where a package that shape did NOT produce came from (m12): the same "one package, its own
+// acceptance" rule, without claiming a critique that never ran.
+const ORIGIN_RULE = {
+  repair: 'The task manager opened this run as a REPAIR package: its worktree is the integration tree, and its job is to make the integration checks pass. No critique judged it - the refused integrate is its brief.',
+  planning: 'The task manager opened this run as a PLANNING card: one feature area of the EPIC, split by the plan stage and judged by areas-critique. Write THIS area\'s PRD section; do not re-split the EPIC or plan other areas.',
+  qa: 'The task manager opened this run as a QA card: exercise ONE feature area of the integrated result against its user stories and report defects. Do not fix, re-plan or re-split anything.',
+  audit: 'The task manager opened this run as the planning AUDIT: judge the integrated result against the PRD\'s user stories. Do not fix or re-plan anything.',
+  filed: 'The task manager opened this run for a FILED fix (QA, the audit, a person, or a downstream package found it) - no shape or critique produced it; the Request above is the defect and its reproduction. Fix exactly that; do not re-split the EPIC or widen the scope.',
+};
+
+function packageBlock(run, n) {
+  const pkg = run.package;
+  const acc = Array.isArray(pkg.acceptance) ? pkg.acceptance : [];
+  const rule = ORIGIN_RULE[pkg.origin] || PACKAGE_PLAN_RULE;
+  const L = ['', `## This package${pkg.id ? ` (${pkg.id})` : ''}${pkg.title ? ` — ${pkg.title}` : ''}`, rule];
+  if (acc.length) L.push(`Package acceptance (set by the manager; the manager accepts this package against exactly these):\n${bullets(acc)}`);
+  if (n.stage === 'plan') {
+    L.push(`size is S: this package is already one run's worth of work. The decomposition is the plan for it, in order; name more than one unit only where the package genuinely needs it.`);
+  } else if (n.stage === 'setgoal') {
+    L.push(`Keep one subgoal unless the package genuinely needs more (independent parts that can be built and checked on their own). Carry every package acceptance item above into spec.acceptance verbatim - word for word, none dropped or reworded; add your own criteria beside them, not instead of them. Turn the plan's test plan into each subgoal's test[].`);
+  } else if (n.stage === 'critique') {
+    L.push(`Judge the plan and the spec against this package's brief (the Request above) and the package acceptance: a spec that drops or rewords a package acceptance item, or does something the brief did not ask for, is blocking. Re-splitting the EPIC is not this run's job - do not ask for it.`);
+    const plan = run.nodes.filter((x) => x.stage === 'plan' && x.state === 'done' && x.result).pop();
+    if (plan && plan.result.plan) L.push(`The build plan this spec came from:\n${String(plan.result.plan)}`);
+  }
+  return L;
 }
 
 export function composePrompt(run, n, briefing) {
@@ -233,9 +302,16 @@ export function composePrompt(run, n, briefing) {
       // did (idol-pm-1/2, 2026-09-22), and why the domain's own rules ended up in Out of scope
       // or in an open question rather than in a document of their own.
       if (f === 'plan' && ['plan', 'setgoal'].includes(n.stage)) lines.push(PLANNING_SETGOAL);
+      // Light mode (docs/plans/2026-09-28-teams-light-plan.md §2.2) overrides the set-deciding
+      // half of the text above: the backlog is the set, already written.
+      if (f === 'plan' && briefing.default_kind === 'planning-light' && ['plan', 'setgoal'].includes(n.stage)) {
+        lines.push(`This PLAN run is in LIGHT mode: the backlog already declares its acceptance criteria (see "Declared acceptance" in the context above), so the document set is ONE PRD whose user stories are the backlog items - one planning subgoal, not a set. Every planning subgoal here runs investigate -> template-fill -> gate (not draft -> revise); kind "planning" is read as "planning-light" in this run.`);
+      }
     }
     if (briefing.size) lines.push(`size: ${briefing.size}`);
   }
+
+  if (run.package && ['plan', 'setgoal', 'critique'].includes(n.stage)) lines.push(...packageBlock(run, n));
 
   if (['plan', 'setgoal'].includes(n.stage)) {
     const conv = conventionsBlock(run.cwd, { stage: n.stage });
@@ -284,10 +360,10 @@ export function composePrompt(run, n, briefing) {
     // (2026-09-23): setgoal put .claude/team.json in files[] as a source to read, and the
     // document-path rule rejected the spec for it.
     if (sg.sources?.length && (n.stage === 'investigate' || n.stage === 'audit')) lines.push(`Sources to open first:\n${bullets(sg.sources)}`);
-    if (['implement', 'investigate', 'draft', 'revise'].includes(n.stage)) {
+    if (['implement', 'investigate', 'draft', 'revise', 'template-fill'].includes(n.stage)) {
       // A planning subgoal writes the PRD, which governs the whole tree - its conventions are
       // not selected by the paths it touches.
-      const planning = kindOf(sg) === 'planning';
+      const planning = kindOf(sg) === 'planning' || kindOf(sg) === 'planning-light';
       const conv = conventionsBlock(run.cwd, { stage: planning ? 'planning' : n.stage, files: sg.files });
       if (conv) {
         lines.push('');
@@ -451,7 +527,9 @@ export function composePrompt(run, n, briefing) {
   }
   if (briefing.prior_decisions && briefing.prior_decisions.length) {
     lines.push('');
-    lines.push(`## Already decided by a person — settled, do not raise these again`);
+    // "or by this task" since §6.2-2: run.task_decisions joins this list, and some of those were
+    // the engine's own brainstorm or a PLAN default - each bullet names where it was settled.
+    lines.push(`## Already decided by a person, or by this task — settled, do not raise these again`);
     lines.push(`These hold for the whole run, whichever part of it they were asked under: your document must agree with them, and a question that is one of these in other words is not open.`);
     lines.push(bullets(briefing.prior_decisions.map((d) => `${d.question} -> ${d.chose}${d.because ? ` (${d.because})` : ''}${d.decided_for ? ` [decided under ${d.decided_for}]` : ''}`)));
     lines.push('A question above is answered. Write it as the rule it now is; do not list it as an open question, and do not ask it again in any form - a reworded repeat of a settled decision is the same defect as an identical one.');
@@ -476,12 +554,23 @@ export function composePrompt(run, n, briefing) {
     });
   }
 
+  // planning-light only (graph.mjs's nodeBriefing sets it for template-fill and gate).
+  if (Array.isArray(briefing.investigate_unknowns)) {
+    lines.push('');
+    lines.push(`## Investigate unknowns`);
+    lines.push(`What this subgoal's investigate stage could not settle from any source. Each one must reach the document - as an open question with its owner, or as the rule a person or the default decided.`);
+    lines.push(bullets(briefing.investigate_unknowns.map((u) => `${u.question}${u.owner ? ` [owner: ${u.owner}]` : ''}`)));
+  }
+
   lines.push(mountBlock(run, n));
 
   lines.push('');
   lines.push(`## Required output`);
   const contract = n.node_id.startsWith('gate:goal') ? CONTRACT['gate:goal'] : CONTRACT[n.stage];
   lines.push(contract || CONTRACT.implement);
+  if (n.stage === 'gate' && briefing.subgoal && kindOf(briefing.subgoal) === 'planning-light') {
+    lines.push(PLANNING_LIGHT_GATE);
+  }
   lines.push('');
   lines.push(`Return that JSON object and nothing else.`);
   return lines.join('\n');

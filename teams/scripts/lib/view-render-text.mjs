@@ -149,17 +149,25 @@ function renderModelBody(m, indent, out) {
   renderPhaseRounds(m.audit, 'AUDIT', indent, out);
 }
 
-// The QA and planning-audit phase-Teams (§2/§3): a fixed package (task.qa_pkg / task.audit_pkg)
-// that can be dispatched more than once - one round per defect/unmet-story cycle, capped by
+// The QA and planning-audit phase-Teams (§2/§3): one QA card per feature area (task.qa_pkgs) and
+// the audit (task.audit_pkg), each a fixed package that can be dispatched more than once - one round per defect/unmet-story cycle, capped by
 // qa_rounds. Printed as its own section, not folded into "packages:", because a round is not a
 // develop STORY: it has no title of its own worth repeating per round, and what a person needs
 // from it - round number, state, how many defects/unmet stories it found - is different from
 // what a package needs (title, brief, deps).
+// The latest round of each QA card - a model from before the split (no qa.cards) is one card.
+function latestQaRounds(m) {
+  if (!m.qa) return [];
+  const cards = Array.isArray(m.qa.cards) ? m.qa.cards : [{ rounds: m.qa.rounds || [] }];
+  return cards.filter((c) => c.rounds.length).map((c) => c.rounds[c.rounds.length - 1]);
+}
+
 function renderPhaseRounds(phase, label, indent, out) {
   if (!phase || !phase.rounds.length) return;
   out.push(line(indent, `${label}:`));
   for (const r of phase.rounds) {
-    const bits = [`[${mark(r.state)}] ${label}:${r.round}`];
+    // r.id is "<card id>:<attempt>" - QA-F2:1 names the area as well as the round.
+    const bits = [`[${mark(r.state)}] ${r.id || `${label}:${r.round}`}`];
     if (r.defects_count != null) bits.push(`defects=${r.defects_count}`);
     if (r.unmet_count != null) bits.push(`unmet=${r.unmet_count}`);
     out.push(line(indent + 1, bits.join(' ')));
@@ -198,7 +206,8 @@ function fmtTime(ts) { return ts ? new Date(ts).toISOString() : '?'; }
 // subgoal_id anyway, so a stale round would just repeat the same state as a duplicate card.
 function boardCards(m) {
   const cards = (m.packages || []).slice();
-  if (m.qa && m.qa.rounds.length) cards.push(m.qa.rounds[m.qa.rounds.length - 1]);
+  // One live card per QA card (cards-everywhere C7): each feature area's latest round.
+  for (const c of latestQaRounds(m)) cards.push(c);
   if (m.audit && m.audit.rounds.length) cards.push(m.audit.rounds[m.audit.rounds.length - 1]);
   return cards;
 }
@@ -358,6 +367,7 @@ export function renderIndexText(rows, tasksDir) {
     if (r.error) { out.push(`  ${r.epic_key}  ERROR: ${r.error}  (task ${r.task_id})`); continue; }
     out.push(`  ${r.epic_key}  ${statusLabel(r)}  ${r.title}`);
     const bits = [`task=${r.task_id}`, `size=${r.size || '?'}`];
+    if (r.initiative) bits.push(`initiative=${r.initiative}`);
     const stories = storiesLabel(r);
     if (stories) bits.push(stories);
     if (r.open_defects) bits.push(`open defects=${r.open_defects}`);

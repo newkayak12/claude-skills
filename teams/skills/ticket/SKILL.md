@@ -60,8 +60,8 @@ doc: .teams_output/team/E-a1b2c3d4/40-stories/P2.md
 `daemon` prints `none` when the EPIC has none yet. `worktree` prints `—` before any dispatch has
 run. `tasks` is `—` when no dispatch has started a child run to measure. `reporter` is `shape` for
 original scope, `repair` for an integration seam, or `qa`/`planning-audit`/`you` for a filed
-defect (QA, audit, or `tm_file`) — see `board`'s own explanation for how a PLAN/QA/AUDIT
-phase-Team package's ticket reads instead. `human_assignments` (`[{subgoal_id, who}]`) names
+defect (QA, audit, or `tm_file`) — see `board`'s own explanation for how a planning card
+(`PLAN-F1`, ...), a QA card (`QA-F1`, ...) or the AUDIT package's ticket reads instead. `human_assignments` (`[{subgoal_id, who}]`) names
 which of this STORY's subgoals a human currently owns — `[]` before the package has a child run
 to pin against. Render one `subgoal_id -> who` pair per entry (join multiple with `, `); a
 `WAITING_HUMAN` state with no entry here just hasn't been claimed yet — point at `take`.

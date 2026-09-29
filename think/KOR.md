@@ -84,7 +84,7 @@
 아픈 말을 정확히 한 번 하고 반복하지 않기. 아포리아는 허용된 결말입니다 — 들어올 때보다 더 선명한
 혼란으로 끝나는 게, 내 것이 아닌 깔끔한 결론보다 낫습니다. 저장소 전체를 끌어씁니다(전제와 근거는
 `cognition:`, 가치와 회피는 `self:`, 커리어는 `leadership:`/`portfolio:`). 기술·제품 질문으로
-판명되면 철학하지 않고 `develop:`/`pm:`으로 전부 넘깁니다.
+판명되면 철학하지 않고 `develop:`/`planning:`으로 전부 넘깁니다.
 
 대화가 닫히는 지점에 도달했을 때의 마무리 형태:
 
@@ -273,6 +273,7 @@ Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세�
 - Step 1 전에, 질문 자체가 이상하게 느껴지면 `problem-reframer`.
 - 검토가 필요한 대상이 내 판단 자체라면 `mentor`. 질문이 제대로 서고 남은 게 산출물뿐이면
   `deep-thinking-workflow`로 넘깁니다.
-- 결정이 나오면 `pm:pm-strategy-workflow`나 `develop:dev-quality-workflow`로 넘깁니다.
+- 결정이 나오면 `develop:dev-quality-workflow`(엔지니어링 인계)나 `planning:roadmap-planning`(제품/전략
+  결정을 로드맵으로 배치)으로 넘깁니다.
 - `technique-write:design-review-writer`는 발산과 스트레스 테스트 결과를 리뷰 가능한 설계 문서로
   바꿔줍니다.

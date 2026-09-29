@@ -57,6 +57,17 @@ Quick rules:
 - No background explanations — skill name is the context
 - Target: 70% of current average length
 
+## Design Changes (harness rule for Claude's own work)
+
+Before changing behaviour of a plugin (not typo/doc fixes):
+1. **plan** — what changes and why, citing the governing design doc (`docs/plans/`).
+2. **setgoal** — checkable done-criteria.
+3. **critique** — check it against the doc's principles; show the user and get approval. No code before approval.
+4. **implement → gate** — show the result against the done-criteria.
+
+Never remove a stage, a gate, or a principle for cost or simplicity without the user's approval.
+teams principles: `docs/plans/2026-09-28-teams-cards-everywhere.md`.
+
 ## Update Workflow
 
 After any change: bump version in `.claude-plugin/marketplace.json` → update `<plugin>/README.md` **and** `<plugin>/KOR.md` (English default + Korean mirror; both must move together) → commit → `git push origin main`.

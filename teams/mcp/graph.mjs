@@ -102,6 +102,26 @@ export const KINDS = {
       gate: ['think:devils-advocate'],
     },
   },
+  // The light PLAN chain (docs/plans/2026-09-28-teams-light-plan.md §2.2): for a backlog whose
+  // acceptance criteria are already declared (acceptance.mjs's hasDeclaredAcceptance), draft
+  // and revise fold into one template-fill - copy the declared criteria into the document in
+  // backlog order, cite investigate's findings beside them, carry every unknown - and the gate
+  // additionally checks per-item rule coverage and that no unknown was lost (§2.3). investigate
+  // stays whole: it is the only stage that reads sources and the only route an unknown takes to
+  // an `ask` card. A separate kind rather than a `chain_light` field on `planning` (§5-2): every
+  // lookup here (chain, author, gate stage, skills) and reducers.mjs's REGISTRY are keyed by
+  // kind, so a kind of its own needs no run-aware variant of any of them. A light run gets it by
+  // run.planning_mode === 'light' (normalizeSpec below), never by setgoal naming it.
+  'planning-light': {
+    chain: ['investigate', 'template-fill', 'gate'],
+    reasoning: [],
+    author: 'template-fill',
+    skills: {
+      investigate: ['develop:domain-driven-design', 'cognition:assumption-extractor'],
+      'template-fill': ['write:doc-coauthoring'],
+      gate: ['think:devils-advocate'],
+    },
+  },
   qa: {
     chain: ['cases', 'execute', 'gate'],
     reasoning: [],
@@ -166,6 +186,33 @@ export const REASONING_STAGES = new Set([
 // to count as done. A stage absent here has no verdict beyond stage_ok.
 export const VERDICT_FIELD = { gate: 'accept', critique: 'sound', test: 'verified', review: 'verified', execute: 'verified' };
 
+// Why a judging node said no, when it never said so in a `reason`. review's and test's schema
+// have no reason field at all, and a manager integrate/accept/critique can come back
+// verified/accept/sound:false with empty gaps/blocking - only `checks`/`evidence` explain it.
+// The first check reading as a failure, else the evidence summary, else every check. '' when
+// the result already carries its own reason (or gaps/blocking for the fields that have them),
+// or has nothing to synthesize from. Shared by the broker (child nodes), taskmanager.finish
+// (manager nodes) and runlog.classify (records written before either filled it).
+export function reasonFromVerdict(result, field) {
+  const r = result || {};
+  if (!field || r[field] !== false) return '';
+  if (r.reason || r.verification_error) return '';
+  if (field === 'accept' && (r.gaps || []).length) return '';
+  if (field === 'sound' && (r.blocking || []).length) return '';
+  const checks = Array.isArray(r.checks) ? r.checks : [];
+  // Read a check's outcome (after its last "->"), quoted text removed: a passing check that
+  // quotes the rule it verified ("-> 'does NOT move the score'") is not a failure.
+  const readsAsFailure = (c) => {
+    const s = String(c);
+    const outcome = s.includes('->') ? s.slice(s.lastIndexOf('->') + 2) : s;
+    // An in-word apostrophe (주장's, don't) is not a quote mark.
+    const unquoted = outcome.replace(/([^\s'"`])'(?=[a-z])/gi, '$1').replace(/"[^"]{0,200}"|'[^']{0,200}'|`[^`]{0,200}`/g, '');
+    return /\b(missing|fail(ed|ing|s)?|not met|unmet|does not|refused)\b/i.test(unquoted);
+  };
+  const flagged = checks.find(readsAsFailure);
+  return String(flagged || (r.evidence ? String(r.evidence) : '') || checks.join('; ')).slice(0, 300);
+}
+
 // A flow is what the user-facing entry chose - or, under `auto`, what the plan node decided
 // from the request. It sets the kind a subgoal gets when setgoal names none, and gives
 // setgoal a persona set to draw from. With `mixed: false` it also forbids the other kinds,
@@ -208,15 +255,31 @@ export function flowOf(run) {
 
 export function defaultKind(run) {
   const f = flowOf(run);
-  return f ? FLOWS[f].kind : DEFAULT_KIND;
+  const kind = f ? FLOWS[f].kind : DEFAULT_KIND;
+  // A PLAN run the manager opened in light mode (taskmanager.mjs's planning_mode) runs every
+  // planning subgoal as planning-light - same flow, same personas, shorter chain.
+  return kind === 'planning' && run.planning_mode === 'light' ? 'planning-light' : kind;
 }
 
 // Every subgoal leaves setgoal with an explicit kind, so nothing downstream - retries, the
 // author check, the cross-check - has to know what the run's default was at the time.
+// In a light PLAN run an explicit kind "planning" (what PLANNING_SETGOAL tells setgoal to write)
+// is read as planning-light too: the mode is the manager's decision, not setgoal's.
 export function normalizeSpec(run, spec) {
   if (!spec || typeof spec !== 'object' || !Array.isArray(spec.subgoals)) return spec;
   const dflt = defaultKind(run);
-  return { ...spec, subgoals: spec.subgoals.map((sg) => (sg && typeof sg === 'object' && sg.kind == null ? { ...sg, kind: dflt } : sg)) };
+  const light = dflt === 'planning-light';
+  // A package child run (run.package, opened by the task manager's openChild) is judged by its
+  // manager against the package's own acceptance - so its spec carries every item verbatim,
+  // whatever setgoal wrote. setgoal is told so (prompts.mjs's packageBlock); this is the
+  // deterministic half, so a dropped or reworded item cannot slip past gate:goal unjudged.
+  const pkgAcc = run && run.package && Array.isArray(run.package.acceptance) ? run.package.acceptance : [];
+  if (pkgAcc.length) {
+    const own = Array.isArray(spec.acceptance) ? spec.acceptance.map(String) : [];
+    const missing = pkgAcc.filter((a) => !own.includes(a));
+    if (missing.length) spec = { ...spec, acceptance: [...missing, ...own] };
+  }
+  return { ...spec, subgoals:spec.subgoals.map((sg) => (sg && typeof sg === 'object' && (sg.kind == null || (light && sg.kind === 'planning')) ? { ...sg, kind: dflt } : sg)) };
 }
 
 // The stage that AUTHORS the artifact - the identity a later reviewing stage must not be.
@@ -330,6 +393,36 @@ export function applyPinAction(run, action) {
   // `interactive` says (a model-written assignee is the one that needs interactive, §7).
   sg.assignee = { by: 'user', ...(action.who ? { who: action.who } : {}) };
   return applyHumanPin(run, sg, action.subgoal_id, action.attempt);
+}
+
+// The STORY half of tm_assign ({kind: 'story_pin', to, who}): the run-level pin expandSubgoals
+// hands to every subgoal setgoal produces. A package child run opens with plan/setgoal/critique
+// ahead of any subgoal, so a STORY pinned after dispatch but before setgoal has no subgoal to
+// pin yet - this is what makes it land when they appear (and on a later spec retry). Subgoals
+// that already exist are pinned by tm_assign's own per-subgoal `pin` actions.
+// A STORY pin can also land AFTER setgoal produced subgoals (M5): tm_assign saw none while
+// setgoal was running, queued only this run-level pin, and setgoal then expanded its subgoals
+// unpinned. So the pin is applied to every subgoal that exists by now, at its current attempt,
+// as well as to the ones setgoal will still produce; a release lets go of the user pins the
+// STORY pin put there, leaving a model-written assignee alone.
+export function applyStoryPin(run, action) {
+  const subgoals = (run.spec && Array.isArray(run.spec.subgoals)) ? run.spec.subgoals : [];
+  if (action.to === 'auto') {
+    let changed = !!run.subgoal_assignee;
+    delete run.subgoal_assignee;
+    for (const sg of subgoals) {
+      if (!(sg.assignee && typeof sg.assignee === 'object' && sg.assignee.by === 'user')) continue;
+      releaseHumanPin(run, sg, String(sg.id), currentAttempt(run, sg.id));
+      changed = true;
+    }
+    return changed;
+  }
+  run.subgoal_assignee = { by: 'user', ...(action.who ? { who: action.who } : {}) };
+  for (const sg of subgoals) {
+    sg.assignee = { ...run.subgoal_assignee };
+    applyHumanPin(run, sg, String(sg.id), currentAttempt(run, sg.id));
+  }
+  return true;
 }
 
 // The attempt a subgoal is currently on, read back from the nodes themselves - what tm_assign
@@ -604,6 +697,17 @@ export function createRun(opts) {
     // decided by default and merely recorded (run.unasked). Off unless asked for: a run opened
     // by a daemon nobody is watching must still be able to finish.
     interactive: opts.interactive === true,
+    // task.decisions (docs/plans/2026-09-28-teams-light-plan.md §6.2-2): what this task already
+    // decided before this run opened - the session brainstorm, the engine's own brainstorm node,
+    // PLAN's asks and defaults. A snapshot, not a reference: graph.mjs never sees the task, and
+    // the decisions it snapshots are written once, before any package opens. openAsk and
+    // nodeBriefing read it next to answeredDecisions(run). Absent (not []) when there is none,
+    // so a run opened by anything but the task manager is byte-for-byte what it was.
+    ...(Array.isArray(opts.task_decisions) && opts.task_decisions.length ? { task_decisions: opts.task_decisions.map((d) => ({ ...d })) } : {}),
+    // §6.2-3: a package child run past PLAN. Its new questions are decided by default and
+    // recorded even when `interactive` - only a blocking one (routeExecutionQuestions) is kept
+    // for the task manager to park once at EPIC level.
+    ...(opts.execution_phase === true ? { execution_phase: true } : {}),
     // gate:human (D2 Task 4): which judging stages this run must stop and have a person
     // accept/reject, by name ('critique', 'gate', 'gate:goal', ...) - see promoteHumanGates.
     // Threaded the same way `interactive` is (teamconfig.mjs -> task.child_opts -> here).
@@ -625,6 +729,9 @@ export function createRun(opts) {
     // planning run: told in words that one PRD would do, code-sprint-P3's planner still wrote two
     // documents and spent $10.86 of $15 before a package ran.
     max_subgoals: Number.isInteger(opts.max_subgoals) && opts.max_subgoals > 0 ? opts.max_subgoals : null,
+    // 'light' only on a PLAN child the manager resolved to the light chain (docs/plans/
+    // 2026-09-28-teams-light-plan.md §2.5); defaultKind/normalizeSpec read it. Absent otherwise.
+    ...(opts.planning_mode === 'light' ? { planning_mode: 'light' } : {}),
     max_retries: Number.isInteger(opts.max_retries) ? opts.max_retries : 2,
     // continue (default) or rollback - docs/plans/2026-09-23-teams-reducer-human-rollback.md §5.
     // Read by retrySubgoal below to decide whether a rejected attempt's worktree edits stay (as
@@ -645,11 +752,6 @@ export function createRun(opts) {
     size: null,
     created_at: Date.now(),
     spec: null,
-    // How many packages deep this run was opened. 0 at the top; task.child_opts.depth =
-    // parent.depth + 1 for every package's child run (teamconfig.mjs's max_depth reads
-    // this). A caller that never asks - the ordinary team_open path, every run before this
-    // field existed - gets 0, which max_depth (default 2) never trips.
-    depth: Number.isInteger(opts.depth) ? opts.depth : 0,
     nodes: [],
     // Cross-run author identity ({executor, vendor, model} or null), for a run whose judging
     // stage's author never ran in ITS OWN nodes[] - today only the planning-audit kind's `audit`
@@ -659,33 +761,29 @@ export function createRun(opts) {
     // is not an audit child simply carries null, same as opts.external_author being absent.
     external_author: opts.external_author || null,
   };
-  // A parent that already shaped and critiqued this run's one subgoal (docs/plans/
-  // 2026-09-21-teams-server-owns-the-loop.md §3) hands it down already decided: run-level
-  // plan/setgoal/critique would only re-derive what the parent's shape+critique already
-  // settled, and a goal-level gate would only re-judge what that one subgoal's own gate
-  // just judged. Skip both layers - this run IS the subgoal chain, nothing else. No plan
-  // node ever runs here, so run.flow (opts.flow - a package's child is always opened with a
-  // resolved flow, never 'auto') decides the kind directly instead of waiting on flow_chosen.
-  if (opts.parent_shaped === true) {
-    run.parent_shaped = true;
-    const kind = FLOWS[run.flow] ? FLOWS[run.flow].kind : DEFAULT_KIND;
-    const acceptance = Array.isArray(opts.acceptance) && opts.acceptance.length
-      ? opts.acceptance.slice()
-      : [String(opts.goal || opts.request || '').slice(0, 200) || 'the package meets its brief'];
-    run.spec = {
-      goal: opts.goal || opts.request,
-      acceptance,
-      subgoals: [{ id: 'U1', title: opts.goal || 'the package', kind, acceptance: acceptance.slice(), deps: [], after: [], ...(opts.subgoal_assignee ? { assignee: opts.subgoal_assignee } : {}) }],
+  // A package the task manager shaped and critiqued (openChild) still runs the full harness
+  // inside its own child run - plan -> setgoal -> critique -> <chain> -> gate:goal -> report -
+  // the fractal rule of docs/plans/2026-09-17-teams-team.md §2 (each Team runs the four steps
+  // inside itself). What the manager already settled travels down as data, not as skipped
+  // nodes: `package` tells plan it is writing a BUILD plan for this one package (not a re-split
+  // of the EPIC - prompts.mjs's packageBlock), and its acceptance is carried verbatim into the
+  // spec (normalizeSpec). `subgoal_assignee` is a STORY-level human pin (pkg.assignee, or
+  // tm_assign before dispatch), applied to the subgoals setgoal produces (expandSubgoals).
+  // The 2026-09-21 chain-only shortcut (`parent_shaped`) was reverted on 2026-09-28.
+  if (opts.package && typeof opts.package === 'object') {
+    run.package = {
+      id: opts.package.id != null ? String(opts.package.id) : null,
+      origin: opts.package.origin ? String(opts.package.origin) : 'shape',
+      title: String(opts.goal || opts.package.title || ''),
+      acceptance: Array.isArray(opts.acceptance) ? opts.acceptance.map(String).filter(Boolean) : [],
     };
-    pushChain(run, (KINDS[kind] || KINDS[DEFAULT_KIND]).chain, 'U1', 1, [], [], {});
-    applyHumanPin(run, run.spec.subgoals[0], 'U1', 1);
-  } else {
-    run.nodes.push(
-      node('plan', 'plan', []),
-      node('setgoal', 'setgoal', ['plan']),
-      node('critique', 'critique', ['setgoal']),
-    );
   }
+  if (opts.subgoal_assignee) run.subgoal_assignee = opts.subgoal_assignee;
+  run.nodes.push(
+    node('plan', 'plan', []),
+    node('setgoal', 'setgoal', ['plan']),
+    node('critique', 'critique', ['setgoal']),
+  );
   return saveRun(run);
 }
 
@@ -752,7 +850,7 @@ export function getNode(run, nodeId) {
 // Kinds whose product is a written document, never a change to source. Their subgoals may
 // only name document paths in files[] (validateSpec), and their authoring stages are told so
 // in as many words (prompts.mjs).
-export const DOCUMENT_ONLY_KINDS = new Set(['planning', 'planning-audit']);
+export const DOCUMENT_ONLY_KINDS = new Set(['planning', 'planning-light', 'planning-audit']);
 
 export function validateSpec(spec, opts = {}) {
   const problems = [];
@@ -788,7 +886,8 @@ export function validateSpec(spec, opts = {}) {
     // setgoal named source files in `files` and the draft node wrote its PRD sections INTO
     // them - measured, 2026-09-22, P1: a "Time and Clock resolution rules" subgoal whose
     // files[] were packages/queue/src/index.mjs and packages/cli/src/index.mjs, both duly
-    // edited. A planning run has no worktree of its own, so that lands in the real tree.
+    // edited. (Planning cards now run in worktrees of their own - cards-everywhere C2 - but a
+    // PRD written into source is still not a PRD.)
     if (DOCUMENT_ONLY_KINDS.has(kindOf(sg))) {
       for (const f of (sg && sg.files) || []) {
         if (!/\.(md|markdown|txt|rst|adoc)$/i.test(String(f))) {
@@ -861,19 +960,6 @@ export function pushChain(run, chain, subgoalId, attempt, headDeps, headAfter, h
 function gateStage(kind) {
   const { chain } = KINDS[kind] || KINDS[DEFAULT_KIND];
   return chain[chain.length - 1];
-}
-
-// A parent_shaped run's terminal node: the latest-attempt gate of its one subgoal. There is
-// no gate:goal and no report on this run, so runState (below) and any caller reading the
-// child's own account of itself (taskmanager.mjs's foldChild) read this instead. Latest
-// attempt is the last-pushed one, the same convention retrySubgoal's own `heads.at(-1)` and
-// `prior.length` counting rely on elsewhere in this file.
-export function parentShapedTerminal(run) {
-  const sg = run.spec && Array.isArray(run.spec.subgoals) ? run.spec.subgoals[0] : null;
-  if (!sg) return null;
-  const stage = gateStage(kindOf(sg));
-  const nodes = run.nodes.filter((n) => n.stage === stage && n.subgoal_id === String(sg.id));
-  return nodes.length ? nodes[nodes.length - 1] : null;
 }
 
 // ---------- goal-gate consensus and repair (Step 9) ----------
@@ -1066,13 +1152,125 @@ export function answeredDecisions(run, owner) {
   return out;
 }
 
-export function openAsk(run, n, questions) {
+// ---------- task.decisions (docs/plans/2026-09-28-teams-light-plan.md §6) ----------
+//
+// answeredDecisions is scoped to ONE run, and PLAN and every package are separate runs - so a
+// decision PLAN's ask settled reached no package, and each package's investigate either
+// rediscovered it or asked it again (the cross-run version of idol-beta-ask1's cross-attempt
+// bug). task.decisions is the task-level list those runs share: written by tm_open (a session
+// brainstorm), the engine's own `brainstorm` node, and accept:PLAN's fold, then snapshotted into
+// every child run as run.task_decisions. One entry shape everywhere:
+// {question, chose, because?, owner, decided_in, source}.
+
+// What an unasked record decided: its stated default, else its recommended (first) option - the
+// same reading nodeBriefing's default_decisions has always used.
+export function chosenOf(u) {
+  if (!u) return '';
+  if (u.decided != null) return typeof u.decided === 'string' ? u.decided : JSON.stringify(u.decided);
+  if (u.default != null) return typeof u.default === 'string' ? u.default : JSON.stringify(u.default);
+  const first = Array.isArray(u.options) && u.options.length ? u.options[0] : null;
+  return first == null ? '' : String((first && first.option) || first);
+}
+
+export function normalizeDecision(d, defaults = {}) {
+  if (!d || typeof d !== 'object') return null;
+  const question = String(d.question || d.unknown || '').trim();
+  const chose = d.chose != null ? (typeof d.chose === 'string' ? d.chose : JSON.stringify(d.chose)) : chosenOf(d);
+  if (!question || !String(chose).trim()) return null;
+  return {
+    question,
+    chose: String(chose),
+    ...(d.because ? { because: String(d.because) } : {}),
+    owner: d.owner != null ? d.owner : (defaults.owner != null ? defaults.owner : null),
+    decided_in: d.decided_in || defaults.decided_in || null,
+    source: d.source || defaults.source || null,
+  };
+}
+
+// Appends onto `list` (task.decisions), exact-question dedup: the first answer to a question is
+// the task's answer. Returns what was actually added.
+export function appendDecisions(list, entries, defaults = {}) {
+  const seen = new Set(list.map((d) => d.question));
+  const added = [];
+  for (const raw of entries || []) {
+    const d = normalizeDecision(raw, defaults);
+    if (!d || seen.has(d.question)) continue;
+    seen.add(d.question);
+    list.push(d);
+    added.push(d);
+  }
+  return added;
+}
+
+// §6.2-1: what a finished PLAN child run settled - every person's answer on its ask cards (all
+// owners) plus every question it decided by default because nobody was asked.
+export function planDecisions(planRun) {
+  if (!planRun) return [];
+  const out = [];
+  appendDecisions(out, answeredDecisions(planRun).map((d) => ({ ...d, owner: d.owner || d.decided_for || null })), { decided_in: 'PLAN', source: 'ask' });
+  appendDecisions(out, (planRun.unasked || []).filter((u) => u && u.question), { decided_in: 'PLAN', source: 'default' });
+  return out;
+}
+
+// Every decision this run must treat as settled: its own ask cards' answers, then the task's.
+export function settledDecisions(run) {
+  const out = answeredDecisions(run);
+  const seen = new Set(out.map((d) => d.question));
+  for (const d of run.task_decisions || []) {
+    if (!d || !d.question || seen.has(d.question)) continue;
+    seen.add(d.question);
+    out.push({ ...d, decided_for: `task${d.decided_in ? `/${d.decided_in}` : ''}${d.source ? ` (${d.source})` : ''}` });
+  }
+  return out;
+}
+
+// §6.2-3: a question raised inside an execution-phase run (run.execution_phase) is not put to a
+// person on that run's own card. It is decided by default and recorded (run.unasked) - unless it
+// is blocking, by one of two structural tests, never a model's judgement:
+//   (a) the stage set `contradicts_decision` on it - it says, in a field, that a settled
+//       decision does not hold;
+//   (b) there is no safe default - at most one option and no `default` (the very questions
+//       openAsk's own filter silently drops).
+// Blocking questions are kept on run.blocking_questions for the task manager, which parks them
+// once at EPIC level (taskmanager.mjs's escalateBlocking). A question already settled
+// (settledDecisions) is dropped outright unless it is itself a contradiction.
+export function routeExecutionQuestions(run, n, questions) {
+  const settled = new Set(settledDecisions(run).map((d) => d.question));
+  const blocking = [];
+  const decided = [];
+  for (const q of questions || []) {
+    const text = q && String(q.question || q.unknown || '').trim();
+    if (!text) continue;
+    const contradicts = typeof q.contradicts_decision === 'string' && q.contradicts_decision.trim() ? q.contradicts_decision.trim() : null;
+    if (!contradicts && settled.has(text)) continue;
+    const hasOptions = Array.isArray(q.options) && q.options.length > 1;
+    const hasDefault = q.default !== undefined && q.default !== null;
+    const base = { subgoal_id: n.subgoal_id, node_id: n.node_id, stage: n.stage, question: text, owner: q.to || q.owner || null, options: q.options || null, why: q.why || null };
+    if (contradicts || (!hasOptions && !hasDefault)) {
+      blocking.push({ ...base, ...(hasDefault ? { default: q.default } : {}), ...(contradicts ? { contradicts_decision: contradicts } : {}), blocking: contradicts ? 'contradicts_decision' : 'no_safe_default' });
+    } else {
+      decided.push({ ...base, decided: hasDefault ? q.default : null });
+    }
+  }
+  if (decided.length) run.unasked = [...(run.unasked || []), ...decided];
+  if (blocking.length) {
+    const have = new Set((run.blocking_questions || []).map((b) => b.question));
+    run.blocking_questions = [...(run.blocking_questions || []), ...blocking.filter((b) => !have.has(b.question) && have.add(b.question))];
+  }
+  return { decided, blocking };
+}
+
+// opts (§6.2-4, task-layer escalation only): `owner` replaces the subgoal/node owner key and
+// `attempt` its attempt number, so a card can stand for the EPIC rather than one package;
+// `blocking: true` keeps a question with no options and no default, which is exactly what makes
+// it blocking - the default filter below would drop it.
+export function openAsk(run, n, questions, opts = {}) {
   if (!n) return [];
   let qs = (questions || []).filter((q) => q && (q.question || q.unknown)
-    && ((Array.isArray(q.options) && q.options.length > 1) || q.default !== undefined));
+    && (opts.blocking === true || (Array.isArray(q.options) && q.options.length > 1) || q.default !== undefined));
   if (!qs.length) return [];
-  const attempt = n.attempt || 1;
-  const owner = n.subgoal_id || n.node_id;
+  const attempt = opts.attempt || n.attempt || 1;
+  const owner = opts.owner || n.subgoal_id || n.node_id;
   if (run.nodes.some((x) => x.node_id === `ask:${owner}:${attempt}`)) return [];
   // A question a person already answered on an earlier attempt of this same owner is settled, and
   // asking it again is asking them to decide twice. idol-beta-ask1 (2026-09-25) measured it: U4's
@@ -1082,7 +1280,10 @@ export function openAsk(run, n, questions) {
   // them. The other four were rewordings of the same decisions, which no string filter can catch -
   // that is why answeredDecisions also reaches the next attempt's own briefing (nodeBriefing):
   // the stage that writes the question is the one that should know it is already decided.
-  const settled = new Set(answeredDecisions(run).map((d) => d.question));
+  // run.task_decisions joins the set (§6.2-2): a question the task already settled - in the
+  // session, in the engine's brainstorm, in PLAN - is as answered here as one this run's own
+  // card answered.
+  const settled = new Set(settledDecisions(run).map((d) => d.question));
   if (settled.size) {
     qs = qs.filter((q) => !settled.has(q.question || q.unknown));
     if (!qs.length) return [];
@@ -1166,6 +1367,14 @@ export function expandSubgoals(run, subgoals) {
     const deps = (sg.deps || []).map((d) => `gate:${d}:${round}`);
     const after = (sg.after || []).map((d) => `gate:${d}:${round}`);
     gateIds.push(pushChain(run, (KINDS[kindOf(sg)] || KINDS[DEFAULT_KIND]).chain, id, round, [critiqueDep, ...deps], after, {}));
+    // A STORY-level pin (run.subgoal_assignee: the package's own assignee from shape, or
+    // tm_assign on the STORY) covers every subgoal the package's setgoal produced - the STORY
+    // is the human's, so its TASKs are too. A subgoal setgoal already pinned keeps its own.
+    // Written onto the spec subgoal (not only the node) so retrySubgoal's later attempts
+    // re-apply it the same way.
+    if (run.subgoal_assignee && !sg.assignee) {
+      sg.assignee = typeof run.subgoal_assignee === 'object' ? { ...run.subgoal_assignee } : run.subgoal_assignee;
+    }
     applyHumanPin(run, sg, id, round);
   }
   // Where parallel subgoals converge. Until this node existed the only place they met was
@@ -1405,14 +1614,6 @@ export function retrySubgoal(run, subgoalId, feedback) {
 // setgoal with the critique's problems, and discard the subgoal graph the old spec
 // produced - a new spec may decompose differently.
 export function retrySpec(run, feedback) {
-  // A parent_shaped run has no setgoal/critique to redo - its "spec" IS the one subgoal the
-  // parent already shaped. A caller that asks for a spec-level retry anyway (autoReassign's
-  // twice-rejected-for-the-same-reason escalation, or a bare team_retry({run_id})) gets the
-  // one retry this run actually has: a fresh attempt of that subgoal's chain.
-  if (run.parent_shaped) {
-    const sg = run.spec && Array.isArray(run.spec.subgoals) ? run.spec.subgoals[0] : null;
-    if (sg) return retrySubgoal(run, sg.id, feedback);
-  }
   const priors = run.nodes.filter((n) => n.stage === 'setgoal');
   const attempt = priors.length + 1;
   if (attempt > run.max_retries + 1) {
@@ -1513,7 +1714,7 @@ export function promoteWaitingHuman(run) {
 // so every downstream hook that already reads a stage's result (autoReassign's retry, shape's
 // expandPackages, a package's own accept feeding the manager) keeps working unmodified - a
 // human's verdict and a model's verdict are the same shape once they land on the node.
-export const HUMAN_GATE_VERDICT_FIELD = { gate: 'accept', critique: 'sound', accept: 'accept', integrate: 'verified' };
+export const HUMAN_GATE_VERDICT_FIELD = { gate: 'accept', critique: 'sound', accept: 'accept', integrate: 'verified', 'areas-critique': 'sound', 'plan-integrate': 'accept' };
 
 // gate:goal is `stage: 'gate'` with `subgoal_id: null` on both the child-run graph
 // (expandSubgoals' pushGoalGateRound) and the manager graph (taskmanager.mjs's own
@@ -1602,6 +1803,9 @@ export function humanGateResultFromPayload(n, payload) {
     ...(field === 'accept' ? { match_pct: accept ? 100 : 0, attacks: [`gate:human: ${reason}`] } : {}),
     checks: [`human accept/reject: ${reason}`],
     gaps: Array.isArray(p.gaps) ? p.gaps : [],
+    // A person refusing the planning integrate can ask for the feature split itself to be redone
+    // (M4) - the one non-boolean a human verdict carries through.
+    ...(p.resplit === true ? { resplit: true } : {}),
     observations: [],
     reason,
     evidence: 'gate:human: a person judged this node directly, not a model',
@@ -1637,28 +1841,6 @@ export function runState(run) {
   }
   const withVerdict = (s) => (goalVerdict ? { ...s, goal_verdict: goalVerdict } : s);
 
-  // A parent_shaped run has no gate:goal and no report node (§3 of docs/plans/
-  // 2026-09-21-teams-server-owns-the-loop.md) - it IS the one subgoal's chain, so its
-  // terminal gate stands in for both: done means complete, and the ordinary blocked/running
-  // reads below still apply to everything short of that.
-  if (run.parent_shaped) {
-    const terminal = parentShapedTerminal(run);
-    if (terminal && terminal.state === 'done') return withVerdict({ state: 'complete', counts });
-    // Checked exactly where `blocked` would otherwise fire, not before it: readyNodes() already
-    // excludes a waiting_human node (it left 'pending' the moment promoteWaitingHuman parked
-    // it), so without this a run with NOTHING ELSE ready reads exactly like a genuine deadlock -
-    // the sizing document's own §4.2 risk. A sibling subgoal still being offered or worked is a
-    // different fact - the run is still `running`, same as it would be blocked on nothing at
-    // all; only the "otherwise blocked" case gets the more honest word. See graph.mjs's
-    // promoteWaitingHuman for who sets the node state this reads.
-    if (!readyNodes(run).length && !counts.running && run.nodes.some((n) => n.state === 'waiting_human')) {
-      return withVerdict({ state: 'waiting_human', counts });
-    }
-    if (run.routing_blocked && !counts.running) return withVerdict({ state: 'blocked', counts });
-    if (!readyNodes(run).length && !counts.running) return withVerdict({ state: 'blocked', counts });
-    return withVerdict({ state: 'running', counts });
-  }
-
   // Only a finished report means the run finished. Deciding on "nothing pending" once
   // let a spec retry that rebuilt no nodes report itself complete having implemented
   // nothing - the worst kind of failure, because it looks like success.
@@ -1675,11 +1857,12 @@ export function runState(run) {
     const settled = counts.unreachable > 0;
     return withVerdict(settled ? { state: 'complete', settled: true, counts } : { state: 'complete', counts });
   }
-  // Same reuse the parent_shaped branch above relies on - tickets.mjs's epicTicketState and
-  // taskmanager.mjs's task-level runState(task) call this same function (task.json is itself a
-  // "run" with a .nodes array), so this one branch fixes both levels at once. Gated on "nothing
-  // else ready or running" for the same reason the parent_shaped branch is: a sibling subgoal
-  // still moving means the run is still `running`, not waiting on anything as a whole.
+  // tickets.mjs's epicTicketState and taskmanager.mjs's task-level runState(task) call this
+  // same function (task.json is itself a "run" with a .nodes array), so this one branch fixes
+  // both levels at once. Gated on "nothing else ready or running": readyNodes() already excludes
+  // a waiting_human node, so without the gate a run with nothing else ready reads like a
+  // deadlock; a sibling subgoal still moving means the run is still `running`, not waiting on
+  // anything as a whole.
   if (!readyNodes(run).length && !counts.running && run.nodes.some((n) => n.state === 'waiting_human')) {
     return withVerdict({ state: 'waiting_human', counts });
   }
@@ -1744,7 +1927,8 @@ export function nodeBriefing(run, n) {
   // scope entirely and the new attempt's investigate had no way to know a question was settled -
   // idol-beta-ask1 (2026-09-25) re-raised six of them, two word for word. openAsk drops the exact
   // repeats; this is what stops the rewordings, by telling the stage that writes the questions.
-  const priorDecisions = answeredDecisions(run)
+  // settledDecisions adds the task's own (run.task_decisions, §6.2-2/§6.5-2) after the run's.
+  const priorDecisions = settledDecisions(run)
     .filter((d) => !(n.stage === 'ask' && (n.questions || []).some((q) => (q.question || q.unknown) === d.question)));
 
   const sg = run.spec && n.subgoal_id
@@ -1847,13 +2031,30 @@ export function nodeBriefing(run, n) {
     // the same document called unresolved - a contradiction no revise could close while the
     // questions stayed open and unanswerable. Shown to authoring stages, not to investigate
     // (which decides what is open) or ask.
-    decide_by_default: !run.interactive && ['draft', 'revise', 'implement', 'cases'].includes(n.stage),
-    default_decisions: !run.interactive && ['draft', 'revise', 'implement', 'cases'].includes(n.stage)
+    // An execution-phase run (§6.2-3) decides by default even when interactive.
+    decide_by_default: (!run.interactive || run.execution_phase === true) && ['draft', 'revise', 'template-fill', 'implement', 'cases'].includes(n.stage),
+    default_decisions: (!run.interactive || run.execution_phase === true) && ['draft', 'revise', 'template-fill', 'implement', 'cases'].includes(n.stage)
       ? (run.unasked || []).filter((u) => u && u.question && ((Array.isArray(u.options) && u.options.length) || u.decided != null))
         .map((u) => ({ question: u.question, chose: u.decided != null ? (typeof u.decided === 'string' ? u.decided : JSON.stringify(u.decided)) : String((u.options[0] && (u.options[0].option || u.options[0])) || ''), owner: u.owner || null, asked_under: u.subgoal_id || null }))
         .filter((d, i, all) => d.chose && all.findIndex((x) => x.question === d.question) === i)
       : [],
     write_scope: writeScope,
+    // planning-light (§2.3): investigate's unknowns, handed verbatim to template-fill (which
+    // must carry each one) and to the gate (which checks none was lost). The full chain's gate
+    // is two stages removed from investigate and never needed them; this one is the check.
+    investigate_unknowns: sg && kindOf(sg) === 'planning-light' && ['template-fill', 'gate'].includes(n.stage)
+      ? lightUnknowns(run, n)
+      : null,
     reasoning_stage: REASONING_STAGES.has(n.stage),
   };
+}
+
+// The unknowns the same attempt's investigate returned - the one this template-fill/gate
+// descends from, not an earlier attempt's.
+function lightUnknowns(run, n) {
+  const inv = run.nodes.filter((x) => x.stage === 'investigate' && x.subgoal_id === n.subgoal_id
+    && (x.attempt || 1) === (n.attempt || 1) && x.result).pop();
+  const us = inv && Array.isArray(inv.result.unknowns) ? inv.result.unknowns : [];
+  return us.filter((u) => u && (u.question || u.unknown))
+    .map((u) => ({ question: String(u.question || u.unknown), owner: u.owner || null }));
 }

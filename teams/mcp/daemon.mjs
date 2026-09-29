@@ -13,7 +13,8 @@
 // process is not a client of that server at all. It imports taskmanager.mjs as a library and
 // calls the functions a tool handler calls - advanceDispatches, finish, foldChild - directly, in
 // process. The only thing here that still costs a model call is judge(): one single-shot
-// `claude -p` per judging node (size, shape, critique, accept, integrate, gate, report), fed the
+// `claude -p` per judging node (size, areas, shape, critique, accept, integrate, plan-integrate,
+// gate, report), fed the
 // exact briefing composeTaskPrompt already builds and required to return the exact JSON contract
 // CONTRACT already asks for - the same work a "fresh agent" node the old leader spawned did.
 //
@@ -30,9 +31,10 @@ import {
 import {
   taskPath, taskDir, record, noDriver, taskState,
   advanceDispatches, serviceRunningDispatches, prepareReadyIntegrations,
-  dispatchSettled, foldChild, serviceSRun, delegateIfSmall,
+  dispatchSettled, foldChild, updateAutoParallel, serviceSRun, delegateIfSmall,
   finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages, autoRejudge, autoResumeCapacity, pendingRejudgeAt,
-  STAGE_SKILLS, syncTickets, autoReshape, promoteManagerHumanGates, enforceBudget,
+  STAGE_SKILLS, syncTickets, autoReshape, closeFailedPlanning, openSQa, sQaActive, promoteManagerHumanGates, enforceBudget,
+  expireAsks, nextAskDeadline,
 } from './taskmanager.mjs';
 import { ticketSnapshot } from './tickets.mjs';
 import { harvestTask } from './runlog.mjs';
@@ -156,7 +158,9 @@ export function unexplainedRefusal(result) {
   // Every field a contract uses to say WHY: integrate's own refusal lives in unowned/evidence
   // (code-sprint-S5's integrate:2 named P3/P4's missing work there, with reason and gaps absent) -
   // reading only reason/gaps turned a well-argued refusal into a "no reason" re-judge.
-  if (['reason', 'gaps', 'problems', 'blocking', 'unowned', 'evidence', 'conflicts'].some((k) => said(result[k]))) return null;
+  // plan-integrate's refusal (cards-everywhere C4) names its cards and features in retry/
+  // contradictions/uncovered/duplicates/new_areas, each of which finish() acts on directly.
+  if (['reason', 'gaps', 'problems', 'blocking', 'unowned', 'evidence', 'conflicts', 'retry', 'contradictions', 'uncovered', 'duplicates', 'new_areas'].some((k) => said(result[k]))) return null;
   return { ...result, stage_ok: false, judge_failed: true, reason: 'the judge refused without a reason or gaps - a refusal nobody can act on; asked again' };
 }
 
@@ -258,6 +262,9 @@ function watchDir(dir, onChange) {
 // exit file there the moment a driver process dies - §4's "child driver process exit"). Falls
 // back to FALLBACK_WAIT_MS if nothing fires first.
 function waitForProgress(task) {
+  // An ask deadline sooner than the fallback wakes the loop for it rather than up to 15s late.
+  const askAt = nextAskDeadline(task);
+  const waitMs = askAt === null ? FALLBACK_WAIT_MS : Math.max(250, Math.min(FALLBACK_WAIT_MS, askAt - Date.now() + 250));
   return new Promise((resolve) => {
     let settled = false;
     const watchers = [];
@@ -286,7 +293,7 @@ function waitForProgress(task) {
     // (2026-09-21) died exactly that way, one second after dispatching P1: an unref()'d timer here
     // was the only handle left, so the daemon "finished" mid-wait with nothing in stderr, and so
     // did both restarts. The child ran every node to done and nobody was left to fold it.
-    const timer = setTimeout(finishWait, FALLBACK_WAIT_MS);
+    const timer = setTimeout(finishWait, waitMs);
   });
 }
 
@@ -305,15 +312,22 @@ async function stepOnce(task) {
 }
 
 async function stepOnceInner(task) {
+  // ask_timeout: this daemon is the clock for every `ask` card under the task - a parked child
+  // has no driver to notice its own deadline (taskmanager.mjs's expireAsks).
+  let expired = false;
+  if (expireAsks(task).length) { saveRun(task); expired = true; }
   // Size S: no manager-level node is left to judge once `size` has resolved (delegateIfSmall
   // already skipped shape/critique) - the whole task is now the one child run at task.s_run, and
   // this daemon's only job is keeping ITS driver alive.
   if (task.s_run) {
     if (serviceSRun(task)) saveRun(task);
-    return false;
+    // m4: once the S run completed, its QA cards open on a snapshot and run through the same
+    // dispatch/fold/judge loop below as an L task's; until then the run is the whole task.
+    if (openSQa(task)) saveRun(task);
+    if (!sQaActive(task)) return expired;
   }
 
-  let progressed = false;
+  let progressed = expired;
   // A judge that could not judge is re-judged before anything reads its non-verdict as a
   // refusal; a driver parked on a provider's reset time is respawned once that time has passed.
   if (autoRejudge(task)) progressed = true;
@@ -347,6 +361,7 @@ async function stepOnceInner(task) {
       record(task, { event: 'daemon_fold_deferred', task_id: task.run_id, node_id: n.node_id, reason: String((e && e.message) || e).slice(0, 300) });
       continue;
     }
+    updateAutoParallel(task, n, result);
     finish(task, n, result);
     progressed = true;
   }
@@ -374,6 +389,8 @@ async function stepOnceInner(task) {
   // A shape or critique that failed gets its next attempt the same way, carrying the verdict
   // that refused it - otherwise the loop stops at a critique it could act on.
   if (autoReshape(task)) progressed = true;
+  // Planning or shaping that failed for good closes to a report, not to a silent block (M2).
+  if (closeFailedPlanning(task)) { saveRun(task); progressed = true; }
 
   return progressed;
 }
@@ -410,7 +427,17 @@ async function main() {
         await new Promise((r) => setTimeout(r, Math.max(1000, Math.min(rejudgeAt - Date.now() + 500, 60 * 1000))));
         continue;
       }
-      record(fresh, { event: 'daemon_done', task_id: TASK_ID, state: taskState(fresh).state });
+      // Nor while an `ask` card waits with an ask_timeout set: the whole graph parked on a person
+      // (manager-level card, or a size-S run) leaves nothing else to drive, and exiting here would
+      // leave nobody to answer it at its deadline. Sleep until then (capped, re-checked) instead.
+      const askAt = nextAskDeadline(fresh);
+      if (askAt !== null) {
+        await new Promise((r) => setTimeout(r, Math.max(250, Math.min(askAt - Date.now() + 250, 60 * 1000))));
+        continue;
+      }
+      const doneState = taskState(fresh);
+      record(fresh, { event: 'daemon_done', task_id: TASK_ID, state: doneState.state,
+        ...(doneState.partial ? { partial: true, partial_reasons: doneState.partial_reasons } : {}) });
       // Every task leaves a record past its project's .teams_output and /tmp (mcp/runlog.mjs,
       // read across runs by scripts/bench/triage.mjs). A failure to keep it never fails the task.
       if (!noDriver() || process.env.TEAMS_RUNS_DIR) {

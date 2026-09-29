@@ -85,6 +85,8 @@ TaskLeader  gate:goal → report
 - `team.json.roles`로 planning/qa를 끄면 그 단계가 생기지 않는다. 둘 다 끄면 지금의 0.9.0 흐름과
   같다 — 하위 호환.
 
+> **폐기(2026-09-28)**: 아래 sub-EPIC 중첩과 `max_depth`는 폐기됐다. 한 EPIC에 안 끝나는 일은 다음 Sprint로 이월한다 (`2026-09-28-teams-sprint-not-sub-epic.md`). "모든 레벨이 plan→setgoal→impl→qualitygate" 부분은 유지된다.
+
 **프랙탈 규칙**: 모든 레벨이 *plan → setgoal → impl → qualitygate*를 반복한다. TeamLeader가
 STORY를 `plan`에서 **L**로 측정하면, 자기 STORY 아래에 **sub-EPIC**을 연다(`tm_open`을 자식이
 호출, `parent: {task_id, package_id}` 기록). 깊이 캡 `max_depth` 기본 **2** — 0.8.0에서 컨텍스트
@@ -227,12 +229,19 @@ tm_status / tm_retry                         -> 현행
 (넘기면 거부). main이 노드를 하나라도 직접 드라이브하는 경로는 없다. 벤치에서 "main이 도는"
 비교군이 필요하면 stable `graph` 라인을 쓴다.
 
+> **superseded (2026-09-28).** "TaskLeader는 항상 별도 프로세스"는
+> `docs/plans/2026-09-21-teams-server-owns-the-loop.md` §2가 뒤집었다 — 매니저 폴링을
+> `claude -p` + `manager.md`로 도는 세션에 맡기던 전제가 실측($9.66/91턴)에서 깨졌고, 루프
+> 자체를 `node mcp/daemon.mjs`로 옮겼다($0/0턴). 이 절이 지키려던 성질(**main은 절대 리더가
+> 아니다**, detached 프로세스가 세션보다 오래 산다)은 그대로 남았다 — 리더 프로세스가
+> 사람에서 코드로 바뀌었을 뿐, "별도 프로세스" 자체는 daemon.mjs로 계승됐다.
+
 main 세션이 할 수 있는 일의 전부:
 
 | 호출 | 성격 |
 |---|---|
 | `tm_open` | EPIC 열기 → leader 프로세스 spawn → `task_id` 받고 끝 |
-| `tm_board` `tm_ticket` `tm_events` `tm_status` `tm_docs` `tm_inbox`(**미구현** — human 노드가 있어야 채울 게 생긴다, v0.13.0) `tm_log`(**미구현** — v0.11.0 범위에서 의도적으로 뺐다, §8) | 읽기. 뒤 둘은 이 자리를 노리고 설계됐지만 지금은 없다(§8 도구 표 참고) |
+| `tm_board` `tm_ticket` `tm_events` `tm_status` `tm_docs` `tm_inbox`(**미구현** — human 노드가 있어야 채울 게 생긴다, v0.13.0) `tm_log`(구현됨, 2026-09-28 — `teams/mcp/tasklog.mjs`, §8) | 읽기. 뒤 둘은 이 자리를 노리고 설계됐지만 지금은 없다(§8 도구 표 참고) |
 | `tm_answer`(**미구현**, v0.13.0) `tm_assign`(**미구현**, v0.13.0) `tm_retry`(구현됨) `tm_file`(**미구현** — §11 어느 단계에도 아직 배정 안 됐다, `docs/plans/2026-09-17-teams-roadmap-sizing.md`의 미배치 일감 목록 참고) | inbox에 요청 파일 하나 떨어뜨림 (§7b). 적용은 leader — 지금 실제로 있는 건 `tm_retry`뿐 |
 | `tm_clean`(**미구현** — 위와 같음, §11 어느 단계에도 아직 배정 안 됐다) | EPIC DONE 뒤 정리 (계획) |
 
@@ -463,7 +472,7 @@ the ticket key..." 케이스로 회귀를 잡는다.
 | `tm_ticket({key})` | 티켓 1개. EPIC 키면 `state, phase, leader, doc_path`. STORY 키(`E-xxx/Pn`)면 `state, tasks, worktree, last_verdict, reporter, doc_path`. **담당(vendor/model), 전이 이력, 열린 질문, 가정은 반환하지 않는다** — 아래 human 관련 도구와 같은 이유(§7, v0.13.0 전까지 만들 데이터가 없다) |
 | `tm_docs({task_id, rebuild?})` | §7c 문서를 task.json에서 다시 렌더. 실제로는 13종 중 **8종**(INDEX·request·shape·critique·STORY별·integrate·goal-gate·report) — planning/qa Team이 아직 EPIC 흐름에 안 붙어서(§11 v0.11.0 행, v0.12.0+) `10-planning`/`10-prd`/`15-spec-gate`/`60-qa`/`65-audit` 5종은 만들지 않는다. `task_id`는 위와 같이 티켓 키도 받는다 |
 | `tm_events({task_id, since?})` | **`board.jsonl`이 아니라 `ledger.jsonl`(일반 이벤트 로그, v0.10.0부터 있음)의 꼬리를 반환한다** — 티켓 전이만 담는 `board.jsonl`을 읽어 돌려주는 도구는 아직 없다. `task_id`는 위와 같이 티켓 키도 받는다 |
-| `tm_log({key, tail?})` | **미구현.** v0.11.0 범위에서 의도적으로 뺐다 |
+| `tm_log({key, tail?, since?, raw?})` | **구현됨**(2026-09-28, `teams/mcp/tasklog.mjs`). 읽기 전용. STORY 키(`E-xxx/Pn`)면 최신 dispatch의 `child.driver.log`(stream-json)를, EPIC 키면 `ledger.jsonl`을 파일 끝에서부터 마지막 `tail`줄(기본 50, 최대 500)만 읽어 이벤트당 한 줄로 렌더해 반환. `since`는 직전 응답의 `cursor`(바이트 오프셋) — 그 뒤에 덧붙은 줄만. 새 저장소 없음 |
 | `tm_answer({key, payload})` | **미구현.** §7의 human 노드(`ask`/`gate:human`/`waiting_human`)가 없으면 제출할 대상이 없다 — v0.13.0 |
 | `tm_assign({key, vendor})` | **미구현.** 위와 같음 — v0.13.0 |
 | `tm_inbox({task_id?})` | **미구현.** 위와 같음 — v0.13.0 |
@@ -474,7 +483,7 @@ the ticket key..." 케이스로 회귀를 잡는다.
 |---|---|
 | `/teams:board [E-xxx]` | **구현됨**(`teams/skills/board`). `tm_board` → 아래 표. `E-xxx`는 짧은 티켓 키로 받는다 — `tm_board`만이 아니라 `task_id`를 받는 도구 전부가 같은 방식으로 해석한다(위 도구 표 참고) |
 | `/teams:ticket E-xxx/P2` | **구현됨**(`teams/skills/ticket`). `tm_ticket` → 한 티켓 |
-| `/teams:log E-xxx/P2` | **미구현** — `tm_log` 자체가 없다 |
+| `/teams:log E-xxx/P2` | **구현됨**(`teams/skills/log`). `tm_log` → 꼬리 몇 줄 |
 | `/teams:inbox` | **미구현** — `tm_inbox` 자체가 없다 |
 | `/teams:answer E-xxx/ask:1 '{...}'` | **미구현** — `tm_answer` 자체가 없다 |
 | `/teams:take E-xxx/P2/U1` | **미구현** — `tm_assign` 자체가 없다 |
@@ -664,8 +673,30 @@ harness `patch.mjs`와 같은 규칙: `x.y.Z`만, plugin.json + marketplace 항�
 | v0.12.0 | **완료.** `.claude/team.json`의 `roles.planning`/`roles.qa` 스위치(v0.10.1부터 있었지만 지금까지 무동작이던 것)가 실제로 뭔가를 한다: `roles.planning`은 `shape` 앞에 기획 phase-Team을 끼워 넣어 PRD와 `user_stories[]`를 `shape`의 입력으로 넘기고, `shape` 계약에 `priority`와 그 user stories 대비 `implements[]` 완전성 검사를 더해 기획이 나눈 story가 두 phase 사이에서 새지 않게 막는다. `roles.qa`는 `integrate`와 `gate:goal` 사이에 QA phase-Team을 끼워 넣는다 — 새 워크트리가 아니라 repair 워크트리를 그대로 쓴다(QA의 트리가 곧 통합 트리라는 원칙). 이번 릴리스에서는 EPIC당 한 번 돌아 결과를 리포트할 뿐, 그 결과에 따라 행동하지는 않는다(결함 STORY 재순회는 v0.12.1). `max_parallel_teams`(기본 2)가 develop STORY dispatch를 priority 순으로 캡하는데, phase-Team은 카운트·캡 양쪽에서 제외된다(`taskmanager.mjs:1964-1978`) — **이 제외는 설계 문서의 결정이 아니라 이 릴리스 계획의 판단이다**(v0.12.0 계획의 자기 검토가 그렇게 적어 뒀다), 그리고 `e834f9f`가 그 전제("phase-Team은 develop STORY와 절대 동시에 뜨지 않는다")가 v0.12.1의 defect-STORY 재순회 아래서 깨진다고 이미 기록해 뒀다 — QA phase-Team이 살아있는 동안 결함 STORY가 dispatch되면 `max_parallel_teams: 1`이어도 자식 run이 2개 동시에 뜰 수 있고, 이것이 맞는 동작인지는 v0.12.1 착수 전 확인할 열린 질문으로 남는다. `tickets.mjs`/`docs.mjs`도 두 phase-Team을 안다: `tm_board`의 STORY 행이 이제 `role: 'planning'\|'qa'\|'develop'`을 낸다(이전엔 항상 `'develop'`), `docs.mjs`는 §7c 13종 중 **11종**을 렌더한다(v0.11.0의 8종에 `10-planning.md`/`10-prd.md`/`60-qa.md` 추가) — 남은 둘은 `65-audit.md`(v0.12.1)와 `15-spec-gate.md`(v0.13.0). 마무리 중 실결함 2건 발견·수정: `team_open`이 잘못된 `.claude/team.json` 키를 호출자에게 전혀 알리지 못하던 문제(`3292a91`, 이제 `team_status`의 `config_notes`로 노출), `tickets.mjs`의 `docPaths`가 `TEAM_DEFAULTS.docs_dir`을 읽는 대신 그 리터럴을 재타이핑해 둔 문제(`82b94dc`, be83bbc가 이미 경고한 바로 그 모양) | `node --test teams/scripts/test-*.mjs` **344/344**, 회귀 0. **벤치는 이번에도 미실행 — 실제 벤더 실행 증거 없음, 전부 단위 테스트**(v0.10.1·v0.11.0 행과 같은 사정). golden 픽스처는 planning+qa가 뜬 EPIC 하나로 11/13 문서 렌더를 확인 |
 | v0.12.1 | **완료(`a60e24a`).** 결함 STORY 발행(`tm_file`, `qa_rounds` 캡·재순회, 결정 기록 #2, `45a5751`) + 기획 크로스 검수(`planning-audit` kind, 결정 기록 #1, `3a9d9e8`). QA gate가 낸 결함은 이제 develop STORY가 되고 `fileDefects`가 `reintegrateBehind`(`openRepair`와 공유하는 헬퍼)로 새 integrate를 열어 `gate:goal`을 그리로 돌린다 — QA 재개는 그 새 integrate가 끝난 뒤에 지연 실행돼, phase-Team이 develop STORY dispatch와 동시에 뜨지 않는다는 v0.12.0의 전제(위 행이 열린 질문으로 남겨 둔 바로 그것)를 유지한다. `roles.planning`은 세 번째 phase-Team인 **AUDIT**을 `gate:goal` 앞에 연다(qa 켜짐이면 마지막 `accept:QA:N` 뒤, 꺼짐이면 `integrate` 뒤) — 게이트 조건은 `roles.planning` 하나뿐이고 QA 리포트는 있으면 소비·없으면 생략(결정 #4). 트리거를 노드 stage가 아니라 "`gate:goal`이 지금 기다리는 노드가 방금 끝났는가"로 잡아, 결함이 나온 라운드에서는 audit이 곧 다시 빌드될 트리를 감사하지 않는다. audit이 낸 미충족 user story는 같은 `fileDefects`를 `reporter: 'planning-audit'`로 재사용해 발행하고 **같은 `qa_rounds` 값으로 상한**을 둔다(두 번째 노브를 만들면 두 숫자를 맞춰 다녀야 하므로). `docs.mjs`는 이제 §7c 13종 중 **12종**을 렌더한다(`65-audit.md` 추가) — 남은 하나는 `15-spec-gate.md`(v0.13.0). **배선 중 실결함 2건 발견·수정**: 매니저의 `accept` 계약이 `defects`를 한 번도 언급하지 않아 Task 1이 의존하는 QA 판정자가 결함을 올려보내라는 말을 들은 적이 없었던 것(`ACCEPT_EXTRA`로 phase-Team별 계약 확장), `renderStory`/`tm_ticket`이 `epicBoardRows`가 이미 읽던 `p.reporter`를 무시하고 repair-or-shape만 찍던 것 | `node --test teams/scripts/test-*.mjs` **357/357**, 회귀 0(351→+6). `validate_plugins.py` ERROR 0. **벤치는 이번에도 미실행 — 실제 벤더 실행 증거 없음, 전부 단위 테스트**(v0.10.1·v0.11.0·v0.12.0 행과 같은 사정). golden 픽스처는 audit 2라운드가 도는 EPIC 하나로 12/13 문서 렌더를 확인(1라운드가 D1을 발행하고 2라운드가 깨끗한 상태) |
 | v0.13.0 | executor `human`: `ask`, `gate:human`, `assignee`, `waiting_human` park/respawn, `tm_answer/tm_assign/tm_inbox` | fake driver 테스트 (0.8.0 방식), human이 implement한 TASK의 test가 non-human으로 가는지 |
+
+> **superseded (2026-09-28).** 버전 번호 `v0.13.0`은 실제로는 이 행이 계획한 기능(human
+> executor)으로 나가지 않았다 — `git log --oneline -- teams`에서 `v0.13.0`을 단 커밋은
+> `3c5ad0c feat(teams)!: a Node daemon owns the loop, not three model sessions (0.13.0)`이다.
+> 이 행의 human-as-executor 계획(`ask`/`gate:human`/`tm_assign`/`tm_inbox`)은 나중 버전들에
+> 조각조각 나갔다(`tm_assign`은 v0.27.3, `human_gates`는 v0.29.0 — `teams/README.md` 변경
+> 이력 참고). 자세한 사정은 `docs/plans/2026-09-21-teams-server-owns-the-loop.md` §2.
 | v0.13.1 | `interactive` 플래그 (사용자 질문 모드) | 실측 1회, main 컨텍스트 토큰 비교. **kill-and-resume 표 테스트**: 매니저 노드 전이마다 leader kill → `tm_next` → 동일 결과 |
 | v0.14.0 | sub-EPIC (`parent`, `max_depth`) | 깊이 2 픽스처 |
+
+> **narrowed (2026-09-28).** `docs/plans/2026-09-21-teams-server-owns-the-loop.md` §3("자식
+> 런은 체인만 돈다")이 실제로 v0.14.0으로 나간 것을 이 행의 계획보다 좁혔다: 나간 것은
+> "부모가 shape·critique를 끝낸 STORY의 자식 런이 plan/setgoal/critique/gate:goal/report
+> 껍데기 없이 KINDS 체인만 돈다"(`parent_shaped`, `max_depth`가 트리거)이고, 이건 이미 있는
+> **graph.mjs 자식 런**의 노드 수를 줄이는 최적화다(`teams/mcp/taskmanager.mjs`의
+> `createRun`/`openChild`, `parentShaped` 계산). 이 행이 말한 **재귀적 task 중첩**(한 task가
+> 다른 `tm_open`을 여는 진짜 sub-EPIC)은 09-21 §10 논점 3이 "부모가 shape·critique를 끝냈다"의
+> 신호로 `parent_shaped` 플래그 하나만 확정했을 뿐, 그 논의 자체가 여전히 "패키지의 자식은
+> graph.mjs 런이지 또 다른 task가 아니다"라는 전제 위에 있다 —
+> `teams/mcp/taskmanager.mjs`의 `depth` 필드 주석이 그대로 인정한다: "Nothing in this
+> codebase opens a nested tm_open yet ... this is forward declared for when it does".
+> **판정: 재귀적 task 중첩(sub-EPIC)은 superseded가 아니라 여전히 open — 09-21은 이걸 대체한
+> 게 아니라 손대지 않았고, 대신 그 이름표(`max_depth`) 아래 다른(좁은) 것을 실제로 배선했다.**
+> §14 결정 기록에 행 추가.
 
 각 단계 끝에 실측 1회 — "측정 전 비용 주장 금지" 규칙 유지.
 
@@ -780,6 +811,8 @@ task-unit 숫자를 지어내지 않기 위해서다.
 | 13 | **TaskLeader의 push notification을 확장이 아니라 제거했다** (v0.11.0, commit `49a10a1`). `leaderPrompt`는 스폰된 TaskLeader 세션에게 상태가 바뀔 때마다 opener를 `SendMessage`하라고 *지시*만 했을 뿐 — `taskmanager.mjs`는 그 메시지가 실제로 갔는지 검증·재시도·ack 어느 것도 하지 않았다. 메시지가 영영 안 와도 "아무 일도 안 일어남"과 구분이 안 되는, 알림 채널로서 최악의 성질이었고, §7 가이드 요구 7항("main 컨텍스트 사용 안 함")과도 어긋났다 — 매 노드 전이마다 main에 SendMessage로 뭔가를 채우는 것 자체가 그 요구가 비워두라는 자리다 | `tm_open`의 `notify` 인자·`task.notify` 필드·`leaderPrompt`의 두 SendMessage 분기 전부 삭제. `tm_board`/`tm_events`가 durable하고 검증 가능한 pull 경로로 대신한다 — 사람이 확인하고 싶을 때 확인하지, driver가 밀어 넣지 않는다 |
 | 14 | **`ask` 노드의 질문 필드.** `ask:N`은 매니저 노드(`size`/`shape`/`critique`) 출력에 `questions[]`가 있어야 TaskLeader가 삽입한다(§7 표). shape 출력에서는 이 필드를 **`shape.questions[]`로 통일** — §5의 `packages[]`/`implements[]`와 같은 층위의 필드로 둬서, TaskLeader의 질문 추출 로직이 노드마다 다른 이름을 파싱하지 않게 한다 | §5 shape 출력 스키마에 `questions[]` 추가, §7 `ask:N` 행, §8b (구 A행 (1)) |
 | 15 | **`gate:human` payload 스키마와 `redirect` 재개 지점.** payload 스키마는 이미 `{decision: "accept" \| "reject" \| "redirect", note}`(§7 표) + UserFirst의 `override`(결정 4)로 고정돼 있다 — 새로 정할 것은 스키마가 아니라 `redirect`가 어디서부터 다시 도는가였다. 답: 기존 스펙 재저작 경로, 즉 `retrySpec`(`teams/mcp/graph.mjs:856`)을 재사용한다. **코드 확인 결과 정정**: `retrySpec`은 `critique`가 아니라 **`setgoal`**부터 다시 만든다 — `setgoal:N`을 새로 생성한 뒤(`feedback` 포함) 그 밑에 `critique:N`을 다시 붙인다(`graph.mjs:881-884`). §7 가드레일과 §8b 초안이 써 온 "critique부터"는 critique의 거부가 redirect의 트리거라는 뜻으로 읽어야지, 실제 재실행이 시작되는 노드를 가리키는 표현이 아니다 — **정확한 재개 지점은 `setgoal`** | §7 가드레일 "redirect" 문구를 이 결정을 가리키도록 갱신, §8b (구 A행 (2)), `taskmanager.mjs`의 `ask`/`gate:human` 삽입 구현 시 `retrySpec` 재사용 |
+| 17 | **(2026-09-28 추가) v0.14.0 "sub-EPIC"의 범위 정정.** §11 v0.14.0 행이 계획한 `parent`/`max_depth`는 재귀적 task 중첩(한 task가 다른 `tm_open`을 여는 것)을 뜻했으나, 실제 v0.14.0(`5bb4e6f`)이 배선한 것은 `docs/plans/2026-09-21-teams-server-owns-the-loop.md` §3의 "자식 런은 체인만 돈다" — 이미 있는 graph.mjs 자식 런에서 plan/setgoal/critique/gate:goal/report 껍데기를 생략하는 최적화다. 재귀적 task 중첩 자체는 이 결정으로 닫힌 게 아니라 여전히 미구현·미설계 확정 — `taskmanager.mjs`의 `depth` 필드가 "forward declared for when it does"라고 스스로 적어 둔 상태 그대로다 | §11 v0.14.0 행에 narrowed 노트. superseded 아님, open으로 기록 |
+| 18 | **(2026-09-28 추가) PLAN의 ask 결정이 실행 패키지로 전파된다.** `task.decisions[]`(PLAN accept 시점에 1회 기록) → 모든 패키지 자식 런의 `openAsk` 걸러내기 집합에 합류. 실행 단계의 새 질문은 `interactive`와 무관하게 기본값으로 결정되고 기록되며, `task.decisions`와 구조적으로 모순되거나(`contradicts_decision` 필드) 안전한 기본값이 없는 경우만 EPIC 레벨에 1회 park한다. **`human_scope`(`leader`/`all`, 미구현)를 대체한다** — 사람이 언제 불려가는지는 이제 '리더냐 전부냐'가 아니라 **'`tm_open` 전 세션 brainstorming(선택) → 건너뛰면 엔진 `brainstorm` 노드가 프롬프트로 스스로(interactive면 여기서 1회 ask) → 실행 중엔 blocking 예외만(EPIC에서 1회)'**로 갈린다 | `docs/plans/2026-09-28-teams-light-plan.md` §6.2·§6.5, `taskmanager.mjs` childContext/`task.decisions`/`escalateBlocking`, `graph.mjs` openAsk/`routeExecutionQuestions`, `teamconfig.mjs`(`human_scope` deprecated no-op) |
 | 16 | **routing.mjs의 human 제외.** `rankCandidates`는 `human`을 후보 자동 선택에 넣지 않는다 — human 배정은 `assignee` 핀, 또는 `ask`/`gate:human` 전용 노드 타입을 통해서만 이루어진다. 자동 라우팅이 임의로 사람에게 일을 떠넘기지 않아야 `interactive: false` 기본 흐름이 그대로 AI만으로 돈다(현재 `routing.mjs`에 `human` 관련 분기 없음 — 확인함, v0.13.0에서 신설) | §9 변경 지점(routing.mjs 행), §7 "범위" 절, §8b (구 A행 (3)) |
 
 ## 5b. 결함 STORY — QA가 발행하는 티켓

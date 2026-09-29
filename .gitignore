@@ -14,9 +14,10 @@ INSTRUCT.md
 /report/
 *-workspace/
 .claude/.feedback/
-# Local-only Claude config for this repo (kept out of version control)
-.claude/settings.json
 .claude/conventions/
 **/.knowledge/knowledge.sqlite
 **/.knowledge/knowledge.sqlite-shm
 **/.knowledge/knowledge.sqlite-wal
+.claude/.harness-markers/
+.harness-run/
+.claude/settings.local.json

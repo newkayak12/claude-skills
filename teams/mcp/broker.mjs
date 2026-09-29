@@ -21,11 +21,11 @@
 // Zero dependencies: MCP's stdio transport is newline-delimited JSON-RPC 2.0.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
-import { capacityFailure, capacityNotice, selectModel, rankCandidates } from './routing.mjs';
+import { capacityFailure, capacityNotice, selectModel, rankCandidates, authorIdentities, demoteAuthors } from './routing.mjs';
 import {
   STAGES,
   REASONING_STAGES,
@@ -37,6 +37,7 @@ import {
   getNode,
   expandSubgoals,
   openAsk,
+  routeExecutionQuestions,
   validateSpec,
   retrySubgoal,
   retrySpec,
@@ -46,6 +47,7 @@ import {
   nodeBriefing,
   stagePolicy,
   VERDICT_FIELD,
+  reasonFromVerdict,
   authorStage,
   isAuthorNode,
   nodeKind,
@@ -62,6 +64,7 @@ import {
   promoteHumanGates,
   autoPassHumanGateResult,
   applyPinAction,
+  applyStoryPin,
   drainHumanActions,
   computeWriteScope,
 } from './graph.mjs';
@@ -149,8 +152,13 @@ function binaryPresent(name) {
 
 // ---------- ledger ----------
 
+// Everything the harness itself writes while a node runs - the ledger, probe caches, and
+// every node's own prompt/result files - lives here. Never attributable to the node under
+// judgment (verifySnapshot/verifyRestore below read this same constant).
+const HARNESS_ROOT = '.teams_output';
+
 function brokerDir(cwd) {
-  return join(cwd, '.teams_output', 'broker');
+  return join(cwd, HARNESS_ROOT, 'broker');
 }
 
 function record(cwd, entry) {
@@ -445,6 +453,127 @@ function crossCheck(cwd, claimed, isolated, kind) {
   return { changed_files_verified: missing.length ? false : ignored.length ? null : true, change_attribution: 'isolated', contradicted_files: missing, ...extra };
 }
 
+// review/gate's --verify grants Bash under a read-only tool profile that has no OS sandbox
+// behind it for this vendor (the claude adapter's own top comment says so) - a denylist of
+// mutating git/fs verbs helps, but does not catch a redirect (`echo x > path`), `tee`, or a
+// scripting language writing a file directly. This pair is the actual backstop: fingerprint
+// the whole worktree before the node runs, and if anything differs after, restore it and
+// void the node's own verdict - "read-only" holds because the work is put back, not only
+// because the model was asked nicely.
+//
+// This used to fingerprint only the node's own subgoal's declared files[], byte for byte,
+// never a whole-tree git status - on the theory (still true) that two sibling subgoals can
+// share one cwd when the run is not isolated ("isolated" means only this RUN has the cwd, not
+// that each subgoal does - team_open's own schema says so), and each legitimately writes its
+// OWN files while this one's gate is judging. But that scope was also the gap: a verify-mode
+// node could write ANY file NOT in its own subgoal's files[] - another subgoal's tracked
+// file, a brand-new untracked file, a build artifact - and the fingerprint never looked
+// there, so nothing caught it.
+//
+// The fix watches every path `git status` reports (tracked or not) and narrows only two ways:
+//   - isHarnessPath: the harness's own writes while a node runs (the ledger, probe caches,
+//     every node's own prompt/result files, all under HARNESS_ROOT) are never the node's doing.
+//   - concurrentWriterFiles: a SIBLING subgoal whose own author node is genuinely `running`
+//     right now may touch its own declared files without blame - the concurrency the old
+//     scoping was built for. A sibling that is not concurrently running (finished, not yet
+//     started, or this is a whole-tree gate:goal with no sibling gates still open) earns no
+//     such cover; a change to its file is attributed to this node like any other.
+// Everything else that changes - including this node's own subgoal's files, the original
+// scope, still covered - is a violation.
+function isHarnessPath(rel) {
+  return rel === HARNESS_ROOT || rel.startsWith(HARNESS_ROOT + '/');
+}
+
+// The same glob shape crossCheck uses for a claimed file against git's observed list,
+// factored out so a declared files[] pattern can be tested against an observed path here too.
+function fileGlobRe(g) {
+  return new RegExp('(^|/)' + g.split('*').map((x) => x.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*') + '$');
+}
+function declaresPath(patterns, rel) {
+  return patterns.some((p) => {
+    const q = String(p).replace(/^\.\//, '');
+    return q.includes('*') ? fileGlobRe(q).test(rel) : (rel === q || rel.endsWith('/' + q));
+  });
+}
+
+// Every OTHER node's declared files[], but only for a subgoal whose own node is actually in
+// state 'running' right now - read fresh by the caller at both ends of the window (before
+// dispatch, and again at restore time) and unioned there, since a sibling can start or finish
+// while this node runs. A subgoal that merely exists in the spec earns no cover; only a node
+// genuinely mid-flight does, which is exactly the concurrency the whole-tree check must not
+// misattribute.
+function concurrentWriterFiles(run, n) {
+  const subgoals = (run.spec && run.spec.subgoals) || [];
+  const files = [];
+  for (const other of run.nodes) {
+    if (other.node_id === n.node_id || other.state !== 'running' || !other.subgoal_id) continue;
+    const sg = subgoals.find((s) => String(s.id) === String(other.subgoal_id));
+    for (const f of (Array.isArray(sg?.files) ? sg.files : [])) {
+      if (typeof f === 'string') files.push(f);
+    }
+  }
+  return files;
+}
+
+function verifySnapshot(run, n) {
+  const changed = gitChanged(run.cwd);
+  if (changed === null) return { noGit: true };
+  const paths = changed.filter((p) => !isHarnessPath(p));
+  const data = {};
+  for (const p of paths) {
+    try { data[p] = readFileSync(join(run.cwd, p)); } catch { data[p] = null; }
+  }
+  return { paths, data, writers: concurrentWriterFiles(run, n) };
+}
+
+// Returns the paths that changed and had to be put back - an empty array means the node's
+// own verdict stands. Best-effort restore: a failure to write back is still reported, so the
+// caller voids the verdict either way rather than trusting a tree it could not confirm.
+function verifyRestore(run, n, before) {
+  if (before.noGit) return [];
+  const after = gitChanged(run.cwd);
+  if (after === null) return [];
+  const writers = [...new Set([...(before.writers || []), ...concurrentWriterFiles(run, n)])];
+  const beforeMap = before.data || {};
+  const beforeSet = new Set(before.paths || []);
+  const all = new Set([...beforeSet, ...after.filter((p) => !isHarnessPath(p))]);
+  const changed = [];
+  for (const p of all) {
+    if (declaresPath(writers, p)) continue; // a concurrently-running sibling's own file - not this node's doing
+    const abs = join(run.cwd, p);
+    let now;
+    try { now = readFileSync(abs); } catch { now = null; }
+    if (!beforeSet.has(p)) {
+      // Clean (or nonexistent) before this node ran, and different now: entirely this
+      // node's own doing. Tracked -> a git checkout restores exactly the pre-node state,
+      // since "clean" means that state IS what HEAD holds. Untracked -> it did not exist
+      // at all before this node ran; remove it outright.
+      if (now === null) continue; // vanished on its own; nothing to restore
+      changed.push(p);
+      const tracked = spawnSync('git', ['ls-files', '--error-unmatch', '--', p], { cwd: run.cwd }).status === 0;
+      if (tracked) {
+        spawnSync('git', ['checkout', '--', p], { cwd: run.cwd });
+      } else {
+        try { rmSync(abs, { force: true }); } catch { /* best-effort */ }
+        spawnSync('git', ['clean', '-fq', '--', p], { cwd: run.cwd });
+      }
+      continue;
+    }
+    // Already dirty (or untracked) before this node ran - a git checkout would blow away
+    // whatever legitimate uncommitted work put it in that state (the subgoal's own
+    // implement, most commonly). Restore the exact bytes captured before dispatch instead.
+    const was = beforeMap[p];
+    const same = now === null ? was === null : was !== null && Buffer.compare(now, was) === 0;
+    if (same) continue;
+    changed.push(p);
+    try {
+      if (was === null) rmSync(abs, { force: true });
+      else { mkdirSync(dirname(abs), { recursive: true }); writeFileSync(abs, was); }
+    } catch { /* reported regardless - the caller voids the verdict either way */ }
+  }
+  return changed;
+}
+
 // ---------- run lookup ----------
 
 const knownCwds = new Set();
@@ -526,6 +655,8 @@ function ingestHandoff(run) {
   for (const action of queue) {
     if (action.kind === 'pin') {
       if (applyPinAction(run, action)) touched = true;
+    } else if (action.kind === 'story_pin') {
+      if (applyStoryPin(run, action)) touched = true;
     } else if (action.kind === 'submit') {
       const n = getNode(run, action.node_id);
       if (!n || n.state !== 'waiting_human') continue; // already resolved (or stale), nothing to apply
@@ -562,8 +693,12 @@ async function route(run, node) {
       : [want]).filter((v) => v !== 'human');
 
   const attempts = [];
-  const ranked = balanced && want === 'auto' ? rankCandidates(run, node, order)
-    : order.map(vendor => ({ vendor, reason: 'explicit vendor/candidate order' }));
+  // Author != judge under either allocation (m3): the balanced ranking only discounted the
+  // author, and the ordered one never looked - critique ran on setgoal's own vendor. A judging
+  // node's author goes last; it still runs there when nothing else is ready.
+  const predictModel = (name) => (balanced ? selectModel(run, node, name, pol.model) : pol.model) || null;
+  const ranked = demoteAuthors(balanced && want === 'auto' ? rankCandidates(run, node, order)
+    : order.map(vendor => ({ vendor, reason: 'explicit vendor/candidate order' })), authorIdentities(run, node), predictModel);
   for (const candidate of ranked) {
     const name = candidate.vendor;
     if ((run.unavailable_vendors || {})[name]) {
@@ -805,15 +940,17 @@ function reviewIndependence(run, n, executor, model) {
   // routed-away vendor (routing.mjs's externalAuthorOf) is the "where possible" half, and this
   // is the "record it either way" half.
   if (n.stage === 'audit') {
-    const ext = run.external_author;
-    if (!ext) return null;
+    // One author per planning card (m10): the audit is independent only of all of them.
+    const exts = [].concat(run.external_author || []).filter(Boolean);
+    if (!exts.length) return null;
     const mine = identityOf(executor, model);
-    const theirs = identityOf(ext.executor || ext.vendor, ext.model);
-    if ((executor || 'self') === 'self' || (ext.executor || ext.vendor || 'self') === 'self') {
-      return { independence: 'unverifiable-self', author: theirs, reviewer: mine };
+    const theirs = exts.map((ext) => identityOf(ext.executor || ext.vendor, ext.model));
+    const author = theirs.length === 1 ? theirs[0] : theirs;
+    if ((executor || 'self') === 'self' || exts.some((ext) => (ext.executor || ext.vendor || 'self') === 'self')) {
+      return { independence: 'unverifiable-self', author, reviewer: mine };
     }
-    if (mine === theirs) return { independence: 'unverifiable-same-host', author: theirs, reviewer: mine };
-    return { independence: 'distinct-identity', author: theirs, reviewer: mine };
+    if (theirs.includes(mine)) return { independence: 'unverifiable-same-host', author, reviewer: mine };
+    return { independence: 'distinct-identity', author, reviewer: mine };
   }
   // revise (planning kind) makes the same "not the same identity as the author" demand
   // review does - the design doc's decision that a different identity revises. The
@@ -1094,6 +1231,17 @@ export function finishNode(run, n, result, vendorName) {
       ? 'gate accepted without a check; a judgement with no evidence is a guess'
       : 'goal gate accepted without an attack; a judgement never invoked from outside the tree is a guess' };
   }
+  // A rejection the judging machinery itself produced (stage_ok:true, verdict field false) can
+  // still leave `reason` empty: review's and test's schema never had a reason field at all - only
+  // `checks`/`evidence` describe why verified came back false - and a gate or critique can in
+  // principle reject with empty gaps/blocking too. Downstream (runlog.mjs classify, triage.mjs
+  // groups) reads only `reason`, so an unfilled one surfaced as e.g. "P4 review:U1:1: (empty)" -
+  // a real rejection with no visible cause. execute is excluded: its own verified:false is a
+  // passing case-set run carrying defects forward, not a failure (see nodeSucceeded above).
+  if (n.state === 'failed' && result.stage_ok === true && n.stage !== 'execute') {
+    const synthesized = reasonFromVerdict(result, VERDICT_FIELD[n.stage]);
+    if (synthesized) result = { ...result, reason: synthesized };
+  }
   n.result = result;
   n.vendor = vendorName;
   n.finished_at = Date.now();
@@ -1132,7 +1280,16 @@ export function finishNode(run, n, result, vendorName) {
   // and draft consumes the answer instead of the question. A non-interactive run records the
   // same questions on run.unasked, which is what makes "we decided this by default, and here
   // is what we would have asked" legible in the report instead of invisible in the document.
-  if (n.stage === 'investigate' && n.state === 'done') {
+  // An execution-phase package run (§6.2-3, docs/plans/2026-09-28-teams-light-plan.md) asks no
+  // one on its own card, interactive or not: every new question is decided by default and
+  // recorded, and only a blocking one is kept for the task manager to park once at EPIC level.
+  if (run.execution_phase === true && n.state === 'done') {
+    const raw = [
+      ...(n.stage === 'investigate' && Array.isArray(result.unknowns) ? result.unknowns : []),
+      ...(Array.isArray(result.questions) ? result.questions : []),
+    ];
+    if (raw.length) routeExecutionQuestions(run, n, raw);
+  } else if (n.stage === 'investigate' && n.state === 'done') {
     const decidable = (Array.isArray(result.unknowns) ? result.unknowns : [])
       .filter((u) => u && (u.question || u.unknown) && Array.isArray(u.options) && u.options.length > 1);
     if (decidable.length) {
@@ -1157,7 +1314,7 @@ export function finishNode(run, n, result, vendorName) {
   // openAsk's own comment) and the engine opens the same kind of card for it. Kept as a second
   // block, not folded into the one above, so investigate's own unknowns[] (and its report shape
   // on run.unasked) stay exactly as they were for every existing caller and test.
-  if (n.state === 'done' && Array.isArray(result.questions) && result.questions.length) {
+  if (run.execution_phase !== true && n.state === 'done' && Array.isArray(result.questions) && result.questions.length) {
     const decidable = result.questions.filter((q) => q && q.question
       && ((Array.isArray(q.options) && q.options.length > 1) || q.default !== undefined));
     if (decidable.length) {
@@ -1480,9 +1637,9 @@ async function toolGraphOpen(a) {
   // the same precedence tm_open's own resolveTeamOptions call gives it (teamconfig.mjs).
   // Only vendor/allocation/goal_threshold/max_retries/interactive/retry_policy/human_gates
   // are both a TEAM_DEFAULTS key and a team_open argument that createRun actually consumes
-  // on a single run; the other seven TEAM_DEFAULTS keys (human_scope, max_parallel_teams,
-  // max_depth, qa_rounds, roles, driver_restarts, docs_dir) belong to tm_open's
-  // multi-team/TaskManager layer and are not team_open arguments at all.
+  // on a single run; the other TEAM_DEFAULTS keys (brainstorm, max_parallel_teams,
+  // max_parallel_ceiling, qa_rounds, roles, driver_restarts, docs_dir) belong to
+  // tm_open's multi-team/TaskManager layer and are not team_open arguments at all.
   const team = resolveTeamOptions(a, readTeamConfig(cwd).config);
   const T = team.opts;
   const run = createRun({
@@ -1697,6 +1854,16 @@ async function toolGraphRun(a) {
   // A draft is implement-shaped - it writes files and reports them - so it borrows that
   // schema; review is reasoning and runs unstaged like the other judging nodes.
   const reasoning = REASONING_STAGES.has(n.stage);
+  // review and gate are reasoning (read-only sandbox, no Edit/Write), but their own contract
+  // asks them to re-run the acceptance checks a command names - wc -w, a validator script,
+  // git diff --stat - not to trust the authoring node's report of them. A reasoning node with
+  // no Bash cannot do that (P4:review:U1, portfolio-refresh Sprint: rejected twice on
+  // `verified:false` for "no Bash tool available in this reasoning node", passed on attempt 3
+  // on the identical unverifiable evidence - the verdict was luck, not the work). --verify
+  // tells the adapter to grant Bash under the read-only profile anyway, for exactly these two
+  // stages; every other reasoning stage (plan, setgoal, critique, report, reduce, ask) is
+  // judgment over text and gets no Bash, unchanged.
+  const verifies = n.stage === 'review' || n.stage === 'gate';
   const args = [
     ...(reasoning ? [] : ['--stage', n.stage === 'test' ? 'test' : 'implement']),
     '--cwd', run.cwd,
@@ -1705,9 +1872,15 @@ async function toolGraphRun(a) {
     '--output', outPath,
     '--sandbox', r.sandbox,
   ];
+  if (verifies) args.push('--verify');
   if (run.isolated && !REASONING_STAGES.has(n.stage)) args.push('--isolated');
   for (const d of Array.isArray(a.add_dirs) ? a.add_dirs : []) args.push('--add-dir', String(d));
   if (chosenModel) args.push('--model', String(chosenModel));
+
+  // Taken before the adapter runs, so a --verify node's own Bash access can be checked
+  // against it afterward regardless of what the node itself claims (verifySnapshot/
+  // verifyRestore above).
+  const verifySnap = verifies ? verifySnapshot(run, n) : null;
 
   let proc;
   try {
@@ -1728,6 +1901,10 @@ async function toolGraphRun(a) {
   if (fresh) {
     run.nodes = fresh.nodes;
     run.spec = fresh.spec;
+    // A STORY pin another process drained meanwhile lives on the run, not on a node (M5): carry
+    // it, so what this node expands (setgoal's subgoals) is pinned the way the person asked.
+    if (fresh.subgoal_assignee) run.subgoal_assignee = fresh.subgoal_assignee;
+    else delete run.subgoal_assignee;
     const again = getNode(run, n.node_id);
     if (again) {
       again.ticket = n.ticket;
@@ -1736,6 +1913,12 @@ async function toolGraphRun(a) {
       n = again;
     }
   }
+  // Whatever a person queued while this vendor ran (tm_assign, tm_submit({key})) is applied now,
+  // before this node's result expands anything - the same drain every tool entry point makes
+  // (mustFindRun). A STORY pin queued during setgoal otherwise waited for the next team_next and
+  // missed the subgoals this very result creates (M5).
+  ingestHandoff(run);
+  n = getNode(run, n.node_id) || n;
 
   const transportOk = proc.status === 0;
   // A provider's usage limit is never a verdict on the work, under either allocation: code-sprint-S2's
@@ -1797,6 +1980,16 @@ async function toolGraphRun(a) {
       // belongs on the result; merged here instead of gating a whole extra branch on one stage.
       ...(independence ? { reviewer_independence: independence.independence } : {}),
     };
+  }
+  if (verifySnap) {
+    const mutated = verifyRestore(run, n, verifySnap);
+    if (mutated.length) {
+      result = {
+        stage_ok: false,
+        reason: `${entry(n)} used its --verify Bash access to change ${mutated.join(', ')} while judging read-only. Restored; this attempt is void - a ${n.stage} node's verdict on a tree it edited itself is not evidence.`,
+      };
+      record(run.cwd, { event: 'verify_write_guard_violation', run_id: run.run_id, node_id: n.node_id, stage: n.stage, paths: mutated });
+    }
   }
   return finishNode(run, n, result, r.vendor);
 }
