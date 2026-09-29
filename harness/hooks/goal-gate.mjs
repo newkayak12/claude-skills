@@ -236,7 +236,7 @@ const WRITE_CMD = /(^|[\s;&|(`"'])(tee|sed\s+(-[^\s]*\s+)*-i|perl\s+(-[^\s]*\s+)
 const INLINE_FLAG = /(^|\s)(-e|--eval|-p|--print|-c)\b/;
 // A git command with --output writes that file.
 const GIT_OUTPUT = /(?:^|\s)--output(?:=|\s+)("([^"]*)"|'([^']*)'|[^\s;&|<>()]+)/g;
-const HEREDOC = /(?<!<)<<(?!<)-?\s*(['"]?)([A-Za-z_]\w*)\1/g;
+const REDIRECT = /(?:^|[^<>&0-9])(?:[0-9]|&)?>>?\|?\s*("([^"]*)"|'([^']*)'|[^\s;&|<>()]+)/g;
 const PATHLIKE = /[A-Za-z0-9_.\/~@+-]+/g;
 // Read-only commands whose plain arguments may name a write verb (grep -n cp x.mjs). Anything
 // else - sudo, env, nohup, xargs, find -exec, eval, command, exec, flock, a wrapper nobody listed
@@ -245,9 +245,12 @@ const READ_ONLY = new Set(['grep', 'egrep', 'fgrep', 'rg', 'cat', 'head', 'tail'
 const GIT_READ = new Set(['log', 'show', 'diff', 'status']);
 const INTERP = /^(node|deno|bun|python[0-9.]*|perl|ruby|php)$/;
 const SHELLS = /^(bash|sh|zsh|dash|ksh|fish|eval|source|xargs)$/;
-// Anything in a script body that could write, run or load code. Deny by default: a read call
-// named here (open() for reading) still counts - only a script with none of these is text.
-const SCRIPT_WRITE = /\b(write\w*|append\w*|open\w*|copy\w*|rename\w*|replace|unlink\w*|remove\w*|rm\w*|mkdir\w*|makedirs|truncate|chmod|chown|symlink\w*|link\w*|exec\w*|spawn\w*|fork|subprocess|system|popen|shutil|eval|require|import|__import__|fs|pathlib|Path|os|child_process|Deno|Bun|File\w*|stream\w*|save\w*|dump\w*|to_csv|to_json)\b/;
+// Anything in a script body that could write, run or load code - dynamic lookups included, so
+// getattr(__builtins__, 'op'+'en') still counts. Deny by default: a read call named here (open()
+// for reading) still counts - only a script with none of these is text.
+const SCRIPT_WRITE = /\b(write\w*|append\w*|open\w*|copy\w*|rename\w*|replace|unlink\w*|remove\w*|rm\w*|mkdir\w*|makedirs|truncate|chmod|chown|symlink\w*|link\w*|exec\w*|spawn\w*|fork|subprocess|system|popen|shutil|eval|require|import|__import__|fs|pathlib|Path|os|child_process|Deno|Bun|File\w*|stream\w*|save\w*|dump\w*|to_csv|to_json|getattr|__builtins__|__dict__|globals|compile|Function|constructor)\b/;
+// A file a data heredoc writes that is itself code.
+const SCRIPT_EXT = /\.(sh|bash|zsh|py|js|mjs|cjs|ts|rb|pl|php)$/i;
 
 // Simple commands of a command line: split on ; & | && || and newlines outside quotes and
 // escapes (find -exec rm {} \; stays one). 2>&1 and &> are not separators.
@@ -278,53 +281,121 @@ export function simpleCommands(text) {
   return out;
 }
 
-const firstWord = (seg) => (seg.match(/^\S+/) || [''])[0].replace(/^['"]|['"]$/g, '').replace(/^.*\//, '');
+const bare = (w) => w.replace(/^['"]+|['"]+$/g, '').replace(/^.*\//, '');
+const firstWord = (seg) => bare((seg.match(/^\S+/) || [''])[0]);
+// Every word of a simple command: an interpreter behind a wrapper (timeout 5 python3 -c, nice
+// node -e, env python3 -) is still an interpreter.
+const words = (seg) => seg.split(/\s+/).map(bare).filter(Boolean);
+
+function redirectTargets(text) {
+  const out = [];
+  for (const m of String(text).matchAll(REDIRECT)) {
+    const t = m[2] ?? m[3] ?? m[1];
+    if (t && !/^&\d$/.test(t) && t !== '/dev/null') out.push(t);
+  }
+  return out;
+}
+
+// A read-only command's own way to run or write something: rg --pre runs a command on each
+// file, less -o/--log-file writes its input to a file.
+function runsOrWrites(seg) {
+  const w = firstWord(seg);
+  return (w === 'rg' && /(^|\s)--pre(-glob)?\b/.test(seg))
+    || (w === 'less' && /(^|\s)(-[a-zA-Z]*[oO]|--log-file|--LOG-FILE)\b/.test(seg));
+}
 
 // A read-only command that owns the whole simple command: its plain arguments write nothing.
-// Command substitution runs something else, so it never counts as read-only.
+// Command substitution runs something else, so it never counts as read-only; neither does a
+// read-only command's own way to run or write something (rg --pre, less -o).
 function readOnly(seg) {
   if (/\$\(|`/.test(seg)) return false;
   const w = firstWord(seg);
   if (w === 'echo') return !/>/.test(seg.replace(/[12]?>&[12]/g, ''));
+  if (runsOrWrites(seg)) return false;
   if (READ_ONLY.has(w)) return true;
   if (w === 'git') return GIT_READ.has(seg.split(/\s+/)[1]) && !/(^|\s)--output\b/.test(seg);
   return false;
 }
 
-// The command line with every heredoc body cut out, and each heredoc classified by the
-// pipeline that consumes it: fed to a shell (a script), to an interpreter (a script, judged by
-// its body), or to anything else (data - only its redirect target is written).
+// The command line with every heredoc body cut out, and each heredoc with the line that feeds
+// it. Heredoc markers are found outside quotes only (grep -n "<<EOF" is not one). A heredoc that
+// never closes returns the whole command as its head, judged as it stands.
 export function splitHeredocs(cmd) {
-  const lines = String(cmd).split('\n');
-  const head = [];
+  const s = String(cmd);
   const docs = [];
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    head.push(line);
-    const delims = [...line.matchAll(HEREDOC)].map((m) => m[2]);
-    if (!delims.length) continue;
-    const words = simpleCommands(line).map(firstWord);
-    const kind = words.some((w) => SHELLS.test(w)) ? 'shell' : words.some((w) => INTERP.test(w)) ? 'script' : 'data';
-    for (const d of delims) {
-      const body = [];
-      while (i + 1 < lines.length && lines[i + 1].trim() !== d) body.push(lines[++i]);
-      if (i + 1 < lines.length) i++; // the delimiter line
-      docs.push({ kind, body: body.join('\n') });
+  let out = '';
+  let q = null;
+  let pending = [];
+  let i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (q) {
+      out += c;
+      if (c === '\\' && q === '"' && i + 1 < s.length) out += s[++i];
+      else if (c === q) q = null;
+      i++;
+      continue;
     }
+    if (c === '\\' && i + 1 < s.length) { out += c + s[i + 1]; i += 2; continue; }
+    if (c === '"' || c === "'") { q = c; out += c; i++; continue; }
+    if (c === '<' && s[i + 1] === '<' && s[i - 1] !== '<' && s[i + 2] !== '<') {
+      const m = /^<<-?\s*(['"]?)([A-Za-z_]\w*)\1/.exec(s.slice(i));
+      if (m) { pending.push(m[2]); out += m[0]; i += m[0].length; continue; }
+    }
+    if (c === '\n' && pending.length) {
+      const line = out.slice(out.lastIndexOf('\n') + 1);
+      out += c;
+      i++;
+      for (const d of pending) {
+        const body = [];
+        let closed = false;
+        while (i < s.length) {
+          const nl = s.indexOf('\n', i);
+          const end = nl < 0 ? s.length : nl;
+          const l = s.slice(i, end);
+          i = nl < 0 ? s.length : nl + 1;
+          if (l.trim() === d) { closed = true; break; }
+          body.push(l);
+        }
+        if (!closed) return { head: s, docs: [] };
+        docs.push({ line, body: body.join('\n') });
+      }
+      pending = [];
+      continue;
+    }
+    out += c;
+    i++;
   }
-  return { head: head.join('\n'), docs };
+  if (pending.length) return { head: s, docs: [] };
+  return { head: out, docs };
+}
+
+// Whether a heredoc's paths count as written, by what consumes it: a shell always; an
+// interpreter when its body can write; anything else (data) when its body holds a write verb,
+// or - when the file it writes is code, or is run later on the same command line - a
+// write-capable call. Plain prose (a commit message saying "remove") is data.
+function heredocWrites(d, head) {
+  const ws = simpleCommands(d.line).flatMap(words);
+  if (ws.some((w) => SHELLS.test(w))) return true;
+  if (ws.some((w) => INTERP.test(w))) return SCRIPT_WRITE.test(d.body) || WRITE_CMD.test(d.body);
+  if (WRITE_CMD.test(d.body)) return true;
+  const targets = redirectTargets(d.line);
+  const code = targets.some((t) => SCRIPT_EXT.test(t) || head.split(t).length > 2);
+  return code && SCRIPT_WRITE.test(d.body);
 }
 
 // Whether the paths a command names count as written: a write verb outside a read-only
-// command, a shell fed a script, or an inline/heredoc script with anything write-capable in it.
+// command, a shell given a script, an interpreter's inline script with anything write-capable
+// in it, or a heredoc that writes (heredocWrites).
 function writesNamedPaths(head, docs) {
-  if (docs.some((d) => d.kind === 'shell' || (d.kind === 'script' && SCRIPT_WRITE.test(d.body)))) return true;
+  if (docs.some((d) => heredocWrites(d, head))) return true;
   for (const seg of simpleCommands(head)) {
     if (readOnly(seg)) continue;
-    if (WRITE_CMD.test(seg)) return true;
-    const w = firstWord(seg);
-    if (SHELLS.test(w) && INLINE_FLAG.test(seg)) return true;
-    if (INTERP.test(w) && INLINE_FLAG.test(seg) && SCRIPT_WRITE.test(seg.slice(seg.indexOf(' ')))) return true;
+    if (WRITE_CMD.test(seg) || runsOrWrites(seg)) return true;
+    if (!INLINE_FLAG.test(seg)) continue;
+    const ws = words(seg);
+    if (ws.some((w) => SHELLS.test(w))) return true;
+    if (ws.some((w) => INTERP.test(w)) && SCRIPT_WRITE.test(seg)) return true;
   }
   return false;
 }
@@ -347,20 +418,16 @@ function bases(cmd, cwd) {
 export function bashWriteTargets(command, cwd) {
   const cmd = String(command || '');
   const { head, docs } = splitHeredocs(cmd);
-  const words = new Set();
-  for (const m of head.matchAll(/(?:^|[^<>&0-9])(?:[0-9]|&)?>>?\|?\s*("([^"]*)"|'([^']*)'|[^\s;&|<>()]+)/g)) {
-    const t = m[2] ?? m[3] ?? m[1];
-    if (t && !/^&\d$/.test(t) && t !== '/dev/null') words.add(t);
-  }
-  for (const m of head.matchAll(GIT_OUTPUT)) words.add(m[2] ?? m[3] ?? m[1]);
+  const found = new Set(redirectTargets(head));
+  for (const m of head.matchAll(GIT_OUTPUT)) found.add(m[2] ?? m[3] ?? m[1]);
   if (writesNamedPaths(head, docs)) {
     for (const t of cmd.match(PATHLIKE) || []) {
       if (t.startsWith('-') || !/[./]/.test(t) || /^\.+$/.test(t)) continue;
-      words.add(t);
+      found.add(t);
     }
   }
   const out = new Set();
-  for (const b of bases(head, cwd)) for (const w of words) out.add(resolve(b, w.replace(/^~(?=\/)/, process.env.HOME || '~')));
+  for (const b of bases(head, cwd)) for (const w of found) out.add(resolve(b, w.replace(/^~(?=\/)/, process.env.HOME || '~')));
   return [...out];
 }
 
