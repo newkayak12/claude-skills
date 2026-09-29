@@ -1,6 +1,6 @@
 # deprecated
 
-Plugins that are no longer published to the marketplace. The files stay here so their frameworks can
+Plugins that are no longer published to the marketplace, and unused skills and artifacts of live plugins. The files stay here so their frameworks can
 be read and lifted; nothing routes to them.
 
 | Plugin | Skills | Unpublished | Note |
@@ -9,6 +9,19 @@ be read and lifted; nothing routes to them.
 | `leadership` | 5 | `fef3604` (2026-08-27), unlinked deliberately 2026-09-11 | IC/manager leveling and 1-on-1 preparation |
 | `pm` | 22 | `dab44e5` (2026-08-30, hidden); moved here 2026-09-28 | product management; think/planning/develop now carry what they used (planning 1.2.0 absorbed hypothesis, prioritization and problem-validation parts), teams inlined its PRD contract at 0.20.0 |
 | `harness-beta` | 2 | `d396f2d` (2026-09-08), its only commit | routing idea (classifier choosing Agent Team vs. Dynamic Workflow) absorbed into `graph` |
+
+## Skills and artifacts (moved 2026-09-29, `docs/plans/2026-09-29-repo-tidy.md`)
+
+The plugins below are still live. Only these pieces of them were unused, meaning no workflow, skill or code routed to them, so they moved here with their contents unchanged.
+
+| Path | What | Plugin version that dropped it |
+|---|---|---|
+| `develop/skills/pragmatic-programmer` | codebase-health diagnosis across seven principles | develop 1.5.4 |
+| `think/skills/microinteractions` | UI micro-moment design | think 1.3.3 |
+| `cognition/skills/thinking-style-profiler` | personal thinking-pattern profile | cognition 1.1.4 |
+| `write/skills/write-like-me`, `write/skills/sbi-writer` | voice-matched rewriting; SBI feedback (reached only via write-like-me) | write 1.4.2 |
+| `artifacts/think-devils-advocate-workspace` | generated benchmark output of devils-advocate iteration 1 | — |
+| `docs/diagrams/` | teams architecture and first-run diagrams nothing cites | — |
 
 They were absent from `.claude-plugin/marketplace.json` from `fef3604` onward — a release commit that
 mentioned neither — and the removal was confirmed as intended on 2026-09-11.
@@ -25,6 +38,3 @@ mentioned neither — and the removal was confirmed as intended on 2026-09-11.
   and is the place to look for it now.
 - The validator does not check this directory, and these versions are frozen at their last published value (`self` 1.1.3, `leadership` 1.1.2). If one comes
   back, move it out, add it to `marketplace.json`, and give it a `KOR.md` — `self` never had one.
-- `pm/` is hidden from the marketplace (`dab44e5`) but **not** deprecated: `planning:roadmap-planning`,
-  `develop:operations-workflow`, `develop:incident-response-playbook` and
-  `think:deep-thinking-workflow` still route to `pm:` skills. Leave it where it is.

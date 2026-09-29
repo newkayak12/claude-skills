@@ -27,7 +27,6 @@ alone.
 | Strip inherited assumptions and rebuild from the ground up | `first-principles` |
 | Have my plan attacked with the strongest objections | `devils-advocate` |
 | Turn scattered notes into a structure I can write or present from | `thought-organizer` |
-| Design a UI moment — toggle, loading state, empty state — that feels right | `microinteractions` |
 | Prepare for a salary talk, a contract, or a hard conversation | `negotiation` |
 
 ## Skills
@@ -225,23 +224,6 @@ It picks the output shape before structuring:
 | 5+ ideas with named cross-links, knowledge-base goal | Zettelkasten-style linking |
 | You need only the core message | Core claim extraction |
 
-### `microinteractions`
-
-Designs the contained product moments — toggles, password fields, loading indicators,
-pull-to-refresh, like buttons — using Dan Saffer's structure: Trigger, Rules, Feedback, Loops &
-Modes, plus signature moments and reduction. Trigger → feedback → rules gets defined before any
-motion is designed, animation duration matches the perceived weight of the action, and no motion is
-added as decoration — every one communicates a state change. It self-scores 0–10 with the gaps named.
-
-```
-파일 업로드 버튼이 눌러도 반응이 없는 것처럼 느껴져.
-트리거부터 성공 피드백까지 어떻게 설계해야 할지 잡아줘.
-```
-
-Each area carries an ethical boundary: no critical triggers hidden behind gestures without a visible
-fallback, no fake progress bars or manipulative countdowns, no adaptive loops that make opt-out
-progressively harder, and function always before delight.
-
 ### `negotiation`
 
 Chris Voss's tactical-empathy framework, prepared before the conversation rather than improvised in
@@ -271,7 +253,6 @@ private information.
 | `first-principles` | think-tool (Lens A and Lens C) | mcp-reasoner |
 | `devils-advocate` | — | think-tool, mcp-reasoner, sequential-thinking |
 | `thought-organizer` | think-tool (gap surfacing) | sequential-thinking |
-| `microinteractions` | — | think-tool |
 | `negotiation` | think-tool (counterpart motivations, black swans) | sequential-thinking |
 
 Add the remote SSE endpoints in Claude settings → MCP Servers.
