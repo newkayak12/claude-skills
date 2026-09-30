@@ -1119,7 +1119,7 @@ test('flowMetrics: a STORY that never logged an explicit BACKLOG line (deps alre
   assert.equal(fm.cycle_time_ms.by_story[`${EPIC}/P1`], 1000); // 4000 - 3000
 });
 
-// Cards everywhere (docs/plans/2026-09-28-teams-cards-everywhere.md C2/C7): planning and QA are one
+// Cards everywhere (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md C2/C7): planning and QA are one
 // card per feature area. Every reader goes through planningPkgs/qaPkgs, which also read a task.json
 // written before the split (a single planning_pkg/qa_pkg) as a one-card list.
 test('planningPkgs/qaPkgs/phaseOfId read the card lists, and a pre-split task.json as one card each', async () => {

@@ -36,7 +36,7 @@ All users are job seekers. Most are Korean-speaking backend/software engineers w
 | **Seeker mid-rewrite** | Make weak lines stronger, and when a target posting exists, bend the resume toward it without changing a fact | Calls `portfolio-rewrite` for strength, then separately `resume-tailorer` for the JD. The two outputs have different formats and different `[확정]` handling. |
 | **Seeker requesting feedback** | "Would this pass 서류? What is weakest?", with the writing-pattern read (피동, subject, numbers, decisions) included | Calls `portfolio-feedback`, then `portfolio-pattern`, and gets the decision-verb ratio twice. |
 | **Seeker running the whole application** | One guided path from posting to interview, including 자기소개서 | Follows `job-application-workflow`, which names three skills that will no longer exist and has no 자기소개서 step. |
-| **Maintainer (secondary)** | Keep the plugin installable and every cross-reference live | Relies on `scripts/validate_plugins.py`, which does not detect references to deleted skills (F§5). |
+| **Maintainer (secondary)** | Keep the plugin installable and every cross-reference live | Relies on `_repo/scripts/validate_plugins.py`, which does not detect references to deleted skills (F§5). |
 
 ## Solution overview
 
@@ -52,7 +52,7 @@ All users are job seekers. Most are Korean-speaking backend/software engineers w
 - SC2. Every capability in keep-lists JD1-17, PC1-15, RT1-17 and PR1-9 can be located in the merged skill (its SKILL.md or its own `references/`). The build package's PR/notes contain a table from each ID to a passage.
 - SC3. On the fixtures (see *Fixtures* below), a fresh model running the merged or new skill reaches the same judgment as a fresh model running the pre-change skill(s) from `git show cbdfcd6:…`, per the parity rules in each story.
 - SC4. `grep -rn "jd-fit\|portfolio-company\|resume-tailorer" portfolio/` returns only the five whitelisted lines listed in US-4 (unchanged portfolio-feedback, portfolio-pattern and plugin.json).
-- SC5. `python3 scripts/validate_plugins.py` prints `PASSED` after every build package.
+- SC5. `python3 _repo/scripts/validate_plugins.py` prints `PASSED` after every build package.
 - SC6. `git diff cbdfcd6 -- portfolio/skills/portfolio-feedback portfolio/skills/portfolio-pattern .claude-plugin/marketplace.json portfolio/.claude-plugin/plugin.json` is empty.
 - SC7. Each output of every job-application-workflow step matches an output block of the skill named at that step.
 
@@ -173,13 +173,13 @@ Run-it rule for every comparison: a *fresh* model (a new subagent that has not s
 - AC4.3 For each step, the output the workflow promises is an output block of the named skill at the post-sprint tree. In README/KOR, the §job-application-workflow prose and the workflow diagram (README L47-64, KOR L46-62 at `cbdfcd6`) state the new step count and no longer promise "company research" / "회사 리서치", or a written "STAR story bank" / "STAR 스토리 뱅크" as the interview step's output. interview-plan's own section, which describes 6-8 STAR *prompts* (README L284, KOR L263), is accurate and stays.
 - AC4.4 `grep -rn "jd-fit\|portfolio-company\|resume-tailorer" portfolio/` returns exactly the five whitelisted lines: portfolio-feedback L48, L149; portfolio-pattern L36, L141; `.claude-plugin/plugin.json` L3.
 - AC4.5 README.md and KOR.md change together: both have the same sections for `fit`, the merged `portfolio-rewrite`, and the beta-lane line, and neither has a section for a deleted skill.
-- AC4.6 `python3 scripts/validate_plugins.py` passes.
+- AC4.6 `python3 _repo/scripts/validate_plugins.py` passes.
 
 ## Out of scope (scope and non-goals)
 
 **Scope boundaries (decided by the requester)**
 - **No version or manifest edits.** `.claude-plugin/marketplace.json` and `portfolio/.claude-plugin/plugin.json` are not touched this sprint. Versions (and, by default, the stale description strings) are bumped once after the sprint (D9). This overrides writing-skills step 8. The "update README + KOR" part of the repo update workflow still applies.
-- **Gate carried into every build package:** `python3 scripts/validate_plugins.py` must pass (D10; it prints `PASSED — all 14 plugins are installable` at `cbdfcd6`), together with the reference grep of AC4.4. The validator does not detect dangling references (F§5), so the grep is what catches them. A package that runs before US-4 lands may leave reference sites outside its own story for US-4; the grep's five-line result is required once all four stories are merged.
+- **Gate carried into every build package:** `python3 _repo/scripts/validate_plugins.py` must pass (D10; it prints `PASSED — all 14 plugins are installable` at `cbdfcd6`), together with the reference grep of AC4.4. The validator does not detect dangling references (F§5), so the grep is what catches them. A package that runs before US-4 lands may leave reference sites outside its own story for US-4; the grep's five-line result is required once all four stories are merged.
 - **No edits to portfolio-feedback or portfolio-pattern** (D4). Their stale references wait for beta promotion.
 - **Beta promotion is not part of this sprint.** Merging portfolio-feedback-beta into portfolio-feedback, or deleting portfolio-pattern, is the user's call after benchmarking (D4).
 
@@ -226,7 +226,7 @@ The merged skill's name (`portfolio/skills/fit`) is not in this table. The reque
 - `references/`: portfolio-feedback's `resume-conventions.md`, `claim-and-consistency.md`, `revision-diff.md` (F§3); shared `portfolio/references/ats-rules-korea.md` and `korea-company-culture-signals.md` (F§2, F§4).
 - `portfolio/.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` description strings (F§4, U3).
 - `write/skills/writer-verification/SKILL.md` draft mode and genres (F§4); `write/skills/writing-skills/SKILL.md` authoring rules (F§5).
-- `scripts/validate_plugins.py` checks and warnings (F§5); `portfolio-feedback/evals/` as the fixture-format precedent (F§5).
+- `_repo/scripts/validate_plugins.py` checks and warnings (F§5); `portfolio-feedback/evals/` as the fixture-format precedent (F§5).
 
 **Requester decisions (findings §0) and where this PRD reflects each**
 

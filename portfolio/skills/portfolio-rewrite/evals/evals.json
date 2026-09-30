@@ -4,7 +4,7 @@
     {
       "id": 1,
       "prompt": "이 공고에 맞게 이력서 고쳐줘.\n\n[Resume file: resume-backend-kr.md]\n[JD file: jd-fintech-senior-backend.md]",
-      "expected_output": "JD-tailoring mode. Opens with the one-line `JD 적합도 판정: must-have 5개 중 Missing 0 · Weak 1 — 최우선 변경: [Profile/Summary 신설]` (자격요건 5 lines are the must-haves; RDBMS 설계 is the Weak row). Then JD Analysis Summary, the gap table with Missing/Weak/Strong rows, Section Rewrites with actual Before/After text, and ends with What NOT to Change. 'API 응답속도 개선' is rewritten with `[확인 필요: …]` for the number; '820ms → 310ms' and '4시간 → 40분' appear unchanged. Baseline for parity: the pre-merge JD-tailoring skill at cbdfcd6 (path in docs/plans/portfolio-consolidate/rewrite-comparison.md) on the same files must report the same Missing/Weak counts and 최우선 변경 area (one rerun of both allowed on mismatch).",
+      "expected_output": "JD-tailoring mode. Opens with the one-line `JD 적합도 판정: must-have 5개 중 Missing 0 · Weak 1 — 최우선 변경: [Profile/Summary 신설]` (자격요건 5 lines are the must-haves; RDBMS 설계 is the Weak row). Then JD Analysis Summary, the gap table with Missing/Weak/Strong rows, Section Rewrites with actual Before/After text, and ends with What NOT to Change. 'API 응답속도 개선' is rewritten with `[확인 필요: …]` for the number; '820ms → 310ms' and '4시간 → 40분' appear unchanged. Baseline for parity: the pre-merge JD-tailoring skill at cbdfcd6 (path in _repo/docs/plans/portfolio-consolidate/rewrite-comparison.md) on the same files must report the same Missing/Weak counts and 최우선 변경 area (one rerun of both allowed on mismatch).",
       "files": [
         "evals/files/resume-backend-kr.md",
         "evals/files/jd-fintech-senior-backend.md"

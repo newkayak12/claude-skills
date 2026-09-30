@@ -102,7 +102,7 @@ export const KINDS = {
       gate: ['think:devils-advocate'],
     },
   },
-  // The light PLAN chain (docs/plans/2026-09-28-teams-light-plan.md §2.2): for a backlog whose
+  // The light PLAN chain (_repo/docs/plans/2026-09-28-teams-light-plan.md §2.2): for a backlog whose
   // acceptance criteria are already declared (acceptance.mjs's hasDeclaredAcceptance), draft
   // and revise fold into one template-fill - copy the declared criteria into the document in
   // backlog order, cite investigate's findings beside them, carry every unknown - and the gate
@@ -310,12 +310,12 @@ export function isAuthorNode(run, n) {
 // routing.mjs's AUTHOR_OF guards against for AI identities, just unguarded because a human was
 // never in that table at all. Called right after pushChain creates the attempt - expandSubgoals'
 // first attempt and retrySubgoal's every later one both call it, so a rejected human-authored
-// subgoal comes back to a human again, not a model (docs/plans/2026-09-23-teams-reducer-human-
+// subgoal comes back to a human again, not a model (_repo/docs/plans/2026-09-23-teams-reducer-human-
 // rollback.md §0.2: a headless driver has no surface to reach one). A node already past
 // 'pending' (running or done before the pin landed) is left alone - the spec's `assignee` still
 // updates, so the NEXT attempt, if this one is rejected, picks it up.
 //
-// Two different hands write `assignee`, and docs/plans/2026-09-17-teams-team.md §7 ("사용자 =
+// Two different hands write `assignee`, and _repo/docs/plans/2026-09-17-teams-team.md §7 ("사용자 =
 // 그래프 노드") treats them differently. tm_assign marks its own writes {by: 'user'}
 // (taskmanager.mjs's toolAssign, both the STORY-level pkg.assignee and the TASK-level
 // sg.assignee) - the user is present by definition (they just called the tool), so that pin
@@ -714,7 +714,7 @@ export function createRun(opts) {
     // decided by default and merely recorded (run.unasked). Off unless asked for: a run opened
     // by a daemon nobody is watching must still be able to finish.
     interactive: opts.interactive === true,
-    // task.decisions (docs/plans/2026-09-28-teams-light-plan.md §6.2-2): what this task already
+    // task.decisions (_repo/docs/plans/2026-09-28-teams-light-plan.md §6.2-2): what this task already
     // decided before this run opened - the session brainstorm, the engine's own brainstorm node,
     // PLAN's asks and defaults. A snapshot, not a reference: graph.mjs never sees the task, and
     // the decisions it snapshots are written once, before any package opens. openAsk and
@@ -746,11 +746,11 @@ export function createRun(opts) {
     // planning run: told in words that one PRD would do, code-sprint-P3's planner still wrote two
     // documents and spent $10.86 of $15 before a package ran.
     max_subgoals: Number.isInteger(opts.max_subgoals) && opts.max_subgoals > 0 ? opts.max_subgoals : null,
-    // 'light' only on a PLAN child the manager resolved to the light chain (docs/plans/
+    // 'light' only on a PLAN child the manager resolved to the light chain (_repo/docs/plans/
     // 2026-09-28-teams-light-plan.md §2.5); defaultKind/normalizeSpec read it. Absent otherwise.
     ...(opts.planning_mode === 'light' ? { planning_mode: 'light' } : {}),
     max_retries: Number.isInteger(opts.max_retries) ? opts.max_retries : 2,
-    // continue (default) or rollback - docs/plans/2026-09-23-teams-reducer-human-rollback.md §5.
+    // continue (default) or rollback - _repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §5.
     // Read by retrySubgoal below to decide whether a rejected attempt's worktree edits stay (as
     // every retry has always left them) or are reset to the attempt's own pre-checkpoint first.
     retry_policy: opts.retry_policy === 'rollback' ? 'rollback' : 'continue',
@@ -780,7 +780,7 @@ export function createRun(opts) {
   };
   // A package the task manager shaped and critiqued (openChild) still runs the full harness
   // inside its own child run - plan -> setgoal -> critique -> <chain> -> gate:goal -> report -
-  // the fractal rule of docs/plans/2026-09-17-teams-team.md §2 (each Team runs the four steps
+  // the fractal rule of _repo/docs/plans/2026-09-17-teams-team.md §2 (each Team runs the four steps
   // inside itself). What the manager already settled travels down as data, not as skipped
   // nodes: `package` tells plan it is writing a BUILD plan for this one package (not a re-split
   // of the EPIC - prompts.mjs's packageBlock), and its acceptance is carried verbatim into the
@@ -1132,7 +1132,7 @@ export function openRepair(run, round, feedback, judges) {
 // decide automatically and record what it WOULD have asked - broker.mjs keeps those on
 // run.unasked so the report can show the questions nobody answered, which reads better than a
 // document quietly full of assumptions.
-// D2 slice 3 (0.29.0, docs/plans/2026-09-23-teams-reducer-human-rollback.md §1): `questions[]`
+// D2 slice 3 (0.29.0, _repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §1): `questions[]`
 // is no longer investigate's `unknowns[]` alone - any judging/deciding stage's own contract
 // (setgoal, plan, critique, shape, gate, accept, gate:goal, a QA cases set) may return the same
 // shape ({question, to/owner, options?, default, why}), and the engine treats it identically.
@@ -1169,7 +1169,7 @@ export function answeredDecisions(run, owner) {
   return out;
 }
 
-// ---------- task.decisions (docs/plans/2026-09-28-teams-light-plan.md §6) ----------
+// ---------- task.decisions (_repo/docs/plans/2026-09-28-teams-light-plan.md §6) ----------
 //
 // answeredDecisions is scoped to ONE run, and PLAN and every package are separate runs - so a
 // decision PLAN's ask settled reached no package, and each package's investigate either
@@ -1317,12 +1317,12 @@ export function openAsk(run, n, questions, opts = {}) {
   // a capacity lead, Legal/Finance, SRE and Security - addressed to whichever happened to be first.
   // Nobody can answer that card: it is five people's work in one envelope, and the design this
   // came from is explicit that a checkpoint without a named owner is where the pattern breaks
-  // (docs/plans/2026-09-23-teams-reducer-human-rollback.md §0'). Grouped in first-appearance
+  // (_repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §0'). Grouped in first-appearance
   // order so the leading card stays `ask:<sg>:<attempt>` and reads the same as before whenever
   // there is only one owner - which is the common case and every test written before this.
   const groups = new Map();
   for (const q of qs) {
-    // `to` is the generalized contract's field name (docs/plans/2026-09-23-teams-reducer-
+    // `to` is the generalized contract's field name (_repo/docs/plans/2026-09-23-teams-reducer-
     // human-rollback.md §1); `owner` is investigate's own, kept so its existing unknowns[]
     // still group exactly as before.
     const key = (typeof q.to === 'string' && q.to.trim()) || (typeof q.owner === 'string' && q.owner.trim()) || '';
@@ -1436,7 +1436,7 @@ export function expandSubgoals(run, subgoals) {
 }
 
 // Deterministic sibling write-scope check (item 2 of the reducer plan, §0.1/§4 of
-// docs/plans/2026-09-23-teams-reducer-human-rollback.md): whether parallel subgoals collided
+// _repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md): whether parallel subgoals collided
 // on a file - or, sharing one document, the same heading - without a single declared owner.
 // This is a pure function of run state, not a model call, so it runs whether or not the run's
 // own `reduce` LLM pass happened to notice the same thing (see broker.mjs's finishNode, which
@@ -1539,7 +1539,7 @@ export function retrySubgoal(run, subgoalId, feedback) {
   const baseDeps = head ? head.deps.slice() : ['critique'];
   const baseAfter = head ? (head.after || []).slice() : [];
 
-  // rollback (docs/plans/2026-09-23-teams-reducer-human-rollback.md §5): reset the worktree to
+  // rollback (_repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §5): reset the worktree to
   // the checkpoint broker.mjs recorded before this subgoal's OWN first attempt touched it, i.e.
   // the state that had already cleared every gate upstream of this subgoal - not a checkpoint
   // from any later attempt, which would itself carry a still-uncommitted, still-failing edit.
@@ -1695,7 +1695,7 @@ export function readyNodes(run) {
 }
 
 // A human-pinned node that has just become ready parks here instead of ever being offered to a
-// driver: docs/plans/2026-09-17-teams-team-v0.13.0.md §0.1 fixes `waiting_human` as a node
+// driver: _repo/docs/plans/2026-09-17-teams-team-v0.13.0.md §0.1 fixes `waiting_human` as a node
 // state, not a vendor, and §0.3 fixes human OUT of the routing pool entirely - the only way in
 // is this pin (`node.assignment.executor === 'human'`, written by the spec's own `assignee`
 // field via applyHumanPin, or by tm_assign at runtime). Nothing in this engine polls a model for
@@ -1717,7 +1717,7 @@ export function promoteWaitingHuman(run) {
   return touched;
 }
 
-// gate:human (D2 Task 4, docs/plans/2026-09-23-teams-reducer-human-rollback.md §1): a
+// gate:human (D2 Task 4, _repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §1): a
 // configurable human approval gate over a judging stage, set with the team option
 // `human_gates: ['critique', 'gate', 'gate:goal', ...]` (run.human_gates, threaded the same way
 // run.interactive is - teamconfig.mjs, task.child_opts, createRun). Only a VERDICT-bearing

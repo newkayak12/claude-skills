@@ -8,7 +8,7 @@ threshold (see CURATION.md cluster B) without the metric itself moving under
 the rewrite's feet.
 
 Usage:
-    python3 scripts/prose_overlap.py <new_file> <upstream_file>
+    python3 _repo/scripts/prose_overlap.py <new_file> <upstream_file>
 
 Prints a single containment percentage (float, one line) to stdout:
 

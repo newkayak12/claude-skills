@@ -1,6 +1,6 @@
 # Findings — PRD-portfolio-consolidate
 
-Investigate stage for `docs/plans/portfolio-consolidate/PRD-portfolio-consolidate.md`.
+Investigate stage for `_repo/docs/plans/portfolio-consolidate/PRD-portfolio-consolidate.md`.
 Tree read at HEAD `cbdfcd6` (branch `teams/portfolio-consolidate`, portfolio plugin.json version 2.1.0).
 Every finding cites the file (and line where useful) it came from. Anything no source settles is under **Unknowns** with an owner; it must go into the PRD's Open Questions, not be decided in prose.
 
@@ -17,7 +17,7 @@ Line-number note: citations marked (L…) in the portfolio-company keep-list, th
 - D7. Fixtures, written under `portfolio/skills/<skill>/evals/` and kept: (a) Korean backend resume/경력기술서 excerpt with one metric-less line ("API 응답속도 개선") and one metric line; (b) JD for a senior backend role at a ~100-person fintech; (c) no JD (company-type path).
 - D8. Update every reference to a removed/renamed skill across `portfolio/` (related lists, README.md, KOR.md).
 - D9. Do NOT touch `.claude-plugin/marketplace.json` or `portfolio/.claude-plugin/plugin.json` versions (bumped once after the sprint). This overrides `write/skills/writing-skills/SKILL.md` step 8 ("bump the plugin's version").
-- D10. `python3 scripts/validate_plugins.py` must pass.
+- D10. `python3 _repo/scripts/validate_plugins.py` must pass.
 - D11. The bar = portfolio-feedback Standing Mandates: no invented facts → `[확인 필요: ○○]`, `[확정]` ledger, judgment first, boundary values not flagged.
 - D12. Document set = this one PRD (boxed sprint, $40 total).
 
@@ -139,7 +139,7 @@ Sources read: `portfolio/skills/portfolio-feedback/SKILL.md` (149 lines), its `r
 
 ## 4. Story: job-application-workflow rewire
 
-Sources read: `portfolio/skills/job-application-workflow/SKILL.md` (98 lines), `portfolio/skills/mock-interview/SKILL.md`, `portfolio/skills/interview-plan/SKILL.md`, `write/skills/writer-verification/SKILL.md`, README §job-application-workflow (L45-67), KOR §job-application-workflow (L42-62), `docs/plans/portfolio-refresh/PRD-portfolio-refresh.md` (US-8, Non-goals, Open Q 7).
+Sources read: `portfolio/skills/job-application-workflow/SKILL.md` (98 lines), `portfolio/skills/mock-interview/SKILL.md`, `portfolio/skills/interview-plan/SKILL.md`, `write/skills/writer-verification/SKILL.md`, README §job-application-workflow (L45-67), KOR §job-application-workflow (L42-62), `_repo/docs/plans/portfolio-refresh/PRD-portfolio-refresh.md` (US-8, Non-goals, Open Q 7).
 
 ### Current workflow shape
 - 4 steps: Step 1 JD Match · `jd-fit`; Step 2 Company-Type Fit · `portfolio-company` (skip if company fixed); Step 3 Tailoring · `resume-tailorer` (+ `portfolio-rewrite`); Step 4 Interview Preparation · `interview-plan` (L34-51). `[확정]` restated on entry; missing facts `[확인 필요]` (L32). `type: workflow` required by validator for names containing "workflow" (validate_plugins.py L223-224).
@@ -162,12 +162,12 @@ Sources read: `portfolio/skills/job-application-workflow/SKILL.md` (98 lines), `
 - `portfolio/README.md` L31, L32, L37 (which-skill table), L58, L60, L62 (workflow diagram), L70-97 (§jd-fit incl. L80-81), L99-114 (§portfolio-company), L123 (jd-fit in §portfolio-feedback), L252-277 (§resume-tailorer).
 - `portfolio/KOR.md` L30, L31, L36, L56, L58, L60, L68-77, L95-, L117, L232-.
 - `portfolio/.claude-plugin/plugin.json` L3 (inside portfolio/, so the reference grep hits it) description ("JD fit (jd-fit) … company-type fit … resume tailoring") and `.claude-plugin/marketplace.json` L101 (same string) — D9 excludes version edits; description edits unresolved (Unknown U3).
-- Outside portfolio/: only `docs/plans/portfolio-refresh/*` (historical; not a reference site) and `.teams_output/`.
+- Outside portfolio/: only `_repo/docs/plans/portfolio-refresh/*` (historical; not a reference site) and `.teams_output/`.
 - README/KOR workflow diagram (README L58-64, KOR L56-62) and prose ("JD analysis → company research", "culture signals, talking points, red flags", "STAR story bank, likely questions, questions to ask") promise outputs the skills do not produce (portfolio-company does no company research — workflow SKILL L39; interview-plan writes STAR prompts, not answers — interview-plan L28). D5's "no step promises an output no skill produces" applies to these lines too.
 
 ## 5. Gate and verification facts
 
-- `scripts/validate_plugins.py` passes at HEAD ("OK [portfolio] 10 skills", "PASSED — all 14 plugins are installable").
+- `_repo/scripts/validate_plugins.py` passes at HEAD ("OK [portfolio] 10 skills", "PASSED — all 14 plugins are installable").
 - It checks per skill dir: SKILL.md exists; frontmatter `name`, `description` (with "Use when"/"Use before"/"Use after"/"Apply when"), `scenarios`, `compatibility`; `type: workflow` for names containing "workflow". Warnings only: description >250 chars, >250 lines, >200 lines without `effort` / `## Standing Mandates` (L159-224). Dirs ending `-workspace` are skipped.
 - It does NOT check dangling references to deleted skills, nor `name` == directory name. D8 needs its own grep gate (e.g. `grep -rn "jd-fit\|portfolio-company\|resume-tailorer" portfolio/` = 0 outside allowed exceptions).
 - Authoring rules (write/skills/writing-skills/SKILL.md L67-93; repo CLAUDE.md): description starts "Use when" and states triggers only; scenarios 2-3 EN + 2-3 KR; body order Process → Output Template → What Claude Does / What You Do → Related Skills; nothing titled Overview/Background before Process. Step 6 gates (`skill:skill-trigger-validator`, `skill:skill-quality-assurance`) — the portfolio-refresh PRD recorded them as not installed here (refresh PRD Non-goals); not re-verified in this run.

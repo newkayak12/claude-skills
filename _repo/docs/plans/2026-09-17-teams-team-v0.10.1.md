@@ -78,10 +78,10 @@
   픽스처(`fixtures/tinyq/src/{index,queue,retry,worker}.mjs` + `test/*.test.mjs`)는 실제 코드와
   테스트가 이미 있는 유일한 flat 픽스처라서(`ledger`/`seam`은 빈 패키지) plan-flat과 qa-flat 둘 다
   이걸 쓴다 — 새 픽스처는 만들지 않는다.
-- `scripts/validate_plugins.py`는 스킬을 디렉터리 존재만으로 발견한다(매니페스트에 이름을 등록하는
+- `_repo/scripts/validate_plugins.py`는 스킬을 디렉터리 존재만으로 발견한다(매니페스트에 이름을 등록하는
   절차 없음) — `teams/skills/plan/SKILL.md`, `teams/skills/qa/SKILL.md`를 만드는 것 자체가
   등록이다.
-- **팀 리더 지시**: 이 파일 하나만 내가 소유한다. `docs/plans/2026-09-17-teams-team.md`는 다른
+- **팀 리더 지시**: 이 파일 하나만 내가 소유한다. `_repo/docs/plans/2026-09-17-teams-team.md`는 다른
   agent가 병행 편집 중이라 이 계획은 그 파일을 건드리지 않는다 — v0.10.0의 Task 9가 했던 "설계 문서
   §11/§13 갱신"에 해당하는 부분이 이번 계획에는 없다(Task 8 참고).
 
@@ -378,7 +378,7 @@ const GRAPH_STAGE_MOUNTS = {
 **Interfaces:** consumes 없음(정적 문서) — `flow: "plan"`을 이름으로만 참조, Task 1의 `FLOWS.plan`이
 실제로 존재해야 이 스킬이 의미 있게 동작하지만 파일 자체는 어떤 소스 파일과도 import 관계가 없어
 Task 1-3·5·6과 완전히 병행 가능.
-**Pass bar:** `python3 scripts/validate_plugins.py` teams 관련 ERROR 0.
+**Pass bar:** `python3 _repo/scripts/validate_plugins.py` teams 관련 ERROR 0.
 
 - [ ] 1: `develop`/`document`의 SKILL.md와 같은 구조로 작성한다
 ```markdown
@@ -464,7 +464,7 @@ Say it is a planning job. That is the whole difference from `orchestrate`.
 - `document` — same loop, flow pinned to a general written artifact, not a PRD
 - `qa` — same loop, flow pinned to test-case authoring and execution
 ```
-- [ ] 2: `python3 scripts/validate_plugins.py 2>&1 | grep -i teams` — ERROR 없음 확인(WARN은 허용)
+- [ ] 2: `python3 _repo/scripts/validate_plugins.py 2>&1 | grep -i teams` — ERROR 없음 확인(WARN은 허용)
 - [ ] 3: `grep -c '^name: plan$' teams/skills/plan/SKILL.md` → 1, `grep -c 'Use when' teams/skills/plan/SKILL.md` → 1 이상 확인
 - [ ] 4: `git add teams/skills/plan/SKILL.md && git commit -m "docs(teams): plan entry skill - flow pinned to PRD authoring"`
 
@@ -473,7 +473,7 @@ Say it is a planning job. That is the whole difference from `orchestrate`.
 ### Task 5: `teams:qa` entry 스킬
 **Files:** create `teams/skills/qa/SKILL.md`
 **Interfaces:** consumes 없음(정적 문서), Task 4와 마찬가지로 다른 모든 태스크와 완전히 병행 가능.
-**Pass bar:** `python3 scripts/validate_plugins.py` teams 관련 ERROR 0.
+**Pass bar:** `python3 _repo/scripts/validate_plugins.py` teams 관련 ERROR 0.
 
 - [ ] 1: 작성한다
 ```markdown
@@ -553,7 +553,7 @@ Say it is a QA pass. That is the whole difference from `orchestrate`.
 - `develop` — same loop, flow pinned to the code the qa pass checks
 - `plan` — same loop, flow pinned to the PRD this work traces back to
 ```
-- [ ] 2: `python3 scripts/validate_plugins.py 2>&1 | grep -i teams` — ERROR 없음 확인
+- [ ] 2: `python3 _repo/scripts/validate_plugins.py 2>&1 | grep -i teams` — ERROR 없음 확인
 - [ ] 3: `grep -c '^name: qa$' teams/skills/qa/SKILL.md` → 1 확인
 - [ ] 4: `git add teams/skills/qa/SKILL.md && git commit -m "docs(teams): qa entry skill - flow pinned to test-case authoring and execution"`
 
@@ -723,7 +723,7 @@ function reviewIndependence(run, n, executor, model) {
 **Files:** modify `teams/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`(teams 항목
 version + description), `teams/README.md`, `teams/KOR.md`
 **Interfaces:** consumes Task 1-7 전부.
-**Pass bar:** `node --test teams/scripts/test-*.mjs` 전부 통과(회귀 0), `python3 scripts/validate_plugins.py`
+**Pass bar:** `node --test teams/scripts/test-*.mjs` 전부 통과(회귀 0), `python3 _repo/scripts/validate_plugins.py`
 ERROR 0, 두 매니페스트 0.10.1 일치, README·KOR Status 첫 항목이 v0.10.1.
 
 - [ ] 1: `git fetch skills main && git status -sb` — origin이 앞서 있으면 rebase
@@ -741,7 +741,7 @@ ERROR 0, 두 매니페스트 0.10.1 일치, README·KOR Status 첫 항목이 v0.
     (planning before shape, qa after integrate, defect STORYs) - that needs the ticket/board layer,
     v0.11.0+.`
   - KOR: 같은 내용을 한국어로.
-- [ ] 5: `python3 scripts/validate_plugins.py` ERROR 0 확인
+- [ ] 5: `python3 _repo/scripts/validate_plugins.py` ERROR 0 확인
 - [ ] 6: `git add teams/.claude-plugin/plugin.json .claude-plugin/marketplace.json teams/README.md teams/KOR.md && git commit -m "feat(teams): 0.10.1 - planning/qa kinds, personas/skills/mounts, plan/qa entry skills"`
 - [ ] 7: `git push skills main`(저장소 규칙. 실패하면 1번으로 돌아가 fetch·rebase 후 재시도)
 

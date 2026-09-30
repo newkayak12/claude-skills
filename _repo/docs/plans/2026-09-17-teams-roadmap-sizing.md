@@ -12,7 +12,7 @@
 > 않았다 — 이 문서의 요점은 숫자가 아니라 표에서 재현되는 도출 과정이므로, 바뀐 것이 상태 칸
 > 하나뿐일 때는 그 칸만 바꾸는 것이 맞다.
 >
-> **상태 갱신 (2026-09-28), 진행 중인 일감:** 이 문서 이후 `docs/plans/2026-09-21-teams-server-owns-the-loop.md`가
+> **상태 갱신 (2026-09-28), 진행 중인 일감:** 이 문서 이후 `_repo/docs/plans/2026-09-21-teams-server-owns-the-loop.md`가
 > 나가며 v0.13.0/v0.14.0 자체가 이 문서가 사이징한 것과 다른 모양으로 출시됐다(자세한 사정은
 > `2026-09-17-teams-team.md` §11의 해당 행 노트). 남은 일감 중 실제로 살아 있는 것만 다시 적으면:
 > `tm_clean`, `teams run` CLI, `max_parallel_teams` 적응형 사이징 셋은 브랜치
@@ -372,7 +372,7 @@ Task 1–6(6개), v0.12.0 = Task 1–7(7개, `95dd8ee`로 출시 확인), v0.12.
 | Sprint box(budget/timebox/retro/backlog) | v0.29.0 |
 | judge-independence | v0.29.0 |
 | reducer registry | v0.29.0 |
-| checkpoint/rollback | v0.29.0 (`docs/plans/2026-09-23-teams-reducer-human-rollback.md` D3, 커밋 `edd29fc`) |
+| checkpoint/rollback | v0.29.0 (`_repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md` D3, 커밋 `edd29fc`) |
 | card-taking(`tm_assign`) | v0.27.3 |
 | idempotent submit | v0.29.0 |
 | diagram / `view.mjs` | diagram: v0.32.0, `view.mjs`: v0.14.0 |

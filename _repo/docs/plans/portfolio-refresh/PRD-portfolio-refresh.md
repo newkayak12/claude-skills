@@ -56,7 +56,7 @@ Only each skill's own directory changes. Versions, the plugin manifest and READM
 6. `grep '^## '` shows `Process`, `Output Template`, `What Claude Does / What You Do`, `Related Skills` in that order, with `Related Skills` last, and no `Why ...`/Overview/Background heading.
 7. `wc -w` of each SKILL.md ≤ its baseline in F§4.
 8. Every capability in the story's keep-list is still present.
-9. `python3 scripts/validate_plugins.py` passes; `git diff --stat` touches only `portfolio/skills/<name>/`.
+9. `python3 _repo/scripts/validate_plugins.py` passes; `git diff --stat` touches only `portfolio/skills/<name>/`.
 
 ## User Stories
 
@@ -195,7 +195,7 @@ Non-goals:
 - New numeric thresholds or score→verdict cut-offs for portfolio-jd and portfolio-company: none exists in any source, and inventing one is the failure this sprint removes.
 - New skills (cover letter, company research): the request is a refresh and the repo has too many skills already; the workflow is corrected to not promise them.
 - Sourcing the unsourced heuristics in interview-prep (LeetCode medium in 30 minutes, 45-minute system design) and portfolio-company profiles: kept as they are; not introduced by this sprint.
-- Running `skill:skill-trigger-validator` / `skill:skill-quality-assurance`: not installed here. Acceptance is verified by this PRD's per-story checks, `scripts/validate_plugins.py`, and the grep checks (decided by default - revisit with sprint manager).
+- Running `skill:skill-trigger-validator` / `skill:skill-quality-assurance`: not installed here. Acceptance is verified by this PRD's per-story checks, `_repo/scripts/validate_plugins.py`, and the grep checks (decided by default - revisit with sprint manager).
 
 ## Open Questions
 

@@ -9,6 +9,9 @@ work on with Codex.
 - Plugin manifests live at `<plugin>/.claude-plugin/plugin.json`.
 - The marketplace manifest lives at `.claude-plugin/marketplace.json`.
 - The harness plugin lives under `harness/`.
+- Non-plugin material lives under `_repo/`: design docs (`_repo/docs/`), repo scripts (`_repo/scripts/`), retired plugins (`_repo/deprecated/`).
+
+Before modifying this repo, read and follow `_repo/coding-guidelines.md`.
 
 ## Harness Paths
 
@@ -41,7 +44,7 @@ local Codex CLI process. It is not the Codex-session compatibility path.
 After plugin or skill changes, run:
 
 ```sh
-python3 scripts/validate_plugins.py
+python3 _repo/scripts/validate_plugins.py
 ```
 
 For harness engine script changes, also run:

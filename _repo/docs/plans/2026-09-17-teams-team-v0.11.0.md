@@ -1190,7 +1190,7 @@ function toolDocs(a) {
 **Interfaces:** consumes 없음(정적 문서) — `tm_board`/`tm_ticket`을 이름으로만 참조. 어떤 소스
 파일과도 import 관계가 없어 Task 1-4 전부와 완전히 병행 가능(실제로 유용해지는 건 Task 3 이후지만,
 파일 자체는 먼저 만들어도 충돌이 없다).
-**Pass bar:** `python3 scripts/validate_plugins.py` teams 관련 ERROR 0.
+**Pass bar:** `python3 _repo/scripts/validate_plugins.py` teams 관련 ERROR 0.
 
 - [ ] 1: `teams/skills/board/SKILL.md`
 ```markdown
@@ -1287,7 +1287,7 @@ Say which ticket - the key, or enough to find it (task + package id).
 - `board` — the whole task's kanban table, one row per STORY
 - `orchestrate` — opens a task in the first place
 ```
-- [ ] 3: `python3 scripts/validate_plugins.py 2>&1 | grep -i teams` — ERROR 없음 확인
+- [ ] 3: `python3 _repo/scripts/validate_plugins.py 2>&1 | grep -i teams` — ERROR 없음 확인
 - [ ] 4: `grep -c '^name: board$' teams/skills/board/SKILL.md` → 1, `grep -c '^name: ticket$' teams/skills/ticket/SKILL.md` → 1 확인
 - [ ] 5: `git add teams/skills/board/SKILL.md teams/skills/ticket/SKILL.md && git commit -m "docs(teams): board/ticket entry skills - thin wrappers over tm_board/tm_ticket"`
 
@@ -1298,7 +1298,7 @@ Say which ticket - the key, or enough to find it (task + package id).
 (teams 항목만), `teams/README.md`, `teams/KOR.md`
 **Interfaces:** consumes Task 1-5 전부.
 **Pass bar:** `node --test teams/scripts/test-*.mjs` 전부 통과(회귀 0), `python3
-scripts/validate_plugins.py` ERROR 0, 두 매니페스트 0.11.0 일치, README·KOR Status 첫 항목이
+_repo/scripts/validate_plugins.py` ERROR 0, 두 매니페스트 0.11.0 일치, README·KOR Status 첫 항목이
 v0.11.0.
 
 - [ ] 1: `git fetch skills main && git status -sb` — origin이 앞서 있으면 rebase(다른 agent가
@@ -1319,9 +1319,9 @@ v0.11.0.
     wrappers. Not yet: planning/qa wired into the EPIC flow itself, shape's role/priority, defect
     STORYs, or human executors - those are v0.12.0+.`
   - KOR: 같은 내용을 한국어로.
-- [ ] 5: 설계 문서(`docs/plans/2026-09-17-teams-team.md`)는 이 계획 파일 소유가 아니므로
+- [ ] 5: 설계 문서(`_repo/docs/plans/2026-09-17-teams-team.md`)는 이 계획 파일 소유가 아니므로
   건드리지 않는다 — §11의 v0.11.0 행을 "완료"로 표시하는 것은 팀 리더나 그 갱신을 맡은 agent의 몫.
-- [ ] 6: `python3 scripts/validate_plugins.py` ERROR 0 확인
+- [ ] 6: `python3 _repo/scripts/validate_plugins.py` ERROR 0 확인
 - [ ] 7: `git add teams/.claude-plugin/plugin.json .claude-plugin/marketplace.json teams/README.md teams/KOR.md && git commit -m "feat(teams): 0.11.0 - ticket layer (tickets.mjs, board.jsonl, docs.mjs), tm_board/tm_ticket/tm_docs, board/ticket entry skills"`
 - [ ] 8: `git push skills main`(저장소 규칙. 실패하면 1번으로 돌아가 fetch·rebase 후 재시도)
 

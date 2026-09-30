@@ -80,7 +80,7 @@ fit은 주어진 정보로만 판단합니다. 모든 단계가 `[확정]` 목�
 한국 회사 유형(대형 플랫폼, 성장기 스타트업, 핀테크/엔터프라이즈, 글로벌 테크, 개발도구/OSS)별로
 채점합니다 — Top 2와 피할 유형, 각각 근거·미스매치·보완 하나. 회사 신호는 사용자가 준 것만
 쓰고, 없는 사실은 `[확인 필요]`로 남습니다. 대체한 두 스킬과 같은 이력서·JD로 비교 검증했습니다
-(`evals/`, `docs/plans/portfolio-consolidate/fit-comparison.md`).
+(`evals/`, `_repo/docs/plans/portfolio-consolidate/fit-comparison.md`).
 
 ```
 내 포트폴리오랑 시리즈 C 핀테크 시니어 백엔드 JD 전문이야.

@@ -45,7 +45,7 @@ a source checkout of this marketplace, not for refreshing files installed into a
    name doesn't match `"plugin"`, plugin and marketplace versions differ, either `## Status`
    (CHANGELOG.md) or `## 상태` (CHANGELOG.KOR.md) heading is missing, or either summary is empty, multiline, or
    already present in its file.
-4. Run `python3 scripts/validate_plugins.py`, inspect `git diff`, and report the new version and
+4. Run `python3 _repo/scripts/validate_plugins.py`, inspect `git diff`, and report the new version and
    both status entries. Do not claim the release is published; this only prepares source
    metadata.
 

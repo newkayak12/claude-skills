@@ -15,7 +15,7 @@ must still pass unchanged (they prove we did not drift the contract). Docs edits
 verified with shell assertions (grep/wc) that fail before and pass after, the repo
 validator, and a final re-run of the QA skill against a fixed fixture.
 
-**Tech Stack:** markdown, `python3 scripts/validate_plugins.py`, `node graph/scripts/*.mjs`,
+**Tech Stack:** markdown, `python3 _repo/scripts/validate_plugins.py`, `node graph/scripts/*.mjs`,
 `skill:skill-quality-assurance`.
 
 **Ground rules for the executing session**
@@ -79,7 +79,7 @@ validator still reports `[graph] 2 skills` OK.
   they now live in the mandates. Keep `**Follow `graph_next`.**` and
   `**Self nodes are still adjudicated.**`.
 - [ ] 4: Re-run the step-1 assertion → prints `6`. Then
-  `python3 scripts/validate_plugins.py | grep -E "graph|PASSED"` → `OK    [graph] 2 skills` and `PASSED`.
+  `python3 _repo/scripts/validate_plugins.py | grep -E "graph|PASSED"` → `OK    [graph] 2 skills` and `PASSED`.
 - [ ] 5: `git add -A && git commit -m "docs(graph): orchestrate mandates carry the discriminating rules"`
 
 ---
@@ -206,7 +206,7 @@ file; the `Fable` word appears exactly once in SKILL.md (the mandate);
   after `### Not done` … `>`) so it sits immediately after `## Dispatching a self node`
   and before `## Do not pull the payload into your context`.
 - [ ] 8: Re-run step 1 → `≤170`, an `## Output template` line number `< (total/2)`, `1`, `1`.
-  Then `python3 scripts/validate_plugins.py | grep -E "graph|WARN.*graph|PASSED"` → OK, no graph warning.
+  Then `python3 _repo/scripts/validate_plugins.py | grep -E "graph|WARN.*graph|PASSED"` → OK, no graph warning.
 - [ ] 9: Sentence-level loss check against the pre-Task-3 file — nothing may vanish from the
   set {SKILL.md + references/*.md}:
   ```bash
@@ -269,7 +269,7 @@ validator emits no description warning for graph.
     ready self nodes before blocking on vendor nodes, promotes the discriminating rules to
     Standing Mandates, drops prose duplicated in `references/`, and names its trigger phrases.
   ```
-- [ ] 3: Re-run step 1 → both `1.5.4`. `python3 scripts/validate_plugins.py | tail -3` → PASSED.
+- [ ] 3: Re-run step 1 → both `1.5.4`. `python3 _repo/scripts/validate_plugins.py | tail -3` → PASSED.
 - [ ] 4: `git commit -am "chore(graph): 1.5.4"`
 
 ---
@@ -315,7 +315,7 @@ succeeds and `git rev-parse HEAD` equals `git rev-parse skills/main`.
 - [ ] 2: If any bar in the pass bar is missed, fix the SKILL.md text that the failing
   check quotes, commit, and re-run only that check. Do not lower the bar.
 - [ ] 3: `git push skills main`. If rejected: `git fetch skills && git rebase skills/main`,
-  re-run `python3 scripts/validate_plugins.py | tail -1` → PASSED, push again.
+  re-run `python3 _repo/scripts/validate_plugins.py | tail -1` → PASSED, push again.
 - [ ] 4: `git fetch skills && [ "$(git rev-parse HEAD)" = "$(git rev-parse skills/main)" ] && echo SYNCED` → `SYNCED`.
 
 ---

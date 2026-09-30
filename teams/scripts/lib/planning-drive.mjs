@@ -1,6 +1,6 @@
 // test-planning.mjs - test support: drive the planning every task now runs.
 //
-// docs/plans/2026-09-28-teams-cards-everywhere.md makes planning unconditional (C5: roles.planning
+// _repo/docs/plans/2026-09-28-teams-cards-everywhere.md makes planning unconditional (C5: roles.planning
 // false is refused; C6: size S plans too): every task runs size -> areas -> one planning card per
 // feature area (each a full-harness child run) -> plan-integrate before shape can run, and shape's
 // packages must implement every merged user story. The suites that drive a task by hand were

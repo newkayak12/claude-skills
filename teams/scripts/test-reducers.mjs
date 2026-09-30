@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Unit + property tests for reducers.mjs - the declared reducer registry (docs/plans/
+// Unit + property tests for reducers.mjs - the declared reducer registry (_repo/docs/plans/
 // 2026-09-23-teams-reducer-human-rollback.md §0.1/§1, D1). The property under test throughout
 // is the one item 1 of the reducer plan asks for: a fold is associative/commutative (order of
 // the input entries never changes the result) and idempotent (folding the same entry twice is
@@ -164,7 +164,7 @@ test('reducersFor: every real kind starts from the shared defaults and only adds
     assert.equal(table.gaps, 'concat-dedup');
   }
   assert.equal(reducersFor('planning').user_stories, 'union');
-  assert.deepEqual(reducersFor('planning-light'), reducersFor('planning'), 'the light PLAN kind folds exactly like planning (docs/plans/2026-09-28-teams-light-plan.md §5-2)');
+  assert.deepEqual(reducersFor('planning-light'), reducersFor('planning'), 'the light PLAN kind folds exactly like planning (_repo/docs/plans/2026-09-28-teams-light-plan.md §5-2)');
   assert.equal(reducersFor('qa').defects, 'concat-dedup');
   assert.equal(reducersFor('subgoal').user_stories, undefined, 'subgoal-kind work never returns user_stories');
   assert.equal(reducersFor('nonexistent-kind'), REGISTRY._default, 'an unknown kind falls back to the shared defaults');

@@ -620,8 +620,8 @@ function teamDefaultsObject(teamconfigSrc) {
 test('TEAM_DEFAULTS pins its own documented default VALUES for the keys no test exercises un-overridden: qa_rounds, roles, plugin_dirs', () => {
   const d = teamDefaultsObject(src('teamconfig'));
   assert.deepStrictEqual(d.qa_rounds, 2, `qa_rounds default drifted to ${JSON.stringify(d.qa_rounds)} (expected 2)`);
-  assert.deepStrictEqual(d.roles, { planning: 'auto', qa: true, audit: true }, `roles default drifted to ${JSON.stringify(d.roles)} (expected {planning: 'auto', qa: true, audit: true} - light PLAN mode, docs/plans/2026-09-28-teams-light-plan.md §2.5)`);
-  assert.equal('max_depth' in d, false, 'max_depth is retired - no sub-EPIC (docs/plans/2026-09-28-teams-sprint-not-sub-epic.md)');
+  assert.deepStrictEqual(d.roles, { planning: 'auto', qa: true, audit: true }, `roles default drifted to ${JSON.stringify(d.roles)} (expected {planning: 'auto', qa: true, audit: true} - light PLAN mode, _repo/docs/plans/2026-09-28-teams-light-plan.md §2.5)`);
+  assert.equal('max_depth' in d, false, 'max_depth is retired - no sub-EPIC (_repo/docs/plans/2026-09-28-teams-sprint-not-sub-epic.md)');
   assert.deepStrictEqual(d.plugin_dirs, [], `plugin_dirs default drifted to ${JSON.stringify(d.plugin_dirs)} (expected [])`);
   assert.deepStrictEqual(d.max_parallel_teams, 'auto', `max_parallel_teams default drifted to ${JSON.stringify(d.max_parallel_teams)} (expected 'auto' - see taskmanager.mjs's AIMD controller)`);
   assert.deepStrictEqual(d.max_parallel_ceiling, null, `max_parallel_ceiling default drifted to ${JSON.stringify(d.max_parallel_ceiling)} (expected null - the AIMD controller derives one from the host when unset)`);

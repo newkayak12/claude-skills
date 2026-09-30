@@ -398,7 +398,7 @@ function boardPackages(task) {
   ];
 }
 
-// Cards everywhere (docs/plans/2026-09-28-teams-cards-everywhere.md C2/C7): planning and QA are
+// Cards everywhere (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md C2/C7): planning and QA are
 // no longer one phase-Team package each but one STORY card per feature area - task.planning_pkgs
 // (PLAN-F1, PLAN-F2, ...) and task.qa_pkgs (QA-F1, QA-F2, ...). Every reader goes through these
 // two, never the fields directly: a task.json written before the split still carries the single

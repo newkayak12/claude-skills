@@ -4,7 +4,7 @@
 #   drive.sh "<arm> <case> <label>" ["<arm> <case> <label>" ...]
 #
 # Teams arms (beta, betas, skills) go through `teams run` (scripts/run.mjs, wait-model C of
-# docs/plans/2026-09-21-teams-server-owns-the-loop.md §4): a new workspace is seeded and run by
+# _repo/docs/plans/2026-09-21-teams-server-owns-the-loop.md §4): a new workspace is seeded and run by
 # `BENCH_VIA=run bench.sh`, an existing one is resumed with `run.mjs --resume <task_id>`, and in
 # both the CLI itself waits until the task settles and sleeps through a usage-limit reset
 # (--resume-on-limit, at most MAX_RESUMES resumes). No model session watches it, and none of the
@@ -47,7 +47,7 @@ task_settle_state() {  # workspace dir -> "no-task|complete|running\t<reason>"
   # The work does not live in the top-level session drive.sh just watched: teams (arm beta/
   # betas/skills) hands off to a detached leader process, which spawns further detached driver
   # processes per dispatch node (task.json's `.child.driver`). The top-level session can - and,
-  # per docs/diagrams/teams-first-real-run.mmd:33-35, once did - exit while those are still
+  # per _repo/docs/diagrams/teams-first-real-run.mmd:33-35, once did - exit while those are still
   # working. This inspects <ws>/.harness-tasks/*/task.json on disk only (no model calls, no
   # network) to tell whether the actual work is finished, still in flight, or dead in a way that
   # will never finish on its own (a driver process that has already exited while its node is
@@ -133,7 +133,7 @@ print(f"{best[0]}\t{best[1]}")
 EOF
 }
 
-# --- The waiting seam (plan docs/plans/2026-09-21-teams-server-owns-the-loop.md §4) -----------
+# --- The waiting seam (plan _repo/docs/plans/2026-09-21-teams-server-owns-the-loop.md §4) -----------
 # A headless bench must wait OUTSIDE any model session (§4-C): waiting inside a session charges
 # the arm under test for turns spent polling, not for work (§3 of that plan: 125 polling turns,
 # $4.53, for one run). wait_for_settle is that whole waiting strategy behind one name - today it
@@ -241,7 +241,7 @@ for job in "$@"; do
     # leader/driver processes are detached and can still be running (see task_settle_state
     # above). Score only once that work has actually settled, or a hard ceiling gives up on it -
     # never on the top-level session's exit alone (that was scoring a run that was still
-    # running: docs/diagrams/teams-first-real-run.mmd:33-35).
+    # running: _repo/docs/diagrams/teams-first-real-run.mmd:33-35).
     echo "$(date -u +%FT%TZ) $job: top-level session ended; waiting for the task to settle"
     IFS=$'\t' read -r settle_status settle_reason < <(wait_for_settle "$ws")
     echo "$(date -u +%FT%TZ) $job: scoring now ($settle_status) - $settle_reason"

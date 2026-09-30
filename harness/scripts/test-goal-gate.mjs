@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // harness/scripts/test-goal-gate.mjs - the PreToolUse gate against the 2026-09-28 adversarial
-// findings (docs/plans/2026-09-28-teams-adversarial-fixes.md G1-G6): engagement only from a
+// findings (_repo/docs/plans/2026-09-28-teams-adversarial-fixes.md G1-G6): engagement only from a
 // record, the root from the target, the gate's own files gated, Bash writes judged, forged
 // future timestamps ignored.
 import assert from 'node:assert/strict';
@@ -226,7 +226,7 @@ test('G4: Bash writes to a gated path are denied; reads and runs are allowed', (
   for (const c of allow) assert.equal(run(bash(dir, c)), 'allow', c);
 });
 
-// ---- long-loop G1/G2/G2b (docs/plans/2026-09-28-teams-long-loop.md) ----
+// ---- long-loop G1/G2/G2b (_repo/docs/plans/2026-09-28-teams-long-loop.md) ----
 
 test('LL-G1: a hand-written broker ledger is gated - it would engage the gate itself', () => {
   const dir = project();

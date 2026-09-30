@@ -7,7 +7,7 @@
 // caller (the sibling write-scope check below, the manager's per-package fold in
 // taskmanager.mjs) could reuse without copying the code, and nothing stopped a fourth fold from
 // choosing a fourth convention for the same field. This module is the one place a field's merge
-// is named - see docs/plans/2026-09-23-teams-reducer-human-rollback.md §0.1/§1 (D1) and the
+// is named - see _repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §0.1/§1 (D1) and the
 // external comparison table there (LangGraph's `Annotated[list, add]` reducer schema; MapReduce's
 // associativity/idempotence requirement on a combiner).
 //
@@ -192,7 +192,7 @@ export function foldRecords(kind, records) {
 
 // ---------- sibling write-scope check ----------
 //
-// docs/plans/2026-09-23-teams-reducer-human-rollback.md §0.1 and item 2 of this session's
+// _repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §0.1 and item 2 of this session's
 // plan: the CONTRACT.setgoal convention ("give each subgoal the section it owns, by heading,
 // in its title and acceptance[]") is prose, and prose breaks silently. This is the
 // deterministic, code-level check that runs whether or not the run's own `reduce` LLM pass

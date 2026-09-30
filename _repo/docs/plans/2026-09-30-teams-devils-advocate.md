@@ -1,7 +1,7 @@
 # teams: devil's advocate — 문제점과 나아갈 방향
 
 > 2026-09-30, `think:devils-advocate`. 기준 버전 teams 0.38.0 (`f2f600e`).
-> 근거: `docs/plans/2026-09-21-teams-server-owns-the-loop.md` §8b–§8g, `2026-09-28-teams-cards-everywhere.md`,
+> 근거: `_repo/docs/plans/2026-09-21-teams-server-owns-the-loop.md` §8b–§8g, `2026-09-28-teams-cards-everywhere.md`,
 > `2026-09-28-teams-long-loop.md`, `teams/CHANGELOG.md`, `teams/README.md`.
 > 이 문서는 비판이다. 결정 기록이 아니며 어떤 원칙도 바꾸지 않는다.
 
@@ -120,7 +120,7 @@ trap에서 accept가 약한 SIGKILL 테스트를 정확히 지적했지만 최�
    `:1529`에서 신·구 경로가 한 조건문. `harnessrun`이 `.harness-run/broker/runs/<id>.json` 레이아웃을 버전 확인 없이 하드코딩 —
    harness가 바꾸면 S verdict를 조용히 못 읽는다. 런타임이 벤치 코드를 import(`taskmanager:106` → `scripts/bench/lib/drivercost`).
 
-경로: `docs/plans/` 현재 규칙 한 장(CURRENT.md) + 낡은 문서 상단 포인터 통일, `s_run` 읽기를 legacy 모듈로 추출,
+경로: `_repo/docs/plans/` 현재 규칙 한 장(CURRENT.md) + 낡은 문서 상단 포인터 통일, `s_run` 읽기를 legacy 모듈로 추출,
 harness 레이아웃 버전 체크 + 계약 테스트, `drivercost`를 `mcp/`로 이동.
 
 ## 종합

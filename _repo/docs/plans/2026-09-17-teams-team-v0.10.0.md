@@ -46,9 +46,9 @@ team이 워크트리와 S-run cwd에 `team-<task8>` 마커를 쓰고 폴링마�
 ### Task 0: 버전 정합
 **Files:** modify `teams/.claude-plugin/plugin.json`
 **Interfaces:** produces — 이후 patch 스크립트가 통과하는 전제.
-**Pass bar:** `python3 scripts/validate_plugins.py` 출력에 teams 버전 불일치 ERROR가 없다.
+**Pass bar:** `python3 _repo/scripts/validate_plugins.py` 출력에 teams 버전 불일치 ERROR가 없다.
 
-- [ ] 1: `python3 scripts/validate_plugins.py 2>&1 | grep -i "teams" | grep -i version` 로 불일치를 확인한다
+- [ ] 1: `python3 _repo/scripts/validate_plugins.py 2>&1 | grep -i "teams" | grep -i version` 로 불일치를 확인한다
 - [ ] 2: `plugin.json`의 `"version": "0.6.4"` → `"0.9.0"`
 - [ ] 3: 1의 명령을 다시 실행해 출력이 비었음을 확인한다
 - [ ] 4: `git commit -am "chore(teams): sync plugin.json version to 0.9.0"`
@@ -1182,7 +1182,7 @@ main();
 ### Task 8: SKILL.md 셋 (install 재작성, remove·patch 신설)
 **Files:** modify `teams/skills/install/SKILL.md`, create `teams/skills/remove/SKILL.md`, create `teams/skills/patch/SKILL.md`
 **Interfaces:** consumes Task 5·6·7의 CLI 인자·리포트 필드 이름 그대로.
-**Pass bar:** `python3 scripts/validate_plugins.py`에 teams 관련 ERROR 0. 세 SKILL 모두 `description`이 `Use when`으로 시작, `scenarios` EN+KR, `compatibility`, Process → What Claude does → What you do → Related 구조.
+**Pass bar:** `python3 _repo/scripts/validate_plugins.py`에 teams 관련 ERROR 0. 세 SKILL 모두 `description`이 `Use when`으로 시작, `scenarios` EN+KR, `compatibility`, Process → What Claude does → What you do → Related 구조.
 
 - [ ] 1: `install/SKILL.md` 본문을 아래 구조로 다시 쓴다 (frontmatter의 `name: install`, `compatibility.required: [node-18+]` 유지; description은 "Use when installing teams into a project: team.json defaults, the dispatch gate, conventions, and the coexistence check against the stable graph plugin. Not for running a task; use teams:orchestrate.")
   - **Process**: (1) 판단 — dispatch 패턴 제안·확인(프로젝트 언어 보고), 켤 roles 물음(0.10에서는 기록만 됨을 말한다), harness가 있으면 "conventions는 공유, 마커 디렉터리 공유"를 말한다; (2) `node "<plugin>/skills/install/install.mjs" '{...}'` 실행 — exit 3이면 `report.conflicts`를 읽어 사용자에게 stable graph를 끄거나 `force`를 고르게 한다, **절대 스스로 force하지 않는다**; (3) 리포트 JSON을 진실로 삼아 created/kept/present를 보고; (4) 도구 발견 — `team_*` 6 + `tm_*` (tm_open tm_next tm_submit tm_retry tm_status tm_settle tm_repackage tm_repair tm_reset_capacity), 없으면 reload 안내; (5) `refresh: true`는 버전 업 뒤 team.json에 새 키를 채우는 용도임을 적는다.
@@ -1190,17 +1190,17 @@ main();
   - **What Claude does / What you do / Related** (`orchestrate`, `remove`, `patch`, `harness:install`).
   - 도구 발견 목록에 `tm_events` 추가; "main은 tm_open 뒤 tm_status/tm_events로 지켜본다"를 한 줄로.
 - [ ] 2: `remove/SKILL.md` — frontmatter `name: remove`, description "Use when removing teams from a project: team.json, the dispatch gate, the CLAUDE.md block and gitignore lines. Keeps conventions, run and task history unless asked by name. Refuses to purge a task whose driver is alive.", scenarios EN 2 + KR 2 ("teams 이 프로젝트에서 제거해줘", "team.json이랑 dispatch 게이트 지워줘"), `compatibility.optional: []`. Process: 대상 나열 → `purgeConventions`/`purgeRuns`/`purgeTasks`는 각각 **명시 확인 후에만** → 실행 → 리포트에서 `refused-alive`·`marker-error`·`kept-harness`를 그대로 보고. Related: install, patch, harness:remove.
-- [ ] 3: `patch/SKILL.md` — `name: patch`, description "Use when preparing a patch release of the teams plugin source: bumps x.y.Z in plugin.json and marketplace.json and prepends the same entry to README Status and KOR.md 상태. Not for project installs.", scenarios EN 2 + KR 2 ("teams 패치 버전 올려줘", "0.10.x 릴리스 준비"). Process: diff에서 한 줄 요약 EN·KO 도출 → minor/major면 중단하고 손으로 → `dryRun: true` → 확인 → 실행 → `python3 scripts/validate_plugins.py` → git diff 보고, "published"라 말하지 않기. Related: install, remove, harness:patch.
-- [ ] 4: `python3 scripts/validate_plugins.py` 실행, teams ERROR 0 확인 (WARN은 허용)
+- [ ] 3: `patch/SKILL.md` — `name: patch`, description "Use when preparing a patch release of the teams plugin source: bumps x.y.Z in plugin.json and marketplace.json and prepends the same entry to README Status and KOR.md 상태. Not for project installs.", scenarios EN 2 + KR 2 ("teams 패치 버전 올려줘", "0.10.x 릴리스 준비"). Process: diff에서 한 줄 요약 EN·KO 도출 → minor/major면 중단하고 손으로 → `dryRun: true` → 확인 → 실행 → `python3 _repo/scripts/validate_plugins.py` → git diff 보고, "published"라 말하지 않기. Related: install, remove, harness:patch.
+- [ ] 4: `python3 _repo/scripts/validate_plugins.py` 실행, teams ERROR 0 확인 (WARN은 허용)
 - [ ] 5: `git add -A teams/skills && git commit -m "docs(teams): install/remove/patch skills"`
 
 ---
 
 ### Task 9: 릴리스 0.10.0 — 버전, Status, 설계 문서 §13, 전체 검증
 **Files:** modify `teams/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` (teams 항목 version + description),
-`teams/README.md`, `teams/KOR.md`, `docs/plans/2026-09-17-teams-team.md` (§13)
+`teams/README.md`, `teams/KOR.md`, `_repo/docs/plans/2026-09-17-teams-team.md` (§13)
 **Interfaces:** consumes 모든 이전 Task.
-**Pass bar:** `node --test teams/scripts/test-*.mjs` 전부 통과(회귀 0), `python3 scripts/validate_plugins.py` ERROR 0, 두 매니페스트 0.10.0 일치, README·KOR Status 첫 항목이 v0.10.0.
+**Pass bar:** `node --test teams/scripts/test-*.mjs` 전부 통과(회귀 0), `python3 _repo/scripts/validate_plugins.py` ERROR 0, 두 매니페스트 0.10.0 일치, README·KOR Status 첫 항목이 v0.10.0.
 
 - [ ] 1: 메모리 규칙대로 `git fetch skills main && git status -sb`로 origin이 앞서 있는지 확인, 앞서 있으면 rebase
 - [ ] 2: `node --test teams/scripts/test-*.mjs 2>&1 | tail -8` → `# fail 0` 확인
@@ -1208,7 +1208,7 @@ main();
 - [ ] 4: README `## Status` 첫 항목과 KOR `## 상태` 첫 항목에 v0.10.0 — install/remove/patch, team.json(우선순위·출처), 공유 마커(harness 변경 0, 워크트리 위치가 이유), dispatch-gate 역방향, patch가 KOR 포함, **inline 제거(breaking: `child_driver`/`s_driver` 인자 에러)**, **TaskLeader driver + inbox + `tm_events`**, 테스트 파일 수/개수(실행 결과 숫자를 그대로), **미측정 항목**: 실제 harness+team 프로젝트에서의 런 1회, leader 세션의 SendMessage 알림이 실제로 도착하는지
 - [ ] 5: 설계 문서 갱신 — §14 결정 기록의 "inline 옵션 셋 제거"를 v0.10.0 완료로, §6의 main 허용 호출 표에 `tm_events`를,
   §7b의 inbox 문단에 "구현: `HARNESS_LEADER_OF`로 leader 프로세스 식별, `<taskDir>/inbox/`"를 한 줄 추가. 그리고 §13의 "harness + team" 행을 이 계획의 Architecture 문단대로 고친다 — `~/.harness/active/` 삭제, `.claude/.harness-markers/team-<task8>` 공유, "harness 훅 한 줄 변경"을 "harness 변경 0"으로. §12 install 표의 "훅 쓰지 않음" 유지. §11 단계 표의 v0.10.0 행을 "완료" 표시
-- [ ] 6: `python3 scripts/validate_plugins.py` ERROR 0 확인
+- [ ] 6: `python3 _repo/scripts/validate_plugins.py` ERROR 0 확인
 - [ ] 7: `git add -A && git commit -m "feat(teams): 0.10.0 - install/remove/patch, team.json defaults, shared engagement marker for harness coexistence"`
 - [ ] 8: `git push skills main` (저장소 규칙. 실패하면 1번으로 돌아가 fetch·rebase 후 재시도)
 

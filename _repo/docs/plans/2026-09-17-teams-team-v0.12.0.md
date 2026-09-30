@@ -20,7 +20,7 @@ gate:goal → report`뿐이고, `planning`/`qa`는 `teams:plan`/`teams:qa` entry
 `team.json.roles.planning`이 켜지면 shape **앞**에 기획 단계가, `roles.qa`가 켜지면 통합 **뒤**에
 QA 단계가 생긴다. 결함 STORY 발행과 기획 크로스 검수는 **여기 넣지 않는다** — v0.12.1이 그 자리다.
 
-**전제: A-1은 분기 B로 결정됐다** — `docs/plans/2026-09-17-teams-roadmap-sizing.md` §2.4의 추천을
+**전제: A-1은 분기 B로 결정됐다** — `_repo/docs/plans/2026-09-17-teams-roadmap-sizing.md` §2.4의 추천을
 그대로 받는다. shape 출력에 `role`은 **영원히 생기지 않는다**. planning/qa는 STORY(package)가 아니라
 **EPIC의 phase에 붙는 Team**이다.
 
@@ -390,7 +390,7 @@ planning이 꺼진 태스크는 `implements` 검사를 건너뜀을 별도 테�
 항목만), `teams/README.md`, `teams/KOR.md`
 **Interfaces:** consumes Task 1-6 전부.
 **Pass bar:** `node --test teams/scripts/test-*.mjs` 전부 통과(회귀 0), `python3
-scripts/validate_plugins.py` ERROR 0, 두 매니페스트 0.12.0 일치, README·KOR Status 첫 항목이
+_repo/scripts/validate_plugins.py` ERROR 0, 두 매니페스트 0.12.0 일치, README·KOR Status 첫 항목이
 v0.12.0.
 
 - [ ] 1: `git fetch skills main && git status -sb` — origin이 앞서 있으면 rebase.
@@ -401,9 +401,9 @@ v0.12.0.
   planning cross-review pass land in v0.12.1." 추가.
 - [ ] 4: README/KOR `## Status` 맨 위에 한 줄 prepend(v0.11.0 항목 등 기존 내용은 그대로 아래에
   둔다) — 이 단계가 실제로 닫은 것(위 §1)과 여전히 안 닫은 것(§2, v0.12.1 포함)을 요약.
-- [ ] 5: 설계 문서(`docs/plans/2026-09-17-teams-team.md`) §11의 v0.12.0 행을 "완료"로 표시하는
+- [ ] 5: 설계 문서(`_repo/docs/plans/2026-09-17-teams-team.md`) §11의 v0.12.0 행을 "완료"로 표시하는
   것은 이 계획 파일 소유가 아니다 — 팀 리더나 그 갱신을 맡은 agent의 몫. 이 계획은 건드리지 않는다.
-- [ ] 6: `python3 scripts/validate_plugins.py` ERROR 0 확인.
+- [ ] 6: `python3 _repo/scripts/validate_plugins.py` ERROR 0 확인.
 - [ ] 7: `git add teams/.claude-plugin/plugin.json .claude-plugin/marketplace.json teams/README.md teams/KOR.md && git commit -m
   "feat(teams): 0.12.0 - planning/QA as EPIC phase-Teams, shape priority/implements[], scheduler cap"`
 - [ ] 8: `git push skills main`(실패하면 1번으로 돌아가 fetch·rebase 후 재시도).
@@ -575,7 +575,7 @@ story 1건을 내면 새 develop STORY가 `reporter: 'planning-audit'`로 생기
 항목만), `teams/README.md`, `teams/KOR.md`
 **Interfaces:** consumes Task 1-2 전부.
 **Pass bar:** `node --test teams/scripts/test-*.mjs` 전부 통과(회귀 0), `python3
-scripts/validate_plugins.py` ERROR 0, 두 매니페스트 0.12.1 일치, README·KOR Status 첫 항목이
+_repo/scripts/validate_plugins.py` ERROR 0, 두 매니페스트 0.12.1 일치, README·KOR Status 첫 항목이
 v0.12.1.
 
 - [x] 1: `git fetch skills main && git status -sb` — origin이 앞서 있으면 rebase.
@@ -586,9 +586,9 @@ v0.12.1.
   the PRD and files STORYs on gaps." 추가.
 - [x] 4: README/KOR `## Status` 맨 위에 한 줄 prepend(v0.12.0 항목 등 기존 내용은 그대로 아래에
   둔다).
-- [x] 5: 설계 문서(`docs/plans/2026-09-17-teams-team.md`) §11의 v0.12.1 행을 "완료"로 표시하는
+- [x] 5: 설계 문서(`_repo/docs/plans/2026-09-17-teams-team.md`) §11의 v0.12.1 행을 "완료"로 표시하는
   것은 이 계획 파일 소유가 아니다 — 팀 리더나 그 갱신을 맡은 agent의 몫.
-- [x] 6: `python3 scripts/validate_plugins.py` ERROR 0 확인.
+- [x] 6: `python3 _repo/scripts/validate_plugins.py` ERROR 0 확인.
 - [x] 7: `git add teams/.claude-plugin/plugin.json .claude-plugin/marketplace.json teams/README.md teams/KOR.md && git commit -m
   "feat(teams): 0.12.1 - defect STORYs (tm_file, qa_rounds loop) and planning cross-review (planning-audit kind)"`
 - [x] 8: `git push skills main`(실패하면 1번으로 돌아가 fetch·rebase 후 재시도).

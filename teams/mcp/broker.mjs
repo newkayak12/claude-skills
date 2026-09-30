@@ -351,7 +351,7 @@ function gitChanged(cwd) {
   return out;
 }
 
-// ---------- checkpoint / rollback (docs/plans/2026-09-23-teams-reducer-human-rollback.md §5) ----------
+// ---------- checkpoint / rollback (_repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §5) ----------
 
 function gitHead(cwd) {
   const r = spawnSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' });
@@ -681,7 +681,7 @@ async function route(run, node) {
   const balanced = run.allocation === 'balanced';
   const isSelf = ['self', 'off', 'none'].includes(want) || (!balanced && want === 'claude');
   // 'human' never enters the automatic candidate pool, even if a caller's own policy names it
-  // (team_open({candidates: ['human', 'claude']}) among them) - §0.3 of docs/plans/2026-09-17-
+  // (team_open({candidates: ['human', 'claude']}) among them) - §0.3 of _repo/docs/plans/2026-09-17-
   // teams-team-v0.13.0.md fixes this: the only way a node goes to a human is the pin
   // (node.assignment, honored by this function's early return above), never a ranked choice.
   // vendors[name] already has no 'human' entry, so ranking never PICKED it either - this is
@@ -1280,7 +1280,7 @@ export function finishNode(run, n, result, vendorName) {
   // and draft consumes the answer instead of the question. A non-interactive run records the
   // same questions on run.unasked, which is what makes "we decided this by default, and here
   // is what we would have asked" legible in the report instead of invisible in the document.
-  // An execution-phase package run (§6.2-3, docs/plans/2026-09-28-teams-light-plan.md) asks no
+  // An execution-phase package run (§6.2-3, _repo/docs/plans/2026-09-28-teams-light-plan.md) asks no
   // one on its own card, interactive or not: every new question is decided by default and
   // recorded, and only a blocking one is kept for the task manager to park once at EPIC level.
   if (run.execution_phase === true && n.state === 'done') {
@@ -1526,7 +1526,7 @@ const TOOLS = [
         mixed: { type: 'boolean', description: 'default true. false: every subgoal must be the flow\'s kind; a spec that mixes kinds fails at setgoal.' },
         skills: { description: 'Method per engine stage, overriding the defaults: {"plan": ["agents:agent-task-decomposer"], "critique": []}. Keys are plan, critique, test, review, gate, plus the optional gate:goal. false runs every one of those stages on its contract alone. A skill named here must be analytic and non-dialogic - a node runs headless and cannot answer a skill that asks it something.' },
         mounts: { description: 'Advisory MCP tools per engine stage, overriding the defaults: {"plan": ["mcp__sequential-thinking__sequentialthinking"]}. Keys are plan, setgoal, plus the optional gate:goal. false offers none of them. A tool named here that is not connected is skipped in silence, never searched for.' },
-        retry_policy: { type: 'string', enum: ['continue', 'rollback'], description: 'default "continue", also settable in .claude/team.json. What team_retry (or autoReassign\'s own automatic retry) does with the worktree a rejected implement/draft/cases/audit attempt left. "continue" (default, today\'s only behavior) builds the next attempt on top of it. "rollback" resets the worktree to the checkpoint broker.mjs recorded before that subgoal\'s OWN FIRST attempt touched it, then re-runs with the failed gate\'s gaps as feedback - only when this run has exactly one subgoal (a shared worktree with a sibling subgoal still working in it cannot be reset for one of them without discarding the other\'s progress too; team_retry\'s reply names why it fell back to continue when that guard trips). docs/plans/2026-09-23-teams-reducer-human-rollback.md §5 measured two real runs before defaulting to continue: both showed a retried implement CONVERGING on gate feedback across attempts (52%->60%->78%) rather than repeating the same mistake.' },
+        retry_policy: { type: 'string', enum: ['continue', 'rollback'], description: 'default "continue", also settable in .claude/team.json. What team_retry (or autoReassign\'s own automatic retry) does with the worktree a rejected implement/draft/cases/audit attempt left. "continue" (default, today\'s only behavior) builds the next attempt on top of it. "rollback" resets the worktree to the checkpoint broker.mjs recorded before that subgoal\'s OWN FIRST attempt touched it, then re-runs with the failed gate\'s gaps as feedback - only when this run has exactly one subgoal (a shared worktree with a sibling subgoal still working in it cannot be reset for one of them without discarding the other\'s progress too; team_retry\'s reply names why it fell back to continue when that guard trips). _repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §5 measured two real runs before defaulting to continue: both showed a retried implement CONVERGING on gate feedback across attempts (52%->60%->78%) rather than repeating the same mistake.' },
       },
       required: ['request', 'cwd'],
     },
@@ -1801,7 +1801,7 @@ async function toolGraphRun(a) {
   let n = requireRunnable(run, String(a.node_id));
   // team_next never offers this node (promoteWaitingHuman parks it in waiting_human first), but
   // a caller who already has the node_id can still reach team_run directly before that happens -
-  // §0.3 of docs/plans/2026-09-17-teams-team-v0.13.0.md fixes human OUT of the routing pool
+  // §0.3 of _repo/docs/plans/2026-09-17-teams-team-v0.13.0.md fixes human OUT of the routing pool
   // entirely, and without this guard route()'s own early return (line ~427, honoring
   // node.assignment as-is) would hand this node's vendor straight through as 'human', which
   // loadVendors(run.cwd) has no entry for.
@@ -2034,7 +2034,7 @@ function submitResult(run, n, payload, vendorName) {
   return finishNode(run, n, result, vendorName);
 }
 
-// At-least-once delivery (docs/plans/2026-09-23-teams-reducer-human-rollback.md §5): a caller
+// At-least-once delivery (_repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §5): a caller
 // that submits the same node twice - a retried MCP call, two drivers racing on one node - must
 // not have its second call re-adjudicate (or, for a dispatch-shaped node, redo a git commit) what
 // the first already settled. node_id already disambiguates ATTEMPT for every stage this engine

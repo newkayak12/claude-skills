@@ -80,7 +80,7 @@ function externalAuthorOf(run, node) {
 }
 
 // Every identity (vendor, and model when recorded) that authored what this node judges (m3,
-// docs/plans/2026-09-28-teams-adversarial-fixes.md): the run's setgoal for critique; for the
+// _repo/docs/plans/2026-09-28-teams-adversarial-fixes.md): the run's setgoal for critique; for the
 // run's goal gate, everyone who implemented, drafted, filled a template or repaired ANY subgoal
 // (its subgoal_id is null, so the per-subgoal peer lookup found nobody); for a subgoal's own
 // judges, its authoring peers; for an audit, the PRD's authors from the planning runs.

@@ -79,7 +79,7 @@ test('max_depth is retired (no sub-EPIC; too-big work carries into the next Spri
   assert.match(notes[0], /"max_depth" is deprecated.*next Sprint/);
 });
 
-// roles.planning (docs/plans/2026-09-28-teams-light-plan.md §2.5): true | false | 'light' | 'auto'.
+// roles.planning (_repo/docs/plans/2026-09-28-teams-light-plan.md §2.5): true | false | 'light' | 'auto'.
 // The other roles stay boolean-only; any other string is a note, not a value.
 test('roles.planning accepts true/"light"/"auto", defaults to "auto"; false is refused with a note; other strings and non-boolean qa/audit are ignored with a note', () => {
   assert.equal(TEAM_DEFAULTS.roles.planning, 'auto');
@@ -88,7 +88,7 @@ test('roles.planning accepts true/"light"/"auto", defaults to "auto"; false is r
     assert.equal(r.opts.roles.planning, v, `roles.planning ${JSON.stringify(v)} must be accepted`);
     assert.equal(r.notes.length, 0, JSON.stringify(r.notes));
   }
-  // C5 (docs/plans/2026-09-28-teams-cards-everywhere.md): false is refused - planning always
+  // C5 (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md): false is refused - planning always
   // produces its deliverables. The layer's value falls back to the one below it, the note says so,
   // and the rest of that roles object still applies.
   const off = resolveTeamOptions({}, { roles: { planning: false, qa: false } });

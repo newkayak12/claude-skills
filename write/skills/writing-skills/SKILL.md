@@ -90,7 +90,7 @@ done.
    until both pass clean.
 8. **Ship housekeeping.** Per `.claude/conventions/boundaries.md`: bump the
    plugin's version in `.claude-plugin/marketplace.json`, update that
-   plugin's `README.md`, and re-run `scripts/validate_plugins.py`.
+   plugin's `README.md`, and re-run `_repo/scripts/validate_plugins.py`.
 
 ## Output Template
 

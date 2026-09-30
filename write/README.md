@@ -211,7 +211,7 @@ description이 "Use when"으로 시작하게 하고, 트리거 검증까지 돌�
 If a harness pipeline handed you the task, act in harness-engaged mode; otherwise default to solo and
 run both gates yourself. Shipping also means bumping the plugin version in
 `.claude-plugin/marketplace.json`, updating that plugin's README, and re-running
-`scripts/validate_plugins.py`.
+`_repo/scripts/validate_plugins.py`.
 
 ### `writer-verification`
 
