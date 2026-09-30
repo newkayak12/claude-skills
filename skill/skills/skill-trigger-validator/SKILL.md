@@ -149,3 +149,11 @@ After producing improved descriptions, ask the user: **"Want me to apply these t
 If yes, update only the `description` field in each file's frontmatter — do not touch the body. Then follow INSTRUCT.md: bump the patch version in `marketplace.json`, update the plugin README, commit, and push.
 
 If the user wants to review first, show all rewrites side-by-side before applying.
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Generates 10 test queries per skill and scores trigger coverage | Name the target: skill, plugin, or all |
+| Rewrites weak descriptions | Review the rewrites |
+| Applies description changes to frontmatter only when asked | Answer whether to apply them |

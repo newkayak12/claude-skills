@@ -125,12 +125,14 @@ step-2 bar via `completion:verification-before-completion`.
 - Assuming the plan's preconditions still hold without looking.
 - Picking parallel execution to feel fast when the steps are actually dependent.
 
-## What Claude does / What you do
+## What Claude Does / What You Do
 
-- **Claude:** loads and adversarially reviews the plan, states a pass bar per step,
-  stops on any defect, and routes fit plans to the matching executor.
-- **You:** supply the plan and any missing pass bar; confirm accepted assumptions
-  when the plan is ambiguous rather than blocking.
+| Claude | You |
+|--------|-----|
+| Loads and adversarially reviews the plan | Supply the plan |
+| States a pass bar per step | Supply any missing pass bar |
+| Stops on any defect | Confirm accepted assumptions when the plan is ambiguous |
+| Routes fit plans to the matching executor | Approve the routing |
 
 ## Related
 

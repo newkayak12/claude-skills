@@ -54,6 +54,13 @@ Note: `harness/KOR.md`'s `## 상태` section only started tracking entries once 
 requirement was added — it does not carry the ~30 pre-existing English-only Status entries, and
 that history is not being backfilled. See the note at the top of that section.
 
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Runs the patch script to bump plugin.json, marketplace, README Status and KOR.md 상태 | Requests the patch release |
+| Runs `validate_plugins.py`, inspects `git diff`, reports version and both status entries | Provides the release note (EN and KO); publishes separately (this only prepares metadata) |
+
 ## Related
 
 - `install` — install or refresh project-owned harness copies

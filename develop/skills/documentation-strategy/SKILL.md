@@ -149,3 +149,12 @@ Add to your team's PR template:
 | System design → architecture docs | [`../architecture-designer/SKILL.md`](../architecture-designer/SKILL.md) |
 | Inline code documentation | [`../code-documenter/SKILL.md`](../code-documenter/SKILL.md) |
 | Incident RCA to store and maintain | [`../incident-response-playbook/SKILL.md`](../incident-response-playbook/SKILL.md) |
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Audits existing docs before recommending new ones | Point to where current docs live |
+| Names audience and maintenance owner per doc type | Confirm the owners |
+| Writes the highest-pain missing doc from the template | Pick the doc type to start with |
+| Adds the doc to the index/README | Get a reviewer who matches the target audience |

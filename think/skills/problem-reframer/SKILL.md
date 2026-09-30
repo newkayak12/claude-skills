@@ -155,6 +155,14 @@ think-tool을 사용해 가정을 enumerate. 출력 시작 전에 이 표를 완
 
 See `references/examples.md` for worked examples across software and non-software domains.
 
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| 원문 그대로 문제를 적고 문제 vs 증상을 진단 | 문제를 있는 그대로 말해주기 |
+| 숨은 가정을 드러내고 다른 시점·추상도로 재프레이밍 | 어떤 가정이 실제로 맞는지 확인 |
+| 재프레이밍한 문제 정의 후보를 제시 | 어떤 정의로 갈지 결정 |
+
 ## Related Skills
 
 - `first-principles` — 재프레이밍 후 근본 가정을 더 깊이 분해하고 바닥부터 재구성하고 싶을 때

@@ -93,3 +93,10 @@ Produce a self-contained report in this format:
 Priority labels: 🔴 Must fix · 🟡 Recommended · 🟢 Optional
 
 The "Top Improvements" section is what skill-creator reads to decide what to fix next. Make it concrete and actionable — not "improve structure" but "extract the grading logic into `agents/grader.md` and call it from SKILL.md with a Task()".
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Reads all skill files and runs the 6 checks | Provide the skill path |
+| Produces the QA report with Top Improvements | Decide which improvements to apply |

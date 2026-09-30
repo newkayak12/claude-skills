@@ -244,6 +244,14 @@ For each document, Claude produces:
 3. **Review comments** — suggestions for clarity, gaps, and factual accuracy
 4. **Revision log** — summary of changes made in each iteration
 
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Asks who the primary reader is and what question the doc must answer | Provide context and answer those questions |
+| Drafts and refines one section at a time | Review and approve each section before the next |
+| Tests the doc with a fresh Claude that has no context | Apply the blind-spot fixes and share the doc |
+
 ## Tips for Effective Guidance
 
 See `references/guidance-tips.md` for tone, deviation handling, context management, artifact management, and quality guidance.

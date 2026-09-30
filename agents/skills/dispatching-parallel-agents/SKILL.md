@@ -176,12 +176,14 @@ When agents return:
 - Leaking one job's context into another agent's brief.
 - Declaring the batch done off the agents' summaries instead of a full re-run.
 
-## What Claude does / What you do
+## What Claude Does / What You Do
 
-- **Claude:** verifies independence, allocates each job to its best-fit persona,
-  dispatches isolated agents in parallel, then gathers and verifies the whole.
-- **You:** confirm the jobs really are independent if it's ambiguous, and name any
-  specialist personas your environment exposes that Claude should prefer.
+| Claude | You |
+|--------|-----|
+| Verifies the jobs are independent | Confirm independence if it's ambiguous |
+| Allocates each job to its best-fit persona | Name specialist personas Claude should prefer |
+| Dispatches isolated agents in parallel | Review the gathered result |
+| Gathers and verifies the whole | Accept or send back |
 
 ## Related
 

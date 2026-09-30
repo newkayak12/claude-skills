@@ -125,12 +125,14 @@ proof is on passing, not on explaining the ambiguity away.
 - Taking a subagent's word instead of its evidence.
 - Deciding *this* claim doesn't need isolation.
 
-## What Claude does / What you do
+## What Claude Does / What You Do
 
-- **Claude:** states the verify-level, dispatches an isolated verifier per claim,
-  reports the returned evidence, and makes the claim only if the evidence backs it.
-- **You:** supply the pass bar if the project has one; otherwise confirm the bar
-  Claude stood up before it verifies against it.
+| Claude | You |
+|--------|-----|
+| States the verify-level | Supply the pass bar if the project has one |
+| Dispatches an isolated verifier per claim | Otherwise confirm the bar Claude stood up |
+| Reports the returned evidence | Read the evidence |
+| Makes the claim only if the evidence backs it | Accept or challenge the claim |
 
 ## Related
 

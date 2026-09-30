@@ -153,6 +153,14 @@ This skill synthesizes insights from several foundational sources:
 - [*"The Great Mental Models Vol. 1"*](https://www.amazon.com/Great-Mental-Models-Thinking-Concepts/dp/1999449002) by Shane Parrish (Farnam Street) — practical synthesis of first principles models
 - Elon Musk interviews on first principles reasoning (widely available; no single text)
 
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Lists every assumption and decomposes to verifiable truths | Name the problem or decision to examine |
+| Rebuilds a solution from those truths | Confirm which constraints are real |
+| Stress-tests the rebuild with counterarguments and scores the analysis | Decide whether to adopt the reconstruction |
+
 ## Related Skills
 
 - `brainstorming` — 가정을 분해한 후 바닥부터 새 아이디어를 발산하며 설계하고 싶을 때

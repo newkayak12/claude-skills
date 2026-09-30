@@ -237,3 +237,11 @@ The four input-gathering activities below are fully independent — collect them
 See `examples/sample.md` for full roadmap examples including good vs. bad roadmap comparison, epic hypotheses, RICE scoring, and quarterly sequencing.
 
 ---
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Gathers inputs and defines initiatives as epics with hypotheses and metrics | Provide customer problems, goals, and real capacity constraints |
+| Prioritizes and maps epic dependencies before sequencing | Align stakeholders on top-level outcome priorities |
+| Separates committed from aspirational items and drafts the roadmap narrative | Decide what is committed and approve the roadmap |

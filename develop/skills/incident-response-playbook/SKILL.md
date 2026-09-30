@@ -241,3 +241,12 @@ People make mistakes. Systems should make mistakes hard to cause and easy to det
 | Understanding failure modes before they happen | [`../chaos-engineer/SKILL.md`](../chaos-engineer/SKILL.md) |
 | Writing and storing the RCA | [`../documentation-strategy/SKILL.md`](../documentation-strategy/SKILL.md) |
 | Root cause traces to a feature/rollout decision, not a technical defect | See "When Root Cause Traces to a Product Decision" above — flag to the feature owner; this skill's RCA covers technical root cause only |
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Classifies severity and drafts triage steps | Declare severity and open the incident channel |
+| Drafts Slack/status updates | Send them; keep the 15-30 min update cadence |
+| Proposes mitigation options | Execute and approve the mitigation |
+| Writes the blameless RCA in the post-mortem format | Confirm timeline and root cause; schedule the RCA |

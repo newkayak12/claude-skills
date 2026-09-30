@@ -128,6 +128,13 @@ content.
 - Every declared graph competency question has a passing, bounded, typed, evidence-backed record in `_graph/question-reachability.jsonl`.
 - The output can be imported, queried, or manually reviewed without re-reading the entire source corpus.
 
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Runs a quick intake, extracts source-grounded entities and edges, validates relationships | Describes the domain and the questions the graph should answer |
+| Emits schema plus graph-ready data and a question-reachability check | Picks the storage target and reviews uncertain classes or edges |
+
 ## Related Skills
 
 - `knowledge:knowledge-base-builder` - use when the output should be an Obsidian-style linked Markdown vault.

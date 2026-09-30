@@ -125,6 +125,13 @@ Optional downstream index notes can be added as `ingest-pgvector.md`, `ingest-qd
 - Retrieval success is not reported as answerability success; competency results still require complete evidence coverage.
 - Stale, conflicting, or permission-limited sources are visible in the output.
 
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Runs a quick intake, chunks sources with metadata and citations, writes schema and ingestion report | Describes the material and the questions retrieval must answer |
+| Records assumptions and designs retrieval checks | Confirms citation, freshness, permission needs and any vector-DB target |
+
 ## Related Skills
 
 - `knowledge:knowledge-base-builder` - use for Obsidian-style linked Markdown notes.

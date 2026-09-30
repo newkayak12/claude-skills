@@ -71,6 +71,13 @@ because two servers exposing the same `graph_*` tools make routing ambiguous.
 Report which mode is active, which files changed, whether a reload is still required,
 and the observed tool list. Installation ends there; use `graph:orchestrate` to run work.
 
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Verifies the `graph_*` tools are available, or merges the project-local `.mcp.json` entry | Installs or updates `graph@newkayak12-claude-skills` and reloads Claude Code |
+| Never copies or forks the engine; avoids double registration | Chooses project-local mode only when running from a source checkout |
+
 ## Related
 
 - `orchestrate` — drive a request through the connected graph
