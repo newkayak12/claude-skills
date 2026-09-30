@@ -56,6 +56,14 @@ a source checkout of this marketplace, not for refreshing files installed into a
 - the first entry under `teams/CHANGELOG.md` → `## Status`
 - the first entry under `teams/CHANGELOG.KOR.md` → `## 상태`
 
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Derives one EN and one KR release-summary line from the teams diff | Decide if the release is breaking or feature-sized (then use major/minor instead) |
+| Runs the dry-run first, then the real run | Confirm the reported previous and next versions |
+| Runs the validator, inspects `git diff`, reports version and both status entries | |
+
 ## Related
 
 - `install` — install or refresh project-owned teams copies

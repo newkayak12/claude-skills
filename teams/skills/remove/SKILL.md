@@ -53,6 +53,14 @@ settings, project instructions, or harness's own files. The deterministic work l
 
 The operation is idempotent: a second run reports `absent` for everything already removed.
 
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Lists what will be removed unconditionally and runs `remove.mjs` | Confirm, one at a time, before `purgeConventions`, `purgeRuns`, or `purgeTasks` is passed as `true` |
+| Reads the JSON report and passes it through as-is; tells you which task id must stop when `refused-alive` | Stop a live task driver if a task was skipped |
+| Verifies the listed paths are gone and unrelated files remain untouched | |
+
 ## Related
 
 - `install` — scaffold the files this skill removes

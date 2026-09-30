@@ -142,17 +142,13 @@ means no gate, and the hook fails open on any error.
    connection alone does not provide new AI sessions. A bare `tm_open({vendor: "auto"})` call
    stays on `self`; a named vendor fails instead of silently degrading.
 
-## What Claude does
+## What Claude Does / What You Do
 
-- Proposes dispatch patterns and role toggles, runs `install.mjs` for every deterministic file
-  op, confirms tool discovery, and reports honestly from the script's JSON.
-
-## What you do
-
-- Confirm the dispatch patterns and roles. Commit `.claude/team.json`,
-  `.claude/teams-dispatch.json`, `.claude/conventions/`, and the CLAUDE.md block so the
-  gate applies team-wide. After a plugin version bump, re-run with `"refresh": true` to backfill
-  new `team.json` keys.
+| Claude | You |
+|--------|-----|
+| Proposes dispatch patterns and role toggles | Confirm the dispatch patterns and roles |
+| Runs `install.mjs` for every deterministic file op, confirms tool discovery | Commit `.claude/team.json`, `.claude/teams-dispatch.json`, `.claude/conventions/`, and the CLAUDE.md block so the gate applies team-wide |
+| Reports honestly from the script's JSON | After a plugin version bump, re-run with `"refresh": true` to backfill new `team.json` keys |
 
 ## Related
 

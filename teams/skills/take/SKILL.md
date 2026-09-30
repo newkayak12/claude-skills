@@ -62,16 +62,13 @@ briefing: <briefing_path, from `inbox`, if a listed subgoal is already parked>
 
 Releasing (`to: "auto"`) prints the same table with `to: auto` and no briefing line.
 
-## What Claude Does
+## What Claude Does / What You Do
 
-Calls `tm_assign({task_id, key, to: "human", who})` — or `to: "auto"` to release — and renders
-`assigned` above. Never fabricates a `briefing_path`; only names one it actually read from
-`inbox` for a subgoal this reply shows as `waiting_human`.
-
-## What You Do
-
-Name a STORY or TASK key — your own, or one you saw in `inbox`. Do the work in the briefed
-worktree, then hand it to `submit`. Release a card you no longer want with the same skill.
+| Claude | You |
+|--------|-----|
+| Calls `tm_assign({task_id, key, to: "human", who})` — or `to: "auto"` to release — and renders `assigned` above | Name a STORY or TASK key — your own, or one you saw in `inbox` |
+| Never fabricates a `briefing_path`; only names one read from `inbox` for a subgoal shown as `waiting_human` | Do the work in the briefed worktree, then hand it to `submit` |
+| | Release a card you no longer want with the same skill |
 
 ## Related Skills
 

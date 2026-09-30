@@ -71,14 +71,12 @@ sibling STORY key plus that sibling's own current state, `implements` names the 
 ids this STORY was shaped to satisfy, and `filed_by` repeats `reporter` — the same relations
 `board`'s own STORY rows carry under the same name.
 
-## What Claude Does
+## What Claude Does / What You Do
 
-Calls `tm_ticket({key})` with the key as given and renders the card above — nothing more.
-
-## What You Do
-
-Give a ticket key, EPIC or STORY. Open `doc_path` yourself for the long form; the skill won't
-paste it into the conversation.
+| Claude | You |
+|--------|-----|
+| Calls `tm_ticket({key})` with the key as given | Give a ticket key, EPIC or STORY |
+| Renders the card above — nothing more | Open `doc_path` yourself for the long form; the skill won't paste it |
 
 ## Related Skills
 
