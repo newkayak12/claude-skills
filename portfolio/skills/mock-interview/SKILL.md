@@ -23,7 +23,7 @@ compatibility:
 
 # Portfolio-Based Mock Interview
 
-**Not for** a prep plan from scratch (`interview-plan`), overall portfolio assessment (`portfolio-feedback`), or JD fit analysis (`fit`).
+**Not for** a prep plan from scratch (`interview-plan`), overall portfolio assessment (`feedback`), or JD fit analysis (`fit`).
 
 ## Standing Mandates
 
@@ -42,7 +42,7 @@ compatibility:
 - Flow: technical depth first, then leadership — or behavioral opener, then technical.
 - The 2–3 questions that will be genuinely hard for this candidate.
 
-**2. Persona.** Inherited from portfolio-feedback, or matched from the role, level or company the user named ("백엔드 시니어" → A): state the pick in one line, add it to `[확정]`, and ask Q1 in the same turn — never stop at the persona. Only when nothing names a target, offer:
+**2. Persona.** Inherited from feedback, or matched from the role, level or company the user named ("백엔드 시니어" → A): state the pick in one line, add it to `[확정]`, and ask Q1 in the same turn — never stop at the persona. Only when nothing names a target, offer:
 - **A — Staff Engineer, Large Platform**: deep technical probing, system design, scale
 - **B — Engineering Manager, Startup**: ownership, leadership, business impact
 - **C — Tech Lead, Enterprise**: process maturity, reliability, communication
@@ -95,7 +95,7 @@ Be honest: name a vague answer, an answer that talked around the question, or on
 - The coaching note is the place for honesty; the interview itself stays realistic, not therapeutic.
 - Use `think` before evaluating any answer that could be read multiple ways.
 
-**Standalone inputs** (without prior portfolio-feedback): the portfolio (pasted or key projects described), target company type or company, and desired persona.
+**Standalone inputs** (without prior feedback): the portfolio (pasted or key projects described), target company type or company, and desired persona.
 
 ## Output Template
 
@@ -139,6 +139,6 @@ The one thing to work on most before the real interview.
 
 ## Related Skills
 
-- `../portfolio-feedback/SKILL.md` — overall assessment before the mock interview
+- `../feedback/SKILL.md` — overall assessment before the mock interview
 - `../interview-plan/SKILL.md` — study plan for topics exposed in this mock
-- `../portfolio-rewrite/SKILL.md` — improve weak portfolio sections that came up
+- `../rewrite/SKILL.md` — improve weak portfolio sections that came up

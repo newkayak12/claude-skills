@@ -36,12 +36,12 @@ With a JD: 서류 통과 가능성, gaps by severity, positioning, apply or not.
 **Skip if:** the target is already fixed and judged.
 > "Step 1 시작" / "JD랑 비교해줘" / "어느 회사에 잘 맞아?"
 
-**Step 2 — Review** · `portfolio-feedback`
+**Step 2 — Review** · `feedback`
 Interviewer-grade verdict on the materials: screen verdict, whether numbers and skills hold up, level read.
 **Skip if:** the materials were reviewed since their last change.
 > "Step 2 시작" / "포트폴리오 피드백 해줘"
 
-**Step 3 — Tailoring** · `portfolio-rewrite`
+**Step 3 — Tailoring** · `rewrite`
 Before/After rewrites of 이력서·포트폴리오 lines; with the Step 1 JD it tailors to that posting (keywords, achievement reframing, skills order). Missing numbers stay `[확인 필요]`.
 **Skip if:** materials already tailored to this role.
 > "Step 3 시작" / "이력서 맞춰줘" / "이 문장 고쳐줘"
@@ -104,6 +104,6 @@ One per line — what the next step cannot proceed without.
 
 ## Related Skills
 
-- Steps: `fit`, `portfolio-feedback`, `portfolio-rewrite`, `write:writer-verification`, `interview-plan`, `mock-interview`
-- Adjacent: `portfolio-pattern` (how the writing reads), `deck-builder` (portfolio deck as pptx)
+- Steps: `fit`, `feedback`, `rewrite`, `write:writer-verification`, `interview-plan`, `mock-interview`
+- Adjacent: `pattern` (how the writing reads), `deck-builder` (portfolio deck as pptx)
 - After: `think:negotiate` (offer negotiation)

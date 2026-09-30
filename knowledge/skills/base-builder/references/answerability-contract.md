@@ -105,7 +105,7 @@ shapes: direct lookup, synonym or operator-language lookup, comparison, cross-la
 multi-source synthesis, and freshness-sensitive lookup. Do not satisfy the gate with a fixed
 number of easy questions.
 
-After running each question through `knowledge:knowledge-query`, write one record to
+After running each question through `knowledge:query`, write one record to
 `_knowledge/question-results.jsonl`:
 
 ```json

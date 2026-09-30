@@ -1,5 +1,5 @@
 ---
-name: knowledge-query
+name: query
 effort: high
 description: >-
   Use when answering questions over an existing linked Markdown vault, local
@@ -193,7 +193,7 @@ For impact analysis:
 ## Related Skills
 
 - `knowledge:sqlite-index-builder` - build or refresh the derived SQLite index from canonical Markdown and JSONL.
-- `knowledge:knowledge-base-builder` - use to create or reshape the linked Markdown vault before querying.
+- `knowledge:base-builder` - use to create or reshape the linked Markdown vault before querying.
 - `knowledge:ontology-builder` - use to define class/relation semantics and controlled vocabularies before querying or extraction.
-- `knowledge:knowledge-graph-builder` - use to create graph-ready entities and relationships before graph queries.
+- `knowledge:graph-builder` - use to create graph-ready entities and relationships before graph queries.
 - `knowledge:rag-corpus-builder` - use to prepare retrieval chunks and evals before RAG-style querying.

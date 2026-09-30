@@ -4,7 +4,7 @@ effort: high
 description: >-
   Use when judging a portfolio's fit to a JD, or with no JD to company types or a named company.
   Triggers: "이 공고에 맞아?", "JD랑 비교해줘", "어느 회사에 잘 맞아?", "네이버 지원하려는데 어때?",
-  "which companies fit me". Not generic "서류 통과할까?" (portfolio-feedback).
+  "which companies fit me". Not generic "서류 통과할까?" (feedback).
 scenarios:
   - "Compare my portfolio to this job description — where are the gaps and would I pass the screen?"
   - "Which Korean tech companies would my portfolio appeal to? I don't have a posting yet"
@@ -57,7 +57,7 @@ Company-type mode:
 - ALWAYS be honest about poor fits — it is more useful than false encouragement.
 - NEVER invent a tally line for this mode. It ends with 포지셔닝 제안; there is no `판정 …` line.
 
-**Not for** a generic portfolio review or "서류 통과할까?" with no posting or company in question (`portfolio-feedback`), rewriting portfolio sections (`portfolio-rewrite`), or interview preparation (`interview-plan`, `mock-interview`).
+**Not for** a generic portfolio review or "서류 통과할까?" with no posting or company in question (`feedback`), rewriting portfolio sections (`rewrite`), or interview preparation (`interview-plan`, `mock-interview`).
 
 ## Process
 
@@ -194,7 +194,7 @@ No tally line follows in this mode.
 
 ## Related Skills
 
-- `../portfolio-rewrite/SKILL.md` — act on the gaps and positioning changes identified here
-- `../portfolio-feedback/SKILL.md` — overall portfolio assessment not tied to a role or company
+- `../rewrite/SKILL.md` — act on the gaps and positioning changes identified here
+- `../feedback/SKILL.md` — overall portfolio assessment not tied to a role or company
 - `../interview-plan/SKILL.md` — build a prep plan once a target is chosen
 - `../mock-interview/SKILL.md` — practice the questions the gaps will draw

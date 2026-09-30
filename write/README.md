@@ -22,9 +22,9 @@ run it alone, and a machine-readable spec when a `harness:harness` run is drivin
 | Plan an implementation, co-write a doc others will read (PRD, design doc, RFC), write a design review or ADR, write a technical blog post, or give feedback that lands | `plans` |
 | Write or fix a SKILL.md | `writing-skills` |
 | Review text, or draft a PR description / post that reads as human-written | `writer-verification` |
-| Rewrite text so it sounds like *me*, learned from my own samples | `write-like-me` |
+| Rewrite text so it sounds like *me*, learned from my own samples | `like-me` |
 
-Knowledge-base, knowledge-graph, RAG corpus, and knowledge-query skills now live in the `knowledge`
+Knowledge-base, knowledge-graph, RAG corpus, and query skills now live in the `knowledge`
 plugin.
 
 ## Skills
@@ -264,7 +264,7 @@ that answers a `[why]` is re-read against the diff before the next round — eve
 Y" needs a `-` line that shows X — and a `[why]` fix quotes the reason the material gives or says
 "ask the author", never a cause the pass supplied.
 
-### `write-like-me`
+### `like-me`
 
 `writer-verification` makes text read as *a* person wrote it; this makes it read as *you* wrote it.
 Give it 2–5 texts you wrote alone in the same genre (Slack, email, blog, PR, cover letter) and it
@@ -289,8 +289,12 @@ Every skill in this plugin lists MCP tools as optional or recommended, not requi
 | `plans` | sequential-thinking, think-tool | Dependency chains; judging whether a step is unambiguous; which document section holds the most unknowns |
 | `writing-skills` | think-tool | Framing the RED-phase pressure scenario |
 | `writer-verification` | think-tool, sequential-thinking, mcp-reasoner | Pass structuring; resolving conflicting findings; picking the summary lead |
-| `write-like-me` | think-tool | Separating recurring habits from one-off noise in samples |
+| `like-me` | think-tool | Separating recurring habits from one-off noise in samples |
 
 Add the remote SSE endpoints in Claude settings → MCP Servers.
 
 ---
+
+## Renames
+
+- `write:like-me` — renamed from `write:write-like-me`; the old name no longer resolves.

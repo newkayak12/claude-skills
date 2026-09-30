@@ -19,7 +19,7 @@ compatibility:
 
 Turn an existing graph dataset into one self-contained HTML file for visual exploration. The view is Obsidian-inspired: a dark infinite canvas, force-directed nodes, muted edges, type colors, search, filters, zoom/pan, and a node detail panel.
 
-This skill is a renderer, not a graph builder. Never infer, merge, rename, or create nodes and edges to improve the picture. If graph artifacts do not exist, route graph extraction to `knowledge:knowledge-graph-builder` first.
+This skill is a renderer, not a graph builder. Never infer, merge, rename, or create nodes and edges to improve the picture. If graph artifacts do not exist, route graph extraction to `knowledge:graph-builder` first.
 
 ## Input Discovery
 
@@ -90,5 +90,5 @@ Report the absolute output path, rendered counts, and any omitted invalid edges.
 
 ## Related Skills
 
-- `knowledge:knowledge-graph-builder` - create or repair source-grounded node and edge artifacts before rendering.
-- `knowledge:knowledge-query` - answer relationship questions from the graph rather than visually browsing it.
+- `knowledge:graph-builder` - create or repair source-grounded node and edge artifacts before rendering.
+- `knowledge:query` - answer relationship questions from the graph rather than visually browsing it.

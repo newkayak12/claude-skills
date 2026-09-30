@@ -1,5 +1,5 @@
 ---
-name: write-like-me
+name: like-me
 description: >-
   Use when text must sound like the user wrote it, not a generic human, given their own samples.
   Triggers on: "내 말투로", "내가 쓴 것처럼", "내 문체로", "write it in my voice", "sound like me".

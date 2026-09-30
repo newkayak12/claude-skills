@@ -28,11 +28,11 @@ remote SSE 엔드포인트로 추가하세요.
 |---|---|
 | JD부터 면접 당일까지 지원 전 과정 | `job-application-workflow` |
 | 특정 공고 하나에 얼마나 맞는지, 또는 공고 없이 어디에 지원할지 | `fit` |
-| 면접관 시각의 솔직한 포트폴리오 평가 | `portfolio-feedback` |
-| 숫자·스킬 목록·날짜, 그리고 주장하는 레벨이 앞뒤가 맞는지 | `portfolio-feedback` |
-| 포트폴리오가 왜 "오너십 없어 보이는지" 찾기 | `portfolio-pattern` |
-| 약한 문장을 시니어 수준으로 리라이팅 | `portfolio-rewrite` |
-| 특정 JD 어휘에 맞춰 이력서 최적화 | `portfolio-rewrite` (JD 첨부) |
+| 면접관 시각의 솔직한 포트폴리오 평가 | `feedback` |
+| 숫자·스킬 목록·날짜, 그리고 주장하는 레벨이 앞뒤가 맞는지 | `feedback` |
+| 포트폴리오가 왜 "오너십 없어 보이는지" 찾기 | `pattern` |
+| 약한 문장을 시니어 수준으로 리라이팅 | `rewrite` |
+| 특정 JD 어휘에 맞춰 이력서 최적화 | `rewrite` (JD 첨부) |
 | 내 자료만으로 자기소개서 초안 | `job-application-workflow` Step 4 (`write:writer-verification`) |
 | 면접 전 주차별 학습 계획 | `interview-plan` |
 | 모의 면접으로 내 작업 방어 연습 | `mock-interview` |
@@ -55,9 +55,9 @@ remote SSE 엔드포인트로 추가하세요.
 ```
 [1] fit                       서류 통과 가능성, 심각도별 갭, 지원 여부
       ↓
-[2] portfolio-feedback        면접관 시각의 자료 판정
+[2] feedback        면접관 시각의 자료 판정
       ↓
-[3] portfolio-rewrite         JD에 맞춘 Before/After
+[3] rewrite         JD에 맞춘 Before/After
       ↓
 [4] write:writer-verification 내 자료만으로 쓴 자기소개서 초안
       ↓
@@ -97,13 +97,13 @@ fit은 주어진 정보로만 판단합니다. 모든 단계가 `[확정]` 목�
 판정 통과 · 5개 차원 6.2/10 · 치명적 0 · 보완 가능 5 · 마이너 3 · must-have 미충족 0/5
 ```
 
-### `portfolio-feedback`
+### `feedback`
 
 이번 주에만 포트폴리오 백 개를 본 면접관처럼 읽습니다 — 있는 것보다 *없는 것*에 패턴 매칭을
 겁니다. 리뷰어 페르소나 넷 중 하나를 고르면(대형 플랫폼 Staff / 스타트업 EM / 엔터프라이즈 Tech
 Lead / OSS·DevTools Lead) 끝까지 그 시각을 유지합니다. 다섯 차원을 채점하고, 7점 이상은 전부
 "회의적인 면접관이라면 뭐라고 깎을까"로 반박을 겁니다. 그 반박을 견딘 점수만 살아남습니다.
-문장 리라이팅은 `portfolio-rewrite`, JD 매칭은 `fit`.
+문장 리라이팅은 `rewrite`, JD 매칭은 `fit`.
 
 ```
 대형 플랫폼 스태프 엔지니어 시각으로 내 포트폴리오 평가해줘.
@@ -182,14 +182,14 @@ XYZ+S 분모는 성과 주장 불릿만, `불릿/롤`은 `—`, 리크루터 패
 않는다, 지원자가 직접 쓴 문장은 오타·용어 오용·문서 간 모순 세 가지만 보고 리뷰 자세를 작성에
 끌고 가지 않는다.
 
-**베타 레인 — `portfolio-feedback-beta`.** portfolio-feedback에 portfolio-pattern의 네 측정을 한 번에 더한 버전입니다. `피동 n`과 `팀 주어 n`이 집계 줄에 붙고, 숫자 밀도는 완전 주장 분모 기준의 읽기 값으로만 보고하며(두 번 감점하지 않음), 의사결정 가시성은 부록 메모입니다. 명시적으로 베타를 요청할 때만 동작하고, 안정판 `portfolio-feedback`과 `portfolio-pattern`은 그대로입니다. 승격은 비교 실행(`evals/`) 뒤에 결정합니다.
+**베타 레인 — `feedback-beta`.** feedback에 pattern의 네 측정을 한 번에 더한 버전입니다. `피동 n`과 `팀 주어 n`이 집계 줄에 붙고, 숫자 밀도는 완전 주장 분모 기준의 읽기 값으로만 보고하며(두 번 감점하지 않음), 의사결정 가시성은 부록 메모입니다. 명시적으로 베타를 요청할 때만 동작하고, 안정판 `feedback`과 `pattern`은 그대로입니다. 승격은 비교 실행(`evals/`) 뒤에 결정합니다.
 
-### `portfolio-pattern`
+### `pattern`
 
 내용이 아니라 **읽히는 방식**을 봅니다. 여섯 차원을 감사합니다: 의사결정 동사 비율(제안/채택/배제
 vs 맨 개발했습니다), 행위 주체 표현, 숫자 밀도, 실패 서사 유무, 의사결정 가시성, 동사 에너지. "오너십이 안
 보인다"는 피드백은 받았는데 어디가 문제인지 아무도 못 짚어줄 때 씁니다. 지적된 문장을 고치는 건
-`portfolio-rewrite`, 전체 채점은 `portfolio-feedback`.
+`rewrite`, 전체 채점은 `feedback`.
 
 ```
 포트폴리오에 오너십이 안 드러난다는 말을 계속 들어. 글쓰기 패턴 분석해서
@@ -201,7 +201,7 @@ vs 맨 개발했습니다), 행위 주체 표현, 숫자 밀도, 실패 서사 �
 5년차 이상에서 숫자 없는 임팩트 주장이 60 %를 넘으면 문제입니다. 다년 경력에
 실패나 어려움 서술이 아예 없는 것 자체가 시그널입니다.
 
-### `portfolio-rewrite`
+### `rewrite`
 
 특정 구절을 받아 Before / After와 "무엇이 바뀌었고 면접관에게 왜 다르게 읽히는지"를 2–4문장으로
 냅니다. 리라이팅 전에 실제 약점을 먼저 진단하고 — 숫자 없음, 수동적 오너십, 맥락 없음,
@@ -225,7 +225,7 @@ Missing / Weak / Strong 갭 표, 섹션별로 실제로 다시 쓴 텍스트, "�
 
 ATS 키워드 규칙과 회사 유형별 컬처 시그널: `references/ats-rules-korea.md`,
 `references/korea-company-culture-signals.md`; JD 튜닝 절차:
-`skills/portfolio-rewrite/references/jd-tailoring.md`.
+`skills/rewrite/references/jd-tailoring.md`.
 
 ### `interview-plan`
 
@@ -432,3 +432,10 @@ python /abs/path/to/skills/deck-builder/scripts/ppt_keycolor_changer.py replace 
 
 모든 리포트는 이미지 캐비엇으로 끝납니다: 삽입된 이미지 내부 색상은 여기가 아니라 이미지
 편집 도구에서 고쳐야 합니다.
+
+## 이름 변경
+
+- `portfolio:feedback` — `portfolio:portfolio-feedback`에서 이름이 바뀜; 기존 이름은 더 이상 동작하지 않습니다.
+- `portfolio:feedback-beta` — `portfolio:portfolio-feedback-beta`에서 이름이 바뀜; 기존 이름은 더 이상 동작하지 않습니다.
+- `portfolio:pattern` — `portfolio:portfolio-pattern`에서 이름이 바뀜; 기존 이름은 더 이상 동작하지 않습니다.
+- `portfolio:rewrite` — `portfolio:portfolio-rewrite`에서 이름이 바뀜; 기존 이름은 더 이상 동작하지 않습니다.

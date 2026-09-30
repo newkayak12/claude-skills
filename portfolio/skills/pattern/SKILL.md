@@ -1,5 +1,5 @@
 ---
-name: portfolio-pattern
+name: pattern
 description: >-
   Use when someone wants to understand the writing patterns in their portfolio —
   not what it says but how it reads: passive voice ratio, subject audit, number
@@ -33,7 +33,7 @@ compatibility:
 - NEVER fire a flag on a boundary value. The ~20% decision-verb and 60% number-free thresholds are provisional (잠정): set from eval fixtures, not screening research, and never presented as industry numbers. A flag fires only when the value is at least 10 points past the threshold *and* one entry moving would not bring it back. Otherwise the tally line reads `경계 (58%, 기준 ~60%)` — in general `경계 (값, 기준 ~N%)` — and no flag is raised.
 - NEVER measure the `저는/제가` rate (see Subject Audit).
 
-**Not for** rewriting weak sections (`portfolio-rewrite`), overall quality scoring (`portfolio-feedback`), or JD keyword matching (`jd-fit`).
+**Not for** rewriting weak sections (`rewrite`), overall quality scoring (`feedback`), or JD keyword matching (`jd-fit`).
 
 Input: the portfolio text (paste or upload); Korean fully supported.
 
@@ -132,10 +132,10 @@ For each flagged pattern: one concrete fix that changes shape, never adds a fact
 |--------|-----|
 | Audits 6 dimensions: subject audit, agency language, number density, failure narrative, decision visibility, verb energy | Provides the portfolio text |
 | Calculates ratios and marks boundary values `경계` instead of flagging | Validates findings against your actual intent |
-| Identifies top 3 patterns with quotes and one fix each, missing facts as `[확인 필요]` | Fills the `[확인 필요]` facts and decides what to rewrite (or uses portfolio-rewrite) |
+| Identifies top 3 patterns with quotes and one fix each, missing facts as `[확인 필요]` | Fills the `[확인 필요]` facts and decides what to rewrite (or uses rewrite) |
 
 ## Related Skills
 
-- `../portfolio-rewrite/SKILL.md` — act on the patterns identified here
-- `../portfolio-feedback/SKILL.md` — overall assessment alongside pattern analysis
+- `../rewrite/SKILL.md` — act on the patterns identified here
+- `../feedback/SKILL.md` — overall assessment alongside pattern analysis
 - `../jd-fit/SKILL.md` — after improving patterns, check fit against a specific JD

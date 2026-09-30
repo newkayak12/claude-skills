@@ -58,7 +58,7 @@ top-50을 cross-encoder로 재정렬. `--provider ollama`와 같은 패턴 — *
 **두 모양이 있고, 게이트가 서로 다릅니다** (2026-09-24, Hindsight 대조에서 갈라짐 —
 `docs/theory.md` §9.4).
 
-**4a. 챗봇** — `knowledge-query` 위에 생성 모델을 얹는 대화 계층. 후보: Gemma 4 26B A4B
+**4a. 챗봇** — `query` 위에 생성 모델을 얹는 대화 계층. 후보: Gemma 4 26B A4B
 (로컬) 또는 Claude.
 - **게이트 유지**: 검색 recall 0.8+ 도달 전에는 시작 안 함 — 근거가 없으면 지어냅니다.
 - 별도 지표: retrieval recall이 아니라 인용 충실도.
@@ -93,10 +93,10 @@ Phase를 플러그인 변경 단위로 옮기면:
   `--rerank-depth`. Cohere·Jina `/v1/rerank` 형식(llama.cpp `--pooling rank`, TEI 호환).
   창 구성 **전에** 재정렬하므로 승격의 회수 보장이 유지됨. 실패 시 융합 순서로 폴백 +
   `rerank_error` 기록, eval은 `reranker` 블록으로 비교 가능성을 표시.
-  스킬 쪽: `knowledge-query`에 부착·실패 판독 규칙, `local-sqlite.md`에 천장 측정법,
+  스킬 쪽: `query`에 부착·실패 판독 규칙, `local-sqlite.md`에 천장 측정법,
   `sqlite-index-builder`에 리랭커 전 `recall@50 − recall@10` 확인 단계.
 - **R4 루프 닫기** — eval-baseline.json 규약 + fail-open 훅, `promote` 커맨드.
-- **R5 워크플로 진입점 — 완료 (v1.14.0)** — `knowledge:knowledge-workflow`. 기존 스킬을
+- **R5 워크플로 진입점 — 완료 (v1.14.0)** — `knowledge:workflow`. 기존 스킬을
   라우팅하는 진입점이고 새 내용은 없음. 추가한 것은 **루프의 규율**입니다: 첫 수정 전
   분할, 측정 1회당 변경 1건, 신호→레버 라우팅 표, 그리고 **명시적 종료 조건 4가지**
   (dev 2라운드 무변화 / 남은 게 전부 missing-note / 목표 recall 도달 / dev만 오르고
@@ -137,7 +137,7 @@ Phase를 플러그인 변경 단위로 옮기면:
   "더 인용하기" 모양이라, 정밀도 없이 측정하면 개선인지 남발인지 구분 못 합니다. 보고만 하고
   게이트로 걸지 않습니다.
 - v1.17.0 (3건) — 연 것만 인용 / 여러 면 있는 질문은 한 홉 확장 / `complete`는 부분 대응표로
-  판정. 전부 `knowledge-query` 스킬 규칙.
+  판정. 전부 `query` 스킬 규칙.
 
 **다음 측정**: 같은 94문항 재실행. 볼 것은 recall 상승과 **정밀도가 버티는지**, 그리고
 로컬 모델 적자 중 절차(안 열어서 못 씀)가 아닌 진짜 모델 격차가 얼마인지.

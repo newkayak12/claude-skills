@@ -33,7 +33,7 @@ compatibility:
 
 # Interview Prep Planner
 
-**Not for** live mock interview practice (`mock-interview`), resume tailoring to a JD (`portfolio-rewrite`), or general portfolio improvement (`portfolio-feedback`).
+**Not for** live mock interview practice (`mock-interview`), resume tailoring to a JD (`rewrite`), or general portfolio improvement (`feedback`).
 
 ## Process
 
@@ -48,7 +48,7 @@ If `sequential-thinking` is available, use it to enforce the order: (1) gather c
 
 ### Step 1 — Gather Context
 
-If following portfolio-feedback or fit, start here. Before producing any plan, collect:
+If following feedback or fit, start here. Before producing any plan, collect:
 
 1. **Background:** How many years of experience? Current/recent role and tech stack?
 2. **Target:** Which company or type of company? Which role level? (IC3 vs. Staff, for example)
@@ -152,5 +152,5 @@ Target: [Company type] [Role] — [N] weeks · Format: [format 또는 확인 필
 ## Related Skills
 
 - `../mock-interview/SKILL.md` — practice answering questions live after building this plan
-- `../portfolio-feedback/SKILL.md` — overall portfolio assessment before targeting specific companies
+- `../feedback/SKILL.md` — overall portfolio assessment before targeting specific companies
 - `../fit/SKILL.md` — JD-specific gap analysis if you have a posting, company-type fit if you don't

@@ -22,9 +22,9 @@ harness-aware입니다 — 혼자 돌리면 문서를 내고, `harness:harness` 
 | 구현 계획 세우기, 남이 읽을 문서(PRD, design doc, RFC) 같이 쓰기, 디자인 리뷰·ADR 쓰기, 기술 블로그 쓰기, 닿는 피드백 쓰기 | `plans` |
 | SKILL.md 쓰거나 고치기 | `writing-skills` |
 | 글 검토, 또는 사람이 쓴 것처럼 읽히는 PR 설명·글 초안 | `writer-verification` |
-| 내 글 샘플로 배운 *내* 말투로 다시 쓰기 | `write-like-me` |
+| 내 글 샘플로 배운 *내* 말투로 다시 쓰기 | `like-me` |
 
-knowledge-base, knowledge-graph, RAG corpus, knowledge-query 스킬은 이제 `knowledge` 플러그인에
+knowledge-base, knowledge-graph, RAG corpus, query 스킬은 이제 `knowledge` 플러그인에
 있습니다.
 
 ## 스킬
@@ -256,7 +256,7 @@ draft 루프의 설명, 스킬 없는 초안, 사람 원본을 섞어 diff와 �
 있어야 함 — `[why]` 수정안은 자료가 주는 이유를 인용하거나 "작성자에게 물어보라"고 하지, 패스가
 지어낸 원인은 절대 쓰지 않습니다.
 
-### `write-like-me`
+### `like-me`
 
 `writer-verification`은 글을 *사람이* 쓴 것처럼 만들고, 이 스킬은 *내가* 쓴 것처럼 만듭니다. 같은
 장르(슬랙, 메일, 블로그, PR, 자기소개서)로 직접 쓴 글 2~5개를 주면 수치로 된 문체 프로필을
@@ -280,6 +280,10 @@ draft 루프의 설명, 스킬 없는 초안, 사람 원본을 섞어 diff와 �
 | `plans` | sequential-thinking, think-tool | 의존성 사슬 추적, 단계가 정말 모호하지 않은지 판정, 어느 섹션에 미지수가 가장 많은지 판단 |
 | `writing-skills` | think-tool | RED 단계 압박 시나리오 설계 |
 | `writer-verification` | think-tool, sequential-thinking, mcp-reasoner | 패스 구조화, 상충하는 지적 조정, Summary 선두 고르기 |
-| `write-like-me` | think-tool | 샘플에서 반복 습관과 일회성 노이즈 구분 |
+| `like-me` | think-tool | 샘플에서 반복 습관과 일회성 노이즈 구분 |
 
 Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
+
+## 이름 변경
+
+- `write:like-me` — `write:write-like-me`에서 이름이 바뀜; 기존 이름은 더 이상 동작하지 않습니다.
