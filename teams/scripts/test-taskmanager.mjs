@@ -3722,6 +3722,13 @@ async function waitFor(fn, what, ms = 15000) {
   }
 }
 
+// Drivers are spawned detached + unref()'d so they outlive a daemon restart - which also means they
+// outlive a test that only kills the daemon. Kill every process started from the test's own fake
+// driver dir; call it after the daemon is dead, or the daemon spawns the next one.
+function killDriversIn(drv) {
+  spawnSync('pkill', ['-KILL', '-f', drv]);
+}
+
 function driverFixture(env = {}, script = FAKE_DRIVER) {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
@@ -4581,6 +4588,7 @@ test('a judge call leaves its stream under drivers/, so budget and the report co
         if (e && e.event === 'daemon_spawned') { try { process.kill(e.pid, 'SIGKILL'); } catch { /* gone */ } }
       }
     } catch { /* no ledger */ }
+    killDriversIn(drv);
     rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     rmSync(drv, { recursive: true, force: true });
@@ -4604,11 +4612,12 @@ test('the daemon stays alive while it only has a running child to wait on', asyn
     HARNESS_JUDGE_DRIVER: `node ${hang}`,
     CLAUDECODE: '1',
   }).init();
+  let task = () => null;
   try {
     // size pinned S: no judge runs, the one child run opens at once, and the daemon's whole job
     // is to wait for that driver.
     const open = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'one small request', cwd, vendor: 'self', size: 'S' });
-    const task = () => JSON.parse(readFileSync(join(root, open.task_id, 'task.json'), 'utf8'));
+    task = () => JSON.parse(readFileSync(join(root, open.task_id, 'task.json'), 'utf8'));
     const d = await waitFor(async () => (task().daemon && task().daemon.pid ? task().daemon : null), 'the daemon to be spawned', 10000);
     await new Promise((r) => setTimeout(r, 3000));
     let alive = true;
@@ -4617,9 +4626,9 @@ test('the daemon stays alive while it only has a running child to wait on', asyn
     assert.ok(!existsSync(d.exit), 'no exit file may exist while the child driver is alive');
     assert.equal(task().daemon.restarts || 0, 0, 'nothing had to restart it');
   } finally {
-    try { const t = task(); if (t.daemon && t.daemon.pid) process.kill(t.daemon.pid, 'SIGTERM'); } catch { /* gone */ }
-    try { const t = task(); const sr = t.s_run && t.s_run.driver; if (sr && sr.pid) process.kill(sr.pid, 'SIGTERM'); } catch { /* gone */ }
+    try { const t = task(); if (t.daemon && t.daemon.pid) process.kill(t.daemon.pid, 'SIGKILL'); } catch { /* gone */ }
     tm.close();
+    killDriversIn(drv);
     rmSync(cwd, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
     rmSync(drv, { recursive: true, force: true });

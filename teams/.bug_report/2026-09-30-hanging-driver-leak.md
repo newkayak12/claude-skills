@@ -2,7 +2,7 @@
 
 - 발견: 2026-09-30
 - 영역: `teams/scripts/test-taskmanager.mjs` (테스트 정리 코드). 제품 버그 아님.
-- 상태: 미수정
+- 상태: 수정됨 (2026-09-30, `killDriversIn`)
 
 ## 증상
 
@@ -36,3 +36,13 @@ PPID=1 고아로 계속 쌓인다. 2026-09-30 기준 하루 이상 된 것만 39
 건드리지 않는다.
 
 `.mjs`는 harness 게이트 대상이므로 plan → setgoal → critique 절차를 거쳐 수정한다.
+
+## 수정 (2026-09-30)
+
+- 원인이 하나 더 있었다. `the daemon stays alive…` 테스트는 `const task`를 `try` 안에서 선언해서
+  `finally`의 `task()`가 ReferenceError를 냈고, 빈 `catch`가 삼켰다. 데몬도 드라이버도 한 번도
+  죽이지 않았다.
+- `killDriversIn(drv)` 헬퍼 추가: 테스트별 fake 드라이버 디렉터리 경로로 `pkill -KILL -f`.
+  PID가 어디에 기록됐는지와 상관없이 그 테스트가 띄운 드라이버를 전부 죽인다. 두 테스트
+  `finally`에서 데몬을 죽인 뒤 호출한다.
+- 검증: 수정본은 2/2 통과, 새 고아 0개. 수정 전 HEAD는 실행마다 1개 남는다.
