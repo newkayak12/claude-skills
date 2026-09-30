@@ -23,7 +23,9 @@ run it alone, and a machine-readable spec when a `harness:harness` run is drivin
 | Plan a multi-step implementation before touching code | `writing-plans` |
 | Write or fix a SKILL.md | `writing-skills` |
 | Write a technical blog post about something I built or fixed | `technical-blog-writer` |
+| Give a colleague feedback that lands instead of stinging | `sbi-writer` |
 | Review text, or draft a PR description / post that reads as human-written | `writer-verification` |
+| Rewrite text so it sounds like *me*, learned from my own samples | `write-like-me` |
 
 Knowledge-base, knowledge-graph, RAG corpus, and knowledge-query skills now live in the `knowledge`
 plugin.
@@ -126,6 +128,27 @@ Length guide:
 | Deep dive or tutorial | 2,000–3,500 words |
 | Series part | 1,000–1,500 words per part |
 
+### `sbi-writer`
+
+Rewrites feedback into Situation → Behavior → Impact: a single specific moment, an observable action
+that passes the camera test, and the actual consequence stated from "I/we". It separates observation
+from judgment in the raw input and flags interpretations and character labels for rephrasing. Works
+the same for praise — vague praise doesn't tell the receiver what to repeat.
+
+```
+팀원이 스프린트 리뷰에서 준비 없이 발표해서 고객 미팅이 밀렸어.
+비난처럼 안 들리게 피드백 문장 만들어줘.
+```
+
+Common failures it fixes:
+
+| Mistake | Fix |
+|---|---|
+| Judgment disguised as behavior ("무책임하게 행동했다") | "마감 전날 아무 공지 없이 작업을 제출하지 않았다" |
+| Vague situation ("항상 회의에서") | "지난 화요일 스프린트 플래닝에서" |
+| Missing impact ("그건 별로였어") | "팀이 다음 스텝을 못 정하고 하루를 낭비했다" |
+| Piling on multiple behaviors | One behavior per SBI |
+
 ### `writer-verification`
 
 Makes writing read as if a person wrote it — two modes. **Review** runs five passes over text you
@@ -177,6 +200,22 @@ that answers a `[why]` is re-read against the diff before the next round — eve
 Y" needs a `-` line that shows X — and a `[why]` fix quotes the reason the material gives or says
 "ask the author", never a cause the pass supplied.
 
+### `write-like-me`
+
+`writer-verification` makes text read as *a* person wrote it; this makes it read as *you* wrote it.
+Give it 2–5 texts you wrote alone in the same genre (Slack, email, blog, PR, cover letter) and it
+builds a counted voice profile — sentence length and spread, 종결어미 distribution, 존댓말 level,
+opener/closer habits, recurring words, punctuation, formatting, hedging, code-switched terms — and
+shows it to you before rewriting. Detection and writing are split: `writer-verification` runs first
+and only its findings are kept — its generic fixes are discarded — then this skill closes each 🔴🟡
+in your words, brings the rest onto the profile, and re-checks each row against a tolerance. A tell
+your own samples use counts as voice, not a finding. It refuses to profile from one sample or from
+AI-assisted text, and never imports typos as style.
+
+```
+내가 평소 슬랙에 쓴 메시지 3개 줄게. 이 공지 내 말투로 바꿔줘.
+```
+
 ## MCP
 
 Every skill in this plugin lists MCP tools as optional or recommended, not required:
@@ -187,7 +226,9 @@ Every skill in this plugin lists MCP tools as optional or recommended, not requi
 | `writing-plans` | sequential-thinking, think-tool | Dependency chains; judging whether a step is unambiguous |
 | `writing-skills` | think-tool | Framing the RED-phase pressure scenario |
 | `technical-blog-writer` | think-tool | Fixing the core story and angle before drafting |
+| `sbi-writer` | think-tool | Ambiguous observation-vs-judgment cases |
 | `writer-verification` | think-tool, sequential-thinking, mcp-reasoner | Pass structuring; resolving conflicting findings; picking the summary lead |
+| `write-like-me` | think-tool | Separating recurring habits from one-off noise in samples |
 
 Add the remote SSE endpoints in Claude settings → MCP Servers.
 
