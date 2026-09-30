@@ -27,12 +27,12 @@
 | C3 | Each planning card delivers its PRD section: goal, scope and non-goals, user stories with acceptance criteria, open questions | 4 |
 | C4 | A planning integrate merges the cards into one `10-prd.md` and judges it: story-id collisions, contradictions between features, a feature the request names but no card covers | 2, 4 |
 | C5 | `roles.planning: false` is refused (recorded as a note); `true` / `'light'` / `'auto'` remain | 4 |
-| C6 | A size-S request also gets planning: one planning card before its run, so `10-prd.md` and `user_stories[]` always exist | 4 |
+| C6 | A size-S request also gets planning: one planning card before its run, so `10-prd.md` and `user_stories[]` always exist *(Superseded for size S by `2026-09-28-teams-long-loop.md` S1–S2, teams 0.38.0: S runs on the development harness, no PRD.)* | 4 |
 | C7 | QA splits the same way: one QA card per feature area (or per user-story group) on the integrated tree, running the full harness in parallel; their defects file fix STORYs as today | 1, 5 |
 
 ## Done when
 
-- Any task, any size, any `team.json`: the task dir has `10-prd.md` and at least one user story.
+- Any task, any size, any `team.json`: the task dir has `10-prd.md` and at least one user story. *(Superseded for size S by `2026-09-28-teams-long-loop.md` S1–S2, teams 0.38.0: S runs on the development harness, no PRD.)*
 - The board shows one planning card per feature area and one QA card per feature area.
 - Every card's child run contains plan → setgoal → critique before its chain and gate:goal → report after it.
 - `shape` still maps user stories to develop cards (`implements[]` must cover every story).

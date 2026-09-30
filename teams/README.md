@@ -7,8 +7,8 @@ pass is sized, planned, split into **packages** (one per piece of work), and eac
 handed to its own worker in its own git worktree. Every result is judged before it is accepted,
 the accepted branches are merged into one integration tree, QA exercises the merged result, and a
 final goal gate decides whether the request was actually met. You get a report either way. A
-small request skips the split and runs as one graph run, but it is still planned first: every
-task, of any size, gets a PRD and user stories.
+large (size L) request gets a PRD and user stories first. A small (size S) request skips all of
+that and is handed to the development harness, which plans, gates and reports it with its own stages.
 
 Use `teams` when the work splits into parts, is not only code (a design doc, a PRD, a QA pass),
 or should keep running after you close the session. Use [`graph`](../graph/README.md) for a
@@ -66,11 +66,8 @@ flowchart TB
 ```mermaid
 flowchart TD
   OPEN["tm_open"] --> SIZE{"size"}
-  SIZE -->|"S"| SPLAN["one planning card: PRD section and user stories"]
-  SPLAN --> SPI{"plan-integrate"}
-  SPI -->|"accepted"| SRUN["one graph run in the project directory, built from the PRD"]
-  SRUN --> SQA{"QA card on a snapshot of the run's working tree"}
-  SQA --> SREP["report: the run's account + QA defects left unresolved"]
+  SIZE -->|"S"| SRUN["development harness run in the project directory, its own six stages"]
+  SRUN --> SREP["report: the harness run's own goal gate and report, relayed"]
   SIZE -->|"L"| BS["brainstorm"]
   BS --> AREAS["areas: split the request by feature"]
   AREAS --> ACRIT{"areas-critique"}

@@ -6,9 +6,9 @@
 기획하고, **패키지**(작업 단위 하나) 여러 개로 나눈 뒤, 패키지마다 전담 워커를 붙여 각자의 git
 워크트리에서 돌립니다. 결과는 모두 심사를 거쳐야 받아들여지고, 받아들여진 브랜치들은 하나의
 통합 트리로 합쳐집니다. 그 위에서 QA가 실제로 써 보고, 마지막 목표 게이트가 원래 요청을 정말
-충족했는지 판정합니다. 결과가 어떻든 보고서는 남습니다. 작은 요청은 분할을 건너뛰고 graph 런
-하나로 끝나지만, 그 전에 기획은 거칩니다. 크기와 상관없이 모든 태스크에 PRD와 유저 스토리가
-남습니다.
+충족했는지 판정합니다. 결과가 어떻든 보고서는 남습니다. 큰(size L) 요청은 먼저 PRD와 유저 스토리를
+남깁니다. 작은(size S) 요청은 이 과정을 모두 건너뛰고 개발 하네스에 넘겨지며, 하네스가 자체 단계로
+계획하고 판정하고 보고합니다.
 
 작업이 여러 조각으로 나뉘거나, 코드만이 아니거나(설계 문서, PRD, QA 패스), 세션을 닫은 뒤에도
 계속 돌아야 한다면 `teams`를 쓰세요. 한 세션에서 직접 이끌어 가는 코드 변경 하나라면
@@ -66,11 +66,8 @@ flowchart TB
 ```mermaid
 flowchart TD
   OPEN["tm_open"] --> SIZE{"size"}
-  SIZE -->|"S"| SPLAN["one planning card: PRD section and user stories"]
-  SPLAN --> SPI{"plan-integrate"}
-  SPI -->|"accepted"| SRUN["one graph run in the project directory, built from the PRD"]
-  SRUN --> SQA{"QA card on a snapshot of the run's working tree"}
-  SQA --> SREP["report: the run's account + QA defects left unresolved"]
+  SIZE -->|"S"| SRUN["development harness run in the project directory, its own six stages"]
+  SRUN --> SREP["report: the harness run's own goal gate and report, relayed"]
   SIZE -->|"L"| BS["brainstorm"]
   BS --> AREAS["areas: split the request by feature"]
   AREAS --> ACRIT{"areas-critique"}
