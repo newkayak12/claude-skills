@@ -2,7 +2,7 @@
 
 One worked exchange per move. The name never appears in the conversation; the operation does.
 
-The last five were absorbed from the retired `self` plugin (`deprecated/self`). They are not
+The last five were absorbed from the retired `self` plugin (`_repo/deprecated/self`). They are not
 therapy — each one is a judgment operation on material people usually treat as feeling.
 
 ## Elenchus

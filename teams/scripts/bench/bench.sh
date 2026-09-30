@@ -179,7 +179,7 @@ echo "$(date -u +%FT%TZ) start $ARM/$CASE -> $WS" | tee "$OUTB.start.txt"
 set +e
 if [ "${BENCH_VIA:-session}" = run ] && [[ "$ARM" == beta || "$ARM" == betas || "$ARM" == skills ]]; then
   # BENCH_VIA=run (drive.sh's default for the teams arms): no model session in the loop at all
-  # - `teams run` (scripts/run.mjs, wait-model C of docs/plans/2026-09-21-teams-server-owns-the-
+  # - `teams run` (scripts/run.mjs, wait-model C of _repo/docs/plans/2026-09-21-teams-server-owns-the-
   # loop.md §4) opens the task the way tm_run does and blocks until it settles, waiting out usage
   # limits itself (--resume-on-limit). The prompt's words become flags: the flow the entry skill
   # would pick, and beta's "split this" as --size L. The daemon's drivers find the skill plugins

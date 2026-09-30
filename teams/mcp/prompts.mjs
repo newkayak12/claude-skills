@@ -61,7 +61,7 @@ A section you cannot fill from the request or the tree is written with what you 
 Before any of that, name the domain the request belongs to and what is specific to it. The general version of a problem is the one you already know, and it is the one you will write if nobody stops you: a ticketing PRD about queues and bots, a payments PRD about retries, a chat PRD about delivery receipts. Those are real, and they are not the point. Ask what the people in THIS domain actually do that the generic version has no idea about - who gets priority and on what basis, what an established customer expects that a first-time one does not, which rule exists because of that industry's history or regulation, what everyone in it would notice missing on the first read. Write those into Problem, Target users and the stories, with the domain's own vocabulary rather than a neutral paraphrase of it. A domain practice you decide not to build is named in Out of scope, so that skipping it is a decision on the record; one you never mention has not been scoped, it has been overlooked - and it is the reason a reader in that industry puts the document down.
 Out of scope is for capability you decided not to build, and it is not a place to put a rule you did not decide. If a user story rests on the rule - what the per-person limit is, who is entitled to the early window, what happens to a cancelled order, what follows when someone is caught abusing it - then that rule is DECIDED, in the PRD or in whichever document of the set owns it, or it stands as an Open question with a named owner. A story resting on an undecided rule is not buildable, and moving the rule to Out of scope makes the document pass while the decision is still missing: the practice is then neither built nor decided, only filed. The same goes for a practice you write down as merely assumed to exist - an assumption with no decision behind it and no story over it is an omission wearing a heading.`
 
-// D2 slice 3 (0.29.0, docs/plans/2026-09-23-teams-reducer-human-rollback.md §1): the same
+// D2 slice 3 (0.29.0, _repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §1): the same
 // treatment investigate's own unknowns[] got in 0.28.0, offered to every other judging/
 // deciding stage that names it below - a decision this stage cannot make alone, but must not
 // silently guess either. graph.mjs's openAsk reads this field by name; keep it short, every
@@ -144,7 +144,7 @@ You are the reader, not the author. Open the artifact at the paths the draft rep
 ${UNVERIFIABLE_RULE}`,
   revise: `Return JSON: {"stage_ok": true|false, "handoff": "<what changed, then a one-paragraph abstract of what the document now says>", "changed_files": ["..."], "checks": ["claim -> the evidence you checked it against, or the passage you rewrote and why"], "evidence": "..."}
 You are a different identity from draft, and unlike review you may edit the artifact - this is a second pass, not only a judgment. Rewrite for the reader who will actually use this document, and check every claim it makes against the evidence for it; a claim you cannot verify gets fixed or removed, not passed through. stage_ok=false when the artifact could not be revised. Do not report a file as changed unless you changed it.`,
-  // The light PLAN chain's one authoring stage (docs/plans/2026-09-28-teams-light-plan.md §2.2),
+  // The light PLAN chain's one authoring stage (_repo/docs/plans/2026-09-28-teams-light-plan.md §2.2),
   // in place of draft+revise, for a backlog whose acceptance criteria were already declared: it
   // moves existing sentences and cites their sources, so it has neither draft's licence to
   // compose nor revise's to rewrite. The assembly it copies from is deterministic (acceptance.mjs's
@@ -198,7 +198,7 @@ The goal gate's consensus rejected the assembled result, not any one subgoal - t
 Synthesize from the node results below only. State plainly what was not done and why.`,
 };
 
-// The light PLAN chain's gate (docs/plans/2026-09-28-teams-light-plan.md §2.3): the ordinary
+// The light PLAN chain's gate (_repo/docs/plans/2026-09-28-teams-light-plan.md §2.3): the ordinary
 // gate contract plus the two checks the folded draft/revise no longer stand behind. Appended to
 // CONTRACT.gate only for a planning-light subgoal (composePrompt), so every other gate reads
 // exactly what it did before. portfolio-refresh-80ec931a's own report already noted doing the
@@ -302,7 +302,7 @@ export function composePrompt(run, n, briefing) {
       // did (idol-pm-1/2, 2026-09-22), and why the domain's own rules ended up in Out of scope
       // or in an open question rather than in a document of their own.
       if (f === 'plan' && ['plan', 'setgoal'].includes(n.stage)) lines.push(PLANNING_SETGOAL);
-      // Light mode (docs/plans/2026-09-28-teams-light-plan.md §2.2) overrides the set-deciding
+      // Light mode (_repo/docs/plans/2026-09-28-teams-light-plan.md §2.2) overrides the set-deciding
       // half of the text above: the backlog is the set, already written.
       if (f === 'plan' && briefing.default_kind === 'planning-light' && ['plan', 'setgoal'].includes(n.stage)) {
         lines.push(`This PLAN run is in LIGHT mode: the backlog already declares its acceptance criteria (see "Declared acceptance" in the context above), so the document set is ONE PRD whose user stories are the backlog items - one planning subgoal, not a set. Every planning subgoal here runs investigate -> template-fill -> gate (not draft -> revise); kind "planning" is read as "planning-light" in this run.`);

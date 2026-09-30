@@ -13,7 +13,7 @@
 // or is auto-decided past it, graph.mjs's applyHumanPin). `human_gates` is live as of 0.29.0
 // (graph.mjs's promoteHumanGates) - a list of judging stages a person must accept/reject
 // instead of a model. `human_scope` (leader/all) never shipped and is retired: when a person is
-// called is now decided by task.decisions (docs/plans/2026-09-28-teams-light-plan.md §6) - the
+// called is now decided by task.decisions (_repo/docs/plans/2026-09-28-teams-light-plan.md §6) - the
 // session brainstorm before tm_open, else the engine's own `brainstorm` node (one ask when
 // interactive), and during execution only a blocking question, once, at EPIC level. A team.json
 // that still names it is accepted with a note, never an error (DEPRECATED below).
@@ -21,7 +21,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // A fixed 2 used to be the only option here, and it was a guess, not a measurement - a measured
-// cause of slowness (docs/plans/2026-09-21-teams-server-owns-the-loop.md §0/§7), left in place
+// cause of slowness (_repo/docs/plans/2026-09-21-teams-server-owns-the-loop.md §0/§7), left in place
 // until "a capacity-based rule (same plan, §7)" replaced it. This is that rule: 'auto' (the
 // default since 2026-09-28) hands the cap to an AIMD controller (taskmanager.mjs's
 // ensureAutoParallel/updateAutoParallel, applied in advanceDispatches) that starts at 2 - the
@@ -91,7 +91,7 @@ export const TEAM_DEFAULTS = Object.freeze({
   // unchanged, so a project that never heard of this key keeps today's behaviour byte for byte -
   // but a project may now turn audit off while keeping the rest of planning (a PRD without the
   // post-integration cross-check), which `roles.planning` alone could never express.
-  // roles.planning takes true | false | 'light' | 'auto' (docs/plans/2026-09-28-teams-light-plan.md
+  // roles.planning takes true | false | 'light' | 'auto' (_repo/docs/plans/2026-09-28-teams-light-plan.md
   // §2.5). 'auto' (the default since 2026-09-28, was true) picks the light PLAN chain
   // (investigate -> template-fill -> gate) when the backlog already declares its acceptance -
   // acceptance.mjs's hasDeclaredAcceptance - and the full one otherwise. It never picks false:
@@ -148,7 +148,7 @@ export const TEAM_DEFAULTS = Object.freeze({
   // `rollback` resets the worktree to the last checkpoint that passed its gate (this subgoal's
   // pre-attempt state at the node level; the package's last accepted commit, or its base commit
   // if none, at the retryPackage level) before the new attempt opens, then carries the failed
-  // gate's gaps forward as feedback exactly as continue does. docs/plans/
+  // gate's gaps forward as feedback exactly as continue does. _repo/docs/plans/
   // 2026-09-23-teams-reducer-human-rollback.md §5 measured two real runs before picking a
   // default: both showed a retried implement CONVERGING on its own gate's feedback across
   // attempts (52%->60%->78%, 74%->78%) rather than repeating the same mistake, so continue - the
@@ -156,7 +156,7 @@ export const TEAM_DEFAULTS = Object.freeze({
   // OTHER failure mode the measurement also saw (a structural collapse - "reduce is unreachable"
   // - where continuing has nothing coherent to build on).
   retry_policy: 'continue',
-  // The Sprint's own missing box (docs/plans' Scrum Guide mapping audit: no backlog, no
+  // The Sprint's own missing box (_repo/docs/plans' Scrum Guide mapping audit: no backlog, no
   // timebox/budget, no retro - this is the second of those three). null is unlimited, today's
   // behaviour byte for byte: a task that never sets either keeps running exactly as it always
   // has. Set, taskmanager.mjs's budgetStatus reads whichever is tighter as a fraction spent (a
@@ -245,10 +245,10 @@ export function readTeamConfig(cwd) {
 // says why rather than the generic "unknown key".
 const DEPRECATED = {
   human_scope: 'no-op: replaced by task.decisions (session brainstorm / brainstorm node / EPIC-level blocking questions)',
-  max_depth: 'no-op: there is no nested task (sub-EPIC) - work too big for one EPIC carries into the next Sprint (docs/plans/2026-09-28-teams-sprint-not-sub-epic.md)',
+  max_depth: 'no-op: there is no nested task (sub-EPIC) - work too big for one EPIC carries into the next Sprint (_repo/docs/plans/2026-09-28-teams-sprint-not-sub-epic.md)',
 };
 
-// roles.planning: false is refused (docs/plans/2026-09-28-teams-cards-everywhere.md C5,
+// roles.planning: false is refused (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md C5,
 // principle 4 "planning always produces its deliverables - no setting skips them"). Only that one
 // entry is dropped, with a note naming the value that stands instead; the rest of the roles object
 // (qa, audit) still applies, so a team.json that also turned QA off keeps that.

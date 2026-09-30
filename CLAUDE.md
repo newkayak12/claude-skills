@@ -2,6 +2,12 @@
 
 This repository contains reusable skills organized into plugins. When working in this repo or when a user installs these plugins, follow the instructions below.
 
+## Modifying This Repo
+
+Every change to this repo is checked against the coding guidelines below (think before coding, simplicity first, surgical changes, goal-driven execution). Non-plugin material (design docs, repo scripts, deprecated plugins) lives under `_repo/`; every other top-level directory is a plugin.
+
+@_repo/coding-guidelines.md
+
 ## Skill Awareness
 
 Before responding to any user request, check whether a relevant skill exists:
@@ -59,13 +65,13 @@ Quick rules:
 ## Design Changes (harness rule for Claude's own work)
 
 Before changing behaviour of a plugin (not typo/doc fixes):
-1. **plan** — what changes and why, citing the governing design doc (`docs/plans/`).
+1. **plan** — what changes and why, citing the governing design doc (`_repo/docs/plans/`).
 2. **setgoal** — checkable done-criteria.
 3. **critique** — check it against the doc's principles; show the user and get approval. No code before approval.
 4. **implement → gate** — show the result against the done-criteria.
 
 Never remove a stage, a gate, or a principle for cost or simplicity without the user's approval.
-teams principles: `docs/plans/2026-09-28-teams-cards-everywhere.md`.
+teams principles: `_repo/docs/plans/2026-09-28-teams-cards-everywhere.md`.
 
 ## Update Workflow
 

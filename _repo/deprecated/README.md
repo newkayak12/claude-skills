@@ -11,7 +11,7 @@ be read and lifted; nothing routes to them.
 | `harness-beta` | 2 | `d396f2d` (2026-09-08), its only commit | routing idea (classifier choosing Agent Team vs. Dynamic Workflow) absorbed into `graph` |
 | `technique-write` | 2 | 2026-09-30 | fixed-template Design Review and ADR; now formats of `write:plans` (`write/skills/plans/references/formats/`) |
 
-## Skills and artifacts (moved 2026-09-29, `docs/plans/2026-09-29-repo-tidy.md`)
+## Skills and artifacts (moved 2026-09-29, `_repo/docs/plans/2026-09-29-repo-tidy.md`)
 
 The plugins below are still live. Only these pieces of them were unused, meaning no workflow, skill or code routed to them, so they moved here with their contents unchanged.
 
@@ -22,7 +22,7 @@ The plugins below are still live. Only these pieces of them were unused, meaning
 | `think/skills/deep-thinking-workflow` | staged ideate-critique-converge workflow over other think skills | think (next release) |
 | `cognition/skills/thinking-style-profiler` | personal thinking-pattern profile | cognition 1.1.4 |
 | `artifacts/think-devils-advocate-workspace` | generated benchmark output of devils-advocate iteration 1 | — |
-| `docs/diagrams/` | teams architecture and first-run diagrams nothing cites | — |
+| `_repo/docs/diagrams/` | teams architecture and first-run diagrams nothing cites | — |
 
 ## Merged into `write:plans` (2026-09-30)
 

@@ -33,7 +33,7 @@ Structural observations about the bar itself (relevant because the PRD tells eng
 - Step 8 says ship housekeeping bumps `.claude-plugin/marketplace.json` and README — **overridden for this sprint by the requester** (decided by the requester in this task's context): do NOT touch `.claude-plugin/marketplace.json`, `portfolio/.claude-plugin/plugin.json`, `portfolio/README.md`, `portfolio/KOR.md`; versions/docs are bumped once after the sprint.
 - Step 6 gates (`skill:skill-trigger-validator`, `skill:skill-quality-assurance`) — neither is in this session's available skill list; not reachable here.
 - Repo `CLAUDE.md` "Skill Authoring Rules": "No background explanations — skill name is the context"; "Target: 70% of current average length"; every skill needs Process → Output Template → What Claude Does / What You Do → Related Skills.
-- `scripts/validate_plugins.py` checks only that description contains "Use when" (L11, L183) and that `scenarios` is present (L191). It does not check scenario counts, section order, or length. Currently PASSES for all 14 plugins.
+- `_repo/scripts/validate_plugins.py` checks only that description contains "Use when" (L11, L183) and that `scenarios` is present (L191). It does not check scenario counts, section order, or length. Currently PASSES for all 14 plugins.
 - `.claude/conventions/` referenced by writing-skills does not exist in this worktree.
 
 ## 3. Requester-decided acceptance (from the task context — decided by the requester)

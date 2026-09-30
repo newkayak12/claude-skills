@@ -182,7 +182,7 @@ Planning and QA run on cards, and every card is a full run like this one: a plan
 (`PLAN-F1`, ...) in a worktree of its own, a QA card (`QA-F1`, ...) on the integration tree. The
 task itself runs the same six stages around its cards - `areas` is its plan, `plan-integrate`,
 `accept` and `gate:goal` are its gates - so no team runs a chain without a plan before it and a
-gate after it (design: [`docs/plans/2026-09-28-teams-cards-everywhere.md`](../docs/plans/2026-09-28-teams-cards-everywhere.md)).
+gate after it (design: [`_repo/docs/plans/2026-09-28-teams-cards-everywhere.md`](../_repo/docs/plans/2026-09-28-teams-cards-everywhere.md)).
 
 ## How a task ends
 
@@ -305,11 +305,11 @@ explanation of every key is in [docs/configuration.md](docs/configuration.md#con
 - [docs/configuration.md](docs/configuration.md): full per-key reference, Sprint mechanics
   (`requests`, acceptance, budget, `retro.json`, `context_from`), `view.mjs` views, headless
   details.
-- Design docs in [`docs/plans/`](../docs/plans/): start with
-  [`2026-09-11-teams-taskmanager.md`](../docs/plans/2026-09-11-teams-taskmanager.md) and
-  [`2026-09-21-teams-server-owns-the-loop.md`](../docs/plans/2026-09-21-teams-server-owns-the-loop.md);
+- Design docs in [`_repo/docs/plans/`](../_repo/docs/plans/): start with
+  [`2026-09-11-teams-taskmanager.md`](../_repo/docs/plans/2026-09-11-teams-taskmanager.md) and
+  [`2026-09-21-teams-server-owns-the-loop.md`](../_repo/docs/plans/2026-09-21-teams-server-owns-the-loop.md);
   the current principles are in
-  [`2026-09-28-teams-cards-everywhere.md`](../docs/plans/2026-09-28-teams-cards-everywhere.md).
+  [`2026-09-28-teams-cards-everywhere.md`](../_repo/docs/plans/2026-09-28-teams-cards-everywhere.md).
 - [`graph/README.md`](../graph/README.md): the shared broker internals (tools, routing,
   adjudication, vendors, capacity recovery, the ledger). Fixes to that engine are ported
   between the two plugins. teams plugs into [`harness`](../harness/README.md)'s runtime gate

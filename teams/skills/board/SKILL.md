@@ -66,7 +66,7 @@ doc: .teams_output/team/E-a1b2c3d4/INDEX.md
 ```
 
 `role` is `develop` for an ordinary package. `planning`, `qa` and `audit` are the phase-Team rows,
-and planning and QA run as one card per feature area (docs/plans/2026-09-28-teams-cards-everywhere.md):
+and planning and QA run as one card per feature area (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md):
 the `planning` rows (keys `PLAN-F1`, `PLAN-F2`, ...) always come first - every EPIC has at least
 one, since planning cannot be turned off - each writing its area's PRD section, merged into the one
 PRD `shape` reads. The `qa` rows (keys `QA-F1`, `QA-F2`, ..., `roles.qa`) run between `integrate`

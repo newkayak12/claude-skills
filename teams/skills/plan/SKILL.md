@@ -65,7 +65,7 @@ planning subgoals' `files[]` when the goal-spec is authored - there is no automa
 only the plain `files[]` mechanism every subgoal already has.
 
 This is the standalone route, where the whole run is the PRD. Every EPIC already plans on its own,
-whatever it is for (docs/plans/2026-09-28-teams-cards-everywhere.md): its plan stage splits the
+whatever it is for (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md): its plan stage splits the
 request by feature, one planning card per feature area (`PLAN-F1`, `PLAN-F2`, ...) runs the same
 `investigate → draft → revise → gate` work in its own worktree and writes that area's section (goal,
 scope and non-goals, user stories with acceptance criteria - ids prefixed by the area, `F1-US-1` -

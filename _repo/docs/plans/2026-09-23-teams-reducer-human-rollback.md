@@ -420,4 +420,4 @@ D1("reducer는 있지만 선언되지 않았다")을 마저 닫는다. §0.1이 
 
 테스트: `teams/scripts/test-reducers.mjs`(신규, 27개) + `test-graph.mjs`/`test-broker.mjs`/
 `test-taskmanager.mjs`에 추가한 통합 테스트. 전체 `node --test teams/scripts/test-*.mjs`
-652개 통과, `python3 scripts/validate_plugins.py` 통과.
+652개 통과, `python3 _repo/scripts/validate_plugins.py` 통과.

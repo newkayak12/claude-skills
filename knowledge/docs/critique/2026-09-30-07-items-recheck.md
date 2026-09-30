@@ -38,7 +38,7 @@
 
 **확인한 사실**
 - 규칙은 있다: `write/skills/writing-skills/SKILL.md:80` 필수 섹션 목록.
-- 강제는 없다: `scripts/validate_plugins.py`는 200줄 넘는 스킬의 `Standing Mandates`만 경고(:212), WCD는 검사 안 함.
+- 강제는 없다: `_repo/scripts/validate_plugins.py`는 200줄 넘는 스킬의 `Standing Mandates`만 경고(:212), WCD는 검사 안 함.
 - 저장소 전체가 불균일하다(WCD 보유/스킬 수): cognition 10/10, portfolio 9/9, develop 30/33, teams 7/15, think 4/8,
   write 3/5, **knowledge 2/8**, harness 0/5, agents 0/3, graph 0/2, planning 0/2, skill 0/2, completion 0/1.
 
@@ -47,7 +47,7 @@
 - Think: knowledge만 유독 뒤처진 게 아니다(harness 0/5 등). 이걸 "knowledge 완성도 1순위"로 부를 근거는 약하다.
   사용자가 스킬을 써서 얻는 결과(해석 b)는 이 표로 바뀌지 않는다.
 - 한다면: 6개 스킬 각 표 1개(3~4행, 기존 스킬의 WCD 형식 따름) → verify: `grep -L "What Claude Does" knowledge/skills/*/SKILL.md` 출력 0줄
-  + `python3 scripts/validate_plugins.py` 통과 + 버전 bump·README/KOR.
+  + `python3 _repo/scripts/validate_plugins.py` 통과 + 버전 bump·README/KOR.
 
 ## 종합
 

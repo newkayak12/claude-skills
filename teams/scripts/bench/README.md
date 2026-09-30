@@ -106,7 +106,7 @@ reason. The scorer sums duration, cost and turns over every session that drove a
 counts the limit hits (`sessions`, `limit_hit`).
 
 `drive.sh` puts the teams arms (`beta`, `betas`, `skills`) through `teams run` instead
-(`scripts/run.mjs`, §4-C of `docs/plans/2026-09-21-teams-server-owns-the-loop.md`): a new job
+(`scripts/run.mjs`, §4-C of `_repo/docs/plans/2026-09-21-teams-server-owns-the-loop.md`): a new job
 is `BENCH_VIA=run bench.sh` — seed, `run.mjs "<request>" --kind develop|auto [--size L]
 --resume-on-limit`, score, harvest — and an existing workspace is `run.mjs --resume <task_id>
 --resume-on-limit`, then score. No model session is in the loop; the CLI blocks until the task

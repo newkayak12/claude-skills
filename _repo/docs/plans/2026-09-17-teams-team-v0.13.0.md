@@ -164,7 +164,7 @@ v0.12.0 계획(`2026-09-17-teams-team-v0.12.0.md` §0.1)은 planning/qa phase-Te
    `team.notes`, `team_status`의 `config_notes`(`3292a91`)로 기존 경로 그대로 노출된다. 새 태스크가
    아니라 Task 4 안의 몇 줄이다. **팀 리더에게 남은 요청**: 설계 문서(`2026-09-17-teams-team.md`)
    §11 로드맵 표에 `human_scope: "all"`을 나중 버전으로 미룬 행을 추가하는 것 — 이 계획 파일은
-   `docs/plans/2026-09-17-teams-team-v0.13.0.md` 하나만 쓸 수 있어(공유 워크트리 규칙) 설계 문서는
+   `_repo/docs/plans/2026-09-17-teams-team-v0.13.0.md` 하나만 쓸 수 있어(공유 워크트리 규칙) 설계 문서는
    이 계획이 직접 건드리지 않는다. 팀 리더나 그 문서를 소유한 agent가 추가해야 한다.
 4. **명령 스킬 개수 — §4.2 표의 자기 모순.** 6번 행은 "도구 3–4개 배선(답변·담당·내 할 일·로그)"라고
    4개를 세지만 8번 행은 "명령 스킬 셋(내 할 일·답변·take)"이라고 3개만 이름을 댄다(`/teams:log`가
@@ -573,7 +573,7 @@ Output Template(도구가 실제로 반환하는 필드만) + What Claude Does /
 항목만), `teams/README.md`, `teams/KOR.md`
 **Interfaces:** consumes Task 1-9 전부.
 **Pass bar:** `node --test teams/scripts/test-*.mjs` 전부 통과(회귀 0), `python3
-scripts/validate_plugins.py` ERROR 0, 두 매니페스트 0.13.0 일치, README·KOR Status 첫 항목이
+_repo/scripts/validate_plugins.py` ERROR 0, 두 매니페스트 0.13.0 일치, README·KOR Status 첫 항목이
 v0.13.0.
 
 - [ ] 1: `git fetch skills main && git status -sb` — origin이 앞서 있으면 rebase.
@@ -584,9 +584,9 @@ v0.13.0.
   land, and WAITING_USER becomes reachable. Stopping to actually wait on a person ships in
   v0.13.1." 추가.
 - [ ] 4: README/KOR `## Status` 맨 위에 한 줄 prepend(기존 내용은 그대로 아래에 둔다).
-- [ ] 5: 설계 문서(`docs/plans/2026-09-17-teams-team.md`) §11의 v0.13.0 행을 "완료"로 표시하는
+- [ ] 5: 설계 문서(`_repo/docs/plans/2026-09-17-teams-team.md`) §11의 v0.13.0 행을 "완료"로 표시하는
   것은 이 계획 파일 소유가 아니다 — 팀 리더나 그 갱신을 맡은 agent의 몫.
-- [ ] 6: `python3 scripts/validate_plugins.py` ERROR 0 확인.
+- [ ] 6: `python3 _repo/scripts/validate_plugins.py` ERROR 0 확인.
 - [ ] 7: `git add teams/.claude-plugin/plugin.json .claude-plugin/marketplace.json teams/README.md teams/KOR.md && git commit -m
   "feat(teams): 0.13.0 - human as an executor (auto-decide side): ask/gate:human/assignee seats, tm_answer/tm_assign/tm_inbox/tm_log, WAITING_USER"`
 - [ ] 8: `git push skills main`(실패하면 1번으로 돌아가 fetch·rebase 후 재시도).

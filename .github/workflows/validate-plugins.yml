@@ -13,4 +13,4 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Validate plugin installability
-        run: python3 scripts/validate_plugins.py
+        run: python3 _repo/scripts/validate_plugins.py

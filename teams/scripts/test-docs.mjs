@@ -22,7 +22,7 @@ const GOLDEN = join(HERE, 'fixtures', 'docs-golden');
 // A task well past goal-gate, with a rejected-then-retried P1 and an accepted P2, PLUS all three
 // phase-Teams turned on - exercises every renderer renderAll would reach for a task this far
 // along, v0.12.0's three (10-planning/10-prd/60-qa) and v0.12.1's 65-audit.md included. Planning
-// and QA run on cards (docs/plans/2026-09-28-teams-cards-everywhere.md): two feature areas, so two
+// and QA run on cards (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md): two feature areas, so two
 // planning cards merged by plan-integrate:1, and two QA cards per QA round.
 //
 // The tail follows a full v0.12.1 loop rather than stopping at the first goal gate: audit round 1
@@ -193,7 +193,7 @@ test('the PRD page lists user stories by id, never as [object Object]', async ()
   assert.match(page, /F1-US-2 - Atomic hold/);
 });
 
-// C4 (docs/plans/2026-09-28-teams-cards-everywhere.md): 10-prd.md is the ONE merged PRD - every
+// C4 (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md): 10-prd.md is the ONE merged PRD - every
 // planning card's accepted section, read from its own worktree, under its feature area's heading,
 // with every story of the EPIC listed first and the card that owns it named.
 test('10-prd.md merges every planning card\'s accepted section into one PRD, under its area\'s heading (C4)', async () => {

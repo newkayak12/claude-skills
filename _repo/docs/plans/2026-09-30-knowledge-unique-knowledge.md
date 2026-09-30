@@ -26,7 +26,7 @@
 - **큐 미소비는 실측된 문제다.** knowledge-chat `vault/_knowledge/jobs/`에 `catalog-delta-queue`·`embed-queue`
   각 616줄 누적, 소비 흔적 없음.
 - **212문항에는 `kind`가 없다**(`{id, question, required_note_ids, repo}`). 태그는 새로 붙여야 한다.
-- CI(`.github/workflows/validate-plugins.yml`)는 `python3 scripts/validate_plugins.py`만 돈다. 로컬 Node 22.12.
+- CI(`.github/workflows/validate-plugins.yml`)는 `python3 _repo/scripts/validate_plugins.py`만 돈다. 로컬 Node 22.12.
 
 ## 범위 밖 (명시적 동결)
 

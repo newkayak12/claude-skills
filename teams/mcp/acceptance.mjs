@@ -1,6 +1,6 @@
 // teams/mcp/acceptance.mjs - "does this backlog already carry its acceptance criteria?"
 //
-// docs/plans/2026-09-28-teams-light-plan.md §2.1. A structural check, never a model's opinion:
+// _repo/docs/plans/2026-09-28-teams-light-plan.md §2.1. A structural check, never a model's opinion:
 // the answer picks between the full PLAN chain (investigate -> draft -> revise -> gate) and the
 // light one (investigate -> template-fill -> gate) when roles.planning is 'auto', and the same
 // function is meant to decide how short the brainstorm step may be (§6.5-4) - defined once, here,
@@ -168,7 +168,7 @@ export function hasDeclaredAcceptance(input) {
 // NEVER 'off': removing the safety net is always a person's explicit decision.
 // Returns {mode: 'full'|'light'|'off', source: 'explicit'|'auto', reason, detection?}.
 export function resolvePlanningMode(planning, input) {
-  // roles.planning: false is refused (docs/plans/2026-09-28-teams-cards-everywhere.md C5): it
+  // roles.planning: false is refused (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md C5): it
   // resolves exactly like the default 'auto', and says so. There is no 'off' mode any more -
   // teamconfig.mjs's applyLayer already dropped the value with a note before it could get here;
   // this is the same rule for a caller that hands the raw value in directly.

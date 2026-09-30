@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // run.mjs - headless "teams run" CLI: wait-model C (§4, §8 step 1, §10-1/4 of
-// docs/plans/2026-09-21-teams-server-owns-the-loop.md).
+// _repo/docs/plans/2026-09-21-teams-server-owns-the-loop.md).
 //
 // §4 names three ways a caller can watch a daemon-driven task: B (open and walk away), A
 // (bounded long-poll from inside a live session), and C ("teams run CLI가 서버를 띄우고 완료까지

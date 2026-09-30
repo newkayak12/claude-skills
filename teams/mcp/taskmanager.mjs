@@ -10,7 +10,7 @@
 //     -> [dispatch -> accept] per package -> integrate -> [dispatch -> accept] per QA card
 //     -> gate:goal -> report
 //
-// (docs/plans/2026-09-28-teams-cards-everywhere.md: every phase runs on cards. `areas` is the
+// (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md: every phase runs on cards. `areas` is the
 // EPIC's plan stage - it splits the request by FEATURE into planning cards PLAN-F1, PLAN-F2, ...;
 // plan-integrate merges their PRD sections into one 10-prd.md and judges it; shape splits the
 // merged user stories again, by OWNERSHIP, into develop cards; QA runs one card per feature area.)
@@ -105,7 +105,7 @@ import { computeSubmitResult } from './broker.mjs';
 import { pidAlive } from './proc.mjs';
 import { collectDriverCosts, collectTaskCosts, collectNodeCosts } from '../scripts/bench/lib/drivercost.mjs';
 import { applyMerge, foldRecords } from './reducers.mjs';
-// Light PLAN mode (docs/plans/2026-09-28-teams-light-plan.md): the structural "is acceptance
+// Light PLAN mode (_repo/docs/plans/2026-09-28-teams-light-plan.md): the structural "is acceptance
 // already declared?" check and the roles.planning resolution it drives. Re-exported so a caller
 // that already imports this module can reach the one detection function by name.
 import { detectDeclaredAcceptance, hasDeclaredAcceptance, resolvePlanningMode, renderAcceptanceTemplate } from './acceptance.mjs';
@@ -345,14 +345,14 @@ const QUESTIONS_CONTRACT = `Optional: "questions": [{"question": "...", "to": "<
 export const CONTRACT = {
   size: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "handoff": "<what shape needs to know>", "evidence": "..."}
 S means one graph run in one worktree can carry the whole request. L means it spans independent modules, packages or repositories that each need their own run and worktree, integrated afterwards. Decide from what commands show - file and module counts, ownership boundaries, build units - and put those commands in "sizing". The default is S: a manager layer exists, and the temptation is to use it. Over-sizing costs a worktree, a run and an integration per package; under-sizing costs one retry.`,
-  // The EPIC's plan stage (docs/plans/2026-09-28-teams-cards-everywhere.md C2): the first of the
+  // The EPIC's plan stage (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md C2): the first of the
   // two splits, by feature. Each area becomes a planning card (PLAN-F1, ...) with its own child
   // run and worktree; plan-integrate judges the merged result, so this stage is not its own judge.
   areas: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "areas": [{"id": "F1", "title": "<the feature area, in the user's words>", "brief": "<what a user must be able to do in this area, and what is out of it - self-contained>", "deps": [], "items": [1]}], "handoff": "<what the planning cards need to know>", "evidence": "<what you read and what it showed>"}
 You are the EPIC's plan stage. Split the request into FEATURE AREAS - what a user must be able to do, grouped so each group can be planned on its own. Each area becomes its own planning card: a child run with its own worktree that writes that area's PRD section (goal, scope and non-goals, user stories with acceptance criteria, open questions) and returns its user stories. Cards run in parallel.
 This is the first of two splits and its criterion is the FEATURE, not the code: shape later groups the stories by ownership (which tree, which team touches it) into develop cards. Do not split by module, layer, file or phase - an area is something a user would name. Every feature the request names falls in exactly one area: a planning integrate reads the merged PRD for a feature no card covers and for contradictions between areas, and sends the offending card back. One area is the right answer for a request that is one feature; do not pad the count. "deps" names an earlier area only when this area's planning cannot start without reading that one's PRD section - rare, and a chain that only orders the work is wrong. "items" is only for a backlog request ("[backlog priority N]" lines): the 1-based backlog item numbers (N+1) this area covers; every item in exactly one area. Omit it otherwise.
 ${QUESTIONS_CONTRACT}`,
-  // M4 (docs/plans/2026-09-28-teams-adversarial-fixes.md): the gate after the first split. The
+  // M4 (_repo/docs/plans/2026-09-28-teams-adversarial-fixes.md): the gate after the first split. The
   // plan stage is not its own judge, and before this nothing judged the split before cards ran.
   'areas-critique': `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "sound": true|false, "blocking": ["..."], "problems": ["..."], "checks": ["<what you compared and what it showed>"], "handoff": "...", "evidence": "..."}
 You judge the EPIC's feature split below - you did not write it. Each area becomes a planning card that writes that area's PRD section, in parallel, so a bad split is paid for by every card. Attack it on four points, from the request itself: (1) coverage - a feature the request names that falls in no area; (2) overlap - a feature two areas would both plan, so their stories collide or contradict; (3) criterion - an area cut by module, layer, file or phase instead of by what a user does; (4) granularity - one feature padded into several areas, or unrelated features forced into one, and an area whose brief is too thin for its card to plan from alone. Set sound=false only for defects in "blocking" - one of the four that would make the cards' PRD wrong or colliding; name the kind inline ("coverage - ..."). Everything else is a problem, carried to the next split attempt as advice. sound=true with an empty checks[] is refused by the engine.
@@ -387,7 +387,7 @@ accept:true with an empty checks[] is refused by the engine - a judgement with n
 ${QUESTIONS_CONTRACT}`,
   report: `Return JSON: {"stage_ok": true, "handoff": "<the final report>", "evidence": "..."}
 Synthesize from the node results below only: which packages ran, what each delivered, what the integration showed, what the gate said. State plainly what was not done and why.`,
-  // §6.5-3 (docs/plans/2026-09-28-teams-light-plan.md): the brainstorm nobody held with the user
+  // §6.5-3 (_repo/docs/plans/2026-09-28-teams-light-plan.md): the brainstorm nobody held with the user
   // before tm_open, held by the engine from the request instead. Opened only when tm_open got no
   // decisions[] - its result becomes task.decisions (finish's foldBrainstorm), which PLAN and
   // every package then read as settled.
@@ -525,10 +525,10 @@ function createTask(a) {
   // its budget to the end (code-sprint-S1, 2026-09-26: the ledger backlog measured S, as the
   // monorepo fixtures do). Pinned L here unless the caller pinned a size itself.
   const boxedBacklog = !!(requests && requests.length > 1 && (T.budget_usd != null || T.timebox_minutes != null));
-  // roles.planning: true | 'light' | 'auto' (docs/plans/2026-09-28-teams-light-plan.md §2.5)
+  // roles.planning: true | 'light' | 'auto' (_repo/docs/plans/2026-09-28-teams-light-plan.md §2.5)
   // -> which PLAN chain every planning card runs. 'auto' reads the raw arguments (structured
   // fields first, the free-text parser second) and picks light or full. false is refused
-  // (docs/plans/2026-09-28-teams-cards-everywhere.md C5): teamconfig.mjs dropped it with a note,
+  // (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md C5): teamconfig.mjs dropped it with a note,
   // and resolvePlanningMode reads it as 'auto' - planning always produces its deliverables.
   const planning = resolvePlanningMode(T.roles.planning, a);
   const task = {
@@ -650,7 +650,7 @@ function createTask(a) {
     // waiting_capacity?} for the one graph run the manager opened and is driving with a
     // headless session, mirroring a package's n.child.
     s_run: null,
-    // The planning cards (docs/plans/2026-09-28-teams-cards-everywhere.md C2): one STORY card
+    // The planning cards (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md C2): one STORY card
     // per feature area, PLAN-F1, PLAN-F2, ... - opened by the `areas` node's result (expandPlanning),
     // or by delegateIfSmall for a size-S task (C6: one card). Stashed here, never in
     // task.spec.packages (which shape owns, and which is still null while planning runs);
@@ -674,7 +674,7 @@ function createTask(a) {
   return saveRun(task);
 }
 
-// §6.5 (docs/plans/2026-09-28-teams-light-plan.md): where the person comes in first is not
+// §6.5 (_repo/docs/plans/2026-09-28-teams-light-plan.md): where the person comes in first is not
 // PLAN's ask - PLAN runs in a detached daemon that cannot know whether anyone is there - but the
 // entry skill's brainstorm with the user, just before it calls tm_open. What they settled
 // arrives as tm_open({decisions}) and becomes the first entries of task.decisions. When they
@@ -769,7 +769,7 @@ export function mustFindTask(a) {
   return task;
 }
 
-// ---------- planning cards (docs/plans/2026-09-28-teams-cards-everywhere.md C2-C4, C6) ----------
+// ---------- planning cards (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md C2-C4, C6) ----------
 //
 // The EPIC's plan stage (`areas`) splits the request by FEATURE; each area becomes one planning
 // STORY card, PLAN-F<n>, dispatched and accepted exactly like a develop package - its own child
@@ -1246,7 +1246,7 @@ function expandPackages(task, packages) {
   const integrateId = `integrate:${nextIndex(task, 'integrate')}`;
   task.nodes.push(node(integrateId, 'integrate', acceptIds, { subgoal_id: null }));
   // roles.qa (§2): QA runs over the integrated tree, between integrate and the goal gate - one
-  // QA card per feature area (docs/plans/2026-09-28-teams-cards-everywhere.md C7), the same areas
+  // QA card per feature area (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md C7), the same areas
   // planning split by, in parallel. Each reuses repairWorktree rather than a fresh worktree, since
   // QA's tree IS the integration tree. The goal gate waits on every one of them.
   let goalGateDeps = [integrateId];
@@ -1351,7 +1351,7 @@ function retryPackage(task, pkgId, feedback) {
   // idol-pm-4's retries to `critique` and `accept:P1:1` - both skipped by the reshape - so four
   // retries sat pending forever and the daemon ended the task blocked with budget left.
   const baseDeps = first ? first.deps.slice() : ['critique'];
-  // rollback (docs/plans/2026-09-23-teams-reducer-human-rollback.md §5, item 3): the new
+  // rollback (_repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §5, item 3): the new
   // dispatch's worktree (openChild, ensureWorktree) is the SAME one every attempt of this
   // package ever ran in - "continue" is what happens if rollback_to is left unset here, exactly
   // as it always has. When the task's retry_policy is 'rollback', point the new attempt at the
@@ -1538,7 +1538,7 @@ export function autoReshape(task) {
   // is no verdict coming, and reshaping is the only move left - so reshape then.
   const judgeStuck = (n) => n.result.judge_failed === true && (n.judge_attempts || 0) < JUDGE_ATTEMPTS_MAX;
   // The plan stage's split and the planning integrate are the shaping pair's planning twins
-  // (docs/plans/2026-09-28-teams-cards-everywhere.md C2/C4), recovered the same way: a failed
+  // (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md C2/C4), recovered the same way: a failed
   // split is split again with its problems as feedback; a planning integrate whose judge never
   // came back (finish() already replans a real refusal) is replanned once its rejudges are spent.
   if (!task.nodes.some((n) => n.state === 'running')) {
@@ -1874,7 +1874,7 @@ export function autoRepair(task) {
 // it before deciding whether to call this at all; tm_file (a user filing a STORY directly) never
 // checks it - a user-filed STORY is not a QA round (v0.12.1 self-review's open risk on tm_file
 // vs qa_rounds, resolved here: tm_file always proceeds, uncapped).
-// The QA round's join (docs/plans/2026-09-28-teams-cards-everywhere.md C7). A round is one QA
+// The QA round's join (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md C7). A round is one QA
 // card per feature area over the same integrated tree, and the goal gate waits on all of their
 // accepts. Defects are filed once the WHOLE round has settled - every card accepted, or retired
 // with its dispatch's defects (autoRetryPackages' qa_direct) - and all together: filing on the
@@ -1912,7 +1912,7 @@ function settleQaRound(task) {
   return { filed: out.filed, defects };
 }
 
-// A QA card spent past its retries (M3, docs/plans/2026-09-28-teams-adversarial-fixes.md): its
+// A QA card spent past its retries (M3, _repo/docs/plans/2026-09-28-teams-adversarial-fixes.md): its
 // settleFailure made the goal gate unreachable, so the round's join never ran and a sibling
 // card's defects were neither filed nor listed. The dead card is dropped from the goal gate's
 // deps (onto the round's other QA accepts, or the integrate they judge), everything its failure
@@ -2611,7 +2611,7 @@ function childContext(task, pkg) {
     // Without this the planning run reads a request that says "implement ..." and does exactly
     // that (first real-vendor run, 2026-09-22: the PLAN child opened implement/test/gate chains
     // and started building the CLI). The request is the thing to PLAN, not the thing to do.
-    // One planning card per feature area (docs/plans/2026-09-28-teams-cards-everywhere.md C2/C3):
+    // One planning card per feature area (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md C2/C3):
     // the card is told which area is its own, what its section must hold, and how to number its
     // stories so they stay unique across the EPIC once plan-integrate merges every card.
     const cards = planningPkgs(task);
@@ -2630,7 +2630,7 @@ function childContext(task, pkg) {
       const parts = [Number.isFinite(box.budget_usd) ? `$${box.budget_usd}` : null, Number.isFinite(box.timebox_minutes) ? `${box.timebox_minutes} minutes` : null].filter(Boolean).join(' and ');
       lines.push(`This Sprint is boxed at ${parts} for everything - planning is the first thing that box pays for, and every package is built out of what is left. Size the document set to what the packages need to be built right: a backlog whose items already state their behaviour and acceptance needs one PRD, not a set. Planning that spends the box leaves nothing built.`);
     }
-    // Light PLAN mode (docs/plans/2026-09-28-teams-light-plan.md §2.2): the backlog already
+    // Light PLAN mode (_repo/docs/plans/2026-09-28-teams-light-plan.md §2.2): the backlog already
     // declared its acceptance, so the PRD is a transfer of it, laid out here deterministically
     // for template-fill to place and for the gate to check coverage against.
     if (pkg.planning_mode === 'light') {
@@ -2670,7 +2670,7 @@ function childContext(task, pkg) {
   lines.push('');
   lines.push('Package acceptance - what the manager will judge this run against:');
   lines.push(bullets(pkg.acceptance));
-  // §6.2-2 (docs/plans/2026-09-28-teams-light-plan.md): what the task already decided, in the
+  // §6.2-2 (_repo/docs/plans/2026-09-28-teams-light-plan.md): what the task already decided, in the
   // session, in the engine's own brainstorm, or in PLAN. Same tone 0.28.0's ask answers reached
   // a draft with - a rule to write, not a question to reopen.
   if ((task.decisions || []).length) {
@@ -3214,7 +3214,7 @@ export function taskState(task) {
     }
     return st;
   }
-  // S2 (docs/plans/2026-09-28-teams-long-loop.md): a legacy size-S task is read through this
+  // S2 (_repo/docs/plans/2026-09-28-teams-long-loop.md): a legacy size-S task is read through this
   // frozen path - its run file only, its QA cards (s_qa) ignored, never respawned. A run that
   // never finished and has no live driver will never finish: it reads blocked, not running
   // forever (tm_wait would otherwise never return).
@@ -3273,7 +3273,7 @@ export function openChild(task, n) {
   const depBranches = (pkg.deps || []).map((d) => deliveredBranch(task, d)).filter(Boolean);
   // A repair package is the exception: its tree is the integration tree of the integrate it
   // repairs, already holding every package's work. Nothing is created and nothing is merged.
-  // A planning card is NOT an exception any more (docs/plans/2026-09-28-teams-cards-everywhere.md
+  // A planning card is NOT an exception any more (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md
   // C2): several cards plan in parallel, and two of them writing docs/prd.md in the one project
   // cwd would overwrite each other. Each gets its own worktree like a develop package, and a card
   // whose area deps on another's branches from that card's delivered section.
@@ -3294,7 +3294,7 @@ export function openChild(task, n) {
     record(task, { event: 'dispatch_failed', task_id: task.run_id, node_id: n.node_id, reason: n.result.reason });
     return;
   }
-  // rollback (docs/plans/2026-09-23-teams-reducer-human-rollback.md §5, item 3): only a package
+  // rollback (_repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §5, item 3): only a package
   // with a worktree of its own (not repair/qa/audit, which all reuse someone else's
   // tree) has a branch retryPackage can reset. The first time this package id ever creates the
   // worktree, its HEAD is the base every later attempt would roll back to if none of them are
@@ -3341,12 +3341,12 @@ export function openChild(task, n) {
   }
   const flow = FLOWS[pkg.flow] ? pkg.flow : (task.flow_chosen && FLOWS[task.flow_chosen] ? task.flow_chosen : 'auto');
   // Every package runs the full harness inside its own child run: plan -> setgoal -> critique
-  // -> <chain> -> gate:goal -> report (the fractal rule, docs/plans/2026-09-17-teams-team.md §2;
+  // -> <chain> -> gate:goal -> report (the fractal rule, _repo/docs/plans/2026-09-17-teams-team.md §2;
   // the 2026-09-21 chain-only shortcut was reverted 2026-09-28). An ordinary STORY package - one
   // this task's own shape produced and its critique passed (not a phase Team, not a repair) -
   // is opened with `package`, which turns its plan into a BUILD plan for this package instead of
   // a re-split (prompts.mjs's packageBlock) and carries its acceptance verbatim into its spec.
-  // Every package carries its acceptance verbatim into its spec (m12, docs/plans/2026-09-28-teams-
+  // Every package carries its acceptance verbatim into its spec (m12, _repo/docs/plans/2026-09-28-teams-
   // adversarial-fixes.md) - a repair, a planning/QA/audit card and a filed fix are judged against
   // their acceptance exactly as a shaped STORY is. What differs is what the child is told about
   // where the package came from: only a STORY shape produced has had a manager critique.
@@ -4606,7 +4606,7 @@ export function finish(task, n, result) {
       }
     }
   }
-  // task.decisions (docs/plans/2026-09-28-teams-light-plan.md §6.2/§6.5). Before the questions[]
+  // task.decisions (_repo/docs/plans/2026-09-28-teams-light-plan.md §6.2/§6.5). Before the questions[]
   // block below: foldBrainstorm decides what reaches it.
   // The brainstorm is advice the task can proceed without, not a gate: once it has no rejudge left
   // (autoRejudge), a failed one is closed as done with nothing decided, rather than leaving
@@ -4736,13 +4736,13 @@ const TOOLS = [
         ask_timeout: { type: ['integer', 'null'], description: 'default null (wait forever), also settable in .claude/team.json. Milliseconds an interactive `ask` card may wait on a person; once it expires the engine answers it itself with each question\'s `default` (else its first, recommended option), recorded `by: "timeout"` and listed in tm_inbox\'s `decided`. Checked by the task daemon (and on any tm_* call for this task), so expiry lands within ~15s of the deadline.' },
         goal_threshold: { type: 'integer', description: 'default 90: the manager\'s own goal gate must report match_pct at or above this to accept, and it is passed through to every child run as its own goal_threshold. A gate that says accept with 40% match is reporting a partial result as a pass. 0 accepts on the verdict alone.' },
         goal_judges: { type: 'integer', description: 'default 1: independent judges on EVERY child run\'s own goal gate (each package\'s dispatch, and the one run a size-S task opens). >1 opens that many sibling gate nodes per round, routed to different identities where possible, and accepts only if every judge accepts at or above goal_threshold - the same mechanism team_open documents (default 2 there). The default stays 1 here, matching every run this manager has ever opened, so an existing project sees no change in judge count or cost unless it asks for more. This is the child run\'s own gate, not the manager\'s own top-level gate:goal, which is a separate, single-judge mechanism unaffected by this option.' },
-        retry_policy: { type: 'string', enum: ['continue', 'rollback'], description: 'default "continue", also settable in .claude/team.json. What a retried attempt does with the worktree the failed one left: "continue" (default, today\'s only behavior) builds the next attempt on top of it. "rollback" resets the worktree first - a subgoal\'s own implement/draft to the checkpoint recorded before ITS first attempt touched it (single-subgoal child runs only; a shared worktree with a sibling subgoal still in flight cannot be reset for one of them, so it falls back to continue and says why), a package\'s own retry (tm_retry/retryPackage) to its last ACCEPTED commit, or the worktree\'s base commit if none of its attempts ever passed - then re-runs with the failed gate\'s gaps as feedback either way. docs/plans/2026-09-23-teams-reducer-human-rollback.md §5 measured two real runs before defaulting to continue: both showed a retried implement CONVERGING on gate feedback across attempts rather than repeating the same mistake, so there is no evidence yet that discarding an attempt\'s work helps more than it loses.' },
+        retry_policy: { type: 'string', enum: ['continue', 'rollback'], description: 'default "continue", also settable in .claude/team.json. What a retried attempt does with the worktree the failed one left: "continue" (default, today\'s only behavior) builds the next attempt on top of it. "rollback" resets the worktree first - a subgoal\'s own implement/draft to the checkpoint recorded before ITS first attempt touched it (single-subgoal child runs only; a shared worktree with a sibling subgoal still in flight cannot be reset for one of them, so it falls back to continue and says why), a package\'s own retry (tm_retry/retryPackage) to its last ACCEPTED commit, or the worktree\'s base commit if none of its attempts ever passed - then re-runs with the failed gate\'s gaps as feedback either way. _repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §5 measured two real runs before defaulting to continue: both showed a retried implement CONVERGING on gate feedback across attempts rather than repeating the same mistake, so there is no evidence yet that discarding an attempt\'s work helps more than it loses.' },
         budget_usd: { type: ['number', 'null'], description: 'default null (unlimited), also settable in .claude/team.json. Spend is the task\'s full cost (collectTaskCosts, taskSpend): every driver\'s own stream log under this task (drivers/*.stream.jsonl result events\' total_cost_usd) PLUS every child graph run\'s own node adapter sessions (each worktree\'s .teams_output/broker/<run_id>/<node>/<attempt>/events.jsonl), summed each daemon tick. At 80% of this a warning is recorded once (tm_status shows it); at 100% no NEW package is dispatched - a package already running finishes - and once nothing is left running, a fresh integrate opens over just what accepted, naming the rest "not done" in the report rather than dropping them silently. Whichever of budget_usd/timebox_minutes is closer to its own limit decides; either alone is a real stop. The stop never kills a running dispatch, and a stopped task still owes its goal gate and report - both continue to spend past the 100% mark. This is by design (a truncated report with no gate/retro is worse than a few dollars over), but it is real: budget a reserve above your real target for the in-flight package finishing plus goal-gate+report, and read the harvested summary\'s budget.post_stop_usd after the fact to see exactly how much that reserve needed to be.' },
         timebox_minutes: { type: ['number', 'null'], description: 'default null (unlimited), also settable in .claude/team.json. Minutes since tm_open, the same stop condition budget_usd is, on the same clock - see its own description for exactly what 80% and 100% do.' },
         budget_grace_usd: { type: ['number', 'null'], description: 'default null (10% of budget_usd when budget_usd is set, else no dollar grace), also settable in .claude/team.json. At 100% a dispatch already running whose accept the closing path still needs (a package, PLAN, or a size-S run) is let finish, but not forever: past this much MORE spend since the stop (or budget_grace_minutes, whichever first) it is killed too (killDriver, the same stop retryPackage/serviceStalledDriver already use) and its accept is skipped like a package that never ran. A phase-Team pass (QA, AUDIT) gets none of this grace - it is killed the moment the box trips, since the goal-gate rewire already never reads its accept once stopped.' },
         budget_grace_minutes: { type: 'integer', description: 'default 5, also settable in .claude/team.json. See budget_grace_usd - whichever of the two limits a still-running, still-needed dispatch reaches first stops it.' },
         requests: { type: 'array', items: { anyOf: [{ type: 'string' }, { type: 'object', properties: { request: { type: 'string' }, acceptance: { type: 'array', items: { type: 'string' } } }, required: ['request'] }] }, description: 'A backlog instead of one request: several EPIC-level items, priority = array order (first is highest). An item may be {request, acceptance: ["..."]} to declare that item\'s own acceptance criteria - when every item declares them (or shared_acceptance is given), roles.planning "auto" runs the light PLAN chain (investigate -> template-fill -> gate) instead of the full one. shape treats each as its own story set; with budget_usd/timebox_minutes in play, the lowest-priority items still unshaped or undispatched when the stop trips are exactly what the report names "Next backlog". Mutually exclusive with `request` - send one or the other, never both.' },
-        shared_acceptance: { type: 'array', items: { type: 'string' }, description: 'Acceptance criteria that apply to EVERY backlog item (or to the single request) - the structured form of an "Acceptance for every item:" block. Written into the request text and, when non-empty, makes roles.planning "auto" pick the light PLAN chain (docs/plans/2026-09-28-teams-light-plan.md). roles.planning itself (team.json or a roles argument) takes true (full chain), "light" (force light) or "auto" (default: light when acceptance is declared - structured fields, or a numbered backlog with an "Acceptance:" heading and bullets - else full). false is refused with a note: planning always runs, one card per feature area, and every task gets a PRD and user stories.' },
+        shared_acceptance: { type: 'array', items: { type: 'string' }, description: 'Acceptance criteria that apply to EVERY backlog item (or to the single request) - the structured form of an "Acceptance for every item:" block. Written into the request text and, when non-empty, makes roles.planning "auto" pick the light PLAN chain (_repo/docs/plans/2026-09-28-teams-light-plan.md). roles.planning itself (team.json or a roles argument) takes true (full chain), "light" (force light) or "auto" (default: light when acceptance is declared - structured fields, or a numbered backlog with an "Acceptance:" heading and bullets - else full). false is refused with a note: planning always runs, one card per feature area, and every task gets a PRD and user stories.' },
         context_from: { type: 'string', description: 'A prior task_id (or its ticket key). Its retro.json - the Retrospective and Next backlog a finished task\'s report stage writes - is read and folded into this task\'s own context: what failed and why, retries, defects left, and any unaccepted packages or unresolved questions the prior task ran out of budget/timebox to reach. The prior task\'s own Next backlog is NOT auto-added to `requests` - naming it here is a decision this task\'s own request should still make in its own words. tm_open returns carryover_candidates (backlog items and user stories the prior Sprint did not ship) for the person to choose from.' },
         initiative: { type: 'string', description: 'default null, also settable in .claude/team.json. An optional label ABOVE this EPIC - several EPICs toward one outcome (a slug-normalized "I-<slug>" key: lowercased, non-alphanumeric runs collapsed to one "-"). Display/grouping only: tm_board groups every EPIC by it once any task has one, and tm_ticket("I-<slug>") lists that group\'s EPICs with state and cost. Never read by scheduling or execution, and never nests a task inside another - EPICs under the same initiative are still independent tasks.' },
         decisions: { type: 'array', items: { type: 'object', properties: { question: { type: 'string' }, chose: { type: 'string' }, because: { type: 'string' } }, required: ['question', 'chose'] }, description: 'What the entry skill settled with the user in its brainstorm before calling tm_open: [{question, chose, because?}]. Written as the first entries of task.decisions (source "brainstorm", decided_in "session"); PLAN and every package read them as settled rules, and an ask about the same question is never opened again. Passing it (even []) skips the engine\'s own brainstorm node.' },
@@ -5027,7 +5027,7 @@ function lastLoggedStates(path) {
 // reliably, and it does not need to: this is a grep. The alternatives are the renames a reader
 // would accept without blinking - anything further afield is a section that is missing.
 const PRD_SECTIONS = [
-  // C3 (docs/plans/2026-09-28-teams-cards-everywhere.md): every planning card's section states
+  // C3 (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md): every planning card's section states
   // its goal. "goal" alone, since "goals" already names Success criteria below.
   ['Goal', ['goal', 'objective', '목표']],
   ['Problem', ['problem', 'problem statement', '문제']],
@@ -5638,7 +5638,7 @@ async function toolRun(a) {
   };
 }
 
-// Size S goes to the development harness (docs/plans/2026-09-28-teams-long-loop.md S1): no
+// Size S goes to the development harness (_repo/docs/plans/2026-09-28-teams-long-loop.md S1): no
 // planning card, feature split, shape or critique - the harness plans, sets goals, critiques,
 // implements, tests and gates it with its own stages, claude and codex taking part. The task
 // stays on disk as the pointer to that run; the reply carries tm_next's harness fields.
@@ -6011,7 +6011,7 @@ function closeStoppedToReport(task) {
 }
 
 // A task whose planning (or shaping) failed for good, before shape produced a package, still owes
-// a person its report and the next Sprint its retro (docs/plans/2026-09-28-teams-adversarial-
+// a person its report and the next Sprint its retro (_repo/docs/plans/2026-09-28-teams-adversarial-
 // fixes.md M2). Nothing downstream of a spent areas split, planning card, planning integrate,
 // shape or critique can run - settleFailure marked it unreachable - and the report node does not
 // exist yet (expandPackages opens it). Once nothing is running, nothing is ready and no re-judge
@@ -6393,7 +6393,7 @@ export function advanceDispatches(task) {
   // itself. They never run beside a develop STORY (planning precedes shape; a QA round starts only
   // once its integrate has every package done, and its defects are filed only once the whole
   // round has settled - settleQaRound), and the cards of one phase are meant to run in parallel
-  // where their deps allow (docs/plans/2026-09-28-teams-cards-everywhere.md principle 5).
+  // where their deps allow (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md principle 5).
   let opened = 0;
   const isPhaseTeam = (n) => { const pkg = packageOf(task, n.subgoal_id); return !!(pkg && (pkg.phase === 'planning' || pkg.phase === 'qa' || pkg.phase === 'audit')); };
   const readyDispatch = readyNodes(task).filter((n) => n.stage === 'dispatch');
@@ -6551,7 +6551,7 @@ function toolNext(a) {
 }
 
 // At-least-once delivery, this layer's own copy of broker.mjs's idempotentSubmit (same reasoning:
-// docs/plans/2026-09-23-teams-reducer-human-rollback.md §5). Matters more here than at the
+// _repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §5). Matters more here than at the
 // node layer - a dispatch node's fold (foldChild) commits the package's worktree on accept
 // (taskmanager.mjs's commitWorktree), and finish() runs shape validation, QA/audit defect
 // filing and much else besides; none of it is safe to run twice on the same node. node_id
@@ -7069,7 +7069,7 @@ function toolStatus(a) {
 }
 
 // tm_status's view of the cards that are not shape's packages: one planning card and one QA
-// card per feature area (docs/plans/2026-09-28-teams-cards-everywhere.md C2/C7), each with its
+// card per feature area (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md C2/C7), each with its
 // ticket state, plus where the merged PRD is and how many user stories it holds.
 function cardsStatus(task) {
   const row = (p) => ({ id: String(p.id), area: p.area || null, title: p.area_title || p.title || '', state: storyTicketState(task, String(p.id)) });
@@ -7109,7 +7109,7 @@ function dispatch(name, a) {
 // awaits ensureViewer) - every other tool still resolves synchronously, `await` just passes
 // those straight through.
 //
-// Exported for teams/scripts/run.mjs (§4-C / §8 step 1 of docs/plans/
+// Exported for teams/scripts/run.mjs (§4-C / §8 step 1 of _repo/docs/plans/
 // 2026-09-21-teams-server-owns-the-loop.md): the headless CLI imports THIS, the exact function
 // the JSON-RPC surface below calls for tools/call, rather than re-implementing tm_run's
 // open+spawn or tm_wait's poll loop a second time. Same reuse daemon.mjs already relies on for

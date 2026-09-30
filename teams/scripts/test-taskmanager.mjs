@@ -229,7 +229,7 @@ async function withTask(fn, extra) {
     // planning by name (roles.planning: true, the tests about the audit) or for audit itself.
     const asked = (extra && extra.roles) || {};
     const roles = { qa: false, audit: asked.planning === true, ...asked };
-    // brainstorm (docs/plans/2026-09-28-teams-light-plan.md §6.5) is on by default too; pinned off
+    // brainstorm (_repo/docs/plans/2026-09-28-teams-light-plan.md §6.5) is on by default too; pinned off
     // for the same reason, so size still feeds the plan stage directly. Its own tests turn it on.
     const open = await tm.call('tm_open', { request: 'big request', cwd, vendor: 'self', brainstorm: false, ...extra, roles });
     await fn({ tm, g, cwd, root, task_id: open.task_id, open });
@@ -424,7 +424,7 @@ test('tm_open with no roles argument defaults BOTH planning and qa on (0.17.0): 
   }
 });
 
-// C5 (docs/plans/2026-09-28-teams-cards-everywhere.md): roles.planning false is refused - it
+// C5 (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md): roles.planning false is refused - it
 // used to remove PLAN from the graph (the regression this test pinned); now the task plans like
 // any other, and the refusal is on the record as a team note.
 test('roles.planning:false is refused: the plan stage still opens, and a note records the refusal (C5)', async () => {
@@ -468,7 +468,7 @@ test('the PLAN child run is pinned to the plan flow (mixed:false) and its contex
   });
 });
 
-// Light PLAN mode (docs/plans/2026-09-28-teams-light-plan.md §2): roles.planning 'auto' reads
+// Light PLAN mode (_repo/docs/plans/2026-09-28-teams-light-plan.md §2): roles.planning 'auto' reads
 // the backlog's structure and runs investigate -> template-fill -> gate when its acceptance is
 // already declared. The request below is the portfolio-refresh-80ec931a shape: a numbered
 // 8-item backlog plus one shared "Acceptance for every item:" block.
@@ -760,7 +760,7 @@ test('tm_open({size}) pins the size: L opens the plan stage without measuring, S
   } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
 });
 
-// S1 (docs/plans/2026-09-28-teams-long-loop.md): size S goes to the development harness - no
+// S1 (_repo/docs/plans/2026-09-28-teams-long-loop.md): size S goes to the development harness - no
 // planning card, feature split, shape, critique, worktree or teams child run.
 function graphRunFixture(cwd, taskId, { report = false, accept = null, tagged = true, createdAt = Date.now(), runId } = {}) {
   const run_id = runId || `g-${Math.random().toString(16).slice(2, 10)}`;
@@ -1069,7 +1069,7 @@ test('a sound shape dispatches its root package: worktree created, child run ope
 
 // ---------- every package runs the full harness (fractal rule; §3 chain-only reverted 2026-09-28) ----------
 //
-// docs/plans/2026-09-17-teams-team.md §2: each Team runs the four steps inside itself. A develop
+// _repo/docs/plans/2026-09-17-teams-team.md §2: each Team runs the four steps inside itself. A develop
 // package's child run is plan -> setgoal -> critique -> implement -> test -> gate -> gate:goal ->
 // report, like a phase Team's or a repair package's; its plan is a BUILD plan for the package
 // (not a re-split), and the package's own acceptance reaches the spec verbatim.
@@ -3360,7 +3360,7 @@ test('a child whose goal gate rejected fails the dispatch; tm_retry reopens it i
   }, { auto_reassign: false });
 });
 
-// ---------- checkpoint / rollback (docs/plans/2026-09-23-teams-reducer-human-rollback.md §5, item 3) ----------
+// ---------- checkpoint / rollback (_repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §5, item 3) ----------
 
 test('retry_policy "rollback": a package retried before any of its attempts was ever accepted resets to its worktree\'s base commit, still keeps the gaps', async () => {
   await withTask(async ({ tm, g, task_id }) => {
@@ -4213,7 +4213,7 @@ test('HARNESS_TEST_NO_DRIVER spawns nothing: the child is the test to drive, and
   }
 });
 
-// m4 (docs/plans/2026-09-28-teams-adversarial-fixes.md): a size-S task gets its QA card too - on a
+// m4 (_repo/docs/plans/2026-09-28-teams-adversarial-fixes.md): a size-S task gets its QA card too - on a
 // snapshot of the run's working tree, never the tree itself; what it finds is unresolved.
 // S2: a task written before S1 carries task.s_run. It is read through a frozen path - its run
 // file only, its QA cards ignored, never respawned; unfinished with no live driver, it is blocked.
@@ -4433,7 +4433,7 @@ test('a duplicate tm_submit for a node already finished is a no-op that returns 
     // idempotentSubmit re-reads the node's state from the task this call loads fresh off disk on
     // every call, so a second writer racing in after the first already finished the node - the
     // daemon's own loop, a retried MCP call, any other caller - gets back the STORED verdict
-    // (docs/plans/2026-09-23-teams-reducer-human-rollback.md §5, at-least-once delivery), not a
+    // (_repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §5, at-least-once delivery), not a
     // re-run on its own (different) payload and not an error.
     const again = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'S', flow: 'develop' }) });
     assert.equal(again.idempotent, true);
@@ -5840,7 +5840,7 @@ test('missingPrdSections accepts the renames a reader would accept, and nothing 
     assert.ok(write(full.filter((h) => h !== 'Open questions').map((h) => `## ${h}\n\nbody\n`).join('\n') + '\n## Future work\n\nbody\n')
       .includes('Open questions'), '"Future work" is not "Open questions"');
 
-    // m1 (docs/plans/2026-09-28-teams-adversarial-fixes.md): no readable PRD is every section
+    // m1 (_repo/docs/plans/2026-09-28-teams-adversarial-fixes.md): no readable PRD is every section
     // missing. It used to be none, and a card that wrote no document was accepted on its stories.
     assert.deepEqual(missingPrdSections(cwd, ['nope.md']), full);
     assert.deepEqual(missingPrdSections(cwd, []), full);
@@ -6135,7 +6135,7 @@ test('a STORY pin reaches every subgoal the package\'s own setgoal produces - ta
   }
 });
 
-// M5 (docs/plans/2026-09-28-teams-adversarial-fixes.md): a STORY pin drained after setgoal already
+// M5 (_repo/docs/plans/2026-09-28-teams-adversarial-fixes.md): a STORY pin drained after setgoal already
 // expanded the subgoals - tm_assign ran while setgoal was running and saw none - still pins them.
 test('M5: a STORY pin that lands after setgoal expanded pins every existing subgoal; a release lets go of them', async () => {
   const { applyStoryPin, node: gnode } = await import('../mcp/graph.mjs');
@@ -7218,7 +7218,7 @@ test('portfolio-consolidate: stories are read from the PRD when the goal gate re
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-// ---------- task.decisions: decide once, before execution (docs/plans/2026-09-28-teams-light-plan.md §6) ----------
+// ---------- task.decisions: decide once, before execution (_repo/docs/plans/2026-09-28-teams-light-plan.md §6) ----------
 
 const readTask = (root, task_id) => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
 const readChild = (child) => JSON.parse(readFileSync(join(child.cwd, '.teams_output', 'broker', 'runs', `${child.run_id}.json`), 'utf8'));
@@ -7607,7 +7607,7 @@ test('portfolio-consolidate: a budget-closed task with failed/skipped work reads
   });
 });
 
-// ---------- cards everywhere (docs/plans/2026-09-28-teams-cards-everywhere.md C2-C7) ----------
+// ---------- cards everywhere (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md C2-C7) ----------
 //
 // Planning and QA run as STORY cards, one per feature area, each its own full-harness child run;
 // plan-integrate merges and judges the planning cards (C4); QA files a round's defects together.
@@ -7759,7 +7759,7 @@ test('C4: planning integrates are budgeted like a reshape - past max_retries the
   }, { max_retries: 0 });
 });
 
-// M2 (docs/plans/2026-09-28-teams-adversarial-fixes.md): a planning phase spent past its retries
+// M2 (_repo/docs/plans/2026-09-28-teams-adversarial-fixes.md): a planning phase spent past its retries
 // closes to a report and a retro instead of ending blocked with neither.
 async function planningClosesToReport(tm, root, task_id, { node: deadId, prd, stories = [] }) {
   const nx = await tm.call('tm_next', { task_id });
@@ -7846,7 +7846,7 @@ test('C2: a rejected planning card gets its retry, and the planning integrate wa
   });
 });
 
-// M4 (docs/plans/2026-09-28-teams-adversarial-fixes.md): the split has its own gate before any
+// M4 (_repo/docs/plans/2026-09-28-teams-adversarial-fixes.md): the split has its own gate before any
 // card runs, a planning integrate can send the split itself back, and both are human-gateable.
 test('m12: every card and package carries its acceptance verbatim; only a shaped STORY is told a critique passed it', async () => {
   await withTask(async ({ tm, g, task_id }) => {

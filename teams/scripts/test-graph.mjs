@@ -101,7 +101,7 @@ test('kindOf resolves planning-audit', () => {
   assert.equal(kindOf({ id: 'A1', kind: 'planning-audit' }), 'planning-audit');
 });
 
-// ---------- light PLAN mode (docs/plans/2026-09-28-teams-light-plan.md §2.2-2.3) ----------
+// ---------- light PLAN mode (_repo/docs/plans/2026-09-28-teams-light-plan.md §2.2-2.3) ----------
 
 test('planning-light kind: investigate -> template-fill -> gate, template-fill authors, document-only like planning', () => {
   assert.deepEqual(KINDS['planning-light'].chain, ['investigate', 'template-fill', 'gate']);
@@ -1231,7 +1231,7 @@ test('code-sprint-P3: validateSpec holds a run to its max_subgoals', () => {
   assert.ok(!validateSpec({ ...spec, subgoals: [sg('U1')] }, { max_subgoals: 1 }).some((p) => /allows at most/.test(p)));
 });
 
-// ---------- task.decisions (docs/plans/2026-09-28-teams-light-plan.md §6) ----------
+// ---------- task.decisions (_repo/docs/plans/2026-09-28-teams-light-plan.md §6) ----------
 
 test('§6.2-3: an execution-phase run decides a question with a safe default, and keeps as blocking only a contradiction or a question with no safe default', () => {
   const run = { ...askRun(), execution_phase: true, task_decisions: [{ question: twoOptions[0].question, chose: '2 per sale phase', decided_in: 'PLAN', source: 'ask' }] };

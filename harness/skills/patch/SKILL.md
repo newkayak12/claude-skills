@@ -40,7 +40,7 @@ checkout of this marketplace, not for refreshing files installed into an applica
    the README `## Status` or KOR.md `## 상태` heading is missing, or either `summary` /
    `summary_ko` is empty, multiline, or omitted — a release note that lands in only one language
    is exactly the silent divergence this script exists to prevent.
-4. Run `python3 scripts/validate_plugins.py`, inspect `git diff`, and report the new version and
+4. Run `python3 _repo/scripts/validate_plugins.py`, inspect `git diff`, and report the new version and
    both status entries. Do not claim the release is published; this only prepares source metadata.
 
 `patch.mjs` updates:

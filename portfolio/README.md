@@ -83,7 +83,7 @@ it characterizes what engineer the portfolio signals and scores it against Korea
 (대형 플랫폼, 성장기 스타트업, 핀테크/엔터프라이즈, 글로벌 테크, 개발도구/OSS) — Top 2 fits and the
 type to avoid, each with evidence, mismatch and one fix. Company signals come only from what you
 give; a missing fact stays `[확인 필요]`. Checked against the two skills it replaced on the same
-resume and JD (`evals/`, `docs/plans/portfolio-consolidate/fit-comparison.md`).
+resume and JD (`evals/`, `_repo/docs/plans/portfolio-consolidate/fit-comparison.md`).
 
 ```
 Here's my portfolio and the full JD for a senior backend role at a Series C fintech.

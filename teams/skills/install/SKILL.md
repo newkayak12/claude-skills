@@ -42,7 +42,7 @@ precede a run; add it whenever the project is ready to commit to it.
 1. **Judgment, before running anything.** Inspect the project's languages and source roots and
    propose dispatch patterns (e.g. `src/**`, `packages/**`); confirm them with the user. Ask
    which `roles` to keep on (`qa`, `audit`) — both default ON. Planning is not a choice: it
-   always runs (docs/plans/2026-09-28-teams-cards-everywhere.md C5; `planning: false` is refused
+   always runs (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md C5; `planning: false` is refused
    with a note). The EPIC's plan stage splits the request by feature, one planning card per area
    (PRD investigate → draft → revise → gate) writes that area's section, and `plan-integrate`
    merges them into one PRD whose user stories feed shape's packages; `roles.planning` only picks

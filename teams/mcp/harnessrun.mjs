@@ -1,4 +1,4 @@
-// A size-S task runs on the development harness (docs/plans/2026-09-28-teams-long-loop.md S1/S1a).
+// A size-S task runs on the development harness (_repo/docs/plans/2026-09-28-teams-long-loop.md S1/S1a).
 // Its driver session writes one thing: a pointer to the harness run it opened
 // (<taskDir>/harness-run.json). A pointer is a claim, not a fact - it is taken only when the run
 // it names carries this task's tag ([teams-task <id>] on the graph request, teams_task in the

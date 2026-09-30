@@ -1,4 +1,4 @@
-// test-run.mjs - teams/scripts/run.mjs, the headless "teams run" CLI (§4-C of docs/plans/
+// test-run.mjs - teams/scripts/run.mjs, the headless "teams run" CLI (§4-C of _repo/docs/plans/
 // 2026-09-21-teams-server-owns-the-loop.md).
 //
 // Every test here mocks the task layer (`deps.callTool`, and where needed `mustFindTask`/

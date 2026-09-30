@@ -144,7 +144,7 @@ test('audit with no external_author (a run opened outside the TaskManager) is un
   assert.ok(ranked.every((r) => /same_actor=false/.test(r.reason)));
 });
 
-// m3 (docs/plans/2026-09-28-teams-adversarial-fixes.md): author != judge holds under either
+// m3 (_repo/docs/plans/2026-09-28-teams-adversarial-fixes.md): author != judge holds under either
 // allocation - the author's vendor is tried last, not merely discounted.
 test('authorIdentities: critique <- setgoal, the goal gate <- every implementer, a subgoal gate <- its own author, an audit <- every PRD author', async () => {
   const { authorIdentities, demoteAuthors } = await import('../mcp/routing.mjs');

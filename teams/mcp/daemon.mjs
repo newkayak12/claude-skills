@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// daemon.mjs - the server owns the loop (docs/plans/2026-09-21-teams-server-owns-the-loop.md).
+// daemon.mjs - the server owns the loop (_repo/docs/plans/2026-09-21-teams-server-owns-the-loop.md).
 //
 // One task, one daemon: `node daemon.mjs --task <task_id>` drives that task's graph to
 // complete/blocked with no model in the loop except where a node genuinely needs judgment. It is
@@ -9,7 +9,7 @@
 //
 // What replaced what: the TaskLeader used to be a `claude -p` session that read
 // references/manager.md and called tm_next/tm_submit/tm_retry back into THIS SAME MCP server
-// over stdio - 91 turns and $9.66 to relay JSON it never looked at (docs/plans, §1a). This
+// over stdio - 91 turns and $9.66 to relay JSON it never looked at (_repo/docs/plans, §1a). This
 // process is not a client of that server at all. It imports taskmanager.mjs as a library and
 // calls the functions a tool handler calls - advanceDispatches, finish, foldChild - directly, in
 // process. The only thing here that still costs a model call is judge(): one single-shot

@@ -27,7 +27,7 @@ import os
 import sys
 import re
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MARKETPLACE = os.path.join(ROOT, ".claude-plugin", "marketplace.json")
 
 errors = []

@@ -3,7 +3,7 @@
 // (md is a rendered view, never a second source of truth, same principle as tickets.mjs's §4).
 //
 // v0.12.0 wires planning/qa into the EPIC flow as phase-Teams, and renders three more of §7c's
-// 13: 10-planning.md, 10-prd.md, 60-qa.md. Since cards-everywhere (docs/plans/2026-09-28-teams-
+// 13: 10-planning.md, 10-prd.md, 60-qa.md. Since cards-everywhere (_repo/docs/plans/2026-09-28-teams-
 // cards-everywhere.md) planning and QA run as one card per feature area (tickets.mjs's
 // planningPkgs/qaPkgs): 10-planning.md and 60-qa.md list every card, and 10-prd.md is the MERGED
 // PRD plan-integrate judges - every card's accepted section under its area's heading.
@@ -450,7 +450,7 @@ export function buildRetro(task) {
     }
   }
   // What shipped is what the Sprint's final integration holds (M7/M8,
-  // docs/plans/2026-09-28-teams-adversarial-fixes.md): the latest integrate nothing superseded,
+  // _repo/docs/plans/2026-09-28-teams-adversarial-fixes.md): the latest integrate nothing superseded,
   // and only if it settled done - a later failed integrate is not overridden by an earlier pass.
   // Its tree is cumulative, so the done integrates it superseded count too, and every accept its
   // deps reach transitively (a repair's or a defect fix's integrate names only the new accept;
@@ -467,7 +467,7 @@ export function buildRetro(task) {
     }
     task.requests.forEach((r, i) => { if (!shipped.has(i)) unshippedRequests.push({ priority: i, request: r }); });
   }
-  // The user stories this task did not ship (docs/plans/2026-09-28-teams-sprint-not-sub-epic.md):
+  // The user stories this task did not ship (_repo/docs/plans/2026-09-28-teams-sprint-not-sub-epic.md):
   // work too big for one Sprint is not nested into a sub-EPIC, it carries into the next Sprint as
   // a backlog candidate. A story ships when every package implementing it shipped (one of two is
   // not the story). A size-S task has no packages: its one run shipped all its stories when it

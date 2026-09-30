@@ -206,7 +206,7 @@ description이 "Use when"으로 시작하게 하고, 트리거 검증까지 돌�
 
 harness 파이프라인이 이 작업을 넘겼다면 harness-engaged, 아니면 solo로 보고 두 게이트를 직접
 돌리세요. 출시에는 `.claude-plugin/marketplace.json` 버전 bump, 해당 플러그인 README 갱신,
-`scripts/validate_plugins.py` 재실행이 포함됩니다.
+`_repo/scripts/validate_plugins.py` 재실행이 포함됩니다.
 
 ### `writer-verification`
 

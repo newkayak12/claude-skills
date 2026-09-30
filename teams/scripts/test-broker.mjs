@@ -272,7 +272,7 @@ test('team_submit refuses an unknown node; a duplicate submit of a finished one 
     assert.match(unknown.error, /unknown node/);
     const first = await c.call('team_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
     assert.equal(first.state, 'done');
-    // At-least-once delivery (docs/plans/2026-09-23-teams-reducer-human-rollback.md §5): a
+    // At-least-once delivery (_repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §5): a
     // second submit of the same {run_id, node_id} - the request retried, two callers racing -
     // must not re-adjudicate. It gets back exactly the first verdict, flagged idempotent, never
     // an error.
@@ -2558,7 +2558,7 @@ writeFileSync(output, JSON.stringify({stage_ok:true,result}));
   return cwd;
 }
 
-// m3 (docs/plans/2026-09-28-teams-adversarial-fixes.md): ordered allocation took the first ready
+// m3 (_repo/docs/plans/2026-09-28-teams-adversarial-fixes.md): ordered allocation took the first ready
 // candidate for every stage, so critique ran as the very identity that wrote the spec it judges.
 test('ordered allocation: critique does not run on the vendor@model that ran setgoal when another is ready', async () => {
   const cwd = balancedRepo();
@@ -3751,7 +3751,7 @@ test('judging stages are never pinned - only the kind\'s author stage carries th
   }, { interactive: true });
 });
 
-// ---------- checkpoint / rollback (docs/plans/2026-09-23-teams-reducer-human-rollback.md §5) ----------
+// ---------- checkpoint / rollback (_repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §5) ----------
 
 const SOLE = {
   goal: 'G', acceptance: ['A'],

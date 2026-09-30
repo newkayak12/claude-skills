@@ -179,7 +179,7 @@ flowchart LR
 워크트리에서, QA 카드(`QA-F1`, ...)는 통합 트리에서 돕니다. 태스크 자신도 카드들을 둘러싸고 같은
 여섯 단계를 돕니다. `areas`가 태스크의 plan이고, `plan-integrate`, `accept`, `gate:goal`이 게이트입니다.
 그래서 어떤 팀도 앞에 계획 없이, 뒤에 게이트 없이 체인만 돌지 않습니다(설계:
-[`docs/plans/2026-09-28-teams-cards-everywhere.md`](../docs/plans/2026-09-28-teams-cards-everywhere.md)).
+[`_repo/docs/plans/2026-09-28-teams-cards-everywhere.md`](../_repo/docs/plans/2026-09-28-teams-cards-everywhere.md)).
 
 ## 태스크가 끝나는 방식
 
@@ -301,11 +301,11 @@ node teams/scripts/run.mjs --resume <task_id>
 - [CHANGELOG.KOR.md](CHANGELOG.KOR.md): 모든 릴리스, 최신순.
 - [docs/configuration.KOR.md](docs/configuration.KOR.md): 키별 전체 설명, 스프린트 동작
   (`requests`, 인수 기준, 예산, `retro.json`, `context_from`), `view.mjs` 뷰, 헤드리스 세부 사항.
-- [`docs/plans/`](../docs/plans/)의 설계 문서:
-  [`2026-09-11-teams-taskmanager.md`](../docs/plans/2026-09-11-teams-taskmanager.md)와
-  [`2026-09-21-teams-server-owns-the-loop.md`](../docs/plans/2026-09-21-teams-server-owns-the-loop.md)부터
+- [`_repo/docs/plans/`](../_repo/docs/plans/)의 설계 문서:
+  [`2026-09-11-teams-taskmanager.md`](../_repo/docs/plans/2026-09-11-teams-taskmanager.md)와
+  [`2026-09-21-teams-server-owns-the-loop.md`](../_repo/docs/plans/2026-09-21-teams-server-owns-the-loop.md)부터
   읽으세요. 지금의 원칙은
-  [`2026-09-28-teams-cards-everywhere.md`](../docs/plans/2026-09-28-teams-cards-everywhere.md)에 있습니다.
+  [`2026-09-28-teams-cards-everywhere.md`](../_repo/docs/plans/2026-09-28-teams-cards-everywhere.md)에 있습니다.
 - [`graph/KOR.md`](../graph/KOR.md): 공유하는 브로커 내부(도구, 라우팅, 판정, 벤더, 용량 복구,
   원장). 이 엔진의 수정은 두 플러그인 사이에 옮겨 적용됩니다. teams는
   [`harness`](../harness/KOR.md)의 런타임 게이트 프로토콜에 다른 프로젝트와 똑같이 연동하며, 두

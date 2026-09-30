@@ -38,7 +38,7 @@ gate` work inside an ordinary `develop`/`document`/`orchestrate` run: one QA car
 the EPIC's planning split by (`QA-F1`, `QA-F2`, ...), each a full run on the integration tree
 between `integrate` and `gate:goal`, in parallel, exercising its own area's user stories; once every
 card of the round has settled their defects are filed together as fix STORYs and the next round
-reopens every card (docs/plans/2026-09-28-teams-cards-everywhere.md C7). Use this skill when the
+reopens every card (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md C7). Use this skill when the
 deliverable IS the QA pass; leave `roles.qa` on when every EPIC should get its QA cards
 automatically, gating its own `gate:goal`.
 
