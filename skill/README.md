@@ -40,7 +40,7 @@ what to fix first.
 | # | Check | Agent | Verdict scale |
 |---|---|---|---|
 | 1 | Usefulness | `agents/usefulness-checker.md` | PASS / WARN / FAIL |
-| 2 | Authoring principles | `agents/authoring-checker.md` | PASS / WARN / FAIL |
+| 2 | Authoring principles (incl. required sections, length) | `agents/authoring-checker.md` | PASS / WARN / FAIL |
 | 3 | Agent structure | `agents/structure-reviewer.md` | GOOD / IMPROVABLE / MISSING |
 | 4 | MCP fit | `agents/mcp-advisor.md` | NONE / OPTIONAL / RECOMMENDED |
 | 5 | SKILL.md weight | `agents/weight-analyzer.md` | LIGHT / OK / HEAVY / CRITICAL |
@@ -56,7 +56,7 @@ written concretely enough to act on directly.
 Audits the `description` field, the only signal Claude uses when deciding whether to invoke a
 skill, and rewrites it as a drop-in replacement. Point it at a single skill, a whole plugin, or
 the entire repo; if no target is given it asks first. It touches only the frontmatter
-`description`, never the body, and asks before applying anything.
+`description`, never the body, and asks before applying unless you already asked for the fix.
 
 ```
 develop 플러그인 스킬들 트리거 커버리지 감사해줘. 한국어로 말할 때 안 걸리는 것부터.
@@ -64,18 +64,17 @@ develop 플러그인 스킬들 트리거 커버리지 감사해줘. 한국어로
 
 Per skill it generates 10 test queries — 2 formal English, 2 natural English, 3 natural Korean,
 2 borderline that should *not* trigger, 1 implicit need — scores each against the current
-description, and reports `(correct / 10) × 10`. Named failure patterns: Korean blind spot,
-keyword-only, jargon wall, too narrow, too broad. The rewrite follows a fixed shape:
+description, and reports `(correct / 10) × 10` — judged by default, or measured by running each
+query through headless `claude -p` when you ask. Named failure patterns: Korean blind spot,
+keyword-only, jargon wall, too narrow, too broad. The rewrite starts with `Use when`, stays within 250 characters, and follows a fixed shape:
 
 ```
-[What skill does]. Use when [situation/intent] — [English phrases], or Korean:
-[한국어 구어체]. Also triggers on [implicit/borderline cases worth catching].
+Use when [situation/intent]. Triggers on: "[한국어 구어체]", "[English phrase]", "[implicit case]".
 ```
 
 Batch runs lead with a summary table and give full reports only for skills scoring below 7; 7+ is
-"acceptable — no action needed". If you accept the rewrites, it applies them and then follows
-`INSTRUCT.md` — bump the patch version in `marketplace.json`, update the plugin README, commit,
-push.
+"acceptable — no action needed". After applying, it follows the repo's update workflow —
+bump the version in `marketplace.json`, update the plugin `README.md` and `KOR.md` together, commit.
 
 ## Related plugins
 

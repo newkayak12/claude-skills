@@ -38,7 +38,7 @@ skill/skills/skill-trigger-validator 배포 전에 검토해줘. 6개 검사 다
 | # | 검사 | 에이전트 | 판정 |
 |---|---|---|---|
 | 1 | 유용성 | `agents/usefulness-checker.md` | PASS / WARN / FAIL |
-| 2 | 저작 원칙 | `agents/authoring-checker.md` | PASS / WARN / FAIL |
+| 2 | 저작 원칙 (필수 섹션·길이 포함) | `agents/authoring-checker.md` | PASS / WARN / FAIL |
 | 3 | 에이전트 구조 | `agents/structure-reviewer.md` | GOOD / IMPROVABLE / MISSING |
 | 4 | MCP 적합성 | `agents/mcp-advisor.md` | NONE / OPTIONAL / RECOMMENDED |
 | 5 | SKILL.md 무게 | `agents/weight-analyzer.md` | LIGHT / OK / HEAVY / CRITICAL |
@@ -53,7 +53,7 @@ assertion, 약속했지만 지키지 못한 갭을 보고합니다. 리포트는
 Claude가 스킬 호출 여부를 판단할 때 쓰는 유일한 신호인 `description` 필드를 감사하고, 그대로
 갈아끼울 수 있는 새 description을 써줍니다. 대상은 스킬 하나, 플러그인 전체, 레포 전체 중 하나
 — 안 주면 먼저 물어봅니다. 프론트매터의 `description`만 고치고 본문은 건드리지 않으며, 적용
-전에 반드시 물어봅니다.
+전에 물어봅니다 (이미 고쳐 달라고 했다면 바로 적용).
 
 ```
 develop 플러그인 스킬들 트리거 커버리지 감사해줘. 한국어로 말할 때 안 걸리는 것부터.
@@ -61,17 +61,17 @@ develop 플러그인 스킬들 트리거 커버리지 감사해줘. 한국어로
 
 스킬마다 테스트 쿼리 10개를 만듭니다 — 격식 영어 2, 자연스러운 영어 2, 자연스러운 한국어 3,
 트리거되면 *안 되는* 인접 주제 2, 스킬 이름을 말하지 않는 암묵적 요구 1 — 현재 description으로
-각각 채점해 `(맞은 수 / 10) × 10`을 냅니다. 지목하는 실패 패턴: 한국어 사각지대, 키워드만 나열,
-전문용어 벽, 너무 좁음, 너무 넓음. 재작성 형식:
+각각 채점해 `(맞은 수 / 10) × 10`을 냅니다 — 기본은 판단 점수, 요청하면 headless
+`claude -p`로 쿼리를 실제로 돌려 측정합니다. 지목하는 실패 패턴: 한국어 사각지대, 키워드만 나열,
+전문용어 벽, 너무 좁음, 너무 넓음. 재작성은 `Use when`으로 시작하고 250자 안에 들며, 형식은:
 
 ```
-[스킬이 하는 일]. Use when [상황/의도] — [영어 표현들], or Korean:
-[한국어 구어체]. Also triggers on [잡을 가치 있는 암묵적·경계 사례].
+Use when [상황/의도]. Triggers on: "[한국어 구어체]", "[English phrase]", "[암묵적 사례]".
 ```
 
 일괄 실행은 요약 테이블로 시작하고 7점 미만인 스킬만 개별 리포트를 냅니다. 7점 이상은
-"acceptable — no action needed". 재작성을 수락하면 적용한 뒤 `INSTRUCT.md`를 따릅니다 —
-`marketplace.json` 패치 버전 올리고, 플러그인 README 갱신하고, 커밋, 푸시.
+"acceptable — no action needed". 적용한 뒤 레포의 업데이트 절차를 따릅니다 —
+`marketplace.json` 버전 올리고, 플러그인 `README.md`와 `KOR.md`를 함께 갱신하고, 커밋.
 
 ## 관련 플러그인
 

@@ -46,7 +46,7 @@ Now respond to this user request: [scenario prompt]
 [scenario prompt]
 ```
 
-Run all 4 sub-agents (2 scenarios × 2 configurations) in parallel if possible, or 2+2 in two batches.
+Run all 4 sub-agents (2 scenarios × 2 configurations) in parallel if possible, or 2+2 in two batches. Use `model: "sonnet"` for all 4 — the comparison needs the same model on both arms, not the strongest one.
 
 ### Step 4: Grade outputs
 

@@ -24,7 +24,7 @@ compatibility:
 
 Run 6 quality checks on a skill and produce an actionable improvement report.
 
-This is the quality gate before publishing — and also useful mid-creation to catch design issues early. The "Top Improvements" section at the end maps directly to what skill-creator should fix next, making this the natural handoff between authoring and shipping.
+This is the quality gate before publishing — and also useful mid-creation to catch design issues early. The "Top Improvements" section at the end maps directly to what `write:writing-skills` should fix next, making this the natural handoff between authoring and shipping.
 
 ## Input
 
@@ -45,13 +45,13 @@ Run checks 1–5 in parallel. Run check 6 after — it depends on understanding 
 | # | Check | Agent | What it examines |
 |---|-------|-------|-----------------|
 | 1 | Usefulness | `agents/usefulness-checker.md` | Does this skill earn its place? |
-| 2 | Authoring Principles | `agents/authoring-checker.md` | description ≤250 chars? Standing Mandates? Compaction-aware? effort field? |
+| 2 | Authoring Principles | `agents/authoring-checker.md` | description ≤250 chars? Standing Mandates? Compaction-aware? effort field? Required sections? |
 | 3 | Agent Structure | `agents/structure-reviewer.md` | Should responsibilities split into subagents? Which steps can parallelize? |
 | 4 | MCP Fit | `agents/mcp-advisor.md` | Which MCPs would genuinely help? (load `references/mcp-catalog.md`) |
 | 5 | SKILL.md Weight | `agents/weight-analyzer.md` | Too heavy? What belongs in references/ or scripts/? |
 | 6 | Output Quality | `agents/eval-agent.md` | Does the skill measurably improve output vs no-skill baseline? |
 
-Pass the **full content of all skill files** to each agent as context.
+Pass the **full content of all skill files** to each agent as context. Dispatch agents with `model: "sonnet"`, including the 4 eval runs inside check 6.
 
 ## Output Format
 
@@ -92,7 +92,7 @@ Produce a self-contained report in this format:
 
 Priority labels: 🔴 Must fix · 🟡 Recommended · 🟢 Optional
 
-The "Top Improvements" section is what skill-creator reads to decide what to fix next. Make it concrete and actionable — not "improve structure" but "extract the grading logic into `agents/grader.md` and call it from SKILL.md with a Task()".
+The "Top Improvements" section is what `write:writing-skills` reads to decide what to fix next. Make it concrete and actionable — not "improve structure" but "extract the grading logic into `agents/grader.md` and call it from SKILL.md with a Task()".
 
 ## What Claude Does / What You Do
 
@@ -100,3 +100,8 @@ The "Top Improvements" section is what skill-creator reads to decide what to fix
 |--------|-----|
 | Reads all skill files and runs the 6 checks | Provide the skill path |
 | Produces the QA report with Top Improvements | Decide which improvements to apply |
+
+## Related Skills
+
+- `skill-trigger-validator` — when check 2 flags the description or the skill doesn't fire
+- `write:writing-skills` — applies the Top Improvements
