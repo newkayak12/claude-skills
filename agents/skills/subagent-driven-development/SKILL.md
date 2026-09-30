@@ -49,10 +49,8 @@ digraph process {
         "Answer questions, provide context" [shape=box];
         "Implementer subagent implements, tests, commits, self-reviews" [shape=box];
         "Dispatch spec + quality reviewers IN PARALLEL (./spec-reviewer-prompt.md + ./code-quality-reviewer-prompt.md)" [shape=box];
-        "Spec reviewer subagent confirms code matches spec?" [shape=diamond];
-        "Implementer subagent fixes spec gaps" [shape=box];
-        "Code quality reviewer subagent approves (wait for both)?" [shape=diamond];
-        "Implementer subagent fixes quality issues" [shape=box];
+        "Both reviewers pass? (wait for both)" [shape=diamond];
+        "Implementer subagent fixes combined findings" [shape=box];
         "Mark task complete in task list" [shape=box];
     }
 
@@ -67,13 +65,10 @@ digraph process {
     "Answer questions, provide context" -> "Dispatch implementer subagent (./implementer-prompt.md)";
     "Implementer subagent asks questions?" -> "Implementer subagent implements, tests, commits, self-reviews" [label="no"];
     "Implementer subagent implements, tests, commits, self-reviews" -> "Dispatch spec + quality reviewers IN PARALLEL (./spec-reviewer-prompt.md + ./code-quality-reviewer-prompt.md)";
-    "Dispatch spec + quality reviewers IN PARALLEL (./spec-reviewer-prompt.md + ./code-quality-reviewer-prompt.md)" -> "Spec reviewer subagent confirms code matches spec?";
-    "Spec reviewer subagent confirms code matches spec?" -> "Implementer subagent fixes spec gaps" [label="no"];
-    "Implementer subagent fixes spec gaps" -> "Dispatch spec + quality reviewers IN PARALLEL (./spec-reviewer-prompt.md + ./code-quality-reviewer-prompt.md)" [label="re-review"];
-    "Spec reviewer subagent confirms code matches spec?" -> "Code quality reviewer subagent approves (wait for both)?" [label="yes"];
-    "Code quality reviewer subagent approves (wait for both)?" -> "Implementer subagent fixes quality issues" [label="no"];
-    "Implementer subagent fixes quality issues" -> "Dispatch spec + quality reviewers IN PARALLEL (./spec-reviewer-prompt.md + ./code-quality-reviewer-prompt.md)" [label="re-review"];
-    "Code quality reviewer subagent approves (wait for both)?" -> "Mark task complete in task list" [label="yes"];
+    "Dispatch spec + quality reviewers IN PARALLEL (./spec-reviewer-prompt.md + ./code-quality-reviewer-prompt.md)" -> "Both reviewers pass? (wait for both)";
+    "Both reviewers pass? (wait for both)" -> "Implementer subagent fixes combined findings" [label="no"];
+    "Implementer subagent fixes combined findings" -> "Dispatch spec + quality reviewers IN PARALLEL (./spec-reviewer-prompt.md + ./code-quality-reviewer-prompt.md)" [label="re-review"];
+    "Both reviewers pass? (wait for both)" -> "Mark task complete in task list" [label="yes"];
     "Mark task complete in task list" -> "More tasks remain?";
     "More tasks remain?" -> "Dispatch implementer subagent (./implementer-prompt.md)" [label="yes"];
     "More tasks remain?" -> "Dispatch final code reviewer subagent for entire implementation" [label="no"];
