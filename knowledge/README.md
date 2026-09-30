@@ -258,6 +258,10 @@ begins with a coverage grade:
 
 ```markdown
 Coverage: partial
+Parts:
+- ledger bucket axis -> notes/stock/stock-ledger.md
+- change-report bucket axis -> notes/stock/stock-change.md
+- outbound denominator contrast -> none
 
 The ledger and change reports both decompose stock by bucket, but on different axes …
 
@@ -287,7 +291,8 @@ competency questions on one real vault, same index for both, only the answering 
   notes, or it is `partial` and says which side is missing.
 - **`complete` is a claim about parts, not confidence.** It was declared on 69 and 80 of 94
   answers and was actually complete on 22 and 38. Split the question into parts, name the opened
-  note covering each, and downgrade the moment one maps to nothing, a snippet, or inference.
+  note covering each on its own `Parts` line, and downgrade the moment one maps to nothing, a
+  snippet, or inference.
 
 ## Local SQLite + MCP
 
