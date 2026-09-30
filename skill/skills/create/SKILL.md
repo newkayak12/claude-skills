@@ -42,7 +42,10 @@ Writes a new skill that carries the repo's house identity — re-checkable outpu
    - **Done:** the checkable criterion that ends a run, and the bound on any loop (P9).
 4. **Place.** `<plugin>/skills/<name>/SKILL.md`, bare kebab name that doesn't repeat the plugin.
 5. **Draft** the smallest skill that carries the anchors (P12): frontmatter, Standing Mandates only if there are rules a no-skill run would break — each with its reason (P10) — then the body in the siblings' order. The Output Template opens with the judgment (P5) and forces a count or quote somewhere (P1).
-6. **Audit** the draft against P1–P13: for each, the line that satisfies it, or `N/A — <why>`. Rewrite anything that fails before moving on.
+6. **Audit** the draft against P1–P13: for each, the line that satisfies it, or `N/A — <why>`. Rewrite anything that fails before moving on. Also check:
+   - **Promises:** every promise in the `Goal:` line or Output Template (a tally that recounts, a verdict per item) has a Process step that performs it (P9).
+   - **Effort:** a judgment-heavy skill (per-item grading, forks on facts) gets `effort: high`.
+   - **Description:** it names every core check the Process runs, not only the headline one.
 7. **Check.** Run the repo's validator (here `python3 _repo/scripts/validate_plugins.py`); fix every ERROR on the new skill.
 8. **Hand off.** `trigger-validator` on the description, then `quality-assurance` on the whole skill. Fix 🔴 items, re-run the gate that flagged them. Max two rounds.
 9. **Register.** Only what the repo's update workflow names (here: `marketplace.json` version, plugin `README.md` + `KOR.md`). Touch nothing else (P13); mention unrelated problems you saw. Skip any step the user has put on hold.

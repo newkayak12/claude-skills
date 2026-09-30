@@ -78,7 +78,9 @@ Never a menu. Read the repo / the source before asking anything it could answer.
 Mandates end with a `Goal:` line. Every loop is bounded; "done" is a checkable criterion, not "looks good".
 (Guidelines §4: turn the task into a verifiable goal, loop until verified.)
 
-- Check: `Goal:` line? Each loop has a max and says what to report when it hits it?
+- Check: `Goal:` line? Each loop has a max and says what to report when it hits it? Does a Process step actually
+  perform what the Goal promises? (A dry run's Goal said "the tally recounts to the table"; no step recounted, and the
+  header came out 3·1 against a 2·2 table.)
 - "A loop with no declared exit becomes editing that looks like progress." — `knowledge/skills/knowledge-workflow`
 
 ## P10. Rules carry their scar
