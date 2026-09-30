@@ -137,13 +137,12 @@ what a relayed session used to run. Every graph run it opens is still driven by 
 headless session, never by you. The Standing Mandates, Output template, and "Running without
 install" note in `../orchestrate/SKILL.md` apply unchanged.
 
-## What the current AI does
+## What Claude Does / What You Do
 
-Offers the optional brainstorm and passes its `decisions`, opens with the flow pinned, runs the loop, reports from verdicts.
-
-## What you do
-
-Say it is a planning job. That is the whole difference from `orchestrate`.
+| Claude | You |
+|--------|-----|
+| Offers the optional brainstorm and passes its `decisions` | Say it is a planning job — the whole difference from `orchestrate` |
+| Opens with the flow pinned, runs the loop, reports from verdicts | |
 
 ## Related skills
 

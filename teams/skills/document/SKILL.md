@@ -81,13 +81,12 @@ install" note in `../orchestrate/SKILL.md` apply unchanged. One reading note: a 
 `changed_files_verified: null`, attribution `document-unchanged` — the review judges it, not
 git. Report it as unattributed, not as verified.
 
-## What the current AI does
+## What Claude Does / What You Do
 
-Opens with the flow pinned, runs the loop, reports from verdicts.
-
-## What you do
-
-Say it is a writing job. That is the whole difference from `orchestrate`.
+| Claude | You |
+|--------|-----|
+| Opens with the flow pinned | Say it is a writing job — the whole difference from `orchestrate` |
+| Runs the loop, reports from verdicts | |
 
 ## Related skills
 

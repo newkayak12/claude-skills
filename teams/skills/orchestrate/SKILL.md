@@ -185,16 +185,12 @@ Everything past the entry lives in `references/`:
 A usage limit is `failure_kind:"quota"`, never an ordinary failure — submit it that way, and
 call `team_next` for the alternate route.
 
-## What the current AI does
+## What Claude Does / What You Do
 
-Sizes, then runs the loop — or the task — and reports from the verdicts. Tools missing or
-`tm_open`/`team_open` failing is a stop, not a licence — see "Running without install" above for
-the fix (plugin connection, not `team.json`); never the work itself.
-
-## What you do
-
-Nothing during a `team_run` — it blocks. The full history is in
-`.teams_output/broker/` (one run) and `~/.harness/tasks/<task_id>/` (a task) if you want it.
+| Claude | You |
+|--------|-----|
+| Sizes, then runs the loop — or the task — and reports from the verdicts | Nothing during a `team_run` — it blocks |
+| Treats missing tools or a failing `tm_open`/`team_open` as a stop, not a licence — see "Running without install" above; never does the work itself | Read the full history in `.teams_output/broker/` (one run) or `~/.harness/tasks/<task_id>/` (a task) if you want it |
 
 ## Related skills
 

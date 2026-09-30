@@ -119,21 +119,14 @@ Next backlog (carries into context_from):
 - Open questions: ...
 ```
 
-## What Claude Does
+## What Claude Does / What You Do
 
-Offers the brainstorm (step 0) and passes what was settled as `decisions`; opens the task with
-`requests`/`budget_usd`/`timebox_minutes`/`interactive` set from what the human actually said (never invents a budget or timebox nobody asked for); reads `tm_board`/
-`tm_status` for the daily check and names a budget warning or stop plainly when the fields say
-so; reads the report and `retro.json` at close, rather than reconstructing either from raw node
-state; on a follow-up Sprint, passes `context_from` instead of restating the prior task's retro
-by hand.
-
-## What You Do
-
-Say the backlog in your own words (`requests`, priority order) and the box you want it held to
-(`budget_usd`/`timebox_minutes`). Decide whether anyone is around to answer an `ask` card
-(`interactive`). Read the retro at close and decide, in your own words, what of "Next backlog"
-becomes the next Sprint's `requests` — this skill hands you the list, not the decision.
+| Claude | You |
+|--------|-----|
+| Offers the brainstorm (step 0) and passes what was settled as `decisions` | Say the backlog in your own words (`requests`, priority order) |
+| Opens the task with `requests`/`budget_usd`/`timebox_minutes`/`interactive` set from what you actually said — never invents a budget or timebox | Say the box you want it held to (`budget_usd`/`timebox_minutes`) |
+| Reads `tm_board`/`tm_status` for the daily check; names a budget warning or stop plainly | Decide whether anyone is around to answer an `ask` card (`interactive`) |
+| Reads the report and `retro.json` at close, not raw node state; on a follow-up Sprint passes `context_from` | Read the retro and decide what of "Next backlog" becomes the next Sprint's `requests` |
 
 ## Related Skills
 

@@ -83,16 +83,13 @@ E-a1b2c3d4/TASK/critique   stage: critique   state: failed   sound: false
 gaps: ownership overlap between P1 and P2
 ```
 
-## What Claude Does
+## What Claude Does / What You Do
 
-Calls `tm_submit({task_id, key, payload})` with the key exactly as given and the payload exactly
-as the human describes their own work — never inflates `stage_ok`, never edits `changed_files`
-to make the cross-check pass. Renders the verdict above.
-
-## What You Do
-
-Finish the work in the briefed worktree before calling this. Name the TASK key and, for an
-authoring stage, the files you actually changed — the cross-check does the rest.
+| Claude | You |
+|--------|-----|
+| Calls `tm_submit({task_id, key, payload})` with the key and payload exactly as you give them | Finish the work in the briefed worktree before calling this |
+| Never inflates `stage_ok` or edits `changed_files` to make the cross-check pass | Name the TASK key and, for an authoring stage, the files you actually changed |
+| Renders the verdict above | The cross-check does the rest |
 
 ## Related Skills
 

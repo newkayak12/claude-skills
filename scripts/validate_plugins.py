@@ -17,6 +17,7 @@ Checks:
  12. Per skill  — description length ≤ 250 chars (Claude Code truncation limit)
  13. Per skill  — heavy skills (>200 lines) should declare effort: field
  14. Per skill  — heavy skills (>200 lines) should have a Standing Mandates section
+ 15. Per skill  — '## What Claude Does / What You Do' section with a '| Claude | You |' table, before Related Skills
 
 Authoring principles: skill/skills/skill-quality-assurance/references/authoring-principles.md
 """
@@ -218,6 +219,20 @@ def check_plugin(plugin_entry):
             if not has_mandates:
                 warn(f"{prefix}/{skill_name}: {line_count}-line skill has no '## Standing Mandates' section "
                      f"(discriminating behaviors should be front-loaded as standing instructions)")
+
+        # 15. WCD section: exact heading, Claude/You table, placed before Related Skills
+        #     (fenced code is stripped so example headings don't count)
+        prose = re.sub(r"^```.*?^```[^\n]*$", "", skill_content.replace("\r\n", "\n"), flags=re.M | re.S)
+        wcd_m = re.search(r"^## What Claude Does / What You Do[ \t]*$", prose, re.M)
+        if not wcd_m:
+            skill_errors.append(f"    {skill_name}: missing '## What Claude Does / What You Do' section")
+        else:
+            wcd_body = re.split(r"^## ", prose[wcd_m.end():], maxsplit=1, flags=re.M)[0]
+            if not re.search(r"^\|\s*Claude\s*\|\s*You\s*\|", wcd_body, re.M):
+                skill_errors.append(f"    {skill_name}: WCD section lacks a '| Claude | You |' table")
+            related_m = re.search(r"^## Related Skills[ \t]*$", prose, re.M)
+            if related_m and related_m.start() < wcd_m.start():
+                skill_errors.append(f"    {skill_name}: WCD section must come before '## Related Skills'")
 
         # 10. workflow skills must declare type: workflow
         if "workflow" in skill_name and fm.get("type", "") != "workflow":

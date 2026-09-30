@@ -92,14 +92,13 @@ headless session, never by you. The Standing Mandates, Output template, and "Run
 install" note in `../orchestrate/SKILL.md` apply unchanged — read them once; this skill adds
 nothing to them and removes nothing from them.
 
-## What the current AI does
+## What Claude Does / What You Do
 
-Offers the optional brainstorm and passes its `decisions`, opens with the flow pinned, runs the loop, reports from verdicts. If `plan` returns
-`size: L`, say so in the report; the run still proceeds as one graph.
-
-## What you do
-
-Say it is code work. That is the whole difference from `orchestrate`.
+| Claude | You |
+|--------|-----|
+| Offers the optional brainstorm and passes its `decisions` | Say it is code work — the whole difference from `orchestrate` |
+| Opens with the flow pinned, runs the loop, reports from verdicts | |
+| If `plan` returns `size: L`, says so in the report; the run still proceeds as one graph | |
 
 ## Related skills
 

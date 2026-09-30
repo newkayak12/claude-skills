@@ -94,15 +94,12 @@ user-story ids (`F1-US-1`, …, from every planning card) this STORY was shaped 
 when the human asks for a STORY's detail (see `ticket`) or when something is actually waiting on
 something else — an ordinary row with none of these needs no extra text in the table above.
 
-## What Claude Does
+## What Claude Does / What You Do
 
-Calls `tm_board` with the right argument — the EPIC key or a full `task_id`, passed straight
-through — and renders the table above — nothing more.
-
-## What You Do
-
-Name an EPIC key for its kanban, or nothing for the full list. Open `doc_path` yourself for the
-long form; the skill won't paste it into the conversation.
+| Claude | You |
+|--------|-----|
+| Calls `tm_board` with the EPIC key or full `task_id`, passed straight through | Name an EPIC key for its kanban, or nothing for the full list |
+| Renders the table above — nothing more | Open `doc_path` yourself for the long form; the skill won't paste it |
 
 For a live visual instead of a table — the manager pipeline, per-package cards, each child
 run's node chain, and the event ledger, polling every ~3s in a browser — run

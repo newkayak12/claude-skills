@@ -5,6 +5,7 @@
 `teams` 플러그인의 모든 릴리스를 최신순으로 적었습니다. 예전 KOR.md의 `## 상태` 절을 그대로 옮겨 온 것입니다. 새 릴리스 줄은 `teams:patch`가 아래 `## 상태` 맨 위에 추가합니다.
 
 ## 상태
+- v0.38.3 — 열다섯 스킬 모두 What Claude Does / What You Do 표 형식으로 통일.
 - v0.38.2 — planning draft·template-fill 노드가 write:plans를 씀 (기존 write:doc-coauthoring)
 - v0.38.1 — **데몬이 재시작 한도를 다 쓰면 blocked, teams run은 Mac 절전을 막는다**: `driver_restarts`를 다 쓴 데몬의 미완료 size-L 태스크가 `running`으로 남아 `tm_wait`와 `teams run`이 끝없이 폴링했다. 이제 사유와 함께 `blocked`로 읽힌다(`tm_status`도 `taskState`를 읽는다). macOS에서 `teams run`이 `caffeinate -i -w <pid>`를 띄운다(idol-pm-4 절전으로 5시간 손실). 문서: README/KOR가 size S에 PRD를 약속하지 않고, C6에 superseded 표기, 플러그인 설명 동기화. 새 테스트 1건.
 - v0.38.0 — **size S는 개발 하네스에서 돕니다**(docs/plans/2026-09-28-teams-long-loop.md S1/S1a/S2). 판정되었든 고정되었든 size S 태스크는 더 이상 기획 카드, teams 자식 런, S QA 카드를 받지 않습니다. 매니저가 `graph`·`harness` 플러그인을 실은 헤드리스 드라이버 하나를 프로젝트 cwd에서 띄우고, 드라이버는 요청을 `graph_open`(balanced 배분, claude와 codex 참여)으로, graph MCP가 없으면 harness Agent Team 폴백으로 돌립니다. Workflow 경로는 쓰지 않습니다. 런에는 `[teams-task <id>]` 태그가 붙고(폴백은 manifest의 `teams_task`), 드라이버는 포인터(`harness-run.json`)와 리포트 사본을 씁니다. 매니저는 태그가 있고 open 이후에 만들어진 런을 가리키는 포인터만 받아들이며, 아니면 태그된 런을 직접 찾습니다. 상태는 런 자신의 파일에서 읽습니다. goal gate가 수락하면 `complete`, 수락하지 않으면 `partial`(gaps가 사유), 드라이버가 `driver_restarts`를 넘겨 죽으면 `blocked`. 재기동된 드라이버는 기록된 런을 이어 가라는 지시를 받고, 사용 한도로 죽으면 `waiting_capacity`로 주차됩니다. `tm_status`/`tm_next`에 `harness: {route, run, report_path, pointer}`가 실리고, 리포트와 retro는 런에서 렌더링됩니다. 기존 `s_run` 태스크는 고정된 읽기 경로로 읽힙니다. 재기동하지 않으며, 끝나지 않은 런의 드라이버가 죽었으면 `blocked`입니다.

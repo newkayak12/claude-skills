@@ -77,16 +77,12 @@ E-a1b2c3d4/P2/U1
 `acceptance`/`briefing_path` block for each row in `cards`, not just the first. Omit either
 section header entirely when its list is empty, rather than printing it empty.
 
-## What Claude Does
+## What Claude Does / What You Do
 
-Calls `tm_inbox` with the optional `task_id` and renders both lists above — nothing more. Never
-opens a `briefing_path` itself; names it for the human to open.
-
-## What You Do
-
-Name a task (`E-xxxxxxxx`) to filter to one EPIC, or nothing for every run this session can see.
-Take a card's `key` with `take`; a `decided` entry can be objected to the same way — taking it
-pins it to you and reroutes it to waiting_human on its next attempt.
+| Claude | You |
+|--------|-----|
+| Calls `tm_inbox` with the optional `task_id` and renders both lists above — nothing more | Name a task (`E-xxxxxxxx`) to filter to one EPIC, or nothing for every run this session can see |
+| Never opens a `briefing_path` itself; names it for the human to open | Take a card's `key` with `take`; a `decided` entry can be objected to the same way (pins it to you, reroutes to waiting_human on its next attempt) |
 
 ## Related Skills
 

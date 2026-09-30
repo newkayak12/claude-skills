@@ -54,15 +54,12 @@ Print `(truncated)` only when `truncated` is true (older lines exist). Driver li
 `result <subtype> turns=N cost=$X: <text>`, `rate_limit <status>`. Ledger lines read
 `HH:MM:SS <event> k=v ...` (UTC).
 
-## What Claude Does
+## What Claude Does / What You Do
 
-Calls `tm_log({key, tail?, since?})` and prints the tail above — nothing more. Never reads the
-log file directly and never asks for `raw: true` unless the user wants the exact JSON.
-
-## What You Do
-
-Give a ticket key, STORY or EPIC, and optionally how many lines. Say "more" or "what's new" to
-continue from the last cursor.
+| Claude | You |
+|--------|-----|
+| Calls `tm_log({key, tail?, since?})` and prints the tail above — nothing more | Give a ticket key, STORY or EPIC, and optionally how many lines |
+| Never reads the log file directly; never asks for `raw: true` unless you want the exact JSON | Say "more" or "what's new" to continue from the last cursor |
 
 ## Related Skills
 
