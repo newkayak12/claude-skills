@@ -1,7 +1,7 @@
 {
   "name": "cognition",
   "description": "Thinking quality skills: assumption extraction, bias auditing (v2 — context probe, per-bias remedies, calibration check), fallacy detection, mental models, epistemic reasoning, tradeoff articulation, question upgrading, and second-order thinking.",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "author": {
     "name": "newkayak12"
   },
