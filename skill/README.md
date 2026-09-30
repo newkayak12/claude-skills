@@ -2,10 +2,11 @@
 
 **English** · [한국어](KOR.md)
 
-Two skills that inspect other skills. A SKILL.md can fail in two independent ways: it never fires
+Three skills for making and checking other skills. `create` writes a new skill shaped like its
+siblings in the same repo. Then a SKILL.md can still fail in two independent ways: it never fires
 because its `description` gives Claude no signal, or it fires and then doesn't earn its place —
-too heavy, badly structured, or no better than no skill at all. `skill-trigger-validator` measures
-and fixes the first; `skill-quality-assurance` runs the six checks that cover the second, ending
+too heavy, badly structured, or no better than no skill at all. `trigger-validator` measures
+and fixes the first; `quality-assurance` runs the six checks that cover the second, ending
 in a prioritized fix list.
 
 ## Install & Uninstall
@@ -19,12 +20,28 @@ in a prioritized fix list.
 
 | I want to… | Skill |
 |---|---|
-| Review a skill before shipping and get a ranked list of what to fix | `skill-quality-assurance` |
-| Fix a skill that doesn't fire on natural language, especially Korean | `skill-trigger-validator` |
+| Turn "I need a skill for X" into a SKILL.md that matches the repo's existing skills | `create` |
+| Review a skill before shipping and get a ranked list of what to fix | `quality-assurance` |
+| Fix a skill that doesn't fire on natural language, especially Korean | `trigger-validator` |
 
 ## Skills
 
-### `skill-quality-assurance`
+### `create`
+
+Generates a new skill's files from an intake: the gap it fills, the phrases that should trigger it,
+and what it hands back. It reads the existing skills in the target repo, picks the archetype they
+share for that kind of task (technique, workflow, and so on), and writes a `SKILL.md` with the same
+frontmatter and section order as its siblings, plus `references/` where the body would run heavy.
+It then runs the repo validator if there is one and hands off to `trigger-validator`, then
+`quality-assurance`. `write:writing-skills` stays the discipline for editing and repairing;
+`create` does the scaffold.
+
+```
+Create a skill that checks commit messages against our convention. Look at how the
+other skills in this repo are laid out first.
+```
+
+### `quality-assurance`
 
 Runs six quality checks on a skill and produces an actionable report. It reads every file in the
 skill directory — `SKILL.md`, `agents/`, `references/`, `scripts/` — noting absent directories
@@ -33,7 +50,7 @@ output quality depends on knowing what the skill promised. It is the gate before
 also useful mid-creation.
 
 ```
-Review skill/skills/skill-trigger-validator before I ship it. Six checks, and tell me
+Review skill/skills/trigger-validator before I ship it. Six checks, and tell me
 what to fix first.
 ```
 
@@ -51,7 +68,7 @@ delta, the discriminating assertions the skill enforces, and the gaps it promise
 deliver. The report closes with **Top Improvements** — 🔴 must fix / 🟡 recommended / 🟢 optional —
 written concretely enough to act on directly.
 
-### `skill-trigger-validator`
+### `trigger-validator`
 
 Audits the `description` field, the only signal Claude uses when deciding whether to invoke a
 skill, and rewrites it as a drop-in replacement. Point it at a single skill, a whole plugin, or
@@ -75,6 +92,10 @@ Use when [situation/intent]. Triggers on: "[한국어 구어체]", "[English phr
 Batch runs lead with a summary table and give full reports only for skills scoring below 7; 7+ is
 "acceptable — no action needed". After applying, it follows the repo's update workflow —
 bump the version in `marketplace.json`, update the plugin `README.md` and `KOR.md` together, commit.
+
+## Renames
+
+`skill-quality-assurance` is now `quality-assurance` and `skill-trigger-validator` is now `trigger-validator`. The old `skill:skill-quality-assurance` / `skill:skill-trigger-validator` invocations no longer resolve; use `skill:quality-assurance` / `skill:trigger-validator`.
 
 ## Related plugins
 

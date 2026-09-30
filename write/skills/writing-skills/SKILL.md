@@ -56,8 +56,8 @@ run is driving.
 |---|---|---|
 | Scope the gap | You name the miss from memory or a quick manual probe | SetGoal's acceptance criteria already state the gap as a subgoal |
 | Draft | You write the SKILL.md directly | An Implement executor writes it against the subgoal's acceptance bar |
-| Trigger check | You invoke `skill:skill-trigger-validator` yourself before calling it done | The QualityGate stage invokes it as part of scoring the subgoal |
-| Ship gate | You invoke `skill:skill-quality-assurance` yourself and act on its report | QualityGate invokes it; a failing report blocks the subgoal, not just a suggestion |
+| Trigger check | You invoke `skill:trigger-validator` yourself before calling it done | The QualityGate stage invokes it as part of scoring the subgoal |
+| Ship gate | You invoke `skill:quality-assurance` yourself and act on its report | QualityGate invokes it; a failing report blocks the subgoal, not just a suggestion |
 
 Unsure which lane you're in: if a harness pipeline handed you this task, act
 in harness-engaged mode and let its stage boundaries decide when a gate runs.
@@ -82,8 +82,8 @@ done.
    Overview or Background sits ahead of `Process`.
 5. **Run the RED-phase check** from the cycle above — by hand in solo mode,
    or read off the subgoal's acceptance criteria in harness mode.
-6. **Hand off, don't re-score.** Call `skill:skill-trigger-validator` for
-   description and trigger coverage, then `skill:skill-quality-assurance`
+6. **Hand off, don't re-score.** Call `skill:trigger-validator` for
+   description and trigger coverage, then `skill:quality-assurance`
    for the full pre-ship pass. Fix what they flag; don't re-derive their
    checks inline in the draft.
 7. **Close what the gates flagged**, re-run the gate that flagged it, repeat
@@ -98,9 +98,9 @@ A finished unit of work from this skill is:
 
 1. The `SKILL.md` file (plus any supporting files it actually points to).
 2. A one-line statement of the gap it closes (from step 1).
-3. The `skill-trigger-validator` verdict and, if it rewrote the description,
+3. The `trigger-validator` verdict and, if it rewrote the description,
    which wording won.
-4. The `skill-quality-assurance` report's Top Improvements section, with
+4. The `quality-assurance` report's Top Improvements section, with
    each 🔴 item resolved before calling the skill shipped.
 5. The version-bump / README-update diff from step 8.
 
@@ -128,15 +128,15 @@ A finished unit of work from this skill is:
 | Claude | You |
 |--------|-----|
 | Confirms the gap and drafts frontmatter + body against the Process order | Confirm the stated gap is the real one, not a proxy for it |
-| Calls `skill:skill-trigger-validator` and `skill:skill-quality-assurance` rather than self-scoring | Read both reports; call the go/no-go on anything not clearly 🔴 |
+| Calls `skill:trigger-validator` and `skill:quality-assurance` rather than self-scoring | Read both reports; call the go/no-go on anything not clearly 🔴 |
 | Applies fixes the gates flag and re-runs the gate that flagged them | Approve the final draft before it ships |
 | Performs the version/README housekeeping the boundaries convention requires | Confirm the version bump matches what actually changed |
 
 ## Related Skills
 
-- `skill:skill-trigger-validator` — scores and rewrites the `description`
+- `skill:trigger-validator` — scores and rewrites the `description`
   field for trigger coverage; the authority on step 6's first half.
-- `skill:skill-quality-assurance` — the six-check pre-ship gate; the
+- `skill:quality-assurance` — the six-check pre-ship gate; the
   authority on step 6's second half and on whether a skill is worth keeping
   at all.
 - `develop:test-driven-development` — source of the RED-GREEN-REFACTOR shape

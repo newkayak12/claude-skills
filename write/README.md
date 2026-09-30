@@ -189,7 +189,7 @@ Common failures it fixes:
 ### `writing-skills`
 
 Authors convention-compliant `SKILL.md` files and refuses to grade its own output — trigger coverage
-goes to `skill:skill-trigger-validator` and the pre-ship pass to `skill:skill-quality-assurance`. It
+goes to `skill:trigger-validator` and the pre-ship pass to `skill:quality-assurance`. It
 borrows the TDD shape for prose: name a scenario where an agent misbehaves *without* the skill,
 confirm the miss is a real gap, then write the smallest draft that closes it. No confirmed gap, no
 draft.
@@ -205,8 +205,8 @@ description이 "Use when"으로 시작하게 하고, 트리거 검증까지 돌�
 |---|---|---|
 | Scope the gap | You name the miss from memory or a manual probe | SetGoal's acceptance criteria already state it |
 | Draft | You write the SKILL.md | An Implement executor writes it against the subgoal bar |
-| Trigger check | You invoke `skill:skill-trigger-validator` | QualityGate invokes it while scoring the subgoal |
-| Ship gate | You invoke `skill:skill-quality-assurance` and act on its report | QualityGate invokes it; a failing report blocks the subgoal |
+| Trigger check | You invoke `skill:trigger-validator` | QualityGate invokes it while scoring the subgoal |
+| Ship gate | You invoke `skill:quality-assurance` and act on its report | QualityGate invokes it; a failing report blocks the subgoal |
 
 If a harness pipeline handed you the task, act in harness-engaged mode; otherwise default to solo and
 run both gates yourself. Shipping also means bumping the plugin version in
