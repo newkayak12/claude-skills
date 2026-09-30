@@ -1,7 +1,7 @@
 {
   "name": "planning",
   "description": "Planning skills: pre-flight plan gating (review a plan, set a QualityGate pass-bar per step, route to the right executor) and roadmap planning.",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "author": {
     "name": "newkayak12"
   },
