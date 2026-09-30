@@ -139,5 +139,8 @@ harness 레이아웃 버전 체크 + 계약 테스트, `drivercost`를 `mcp/`로
 **우선순위(제안):**
 1. 즉시(doc fix, 설계 절차 불필요): README/KOR:9-11과 S 다이어그램, cards-everywhere C6 superseded 주석, marketplace 설명 동기화.
 2. 설계 절차 필요(plan→setgoal→critique→승인): 예산 하드 캡과 무제한 경고, 데몬 heartbeat와 사망 상태 승격, harness 레이아웃 계약 테스트.
+
+> **정정 (2026-09-30, 사용자):** 사용자는 비용이 들어도 완성된 결과를 원한다. 예산 하드 캡은 기본값으로 두지 않고, 기본 무제한을 유지한다.
+> 막을 대상은 지출이 아니라 **낭비**(같은 실패의 반복)다. 실행 범위는 `2026-09-30-teams-direction-plan.md`(축소판)를 따른다.
 3. 측정(비용 발생, 상한 먼저): 본문 개선 경로 1·2 — trap P1/Q1, 엔진 vs 얇은 gate.
 4. 구조 정리(급하지 않음): CURRENT.md, `s_run` legacy 추출, `drivercost` 이동.
