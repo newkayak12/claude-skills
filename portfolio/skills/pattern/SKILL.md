@@ -33,7 +33,7 @@ compatibility:
 - NEVER fire a flag on a boundary value. The ~20% decision-verb and 60% number-free thresholds are provisional (잠정): set from eval fixtures, not screening research, and never presented as industry numbers. A flag fires only when the value is at least 10 points past the threshold *and* one entry moving would not bring it back. Otherwise the tally line reads `경계 (58%, 기준 ~60%)` — in general `경계 (값, 기준 ~N%)` — and no flag is raised.
 - NEVER measure the `저는/제가` rate (see Subject Audit).
 
-**Not for** rewriting weak sections (`rewrite`), overall quality scoring (`feedback`), or JD keyword matching (`jd-fit`).
+**Not for** rewriting weak sections (`rewrite`), overall quality scoring (`feedback`), or JD keyword matching (`fit`).
 
 Input: the portfolio text (paste or upload); Korean fully supported.
 
@@ -138,4 +138,4 @@ For each flagged pattern: one concrete fix that changes shape, never adds a fact
 
 - `../rewrite/SKILL.md` — act on the patterns identified here
 - `../feedback/SKILL.md` — overall assessment alongside pattern analysis
-- `../jd-fit/SKILL.md` — after improving patterns, check fit against a specific JD
+- `../fit/SKILL.md` — after improving patterns, check fit against a specific JD
