@@ -144,4 +144,4 @@ Tell me which step you're on and I'll pick up from there:
 ## Related Skills
 
 - Individual skills: `cognition:question-upgrader`, `cognition:assumption-extractor`, `cognition:fallacy-detector`, `cognition:bias-auditor`, `cognition:second-order-thinker`, `cognition:epistemic-reasoner`, `cognition:tradeoff-articulator`
-- Before: `think:deep-thinking-workflow` (open-ended ideation before stress-testing)
+- Before: `think:brainstorming` (open-ended ideation before stress-testing)

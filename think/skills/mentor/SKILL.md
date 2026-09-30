@@ -2,16 +2,16 @@
 name: mentor
 effort: high
 description: >-
-  Use when someone brings a question about how to decide, judge, or live and wants it examined
-  rather than answered. Philosophical mentor — takes a position, tests theirs. Triggers: "멘토가
-  필요해", "조언이 필요해", "이렇게 사는 게 맞나", "어떻게 판단해야 할지", "mentor me".
+  Use when someone wants a senior mentor's judgment in any field: career, craft, work, study,
+  relationships, life. Takes a position, tests theirs. Triggers: "멘토링 해줘", "선배처럼 조언",
+  "mentor me", "커리어 고민", "how would a senior think about this".
 scenarios:
-  - "I keep making the same kind of choice and I don't know what's driving it"
-  - "Everyone says take the promotion. I want the question examined, not the answer"
-  - "Tell me where my reasoning about this is weak — don't be nice about it"
-  - "내가 지금 기준으로 삼고 있는 게 맞는 기준인지 모르겠어"
-  - "결정은 내렸는데 왜 찜찜한지 모르겠어, 같이 따져줘"
-  - "멘토처럼 얘기해줘. 위로 말고 진짜 생각을 말해줘"
+  - "Mentor me on whether to take the staff-engineer track or move into management"
+  - "How would a senior think about this design call? I keep second-guessing my judgment"
+  - "I'm studying for a certification and keep restarting. Tell me what's actually going on"
+  - "커리어 고민이야. 선배처럼 진짜 생각을 말해줘, 위로 말고"
+  - "팀장이랑 자꾸 부딪히는데 내가 뭘 놓치고 있는지 같이 따져줘"
+  - "결정은 내렸는데 왜 찜찜한지 모르겠어, 멘토링 해줘"
 compatibility:
   recommended:
     - think-tool
@@ -42,12 +42,13 @@ related:
 
 # Mentor
 
-Examines the question someone brings instead of answering it — then says what it thinks anyway.
-Most questions arrive misfiled: a values question dressed as a decision, a fear dressed as a
+A mentor for any field — career, engineering craft, work, study, working relationships, life
+decisions. Examines the question someone brings instead of answering it — then says what it thinks
+anyway. Most questions arrive misfiled: a values question dressed as a decision, a fear dressed as a
 constraint, an inherited standard treated as a fact. The first job is finding out which.
 
-**Not for** producing a decision artifact
-(`deep-thinking-workflow`), auditing an argument's logic (`cognition:critical-thinking-workflow`),
+**Not for** weighing options against explicit criteria
+(`cognition:tradeoff-articulator`), auditing an argument's logic (`cognition:critical-thinking-workflow`),
 or pure fact-finding inside a technical or product question — benchmarks, spec comparisons,
 implementation (hand that part to the `develop:` or `planning:` skill and say so). Career and
 technical *decisions* stay here: examine the judgment, hand over only the facts.
@@ -91,7 +92,7 @@ thing they should notice next time this shape appears.
 
 ## Moves
 
-Philosophical operations, not labels. Never say the name out loud.
+Operations, not labels. Never say the name out loud.
 
 | Move | Use when | The operation |
 |---|---|---|
@@ -116,7 +117,7 @@ Philosophical operations, not labels. Never say the name out loud.
 ## Pulling other skills
 
 Name the skill when you run it or hand over — the repo's rule is that invocation is visible. Never
-name the philosophical move.
+name the move.
 
 | The question turns out to be about | Skill |
 |---|---|
@@ -175,7 +176,7 @@ Skip any line you can't fill honestly. A `[내 생각]` you don't have is worse 
 
 ## Related Skills
 
-- `think:deep-thinking-workflow` — when what you need is the decision artifact, not the examination
+- `cognition:tradeoff-articulator` — when the options and criteria are clear and what you need is the comparison, not the examination
 - `cognition:critical-thinking-workflow` — when a specific argument, not a person's judgment, is the subject
 - `think:redefine-problem` — when the question itself is mis-stated and that is the whole finding
 - `cognition:epistemic-reasoner` — when the issue is whether the grounds support the belief at all

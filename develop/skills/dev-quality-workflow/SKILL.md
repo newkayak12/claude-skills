@@ -142,5 +142,5 @@ compatibility:
 ## Related Skills
 
 - Peer: `develop:microservices-architect`, `develop:event-storming`, `develop:clean-architecture`
-- Before: `think:deep-thinking-workflow` (for design decisions)
+- Before: `think:brainstorming` (for design decisions)
 - After: `planning:roadmap-planning` (Phase 5 — Communicate Roadmap; audience-specific stakeholder messaging when shipping)
