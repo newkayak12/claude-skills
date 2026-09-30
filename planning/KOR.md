@@ -44,10 +44,12 @@ docs/plans/billing-retry.md 지난주에 쓴 건데, 지금 코드 기준으로 
 | Ambiguity | 모르는 사람에게 그대로 넘길 수 없는 단계 | STOP — 의도부터 확정 |
 | Drift | 계획이 전제한 파일·API·스키마가 이미 바뀜 | STOP — 계획이 낡음 |
 
-핸드오프 라우팅: 독립적인 단계 → `agents:dispatching-parallel-agents`, 순차·의존 단계 →
-`agents:subagent-driven-development`. 애매하면 기본은 순차입니다 — 병렬 오판이 순서대로 도는
-것보다 비쌉니다. 각 단계의 완료 판정은 실행자의 말이 아니라 2단계에서 정한 기준에 대고
-`completion:verification-before-completion`이 내립니다.
+핸드오프 라우팅: 단계를 의존성 순서의 레이어로 나눕니다. 한 레이어 안에서 독립적인 단계 →
+`agents:dispatching-parallel-agents`, 순차·의존 단계 → `agents:subagent-driven-development`
+(계획 순서대로). 다음 레이어는 이전 레이어의 모든 단계가 2단계 기준을 통과한 뒤에 시작합니다.
+애매하면 기본은 순차입니다 — 병렬 오판이 순서대로 도는 것보다 비쌉니다. 각 단계의 완료 판정은
+실행자의 말이 아니라 2단계에서 정한 기준에 대고 `completion:verification-before-completion`이
+내립니다.
 
 **하네스 인지 듀얼 모드.** 이 스킬은 두 가지로 돌도록 쓰였습니다 — 위처럼 단독으로, 그리고 하네스
 SetGoal 단계가 subgoal 실행자로 선택할 수 있는 executor로 (`harness:harness`의 "Optional skill

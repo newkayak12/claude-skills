@@ -51,6 +51,9 @@ subtask로 나누고 각각 프롬프트도 써줘.
 
 입도 기준: 30분짜리는 subtask 1–2개, 반나절짜리는 3–5개, 며칠짜리는 5–10개(각각 반나절 이하).
 
+핸드오프: 먼저 `planning:executing-plans`로 계획을 게이트하고, 독립적인 레이어는
+`dispatching-parallel-agents`로, 순차 subtask는 `subagent-driven-development`로 실행합니다.
+
 ### `dispatching-parallel-agents`
 
 독립적인 작업이 2개 이상일 때 쓰는 job 할당기입니다. 동시에 뿌리면서 각 작업에 맞는 persona를
@@ -68,15 +71,16 @@ agent-tool-abort.test.ts 타이밍 실패. 원인도 파일도 달라 — 각 �
 게이트: `0. INDEPENDENCE`(공유 파일·인과 관계 없음 확인) → `1. ALLOCATE`(작업 신호 → persona) →
 `2. DISPATCH`(격리된 에이전트, 병렬) → `3. GATHER`(충돌 확인, 전체 재실행, 최종 판정은
 `completion:verification-before-completion`). persona 매칭은 고정 목록이 아니라 작업의 지배적
-신호로 동적으로 합니다.
+신호로 동적으로 합니다. 파일을 쓰는 에이전트는 런타임이 지원하면 `isolation: "worktree"`를
+권장하고, 지원하지 않으면 0단계의 공유 파일 없음 확인이 대체 수단입니다.
 
 ### `subagent-driven-development`
 
 구현 계획을 현재 세션에서 실행합니다. 태스크마다 새 서브에이전트를 붙이고, 끝나면 spec 준수
 리뷰어와 코드 품질 리뷰어를 같은 턴에 함께 띄우며, 둘 다 같은 라운드에서 통과해야 그 태스크가
-완료입니다. 계획이 있고, 태스크가 대체로 독립적이고, 이 세션에 머물고 싶을 때 쓰세요. 별도로
-게이트된 세션이 필요하면 `planning:executing-plans`를, 태스크가 강하게 얽혀 있거나 계획이 아직
-없으면 수동 실행을 쓰세요.
+완료입니다. 태스크는 계획 순서대로 하나씩 실행하므로 뒤 태스크가 앞 태스크 결과 위에 쌓일 수
+있습니다. 계획이 있고 이 세션에 머물고 싶을 때 쓰세요. `planning:executing-plans`가 계획을
+게이트한 뒤 순차·의존 단계를 여기로 넘깁니다. 계획이 아직 없으면 수동 실행을 쓰세요.
 
 ```
 docs/plans/workspace-invites.md에 계획 있어. 태스크마다 새 서브에이전트로 구현하고
@@ -105,6 +109,6 @@ docs/plans/workspace-invites.md에 계획 있어. 태스크마다 새 서브에�
 
 ## 관련 플러그인
 
-- `planning:executing-plans` — 계획을 게이트해서 위 두 실행자 중 하나로 라우팅.
+- `planning:executing-plans` — 계획을 게이트해서 의존성 순서의 레이어로 나눠 라우팅 — 독립 단계는 `dispatching-parallel-agents`, 순차 단계는 `subagent-driven-development`.
 - `completion:verification-before-completion` — 모든 "완료" 주장을 격리된 증거로 판정.
 - `harness:harness` — 하나의 목표에 대한 고정 수직 단계. 이 스킬들은 수평 축.

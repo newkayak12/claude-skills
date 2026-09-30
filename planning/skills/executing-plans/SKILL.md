@@ -61,8 +61,12 @@ plan downstream.
             the observable check that proves that step is done. No bar → stand
             one up before routing. (verify-level; see verification-before-completion)
 3. HAND-OFF Route execution — this skill does not execute:
-            → steps are independent → agents:dispatching-parallel-agents
-            → steps are sequential/dependent → agents:subagent-driven-development
+            → sort steps by dependency into ordered layers
+            → in a layer, 2+ steps with no shared files and no causal order
+              → agents:dispatching-parallel-agents
+            → every other step → agents:subagent-driven-development, in plan order
+            → a layer starts only after the previous layer's steps meet their
+              step-2 bars
             Each step's done-verdict is settled against its step-2 bar by
             completion:verification-before-completion, not the executor's word.
 ```
@@ -97,13 +101,18 @@ REVIEW defect (ambiguity) and stop. The bars travel with the plan to the executo
 This skill's output is a **gated plan** (reviewed, bars attached) plus a routing
 decision. It never edits code itself.
 
+Sort the steps by dependency into ordered layers. Route each layer:
+
 ```
-independent steps (no shared files, no causal order)
+2+ steps in the layer with no shared files and no causal order
     → agents:dispatching-parallel-agents   (fan out, one persona-matched agent per step)
 
-sequential / dependent steps
-    → agents:subagent-driven-development    (one fresh subagent per step, in order)
+every other step (sequential / dependent)
+    → agents:subagent-driven-development    (one fresh subagent per step, in plan order)
 ```
+
+A layer starts only after the previous layer's steps meet their step-2 pass bars,
+settled by `completion:verification-before-completion`.
 
 Default when unsure: sequential. A wrong parallel call costs more than running in
 order would have. Whichever executor runs it, each step is closed out against its
@@ -137,8 +146,8 @@ step-2 bar via `completion:verification-before-completion`.
 ## Related
 
 - `write:plans` — produces the plan this skill gates (upstream).
-- `agents:dispatching-parallel-agents` — executor for independent steps (downstream).
-- `agents:subagent-driven-development` — executor for sequential/dependent steps.
+- `agents:dispatching-parallel-agents` — executor for a layer's independent steps (downstream).
+- `agents:subagent-driven-development` — executor for sequential/dependent steps, in plan order.
 - `completion:verification-before-completion` — settles each step's done-verdict
   against the bar set here.
 - `harness:harness` — the six-stage engine; this skill is the solo counterpart of

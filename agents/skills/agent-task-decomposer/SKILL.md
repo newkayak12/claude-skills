@@ -77,7 +77,7 @@ Bad subtask boundaries have:
 Draw the dependency graph (even mentally) before assigning subtasks to agents.
 
 ```
-Independent subtasks  → can run in parallel (use dispatching-parallel-agents)
+Independent subtasks  → can run in parallel (use agents:dispatching-parallel-agents)
 Sequential subtasks   → one agent hands off to the next
 Mixed graph           → parallelize the independent layers, sequence the rest
 ```
@@ -86,6 +86,8 @@ Mark explicitly:
 - Which subtasks can start immediately with available context
 - Which subtasks are blocked until another subtask completes
 - What the handoff artifact looks like between dependent stages
+
+Hand-off: gate the plan with `planning:executing-plans` first, then run independent layers via `agents:dispatching-parallel-agents` and sequential/dependent subtasks via `agents:subagent-driven-development`.
 
 ---
 
@@ -191,3 +193,9 @@ If a subtask feels trivially small, merge it with an adjacent one — but only i
 | Maps the full task and asks one focused question if it's unclear | Give the deliverable, constraints, and consumer |
 | Splits it along seams and maps dependencies | Confirm the subtask boundaries |
 | Writes a constrained prompt with an output contract per subtask | Review the prompts before dispatch |
+
+## Related
+
+- `planning:executing-plans` — gate the decomposed plan before execution.
+- `agents:dispatching-parallel-agents` — fan out the independent layers.
+- `agents:subagent-driven-development` — run sequential/dependent subtasks.
