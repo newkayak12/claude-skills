@@ -264,7 +264,7 @@ Add the remote SSE endpoints in Claude settings → MCP Servers.
   `deep-thinking-workflow` once the question is stated right and a deliverable is what's left.
 - After a decision, feed it into `develop:dev-quality-workflow` (engineering handoff) or
   `planning:roadmap-planning` (sequencing a product/strategy decision into a roadmap).
-- `technique-write:design-review-writer` turns the divergence and stress-test output into a
+- `write:plans` (design review format) turns the divergence and stress-test output into a
   reviewable design doc.
 
 ---

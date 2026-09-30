@@ -22,7 +22,6 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 /plugin install portfolio@newkayak12-claude-skills
 /plugin install skill@newkayak12-claude-skills
 /plugin install teams@newkayak12-claude-skills
-/plugin install technique-write@newkayak12-claude-skills
 /plugin install think@newkayak12-claude-skills
 /plugin install write@newkayak12-claude-skills
 ```
@@ -42,6 +41,5 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 | [portfolio](./portfolio/README.md) · [한국어](./portfolio/KOR.md) | Portfolio and career: feedback, JD analysis, interview prep |
 | [skill](./skill/README.md) · [한국어](./skill/KOR.md) | Skill creation, improvement, and validation |
 | [teams](./teams/README.md) · [한국어](./teams/KOR.md) | TaskManager MCP and per-flow teams (develop, document, plan, qa) with an EPIC/STORY board |
-| [technique-write](./technique-write/README.md) · [한국어](./technique-write/KOR.md) | Fixed-template Design Reviews and ADRs |
 | [think](./think/README.md) · [한국어](./think/KOR.md) | Brainstorming, devil's advocate, problem reframing, and more |
 | [write](./write/README.md) · [한국어](./write/KOR.md) | Documentation, writing plans, and content review |

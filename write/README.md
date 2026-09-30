@@ -19,7 +19,7 @@ run it alone, and a machine-readable spec when a `harness:harness` run is drivin
 
 | I want to… | Skill |
 |---|---|
-| Plan an implementation, co-write a doc others will read (PRD, design doc, RFC), write a technical blog post, or give feedback that lands | `plans` |
+| Plan an implementation, co-write a doc others will read (PRD, design doc, RFC), write a design review or ADR, write a technical blog post, or give feedback that lands | `plans` |
 | Write or fix a SKILL.md | `writing-skills` |
 | Review text, or draft a PR description / post that reads as human-written | `writer-verification` |
 | Rewrite text so it sounds like *me*, learned from my own samples | `write-like-me` |
@@ -80,6 +80,65 @@ never drafts all sections upfront and never starts before it knows who the prima
 Per document it produces: the document structure, the drafted sections, review comments on clarity
 and gaps, and a revision log. In Claude Code, Reader Testing runs the `agents/reader-agent.md`
 subagent; on claude.ai it falls back to `references/manual-reader-testing.md`.
+
+#### Design review
+
+Drives a section-by-section interview and assembles the result into a fixed 8-section Design Review.
+It never drafts all sections in one shot, requires at least two alternatives in §6, runs
+`devils-advocate` against the proposed design before writing the trade-offs, and writes §1 Summary
+last. Skip it for a one-line fix, or when the decision is already made — in that case it stops and
+switches to the ADR format.
+
+```
+결제 모듈을 새로 만들려고 해. PG 연동이랑 정산 분리가 쟁점인데
+design review 문서 같이 잡아줘.
+```
+
+Fixed section order (optional sections are only filled when you confirm they apply):
+
+```text
+Metadata → 1. Summary → 2. Background & Context → 3. Goals & Non-Goals
+→ 4. Requirements (Functional / Non-Functional) → 5. Proposed Design
+→ 6. Alternatives Considered → 7. Trade-offs → 8. Impact Analysis
+→ Optional: Migration/Rollout · Rollback · Observability · Testing Strategy
+           · Security & Compliance · Operational Concerns · Open Questions
+           · Timeline & Milestones
+→ Review Comments
+```
+
+Saved to `docs/design-reviews/YYYY-MM-DD-<short-slug>.md`. Once the status is Approved, it switches
+to the ADR format and cross-links both documents.
+
+#### ADR
+
+Turns an approved Design Review — or raw decision context — into a numbered ADR. The Decision must
+be declarative (`~를 채택한다`, `~로 한다`); hedging like `~를 고려한다` is rejected. Consequences
+always carry all three buckets, and an empty Negative triggers `bias-auditor` rather than being left
+blank. An accepted ADR is never edited or deleted: reverse it with a new ADR and mark the old one
+`Superseded by ADR-XXXX`.
+
+```
+Postgres 대신 Aurora로 가기로 결정했어. docs/design-reviews/2026-03-11-storage.md
+기반으로 ADR 써줘. 기존 ADR-0001을 대체하는 거야.
+```
+
+Fixed section order:
+
+```text
+# ADR-NNNN: [결정 제목]
+Metadata (Status / Date / Deciders / Related)
+→ Context → Decision → Rationale
+→ Consequences (Positive / Negative / Neutral) → References
+```
+
+Stored at `docs/adr/NNNN-<slug>.md` with sequential numbering:
+
+```text
+docs/adr/
+  0001-use-postgresql-as-primary-store.md
+  0002-adopt-kafka-for-inter-service-events.md
+  0007-supersede-0001-migrate-to-aurora.md
+```
 
 #### Blog
 

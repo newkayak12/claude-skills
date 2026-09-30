@@ -2,10 +2,10 @@
 name: plans
 description: >-
   Use when writing starts from a plan: an implementation plan before coding, a document others
-  will read (PRD, design doc, RFC, proposal, spec), a technical blog post, or SBI feedback to a
+  will read (PRD, design doc, RFC, proposal, spec), a design review or ADR, a technical blog post, or SBI feedback to a
   colleague. Triggers: "구현 계획 써줘", "implementation plan", "코딩 전에 계획 잡아줘", "migration plan",
   "리팩토링 계획", "문서 같이 써줘", "PRD 작성", "design doc", "RFC 초안", "제안서 써야 해", "기술 블로그 써줘",
-  "technical blog", "회고 글", "피드백 어떻게 말해?", "SBI", "peer review 써야 해".
+  "technical blog", "회고 글", "ADR 써줘", "write an ADR", "design review 문서", "피드백 어떻게 말해?", "SBI", "peer review 써야 해".
 scenarios:
   - "이 기능 구현 계획 작성해줘"
   - "Create an implementation plan for this new service"
@@ -26,7 +26,7 @@ compatibility:
 
 ## Step 0 — Purpose
 
-Read the purpose from the request or briefing; ask only when it is genuinely ambiguous.
+Ask which format to write — unless the request or briefing already names one.
 The implementation plan is the default: a hand-off from `think:brainstorming`,
 `planning:executing-plans`, `agents:subagent-driven-development` or the harness gets it
 without a question.
@@ -35,6 +35,8 @@ without a question.
 |---|---|---|
 | implementation plan | code/migration/refactor work, any plan hand-off | Overview → Process below |
 | document | PRD, design doc, RFC, proposal, decision doc, spec — including a teams briefing that names one | `references/document.md` (Stage 3 uses `agents/reader-agent.md`) |
+| design review | options still open, reviewers argue alternatives and trade-offs | `references/formats/design-review.md` (fixed 8 sections) |
+| ADR | a decision already made, to be recorded | `references/formats/adr.md` (fixed template, `docs/adr/NNNN-*.md`) |
 | blog | technical blog, 회고 글, tutorial | `references/document.md` + `references/examples/blog.md` |
 | feedback | feedback to a colleague, praise, peer review | `references/examples/sbi.md` (short form, no section loop) |
 

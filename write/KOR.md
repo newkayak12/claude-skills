@@ -19,7 +19,7 @@ harness-aware입니다 — 혼자 돌리면 문서를 내고, `harness:harness` 
 
 | 하고 싶은 것 | 스킬 |
 |---|---|
-| 구현 계획 세우기, 남이 읽을 문서(PRD, design doc, RFC) 같이 쓰기, 기술 블로그 쓰기, 닿는 피드백 쓰기 | `plans` |
+| 구현 계획 세우기, 남이 읽을 문서(PRD, design doc, RFC) 같이 쓰기, 디자인 리뷰·ADR 쓰기, 기술 블로그 쓰기, 닿는 피드백 쓰기 | `plans` |
 | SKILL.md 쓰거나 고치기 | `writing-skills` |
 | 글 검토, 또는 사람이 쓴 것처럼 읽히는 PR 설명·글 초안 | `writer-verification` |
 | 내 글 샘플로 배운 *내* 말투로 다시 쓰기 | `write-like-me` |
@@ -79,6 +79,63 @@ Solo 모드의 태스크 형태:
 문서마다 나오는 것: 문서 구조, 섹션별 초안, 명확성·누락에 대한 리뷰 코멘트, 수정 로그. Claude
 Code에서는 Reader Testing이 `agents/reader-agent.md` 서브에이전트로 돌고, claude.ai에서는
 `references/manual-reader-testing.md`로 대체됩니다.
+
+#### 디자인 리뷰
+
+섹션별로 질문을 몰아가며 8섹션 고정 템플릿으로 문서를 조립합니다. 한 번에 전 섹션을 쓰지 않고,
+§6에 대안을 최소 2개 요구하고, §7 trade-off를 쓰기 전에 제안 설계에 `devils-advocate`를 돌리고,
+§1 Summary는 맨 마지막에 씁니다. 한 줄짜리 수정에는 쓰지 마세요. 결정이 이미 끝났다면 이 형식은
+멈추고 ADR 형식으로 넘어갑니다.
+
+```
+결제 모듈을 새로 만들려고 해. PG 연동이랑 정산 분리가 쟁점인데
+design review 문서 같이 잡아줘.
+```
+
+고정 섹션 순서 (optional 섹션은 해당된다고 확인해줄 때만 채웁니다):
+
+```text
+Metadata → 1. Summary → 2. Background & Context → 3. Goals & Non-Goals
+→ 4. Requirements (Functional / Non-Functional) → 5. Proposed Design
+→ 6. Alternatives Considered → 7. Trade-offs → 8. Impact Analysis
+→ Optional: Migration/Rollout · Rollback · Observability · Testing Strategy
+           · Security & Compliance · Operational Concerns · Open Questions
+           · Timeline & Milestones
+→ Review Comments
+```
+
+저장 위치는 `docs/design-reviews/YYYY-MM-DD-<short-slug>.md`. Status가 Approved가 되면
+ADR 형식으로 넘어가 두 문서를 서로 링크합니다.
+
+#### ADR
+
+승인된 Design Review — 또는 맨 컨텍스트 — 를 번호 붙은 ADR로 만듭니다. Decision은 반드시 단정형
+(`~를 채택한다`, `~로 한다`)이어야 하고 `~를 고려한다` 같은 헤지는 거부합니다. Consequences는 항상
+세 칸을 다 채우며, Negative가 비면 그냥 두지 않고 `bias-auditor`를 부릅니다. Accepted된 ADR은
+수정도 삭제도 하지 않습니다 — 새 ADR로 뒤집고 옛 문서에 `Superseded by ADR-XXXX`를 답니다.
+
+```
+Postgres 대신 Aurora로 가기로 결정했어. docs/design-reviews/2026-03-11-storage.md
+기반으로 ADR 써줘. 기존 ADR-0001을 대체하는 거야.
+```
+
+고정 섹션 순서:
+
+```text
+# ADR-NNNN: [결정 제목]
+Metadata (Status / Date / Deciders / Related)
+→ Context → Decision → Rationale
+→ Consequences (Positive / Negative / Neutral) → References
+```
+
+`docs/adr/NNNN-<slug>.md`에 순차 번호로 저장합니다:
+
+```text
+docs/adr/
+  0001-use-postgresql-as-primary-store.md
+  0002-adopt-kafka-for-inter-service-events.md
+  0007-supersede-0001-migrate-to-aurora.md
+```
 
 #### 블로그
 

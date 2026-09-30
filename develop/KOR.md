@@ -113,7 +113,7 @@ Step 4로 바로 갑니다.
 도메인 발견부터 결정 문서화까지 7단계: `event-storming`(도메인이 이미 명확하면 생략) →
 `domain-driven-design` → `service-boundary-validator` → `clean-architecture` →
 `architecture-designer` → `microservices-architect`(모놀리스 유지면 생략) →
-`technique-write:adr-writer`. 마지막 ADR 단계만은 절대 건너뛰지 않습니다. 신규 시스템이나
+`write:plans` (ADR format). 마지막 ADR 단계만은 절대 건너뛰지 않습니다. 신규 시스템이나
 모놀리스 → MSA 검토용이고, 안정된 기존 아키텍처 안에서 반복 작업할 때는 개별 스킬을 쓰세요.
 
 ```
@@ -568,7 +568,7 @@ REST API, SRE 파이프라인 연동만 필요한 경우(`sre-engineer`)는 제�
 아직 없는 문서를 만듭니다. 함수·클래스 docstring과 JSDoc, 기존 API에서 생성한 OpenAPI/Swagger
 스펙, 문서 사이트, README, 튜토리얼을 다룹니다. 먼저 선호 포맷과 제외 대상을 묻고 코드베이스의
 기존 관례를 따르며, 없으면 Python은 Google 스타일, TypeScript/JS는 JSDoc이 기본입니다.
-아키텍처 결정 기록은 `technique-write:adr-writer`, 문서 체계 설계는 `documentation-strategy`입니다.
+아키텍처 결정 기록은 `write:plans` (ADR format), 문서 체계 설계는 `documentation-strategy`입니다.
 
 ```
 이 모듈에 문서가 전혀 없습니다. 공개 API에 docstring을 붙이고 컨트롤러에서 OpenAPI

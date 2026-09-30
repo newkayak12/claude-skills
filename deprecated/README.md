@@ -9,6 +9,7 @@ be read and lifted; nothing routes to them.
 | `leadership` | 5 | `fef3604` (2026-08-27), unlinked deliberately 2026-09-11 | IC/manager leveling and 1-on-1 preparation |
 | `pm` | 22 | `dab44e5` (2026-08-30, hidden); moved here 2026-09-28 | product management; think/planning/develop now carry what they used (planning 1.2.0 absorbed hypothesis, prioritization and problem-validation parts), teams inlined its PRD contract at 0.20.0 |
 | `harness-beta` | 2 | `d396f2d` (2026-09-08), its only commit | routing idea (classifier choosing Agent Team vs. Dynamic Workflow) absorbed into `graph` |
+| `technique-write` | 2 | 2026-09-30 | fixed-template Design Review and ADR; now formats of `write:plans` (`write/skills/plans/references/formats/`) |
 
 ## Skills and artifacts (moved 2026-09-29, `docs/plans/2026-09-29-repo-tidy.md`)
 
