@@ -33,7 +33,7 @@ _graph/nodes.jsonl             # or graph/nodes.jsonl
 _graph/edges.jsonl             # or graph/edges.jsonl
 ```
 
-Markdown is indexed through each catalog record's `path`; the indexer does not crawl arbitrary `*.md` files. If Markdown exists without `_knowledge/catalog.jsonl`, use `knowledge:knowledge-base-builder` to create the catalog before indexing. If graph or RAG JSONL must be produced or repaired, use `knowledge:knowledge-graph-builder` or `knowledge:rag-corpus-builder` first.
+Markdown is indexed through each catalog record's `path`; the indexer does not crawl arbitrary `*.md` files. If Markdown exists without `_knowledge/catalog.jsonl`, use `knowledge:base-builder` to create the catalog before indexing. If graph or RAG JSONL must be produced or repaired, use `knowledge:graph-builder` or `knowledge:rag-corpus-builder` first.
 
 ## Build
 
@@ -106,7 +106,7 @@ same questions used to judge it.
    nothing.
 2. **Read `repair_targets` before proposing an edit.** Each entry names an unretrieved required
    note, how many questions it blocks, and its `gap`: `missing-note` means the note is absent
-   from the catalog and this is an extraction job for `knowledge:knowledge-base-builder`;
+   from the catalog and this is an extraction job for `knowledge:base-builder`;
    `no-lookup-vocabulary` means the note carries no aliases, user terms, or source symbols;
    `ranking` means the vocabulary exists and something else is outranking it. Start with the
    note blocking the most questions, not the note that is easiest to edit.
@@ -114,7 +114,7 @@ same questions used to judge it.
    relation record's `participants` before touching vocabulary: search pulls declared
    participants in on its own, so an undeclared side is a catalog defect, not a lookup one.
 3. **Ground each added term in the repo, not in the question set.** See the vocabulary-bridge
-   repair rules in [answerability-contract.md](../knowledge-base-builder/references/answerability-contract.md).
+   repair rules in [answerability-contract.md](../base-builder/references/answerability-contract.md).
 4. **Re-index and re-score after each change, against the saved run.** One edit per measurement;
    a batch of edits cannot be attributed or reverted.
 5. **Sweep the fusion split before accepting a semantic provider's losses.** With a real
@@ -165,7 +165,7 @@ report that plainly instead of citing the dev gain.
 
 Do not cite the SQLite file as source evidence and do not commit it merely to share knowledge. Commit or synchronize the canonical Markdown and JSONL instead. Do not modify source artifacts during an index-only request.
 
-Read [the local SQLite reference](../knowledge-query/references/local-sqlite.md) when Docker operation, MCP routing, Ollama configuration, or failure recovery is needed.
+Read [the local SQLite reference](../query/references/local-sqlite.md) when Docker operation, MCP routing, Ollama configuration, or failure recovery is needed.
 
 ## What Claude Does / What You Do
 
@@ -176,7 +176,7 @@ Read [the local SQLite reference](../knowledge-query/references/local-sqlite.md)
 
 ## Related Skills
 
-- `knowledge:knowledge-base-builder` - create the Markdown catalog that controls note inclusion.
-- `knowledge:knowledge-graph-builder` - create or repair graph node and edge JSONL.
+- `knowledge:base-builder` - create the Markdown catalog that controls note inclusion.
+- `knowledge:graph-builder` - create or repair graph node and edge JSONL.
 - `knowledge:rag-corpus-builder` - create or repair retrieval chunk JSONL.
-- `knowledge:knowledge-query` - query and cite evidence from an existing index after the build.
+- `knowledge:query` - query and cite evidence from an existing index after the build.

@@ -1,5 +1,5 @@
 ---
-name: knowledge-graph-builder
+name: graph-builder
 description: >-
   Use when building knowledge graphs by extracting source-grounded entities,
   relationships, properties, evidence, schema, and graph-ready data from code,
@@ -107,8 +107,8 @@ For exploratory work, Markdown tables are acceptable. For implementation work, p
 
 ## Question Reachability
 
-Follow the graph record in `knowledge-base-builder`'s
-[answerability contract](../knowledge-base-builder/references/answerability-contract.md). A path
+Follow the graph record in `base-builder`'s
+[answerability contract](../base-builder/references/answerability-contract.md). A path
 passes only when its edge IDs resolve, its length is within `max_hops`, every edge is typed and
 grounded, and the result includes every `required_graph_node_id`. Generic hubs, co-occurrence,
 and `RELATED_TO` shortcuts do not count.
@@ -137,9 +137,9 @@ content.
 
 ## Related Skills
 
-- `knowledge:knowledge-base-builder` - use when the output should be an Obsidian-style linked Markdown vault.
+- `knowledge:base-builder` - use when the output should be an Obsidian-style linked Markdown vault.
 - `knowledge:ontology-builder` - use when class hierarchy, relationship semantics, constraints, or controlled vocabularies need to be designed before graph extraction.
 - `knowledge:rag-corpus-builder` - use when the goal is retrieval-ready chunks, metadata, citations, and evaluation queries.
-- `knowledge:knowledge-query` - use when querying an existing graph, vault, RAG corpus, or mixed knowledge asset.
+- `knowledge:query` - use when querying an existing graph, vault, RAG corpus, or mixed knowledge asset.
 - `develop:documentation-strategy` - use when the main task is planning a documentation system rather than extracting graph data.
 - `develop:architecture-designer` - use when the task is designing system architecture, not modeling extracted knowledge.

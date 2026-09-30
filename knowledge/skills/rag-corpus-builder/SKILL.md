@@ -24,8 +24,8 @@ Prepare source material for retrieval-augmented generation. This skill produces 
 
 | Goal | Use |
 |---|---|
-| Browse knowledge as Markdown notes with backlinks | `knowledge:knowledge-base-builder` |
-| Model entities and relationships as graph data | `knowledge:knowledge-graph-builder` |
+| Browse knowledge as Markdown notes with backlinks | `knowledge:base-builder` |
+| Model entities and relationships as graph data | `knowledge:graph-builder` |
 | Standardize classes, relation meanings, and controlled vocabularies | `knowledge:ontology-builder` |
 | Retrieve cited chunks for generation | This skill |
 
@@ -134,8 +134,8 @@ Optional downstream index notes can be added as `ingest-pgvector.md`, `ingest-qd
 
 ## Related Skills
 
-- `knowledge:knowledge-base-builder` - use for Obsidian-style linked Markdown notes.
+- `knowledge:base-builder` - use for Obsidian-style linked Markdown notes.
 - `knowledge:ontology-builder` - use when metadata values, domain terms, or entity classes need shared semantic control.
-- `knowledge:knowledge-graph-builder` - use for entity/relationship schema and graph-ready data.
-- `knowledge:knowledge-query` - use when querying an existing RAG corpus, vault, graph, or mixed knowledge asset.
+- `knowledge:graph-builder` - use for entity/relationship schema and graph-ready data.
+- `knowledge:query` - use when querying an existing RAG corpus, vault, graph, or mixed knowledge asset.
 - `develop:documentation-strategy` - use when the source corpus itself needs a maintenance strategy before indexing.

@@ -83,18 +83,18 @@
 
 | 하고 싶은 것 | 스킬 |
 |---|---|
-| 자료 하나로 처음부터 끝까지 다 만들기 | `knowledge-workflow` |
-| 코드/문서를 링크 걸린 Markdown 볼트 + 룩업 카탈로그로 | `knowledge-base-builder` |
+| 자료 하나로 처음부터 끝까지 다 만들기 | `workflow` |
+| 코드/문서를 링크 걸린 Markdown 볼트 + 룩업 카탈로그로 | `base-builder` |
 | 클래스명, 관계 의미, 통제 어휘를 먼저 합의 | `ontology-builder` |
-| 엔티티·관계를 그래프용 JSONL로 추출 | `knowledge-graph-builder` |
+| 엔티티·관계를 그래프용 JSONL로 추출 | `graph-builder` |
 | 그래프를 클릭 가능한 오프라인 HTML로 | `render-graph-view` |
 | 벡터 스토어용 청크·메타데이터·평가 질의 준비 | `rag-corpus-builder` |
 | 로컬 SQLite 인덱스 빌드/갱신 + 점수 측정 | `sqlite-index-builder` |
-| 질문하고 인용·커버리지 등급 달린 답 받기 | `knowledge-query` |
+| 질문하고 인용·커버리지 등급 달린 답 받기 | `query` |
 
 ## 스킬
 
-### `knowledge-workflow`
+### `workflow`
 
 진입점입니다. 자료를 그래프 탐색하듯 읽고 — 시드 소스, 인접 개념, 의존성 — 나머지 스킬을
 순서대로 몹니다: 인테이크 → 볼트 → 온톨로지 → 그래프 → RAG → 질의 표면. 산출물 하나가
@@ -117,14 +117,14 @@ knowledge-system/
   _rag/         chunks.jsonl  sources.csv  eval-queries.jsonl
 ```
 
-### `knowledge-workflow`
+### `workflow`
 
 전체 구축과 검색 개선 루프의 진입점. 아래 스킬들을 순서대로 라우팅하고, 수리 루프를
 **측정 라운드**로 바꿉니다 — 첫 수정 전에 질문 세트를 분할하고, 측정 1회당 변경 1건,
 코퍼스 수정은 회귀 시 되돌리고, 편집거리가 떨어질 때가 아니라 **홀드아웃이 멈출 때**
 종료합니다.
 
-### `knowledge-base-builder`
+### `base-builder`
 
 링크 걸린 Markdown 볼트를 만듭니다. 노트 하나는 지속적인 **주장(claim)** 하나 — 개념, 코드
 모듈, 결정, 워크플로, 또는 대상들 사이의 *관계*. 원자 단위는 개체가 아니라 주장이라서
@@ -165,7 +165,7 @@ Citations: recall 3/3; precision 3/4; off-key 1; full 1/1
 ### `ontology-builder`
 
 볼트·그래프·RAG 층이 공유할 클래스, 관계 타입, 속성, 제약, 통제 어휘를 정의합니다. 오래
-갈 코퍼스나 도메인이 여럿인 코퍼스라면 `knowledge-graph-builder` 전에 쓰세요.
+갈 코퍼스나 도메인이 여럿인 코퍼스라면 `graph-builder` 전에 쓰세요.
 `Service DEPENDS_ON Database`가 어디서나 한 가지 뜻이 되도록.
 
 ```
@@ -173,7 +173,7 @@ Citations: recall 3/3; precision 3/4; off-key 1; full 1/1
 화면→쿼리 추적성이 필요해.
 ```
 
-### `knowledge-graph-builder`
+### `graph-builder`
 
 소스 근거가 있는 노드·엣지를 추출합니다. 관계명은 구체적이고 방향이 있으며(`CALLS`,
 `QUERIES`, `SUPERSEDES` — `RELATED_TO` 아님), 자명하지 않은 엣지마다 `source_ref`가 붙고,
@@ -246,7 +246,7 @@ provider·융합 가중·리랭커 차이는 `differences`에 이름으로 남�
   "questions": [{ "question_id": "stock-table-differences", "first_rank": 1, "hit": true }] }
 ```
 
-### `knowledge-query`
+### `query`
 
 위의 모든 자산 — SQLite 인덱스, 카탈로그, 볼트, 그래프, RAG — 위에서 질문에 답하며, 항상
 커버리지 등급으로 시작합니다:
@@ -419,7 +419,14 @@ docker compose -f knowledge/compose.yaml run --rm knowledge-index
 못했습니다. 답은 세 노트 *사이에* 있었지 어느 노트 안에도 없었습니다. 이 실패가 플러그인의
 형태를 만들었습니다:
 
-- 양쪽 근거를 갖춘 관계 노트 (`knowledge-base-builder`)
+- 양쪽 근거를 갖춘 관계 노트 (`base-builder`)
 - 컴피턴시 질문을 강제 완료 게이트로 (`validate-knowledge.mjs`)
 - 화면명이 매퍼 id에 닿도록 하는 `user_terms` / `source_symbols` 브리지 (`catalog.jsonl`)
 - 검색 변경을 감이 아니라 `mrr`로 증명하는 `eval` (`sqlite-index-builder`)
+
+## 이름 변경
+
+- `knowledge:base-builder` — `knowledge:knowledge-base-builder`에서 이름이 바뀜; 기존 이름은 더 이상 동작하지 않습니다.
+- `knowledge:graph-builder` — `knowledge:knowledge-graph-builder`에서 이름이 바뀜; 기존 이름은 더 이상 동작하지 않습니다.
+- `knowledge:query` — `knowledge:knowledge-query`에서 이름이 바뀜; 기존 이름은 더 이상 동작하지 않습니다.
+- `knowledge:workflow` — `knowledge:knowledge-workflow`에서 이름이 바뀜; 기존 이름은 더 이상 동작하지 않습니다.

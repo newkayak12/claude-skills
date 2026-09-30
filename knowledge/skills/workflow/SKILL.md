@@ -1,5 +1,5 @@
 ---
-name: knowledge-workflow
+name: workflow
 effort: high
 description: >-
   Use when building a knowledge vault end to end, or when eval and competency
@@ -55,7 +55,7 @@ Build the vault, then repair retrieval in measured rounds until it stops improvi
    └─── stop condition met? ──no──┘
                  │ yes
                  ↓
-        [F] Report + hand off to knowledge-query
+        [F] Report + hand off to query
 ```
 
 ---
@@ -64,8 +64,8 @@ Build the vault, then repair retrieval in measured rounds until it stops improvi
 
 | Step | Skill | Skip if |
 |---|---|---|
-| A1 Catalog | `knowledge:knowledge-base-builder` | `_knowledge/catalog.jsonl` exists and covers the sources |
-| A2 Graph | `knowledge:knowledge-graph-builder` | No relationship questions in scope |
+| A1 Catalog | `knowledge:base-builder` | `_knowledge/catalog.jsonl` exists and covers the sources |
+| A2 Graph | `knowledge:graph-builder` | No relationship questions in scope |
 | A3 RAG chunks | `knowledge:rag-corpus-builder` | Notes are short enough to retrieve whole |
 | A4 Index | `knowledge:sqlite-index-builder` | — |
 
@@ -92,10 +92,10 @@ Read, in this order: `repair_targets` (each gap and how many questions the note 
 | `embedding_prompt: none` under `embeddinggemma` | Rebuild with the asymmetric prompts | `knowledge:sqlite-index-builder` |
 | `documents_windowed` high | Chunk the corpus finer | `knowledge:rag-corpus-builder` |
 | Exact screen-label questions lose to paraphrases | Sweep the fusion split | `eval --sweep 0.3,0.4,0.5` |
-| `recall@50` ≫ `recall@10` | Attach a reranker | `knowledge:knowledge-query` → `references/local-sqlite.md` |
-| `gap: missing-note` | Extract the note | `knowledge:knowledge-base-builder` |
-| `gap: no-lookup-vocabulary` | Add bridge fields, grounded in the repo | `knowledge:knowledge-base-builder` |
-| Comparison question retrieves the contrast but none of its sides | Declare `participants` | `knowledge:knowledge-graph-builder` |
+| `recall@50` ≫ `recall@10` | Attach a reranker | `knowledge:query` → `references/local-sqlite.md` |
+| `gap: missing-note` | Extract the note | `knowledge:base-builder` |
+| `gap: no-lookup-vocabulary` | Add bridge fields, grounded in the repo | `knowledge:base-builder` |
+| Comparison question retrieves the contrast but none of its sides | Declare `participants` | `knowledge:graph-builder` |
 
 Re-indexing between rounds is cheap: an unchanged document reuses its stored embedding, so a round that edits two notes re-embeds two documents. `embeddings_computed` far above the number of edited notes means the cache was rejected — usually because the provider or model changed, which makes the round a provider change, not a corpus one.
 
@@ -147,7 +147,7 @@ node --no-warnings "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval \
 
 ## Related Skills
 
-- Steps: `knowledge:knowledge-base-builder`, `knowledge:knowledge-graph-builder`, `knowledge:rag-corpus-builder`, `knowledge:sqlite-index-builder`
-- After: `knowledge:knowledge-query` — answer from the index the loop stabilized
+- Steps: `knowledge:base-builder`, `knowledge:graph-builder`, `knowledge:rag-corpus-builder`, `knowledge:sqlite-index-builder`
+- After: `knowledge:query` — answer from the index the loop stabilized
 - Also: `knowledge:render-graph-view`, `knowledge:ontology-builder`
 - Measured lever sizes and what is deliberately not being done: [ROADMAP.md](../../ROADMAP.md)

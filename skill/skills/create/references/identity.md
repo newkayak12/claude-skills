@@ -11,8 +11,8 @@ Each principle: the rule, what to check in a draft, evidence.
 Counts, quotes, IDs instead of adjectives. The output closes on one tally or verdict line the user can recount.
 
 - Check: does the Output Template force a count or a quote somewhere? Is there a closing verdict line?
-- "ALWAYS tally, never adjective" — `portfolio/skills/portfolio-feedback`
-- "extract the profile as observable counts and quotes, never adjectives" — `write/skills/write-like-me`
+- "ALWAYS tally, never adjective" — `portfolio/skills/feedback`
+- "extract the profile as observable counts and quotes, never adjectives" — `write/skills/like-me`
 
 ## P2. Never supply a missing fact
 
@@ -46,7 +46,7 @@ Lead with what the user can act on. State a finding once; evidence sits behind i
 
 - Check: does the template open with the verdict? Could any block repeat another?
 - "front blocks cite it instead of restating it" — `portfolio/skills/fit`
-- "if a defect appears in four blocks, three of them are padding" — `portfolio/skills/portfolio-feedback`
+- "if a defect appears in four blocks, three of them are padding" — `portfolio/skills/feedback`
 
 ## P6. Say where it ends; hand off by name
 
@@ -81,14 +81,14 @@ Mandates end with a `Goal:` line. Every loop is bounded; "done" is a checkable c
 - Check: `Goal:` line? Each loop has a max and says what to report when it hits it? Does a Process step actually
   perform what the Goal promises? (A dry run's Goal said "the tally recounts to the table"; no step recounted, and the
   header came out 3·1 against a 2·2 table.)
-- "A loop with no declared exit becomes editing that looks like progress." — `knowledge/skills/knowledge-workflow`
+- "A loop with no declared exit becomes editing that looks like progress." — `knowledge/skills/workflow`
 
 ## P10. Rules carry their scar
 
 A mandate states the failure that produced it, or a measured number. No rule without a reason.
 
 - Check: can each NEVER/ALWAYS answer "what went wrong without it"?
-- "Measured on a 94-question competency set: answers that opened no note cited the required note 14% of the time." — `knowledge/skills/knowledge-query`
+- "Measured on a 94-question competency set: answers that opened no note cited the required note 14% of the time." — `knowledge/skills/query`
 
 ## P11. Surface, don't pick silently (guidelines §1)
 

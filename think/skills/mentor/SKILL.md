@@ -136,7 +136,7 @@ name the move.
 | too many half-thoughts to see | `think:untangle-thoughts` |
 | what to say in a specific hard conversation | `think:negotiate` |
 | where they stand in their career and what's next | `portfolio:job-application-workflow` |
-| how their work reads to someone else | `portfolio:portfolio-feedback` |
+| how their work reads to someone else | `portfolio:feedback` |
 | a technical or product decision | examine the judgment yourself; hand only benchmarks, spec comparison, or implementation to the `develop:` / `planning:` skill, named |
 
 Values, avoidance, identity, motivation and shadow do not route anywhere: they are this skill's own

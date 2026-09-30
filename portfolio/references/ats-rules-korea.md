@@ -1,6 +1,6 @@
 # ATS Rules — Korean Job Market Reference
 
-Shared reference for portfolio/ skills (portfolio-rewrite, etc.).
+Shared reference for portfolio/ skills (rewrite, etc.).
 Covers keyword matching rules and formatting considerations for ATS systems used by Korean employers.
 
 ---

@@ -1,5 +1,5 @@
 {
-  "skill_name": "portfolio-feedback",
+  "skill_name": "feedback",
   "evals": [
     {
       "id": 1,
@@ -841,7 +841,7 @@
       "files": [
         "evals/files/resume-backend-kr.md"
       ],
-      "expected_output": "Same two-reader verdict and dimension scores (±1) as portfolio-feedback on the same file; tally carries every stable field plus 피동 n and 팀 주어 n; 'API 응답속도 개선' is one 완전 주장 miss (A-ID) and number density cites it by ID with no judgment of its own.",
+      "expected_output": "Same two-reader verdict and dimension scores (±1) as `feedback` on the same file; tally carries every stable field plus 피동 n and 팀 주어 n; 'API 응답속도 개선' is one 완전 주장 miss (A-ID) and number density cites it by ID with no judgment of its own.",
       "assertions": [
         {
           "name": "tally-extra-fields",

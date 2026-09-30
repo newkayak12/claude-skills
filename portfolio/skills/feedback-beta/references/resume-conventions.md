@@ -55,7 +55,7 @@ bullets carry all four.
 - Weak: `배포 파이프라인 개선`
 - Strong: `배포 소요 30분 → 4분 (X, Y) — 빌드 캐시 분리와 카나리 자동화로 (Z), 일 40회 배포하는 정산 서비스에서 (S)`
 
-The rewrite mechanics live in `portfolio-rewrite`; this pass only counts how many bullets
+The rewrite mechanics live in `rewrite`; this pass only counts how many bullets
 qualify and names the worst three.
 
 ## 5. Section order

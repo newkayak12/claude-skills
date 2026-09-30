@@ -26,11 +26,11 @@ Use this skill when the problem is not just extracting notes, chunks, or edges, 
 
 | Layer | Main question | Related skill |
 |---|---|---|
-| Linked Markdown vault | What should humans read and navigate? | `knowledge:knowledge-base-builder` |
+| Linked Markdown vault | What should humans read and navigate? | `knowledge:base-builder` |
 | RAG corpus | What should retrieval index and cite? | `knowledge:rag-corpus-builder` |
-| Knowledge graph | What entities and edges exist? | `knowledge:knowledge-graph-builder` |
+| Knowledge graph | What entities and edges exist? | `knowledge:graph-builder` |
 | Ontology | What classes, relations, constraints, and meanings are valid? | This skill |
-| Query | How do we answer from the available assets? | `knowledge:knowledge-query` |
+| Query | How do we answer from the available assets? | `knowledge:query` |
 
 Ontology should guide graph extraction and metadata design, but it should not become an abstract taxonomy detached from the user's actual sources and questions.
 
@@ -131,7 +131,7 @@ Constraints:
 
 ## Related Skills
 
-- `knowledge:knowledge-graph-builder` - use after ontology design to extract graph-ready records.
-- `knowledge:knowledge-base-builder` - use to align Markdown frontmatter and note taxonomy with ontology terms.
+- `knowledge:graph-builder` - use after ontology design to extract graph-ready records.
+- `knowledge:base-builder` - use to align Markdown frontmatter and note taxonomy with ontology terms.
 - `knowledge:rag-corpus-builder` - use to align chunk metadata and filters with ontology terms.
-- `knowledge:knowledge-query` - use to answer questions using ontology-aware routing and evidence.
+- `knowledge:query` - use to answer questions using ontology-aware routing and evidence.

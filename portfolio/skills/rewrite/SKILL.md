@@ -1,5 +1,5 @@
 ---
-name: portfolio-rewrite
+name: rewrite
 effort: high
 description: >-
   Use when resume or portfolio lines need a stronger rewrite, optionally to a
@@ -26,13 +26,13 @@ compatibility:
 
 # Portfolio Section Rewriter
 
-**Not for** overall scoring (`portfolio-feedback`), holistic writing patterns (`portfolio-pattern`), or deciding whether to apply to a posting at all (`fit`).
+**Not for** overall scoring (`feedback`), holistic writing patterns (`pattern`), or deciding whether to apply to a posting at all (`fit`).
 
 ## Standing Mandates
 
 - NEVER supply a fact the user did not give. A missing number, cause, date, tool, scope or context is written `[확인 필요: ○○]` in its place — no invention, no estimate, no 역산, no candidate values. `API 응답속도 개선` becomes `API 응답속도 [확인 필요: 개선 전/후 수치] 개선`, never `40% 개선`.
 - NEVER alter an achievement number, scope claim or timeline fact the text already states. `820ms → 310ms` stays `820ms → 310ms` in the After.
-- Rewrite by purpose — vocabulary, emphasis, order, shape. The two rules above are the only bound; the writing-mode guard of `portfolio-feedback` is not imported (default - revisit).
+- Rewrite by purpose — vocabulary, emphasis, order, shape. The two rules above are the only bound; the writing-mode guard of `feedback` is not imported (default - revisit).
 - Rewrite first, then ask: questions follow the rewrite, never replace it.
 - Keep the `[확정]` ledger; nothing on it is re-proposed or reopened.
 - JD mode: ALWAYS run the JD analysis and the gap analysis before rewriting any section, and ALWAYS lead with the `JD 적합도 판정` line; every later block cites it rather than restating it.
@@ -186,6 +186,6 @@ Reordered priority: [new ordering]
 
 ## Related Skills
 
-- `../portfolio-pattern/SKILL.md` — diagnose patterns before targeted rewriting
-- `../portfolio-feedback/SKILL.md` — understand which sections to prioritize for rewriting
+- `../pattern/SKILL.md` — diagnose patterns before targeted rewriting
+- `../feedback/SKILL.md` — understand which sections to prioritize for rewriting
 - `../fit/SKILL.md` — fit to a posting or company type, before deciding to tailor

@@ -16,7 +16,7 @@
   새 발상을 알아채지 못하고, 그 노트로 향하는 링크의 의미도 흐려진다. 소프트웨어의 관심사 분리와 같은 논리.
   Zettelkasten 전통과 Matuschak의 evergreen notes("atomic", "concept-oriented")가 대표적.
 - **출처**: Andy Matuschak, [Evergreen notes should be atomic](https://notes.andymatuschak.org/zNUaiGAXp21eorsER1Jm9yU).
-- **적용**: `knowledge-base-builder`의 "Treat the claim, not the entity, as the atomic unit". 노트 유형
+- **적용**: `base-builder`의 "Treat the claim, not the entity, as the atomic unit". 노트 유형
   (`concept`, `code-module`, `decision`, `workflow`, `relation`, `moc`)은 모두 한 주장을 담는 모양.
 - **다르게 간 지점**: 원자성의 단위를 *개념*이 아니라 *주장(claim)*으로 옮겼습니다. "A와 B는 X에서 다르다"는
   A 노트에도 B 노트에도 속하지 않으므로, 개념 단위로 쪼개면 사라집니다. 583노트 WMS 볼트가 구조 검사를 전부
@@ -74,7 +74,7 @@
 
 - **이론**: 속성 그래프/RDF 모델에서 관계 타입은 질의 가능한 의미 단위. `RELATED_TO` 같은 포괄 타입은 그래프를
   동시출현 행렬로 되돌린다.
-- **적용**: `knowledge-graph-builder`의 Weak → Better 표 (`USES` → `CALLS`/`QUERIES`/`IMPORTS` …).
+- **적용**: `graph-builder`의 Weak → Better 표 (`USES` → `CALLS`/`QUERIES`/`IMPORTS` …).
   공유 앵커와 동시출현은 관계를 *지명*할 수는 있어도 *확정*하지 못함. 추론 엣지는 `confidence` + `inference_reason` 필수.
 
 ### 3.2 멀티홉 질문과 도달성
@@ -85,7 +85,7 @@
 - **적용**:
   - 그래프 쪽: `graph_check: true` 질문마다 `_graph/question-reachability.jsonl`에 `max_hops` 이내 타입·근거
     있는 경로를 기록. 도달 불가 = 그래프 결함.
-  - 질의 쪽: `knowledge-query`의 "One hop before answering, for questions with sides" — 최상위 후보에서
+  - 질의 쪽: `query`의 "One hop before answering, for questions with sides" — 최상위 후보에서
     `knowledge_neighbors`로 한 홉 확장 후 답변. 측정상 단일노트 질문 0.94 vs 다중출처 0.28/0.69.
 - **다르게 간 지점**: 그래프를 *걷지* 않고 **한 홉에서 멈춥니다**. 측정에서 놓친 노트는 정확히 한 홉 거리의
   허브·대조·형제 노트에 몰려 있었고, 그 이상의 탐색은 근거가 없습니다.
@@ -418,7 +418,7 @@ Dwork식 재사용 holdout 메커니즘은 없고 "한 번만 본다"는 절차 
 - **우리가 이미 가진 것**: `_knowledge/questions.jsonl`이 정확히 "한 번 정의한 질문 집합"이다.
   볼트·그래프·RAG·온톨로지가 공유하고(§2.1), `--require-answerability`가 완료 게이트로 쓰고,
   `eval`이 평가 셋으로 쓴다. **답을 저장하지만 않는다.**
-- **재구성**: ROADMAP Phase 4(생성층)는 지금 "`knowledge-query` 위에 챗봇을 얹는다"로 적혀 있고, 그래서
+- **재구성**: ROADMAP Phase 4(생성층)는 지금 "`query` 위에 챗봇을 얹는다"로 적혀 있고, 그래서
   "검색 recall 0.8+ 전에는 시작 안 함"이라는 게이트가 붙어 있다. Hindsight의 모양으로 다시 쓰면 그것은
   챗봇이 아니라 **컴피턴시 질문마다의 상주 답변(materialized answer)**이다. 차이가 셋:
   1. **산출물과 평가 대상이 같은 객체가 된다.** 지금 eval은 "이 질문에 답할 때 정답 노트를 인용하는가"를

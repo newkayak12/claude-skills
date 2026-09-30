@@ -85,18 +85,18 @@ note.
 
 | I want to… | Skill |
 |---|---|
-| Build everything end to end from a corpus | `knowledge-workflow` |
-| Turn code/docs into a linked Markdown vault with a lookup catalog | `knowledge-base-builder` |
+| Build everything end to end from a corpus | `workflow` |
+| Turn code/docs into a linked Markdown vault with a lookup catalog | `base-builder` |
 | Agree on class names, relation meanings, and controlled vocabulary first | `ontology-builder` |
-| Extract entities and relationships into graph-ready JSONL | `knowledge-graph-builder` |
+| Extract entities and relationships into graph-ready JSONL | `graph-builder` |
 | See the graph as a clickable offline HTML page | `render-graph-view` |
 | Prepare chunks, metadata, and eval queries for a vector store | `rag-corpus-builder` |
 | Build or refresh the local SQLite index and score it | `sqlite-index-builder` |
-| Ask a question and get a cited, coverage-graded answer | `knowledge-query` |
+| Ask a question and get a cited, coverage-graded answer | `query` |
 
 ## Skills
 
-### `knowledge-workflow`
+### `workflow`
 
 The entry point. Explores the source material like a graph — seed sources, neighbouring
 concepts, dependencies — and drives the other skills in order: intake → vault → ontology →
@@ -120,14 +120,14 @@ knowledge-system/
   _rag/         chunks.jsonl  sources.csv  eval-queries.jsonl
 ```
 
-### `knowledge-workflow`
+### `workflow`
 
 Entry point for a full build or a retrieval repair loop. Routes the skills below in order,
 and turns the repair loop into measured rounds with a declared stop condition: split the
 question set before the first edit, change one thing per measurement, revert regressions on
 corpus edits, and stop when the holdout stops moving rather than when the edits run out.
 
-### `knowledge-base-builder`
+### `base-builder`
 
 Builds the linked Markdown vault. Each note is one durable **claim** — a concept, a code module,
 a decision, a workflow, or a *relation* between things. The atomic unit is the claim, not the
@@ -170,7 +170,7 @@ and gating them would teach answers to cite less rather than better.
 ### `ontology-builder`
 
 Defines the classes, relationship types, properties, constraints, and controlled vocabularies
-that the vault, graph, and RAG layers share. Use it before `knowledge-graph-builder` on any
+that the vault, graph, and RAG layers share. Use it before `graph-builder` on any
 long-lived or cross-domain corpus, so `Service DEPENDS_ON Database` means one thing everywhere.
 
 ```
@@ -178,7 +178,7 @@ Design an ontology for this WMS codebase before we extract the graph. We need
 ownership, dependency, and screen-to-query traceability.
 ```
 
-### `knowledge-graph-builder`
+### `graph-builder`
 
 Extracts source-grounded nodes and edges. Relationship names are specific and directional
 (`CALLS`, `QUERIES`, `SUPERSEDES` — not `RELATED_TO`), every non-obvious edge carries a
@@ -251,7 +251,7 @@ set guarantees its own retrieval and measures nothing.
   "questions": [{ "question_id": "stock-table-differences", "first_rank": 1, "hit": true }] }
 ```
 
-### `knowledge-query`
+### `query`
 
 Answers questions over any of the above — SQLite index, catalog, vault, graph, RAG — and always
 begins with a coverage grade:
@@ -436,9 +436,16 @@ metadata, provenance, 99 % resolved links — and still could not answer "what i
 between the stock ledger, status, and change reports?". The answer lived *between* three notes,
 not in any of them. That failure shaped this plugin:
 
-- relation notes with per-side evidence (`knowledge-base-builder`)
+- relation notes with per-side evidence (`base-builder`)
 - competency questions as a hard completion gate (`validate-knowledge.mjs`)
 - `user_terms` / `source_symbols` bridges so screen names reach mapper ids (`catalog.jsonl`)
 - `eval` so retrieval changes are proven with `mrr`, not felt (`sqlite-index-builder`)
 
 ---
+
+## Renames
+
+- `knowledge:base-builder` — renamed from `knowledge:knowledge-base-builder`; the old name no longer resolves.
+- `knowledge:graph-builder` — renamed from `knowledge:knowledge-graph-builder`; the old name no longer resolves.
+- `knowledge:query` — renamed from `knowledge:knowledge-query`; the old name no longer resolves.
+- `knowledge:workflow` — renamed from `knowledge:knowledge-workflow`; the old name no longer resolves.

@@ -1,15 +1,15 @@
 ---
-name: portfolio-feedback-beta
+name: feedback
 effort: high
 description: >-
-  Use when someone explicitly asks for beta portfolio feedback: portfolio-feedback plus writing
-  patterns (피동, team subject, number density, decision visibility). Triggers only on "피드백
-  베타로", "feedback beta".
+  Use when someone shares a developer portfolio and wants interviewer-grade feedback: screen
+  verdict, whether numbers and skills hold up, whether it reads at the claimed level. Triggers:
+  "포트폴리오 피드백 해줘", "서류 통과할까", "숫자 근거 있어?", "시니어로 읽혀?", "고친 버전 비교".
 scenarios:
-  - "Run the beta portfolio feedback on my backend portfolio"
+  - "Review my backend developer portfolio and give me honest feedback"
   - "Audit my portfolio — do the numbers hold up and does the skills list match the projects?"
   - "I call myself senior with 7 years. Does the document actually read senior?"
-  - "피드백 베타로 내 포트폴리오 봐줘. 서류 통과할지도 같이"
+  - "내 포트폴리오 인터뷰어 관점에서 평가해줘. 서류 통과할지도 같이"
   - "이전 버전이랑 고친 버전 같이 줄게. 뭐가 나아졌고 뭐가 후퇴했어?"
   - "7년차 시니어라고 썼는데 이 문서가 진짜 시니어로 읽히는지 봐줘"
 compatibility:
@@ -32,21 +32,20 @@ compatibility:
 - ALWAYS make an improvement specific about *where* and *what shape* — and NEVER supply the fact. When the number, cause, or context is not in the document, write `[확인 필요: ○○]` and stop. No 역산, no candidate values, no plausible-sounding reason written as if it were the candidate's experience.
 - NEVER fire a tally-based red flag on a boundary value. Within 10 points of a provisional threshold, or when one entry moving would cross it, the tally line says `경계 (58%, 기준 ~60%)` and no flag is raised.
 - NEVER reopen a settled decision. In a continuing session keep a `[확정]` list (excluded items, kept items, numbers already judged over-claimed) and check every proposal against it before making it.
-- NEVER carry the reviewer posture into writing. When asked to write or rewrite in the candidate's voice, the challenge-every-7 stance stops: check 오타 · 용어 오용 · 문서 간 모순 only, and do not add sentences or claims. Real rewriting is `portfolio-rewrite`.
+- NEVER carry the reviewer posture into writing. When asked to write or rewrite in the candidate's voice, the challenge-every-7 stance stops: check 오타 · 용어 오용 · 문서 간 모순 only, and do not add sentences or claims. Real rewriting is `rewrite`.
 - NEVER treat a Skills list as evidence. Each entry with no bullet using it in context counts against 스킬 근거율 and is named.
-- NEVER count one property twice. The writing-pattern measures (beta) sit beside the tallies, not on top of them: the subject audit is the existing `의사결정 동사 n%` plus a `팀 주어 n` count (bullets whose subject is 팀/저희/우리) — no second decision-verb ratio; `피동 n` counts ~되었습니다 / ~되었고 / ~되어 bullets; number density is reported over 완전 주장's denominator (outcome bullets) as a reading, never a finding — no 낮음, no flag, no priority, and it never moves the Impact score or the XYZ+S count; the numberless bullets are cited by their `A` IDs, not listed again; decision visibility (a choice shown vs. only implied) is an appendix note, never a tally field.
 - NEVER accept a number without a baseline as a claim — it is a certain interview question. Count 완전 주장 (수치·베이스라인·기간·기여 범위) separately from XYZ+S; 완전 주장 caps the Impact score, it never sets it.
 - NEVER set the read level from years or title. Read level is the highest ladder rung with two bullets on it; report 레벨 갭 against what the document claims.
 - NEVER net red flags against strengths, and cap convention violations at 5 ranked by screen cost.
 - NEVER score Technical Depth from a technology list; challenge every 7+ with the objection a skeptical interviewer would raise, with the same force whether or not the form blocks were harsh.
 - NEVER summarize as the coach. The AI-screener summary uses only what the document says — no benefit of the doubt.
-- Goal: every review ends with one tally line — `XYZ+S n/m · 완전 주장 n/m · 스킬 근거율 n/m · 날짜 불일치 n · 레벨 갭 ±n · 의사결정 동사 n% (국문일 때) · 피동 n · 팀 주어 n · 불릿/롤 max n` — that the candidate can re-count against their own document.
+- Goal: every review ends with one tally line — `XYZ+S n/m · 완전 주장 n/m · 스킬 근거율 n/m · 날짜 불일치 n · 레벨 갭 ±n · 의사결정 동사 n% (국문일 때) · 불릿/롤 max n` — that the candidate can re-count against their own document.
 
 # Portfolio Feedback
 
 Interviewer-calibrated portfolio feedback with the screen-stage answer first: a two-reader screen verdict, red-flag catalog with interview defenses, AI-screener summary, and a tallied convention check including ATS/parser safety (`references/screen-models.md`, `references/resume-conventions.md`) — then three passes that ask whether the document agrees with itself (`references/claim-and-consistency.md`): **consistency** (dates, skills index vs. evidence, role claim vs. verbs), **claim audit** (does each number survive one question), and **level calibration** (does it read at the level it claims). Dimension scores, expected questions, and improvement priorities follow, in persona. Revision mode compares a v1/v2 pair (`references/revision-diff.md`).
 
-**Not for** rewriting flagged sentences (`portfolio-rewrite`), JD matching and target companies (`fit`), interview simulation (`mock-interview`).
+**Not for** rewriting flagged sentences (`rewrite`), JD matching (`jd-fit`), interview simulation (`mock-interview`), or target companies (`portfolio-company`).
 
 ---
 
@@ -61,7 +60,6 @@ Skim as a time-pressed interviewer: what is the immediate signal, the career sto
 - Convention check — [`references/resume-conventions.md`](references/resume-conventions.md). Tally XYZ+S (denominators in [`references/revision-diff.md`](references/revision-diff.md)), 국문 의사결정 동사 비율 (§2; `제가/저는` is not counted), 불릿/롤 max. English resumes and 국문 경력기술서 have different subject conventions — don't apply one language's rule to the other. §8 machine readability is judged on the document only — conversion artifacts are never findings.
 - Consistency — [`references/claim-and-consistency.md`](references/claim-and-consistency.md) §A: dates across sections vs. the summary's tenure (`날짜 불일치 n`), every Skills entry vs. its evidencing bullet (`스킬 근거율 n/m`, unevidenced named), role claim vs. bullet verbs.
 - Claim audit — §B: every outcome bullet for 수치·베이스라인·기간·기여 범위 (`완전 주장 n/m`); the worst three named with the exact question each invites, which go straight into Expected Questions.
-- Writing patterns (beta) — list, then count, the `피동` and `팀 주어` bullets; number density = outcome bullets carrying a number / 완전 주장's denominator, reported as `n/m` with the `A` IDs of the numberless ones and nothing else — 완전 주장 already judged them; note which decisions are visible vs. only implied. pattern's ~20% subject target is provisional — boundary rule applies.
 - Level calibration — §E: claimed rung (연차·직함·target role) vs. read rung from the ladder, `레벨 갭 ±n`, with the two ceiling bullets quoted. Over-claim feeds the 직함 인플레이션 flag; under-claim is Improvement Priority #1 unless the screen outranks it.
 
 Thresholds (§F) are provisional working numbers, never presented as industry figures.
@@ -127,12 +125,10 @@ Before/after tally table (`revision-diff.md` + §C rows) · one line on verdict 
 
 **[형식 위반 / Convention Violations]** *(omit when clean)* — `F1…` at most 5, ranked by screen cost — section, defect, one-line fix.
 
-**[글쓰기 패턴 / Writing Patterns]** *(beta)* — `P1…` 피동 bullets and team-subject bullets quoted (at most 3 each), number density `n/m` with the `A` IDs it rests on (no judgment of its own), and one line on decision visibility: which choices are shown with their alternative and which are only implied.
-
 **[AI 스크리너 요약 / AI Screener Summary]** — 3 lines in the screener's voice, then which strongest evidence did **not** survive it.
 
 **[집계 / Tally]**
-`XYZ+S n/m · 완전 주장 n/m · 스킬 근거율 n/m · 날짜 불일치 n · 레벨 갭 ±n · 의사결정 동사 n% (국문일 때) · 피동 n · 팀 주어 n · 불릿/롤 max n` — resume set; deck set per §0. Boundary values marked `경계 (값, 기준)`.
+`XYZ+S n/m · 완전 주장 n/m · 스킬 근거율 n/m · 날짜 불일치 n · 레벨 갭 ±n · 의사결정 동사 n% (국문일 때) · 불릿/롤 max n` — resume set; deck set per §0. Boundary values marked `경계 (값, 기준)`.
 
 ---
 
@@ -147,8 +143,7 @@ Before/after tally table (`revision-diff.md` + §C rows) · one line on verdict 
 
 ## Related Skills
 
-- `portfolio-rewrite` — act on the improvement priorities
-- `portfolio-pattern` — writing patterns behind the ownership read
+- `rewrite` — act on the improvement priorities
+- `pattern` — writing patterns behind the ownership read
 - `mock-interview` — rehearse the expected questions
-- `fit` — match against a specific posting, or by company type
-- `portfolio-feedback` — the stable skill this beta extends
+- `jd-fit` — match against a specific posting

@@ -29,11 +29,11 @@ classification). Connect them under Claude settings → MCP Servers as remote SS
 |---|---|
 | Run a whole application from JD to interview day | `job-application-workflow` |
 | Know how well I match one specific posting — or where to apply with no posting | `fit` |
-| Get an honest interviewer's read on my portfolio | `portfolio-feedback` |
-| Check whether my numbers, skills, dates — and claimed level — hold up | `portfolio-feedback` |
-| Find out why my portfolio doesn't read as "ownership" | `portfolio-pattern` |
-| Rewrite specific weak sentences to senior level | `portfolio-rewrite` |
-| Rewrite my resume to match one JD's vocabulary | `portfolio-rewrite` (with a JD) |
+| Get an honest interviewer's read on my portfolio | `feedback` |
+| Check whether my numbers, skills, dates — and claimed level — hold up | `feedback` |
+| Find out why my portfolio doesn't read as "ownership" | `pattern` |
+| Rewrite specific weak sentences to senior level | `rewrite` |
+| Rewrite my resume to match one JD's vocabulary | `rewrite` (with a JD) |
 | Draft a 자기소개서 from my own material only | `job-application-workflow` Step 4 (`write:writer-verification`) |
 | Get a week-by-week study plan before interviews | `interview-plan` |
 | Practice defending my work in a mock interview | `mock-interview` |
@@ -57,9 +57,9 @@ run the whole process with me from fit through a mock interview.
 ```
 [1] fit                       서류 통과 가능성, gaps by severity, apply or not
       ↓
-[2] portfolio-feedback        interviewer-grade verdict on the materials
+[2] feedback        interviewer-grade verdict on the materials
       ↓
-[3] portfolio-rewrite         Before/After, tailored to the JD
+[3] rewrite         Before/After, tailored to the JD
       ↓
 [4] write:writer-verification 자기소개서 drafts from your material only
       ↓
@@ -100,14 +100,14 @@ Tell me which gaps are fatal, and be honest about whether I'd pass screening.
 판정 통과 · 5개 차원 6.2/10 · 치명적 0 · 보완 가능 5 · 마이너 3 · must-have 미충족 0/5
 ```
 
-### `portfolio-feedback`
+### `feedback`
 
 Reads your portfolio as an interviewer who has seen a hundred this week — pattern-matching on
 what's *missing*, not just what's present. You pick one of four reviewer personas (Staff Engineer /
 Startup EM / Enterprise Tech Lead / OSS-DevTools Lead) and it stays in that persona throughout.
 Scores five dimensions, then challenges every score of 7 or above with the objection a skeptical
 interviewer would raise; only scores that survive stay high. Not for rewriting sentences
-(`portfolio-rewrite`) or JD matching (`fit`).
+(`rewrite`) or JD matching (`fit`).
 
 ```
 Review my portfolio as a staff engineer at a large platform company.
@@ -198,15 +198,15 @@ decision the candidate has settled goes on a `[확정]` list and is not reopened
 candidate writes their own sentence, only typos, misused terms, and cross-document contradictions
 are checked — the reviewer posture does not follow into their writing.
 
-**Beta lane — `portfolio-feedback-beta`.** portfolio-feedback plus portfolio-pattern's four measures in one pass: `피동 n` and `팀 주어 n` join the tally, number density is reported over 완전 주장's denominator as a reading (never a second penalty), and decision visibility is an appendix note. Triggers only on an explicit beta request; the stable `portfolio-feedback` and `portfolio-pattern` are unchanged. Promotion is decided after comparison runs (`evals/`).
+**Beta lane — `feedback-beta`.** feedback plus pattern's four measures in one pass: `피동 n` and `팀 주어 n` join the tally, number density is reported over 완전 주장's denominator as a reading (never a second penalty), and decision visibility is an appendix note. Triggers only on an explicit beta request; the stable `feedback` and `pattern` are unchanged. Promotion is decided after comparison runs (`evals/`).
 
-### `portfolio-pattern`
+### `pattern`
 
 Not what your portfolio says but how it reads. Audits six dimensions: decision-verb ratio
 (제안/채택/배제 vs. bare 개발했습니다), agency language, number density, failure-narrative presence, decision visibility,
 and verb energy. Use it when you've been told your portfolio "lacks ownership" but nobody could
-point at where. Not for rewriting the flagged sentences (`portfolio-rewrite`) or overall scoring
-(`portfolio-feedback`).
+point at where. Not for rewriting the flagged sentences (`rewrite`) or overall scoring
+(`feedback`).
 
 ```
 People keep saying my portfolio doesn't show ownership. Analyze the writing patterns
@@ -218,7 +218,7 @@ calling out in a senior portfolio (the `저는/제가` rate is deliberately *not
 omission is normal Korean); a number-free impact-claim rate above 60 % for 5+ years of
 experience is a problem. Complete absence of failure or difficulty is itself a signal.
 
-### `portfolio-rewrite`
+### `rewrite`
 
 Takes specific passages and produces Before / After with a 2–4 sentence explanation of what changed
 and why it lands differently with an interviewer. It diagnoses the actual weakness first — missing
@@ -243,7 +243,7 @@ so they read at senior level.
 
 ATS keyword rules and per-company-type culture signals: `references/ats-rules-korea.md`,
 `references/korea-company-culture-signals.md`; JD tailoring procedure:
-`skills/portfolio-rewrite/references/jd-tailoring.md`.
+`skills/rewrite/references/jd-tailoring.md`.
 
 ### `interview-plan`
 
@@ -454,3 +454,10 @@ Every report ends with the image caveat: colors inside inserted images need edit
 tool, not here.
 
 ---
+
+## Renames
+
+- `portfolio:feedback` — renamed from `portfolio:portfolio-feedback`; the old name no longer resolves.
+- `portfolio:feedback-beta` — renamed from `portfolio:portfolio-feedback-beta`; the old name no longer resolves.
+- `portfolio:pattern` — renamed from `portfolio:portfolio-pattern`; the old name no longer resolves.
+- `portfolio:rewrite` — renamed from `portfolio:portfolio-rewrite`; the old name no longer resolves.

@@ -1,5 +1,5 @@
 ---
-name: knowledge-base-builder
+name: base-builder
 description: >-
   Use when turning code, docs, notes, or mixed sources into a small-to-moderate,
   query-efficient Markdown knowledge base with predictable folders, an AI lookup
@@ -62,7 +62,7 @@ If the user gives a partial answer, proceed with reasonable defaults and record 
 10. **Link and ground deliberately.** Use Obsidian-style wikilinks (`[[Note Title]]`) for durable concepts and relative Markdown links for files that should open directly from the repository. Include exact source references and mark uncertain inferences as `Open Questions` instead of presenting them as facts.
 11. **Create navigation and lookup surfaces.** Add `index.md` for readers, focused MOCs where they improve traversal, and `_knowledge/catalog.jsonl` for fast AI candidate discovery. The catalog should map stable IDs and retrieval metadata to current paths without copying entire note bodies.
 12. **Prepare the RAG handoff when relevant.** Keep notes as the source-grounded corpus layer. Record whether headings are suitable chunk boundaries, whether metadata and permissions can propagate to chunks, and which sources are stale, conflicting, or missing before routing to `knowledge:rag-corpus-builder`.
-13. **Run the answerability gate.** Execute every declared competency question through `knowledge:knowledge-query`, write `_knowledge/question-results.jsonl`, and summarize complete/partial/unanswerable counts in `_knowledge/coverage.md`. A question passes only when the required notes and direct evidence support every material part. Run the validator from [references/answerability-contract.md](references/answerability-contract.md); any partial or unanswerable result leaves the build incomplete and becomes the next extraction or correction task.
+13. **Run the answerability gate.** Execute every declared competency question through `knowledge:query`, write `_knowledge/question-results.jsonl`, and summarize complete/partial/unanswerable counts in `_knowledge/coverage.md`. A question passes only when the required notes and direct evidence support every material part. Run the validator from [references/answerability-contract.md](references/answerability-contract.md); any partial or unanswerable result leaves the build incomplete and becomes the next extraction or correction task.
 14. **Check structural and claim quality.** Inspect folder placement, catalog coverage, vocabulary lookup, orphan notes, duplicate IDs or titles, missing source references, dead links, oversized notes, and unsupported synthesis. For relation notes, compare each participant against its own cited anchor before accepting the relation claim.
 15. **Capture improvement memory.** After meaningful build or update work, append only observed retrieval friction, structural decisions, failed competency questions, remaining manual steps, and evidence-backed next improvements to `_knowledge/improvement-notes.md`. Use the format in [references/retrieval-layout.md](references/retrieval-layout.md); preserve prior entries and do not turn it into a generic activity log.
 
@@ -200,7 +200,7 @@ Useful fields:
 
 ## AI Lookup Catalog
 
-For non-trivial vaults, emit one record per note in `_knowledge/catalog.jsonl` using the contracts in [references/retrieval-layout.md](references/retrieval-layout.md) and [references/answerability-contract.md](references/answerability-contract.md). Keep summaries short enough for candidate selection, paths current, IDs stable, and terms grounded in language users actually search. Include relation-side evidence and vocabulary bridge fields where applicable. `knowledge:knowledge-query` should search the catalog first and open only a small candidate set.
+For non-trivial vaults, emit one record per note in `_knowledge/catalog.jsonl` using the contracts in [references/retrieval-layout.md](references/retrieval-layout.md) and [references/answerability-contract.md](references/answerability-contract.md). Keep summaries short enough for candidate selection, paths current, IDs stable, and terms grounded in language users actually search. Include relation-side evidence and vocabulary bridge fields where applicable. `knowledge:query` should search the catalog first and open only a small candidate set.
 
 ## RAG Handoff
 
@@ -221,7 +221,7 @@ Follow the handoff contract in [references/retrieval-layout.md](references/retri
 - Important components, concepts, decisions, and workflows have at least one inbound link.
 - Important notes are reachable from `index.md` or a MOC within two clicks.
 - Every non-obvious claim is traceable to a source or labeled as an inference.
-- Frontmatter is consistent enough to support later `rag-corpus-builder` or `knowledge-graph-builder` work.
+- Frontmatter is consistent enough to support later `rag-corpus-builder` or `graph-builder` work.
 - RAG-ready vaults preserve stable IDs, semantic headings, exact source references, and metadata that can propagate without reclassification.
 - Improvement memory records concrete evidence and actionable next changes without becoming catalog or RAG content itself.
 - Notes are useful independently but improve when followed through links.
@@ -241,7 +241,7 @@ Follow the handoff contract in [references/retrieval-layout.md](references/retri
 - `develop:code-documenter` - use when the main goal is inline/API/code documentation rather than a linked knowledge base.
 - `knowledge:rag-corpus-builder` - use when the goal is retrieval-ready chunks, metadata, citations, and eval queries.
 - `knowledge:ontology-builder` - use when note types, domains, aliases, or relation meanings need shared semantic control across vault, graph, and RAG outputs.
-- `knowledge:knowledge-graph-builder` - use when the goal is entity/relationship schema and graph-ready records.
-- `knowledge:knowledge-query` - use when querying an existing vault, graph, RAG corpus, or mixed knowledge asset.
+- `knowledge:graph-builder` - use when the goal is entity/relationship schema and graph-ready records.
+- `knowledge:query` - use when querying an existing vault, graph, RAG corpus, or mixed knowledge asset.
 - `develop:documentation-strategy` - use when planning a documentation system before producing notes.
 - `write:plans` (document purpose) - use when collaboratively drafting a specific document for readers.
