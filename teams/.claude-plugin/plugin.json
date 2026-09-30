@@ -1,6 +1,6 @@
 {
   "name": "teams",
-  "description": "A broker-driven node-graph engine, sibling to the graph plugin, with kinds (code / document), flows with develop/document entry skills, and a second MCP server, task-manager, that splits medium and large requests into packages, runs each as its own graph in its own worktree, integrates and reports. Runs are kept under .teams_output/ and ~/.harness/tasks/, separate from graph's own run directory. Zero runtime dependencies beyond Node 18+.",
+  "description": "A sibling of graph for requests too big for one pass: a TaskManager MCP (task-manager) sizes the request; size L is planned into a PRD and user stories, split into packages that each run the full harness in their own worktree, integrated, QA'd and gated by a background daemon; size S is handed to the development harness. Entry skills teams:orchestrate/develop/document/plan/qa/sprint, board and ticket views (tm_board, teams:board). Runs are kept under .teams_output/ and ~/.harness/tasks/. Zero runtime dependencies beyond Node 18+.",
   "version": "0.38.0",
   "author": {
     "name": "newkayak12"
