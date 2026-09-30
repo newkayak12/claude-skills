@@ -167,7 +167,7 @@ See `references/example-workflow.md` for a full concrete trace. For context on w
 
 **Before dispatching (do these yourself):**
 - **Isolated workspace** — start on a dedicated branch or worktree, never `main`/`master`, so parallel task commits don't land on a shared branch. Set this up manually; there is no separate skill for it here.
-- **`write:writing-plans`** — produces the plan this skill executes.
+- **`write:plans`** — produces the plan this skill executes.
 
 **During execution:**
 - **`develop:test-driven-development`** — each dispatched subagent drives its task test-first.

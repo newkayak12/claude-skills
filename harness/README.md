@@ -79,7 +79,7 @@ Returns `report`, `all_passed`, `failed[]`, and `goal_gate` — relayed to you a
 included. Beyond the three statically mounted skills (`agents:agent-task-decomposer` at Plan,
 `think:devils-advocate` at the spec critic and QualityGate,
 `completion:verification-before-completion` at Test), SetGoal *may* map harness-aware repo skills
-(`write:writing-plans`, `planning:executing-plans`, `agents:subagent-driven-development`,
+(`write:plans`, `planning:executing-plans`, `agents:subagent-driven-development`,
 `develop:test-driven-development`, `write:writing-skills`, `agents:dispatching-parallel-agents`,
 `think:brainstorming`) onto subgoals. All optional; a run using none of them is valid.
 
@@ -362,7 +362,7 @@ are always gated. Fail-open everywhere (v0 lesson).
   attempt's exact gaps/reason, the loop breaks early instead of spending the rest of its
   `max_retries` on an identical gap (still hard-capped by `max_retries` — only exits sooner).
 - v1.11.1 — documented the **optional** harness-aware skill integrations: SetGoal may map the
-  repo's dual-mode cluster-B skills (`writing-plans`, `executing-plans`, `subagent-driven-development`,
+  repo's dual-mode cluster-B skills (`plans`, `executing-plans`, `subagent-driven-development`,
   `test-driven-development`, `writing-skills`, `dispatching-parallel-agents`, `brainstorming`) as
   subgoal executors when the task fits — none required, each also runs standalone. See the harness
   skill's "Optional skill integrations".

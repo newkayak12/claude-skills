@@ -26,7 +26,7 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 related:
   - design-review-writer
-  - doc-coauthoring
+  - plans
   - writer-verification
   - tradeoff-articulator
   - bias-auditor
@@ -145,7 +145,7 @@ Sequential numbering. Never delete or rewrite an accepted ADR — supersede inst
 ## Related Skills
 
 - `design-review-writer` — produce the upstream Design Review this ADR captures
-- `doc-coauthoring` — section-by-section co-write mechanics for long Context
+- `plans` (document purpose) — section-by-section co-write mechanics for long Context
 - `writer-verification` — final pass to catch hedging in Decision
 - `tradeoff-articulator` — frame Rationale as "accept X to gain Y"
 - `bias-auditor` — when the decision boundary is unclear or Negative is empty

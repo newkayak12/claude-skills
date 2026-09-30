@@ -34,7 +34,7 @@ related:
   - tradeoff-articulator
   - assumption-extractor
   - second-order-thinker
-  - doc-coauthoring
+  - plans
   - adr-writer
 ---
 
@@ -195,7 +195,7 @@ When the Design Review is Approved, invoke `adr-writer` to produce the matching 
 - `brainstorming`, `devils-advocate`, `problem-reframer` — divergence and stress testing
 - `architecture-designer` / `domain-driven-design` / `microservices-architect` — produce §5 diagrams
 - `bias-auditor`, `tradeoff-articulator`, `assumption-extractor`, `second-order-thinker` — honest §7-§8
-- `doc-coauthoring` — section-by-section co-write mechanics
+- `plans` (document purpose) — section-by-section co-write mechanics
 - `adr-writer` — once Approved, convert to ADR
 
 Fallback if any related skill is not installed: see `references/process-detail.md`.

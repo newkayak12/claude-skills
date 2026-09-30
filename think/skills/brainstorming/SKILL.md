@@ -29,7 +29,7 @@ compatibility:
 - ALWAYS separate diverging from converging. No criticism while generating options; no new options while cutting them.
 - ALWAYS produce at least three options before judging any, including one you expect to lose — the losing option shows the shape of the winning one.
 - NEVER narrow to one option on instinct. Cut with written kill-criteria, down to two or three, and show the trade-off between what survives.
-- ALWAYS hand off to `write:writing-plans` after approval. The output of this skill is a design and a plan, never working code.
+- ALWAYS hand off to `write:plans` after approval. The output of this skill is a design and a plan, never working code.
 - Goal: the user sees the option space before committing, and the decision they make is theirs, made against stated criteria.
 
 # Brainstorming
@@ -84,7 +84,7 @@ simple, detail where the nuance is. Cover architecture, components, data flow, e
 testing. Check each major section with the user. If they ask "any other options?" or every option
 feels off, go back to 3a — or, if all options feel off, to `problem-reframer`.
 
-**5. After approval** invoke `write:writing-plans`. Do not invoke any other implementation skill.
+**5. After approval** invoke `write:plans` (implementation plan). Do not invoke any other implementation skill.
 
 Design principles that apply throughout: units with one purpose and a defined interface;
 YAGNI — nothing for hypothetical future needs; in existing code, follow existing patterns and
@@ -101,7 +101,7 @@ fix what the change touches, nothing else.
 [기준 / Kill-criteria]  the list above, filled in for this decision
 [후보 / Finalists]      2–3 survivors, one trade-off table
 [설계 / Design]         for the chosen option — architecture · components · data flow · errors · tests
-→ approval → write:writing-plans
+→ approval → write:plans
 ```
 
 Write in the user's language.
@@ -122,4 +122,4 @@ Write in the user's language.
 - `thought-organizer` — too many ideas, need structure and priority
 - `cognition:bias-auditor` — strong pull toward one option
 - `devils-advocate` — stress-test the chosen design before planning
-- `write:writing-plans` — the mandatory next step after approval
+- `write:plans` — the mandatory next step after approval

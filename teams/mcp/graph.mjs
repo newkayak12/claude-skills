@@ -68,7 +68,7 @@ export const KINDS = {
     chain: ['draft', 'review', 'gate'],
     reasoning: ['review'],
     skills: {
-      draft: ['write:doc-coauthoring', 'develop:architecture-designer'],
+      draft: ['write:plans', 'develop:architecture-designer'],
       review: ['write:writer-verification'],
       gate: ['think:devils-advocate'],
     },
@@ -97,7 +97,7 @@ export const KINDS = {
       // mount and left every planning draft with no method at all. The PRD method now lives
       // in prompts.mjs's PRD_CONTRACT, inside the draft contract itself.
       investigate: ['develop:domain-driven-design', 'cognition:assumption-extractor'],
-      draft: ['write:doc-coauthoring', 'develop:architecture-designer'],
+      draft: ['write:plans', 'develop:architecture-designer'],
       revise: ['write:writer-verification', 'think:devils-advocate'],
       gate: ['think:devils-advocate'],
     },
@@ -118,7 +118,7 @@ export const KINDS = {
     author: 'template-fill',
     skills: {
       investigate: ['develop:domain-driven-design', 'cognition:assumption-extractor'],
-      'template-fill': ['write:doc-coauthoring'],
+      'template-fill': ['write:plans'],
       gate: ['think:devils-advocate'],
     },
   },

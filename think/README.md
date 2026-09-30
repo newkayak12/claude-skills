@@ -118,7 +118,7 @@ at least three options before any judgment, including one expected to lose. Conv
 written kill-criteria — constraint violation, missing success criteria, uncontrolled dependency,
 reversibility, team fit — narrowing to 2–3 options, not 1; a strong pull toward one option routes
 through `cognition:bias-auditor` first. Questions come one at a time. After approval it hands off to
-`write:writing-plans`, never to an implementation skill.
+`write:plans`, never to an implementation skill.
 
 Output shape:
 
@@ -128,7 +128,7 @@ Output shape:
 [옵션] 3–5, no verdicts yet
 [기준] kill-criteria filled in for this decision
 [후보] 2–3 survivors + one trade-off table
-[설계] architecture · components · data flow · errors · tests → approval → write:writing-plans
+[설계] architecture · components · data flow · errors · tests → approval → write:plans
 ```
 
 ### `problem-reframer`

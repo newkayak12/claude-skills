@@ -94,7 +94,7 @@ brainstorming → design-review-writer → (devils-advocate, bias-auditor) → a
 - `develop:architecture-designer`, `develop:domain-driven-design`, `develop:microservices-architect`
 - `cognition:bias-auditor`, `cognition:assumption-extractor`, `cognition:tradeoff-articulator`,
   `cognition:second-order-thinker`
-- `write:doc-coauthoring`, `write:writer-verification`
+- `write:plans`, `write:writer-verification`
 
 참조된 스킬이 설치되어 있지 않으면 Claude가 알려주고 설치할지 그냥 진행할지 물어봅니다. 대체
 경로는 각 스킬의 `references/process-detail.md`에 있습니다.

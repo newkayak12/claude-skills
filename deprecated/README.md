@@ -22,6 +22,16 @@ The plugins below are still live. Only these pieces of them were unused, meaning
 | `artifacts/think-devils-advocate-workspace` | generated benchmark output of devils-advocate iteration 1 | — |
 | `docs/diagrams/` | teams architecture and first-run diagrams nothing cites | — |
 
+## Merged into `write:plans` (2026-09-30)
+
+`write/skills/writing-plans` was renamed `write/skills/plans` and became the one entry for plan-first writing; its Step 0 picks the purpose. These three moved here unchanged; their content lives on under `write/skills/plans/references/`.
+
+| Path | Now |
+|---|---|
+| `write/skills/doc-coauthoring` | `plans` document purpose — `references/document.md`, `agents/reader-agent.md` |
+| `write/skills/technical-blog-writer` | `plans` blog purpose — `references/examples/blog.md` |
+| `write/skills/sbi-writer` | `plans` feedback purpose — `references/examples/sbi.md` |
+
 They were absent from `.claude-plugin/marketplace.json` from `fef3604` onward — a release commit that
 mentioned neither — and the removal was confirmed as intended on 2026-09-11.
 

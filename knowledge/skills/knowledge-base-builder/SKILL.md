@@ -244,4 +244,4 @@ Follow the handoff contract in [references/retrieval-layout.md](references/retri
 - `knowledge:knowledge-graph-builder` - use when the goal is entity/relationship schema and graph-ready records.
 - `knowledge:knowledge-query` - use when querying an existing vault, graph, RAG corpus, or mixed knowledge asset.
 - `develop:documentation-strategy` - use when planning a documentation system before producing notes.
-- `write:doc-coauthoring` - use when collaboratively drafting a specific document for readers.
+- `write:plans` (document purpose) - use when collaboratively drafting a specific document for readers.

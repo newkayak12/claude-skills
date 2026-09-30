@@ -90,7 +90,7 @@ check for Phase 1), `references/prioritization-frameworks.md` (RICE + MoSCoW for
 
 ## Related plugins
 
-- `write:writing-plans` — produces the plan `executing-plans` gates.
+- `write:plans` — produces the plan `executing-plans` gates.
 - `agents:*` — the executors `executing-plans` routes to.
 - `completion:verification-before-completion` — closes out each step against its bar.
 

@@ -139,6 +139,6 @@ Priority: 🔴 Must fix (meaning, logic, missing *why* in a PR) · 🟡 Recommen
 
 ## Related Skills
 
-- `write:doc-coauthoring` — when the document's content is still being decided, not its wording
-- `write:technical-blog-writer` — long-form drafting; hand the result here for the loop
+- `write:plans` (document purpose) — when the document's content is still being decided, not its wording
+- `write:plans` (blog purpose) — long-form drafting; hand the result here for the loop
 - `develop:clean-code` — for the commit itself; this skill covers the description of it

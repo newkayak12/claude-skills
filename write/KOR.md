@@ -4,7 +4,7 @@
 
 엔지니어가 실제로 써야 하는 것들을 위한 글쓰기 스킬입니다 — design doc과 PRD, 구현 계획, 블로그
 글, 동료 피드백, 그리고 다른 스킬을 움직이는 SKILL.md. 전부 프롬프트가 아니라 프로세스입니다.
-컨텍스트 먼저, 구조 다음, 문장은 마지막. 그중 둘(`writing-plans`, `writing-skills`)은
+컨텍스트 먼저, 구조 다음, 문장은 마지막. 그중 둘(`plans`, `writing-skills`)은
 harness-aware입니다 — 혼자 돌리면 문서를 내고, `harness:harness` 실행이 몰고 있으면 기계가 읽는
 스펙을 냅니다.
 
@@ -19,11 +19,8 @@ harness-aware입니다 — 혼자 돌리면 문서를 내고, `harness:harness` 
 
 | 하고 싶은 것 | 스킬 |
 |---|---|
-| 남이 읽을 큰 문서(PRD, design doc, RFC) 같이 쓰기 | `doc-coauthoring` |
-| 코드 건드리기 전에 여러 단계짜리 구현 계획 세우기 | `writing-plans` |
+| 구현 계획 세우기, 남이 읽을 문서(PRD, design doc, RFC) 같이 쓰기, 기술 블로그 쓰기, 닿는 피드백 쓰기 | `plans` |
 | SKILL.md 쓰거나 고치기 | `writing-skills` |
-| 만들거나 고친 것을 기술 블로그로 쓰기 | `technical-blog-writer` |
-| 동료에게 쏘지 않고 닿는 피드백 쓰기 | `sbi-writer` |
 | 글 검토, 또는 사람이 쓴 것처럼 읽히는 PR 설명·글 초안 | `writer-verification` |
 | 내 글 샘플로 배운 *내* 말투로 다시 쓰기 | `write-like-me` |
 
@@ -32,23 +29,11 @@ knowledge-base, knowledge-graph, RAG corpus, knowledge-query 스킬은 이제 `k
 
 ## 스킬
 
-### `doc-coauthoring`
+### `plans`
 
-남이 읽을 문서를 3단계로 씁니다. **Context Gathering**(맥락 덤프 + 번호 붙은 5~10개 확인 질문),
-**Refinement & Structure**(섹션 하나씩 — 질문 → 5~20개 옵션 발산 → 사용자가 취사선택 → 초안 →
-부분 수정), **Reader Testing**(작성 맥락이 전혀 없는 새 Claude가 예상 독자 질문에 답해보며 사각지대
-노출). 전 섹션을 미리 쓰지 않고, 주 독자가 누구인지 모르는 채로는 시작하지 않습니다.
+계획에서 시작하는 글쓰기의 단일 진입점입니다. Step 0에서 요청으로 목적을 읽고, 애매할 때만 묻습니다. 기본값은 구현 계획이라 `think:brainstorming`, `planning:executing-plans`, harness에서 넘어오면 질문 없이 진행합니다.
 
-```
-새 검색 서비스 design doc 같이 쓰자. 독자는 인프라 팀이고,
-왜 Elasticsearch 대신 직접 인덱싱하는지 설득해야 해.
-```
-
-문서마다 나오는 것: 문서 구조, 섹션별 초안, 명확성·누락에 대한 리뷰 코멘트, 수정 로그. Claude
-Code에서는 Reader Testing이 `agents/reader-agent.md` 서브에이전트로 돌고, claude.ai에서는
-`references/manual-reader-testing.md`로 대체됩니다.
-
-### `writing-plans`
+#### 구현 계획 (기본)
 
 구현 계획만 만들고 실행은 절대 하지 않습니다. `planning:executing-plans`가 인계 시점에 하던 갭
 체크와 모호성 체크를 여기서, 작성 시점에 합니다 — 계획이 완성되려면 모든 단계에 관측 가능한 pass
@@ -79,6 +64,68 @@ Solo 모드의 태스크 형태:
   (full code) → 4: confirm it passes → 5: commit
 ```
 
+#### 문서
+
+남이 읽을 문서를 3단계로 씁니다. **Context Gathering**(맥락 덤프 + 번호 붙은 5~10개 확인 질문),
+**Refinement & Structure**(섹션 하나씩 — 질문 → 5~20개 옵션 발산 → 사용자가 취사선택 → 초안 →
+부분 수정), **Reader Testing**(작성 맥락이 전혀 없는 새 Claude가 예상 독자 질문에 답해보며 사각지대
+노출). 전 섹션을 미리 쓰지 않고, 주 독자가 누구인지 모르는 채로는 시작하지 않습니다.
+
+```
+새 검색 서비스 design doc 같이 쓰자. 독자는 인프라 팀이고,
+왜 Elasticsearch 대신 직접 인덱싱하는지 설득해야 해.
+```
+
+문서마다 나오는 것: 문서 구조, 섹션별 초안, 명확성·누락에 대한 리뷰 코멘트, 수정 로그. Claude
+Code에서는 Reader Testing이 `agents/reader-agent.md` 서브에이전트로 돌고, claude.ai에서는
+`references/manual-reader-testing.md`로 대체됩니다.
+
+#### 블로그
+
+`references/examples/blog.md`를 얹어 문서 경로로 진행합니다.
+
+3단계입니다. 핵심 스토리 추출(무엇을 만들었나 / 뭐가 의외였나 / 독자가 읽고 뭘 다르게 할까 — 세
+답이 다 나오기 전엔 초안 금지), 고정된 아크로 아웃라인, 그다음 초안과 다듬기. 아크는 Hook →
+Problem in Depth → Solution → Results → What You'd Do Differently → Conclusion + CTA이고, 해결
+과정은 깔끔한 설명서 순서가 아니라 실제로 발견한 순서로 씁니다.
+
+```
+Kafka consumer lag를 40초에서 2초로 줄인 과정을 기술 블로그로 쓰고 싶어.
+파티션 재설계가 핵심이었고, 처음엔 컨슈머 수만 늘려서 실패했어.
+```
+
+분량 가이드:
+
+| 주제 유형 | 목표 |
+|---|---|
+| 짧은 팁·단일 개념 | 400–700 words |
+| 문제/해결 서사 전체 | 1,000–1,800 words |
+| 심층 분석·튜토리얼 | 2,000–3,500 words |
+| 시리즈 한 편 | 편당 1,000–1,500 words |
+
+#### 피드백 (SBI)
+
+짧은 형식 — `references/examples/sbi.md`, 섹션 루프와 reader testing은 건너뜁니다.
+
+피드백을 Situation → Behavior → Impact로 다시 씁니다. 특정한 한 순간, 카메라 테스트를 통과하는
+관찰 가능한 행동, 그리고 "나/우리" 시점에서 말한 실제 결과. 원문에서 관찰과 판단을 분리하고,
+해석이나 성격 규정은 다시 쓰도록 표시합니다. 칭찬도 마찬가지입니다 — 뭉뚱그린 칭찬은 상대가 뭘
+반복해야 할지 알려주지 못합니다.
+
+```
+팀원이 스프린트 리뷰에서 준비 없이 발표해서 고객 미팅이 밀렸어.
+비난처럼 안 들리게 피드백 문장 만들어줘.
+```
+
+자주 잡는 실패:
+
+| 실수 | 고침 |
+|---|---|
+| 판단을 행동인 척 ("무책임하게 행동했다") | "마감 전날 아무 공지 없이 작업을 제출하지 않았다" |
+| 모호한 상황 ("항상 회의에서") | "지난 화요일 스프린트 플래닝에서" |
+| 영향 누락 ("그건 별로였어") | "팀이 다음 스텝을 못 정하고 하루를 낭비했다" |
+| 여러 행동 몰아치기 | SBI 하나당 행동 하나 |
+
 ### `writing-skills`
 
 컨벤션에 맞는 `SKILL.md`를 쓰되 자기 결과물을 스스로 채점하지 않습니다 — 트리거 커버리지는
@@ -103,48 +150,6 @@ description이 "Use when"으로 시작하게 하고, 트리거 검증까지 돌�
 harness 파이프라인이 이 작업을 넘겼다면 harness-engaged, 아니면 solo로 보고 두 게이트를 직접
 돌리세요. 출시에는 `.claude-plugin/marketplace.json` 버전 bump, 해당 플러그인 README 갱신,
 `scripts/validate_plugins.py` 재실행이 포함됩니다.
-
-### `technical-blog-writer`
-
-3단계입니다. 핵심 스토리 추출(무엇을 만들었나 / 뭐가 의외였나 / 독자가 읽고 뭘 다르게 할까 — 세
-답이 다 나오기 전엔 초안 금지), 고정된 아크로 아웃라인, 그다음 초안과 다듬기. 아크는 Hook →
-Problem in Depth → Solution → Results → What You'd Do Differently → Conclusion + CTA이고, 해결
-과정은 깔끔한 설명서 순서가 아니라 실제로 발견한 순서로 씁니다.
-
-```
-Kafka consumer lag를 40초에서 2초로 줄인 과정을 기술 블로그로 쓰고 싶어.
-파티션 재설계가 핵심이었고, 처음엔 컨슈머 수만 늘려서 실패했어.
-```
-
-분량 가이드:
-
-| 주제 유형 | 목표 |
-|---|---|
-| 짧은 팁·단일 개념 | 400–700 words |
-| 문제/해결 서사 전체 | 1,000–1,800 words |
-| 심층 분석·튜토리얼 | 2,000–3,500 words |
-| 시리즈 한 편 | 편당 1,000–1,500 words |
-
-### `sbi-writer`
-
-피드백을 Situation → Behavior → Impact로 다시 씁니다. 특정한 한 순간, 카메라 테스트를 통과하는
-관찰 가능한 행동, 그리고 "나/우리" 시점에서 말한 실제 결과. 원문에서 관찰과 판단을 분리하고,
-해석이나 성격 규정은 다시 쓰도록 표시합니다. 칭찬도 마찬가지입니다 — 뭉뚱그린 칭찬은 상대가 뭘
-반복해야 할지 알려주지 못합니다.
-
-```
-팀원이 스프린트 리뷰에서 준비 없이 발표해서 고객 미팅이 밀렸어.
-비난처럼 안 들리게 피드백 문장 만들어줘.
-```
-
-자주 잡는 실패:
-
-| 실수 | 고침 |
-|---|---|
-| 판단을 행동인 척 ("무책임하게 행동했다") | "마감 전날 아무 공지 없이 작업을 제출하지 않았다" |
-| 모호한 상황 ("항상 회의에서") | "지난 화요일 스프린트 플래닝에서" |
-| 영향 누락 ("그건 별로였어") | "팀이 다음 스텝을 못 정하고 하루를 낭비했다" |
-| 여러 행동 몰아치기 | SBI 하나당 행동 하나 |
 
 ### `writer-verification`
 
@@ -215,11 +220,8 @@ draft 루프의 설명, 스킬 없는 초안, 사람 원본을 섞어 diff와 �
 
 | 스킬 | 도구 | 용도 |
 |---|---|---|
-| `doc-coauthoring` | think-tool | 어느 섹션에 미지수가 가장 많은지 판단 |
-| `writing-plans` | sequential-thinking, think-tool | 의존성 사슬 추적, 단계가 정말 모호하지 않은지 판정 |
+| `plans` | sequential-thinking, think-tool | 의존성 사슬 추적, 단계가 정말 모호하지 않은지 판정, 어느 섹션에 미지수가 가장 많은지 판단 |
 | `writing-skills` | think-tool | RED 단계 압박 시나리오 설계 |
-| `technical-blog-writer` | think-tool | 초안 전에 핵심 스토리와 각도 확정 |
-| `sbi-writer` | think-tool | 관찰과 판단 구분이 애매한 케이스 |
 | `writer-verification` | think-tool, sequential-thinking, mcp-reasoner | 패스 구조화, 상충하는 지적 조정, Summary 선두 고르기 |
 | `write-like-me` | think-tool | 샘플에서 반복 습관과 일회성 노이즈 구분 |
 
