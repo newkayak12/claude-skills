@@ -261,6 +261,7 @@ are always gated. Fail-open everywhere (v0 lesson).
   dry-runs first and refuses mismatched versions or a release note supplied in only one language.
 
 ## Status
+- v1.22.5 — All five skills now carry a standard What Claude Does / What You Do table.
 - v1.22.4 — goal gate Bash judgement is deny by default without false positives: a write verb is exempt only as a plain argument of a read-only command that owns the whole simple command (`grep -n cp x.mjs`; not `rg --pre`, `less -o`, `$(…)`); wrappers and an interpreter/shell anywhere in a command are judged; `git --output` counts; an inline or heredoc script counts named paths only when it can write, a heredoc used as data only its redirect (unless its body writes, or its file is code or run later); heredocs are found outside quotes and an unclosed one is judged whole; the broker ledger `.harness-run/broker/` is gated
 - v1.22.3 — goal gate engages only on records (a tool call that ran, a broker node, a fallback run with a sound critique) - never transcript text; root from the target file (subdirs, sibling worktrees); gates its own config/hook/settings; judges Bash writes; ignores future timestamps; install widens old matchers and ignores .harness-run/
 - **v1.22.2 — graph path opens in balanced mode**: step 0 documented `graph_open({request,

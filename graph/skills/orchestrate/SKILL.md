@@ -199,15 +199,12 @@ rather than rounding it up.
   reasoning belongs to the nodes, and a scratchpad over a payload you must relay verbatim
   is the failure this skill exists to prevent.
 
-## What the current AI does
+## What Claude Does / What You Do
 
-Runs the loop and reports from the verdicts. Tools missing or `graph_open` failing is a
-stop, not a licence: run `graph:install`, never the work itself.
-
-## What you do
-
-Nothing during a `graph_run` — it blocks. The full history is in
-`.harness-run/broker/` if you want it.
+| Claude | You |
+|--------|-----|
+| Runs the loop and reports from the verdicts | Nothing during a `graph_run` (it blocks) |
+| On missing tools or failing `graph_open`, stops and runs `graph:install`, never the work itself | Reads `.harness-run/broker/` for the full history if wanted |
 
 ## Related skills
 

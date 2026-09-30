@@ -183,3 +183,11 @@ If a subtask feels trivially small, merge it with an adjacent one — but only i
 **Prompts without constraints.** Unconstrained agents refactor, rename, reorganize, and expand scope. Constraints are not optional polish — they are the fence that keeps the agent on task.
 
 **Too many subtasks with fine-grained dependencies.** A sequential chain of 10 small subtasks gains nothing from decomposition and loses parallelism. Merge sequential steps that belong to the same agent.
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Maps the full task and asks one focused question if it's unclear | Give the deliverable, constraints, and consumer |
+| Splits it along seams and maps dependencies | Confirm the subtask boundaries |
+| Writes a constrained prompt with an output contract per subtask | Review the prompts before dispatch |

@@ -178,3 +178,12 @@ See `references/example-workflow.md` for a full concrete trace. For context on w
 **Alternative:** **`planning:executing-plans`** — a separately-gated session instead of same-session subagent execution.
 
 **Harness mode:** `harness:harness` may map this skill as an Implement-subgoal executor. Nothing changes in the loop above; the plan arrives as a SetGoal goal-spec and the final reviewer verdict feeds the harness QualityGate instead of your own done-check. Opt-in per run, never pre-wired.
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Dispatches a fresh subagent per task | Supply the implementation plan |
+| Runs spec review, then code-quality review after each task | Set up the isolated branch or worktree |
+| Handles implementer status such as BLOCKED | Decide on blocked tasks Claude can't resolve |
+| Settles the done-verdict via `completion:verification-before-completion` | Close the branch: PR or merge per the repo's flow |

@@ -81,6 +81,13 @@ Report the absolute output path, rendered counts, and any omitted invalid edges.
 - Respect reduced-motion preferences by starting with the layout paused.
 - Escape graph content through DOM text APIs; never interpolate record content as executable HTML.
 
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Reads `nodes.jsonl` and `edges.jsonl`, renders standalone HTML, verifies output | Points to or confirms the graph artifacts |
+| Does not extract or invent relationships | Opens and reviews the rendered view |
+
 ## Related Skills
 
 - `knowledge:knowledge-graph-builder` - create or repair source-grounded node and edge artifacts before rendering.

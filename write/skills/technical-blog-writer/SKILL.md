@@ -162,3 +162,11 @@ Longer is not deeper. Every paragraph should earn its place by adding informatio
 **Code blocks that are too long.** A 150-line code block in a blog post is unreadable. Show the key 10–20 lines with a comment pointing to the full version elsewhere.
 
 **No call to action.** Readers who finish a post and have nowhere to go produce no engagement and no memory. End with something actionable.
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Extracts the core story and outlines the post | Provide the experience, code, and results |
+| Drafts and polishes with a hook, tradeoffs, and a call to action | Confirm the story and facts are accurate |
+| Suggests SEO-friendly headings within the length guide | Choose the final title and publish |

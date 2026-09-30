@@ -122,6 +122,13 @@ Constraints:
 - Constraints improve extraction/query quality rather than adding decorative formality.
 - Every abstraction is grounded in source examples or marked as provisional.
 
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Runs a quick intake, drafts competency questions, classes, relations, constraints | Describes the domain and the decisions or queries it should support |
+| Validates against real sources; logs open term boundaries | Resolves open ontology questions |
+
 ## Related Skills
 
 - `knowledge:knowledge-graph-builder` - use after ontology design to extract graph-ready records.

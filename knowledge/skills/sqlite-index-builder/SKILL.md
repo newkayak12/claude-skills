@@ -167,6 +167,13 @@ Do not cite the SQLite file as source evidence and do not commit it merely to sh
 
 Read [the local SQLite reference](../knowledge-query/references/local-sqlite.md) when Docker operation, MCP routing, Ollama configuration, or failure recovery is needed.
 
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Builds or refreshes the SQLite index from Markdown plus catalog, RAG, and graph JSONL and verifies it | Confirms the canonical inputs and when to rebuild |
+| Runs the retrieval repair loop on failing queries | Reviews the repair results |
+
 ## Related Skills
 
 - `knowledge:knowledge-base-builder` - create the Markdown catalog that controls note inclusion.

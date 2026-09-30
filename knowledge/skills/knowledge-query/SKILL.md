@@ -183,6 +183,13 @@ For impact analysis:
 - Read-only queries do not mutate improvement memory or competency results without maintenance authorization or an explicit vault opt-in.
 - No Markdown note is opened before a search or catalog step nominated it; when a file is read, the answer states which search result led there.
 
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Routes the question to the right asset (SQLite, vault, graph, RAG) and answers with citations | Asks the question |
+| Flags unknowns and uncertainty instead of guessing | Confirms scope or supplies missing sources |
+
 ## Related Skills
 
 - `knowledge:sqlite-index-builder` - build or refresh the derived SQLite index from canonical Markdown and JSONL.

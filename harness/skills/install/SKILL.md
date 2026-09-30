@@ -108,17 +108,13 @@ or `unchanged`) and never touches user-owned files even with refresh on. Then `g
 plugin-owned copies and commit. In **plugin mode** (no embedding) the only drift-prone file is
 `goal-gate.mjs`; in **embedded mode** it also refreshes `.claude/harness/**`.
 
-## What Claude does
-- Proposes gate patterns, asks about embedding + resolves skill sources, runs `install.mjs`
-  for every deterministic file op, then does conventions + the CLAUDE.md block (judgment), and
-  reports honestly from the script's JSON (incl. the plugin-engine gap / dynamic-skill boundary).
+## What Claude Does / What You Do
 
-## What you do
-- Confirm the gate patterns and the embedding choice. Commit `.claude/settings.json`,
-  `.claude/hooks/goal-gate.mjs`, any `.claude/harness/` copies, and the conventions so the
-  gate applies team-wide. Fill remaining placeholders. Own the copies afterward — after a
-  plugin version bump, re-run with `"refresh": true` to pull the newer plugin-owned files
-  (see "Updating after a plugin version bump"); your gate/conventions/CLAUDE.md stay put.
+| Claude | You |
+|--------|-----|
+| Proposes gate patterns; asks about embedding and resolves skill sources | Confirms gate patterns and the embedding choice |
+| Runs the install script for deterministic file ops, then conventions and the CLAUDE.md block | Fills remaining placeholders |
+| Reports honestly from the script's JSON (plugin-engine gap, dynamic-skill boundary) | Commits settings, hook, `.claude/harness/` copies, conventions; re-runs with `"refresh": true` after a plugin bump |
 
 ## Related
 - `install.mjs` — deterministic file ops (gate/hook/embed/gitignore) this skill invokes

@@ -58,10 +58,10 @@ findings, one line per step with code and ms, cleanup line.
 
 ## What Claude Does / What You Do
 
-| Claude | You (or the director / CI) |
-|---|---|
-| Sends every step, chains captures, logs pairs, writes the result JSON | Supply spec path, `BASE_URL`, results dir |
-| Probes `[확인 필요]`, records docs≠server mismatches in the spec | Decide spec-vs-server when the actor cannot |
+| Claude | You |
+|--------|-----|
+| Sends every step, chains captures, logs pairs, writes the result JSON | Supply spec path, `BASE_URL`, results dir (or the director / CI does) |
+| Probes `[확인 필요]`, records docs≠server mismatches in the spec | Decide spec-vs-server when the actor cannot (director / CI) |
 | Cleans up through the API on every exit path | Keep the server up for the run |
 
 ## Related Skills

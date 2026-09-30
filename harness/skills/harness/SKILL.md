@@ -92,13 +92,12 @@ Workflow controller/fallback/report role, not the actor.
 4. **Relay the returned `report` to the user.** Surface `failed[]` and a failing
    `goal_gate` honestly. Eval and retry already happened inside the engine.
 
-## What Claude does
-- Phrases `args.request` faithfully (add known constraints via `args.context`).
-- Invokes the engine; relays `report`, `all_passed`, `failed[]`, `goal_gate`.
+## What Claude Does / What You Do
 
-## What you do
-- State the request and its bar. Receive the final report.
-- (Optional) watch progress via `/workflows` — six phase groups are visible.
+| Claude | You |
+|--------|-----|
+| Phrases `args.request` faithfully; adds known constraints via `args.context` | States the request and its bar |
+| Invokes the engine; relays `report`, `all_passed`, `failed[]`, `goal_gate` | Receives the final report; optionally watches `/workflows` (six phase groups) |
 
 ## Optional skill integrations
 

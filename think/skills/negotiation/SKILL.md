@@ -222,3 +222,11 @@ See: [references/techniques.md](references/techniques.md)
 **They seem irrational:**
 - Diagnose: Are they (1) ill-informed, (2) constrained, or (3) hiding something?
 - Use calibrated questions to uncover which
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Identifies your BATNA and prepares two black swans | Share your situation, interests, and alternatives |
+| Anchors on interests and drafts labels and calibrated questions | Deliver them in the real conversation |
+| Scores your preparation 0-10 | Decide what to accept, counter, or walk away from |

@@ -194,3 +194,12 @@ Before declaring the investigation done:
 ---
 
 **Stack coverage note:** Tool examples in this skill are JVM (async-profiler, heap dumps, GC logs), Python (py-spy, memory-profiler), and Go (pprof) centric. For Node.js: use `clinic.js` or `--inspect` with Chrome DevTools. For Rust: use `cargo flamegraph` or `perf`. The investigation workflow (measure → hypothesize → profile → fix → verify) applies to all stacks regardless of tooling.
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Sets the baseline and states the problem in one line | Provide metrics: latency percentiles, error rate, resource use |
+| Forms hypotheses and guides profiling to confirm the bottleneck | Run the profiler in your environment and share the output |
+| Proposes one targeted change at a time | Apply the change |
+| Verifies the improvement with before/after numbers | Provide post-fix metrics |

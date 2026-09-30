@@ -42,3 +42,11 @@ Claude/Sonnet path.
   files, and do not trust the Implement narrative without command/file evidence.
 - After Codex returns, read the adapter JSON and produce the normal harness artifact
   shape expected by the current stage.
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Resolves the Codex adapter and runs `--detect` first | Provides `codex_adapter_path` if a custom adapter is used |
+| Runs separate Codex processes for Implement and Test; Test is verification-only | Reviews the stage artifacts |
+| Reads adapter JSON and produces the stage's artifact; falls back to Claude/Sonnet if no adapter | Nothing when the adapter is found |

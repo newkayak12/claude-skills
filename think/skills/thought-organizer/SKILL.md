@@ -164,6 +164,14 @@ See `references/examples.md` for more examples: essay framing and philosophical 
 - Do not pick a structure type without considering what serves the content best
 - Do not skip the "gaps" step — unresolved tensions are valuable
 
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Extracts ideas, clusters them, and ranks the core claim | Provide the raw notes or ideas |
+| Chooses a structure (outline, mind map, Zettelkasten) and builds it | Say what the output is for: draft, presentation, decision |
+| Flags gaps and contradictions, then offers next steps | Resolve the gaps and choose the next step |
+
 ## Related Skills
 
 - `brainstorming` — 구조화 후 새로운 아이디어나 설계 방향이 필요할 때

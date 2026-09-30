@@ -45,6 +45,13 @@ The operation is idempotent: a second run reports `absent` rather than failing. 
 `.claude/harness/` namespace is install-owned and is removed as a unit; conventions are kept
 unless `purgeConventions` is explicitly true.
 
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Confirms scope, runs the remove script, reads the JSON report | Confirms removal and any `purgeConventions` |
+| Verifies hook registration and paths are gone and unrelated settings remain | Reviews preserved conventions |
+
 ## Related
 
 - `install` — scaffold the project-local governance files
