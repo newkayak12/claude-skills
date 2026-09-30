@@ -2,8 +2,8 @@
 
 **English** · [한국어](KOR.md)
 
-Three skills for making and checking other skills. `create` writes a new skill shaped like its
-siblings in the same repo. Then a SKILL.md can still fail in two independent ways: it never fires
+Three skills for making and checking other skills. `create` writes a new skill that carries the
+repo's house identity. Then a SKILL.md can still fail in two independent ways: it never fires
 because its `description` gives Claude no signal, or it fires and then doesn't earn its place —
 too heavy, badly structured, or no better than no skill at all. `trigger-validator` measures
 and fixes the first; `quality-assurance` runs the six checks that cover the second, ending
@@ -28,13 +28,14 @@ in a prioritized fix list.
 
 ### `create`
 
-Generates a new skill's files from an intake: the gap it fills, the phrases that should trigger it,
-and what it hands back. It reads the existing skills in the target repo, picks the archetype they
-share for that kind of task (technique, workflow, and so on), and writes a `SKILL.md` with the same
-frontmatter and section order as its siblings, plus `references/` where the body would run heavy.
-It then runs the repo validator if there is one and hands off to `trigger-validator`, then
-`quality-assurance`. `write:writing-skills` stays the discipline for editing and repairing;
-`create` does the scaffold.
+Writes a new skill that reads like one the repo owner wrote. The shape matters least: `create`
+works from `references/identity.md`, thirteen principles induced from ~30 skills plus the owner's
+coding guidelines — re-checkable output, never inventing a missing fact, the actor never grading
+itself, one forbidden comfortable reflex, a stated boundary, the user deciding, minimum and surgical.
+Before drafting it reads identity.md and 3–4 real skills and writes three anchor lines: the reflex
+the skill forbids, its `Not for` boundary, and what "done" means. It audits the draft against all
+thirteen principles, runs the repo validator, then hands off to `trigger-validator` and
+`quality-assurance`. `write:writing-skills` stays the discipline for editing and repairing.
 
 ```
 Create a skill that checks commit messages against our convention. Look at how the
