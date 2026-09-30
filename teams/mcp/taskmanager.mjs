@@ -3205,7 +3205,15 @@ export function managerState(task) {
 
 export function taskState(task) {
   if (task.harness_run) return harnessState(task);
-  if (!task.s_run) return managerState(task);
+  if (!task.s_run) {
+    const st = managerState(task);
+    // serviceDaemon never respawns an exhausted daemon, so nothing will move this task again:
+    // reading it running kept tm_wait (and teams run) polling forever.
+    if (st.state === 'running' && task.daemon && task.daemon.exhausted && !driverAlive(task.daemon)) {
+      return { ...st, state: 'blocked', reason: 'the task daemon died past its restart budget (driver_restarts)' };
+    }
+    return st;
+  }
   // S2 (docs/plans/2026-09-28-teams-long-loop.md): a legacy size-S task is read through this
   // frozen path - its run file only, its QA cards (s_qa) ignored, never respawned. A run that
   // never finished and has no live driver will never finish: it reads blocked, not running
@@ -7009,7 +7017,7 @@ function toolStatus(a) {
       ...viewFields,
     };
   }
-  const state = managerState(task);
+  const state = taskState(task);
   return {
     task_id: task.run_id,
     cwd: task.cwd,

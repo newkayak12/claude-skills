@@ -58,6 +58,7 @@
 // §10-1 of the plan: tm_run itself returns only {task_id, run_id, docs_dir, state} (never a
 // verdict) - B is the default for a model caller. C, this file, is what repeats tm_wait for it.
 
+import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { callTool as realCallTool, mustFindTask as realMustFindTask, capacityResetAt } from '../mcp/taskmanager.mjs';
@@ -390,7 +391,15 @@ export async function runHeadless(a, deps = {}, shouldStop = () => false, out = 
   return { exitCode, taskId, final, resumes };
 }
 
+// The laptop must not sleep under a headless run (idol-pm-4 lost five hours to one); bench
+// drive.sh does the same. -w ends caffeinate when this process exits.
+export function keepAwakeArgv(platform = process.platform, pid = process.pid) {
+  return platform === 'darwin' ? ['caffeinate', ['-i', '-w', String(pid)]] : null;
+}
+
 async function main() {
+  const awake = keepAwakeArgv();
+  if (awake) spawn(awake[0], awake[1], { stdio: 'ignore' }).on('error', () => {}).unref();
   const a = parseArgs(process.argv.slice(2));
   if (a.error) {
     process.stderr.write(`teams run: ${a.error}\n${USAGE}`);

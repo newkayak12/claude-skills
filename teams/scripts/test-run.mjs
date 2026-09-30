@@ -10,7 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  parseArgs, exitCodeForState, runHeadless, EXIT,
+  parseArgs, exitCodeForState, runHeadless, EXIT, keepAwakeArgv,
   isLimitNotice, limitResumeAt, findLimitNotices, sleepUntil, RESET_GRACE_MS,
 } from './run.mjs';
 
@@ -491,4 +491,9 @@ test('resume-on-limit: SIGINT during the reset wait detaches with 130 and says t
   assert.equal(calls.some((c) => c.name === 'tm_retry'), false);
   assert.match(out.lines.join(''), /waiting out a usage limit/);
   assert.match(out.lines.join(''), /--resume T-open --resume-on-limit/);
+});
+
+test('keepAwakeArgv: caffeinate waits on this pid on darwin, nothing elsewhere', () => {
+  assert.deepEqual(keepAwakeArgv('darwin', 123), ['caffeinate', ['-i', '-w', '123']]);
+  assert.equal(keepAwakeArgv('linux', 123), null);
 });

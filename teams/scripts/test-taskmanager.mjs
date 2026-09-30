@@ -4461,6 +4461,7 @@ test('a dead daemon is respawned on any tm_* call up to driver_restarts, then re
     s = await tm.call('tm_status', { task_id: open.task_id });
     assert.equal(s.daemon.restarts, 1);
     assert.equal(s.daemon.exhausted, true);
+    assert.equal(s.state, 'blocked', 'nothing respawns an exhausted daemon: tm_wait must not poll it forever');
     assert.ok(s.daemon.stderr_tail.length > 0);
     const ledger = readFileSync(join(root, open.task_id, 'ledger.jsonl'), 'utf8');
     assert.match(ledger, /"event":"daemon_restarted"/);
