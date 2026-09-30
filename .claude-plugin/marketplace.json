@@ -29,7 +29,7 @@
     {
       "name": "write",
       "description": "Writing skills: plans (one entry, purpose chosen at step 0 — gate-ready implementation plans with production-time gap/ambiguity checks + per-step pass bars and dual-mode; reader documents co-written section by section with reader testing; fixed-template design reviews and ADRs; technical blog posts; SBI feedback), skill writing, and writer verification (v2 — five passes incl. a humanizer for machine tells, draft loop that rewrites until 🔴🟡 = 0, PR descriptions from a diff as first-class input). Knowledge-base, graph, RAG, and query skills moved to the knowledge plugin.",
-      "version": "1.5.2",
+      "version": "1.5.3",
       "author": {
         "name": "newkayak12"
       },
@@ -68,8 +68,8 @@
     },
     {
       "name": "skill",
-      "description": "Skill management: quality-assure skills (6-dimension QA) and audit trigger coverage.",
-      "version": "1.1.6",
+      "description": "Skill management: create skills in the repo's house identity, quality-assure them (6-dimension QA), and audit trigger coverage.",
+      "version": "1.2.0",
       "author": {
         "name": "newkayak12"
       },
