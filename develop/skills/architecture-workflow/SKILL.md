@@ -153,5 +153,5 @@ compatibility:
 
 ## Related Skills
 - Peer: `develop:dev-quality-workflow` — full engineering quality cycle after architecture is set
-- Before: `think:deep-thinking-workflow` — early-stage decision framing before Step 1
+- Before: `think:redefine-problem` — early-stage decision framing before Step 1
 - After: `develop:spring-boot-engineer` or `develop:kotlin-specialist` — implementation after Step 7

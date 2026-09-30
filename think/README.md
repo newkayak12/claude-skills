@@ -4,10 +4,9 @@
 
 Skills for the thinking that happens before the work: generating options instead of settling on the
 first one, questioning whether the problem is even stated correctly, attacking your own plan hard
-enough that reality can't do it first, and converging on a decision with criteria rather than a gut
-feel. `deep-thinking-workflow` is the entry point when you want the whole sequence; `mentor` is the
-entry point when the question is about your own judgment rather than a deliverable; the rest stand
-alone.
+enough that reality can't do it first, and preparing a negotiation before you walk in. `mentor` is
+the entry point when the question is about your own judgment rather than a deliverable, in any
+field; the rest stand alone.
 
 ## Install & Uninstall
 
@@ -20,8 +19,7 @@ alone.
 
 | I want to… | Skill |
 |---|---|
-| Run the whole idea → decision process end to end | `deep-thinking-workflow` |
-| Have a question about how to decide or live — career and technical judgment included — examined rather than answered | `mentor` |
+| Get a senior mentor's judgment in any field — career, craft, work, study, relationships, life decisions | `mentor` |
 | Design something when the solution shape is still unclear | `brainstorming` |
 | Check whether I'm even solving the right problem | `redefine-problem` |
 | Break an approach down to what's checkable and rebuild from there | `back-to-basics` |
@@ -31,34 +29,14 @@ alone.
 
 ## Skills
 
-### `deep-thinking-workflow`
-
-The entry point. Four steps — diverge → decompose → challenge → converge — driving three other
-skills in order and then a decision matrix:
-
-| Step | Skill | Output | Skip if |
-|---|---|---|---|
-| 1. Diverge | `brainstorming` | 3–5 options, cut to 2–3 finalists against written kill-criteria | Ideas already exist |
-| 2. Decompose | `back-to-basics` | Root causes, components, assumption list | Scope already well-defined |
-| 3. Challenge | `devils-advocate` | 3 strongest counterarguments + core vulnerability | Low-stakes or reversible |
-| 4. Converge | (decision framework) | Weighted decision matrix, recommendation, confidence | One option left standing |
-
-Step 4 lists the 2–4 surviving options, names 3–5 weighted criteria, scores each, and states the
-recommendation, the confidence level, and what would change the call. You can join mid-process —
-say which step you're at and it starts there. Skip it for a simple factual question or when you
-already know what to do.
-
-```
-사내 결제 시스템을 직접 만들지 외부 PG를 쓸지 결정해야 해.
-아이디어 발산부터 반론까지 다 돌리고 마지막에 비교표로 정리해줘.
-```
-
 ### `mentor`
 
-A philosophical mentor: it takes a position and tests yours, which is what separates it from both a
-counselling persona (no position) and `deep-thinking-workflow` (produces a decision). The
-first move is classification, because most questions arrive misfiled — a values question in a
-decision costume, a fear described as a constraint, an inherited standard treated as a fact:
+A mentor for any field — career, engineering craft, work, study, working relationships, life
+decisions. It takes a position and tests yours, which is what separates it from a counselling persona
+(no position) and from a tradeoff comparison (`cognition:tradeoff-articulator`, which scores options
+against criteria). The first move is classification, because most questions arrive misfiled — a
+values question in a decision costume, a fear described as a constraint, an inherited standard
+treated as a fact:
 
 | What you bring | What it usually is |
 |---|---|
@@ -74,11 +52,11 @@ decision costume, a fear described as a constraint, an inherited standard treate
 왜 찜찜한지 내가 모르겠어.
 ```
 
-Fifteen operations from the philosophical traditions — elenchus, distinction, dichotomy of control,
+Fifteen moves, drawn from philosophical practice — elenchus, distinction, dichotomy of control,
 bad faith, genealogy, impartial spectator, phronesis, via negativa, steelman, aporia, plus five
 absorbed from the retired `self` plugin (ranking under scarcity, avoidance inversion, owning the
 motive, role vs person, projection check) — applied one or two at a time, never as a tour, and never
-named out loud (`references/moves.md` carries a worked exchange for each). The tradition stays
+named out loud (`references/moves.md` carries a worked exchange for each). The technique stays
 invisible; a skill it hands over to is always named.
 
 What separates it from a wise-sounding prose generator is a set of refusals: no aphorism or
@@ -87,7 +65,7 @@ account under it, no flattery, and no repetition of the hard thing once it has b
 once. Aporia is an allowed outcome — ending in confusion sharper than the confusion you arrived
 with beats a tidy conclusion you don't own. It routes across the whole repo (`cognition:` for
 premises and grounds, `self:` for values and avoidance, `leadership:`/`portfolio:` for career
-questions). Career and technical decisions stay with it — it examines the judgment and hands only the
+questions). Career and technical questions stay with it — it examines the judgment and hands only the
 facts (benchmarks, spec comparisons, implementation) to `develop:`/`planning:`, named.
 
 Closing shape, when the conversation reaches one:
@@ -248,7 +226,6 @@ Not legal advice; have a lawyer read any binding contract before signing.
 
 | Skill | Recommended | Optional |
 |---|---|---|
-| `deep-thinking-workflow` | think-tool, sequential-thinking | mcp-reasoner |
 | `mentor` | think-tool (classifying what kind of question it is) | sequential-thinking, mcp-reasoner |
 | `brainstorming` | — | think-tool, sequential-thinking, mcp-reasoner |
 | `redefine-problem` | think-tool (required gate: assumption enumeration) | sequential-thinking |
@@ -261,9 +238,9 @@ Add the remote SSE endpoints in Claude settings → MCP Servers.
 
 ## Related workflows
 
-- Before Step 1, `redefine-problem` if the question itself feels wrong.
-- `mentor` when the thing needing examination is your own judgment; it hands over to
-  `deep-thinking-workflow` once the question is stated right and a deliverable is what's left.
+- `redefine-problem` first if the question itself feels wrong.
+- `mentor` when the thing needing examination is your own judgment; once the question is stated
+  right and a comparison is what's left, it hands over to `cognition:tradeoff-articulator`.
 - After a decision, feed it into `develop:dev-quality-workflow` (engineering handoff) or
   `planning:roadmap-planning` (sequencing a product/strategy decision into a roadmap).
 - `write:plans` (design review format) turns the divergence and stress-test output into a

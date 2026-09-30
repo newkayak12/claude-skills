@@ -19,6 +19,7 @@ The plugins below are still live. Only these pieces of them were unused, meaning
 |---|---|---|
 | `develop/skills/pragmatic-programmer` | codebase-health diagnosis across seven principles | develop 1.5.4 |
 | `think/skills/microinteractions` | UI micro-moment design | think 1.3.3 |
+| `think/skills/deep-thinking-workflow` | staged ideate-critique-converge workflow over other think skills | think (next release) |
 | `cognition/skills/thinking-style-profiler` | personal thinking-pattern profile | cognition 1.1.4 |
 | `artifacts/think-devils-advocate-workspace` | generated benchmark output of devils-advocate iteration 1 | — |
 | `docs/diagrams/` | teams architecture and first-run diagrams nothing cites | — |

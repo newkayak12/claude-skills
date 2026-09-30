@@ -18,7 +18,6 @@ For complex multi-step tasks, use these workflow skills as entry points:
 
 | User says | Invoke |
 |-----------|--------|
-| Deep thinking, structured ideation, decision | `think:deep-thinking-workflow` |
 | New feature, full dev cycle, quality process | `develop:dev-quality-workflow` |
 | Job application, career transition, interview prep | `portfolio:job-application-workflow` |
 | TDD, test coverage strategy, flaky CI | `develop:testing-workflow` |
