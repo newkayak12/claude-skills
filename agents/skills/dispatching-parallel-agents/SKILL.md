@@ -79,7 +79,10 @@ Multiple jobs or failures?
                  No clear fit → general-purpose.
 2. DISPATCH      One isolated subagent per job, in parallel. Mount the persona,
                  give a focused self-contained brief, no shared context between
-                 agents. This is the parallel-agent core — it always stays.
+                 agents. Agents that write files each get their own worktree
+                 (`isolation: "worktree"`) when the runtime supports it; without
+                 it, step 0's no-shared-files check is the only collision guard. This is the
+                 parallel-agent core — it always stays.
 3. GATHER        Collect summaries. Verify fixes don't conflict, run the whole
                  thing, and settle "done" through verification-before-completion.
 ```
@@ -118,10 +121,15 @@ Fan out concurrently. Each brief is:
 
 ```
 # All run at once — one persona-matched agent per independent job
-Task(persona=flaky-test-analyzer,  "Fix agent-tool-abort.test.ts — 3 timing failures …")
-Task(persona=database-optimizer,   "Cut p99 on GET /orders — slow query, see EXPLAIN …")
-Task(persona=frontend-developer,   "Fix cart badge not updating after remove …")
+Agent(subagent_type=flaky-test-analyzer, isolation="worktree", prompt="Fix agent-tool-abort.test.ts — 3 timing failures …")
+Agent(subagent_type=database-optimizer,  isolation="worktree", prompt="Cut p99 on GET /orders — slow query, see EXPLAIN …")
+Agent(subagent_type=frontend-developer,  isolation="worktree", prompt="Fix cart badge not updating after remove …")
 ```
+
+**Worktree isolation.** For every agent that writes files, prefer
+`isolation: "worktree"` — each gets its own git worktree, so edits can't collide.
+If the runtime doesn't support it, fall back to the step-0 check: no two agents
+touch the same files. Read-only agents need neither.
 
 Each agent runs in its **own context** — it never sees your reasoning or the other
 agents' work. That isolation is deliberate: it keeps jobs from cross-contaminating
@@ -153,6 +161,8 @@ Return: root cause + exactly what you changed.
 When agents return:
 1. **Read each summary** — understand what each persona changed.
 2. **Check for conflicts** — did any two agents touch the same code despite step 0?
+   Worktree results must be merged back into the main tree; resolve and re-check
+   conflicts after each merge.
 3. **Run the whole thing** — the full suite / build, not just the touched parts.
 4. **Settle the claim** — route "it passes now" through
    `completion:verification-before-completion` (isolated fresh evidence), not the
@@ -165,6 +175,7 @@ When agents return:
 | "Fix all the tests" — agent gets lost | "Fix agent-tool-abort.test.ts" — focused scope |
 | One generalist for every job | Persona per job — right defaults, less rework |
 | Skipping the independence check | Confirm no shared files / causal link first |
+| File-writing agents sharing one checkout | `isolation: "worktree"` per agent, or verify no shared files |
 | Pasting your own reasoning into each brief | Clean self-contained brief — keep contexts isolated |
 | Trusting an agent's "done" message | Gather + verify the whole through fresh evidence |
 | Fixed persona registry that rots | Match on the job's signal dynamically |

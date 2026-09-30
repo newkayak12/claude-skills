@@ -55,6 +55,9 @@ output format, verification step — and the decomposition is emitted as:
 Granularity guide: a 30-minute task is 1–2 subtasks, a half-day task 3–5, a multi-day task 5–10
 with each half a day or less.
 
+Hand-off: gate the plan first via `planning:executing-plans`, then run independent layers with
+`dispatching-parallel-agents` and sequential subtasks with `subagent-driven-development`.
+
 ### `dispatching-parallel-agents`
 
 A job allocator for 2+ independent jobs: it fans them out concurrently and mounts the best-fit
@@ -73,16 +76,18 @@ different files — dispatch them in parallel to matching specialists.
 The gate: `0. INDEPENDENCE` (no shared files, no causal link) → `1. ALLOCATE` (job signal →
 persona) → `2. DISPATCH` (isolated agents, in parallel) → `3. GATHER` (conflict check, full
 re-run, verdict via `completion:verification-before-completion`). Persona matching is dynamic —
-match on the job's dominant signal, not a fixed registry.
+match on the job's dominant signal, not a fixed registry. Prefer `isolation: "worktree"` for each
+file-writing agent when the runtime supports it; otherwise the step-0 no-shared-files check is the
+fallback.
 
 ### `subagent-driven-development`
 
 Executes an implementation plan in the current session: one fresh subagent per task, then a spec
 compliance reviewer and a code quality reviewer dispatched in the same turn, with the task marked
-done only when both pass in the same round. Use it when you have a plan, the tasks are mostly
-independent, and you want to stay in this session; use `planning:executing-plans` when you need a
-separately gated session, and manual execution when the tasks are tightly coupled or there is no
-plan yet.
+done only when both pass in the same round. Tasks run one at a time in plan order, so later tasks
+can build on earlier ones. Use it when you have a plan and want to stay in this session;
+`planning:executing-plans` gates the plan and routes its sequential or dependent steps here. Use
+manual execution when there is no plan yet.
 
 ```
 Here's the plan in docs/plans/workspace-invites.md. Run it task by task with a fresh
@@ -111,7 +116,7 @@ without it, and it runs without the harness.
 
 ## Related plugins
 
-- `planning:executing-plans` — gates a plan and routes it to one of these two executors.
+- `planning:executing-plans` — gates a plan and routes it in ordered dependency layers — independent steps to `dispatching-parallel-agents`, sequential ones to `subagent-driven-development`.
 - `completion:verification-before-completion` — settles every "done" claim with isolated evidence.
 - `harness:harness` — fixed vertical stages over one goal; these skills are the horizontal axis.
 

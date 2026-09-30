@@ -1,8 +1,8 @@
 ---
 name: subagent-driven-development
 description: >-
-  Use when executing an implementation plan with independent tasks using fresh
-  subagents per task. Triggers on: "계획 실행해줘", "서브에이전트로 구현해줘", "subagent-driven",
+  Use when running a plan's tasks sequentially in plan order, a fresh subagent
+  per task. Triggers on: "계획 실행해줘", "서브에이전트로 구현해줘", "subagent-driven",
   "plan 실행", "태스크별로 에이전트 배포해줘", "두 단계 리뷰로 구현", "현재 세션에서 계획 실행".
 scenarios:
   - "이 구현 계획 서브에이전트로 실행해줘"
@@ -23,18 +23,18 @@ compatibility:
 
 # Subagent-Driven Development
 
-Execute plan by dispatching fresh subagent per task, with two-stage review after each: spec compliance review first, then code quality review.
+Execute plan by dispatching a fresh subagent per task, one task at a time in plan order, with spec and code-quality reviewers dispatched together after each; both must pass.
 
-**Core principle:** Fresh subagent per task + two-stage review (spec then quality) = high quality, fast iteration
+**Core principle:** Fresh subagent per task + spec and quality reviewers dispatched in parallel, both must pass = high quality, fast iteration
 
 ## When to Use
 
 Use this skill when all three conditions are met:
 - You have an implementation plan with defined tasks
-- The tasks are mostly independent (not tightly coupled)
-- You want to stay in the current session (not open parallel worktrees)
+- The tasks are sequential or dependent and run one at a time in plan order
+- You want to stay in the current session
 
-Use `planning:executing-plans` instead when you need an isolated, separately-gated session. Use manual execution when you don't yet have a plan or tasks are tightly coupled.
+`planning:executing-plans` gates the plan and routes its sequential/dependent steps here. Use manual execution when you don't yet have a plan.
 
 ## The Process
 
@@ -52,17 +52,16 @@ digraph process {
         "Spec reviewer subagent confirms code matches spec?" [shape=diamond];
         "Implementer subagent fixes spec gaps" [shape=box];
         "Code quality reviewer subagent approves (wait for both)?" [shape=diamond];
-        "Code quality reviewer subagent approves?" [shape=diamond];
         "Implementer subagent fixes quality issues" [shape=box];
-        "Mark task complete in TodoWrite" [shape=box];
+        "Mark task complete in task list" [shape=box];
     }
 
-    "Read plan, extract all tasks with full text, note context, create TodoWrite" [shape=box];
+    "Read plan, extract all tasks with full text, note context, create task list" [shape=box];
     "More tasks remain?" [shape=diamond];
     "Dispatch final code reviewer subagent for entire implementation" [shape=box];
     "Finalize branch: full tests + commit + PR/merge" [shape=box style=filled fillcolor=lightgreen];
 
-    "Read plan, extract all tasks with full text, note context, create TodoWrite" -> "Dispatch implementer subagent (./implementer-prompt.md)";
+    "Read plan, extract all tasks with full text, note context, create task list" -> "Dispatch implementer subagent (./implementer-prompt.md)";
     "Dispatch implementer subagent (./implementer-prompt.md)" -> "Implementer subagent asks questions?";
     "Implementer subagent asks questions?" -> "Answer questions, provide context" [label="yes"];
     "Answer questions, provide context" -> "Dispatch implementer subagent (./implementer-prompt.md)";
@@ -74,8 +73,8 @@ digraph process {
     "Spec reviewer subagent confirms code matches spec?" -> "Code quality reviewer subagent approves (wait for both)?" [label="yes"];
     "Code quality reviewer subagent approves (wait for both)?" -> "Implementer subagent fixes quality issues" [label="no"];
     "Implementer subagent fixes quality issues" -> "Dispatch spec + quality reviewers IN PARALLEL (./spec-reviewer-prompt.md + ./code-quality-reviewer-prompt.md)" [label="re-review"];
-    "Code quality reviewer subagent approves (wait for both)?" -> "Mark task complete in TodoWrite" [label="yes"];
-    "Mark task complete in TodoWrite" -> "More tasks remain?";
+    "Code quality reviewer subagent approves (wait for both)?" -> "Mark task complete in task list" [label="yes"];
+    "Mark task complete in task list" -> "More tasks remain?";
     "More tasks remain?" -> "Dispatch implementer subagent (./implementer-prompt.md)" [label="yes"];
     "More tasks remain?" -> "Dispatch final code reviewer subagent for entire implementation" [label="no"];
     "Dispatch final code reviewer subagent for entire implementation" -> "Finalize branch: full tests + commit + PR/merge";
@@ -84,9 +83,7 @@ digraph process {
 
 **Parallel review note:** After each implementation task, dispatch the spec-reviewer and code-quality-reviewer in the **same turn** — both are read-only and have no dependency on each other's output. Wait for both to complete, then act on their combined findings.
 
-**Re-review routing after fixes:**
-- If spec reviewer found issues: implementer fixes them, then re-run **both** reviewers in the same turn (spec compliance may have affected quality too).
-- If spec reviewer already passed and only quality issues remain: re-dispatch **only the code quality reviewer** — spec compliance was already verified and does not need to re-run.
+**Re-review routing after fixes:** After any fix (spec gaps or quality issues), the implementer fixes, then re-dispatch **both** reviewers in the same turn. Fixes for one can affect the other, so no reviewer is skipped.
 
 Only mark the task complete when both spec and quality reviewers have passed in the same review round.
 
@@ -111,7 +108,7 @@ Use the least powerful model that can handle each role to conserve cost and incr
 
 Implementer subagents report one of four statuses. Handle each appropriately:
 
-**DONE:** Proceed to spec compliance review.
+**DONE:** Dispatch spec + code-quality reviewers in parallel.
 
 **DONE_WITH_CONCERNS:** Read the concerns first — if they touch correctness or scope, address before review; if they're observations only (e.g., "file is getting large"), note and proceed to review. If think-tool is available and the concerns are ambiguous, invoke it to reason: does this touch correctness or scope, and what is the right action?
 
@@ -138,12 +135,12 @@ See `references/example-workflow.md` for a full concrete trace. For context on w
 - Skip reviews (spec compliance OR code quality)
 - Proceed with unfixed issues
 - Dispatch multiple implementation subagents in parallel (conflicts)
+- Reorder tasks, or start a task before the task it depends on has passed review
 - Make subagent read plan file (provide full text instead)
 - Skip scene-setting context (subagent needs to understand where task fits)
 - Ignore subagent questions (answer before letting them proceed)
 - Accept "close enough" on spec compliance (spec reviewer found issues = not done)
 - Skip review loops (reviewer found issues = implementer fixes = review again)
-- Re-run spec reviewer when spec already passed and only quality issues remain — if spec reviewer already passed, re-dispatch only the code quality reviewer after quality fixes
 - Let implementer self-review replace actual review (both are needed)
 - **Act on only one review result while the other is still running** — wait for both, then decide
 - Move to next task while either review has open issues
@@ -166,7 +163,7 @@ See `references/example-workflow.md` for a full concrete trace. For context on w
 ## Integration
 
 **Before dispatching (do these yourself):**
-- **Isolated workspace** — start on a dedicated branch or worktree, never `main`/`master`, so parallel task commits don't land on a shared branch. Set this up manually; there is no separate skill for it here.
+- **Isolated workspace** — start on a dedicated branch or worktree, never `main`/`master`, so task commits don't land on a shared branch. Set this up manually; there is no separate skill for it here.
 - **`write:plans`** — produces the plan this skill executes.
 
 **During execution:**
@@ -175,7 +172,7 @@ See `references/example-workflow.md` for a full concrete trace. For context on w
 
 **Finishing:** after the final reviewer passes, close the branch yourself — run the full test suite, commit, then open a PR or merge per the repo's flow — and settle the done-verdict with **`completion:verification-before-completion`**.
 
-**Alternative:** **`planning:executing-plans`** — a separately-gated session instead of same-session subagent execution.
+**Upstream:** **`planning:executing-plans`** — gates the plan and routes its sequential/dependent steps to this skill.
 
 **Harness mode:** `harness:harness` may map this skill as an Implement-subgoal executor. Nothing changes in the loop above; the plan arrives as a SetGoal goal-spec and the final reviewer verdict feeds the harness QualityGate instead of your own done-check. Opt-in per run, never pre-wired.
 
@@ -184,6 +181,6 @@ See `references/example-workflow.md` for a full concrete trace. For context on w
 | Claude | You |
 |--------|-----|
 | Dispatches a fresh subagent per task | Supply the implementation plan |
-| Runs spec review, then code-quality review after each task | Set up the isolated branch or worktree |
+| Runs spec and code-quality review in parallel after each task | Set up the isolated branch or worktree |
 | Handles implementer status such as BLOCKED | Decide on blocked tasks Claude can't resolve |
 | Settles the done-verdict via `completion:verification-before-completion` | Close the branch: PR or merge per the repo's flow |

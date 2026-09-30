@@ -5,13 +5,8 @@
 **vs. Manual execution:**
 - Subagents follow TDD naturally
 - Fresh context per task (no confusion)
-- Parallel-safe (subagents don't interfere)
+- Isolation (one subagent per task, no shared context)
 - Subagent can ask questions (before AND during work)
-
-**vs. Executing Plans:**
-- Same session (no handoff)
-- Continuous progress (no waiting)
-- Review checkpoints automatic
 
 **Efficiency gains:**
 - No file reading overhead (controller provides full text)
@@ -21,7 +16,7 @@
 
 **Quality gates:**
 - Self-review catches issues before handoff
-- Two-stage review: spec compliance, then code quality
+- Spec and code-quality reviewers dispatched in parallel; both must pass
 - Review loops ensure fixes actually work
 - Spec compliance prevents over/under-building
 - Code quality ensures implementation is well-built
@@ -37,7 +32,7 @@
 Use this skill when all three conditions are met:
 
 1. You have an implementation plan with defined tasks
-2. The tasks are mostly independent (not tightly coupled with forced ordering)
-3. You want to stay in the current session (not open parallel worktrees)
+2. The tasks are sequential or dependent and run one at a time in plan order
+3. You want to stay in the current session
 
-Use `executing-plans` instead when tasks need isolated sessions or parallel worktrees. Use manual execution or brainstorm first when you don't yet have a plan or tasks are tightly coupled.
+`planning:executing-plans` gates the plan and routes its sequential/dependent steps here. Use manual execution or brainstorm first when you don't yet have a plan.

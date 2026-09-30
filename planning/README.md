@@ -46,8 +46,10 @@ The gate is `0. LOAD → 1. REVIEW → 2. GATE → 3. HAND-OFF`. Three review de
 | Ambiguity | You couldn't dispatch the step to a stranger without guessing | STOP — pin the intent first |
 | Drift | The plan assumes a file, API, or schema that changed | STOP — the plan is stale |
 
-Routing at hand-off: independent steps → `agents:dispatching-parallel-agents`; sequential or
-dependent steps → `agents:subagent-driven-development`. Default when unsure is sequential — a
+Routing at hand-off: steps are sorted into ordered dependency layers. Independent steps within a
+layer → `agents:dispatching-parallel-agents`; sequential or dependent steps →
+`agents:subagent-driven-development`, in plan order. The next layer starts only after every step of
+the previous layer meets its step-2 bar. Default when unsure is sequential — a
 wrong parallel call costs more than running in order. Each step's done-verdict is settled against
 its step-2 bar by `completion:verification-before-completion`, not the executor's word.
 

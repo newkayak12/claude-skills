@@ -7,7 +7,7 @@ You: I'm using Subagent-Driven Development to execute this plan.
 
 [Read plan file once: docs/plans/feature-plan.md]
 [Extract all 5 tasks with full text and context]
-[Create TodoWrite with all tasks]
+[Create task list with all tasks]
 
 Task 1: Hook installation script
 
@@ -51,16 +51,15 @@ Spec reviewer: ❌ Issues:
 [Implementer fixes issues]
 Implementer: Removed --json flag, added progress reporting
 
-[Spec reviewer reviews again — spec only, since quality was not the issue]
+[Re-dispatch spec + code quality reviewers in the same turn]
 Spec reviewer: ✅ Spec compliant now
-
-[Dispatch code quality reviewer — spec already passed, only quality re-review needed]
 Code reviewer: Strengths: Solid. Issues (Important): Magic number (100)
 
 [Implementer fixes]
 Implementer: Extracted PROGRESS_INTERVAL constant
 
-[Code reviewer reviews again]
+[Re-dispatch spec + code quality reviewers in the same turn]
+Spec reviewer: ✅ Spec compliant
 Code reviewer: ✅ Approved
 
 [Mark Task 2 complete]
