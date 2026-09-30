@@ -43,7 +43,7 @@ related:
 **Not for:**
 - 논증 구조 결함 → `fallacy-detector`
 - 증거 대비 confidence 정량 보정 → `epistemic-reasoner`
-- 명시되지 않은 전제 발굴 → `assumption-extractor` 또는 `problem-reframer`
+- 명시되지 않은 전제 발굴 → `assumption-extractor` 또는 `redefine-problem`
 
 ## Process
 

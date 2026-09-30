@@ -1,5 +1,5 @@
 ---
-name: thought-organizer
+name: untangle-thoughts
 description: >-
   Use when raw, scattered ideas or notes need structure before writing,
   presenting, or deciding. Triggers on: "생각 정리해줘", "노트 정리", "머릿속이 복잡해", "아이디어
@@ -22,7 +22,7 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 related:
   - brainstorming
-  - first-principles
+  - back-to-basics
 ---
 
 # Thought Organizer
@@ -175,4 +175,4 @@ See `references/examples.md` for more examples: essay framing and philosophical 
 ## Related Skills
 
 - `brainstorming` — 구조화 후 새로운 아이디어나 설계 방향이 필요할 때
-- `first-principles` — 정리된 아이디어 중 근본 가정을 검증하고 싶을 때
+- `back-to-basics` — 정리된 아이디어 중 근본 가정을 검증하고 싶을 때

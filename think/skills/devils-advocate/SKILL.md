@@ -36,7 +36,7 @@ compatibility:
 
 Finds the real weaknesses in a position before reality does. Not for sport — for the decision.
 
-**Not for** reframing the problem (`problem-reframer`) or generating alternatives after the
+**Not for** reframing the problem (`redefine-problem`) or generating alternatives after the
 critique lands (`brainstorming`).
 
 ---
@@ -120,6 +120,6 @@ honestly rather than perform them.
 
 ## Related Skills
 
-- `problem-reframer` — when every objection is surface-level, the problem definition is what's wrong
+- `redefine-problem` — when every objection is surface-level, the problem definition is what's wrong
 - `brainstorming` — when the critique has collapsed the direction and alternatives are needed
 - `cognition:bias-auditor` — when the user's attachment to the position is itself the risk

@@ -23,9 +23,9 @@ compatibility:
     think-tool + sequential-thinking 조합이 이 워크플로의 핵심입니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 related:
-  - thought-organizer
+  - untangle-thoughts
   - brainstorming
-  - first-principles
+  - back-to-basics
   - devils-advocate
 ---
 
@@ -70,7 +70,7 @@ related:
 ---
 
 ### Step 2 — First Principles Thinking
-**Skill:** `first-principles`
+**Skill:** `back-to-basics`
 **Goal:** Break the problem to its fundamentals, question every assumption
 **Input:** Top ideas from Step 1 (or the core question directly)
 **Output:** Root causes, broken-down components, assumption list
@@ -109,7 +109,7 @@ related:
 ## State Tracking
 
 어느 단계에 있는지 알려주면 바로 합류합니다:
-- "Step 2부터" → first-principles 바로 시작
+- "Step 2부터" → back-to-basics 바로 시작
 - "아이디어는 있어, 반론만 봐줘" → Step 3으로 직행
 
 ## MCP Enhancement
@@ -129,9 +129,9 @@ related:
 
 ## Related Skills
 
-- `think:brainstorming`, `think:first-principles`, `think:devils-advocate`
-- Before: Use `think:problem-reframer` if the question itself feels wrong
+- `think:brainstorming`, `think:back-to-basics`, `think:devils-advocate`
+- Before: Use `think:redefine-problem` if the question itself feels wrong
 - After: Feed decision output into `develop:dev-quality-workflow` (engineering handoff) or
   `planning:roadmap-planning` (sequencing a product/strategy decision into a roadmap)
-- `thought-organizer` — 워크플로 시작 전에 산발적 입력 재료를 구조화할 때
-- `problem-reframer` — Step 1 발산 전에 문제 정의 자체가 올바른지 점검하고 싶을 때
+- `untangle-thoughts` — 워크플로 시작 전에 산발적 입력 재료를 구조화할 때
+- `redefine-problem` — Step 1 발산 전에 문제 정의 자체가 올바른지 점검하고 싶을 때
