@@ -1,7 +1,7 @@
 {
   "name": "write",
   "description": "Writing skills: plans (one entry, purpose chosen at step 0 — gate-ready implementation plans with production-time gap/ambiguity checks + per-step pass bars and dual-mode; reader documents co-written section by section with reader testing; fixed-template design reviews and ADRs; technical blog posts; SBI feedback), skill writing, and writer verification (v2 — five passes incl. a humanizer for machine tells, draft loop that rewrites until 🔴🟡 = 0, PR descriptions from a diff as first-class input). Knowledge-base, graph, RAG, and query skills moved to the knowledge plugin.",
-  "version": "1.4.4",
+  "version": "1.5.0",
   "author": {
     "name": "newkayak12"
   },

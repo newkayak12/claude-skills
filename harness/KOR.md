@@ -250,6 +250,7 @@ plan·goal-spec·sound critique가 디스크에 있는 fallback run). 대화 속
   버전이 어긋나거나 둘 중 한쪽 언어 노트가 빠지면 거부합니다.
 
 ## 상태
+- v1.22.6 — 하네스 대응 스킬 write:writing-plans가 write:plans로 이름 변경
 - v1.22.5 — 다섯 스킬 모두 What Claude Does / What You Do 표 형식으로 통일.
 - v1.22.4 — goal gate의 Bash 판정은 오탐 없는 기본 거부: 쓰기 동사는 단순 명령 전체를 가진 읽기 전용 명령의 평범한 인자일 때만 예외(`grep -n cp x.mjs`; `rg --pre`, `less -o`, `$(…)`는 아님); 래퍼와 명령 안 어디든 있는 인터프리터/셸도 판정; `git --output` 포함; 인라인·heredoc 스크립트는 쓸 수 있을 때만 이름 붙은 경로를 셈, 데이터 heredoc은 리다이렉트만(본문이 쓰거나 그 파일이 코드이거나 나중에 실행되면 예외); heredoc은 따옴표 밖에서만 찾고 닫히지 않으면 전체로 판정; broker 원장 `.harness-run/broker/`를 게이트
 - v1.22.3 — goal gate는 기록(실제 실행된 도구 호출, broker 노드, sound critique가 있는 fallback run)으로만 열림 - 대화 문자열 불인정; 루트를 대상 파일에서 찾음(하위 디렉터리, 형제 worktree); 자기 설정·훅·settings를 게이트; Bash 쓰기 판정; 미래 타임스탬프 무시; install이 기존 matcher 확장 및 .harness-run/ 무시
