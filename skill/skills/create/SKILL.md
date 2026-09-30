@@ -34,7 +34,7 @@ Writes a new skill that carries the repo's house identity — re-checkable outpu
 
 ## Process
 
-1. **Intake.** Purpose, the situation that should trigger it, the user's own words for asking. Missing one → ask in one line. If an existing skill or a one-line CLAUDE.md rule already covers it, say so and stop (P11).
+1. **Intake.** Purpose, the situation that should trigger it, the user's own words for asking. Missing one → ask in one line. If an existing skill or a one-line CLAUDE.md rule already covers it, name it, recommend the one change you'd make instead (a trigger added, a new mode), and stop — one recommendation, not an option menu (P8, P11).
 2. **Read.** `references/identity.md`, then 3–4 skills: 2 recently changed (`git log --since=<30 days> --name-only -- '*/SKILL.md'`) and 1–2 siblings in the target plugin. Where the siblings' structure differs from identity.md's Structure section, the siblings win.
 3. **Anchor.** Write three lines before drafting:
    - **Reflex:** the comfortable move a no-skill run would make here, which this skill forbids (P4).
