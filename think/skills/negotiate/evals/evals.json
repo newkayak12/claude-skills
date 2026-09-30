@@ -1,0 +1,207 @@
+{
+  "skill_name": "negotiate",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "오퍼 받았는데 연봉이 5,800이야. 현재 회사는 5,500이고 다른 데는 면접 진행 중이야. 연봉 협상 어떻게 해야 해?",
+      "expected_output": "BATNA(현직 5,500, 진행 중 면접)와 walk-away를 먼저 확인하고, 상대 제약을 파악한 뒤 앵커와 범위, 정확한 멘트, 양보 순서(각 양보에 반대급부; 금액은 Ackerman 단계)를 제시. 없는 경쟁 오퍼를 지어내라고 하지 않음.",
+      "files": [],
+      "expectations": [
+        "BATNA and walk-away line are settled or requested before any strategy or wording",
+        "Counterpart interests and constraints (budget band, approval chain) are addressed",
+        "Exact lines to say are provided in Korean, not just tone advice",
+        "A researched anchor with a range whose low end is acceptable is proposed",
+        "Concessions are ordered and each is traded for something; Ackerman-style steps appear for money only",
+        "Non-salary levers (sign-on, equity, review date, title) are listed as tradeables",
+        "Does not suggest inventing or implying a competing offer that does not exist",
+        "Response is in Korean"
+      ],
+      "assertions": [
+        {
+          "name": "batna",
+          "type": "contains_any",
+          "values": [
+            "BATNA"
+          ]
+        },
+        {
+          "name": "walk-away",
+          "type": "contains_any",
+          "values": [
+            "walk-away",
+            "Walk-away",
+            "마지노선"
+          ]
+        },
+        {
+          "name": "say-section",
+          "type": "contains_any",
+          "values": [
+            "SAY",
+            "이렇게 말",
+            "말할 문장"
+          ]
+        },
+        {
+          "name": "concede",
+          "type": "contains_any",
+          "values": [
+            "CONCEDE",
+            "양보"
+          ]
+        },
+        {
+          "name": "no-fake-offer",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*(가짜 오퍼|거짓으로 .{0,10}오퍼))[\\s\\S]*$"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Here is my freelance contract clause: 'Client may terminate at any time at its discretion. Payment due within 90 days of invoice acceptance. All work product, including pre-existing tools, is owned by Client.' Which clauses are risky and what can I push back on?",
+      "expected_output": "Clause-by-clause TERMS review sorted into missing/risky/negotiable, top asks ranked (payment deadline, kill fee, IP carve-out for pre-existing tools, scope change), exact pushback lines, concession order, and a not-legal-advice note recommending a lawyer before signing.",
+      "files": [],
+      "expectations": [
+        "Clauses are sorted into missing, risky, and negotiable",
+        "Termination-at-discretion, 90-day payment, and pre-existing-tools IP are each flagged as risky",
+        "Missing protections (kill fee, scope change, late-payment interest) are named",
+        "Top three to five asks are ranked, not all clauses",
+        "Exact wording for the pushback is given",
+        "States this is not legal advice and to have a lawyer review the binding contract before signing",
+        "Response is in English"
+      ],
+      "assertions": [
+        {
+          "name": "terms",
+          "type": "contains_any",
+          "values": [
+            "TERMS",
+            "Missing",
+            "missing"
+          ]
+        },
+        {
+          "name": "risky",
+          "type": "contains_any",
+          "values": [
+            "risky",
+            "Risky"
+          ]
+        },
+        {
+          "name": "lawyer",
+          "type": "contains_any",
+          "values": [
+            "lawyer",
+            "attorney"
+          ]
+        },
+        {
+          "name": "not-legal-advice",
+          "type": "contains_any",
+          "values": [
+            "not legal advice",
+            "Not legal advice"
+          ]
+        },
+        {
+          "name": "say",
+          "type": "contains_any",
+          "values": [
+            "SAY",
+            "say"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "클라이언트가 예산이 없다면서 원래 견적의 절반만 주겠대. 그래도 관계는 유지하고 싶어. 어떻게 대응하지?",
+      "expected_output": "클라이언트의 제약(예산 구조, 승인 체계)을 질문으로 파악하고, 가격을 깎지 말고 범위를 줄이는 교환 제안, Voss 식 라벨링/캘리브레이션 질문을 포함한 정확한 멘트, 양보는 반대급부와 함께. BATNA 확인 포함.",
+      "files": [],
+      "expectations": [
+        "User's BATNA (other clients, runway) is asked or stated before recommending accept or refuse",
+        "Counterpart budget constraint is treated as an interest to explore, not just a position",
+        "Trades scope or terms for price instead of giving the discount free",
+        "Uses a label or calibrated question (e.g. '어떻게 하면 이 예산에 맞출 수 있을까요?') with exact wording",
+        "Lines are written in Korean and ready to say",
+        "Does not recommend deception or bluffing"
+      ],
+      "assertions": [
+        {
+          "name": "batna",
+          "type": "contains_any",
+          "values": [
+            "BATNA"
+          ]
+        },
+        {
+          "name": "calibrated",
+          "type": "contains_any",
+          "values": [
+            "어떻게",
+            "What would it take",
+            "How am I supposed"
+          ]
+        },
+        {
+          "name": "concede",
+          "type": "contains_any",
+          "values": [
+            "CONCEDE",
+            "양보",
+            "교환",
+            "trade"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "I need to convince my manager to approve a 3-month refactor. She keeps saying 'not this quarter'.",
+      "expected_output": "Case prep on manager's constraints (quarterly goals, approval chain), accusation audit and mirroring lines, calibrated questions for the stall, a smaller first ask, and concessions traded for commitments. BATNA framed as what user does if refused.",
+      "files": [],
+      "expectations": [
+        "Manager's constraints and interests are analysed before wording",
+        "Exact lines are given for the opening and for the 'not this quarter' stall",
+        "At least one Voss tool (accusation audit, mirroring, labeling, calibrated question) is used by name or clearly applied",
+        "Concessions (phasing, smaller scope) are each tied to a return ask",
+        "Ackerman steps are NOT applied to this non-money request",
+        "Response is in English"
+      ],
+      "assertions": [
+        {
+          "name": "stall-line",
+          "type": "contains_any",
+          "values": [
+            "not this quarter",
+            "Not this quarter"
+          ]
+        },
+        {
+          "name": "voss",
+          "type": "contains_any",
+          "values": [
+            "calibrated",
+            "Calibrated",
+            "mirror",
+            "Mirror",
+            "label",
+            "Label",
+            "accusation",
+            "Accusation"
+          ]
+        },
+        {
+          "name": "say",
+          "type": "contains_any",
+          "values": [
+            "SAY",
+            "say"
+          ]
+        }
+      ]
+    }
+  ]
+}

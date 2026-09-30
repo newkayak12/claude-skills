@@ -25,7 +25,7 @@ compatibility:
 
 # Job Application Workflow
 
-fit → review → tailor → write → prepare → practice. **Not for** open-ended career direction, offer negotiation (`think:negotiation`), or one document alone (use that step's skill).
+fit → review → tailor → write → prepare → practice. **Not for** open-ended career direction, offer negotiation (`think:negotiate`), or one document alone (use that step's skill).
 
 ## Process
 
@@ -106,4 +106,4 @@ One per line — what the next step cannot proceed without.
 
 - Steps: `fit`, `portfolio-feedback`, `portfolio-rewrite`, `write:writer-verification`, `interview-plan`, `mock-interview`
 - Adjacent: `portfolio-pattern` (how the writing reads), `deck-builder` (portfolio deck as pptx)
-- After: `think:negotiation` (offer negotiation)
+- After: `think:negotiate` (offer negotiation)

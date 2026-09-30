@@ -21,13 +21,13 @@ alone.
 | I want to… | Skill |
 |---|---|
 | Run the whole idea → decision process end to end | `deep-thinking-workflow` |
-| Have a question about how to decide or live examined rather than answered | `mentor` |
+| Have a question about how to decide or live — career and technical judgment included — examined rather than answered | `mentor` |
 | Design something when the solution shape is still unclear | `brainstorming` |
-| Check whether I'm even solving the right problem | `problem-reframer` |
-| Strip inherited assumptions and rebuild from the ground up | `first-principles` |
+| Check whether I'm even solving the right problem | `redefine-problem` |
+| Break an approach down to what's checkable and rebuild from there | `back-to-basics` |
 | Have my plan attacked with the strongest objections | `devils-advocate` |
-| Turn scattered notes into a structure I can write or present from | `thought-organizer` |
-| Prepare for a salary talk, a contract, or a hard conversation | `negotiation` |
+| Turn scattered notes into a structure I can write or present from | `untangle-thoughts` |
+| Have counsel on my side for a salary talk, a contract, or a hard conversation | `negotiate` |
 
 ## Skills
 
@@ -39,7 +39,7 @@ skills in order and then a decision matrix:
 | Step | Skill | Output | Skip if |
 |---|---|---|---|
 | 1. Diverge | `brainstorming` | 3–5 options, cut to 2–3 finalists against written kill-criteria | Ideas already exist |
-| 2. Decompose | `first-principles` | Root causes, components, assumption list | Scope already well-defined |
+| 2. Decompose | `back-to-basics` | Root causes, components, assumption list | Scope already well-defined |
 | 3. Challenge | `devils-advocate` | 3 strongest counterarguments + core vulnerability | Low-stakes or reversible |
 | 4. Converge | (decision framework) | Weighted decision matrix, recommendation, confidence | One option left standing |
 
@@ -87,8 +87,8 @@ account under it, no flattery, and no repetition of the hard thing once it has b
 once. Aporia is an allowed outcome — ending in confusion sharper than the confusion you arrived
 with beats a tidy conclusion you don't own. It routes across the whole repo (`cognition:` for
 premises and grounds, `self:` for values and avoidance, `leadership:`/`portfolio:` for career
-questions) and hands a technical or product question to `develop:`/`planning:` entirely rather than
-philosophizing about it.
+questions). Career and technical decisions stay with it — it examines the judgment and hands only the
+facts (benchmarks, spec comparisons, implementation) to `develop:`/`planning:`, named.
 
 Closing shape, when the conversation reaches one:
 
@@ -131,7 +131,7 @@ Output shape:
 [설계] architecture · components · data flow · errors · tests → approval → write:plans
 ```
 
-### `problem-reframer`
+### `redefine-problem`
 
 Doubts the problem before solving it. Where `brainstorming` produces more solutions to a given
 problem, this asks whether the problem is stated right. It separates symptom from mechanism ("does
@@ -157,15 +157,16 @@ Output shape:
 
 A reframe that doesn't change your approach is a paraphrase, not a reframe.
 
-### `first-principles`
+### `back-to-basics`
 
-Decomposes a claim to irreducible truths and rebuilds from them, through three lenses: **A**
-Aristotelian decomposition (keep asking "why?" until the chain ends in physics, logic, or verified
-data — "we've always done it this way" is never a first principle), **B** practical reconstruction
-(Musk/Munger — rebuild from raw inputs, invert, trace second-order effects, name opportunity cost),
-and **C** synthesis and challenge (which assumptions survived A, which new ones B introduced, and
-under what conditions the reconstruction is wrong). It self-scores 0–10 and states what's missing to
-reach 10. Reserve it for novel situations and large bets — it's overkill for routine decisions.
+Breaks an approach down to a checkable floor, rebuilds from it, and states the conditions under which
+the rebuild is wrong. Every assumption is listed first, then pushed through "why?" until it ends in
+something checkable and sorted as `checked`, `inherited`, or `unverified` — "that's how it's done" is
+a finding, not a floor. The rebuild uses only what survived, names what it gives up, and may come out
+identical to today's approach, which means the constraints were real. It questions the approach and
+its constraints; `redefine-problem` questions the problem statement, and `devils-advocate` does the
+full counterargument work on the rebuild. Reserve it for novel situations and large bets — it's
+overkill for routine decisions.
 
 ```
 우리 배포가 왜 2주 걸려야 하는지 처음부터 다시 따져줘.
@@ -202,7 +203,7 @@ Multi-persona attack (CFO, on-call/SRE, competitor, legal, junior, customer) is 
 technical choices — a regulatory critique of "Redis vs Memcached" is theater. Path-forward
 suggestions only appear if you ask for improvement rather than critique.
 
-### `thought-organizer`
+### `untangle-thoughts`
 
 Takes scattered notes, half-formed ideas, and stream-of-consciousness and produces structure: absorb
 → extract atoms → cluster → rank → structure → surface gaps → deliver. It preserves your intent
@@ -224,23 +225,24 @@ It picks the output shape before structuring:
 | 5+ ideas with named cross-links, knowledge-base goal | Zettelkasten-style linking |
 | You need only the core message | Core claim extraction |
 
-### `negotiation`
+### `negotiate`
 
-Chris Voss's tactical-empathy framework, prepared before the conversation rather than improvised in
-it: tactical empathy, mirroring, labeling, calibrated questions, accusation audit, "That's right",
-Ackerman bargaining, and Black Swans. Identify your BATNA before entering; prepare at least two black
-swans; anchor on interests rather than positions; never treat the first offer as the floor. It
-self-scores 0–10 against those moves.
+Counsel on your side: it acts like the lawyer and negotiator you don't have, and prepares before the
+conversation rather than improvising in it. Four steps — case prep (counterpart's interests, your
+BATNA and walk-away line, tradeables), terms review (clauses sorted into missing, risky, negotiable,
+top asks ranked), strategy with exact lines to say, and a concession order in which every give is
+traded for something. The BATNA is settled before any strategy, and it will not invent a competing
+offer for you.
 
 ```
 연봉 협상을 앞두고 있어. 시장가보다 낮게 받고 있는 상황이고
 매니저는 예산이 묶여 있다고 말해. 어떻게 접근해야 할지 준비해줘.
 ```
 
-Ackerman ladder: open at 65 % of target, then 85 % → 95 % → 100 %, with a precise non-round final
-number and a non-monetary bonus attached. Every technique carries an ethical boundary — empathy to
-understand rather than manipulate, black swans to improve both sides' outcome rather than exploit
-private information.
+Voss techniques (accusation audit, mirroring, labeling, calibrated questions) are tools for the
+conversation itself; the Ackerman ladder — 65 % → 85 % → 95 % → 100 %, with a precise final number and
+a non-monetary add-on — applies to money only. Output keys: CASE, TERMS, OPEN, SAY, CONCEDE, CHECK.
+Not legal advice; have a lawyer read any binding contract before signing.
 
 ## MCP
 
@@ -249,17 +251,17 @@ private information.
 | `deep-thinking-workflow` | think-tool, sequential-thinking | mcp-reasoner |
 | `mentor` | think-tool (classifying what kind of question it is) | sequential-thinking, mcp-reasoner |
 | `brainstorming` | — | think-tool, sequential-thinking, mcp-reasoner |
-| `problem-reframer` | think-tool (required gate: assumption enumeration) | sequential-thinking |
-| `first-principles` | think-tool (Lens A and Lens C) | mcp-reasoner |
+| `redefine-problem` | think-tool (required gate: assumption enumeration) | sequential-thinking |
+| `back-to-basics` | think-tool (assumption listing, checked vs inherited) | mcp-reasoner |
 | `devils-advocate` | — | think-tool, mcp-reasoner, sequential-thinking |
-| `thought-organizer` | think-tool (gap surfacing) | sequential-thinking |
-| `negotiation` | think-tool (counterpart motivations, black swans) | sequential-thinking |
+| `untangle-thoughts` | think-tool (gap surfacing) | sequential-thinking |
+| `negotiate` | think-tool (counterpart interests, BATNA check) | sequential-thinking |
 
 Add the remote SSE endpoints in Claude settings → MCP Servers.
 
 ## Related workflows
 
-- Before Step 1, `problem-reframer` if the question itself feels wrong.
+- Before Step 1, `redefine-problem` if the question itself feels wrong.
 - `mentor` when the thing needing examination is your own judgment; it hands over to
   `deep-thinking-workflow` once the question is stated right and a deliverable is what's left.
 - After a decision, feed it into `develop:dev-quality-workflow` (engineering handoff) or

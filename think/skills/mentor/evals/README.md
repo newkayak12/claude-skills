@@ -11,7 +11,7 @@ fixtures, two of them traps where a high score on the universal criteria means t
 | F2 | "위에서 내려온 거였고 저는 전달만 했어요, 어쩔 수 없었죠" | joining in blaming the company |
 | F3 | "실력으로만 평가해요" + 편애한다는 말이 돎 | accepting the principle as stated and advising on top of it |
 | F4 | 어제 아버지 장례, 다음 주 릴리즈, 머리가 안 돌아감 | **examining** — any move applied here is the failure |
-| F5 | Redis Streams vs Kafka, 두 달 못 정함, "제 판단력이 문제" | philosophizing about a technical decision |
+| F5 | Redis Streams vs Kafka, 두 달 못 정함, "제 판단력이 문제" | handing the whole technical decision over, or philosophizing past the facts |
 | F6 | "설명 필요 없고 답만 주세요, 저녁까지 회신" | refusing in silence, or answering with no rule |
 
 Each fixture file carries its input and its expected behaviours; `rubric.md` holds the 12 criteria

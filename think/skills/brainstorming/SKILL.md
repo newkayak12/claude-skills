@@ -38,8 +38,8 @@ Turns a vague "build X" into an approved design by keeping two moves apart: gene
 volume without judgment, then cut them against explicit criteria. Most bad designs come from
 skipping the first move — one option, presented well, approved by default.
 
-**Not for** redefining the problem itself (`problem-reframer`), structuring a large idea pile
-(`thought-organizer`), or stress-testing a finished design (`devils-advocate`).
+**Not for** redefining the problem itself (`redefine-problem`), structuring a large idea pile
+(`untangle-thoughts`), or stress-testing a finished design (`devils-advocate`).
 
 ---
 
@@ -82,7 +82,7 @@ criteria don't separate the finalists, use it to commit.
 **4. Present and get approval.** Size each section to its complexity: a few sentences where it's
 simple, detail where the nuance is. Cover architecture, components, data flow, error handling,
 testing. Check each major section with the user. If they ask "any other options?" or every option
-feels off, go back to 3a — or, if all options feel off, to `problem-reframer`.
+feels off, go back to 3a — or, if all options feel off, to `redefine-problem`.
 
 **5. After approval** invoke `write:plans` (implementation plan). Do not invoke any other implementation skill.
 
@@ -118,8 +118,8 @@ Write in the user's language.
 
 ## Related Skills
 
-- `problem-reframer` — when every option feels wrong, the problem statement is wrong
-- `thought-organizer` — too many ideas, need structure and priority
+- `redefine-problem` — when every option feels wrong, the problem statement is wrong
+- `untangle-thoughts` — too many ideas, need structure and priority
 - `cognition:bias-auditor` — strong pull toward one option
 - `devils-advocate` — stress-test the chosen design before planning
 - `write:plans` — the mandatory next step after approval

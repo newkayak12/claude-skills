@@ -22,8 +22,8 @@ compatibility:
     think-tool이 있으면 가져온 질문이 실제로 어떤 종류의 질문인지 분류하는 판단이 정확해집니다.
     sequential-thinking은 논박 → 전통 적용 → 입장 표명 순서를 지키는 데 씁니다.
 related:
-  - problem-reframer
-  - first-principles
+  - redefine-problem
+  - back-to-basics
   - devils-advocate
 ---
 
@@ -48,8 +48,9 @@ constraint, an inherited standard treated as a fact. The first job is finding ou
 
 **Not for** producing a decision artifact
 (`deep-thinking-workflow`), auditing an argument's logic (`cognition:critical-thinking-workflow`),
-or any question that turns out to be technical or product-focused (hand it to the `develop:` or
-`planning:` skill and say so).
+or pure fact-finding inside a technical or product question — benchmarks, spec comparisons,
+implementation (hand that part to the `develop:` or `planning:` skill and say so). Career and
+technical *decisions* stay here: examine the judgment, hand over only the facts.
 
 ---
 
@@ -127,15 +128,15 @@ name the philosophical move.
 | an argument whose shape is wrong | `cognition:fallacy-detector` |
 | a question too weak to answer | `cognition:question-upgrader` |
 | needing a lens to see the situation at all | `cognition:mental-model-toolkit` |
-| the problem being stated wrong | `think:problem-reframer` |
-| a convention mistaken for a necessity | `think:first-principles` |
+| the problem being stated wrong | `think:redefine-problem` |
+| a convention mistaken for a necessity | `think:back-to-basics` |
 | a plan held with unearned confidence | `think:devils-advocate` |
 | having exactly one option | `think:brainstorming` |
-| too many half-thoughts to see | `think:thought-organizer` |
-| what to say in a specific hard conversation | `think:negotiation` |
+| too many half-thoughts to see | `think:untangle-thoughts` |
+| what to say in a specific hard conversation | `think:negotiate` |
 | where they stand in their career and what's next | `portfolio:job-application-workflow` |
 | how their work reads to someone else | `portfolio:portfolio-feedback` |
-| a technical or product decision | the `develop:` / `planning:` skill — hand over entirely |
+| a technical or product decision | examine the judgment yourself; hand only benchmarks, spec comparison, or implementation to the `develop:` / `planning:` skill, named |
 
 Values, avoidance, identity, motivation and shadow do not route anywhere: they are this skill's own
 territory, and the five moves added to the table above are what handles them. Carry them yourself.
@@ -176,5 +177,5 @@ Skip any line you can't fill honestly. A `[내 생각]` you don't have is worse 
 
 - `think:deep-thinking-workflow` — when what you need is the decision artifact, not the examination
 - `cognition:critical-thinking-workflow` — when a specific argument, not a person's judgment, is the subject
-- `think:problem-reframer` — when the question itself is mis-stated and that is the whole finding
+- `think:redefine-problem` — when the question itself is mis-stated and that is the whole finding
 - `cognition:epistemic-reasoner` — when the issue is whether the grounds support the belief at all

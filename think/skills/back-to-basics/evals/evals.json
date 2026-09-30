@@ -1,0 +1,183 @@
+{
+  "skill_name": "back-to-basics",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "왜 배포가 2주나 걸려야 해? 진짜 필수적인 단계가 뭐야?",
+      "expected_output": "배포 2주 접근을 한 줄로 서술하고, 각 단계의 가정을 checked/inherited/unverified로 분류. 확인된 바닥만으로 배포 절차를 재구성하고, 재구성이 틀리는 조건과 다음 확인 항목을 제시. 한국어.",
+      "files": [],
+      "expectations": [
+        "Approach is restated in one line before any analysis",
+        "Every assumption is listed and sorted into checked, inherited, and unverified",
+        "Inherited items name where the habit came from (e.g. past incident, org history) rather than being called a floor",
+        "The rebuild uses only the checked pile plus explicitly flagged unverified items",
+        "No invented numbers or facts appear in the floor; unverified items say how to check",
+        "A 'Wrong if' / '틀리는 조건' section lists falsifying conditions and new assumptions",
+        "A Next line names the cheapest check for the top unverified item",
+        "Response is in Korean (matching prompt language)"
+      ],
+      "assertions": [
+        {
+          "name": "floor-section",
+          "type": "contains_any",
+          "values": [
+            "바닥",
+            "Floor"
+          ]
+        },
+        {
+          "name": "three-piles",
+          "type": "contains_any",
+          "values": [
+            "inherited"
+          ]
+        },
+        {
+          "name": "rebuild-section",
+          "type": "contains_any",
+          "values": [
+            "재구성",
+            "Rebuild"
+          ]
+        },
+        {
+          "name": "wrong-if",
+          "type": "contains_any",
+          "values": [
+            "틀리는 조건",
+            "Wrong if"
+          ]
+        },
+        {
+          "name": "next-line",
+          "type": "contains_any",
+          "values": [
+            "Next"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "레거시 제약 없이 처음부터 설계하면 어떻게 될까? 지금은 모든 주문이 단일 Oracle DB를 거쳐야 해.",
+      "expected_output": "'단일 Oracle DB 경유' 제약을 분해해 계약/라이선스/데이터 정합성 등 확인 가능한 것과 관습으로 물려받은 것을 구분. 유추(다른 회사는 이렇게 했다)에 의존하지 않고 재구성하며, 틀리는 조건과 devils-advocate 인계를 제시.",
+      "files": [],
+      "expectations": [
+        "The single-Oracle constraint is broken into sub-assumptions and each is tested for checkability",
+        "Contract or licence text and data-consistency needs are treated as possible floors only if checkable",
+        "No rebuild by analogy ('like company X did'); if analogy appears it is named and dropped",
+        "If the rebuild equals the incumbent, the response says so plainly",
+        "A 'Wrong if' section is present",
+        "The response offers to hand the rebuild to devils-advocate for a full attack instead of attacking it inline",
+        "Response is in Korean"
+      ],
+      "assertions": [
+        {
+          "name": "floor-section",
+          "type": "contains_any",
+          "values": [
+            "바닥",
+            "Floor"
+          ]
+        },
+        {
+          "name": "wrong-if",
+          "type": "contains_any",
+          "values": [
+            "틀리는 조건",
+            "Wrong if"
+          ]
+        },
+        {
+          "name": "handoff-devils-advocate",
+          "type": "contains_any",
+          "values": [
+            "devils-advocate"
+          ]
+        },
+        {
+          "name": "no-analogy-rebuild",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*(처럼 하면 됩니다|just copy))[\\s\\S]*$"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Why does onboarding have to take 3 weeks? Rebuild it from first principles.",
+      "expected_output": "Approach line, Floor with checked/inherited/unverified, Rebuild built from the checked pile, Wrong if, Next. English output. Unverified items (e.g. compliance training length) marked with how to verify; no invented durations.",
+      "files": [],
+      "expectations": [
+        "Output uses the labels Approach, Floor, Rebuild, Wrong if, Next",
+        "Compliance or access-provisioning steps are classified by whether they can be checked, not assumed required",
+        "Numbers not given by the user are marked unverified rather than invented",
+        "The rebuild states what it gives up and how it differs from today's 3-week process",
+        "Response is in English (matching prompt language)"
+      ],
+      "assertions": [
+        {
+          "name": "floor",
+          "type": "contains_any",
+          "values": [
+            "Floor",
+            "바닥"
+          ]
+        },
+        {
+          "name": "rebuild",
+          "type": "contains_any",
+          "values": [
+            "Rebuild",
+            "재구성"
+          ]
+        },
+        {
+          "name": "wrong-if",
+          "type": "contains_any",
+          "values": [
+            "Wrong if",
+            "틀리는 조건"
+          ]
+        },
+        {
+          "name": "unverified-marked",
+          "type": "contains_any",
+          "values": [
+            "unverified"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "We keep optimizing our checkout page conversion but nothing moves the number. What do we actually know for certain? Maybe we're solving the wrong problem.",
+      "expected_output": "Runs the breakdown briefly, notices the goal/problem statement itself may be mis-stated, stops and hands off to redefine-problem rather than continuing to rebuild the approach. May also point to devils-advocate for attacking any rebuild.",
+      "files": [],
+      "expectations": [
+        "Lists what is known versus inherited about the checkout optimization effort",
+        "Recognises the doubt is about the problem statement, not the how, and says so",
+        "Explicitly hands off to redefine-problem instead of reframing the problem inside this skill",
+        "Does not fabricate conversion data",
+        "Response is in English"
+      ],
+      "assertions": [
+        {
+          "name": "handoff-redefine",
+          "type": "contains_any",
+          "values": [
+            "redefine-problem"
+          ]
+        },
+        {
+          "name": "floor",
+          "type": "contains_any",
+          "values": [
+            "Floor",
+            "바닥",
+            "checked"
+          ]
+        }
+      ]
+    }
+  ]
+}

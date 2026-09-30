@@ -1,6 +1,6 @@
 # Worked Examples
 
-These examples show the problem-reframer skill applied end-to-end across software and non-software domains. Each example names the technique(s) used so you can see which reframing produced which insight.
+These examples show the redefine-problem skill applied end-to-end across software and non-software domains. Each example names the technique(s) used so you can see which reframing produced which insight.
 
 ---
 

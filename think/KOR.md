@@ -20,13 +20,13 @@
 | 하고 싶은 것 | 스킬 |
 |---|---|
 | 아이디어 → 결정까지 전 과정 돌리기 | `deep-thinking-workflow` |
-| 어떻게 판단하고 살아야 할지에 대한 질문을, 답이 아니라 검토받기 | `mentor` |
+| 어떻게 판단하고 살아야 할지에 대한 질문(커리어·기술 판단 포함)을, 답이 아니라 검토받기 | `mentor` |
 | 해법 모양이 아직 안 잡힌 걸 설계하기 | `brainstorming` |
-| 애초에 맞는 문제를 풀고 있는지 점검 | `problem-reframer` |
-| 물려받은 가정을 걷어내고 바닥부터 재구성 | `first-principles` |
+| 애초에 맞는 문제를 풀고 있는지 점검 | `redefine-problem` |
+| 접근 방식을 확인 가능한 바닥까지 분해하고 거기서 재구성 | `back-to-basics` |
 | 내 계획을 가장 강한 반론으로 두들겨 맞기 | `devils-advocate` |
-| 흩어진 노트를 쓰거나 발표할 수 있는 구조로 | `thought-organizer` |
-| 연봉·계약·어려운 대화 준비 | `negotiation` |
+| 흩어진 노트를 쓰거나 발표할 수 있는 구조로 | `untangle-thoughts` |
+| 연봉·계약·어려운 대화에서 내 편 조언자 두기 | `negotiate` |
 
 ## 스킬
 
@@ -38,7 +38,7 @@
 | 단계 | 스킬 | 산출 | 건너뛸 때 |
 |---|---|---|---|
 | 1. 발산 | `brainstorming` | 옵션 3~5개 → 적어둔 kill-criteria로 후보 2~3개까지 | 아이디어가 이미 있을 때 |
-| 2. 분해 | `first-principles` | 근본 원인, 구성요소, 가정 목록 | 문제 범위가 이미 명확할 때 |
+| 2. 분해 | `back-to-basics` | 근본 원인, 구성요소, 가정 목록 | 문제 범위가 이미 명확할 때 |
 | 3. 공격 | `devils-advocate` | 가장 강한 반론 3개 + 핵심 취약점 | 판돈이 작거나 되돌릴 수 있을 때 |
 | 4. 수렴 | (결정 프레임워크) | 가중치 결정 매트릭스, 추천, 확신도 | 남은 옵션이 하나뿐일 때 |
 
@@ -82,8 +82,9 @@
 세 개 메뉴 내밀지 않기, 당신 이야기에서 나온 구체적 사례 하나 없이 추상화하지 않기, 아첨하지 않기,
 아픈 말을 정확히 한 번 하고 반복하지 않기. 아포리아는 허용된 결말입니다 — 들어올 때보다 더 선명한
 혼란으로 끝나는 게, 내 것이 아닌 깔끔한 결론보다 낫습니다. 저장소 전체를 끌어씁니다(전제와 근거는
-`cognition:`, 가치와 회피는 `self:`, 커리어는 `leadership:`/`portfolio:`). 기술·제품 질문으로
-판명되면 철학하지 않고 `develop:`/`planning:`으로 전부 넘깁니다.
+`cognition:`, 가치와 회피는 `self:`, 커리어는 `leadership:`/`portfolio:`). 커리어·기술 결정은
+여기 남아 판단 자체를 검토하고, 벤치마크·스펙 비교·구현 같은 사실 작업만 이름을 밝히고
+`develop:`/`planning:`으로 넘깁니다.
 
 대화가 닫히는 지점에 도달했을 때의 마무리 형태:
 
@@ -126,7 +127,7 @@
 [설계] 아키텍처 · 컴포넌트 · 데이터 흐름 · 에러 · 테스트 → 승인 → write:plans
 ```
 
-### `problem-reframer`
+### `redefine-problem`
 
 풀기 전에 문제를 의심합니다. `brainstorming`이 *주어진 문제에 더 많은 해법*을 만든다면, 이건
 *문제가 제대로 정의됐는지*를 묻습니다. 증상과 메커니즘을 분리하고("이 상태가 사라지면 끝나는가,
@@ -151,15 +152,15 @@
 
 접근이 안 달라지는 reframe은 reframe이 아니라 같은 문제의 다른 표현입니다.
 
-### `first-principles`
+### `back-to-basics`
 
-주장을 더 쪼갤 수 없는 사실까지 분해하고 거기서 다시 쌓습니다. 렌즈 셋으로 돌아갑니다. **A**
-아리스토텔레스식 분해 — 물리·논리·검증된 데이터에 닿을 때까지 "왜?"를 계속 묻습니다. "원래 이렇게
-해왔다"는 절대 first principle이 아닙니다. **B** 실전 재구성(Musk/Munger) — 원재료부터 다시 쌓고,
-뒤집어 보고, 2차 효과를 따라가고, 기회비용을 이름으로 적습니다. **C** 종합과 공격 — A에서 살아남은
-가정과 B가 새로 들여온 가정을 구분하고, 이 재구성이 틀리게 되는 조건을 명시합니다. 0~10점으로
-스스로 채점하고 10점까지 뭐가 모자란지 말합니다. 새로운 상황이나 큰 베팅에 쓰세요. 일상적 결정엔
-과합니다.
+접근 방식을 확인 가능한 바닥까지 분해하고, 거기서 다시 쌓고, 그 재구성이 틀리게 되는 조건을 말합니다.
+가정을 먼저 전부 나열한 뒤 각각을 "왜?"로 밀어 확인 가능한 것에 닿을 때까지 파고, `checked` /
+`inherited` / `unverified`로 분류합니다 — "원래 이렇게 해왔다"는 바닥이 아니라 발견 사항입니다.
+재구성은 살아남은 것만 쓰고, 무엇을 포기하는지 적습니다. 결과가 지금의 접근과 같을 수도 있는데,
+그건 제약이 진짜였다는 뜻입니다. 접근과 제약을 의심하며, 문제 정의는 `redefine-problem`이,
+재구성에 대한 본격적인 반론은 `devils-advocate`가 맡습니다. 새로운 상황이나 큰 베팅에 쓰세요.
+일상적 결정엔 과합니다.
 
 ```
 우리 배포가 왜 2주 걸려야 하는지 처음부터 다시 따져줘.
@@ -196,7 +197,7 @@ Position / Steel-man
 — "Redis vs Memcached"에 규제 시점 공격은 theater입니다. 개선안은 비판이 아니라 개선을 원한다고
 할 때만 나옵니다.
 
-### `thought-organizer`
+### `untangle-thoughts`
 
 흩어진 노트, 반쯤 만들어진 아이디어, 의식의 흐름을 받아 구조를 냅니다: 흡수 → 원자 추출 → 군집화
 → 우선순위 → 구조화 → 빈틈 노출 → 전달. 사용자의 의도를 보존하고 서사를 씌우지 않으며, 말하지
@@ -217,22 +218,23 @@ Position / Steel-man
 | 교차 링크가 있는 5개 이상 아이디어, 지식베이스 목적 | Zettelkasten 방식 링크 |
 | 핵심 메시지만 필요할 때 | Core claim extraction |
 
-### `negotiation`
+### `negotiate`
 
-Chris Voss의 tactical empathy 프레임워크를, 대화 중 즉흥이 아니라 대화 전에 준비하는 형태로 씁니다:
-tactical empathy, mirroring, labeling, calibrated questions, accusation audit, "That's right",
-Ackerman 협상, Black Swans. 들어가기 전에 BATNA를 정하고, black swan을 최소 두 개 준비하고, 포지션
-대신 이해관계에 앵커하고, 첫 제안을 바닥으로 취급하지 않습니다. 이 항목들에 대해 0~10점으로 스스로
-채점합니다.
+내 편에 서는 조언자입니다. 나에게 없는 변호사이자 협상가처럼 움직이며, 대화 중 즉흥이 아니라 대화
+전에 준비합니다. 네 단계 — 사건 준비(상대의 이해관계, 내 BATNA와 walk-away 선, 맞바꿀 카드), 조건
+검토(조항을 누락·위험·협상 가능으로 분류하고 요구 우선순위 매기기), 전략과 그대로 말할 문장,
+양보 순서(모든 양보는 무언가와 맞바꿈). BATNA는 전략보다 먼저 정하고, 없는 경쟁 제안을 지어내
+주지 않습니다.
 
 ```
 연봉 협상을 앞두고 있어. 시장가보다 낮게 받고 있는 상황이고
 매니저는 예산이 묶여 있다고 말해. 어떻게 접근해야 할지 준비해줘.
 ```
 
-Ackerman 사다리: 목표의 65 %로 열고 85 % → 95 % → 100 %, 마지막은 딱 떨어지지 않는 정밀한 숫자에
-비금전적 보너스를 붙입니다. 모든 기법에 윤리 경계가 있습니다 — 조작이 아니라 이해를 위한 공감,
-사적 정보 착취가 아니라 양쪽 결과를 개선하기 위한 black swan.
+Voss 기법(accusation audit, mirroring, labeling, calibrated questions)은 대화 자체에 쓰는 도구이고,
+Ackerman 사다리 — 65 % → 85 % → 95 % → 100 %, 마지막은 정밀한 숫자에 비금전적 add-on — 는 돈에만
+씁니다. 출력 키: CASE, TERMS, OPEN, SAY, CONCEDE, CHECK. 법률 자문이 아니므로 구속력 있는 계약은
+서명 전에 변호사에게 보이세요.
 
 ## MCP
 
@@ -241,17 +243,17 @@ Ackerman 사다리: 목표의 65 %로 열고 85 % → 95 % → 100 %, 마지막�
 | `deep-thinking-workflow` | think-tool, sequential-thinking | mcp-reasoner |
 | `mentor` | think-tool (어떤 종류의 질문인지 분류) | sequential-thinking, mcp-reasoner |
 | `brainstorming` | — | think-tool, sequential-thinking, mcp-reasoner |
-| `problem-reframer` | think-tool (가정 열거 필수 게이트) | sequential-thinking |
-| `first-principles` | think-tool (Lens A, Lens C) | mcp-reasoner |
+| `redefine-problem` | think-tool (가정 열거 필수 게이트) | sequential-thinking |
+| `back-to-basics` | think-tool (가정 나열, checked/inherited 구분) | mcp-reasoner |
 | `devils-advocate` | — | think-tool, mcp-reasoner, sequential-thinking |
-| `thought-organizer` | think-tool (빈틈 노출) | sequential-thinking |
-| `negotiation` | think-tool (상대 동기 분석, black swan 탐색) | sequential-thinking |
+| `untangle-thoughts` | think-tool (빈틈 노출) | sequential-thinking |
+| `negotiate` | think-tool (상대 이해관계 분석, BATNA 점검) | sequential-thinking |
 
 Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 
 ## 이어지는 워크플로
 
-- Step 1 전에, 질문 자체가 이상하게 느껴지면 `problem-reframer`.
+- Step 1 전에, 질문 자체가 이상하게 느껴지면 `redefine-problem`.
 - 검토가 필요한 대상이 내 판단 자체라면 `mentor`. 질문이 제대로 서고 남은 게 산출물뿐이면
   `deep-thinking-workflow`로 넘깁니다.
 - 결정이 나오면 `develop:dev-quality-workflow`(엔지니어링 인계)나 `planning:roadmap-planning`(제품/전략

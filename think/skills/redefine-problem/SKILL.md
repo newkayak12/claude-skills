@@ -1,5 +1,5 @@
 ---
-name: problem-reframer
+name: redefine-problem
 description: >-
   Use when solutions keep feeling wrong or shallow — when the problem itself may
   be mis-defined. Triggers on: "뭔가 잘못된 것 같아", "계속 이 문제가 반복돼", "다른 각도로 봐야 할 것
@@ -20,7 +20,7 @@ compatibility:
     think-tool이 있으면 숨겨진 가정을 체계적으로 열거하는 필수 게이트 단계를 수행할 수 있습니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 related:
-  - first-principles
+  - back-to-basics
   - devils-advocate
   - brainstorming
 ---
@@ -36,11 +36,11 @@ Brainstorming과 다른 점: brainstorming은 *주어진 문제에 더 많은 �
 | Situation | Use |
 |-----------|-----|
 | "I need more ideas for X" | brainstorming |
-| "I keep trying things but nothing works" | problem-reframer |
+| "I keep trying things but nothing works" | redefine-problem |
 | "What should I build?" | brainstorming |
-| "Why does this keep being a problem?" | problem-reframer |
-| "I have solutions but they all feel wrong" | problem-reframer |
-| "Maybe I'm solving the wrong thing" | problem-reframer |
+| "Why does this keep being a problem?" | redefine-problem |
+| "I have solutions but they all feel wrong" | redefine-problem |
+| "Maybe I'm solving the wrong thing" | redefine-problem |
 
 ## Core Workflow
 
@@ -165,7 +165,7 @@ See `references/examples.md` for worked examples across software and non-softwar
 
 ## Related Skills
 
-- `first-principles` — 재프레이밍 후 근본 가정을 더 깊이 분해하고 바닥부터 재구성하고 싶을 때
+- `back-to-basics` — 재프레이밍 후 근본 가정을 더 깊이 분해하고 바닥부터 재구성하고 싶을 때
 - `devils-advocate` — 재프레이밍한 새 방향에 강한 반론으로 검증하고 싶을 때. multi-persona *공격*이 필요하면 그쪽
 - `brainstorming` — 문제 정의가 분명해진 뒤 해법을 발산해야 할 때. 제약 *완화*로 해법을 찾고 싶다면 그쪽의 constraint relaxation
 - `bias-auditor` — reframing 결과 confidence가 높다면 점검
