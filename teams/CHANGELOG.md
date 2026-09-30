@@ -5,6 +5,7 @@
 Every release of the `teams` plugin, newest first. Moved here verbatim from the README's old `## Status` section. `teams:patch` prepends new release lines under `## Status` below.
 
 ## Status
+- v0.38.5 — test-taskmanager: the two hanging-driver tests now kill every fake driver they spawned (`killDriversIn`); one test's cleanup never ran because `task` was scoped inside `try`. Test-only, no behavior change.
 - v0.38.4 — repo design docs and scripts moved under `_repo/`; doc citations in skills, code comments and README re-pointed. No behavior change.
 - v0.38.3 — All fifteen skills now carry a standard What Claude Does / What You Do table.
 - v0.38.2 — planning draft and template-fill nodes mount write:plans (was write:doc-coauthoring)

@@ -5,6 +5,7 @@
 `teams` 플러그인의 모든 릴리스를 최신순으로 적었습니다. 예전 KOR.md의 `## 상태` 절을 그대로 옮겨 온 것입니다. 새 릴리스 줄은 `teams:patch`가 아래 `## 상태` 맨 위에 추가합니다.
 
 ## 상태
+- v0.38.5 — test-taskmanager: hanging-driver 테스트 두 개가 띄운 가짜 드라이버를 모두 정리(`killDriversIn`). 한 테스트는 `task`가 `try` 안에 선언돼 정리 코드가 한 번도 돌지 않았음. 테스트만 수정, 동작 변화 없음.
 - v0.38.4 — 저장소 설계 문서·스크립트가 `_repo/` 아래로 이동; 스킬·코드 주석·README의 문서 인용 경로 갱신. 동작 변화 없음.
 - v0.38.3 — 열다섯 스킬 모두 What Claude Does / What You Do 표 형식으로 통일.
 - v0.38.2 — planning draft·template-fill 노드가 write:plans를 씀 (기존 write:doc-coauthoring)
