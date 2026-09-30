@@ -47,11 +47,19 @@ Check: is the skill judgment-heavy? If yes, is `effort: high` (or higher) set?
 
 The `scenarios:` frontmatter field feeds directly into the eval pipeline. Ideal: 2–3 entries with both English and Korean variants.
 
-Check: present and populated? Mix of EN and KR? Realistic user prompts (not skill-internal jargon)?
+Check: present and populated? 2–3 EN and 2–3 KR? Realistic user prompts (not skill-internal jargon)?
+
+### 6. Required sections and length
+
+Every skill needs, in order: Process (or Workflow) → Output Template (or Output Format) → What Claude Does / What You Do → Related Skills. No background explanation sections — the skill name is the context.
+
+Length target: ~70% of the repo's average SKILL.md line count. If the skill lives in a repo, compute the average (`wc -l */skills/*/SKILL.md`); otherwise skip this sub-check.
+
+Check: which sections are missing or out of order? Is the file over the target, and what would you cut?
 
 ## How to respond
 
-Before issuing PASS / WARN / FAIL, if `think-tool` is available, invoke it to weigh all five criteria — a skill can pass on description but fail badly on compaction ordering.
+Before issuing PASS / WARN / FAIL, if `think-tool` is available, invoke it to weigh all six criteria — a skill can pass on description but fail badly on compaction ordering.
 
 ```
 ### 2. Authoring Principles — [PASS / WARN / FAIL]
@@ -73,8 +81,11 @@ Before issuing PASS / WARN / FAIL, if `think-tool` is available, invoke it to we
 **scenarios field:** [OK / MISSING / WEAK]
   [If weak: what's wrong — too few entries, no Korean variants, unrealistic?]
 
+**Sections & length:** [OK / MISSING SECTIONS / OVER TARGET]
+  [Missing or misordered sections; line count vs target]
+
 **Findings:**
 [2–4 sentences. What does following or violating these principles mean for this skill's runtime behavior?]
 ```
 
-Be specific. Quote the problematic parts so skill-creator knows exactly what to fix.
+Be specific. Quote the problematic parts so the author knows exactly what to fix.

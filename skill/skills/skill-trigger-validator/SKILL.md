@@ -59,6 +59,15 @@ Good Korean queries feel like something a developer would actually type in chat 
 
 For each query, ask: **would the current description cause Claude to invoke this skill?**
 
+Default is a judged score — Claude reads the description and predicts. When the user asks for a measured score ("실제로 돌려봐", "measure it"), run each query headless instead and record whether the skill fired:
+
+```bash
+claude -p "<query>" --setting-sources project --plugin-dir <plugin> --output-format stream-json --verbose --max-turns 2 < /dev/null \
+  | grep -q '"name":"Skill".*<skill-name>' && echo HIT || echo MISS
+```
+
+Run from a scratch directory under `$TMPDIR`, not inside the plugin. Label the score `measured` or `judged` in the report.
+
 Assess each query on two axes:
 - **Should trigger** (queries 1–7, 10): does the description give enough signal? Score 1 if yes, 0 if no.
 - **Should not trigger** (queries 8–9): does the description stay silent? Score 1 if correctly silent, 0 if it would falsely trigger.
@@ -85,11 +94,12 @@ Rewrite the description as a drop-in replacement. Follow these principles:
 2. **Frame around intent/situation**, not just keywords — describe *when someone needs this*, not just *what words they say*
 3. **Include Korean natural language phrases** — real colloquial expressions in-line, not a separate section
 4. **Include English colloquial variants** alongside formal terms
-5. **Stay under ~80 words** — descriptions are always in context; verbosity degrades the whole system
+5. **Stay at or under 250 characters** — Claude Code truncates past that, and descriptions are always in context
+6. **Start with `Use when`** — the situation first; no workflow summary
 
 **Structure:**
 ```
-[What skill does]. Use when [situation/intent] — [English phrases], or Korean: [한국어 구어체]. Also triggers on [implicit/borderline cases worth catching].
+Use when [situation/intent]. Triggers on: "[한국어 구어체]", "[English phrase]", "[implicit case]".
 ```
 
 **Before / After example:**
@@ -101,7 +111,7 @@ Write readable, maintainable code. Use when the user mentions "code review", "na
 
 After:
 ```
-Improves code quality through naming, function design, and smell detection. Use when reviewing or cleaning up any code — "code review", "refactor", "this is hard to read", or Korean: "코드 리뷰해줘", "이 코드 좀 봐줘", "가독성", "리팩토링", "코드 정리". Also triggers when someone asks why code feels messy or hard to change.
+Use when code is hard to read or change and needs review or cleanup. Triggers on: "코드 리뷰해줘", "이 코드 좀 봐줘", "가독성", "리팩토링", "this is hard to read", "code review".
 ```
 
 ## Output Format
@@ -111,7 +121,7 @@ Improves code quality through naming, function design, and smell detection. Use 
 ```
 ## [skill-name] — Trigger Analysis
 
-**Score:** X/10
+**Score:** X/10 (judged / measured)
 **Current description:** [verbatim]
 
 ### Query Results
@@ -144,11 +154,9 @@ Then produce individual reports for all skills scoring below 7. For skills scori
 
 ## Applying Changes
 
-After producing improved descriptions, ask the user: **"Want me to apply these to the SKILL.md files directly?"**
+If the request already asked for a fix ("개선해줘", "rewrite it"), apply the rewrites. Otherwise show them side-by-side and ask once before applying.
 
-If yes, update only the `description` field in each file's frontmatter — do not touch the body. Then follow INSTRUCT.md: bump the patch version in `marketplace.json`, update the plugin README, commit, and push.
-
-If the user wants to review first, show all rewrites side-by-side before applying.
+Update only the `description` field in each file's frontmatter — do not touch the body. Then follow the repo's update workflow (in this repo, `CLAUDE.md` → Update Workflow: bump the version in `.claude-plugin/marketplace.json`, update `<plugin>/README.md` and `<plugin>/KOR.md` together, commit).
 
 ## What Claude Does / What You Do
 
@@ -156,4 +164,9 @@ If the user wants to review first, show all rewrites side-by-side before applyin
 |--------|-----|
 | Generates 10 test queries per skill and scores trigger coverage | Name the target: skill, plugin, or all |
 | Rewrites weak descriptions | Review the rewrites |
-| Applies description changes to frontmatter only when asked | Answer whether to apply them |
+| Applies description changes to frontmatter only | Say whether to apply, if not already asked |
+
+## Related Skills
+
+- `skill-quality-assurance` — full 6-check review once the skill fires
+- `write:writing-skills` — authoring guide the rewrites must satisfy
