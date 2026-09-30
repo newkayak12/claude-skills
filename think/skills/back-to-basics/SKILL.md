@@ -2,9 +2,9 @@
 name: back-to-basics
 effort: high
 description: >-
-  Use when the current approach feels fundamentally wrong, an inherited constraint may not be real,
-  or someone wants to rebuild a solution from what is actually known. Triggers on: "왜 이렇게 해야 해?",
-  "기본부터 다시 생각해", "first principles", "가정을 의심해봐", "이 방식 자체가 맞는 건지", "처음부터 설계하면".
+  Use when an approach feels fundamentally wrong or an inherited constraint may not be real — rebuild
+  from what is actually known. Triggers: "왜 이렇게 해야 해?", "기본부터 다시 생각해", "first principles",
+  "가정을 의심해봐", "처음부터 설계하면".
 scenarios:
   - "왜 배포가 2주나 걸려야 해? 진짜 필수적인 단계가 뭐야?"
   - "레거시 제약 없이 처음부터 설계하면 어떻게 될까?"

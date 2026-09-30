@@ -25,7 +25,7 @@ For complex multi-step tasks, use these workflow skills as entry points:
 | System architecture, DDD, service boundaries, MSA | `develop:architecture-workflow` |
 | Production readiness, SRE, chaos testing, incident response | `develop:operations-workflow` |
 | Critical thinking, stress-test a plan or argument | `cognition:critical-thinking-workflow` |
-| How should I decide / judge / live — examined, not answered | `think:mentor` |
+| Mentoring in any field — career, craft, study, life decisions | `think:mentor` |
 | Knowledge vault build, retrieval quality loop, eval not improving | `knowledge:knowledge-workflow` |
 
 Each workflow skill guides through sub-skills step by step. Ask the user which step to start from if they're mid-process.
