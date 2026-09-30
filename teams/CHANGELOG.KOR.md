@@ -5,6 +5,7 @@
 `teams` 플러그인의 모든 릴리스를 최신순으로 적었습니다. 예전 KOR.md의 `## 상태` 절을 그대로 옮겨 온 것입니다. 새 릴리스 줄은 `teams:patch`가 아래 `## 상태` 맨 위에 추가합니다.
 
 ## 상태
+- v0.38.4 — 저장소 설계 문서·스크립트가 `_repo/` 아래로 이동; 스킬·코드 주석·README의 문서 인용 경로 갱신. 동작 변화 없음.
 - v0.38.3 — 열다섯 스킬 모두 What Claude Does / What You Do 표 형식으로 통일.
 - v0.38.2 — planning draft·template-fill 노드가 write:plans를 씀 (기존 write:doc-coauthoring)
 - v0.38.1 — **데몬이 재시작 한도를 다 쓰면 blocked, teams run은 Mac 절전을 막는다**: `driver_restarts`를 다 쓴 데몬의 미완료 size-L 태스크가 `running`으로 남아 `tm_wait`와 `teams run`이 끝없이 폴링했다. 이제 사유와 함께 `blocked`로 읽힌다(`tm_status`도 `taskState`를 읽는다). macOS에서 `teams run`이 `caffeinate -i -w <pid>`를 띄운다(idol-pm-4 절전으로 5시간 손실). 문서: README/KOR가 size S에 PRD를 약속하지 않고, C6에 superseded 표기, 플러그인 설명 동기화. 새 테스트 1건.
