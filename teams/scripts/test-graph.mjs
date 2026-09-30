@@ -28,7 +28,7 @@ test('planning kind: chain, no reasoning stage, and skills by stage', () => {
   assert.deepEqual(KINDS.planning.chain, ['investigate', 'draft', 'revise', 'gate']);
   assert.deepEqual(KINDS.planning.reasoning, []);
   assert.deepEqual(kindSkills('planning', 'investigate'), ['develop:domain-driven-design', 'cognition:assumption-extractor']);
-  assert.deepEqual(kindSkills('planning', 'draft'), ['write:doc-coauthoring', 'develop:architecture-designer'], 'the implementation-lead persona draws what the PRD builds');
+  assert.deepEqual(kindSkills('planning', 'draft'), ['write:plans', 'develop:architecture-designer'], 'the implementation-lead persona draws what the PRD builds');
   assert.deepEqual(kindSkills('planning', 'revise'), ['write:writer-verification', 'think:devils-advocate']);
   assert.deepEqual(kindSkills('planning', 'gate'), ['think:devils-advocate']);
   // investigate leads the chain but does not author the document; revise must be independent

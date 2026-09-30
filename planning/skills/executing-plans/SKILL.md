@@ -136,7 +136,7 @@ step-2 bar via `completion:verification-before-completion`.
 
 ## Related
 
-- `write:writing-plans` — produces the plan this skill gates (upstream).
+- `write:plans` — produces the plan this skill gates (upstream).
 - `agents:dispatching-parallel-agents` — executor for independent steps (downstream).
 - `agents:subagent-driven-development` — executor for sequential/dependent steps.
 - `completion:verification-before-completion` — settles each step's done-verdict

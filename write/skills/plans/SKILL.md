@@ -1,26 +1,42 @@
 ---
-name: writing-plans
+name: plans
 description: >-
-  Use when a task is large enough that diving in without a plan leads to rework.
-  Triggers: "구현 계획 써줘", "implementation plan", "코딩 전에 계획 잡아줘", "migration plan",
-  "plan before coding", "스텝별로 정리해줘", "리팩토링 계획".
+  Use when writing starts from a plan: an implementation plan before coding, a document others
+  will read (PRD, design doc, RFC, proposal, spec), a technical blog post, or SBI feedback to a
+  colleague. Triggers: "구현 계획 써줘", "implementation plan", "코딩 전에 계획 잡아줘", "migration plan",
+  "리팩토링 계획", "문서 같이 써줘", "PRD 작성", "design doc", "RFC 초안", "제안서 써야 해", "기술 블로그 써줘",
+  "technical blog", "회고 글", "피드백 어떻게 말해?", "SBI", "peer review 써야 해".
 scenarios:
   - "이 기능 구현 계획 작성해줘"
-  - "DB 마이그레이션 단계별로 계획 잡아줘"
   - "Create an implementation plan for this new service"
-  - "리팩토링 어떻게 단계별로 나눠야 해?"
-  - "I need a step-by-step plan before I start coding this"
-  - "의존성 있는 작업들 어떻게 순서 잡아?"
+  - "이 기능에 대한 PRD 작성해야 해"
+  - "Help me write a design doc for this new service"
+  - "Kafka 도입 과정을 기술 블로그로 써줘"
+  - "I need to give feedback but don't want it to sound mean"
 compatibility:
   optional:
     - sequential-thinking  # tracking dependency chains across many tasks
-    - think-tool           # judging whether a step is genuinely unambiguous
+    - think-tool           # judging whether a step is unambiguous; which document section has most unknowns
   remote_mcp_note: >-
     sequential-thinking이 있으면 작업 간 의존성 사슬이 복잡한 계획의 갭을 더 체계적으로
     찾을 수 있습니다. Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
-# Writing Plans
+# Plans
+
+## Step 0 — Purpose
+
+Read the purpose from the request or briefing; ask only when it is genuinely ambiguous.
+The implementation plan is the default: a hand-off from `think:brainstorming`,
+`planning:executing-plans`, `agents:subagent-driven-development` or the harness gets it
+without a question.
+
+| Purpose | Signal | Path |
+|---|---|---|
+| implementation plan | code/migration/refactor work, any plan hand-off | Overview → Process below |
+| document | PRD, design doc, RFC, proposal, decision doc, spec — including a teams briefing that names one | `references/document.md` (Stage 3 uses `agents/reader-agent.md`) |
+| blog | technical blog, 회고 글, tutorial | `references/document.md` + `references/examples/blog.md` |
+| feedback | feedback to a colleague, praise, peer review | `references/examples/sbi.md` (short form, no section loop) |
 
 ## Overview
 
@@ -34,7 +50,7 @@ happens, not how the plan was written — so `planning:executing-plans` owns
 that check at hand-off. A clean gap/ambiguity pass here claims nothing
 about drift.
 
-**Announce at start:** "I'm using the writing-plans skill to create the
+**Announce at start:** "I'm using the plans skill to create the
 implementation plan."
 
 **Save plans to:** `docs/plans/YYYY-MM-DD-<feature-name>.md` (a stated user
@@ -64,7 +80,7 @@ preference overrides this default).
 ```markdown
 # [Feature Name] Implementation Plan
 
-> Produced by write:writing-plans. Owner for execution routing:
+> Produced by write:plans. Owner for execution routing:
 > planning:executing-plans. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** [one sentence] **Architecture:** [2-3 sentences]

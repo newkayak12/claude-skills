@@ -3607,7 +3607,7 @@ test('a package that names no skills produces the child request and context it p
   });
   // Same shape with skills added to the OTHER package: P1's child is byte-for-byte what it was.
   await withTask(async ({ tm, g, task_id }) => {
-    await throughCritique(tm, task_id, { ...SHAPE, packages: [SHAPE.packages[0], { ...SHAPE.packages[1], skills: ['write:writing-plans'] }] });
+    await throughCritique(tm, task_id, { ...SHAPE, packages: [SHAPE.packages[0], { ...SHAPE.packages[1], skills: ['write:plans'] }] });
     const nx = await tm.call('tm_next', { task_id });
     const child = await g.call('team_status', { run_id: nx.children[0].run_id, cwd: nx.children[0].cwd, full: true });
     assert.equal(child.request, plain.request);
@@ -3638,11 +3638,11 @@ test('skills: false runs every stage on its contract alone, and an override repl
     const mine = await tm.call('tm_open', {
       request: 'big request', cwd, vendor: 'self', size: 'L', roles: { qa: false }, brainstorm: false,
       // A pinned L opens at the plan stage (C2), the first judging stage - its method is overridden.
-      skills: { areas: ['write:writing-plans'] },
+      skills: { areas: ['write:plans'] },
     });
     assert.equal(mine.ready[0].stage, 'areas');
     const prompt = readFileSync(mine.ready[0].briefing_path, 'utf8');
-    assert.match(prompt, /write:writing-plans/);
+    assert.match(prompt, /write:plans/);
     assert.doesNotMatch(prompt, /cognition:assumption-extractor/, 'an override replaces the default, it does not add to it');
   } finally {
     tm.close();

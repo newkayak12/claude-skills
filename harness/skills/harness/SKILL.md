@@ -109,7 +109,7 @@ CLI adapter across plugin, repo-local, and embedded installs. Beyond those, SetG
 rewritten dual-mode to run standalone AND as a harness executor — into subgoals when the task
 fits. None is required; the harness runs without them and each also works on its own:
 
-- `write:writing-plans` — produce a gate-ready plan / goal-spec-shaped decomposition.
+- `write:plans` — produce a gate-ready plan / goal-spec-shaped decomposition.
 - `planning:executing-plans` — pre-flight plan gate + executor routing.
 - `agents:subagent-driven-development` — fresh-subagent-per-task execution with two-stage review.
 - `develop:test-driven-development` — drive an Implement subgoal test-first (evidence gate).

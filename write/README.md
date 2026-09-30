@@ -5,7 +5,7 @@
 Writing skills for the things engineers actually have to write: design docs and PRDs, implementation
 plans, blog posts, peer feedback, and the SKILL.md files that drive other skills. Each one is a
 process rather than a prompt — context first, structure second, prose last — and two of them
-(`writing-plans`, `writing-skills`) are harness-aware: the same skill produces a document when you
+(`plans`, `writing-skills`) are harness-aware: the same skill produces a document when you
 run it alone, and a machine-readable spec when a `harness:harness` run is driving.
 
 ## Install & Uninstall
@@ -19,11 +19,8 @@ run it alone, and a machine-readable spec when a `harness:harness` run is drivin
 
 | I want to… | Skill |
 |---|---|
-| Co-write a substantial doc (PRD, design doc, RFC) that others will read | `doc-coauthoring` |
-| Plan a multi-step implementation before touching code | `writing-plans` |
+| Plan an implementation, co-write a doc others will read (PRD, design doc, RFC), write a technical blog post, or give feedback that lands | `plans` |
 | Write or fix a SKILL.md | `writing-skills` |
-| Write a technical blog post about something I built or fixed | `technical-blog-writer` |
-| Give a colleague feedback that lands instead of stinging | `sbi-writer` |
 | Review text, or draft a PR description / post that reads as human-written | `writer-verification` |
 | Rewrite text so it sounds like *me*, learned from my own samples | `write-like-me` |
 
@@ -32,24 +29,11 @@ plugin.
 
 ## Skills
 
-### `doc-coauthoring`
+### `plans`
 
-A three-stage workflow for a document someone else will read: **Context Gathering** (info dump plus
-5–10 numbered clarifying questions), **Refinement & Structure** (one section at a time — questions →
-5–20 brainstormed options → you curate → draft → surgical edits), and **Reader Testing** (a fresh
-Claude with no authoring context answers predicted reader questions and exposes blind spots). It
-never drafts all sections upfront and never starts before it knows who the primary reader is.
+One entry for writing that starts from a plan. Step 0 reads the purpose from the request and asks only when it is ambiguous; an implementation plan is the default, so hand-offs from `think:brainstorming`, `planning:executing-plans` and the harness never get a question.
 
-```
-새 검색 서비스 design doc 같이 쓰자. 독자는 인프라 팀이고,
-왜 Elasticsearch 대신 직접 인덱싱하는지 설득해야 해.
-```
-
-Per document it produces: the document structure, the drafted sections, review comments on clarity
-and gaps, and a revision log. In Claude Code, Reader Testing runs the `agents/reader-agent.md`
-subagent; on claude.ai it falls back to `references/manual-reader-testing.md`.
-
-### `writing-plans`
+#### Implementation plan (default)
 
 Produces implementation plans — and never runs them. The gap check and ambiguity check that
 `planning:executing-plans` would otherwise do at hand-off happen here, at production time: every
@@ -80,6 +64,69 @@ Per-task shape in solo mode:
   (full code) → 4: confirm it passes → 5: commit
 ```
 
+#### Document
+
+A three-stage workflow for a document someone else will read: **Context Gathering** (info dump plus
+5–10 numbered clarifying questions), **Refinement & Structure** (one section at a time — questions →
+5–20 brainstormed options → you curate → draft → surgical edits), and **Reader Testing** (a fresh
+Claude with no authoring context answers predicted reader questions and exposes blind spots). It
+never drafts all sections upfront and never starts before it knows who the primary reader is.
+
+```
+새 검색 서비스 design doc 같이 쓰자. 독자는 인프라 팀이고,
+왜 Elasticsearch 대신 직접 인덱싱하는지 설득해야 해.
+```
+
+Per document it produces: the document structure, the drafted sections, review comments on clarity
+and gaps, and a revision log. In Claude Code, Reader Testing runs the `agents/reader-agent.md`
+subagent; on claude.ai it falls back to `references/manual-reader-testing.md`.
+
+#### Blog
+
+Runs the document path with `references/examples/blog.md`.
+
+Three phases: extract the core story (what you built, what was surprising, what a reader would do
+differently — no draft until all three have answers), outline against the fixed arc, then draft and
+polish. The arc is Hook → Problem in Depth → Solution → Results → What You'd Do Differently →
+Conclusion + CTA, and the solution is told in the order you discovered it, not as a clean explainer.
+
+```
+Kafka consumer lag를 40초에서 2초로 줄인 과정을 기술 블로그로 쓰고 싶어.
+파티션 재설계가 핵심이었고, 처음엔 컨슈머 수만 늘려서 실패했어.
+```
+
+Length guide:
+
+| Topic type | Target |
+|---|---|
+| Quick tip or single concept | 400–700 words |
+| Full problem/solution narrative | 1,000–1,800 words |
+| Deep dive or tutorial | 2,000–3,500 words |
+| Series part | 1,000–1,500 words per part |
+
+#### Feedback (SBI)
+
+Short form — `references/examples/sbi.md`, no section loop or reader testing.
+
+Rewrites feedback into Situation → Behavior → Impact: a single specific moment, an observable action
+that passes the camera test, and the actual consequence stated from "I/we". It separates observation
+from judgment in the raw input and flags interpretations and character labels for rephrasing. Works
+the same for praise — vague praise doesn't tell the receiver what to repeat.
+
+```
+팀원이 스프린트 리뷰에서 준비 없이 발표해서 고객 미팅이 밀렸어.
+비난처럼 안 들리게 피드백 문장 만들어줘.
+```
+
+Common failures it fixes:
+
+| Mistake | Fix |
+|---|---|
+| Judgment disguised as behavior ("무책임하게 행동했다") | "마감 전날 아무 공지 없이 작업을 제출하지 않았다" |
+| Vague situation ("항상 회의에서") | "지난 화요일 스프린트 플래닝에서" |
+| Missing impact ("그건 별로였어") | "팀이 다음 스텝을 못 정하고 하루를 낭비했다" |
+| Piling on multiple behaviors | One behavior per SBI |
+
 ### `writing-skills`
 
 Authors convention-compliant `SKILL.md` files and refuses to grade its own output — trigger coverage
@@ -106,48 +153,6 @@ If a harness pipeline handed you the task, act in harness-engaged mode; otherwis
 run both gates yourself. Shipping also means bumping the plugin version in
 `.claude-plugin/marketplace.json`, updating that plugin's README, and re-running
 `scripts/validate_plugins.py`.
-
-### `technical-blog-writer`
-
-Three phases: extract the core story (what you built, what was surprising, what a reader would do
-differently — no draft until all three have answers), outline against the fixed arc, then draft and
-polish. The arc is Hook → Problem in Depth → Solution → Results → What You'd Do Differently →
-Conclusion + CTA, and the solution is told in the order you discovered it, not as a clean explainer.
-
-```
-Kafka consumer lag를 40초에서 2초로 줄인 과정을 기술 블로그로 쓰고 싶어.
-파티션 재설계가 핵심이었고, 처음엔 컨슈머 수만 늘려서 실패했어.
-```
-
-Length guide:
-
-| Topic type | Target |
-|---|---|
-| Quick tip or single concept | 400–700 words |
-| Full problem/solution narrative | 1,000–1,800 words |
-| Deep dive or tutorial | 2,000–3,500 words |
-| Series part | 1,000–1,500 words per part |
-
-### `sbi-writer`
-
-Rewrites feedback into Situation → Behavior → Impact: a single specific moment, an observable action
-that passes the camera test, and the actual consequence stated from "I/we". It separates observation
-from judgment in the raw input and flags interpretations and character labels for rephrasing. Works
-the same for praise — vague praise doesn't tell the receiver what to repeat.
-
-```
-팀원이 스프린트 리뷰에서 준비 없이 발표해서 고객 미팅이 밀렸어.
-비난처럼 안 들리게 피드백 문장 만들어줘.
-```
-
-Common failures it fixes:
-
-| Mistake | Fix |
-|---|---|
-| Judgment disguised as behavior ("무책임하게 행동했다") | "마감 전날 아무 공지 없이 작업을 제출하지 않았다" |
-| Vague situation ("항상 회의에서") | "지난 화요일 스프린트 플래닝에서" |
-| Missing impact ("그건 별로였어") | "팀이 다음 스텝을 못 정하고 하루를 낭비했다" |
-| Piling on multiple behaviors | One behavior per SBI |
 
 ### `writer-verification`
 
@@ -222,11 +227,8 @@ Every skill in this plugin lists MCP tools as optional or recommended, not requi
 
 | Skill | Tool | Used for |
 |---|---|---|
-| `doc-coauthoring` | think-tool | Deciding which section holds the most unknowns |
-| `writing-plans` | sequential-thinking, think-tool | Dependency chains; judging whether a step is unambiguous |
+| `plans` | sequential-thinking, think-tool | Dependency chains; judging whether a step is unambiguous; which document section holds the most unknowns |
 | `writing-skills` | think-tool | Framing the RED-phase pressure scenario |
-| `technical-blog-writer` | think-tool | Fixing the core story and angle before drafting |
-| `sbi-writer` | think-tool | Ambiguous observation-vs-judgment cases |
 | `writer-verification` | think-tool, sequential-thinking, mcp-reasoner | Pass structuring; resolving conflicting findings; picking the summary lead |
 | `write-like-me` | think-tool | Separating recurring habits from one-off noise in samples |
 

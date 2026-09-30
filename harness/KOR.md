@@ -75,7 +75,7 @@ Workflow({ scriptPath: "harness/engine/pipeline.js", args: {
 `report`, `all_passed`, `failed[]`, `goal_gate`를 돌려주고, 실패도 숨기지 않고 그대로 전달합니다.
 엔진이 항상 물리는 세 스킬(Plan의 `agents:agent-task-decomposer`, 스펙 비평·QualityGate의
 `think:devils-advocate`, Test의 `completion:verification-before-completion`) 외에, SetGoal이
-필요하면 하네스 대응 스킬(`write:writing-plans`, `planning:executing-plans`,
+필요하면 하네스 대응 스킬(`write:plans`, `planning:executing-plans`,
 `agents:subagent-driven-development`, `develop:test-driven-development`, `write:writing-skills`,
 `agents:dispatching-parallel-agents`, `think:brainstorming`)을 subgoal에 매핑할 수 있습니다.
 전부 선택이고, 하나도 안 써도 정상 실행입니다.

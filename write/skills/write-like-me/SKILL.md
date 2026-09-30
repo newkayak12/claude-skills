@@ -92,5 +92,5 @@ Uncertain: [traits seen in one sample only — confirm or drop]
 ## Related Skills
 
 - `write:writer-verification` — the detector in step 2; use it alone (review or draft mode) when there are no samples
-- `write:sbi-writer` — when the problem is what the feedback says, not how it sounds
-- `write:technical-blog-writer` — draft the post there, then match voice here
+- `write:plans` (feedback purpose) — when the problem is what the feedback says, not how it sounds
+- `write:plans` (blog purpose) — draft the post there, then match voice here

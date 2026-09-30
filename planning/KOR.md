@@ -86,6 +86,6 @@ Standing mandates: 시퀀싱 전에 epic 간 의존성을 반드시 매핑한다
 
 ## 관련 플러그인
 
-- `write:writing-plans` — `executing-plans`가 게이트할 계획을 만드는 쪽.
+- `write:plans` — `executing-plans`가 게이트할 계획을 만드는 쪽.
 - `agents:*` — `executing-plans`가 넘기는 실행자들.
 - `completion:verification-before-completion` — 각 단계를 기준에 대고 닫는 쪽.

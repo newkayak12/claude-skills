@@ -244,5 +244,5 @@ Full table, and which step catches each one: `references/limits.md`.
 
 ## Related Skills
 
-- `write:doc-coauthoring` — develop the content before mapping it onto slides
+- `write:plans` (document purpose) — develop the content before mapping it onto slides
 - `think:thought-organizer` — turn scattered notes into the slide-by-slide structure Step 2 needs

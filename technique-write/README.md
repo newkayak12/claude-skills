@@ -96,7 +96,7 @@ Both skills call other marketplace skills as collaborators:
 - `develop:architecture-designer`, `develop:domain-driven-design`, `develop:microservices-architect`
 - `cognition:bias-auditor`, `cognition:assumption-extractor`, `cognition:tradeoff-articulator`,
   `cognition:second-order-thinker`
-- `write:doc-coauthoring`, `write:writer-verification`
+- `write:plans`, `write:writer-verification`
 
 If a referenced skill is not installed, Claude says so and offers to install it or proceed without
 it — the fallback path is in each skill's `references/process-detail.md`.
