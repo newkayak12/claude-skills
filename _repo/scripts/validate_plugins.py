@@ -19,7 +19,7 @@ Checks:
  14. Per skill  — heavy skills (>200 lines) should have a Standing Mandates section
  15. Per skill  — '## What Claude Does / What You Do' section with a '| Claude | You |' table, before Related Skills
 
-Authoring principles: skill/skills/skill-quality-assurance/references/authoring-principles.md
+Authoring principles: skill/skills/quality-assurance/references/authoring-principles.md
 """
 
 import json

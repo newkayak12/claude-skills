@@ -3,7 +3,7 @@
 Detailed guidance on SKILL.md structure, flowcharts, code examples, file organization, and anti-patterns.
 
 > **Quality principles (delta, Standing Mandates, compaction, effort field):**
-> See `skill/skills/skill-quality-assurance/references/authoring-principles.md`
+> See `skill/skills/quality-assurance/references/authoring-principles.md`
 > These principles are also enforced by `_repo/scripts/validate_plugins.py` (checks 12–14).
 
 ---

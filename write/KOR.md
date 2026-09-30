@@ -186,7 +186,7 @@ Kafka consumer lag를 40초에서 2초로 줄인 과정을 기술 블로그로 �
 ### `writing-skills`
 
 컨벤션에 맞는 `SKILL.md`를 쓰되 자기 결과물을 스스로 채점하지 않습니다 — 트리거 커버리지는
-`skill:skill-trigger-validator`, 출시 전 검사는 `skill:skill-quality-assurance`에 넘깁니다. TDD
+`skill:trigger-validator`, 출시 전 검사는 `skill:quality-assurance`에 넘깁니다. TDD
 모양을 문서에 빌려옵니다: 그 스킬이 *없을 때* 에이전트가 잘못 행동하는 시나리오를 만들고, 그게
 진짜 갭임을 확인한 뒤, 그 갭을 막는 가장 작은 초안을 씁니다. 확인된 갭이 없으면 초안도 없습니다.
 
@@ -201,8 +201,8 @@ description이 "Use when"으로 시작하게 하고, 트리거 검증까지 돌�
 |---|---|---|
 | 갭 정하기 | 기억이나 수동 프로브로 직접 지목 | SetGoal의 acceptance criteria가 이미 명시 |
 | 초안 | 직접 SKILL.md 작성 | Implement 실행자가 subgoal 기준에 맞춰 작성 |
-| 트리거 검사 | 직접 `skill:skill-trigger-validator` 호출 | QualityGate가 subgoal 채점 중 호출 |
-| 출시 게이트 | 직접 `skill:skill-quality-assurance` 호출 후 반영 | QualityGate가 호출, 실패 리포트는 subgoal을 막음 |
+| 트리거 검사 | 직접 `skill:trigger-validator` 호출 | QualityGate가 subgoal 채점 중 호출 |
+| 출시 게이트 | 직접 `skill:quality-assurance` 호출 후 반영 | QualityGate가 호출, 실패 리포트는 subgoal을 막음 |
 
 harness 파이프라인이 이 작업을 넘겼다면 harness-engaged, 아니면 solo로 보고 두 게이트를 직접
 돌리세요. 출시에는 `.claude-plugin/marketplace.json` 버전 bump, 해당 플러그인 README 갱신,

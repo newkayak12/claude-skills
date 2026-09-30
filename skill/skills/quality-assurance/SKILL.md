@@ -1,5 +1,5 @@
 ---
-name: skill-quality-assurance
+name: quality-assurance
 description: >-
   Use when reviewing or quality-checking a skill before shipping. Runs 6 checks:
   usefulness, authoring, structure, MCP, weight, output quality. Triggers on: 스킬
@@ -24,7 +24,7 @@ compatibility:
 
 Run 6 quality checks on a skill and produce an actionable improvement report.
 
-This is the quality gate before publishing — and also useful mid-creation to catch design issues early. The "Top Improvements" section at the end maps directly to what `write:writing-skills` should fix next, making this the natural handoff between authoring and shipping.
+This is the quality gate before publishing — and also useful mid-creation to catch design issues early. The "Top Improvements" section at the end maps directly to what `create` (new skills) or `write:writing-skills` (edits) should fix next, making this the natural handoff between authoring and shipping.
 
 ## Input
 
@@ -92,7 +92,7 @@ Produce a self-contained report in this format:
 
 Priority labels: 🔴 Must fix · 🟡 Recommended · 🟢 Optional
 
-The "Top Improvements" section is what `write:writing-skills` reads to decide what to fix next. Make it concrete and actionable — not "improve structure" but "extract the grading logic into `agents/grader.md` and call it from SKILL.md with a Task()".
+The "Top Improvements" section is what `create` or `write:writing-skills` reads to decide what to fix next. Make it concrete and actionable — not "improve structure" but "extract the grading logic into `agents/grader.md` and call it from SKILL.md with a Task()".
 
 ## What Claude Does / What You Do
 
@@ -103,5 +103,6 @@ The "Top Improvements" section is what `write:writing-skills` reads to decide wh
 
 ## Related Skills
 
-- `skill-trigger-validator` — when check 2 flags the description or the skill doesn't fire
+- `create` — scaffolds a new skill; QA is its last step
+- `trigger-validator` — when check 2 flags the description or the skill doesn't fire
 - `write:writing-skills` — applies the Top Improvements

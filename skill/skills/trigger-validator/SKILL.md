@@ -1,5 +1,5 @@
 ---
-name: skill-trigger-validator
+name: trigger-validator
 description: >-
   Use when a skill isn't triggering reliably on natural language or Korean
   input. Triggers on: "스킬이 트리거 안 돼", "skill not firing", "description 개선해줘",
@@ -168,5 +168,5 @@ Update only the `description` field in each file's frontmatter — do not touch 
 
 ## Related Skills
 
-- `skill-quality-assurance` — full 6-check review once the skill fires
+- `quality-assurance` — full 6-check review once the skill fires
 - `write:writing-skills` — authoring guide the rewrites must satisfy

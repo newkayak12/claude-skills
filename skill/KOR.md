@@ -2,10 +2,11 @@
 
 [English](README.md) · **한국어**
 
-다른 스킬을 검사하는 스킬 둘입니다. SKILL.md는 독립적인 두 가지 방식으로 실패합니다 —
+다른 스킬을 만들고 검사하는 스킬 셋입니다. `create`가 같은 레포의 기존 스킬과 같은 모양으로 새
+스킬을 써줍니다. 그렇게 만든 SKILL.md도 독립적인 두 가지 방식으로 실패합니다 —
 `description`이 신호를 못 줘서 아예 안 걸리거나, 걸리긴 하는데 제값을 못 하거나(너무 무겁거나,
-구조가 나쁘거나, 스킬 없을 때와 차이가 없거나). `skill-trigger-validator`가 첫 번째를 재고
-고치고, `skill-quality-assurance`가 두 번째를 6개 검사로 훑고 우선순위 붙은 수정 목록으로 끝냅니다.
+구조가 나쁘거나, 스킬 없을 때와 차이가 없거나). `trigger-validator`가 첫 번째를 재고
+고치고, `quality-assurance`가 두 번째를 6개 검사로 훑고 우선순위 붙은 수정 목록으로 끝냅니다.
 
 ## 설치 / 제거
 
@@ -18,12 +19,27 @@
 
 | 하고 싶은 것 | 스킬 |
 |---|---|
-| 배포 전 스킬 검토하고 뭘 먼저 고칠지 순위 받기 | `skill-quality-assurance` |
-| 자연어(특히 한국어)에 안 걸리는 스킬 고치기 | `skill-trigger-validator` |
+| "X용 스킬이 필요해"를 레포의 기존 스킬과 같은 모양의 SKILL.md로 만들기 | `create` |
+| 배포 전 스킬 검토하고 뭘 먼저 고칠지 순위 받기 | `quality-assurance` |
+| 자연어(특히 한국어)에 안 걸리는 스킬 고치기 | `trigger-validator` |
 
 ## 스킬
 
-### `skill-quality-assurance`
+### `create`
+
+인테이크(채우려는 공백, 트리거돼야 할 표현, 돌려줄 결과물)를 받아 새 스킬의 파일을 만듭니다.
+대상 레포의 기존 스킬을 먼저 읽고, 그 종류의 작업에 기존 스킬들이 공통으로 쓰는 아키타입(technique,
+workflow 등)을 골라, 형제 스킬과 같은 프론트매터·섹션 순서의 `SKILL.md`를 씁니다. 본문이 무거워지면
+`references/`로 뺍니다. 레포에 validator가 있으면 돌리고, `trigger-validator`, 이어서
+`quality-assurance`로 넘깁니다. 수정·보수와 RED 체크 규율은 계속 `write:writing-skills`가 맡고,
+뼈대 생성은 `create`가 맡습니다.
+
+```
+커밋 메시지가 우리 컨벤션을 따르는지 검사하는 스킬 만들어줘. 이 레포의 다른 스킬들이
+어떻게 생겼는지 먼저 봐.
+```
+
+### `quality-assurance`
 
 스킬 하나에 6개 품질 검사를 돌리고 바로 행동 가능한 리포트를 냅니다. 스킬 디렉터리의 모든 파일을
 먼저 읽고 — `SKILL.md`, `agents/`, `references/`, `scripts/` — 없는 디렉터리는 검사를 건너뛰는
@@ -31,7 +47,7 @@
 약속했는지 알아야 잴 수 있으니까). 배포 전 게이트이자 제작 중간 점검용입니다.
 
 ```
-skill/skills/skill-trigger-validator 배포 전에 검토해줘. 6개 검사 다 돌리고
+skill/skills/trigger-validator 배포 전에 검토해줘. 6개 검사 다 돌리고
 뭐부터 고쳐야 하는지 알려줘.
 ```
 
@@ -48,7 +64,7 @@ skill/skills/skill-trigger-validator 배포 전에 검토해줘. 6개 검사 다
 assertion, 약속했지만 지키지 못한 갭을 보고합니다. 리포트는 **Top Improvements** — 🔴 필수 /
 🟡 권장 / 🟢 선택 — 로 닫히고, "구조 개선" 같은 말이 아니라 바로 손댈 수 있는 문장으로 씁니다.
 
-### `skill-trigger-validator`
+### `trigger-validator`
 
 Claude가 스킬 호출 여부를 판단할 때 쓰는 유일한 신호인 `description` 필드를 감사하고, 그대로
 갈아끼울 수 있는 새 description을 써줍니다. 대상은 스킬 하나, 플러그인 전체, 레포 전체 중 하나
@@ -72,6 +88,10 @@ Use when [상황/의도]. Triggers on: "[한국어 구어체]", "[English phrase
 일괄 실행은 요약 테이블로 시작하고 7점 미만인 스킬만 개별 리포트를 냅니다. 7점 이상은
 "acceptable — no action needed". 적용한 뒤 레포의 업데이트 절차를 따릅니다 —
 `marketplace.json` 버전 올리고, 플러그인 `README.md`와 `KOR.md`를 함께 갱신하고, 커밋.
+
+## 이름 변경
+
+`skill-quality-assurance`는 `quality-assurance`로, `skill-trigger-validator`는 `trigger-validator`로 바뀌었습니다. 기존 `skill:skill-quality-assurance` / `skill:skill-trigger-validator` 호출은 더 이상 동작하지 않으니 `skill:quality-assurance` / `skill:trigger-validator`를 쓰세요.
 
 ## 관련 플러그인
 
