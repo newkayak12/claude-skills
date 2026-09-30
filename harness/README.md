@@ -261,6 +261,7 @@ are always gated. Fail-open everywhere (v0 lesson).
   dry-runs first and refuses mismatched versions or a release note supplied in only one language.
 
 ## Status
+- v1.22.7 — repo scripts moved under `_repo/`; the patch skill runs `_repo/scripts/validate_plugins.py`
 - v1.22.6 — harness-aware skill write:writing-plans renamed write:plans
 - v1.22.5 — All five skills now carry a standard What Claude Does / What You Do table.
 - v1.22.4 — goal gate Bash judgement is deny by default without false positives: a write verb is exempt only as a plain argument of a read-only command that owns the whole simple command (`grep -n cp x.mjs`; not `rg --pre`, `less -o`, `$(…)`); wrappers and an interpreter/shell anywhere in a command are judged; `git --output` counts; an inline or heredoc script counts named paths only when it can write, a heredoc used as data only its redirect (unless its body writes, or its file is code or run later); heredocs are found outside quotes and an unclosed one is judged whole; the broker ledger `.harness-run/broker/` is gated

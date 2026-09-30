@@ -5,6 +5,7 @@
 Every release of the `teams` plugin, newest first. Moved here verbatim from the README's old `## Status` section. `teams:patch` prepends new release lines under `## Status` below.
 
 ## Status
+- v0.38.4 — repo design docs and scripts moved under `_repo/`; doc citations in skills, code comments and README re-pointed. No behavior change.
 - v0.38.3 — All fifteen skills now carry a standard What Claude Does / What You Do table.
 - v0.38.2 — planning draft and template-fill nodes mount write:plans (was write:doc-coauthoring)
 - v0.38.1 — **an exhausted daemon reads blocked; teams run keeps the Mac awake**: an unfinished size-L task whose daemon spent `driver_restarts` read `running` forever, so `tm_wait` and `teams run` polled a task nothing would move again; it now reads `blocked` with the reason (`tm_status` reads `taskState` too). `teams run` spawns `caffeinate -i -w <pid>` on macOS (idol-pm-4 lost 5h to sleep). Docs: README/KOR no longer promise a PRD for size S, C6 marked superseded, plugin descriptions synced. 1 new test.
