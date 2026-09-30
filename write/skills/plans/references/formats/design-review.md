@@ -25,7 +25,7 @@ If the user already knows the decision, **stop and switch to the ADR format** (`
 
 ## Process
 
-1. **Frame the topic** — get one-sentence intent, trigger, audience. If symptomatic, invoke `problem-reframer`.
+1. **Frame the topic** — get one-sentence intent, trigger, audience. If symptomatic, invoke `redefine-problem`.
 2. **Fill §2 Background + §3 Goals/Non-Goals** — pull constraints; force Non-Goals.
 3. **Fill §4 Requirements** — split functional/non-functional, quantify NFRs.
 4. **Diverge** — invoke `brainstorming` for 3-5 alternatives; write §6 **before** §5 to avoid anchoring.
@@ -156,7 +156,7 @@ When the Design Review is Approved, switch to the ADR format (`references/format
 
 ## Related Skills
 
-- `brainstorming`, `devils-advocate`, `problem-reframer` — divergence and stress testing
+- `brainstorming`, `devils-advocate`, `redefine-problem` — divergence and stress testing
 - `architecture-designer` / `domain-driven-design` / `microservices-architect` — produce §5 diagrams
 - `bias-auditor`, `tradeoff-articulator`, `assumption-extractor`, `second-order-thinker` — honest §7-§8
 - document purpose (`references/document.md`) — section-by-section co-write mechanics

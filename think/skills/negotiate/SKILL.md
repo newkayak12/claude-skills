@@ -2,10 +2,9 @@
 name: negotiate
 effort: high
 description: >-
-  Use when someone must negotiate, review terms, or win a hard conversation and needs counsel on their side
-  before speaking. Covers salary, contracts, clients, and persuading a boss. Triggers on: "연봉 협상",
-  "계약 조건 봐줘", "거절당했어", "설득해야 해", "협상 준비", "상사한테 어떻게 말해", "negotiate my offer",
-  "review these contract terms".
+  Use when someone must negotiate, review terms, or handle a hard conversation and needs counsel on
+  their side — salary, contracts, clients, a boss. Triggers: "연봉 협상", "계약 조건 봐줘", "설득해야 해",
+  "협상 준비", "상사한테 어떻게 말해", "negotiate my offer".
 scenarios:
   - "I got a job offer and want to negotiate the salary. What do I say?"
   - "Here is my freelance contract. Which clauses are risky, and what can I push back on?"

@@ -9,7 +9,7 @@ Ask:
 2. 왜 지금인가요? (트리거 이벤트, 데드라인, 장애)
 3. 이 문서를 누가 읽고 무엇을 결정해야 하나요?
 
-If the answer to (1) is symptomatic (`"속도가 느려서…"`, `"확장이 안 되어서…"`), invoke `problem-reframer` before continuing. A blurry topic produces a blurry §2.
+If the answer to (1) is symptomatic (`"속도가 느려서…"`, `"확장이 안 되어서…"`), invoke `redefine-problem` before continuing. A blurry topic produces a blurry §2.
 
 ## Step 2 — §2 Background & Context and §3 Goals/Non-Goals
 
