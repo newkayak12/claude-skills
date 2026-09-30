@@ -57,3 +57,12 @@ Ticked only where a verification unit produced a PASS.
 - **Rename breaks installed users.** `skill:skill-*` invocations stop resolving after update. Acceptable
   (think 1.4.0 set the precedent); note it in README.
 - **Other plugins' prefixes** (knowledge-*, portfolio-*, 14 more) are out of scope unless asked.
+
+## Revision 2026-09-30 (user): identity, not archetypes
+
+User: "6가지 유형 중 하나를 고르고 → 이게 아니라 전체 스킬 작성된 태를 보고 유사하게" — the shared, unstated
+identity of the skills, plus the owner's coding guidelines (think first / simplicity / surgical / goal-driven).
+`references/archetypes.md` is replaced by `references/identity.md` (P1–P10 induced from ~30 skills, every quote
+grep-verified; P11–P13 from the guidelines). `create` no longer picks an archetype: it reads identity.md + 3–4 real
+skills, writes three anchors (forbidden reflex, boundary, done criterion), drafts the minimum skill, audits P1–P13,
+then validator and the two gates.

@@ -2,71 +2,83 @@
 name: create
 effort: high
 description: >-
-  Use when a new skill should be generated in the same shape as the repo's existing skills. Triggers on: "스킬 만들어줘", "새 스킬 뼈대", "우리 스킬처럼 만들어줘", "create a skill".
+  Use when a new skill should be written to read like the repo's existing skills. Triggers on: "스킬 만들어줘",
+  "새 스킬 뼈대", "우리 스킬처럼 만들어줘", "이걸 스킬로", "create a skill".
 scenarios:
-  - "Create a skill for reviewing database migrations, shaped like the develop skills"
-  - "Scaffold a new skill that looks like the rest of the repo"
-  - "create a skill that enforces a stance every turn, like devils-advocate"
-  - "스킬 만들어줘 — PR 설명 검토용으로, 기존 스킬이랑 똑같은 모양으로"
+  - "Create a skill for reviewing database migrations, like our other skills"
+  - "Turn this checklist into a skill that reads like the rest of the repo"
+  - "스킬 만들어줘 — PR 설명 검토용으로, 기존 스킬이랑 같은 결로"
+  - "이 회고 정리 방식을 우리 스킬처럼 만들어줘"
   - "새 스킬 뼈대 잡아줘, think 플러그인에 넣을 거야"
-  - "우리 스킬처럼 만들어줘. 장애 회고 정리하는 스킬이야"
 compatibility:
   optional:
     - think-tool
   remote_mcp_note: >-
-    think-tool이 있으면 아키타입을 고르기 전에 이 스킬이 정말 새로 필요한지, 기존 스킬로 충분한지 먼저 따져볼 수 있습니다.
+    think-tool이 있으면 이 스킬이 막아야 할 '편한 한 수'와 경계(Not for)를 초안 전에 따져볼 수 있습니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
 ## Standing Mandates
 
-- ALWAYS read 1-2 exemplars of the chosen archetype and mirror their headings and their order. Do not work from the skeleton alone.
-- ALWAYS write the description as "Use when ...", 250 chars or fewer, triggers only. Never summarize the process in it.
-- NEVER add filler sections. No Overview, Background, or Philosophy; if a heading is not in the archetype, it does not go in.
-- NEVER exceed the archetype's line band. Over the band means cut, not split into a longer file.
-- Goal: a reviewer cannot tell the result from its siblings.
+- ALWAYS read `references/identity.md` and 3–4 real skills before drafting. The identity is in the skills, not the headings; a skeleton alone produces a skill with the right sections and none of the stance.
+- ALWAYS write the three anchor lines (step 3) before any prose. A skill that can't name the reflex it forbids has no reason to exist.
+- NEVER add a section, mode, or option the purpose doesn't need. Every extra section is one more place to drift from the siblings.
+- NEVER grade the draft yourself as the final word. Your identity audit is a checklist; the verdict comes from `trigger-validator` and `quality-assurance`.
+- Goal: a reader who knows the repo can't tell the new skill from one the owner wrote. Stop after the gates pass or after two fix rounds — report what's still open.
 
 # Create
 
-Generates a new SKILL.md shaped like the skills already in this repo, then hands it to the two gates.
+Writes a new skill that carries the repo's house identity — re-checkable output, no invented facts, one forbidden reflex, a stated boundary, the user deciding — then hands it to the two gates.
 
 **Not for** editing or repairing an existing skill (`write:writing-skills`).
 
 ## Process
 
-1. **Intake.** Get the skill's purpose, the situation that should trigger it, and the user's own words for asking. One line each; ask only for what is missing.
-2. **Place.** Pick the plugin, then a bare kebab-case name at `<plugin>/skills/<name>/SKILL.md`. Never repeat the plugin name in it (`think/skills/mentor`, not `think-mentor`).
-3. **Pick archetype.** Choose from `references/archetypes.md`: technique, persona, workflow, ops, builder, or specialist. State the choice and the line band.
-4. **Read exemplars.** Read the archetype's exemplars and 1-2 siblings in the target plugin. When the siblings disagree with the archetype file, the target plugin's siblings win.
-5. **Draft.** Write frontmatter (name, description, 2-3 EN and 2-3 KR scenarios, compatibility with a Korean `remote_mcp_note`), then the body in the exemplars' heading order. Body is English; Korean stays in triggers, scenarios, and the note.
-6. **Check.** Run the repo's validator (here `python3 _repo/scripts/validate_plugins.py`) and fix every ERROR for the new skill. Count lines against the band.
-7. **Hand off.** Run `trigger-validator` on the description, then `quality-assurance` on the whole skill. Fix what they flag and re-run the one that flagged it.
-8. **Register.** Follow the repo's update workflow: version bump in `.claude-plugin/marketplace.json`, the plugin's `README.md` and `KOR.md`, commit, push. Where the user has put a hold on any of these, stop before that step.
+1. **Intake.** Purpose, the situation that should trigger it, the user's own words for asking. Missing one → ask in one line. If an existing skill or a one-line CLAUDE.md rule already covers it, say so and stop (P11).
+2. **Read.** `references/identity.md`, then 3–4 skills: 2 recently changed (`git log --since=<30 days> --name-only -- '*/SKILL.md'`) and 1–2 siblings in the target plugin. Where the siblings' structure differs from identity.md's Structure section, the siblings win.
+3. **Anchor.** Write three lines before drafting:
+   - **Reflex:** the comfortable move a no-skill run would make here, which this skill forbids (P4).
+   - **Boundary:** `Not for …` and the skill it hands that to (P6).
+   - **Done:** the checkable criterion that ends a run, and the bound on any loop (P9).
+4. **Place.** `<plugin>/skills/<name>/SKILL.md`, bare kebab name that doesn't repeat the plugin.
+5. **Draft** the smallest skill that carries the anchors (P12): frontmatter, Standing Mandates only if there are rules a no-skill run would break — each with its reason (P10) — then the body in the siblings' order. The Output Template opens with the judgment (P5) and forces a count or quote somewhere (P1).
+6. **Audit** the draft against P1–P13: for each, the line that satisfies it, or `N/A — <why>`. Rewrite anything that fails before moving on.
+7. **Check.** Run the repo's validator (here `python3 _repo/scripts/validate_plugins.py`); fix every ERROR on the new skill.
+8. **Hand off.** `trigger-validator` on the description, then `quality-assurance` on the whole skill. Fix 🔴 items, re-run the gate that flagged them. Max two rounds.
+9. **Register.** Only what the repo's update workflow names (here: `marketplace.json` version, plugin `README.md` + `KOR.md`). Touch nothing else (P13); mention unrelated problems you saw. Skip any step the user has put on hold.
 
 ## Output Template
 
 ```
-Skill: <plugin>/skills/<name>/SKILL.md
-Archetype: <archetype> (<line band>) — exemplars: <paths>
-Lines: <n>
+Skill: <plugin>/skills/<name>/SKILL.md (<n> lines)
+Reflex forbidden: <one line>
+Boundary: Not for <x> → <plugin:skill>
+Done when: <criterion>
+
+Identity audit: <k>/13 satisfied, <m> N/A
+| P | Where in the draft | 
+|---|--------------------|
+| P1 | <line or N/A — why> |
+...
+
 Validator: <no ERROR | list>
-trigger-validator: <verdict, winning description if rewritten>
-quality-assurance: <Top Improvements, each red item resolved>
-Registered: <README/KOR/version status>
+trigger-validator: <score>, description <kept | rewritten>
+quality-assurance: 🔴 <fixed…> · 🟡 <open…>
+Open: <what the gates left, or "none">
 ```
 
-Do NOT ship a skill that has not passed both gates.
+Do NOT paste the generated SKILL.md into chat — it is in the file.
 
 ## What Claude Does / What You Do
 
 | Claude | You |
 |--------|-----|
-| Picks the archetype, reads exemplars, drafts to their shape | Confirm the purpose, the plugin, and the trigger phrases |
-| Runs the validator and both gates, fixes what they flag | Decide on anything the gates leave as a judgment call |
-| Prepares the README, KOR, and version changes for registration | Approve the final draft and any push |
+| Reads identity.md and real skills, writes the anchors, drafts the minimum skill | Say what the skill is for and where it goes |
+| Audits the draft against P1–P13 and runs the validator and both gates | Confirm or change the forbidden reflex and the boundary |
+| Prepares registration, touching only what the repo requires | Decide on 🟡 items and approve the push |
 
 ## Related Skills
 
-- `trigger-validator` — scores and rewrites the description; step 7, first half.
-- `quality-assurance` — the pre-ship gate; step 7, second half.
-- `write:writing-skills` — the authoring rules this skill follows, and the tool for editing an existing skill.
+- `trigger-validator` — scores and rewrites the description; step 8, first half.
+- `quality-assurance` — the pre-ship gate; step 8, second half.
+- `write:writing-skills` — editing or repairing an existing skill; the RED-check discipline.
