@@ -114,7 +114,7 @@ implemented, just check performance" jumps to Step 4.
 Seven steps from domain discovery to documented decision: `event-storming` (optional if the domain
 is well understood) → `domain-driven-design` → `service-boundary-validator` → `clean-architecture`
 → `architecture-designer` → `microservices-architect` (optional if staying on a monolith) →
-`technique-write:adr-writer`, which is the one step never skipped. Use it for a new system or a
+`write:plans` (ADR format), which is the one step never skipped. Use it for a new system or a
 monolith-to-MSA evaluation; for iterating inside an existing stable architecture, call the
 individual skill instead.
 
@@ -592,7 +592,7 @@ Creates documentation that does not exist yet: docstrings and JSDoc for function
 OpenAPI/Swagger specs generated from an existing API, doc sites, READMEs, and tutorials. It asks
 for format preferences and exclusions first, and follows existing conventions in the codebase —
 defaulting to Google style for Python and JSDoc for TypeScript/JS when none are found. Not for
-architectural decision records (use `technique-write:adr-writer`) or planning a doc system (use
+architectural decision records (use `write:plans` (ADR format)) or planning a doc system (use
 `documentation-strategy`).
 
 ```

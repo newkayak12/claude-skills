@@ -8,23 +8,13 @@
   "plugins": [
     {
       "name": "develop",
-      "description": "Engineering skills: CLI, SQL, clean architecture, clean code, DDD, database optimization, chaos engineering, Spring Boot, microservices, Kotlin, TDD, frontend, code documentation, testing, SRE, performance profiling & optimization, incident response, documentation strategy, and dev-quality-workflow (full dev cycle entry point). ADR drafting moved to the technique-write plugin.",
+      "description": "Engineering skills: CLI, SQL, clean architecture, clean code, DDD, database optimization, chaos engineering, Spring Boot, microservices, Kotlin, TDD, frontend, code documentation, testing, SRE, performance profiling & optimization, incident response, documentation strategy, and dev-quality-workflow (full dev cycle entry point). ADR drafting moved to write:plans (ADR format).",
       "version": "1.5.5",
       "author": {
         "name": "newkayak12"
       },
       "source": "./develop",
       "category": "engineering"
-    },
-    {
-      "name": "technique-write",
-      "description": "Technical writing techniques with strict templates: design-review-writer (interactive discovery → fixed-template Design Review) and adr-writer (declarative Architecture Decision Record derived from a Design Review or raw context).",
-      "version": "1.0.1",
-      "author": {
-        "name": "newkayak12"
-      },
-      "source": "./technique-write",
-      "category": "productivity"
     },
     {
       "name": "think",
@@ -38,7 +28,7 @@
     },
     {
       "name": "write",
-      "description": "Writing skills: plans (one entry, purpose chosen at step 0 — gate-ready implementation plans with production-time gap/ambiguity checks + per-step pass bars and dual-mode; reader documents co-written section by section with reader testing; technical blog posts; SBI feedback), skill writing, and writer verification (v2 — five passes incl. a humanizer for machine tells, draft loop that rewrites until 🔴🟡 = 0, PR descriptions from a diff as first-class input). Knowledge-base, graph, RAG, and query skills moved to the knowledge plugin.",
+      "description": "Writing skills: plans (one entry, purpose chosen at step 0 — gate-ready implementation plans with production-time gap/ambiguity checks + per-step pass bars and dual-mode; reader documents co-written section by section with reader testing; fixed-template design reviews and ADRs; technical blog posts; SBI feedback), skill writing, and writer verification (v2 — five passes incl. a humanizer for machine tells, draft loop that rewrites until 🔴🟡 = 0, PR descriptions from a diff as first-class input). Knowledge-base, graph, RAG, and query skills moved to the knowledge plugin.",
       "version": "1.4.4",
       "author": {
         "name": "newkayak12"

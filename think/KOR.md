@@ -256,5 +256,5 @@ Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세�
   `deep-thinking-workflow`로 넘깁니다.
 - 결정이 나오면 `develop:dev-quality-workflow`(엔지니어링 인계)나 `planning:roadmap-planning`(제품/전략
   결정을 로드맵으로 배치)으로 넘깁니다.
-- `technique-write:design-review-writer`는 발산과 스트레스 테스트 결과를 리뷰 가능한 설계 문서로
+- `write:plans` (design review format)는 발산과 스트레스 테스트 결과를 리뷰 가능한 설계 문서로
   바꿔줍니다.
