@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { composePrompt, HANDOFF_CAP, DEGENERATE_SPEC_DIAGNOSIS, CONTRACT, EXERCISE_RULE } from '../mcp/prompts.mjs';
+import { composePrompt, HANDOFF_CAP, DEGENERATE_SPEC_DIAGNOSIS, CONTRACT, EXERCISE_RULE, FIDELITY_RULE, PRD_CONTRACT } from '../mcp/prompts.mjs';
 import { loadConventions, conventionsBlock, CONVENTIONS_CAP } from '../mcp/conventions.mjs';
 import { nodeBriefing } from '../mcp/graph.mjs';
 
@@ -650,4 +650,81 @@ test('portfolio-refresh: the manager shape, critique, accept and QA carry the sa
   assert.match(tm.CONTRACT.critique, /no acceptance item that runs them/);
   assert.match(tm.CONTRACT.accept, /a grep that the words are there is absent evidence for it/);
   assert.match(src, /Reading the file is a review, not QA\./);
+});
+
+// portfolio-consolidate-8518d5dd (teams 0.35.1): the request asked the beta not to regress
+// feedback's verdict; the plan demanded equal tally counts the unchanged skill itself varies on
+// (P3 failed 8 runs of a correct skill), P1 required the old jd-fit to show a mark it never
+// shows, and P4 (main work) dep'd on P3 (a beta lane) - both critiques let all three through.
+test('portfolio-consolidate-8518d5dd: a criterion holds work to the request\'s bar - PRD, setgoal and critique carry the rule', () => {
+  assert.equal(typeof FIDELITY_RULE, 'string');
+  assert.ok(!FIDELITY_RULE.includes('\n'), 'FIDELITY_RULE sits on the PRD Success criteria line - one line, no fake section');
+  assert.match(FIDELITY_RULE, /the request's own bar, never a stricter one/);
+  assert.match(FIDELITY_RULE, /never exact equality of a count/);
+  assert.match(FIDELITY_RULE, /allows the spread the pre-change version shows between its own runs/);
+  assert.match(FIDELITY_RULE, /never requires the old version to show a property it demonstrably lacks/);
+  assert.match(FIDELITY_RULE, /a property it only might lack, with nothing you can read showing the lack, does not make the criterion stricter/);
+  assert.match(FIDELITY_RULE, /Establish the lack by reading the pre-change version where you can - "git show <base>:<path>", or the old text the brief quotes/);
+  assert.match(FIDELITY_RULE, /when the brief, the pre-change file or a run shows the old version lacks the property, the criterion is stricter than the request and blocks/);
+  assert.match(FIDELITY_RULE, /comparing a verdict or a categorical choice across runs .* is allowed and is not a stricter bar/);
+  assert.ok(CONTRACT.critique.includes('a property it demonstrably lacks'));
+  assert.match(PRD_CONTRACT, /^  Success criteria - .*/m);
+  assert.ok(PRD_CONTRACT.split('\n').find((l) => l.startsWith('  Success criteria -')).includes(FIDELITY_RULE));
+  assert.ok(CONTRACT.setgoal.includes(EXERCISE_RULE) && CONTRACT.setgoal.includes(FIDELITY_RULE));
+  assert.ok(CONTRACT.critique.includes(FIDELITY_RULE));
+  assert.match(CONTRACT.critique, /a criterion stricter than the request/);
+  assert.match(CONTRACT.critique, /A stricter bar counts as contradicting the request/);
+  assert.match(CONTRACT.critique, /a criterion that contradicts the request, or would break behaviour that works today/);
+});
+
+test('portfolio-consolidate-8518d5dd: shape carries rules Five and Six, and its critique blocks both defects', async () => {
+  const tm = await import('../mcp/taskmanager.mjs');
+  const shape = tm.CONTRACT.shape;
+  assert.match(shape, /Six rules critique will refuse the shape over/);
+  assert.ok(shape.includes(`Five: ${FIDELITY_RULE}`));
+  assert.match(shape, /Six: a package never deps, for any part of its own work, on a package whose failure the request tolerates/);
+  assert.match(shape, /nor on a package of lower priority than itself, since a budget stop drops lower priority first/);
+  assert.match(shape, /Every package is protected this way, whatever its own priority/);
+  assert.match(shape, /A dep on a higher-priority package whose failure the request does not tolerate is fine/);
+  assert.match(shape, /a tolerated package ranked above the dependent one by its priority number is still tolerated/);
+  // the attempt-2 regression: priority restricting the PROTECTED side; "higher-priority" only in the "is fine" sense
+  assert.doesNotMatch(shape, /main or higher-priority/);
+  assert.equal(shape.match(/higher-priority/g).length, 1);
+  assert.match(shape, /work the request says may fail/);
+  assert.match(shape, /even when that part is a real data dependency/);
+  assert.match(shape, /first, the dependent package does that part from the request alone, without the edge/);
+  assert.match(shape, /move that part into the tolerated or lower-priority package itself, or into another package the request tolerates too - valid only when the move creates no touches\[\] overlap/);
+  assert.ok(shape.indexOf('from the request alone') < shape.indexOf('move that part into the tolerated'), 'the no-edge remedy is listed first');
+  assert.doesNotMatch(shape, /a later package/);
+  const critique = tm.CONTRACT.critique;
+  const iRun = critique.indexOf('unrunnable:');
+  const iJudge = critique.indexOf('unjudgeable:');
+  assert.ok(iRun >= 0 && iJudge > iRun, 'unrunnable: precedes unjudgeable:');
+  const unrunnable = critique.slice(iRun, iJudge);
+  const unjudgeable = critique.slice(iJudge);
+  assert.match(unrunnable, /a dependency on a package whose failure the request tolerates \(an experimental, beta or optional lane, or work the request says may fail\)/);
+  assert.match(unrunnable, /or on a package of lower priority than the dependent one \(a budget stop drops lower priority first\)/);
+  assert.match(unrunnable, /it protects every package, whatever its own priority/);
+  assert.match(unrunnable, /a beta lane ranked above the dependent package is still tolerated/);
+  assert.match(unrunnable, /A dep on a higher-priority package whose failure the request does not tolerate is fine/);
+  assert.doesNotMatch(critique, /main or higher-priority/);
+  assert.equal(critique.match(/higher-priority/g).length, 1);
+  assert.match(critique, /deps on a package whose failure the request tolerates, whatever their priority numbers, or on a package of lower priority than itself - blocking/);
+  assert.match(unrunnable, /blocks even when the brief names a real data dependency/);
+  assert.match(unrunnable, /first, the dependent package does that part from the request alone, without the edge/);
+  assert.match(unrunnable, /is a fix only when it creates no touches\[\] overlap/);
+  assert.doesNotMatch(critique, /a later package/);
+  assert.match(unjudgeable, /a goal-level or package acceptance criterion stricter than the request/);
+  assert.match(unjudgeable, /exact agreement between model runs/);
+  assert.match(unjudgeable, /a pre-change version required to show a property it demonstrably lacks/);
+  assert.match(unjudgeable, /not a property it might lack/);
+  assert.match(unjudgeable, /when the brief or the pre-change file shows the lack, the criterion blocks/);
+  assert.match(unjudgeable, /Agreement on a verdict or a categorical choice across runs is not stricter and does not block/);
+  assert.ok(unjudgeable.includes(FIDELITY_RULE), 'the shape critique quotes the one rule');
+  assert.match(unjudgeable, /A criterion you would merely improve is a problem, not a blocker: block only a criterion that correct work would fail/);
+  assert.match(unjudgeable, /block every such criterion, the one with a rerun clause included/);
+  assert.doesNotMatch(unrunnable, /stricter than the request/);
+  assert.match(unjudgeable, /allows a rerun on mismatch but still demands exact agreement/);
+  assert.match(unjudgeable, /not a cure/);
+  assert.match(critique, /three kinds/);
 });
