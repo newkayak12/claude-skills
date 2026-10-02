@@ -728,3 +728,16 @@ test('portfolio-consolidate-8518d5dd: shape carries rules Five and Six, and its 
   assert.match(unjudgeable, /not a cure/);
   assert.match(critique, /three kinds/);
 });
+
+// QUESTIONS_CONTRACT had two byte-identical literals (prompts.mjs and taskmanager.mjs, D2 slice 3,
+// 0.29.0); the 2026-10-02 architecture review folded them into one export so the child-run graph's
+// stages and the manager's judging stages cannot drift apart on the questions[] wording.
+test('QUESTIONS_CONTRACT: exported once from prompts.mjs, imported (not copied) by taskmanager.mjs', async () => {
+  const prompts = await import('../mcp/prompts.mjs');
+  assert.equal(typeof prompts.QUESTIONS_CONTRACT, 'string');
+  assert.match(prompts.QUESTIONS_CONTRACT, /^Optional: "questions": \[/);
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../mcp/taskmanager.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /const QUESTIONS_CONTRACT\b/, 'no local copy in taskmanager.mjs');
+  assert.match(src, /^import \{[^}]*\bQUESTIONS_CONTRACT\b[^}]*\} from '\.\/prompts\.mjs';$/m);
+});

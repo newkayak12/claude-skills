@@ -8,11 +8,12 @@
 //
 // Runs live at <cwd>/.teams_output/broker/runs/<run_id>.json.
 
-import { mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, statSync, renameSync, existsSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, renameSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_MODELS } from './routing.mjs';
 import { applyMerge, writeScopeFindings } from './reducers.mjs';
+import { acquireLock as acquire, releaseLock as release, writeAtomic, transactionObject } from './store.mjs';
 
 export const STAGES = [
   'plan',      // decompose the raw request
@@ -550,8 +551,9 @@ export function drainHumanActions(cwd, runId) {
 // stale snapshot overwrote a node the fast one had already finished and reported `done`
 // to its client. The work had happened; only the record vanished.
 //
-// mkdir is atomic on every filesystem we care about, so it is the lock.
-const LOCK_STALE_MS = 30 * 1000;
+// The lock is store.mjs's (mkdir + owner.json): it throws ELOCKTIMEOUT instead of the old
+// "fall through unlocked rather than hang" after 5 s, and never steals from a live owner pid
+// (2026-10-02 review). A busy lock now surfaces as an error, not as a silent unlocked write.
 
 // Where this run's file is. The broker's runs live under their project; a run that manages
 // other runs (the TaskManager's) lives outside any project and says so with `store_path`.
@@ -560,42 +562,9 @@ export function pathOf(run) {
   return run.store_path || runPath(run.cwd, run.run_id);
 }
 
-function acquire(path) {
-  const lock = path + '.lock';
-  const deadline = Date.now() + 5000;
-  for (;;) {
-    try {
-      mkdirSync(lock);
-      return lock;
-    } catch {
-      // A lock left behind by a killed process must not wedge the run forever.
-      try {
-        if (Date.now() - statSync(lock).mtimeMs > LOCK_STALE_MS) {
-          rmSync(lock, { recursive: true, force: true });
-          continue;
-        }
-      } catch {
-        continue; // it vanished between the two calls; try again
-      }
-      if (Date.now() > deadline) return null; // fall through unlocked rather than hang
-      // Busy-wait briefly: the critical section is a file write, measured in microseconds.
-      const spin = Date.now() + 5;
-      while (Date.now() < spin) { /* yield-free by design; this is a sub-millisecond wait */ }
-    }
-  }
-}
-
-function release(lock) {
-  if (!lock) return;
-  try {
-    rmSync(lock, { recursive: true, force: true });
-  } catch {
-    /* best-effort */
-  }
-}
-
 // Apply this process's view of the run onto whatever is currently on disk, instead of
-// replacing it. Nodes another broker finished while we were working are kept.
+// replacing it. Nodes another broker finished while we were working are kept. Child runs only
+// (the broker's): a task (store_path) is written by store.mjs mutateTask and never reaches here.
 function mergeOnto(fresh, mine) {
   if (!fresh) return mine;
   const byId = new Map(fresh.nodes.map((n) => [n.node_id, n]));
@@ -622,6 +591,19 @@ function mergeOnto(fresh, mine) {
 
 export function saveRun(run) {
   const path = pathOf(run);
+  // Inside mutateTask/mutateRun on this file: the transaction owns the write. Only its own object
+  // is accepted - a second object for the same path (a helper that re-read via loadRunAt, a handler
+  // still holding its own `task`) would have its changes vanish at commit with no error.
+  const held = transactionObject(path);
+  if (held) {
+    if (held !== run) throw new Error(`saveRun inside mutateTask on ${path} got a different object than the transaction holds - its changes would be lost; mutate the transaction's object`);
+    return run;
+  }
+  // A task (store_path) is written only through mutateTask - always; there is no flag or env escape.
+  // Child runs (no store_path; teams broker.mjs) keep the locked merge below.
+  if (run.store_path) {
+    throw new Error(`saveRun of task ${run.run_id || path} outside mutateTask - task.json is written only through store.mjs mutateTask`);
+  }
   mkdirSync(dirname(path), { recursive: true });
   const lock = acquire(path);
   try {
@@ -630,9 +612,7 @@ export function saveRun(run) {
     // from a session) must never see a truncated file. A plain writeFileSync truncates first and
     // fills second, and seam-beta-D2 (2026-09-21) caught the daemon in that gap - it read a torn
     // child run, called the dispatch settled, then foldChild re-read a whole file and threw.
-    const tmp = `${path}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
-    writeFileSync(tmp, JSON.stringify(merged, null, 2) + '\n');
-    renameSync(tmp, path);
+    writeAtomic(path, merged);
     // Keep the caller's object consistent with what was written.
     run.nodes = merged.nodes;
     run.capacity_epoch = merged.capacity_epoch || 0;

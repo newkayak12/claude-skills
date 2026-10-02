@@ -83,7 +83,11 @@ Out of scope is for capability you decided not to build, and it is not a place t
 // package "passed" and nothing had shown that one skill behaves differently on one input.
 export const EXERCISE_RULE = `When a deliverable is instructions a model will follow - a skill (SKILL.md), a prompt, an agent, command or system-prompt definition - it is code, not a document: finding a passage in it proves the rule was written, never that it is followed. At least one acceptance item for it must RUN it: a fresh model (a subagent, or \`claude -p\`) is handed the changed file and a stated input and follows it, and a stated property of the output is checked - with the pre-change version run on the same input when one exists, so a regression shows. Name the input in the criterion; a grep, a word count or a heading order is never the only check on such a deliverable.`;
 
-const QUESTIONS_CONTRACT = `Optional: "questions": [{"question": "...", "to": "<role or person who owns this, if you can name one>", "options": [{"option": "...", "consequence": "..."}], "default": "<what you decide if nobody answers - required whenever "options" is>", "why": "<why this is not yours to decide alone>"}]. Only for a decision with a real owner other than you - not a hedge on ordinary judgment. An interactive run stops and asks; otherwise "default" is used and the question is recorded on the report as decided-for-you.`;
+// One literal for both graphs: taskmanager.mjs imports this for its manager-level judging stages
+// (shape/critique/accept/integrate/gate/gate:goal) instead of keeping the byte-identical copy it
+// carried since D2 slice 3 (0.29.0) - folded on the 2026-10-02 architecture review, because two
+// literals of one contract only ever drift.
+export const QUESTIONS_CONTRACT = `Optional: "questions": [{"question": "...", "to": "<role or person who owns this, if you can name one>", "options": [{"option": "...", "consequence": "..."}], "default": "<what you decide if nobody answers - required whenever "options" is>", "why": "<why this is not yours to decide alone>"}]. Only for a decision with a real owner other than you - not a hedge on ordinary judgment. An interactive run stops and asks; otherwise "default" is used and the question is recorded on the report as decided-for-you.`;
 
 // A downstream package's implement/test/gate finding something wrong OUTSIDE its own scope, in
 // a package it deps on (its own worktree started from that package's delivered branch - see

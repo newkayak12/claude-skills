@@ -62,7 +62,8 @@ import { readPointer, ownsRun, findTaggedRun, harnessVerdict, taskTag } from './
 import { logReply, renderStreamLine, renderLedgerLine } from './tasklog.mjs';
 import { validate as validateDiagram, renderToFile as renderDiagram } from './diagram.mjs';
 import { conventionsBlock } from './conventions.mjs';
-import { EXERCISE_RULE, FIDELITY_RULE } from './prompts.mjs';
+import { EXERCISE_RULE, FIDELITY_RULE, QUESTIONS_CONTRACT } from './prompts.mjs';
+import { appendLedger, mutateTask, mutateRun, writeAtomic, inTransaction } from './store.mjs';
 import { readTeamConfig, resolveTeamOptions, TEAM_DEFAULTS } from './teamconfig.mjs';
 import { pluginDirArgs, isEntryPoint, teamsPluginRoot } from './pluginroots.mjs';
 import { ensureViewer, readViewRecord, viewUrl } from './viewserver.mjs';
@@ -126,14 +127,22 @@ export function taskPath(taskId) {
   return join(taskDir(taskId), 'task.json');
 }
 
+// Through store.mjs appendLedger: inside a mutateTask transaction the line is buffered and written
+// only after task.json commits, so a write that aborts leaves no phantom event (2026-10-02 review -
+// toolSubmit recorded tm_submit and then threw on a dispatch payload).
 export function record(task, entry) {
+  // An open's effect (openChild, outside any transaction) holds its lines until its apply lands:
+  // an open that is claim_lost never shows a dispatch the node did not get (goal repair 1).
+  if (effectLedger && !inTransaction()) { effectLedger.push({ ts: Date.now(), ...entry }); return; }
   try {
-    mkdirSync(taskDir(task.run_id), { recursive: true });
-    appendFileSync(join(taskDir(task.run_id), 'ledger.jsonl'), JSON.stringify({ ts: Date.now(), ...entry }) + '\n');
+    appendLedger(join(taskDir(task.run_id), 'ledger.jsonl'), JSON.stringify({ ts: Date.now(), ...entry }) + '\n');
   } catch {
     /* the ledger is evidence, not a dependency */
   }
 }
+
+// Set by runClaimed while an open effect runs; see record().
+let effectLedger = null;
 
 // ---------- the manager's stages ----------
 
@@ -334,14 +343,9 @@ function stageSkills(task, n) {
 // Every manager stage that decides or judges. size only measures, and report only recounts.
 const MANAGER_CONVENTION_STAGES = new Set(['areas', 'areas-critique', 'shape', 'critique', 'accept', 'integrate', 'plan-integrate', 'gate', 'gate:goal']);
 
-// Same field, same short wording, as prompts.mjs's own QUESTIONS_CONTRACT (D2 slice 3, 0.29.0) -
-// this file's manager-level judging stages (shape/critique/accept/integrate/gate/gate:goal) get
-// the identical `questions[]` contract the child-run graph's stages do, generalized from
-// investigate's own unknowns[]. Kept as a second literal rather than importing prompts.mjs's
-// constant: the two files already diverge on every other line of these contracts, and importing
-// one string across that boundary would suggest a coupling that does not otherwise exist.
-const QUESTIONS_CONTRACT = `Optional: "questions": [{"question": "...", "to": "<role or person who owns this, if you can name one>", "options": [{"option": "...", "consequence": "..."}], "default": "<what you decide if nobody answers - required whenever "options" is>", "why": "<why this is not yours to decide alone>"}]. Only for a decision with a real owner other than you - not a hedge on ordinary judgment. An interactive run stops and asks; otherwise "default" is used and the question is recorded on the report as decided-for-you.`;
-
+// Manager-level judging stages (shape/critique/accept/integrate/gate/gate:goal) carry the same
+// `questions[]` contract the child-run graph's stages do (D2 slice 3, 0.29.0) - QUESTIONS_CONTRACT is
+// imported from prompts.mjs, not copied (2026-10-02 review: the two literals were byte-identical).
 export const CONTRACT = {
   size: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "handoff": "<what shape needs to know>", "evidence": "..."}
 S means one graph run in one worktree can carry the whole request. L means it spans independent modules, packages or repositories that each need their own run and worktree, integrated afterwards. Decide from what commands show - file and module counts, ownership boundaries, build units - and put those commands in "sizing". The default is S: a manager layer exists, and the temptation is to use it. Over-sizing costs a worktree, a run and an integration per package; under-sizing costs one retry.`,
@@ -671,7 +675,8 @@ function createTask(a) {
     nodes: [node('size', 'size', []), node('areas', 'areas', ['size']), node('areas-critique', 'areas-critique', ['areas'])],
   };
   openBrainstorm(task, a, T);
-  return saveRun(task);
+  // Created through the store like every other task write; the object returned is the one written.
+  return mutateTask(task.store_path, (fresh) => Object.assign(fresh, task), { create: true });
 }
 
 // §6.5 (_repo/docs/plans/2026-09-28-teams-light-plan.md): where the person comes in first is not
@@ -767,6 +772,18 @@ export function mustFindTask(a) {
   const task = id && loadRunAt(taskPath(id));
   if (!task) throw new Error(`unknown task ${a.task_id}`);
   return task;
+}
+
+// The handler form of store.mjs mutateTask (2026-10-02 task-store review, U4): resolves the task
+// ref exactly as mustFindTask does, then runs fn on a FRESH read inside the store lock and commits
+// what fn left in its argument. A helper's own saveRun(task) of that same object is a no-op inside
+// the transaction; fn throwing writes nothing and drops every record() it made. fn is synchronous
+// and must not call an own-transaction function (advanceDispatches, prepareReadyIntegrations,
+// foldDispatch, toolNext): those run their effects outside the lock, so call them after this.
+function withTask(a, fn) {
+  const id = resolveTaskRef(a.task_id);
+  if (!id || !existsSync(taskPath(id))) throw new Error(`unknown task ${a.task_id}`);
+  return mutateTask(id, fn);
 }
 
 // ---------- planning cards (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md C2-C4, C6) ----------
@@ -1819,7 +1836,7 @@ export function autoRejudge(task, now = Date.now()) {
     n.judge_attempts = (n.judge_attempts || 0) + 1;
     n.judge_failures = (n.judge_failures || []).concat([{ at: n.finished_at || null, reason: reason.slice(0, 300) }]);
     n.state = 'pending';
-    n.reopened = (n.reopened || 0) + 1; // mergeOnto's one legitimate terminal -> pending path
+    n.reopened = (n.reopened || 0) + 1; // the reopen count; a child run's merge keys off it too
     delete n.result; delete n.finished_at; delete n.started_at;
     record(task, { event: 'daemon_rejudge', task_id: task.run_id, node_id: n.node_id, attempt: n.judge_attempts, reason: reason.slice(0, 200) });
     changed = true;
@@ -1936,8 +1953,8 @@ function rescueQaRound(task, pkg, unreachable, failed) {
     x.state = 'pending';
     delete x.result;
     delete x.final;
-    // saveRun keeps a terminal state on disk over a pending one in memory unless the reopen is
-    // counted (graph.mjs's mergeOnto) - the same mark autoRejudge's reopen carries.
+    // Counted, the same mark autoRejudge's reopen carries. task.json is written whole by
+    // mutateTask; only a child run's merge (graph.mjs mergeOnto) still reads it to let a reopen win.
     x.reopened = (x.reopened || 0) + 1;
   }
   const kept = goal.deps.filter((d) => !deadDeps.includes(d));
@@ -2326,11 +2343,11 @@ export function harnessPathsUnder(cwd) {
   return paths;
 }
 
-// `git add`/`rm --cached`/`commit` each take the worktree's index.lock. Two processes folding
-// the same child at the same moment - daemon.mjs's fold loop against a direct tm_submit, a race
-// the daemon's header explicitly allows - make the loser fail on "index.lock: File exists" for
-// a few milliseconds. That is contention, not a broken tree: wait it out, briefly and boundedly,
-// rather than turn a passed package into a failed dispatch.
+// `git add`/`rm --cached`/`commit` each take the worktree's index.lock. Two processes folding the
+// same child at once (daemon fold loop vs a direct tm_submit) no longer happens: the fold claim
+// (claimed in a mutateTask) lets one of them fold. The retry stays as defence against a user's
+// own git, or another tool, holding index.lock for a few milliseconds - contention, not a broken
+// tree: wait it out, briefly and boundedly, rather than turn a passed package into a failed dispatch.
 const INDEX_LOCK_RETRIES = 8;
 const INDEX_LOCK_WAIT_MS = 150;
 function gitIndexed(cwd, args) {
@@ -3065,9 +3082,10 @@ export function serviceStalledDriver(task, child, nodeId) {
 // for the leader to drain) existed only because the leader was itself a model session that had
 // to poll its OWN inbox at the top of its OWN tm_next to see it. The daemon is not a client of
 // this MCP server - it never calls back into it - so a direct tm_submit/tm_retry from any other
-// caller and the daemon's own graph.mjs saveRun() calls are just two writers sharing the same
-// mkdir-lock saveRun already serializes; requireRunnable's fresh state re-read (mustFindTask
-// loads from disk on every call) is what stops either side from finishing a node twice.
+// caller and the daemon's phases are two writers of task.json, each going through store.mjs
+// mutateTask (lock -> read fresh -> change -> write-then-rename), so neither writes over the
+// other's stale snapshot; a saveRun of a task outside a transaction throws. Only child run files
+// (the broker's) still take saveRun's locked merge.
 
 function daemonPath() {
   return join(dirname(fileURLToPath(import.meta.url)), 'daemon.mjs');
@@ -3260,7 +3278,7 @@ function serviceDaemon(task) {
 }
 
 // Executed by the server the moment the node is ready. The model never opens a run.
-export function openChild(task, n) {
+export function openChild(task, n, progress = null) {
   const pkg = packageOf(task, n.subgoal_id);
   if (!pkg) {
     n.state = 'failed';
@@ -3389,6 +3407,8 @@ export function openChild(task, n) {
     execution_phase: pkg.phase !== 'planning'
       && (planningPkgs(task).length > 0 || task.session_brainstorm === true || task.nodes.some((x) => x.stage === 'brainstorm')),
   });
+  // The child run exists from here on: an open whose apply never lands finds it by this note.
+  if (progress) progress({ child_run_id: child.run_id, cwd: wt.path });
   n.state = 'running';
   n.started_at = Date.now();
   n.child = { cwd: wt.path, run_id: child.run_id, branch: wt.branch, flow, based_on };
@@ -3397,6 +3417,7 @@ export function openChild(task, n) {
     n.child.spawn_count = 0; // the first spawn gets no filename suffix; a respawn starts at 1
     const driver = spawnChildDriver(task, n.node_id, n.child);
     n.child.driver = driver;
+    if (progress) progress({ driver });
     record(task, {
       event: 'child_driver_spawned', task_id: task.run_id, node_id: n.node_id, child_run_id: child.run_id,
       pid: driver.pid, cwd: n.child.cwd, log: driver.log, command: driver.command,
@@ -3557,19 +3578,22 @@ export function foldChild(task, n) {
   if (cs.state === 'running') {
     // A direct tm_submit (skipping tm_next) still gets the same dead-driver handling tm_next
     // gives it on every poll: respawn on the same run_id, or park on capacity, before ever
-    // folding blocked. Persist first - this throws on every branch but the last.
-    if (n.child.driver && !driverAlive(n.child.driver) && serviceDeadDriver(task, n.child, n.node_id)) saveRun(task);
+    // folding blocked. Not persisted here and not thrown: this used to saveRun then throw, which
+    // cannot work inside a transaction (a throw aborts the write). It returns {deferred, reason};
+    // foldDispatch applies the n.child change in its apply transaction, tm_submit throws the
+    // reason to its caller after that commits, and the daemon records daemon_fold_deferred.
+    if (n.child.driver && !driverAlive(n.child.driver)) serviceDeadDriver(task, n.child, n.node_id);
     const driver = n.child.driver || null;
     if (n.child.waiting_capacity) {
-      throw new Error(`dispatch ${n.node_id}: child run ${n.child.run_id} is waiting on provider capacity `
+      return { deferred: true, reason: `dispatch ${n.node_id}: child run ${n.child.run_id} is waiting on provider capacity `
         + `(${n.child.waiting_capacity.reason}). Tell the user the reset time and stop; `
-        + `tm_retry({task_id, package_id: "${n.subgoal_id}", reset_capacity: true}) resumes it once capacity is back.`);
+        + `tm_retry({task_id, package_id: "${n.subgoal_id}", reset_capacity: true}) resumes it once capacity is back.` };
     }
     if (!driver || driverAlive(driver)) {
-      throw new Error(`dispatch ${n.node_id}: child run ${n.child.run_id} is still running (${JSON.stringify(cs.counts)}). `
+      return { deferred: true, reason: `dispatch ${n.node_id}: child run ${n.child.run_id} is still running (${JSON.stringify(cs.counts)}). `
         + (driver
           ? `Its driver process (pid ${driver.pid}) is still working; wait and poll tm_next, then submit this node again.`
-          : `Drive it with team_next/team_run/team_submit at cwd ${n.child.cwd}, then submit this node again.`));
+          : `Drive it with team_next/team_run/team_submit at cwd ${n.child.cwd}, then submit this node again.`) };
     }
     // The driver died with the run unfinished and the restart budget (serviceDeadDriver already
     // tried) is spent. That is not a verdict about the package, but it is an honest end for
@@ -4981,8 +5005,9 @@ function toolWait(a) {
   let events = nodeTransitionsSince(task, since);
   while (!events.length && Date.now() < until && taskState(task).state === 'running') {
     sleepSync(Math.min(2000, until - Date.now()));
-    task = mustFindTask(a); // re-read from disk: the daemon writes task.json from its own process
-    serviceDaemon(task);
+    // A fresh read each iteration (the daemon writes task.json from its own process), and the lock
+    // only for this one serviceDaemon - never across the sleep.
+    task = withTask(a, (fresh) => { serviceDaemon(fresh); return fresh; });
     events = nodeTransitionsSince(task, since);
   }
   const st = taskState(task);
@@ -5320,8 +5345,14 @@ function humanAssignments(task, pkgId) {
 // (against a read-only loadRun, through applyPinAction - the same function the broker uses to
 // apply it for real) and queues the instruction for the broker to pick up - see graph.mjs's
 // queueHumanAction and this file's own header, rule 2.
+// Two transactions on purpose: the STORY pin on the package commits first and survives a throw in
+// the child-run half below (the pre-store code saved it and then could throw on a missing child run).
 function toolAssign(a) {
-  const task = mustFindTask(a);
+  withTask(a, (task) => assignOnTask(task, a, { pinOnly: true }));
+  return withTask(a, (task) => assignOnTask(task, a));
+}
+
+function assignOnTask(task, a, { pinOnly = false } = {}) {
   const key = String(a.key || '');
   const parsed = parseTicketKey(key);
   if (!parsed || !parsed.pkgId) throw new Error(`tm_assign needs a STORY or TASK key (E-xxxxxxxx/Pn[/subgoalId]), got "${key}"`);
@@ -5345,8 +5376,8 @@ function toolAssign(a) {
     // SAME field a shape/setgoal writes on its own - the user just called tm_assign, so this
     // one always parks regardless of run.interactive (§7); an unmarked assignee is the model's.
     else pkg.assignee = { by: 'user', ...(who ? { who } : {}) };
-    saveRun(task);
   }
+  if (pinOnly) return null; // the second transaction repeats the pin above as a no-op
   const dispatch = latestBySubgoal(task, pkgId, 'dispatch');
   if (!dispatch || !dispatch.child) {
     if (subgoalId) throw new Error(`${key} has no child run yet - pin its STORY (${storyKey(task.run_id, pkgId)}) instead, which holds until it dispatches`);
@@ -5591,6 +5622,11 @@ async function openTaskAndMaybePin(a, eventName) {
   let view = null;
   try { view = await ensureViewer(tasksRoot(), task.run_id); } catch { view = null; }
   if (!task.size_pinned) return { task, delegated: null, view };
+  // The pinned size is finished on a fresh read: the await above let the daemon in.
+  return mutateTask(task.run_id, (fresh) => pinSize(fresh, view));
+}
+
+function pinSize(task, view) {
   const n = task.nodes.find((x) => x.node_id === 'size');
   const out = finish(task, n, {
     stage_ok: true, size: task.size_pinned, size_source: 'pinned', sizing: [],
@@ -5602,7 +5638,6 @@ async function openTaskAndMaybePin(a, eventName) {
     evidence: 'no measurement: pinned by the caller',
   });
   const delegated = delegateIfSmall(task, n, out);
-  if (!delegated) saveRun(task);
   return { task, delegated, view };
 }
 
@@ -6220,9 +6255,8 @@ export function enforceBudget(task) {
 // (the default since 2026-09-28) replaces the guess with additive-increase/multiplicative-decrease,
 // the same shape TCP congestion control uses for the same reason: probe up slowly while nothing
 // complains, back off hard the moment something does. State lives on task.auto_parallel - a plain
-// top-level field, exactly like task.driver_restarts/task.budget_stopped, that saveRun's mergeOnto
-// (graph.mjs) already carries through untouched because it spreads the whole task object, not a
-// hand-picked field list.
+// top-level field, exactly like task.driver_restarts/task.budget_stopped, that mutateTask
+// (store.mjs) writes with the rest of the task object - no hand-picked field list.
 const AIMD_START = 2; // the same number max_parallel_teams used to be pinned at forever
 const AIMD_FLOOR = 1;
 const AIMD_WINDOW = 2; // this many consecutive clean develop-STORY settles before +1
@@ -6380,50 +6414,336 @@ export function updateAutoParallel(task, n, result) {
   }
 }
 
+// ---------- claims: a node is taken in a transaction before any side effect (2026-10-02, U3) ----------
+//
+// openChild (git worktree add, createRun, a driver spawn), prepareIntegration (worktree, merges,
+// npm test), preparePlanIntegration and foldChild (git commit) used to run on whatever snapshot
+// the caller held, guarded only by readyNodes() on that snapshot - so the daemon and a tm_next (or
+// a tm_submit) could both open, prepare or fold the same node (v0.26.3 double fold: only the
+// index.lock retry was ever fixed). Now: a claim transaction re-reads task.json and stamps
+// n.claim = {pid, token, op, attempt, at} on a node still eligible; the effect runs outside the
+// lock on a fresh copy; an apply transaction writes the effect's node fields back only if the node
+// still holds that token, at the same attempt and state - else claim_lost, nothing applied. An
+// effect that throws releases the claim (claim_failed) so the node is runnable again.
+//
+// Dispatch open moves the node to `running` in the claim transaction (readyNodes stops offering
+// it at once); until the apply it is a running dispatch with no `child` - readers say "opening".
+// integrate / plan-integrate stay `pending` with a claim, so readyToJudge (daemon judge pass,
+// tm_next's ready list) skips a node with a live claim or with no preparation yet (critique N1).
+
+// Tokens this process holds right now. A claim stamped with our pid but a token not in here is a
+// previous incarnation of this pid (pid reuse after a crash): stale, not ours.
+const heldClaims = new Set();
+
+// Test seam: called once (then cleared) between a claim transaction and its effect, outside any
+// transaction - the window a second caller arrives in. Never set outside tests.
+export const __storeHooks = { afterClaim: null, afterEffect: null };
+
+export function liveClaim(claim) {
+  if (!claim || !claim.token) return false;
+  if (claim.pid === process.pid) return heldClaims.has(claim.token);
+  return pidAlive(claim.pid);
+}
+
+// Inside a transaction on `task`: stamp a claim on n, or null if another live owner holds one. A
+// dead owner's claim is reclaimed (claim_reclaimed).
+export function claimNode(task, n, op) {
+  if (n.claim) {
+    if (liveClaim(n.claim)) return null;
+    record(task, { event: 'claim_reclaimed', task_id: task.run_id, node_id: n.node_id, op: n.claim.op, pid: n.claim.pid, token: n.claim.token });
+    delete n.claim;
+  }
+  const claim = { pid: process.pid, token: randomUUID(), op, attempt: n.attempt || 1, at: Date.now() };
+  n.claim = claim;
+  return claim;
+}
+
+function taskIdOf(t) { return typeof t === 'string' ? t : t.run_id; }
+
+// Test seam: called once (then cleared) after an open's effect returned and its intent was noted,
+// before the apply transaction - the window a crash or a lost apply lands in.
+function fireAfterEffect(info) {
+  const h = __storeHooks.afterEffect;
+  if (!h) return;
+  __storeHooks.afterEffect = null;
+  h(info);
+}
+
+// ---------- open intents (goal repair 1) ----------
+//
+// openChild's effect is real the moment it happens: a child run file, a detached driver. Its apply
+// can still be claim_lost, throw (ELOCKTIMEOUT), or never run (the process died). The intent file
+// opening/<token>.json, written before the effect and added to as it goes (the child run, the
+// driver, then the finished node fields and the held ledger lines), is how that effect is found
+// again: a lost apply undoes it, and the reclaim of a stale open adopts it when it finished, else
+// undoes it - so a worktree never gets a second driver beside an orphaned first.
+function intentPath(taskId, token) { return join(taskDir(taskId), 'opening', `${token}.json`); }
+function readIntent(taskId, token) {
+  try { return JSON.parse(readFileSync(intentPath(taskId, token), 'utf8')); } catch { return null; }
+}
+function noteIntent(taskId, token, patch) {
+  writeAtomic(intentPath(taskId, token), { ...(readIntent(taskId, token) || {}), ...patch });
+}
+function dropIntent(taskId, token) {
+  try { rmSync(intentPath(taskId, token), { force: true }); } catch { /* a leftover intent of an applied open is never read */ }
+}
+
+// Stop the intent's driver and mark its child run retired. `task` is the transaction's task when
+// called inside one (the ledger line rides that commit), else a {run_id} for a direct write.
+function undoOpen(task, intent, reason) {
+  const driver = intent.driver || null;
+  const killed = killDriver(driver);
+  let retired = false;
+  if (intent.child_run_id && intent.cwd) {
+    try {
+      mutateRun(join(intent.cwd, '.teams_output', 'broker', 'runs', `${intent.child_run_id}.json`), (r) => {
+        r.retired = { by: 'teams', node_id: intent.node_id, reason, at: Date.now() };
+      });
+      retired = true;
+    } catch { /* no run file yet (the effect stopped before createRun wrote it), or unreadable */ }
+  }
+  record(task, {
+    event: 'open_undone', task_id: task.run_id, node_id: intent.node_id, token: intent.token, reason,
+    child_run_id: intent.child_run_id || null, pid: driver ? driver.pid : null, killed, retired,
+  });
+}
+
+function fireAfterClaim(info) {
+  const h = __storeHooks.afterClaim;
+  if (!h) return;
+  __storeHooks.afterClaim = null;
+  h(info);
+}
+
+// The apply transaction: fn(fresh, node) runs only if the node still holds this claim at the same
+// attempt and in `expectState`. Otherwise claim_lost, and nothing from the effect is written (only
+// our own claim marker is dropped, if it is still there).
+export function applyClaim(taskId, nodeId, claim, expectState, fn) {
+  try {
+    return mutateTask(taskId, (fresh) => {
+      const f = getNode(fresh, nodeId);
+      const holds = f && f.claim && f.claim.token === claim.token;
+      if (!holds || (f.attempt || 1) !== claim.attempt || f.state !== expectState) {
+        record(fresh, {
+          event: 'claim_lost', task_id: fresh.run_id, node_id: nodeId, op: claim.op, token: claim.token,
+          state: f ? f.state : null, attempt: f ? (f.attempt || 1) : null, holder: f && f.claim ? f.claim.token : null,
+        });
+        if (holds) delete f.claim;
+        return { lost: true };
+      }
+      delete f.claim;
+      return { lost: false, value: fn(fresh, f) };
+    });
+  } finally {
+    heldClaims.delete(claim.token);
+  }
+}
+
+// The effect threw (or never ran): drop the claim so the node is runnable again. A dispatch that
+// was moved to running by its open claim goes back to pending. Never masks the original error.
+function releaseClaim(taskId, nodeId, claim, err) {
+  try {
+    mutateTask(taskId, (fresh) => {
+      const f = getNode(fresh, nodeId);
+      if (!f || !f.claim || f.claim.token !== claim.token) return;
+      delete f.claim;
+      if (claim.op === 'open' && f.state === 'running' && !f.child) f.state = 'pending';
+      record(fresh, { event: 'claim_failed', task_id: fresh.run_id, node_id: nodeId, op: claim.op, token: claim.token, error: String((err && err.message) || err).slice(0, 300) });
+    });
+  } catch { /* the claim stays; its owner pid's death (or this token leaving heldClaims) frees it */ }
+  heldClaims.delete(claim.token);
+}
+
+// Node fields each effect writes (and nothing else): what the apply copies back.
+const CLAIM_EFFECTS = {
+  open: { state: 'running', fields: ['state', 'result', 'started_at', 'child', 'base_commit'], run: (task, n, progress) => openChild(task, n, progress) },
+  integrate: { state: 'pending', fields: ['state', 'result', 'integration'], run: (task, n) => prepareIntegration(task, n) },
+  'plan-integrate': { state: 'pending', fields: ['prd', 'state', 'result'], run: (task, n) => preparePlanIntegration(task, n) },
+};
+
+// claims: [{node_id, claim}] from one claim transaction. Effects run one by one, each on a fresh
+// read of task.json (so a later one sees what an earlier apply wrote), outside the lock. Returns
+// how many were applied.
+function runClaimed(taskId, claims) {
+  for (const c of claims) heldClaims.add(c.claim.token);
+  const open = new Set(claims);
+  let applied = 0;
+  try {
+    fireAfterClaim({ op: claims[0].claim.op, task_id: taskId, node_ids: claims.map((c) => c.node_id) });
+    for (const c of claims) {
+      const eff = CLAIM_EFFECTS[c.claim.op];
+      const snap = loadRunAt(taskPath(taskId));
+      const n = snap && getNode(snap, c.node_id);
+      if (!n || !n.claim || n.claim.token !== c.claim.token) {
+        // Lost before the effect ran (a tm_submit took the node meanwhile): no effect at all.
+        open.delete(c);
+        applyClaim(taskId, c.node_id, c.claim, eff.state, () => null);
+        continue;
+      }
+      const isOpen = c.claim.op === 'open';
+      let held = [];
+      if (isOpen) {
+        noteIntent(taskId, c.claim.token, { node_id: c.node_id, token: c.claim.token, attempt: c.claim.attempt });
+        effectLedger = [];
+        try {
+          eff.run(snap, n, (p) => noteIntent(taskId, c.claim.token, p));
+        } catch (e) {
+          held = effectLedger;
+          effectLedger = null;
+          for (const l of held) record({ run_id: taskId }, l); // evidence of how far it got
+          undoOpen({ run_id: taskId }, readIntent(taskId, c.claim.token) || { node_id: c.node_id, token: c.claim.token }, `open threw: ${String((e && e.message) || e).slice(0, 200)}`);
+          dropIntent(taskId, c.claim.token);
+          throw e;
+        }
+        held = effectLedger;
+        effectLedger = null;
+        noteIntent(taskId, c.claim.token, { fields: pickFields(n, eff.fields), ledger: held });
+        open.delete(c);
+        fireAfterEffect({ op: c.claim.op, task_id: taskId, node_id: c.node_id, node: n });
+      } else {
+        eff.run(snap, n);
+        open.delete(c);
+      }
+      // A throw here (ELOCKTIMEOUT) leaves the intent: the node keeps a claim this process no
+      // longer holds, and the next reclaim adopts the open from it.
+      const out = applyClaim(taskId, c.node_id, c.claim, eff.state, (fresh, f) => {
+        for (const k of eff.fields) {
+          if (k in n) f[k] = n[k];
+          else delete f[k];
+        }
+        for (const l of held) record(fresh, l);
+      });
+      if (isOpen) {
+        if (out.lost) undoOpen({ run_id: taskId }, readIntent(taskId, c.claim.token), 'claim_lost: the node moved while it was being opened');
+        dropIntent(taskId, c.claim.token);
+      }
+      if (!out.lost) applied++;
+    }
+  } catch (e) {
+    for (const c of open) releaseClaim(taskId, c.node_id, c.claim, e);
+    throw e;
+  }
+  return applied;
+}
+
+function pickFields(n, fields) {
+  const out = {};
+  for (const k of fields) if (k in n) out[k] = n[k];
+  return out;
+}
+
+// A dispatch moved to running by an open claim whose owner died (or whose apply threw) before the
+// apply. Its intent says how far the effect got: finished with a child -> adopted (the node takes
+// the child and its live driver, and the held dispatch lines are written now); otherwise its driver
+// is stopped and its child run retired, and the node goes back to pending for the claim pass below.
+// Returns the intent tokens to drop once this transaction commits.
+function reclaimOrphanedOpens(task) {
+  const settled = [];
+  for (const n of task.nodes) {
+    if (n.stage !== 'dispatch' || n.state !== 'running' || n.child || !n.claim || liveClaim(n.claim)) continue;
+    const claim = n.claim;
+    record(task, { event: 'claim_reclaimed', task_id: task.run_id, node_id: n.node_id, op: claim.op, pid: claim.pid, token: claim.token });
+    delete n.claim;
+    const intent = claim.op === 'open' ? readIntent(task.run_id, claim.token) : null;
+    if (intent) settled.push(claim.token);
+    if (intent && intent.fields && intent.fields.child && intent.attempt === (n.attempt || 1)) {
+      for (const k of CLAIM_EFFECTS.open.fields) {
+        if (k in intent.fields) n[k] = intent.fields[k];
+        else delete n[k];
+      }
+      for (const l of intent.ledger || []) record(task, l);
+      record(task, { event: 'open_adopted', task_id: task.run_id, node_id: n.node_id, token: claim.token, child_run_id: intent.fields.child.run_id, pid: intent.fields.child.driver ? intent.fields.child.driver.pid : null });
+      continue;
+    }
+    if (intent) undoOpen(task, intent, `reclaimed: the open by pid ${claim.pid} never applied`);
+    n.state = 'pending';
+  }
+  return settled;
+}
+
+// readyNodes minus what nobody may judge or hand out yet: a node another caller holds a live claim
+// on, and an integrate / plan-integrate whose preparation (merges, tests, merged PRD) has not been
+// applied. The daemon's judge pass and tm_next's ready list both read this (critique N1).
+export function readyToJudge(task) {
+  return readyNodes(task).filter((n) => {
+    if (n.claim && liveClaim(n.claim)) return false;
+    if (n.stage === 'integrate' && !n.integration) return false;
+    if (n.stage === 'plan-integrate' && !n.prd) return false;
+    return true;
+  });
+}
+
+// Re-read task.json into the caller's object in place. A caller that holds a task object across a
+// claim-owning call (advanceDispatches, prepareReadyIntegrations, foldDispatch) refreshes after
+// it, so a later legacy saveRun of that object cannot carry the pre-claim node back.
+export function refreshTask(task) {
+  const fresh = loadRunAt(taskPath(task.run_id));
+  if (!fresh) return task;
+  for (const k of Object.keys(task)) if (!(k in fresh)) delete task[k];
+  Object.assign(task, fresh);
+  return task;
+}
+
 // Opens every ready dispatch node this poll is allowed to - the phase-Team exemption and
 // max_parallel_teams for ordinary STORY packages - and returns how many it opened. Shared by
 // tm_next (a caller driving the graph by hand, chiefly tests) and the daemon's own loop, so the
-// two can never disagree about which dispatch is allowed to open when.
-export function advanceDispatches(task) {
-  // budget/timebox stop: no NEW package opens once the task is over budget - a running one
-  // (this check never sees, since it never touches state 'running') still finishes.
-  if (task.budget_stopped) return 0;
-  // max_parallel_teams caps how many develop STORY dispatches run at once - phase-Team
-  // packages (planning cards, QA cards, AUDIT) are exempt, both from the count and from the cap
-  // itself. They never run beside a develop STORY (planning precedes shape; a QA round starts only
-  // once its integrate has every package done, and its defects are filed only once the whole
-  // round has settled - settleQaRound), and the cards of one phase are meant to run in parallel
-  // where their deps allow (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md principle 5).
-  let opened = 0;
-  const isPhaseTeam = (n) => { const pkg = packageOf(task, n.subgoal_id); return !!(pkg && (pkg.phase === 'planning' || pkg.phase === 'qa' || pkg.phase === 'audit')); };
-  const readyDispatch = readyNodes(task).filter((n) => n.stage === 'dispatch');
-  for (const n of readyDispatch) {
-    if (!isPhaseTeam(n)) continue;
-    openChild(task, n);
-    opened++;
-  }
-  // A fixed number (team.json, a tm_open argument, or - pre-0.36.0 - the only default there ever
-  // was) is used exactly as given, unconditionally: numeric max_parallel_teams is a promise to the
-  // caller, not a suggestion this controller is free to override. Anything else - 'auto' (the
-  // default now), or a task.json written before task.team existed at all (createTask has set
-  // task.team on every task since taskmanager.mjs:187, so only a pre-existing file on disk still
-  // reaches this) - falls through to the AIMD controller above, which self-initializes at
-  // AIMD_START the first time it is asked, the same number this cap used to be pinned at forever.
-  const configuredMax = task.team && task.team.opts && task.team.opts.max_parallel_teams;
-  const maxParallel = Number.isInteger(configuredMax) ? configuredMax : ensureAutoParallel(task).current;
-  const runningStories = task.nodes.filter((n) => n.stage === 'dispatch' && n.state === 'running' && !isPhaseTeam(n)).length;
-  const slots = Math.max(0, maxParallel - runningStories);
-  const storyReady = readyDispatch.filter((n) => !isPhaseTeam(n))
-    .sort((a, b) => {
-      const pa = packageOf(task, a.subgoal_id);
-      const pb = packageOf(task, b.subgoal_id);
-      return (Number.isInteger(pa && pa.priority) ? pa.priority : 0) - (Number.isInteger(pb && pb.priority) ? pb.priority : 0);
-    });
-  for (const n of storyReady.slice(0, slots)) {
-    openChild(task, n);
-    opened++;
-  }
-  return opened;
+// two can never disagree about which dispatch is allowed to open when. Owns its transactions
+// (claim -> openChild outside the lock -> apply): takes the task id, not a snapshot.
+export function advanceDispatches(taskRef) {
+  const taskId = taskIdOf(taskRef);
+  let settledIntents = [];
+  const claims = mutateTask(taskId, (task) => {
+    settledIntents = reclaimOrphanedOpens(task);
+    // budget/timebox stop: no NEW package opens once the task is over budget - a running one
+    // (this check never sees, since it never touches state 'running') still finishes.
+    if (task.budget_stopped) return [];
+    // max_parallel_teams caps how many develop STORY dispatches run at once - phase-Team
+    // packages (planning cards, QA cards, AUDIT) are exempt, both from the count and from the cap
+    // itself. They never run beside a develop STORY (planning precedes shape; a QA round starts only
+    // once its integrate has every package done, and its defects are filed only once the whole
+    // round has settled - settleQaRound), and the cards of one phase are meant to run in parallel
+    // where their deps allow (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md principle 5).
+    const out = [];
+    const take = (n) => {
+      const claim = claimNode(task, n, 'open');
+      if (!claim) return false;
+      n.state = 'running';
+      out.push({ node_id: n.node_id, claim });
+      return true;
+    };
+    const isPhaseTeam = (n) => { const pkg = packageOf(task, n.subgoal_id); return !!(pkg && (pkg.phase === 'planning' || pkg.phase === 'qa' || pkg.phase === 'audit')); };
+    const readyDispatch = readyNodes(task).filter((n) => n.stage === 'dispatch');
+    for (const n of readyDispatch) {
+      if (!isPhaseTeam(n)) continue;
+      take(n);
+    }
+    // A fixed number (team.json, a tm_open argument, or - pre-0.36.0 - the only default there ever
+    // was) is used exactly as given, unconditionally: numeric max_parallel_teams is a promise to the
+    // caller, not a suggestion this controller is free to override. Anything else - 'auto' (the
+    // default now), or a task.json written before task.team existed at all (createTask has set
+    // task.team on every task since taskmanager.mjs:187, so only a pre-existing file on disk still
+    // reaches this) - falls through to the AIMD controller above, which self-initializes at
+    // AIMD_START the first time it is asked, the same number this cap used to be pinned at forever.
+    const configuredMax = task.team && task.team.opts && task.team.opts.max_parallel_teams;
+    const maxParallel = Number.isInteger(configuredMax) ? configuredMax : ensureAutoParallel(task).current;
+    // A STORY still opening (claimed, no child yet) is running and holds its slot.
+    const runningStories = task.nodes.filter((n) => n.stage === 'dispatch' && n.state === 'running' && !isPhaseTeam(n)).length;
+    let slots = Math.max(0, maxParallel - runningStories);
+    const storyReady = readyDispatch.filter((n) => !isPhaseTeam(n))
+      .sort((a, b) => {
+        const pa = packageOf(task, a.subgoal_id);
+        const pb = packageOf(task, b.subgoal_id);
+        return (Number.isInteger(pa && pa.priority) ? pa.priority : 0) - (Number.isInteger(pb && pb.priority) ? pb.priority : 0);
+      });
+    for (const n of storyReady) {
+      if (slots <= 0) break;
+      if (take(n)) slots--;
+    }
+    return out;
+  });
+  for (const t of settledIntents) dropIntent(taskId, t);
+  if (!claims.length) return 0;
+  return runClaimed(taskId, claims);
 }
 
 // Every running dispatch whose driver is no longer alive gets serviced here: respawned on the
@@ -6442,23 +6762,85 @@ export function serviceRunningDispatches(task) {
 // Integration is mechanical up to the checks: the worktree and the merges are done here, in
 // dependency order, so a conflict is a fact the manager saw and not a claim a node made. Only
 // after this does an integrate node's own judging (composeTaskPrompt's CONTRACT.integrate) run.
-export function prepareReadyIntegrations(task) {
-  let prepared = 0;
-  for (const n of readyNodes(task)) {
-    // The planning integrate (C4) is prepared the same way: its merge is the manager's, made
-    // before its judge is called, so the judge reads a 10-prd.md that exists.
-    if (n.stage === 'plan-integrate' && !n.prd) {
-      preparePlanIntegration(task, n);
-      saveRun(task);
-      prepared++;
-      continue;
+// Claimed like a dispatch open (the merges and npm test run outside the lock); the node stays
+// pending with its claim, and readyToJudge keeps it from a judge until the apply lands.
+export function prepareReadyIntegrations(taskRef) {
+  const taskId = taskIdOf(taskRef);
+  const claims = mutateTask(taskId, (task) => {
+    const out = [];
+    for (const n of readyNodes(task)) {
+      // The planning integrate (C4) is prepared the same way: its merge is the manager's, made
+      // before its judge is called, so the judge reads a 10-prd.md that exists.
+      const op = n.stage === 'plan-integrate' && !n.prd ? 'plan-integrate'
+        : n.stage === 'integrate' && !n.integration ? 'integrate' : null;
+      if (!op) continue;
+      const claim = claimNode(task, n, op);
+      if (claim) out.push({ node_id: n.node_id, claim });
     }
-    if (n.stage !== 'integrate' || n.integration) continue;
-    prepareIntegration(task, n);
-    saveRun(task);
-    prepared++;
+    return out;
+  });
+  if (!claims.length) return 0;
+  return runClaimed(taskId, claims);
+}
+
+// One dispatch's fold - foldChild (which commits an accepted package's worktree) then
+// updateAutoParallel + finish - shared by the daemon's fold loop and tm_submit, under a fold
+// claim: a second caller arriving while the first holds it gets {busy}, one arriving after gets
+// the stored verdict ({idempotent: true}). foldChild runs outside the lock on a fresh copy;
+// finish runs inside the apply transaction on the fresh task. A child still running comes back
+// {deferred, reason} (the dead-driver respawn foldChild may have made is applied first).
+// Returns finish's output, or {busy|deferred|lost|idempotent|opening}.
+export function foldDispatch(taskRef, nodeId, caller = 'tm_submit') {
+  const taskId = taskIdOf(taskRef);
+  const got = mutateTask(taskId, (task) => {
+    const n = getNode(task, String(nodeId));
+    if (!n) throw new Error(`unknown node ${nodeId}`);
+    if (n.stage !== 'dispatch') throw new Error(`${n.node_id} is not a dispatch node`);
+    if (n.state !== 'running') {
+      if (n.state !== 'pending' && n.result) {
+        return { done: { ...verdict(task, n), idempotent: true, note: `node ${n.node_id} already ${n.state}; returning the stored result, no work repeated` } };
+      }
+      throw new Error(`dispatch ${n.node_id} is ${n.state}; only a running dispatch can be folded`);
+    }
+    if (!n.child) return { opening: n.claim || {} };
+    if (n.claim && liveClaim(n.claim)) return { busy: n.claim };
+    return { claim: claimNode(task, n, 'fold') };
+  });
+  if (got.done) return got.done;
+  if (got.opening) {
+    return { opening: true, reason: `dispatch ${nodeId} is still opening: its child run is being created${got.opening.pid ? ` by pid ${got.opening.pid}` : ''}; poll tm_next and submit it once it is running` };
   }
-  return prepared;
+  if (got.busy) {
+    return { busy: true, reason: `dispatch ${nodeId} is already being folded (${got.busy.op} claim by pid ${got.busy.pid}); poll tm_status for its verdict` };
+  }
+  const claim = got.claim;
+  heldClaims.add(claim.token);
+  let n;
+  let result;
+  let childBefore;
+  try {
+    fireAfterClaim({ op: 'fold', task_id: taskId, node_ids: [String(nodeId)], caller });
+    const snap = loadRunAt(taskPath(taskId));
+    n = snap && getNode(snap, String(nodeId));
+    if (!n || !n.claim || n.claim.token !== claim.token) {
+      applyClaim(taskId, String(nodeId), claim, 'running', () => null);
+      return { lost: true, reason: `dispatch ${nodeId}: fold claim lost before the fold ran` };
+    }
+    childBefore = JSON.stringify(n.child);
+    result = foldChild(snap, n);
+  } catch (e) {
+    releaseClaim(taskId, String(nodeId), claim, e);
+    throw e;
+  }
+  const childChanged = JSON.stringify(n.child) !== childBefore;
+  const out = applyClaim(taskId, String(nodeId), claim, 'running', (fresh, f) => {
+    if (childChanged) f.child = n.child;
+    if (result && result.deferred) return { deferred: true, reason: result.reason };
+    updateAutoParallel(fresh, f, result);
+    return finish(fresh, f, result);
+  });
+  if (out.lost) return { lost: true, reason: `dispatch ${nodeId}: the node moved while it was being folded (claim_lost); nothing applied` };
+  return out.value;
 }
 
 // gate:human (D2 Task 4): a manager-graph judging node (shape/critique/accept/integrate/gate/
@@ -6482,34 +6864,44 @@ export function promoteManagerHumanGates(task) {
 }
 
 function toolNext(a) {
-  const task = mustFindTask(a);
-  // Refresh the shared engagement marker in every tree a live driver is working in, so the
-  // harness gate's 2h window never closes on a long package (see engage.mjs).
-  for (const n of task.nodes) {
-    if (n.child && n.child.cwd && n.state === 'running') touchMarker(n.child.cwd, task.run_id);
-  }
-  if (task.harness_run) {
-    touchMarker(task.harness_run.cwd, task.run_id);
-    return toolNextHarness(task);
-  }
-  if (task.s_run) return toolNextSRun(task);
-  // Dispatch nodes run here, the moment they are ready. Doing it in tm_next rather than in
-  // a separate call means a caller driving the graph by hand cannot forget to, and cannot do it
-  // twice - the same three steps the daemon's own loop runs, shared through the exports above so
-  // the two never diverge on what "ready" means.
-  if (enforceBudget(task)) saveRun(task);
-  if (closeFailedPlanning(task)) saveRun(task);
-  if (advanceDispatches(task)) saveRun(task);
-  if (serviceRunningDispatches(task)) saveRun(task);
-  prepareReadyIntegrations(task);
-  promoteManagerHumanGates(task);
+  const first = withTask(a, (task) => {
+    // Refresh the shared engagement marker in every tree a live driver is working in, so the
+    // harness gate's 2h window never closes on a long package (see engage.mjs).
+    for (const n of task.nodes) {
+      if (n.child && n.child.cwd && n.state === 'running') touchMarker(n.child.cwd, task.run_id);
+    }
+    if (task.harness_run) {
+      touchMarker(task.harness_run.cwd, task.run_id);
+      return { out: toolNextHarness(task) };
+    }
+    if (task.s_run) return { out: toolNextSRun(task) };
+    // Dispatch nodes run here, the moment they are ready. Doing it in tm_next rather than in
+    // a separate call means a caller driving the graph by hand cannot forget to, and cannot do it
+    // twice - the same three steps the daemon's own loop runs, shared through the exports above so
+    // the two never diverge on what "ready" means.
+    enforceBudget(task);
+    closeFailedPlanning(task);
+    return { id: task.run_id };
+  });
+  if (first.out) return first.out;
+  // Both own their transactions (claim -> effect outside the lock -> apply), so they run between
+  // this handler's transactions, never inside one; each phase below starts from a fresh read.
+  advanceDispatches(first.id);
+  withTask({ task_id: first.id }, (task) => { serviceRunningDispatches(task); });
+  prepareReadyIntegrations(first.id);
+  const task = withTask({ task_id: first.id }, (fresh) => { promoteManagerHumanGates(fresh); return fresh; });
   const state = runState(task);
-  const ready = readyNodes(task).map((n) => {
+  const ready = readyToJudge(task).map((n) => {
     const p = briefingPath(task, n);
     try { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, composeTaskPrompt(task, n)); } catch { /* status full is the fallback */ }
     return { node_id: n.node_id, stage: n.stage, briefing_path: p, next: 'dispatch briefing_path to a fresh native agent, then tm_submit' };
   });
   const budget = Number.isInteger(task.driver_restarts) ? task.driver_restarts : 2;
+  // A dispatch claimed by another caller and not yet applied: running, no child run yet.
+  const opening = task.nodes.filter((n) => n.stage === 'dispatch' && n.state === 'running' && !n.child).map((n) => ({
+    node_id: n.node_id, package_id: n.subgoal_id, opening: true,
+    next: `its child run is being opened${n.claim && n.claim.pid ? ` (claimed by pid ${n.claim.pid})` : ''}; poll tm_next`,
+  }));
   const children = task.nodes.filter((n) => n.stage === 'dispatch' && n.state === 'running' && n.child).map((n) => {
     const child = loadRun(n.child.cwd, n.child.run_id);
     const childState = child ? runState(child).state : 'missing';
@@ -6546,7 +6938,7 @@ function toolNext(a) {
     ...(task.size ? { size: task.size } : {}),
     flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),
     ready,
-    children,
+    children: [...children, ...opening],
   };
 }
 
@@ -6564,22 +6956,28 @@ function idempotentSubmit(task, n, a) {
 }
 
 function toolSubmit(a) {
-  const task = mustFindTask(a);
-  if (a.key) return toolSubmitHuman(task, a);
-  const already = idempotentSubmit(task, getNode(task, String(a.node_id)), a);
-  if (already) return already;
-  record(task, { event: 'tm_submit', task_id: task.run_id, node_id: String(a.node_id) });
-  const n = requireRunnable(task, String(a.node_id));
-  if (n.stage === 'dispatch') {
-    if (a.payload && Object.keys(a.payload).length) throw new Error('a dispatch node takes no payload: the manager reads the child run itself');
-    const result = foldChild(task, n);
-    updateAutoParallel(task, n, result);
-    return finish(task, n, result);
-  }
-  const payload = a.payload || {};
-  const result = { ...payload, stage_ok: payload.stage_ok !== false };
-  const out = finish(task, n, result);
-  return delegateIfSmall(task, n, out) || out;
+  // The idempotency check, the finish and delegateIfSmall all run on one fresh read in one
+  // transaction; a throw anywhere in it (a refused payload) leaves neither the node nor the
+  // tm_submit ledger line behind.
+  const r = withTask(a, (task) => {
+    if (a.key) return { out: toolSubmitHuman(task, a) };
+    const already = idempotentSubmit(task, getNode(task, String(a.node_id)), a);
+    if (already) return { out: already };
+    const n = requireRunnable(task, String(a.node_id));
+    if (n.stage === 'dispatch' && a.payload && Object.keys(a.payload).length) throw new Error('a dispatch node takes no payload: the manager reads the child run itself');
+    record(task, { event: 'tm_submit', task_id: task.run_id, node_id: String(a.node_id) });
+    if (n.stage === 'dispatch') return { fold: { taskId: task.run_id, nodeId: n.node_id } };
+    const payload = a.payload || {};
+    const result = { ...payload, stage_ok: payload.stage_ok !== false };
+    const out = finish(task, n, result);
+    return { out: delegateIfSmall(task, n, out) || out };
+  });
+  if (!r.fold) return r.out;
+  // The same claimed fold the daemon makes (foldDispatch): the two can no longer both fold it.
+  // It owns its transactions (the fold commits git outside the lock), so it runs after ours.
+  const out = foldDispatch(r.fold.taskId, r.fold.nodeId, 'tm_submit');
+  if (out.opening || out.busy || out.deferred || out.lost) throw new Error(out.reason);
+  return out;
 }
 
 // tm_submit({task_id, key, payload}): the human's own answer for a waiting_human card. Through
@@ -6709,7 +7107,7 @@ function toolSubmitHuman(task, a) {
   // Only when nothing is driving the run: a sibling subgoal still in flight keeps its driver
   // alive, and that driver picks the answered node up on its next team_next. A second driver on
   // the same run would dispatch the same ready nodes twice.
-  if (resumeParkedDriver(task, dispatch.node_id, dispatch.child, 'human_submitted')) saveRun(task);
+  resumeParkedDriver(task, dispatch.node_id, dispatch.child, 'human_submitted'); // inside toolSubmit's transaction
   return { task_id: task.run_id, key, node_id: nodeId, state: done ? 'done' : 'failed', result };
 }
 
@@ -6822,8 +7220,14 @@ export function expireAsks(task, now = Date.now()) {
   return answered;
 }
 
+// The retry itself is one transaction on a fresh read; the tm_next that every reply carries runs
+// after it commits (toolNext owns its own transactions and must never run inside one).
 function toolRetry(a) {
-  const task = mustFindTask(a);
+  const res = withTask(a, (task) => retryTask(task, a));
+  return { ...res, ...toolNext({ task_id: res.task_id }) };
+}
+
+function retryTask(task, a) {
   // A driver parked waiting_capacity after a usage-limit death spent no restart; the way back
   // is not a retried package but a cleared wait, once the caller believes capacity is back.
   // Clears every waiting child (or just package_id's, or task.s_run for a size-S task) and
@@ -6832,14 +7236,14 @@ function toolRetry(a) {
     const resumed = clearCapacity(task, a.package_id != null ? String(a.package_id) : null);
     saveRun(task);
     record(task, { event: 'tm_reset_capacity', task_id: task.run_id, resumed });
-    return { task_id: task.run_id, retried: resumed.length > 0, resumed, reason: resumed.length ? '' : 'nothing in this task is waiting on provider capacity', ...toolNext({ task_id: task.run_id }) };
+    return { task_id: task.run_id, retried: resumed.length > 0, resumed, reason: resumed.length ? '' : 'nothing in this task is waiting on provider capacity' };
   }
   // A size-S task whose harness driver died past its budget: a fresh driver on the same run,
   // with a fresh restart budget - the same move tm_retry makes for a spent package.
   if (task.harness_run && a.package_id == null) {
     const h = task.harness_run;
     const st = taskState(task);
-    if (st.state !== 'blocked') return { task_id: task.run_id, retried: false, reason: `the harness run is ${st.state}`, ...toolNext({ task_id: task.run_id }) };
+    if (st.state !== 'blocked') return { task_id: task.run_id, retried: false, reason: `the harness run is ${st.state}` };
     delete h.exhausted;
     if (!noDriver()) {
       const fresh = spawnHarnessDriver(task, { resume: true, run: resolveHarnessRun(task), attempt: nextSpawnAttempt(h) });
@@ -6848,7 +7252,7 @@ function toolRetry(a) {
     }
     saveRun(task);
     record(task, { event: 'tm_retry_harness', task_id: task.run_id, pid: h.driver && h.driver.pid });
-    return { task_id: task.run_id, retried: true, ...toolNext({ task_id: task.run_id }) };
+    return { task_id: task.run_id, retried: true };
   }
   // Two children pass and the merge fails: that is nobody's failure but the shape's. The
   // packages that collided go back to shape as one instruction - make them one package, or
@@ -6868,7 +7272,7 @@ function toolRetry(a) {
     ].filter(Boolean).join('\n- ');
     const out = retryShape(task, fb);
     record(task, { event: out.attempt ? 'tm_repackage' : 'tm_settle', task_id: task.run_id, packages: ids, attempt: out.attempt });
-    return { task_id: task.run_id, target: 'shape', repackage: ids, retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable, ...toolNext({ task_id: task.run_id }) };
+    return { task_id: task.run_id, target: 'shape', repackage: ids, retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable };
   }
   // An integrate that refused over a seam has no package to blame: reopening one puts the child
   // back in its own worktree, where the offending claim is still true and the defect is not
@@ -6881,7 +7285,7 @@ function toolRetry(a) {
     record(task, { event: out.package_id ? 'tm_repair' : 'tm_settle', task_id: task.run_id, package_id: out.package_id, integrate: target.node.node_id });
     return { task_id: task.run_id, target: out.package_id || target.node.node_id, package_id: out.package_id || undefined, repair: true,
       repairs: target.node.node_id, retried: !!out.package_id, attempt: out.package_id ? 1 : undefined,
-      reason: out.reason, unreachable: out.unreachable, ...toolNext({ task_id: task.run_id }) };
+      reason: out.reason, unreachable: out.unreachable };
   }
   if (!a.package_id) {
     // Before shape exists, "retry the plan" means the plan stage's feature split (C2).
@@ -6890,7 +7294,7 @@ function toolRetry(a) {
       const out = retryAreas(task, [split.result.reason || '', ...(split.result.area_problems || []), ...(split.result.blocking || [])].filter(Boolean).join('\n- '));
       saveRun(task);
       record(task, { event: out.attempt ? 'tm_retry' : 'tm_settle', task_id: task.run_id, target: 'areas', attempt: out.attempt });
-      return { task_id: task.run_id, target: 'areas', retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable, ...toolNext({ task_id: task.run_id }) };
+      return { task_id: task.run_id, target: 'areas', retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable };
     }
     const source = task.nodes.filter((n) => (n.stage === 'critique' || n.stage === 'shape') && n.state === 'failed' && n.result).pop();
     const fb = source && source.result
@@ -6898,7 +7302,7 @@ function toolRetry(a) {
       : '';
     const out = retryShape(task, fb);
     record(task, { event: out.attempt ? 'tm_retry' : 'tm_settle', task_id: task.run_id, target: 'shape', attempt: out.attempt });
-    return { task_id: task.run_id, target: 'shape', retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable, ...toolNext({ task_id: task.run_id }) };
+    return { task_id: task.run_id, target: 'shape', retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable };
   }
   const pid = String(a.package_id);
   // A package id the shape never named would open a phantom package with a dispatch that can
@@ -6911,11 +7315,14 @@ function toolRetry(a) {
   const fb = last && last.result ? [last.result.reason || '', ...(last.result.gaps || [])].filter(Boolean).join('\n- ') : '';
   const out = retryPackage(task, pid, fb);
   record(task, { event: out.attempt ? 'tm_retry' : 'tm_settle', task_id: task.run_id, package_id: pid, attempt: out.attempt });
-  return { task_id: task.run_id, target: pid, package_id: pid, retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable, ...toolNext({ task_id: task.run_id }) };
+  return { task_id: task.run_id, target: pid, package_id: pid, retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable };
 }
 
 function toolFile(a) {
-  const task = mustFindTask(a);
+  return withTask(a, (task) => fileStories(task, a));
+}
+
+function fileStories(task, a) {
   if (!task.spec || !Array.isArray(task.spec.packages)) throw new Error('this task has no shape yet - tm_file needs an existing package list to file a STORY beside');
   const stories = Array.isArray(a.stories) ? a.stories : [];
   if (!stories.length) throw new Error('tm_file needs at least one story in stories[]');
@@ -6954,7 +7361,7 @@ function toolStatus(a) {
       .map((t) => { const s = runState(t); return { task_id: t.run_id, cwd: t.cwd, state: s.state, counts: s.counts, size: t.size, request: String(t.request).slice(0, 160), created_at: new Date(t.created_at).toISOString() }; });
     return { root: tasksRoot(), tasks };
   }
-  const task = mustFindTask(a);
+  let task = mustFindTask(a);
   if (a.full) {
     if (a.node_id) { const n = getNode(task, String(a.node_id)); if (!n) throw new Error(`unknown node ${a.node_id}`); return { task_id: task.run_id, node: n }; }
     return task;
@@ -6972,7 +7379,9 @@ function toolStatus(a) {
   if (task.harness_run) {
     // tm_status is not a board tool: a verdict first read here renders its report and retro here.
     const before = ticketSnapshot(task);
-    if (serviceHarnessRun(task)) { saveRun(task); syncTickets(task, before, 'tm_status'); }
+    let changed = false;
+    task = withTask(a, (fresh) => { changed = serviceHarnessRun(fresh); return fresh; });
+    if (changed) syncTickets(task, before, 'tm_status');
     const ts = taskState(task);
     return {
       task_id: task.run_id,
@@ -7052,7 +7461,8 @@ function toolStatus(a) {
     ...costFields,
     nodes: task.nodes.filter((n) => (a.node_id ? n.node_id === a.node_id : true)).map((n) => (n.state === 'pending' || n.state === 'running'
       ? { node_id: n.node_id, stage: n.stage, state: n.state, deps: n.deps, after: n.after || [],
-          ...(n.child ? { child: { ...n.child, ...(n.child.driver ? { driver: { ...n.child.driver, alive: driverAlive(n.child.driver) } } : {}) } } : {}) }
+          ...(n.child ? { child: { ...n.child, ...(n.child.driver ? { driver: { ...n.child.driver, alive: driverAlive(n.child.driver) } } : {}) } } : {}),
+          ...(n.stage === 'dispatch' && n.state === 'running' && !n.child ? { opening: true } : {}) }
       : verdict(task, n))),
     daemon: task.daemon ? { pid: task.daemon.pid, alive: driverAlive(task.daemon), log: task.daemon.log, stderr: task.daemon.stderr, spawn_count: task.daemon.spawn_count, restarts: task.daemon.restarts || 0, exhausted: !!task.daemon.exhausted, stderr_tail: driverStderrTail(task.daemon) } : null,
     team: task.team || null,
@@ -7118,13 +7528,16 @@ export async function callTool(name, args) {
   const a = args || {};
   // Re-raise a dead daemon before doing anything else, on every tool that already has a task to
   // raise one for. No gate here beyond that: any caller may read or mutate the task at any time -
-  // there is no leader to defer to and no inbox to queue behind. saveRun's own mkdir-lock is what
-  // makes two writers (this call and the daemon's own loop) safe together.
+  // there is no leader to defer to and no inbox to queue behind. store.mjs mutateTask is what
+  // makes two writers (this call and the daemon's own loop) safe together: each reads task.json
+  // fresh under the lock and writes it whole.
+  // One transaction: two concurrent callers cannot both see a dead daemon and both spawn one.
   if (a.task_id && name !== 'tm_open' && name !== 'tm_run') {
-    const task = mustFindTask(a);
-    // An expired ask is answered on the next look even when no daemon is left to notice it.
-    if (expireAsks(task).length) saveRun(task);
-    serviceDaemon(task);
+    withTask(a, (task) => {
+      // An expired ask is answered on the next look even when no daemon is left to notice it.
+      expireAsks(task);
+      serviceDaemon(task);
+    });
   }
   // board.jsonl: taken as a before/after diff of the tools that can move a ticket.
   if (!BOARD_TOOLS.has(name)) return dispatch(name, a);
@@ -7136,7 +7549,7 @@ export async function callTool(name, args) {
     // A mutation may have just turned a blocked task running again (tm_retry, tm_file) or opened
     // a brand-new one (tm_open, tm_run): re-check right after, not only on the NEXT call in, so a
     // caller that never polls again still leaves the task with a live daemon behind it.
-    try { serviceDaemon(mustFindTask({ task_id: taskId })); } catch { /* best-effort */ }
+    try { withTask({ task_id: taskId }, serviceDaemon); } catch { /* best-effort */ }
   }
   return out;
 }

@@ -8,9 +8,10 @@
 //
 // Runs live at <cwd>/.harness-run/broker/runs/<run_id>.json.
 
-import { mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { runFilePath, acquireLock, releaseLock, writeAtomic, activeTransaction } from './store.mjs';
 
 export const STAGES = [
   'plan',      // decompose the raw request
@@ -32,7 +33,7 @@ function runsDir(cwd) {
 }
 
 function runPath(cwd, runId) {
-  return join(runsDir(cwd), runId + '.json');
+  return runFilePath(cwd, runId);
 }
 
 // A run file is read-modify-written by every mutation, and a node can be held open for
@@ -40,58 +41,23 @@ function runPath(cwd, runId) {
 // stale snapshot overwrote a node the fast one had already finished and reported `done`
 // to its client. The work had happened; only the record vanished.
 //
-// mkdir is atomic on every filesystem we care about, so it is the lock.
-const LOCK_STALE_MS = 30 * 1000;
-
-function lockPath(cwd, runId) {
-  return runPath(cwd, runId) + '.lock';
-}
-
-function acquire(cwd, runId) {
-  const lock = lockPath(cwd, runId);
-  const deadline = Date.now() + 5000;
-  for (;;) {
-    try {
-      mkdirSync(lock);
-      return lock;
-    } catch {
-      // A lock left behind by a killed process must not wedge the run forever.
-      try {
-        if (Date.now() - statSync(lock).mtimeMs > LOCK_STALE_MS) {
-          rmSync(lock, { recursive: true, force: true });
-          continue;
-        }
-      } catch {
-        continue; // it vanished between the two calls; try again
-      }
-      if (Date.now() > deadline) return null; // fall through unlocked rather than hang
-      // Busy-wait briefly: the critical section is a file write, measured in microseconds.
-      const spin = Date.now() + 5;
-      while (Date.now() < spin) { /* yield-free by design; this is a sub-millisecond wait */ }
-    }
-  }
-}
-
-function release(lock) {
-  if (!lock) return;
-  try {
-    rmSync(lock, { recursive: true, force: true });
-  } catch {
-    /* best-effort */
-  }
-}
+// The broker's own writes are transactions now (store.mjs mutateRun: lock, read fresh,
+// apply, write tmp + rename). saveRun remains for code that holds a whole run object:
+// inside a transaction on the same run it is a no-op (the transaction commits); outside
+// one it takes the same lock - a timeout throws, it never writes unlocked - and merges
+// the caller's object onto what is on disk.
 
 // Apply this process's view of the run onto whatever is currently on disk, instead of
-// replacing it. Nodes another broker finished while we were working are kept.
+// replacing it. Nodes another writer finished while we were working are kept. (The
+// broker's checkpoint path, which once needed an exception here for its own running
+// node, applies under a ticket check in a transaction and never reaches this merge.)
 function mergeOnto(fresh, mine) {
   if (!fresh) return mine;
   const byId = new Map(fresh.nodes.map((n) => [n.node_id, n]));
   for (const n of mine.nodes) {
     const cur = byId.get(n.node_id);
-    // A terminal state on disk that we never saw belongs to another broker: keep it.
-    const recoveringOwnExecution = cur?.state === 'running' && cur.ticket
-      && n.recovery?.from_ticket === cur.ticket;
-    if (cur && cur.state !== 'pending' && n.state === 'pending' && !recoveringOwnExecution) continue;
+    // A terminal state on disk that we never saw belongs to another writer: keep it.
+    if (cur && cur.state !== 'pending' && n.state === 'pending') continue;
     byId.set(n.node_id, n);
   }
   const freshEpoch = fresh.capacity_epoch || 0;
@@ -104,18 +70,24 @@ function mergeOnto(fresh, mine) {
 }
 
 export function saveRun(run) {
+  const path = runPath(run.cwd, run.run_id);
+  const tx = activeTransaction(path);
+  if (tx) {
+    if (tx !== run) throw new Error(`saveRun inside a transaction on run ${run.run_id} must be given that transaction's run object`);
+    return run;
+  }
   mkdirSync(runsDir(run.cwd), { recursive: true });
-  const lock = acquire(run.cwd, run.run_id);
+  const lock = acquireLock(path);
   try {
     const merged = mergeOnto(loadRun(run.cwd, run.run_id), run);
-    writeFileSync(runPath(run.cwd, run.run_id), JSON.stringify(merged, null, 2) + '\n');
+    writeAtomic(path, merged);
     // Keep the caller's object consistent with what was written.
     run.nodes = merged.nodes;
     run.capacity_epoch = merged.capacity_epoch || 0;
     run.unavailable_vendors = merged.unavailable_vendors || {};
     return run;
   } finally {
-    release(lock);
+    releaseLock(lock);
   }
 }
 
@@ -192,6 +164,10 @@ export function createRun(opts) {
     isolated: opts.isolated === true,
     max_retries: Number.isInteger(opts.max_retries) ? opts.max_retries : 2,
     created_at: Date.now(),
+    // Capacity state starts explicit: no writer normalizes it any more (transactions
+    // apply exactly what changed), so a fresh run must not report it as missing.
+    capacity_epoch: 0,
+    unavailable_vendors: {},
     spec: null,
     nodes: [
       node('plan', 'plan', []),
@@ -382,19 +358,26 @@ export function retrySubgoal(run, subgoalId, feedback) {
 
   // The previous attempt may have died at implement, leaving its test and gate pending
   // forever. Retire them: a node waiting on a dep that can never complete is a dead
-  // loop, and a dep on a failed node never satisfies.
+  // loop, and a dep on a failed node never satisfies. A node of that attempt still
+  // running is retired too: its result, when it lands, belongs to an attempt the
+  // caller has given up on, and the broker drops it (the state no longer matches).
   for (const n of run.nodes) {
-    if (n.subgoal_id === subgoalId && (n.attempt || 1) === attempt - 1 && n.state === 'pending') {
+    if (n.subgoal_id === subgoalId && (n.attempt || 1) === attempt - 1 && (n.state === 'pending' || n.state === 'running')) {
       n.state = 'skipped';
       n.result = { stage_ok: false, reason: `superseded by attempt ${attempt}` };
     }
   }
 
-  // The new attempt starts from the same upstream the first attempt had, not from the
-  // attempt that just failed.
-  const first = run.nodes.find((x) => x.subgoal_id === subgoalId && x.stage === 'implement');
-  const baseDeps = first ? first.deps.slice() : ['critique'];
-  const baseAfter = first ? (first.after || []).slice() : [];
+  // The new attempt starts from the upstream its own generation had, not from the attempt
+  // that just failed - every attempt in a generation copies the same base deps, so the latest
+  // implement node that a spec retry did not supersede carries it. Reading the *earliest*
+  // one instead stranded the retry after a spec retry: attempt 1 waits on the retired
+  // `critique` and gate:*:1 nodes, which never become done. (Ported from teams 8d3ba22.)
+  const heads = run.nodes.filter((x) => x.subgoal_id === subgoalId && x.stage === 'implement');
+  const live = heads.filter((x) => !(x.state === 'skipped' && x.result && /superseded by spec/.test(x.result.reason || '')));
+  const head = (live.length ? live : heads).at(-1);
+  const baseDeps = head ? head.deps.slice() : ['critique'];
+  const baseAfter = head ? (head.after || []).slice() : [];
 
   run.nodes.push(node(impl, 'implement', baseDeps, { subgoal_id: subgoalId, attempt, feedback: feedback || '', after: baseAfter }));
   run.nodes.push(node(test, 'test', [impl], { subgoal_id: subgoalId, attempt }));
@@ -443,7 +426,7 @@ export function retrySpec(run, feedback) {
 
   for (const n of run.nodes) {
     if (n.stage === 'setgoal' || n.stage === 'critique' || n.subgoal_id || n.stage === 'report' || (n.stage === 'gate' && n.subgoal_id === null)) {
-      if (n.state === 'pending' || n.state === 'failed') {
+      if (n.state === 'pending' || n.state === 'failed' || n.state === 'running') {
         n.state = 'skipped';
         n.result = n.result || { stage_ok: false, reason: `superseded by spec attempt ${attempt}` };
       }
@@ -470,7 +453,16 @@ function settled(dep) {
 export function unmetDeps(run, n) {
   const data = n.deps.filter((d) => (getNode(run, d) || {}).state !== 'done');
   const order = (n.after || []).filter((d) => { const dep = getNode(run, d); return !dep || !settled(dep); });
-  return [...data, ...order];
+  // A report is the run's last word, so it also waits on anything still live. Its `after` is
+  // only the goal gate, and a goal gate made unreachable by one subgoal's settled failure
+  // released the report while an independent subgoal was still running. Pending nodes whose
+  // own deps are unmet are not waited on: they may never run, and nothing would release the
+  // report then. (Ported from teams 9d359b0.)
+  const live = n.stage === 'report' && !data.length && !order.length
+    ? run.nodes.filter((x) => x !== n && x.stage !== 'report' && (x.state === 'running'
+      || (x.state === 'pending' && !unmetDeps(run, x).length))).map((x) => x.node_id)
+    : [];
+  return [...data, ...order, ...live];
 }
 
 function depsSatisfied(run, n) {

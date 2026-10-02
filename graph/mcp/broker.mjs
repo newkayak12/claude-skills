@@ -31,7 +31,6 @@ import {
   REASONING_STAGES,
   createRun,
   loadRun,
-  saveRun,
   findRun,
   listRuns,
   getNode,
@@ -46,6 +45,7 @@ import {
   stagePolicy,
 } from './graph.mjs';
 import { composePrompt } from './prompts.mjs';
+import { mutateRun, writeAtomic, pidAlive } from './store.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER = { name: 'graph-engineering', version: '1.0.0' };
@@ -130,8 +130,8 @@ function record(cwd, entry) {
 
 function writeOpen(cwd, map) {
   try {
-    mkdirSync(brokerDir(cwd), { recursive: true });
-    writeFileSync(join(brokerDir(cwd), 'open-nodes.json'), JSON.stringify(map, null, 2) + '\n');
+    // A hook reads this while the broker rewrites it: never let it see half a file.
+    writeAtomic(join(brokerDir(cwd), 'open-nodes.json'), map);
   } catch {
     /* best-effort */
   }
@@ -286,17 +286,25 @@ async function probe(name, vendor, cwd, sandbox, model) {
 // ---------- worktree cross-check ----------
 
 function gitChanged(cwd) {
-  const r = spawnSync('git', ['status', '--porcelain=v1', '--untracked-files=all'], {
+  // -z: paths verbatim - the default output quotes any path with a space or non-ASCII byte,
+  // and a quoted path never equals the claim, so a truthful node was failed as contradicted.
+  // A rename is "R  new\0old": the entry after a rename/copy is its source and is skipped.
+  // (Ported from teams 1a00aba.)
+  const r = spawnSync('git', ['-c', 'core.quotePath=false', 'status', '--porcelain=v1', '-z', '--untracked-files=all'], {
     cwd,
     encoding: 'utf8',
     maxBuffer: 16 * 1024 * 1024,
   });
   if (r.status !== 0) return null;
-  return r.stdout
-    .split('\n')
-    .map((l) => l.slice(3).trim())
-    .filter(Boolean)
-    .map((p) => (p.includes(' -> ') ? p.split(' -> ').pop() : p));
+  const parts = r.stdout.split('\0');
+  const out = [];
+  for (let i = 0; i < parts.length; i++) {
+    const e = parts[i];
+    if (e.length < 4) continue;
+    out.push(e.slice(3));
+    if (e[0] === 'R' || e[0] === 'C') i++;
+  }
+  return out;
 }
 
 // Positive attribution is only sound when this node had the worktree to itself.
@@ -308,23 +316,37 @@ function crossCheck(cwd, claimed, isolated) {
   // while git reports them relative to cwd. Compare in one space. A path outside cwd is
   // left as-is rather than trimmed, so it stays unmatched instead of matching by suffix.
   const base = String(cwd).replace(/\\/g, '/').replace(/\/+$/, '') + '/';
+  // A claim is a path, sometimes with a note after it: "x.mjs (deleted)", "fx/*.json (23
+  // fixtures)". The note is dropped; a glob matches what git lists. (Ported from teams 1a00aba.)
   const toRel = (f) => {
-    const p = String(f).replace(/\\/g, '/');
+    const p = String(f).replace(/\s+\([^)]*\)?.*$/, '').trim().replace(/\\/g, '/');
     return (p.startsWith(base) ? p.slice(base.length) : p).replace(/^\.\//, '');
   };
+  const globRe = (g) => new RegExp('(^|/)' + g.split('*').map((x) => x.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*') + '$');
+  const seen = (r) => (r.includes('*') ? observed.some((o) => globRe(r).test(o)) : observed.some((o) => o === r || o.endsWith('/' + r)));
   const list = Array.isArray(claimed) ? claimed.map(String) : [];
-  const missing = list.filter((f) => {
+  const unseen = list.filter((f) => {
     const r = toRel(f);
-    return !r || !observed.some((o) => o === r || o.endsWith('/' + r));
+    return !r || !seen(r);
   });
+  // git status never lists an ignored path, so a file written there is invisible to it. A
+  // claimed file that exists and is ignored is not contradicted; it is not verified either.
+  // (Ported from teams e33f3aa.)
+  const ignored = unseen.filter((f) => {
+    const r = toRel(f);
+    return r && !r.includes('*') && existsSync(join(cwd, r)) && spawnSync('git', ['check-ignore', '-q', '--', r], { cwd }).status === 0;
+  });
+  const missing = unseen.filter((f) => !ignored.includes(f));
+  const extra = ignored.length ? { ignored_files: ignored } : {};
   if (!isolated) {
     return {
       changed_files_verified: missing.length ? false : null,
       change_attribution: 'shared-worktree',
       contradicted_files: missing,
+      ...extra,
     };
   }
-  return { changed_files_verified: missing.length === 0, change_attribution: 'isolated', contradicted_files: missing };
+  return { changed_files_verified: missing.length ? false : ignored.length ? null : true, change_attribution: 'isolated', contradicted_files: missing, ...extra };
 }
 
 // ---------- run lookup ----------
@@ -337,26 +359,64 @@ const knownCwds = new Set();
 // abandoned. Without reclaiming it the run wedges forever: graph_next offers nothing and
 // graph_run refuses the node as already running.
 const activeNodes = new Set();
+// One run mutation = one store transaction on the fresh run (never on `run`, which may be
+// minutes old). Afterwards the caller's snapshot is replaced by what was committed, so
+// code that reads `run` next sees the truth - but any node reference taken from the old
+// snapshot is stale: look nodes up again by id.
+function transact(run, fn) {
+  let committed = null;
+  const out = mutateRun(run.cwd, run.run_id, (fresh) => {
+    committed = fresh;
+    return fn(fresh);
+  });
+  for (const k of Object.keys(run)) if (!(k in committed)) delete run[k];
+  Object.assign(run, committed);
+  return out;
+}
+
 const STALE_AFTER_MS = Number(process.env.BROKER_STALE_AFTER_MS) > 0
   ? Number(process.env.BROKER_STALE_AFTER_MS)
   : 10 * 60 * 1000;
 
+// This boot of the host; a claim stamped under another boot has no live owner, whatever
+// its pid now names. null where the kernel does not expose one.
+const BOOT_ID = (() => {
+  try { return readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim() || null; } catch { return null; }
+})();
+
+// A running node is abandoned when the process that claimed it is gone - not when it is
+// slow: adapter runs routinely outlast STALE_AFTER_MS (NODE_TIMEOUT_MS is 45 min), and a
+// time-only judgement failed a live broker's node and then dropped its real result as
+// superseded. Elapsed time is only the fallback for a claim with no owner recorded (run
+// files written before claims carried one).
+function ownerGone(n) {
+  if (!Number.isInteger(n.owner_pid)) return null;
+  if (n.owner_boot && BOOT_ID && n.owner_boot !== BOOT_ID) return true;
+  return !pidAlive(n.owner_pid);
+}
+
 function reclaimAbandoned(run) {
-  let reclaimed = 0;
-  for (const n of run.nodes) {
-    if (n.state !== 'running') continue;
-    const key = `${run.run_id}:${n.node_id}`;
-    if (activeNodes.has(key)) continue;
-    if (Date.now() - (n.started_at || 0) < STALE_AFTER_MS) continue;
-    n.state = 'failed';
-    n.result = {
-      stage_ok: false,
-      reason: 'abandoned: the broker executing this node exited before it finished',
-    };
-    reclaimed++;
-  }
+  const stranded = (n) => {
+    if (n.state !== 'running' || activeNodes.has(`${run.run_id}:${n.node_id}`)) return false;
+    const gone = ownerGone(n);
+    return gone === null ? Date.now() - (n.started_at || 0) >= STALE_AFTER_MS : gone;
+  };
+  if (!run.nodes.some(stranded)) return 0;
+  // Judged again on the fresh run: a node another broker finished meanwhile is not stranded.
+  const reclaimed = transact(run, (fresh) => {
+    let count = 0;
+    for (const n of fresh.nodes) {
+      if (!stranded(n)) continue;
+      n.state = 'failed';
+      n.result = {
+        stage_ok: false,
+        reason: 'abandoned: the broker executing this node exited before it finished',
+      };
+      count++;
+    }
+    return count;
+  });
   if (reclaimed) {
-    saveRun(run);
     syncOpenNodes(run);
     record(run.cwd, { event: 'node_reclaimed', run_id: run.run_id, count: reclaimed });
   }
@@ -450,13 +510,17 @@ async function route(run, node) {
       attempts.push({ vendor: name, ready: false, reason: `vendor "${name}" does not support sandbox ${sandbox}` });
       continue;
     }
+    const epochAtProbe = run.capacity_epoch || 0;
     const p = await probe(name, v, run.cwd, sandbox, model);
     const usable = REASONING_STAGES.has(stage) ? p.reachable : p.ready;
     // Spent capacity is recorded on the run so the operator sees why the vendor dropped
     // out, the run stops re-probing it, and graph_retry({reset_capacity:true}) is the way back.
+    // An explicit reset that landed while this probe ran wins over its verdict.
     if (!usable && p.quota) {
-      run.unavailable_vendors = { ...(run.unavailable_vendors || {}), [name]: 'usage capacity exhausted at probe' };
-      saveRun(run);
+      transact(run, (fresh) => {
+        if ((fresh.capacity_epoch || 0) !== epochAtProbe) return;
+        fresh.unavailable_vendors = { ...(fresh.unavailable_vendors || {}), [name]: 'usage capacity exhausted at probe' };
+      });
     }
     attempts.push({ vendor: name, ready: usable, reason: usable ? '' : p.reason });
     if (usable) return { vendor: name, executor: name, sandbox, model, reason: candidate.reason, attempts };
@@ -529,6 +593,8 @@ function verdict(run, n) {
   // sees a plain stage_ok=false and cannot tell a node that admitted failure from one
   // that claimed success and was caught.
   if (res.submitted_stage_ok === true && out.stage_ok !== true) out.submitted_stage_ok = true;
+  // The opposite overrule: an author said stage_ok:false with nothing behind it and the work went on to be judged.
+  if (res.self_reported_stage_ok === false) out.self_reported_stage_ok = false;
   if (n.state === 'failed' && res.stage_ok === true) {
     const field = n.stage === 'gate' ? 'accept' : n.stage === 'critique' ? 'sound' : n.stage === 'test' ? 'verified' : null;
     if (field && res[field] === undefined) out.missing_verdict = field;
@@ -556,57 +622,151 @@ function nodeSucceeded(n, result) {
   return true;
 }
 
-function finishNode(run, n, result, vendorName) {
-  delete n.recovery; // historical interruptions remain in n.interruptions
-  n.state = nodeSucceeded(n, result) ? 'done' : 'failed';
-  n.result = result;
-  n.vendor = vendorName;
-  n.finished_at = Date.now();
-
-  // setgoal is the only node that changes the shape of the graph. Expanding here keeps
-  // the spec out of the orchestrator entirely - but only for a spec that can actually
-  // be expanded. A bad one is failed here with its defects as the reason, so the normal
-  // spec-retry loop carries them into the next attempt instead of deadlocking later.
-  if (n.stage === 'setgoal' && n.state === 'done') {
-    const problems = validateSpec(result.spec);
-    if (problems.length) {
-      n.state = 'failed';
-      n.result = { ...result, stage_ok: false, spec_problems: problems, reason: `unusable spec: ${problems.join('; ')}` };
-    } else {
-      run.spec = result.spec;
-      expandSubgoals(run, result.spec.subgoals);
-    }
+// Who may record an outcome on a node - judged on the fresh run, inside the transaction
+// that records it. graph_run holds a ticket stamped before its adapter ran: its outcome
+// lands only if the node still runs under that ticket. Anything else (another broker
+// took the node over, a retry retired it, a reclaim failed it) means the outcome is late
+// and is dropped - never written over whatever the node now says. graph_submit holds no
+// ticket: its node must still be runnable, as it was when the call began.
+function claimOutcome(fresh, nodeId, expect) {
+  if (expect.ticket) {
+    const n = getNode(fresh, nodeId);
+    if (!n) return { why: `node ${nodeId} no longer exists` };
+    if (n.ticket !== expect.ticket) return { n, why: `node ${nodeId} is no longer running under this call's ticket` };
+    if (n.state !== 'running') return { n, why: `node ${nodeId} is ${n.state}, no longer running under this call's ticket` };
+    return { n };
   }
-  saveRun(run);
+  const n = requireRunnable(fresh, nodeId);
+  if (expect.prepare) expect.prepare(n);
+  return { n };
+}
+
+function noteSuperseded(n, expect, result, vendorName, why) {
+  if (!n) return;
+  n.superseded_results = [...(n.superseded_results || []), {
+    ticket: expect.ticket || null, vendor: vendorName, at: Date.now(),
+    stage_ok: result.stage_ok === true, reason: why,
+  }];
+}
+
+function supersededVerdict(run, nodeId, expect, vendorName, why) {
+  syncOpenNodes(run);
+  record(run.cwd, { event: 'result_superseded', run_id: run.run_id, node_id: nodeId, ticket: expect.ticket || null, vendor: vendorName, reason: why });
+  const n = getNode(run, nodeId);
+  const base = n ? verdict(run, n) : { run_id: run.run_id, node_id: nodeId, stage: 'unknown', state: 'skipped', stage_ok: false };
+  return { ...base, superseded: true, reason: `result dropped: ${why}` };
+}
+
+const VERDICT_FIELD = { gate: 'accept', critique: 'sound', test: 'verified' };
+
+// An authoring node's own stage_ok is not a verdict on its work - the test and gate nodes
+// are. An author that reports stage_ok:false with no reason, no error and only passing
+// checks has mis-set a flag, not failed; failing it spent a retry on work nobody judged.
+// The flag stays on the result for the gate to see. A stated reason, an error, a
+// contradicted claim or a failing check is honoured. (Ported from teams 803dc5b.)
+function withJudgedOutcome(n, result) {
+  if (REASONING_STAGES.has(n.stage)) return result;
+  if (result.stage_ok !== false || result.reason || result.error || result.verification_error
+    || (result.contradicted_files || []).length || result.submitted_stage_ok === true || result.killed_for) return result;
+  const checks = Array.isArray(result.checks) ? result.checks : [];
+  const failing = checks.some((c) => /\b(fail(ed|ing|s)?|error|ENOENT|exit(ed)? [1-9]|not ok)\b/i.test(String(c)) && !/\b0 fail/i.test(String(c)));
+  if (failing) return result;
+  return {
+    ...result, stage_ok: true, self_reported_stage_ok: false,
+    stage_ok_note: 'author reported stage_ok:false with no reason and no failing check; the test and gate nodes judge the work, not the author',
+  };
+}
+
+// A rejection the judging itself produced (stage_ok:true, verdict field false) can still
+// leave `reason` empty - test's contract has no reason field, only checks/evidence - and the
+// verdict and the retry's feedback read only `reason`, so a real rejection showed no cause.
+// (Ported from teams b914d04.)
+function withRejectionReason(n, result) {
+  if (n.state !== 'failed' || result.stage_ok !== true) return result;
+  const field = VERDICT_FIELD[n.stage];
+  const hasOwnReason = result.reason || result.verification_error
+    || (field === 'accept' && (result.gaps || []).length)
+    || (field === 'sound' && (result.blocking || []).length);
+  if (!field || result[field] !== false || hasOwnReason) return result;
+  const checks = Array.isArray(result.checks) ? result.checks : [];
+  const flagged = checks.find((c) => /\b(missing|fail(ed|ing|s)?|not met|does not|refused)\b/i.test(String(c)));
+  const synthesized = flagged || (result.evidence ? String(result.evidence) : '') || checks.join('; ');
+  return synthesized ? { ...result, reason: synthesized.slice(0, 300) } : result;
+}
+
+function finishNode(run, nodeId, result, vendorName, expect) {
+  const why = transact(run, (fresh) => {
+    const { n, why: late } = claimOutcome(fresh, nodeId, expect);
+    if (late) {
+      noteSuperseded(n, expect, result, vendorName, late);
+      return late;
+    }
+    delete n.recovery; // historical interruptions remain in n.interruptions
+    const res = withJudgedOutcome(n, result);
+    n.state = nodeSucceeded(n, res) ? 'done' : 'failed';
+    n.result = withRejectionReason(n, res);
+    n.vendor = vendorName;
+    n.finished_at = Date.now();
+
+    // setgoal is the only node that changes the shape of the graph. Expanding here keeps
+    // the spec out of the orchestrator entirely - but only for a spec that can actually
+    // be expanded. A bad one is failed here with its defects as the reason, so the normal
+    // spec-retry loop carries them into the next attempt instead of deadlocking later.
+    if (n.stage === 'setgoal' && n.state === 'done') {
+      const problems = validateSpec(result.spec);
+      if (problems.length) {
+        n.state = 'failed';
+        n.result = { ...result, stage_ok: false, spec_problems: problems, reason: `unusable spec: ${problems.join('; ')}` };
+      } else {
+        fresh.spec = result.spec;
+        expandSubgoals(fresh, result.spec.subgoals);
+      }
+    }
+    return null;
+  });
+  if (why) return supersededVerdict(run, nodeId, expect, vendorName, why);
+  const n = getNode(run, nodeId);
   syncOpenNodes(run);
   record(run.cwd, { event: 'node_finish', run_id: run.run_id, node_id: n.node_id, stage: n.stage, vendor: vendorName, stage_ok: n.result.stage_ok === true });
   return verdict(run, n);
 }
 
-function checkpointInterruption(run, n, executor, details, kind = 'quota') {
-  const dir = join(brokerDir(run.cwd), run.run_id, n.node_id.replace(/[^A-Za-z0-9._-]/g, '_'), `recovery-${randomUUID()}`);
+function checkpointInterruption(run, nodeId, executor, details, kind, expect) {
+  const before = getNode(run, nodeId);
+  const dir = join(brokerDir(run.cwd), run.run_id, nodeId.replace(/[^A-Za-z0-9._-]/g, '_'), `recovery-${randomUUID()}`);
   mkdirSync(dir, { recursive: true });
   const path = join(dir, 'checkpoint.json');
   const detailPath = join(dir, 'interrupted-result.json');
+  // Written before the transaction so the node never points at a checkpoint that is not
+  // on disk yet. If the outcome turns out to be late, these files are only orphaned.
   writeFileSync(detailPath, JSON.stringify(details, null, 2));
-  writeFileSync(path, JSON.stringify({ node_id: n.node_id, executor, kind, cwd: run.cwd,
-    detail_path: detailPath, previous_detail_path: n.detail_path || null,
-    previous_checkpoint: n.recovery?.checkpoint_path || null,
+  writeFileSync(path, JSON.stringify({ node_id: nodeId, executor, kind, cwd: run.cwd,
+    detail_path: detailPath, previous_detail_path: (before && before.detail_path) || null,
+    previous_checkpoint: (before && before.recovery?.checkpoint_path) || null,
     run_path: join(brokerDir(run.cwd), 'runs', `${run.run_id}.json`),
     changed_files: (gitChanged(run.cwd) || []).filter(p => !p.startsWith('.harness-run/')),
     instruction: 'Inspect the current files before continuing. Partial writes are not verified completion. Keep original acceptance criteria; rerun verification.' }, null, 2));
-  n.recovery = { checkpoint_path: path, executor, kind, from_ticket: n.ticket || null };
-  n.interruptions = [...(n.interruptions || []), n.recovery];
-  n.result = { stage_ok: false, reason: `${executor} ${kind}; work retained at ${path}` };
-  n.vendor = executor;
-  n.state = 'pending';
-  n.ticket = null;
-  delete n.assignment;
-  if (kind === 'quota') run.unavailable_vendors = { ...(run.unavailable_vendors || {}), [executor]: 'usage capacity exhausted in this run' };
-  saveRun(run);
+  const outcome = { stage_ok: false, reason: `${executor} ${kind}; work retained at ${path}` };
+  const why = transact(run, (fresh) => {
+    const { n, why: late } = claimOutcome(fresh, nodeId, expect);
+    if (late) {
+      noteSuperseded(n, expect, outcome, executor, late);
+      return late;
+    }
+    n.recovery = { checkpoint_path: path, executor, kind, from_ticket: n.ticket || null };
+    n.interruptions = [...(n.interruptions || []), n.recovery];
+    n.result = outcome;
+    n.vendor = executor;
+    n.state = 'pending';
+    n.ticket = null;
+    delete n.assignment;
+    if (kind === 'quota') fresh.unavailable_vendors = { ...(fresh.unavailable_vendors || {}), [executor]: 'usage capacity exhausted in this run' };
+    return null;
+  });
+  if (why) return supersededVerdict(run, nodeId, expect, executor, why);
   syncOpenNodes(run);
-  record(run.cwd, { event: 'node_interrupted', run_id: run.run_id, node_id: n.node_id, executor, kind, checkpoint_path: path });
-  return { ...verdict(run, n), recoverable: true, checkpoint_path: path, next: 'call graph_next for fallback; graph_retry with node_id and reset_capacity after quota renewal' };
+  record(run.cwd, { event: 'node_interrupted', run_id: run.run_id, node_id: nodeId, executor, kind, checkpoint_path: path });
+  return { ...verdict(run, getNode(run, nodeId)), recoverable: true, checkpoint_path: path, next: 'call graph_next for fallback; graph_retry with node_id and reset_capacity after quota renewal' };
 }
 
 // ---------- tools ----------
@@ -639,10 +799,12 @@ const VERDICT_SCHEMA = {
     change_attribution: { type: ['string', 'null'], enum: ['isolated', 'shared-worktree', 'no-git', null] },
     contradicted_files: { type: 'array', items: { type: 'string' } },
     submitted_stage_ok: { type: 'boolean', description: 'present when the broker overruled the executor' },
+    self_reported_stage_ok: { type: 'boolean', description: 'present (false) when an authoring node reported stage_ok:false with no reason and no failing check, and the broker let the test and gate judge the work instead' },
     missing_verdict: { type: 'string', description: 'the verdict field the node failed to return' },
     killed_for: { type: 'string', enum: ['timeout', 'cancelled'] },
     reason: { type: 'string' },
     detail_path: { type: ['string', 'null'], description: 'read this for one node only; never pull a whole run into context' },
+    superseded: { type: 'boolean', description: 'this call\'s outcome arrived after the node moved on and was dropped; the verdict shows the node as it now is' },
   },
   required: ['node_id', 'stage', 'state', 'stage_ok'],
 };
@@ -897,15 +1059,20 @@ async function toolGraphNext(a) {
       for (const n of ready) {
       const r = await route(run, n);
       if (run.allocation === 'balanced' && r.vendor !== 'vendor-failure') {
-        n.assignment = r;
-        n.executor = r.executor || r.vendor;
-        saveRun(run);
+        transact(run, (fresh) => {
+          const f = getNode(fresh, n.node_id);
+          // Only a node still waiting gets an assignment; one another broker started keeps its own.
+          if (!f || f.state !== 'pending') return;
+          f.assignment = r;
+          f.executor = r.executor || r.vendor;
+        });
       }
       const briefingPath = join(brokerDir(run.cwd), run.run_id, 'briefings', `${n.node_id.replace(/[^A-Za-z0-9._-]/g, '_')}.md`);
       if (r.vendor === 'self') {
         try {
           mkdirSync(dirname(briefingPath), { recursive: true });
-          writeFileSync(briefingPath, composePrompt(run, n, nodeBriefing(run, n)));
+          const cur = getNode(run, n.node_id) || n;
+          writeFileSync(briefingPath, composePrompt(run, cur, nodeBriefing(run, cur)));
         } catch {
           /* the orchestrator can still fall back to graph_status full:true */
         }
@@ -925,46 +1092,97 @@ async function toolGraphNext(a) {
       return offered;
     })(),
   };
-  run.routing_blocked = Boolean(response.ready.length && response.ready.every(n => n.vendor === 'vendor-failure'));
-  saveRun(run);
+  const blocked = Boolean(response.ready.length && response.ready.every(n => n.vendor === 'vendor-failure'));
+  transact(run, (fresh) => { fresh.routing_blocked = blocked; });
   response.state = runState(run).state;
   return response;
 }
 
+// The fields graph_run's claim stamps on a node; a released claim restores them.
+const CLAIM_FIELDS = ['ticket', 'executor', 'model', 'started_at', 'detail_path', 'owner_pid', 'owner_boot'];
+
 async function toolGraphRun(a) {
   const run = mustFindRun(a);
-  let n = requireRunnable(run, String(a.node_id));
+  const nodeId = String(a.node_id);
+  requireRunnable(run, nodeId); // cheap early refusal; the claim below is the real check
 
-  const r = await route(run, n);
-  if (r.vendor === 'self') throw new Error(`node ${n.node_id} is routed to self - use graph_submit`);
+  const r = await route(run, getNode(run, nodeId));
+  if (r.vendor === 'self') throw new Error(`node ${nodeId} is routed to self - use graph_submit`);
   if (r.vendor === 'vendor-failure') {
-    n.state = 'failed';
-    n.result = { stage_ok: false, reason: r.attempts.map((x) => `${x.vendor}: ${x.reason}`).join(' | ') };
-    n.vendor = 'vendor-failure';
-    saveRun(run);
-    return verdict(run, n);
+    // route() awaited probes; another broker may have started the node meanwhile. Only a
+    // node that is still runnable on the fresh run may be failed for want of a vendor.
+    transact(run, (fresh) => {
+      const n = requireRunnable(fresh, nodeId);
+      n.state = 'failed';
+      n.result = { stage_ok: false, reason: r.attempts.map((x) => `${x.vendor}: ${x.reason}`).join(' | ') };
+      n.vendor = 'vendor-failure';
+    });
+    return verdict(run, getNode(run, nodeId));
   }
 
   const vendor = loadVendors(run.cwd)[r.vendor];
   const ticket = randomUUID();
-  n.ticket = ticket;
-  n.executor = r.executor || r.vendor;
-  n.model = r.model || null;
-  n.state = 'running';
-  n.started_at = Date.now();
-  saveRun(run);
-  syncOpenNodes(run);
-  const activeKey = `${run.run_id}:${n.node_id}`;
-  activeNodes.add(activeKey);
-
-  const dir = join(brokerDir(run.cwd), run.run_id, n.node_id.replace(/[^A-Za-z0-9._-]/g, '_'), ticket);
-  mkdirSync(dir, { recursive: true });
+  const dir = join(brokerDir(run.cwd), run.run_id, nodeId.replace(/[^A-Za-z0-9._-]/g, '_'), ticket);
   const promptPath = join(dir, 'prompt.md');
   const outPath = join(dir, 'result.json');
   const eventsPath = join(dir, 'events.jsonl');
+  // Claim before the side effect. The node is re-checked on the fresh run and stamped with
+  // this call's ticket in one transaction, so of two graph_run calls on one node exactly
+  // one gets to start the adapter; the other is refused here.
+  let preClaim = null;
+  transact(run, (fresh) => {
+    const cur = getNode(fresh, nodeId);
+    if (cur && cur.state === 'running') throw new Error(`node ${nodeId} is already running under ticket ${cur.ticket || '(none)'} - refusing to start it twice`);
+    const n = requireRunnable(fresh, nodeId);
+    preClaim = Object.fromEntries(CLAIM_FIELDS.filter((k) => k in n).map((k) => [k, n[k]]));
+    n.ticket = ticket;
+    n.owner_pid = process.pid; // abandoned = this process is gone (reclaimAbandoned)
+    n.owner_boot = BOOT_ID;
+    n.executor = r.executor || r.vendor;
+    n.model = r.model || null;
+    n.state = 'running';
+    n.started_at = Date.now();
+    n.detail_path = outPath;
+  });
+  syncOpenNodes(run);
+  const activeKey = `${run.run_id}:${nodeId}`;
+  activeNodes.add(activeKey);
+  // From here until the outcome is applied (finishNode / checkpointInterruption), a throw
+  // releases the claim: still under this ticket and running, the node goes back to pending
+  // with its pre-claim fields. Otherwise nothing would ever finish the ticket - the node
+  // would wait STALE_AFTER_MS and then be failed as abandoned, spending an attempt.
+  try {
+    return await runClaimed(a, run, nodeId, r, vendor, ticket, { dir, promptPath, outPath, eventsPath });
+  } catch (e) {
+    releaseClaim(run, nodeId, ticket, preClaim, e);
+    throw e;
+  } finally {
+    activeNodes.delete(activeKey);
+  }
+}
+
+function releaseClaim(run, nodeId, ticket, preClaim, err) {
+  try {
+    const released = transact(run, (fresh) => {
+      const n = getNode(fresh, nodeId);
+      if (!n || n.state !== 'running' || n.ticket !== ticket) return false; // outcome applied or superseded
+      for (const k of CLAIM_FIELDS) delete n[k];
+      Object.assign(n, preClaim || {});
+      n.state = 'pending';
+      return true;
+    });
+    if (!released) return;
+    syncOpenNodes(run);
+    record(run.cwd, { event: 'claim_failed', run_id: run.run_id, node_id: nodeId, ticket, error: String((err && err.message) || err).slice(0, 300) });
+  } catch {
+    /* best-effort: if even this cannot be written, reclaimAbandoned is the backstop */
+  }
+}
+
+async function runClaimed(a, run, nodeId, r, vendor, ticket, { dir, promptPath, outPath, eventsPath }) {
+  let n = getNode(run, nodeId);
+  mkdirSync(dir, { recursive: true });
   writeFileSync(promptPath, composePrompt(run, n, nodeBriefing(run, n)));
-  n.detail_path = outPath;
-  saveRun(run);
 
   // Implement/test go through the adapter's stage contract, which enforces their JSON
   // schema. Reasoning nodes must NOT: their shapes differ per stage (setgoal returns a
@@ -986,39 +1204,31 @@ async function toolGraphRun(a) {
   const chosenModel = a.model || r.model;
   if (chosenModel) args.push('--model', String(chosenModel));
 
-  let proc;
-  try {
-    proc = await runAdapter(vendor, args, run.cwd, {
-      register: (cancel) => { if (a.__onCancel) a.__onCancel(cancel); },
-      timeoutMs: a.timeout_ms,
-    });
-  } finally {
-    activeNodes.delete(activeKey);
-  }
+  const proc = await runAdapter(vendor, args, run.cwd, {
+    register: (cancel) => { if (a.__onCancel) a.__onCancel(cancel); },
+    timeoutMs: a.timeout_ms,
+  });
   const report = readJson(outPath) || {};
   const payload = parseVendorResult(report) || {};
 
-  // The vendor call above may have taken minutes. Anything this process remembers about
-  // the run is potentially stale, so re-read before recording - otherwise finishing this
-  // node writes back a snapshot that erases whatever else completed meanwhile.
-  const fresh = loadRun(run.cwd, run.run_id);
-  if (fresh) {
-    run.nodes = fresh.nodes;
-    run.spec = fresh.spec;
-    const again = getNode(run, n.node_id);
-    if (again) {
-      again.ticket = n.ticket;
-      again.started_at = n.started_at;
-      again.detail_path = n.detail_path;
-      n = again;
-    }
-  }
-
+  // The vendor call above may have taken minutes and `run` is that old. The outcome is
+  // recorded in a transaction on the fresh run, and only under this call's ticket.
+  const expect = { ticket };
   const transportOk = proc.status === 0;
   if (run.allocation === 'balanced' && (!transportOk || report.stage_ok === false)
       && capacityFailure(report, proc.stderr)) {
-    return checkpointInterruption(run, n, r.executor || r.vendor, { ...report,
-      transport: { status: proc.status, stderr: proc.stderr, stdout: proc.stdout } }, 'quota');
+    return checkpointInterruption(run, nodeId, r.executor || r.vendor, { ...report,
+      transport: { status: proc.status, stderr: proc.stderr, stdout: proc.stdout } }, 'quota', expect);
+  }
+  // A vendor that answered in full but whose JSON does not parse has not failed the work - it
+  // mistyped the envelope (one stray `]` after a complete plan). Nothing retries a plan or
+  // report node, so that one character dead-ended the run. One fresh attempt on the same
+  // vendor; a second malformed answer is a failure. (Ported from teams 3cf65d7.)
+  const malformed = !proc.killed_for && /[{[]/.test(String(report.last_message || ''))
+    && !report.result && (Object.keys(payload).length === 0 || payload._unparsed === true);
+  if (malformed && !(n.interruptions || []).some((i) => i.kind === 'malformed')) {
+    return checkpointInterruption(run, nodeId, r.executor || r.vendor, { ...report,
+      transport: { status: proc.status, stderr: proc.stderr } }, 'malformed', expect);
   }
   let result;
   if (!transportOk) {
@@ -1051,18 +1261,24 @@ async function toolGraphRun(a) {
         : report.verification_error || '',
     };
   }
-  return finishNode(run, n, result, r.vendor);
+  return finishNode(run, nodeId, result, r.vendor, expect);
 }
 
 function toolGraphSubmit(a) {
   const run = mustFindRun(a);
-  const n = requireRunnable(run, String(a.node_id));
+  const nodeId = String(a.node_id);
+  const n = requireRunnable(run, nodeId);
   const payload = a.payload || {};
+  // Checked here for a fast error, and again on the fresh node when the result is applied.
+  const nativeOnly = (x) => {
+    if (!x.assignment || x.assignment.vendor !== 'self') throw new Error('balanced node must be assigned to a native executor by graph_next before submit');
+    x.executor = x.assignment.executor || 'self';
+    x.model = x.assignment.model || null;
+  };
+  const expect = { prepare: run.allocation === 'balanced' ? nativeOnly : null };
   if (run.allocation === 'balanced') {
-    if (!n.assignment || n.assignment.vendor !== 'self') throw new Error('balanced node must be assigned to a native executor by graph_next before submit');
-    n.executor = n.assignment.executor || 'self';
-    n.model = n.assignment.model || null;
-    if (payload.stage_ok === false && capacityFailure(payload)) return checkpointInterruption(run, n, n.executor, payload, 'quota');
+    nativeOnly(n);
+    if (payload.stage_ok === false && capacityFailure(payload)) return checkpointInterruption(run, nodeId, n.executor, payload, 'quota', expect);
   }
 
   let result;
@@ -1081,55 +1297,66 @@ function toolGraphSubmit(a) {
         : '',
     };
   }
-  return finishNode(run, n, result, 'self');
+  return finishNode(run, nodeId, result, 'self', expect);
 }
 
 async function toolGraphRetry(a) {
   const run = mustFindRun(a);
   // Validate before touching anything: a call that is going to be rejected must not have
-  // already spent the capacity reset. The node itself is looked up again below, after the
-  // reset has saved - saveRun rebuilds run.nodes, so a reference taken here can go stale.
+  // already spent the capacity reset.
   const retryable = (n) => n && n.state === 'pending' && n.recovery;
-  if (a.node_id && !retryable(getNode(run, String(a.node_id)))) {
-    throw new Error('node_id must identify a currently interrupted pending node');
-  }
+  const mustBeRetryable = (r) => {
+    if (a.node_id && !retryable(getNode(r, String(a.node_id)))) {
+      throw new Error('node_id must identify a currently interrupted pending node');
+    }
+  };
+  mustBeRetryable(run);
 
-  // A vendor can be excluded before it ever runs a node, so a capacity reset cannot
-  // require an interrupted node to name.
-  if (a.reset_capacity === true) {
-    run.unavailable_vendors = {};
-    run.capacity_epoch = (run.capacity_epoch || 0) + 1;
-    probeCache.clear();
-    // An assignment made while the vendor was excluded is stale: re-rank it. Work already
-    // dispatched keeps its executor - only what has not left the gate is reconsidered.
-    for (const n of run.nodes) if (n.state === 'pending' && !n.ticket) delete n.assignment;
-    saveRun(run);
-    if (!a.node_id && !a.subgoal_id) {
+  // The capacity reset and the node reopen are one transaction, validated on the fresh
+  // run first: a call that is going to be rejected must not have spent the reset.
+  if (a.reset_capacity === true || a.node_id) {
+    transact(run, (fresh) => {
+      mustBeRetryable(fresh);
+      // A vendor can be excluded before it ever runs a node, so a capacity reset cannot
+      // require an interrupted node to name.
+      if (a.reset_capacity === true) {
+        fresh.unavailable_vendors = {};
+        fresh.capacity_epoch = (fresh.capacity_epoch || 0) + 1;
+        // An assignment made while the vendor was excluded is stale: re-rank it. Work already
+        // dispatched keeps its executor - only what has not left the gate is reconsidered.
+        for (const n of fresh.nodes) if (n.state === 'pending' && !n.ticket) delete n.assignment;
+      }
+      if (a.node_id) {
+        const n = getNode(fresh, String(a.node_id));
+        n.state = 'pending';
+        n.ticket = null;
+        delete n.assignment;
+      }
+    });
+    if (a.reset_capacity === true) probeCache.clear();
+    if (a.node_id) {
+      return { run_id: run.run_id, target: String(a.node_id), retried: true, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
+    }
+    if (!a.subgoal_id) {
       record(run.cwd, { event: 'graph_retry', run_id: run.run_id, target: 'capacity' });
       return { run_id: run.run_id, target: 'capacity', retried: true, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
     }
   }
 
-  if (a.node_id) {
-    const n = getNode(run, String(a.node_id));
-    n.state = 'pending';
-    n.ticket = null;
-    delete n.assignment;
-    saveRun(run);
-    return { run_id: run.run_id, target: n.node_id, retried: true, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
-  }
-
   // No subgoal named means the spec itself was rejected: redo setgoal and critique.
   if (!a.subgoal_id) {
-    const source = run.nodes
-      .filter((n) => (n.stage === 'critique' || n.stage === 'setgoal') && n.state === 'failed' && n.result)
-      .pop() || run.nodes.filter((n) => n.stage === 'critique' && n.result).pop();
-    const fb = source && source.result
-      ? [source.result.reason || '', ...(source.result.blocking || []),
-         ...(source.result.spec_problems || []), ...(source.result.problems || [])]
-          .filter(Boolean).join('\n- ')
-      : '';
-    const out = retrySpec(run, fb);
+    const out = transact(run, (fresh) => {
+      const source = fresh.nodes
+        .filter((n) => (n.stage === 'critique' || n.stage === 'setgoal') && n.state === 'failed' && n.result)
+        .pop() || fresh.nodes.filter((n) => n.stage === 'critique' && n.result).pop();
+      const fb = source && source.result
+        ? [source.result.reason || '', ...(source.result.blocking || []),
+           ...(source.result.spec_problems || []), ...(source.result.problems || [])]
+            .filter(Boolean).join('\n- ')
+        : '';
+      const { attempt, reason, unreachable } = retrySpec(fresh, fb);
+      return { attempt, reason, unreachable };
+    });
     if (!out.attempt) {
       record(run.cwd, { event: 'graph_settle', run_id: run.run_id, target: 'spec', unreachable: out.unreachable.length });
       return { run_id: run.run_id, target: 'spec', retried: false, reason: out.reason, unreachable: out.unreachable, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
@@ -1139,20 +1366,23 @@ async function toolGraphRetry(a) {
   }
 
   const sid = String(a.subgoal_id);
-  // The last node that judged this subgoal: its gate, or the test that failed before any
-  // gate ran. A retry after a failed test used to carry no feedback at all.
-  const judged = run.nodes.filter((n) => n.subgoal_id === sid && n.result && (n.stage === 'gate' || n.state === 'failed'));
-  const last = judged[judged.length - 1];
-  // A goal gate that rejected the assembled result names what the run as a whole lacks; the
-  // subgoal being retried for it must hear that too, since its own gate passed.
-  const goal = run.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id === null && n.state === 'failed' && !n.final && n.result).pop();
-  const feedback = [
-    ...(last && last.result
-      ? [last.result.reason || '', ...(last.result.gaps || []), ...(last.result.verified === false ? (last.result.checks || []) : [])]
-      : []),
-    ...(goal ? [`goal gate ${goal.node_id}: ${goal.result.reason || 'rejected'}`, ...(goal.result.gaps || [])] : []),
-  ].filter(Boolean).join('\n- ');
-  const out = retrySubgoal(run, sid, feedback);
+  const out = transact(run, (fresh) => {
+    // The last node that judged this subgoal: its gate, or the test that failed before any
+    // gate ran. A retry after a failed test used to carry no feedback at all.
+    const judged = fresh.nodes.filter((n) => n.subgoal_id === sid && n.result && (n.stage === 'gate' || n.state === 'failed'));
+    const last = judged[judged.length - 1];
+    // A goal gate that rejected the assembled result names what the run as a whole lacks; the
+    // subgoal being retried for it must hear that too, since its own gate passed.
+    const goal = fresh.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id === null && n.state === 'failed' && !n.final && n.result).pop();
+    const feedback = [
+      ...(last && last.result
+        ? [last.result.reason || '', ...(last.result.gaps || []), ...(last.result.verified === false ? (last.result.checks || []) : [])]
+        : []),
+      ...(goal ? [`goal gate ${goal.node_id}: ${goal.result.reason || 'rejected'}`, ...(goal.result.gaps || [])] : []),
+    ].filter(Boolean).join('\n- ');
+    const { attempt, reason, unreachable } = retrySubgoal(fresh, sid, feedback);
+    return { attempt, reason, unreachable };
+  });
   if (!out.attempt) {
     record(run.cwd, { event: 'graph_settle', run_id: run.run_id, subgoal_id: sid, unreachable: out.unreachable.length });
     return { run_id: run.run_id, target: sid, subgoal_id: sid, retried: false, reason: out.reason, unreachable: out.unreachable, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
@@ -1207,7 +1437,8 @@ function toolGraphStatus(a) {
       if (!n) throw new Error(`unknown node ${a.node_id}`);
       return { run_id: run.run_id, node: n };
     }
-    return run;
+    // A run file written before capacity state was initialized at creation has none.
+    return { ...run, capacity_epoch: run.capacity_epoch || 0, unavailable_vendors: run.unavailable_vendors || {} };
   }
   const state = runState(run);
   return {
