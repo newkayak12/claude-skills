@@ -22,6 +22,23 @@ import { collectDriverCosts } from './bench/lib/drivercost.mjs';
 import { hasDeclaredAcceptance, detectDeclaredAcceptance, resolvePlanningMode, renderAcceptanceTemplate } from '../mcp/acceptance.mjs';
 import { hasDeclaredAcceptance as tmHasDeclaredAcceptance } from '../mcp/taskmanager.mjs';
 import { afterTmCall, beforeTmCall, drivePlanning, completePlanningChild } from './lib/planning-drive.mjs';
+import { mutateTask } from '../mcp/store.mjs';
+
+// An in-process saving helper (autoReshape, autoRetryPackages, enforceBudget, finish, ...) run the
+// way the daemon and the tm_* handlers run it: inside mutateTask on the task's own file, since a
+// task.json write outside a transaction throws. The test's hand-held object - unsaved edits
+// included - becomes the transaction's content (node objects shared, so held references stay
+// live), and after commit it carries exactly what was written.
+function inTx(task, helper, ...args) {
+  if (!task.store_path) return helper(task, ...args);
+  return mutateTask(task.store_path, (t) => {
+    Object.assign(t, task);
+    try { return helper(t, ...args); } finally {
+      for (const k of Object.keys(task)) if (!(k in t)) delete task[k];
+      Object.assign(task, t);
+    }
+  }, { create: true });
+}
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TM = join(HERE, '..', 'mcp', 'taskmanager.mjs');
@@ -1533,7 +1550,7 @@ test('a failed QA dispatch whose child recorded defects files them instead of bl
     const prevRoot = process.env.HARNESS_TASKS_DIR;
     const withRoot = (fn) => { process.env.HARNESS_TASKS_DIR = root; try { return fn(); } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; } };
 
-    const changed = withRoot(() => autoRetryPackages(load()));
+    const changed = withRoot(() => inTx(load(), autoRetryPackages));
     assert.equal(changed, true, 'the daemon acts on the failed dispatch');
 
     const after = load();
@@ -1585,7 +1602,7 @@ test('a budget stop that rewires gate:goal past an incomplete QA pass records qa
       stage_ok: false, reason: 'child run ended blocked. Its own verdicts:\nplan: adapter exit 1',
     };
     save(t);
-    assert.equal(withRoot(() => autoRetryPackages(load())), true, 'the daemon reopens QA as attempt 2');
+    assert.equal(withRoot(() => inTx(load(), autoRetryPackages)), true, 'the daemon reopens QA as attempt 2');
 
     t = load();
     assert.ok(t.nodes.some((n) => n.node_id === 'dispatch:QA-F1:2'), 'QA gets a second attempt');
@@ -1739,7 +1756,7 @@ test('a failed downstream dispatch carrying upstream_defects files a fix STORY o
     const prevRoot = process.env.HARNESS_TASKS_DIR;
     const withRoot = (fn) => { process.env.HARNESS_TASKS_DIR = root; try { return fn(); } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; } };
 
-    const changed = withRoot(() => autoRetryPackages(load()));
+    const changed = withRoot(() => inTx(load(), autoRetryPackages));
     assert.equal(changed, true, 'the daemon acts on the failed dispatch');
 
     const after = load();
@@ -1803,7 +1820,7 @@ test('upstream_fix_rounds caps the loop: past the cap, an upstream defect is rec
 
     // upstream_fix_rounds: 0 - the very first round against P1 is already over the cap, the same
     // shape the qa_rounds:0 test above uses for QA's own cap.
-    const changed = withRoot(() => autoRetryPackages(load()));
+    const changed = withRoot(() => inTx(load(), autoRetryPackages));
     assert.equal(changed, true, 'the daemon still acts on the failed dispatch - a blind retry, this time');
 
     const after = load();
@@ -2526,7 +2543,7 @@ test('code-sprint-S5: after a budget stop the reintegration is judged on the kep
     process.env.HARNESS_TASKS_DIR = root;
     try {
       const t = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
-      assert.equal(autoRepair(t), false, 'no repair package once the box is stopped');
+      assert.equal(inTx(t, autoRepair), false, 'no repair package once the box is stopped');
       assert.equal(pendingRejudgeAt(t), null, 'a reasoned refusal is not a judge failure');
     } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; }
 
@@ -4690,7 +4707,7 @@ test('a refused integrate opens a repair package by itself (autoRepair) instead 
     const prevRoot = process.env.HARNESS_TASKS_DIR;
     process.env.HARNESS_TASKS_DIR = root;
     try {
-      assert.equal(autoRepair(task), true, 'a refused integrate with a combined tree is a repair, not an end');
+      assert.equal(inTx(task, autoRepair), true, 'a refused integrate with a combined tree is a repair, not an end');
     } finally {
       if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot;
     }
@@ -4705,7 +4722,7 @@ test('a refused integrate opens a repair package by itself (autoRepair) instead 
     assert.equal((await tm.call('tm_status', { task_id })).state, 'running', 'the task is live again');
     process.env.HARNESS_TASKS_DIR = root;
     try {
-      assert.equal(autoRepair(load()), false, 'nothing to repair twice: integrate:1 is superseded, integrate:2 is pending');
+      assert.equal(inTx(load(), autoRepair), false, 'nothing to repair twice: integrate:1 is superseded, integrate:2 is pending');
     } finally {
       if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot;
     }
@@ -4792,14 +4809,14 @@ test('a package whose child blocked opens its next attempt by itself (autoRetryP
       await blockChild(g, child);
       const v = await tm.call('tm_submit', { task_id, node_id: `dispatch:P1:${attempt}` });
       assert.equal(v.state, 'failed', `attempt ${attempt} folds failed`);
-      const changed = withRoot(() => autoRetryPackages(load()));
+      const changed = withRoot(() => inTx(load(), autoRetryPackages));
       assert.equal(changed, true, `attempt ${attempt}: the daemon acts on a failed package`);
       const t = load();
       if (attempt <= maxRetries) {
         const next = t.nodes.find((n) => n.node_id === `dispatch:P1:${attempt + 1}`);
         assert.ok(next, `attempt ${attempt + 1} opened`);
         assert.match(String(next.feedback || ''), /short|missing the b half/, 'the rejection reason travels as feedback');
-        assert.equal(withRoot(() => autoRetryPackages(load())), false, 'nothing to retry twice while the new attempt is open');
+        assert.equal(withRoot(() => inTx(load(), autoRetryPackages)), false, 'nothing to retry twice while the new attempt is open');
       } else {
         assert.ok(!t.nodes.some((n) => n.node_id === `dispatch:P1:${attempt + 1}`), 'budget spent: no further attempt');
         const st = await tm.call('tm_status', { task_id });
@@ -4855,9 +4872,9 @@ test('autoResumeCapacity clears a capacity park once the provider-named reset ti
     writeFileSync(join(root, task_id, 'task.json'), JSON.stringify(task, null, 2));
     const resetAt = capacityResetAt(n.child.waiting_capacity.reason, since);
     assert.equal(new Date(resetAt).toISOString(), '2026-09-21T17:40:00.000Z');
-    assert.equal(withRoot(() => autoResumeCapacity(load(), resetAt + 60 * 1000)), false, 'one minute after the reset is inside the grace period: still parked');
+    assert.equal(withRoot(() => inTx(load(), autoResumeCapacity, resetAt + 60 * 1000)), false, 'one minute after the reset is inside the grace period: still parked');
     assert.ok(load().nodes.find((x) => x.node_id === 'dispatch:P1:1').child.waiting_capacity, 'untouched');
-    assert.equal(withRoot(() => autoResumeCapacity(load(), resetAt + 4 * 60 * 1000)), true, 'four minutes after: resumed');
+    assert.equal(withRoot(() => inTx(load(), autoResumeCapacity, resetAt + 4 * 60 * 1000)), true, 'four minutes after: resumed');
     assert.ok(!load().nodes.find((x) => x.node_id === 'dispatch:P1:1').child.waiting_capacity, 'the park is cleared');
     const ev = await tm.call('tm_events', { task_id });
     assert.ok(ev.events.some((e) => e.event === 'daemon_capacity_resumed' && e.resumed.includes('dispatch:P1:1')));
@@ -4885,11 +4902,11 @@ test('a judge that could not judge is re-judged, not treated as a refusal: no re
     const load = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
     const prevRoot = process.env.HARNESS_TASKS_DIR;
     const withRoot = (fn) => { process.env.HARNESS_TASKS_DIR = root; try { return fn(); } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; } };
-    assert.equal(withRoot(() => autoRepair(load())), false, 'a non-verdict opens no repair package');
-    assert.equal(withRoot(() => autoRetryPackages(load())), false, 'and retries no package');
+    assert.equal(withRoot(() => inTx(load(), autoRepair)), false, 'a non-verdict opens no repair package');
+    assert.equal(withRoot(() => inTx(load(), autoRetryPackages)), false, 'and retries no package');
     const finishedAt = load().nodes.find((n) => n.node_id === 'integrate:1').finished_at;
-    assert.equal(withRoot(() => autoRejudge(load(), finishedAt + 60 * 1000)), false, 'the reply named a reset time: not before it');
-    const t1 = withRoot(() => autoRejudge(load(), finishedAt + 26 * 60 * 60 * 1000));
+    assert.equal(withRoot(() => inTx(load(), autoRejudge, finishedAt + 60 * 1000)), false, 'the reply named a reset time: not before it');
+    const t1 = withRoot(() => inTx(load(), autoRejudge, finishedAt + 26 * 60 * 60 * 1000));
     assert.equal(t1, true, 'after the reset: re-judged');
     let n = load().nodes.find((x) => x.node_id === 'integrate:1');
     assert.equal(n.state, 'pending'); assert.equal(n.judge_attempts, 1); assert.equal(n.result, undefined);
@@ -4898,10 +4915,10 @@ test('a judge that could not judge is re-judged, not treated as a refusal: no re
     // Two more failures with no reset time named: the second re-judge happens after a minute, a third never.
     await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: { stage_ok: false, judge_failed: true, reason: 'judge process for integrate:1 failed to run: spawn ENOENT' } });
     n = load().nodes.find((x) => x.node_id === 'integrate:1');
-    assert.equal(withRoot(() => autoRejudge(load(), n.finished_at + 2 * 60 * 1000)), true);
+    assert.equal(withRoot(() => inTx(load(), autoRejudge, n.finished_at + 2 * 60 * 1000)), true);
     await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: { stage_ok: false, judge_failed: true, reason: 'judge process for integrate:1 failed to run: spawn ENOENT' } });
     n = load().nodes.find((x) => x.node_id === 'integrate:1');
-    assert.equal(withRoot(() => autoRejudge(load(), n.finished_at + 2 * 60 * 1000)), false, 'budget of two re-judges spent');
+    assert.equal(withRoot(() => inTx(load(), autoRejudge, n.finished_at + 2 * 60 * 1000)), false, 'budget of two re-judges spent');
     assert.equal(load().nodes.find((x) => x.node_id === 'integrate:1').state, 'failed');
     const ev = await tm.call('tm_events', { task_id });
     assert.equal(ev.events.filter((e) => e.event === 'daemon_rejudge').length, 2);
@@ -5615,12 +5632,12 @@ test('a failed critique is reshaped by the engine, carrying the verdict that ref
 
     const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
     assert.equal(task.nodes.find((n) => n.node_id === 'critique').state, 'failed');
-    assert.ok(autoReshape(task), 'the engine must open the next shape attempt itself');
+    assert.ok(inTx(task, autoReshape), 'the engine must open the next shape attempt itself');
     const next = task.nodes.find((n) => n.node_id === 'shape:2');
     assert.ok(next, 'a second shape attempt exists');
     assert.match(next.feedback, /no package owns final assembly/, "critique's blocking travels into it");
     assert.match(next.feedback, /both touch a\.txt/, 'so do its non-blocking problems');
-    assert.equal(autoReshape(task), false, 'it does not reshape again while the new attempt is open');
+    assert.equal(inTx(task, autoReshape), false, 'it does not reshape again while the new attempt is open');
   });
 });
 
@@ -5646,12 +5663,12 @@ test('a judge that timed out does not spend a shaping attempt - until its rejudg
   });
   try {
     const waiting = mk(0);
-    assert.equal(autoReshape(waiting), false, 'a rejudgeable judge failure belongs to autoRejudge, not to a reshape');
+    assert.equal(inTx(waiting, autoReshape), false, 'a rejudgeable judge failure belongs to autoRejudge, not to a reshape');
     assert.equal(waiting.nodes.find((n) => n.node_id === 'shape:2'), undefined);
 
     // Once the rejudge budget is spent no verdict is coming, and reshaping is the only move left.
     const spent = mk(2);
-    assert.ok(autoReshape(spent), 'a judge failure with no rejudge left must not wedge the task');
+    assert.ok(inTx(spent, autoReshape), 'a judge failure with no rejudge left must not wedge the task');
     assert.ok(spent.nodes.find((n) => n.node_id === 'shape:2'), 'the next shape attempt opens');
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -5696,7 +5713,7 @@ test('an accept under goal_threshold is a rejection, and the phase-Team package 
     // A phase-Team package is not in task.spec.packages, so autoRetryPackages used to walk
     // straight past it and the daemon would record daemon_done on an untouched retry budget.
     const { autoRetryPackages } = await import('../mcp/taskmanager.mjs');
-    assert.ok(autoRetryPackages(task), 'the PLAN package must get the retry max_retries budgets');
+    assert.ok(inTx(task, autoRetryPackages), 'the PLAN package must get the retry max_retries budgets');
     const retry = task.nodes.find((n) => n.node_id === 'dispatch:PLAN-F1:2');
     assert.ok(retry, 'a second attempt of the planning card opens');
     assert.match(String(retry.feedback || ''), /specific to this domain/, 'the gap that cost it the points travels into the retry');
@@ -6813,7 +6830,7 @@ test('code-sprint-P2: a stopped box whose goal gate waits on a node nothing can 
     };
     mkdirSync(join(root, 'p2'), { recursive: true });
     writeDriverSpend(root, 'p2', 'dispatch_PLAN_1', 5);
-    assert.equal(enforceBudget(task), true);
+    assert.equal(inTx(task, enforceBudget), true);
     assert.equal(task.nodes.find((n) => n.node_id === 'gate:goal:1').state, 'skipped');
     assert.equal(task.nodes.find((n) => n.node_id === 'report').state, 'pending');
   } finally {
@@ -6975,7 +6992,7 @@ test('code-sprint-P5: an audit that dies after the stop gives the goal gate back
     };
     mkdirSync(join(root, 'p5'), { recursive: true });
     writeDriverSpend(root, 'p5', 'dispatch_AUDIT_1', 5);
-    assert.equal(enforceBudget(task), true);
+    assert.equal(inTx(task, enforceBudget), true);
     const goal = task.nodes.find((n) => n.node_id === 'gate:goal:1');
     assert.equal(goal.state, 'pending', 'the goal gate still runs');
     assert.deepEqual(goal.deps, ['integrate:1']);
@@ -7021,7 +7038,7 @@ test('a phase-Team pass (QA) still running when the box trips is killed immediat
     };
     mkdirSync(join(root, 'qk'), { recursive: true });
     writeDriverSpend(root, 'qk', 'dispatch_QA_2', 1.2);
-    assert.equal(enforceBudget(task), true);
+    assert.equal(inTx(task, enforceBudget), true);
     const dq = task.nodes.find((n) => n.node_id === 'dispatch:QA:2');
     assert.equal(dq.state, 'skipped');
     assert.match(dq.result.reason, /bypassed by the close path/);
@@ -7069,7 +7086,7 @@ test('a package dispatch still running within its grace is left to finish, not k
     };
     mkdirSync(join(root, 'gr1'), { recursive: true });
     writeDriverSpend(root, 'gr1', 'dispatch_PLAN_1', 1.05);
-    assert.equal(enforceBudget(task), false, 'nothing to sweep yet - P1 is a needed dispatch, still within grace');
+    assert.equal(inTx(task, enforceBudget), false, 'nothing to sweep yet - P1 is a needed dispatch, still within grace');
     const d1 = task.nodes.find((n) => n.node_id === 'dispatch:P1:1');
     assert.equal(d1.state, 'running', 'not killed - budget_grace_minutes/_usd has not elapsed');
     const ledgerPath = join(root, 'gr1', 'ledger.jsonl');
@@ -7109,7 +7126,7 @@ test('a package dispatch still running past its grace is killed too, and the box
     };
     mkdirSync(join(root, 'gr2'), { recursive: true });
     writeDriverSpend(root, 'gr2', 'dispatch_PLAN_1', 1.05);
-    assert.equal(enforceBudget(task), true);
+    assert.equal(inTx(task, enforceBudget), true);
     const d1 = task.nodes.find((n) => n.node_id === 'dispatch:P1:1');
     assert.equal(d1.state, 'skipped');
     assert.match(d1.result.reason, /grace exhausted/);
@@ -7502,7 +7519,7 @@ test('portfolio-consolidate: a budget-stopped Sprint integrates its accepted wor
     mkdirSync(join(root, 'pc1'), { recursive: true });
     writeDriverSpend(root, 'pc1', 'dispatch_P3_1.restart1', 45);
     // 05:18: P3's dispatch has failed, nothing is running. The sweep skips P4 and reintegrates P1+P2.
-    assert.equal(enforceBudget(task), true);
+    assert.equal(inTx(task, enforceBudget), true);
     const i2 = task.nodes.find((n) => n.node_id === 'integrate:2');
     assert.ok(i2, JSON.stringify(task.nodes.map((n) => [n.node_id, n.state])));
     assert.deepEqual(i2.deps, ['accept:P1:1', 'accept:P2:1']);
@@ -7513,10 +7530,10 @@ test('portfolio-consolidate: a budget-stopped Sprint integrates its accepted wor
     // integrate:2 runs and verifies.
     i2.state = 'running';
     i2.integration = { cwd: join(root, 'integration-2'), branch: 'harness/pc1/integration-2', merged: [{ package: 'P1', branch: 'b1', commit: 'bf5cb86' }, { package: 'P2', branch: 'b2', commit: '0f4442a' }] };
-    finish(task, i2, { stage_ok: true, verified: true, checks: ['git log -> integrate P2 on top of integrate P1'] });
+    inTx(task, finish, i2, { stage_ok: true, verified: true, checks: ['git log -> integrate P2 on top of integrate P1'] });
     assert.equal(i2.state, 'done');
     // The real run's daemon ticked on: every tick reopened another integrate over the same accepts.
-    for (let i = 0; i < 5; i += 1) enforceBudget(task);
+    for (let i = 0; i < 5; i += 1) inTx(task, enforceBudget);
     const integrates = task.nodes.filter((n) => n.stage === 'integrate').map((n) => n.node_id);
     assert.deepEqual(integrates, ['integrate:1', 'integrate:2'], 'one integrate of the accepted work, no integrate:3..6');
     assert.ok(!task.nodes.some((n) => n.node_id === 'dispatch:QA:2'), 'no QA round a stopped box could never dispatch');
@@ -7541,8 +7558,8 @@ test('portfolio-consolidate: a QA round skipped by the budget is not a defect - 
       integration: { cwd: join(root, 'integration-2'), branch: 'harness/pc2/integration-2', merged: [] } });
     mkdirSync(join(root, 'pc2'), { recursive: true });
     writeDriverSpend(root, 'pc2', 'dispatch_P3_1.restart1', 45);
-    finish(task, task.nodes.find((n) => n.node_id === 'integrate:2'), { stage_ok: true, verified: true, checks: ['ls portfolio/skills -> fit'] });
-    for (let i = 0; i < 5; i += 1) enforceBudget(task);
+    inTx(task, finish, task.nodes.find((n) => n.node_id === 'integrate:2'), { stage_ok: true, verified: true, checks: ['ls portfolio/skills -> fit'] });
+    for (let i = 0; i < 5; i += 1) inTx(task, enforceBudget);
     assert.deepEqual(task.nodes.filter((n) => n.stage === 'integrate').map((n) => n.node_id), ['integrate:1', 'integrate:2'],
       JSON.stringify(task.nodes.map((n) => [n.node_id, n.state, n.deps])));
     assert.deepEqual(task.nodes.find((n) => n.node_id === 'gate:goal:1').deps, ['integrate:2']);
@@ -7564,10 +7581,10 @@ test('portfolio-consolidate: once the box has stopped, a capacity-parked driver 
     mkdirSync(join(root, 'pc3'), { recursive: true });
     writeDriverSpend(root, 'pc3', 'dispatch_P2_1', 45);
     // Well past any reset + grace: before the stop this resumes; after it, nothing may spend again.
-    assert.equal(autoResumeCapacity(task, since + 25 * 60 * 60 * 1000), false, 'a stopped box resumes nothing');
+    assert.equal(inTx(task, autoResumeCapacity, since + 25 * 60 * 60 * 1000), false, 'a stopped box resumes nothing');
     assert.ok(d3.child.waiting_capacity, 'still parked');
     // And the park is settled at once - no grace to wait out for a driver that is not even running.
-    assert.equal(enforceBudget(task), true);
+    assert.equal(inTx(task, enforceBudget), true);
     assert.equal(d3.state, 'skipped');
     assert.match(d3.result.reason, /parked on provider capacity/);
     assert.equal(task.nodes.find((n) => n.node_id === 'accept:P3:1').state, 'skipped');
@@ -7797,7 +7814,7 @@ test('M2: an areas split spent past its retries closes to a report and retro, wi
     await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['x'] }) });
     await tm.call('tm_submit', { task_id, node_id: 'areas', payload: ok({ areas: [] }) });
     const task = readTask(root, task_id);
-    assert.equal(withTasksRoot(root, () => autoReshape(task)), false, 'no split attempt left');
+    assert.equal(withTasksRoot(root, () => inTx(task, autoReshape)), false, 'no split attempt left');
     assert.equal(readTask(root, task_id).nodes.find((n) => n.node_id === 'areas').final, true);
     await planningClosesToReport(tm, root, task_id, { node: 'areas', prd: false });
   }, { max_retries: 0 });
@@ -7808,7 +7825,7 @@ test('G4/M2: a Sprint whose planning failed carries every backlog request into t
   await withTask(async ({ tm, root, task_id }) => {
     await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['x'] }) });
     await tm.call('tm_submit', { task_id, node_id: 'areas', payload: ok({ areas: [] }) });
-    withTasksRoot(root, () => autoReshape(readTask(root, task_id)));
+    withTasksRoot(root, () => inTx(readTask(root, task_id), autoReshape));
     await planningClosesToReport(tm, root, task_id, { node: 'areas', prd: false });
     const retro = JSON.parse(readFileSync(docPaths(readTask(root, task_id)).retro, 'utf8'));
     assert.deepEqual(retro.next_backlog.unshipped_requests.map((r) => r.request), ['sign in', 'sign out', 'reset password']);
@@ -7828,7 +7845,7 @@ test('M2: a planning card spent past its retries closes to a report; the sibling
         ? { accept: true, match_pct: 95 } : { accept: false, match_pct: 40, reason: 'thin', gaps: ['no acceptance'] }) });
     }
     const task = readTask(root, task_id);
-    assert.equal(withTasksRoot(root, () => autoRetryPackages(task)), true);
+    assert.equal(withTasksRoot(root, () => inTx(task, autoRetryPackages)), true);
     assert.equal(readTask(root, task_id).nodes.find((n) => n.node_id === 'accept:PLAN-F2:1').final, true);
     await planningClosesToReport(tm, root, task_id, { node: 'accept:PLAN-F2:1', prd: true, stories: ['F1-US-1', 'F2-US-1'] });
   }, { max_retries: 0 });
@@ -7847,7 +7864,7 @@ test('C2: a rejected planning card gets its retry, and the planning integrate wa
     const v = await tm.call('tm_submit', { task_id, node_id: 'accept:PLAN-F2:1', payload: ok({ accept: false, match_pct: 70, gaps: ['no acceptance on F2-US-1'], reason: 'thin' }) });
     assert.equal(v.state, 'failed');
     const task = readTask(root, task_id);
-    assert.ok(withTasksRoot(root, () => autoRetryPackages(task)));
+    assert.ok(withTasksRoot(root, () => inTx(task, autoRetryPackages)));
     const retry = task.nodes.find((n) => n.node_id === 'dispatch:PLAN-F2:2');
     assert.ok(retry, 'the rejected card gets a second attempt, exactly like a develop package');
     assert.match(retry.feedback, /no acceptance on F2-US-1/);
@@ -7893,7 +7910,7 @@ test('M4: areas-critique judges the split before any card opens; a refusal re-sp
     const v = await tm.rawCall('tm_submit', { task_id, node_id: 'areas-critique', payload: ok({ sound: false, blocking: ['overlap - both areas plan checkout'], problems: ['F2 brief is thin'] }) });
     assert.equal(v.state, 'failed');
     let task = readTask(root, task_id);
-    assert.ok(withTasksRoot(root, () => autoReshape(task)));
+    assert.ok(withTasksRoot(root, () => inTx(task, autoReshape)));
     task = readTask(root, task_id);
     const again = task.nodes.find((n) => n.node_id === 'areas:2');
     assert.ok(again, 'the refused split is split again');
@@ -7905,7 +7922,7 @@ test('M4: areas-critique judges the split before any card opens; a refusal re-sp
     await tm.rawCall('tm_submit', { task_id, node_id: 'areas:2', payload: ok({ areas: TWO_AREAS }) });
     await tm.rawCall('tm_submit', { task_id, node_id: 'areas-critique:2', payload: ok({ sound: false, blocking: ['overlap - still'] }) });
     task = readTask(root, task_id);
-    assert.equal(withTasksRoot(root, () => autoReshape(task)), false);
+    assert.equal(withTasksRoot(root, () => inTx(task, autoReshape)), false);
     task = readTask(root, task_id);
     assert.equal(task.nodes.find((n) => n.node_id === 'areas-critique:2').final, true);
     const nx = await tm.rawCall('tm_next', { task_id });
@@ -7996,7 +8013,7 @@ test('C2: a plan stage that returns no feature areas fails, and is split again w
     assert.equal(v.state, 'failed');
     assert.match(v.reason, /no feature areas/);
     const task = readTask(root, task_id);
-    assert.ok(withTasksRoot(root, () => autoReshape(task)));
+    assert.ok(withTasksRoot(root, () => inTx(task, autoReshape)));
     const again = task.nodes.find((n) => n.node_id === 'areas:2');
     assert.ok(again);
     assert.deepEqual(again.deps, ['size']);
@@ -8030,7 +8047,7 @@ test('M3: a QA card spent past its retries does not take the round down - its si
     assert.equal((await finishQa('QA-F1', 'a.txt loses its newline')).state, 'done');
     assert.equal((await finishQa('QA-F2', null)).state, 'failed');
     const task = readTask(root, task_id);
-    assert.ok(withTasksRoot(root, () => autoRetryPackages(task)));
+    assert.ok(withTasksRoot(root, () => inTx(task, autoRetryPackages)));
     const t = readTask(root, task_id);
     assert.deepEqual(t.spec.packages.map((p) => p.id), ['P1', 'P2', 'D1'], 'QA-F1\'s defect is filed');
     const goal = t.nodes.find((n) => n.node_id === 'gate:goal:1');
@@ -8129,7 +8146,7 @@ test('C7: past qa_rounds a whole round\'s defects are recorded unresolved, and a
     Object.assign(t.nodes.find((n) => n.node_id === 'dispatch:QA-F2:1'), { state: 'failed', result: { stage_ok: false, accept: false, reason: 'blocked', defects: ['b broke'] } });
     writeFileSync(join(root, task_id, 'task.json'), JSON.stringify(t));
     const task = readTask(root, task_id);
-    assert.ok(withTasksRoot(root, () => autoRetryPackages(task)));
+    assert.ok(withTasksRoot(root, () => inTx(task, autoRetryPackages)));
     assert.equal(task.nodes.find((n) => n.node_id === 'accept:QA-F2:1').state, 'skipped', 'retired in place, not retried on the same tree');
     assert.ok(!task.nodes.some((n) => n.node_id === 'dispatch:QA-F2:2'));
     assert.deepEqual(task.unresolved_defects.map((d) => d.title).sort(), ['a broke', 'b broke'], 'qa_rounds 0: both cards\' defects recorded, none filed');
@@ -8148,7 +8165,7 @@ test('C7: a budget stop with two QA cards unfinished puts the goal gate back on 
     t.created_at = Date.now() - 11 * 60 * 1000;
     writeFileSync(join(root, task_id, 'task.json'), JSON.stringify(t));
     const task = readTask(root, task_id);
-    withTasksRoot(root, () => { enforceBudget(task); enforceBudget(task); });
+    withTasksRoot(root, () => { inTx(task, enforceBudget); inTx(task, enforceBudget); });
     assert.ok(task.budget_stopped);
     assert.deepEqual(task.nodes.find((n) => n.node_id === 'gate:goal:1').deps, ['integrate:1']);
     assert.deepEqual(task.budget_stopped.qa_not_run.map((q) => [q.pass, q.reason]), [['QA-F1', 'QA-F1 blocked'], ['QA-F2', 'QA-F2 blocked']]);

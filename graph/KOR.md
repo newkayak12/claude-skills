@@ -46,6 +46,45 @@
 
 ## 상태
 
+- **v1.8.0 — graph가 트랜잭션 런 저장소를 갖는다**: 런 파일을 제자리에서
+  (`writeFileSync`) 써서 읽는 쪽이 반쯤 쓰인 파일을 볼 수 있었고, 락 대기 시간이 지나면
+  락 없이 그냥 썼습니다. 새 `mcp/store.mjs`(graph 자체 구현, teams에서 가져오는 것 없음)의
+  `mutateRun`은 락을 잡고, 런을 새로 읽고, `fn`을 돌리고, 임시 파일에 쓴 뒤 rename합니다.
+  전부 락 하나 안에서입니다. 락 대기 시간(`GRAPH_LOCK_TIMEOUT_MS`, 5000)이 지나면
+  `LockTimeoutError`를 던집니다. 살아 있는 소유자의 락은 절대 뺏지 않고, 죽은 소유자의 락은
+  별도의 `<lock>.steal` 락 아래서만 풉니다. 브로커의 모든 쓰기가 이것을 거치고,
+  `open-nodes.json`도 같은 방식으로 씁니다. **실행 전에 선점**: `graph_run`은 어댑터를 띄우기
+  전에 티켓으로 노드를 선점하므로, 같은 노드에 대한 두 번째 호출은 벤더를 두 번 돌리지 않고
+  거절됩니다. 티켓이 더 이상 유효하지 않은 결과나 중단은 반영하지 않고 `result_superseded`로
+  기록합니다. 서브골이나 spec을 재시도하면 그 `running` 노드도 정리합니다. **teams에서 포트**
+  (각각 여기서도 결함인지 다시 확인했고, 포트 전에 실패하던 테스트가 있습니다): #1 spec 재시도
+  뒤의 재시도가 죽은 세대를 기다리지 않음; #2 `report`가 살아 있는 노드를 기다림; #6 공백·비ASCII·
+  메모·glob·rename이 있는 `changed_files` 주장이 git과 맞음; #7 존재하지만 git-ignore된 주장
+  파일을 모순으로 보지 않음; #8 위의 찢어진 읽기; #9 사유 없이 `stage_ok:false`를 낸 작성자의
+  검사가 통과했으면 판정으로 넘어감; #10 사유 없는 거부는 checks/evidence에서 사유를 얻음;
+  #11 형식이 깨진 벤더 JSON은 새로 한 번 더 시도. **포트하지 않음**: #3(끝남 ≠ 전달됨)은
+  `runState`의 반환값에 `settled` 필드 하나를 더할 뿐이고, graph는 확정 실패를 이미 노드
+  상태(`unreachable`)와 리포트로 보여 주므로 graph에 없는 것을 더하지 않습니다. #4(test를
+  구현하지 않은 벤더에게)와 #5(어느 배분에서든 작성자를 마지막에)는 라우팅 정책이고, graph는
+  사용자가 정한 명시·순서 배분대로 라우팅합니다. 결함이 아니라 기능이나 정책이라 포트하지
+  않은 것도 있습니다. 데몬·taskmanager에만 있는 수정(e332ed4 dispatchSettled/fold_deferred,
+  2917e2e, 5cbfb19, 1d4bb37), 0a34817(graph에는 autoReassign이 없고 spec 문제는 이미
+  `graph_retry`로 갑니다), c182b99/453ff06(graph에는 goal 기준선이 없고 나머지는 카드와 핀),
+  1fccf7f(graph에는 draft/review 단계가 없음), 4983843, fd78c4a, e8086b7, dd610ef, 8406e45,
+  fe1ed28, ff1e8df m1/m2/m4/m5/m8/m10/m12, f0ee114(teams 기능), 9d359b0의
+  capacityNotice/`routing_blocked_capacity`(매니저 대기열), 094de8c(게이트 계약을 바꾸는 비용
+  정책), edd29fc(`requireRunnable`이 이미 중복을 거절함), ecd8c81/32f05eb(`--verify` Bash,
+  기능)입니다. **경합·크래시 수리**: 뺏기에 경합이 없습니다. `<lock>.steal`은 소유자 정보를
+  담아 `link()`로 만드는 파일이고, 죽은 소유자는 이름으로 지우지 않고 `<lock>.steal.<key>`로
+  이어받으므로 `link()` 하나만 이깁니다(teams와 같은 방식, 코드는 graph 자체 구현). 선점 뒤에
+  (프롬프트 쓰기, 어댑터, 결과 처리에서) 던지면 선점을 풉니다. 노드는 선점 전 필드로 `pending`에
+  돌아가고 원장에는 `claim_failed`가 남습니다. 선점은 소유자의 pid와 boot id를 기록하고,
+  `running` 노드는 그 프로세스가 죽었거나 다른 부팅에서 선점된 경우에만 회수합니다. 경과
+  시간은 소유자 기록이 없는 예전 런 파일에만 씁니다. 그래서 10분 넘게 도는 살아 있는 어댑터
+  런도 노드를 잃지 않고 결과가 반영됩니다. 테스트: 새 test-store(24), test-ports(13), graph
+  스위트 143.
+- **v1.7.2 — 스킬 문서 형식**: 스킬에 표준 `## What Claude Does / What You Do` 표를
+  넣었습니다. 문서만 바뀌었고 브로커 동작 변경 없음.
 - **v1.7.1 — teams 벤치가 공유 엔진에서 찾은 수정 셋**: teams의 첫 e2e 라운드
   (`teams/scripts/bench/`)가 이 엔진 코드를 실제 세션으로 돌려 유닛 스위트에 없던 결함
   셋을 쳤고, stable 벤치 런 둘도 첫 번째를 재현했습니다. (1) 자신을 `claude-opus-5[1m]`(fresh

@@ -632,7 +632,12 @@ export function epicBoardRows(task) {
       : r.accept === true ? `accept ${r.match_pct == null ? '?' : r.match_pct}`
       : String(r.reason || 'rejected').slice(0, 60);
     const filing = packageFiling(p);
+    // A dispatch claimed and not yet applied (taskmanager.mjs's claim, 2026-10-02): running with
+    // no child run yet. Its ticket reads IN_PROGRESS; this says why there is no run to look at.
+    const dispatch = latestBySubgoal(task, id, 'dispatch');
+    const opening = !!(dispatch && dispatch.state === 'running' && !dispatch.child);
     return {
+      ...(opening ? { opening: true } : {}),
       key: storyKey(task.run_id, id), id, title: p.title || '',
       role: p.phase || 'develop',
       state: storyTicketState(task, id),

@@ -47,6 +47,48 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.8.0 — graph owns a transactional run store**: the run file was written in place
+  (`writeFileSync`), so a reader could see half a file, and a lock that timed out let the
+  write go ahead unlocked. New `mcp/store.mjs` (graph's own; nothing imported from teams):
+  `mutateRun` takes the lock, reads the run fresh, runs `fn`, and writes to a temp file then
+  renames, all under one lock. A lock timeout (`GRAPH_LOCK_TIMEOUT_MS`, 5000) throws
+  `LockTimeoutError`; a live owner's lock is never taken; a dead owner's lock is broken only
+  under a separate `<lock>.steal` lock. Every broker write goes through it, and
+  `open-nodes.json` is written the same way. **Claim before run**: `graph_run` claims the node
+  with a ticket before it starts the adapter, so a second call on the same node is refused
+  instead of running the vendor twice; a result or interruption whose ticket no longer holds
+  is recorded `result_superseded`, not applied; retrying a subgoal or spec also retires its
+  `running` nodes. **Ported from teams** (each re-checked as a defect here, each with a test
+  that failed before): #1 a retry after a spec retry no longer waits on the dead generation;
+  #2 `report` waits on live nodes; #6 `changed_files` claims with spaces, non-ASCII, notes,
+  globs or renames match git; #7 a claimed file that exists but is git-ignored is not
+  contradicted; #8 the torn read above; #9 an author `stage_ok:false` with no reason and
+  passing checks goes on to be judged; #10 a rejection with no reason gets one from its
+  checks/evidence; #11 malformed vendor JSON gets one fresh attempt. **Not ported**: #3
+  (finished ≠ delivered) only adds a `settled` field to `runState`'s return, and graph already
+  shows a settled failure in its node states (`unreachable`) and the report, so it adds
+  nothing graph lacks; #4 (test goes to the non-implementing vendor) and #5 (author runs last
+  under either allocation) are routing policy, and graph routes by the explicit or ordered
+  allocation its user set. Also not ported, as features or policy rather than defects:
+  daemon/taskmanager-only fixes (e332ed4 dispatchSettled/fold_deferred, 2917e2e, 5cbfb19,
+  1d4bb37); 0a34817 (graph has no autoReassign, and spec problems already reach
+  `graph_retry`); c182b99/453ff06 (graph has no goal threshold; the rest is cards and pins);
+  1fccf7f (graph has no draft/review stages); 4983843, fd78c4a, e8086b7, dd610ef, 8406e45,
+  fe1ed28, ff1e8df m1/m2/m4/m5/m8/m10/m12 and f0ee114 (teams features); 9d359b0
+  capacityNotice/`routing_blocked_capacity` (manager parking); 094de8c (a cost policy that
+  changes the gate contract); edd29fc (`requireRunnable` already refuses duplicates);
+  ecd8c81/32f05eb (`--verify` Bash, a feature). **Race and crash repairs**: the steal is
+  race-free: `<lock>.steal` is a `link()`ed file carrying its owner, a dead holder is
+  succeeded through `<lock>.steal.<key>` and never removed by name, so one `link()` wins
+  (same scheme as teams, graph's own code). A throw after the claim (prompt write, adapter,
+  outcome) releases the claim: the node goes back to `pending` with its pre-claim fields,
+  ledger `claim_failed`. A claim records the owner's pid and boot id, and a `running` node is
+  reclaimed only when that process is dead or the claim came from another boot; elapsed time
+  is used only for old run files with no owner, so a live adapter run longer than 10 minutes
+  keeps its node and its result applies. Tests: new test-store (24) and test-ports (13),
+  graph suite 143.
+- **v1.7.2 — skill doc format**: the skills now carry the standard `## What Claude Does /
+  What You Do` table. Documentation only; no broker change.
 - **v1.7.1 — three fixes the teams bench found in the shared engine**: teams' first
   end-to-end rounds (`teams/scripts/bench/`) drove this engine's code through real
   sessions and hit three defects the unit suite never had; both stable bench runs reproduced

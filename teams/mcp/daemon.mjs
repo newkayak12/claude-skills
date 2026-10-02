@@ -11,7 +11,7 @@
 // references/manager.md and called tm_next/tm_submit/tm_retry back into THIS SAME MCP server
 // over stdio - 91 turns and $9.66 to relay JSON it never looked at (_repo/docs/plans, §1a). This
 // process is not a client of that server at all. It imports taskmanager.mjs as a library and
-// calls the functions a tool handler calls - advanceDispatches, finish, foldChild - directly, in
+// calls the functions a tool handler calls - advanceDispatches, finish, foldDispatch - directly, in
 // process. The only thing here that still costs a model call is judge(): one single-shot
 // `claude -p` per judging node (size, areas, shape, critique, accept, integrate, plan-integrate,
 // gate, report), fed the
@@ -19,19 +19,21 @@
 // CONTRACT already asks for - the same work a "fresh agent" node the old leader spawned did.
 //
 // Zero dependencies, matching the rest of this plugin: no queue, no message bus, just task.json
-// (graph.mjs's saveRun, mkdir-locked) as the one shared truth a direct tm_submit/tm_retry from
-// anywhere else can safely race against.
+// as the one shared truth a direct tm_submit/tm_retry from anywhere else can safely race against -
+// written only through store.mjs's mutateTask (lock -> read fresh -> change -> write-then-rename).
+// This process holds no task object across a phase, and none at all across `await judge`.
 
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync, watch } from 'node:fs';
 import { join, dirname } from 'node:path';
-import {
-  loadRunAt, saveRun, readyNodes,
-} from './graph.mjs';
+import { randomUUID } from 'node:crypto';
+import { loadRunAt } from './graph.mjs';
+import { mutateTask } from './store.mjs';
+import { pidAlive } from './proc.mjs';
 import {
   taskPath, taskDir, record, noDriver, taskState,
   advanceDispatches, serviceRunningDispatches, prepareReadyIntegrations,
-  dispatchSettled, foldChild, updateAutoParallel, serviceSRun, delegateIfSmall,
+  dispatchSettled, foldDispatch, readyToJudge, serviceSRun, delegateIfSmall,
   finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages, autoRejudge, autoResumeCapacity, pendingRejudgeAt,
   STAGE_SKILLS, syncTickets, autoReshape, closeFailedPlanning, promoteManagerHumanGates, enforceBudget,
   expireAsks, nextAskDeadline,
@@ -307,96 +309,232 @@ function waitForProgress(task) {
 // thing that moves a ticket. The board therefore froze at tm_open: idol-pm-1 (2026-09-22) ran 81
 // minutes and 25 nodes and its PLAN story still read READY. One wrapper around stepOnce, not a
 // dozen instrumented mutation sites, for exactly the reason appendBoardTransitions already gives.
-async function stepOnce(task) {
-  const before = ticketSnapshot(task);
+// Takes the task id (a task object is accepted for its run_id): the step holds no snapshot - each
+// phase reads task.json fresh inside its own mutateTask, and the before/after board diff reads
+// committed state. Exported for test-store-interleave.mjs, where `judge` is injected.
+export async function stepOnce(taskRef, opts = {}) {
+  const taskId = typeof taskRef === 'string' ? taskRef : taskRef.run_id;
+  const start = loadRunAt(taskPath(taskId));
+  const before = start ? ticketSnapshot(start) : {};
   try {
-    return await stepOnceInner(task);
+    return await stepOnceInner(taskId, opts.judge || judge);
   } finally {
-    try { syncTickets(task, before, 'daemon'); } catch { /* evidence, not a dependency */ }
+    try { const after = loadRunAt(taskPath(taskId)); if (after) syncTickets(after, before, 'daemon'); } catch { /* evidence, not a dependency */ }
   }
 }
 
-async function stepOnceInner(task) {
+// ---------- judge compare-and-set (2026-10-02 task-store review, U5) ----------
+//
+// A judge call takes minutes; a tm_submit / tm_retry / autoRejudge can move the node meanwhile.
+// So no task object survives the await: one transaction stamps n.judging {pid, token, attempt,
+// reopened, at} (+ judge_start) right before that node's judge, and another applies the verdict
+// only if the fresh node is still pending at the same attempt and reopened count and still holds
+// the token. Anything else is judge_superseded (ledger + n.judge_superseded) and the verdict is
+// dropped - including the size node's delegateIfSmall, which spawns the harness driver and so
+// belongs to the apply, never to a dropped verdict (critique N2).
+
+// Tokens this process is judging right now: a stamp with our pid and a token not in here is a
+// previous incarnation of this pid (pid reuse after a crash), so stale.
+const heldJudging = new Set();
+
+function liveJudging(j, now = Date.now()) {
+  if (!j || !j.token) return false;
+  if (!(now - (Number(j.at) || 0) < JUDGE_TIMEOUT_MS)) return false;
+  if (j.pid === process.pid) return heldJudging.has(j.token);
+  return pidAlive(j.pid);
+}
+
+function judgeable(t, nodeId) {
+  return readyToJudge(t).find((x) => x.node_id === nodeId && x.stage !== 'dispatch') || null;
+}
+
+// Stamp one node, inside a transaction. Returns {stamp, task, node} as clones for the judge to
+// compose its prompt from, or null when the node is no longer judgeable or another live owner is
+// judging it.
+function stampJudging(taskId, nodeId) {
+  return mutateTask(taskId, (t) => {
+    const n = judgeable(t, nodeId);
+    if (!n) return null;
+    if (n.judging) {
+      if (liveJudging(n.judging)) return null;
+      record(t, { event: 'judge_reclaimed', task_id: t.run_id, node_id: nodeId, pid: n.judging.pid, token: n.judging.token });
+    }
+    const stamp = { pid: process.pid, token: randomUUID(), attempt: n.attempt || 1, reopened: n.reopened || 0, at: Date.now() };
+    n.judging = stamp;
+    heldJudging.add(stamp.token);
+    record(t, { event: 'judge_start', task_id: t.run_id, node_id: nodeId, stage: n.stage, token: stamp.token, attempt: stamp.attempt, reopened: stamp.reopened });
+    const task = structuredClone(t);
+    return { stamp, task, node: task.nodes.find((x) => x.node_id === nodeId) };
+  });
+}
+
+function supersededReason(f, stamp) {
+  if (!f) return 'node is gone';
+  if (f.state !== 'pending') return `node is ${f.state}`;
+  if ((f.attempt || 1) !== stamp.attempt) return `attempt ${f.attempt || 1}, judged at ${stamp.attempt}`;
+  if ((f.reopened || 0) !== stamp.reopened) return `reopened ${f.reopened || 0}, judged at ${stamp.reopened}`;
+  if (!f.judging || f.judging.token !== stamp.token) return 'judging stamp replaced';
+  return null;
+}
+
+function applyJudged(taskId, nodeId, stamp, result) {
+  try {
+    return mutateTask(taskId, (t) => {
+      const f = t.nodes.find((x) => x.node_id === nodeId);
+      const reason = supersededReason(f, stamp);
+      if (reason) {
+        if (f) {
+          if (f.judging && f.judging.token === stamp.token) delete f.judging;
+          f.judge_superseded = (f.judge_superseded || []).concat([{ token: stamp.token, at: Date.now(), reason }]);
+        }
+        record(t, { event: 'judge_superseded', task_id: t.run_id, node_id: nodeId, token: stamp.token, reason,
+          state: f ? f.state : null, attempt: f ? (f.attempt || 1) : null });
+        return { superseded: true };
+      }
+      delete f.judging;
+      const out = finish(t, f, result);
+      // finish() alone does not delegate a size-S task to its own run - toolSubmit calls
+      // delegateIfSmall right after finish() for the size node, and the daemon makes the same
+      // call here, on the fresh node, only for a verdict that was applied.
+      if (f.stage === 'size') delegateIfSmall(t, f, out);
+      return { superseded: false };
+    });
+  } finally {
+    heldJudging.delete(stamp.token);
+  }
+}
+
+function clearJudging(taskId, nodeId, stamp) {
+  try {
+    mutateTask(taskId, (t) => {
+      const f = t.nodes.find((x) => x.node_id === nodeId);
+      if (f && f.judging && f.judging.token === stamp.token) delete f.judging;
+    });
+  } finally {
+    heldJudging.delete(stamp.token);
+  }
+}
+
+async function stepOnceInner(taskId, judgeFn) {
+  const tx = (fn) => mutateTask(taskId, fn);
   // ask_timeout: this daemon is the clock for every `ask` card under the task - a parked child
   // has no driver to notice its own deadline (taskmanager.mjs's expireAsks).
-  let expired = false;
-  if (expireAsks(task).length) { saveRun(task); expired = true; }
+  const expired = tx((t) => expireAsks(t).length > 0);
   // Size S: no manager-level node is left to judge once `size` has resolved (delegateIfSmall
   // skipped the rest) - the whole task is the development-harness run its one driver works, and
   // this daemon's only job is keeping that driver alive (and resuming it after a capacity park).
   // A legacy task.s_run (S2) is read, never driven: nothing to do here.
-  if (task.harness_run) {
-    let changed = serviceSRun(task);
-    if (autoResumeCapacity(task)) changed = true;
-    if (changed) saveRun(task);
-    return expired || changed;
-  }
-  if (task.s_run) return expired;
+  const mode = tx((t) => {
+    if (t.harness_run) {
+      let changed = serviceSRun(t);
+      if (autoResumeCapacity(t)) changed = true;
+      return { harness: true, changed };
+    }
+    return { s: !!t.s_run };
+  });
+  if (mode.harness) return expired || mode.changed;
+  if (mode.s) return expired;
 
   let progressed = expired;
   // A judge that could not judge is re-judged before anything reads its non-verdict as a
   // refusal; a driver parked on a provider's reset time is respawned once that time has passed.
-  if (autoRejudge(task)) progressed = true;
-  if (autoResumeCapacity(task)) progressed = true;
   // Budget/timebox (§B.1): checked before advanceDispatches so a stop that trips THIS tick
   // already refuses THIS tick's dispatch, not just the next one.
-  if (enforceBudget(task)) { saveRun(task); progressed = true; }
-  if (advanceDispatches(task)) { saveRun(task); progressed = true; }
-  if (serviceRunningDispatches(task)) saveRun(task);
-  if (prepareReadyIntegrations(task)) progressed = true;
+  if (tx((t) => {
+    let p = false;
+    if (autoRejudge(t)) p = true;
+    if (autoResumeCapacity(t)) p = true;
+    if (enforceBudget(t)) p = true;
+    return p;
+  })) progressed = true;
+  // advanceDispatches / prepareReadyIntegrations / foldDispatch own their transactions (claim ->
+  // effect outside the lock -> apply).
+  if (advanceDispatches(taskId)) progressed = true;
+  tx((t) => serviceRunningDispatches(t));
+  if (prepareReadyIntegrations(taskId)) progressed = true;
   // gate:human (D2 Task 4): a judging node human_gates named must never reach judge() below -
   // this daemon has no tool boundary a session's tm_next could have caught it at, so this is
   // the one place that matters for an autonomous run. Interactive parks it (readyNodes no
   // longer offers it, the same way a pinned author stage already does not); non-interactive
   // auto-passes it through finish() directly, counted as progress like every other fold.
-  if (promoteManagerHumanGates(task).autoPass.length) progressed = true;
+  if (tx((t) => promoteManagerHumanGates(t).autoPass.length > 0)) progressed = true;
 
   // Fold every dispatch whose child has stopped running - foldChild + finish() is exactly what
   // tm_submit does for a dispatch node with no payload; this is that same call, made directly
-  // instead of relayed through a tool call.
-  for (const n of task.nodes) {
-    if (n.stage !== 'dispatch' || n.state !== 'running' || !n.child) continue;
-    if (!dispatchSettled(task, n)) continue;
-    let result;
+  // instead of relayed through a tool call. Read-only view; foldDispatch re-reads and claims.
+  const view = loadRunAt(taskPath(taskId)) || { run_id: taskId, nodes: [] };
+  const foldable = view.nodes.filter((n) => n.stage === 'dispatch' && n.state === 'running' && n.child).map((n) => n.node_id);
+  for (const nodeId of foldable) {
+    const t = loadRunAt(taskPath(taskId));
+    const n = t && t.nodes.find((x) => x.node_id === nodeId);
+    if (!n || n.state !== 'running' || !n.child || !dispatchSettled(t, n)) continue;
+    let out;
     try {
-      result = foldChild(task, n);
+      out = foldDispatch(taskId, nodeId, 'daemon');
     } catch (e) {
-      // foldChild throws when the child is in fact still running (a driver alive, a capacity
-      // park). dispatchSettled and foldChild read the child file separately, so the two can
-      // disagree across a write; that is "not yet", never a reason for the daemon to die.
-      record(task, { event: 'daemon_fold_deferred', task_id: task.run_id, node_id: n.node_id, reason: String((e && e.message) || e).slice(0, 300) });
+      record(t, { event: 'daemon_fold_deferred', task_id: taskId, node_id: nodeId, reason: String((e && e.message) || e).slice(0, 300) });
       continue;
     }
-    updateAutoParallel(task, n, result);
-    finish(task, n, result);
+    // Deferred: the child is in fact still running (a driver alive, a capacity park) -
+    // dispatchSettled and foldChild read the child file separately, so the two can disagree
+    // across a write; that is "not yet", never a reason for the daemon to die. Busy/lost: a
+    // tm_submit folded (or is folding) it - its fold, not ours.
+    if (out && out.deferred) {
+      record(t, { event: 'daemon_fold_deferred', task_id: taskId, node_id: nodeId, reason: String(out.reason || '').slice(0, 300) });
+      continue;
+    }
+    if (!out || out.busy || out.lost || out.idempotent || out.opening) continue;
     progressed = true;
   }
 
   // Judge every ready reasoning node - size, shape, critique, accept, integrate, gate, report -
   // one single-shot claude -p each, exactly the fresh agent a briefing_path was always meant for.
-  for (const n of readyNodes(task)) {
-    if (n.stage === 'dispatch') continue; // opened above, not judged
-    const result = await judge(task, n);
-    const out = finish(task, n, result);
-    // finish() alone does not delegate a size-S task to its own run - toolOpen/toolSubmit did
-    // that by calling delegateIfSmall right after finish() for the size node, and the daemon has
-    // to make the same call itself since it is not going through either tool handler.
-    if (n.stage === 'size') delegateIfSmall(task, n, out);
+  // readyToJudge, not readyNodes: a node another caller holds a live claim on, or an integrate
+  // whose preparation (merges, npm test) has not been applied yet, is not judged (critique N1).
+  // The candidates are this moment's; each is re-checked and stamped in its own transaction just
+  // before its own judge, and nothing read before the await is written after it.
+  const candidates = readyToJudge(loadRunAt(taskPath(taskId)) || { nodes: [] })
+    .filter((n) => n.stage !== 'dispatch').map((n) => n.node_id);
+  for (const nodeId of candidates) {
+    const s = stampJudging(taskId, nodeId);
+    if (!s) continue;
+    let result;
+    try {
+      result = await judgeFn(s.task, s.node);
+    } catch (e) {
+      // A clear that fails (ELOCKTIMEOUT) must not mask the judge's own error: the stamp it
+      // leaves is reclaimed as stale later; the ledger keeps both, and the judge error surfaces.
+      try {
+        clearJudging(taskId, nodeId, s.stamp);
+      } catch (clearErr) {
+        record({ run_id: taskId }, {
+          event: 'judging_clear_failed', task_id: taskId, node_id: nodeId, token: s.stamp.token,
+          error: String((clearErr && clearErr.message) || clearErr).slice(0, 300),
+          judge_error: String((e && e.message) || e).slice(0, 300),
+        });
+      }
+      throw e;
+    }
+    applyJudged(taskId, nodeId, s.stamp, result);
     progressed = true;
   }
 
   // An integrate that refused on its checks leaves the graph "blocked" by node state alone, but
   // the task is not done: open the repair package (budgeted by max_retries) the way a caller's
   // tm_retry({package_id: "integration"}) would, and keep driving.
-  if (autoRepair(task)) progressed = true;
   // A package whose attempt failed (dispatch folded blocked, or accept rejected) gets its next
   // attempt the way tm_retry({package_id}) would give it, while max_retries allows.
-  if (autoRetryPackages(task)) progressed = true;
   // A shape or critique that failed gets its next attempt the same way, carrying the verdict
   // that refused it - otherwise the loop stops at a critique it could act on.
-  if (autoReshape(task)) progressed = true;
   // Planning or shaping that failed for good closes to a report, not to a silent block (M2).
-  if (closeFailedPlanning(task)) { saveRun(task); progressed = true; }
+  if (tx((t) => {
+    let p = false;
+    if (autoRepair(t)) p = true;
+    if (autoRetryPackages(t)) p = true;
+    if (autoReshape(t)) p = true;
+    if (closeFailedPlanning(t)) p = true;
+    return p;
+  })) progressed = true;
 
   return progressed;
 }
@@ -408,7 +546,7 @@ async function main() {
       record({ run_id: TASK_ID, store_path: taskPath(TASK_ID) }, { event: 'daemon_task_missing', task_id: TASK_ID });
       return;
     }
-    const progressed = await stepOnce(task);
+    const progressed = await stepOnce(TASK_ID);
     let fresh = loadTask();
     if (!fresh) {
       // loadRunAt returns null on a parse error too, and another process (tm_submit, tm_wait's
@@ -426,7 +564,7 @@ async function main() {
       // The closers run at the TOP of a step; a node that failed at the end of this one (the goal
       // gate, code-sprint-S6) left the task blocked before enforceBudget ever saw it, and the
       // stopped Sprint ended with no report. Give them one look before calling it done.
-      if (enforceBudget(fresh)) { saveRun(fresh); continue; }
+      if (mutateTask(TASK_ID, (t) => enforceBudget(t))) continue;
       // Not running is not finished while a failed judge still has a scheduled re-judge.
       const rejudgeAt = pendingRejudgeAt(fresh);
       if (rejudgeAt !== null) {
