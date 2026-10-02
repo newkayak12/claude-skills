@@ -61,7 +61,15 @@ export const KINDS = {
     skills: {
       implement: ['develop:clean-code'],
       test: ['develop:testing-workflow', 'completion:verification-before-completion'],
-      gate: ['think:devils-advocate'],
+      // clean-code picks its mode from the stage it is called in: on implement it is the kind's
+      // default method (implement mode - a spec's own sg.skills replace it there, so it is a
+      // default, not a guarantee); on the gate it is the gate's own method from the kind (gate
+      // mode), never the author's spec-picked skill - a judging stage reads only kindSkills.
+      // devils-advocate stays beside it as the independent view: implementer and judge loading
+      // the same rubric would share blind spots. test-master is not mounted on this chain: test
+      // is a verdict stage, and implement mode's tests-first step already references it.
+      // (User direction 2026-10-02; clean-code 2.0.0 gate mode.)
+      gate: ['develop:clean-code', 'think:devils-advocate'],
     },
   },
   document: {

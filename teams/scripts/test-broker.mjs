@@ -3592,7 +3592,7 @@ test('persona and method go to the hand that works, never to the one that judges
       run_id: runId, cwd, node_id: 'setgoal',
       payload: ok({ handoff: 's', spec: { goal: 'G', acceptance: ['A'], subgoals: [{
         id: 'U1', kind: 'subgoal', title: 't', persona: 'implementer who owns this module',
-        skills: ['develop:clean-code'], acceptance: ['a'], test: ['x'], deps: [],
+        skills: ['develop:cli-developer'], acceptance: ['a'], test: ['x'], deps: [],
       }] } }),
     });
     await c.call('team_submit', { run_id: runId, cwd, node_id: 'critique', payload: ok({ sound: true }) });
@@ -3603,15 +3603,17 @@ test('persona and method go to the hand that works, never to the one that judges
     };
     const impl = await brief('implement:U1:1');
     assert.match(impl, /Act as: implementer who owns this module/);
-    assert.match(impl, /develop:clean-code/);
+    assert.match(impl, /develop:cli-developer/, 'the author gets the method the spec picked');
     const f = dirty(cwd);
     await c.call('team_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [f] }) });
     await c.call('team_submit', { run_id: runId, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
     const gate = await brief('gate:U1:1');
     assert.ok(gate, 'the gate opened');
     assert.doesNotMatch(gate, /Act as:/, 'the judge is not handed the author\'s identity');
-    assert.doesNotMatch(gate, /develop:clean-code/, 'nor the method the spec picked for the author');
-    assert.match(gate, /think:devils-advocate/, 'it has its own method, from the kind');
+    assert.doesNotMatch(gate, /develop:cli-developer/, 'nor the method the spec picked for the author');
+    // clean-code reaches the gate from the kind (its gate mode), not from the spec.
+    assert.match(gate, /develop:clean-code/, 'it has its own method, from the kind');
+    assert.match(gate, /think:devils-advocate/, 'and the independent view, also from the kind');
     assert.match(gate, /judge, not the actor/, 'it is told the opposite, and now nothing contradicts it');
   }, { isolated: true });
 });

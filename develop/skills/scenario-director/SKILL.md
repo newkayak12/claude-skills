@@ -3,7 +3,7 @@ name: scenario-director
 effort: high
 description: >-
   Use when a backend's API scenario tests must be collected or read from md, written as specs,
-  then run against a live server by one actor AI per flow. Triggers: "API 시나리오 테스트",
+  then run against a live server by one actor AI per flow (or specs only). Triggers: "API 시나리오 테스트",
   "시나리오 md 읽고 서버에 돌려줘", "flow test", "시나리오 CI 붙여줘".
 scenarios:
   - "Set up scenario tests for this backend and run them against the dev server"
@@ -22,15 +22,17 @@ compatibility:
 
 ## Standing Mandates
 
-- ALWAYS collect before generating. Existing collections, logs, incidents, and the user's own scenario file are real flows; the state map generates the rest. Every flow enters `tests/scenarios/CATALOG.md` with its source before it has a spec.
+Every mandate holds in both modes (step 0) unless marked **Full only**.
+
+- ALWAYS collect before generating. Existing collections, logs, incidents, and the user's own scenario file are real flows; the state map generates the rest. Every flow enters `CATALOG.md` (under `tests/scenarios/`, or the caller's path) with its source before it has a spec.
 - ALWAYS accept a scenario the user wrote — markdown, a table, a sentence per step — and normalize it into the spec shape (`references/scenario-spec.md`). Their title stays; a missing status code becomes `[확인 필요]` for the actor to resolve by sending the request, never a guess.
-- ALWAYS confirm the server answers one real request before writing any spec. A state map read from code is not trusted until a response backs it.
-- ALWAYS hand execution to `scenario-actor` — one subagent per spec, dispatched in one turn, each with the spec path, `BASE_URL`, and the results dir. The actor is the runner: nobody writes test code. The director never sends a scenario request itself and never asserts a result it did not receive from an actor.
-- ALWAYS install `tests/scenarios/ci.sh` (copied from `scenario-actor/references/ci.md`) before dispatching — it is the same actor under `claude -p`, and it is what CI and the two-run check execute.
-- ALWAYS run `ci.sh` twice against the same server process after the actors return. Run 2 differing from run 1 — in count or per scenario — is a cleanup gap and is reported as such.
+- **Full only:** ALWAYS confirm the server answers one real request before writing any spec. A state map read from code is not trusted until a response backs it.
+- **Full only:** ALWAYS hand execution to `scenario-actor` — one subagent per spec, dispatched in one turn, each with the spec path, `BASE_URL`, and the results dir. The actor is the runner: nobody writes test code. The director never sends a scenario request itself and never asserts a result it did not receive from an actor.
+- **Full only:** ALWAYS install `tests/scenarios/ci.sh` (copied from `scenario-actor/references/ci.md`) before dispatching — it is the same actor under `claude -p`, and it is what CI and the two-run check execute.
+- **Full only:** ALWAYS run `ci.sh` twice against the same server process after the actors return. Run 2 differing from run 1 — in count or per scenario — is a cleanup gap and is reported as such.
 - ALWAYS keep a coverage matrix in `CATALOG.md`: every transition in the state map has a happy row and at least one refusal row, or a written reason for skipping it.
-- ALWAYS check the set is not vacuous when the server offers a fault switch (a `--bug` flag, a chaos toggle, a feature flag that breaks a rule): run `ci.sh` once against the broken server and require at least one `fail_server`. A set that passes on a broken server tests nothing.
-- NEVER invent an endpoint, field, or status code, and NEVER let an actor's report through unread. Return to the actor: a pass with no step pairs, a missing `results/s<n>.json`, an assert on a whole body, a literal host in any command, a `[확인 필요]` still in the spec, a refusal step without a verify step after it.
+- **Full only:** ALWAYS check the set is not vacuous when the server offers a fault switch (a `--bug` flag, a chaos toggle, a feature flag that breaks a rule): run `ci.sh` once against the broken server and require at least one `fail_server`. A set that passes on a broken server tests nothing.
+- NEVER invent an endpoint, field, or status code, and (**Full only**) NEVER let an actor's report through unread. Return to the actor: a pass with no step pairs, a missing `results/s<n>.json`, an assert on a whole body, a literal host in any command, a `[확인 필요]` still in the spec, a refusal step without a verify step after it.
 - NEVER build state outside the API — no database inserts, no fixture edits — and never let a spec share a token or a record with another spec.
 - Goal: a catalog a teammate can extend by adding a row, a spec per flow they can read in a minute, and one `ci.sh` that gives the same pass/fail against any `BASE_URL` — locally and in CI.
 
@@ -57,6 +59,17 @@ intermittent failure (`flaky-test-analyzer`), or browser flows.
 | Scenario files — `*.spec.md`, or any markdown/text where a person wrote flows | Normalize → dispatch (steps 3–5; step 1 only to confirm the server and the routes the file names) |
 | `tests/scenarios/` already exists | Extend: new rows, new specs, re-run `ci.sh` (steps 2–5) |
 | A Postman / Insomnia / `.http` / `.hurl` collection | Convert → dispatch (origin kept in the catalog) |
+| **Reference mode** — a headless test-case writing step (teams `qa` `cases`), or "specs only" | Specs + `CATALOG.md` only (steps 1–3, below); everything else is **Full mode** |
+
+**Reference mode** writes `s<n>_<flow>.spec.md` + `CATALOG.md` (inventory + coverage matrix) at the
+path the caller names (default `tests/scenarios/`) and stops. Flows derive from the stated
+acceptance / feature spec, read first; routes, handlers, and OpenAPI are read only to name
+endpoints, fields, and the auth rule — never as the source of a flow or an expected code. Each
+catalog row names the acceptance item it covers. Collections and incidents already on disk add
+flows; nobody is asked anything. Skipped: the one question (the first flow is an incident's
+sequence, else the primary lifecycle — recorded in `CATALOG.md` with any other assumption), the
+live-server request (a code the acceptance or docs do not state stays `[확인 필요]` for the
+executing step to resolve), `ci.sh` install and runs, actor dispatch, and the fault/mutation check.
 
 **1. Collect, then map.** Read all five sources before writing anything:
 
@@ -104,6 +117,8 @@ verdict. Hand over `references/ci.md`'s GitHub Actions job for the user to wire 
 
 ## Output Template
 
+Full mode:
+
 ```
 ## Scenario set — <service>
 State map: <resource>: CREATED → PAID | CANCELLED (PAID ✗ cancel) · auth: bearer, per-owner
@@ -126,6 +141,21 @@ Failures: none | per failure: step, request, response, verdict (spec | server), 
 Docs≠server: README says 403 for another user's order; server returns 404 (S3 spec updated)
 ```
 
+Reference mode — no Execution block, no CI line:
+
+```
+## Scenario specs — <service> (reference mode, not run)
+Source: <acceptance / feature spec path> · routes read for names only
+Catalog: <path>/CATALOG.md — 5 flows (4 from acceptance, 1 incident #212) · 5 specced · 0 run
+Coverage: 3 transitions · 3 happy · 4 refusal · 0 skipped
+Assumptions: first flow = order lifecycle (no incident ranks higher) · S3 code [확인 필요]
+
+| # | Flow | Covers | Spec | Refuses | Unresolved |
+|---|------|--------|------|---------|------------|
+| S1 | order lifecycle | AC1, AC2 | <path>/s1_order_lifecycle.spec.md | — | — |
+| S3 | other user's order | AC4 | <path>/s3_other_users_order.spec.md | GET/pay alice's | status [확인 필요] |
+```
+
 ---
 
 ## What Claude Does / What You Do
@@ -136,6 +166,7 @@ Docs≠server: README says 403 for another user's order; server returns 404 (S3 
 | Normalizes your wording into specs, leaves unknown codes as `[확인 필요]` | Answer the one question when a step names something the routes don't have |
 | Installs `ci.sh`, dispatches one actor per spec, rejects evidence-free passes, runs the set twice, mutation-checks it | Provide a test account or seed endpoint; decide spec-vs-server when an actor cannot |
 | Keeps `CATALOG.md` (inventory + coverage matrix) current | Add the GitHub Actions job and `ANTHROPIC_API_KEY` secret |
+| Headless / reference mode: writes specs + catalog from the acceptance, asks nothing, records assumptions in `CATALOG.md` | Nothing during the step; review the catalog's assumptions afterward |
 
 ## Related Skills
 

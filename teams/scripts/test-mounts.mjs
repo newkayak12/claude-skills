@@ -3,7 +3,7 @@ process.env.TEAMS_RUNS_DIR ??= 'off';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { graphStageSkills, graphStageMounts, mountBlock } from '../mcp/mounts.mjs';
-import { composePrompt, SKILL_METHOD_DISCLAIMER } from '../mcp/prompts.mjs';
+import { composePrompt, SKILL_INVOKE_LINE, SKILL_METHOD_DISCLAIMER, SKILLS_USED_FIELD } from '../mcp/prompts.mjs';
 import { createRun } from '../mcp/graph.mjs';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -157,17 +157,38 @@ test('the contract-outranks disclaimer appears exactly once in a composed prompt
   assert.equal(count, 1, 'plan only ever gets the stage-mounted Method block, never the subgoal one');
 });
 
-test('the contract-outranks disclaimer still appears at least once when a subgoal Method block ALSO renders', () => {
-  // test/review/gate belong to a subgoal chain (kind skills) AND are stage-mounted, so both
-  // Method blocks can render on the same node. The disclaimer is shared text, not a new
-  // mechanism, so this asserts it is present rather than asserting a count.
+test('a subgoal node renders ONE Method block: its own method merged with the stage mount (develop-renewal-teams R1b)', () => {
+  // With two Method blocks the model loaded only the skills the last one named, 9/9 real runs.
   const run = { cwd: '/tmp/mounts-test', request: 'r', context: '', allocation: 'ordered' };
   const briefing = {
     upstream: [],
     subgoal: { id: 'U1', title: 't', kind: 'subgoal', acceptance: ['a'], test: ['t'] },
   };
   const prompt = composePrompt(run, node('test:U1:1', 'test', { subgoal_id: 'U1' }), briefing);
-  assert.ok(prompt.includes(SKILL_METHOD_DISCLAIMER));
+  assert.equal(prompt.split(SKILL_METHOD_DISCLAIMER).length - 1, 1);
+  assert.equal(prompt.split(SKILL_INVOKE_LINE).length - 1, 1);
+  assert.equal(prompt.split(SKILLS_USED_FIELD).length - 1, 1);
+  assert.doesNotMatch(prompt, /Method — load each/, 'no second, subgoal-only method block');
+  const method = prompt.slice(prompt.indexOf('## Method'), prompt.indexOf('## Required output'));
+  assert.ok(method.indexOf('develop:testing-workflow') < method.indexOf('completion:verification-before-completion'), 'kind skills first');
+  assert.equal(method.split('completion:verification-before-completion').length - 1, 1, 'a skill both name is listed once');
+});
+
+test('a gate subgoal briefing has exactly one Method heading naming clean-code and devils-advocate, not the author\'s skills', () => {
+  const run = { cwd: '/tmp/mounts-test', request: 'r', context: '', allocation: 'ordered' };
+  const briefing = {
+    upstream: [],
+    subgoal: { id: 'U1', title: 't', kind: 'subgoal', skills: ['develop:cli-developer'], acceptance: ['a'], test: ['t'] },
+  };
+  const prompt = composePrompt(run, node('gate:U1:1', 'gate', { subgoal_id: 'U1' }), briefing);
+  assert.equal(prompt.match(/Method/g).length, 1, 'one Method heading, no other method block');
+  const method = prompt.slice(prompt.indexOf('## Method'), prompt.indexOf('## Required output'));
+  assert.match(method, /- develop:clean-code\n- think:devils-advocate\n/);
+  assert.ok(method.includes(SKILL_INVOKE_LINE));
+  assert.doesNotMatch(prompt, /develop:cli-developer/, 'the judge does not get the author\'s method');
+
+  const impl = composePrompt(run, node('implement:U1:1', 'implement', { subgoal_id: 'U1' }), briefing);
+  assert.match(impl, /## Method\n[^\n]*\n- develop:cli-developer\n/, 'the author keeps the method the spec picked');
 });
 
 // ---------- createRun stores the options ----------

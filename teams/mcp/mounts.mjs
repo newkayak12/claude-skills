@@ -20,7 +20,7 @@
 // for the goal gate) to reason with. Advisory only - a tool that is not connected is
 // skipped in silence, never searched for and never blocking.
 
-import { SKILL_METHOD_DISCLAIMER, SKILLS_USED_FIELD } from './prompts.mjs';
+import { SKILL_INVOKE_LINE, SKILL_METHOD_DISCLAIMER, SKILLS_USED_FIELD } from './prompts.mjs';
 import { nodeKind } from './graph.mjs';
 
 // Keyed the same way taskmanager's STAGE_SKILLS is: by stage name, with `gate:goal` split
@@ -100,15 +100,19 @@ function bulletList(list) {
 // Everything composePrompt appends for this node: a `## Method` block for stage-mounted
 // skills, then a `## Tools` block for stage-mounted MCP tools. Either half is omitted when
 // there is nothing to mount. Returns '' when neither applies.
-export function mountBlock(run, n) {
+// `first` is a subgoal node's own method (composePrompt's author/kind skills): it leads the
+// one Method list instead of rendering as a second block. With two blocks the model loaded only
+// the skills the LAST one named - 9/9 real runs (develop-renewal-teams R1b), so clean-code never
+// reached the gate.
+export function mountBlock(run, n, first = []) {
   const lines = [];
-  const skills = graphStageSkills(run, n);
+  const skills = [...new Set([...first, ...graphStageSkills(run, n)])];
   if (skills.length) {
     lines.push('');
     lines.push('## Method');
     lines.push('Load each of these that is available, then work the way it says:');
     lines.push(bulletList(skills));
-    lines.push('Invoke it through the Skill tool. If the Skill tool is not available here, read the skill\'s own SKILL.md directly and follow it instead.');
+    lines.push(SKILL_INVOKE_LINE);
     lines.push(SKILL_METHOD_DISCLAIMER);
     lines.push(SKILLS_USED_FIELD);
   }
