@@ -38,6 +38,10 @@ import { mountBlock } from './mounts.mjs';
 // Telemetry, not method: without this field no graph node ever said which skills it loaded, so
 // a run with no skills mounted at all was indistinguishable from one that used them.
 export const SKILLS_USED_FIELD = `Add "skills_used": ["plugin:skill", ...] to the Required output JSON below, naming the ones you actually loaded, or ["none"].`;
+// How to load a listed skill. Only the stage-mounted block used to say it, so a gate whose
+// subgoal Method listed develop:clean-code loaded only the stage mount's skill (develop-renewal-teams
+// R1b diag: 0/6 runs loaded clean-code). Every Method block carries it now.
+export const SKILL_INVOKE_LINE = `Invoke it through the Skill tool. If the Skill tool is not available here, read the skill's own SKILL.md directly and follow it instead.`;
 export const SKILL_METHOD_DISCLAIMER = `A skill that is not installed here is skipped without comment or substitute. Its own output template does not apply - "Required output" below is the only shape you may return - and neither does its "what you do / what I do" half: nobody is reading this but the machine that called you, so ask nothing and finish the work yourself.`;
 
 // Absorbed from what a PRD skill would have supplied. The engine names no PM plugin here: the
@@ -339,6 +343,7 @@ export function composePrompt(run, n, briefing) {
     lines.push(bullets(briefing.goal_acceptance));
   }
 
+  let subgoalMethod = [];
   if (briefing.subgoal) {
     const sg = briefing.subgoal;
     lines.push('');
@@ -358,11 +363,8 @@ export function composePrompt(run, n, briefing) {
     // it is the stage that knows what the work is - a migration wants different method than
     // a reference document. Same precedence as everywhere else: the node contract wins, a
     // missing skill is skipped in silence, and nobody is there to answer a question.
-    if (method.length) {
-      lines.push(`Method — load each of these that is available, then work the way it says:\n${bullets(method)}`);
-      lines.push(SKILL_METHOD_DISCLAIMER);
-      lines.push(SKILLS_USED_FIELD);
-    }
+    // Rendered once, merged with the stage mount, by mountBlock below (develop-renewal-teams R1b).
+    subgoalMethod = method;
     if (sg.files?.length) lines.push(`Required paths:\n${bullets(sg.files)}`);
     // setgoal names what a planning document's investigator should open in sources[], apart from
     // files[], which is what the subgoal writes. The two shared one field until idol-pm-3
@@ -571,7 +573,7 @@ export function composePrompt(run, n, briefing) {
     lines.push(bullets(briefing.investigate_unknowns.map((u) => `${u.question}${u.owner ? ` [owner: ${u.owner}]` : ''}`)));
   }
 
-  lines.push(mountBlock(run, n));
+  lines.push(mountBlock(run, n, subgoalMethod));
 
   lines.push('');
   lines.push(`## Required output`);

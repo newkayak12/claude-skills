@@ -1,21 +1,20 @@
 ---
 name: clean-code
 description: >-
-  Use when reviewing, refactoring, or writing code that others need to read and
-  maintain — any code that is hard to understand, has grown too long, or whose
-  intent is not immediately clear. Triggers on: "리팩토링", "코드 가독성", "clean code",
-  "code review".
+  Use when a diff needs a quality-gate verdict, code needs review or refactoring, or a
+  requirement needs implementing cleanly. Triggers: "코드 리뷰", "품질 게이트", "리팩토링",
+  "코드 가독성", "어떻게 구현해?", "clean code", "code review", "implement this cleanly".
 license: MIT
 metadata:
   author: wondelai
-  version: "1.0.0"
+  version: "2.0.0"
 scenarios:
-  - "review this code for quality"
+  - "quality gate: does this diff meet the acceptance criteria?"
   - "refactor this function — it's too long"
-  - "how should I name this variable?"
+  - "how should I implement this requirement cleanly?"
+  - "이 PR 품질 게이트 통과 가능한지 봐줘"
   - "이 코드 리팩토링해줘"
-  - "코드 가독성이 너무 낮아"
-  - "함수가 너무 길고 복잡해"
+  - "이 요구사항 어떻게 구현하면 깔끔할까?"
 compatibility:
   recommended:
     - think-tool
@@ -26,151 +25,135 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
-# Clean Code Framework
+# Clean Code
 
-A disciplined approach to writing code that communicates intent, minimizes surprises, and welcomes change.
+Code that communicates intent, minimizes surprises, and welcomes change — judged in gate
+mode, written in implement mode, against the same six dimensions.
+
+## Mode Map
+
+Pick the mode from the stage you were called in and the output the caller asks for.
+
+| Mode | Chosen when | Interactive | Headless (teams / harness stage) |
+|------|-------------|-------------|----------------------------------|
+| **Gate / review** | stage is `gate`, `review` or `critique`; asked to judge or review a diff; or the required output asks for a verdict (`accept`, `pass`, `verified`) | Findings table + verdict, before/after snippets for each fix | Judge only; fill the caller's verdict fields per Process G5; edit nothing; ask nothing |
+| **Implement** | stage is `implement`; asked how to build a stated requirement; or the required output asks for `changed_files` | Present the ordered steps, then write the code if asked | Follow the steps and edit the files; return what the caller asks (e.g. `changed_files`, `checks`); ask nothing |
+
+- A refactor request is implement mode with "behaviour unchanged" as the requirement: pin
+  current behaviour with tests (step I2), then restructure.
+- A caller's required output always overrides this skill's Output Template. When nobody
+  can answer, an open point becomes a recorded assumption, never a question.
 
 ## When to Use / When Not to Use
 
 | Use | Skip |
 |-----|------|
-| Code review or PR feedback | Architectural layer decisions (use clean-architecture) |
+| Quality gate or PR review of a diff | Architectural layer decisions (use clean-architecture) |
 | Refactoring legacy code | Domain modeling (use domain-driven-design) |
-| Writing new code that others will maintain | Performance optimization (profile first) |
+| Implementing a stated requirement others will maintain | Performance optimization (profile first) |
 | Naming variables, functions, classes | Infrastructure or deployment config |
+
+## The Six Dimensions
+
+Names · Functions · Comments & formatting · Error handling · Unit tests · Smells. Patterns,
+examples and the quick diagnostic: [references/review-framework.md](references/review-framework.md).
+Severity rubric and worked examples of both modes: [references/modes.md](references/modes.md).
 
 ## Process
 
-1. **Score the code** — Rate 0–10 based on the framework below; state the score explicitly
-2. **Identify smells** — List specific violations by category (names, functions, comments, errors, tests)
-3. **Prioritize** — Address highest-impact issues first (usually names and function size)
-4. **Refactor** — Apply targeted fixes with before/after examples
-5. **Verify** — Confirm tests still pass; re-score
+### Gate / review mode
 
-## Scoring
+1. **G1 Fix the bar.** List the acceptance items you judge against (from the caller, the
+   PR, or the request). None supplied → blocking is reserved for correctness defects; say so.
+2. **G2 Read the diff, dimension by dimension.** For each of the six dimensions, check the
+   changed lines and the code they call. Read every comment the change added: one that
+   states behaviour the code does not have is a finding. Run any check you can run (tests,
+   linters) and keep what it printed.
+3. **G3 Record findings.** One row per defect: `file:line`, dimension, severity
+   (blocking / major / minor — rubric in references/modes.md), verdict `fail`, the
+   acceptance item it threatens (required when blocking), and the concrete fix. A dimension
+   checked clean gets one `pass` row with its line range. Unclear intent → a finding
+   `assumption: … — what would settle it`, blocking if an acceptance item turns on it.
+4. **G4 Verdict.** FAIL iff any blocking finding; otherwise PASS, majors and minors listed.
+   A 0–10 score is never the verdict.
+5. **G5 Map onto the caller's contract** when one is given (teams `gate`: `accept`,
+   `match_pct`, `checks`, `gaps`, `observations`, `reason`):
+   - each blocking finding → one `gaps[]` entry
+     `"<id> <file>:<line> — <severity> — threatens <acceptance> — <fix>"`;
+   - each major/minor finding → one `observations[]` entry in the same shape;
+   - `accept: false` iff any blocking finding;
+   - every other required field is still filled as the caller defines it — `match_pct`
+     (0–100, share of acceptance met), `checks` (what you ran or read → what it showed),
+     `reason`, `evidence`. Dropping the 0–10 score is not a reason to drop or zero them.
+6. **G6 Interactive only:** add before/after snippets for each fix; give a 0–10 score only
+   if asked (rubric in references/review-framework.md).
 
-**Goal: 10/10.** Rate code 0–10 based on adherence to the principles below.
+### Implement mode
 
-- **9–10:** Names reveal intent, functions small and focused, error handling consistent, tests clean and comprehensive
-- **7–8:** Mostly clean with minor naming ambiguities or a few long functions
-- **5–6:** Mixed quality — some good patterns alongside unclear names or duplicated logic
-- **3–4:** Significant readability issues — long functions, misleading names, poor or missing tests
-- **1–2:** Code works but is nearly unreadable — magic numbers, cryptic abbreviations, no tests
+Each step names what it leaves in the tree. Worked example: references/modes.md.
 
-## The Clean Code Framework
+1. **I1 Pin the requirement.** List the behaviours, the acceptance items and the error
+   cases. Ambiguity → write the assumption into the handoff. *Leaves:* case list +
+   assumptions (handoff / notes).
+2. **I2 Cases first.** Derive cases with expected results (`develop:test-master` reference
+   mode) and write the test file FIRST, before any implementation file — even when no test
+   runner is available here; the test file is still the first artifact. Where a runner
+   applies, run them and watch them fail for the predicted reason
+   (`develop:test-driven-development`); otherwise leave the RED proof to the test stage.
+   *Leaves:* test file path + test names, RED output (or "not run").
+3. **I3 Structure.** Decide the file/module and the public surface — only what the
+   requirement names is exported; one responsibility per module. *Leaves:* paths + exported
+   symbols.
+4. **I4 Names.** Domain words from the requirement; predicates for booleans; named
+   constants for every literal with meaning. *Leaves:* symbol names.
+5. **I5 Function boundaries.** One thing per function, one level of abstraction, under ~20
+   lines, ≤3 parameters, no flag arguments, guard clauses for errors. *Leaves:* function list.
+6. **I6 Error handling.** Typed errors carrying context; no null returns, no empty catch,
+   no silent default; wrap third-party calls. *Leaves:* error type(s) + a test asserting each.
+7. **I7 GREEN, then tidy.** Make the tests pass; remove duplication, magic numbers and
+   "what" comments. *Leaves:* passing test output.
+8. **I8 Self-gate.** Run gate mode G2–G4 over your own diff; fix every blocking and major
+   finding. *Leaves:* no blocking findings.
 
-### 1. Meaningful Names
-
-Names should reveal intent, avoid disinformation, and make the code read like prose.
-
-| Context | Pattern | Example |
-|---------|---------|---------|
-| Variables | Intention-revealing name | `elapsedTimeInDays` not `d` |
-| Booleans | Predicate phrasing | `isActive`, `hasPermission`, `canEdit` |
-| Functions | Verb + noun describing action | `calculateMonthlyRevenue()` not `calc()` |
-| Classes | Noun describing responsibility | `InvoiceGenerator` not `InvoiceManager` |
-| Constants | Searchable, all-caps with context | `MAX_RETRY_ATTEMPTS = 3` not `3` inline |
-| Collections | Plural nouns or descriptive phrases | `activeUsers` not `list` or `data` |
-
-See: [references/naming-conventions.md](references/naming-conventions.md)
-
-### 2. Functions
-
-Functions should be small (4–6 lines ideal), do one thing, and operate at a single level of abstraction.
-
-| Context | Pattern | Example |
-|---------|---------|---------|
-| Long function | Extract into named steps | `validateInput(); transformData(); saveRecord();` |
-| Flag argument | Split into two functions | `renderForPrint()` and `renderForScreen()` not `render(isPrint)` |
-| Deep nesting | Extract inner blocks | Move nested `if`/`for` bodies into named functions |
-| Multiple returns | Guard clauses at top | Early return for error cases, single happy path |
-| Many arguments | Introduce parameter object | `new DateRange(start, end)` not `report(start, end, format, locale)` |
-
-See: [references/functions-and-methods.md](references/functions-and-methods.md)
-
-### 3. Comments and Formatting
-
-A comment is a failure to express yourself in code. Comments should explain *why*, never *what*.
-
-| Context | Pattern | Example |
-|---------|---------|---------|
-| Explaining "what" | Replace with better name | Rename `// check if eligible` to `isEligible()` |
-| Explaining "why" | Keep as comment | `// RFC 7231 requires this header for proxies` |
-| Commented-out code | Delete it | Trust version control to remember |
-| File organization | Newspaper metaphor | High-level functions at top, details below |
-| Team formatting | Agree on rules once | Use automated formatters (Prettier, Black, gofmt) |
-
-See: [references/comments-formatting.md](references/comments-formatting.md)
-
-### 4. Error Handling
-
-Use exceptions rather than return codes, provide context with every exception, and never return or pass null.
-
-| Context | Pattern | Example |
-|---------|---------|---------|
-| Null returns | Return empty collection or Optional | `return Collections.emptyList()` not `return null` |
-| Error codes | Replace with exceptions | `throw new InsufficientFundsException(balance, amount)` |
-| Third-party APIs | Wrap with adapter | `PortfolioService` wraps vendor API, translates exceptions |
-| Special cases | Null Object pattern | `GuestUser` with default behavior instead of null checks |
-
-See: [references/error-handling.md](references/error-handling.md)
-
-### 5. Unit Testing
-
-Tests are first-class code — clean, readable, maintained with the same discipline as production code.
-
-| Context | Pattern | Example |
-|---------|---------|---------|
-| Test structure | Arrange-Act-Assert | Setup, execute, verify — clearly separated |
-| Test naming | Scenario + expected behavior | `shouldRejectExpiredToken` not `test1` |
-| Flaky tests | Remove external dependencies | Mock time, network, file system |
-| Test readability | Domain-specific helpers | `assertThatInvoice(inv).isPaidInFull()` |
-
-See: [references/testing-principles.md](references/testing-principles.md)
-
-### 6. Code Smells and Heuristics
-
-| Context | Pattern | Example |
-|---------|---------|---------|
-| Duplication | Extract shared logic | Common validation → `validateEmail()` helper |
-| Long parameter list | Introduce parameter object | `SearchCriteria` groups related params |
-| Feature envy | Move method to data's class | `order.calculateTotal()` not `calculator.total(order)` |
-| Dead code | Delete it | Remove unused functions, unreachable branches |
-| Magic numbers | Named constants | `MAX_LOGIN_ATTEMPTS = 5` not bare `5` |
-
-See: [references/code-smells.md](references/code-smells.md)
-
-## Quick Diagnostic
-
-| Question | If No | Action |
-|----------|-------|--------|
-| Can you understand each function without reading its body? | Names don't reveal intent | Rename functions to describe what they do |
-| Are all functions under 20 lines? | Functions do too many things | Extract sub-operations into named helpers |
-| Are there zero commented-out code blocks? | Dead code creating confusion | Delete them — version control has history |
-| Is error handling separate from business logic? | Try-catch cluttering main flow | Extract error handling; use exceptions not return codes |
-| Does every class have a single responsibility? | Classes accumulate unrelated duties | Split into focused classes with clear names |
-| Is there a test for every public method? | No safety net for changes | Add tests before making further changes |
-| Are magic numbers replaced with named constants? | Intent hidden behind raw values | Extract constants with descriptive names |
+In an implement **stage** these steps are how you do the work: edit the files, then return
+the caller's shape (`changed_files` = files you actually changed, `checks` = test output).
+Returning the steps instead of the code is a failed stage.
 
 ## Output Template
 
-When reviewing code, provide:
-1. Score (0–10) with justification
-2. Top 3–5 issues by category
-3. Before/after code snippets for each fix
-4. Improved score after fixes applied
+Used when no caller fixes the output shape (inside a contract, Process G5 / the implement
+stage note apply instead).
+
+**Gate / review**
+
+| ID | file:line | Dimension | Severity | Verdict | Threatens | Fix |
+|----|-----------|-----------|----------|---------|-----------|-----|
+| F1 | path:line | errors | blocking | fail | A2 … | … |
+| P1 | path:start-end | names | — | pass | — | — |
+
+Verdict: PASS | FAIL — `<n>` blocking (`<ids>`); assumptions: `<list or none>`.
+
+**Implement**
+
+| # | Step | What to do | Leaves in tree (path / symbol / test) | Check |
+|---|------|------------|----------------------------------------|-------|
+| I1 | Pin requirement | … | … | every acceptance item has a case |
+
+Then: files changed, test command → output.
 
 ## What Claude Does / What You Do
 
 | Claude | You |
 |--------|-----|
-| Scores the code and lists specific violations | Share the code or PR diff |
-| Produces before/after refactoring examples | Confirm business intent behind unclear code |
-| Suggests better names with reasoning | Apply fixes and run tests |
-| Identifies test coverage gaps | Merge after teammate review |
+| **Gate, headless:** judges the diff, records findings with file:line, fills the caller's verdict fields; asks nothing | — |
+| **Gate, interactive:** same findings + verdict, before/after snippets, a score only if asked | Share the diff and acceptance; confirm business intent behind code flagged `assumption` |
+| **Implement, headless:** follows I1–I8, edits files, returns `changed_files` + checks; asks nothing | — |
+| **Implement, interactive:** presents the steps, then writes the code and tests | State the requirement; approve the steps; merge after review |
 
 ## Reference Files
 
+- [review-framework.md](references/review-framework.md) — six dimensions, quick diagnostic, optional score
+- [modes.md](references/modes.md) — severity rubric, finding/gaps examples, implement walkthrough
 - [naming-conventions.md](references/naming-conventions.md)
 - [functions-and-methods.md](references/functions-and-methods.md)
 - [comments-formatting.md](references/comments-formatting.md)
@@ -180,7 +163,7 @@ When reviewing code, provide:
 
 ## Related Skills
 
+- `develop:test-master` — case lists with expected results (reference mode) for step I2
+- `develop:test-driven-development` — the RED proof for step I2
 - `develop:clean-architecture` — architectural layer structure and dependency rule
 - `develop:domain-driven-design` — domain modeling and ubiquitous language
-- `develop:test-master` — comprehensive test generation
-- `develop:test-driven-development` — test-first workflow

@@ -24,6 +24,15 @@ import {
   routeExecutionQuestions, planDecisions, settledDecisions,
 } from '../mcp/graph.mjs';
 
+test('subgoal kind: chain and skills by stage - clean-code on implement and gate, devils-advocate kept on gate', () => {
+  assert.deepEqual(KINDS.subgoal.chain, ['implement', 'test', 'gate']);
+  assert.deepEqual(KINDS.subgoal.reasoning, []);
+  assert.deepEqual(kindSkills('subgoal', 'implement'), ['develop:clean-code'], 'implement mode');
+  assert.deepEqual(kindSkills('subgoal', 'test'), ['develop:testing-workflow', 'completion:verification-before-completion']);
+  assert.deepEqual(kindSkills('subgoal', 'gate'), ['develop:clean-code', 'think:devils-advocate'],
+    'gate mode, with devils-advocate as the independent view');
+});
+
 test('planning kind: chain, no reasoning stage, and skills by stage', () => {
   assert.deepEqual(KINDS.planning.chain, ['investigate', 'draft', 'revise', 'gate']);
   assert.deepEqual(KINDS.planning.reasoning, []);

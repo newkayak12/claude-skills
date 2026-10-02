@@ -34,7 +34,7 @@ the specialist skills in a fixed order and let you join mid-process.
 | I want to… | Skill |
 |---|---|
 | Write a failing test first and prove it can actually fail | `test-driven-development` |
-| Add tests to untested code, audit coverage, write a test plan | `test-master` |
+| Add tests to untested code, audit coverage, write a test plan or a test-case list | `test-master` |
 | Collect/generate API scenarios as specs, dispatch one actor AI per spec, install `ci.sh` | `scenario-director` |
 | Execute one scenario spec by hand with curl — locally or as CI's `claude -p` unit | `scenario-actor` |
 | Fix tests that pass locally and fail in CI | `flaky-test-analyzer` |
@@ -83,7 +83,7 @@ the specialist skills in a fixed order and let you join mid-process.
 
 | I want to… | Skill |
 |---|---|
-| Get a readability review and a concrete refactor list | `clean-code` |
+| Get a review or gate verdict on a change, or implement one test-first | `clean-code` |
 | Generate docstrings, JSDoc, or an OpenAPI spec for existing code | `code-documenter` |
 | Plan which docs should exist, for whom, and who keeps them current | `documentation-strategy` |
 
@@ -206,6 +206,12 @@ code that has none, or when coverage exists but nobody knows what it actually co
 work already under a TDD cycle (use `test-driven-development`), and not for debugging one specific
 flaky test (use `flaky-test-analyzer`).
 
+Reference mode writes test cases only, for a caller that runs them later — teams QA `cases`, the
+tests-first step of `clean-code` implement mode, or "cases only". It stops after one case file at
+the caller's path (`references/case-spec.md`: id, behavior, input, expected result, the acceptance
+item each case covers, plus coverage map and assumptions), derives cases from the acceptance or
+spec rather than the code, runs nothing, and never asks — open points go under Assumptions.
+
 ```
 This legacy billing module has no tests. Audit what's testable, write a test plan by
 risk, then add unit and integration tests for the highest-risk paths first.
@@ -223,6 +229,11 @@ code: the director copies `ci.sh` in, dispatches one `scenario-actor` subagent p
 rejects any pass without step pairs or a result JSON, runs `ci.sh` twice on the same server process
 (a differing run 2 is a cleanup gap), and — when the server has a fault switch — once against the
 broken server to prove the set is not vacuous.
+
+Reference mode ("specs only", or teams QA `cases`) runs steps 1–3 and stops: specs plus
+`CATALOG.md` at the caller's path, each catalog row naming the acceptance item it covers, endpoint
+names taken from routes but flows from the acceptance or feature spec. No question, no server
+request (`[확인 필요]` stays), no `ci.sh`, no actors, no fault check.
 
 ```
 시나리오 md로 써놨어, 이거 읽고 서버에 돌려줘. mock 말고.
@@ -575,10 +586,19 @@ Go `cobra + viper`, with `bubbletea` for TUIs only.
 
 ### `clean-code`
 
-Reviews and refactors code for the people who have to read it later. It scores the code 0–10,
-states the score explicitly, then lists specific violations by category — names, functions,
-comments, error handling, tests — with the refactor for each. Use it for PR feedback, legacy
-cleanup, or naming decisions. Not for architectural layer decisions (use `clean-architecture`),
+Reviews, gates, and writes code for the people who have to read it later. Two modes, picked from
+the stage and the output the caller wants:
+
+- **Gate / review** — judges a change against its acceptance. Each finding is
+  `<file>:<line> — severity — the acceptance it threatens — fix`; blocking findings fail the gate,
+  the rest are observations. The six-dimension tables (names, functions, comments, error handling,
+  tests, structure) live in `references/review-framework.md`; the optional 0–10 score is never the
+  verdict. Under teams it fills the gate JSON (`gaps[]`, `accept:false` iff something blocks).
+- **Implement** — writes the change: test file first (cases via `test-master` reference mode), then
+  the code, then returns `changed_files`. A refactor is implement mode with behavior pinned.
+
+Both run interactive or headless; headless asks nothing. Use it for PR feedback, a gate verdict,
+legacy cleanup, or a test-first change. Not for architectural layer decisions (use `clean-architecture`),
 domain modeling (use `domain-driven-design`), or performance work (profile first).
 
 ```
