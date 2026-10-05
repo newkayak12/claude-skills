@@ -1358,10 +1358,14 @@ export function expandSubgoals(run, subgoals) {
   const critiqueDep = liveCritique ? liveCritique.node_id : 'critique';
 
   // One attempt number for the whole expansion, so a subgoal's deps can name its
-  // siblings' gates without guessing which round they belong to.
+  // siblings' gates without guessing which round they belong to. Counted over every
+  // kind's chain stages, not implement alone: a planning/qa/audit chain has no implement
+  // node, so its respec came back as round 1 and re-pushed the retired ids (u40). Every
+  // kind also covers a subgoal whose kind changed between specs.
+  const chainStages = [...new Set(Object.values(KINDS).flatMap((k) => k.chain))];
   const round = Math.max(
     1,
-    ...subgoals.map((sg) => nextIndex(run, `implement:${String(sg.id)}`)),
+    ...subgoals.flatMap((sg) => chainStages.map((stage) => nextIndex(run, `${stage}:${String(sg.id)}`))),
   );
 
   for (const sg of subgoals) {

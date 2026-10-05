@@ -1022,6 +1022,55 @@ test('a retried spec with the SAME subgoal ids rebuilds real nodes', async () =>
   }, { auto_reassign: false });
 });
 
+// The same respec in a chain with no implement stage. The round used to be counted from
+// implement:<id> alone, so a planning/qa respec came back as round 1, re-pushed ids equal
+// to the retired nodes, mergeOnto kept the skipped copies, and gate:goal:2 waited on the
+// skipped gate:U1:1 forever (teams 0.40.0 real run u40, PLAN-F2).
+async function respecSameIds(c, cwd, runId, spec1, spec2 = spec1) {
+  await c.call('team_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+  await c.call('team_submit', { run_id: runId, cwd, node_id: 'setgoal', payload: ok({ spec: spec1 }) });
+  await c.call('team_submit', { run_id: runId, cwd, node_id: 'critique', payload: ok({ sound: false, blocking: ['x'] }) });
+  await c.call('team_retry', { run_id: runId, cwd });
+  await c.call('team_submit', { run_id: runId, cwd, node_id: 'setgoal:2', payload: ok({ spec: spec2 }) });
+  const v = await c.call('team_submit', { run_id: runId, cwd, node_id: 'critique:2', payload: ok({ sound: true }) });
+  assert.equal(v.state, 'done');
+  const nx = await c.call('team_next', { run_id: runId, cwd });
+  const st = await c.call('team_status', { run_id: runId, cwd });
+  return { nx, st };
+}
+
+test('a retried PLAN spec with the same subgoal ids rebuilds the planning chain', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    const spec = { goal: 'G', acceptance: ['A'], subgoals: [{ id: 'U1', kind: 'planning', title: 'prd', acceptance: ['a'], deps: [] }] };
+    const { nx, st } = await respecSameIds(c, cwd, runId, spec);
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['investigate:U1:2']);
+    const goal2 = st.nodes.find((n) => n.node_id === 'gate:goal:2');
+    assert.ok(goal2.deps.includes('gate:U1:2'), `gate:goal:2 must wait on the new chain: ${JSON.stringify(goal2.deps)}`);
+    assert.ok(st.nodes.some((n) => n.node_id === 'report:2'), 'the second expansion has its own report');
+  }, { flow: 'plan', mixed: false, auto_reassign: false });
+});
+
+test('a retried QA spec with the same subgoal ids rebuilds the qa chain', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    const spec = { goal: 'G', acceptance: ['A'], subgoals: [{ id: 'U1', kind: 'qa', title: 'qa pass', acceptance: ['a'], deps: [] }] };
+    const { nx, st } = await respecSameIds(c, cwd, runId, spec);
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['cases:U1:2']);
+    const goal2 = st.nodes.find((n) => n.node_id === 'gate:goal:2');
+    assert.ok(goal2.deps.includes('gate:U1:2'), `gate:goal:2 must wait on the new chain: ${JSON.stringify(goal2.deps)}`);
+    assert.ok(st.nodes.some((n) => n.node_id === 'report:2'), 'the second expansion has its own report');
+  }, { auto_reassign: false });
+});
+
+test('a retried spec that changes a subgoal kind numbers past every earlier attempt', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    const sg = { id: 'U1', title: 'x', acceptance: ['a'], test: ['t'], deps: [] };
+    const { nx } = await respecSameIds(c, cwd, runId,
+      { goal: 'G', acceptance: ['A'], subgoals: [{ ...sg, kind: 'planning' }] },
+      { goal: 'G', acceptance: ['A'], subgoals: [{ ...sg, kind: 'subgoal' }] });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['implement:U1:2']);
+  }, { auto_reassign: false });
+});
+
 test('a run is complete only when a report node is done', async () => {
   await withRun(async ({ c, cwd, runId }) => {
     await c.call('team_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
