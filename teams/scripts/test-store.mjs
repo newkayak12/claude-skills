@@ -418,3 +418,102 @@ test('ledger: a record inside a nested transaction on another file is dropped wh
   });
   assert.deepEqual(ledgerOf(outer.id).trim().split('\n').map((l) => JSON.parse(l).event), ['nested_ok']);
 });
+
+// ---------- afterCommit (C3b): side effects after the write and the lock release ----------
+
+test('afterCommit: queued fns run after the write and the release, in order; outside a transaction at once', () => {
+  const { path } = seedTask();
+  const seen = [];
+  mutateTask(path, (t) => {
+    t.n = 1;
+    store.afterCommit(() => seen.push(['a', inTransaction(), JSON.parse(readFileSync(path, 'utf8')).n, existsSync(path + '.lock')]));
+    store.afterCommit(() => seen.push(['b', inTransaction()]));
+    assert.deepEqual(seen, [], 'nothing runs inside the transaction');
+  });
+  assert.deepEqual(seen, [['a', false, 1, false], ['b', false]], 'after the write, after the release, in order');
+  let now = false;
+  store.afterCommit(() => { now = true; });
+  assert.equal(now, true, 'outside a transaction fn runs immediately');
+});
+
+test('afterCommit: a transaction that throws discards its queue, including what nested frames queued', () => {
+  const outer = seedTask();
+  const inner = seedTask();
+  const ran = [];
+  const discarded = [];
+  assert.throws(() => mutateTask(outer.path, () => {
+    store.afterCommit(() => ran.push('outer'), () => discarded.push('outer'));
+    mutateTask(inner.path, (u) => { u.n = 1; store.afterCommit(() => ran.push('inner-other-file'), () => discarded.push('inner-other-file')); });
+    mutateTask(outer.path, () => { store.afterCommit(() => ran.push('joined')); });
+    throw new Error('outer abort');
+  }), /outer abort/);
+  assert.deepEqual(ran, [], 'no queued fn runs after an abort');
+  assert.deepEqual(discarded.sort(), ['inner-other-file', 'outer'], 'each discarded fn\'s onDiscard runs');
+  // A nested frame that throws (caught by the outer fn) drops only what it queued.
+  mutateTask(outer.path, (t) => {
+    store.afterCommit(() => ran.push('kept'));
+    try { mutateTask(inner.path, () => { store.afterCommit(() => ran.push('dropped-nested')); throw new Error('inner'); }); } catch { /* outer continues */ }
+    try { mutateTask(outer.path, () => { store.afterCommit(() => ran.push('dropped-joined')); throw new Error('joined'); }); } catch { /* outer continues */ }
+    t.n = 2;
+  });
+  assert.deepEqual(ran, ['kept']);
+});
+
+test('afterCommit: a nested mutateTask on the same path from inside the fn does not deadlock', () => {
+  const { path } = seedTask();
+  withEnv({ TEAMS_LOCK_TIMEOUT_MS: '300' }, () => {
+    mutateTask(path, (t) => {
+      t.n = 1;
+      store.afterCommit(() => mutateTask(path, (u) => { u.n += 10; }));
+    });
+  });
+  assert.equal(JSON.parse(readFileSync(path, 'utf8')).n, 11);
+});
+
+// ---------- C3(c): a child run's saveRun goes through mutateRun ----------
+
+function seedChildRun(nodes) {
+  const dir = mkdtempSync(join(ROOT, 'child-'));
+  const run = { run_id: 'c1', cwd: dir, capacity_epoch: 0, unavailable_vendors: {}, nodes };
+  const path = graph.pathOf(run);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(run, null, 2) + '\n');
+  return { run, path };
+}
+
+test('child saveRun nested inside mutateRun on the same path with a different object throws and writes nothing', () => {
+  const { run, path } = seedChildRun([{ node_id: 'a', state: 'pending' }]);
+  const before = readFileSync(path, 'utf8');
+  const stale = JSON.parse(before);
+  stale.nodes[0].state = 'done';
+  assert.throws(() => mutateRun(path, (r) => { r.touched = true; graph.saveRun(stale); }), /different object/);
+  assert.equal(readFileSync(path, 'utf8'), before, 'the file is unchanged');
+  assert.equal(run.nodes[0].state, 'pending');
+});
+
+test('child saveRun: a terminal node state written meanwhile survives a later stale saveRun', () => {
+  const { path } = seedChildRun([{ node_id: 'a', state: 'pending' }, { node_id: 'b', state: 'pending' }]);
+  const stale = JSON.parse(readFileSync(path, 'utf8'));
+  mutateRun(path, (r) => { r.nodes[0].state = 'done'; r.nodes[0].result = { stage_ok: true }; });
+  stale.nodes[1].state = 'running';
+  graph.saveRun(stale);
+  const disk = JSON.parse(readFileSync(path, 'utf8'));
+  assert.equal(disk.nodes[0].state, 'done', 'the interleaved terminal state is kept');
+  assert.equal(disk.nodes[1].state, 'running', 'the stale writer\'s own change lands');
+  assert.equal(stale.nodes.find((n) => n.node_id === 'a').state, 'done', 'the caller\'s object is brought up to date');
+});
+
+test('child saveRun of a run that changed nothing does not rewrite the file (mutateRun: inode unchanged)', () => {
+  const { run, path } = seedChildRun([{ node_id: 'a', state: 'done' }]);
+  const ino = statSync(path).ino;
+  graph.saveRun(run);
+  assert.equal(statSync(path).ino, ino, 'no write-then-rename for an unchanged child run');
+});
+
+test('child saveRun of a missing run file creates it', () => {
+  const dir = mkdtempSync(join(ROOT, 'child-new-'));
+  const run = { run_id: 'c2', cwd: dir, nodes: [{ node_id: 'a', state: 'pending' }] };
+  graph.saveRun(run);
+  const disk = JSON.parse(readFileSync(graph.pathOf(run), 'utf8'));
+  assert.equal(disk.nodes[0].node_id, 'a');
+});

@@ -20,8 +20,19 @@
 // for the goal gate) to reason with. Advisory only - a tool that is not connected is
 // skipped in silence, never searched for and never blocking.
 
-import { SKILL_INVOKE_LINE, SKILL_METHOD_DISCLAIMER, SKILLS_USED_FIELD } from './prompts.mjs';
 import { nodeKind } from './graph.mjs';
+
+// Shared by every Method block a composed prompt can carry - the per-subgoal one below and
+// the stage-mounted one mounts.mjs renders - so the two mechanisms state the same rule in
+// the same words instead of drifting apart.
+// Telemetry, not method: without this field no graph node ever said which skills it loaded, so
+// a run with no skills mounted at all was indistinguishable from one that used them.
+export const SKILLS_USED_FIELD = `Add "skills_used": ["plugin:skill", ...] to the Required output JSON below, naming the ones you actually loaded, or ["none"].`;
+// How to load a listed skill. Only the stage-mounted block used to say it, so a gate whose
+// subgoal Method listed develop:clean-code loaded only the stage mount's skill (develop-renewal-teams
+// R1b diag: 0/6 runs loaded clean-code). Every Method block carries it now.
+export const SKILL_INVOKE_LINE = `Invoke it through the Skill tool. If the Skill tool is not available here, read the skill's own SKILL.md directly and follow it instead.`;
+export const SKILL_METHOD_DISCLAIMER = `A skill that is not installed here is skipped without comment or substitute. Its own output template does not apply - "Required output" below is the only shape you may return - and neither does its "what you do / what I do" half: nobody is reading this but the machine that called you, so ask nothing and finish the work yourself.`;
 
 // Keyed the same way taskmanager's STAGE_SKILLS is: by stage name, with `gate:goal` split
 // out from the plain per-subgoal `gate` so a caller can override the goal gate without

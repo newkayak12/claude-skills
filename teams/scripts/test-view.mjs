@@ -579,6 +579,43 @@ test('collect(): an ordinary package whose latest dispatch already has its own c
   }
 });
 
+test('collect()/render: a dispatch claimed but not yet applied (running, no child) reads "opening", not "not dispatched yet" - tickets.mjs:638\'s predicate', () => {
+  const root = mkdtempSync(join(tmpdir(), 'view-test-opening-'));
+  try {
+    const taskId = 'eeeeeeee-0000-0000-0000-000000000000';
+    const taskDir = join(root, taskId);
+    const taskPath = join(taskDir, 'task.json');
+    mkdirSync(taskDir, { recursive: true });
+    writeFileSync(taskPath, JSON.stringify({
+      run_id: taskId, cwd: root, request: 'a request', created_at: 1, store_path: taskPath,
+      spec: { packages: [{ id: 'P1', title: 'module a' }, { id: 'P2', title: 'module b' }] },
+      nodes: [
+        node('dispatch:P1:1', 'dispatch', [], { subgoal_id: 'P1', attempt: 1, state: 'running', started_at: 1 }),
+        node('dispatch:P2:1', 'dispatch', [], { subgoal_id: 'P2', attempt: 1, state: 'pending' }),
+      ],
+    }));
+    const model = collectTask(root, taskId);
+    const p1 = model.packages.find((p) => p.id === 'P1');
+    const p2 = model.packages.find((p) => p.id === 'P2');
+    assert.equal(p1.dispatch.opening, true);
+    assert.equal(p1.child, null);
+    assert.equal(p2.dispatch.opening, undefined, 'a pending dispatch is not opening');
+
+    assert.match(renderText(model), /dispatch:P1:1 \(dispatch\).* opening/);
+    const res = renderResourcesText(model);
+    assert.match(res, /Team P1 - module a\n {2}\(opening - child run being created\)/);
+    assert.match(res, /Team P2 - module b\n {2}\(not dispatched yet - no worktree\)/);
+
+    const { resourcesBody, pkgCard } = extractPageFns(['resourcesBody', 'pkgCard']);
+    assert.match(resourcesBody(model), /Team P1 – module a<\/div><div class="muted">opening - child run being created<\/div>/);
+    assert.match(resourcesBody(model), /Team P2 – module b<\/div><div class="muted">not dispatched yet<\/div>/);
+    assert.match(pkgCard(p1, 0), /opening - child run being created/);
+    assert.doesNotMatch(pkgCard(p2, 1), /opening/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('renderText()/renderResourcesText(): a node state of "unreachable" gets its own mark, distinct from missing/unknown\'s "?"', () => {
   const model = {
     task_id: 'x', state: 'blocked', size: 'M', flow: 'develop', cost: { usd: 0, turns: 0 }, elapsed_ms: 0,

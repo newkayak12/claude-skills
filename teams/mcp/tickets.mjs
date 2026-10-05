@@ -750,3 +750,19 @@ export function flowMetrics(task, boardEntries, opts = {}) {
     lead_time_ms: { mean: mean(Object.values(leadByStory)), by_story: leadByStory },
   };
 }
+
+// A user story arrives from gate:goal as {"id": "US-1", "title": "...", "acceptance": [...]} -
+// the shape its own contract asks for. `String(story)` on that gives "[object Object]", which
+// matched no packages[].implements[] entry, so with planning on shape could never pass and the
+// develop workflow could not stand up at all (idol-pm-1, 2026-09-22). Invisible until then only
+// because every earlier planning run returned zero stories and the loop never ran.
+export function storyId(story) {
+  if (story && typeof story === 'object') return String(story.id || story.US || story.story_id || '').trim();
+  return String(story == null ? '' : story).trim();
+}
+
+export function storyLabel(story) {
+  const id = storyId(story);
+  const title = story && typeof story === 'object' ? String(story.title || '').trim() : '';
+  return title ? `${id} - ${title}` : id;
+}

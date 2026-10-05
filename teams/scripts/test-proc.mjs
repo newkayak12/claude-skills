@@ -15,12 +15,14 @@ test('pidAlive: this process is alive, a missing pid is not', () => {
 });
 
 test('pidAlive: a zombie (exited, never reaped) reads dead', { skip: !existsSync('/proc/self/stat') && 'no /proc' }, async () => {
-  // `sleep 0` exits at once; its parent then execs into `sleep 5`, which never waits on it.
-  const sh = spawn('sh', ['-c', 'sleep 0 & echo $!; exec sleep 5'], { stdio: ['ignore', 'pipe', 'ignore'] });
+  // The background child exits only once its parent has exec'd into `sleep 5`, which never waits
+  // on it. A bare `sleep 0 &` could finish before the exec, and dash reaps a finished background
+  // child after a builtin - under load /proc/<pid> was gone, not <defunct>, and the test flaked.
+  const sh = spawn('sh', ['-c', 'sh -c \'until [ ! -e /proc/$PPID ] || { read c </proc/$PPID/comm && [ "$c" = sleep ]; }; do :; done\' & echo $!; exec sleep 5'], { stdio: ['ignore', 'pipe', 'ignore'] });
   try {
     const pid = Number(await new Promise((res) => sh.stdout.once('data', (d) => res(String(d).trim()))));
     let zombie = false;
-    for (let i = 0; i < 50 && !zombie; i++) { await new Promise((r) => setTimeout(r, 20)); zombie = isZombie(pid); }
+    for (let i = 0; i < 250 && !zombie; i++) { await new Promise((r) => setTimeout(r, 20)); zombie = isZombie(pid); }
     assert.equal(zombie, true, 'the orphaned child is <defunct>');
     let signalled = true;
     try { process.kill(pid, 0); } catch { signalled = false; }

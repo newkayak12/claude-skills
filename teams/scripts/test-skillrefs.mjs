@@ -172,3 +172,59 @@ test('PRD_CONTRACT makes the domain a requirement, not a hope', () => {
   assert.match(PRD_CONTRACT, /named in Out of scope/);
   assert.match(PRD_CONTRACT, /has not been scoped, it has been overlooked/);
 });
+
+// C2 (teams 0.40.0): a pinned (mixed=false) run's setgoal was handed the generic Required output
+// template, "kind": "subgoal|document", last in the prompt - after the Flow line that says every
+// subgoal is kind planning/qa. 8/8 phase children of the 2026-10-02 ws runs failed setgoal_1
+// with ['document'] and passed only on the retry. validateSpec's rule stays (082937b); the
+// contract now names the one kind the run accepts.
+function requiredOutput(prompt) {
+  return prompt.slice(prompt.indexOf('## Required output'));
+}
+
+for (const [flow, dk, k] of [
+  ['qa', 'qa', 'qa'],
+  ['plan', 'planning', 'planning'],
+  ['audit', 'planning-audit', 'planning-audit'],
+  ['plan', 'planning-light', 'planning'],
+]) {
+  test(`a pinned ${flow} setgoal (default_kind ${dk}) is told every subgoal is kind "${k}"`, async () => {
+    const { composePrompt } = await import('../mcp/prompts.mjs');
+    const run = { run_id: 'r1', flow, goal: 'X', cwd: '/tmp/x', allocation: 'balanced', nodes: [] };
+    const out = requiredOutput(composePrompt(run, { node_id: 'setgoal', stage: 'setgoal' },
+      { upstream: [], problems: [], flow, default_kind: dk, mixed: false }));
+    assert.ok(out.includes(`"kind": "${k}"`), `Required output names kind ${k}`);
+    assert.ok(!out.includes('subgoal|document'), 'not the generic template kind');
+    assert.ok(out.toLowerCase().includes(`this run is pinned (mixed=false); every subgoal is kind "${k}"; any kind other than "${k}" fails this spec.`));
+    if (k === 'qa') assert.match(out, /"qa" - a case set run against the built tree: cases -> execute -> gate/);
+  });
+}
+
+test('a pinned develop setgoal names "subgoal" and never calls it a failing kind', async () => {
+  const { composePrompt } = await import('../mcp/prompts.mjs');
+  const run = { run_id: 'r1', flow: 'develop', goal: 'X', cwd: '/tmp/x', allocation: 'balanced', nodes: [] };
+  const out = requiredOutput(composePrompt(run, { node_id: 'setgoal', stage: 'setgoal' },
+    { upstream: [], problems: [], flow: 'develop', default_kind: 'subgoal', mixed: false }));
+  assert.ok(out.includes('"kind": "subgoal"'));
+  assert.ok(!out.includes('subgoal|document'));
+  // "any kind other than "subgoal" fails" is the rule; "subgoal" itself failing is the bug.
+  assert.doesNotMatch(out, /(?<!other than )"subgoal"[^;.\n]*fails/);
+  assert.doesNotMatch(out, /"subgoal"[^.\n]*(another flow|other flows)/);
+});
+
+test('a mixed setgoal keeps the Required output template byte for byte', async () => {
+  const { composePrompt, CONTRACT } = await import('../mcp/prompts.mjs');
+  const run = { run_id: 'r1', flow: 'develop', goal: 'X', cwd: '/tmp/x', allocation: 'balanced', nodes: [] };
+  for (const mixed of [true, undefined]) {
+    const out = requiredOutput(composePrompt(run, { node_id: 'setgoal', stage: 'setgoal' },
+      { upstream: [], problems: [], flow: 'develop', default_kind: 'subgoal', mixed }));
+    assert.equal(out, `## Required output\n${CONTRACT.setgoal}\n\nReturn that JSON object and nothing else.`);
+  }
+});
+
+test('validateSpec still pins a mixed=false run to its kind', async () => {
+  const { validateSpec } = await import('../mcp/graph.mjs');
+  const spec = (kind) => ({ goal: 'g', acceptance: ['a'], subgoals: [{ id: 'U1', kind, title: 't', acceptance: ['a'], files: ['docs/qa.md'] }] });
+  assert.deepEqual(validateSpec(spec('qa'), { kind: 'qa', mixed: false, flow: 'qa' }), []);
+  assert.ok(validateSpec(spec('document'), { kind: 'qa', mixed: false, flow: 'qa' }).some((p) => /kind document.*mixed=false/.test(p)));
+});

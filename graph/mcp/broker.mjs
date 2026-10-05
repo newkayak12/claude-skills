@@ -358,7 +358,8 @@ const knownCwds = new Set();
 // been sitting long enough, belongs to a broker that died - it is not in flight, it is
 // abandoned. Without reclaiming it the run wedges forever: graph_next offers nothing and
 // graph_run refuses the node as already running.
-const activeNodes = new Set();
+// run_id:node_id -> the ticket this process is running it under.
+const activeNodes = new Map();
 // One run mutation = one store transaction on the fresh run (never on `run`, which may be
 // minutes old). Afterwards the caller's snapshot is replaced by what was committed, so
 // code that reads `run` next sees the truth - but any node reference taken from the old
@@ -392,6 +393,9 @@ const BOOT_ID = (() => {
 function ownerGone(n) {
   if (!Number.isInteger(n.owner_pid)) return null;
   if (n.owner_boot && BOOT_ID && n.owner_boot !== BOOT_ID) return true;
+  // Our own pid is always alive: the claim is live only if this process still holds it
+  // (a release that failed to write, or a pid reused within one boot, leaves it unheld).
+  if (n.owner_pid === process.pid) return ![...activeNodes.values()].includes(n.ticket);
   return !pidAlive(n.owner_pid);
 }
 
@@ -1146,7 +1150,7 @@ async function toolGraphRun(a) {
   });
   syncOpenNodes(run);
   const activeKey = `${run.run_id}:${nodeId}`;
-  activeNodes.add(activeKey);
+  activeNodes.set(activeKey, ticket);
   // From here until the outcome is applied (finishNode / checkpointInterruption), a throw
   // releases the claim: still under this ticket and running, the node goes back to pending
   // with its pre-claim fields. Otherwise nothing would ever finish the ticket - the node
