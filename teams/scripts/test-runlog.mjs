@@ -192,3 +192,30 @@ test('a verdict-false record with no reason gets one from its checks/evidence at
     assert.match(i.message, /G1, G3 are unmet/, 'no check reads as a failure, so the evidence summary');
   } finally { for (const x of [cwd, tasks, root]) rmSync(x, { recursive: true, force: true }); }
 });
+
+// A dispatch claimed and not yet applied (taskmanager.mjs's claim): running with no child, its
+// intent at <taskDir>/opening/<token>.json. A harvest taken in that window names the node and
+// keeps the intent, or the archive cannot say why that STORY has no child run.
+test('a running dispatch without a child is listed as summary.opening and its opening/ intent is copied', () => {
+  const { cwd, tasks, td } = fixture();
+  const root = mkdtempSync(join(tmpdir(), 'runlog-root-'));
+  try {
+    const task = JSON.parse(readFileSync(join(td, 'task.json'), 'utf8'));
+    task.nodes.push({ node_id: 'dispatch:P1:1', stage: 'dispatch', subgoal_id: 'P1', state: 'running' });
+    writeFileSync(join(td, 'task.json'), JSON.stringify(task));
+    mkdirSync(join(td, 'opening'), { recursive: true });
+    writeFileSync(join(td, 'opening', 'tok-1.json'), JSON.stringify({ node_id: 'dispatch:P1:1', token: 'tok-1' }));
+    const r = harvestTask({ taskDir: td, cwd, root });
+    assert.deepEqual(r.summary.opening, ['dispatch:P1:1']);
+    assert.equal(JSON.parse(readFileSync(join(r.out, 'opening', 'tok-1.json'), 'utf8')).token, 'tok-1');
+  } finally { for (const d of [cwd, tasks, root]) rmSync(d, { recursive: true, force: true }); }
+});
+
+test('no opening dispatch -> summary carries no opening key', () => {
+  const { cwd, tasks, td } = fixture();
+  const root = mkdtempSync(join(tmpdir(), 'runlog-root-'));
+  try {
+    const r = harvestTask({ taskDir: td, cwd, root });
+    assert.equal('opening' in r.summary, false);
+  } finally { for (const d of [cwd, tasks, root]) rmSync(d, { recursive: true, force: true }); }
+});

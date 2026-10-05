@@ -49,6 +49,7 @@ const FILES = {
   teamsGraph: join(REPO_ROOT, 'teams/mcp/graph.mjs'),
   teamsBroker: join(REPO_ROOT, 'teams/mcp/broker.mjs'),
   teamsTaskmanager: join(REPO_ROOT, 'teams/mcp/taskmanager.mjs'),
+  teamsStagecontract: join(REPO_ROOT, 'teams/mcp/stagecontract.mjs'),
   graphGraph: join(REPO_ROOT, 'graph/mcp/graph.mjs'),
   graphBroker: join(REPO_ROOT, 'graph/mcp/broker.mjs'),
   teamsTickets: join(REPO_ROOT, 'teams/mcp/tickets.mjs'),
@@ -435,7 +436,8 @@ function checkSchemaReachability(fullSrc, schemaNames, allowlist = SCHEMA_FIELD_
 }
 
 test('every NEXT_SCHEMA/VERDICT_SCHEMA field in taskmanager.mjs has a producer, or a reasoned allowlist entry', () => {
-  const r = checkSchemaReachability(src('teamsTaskmanager'), ['NEXT_SCHEMA', 'VERDICT_SCHEMA']);
+  // The stage CONTRACT templates (a producer of payload fields) live in stagecontract.mjs since C4.
+  const r = checkSchemaReachability(src('teamsTaskmanager') + src('teamsStagecontract'), ['NEXT_SCHEMA', 'VERDICT_SCHEMA']);
   assert.deepEqual(r.unreachable, [], `declared with no producer and no allowlist entry: ${r.unreachable.join(', ')}`);
   // The vacuity floor guard A/B/C already explain: too few fields found means extraction
   // stopped matching real code, not that the schemas shrank. Pinned to today's exact shape -
@@ -464,7 +466,7 @@ function build() {
 });
 
 test('proof: re-adding delegate to NEXT_SCHEMA (the exact 2095662 shape) makes guard E fail; the real source passes', () => {
-  const realTaskmanager = src('teamsTaskmanager');
+  const realTaskmanager = src('teamsTaskmanager') + src('teamsStagecontract');
   assert.deepEqual(checkSchemaReachability(realTaskmanager, ['NEXT_SCHEMA', 'VERDICT_SCHEMA']).unreachable, [], 'sanity: real source must pass before mutating it');
 
   const mutated = realTaskmanager.replace(

@@ -12,7 +12,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, basename, dirname } from 'node:path';
 import { loadRunAt, runState, kindSkills, kindOf, KINDS } from '../../mcp/graph.mjs';
 import { graphStageSkills } from '../../mcp/mounts.mjs';
-import { STAGE_SKILLS } from '../../mcp/taskmanager.mjs';
+import { STAGE_SKILLS } from '../../mcp/stagecontract.mjs';
 import { epicKey, storyKey, epicTicketState, storyTicketState, planningPkgs, qaPkgs } from '../../mcp/tickets.mjs';
 
 const REASONING_VERDICT = { critique: 'sound', dispatch: 'accept', accept: 'accept', integrate: 'verified', gate: 'accept' };

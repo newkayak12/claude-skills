@@ -30,19 +30,9 @@ function capHandoff(text) {
 // generation's `isDegenerateSpec` corrective re-author carried; `validateSpec` catches the
 // same emptiness cases (and more) but only lists them - it never explained why they recur.
 export const DEGENERATE_SPEC_DIAGNOSIS = `Diagnosis: the previous spec was rejected by structured-output validation, not by a human judgment call. The usual cause is a single missing or empty top-level field - most often "acceptance" at the goal level, or a subgoal with no "acceptance", no "title", or a title/goal so short it reads as a placeholder rather than real content. The failure mode to avoid: shrinking the whole spec to isolate which field is wrong. Do not throw away subgoals, decomposition, or detail that was not named below. Fix exactly the field(s) named as the problem and return the rest of the spec unchanged.`;
-import { mountBlock } from './mounts.mjs';
+import { mountBlock, SKILL_INVOKE_LINE, SKILL_METHOD_DISCLAIMER, SKILLS_USED_FIELD } from './mounts.mjs';
+export { SKILL_INVOKE_LINE, SKILL_METHOD_DISCLAIMER, SKILLS_USED_FIELD };
 
-// Shared by every Method block a composed prompt can carry - the per-subgoal one below and
-// the stage-mounted one mounts.mjs renders - so the two mechanisms state the same rule in
-// the same words instead of drifting apart.
-// Telemetry, not method: without this field no graph node ever said which skills it loaded, so
-// a run with no skills mounted at all was indistinguishable from one that used them.
-export const SKILLS_USED_FIELD = `Add "skills_used": ["plugin:skill", ...] to the Required output JSON below, naming the ones you actually loaded, or ["none"].`;
-// How to load a listed skill. Only the stage-mounted block used to say it, so a gate whose
-// subgoal Method listed develop:clean-code loaded only the stage mount's skill (develop-renewal-teams
-// R1b diag: 0/6 runs loaded clean-code). Every Method block carries it now.
-export const SKILL_INVOKE_LINE = `Invoke it through the Skill tool. If the Skill tool is not available here, read the skill's own SKILL.md directly and follow it instead.`;
-export const SKILL_METHOD_DISCLAIMER = `A skill that is not installed here is skipped without comment or substitute. Its own output template does not apply - "Required output" below is the only shape you may return - and neither does its "what you do / what I do" half: nobody is reading this but the machine that called you, so ask nothing and finish the work yourself.`;
 
 // Absorbed from what a PRD skill would have supplied. The engine names no PM plugin here: the
 // planning kind is the only caller, it always runs headless, and a method skill that is not
@@ -582,7 +572,17 @@ export function composePrompt(run, n, briefing) {
   lines.push('');
   lines.push(`## Required output`);
   const contract = n.node_id.startsWith('gate:goal') ? CONTRACT['gate:goal'] : CONTRACT[n.stage];
-  lines.push(contract || CONTRACT.implement);
+  // A pinned run (mixed=false: plan/qa/audit children, a mixed:false develop or document run)
+  // accepts one kind, and validateSpec rejects any other. The template's "subgoal|document",
+  // read last, out-voted the Flow line above: 8/8 phase children of the 2026-10-02 ws runs
+  // returned kind "document" on setgoal_1 and passed only on the retry.
+  if (n.stage === 'setgoal' && briefing.mixed === false && briefing.default_kind) {
+    // normalizeSpec reads "planning" back as planning-light in a light run.
+    const k = briefing.default_kind === 'planning-light' ? 'planning' : briefing.default_kind;
+    lines.push(CONTRACT.setgoal.replace('"kind": "subgoal|document"', `"kind": "${k}"`));
+    lines.push(`This run is pinned (mixed=false); every subgoal is kind "${k}"; any kind other than "${k}" fails this spec.`);
+    if (k === 'qa') lines.push(`  "qa" - a case set run against the built tree: cases -> execute -> gate. Its acceptance[] is what the cases exercise; files[] names the report path.`);
+  } else lines.push(contract || CONTRACT.implement);
   if (n.stage === 'gate' && briefing.subgoal && kindOf(briefing.subgoal) === 'planning-light') {
     lines.push(PLANNING_LIGHT_GATE);
   }

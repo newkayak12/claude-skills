@@ -183,8 +183,8 @@
     return bits.join('');
   }
 
-  function childStrip(child) {
-    if (!child) return '<p class="muted">not dispatched yet</p>';
+  function childStrip(child, opening) {
+    if (!child) return '<p class="muted">' + (opening ? 'opening - child run being created' : 'not dispatched yet') + '</p>';
     if (child.missing) return '<p class="reason">child run file missing: ' + esc(child.cwd) + '</p>';
     var out = ['<p class="mono muted">', esc(child.run_id), ' · ', esc(child.cwd), ' · state=', esc(child.state), '</p>'];
     out.push('<div class="strip">');
@@ -264,7 +264,7 @@
       (p.defects_count != null ? '<span>defects: ' + p.defects_count + '</span>' : '') +
       (p.unmet_count != null ? '<span>unmet: ' + p.unmet_count + '</span>' : '') +
       '</div>' +
-      '<div class="pkg-detail">' + childStrip(p.child) + '</div>' +
+      '<div class="pkg-detail">' + childStrip(p.child, p.dispatch && p.dispatch.opening) + '</div>' +
       '</div>'
     );
   }
@@ -389,9 +389,10 @@
     return '<div class="res-worker"><span class="dot ' + esc(n.state || 'pending') + '"></span>' + bits.join(' · ') + '</div>';
   }
 
-  function resTeam(label, teamLike) {
+  function resTeam(label, teamLike, opening) {
     var out = ['<div class="res-node"><div class="res-label">Team ' + esc(label) + '</div>'];
-    if (!teamLike) { out.push('<div class="muted">not dispatched yet</div></div>'); return out.join(''); }
+    // A dispatch claimed and not yet applied (view-collect.mjs's nodeSummary `opening`).
+    if (!teamLike) { out.push('<div class="muted">' + (opening ? 'opening - child run being created' : 'not dispatched yet') + '</div></div>'); return out.join(''); }
     if (teamLike.missing) { out.push('<div class="reason">child run file missing at ' + esc(teamLike.cwd) + '</div></div>'); return out.join(''); }
     // Same fallback as the text renderer: packageModel() (view-collect.mjs) hands back the last
     // attempt's own child/cost when the current one has not opened a worktree yet.
@@ -424,9 +425,9 @@
       (d ? '<div class="mono">pid=' + esc(d.pid) + ' ' + (d.alive ? 'alive' : 'dead') + ' started=' + fmtTime(d.started_at) + ' restarts=' + esc(d.restarts) + (d.exhausted ? ' EXHAUSTED' : '') + '</div>'
         : '<div class="muted">no daemon - driven by hand or an MCP client</div>') + '</div>'];
     if (m.s_run) { out.push(resTeam('S', m.s_run)); return out.join(''); }
-    (m.packages || []).forEach(function (p) { out.push(resTeam(p.id + (p.title ? ' – ' + p.title : ''), p.child)); });
-    if (m.qa) m.qa.rounds.forEach(function (r) { out.push(resTeam(r.id || ('QA:' + r.round), r.child)); });
-    if (m.audit) m.audit.rounds.forEach(function (r) { out.push(resTeam('AUDIT:' + r.round, r.child)); });
+    (m.packages || []).forEach(function (p) { out.push(resTeam(p.id + (p.title ? ' – ' + p.title : ''), p.child, p.dispatch && p.dispatch.opening)); });
+    if (m.qa) m.qa.rounds.forEach(function (r) { out.push(resTeam(r.id || ('QA:' + r.round), r.child, r.dispatch && r.dispatch.opening)); });
+    if (m.audit) m.audit.rounds.forEach(function (r) { out.push(resTeam('AUDIT:' + r.round, r.child, r.dispatch && r.dispatch.opening)); });
     return out.join('');
   }
 

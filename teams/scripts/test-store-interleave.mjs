@@ -892,3 +892,161 @@ test('N2 control: an applied size S verdict delegates to the harness inside the 
   assert.equal(events(id, 'child_driver_spawned', 'S').length, 1, 'one harness driver');
   assert.equal(t.nodes.find((n) => n.node_id === 'shape').state, 'skipped');
 });
+
+// ---------- C3(b): spawns leave the transaction (afterCommit + reservation) ----------
+//
+// The daemon is a marker-writing stub (HARNESS_DAEMON): each spawn appends its pid to
+// <MARK_DIR>/<task id>, then stays alive a while so a second service sees it alive.
+
+const MARK_DIR = mkdtempSync(join(tmpdir(), 'tm-interleave-mark-'));
+scratch.push(MARK_DIR);
+const DAEMON_STUB = join(STUB_DIR, 'daemon.mjs');
+writeFileSync(DAEMON_STUB, [
+  "import { appendFileSync } from 'node:fs';",
+  "import { join } from 'node:path';",
+  "const [dir, , id] = process.argv.slice(2);",
+  "appendFileSync(join(dir, id), process.pid + '\\n');",
+  "setTimeout(() => {}, 4000);",
+].join('\n') + '\n');
+
+async function withDaemonStub(fn) {
+  const prev = { no: process.env.HARNESS_TEST_NO_DAEMON, d: process.env.HARNESS_DAEMON };
+  delete process.env.HARNESS_TEST_NO_DAEMON;
+  process.env.HARNESS_DAEMON = `node ${DAEMON_STUB} ${MARK_DIR}`;
+  try { return await fn(); } finally {
+    process.env.HARNESS_TEST_NO_DAEMON = prev.no;
+    if (prev.d === undefined) delete process.env.HARNESS_DAEMON; else process.env.HARNESS_DAEMON = prev.d;
+  }
+}
+// Waits out the spawn (the stub writes asynchronously) and returns the marker pids.
+async function markers(id, ms = 1500) {
+  const f = join(MARK_DIR, id);
+  const end = Date.now() + ms;
+  while (Date.now() < end) await new Promise((r) => setTimeout(r, 50));
+  const pids = existsSync(f) ? readFileSync(f, 'utf8').split('\n').filter(Boolean).map(Number) : [];
+  spawnedPids.push(...pids);
+  return pids;
+}
+
+test('C3b: a transaction that calls serviceDaemon and then throws spawns no daemon', async () => {
+  await withDaemonStub(async () => {
+    const id = readyDispatch(repo());
+    assert.throws(() => store.mutateTask(id, (t) => {
+      assert.equal(tm.serviceDaemon(t), true, 'serviceDaemon reserved a spawn');
+      throw new Error('abort after serviceDaemon');
+    }), /abort after serviceDaemon/);
+    assert.deepEqual(await markers(id), [], 'no daemon process');
+    assert.equal(load(id).daemon, undefined, 'no reservation on disk');
+  });
+});
+
+test('C3b: a second serviceDaemon in the commit -> applySpawn window spawns nothing; exactly one daemon', async () => {
+  await withDaemonStub(async () => {
+    const id = readyDispatch(repo());
+    const seen = {};
+    __storeHooks.afterReserve = (info) => {
+      seen.inTx = store.inTransaction();
+      seen.info = info;
+      seen.reservation = load(id).daemon && load(id).daemon.spawning;
+      seen.second = store.mutateTask(id, (t) => tm.serviceDaemon(t));
+    };
+    store.mutateTask(id, (t) => { tm.serviceDaemon(t); });
+    assert.equal(__storeHooks.afterReserve, null, 'the hook is one-shot');
+    assert.equal(seen.inTx, false, 'the spawn happens outside the store lock');
+    assert.equal(seen.reservation.pid, process.pid, 'the reservation is on disk before the spawn');
+    assert.ok(seen.reservation.token);
+    assert.equal(seen.second, false, 'a live reservation counts as already spawning');
+    const pids = await markers(id);
+    assert.equal(pids.length, 1, `exactly one daemon: ${pids.join(', ')}`);
+    const d = load(id).daemon;
+    assert.equal(d.pid, pids[0], 'the apply wrote the spawned pid');
+    assert.equal(d.spawning, undefined, 'the reservation is cleared');
+    assert.equal(d.restarts, 0);
+    assert.equal(events(id, 'daemon_spawned').length, 1);
+  });
+});
+
+for (const [label, spawning] of [
+  ['a dead pid', { pid: 2147483646, token: 'dead-token', attempt: 0, reason: 'spawn', restarts: 0 }],
+  ['this pid with a token this process does not hold', { pid: process.pid, token: 'not-held', attempt: 0, reason: 'spawn', restarts: 0 }],
+]) {
+  test(`C3b: a task.daemon.spawning reservation stamped with ${label} is reclaimed and exactly one daemon spawns`, async () => {
+    await withDaemonStub(async () => {
+      const id = seedTask(repo(), [
+        graph.node('dispatch:P1:1', 'dispatch', ['critique'], { subgoal_id: 'P1' }),
+        graph.node('accept:P1:1', 'accept', ['dispatch:P1:1'], { subgoal_id: 'P1' }),
+      ], { daemon: { spawning } });
+      store.mutateTask(id, (t) => { tm.serviceDaemon(t); });
+      store.mutateTask(id, (t) => { tm.serviceDaemon(t); });
+      const pids = await markers(id);
+      assert.equal(pids.length, 1, `exactly one daemon: ${pids.join(', ')}`);
+      const d = load(id).daemon;
+      assert.equal(d.pid, pids[0]);
+      assert.equal(d.spawning, undefined);
+      assert.equal(d.restarts, 0, 'a reclaimed reservation spends no restart');
+      assert.equal(events(id, 'spawn_reclaimed').length, 1);
+    });
+  });
+}
+
+test('C3b: a reservation taken over before the spawn starts no process and records spawn_lost', async () => {
+  await withDaemonStub(async () => {
+    const id = readyDispatch(repo());
+    __storeHooks.afterReserve = () => {
+      // Another process takes the reservation over while this one is about to spawn.
+      store.mutateTask(id, (t) => { t.daemon.spawning = { pid: process.ppid, token: 'theirs', attempt: 0, reason: 'spawn', restarts: 0 }; });
+    };
+    store.mutateTask(id, (t) => { tm.serviceDaemon(t); });
+    assert.deepEqual(await markers(id), [], 'the fresh read before the spawn saw the reservation gone');
+    assert.equal(events(id, 'spawn_lost').length, 1);
+    const d = load(id).daemon;
+    assert.equal(d.spawning.token, 'theirs', 'the other reservation stands');
+    assert.equal(d.pid, undefined, 'no pid applied');
+  });
+});
+
+// The size-S harness driver (openHarnessRun via delegateIfSmall) is spawned after the commit too;
+// the tm_submit reply still carries tm_next's harness fields, read after that commit.
+const DRIVER_MARK_STUB = join(STUB_DIR, 'driver-mark.mjs');
+writeFileSync(DRIVER_MARK_STUB, [
+  "import { appendFileSync } from 'node:fs';",
+  "import { join } from 'node:path';",
+  "const [dir, tag] = process.argv.slice(2);",
+  "appendFileSync(join(dir, tag), process.pid + '\\n');",
+  "setTimeout(() => {}, 4000);",
+].join('\n') + '\n');
+async function withDriverStub(tag, fn) {
+  const prev = process.env.HARNESS_CHILD_DRIVER;
+  process.env.HARNESS_CHILD_DRIVER = `node ${DRIVER_MARK_STUB} ${MARK_DIR} ${tag}`;
+  try { return await fn(); } finally { process.env.HARNESS_CHILD_DRIVER = prev; }
+}
+
+test('C3b: a transaction that throws after delegateIfSmall spawns no harness driver', async () => {
+  await withDriverStub('throw-harness', async () => {
+    const id = sizeReady(repo());
+    assert.throws(() => store.mutateTask(id, (t) => {
+      const n = t.nodes.find((x) => x.node_id === 'size');
+      n.state = 'done'; n.result = SIZE('S'); t.size = 'S';
+      assert.equal(tm.delegateIfSmall(t, n, {}).task_state, 'harness');
+      throw new Error('abort after delegate');
+    }), /abort after delegate/);
+    assert.deepEqual(await markers('throw-harness'), [], 'no harness driver process');
+    assert.equal(load(id).harness_run, undefined);
+    assert.equal(events(id, 'child_driver_spawned').length, 0);
+  });
+});
+
+test('C3b: a size-S tm_submit reply still carries the harness driver and next, read after the commit', async () => {
+  await withDriverStub('reply-harness', async () => {
+    const id = sizeReady(repo());
+    const r = await callTool('tm_submit', { task_id: id, node_id: 'size', payload: SIZE('S') });
+    assert.equal(r.task_state, 'harness', JSON.stringify(r));
+    assert.ok(r.driver && Number.isInteger(r.driver.pid), JSON.stringify(r));
+    assert.equal(typeof r.next, 'string');
+    const h = load(id).harness_run;
+    assert.equal(h.driver.pid, r.driver.pid, 'the reply names the driver the apply wrote');
+    assert.equal(h.spawning, undefined);
+    assert.equal(events(id, 'child_driver_spawned', 'S').length, 1);
+    assert.equal((await markers('reply-harness')).length, 1, 'one harness driver');
+  });
+});

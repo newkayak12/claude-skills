@@ -67,6 +67,7 @@ function renderNode(n, indent, out) {
   if (n.elapsed_ms != null) bits.push(fmtMs(n.elapsed_ms));
   if (n.verdict !== undefined) bits.push(`verdict=${n.verdict}`);
   if (n.match_pct !== undefined) bits.push(`match=${n.match_pct}%`);
+  if (n.opening) bits.push('opening');
   out.push(line(indent, bits.join(' ')));
   if (n.reason) out.push(line(indent + 1, `reason: ${n.reason}`));
   if (n.gaps && n.gaps.length) out.push(line(indent + 1, `gaps: ${n.gaps.join('; ')}`));
@@ -291,9 +292,9 @@ export function renderTicketsText(model) {
 // with executor/vendor/model/state/timing - nodeSummary already carries all of it). Every field
 // this reads already exists on the SAME collect() model the pipeline view renders; nothing here
 // re-derives liveness, cost, or state a second way.
-function renderTeam(label, teamLike, indent, out) {
+function renderTeam(label, teamLike, indent, out, opening = false) {
   out.push(line(indent, `Team ${label}`));
-  if (!teamLike) { out.push(line(indent + 1, '(not dispatched yet - no worktree)')); return; }
+  if (!teamLike) { out.push(line(indent + 1, opening ? '(opening - child run being created)' : '(not dispatched yet - no worktree)')); return; }
   if (teamLike.missing) { out.push(line(indent + 1, `child run file missing at ${teamLike.cwd}`)); return; }
   // packageModel() (view-collect.mjs) falls back to the latest earlier attempt's own child/cost
   // when the CURRENT attempt has not opened a worktree yet - say so plainly, so this never reads
@@ -338,9 +339,9 @@ function renderResourcesBody(m, indent, out) {
     ? `pid=${d.pid} alive=${d.alive} started=${fmtTime(d.started_at)} restarts=${d.restarts}${d.exhausted ? ' EXHAUSTED' : ''}`
     : '(no daemon - driven by hand or an MCP client)'));
   if (m.s_run) { renderTeam('S', m.s_run, indent, out); return; }
-  for (const p of m.packages || []) renderTeam(`${p.id}${p.title ? ' - ' + p.title : ''}`, p.child, indent, out);
-  for (const r of (m.qa && m.qa.rounds) || []) renderTeam(`QA:${r.round}`, r.child, indent, out);
-  for (const r of (m.audit && m.audit.rounds) || []) renderTeam(`AUDIT:${r.round}`, r.child, indent, out);
+  for (const p of m.packages || []) renderTeam(`${p.id}${p.title ? ' - ' + p.title : ''}`, p.child, indent, out, !!(p.dispatch && p.dispatch.opening));
+  for (const r of (m.qa && m.qa.rounds) || []) renderTeam(`QA:${r.round}`, r.child, indent, out, !!(r.dispatch && r.dispatch.opening));
+  for (const r of (m.audit && m.audit.rounds) || []) renderTeam(`AUDIT:${r.round}`, r.child, indent, out, !!(r.dispatch && r.dispatch.opening));
 }
 
 export function renderResourcesText(model) {

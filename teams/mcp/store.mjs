@@ -29,13 +29,18 @@
 //   - A transaction that left the object deep-equal to what it read does not rewrite the file
 //     (tm_status and every tm_wait poll would otherwise churn task.json's mtime and the lock).
 //   - Nested mutateTask on the same path in the same process joins the outer transaction.
+//   - afterCommit(fn) queues a side effect (a process spawn) on the outermost transaction: it runs
+//     after the write and the lock release, in queue order, and never if the transaction (or the
+//     nested frame that queued it) throws. A spawn made inside fn outlived an aborted write as an
+//     untracked live process (C3b, teams 0.40.0).
 //
 // graph.mjs saveRun is transaction-aware rather than rewritten at its 44 call sites: inside an active
 // transaction on the same path it accepts only the transaction's own object (identity) and does no
 // I/O - any other object for that path throws, since its changes would silently vanish at commit.
 // Outside a transaction a saveRun of a task (store_path) always throws /outside mutateTask/ - there
-// is no flag and no env escape; every task.json writer goes through mutateTask. Child runs (no
-// store_path; teams broker.mjs) stay on the merge path - out of scope for this change.
+// is no flag and no env escape; every task.json writer goes through mutateTask. A child run (no
+// store_path; teams broker.mjs) is saved through mutateRun too, merging the caller's run onto the
+// fresh disk copy inside the transaction (C3c, teams 0.40.0).
 
 import { mkdirSync, readFileSync, writeFileSync, renameSync, rmSync, statSync, appendFileSync, unlinkSync, linkSync } from 'node:fs';
 import { join, dirname, resolve, isAbsolute } from 'node:path';
@@ -291,6 +296,22 @@ export function appendLedger(file, line) {
   appendFileSync(file, line);
 }
 
+// Queue fn to run once the outermost open transaction has committed and released its lock; outside
+// a transaction it runs at once. onDiscard (optional) runs instead of fn when the transaction that
+// queued it aborts - for undoing in-memory bookkeeping made alongside the queueing.
+export function afterCommit(fn, onDiscard = null) {
+  if (!frames.length) { fn(); return; }
+  frames[0].after.push({ fn, onDiscard });
+}
+
+// Drop what was queued since `mark` (an aborted frame's share), running each onDiscard.
+function discardAfter(mark) {
+  if (!frames.length) return;
+  for (const { onDiscard } of frames[0].after.splice(mark)) {
+    if (onDiscard) { try { onDiscard(); } catch { /* bookkeeping only */ } }
+  }
+}
+
 function isThenable(v) { return v && (typeof v === 'object' || typeof v === 'function') && typeof v.then === 'function'; }
 
 function runSync(fn, obj) {
@@ -313,10 +334,13 @@ export function mutateRun(path, fn, opts = {}) {
     // Same transaction - but a joined fn that throws (and is caught by the outer fn) keeps none of
     // the lines it recorded.
     const mark = frames[frames.length - 1].ledger.length;
-    try { return runSync(fn, joined.obj); } catch (e) { frames[frames.length - 1].ledger.length = mark; throw e; }
+    const afterMark = frames[0].after.length;
+    try { return runSync(fn, joined.obj); } catch (e) { frames[frames.length - 1].ledger.length = mark; discardAfter(afterMark); throw e; }
   }
   const lock = acquireLock(file);
-  const frame = { path: file, obj: null, ledger: [] };
+  const frame = { path: file, obj: null, ledger: [], after: [] };
+  const afterMark = frames.length ? frames[0].after.length : 0;
+  let after = null; // the outermost frame's queue, set once it committed
   try {
     let raw = null;
     try { raw = readFileSync(file, 'utf8'); } catch (e) {
@@ -331,17 +355,34 @@ export function mutateRun(path, fn, opts = {}) {
     const before = raw === null ? null : JSON.stringify(frame.obj);
     frames.push(frame);
     let out;
-    try { out = runSync(fn, frame.obj); } finally { frames.splice(frames.indexOf(frame), 1); }
-    if (before === null || JSON.stringify(frame.obj) !== before) writeAtomic(file, frame.obj);
+    try {
+      out = runSync(fn, frame.obj);
+      if (before === null || JSON.stringify(frame.obj) !== before) writeAtomic(file, frame.obj);
+    } catch (e) {
+      discardAfter(afterMark);
+      throw e;
+    } finally { frames.splice(frames.indexOf(frame), 1); }
     const parent = frames[frames.length - 1];
     if (parent) { parent.ledger.push(...frame.ledger); return out; }
     for (const [ledgerFile, line] of frame.ledger) {
       try { mkdirSync(dirname(ledgerFile), { recursive: true }); appendFileSync(ledgerFile, line); } catch { /* the ledger is evidence, not a dependency */ }
     }
+    after = frame.after;
     return out;
   } finally {
     releaseLock(lock);
+    // After the release: an afterCommit fn may open its own transaction on this same file.
+    if (after) runAfter(after);
   }
+}
+
+// Every fn runs even if an earlier one threw; the first error is rethrown after the last.
+function runAfter(queue) {
+  let first = null;
+  for (const { fn } of queue) {
+    try { fn(); } catch (e) { if (!first) first = e; }
+  }
+  if (first) throw first;
 }
 
 // mutateTask(taskId | task.json path, fn, opts) - see the header.

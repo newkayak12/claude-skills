@@ -105,6 +105,9 @@ function nodeSummary(n) {
     started_at: n.started_at || null,
     elapsed_ms: elapsedMs(n.started_at, n.ended_at),
   };
+  // A dispatch claimed and not yet applied (taskmanager.mjs's claim): running with no child run
+  // yet - the same predicate tickets.mjs's board uses for its own `opening` flag.
+  if (n.stage === 'dispatch' && n.state === 'running' && !n.child) out.opening = true;
   if (n.state === 'failed' || n.state === 'blocked') {
     out.reason = String(r.reason || '').slice(0, 300) || null;
   }
