@@ -47,6 +47,15 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.8.1 — own-pid claim reclaim and a boot-id test**: `ownerGone` judged a claim by its
+  owner's pid and boot, so a `running` claim stamped under the broker's own pid was never
+  reclaimed, even when this process no longer held its ticket. `activeNodes` now maps each
+  held node to its ticket, and an own-pid claim with a matching boot is reclaimed (`abandoned`) only when this
+  process does not hold that ticket; a held claim is never reclaimed. The existing boot-id
+  branch (a claim from another boot is reclaimed though its pid is alive) gets its first repo
+  test, with a live-pid control that stays `running` and a skip where
+  `/proc/sys/kernel/random/boot_id` is absent; deleting the boot comparison makes the test
+  fail. No default changed, nothing imported from teams. Tests: graph suite 145 (from 143).
 - **v1.8.0 — graph owns a transactional run store**: the run file was written in place
   (`writeFileSync`), so a reader could see half a file, and a lock that timed out let the
   write go ahead unlocked. New `mcp/store.mjs` (graph's own; nothing imported from teams):

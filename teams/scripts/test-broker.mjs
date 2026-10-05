@@ -3887,3 +3887,76 @@ test('code-sprint-P4: a changed_files claim with a note after the path, a glob, 
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+// runit-u10b child-P1-1: an implement node that committed its own work (be40eee, 5fe1b85) left
+// `git status` clean, so every claimed file was "missing" and all three attempts were called
+// liars. crossCheck now also counts what was committed since the subgoal's attribution base -
+// the checkpoint recorded before its FIRST author attempt.
+const commitAll = (cwd, msg = 'node commit') => {
+  spawnSync('git', ['add', '-A'], { cwd });
+  spawnSync('git', ['commit', '-qm', msg], { cwd });
+};
+const headOf = (cwd) => spawnSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).stdout.trim();
+
+test('runit-u10b: a node that commits its claimed file and then submits verifies, not contradicted', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, SOLE);
+    const base = headOf(cwd);
+    await c.call('team_next', { run_id: runId, cwd }); // records implement:U1:1's checkpoint
+    writeFileSync(join(cwd, 'feature.js'), 'export const f = 1;\n');
+    commitAll(cwd);
+    const r = await c.call('team_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: ['feature.js'], handoff: 'h' }) });
+    assert.equal(r.state, 'done', JSON.stringify(r));
+    assert.equal(r.changed_files_verified, true);
+    const { node } = await c.call('team_status', { run_id: runId, cwd, full: true, node_id: 'implement:U1:1' });
+    assert.equal(node.result.change_base, base);
+    assert.deepEqual(node.result.committed_files, ['feature.js'], 'triage can see a commit is what accepted the claim');
+  }, { isolated: true });
+});
+
+test('runit-u10b: on retry attempt 2, re-claiming a file committed in attempt 1 is not contradicted', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, SOLE);
+    const base = headOf(cwd);
+    await c.call('team_next', { run_id: runId, cwd });
+    writeFileSync(join(cwd, 'feature.js'), 'export const f = 1;\n');
+    const first = await c.call('team_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: ['feature.js'], handoff: 'h' }) });
+    assert.equal(first.state, 'done', 'attempt 1 verifies off git status alone');
+    commitAll(cwd, 'attempt 1'); // attempt 1's work is committed before the gate rejects it
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'gate:U1:1', payload: ok({ accept: false, match_pct: 40, gaps: ['fix it'] }) });
+    const next = await c.call('team_next', { run_id: runId, cwd }); // attempt 2's checkpoint is AFTER the commit
+    assert.equal(next.ready[0].node_id, 'implement:U1:2');
+    const r = await c.call('team_submit', { run_id: runId, cwd, node_id: 'implement:U1:2', payload: ok({ changed_files: ['feature.js'], handoff: 'h2' }) });
+    assert.equal(r.state, 'done', JSON.stringify(r));
+    assert.equal(r.changed_files_verified, true);
+    const { node } = await c.call('team_status', { run_id: runId, cwd, full: true, node_id: 'implement:U1:2' });
+    assert.equal(node.result.change_base, base, 'the base is the FIRST attempt\'s checkpoint, not attempt 2\'s');
+  }, { isolated: true });
+});
+
+test('runit-u10b: a claimed file that was never written is still contradicted with a since-base diff in play', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, SOLE);
+    await c.call('team_next', { run_id: runId, cwd });
+    writeFileSync(join(cwd, 'feature.js'), 'export const f = 1;\n');
+    commitAll(cwd);
+    const r = await c.call('team_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: ['feature.js', 'ghost.js'], handoff: 'h' }) });
+    assert.equal(r.state, 'failed');
+    assert.deepEqual(r.contradicted_files, ['ghost.js']);
+  }, { isolated: true });
+});
+
+test('runit-u10b: a committed file on a node with no checkpoint is still contradicted (no-base fallback)', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, SOLE);
+    // no team_next: nothing recorded a checkpoint, so there is no base to diff against
+    writeFileSync(join(cwd, 'feature.js'), 'export const f = 1;\n');
+    commitAll(cwd);
+    const r = await c.call('team_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: ['feature.js'], handoff: 'h' }) });
+    assert.equal(r.state, 'failed');
+    assert.deepEqual(r.contradicted_files, ['feature.js']);
+    const { node } = await c.call('team_status', { run_id: runId, cwd, full: true, node_id: 'implement:U1:1' });
+    assert.equal(node.result.change_base ?? null, null, 'no base recorded, none used');
+  }, { isolated: true });
+});

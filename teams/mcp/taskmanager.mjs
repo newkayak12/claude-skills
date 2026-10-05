@@ -46,7 +46,7 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, readdirSync, openSync, closeSync, statSync, realpathSync } from 'node:fs';
-import { homedir, availableParallelism } from 'node:os';
+import { availableParallelism } from 'node:os';
 import { join, resolve, dirname, basename, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -55,15 +55,19 @@ import {
   epicKey, initiativeKey, storyKey, taskKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
   storyTicketState, storyTaskProgress, epicBoardRows, ticketSnapshot,
   storyLinks, packageFiling, parseTicketKey, storyBlockedReason,
-  planningPkgs, livePlanningPkgs, qaPkgs, phaseOfId, planningStories,
+  planningPkgs, livePlanningPkgs, qaPkgs, phaseOfId, planningStories, storyId, storyLabel,
 } from './tickets.mjs';
 import { writeDocs, renderPrd, cardDocuments, questionLine } from './docs.mjs';
-import { readPointer, ownsRun, findTaggedRun, harnessVerdict, taskTag } from './harnessrun.mjs';
+import { harnessVerdict, taskTag } from './harnessrun.mjs';
 import { logReply, renderStreamLine, renderLedgerLine } from './tasklog.mjs';
 import { validate as validateDiagram, renderToFile as renderDiagram } from './diagram.mjs';
 import { conventionsBlock } from './conventions.mjs';
-import { EXERCISE_RULE, FIDELITY_RULE, QUESTIONS_CONTRACT } from './prompts.mjs';
-import { appendLedger, mutateTask, mutateRun, writeAtomic, inTransaction } from './store.mjs';
+import {
+  tasksRoot, taskDir, taskPath, record, beginEffectLedger, takeEffectLedger, driverAlive,
+  restartBudget, countedDriverRestarts, unfinishedWork, resolveHarnessRun, harnessState,
+} from './taskstate.mjs';
+import { STAGE_SKILLS, stageSkills, MANAGER_CONVENTION_STAGES, CONTRACT, ACCEPT_EXTRA } from './stagecontract.mjs';
+import { mutateTask, mutateRun, writeAtomic, inTransaction, afterCommit } from './store.mjs';
 import { readTeamConfig, resolveTeamOptions, TEAM_DEFAULTS } from './teamconfig.mjs';
 import { pluginDirArgs, isEntryPoint, teamsPluginRoot } from './pluginroots.mjs';
 import { ensureViewer, readViewRecord, viewUrl } from './viewserver.mjs';
@@ -104,45 +108,19 @@ import { computeSubmitResult } from './broker.mjs';
 // header comment) - reused here, not re-parsed, so tm_status/tm_board/the report briefing can
 // never disagree with what the view surface already shows for the same task.
 import { pidAlive } from './proc.mjs';
-import { collectDriverCosts, collectTaskCosts, collectNodeCosts } from '../scripts/bench/lib/drivercost.mjs';
+import { collectDriverCosts, collectTaskCosts, collectNodeCosts } from './drivercost.mjs';
 import { applyMerge, foldRecords } from './reducers.mjs';
 // Light PLAN mode (_repo/docs/plans/2026-09-28-teams-light-plan.md): the structural "is acceptance
 // already declared?" check and the roles.planning resolution it drives. Re-exported so a caller
 // that already imports this module can reach the one detection function by name.
 import { detectDeclaredAcceptance, hasDeclaredAcceptance, resolvePlanningMode, renderAcceptanceTemplate } from './acceptance.mjs';
 export { hasDeclaredAcceptance } from './acceptance.mjs';
+// Moved to leaf modules (taskstate.mjs, stagecontract.mjs, tickets.mjs); re-exported so every
+// caller that imports them from here keeps working.
+export { tasksRoot, taskDir, taskPath, record, driverAlive, unfinishedWork, resolveHarnessRun, STAGE_SKILLS, CONTRACT, storyId, storyLabel };
 
 const SERVER = { name: 'task-manager', version: '0.7.0' };
 const DEFAULT_PROTOCOL = '2025-06-18';
-
-// ---------- where tasks live ----------
-
-export function tasksRoot() {
-  return process.env.HARNESS_TASKS_DIR ? resolve(process.env.HARNESS_TASKS_DIR) : join(homedir(), '.harness', 'tasks');
-}
-export function taskDir(taskId) {
-  return join(tasksRoot(), taskId);
-}
-export function taskPath(taskId) {
-  return join(taskDir(taskId), 'task.json');
-}
-
-// Through store.mjs appendLedger: inside a mutateTask transaction the line is buffered and written
-// only after task.json commits, so a write that aborts leaves no phantom event (2026-10-02 review -
-// toolSubmit recorded tm_submit and then threw on a dispatch payload).
-export function record(task, entry) {
-  // An open's effect (openChild, outside any transaction) holds its lines until its apply lands:
-  // an open that is claim_lost never shows a dispatch the node did not get (goal repair 1).
-  if (effectLedger && !inTransaction()) { effectLedger.push({ ts: Date.now(), ...entry }); return; }
-  try {
-    appendLedger(join(taskDir(task.run_id), 'ledger.jsonl'), JSON.stringify({ ts: Date.now(), ...entry }) + '\n');
-  } catch {
-    /* the ledger is evidence, not a dependency */
-  }
-}
-
-// Set by runClaimed while an open effect runs; see record().
-let effectLedger = null;
 
 // ---------- the manager's stages ----------
 
@@ -310,111 +288,6 @@ function shapeDiagramLines(task) {
   if (shared.length) L.push(`Shared between packages: ${shared.map((n) => `${n.id} (${label.get(n.id)})`).join(', ')}`);
   return L;
 }
-
-// Method a stage may load before it works. A skill named here must be analytic and
-// non-dialogic: it reasons about material it is handed and never asks the operator
-// anything - a node runs headless, so a skill with a "What You Do" half has no one to do
-// it. `size` gets none on purpose: it is a measurement, and its one failure mode is
-// reaching for method instead of running commands. The stage contract always outranks a
-// skill's own output template; the briefing says so, and the contract asks each stage to
-// name what it actually loaded so the effect can be measured rather than assumed.
-export const STAGE_SKILLS = {
-  size: [],
-  // The EPIC's plan stage: the first split, by feature - what a user must be able to do.
-  areas: ['cognition:assumption-extractor'],
-  shape: ['develop:domain-driven-design', 'develop:architecture-designer'],
-  critique: ['think:devils-advocate', 'cognition:assumption-extractor'],
-  accept: ['cognition:epistemic-reasoner'],
-  integrate: ['cognition:second-order-thinker'],
-  'plan-integrate': ['think:devils-advocate'],
-  'areas-critique': ['think:devils-advocate'],
-  'gate:goal': ['cognition:critical-thinking-workflow'],
-};
-
-// tm_open({skills: {...}}) merges over the defaults; skills: false turns the whole thing off.
-function stageSkills(task, n) {
-  if (task.stage_skills === false) return [];
-  const key = n.node_id.startsWith('gate:goal') ? 'gate:goal' : n.stage;
-  const override = task.stage_skills && typeof task.stage_skills === 'object' ? task.stage_skills[key] : undefined;
-  const list = Array.isArray(override) ? override : STAGE_SKILLS[key];
-  return (list || []).map(String).filter(Boolean);
-}
-
-// Every manager stage that decides or judges. size only measures, and report only recounts.
-const MANAGER_CONVENTION_STAGES = new Set(['areas', 'areas-critique', 'shape', 'critique', 'accept', 'integrate', 'plan-integrate', 'gate', 'gate:goal']);
-
-// Manager-level judging stages (shape/critique/accept/integrate/gate/gate:goal) carry the same
-// `questions[]` contract the child-run graph's stages do (D2 slice 3, 0.29.0) - QUESTIONS_CONTRACT is
-// imported from prompts.mjs, not copied (2026-10-02 review: the two literals were byte-identical).
-export const CONTRACT = {
-  size: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "size": "S|L", "flow": "develop|document", "sizing": ["command -> what it showed"], "handoff": "<what shape needs to know>", "evidence": "..."}
-S means one graph run in one worktree can carry the whole request. L means it spans independent modules, packages or repositories that each need their own run and worktree, integrated afterwards. Decide from what commands show - file and module counts, ownership boundaries, build units - and put those commands in "sizing". The default is S: a manager layer exists, and the temptation is to use it. Over-sizing costs a worktree, a run and an integration per package; under-sizing costs one retry.`,
-  // The EPIC's plan stage (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md C2): the first of the
-  // two splits, by feature. Each area becomes a planning card (PLAN-F1, ...) with its own child
-  // run and worktree; plan-integrate judges the merged result, so this stage is not its own judge.
-  areas: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "areas": [{"id": "F1", "title": "<the feature area, in the user's words>", "brief": "<what a user must be able to do in this area, and what is out of it - self-contained>", "deps": [], "items": [1]}], "handoff": "<what the planning cards need to know>", "evidence": "<what you read and what it showed>"}
-You are the EPIC's plan stage. Split the request into FEATURE AREAS - what a user must be able to do, grouped so each group can be planned on its own. Each area becomes its own planning card: a child run with its own worktree that writes that area's PRD section (goal, scope and non-goals, user stories with acceptance criteria, open questions) and returns its user stories. Cards run in parallel.
-This is the first of two splits and its criterion is the FEATURE, not the code: shape later groups the stories by ownership (which tree, which team touches it) into develop cards. Do not split by module, layer, file or phase - an area is something a user would name. Every feature the request names falls in exactly one area: a planning integrate reads the merged PRD for a feature no card covers and for contradictions between areas, and sends the offending card back. One area is the right answer for a request that is one feature; do not pad the count. "deps" names an earlier area only when this area's planning cannot start without reading that one's PRD section - rare, and a chain that only orders the work is wrong. "items" is only for a backlog request ("[backlog priority N]" lines): the 1-based backlog item numbers (N+1) this area covers; every item in exactly one area. Omit it otherwise.
-${QUESTIONS_CONTRACT}`,
-  // M4 (_repo/docs/plans/2026-09-28-teams-adversarial-fixes.md): the gate after the first split. The
-  // plan stage is not its own judge, and before this nothing judged the split before cards ran.
-  'areas-critique': `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "sound": true|false, "blocking": ["..."], "problems": ["..."], "checks": ["<what you compared and what it showed>"], "handoff": "...", "evidence": "..."}
-You judge the EPIC's feature split below - you did not write it. Each area becomes a planning card that writes that area's PRD section, in parallel, so a bad split is paid for by every card. Attack it on four points, from the request itself: (1) coverage - a feature the request names that falls in no area; (2) overlap - a feature two areas would both plan, so their stories collide or contradict; (3) criterion - an area cut by module, layer, file or phase instead of by what a user does; (4) granularity - one feature padded into several areas, or unrelated features forced into one, and an area whose brief is too thin for its card to plan from alone. Set sound=false only for defects in "blocking" - one of the four that would make the cards' PRD wrong or colliding; name the kind inline ("coverage - ..."). Everything else is a problem, carried to the next split attempt as advice. sound=true with an empty checks[] is refused by the engine.
-${QUESTIONS_CONTRACT}`,
-  // C4: the planning cards' PRD sections, merged by the manager into one 10-prd.md, judged here.
-  'plan-integrate': `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "accept": true|false, "checks": ["<what you read in the merged PRD and what it showed>"], "duplicates": ["<story id> -> the cards that both define it"], "contradictions": ["<card> vs <card>: what one requires that the other rules out"], "uncovered": ["<a feature the request names> -> no card's stories cover it"], "retry": [{"card": "PLAN-F1", "gaps": ["what that card must change in its section"]}], "new_areas": [{"title": "...", "brief": "<a feature no existing card should own>"}], "reason": "...", "evidence": "..."}
-You are the judge of the merged PRD, not an author of it: the manager already merged every planning card's section into the one document named below, and the cards' own gates already judged each section alone. Your job is what no card could see from inside its own area. Three checks, each answered from the merged document and the request: (1) every user story id is unique across the whole EPIC; (2) no two areas contradict each other - a rule, a limit, a flow or a non-goal one area states that another area's stories break; (3) every feature the REQUEST names is covered by some card's user stories. accept:false when any of the three fails. Name each card that must change, and what, in "retry" (by its card id, e.g. PLAN-F2) - both sides of a contradiction when both must move; put a feature no existing card should own in "new_areas" and the manager opens a planning card for it. A rejection that names neither a card nor a new area is one nobody can act on. When the feature split itself is wrong - the cards overlap so much, or are cut so badly, that fixing card by card cannot converge - return accept:false with "resplit": true and say why in "reason": the manager retires every card and the plan stage splits the request again, judged again before any card runs. accept:true with an empty checks[] is refused by the engine.
-${QUESTIONS_CONTRACT}`,
-  shape: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "acceptance": ["goal-level criteria for the integrated result"], "packages": [{"id": "P1", "title": "...", "flow": "develop|document", "skills": ["plugin:skill"], "brief": "<the request this package's own graph run will receive - self-contained>", "acceptance": ["what the package must deliver, checkable inside its worktree"], "touches": ["paths or modules this package changes"], "deps": ["P0"], "implements": ["US-1"], "enables": []}], "handoff": "...", "evidence": "..."}
-"skills" is optional and is method for the package, not for you: you are the stage that knows what each package IS, and a CLI package and a reference-document package want different method. Name the skills that package's own nodes should work by, and they travel into its child run; leave it out when the brief is method enough. Do not name a skill that asks its reader questions - the child's nodes run headless too.
-Six rules critique will refuse the shape over, so decide them here rather than letting it find them. One: every shared artifact two or more packages depend on - the composition root or app assembly that makes the merged tree runnable, a cross-package contract, an auth or admission token and its verifier, a shared schema or type - is owned by exactly one package, named in that package's touches[] AND in its acceptance[]. A package may not be judged on a primitive no package was told to build. A package that owns only such artifacts delivers no story by itself: leave its implements[] empty and list in enables[] the stories that cannot be delivered without it - never claim a story in implements[] to get it past coverage. Two: every goal-level criterion must be checkable by the integration step from the merged tree alone, and no two of them may contradict each other; a criterion that needs an environment this harness cannot produce states the achievable measurement and what it extrapolates from, rather than naming a number no run can reach. Three: a package's own acceptance must be satisfiable from that package's deps[] alone - if proving it needs a sibling's delivered result, that sibling is a dependency or the criterion belongs to whoever has it. Four: ${EXERCISE_RULE} Five: ${FIDELITY_RULE} Six: a package never deps, for any part of its own work, on a package whose failure the request tolerates - an experimental, beta or optional lane, or work the request says may fail - nor on a package of lower priority than itself, since a budget stop drops lower priority first; this holds even when that part is a real data dependency (a README line describing the beta lane is still the beta's part). Every package is protected this way, whatever its own priority. Remedies, in this order: first, the dependent package does that part from the request alone, without the edge (it writes the beta-lane line from the brief); or move that part into the tolerated or lower-priority package itself, or into another package the request tolerates too - valid only when the move creates no touches[] overlap, since two packages touching one file is its own blocker. Either way the tolerated one failing never blocks work the request needs. A dep on a higher-priority package whose failure the request does not tolerate is fine; a tolerated package ranked above the dependent one by its priority number is still tolerated, so that edge is not.
-Each package becomes one graph run in its own worktree. A package with no deps branches from the current HEAD; a package with deps branches from its first dependency's delivered branch with the others merged in, so it builds on what they delivered - not on stubs. Two packages that touch the same path will conflict at integration: split by ownership, not by phase. A dependency means the package needs another's delivered result; it receives that package's report as context and starts from its tree. Every package must be size S on its own - if one still needs splitting, the shape is wrong. Two to six packages is the usual range. Each package's child run still plans how to build it (plan -> setgoal -> critique), then implements, tests and gates it, and closes with its own gate:goal and report - so write its brief and acceptance as the contract that run is held to: its setgoal carries the acceptance verbatim.
-Optional: "diagram" - the package map as you see it, so critique and integrate judge the seams you drew rather than guess them: {"type": "architecture", "title": "...", "nodes": [{"id": "P1", "label": "<= 48 chars", "kind": "package|service|store|queue|external|actor", "row": 0, "col": 0, "note": "..."}], "edges": [{"from": "P1", "to": "P2", "label": "what crosses: the contract, file or call", "style": "sync|async|data|fail"}], "groups": [{"id": "g", "label": "...", "nodes": ["P1"]}]}. One node per package (id = the package id), plus a node for each thing two packages share - a contract, a schema, a store, the composition root. You place every node: row/col, one per cell, entry point at the left. Every node needs an edge. If you use "groups", a group's box is drawn as the rectangle spanning the min/max row and min/max col of its own members - so give every group's members a row/col range that no other node, member of a different group or not, also falls inside. In practice: put a group's members in their own contiguous rows within one column, or their own columns, rather than interleaving two groups' members down the same column (a node from group A sitting between two rows of group B reads as inside group B's box even though you meant it for A). The manager validates it (develop:architecture-designer's diagram IR), tries to repair a group whose box only has this one defect by moving the stray node to a column of its own, and renders it beside the docs; one that still fails after repair is replaced by the plain dependency map and the problems are recorded.
-${QUESTIONS_CONTRACT}`,
-  critique: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "sound": true|false, "blocking": ["..."], "problems": ["..."], "handoff": "...", "evidence": "..."}
-Attack the shape: packages that overlap in touches[], a dependency the brief does not actually need, a package too large to be one run, a goal-level criterion no integration step could check, a package that changes model instructions (a skill, a prompt) with no acceptance item that runs them - blocking, since grep cannot verify behaviour - a goal-level or package acceptance criterion stricter than the request - blocking, since correct work fails it - a package that deps on a package whose failure the request tolerates, whatever their priority numbers, or on a package of lower priority than itself - blocking, even when the edge carries a real data dependency - and - above all - a request that was S sized as L. Set sound=false only for defects in "blocking" that make the packages impossible to run, impossible to integrate, or impossible to verify. Everything else is a problem, carried forward as advice.
-Blocking defects come in three kinds - name the kind inline in the "blocking" entry itself (e.g. "shape - ..."), so it is legible without a second pass. (These are not the A/B/C of the plan docs' critique measurements, which classify by where the fix lands.) shape: the "## Shape analysis" facts above are signals, not verdicts - a genuinely small app can be one linear chain, and one package can legitimately hold the shared contract - so decide with evidence from the brief, not from the numbers alone. A foundation or shared package that owns, in touches[], more than the contracts/types/protocols/interfaces the other packages build against (bloated in the analysis, or simply the one everything else deps on) is a shape defect unless the shape says why that extra scope cannot be split out. A fully serial shape (max_parallel_width 1 across more than one package) is a shape defect unless a real data dependency the brief itself names - not convenience, not habit, not "it was easier to write in order" - requires every edge; a chain that only avoids coordination is blocking, not a problem carried forward as advice. unrunnable: packages that overlap in touches[], a dependency cycle, a dependency the brief does not need, a package too large to be one run, a dependency on a package whose failure the request tolerates (an experimental, beta or optional lane, or work the request says may fail) or on a package of lower priority than the dependent one (a budget stop drops lower priority first) - this one blocks even when the brief names a real data dependency for the edge, and it protects every package, whatever its own priority. A tolerated package's priority number never excuses the edge: a beta lane ranked above the dependent package is still tolerated. A dep on a higher-priority package whose failure the request does not tolerate is fine. The fix to name: first, the dependent package does that part from the request alone, without the edge; moving it into the tolerated package, or another package the request tolerates too, is a fix only when it creates no touches[] overlap. unjudgeable: a goal-level criterion no integration step could check, criteria that contradict each other, a goal-level or package acceptance criterion stricter than the request - exact agreement between model runs on a count the pre-change version itself varies on, or a pre-change version required to show a property it demonstrably lacks (read the pre-change version, or the old text the brief quotes, as the rule below says; when the brief or the pre-change file shows the lack, the criterion blocks - not a property it might lack with nothing showing it); a criterion that allows a rerun on mismatch but still demands exact agreement of such counts is just as stricter than the request, since a rerun is another sample of the same variance, not a cure, so block every such criterion, the one with a rerun clause included - or a request that was S sized as L. Agreement on a verdict or a categorical choice across runs is not stricter and does not block - the rule every criterion answers to, which says so: ${FIDELITY_RULE} A criterion you would merely improve is a problem, not a blocker: block only a criterion that correct work would fail. sound=false whenever "blocking" holds any entry - a shape defect blocks as much as an unrunnable one.
-${QUESTIONS_CONTRACT}`,
-  accept: `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "accept": true|false, "match_pct": 0-100, "checks": ["<what you verified in the worktree or the report, and what it showed>"], "gaps": ["what the package did not deliver"], "observations": ["weaknesses that do not block"], "reason": "...", "evidence": "..."}
-You are the judge, not the actor. The child run's own goal gate and report are below; judge them against THIS package's acceptance, which the child never saw in full. A child that passed its own gate but delivered less than the package asked for is a gap here. Absent evidence is a gap, not a pass - and for model instructions (a skill, a prompt), a criterion about how the model behaves is evidenced only by a run on an input; a grep that the words are there is absent evidence for it.
-accept:true with an empty checks[] is refused by the engine - a judgement with no evidence is a guess.
-If "What the child run delivered" below has an "Upstream defects it reported" list, the child found something wrong OUTSIDE this package's own touches[], in a package it deps on - not a gap in what THIS package delivered. Copy every one of them through verbatim into your own JSON as "upstream_defects": [{"package": "...", "title": "...", "evidence": "...", "touches": ["..."]}] - the manager files each one as a fix STORY owned by the upstream package's own scope, the same way a QA-found defect is filed. Do not judge this package down, and do not put an upstream defect only in "gaps": it is not this package's fault and is not this package's fix.
-${QUESTIONS_CONTRACT}`,
-  integrate: `Return JSON: {"stage_ok": true|false, "skills_used": ["<skill or none>"], "verified": true|false, "checks": ["command -> observed output"], "unowned": ["requirement -> the package that delivered it, NONE if no package did, or <package> -> did not deliver its own stated scope"], "duplication": ["responsibility built more than once -> the packages that each built it, and what shared module it should have been"], "volume": ["package -> files/LOC/tests it delivered -> plausible for its stated scope, or looks like a card was closed rather than a job finished, and why"], "evidence": "..."}
-The package branches are already merged into the integration worktree named below - the manager did that and recorded each merge commit. Your job is what no package could do alone: run the goal-level checks the shape's acceptance implies against the combined tree, and read the seams between packages. stage_ok=false when a check could not run at all. verified=false when the combined tree fails a check the packages passed separately. Do not fix package work here: a failing seam is a gap for the gate and a repackage for the manager.
-Three more questions, answered with evidence, not vibes - the same product-owner pass planning's audit takes after integration, run here so it happens even when roles.audit is off (audit, when it does run, takes this as its own second pass - do not treat this as done because that one is coming): missing - map every requirement in the request or the shape's acceptance to the package that implemented it, name any with no owning package, and name any package whose stated scope it did not actually deliver, into "unowned". duplication - name any responsibility two or more packages each implemented, and any type or helper multiple packages each defined locally instead of sharing, into "duplication", saying what the shared module should be called. volume - for each package, give file/LOC/test counts and say whether that size is plausible for its stated scope, into "volume", with the reasoning that got you there, not just the numbers. An empty list in any of the three is a real finding, not something you skipped.
-verified:true with an empty checks[] is refused by the engine - a judgement with no evidence is a guess.
-${QUESTIONS_CONTRACT}`,
-  'gate:goal': `Return JSON: {"stage_ok": true, "skills_used": ["<skill or none>"], "accept": true|false, "match_pct": 0-100, "checks": ["<what you verified and what it showed>"], "gaps": ["what blocks acceptance"], "observations": ["weaknesses that do not block"], "spec_drift": ["where the shape asked for less than the request did"], "reason": "...", "evidence": "..."}
-You are the judge, not the actor, and the only node that sees the original request again. Judge the integrated result against BOTH the goal-level acceptance and the REQUEST as written. Anything the request asked for that no package delivered and no criterion named belongs in "spec_drift". Absent evidence is a gap, not a pass.
-accept:true with an empty checks[] is refused by the engine - a judgement with no evidence is a guess.
-${QUESTIONS_CONTRACT}`,
-  report: `Return JSON: {"stage_ok": true, "handoff": "<the final report>", "evidence": "..."}
-Synthesize from the node results below only: which packages ran, what each delivered, what the integration showed, what the gate said. State plainly what was not done and why.`,
-  // §6.5-3 (_repo/docs/plans/2026-09-28-teams-light-plan.md): the brainstorm nobody held with the user
-  // before tm_open, held by the engine from the request instead. Opened only when tm_open got no
-  // decisions[] - its result becomes task.decisions (finish's foldBrainstorm), which PLAN and
-  // every package then read as settled.
-  brainstorm: `Return JSON: {"stage_ok": true, "intent": "<the request restated in one sentence>", "scope": {"in": ["..."], "out": ["..."]}, "approaches": [{"approach": "...", "tradeoff": "..."}], "chose": "<the approach you pick>", "because": "<why that one>", "assumptions": ["<what you had to assume because the request does not say>"], "questions": [{"question": "...", "options": [{"option": "...", "consequence": "..."}], "default": "<what you decide if nobody answers - required>", "why": "<why only the requester can answer this>"}], "handoff": "<one paragraph the planner most needs>", "evidence": "<what you read in the project and what it showed>"}
-Nobody held a brainstorm with the requester before this task opened, so you hold it for them, from the request and the project alone. Read the project first (read-only) so you never ask what the tree already answers. Then settle, in one pass: what the request is for (intent), what is in and what is out (scope), two or three real approaches with their trade-offs, the one you pick and why, and what you had to assume.
-"questions" is only for what the REQUESTER alone can answer and the request does not say - what they want, what to leave out, A or B. A fact the project or a source can settle is not a question: it is research, and PLAN's investigate does it. Every question carries two to four options, your recommended one first, and a "default" - nobody may be there to answer. An interactive task puts them to the requester on one card; otherwise your defaults stand. Either way, everything you return here is written down as decided for the whole task and every package reads it as a rule, so choose conservatively and say what you assumed.`,
-  // A card the manager graph parks for a human the moment a `questions[]`-bearing stage
-  // completes (openAsk, generalized in graph.mjs - D2 slice 3). It never dispatches to a
-  // fresh agent - the same reason `ask` is not in MANAGER_CONVENTION_STAGES above - this entry
-  // exists only so composeTaskPrompt has contract text to show the PERSON reading the card
-  // (tm_inbox's briefing_path), not a model.
-  ask: `Return JSON: {"stage_ok": true|false, "decisions": [{"question": "<the question, as it was asked>", "chose": "<the option you picked, in full>", "because": "<optional: why, or a condition on it>"}], "evidence": "who decided, and when"}`,
-};
-
-// What an ordinary accept never has to say, and a phase-Team's accept does. Both of these pass
-// a list UP to the manager rather than judging it: the QA accept's `defects` and the audit
-// accept's `unmet` are what finish() files STORYs from (§5b). A judge that is never told to
-// return the field returns a verdict the hook has nothing to act on - so the field is named
-// here, in the same breath as the contract it extends, rather than left to the child's report.
-const ACCEPT_EXTRA = {
-  qa: `This package is the goal-level QA pass, so your JSON carries one more field: "defects": [{"title": "...", "touches": ["path"], "deps": ["P1"], "evidence": "<how to reproduce>", "severity": "high|medium|low"}]. Every defect the QA report substantiates goes there, whether or not you accept the package - the manager files each one as its own STORY and loops the task back through integration. An empty list is the right answer when QA found nothing; do not invent one, and do not put a defect only in "gaps". If the briefing below has a "Defects it reported" list under "What the child run delivered", every entry there came from the case set actually being run and MUST turn into one object in your own "defects" array (title + evidence at minimum) - dropping one because the package also gets accepted is exactly the failure this field exists to prevent.`,
-  audit: `This package is planning's audit pass, so your JSON carries one more field: "unmet": ["US-n -> what the integrated result still does not do"]. Put every user story the audit showed is unsatisfied there, one entry each, whether or not you accept the package - the manager files each as its own STORY. An empty list is the right answer when every story is met.`,
-};
 
 function bullets(list) {
   return (list || []).map((x) => `- ${x}`).join('\n') || '- (none)';
@@ -1073,22 +946,6 @@ function planningStoryLines(stories) {
 // (tickets.mjs's planningStories) - passed by finish(), so this stays a pure function of what it
 // is handed. undefined/null skips the check entirely (a caller with no planning to check against;
 // the engine itself always passes the list now that planning always runs).
-// A user story arrives from gate:goal as {"id": "US-1", "title": "...", "acceptance": [...]} -
-// the shape its own contract asks for. `String(story)` on that gives "[object Object]", which
-// matched no packages[].implements[] entry, so with planning on shape could never pass and the
-// develop workflow could not stand up at all (idol-pm-1, 2026-09-22). Invisible until then only
-// because every earlier planning run returned zero stories and the loop never ran.
-export function storyId(story) {
-  if (story && typeof story === 'object') return String(story.id || story.US || story.story_id || '').trim();
-  return String(story == null ? '' : story).trim();
-}
-
-export function storyLabel(story) {
-  const id = storyId(story);
-  const title = story && typeof story === 'object' ? String(story.title || '').trim() : '';
-  return title ? `${id} - ${title}` : id;
-}
-
 // A touches entry as the path it claims: a trailing /** or /* claims the directory, so
 // "src/a/**", "src/a/*" and "src/a" are one scope. Any other wildcard is left as written and
 // only ever matches itself - guessing what "src/*.test.ts" covers would fail good shapes.
@@ -1710,10 +1567,13 @@ export function clearCapacity(task, packageId) {
       delete h.waiting_capacity;
       if (!noDriver()) {
         const restarts = (h.driver && h.driver.restarts) || [];
-        const fresh = spawnHarnessDriver(task, { resume: true, run: resolveHarnessRun(task), attempt: nextSpawnAttempt(h) });
-        fresh.restarts = restarts;
-        h.driver = fresh;
-        record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: 'S', pid: fresh.pid, reason: 'reset_capacity' });
+        const run = resolveHarnessRun(task);
+        const attempt = nextSpawnAttempt(h);
+        respawnDriver(task, 'S', h, {
+          attempt, reason: 'reset_capacity', restarts,
+          spawn: (t) => spawnHarnessDriver(t, { resume: true, run, attempt }),
+          event: (t, fresh) => ({ event: 'child_driver_restarted', task_id: t.run_id, node_id: 'S', pid: fresh.pid, reason: 'reset_capacity' }),
+        });
       }
       resumed.push('S');
     }
@@ -1725,11 +1585,13 @@ export function clearCapacity(task, packageId) {
       reopenCapacity(n.child);
       if (!noDriver()) {
         const restarts = (n.child.driver && n.child.driver.restarts) || [];
-        const fresh = spawnChildDriver(task, n.node_id, n.child, { resume: true, attempt: nextSpawnAttempt(n.child) });
-        fresh.restarts = restarts;
-        n.child.driver = fresh;
-        delete n.child.stalled_since;
-        record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: n.node_id, pid: fresh.pid, reason: 'reset_capacity' });
+        const attempt = nextSpawnAttempt(n.child);
+        const nodeId = n.node_id;
+        respawnDriver(task, nodeId, n.child, {
+          attempt, reason: 'reset_capacity', restarts,
+          spawn: (t, c) => spawnChildDriver(t, nodeId, c, { resume: true, attempt }),
+          event: (t, fresh) => ({ event: 'child_driver_restarted', task_id: t.run_id, node_id: nodeId, pid: fresh.pid, reason: 'reset_capacity' }),
+        });
       }
       resumed.push(n.node_id);
     }
@@ -2845,10 +2707,6 @@ function spawnChildDriver(task, nodeIdLabel, child, opts = {}) {
   }
 }
 
-export function driverAlive(driver) {
-  return !!(driver && driver.pid) && pidAlive(driver.pid);
-}
-
 function killDriver(driver) {
   if (!driverAlive(driver)) return false;
   // detached:true made it a group leader, so the whole subtree goes. Best effort either way.
@@ -2912,28 +2770,6 @@ function nextSpawnAttempt(child) {
   return n;
 }
 
-// The restart budget and the restarts that count against it (the sliding window when
-// restart_period_minutes > 0 - see serviceDeadDriver). Shared with dispatchSettled, which has to
-// know when a dead driver will never be respawned so the dispatch can fold instead of sitting
-// 'running' forever: idol-beta-ask1's P6 spent its budget and then stayed running 16h+, because
-// dispatchSettled only ever read the child run's own state, which a dead driver never advances.
-function restartBudget(task) {
-  return Number.isInteger(task.driver_restarts) ? task.driver_restarts : 2;
-}
-
-// OTP-style restart intensity: driver_restarts is a flat, forever counter by default
-// (restart_period_minutes 0, teamconfig.mjs) - every death this run has ever had counts
-// against the budget. >0 makes it a sliding window: only the restarts whose own `at` falls
-// inside the last restart_period_minutes count, so a package that dies once an hour for a week
-// never exhausts a budget sized for "how many deaths in a row".
-function countedDriverRestarts(task, driver) {
-  const prior = (driver && driver.restarts) || [];
-  const periodMinutes = Number.isInteger(task.restart_period_minutes) ? task.restart_period_minutes : TEAM_DEFAULTS.restart_period_minutes;
-  return periodMinutes > 0
-    ? prior.filter((r) => Number.isInteger(r.at) && Date.now() - r.at <= periodMinutes * 60000)
-    : prior;
-}
-
 export function driverRestartsSpent(task, child) {
   const d = child && child.driver;
   if (!d || driverAlive(d) || child.waiting_capacity) return false;
@@ -2950,7 +2786,7 @@ export function driverRestartsSpent(task, child) {
 // Returns true when it changed anything (so the caller knows to persist the task).
 export function serviceDeadDriver(task, child, nodeId) {
   const driver = child.driver;
-  if (!driver || driverAlive(driver)) return false;
+  if (!driver || driverAlive(driver) || spawning(child)) return false;
   const run = loadRun(child.cwd, child.run_id);
   const cs = run ? runState(run) : { state: 'missing' };
   // A run parked on a human is not a dead run, and no driver is SUPPOSED to be alive while it
@@ -2986,12 +2822,12 @@ export function serviceDeadDriver(task, child, nodeId) {
   const countedRestarts = countedDriverRestarts(task, driver);
   if (countedRestarts.length >= budget) return false; // budget spent (within the window, if any): fold it, do not respawn again
   const restarts = [...priorRestarts, entry];
-  const fresh = spawnChildDriver(task, nodeId, child, { resume: true, attempt: nextSpawnAttempt(child) });
-  fresh.restarts = restarts;
-  child.driver = fresh;
-  delete child.stalled_since; // a fresh driver has made no progress yet, but it has also not stalled
-  record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: nodeId, pid: fresh.pid, restart: restarts.length, budget });
-  return true;
+  const attempt = nextSpawnAttempt(child);
+  return respawnDriver(task, nodeId, child, {
+    attempt, reason: 'restart', restarts,
+    spawn: (t, c) => spawnChildDriver(t, nodeId, c, { resume: true, attempt }),
+    event: (t, fresh) => ({ event: 'child_driver_restarted', task_id: t.run_id, node_id: nodeId, pid: fresh.pid, restart: restarts.length, budget }),
+  });
 }
 
 // The mtime of whatever this child's own driver most recently touched - the same directory
@@ -3114,9 +2950,31 @@ export function noDaemon() {
 // task.daemon mirrors task.leader's old shape: {pid, started_at, log, stderr, exit, command,
 // spawn_count, restarts, exhausted}. Spawned detached + unref(), like every driver - it has to
 // outlive the session that opened the task, because closing that session must not stop the run.
-function spawnDaemon(task, opts = {}) {
+// Reserved inside the caller's transaction (task.daemon.spawning) and spawned after it commits
+// (reserveSpawn). A task.daemon holding only a reservation is not a prior daemon: no restart.
+function spawnDaemon(task) {
+  const prior = !!(task.daemon && task.daemon.started_at);
+  const attempt = prior ? (task.daemon.spawn_count || 0) : 0;
+  const priorRestarts = prior ? (task.daemon.restarts || 0) : 0;
+  const restarts = prior ? priorRestarts + 1 : 0;
+  if (!task.daemon) task.daemon = {};
+  return reserveSpawn(task, 'daemon', task.daemon, {
+    attempt, reason: prior ? 'restart' : 'spawn', restarts,
+    spawn: (t) => spawnDaemonProcess(t, attempt),
+    apply: (t, _h, d) => {
+      if (d.error) {
+        t.daemon = { ...d, spawn_count: attempt + 1, restarts: priorRestarts, exhausted: false };
+        record(t, { event: 'daemon_spawn_failed', task_id: t.run_id, error: d.error });
+        return;
+      }
+      t.daemon = { ...d, spawn_count: attempt + 1, restarts, exhausted: false };
+      record(t, { event: prior ? 'daemon_restarted' : 'daemon_spawned', task_id: t.run_id, pid: d.pid, log: d.log });
+    },
+  });
+}
+
+function spawnDaemonProcess(task, attempt) {
   const dir = join(taskDir(task.run_id), 'daemon');
-  const attempt = task.daemon ? (task.daemon.spawn_count || 0) : 0;
   const suffix = attempt > 0 ? `.restart${attempt}` : '';
   const log = join(dir, `daemon${suffix}.log.jsonl`);
   const stderr = join(dir, `daemon${suffix}.stderr.txt`);
@@ -3139,13 +2997,9 @@ function spawnDaemon(task, opts = {}) {
       });
     } catch { /* best-effort */ }
     proc.unref();
-    const d = { pid: proc.pid || null, started_at: Date.now(), log, stderr, exit: exitFile, command };
-    task.daemon = { ...d, spawn_count: attempt + 1, restarts: task.daemon ? (task.daemon.restarts || 0) + (opts.resume ? 1 : 0) : 0, exhausted: false };
-    record(task, { event: opts.resume ? 'daemon_restarted' : 'daemon_spawned', task_id: task.run_id, pid: d.pid, log: d.log, ...(d.error ? { error: d.error } : {}) });
+    return { pid: proc.pid || null, started_at: Date.now(), log, stderr, exit: exitFile, command };
   } catch (e) {
-    const error = String((e && e.message) || e);
-    task.daemon = { pid: null, started_at: Date.now(), log, stderr, exit: exitFile, command, error, spawn_count: attempt + 1, restarts: task.daemon ? (task.daemon.restarts || 0) : 0, exhausted: false };
-    record(task, { event: 'daemon_spawn_failed', task_id: task.run_id, error });
+    return { pid: null, started_at: Date.now(), log, stderr, exit: exitFile, command, error: String((e && e.message) || e) };
   } finally {
     for (const fd of [out, err]) { try { if (fd !== null) closeSync(fd); } catch { /* already closed */ } }
   }
@@ -3164,52 +3018,6 @@ function spawnDaemon(task, opts = {}) {
 // block: code-beta-X4's shape judge replied with broken JSON, the daemon scheduled the re-judge,
 // and tm_wait told the driving session "blocked" - which wrote its final report and exited two
 // minutes in, while the task went on without anyone watching.
-// What a finished task left undone, or null when it delivered everything it set out to.
-// portfolio-consolidate-8518d5dd closed `complete` with integrate:6 refused, P3 unaccepted, P4
-// never dispatched and QA and gate:goal skipped - every machine-readable surface said success,
-// and a settled retry budget (idol-pm-1) read the same. One rule, whatever stopped it (budget,
-// timebox, a spent retry budget): a written report over any of these is `partial`, not `complete`.
-export function unfinishedWork(task) {
-  if (!task || !Array.isArray(task.nodes)) return null;
-  // Size S on the development harness: what its own goal gate said, or why its driver stopped.
-  if (task.harness_run) {
-    const st = harnessState(task);
-    if (st.partial_reasons) return { partial: true, partial_reasons: st.partial_reasons };
-    return st.state === 'blocked' ? { partial: true, partial_reasons: [st.reason] } : null;
-  }
-  const reasons = [];
-  const last = (pred) => task.nodes.filter(pred).pop();
-  if (task.planning_failed) {
-    const f = task.planning_failed;
-    reasons.push(`planning stopped at ${f.node_id} with no retry left: ${String(f.reason || '').slice(0, 300)}${f.prd ? '' : ' - no planning card was accepted, so there is no PRD'}`);
-  }
-  const skippedPkgs = (task.budget_stopped && task.budget_stopped.skipped_packages) || [];
-  for (const p of ((task.spec && task.spec.packages) || [])) {
-    const id = String(p.id);
-    if (last((n) => n.stage === 'accept' && n.subgoal_id === id && n.state === 'done')) continue;
-    const d = last((n) => n.stage === 'dispatch' && n.subgoal_id === id);
-    reasons.push(skippedPkgs.includes(id) || !d || d.state === 'pending'
-      ? `${id}: never dispatched (budget/timebox)`
-      : `${id}: not accepted (${d.node_id} ${d.state})`);
-  }
-  const integ = last((n) => n.stage === 'integrate' && n.state !== 'skipped');
-  if (!integ) reasons.push('no integrate ran');
-  else if (integ.state !== 'done') reasons.push(`${integ.node_id} ${integ.state}${integ.result && integ.result.verified === false ? ' (verified=false)' : ''}`);
-  // Every card of every pass: a planning card that never got accepted, and each QA card (C7),
-  // each named on its own - "QA-F2: no verdict" says which area went unexercised.
-  for (const pkg of [...livePlanningPkgs(task), ...qaPkgs(task), task.audit_pkg].filter(Boolean)) {
-    const pass = String(pkg.id);
-    const a = last((n) => n.stage === 'accept' && n.subgoal_id === pass);
-    if (a && a.state === 'done') continue;
-    reasons.push(`${pass}: no verdict (${a ? `${a.node_id} ${a.state}` : 'never opened'})`);
-  }
-  const goal = last((n) => n.stage === 'gate' && n.subgoal_id == null && String(n.node_id).startsWith('gate:goal'));
-  if (goal && goal.state !== 'done') reasons.push(`${goal.node_id} ${goal.state}`);
-  const unreachable = task.nodes.filter((n) => n.state === 'unreachable').length;
-  if (unreachable && !reasons.length) reasons.push(`${unreachable} node(s) unreachable after a spent retry budget`);
-  return reasons.length ? { partial: true, partial_reasons: reasons } : null;
-}
-
 export function managerState(task) {
   const st = runState(task);
   if (st.state === 'complete') {
@@ -3259,11 +3067,12 @@ function sState(cs) {
 // watcher branch, no inbox: any caller may read or mutate the task at any time, the same as it
 // always could when there was no daemon at all. This only re-raises a dead daemon while work
 // remains - taskState() is the only thing that decides whether there is anything left to drive.
-function serviceDaemon(task) {
+export function serviceDaemon(task) {
   if (noDaemon()) return false;
   const st = taskState(task).state;
   if (st === 'complete' || st === 'partial' || st === 'blocked') return false;
   if (task.daemon && driverAlive(task.daemon)) return false;
+  if (spawning(task.daemon)) return false; // a spawn already under way: one daemon per task
   if (task.daemon && task.daemon.exhausted) return false;
   const budget = Number.isInteger(task.driver_restarts) ? task.driver_restarts : 2;
   if (task.daemon && (task.daemon.restarts || 0) >= budget) {
@@ -3272,7 +3081,7 @@ function serviceDaemon(task) {
     saveRun(task);
     return true;
   }
-  spawnDaemon(task, { resume: !!task.daemon });
+  if (!spawnDaemon(task)) return false;
   saveRun(task);
   return true;
 }
@@ -5623,7 +5432,8 @@ async function openTaskAndMaybePin(a, eventName) {
   try { view = await ensureViewer(tasksRoot(), task.run_id); } catch { view = null; }
   if (!task.size_pinned) return { task, delegated: null, view };
   // The pinned size is finished on a fresh read: the await above let the daemon in.
-  return mutateTask(task.run_id, (fresh) => pinSize(fresh, view));
+  const pinned = mutateTask(task.run_id, (fresh) => pinSize(fresh, view));
+  return { ...pinned, delegated: withHarnessFields(pinned.delegated, task.run_id) };
 }
 
 function pinSize(task, view) {
@@ -5676,7 +5486,8 @@ async function toolRun(a) {
 // Size S goes to the development harness (_repo/docs/plans/2026-09-28-teams-long-loop.md S1): no
 // planning card, feature split, shape or critique - the harness plans, sets goals, critiques,
 // implements, tests and gates it with its own stages, claude and codex taking part. The task
-// stays on disk as the pointer to that run; the reply carries tm_next's harness fields.
+// stays on disk as the pointer to that run. The reply's tm_next harness fields (driver, next, ...)
+// are added by withHarnessFields once the transaction has committed and the driver is spawned.
 export function delegateIfSmall(task, n, out) {
   if (!(n.stage === 'size' && n.state === 'done' && task.size === 'S')) return null;
   if (task.harness_run || task.s_run) return null;
@@ -5686,7 +5497,14 @@ export function delegateIfSmall(task, n, out) {
   }
   openHarnessRun(task);
   saveRun(task);
-  return { ...out, task_state: 'harness', ...toolNextHarness(task) };
+  return { ...out, task_state: 'harness' };
+}
+
+// Outside any transaction, after the one that called delegateIfSmall: its reply plus tm_next's
+// harness fields, read from the committed task (the driver applySpawn wrote). Other replies pass.
+function withHarnessFields(reply, taskId) {
+  if (!reply || reply.task_state !== 'harness') return reply;
+  return { ...reply, ...withTask({ task_id: taskId }, (task) => toolNextHarness(task)) };
 }
 
 // ---------- size S on the development harness (S1/S1a) ----------
@@ -5745,52 +5563,19 @@ export function openHarnessRun(task) {
   record(task, { event: 'harness_open', task_id: task.run_id, cwd: task.cwd });
   if (noDriver()) return;
   task.harness_run.spawn_count = 0;
-  const driver = spawnHarnessDriver(task);
-  task.harness_run.driver = driver;
-  record(task, {
-    event: 'child_driver_spawned', task_id: task.run_id, node_id: 'S', pid: driver.pid, cwd: task.cwd,
-    log: driver.log, command: driver.command, ...(driver.error ? { error: driver.error } : {}),
+  // Spawned after the caller's transaction commits (reserveSpawn); the reply reads it after that
+  // (withHarnessFields).
+  reserveSpawn(task, 'S', task.harness_run, {
+    attempt: 0, reason: 'spawn', restarts: [],
+    spawn: (t) => spawnHarnessDriver(t),
+    apply: (t, h, driver) => {
+      h.driver = driver;
+      record(t, {
+        event: 'child_driver_spawned', task_id: t.run_id, node_id: 'S', pid: driver.pid, cwd: t.cwd,
+        log: driver.log, command: driver.command, ...(driver.error ? { error: driver.error } : {}),
+      });
+    },
   });
-}
-
-// The run this task's harness driver opened: the pointer, when the run it names carries this
-// task's tag and was created after the open; else the tagged run found on disk. A pointer that
-// fails the check is refused (recorded once) - the driver's word is not the run.
-export function resolveHarnessRun(task) {
-  const h = task.harness_run;
-  if (!h) return null;
-  if (h.run && ownsRun(h.run, task.run_id, h.opened_at)) return h.run;
-  const p = readPointer(h.pointer, h.cwd);
-  let run = null;
-  if (p && ownsRun(p, task.run_id, h.opened_at)) run = p;
-  else if (p && JSON.stringify(p) !== JSON.stringify(h.refused_pointer || null)) {
-    h.refused_pointer = p;
-    record(task, { event: 'harness_pointer_refused', task_id: task.run_id, pointer: p, reason: `the run is not tagged ${taskTag(task.run_id)} or predates the open` });
-  }
-  if (!run) run = findTaggedRun(h.cwd, task.run_id, h.opened_at);
-  if (run) {
-    h.run = run;
-    h.route = run.route;
-  }
-  return run;
-}
-
-// S1a: running while the driver lives or will be respawned; complete/partial once the run's own
-// report is written, by its own goal gate; blocked when the driver died past its budget unfinished.
-function harnessState(task) {
-  const h = task.harness_run;
-  const run = resolveHarnessRun(task);
-  const v = run ? harnessVerdict(run) : null;
-  if (v && v.finished) {
-    if (v.accept) return { state: 'complete', counts: {} };
-    const why = `the harness goal gate did not accept${v.match_pct != null ? ` (match ${v.match_pct})` : ''}${v.gaps.length ? `: ${v.gaps.slice(0, 3).join('; ')}` : ''}`;
-    return { state: 'partial', partial: true, partial_reasons: [why], counts: {} };
-  }
-  if (h.waiting_capacity || !h.driver || driverAlive(h.driver)) return { state: 'running', counts: {} };
-  if (countedDriverRestarts(task, h.driver).length >= restartBudget(task)) {
-    return { state: 'blocked', counts: {}, reason: 'the harness driver died past its restart budget with its run unfinished' };
-  }
-  return { state: 'running', counts: {} };
 }
 
 // Keeps the harness driver alive: a usage-limit death parks on waiting_capacity (no restart
@@ -5805,7 +5590,7 @@ export function serviceHarnessRun(task) {
   if (v && v.finished && !h.finished_at) h.finished_at = Date.now();
   const changed = () => JSON.stringify([h.run || null, h.refused_pointer || null, !!h.finished_at, !!h.exhausted]) !== before;
   const d = h.driver;
-  if ((v && v.finished) || !d || driverAlive(d) || h.waiting_capacity || task.budget_stopped) return changed();
+  if ((v && v.finished) || !d || driverAlive(d) || h.waiting_capacity || task.budget_stopped || spawning(h)) return changed();
   const usage = driverUsageLimitText(d);
   if (usage) {
     h.waiting_capacity = { reason: usage.slice(0, 500), since: Date.now() };
@@ -5820,11 +5605,13 @@ export function serviceHarnessRun(task) {
     return changed();
   }
   const restarts = [...(d.restarts || []), { pid: d.pid, exit: driverExitInfo(d), at: Date.now(), stderr_tail: driverStderrTail(d, 300) }];
-  const fresh = spawnHarnessDriver(task, { resume: true, run, attempt: nextSpawnAttempt(h) });
-  fresh.restarts = restarts;
-  h.driver = fresh;
-  record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: 'S', pid: fresh.pid, restart: restarts.length, budget: restartBudget(task) });
-  return true;
+  const attempt = nextSpawnAttempt(h);
+  const budget = restartBudget(task);
+  return respawnDriver(task, 'S', h, {
+    attempt, reason: 'restart', restarts,
+    spawn: (t) => spawnHarnessDriver(t, { resume: true, run, attempt }),
+    event: (t, fresh) => ({ event: 'child_driver_restarted', task_id: t.run_id, node_id: 'S', pid: fresh.pid, restart: restarts.length, budget }),
+  });
 }
 
 function harnessInfo(task) {
@@ -6437,7 +6224,7 @@ const heldClaims = new Set();
 
 // Test seam: called once (then cleared) between a claim transaction and its effect, outside any
 // transaction - the window a second caller arrives in. Never set outside tests.
-export const __storeHooks = { afterClaim: null, afterEffect: null };
+export const __storeHooks = { afterClaim: null, afterEffect: null, afterReserve: null };
 
 export function liveClaim(claim) {
   if (!claim || !claim.token) return false;
@@ -6459,6 +6246,100 @@ export function claimNode(task, n, op) {
 }
 
 function taskIdOf(t) { return typeof t === 'string' ? t : t.run_id; }
+
+// ---------- spawns out of the transaction (C3b) ----------
+//
+// A driver or the daemon spawned inside mutateTask outlived a transaction that then threw: a live
+// process nothing recorded. A site now stamps a reservation on the holder - a child ref's
+// `spawning`, or task.daemon.spawning - {pid, token, attempt, reason, restarts}, judged by
+// liveClaim like a node claim, and queues applySpawn with store.mjs afterCommit. applySpawn spawns
+// outside the lock, then writes the driver back only if the holder still carries that token;
+// otherwise it kills the new process (spawn_lost). A live reservation is a spawn already under way:
+// the caller spawns nothing (the one-daemon guarantee). A stale one - a dead pid, or this pid with a
+// token this process does not hold - is reclaimed (spawn_reclaimed). Neither a reclaim nor a
+// spawn_lost spends a driver_restarts unit: a restart is counted only when applySpawn writes it.
+
+// The holder a reservation lives on, found again in a fresh read: 'daemon', 'S' (the size-S run),
+// or a dispatch node id (its child).
+function spawnHolder(task, slot) {
+  if (slot === 'daemon') return task.daemon || null;
+  if (slot === 'S') return task.harness_run || task.s_run || null;
+  const n = getNode(task, slot);
+  return (n && n.child) || null;
+}
+
+function spawning(holder) {
+  return !!(holder && holder.spawning && liveClaim(holder.spawning));
+}
+
+// Test seam: called once (then cleared) after the reserving transaction committed and before the
+// spawn - the window a second caller arrives in.
+function fireAfterReserve(info) {
+  const h = __storeHooks.afterReserve;
+  if (!h) return;
+  __storeHooks.afterReserve = null;
+  h(info);
+}
+
+// r: {attempt, reason, restarts, spawn(task, holder) -> process record, apply(task, holder, rec)}.
+// Returns false when a live reservation already stands (nothing reserved).
+function reserveSpawn(task, slot, holder, r) {
+  if (holder.spawning) {
+    if (liveClaim(holder.spawning)) return false;
+    record(task, { event: 'spawn_reclaimed', task_id: task.run_id, node_id: slot, pid: holder.spawning.pid, token: holder.spawning.token });
+    delete holder.spawning;
+  }
+  // No transaction on this task (foldChild's dead-driver respawn on foldDispatch's snapshot, which
+  // its apply copies back): no lock to leave, so spawn in place.
+  if (!inTransaction(task.run_id)) { r.apply(task, holder, r.spawn(task, holder)); return true; }
+  const token = randomUUID();
+  holder.spawning = { pid: process.pid, token, attempt: r.attempt, reason: r.reason, restarts: r.restarts };
+  heldClaims.add(token);
+  afterCommit(() => applySpawn(task.run_id, slot, token, r), () => heldClaims.delete(token));
+  return true;
+}
+
+function applySpawn(taskId, slot, token, r) {
+  let rec = null;
+  let kept = false;
+  try {
+    fireAfterReserve({ task_id: taskId, slot, token });
+    const snap = loadRunAt(taskPath(taskId));
+    const h = snap && spawnHolder(snap, slot);
+    // Lost before the spawn (taken over or cleared in the window): start nothing.
+    if (h && h.spawning && h.spawning.token === token) rec = r.spawn(snap, h);
+    kept = mutateTask(taskId, (fresh) => {
+      const holder = spawnHolder(fresh, slot);
+      const holds = !!(holder && holder.spawning && holder.spawning.token === token);
+      if (!holds || !rec) {
+        record(fresh, { event: 'spawn_lost', task_id: taskId, node_id: slot, token, pid: rec ? rec.pid : null, holder: holder && holder.spawning ? holder.spawning.token : null });
+        if (holds) delete holder.spawning;
+        return false;
+      }
+      delete holder.spawning;
+      r.apply(fresh, holder, rec);
+      return true;
+    });
+  } finally {
+    // Not written (lost, or the apply threw): nothing tracks this process, so it does not run.
+    if (!kept && rec) killDriver(rec);
+    heldClaims.delete(token);
+  }
+}
+
+// A package or size-S driver respawn: the new driver carries `restarts` and `event` is recorded
+// with its pid.
+function respawnDriver(task, slot, holder, { attempt, reason, restarts, spawn, event }) {
+  return reserveSpawn(task, slot, holder, {
+    attempt, reason, restarts, spawn,
+    apply: (t, h, fresh) => {
+      fresh.restarts = restarts;
+      h.driver = fresh;
+      delete h.stalled_since; // a fresh driver has made no progress yet, but it has also not stalled
+      record(t, event(t, fresh));
+    },
+  });
+}
 
 // Test seam: called once (then cleared) after an open's effect returned and its intent was noted,
 // before the apply transaction - the window a crash or a lost apply lands in.
@@ -6584,19 +6465,17 @@ function runClaimed(taskId, claims) {
       let held = [];
       if (isOpen) {
         noteIntent(taskId, c.claim.token, { node_id: c.node_id, token: c.claim.token, attempt: c.claim.attempt });
-        effectLedger = [];
+        beginEffectLedger();
         try {
           eff.run(snap, n, (p) => noteIntent(taskId, c.claim.token, p));
         } catch (e) {
-          held = effectLedger;
-          effectLedger = null;
+          held = takeEffectLedger();
           for (const l of held) record({ run_id: taskId }, l); // evidence of how far it got
           undoOpen({ run_id: taskId }, readIntent(taskId, c.claim.token) || { node_id: c.node_id, token: c.claim.token }, `open threw: ${String((e && e.message) || e).slice(0, 200)}`);
           dropIntent(taskId, c.claim.token);
           throw e;
         }
-        held = effectLedger;
-        effectLedger = null;
+        held = takeEffectLedger();
         noteIntent(taskId, c.claim.token, { fields: pickFields(n, eff.fields), ledger: held });
         open.delete(c);
         fireAfterEffect({ op: c.claim.op, task_id: taskId, node_id: c.node_id, node: n });
@@ -6972,7 +6851,7 @@ function toolSubmit(a) {
     const out = finish(task, n, result);
     return { out: delegateIfSmall(task, n, out) || out };
   });
-  if (!r.fold) return r.out;
+  if (!r.fold) return withHarnessFields(r.out, a.task_id);
   // The same claimed fold the daemon makes (foldDispatch): the two can no longer both fold it.
   // It owns its transactions (the fold commits git outside the lock), so it runs after ours.
   const out = foldDispatch(r.fold.taskId, r.fold.nodeId, 'tm_submit');
@@ -7114,14 +6993,14 @@ function toolSubmitHuman(task, a) {
 // Free respawn of a parked child's driver so it drains a queued human action - no restart spent.
 // Shared by tm_submit({key}) and expireAsks. Caller saves the task.
 function resumeParkedDriver(task, nodeId, childRef, reason) {
-  if (noDriver() || driverAlive(childRef.driver)) return false;
+  if (noDriver() || driverAlive(childRef.driver) || spawning(childRef)) return false;
   const restarts = (childRef.driver && childRef.driver.restarts) || [];
-  const fresh = spawnChildDriver(task, nodeId, childRef, { resume: true, attempt: nextSpawnAttempt(childRef) });
-  fresh.restarts = restarts;
-  childRef.driver = fresh;
-  delete childRef.stalled_since;
-  record(task, { event: 'child_driver_restarted', task_id: task.run_id, node_id: nodeId, pid: fresh.pid, reason });
-  return true;
+  const attempt = nextSpawnAttempt(childRef);
+  return respawnDriver(task, nodeId, childRef, {
+    attempt, reason, restarts,
+    spawn: (t, c) => spawnChildDriver(t, nodeId, c, { resume: true, attempt }),
+    event: (t, fresh) => ({ event: 'child_driver_restarted', task_id: t.run_id, node_id: nodeId, pid: fresh.pid, reason }),
+  });
 }
 
 // ---------- ask_timeout (design §7: "만료 시 default로 자동 제출, by: timeout") ----------
@@ -7246,12 +7125,18 @@ function retryTask(task, a) {
     if (st.state !== 'blocked') return { task_id: task.run_id, retried: false, reason: `the harness run is ${st.state}` };
     delete h.exhausted;
     if (!noDriver()) {
-      const fresh = spawnHarnessDriver(task, { resume: true, run: resolveHarnessRun(task), attempt: nextSpawnAttempt(h) });
-      fresh.restarts = [];
-      h.driver = fresh;
+      // tm_retry_harness is recorded by the apply, with the new driver's pid.
+      const run = resolveHarnessRun(task);
+      const attempt = nextSpawnAttempt(h);
+      respawnDriver(task, 'S', h, {
+        attempt, reason: 'tm_retry', restarts: [],
+        spawn: (t) => spawnHarnessDriver(t, { resume: true, run, attempt }),
+        event: (t, fresh) => ({ event: 'tm_retry_harness', task_id: t.run_id, pid: fresh.pid }),
+      });
+    } else {
+      record(task, { event: 'tm_retry_harness', task_id: task.run_id, pid: h.driver && h.driver.pid });
     }
     saveRun(task);
-    record(task, { event: 'tm_retry_harness', task_id: task.run_id, pid: h.driver && h.driver.pid });
     return { task_id: task.run_id, retried: true };
   }
   // Two children pass and the merge fails: that is nobody's failure but the shape's. The
@@ -7531,7 +7416,8 @@ export async function callTool(name, args) {
   // there is no leader to defer to and no inbox to queue behind. store.mjs mutateTask is what
   // makes two writers (this call and the daemon's own loop) safe together: each reads task.json
   // fresh under the lock and writes it whole.
-  // One transaction: two concurrent callers cannot both see a dead daemon and both spawn one.
+  // One transaction: two concurrent callers cannot both see a dead daemon and both reserve its
+  // spawn; the spawn itself runs after the commit (task.daemon.spawning, reserveSpawn).
   if (a.task_id && name !== 'tm_open' && name !== 'tm_run') {
     withTask(a, (task) => {
       // An expired ask is answered on the next look even when no daemon is left to notice it.

@@ -586,3 +586,32 @@ test('(c) a claim with no owner recorded (older run file) keeps the time-based f
     assert.equal(planOf(cwd, run_id).state, 'failed');
   });
 });
+
+const BOOT_FILE = '/proc/sys/kernel/random/boot_id';
+const bootId = () => readFileSync(BOOT_FILE, 'utf8').trim();
+
+test('(d) a claim under the broker\'s own pid whose ticket it does not hold is reclaimed', async () => {
+  await brokers([{ BROKER_STALE_AFTER_MS: '600000' }], async ({ cwd, clients: [a] }) => {
+    const { run_id } = await a.call('graph_open', { request: 'r', cwd, vendor: 'fake' });
+    const boot = existsSync(BOOT_FILE) ? bootId() : null;
+    plantRunning(cwd, run_id, { owner_pid: a.proc.pid, owner_boot: boot, ticket: 'not-held' });
+    await a.call('graph_status', { run_id, cwd });
+    const plan = planOf(cwd, run_id);
+    assert.equal(plan.state, 'failed', 'an own-pid claim nobody in this broker holds stayed running');
+    assert.match(plan.result.reason, /abandoned/);
+  });
+});
+
+test('(e) a claim stamped under another boot is reclaimed though its pid is alive', { skip: !existsSync(BOOT_FILE) }, async () => {
+  await brokers([{ BROKER_STALE_AFTER_MS: '600000' }], async ({ cwd, clients: [a] }) => {
+    const { run_id } = await a.call('graph_open', { request: 'r', cwd, vendor: 'fake' });
+    plantRunning(cwd, run_id, { owner_pid: process.pid, owner_boot: bootId() });
+    await a.call('graph_status', { run_id, cwd });
+    assert.equal(planOf(cwd, run_id).state, 'running', 'a live same-boot claim was reclaimed');
+    plantRunning(cwd, run_id, { owner_pid: process.pid, owner_boot: 'another-boot' });
+    await a.call('graph_status', { run_id, cwd });
+    const plan = planOf(cwd, run_id);
+    assert.equal(plan.state, 'failed', 'a claim from another boot was not reclaimed');
+    assert.match(plan.result.reason, /abandoned/);
+  });
+});

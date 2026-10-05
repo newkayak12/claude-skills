@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSy
 import { join, basename, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { collectTaskCosts } from '../scripts/bench/lib/drivercost.mjs';
+import { collectTaskCosts } from './drivercost.mjs';
 import { teamsPluginRoot } from './pluginroots.mjs';
 import { reasonFromVerdict } from './graph.mjs';
 
@@ -91,6 +91,8 @@ export function harvestTask({ taskDir, cwd, label, root, scorePrefix } = {}) {
   if (taskDir) {
     for (const f of ['task.json', 'ledger.jsonl', 'board.jsonl']) if (existsSync(join(taskDir, f))) copyFileSync(join(taskDir, f), join(out, f));
     if (existsSync(join(taskDir, 'briefings'))) cpSync(join(taskDir, 'briefings'), join(out, 'briefings'), { recursive: true });
+    // A dispatch claimed and not yet applied leaves its intent at opening/<token>.json (taskmanager.mjs).
+    if (existsSync(join(taskDir, 'opening'))) cpSync(join(taskDir, 'opening'), join(out, 'opening'), { recursive: true });
     mkdirSync(join(out, 'drivers'), { recursive: true });
     for (const f of files(join(taskDir, 'drivers'))) if (/\.(exit\.json|stderr\.txt)$/.test(f)) copyFileSync(join(taskDir, 'drivers', f), join(out, 'drivers', f));
   }
@@ -164,6 +166,8 @@ export function harvestTask({ taskDir, cwd, label, root, scorePrefix } = {}) {
     const k = `node_${stage}`;
     byKind[k] = +((byKind[k] || 0) + (s.cost_usd || 0)).toFixed(4);
   }
+  // Same predicate as tickets.mjs's board `opening`: a dispatch running with no child run yet.
+  const opening = ((task && task.nodes) || []).filter((n) => n.stage === 'dispatch' && n.state === 'running' && !n.child).map((n) => n.node_id);
   const score = readText(join(out, 'bench.score.txt')).split('\n').find((l) => / \| \d+\/\d+ \| /.test(l)) || null;
   // The code the run ran, not the code at harvest time: the last commit before the task opened.
   const opened = (events.find((e) => e.event === 'tm_open') || {}).ts;
@@ -203,6 +207,7 @@ export function harvestTask({ taskDir, cwd, label, root, scorePrefix } = {}) {
     } : null,
     cost_usd: costs ? +(costs.cost_usd || 0).toFixed(4) : null, cost_by_kind: byKind,
     child_runs: childRuns,
+    ...(opening.length ? { opening } : {}),
     retries: events.filter((e) => e.event === 'daemon_retry_opened').length,
     rejudges: events.filter((e) => e.event === 'daemon_rejudge').length,
     events: Object.fromEntries(Object.entries(events.reduce((m, e) => ((m[e.event] = (m[e.event] || 0) + 1), m), {})).filter(([k]) => /budget|capacity|rejudge|retry|audit|diagram|closed|rewired|stalled|killed|restart/.test(k))),

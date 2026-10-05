@@ -13,7 +13,7 @@ import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_MODELS } from './routing.mjs';
 import { applyMerge, writeScopeFindings } from './reducers.mjs';
-import { acquireLock as acquire, releaseLock as release, writeAtomic, transactionObject } from './store.mjs';
+import { acquireLock as acquire, releaseLock as release, transactionObject, mutateRun } from './store.mjs';
 
 export const STAGES = [
   'plan',      // decompose the raw request
@@ -600,27 +600,24 @@ export function saveRun(run) {
     return run;
   }
   // A task (store_path) is written only through mutateTask - always; there is no flag or env escape.
-  // Child runs (no store_path; teams broker.mjs) keep the locked merge below.
+  // A child run (no store_path; teams broker.mjs) is merged onto the fresh disk copy inside a
+  // mutateRun transaction: the broker holds its run across awaits, so it cannot be the fn itself.
   if (run.store_path) {
     throw new Error(`saveRun of task ${run.run_id || path} outside mutateTask - task.json is written only through store.mjs mutateTask`);
   }
-  mkdirSync(dirname(path), { recursive: true });
-  const lock = acquire(path);
-  try {
-    const merged = mergeOnto(loadRunAt(path), run);
-    // Write-then-rename: a reader in another process (the daemon's dispatchSettled, a tm_status
-    // from a session) must never see a truncated file. A plain writeFileSync truncates first and
-    // fills second, and seam-beta-D2 (2026-09-21) caught the daemon in that gap - it read a torn
-    // child run, called the dispatch settled, then foldChild re-read a whole file and threw.
-    writeAtomic(path, merged);
-    // Keep the caller's object consistent with what was written.
-    run.nodes = merged.nodes;
-    run.capacity_epoch = merged.capacity_epoch || 0;
-    run.unavailable_vendors = merged.unavailable_vendors || {};
-    return run;
-  } finally {
-    release(lock);
-  }
+  // mutateRun writes then renames (seam-beta-D2: a reader must never see a torn child run) and
+  // skips the write when the merge left the file as it was.
+  const merged = mutateRun(path, (disk) => {
+    const out = mergeOnto(Array.isArray(disk.nodes) ? disk : null, run);
+    for (const k of Object.keys(disk)) delete disk[k];
+    Object.assign(disk, out);
+    return out;
+  }, { create: true });
+  // Keep the caller's object consistent with what was written.
+  run.nodes = merged.nodes;
+  run.capacity_epoch = merged.capacity_epoch || 0;
+  run.unavailable_vendors = merged.unavailable_vendors || {};
+  return run;
 }
 
 export function loadRunAt(path) {

@@ -351,6 +351,22 @@ function gitChanged(cwd) {
   return out;
 }
 
+// What was committed between `base` and HEAD - a node that commits its own work leaves git status
+// clean (runit-u10b child-P1-1: be40eee, 5fe1b85, all three attempts called liars). [] when there
+// is no base; null when base is not an ancestor of HEAD (reset/rebased away), so crossCheck falls
+// back to status alone. --no-renames lists both sides of a rename; a deletion is listed too.
+function gitChangedSince(cwd, base) {
+  if (!base) return [];
+  if (spawnSync('git', ['merge-base', '--is-ancestor', base, 'HEAD'], { cwd }).status !== 0) return null;
+  const r = spawnSync('git', ['-c', 'core.quotePath=false', 'diff', '--name-only', '--no-renames', '-z', base, 'HEAD'], {
+    cwd,
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  if (r.status !== 0) return null;
+  return r.stdout.split('\0').filter(Boolean);
+}
+
 // ---------- checkpoint / rollback (_repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §5) ----------
 
 function gitHead(cwd) {
@@ -400,17 +416,33 @@ function applyRollback(run, rollback, subgoalId) {
   return { ...rollback, applied: true };
 }
 
+// The commit a node's claims are attributed from: the checkpoint before its subgoal's FIRST author
+// attempt (the same firstAuthor graph.mjs's retrySubgoal rolls back to), so attempt 2 re-claiming
+// what attempt 1 committed still counts. Falls back to the node's own checkpoint, else none.
+function attributionBase(run, n) {
+  const stage = authorStage(nodeKind(run, n));
+  const first = n.subgoal_id
+    ? run.nodes.find((x) => x.subgoal_id === n.subgoal_id && x.stage === stage && (x.attempt || 1) === 1)
+    : null;
+  return first?.checkpoint?.head || n.checkpoint?.head || null;
+}
+
 // Positive attribution is only sound when this node had the worktree to itself.
 // Otherwise null - "could not attribute" is neither a pass nor a failure.
-function crossCheck(cwd, claimed, isolated, kind) {
-  const observed = gitChanged(cwd);
-  if (observed === null) return { changed_files_verified: null, change_attribution: 'no-git', contradicted_files: [] };
+function crossCheck(cwd, claimed, isolated, kind, sinceBase = null) {
+  const status = gitChanged(cwd);
+  if (status === null) return { changed_files_verified: null, change_attribution: 'no-git', contradicted_files: [] };
+  // Files the node committed since its attribution base count as changed too. Unreachable base ->
+  // status only, and change_base null says so.
+  const since = gitChangedSince(cwd, sinceBase);
+  const changeBase = since && sinceBase ? sinceBase : null;
+  const observed = [...new Set([...status, ...(since || [])])];
   // A document draft that reports no files is not caught lying - it wrote nothing git
   // can see, perhaps because the deliverable is the handoff text itself. Under isolation
   // an empty claim used to verify as `true`, which asserts attribution of nothing. Say
   // "could not attribute" and leave the judgement to review, whose job it is.
   if (kind === 'document' && !(Array.isArray(claimed) && claimed.length)) {
-    return { changed_files_verified: null, change_attribution: 'document-unchanged', contradicted_files: [] };
+    return { changed_files_verified: null, change_attribution: 'document-unchanged', contradicted_files: [], change_base: changeBase };
   }
   // A briefing names files by absolute path, so a truthful executor claims them that way,
   // while git reports them relative to cwd. Compare in one space. A path outside cwd is
@@ -425,7 +457,8 @@ function crossCheck(cwd, claimed, isolated, kind) {
     return (p.startsWith(base) ? p.slice(base.length) : p).replace(/^\.\//, '');
   };
   const globRe = (g) => new RegExp('(^|/)' + g.split('*').map((x) => x.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*') + '$');
-  const seen = (r) => (r.includes('*') ? observed.some((o) => globRe(r).test(o)) : observed.some((o) => o === r || o.endsWith('/' + r)));
+  const seenIn = (list, r) => (r.includes('*') ? list.some((o) => globRe(r).test(o)) : list.some((o) => o === r || o.endsWith('/' + r)));
+  const seen = (r) => seenIn(observed, r);
   const list = Array.isArray(claimed) ? claimed.map(String) : [];
   const unseen = list.filter((f) => {
     const r = toRel(f);
@@ -441,7 +474,13 @@ function crossCheck(cwd, claimed, isolated, kind) {
     return r && existsSync(join(cwd, r)) && spawnSync('git', ['check-ignore', '-q', '--', r], { cwd }).status === 0;
   });
   const missing = unseen.filter((f) => !ignored.includes(f));
-  const extra = ignored.length ? { ignored_files: ignored } : {};
+  // Claims accepted only because of a commit since change_base - git status alone would have
+  // contradicted them - so triage can tell a commit is what verified the claim.
+  const committed = list.filter((f) => {
+    const r = toRel(f);
+    return r && !unseen.includes(f) && !seenIn(status, r);
+  });
+  const extra = { change_base: changeBase, ...(committed.length ? { committed_files: committed } : {}), ...(ignored.length ? { ignored_files: ignored } : {}) };
   if (!isolated) {
     return {
       changed_files_verified: missing.length ? false : null,
@@ -1967,7 +2006,7 @@ async function toolGraphRun(a) {
         }
       : { ...payload, stage_ok: payload.stage_ok !== false, ...(independence ? { reviewer_independence: independence.independence } : {}) };
   } else {
-    const check = crossCheck(run.cwd, payload.changed_files, run.isolated, nodeKind(run, n));
+    const check = crossCheck(run.cwd, payload.changed_files, run.isolated, nodeKind(run, n), attributionBase(run, n));
     const contradicted = check.contradicted_files.length > 0;
     result = {
       ...payload,
@@ -2010,7 +2049,7 @@ export function computeSubmitResult(run, n, payload, vendorName) {
   if (REASONING_STAGES.has(n.stage)) {
     result = { ...payload, stage_ok: payload.stage_ok !== false, ...(independence ? { reviewer_independence: independence.independence } : {}) };
   } else {
-    const check = crossCheck(run.cwd, payload.changed_files, run.isolated, nodeKind(run, n));
+    const check = crossCheck(run.cwd, payload.changed_files, run.isolated, nodeKind(run, n), attributionBase(run, n));
     const contradicted = check.contradicted_files.length > 0;
     result = {
       ...payload,
