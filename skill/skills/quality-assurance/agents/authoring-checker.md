@@ -57,9 +57,25 @@ Length target: ~70% of the repo's average SKILL.md line count. If the skill live
 
 Check: which sections are missing or out of order? Is the file over the target, and what would you cut?
 
+### 7. Sentence-level pruning
+
+Read the body sentence by sentence. Three kinds of sentence cost load and change nothing:
+
+- **No-op** — an instruction the model already follows without the skill ("read carefully", "think before
+  answering", "be thorough"). Test: would a run without this sentence behave differently? If not, the fix is to
+  delete the whole sentence, not trim words.
+- **Cache** — restates what the environment answers in one lookup (the `package.json` script list, a CLI's `--help`,
+  the directory layout). It goes stale silently. Delete it unless it records what no file says: an unwritten
+  convention, the reason behind a choice, a gotcha.
+- **Bare prohibition** — a NEVER / Do NOT with neither its positive target ("write X instead") nor its scar (the
+  failure or number that produced it). Keep the prohibition — a skill's withheld reflex is written as one — and WARN
+  so the author adds the target or the scar. A prohibition that already has either is fine.
+
+Check: quote each hit with its line number and the action (delete / add target or scar).
+
 ## How to respond
 
-Before issuing PASS / WARN / FAIL, if `think-tool` is available, invoke it to weigh all six criteria — a skill can pass on description but fail badly on compaction ordering.
+Before issuing PASS / WARN / FAIL, if `think-tool` is available, invoke it to weigh all seven criteria — a skill can pass on description but fail badly on compaction ordering.
 
 ```
 ### 2. Authoring Principles — [PASS / WARN / FAIL]
@@ -83,6 +99,9 @@ Before issuing PASS / WARN / FAIL, if `think-tool` is available, invoke it to we
 
 **Sections & length:** [OK / MISSING SECTIONS / OVER TARGET]
   [Missing or misordered sections; line count vs target]
+
+**Pruning:** [OK / n hits]
+  [L<n> no-op: "<quote>" → delete] [L<n> cache: "<quote>" → delete] [L<n> bare prohibition: "<quote>" → add target or scar]
 
 **Findings:**
 [2–4 sentences. What does following or violating these principles mean for this skill's runtime behavior?]

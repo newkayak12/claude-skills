@@ -86,7 +86,7 @@ For each optimization task, provide:
 | Query Optimization | `references/query-optimization.md` | Slow queries, execution plan analysis |
 | Index Design | `references/index-design-patterns.md` | B-tree, covering, partial, expression indexes |
 | PostgreSQL Memory & WAL | `references/postgresql-memory-wal.md` | shared_buffers, work_mem, WAL config |
-| PostgreSQL VACUUM & Locking | `references/postgresql-vacuum-locking.md` | VACUUM, connection pooling, lock management |
+| PostgreSQL VACUUM & Locking | `references/postgresql-vacuum-locking.md` | VACUUM, connection pooling, lock management; queue claims with SKIP LOCKED, advisory locks, lock order against deadlocks |
 | MySQL Memory & I/O | `references/mysql-memory-io.md` | InnoDB memory, I/O config |
 | PostgreSQL Monitoring | `references/monitoring-postgresql.md` | pg_stat_statements, connections, locks |
 | MySQL Monitoring | `references/monitoring-mysql.md` | Performance schema, InnoDB status |

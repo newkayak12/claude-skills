@@ -20,6 +20,7 @@ run it alone, and a machine-readable spec when a `harness:harness` run is drivin
 | I want to… | Skill |
 |---|---|
 | Plan an implementation, co-write a doc others will read (PRD, design doc, RFC), write a design review or ADR, write a technical blog post, or give feedback that lands | `plans` |
+| Turn a conversation that already settled what to build into a spec — no re-interview | `spec` |
 | Write or fix a SKILL.md | `writing-skills` |
 | Review text, or draft a PR description / post that reads as human-written | `writer-verification` |
 | Rewrite text so it sounds like *me*, learned from my own samples | `like-me` |
@@ -185,6 +186,25 @@ Common failures it fixes:
 | Vague situation ("항상 회의에서") | "지난 화요일 스프린트 플래닝에서" |
 | Missing impact ("그건 별로였어") | "팀이 다음 스텝을 못 정하고 하루를 낭비했다" |
 | Piling on multiple behaviors | One behavior per SBI |
+
+### `spec`
+
+Turns a discussion that already decided what to build — a thread, a meeting, a chat with PM — into a
+spec, without interviewing you again. It reads the conversation, then the repo (glossary, the code and
+tests the conversation names, nearby ADRs), and sorts every point into decided, deferred, or open. Open
+points become `[확인 필요: …]` markers naming who decides; none is filled with a sensible-sounding
+default. The spec has problem, solution, user stories (only those the conversation supports),
+implementation decisions with their source, testing decisions at a named seam, out of scope, and open
+questions, closing on a recountable tally. Writing a PRD or design doc from scratch with reader testing
+stays with `plans`.
+
+On a coupon conversation (percentage discounts, cap, minimum order, rounding left to finance), a run
+without this skill wrote a reasonable spec in zero tool calls — it never opened the glossary or the
+coupon code. With it, the spec used the repo's terms and named the existing `applyCoupon` tests as the seam.
+
+```
+방금 PM이랑 나눈 대화야. 이걸로 spec 정리해줘 — 이미 얘기한 건 다시 묻지 말고.
+```
 
 ### `writing-skills`
 
