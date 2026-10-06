@@ -14,7 +14,7 @@ compatibility:
 related:
   - harness
   - remove
-  - patch
+  - update
 ---
 
 # install — scaffold harness governance into the current project
@@ -93,20 +93,9 @@ idempotent and non-destructive: existing files are never overwritten.
 
 ## Updating after a plugin version bump
 
-`install.mjs` is **non-destructive by default** — a plain re-run reports every existing file
-as `kept` and changes nothing, so it will NOT pull a newer engine/hook on its own. The files
-split into two classes:
-- **plugin-owned copies** (verbatim of a plugin file): `.claude/hooks/goal-gate.mjs` and, if
-  embedded, `.claude/harness/**` (engine, Codex adapter/runner, meta-skeleton, goal-spec, static skills). These
-  drift from the plugin on a version bump.
-- **user-owned** (the project evolves them): `harness-gate.json`, `conventions/**`, the
-  CLAUDE.md block, `settings.json`.
-
-To update: bump the plugin (marketplace), then re-run `install.mjs` with **`"refresh": true`**
-and the same `embed` config. It re-copies only the plugin-owned files (reported `refreshed`
-or `unchanged`) and never touches user-owned files even with refresh on. Then `git diff` the
-plugin-owned copies and commit. In **plugin mode** (no embedding) the only drift-prone file is
-`goal-gate.mjs`; in **embedded mode** it also refreshes `.claude/harness/**`.
+A plain re-run of `install.mjs` is non-destructive and keeps every existing file, so it will NOT
+pull a newer engine/hook. After a plugin bump use the `update` skill (`install.mjs` with
+`"refresh": true`).
 
 ## What Claude Does / What You Do
 
@@ -120,5 +109,5 @@ plugin-owned copies and commit. In **plugin mode** (no embedding) the only drift
 - `install.mjs` — deterministic file ops (gate/hook/embed/gitignore) this skill invokes
 - `harness` skill — running the six-stage engine
 - `remove` skill — uninstalling project-local harness governance
-- `patch` skill — preparing a synchronized source patch release
+- `update` skill — refreshing installed copies after a plugin version bump
 - `hooks/README.md` — gate semantics and accepted holes
