@@ -2,12 +2,13 @@
 
 **English** · [한국어](KOR.md)
 
-Three skills for making and checking other skills. `create` writes a new skill that carries the
+Four skills for making and checking skills. `create` writes a new skill that carries the
 repo's house identity. Then a SKILL.md can still fail in two independent ways: it never fires
 because its `description` gives Claude no signal, or it fires and then doesn't earn its place —
 too heavy, badly structured, or no better than no skill at all. `trigger-validator` measures
 and fixes the first; `quality-assurance` runs the six checks that cover the second, ending
-in a prioritized fix list.
+in a prioritized fix list. `audit` comes before all three: it checks what the workspace already
+has before anything new is installed or built.
 
 ## Install & Uninstall
 
@@ -23,6 +24,7 @@ in a prioritized fix list.
 | Turn "I need a skill for X" into a SKILL.md that matches the repo's existing skills | `create` |
 | Review a skill before shipping and get a ranked list of what to fix | `quality-assurance` |
 | Fix a skill that doesn't fire on natural language, especially Korean | `trigger-validator` |
+| See what this workspace already has and what is missing, before installing or building | `audit` |
 
 ## Skills
 
@@ -93,6 +95,21 @@ Use when [situation/intent]. Triggers on: "[한국어 구어체]", "[English phr
 Batch runs lead with a summary table and give full reports only for skills scoring below 7; 7+ is
 "acceptable — no action needed". After applying, it follows the repo's update workflow —
 bump the version in `marketplace.json`, update the plugin `README.md` and `KOR.md` together, commit.
+
+### `audit`
+
+Answers "what am I missing here?" from files, not memory. It inventories the workspace by name —
+`.claude/settings*`, `.mcp.json`, hooks, `CLAUDE.md`, installed plugins, the skills in this session,
+and `.env*` key names (never values) — then matches the gap against the catalogs this install can
+see: the session skill list and the marketplace manifests and READMEs under `~/.claude/plugins`. Only
+when those have nothing does it look at `_reference/external-skills.md`, and any hit there is labelled
+*candidate, unverified*. Every table row cites a source path; no path means the row is dropped or
+says `no match`. Read-only: a skill-shaped gap goes to `create`, a hook or permission to
+`update-config`. Not for installing the harness (`harness:install`).
+
+```
+뭘 더 설치하면 좋아? 지금 이 레포에 뭐가 깔려 있는지부터 봐줘.
+```
 
 ## Renames
 
