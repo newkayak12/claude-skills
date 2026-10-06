@@ -84,6 +84,15 @@ For each SRE engagement, provide:
 | Capacity Planning | `references/capacity-planning.md` | Forecasting growth, scaling decisions |
 | Incidents | `references/incident-chaos.md` | Incident response, chaos engineering |
 
+## Telemetry Rules
+
+- **Carry one correlation ID across services** (propagate the trace/request ID in headers and every log line) — without it a request cannot be followed across hops, so the cause stays a guess.
+- **Bound label cardinality** — every distinct label combination is its own time series; user IDs, URLs, or request IDs as labels blow up storage and query cost. Keep labels to small fixed sets.
+- **Never log secrets, tokens, or full PII** — logs are copied to many systems with weaker access control and long retention; mask or drop them at the source.
+- **Verify the alert actually fires** — fire it once (inject the condition or lower the threshold) and see the page arrive; an alert never seen firing is an assumption, not a safeguard.
+
+Runbook format for alerts: see `incident-response-playbook` (`references/runbook-format.md`).
+
 ## Example: SLO Definition and Error Budget
 
 ```

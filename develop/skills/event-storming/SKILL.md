@@ -46,6 +46,11 @@ Goal: Explore the entire business domain; discover bounded contexts and pain poi
 5. Mark red hotspots where experts disagree or language shifts
 6. Name the clusters — these are candidate bounded contexts
 
+**Glossary check (rules live in `domain-driven-design/references/ubiquitous-language.md`, see "When Terms Conflict" and "Glossary Maintenance"):**
+- Challenge a term the moment it conflicts with the glossary: quote both meanings ("Glossary: 'Order' = confirmed purchase. Just now: 'Order' = cart.") and mark a red hotspot.
+- When code exists, cross-check workshop terms against class and method names; name each mismatch (`cancel()` in code vs "void" in the room).
+- Keep implementation detail (tables, endpoints) out of the glossary.
+
 ### Level 2: Process Level (2–3 hours)
 Goal: Add commands, actors, and policies to understand who triggers what and why.
 

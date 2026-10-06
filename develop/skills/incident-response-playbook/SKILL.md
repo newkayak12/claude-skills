@@ -183,6 +183,7 @@ One paragraph. What happened, what was the user impact, how was it resolved.
 
 ### Root Cause
 Specific, technical explanation. Not "human error" — explain what made the error possible.
+Write it as causal steps (A → B → C). Each step carries an `Evidence:` line — the log, metric, trace, or diff that shows it. No evidence = mark the step `hypothesis`, not fact.
 
 ### Contributing Factors
 - Factor 1 (e.g., no alerting on X metric)
@@ -199,6 +200,23 @@ Specific, technical explanation. Not "human error" — explain what made the err
 | Update runbook for Y scenario | @person | YYYY-MM-DD | Medium |
 | Add canary deploy for Z service | @person | YYYY-MM-DD | High |
 ```
+
+### Quick RCA (P2/P3 only)
+
+P0/P1 use the full template above. For P2/P3 a half page is enough:
+
+```markdown
+## Quick RCA: <Title> (P2/P3)
+**Date / Duration / Services**:
+**What happened + impact** (2 lines):
+**Cause chain** (each step with `Evidence:`):
+**Fix applied**:
+**Follow-up** (1-3 items, owner + date):
+```
+
+### Runbooks
+
+A runbook is 3 lines (Means / First check / Escalate to) — format and example in `references/runbook-format.md`. When closing an incident where a runbook was used, refresh it: fix wrong steps, add the missing check, then link the update in the Action Items.
 
 ### When Root Cause Traces to a Product Decision
 
@@ -226,6 +244,7 @@ People make mistakes. Systems should make mistakes hard to cause and easy to det
 - [ ] 15–30 min update cadence established
 - [ ] Resolution confirmed across all metrics
 - [ ] RCA scheduled
+- [ ] Runbook used in this incident refreshed
 
 ---
 

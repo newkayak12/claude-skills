@@ -59,6 +59,8 @@ the specialist skills in a fixed order and let you join mid-process.
 | Decide whether a service split is real or would just add coupling | `service-boundary-validator` |
 | Get business logic out of controllers and frameworks | `clean-architecture` |
 | Design or restructure a distributed system | `microservices-architect` |
+| Find where existing code most needs deepening, ranked by git history | `architecture-review` |
+| Drop, rename, or retire a column, API, or feature without breaking its users | `deprecation-and-migration` |
 
 **Operations & reliability**
 
@@ -379,7 +381,8 @@ Facilitates domain discovery through events, in three levels: Big Picture (whole
 contexts, pain points), Process Level, then Design Level. Use it when starting a new product,
 untangling a legacy system, or when someone asks where domain modeling should even begin. Not when
 the domain is already well modeled and stable, and not for producing code — run it first, then
-hand off to `microservices-architect` or `spring-boot-engineer`.
+hand off to `microservices-architect` or `spring-boot-engineer`. A term that conflicts with the glossary is
+challenged on the spot, and when code exists the terms are cross-checked against it.
 
 ```
 We're rebuilding the warehouse system and nobody agrees on how receiving actually works.
@@ -419,7 +422,8 @@ and enforces the dependency rule when business logic has leaked into HTTP handle
 scores the current architecture 0–10, names each dependency-rule violation, and designs ports and
 adapters so the use cases are testable without the framework. Not for code-level naming and
 function size (use `clean-code`), bounded-context modeling (use `domain-driven-design`), or simple
-scripts.
+scripts. Seams are earned: the deletion test exposes pass-through modules, and a port appears only
+when a second adapter does.
 
 ```
 Our controllers are 400 lines and query JPA repositories directly. Score the current
@@ -439,6 +443,39 @@ E-commerce monolith, 12 engineers in three squads, Kubernetes already in place. 
 the decomposition — service boundaries, communication patterns, and data ownership.
 ```
 
+### `architecture-review`
+
+Finds where an existing codebase most needs deepening. Hot spots come from git history; each
+candidate row carries its counts — commits in the window, callers, and the result of
+`clean-architecture`'s deletion test — so confidence is a number you can recheck, not an adjective.
+It reads ADRs and the glossary if they exist and stops at the ranked list: no interface or code
+until you pick a candidate. Not for greenfield design (use `architecture-workflow`) or a layer
+review of a given design (use `clean-architecture`).
+
+```
+This repo has gotten hard to change. Where should we start restructuring?
+```
+
+On a fixture where 12 commits all touched pricing, the skill ranked `pricing.js` (13 commits, 6
+callers) as the one candidate and stopped there; a run without it found the same file but went
+straight to a four-step refactor proposal and ranked a cold one-commit wrapper second.
+
+### `deprecation-and-migration`
+
+Retires or reshapes something others depend on — a column, a table, an endpoint, a feature. Every
+step is labelled expand, migrate, or contract; a destructive step ships alone with a down path
+that was actually run; backfills go in stated batches. Consumers are counted from evidence before
+any sunset, and while they are unverified no date is set. It recommends deprecate or keep; you
+decide. Not for dialect SQL (use `sql-pro`) or write atomicity (use
+`transaction-boundary-reviewer`).
+
+```
+users.legacy_phone is no longer used — write the migration that drops it.
+```
+
+On that request, a run without the skill wrote one migration that drops the column; with it, the
+plan was relax NOT NULL → remove app writes → bake → back up and drop, each in its own deploy.
+
 ### Operations & reliability
 
 ### `sre-engineer`
@@ -446,8 +483,9 @@ the decomposition — service boundaries, communication patterns, and data owner
 Establishes production reliability practice: SLIs and SLOs with error budgets, golden-signal
 alerting and dashboards, incident runbooks, toil reduction, and capacity planning. It confirms
 your observability stack before generating any config — reference examples default to
-Prometheus/Kubernetes. Not for designing chaos experiments (use `chaos-engineer`) or provisioning
-infrastructure.
+Prometheus/Kubernetes. Telemetry rules are explicit: a correlation ID across services, bounded label
+cardinality, no secrets or PII in logs, and every alert fired once before it is trusted. Not for
+designing chaos experiments (use `chaos-engineer`) or provisioning infrastructure.
 
 ```
 Define SLOs and error budgets for our three user-facing APIs, then give me golden-signal
@@ -475,14 +513,17 @@ post right now, and set up the mitigation vs. investigation split.
 | P3 | Minor issue with a workaround | Next business day |
 
 Also ships Slack and status-page update templates and a full RCA format (summary, timeline, root
-cause, contributing factors, what went well, action items).
+cause, contributing factors, what went well, action items). Each causal step carries an `Evidence:`
+line, P2/P3 incidents get a Quick RCA, and runbooks use a three-line format (Means / First check /
+Escalate to) that is refreshed when the incident closes.
 
 ### `performance-profiling-optimization`
 
 Measure first, hypothesize second, profile third, fix fourth, verify always. Establishes a
 baseline, matches the symptom to a likely cause, profiles CPU/memory/IO/network with concrete tool
 guidance, applies one targeted change, and re-measures. Use it when there is a real, observed
-performance problem — not a suspicion.
+performance problem — not a suspicion. A change counts only if correctness holds and the delta beats
+run-to-run noise; a neutral result is reverted, and a CI budget or alert guards the win.
 
 ```
 API P99 went from 120ms to 900ms after Tuesday's deploy, CPU is flat. Baseline it,

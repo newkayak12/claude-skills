@@ -48,6 +48,12 @@ A disciplined approach to structuring software so that business rules remain ind
 4. **Apply Dependency Inversion** — Define interfaces in inner circles; implementations in outer circles
 5. **Validate** — Confirm business logic tests run with no framework imports
 
+### Seam Discipline (before step 4 adds a port)
+
+- **Deletion test**: delete the module in your head. Complexity vanishes → it was a pass-through; remove it. Complexity reappears across callers → it earns its place.
+- **Adapter rule**: one adapter → keep it concrete; the seam is hypothetical. A second adapter (real, or a test fake you actually need) → introduce the port.
+- **The interface is the test surface**: tests cross the same seam callers do. If a test must reach past it, the module is the wrong shape.
+
 ## Scoring
 
 **Goal: 10/10.** Rate architecture 0–10. A 10/10 means business rules can be tested with no database, web server, or framework present.
