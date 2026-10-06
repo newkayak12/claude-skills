@@ -13,6 +13,8 @@ scenarios:
   - "이 문장 더 임팩트 있게 고쳐줘"
   - "이 포트폴리오 섹션 시니어 수준으로 리라이팅 해줘"
   - "이 공고에 맞게 이력서 최적화해줘"
+  - "Add metrics to my resume bullets — I'm not sure what numbers I even have"
+  - "수치 넣고 싶은데 데이터가 없어"
 compatibility:
   recommended: []
   optional:
@@ -99,6 +101,7 @@ Every pair below holds the same facts on both sides; what the Weak side lacks st
 **Specificity over generality**
 - Weak: "성능 개선"
 - Strong: "[확인 필요: 적용한 조치]로 [확인 필요: 측정 지표와 개선 전/후 수치] 개선"
+- Finding the number: `references/metric-discovery.md` — metric types, discovery questions, data sources. Claude asks; it never proposes a value.
 
 **Ownership language**
 - Weak: "구현되었습니다", "팀에서 진행했습니다"
@@ -134,7 +137,7 @@ No `JD 적합도 판정` line and no gap table. For each passage, in this order:
 
 > 🧠 **Rewriter note**: [only if the diagnosis or rewrite needed a real judgment call]
 
-**[확인 필요 질문]** *(omit when none)* — one question per marker, in the order they appear.
+**[확인 필요 질문]** *(omit when none)* — one question per marker, in the order they appear. For a missing number, ask the metric type and where the data might live (`references/metric-discovery.md`), never a value. A figure the user gives themselves is carried as written, tagged `(본인 추정)`, logged in `[확정]`; without a baseline `feedback` still counts it incomplete. "모르겠어요" or no data: the marker stays, or suggest dropping or merging the line.
 
 **[확정]** *(continuing session)* — the restated list plus anything settled this turn, including a pattern call-out already made.
 

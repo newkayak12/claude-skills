@@ -135,6 +135,64 @@
           ]
         }
       ]
+    },
+    {
+      "id": 3,
+      "prompt": "이 불릿 고쳐줘. 수치 넣고 싶은데 데이터가 없어.\n\n- 사내 배치 서버 모니터링 알림 정비\n\n(no job posting, no company named)",
+      "expected_output": "Passage mode. The After keeps a [확인 필요: …] marker; the question block asks metric TYPE and data-source questions (scale, before/after, where the data might live). No value is proposed; no digit+% appears. May suggest dropping or merging the line if no data exists.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "marker-kept",
+          "description": "수치 자리가 마커로 남음",
+          "type": "regex",
+          "pattern": "\\[확인 필요:[^\\]]*\\]"
+        },
+        {
+          "name": "asks-data-source",
+          "description": "데이터 출처를 묻는 질문",
+          "type": "contains_any",
+          "values": [
+            "대시보드",
+            "티켓",
+            "PR",
+            "릴리스 노트"
+          ]
+        },
+        {
+          "name": "no-invented-number",
+          "description": "제안된 수치/퍼센트 없음",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*\\d+(\\.\\d+)?\\s*(%|건|배|분|초|ms|원))[\\s\\S]*$"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "이 불릿 고쳐줘.\n\n- 배포 자동화 스크립트 작성\n\n[확인 필요: 대상 서비스 수]에 대해 물었더니 내가 답했어: \"대략 40개 정도 되는 것 같아요.\" 이걸 반영해서 다시 써줘.\n(no job posting, no company named)",
+      "expected_output": "The user's own approximation is carried as written, tagged (본인 추정), and logged in [확정]; Claude adds no other number. Notes that without a baseline feedback still treats it as incomplete.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "tagged",
+          "description": "본인 추정 태그와 확정 기록",
+          "type": "contains_all",
+          "values": [
+            "40",
+            "(본인 추정)",
+            "[확정]"
+          ]
+        },
+        {
+          "name": "baseline-note",
+          "description": "베이스라인 없으면 불완전 언급",
+          "type": "contains_any",
+          "values": [
+            "베이스라인",
+            "baseline"
+          ]
+        }
+      ]
     }
   ]
 }
