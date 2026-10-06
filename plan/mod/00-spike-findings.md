@@ -15,7 +15,7 @@ It also warns `gating hook without .catch` for `tool.call`/`command.run` (shared
 
 2.1.292, `claude --plugin-dir spike-mod -p "<Write a file>"`: `/tmp/spike-cmd.txt` got
 `cmd hook fired …` AND the store got `moduleSawWrite` → both fired on one Write.
-The toast itself is unverified (headless has no surface) — see "Open".
+Interactive: one Write → `moduleSawWrite` 23:07:01.487Z and `cmd hook fired` 23:07:01.586Z (module first), toast shown.
 
 ## 2. An older build ignores the `modules` key — YES (with one stderr line)
 
@@ -28,11 +28,11 @@ command hook fired. It prints, on **stderr** only (stdout with `2>/dev/null` is 
 Verdict: README rule 1 holds; no separate `<plugin>-mod` plugin needed. Adapters that read
 `claude -p` stdout are unaffected; anything that treats stderr as failure would see the line.
 
-## 3. Headless detection — HALF (headless side verified)
+## 3. Headless detection — YES
 
 `claude -p` on 2.1.292: `session.start` stored `surfaces: { n: 0, list: [] }`. So the
 `surfaces().length > 0` guard (shared rule 2) turns the mod off in headless runs.
-Interactive ≥ 1: not run yet — see "Open".
+Interactive (hot-reloaded in a terminal session): `surfaces: { n: 1, list: ["terminal"] }`.
 
 ## 4. `$.process.run(['node', …])` from a module — YES
 
@@ -44,11 +44,9 @@ Path resolution: **`$.plugin.root`** works (stored the plugin's absolute folder)
 So `02`'s `VIEW` = `` `${$.plugin.root}/scripts/view.mjs` `` (teams' own copy).
 `import.meta.url` not tried (not needed).
 
-## Open (needs one interactive session)
+## Open
 
-Run `claude --plugin-dir ~/.claude/dev-mods/<session>/spike-mod` in a terminal, then:
-Write any file → toast `module saw Write`; `/spike-view` → `exit=0 …`; the store's
-`surfaces.n` ≥ 1. 
+None. `/spike-view` was not typed; §4 already proves `$.process.run` from the module.
 
 ## Plan changes
 
