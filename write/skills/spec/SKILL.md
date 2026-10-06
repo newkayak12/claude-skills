@@ -43,7 +43,8 @@ implementation plan (`write:plans`); breaking a spec into tickets.
 3. **Seams.** Name where the feature will be tested — prefer an existing seam, the highest one that exercises the
    behaviour, as few as possible. Say which tests already sit there.
 4. **Draft** with the template. User stories only for behaviour the conversation supports; never pad the list.
-   Implementation decisions name modules and contracts, not file paths or code — paths go stale before the spec does.
+   Implementation decisions name modules and contracts, not file paths or code — paths go stale before the spec does;
+   a path belongs only in the `(source: …)` note.
 5. **Recount.** Count stories, decisions, and `[확인 필요]` markers in the draft and write the tally line from that
    count.
 
