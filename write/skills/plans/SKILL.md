@@ -1,11 +1,8 @@
 ---
 name: plans
 description: >-
-  Use when writing starts from a plan: an implementation plan before coding, a document others
-  will read (PRD, design doc, RFC, proposal, spec), a design review or ADR, a technical blog post, or SBI feedback to a
-  colleague. Triggers: "구현 계획 써줘", "implementation plan", "코딩 전에 계획 잡아줘", "migration plan",
-  "리팩토링 계획", "문서 같이 써줘", "PRD 작성", "design doc", "RFC 초안", "제안서 써야 해", "기술 블로그 써줘",
-  "technical blog", "회고 글", "ADR 써줘", "write an ADR", "design review 문서", "피드백 어떻게 말해?", "SBI", "peer review 써야 해".
+  Use when writing starts from a plan: an implementation plan or ticket breakdown before code, a PRD, design doc or
+  RFC, a design review or ADR, a tech blog, or SBI feedback. Triggers: "구현 계획 써줘", "티켓으로 쪼개줘", "PRD 작성", "ADR 써줘".
 scenarios:
   - "이 기능 구현 계획 작성해줘"
   - "Create an implementation plan for this new service"
@@ -33,7 +30,7 @@ without a question.
 
 | Purpose | Signal | Path |
 |---|---|---|
-| implementation plan | code/migration/refactor work, any plan hand-off | Overview → Process below |
+| implementation plan | code/migration/refactor work, breaking a plan or feature into tickets/issues, any plan hand-off | Overview → Process below |
 | document | PRD, design doc, RFC, proposal, decision doc, spec — including a teams briefing that names one | `references/document.md` (Stage 3 uses `agents/reader-agent.md`) |
 | design review | options still open, reviewers argue alternatives and trade-offs | `references/formats/design-review.md` (fixed 8 sections) |
 | ADR | a decision already made, to be recorded | `references/formats/adr.md` (fixed template, `docs/adr/NNNN-*.md`) |
@@ -64,8 +61,11 @@ preference overrides this default).
 2. **Survey, then structure.** Read entry points, tests, and the nearest
    analogue before inventing file paths; lock which files are touched and
    what each owns.
-3. **Right-size the tasks.** One testable deliverable per task, 2-5 minute
-   steps: test → fail → implement → pass → commit.
+3. **Right-size the tasks.** One task is one vertical slice: it leaves one
+   behaviour working end to end at a thinner scope — never "all backend, then
+   all frontend", because a layer-only task has nothing to demo or test until
+   its sibling lands. A wide refactor goes expand → migrate → contract, one task
+   each. Inside a task, 2-5 minute steps: test → fail → implement → pass → commit.
 4. **Gap check, in-line.** Confirm each thing a task consumes was produced
    by an earlier task — the defect `planning:executing-plans` screens for;
    catch it before it ships.
@@ -97,6 +97,7 @@ preference overrides this default).
 **Files:** create/modify/test — exact paths.
 **Interfaces:** consumes [earlier tasks' signatures] / produces [names
   later tasks rely on].
+**Blocked by:** [Task k, … | none] — the order made explicit, not implied.
 **Pass bar:** [the observable check from Process step 6]
 
 - [ ] 1: failing test (full code) → 2: confirm it fails → 3: minimal

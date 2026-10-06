@@ -39,7 +39,10 @@ knowledge-base, knowledge-graph, RAG corpus, query 스킬은 이제 `knowledge` 
 구현 계획만 만들고 실행은 절대 하지 않습니다. `planning:executing-plans`가 인계 시점에 하던 갭
 체크와 모호성 체크를 여기서, 작성 시점에 합니다 — 계획이 완성되려면 모든 단계에 관측 가능한 pass
 bar가 하나씩 찍혀 있어야 합니다. staleness/drift는 일부러 범위 밖입니다. 그건
-`planning:executing-plans`가 맡습니다.
+`planning:executing-plans`가 맡습니다. 작업 하나는 세로 조각 하나입니다. 기능 하나가 끝에서 끝까지 동작하게 만들고,
+"백엔드 다 하고 프론트 다 하기" 식으로 나누지 않습니다. 작업마다 무엇에 막혀 있는지(`Blocked by`)도 적으므로
+티켓 분해("티켓으로 쪼개줘")도 여기로 옵니다. 저장된 검색 기능으로 비교했을 때, 이 규칙 없이는 백엔드/프론트
+섹션으로 나뉘고 선후 관계가 없었고, 규칙을 넣으면 조각 7개가 각각 `Blocked by`와 pass bar를 가졌습니다.
 
 ```
 결제 웹훅 재시도 로직 구현 계획 써줘. 기존 PaymentEventHandler 건드리는 범위까지 포함해서,
