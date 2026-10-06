@@ -653,6 +653,8 @@ the stage and the output the caller wants:
   the rest are observations. The six-dimension tables (names, functions, comments, error handling,
   tests, structure) live in `references/review-framework.md`; the optional 0–10 score is never the
   verdict. Under teams it fills the gate JSON (`gaps[]`, `accept:false` iff something blocks).
+  Interactive review also reads the issue or spec the change claims and flags unrequested or
+  out-of-scope behaviour.
 - **Implement** — writes the change: test file first (cases via `test-master` reference mode), then
   the code, then returns `changed_files`. A refactor is implement mode with behavior pinned.
 
