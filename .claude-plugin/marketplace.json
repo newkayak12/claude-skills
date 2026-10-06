@@ -68,7 +68,7 @@
     },
     {
       "name": "skill",
-      "description": "Skill management: create skills in the repo's house identity, quality-assure them (6-dimension QA), and audit trigger coverage.",
+      "description": "Skill management: create skills in the repo's house identity, quality-assure them (6-dimension QA), audit trigger coverage, and audit a workspace for what it already has before installing.",
       "version": "1.2.0",
       "author": {
         "name": "newkayak12"
