@@ -9,7 +9,7 @@
     {
       "name": "develop",
       "description": "Engineering skills: CLI, SQL, clean architecture, clean code, DDD, database optimization, chaos engineering, Spring Boot, microservices, Kotlin, TDD, frontend, code documentation, testing, bug diagnosis, security audit, SRE, performance profiling & optimization, incident response, documentation strategy, and dev-quality-workflow (full dev cycle entry point). ADR drafting moved to write:plans (ADR format).",
-      "version": "1.6.0",
+      "version": "1.7.0",
       "author": {
         "name": "newkayak12"
       },
@@ -69,7 +69,7 @@
     {
       "name": "skill",
       "description": "Skill management: create skills in the repo's house identity, quality-assure them (6-dimension QA), audit trigger coverage, and audit a workspace for what it already has before installing.",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "author": {
         "name": "newkayak12"
       },
@@ -89,7 +89,7 @@
     {
       "name": "portfolio",
       "description": "Portfolio and career skills: fit (JD or company type), portfolio feedback, rewriting and JD tailoring, pattern analysis, mock interview, interview plan, job-application-workflow (through a 자기소개서 step via write:writer-verification), and deck-builder (reference template.pptx + deck.mdx → pptx; recolors a pptx to a brand palette).",
-      "version": "2.3.1",
+      "version": "2.4.0",
       "author": {
         "name": "newkayak12"
       },
