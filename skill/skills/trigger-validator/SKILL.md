@@ -43,23 +43,31 @@ For each target skill, read the `description` field from the SKILL.md frontmatte
 
 ### 2. Generate Test Queries
 
-For each skill, generate **10 test queries** that a real user might type:
+For each skill, generate **20 test queries** that a real user might type — 10 that should trigger, 10 that should not:
 
 | # | Type | Example register |
 |---|------|-----------------|
 | 1–2 | Formal English | exact keywords from the description |
 | 3–4 | Natural English | colloquial, indirect phrasing |
 | 5–7 | Natural Korean | conversational 한국어, not word-for-word translations |
-| 8–9 | Borderline | adjacent topic that should NOT trigger this skill |
-| 10 | Implicit | user has a clear need but never says the skill name |
+| 8–9 | Implicit | user has a clear need but never says the skill name |
+| 10 | Competing skill | a sibling skill also fits, and this one should win |
+| 11–20 | Near-miss | shares keywords or concepts with the skill but needs something else — an adjacent skill, plain Claude, or a different tool |
 
-Good Korean queries feel like something a developer would actually type in chat — "이거 어떻게 설계해야 해?", "Redis 써야 할까?", "코드 너무 복잡한데 어떻게 해?". Bad Korean queries are literal translations of English keywords.
+Make every query concrete and substantive: a file name, a number, a bit of the user's situation, casual phrasing or a
+typo. Claude skips skills for trivial one-step asks whatever the description says, so "debug this" tests nothing.
+Good Korean queries feel like something a developer would actually type in chat — "이거 어떻게 설계해야 해?",
+"Redis 써야 할까?", "코드 너무 복잡한데 어떻게 해?". Bad Korean queries are literal translations of English keywords.
+
+A near-miss is valuable only if a keyword match would fire on it. "Write a fibonacci function" as a negative for a
+PDF skill is too easy and measures nothing; for a bug-diagnosis skill, "add a regression test for the paging fix we
+just made" is a near-miss.
 
 ### 3. Score Trigger Coverage
 
 For each query, ask: **would the current description cause Claude to invoke this skill?**
 
-Default is a judged score — Claude reads the description and predicts. When the user asks for a measured score ("실제로 돌려봐", "measure it"), run each query headless instead and record whether the skill fired:
+Default is a judged score — Claude reads the description and predicts. When the user asks for a measured score ("실제로 돌려봐", "measure it"), run each query headless **3 times** and record how often the skill fired; a query counts as fired at 2 of 3 or more (one run is noise):
 
 ```bash
 claude -p "<query>" --setting-sources project --plugin-dir <plugin> --output-format stream-json --verbose --max-turns 2 < /dev/null \
@@ -69,10 +77,10 @@ claude -p "<query>" --setting-sources project --plugin-dir <plugin> --output-for
 Run from a scratch directory under `$TMPDIR`, not inside the plugin. Label the score `measured` or `judged` in the report.
 
 Assess each query on two axes:
-- **Should trigger** (queries 1–7, 10): does the description give enough signal? Score 1 if yes, 0 if no.
-- **Should not trigger** (queries 8–9): does the description stay silent? Score 1 if correctly silent, 0 if it would falsely trigger.
+- **Should trigger** (queries 1–10): does the description give enough signal? Score 1 if yes, 0 if no.
+- **Should not trigger** (queries 11–20): does the description stay silent? Score 1 if correctly silent, 0 if it would falsely trigger.
 
-**Trigger score** = `(correct answers / 10) × 10`
+**Trigger score** = `(correct answers / 20) × 10`
 
 ### 4. Identify Gaps
 
@@ -96,6 +104,10 @@ Rewrite the description as a drop-in replacement. Follow these principles:
 4. **Include English colloquial variants** alongside formal terms
 5. **Stay at or under 250 characters** — Claude Code truncates past that, and descriptions are always in context
 6. **Start with `Use when`** — the situation first; no workflow summary
+
+When rewriting in measured mode, hold out 8 of the 20 queries (4 should, 4 near-miss) and iterate on the other 12:
+rewrite, re-measure, at most 3 iterations. Pick the description with the best **held-out** score, not the best
+training score — a description tuned to the 12 it saw can lose on the 8 it didn't. Report both scores.
 
 **Structure:**
 ```
@@ -121,7 +133,7 @@ Use when code is hard to read or change and needs review or cleanup. Triggers on
 ```
 ## [skill-name] — Trigger Analysis
 
-**Score:** X/10 (judged / measured)
+**Score:** X/10 (judged / measured; measured also shows held-out X/10 when rewritten)
 **Current description:** [verbatim]
 
 ### Query Results
@@ -162,7 +174,7 @@ Update only the `description` field in each file's frontmatter — do not touch 
 
 | Claude | You |
 |--------|-----|
-| Generates 10 test queries per skill and scores trigger coverage | Name the target: skill, plugin, or all |
+| Generates 20 test queries per skill (10 should, 10 near-miss) and scores trigger coverage | Name the target: skill, plugin, or all |
 | Rewrites weak descriptions | Review the rewrites |
 | Applies description changes to frontmatter only | Say whether to apply, if not already asked |
 
