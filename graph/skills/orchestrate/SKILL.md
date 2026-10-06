@@ -1,15 +1,15 @@
 ---
 name: orchestrate
 description: >-
-  Use when running a whole request through the graph-engineering MCP and driving
-  its harness nodes without holding the payload yourself. Triggers on: "그래프 돌려줘",
-  "노드 단위로 돌려줘", "run it through the MCP", "orchestrate this run". Not for installation.
+  Use when running a whole request through the graph-engineering MCP, driving its
+  harness nodes without holding the payload. Triggers: "graph-engineering으로 돌려줘",
+  "graph-engineering 노드 루프", "graph-owned harness flow". Not for install.
 effort: high
 scenarios:
   - "Run this request through the harness flow but keep my context free for the loop"
   - "Dispatch every stage to whichever vendor can actually do it"
-  - "요청 전체를 MCP에 던지고 노드 단위로 할당받아서 돌리고 싶어"
-  - "결과가 메인에 쌓이지 않게 그래프를 끝까지 돌려줘"
+  - "요청 전체를 graph-engineering MCP에 던지고 노드 단위로 할당받아서 돌리고 싶어"
+  - "결과가 메인에 쌓이지 않게 graph-engineering 루프를 끝까지 돌려줘"
 compatibility:
   required:
     - graph-engineering

@@ -1,10 +1,9 @@
 ---
 name: assumption-extractor
 description: >-
-  Use when someone presents a plan, argument, or belief with confidence and its
-  hidden dependencies have not been examined — surfacing factual, causal, value,
-  and definitional assumptions, then ranking which ones would collapse
-  everything if wrong.
+  Use when a plan, argument, or belief is stated with confidence and its hidden
+  dependencies are unexamined. Surfaces factual, causal, value, and definitional
+  assumptions and ranks which would collapse everything if wrong.
 
 scenarios:
   - "Walk me through the assumptions behind this strategy"

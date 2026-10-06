@@ -267,3 +267,10 @@ People make mistakes. Systems should make mistakes hard to cause and easy to det
 | Drafts Slack/status updates | Send them; keep the 15-30 min update cadence |
 | Proposes mitigation options | Execute and approve the mitigation |
 | Writes the blameless RCA in the post-mortem format | Confirm timeline and root cause; schedule the RCA |
+
+## Related Skills
+
+- `develop:sre-engineer` — SLOs, alerting, runbooks
+- `develop:chaos-engineer` — test failure modes before they happen
+- `develop:documentation-strategy` — where to store and maintain the RCA
+- `develop:performance-profiling-optimization` — when the incident is a performance regression

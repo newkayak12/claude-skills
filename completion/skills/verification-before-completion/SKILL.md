@@ -1,7 +1,7 @@
 ---
 name: verification-before-completion
 description: >-
-  Use before claiming work is done, tests pass, a build is green, or a bug is
+  Use when about to claim work is done, tests pass, a build is green, or a bug is
   fixed without fresh isolated evidence. Triggers on: "완료했어", "테스트 통과", "빌드 성공",
   "버그 고쳤어", "커밋할게", "PR 올릴게", "done", "should pass", "bug is fixed".
 scenarios:
