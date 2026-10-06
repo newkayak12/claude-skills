@@ -28,7 +28,8 @@ import { existsSync, mkdirSync, writeFileSync, watch } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { loadRunAt } from './graph.mjs';
-import { mutateTask } from './store.mjs';
+import { mutateTask, LockTimeoutError } from './store.mjs';
+import { applySuspends } from './taskstate.mjs';
 import { pidAlive } from './proc.mjs';
 import {
   taskPath, taskDir, record, noDriver, taskState,
@@ -417,6 +418,9 @@ function clearJudging(taskId, nodeId, stamp) {
 
 async function stepOnceInner(taskId, judgeFn) {
   const tx = (fn) => mutateTask(taskId, fn);
+  // Sleep/wake first: a suspend since the last tick is recorded before the ask timeout, the stall
+  // watchdog and the timebox below read the clock (taskstate.mjs applySuspends).
+  tx((t) => applySuspends(t));
   // ask_timeout: this daemon is the clock for every `ask` card under the task - a parked child
   // has no driver to notice its own deadline (taskmanager.mjs's expireAsks).
   const expired = tx((t) => expireAsks(t).length > 0);
@@ -539,14 +543,37 @@ async function stepOnceInner(taskId, judgeFn) {
   return progressed;
 }
 
+// One step of the loop below, surviving a lock it could not get: a LockTimeoutError (a sleep
+// mid-wait, a slow writer) used to reach main().catch and exit, leaving the task running with no
+// daemon. Now it is a retry. daemon_lock_timeout is recorded once per streak, not per tick.
+// Any other error propagates as before. Returns {ok, value}; ok false means "wait, try again".
+export async function loopStep(taskId, streak, fn) {
+  try {
+    const value = await fn();
+    streak.count = 0;
+    return { ok: true, value };
+  } catch (e) {
+    if (!(e instanceof LockTimeoutError) && !(e && e.code === 'ELOCKTIMEOUT')) throw e;
+    streak.count = (streak.count || 0) + 1;
+    if (streak.count === 1) {
+      record({ run_id: taskId }, { event: 'daemon_lock_timeout', task_id: taskId, path: e.path || null, owner: (e.owner && e.owner.pid) || null });
+    }
+    return { ok: false };
+  }
+}
+
 async function main() {
+  const streak = { count: 0 };
+  const lockRetry = () => new Promise((r) => setTimeout(r, 1000));
   for (;;) {
     const task = loadTask();
     if (!task) {
       record({ run_id: TASK_ID, store_path: taskPath(TASK_ID) }, { event: 'daemon_task_missing', task_id: TASK_ID });
       return;
     }
-    const progressed = await stepOnce(TASK_ID);
+    const step = await loopStep(TASK_ID, streak, () => stepOnce(TASK_ID));
+    if (!step.ok) { await lockRetry(); continue; }
+    const progressed = step.value;
     let fresh = loadTask();
     if (!fresh) {
       // loadRunAt returns null on a parse error too, and another process (tm_submit, tm_wait's
@@ -564,7 +591,9 @@ async function main() {
       // The closers run at the TOP of a step; a node that failed at the end of this one (the goal
       // gate, code-sprint-S6) left the task blocked before enforceBudget ever saw it, and the
       // stopped Sprint ended with no report. Give them one look before calling it done.
-      if (mutateTask(TASK_ID, (t) => enforceBudget(t))) continue;
+      const closed = await loopStep(TASK_ID, streak, () => mutateTask(TASK_ID, (t) => enforceBudget(t)));
+      if (!closed.ok) { await lockRetry(); continue; }
+      if (closed.value) continue;
       // Not running is not finished while a failed judge still has a scheduled re-judge.
       const rejudgeAt = pendingRejudgeAt(fresh);
       if (rejudgeAt !== null) {

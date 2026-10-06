@@ -65,6 +65,7 @@ import { conventionsBlock } from './conventions.mjs';
 import {
   tasksRoot, taskDir, taskPath, record, beginEffectLedger, takeEffectLedger, driverAlive,
   restartBudget, countedDriverRestarts, unfinishedWork, resolveHarnessRun, harnessState,
+  __clock, applySuspends, suspendedSince, stampAfterWake,
 } from './taskstate.mjs';
 import { STAGE_SKILLS, stageSkills, MANAGER_CONVENTION_STAGES, CONTRACT, ACCEPT_EXTRA } from './stagecontract.mjs';
 import { mutateTask, mutateRun, writeAtomic, inTransaction, afterCommit } from './store.mjs';
@@ -959,6 +960,13 @@ function scopesOverlap(a, b) {
   return a.startsWith(b + '/') || b.startsWith(a + '/');
 }
 
+// Two packages claim a path in common, by the rule validateShape uses for shape's packages.
+function touchesOverlap(a, b) {
+  const scopes = (p) => ((p && p.touches) || []).map((t) => touchScope(String(t).replace(/\/+$/, '')));
+  const theirs = scopes(b);
+  return scopes(a).some((x) => theirs.some((y) => scopesOverlap(x, y)));
+}
+
 // Every id a STORY key can name, cards first (m8): tm_ticket's refusal listed only the shape's
 // packages and said "none yet" while planning cards were running.
 function knownIds(task) {
@@ -1843,6 +1851,28 @@ function fileDefects(task, defects, opts) {
   const oldDep = goal.deps.length > 1 ? goal.deps.slice() : goal.deps[0];
   const acceptIds = [];
   const filed = [];
+  // Overlapping touches is what integration conflicts are made of, and shape orders its own
+  // packages for it; a filed package gets the same ordering (C7). ws-a6b31c1b (0.40.1): D1-D4 all
+  // touched one csv source file, were filed unordered, ran in parallel and conflicted at
+  // integrate:2. An upstream fix never orders behind its filer, nor anything depending on it:
+  // fileUpstreamDefects rewires the filer's next dispatch onto the fix, so that edge is a cycle.
+  const behindFiler = new Set(origin === 'upstream' ? [String(reporter)] : []);
+  for (let grew = behindFiler.size > 0; grew;) {
+    grew = false;
+    for (const p of packages) {
+      if (behindFiler.has(String(p.id)) || !(p.deps || []).some((x) => behindFiler.has(String(x)))) continue;
+      behindFiler.add(String(p.id));
+      grew = true;
+    }
+  }
+  // An earlier package not yet accepted is waited on only when it is itself filed: those depend
+  // only backwards, so the edge cannot close a loop. A dead one (skipped, written off) never is.
+  const overlapDeps = (pkg) => packages.filter((q) => {
+    if (q.repair || behindFiler.has(String(q.id)) || !touchesOverlap(q, pkg)) return false;
+    const acc = latestBySubgoal(task, q.id, 'accept');
+    if (!acc || acc.state === 'skipped' || acc.state === 'unreachable') return false;
+    return acc.state === 'done' || (!acc.final && Boolean(q.reporter));
+  }).map((q) => String(q.id));
   for (const d of defects) {
     const id = `D${packages.filter((p) => p.reporter).length + 1}`;
     const evidence = d && d.evidence ? String(d.evidence) : '';
@@ -1870,6 +1900,9 @@ function fileDefects(task, defects, opts) {
       touches: ((d && d.touches) || []).map(String),
       deps: ((d && d.deps) || []).map(String),
     };
+    // The filer's own deps first: dispatch branches from the first dep, so the base stays the same.
+    pkg.deps = [...new Set([...pkg.deps, ...overlapDeps(pkg)])];
+    if (pkg.deps.some((x) => behindFiler.has(x))) behindFiler.add(id);
     packages.push(pkg);
     filed.push(pkg);
     // Every named dep is a sibling package id, resolved to ITS current accept the same way a
@@ -2821,7 +2854,7 @@ export function serviceDeadDriver(task, child, nodeId) {
   const priorRestarts = driver.restarts || [];
   const countedRestarts = countedDriverRestarts(task, driver);
   if (countedRestarts.length >= budget) return false; // budget spent (within the window, if any): fold it, do not respawn again
-  const restarts = [...priorRestarts, entry];
+  const restarts = [...priorRestarts, stampAfterWake(task, priorRestarts, entry)];
   const attempt = nextSpawnAttempt(child);
   return respawnDriver(task, nodeId, child, {
     attempt, reason: 'restart', restarts,
@@ -2882,7 +2915,8 @@ export function serviceStalledDriver(task, child, nodeId) {
   // park (capacity, a dead predecessor) inherits the old progress mtime, and measured from that
   // alone it read 79 minutes idle the moment it came up - idol-beta-ask1's P6 had eight fresh
   // drivers killed as "stalled" within 68 ms and its whole restart budget spent.
-  const progressAt = Math.max(childProgressMtime(child) ?? 0, driver.started_at ?? 0) || Date.now();
+  // And the wake from a suspend (task.resumed_at): a sleeping laptop is not a stalled driver.
+  const progressAt = Math.max(childProgressMtime(child) ?? 0, driver.started_at ?? 0, task.resumed_at ?? 0) || Date.now();
   const idleMs = Date.now() - progressAt;
   const stallMs = stallMinutes * 60000;
   if (idleMs < stallMs) {
@@ -2997,11 +3031,27 @@ function spawnDaemonProcess(task, attempt) {
       });
     } catch { /* best-effort */ }
     proc.unref();
-    return { pid: proc.pid || null, started_at: Date.now(), log, stderr, exit: exitFile, command };
+    const keepAwake = startKeepAwake(proc.pid);
+    return { pid: proc.pid || null, started_at: Date.now(), log, stderr, exit: exitFile, command, ...(keepAwake ? { keep_awake: keepAwake } : {}) };
   } catch (e) {
     return { pid: null, started_at: Date.now(), log, stderr, exit: exitFile, command, error: String((e && e.message) || e) };
   } finally {
     for (const fd of [out, err]) { try { if (fd !== null) closeSync(fd); } catch { /* already closed */ } }
+  }
+}
+
+// macOS: keep the machine from idle-sleeping while the daemon lives - `caffeinate -w` exits with
+// the pid it watches. Idle sleep only: a lid close or a forced sleep still suspends (the suspend
+// detection in taskstate.mjs covers that). Returns {pid, bin} or null (not darwin, no binary).
+export function startKeepAwake(pid, { platform = __clock.platform(), bin = '/usr/bin/caffeinate' } = {}) {
+  if (platform !== 'darwin' || !pid || !existsSync(bin)) return null;
+  try {
+    const p = spawn(bin, ['-i', '-w', String(pid)], { detached: true, stdio: 'ignore' });
+    p.on('error', () => { /* best-effort */ });
+    p.unref();
+    return { pid: p.pid || null, bin };
+  } catch {
+    return null;
   }
 }
 
@@ -5584,6 +5634,7 @@ export function openHarnessRun(task) {
 export function serviceHarnessRun(task) {
   const h = task.harness_run;
   if (!h) return false;
+  applySuspends(task);
   const before = JSON.stringify([h.run || null, h.refused_pointer || null, !!h.finished_at, !!h.exhausted]);
   const run = resolveHarnessRun(task);
   const v = run ? harnessVerdict(run) : null;
@@ -5604,7 +5655,7 @@ export function serviceHarnessRun(task) {
     }
     return changed();
   }
-  const restarts = [...(d.restarts || []), { pid: d.pid, exit: driverExitInfo(d), at: Date.now(), stderr_tail: driverStderrTail(d, 300) }];
+  const restarts = [...(d.restarts || []), stampAfterWake(task, d.restarts || [], { pid: d.pid, exit: driverExitInfo(d), at: Date.now(), stderr_tail: driverStderrTail(d, 300) })];
   const attempt = nextSpawnAttempt(h);
   const budget = restartBudget(task);
   return respawnDriver(task, 'S', h, {
@@ -5728,7 +5779,8 @@ export function taskSpend(task) {
 }
 
 export function taskElapsedMinutes(task) {
-  return (Date.now() - (task.created_at || Date.now())) / 60000;
+  // Time the machine slept is not time the run spent.
+  return (Date.now() - (task.created_at || Date.now()) - (task.suspended_ms || 0)) / 60000;
 }
 
 // {pct, over, warn, spend, elapsed_minutes}. Neither budget_usd nor timebox_minutes set:
@@ -5925,6 +5977,7 @@ function settleRunningDispatchesAtStop(task, status) {
 }
 
 export function enforceBudget(task) {
+  applySuspends(task);
   const status = budgetStatus(task);
   let progressed = false;
   if (status.warn && !task.budget_warned) {
@@ -6629,6 +6682,7 @@ export function advanceDispatches(taskRef) {
 // same run_id, or parked on capacity, before anyone ever sees it as something to fold. Only a
 // spent restart budget leaves it dead. Returns how many it touched.
 export function serviceRunningDispatches(task) {
+  applySuspends(task);
   let serviced = 0;
   for (const n of task.nodes) {
     if (n.stage !== 'dispatch' || n.state !== 'running' || !n.child || !n.child.driver) continue;
@@ -7061,13 +7115,18 @@ function expiringAsks(run, ref) {
   return run.nodes.filter((x) => x.stage === 'ask' && x.state === 'waiting_human' && Number.isInteger(x.waiting_since) && !queued.has(x.node_id));
 }
 
+// An ask's deadline, pushed back by the time the machine slept after it started waiting.
+function askDeadline(task, n, timeout) {
+  return n.waiting_since + timeout + suspendedSince(task, n.waiting_since);
+}
+
 // Earliest pending deadline across every run above, or null (no timeout, or nothing waiting).
 export function nextAskDeadline(task) {
   const timeout = askTimeoutMs(task);
   if (!timeout) return null;
   let at = null;
   for (const { run, ref } of askRuns(task)) {
-    for (const x of expiringAsks(run, ref)) at = at === null ? x.waiting_since + timeout : Math.min(at, x.waiting_since + timeout);
+    for (const x of expiringAsks(run, ref)) at = at === null ? askDeadline(task, x, timeout) : Math.min(at, askDeadline(task, x, timeout));
   }
   return at;
 }
@@ -7075,13 +7134,14 @@ export function nextAskDeadline(task) {
 // Answers every expired card. Returns the node ids it answered; the caller saves the task when
 // the list is non-empty (a manager-level finish() already saved it, a resumed driver has not).
 export function expireAsks(task, now = Date.now()) {
+  applySuspends(task);
   const timeout = askTimeoutMs(task);
   if (!timeout) return [];
   const answered = [];
   for (const { run, ref, nodeId } of askRuns(task)) {
     let queuedHere = false;
     for (const n of expiringAsks(run, ref)) {
-      if (n.waiting_since + timeout > now) continue;
+      if (askDeadline(task, n, timeout) > now) continue;
       const decisions = timeoutDecisions(n, timeout);
       if (!decisions) continue;
       const payload = { stage_ok: true, decisions, by: 'timeout', timed_out_after_ms: timeout };
