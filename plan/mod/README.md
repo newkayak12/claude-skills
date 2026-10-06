@@ -94,3 +94,6 @@ Value H/M, kept out of this round to stay small; revisit after 2 and 3 ship.
   dev mod (`~/.claude/dev-mods/<session>/skill-notify/`); fold into the skill-routing item above.
 - **like-me voice profile:** save the analysed voice profile in `$.store` so later `write:like-me`
   runs reuse it instead of re-reading samples.
+- **portfolio/write/develop extras (all six, from Backlog):** deck-builder preview pane,
+  mock-interview ledger in `$.store`, flaky-test-analyzer `run_n` tool, scenario-director actor
+  pane + director request guard, writer-verification ask before `gh pr create`.
