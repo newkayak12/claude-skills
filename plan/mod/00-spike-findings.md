@@ -46,7 +46,10 @@ So `02`'s `VIEW` = `` `${$.plugin.root}/scripts/view.mjs` `` (teams' own copy).
 
 ## Open
 
-None. `/spike-view` was not typed; §4 already proves `$.process.run` from the module.
+`/spike-view` typed interactively first answered `no command.run hook answered it`: the spike
+matched `{ name }`; the matcher key is **`{ command: 'spike-view' }`**. `claude plugin validate`
+did NOT flag the wrong key (it listed `command.run{name=spike-view}` as fine) — only a test or a
+live run catches it. 02/03 already use `{ command }`. Spike fixed; re-run pending.
 
 ## Plan changes
 
