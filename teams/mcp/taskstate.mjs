@@ -48,6 +48,111 @@ export function takeEffectLedger() {
   return held;
 }
 
+// ---------- sleep/wake (../teams-mac-sleep/finding.md) ----------
+//
+// A laptop that sleeps stops every process, and on wake each wall-clock judgement (stall, timebox,
+// ask deadline) reads the sleep as idle time. Wall time jumps across a suspend; the monotonic
+// clock (performance.now) does not, so the difference between the two deltas since this process
+// last looked is the suspend. The clock is a seam so tests inject a suspend instead of sleeping.
+export const __clock = { wall: () => Date.now(), mono: () => performance.now(), platform: () => process.platform };
+export const SUSPEND_GAP_MS = 60000;
+export const WAKE_WINDOW_MS = 10 * 60000;
+const MAX_SUSPENDS = 50;
+
+// Per process: the last {wall, mono} looked at, and every suspend this process has detected.
+// One MCP server serves many tasks, so a gap is kept and applied to each task it services, not
+// only to the one whose call happened to notice it.
+const detector = { base: null, detected: [] };
+export function __resetSuspendDetector() { detector.base = null; detector.detected = []; }
+
+// The forward wall-clock time the monotonic clock did not see, when it is a suspend; else 0
+// (a backward wall step is negative and reads as 0).
+export function suspendGap(prev, cur) {
+  const gap = (cur.wall - prev.wall) - (cur.mono - prev.mono);
+  return gap >= SUSPEND_GAP_MS ? gap : 0;
+}
+
+// Looks at the clock; returns every suspend this process has detected so far.
+export function detectSuspends() {
+  const cur = { wall: __clock.wall(), mono: __clock.mono() };
+  if (detector.base) {
+    const gap = suspendGap(detector.base, cur);
+    if (gap) detector.detected.push({ at: cur.wall, gap_ms: gap });
+  }
+  detector.base = cur;
+  return detector.detected;
+}
+
+// Records one suspend [at - gap, at] on the task, clipped to the part after the task existed.
+// Idempotent: intervals that overlap are merged and suspended_ms counts their union, so two
+// processes (the daemon, an MCP server) that saw the same sleep count it once. Returns true when
+// the task changed. Past the cap, suspends_floor is the end of the newest interval dropped from
+// the list: anything before it is already counted, so a process re-applying its old detections
+// adds nothing.
+export function noteSuspend(task, at, gapMs) {
+  const from = Math.max(at - gapMs, Number.isFinite(task.created_at) ? task.created_at : -Infinity,
+    Number.isFinite(task.suspends_floor) ? task.suspends_floor : -Infinity);
+  if (!(at > from)) return false;
+  const list = (task.suspends || []).map((s) => [s.at - s.gap_ms, s.at]);
+  const before = list.reduce((sum, [a, b]) => sum + (b - a), 0);
+  let lo = from;
+  let hi = at;
+  let merged = false;
+  const keep = [];
+  for (const [a, b] of list) {
+    if (a <= hi && b >= lo) { lo = Math.min(lo, a); hi = Math.max(hi, b); merged = true; } else keep.push([a, b]);
+  }
+  keep.push([lo, hi]);
+  keep.sort((x, y) => x[1] - y[1]);
+  const added = keep.reduce((sum, [a, b]) => sum + (b - a), 0) - before;
+  if (added <= 0) return false;
+  if (keep.length > MAX_SUSPENDS) task.suspends_floor = keep[keep.length - MAX_SUSPENDS - 1][1];
+  task.suspends = keep.slice(-MAX_SUSPENDS).map(([a, b]) => ({ at: b, gap_ms: b - a }));
+  task.suspended_ms = (task.suspended_ms || 0) + added;
+  task.resumed_at = Math.max(task.resumed_at || 0, at);
+  // A stall flagged before the sleep was the sleep.
+  for (const n of task.nodes || []) {
+    if (n.stage === 'dispatch' && n.state === 'running' && n.child) delete n.child.stalled_since;
+  }
+  if (task.harness_run) delete task.harness_run.stalled_since;
+  if (!merged) record(task, { event: 'suspend_detected', task_id: task.run_id, gap_ms: at - from, resumed_at: at });
+  return true;
+}
+
+// Before any time judgement on this task: look at the clock, then apply every suspend this
+// process has seen that the task has not yet recorded.
+export function applySuspends(task) {
+  let changed = false;
+  for (const s of detectSuspends()) if (noteSuspend(task, s.at, s.gap_ms)) changed = true;
+  return changed;
+}
+
+// Suspended time after `since` (an ask's waiting_since).
+export function suspendedSince(task, since) {
+  let ms = 0;
+  for (const s of task.suspends || []) ms += Math.max(0, s.at - Math.max(s.at - s.gap_ms, since));
+  return ms;
+}
+
+// The wake window of each suspend buys at most ONE free restart per driver: the restart stamped
+// after_wake for it, else the first one inside [at - gap, at + WAKE_WINDOW_MS]. Map: index into
+// restarts -> the suspend's at.
+export function freeRestarts(task, restarts) {
+  const free = new Map();
+  for (const s of task.suspends || []) {
+    const i = restarts.findIndex((r, k) => !free.has(k) && Number.isFinite(r.at)
+      && (r.after_wake === s.at || (r.at >= s.at - s.gap_ms && r.at <= s.at + WAKE_WINDOW_MS)));
+    if (i >= 0) free.set(i, s.at);
+  }
+  return free;
+}
+
+// Stamps a new restart entry after_wake when it is that driver's free restart for a suspend.
+export function stampAfterWake(task, prior, entry) {
+  const at = freeRestarts(task, [...prior, entry]).get(prior.length);
+  return at === undefined ? entry : { ...entry, after_wake: at };
+}
+
 export function driverAlive(driver) {
   return !!(driver && driver.pid) && pidAlive(driver.pid);
 }
@@ -67,7 +172,9 @@ export function restartBudget(task) {
 // inside the last restart_period_minutes count, so a package that dies once an hour for a week
 // never exhausts a budget sized for "how many deaths in a row".
 export function countedDriverRestarts(task, driver) {
-  const prior = (driver && driver.restarts) || [];
+  const all = (driver && driver.restarts) || [];
+  const free = freeRestarts(task, all);
+  const prior = free.size ? all.filter((_, i) => !free.has(i)) : all;
   const periodMinutes = Number.isInteger(task.restart_period_minutes) ? task.restart_period_minutes : TEAM_DEFAULTS.restart_period_minutes;
   return periodMinutes > 0
     ? prior.filter((r) => Number.isInteger(r.at) && Date.now() - r.at <= periodMinutes * 60000)

@@ -1957,6 +1957,137 @@ test('tm_file lets a user file a STORY directly, reporter: "user" / origin: "tm_
   }, { roles: { qa: true }, qa_rounds: 0 });
 });
 
+// The task's node dep graph (deps + after) has no cycle: a cycle is a set of nodes that can
+// never become ready, and the run would sit pending with budget left.
+function assertAcyclic(task) {
+  const byId = new Map(task.nodes.map((n) => [n.node_id, n]));
+  const state = new Map();
+  const walk = (id, path) => {
+    if (state.get(id) === 'done') return;
+    assert.notEqual(state.get(id), 'open', `node dep cycle: ${[...path, id].join(' -> ')}`);
+    state.set(id, 'open');
+    const n = byId.get(id);
+    for (const d of n ? [...n.deps, ...(n.after || [])] : []) walk(d, [...path, id]);
+    state.set(id, 'done');
+  };
+  for (const n of task.nodes) walk(n.node_id, []);
+}
+
+// ws-a6b31c1b (0.40.1): D1-D4 all touched one csv source file, were filed with no ordering, ran
+// in parallel and conflicted at integrate:2. A filed package now depends on every earlier package
+// whose touches overlap, the ordering shape gives P packages (C7).
+async function fileThreeOverlapping(tm, g, root, task_id) {
+  await toIntegrate(tm, g, task_id);
+  await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+  const filed = await tm.call('tm_file', { task_id, stories: [
+    { title: 'b first', touches: ['b.txt'], deps: [], evidence: 'e1' },
+    { title: 'b second', touches: ['b.txt'], deps: [], evidence: 'e2' },
+    { title: 'c alone', touches: ['c.txt'], deps: [], evidence: 'e3' },
+  ] });
+  assert.deepEqual(filed.filed, ['D1', 'D2', 'D3']);
+  return JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+}
+
+test('tm_file after integrate:1: a filed STORY depends on every earlier package whose touches overlap, so overlapping fixes run in sequence (C7, ws-a6b31c1b)', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    const task = await fileThreeOverlapping(tm, g, root, task_id);
+    const pkg = (id) => task.spec.packages.find((p) => p.id === id);
+    assert.deepEqual(pkg('D1').deps, ['P2'], 'D1 orders behind P2, which owns b.txt');
+    assert.ok(pkg('D2').deps.includes('D1'), `D2 shares b.txt with D1 and must wait for it: ${JSON.stringify(pkg('D2').deps)}`);
+    assert.ok(!pkg('D3').deps.includes('D1') && !pkg('D3').deps.includes('D2'), 'D3 touches c.txt only - no ordering');
+    assert.ok(task.nodes.find((n) => n.node_id === 'dispatch:D2:1').deps.includes('accept:D1:1'));
+    assertAcyclic(task);
+    const nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.children.map((c) => c.package_id).sort(), ['D1', 'D3'], 'D2 is not dispatched beside D1');
+  });
+});
+
+test('an earlier filed defect whose accept ends final-failed settles the later overlapping defect unreachable, not pending (N5)', async () => {
+  const { autoRetryPackages } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await fileThreeOverlapping(tm, g, root, task_id);
+    const taskPath = join(root, task_id, 'task.json');
+    const raw = JSON.parse(readFileSync(taskPath, 'utf8'));
+    raw.max_retries = 0;
+    const d1Dispatch = raw.nodes.find((n) => n.node_id === 'dispatch:D1:1');
+    d1Dispatch.state = 'done';
+    d1Dispatch.result = { stage_ok: true, accept: true };
+    const d1Accept = raw.nodes.find((n) => n.node_id === 'accept:D1:1');
+    d1Accept.state = 'failed';
+    d1Accept.result = { stage_ok: true, accept: false, reason: 'the fix did not hold' };
+    writeFileSync(taskPath, JSON.stringify(raw));
+    const prevRoot = process.env.HARNESS_TASKS_DIR;
+    process.env.HARNESS_TASKS_DIR = root;
+    try { inTx(JSON.parse(readFileSync(taskPath, 'utf8')), autoRetryPackages); } finally {
+      if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot;
+    }
+    const after = JSON.parse(readFileSync(taskPath, 'utf8'));
+    const at = (id) => after.nodes.find((n) => n.node_id === id);
+    assert.equal(at('accept:D1:1').state, 'failed');
+    assert.equal(at('accept:D1:1').final, true);
+    assert.equal(at('dispatch:D2:1').state, 'unreachable', 'D2 waits on D1 through the overlap edge and settles with it');
+    assert.equal(at('accept:D2:1').state, 'unreachable');
+  });
+});
+
+test('a QA round\'s defects whose touches contain one another are ordered: src/x/** then src/x/y.mjs (C7)', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const nx = await tm.call('tm_next', { task_id });
+    const qa1 = nx.children[0];
+    assert.equal(qa1.package_id, 'QA-F1');
+    await completeQaChild(g, qa1, { accept: true, match_pct: 95 });
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:QA-F1:1' });
+    const accepted = await tm.call('tm_submit', { task_id, node_id: 'accept:QA-F1:1', payload: ok({
+      accept: true, match_pct: 95,
+      defects: [
+        { title: 'x module drops rows', touches: ['src/x/**'], deps: [], evidence: 'e1', severity: 'high' },
+        { title: 'y helper off by one', touches: ['src/x/y.mjs'], deps: [], evidence: 'e2', severity: 'high' },
+      ],
+    }) });
+    assert.equal(accepted.state, 'done', JSON.stringify(accepted));
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.deepEqual(task.spec.packages.map((p) => p.id), ['P1', 'P2', 'D1', 'D2']);
+    assert.deepEqual(task.spec.packages.find((p) => p.id === 'D2').deps, ['D1'], 'containment counts as overlap');
+    assert.deepEqual(task.spec.packages.find((p) => p.id === 'D1').deps, []);
+    assertAcyclic(task);
+  }, { roles: { qa: true }, qa_rounds: 1 });
+});
+
+// B1: an upstream fix is filed mid-run, and fileUpstreamDefects rewires the filer's next dispatch
+// onto the fix's accept. An overlap edge from the fix back onto the filer (or anything depending
+// on it) closes a cycle once retryPackage remaps accept:<filer>:N -> N+1.
+test('an upstream fix never orders behind the downstream filer whose touches it overlaps: no dep cycle through the filer\'s next attempt (B1)', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    let nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' })).state, 'done');
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) })).state, 'done');
+    nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P2:1' })).state, 'done');
+    // P2 (deps P1) claims a.txt too: ordered overlap with P1, and with the fix filed against P1.
+    const taskPath = join(root, task_id, 'task.json');
+    const raw = JSON.parse(readFileSync(taskPath, 'utf8'));
+    raw.spec.packages.find((p) => p.id === 'P2').touches = ['b.txt', 'a.txt'];
+    writeFileSync(taskPath, JSON.stringify(raw));
+    const accepted = await tm.call('tm_submit', { task_id, node_id: 'accept:P2:1', payload: ok({
+      accept: true, match_pct: 90,
+      upstream_defects: [{ package: 'P1', title: 'a.txt is wrong upstream', evidence: 'probe', touches: ['a.txt'] }],
+    }) });
+    assert.equal(accepted.state, 'done', JSON.stringify(accepted));
+    const task = JSON.parse(readFileSync(taskPath, 'utf8'));
+    const d1 = task.spec.packages.find((p) => p.id === 'D1');
+    assert.ok(d1, 'the upstream fix is filed');
+    assert.ok(!d1.deps.includes('P2'), `the fix must not depend on its filer P2: ${JSON.stringify(d1.deps)}`);
+    assert.ok(!task.nodes.find((n) => n.node_id === 'dispatch:D1:1').deps.some((d) => d.startsWith('accept:P2:')));
+    assert.ok(task.nodes.find((n) => n.node_id === 'dispatch:P2:2').deps.includes('accept:D1:1'), 'P2\'s next attempt waits on the fix');
+    assertAcyclic(task);
+  });
+});
+
 test('tm_file refuses before the task has a shape, and refuses an empty stories[]', async () => {
   await withTask(async ({ tm, task_id }) => {
     const early = await tm.call('tm_file', { task_id, stories: [{ title: 'x' }] });
