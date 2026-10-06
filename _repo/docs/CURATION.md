@@ -17,9 +17,9 @@
 
 ---
 
-## 🔄 B. superpowers 중복 클러스터 — **개량하여 우리 것으로 (진행 중)**
+## 🔄 B. 외부 동일명 중복 클러스터 — **개량하여 우리 것으로 (진행 중)**
 
-repo가 superpowers와 같은 이름으로 둔 8개. **결정: KILL 아님 — 각 스킬을 개량해 독자
+repo가 외부 스킬과 같은 이름으로 둔 8개. **결정: KILL 아님 — 각 스킬을 개량해 독자
 스킬로 재작성**(이름·슬롯 유지, 내용만 우리 관점으로). 부수 효과로 MIT "substantial
 portions" 귀속 의무가 소멸(프로즈 중복 <30% 목표). 스킬은 하나도 사라지지 않음.
 
@@ -33,7 +33,7 @@ per-skill 흐름: brainstorm 방향 → 유저 확정 → 재작성 → overlap 
 | 4 | `develop:test-driven-development` | 38.84% | ✅ 재작성 (dual-mode evidence gate, prose 0.34%) |
 | 5 | `write:writing-skills` | 61% | ✅ 재작성 (producer + 이중 위임 계약, dual-mode, prose 0.37%) |
 | 6 | `write:writing-plans` | 52% | ✅ 재작성 (gate-ready 플랜 생산자 + production-time gap/ambiguity 검사 + step별 pass-bar + dual-mode, prose 2.96%) |
-| 7 | `agents:subagent-driven-development` | 22% | ✅ 잔여 정리 완료 (superpowers→우리 네임스페이스 재배선 + NO-EQ 3개 인라인, prose 11.99%) |
+| 7 | `agents:subagent-driven-development` | 22% | ✅ 잔여 정리 완료 (외부→우리 네임스페이스 재배선 + NO-EQ 3개 인라인, prose 11.99%) |
 | 8 | `think:brainstorming` | 5% | 🔲 잔여 정리만 |
 
 ---
@@ -70,7 +70,7 @@ per-skill 흐름: brainstorm 방향 → 유저 확정 → 재작성 → overlap 
 
 ## 다음 할 것 (우선순위)
 
-1. **B 결정** — "이 마켓플레이스는 superpowers 설치를 전제하는가?" 한 줄 답이면 8개 처리 방향 확정.
+1. **B 결정** — "이 마켓플레이스는 외부 스킬 설치를 전제하는가?" 한 줄 답이면 8개 처리 방향 확정.
 2. **C 병합** — develop 32개가 최대 표적. 클러스터별로 실제 SKILL.md 읽고 인덱스 1 + 실질 N으로 축소.
 3. **D 확인** — pm/self/leadership 사용 여부. 안 쓰면 39개까지 정리 가능.
 4. **E 보수** — 살아남는 스킬만 대상으로 authoring 규칙대로 필수 섹션 채움.
