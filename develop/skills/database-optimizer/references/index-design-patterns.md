@@ -1,246 +1,77 @@
-# Index Design Patterns
+# Index Design
 
-## Index Selection Methodology
+## Choosing what to index
 
-### Identify Index Candidates
+Start from evidence: slow statements (`pg_stat_statements`, MySQL digest table), then their predicates, join keys and sort keys. An index should serve a named query. Every index taxes each insert, each update of its columns, vacuum, and the replica.
 
-```sql
--- PostgreSQL: Find queries missing indexes
-SELECT query, calls, total_exec_time, mean_exec_time
-FROM pg_stat_statements
-WHERE mean_exec_time > 100
-ORDER BY total_exec_time DESC
-LIMIT 20;
+## B-tree composite order
 
--- PostgreSQL: Find sequential scans on large tables
-SELECT schemaname, tablename, seq_scan, seq_tup_read,
-       idx_scan, seq_tup_read / seq_scan as avg_seq_tup_read
-FROM pg_stat_user_tables
-WHERE seq_scan > 0
-  AND seq_tup_read / seq_scan > 10000
-ORDER BY seq_tup_read DESC;
+A composite B-tree is sorted by its first column, then the second within it. So:
 
--- MySQL: Check table scans
-SELECT * FROM sys.statements_with_full_table_scans
-WHERE db = 'your_database'
-ORDER BY exec_count DESC;
-```
+1. Equality columns first.
+2. Then the one range or sort column.
+3. Columns after a range column cannot narrow the scan.
 
-## B-Tree Indexes (Default)
+`WHERE tenant_id = ? AND status = ? AND created_at >= ? ORDER BY created_at` is served by `(tenant_id, status, created_at)`. The same index does not help a query filtering only on `status`. Between two equality columns, put the one most queries share first so one index serves more statements.
 
-### Single Column Indexes
+Sort direction matters only when mixing directions (`a ASC, b DESC`); declare it in the index. MySQL supports descending index parts from 8.0.
+
+## Covering indexes
+
+When every column a query reads is in the index, the table is not touched (PostgreSQL index-only scan, MySQL `Using index`).
 
 ```sql
--- Create index for WHERE clauses
-CREATE INDEX idx_users_email ON users(email);
-
--- Create index for JOIN conditions
-CREATE INDEX idx_orders_user_id ON orders(user_id);
-
--- Create index for ORDER BY
-CREATE INDEX idx_products_price ON products(price);
-
--- Unique constraint as index
-CREATE UNIQUE INDEX idx_users_username ON users(username);
+-- PostgreSQL: INCLUDE adds payload columns without making them part of the key
+CREATE INDEX CONCURRENTLY idx_order_cust_created
+    ON orders (customer_id, created_at DESC) INCLUDE (total_amount, status);
 ```
 
-### Multi-Column Indexes
+Index-only scans in PostgreSQL still check the visibility map, so a table that is rarely vacuumed gets little benefit. MySQL has no `INCLUDE`; extra columns go into the key, and InnoDB secondary indexes already carry the primary key.
+
+## Partial and filtered indexes
+
+PostgreSQL can index only the rows a hot query touches:
 
 ```sql
--- Order matters: most selective column first
-CREATE INDEX idx_orders_status_created
-ON orders(status, created_at);
-
--- Good for queries:
--- WHERE status = 'pending'
--- WHERE status = 'pending' AND created_at > '2024-01-01'
--- WHERE status = 'pending' ORDER BY created_at
-
--- NOT good for:
--- WHERE created_at > '2024-01-01' (status not specified)
-
--- Include commonly queried columns
-CREATE INDEX idx_users_active_email_name
-ON users(active, email) INCLUDE (name);
+CREATE INDEX CONCURRENTLY idx_job_pending ON job (run_at) WHERE state = 'pending';
 ```
 
-### Column Order Guidelines
+The query must repeat a predicate the planner can prove implies the index predicate. MySQL has no partial indexes; emulate with a generated column that is NULL for uninteresting rows, then index it.
 
-```sql
--- Rule 1: Equality before range
-CREATE INDEX idx_events_type_timestamp
-ON events(type, timestamp);  -- type = 'click' AND timestamp > ...
+## Expression indexes
 
--- Rule 2: High selectivity first
-CREATE INDEX idx_orders_user_status
-ON orders(user_id, status);  -- user_id is more selective than status
+Index the expression the query uses: `CREATE INDEX ON users (lower(email))` serves `WHERE lower(email) = ?`. In MySQL 8.0.13+ functional key parts are supported directly; before that, a generated column plus an index.
 
--- Rule 3: Match query patterns
--- Query: WHERE country = 'US' AND city = 'NYC' AND zip = '10001'
-CREATE INDEX idx_locations_country_city_zip
-ON locations(country, city, zip);
-```
+## Beyond B-tree (PostgreSQL)
 
-## Covering Indexes
+| Type | Fits |
+|------|------|
+| GIN | `jsonb` containment (`@>`), arrays, full-text `tsvector`, trigram `LIKE '%x%'` |
+| GiST | ranges and exclusion constraints, geometry, nearest-neighbour |
+| BRIN | very large, naturally ordered append-only tables (time series); tiny index, coarse |
+| Hash | equality only; rarely better than B-tree |
 
-### PostgreSQL INCLUDE Clause
+MySQL: `FULLTEXT` for natural-language search, spatial indexes for geometry.
 
-```sql
--- Include non-key columns for index-only scans
-CREATE INDEX idx_users_email_covering
-ON users(email) INCLUDE (name, created_at);
+## Maintenance
 
--- Query can be satisfied entirely from index
-EXPLAIN (ANALYZE, BUFFERS)
-SELECT name, created_at
-FROM users
-WHERE email = 'user@example.com';
--- Should show "Index Only Scan"
-```
+- Find unused: PostgreSQL `pg_stat_user_indexes.idx_scan = 0` (over a full business cycle, and not backing a constraint); MySQL `sys.schema_unused_indexes`. In MySQL 8, make an index invisible first to test removal cheaply.
+- Find duplicates: indexes whose columns are a leading prefix of another.
+- Bloat: after heavy churn, `REINDEX INDEX CONCURRENTLY` (PostgreSQL 12+). `OPTIMIZE TABLE` or an online rebuild in MySQL.
+- Create without blocking writes: `CREATE INDEX CONCURRENTLY` (cannot run inside a transaction; a failed run leaves an `INVALID` index to drop). MySQL InnoDB builds most secondary indexes online with `ALGORITHM=INPLACE, LOCK=NONE`.
 
-### MySQL Covering Indexes
+## Anti-patterns
 
-```sql
--- MySQL: Add columns to end of index
-CREATE INDEX idx_orders_user_covering
-ON orders(user_id, status, created_at, total);
+- An index per column "just in case".
+- Indexing low-cardinality booleans on their own.
+- Wide, many-column indexes that no query fully uses.
+- Random UUID primary keys on write-heavy InnoDB tables (page splits, fat secondary indexes); time-ordered IDs behave better.
+- Adding an index to fix an estimate problem.
 
--- Query uses covering index
-EXPLAIN
-SELECT status, created_at, total
-FROM orders
-WHERE user_id = 123;
--- Should show "Using index" in Extra column
-```
+## Checklist
 
-## Partial Indexes
-
-### PostgreSQL Partial Indexes
-
-```sql
--- Index only active users
-CREATE INDEX idx_users_active_email
-ON users(email)
-WHERE active = true;
-
--- Index only recent orders
-CREATE INDEX idx_orders_recent
-ON orders(user_id, created_at)
-WHERE created_at > NOW() - INTERVAL '30 days';
-
--- Index only pending/processing orders (ignore completed)
-CREATE INDEX idx_orders_active
-ON orders(status, user_id)
-WHERE status IN ('pending', 'processing');
-
--- Smaller index = better performance + less storage
-```
-
-### MySQL Filtered Indexes (8.0+)
-
-```sql
--- MySQL 8.0+ supports functional indexes for similar effect
-CREATE INDEX idx_users_active
-ON users((CASE WHEN active = 1 THEN email END));
-```
-
-## Expression Indexes
-
-### PostgreSQL Function Indexes
-
-```sql
--- Index for case-insensitive search
-CREATE INDEX idx_users_email_lower
-ON users(LOWER(email));
-
--- Query must match expression
-SELECT * FROM users
-WHERE LOWER(email) = LOWER('User@Example.com');
-
--- Index for JSONB queries
-CREATE INDEX idx_users_settings_theme
-ON users((settings->>'theme'));
-
-SELECT * FROM users
-WHERE settings->>'theme' = 'dark';
-
--- Index for date truncation
-CREATE INDEX idx_orders_date
-ON orders(DATE(created_at));
-```
-
-### MySQL Generated Column Indexes
-
-```sql
--- Create generated column, then index it
-ALTER TABLE users
-ADD COLUMN email_lower VARCHAR(255)
-GENERATED ALWAYS AS (LOWER(email)) STORED;
-
-CREATE INDEX idx_users_email_lower
-ON users(email_lower);
-
--- Use in queries
-SELECT * FROM users
-WHERE email_lower = LOWER('User@Example.com');
-```
-
-## Specialized Index Types
-
-### PostgreSQL GIN Indexes (Full-Text, Arrays, JSONB)
-
-```sql
--- Full-text search
-CREATE INDEX idx_posts_search
-ON posts USING GIN(to_tsvector('english', title || ' ' || content));
-
-SELECT * FROM posts
-WHERE to_tsvector('english', title || ' ' || content)
-      @@ to_tsquery('english', 'database & optimization');
-
--- Array search
-CREATE INDEX idx_products_tags
-ON products USING GIN(tags);
-
-SELECT * FROM products
-WHERE tags @> ARRAY['electronics', 'sale'];
-
--- JSONB search
-CREATE INDEX idx_users_metadata
-ON users USING GIN(metadata);
-
-SELECT * FROM users
-WHERE metadata @> '{"plan": "premium"}';
-```
-
-### PostgreSQL GiST Indexes (Geometric, Range)
-
-```sql
--- Range types
-CREATE INDEX idx_events_time_range
-ON events USING GIST(time_range);
-
-SELECT * FROM events
-WHERE time_range && '[2024-01-01, 2024-01-31]'::tstzrange;
-
--- PostGIS geometric queries
-CREATE INDEX idx_locations_coords
-ON locations USING GIST(coordinates);
-```
-
-### MySQL Full-Text Indexes
-
-```sql
--- Full-text search
-CREATE FULLTEXT INDEX idx_posts_content
-ON posts(title, content);
-
-SELECT * FROM posts
-WHERE MATCH(title, content)
-      AGAINST('database optimization' IN NATURAL LANGUAGE MODE);
-
--- Boolean mode for complex searches
-SELECT * FROM posts
-WHERE MATCH(title, content)
-      AGAINST('+database -mysql' IN BOOLEAN MODE);
-```
+- Which query does it serve, and what does the plan show before and after?
+- Column order follows equality, then range or sort?
+- Could a partial or covering variant be smaller or faster?
+- Write cost measured on the busiest table?
+- Built concurrently, with a rollback (drop) ready?

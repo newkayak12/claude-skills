@@ -20,24 +20,23 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 license: MIT
 metadata:
-  author: https://github.com/Jeffallan
   version: "1.1.0"
+  triggers: Kotlin, coroutines, suspend function, Flow, KMP, Kotlin Multiplatform, Compose, Ktor, Android Kotlin
+  related-skills: test-master, spring-boot-engineer
   domain: language
-  triggers: Kotlin, coroutines, Kotlin Multiplatform, KMP, Jetpack Compose, Ktor, Flow, Android Kotlin, suspend function
   role: specialist
   scope: implementation
   output-format: code
-  related-skills: test-master
 ---
 
 # Kotlin Specialist
 
-Senior Kotlin developer with deep expertise in coroutines, Kotlin Multiplatform (KMP), and Kotlin 1.9+ patterns.
+Kotlin implementation specialist: coroutines, Flow, Multiplatform (KMP), Compose, Ktor, and DSL design on Kotlin 1.9+.
 
 ## When to Use / When Not to Use
 
 **Use when:**
-- Writing idiomatic Kotlin with coroutines, Flow, or sealed class state models
+- Writing idiomatic Kotlin that uses coroutines, Flow, or sealed state types
 - Building Kotlin Multiplatform (KMP) shared modules
 - Implementing Android UI with Jetpack Compose
 - Setting up a Ktor server or writing a type-safe DSL
@@ -48,20 +47,20 @@ Senior Kotlin developer with deep expertise in coroutines, Kotlin Multiplatform 
 
 ## Process
 
-1. **Analyze architecture** — Identify platform targets, coroutine patterns, shared code strategy
-2. **Design models** — Create sealed classes, data classes, type hierarchies
-3. **Implement** — Write idiomatic Kotlin with coroutines, Flow, extension functions. Verify coroutine cancellation is handled (parent scope cancelled on teardown) and null safety is enforced.
+1. **Analyze architecture** — Establish the target platforms, where concurrency lives, and how much code is shared
+2. **Design models** — Define the sealed hierarchies, data classes, and type relationships
+3. **Implement** — Code in idiomatic Kotlin, using coroutines, Flow, and extension functions. Confirm that cancellation propagates (scopes are cancelled by their owner on teardown) and that nullability is handled in the types.
 4. **Lint** — Run `detekt` and `ktlint`; fix all violations before proceeding
-5. **Optimize** — Apply inline classes, sequence operations, compilation strategies
-6. **Test** — Write multiplatform tests with `runTest` and Turbine for Flow assertions
+5. **Optimize** — Reach for value classes, sequences, and inlining where measurement supports them
+6. **Test** — Cover behavior with `runTest`, and assert Flow emissions with Turbine; run multiplatform tests on each target
 
 ## Output Template
 
 For each implementation task, provide:
-1. Data models (sealed classes, data classes)
+1. Data models: sealed hierarchies and data classes
 2. Implementation file with coroutine/Flow patterns
 3. Test file using `runTest` + Turbine
-4. Brief explanation of Kotlin-specific patterns used
+4. A short note on which Kotlin idioms were applied and why
 
 ## What Claude Does / What You Do
 
@@ -75,39 +74,37 @@ For each implementation task, provide:
 
 ## Reference Guide
 
-| Topic | Reference | Load When |
-|-------|-----------|-----------|
-| Coroutines & Flow | `references/coroutines-flow.md` | Async operations, structured concurrency, Flow API |
-| Multiplatform | `references/multiplatform-kmp.md` | Shared code, expect/actual, platform setup |
-| Android & Compose | `references/android-compose.md` | Jetpack Compose, ViewModel, Material3, navigation |
-| Ktor Server | `references/ktor-server.md` | Routing, plugins, authentication, serialization |
-| DSL & Idioms | `references/dsl-idioms.md` | Type-safe builders, scope functions, delegates |
+| Topic | File | Read it when |
+|-------|------|--------------|
+| Language idioms | `references/dsl-idioms.md` | Writing builders with @DslMarker, scope functions, delegation, value classes, inline |
+| Concurrency | `references/coroutines-flow.md` | Scope ownership, dispatchers, cancellation, hot/cold flows, runTest |
+| Server-side | `references/ktor-server.md` | Modules, routes, status pages, JWT, Exposed, WebSockets, testApplication |
+| Sharing code across platforms | `references/multiplatform-kmp.md` | Source sets, Gradle targets, expect/actual vs interfaces, iOS, publishing |
+| Android UI | `references/android-compose.md` | State hoisting, ViewModel, effects, lazy lists, navigation, theming |
 
 ## Key Patterns
 
 ### Sealed Class State Modeling
 
 ```kotlin
-sealed class UiState<out T> {
-    data object Loading : UiState<Nothing>()
-    data class Success<T>(val data: T) : UiState<T>()
-    data class Error(val message: String, val cause: Throwable? = null) : UiState<Nothing>()
+sealed interface LoadState<out T> {
+    data object Loading : LoadState<Nothing>   // no payload
+    data class Ready<T>(val value: T) : LoadState<T>
+    data class Failed(val reason: String, val error: Throwable? = null) : LoadState<Nothing>
 }
 ```
 
 ### Coroutines & Flow (Structured Concurrency)
 
 ```kotlin
-// Use structured concurrency — never GlobalScope
-class UserRepository(private val api: UserApi, private val scope: CoroutineScope) {
+// The owner decides the lifetime; no GlobalScope anywhere
+class AccountRepository(private val api: AccountApi) {
 
-    fun userUpdates(id: String): Flow<UiState<User>> = flow {
-        emit(UiState.Loading)
-        try {
-            emit(UiState.Success(api.fetchUser(id)))
-        } catch (e: IOException) {
-            emit(UiState.Error("Network error", e))
-        }
+    fun observe(id: String): Flow<LoadState<Account>> = flow {
+        emit(LoadState.Loading)
+        emit(LoadState.Ready(api.fetch(id)))
+    }.catch { e ->
+        if (e is IOException) emit(LoadState.Failed("Network error", e)) else throw e
     }.flowOn(Dispatchers.IO)
 }
 ```
@@ -115,29 +112,29 @@ class UserRepository(private val api: UserApi, private val scope: CoroutineScope
 ### Null Safety
 
 ```kotlin
-// Prefer safe calls and elvis operator
-val displayName = user?.profile?.name ?: "Anonymous"
+// Safe call chain with a default
+val label = account?.owner?.name ?: "Unknown"
 
-// !! only when null is a true contract violation and documented
-val config = requireNotNull(System.getenv("APP_CONFIG")) { "APP_CONFIG must be set" }
+// `!!` is reserved for violated contracts; prefer a message-carrying check
+val endpoint = requireNotNull(System.getenv("SERVICE_URL")) { "SERVICE_URL is not set" }
 ```
 
 ## Constraints
 
-**MUST DO:**
-- Use null safety (`?`, `?.`, `?:`) — use `!!` only with documented justification
-- Prefer `sealed class` for state modeling
-- Use `suspend` functions for async operations
-- Use `Flow` for reactive streams
+**Required:**
+- Rely on nullable types and `?`, `?.`, `?:`; allow `!!` only where a comment states the contract
+- Model states as `sealed` types
+- Express async work as `suspend` functions
+- Expose streams of values as `Flow`
 - Verify coroutine cancellation on teardown
-- Run `detekt` and `ktlint` before committing
+- Pass `detekt` and `ktlint` cleanly before every commit
 
-**MUST NOT DO:**
-- Use `runBlocking` in production code
-- Use `!!` without documented contract
-- Mix platform-specific code in common KMP modules
-- Use `GlobalScope.launch` (use structured concurrency)
-- Create memory leaks with coroutine scopes
+**Forbidden:**
+- Calling `runBlocking` outside of `main` and tests
+- Writing `!!` with no stated contract
+- Referencing platform APIs from common KMP source sets
+- Launching from `GlobalScope` (use an owned scope)
+- Keeping a coroutine scope alive past its owner
 
 ## Related Skills
 

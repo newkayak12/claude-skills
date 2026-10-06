@@ -19,14 +19,9 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 license: MIT
 metadata:
-  author: https://github.com/Jeffallan
   version: "1.1.0"
   domain: devops
-  triggers: SRE, site reliability, SLO, SLI, error budget, incident management, chaos engineering, toil reduction, on-call, MTTR
-  role: specialist
-  scope: implementation
-  output-format: code
-  related-skills: devops-engineer, cloud-architect, kubernetes-specialist
+  triggers: SRE, SLO, SLI, error budget, burn rate, toil, on-call, alert fatigue, golden signals
 ---
 
 # SRE Engineer
@@ -35,32 +30,32 @@ metadata:
 
 **Use when:**
 - Establishing SLOs and error budgets for a service
-- Building golden-signal dashboards and multi-window burn-rate alerts
-- Writing incident response runbooks with clear remediation steps
+- Building dashboards around the four golden signals, plus burn-rate alerts over paired windows
+- Writing runbooks that tell on-call what to do
 - Identifying and automating operational toil
 - Planning capacity from traffic forecasts
 
 **Do not use when:**
-- Designing chaos experiments (use `chaos-engineer`)
+- Planning failure-injection experiments (use `chaos-engineer`)
 - Provisioning infrastructure (use DevOps/IaC skills)
 
 ## Process
 
 0. **Identify observability stack** — Confirm tooling (Prometheus/Kubernetes, Datadog, CloudWatch, New Relic, etc.) before generating any config. All reference examples default to Prometheus/Kubernetes.
-1. **Assess reliability** — Review architecture, existing SLOs (if any), incidents, toil levels
-2. **Define SLOs** — Identify meaningful SLIs and set appropriate targets
-3. **Verify alignment** — Confirm SLO targets with the user before proceeding. Do not proceed past this step without explicit confirmation.
-4. **Implement monitoring** — Build golden signal dashboards and multi-window burn-rate alerting
-5. **Automate toil** — Identify repetitive tasks and build automation
-6. **Test resilience** — Design and execute chaos experiments; verify recovery meets RTO/RPO
+1. **Assess reliability** — Look at the architecture, any SLOs already in place, past incidents and how much toil the team carries
+2. **Define SLOs** — Choose SLIs that reflect user experience, then set a target for each
+3. **Verify alignment** — Get the user to confirm the SLO targets. Do not move past this step until they have explicitly said yes.
+4. **Implement monitoring** — Create golden-signal dashboards and burn-rate alerts that use a long and a short window
+5. **Automate toil** — Find the repeated manual work and script it away
+6. **Test resilience** — Plan and run failure experiments, then check that recovery stays within RTO and RPO
 
 ## Output Template
 
 For each SRE engagement, provide:
-1. SLO definitions with SLI measurements and targets
-2. Monitoring/alerting configuration (Prometheus YAML or equivalent)
-3. Automation scripts (Python, Go, Terraform)
-4. Runbooks with clear remediation steps
+1. SLO definitions: each SLI, how it is measured, and its target
+2. Monitoring and alerting configuration, as Prometheus YAML or the equivalent
+3. Automation scripts for the toil identified (Kotlin, Python, Go, or Terraform)
+4. Runbooks whose steps end in a concrete remediation
 5. Brief note on reliability impact
 
 ## What Claude Does / What You Do
@@ -75,14 +70,12 @@ For each SRE engagement, provide:
 
 ## Reference Guide
 
-| Topic | Reference | Load When |
-|-------|-----------|-----------|
-| SLO/SLI | `references/slo-sli-management.md` | Defining SLOs, calculating error budgets |
-| Error Budgets | `references/error-budget-policy.md` | Managing budgets, burn rates, policies |
-| Monitoring | `references/monitoring-alerting.md` | Golden signals, alert design, dashboards |
-| Automation | `references/automation-toil.md` | Toil reduction patterns |
-| Capacity Planning | `references/capacity-planning.md` | Forecasting growth, scaling decisions |
-| Incidents | `references/incident-chaos.md` | Incident response, chaos engineering |
+| Topic | File | Read when |
+|---|---|---|
+| SLO/SLI and budgets | `references/slo-and-budgets.md` | Defining SLOs, error budgets, burn rates, policy |
+| Monitoring | `references/monitoring-alerting.md` | Four signals, what to page on, runbooks, dashboards |
+| Toil and capacity | `references/toil-and-capacity.md` | Toil reduction, forecasting growth, scaling decisions |
+| Incidents | `references/incidents.md` | Postmortems, severity, resilience drills |
 
 ## Telemetry Rules
 
@@ -91,42 +84,41 @@ For each SRE engagement, provide:
 - **Never log secrets, tokens, or full PII** — logs are copied to many systems with weaker access control and long retention; mask or drop them at the source.
 - **Verify the alert actually fires** — fire it once (inject the condition or lower the threshold) and see the page arrive; an alert never seen firing is an assumption, not a safeguard.
 
-Runbook format for alerts: see `incident-response-playbook` (`references/runbook-format.md`).
+Runbook format for alerts: see `incident-response-playbook`; a short skeleton is in `references/monitoring-alerting.md`.
 
 ## Example: SLO Definition and Error Budget
 
 ```
-# 99.9% availability SLO over a 30-day window
-# Allowed downtime: (1 - 0.999) * 30 * 24 * 60 = 43.2 minutes/month
-# Error budget (request-based): 0.001 * total_requests
-# 10M requests/month → 10,000 error budget requests
-# If 5,000 errors consumed in week 1 → 50% budget burned in 25% of window
-# → Trigger error budget policy: freeze non-critical releases
+# Objective: 99.9% success ratio, 30-day rolling window
+# Budget in time:     0.001 x 43,200 min = 43.2 min
+# Budget in requests: 0.001 x 10M requests = 10,000 failures
+# 5,000 failures in week one = half the budget gone with 75% of the window left
+# -> the error budget policy kicks in: hold non-critical releases
 ```
 
-## Example: Prometheus Multi-Window Burn Rate Alert
+## Example: Fast-Burn Alert Rule
 
 ```yaml
 groups:
-  - name: slo_availability
+  - name: availability_slo
     rules:
-      # Fast burn: 2% budget in 1h (14.4x burn rate)
-      - alert: HighErrorBudgetBurn
+      # Fast burn: 14.4x sustainable rate (2% of the 30-day budget in one hour)
+      - alert: ErrorBudgetFastBurn
         expr: |
           (
-            sum(rate(http_requests_total{status=~"5.."}[1h]))
-            / sum(rate(http_requests_total[1h]))
-          ) > 0.014400
+            sum(rate(http_server_requests_seconds_count{status=~"5.."}[1h]))
+            / sum(rate(http_server_requests_seconds_count[1h]))
+          ) > (0.001 * 14.4)
           and
           (
-            sum(rate(http_requests_total{status=~"5.."}[5m]))
-            / sum(rate(http_requests_total[5m]))
-          ) > 0.014400
-        for: 2m
+            sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+            / sum(rate(http_server_requests_seconds_count[5m]))
+          ) > (0.001 * 14.4)
         labels:
-          severity: critical
+          severity: page
+        for: 2m
         annotations:
-          runbook: "https://wiki.internal/runbooks/high-error-burn"
+          runbook: "runbook link for this alert"
 ```
 
 ## Constraints
@@ -134,17 +126,17 @@ groups:
 **MUST DO:**
 - Identify the observability stack before generating any config
 - Confirm SLO targets with the user before generating alert rules
-- Define quantitative SLOs (e.g., 99.9% availability, not "high availability")
-- Monitor all four golden signals (latency, traffic, errors, saturation)
-- Write blameless postmortems for all incidents
-- Measure toil and track reduction progress
+- State every SLO as a number with a window, never as an adjective
+- Cover latency, traffic, errors and saturation for each service
+- Run a blameless postmortem after every incident
+- Measure toil and report how it trends
 
 **MUST NOT DO:**
-- Set SLOs without user impact justification
-- Alert on symptoms without actionable runbooks
+- Pick an SLO target with no stated user impact
+- Page on a condition that has no runbook
 - Tolerate >50% toil without an automation plan
-- Skip postmortems or assign blame
-- Implement manual processes for recurring tasks
+- Skip a postmortem, or write one that names a culprit
+- Leave a recurring task as a manual procedure
 
 ## Related Skills
 

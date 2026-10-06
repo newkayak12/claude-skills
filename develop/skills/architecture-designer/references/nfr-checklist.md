@@ -1,112 +1,31 @@
-# Non-Functional Requirements Checklist
+# Non-Functional Requirements
 
-## NFR Categories
+A requirement counts only when it has a number, a scope and a way to check it. "Fast" and "secure" are wishes; "p95 under 300 ms for checkout at 500 req/s" is a requirement.
 
-### Scalability
+## Prompts by quality
 
-| Question | Common Targets |
-|----------|----------------|
-| Expected concurrent users? | 100 / 1K / 10K / 100K |
-| Requests per second? | 10 / 100 / 1000 / 10000 |
-| Data volume? | GB / TB / PB |
-| Growth rate? | 10% / 50% / 100% per year |
-| Peak vs average load? | 2x / 5x / 10x |
+| Quality | Ask | Example target |
+|---------|-----|----------------|
+| Performance | Which operations matter, at what percentile, under what load? | search p95 < 400 ms at peak |
+| Scalability | Expected growth in users, data and traffic over 12-24 months? Which part saturates first? | 10x orders without redesign |
+| Availability | What does downtime cost per hour? Planned maintenance allowed? | 99.9% monthly, i.e. about 43 minutes of budget |
+| Reliability | What may be lost on failure? How quickly must service return? | RPO 5 min, RTO 30 min |
+| Security | What data classes exist? Who may see or change them? Which regulations apply? | PII encrypted at rest; audit log of admin actions |
+| Observability | How will you know it is broken before users say so? | trace id on every request, alert on error-rate SLO burn |
+| Maintainability | Who changes it, how often, how safely? | deploy on demand; rollback under 10 minutes |
+| Cost | What is the budget per month, and per unit of work? | under a fixed monthly cloud budget |
 
-### Performance
+## Process
 
-| Question | Common Targets |
-|----------|----------------|
-| API response time? | < 100ms / 200ms / 500ms p95 |
-| Page load time? | < 1s / 2s / 3s |
-| Database query time? | < 10ms / 50ms / 100ms |
-| Batch processing throughput? | 1K / 10K / 100K records/hour |
+1. Interview for the prompts above; record unknowns as open questions, not assumptions.
+2. Rank. Rarely can all be maximised; name the two or three that drive the design.
+3. Tie each ranked quality to a decision it influences (cache, replica, queue, region).
+4. Put the targets where tests and alerts can read them.
 
-### Availability
-
-| Target | Downtime/Year | Use Case |
-|--------|---------------|----------|
-| 99% | 3.65 days | Internal tools |
-| 99.9% | 8.76 hours | Business apps |
-| 99.95% | 4.38 hours | E-commerce |
-| 99.99% | 52.6 minutes | Financial systems |
-| 99.999% | 5.26 minutes | Life-critical |
-
-### Security
-
-| Question | Considerations |
-|----------|----------------|
-| Authentication required? | JWT, OAuth, SAML, MFA |
-| Authorization model? | RBAC, ABAC, ACL |
-| Data sensitivity? | Public, internal, confidential, PII |
-| Compliance requirements? | GDPR, HIPAA, PCI DSS, SOC 2 |
-| Encryption needs? | At rest, in transit, end-to-end |
-
-### Reliability
-
-| Question | Considerations |
-|----------|----------------|
-| Acceptable data loss? | RPO: 0 / 1hr / 24hr |
-| Recovery time target? | RTO: 1hr / 4hr / 24hr |
-| Backup frequency? | Real-time / hourly / daily |
-| Disaster recovery? | Single region / multi-region |
-
-### Maintainability
-
-| Question | Considerations |
-|----------|----------------|
-| Deployment frequency? | Daily / weekly / monthly |
-| Deployment strategy? | Blue-green, canary, rolling |
-| Monitoring requirements? | Logs, metrics, traces, alerts |
-| On-call requirements? | 24/7, business hours |
-
-### Cost
-
-| Question | Considerations |
-|----------|----------------|
-| Infrastructure budget? | $/month, $/user, $/request |
-| Operational budget? | FTE for maintenance |
-| Cost optimization? | Reserved instances, spot instances |
-| Cost alerts? | Thresholds for notification |
-
-## Template
+## Record format
 
 ```markdown
-## Non-Functional Requirements
-
-### Performance
-- API response time: < 200ms p95
-- Page load time: < 2s
-- Database query time: < 50ms
-
-### Scalability
-- Concurrent users: 10,000
-- Requests per second: 1,000
-- Data volume: 1TB
-
-### Availability
-- Target: 99.9% (8.76 hours/year downtime)
-- RPO: 1 hour
-- RTO: 4 hours
-
-### Security
-- Authentication: JWT with refresh tokens
-- Authorization: Role-based (admin, user, guest)
-- Compliance: GDPR, SOC 2
-
-### Observability
-- Logging: Structured JSON to ELK
-- Metrics: Prometheus + Grafana
-- Tracing: OpenTelemetry
-- Alerts: PagerDuty integration
+| Quality | Requirement | Measure | Source | Priority |
+|---------|-------------|---------|--------|----------|
+| Availability | 99.9% monthly | uptime probe, SLO dashboard | product owner | high |
 ```
-
-## Quick Reference
-
-| Category | Key Metric |
-|----------|------------|
-| Performance | Response time (p95) |
-| Scalability | Concurrent users, RPS |
-| Availability | Uptime percentage |
-| Reliability | RPO, RTO |
-| Security | Compliance requirements |
-| Cost | $/month budget |

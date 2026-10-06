@@ -20,14 +20,13 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 license: MIT
 metadata:
-  author: https://github.com/Jeffallan
   version: "1.1.0"
   domain: infrastructure
-  triggers: database optimization, slow query, query performance, database tuning, index optimization, execution plan, EXPLAIN ANALYZE, database performance, PostgreSQL optimization, MySQL optimization
+  triggers: server-side database tuning, vacuum lag, lock waits, buffer pool sizing, partitioning, EXPLAIN ANALYZE reading
   role: specialist
   scope: optimization
-  output-format: analysis-and-code
-  related-skills: devops-engineer
+  output-format: findings-with-config-and-sql
+  related-skills: sql-pro, connection-pool-tuner, sre-engineer
 ---
 
 # Database Optimizer
@@ -48,10 +47,10 @@ metadata:
 
 1. **Initial triage** — Confirm: database engine + version, deployment type (self-managed vs. cloud-managed), and whether direct connection is available
 2. **Capture baseline** — Run `EXPLAIN (ANALYZE, BUFFERS)` before any changes
-3. **Identify bottlenecks** — Find inefficient queries, missing indexes, config issues from the plan
+3. **Identify bottlenecks** — Read the plan for costly queries, absent indexes and misconfigured settings
 4. **Design solutions** — Index strategy, query rewrites, schema or config improvements
-5. **Implement incrementally** — One change at a time; validate each before proceeding
-6. **Validate results** — Re-run `EXPLAIN ANALYZE`, compare costs, measure wall-clock improvement
+5. **Implement incrementally** — Apply a single change, confirm its effect, then move on
+6. **Validate results** — Repeat `EXPLAIN ANALYZE`, set costs side by side, and time the real workload
 
 > On cloud-managed databases (RDS, Cloud SQL, Aurora): `ALTER SYSTEM` and `my.cnf` edits are unavailable. Use parameter groups or the console instead.
 
@@ -60,12 +59,12 @@ Use `sequential-thinking` if available — it enforces the baseline-capture step
 ## Output Template
 
 For each optimization task, provide:
-1. Performance analysis with baseline metrics (query time, cost, buffer hit ratio)
+1. Performance analysis with baseline numbers: latency, plan cost, hit rate of the buffer cache
 2. Identified bottlenecks with EXPLAIN evidence
-3. Optimization strategy with specific changes
-4. Implementation SQL / config changes
-5. Validation queries to measure improvement
-6. Monitoring recommendations
+3. Optimization strategy naming each concrete change
+4. SQL and configuration changes to apply
+5. Validation queries that measure the improvement
+6. Monitoring to keep after the change
 
 ## What Claude Does / What You Do
 
@@ -74,14 +73,14 @@ For each optimization task, provide:
 | Reads EXPLAIN output and identifies plan patterns | Provide the actual EXPLAIN output |
 | Recommends index type (B-tree, covering, partial, expression) | Run `CREATE INDEX CONCURRENTLY` in your environment |
 | Generates parameter tuning recommendations | Apply via parameter group or `ALTER SYSTEM` |
-| Writes validation queries to measure improvement | Confirm improvement in production-scale data |
+| Writes the queries that prove the gain | Confirm the gain on production-sized data |
 | Flags cloud-managed platform constraints | Verify access level (console vs. direct connection) |
 
 ## Reference Guide
 
-| Topic | Reference | Load When |
-|-------|-----------|-----------|
-| Query Optimization | `references/query-optimization.md` | Slow queries, execution plan analysis |
+| Area | File | Read when |
+|------|------|-----------|
+| Plans and query shape | `references/query-optimization.md` | Reading EXPLAIN output, slow statements |
 | Index Design | `references/index-design-patterns.md` | B-tree, covering, partial, expression indexes |
 | PostgreSQL Memory & WAL | `references/postgresql-memory-wal.md` | shared_buffers, work_mem, WAL config |
 | PostgreSQL VACUUM & Locking | `references/postgresql-vacuum-locking.md` | VACUUM, connection pooling, lock management; queue claims with SKIP LOCKED, advisory locks, lock order against deadlocks |
@@ -91,35 +90,35 @@ For each optimization task, provide:
 
 ## EXPLAIN Output — Key Patterns
 
-| Pattern | Symptom | Typical Remedy |
-|---------|---------|----------------|
-| `Seq Scan` on large table | No filter selectivity | Add B-tree index on filter column |
-| `Nested Loop` with large outer set | Exponential row growth | Consider Hash Join; index inner join key |
-| `cost=... rows=1` but actual rows=50000 | Stale statistics | Run `ANALYZE <table>` |
-| `Buffers: hit=10 read=90000` | Low cache hit rate | Increase `shared_buffers`; add covering index |
-| `Sort Method: external merge` | Sort spilling to disk | Increase `work_mem` for the session |
+| Plan signal | What it suggests | Usual first move |
+|-------------|------------------|------------------|
+| `Seq Scan` over a big table | Filter keeps few rows but nothing indexed | B-tree index on the filtered column |
+| `Nested Loop` driven by a large outer side | Inner side re-probed once per outer row | Index the inner join key, or let a hash join win |
+| Estimated `rows=1`, actual 50000 | Planner statistics out of date | `ANALYZE` the table |
+| `Buffers: hit=40 read=120000` | Pages mostly fetched from disk | Grow `shared_buffers`, or add a covering index |
+| `Sort Method: external merge  Disk: ...` | Sort overflowed memory | Raise `work_mem` for that session or role |
 
 ```sql
--- Always use BUFFERS to see cache hit vs. disk read ratio
-EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
-SELECT o.id, c.name
-FROM   orders o
-JOIN   customers c ON c.id = o.customer_id
-WHERE  o.status = 'pending'
-  AND  o.created_at > now() - interval '7 days';
+-- BUFFERS separates cached reads from disk reads
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT p.id, u.display_name
+FROM payment p
+JOIN app_user u ON u.id = p.user_id
+WHERE p.state = 'authorized'
+  AND p.created_at > now() - interval '24 hours'
 ```
 
 ## Constraints
 
 **MUST DO:**
 - Capture `EXPLAIN (ANALYZE, BUFFERS)` before any changes — this is the baseline
-- Create PostgreSQL indexes with `CONCURRENTLY` to avoid table locks
-- Test in non-production; roll back if write performance or replication lag worsens
-- Make one change at a time — measure before making the next change
+- Build PostgreSQL indexes `CONCURRENTLY` so writers are not blocked
+- Rehearse outside production; revert if writes slow or replicas fall behind
+- One change per round; measure before the next
 
 **MUST NOT DO:**
-- Apply optimizations without a measured baseline
-- Create redundant or unused indexes
+- Change anything before a baseline is recorded
+- Add indexes that duplicate another or serve no query
 - Make multiple changes simultaneously
 - Use `ALTER SYSTEM` on Amazon RDS or other cloud-managed databases
 

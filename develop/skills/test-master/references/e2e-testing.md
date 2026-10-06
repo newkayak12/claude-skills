@@ -1,128 +1,42 @@
-# E2E Testing
+# End-to-End Tests
 
-## E2E Test Strategy
+An E2E test drives the deployed system the way a user does. It is slow and the most failure-prone layer, so spend it only on journeys whose breakage costs money or trust.
 
-```typescript
-// Critical user paths to test
-const criticalPaths = [
-  'User registration and login',
-  'Core product/service workflow',
-  'Payment/checkout flow',
-  'Settings and profile management',
-];
-```
+## Choosing journeys
 
-## User Flow Testing
+Rank candidate flows by (business impact x chance of breaking). Typical keepers: sign-up and login, the purchase or submission path, payment, and one recovery path (password reset). Anything checkable lower down -- validation messages, calculations, permutations -- belongs in unit or integration tests.
 
-```typescript
-import { test, expect } from '@playwright/test';
+Target a small suite (tens, not hundreds) that runs in minutes.
 
-test.describe('User Registration Flow', () => {
-  test('complete registration', async ({ page }) => {
-    await page.goto('/register');
+## Writing stable browser tests (Playwright)
 
-    await page.getByLabel('Email').fill('new@example.com');
-    await page.getByLabel('Password').fill('SecurePass123!');
-    await page.getByLabel('Confirm Password').fill('SecurePass123!');
-    await page.getByRole('button', { name: 'Register' }).click();
+- Locate by role, label or a dedicated `data-testid`, not by CSS chains or text that marketing may change.
+- Rely on auto-waiting and web-first assertions (`await expect(locator).toBeVisible()`); do not insert fixed sleeps.
+- One test = one journey with a clear end state; keep steps inside it linear.
+- Each test creates its own account/data through an API or seed endpoint, and does not depend on another test having run.
+- Log in once through the API and reuse the saved storage state instead of walking the login form in every test.
 
-    await expect(page).toHaveURL(/dashboard/);
-    await expect(page.getByText('Welcome')).toBeVisible();
-  });
-
-  test('shows validation errors', async ({ page }) => {
-    await page.goto('/register');
-
-    await page.getByLabel('Email').fill('invalid');
-    await page.getByRole('button', { name: 'Register' }).click();
-
-    await expect(page.getByText('Invalid email')).toBeVisible();
-  });
+```ts
+test('buyer completes checkout', async ({ page, request }) => {
+  const { sku } = await seedProduct(request, { stock: 1 });
+  await page.goto(`/products/${sku}`);
+  await page.getByRole('button', { name: 'Add to basket' }).click();
+  await page.getByRole('link', { name: 'Checkout' }).click();
+  await payWithTestCard(page);
+  await expect(page.getByRole('heading', { name: 'Order confirmed' })).toBeVisible();
 });
 ```
 
-## Checkout Flow
+## Data and environment
 
-```typescript
-test.describe('Checkout Flow', () => {
-  test('complete purchase', async ({ page }) => {
-    // Add to cart
-    await page.goto('/products/123');
-    await page.getByRole('button', { name: 'Add to Cart' }).click();
-    await expect(page.getByTestId('cart-count')).toHaveText('1');
+- Use a dedicated environment with test-mode third parties (payment sandbox, mail catcher).
+- Make seeded data unique per run (random suffix) so parallel workers do not collide.
+- Clean up through the API, or let the environment be rebuilt on a schedule.
 
-    // Checkout
-    await page.goto('/cart');
-    await page.getByRole('button', { name: 'Checkout' }).click();
+## Browsers and devices
 
-    // Payment
-    await page.getByLabel('Card Number').fill('4242424242424242');
-    await page.getByLabel('Expiry').fill('12/25');
-    await page.getByLabel('CVC').fill('123');
-    await page.getByRole('button', { name: 'Pay' }).click();
+Run the full suite on one engine for every change; add the other engines and a mobile viewport nightly or before release.
 
-    // Confirmation
-    await expect(page).toHaveURL(/order-confirmation/);
-    await expect(page.getByText('Order Confirmed')).toBeVisible();
-  });
-});
-```
+## Diagnosing failures
 
-## Test Data Management
-
-```typescript
-// fixtures/testData.ts
-export const testUsers = {
-  standard: {
-    email: 'standard@test.com',
-    password: 'TestPass123!',
-  },
-  admin: {
-    email: 'admin@test.com',
-    password: 'AdminPass123!',
-  },
-};
-
-// Test setup
-test.beforeEach(async ({ page }) => {
-  // Seed test data
-  await page.request.post('/api/test/seed');
-});
-
-test.afterEach(async ({ page }) => {
-  // Clean up
-  await page.request.post('/api/test/cleanup');
-});
-```
-
-## Cross-Browser Testing
-
-```typescript
-// playwright.config.ts
-export default defineConfig({
-  projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
-    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
-    { name: 'mobile-chrome', use: { ...devices['Pixel 5'] } },
-    { name: 'mobile-safari', use: { ...devices['iPhone 13'] } },
-  ],
-});
-```
-
-## Quick Reference
-
-| Pattern | When to Use |
-|---------|-------------|
-| Happy path | Critical user journeys |
-| Error handling | Form validation, API errors |
-| Edge cases | Empty states, max limits |
-| Cross-browser | Before major releases |
-| Mobile | Responsive features |
-
-| Priority | Test Coverage |
-|----------|---------------|
-| **P0** | Registration, login, core feature |
-| **P1** | Payment, settings, common flows |
-| **P2** | Edge cases, admin features |
-| **P3** | Rare scenarios |
+Keep a trace, screenshot and video on first retry. A test that passes only on retry is a defect in the test or the product; track the retry rate and fix the worst offenders weekly.

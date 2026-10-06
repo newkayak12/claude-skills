@@ -20,14 +20,13 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 license: MIT
 metadata:
-  author: https://github.com/Jeffallan
-  version: "1.1.0"
   domain: backend
-  triggers: Spring Boot, Spring Framework, Spring Cloud, Spring Security, Spring Data JPA, Spring WebFlux, Microservices Java, Java REST API, Reactive Java
-  role: specialist
-  scope: implementation
   output-format: code
-  related-skills: java-architect, database-optimizer, microservices-architect, devops-engineer
+  scope: implementation
+  role: specialist
+  triggers: Spring Boot, Spring Security, Spring Data JPA, Spring Cloud, WebFlux, Java REST API, Actuator
+  related-skills: database-optimizer, microservices-architect, transaction-boundary-reviewer, kotlin-specialist
+  version: "1.1.0"
 ---
 
 # Spring Boot Engineer
@@ -45,12 +44,12 @@ metadata:
 
 ## Process
 
-1. **Analyze requirements** — Identify service boundaries, APIs, data models, security needs
-2. **Design architecture** — Plan data access, cloud integration, security; confirm before coding
-3. **Implement** — Create services with constructor injection and layered architecture
-4. **Secure** — Add Spring Security, OAuth2, method security, CORS; verify security rules compile and tests pass
-5. **Test** — Write unit, integration, and slice tests; run `./mvnw test` and confirm all pass
-6. **Deploy** — Configure Actuator health checks; validate `/actuator/health` returns `UP`
+1. **Analyze requirements** — Pin down service boundaries, API contracts, data model and security needs
+2. **Design architecture** — Decide persistence, remote-call and security approach; get agreement before writing code
+3. **Implement** — Build layered services whose dependencies arrive through the constructor
+4. **Secure** — Wire authentication, OAuth2 resource-server rules, method-level checks and CORS; compile the rules and see the security tests green
+5. **Test** — Cover units, slices and integration paths; execute `./mvnw test` and read the result
+6. **Deploy** — Enable Actuator health endpoints; check that `/actuator/health` reports `UP`
 
 ## Output Template
 
@@ -73,91 +72,97 @@ For each Spring Boot feature, provide:
 
 ## Reference Guide
 
-| Topic | Reference | Load When |
-|-------|-----------|-----------|
-| Web Layer | `references/web.md` | Controllers, REST APIs, validation, exception handling |
-| Data Access | `references/data.md` | Spring Data JPA, repositories, transactions, projections |
-| Security | `references/security.md` | Spring Security 6, OAuth2, JWT, method security |
-| Cloud Native | `references/cloud.md` | Spring Cloud, Config, Discovery, Gateway, resilience |
-| Testing | `references/testing.md` | @SpringBootTest, MockMvc, Testcontainers, test slices |
+| Need | Read | Covers |
+|------|------|--------|
+| Controllers and API errors | `references/web.md` | DTOs, validation, problem details, outbound clients, CORS |
+| Persistence | `references/data.md` | Entity mapping, repositories, fetching, transactions, migrations |
+| Authentication and authorization | `references/security.md` | Filter chain, resource server, method rules |
+| Distributed deployment | `references/cloud.md` | Config, discovery, gateway, resilience, probes, packaging |
+| Tests | `references/testing.md` | Slices, Testcontainers, security tests |
 
-## Quick Start — Minimal Working Structure
+## Minimal Working Example
 
-### Entity
+The example is a small `Book` catalog.
+
 ```java
 @Entity
-@Table(name = "products")
-public class Product {
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+@Table(name = "books")
+public class Book {
+    @Id
+    @GeneratedValue(strategy = GenerationType.SEQUENCE)
     private Long id;
-    @NotBlank private String name;
-    @DecimalMin("0.0") private BigDecimal price;
-}
-```
 
-### Repository
-```java
-public interface ProductRepository extends JpaRepository<Product, Long> {
-    List<Product> findByNameContainingIgnoreCase(String name);
-}
-```
+    @NotBlank
+    private String title;
 
-### Service (constructor injection)
-```java
+    @PositiveOrZero
+    private BigDecimal cost;
+    // accessors omitted
+}
+
+public interface BookRepository extends JpaRepository<Book, Long> {
+    List<Book> findByTitleContainingIgnoreCase(String fragment);
+}
+
+public record BookRequest(@NotBlank String title, @PositiveOrZero BigDecimal cost) {}
+
+public record BookResponse(Long id, String title) {}
+
 @Service
-public class ProductService {
-    private final ProductRepository repo;
-    public ProductService(ProductRepository repo) { this.repo = repo; }
+public class BookService {
+    private final BookRepository books;
+
+    public BookService(BookRepository books) { this.books = books; }
 
     @Transactional(readOnly = true)
-    public List<Product> search(String name) {
-        return repo.findByNameContainingIgnoreCase(name);
+    public List<Book> search(String fragment) {
+        return books.findByTitleContainingIgnoreCase(fragment);
+    }
+
+    @Transactional
+    public Book add(BookRequest req) {
+        Book b = new Book();
+        b.setTitle(req.title());
+        b.setCost(req.cost());
+        return books.save(b);
     }
 }
-```
 
-### REST Controller
-```java
 @RestController
-@RequestMapping("/api/v1/products")
-@Validated
-public class ProductController {
-    private final ProductService service;
-    public ProductController(ProductService service) { this.service = service; }
+@RequestMapping("/api/v1/books")
+public class BookController {
+    private final BookService books;
+
+    public BookController(BookService books) { this.books = books; }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public Product create(@Valid @RequestBody ProductRequest request) {
-        return service.create(request);
+    public BookResponse add(@Valid @RequestBody BookRequest req) {
+        Book saved = books.add(req);
+        return new BookResponse(saved.getId(), saved.getTitle());
     }
 }
 ```
 
-### DTO (record)
-```java
-public record ProductRequest(
-    @NotBlank String name,
-    @DecimalMin("0.0") BigDecimal price
-) {}
-```
+Entities stay behind the service; the controller returns a response record (see `references/web.md`).
 
 ## Constraints
 
 **MUST DO:**
 
-| Rule | Correct Pattern |
-|------|----------------|
-| Constructor injection | `public MyService(Dep dep) { this.dep = dep; }` |
-| Validate API input | `@Valid @RequestBody` on every mutating endpoint |
-| Type-safe config | `@ConfigurationProperties(prefix = "app")` |
-| Transaction scope | `@Transactional` on multi-step writes; `readOnly = true` on reads |
-| Externalize secrets | Environment variables or Spring Cloud Config — never in `application.properties` |
+| Rule | Pattern |
+|------|---------|
+| Constructor injection | Final fields assigned in the constructor |
+| Validate API input | Annotate each write endpoint's body with `@Valid` |
+| Typed settings | Bind with `@ConfigurationProperties`, prefix `app` |
+| Transaction scope | Writes spanning several steps are `@Transactional`; reads add `readOnly = true` |
+| Secrets | Supplied by environment or a secret store, not by committed property files |
 
 **MUST NOT DO:**
-- Field injection (`@Autowired` on fields)
-- Skip input validation on API endpoints
-- Mix blocking and reactive code (no `.block()` inside WebFlux chains)
-- Use deprecated Spring Boot 2.x patterns (e.g., `WebSecurityConfigurerAdapter`)
+- Inject fields with `@Autowired`
+- Accept unvalidated request bodies
+- Call `.block()` inside a reactive chain
+- Carry over Boot 2.x idioms such as `WebSecurityConfigurerAdapter`
 
 ## Related Skills
 

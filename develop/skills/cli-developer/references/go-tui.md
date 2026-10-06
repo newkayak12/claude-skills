@@ -1,206 +1,58 @@
-# Go Terminal UI (TUI) Development
+# Go Terminal UI
 
-Use this reference when the user specifically needs an interactive terminal UI beyond basic output. For cobra/viper CLI framework usage, see `references/go-cli.md`.
+Reach for a full TUI only when the user must navigate, filter, or watch live state. For one-shot commands, a spinner or progress line on stderr is lighter and keeps pipes working.
 
-## Bubble Tea (Interactive TUI)
+## Bubble Tea model
 
-Modern terminal UI framework using an Elm-inspired Model-Update-View architecture.
+The Elm-style loop has three methods (Bubble Tea v1 API):
 
 ```go
-package main
-
-import (
-    "fmt"
-    "os"
-
-    tea "github.com/charmbracelet/bubbletea"
-    "github.com/charmbracelet/lipgloss"
-)
-
-// Model
-type model struct {
-    choices  []string
-    cursor   int
-    selected map[int]struct{}
+type picker struct {
+	envs []string
+	sel  int
 }
 
-func initialModel() model {
-    return model{
-        choices:  []string{"TypeScript", "ESLint", "Prettier", "Jest"},
-        selected: make(map[int]struct{}),
-    }
+func (p picker) Init() tea.Cmd {
+	return nil
 }
 
-// Init
-func (m model) Init() tea.Cmd {
-    return nil
+func (p picker) Update(in tea.Msg) (tea.Model, tea.Cmd) {
+	key, isKey := in.(tea.KeyMsg)
+	if isKey {
+		switch key.String() {
+		case "q", "ctrl+c":
+			return p, tea.Quit
+		case "up":
+			if p.sel > 0 { p.sel-- }
+		case "down":
+			if p.sel < len(p.envs)-1 { p.sel++ }
+		}
+	}
+	return p, nil
 }
 
-// Update
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-    switch msg := msg.(type) {
-    case tea.KeyMsg:
-        switch msg.String() {
-        case "ctrl+c", "q":
-            return m, tea.Quit
-
-        case "up", "k":
-            if m.cursor > 0 {
-                m.cursor--
-            }
-
-        case "down", "j":
-            if m.cursor < len(m.choices)-1 {
-                m.cursor++
-            }
-
-        case " ":
-            _, ok := m.selected[m.cursor]
-            if ok {
-                delete(m.selected, m.cursor)
-            } else {
-                m.selected[m.cursor] = struct{}{}
-            }
-
-        case "enter":
-            return m, tea.Quit
-        }
-    }
-
-    return m, nil
-}
-
-// View
-func (m model) View() string {
-    s := "Select features:\n\n"
-
-    for i, choice := range m.choices {
-        cursor := " "
-        if m.cursor == i {
-            cursor = ">"
-        }
-
-        checked := " "
-        if _, ok := m.selected[i]; ok {
-            checked = "x"
-        }
-
-        s += fmt.Sprintf("%s [%s] %s\n", cursor, checked, choice)
-    }
-
-    s += "\nPress space to select, enter to confirm, q to quit.\n"
-
-    return s
-}
+func (p picker) View() string { return fmt.Sprint(p.envs, " selected: ", p.sel) } // render p.envs with p.sel highlighted
 
 func main() {
-    p := tea.NewProgram(initialModel())
-    if _, err := p.Run(); err != nil {
-        fmt.Printf("Error: %v", err)
-        os.Exit(1)
-    }
+	if _, err := tea.NewProgram(picker{envs: []string{"dev", "prod"}}).Run(); err != nil {
+		log.Fatal(err)
+	}
 }
 ```
 
-## Progress Indicators
+Rules:
+- `Update` never blocks. Slow work is a `tea.Cmd` (a function returning a `tea.Msg`) that runs in the background and reports back with a message.
+- State lives only in the model; `View` is a pure function of it.
+- Handle `tea.WindowSizeMsg` to adapt layout.
+- Ctrl+C arrives as a key message in raw mode; handle it yourself.
 
-```go
-package main
+## Components
 
-import (
-    "fmt"
-    "time"
+The `bubbles` module supplies ready parts: `spinner`, `progress`, `list`, `textinput`, `table`, `viewport`. Each is a sub-model: store it in your model, forward messages to its `Update`, and render its `View`. A spinner needs its `Tick` command returned from `Init`.
 
-    "github.com/schollz/progressbar/v3"
-)
+`lipgloss` handles styling (`lipgloss.NewStyle().Foreground(...).Bold(true).Render(s)`) and detects terminal colour capability.
 
-func main() {
-    // Simple progress bar
-    bar := progressbar.Default(100, "Downloading")
-    for i := 0; i < 100; i++ {
-        bar.Add(1)
-        time.Sleep(40 * time.Millisecond)
-    }
+## Non-TUI feedback
 
-    // Custom progress bar
-    bar = progressbar.NewOptions(100,
-        progressbar.OptionEnableColorCodes(true),
-        progressbar.OptionShowBytes(true),
-        progressbar.OptionSetWidth(15),
-        progressbar.OptionSetDescription("[cyan][1/3][reset] Downloading..."),
-        progressbar.OptionSetTheme(progressbar.Theme{
-            Saucer:        "[green]=[reset]",
-            SaucerHead:    "[green]>[reset]",
-            SaucerPadding: " ",
-            BarStart:      "[",
-            BarEnd:        "]",
-        }),
-    )
-
-    for i := 0; i < 100; i++ {
-        bar.Add(1)
-        time.Sleep(40 * time.Millisecond)
-    }
-}
-```
-
-## Spinner
-
-```go
-package main
-
-import (
-    "fmt"
-    "time"
-
-    "github.com/briandowns/spinner"
-)
-
-func main() {
-    s := spinner.New(spinner.CharSets[11], 100*time.Millisecond)
-    s.Suffix = " Installing dependencies..."
-    s.Start()
-
-    time.Sleep(4 * time.Second)
-
-    s.UpdateCharSet(spinner.CharSets[9])
-    s.Suffix = " Processing..."
-    time.Sleep(2 * time.Second)
-
-    s.Stop()
-    fmt.Println("✓ Done!")
-}
-```
-
-## Colored Output
-
-```go
-package main
-
-import (
-    "github.com/fatih/color"
-)
-
-func main() {
-    // Basic colors
-    color.Blue("Info: Starting deployment...")
-    color.Green("Success: Deployment complete!")
-    color.Yellow("Warning: Deprecated flag used")
-    color.Red("Error: Deployment failed")
-
-    // Custom styles
-    success := color.New(color.FgGreen, color.Bold).PrintlnFunc()
-    error := color.New(color.FgRed, color.Bold).PrintlnFunc()
-
-    success("✓ Build successful")
-    error("✗ Build failed")
-
-    // Printf-style
-    color.Cyan("Processing %d files...\n", 42)
-
-    // Disable colors for CI
-    if os.Getenv("CI") != "" {
-        color.NoColor = true
-    }
-}
-```
+- Progress that only prints lines (`step 3/8: migrating`) is correct in CI logs; animate only when stderr is a terminal (`term.IsTerminal(int(os.Stderr.Fd()))` from `golang.org/x/term`).
+- Provide a plain-output fallback flag so the same command is usable over dumb terminals and in logs.

@@ -1,118 +1,54 @@
-# Performance Testing
+# Performance Tests
 
-## k6 Load Test
+Aim: find out how the service behaves under load, against a stated target, before users do.
 
-```javascript
+## Decide the question first
+
+| Test | Question | Shape of load |
+|---|---|---|
+| Load | Does it meet the target at expected peak? | ramp up, hold at normal peak, ramp down |
+| Stress | Where does it break, and how? | keep raising rate past peak |
+| Spike | Does it survive and recover from a sudden surge? | jump to a multiple of peak, then drop |
+| Soak | Does it leak or degrade over hours? | steady moderate load held for many hours |
+
+## A k6 script
+
+```js
+import { sleep, check } from 'k6';
 import http from 'k6/http';
-import { check, sleep } from 'k6';
+
 
 export const options = {
   stages: [
-    { duration: '30s', target: 20 },   // Ramp up to 20 users
-    { duration: '1m', target: 20 },    // Stay at 20 users
-    { duration: '30s', target: 0 },    // Ramp down
+    { target: 40, duration: '2m' },   // ramp up
+    { target: 40, duration: '8m' },   // hold
+    { target: 0, duration: '30s' },   // ramp down
   ],
   thresholds: {
-    http_req_duration: ['p(95)<500'],  // 95% requests under 500ms
-    http_req_failed: ['rate<0.01'],    // <1% errors
+    http_req_failed: ['rate<0.01'],    // under 1% errors
+    http_req_duration: ['p(95)<350', 'p(99)<900'],
   },
 };
 
-export default function () {
-  const res = http.get('http://localhost:3000/api/users');
-
-  check(res, {
-    'status is 200': (r) => r.status === 200,
-    'response time < 200ms': (r) => r.timings.duration < 200,
-  });
-
+export default function () {  // one virtual-user iteration
+  const res = http.get(`${__ENV.BASE_URL}/api/orders?size=20`);
+  check(res, { 'is ok': (res2) => res2.status === 200 });
   sleep(1);
 }
 ```
 
-## Stress Test
+If a threshold fails, k6 exits non-zero, so the same script can gate a pipeline.
 
-```javascript
-export const options = {
-  stages: [
-    { duration: '2m', target: 100 },   // Ramp to 100 users
-    { duration: '5m', target: 100 },   // Stay at 100
-    { duration: '2m', target: 200 },   // Push to 200
-    { duration: '5m', target: 200 },   // Stay at 200
-    { duration: '2m', target: 0 },     // Ramp down
-  ],
-};
-```
+## Making the numbers mean something
 
-## Spike Test
+- Express targets as percentiles (p95/p99) plus error rate, taken from an SLO or a business need; averages hide the slow tail.
+- Run against an environment shaped like production: same instance size, same data volume, same pool settings. A near-empty database makes every query look fast.
+- Generate the load from a separate machine so the generator is not the bottleneck.
+- Use realistic request mixes and varied ids; hammering one cached row measures the cache.
+- Authenticate once in `setup()` and pass the token, unless login itself is under test.
+- Warm up (JIT, pools, caches) before measuring.
+- Record the build, config and data size beside each result so runs are comparable.
 
-```javascript
-export const options = {
-  stages: [
-    { duration: '10s', target: 10 },   // Normal load
-    { duration: '1m', target: 10 },
-    { duration: '10s', target: 200 },  // Spike!
-    { duration: '3m', target: 200 },
-    { duration: '10s', target: 10 },   // Scale down
-    { duration: '3m', target: 10 },
-    { duration: '10s', target: 0 },
-  ],
-};
-```
+## Reading the result
 
-## API Testing with Auth
-
-```javascript
-import http from 'k6/http';
-
-export function setup() {
-  const loginRes = http.post('http://localhost:3000/api/login', {
-    email: 'test@test.com',
-    password: 'password',
-  });
-  return { token: loginRes.json('token') };
-}
-
-export default function (data) {
-  const params = {
-    headers: { Authorization: `Bearer ${data.token}` },
-  };
-
-  http.get('http://localhost:3000/api/protected', params);
-}
-```
-
-## Thresholds Reference
-
-```javascript
-thresholds: {
-  // Response time
-  http_req_duration: ['p(95)<500', 'p(99)<1000'],
-
-  // Error rate
-  http_req_failed: ['rate<0.01'],
-
-  // Throughput
-  http_reqs: ['rate>100'],
-
-  // Custom metrics
-  'http_req_duration{name:login}': ['p(95)<200'],
-}
-```
-
-## Quick Reference
-
-| Metric | Description |
-|--------|-------------|
-| `http_req_duration` | Response time |
-| `http_req_failed` | Failed requests rate |
-| `http_reqs` | Request rate |
-| `p(95)` | 95th percentile |
-| `rate` | Rate per second |
-
-| Test Type | Purpose |
-|-----------|---------|
-| Load | Normal expected load |
-| Stress | Find breaking point |
-| Spike | Sudden traffic surge |
-| Soak | Long duration stability |
+While the load runs, watch the server too: CPU, GC pauses, DB connections in use, slow queries, thread pool queue depth. Find the first saturated resource; that is the bottleneck. Change one thing, re-run, compare.

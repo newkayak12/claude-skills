@@ -1,264 +1,72 @@
-# MySQL Memory & I/O Tuning
+# MySQL / InnoDB: Memory, I/O, Partitioning and Replication
 
-## InnoDB Memory Configuration
+Applies to MySQL 8.0 (notes where MariaDB or 5.7 differ are omitted). Managed services expose these through parameter groups.
 
-### Buffer Pool
+## Memory
 
-```sql
--- Recommended: 70-80% of system RAM for dedicated MySQL server
--- For 16GB RAM server:
-SET GLOBAL innodb_buffer_pool_size = 12884901888;  -- 12GB
+| Setting | Guidance |
+|---------|----------|
+| `innodb_buffer_pool_size` | largest single lever; on a dedicated host about 50-75% of RAM, leaving room for per-connection buffers and the OS. Resizable online. |
+| `innodb_buffer_pool_instances` | split the pool to reduce mutex contention; only meaningful for pools of a few GB or more |
+| `sort_buffer_size`, `join_buffer_size`, `read_rnd_buffer_size` | allocated per connection per use; keep modest and raise per session for a specific job |
+| `tmp_table_size`, `max_heap_table_size` | in-memory temp table cap (the smaller of the two applies); beyond it the table goes to disk |
+| `max_connections` | each connection costs memory; fix the application pool rather than inflating this |
 
--- Check buffer pool usage
-SHOW GLOBAL STATUS LIKE 'Innodb_buffer_pool_%';
+The query cache was removed in 8.0; ignore advice that enables it.
 
--- Buffer pool hit ratio (target: >99%)
-SELECT
-    (1 - (Innodb_buffer_pool_reads / Innodb_buffer_pool_read_requests)) * 100 as hit_ratio
-FROM (
-    SELECT
-        VARIABLE_VALUE as Innodb_buffer_pool_reads
-    FROM performance_schema.global_status
-    WHERE VARIABLE_NAME = 'Innodb_buffer_pool_reads'
-) reads,
-(
-    SELECT
-        VARIABLE_VALUE as Innodb_buffer_pool_read_requests
-    FROM performance_schema.global_status
-    WHERE VARIABLE_NAME = 'Innodb_buffer_pool_read_requests'
-) requests;
+Health check: `Innodb_buffer_pool_reads` (misses that hit disk) against `Innodb_buffer_pool_read_requests`; the miss fraction should be tiny once warm.
 
--- Buffer pool instances (for multi-core systems)
--- Recommended: 1 instance per 1GB, max 64
-SET GLOBAL innodb_buffer_pool_instances = 8;
+## Redo log, flushing and I/O
+
+- `innodb_flush_log_at_trx_commit`: `1` flushes at every commit (durable); `2` writes to the OS and flushes about once a second; `0` flushes only about once a second. Pair `1` with `sync_binlog=1` where replicas or point-in-time recovery matter.
+- Redo capacity: `innodb_redo_log_capacity` (8.0.30+) replaces `innodb_log_file_size` x files. Too small a redo log forces aggressive page flushing and write stalls.
+- `innodb_flush_method=O_DIRECT` avoids double-buffering in the OS page cache on Linux.
+- `innodb_io_capacity` and `innodb_io_capacity_max` tell background flushing how many IOPS the storage can sustain; set from the device, not the default.
+- Spinning disks benefit from `innodb_flush_neighbors`; SSDs generally do not.
+- `innodb_read_io_threads`, `innodb_write_io_threads`: defaults suit most hosts.
+
+## Finding slow work
+
+```
+slow_query_log = ON
+long_query_time = 0.5
+log_queries_not_using_indexes = ON    # noisy; enable briefly
 ```
 
-### Sort and Join Buffers
+Aggregate with `pt-query-digest` if installed, or in Performance Schema (see `monitoring-mysql.md`). In the plan check `type: ALL`, `Using filesort`, `Using temporary`; table statistics refresh with `ANALYZE TABLE`. 8.0 also supports histograms (`ANALYZE TABLE t UPDATE HISTOGRAM ON col`) for skewed non-indexed columns.
+
+## Index notes specific to InnoDB
+
+- Rows are clustered by primary key; each secondary index entry stores the primary key, so a wide PK enlarges every index.
+- Sequential PKs append; random UUIDs cause page splits.
+- Invisible indexes (8.0) let you test dropping one; `sys.schema_unused_indexes` lists candidates.
+
+## Partitioning
 
 ```sql
--- Sort buffer per connection
-SET GLOBAL sort_buffer_size = 2097152;  -- 2MB
-
--- Join buffer for full joins
-SET GLOBAL join_buffer_size = 2097152;  -- 2MB
-
--- Temporary table size
-SET GLOBAL tmp_table_size = 67108864;  -- 64MB
-SET GLOBAL max_heap_table_size = 67108864;  -- 64MB
-
--- Monitor temp table usage
-SHOW GLOBAL STATUS LIKE 'Created_tmp%';
+CREATE TABLE audit (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  occurred_at DATETIME NOT NULL,
+  payload JSON,
+  PRIMARY KEY (id, occurred_at)
+) PARTITION BY RANGE (TO_DAYS(occurred_at)) (
+  PARTITION p202610 VALUES LESS THAN (TO_DAYS('2026-11-01')),
+  PARTITION p_rest VALUES LESS THAN MAXVALUE
+);
 ```
 
-## Query Cache (Deprecated in 8.0)
+- Every unique key, including the primary key, must contain the partition columns.
+- InnoDB partitioned tables cannot have foreign keys, and cannot be referenced by them.
+- Pruning requires the partition column in the `WHERE`; verify with `EXPLAIN` (`partitions` column).
+- Retention: `ALTER TABLE ... DROP PARTITION` is near-instant, unlike a large `DELETE`.
+- Add new partitions by `REORGANIZE PARTITION p_rest INTO (...)` before data lands in the catch-all.
 
-```sql
--- MySQL 5.7 and earlier
--- Note: Removed in MySQL 8.0
-SET GLOBAL query_cache_type = 1;
-SET GLOBAL query_cache_size = 67108864;  -- 64MB
+## Replication
 
--- Check query cache effectiveness
-SHOW STATUS LIKE 'Qcache%';
+- Binary log: `binlog_format=ROW` is the default and safest; `binlog_expire_logs_seconds` bounds disk use.
+- Lag check: `SHOW REPLICA STATUS` (`SHOW SLAVE STATUS` before 8.0.22), field `Seconds_Behind_Source`. Large transactions and single-threaded apply cause lag; enable multi-threaded applier (`replica_parallel_workers`) and break giant batch writes into smaller transactions.
+- Do not route read-your-writes traffic to a lagging replica; Spring routing data sources should account for this.
 
--- Query cache hit ratio
-SELECT
-    Qcache_hits / (Qcache_hits + Com_select) * 100 as cache_hit_ratio
-FROM (
-    SELECT VARIABLE_VALUE as Qcache_hits
-    FROM performance_schema.global_status
-    WHERE VARIABLE_NAME = 'Qcache_hits'
-) hits,
-(
-    SELECT VARIABLE_VALUE as Com_select
-    FROM performance_schema.global_status
-    WHERE VARIABLE_NAME = 'Com_select'
-) selects;
-```
+## Table upkeep
 
-## InnoDB Performance Settings
-
-### Log Files and Flushing
-
-```sql
--- InnoDB log file size (larger = better write performance)
--- Recommended: 1-2GB for write-heavy workloads
-SET GLOBAL innodb_log_file_size = 1073741824;  -- 1GB
-
--- Log buffer size
-SET GLOBAL innodb_log_buffer_size = 16777216;  -- 16MB
-
--- Flush method (O_DIRECT for dedicated server, avoids double buffering)
--- Set in my.cnf
-innodb_flush_method = O_DIRECT
-
--- Flush log at transaction commit
--- 1 = full ACID (default, safest)
--- 2 = write to OS cache, flush every second
--- 0 = write and flush every second (fastest, risk data loss)
-SET GLOBAL innodb_flush_log_at_trx_commit = 1;
-
--- For replication slaves or analytics (trade safety for speed)
-SET GLOBAL innodb_flush_log_at_trx_commit = 2;
-```
-
-### I/O Configuration
-
-```sql
--- Read I/O threads
-SET GLOBAL innodb_read_io_threads = 8;
-
--- Write I/O threads
-SET GLOBAL innodb_write_io_threads = 8;
-
--- I/O capacity (IOPS your storage can handle)
--- For SSD: 5000-20000
-SET GLOBAL innodb_io_capacity = 10000;
-SET GLOBAL innodb_io_capacity_max = 20000;
-
--- Flush method for optimal I/O
--- my.cnf:
-innodb_flush_method = O_DIRECT
-innodb_flush_neighbors = 0  -- Disable for SSD
-```
-
-### Thread Configuration
-
-```sql
--- Max connections
-SET GLOBAL max_connections = 200;
-
--- Thread cache (reuse threads)
-SET GLOBAL thread_cache_size = 100;
-
--- Check thread cache effectiveness
-SHOW STATUS LIKE 'Threads_%';
-SHOW STATUS LIKE 'Connections';
-
--- Thread cache hit ratio (target: >90%)
-SELECT
-    (1 - (Threads_created / Connections)) * 100 as thread_cache_hit_ratio
-FROM (
-    SELECT VARIABLE_VALUE as Threads_created
-    FROM performance_schema.global_status
-    WHERE VARIABLE_NAME = 'Threads_created'
-) created,
-(
-    SELECT VARIABLE_VALUE as Connections
-    FROM performance_schema.global_status
-    WHERE VARIABLE_NAME = 'Connections'
-) conns;
-```
-
-## Query Optimization
-
-### Slow Query Log
-
-```sql
--- Enable slow query logging
-SET GLOBAL slow_query_log = 'ON';
-SET GLOBAL long_query_time = 1.0;  -- Log queries > 1 second
-SET GLOBAL log_queries_not_using_indexes = 'ON';
-
--- Slow query log file location
-SET GLOBAL slow_query_log_file = '/var/log/mysql/slow-query.log';
-
--- Analyze slow query log with pt-query-digest
--- $ pt-query-digest /var/log/mysql/slow-query.log
-
--- Check slow query status
-SHOW GLOBAL STATUS LIKE 'Slow_queries';
-```
-
-### Performance Schema
-
-```sql
--- Enable performance schema (my.cnf)
-performance_schema = ON
-
--- Top queries by total execution time
-SELECT
-    DIGEST_TEXT,
-    COUNT_STAR as exec_count,
-    ROUND(AVG_TIMER_WAIT / 1000000000000, 3) as avg_time_sec,
-    ROUND(SUM_TIMER_WAIT / 1000000000000, 3) as total_time_sec,
-    ROUND((SUM_TIMER_WAIT / SUM(SUM_TIMER_WAIT) OVER ()) * 100, 2) as pct
-FROM performance_schema.events_statements_summary_by_digest
-ORDER BY SUM_TIMER_WAIT DESC
-LIMIT 10;
-
--- Full table scans
-SELECT * FROM sys.statements_with_full_table_scans
-ORDER BY exec_count DESC
-LIMIT 10;
-
--- Tables with high I/O
-SELECT
-    object_schema,
-    object_name,
-    count_read,
-    count_write,
-    count_fetch,
-    SUM_TIMER_WAIT / 1000000000000 as total_latency_sec
-FROM performance_schema.table_io_waits_summary_by_table
-WHERE object_schema NOT IN ('mysql', 'performance_schema', 'sys')
-ORDER BY SUM_TIMER_WAIT DESC
-LIMIT 10;
-```
-
-## Index Optimization
-
-### Index Statistics
-
-```sql
--- Update index statistics
-ANALYZE TABLE users;
-
--- Check index cardinality
-SHOW INDEX FROM users;
-
--- Find duplicate/redundant indexes
-SELECT
-    a.table_schema,
-    a.table_name,
-    a.index_name as index1,
-    a.column_name,
-    b.index_name as index2
-FROM information_schema.statistics a
-JOIN information_schema.statistics b
-    ON a.table_schema = b.table_schema
-    AND a.table_name = b.table_name
-    AND a.seq_in_index = b.seq_in_index
-    AND a.column_name = b.column_name
-    AND a.index_name != b.index_name
-WHERE a.table_schema NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')
-ORDER BY a.table_schema, a.table_name, a.index_name;
-
--- Find unused indexes
-SELECT
-    object_schema,
-    object_name,
-    index_name
-FROM performance_schema.table_io_waits_summary_by_index_usage
-WHERE index_name IS NOT NULL
-  AND count_star = 0
-  AND object_schema NOT IN ('mysql', 'performance_schema', 'sys')
-ORDER BY object_schema, object_name;
-```
-
-### Covering Indexes
-
-```sql
--- Create covering index
-CREATE INDEX idx_users_email_name_created
-ON users(email, name, created_at);
-
--- Query can use covering index
-EXPLAIN
-SELECT name, created_at FROM users WHERE email = 'user@example.com';
--- Look for "Using index" in Extra column
-
--- Force index usage for testing
-SELECT name FROM users FORCE INDEX (idx_users_email_name_created)
-WHERE email = 'user@example.com';
-```
+`OPTIMIZE TABLE` rebuilds and reclaims space after mass deletes (locks briefly for the online path; large tables need a window or an online-schema-change tool). Page compression exists, but weigh CPU against I/O and measure.

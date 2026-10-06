@@ -78,6 +78,8 @@ For money, set a researched anchor with a range whose low end is acceptable. Pre
 
 **4. Concession order.** Fix the sequence before the meeting: what to hold, what to trade first, what to trade last. Each concession gets a return ask. Keep steps shrinking. **Ackerman applies to money only**: target, then 65%, 85%, 95%, 100% with a precise final number and a non-money add-on. Never use it on non-money terms or on relationships.
 
+Phase-by-phase moves (prep, opening, resistance, concessions): [references/techniques.md](references/techniques.md).
+
 ---
 
 ## Output Template

@@ -1,545 +1,151 @@
-# Testing - Spring Boot Test
+# Testing
 
-## Unit Testing with JUnit 5
+## Pick the narrowest slice
+
+| Question | Tool | Context loaded |
+|---|---|---|
+| Does this logic compute correctly? | Plain JUnit 5 + Mockito | none |
+| Does the controller map, validate and serialize? | `@WebMvcTest` | MVC beans only |
+| Do my queries and mappings work? | `@DataJpaTest` | JPA + datasource |
+| Does the whole wiring work end to end? | `@SpringBootTest` | everything |
+| Is JSON shaped as expected? | `@JsonTest` | Jackson |
+
+The wider the context, the slower the suite; keep `@SpringBootTest` for a few journeys.
+
+## Plain unit tests
 
 ```java
-@ExtendWith(MockitoExtension.class)
-class UserServiceTest {
-
-    @Mock
-    private UserRepository userRepository;
-
-    @Mock
-    private PasswordEncoder passwordEncoder;
-
-    @InjectMocks
-    private UserService userService;
+@ExtendWith({MockitoExtension.class})
+class PricingServiceTest {
+    @Mock DiscountRepository discounts;
+    @InjectMocks PricingService pricing;
 
     @Test
-    @DisplayName("Should create user successfully")
-    void shouldCreateUser() {
-        // Given
-        UserCreateRequest request = new UserCreateRequest(
-            "test@example.com",
-            "Password123",
-            "testuser",
-            25
-        );
+    void appliesLargestDiscount() {
+        when(discounts.activeFor("gold")).thenReturn(List.of(pct(5), pct(15)));
 
-        User user = User.builder()
-            .id(1L)
-            .email(request.email())
-            .username(request.username())
-            .build();
+        assertThat(pricing.priceFor("gold", new BigDecimal("100.00")))
+            .isEqualByComparingTo("85.00");
+    }
 
-        when(userRepository.existsByEmail(request.email())).thenReturn(false);
-        when(passwordEncoder.encode(request.password())).thenReturn("encodedPassword");
-        when(userRepository.save(any(User.class))).thenReturn(user);
+    @ParameterizedTest
+    @CsvSource({"0,0", "1,5", "10,50"})
+    void multiplies(int qty, int expected) { ... }
+}
+```
 
-        // When
-        UserResponse response = userService.create(request);
+## Controller slice
 
-        // Then
-        assertThat(response).isNotNull();
-        assertThat(response.email()).isEqualTo(request.email());
+```java
+@WebMvcTest(TicketController.class)
+class TicketControllerTest {
+    @Autowired MockMvc mvc;
+    @MockitoBean TicketService tickets;      // Boot 3.4+; earlier versions: @MockBean
 
-        verify(userRepository).existsByEmail(request.email());
-        verify(passwordEncoder).encode(request.password());
-        verify(userRepository).save(any(User.class));
+    @Test
+    void rejectsEmptyItems() throws Exception {
+        mvc.perform(post("/v1/tickets")
+                .contentType("application/json")
+                .content("""
+                    {"reporterId": 1, "items": []}
+                    """))
+           .andExpect(status().isBadRequest());
     }
 
     @Test
-    @DisplayName("Should throw exception when email already exists")
-    void shouldThrowExceptionWhenEmailExists() {
-        // Given
-        UserCreateRequest request = new UserCreateRequest(
-            "test@example.com",
-            "Password123",
-            "testuser",
-            25
-        );
+    void opensTicket() throws Exception {
+        when(tickets.open(any())).thenReturn(new TicketResponse(7, "OPEN", Instant.EPOCH));
 
-        when(userRepository.existsByEmail(request.email())).thenReturn(true);
-
-        // When & Then
-        assertThatThrownBy(() -> userService.create(request))
-            .isInstanceOf(DuplicateResourceException.class)
-            .hasMessageContaining("Email already registered");
-
-        verify(userRepository, never()).save(any(User.class));
+        mvc.perform(post("/v1/tickets")
+                .contentType("application/json")
+                .content("""
+                    {"reporterId": 1, "items": [{"sku": "A1", "quantity": 2}]}
+                    """))
+           .andExpect(status().is(201))
+           .andExpect(header().string("Location", endsWith("/v1/tickets/7")));
     }
 }
 ```
 
-## Integration Testing with @SpringBootTest
+With Spring Security on the classpath the slice applies the filter chain. Add `spring-security-test` and use `@WithMockUser(roles = "ADMIN")` or `.with(jwt())` request post-processors, plus `.with(csrf())` for mutating calls when CSRF is enabled.
+
+## Repository slice with a real database
+
+H2 hides dialect differences. Run the production engine in a container, wired by `@ServiceConnection` (Boot 3.1+):
 
 ```java
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@ActiveProfiles("test")
-@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-class UserIntegrationTest {
-
-    @Autowired
-    private TestRestTemplate restTemplate;
-
-    @Autowired
-    private UserRepository userRepository;
-
-    @BeforeEach
-    void setUp() {
-        userRepository.deleteAll();
-    }
-
-    @Test
-    @Order(1)
-    @DisplayName("Should create user via API")
-    void shouldCreateUserViaApi() {
-        // Given
-        UserCreateRequest request = new UserCreateRequest(
-            "test@example.com",
-            "Password123",
-            "testuser",
-            25
-        );
-
-        // When
-        ResponseEntity<UserResponse> response = restTemplate.postForEntity(
-            "/api/v1/users",
-            request,
-            UserResponse.class
-        );
-
-        // Then
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-        assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().email()).isEqualTo(request.email());
-        assertThat(response.getHeaders().getLocation()).isNotNull();
-    }
-
-    @Test
-    @Order(2)
-    @DisplayName("Should return validation error for invalid request")
-    void shouldReturnValidationError() {
-        // Given
-        UserCreateRequest request = new UserCreateRequest(
-            "invalid-email",
-            "short",
-            "u",
-            15
-        );
-
-        // When
-        ResponseEntity<ValidationErrorResponse> response = restTemplate.postForEntity(
-            "/api/v1/users",
-            request,
-            ValidationErrorResponse.class
-        );
-
-        // Then
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().errors()).isNotEmpty();
-    }
-}
-```
-
-## Web Layer Testing with MockMvc
-
-```java
-@WebMvcTest(UserController.class)
-@Import(SecurityConfig.class)
-class UserControllerTest {
-
-    @Autowired
-    private MockMvc mockMvc;
-
-    @MockBean
-    private UserService userService;
-
-    @Autowired
-    private ObjectMapper objectMapper;
-
-    @Test
-    @WithMockUser(roles = "ADMIN")
-    @DisplayName("Should get all users")
-    void shouldGetAllUsers() throws Exception {
-        // Given
-        Page<UserResponse> users = new PageImpl<>(List.of(
-            new UserResponse(1L, "user1@example.com", "user1", 25, true, null, null),
-            new UserResponse(2L, "user2@example.com", "user2", 30, true, null, null)
-        ));
-
-        when(userService.findAll(any(Pageable.class))).thenReturn(users);
-
-        // When & Then
-        mockMvc.perform(get("/api/v1/users")
-                .contentType(MediaType.APPLICATION_JSON))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.content").isArray())
-            .andExpect(jsonPath("$.content.length()").value(2))
-            .andExpect(jsonPath("$.content[0].email").value("user1@example.com"))
-            .andDo(print());
-    }
-
-    @Test
-    @WithMockUser(roles = "ADMIN")
-    @DisplayName("Should create user")
-    void shouldCreateUser() throws Exception {
-        // Given
-        UserCreateRequest request = new UserCreateRequest(
-            "test@example.com",
-            "Password123",
-            "testuser",
-            25
-        );
-
-        UserResponse response = new UserResponse(
-            1L,
-            request.email(),
-            request.username(),
-            request.age(),
-            true,
-            LocalDateTime.now(),
-            LocalDateTime.now()
-        );
-
-        when(userService.create(any(UserCreateRequest.class))).thenReturn(response);
-
-        // When & Then
-        mockMvc.perform(post("/api/v1/users")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(request)))
-            .andExpect(status().isCreated())
-            .andExpect(header().exists("Location"))
-            .andExpect(jsonPath("$.email").value(request.email()))
-            .andExpect(jsonPath("$.username").value(request.username()))
-            .andDo(print());
-    }
-
-    @Test
-    @WithMockUser(roles = "USER")
-    @DisplayName("Should return 403 for non-admin user")
-    void shouldReturn403ForNonAdmin() throws Exception {
-        mockMvc.perform(get("/api/v1/users")
-                .contentType(MediaType.APPLICATION_JSON))
-            .andExpect(status().isForbidden());
-    }
-}
-```
-
-## Data JPA Testing
-
-```java
-@DataJpaTest
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@ActiveProfiles("test")
-class UserRepositoryTest {
-
-    @Autowired
-    private UserRepository userRepository;
-
-    @Autowired
-    private TestEntityManager entityManager;
-
-    @Test
-    @DisplayName("Should find user by email")
-    void shouldFindUserByEmail() {
-        // Given
-        User user = User.builder()
-            .email("test@example.com")
-            .password("password")
-            .username("testuser")
-            .active(true)
-            .build();
-
-        entityManager.persistAndFlush(user);
-
-        // When
-        Optional<User> found = userRepository.findByEmail("test@example.com");
-
-        // Then
-        assertThat(found).isPresent();
-        assertThat(found.get().getEmail()).isEqualTo("test@example.com");
-    }
-
-    @Test
-    @DisplayName("Should check if email exists")
-    void shouldCheckIfEmailExists() {
-        // Given
-        User user = User.builder()
-            .email("test@example.com")
-            .password("password")
-            .username("testuser")
-            .active(true)
-            .build();
-
-        entityManager.persistAndFlush(user);
-
-        // When
-        boolean exists = userRepository.existsByEmail("test@example.com");
-
-        // Then
-        assertThat(exists).isTrue();
-    }
-
-    @Test
-    @DisplayName("Should fetch user with roles")
-    void shouldFetchUserWithRoles() {
-        // Given
-        Role adminRole = Role.builder().name("ADMIN").build();
-        entityManager.persist(adminRole);
-
-        User user = User.builder()
-            .email("admin@example.com")
-            .password("password")
-            .username("admin")
-            .active(true)
-            .roles(Set.of(adminRole))
-            .build();
-
-        entityManager.persistAndFlush(user);
-        entityManager.clear();
-
-        // When
-        Optional<User> found = userRepository.findByEmailWithRoles("admin@example.com");
-
-        // Then
-        assertThat(found).isPresent();
-        assertThat(found.get().getRoles()).hasSize(1);
-        assertThat(found.get().getRoles()).extracting(Role::getName).contains("ADMIN");
-    }
-}
-```
-
-## Testcontainers for Database
-
-```java
-@SpringBootTest
 @Testcontainers
-@ActiveProfiles("test")
-class UserServiceIntegrationTest {
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = Replace.NONE)
+class InvoiceRepositoryTest {
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine")
-        .withDatabaseName("testdb")
-        .withUsername("test")
-        .withPassword("test");
+    @ServiceConnection
+    static PostgreSQLContainer<?> db = new PostgreSQLContainer<>("postgres:16");
 
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-    }
-
-    @Autowired
-    private UserService userService;
-
-    @Autowired
-    private UserRepository userRepository;
-
-    @BeforeEach
-    void setUp() {
-        userRepository.deleteAll();
-    }
+    @Autowired InvoiceRepository invoices;
+    @Autowired TestEntityManager em;
 
     @Test
-    @DisplayName("Should create and find user in real database")
-    void shouldCreateAndFindUser() {
-        // Given
-        UserCreateRequest request = new UserCreateRequest(
-            "test@example.com",
-            "Password123",
-            "testuser",
-            25
-        );
+    void findsOverdue() {
+        em.persist(overdueInvoice());
+        em.flush(); em.clear();                    // force a real round trip
 
-        // When
-        UserResponse created = userService.create(request);
-        UserResponse found = userService.findById(created.id());
-
-        // Then
-        assertThat(found).isNotNull();
-        assertThat(found.email()).isEqualTo(request.email());
+        assertThat(invoices.findByStatus(InvoiceStatus.OVERDUE)).hasSize(1);
     }
 }
 ```
 
-## Testing Reactive Endpoints with WebTestClient
+`@DataJpaTest` rolls back after each test. Flush and clear before asserting, or the first-level cache answers instead of the database.
+
+## Full-context test
 
 ```java
-@WebFluxTest(UserReactiveController.class)
-class UserReactiveControllerTest {
+@Testcontainers
+@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
+class TicketJourneyTest {
+    @Container
+    @ServiceConnection
+    static PostgreSQLContainer<?> db = new PostgreSQLContainer<>("postgres:16");
 
-    @Autowired
-    private WebTestClient webTestClient;
-
-    @MockBean
-    private UserReactiveService userService;
+    @Autowired TestRestTemplate http;
 
     @Test
-    @DisplayName("Should get user reactively")
-    void shouldGetUserReactively() {
-        // Given
-        UserResponse user = new UserResponse(
-            1L,
-            "test@example.com",
-            "testuser",
-            25,
-            true,
-            LocalDateTime.now(),
-            LocalDateTime.now()
-        );
+    void openThenFetch() {
+        var created = http.postForEntity("/v1/tickets", validRequest(), TicketResponse.class);
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
 
-        when(userService.findById(1L)).thenReturn(Mono.just(user));
-
-        // When & Then
-        webTestClient.get()
-            .uri("/api/v1/users/{id}", 1L)
-            .accept(MediaType.APPLICATION_JSON)
-            .exchange()
-            .expectStatus().isOk()
-            .expectBody(UserResponse.class)
-            .value(response -> {
-                assertThat(response.id()).isEqualTo(1L);
-                assertThat(response.email()).isEqualTo("test@example.com");
-            });
-    }
-
-    @Test
-    @DisplayName("Should create user reactively")
-    void shouldCreateUserReactively() {
-        // Given
-        UserCreateRequest request = new UserCreateRequest(
-            "test@example.com",
-            "Password123",
-            "testuser",
-            25
-        );
-
-        UserResponse response = new UserResponse(
-            1L,
-            request.email(),
-            request.username(),
-            request.age(),
-            true,
-            LocalDateTime.now(),
-            LocalDateTime.now()
-        );
-
-        when(userService.create(any(UserCreateRequest.class))).thenReturn(Mono.just(response));
-
-        // When & Then
-        webTestClient.post()
-            .uri("/api/v1/users")
-            .contentType(MediaType.APPLICATION_JSON)
-            .body(Mono.just(request), UserCreateRequest.class)
-            .exchange()
-            .expectStatus().isCreated()
-            .expectHeader().exists("Location")
-            .expectBody(UserResponse.class)
-            .value(user -> {
-                assertThat(user.email()).isEqualTo(request.email());
-            });
+        var fetched = http.getForEntity(created.getHeaders().getLocation(), TicketResponse.class);
+        assertThat(fetched.getBody().status()).isEqualTo("OPEN");
     }
 }
 ```
 
-## Testing Configuration
+Share one container across classes by declaring it in an abstract base or a `@TestConfiguration` with `@Bean @ServiceConnection`; starting a database per class dominates run time.
+
+## Reactive endpoints
+
+`WebTestClient` works with WebFlux slices (`@WebFluxTest`) and with a running server.
 
 ```java
-// application-test.yml
-spring:
-  datasource:
-    url: jdbc:h2:mem:testdb
-    driver-class-name: org.h2.Driver
-  jpa:
-    hibernate:
-      ddl-auto: create-drop
-    show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
-  security:
-    user:
-      name: test
-      password: test
-
-logging:
-  level:
-    org.hibernate.SQL: DEBUG
-    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
-
-// Test Configuration Class
-@TestConfiguration
-public class TestConfig {
-
-    @Bean
-    @Primary
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(4); // Faster for tests
-    }
-
-    @Bean
-    public Clock fixedClock() {
-        return Clock.fixed(
-            Instant.parse("2024-01-01T00:00:00Z"),
-            ZoneId.of("UTC")
-        );
-    }
-}
+webTestClient.get().uri("/quotes/{sku}", "A1")
+    .exchange()
+    .expectStatus().isOk()
+    .expectBody().jsonPath("$.amount").isEqualTo(10);
 ```
 
-## Test Fixtures with @DataJpaTest
+For publishers inside services use `StepVerifier` from reactor-test.
 
-```java
-@Component
-public class TestDataFactory {
+## Overriding configuration
 
-    public static User createUser(String email, String username) {
-        return User.builder()
-            .email(email)
-            .password("encodedPassword")
-            .username(username)
-            .active(true)
-            .createdAt(LocalDateTime.now())
-            .updatedAt(LocalDateTime.now())
-            .build();
-    }
+- `@TestPropertySource(properties = "app.feature.x=true")` or `@DynamicPropertySource` for values only known at runtime.
+- `@ActiveProfiles("test")` for a profile file.
+- `@TestConfiguration` for replacement beans; it is not picked up by component scan, so import it explicitly.
 
-    public static UserCreateRequest createUserRequest() {
-        return new UserCreateRequest(
-            "test@example.com",
-            "Password123",
-            "testuser",
-            25
-        );
-    }
-}
-```
+## Habits
 
-## Quick Reference
-
-| Annotation | Purpose |
-|------------|---------|
-| `@SpringBootTest` | Full application context integration test |
-| `@WebMvcTest` | Test MVC controllers with mocked services |
-| `@WebFluxTest` | Test reactive controllers |
-| `@DataJpaTest` | Test JPA repositories with in-memory database |
-| `@MockBean` | Add mock bean to Spring context |
-| `@WithMockUser` | Mock authenticated user for security tests |
-| `@Testcontainers` | Enable Testcontainers support |
-| `@ActiveProfiles` | Activate specific Spring profiles for test |
-
-## Testing Best Practices
-
-- Write tests following AAA pattern (Arrange, Act, Assert)
-- Use descriptive test names with @DisplayName
-- Mock external dependencies, use real DB with Testcontainers
-- Achieve 85%+ code coverage
-- Test happy path and edge cases
-- Use @Transactional for test data cleanup
-- Separate unit tests from integration tests
-- Use parameterized tests for multiple scenarios
-- Test security rules and validation
-- Keep tests fast and independent
+- Name tests after behaviour, assert one behaviour each.
+- No sleeps; await with Awaitility.
+- Never share mutable state between tests; each builds its own data.
+- A failing security rule needs a test for the denied case, not just the allowed one.
+- Execute the build tool's test task before calling work finished, and read what it prints.

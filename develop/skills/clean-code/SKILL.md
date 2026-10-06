@@ -6,7 +6,6 @@ description: >-
   "리팩토링", "어떻게 구현해?", "review this branch", "code review".
 license: MIT
 metadata:
-  author: wondelai
   version: "2.1.0"
 scenarios:
   - "quality gate: does this diff meet the acceptance criteria?"

@@ -1,384 +1,78 @@
-# Query Optimization
+# Optimization
 
-## EXPLAIN Plan Analysis
+Work in this order: measure, read the plan, fix the query shape, then add or adjust an index, and only then touch configuration.
 
-```sql
--- PostgreSQL EXPLAIN ANALYZE
-EXPLAIN (ANALYZE, BUFFERS, VERBOSE)
-SELECT
-    c.customer_id,
-    c.name,
-    COUNT(o.order_id) as order_count,
-    SUM(o.total) as lifetime_value
-FROM customers c
-LEFT JOIN orders o ON c.customer_id = o.customer_id
-WHERE c.created_at >= '2024-01-01'
-GROUP BY c.customer_id, c.name
-HAVING COUNT(o.order_id) > 5;
+## Reading a Plan
 
-/*
-Key metrics to analyze:
-- Planning Time: Time to generate plan
-- Execution Time: Actual runtime
-- Seq Scan: Table scans (bad for large tables)
-- Index Scan: Using indexes (good)
-- Rows: Estimated vs actual (large difference = stale stats)
-- Buffers: shared hit = cache, read = disk I/O
-- Loops: Nested loop iterations
-*/
+PostgreSQL: `EXPLAIN (ANALYZE, BUFFERS) <query>`. `ANALYZE` really executes the statement, so wrap INSERT/UPDATE/DELETE in a transaction and roll back. MySQL: `EXPLAIN ANALYZE` (8.0.18+) or `EXPLAIN FORMAT=TREE`. SQL Server: actual execution plan, or `SET STATISTICS IO, TIME ON`. Oracle: `EXPLAIN PLAN` plus `DBMS_XPLAN.DISPLAY`.
 
--- MySQL EXPLAIN
-EXPLAIN FORMAT=JSON
-SELECT * FROM orders o
-INNER JOIN customers c ON o.customer_id = c.customer_id
-WHERE o.order_date >= '2024-01-01'
-  AND c.country = 'US';
+What to look at, in order:
+1. **Estimated vs actual rows** per node. A gap of orders of magnitude means stale or insufficient statistics, correlated columns, or a predicate the planner cannot estimate.
+2. **Node where time goes**: the highest actual time or buffer count, remembering that times of child nodes are included in parents and loops multiply per-loop figures.
+3. **Access method**: sequential scan on a selective predicate, index scan, index-only scan, bitmap scan (many matches), each is right in some range of selectivity.
+4. **Join method**: nested loop (good with a small outer side and indexed inner side), hash join (large unsorted inputs, needs memory), merge join (pre-sorted inputs).
+5. **Sorts and spills**: a sort or hash reported as using disk points at `work_mem` or a missing index that supplies order.
+6. **Buffers**: many shared reads mean cold cache or too many pages touched; high `Rows Removed by Filter` means the index does not cover the predicate.
 
--- SQL Server execution plan
-SET STATISTICS IO ON;
-SET STATISTICS TIME ON;
+A sequential scan is not automatically wrong: on a small table, or when most rows qualify, it is the cheapest plan.
 
-SELECT ...;
+## Sargability
 
--- Check actual vs estimated rows
-SELECT * FROM sys.dm_exec_query_stats;
-```
+A predicate can use an index only if the indexed column stands alone on one side.
 
-## Index Design and Optimization
+| Blocks the index | Index-friendly form |
+|------------------|---------------------|
+| `WHERE DATE(placed_at) = '2026-01-05'` | `placed_at >= '2026-01-05' AND placed_at < '2026-01-06'` |
+| `WHERE lower(email) = :e` | expression index on `lower(email)`, or case-insensitive collation |
+| `WHERE amount + 10 > 100` | `amount > 90` |
+| `WHERE name LIKE '%son'` | trigram index (PostgreSQL `pg_trgm`) or full-text search |
+| `WHERE varchar_col = 123` (implicit cast) | pass a value of the column's type |
 
-```sql
--- Covering index (all columns in index)
-CREATE INDEX idx_orders_covering ON orders (
-    customer_id,
-    order_date
-) INCLUDE (total, status);
+## Index Design
 
--- Query uses index-only scan (no table access needed)
-SELECT customer_id, order_date, total, status
-FROM orders
-WHERE customer_id = 123
-  AND order_date >= '2024-01-01';
+- Column order in a composite index: equality predicates first, then the range or sort column. `(status, placed_at)` serves `status = ? ORDER BY placed_at`; the reverse order does not.
+- B-tree prefix rule: an index on `(a, b, c)` helps queries on `a`, `a,b`, `a,b,c`, not on `b` alone.
+- **Covering**: add payload columns so the query never visits the table. PostgreSQL 11+ and SQL Server: `INCLUDE (col)`. MySQL InnoDB: append columns to the key, since secondary indexes already carry the primary key.
+- **Partial** (PostgreSQL, SQL Server filtered): `CREATE INDEX ON orders (customer_id) WHERE status = 'OPEN'` is small and fast for hot subsets.
+- **Expression** indexes (PostgreSQL, MySQL 8.0.13+) support computed predicates.
+- Other PostgreSQL types: GIN for `jsonb` containment and arrays, BRIN for huge append-ordered tables, GiST for ranges and geometry.
+- Every index taxes writes and storage. Low-cardinality single-column indexes (booleans) rarely pay off, except as a partial index.
+- Foreign key columns need an index when you join or delete parents; PostgreSQL does not create one automatically.
 
--- Composite index (order matters!)
-CREATE INDEX idx_orders_customer_date ON orders (customer_id, order_date DESC);
--- Good: WHERE customer_id = X AND order_date > Y
--- Good: WHERE customer_id = X
--- Bad: WHERE order_date > Y (doesn't use index)
+Build without blocking writes: PostgreSQL `CREATE INDEX CONCURRENTLY` (cannot run inside a transaction block; a failed build leaves an INVALID index to drop). SQL Server: `WITH (ONLINE = ON)` where the edition allows it. MySQL InnoDB builds most secondary indexes online by default.
 
--- Partial/Filtered index (smaller, faster)
-CREATE INDEX idx_active_orders ON orders (customer_id, order_date)
-WHERE status = 'active';
+## Maintenance
 
--- Only used when query includes the filter
-SELECT * FROM orders
-WHERE customer_id = 123
-  AND status = 'active'
-  AND order_date >= '2024-01-01';
+- Keep statistics fresh: PostgreSQL `ANALYZE` (autovacuum does it), MySQL `ANALYZE TABLE`, SQL Server `UPDATE STATISTICS`. Raise per-column statistics targets for skewed columns.
+- PostgreSQL bloat: autovacuum must keep up with update-heavy tables; `REINDEX CONCURRENTLY` (12+) rebuilds a bloated index online.
+- Find unused indexes before dropping: PostgreSQL `pg_stat_user_indexes.idx_scan`, SQL Server `sys.dm_db_index_usage_stats`, MySQL `sys.schema_unused_indexes`. Check replicas too, and confirm the stats window covers month-end jobs.
 
--- Expression/Function-based index
-CREATE INDEX idx_users_lower_email ON users (LOWER(email));
+## Rewrites That Usually Win
 
--- Now this uses the index
-SELECT * FROM users WHERE LOWER(email) = 'user@example.com';
+- Correlated subquery per row to a pre-aggregated join (see SKILL.md example).
+- Many `OR`s on different columns to `UNION ALL` branches.
+- `SELECT *` to the needed columns, which also enables index-only scans.
+- Row-by-row application loop (the N+1 shape from an ORM) to one set-based statement: `WHERE id = ANY(:ids)`, a join, or a batch `INSERT ... SELECT`.
+- Large `IN` lists to a join against `VALUES` or a temp table.
+- Bulk write in chunks (for example 5-10k rows per transaction) to keep locks and WAL manageable.
+- Aggregate before joining when the join would multiply rows only to collapse them again.
 
--- GIN index for arrays/JSONB (PostgreSQL)
-CREATE INDEX idx_products_tags ON products USING GIN (tags);
-SELECT * FROM products WHERE tags @> ARRAY['electronics', 'sale'];
+## Partitioning
 
-CREATE INDEX idx_orders_metadata ON orders USING GIN (metadata jsonb_path_ops);
-SELECT * FROM orders WHERE metadata @> '{"priority": "high"}';
-```
-
-## Index Maintenance
-
-```sql
--- PostgreSQL: Find missing indexes
-SELECT
-    schemaname,
-    tablename,
-    seq_scan,
-    seq_tup_read,
-    idx_scan,
-    seq_tup_read / seq_scan as avg_seq_read
-FROM pg_stat_user_tables
-WHERE seq_scan > 0
-  AND seq_tup_read / seq_scan > 10000
-ORDER BY seq_tup_read DESC;
-
--- Find unused indexes
-SELECT
-    schemaname,
-    tablename,
-    indexname,
-    idx_scan,
-    pg_size_pretty(pg_relation_size(indexrelid)) as index_size
-FROM pg_stat_user_indexes
-WHERE idx_scan = 0
-  AND indexrelname NOT LIKE 'pg_toast%'
-ORDER BY pg_relation_size(indexrelid) DESC;
-
--- Find duplicate indexes
-SELECT
-    pg_size_pretty(SUM(pg_relation_size(idx))::BIGINT) as size,
-    (array_agg(idx))[1] as idx1,
-    (array_agg(idx))[2] as idx2,
-    (array_agg(idx))[3] as idx3
-FROM (
-    SELECT
-        indexrelid::regclass as idx,
-        (indrelid::text ||E'\n'|| indclass::text ||E'\n'||
-         indkey::text ||E'\n'|| COALESCE(indexprs::text,'')||E'\n'||
-         COALESCE(indpred::text,'')) as key
-    FROM pg_index
-) sub
-GROUP BY key
-HAVING COUNT(*) > 1
-ORDER BY SUM(pg_relation_size(idx)) DESC;
-
--- Reindex to reduce bloat
-REINDEX INDEX CONCURRENTLY idx_orders_customer_date;
-
--- Update statistics
-ANALYZE orders;
-ANALYZE VERBOSE;  -- Show progress
-```
-
-## Query Rewriting Patterns
-
-```sql
--- Avoid SELECT DISTINCT when possible
--- Bad: Forces sort/dedup
-SELECT DISTINCT customer_id FROM orders WHERE status = 'active';
-
--- Good: Use EXISTS
-SELECT customer_id FROM customers c
-WHERE EXISTS (
-    SELECT 1 FROM orders o
-    WHERE o.customer_id = c.customer_id
-      AND o.status = 'active'
-);
-
--- Avoid NOT IN with NULLs
--- Bad: NULL handling issues and poor performance
-SELECT * FROM customers
-WHERE customer_id NOT IN (SELECT customer_id FROM orders);
-
--- Good: Use NOT EXISTS
-SELECT * FROM customers c
-WHERE NOT EXISTS (
-    SELECT 1 FROM orders o WHERE o.customer_id = c.customer_id
-);
-
--- Push down filtering early
--- Bad: Filter after JOIN
-SELECT c.*, o.*
-FROM customers c
-JOIN orders o ON c.customer_id = o.customer_id
-WHERE c.country = 'US' AND o.order_date >= '2024-01-01';
-
--- Good: Use WHERE in subquery/CTE to reduce JOIN size
-WITH us_customers AS (
-    SELECT customer_id, name
-    FROM customers
-    WHERE country = 'US'
-),
-recent_orders AS (
-    SELECT customer_id, order_id, total
-    FROM orders
-    WHERE order_date >= '2024-01-01'
-)
-SELECT c.*, o.*
-FROM us_customers c
-JOIN recent_orders o ON c.customer_id = o.customer_id;
-
--- Avoid scalar subqueries in SELECT
--- Bad: N+1 problem
-SELECT
-    p.product_id,
-    p.name,
-    (SELECT COUNT(*) FROM reviews WHERE product_id = p.product_id) as review_count
-FROM products p;
-
--- Good: Single JOIN with GROUP BY
-SELECT
-    p.product_id,
-    p.name,
-    COUNT(r.review_id) as review_count
-FROM products p
-LEFT JOIN reviews r ON p.product_id = r.product_id
-GROUP BY p.product_id, p.name;
-```
-
-## Partitioning Strategies
-
-```sql
--- Range partitioning by date (PostgreSQL)
-CREATE TABLE orders (
-    order_id SERIAL,
-    customer_id INT,
-    order_date DATE NOT NULL,
-    total DECIMAL(10,2)
-) PARTITION BY RANGE (order_date);
-
-CREATE TABLE orders_2024_q1 PARTITION OF orders
-    FOR VALUES FROM ('2024-01-01') TO ('2024-04-01');
-
-CREATE TABLE orders_2024_q2 PARTITION OF orders
-    FOR VALUES FROM ('2024-04-01') TO ('2024-07-01');
-
--- Partition pruning in action
-EXPLAIN SELECT * FROM orders WHERE order_date >= '2024-02-01' AND order_date < '2024-03-01';
--- Only scans orders_2024_q1 partition
-
--- List partitioning by category
-CREATE TABLE products (
-    product_id SERIAL,
-    category VARCHAR(50) NOT NULL,
-    name VARCHAR(200)
-) PARTITION BY LIST (category);
-
-CREATE TABLE products_electronics PARTITION OF products
-    FOR VALUES IN ('electronics', 'computers', 'phones');
-
-CREATE TABLE products_clothing PARTITION OF products
-    FOR VALUES IN ('clothing', 'shoes', 'accessories');
-
--- Hash partitioning for even distribution
-CREATE TABLE users (
-    user_id SERIAL,
-    email VARCHAR(255)
-) PARTITION BY HASH (user_id);
-
-CREATE TABLE users_p0 PARTITION OF users
-    FOR VALUES WITH (MODULUS 4, REMAINDER 0);
-CREATE TABLE users_p1 PARTITION OF users
-    FOR VALUES WITH (MODULUS 4, REMAINDER 1);
-```
+Worth it for very large tables with a natural range key (time) where old data is dropped or archived by detaching a partition, or where queries always filter by the key. PostgreSQL declarative partitioning supports RANGE, LIST and HASH; the planner prunes partitions only when the predicate on the partition key is visible. A primary key or unique index must include the partition key. Too many tiny partitions inflate planning time. Partitioning is not a substitute for a missing index.
 
 ## Materialized Views
 
-```sql
--- Create materialized view for expensive aggregations
-CREATE MATERIALIZED VIEW daily_sales_summary AS
-SELECT
-    DATE_TRUNC('day', order_date) as day,
-    COUNT(*) as order_count,
-    SUM(total) as revenue,
-    AVG(total) as avg_order_value,
-    COUNT(DISTINCT customer_id) as unique_customers
-FROM orders
-GROUP BY DATE_TRUNC('day', order_date);
+Store an expensive aggregate and refresh on a schedule. PostgreSQL: `REFRESH MATERIALIZED VIEW CONCURRENTLY mv` avoids blocking readers but requires a unique index on the view. MySQL has no native materialized views; emulate with a summary table maintained by a job. Oracle and SQL Server offer refresh-on-commit variants (materialized view, indexed view) with restrictions on the defining query.
 
-CREATE UNIQUE INDEX idx_daily_sales_day ON daily_sales_summary (day);
+## Hints
 
--- Refresh strategy
-REFRESH MATERIALIZED VIEW CONCURRENTLY daily_sales_summary;
+PostgreSQL has none built in; fix statistics, query shape or indexes instead. MySQL offers index hints (`USE INDEX`, `FORCE INDEX`) and optimizer hints in `/*+ ... */`. SQL Server uses `OPTION (...)` and table hints; Oracle uses `/*+ ... */`. Treat a hint as a pinned workaround and record why.
 
--- Auto-refresh with trigger (PostgreSQL)
-CREATE OR REPLACE FUNCTION refresh_daily_sales()
-RETURNS TRIGGER AS $$
-BEGIN
-    REFRESH MATERIALIZED VIEW CONCURRENTLY daily_sales_summary;
-    RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
+## Finding the Worst Queries
 
-CREATE TRIGGER trigger_refresh_daily_sales
-AFTER INSERT OR UPDATE OR DELETE ON orders
-FOR EACH STATEMENT
-EXECUTE FUNCTION refresh_daily_sales();
-```
+- PostgreSQL: `pg_stat_statements` ordered by `total_exec_time` (column names for 13+), plus `log_min_duration_statement`.
+- MySQL: slow query log, `performance_schema`, `sys` schema.
+- SQL Server: Query Store, DMVs.
 
-## Query Hints and Optimization
-
-```sql
--- PostgreSQL: Force index usage (use sparingly)
-SET enable_seqscan = OFF;
-SELECT /*+ IndexScan(orders idx_orders_customer) */ * FROM orders WHERE customer_id = 123;
-SET enable_seqscan = ON;
-
--- SQL Server: Query hints
-SELECT * FROM orders WITH (INDEX(idx_orders_customer_date))
-WHERE customer_id = 123;
-
--- Force specific join type
-SELECT * FROM customers c
-INNER MERGE JOIN orders o ON c.customer_id = o.customer_id;
-
--- MySQL: Index hints
-SELECT * FROM orders USE INDEX (idx_orders_customer_date)
-WHERE customer_id = 123;
-
-SELECT * FROM orders FORCE INDEX (idx_orders_customer_date)
-WHERE customer_id = 123;
-
--- PostgreSQL: Parallel query tuning
-SET max_parallel_workers_per_gather = 4;
-ALTER TABLE large_table SET (parallel_workers = 4);
-```
-
-## Performance Monitoring Queries
-
-```sql
--- PostgreSQL: Find slow queries
-SELECT
-    query,
-    calls,
-    total_exec_time,
-    mean_exec_time,
-    max_exec_time,
-    rows / calls as avg_rows
-FROM pg_stat_statements
-ORDER BY mean_exec_time DESC
-LIMIT 20;
-
--- Find blocking queries
-SELECT
-    blocked_locks.pid AS blocked_pid,
-    blocked_activity.usename AS blocked_user,
-    blocking_locks.pid AS blocking_pid,
-    blocking_activity.usename AS blocking_user,
-    blocked_activity.query AS blocked_statement,
-    blocking_activity.query AS blocking_statement
-FROM pg_catalog.pg_locks blocked_locks
-JOIN pg_catalog.pg_stat_activity blocked_activity ON blocked_activity.pid = blocked_locks.pid
-JOIN pg_catalog.pg_locks blocking_locks
-    ON blocking_locks.locktype = blocked_locks.locktype
-    AND blocking_locks.database IS NOT DISTINCT FROM blocked_locks.database
-    AND blocking_locks.relation IS NOT DISTINCT FROM blocked_locks.relation
-    AND blocking_locks.page IS NOT DISTINCT FROM blocked_locks.page
-    AND blocking_locks.tuple IS NOT DISTINCT FROM blocked_locks.tuple
-    AND blocking_locks.virtualxid IS NOT DISTINCT FROM blocked_locks.virtualxid
-    AND blocking_locks.transactionid IS NOT DISTINCT FROM blocked_locks.transactionid
-    AND blocking_locks.classid IS NOT DISTINCT FROM blocked_locks.classid
-    AND blocking_locks.objid IS NOT DISTINCT FROM blocked_locks.objid
-    AND blocking_locks.objsubid IS NOT DISTINCT FROM blocked_locks.objsubid
-    AND blocking_locks.pid != blocked_locks.pid
-JOIN pg_catalog.pg_stat_activity blocking_activity ON blocking_activity.pid = blocking_locks.pid
-WHERE NOT blocked_locks.granted;
-
--- Table bloat detection
-SELECT
-    schemaname,
-    tablename,
-    pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as size,
-    n_dead_tup,
-    n_live_tup,
-    ROUND(n_dead_tup * 100.0 / NULLIF(n_live_tup + n_dead_tup, 0), 2) as dead_pct
-FROM pg_stat_user_tables
-WHERE n_dead_tup > 1000
-ORDER BY n_dead_tup DESC;
-```
-
-## Best Practices Checklist
-
-1. Always run EXPLAIN ANALYZE before optimizing
-2. Create indexes on foreign keys and WHERE/JOIN columns
-3. Use covering indexes for frequent queries
-4. Keep statistics up to date (ANALYZE regularly)
-5. Avoid SELECT *, specify needed columns
-6. Use EXISTS instead of IN for subqueries
-7. Filter early, aggregate late
-8. Consider partitioning for large tables (>10M rows)
-9. Use materialized views for expensive aggregations
-10. Monitor slow query log and pg_stat_statements
+Always report before/after with the same data volume, and say whether the cache was warm.

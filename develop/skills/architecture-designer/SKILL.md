@@ -6,12 +6,7 @@ description: >-
   ("아키텍처 그려줘", "시퀀스 다이어그램", "diagram this system").
 license: MIT
 metadata:
-  author: https://github.com/Jeffallan
   version: "1.2.0"
-  domain: api-architecture
-  role: expert
-  scope: design
-  output-format: document
 scenarios:
   - "design a system architecture for this product"
   - "should we use microservices or a monolith?"
@@ -34,7 +29,7 @@ compatibility:
 
 # Architecture Designer
 
-Senior software architect specializing in system design, design patterns, and architectural decision-making.
+Acts as a senior architect: shapes system topology, weighs patterns against constraints, and records the reasoning behind each choice.
 
 ## When to Use / When Not to Use
 
@@ -47,60 +42,60 @@ Senior software architect specializing in system design, design patterns, and ar
 
 ## Process
 
-1. **Understand requirements** — Gather functional, non-functional, and constraint requirements. Verify full requirements coverage before proceeding.
-2. **Identify patterns** — Match requirements to architectural patterns (see Reference Guide). Use think-tool to weigh trade-offs explicitly when two or more patterns plausibly fit.
-3. **Design** — Create architecture with trade-offs explicitly documented; produce a diagram. For one a person will open or share, write the diagram IR (`references/diagram-ir.md`), run `node scripts/diagram.mjs check`, apply every repair it prints, then `render` to one HTML file. You place every node - layout is part of the argument.
-4. **Document** — Write ADRs for all key decisions.
-5. **Review** — Validate with stakeholders. If review fails, return to step 3 with recorded feedback.
+1. **Understand requirements** — Collect what the system must do, how well it must do it, and what limits apply. Confirm nothing is missing before moving on.
+2. **Identify patterns** — Map the requirements onto candidate shapes from the Reference Guide. Use think-tool to weigh trade-offs explicitly when two or more patterns plausibly fit.
+3. **Design** — Draft the architecture, write down what each choice costs, and draw it. For one a person will open or share, write the diagram IR (`references/diagram-ir.md`), run `node scripts/diagram.mjs check`, apply every repair it prints, then `render` to one HTML file. You place every node - layout is part of the argument.
+4. **Document** — Record every key decision as an ADR.
+5. **Review** — Walk stakeholders through it. If it does not hold up, go back to step 3 with their feedback written down.
 
 ## Reference Guide
 
-| Topic | Reference | Load When |
+| Topic | Reference | Read when |
 |-------|-----------|-----------|
-| Architecture Patterns | `references/architecture-patterns.md` | Choosing monolith vs microservices |
-| ADR Template | `references/adr-template.md` | Documenting decisions |
-| System Design | `references/system-design.md` | Full system design template |
-| Database Selection | `references/database-selection.md` | Choosing database technology |
-| NFR Checklist | `references/nfr-checklist.md` | Gathering non-functional requirements |
+| System shape | `references/architecture-patterns.md` | Deciding between monolith, modular monolith, services, events |
+| ADR | `references/adr-template.md` | Recording a decision |
+| Design document | `references/system-design.md` | Writing the full design up |
+| Datastore | `references/database-selection.md` | Picking a database |
+| Quality targets | `references/nfr-checklist.md` | Turning non-functional wishes into measurable targets |
 | Diagram IR | `references/diagram-ir.md` | Drawing a system as an interactive, shareable HTML diagram |
 
 ## Constraints
 
 **MUST DO**
-- Document all significant decisions with ADRs
-- Consider non-functional requirements explicitly
-- Evaluate trade-offs, not just benefits
-- Plan for failure modes
-- Consider operational complexity
-- Review with stakeholders before finalizing
+- Capture each significant decision in an ADR
+- State non-functional requirements up front
+- Weigh costs alongside benefits
+- Design for the ways it will fail
+- Account for the operational burden
+- Get stakeholder review before calling it final
 
 **MUST NOT DO**
-- Over-engineer for hypothetical scale
-- Choose technology without evaluating alternatives
-- Ignore operational costs
-- Design without understanding requirements
-- Skip security considerations
+- Build for scale nobody has asked for
+- Pick a technology without comparing options
+- Overlook running costs
+- Start designing before requirements are understood
+- Leave security out
 - Hand over a diagram HTML that `scripts/diagram.mjs check` has not passed
 
 ## Output Template
 
-When designing architecture, provide:
-1. Requirements summary (functional + non-functional)
-2. High-level architecture diagram — Mermaid inline in a markdown doc; the IR + `diagram.mjs render` HTML (and its `.json` source) when it will be opened or shared
-3. Key decisions with trade-offs (ADR format — see `references/adr-template.md`)
-4. Technology recommendations with rationale
-5. Risks and mitigation strategies
+A design delivers:
+1. Requirements recap, functional and non-functional
+2. Overview diagram: Mermaid inline in a markdown doc; the IR + `diagram.mjs render` HTML (and its `.json` source) when it will be opened or shared
+3. Key decisions and what they trade away (ADR format — see `references/adr-template.md`)
+4. Technology picks, each with its reason
+5. Risks and how to contain them
 
-### Architecture Diagram (Mermaid)
+### Example diagram (Mermaid)
 
 ```mermaid
 graph TD
-    Client["Client (Web/Mobile)"] --> Gateway["API Gateway"]
-    Gateway --> AuthSvc["Auth Service"]
-    Gateway --> OrderSvc["Order Service"]
-    OrderSvc --> DB[("Orders DB\n(PostgreSQL)")]
-    OrderSvc --> Queue["Message Queue\n(RabbitMQ)"]
-    Queue --> NotifySvc["Notification Service"]
+    App["Mobile / web app"] --> Edge["Edge gateway"]
+    Edge --> Billing["Billing service"]
+    Edge --> Catalog["Catalog service"]
+    Catalog --> Store[("Catalog store, PostgreSQL")]
+    Catalog --> Bus["Event bus, Kafka"]
+    Bus --> Mailer["Email sender"]
 ```
 
 For a worked ADR example and full template, see `references/adr-template.md`.

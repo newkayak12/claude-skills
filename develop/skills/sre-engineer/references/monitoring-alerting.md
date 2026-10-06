@@ -1,424 +1,86 @@
 # Monitoring and Alerting
 
-## Golden Signals Monitoring
+## The four signals per service
 
-Monitor the four golden signals for every service.
+| Signal | Question | Spring/Micrometer source |
+|---|---|---|
+| Latency | How long do requests take, split by success and failure? | `http_server_requests_seconds_*` |
+| Traffic | How much demand? | rate of the same count series |
+| Errors | What fraction fail, explicitly (5xx) or implicitly (200 with wrong body, slow past SLO)? | `status=~"5.."` label |
+| Saturation | How full is the scarcest resource? | `hikaricp_connections_active / hikaricp_connections_max`, `jvm_memory_used_bytes`, executor queue size, Postgres `pg_stat_activity` counts |
+
+Failed requests are often fast; keep their latency out of the success histogram or the p99 looks healthy during an outage.
+
+Recording rules keep dashboards and alerts cheap:
 
 ```yaml
-# prometheus_rules.yaml - Golden signals recording rules
 groups:
-  - name: golden_signals
-    interval: 30s
+  - name: orders_signals
     rules:
-      # Latency: Request duration
-      - record: service:http_request_duration_seconds:p50
+      - record: orders:request_rate:5m
+        expr: sum(rate(http_server_requests_seconds_count{app="orders"}[5m]))
+      - record: orders:error_ratio:5m
         expr: |
-          histogram_quantile(0.50,
-            sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service)
-          )
-
-      - record: service:http_request_duration_seconds:p95
-        expr: |
-          histogram_quantile(0.95,
-            sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service)
-          )
-
-      - record: service:http_request_duration_seconds:p99
-        expr: |
-          histogram_quantile(0.99,
-            sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service)
-          )
-
-      # Traffic: Requests per second
-      - record: service:http_requests:rate5m
-        expr: |
-          sum(rate(http_requests_total[5m])) by (service)
-
-      # Errors: Error rate
-      - record: service:http_requests:error_rate5m
-        expr: |
-          sum(rate(http_requests_total{status=~"5.."}[5m])) by (service)
-          /
-          sum(rate(http_requests_total[5m])) by (service)
-
-      # Saturation: Resource utilization
-      - record: service:cpu_utilization
-        expr: |
-          avg(rate(container_cpu_usage_seconds_total[5m])) by (service)
-
-      - record: service:memory_utilization
-        expr: |
-          avg(container_memory_working_set_bytes / container_spec_memory_limit_bytes)
-          by (service)
+          sum(rate(http_server_requests_seconds_count{app="orders",status=~"5.."}[5m]))
+          / sum(rate(http_server_requests_seconds_count{app="orders"}[5m]))
+      - record: orders:latency_p99:5m
+        expr: histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{app="orders"}[5m])))
+      - record: orders:hikari_utilisation
+        expr: max(hikaricp_connections_active{app="orders"} / hikaricp_connections_max{app="orders"})
 ```
 
-## Alert Design Principles
+## What deserves a page
 
-Good alerts are actionable, not just informative.
+A page must be urgent, actionable and about user harm. Test each rule with three questions: does a human need to act in minutes, is there something they can do, is a user hurt or about to be.
+
+- Page on burn rate (see the SLO file) and on imminent hard limits (disk full within hours, connection pool pinned at max for minutes).
+- Ticket on slow burn, certificate expiry in 14 days, replica lag trending up.
+- Dashboard only: CPU, GC pauses, single-pod restarts, cache hit rate.
 
 ```yaml
-# alerts.yaml - SLO-based alerting
-groups:
-  - name: slo_alerts
-    rules:
-      # Multi-window burn rate alert (fast burn)
-      - alert: ErrorBudgetBurnRateFast
-        expr: |
-          (
-            service:http_requests:error_rate5m > (14.4 * 0.001)
-            and
-            service:http_requests:error_rate1h > (14.4 * 0.001)
-          )
-        for: 2m
-        labels:
-          severity: critical
-          slo: availability
-        annotations:
-          summary: "Fast error budget burn on {{ $labels.service }}"
-          description: |
-            Service {{ $labels.service }} is burning error budget at 14.4x rate.
-            At this rate, 30-day budget will exhaust in 2 days.
-
-            Current error rate: {{ $value | humanizePercentage }}
-            Threshold: 1.44%
-
-            RUNBOOK: https://runbooks.example.com/error-budget-burn
-
-      # Slow burn rate alert
-      - alert: ErrorBudgetBurnRateSlow
-        expr: |
-          (
-            service:http_requests:error_rate6h > (6 * 0.001)
-            and
-            service:http_requests:error_rate1d > (6 * 0.001)
-          )
-        for: 15m
-        labels:
-          severity: warning
-          slo: availability
-        annotations:
-          summary: "Slow error budget burn on {{ $labels.service }}"
-          description: |
-            Service {{ $labels.service }} is burning error budget at 6x rate.
-
-            RUNBOOK: https://runbooks.example.com/error-budget-burn
-
-      # Latency SLO violation
-      - alert: LatencySLOViolation
-        expr: |
-          service:http_request_duration_seconds:p99 > 0.5
-        for: 5m
-        labels:
-          severity: warning
-          slo: latency
-        annotations:
-          summary: "P99 latency exceeds 500ms on {{ $labels.service }}"
-          description: |
-            P99 latency is {{ $value }}s, exceeding 500ms threshold.
-
-            Check:
-            1. Database query performance
-            2. External API latency
-            3. Resource saturation (CPU/memory)
-
-            RUNBOOK: https://runbooks.example.com/high-latency
-
-      # Saturation alert
-      - alert: HighMemoryUtilization
-        expr: |
-          service:memory_utilization > 0.85
-        for: 10m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High memory usage on {{ $labels.service }}"
-          description: |
-            Memory utilization is {{ $value | humanizePercentage }}.
-
-            Actions:
-            1. Check for memory leaks
-            2. Review recent deployments
-            3. Consider scaling up
-
-            RUNBOOK: https://runbooks.example.com/high-memory
+- alert: OrdersFastBurn
+  expr: |
+    (sum(rate(http_server_requests_seconds_count{app="orders",status=~"5.."}[1h]))
+      / sum(rate(http_server_requests_seconds_count{app="orders"}[1h]))) > 0.0144
+    and
+    (sum(rate(http_server_requests_seconds_count{app="orders",status=~"5.."}[5m]))
+      / sum(rate(http_server_requests_seconds_count{app="orders"}[5m]))) > 0.0144
+  for: 2m
+  labels: {severity: page}
+  annotations:
+    summary: "orders burning 2% of monthly budget per hour"
+    runbook: "link to the runbook page for this alert"
 ```
 
-## Alert Runbook Template
+## Runbook skeleton for an alert
 
-Every alert must link to a runbook with clear remediation steps.
+1. What the alert means in user terms, and its severity.
+2. Three-step triage: scope (which endpoint, region, tenant), recent change (deploy, flag, migration), dependency health.
+3. Mitigations in order of speed: roll back, disable flag, scale out, shed load, fail over. Include the exact command or console path.
+4. How to confirm recovery (the metric and the value to see).
+5. Who to escalate to and when.
+6. Follow-up: link to the ticket template for the permanent fix.
 
-```markdown
-# Runbook: Error Budget Burn Rate
+Review runbooks after each use; a step nobody followed is a step to delete or fix.
 
-## Alert: ErrorBudgetBurnRateFast
+## Dashboard layout
 
-### Description
-The service is consuming error budget faster than sustainable rate.
-At current rate, the 30-day error budget will be exhausted within 2 days.
+Top row: SLI, remaining budget, burn rate. Second row: the four signals for the service. Third row: dependencies (database, cache, broker, downstream HTTP) with the same signals. Bottom: deploy and flag markers overlaid as annotations so cause and effect line up. One dashboard per service, same layout everywhere, so on-call can read an unfamiliar one.
 
-### Severity: Critical
+## Fighting alert fatigue
 
-### Impact
-- Users experiencing elevated error rates
-- Risk of SLO violation and feature freeze
-- Potential customer impact
+Measure the pager: pages per shift, share with no action taken, share out of hours, time to acknowledge. Healthy rotations see at most a couple of actionable pages per 12-hour shift.
 
-### Triage Steps
+Actions, in order:
+1. Delete alerts that never led to action in the last quarter.
+2. Convert cause-based alerts (CPU, queue length) to symptom-based ones.
+3. Add `for:` durations and the short-window condition to remove blips.
+4. Group and inhibit: a node-down alert should silence the pod alerts on that node.
+5. Route by ownership, not by broadcast.
 
-1. **Check current error rate**
-   ```promql
-   rate(http_requests_total{status=~"5..", service="api"}[5m])
-   ```
+## On-call norms
 
-2. **Identify error types**
-   ```bash
-   kubectl logs -l app=api --tail=100 | grep ERROR
-   ```
-
-3. **Check recent deployments**
-   ```bash
-   kubectl rollout history deployment/api
-   ```
-
-4. **Review dependencies**
-   - Database health
-   - External API status
-   - Infrastructure issues
-
-### Remediation
-
-**If caused by recent deployment:**
-```bash
-# Rollback to previous version
-kubectl rollout undo deployment/api
-
-# Verify rollback
-kubectl rollout status deployment/api
-```
-
-**If database issue:**
-```bash
-# Check database connections
-kubectl exec -it postgres-0 -- psql -c "SELECT count(*) FROM pg_stat_activity;"
-
-# Check slow queries
-kubectl exec -it postgres-0 -- psql -c "SELECT * FROM pg_stat_statements ORDER BY mean_time DESC LIMIT 10;"
-```
-
-**If traffic spike:**
-```bash
-# Scale up replicas
-kubectl scale deployment/api --replicas=10
-
-# Enable rate limiting
-kubectl apply -f rate-limit-config.yaml
-```
-
-### Communication
-
-**Slack template:**
-```
-:fire: INCIDENT: Error budget burn rate critical
-
-Service: api
-Error rate: [X]%
-Impact: [describe user impact]
-ETA: [when will it be resolved]
-
-Incident doc: [link]
-```
-
-### Prevention
-- Add integration tests for this failure mode
-- Implement circuit breaker for external dependencies
-- Add capacity planning for traffic spikes
-```
-
-## Dashboard Configuration
-
-```python
-# grafana_dashboard.py - Generate SLO dashboard using Grafana SDK
-from grafana_dashboard import Dashboard, Panel, Target
-
-def create_slo_dashboard(service: str) -> dict:
-    """Create SLO monitoring dashboard for a service."""
-
-    dashboard = Dashboard(
-        title=f"{service} - SLO Dashboard",
-        tags=["slo", "sre", service],
-        refresh="1m",
-    )
-
-    # SLI Current Value
-    dashboard.add_panel(
-        Panel(
-            title="Availability SLI (30d)",
-            targets=[
-                Target(
-                    expr=f"""
-                    sum(rate(http_requests_total{{
-                        status=~"2..",
-                        service="{service}"
-                    }}[30d]))
-                    /
-                    sum(rate(http_requests_total{{service="{service}"}}[30d]))
-                    """,
-                    legendFormat="Current SLI",
-                ),
-            ],
-            thresholds=[
-                {"value": 0.999, "color": "red"},
-                {"value": 0.9995, "color": "yellow"},
-                {"value": 1.0, "color": "green"},
-            ],
-        )
-    )
-
-    # Error Budget Remaining
-    dashboard.add_panel(
-        Panel(
-            title="Error Budget Remaining",
-            targets=[
-                Target(
-                    expr=f"""
-                    (0.001 - (1 - (
-                      sum(rate(http_requests_total{{
-                          status=~"2..",
-                          service="{service}"
-                      }}[30d]))
-                      /
-                      sum(rate(http_requests_total{{service="{service}"}}[30d]))
-                    ))) / 0.001 * 100
-                    """,
-                    legendFormat="Budget Remaining %",
-                ),
-            ],
-            unit="percent",
-        )
-    )
-
-    # Burn Rate
-    dashboard.add_panel(
-        Panel(
-            title="Error Budget Burn Rate",
-            targets=[
-                Target(
-                    expr=f"""
-                    (1 - (
-                      sum(rate(http_requests_total{{
-                          status=~"2..",
-                          service="{service}"
-                      }}[1h]))
-                      /
-                      sum(rate(http_requests_total{{service="{service}"}}[1h]))
-                    )) / 0.001
-                    """,
-                    legendFormat="1h burn rate",
-                ),
-            ],
-            thresholds=[
-                {"value": 1.0, "color": "green"},
-                {"value": 6.0, "color": "yellow"},
-                {"value": 14.4, "color": "red"},
-            ],
-        )
-    )
-
-    # Golden Signals
-    dashboard.add_row("Golden Signals")
-
-    dashboard.add_panel(
-        Panel(
-            title="Latency (P50, P95, P99)",
-            targets=[
-                Target(
-                    expr=f'service:http_request_duration_seconds:p50{{service="{service}"}}',
-                    legendFormat="p50",
-                ),
-                Target(
-                    expr=f'service:http_request_duration_seconds:p95{{service="{service}"}}',
-                    legendFormat="p95",
-                ),
-                Target(
-                    expr=f'service:http_request_duration_seconds:p99{{service="{service}"}}',
-                    legendFormat="p99",
-                ),
-            ],
-            unit="s",
-        )
-    )
-
-    return dashboard.to_json()
-```
-
-## Alert Fatigue Prevention
-
-```python
-from dataclasses import dataclass
-from typing import List
-
-@dataclass
-class AlertQualityMetrics:
-    """Track alert quality to prevent fatigue."""
-    total_alerts: int
-    actionable_alerts: int  # Required manual intervention
-    false_positives: int
-    auto_resolved: int  # Resolved before human action
-
-    @property
-    def precision(self) -> float:
-        """Percentage of alerts that were actionable."""
-        if self.total_alerts == 0:
-            return 0.0
-        return (self.actionable_alerts / self.total_alerts) * 100
-
-    @property
-    def toil_ratio(self) -> float:
-        """Percentage of alerts that required manual work."""
-        if self.total_alerts == 0:
-            return 0.0
-        return ((self.actionable_alerts + self.false_positives) / self.total_alerts) * 100
-
-# Target: >90% precision, <30% toil
-metrics = AlertQualityMetrics(
-    total_alerts=100,
-    actionable_alerts=85,
-    false_positives=5,
-    auto_resolved=10,
-)
-
-print(f"Alert precision: {metrics.precision}%")
-print(f"Toil ratio: {metrics.toil_ratio}%")
-```
-
-## On-Call Alert Guidelines
-
-```yaml
-# on_call_alert_standards.yaml
-alert_standards:
-  page_worthy:
-    - "Immediate user impact (>5% of users affected)"
-    - "SLO violation in progress"
-    - "Error budget burn rate critical (>10x)"
-    - "Security incident"
-    - "Data loss risk"
-
-  not_page_worthy:
-    - "Predictive alerts without current impact"
-    - "Informational metrics"
-    - "Non-user-facing issues"
-    - "Slow trends (address during business hours)"
-
-  alert_routing:
-    critical:
-      - page: on-call engineer
-      - slack: "#incidents"
-      - create: incident doc
-
-    warning:
-      - slack: "#alerts"
-      - ticket: auto-create if persists >1h
-
-    info:
-      - dashboard: only
-```
+- Primary and secondary, with a written handoff note at rotation change.
+- Compensation or time off in lieu for out-of-hours pages.
+- Anyone can escalate without justification.
+- Every page either produces a fix, a threshold change or a deletion.

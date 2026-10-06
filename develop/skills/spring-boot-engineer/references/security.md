@@ -1,459 +1,163 @@
-# Security - Spring Security 6
+# Security (Spring Security 6)
 
-## Security Configuration
+## Filter chain as a bean
+
+`WebSecurityConfigurerAdapter` is gone. Declare a `SecurityFilterChain` bean and use the lambda DSL.
 
 ```java
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
-public class SecurityConfig {
+class SecurityConfig {
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http
-            .csrf(csrf -> csrf
-                .ignoringRequestMatchers("/api/auth/**")
-                .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-            )
-            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/**", "/actuator/health").permitAll()
-                .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                .requestMatchers("/api/users/**").hasAnyRole("USER", "ADMIN")
-                .anyRequest().authenticated()
-            )
-            .sessionManagement(session -> session
-                .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-            )
-            .exceptionHandling(ex -> ex
-                .authenticationEntryPoint(authenticationEntryPoint())
-                .accessDeniedHandler(accessDeniedHandler())
-            )
-            .addFilterBefore(jwtAuthenticationFilter(),
-                           UsernamePasswordAuthenticationFilter.class);
-
-        return http.build();
+    SecurityFilterChain api(HttpSecurity http, JwtAuthFilter jwt) throws Exception {
+        return http
+            .cors(Customizer.withDefaults())
+            .csrf(AbstractHttpConfigurer::disable)               // stateless, token in header
+            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .authorizeHttpRequests(a -> a
+                .requestMatchers("/auth/**", "/actuator/health/**", "/error").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/catalog/**").permitAll()
+                .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                .anyRequest().authenticated())
+            .exceptionHandling(e -> e
+                .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+            .addFilterBefore(jwt, UsernamePasswordAuthenticationFilter.class)
+            .build();
     }
 
     @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:3000"));
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("*"));
-        configuration.setAllowCredentials(true);
-        configuration.setMaxAge(3600L);
-
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
-        return source;
-    }
+    PasswordEncoder encoder() { return PasswordEncoderFactories.createDelegatingPasswordEncoder(); }
 
     @Bean
-    public AuthenticationManager authenticationManager(
-            AuthenticationConfiguration config) throws Exception {
-        return config.getAuthenticationManager();
-    }
-
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(12);
+    AuthenticationManager authenticationManager(AuthenticationConfiguration cfg) throws Exception {
+        return cfg.getAuthenticationManager();
     }
 }
 ```
 
-## JWT Authentication Filter
+- Matchers are evaluated top to bottom; the first match wins, so put the specific ones first and `anyRequest()` last.
+- Disable CSRF only for APIs that authenticate with a header token and keep no session cookie. Browser apps with cookie sessions keep it on.
+- `hasRole("ADMIN")` checks the authority `ROLE_ADMIN`; `hasAuthority` compares verbatim.
+
+## Self-issued JWT
+
+Prefer an identity provider and the resource-server setup below. If the service must issue tokens itself, keep these properties:
+- A signing key of adequate size from configuration, never a literal in code.
+- Short access-token lifetime (minutes) and a distinct refresh path.
+- Validate signature, expiry and issuer on every request.
+
+A request filter then loads the principal and fills the context:
 
 ```java
 @Component
-@RequiredArgsConstructor
-public class JwtAuthenticationFilter extends OncePerRequestFilter {
-    private final JwtService jwtService;
-    private final UserDetailsService userDetailsService;
+class JwtAuthFilter extends OncePerRequestFilter {
+    private final TokenService tokens;
+    private final UserDetailsService users;
+
+    JwtAuthFilter(TokenService tokens, UserDetailsService users) {
+        this.tokens = tokens; this.users = users;
+    }
 
     @Override
-    protected void doFilterInternal(
-            @NonNull HttpServletRequest request,
-            @NonNull HttpServletResponse response,
-            @NonNull FilterChain filterChain) throws ServletException, IOException {
-
-        final String authHeader = request.getHeader("Authorization");
-        final String jwt;
-        final String username;
-
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-
-        jwt = authHeader.substring(7);
-
-        try {
-            username = jwtService.extractUsername(jwt);
-
-            if (username != null && SecurityContextHolder.getContext()
-                    .getAuthentication() == null) {
-                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
-
-                if (jwtService.isTokenValid(jwt, userDetails)) {
-                    UsernamePasswordAuthenticationToken authToken =
-                        new UsernamePasswordAuthenticationToken(
-                            userDetails,
-                            null,
-                            userDetails.getAuthorities()
-                        );
-
-                    authToken.setDetails(
-                        new WebAuthenticationDetailsSource().buildDetails(request)
-                    );
-
-                    SecurityContextHolder.getContext().setAuthentication(authToken);
-                }
+    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)
+            throws ServletException, IOException {
+        String header = req.getHeader(HttpHeaders.AUTHORIZATION);
+        if (header != null && header.startsWith("Bearer ")
+                && SecurityContextHolder.getContext().getAuthentication() == null) {
+            try {
+                String username = tokens.verifyAndGetSubject(header.substring(7));
+                UserDetails user = users.loadUserByUsername(username);
+                var auth = UsernamePasswordAuthenticationToken.authenticated(
+                        user, null, user.getAuthorities());
+                auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(req));
+                SecurityContextHolder.getContext().setAuthentication(auth);
+            } catch (JwtException | UsernameNotFoundException e) {
+                SecurityContextHolder.clearContext();   // fall through as anonymous
             }
-        } catch (JwtException e) {
-            log.error("JWT validation failed", e);
         }
-
-        filterChain.doFilter(request, response);
+        chain.doFilter(req, res);
     }
 }
 ```
 
-## JWT Service
+`TokenService` is a thin wrapper over a JWT library of your choice; verification must reject `alg=none` and unexpected algorithms.
+
+## Users and passwords
 
 ```java
 @Service
-public class JwtService {
-    @Value("${jwt.secret}")
-    private String secretKey;
+class AccountUserDetailsService implements UserDetailsService {
+    private final AccountRepository accounts;
+    AccountUserDetailsService(AccountRepository accounts) { this.accounts = accounts; }
 
-    @Value("${jwt.expiration}")
-    private long jwtExpiration;
-
-    @Value("${jwt.refresh-expiration}")
-    private long refreshExpiration;
-
-    public String extractUsername(String token) {
-        return extractClaim(token, Claims::getSubject);
-    }
-
-    public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
-        final Claims claims = extractAllClaims(token);
-        return claimsResolver.apply(claims);
-    }
-
-    public String generateToken(UserDetails userDetails) {
-        Map<String, Object> extraClaims = new HashMap<>();
-        extraClaims.put("roles", userDetails.getAuthorities().stream()
-            .map(GrantedAuthority::getAuthority)
-            .collect(Collectors.toList()));
-
-        return generateToken(extraClaims, userDetails);
-    }
-
-    public String generateToken(
-            Map<String, Object> extraClaims,
-            UserDetails userDetails) {
-        return buildToken(extraClaims, userDetails, jwtExpiration);
-    }
-
-    public String generateRefreshToken(UserDetails userDetails) {
-        return buildToken(new HashMap<>(), userDetails, refreshExpiration);
-    }
-
-    private String buildToken(
-            Map<String, Object> extraClaims,
-            UserDetails userDetails,
-            long expiration) {
-        return Jwts
-            .builder()
-            .setClaims(extraClaims)
-            .setSubject(userDetails.getUsername())
-            .setIssuedAt(new Date(System.currentTimeMillis()))
-            .setExpiration(new Date(System.currentTimeMillis() + expiration))
-            .signWith(getSignInKey(), SignatureAlgorithm.HS256)
-            .compact();
-    }
-
-    public boolean isTokenValid(String token, UserDetails userDetails) {
-        final String username = extractUsername(token);
-        return username.equals(userDetails.getUsername()) && !isTokenExpired(token);
-    }
-
-    private boolean isTokenExpired(String token) {
-        return extractExpiration(token).before(new Date());
-    }
-
-    private Date extractExpiration(String token) {
-        return extractClaim(token, Claims::getExpiration);
-    }
-
-    private Claims extractAllClaims(String token) {
-        return Jwts
-            .parserBuilder()
-            .setSigningKey(getSignInKey())
-            .build()
-            .parseClaimsJws(token)
-            .getBody();
-    }
-
-    private Key getSignInKey() {
-        byte[] keyBytes = Decoders.BASE64.decode(secretKey);
-        return Keys.hmacShaKeyFor(keyBytes);
-    }
-}
-```
-
-## UserDetailsService Implementation
-
-```java
-@Service
-@RequiredArgsConstructor
-public class CustomUserDetailsService implements UserDetailsService {
-    private final UserRepository userRepository;
-
-    @Override
-    @Transactional(readOnly = true)
-    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        User user = userRepository.findByEmailWithRoles(username)
-            .orElseThrow(() -> new UsernameNotFoundException(
-                "User not found with email: " + username));
-
-        return org.springframework.security.core.userdetails.User
-            .builder()
-            .username(user.getEmail())
-            .password(user.getPassword())
-            .authorities(user.getRoles().stream()
-                .map(role -> new SimpleGrantedAuthority("ROLE_" + role.getName()))
-                .collect(Collectors.toList()))
-            .accountExpired(false)
-            .accountLocked(!user.getActive())
-            .credentialsExpired(false)
-            .disabled(!user.getActive())
+    public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
+        Account a = accounts.findByEmail(email)
+            .orElseThrow(() -> new UsernameNotFoundException(email));
+        return User.withUsername(a.getEmail())
+            .password(a.getPasswordHash())
+            .authorities(a.getRoles().stream().map(r -> "ROLE_" + r).toArray(String[]::new))
+            .disabled(!a.isActive())
             .build();
     }
 }
 ```
 
-## Authentication Controller
+The delegating encoder above stores an algorithm prefix (`{bcrypt}...`) with each hash, so the algorithm can be upgraded later; `BCryptPasswordEncoder` or `Argon2PasswordEncoder` can also be used directly. Login failures return one generic message for unknown user and wrong password.
+
+## Resource server (preferred for JWT)
+
+Dependency: `spring-boot-starter-oauth2-resource-server`. Configuration:
+
+```properties
+spring.security.oauth2.resourceserver.jwt.issuer-uri=https://idp.example.com/realms/acme
+```
 
 ```java
-@RestController
-@RequestMapping("/api/auth")
-@RequiredArgsConstructor
-public class AuthenticationController {
-    private final AuthenticationService authenticationService;
+http.authorizeHttpRequests(a -> a.anyRequest().hasAuthority("SCOPE_orders.read"))
+    .oauth2ResourceServer(o -> o.jwt(j -> j.jwtAuthenticationConverter(converter())));
 
-    @PostMapping("/register")
-    public ResponseEntity<AuthenticationResponse> register(
-            @Valid @RequestBody RegisterRequest request) {
-        AuthenticationResponse response = authenticationService.register(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
-    }
-
-    @PostMapping("/login")
-    public ResponseEntity<AuthenticationResponse> login(
-            @Valid @RequestBody LoginRequest request) {
-        AuthenticationResponse response = authenticationService.login(request);
-        return ResponseEntity.ok(response);
-    }
-
-    @PostMapping("/refresh")
-    public ResponseEntity<AuthenticationResponse> refreshToken(
-            @RequestBody RefreshTokenRequest request) {
-        AuthenticationResponse response = authenticationService.refreshToken(request);
-        return ResponseEntity.ok(response);
-    }
-
-    @PostMapping("/logout")
-    @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<Void> logout() {
-        SecurityContextHolder.clearContext();
-        return ResponseEntity.noContent().build();
-    }
+JwtAuthenticationConverter converter() {
+    var authorities = new JwtGrantedAuthoritiesConverter();
+    authorities.setAuthoritiesClaimName("roles");
+    authorities.setAuthorityPrefix("ROLE_");
+    var c = new JwtAuthenticationConverter();
+    c.setJwtGrantedAuthoritiesConverter(authorities);
+    return c;
 }
 ```
 
-## Authentication Service
+Boot discovers the issuer's JWK set and builds a `JwtDecoder`; a decoder validating `iss` and `exp` is configured for you. Add an audience check with a custom `OAuth2TokenValidator<Jwt>` when tokens are shared across services. By default scopes map to `SCOPE_*` authorities.
+
+## Method-level rules
+
+`@EnableMethodSecurity` turns on `@PreAuthorize`, `@PostAuthorize`, `@PreFilter` and `@PostFilter`.
 
 ```java
-@Service
-@RequiredArgsConstructor
-@Transactional
-public class AuthenticationService {
-    private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
-    private final JwtService jwtService;
-    private final AuthenticationManager authenticationManager;
+@PreAuthorize("hasRole('ADMIN') or #ownerId == authentication.principal.username")
+public List<Document> documentsOf(String ownerId) { ... }
 
-    public AuthenticationResponse register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.email())) {
-            throw new DuplicateResourceException("Email already registered");
-        }
-
-        User user = User.builder()
-            .email(request.email())
-            .password(passwordEncoder.encode(request.password()))
-            .username(request.username())
-            .active(true)
-            .roles(Set.of(Role.builder().name("USER").build()))
-            .build();
-
-        user = userRepository.save(user);
-
-        String accessToken = jwtService.generateToken(convertToUserDetails(user));
-        String refreshToken = jwtService.generateRefreshToken(convertToUserDetails(user));
-
-        return new AuthenticationResponse(accessToken, refreshToken);
-    }
-
-    public AuthenticationResponse login(LoginRequest request) {
-        authenticationManager.authenticate(
-            new UsernamePasswordAuthenticationToken(
-                request.email(),
-                request.password()
-            )
-        );
-
-        User user = userRepository.findByEmail(request.email())
-            .orElseThrow(() -> new UsernameNotFoundException("User not found"));
-
-        String accessToken = jwtService.generateToken(convertToUserDetails(user));
-        String refreshToken = jwtService.generateRefreshToken(convertToUserDetails(user));
-
-        return new AuthenticationResponse(accessToken, refreshToken);
-    }
-
-    public AuthenticationResponse refreshToken(RefreshTokenRequest request) {
-        String username = jwtService.extractUsername(request.refreshToken());
-
-        User user = userRepository.findByEmail(username)
-            .orElseThrow(() -> new UsernameNotFoundException("User not found"));
-
-        UserDetails userDetails = convertToUserDetails(user);
-
-        if (!jwtService.isTokenValid(request.refreshToken(), userDetails)) {
-            throw new InvalidTokenException("Invalid refresh token");
-        }
-
-        String accessToken = jwtService.generateToken(userDetails);
-
-        return new AuthenticationResponse(accessToken, request.refreshToken());
-    }
-
-    private UserDetails convertToUserDetails(User user) {
-        return org.springframework.security.core.userdetails.User
-            .builder()
-            .username(user.getEmail())
-            .password(user.getPassword())
-            .authorities(user.getRoles().stream()
-                .map(role -> new SimpleGrantedAuthority("ROLE_" + role.getName()))
-                .collect(Collectors.toList()))
-            .build();
-    }
-}
+@PostAuthorize("returnObject.owner == authentication.name")
+public Document load(long id) { ... }
 ```
 
-## Method Security
+Method rules defend the service when it is called from another entry point (a message listener, a scheduler); URL rules alone do not. Self-invocation bypasses them, the same as with transactions.
+
+## Reading the caller
+
+Inject `@AuthenticationPrincipal` into a controller parameter instead of reaching into `SecurityContextHolder`:
 
 ```java
-@Service
-@RequiredArgsConstructor
-public class UserService {
-    private final UserRepository userRepository;
-
-    @PreAuthorize("hasRole('ADMIN')")
-    public List<User> getAllUsers() {
-        return userRepository.findAll();
-    }
-
-    @PreAuthorize("hasRole('ADMIN') or #userId == authentication.principal.id")
-    public User getUserById(Long userId) {
-        return userRepository.findById(userId)
-            .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
-
-    @PreAuthorize("isAuthenticated()")
-    @PostAuthorize("returnObject.email == authentication.principal.username")
-    public User updateProfile(Long userId, UserUpdateRequest request) {
-        User user = getUserById(userId);
-        // Update logic
-        return userRepository.save(user);
-    }
-
-    @Secured({"ROLE_ADMIN", "ROLE_MANAGER"})
-    public void deleteUser(Long userId) {
-        userRepository.deleteById(userId);
-    }
-}
+@GetMapping("/me")
+ProfileResponse me(@AuthenticationPrincipal Jwt jwt) { return profiles.byId(jwt.getSubject()); }
 ```
 
-## OAuth2 Resource Server (JWT)
+## Hardening list
 
-```java
-@Configuration
-@EnableWebSecurity
-public class OAuth2ResourceServerConfig {
-
-    @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/public/**").permitAll()
-                .anyRequest().authenticated()
-            )
-            .oauth2ResourceServer(oauth2 -> oauth2
-                .jwt(jwt -> jwt
-                    .jwtAuthenticationConverter(jwtAuthenticationConverter())
-                )
-            );
-
-        return http.build();
-    }
-
-    @Bean
-    public JwtDecoder jwtDecoder() {
-        return JwtDecoders.fromIssuerLocation("https://auth.example.com");
-    }
-
-    @Bean
-    public JwtAuthenticationConverter jwtAuthenticationConverter() {
-        JwtGrantedAuthoritiesConverter grantedAuthoritiesConverter =
-            new JwtGrantedAuthoritiesConverter();
-        grantedAuthoritiesConverter.setAuthoritiesClaimName("roles");
-        grantedAuthoritiesConverter.setAuthorityPrefix("ROLE_");
-
-        JwtAuthenticationConverter jwtAuthenticationConverter =
-            new JwtAuthenticationConverter();
-        jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(
-            grantedAuthoritiesConverter);
-
-        return jwtAuthenticationConverter;
-    }
-}
-```
-
-## Quick Reference
-
-| Annotation | Purpose |
-|------------|---------|
-| `@EnableWebSecurity` | Enables Spring Security |
-| `@EnableMethodSecurity` | Enables method-level security annotations |
-| `@PreAuthorize` | Checks authorization before method execution |
-| `@PostAuthorize` | Checks authorization after method execution |
-| `@Secured` | Role-based method security |
-| `@WithMockUser` | Mock authenticated user in tests |
-| `@AuthenticationPrincipal` | Inject current user in controller |
-
-## Security Best Practices
-
-- Always use HTTPS in production
-- Store JWT secret in environment variables
-- Use strong password encoding (BCrypt with strength 12+)
-- Implement token refresh mechanism
-- Add rate limiting to authentication endpoints
-- Validate all user inputs
-- Log security events
-- Keep dependencies updated
-- Use CSRF protection for state-changing operations
-- Implement proper session timeout
+- Secrets and keys come from the environment or a secret manager.
+- Rate-limit login and token endpoints.
+- Return 401 for missing or invalid credentials and 403 for insufficient rights.
+- Do not log tokens or passwords.
+- Keep `Strict-Transport-Security` and the other default security headers on; only change them with a reason.
+- Add security tests (see testing) for each rule: anonymous, wrong role, right role.
