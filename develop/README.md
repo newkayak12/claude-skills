@@ -7,7 +7,7 @@ in the wrong place, a test that passes for the wrong reason, a pool sized by gue
 nobody wrote until the pager went off. Each skill takes one of those and gives it a process:
 diagnose before changing, name the trade-off, verify with evidence rather than assertion.
 
-Five of the 33 skills are **workflow entry points** — they don't do the work themselves, they drive
+Five of the 35 skills are **workflow entry points** — they don't do the work themselves, they drive
 the specialist skills in a fixed order and let you join mid-process.
 
 ## Install & Uninstall
@@ -38,6 +38,7 @@ the specialist skills in a fixed order and let you join mid-process.
 | Collect/generate API scenarios as specs, dispatch one actor AI per spec, install `ci.sh` | `scenario-director` |
 | Execute one scenario spec by hand with curl — locally or as CI's `claude -p` unit | `scenario-actor` |
 | Fix tests that pass locally and fail in CI | `flaky-test-analyzer` |
+| Find why something is broken — repro loop first, then the cause and a locked-in fix | `bug-diagnoser` |
 
 **Database**
 
@@ -84,6 +85,7 @@ the specialist skills in a fixed order and let you join mid-process.
 | I want to… | Skill |
 |---|---|
 | Get a review or gate verdict on a change, or implement one test-first | `clean-code` |
+| Audit a feature or service for exploitable flaws in auth, input, secrets, payments | `security-auditor` |
 | Generate docstrings, JSDoc, or an OpenAPI spec for existing code | `code-documenter` |
 | Plan which docs should exist, for whom, and who keeps them current | `documentation-strategy` |
 
@@ -263,6 +265,22 @@ consistently — that is a bug — and not for writing new tests.
 ```
 These three integration tests fail in CI maybe one run in five, always green locally.
 Find the actual cause — I don't want another retry wrapper.
+```
+
+### `bug-diagnoser`
+
+Finds the cause of a bug before touching the code. First it builds one command that goes red on
+your exact symptom and runs it; only then does it rank hypotheses, each with a prediction that a
+one-variable probe can falsify. The fix comes with a regression test at a seam that exercises the
+real call pattern — and if no such seam exists, that is reported as a finding. Temporary logs are
+tagged `[DEBUG-xxxx]` and grepped out at the end. Two rounds of all-falsified hypotheses and it stops
+and reports what was ruled out instead of guessing a third time. Not for intermittent tests
+(`flaky-test-analyzer`), live outages (`incident-response-playbook` first), or slowness with correct
+output (`performance-profiling-optimization`).
+
+```
+Page 2 of the product list shows 9 items instead of 10; pages 1 and 3 are fine.
+Find the actual cause and fix it.
 ```
 
 ### Database
@@ -604,6 +622,27 @@ domain modeling (use `domain-driven-design`), or performance work (profile first
 ```
 Review this 300-line service class for readability. Give me the score, the specific
 smells, and the refactor in priority order — I only have an afternoon.
+```
+
+### `security-auditor`
+
+Audits a feature, a set of paths, or a whole service for flaws an attacker can actually use. It maps
+entry points and where authentication and authorization are really enforced, sweeps a checklist
+(auth, input, secrets, payment trust boundary, config — OWASP Top 10:2025 IDs), then puts every
+candidate through four questions: attacker-controlled, reachable past existing controls, blast
+radius, every step possible. Each finding carries its `file:line` path from entry to sink and a
+`Confirmed | Needs verification` confidence; everything dropped is listed with the question it
+failed, and the tally recounts to both lists. Secret values are never printed. Read-only. For the
+pending branch diff, Claude Code's built-in `/security-review` is quicker; payment idempotency and
+double-spend go to `transaction-boundary-reviewer`.
+
+On a four-route Express fixture with two decoys, a review without this skill listed 10 findings — 6 of
+them hardening items with no attacker path. With it: 4 findings (IDOR, client-set amount, hardcoded
+key, crash-on-demand), each with its path, and those 6 items moved to the dropped list with reasons.
+
+```
+Audit the checkout and order APIs before launch — auth, input handling, secrets, payments.
+Only what an attacker could actually exploit. Don't change the code.
 ```
 
 ### `code-documenter`
