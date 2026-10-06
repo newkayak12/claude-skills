@@ -11,6 +11,8 @@
 Rules:
 - Severity follows the acceptance, not taste. A smell becomes blocking only when you can
   name the acceptance item (or the correctness property) it breaks.
+- Scope finding (behaviour the spec does not ask for or puts out of scope): blocking if the
+  spec explicitly excludes it, major otherwise.
 - No acceptance given: blocking is reserved for correctness defects (lost errors, null
   leaks, comments that lie, unreachable required paths). Say "no acceptance supplied" in the
   verdict line.

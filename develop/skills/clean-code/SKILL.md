@@ -1,13 +1,13 @@
 ---
 name: clean-code
 description: >-
-  Use when a diff needs a quality-gate verdict, code needs review or refactoring, or a
-  requirement needs implementing cleanly. Triggers: "코드 리뷰", "품질 게이트", "리팩토링",
-  "코드 가독성", "어떻게 구현해?", "clean code", "code review", "implement this cleanly".
+  Use when a diff, branch or PR needs review or a gate verdict, code needs refactoring, or a
+  requirement needs implementing cleanly. Triggers: "코드 리뷰", "이 브랜치 리뷰해줘", "PR 리뷰",
+  "리팩토링", "어떻게 구현해?", "review this branch", "code review".
 license: MIT
 metadata:
   author: wondelai
-  version: "2.0.0"
+  version: "2.1.0"
 scenarios:
   - "quality gate: does this diff meet the acceptance criteria?"
   - "refactor this function — it's too long"
@@ -65,6 +65,12 @@ Severity rubric and worked examples of both modes: [references/modes.md](referen
 
 1. **G1 Fix the bar.** List the acceptance items you judge against (from the caller, the
    PR, or the request). None supplied → blocking is reserved for correctness defects; say so.
+   Interactive with no caller acceptance: look up the spec the change claims — issue refs in
+   commit messages (Closes/Fixes #N, ticket keys), a spec/plan path the user names, a docs/
+   file matching the issue number or branch name. Read it; its items become the acceptance
+   list and its out-of-scope lines count too. None found or the ref dangles → say so in the
+   output and continue as above; never ask. Caller-supplied acceptance or headless: skip the
+   lookup, read nothing beyond the diff.
 2. **G2 Read the diff, dimension by dimension.** For each of the six dimensions, check the
    changed lines and the code they call. Read every comment the change added: one that
    states behaviour the code does not have is a finding. Run any check you can run (tests,
@@ -74,6 +80,8 @@ Severity rubric and worked examples of both modes: [references/modes.md](referen
    acceptance item it threatens (required when blocking), and the concrete fix. A dimension
    checked clean gets one `pass` row with its line range. Unclear intent → a finding
    `assumption: … — what would settle it`, blocking if an acceptance item turns on it.
+   Scope finding: a changed behaviour no spec item asks for, or one the spec puts out of
+   scope — quote the spec line; blocking if the spec explicitly excludes it, major otherwise.
 4. **G4 Verdict.** FAIL iff any blocking finding; otherwise PASS, majors and minors listed.
    A 0–10 score is never the verdict.
 5. **G5 Map onto the caller's contract** when one is given (teams `gate`: `accept`,
