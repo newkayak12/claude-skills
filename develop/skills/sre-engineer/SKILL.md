@@ -1,10 +1,8 @@
 ---
 name: sre-engineer
 description: >-
-  Use when someone needs to establish or improve production reliability
-  practices: defining SLOs and error budgets, setting up golden-signal alerting
-  and dashboards, building incident response runbooks, reducing operational toil
-  through automation,...
+  Use when setting up production reliability practices. Triggers on: "SLO 정하고 싶어", "에러 버짓", "알람 피로", "반복 작업(toil)
+  줄이기", "golden signals dashboard", "burn-rate alert". Not for active incidents or chaos tests.
 scenarios:
   - "Define SLOs and error budgets for our user-facing API services"
   - "Help me set up observability with metrics, logs, and distributed tracing"

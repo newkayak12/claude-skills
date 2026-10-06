@@ -1,10 +1,8 @@
 ---
 name: performance-profiling-optimization
 description: >-
-  Guides systematic performance investigation from symptom to fix — establishing
-  a baseline, profiling the bottleneck, identifying root cause, applying a
-  targeted change, and verifying the improvement with data. Use when someone has
-  a concrete...
+  Use when something is slow and you need data-driven profiling. Triggers on: "API가 느려요", "병목 찾아줘", "메모리 계속 늘어나",
+  "p99 latency spike", "profile this endpoint", "high CPU". Not for SQL rewrites or pool sizing.
 scenarios:
   - "Our API response times degraded after the last deploy — help me profile and fix it"
   - "Profile this Java service to find memory leaks and CPU hotspots"

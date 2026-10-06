@@ -2,10 +2,8 @@
 name: rewrite
 effort: high
 description: >-
-  Use when resume or portfolio lines need a stronger rewrite, optionally to a
-  JD. Triggers: "이 문장 고쳐줘", "이 부분 어떻게 쓰면 좋아", "더 잘 쓰는 법",
-  "임팩트 있게 바꿔줘", "rewrite this portfolio section", "이력서 맞춰줘", "공고에 맞게 고쳐줘",
-  "이력서 최적화", "tailor my resume to this JD".
+  Use when resume or portfolio lines need a stronger rewrite, optionally tailored to a JD. Triggers on: "이력서 문장
+  고쳐줘", "포트폴리오 임팩트 있게 바꿔줘", "공고에 맞게 이력서 최적화", "rewrite my resume bullet", "tailor resume to JD".
 scenarios:
   - "Rewrite this portfolio bullet point to sound more senior"
   - "I have vague impact claims — help me rewrite them with stronger language"

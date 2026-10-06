@@ -2,9 +2,8 @@
 name: workflow
 effort: high
 description: >-
-  Use when building a knowledge vault end to end, or when eval and competency
-  questions keep failing and the retrieval fix has to be measured — routes
-  catalog, graph, RAG, index, and repair as one loop with a stop condition.
+  Use when building a knowledge vault end to end, or when retrieval answers keep failing and fixes must be measured.
+  Triggers on: "vault 처음부터 끝까지", "검색 품질이 안 올라", "eval 점수 개선 루프", "repair retrieval loop".
 type: workflow
 theme: knowledge
 scenarios:

@@ -1,11 +1,8 @@
 ---
 name: fallacy-detector
 description: >-
-  Use when someone presents a chain of reasoning or a story explaining why
-  something happened, and the logic may have a structural flaw or the narrative
-  may be too tidy. Covers logical fallacies (false dichotomy, post hoc, straw
-  man) and narrative...
-
+  Use when an argument or explanation of why something happened may be logically flawed or too tidy. Triggers on:
+  "논리에 허점 있어?", "이거 억지 아냐?", "원인이 너무 깔끔한데", "spot the fallacy", "post hoc", "strawman".
 scenarios:
   - "Check my reasoning for logical holes"
   - "This explanation feels too neat — is it a narrative fallacy?"

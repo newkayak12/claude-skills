@@ -200,7 +200,8 @@ stays with `plans`.
 
 On a coupon conversation (percentage discounts, cap, minimum order, rounding left to finance), a run
 without this skill wrote a reasonable spec in zero tool calls — it never opened the glossary or the
-coupon code. With it, the spec used the repo's terms and named the existing `applyCoupon` tests as the seam.
+coupon code. With it, the run read the glossary, the coupon code and its test first, used the glossary's terms, named
+the existing `applyCoupon` test as the seam, and left rounding open for finance instead of picking one.
 
 ```
 방금 PM이랑 나눈 대화야. 이걸로 spec 정리해줘 — 이미 얘기한 건 다시 묻지 말고.

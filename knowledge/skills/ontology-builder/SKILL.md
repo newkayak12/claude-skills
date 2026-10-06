@@ -1,9 +1,8 @@
 ---
 name: ontology-builder
 description: >-
-  Use when designing or refining an ontology for a knowledge system: domain
-  concepts, classes, relationship semantics, constraints, controlled
-  vocabularies, reasoning rules, and mappings to graph/RAG/vault artifacts.
+  Use when defining what kinds of things and relations a knowledge domain has, before graph or RAG work. Triggers
+  on: "온톨로지 설계", "용어/관계 체계 잡아줘", "class·relation 정리", "controlled vocabulary", "design an ontology".
 scenarios:
   - "이 도메인 ontology 설계해줘"
   - "knowledge graph 만들기 전에 class랑 relation taxonomy 잡아줘"
