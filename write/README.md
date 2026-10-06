@@ -42,7 +42,7 @@ step gets one observable pass bar stamped on it before the plan counts as finish
 is deliberately out of scope; `planning:executing-plans` owns that check. Each task is one vertical slice — one
 behaviour working end to end, never "all backend, then all frontend" — and names what blocks it, so a ticket
 breakdown ("티켓으로 쪼개줘") lands here too. On a saved-search feature, a run without this rule split the work
-into Backend and Frontend sections with no blocking edges; with it, seven slices each carried `Blocked by` and a pass bar.
+into Backend and Frontend sections with no blocking edges; with it, two runs gave 7 and 8 slices, each carrying `Blocked by` and a pass bar.
 
 ```
 결제 웹훅 재시도 로직 구현 계획 써줘. 기존 PaymentEventHandler 건드리는 범위까지 포함해서,
