@@ -2,9 +2,8 @@
 name: feedback-beta
 effort: high
 description: >-
-  Use when someone explicitly asks for beta portfolio feedback: feedback plus writing
-  patterns (피동, team subject, number density, decision visibility). Triggers only on "피드백
-  베타로", "feedback beta".
+  Use when a portfolio needs feedback plus its writing patterns (피동, 팀 주어, 숫자 밀도, 결정 가시성) in one pass. Triggers on:
+  "피드백 베타로", "feedback beta", "피드백이랑 문체 패턴까지 같이 봐줘", "beta feedback with patterns".
 scenarios:
   - "Run the beta portfolio feedback on my backend portfolio"
   - "Audit my portfolio — do the numbers hold up and does the skills list match the projects?"

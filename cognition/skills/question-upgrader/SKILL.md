@@ -1,11 +1,8 @@
 ---
 name: question-upgrader
 description: >-
-  Use when someone is asking a question that is too narrow, too closed, or based
-  on a hidden assumption that may be wrong. Upgrades weak questions and
-  generates meta-questions to check whether the right question is even being
-  asked.
-
+  Use when a question is too closed or has a solution baked in and may be the wrong question. Triggers on: "질문 자체가
+  틀린 건 아닐까?", "이 질문이 맞는 질문일까?", "질문 좀 더 좋게", "am I asking the right question", "better question".
 scenarios:
   - "Is this even the right question to be asking?"
   - "Should I use microservices? (upgrade this)"

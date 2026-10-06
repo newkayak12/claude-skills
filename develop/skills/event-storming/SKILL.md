@@ -1,10 +1,8 @@
 ---
 name: event-storming
 description: >-
-  Use when someone is starting a new product, untangling a legacy system,
-  mapping how a business process actually works, or asking where to begin domain
-  modeling — even if they do not name Event Storming explicitly. Triggers on:
-  "domain modeling".
+  Use when starting a product, untangling legacy, or mapping a business process before code. Triggers on: "이벤트 스토밍",
+  "도메인 이벤트 뽑아보자", "도메인 모델링 워크숍", "workshop with domain experts", "map our business flow".
 scenarios:
   - "We're starting a new product and need to model the domain before writing code"
   - "Help me run an event storming workshop to discover bounded contexts"

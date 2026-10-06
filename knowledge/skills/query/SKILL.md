@@ -2,9 +2,8 @@
 name: query
 effort: high
 description: >-
-  Use when answering questions over an existing linked Markdown vault, local
-  SQLite index, ontology, knowledge graph, RAG corpus, or mixed knowledge assets
-  while preserving citations, uncertainty, and retrieval traceability.
+  Use when answering a question from an existing knowledge vault, index, or graph with cited sources. Triggers on:
+  "이 knowledge base에서 찾아줘", "근거 달아서 답해줘", "vault에서 알려줘", "answer with citations". Not for building.
 scenarios:
   - "이 knowledge base에서 답 찾아줘"
   - "vault랑 graph를 보고 영향 범위 알려줘"

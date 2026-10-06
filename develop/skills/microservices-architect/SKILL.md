@@ -1,10 +1,8 @@
 ---
 name: microservices-architect
 description: >-
-  Use when someone needs to design or evaluate a distributed system —
-  decomposing a monolith, defining service boundaries with DDD, choosing between
-  sync and async communication, or planning resilience and observability.
-  Triggers on:.
+  Use when designing or evaluating a distributed system. Triggers on: "MSA로 쪼갤까?", "서비스 간 통신 REST vs 이벤트", "분산 시스템
+  설계", "decompose the monolith", "sync vs async calls", "saga design". Not for validating existing boundaries.
 scenarios:
   - "Design a microservices architecture for our e-commerce monolith migration"
   - "Help me decide service boundaries and communication patterns for this system"

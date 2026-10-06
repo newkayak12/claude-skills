@@ -1,10 +1,8 @@
 ---
 name: chaos-engineer
 description: >-
-  Use when someone wants to proactively test whether a distributed system will
-  survive real failures — by designing controlled chaos experiments, injecting
-  faults (network latency, pod deletion, zone outages), planning a game day
-  exercise, or...
+  Use when you want to test whether a system survives real failures. Triggers on: "장애 주입 테스트", "game day 준비", "pod
+  죽여보고 싶어", "chaos experiment", "kill a pod in staging", "simulate zone outage". Not for active incidents.
 scenarios:
   - "I want to run a chaos experiment on our Kubernetes cluster to test pod failure resilience"
   - "Help me plan a game day exercise to test our system's failure tolerance"

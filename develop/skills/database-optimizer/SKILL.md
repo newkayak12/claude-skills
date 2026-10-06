@@ -1,10 +1,8 @@
 ---
 name: database-optimizer
 description: >-
-  Use when database slowness stems from infrastructure concerns rather than
-  query authoring: server memory and I/O configuration, connection pooling, lock
-  contention, VACUUM and statistics maintenance, partitioning design, or
-  cloud-managed database...
+  Use when DB slowness is server-side, not query text. Triggers on: "락 경합", "VACUUM 밀림", "shared_buffers 튜닝", "파티셔닝
+  설계", "lock contention", "stale statistics", "InnoDB buffer pool". Not for SQL rewrites or pool sizing.
 scenarios:
   - "Our database queries are slow and we're hitting performance bottlenecks"
   - "Help me optimize this SQL query that takes 30 seconds on a 10M row table"

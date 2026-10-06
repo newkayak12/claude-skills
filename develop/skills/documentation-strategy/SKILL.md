@@ -2,10 +2,8 @@
 name: documentation-strategy
 effort: high
 description: >-
-  Plans and maintains a documentation system across architecture docs, API
-  references, runbooks, and onboarding guides — producing a doc coverage map and
-  writing or improving the highest-leverage missing content. Use when a
-  codebase, API, or team...
+  Use when a team needs a plan for what docs to write. Triggers on: "문서 뭐부터 써야 해?", "온보딩 문서 정리", "런북/ADR 체계", "doc
+  coverage map", "documentation audit". Not for adding docstrings or OpenAPI specs.
 scenarios:
   - "Our codebase has no docs and new engineers keep asking the same questions repeatedly"
   - "We have documentation but it's scattered across three wikis and no one knows what's current"
