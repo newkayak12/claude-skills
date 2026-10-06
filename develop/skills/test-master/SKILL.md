@@ -96,8 +96,6 @@ Apply the same structure for pytest (`def test_…`, `assert result == expected`
 
 Load detailed guidance based on context:
 
-<!-- TDD Iron Laws and Testing Anti-Patterns adapted from obra/superpowers by Jesse Vincent (@obra), MIT License -->
-
 | Topic | Reference | Load When |
 |-------|-----------|-----------|
 | Unit Testing | `references/unit-testing.md` | Jest, Vitest, pytest patterns |

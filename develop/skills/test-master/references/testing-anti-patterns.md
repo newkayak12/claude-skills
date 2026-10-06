@@ -225,7 +225,3 @@ Review your tests for these warning signs:
 | Over-mocking | 10+ mocks per test | Test with real deps first |
 | Incomplete mocks | Minimal stub responses | Use factories, match reality |
 | Tests as afterthought | Features ship untested | TDD from the start |
-
----
-
-*Content adapted from [obra/superpowers](https://github.com/obra/superpowers) by Jesse Vincent (@obra), MIT License.*

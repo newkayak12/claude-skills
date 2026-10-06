@@ -200,7 +200,7 @@ same; the *durability guarantee* legitimately differs and is stated as such.
 
 The Plan prompt's namespace hint (`pipeline.js:122`:
 `develop:*, think:*, write:*, pm:*, cognition:*, agents:*, skill:*`) omits
-`planning:*` and `superpowers:*`, yet `harness/skills/harness/SKILL.md:76`
+`planning:*` and external `*` skills, yet `harness/skills/harness/SKILL.md:76`
 recommends `planning:executing-plans` as an optional executor. The engine never
 surfaces the `planning:` namespace to SetGoal, so that documented mapping is
 effectively invisible. The seven "dual-mode" skills are documented in SKILL.md but
