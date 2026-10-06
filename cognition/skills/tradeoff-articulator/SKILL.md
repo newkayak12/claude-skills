@@ -1,10 +1,9 @@
 ---
 name: tradeoff-articulator
 description: >-
-  Use when someone is weighing options or making a decision where something is
-  being given up. Makes the cost structure of each option explicit — including
-  hidden axes — without picking a winner. Triggers on: "tradeoff", "트레이드오프",
-  "장단점".
+  Use when weighing options where something is being given up. Makes each
+  option's cost structure explicit, including hidden axes, without picking a
+  winner. Triggers: "tradeoff", "트레이드오프", "장단점".
 
 scenarios:
   - "Map out the tradeoffs between these two approaches"

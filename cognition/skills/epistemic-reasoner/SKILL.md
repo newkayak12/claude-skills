@@ -1,10 +1,9 @@
 ---
 name: epistemic-reasoner
 description: >-
-  Use when someone states something with more certainty than the evidence
-  supports, or when an analogy is doing the main argumentative work. Two
-  instruments: calibrate what confidence level the evidence actually warrants,
-  and stress-test whether...
+  Use when something is stated with more certainty than the evidence supports,
+  or an analogy carries the argument. Calibrates the confidence the evidence
+  warrants and stress-tests whether the analogy actually holds.
 
 scenarios:
   - "How confident should I actually be about this claim?"

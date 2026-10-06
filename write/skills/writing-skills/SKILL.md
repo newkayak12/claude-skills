@@ -1,15 +1,15 @@
 ---
 name: writing-skills
 description: >-
-  Use when creating a new skill, editing an existing SKILL.md, or fixing one
-  that misfires. Triggers: "스킬 만들어줘", "새 skill 작성", "SKILL.md 써줘", "skill 개선해줘",
-  "create a skill", "skill documentation", "스킬 문서 작성", "workflow skill로 만들어줘".
+  Use when editing an existing SKILL.md to meet repo conventions, or fixing a
+  skill that misfires (new skills go to skill:create). Triggers: "SKILL.md 고쳐줘",
+  "skill 개선해줘", "skill documentation", "스킬 문서 작성", "skill이 안 떠", "fix this skill".
 scenarios:
-  - "이 워크플로우를 skill로 만들어줘"
-  - "새 skill SKILL.md 작성해줘"
-  - "Create a skill for this repeatable process"
+  - "이 SKILL.md가 컨벤션에 맞는지 보고 고쳐줘"
+  - "SKILL.md 구조 정리해줘"
+  - "Fix this SKILL.md so it follows the repo conventions"
   - "기존 skill 개선해줘"
-  - "I want to capture this pattern as a reusable skill"
+  - "This skill never triggers — fix its description"
   - "Skill 설명이 너무 약한 것 같아, 개선해줘"
 compatibility:
   optional:

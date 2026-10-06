@@ -245,3 +245,9 @@ See `examples/sample.md` for full roadmap examples including good vs. bad roadma
 | Gathers inputs and defines initiatives as epics with hypotheses and metrics | Provide customer problems, goals, and real capacity constraints |
 | Prioritizes and maps epic dependencies before sequencing | Align stakeholders on top-level outcome priorities |
 | Separates committed from aspirational items and drafts the roadmap narrative | Decide what is committed and approve the roadmap |
+
+## Related Skills
+
+- `planning:executing-plans` — turns an approved plan into executed work
+- `write:plans` — breaks a roadmap item into an implementation plan
+- `write:spec` — spec for an individual roadmap initiative
