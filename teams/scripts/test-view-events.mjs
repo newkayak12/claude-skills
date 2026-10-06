@@ -50,3 +50,99 @@ test('statusLine: empty and two tasks', () => {
     { id: 'E-5e6f7a8b', state: 'running', done: 2, total: 9, current: 'shape' },
   ]), 'teams: E-1a2b3c4d 7/12 P3 implement · E-5e6f7a8b 2/9 shape');
 });
+
+// ---------- CLI: view.mjs --once --format status|events ----------
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { node } from '../mcp/graph.mjs';
+
+const VIEW = join(dirname(fileURLToPath(import.meta.url)), 'view.mjs');
+const RUN_ID = 'E-aaaaaaaa1111';
+const DONE_ID = 'E-bbbbbbbb2222';
+
+// "Running" is collect()'s rule (view-collect.mjs collectTask): state 'running', and when
+// task.daemon is set, task.daemon.pid alive (pidAlive). The fixture's daemon.pid is this test
+// process, which pidAlive reports alive.
+function fixture() {
+  const root = mkdtempSync(join(tmpdir(), 'view-events-'));
+  const cwd = join(root, 'proj');
+  mkdirSync(cwd);
+  const tasks = join(root, 'tasks');
+  const mk = (id, nodes, daemon) => {
+    mkdirSync(join(tasks, id), { recursive: true });
+    writeFileSync(join(tasks, id, 'task.json'), JSON.stringify({
+      run_id: id, cwd, request: 'r', created_at: 1, store_path: join(tasks, id, 'task.json'), nodes,
+      ...(daemon ? { daemon: { pid: process.pid } } : {}),
+    }));
+  };
+  mk(RUN_ID, [node('size', 'size', [], { state: 'done' }), node('shape', 'shape', ['size'], { state: 'running' }),
+    node('critique', 'critique', ['shape'], { state: 'waiting_human' })], true);
+  mk(DONE_ID, [node('report', 'report', [], { state: 'done', result: {} })], false);
+  // a dir with only a ledger and no task.json: unknown state, not running
+  mkdirSync(join(tasks, 'E-cccccccc3333'));
+  writeFileSync(join(tasks, 'E-cccccccc3333', 'ledger.jsonl'), JSON.stringify({ ts: 9, event: 'daemon_exhausted', task_id: 'E-cccccccc3333' }) + '\n');
+  writeFileSync(join(tasks, RUN_ID, 'ledger.jsonl'), [
+    { ts: 5, event: 'node_start', task_id: RUN_ID },
+    { ts: 6, event: 'daemon_exhausted', task_id: RUN_ID },
+    { ts: 7, event: 'child_driver_capacity', task_id: RUN_ID },
+  ].map((o) => JSON.stringify(o)).join('\n') + '\n');
+  writeFileSync(join(tasks, DONE_ID, 'ledger.jsonl'), JSON.stringify({ ts: 9, event: 'daemon_exhausted', task_id: DONE_ID }) + '\n');
+  return { root, cwd, tasks };
+}
+const cli = (f, ...a) => spawnSync(process.execPath, [VIEW, '--once', '--tasks-dir', f.tasks, '--cwd', f.cwd, ...a], { encoding: 'utf8' });
+
+test('--format status: only the running task, id8 named, waiting from task.json node state', () => {
+  const f = fixture();
+  try {
+    const r = cli(f, '--format', 'status');
+    assert.equal(r.status, 0, r.stderr);
+    const o = JSON.parse(r.stdout);
+    assert.ok(o.line.length > 0);
+    assert.ok(o.line.includes('E-aaaaaaaa'));
+    assert.ok(!o.line.includes('E-bbbbbbbb') && !o.line.includes('E-cccccccc'));
+    assert.equal(o.waiting, 1);
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('--format status: another cwd gives an empty line', () => {
+  const f = fixture();
+  try {
+    const r = spawnSync(process.execPath, [VIEW, '--once', '--tasks-dir', f.tasks, '--cwd', join(f.root, 'elsewhere'), '--format', 'status'], { encoding: 'utf8' });
+    assert.deepEqual(JSON.parse(r.stdout), { line: '', waiting: 0 });
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('--format events --since 0: notable lines of running tasks only', () => {
+  const f = fixture();
+  try {
+    const r = cli(f, '--format', 'events', '--since', '0');
+    assert.equal(r.status, 0, r.stderr);
+    const evs = r.stdout.trim().split('\n').map((l) => JSON.parse(l));
+    assert.deepEqual(evs.map((e) => e.kind), ['daemon_exhausted', 'child_driver_capacity']);
+    assert.ok(evs.every((e) => e.task_id === RUN_ID));
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('--format events reads only the ledger tail', () => {
+  const f = fixture();
+  try {
+    const head = (JSON.stringify({ ts: 1, event: 'daemon_exhausted', task_id: RUN_ID }) + '\n').repeat(75000)
+      + 'x'.repeat(300000);
+    const tail = [
+      { ts: 20, event: 'waiting_human', task_id: RUN_ID, node_id: 'n9' },
+      { ts: 21, event: 'node_start', task_id: RUN_ID },
+      { ts: 22, event: 'daemon_done', task_id: RUN_ID, state: 'done' },
+    ].map((o) => JSON.stringify(o)).join('\n') + '\n';
+    const p = join(f.tasks, RUN_ID, 'ledger.jsonl');
+    writeFileSync(p, head + '\n' + tail);
+    const big = cli(f, '--format', 'events', '--since', '0');
+    writeFileSync(p, tail);
+    const small = cli(f, '--format', 'events', '--since', '0');
+    assert.ok(head.length > 4.5e6);
+    assert.equal(big.stdout, small.stdout);
+    assert.deepEqual(big.stdout.trim().split('\n').map((l) => JSON.parse(l).ts), [20, 22]);
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});

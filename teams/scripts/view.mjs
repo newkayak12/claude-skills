@@ -19,12 +19,13 @@
 // Both the HTML page's /state.json and --once's text tree come from ONE collect() function
 // (teams/scripts/lib/view-collect.mjs) - this file only renders it two ways.
 import { createServer } from 'node:http';
-import { readFileSync, existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { readFileSync, existsSync, openSync, readSync, fstatSync, closeSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tasksRoot } from '../mcp/taskmanager.mjs';
 import { collectTask, listTasks } from './lib/view-collect.mjs';
 import { renderText, renderIndexText, renderTicketsText, renderResourcesText } from './lib/view-render-text.mjs';
+import { notableEvents, statusLine } from './lib/view-events.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -43,13 +44,77 @@ function parseArgs(argv) {
     else if (arg === '--port') a.port = Number(argv[++i]) || 0;
     else if (arg === '--once') a.once = true;
     else if (arg === '--view') a.view = argv[++i];
-    else if (arg === '--help' || arg === '-h') a.help = true;
+    else if (arg === '--format') a.format = argv[++i];
+    else if (arg === '--since') a.since = Number(argv[++i]) || 0;
+    else if (arg === '--cwd') a.cwd = argv[++i];
+    else if (arg === '--help'|| arg === '-h') a.help = true;
   }
   return a;
 }
 
 function usage() {
-  return 'usage: node view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--once] [--view pipeline|tickets|resources]\n';
+  return 'usage: node view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--once] [--view pipeline|tickets|resources] [--once --format status|events [--since <ts>] [--cwd <dir>]]\n';
+}
+
+// ---------- --once --format status|events (the teams-live mod's data) ----------
+
+const TAIL_BYTES = 256 * 1024;
+
+// Last 256 KiB of a ledger as lines, read from the end so a huge ledger costs the same. When the
+// read starts mid-file its first line is a fragment and is dropped.
+function tailLines(path) {
+  let fd;
+  try {
+    fd = openSync(path, 'r');
+    const size = fstatSync(fd).size;
+    const start = Math.max(0, size - TAIL_BYTES);
+    const buf = Buffer.alloc(size - start);
+    readSync(fd, buf, 0, buf.length, start);
+    const lines = buf.toString('utf8').split('\n');
+    if (start > 0) lines.shift();
+    return lines.filter((l) => l.trim());
+  } catch {
+    return [];
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+// Running tasks, decided by collectTask(): state 'running' (a dead daemon reads 'stalled'). A
+// task.json-less dir is never listed, and an unreadable one carries `error`, so unknown = not running.
+function runningModels(tasksDir, cwd) {
+  const want = cwd ? resolve(cwd) : null;
+  const out = [];
+  for (const row of listTasks(tasksDir)) {
+    const m = collectTask(tasksDir, row.task_id);
+    if (m.error || m.state !== 'running') continue;
+    if (want && (!m.cwd || resolve(m.cwd) !== want)) continue;
+    out.push(m);
+  }
+  return out;
+}
+
+function statusOutput(tasksDir, cwd) {
+  const models = runningModels(tasksDir, cwd);
+  const rows = models.map((m) => {
+    const c = m.counts || {};
+    const total = Object.values(c).reduce((s, n) => s + (Number(n) || 0), 0);
+    const cur = (m.manager_stages || []).find((n) => n.state === 'running')
+      || (m.packages || []).find((p) => p.state === 'running');
+    return { id: 'E-' + String(m.task_id).replace(/^E-/, '').slice(0, 8), state: m.state, done: c.done || 0, total, current: cur ? (cur.node_id || cur.id || '') : '' };
+  });
+  // waiting = nodes in state waiting_human, counted from task.json (no ledger records that event).
+  const waiting = models.reduce((s, m) => s + ((m.counts && m.counts.waiting_human) || 0), 0);
+  return JSON.stringify({ line: statusLine(rows), waiting }) + '\n';
+}
+
+function eventsOutput(tasksDir, cwd, since) {
+  const out = [];
+  for (const m of runningModels(tasksDir, cwd)) {
+    out.push(...notableEvents(tailLines(join(tasksDir, m.task_id, 'ledger.jsonl')), since));
+  }
+  out.sort((a, b) => a.ts - b.ts);
+  return out.map((e) => JSON.stringify(e) + '\n').join('');
 }
 
 // ---------- HTML page (inline CSS/JS, no CDN; polls /state.json) ----------
@@ -112,6 +177,8 @@ async function main() {
   const tasksDir = args.tasksDir ? args.tasksDir : tasksRoot();
 
   if (args.once) {
+    if (args.format === 'status') { process.stdout.write(statusOutput(tasksDir, args.cwd)); return; }
+    if (args.format === 'events') { process.stdout.write(eventsOutput(tasksDir, args.cwd, args.since || 0)); return; }
     if (args.task) {
       process.stdout.write(render(collectTask(tasksDir, args.task)));
       return;
