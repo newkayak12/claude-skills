@@ -20,6 +20,7 @@
 |---|---|
 | 분야를 가리지 않고 — 커리어·기술·일·공부·관계·인생 결정 — 선배 멘토의 판단 받기 | `mentor` |
 | 해법 모양이 아직 안 잡힌 걸 설계하기 | `brainstorming` |
+| 이미 가진 계획을 만들기 전에 질문으로 털기 | `grill` |
 | 애초에 맞는 문제를 풀고 있는지 점검 | `redefine-problem` |
 | 접근 방식을 확인 가능한 바닥까지 분해하고 거기서 재구성 | `back-to-basics` |
 | 내 계획을 가장 강한 반론으로 두들겨 맞기 | `devils-advocate` |
@@ -104,6 +105,22 @@
 [후보] 살아남은 2~3개 + trade-off 표 하나
 [설계] 아키텍처 · 컴포넌트 · 데이터 흐름 · 에러 · 테스트 → 승인 → write:plans
 ```
+
+### `grill`
+
+이미 가진 계획을 만들기 전에 질문으로 털어 줍니다. README와 계획이 건드리는 코드부터 읽고, 사실은 직접 찾아보며
+결정만 묻습니다. 열린 질문 전부를 번호를 매겨 한 번에 내놓고, 질문마다 추천 답과 한 줄 이유를 붙입니다. 다음
+라운드는 답이 새로 연 것만 묻고, 최대 세 라운드 뒤 남은 건 열린 항목으로 정리합니다. `brainstorming`의 모드가
+아닌 이유는 그 스킬이 한 번에 하나씩 묻고 선택지를 넓히는 쪽이라서입니다. 이 스킬은 계획을 밀어붙여 봅니다.
+애매한 질문 하나를 다듬는 건 `cognition:question-upgrader`입니다.
+
+```
+새 기능 설계하기 전에 나 좀 빡세게 질문해줘 — 알림 기능 추가하려고
+```
+
+README에 스택, 규모, 메일 제공자가 적힌 작은 앱으로 비교했을 때, 스킬 없이는 파일을 하나도 열지 않고 일반론
+질문 18~22개를 던졌습니다. 일부는 README에 답이 있었고 추천 답은 없었습니다. 스킬을 쓰면 두 번 다 README부터
+읽고 정해진 사실은 known으로 정리한 뒤, 추천 답이 붙은 질문 7~8개를 물었습니다.
 
 ### `redefine-problem`
 
@@ -220,6 +237,7 @@ Ackerman 사다리 — 65 % → 85 % → 95 % → 100 %, 마지막은 정밀한 
 |---|---|---|
 | `mentor` | think-tool (어떤 종류의 질문인지 분류) | sequential-thinking, mcp-reasoner |
 | `brainstorming` | — | think-tool, sequential-thinking, mcp-reasoner |
+| `grill` | — | think-tool |
 | `redefine-problem` | think-tool (가정 열거 필수 게이트) | sequential-thinking |
 | `back-to-basics` | think-tool (가정 나열, checked/inherited 구분) | mcp-reasoner |
 | `devils-advocate` | — | think-tool, mcp-reasoner, sequential-thinking |
