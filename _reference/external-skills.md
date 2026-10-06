@@ -49,7 +49,7 @@ https://agentskill.sh — 스킬 27만 개 이상 카탈로그.
 - 스킬 묶음: https://agentskill.sh/skillsets
 - 직군별 목록: `https://agentskill.sh/for/<직군>`. JSON은 `https://agentskill.sh/api/skills?category=<직군>&page=N` (페이지당 20개, 스타순 고정, 정렬 옵션 없음)
 
-2026-10-06 조사: 6개 직군(development, product, operations, project-management, support, hr)에서 각각 상위 200개, 중복 제거 후 929개. 품질점수 85 이상만 남기고 openclaw·feishu·qqbot 같은 저장소 전용 스킬과 같은 스킬의 복제본, 이미 설치된 superpowers(obra)는 뺐다.
+2026-10-06 조사: 6개 직군(development, product, operations, project-management, support, hr)에서 각각 상위 200개, 중복 제거 후 929개. 품질점수 85 이상만 남기고 openclaw·feishu·qqbot 같은 저장소 전용 스킬과 같은 스킬의 복제본, 이미 설치된 외부 중복 스킬은 뺐다.
 
 ### HR
 
