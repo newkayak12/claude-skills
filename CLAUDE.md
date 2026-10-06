@@ -55,6 +55,10 @@ If MCP tools are not available, prompt the user to connect them:
 
 See `write/skills/writing-skills/SKILL.md` for the full authoring guide.
 
+Founding principle: every skill starts from the four coding guidelines in `_repo/coding-guidelines.md`
+(think before coding, simplicity first, surgical changes, goal-driven execution). Apply them when a skill
+is created or next edited — no mass rewrite. teams-mounted skills stay frozen until teams decides.
+
 Quick rules:
 - `description` must start with `Use when` — this is the trigger
 - `scenarios` must have EN + KR variants (2-3 each)
