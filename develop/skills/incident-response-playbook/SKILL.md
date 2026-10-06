@@ -2,10 +2,8 @@
 name: incident-response-playbook
 effort: high
 description: >-
-  Guides the developer-side incident lifecycle from triage through mitigation to
-  blameless RCA — with severity classification, Slack update templates,
-  escalation paths, and a structured post-mortem format. Use when a production
-  issue is active or...
+  Use when a production incident is active or needs a post-mortem. Triggers on: "장애 났어", "프로덕션 터졌어", "포스트모템 써줘",
+  "severity 분류", "prod is down", "write an RCA". Not for SLO setup or chaos tests.
 scenarios:
   - "We just had a production outage and need a structured incident response process"
   - "Help me create an on-call runbook for database failures"

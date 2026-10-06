@@ -1,11 +1,8 @@
 ---
 name: mental-model-toolkit
 description: >-
-  Use when someone is stuck on a problem and needs a different frame entirely,
-  suspects they have blind spots, or has exhausted obvious solutions. Three
-  instruments: choose the right mental model, systematically surface unknown
-  unknowns, and break...
-
+  Use when obvious fixes are exhausted and you need a new lens or hidden blind spots surfaced. Triggers on: "다른 관점이
+  필요해", "내가 뭘 놓치고 있지?", "해볼 건 다 해봤는데", "blind spots", "unknown unknowns", "mental model".
 scenarios:
   - "I've tried everything obvious — what am I missing?"
   - "Help me find blind spots in this plan"

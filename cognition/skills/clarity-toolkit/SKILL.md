@@ -1,11 +1,8 @@
 ---
 name: clarity-toolkit
 description: >-
-  Use when someone is overwhelmed by information, stuck in vague thinking, or
-  spinning in analysis without moving forward. Three modes: cut signal from
-  noise, eliminate vague language, and break overthinking loops. Triggers on:
-  "overwhelmed".
-
+  Use when info overload, vague goals, or endless analysis blocks action. Triggers on: "정보가 너무 많아서 뭐가 중요한지 모르겠어",
+  "목표가 너무 막연해", "분석만 하다 결정을 못 해", "overthinking", "too vague".
 scenarios:
   - "I have too much data and can't figure out what matters"
   - "My goal is to 'be more strategic' but I don't know what that means"

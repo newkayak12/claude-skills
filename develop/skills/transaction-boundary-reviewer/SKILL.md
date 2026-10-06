@@ -1,10 +1,8 @@
 ---
 name: transaction-boundary-reviewer
 description: >-
-  Use when data appears inconsistent after failures, when two writes need to
-  succeed or fail together, or when transactions are causing lock contention or
-  timeout errors under load. Reviews isolation levels, atomicity gaps, overly
-  wide...
+  Use when data goes inconsistent or transactions cause locks. Triggers on: "데이터 정합성 깨져", "@Transactional 범위", "트랜잭션
+  락 타임아웃", "isolation level", "two writes atomic", "deadlock under load".
 scenarios:
   - "Data is inconsistent after failures — review our transaction boundaries"
   - "Help me identify where distributed transactions are causing data integrity issues"
