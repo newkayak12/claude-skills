@@ -74,6 +74,27 @@ test('a lock held by a live owner pid is never stolen, however old it is', () =>
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
+// A wall-clock jump (wake from sleep, NTP step) must not expire the wait at once.
+test('the lock wait deadline is monotonic: a forward Date.now jump does not cut the wait short', () => {
+  const cwd = scratch();
+  const realNow = Date.now;
+  try {
+    const { run, path } = seed(cwd);
+    holdLock(path, { pid: process.ppid, at: realNow(), token: 'other' });
+    let calls = 0;
+    Date.now = () => realNow() + (calls++ > 0 ? 60 * 60 * 1000 : 0);
+    const t0 = performance.now();
+    withEnv({ GRAPH_LOCK_TIMEOUT_MS: '300' }, () => {
+      assert.throws(() => mutateRun(cwd, run.run_id, (r) => { r.request = 'x'; }), (e) => e.code === 'ELOCKTIMEOUT');
+    });
+    const waited = performance.now() - t0;
+    assert.ok(waited >= 250, `waited only ${Math.round(waited)} ms of a 300 ms timeout`);
+  } finally {
+    Date.now = realNow;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('a lock whose owner pid is dead is broken', () => {
   const cwd = scratch();
   try {

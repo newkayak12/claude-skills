@@ -94,6 +94,24 @@ test('a live owner lock with an old mtime is NOT stolen; the waiter throws ELOCK
   rmSync(path + '.lock', { recursive: true });
 });
 
+test('the lock wait deadline is monotonic: Date.now jumping +1h mid-wait (a sleep) still waits ~the timeout', () => {
+  const { path } = seedTask();
+  holdLock(path, { pid: process.pid, at: Date.now(), token: 'held-across-a-sleep' });
+  const realNow = Date.now;
+  let calls = 0;
+  Date.now = () => realNow() + (calls++ > 0 ? 3600000 : 0);
+  const t0 = performance.now();
+  try {
+    assert.throws(() => withEnv({ TEAMS_LOCK_TIMEOUT_MS: '300' }, () => mutateTask(path, (t) => { t.n = 1; })),
+      (e) => e.code === 'ELOCKTIMEOUT');
+  } finally {
+    Date.now = realNow;
+  }
+  const waited = performance.now() - t0;
+  assert.ok(waited >= 250, `waited ${Math.round(waited)} ms, not thrown at once`);
+  rmSync(path + '.lock', { recursive: true });
+});
+
 test('a lock whose owner pid is dead is stolen', () => {
   const { path } = seedTask();
   holdLock(path, { pid: 2147483646, at: Date.now(), token: 'dead' });

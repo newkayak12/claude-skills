@@ -215,7 +215,9 @@ export function acquireLock(path) {
   const lockDir = path + '.lock';
   mkdirSync(dirname(path), { recursive: true });
   const waitMs = lockTimeoutMs();
-  const deadline = Date.now() + waitMs;
+  // Monotonic: a wall-clock jump (a sleep mid-wait, an NTP step) must not end the wait at once.
+  // The stale-lock age checks below stay on mtimes, which are wall clock.
+  const deadline = performance.now() + waitMs;
   const token = randomUUID();
   for (;;) {
     try {
@@ -233,7 +235,7 @@ export function acquireLock(path) {
       try { ageMs = Date.now() - statSync(lockDir).mtimeMs; } catch { continue; } // vanished: retry
       if (ageMs > LOCK_GRACE_MS && steal(lockDir, null)) continue;
     }
-    if (Date.now() > deadline) throw new LockTimeoutError(path, owner, waitMs);
+    if (performance.now() > deadline) throw new LockTimeoutError(path, owner, waitMs);
     sleepMs(2 + Math.floor(Math.random() * 6));
   }
 }

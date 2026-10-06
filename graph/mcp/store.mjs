@@ -209,7 +209,8 @@ export function acquireLock(path) {
   const lock = path + '.lock';
   mkdirSync(dirname(path), { recursive: true });
   const timeout = lockTimeoutMs();
-  const deadline = Date.now() + timeout;
+  // Monotonic: a wall-clock jump (wake from sleep, NTP step) must not expire the wait.
+  const deadline = performance.now() + timeout;
   const token = randomUUID();
   for (;;) {
     try {
@@ -217,7 +218,7 @@ export function acquireLock(path) {
     } catch (e) {
       if (e.code !== 'EEXIST') throw e;
       if (tryBreak(lock)) continue;
-      if (Date.now() > deadline) throw new LockTimeoutError(path, timeout, readOwner(lock));
+      if (performance.now() > deadline) throw new LockTimeoutError(path, timeout, readOwner(lock));
       sleepSync(SPIN_MS);
       continue;
     }

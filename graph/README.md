@@ -47,6 +47,11 @@ Zero runtime dependencies, Node 18+.
 
 ## Status
 
+- **v1.8.2 — the lock wait deadline is monotonic**: `acquireLock` set its deadline from
+  `Date.now()`, so a forward wall-clock jump (wake from sleep, an NTP step) made a waiter
+  throw `LockTimeoutError` at once instead of waiting out its timeout. The deadline now uses
+  `performance.now()`; stale-lock mtime checks stay on the wall clock. The default timeout is
+  unchanged, nothing imported from teams. Tests: graph suite 146 (from 145).
 - **v1.8.1 — own-pid claim reclaim and a boot-id test**: `ownerGone` judged a claim by its
   owner's pid and boot, so a `running` claim stamped under the broker's own pid was never
   reclaimed, even when this process no longer held its ticket. `activeNodes` now maps each
