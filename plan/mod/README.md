@@ -86,3 +86,11 @@ Value H/M, kept out of this round to stay small; revisit after 2 and 3 ship.
    README/KOR (or CHANGELOG/CHANGELOG.KOR for teams) like any other change.
 6. **Plugin files via `$.plugin.root`.** `CLAUDE_PLUGIN_ROOT` is not set in a
    `$.process.run` child (00-spike-findings §4).
+
+## Next round (user-picked 2026-10-07)
+
+- **skill-notify:** toast + status line `skill: <name>` when the model invokes a skill from this
+  marketplace (plugin list read from the installed `marketplace.json`). Prototype runs as a
+  dev mod (`~/.claude/dev-mods/<session>/skill-notify/`); fold into the skill-routing item above.
+- **like-me voice profile:** save the analysed voice profile in `$.store` so later `write:like-me`
+  runs reuse it instead of re-reading samples.
