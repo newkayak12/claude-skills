@@ -22,7 +22,7 @@ compatibility:
 
 # Performance Profiling & Optimization
 
-Measure first. Hypothesize second. Profile third. Fix fourth. Verify always.
+Measure first. Hypothesize second. Profile third. Fix fourth. Verify always. Guard last.
 
 Never optimize without data. Never guess at bottlenecks.
 
@@ -56,11 +56,24 @@ Map symptoms to candidate causes using the table below. Pick the top 2–3.
 Target the hypothesis. Don't profile everything at once.
 
 ### Step 4 — Fix
-One change at a time. Document what you changed and why.
+One change at a time, so the delta in Step 5 has one cause. Document what you changed and why.
+If changes must ship together, measure each alone first.
 
 ### Step 5 — Verify
-Re-run the same load that reproduced the problem. Compare against baseline.
+Re-run the same load, same conditions, same duration, that reproduced the problem. Compare against baseline.
+- **Correctness check first**: tests pass and output is identical to before. A speedup that changes results
+  (dropped work, stale cache, skipped validation) is a bug, so the metric does not count until this passes.
+- **Beat the noise**: repeat the runs and compare the delta to run-to-run variance, not one mean. A 3% gain
+  inside ±5% variance is a different sample, not a gain.
+- **Neutral or worse: revert.** A change that does not measurably help still adds complexity and risk; keep
+  only what the numbers prove.
 If the fix holds: document it. If not: return to Step 2.
+
+### Step 6 — Guard
+Stop the regression from returning. Pick the metric the fix was justified by (e.g. P99 of `/checkout`) and
+enforce it: a CI performance budget (fail the build above 800ms P95 in the load test, judged on a median of
+repeated runs so variance does not make it flaky) and/or an alert on that metric in production monitoring.
+When the guard fires, return to Step 1 and re-baseline.
 
 ---
 
@@ -185,7 +198,8 @@ Before declaring the investigation done:
 - [ ] Bottleneck confirmed with profiler data (not just hypothesis)
 - [ ] Root cause identified (not just symptom)
 - [ ] Fix applied one change at a time
-- [ ] Post-fix metrics confirm improvement
+- [ ] Correctness check passed; improvement exceeds run-to-run variance (neutral changes reverted)
+- [ ] CI budget or alert guards the metric
 - [ ] Change documented with before/after numbers
 - [ ] Regression test or load test added to prevent recurrence
 
