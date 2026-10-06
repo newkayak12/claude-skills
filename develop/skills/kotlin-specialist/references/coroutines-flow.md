@@ -1,276 +1,127 @@
-# Coroutines & Flow API
+# Coroutines and Flow
 
-## Structured Concurrency
+Reading order: scope ownership, then dispatcher choice, then failure and cancellation, then Flow, then tests.
+
+## Scope ownership
+
+Every coroutine has a parent; the parent waits for children and cancels them when it is cancelled. Design the owner first.
+
+| Owner | Lifetime ends when |
+|-------|--------------------|
+| `viewModelScope` / `lifecycleScope` (Android) | the ViewModel is cleared / lifecycle destroyed |
+| Spring or Ktor request handler | the request completes or the client disconnects |
+| A class-level `CoroutineScope(SupervisorJob() + dispatcher)` | the owner calls `scope.cancel()` from `close()` |
 
 ```kotlin
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
-
-class UserRepository(
-    private val api: ApiService,
-    private val scope: CoroutineScope
-) {
-    // CORRECT: Structured concurrency with supervisor
-    suspend fun fetchUsers(): Result<List<User>> = coroutineScope {
-        supervisorScope {
-            try {
-                val users = async { api.getUsers() }
-                val profiles = async { api.getProfiles() }
-                Result.success(users.await() + profiles.await())
-            } catch (e: Exception) {
-                Result.failure(e)
-            }
-        }
-    }
-
-    // WRONG: GlobalScope bypasses structured concurrency
-    // fun fetchUsersWrong() = GlobalScope.launch { ... }
+class PriceFeed(dispatcher: CoroutineDispatcher = Dispatchers.Default) : AutoCloseable {
+    private val scope = CoroutineScope(SupervisorJob() + dispatcher)
+    fun start(source: Quotes) = scope.launch { source.stream().collect(::publish) }
+    override fun close() = scope.cancel()
 }
 ```
 
-## Coroutine Scopes & Dispatchers
+- Prefer `coroutineScope { }` inside a suspend function over a stored scope; it returns only after all children finish and rethrows the first failure.
+- `supervisorScope { }` lets siblings survive one child's failure; use it for independent work such as fan-out notifications.
+- Inject the dispatcher so tests can replace it.
+
+## Parallel decomposition
 
 ```kotlin
-class ViewModel : CoroutineScope {
-    override val coroutineContext = SupervisorJob() + Dispatchers.Main
-
-    fun loadData() {
-        launch {
-            val data = withContext(Dispatchers.IO) {
-                // I/O operations on IO dispatcher
-                repository.fetchData()
-            }
-            // Back to Main dispatcher automatically
-            updateUI(data)
-        }
-    }
-
-    fun cleanup() {
-        coroutineContext.cancelChildren()
-    }
-}
-
-// Android ViewModel - use viewModelScope
-class AndroidViewModel : ViewModel() {
-    fun loadUsers() {
-        viewModelScope.launch {
-            userRepository.getUsers().collect { users ->
-                _uiState.update { it.copy(users = users) }
-            }
-        }
-    }
+suspend fun loadDashboard(id: Long): Dashboard = coroutineScope {
+    val profile = async { profiles.find(id) }
+    val orders = async { orders.recent(id) }
+    Dashboard(profile.await(), orders.await())
 }
 ```
 
-## Flow Basics
+If `orders` throws, `profile` is cancelled and the exception propagates from `coroutineScope`. For a bounded number of concurrent calls over a collection, use a `Semaphore(permits)` and `withPermit`, or `flatMapMerge(concurrency)` on a Flow.
+
+## Dispatchers
+
+- `Dispatchers.Default`: CPU-bound work, pool sized to core count.
+- `Dispatchers.IO`: blocking calls (JDBC, file, legacy HTTP clients). It shares threads with Default and can grow beyond the core count.
+- `Dispatchers.Main`: UI thread on Android and desktop only.
+- `limitedParallelism(n)` on a dispatcher caps concurrency for one resource, e.g. `Dispatchers.IO.limitedParallelism(8)` for a pool-like limit.
+- Wrap blocking code with `withContext(Dispatchers.IO) { ... }` at the edge, so callers of a suspend function never need to know which thread it uses (main-safety).
+
+## Failure semantics
+
+- A failing child cancels its parent and siblings, unless a `SupervisorJob` sits in between.
+- `launch` reports uncaught exceptions to the scope's `CoroutineExceptionHandler`; `async` holds the exception until `await()`.
+- `try/catch` around `launch { }` does not catch what happens inside; put the `try` inside the lambda.
+- A `CoroutineExceptionHandler` only works on root coroutines and is a last-resort logger, not control flow.
+- Catching `Exception` swallows `CancellationException`. Rethrow it:
 
 ```kotlin
-// Cold flow - starts on collection
-fun getUsers(): Flow<List<User>> = flow {
-    val users = api.fetchUsers()
-    emit(users)
-    delay(1000)
-    emit(users + api.fetchNewUsers())
-}.flowOn(Dispatchers.IO)
-
-// Hot flow - StateFlow (always has value)
-class UserStore {
-    private val _users = MutableStateFlow<List<User>>(emptyList())
-    val users: StateFlow<List<User>> = _users.asStateFlow()
-
-    suspend fun loadUsers() {
-        api.getUsers().collect { userList ->
-            _users.update { userList }
-        }
-    }
-}
-
-// Hot flow - SharedFlow (events, no initial value)
-class EventBus {
-    private val _events = MutableSharedFlow<Event>(
-        replay = 0,
-        extraBufferCapacity = 10,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
-    val events: SharedFlow<Event> = _events.asSharedFlow()
-
-    suspend fun emit(event: Event) {
-        _events.emit(event)
-    }
-}
+try { api.call() }
+catch (e: CancellationException) { throw e }
+catch (e: IOException) { fallback() }
 ```
 
-## Flow Operators
-
-```kotlin
-fun getUsersWithPosts(): Flow<UserWithPosts> = flow {
-    userRepository.getUsers()
-        .map { user -> UserWithPosts(user, getPosts(user.id)) }
-        .filter { it.posts.isNotEmpty() }
-        .catch { e -> emit(UserWithPosts.Error(e)) }
-        .onEach { delay(100) } // Throttle
-        .distinctUntilChanged()
-        .collect { emit(it) }
-}
-
-// Combining flows
-fun getCombinedData(): Flow<UiState> = combine(
-    userFlow,
-    settingsFlow,
-    notificationsFlow
-) { user, settings, notifications ->
-    UiState(user, settings, notifications)
-}
-
-// Flattening flows
-fun searchUsers(query: String): Flow<List<User>> =
-    queryFlow
-        .debounce(300)
-        .filter { it.length >= 3 }
-        .distinctUntilChanged()
-        .flatMapLatest { query ->
-            repository.search(query)
-        }
-```
-
-## Exception Handling
-
-```kotlin
-suspend fun loadDataSafely(): Result<Data> =
-    supervisorScope {
-        try {
-            val result = async {
-                api.getData()
-            }
-            Result.success(result.await())
-        } catch (e: CancellationException) {
-            // Don't catch cancellation - rethrow
-            throw e
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-// Flow error handling
-fun getDataFlow(): Flow<Data> = flow {
-    emit(api.getData())
-}.retry(3) { cause ->
-    cause is IOException
-}.catch { e ->
-    emit(Data.Error(e))
-}
-
-// Supervisor scope for independent children
-suspend fun loadMultiple() = supervisorScope {
-    val job1 = launch { task1() } // Failure won't affect job2
-    val job2 = launch { task2() }
-    joinAll(job1, job2)
-}
-```
+Or use `runCatching` only when you rethrow cancellation afterwards; otherwise prefer explicit catches.
 
 ## Cancellation
 
-```kotlin
-suspend fun cancellableWork() {
-    withTimeout(5000) {
-        while (isActive) { // Check for cancellation
-            doWork()
-            yield() // Cooperation point
-        }
-    }
-}
+Cancellation is cooperative. A coroutine stops at the next suspension point that checks it; tight CPU loops need `ensureActive()` or `yield()`.
 
-// Cleanup with finally
-suspend fun withCleanup() {
-    try {
-        longRunningTask()
-    } finally {
-        withContext(NonCancellable) {
-            cleanup() // Always runs even if cancelled
-        }
+```kotlin
+suspend fun checksum(chunks: List<ByteArray>): Long {
+    var acc = 0L
+    for (c in chunks) { currentCoroutineContext().ensureActive(); acc += crc(c) }
+    return acc
+}
+```
+
+- Cleanup that must suspend after cancellation goes in `withContext(NonCancellable) { ... }` inside `finally`.
+- `withTimeout(d)` throws `TimeoutCancellationException`; `withTimeoutOrNull(d)` returns null instead.
+- Wrap callback APIs with `suspendCancellableCoroutine` and register `invokeOnCancellation` to release the underlying call.
+
+## Flow
+
+A cold `Flow` runs its builder for each collector. Hot types are `SharedFlow` and `StateFlow`.
+
+| Need | Use |
+|------|-----|
+| Sequence computed on demand | `flow { emit(x) }` |
+| Wrap callbacks | `callbackFlow { ...; awaitClose { unregister() } }` |
+| Current value plus updates, replay of last value, conflated | `StateFlow` (always has a value, compares with `equals`) |
+| Events to many listeners, configurable replay | `SharedFlow` |
+| Cold upstream shared among collectors | `shareIn` / `stateIn` with `SharingStarted.WhileSubscribed(5_000)` |
+
+Context rule: collect in the caller's context; change the upstream context with `flowOn`, never with `withContext` around `emit`.
+
+Operators worth knowing:
+- `map`, `filter`, `transform`, `onEach`, `take`.
+- `flatMapLatest` cancels the previous inner flow on new input (search-as-you-type); `flatMapConcat` keeps order; `flatMapMerge` runs concurrently.
+- `debounce`, `distinctUntilChanged`, `conflate`, `buffer` control pressure between producer and consumer.
+- `combine` re-emits when any source emits; `zip` pairs one-to-one.
+- `catch { }` handles upstream errors only; `retryWhen { cause, attempt -> ... }` for backoff; terminal `collect` errors are not caught by it.
+
+```kotlin
+val results: StateFlow<List<Item>> = queries
+    .debounce(300)
+    .distinctUntilChanged()
+    .flatMapLatest { q -> repo.search(q).catch { emit(emptyList()) } }
+    .stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
+```
+
+## Testing
+
+Use `kotlinx-coroutines-test`.
+
+```kotlin
+@Test fun `emits loading then data`() = runTest {
+    val vm = SearchViewModel(FakeRepo(), StandardTestDispatcher(testScheduler))
+    vm.state.test {                         // Turbine
+        assertEquals(Loading, awaitItem())
+        vm.search("kotlin")
+        advanceUntilIdle()
+        assertIs<Success>(awaitItem())
+        cancelAndIgnoreRemainingEvents()
     }
 }
 ```
 
-## Testing Coroutines
-
-```kotlin
-import kotlinx.coroutines.test.*
-
-class UserViewModelTest {
-    @Test
-    fun testLoadUsers() = runTest {
-        val viewModel = UserViewModel(fakeRepository)
-
-        viewModel.loadUsers()
-        advanceUntilIdle() // Run all pending coroutines
-
-        assertEquals(expectedUsers, viewModel.users.value)
-    }
-
-    @Test
-    fun testFlow() = runTest {
-        val flow = repository.getUsersFlow()
-        val results = flow.take(3).toList()
-
-        assertEquals(3, results.size)
-    }
-
-    // Testing with Turbine
-    @Test
-    fun testFlowWithTurbine() = runTest {
-        repository.getUsersFlow().test {
-            assertEquals(Loading, awaitItem())
-            assertEquals(Success(users), awaitItem())
-            awaitComplete()
-        }
-    }
-}
-```
-
-## Performance Patterns
-
-```kotlin
-// Use sequence for lazy evaluation
-fun processLargeList(items: List<Item>): List<Result> =
-    items.asSequence()
-        .filter { it.isValid }
-        .map { transform(it) }
-        .take(100)
-        .toList() // Only processes first 100 valid items
-
-// Channel for producer-consumer
-fun produceNumbers() = produce {
-    repeat(10) {
-        send(it)
-        delay(100)
-    }
-}
-
-// Parallel processing with async
-suspend fun processInParallel(items: List<Item>): List<Result> =
-    coroutineScope {
-        items.map { item ->
-            async { process(item) }
-        }.awaitAll()
-    }
-```
-
-## Quick Reference
-
-| Pattern | Use Case |
-|---------|----------|
-| `launch` | Fire-and-forget coroutine |
-| `async/await` | Parallel computation with result |
-| `flow { }` | Cold stream of values |
-| `StateFlow` | Hot flow with current state |
-| `SharedFlow` | Hot flow for events |
-| `withContext` | Switch dispatcher |
-| `supervisorScope` | Independent child failures |
-| `coroutineScope` | All children must succeed |
-| `flowOn` | Change flow dispatcher |
-| `catch` | Handle flow errors |
-| `retry` | Retry on failure |
-| `debounce` | Rate limiting |
-| `distinctUntilChanged` | Skip duplicates |
-| `combine` | Merge multiple flows |
+- `runTest` skips delays by advancing virtual time; `advanceTimeBy(ms)` and `runCurrent()` give finer control.
+- On Android, set `Dispatchers.setMain(testDispatcher)` in setup and `resetMain()` in teardown.
+- Collection of a `StateFlow` in a background `launch` needs `backgroundScope.launch` so `runTest` can finish.

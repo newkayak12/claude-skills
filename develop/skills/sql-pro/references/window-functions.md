@@ -1,328 +1,91 @@
 # Window Functions
 
-## Ranking Functions
+A window function computes over a set of rows related to the current row **without collapsing them**. General form: `fn(...) OVER (PARTITION BY ... ORDER BY ... frame)`.
+
+Evaluation order matters: windows run after `WHERE`, `GROUP BY` and `HAVING`, so they cannot appear in `WHERE`. To filter on a window result, compute it in a CTE or subquery and filter outside.
+
+## Ranking
+
+| Function | Ties | Gaps after ties |
+|----------|------|-----------------|
+| `ROW_NUMBER()` | arbitrary but unique numbering | n/a |
+| `RANK()` | same rank | yes (1,1,3) |
+| `DENSE_RANK()` | same rank | no (1,1,2) |
+| `NTILE(n)` | splits into n buckets | n/a |
+| `PERCENT_RANK()`, `CUME_DIST()` | relative position 0..1 | n/a |
+
+With a non-unique `ORDER BY`, `ROW_NUMBER` can assign numbers differently between runs. Append a unique tiebreaker like `ORDER BY created_at DESC, id ASC` when results are stored or paginated.
+
+Deduplicate keeping the newest row per key:
 
 ```sql
--- ROW_NUMBER: Sequential numbering within partition
-SELECT
-    customer_id,
-    order_date,
-    total,
-    ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY order_date DESC) as row_num
-FROM orders;
+SELECT * FROM (
+    SELECT e.*, ROW_NUMBER() OVER (PARTITION BY email ORDER BY updated_at DESC, id DESC) AS rn
+    FROM subscriber e
+) x WHERE rn = 1;
+```
 
--- Get most recent order per customer
-SELECT *
+## Navigation
+
+- `LAG(col, n, default)` / `LEAD(col, n, default)` read a row n positions before/after within the partition; the first/last rows yield the default (NULL if omitted).
+- `FIRST_VALUE`, `LAST_VALUE`, `NTH_VALUE` read by frame position.
+
+```sql
+SELECT day, revenue,
+       revenue - LAG(revenue) OVER (ORDER BY day) AS delta,
+       ROUND(100.0 * (revenue - LAG(revenue) OVER (ORDER BY day))
+             / NULLIF(LAG(revenue) OVER (ORDER BY day), 0), 1) AS pct
+FROM daily_revenue;
+```
+
+## Frames
+
+Aggregates and `FIRST/LAST/NTH_VALUE` honour a frame: `{ROWS | RANGE | GROUPS} BETWEEN start AND end`.
+
+- `ROWS` counts physical rows. `RANGE` includes all peers (rows with equal ORDER BY value) and allows value offsets such as `INTERVAL '7 days' PRECEDING` where supported. `GROUPS` counts peer groups (PostgreSQL 11+).
+- **Default frame** with `ORDER BY` is `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`; without `ORDER BY` it is the whole partition.
+- Pitfall: `LAST_VALUE(x) OVER (ORDER BY d)` yields the current row's value (or that of its peers), never the partition's final one. State the frame explicitly: `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+- Running totals: use `ROWS UNBOUNDED PRECEDING`. It is deterministic with duplicate dates and cheaper than the `RANGE` default in several engines.
+
+```sql
+SELECT day,
+       SUM(revenue) OVER (ORDER BY day ROWS UNBOUNDED PRECEDING) AS running,
+       AVG(revenue) OVER (ORDER BY day ROWS 6 PRECEDING)         AS ma7
+FROM daily_revenue;
+```
+
+Share one definition through a named `WINDOW` clause. Supported in PostgreSQL, MySQL 8.0+, SQLite 3.28+ and SQL Server 2022 (compatibility level 160); on other engines, repeat the `OVER (...)` spec:
+
+```sql
+SELECT day, SUM(revenue) OVER w, AVG(revenue) OVER w
+FROM daily_revenue
+WINDOW w AS (ORDER BY day ROWS BETWEEN 2 PRECEDING AND CURRENT ROW);
+```
+
+## Recipes
+
+**Share of total**: `amount / SUM(amount) OVER (PARTITION BY region)`.
+
+**Gaps and islands** (consecutive runs): subtract a row number from the value; rows in one run share the difference.
+
+```sql
+SELECT user_id, MIN(day) AS from_day, MAX(day) AS to_day, COUNT(*) AS streak
 FROM (
-    SELECT
-        customer_id,
-        order_id,
-        order_date,
-        total,
-        ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY order_date DESC) as rn
-    FROM orders
-) ranked
-WHERE rn = 1;
-
--- RANK: Same values get same rank, gaps in sequence
-SELECT
-    student_id,
-    score,
-    RANK() OVER (ORDER BY score DESC) as rank,
-    DENSE_RANK() OVER (ORDER BY score DESC) as dense_rank,
-    ROW_NUMBER() OVER (ORDER BY score DESC) as row_num
-FROM exam_results;
-/*
-score=100: rank=1, dense_rank=1, row_num=1
-score=100: rank=1, dense_rank=1, row_num=2
-score=95:  rank=3, dense_rank=2, row_num=3
-*/
-
--- NTILE: Divide into N buckets
-SELECT
-    customer_id,
-    total_spent,
-    NTILE(4) OVER (ORDER BY total_spent DESC) as quartile
-FROM customer_lifetime_value;
+    SELECT user_id, day,
+           day - (ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY day))::int AS grp
+    FROM login_day
+) t
+GROUP BY user_id, grp;
 ```
+(PostgreSQL: `date - integer` yields a date. Elsewhere use `DATEADD` / `DATE_SUB`.)
 
-## Aggregate Window Functions
+**Sessionization**: flag a new session when `day - LAG(day) > threshold`, then `SUM(flag) OVER (ORDER BY day)` yields session ids.
 
-```sql
--- Running totals and cumulative sums
-SELECT
-    order_date,
-    daily_revenue,
-    SUM(daily_revenue) OVER (ORDER BY order_date) as cumulative_revenue,
-    AVG(daily_revenue) OVER (
-        ORDER BY order_date
-        ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
-    ) as rolling_7day_avg
-FROM daily_sales;
+**Conditional running count**: `SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) OVER (PARTITION BY job ORDER BY run_at, id ROWS UNBOUNDED PRECEDING)`.
 
--- Moving average with RANGE
-SELECT
-    sale_date,
-    amount,
-    AVG(amount) OVER (
-        ORDER BY sale_date
-        RANGE BETWEEN INTERVAL '7 days' PRECEDING AND CURRENT ROW
-    ) as avg_last_7_days
-FROM sales;
+## Cost Notes
 
--- Partition-specific aggregates
-SELECT
-    product_id,
-    sale_date,
-    quantity,
-    SUM(quantity) OVER (PARTITION BY product_id ORDER BY sale_date) as cumulative_qty,
-    AVG(quantity) OVER (PARTITION BY product_id) as avg_qty_for_product,
-    quantity::FLOAT / SUM(quantity) OVER (PARTITION BY product_id) as pct_of_total
-FROM product_sales;
-```
-
-## LAG and LEAD Functions
-
-```sql
--- Compare with previous/next row
-SELECT
-    order_date,
-    total,
-    LAG(total) OVER (ORDER BY order_date) as previous_day_total,
-    LEAD(total) OVER (ORDER BY order_date) as next_day_total,
-    total - LAG(total) OVER (ORDER BY order_date) as day_over_day_change
-FROM daily_orders;
-
--- Find gaps in time series
-SELECT
-    event_date,
-    LAG(event_date) OVER (ORDER BY event_date) as prev_date,
-    event_date - LAG(event_date) OVER (ORDER BY event_date) as days_since_last
-FROM events
-WHERE event_date - LAG(event_date) OVER (ORDER BY event_date) > 7;
-
--- Session analysis with time gaps
-SELECT
-    user_id,
-    action_time,
-    LAG(action_time) OVER (PARTITION BY user_id ORDER BY action_time) as prev_action,
-    EXTRACT(EPOCH FROM (
-        action_time - LAG(action_time) OVER (PARTITION BY user_id ORDER BY action_time)
-    )) / 60 as minutes_since_last_action,
-    CASE
-        WHEN EXTRACT(EPOCH FROM (
-            action_time - LAG(action_time) OVER (PARTITION BY user_id ORDER BY action_time)
-        )) / 60 > 30 THEN 1
-        ELSE 0
-    END as new_session
-FROM user_actions;
-```
-
-## FIRST_VALUE and LAST_VALUE
-
-```sql
--- Compare each row to first/last in partition
-SELECT
-    product_id,
-    price_date,
-    price,
-    FIRST_VALUE(price) OVER (
-        PARTITION BY product_id
-        ORDER BY price_date
-        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-    ) as initial_price,
-    LAST_VALUE(price) OVER (
-        PARTITION BY product_id
-        ORDER BY price_date
-        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-    ) as current_price,
-    price - FIRST_VALUE(price) OVER (
-        PARTITION BY product_id
-        ORDER BY price_date
-        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-    ) as price_change_from_start
-FROM product_price_history;
-
--- NTH_VALUE: Get specific positioned value
-SELECT
-    sale_date,
-    amount,
-    NTH_VALUE(amount, 2) OVER (
-        ORDER BY sale_date
-        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-    ) as second_day_amount
-FROM daily_sales;
-```
-
-## Frame Specifications
-
-```sql
--- ROWS vs RANGE difference
-SELECT
-    order_date,
-    amount,
-    -- ROWS: Physical row offset
-    SUM(amount) OVER (
-        ORDER BY order_date
-        ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING
-    ) as sum_5_rows,
-    -- RANGE: Logical value range
-    SUM(amount) OVER (
-        ORDER BY order_date
-        RANGE BETWEEN INTERVAL '2 days' PRECEDING AND INTERVAL '2 days' FOLLOWING
-    ) as sum_5_day_range
-FROM orders;
-
--- Common frame patterns
-SELECT
-    sale_date,
-    revenue,
-    -- All preceding rows
-    SUM(revenue) OVER (
-        ORDER BY sale_date
-        ROWS UNBOUNDED PRECEDING
-    ) as running_total,
-    -- Last 3 rows including current
-    AVG(revenue) OVER (
-        ORDER BY sale_date
-        ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
-    ) as ma_3,
-    -- Entire partition
-    SUM(revenue) OVER (
-        PARTITION BY EXTRACT(YEAR FROM sale_date)
-    ) as yearly_total,
-    -- Centered window
-    AVG(revenue) OVER (
-        ORDER BY sale_date
-        ROWS BETWEEN 3 PRECEDING AND 3 FOLLOWING
-    ) as centered_ma_7
-FROM sales;
-```
-
-## Advanced Analytics
-
-```sql
--- Percentile calculations
-SELECT
-    employee_id,
-    salary,
-    PERCENT_RANK() OVER (ORDER BY salary) as pct_rank,
-    CUME_DIST() OVER (ORDER BY salary) as cumulative_dist,
-    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY salary) OVER () as median_salary,
-    PERCENTILE_DISC(0.9) WITHIN GROUP (ORDER BY salary) OVER () as p90_salary
-FROM employees;
-
--- Cohort retention analysis
-WITH user_cohorts AS (
-    SELECT
-        user_id,
-        DATE_TRUNC('month', signup_date) as cohort_month,
-        DATE_TRUNC('month', activity_date) as activity_month
-    FROM user_activity
-),
-cohort_sizes AS (
-    SELECT
-        cohort_month,
-        COUNT(DISTINCT user_id) as cohort_size
-    FROM user_cohorts
-    GROUP BY cohort_month
-)
-SELECT
-    uc.cohort_month,
-    uc.activity_month,
-    EXTRACT(MONTH FROM AGE(uc.activity_month, uc.cohort_month)) as months_since_signup,
-    COUNT(DISTINCT uc.user_id) as active_users,
-    cs.cohort_size,
-    ROUND(100.0 * COUNT(DISTINCT uc.user_id) / cs.cohort_size, 2) as retention_pct
-FROM user_cohorts uc
-JOIN cohort_sizes cs ON uc.cohort_month = cs.cohort_month
-GROUP BY uc.cohort_month, uc.activity_month, cs.cohort_size
-ORDER BY uc.cohort_month, months_since_signup;
-
--- Time-series gap filling
-SELECT
-    date_series.date,
-    COALESCE(s.revenue, 0) as revenue,
-    AVG(s.revenue) OVER (
-        ORDER BY date_series.date
-        ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
-    ) as ma_7day
-FROM generate_series(
-    '2024-01-01'::DATE,
-    '2024-12-31'::DATE,
-    '1 day'::INTERVAL
-) AS date_series(date)
-LEFT JOIN sales s ON date_series.date = s.sale_date;
-```
-
-## Conditional Aggregation with Windows
-
-```sql
--- Filter within window function
-SELECT
-    product_id,
-    sale_date,
-    quantity,
-    SUM(quantity) FILTER (WHERE quantity > 10) OVER (
-        PARTITION BY product_id
-        ORDER BY sale_date
-    ) as cumulative_large_orders,
-    COUNT(*) FILTER (WHERE quantity > 100) OVER (
-        PARTITION BY product_id
-    ) as total_bulk_orders
-FROM sales;
-
--- Multiple conditions
-SELECT
-    customer_id,
-    order_date,
-    total,
-    COUNT(*) FILTER (WHERE total > 1000) OVER (
-        PARTITION BY customer_id
-    ) as high_value_order_count,
-    AVG(total) FILTER (WHERE total < 100) OVER (
-        PARTITION BY customer_id
-    ) as avg_small_order_value
-FROM orders;
-```
-
-## Performance Considerations
-
-```sql
--- Avoid multiple window passes - combine into one
--- Bad: Multiple scans
-SELECT
-    product_id,
-    (SELECT AVG(price) FROM products) as avg_price,
-    (SELECT MAX(price) FROM products) as max_price
-FROM products;
-
--- Good: Single window pass
-SELECT DISTINCT
-    AVG(price) OVER () as avg_price,
-    MAX(price) OVER () as max_price
-FROM products;
-
--- Materialize expensive windows
-CREATE MATERIALIZED VIEW product_rankings AS
-SELECT
-    product_id,
-    category,
-    sales_count,
-    RANK() OVER (PARTITION BY category ORDER BY sales_count DESC) as category_rank,
-    PERCENT_RANK() OVER (ORDER BY sales_count DESC) as overall_percentile
-FROM product_sales_summary;
-
-CREATE INDEX idx_product_rankings_category ON product_rankings(category, category_rank);
-```
-
-## Common Patterns
-
-1. **Top N per Group**: Use ROW_NUMBER() with WHERE rn <= N
-2. **Running Totals**: SUM() OVER (ORDER BY date)
-3. **Moving Averages**: AVG() with ROWS BETWEEN N PRECEDING
-4. **Session Analysis**: LAG() to detect time gaps
-5. **Deduplication**: ROW_NUMBER() OVER (PARTITION BY key ORDER BY priority) WHERE rn = 1
-6. **Percentiles**: PERCENT_RANK() or PERCENTILE_CONT()
-7. **Year-over-Year**: LAG(value, 12) OVER (ORDER BY month)
-8. **Cohort Analysis**: PARTITION BY cohort_date, aggregate over activity periods
+- Each distinct `PARTITION BY / ORDER BY` pair usually needs its own sort. Share one ordering across several functions when you can.
+- An index matching `(partition cols, order cols)` can let the engine skip the sort.
+- Filter rows before the window step when semantics allow; windows run over everything that reaches them.
+- For "latest row per group" on a large table, compare against `DISTINCT ON` (PostgreSQL) or a lateral/apply top-1 lookup; with a suitable index these can beat a full-table window.

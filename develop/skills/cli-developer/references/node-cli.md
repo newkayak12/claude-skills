@@ -1,383 +1,80 @@
-# Node.js CLI Development
+# Node.js CLIs
 
-## Commander.js (Recommended)
+## commander
 
-Modern, elegant CLI framework with TypeScript support.
-
-```javascript
+```js
 #!/usr/bin/env node
-import { Command } from 'commander';
-import { version } from './package.json';
+import { Command, Option } from 'commander';
 
-const program = new Command();
+const program = new Command('deployctl')
+  .description('Manage releases')
+  .version('0.3.0');
 
 program
-  .name('mycli')
-  .description('My awesome CLI tool')
-  .version(version);
-
-// Simple command
-program
-  .command('init')
-  .description('Initialize a new project')
-  .option('-t, --template <type>', 'Project template', 'default')
-  .option('-f, --force', 'Overwrite existing files')
-  .action(async (options) => {
-    console.log(`Initializing with template: ${options.template}`);
+  .command('release')
+  .argument('<service>', 'service to release')
+  .addOption(new Option('-e, --env <name>', 'target').choices(['dev', 'prod']).default('dev'))
+  .option('--dry-run', 'print the plan only')
+  .action(async (service, opts) => {
+    // opts.env, opts.dryRun (camel-cased automatically)
   });
 
-// Command with arguments
-program
-  .command('deploy <environment>')
-  .description('Deploy to environment')
-  .option('--dry-run', 'Preview without executing')
-  .action(async (environment, options) => {
-    if (options.dryRun) {
-      console.log(`Would deploy to: ${environment}`);
-    } else {
-      await deploy(environment);
-    }
-  });
-
-// Nested subcommands
-const config = program.command('config').description('Manage configuration');
-
-config
-  .command('get <key>')
-  .description('Get config value')
-  .action((key) => console.log(getConfig(key)));
-
-config
-  .command('set <key> <value>')
-  .description('Set config value')
-  .action((key, value) => setConfig(key, value));
-
-program.parse();
+await program.parseAsync();
 ```
 
-## Yargs (Alternative)
+Points worth knowing:
+- Use `parseAsync` whenever any action is async, otherwise rejections escape.
+- `.requiredOption()` enforces a flag; `.argument('[x]')` is optional, `<x>` required, `<x...>` variadic.
+- `program.opts()` reads global options inside subcommands; `.hook('preAction', fn)` is the place for shared setup such as loading config.
+- Compose big CLIs by building each subcommand in its own module and calling `.addCommand(sub)`.
+- `.exitOverride()` makes commander throw instead of exiting, which is what tests need; `.configureOutput({ writeErr })` redirects its messages.
 
-Powerful argument parsing with middleware support.
+## yargs
 
-```javascript
-#!/usr/bin/env node
-import yargs from 'yargs';
-import { hideBin } from 'yargs/helpers';
+Choose it when you need middleware, coercion pipelines, or `.commandDir()` style auto-loading. Otherwise commander is smaller and starts faster. `oclif` fits when you want generated scaffolding, plugin support and an update story, and accept a heavier install.
 
-yargs(hideBin(process.argv))
-  .command(
-    'deploy <env>',
-    'Deploy to environment',
-    (yargs) => {
-      return yargs
-        .positional('env', {
-          describe: 'Environment name',
-          choices: ['dev', 'staging', 'prod'],
-        })
-        .option('force', {
-          alias: 'f',
-          type: 'boolean',
-          description: 'Force deployment',
-        });
-    },
-    async (argv) => {
-      await deploy(argv.env, { force: argv.force });
-    }
-  )
-  .middleware([(argv) => {
-    // Validate before all commands
-    if (!isConfigValid()) {
-      throw new Error('Invalid config');
-    }
-  }])
-  .demandCommand()
-  .help()
-  .parse();
+## Prompts
+
+`@inquirer/prompts` exposes one function per kind (`input`, `select`, `confirm`, `password`, `checkbox`). Guard every call:
+
+```js
+const env = opts.env ?? (process.stdin.isTTY ? await select({ message: 'Env?', choices }) : fail('--env is required without a TTY'));
 ```
 
-## Interactive Prompts (Inquirer)
+## Output
 
-Beautiful interactive prompts for user input.
+- Color: `process.stdout.isTTY`, the `NO_COLOR` variable and a `--no-color` flag all gate it. picocolors honours `NO_COLOR` out of the box; with chalk, check `NO_COLOR` yourself before enabling color.
+- Spinner (`ora`): `const s = ora('Uploading').start(); ... s.succeed('Uploaded')` or `s.fail(...)`. It writes to stderr and degrades when not a TTY.
+- Determinate bars: `cli-progress`; update with a rate-limited tick, not per byte.
+- Print results with `console.log`, diagnostics with `console.error`.
 
-```javascript
-import inquirer from 'inquirer';
+## Failure handling
 
-// Text input
-const { name } = await inquirer.prompt([
-  {
-    type: 'input',
-    name: 'name',
-    message: 'Project name:',
-    default: 'my-project',
-    validate: (input) => input.length > 0 || 'Name required',
-  },
-]);
-
-// Select from list
-const { environment } = await inquirer.prompt([
-  {
-    type: 'list',
-    name: 'environment',
-    message: 'Select environment:',
-    choices: ['development', 'staging', 'production'],
-    default: 'development',
-  },
-]);
-
-// Checkbox (multi-select)
-const { features } = await inquirer.prompt([
-  {
-    type: 'checkbox',
-    name: 'features',
-    message: 'Select features:',
-    choices: [
-      { name: 'TypeScript', checked: true },
-      { name: 'ESLint', checked: true },
-      { name: 'Prettier', checked: true },
-      { name: 'Jest', checked: false },
-    ],
-  },
-]);
-
-// Confirmation
-const { confirmed } = await inquirer.prompt([
-  {
-    type: 'confirm',
-    name: 'confirmed',
-    message: 'Deploy to production?',
-    default: false,
-  },
-]);
-
-// Password
-const { password } = await inquirer.prompt([
-  {
-    type: 'password',
-    name: 'password',
-    message: 'Enter password:',
-    mask: '*',
-  },
-]);
+```js
+process.on('SIGINT', () => { cleanup(); process.exit(130); });
 ```
 
-## Terminal Output (Chalk)
+Catch at the entry point once: print `err.message` (stack only under `--debug`), set `process.exitCode` and return, instead of calling `process.exit` mid-flow where it can truncate buffered output.
 
-Colorful terminal output with proper TTY detection.
+## Paths and files
 
-```javascript
-import chalk from 'chalk';
+Use `node:os` `homedir()` and `node:path` `join`; never concatenate with `/`. Resolve user-supplied paths against `process.cwd()`. For config dirs, honour `XDG_CONFIG_HOME` before falling back to `~/.config`.
 
-// Basic colors
-console.log(chalk.blue('Info: ') + 'Starting deployment...');
-console.log(chalk.green('Success: ') + 'Deployment complete');
-console.log(chalk.yellow('Warning: ') + 'Deprecated flag used');
-console.log(chalk.red('Error: ') + 'Deployment failed');
-
-// Styles
-console.log(chalk.bold.underline('Important'));
-console.log(chalk.dim('Less important'));
-
-// Templates
-const success = chalk.green.bold;
-const error = chalk.red.bold;
-console.log(success('✓') + ' Build successful');
-console.log(error('✗') + ' Build failed');
-
-// Disable colors for CI
-const log = {
-  info: (msg) => console.log(chalk.blue('ℹ'), msg),
-  success: (msg) => console.log(chalk.green('✔'), msg),
-  warn: (msg) => console.log(chalk.yellow('⚠'), msg),
-  error: (msg) => console.log(chalk.red('✖'), msg),
-};
-
-// Auto-detects TTY and CI environments
-```
-
-## Progress Indicators (Ora)
-
-Elegant terminal spinners and progress indicators.
-
-```javascript
-import ora from 'ora';
-
-// Simple spinner
-const spinner = ora('Loading...').start();
-await doWork();
-spinner.succeed('Done!');
-
-// Update text
-const spinner = ora('Starting...').start();
-spinner.text = 'Processing...';
-await process();
-spinner.text = 'Finalizing...';
-await finalize();
-spinner.succeed('Complete!');
-
-// Different states
-spinner.start('Installing dependencies...');
-// ... work
-spinner.succeed('Dependencies installed');
-// or
-spinner.fail('Installation failed');
-// or
-spinner.warn('Some packages skipped');
-// or
-spinner.info('Using cached packages');
-
-// Multiple spinners
-const spinners = {
-  api: ora('Deploying API...').start(),
-  web: ora('Deploying web app...').start(),
-  db: ora('Running migrations...').start(),
-};
-
-await Promise.all([
-  deployApi().then(() => spinners.api.succeed()),
-  deployWeb().then(() => spinners.web.succeed()),
-  runMigrations().then(() => spinners.db.succeed()),
-]);
-```
-
-## Progress Bars (cli-progress)
-
-```javascript
-import cliProgress from 'cli-progress';
-
-// Single progress bar
-const bar = new cliProgress.SingleBar({}, cliProgress.Presets.shades_classic);
-bar.start(100, 0);
-
-for (let i = 0; i <= 100; i++) {
-  await processItem(i);
-  bar.update(i);
-}
-
-bar.stop();
-
-// Multi-progress
-const multibar = new cliProgress.MultiBar({
-  clearOnComplete: false,
-  hideCursor: true,
-});
-
-const bar1 = multibar.create(100, 0, { task: 'API' });
-const bar2 = multibar.create(100, 0, { task: 'Web' });
-
-await Promise.all([
-  processApi(bar1),
-  processWeb(bar2),
-]);
-
-multibar.stop();
-```
-
-## File System Helpers
-
-```javascript
-import fs from 'fs-extra';
-import { globby } from 'globby';
-import path from 'path';
-
-// Copy with template
-await fs.copy('templates/app', targetDir, {
-  filter: (src) => !src.includes('node_modules'),
-});
-
-// Read/write JSON
-const config = await fs.readJson('config.json');
-await fs.writeJson('output.json', data, { spaces: 2 });
-
-// Ensure directory exists
-await fs.ensureDir('dist/assets');
-
-// Find files
-const files = await globby(['src/**/*.ts', '!src/**/*.test.ts']);
-```
-
-## Error Handling
-
-```javascript
-import { Command } from 'commander';
-
-program
-  .command('deploy')
-  .action(async () => {
-    try {
-      await deploy();
-    } catch (error) {
-      if (error.code === 'EACCES') {
-        console.error(chalk.red('Permission denied'));
-        console.error('Try running with sudo or check file permissions');
-        process.exit(77);
-      } else if (error.code === 'ENOENT') {
-        console.error(chalk.red('File not found:'), error.path);
-        process.exit(127);
-      } else {
-        console.error(chalk.red('Deployment failed:'), error.message);
-        if (process.env.DEBUG) {
-          console.error(error.stack);
-        }
-        process.exit(1);
-      }
-    }
-  });
-
-// Handle SIGINT (Ctrl+C)
-process.on('SIGINT', () => {
-  console.log('\nOperation cancelled');
-  process.exit(130);
-});
-```
-
-## Package.json Setup
+## package.json
 
 ```json
 {
-  "name": "mycli",
-  "version": "1.0.0",
+  "name": "deployctl",
   "type": "module",
-  "bin": {
-    "mycli": "./bin/cli.js"
-  },
-  "files": [
-    "bin/",
-    "lib/",
-    "templates/"
-  ],
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "dependencies": {
-    "commander": "^11.0.0",
-    "inquirer": "^9.0.0",
-    "chalk": "^5.0.0",
-    "ora": "^7.0.0"
-  }
+  "bin": { "deployctl": "./bin/deployctl.js" },
+  "engines": { "node": ">=20" },
+  "files": ["bin", "dist"]
 }
 ```
 
-## Testing CLIs
+Keep the shebang on the bin file; npm creates the shim on Windows. Smoke-test packaging with `npm pack` then installing the tarball.
 
-```javascript
-import { execaCommand } from 'execa';
-import { describe, it, expect } from 'vitest';
+## Testing
 
-describe('mycli', () => {
-  it('shows version', async () => {
-    const { stdout } = await execaCommand('node bin/cli.js --version');
-    expect(stdout).toMatch(/\d+\.\d+\.\d+/);
-  });
-
-  it('shows help', async () => {
-    const { stdout } = await execaCommand('node bin/cli.js --help');
-    expect(stdout).toContain('Usage:');
-  });
-
-  it('handles invalid command', async () => {
-    await expect(
-      execaCommand('node bin/cli.js invalid')
-    ).rejects.toThrow();
-  });
-});
-```
+- Unit-test action functions directly; keep parsing a thin layer.
+- End-to-end: run the real entry with `execFile('node', ['bin/deployctl.js', ...args])` and assert on stdout, stderr, and exit code separately. `node:test` plus `node:assert` is enough.

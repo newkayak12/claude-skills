@@ -1,498 +1,167 @@
-# Cloud Native - Spring Cloud
+# Cloud-Native Concerns
 
-## Spring Cloud Config Server
+Introduce Spring Cloud components one at a time, each against a concrete need. On Kubernetes, config maps, secrets, service DNS and ingress already replace several components below. Use the Spring Cloud release train whose version matches your Boot line, imported through its BOM.
 
-```java
-// Config Server
-@SpringBootApplication
-@EnableConfigServer
-public class ConfigServerApplication {
-    public static void main(String[] args) {
-        SpringApplication.run(ConfigServerApplication.class, args);
-    }
-}
+## Centralized configuration
 
-// application.yml
-server:
-  port: 8888
+Config Server (`@EnableConfigServer` from `spring-cloud-config-server`) serves property files from a Git repo. Clients opt in with the import mechanism:
 
-spring:
-  cloud:
-    config:
-      server:
-        git:
-          uri: https://github.com/example/config-repo
-          default-label: main
-          search-paths: '{application}'
-          username: ${GIT_USERNAME}
-          password: ${GIT_PASSWORD}
-        native:
-          search-locations: classpath:/config
-  security:
-    user:
-      name: config-user
-      password: ${CONFIG_PASSWORD}
-
-// Config Client
-@SpringBootApplication
-public class ClientApplication {
-    public static void main(String[] args) {
-        SpringApplication.run(ClientApplication.class, args);
-    }
-}
-
-// application.yml (Config Client)
+```yaml
 spring:
   application:
-    name: user-service
+    name: billing
   config:
-    import: "configserver:http://localhost:8888"
+    import: "optional:configserver:http://config:8888"
   cloud:
     config:
-      username: config-user
-      password: ${CONFIG_PASSWORD}
       fail-fast: true
-      retry:
-        max-attempts: 6
-        initial-interval: 1000
 ```
 
-## Dynamic Configuration Refresh
+`optional:` lets the service start without the server (local runs); drop it in production if the service cannot work with defaults. Files are resolved by application name and profile (`billing-prod.yml`). Encrypt stored secrets or, better, keep them in a secret manager and reference them by environment variable.
+
+To change values without restart, mark beans `@RefreshScope`, expose the `refresh` actuator endpoint, and trigger it per instance (or broadcast with Spring Cloud Bus). Plain `@ConfigurationProperties` beans rebind on a refresh event without `@RefreshScope`.
+
+## Discovery and client-side balancing
+
+With Eureka, servers run `@EnableEurekaServer`; clients depend on `spring-cloud-starter-netflix-eureka-client` and register under `spring.application.name`. Callers use a logical name and a load-balanced client:
 
 ```java
-@RestController
-@RefreshScope
-public class ConfigController {
-    @Value("${app.feature.enabled:false}")
-    private boolean featureEnabled;
+@Bean
+@LoadBalanced
+RestClient.Builder lbRestClient() { return RestClient.builder(); }
 
-    @Value("${app.max-connections:100}")
-    private int maxConnections;
-
-    @GetMapping("/config")
-    public Map<String, Object> getConfig() {
-        return Map.of(
-            "featureEnabled", featureEnabled,
-            "maxConnections", maxConnections
-        );
-    }
-}
-
-// Refresh configuration via Actuator endpoint:
-// POST /actuator/refresh
+lbRestClient.build().get().uri("http://inventory/stock/{sku}", sku).retrieve().body(Stock.class);
 ```
 
-## Service Discovery - Eureka
+`@LoadBalanced` makes the builder resolve `inventory` through Spring Cloud LoadBalancer, which round-robins over discovered instances by default. In Kubernetes use the service DNS name and skip discovery.
 
-```java
-// Eureka Server
-@SpringBootApplication
-@EnableEurekaServer
-public class EurekaServerApplication {
-    public static void main(String[] args) {
-        SpringApplication.run(EurekaServerApplication.class, args);
-    }
-}
+## Gateway
 
-// application.yml (Eureka Server)
-server:
-  port: 8761
+Spring Cloud Gateway is a reactive edge router; routes are predicates plus filters.
 
-eureka:
-  instance:
-    hostname: localhost
-  client:
-    register-with-eureka: false
-    fetch-registry: false
-    service-url:
-      defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka/
-
-// Eureka Client
-@SpringBootApplication
-@EnableDiscoveryClient
-public class UserServiceApplication {
-    public static void main(String[] args) {
-        SpringApplication.run(UserServiceApplication.class, args);
-    }
-}
-
-// application.yml (Eureka Client)
-spring:
-  application:
-    name: user-service
-
-eureka:
-  client:
-    service-url:
-      defaultZone: http://localhost:8761/eureka/
-    registry-fetch-interval-seconds: 5
-  instance:
-    prefer-ip-address: true
-    lease-renewal-interval-in-seconds: 10
-    lease-expiration-duration-in-seconds: 30
-```
-
-## Spring Cloud Gateway
-
-```java
-@SpringBootApplication
-public class GatewayApplication {
-    public static void main(String[] args) {
-        SpringApplication.run(GatewayApplication.class, args);
-    }
-
-    @Bean
-    public RouteLocator customRouteLocator(RouteLocatorBuilder builder) {
-        return builder.routes()
-            .route("user-service", r -> r
-                .path("/api/users/**")
-                .filters(f -> f
-                    .rewritePath("/api/users/(?<segment>.*)", "/users/${segment}")
-                    .addRequestHeader("X-Gateway", "Spring-Cloud-Gateway")
-                    .circuitBreaker(config -> config
-                        .setName("userServiceCircuitBreaker")
-                        .setFallbackUri("forward:/fallback/users")
-                    )
-                    .retry(config -> config
-                        .setRetries(3)
-                        .setStatuses(HttpStatus.SERVICE_UNAVAILABLE)
-                    )
-                )
-                .uri("lb://user-service")
-            )
-            .route("order-service", r -> r
-                .path("/api/orders/**")
-                .filters(f -> f
-                    .rewritePath("/api/orders/(?<segment>.*)", "/orders/${segment}")
-                    .requestRateLimiter(config -> config
-                        .setRateLimiter(redisRateLimiter())
-                        .setKeyResolver(userKeyResolver())
-                    )
-                )
-                .uri("lb://order-service")
-            )
-            .build();
-    }
-
-    @Bean
-    public RedisRateLimiter redisRateLimiter() {
-        return new RedisRateLimiter(10, 20); // replenishRate, burstCapacity
-    }
-
-    @Bean
-    public KeyResolver userKeyResolver() {
-        return exchange -> Mono.just(
-            exchange.getRequest().getHeaders().getFirst("X-User-Id")
-        );
-    }
-}
-
-// application.yml (Gateway)
+```yaml
 spring:
   cloud:
     gateway:
-      discovery:
-        locator:
-          enabled: true
-          lower-case-service-id: true
-      default-filters:
-        - DedupeResponseHeader=Access-Control-Allow-Origin
-      globalcors:
-        cors-configurations:
-          '[/**]':
-            allowed-origins: "*"
-            allowed-methods:
-              - GET
-              - POST
-              - PUT
-              - DELETE
-            allowed-headers: "*"
+      routes:
+        - id: orders
+          uri: lb://orders
+          predicates:
+            - Path=/api/orders/**
+          filters:
+            - StripPrefix=1
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 20
+                redis-rate-limiter.burstCapacity: 40
 ```
 
-## Circuit Breaker - Resilience4j
+The gateway is WebFlux-based, so it cannot share a module with a servlet MVC application; keep it as its own service. Authenticate at the edge, but still verify tokens in downstream services.
+
+## Resilience
+
+Remote calls fail slowly before they fail loudly. Bound them with Resilience4j through `resilience4j-spring-boot3`:
 
 ```java
 @Service
-@RequiredArgsConstructor
-public class ExternalApiService {
-    private final WebClient webClient;
+class ShippingClient {
+    @CircuitBreaker(name = "shipping", fallbackMethod = "quoteFallback")
+    @Retry(name = "shipping")
+    @TimeLimiter(name = "shipping")          // requires CompletableFuture return type
+    CompletableFuture<Quote> quote(Parcel p) { ... }
 
-    @CircuitBreaker(name = "externalApi", fallbackMethod = "getFallbackData")
-    @Retry(name = "externalApi")
-    @RateLimiter(name = "externalApi")
-    public Mono<ExternalData> getData(String id) {
-        return webClient
-            .get()
-            .uri("/data/{id}", id)
-            .retrieve()
-            .bodyToMono(ExternalData.class)
-            .timeout(Duration.ofSeconds(3));
-    }
-
-    private Mono<ExternalData> getFallbackData(String id, Exception e) {
-        log.warn("Fallback triggered for id: {}, error: {}", id, e.getMessage());
-        return Mono.just(new ExternalData(id, "Fallback data", LocalDateTime.now()));
+    CompletableFuture<Quote> quoteFallback(Parcel p, Throwable t) {
+        return CompletableFuture.completedFuture(Quote.estimate(p));
     }
 }
+```
 
-// application.yml
+```yaml
 resilience4j:
   circuitbreaker:
     instances:
-      externalApi:
-        register-health-indicator: true
-        sliding-window-size: 10
-        minimum-number-of-calls: 5
-        permitted-number-of-calls-in-half-open-state: 3
-        automatic-transition-from-open-to-half-open-enabled: true
-        wait-duration-in-open-state: 5s
-        failure-rate-threshold: 50
-        event-consumer-buffer-size: 10
-
+      shipping:
+        slidingWindowSize: 20
+        failureRateThreshold: 50
+        waitDurationInOpenState: 15s
   retry:
     instances:
-      externalApi:
-        max-attempts: 3
-        wait-duration: 1s
-        enable-exponential-backoff: true
-        exponential-backoff-multiplier: 2
-
-  ratelimiter:
-    instances:
-      externalApi:
-        limit-for-period: 10
-        limit-refresh-period: 1s
-        timeout-duration: 0s
+      shipping:
+        maxAttempts: 3
+        waitDuration: 200ms
 ```
 
-## Distributed Tracing - Micrometer Tracing
+Only retry idempotent operations. The fallback signature must match the original plus a trailing exception parameter. Annotation order and proxy semantics matter, so test the behaviour with a failing stub.
 
-```java
-// application.yml
+## Tracing and metrics
+
+Boot 3 uses Micrometer Observation; Sleuth is gone. Add `micrometer-tracing-bridge-otel` (or the Brave bridge) and an exporter, then:
+
+```yaml
 management:
   tracing:
     sampling:
-      probability: 1.0
-  zipkin:
-    tracing:
-      endpoint: http://localhost:9411/api/v2/spans
-
+      probability: 0.1
 logging:
-  pattern:
-    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
-
-// Custom spans
-@Service
-@RequiredArgsConstructor
-public class OrderService {
-    private final Tracer tracer;
-    private final OrderRepository orderRepository;
-
-    public Order processOrder(OrderRequest request) {
-        Span span = tracer.nextSpan().name("processOrder").start();
-        try (Tracer.SpanInScope ws = tracer.withSpan(span)) {
-            span.tag("order.type", request.type());
-            span.tag("order.items", String.valueOf(request.items().size()));
-
-            // Business logic
-            Order order = createOrder(request);
-
-            span.event("order.created");
-            return order;
-        } finally {
-            span.end();
-        }
-    }
-}
+  include-application-name: true
 ```
 
-## Load Balancing with Spring Cloud LoadBalancer
+Trace context is propagated automatically by `RestClient`, `RestTemplate` and `WebClient` instances built from Boot's builders. Custom spans go through an injected `ObservationRegistry`. Metrics are exposed by `micrometer-registry-prometheus` at `/actuator/prometheus`.
 
-```java
-@Configuration
-@LoadBalancerClient(name = "user-service", configuration = UserServiceLoadBalancerConfig.class)
-public class LoadBalancerConfiguration {
-}
+## Actuator and probes
 
-@Configuration
-public class UserServiceLoadBalancerConfig {
-
-    @Bean
-    public ReactorLoadBalancer<ServiceInstance> randomLoadBalancer(
-            LoadBalancerClientFactory clientFactory,
-            ObjectProvider<LoadBalancerProperties> properties) {
-        return new RandomLoadBalancer(
-            clientFactory.getLazyProvider("user-service", ServiceInstanceListSupplier.class),
-            "user-service"
-        );
-    }
-}
-
-@Service
-@RequiredArgsConstructor
-public class UserClientService {
-    private final WebClient.Builder webClientBuilder;
-
-    public Mono<User> getUser(Long id) {
-        return webClientBuilder
-            .baseUrl("http://user-service")
-            .build()
-            .get()
-            .uri("/users/{id}", id)
-            .retrieve()
-            .bodyToMono(User.class);
-    }
-}
-```
-
-## Health Checks & Actuator
-
-```java
-@Component
-public class CustomHealthIndicator implements HealthIndicator {
-
-    @Override
-    public Health health() {
-        boolean serviceUp = checkExternalService();
-
-        if (serviceUp) {
-            return Health.up()
-                .withDetail("externalService", "Available")
-                .withDetail("timestamp", LocalDateTime.now())
-                .build();
-        } else {
-            return Health.down()
-                .withDetail("externalService", "Unavailable")
-                .withDetail("error", "Connection timeout")
-                .build();
-        }
-    }
-
-    private boolean checkExternalService() {
-        // Check external dependency
-        return true;
-    }
-}
-
-// application.yml
+```yaml
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        include: [health, info, prometheus]
   endpoint:
     health:
-      show-details: always
       probes:
         enabled: true
-  health:
-    livenessState:
-      enabled: true
-    readinessState:
-      enabled: true
-  metrics:
-    export:
-      prometheus:
-        enabled: true
-    tags:
-      application: ${spring.application.name}
+      show-details: never
 ```
 
-## Kubernetes Deployment
+On Kubernetes Boot detects the platform and exposes `/actuator/health/liveness` and `/actuator/health/readiness`. Liveness should say only that the process is not wedged; do not put a database check in it, or a database outage will restart every pod. Readiness may include dependencies. A custom indicator implements `HealthIndicator` and returns `Health.up()` or `Health.down().withDetail(...)`. Keep the management port or its authentication separate from public traffic.
 
-```yaml
-# deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: user-service
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: user-service
-  template:
-    metadata:
-      labels:
-        app: user-service
-    spec:
-      containers:
-      - name: user-service
-        image: user-service:1.0.0
-        ports:
-        - containerPort: 8080
-        env:
-        - name: SPRING_PROFILES_ACTIVE
-          value: "kubernetes"
-        - name: JAVA_OPTS
-          value: "-Xmx512m -Xms256m"
-        livenessProbe:
-          httpGet:
-            path: /actuator/health/liveness
-            port: 8080
-          initialDelaySeconds: 60
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /actuator/health/readiness
-            port: 8080
-          initialDelaySeconds: 30
-          periodSeconds: 5
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "500m"
-          limits:
-            memory: "1Gi"
-            cpu: "1000m"
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: user-service
-spec:
-  selector:
-    app: user-service
-  ports:
-  - port: 80
-    targetPort: 8080
-  type: ClusterIP
-```
+## Packaging and deployment
 
-## Docker Configuration
+Two-stage image with a non-root user:
 
 ```dockerfile
-# Dockerfile (Multi-stage)
-FROM eclipse-temurin:17-jdk-alpine AS build
-WORKDIR /workspace/app
+FROM eclipse-temurin:21-jdk AS build
+COPY . /src
+WORKDIR /src
+RUN ./mvnw -q -DskipTests package
 
-COPY mvnw .
-COPY .mvn .mvn
-COPY pom.xml .
-COPY src src
-
-RUN ./mvnw install -DskipTests
-RUN mkdir -p target/dependency && (cd target/dependency; jar -xf ../*.jar)
-
-FROM eclipse-temurin:17-jre-alpine
-VOLUME /tmp
-ARG DEPENDENCY=/workspace/app/target/dependency
-COPY --from=build ${DEPENDENCY}/BOOT-INF/lib /app/lib
-COPY --from=build ${DEPENDENCY}/META-INF /app/META-INF
-COPY --from=build ${DEPENDENCY}/BOOT-INF/classes /app
-
-ENTRYPOINT ["java","-cp","app:app/lib/*","com.example.Application"]
+FROM eclipse-temurin:21-jre
+RUN useradd -r app
+USER app
+COPY --from=build /src/target/*.jar /app/app.jar
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "/app/app.jar"]
 ```
 
-## Quick Reference
+Alternatively `./mvnw spring-boot:build-image` produces an OCI image with buildpacks, no Dockerfile needed.
 
-| Component | Purpose |
-|-----------|---------|
-| **Config Server** | Centralized configuration management |
-| **Eureka** | Service discovery and registration |
-| **Gateway** | API gateway with routing, filtering, load balancing |
-| **Circuit Breaker** | Fault tolerance and fallback patterns |
-| **Load Balancer** | Client-side load balancing |
-| **Tracing** | Distributed tracing across services |
-| **Actuator** | Production-ready monitoring and management |
-| **Kubernetes** | Container orchestration and deployment |
+```yaml
+# deployment fragment
+containers:
+  - name: billing
+    image: registry.example.com/billing:1.4.2
+    ports: [{containerPort: 8080}]
+    envFrom: [{secretRef: {name: billing-secrets}}]
+    resources:
+      requests: {cpu: 250m, memory: 512Mi}
+      limits: {memory: 768Mi}
+    readinessProbe:
+      httpGet:
+        port: 8080
+        path: /actuator/health/readiness
+    livenessProbe:
+      httpGet:
+        port: 8080
+        path: /actuator/health/liveness
+```
+
+Enable `server.shutdown=graceful` and set `spring.lifecycle.timeout-per-shutdown-phase` so in-flight requests finish before a pod stops.

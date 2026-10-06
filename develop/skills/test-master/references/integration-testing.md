@@ -1,120 +1,72 @@
-# Integration Testing
+# Integration Tests: Spring Boot and PostgreSQL
 
-## API Testing (Supertest)
+Integration tests check that your wiring, serialization, SQL and transactions work together. Keep them fewer than unit tests, but real: the database is a real PostgreSQL, not an in-memory stand-in with a different dialect.
 
-```typescript
-import request from 'supertest';
-import { app } from '../app';
+## Choose the narrowest slice
 
-describe('POST /api/users', () => {
-  it('creates user with valid data', async () => {
-    const response = await request(app)
-      .post('/api/users')
-      .send({ email: 'test@test.com', name: 'Test' })
-      .expect(201);
+| Question | Tool |
+|---|---|
+| Does the controller map, validate and serialize correctly? | `@WebMvcTest` + `MockMvc`, service mocked |
+| Do my queries and mappings work? | `@DataJpaTest` (or jdbc test) against Testcontainers Postgres |
+| Does a whole use case work through HTTP to the DB? | `@SpringBootTest(webEnvironment = RANDOM_PORT)` |
 
-    expect(response.body).toMatchObject({
-      email: 'test@test.com',
-      name: 'Test',
-    });
-    expect(response.body.id).toBeDefined();
-  });
+## Controller slice
 
-  it('returns 400 for invalid email', async () => {
-    const response = await request(app)
-      .post('/api/users')
-      .send({ email: 'invalid', name: 'Test' })
-      .expect(400);
+```kotlin
+@WebMvcTest(TransferController::class)
+class TransferControllerTest(@Autowired val mvc: MockMvc) {
+    @MockkBean lateinit var transfers: TransferService   // springmockk
 
-    expect(response.body.error).toContain('email');
-  });
+    @Test
+    fun `422 when funds are insufficient`() {
+        every { transfers.move(any()) } throws InsufficientFunds()
 
-  it('returns 401 without auth token', async () => {
-    await request(app)
-      .get('/api/users/me')
-      .expect(401);
-  });
-});
+        mvc.post("/transfers") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"from":"A","to":"B","amount":501}"""
+        }.andExpect {
+            status { isUnprocessableEntity() }
+            jsonPath("$.code") { value("INSUFFICIENT_FUNDS") }
+        }
+    }
+}
 ```
 
-## Authenticated Requests
+Cover: success body and status, each validation failure, auth missing / forbidden, and the error envelope.
 
-```typescript
-describe('Protected endpoints', () => {
-  let authToken: string;
+## Real database with Testcontainers
 
-  beforeAll(async () => {
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({ email: 'test@test.com', password: 'password' });
-    authToken = response.body.token;
-  });
-
-  it('accesses protected route', async () => {
-    await request(app)
-      .get('/api/users/me')
-      .set('Authorization', `Bearer ${authToken}`)
-      .expect(200);
-  });
-});
+```kotlin
+@Testcontainers
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = NONE)
+class AccountRepositoryTest {
+    companion object {
+        @JvmStatic @Container @ServiceConnection
+        val pg = PostgreSQLContainer("postgres:16")
+    }
+    // @Autowired repository ...
+}
 ```
 
-## Database Testing
+`@ServiceConnection` needs Spring Boot 3.1+ with `spring-boot-testcontainers` on the test classpath.
 
-```typescript
-import { db } from '../database';
+- Schema comes from the same migrations (Flyway/Liquibase) used in production, so migration bugs surface here.
+- Start the container once per class (static) or per JVM, not per test.
+- Isolate data: roll back with the test transaction, or truncate known tables in `@BeforeEach`. Never rely on test order.
+- Assert on persisted state by querying again after flushing and clearing the persistence context; otherwise you only test the first-level cache.
 
-describe('UserRepository', () => {
-  beforeEach(async () => {
-    await db.query('DELETE FROM users');
-  });
+## Things worth an integration test
 
-  afterAll(async () => {
-    await db.end();
-  });
+- Unique and foreign-key constraints actually reject bad rows.
+- A transaction rolls back every write when a later step throws.
+- Optimistic-lock conflicts (`@Version`) surface as the error your API promises.
+- Pagination and sort order on real data, including ties.
 
-  it('creates and retrieves user', async () => {
-    const user = await userRepo.create({
-      email: 'test@test.com',
-      name: 'Test',
-    });
+## Outbound HTTP
 
-    const found = await userRepo.findById(user.id);
-    expect(found).toEqual(user);
-  });
-});
-```
+Stub the remote with WireMock or `MockRestServiceServer`; assert on the request you send as well as how you react to 4xx, 5xx, timeouts and malformed bodies.
 
-## pytest API Testing
+## Failure hygiene
 
-```python
-import pytest
-from httpx import AsyncClient
-
-@pytest.mark.asyncio
-async def test_create_user(client: AsyncClient):
-    response = await client.post("/api/users/", json={
-        "email": "test@example.com",
-        "name": "Test"
-    })
-    assert response.status_code == 201
-    assert response.json()["email"] == "test@example.com"
-
-@pytest.mark.asyncio
-async def test_invalid_email(client: AsyncClient):
-    response = await client.post("/api/users/", json={
-        "email": "invalid",
-        "name": "Test"
-    })
-    assert response.status_code == 422
-```
-
-## Quick Reference
-
-| Method | Purpose |
-|--------|---------|
-| `.send(body)` | Send request body |
-| `.set(header, value)` | Set header |
-| `.expect(status)` | Assert status code |
-| `.expect('Content-Type', /json/)` | Assert header |
-| `response.body` | Parsed JSON body |
+Fix a flaky integration test by removing its cause (shared rows, clock, async wait). Replace `Thread.sleep` with Awaitility's `await().atMost(...).until { ... }`.

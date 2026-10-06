@@ -7,7 +7,6 @@ description: >-
   "bounded context".
 license: MIT
 metadata:
-  author: wondelai
   version: "1.0.1"
 scenarios:
   - "help me model this business domain"
@@ -27,17 +26,17 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
-# Domain-Driven Design Framework
+# Domain-Driven Design
 
-Framework for tackling software complexity by modeling code around the business domain.
+Keep the code shaped like the business so intricate rules remain readable.
 
 ## When to Use / When Not to Use
 
 | Use | Skip |
 |-----|------|
-| Aligning code structure with business concepts | Architecture layering (use clean-architecture) |
+| Making code mirror business concepts | Architecture layering (use clean-architecture) |
 | Defining service boundaries from domain analysis | Service coupling validation (use service-boundary-validator) |
-| Domain experts and developers speak different languages | Simple CRUD apps without complex business rules |
+| Experts and engineers name the same thing differently | Simple CRUD apps without complex business rules |
 | Identifying core domain vs. generic subdomains | |
 
 ## Process
@@ -51,112 +50,112 @@ Framework for tackling software complexity by modeling code around the business 
 
 ## Scoring
 
-**Goal: 10/10.** A 10/10 means domain experts can read class names and understand them, aggregates are small, and no anemic domain model exists.
+**Target: 10/10.** Full marks: an expert can read the class names and recognise them, aggregates stay small, and nothing is an anemic model.
 
 ## Framework
 
-### 1. Ubiquitous Language
+### 1. Ubiquitous language
 
-A shared, rigorous language between developers and domain experts used consistently in conversation, documentation, and code.
+One precise vocabulary that developers and domain experts both use in speech, documents and source code.
 
-| Context | Pattern | Example |
-|---------|---------|---------|
+| Situation | Pattern | Example |
+|---|---|---|
 | Class naming | Name classes after domain concepts | `LoanApplication`, not `RequestHandler` |
 | Method naming | Use verbs the business uses | `policy.underwrite()`, not `policy.process()` |
 | Event naming | Past-tense domain actions | `ClaimSubmitted`, not `DataSaved` |
-| Module structure | Organize by domain concept | `shipping/`, `billing/`, not `controllers/`, `services/` |
-| Code review | Reject technical-only names | Flag `Manager`, `Helper`, `Processor`, `Utils` as naming smells |
+| Packages | Group by business capability | `shipping/` and `billing/` rather than `controllers/` and `services/` |
+| Review | Push back on purely technical names | `Manager`, `Helper`, `Processor`, `Utils` signal an unnamed concept |
 
-See: [references/ubiquitous-language.md](references/ubiquitous-language.md)
+Details: `references/ubiquitous-language.md`
 
-### 2. Bounded Contexts and Context Mapping
+### 2. Bounded contexts, context maps
 
-A bounded context is an explicit boundary within which a particular domain model is defined and applicable.
+A bounded context marks the region where one particular model, with its own vocabulary, is valid.
 
-| Context | Pattern | Example |
-|---------|---------|---------|
-| Service integration | Anti-Corruption Layer | Translate external API responses into your domain objects at the boundary |
+| Situation | Pattern | Example |
+|---|---|---|
+| Calling an outside system | Anti-Corruption Layer | Map the vendor's payload into your own types at the edge |
 | Team collaboration | Shared Kernel | Two teams co-own a small `Money` value object library |
-| Legacy migration | Conformist / ACL | Wrap legacy system behind an adapter that speaks your domain language |
-| API design | Open Host Service + Published Language | Expose a well-documented REST API with a canonical schema |
+| Replacing a legacy system | Conformist or ACL | An adapter exposes the old system in your own terms |
+| Many downstream consumers | Open Host Service + Published Language | One versioned API, documented, with a shared schema |
 | Module boundaries | Separate packages per context | `myapp.shipping` and `myapp.billing` with explicit translation |
 
-See: [references/bounded-contexts.md](references/bounded-contexts.md)
+Details: `references/bounded-contexts.md`
 
-### 3. Entities, Value Objects, and Aggregates
+### 3. Entities, value objects, aggregates
 
 - **Entity**: identity persists across state changes ("same person even if name changes")
 - **Value Object**: defined entirely by attributes; immutable ("$10 bill is interchangeable")
-- **Aggregate Root**: single entry point enforcing consistency; reference other aggregates by ID only
+- **Aggregate Root**: the one door into a cluster; guards its invariants and points to other aggregates by id
 
-| Context | Pattern | Example |
-|---------|---------|---------|
-| Identity tracking | Entity with ID | `Order` identified by `orderId`, survives state changes |
-| Immutable attributes | Value Object | `Address(street, city, zip)` — replace, never mutate |
-| Consistency boundary | Aggregate Root | `Order` is root; `OrderLine` items exist only through it |
+| Situation | Pattern | Example |
+|---|---|---|
+| Tracked over time | Entity with id | `Order` keeps its `orderId` through every status change |
+| Group of attributes | Value object | `Address(street, city, zip)` gets replaced wholesale, never modified in place |
+| Consistency boundary | Aggregate root | `OrderLine` is reached only via its `Order` |
 | Cross-aggregate reference | Reference by ID | `Order` stores `customerId`, not a `Customer` object |
 
-See: [references/building-blocks.md](references/building-blocks.md)
+Details: `references/building-blocks.md`
 
 ### 4. Domain Events
 
-Domain events capture something that happened in the domain that domain experts care about — named in past tense.
+A domain event states a business-relevant fact that has already happened, named in the past tense.
 
-| Context | Pattern | Example |
-|---------|---------|---------|
-| State transitions | Raise event on domain action | `order.place()` raises `OrderPlaced` event |
-| Cross-context integration | Publish integration event | `OrderPlaced` triggers `ShippingLabelRequested` in shipping context |
+| Situation | Pattern | Example |
+|---|---|---|
+| Status changes | Aggregate records an event | `order.place()` yields `OrderPlaced` |
+| Crossing contexts | Integration event | Billing publishes `InvoicePaid`; shipping reacts by scheduling a pickup |
 | Audit trail | Store events as history | Event log: `OrderPlaced` → `PaymentReceived` → `OrderShipped` |
-| Eventual consistency | Async event handlers | `InventoryReserved` handler updates stock asynchronously |
+| Eventual consistency | Asynchronous subscribers | An `InventoryReserved` subscriber adjusts stock later |
 
-See: [references/domain-events.md](references/domain-events.md)
+Details: `references/domain-events.md`
 
-### 5. Repositories and Factories
+### 5. Repositories and factories
 
-- **Repository**: provides the illusion of an in-memory collection; hides persistence details
+- **Repository**: makes stored aggregates look like a collection and conceals the storage
 - **Factory**: encapsulates complex object creation; ensures aggregates are always created in valid state
 
-| Context | Pattern | Example |
-|---------|---------|---------|
-| Data access abstraction | Repository interface | `OrderRepository.findByCustomer(customerId)` in domain layer |
-| Complex creation | Factory method | `Order.createFromQuote(quote)` validates and assembles |
-| Query encapsulation | Specification | `spec = OverdueBy(days=30); repo.findMatching(spec)` |
-| Ports and adapters | Interface in domain, impl in infra | `interface OrderRepository` in domain; `PostgresOrderRepository` in infrastructure |
+| Situation | Pattern | Example |
+|---|---|---|
+| Loading aggregates | Repository interface | `OrderRepository.findOpenFor(customerId)` declared in the domain |
+| Non-trivial construction | Factory method | `Order.fromQuote(quote)` checks inputs and builds a valid order |
+| Reusable selection rule | Specification | `Overdue(30).and(HighValue)` reused for validation and lookup |
+| Ports and adapters | Contract in the domain, implementation outside | `OrderRepository` interface lives in domain; `PostgresOrderRepository` lives in infrastructure |
 
-See: [references/repositories-factories.md](references/repositories-factories.md)
+Details: `references/repositories-factories.md`
 
-### 6. Strategic Design and Distillation
+### 6. Strategic design, distillation
 
-- **Core Domain**: competitive advantage; invest best developers and deepest modeling here
-- **Supporting Subdomain**: necessary but not differentiating; build it, don't over-engineer
-- **Generic Subdomain**: commodity; buy or use open-source
+- **Core Domain**: the competitive edge; assign your strongest people and deepest modeling
+- **Supporting Subdomain**: necessary but not differentiating; build it plainly, no gold-plating
+- **Generic Subdomain**: commodity; purchase or adopt open source
 
-| Context | Pattern | Example |
-|---------|---------|---------|
-| Build vs. buy | Classify subdomain type | Build custom pricing engine (core); use Stripe for payments (generic) |
-| Code organization | Separate core from generic | `domain/pricing/` (deep model) vs. `infrastructure/email/` (thin adapter) |
+| Situation | Pattern | Example |
+|---|---|---|
+| Make or buy | Classify the subdomain | Pricing engine is built (core); card processing is bought (generic) |
+| Code layout | Keep core apart from generic | `domain/pricing/` holds the rich model; `infrastructure/email/` is a thin adapter |
 
-See: [references/strategic-design.md](references/strategic-design.md)
+Details: `references/strategic-design.md`
 
 ## Common Mistakes
 
 | Mistake | Fix |
 |---------|-----|
-| Technical names instead of domain language | Rename to domain terms: `ClaimAdjudicator`, `PolicyUnderwriter` |
-| One model to rule them all | Define bounded contexts; each gets its own model |
-| Giant aggregates | Keep aggregates small; reference by ID; accept eventual consistency |
-| Anemic domain model (all logic in services) | Move behavior into entities and value objects |
-| No Anti-Corruption Layer at integration points | Wrap every external system behind a translation layer |
+| Names taken from the framework | Use business terms such as `ClaimAdjudicator` |
+| A single model for the whole company | Split into contexts, each with its own model |
+| Oversized aggregates | Shrink them, link by id, tolerate eventual consistency |
+| Rules live in services over a hollow model | Move the rules onto entities and value objects |
+| External systems called directly | Put each behind a translating adapter |
 
 ## Quick Diagnostic
 
-| Question | If No | Action |
-|----------|-------|--------|
-| Can a domain expert read your class names? | Technical jargon instead of domain language | Rename to ubiquitous language |
-| Are bounded context boundaries explicitly defined? | Models bleed across boundaries | Draw a context map; define translation strategies |
-| Are aggregates small (one root + minimal cluster)? | Aggregates are large and slow | Break into smaller aggregates; reference by ID |
-| Do domain objects contain behavior? | Anemic model; logic scattered in services | Move business rules into entities and value objects |
-| Is there an Anti-Corruption Layer at every external integration? | Foreign models pollute your domain | Add a translation layer at each boundary |
+| Check | When the answer is no | Action |
+|---|---|---|
+| Would an expert recognise your class names? | Names are engineering jargon | Rename using the shared vocabulary |
+| Are the context borders written down? | Models leak into each other | Draw a context map and choose a relationship pattern per border |
+| Does each aggregate hold only what one invariant needs? | Large aggregates, contention | Split and refer by id |
+| Do domain objects carry the rules? | Anemic model; logic sits in services | Relocate rules onto the objects |
+| Does every external integration go through a translation layer? | Outside models seep into the domain | Introduce an anti-corruption layer per integration |
 
 ## Output Template
 
@@ -177,12 +176,12 @@ When modeling a domain, provide:
 
 ## Reference Files
 
-- [ubiquitous-language.md](references/ubiquitous-language.md)
-- [bounded-contexts.md](references/bounded-contexts.md)
-- [building-blocks.md](references/building-blocks.md)
-- [domain-events.md](references/domain-events.md)
-- [repositories-factories.md](references/repositories-factories.md)
-- [strategic-design.md](references/strategic-design.md)
+- `references/ubiquitous-language.md`
+- `references/bounded-contexts.md`
+- `references/building-blocks.md`
+- `references/domain-events.md`
+- `references/repositories-factories.md`
+- `references/strategic-design.md`
 
 ## Related Skills
 

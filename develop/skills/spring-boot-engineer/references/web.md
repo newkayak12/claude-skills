@@ -1,295 +1,157 @@
-# Web Layer - Controllers & REST APIs
+# Web Layer
 
-## REST Controller Pattern
+## Controller shape
+
+A controller translates HTTP to a service call and back. It holds no business rules and no transaction.
 
 ```java
 @RestController
-@RequestMapping("/api/v1/users")
-@Validated
-@RequiredArgsConstructor
-public class UserController {
-    private final UserService userService;
+@RequestMapping("/v1/tickets")
+class TicketController {
+    private final TicketService tickets;
 
-    @GetMapping
-    public ResponseEntity<Page<UserResponse>> getUsers(
-            @PageableDefault(size = 20, sort = "createdAt") Pageable pageable) {
-        Page<UserResponse> users = userService.findAll(pageable);
-        return ResponseEntity.ok(users);
-    }
+    TicketController(TicketService tickets) { this.tickets = tickets; }
 
     @GetMapping("/{id}")
-    public ResponseEntity<UserResponse> getUser(@PathVariable Long id) {
-        UserResponse user = userService.findById(id);
-        return ResponseEntity.ok(user);
+    TicketResponse get(@PathVariable long id) {
+        return tickets.find(id);
     }
 
     @PostMapping
-    public ResponseEntity<UserResponse> createUser(
-            @Valid @RequestBody UserCreateRequest request) {
-        UserResponse user = userService.create(request);
-        URI location = ServletUriComponentsBuilder
-                .fromCurrentRequest()
-                .path("/{id}")
-                .buildAndExpand(user.id())
-                .toUri();
-        return ResponseEntity.created(location).body(user);
-    }
-
-    @PutMapping("/{id}")
-    public ResponseEntity<UserResponse> updateUser(
-            @PathVariable Long id,
-            @Valid @RequestBody UserUpdateRequest request) {
-        UserResponse user = userService.update(id, request);
-        return ResponseEntity.ok(user);
+    ResponseEntity<TicketResponse> open(@Valid @RequestBody OpenTicketRequest body,
+                                        UriComponentsBuilder uri) {
+        TicketResponse created = tickets.open(body);
+        return ResponseEntity
+            .created(uri.path("/v1/tickets/{id}").build(created.id()))
+            .body(created);
     }
 
     @DeleteMapping("/{id}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteUser(@PathVariable Long id) {
-        userService.delete(id);
+    ResponseEntity<Void> close(@PathVariable long id) {
+        tickets.close(id);
+        return ResponseEntity.noContent().build();
     }
 }
 ```
 
-## Request DTOs with Validation
+- Status codes: 201 plus `Location` for creation, 204 for empty success, 404 for a missing resource, 409 for a state conflict, 422 or 400 for rejected input.
+- Pageable endpoints take `Pageable` as a parameter and return `Page<T>` mapped to a response record; never return the `Page<Entity>` itself.
+- Version the path (`/api/v1`) or a header, and decide which one once for the whole service.
+
+## DTOs
+
+Entities stay behind the service boundary. Requests and responses are records.
 
 ```java
-public record UserCreateRequest(
-    @NotBlank(message = "Email is required")
-    @Email(message = "Email must be valid")
-    String email,
-
-    @NotBlank(message = "Password is required")
-    @Size(min = 8, max = 100, message = "Password must be 8-100 characters")
-    @Pattern(regexp = "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d).*$",
-             message = "Password must contain uppercase, lowercase, and digit")
-    String password,
-
-    @NotBlank(message = "Username is required")
-    @Size(min = 3, max = 50)
-    @Pattern(regexp = "^[a-zA-Z0-9_]+$", message = "Username must be alphanumeric")
-    String username,
-
-    @Min(value = 18, message = "Must be at least 18")
-    @Max(value = 120, message = "Must be at most 120")
-    Integer age
-) {}
-
-public record UserUpdateRequest(
-    @Email(message = "Email must be valid")
-    String email,
-
-    @Size(min = 3, max = 50)
-    String username
-) {}
-```
-
-## Response DTOs
-
-```java
-public record UserResponse(
-    Long id,
-    String email,
-    String username,
-    Integer age,
-    Boolean active,
-    LocalDateTime createdAt,
-    LocalDateTime updatedAt
+public record OpenTicketRequest(
+    @NotNull Long reporterId,
+    @NotEmpty List<@Valid Item> items,
+    @Size(max = 200) String note
 ) {
-    public static UserResponse from(User user) {
-        return new UserResponse(
-            user.getId(),
-            user.getEmail(),
-            user.getUsername(),
-            user.getAge(),
-            user.getActive(),
-            user.getCreatedAt(),
-            user.getUpdatedAt()
-        );
+    public record Item(@NotBlank String sku, @Positive int quantity) {}
+}
+
+public record TicketResponse(long id, String status, Instant openedAt) {
+    static TicketResponse from(Ticket t) {
+        return new TicketResponse(t.getId(), t.getStatus().name(), t.getOpenedAt());
     }
 }
 ```
 
-## Global Exception Handling
+Jakarta Validation lives in `jakarta.validation.constraints` in Boot 3. `@Valid` on a nested element cascades into it.
+
+## Validation
+
+- `@Valid` on `@RequestBody` fails with `MethodArgumentNotValidException`.
+- Constraints on `@PathVariable` / `@RequestParam` need `@Validated` on the class and fail with `ConstraintViolationException` (Spring 6.1+ built-in method validation raises `HandlerMethodValidationException` instead when the class is not annotated).
+- A rule spanning two fields can be an `@AssertTrue` method on the record; reusable rules deserve a custom `@Constraint` annotation with a `ConstraintValidator`.
+
+```java
+public record Booking(@NotNull LocalDate start, @NotNull LocalDate end) {
+    @AssertTrue(message = "end must not precede start")
+    boolean isRangeValid() {
+        return start == null || end == null || !end.isBefore(start);
+    }
+}
+```
+
+## One place for errors
+
+Return RFC 9457 problem details. Boot enables them with `spring.mvc.problemdetails.enabled=true`, and a `@RestControllerAdvice` extending `ResponseEntityExceptionHandler` covers the framework's own exceptions.
 
 ```java
 @RestControllerAdvice
-@Slf4j
-public class GlobalExceptionHandler {
+class ApiErrors extends ResponseEntityExceptionHandler {
 
-    @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleNotFound(
-            ResourceNotFoundException ex, WebRequest request) {
-        log.error("Resource not found: {}", ex.getMessage());
-        ErrorResponse error = new ErrorResponse(
-            HttpStatus.NOT_FOUND.value(),
-            ex.getMessage(),
-            request.getDescription(false),
-            LocalDateTime.now()
-        );
-        return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
+    @ExceptionHandler(TicketNotFoundException.class)
+    ProblemDetail notFound(TicketNotFoundException e) {
+        ProblemDetail p = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
+        p.setTitle("Ticket not found");
+        return p;
     }
-
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ValidationErrorResponse> handleValidation(
-            MethodArgumentNotValidException ex) {
-        Map<String, String> errors = ex.getBindingResult()
-            .getFieldErrors()
-            .stream()
-            .collect(Collectors.toMap(
-                FieldError::getField,
-                error -> error.getDefaultMessage() != null
-                    ? error.getDefaultMessage()
-                    : "Invalid value"
-            ));
-
-        ValidationErrorResponse response = new ValidationErrorResponse(
-            HttpStatus.BAD_REQUEST.value(),
-            "Validation failed",
-            errors,
-            LocalDateTime.now()
-        );
-        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
-    }
-
-    @ExceptionHandler(DataIntegrityViolationException.class)
-    public ResponseEntity<ErrorResponse> handleDataIntegrity(
-            DataIntegrityViolationException ex, WebRequest request) {
-        log.error("Data integrity violation", ex);
-        ErrorResponse error = new ErrorResponse(
-            HttpStatus.CONFLICT.value(),
-            "Data integrity violation - resource may already exist",
-            request.getDescription(false),
-            LocalDateTime.now()
-        );
-        return new ResponseEntity<>(error, HttpStatus.CONFLICT);
-    }
-
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handleGlobalException(
-            Exception ex, WebRequest request) {
-        log.error("Unexpected error", ex);
-        ErrorResponse error = new ErrorResponse(
-            HttpStatus.INTERNAL_SERVER_ERROR.value(),
-            "An unexpected error occurred",
-            request.getDescription(false),
-            LocalDateTime.now()
-        );
-        return new ResponseEntity<>(error, HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-}
-
-record ErrorResponse(
-    int status,
-    String message,
-    String path,
-    LocalDateTime timestamp
-) {}
-
-record ValidationErrorResponse(
-    int status,
-    String message,
-    Map<String, String> errors,
-    LocalDateTime timestamp
-) {}
-```
-
-## Custom Validation
-
-```java
-@Target({ElementType.FIELD, ElementType.PARAMETER})
-@Retention(RetentionPolicy.RUNTIME)
-@Constraint(validatedBy = UniqueEmailValidator.class)
-public @interface UniqueEmail {
-    String message() default "Email already exists";
-    Class<?>[] groups() default {};
-    Class<? extends Payload>[] payload() default {};
-}
-
-@Component
-@RequiredArgsConstructor
-public class UniqueEmailValidator implements ConstraintValidator<UniqueEmail, String> {
-    private final UserRepository userRepository;
 
     @Override
-    public boolean isValid(String email, ConstraintValidatorContext context) {
-        if (email == null) return true;
-        return !userRepository.existsByEmail(email);
+    protected ResponseEntity<Object> handleMethodArgumentNotValid(
+            MethodArgumentNotValidException ex, HttpHeaders headers,
+            HttpStatusCode status, WebRequest request) {
+        ProblemDetail p = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
+        Map<String, String> errors = new LinkedHashMap<>();
+        for (FieldError fe : ex.getBindingResult().getFieldErrors()) {
+            errors.putIfAbsent(fe.getField(), String.valueOf(fe.getDefaultMessage()));
+        }
+        p.setProperty("errors", errors);
+        return handleExceptionInternal(ex, p, headers, HttpStatus.BAD_REQUEST, request);
+    }
+
+    @ExceptionHandler(RuntimeException.class)
+    ProblemDetail unexpected(Exception e) {
+        log.error("unhandled", e);
+        return ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected error");
     }
 }
 ```
 
-## WebClient for External APIs
+Never put stack traces or exception messages from infrastructure code into the body of a 500.
+
+## Calling other services
+
+`RestClient` (Spring 6.1+) is the synchronous choice; `WebClient` is for reactive pipelines. Build from the injected `RestClient.Builder` so Boot's customizers apply.
 
 ```java
-@Configuration
-public class WebClientConfig {
-    @Bean
-    public WebClient webClient(WebClient.Builder builder) {
-        return builder
-            .baseUrl("https://api.example.com")
-            .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-            .filter(logRequest())
+@Bean
+RestClient inventoryClient(RestClient.Builder b) {
+    return b.baseUrl("http://inventory")
+            .defaultStatusHandler(HttpStatusCode::is5xxServerError,
+                (req, res) -> { throw new UpstreamUnavailableException(res.getStatusCode()); })
             .build();
-    }
-
-    private ExchangeFilterFunction logRequest() {
-        return ExchangeFilterFunction.ofRequestProcessor(request -> {
-            log.info("Request: {} {}", request.method(), request.url());
-            return Mono.just(request);
-        });
-    }
 }
 
-@Service
-@RequiredArgsConstructor
-public class ExternalApiService {
-    private final WebClient webClient;
-
-    public Mono<ExternalDataResponse> fetchData(String id) {
-        return webClient
-            .get()
-            .uri("/data/{id}", id)
-            .retrieve()
-            .onStatus(HttpStatusCode::is4xxClientError, response ->
-                Mono.error(new ResourceNotFoundException("External resource not found")))
-            .onStatus(HttpStatusCode::is5xxServerError, response ->
-                Mono.error(new ServiceUnavailableException("External service unavailable")))
-            .bodyToMono(ExternalDataResponse.class)
-            .timeout(Duration.ofSeconds(5))
-            .retry(3);
-    }
-}
+Stock stock = inventoryClient.get().uri("/stock/{sku}", sku).retrieve().body(Stock.class);
 ```
 
-## CORS Configuration
+Set both a connect and a read timeout on the underlying request factory; a caller left on defaults can wait far longer than a user will.
+
+## CORS
+
+Prefer one central definition tied to Spring Security (`http.cors(Customizer.withDefaults())` plus a `CorsConfigurationSource` bean). List explicit origins; `allowCredentials(true)` cannot be combined with a wildcard origin.
 
 ```java
-@Configuration
-public class WebConfig implements WebMvcConfigurer {
-
-    @Override
-    public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/api/**")
-            .allowedOrigins("http://localhost:3000", "https://example.com")
-            .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-            .allowedHeaders("*")
-            .allowCredentials(true)
-            .maxAge(3600);
-    }
+@Bean
+CorsConfigurationSource cors() {
+    CorsConfiguration c = new CorsConfiguration();
+    c.setAllowedOrigins(List.of("https://app.example.com"));
+    c.setAllowedMethods(List.of("GET", "POST", "PATCH"));
+    c.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+    c.setMaxAge(Duration.ofHours(1));
+    UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
+    src.registerCorsConfiguration("/api/**", c);
+    return src;
 }
 ```
 
-## Quick Reference
+## Checklist
 
-| Annotation | Purpose |
-|------------|---------|
-| `@RestController` | Marks class as REST controller (combines @Controller + @ResponseBody) |
-| `@RequestMapping` | Maps HTTP requests to handler methods |
-| `@GetMapping/@PostMapping` | HTTP method-specific mappings |
-| `@PathVariable` | Extracts values from URI path |
-| `@RequestParam` | Extracts query parameters |
-| `@RequestBody` | Binds request body to method parameter |
-| `@Valid` | Triggers validation on request body |
-| `@RestControllerAdvice` | Global exception handling for REST controllers |
-| `@ResponseStatus` | Sets HTTP status code for method |
+- Every mutating endpoint validates its body.
+- No entity crosses the controller boundary.
+- Errors share one shape.
+- Every outbound call is bounded in time.

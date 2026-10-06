@@ -20,14 +20,13 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 license: MIT
 metadata:
-  author: https://github.com/Jeffallan
-  version: "1.1.0"
   domain: devops
-  triggers: CLI, command-line, terminal app, argument parsing, shell completion, interactive prompt, progress bar, commander, click, typer, cobra
-  role: specialist
+  version: "1.1.0"
   scope: implementation
+  role: specialist
+  related-skills: sre-engineer, code-documenter
   output-format: code
-  related-skills: devops-engineer
+  triggers: CLI, command-line tool, terminal app, subcommands, flags, shell completion, interactive prompt, progress bar, oclif, argparse, bubbletea
 ---
 
 # CLI Developer
@@ -45,21 +44,21 @@ metadata:
 
 ## Process
 
-1. **Analyze UX** — Identify user workflows, command hierarchy, and common tasks. List all commands with expected `--help` output before writing code.
-2. **Design commands** — Plan subcommands, flags, arguments, configuration. Confirm flag naming is consistent and no existing signatures are broken.
+1. **Analyze UX** — Work out who runs this and for what, sketch the command hierarchy, and write the expected `--help` output of every command before any code.
+2. **Design commands** — Lay out subcommands, flags, arguments and configuration sources. Check that flag names follow one convention and that no shipped command signature changes.
 3. **Select framework** — Node.js: `commander` → `yargs` → `oclif`; Python: `typer` → `click` → `argparse`; Go: `cobra + viper` → `bubbletea` (TUI only)
-4. **Implement** — Build with the chosen framework. After wiring commands, run `<cli> --help` to verify help text and `<cli> --version` for version output.
-5. **Polish** — Add completions, error messages, progress indicators. Verify TTY detection for color output and graceful SIGINT handling.
-6. **Test** — Cross-platform smoke tests; benchmark startup time (target: <50ms).
+4. **Implement** — Write the tool on the chosen framework and verify that `<cli> --help` and `<cli> --version` both behave.
+5. **Polish** — Add completions, clear error messages and progress feedback; confirm color is gated on a TTY and that SIGINT shuts down cleanly.
+6. **Test** — Smoke-test on each target OS and measure cold-start time (goal: under 50ms).
 
 ## Output Template
 
 For each CLI feature, provide:
-1. Command structure (main entry point, subcommands)
-2. Configuration handling (files, env vars, flags)
-3. Core implementation with error handling
-4. Shell completion scripts (if applicable)
-5. Brief note on UX decisions
+1. Entry point and subcommand layout
+2. How configuration is read: files, environment, flags
+3. The working code, including error paths
+4. Completion scripts for the shells in scope
+5. A short rationale for UX choices
 
 ## What Claude Does / What You Do
 
@@ -73,55 +72,50 @@ For each CLI feature, provide:
 
 ## Reference Guide
 
-| Topic | Reference | Load When |
-|-------|-----------|-----------|
-| Design Patterns | `references/design-patterns.md` | Subcommands, flags, config, architecture |
-| Node.js CLIs | `references/node-cli.md` | commander, yargs, inquirer, chalk |
-| Python CLIs | `references/python-cli.md` | click, typer, argparse, rich |
-| Go CLIs | `references/go-cli.md` | cobra, viper, error handling, testing, build/distribution |
-| Go TUI | `references/go-tui.md` | bubbletea, progress bars, spinners |
-| UX Patterns | `references/ux-patterns.md` | Progress bars, colors, help text |
+| Area | File | Read it when |
+|------|------|--------------|
+| Command surface | `references/design-patterns.md` | Naming, flags, config precedence, exit codes |
+| Node.js | `references/node-cli.md` | yargs, commander, inquirer-style prompts, npm publishing |
+| Python | `references/python-cli.md` | typer, click, argparse, rich |
+| Go | `references/go-cli.md` | viper, cobra, signals, tests, releases |
+| Go TUI | `references/go-tui.md` | bubbletea models, bubbles components |
+| UX | `references/ux-patterns.md` | Feedback, colour, help text, errors |
 
-## Quick-Start Example (Node.js / commander)
+## Minimal Example (Node.js, commander)
 
 ```js
-#!/usr/bin/env node
-const { program } = require('commander');
+const { Command } = require('commander');
 
-program
-  .name('mytool')
-  .description('Example CLI')
-  .version('1.0.0');
+const cli = new Command('mytool').description('Demo tool').version('1.0.0');
 
-program
-  .command('greet <name>')
-  .description('Greet a user')
-  .option('-l, --loud', 'uppercase the greeting')
-  .action((name, opts) => {
-    const msg = `Hello, ${name}!`;
-    console.log(opts.loud ? msg.toUpperCase() : msg);
+cli
+  .command('echo <text>')
+  .description('Print text back')
+  .option('-u, --upper', 'convert to upper case')
+  .action((text, { upper }) => {
+    console.log(upper ? text.toUpperCase() : text);
   });
 
-program.parse();
+cli.parse();
 ```
 
-For Python (click/typer) and Go (cobra) examples, see `references/python-cli.md` and `references/go-cli.md`.
+For Python and Go, see the matching files under `references/`.
 
 ## Constraints
 
 **MUST DO:**
-- Keep startup time under 50ms
-- Support `--help` and `--version` flags
-- Use consistent flag naming conventions
-- Handle SIGINT (Ctrl+C) gracefully
-- Validate user input early
+- Start in under 50ms
+- Provide `--help` and `--version`
+- Name flags by one consistent convention
+- Exit cleanly on SIGINT (Ctrl+C)
+- Validate input before doing any work
 - Detect TTY before applying color output
-- Support both interactive and non-interactive modes
+- Work both interactively and unattended
 
 **MUST NOT DO:**
-- Print logs/diagnostics to stdout when output will be piped (use stderr)
-- Break existing command signatures — treat renames as breaking changes
-- Require interactive input in CI/CD without non-interactive flag fallbacks
+- Send logs or diagnostics to stderr, never to stdout that may be piped
+- Alter an existing command's signature; a rename counts as a breaking change
+- Block on a prompt in CI/CD; every question needs a flag or env fallback
 - Hardcode platform-specific paths (use `os.homedir()` / `Path.home()`)
 - Ship without shell completions
 

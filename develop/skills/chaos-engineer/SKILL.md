@@ -19,14 +19,12 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 license: MIT
 metadata:
-  author: https://github.com/Jeffallan
   version: "1.1.0"
-  domain: devops
-  triggers: chaos engineering, resilience testing, failure injection, game day, blast radius, chaos experiment, fault injection, Chaos Monkey, Litmus Chaos, antifragile
-  role: specialist
-  scope: implementation
-  output-format: code
-  related-skills: sre-engineer, devops-engineer, kubernetes-specialist
+  area: resilience
+  keywords: fault injection, game day, blast radius, steady-state hypothesis, Chaos Mesh, Litmus
+  kind: specialist
+  produces: experiment docs and injection code
+  see-also: sre-engineer, microservices-architect, circuit-breaker-tuner
 ---
 
 # Chaos Engineer
@@ -34,10 +32,10 @@ metadata:
 ## When to Use / When Not to Use
 
 **Use when:**
-- Designing and running controlled failure experiments before production incidents happen
-- Planning game day exercises for the team
-- Building blast radius controls and CI/CD chaos pipelines
-- Improving resilience based on experiment findings
+- You want to run deliberate, bounded failure experiments ahead of real outages
+- A team game day needs planning
+- Blast-radius limits or pipeline-based chaos checks need building
+- Experiment results should turn into resilience fixes
 
 **Do not use when:**
 - Responding to an active incident (use `sre-engineer` or `incident-response-playbook`)
@@ -45,31 +43,31 @@ metadata:
 
 ## Process
 
-1. **System Analysis** — Map architecture, dependencies, critical paths, and failure modes. Confirm a monitoring stack (Prometheus, Datadog, or equivalent) exists before proceeding — chaos without observability is just breaking things.
-2. **Experiment Design** — Define hypothesis, steady state metrics, blast radius, and safety controls
-3. **Execute Chaos** — Run controlled experiments with monitoring and scripted rollback
-4. **Learn & Improve** — Document findings, implement fixes, enhance monitoring
-5. **Automate** — Integrate chaos testing into CI/CD for continuous resilience
+1. **System Analysis** — Chart the components, what each depends on, the paths users rely on, and how each part can fail. Check that metrics collection (Prometheus, Datadog, or similar) is live first; without observability a failure test only causes damage.
+2. **Experiment Design** — State the hypothesis, the normal-behaviour metrics, how far the fault may reach, and what stops it
+3. **Execute Chaos** — Inject the fault under observation, with a scripted way back
+4. **Learn & Improve** — Record what was found, fix weaknesses, close monitoring gaps
+5. **Automate** — Put recurring experiments into the delivery pipeline so resilience is rechecked continuously
 
 ## Safety Checklist
 
 Enforce on every experiment:
 
-- **Steady state first** — define and verify baseline metrics before injecting any failure
-- **Blast radius cap** — start with the smallest possible impact scope; expand only after validation
-- **Automated rollback ≤ 30 seconds** — abort path must be scripted and tested before the experiment begins
-- **Single variable** — change only one failure condition at a time
-- **No production without safety nets** — customer-facing environments require circuit breakers, feature flags, or canary isolation
-- **Close the loop** — every experiment must produce a written learning summary and at least one tracked improvement
+- **Baseline before fault** — measure the steady-state metrics and confirm they are stable before anything is injected
+- **Smallest scope first** — begin with the narrowest blast radius; widen only after the previous size confirmed the hypothesis
+- **Abort in 30 s or less** — the stop path is scripted and rehearsed before the experiment starts
+- **One variable** — inject a single failure condition per run
+- **Production needs a net** — anything customer-facing must already have breakers, flags, or canary isolation in place
+- **Finish with a write-up** — every run closes with a short report and one or more tracked fixes
 
 ## Output Template
 
 For each experiment, provide:
-1. Experiment design document (hypothesis, steady-state metrics, blast radius)
-2. Implementation code (failure injection scripts or manifests)
-3. Monitoring setup and alert configuration
+1. Design document: hypothesis, normal-behaviour metrics, scope of impact
+2. Injection scripts or manifests
+3. Dashboards and alert rules covering the experiment window
 4. Rollback procedure (scripted, ≤ 30s)
-5. Learning summary and improvement recommendations
+5. Findings summary with proposed fixes
 
 ## What Claude Does / What You Do
 
@@ -83,43 +81,34 @@ For each experiment, provide:
 
 ## Reference Guide
 
-| Topic | Reference | Load When |
-|-------|-----------|-----------|
-| Experiments | `references/experiment-design.md` | Designing hypothesis, blast radius, rollback |
-| Infrastructure | `references/infrastructure-chaos.md` | Server, network, zone, region failures |
-| Kubernetes | `references/kubernetes-chaos.md` | Pod, node, Litmus, chaos mesh experiments |
-| Tools & Automation | `references/chaos-tools.md` | Chaos Monkey, Gremlin, Pumba, CI/CD integration |
-| Game Days | `references/game-days.md` | Planning, executing, learning from game days |
-| Post-Mortems | `references/post-mortem.md` | Post-mortem template for game days and unplanned production incidents |
+| Need | File | Open when |
+|------|------|-----------|
+| Experiment sheet | `references/experiment-design.md` | writing the claim, scope rungs, abort triggers |
+| Host and cloud faults | `references/infrastructure-chaos.md` | network, dependency, resource, zone, DNS, certificate faults |
+| Cluster faults | `references/kubernetes-chaos.md` | pod, node, partition, autoscaling faults |
+| Tooling | `references/chaos-tools.md` | picking a tool, random-kill scripts, pipeline gates |
+| Game days | `references/game-days.md` | running a supervised session |
+| Write-up | `references/post-mortem.md` | report after a game day or real incident |
 
-## Example: Pod Failure Experiment (Litmus Chaos)
+## Example: Pod Kill Experiment (Chaos Mesh)
 
 ```yaml
-# chaos-pod-delete.yaml
-apiVersion: litmuschaos.io/v1alpha1
-kind: ChaosEngine
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
 metadata:
-  name: my-service-pod-delete
-  namespace: production
+  name: orders-pod-kill
+  namespace: staging
 spec:
-  appinfo:
-    appns: production
-    applabel: "app=my-service"
-    appkind: deployment
-  engineState: active
-  chaosServiceAccount: litmus-admin
-  experiments:
-    - name: pod-delete
-      spec:
-        components:
-          env:
-            - name: TOTAL_CHAOS_DURATION
-              value: "60"
-            - name: CHAOS_INTERVAL
-              value: "20"
-            - name: PODS_AFFECTED_PERC
-              value: "33"   # max 33% of replicas affected
+  action: pod-kill
+  mode: fixed-percent
+  value: "33"            # at most a third of matching pods
+  selector:
+    namespaces: [staging]
+    labelSelectors:
+      app: orders
 ```
+
+`pod-kill` is one-shot: deleting the resource does not bring pods back, so cap the blast radius (`value`, selector) up front. For a fault that is held for a period and is undone on deletion, use `pod-failure` with `duration`. For any irreversible fault, write the manual recovery step (reschedule, restore, redeploy) before you start.
 
 For network latency (toxiproxy) and Chaos Monkey examples, see `references/chaos-tools.md`.
 

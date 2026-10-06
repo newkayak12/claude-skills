@@ -1,221 +1,59 @@
-# CLI Design Patterns
+# Designing the Command Surface
 
-## Command Hierarchy
+## Grammar
 
-```
-mycli                           # Root command
-├── init [options]              # Simple command
-├── config
-│   ├── get <key>              # Nested subcommand
-│   ├── set <key> <value>
-│   └── list
-├── deploy [environment]        # Command with args
-│   ├── --dry-run              # Flag
-│   ├── --force
-│   └── --config <file>        # Option with value
-└── plugins
-    ├── install <name>
-    ├── list
-    └── remove <name>
-```
+Pick one shape and hold it everywhere: `tool <noun> <verb> [args] [flags]` (`deployctl release list`) or `tool <verb> <noun>`. Mixing the two is the most common reason users cannot guess a command.
 
-## Flag Conventions
+- Two levels is usually enough. A third level means the tool is really two tools.
+- Verbs stay uniform across nouns: if one noun has `list`, `show`, `create`, `delete`, the others use the same words, not `ls`/`get`/`add`/`rm` in turn.
+- A bare invocation of a group prints that group's help; it does not run something.
+- Aliases are fine for ergonomics, but the canonical name is what docs and scripts use.
 
-```bash
-# Boolean flags (presence = true)
-mycli deploy --force --dry-run
+## Arguments vs flags
 
-# Short + long forms
-mycli -v --verbose
-mycli -c config.yml --config config.yml
+- Positional arguments: the thing acted upon, at most two or three, order obvious.
+- Flags: everything that modifies behaviour. Anything optional is a flag.
+- Long form always (`--output`), short form only for the handful used constantly (`-o`, `-v`, `-q`, `-f`).
+- Booleans are presence-only; offer a `--no-<name>` counterpart when the default is on.
+- Repeatable flags (`--label a --label b`) beat comma-joined values that need escaping.
+- Reserve `-h/--help` and `--version`; never reuse them.
+- Destructive operations: ask for confirmation when a TTY is present, and provide `--yes` (or `--force`) to bypass in scripts. Add `--dry-run` wherever the effect is hard to undo.
 
-# Required vs optional
-mycli deploy <env>              # Positional (required)
-mycli deploy --env production   # Flag (optional)
+## Configuration precedence
 
-# Multiple values
-mycli install pkg1 pkg2 pkg3    # Variadic args
-mycli --exclude node_modules --exclude .git
-```
+Resolve each setting from the most specific source down to a default:
 
-## Configuration Layers
+1. Flag on the command line
+2. Environment variable (`DEPLOYCTL_REGION`)
+3. Project file in the working directory
+4. User file under the XDG config dir (`~/.config/<tool>/`) or the platform equivalent
+5. Built-in default
 
-Priority order (highest to lowest):
+Rules that save debugging time: print the resolved source with a `config show` style command; never put secrets in flags (they land in shell history and `ps`); accept secrets from env or a file path; validate the merged result once, before any work starts.
 
-1. **Command-line flags** - Explicit user intent
-2. **Environment variables** - Runtime context
-3. **Config files (project)** - `.myclirc`, `mycli.config.js`
-4. **Config files (user)** - `~/.myclirc`, `~/.config/mycli/config.yml`
-5. **Config files (system)** - `/etc/mycli/config.yml`
-6. **Defaults** - Hard-coded sensible defaults
+## Streams and exit status
 
-```javascript
-// Example config resolution
-const config = {
-  ...systemDefaults,
-  ...loadSystemConfig(),
-  ...loadUserConfig(),
-  ...loadProjectConfig(),
-  ...loadEnvVars(),
-  ...parseCliFlags(),
-};
-```
+- stdout carries the result, and only the result. Progress, warnings, logs: stderr. A pipeline must still work.
+- Offer `--output json` (or `-o json`) for anything a script might consume, with stable key names. Human tables may change; JSON shape is a contract.
+- Exit status: `0` success; `1` general failure; `2` bad usage (what most parsers already emit); `130` after Ctrl+C (128 + SIGINT's 2). Add tool-specific codes only if callers will branch on them, and document them.
+- A failing check that is "expected" (grep-style "no match") deserves its own code distinct from crashes.
 
-## Exit Codes
+## Interactive and non-interactive
 
-Standard POSIX exit codes:
+Decide interactivity from `isatty` on stdin/stdout, not from guesswork. Every prompt needs a flag or env var that supplies its answer, and when no TTY exists and a required answer is missing, fail with a message naming that flag. Never hang waiting on input in CI.
 
-```javascript
-const EXIT_CODES = {
-  SUCCESS: 0,
-  GENERAL_ERROR: 1,
-  MISUSE: 2,              // Invalid arguments
-  PERMISSION_DENIED: 77,
-  NOT_FOUND: 127,
-  SIGINT: 130,            // Ctrl+C
-};
-```
+## Extensibility
 
-## Plugin Architecture
+The simplest plugin model is the executable-on-PATH convention: `tool foo` runs `tool-foo` if no built-in `foo` exists. It needs no in-process API, works across languages, and is easy to version. Only build in-process plugins when plugins must share state with the host.
 
-```
-mycli/
-├── core/                      # Core functionality
-├── plugins/
-│   ├── aws/                  # Plugin: AWS integration
-│   │   ├── package.json
-│   │   └── index.js
-│   └── github/               # Plugin: GitHub integration
-│       ├── package.json
-│       └── index.js
-└── plugin-loader.js          # Discovery & loading
-```
+## Compatibility
 
-Plugin discovery:
-1. Check `~/.mycli/plugins/`
-2. Check `node_modules/mycli-plugin-*`
-3. Check `MYCLI_PLUGIN_PATH` env var
+Command names, flag names, output keys, and exit codes are public API. Rename = breaking change: keep the old spelling working for at least one release, print a deprecation notice on stderr, and remove it only in a major version.
 
-## Error Handling Patterns
+## Startup cost
 
-```javascript
-// Good: Actionable error messages
-Error: Config file not found at /path/to/config.yml
+Users feel anything past roughly 100 ms. Keep top-level imports light, defer heavy modules to the command that needs them, and never touch the network during parsing, `--help`, or completion.
 
-Tried locations:
-  • ./mycli.config.yml
-  • ~/.myclirc
-  • /etc/mycli/config.yml
+## Updates
 
-Run 'mycli init' to create a config file, or use --config to specify location.
-
-// Bad: Unhelpful errors
-Error: ENOENT
-```
-
-## Interactive vs Non-Interactive
-
-```javascript
-// Detect if running in CI/CD
-const isCI = process.env.CI === 'true' || !process.stdout.isTTY;
-
-if (isCI) {
-  // Non-interactive: fail fast with clear errors
-  if (!options.environment) {
-    throw new Error('--environment required in non-interactive mode');
-  }
-} else {
-  // Interactive: prompt user
-  const environment = await prompt({
-    type: 'select',
-    message: 'Select environment:',
-    choices: ['development', 'staging', 'production'],
-  });
-}
-```
-
-## State Management
-
-```
-~/.mycli/
-├── config.yml           # User configuration
-├── cache/               # Cached data
-│   ├── plugins.json
-│   └── api-responses/
-├── credentials.json     # Sensitive data (600 perms)
-└── state.json          # Session state
-```
-
-## Performance Patterns
-
-```javascript
-// Lazy loading: Don't load unused dependencies
-if (command === 'deploy') {
-  const deploy = require('./commands/deploy'); // Load on demand
-  await deploy.run();
-}
-
-// Caching: Avoid repeated API calls
-const cache = new Cache('~/.mycli/cache', { ttl: 3600 });
-let plugins = await cache.get('plugins');
-if (!plugins) {
-  plugins = await fetchPlugins();
-  await cache.set('plugins', plugins);
-}
-
-// Async operations: Don't block unnecessarily
-await Promise.all([
-  validateConfig(),
-  checkForUpdates(),
-  loadPlugins(),
-]);
-```
-
-## Versioning & Updates
-
-```javascript
-// Check for updates (non-blocking)
-checkForUpdates().then(update => {
-  if (update.available) {
-    console.log(`Update available: ${update.version}`);
-    console.log(`Run: npm install -g mycli@latest`);
-  }
-}).catch(() => {
-  // Silently fail - don't interrupt user workflow
-});
-
-// Version compatibility
-const MIN_NODE_VERSION = '18.0.0';
-if (!semver.satisfies(process.version, `>=${MIN_NODE_VERSION}`)) {
-  console.error(`mycli requires Node.js ${MIN_NODE_VERSION} or higher`);
-  process.exit(1);
-}
-```
-
-## Help Text Design
-
-```
-USAGE
-  mycli deploy [environment] [options]
-
-ARGUMENTS
-  environment  Target environment (development|staging|production)
-
-OPTIONS
-  -c, --config <file>  Path to config file
-  -f, --force          Skip confirmation prompts
-  -d, --dry-run        Preview changes without executing
-  -v, --verbose        Show detailed output
-
-EXAMPLES
-  # Deploy to production
-  mycli deploy production
-
-  # Preview staging deployment
-  mycli deploy staging --dry-run
-
-  # Use custom config
-  mycli deploy --config ./custom.yml
-
-Learn more: https://docs.mycli.dev/deploy
-```
+Do not phone home on every run. If a version check exists, make it opt-out, cached, non-blocking, silent when offline, and disabled when output is not a TTY.

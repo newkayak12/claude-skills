@@ -1,261 +1,107 @@
-# PostgreSQL VACUUM, Locking & Partitioning
+# PostgreSQL: Vacuum, Locks and Partitioning
 
-## VACUUM and Autovacuum
+## Why vacuum matters
 
-### Autovacuum Configuration
+MVCC leaves old row versions behind. Vacuum reclaims them for reuse, updates the visibility map (enables index-only scans), freezes old transaction IDs, and `ANALYZE` refreshes planner statistics. If it falls behind, tables bloat, scans slow down, and eventually wraparound protection forces an aggressive vacuum.
+
+## Autovacuum triggers
+
+A table is vacuumed when dead tuples exceed `autovacuum_vacuum_threshold + autovacuum_vacuum_scale_factor * reltuples` (defaults 50 and 0.2). On a 100M-row table that is 20M dead rows, far too late. Override per table:
 
 ```sql
--- Enable autovacuum (should always be on)
-ALTER SYSTEM SET autovacuum = on;
-
--- Autovacuum worker settings
-ALTER SYSTEM SET autovacuum_max_workers = 4;
-ALTER SYSTEM SET autovacuum_naptime = '30s';
-
--- Thresholds for triggering autovacuum
-ALTER SYSTEM SET autovacuum_vacuum_scale_factor = 0.1;  -- 10% dead tuples
-ALTER SYSTEM SET autovacuum_vacuum_threshold = 50;
-
--- Analyze thresholds
-ALTER SYSTEM SET autovacuum_analyze_scale_factor = 0.05;  -- 5% changed
-ALTER SYSTEM SET autovacuum_analyze_threshold = 50;
-
--- Per-table autovacuum settings for high-churn tables
-ALTER TABLE busy_table SET (
-    autovacuum_vacuum_scale_factor = 0.01,  -- More aggressive
-    autovacuum_vacuum_cost_delay = 2,       -- Faster vacuum
-    autovacuum_vacuum_cost_limit = 1000
+ALTER TABLE event_log SET (
+  autovacuum_vacuum_scale_factor = 0.01,
+  autovacuum_analyze_scale_factor = 0.03
 );
 ```
 
-### Manual Vacuum Operations
+Throughput is throttled by `autovacuum_vacuum_cost_limit` and `autovacuum_vacuum_cost_delay`; with fast storage raise the limit (the limit is shared among running workers) and add workers (`autovacuum_max_workers`) for many large tables.
+
+## Finding trouble
 
 ```sql
--- Full vacuum (locks table, reclaims space)
-VACUUM FULL users;  -- Use sparingly, requires exclusive lock
-
--- Regular vacuum (non-locking)
-VACUUM (ANALYZE, VERBOSE) users;
-
--- Check table bloat
-SELECT
-    schemaname, tablename,
-    pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as total_size,
-    pg_size_pretty(pg_relation_size(schemaname||'.'||tablename)) as table_size,
-    n_dead_tup,
-    n_live_tup,
-    round(n_dead_tup * 100.0 / NULLIF(n_live_tup + n_dead_tup, 0), 2) as dead_pct
-FROM pg_stat_user_tables
-WHERE n_live_tup > 0
-ORDER BY n_dead_tup DESC;
-
--- Monitor autovacuum activity
-SELECT
-    schemaname, relname,
-    last_vacuum, last_autovacuum,
-    last_analyze, last_autoanalyze,
-    vacuum_count, autovacuum_count,
-    analyze_count, autoanalyze_count
-FROM pg_stat_user_tables
-ORDER BY last_autovacuum DESC NULLS LAST;
+SELECT relname, n_live_tup, n_dead_tup, last_autovacuum, last_autoanalyze
+FROM pg_stat_user_tables ORDER BY n_dead_tup DESC LIMIT 20;
 ```
 
-## Connection Pooling
+Vacuum runs but dead tuples stay? Something pins the cleanup horizon:
 
-### Configuration
+- long transactions or sessions `idle in transaction` (see `pg_stat_activity.xact_start`, `backend_xmin`)
+- abandoned replication slots (`pg_replication_slots`) or a lagging standby with `hot_standby_feedback`
+- forgotten prepared transactions (`pg_prepared_xacts`)
+
+Protective settings: `idle_in_transaction_session_timeout`, `statement_timeout`, and for slots `max_slot_wal_keep_size`.
+
+Wraparound watch: `SELECT datname, age(datfrozenxid) FROM pg_database;` compared with `autovacuum_freeze_max_age` (default 200 million).
+
+## Manual operations
+
+- `VACUUM (VERBOSE, ANALYZE) t` is non-blocking for reads and writes.
+- `VACUUM FULL` rewrites the table under an `ACCESS EXCLUSIVE` lock; for online compaction use an extension such as `pg_repack` where the platform allows it.
+- After a bulk load, run `ANALYZE` yourself instead of waiting.
+- Heap-only tuple (HOT) updates avoid index churn: lowering a table's `fillfactor` (for example 85) leaves page room for them on update-heavy tables.
+
+## Lock behaviour worth knowing
+
+Row locks come from `UPDATE`, `DELETE`, `SELECT ... FOR UPDATE/SHARE`. Table-level modes matter for DDL: `ALTER TABLE` often needs `ACCESS EXCLUSIVE`, which queues behind any running query and blocks everything queued after it. Even a quick DDL can stall an entire table if it waits behind a long transaction.
+
+Safe DDL pattern:
 
 ```sql
--- Max connections (keep reasonable to manage memory)
-ALTER SYSTEM SET max_connections = 200;
-
--- Reserved connections for superuser
-ALTER SYSTEM SET superuser_reserved_connections = 3;
-
--- Connection lifecycle
-ALTER SYSTEM SET idle_in_transaction_session_timeout = '5min';
-ALTER SYSTEM SET statement_timeout = '30s';  -- Per-query timeout
-
--- Monitor connections
-SELECT
-    state,
-    count(*),
-    max(now() - state_change) as max_idle_time
-FROM pg_stat_activity
-WHERE state IS NOT NULL
-GROUP BY state;
-
--- Find long-running queries
-SELECT
-    pid,
-    now() - pg_stat_activity.query_start AS duration,
-    query,
-    state
-FROM pg_stat_activity
-WHERE (now() - pg_stat_activity.query_start) > interval '5 minutes'
-  AND state != 'idle';
+SET lock_timeout = '3s';
+ALTER TABLE orders ADD COLUMN note text;   -- fails fast instead of queueing
 ```
 
-## Lock Management
+Retry in the migration tool. Add constraints as `NOT VALID` then `VALIDATE CONSTRAINT` separately; add indexes with `CONCURRENTLY`.
 
-### Lock Monitoring
+### Who blocks whom
 
 ```sql
--- Check current locks
-SELECT
-    locktype,
-    relation::regclass,
-    mode,
-    granted,
-    pid,
-    pg_blocking_pids(pid) as blocked_by
-FROM pg_locks
-WHERE NOT granted
-ORDER BY relation;
-
--- Find blocking queries
-SELECT
-    blocked_locks.pid AS blocked_pid,
-    blocked_activity.usename AS blocked_user,
-    blocking_locks.pid AS blocking_pid,
-    blocking_activity.usename AS blocking_user,
-    blocked_activity.query AS blocked_statement,
-    blocking_activity.query AS blocking_statement
-FROM pg_catalog.pg_locks blocked_locks
-JOIN pg_catalog.pg_stat_activity blocked_activity ON blocked_activity.pid = blocked_locks.pid
-JOIN pg_catalog.pg_locks blocking_locks ON blocking_locks.locktype = blocked_locks.locktype
-    AND blocking_locks.relation = blocked_locks.relation
-    AND blocking_locks.pid != blocked_locks.pid
-JOIN pg_catalog.pg_stat_activity blocking_activity ON blocking_activity.pid = blocking_locks.pid
-WHERE NOT blocked_locks.granted;
-
--- Deadlock configuration
-ALTER SYSTEM SET deadlock_timeout = '1s';
-ALTER SYSTEM SET log_lock_waits = on;
+SELECT a.pid, a.state, a.wait_event_type, a.query,
+       pg_blocking_pids(a.pid) AS blocked_by
+FROM pg_stat_activity a
+WHERE cardinality(pg_blocking_pids(a.pid)) > 0;
 ```
 
-### Application Lock Patterns
+Trace to the root blocker (often an idle-in-transaction session) before cancelling anything: `pg_cancel_backend` then, if needed, `pg_terminate_backend`.
 
-Most lock incidents come from how the application takes locks, not from server settings. Check these before tuning.
+### Deadlocks
 
-**Queue workers: claim with `SKIP LOCKED`.** Without it, N workers block on the same first row and run one at a time.
+Detected after `deadlock_timeout` (1 s default); one victim aborts with SQLSTATE `40P01`. Prevent by touching rows in a consistent order (sort ids before a multi-row update) and keeping transactions short. Spring code should treat `40P01` and `40001` as retryable at the transaction boundary.
+
+### Queue claiming and advisory locks
+
+Work-queue consumers should not block one another:
 
 ```sql
--- Claim up to 10 jobs; rows locked by another worker are skipped, not waited on
-WITH next AS (
-  SELECT id FROM jobs
-  WHERE status = 'pending'
-  ORDER BY created_at
-  LIMIT 10
-  FOR UPDATE SKIP LOCKED
-)
-UPDATE jobs SET status = 'running', claimed_at = now()
-FROM next WHERE jobs.id = next.id
-RETURNING jobs.*;
+SELECT id FROM job WHERE state = 'pending'
+ORDER BY id LIMIT 10
+FOR UPDATE SKIP LOCKED;
 ```
 
-Commit the claim immediately and do the work outside that transaction; holding the row lock for the whole job turns
-the queue back into a serial one. MySQL supports `FOR UPDATE SKIP LOCKED` since MySQL 8.0.
-
-**Advisory locks for critical sections with no row to lock** (one report generator at a time, per-tenant migration):
-
-```sql
-BEGIN;
-SELECT pg_advisory_xact_lock(hashtext('report:' || $1));  -- released at COMMIT/ROLLBACK
--- critical section
-COMMIT;
-
--- Non-blocking variant: skip if someone else holds it
-SELECT pg_try_advisory_xact_lock(hashtext('report:' || $1));
-```
-
-Prefer the `_xact_` forms. Session-scope `pg_advisory_lock` survives the transaction and is released only by
-`pg_advisory_unlock` or disconnect — behind a transaction-mode pooler (PgBouncer) the session is shared, so a
-forgotten unlock leaks the lock to whichever client gets that connection next.
-
-**Deadlock prevention: one lock order everywhere.** Two transactions that lock the same rows in different orders
-deadlock under load; Postgres then kills one after `deadlock_timeout`.
-
-```sql
--- Transfer between accounts: always lock the lower id first
-SELECT id FROM accounts WHERE id IN ($1, $2) ORDER BY id FOR UPDATE;
-```
-
-Lock parents before children (order before order_items), and batch updates in sorted key order.
-
-**Keep transactions short.** No HTTP calls, file uploads, or user think-time inside a transaction that holds row
-locks; every second held is a second every waiter queues. `idle_in_transaction_session_timeout` bounds the damage
-from a client that forgets to commit.
+For a lock not tied to a row (singleton scheduler, per-tenant migration) use `pg_try_advisory_xact_lock(key)`, released automatically at transaction end. Session-level advisory locks leak across pooled connections; prefer the transaction-scoped form.
 
 ## Partitioning
 
-### Range Partitioning
+Use declarative partitioning when a table is large enough that maintenance (retention, vacuum) or scans on a natural key dominate: time-series, tenant-isolated data.
 
 ```sql
--- Create partitioned table
-CREATE TABLE events (
-    id BIGSERIAL,
-    event_type VARCHAR(50),
-    created_at TIMESTAMP NOT NULL,
-    data JSONB
-) PARTITION BY RANGE (created_at);
+CREATE TABLE metric (
+  id bigint GENERATED ALWAYS AS IDENTITY,
+  recorded_at timestamptz NOT NULL,
+  value double precision,
+  PRIMARY KEY (id, recorded_at)
+) PARTITION BY RANGE (recorded_at);
 
--- Create partitions
-CREATE TABLE events_2024_01 PARTITION OF events
-    FOR VALUES FROM ('2024-01-01') TO ('2024-02-01');
-
-CREATE TABLE events_2024_02 PARTITION OF events
-    FOR VALUES FROM ('2024-02-01') TO ('2024-03-01');
-
--- Create indexes on partitions
-CREATE INDEX idx_events_2024_01_type ON events_2024_01(event_type);
-CREATE INDEX idx_events_2024_02_type ON events_2024_02(event_type);
-
--- Query uses partition pruning
-EXPLAIN (ANALYZE)
-SELECT * FROM events
-WHERE created_at >= '2024-01-15' AND created_at < '2024-01-20';
--- Should show "Partitions pruned: X"
+CREATE TABLE metric_2026_10 PARTITION OF metric
+  FOR VALUES FROM ('2026-10-01') TO ('2026-11-01');
 ```
 
-## Performance Monitoring
+Rules and effects:
 
-### Key Metrics Queries
-
-```sql
--- pg_stat_statements (install extension first)
-CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
-
--- Top slow queries
-SELECT
-    round(total_exec_time::numeric, 2) as total_time,
-    calls,
-    round(mean_exec_time::numeric, 2) as mean_time,
-    round((100 * total_exec_time / sum(total_exec_time) OVER ())::numeric, 2) as pct,
-    query
-FROM pg_stat_statements
-ORDER BY total_exec_time DESC
-LIMIT 10;
-
--- Cache hit ratio by table
-SELECT
-    schemaname,
-    tablename,
-    heap_blks_hit,
-    heap_blks_read,
-    round(100.0 * heap_blks_hit / NULLIF(heap_blks_hit + heap_blks_read, 0), 2) as cache_hit_pct
-FROM pg_statio_user_tables
-WHERE heap_blks_hit + heap_blks_read > 0
-ORDER BY heap_blks_read DESC;
-
--- Index usage statistics
-SELECT
-    schemaname,
-    tablename,
-    indexname,
-    idx_scan,
-    idx_tup_read,
-    idx_tup_fetch,
-    pg_size_pretty(pg_relation_size(indexrelid)) as size
-FROM pg_stat_user_indexes
-ORDER BY idx_scan DESC;
-```
+- Any primary key or unique constraint must include the partition key.
+- Queries must filter on the key for partition pruning; check the plan shows only the expected partitions.
+- Retention becomes `ALTER TABLE metric DETACH PARTITION ... CONCURRENTLY` (PostgreSQL 14+) then drop, instead of a huge `DELETE` that creates bloat.
+- Create future partitions ahead of time by a scheduled job; a missing partition makes inserts fail unless a default partition exists.
+- Thousands of partitions raise planning time; choose granularity accordingly.
+- List partitioning suits tenant or region keys; hash spreads evenly when no natural range exists.

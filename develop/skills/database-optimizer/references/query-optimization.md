@@ -1,251 +1,59 @@
-# Query Optimization
+# Reading Plans and Reshaping Queries
 
-## Execution Plan Analysis
+Scope: what a plan tells you about the server. Pure SQL authoring belongs to `sql-pro`.
 
-### PostgreSQL EXPLAIN ANALYZE
+## Reading a plan
 
-```sql
--- Get actual execution statistics
-EXPLAIN (ANALYZE, BUFFERS, VERBOSE, TIMING)
-SELECT u.id, u.name, COUNT(o.id) as order_count
-FROM users u
-LEFT JOIN orders o ON u.id = o.user_id
-WHERE u.created_at > NOW() - INTERVAL '30 days'
-GROUP BY u.id, u.name
-HAVING COUNT(o.id) > 5;
+- `EXPLAIN` shows the planner's estimate; `EXPLAIN ANALYZE` executes the statement and adds actual rows, loops and timing. Wrap data-modifying statements in a transaction you roll back.
+- Compare estimated rows against actual rows at every node first. A gap of one to two orders of magnitude means the planner chose from bad information (statistics), and no index will fix that.
+- Actual figures are per loop. Multiply `actual time` and `rows` by `loops` for the real cost of an inner node.
+- `BUFFERS` splits `shared hit` (cache) from `read` (disk or OS cache). A plan that is fast warm and slow cold is an I/O problem.
+- Hash and sort nodes report spill: `Batches > 1` on a hash, `Sort Method: external merge` on a sort. Both mean `work_mem` was too small for that node.
+- `Rows Removed by Filter` far larger than rows returned means the predicate is applied after the fetch; an index on the filtered column (or a partial index) would let the scan skip them.
 
--- Key metrics to examine:
--- 1. Actual time vs Planning time
--- 2. Rows estimate vs Actual rows (cardinality)
--- 3. Buffers (shared hits vs reads)
--- 4. Sequential Scans vs Index Scans
--- 5. Join methods (Nested Loop, Hash Join, Merge Join)
-```
+MySQL 8 equivalents: `EXPLAIN FORMAT=TREE` for the iterator tree, `EXPLAIN ANALYZE` (8.0.18+) for actual timings. In the classic table output watch `type` (`ALL` is a full scan), `key`, `rows`, and `Extra` values `Using filesort` and `Using temporary`.
 
-### MySQL EXPLAIN
+## Why an index is ignored
 
-```sql
--- Basic execution plan
-EXPLAIN SELECT * FROM orders
-WHERE user_id = 123 AND status = 'pending';
+| Cause | Check |
+|-------|-------|
+| Function or cast on the column (`date(created_at) = ...`, implicit type conversion) | Rewrite the predicate as a range on the bare column, or build an expression index |
+| Leading wildcard `LIKE '%x'` | Trigram (`pg_trgm`) GIN index, or full-text search |
+| Low selectivity | Planner correctly prefers a scan; consider a partial index on the rare value |
+| Stale statistics | `ANALYZE`, then re-plan |
+| Column order mismatch in composite index | See `index-design-patterns.md` |
+| Tiny table | Scan is cheaper; not a defect |
 
--- JSON format for detailed analysis
-EXPLAIN FORMAT=JSON
-SELECT u.name, o.total
-FROM users u
-INNER JOIN orders o ON u.id = o.user_id
-WHERE o.created_at > '2024-01-01';
+## Reshaping that the server rewards
 
--- Analyze actual execution (MySQL 8.0+)
-EXPLAIN ANALYZE
-SELECT * FROM products
-WHERE category_id = 5
-ORDER BY price DESC
-LIMIT 10;
-```
+- **Correlated subquery per row** becomes a join or a `LATERAL` join when the subquery has to return several columns or a top-N per parent.
+- **Existence tests**: `EXISTS` stops at the first match, and `NOT EXISTS` is safer than `NOT IN` because a NULL in the subquery makes `NOT IN` return nothing.
+- **`DISTINCT` used to hide duplicate joins**: fix the join (semi-join with `EXISTS`) instead of paying for a sort or hash over the whole result.
+- **Join order** is the planner's job. If it picks badly, fix statistics (`ALTER TABLE ... ALTER COLUMN ... SET STATISTICS`, extended statistics with `CREATE STATISTICS` for correlated columns) before reaching for hints or `join_collapse_limit`.
+- **CTEs**: since PostgreSQL 12 a non-recursive, side-effect-free CTE referenced once is inlined. Force the old behaviour with `AS MATERIALIZED` when the CTE is expensive and referenced several times; use `AS NOT MATERIALIZED` to push predicates inside it.
+- **Aggregation before join**: collapse the many side to one row per key in a subquery, then join, instead of joining then grouping on a fan-out.
 
-## Query Rewriting Patterns
+## Pagination
 
-### Eliminate Subqueries
+`OFFSET n` reads and discards n rows, so page 5,000 costs 5,000 pages. Use keyset (seek) paging with a unique, indexed sort key:
 
-```sql
--- BEFORE (Slow - executes subquery for each row)
-SELECT *
-FROM orders o
-WHERE total > (
-    SELECT AVG(total)
-    FROM orders
-    WHERE user_id = o.user_id
-);
-
--- AFTER (Fast - single join with window function)
-WITH user_averages AS (
-    SELECT user_id, AVG(total) as avg_total
-    FROM orders
-    GROUP BY user_id
+```kotlin
+// Spring JdbcTemplate: next page after the last (created_at, id) seen
+jdbc.query(
+    """
+    SELECT id, created_at, title FROM article
+    WHERE (created_at, id) < (?, ?)
+    ORDER BY created_at DESC, id DESC LIMIT ?
+    """.trimIndent(),
+    rowMapper, lastCreatedAt, lastId, pageSize
 )
-SELECT o.*
-FROM orders o
-INNER JOIN user_averages ua ON o.user_id = ua.user_id
-WHERE o.total > ua.avg_total;
 ```
 
-### Optimize JOIN Order
+Back it with an index on `(created_at DESC, id DESC)`; row-value comparison works in both PostgreSQL and MySQL 8, though the MySQL optimizer is less reliable at using an index for it, so confirm in the plan. Keyset paging cannot jump to an arbitrary page; if the product needs that, cap the depth.
 
-```sql
--- BEFORE (Cartesian product then filter)
-SELECT p.name, c.name, s.stock
-FROM products p, categories c, stock s
-WHERE p.category_id = c.id
-  AND p.id = s.product_id
-  AND c.active = true;
+## Verifying a change
 
--- AFTER (Filter first, then join)
-SELECT p.name, c.name, s.stock
-FROM categories c
-INNER JOIN products p ON p.category_id = c.id
-INNER JOIN stock s ON s.product_id = p.id
-WHERE c.active = true;
-```
-
-### Use EXISTS Instead of IN
-
-```sql
--- BEFORE (Slow - materializes entire subquery)
-SELECT * FROM users
-WHERE id IN (
-    SELECT DISTINCT user_id
-    FROM orders
-    WHERE total > 1000
-);
-
--- AFTER (Fast - short-circuits on first match)
-SELECT * FROM users u
-WHERE EXISTS (
-    SELECT 1 FROM orders o
-    WHERE o.user_id = u.id
-    AND o.total > 1000
-);
-```
-
-### Optimize DISTINCT
-
-```sql
--- BEFORE (Sorts entire result set)
-SELECT DISTINCT u.email
-FROM users u
-INNER JOIN orders o ON u.id = o.user_id
-WHERE o.status = 'completed';
-
--- AFTER (Uses index for uniqueness)
-SELECT u.email
-FROM users u
-WHERE EXISTS (
-    SELECT 1 FROM orders o
-    WHERE o.user_id = u.id
-    AND o.status = 'completed'
-);
-```
-
-## CTE Optimization
-
-### Materialized vs Inline CTEs
-
-```sql
--- PostgreSQL: Force materialization for reuse
-WITH expensive_calculation AS MATERIALIZED (
-    SELECT user_id,
-           SUM(total) as lifetime_value,
-           COUNT(*) as order_count
-    FROM orders
-    WHERE created_at > NOW() - INTERVAL '1 year'
-    GROUP BY user_id
-)
-SELECT *
-FROM expensive_calculation
-WHERE lifetime_value > 10000
-   OR order_count > 50;
-
--- Force inline for single-use CTEs
-WITH recent_users AS NOT MATERIALIZED (
-    SELECT id FROM users
-    WHERE created_at > NOW() - INTERVAL '7 days'
-)
-SELECT * FROM recent_users;
-```
-
-## Window Function Optimization
-
-```sql
--- BEFORE (Multiple subqueries)
-SELECT
-    o.id,
-    o.total,
-    (SELECT MAX(total) FROM orders WHERE user_id = o.user_id) as max_total,
-    (SELECT AVG(total) FROM orders WHERE user_id = o.user_id) as avg_total
-FROM orders o;
-
--- AFTER (Single window function scan)
-SELECT
-    id,
-    total,
-    MAX(total) OVER (PARTITION BY user_id) as max_total,
-    AVG(total) OVER (PARTITION BY user_id) as avg_total
-FROM orders;
-```
-
-## Aggregation Strategies
-
-### Partial Aggregation
-
-```sql
--- For large cardinality groups, pre-aggregate
-WITH daily_stats AS (
-    SELECT
-        DATE(created_at) as day,
-        user_id,
-        COUNT(*) as daily_orders,
-        SUM(total) as daily_total
-    FROM orders
-    WHERE created_at > NOW() - INTERVAL '90 days'
-    GROUP BY DATE(created_at), user_id
-)
-SELECT
-    user_id,
-    SUM(daily_orders) as total_orders,
-    AVG(daily_total) as avg_daily_total
-FROM daily_stats
-GROUP BY user_id;
-```
-
-## Pagination Optimization
-
-```sql
--- BEFORE (Slow on large offsets)
-SELECT * FROM products
-ORDER BY created_at DESC
-LIMIT 20 OFFSET 10000;
-
--- AFTER (Keyset pagination - cursor-based)
-SELECT * FROM products
-WHERE created_at < '2024-01-01 12:00:00'
-   OR (created_at = '2024-01-01 12:00:00' AND id < 12345)
-ORDER BY created_at DESC, id DESC
-LIMIT 20;
-
--- Create index for keyset pagination
-CREATE INDEX idx_products_pagination
-ON products (created_at DESC, id DESC);
-```
-
-## Query Pattern Red Flags
-
-| Pattern | Issue | Solution |
-|---------|-------|----------|
-| `SELECT *` | Fetches unnecessary columns | Select only needed columns |
-| `OR` conditions | Prevents index usage | Use UNION or separate queries |
-| `LIKE '%term%'` | Full table scan | Use full-text search or trigram indexes |
-| `WHERE DATE(column) = ...` | Function prevents index usage | Use range: `column >= '2024-01-01' AND column < '2024-01-02'` |
-| Large `IN` lists | Inefficient for >100 items | Use temporary table or JOIN |
-| Implicit type conversion | Prevents index usage | Match column data types exactly |
-
-## Performance Validation
-
-```sql
--- PostgreSQL: Compare query performance
-EXPLAIN (ANALYZE, BUFFERS)
--- your query here
-
--- Check buffer cache hits
-SELECT
-    sum(heap_blks_read) as heap_read,
-    sum(heap_blks_hit) as heap_hit,
-    sum(heap_blks_hit) / (sum(heap_blks_hit) + sum(heap_blks_read)) as ratio
-FROM pg_statio_user_tables;
-
--- MySQL: Check handler statistics
-SHOW STATUS LIKE 'Handler%';
-FLUSH STATUS;
--- run your query
-SHOW STATUS LIKE 'Handler%';
-```
+1. Same statement, same parameters, same data volume as the baseline.
+2. Run several times, discard the first (cold cache), compare the median.
+3. Compare plan shape and buffers, not just milliseconds.
+4. Check the write side: inserts and updates on the touched table after an index is added.

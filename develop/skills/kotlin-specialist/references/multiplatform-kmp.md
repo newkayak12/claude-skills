@@ -1,380 +1,109 @@
-# Kotlin Multiplatform (KMP)
+# Kotlin Multiplatform
 
-## Project Structure
+## Module layout
 
 ```
-project/
-├── commonMain/
-│   ├── kotlin/
-│   │   ├── data/
-│   │   │   └── User.kt
-│   │   ├── repository/
-│   │   │   └── UserRepository.kt
-│   │   └── Platform.kt (expect)
-│   └── resources/
-├── androidMain/
-│   └── kotlin/
-│       └── Platform.android.kt (actual)
-├── iosMain/
-│   └── kotlin/
-│       └── Platform.ios.kt (actual)
-└── jvmMain/
-    └── kotlin/
-        └── Platform.jvm.kt (actual)
+shared/
+  src/commonMain/kotlin      platform-neutral code, only common APIs
+  src/commonTest/kotlin
+  src/androidMain/kotlin     JVM/Android specifics
+  src/iosMain/kotlin         shared by iosArm64, iosSimulatorArm64, iosX64 via the default hierarchy
+androidApp/                  consumes :shared
+iosApp/                      Xcode project consuming the framework
 ```
 
-## Gradle Configuration
+Keep business rules, models, and repositories in `commonMain`; keep UI and platform services at the edges.
+
+## Gradle setup
 
 ```kotlin
-// build.gradle.kts
 plugins {
-    kotlin("multiplatform") version "1.9.22"
-    kotlin("plugin.serialization") version "1.9.22"
+    kotlin("multiplatform")
+    kotlin("plugin.serialization")
+    id("com.android.library")
 }
+// Newer AGP versions offer com.android.kotlin.multiplatform.library for KMP modules; prefer it when available.
 
 kotlin {
-    // JVM target
-    jvm {
-        compilations.all {
-            kotlinOptions.jvmTarget = "17"
-        }
-    }
-
-    // Android target
-    androidTarget {
-        compilations.all {
-            kotlinOptions.jvmTarget = "17"
-        }
-    }
-
-    // iOS targets
-    listOf(
-        iosX64(),
-        iosArm64(),
-        iosSimulatorArm64()
-    ).forEach { iosTarget ->
-        iosTarget.binaries.framework {
-            baseName = "shared"
-            isStatic = true
-        }
-    }
-
-    // JS target
-    js(IR) {
-        browser()
-        nodejs()
-    }
+    androidTarget()
+    iosArm64(); iosSimulatorArm64()
+    jvm("desktop")
 
     sourceSets {
-        val commonMain by getting {
-            dependencies {
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
-                implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
-                implementation("io.ktor:ktor-client-core:2.3.7")
-            }
+        commonMain.dependencies {
+            implementation(libs.kotlinx.coroutines.core)
+            implementation(libs.kotlinx.serialization.json)
+            implementation(libs.ktor.client.core)
         }
-
-        val commonTest by getting {
-            dependencies {
-                implementation(kotlin("test"))
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
-            }
-        }
-
-        val androidMain by getting {
-            dependencies {
-                implementation("io.ktor:ktor-client-okhttp:2.3.7")
-            }
-        }
-
-        val iosMain by getting {
-            dependencies {
-                implementation("io.ktor:ktor-client-darwin:2.3.7")
-            }
-        }
-
-        val jvmMain by getting {
-            dependencies {
-                implementation("io.ktor:ktor-client-cio:2.3.7")
-            }
-        }
+        commonTest.dependencies { implementation(kotlin("test")) }
+        androidMain.dependencies { implementation(libs.ktor.client.okhttp) }
+        iosMain.dependencies { implementation(libs.ktor.client.darwin) }
     }
 }
 ```
 
-## Expect/Actual Pattern
+Declare versions in `libs.versions.toml`. With the default hierarchy template, `iosMain` is created automatically for the iOS targets, so no manual `dependsOn` wiring is needed. Add `applyDefaultHierarchyTemplate()` explicitly only when customizing.
 
-```kotlin
-// commonMain/kotlin/Platform.kt
-expect class Platform() {
-    val name: String
-    fun currentTimeMillis(): Long
-}
+## Choosing a seam: interface or expect/actual
 
-expect fun getPlatform(): Platform
-
-// androidMain/kotlin/Platform.android.kt
-import android.os.Build
-
-actual class Platform {
-    actual val name: String = "Android ${Build.VERSION.SDK_INT}"
-
-    actual fun currentTimeMillis(): Long =
-        System.currentTimeMillis()
-}
-
-actual fun getPlatform(): Platform = Platform()
-
-// iosMain/kotlin/Platform.ios.kt
-import platform.UIKit.UIDevice
-import platform.Foundation.NSDate
-
-actual class Platform {
-    actual val name: String =
-        UIDevice.currentDevice.systemName() + " " + UIDevice.currentDevice.systemVersion
-
-    actual fun currentTimeMillis(): Long =
-        (NSDate().timeIntervalSince1970 * 1000).toLong()
-}
-
-actual fun getPlatform(): Platform = Platform()
-```
-
-## Common Code Patterns
-
-```kotlin
-// commonMain - Shared business logic
-class UserRepository(private val api: ApiService) {
-    private val _users = MutableStateFlow<List<User>>(emptyList())
-    val users: StateFlow<List<User>> = _users.asStateFlow()
-
-    suspend fun loadUsers() {
-        try {
-            val result = api.getUsers()
-            _users.value = result
-        } catch (e: Exception) {
-            // Handle error
-        }
-    }
-}
-
-// Shared models
-@Serializable
-data class User(
-    val id: String,
-    val name: String,
-    val email: String,
-    val createdAt: Long
-)
-
-// Sealed class for platform-agnostic results
-sealed class Result<out T> {
-    data class Success<T>(val data: T) : Result<T>()
-    data class Error(val exception: Exception) : Result<Nothing>()
-    object Loading : Result<Nothing>()
-}
-```
-
-## Platform-Specific Implementations
+| Situation | Prefer |
+|-----------|--------|
+| A service with a few methods (storage, clock, logger) | an interface in common, implementations per platform, wired by constructor injection |
+| A platform type or function with the same shape everywhere (`currentTimeMillis`, UUID generation) | `expect` / `actual` |
+| Per-platform Ktor engine | dependency per source set; the engine is discovered at runtime |
 
 ```kotlin
 // commonMain
-expect class DatabaseDriver()
-
-expect suspend fun DatabaseDriver.query(sql: String): List<Map<String, Any>>
+expect fun platformName(): String
 
 // androidMain
-import android.content.Context
-import androidx.sqlite.db.SupportSQLiteDatabase
-
-actual class DatabaseDriver(private val context: Context) {
-    private val db: SupportSQLiteDatabase = // Initialize Android SQLite
-}
-
-actual suspend fun DatabaseDriver.query(sql: String): List<Map<String, Any>> =
-    withContext(Dispatchers.IO) {
-        // Android-specific query execution
-    }
+actual fun platformName(): String = "Android ${android.os.Build.VERSION.SDK_INT}"
 
 // iosMain
-import platform.Foundation.NSFileManager
-
-actual class DatabaseDriver() {
-    private val db = // Initialize iOS SQLite
-}
-
-actual suspend fun DatabaseDriver.query(sql: String): List<Map<String, Any>> =
-    withContext(Dispatchers.Default) {
-        // iOS-specific query execution
-    }
+actual fun platformName(): String = UIDevice.currentDevice.systemName()
 ```
 
-## Ktor Client Multiplatform
+Interfaces are easier to fake in tests and avoid the `expect`/`actual` class feature, which is still marked Beta in recent releases and warns on use. Keep expect declarations small.
+
+## Common code rules
+
+- No `java.*` imports in `commonMain`; use `kotlinx-datetime`, `okio`, or an interface for time, I/O, and formatting.
+- Use `kotlinx.serialization` for JSON; reflection-based libraries do not work on Native.
+- Use `Flow` and suspend in the shared API; on iOS, consume them through SKIE or a thin callback wrapper, because plain Swift does not see Kotlin generics and suspend functions ergonomically.
+- Immutable data classes cross the Swift boundary best; avoid exposing sealed hierarchies with generics when Swift callers need exhaustive switching.
+
+## Shared HTTP client
 
 ```kotlin
-// commonMain
-class ApiClient {
-    private val client = HttpClient {
-        install(ContentNegotiation) {
-            json(Json {
-                prettyPrint = true
-                isLenient = true
-                ignoreUnknownKeys = true
-            })
-        }
-        install(Logging) {
-            level = LogLevel.INFO
-        }
-    }
-
-    suspend fun getUsers(): List<User> =
-        client.get("https://api.example.com/users").body()
-
-    suspend fun createUser(user: User): User =
-        client.post("https://api.example.com/users") {
-            contentType(ContentType.Application.Json)
-            setBody(user)
-        }.body()
-}
-```
-
-## Source Set Hierarchy
-
-```kotlin
-// Intermediate source sets for iOS
-kotlin {
-    sourceSets {
-        val commonMain by getting
-        val commonTest by getting
-
-        val iosMain by creating {
-            dependsOn(commonMain)
-        }
-
-        val iosX64Main by getting {
-            dependsOn(iosMain)
-        }
-
-        val iosArm64Main by getting {
-            dependsOn(iosMain)
-        }
-
-        val iosSimulatorArm64Main by getting {
-            dependsOn(iosMain)
-        }
+class ApiClient(
+    // no engine given: Ktor discovers the one on each platform's classpath
+    private val http: HttpClient = HttpClient {
+        install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+        install(HttpTimeout) { requestTimeoutMillis = 10_000 }
+    },
+) {
+    suspend fun fetchProfile(id: String): Profile {
+        val response = http.get("https://api.example.com/users/$id")
+        return response.body()
     }
 }
 ```
 
-## Native Interop (iOS)
+Add one engine dependency per source set (OkHttp on Android, Darwin on iOS). In tests, pass `HttpClient(MockEngine { ... })` to keep the test in `commonTest`.
 
-```kotlin
-// iosMain - Calling Objective-C/Swift
-import platform.Foundation.NSBundle
-import platform.UIKit.UIApplication
+## iOS integration
 
-fun getAppVersion(): String =
-    NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString") as? String
-        ?: "Unknown"
+- The shared module is exported as a framework; configure with `binaries.framework { baseName = "Shared"; isStatic = true }` on each iOS target.
+- Native memory uses a tracing garbage collector in current releases; no freezing rules apply to new code.
+- Calling Objective-C and Swift-visible APIs from `iosMain` uses `platform.*` imports (`platform.UIKit.UIDevice`); Swift-only libraries need a bridging protocol implemented on the Swift side.
+- Suspend functions appear in Swift as `async` functions on recent toolchains; cancellation from Swift needs explicit handling, and a `Flow` needs an adapter.
 
-fun openURL(url: String) {
-    val nsUrl = NSURL.URLWithString(url)
-    UIApplication.sharedApplication.openURL(nsUrl ?: return)
-}
+## Testing
 
-// Freezing for thread safety (Kotlin/Native memory model)
-class IosViewModel {
-    private val scope = MainScope()
+- Write most tests in `commonTest` with `kotlin.test` and `kotlinx-coroutines-test`; they run for every target.
+- Run `./gradlew allTests` for all targets, or `desktopTest`, `testDebugUnitTest`, `iosSimulatorArm64Test` individually. iOS tests need macOS.
+- Put tests that touch platform APIs in that platform's test source set.
 
-    fun loadData() {
-        scope.launch {
-            val data = api.getData().freeze() // Freeze for iOS
-            updateUI(data)
-        }
-    }
-}
-```
+## Publishing a library
 
-## Testing Multiplatform Code
-
-```kotlin
-// commonTest
-class UserRepositoryTest {
-    private lateinit var repository: UserRepository
-
-    @BeforeTest
-    fun setup() {
-        repository = UserRepository(FakeApiService())
-    }
-
-    @Test
-    fun testLoadUsers() = runTest {
-        repository.loadUsers()
-
-        val users = repository.users.value
-        assertEquals(2, users.size)
-    }
-}
-
-// Platform-specific tests
-// androidTest
-class AndroidUserRepositoryTest {
-    @Test
-    fun testAndroidSpecific() {
-        // Android-only test
-    }
-}
-
-// iosTest
-class IosUserRepositoryTest {
-    @Test
-    fun testIosSpecific() {
-        // iOS-only test
-    }
-}
-```
-
-## Publishing KMP Library
-
-```kotlin
-// build.gradle.kts
-plugins {
-    `maven-publish`
-}
-
-publishing {
-    publications {
-        create<MavenPublication>("kotlinMultiplatform") {
-            groupId = "com.example"
-            artifactId = "shared"
-            version = "1.0.0"
-        }
-    }
-
-    repositories {
-        maven {
-            url = uri("https://maven.pkg.github.com/user/repo")
-            credentials {
-                username = System.getenv("GITHUB_ACTOR")
-                password = System.getenv("GITHUB_TOKEN")
-            }
-        }
-    }
-}
-```
-
-## Quick Reference
-
-| Pattern | Purpose |
-|---------|---------|
-| `expect class` | Declare platform-specific type in common |
-| `actual class` | Implement platform-specific type |
-| `commonMain` | Shared code across all platforms |
-| `androidMain` | Android-specific implementations |
-| `iosMain` | iOS-specific implementations (all targets) |
-| `jvmMain` | JVM/Desktop-specific code |
-| `jsMain` | JavaScript-specific code |
-| `*Test` | Platform-specific tests |
-| `dependsOn` | Source set hierarchy |
-| `.freeze()` | iOS memory model (legacy) |
-| `kotlin("multiplatform")` | KMP Gradle plugin |
+Apply `maven-publish`; the Kotlin plugin creates a publication per target plus a root `kotlinMultiplatform` publication that Gradle metadata uses to pick the right artifact. Set `group`, `version`, and POM metadata, sign artifacts, and publish with `./gradlew publishAllPublicationsToXRepository`. Build iOS publications on macOS.

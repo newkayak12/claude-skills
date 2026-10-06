@@ -1,432 +1,126 @@
-# Negotiation Techniques Reference
+# Negotiation Field Notes
 
-Complete breakdown of tactical negotiation techniques from Chris Voss's "Never Split the Difference."
+Pick tools by the situation you are in, not by name. Each entry: when it fits, what to say, what to avoid.
 
-## Table of Contents
+## A. Before the meeting
 
-1. [Mirroring](#1-mirroring)
-2. [Labeling](#2-labeling)
-3. [Tactical Empathy](#3-tactical-empathy)
-4. [Voice Control](#4-voice-control)
-5. [The Power of Apology and Pause](#5-the-power-of-apology-and-pause)
-6. [Accusation Audit](#6-accusation-audit)
-7. [Calibrated Questions](#7-calibrated-questions)
-8. [No-Oriented Questions](#8-no-oriented-questions)
-9. [Triggering "That's Right"](#9-triggering-thats-right)
-10. [Managing "Yes"](#10-managing-yes)
-11. [The Rule of Three](#11-the-rule-of-three)
-12. [Re-engagement Technique](#12-re-engagement-technique)
-13. [Managing "Fair"](#13-managing-fair)
-14. [Anchoring and Loss Aversion](#14-anchoring-and-loss-aversion)
-15. [Ackerman Bargaining Method](#15-ackerman-bargaining-method)
-16. [Leverage Types](#16-leverage-types)
-17. [Black Swans](#17-black-swans)
-18. [Counterpart Styles](#18-counterpart-styles)
-19. [Body Language and Tone](#19-body-language-and-tone)
-20. [Dynamic Silence](#20-dynamic-silence)
-21. [Pronoun Analysis](#21-pronoun-analysis)
+**Interests behind positions.** A position is a demand ("14% raise"); an interest is the need under it
+(budget cycle, precedent, retention risk). List three plausible interests for the counterpart and one
+question that would test each.
 
----
+**Alternatives.** Your best alternative to agreement sets your floor. The counterpart has one too; if you
+can guess it, you know how much room they really have. Improve yours before the meeting if time allows
+(a second interview, a competing quote).
 
-## 1. Mirroring
+**Zone of agreement.** A deal exists only if your walk-away and theirs overlap. Estimate both ends and
+decide where in the overlap you want to land, then open beyond it.
 
-**What it is:** Repeat the last 1-3 critical words your counterpart said, using a curious, upward-inflecting tone.
+**Objective yardsticks.** Gather outside standards the other side cannot easily dismiss: market salary
+bands, comparable contracts, published rate cards, past invoices. A number with a source survives
+"that's just your opinion".
 
-**Psychological trigger:** Creates familiarity and rapport; signals deep listening; prompts elaboration without direct questions.
+**Rehearse the three hardest lines**: the ask itself, the response to a flat "no", the response to silence.
 
-**How to use:**
-- Listen for the key phrase or emotion-laden words
-- Repeat them back as a gentle question
-- Wait silently for them to expand
+## B. Opening the conversation
 
-**Example:**
-> Counterpart: "We're not sure if this partnership makes sense."
-> You: "Doesn't make sense?"
-> Counterpart: "Well, what I mean is... [elaborates on concerns]"
+**Name the tension first.** If you know the ask will sound steep, say so before they do:
+"This may sound higher than you planned for. I want to explain how I got there." Naming a worry
+defuses it; leaving it unsaid lets it grow.
 
----
+**Anchoring.** The first credible number pulls the rest of the talk toward it. Anchor when you have
+solid data; anchor with a range whose bottom you could live with, because the other side hears the
+bottom. If they anchor first, do not argue with the number; restate your own criteria and re-anchor.
 
-## 2. Labeling
+**Framing the stakes.** People guard against loss harder than they chase gain. Phrase your proposal so
+the other side sees what they keep or avoid ("this keeps the team intact through launch") rather than
+only what they give.
 
-**What it is:** Identify and verbalize the counterpart's emotions or perspective using neutral phrases: "It seems like...", "It sounds like...", "It looks like..."
+**Deadlines.** Most real movement happens near a deadline. Check whether a stated deadline is
+genuine; one that is set by the other side's mood can usually bend. Never invent your own.
 
-**Psychological trigger:** Validates emotions, making them feel understood. Diffuses negative emotions by naming them; reinforces positive ones.
+## C. Drawing information out
 
-**How to use:**
-- Observe their emotional state or concerns
-- Name it with a tentative label (avoid "I think you...")
-- Pause after labeling to let them confirm or clarify
+**Repeat-back.** Echo their last few words as a question and stay quiet. They usually elaborate, and
+the elaboration often contains the constraint you need.
 
-**Examples:**
-> "It seems like you're worried about the budget impact."
-> "It sounds like there's been some frustration with the timeline."
-> "It looks like this decision carries a lot of weight for your team."
+**Reflect the feeling.** State the emotion or constraint you hear: "It sounds like headcount is
+frozen." A wrong guess is fine; they correct it and give you more. Do not follow with "but".
 
-**Important:** After labeling, be silent. Let them respond.
+**Summarize until they agree.** Restate their situation so accurately that they answer "That's right".
+Agreement of that kind (understanding, not consent) lowers defensiveness and opens room for your ask.
+Compare it with "You're right", which usually only ends the topic.
 
----
+**Questions that make them solve it.** Open "how" and "what" questions hand the problem to the other
+side: "How would we make this fit the budget?" "What would need to be true for you to approve it?"
+Avoid "why" for their choices, which sounds like an accusation.
 
-## 3. Tactical Empathy
+**Questions that invite a "no".** Many people feel safer refusing than agreeing. "Would it be a bad
+idea to revisit the number?" is easier to answer than "Can we revisit the number?". A "no" there still
+leaves the topic open.
 
-**What it is:** Consciously imagining yourself in their situation and vocalizing their perspective. Combines the mindset of sincere empathy with techniques like mirroring and labeling.
+**Watch the pronouns.** Heavy "I" suggests personal authority or personal risk; "we" and "the company"
+often signal someone shielding behind a process. Ask who actually decides.
 
-**Psychological trigger:** When people feel understood, brain chemistry shifts toward trust and cooperation. Empathy short-circuits defensive reactions.
+## D. Handling resistance
 
-**How to use:**
-- Before responding, ask yourself: "What is their world like right now?"
-- Articulate their situation, pressures, and fears
-- Show you understand even if you disagree
+**"That's our policy."** Treat it as an opening, not a wall: "What would the exception process look
+like?" or "Which parts of the policy have flexibility?" Policies have owners and exceptions.
 
-**Example:**
-> "I understand you're under enormous pressure to deliver this quarter, and bringing in a new vendor feels like adding risk to an already difficult situation."
+**"Be fair."** Do not accept the word as a weapon, and do not defend yourself. Ask which specific
+comparison they have in mind and invite them to walk through it with you. Offer your own yardstick
+before they invoke theirs.
 
-**Key insight:** Empathy is not agreement. You can understand their position while still advocating for your own needs.
+**Premature yes.** A fast agreement can mean the person wants to end the call, cannot approve, or is
+placating you. Test it with an implementation question: "What are the next steps on your side to
+make this happen?" A real yes has an answer.
 
----
+**Stall.** Ask for a specific next step with a date. If they will not give one, ask who else needs to
+be in the conversation.
 
-## 4. Voice Control
+**Revive a dead thread.** After silence, send a short question that is easy to answer with a no, such
+as "Have you given up on this?" or "Is it a bad time to pick this back up?" It restarts contact without
+begging.
 
-### Late-Night FM DJ Voice
-- **When:** Critical moments, delivering key statements, de-escalating tension
-- **How:** Slow, calm, deep, downward inflection at sentence ends
-- **Effect:** Exudes confidence and calm; relaxes their brain, making them more receptive
+**Sorry, and the pause.** A brief apology for something real defuses tension; a long one weakens you.
+After you state a number or a question, stop talking. The next person to speak concedes more often
+than not.
 
-### Positive/Playful Voice
-- **When:** Default mode; building rapport; most of the conversation
-- **How:** Friendly, warm, light-hearted, with a genuine smile
-- **Effect:** Signals comfort and likability; encourages cooperation
+## E. Reading the other side
 
-**Key insight:** Never use a high-pitched or rapid voice in negotiations—it signals anxiety or aggression.
+| Style | Signs | What works |
+|---|---|---|
+| Analyst | Wants data, slow to reply, dislikes surprises | Send material ahead; do not rush; reward precision |
+| Relationship-first | Warm, chatty, avoids conflict, promises easily | Spend time on rapport; check that promises convert to dates |
+| Direct | Short, wants results, interrupts | Be brief, lead with the outcome, let them finish before answering |
 
----
+Treat these as hypotheses to test, not labels.
 
-## 5. The Power of Apology and Pause
+**Voice and pace.** Lower pitch and slower pace read as calm and in control. A warmer, lighter tone
+helps when the topic is tense. Match the room, not a script.
 
-**What it is:** Start difficult statements with "I'm sorry..." in a slow, calm tone, then deliberately pause for 4+ seconds.
+**Mismatch signals.** Words that say yes while tone or face says otherwise mean there is an unspoken
+objection. Ask about it directly and gently.
 
-**Psychological trigger:** Apology disarms hostility; silence creates a vacuum the other person feels compelled to fill.
+**Silence.** A pause after a counter is not a retreat. Count to five before filling it.
 
-**Sequence:**
-1. "I'm sorry..." (slow, sincere)
-2. Mirror or label their situation
-3. Silence (4+ seconds)
+## F. Leverage and surprises
 
-**Example:**
-> "I'm sorry... It looks like I've let you down on this project." (Pause)
-> Counterpart: "No, it's not just you... the timing caught us off guard..."
+Leverage comes in three kinds: positive (the ability to give them something they want), negative (the
+ability to withhold or hurt), and normative (using the counterpart's own norms and stated values).
+Separately, the party who cares less about the outcome tends to hold the upper hand. Know which you
+hold and do not bluff about the others.
 
----
+Look for the unknown fact that would change the picture: a hidden deadline, an internal reorganization,
+a person who must sign off. Ask one open question per meeting aimed at discovering it.
 
-## 6. Accusation Audit
+## G. Concession math
 
-**What it is:** Before negotiating, list and preemptively verbalize every negative thing they might think or say about you.
+When you must move on money, make each step smaller than the last. The shrinking pattern tells the
+other side you are near your limit; a precise final figure (not a round one) tells them it is
+researched. Pair the last step with something non-monetary. Do not apply this to non-money terms,
+and never let a concession go without something coming back.
 
-**Psychological trigger:** Naming fears and criticisms before they do removes their power. Often triggers reassurance ("Oh, I don't think that...") or at least neutralizes objections.
+## H. Boundaries
 
-**How to use:**
-1. Before the meeting, brainstorm: What negatives might they think about me/my position?
-2. Early in the conversation, acknowledge these directly
-3. Watch them relax as you've addressed the elephant in the room
-
-**Example:**
-> "You probably think I'm being greedy. You may feel like I haven't listened to you in the past. And it might seem like I only care about my own interests. I understand why you might feel that way, and I want to address those concerns..."
-
----
-
-## 7. Calibrated Questions
-
-**What it is:** Open-ended "How...?" and "What...?" questions that shape the conversation while giving them the illusion of control.
-
-**Psychological trigger:** Engages their problem-solving mind; makes them feel in control while you direct the conversation; avoids defensiveness that "Why?" creates.
-
-**Formula:**
-- Start with "How" or "What"
-- Make it neutral and collaborative
-- Avoid "Why" (sounds accusatory)
-
-**Power questions:**
-| Question | Purpose |
-|----------|---------|
-| "How am I supposed to do that?" | Pushes back without saying no |
-| "What's the biggest challenge you're facing?" | Uncovers hidden needs |
-| "What about this is important to you?" | Reveals value drivers |
-| "How can we make this work?" | Creates collaboration |
-| "What would it take to make this happen?" | Identifies obstacles |
-| "How does this affect your team?" | Shows empathy, gathers intel |
-
-**Exception for "Why":** Only use when you want them to defend something favorable to you: "Why would you ever choose our company?" (Makes them articulate your strengths.)
-
----
-
-## 8. No-Oriented Questions
-
-**What it is:** Questions designed to elicit "No" rather than "Yes," because "No" makes people feel safe and in control.
-
-**Psychological trigger:** Saying "No" satisfies the human need for autonomy and control. Once they've said no, they relax and engage more openly.
-
-**How to frame:**
-- Instead of "Do you agree?", ask "Would it be unreasonable to...?"
-- Instead of "Can we move forward?", ask "Are you against trying this?"
-
-**Tactical mislabeling:** Intentionally state something false to prompt a corrective "No":
-> "It seems like you've given up on this project?"
-> Counterpart: "No, I haven't given up. I'm just frustrated with the delays."
-
-Now you have their real concern.
-
----
-
-## 9. Triggering "That's Right"
-
-**What it is:** Summarize their position—their facts, emotions, and concerns—so accurately that they respond with "That's right."
-
-**Psychological trigger:** "That's right" signals complete understanding and creates genuine rapport. It's the moment they feel truly heard.
-
-**How to earn it:**
-1. Listen deeply throughout the conversation
-2. Paraphrase their main points, including emotional subtext
-3. Deliver as a summary: "Let me make sure I understand..."
-4. Keep refining until you get "That's right"
-
-**Example:**
-> "Let me make sure I have this: You need a solution that doesn't overrun budget, and you're concerned that our timeline could put your team in a tough spot. On top of that, you've been burned by vendors who overpromised before."
-> Counterpart: "That's right."
-
-**Warning:** "You're right" is different—it often means they're dismissing you. Keep working until you get "That's right."
-
----
-
-## 10. Managing "Yes"
-
-**Three types of yes:**
-
-| Type | What it means | How to detect |
-|------|---------------|---------------|
-| **Counterfeit Yes** | Saying yes to escape or appease | Quick, no follow-through |
-| **Confirmation Yes** | Agreeing to a minor point | "Yes, I received the email" |
-| **Commitment Yes** | True agreement with intent to act | Detailed, enthusiastic |
-
-**Key insight:** Only commitment yes matters. Chasing yes makes people defensive.
-
-**Strategy:** Instead of pushing for yes, make them comfortable saying no first. Once they've said no (and you've addressed it), their eventual yes is more likely to be genuine.
-
----
-
-## 11. The Rule of Three
-
-**What it is:** Get them to affirm the agreement three times, in three different ways, within the same conversation.
-
-**Psychological trigger:** Genuine agreements withstand multiple confirmations. If it falls apart on round two or three, you didn't really have a deal.
-
-**How to apply:**
-1. First yes: Direct agreement
-2. Second yes: Summarize and get "That's right"
-3. Third yes: Calibrated question about implementation: "How will your team handle...?"
-
-**Example sequence:**
-> "So we're agreed on the $50K budget?" → "Yes."
-> "Just to make sure I understand—you'll allocate $50K with delivery in Q3?" → "That's right."
-> "Great. How will you communicate this to your finance team?" → "I'll send them the PO tomorrow."
-
----
-
-## 12. Re-engagement Technique
-
-**What it is:** When someone goes silent (email, text, or in person), ask: "Have you given up on [this project/deal]?"
-
-**Psychological trigger:** People hate being seen as quitters. This question triggers an instinctive "No" and forces them to re-engage and explain.
-
-**When to use:**
-- Unresponsive counterpart
-- Stalled negotiations
-- Ghosting behavior
-
-**Example:**
-> Subject: Quick question
-> "Have you given up on the partnership we discussed?"
->
-> Response: "No, I haven't given up. I've just been slammed with..."
-
----
-
-## 13. Managing "Fair"
-
-**The word "fair" can derail negotiations. Three scenarios:**
-
-### Scenario 1: "We just want what's fair"
-- **What they mean:** Making you feel guilty; implying you've been unfair
-- **Response:** "Absolutely, I want to be fair too. Let's pause—have I done something unfair? Let's talk about it."
-
-### Scenario 2: "This is a fair offer"
-- **What they mean:** Anchoring; don't ask for more
-- **Response:** Mirror: "Fair?" (silence). Then: "How did you arrive at that figure?"
-
-### Scenario 3: Preempt it yourself
-- **What to say:** "My goal is for you to feel this is 100% fair. If at any point you don't, please tell me and we'll address it."
-- **Effect:** Removes "fair" as a future weapon
-
----
-
-## 14. Anchoring and Loss Aversion
-
-### Anchoring
-**What it is:** The first number mentioned skews all subsequent discussion.
-
-**How to use:**
-- If selling: Start high (higher than you expect to get)
-- If buying: Start low
-- Use ranges to anchor softly: "Similar projects run $150K-$250K" (your target is $150K)
-
-### Loss Aversion
-**What it is:** People will take greater risks to avoid losses than to achieve gains.
-
-**How to use:**
-- Emphasize what they lose by not agreeing
-- Frame the cost of inaction, not just the benefit of action
-
-**Example:**
-> "If we don't resolve this now, you'll lose three months of runway and the team's momentum."
-
-### Deadlines
-- Question every deadline: "Whose deadline is it? Is it real?"
-- Don't let artificial deadlines rush you into bad deals
-- Use legitimate deadlines strategically to create urgency
-
----
-
-## 15. Ackerman Bargaining Method
-
-Step-by-step monetary negotiation system:
-
-| Step | Action | Rationale |
-|------|--------|-----------|
-| 1 | Set your target price | Your real goal |
-| 2 | Open at **65%** of target | Extreme but not insulting anchor |
-| 3 | First raise to **85%** | Decreasing increment signals limit |
-| 4 | Second raise to **95%** | Even smaller—they feel they're squeezing you |
-| 5 | Final offer at **100%** | Use precise number ($97,350 not $97,000) |
-| 6 | Add non-monetary item | "...and I'll include a 1-year warranty" |
-
-**Why precise numbers work:** Non-round numbers ($47,235 vs $47,000) feel calculated and final—as if you've truly pushed to your limit.
-
-**Why the final gift:** A small non-monetary add-on signals you're at your absolute maximum and makes it psychologically harder for them to ask for more.
-
----
-
-## 16. Leverage Types
-
-Leverage is power in negotiation—often perception, not reality.
-
-| Type | Definition | How to use |
-|------|------------|------------|
-| **Positive** | You have something they want | Remind them of what they gain by dealing with you |
-| **Negative** | You can cause them pain | Mention consequences of no deal (use carefully) |
-| **Normative** | Using their beliefs/values against them | "You've always said quality matters most—would cutting corners align with that?" |
-
-**Key question:** "Who feels they have more to lose if this falls apart?"
-
-**Insight:** Even without objective power, you can create perceived leverage by uncovering what they fear or desperately want.
-
----
-
-## 17. Black Swans
-
-**What they are:** Hidden, game-changing pieces of information that can transform a negotiation once discovered.
-
-**Assumption:** Every negotiation has approximately 3 Black Swans lurking.
-
-**Types of Black Swans:**
-- Secret constraints (their boss said no more than X)
-- Hidden motivations (they need this deal to save their job)
-- Unknown context (their competitor just made a move)
-
-**How to find them:**
-- Stay curious; ask calibrated questions
-- Use tactical empathy to make them comfortable
-- Watch for anomalies—odd reactions signal hidden factors
-- Listen in unguarded moments (before/after meetings)
-
-**Effect:** Discovering a Black Swan can turn a stalemate into a breakthrough.
-
----
-
-## 18. Counterpart Styles
-
-### Analyst
-- **Traits:** Methodical, data-driven, prizes accuracy, hates surprises, may seem cold
-- **Fears:** Being rushed, making errors, being unprepared
-- **Adapt:** Use data and facts, be patient, give them time to process, don't pressure with tight deadlines
-
-### Accommodator
-- **Traits:** Amiable, relationship-focused, values personal connection, avoids conflict
-- **Fears:** Confrontation, damaging relationships
-- **Adapt:** Build rapport, make small talk, be friendly—but ensure you pin down specifics (they may agree too quickly just to please)
-
-### Assertive
-- **Traits:** Direct, time-conscious, wants to win, speaks fast, comfortable saying no
-- **Fears:** Wasting time, being seen as weak
-- **Adapt:** Be efficient, stand your ground, acknowledge their points, frame proposals as wins for them
-
-**Insight:** Great negotiators borrow from all three styles as needed.
-
----
-
-## 19. Body Language and Tone
-
-**The 7-38-55 Rule:**
-- 7% of meaning: Words
-- 38% of meaning: Tone
-- 55% of meaning: Body language
-
-**What to watch:**
-- Incongruence between words and tone/body (signals hesitation or deception)
-- Arms crossed, leaning back (defensive)
-- Leaning in, open posture (engaged)
-- Facial micro-expressions
-
-**When to observe:** Unguarded moments before/after meetings reveal true feelings.
-
-**Your own signals:**
-- Keep body language open (no crossed arms, no pointing)
-- Nod to show listening
-- Maintain appropriate eye contact
-- Smile genuinely
-
----
-
-## 20. Dynamic Silence
-
-**What it is:** Deliberate, extended pauses after key statements or questions.
-
-**Psychological trigger:** Silence creates a vacuum people instinctively fill—often with information, concessions, or their internal reasoning.
-
-**How to use:**
-- Make your statement or ask your question
-- Stop talking completely
-- Maintain calm, attentive presence
-- Resist the urge to fill the silence yourself
-
-**Effect:**
-- They reveal more information
-- They may negotiate against themselves
-- Your words carry more weight
-
-**Rule:** "He who speaks least often wins."
-
----
-
-## 21. Pronoun Analysis
-
-**What to listen for:**
-
-| Pronoun pattern | What it may indicate |
-|-----------------|---------------------|
-| Heavy "I/me/my" | May lack full authority; someone else decides |
-| "We/they/our team" | Decision-maker or representing group consensus |
-| Shift from "I" to "we" | May be invoking higher authority to deflect |
-
-**How to use this:**
-- If they use "I" heavily, ask: "How does your team/leadership weigh in on this?"
-- If they use "we" heavily, they may have authority—but verify
-
-**Humanize yourself:** Use your name and their name throughout. "Look, Sarah, I really want to make this work" is more disarming than "I want to make this work."
+Do not claim offers you do not have, deadlines that are not real, or authority you lack. Pressure that
+cannot be defended after the fact damages trust and may expose you to claims of misrepresentation.

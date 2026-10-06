@@ -1,344 +1,49 @@
-# Service Decomposition and Boundaries
+# Finding the Seams
 
-Guide for identifying service boundaries using domain-driven design principles.
+## Cut along language, not along tables
+A boundary is real when the same word stops meaning the same thing. "Product" in Catalog is a description with images; in Inventory it is a SKU with a count; in Billing it is a price line. Three meanings, three candidate contexts. Start from event storming output or from interviews, and list the terms that diverge.
 
-## Domain-Driven Design Foundation
+Signals a cut is good:
+- One team can explain the whole context without consulting another.
+- Most changes (>80% of a typical sprint) touch a single context.
+- The context can be unavailable for a minute without halting the others' core flows.
+- Its data has one writer.
 
-### Bounded Context Identification
+Signals it is bad:
+- Two contexts must deploy together to ship a feature.
+- A "service" is a thin CRUD wrapper over one table.
+- Every read needs three synchronous lookups to assemble.
 
-**Strategic Patterns:**
-- **Ubiquitous Language** - Each bounded context has its own domain language
-- **Context Mapping** - Define relationships between bounded contexts
-- **Subdomain Classification** - Core, supporting, generic domains
+## Sizing
+Size by cognitive load and change cadence, not by lines of code. A useful ceiling: a new engineer on the owning team can hold the model in their head within a couple of weeks. Too small shows up as chatty calls and distributed transactions for trivial operations.
 
-**Bounded Context Indicators:**
-```
-Strong Indicators:
-- Different teams own different parts
-- Different release cadences needed
-- Different scalability requirements
-- Different technology stacks optimal
-- Clear domain model boundaries
+## Team shape
+Structure follows communication. Decide the owning team first; a service with no owning team, or with two, is a defect. Inverse approach: when the desired architecture is known, reorganise teams to match it before splitting code.
 
-Warning Signs:
-- Entities mean different things in different contexts
-- Same term used with different meanings
-- Workflows cross multiple aggregates
-- Teams communicate frequently about shared data
-```
+## Relationship types between contexts
+| Relationship | Use when |
+|---|---|
+| Customer/supplier | Downstream can negotiate the upstream contract |
+| Conformist | Upstream is external or powerful; accept its model |
+| Anti-corruption layer | Upstream model would pollute yours; translate at the edge |
+| Published language | Many consumers; version a shared schema |
+| Shared kernel | Avoid; only for a tiny, jointly owned library |
 
-### Service Boundary Patterns
+## Pre-split checks
+1. Draw the dependency graph of modules inside the monolith; cycles must be broken first.
+2. Identify which tables each module writes; any table with two writers needs an owner decision.
+3. Find joins that cross the proposed boundary; each becomes an API call, a replicated read model, or a reason to move the line.
+4. Check transaction scope: operations that must be atomic across the line signal a wrong line (or a saga).
 
-**Database-Driven Decomposition:**
-```
-1. Identify aggregates (entities with invariants)
-2. Each aggregate becomes a service candidate
-3. Group related aggregates by transaction boundaries
-4. Services own their data (no shared databases)
-```
+## Migrating from a monolith
+Strangler approach: put a routing facade in front, move one capability at a time behind it, retire the old path once traffic is zero.
+1. Choose a capability with low coupling and real business value as the pilot.
+2. Introduce the seam in-process first (interface plus separate module with its own schema).
+3. Extract, run both paths with shadow traffic or a percentage rollout, compare results.
+4. Move the data last; use dual writes or change data capture during the overlap, never both without reconciliation.
 
-**Business Capability Decomposition:**
-```
-Services organized by:
-- User Management (authentication, profiles, permissions)
-- Order Management (cart, checkout, fulfillment)
-- Inventory Management (stock, warehousing, allocation)
-- Payment Processing (transactions, refunds, reconciliation)
-- Notification Service (email, SMS, push notifications)
-```
-
-**Strangler Fig Pattern:**
-```
-Monolith Decomposition Strategy:
-1. Identify seams in existing codebase
-2. Extract one service at a time
-3. Route traffic through facade/proxy
-4. Gradually migrate functionality
-5. Decommission old code when safe
-
-Order of Extraction:
-1. Start with leaf dependencies (no downstream calls)
-2. Extract supporting services first
-3. Core business logic last
-4. Data migration strategy per service
-```
-
-## Service Sizing Guidelines
-
-### Microservice Characteristics
-
-**Right-Sized Service:**
-```
-Team Metrics:
-- 2-pizza team can own it (5-9 people)
-- Single team has full ownership
-- Can be rewritten in 2-4 weeks if needed
-- Independent deployment pipeline
-
-Technical Metrics:
-- 100-1000 lines of business logic
-- 5-15 API endpoints
-- 1-5 database tables
-- Startup time < 30 seconds
-- Single responsibility focus
-```
-
-**Too Small (Nano-service):**
-```
-Warning Signs:
-- Services with 1-2 endpoints
-- Excessive network overhead
-- More infrastructure than business logic
-- Difficult to trace requests
-- Version coupling between services
-```
-
-**Too Large (Distributed Monolith):**
-```
-Warning Signs:
-- Multiple teams working on same service
-- Conflicting scalability requirements
-- Difficult to understand in one sitting
-- Long deployment times
-- Tight coupling with other services
-```
-
-## Conway's Law Alignment
-
-### Team Structure and Service Design
-
-**Team Topologies:**
-```
-Stream-Aligned Teams:
-- Own end-to-end service lifecycle
-- Aligned to business capabilities
-- Full-stack ownership (frontend to database)
-
-Platform Teams:
-- Provide self-service capabilities
-- Enable stream-aligned teams
-- Kubernetes, CI/CD, observability
-
-Enabling Teams:
-- Help with complex implementations
-- Service mesh setup, security patterns
-- Temporary coaching role
-
-Complicated Subsystem Teams:
-- Specialized domains (ML, search, payments)
-- Heavy technical expertise required
-- Clear interfaces to other teams
-```
-
-## Decomposition Checklist
-
-### Pre-Decomposition Analysis
-
-**Business Justification:**
-```
-Check:
-- Independent scalability needed?
-- Different teams responsible?
-- Isolated failure acceptable?
-- Frequent independent deployments?
-- Technology diversity required?
-
-If mostly "no" → Consider modular monolith first
-```
-
-**Technical Readiness:**
-```
-Prerequisites:
-✓ CI/CD pipelines automated
-✓ Monitoring and alerting in place
-✓ Distributed tracing capability
-✓ Container orchestration ready
-✓ Team has microservices experience
-✓ Clear service ownership model
-```
-
-### Decomposition Steps
-
-**1. Identify Bounded Contexts:**
-```
-Activities:
-- Event storming workshop
-- Identify aggregates and entities
-- Map business workflows
-- Document ubiquitous language
-- Draw context boundaries
-```
-
-**2. Define Service Contracts:**
-```
-For each service:
-- REST/gRPC API specification
-- Event schema definitions
-- Data ownership boundaries
-- SLA commitments (latency, availability)
-- Versioning strategy
-```
-
-**3. Plan Data Migration:**
-```
-Data Strategy:
-- Identify shared data
-- Choose consistency model (eventual vs strong)
-- Design data synchronization mechanism
-- Plan schema evolution
-- Test rollback scenarios
-```
-
-**4. Extract Service:**
-```
-Implementation Order:
-1. Create new service skeleton
-2. Implement business logic
-3. Set up database (if needed)
-4. Add observability (logs, metrics, traces)
-5. Deploy to staging
-6. Dual-write from monolith (if applicable)
-7. Switch reads to new service
-8. Remove from monolith
-9. Production deployment
-```
-
-## Anti-Patterns to Avoid
-
-### Common Mistakes
-
-**Distributed Monolith:**
-```
-Symptoms:
-- Services must deploy together
-- Shared database between services
-- Synchronous coupling everywhere
-- Version lock-step required
-- Cascading failures common
-
-Solution:
-- Enforce database per service
-- Use async communication
-- Version APIs independently
-- Add circuit breakers
-```
-
-**Entity Services:**
-```
-Anti-Pattern:
-UserService (CRUD on User entity)
-OrderService (CRUD on Order entity)
-ProductService (CRUD on Product entity)
-
-Problem: Anemic domain model, no business logic
-
-Better Approach:
-AccountManagement (authentication, authorization, profiles)
-OrderFulfillment (workflow: cart → payment → shipping)
-ProductCatalog (search, recommendations, inventory)
-```
-
-**Shared Libraries with Business Logic:**
-```
-Anti-Pattern:
-common-lib (shared across all services with domain logic)
-
-Problem:
-- Tight coupling via dependency
-- Forces synchronized deployments
-- Violates service autonomy
-
-Better:
-- Shared libraries for technical concerns only
-- Duplicate business logic per service
-- Use events to keep data synchronized
-```
-
-## Service Boundary Validation
-
-### Design Review Checklist
-
-**Service Independence:**
-```
-Questions:
-- Can this service be deployed independently?
-- Does it own its data completely?
-- Can it function if dependencies are down?
-- Is the team autonomous to make changes?
-- Are integration points well-defined?
-```
-
-**Data Ownership:**
-```
-Verify:
-- No shared database tables
-- Clear data ownership boundaries
-- Event-driven synchronization for shared concepts
-- API provides all necessary data
-- No direct database access from other services
-```
-
-**Operational Readiness:**
-```
-Check:
-- Health check endpoint implemented
-- Readiness probe configured
-- Circuit breakers for external calls
-- Distributed tracing instrumented
-- Logs structured with correlation IDs
-- Metrics exposed (Prometheus format)
-- Documentation up to date
-```
-
-## Migration Strategies
-
-### Monolith to Microservices
-
-**Gradual Extraction:**
-```
-Phase 1: Prepare
-- Add seams to monolith
-- Implement API layer
-- Set up monitoring
-
-Phase 2: Extract Leaf Services
-- Start with services that have no dependencies
-- Examples: notification service, reporting
-
-Phase 3: Extract Supporting Services
-- Authentication/authorization
-- User management
-- File storage
-
-Phase 4: Extract Core Services
-- Order processing
-- Payment handling
-- Inventory management
-
-Phase 5: Decompose Remaining Monolith
-- Gradual extraction
-- Eventual retirement
-```
-
-**Parallel Run Pattern:**
-```
-Strategy:
-1. Build new microservice
-2. Run both systems simultaneously
-3. Compare outputs (shadow mode)
-4. Gradually shift traffic
-5. Decommission old system
-
-Use for: High-risk migrations, critical paths
-```
-
-## Summary
-
-Service decomposition is both art and science. Start with domain-driven design to identify natural boundaries, align with team structure, and extract incrementally. Avoid the temptation to over-decompose. A modular monolith is better than a poorly designed distributed system.
-
-**Key Takeaways:**
-- Bounded contexts define service boundaries
-- Database per service is non-negotiable
-- Team autonomy drives service design
-- Extract incrementally, not all at once
-- Observability is prerequisite for microservices
+## Failure patterns
+- Distributed monolith: lockstep releases, shared database, synchronous call chains.
+- Entity services: one service per noun, behaviour scattered across callers.
+- Premature split: boundaries guessed before the domain is understood; merging back is cheaper than living with wrong cuts.
+- Shared libraries carrying domain logic, which couples release trains.
