@@ -70,7 +70,7 @@ Code arrived before its test? Throw it away and rebuild from the test. Keeping i
 
 Cycle: RED → falsifiability probe → verify failure → GREEN → verify pass → REFACTOR → repeat.
 
-Before writing any RED test, skim `references/testing-anti-patterns.md` — it pre-screens the test design against the usual mock-related traps (asserting on mocks, mocking without understanding side effects, test-only production methods) so you don't build a probe on top of one.
+Before writing any RED test, skim `references/testing-anti-patterns.md` — it pre-screens the test design against the usual mock-related traps (asserting on mocks, mocking without understanding side effects, test-only production methods) and the tautological test (expected value computed with the same formula as the code, so it passes by construction) so you don't build a probe on top of one.
 
 ### RED — Write One Failing Test
 

@@ -231,6 +231,45 @@ TDD cycle:
 4. THEN claim complete
 ```
 
+## Anti-Pattern 6: Expected Value Computed the Way the Code Computes It
+
+**The violation:**
+```typescript
+// ❌ BAD: the expected value is the implementation, written again
+test('adds tax', () => {
+  const price = 10000;
+  expect(withTax(price)).toBe(price * (1 + TAX_RATE));
+});
+
+// ❌ BAD: total re-derived with the same reduce the code uses
+expect(cartTotal(items)).toBe(items.reduce((s, i) => s + i.price * i.qty, 0));
+```
+
+**Why this is wrong:** The test passes by construction. If `withTax` uses the wrong rate, the test uses the same wrong
+`TAX_RATE` and stays green. The falsifiability probe catches this late (no breaking change you can name turns it red);
+this check catches it while the test is being designed.
+
+**The fix:**
+```typescript
+// ✅ GOOD: expected value from an independent source — worked by hand, from the spec
+test('adds 10% tax', () => {
+  expect(withTax(10000)).toBe(11000);
+});
+```
+
+### Gate Function
+
+```
+BEFORE writing an expected value:
+  Ask: "Where does this number come from?"
+
+  IF it is computed with the same formula, constant, or helper as the code under test:
+    STOP - the test cannot fail when that formula is wrong
+    Use a literal worked out by hand, a value quoted from the spec, or a known fixture
+
+  Snapshots count: approving a snapshot of current output asserts the output equals itself
+```
+
 ## When Mocks Become Too Complex
 
 **Warning signs:**
@@ -250,6 +289,7 @@ TDD cycle:
 | Mock without understanding | Understand dependencies first, mock minimally |
 | Incomplete mocks | Mirror real API completely |
 | Tests as afterthought | TDD - tests first |
+| Expected value re-derived from the code (tautological) | Literal, spec value, or known fixture |
 | Over-complex mocks | Consider integration tests |
 
 ## Red Flags

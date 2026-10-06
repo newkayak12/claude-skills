@@ -133,6 +133,59 @@ ALTER SYSTEM SET deadlock_timeout = '1s';
 ALTER SYSTEM SET log_lock_waits = on;
 ```
 
+### Application Lock Patterns
+
+Most lock incidents come from how the application takes locks, not from server settings. Check these before tuning.
+
+**Queue workers: claim with `SKIP LOCKED`.** Without it, N workers block on the same first row and run one at a time.
+
+```sql
+-- Claim up to 10 jobs; rows locked by another worker are skipped, not waited on
+WITH next AS (
+  SELECT id FROM jobs
+  WHERE status = 'pending'
+  ORDER BY created_at
+  LIMIT 10
+  FOR UPDATE SKIP LOCKED
+)
+UPDATE jobs SET status = 'running', claimed_at = now()
+FROM next WHERE jobs.id = next.id
+RETURNING jobs.*;
+```
+
+Commit the claim immediately and do the work outside that transaction; holding the row lock for the whole job turns
+the queue back into a serial one. MySQL supports `FOR UPDATE SKIP LOCKED` since MySQL 8.0.
+
+**Advisory locks for critical sections with no row to lock** (one report generator at a time, per-tenant migration):
+
+```sql
+BEGIN;
+SELECT pg_advisory_xact_lock(hashtext('report:' || $1));  -- released at COMMIT/ROLLBACK
+-- critical section
+COMMIT;
+
+-- Non-blocking variant: skip if someone else holds it
+SELECT pg_try_advisory_xact_lock(hashtext('report:' || $1));
+```
+
+Prefer the `_xact_` forms. Session-scope `pg_advisory_lock` survives the transaction and is released only by
+`pg_advisory_unlock` or disconnect — behind a transaction-mode pooler (PgBouncer) the session is shared, so a
+forgotten unlock leaks the lock to whichever client gets that connection next.
+
+**Deadlock prevention: one lock order everywhere.** Two transactions that lock the same rows in different orders
+deadlock under load; Postgres then kills one after `deadlock_timeout`.
+
+```sql
+-- Transfer between accounts: always lock the lower id first
+SELECT id FROM accounts WHERE id IN ($1, $2) ORDER BY id FOR UPDATE;
+```
+
+Lock parents before children (order before order_items), and batch updates in sorted key order.
+
+**Keep transactions short.** No HTTP calls, file uploads, or user think-time inside a transaction that holds row
+locks; every second held is a second every waiter queues. `idle_in_transaction_session_timeout` bounds the damage
+from a client that forgets to commit.
+
 ## Partitioning
 
 ### Range Partitioning

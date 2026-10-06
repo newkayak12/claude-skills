@@ -82,10 +82,12 @@ the entire repo; if no target is given it asks first. It touches only the frontm
 develop 플러그인 스킬들 트리거 커버리지 감사해줘. 한국어로 말할 때 안 걸리는 것부터.
 ```
 
-Per skill it generates 10 test queries — 2 formal English, 2 natural English, 3 natural Korean,
-2 borderline that should *not* trigger, 1 implicit need — scores each against the current
-description, and reports `(correct / 10) × 10` — judged by default, or measured by running each
-query through headless `claude -p` when you ask. Named failure patterns: Korean blind spot,
+Per skill it generates 20 concrete test queries — 10 that should trigger (formal and natural English,
+natural Korean, implicit needs, one where a sibling skill competes) and 10 near-misses that share
+keywords but need something else — scores each against the current description, and reports
+`(correct / 20) × 10`. Judged by default; when you ask, measured by running each query through
+headless `claude -p` three times (fired at 2 of 3). Measured rewrites iterate on 12 queries, at most
+three times, and keep the description that scores best on the 8 held out. Named failure patterns: Korean blind spot,
 keyword-only, jargon wall, too narrow, too broad. The rewrite starts with `Use when`, stays within 250 characters, and follows a fixed shape:
 
 ```
