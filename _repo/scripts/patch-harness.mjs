@@ -2,17 +2,17 @@
 // Deterministically prepare a harness patch release across both manifests and the bilingual
 // README.md / KOR.md status logs. Both status lines are required in one call: a release note
 // that only lands in English is exactly the silent divergence this script exists to prevent.
-// Usage: node patch.mjs '{"summary":"concise release note","summary_ko":"간결한 한 줄 노트","repoRoot":"/abs/repo"}'
+// Maintainer tool (not a user skill). Usage: node _repo/scripts/patch-harness.mjs'{"summary":"concise release note","summary_ko":"간결한 한 줄 노트","repoRoot":"/abs/repo"}'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_PLUGIN_ROOT = resolve(HERE, '..', '..');
-const DEFAULT_REPO_ROOT = resolve(DEFAULT_PLUGIN_ROOT, '..');
+const DEFAULT_REPO_ROOT = resolve(HERE, '..', '..');
+const DEFAULT_PLUGIN_ROOT = join(DEFAULT_REPO_ROOT, 'harness');
 
 function fail(message) {
-  process.stderr.write(`patch.mjs: ${message}\n`);
+  process.stderr.write(`patch-harness.mjs: ${message}\n`);
   process.exit(2);
 }
 

@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const HARNESS_ROOT = resolve(HERE, '..');
 const REMOVE = join(HARNESS_ROOT, 'skills', 'remove', 'remove.mjs');
-const PATCH = join(HARNESS_ROOT, 'skills', 'patch', 'patch.mjs');
+const PATCH = join(HARNESS_ROOT, '..', '_repo', 'scripts', 'patch-harness.mjs');
 const scratch = mkdtempSync(join(tmpdir(), 'harness-lifecycle-'));
 
 function write(path, content) {

@@ -46,7 +46,7 @@ Measured on one real run the transport layer cost more than the reasoning layer
 | Connect or verify the graph-owned default orchestration path | `graph:install` |
 | Make the harness ambient in a project — gate, hook, conventions, CLAUDE.md block | `install` |
 | Take harness governance back out of a project | `remove` |
-| Cut a synchronized patch release of the harness plugin source | `patch` |
+| Refresh this project's installed harness copies after a plugin version bump | `update` |
 | Delegate an Implement/Test stage to the local Codex CLI from any install layout | `codex-control` |
 
 ## Skills
@@ -129,38 +129,21 @@ node "<plugin>/skills/remove/remove.mjs" '{
 
 Idempotent: a second run reports `absent` rather than failing.
 
-### `patch`
+### `update`
 
-Prepares a patch release of the harness plugin **source** — it increments `x.y.Z` in both
-manifests and inserts a one-line note at the top of the Status log. For a source checkout of this
-marketplace, not for refreshing files installed into an application project, and not for
-feature- or breaking-sized releases (use an explicit minor/major bump instead).
+Refreshes a project's installed harness copies after the plugin was bumped. It detects the install
+mode from disk (`.claude/harness/` present → embedded), re-derives the embed config from what is
+embedded, and runs `install.mjs` with `"refresh": true` — no new script. Plugin-owned copies
+(`goal-gate.mjs`, `.claude/harness/**`) are reported `refreshed` or `unchanged`; your gate,
+conventions, CLAUDE.md block, and `settings.json` are never touched. An embed source it cannot
+resolve stops the run and is named.
 
 ```
-하네스 패치 릴리스 준비해줘 — 이번 diff 요약해서 Status에 한 줄 넣고 버전 올려줘.
+하네스 플러그인 올렸는데 이 프로젝트 복사본도 최신으로 맞춰줘.
 ```
 
-```sh
-node "<plugin>/skills/patch/patch.mjs" '{
-  "repoRoot": "<abs claude-skills checkout>",
-  "summary": "<concise status entry>",
-  "summary_ko": "<concise 한국어 status entry>",
-  "dryRun": true
-}'
-```
-
-Dry-run first, confirm the reported previous/next versions, then re-run with `"dryRun": false`.
-It refuses to write when plugin and marketplace versions differ, either Status heading
-(`README.md`'s `## Status` or `KOR.md`'s `## 상태`) is missing, or either `summary` / `summary_ko`
-is empty, multiline, or omitted — English-only and Korean-only releases are both refused. Files
-touched:
-
-| File | Change |
-|---|---|
-| `harness/.claude-plugin/plugin.json` | `version` patch bump |
-| `.claude-plugin/marketplace.json` | the `harness` entry's `version` |
-| `harness/README.md` | new first entry under `## Status` |
-| `harness/KOR.md` | new first entry under `## 상태` |
+Maintainers cutting a patch release of this source use `node _repo/scripts/patch-harness.mjs`
+(see the repo CLAUDE.md Update Workflow); it is not a user skill.
 
 ### `codex-control`
 
@@ -255,12 +238,11 @@ are always gated. Fail-open everywhere (v0 lesson).
 - **`harness:remove`** removes the installed hook, registration, gate, embedded runtime,
   marker cache, CLAUDE.md block, and gitignore entry. Project-owned conventions are preserved
   unless their removal is explicitly requested.
-- **`harness:patch`** prepares a source patch release: it increments the harness patch
-  version in both manifests and inserts the supplied one-line release note at the top of this
-  Status section *and* the matching Korean note at the top of `KOR.md`'s `## 상태` section. It
-  dry-runs first and refuses mismatched versions or a release note supplied in only one language.
+- **`harness:update`** refreshes a project's installed copies after a plugin bump by running
+  `install.mjs` with `"refresh": true`; user-owned files are never touched.
 
 ## Status
+- v1.23.0 — `harness:patch` leaves the user surface (maintainer script moved to `_repo/scripts/patch-harness.mjs`); new `harness:update` refreshes installed copies via `install.mjs` `"refresh": true`
 - v1.22.8 — codex-control gains a Related Skills section and Korean scenarios (repo audit)
 - v1.22.7 — repo scripts moved under `_repo/`; the patch skill runs `_repo/scripts/validate_plugins.py`
 - v1.22.6 — harness-aware skill write:writing-plans renamed write:plans
@@ -415,6 +397,6 @@ are always gated. Fail-open everywhere (v0 lesson).
 
 Entry points: [`harness`](skills/harness/SKILL.md),
 [`install`](skills/install/SKILL.md), [`remove`](skills/remove/SKILL.md),
-[`patch`](skills/patch/SKILL.md), and [`codex-control`](skills/codex-control/SKILL.md).
+[`update`](skills/update/SKILL.md), and [`codex-control`](skills/codex-control/SKILL.md).
 
 ---
