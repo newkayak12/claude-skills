@@ -24,6 +24,7 @@
 | 배포 전 스킬 검토하고 뭘 먼저 고칠지 순위 받기 | `quality-assurance` |
 | 자연어(특히 한국어)에 안 걸리는 스킬 고치기 | `trigger-validator` |
 | 설치·제작 전에 이 워크스페이스에 뭐가 있고 뭐가 빠졌는지 보기 | `audit` |
+| 세션에서 반복된 실수를 규칙이 아니라 검사로 막기 | `retro` |
 
 ## 스킬
 
@@ -57,7 +58,7 @@ skill/skills/trigger-validator 배포 전에 검토해줘. 6개 검사 다 돌�
 | # | 검사 | 에이전트 | 판정 |
 |---|---|---|---|
 | 1 | 유용성 | `agents/usefulness-checker.md` | PASS / WARN / FAIL |
-| 2 | 저작 원칙 (필수 섹션·길이 포함) | `agents/authoring-checker.md` | PASS / WARN / FAIL |
+| 2 | 저작 원칙 (필수 섹션·길이, 단계별 완료 기준 포함) | `agents/authoring-checker.md` | PASS / WARN / FAIL |
 | 3 | 에이전트 구조 | `agents/structure-reviewer.md` | GOOD / IMPROVABLE / MISSING |
 | 4 | MCP 적합성 | `agents/mcp-advisor.md` | NONE / OPTIONAL / RECOMMENDED |
 | 5 | SKILL.md 무게 | `agents/weight-analyzer.md` | LIGHT / OK / HEAVY / CRITICAL |
@@ -107,6 +108,22 @@ Use when [상황/의도]. Triggers on: "[한국어 구어체]", "[English phrase
 ```
 뭘 더 설치하면 좋아? 지금 이 레포에 뭐가 깔려 있는지부터 봐줘.
 ```
+
+### `retro`
+
+세션에서 반복된 실수를 검사로 바꿉니다. 사용자가 고쳐 준 말을 인용하고 반복 횟수를 세며, 제안하기 전에 저장소의
+검사 명령(package.json scripts, hook, CI)부터 읽습니다. lint 규칙이나 hook, 테스트로 잡을 수 있는 기계적 반복은
+그 검사를 해법으로 삼고, 판단이 필요한 것만 이유(scar)를 붙여 CLAUDE.md 한 줄로 남깁니다. 승인한 행만 반영하고
+그 전에는 아무것도 쓰지 않습니다. 어떤 스킬이 있는지 보는 건 `audit`, 스킬 하나를 고치는 건
+`write:writing-skills`입니다.
+
+```
+이번 세션 회고해서 다음에 같은 실수 안 하게 해줘
+```
+
+에이전트가 alias 없는 `@/` import를 두 번 쓰고 lint 없이 완료를 두 번 보고한 세션으로 비교했을 때, 스킬 없이는
+메모만 남기고 lint 규칙은 "원하시면" 정도로만 제안했습니다. 스킬을 쓰면 두 반복 모두 검사가 됐습니다. ESLint
+`no-restricted-imports` 규칙과 lint를 돌리는 Stop hook이었고, 승인 전에 쓴 파일은 0개였습니다.
 
 ## 이름 변경
 

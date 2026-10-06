@@ -18,8 +18,8 @@
     },
     {
       "name": "think",
-      "description": "Thinking and ideation skills: mentor (any-field mentoring — takes a position, tests yours, hands over the judgment rule), brainstorming (≥3 options before judgment, kill-criteria convergence, hands off to write:plans), devils-advocate (steel-man first, core vulnerability + reversibility), redefine-problem, back-to-basics, untangle-thoughts, and negotiate (counsel on your side).",
-      "version": "1.4.1",
+      "description": "Thinking and ideation skills: mentor (any-field mentoring — takes a position, tests yours, hands over the judgment rule), brainstorming (≥3 options before judgment, kill-criteria convergence, hands off to write:plans), grill (a held plan interrogated: repo read first, one numbered round with recommended answers), devils-advocate (steel-man first, core vulnerability + reversibility), redefine-problem, back-to-basics, untangle-thoughts, and negotiate (counsel on your side).",
+      "version": "1.5.0",
       "author": {
         "name": "newkayak12"
       },
@@ -68,8 +68,8 @@
     },
     {
       "name": "skill",
-      "description": "Skill management: create skills in the repo's house identity, quality-assure them (6-dimension QA), audit trigger coverage, and audit a workspace for what it already has before installing.",
-      "version": "1.4.0",
+      "description": "Skill management: create skills in the repo's house identity, quality-assure them (6-dimension QA), audit trigger coverage, audit a workspace for what it already has before installing, and retro (a session's repeated mistakes turned into checks).",
+      "version": "1.5.0",
       "author": {
         "name": "newkayak12"
       },

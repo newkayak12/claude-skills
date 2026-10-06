@@ -21,6 +21,7 @@ field; the rest stand alone.
 |---|---|
 | Get a senior mentor's judgment in any field — career, craft, work, study, relationships, life decisions | `mentor` |
 | Design something when the solution shape is still unclear | `brainstorming` |
+| Have a plan I already hold interrogated before building | `grill` |
 | Check whether I'm even solving the right problem | `redefine-problem` |
 | Break an approach down to what's checkable and rebuild from there | `back-to-basics` |
 | Have my plan attacked with the strongest objections | `devils-advocate` |
@@ -108,6 +109,23 @@ Output shape:
 [후보] 2–3 survivors + one trade-off table
 [설계] architecture · components · data flow · errors · tests → approval → write:plans
 ```
+
+### `grill`
+
+Interrogates a plan you already hold, before anything is built. It reads the README and the code the plan touches
+first: facts get looked up, only decisions are asked. The whole open frontier comes in one numbered round, each
+question with a recommended answer and a one-line why; the next round asks only what your answers opened, at most
+three rounds, then whatever is left is listed as open. Not a `brainstorming` mode — that skill asks one question
+at a time and diverges on options; this one presses on a plan. One vague question to sharpen goes to
+`cognition:question-upgrader`.
+
+```
+새 기능 설계하기 전에 나 좀 빡세게 질문해줘 — 알림 기능 추가하려고
+```
+
+On a small app whose README states its stack, scale and mail provider, a run without this skill opened no files
+and asked 18–22 generic questions, some answered by the README, none with a recommendation; with it, both runs
+read the README first, listed what it settled as known, and asked 7–8 questions, each with a recommended answer.
 
 ### `redefine-problem`
 
@@ -228,6 +246,7 @@ Not legal advice; have a lawyer read any binding contract before signing.
 |---|---|---|
 | `mentor` | think-tool (classifying what kind of question it is) | sequential-thinking, mcp-reasoner |
 | `brainstorming` | — | think-tool, sequential-thinking, mcp-reasoner |
+| `grill` | — | think-tool |
 | `redefine-problem` | think-tool (required gate: assumption enumeration) | sequential-thinking |
 | `back-to-basics` | think-tool (assumption listing, checked vs inherited) | mcp-reasoner |
 | `devils-advocate` | — | think-tool, mcp-reasoner, sequential-thinking |

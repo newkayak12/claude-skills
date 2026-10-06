@@ -25,6 +25,7 @@ has before anything new is installed or built.
 | Review a skill before shipping and get a ranked list of what to fix | `quality-assurance` |
 | Fix a skill that doesn't fire on natural language, especially Korean | `trigger-validator` |
 | See what this workspace already has and what is missing, before installing or building | `audit` |
+| Stop a session's repeated mistakes from recurring — as checks, not more rules | `retro` |
 
 ## Skills
 
@@ -60,7 +61,7 @@ what to fix first.
 | # | Check | Agent | Verdict scale |
 |---|---|---|---|
 | 1 | Usefulness | `agents/usefulness-checker.md` | PASS / WARN / FAIL |
-| 2 | Authoring principles (incl. required sections, length) | `agents/authoring-checker.md` | PASS / WARN / FAIL |
+| 2 | Authoring principles (incl. required sections, length, a completion criterion per step) | `agents/authoring-checker.md` | PASS / WARN / FAIL |
 | 3 | Agent structure | `agents/structure-reviewer.md` | GOOD / IMPROVABLE / MISSING |
 | 4 | MCP fit | `agents/mcp-advisor.md` | NONE / OPTIONAL / RECOMMENDED |
 | 5 | SKILL.md weight | `agents/weight-analyzer.md` | LIGHT / OK / HEAVY / CRITICAL |
@@ -112,6 +113,23 @@ says `no match`. Read-only: a skill-shaped gap goes to `create`, a hook or permi
 ```
 뭘 더 설치하면 좋아? 지금 이 레포에 뭐가 깔려 있는지부터 봐줘.
 ```
+
+### `retro`
+
+Turns a session's repeated mistakes into checks. It quotes each correction the user had to make, counts the
+repeats, and reads the repo's own check commands (package.json scripts, hooks, CI) before proposing anything.
+A mechanical repeat — one a lint rule, hook, or test can catch — gets that check as the fix; only a judgement
+call gets a CLAUDE.md line, and it carries its scar. It writes nothing until you approve rows. Not for listing
+which skills exist (`audit`) or repairing one skill (`write:writing-skills`).
+
+```
+이번 세션 회고해서 다음에 같은 실수 안 하게 해줘
+```
+
+On a session where the agent twice used an `@/` import the repo has no alias for and twice reported done without
+running lint, a run without this skill saved prose memory notes and offered a lint rule only as an option; with
+it, both repeats became checks — an ESLint `no-restricted-imports` rule and a Stop hook running lint — with zero
+files written before approval.
 
 ## Renames
 
