@@ -1,339 +1,99 @@
-# Go CLI Development
+# Go CLIs
 
-## Cobra (Recommended)
+## Layout
 
-Powerful CLI framework used by kubectl, hugo, docker.
+```
+cmd/deployctl/main.go     // thin: build root, execute, map error to exit code
+internal/cli/             // one file per command group
+internal/deploy/          // logic with no cobra imports (easy to unit-test)
+```
+
+## cobra
 
 ```go
-// cmd/root.go
-package cmd
-
-import (
-    "fmt"
-    "os"
-    "github.com/spf13/cobra"
-    "github.com/spf13/viper"
-)
-
-var (
-    cfgFile string
-    verbose bool
-)
-
-var rootCmd = &cobra.Command{
-    Use:   "mycli",
-    Short: "My awesome CLI tool",
-    Long: `A longer description of your CLI application`,
-    Version: "1.0.0",
+func newReleaseCmd(cfg *Config) *cobra.Command {
+	var env string
+	cmd := &cobra.Command{
+		Use:   "release <service>",
+		Short: "Release a service",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			fmt.Fprintf(c.OutOrStdout(), "releasing %s to %s\n", args[0], env)
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&env, "env", "e", "dev", "target environment")
+	return cmd
 }
-
-func Execute() {
-    if err := rootCmd.Execute(); err != nil {
-        fmt.Fprintln(os.Stderr, err)
-        os.Exit(1)
-    }
-}
-
-func init() {
-    cobra.OnInitialize(initConfig)
-
-    rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file")
-    rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
-
-    viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
-}
-
-func initConfig() {
-    if cfgFile != "" {
-        viper.SetConfigFile(cfgFile)
-    } else {
-        home, err := os.UserHomeDir()
-        cobra.CheckErr(err)
-
-        viper.AddConfigPath(home)
-        viper.AddConfigPath(".")
-        viper.SetConfigType("yaml")
-        viper.SetConfigName(".mycli")
-    }
-
-    viper.AutomaticEnv()
-
-    if err := viper.ReadInConfig(); err == nil {
-        fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
-    }
-}
-
-// cmd/init.go
-package cmd
-
-import (
-    "fmt"
-    "github.com/spf13/cobra"
-)
-
-var (
-    template string
-    force    bool
-)
-
-var initCmd = &cobra.Command{
-    Use:   "init [name]",
-    Short: "Initialize a new project",
-    Args:  cobra.ExactArgs(1),
-    RunE: func(cmd *cobra.Command, args []string) error {
-        name := args[0]
-        return initProject(name, template, force)
-    },
-}
-
-func init() {
-    rootCmd.AddCommand(initCmd)
-
-    initCmd.Flags().StringVarP(&template, "template", "t", "default", "Project template")
-    initCmd.Flags().BoolVarP(&force, "force", "f", false, "Overwrite existing")
-}
-
-func initProject(name, template string, force bool) error {
-    fmt.Printf("Creating %s from %s\n", name, template)
-    return nil
-}
-
-// cmd/deploy.go
-package cmd
-
-import (
-    "fmt"
-    "github.com/spf13/cobra"
-)
-
-var (
-    dryRun bool
-)
-
-var deployCmd = &cobra.Command{
-    Use:   "deploy [environment]",
-    Short: "Deploy to environment",
-    Args:  cobra.ExactArgs(1),
-    ValidArgs: []string{"dev", "staging", "prod"},
-    RunE: func(cmd *cobra.Command, args []string) error {
-        env := args[0]
-        return deploy(env, dryRun)
-    },
-}
-
-func init() {
-    rootCmd.AddCommand(deployCmd)
-    deployCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview only")
-}
-
-func deploy(env string, dryRun bool) error {
-    if dryRun {
-        fmt.Printf("Would deploy to: %s\n", env)
-    } else {
-        fmt.Printf("Deploying to %s...\n", env)
-    }
-    return nil
-}
-
-// main.go
-package main
-
-import "mycli/cmd"
 
 func main() {
-    cmd.Execute()
+	root := &cobra.Command{Use: "deployctl", SilenceUsage: true, SilenceErrors: true}
+	root.PersistentFlags().String("config", "", "config file")
+	root.AddCommand(newReleaseCmd(&Config{}))
+	if err := root.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
 }
 ```
 
-## Viper (Configuration)
+- Prefer `RunE` over `Run` so errors flow to one place.
+- `SilenceUsage: true` stops the full usage dump on runtime failures; `SilenceErrors: true` (set above) stops cobra printing the error a second time, since `main` prints it.
+- Constructors that return commands (instead of package-level `init()` globals) let tests build fresh trees.
+- `cmd.MarkFlagRequired("name")`, `cmd.MarkFlagsMutuallyExclusive("a", "b")` cover common validation.
+- Write to `cmd.OutOrStdout()` / `cmd.ErrOrStderr()` so tests can capture output.
+- Argument validators: `NoArgs`, `ExactArgs(n)`, `MinimumNArgs(n)`, `RangeArgs(a, b)`, or a custom `func(cmd, args) error`.
+- `ValidArgsFunction` supplies dynamic shell completions; cobra generates bash, zsh, fish and PowerShell scripts through the `completion` subcommand.
 
-Configuration management with multiple sources.
+## viper
 
 ```go
-package config
-
-import (
-    "fmt"
-    "github.com/spf13/viper"
-)
-
-type Config struct {
-    Environment string `mapstructure:"environment"`
-    Timeout     int    `mapstructure:"timeout"`
-    Verbose     bool   `mapstructure:"verbose"`
-    API         APIConfig `mapstructure:"api"`
-}
-
-type APIConfig struct {
-    Endpoint string `mapstructure:"endpoint"`
-    Token    string `mapstructure:"token"`
-}
-
-func Load() (*Config, error) {
-    // Set defaults
-    viper.SetDefault("environment", "development")
-    viper.SetDefault("timeout", 30)
-    viper.SetDefault("verbose", false)
-
-    // Config file locations
-    viper.SetConfigName("config")
-    viper.SetConfigType("yaml")
-    viper.AddConfigPath("/etc/mycli/")
-    viper.AddConfigPath("$HOME/.config/mycli")
-    viper.AddConfigPath(".")
-
-    // Environment variables
-    viper.SetEnvPrefix("MYCLI")
-    viper.AutomaticEnv()
-
-    // Read config
-    if err := viper.ReadInConfig(); err != nil {
-        if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-            return nil, fmt.Errorf("failed to read config: %w", err)
-        }
-    }
-
-    // Unmarshal into struct
-    var cfg Config
-    if err := viper.Unmarshal(&cfg); err != nil {
-        return nil, fmt.Errorf("failed to unmarshal config: %w", err)
-    }
-
-    return &cfg, nil
+v := viper.New()
+v.SetEnvPrefix("DEPLOYCTL")
+v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+v.AutomaticEnv()
+v.BindPFlag("env", cmd.Flags().Lookup("env"))
+v.SetConfigName("deployctl")
+v.AddConfigPath(".")
+if err := v.ReadInConfig(); err != nil {
+	var nf viper.ConfigFileNotFoundError
+	if !errors.As(err, &nf) { return err }
 }
 ```
 
-For interactive TUI (Bubble Tea MVC, progress bars, spinners, colored output), see `references/go-tui.md`.
+Viper's lookup order already matches the usual precedence: explicit Set, flag, env, config file, default. Prefer a private `viper.New()` per command tree over the global instance, and unmarshal into a struct once (`v.Unmarshal(&cfg)`) so the rest of the code never sees viper.
 
-## Error Handling
+## Errors and exit codes
+
+- Wrap with `fmt.Errorf("load config: %w", err)`; test with `errors.Is` / `errors.As`.
+- Define a small typed error carrying an exit code; `main` unwraps it. Everything else exits 1.
+- Print once, at the top, not at each layer.
+
+## Signals
 
 ```go
-package main
-
-import (
-    "errors"
-    "fmt"
-    "os"
-    "syscall"
-
-    "github.com/spf13/cobra"
-)
-
-var deployCmd = &cobra.Command{
-    Use:   "deploy",
-    Short: "Deploy application",
-    RunE: func(cmd *cobra.Command, args []string) error {
-        if err := deploy(); err != nil {
-            return handleError(err)
-        }
-        return nil
-    },
-}
-
-func handleError(err error) error {
-    var exitCode int
-
-    switch {
-    case errors.Is(err, os.ErrPermission):
-        fmt.Fprintln(os.Stderr, "Permission denied")
-        fmt.Fprintln(os.Stderr, "Try running with sudo or check file permissions")
-        exitCode = 77
-
-    case errors.Is(err, os.ErrNotExist):
-        fmt.Fprintf(os.Stderr, "File not found: %v\n", err)
-        exitCode = 127
-
-    default:
-        fmt.Fprintf(os.Stderr, "Deployment failed: %v\n", err)
-        if os.Getenv("DEBUG") != "" {
-            fmt.Fprintf(os.Stderr, "%+v\n", err)
-        }
-        exitCode = 1
-    }
-
-    os.Exit(exitCode)
-    return nil
-}
-
-// Handle SIGINT (Ctrl+C)
-func main() {
-    // Setup signal handling
-    c := make(chan os.Signal, 1)
-    signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
-    go func() {
-        <-c
-        fmt.Println("\nOperation cancelled")
-        os.Exit(130)
-    }()
-
-    cmd.Execute()
-}
+ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+defer stop()
+if err := root.ExecuteContext(ctx); err != nil { ... }
 ```
+
+Read `cmd.Context()` in `RunE` and pass it into every blocking call.
 
 ## Testing
 
 ```go
-package cmd
-
-import (
-    "bytes"
-    "testing"
-
-    "github.com/spf13/cobra"
-    "github.com/stretchr/testify/assert"
-)
-
-func TestInitCommand(t *testing.T) {
-    cmd := &cobra.Command{Use: "test"}
-    cmd.AddCommand(initCmd)
-
-    b := bytes.NewBufferString("")
-    cmd.SetOut(b)
-    cmd.SetArgs([]string{"init", "my-project"})
-
-    err := cmd.Execute()
-    assert.NoError(t, err)
-    assert.Contains(t, b.String(), "Creating my-project")
-}
-
-func TestInitWithTemplate(t *testing.T) {
-    cmd := &cobra.Command{Use: "test"}
-    cmd.AddCommand(initCmd)
-
-    b := bytes.NewBufferString("")
-    cmd.SetOut(b)
-    cmd.SetArgs([]string{"init", "my-project", "--template", "react"})
-
-    err := cmd.Execute()
-    assert.NoError(t, err)
-    assert.Contains(t, b.String(), "react")
-}
+root := newRoot()
+var out bytes.Buffer
+root.SetOut(&out); root.SetErr(&out)
+root.SetArgs([]string{"release", "api", "--env", "prod"})
+err := root.Execute()
 ```
 
-## Build & Distribution
+Assert on `out.String()` and `err`. Table-drive argument sets. For the compiled binary, `exec.Command` in an integration test.
 
-```makefile
-# Makefile
-VERSION := $(shell git describe --tags --always --dirty)
-LDFLAGS := -ldflags "-X main.version=$(VERSION)"
+## Building and shipping
 
-.PHONY: build
-build:
-	go build $(LDFLAGS) -o bin/mycli main.go
-
-.PHONY: install
-install:
-	go install $(LDFLAGS)
-
-.PHONY: test
-test:
-	go test -v ./...
-
-.PHONY: release
-release:
-	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o bin/mycli-linux-amd64
-	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o bin/mycli-darwin-amd64
-	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o bin/mycli-darwin-arm64
-	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o bin/mycli-windows-amd64.exe
-```
+- `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=$VERSION" ./cmd/deployctl`
+- `-X main.version=...` injects the version string; declare `var version = "dev"`.
+- Cross-compile by setting `GOOS`/`GOARCH` (darwin, linux, windows x amd64, arm64).
+- GoReleaser automates archives, checksums, and Homebrew taps; ship checksums either way.

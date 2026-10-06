@@ -1,113 +1,66 @@
-# Unit Testing
+# Unit Tests on the JVM
 
-## Jest/Vitest Pattern
+A unit test exercises one class's decisions with every collaborator that crosses a process boundary replaced. It should run in milliseconds and need no Spring context.
 
-```typescript
-describe('UserService', () => {
-  let service: UserService;
-  let mockRepo: jest.Mocked<UserRepository>;
+## Shape of a test (Kotlin, JUnit 5, MockK)
 
-  beforeEach(() => {
-    mockRepo = { findById: jest.fn(), save: jest.fn() } as any;
-    service = new UserService(mockRepo);
-  });
+```kotlin
+class InvoiceServiceTest {
+    private val rates = mockk<TaxRateClient>()
+    private val sut = InvoiceService(rates)
 
-  afterEach(() => jest.clearAllMocks());
+    @Test
+    fun `adds regional tax to the net total`() {
+        every { rates.rateFor("KR") } returns BigDecimal("0.10")
 
-  describe('getUser', () => {
-    it('returns user when found', async () => {
-      const user = { id: '1', name: 'Test' };
-      mockRepo.findById.mockResolvedValue(user);
+        val invoice = sut.issue(net = BigDecimal("200.00"), region = "KR")
 
-      const result = await service.getUser('1');
+        assertEquals(BigDecimal("220.00"), invoice.gross)
+    }
 
-      expect(result).toEqual(user);
-      expect(mockRepo.findById).toHaveBeenCalledWith('1');
-    });
-
-    it('throws NotFoundError when user not found', async () => {
-      mockRepo.findById.mockResolvedValue(null);
-
-      await expect(service.getUser('1')).rejects.toThrow(NotFoundError);
-    });
-  });
-});
+    @Test
+    fun `rejects a negative net amount`() {
+        val ex = assertThrows<IllegalArgumentException> { sut.issue(BigDecimal("-1"), "KR") }
+        assertEquals("net must be >= 0", ex.message)
+    }
+}
 ```
 
-## pytest Pattern
+Conventions that keep suites readable:
+- Name the behavior, not the method: the backtick title is a sentence a product owner could confirm.
+- Arrange / act / assert in three visible blocks; one act per test.
+- Construct the subject by hand (`InvoiceService(rates)`); constructor injection makes `@SpringBootTest` unnecessary here.
+- Compare values with the narrowest assertion (`assertEquals` on the money amount, not `assertNotNull`).
 
-```python
-import pytest
-from unittest.mock import Mock, AsyncMock
+## Parametrized boundaries
 
-class TestUserService:
-    @pytest.fixture
-    def mock_repo(self):
-        return Mock()
+Use one table for the same rule at several inputs:
 
-    @pytest.fixture
-    def service(self, mock_repo):
-        return UserService(mock_repo)
-
-    async def test_get_user_returns_user(self, service, mock_repo):
-        mock_repo.find_by_id = AsyncMock(return_value={"id": "1", "name": "Test"})
-
-        result = await service.get_user("1")
-
-        assert result == {"id": "1", "name": "Test"}
-        mock_repo.find_by_id.assert_called_once_with("1")
-
-    async def test_get_user_raises_not_found(self, service, mock_repo):
-        mock_repo.find_by_id = AsyncMock(return_value=None)
-
-        with pytest.raises(NotFoundError):
-            await service.get_user("1")
+```kotlin
+@ParameterizedTest
+@CsvSource("0,false", "1,true", "99,true", "100,false")
+fun `quantity must be within 1 until 100`(qty: Int, ok: Boolean) =
+    assertEquals(ok, OrderLine.isValidQuantity(qty))
 ```
 
-## Mocking Patterns
+Pick values on each side of every boundary, plus the empty / null / zero case.
 
-```typescript
-// Mock functions
-const mockFn = jest.fn();
-mockFn.mockReturnValue('value');
-mockFn.mockResolvedValue('async value');
-mockFn.mockRejectedValue(new Error('error'));
+## Test doubles, by purpose
 
-// Mock modules
-jest.mock('./database', () => ({
-  query: jest.fn(),
-}));
+| Double | Use it to | Watch out for |
+|---|---|---|
+| Stub (`every { } returns`) | feed the subject an indirect input | stubbing calls the subject never makes |
+| Mock (`verify`) | confirm an outgoing command happened (send mail, publish event) | verifying queries -- that pins implementation |
+| Fake (in-memory repository) | keep state across calls in a small collaborator | a fake that drifts from the real contract |
 
-// Spy on existing methods
-jest.spyOn(console, 'log').mockImplementation(() => {});
-```
+Prefer a fake or a real value object over a mock when the collaborator is cheap and deterministic. Mock only what you own at an architectural seam; wrap third-party clients behind your own interface first.
 
-## Test Organization
+## Time, randomness, ids
 
-```typescript
-describe('Feature', () => {
-  describe('happy path', () => {
-    it('does expected behavior', () => {});
-  });
+Inject `Clock`, an id generator, or a random source. Tests then set them to fixed values instead of sleeping or asserting "roughly now".
 
-  describe('edge cases', () => {
-    it('handles empty input', () => {});
-    it('handles max values', () => {});
-  });
+## Layout
 
-  describe('error cases', () => {
-    it('throws on invalid input', () => {});
-  });
-});
-```
-
-## Quick Reference
-
-| Pattern | Use Case |
-|---------|----------|
-| `describe()` | Group related tests |
-| `it()` / `test()` | Single test case |
-| `beforeEach()` | Setup before each test |
-| `jest.fn()` | Create mock function |
-| `mockResolvedValue()` | Mock async return |
-| `expect().toThrow()` | Assert exception |
+- Mirror the production package; the test class is named `<Subject>Test`.
+- Shared builders live in a `fixtures` package (`anOrder().withLines(2).build()`), with defaults that are valid so each test overrides only what it is about.
+- Do not share mutable state between tests; JUnit creates a fresh instance per test method by default, so initialise fields instead of using static ones.

@@ -18,14 +18,12 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 license: MIT
 metadata:
-  author: https://github.com/Jeffallan
   version: "1.1.0"
-  domain: quality
-  triggers: documentation, docstrings, OpenAPI, Swagger, JSDoc, comments, API docs, tutorials, user guides, doc site, README, changelog
-  role: specialist
-  scope: implementation
-  output-format: code
-  related-skills: spec-miner, fullstack-guardian, code-reviewer
+  domain: documentation
+  triggers: docstrings, KDoc, JSDoc, OpenAPI, Swagger, README, changelog, tutorials, doc site, API reference
+  role: documentation specialist
+  output-format: documented source and docs
+  related-skills: documentation-strategy, frontend-developer
 ---
 
 # Code Documenter
@@ -44,15 +42,15 @@ metadata:
 
 ## Process
 
-1. **Discover** — Ask for format preference and exclusions. If unspecified, inspect the codebase for existing conventions first; default to Google style (Python) or JSDoc (TypeScript/JS) if none found.
-2. **Detect** — Identify language and framework
-3. **Analyze** — Find undocumented public functions, classes, and API endpoints
-4. **Document** — Apply consistent format across all targets
-5. **Validate** — Test all code examples compile/run:
-   - Python: `python -m doctest file.py` or `pytest --doctest-modules`
+1. **Discover** — Ask which doc format the user wants and what to leave out. If they have no preference, read the repo for an established convention; with none present, use Google style for Python and JSDoc for TypeScript/JS.
+2. **Detect** — Determine the language and framework in use
+3. **Analyze** — List public functions, classes, and API endpoints that have no docs yet
+4. **Document** — Write every target in the one chosen format
+5. **Validate** — Make sure each code example in the docs builds or runs:
+   - Python: `pytest --doctest-modules` (or run doctest on a single module)
    - TypeScript/JavaScript: `tsc --noEmit`
-   - OpenAPI: `npx @redocly/cli lint openapi.yaml`
-6. **Report** — Generate coverage summary. Flag any file below 70% function coverage or any API endpoint below 100% coverage.
+   - OpenAPI: lint the spec with `npx @redocly/cli lint`
+6. **Report** — Produce a coverage summary, flagging files under 70% function coverage and any API endpoint short of 100%.
 
 ## Output Template
 
@@ -75,64 +73,74 @@ metadata:
 
 ## Quick-Reference Examples
 
-### Google-style Docstring (Python)
+### Python (Google style)
 ```python
-def fetch_user(user_id: int, active_only: bool = True) -> dict:
-    """Fetch a single user record by ID.
+def find_order(order_id: int, include_cancelled: bool = False) -> Order:
+    """Look up one order by its id.
 
     Args:
-        user_id: Unique identifier for the user.
-        active_only: When True, raise an error for inactive users.
+        order_id: Primary key of the order.
+        include_cancelled: Also match orders that were cancelled.
 
     Returns:
-        A dict containing user fields (id, name, email, created_at).
+        The matching order.
 
     Raises:
-        ValueError: If user_id is not a positive integer.
-        UserNotFoundError: If no matching user exists.
+        OrderNotFoundError: If no order has this id.
     """
 ```
 
-### JSDoc (TypeScript)
+### KDoc (Kotlin)
+```kotlin
+/**
+ * Lists a customer's orders, newest first.
+ *
+ * @param customerId owner of the orders
+ * @param page zero-based page index
+ * @return the requested page; empty when the customer has no orders
+ * @throws CustomerNotFoundException if [customerId] is unknown
+ */
+fun listOrders(customerId: Long, page: Int = 0): Page<Order>
+```
+
+### TSDoc/JSDoc (TypeScript)
 ```typescript
 /**
- * Fetches a paginated list of products from the catalog.
+ * Lists the orders of a customer, newest first.
  *
- * @param {string} categoryId - The category to filter by.
- * @param {number} [page=1] - Page number (1-indexed).
- * @returns {Promise<ProductPage>} Resolves to a page of product records.
- * @throws {NotFoundError} If the category does not exist.
+ * @param customerId - Owner of the orders.
+ * @param page - Zero-based page index.
+ * @returns A page of orders; empty when there are none.
+ * @throws CustomerNotFoundError When the customer does not exist.
  */
-async function fetchProducts(categoryId: string, page = 1): Promise<ProductPage> { ... }
+async function listOrders(customerId: string, page = 0): Promise<OrderPage> { /* ... */ }
 ```
 
 ## Reference Guide
 
 | Topic | Reference | Load When |
 |-------|-----------|-----------|
-| Python Docstrings | `references/python-docstrings.md` | Google, NumPy, Sphinx styles |
-| TypeScript JSDoc | `references/typescript-jsdoc.md` | JSDoc patterns, TypeScript |
-| FastAPI/Django API | `references/api-docs-fastapi-django.md` | Python API documentation |
-| NestJS/Express API | `references/api-docs-nestjs-express.md` | Node.js API documentation |
-| Coverage Reports | `references/coverage-reports.md` | Generating documentation reports |
-| Doc Site Generators | `references/doc-site-generators.md` | Docusaurus, MkDocs, VitePress config |
-| OpenAPI Advanced | `references/openapi-advanced.md` | Reusable components, security schemes |
-| Tutorial Structure | `references/tutorial-structure.md` | Progressive learning paths |
+| Docstrings / KDoc / JSDoc | `references/docstring-conventions.md` | Choosing or applying a doc-comment style |
+| Framework API docs | `references/framework-api-docs.md` | springdoc, FastAPI, DRF, NestJS, Express |
+| OpenAPI and portals | `references/openapi-and-portals.md` | Components, security schemes, Swagger UI/Redoc, non-REST protocols |
+| Coverage | `references/coverage-reports.md` | Measuring coverage and writing the report |
+| Doc sites | `references/doc-site-generators.md` | Docusaurus, MkDocs, VitePress, versioning, CI checks |
+| Tutorials and guides | `references/tutorial-structure.md` | Tutorials, how-tos, troubleshooting, FAQs |
 
 ## Constraints
 
 **MUST DO:**
-- Ask for format preference before starting (or detect from existing code)
-- Document all public functions and classes
-- Include parameter types, descriptions, and exception docs
-- Test all code examples in documentation
-- Generate a coverage report
+- Settle the comment format first, by asking or by reading existing code
+- Cover every public function and class
+- State parameter types, meanings, and the exceptions raised
+- Execute or compile every example that appears in the docs
+- Finish with a coverage report
 
 **MUST NOT DO:**
-- Assume docstring format without asking or detecting
-- Write inaccurate or untested documentation examples
-- Skip exception/error documentation
-- Document obvious getters/setters verbosely
+- Guess the docstring format
+- Publish examples that are wrong or were never run
+- Leave out error and exception behaviour
+- Write long prose for trivial getters and setters
 
 ## Related Skills
 

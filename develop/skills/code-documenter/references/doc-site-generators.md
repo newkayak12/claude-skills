@@ -1,140 +1,60 @@
-# Documentation Site Generators
+# Documentation Sites
 
-## Docusaurus (Meta)
+## Choosing
+
+| Generator | Fits when | Content | Config |
+|-----------|-----------|---------|--------|
+| Docusaurus | Product docs with versioning, React ecosystem | `docs/` Markdown/MDX | `docusaurus.config.js`, `sidebars.js` |
+| MkDocs (Material theme) | Python or ops teams, plain Markdown | `docs/` | `mkdocs.yml` |
+| VitePress | Vue ecosystem, fast small sites | `docs/` | `docs/.vitepress/config.mts` |
+
+## Commands
 
 ```bash
-# Setup
-npx create-docusaurus@latest docs classic
-cd docs && npm start
+# Docusaurus
+npx create-docusaurus@latest site classic
+npm run start        # dev server
+npm run build        # static output in build/
 
-# Structure
-docs/
-├── docs/           # Documentation pages
-├── blog/           # Blog posts
-├── src/
-│   └── pages/      # Custom pages
-└── docusaurus.config.js
+# MkDocs
+pip install mkdocs mkdocs-material
+mkdocs serve
+mkdocs build --strict   # fail on warnings such as broken nav entries
+
+# VitePress
+npm add -D vitepress
+npx vitepress dev docs
+npx vitepress build docs
 ```
 
-**docusaurus.config.js:**
-```javascript
-module.exports = {
-  title: 'My API',
-  tagline: 'Build amazing things',
-  url: 'https://docs.example.com',
-  baseUrl: '/',
-
-  themeConfig: {
-    navbar: {
-      items: [
-        {to: '/docs/intro', label: 'Docs', position: 'left'},
-        {to: '/api', label: 'API', position: 'left'},
-      ],
-    },
-
-    // Algolia search
-    algolia: {
-      apiKey: 'YOUR_API_KEY',
-      indexName: 'your_index',
-      contextualSearch: true,
-    },
-
-    prism: {
-      theme: lightCodeTheme,
-      darkTheme: darkCodeTheme,
-      additionalLanguages: ['python', 'rust'],
-    },
-  },
-};
-```
-
-## MkDocs (Python)
+## Minimal MkDocs config
 
 ```yaml
-# mkdocs.yml
-site_name: My API Documentation
-theme:
-  name: material
-  features:
-    - navigation.tabs
-    - navigation.sections
-    - toc.integrate
-    - search.suggest
-    - search.highlight
-  palette:
-    - scheme: default
-      toggle:
-        icon: material/brightness-7
-        name: Switch to dark mode
-    - scheme: slate
-      toggle:
-        icon: material/brightness-4
-        name: Switch to light mode
-
-plugins:
-  - search
-  - mkdocstrings:
-      handlers:
-        python:
-          options:
-            show_source: true
-  - git-revision-date-localized
-
-markdown_extensions:
-  - pymdownx.highlight
-  - pymdownx.superfences
-  - admonition
-  - codehilite
-
+site_name: Billing Platform
+theme: { name: material }
 nav:
   - Home: index.md
-  - Getting Started: getting-started.md
-  - API Reference: api/
+  - Guides:
+      - Quick start: guides/quickstart.md
+  - API: api/index.md
 ```
 
-## VitePress (Vue)
+## Versioned docs
 
-```typescript
-// .vitepress/config.ts
-export default defineConfig({
-  title: 'API Docs',
-  description: 'Developer documentation',
+- Docusaurus snapshots a version with `npm run docusaurus docs:version 2.0`; older copies live under `versioned_docs/`.
+- Cut a version only at a release that changes behaviour; keep "next" for unreleased work.
+- Pair each major release with a migration page: what broke, old vs new snippet, and the deprecation timeline.
 
-  themeConfig: {
-    nav: [
-      { text: 'Guide', link: '/guide/' },
-      { text: 'API', link: '/api/' },
-    ],
+## Search
 
-    sidebar: {
-      '/guide/': [
-        {
-          text: 'Introduction',
-          items: [
-            { text: 'Getting Started', link: '/guide/getting-started' },
-            { text: 'Configuration', link: '/guide/config' },
-          ],
-        },
-      ],
-    },
+Docusaurus supports Algolia DocSearch through the theme config; MkDocs and VitePress ship local search options. Prefer the built-in local search until the corpus is large.
 
-    search: {
-      provider: 'local',
-    },
+## Quality checks in CI
 
-    editLink: {
-      pattern: 'https://github.com/user/repo/edit/main/docs/:path',
-    },
-  },
-});
-```
+- Strict build (`mkdocs build --strict`, or Docusaurus failing on broken links by default).
+- Link checking over the output with a tool such as `lychee`.
+- Extract and run code samples; a stale sample is a bug.
 
-## Quick Reference
+## Hosting
 
-| Tool | Best For | Tech Stack |
-|------|----------|-----------|
-| Docusaurus | React projects, versioning | React, MDX |
-| MkDocs | Python projects, simple setup | Python, Jinja2 |
-| VitePress | Vue projects, fast builds | Vue, Vite |
-| Nextra | Next.js integration | React, Next.js |
-| Mintlify | Modern UI, AI search | React |
+Publish the built folder to any static host (GitHub Pages, S3 + CDN). Serve hashed assets with long cache lifetimes and HTML with short ones.

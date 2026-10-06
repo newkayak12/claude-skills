@@ -1,166 +1,46 @@
-# Tutorial Structure & Step-by-Step Guides
+# Tutorials, How-to Guides, and Troubleshooting
 
-## Progressive Learning Path
+## Four kinds of page: do not blend them
 
-```markdown
-# Getting Started with API
+| Kind | Reader's need | Shape |
+|------|---------------|-------|
+| Tutorial | Learn by doing | Guided path to a visible result |
+| How-to | Finish a specific task | Numbered steps, assumes basics |
+| Reference | Look something up | Complete, terse, structured |
+| Explanation | Understand why | Prose, diagrams, trade-offs |
 
-## Prerequisites
-Before you begin, ensure you have:
-- [ ] Node.js 18+ installed
-- [ ] An API key from your dashboard
-- [ ] Basic knowledge of REST APIs
+## Tutorial skeleton
 
-## Quick Start (5 minutes)
+1. Outcome: what exists at the end, and how long it takes.
+2. Prerequisites: versions, accounts, a checkable command per item (`java -version`).
+3. Smallest working example first (aim: under five minutes).
+4. Build up in steps; each step ends with an observable result and the expected output.
+5. A checkpoint after a few steps: "you should now see ...".
+6. Next steps linking to how-to pages and reference.
 
-### 1. Install the SDK
-```bash
-npm install @myapi/sdk
-```
+Every step: one action, the exact command or code, the expected result. Run the whole thing on a clean machine before shipping.
 
-### 2. Create Your First Request
-```typescript
-import { Client } from '@myapi/sdk';
+## How-to pages
 
-const client = new Client({ apiKey: 'your_key' });
-const users = await client.users.list();
-console.log(users);
-```
+Title starts with a verb ("Rotate an API key"). Steps are imperative and numbered. Put warnings before the step they apply to. Finish with verification and links.
 
-### 3. Verify It Works
-Run the code and you should see a list of users.
+## Progressive disclosure
 
-**Expected output:**
-```json
-{
-  "data": [
-    { "id": "1", "name": "Alice" },
-    { "id": "2", "name": "Bob" }
-  ],
-  "total": 2
-}
-```
+Lead with the common path; push options, edge cases, and advanced auth into later sections or collapsible blocks. A reader should be able to succeed without reading past the first screen.
 
-## Next Steps
-- [Authentication Guide](/docs/auth) - Learn about OAuth and API keys
-- [Advanced Queries](/docs/queries) - Filtering, sorting, pagination
-- [Error Handling](/docs/errors) - Handle errors gracefully
-```
+## Diagrams and screenshots
 
-## Step-by-Step Tutorial
+Prefer text-based diagrams (Mermaid) that live in version control. Annotate screenshots sparingly and date-stamp UI-dependent ones so they get refreshed.
+
+## Troubleshooting pages
+
+Organize by symptom, using the text the user actually sees.
 
 ```markdown
-# Tutorial: Building a User Dashboard
-
-**What you'll learn:**
-- Fetching user data from the API
-- Handling pagination
-- Displaying data in a table
-- Adding real-time updates
-
-**Time:** 30 minutes
-**Level:** Intermediate
-
-## Step 1: Set Up the Project
-
-Create a new project:
-```bash
-mkdir user-dashboard
-cd user-dashboard
-npm init -y
-npm install @myapi/sdk react
+### Error: `401 Unauthorized`
+**Cause:** token expired or sent without the `Bearer ` prefix.
+**Fix:** request a new token; confirm the header is `Authorization: Bearer <token>`.
+**Still failing?** Check clock skew on the client.
 ```
 
-## Step 2: Fetch Users
-
-Create `src/api/users.ts`:
-```typescript
-import { Client } from '@myapi/sdk';
-
-const client = new Client({ apiKey: process.env.API_KEY });
-
-export async function getUsers(page = 1, limit = 20) {
-  const response = await client.users.list({ page, limit });
-  return response;
-}
-```
-
-**What's happening:**
-1. We import the SDK client
-2. Initialize it with our API key from environment
-3. Create a helper function that fetches paginated users
-
-## Step 3: Create the Component
-
-Create `src/components/UserTable.tsx`:
-```typescript
-import { useState, useEffect } from 'react';
-import { getUsers } from '../api/users';
-
-export function UserTable() {
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function fetchData() {
-      const data = await getUsers();
-      setUsers(data.data);
-      setLoading(false);
-    }
-    fetchData();
-  }, []);
-
-  if (loading) return <div>Loading...</div>;
-
-  return (
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Email</th>
-        </tr>
-      </thead>
-      <tbody>
-        {users.map(user => (
-          <tr key={user.id}>
-            <td>{user.name}</td>
-            <td>{user.email}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-```
-
-## Step 4: Test It
-
-Run your app:
-```bash
-npm run dev
-```
-
-You should see a table with user data.
-
-## Checkpoint
-At this point, you have:
-- [x] Set up the SDK
-- [x] Created an API helper
-- [x] Built a user table component
-- [ ] Added pagination
-- [ ] Added real-time updates
-
-## Next: Adding Pagination
-
-[Continue to Step 5 →](/docs/tutorial/step-5)
-```
-
-## Quick Reference
-
-| Content Type | Best For | Key Elements |
-|-------------|----------|-------------|
-| Quick Start | New users (5 min) | Prerequisites, minimal code, verify |
-| Tutorial | Learning by doing | Steps, checkpoints, working code |
-| How-To Guide | Specific tasks | Goal, steps, troubleshooting |
-| Reference | Looking up details | Comprehensive, searchable |
-| Explanation | Understanding concepts | Why, not how |
+FAQ entries answer one question in two or three sentences and link to the page with depth. Promote any question asked three times into the main docs.

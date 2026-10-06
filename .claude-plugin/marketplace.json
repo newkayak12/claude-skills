@@ -9,7 +9,7 @@
     {
       "name": "develop",
       "description": "Engineering skills: CLI, SQL, clean architecture, clean code, DDD, database optimization, chaos engineering, Spring Boot, microservices, Kotlin, TDD, frontend, code documentation, testing, bug diagnosis, security audit, architecture review, deprecation & migration, SRE, performance profiling & optimization, incident response, documentation strategy, and dev-quality-workflow (full dev cycle entry point). ADR drafting moved to write:plans (ADR format).",
-      "version": "1.9.2",
+      "version": "1.10.0",
       "author": {
         "name": "newkayak12"
       },
@@ -19,7 +19,7 @@
     {
       "name": "think",
       "description": "Thinking and ideation skills: mentor (any-field mentoring — takes a position, tests yours, hands over the judgment rule), brainstorming (≥3 options before judgment, kill-criteria convergence, hands off to write:plans), grill (a held plan interrogated: repo read first, one numbered round with recommended answers), devils-advocate (steel-man first, core vulnerability + reversibility), redefine-problem, back-to-basics, untangle-thoughts, and negotiate (counsel on your side).",
-      "version": "1.5.0",
+      "version": "1.5.1",
       "author": {
         "name": "newkayak12"
       },

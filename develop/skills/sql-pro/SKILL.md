@@ -20,14 +20,13 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 license: MIT
 metadata:
-  author: https://github.com/Jeffallan
   version: "1.1.0"
-  domain: language
-  triggers: SQL optimization, query performance, database design, PostgreSQL, MySQL, SQL Server, window functions, CTEs, query tuning, EXPLAIN plan, database indexing
   role: specialist
+  triggers: SQL tuning, slow query, schema design, PostgreSQL, MySQL, SQL Server, Oracle, window functions, CTE, EXPLAIN plan, index design
   scope: implementation
+  domain: language
+  related-skills: database-optimizer, connection-pool-tuner, spring-boot-engineer
   output-format: code
-  related-skills: devops-engineer
 ---
 
 # SQL Pro
@@ -47,20 +46,20 @@ metadata:
 ## Process
 
 1. **Schema Analysis** — Review table structure, existing indexes, query patterns
-2. **Design** — Draft set-based operations using CTEs, window functions, appropriate joins
+2. **Design** — Sketch the query as set operations: CTEs, window functions, and the right join types
 3. **Version Check** — Confirm target engine and version; flag any feature requiring a minimum version
-4. **Optimize** — Analyze execution plans; implement covering indexes; eliminate table scans
-5. **Verify** — Run `EXPLAIN ANALYZE` and confirm no sequential scans on large tables; iterate until sub-100ms target is met
+4. **Optimize** — Study the plan, add covering indexes, and remove full scans of big tables
+5. **Verify** — Re-run `EXPLAIN ANALYZE`, check that large tables are no longer scanned sequentially, and repeat until the query is under the 100 ms target
 6. **Document** — Provide query explanation, index rationale, performance metrics, and minimum version requirements
 
 ## Output Template
 
 For each SQL task, provide:
-1. Optimized query with inline comments
-2. Required indexes with rationale
+1. The final query, commented inline
+2. Indexes it needs, and why
 3. Execution plan analysis (key patterns found)
-4. Performance metrics (before/after)
-5. Platform-specific notes if applicable
+4. Timing or cost numbers, before and after
+5. Engine-specific caveats where they apply
 6. Minimum version requirements (e.g., `PostgreSQL >= 10`, `MySQL >= 8.0`)
 
 ## What Claude Does / What You Do
@@ -71,77 +70,79 @@ For each SQL task, provide:
 | Recommends covering index strategy | Run `CREATE INDEX CONCURRENTLY` in your environment |
 | Reads EXPLAIN output and identifies plan patterns | Provide actual EXPLAIN ANALYZE output |
 | Flags dialect-specific syntax differences | Test against your actual database version |
-| Documents the before/after performance comparison | Validate with production-scale data volumes |
+| Writes up the timing difference between old and new query | Check it against production-sized data |
 
 ## Reference Guide
 
-| Topic | Reference | Load When |
-|-------|-----------|-----------|
-| Query Patterns | `references/query-patterns.md` | JOINs, CTEs, subqueries, recursive queries |
-| Window Functions | `references/window-functions.md` | ROW_NUMBER, RANK, LAG/LEAD, analytics |
-| Optimization | `references/optimization.md` | EXPLAIN plans, indexes, statistics |
-| Database Design | `references/database-design.md` | Normalization, keys, constraints |
-| Dialect Differences | `references/dialect-differences.md` | PostgreSQL vs MySQL vs SQL Server |
+| Topic | File | Read it when |
+|-------|------|--------------|
+| Query shapes | `references/query-patterns.md` | Joins, CTEs, recursion, subquery rewrites, pivots, keyset paging |
+| Analytic windows | `references/window-functions.md` | Ranking, running totals, LAG/LEAD, frames, gaps-and-islands |
+| Tuning and plans | `references/optimization.md` | Plan reading, index choice, statistics, partitioning |
+| Schema design | `references/database-design.md` | Normal forms, choosing keys, constraints, history tables, migrations |
+| Porting between engines | `references/dialect-differences.md` | Translating SQL between PostgreSQL, MySQL, SQL Server and Oracle |
 
-## Quick-Reference Examples
+## Worked Examples
 
 ### CTE Pattern
 ```sql
-WITH ranked_orders AS (
+WITH latest AS (
     SELECT
         customer_id,
-        order_id,
-        total_amount,
-        ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY order_date DESC) AS rn
-    FROM orders
-    WHERE status = 'completed'
+        id AS order_pk,
+        total_amount AS amount,
+        ROW_NUMBER() OVER (
+            PARTITION BY customer_id ORDER BY placed_at DESC, id DESC
+        ) AS recency
+    FROM orders WHERE status = 'completed'
 )
-SELECT customer_id, order_id, total_amount
-FROM ranked_orders
-WHERE rn = 1;  -- latest completed order per customer
+SELECT customer_id, order_pk, amount
+FROM latest
+WHERE recency = 1;  -- newest completed order for each customer
 ```
 
-### Window Function Pattern
+### Window Pattern
 ```sql
 SELECT
-    department_id,
-    employee_id,
-    salary,
-    SUM(salary) OVER (PARTITION BY department_id ORDER BY hire_date) AS running_payroll,
-    RANK()      OVER (PARTITION BY department_id ORDER BY salary DESC) AS salary_rank
-FROM employees;
+    store_id,
+    sale_date,
+    amount,
+    SUM(amount) OVER (PARTITION BY store_id ORDER BY sale_date) AS cumulative,
+    RANK()      OVER (PARTITION BY store_id ORDER BY amount DESC) AS amount_rank
+FROM sales;
 ```
 
 ### Before / After Optimization
 ```sql
--- BEFORE: correlated subquery, one execution per row (slow)
-SELECT order_id,
-       (SELECT SUM(quantity) FROM order_items oi WHERE oi.order_id = o.id) AS item_count
-FROM orders o;
+-- BEFORE: correlated subquery runs once per order row
+SELECT ord.id AS order_id,
+       (SELECT SUM(ln.quantity) FROM order_lines ln WHERE ln.order_id = ord.id) AS qty_total
+FROM orders ord;
 
--- AFTER: single aggregation join (fast)
-SELECT o.order_id, COALESCE(agg.item_count, 0) AS item_count
-FROM orders o
-LEFT JOIN (
-    SELECT order_id, SUM(quantity) AS item_count
-    FROM order_items
+-- AFTER: total each order's lines a single time, then join back
+WITH line_totals AS (
+    SELECT order_id, SUM(quantity) AS units_sold
+    FROM order_lines
     GROUP BY order_id
-) agg ON agg.order_id = o.id;
+)
+SELECT ord.id AS order_id, COALESCE(lt.units_sold, 0) AS qty_total
+FROM orders ord
+LEFT JOIN line_totals lt ON lt.order_id = ord.id;
 ```
 
 ## Constraints
 
 **MUST DO:**
-- Analyze execution plans before recommending optimizations
-- Use set-based operations over row-by-row processing
+- Read the execution plan before proposing any optimization
+- Prefer set-based statements to row-at-a-time loops
 - Apply filtering early (before joins where possible)
-- Use EXISTS over COUNT for existence checks
+- Test existence with EXISTS, not COUNT
 - Handle NULLs explicitly
 
 **MUST NOT DO:**
-- Use `SELECT *` in production queries
-- Use cursors when set-based operations work
-- Implement solutions without considering data volume and cardinality
+- Ship `SELECT *` in production queries
+- Reach for cursors when a set-based form exists
+- Propose a fix without asking about row counts and cardinality
 
 ## Related Skills
 

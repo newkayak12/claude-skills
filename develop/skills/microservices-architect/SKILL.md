@@ -4,7 +4,7 @@ description: >-
   Use when designing or evaluating a distributed system. Triggers on: "MSA로 쪼갤까?", "서비스 간 통신 REST vs 이벤트", "분산 시스템
   설계", "decompose the monolith", "sync vs async calls", "saga design". Not for validating existing boundaries.
 scenarios:
-  - "Design a microservices architecture for our e-commerce monolith migration"
+  - "Design a microservices architecture to replace our e-commerce monolith"
   - "Help me decide service boundaries and communication patterns for this system"
   - "Our microservices have too many dependencies — review and restructure the design"
   - "모놀리스를 마이크로서비스로 전환하는 아키텍처를 설계해줘"
@@ -20,19 +20,18 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 license: MIT
 metadata:
-  author: https://github.com/Jeffallan
   version: "1.1.0"
   domain: api-architecture
-  triggers: microservices, service mesh, distributed systems, service boundaries, domain-driven design, event sourcing, CQRS, saga pattern, Kubernetes microservices, Istio, distributed tracing
+  triggers: microservices, mesh, distributed design, service boundary, bounded context, sagas, CQRS, Istio, tracing
   role: architect
   scope: system-design
-  output-format: architecture
-  related-skills: devops-engineer, kubernetes-specialist, graphql-architect, architecture-designer, monitoring-expert
+  output-format: adr
+  related-skills: architecture-designer, service-boundary-validator, spring-boot-engineer
 ---
 
 # Microservices Architect
 
-Senior distributed systems architect specializing in cloud-native microservices, resilience patterns, and operational excellence.
+Acts as a distributed-systems architect: draws service boundaries, picks interaction styles, and plans for failure and operation.
 
 ## When to Use / When Not to Use
 
@@ -64,12 +63,12 @@ Check prerequisites before domain analysis:
 
 ### Steps 1–6
 
-1. **Domain Analysis** — Apply DDD to identify bounded contexts and service boundaries. Validation: each candidate service owns its data exclusively, has a clear public API contract, and can be deployed independently.
-2. **Communication Design** — Choose sync/async patterns. Validation: long-running or cross-aggregate operations use async messaging; only query/command pairs with sub-100ms SLA use sync calls.
-3. **Data Strategy** — Database per service, event sourcing, eventual consistency. Validation: no shared database schema exists between services.
-4. **Resilience** — Circuit breakers, retries, timeouts, bulkheads, fallbacks. Validation: every external call has an explicit timeout, retry budget, and degradation path.
-5. **Observability** — Distributed tracing, correlation IDs, centralized logging. Validation: a single request traceable end-to-end by correlation ID.
-6. **Deployment** — Container orchestration, service mesh, progressive delivery. Validation: health and readiness probes defined; canary or blue-green strategy documented.
+1. **Domain Analysis** — Use DDD to find bounded contexts and turn them into service boundaries. Check: every candidate service is sole owner of its data, publishes an explicit API contract, and ships on its own.
+2. **Communication Design** — Pick sync or async per interaction. Check: work that is slow or crosses aggregates goes through messaging; synchronous calls are limited to query/command pairs with a sub-100ms SLA.
+3. **Data Strategy** — Private store per service, event sourcing where warranted, eventual consistency between services. Check: no schema is shared across services.
+4. **Resilience** — Breakers, retries, timeouts, bulkheads and fallbacks. Check: each outbound call states its timeout, its retry budget and its failure behaviour.
+5. **Observability** — Tracing, correlation IDs, central logs. Check: one correlation ID lets you follow a request across every service it touches.
+6. **Deployment** — Orchestrated containers, optional mesh, progressive rollout. Check: health and readiness probes exist, and a canary or blue-green plan is written down.
 
 ## Output Template
 
@@ -87,11 +86,11 @@ Structure output as an Architecture Decision Record (ADR):
 |---|---|---|---|---|
 
 **Additionally provide:**
-1. Service boundary diagram with bounded contexts
-2. Communication patterns (sync/async, protocols)
-3. Data ownership and consistency model
+1. A diagram of the service boundaries and the bounded contexts they map to
+2. Per-interaction choice of sync or async, and the protocol used
+3. Who owns which data, and the consistency model between owners
 4. Resilience patterns per integration point
-5. Deployment and infrastructure requirements
+5. What deployment and infrastructure the design needs
 
 ## What Claude Does / What You Do
 
@@ -106,27 +105,27 @@ Structure output as an Architecture Decision Record (ADR):
 ## Reference Guide
 
 | Topic | Reference | Load When |
-|-------|-----------|-----------|
-| Service Boundaries | `references/decomposition.md` | Monolith decomposition, bounded contexts |
-| Communication | `references/communication.md` | REST vs gRPC, async messaging, event-driven |
-| Resilience Patterns | `references/patterns.md` | Circuit breakers, bulkhead, retry, health checks |
-| Data Management | `references/data.md` | Database per service, Saga, Event Sourcing, CQRS |
-| Observability | `references/observability.md` | Distributed tracing, correlation IDs, metrics |
+|---|---|---|
+| Boundaries | `references/decomposition.md` | Splitting a monolith, drawing contexts |
+| Communication | `references/communication.md` | Choosing HTTP, gRPC or messaging; events; contracts |
+| Resilience | `references/patterns.md` | Timeouts, retries, breakers, bulkheads, probes |
+| Data | `references/data.md` | Data ownership, outbox, sagas, event sourcing, CQRS |
+| Observability | `references/observability.md` | Tracing, trace propagation, SLOs, alerting |
 
 ## Constraints
 
 **MUST DO:**
 - Apply DDD for service boundaries
-- Use database per service pattern
-- Implement circuit breakers for external calls
-- Add correlation IDs to all requests
-- Use async communication for cross-aggregate operations
+- Give each service a private database
+- Wrap every remote call in a circuit breaker
+- Propagate a correlation ID on every request
+- Go async whenever an operation spans aggregates
 
 **MUST NOT DO:**
-- Share databases between services
-- Use synchronous calls for long-running operations
+- Let services share a database
+- Block on a synchronous call for long-running work
 - Create chatty service interfaces (> 3 sync hops in user-facing request path)
-- Deploy without observability
+- Ship without observability in place
 
 ## Related Skills
 

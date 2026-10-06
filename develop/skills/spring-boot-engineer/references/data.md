@@ -1,381 +1,164 @@
-# Data Access - Spring Data JPA
+# Data Access
 
-## JPA Entity Pattern
+## Mapping entities
 
 ```java
 @Entity
-@Table(name = "users", indexes = {
-    @Index(name = "idx_email", columnList = "email", unique = true),
-    @Index(name = "idx_username", columnList = "username")
-})
-@EntityListeners(AuditingEntityListener.class)
-@Getter @Setter
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class User {
-
+@Table(name = "invoices")
+public class Invoice {
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.SEQUENCE)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 100)
-    private String email;
+    @Column(length = 40, nullable = false)
+    private String number;
 
-    @Column(nullable = false, length = 100)
-    private String password;
+    private LocalDate dueDate;
 
-    @Column(nullable = false, unique = true, length = 50)
-    private String username;
+    private BigDecimal total;
 
-    @Column(nullable = false)
-    @Builder.Default
-    private Boolean active = true;
+    @Enumerated(EnumType.STRING)
+    private InvoiceStatus status;
 
-    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
-    @Builder.Default
-    private List<Address> addresses = new ArrayList<>();
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "customer_id")
+    private Customer customer;
 
-    @ManyToMany
-    @JoinTable(
-        name = "user_roles",
-        joinColumns = @JoinColumn(name = "user_id"),
-        inverseJoinColumns = @JoinColumn(name = "role_id")
-    )
-    @Builder.Default
-    private Set<Role> roles = new HashSet<>();
-
-    @CreatedDate
-    @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-
-    @LastModifiedDate
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
+    @OneToMany(mappedBy = "invoice", orphanRemoval = true, cascade = CascadeType.ALL)
+    private List<InvoiceLine> lines = new ArrayList<>();
 
     @Version
-    private Long version;
+    private long version;
 
-    // Helper methods for bidirectional relationships
-    public void addAddress(Address address) {
-        addresses.add(address);
-        address.setUser(this);
-    }
+    protected Invoice() {}          // required by JPA
 
-    public void removeAddress(Address address) {
-        addresses.remove(address);
-        address.setUser(null);
-    }
+    public void addLine(InvoiceLine l) { lines.add(l); l.setInvoice(this); }
 }
 ```
 
-## Spring Data JPA Repository
+Rules that prevent most production surprises:
+- `@Enumerated(EnumType.STRING)`; ordinals break when the enum is reordered.
+- Associations default to eager for `@ManyToOne` and `@OneToOne`; declare `LAZY` explicitly.
+- Keep both sides of a bidirectional link in sync through a helper such as `addLine`.
+- `@Version` gives optimistic locking; a concurrent update surfaces as `ObjectOptimisticLockingFailureException`.
+- Do not use Lombok `@Data` on entities; generated `equals`/`hashCode`/`toString` touch lazy collections.
+
+## Repositories
 
 ```java
-@Repository
-public interface UserRepository extends JpaRepository<User, Long>,
-                                       JpaSpecificationExecutor<User> {
+public interface InvoiceRepository extends JpaRepository<Invoice, Long>,
+                                           JpaSpecificationExecutor<Invoice> {
 
-    Optional<User> findByEmail(String email);
+    Optional<Invoice> findByNumber(String number);
 
-    Optional<User> findByUsername(String username);
+    @Query("select i from Invoice i join fetch i.customer where i.id = :id")
+    Optional<Invoice> findWithCustomer(@Param("id") Long id);
 
-    boolean existsByEmail(String email);
+    @EntityGraph(attributePaths = {"lines"})
+    List<Invoice> findByStatus(InvoiceStatus status);
 
-    boolean existsByUsername(String username);
-
-    @Query("SELECT u FROM User u LEFT JOIN FETCH u.roles WHERE u.email = :email")
-    Optional<User> findByEmailWithRoles(@Param("email") String email);
-
-    @Query("SELECT u FROM User u WHERE u.active = true AND u.createdAt >= :since")
-    List<User> findActiveUsersSince(@Param("since") LocalDateTime since);
-
-    @Modifying
-    @Query("UPDATE User u SET u.active = false WHERE u.lastLoginAt < :threshold")
-    int deactivateInactiveUsers(@Param("threshold") LocalDateTime threshold);
-
-    // Projection for read-only DTOs
-    @Query("SELECT new com.example.dto.UserSummary(u.id, u.username, u.email) " +
-           "FROM User u WHERE u.active = true")
-    List<UserSummary> findAllActiveSummaries();
+    @Modifying(clearAutomatically = true)
+    @Query("update Invoice i set i.status = :to where i.status = :from and i.dueDate < :cutoff")
+    int markOverdue(@Param("from") InvoiceStatus from, @Param("to") InvoiceStatus to,
+                    @Param("cutoff") LocalDate cutoff);
 }
 ```
 
-## Repository with Specifications
+Derived query names are fine until they exceed about three predicates; after that write `@Query`. Bulk `@Modifying` queries bypass the persistence context, hence `clearAutomatically`.
+
+### Dynamic filters
+
+Use a `Specification` per predicate and compose with `and`/`or`:
 
 ```java
-public class UserSpecifications {
-
-    public static Specification<User> hasEmail(String email) {
-        return (root, query, cb) ->
-            email == null ? null : cb.equal(root.get("email"), email);
-    }
-
-    public static Specification<User> isActive() {
-        return (root, query, cb) -> cb.isTrue(root.get("active"));
-    }
-
-    public static Specification<User> createdAfter(LocalDateTime date) {
-        return (root, query, cb) ->
-            date == null ? null : cb.greaterThanOrEqualTo(root.get("createdAt"), date);
-    }
-
-    public static Specification<User> hasRole(String roleName) {
-        return (root, query, cb) -> {
-            Join<User, Role> roles = root.join("roles", JoinType.INNER);
-            return cb.equal(roles.get("name"), roleName);
-        };
-    }
+static Specification<Invoice> hasStatus(InvoiceStatus s) {
+    return (root, query, cb) -> (s == null) ? cb.conjunction() : cb.equal(root.get("status"), s);
 }
-
-// Usage in service
-@Service
-@RequiredArgsConstructor
-public class UserService {
-    private final UserRepository userRepository;
-
-    public Page<User> searchUsers(UserSearchCriteria criteria, Pageable pageable) {
-        Specification<User> spec = Specification
-            .where(UserSpecifications.hasEmail(criteria.email()))
-            .and(UserSpecifications.isActive())
-            .and(UserSpecifications.createdAfter(criteria.createdAfter()));
-
-        return userRepository.findAll(spec, pageable);
-    }
-}
+repo.findAll(hasStatus(status).and(dueBefore(date)), pageable);
 ```
 
-## Transaction Management
+Returning `cb.conjunction()` (always true) for an absent filter keeps optional criteria composable.
 
-```java
-@Service
-@RequiredArgsConstructor
-@Transactional(readOnly = true)
-public class OrderService {
-    private final OrderRepository orderRepository;
-    private final PaymentService paymentService;
-    private final InventoryService inventoryService;
-    private final NotificationService notificationService;
+## N+1 and fetching
 
-    @Transactional
-    public Order createOrder(OrderCreateRequest request) {
-        // All operations in single transaction
-        Order order = Order.builder()
-            .customerId(request.customerId())
-            .status(OrderStatus.PENDING)
-            .build();
+The typical symptom is one query for the parent list and one more per row for a lazy association. Remedies, best first:
+1. Project only what the screen needs (below).
+2. `@EntityGraph` or `join fetch` for the one use case that needs the association.
+3. `spring.jpa.properties.hibernate.default_batch_fetch_size` for collection loading.
 
-        request.items().forEach(item -> {
-            inventoryService.reserveStock(item.productId(), item.quantity());
-            order.addItem(item);
-        });
-
-        order = orderRepository.save(order);
-
-        try {
-            paymentService.processPayment(order);
-            order.setStatus(OrderStatus.PAID);
-        } catch (PaymentException e) {
-            order.setStatus(OrderStatus.PAYMENT_FAILED);
-            throw e; // Transaction will rollback
-        }
-
-        return orderRepository.save(order);
-    }
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void logOrderEvent(Long orderId, String event) {
-        // Separate transaction - will commit even if parent rolls back
-        OrderEvent orderEvent = new OrderEvent(orderId, event);
-        orderEventRepository.save(orderEvent);
-    }
-
-    @Transactional(noRollbackFor = NotificationException.class)
-    public void completeOrder(Long orderId) {
-        Order order = orderRepository.findById(orderId)
-            .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
-
-        order.setStatus(OrderStatus.COMPLETED);
-        orderRepository.save(order);
-
-        // Won't rollback transaction if notification fails
-        try {
-            notificationService.sendCompletionEmail(order);
-        } catch (NotificationException e) {
-            log.error("Failed to send notification for order {}", orderId, e);
-        }
-    }
-}
-```
-
-## Auditing Configuration
-
-```java
-@Configuration
-@EnableJpaAuditing
-public class JpaAuditingConfig {
-
-    @Bean
-    public AuditorAware<String> auditorProvider() {
-        return () -> {
-            Authentication authentication = SecurityContextHolder
-                .getContext()
-                .getAuthentication();
-
-            if (authentication == null || !authentication.isAuthenticated()) {
-                return Optional.of("system");
-            }
-
-            return Optional.of(authentication.getName());
-        };
-    }
-}
-
-@MappedSuperclass
-@EntityListeners(AuditingEntityListener.class)
-@Getter @Setter
-public abstract class AuditableEntity {
-
-    @CreatedDate
-    @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-
-    @CreatedBy
-    @Column(nullable = false, updatable = false, length = 100)
-    private String createdBy;
-
-    @LastModifiedDate
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
-
-    @LastModifiedBy
-    @Column(nullable = false, length = 100)
-    private String updatedBy;
-}
-```
+Never `join fetch` a collection together with pagination; Hibernate paginates in memory and warns about it. Page the ids first, then fetch.
 
 ## Projections
 
 ```java
-// Interface-based projection
-public interface UserSummary {
-    Long getId();
-    String getUsername();
-    String getEmail();
+public interface InvoiceSummary { String getNumber(); BigDecimal getTotal(); }
+public record InvoiceRow(String number, BigDecimal total) {}
 
-    @Value("#{target.firstName + ' ' + target.lastName}")
-    String getFullName();
-}
-
-// Class-based projection (DTO)
-public record UserSummaryDto(
-    Long id,
-    String username,
-    String email
-) {}
-
-// Usage
-public interface UserRepository extends JpaRepository<User, Long> {
-    List<UserSummary> findAllBy();
-
-    <T> List<T> findAllBy(Class<T> type);
-}
-
-// Service usage
-List<UserSummary> summaries = userRepository.findAllBy();
-List<UserSummaryDto> dtos = userRepository.findAllBy(UserSummaryDto.class);
+List<InvoiceSummary> findByCustomerId(Long id);                 // interface-based
+@Query("select new com.acme.InvoiceRow(i.number, i.total) from Invoice i")
+List<InvoiceRow> rows();                                         // constructor expression
 ```
 
-## Query Optimization
+## Transactions
+
+- Put `@Transactional` on service methods, one per use case. Read-only use cases get `readOnly = true`.
+- The proxy only intercepts calls from outside the bean; calling a transactional method through `this` does nothing.
+- Checked exceptions do not roll back unless `rollbackFor` says so.
+- Keep remote calls out of the transaction; it holds a connection while waiting.
+- To run something in its own transaction, use `Propagation.REQUIRES_NEW` in a different bean.
 
 ```java
 @Service
-@RequiredArgsConstructor
-@Transactional(readOnly = true)
-public class UserQueryService {
-    private final UserRepository userRepository;
-    private final EntityManager entityManager;
-
-    // N+1 problem solved with JOIN FETCH
-    @Query("SELECT DISTINCT u FROM User u " +
-           "LEFT JOIN FETCH u.addresses " +
-           "LEFT JOIN FETCH u.roles " +
-           "WHERE u.active = true")
-    List<User> findAllActiveWithAssociations();
-
-    // Batch fetching
-    @BatchSize(size = 25)
-    @OneToMany(mappedBy = "user")
-    private List<Order> orders;
-
-    // EntityGraph for dynamic fetching
-    @EntityGraph(attributePaths = {"addresses", "roles"})
-    List<User> findAllByActiveTrue();
-
-    // Pagination to avoid loading all data
-    public Page<User> findAllUsers(Pageable pageable) {
-        return userRepository.findAll(pageable);
+class TransferService {
+    @Transactional
+    void transfer(long from, long to, BigDecimal amount) {
+        // lock the lower id first so concurrent opposite transfers cannot deadlock
+        Account first = accounts.findByIdForUpdate(Math.min(from, to)).orElseThrow();
+        Account second = accounts.findByIdForUpdate(Math.max(from, to)).orElseThrow();
+        Account a = from < to ? first : second;
+        Account b = from < to ? second : first;
+        a.withdraw(amount);
+        b.deposit(amount);
     }
+}
 
-    // Native query for complex queries
-    @Query(value = """
-        SELECT u.* FROM users u
-        INNER JOIN orders o ON u.id = o.user_id
-        WHERE o.created_at >= :since
-        GROUP BY u.id
-        HAVING COUNT(o.id) >= :minOrders
-        """, nativeQuery = true)
-    List<User> findFrequentBuyers(@Param("since") LocalDateTime since,
-                                  @Param("minOrders") int minOrders);
+@Lock(LockModeType.PESSIMISTIC_WRITE)
+@Query("select a from Account a where a.id = :id")
+Optional<Account> findByIdForUpdate(@Param("id") Long id);
+```
+
+Lock rows in a consistent order (for example by ascending id) to avoid deadlocks.
+
+## Auditing
+
+```java
+@EnableJpaAuditing
+@Configuration class JpaConfig {}
+
+@MappedSuperclass
+@EntityListeners(AuditingEntityListener.class)
+abstract class Audited {
+    @CreatedDate
+    @Column(updatable = false)
+    Instant createdAt;
+
+    @LastModifiedBy
+    String updatedBy;
+
+    @LastModifiedDate
+    Instant updatedAt;
 }
 ```
 
-## Database Migrations (Flyway)
+`@LastModifiedBy` (and `@CreatedBy`) need an `AuditorAware<String>` bean, typically reading the `SecurityContextHolder`.
+
+## Schema migrations
+
+Hibernate's `ddl-auto` is for throwaway databases. Use Flyway: add `flyway-core` (and `flyway-database-postgresql` for Flyway 10+), put scripts in `src/main/resources/db/migration` named `V3__add_invoice_due_date.sql`, never edit a script that has been applied, and switch Hibernate to schema verification (`ddl-auto: validate` under `spring.jpa.hibernate`) so the mapping is checked against the migrated schema.
 
 ```sql
--- V1__create_users_table.sql
-CREATE TABLE users (
-    id BIGSERIAL PRIMARY KEY,
-    email VARCHAR(100) NOT NULL UNIQUE,
-    password VARCHAR(100) NOT NULL,
-    username VARCHAR(50) NOT NULL UNIQUE,
-    active BOOLEAN NOT NULL DEFAULT true,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    version BIGINT NOT NULL DEFAULT 0
-);
-
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_username ON users(username);
-CREATE INDEX idx_users_active ON users(active);
-
--- V2__create_addresses_table.sql
-CREATE TABLE addresses (
-    id BIGSERIAL PRIMARY KEY,
-    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    street VARCHAR(200) NOT NULL,
-    city VARCHAR(100) NOT NULL,
-    country VARCHAR(2) NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_addresses_user_id ON addresses(user_id);
+ALTER TABLE invoices ADD COLUMN due_date date;
+CREATE INDEX CONCURRENTLY idx_invoices_status_due ON invoices (status, due_date);
 ```
 
-## Quick Reference
-
-| Annotation | Purpose |
-|------------|---------|
-| `@Entity` | Marks class as JPA entity |
-| `@Table` | Specifies table details and indexes |
-| `@Id` | Marks primary key field |
-| `@GeneratedValue` | Auto-generated primary key strategy |
-| `@Column` | Column constraints and mapping |
-| `@OneToMany/@ManyToOne` | One-to-many/many-to-one relationships |
-| `@ManyToMany` | Many-to-many relationships |
-| `@JoinColumn/@JoinTable` | Join column/table configuration |
-| `@Transactional` | Declares transaction boundaries |
-| `@Query` | Custom JPQL/native queries |
-| `@Modifying` | Marks query as UPDATE/DELETE |
-| `@EntityGraph` | Defines fetch graph for associations |
-| `@Version` | Optimistic locking version field |
+`CREATE INDEX CONCURRENTLY` cannot run in a transaction; put it in its own migration with `executeInTransaction=false` in a script configuration file.

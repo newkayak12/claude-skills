@@ -1,116 +1,47 @@
-# ADR Template
+# Writing an Architecture Decision Record
 
-## ADR Format
+One file per decision, kept in the repository next to the code (for example `docs/adr/0007-use-outbox-for-events.md`). Numbers only increase; the title states the decision in a short imperative.
 
-```markdown
-# ADR-{number}: {Title}
+## Sections
 
-## Status
-[Proposed | Accepted | Deprecated | Superseded by ADR-XXX]
+- **Status** — proposed, accepted, deprecated, or superseded by ADR-n. Never delete an old record; supersede it.
+- **Context** — the forces at play: requirements, constraints, deadlines, team skills. Facts only, with numbers where they exist.
+- **Decision** — one or two sentences, active voice: "We will ...".
+- **Alternatives** — each option actually considered and the specific reason it lost. A record with no losing option is not a decision.
+- **Consequences** — what gets easier, what gets harder, and what must now be done or watched. Include the downsides honestly.
 
-## Context
-[Describe the situation and forces at play. What is the problem?
-What constraints exist? What are we trying to achieve?]
+## When a record is warranted
 
-## Decision
-[State the decision clearly. What are we going to do?]
+Write one when the choice is costly to reverse, crosses team boundaries, or someone new would otherwise ask "why did we do this?". Skip it for choices that a single pull request can undo.
 
-## Consequences
-
-### Positive
-- [Benefit 1]
-- [Benefit 2]
-
-### Negative
-- [Drawback 1]
-- [Drawback 2]
-
-### Neutral
-- [Side effect that is neither good nor bad]
-
-## Alternatives Considered
-[What other options were evaluated and why were they rejected?]
-
-## References
-- [Link to relevant documentation]
-- [Link to discussion/RFC]
-```
-
-## Example: Database Selection
+## Example
 
 ```markdown
-# ADR-001: Use PostgreSQL for primary database
+# ADR-0012: Publish domain events through a transactional outbox
 
-## Status
-Accepted
+Status: accepted
 
 ## Context
-We need a relational database for our e-commerce platform that:
-- Handles complex transactions with strong consistency
-- Supports JSON for flexible product attributes
-- Scales to millions of products and orders
-- Works well with our existing Python/Node stack
-
-Team has experience with PostgreSQL and MySQL.
-Budget allows for managed database service.
+Order service writes to PostgreSQL and publishes to Kafka. Dual writes have lost
+events twice in the last quarter. Peak is ~200 orders/s; one team owns the service.
 
 ## Decision
-Use PostgreSQL as the primary database, hosted on AWS RDS.
+We will insert events into an `outbox` table in the same transaction as the
+order change and relay them to Kafka from a separate poller.
+
+## Alternatives
+- Dual write with retries: still loses events when the process dies between writes.
+- CDC on the orders table: no extra table, but a new component to run and a
+  schema coupling we do not want yet.
 
 ## Consequences
-
-### Positive
-- ACID compliance for financial transactions
-- Rich feature set (JSON, full-text search, CTEs)
-- Strong community and tooling
-- Excellent performance with proper indexing
-- Free and open source
-
-### Negative
-- Vertical scaling has limits (addressed with read replicas)
-- Requires DBA expertise for optimization
-- AWS RDS costs for high availability
-
-### Neutral
-- Team will need to learn PostgreSQL-specific features
-- Migration from current SQLite dev database needed
-
-## Alternatives Considered
-
-**MySQL**
-- Rejected: Less feature-rich for JSON operations
-- Considered: Similar cost, familiar to team
-
-**MongoDB**
-- Rejected: Relational data model needed for orders/inventory
-- Considered: Great for product catalog flexibility
-
-**CockroachDB**
-- Rejected: Higher cost, team unfamiliar
-- Considered: Better horizontal scaling
-
-## References
-- https://www.postgresql.org/docs/current/
-- Internal RFC: Database Selection for E-commerce Platform
+Easier: no lost events; ordering per aggregate is preserved.
+Harder: consumers see duplicates and must be idempotent; the relay needs monitoring
+for lag; the outbox needs a cleanup job.
 ```
 
-## ADR Naming Convention
+## Review habits
 
-```
-docs/
-└── adr/
-    ├── 0001-use-postgresql-database.md
-    ├── 0002-adopt-microservices.md
-    ├── 0003-implement-event-sourcing.md
-    └── README.md
-```
-
-## Quick Reference
-
-| Section | Purpose | Key Question |
-|---------|---------|--------------|
-| Status | Current state | Is this active? |
-| Context | Background | Why are we deciding? |
-| Decision | The choice | What did we choose? |
-| Consequences | Impact | What happens now? |
-| Alternatives | Options | What else was considered? |
+- Circulate the draft before the decision is made, not after.
+- Link the record from the code or module README it governs.
+- Revisit when a listed consequence actually happens.

@@ -7,7 +7,6 @@ description: >-
   아키텍처".
 license: MIT
 metadata:
-  author: wondelai
   version: "1.0.0"
 scenarios:
   - "design a clean architecture for this service"
@@ -29,7 +28,7 @@ compatibility:
 
 # Clean Architecture Framework
 
-A disciplined approach to structuring software so that business rules remain independent of frameworks, databases, and delivery mechanisms.
+Keep the rules that earn the business its money free of imports from the tools that deliver them: web stack, datastore, messaging.
 
 ## When to Use / When Not to Use
 
@@ -43,7 +42,7 @@ A disciplined approach to structuring software so that business rules remain ind
 ## Process
 
 1. **Assess current state** — Score the architecture 0–10; identify dependency rule violations
-2. **Draw concentric circles** — Entities → Use Cases → Interface Adapters → Frameworks/Drivers
+2. **Draw concentric circles** — innermost Entities, then Use Cases, then Interface Adapters, outermost Frameworks/Drivers
 3. **Identify violations** — Find import arrows pointing outward; list them
 4. **Apply Dependency Inversion** — Define interfaces in inner circles; implementations in outer circles
 5. **Validate** — Confirm business logic tests run with no framework imports
@@ -56,88 +55,88 @@ A disciplined approach to structuring software so that business rules remain ind
 
 ## Scoring
 
-**Goal: 10/10.** Rate architecture 0–10. A 10/10 means business rules can be tested with no database, web server, or framework present.
+**Goal: 10/10.** Rate architecture 0–10. A 10/10 means every business rule can be exercised in a test with nothing else running.
 
 ## The Clean Architecture Framework
 
-### 1. Dependency Rule and Concentric Circles
+### 1. Dependency Rule and the Rings
 
-Source code dependencies always point inward. Nothing in an inner circle can know anything about an outer circle.
+Imports run toward the middle only. A class in an inner ring has no knowledge that any outer ring exists.
 
 | Context | Pattern | Example |
 |---------|---------|---------|
-| Layer direction | Inner circles define interfaces; outer circles implement them | `UserRepository` interface in Use Cases; `PostgresUserRepository` in Adapters |
-| Data crossing | DTOs or simple structs cross boundaries, not ORM entities | Use Case returns `UserResponse` DTO, not an ActiveRecord model |
-| Framework isolation | Wrap framework calls behind interfaces | `EmailSender` interface hides whether you use SendGrid or SES |
-| Database independence | Repository pattern abstracts persistence | Business logic calls `repo.save(user)`, never raw SQL |
+| Layer direction | The inner ring declares the contract; the outer ring fulfils it | `UserRepository` declared with the use cases; `PostgresUserRepository` lives in adapters |
+| Data crossing | Plain data holders travel between rings; persistence-mapped objects stay outside | Use case answers with a `UserResponse`, never the table-mapped class |
+| Framework isolation | Put framework calls behind your own interface | `EmailSender` interface hides whether you use SendGrid or SES |
+| Database independence | A repository hides how data is stored | rules call `repo.save(user)` and never see SQL |
 
-See: [references/dependency-rule.md](references/dependency-rule.md)
+See: [references/dependency-direction.md](references/dependency-direction.md)
 
 ### 2. Entities and Use Cases
 
-- **Entities** encapsulate enterprise-wide business rules; no framework dependencies
-- **Use Cases** contain application-specific rules; orchestrate Entities; accept Request Models and return Response Models
+- **Entities** hold the rules that apply company-wide and import no framework
+- **Use Cases** hold rules specific to one application operation, drive the entities, take a request model in and hand a response model back
 
 | Context | Pattern | Example |
 |---------|---------|---------|
 | Entity design | Encapsulate rules with no framework dependencies | `Order.calculateTotal()` knows nothing about HTTP |
-| Use Case boundary | Define Input Port and Output Port interfaces | `CreateOrderInput` interface; `CreateOrderOutput` interface |
-| Request/Response | Simple data structures cross the boundary | `CreateOrderRequest { items, customerId }` — no ORM models |
-| Single responsibility | One Use Case per application operation | `PlaceOrder`, `CancelOrder`, `RefundOrder` as separate classes |
+| Use Case boundary | Declare an input port and an output port | `CreateOrderInput` interface; `CreateOrderOutput` interface |
+| Request/Response | Dumb value objects carry input and output | `CreateOrderRequest { items, customerId }`, free of persistence types |
+| Single responsibility | A class per application operation | `PlaceOrder`, `CancelOrder`, `RefundOrder` kept apart |
 
-See: [references/entities-use-cases.md](references/entities-use-cases.md)
+See: [references/use-cases-and-adapters.md](references/use-cases-and-adapters.md)
 
-### 3. Interface Adapters and Frameworks
+### 3. Adapters and Frameworks
 
-Interface Adapters convert data between Use Cases and external agencies. Frameworks belong in the outermost circle.
+Adapters translate between the use cases' data shapes and whatever the outside world speaks. Frameworks sit in the outermost ring.
 
 | Context | Pattern | Example |
 |---------|---------|---------|
-| Controller | Translates delivery mechanism to Use Case input | `OrderController.create(req)` builds `CreateOrderRequest` |
-| Presenter | Translates Use Case output to view model | `OrderPresenter.present(response)` formats data for JSON |
+| Controller | Turns an incoming call into the use case's input | `OrderController.create(req)` assembles a `CreateOrderRequest` |
+| Presenter | Shapes the use case's answer for display | `OrderPresenter.present(response)` prepares the JSON payload |
 | Gateway | Implements repository interface using a specific DB | `SqlOrderRepository implements OrderRepository` |
 | Plugin architecture | Main component wires dependencies at startup | `main()` instantiates concrete classes and injects them |
 
-See: [references/adapters-frameworks.md](references/adapters-frameworks.md)
+See: [references/use-cases-and-adapters.md](references/use-cases-and-adapters.md)
 
 ### 4. Component Principles
 
-- **REP**: classes in a component should be releasable together
-- **CCP**: classes that change for the same reason belong in the same component
-- **ADP**: no cycles in the component dependency graph
-- **SDP**: depend in the direction of stability
+- **REP**: what ships as one unit should also be reusable as one unit
+- **CCP**: group classes that a single kind of change will touch
+- **ADP**: the module graph stays free of loops
+- **SDP**: point dependencies at the modules that change less
 
-See: [references/component-principles.md](references/component-principles.md)
+See: [references/components-and-solid.md](references/components-and-solid.md)
 
 ### 5. SOLID Principles
 
 | Principle | Core Rule | Common Violation |
 |-----------|-----------|-----------------|
 | SRP | One reason to change | `Employee` handles pay, reporting, and persistence |
-| OCP | Extend by adding new code, not modifying existing | Adding `if` branches for new types |
+| OCP | New behaviour arrives as new classes, existing ones stay untouched | Another `if` branch per new variant |
 | LSP | Subtypes usable through base type | `Square extends Rectangle` breaks `setWidth()` contract |
 | ISP | Don't force clients to depend on unused methods | Fat interface forces importing unneeded methods |
 | DIP | High-level modules depend on abstractions | `OrderService` imports `StripeClient` directly |
 
-See: [references/solid-principles.md](references/solid-principles.md)
+See: [references/components-and-solid.md](references/components-and-solid.md)
 
-### 6. Boundaries and Boundary Anatomy
+### 6. Boundary Strength and Humble Objects
 
-- **Full boundary**: reciprocal interfaces on both sides (Input Port + Output Port)
+- **Full boundary**: one interface per direction (input port plus output port)
 - **Partial boundary**: strategy or facade pattern
 - **Humble Object**: split behavior at a boundary — testable logic separate from hard-to-test infrastructure
 
-See: [references/boundaries.md](references/boundaries.md)
+See: [references/boundary-strength.md](references/boundary-strength.md)
 
 ## Quick Diagnostic
 
 | Question | If No | Action |
 |----------|-------|--------|
-| Can you test business rules without a database or web server? | Business rules coupled to infrastructure | Extract entities and use cases behind interfaces |
-| Do source code dependencies point inward on every import? | Dependency Rule violated | Introduce interfaces; invert the offending dependency |
-| Can you swap the database without changing business logic? | Persistence leaking inward | Implement Repository pattern |
-| Are Use Cases independent of the delivery mechanism? | Use Cases know about HTTP | Remove delivery-specific types; use plain DTOs |
-| Is the framework confined to the outermost circle? | Framework is your architecture | Wrap framework calls behind interfaces |
+| Do the rule tests pass with neither datastore nor server up? | Rules are entangled with infrastructure | Extract entities and use cases behind interfaces |
+| Does every import point toward the center? | The dependency rule is broken | Introduce interfaces; invert the offending dependency |
+| Could the datastore change with the rules left alone? | Persistence leaking inward | Implement Repository pattern |
+| Do use cases ignore how requests arrive? | Use Cases know about HTTP | Remove delivery-specific types; use plain DTOs |
+| Is the framework kept in the outer ring? | The framework dictates your structure | Hide framework calls behind your own interfaces |
 
 ## Output Template
 
@@ -158,12 +157,10 @@ When designing or reviewing an architecture, provide:
 
 ## Reference Files
 
-- [dependency-rule.md](references/dependency-rule.md)
-- [entities-use-cases.md](references/entities-use-cases.md)
-- [adapters-frameworks.md](references/adapters-frameworks.md)
-- [component-principles.md](references/component-principles.md)
-- [solid-principles.md](references/solid-principles.md)
-- [boundaries.md](references/boundaries.md)
+- [dependency-direction.md](references/dependency-direction.md)
+- [use-cases-and-adapters.md](references/use-cases-and-adapters.md)
+- [components-and-solid.md](references/components-and-solid.md)
+- [boundary-strength.md](references/boundary-strength.md)
 
 ## Related Skills
 

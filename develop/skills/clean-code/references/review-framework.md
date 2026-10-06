@@ -1,115 +1,105 @@
-# Review Framework — the six dimensions, quick diagnostic, optional score
+# Review Framework — six dimensions, a fast self-check, an optional score
 
-The dimensions both modes use. Gate mode checks a diff against them; implement mode
-writes code that would pass them. Deep dives live in the per-dimension files linked
-under each table.
+Gate mode measures a diff against these dimensions; implement mode writes code that would
+clear them. Each section ends with the file holding the detail.
 
-## 1. Meaningful Names
+## 1. Names
 
-Names should reveal intent, avoid disinformation, and make the code read like prose.
+A name should tell the reader what the thing is for without a trip to its definition.
 
-| Context | Pattern | Example |
-|---------|---------|---------|
-| Variables | Intention-revealing name | `elapsedTimeInDays` not `d` |
-| Booleans | Predicate phrasing | `isActive`, `hasPermission`, `canEdit` |
-| Functions | Verb + noun describing action | `calculateMonthlyRevenue()` not `calc()` |
-| Classes | Noun describing responsibility | `InvoiceGenerator` not `InvoiceManager` |
-| Constants | Searchable, all-caps with context | `MAX_RETRY_ATTEMPTS = 3` not `3` inline |
-| Collections | Plural nouns or descriptive phrases | `activeUsers` not `list` or `data` |
+| Kind | Rule of thumb | Example |
+|------|---------------|---------|
+| Value | Says what it holds, with the unit if any | `daysSinceLastLogin`, not `d` |
+| Boolean | Reads as a yes/no question | `isExpired`, `hasRole`, `canRefund` |
+| Function | Verb phrase for the effect | `issueRefund()`, not `refund2()` |
+| Class | Noun for one responsibility | `InvoiceRenderer`, not `InvoiceHelper` |
+| Constant | Named once, greppable | `MAX_RETRIES = 3` |
+| Collection | Plural of the element | `overdueInvoices`, not `list1` |
 
-See: [naming-conventions.md](naming-conventions.md)
+Detail: [naming-conventions.md](naming-conventions.md)
 
 ## 2. Functions
 
-Functions should be small (4–6 lines ideal, under 20 as a hard look), do one thing, and
-operate at a single level of abstraction.
+Short, one job, one level of detail per body.
 
-| Context | Pattern | Example |
-|---------|---------|---------|
-| Long function | Extract into named steps | `validateInput(); transformData(); saveRecord();` |
-| Flag argument | Split into two functions | `renderForPrint()` and `renderForScreen()` not `render(isPrint)` |
-| Deep nesting | Extract inner blocks | Move nested `if`/`for` bodies into named functions |
-| Multiple returns | Guard clauses at top | Early return for error cases, single happy path |
-| Many arguments | Introduce parameter object | `new DateRange(start, end)` not `report(start, end, format, locale)` |
+| Symptom | Remedy | Example |
+|---------|--------|---------|
+| Body mixes steps | Extract named steps | `validate(cmd); val order = build(cmd); save(order)` |
+| Boolean switch parameter | Two functions | `renderPdf()` / `renderHtml()` instead of `render(pdf: Boolean)` |
+| Arrow-shaped nesting | Guard clauses, extract inner blocks | early `return` / `?: return` |
+| Long parameter list | Group into a type | `DateRange(from, to)` |
 
-See: [functions-and-methods.md](functions-and-methods.md)
+Detail: [functions-and-methods.md](functions-and-methods.md)
 
-## 3. Comments and Formatting
+## 3. Comments and formatting
 
-A comment is a failure to express yourself in code. Comments explain *why*, never *what*.
-A comment that states a behaviour the code does not have is a defect, not a style issue.
+Comments carry the reason the code cannot. A comment asserting behaviour the code lacks is
+a defect, not a style point.
 
-| Context | Pattern | Example |
-|---------|---------|---------|
-| Explaining "what" | Replace with better name | Rename `// check if eligible` to `isEligible()` |
-| Explaining "why" | Keep as comment | `// RFC 7231 requires this header for proxies` |
-| Commented-out code | Delete it | Trust version control to remember |
-| File organization | Newspaper metaphor | High-level functions at top, details below |
-| Team formatting | Agree on rules once | Use automated formatters (Prettier, Black, gofmt) |
+| Situation | Action |
+|-----------|--------|
+| Comment restates the code | Delete it, or rename so it is unnecessary |
+| Comment records a constraint or trade-off | Keep it |
+| Dead code in comments | Delete; history lives in git |
+| Style disputes | Settle once in a formatter config (ktlint, spotless) |
 
-See: [comments-formatting.md](comments-formatting.md)
+Detail: [comments-formatting.md](comments-formatting.md)
 
-## 4. Error Handling
+## 4. Error handling
 
-Use exceptions rather than return codes, provide context with every exception, and never
-return or pass null.
+Failures must be visible, typed and explained.
 
-| Context | Pattern | Example |
-|---------|---------|---------|
-| Null returns | Return empty collection or Optional | `return Collections.emptyList()` not `return null` |
-| Error codes | Replace with exceptions | `throw new InsufficientFundsException(balance, amount)` |
-| Swallowed errors | Never an empty catch | `catch (e) {}` hides the failure from the caller |
-| Third-party APIs | Wrap with adapter | `PortfolioService` wraps vendor API, translates exceptions |
-| Special cases | Null Object pattern | `GuestUser` with default behavior instead of null checks |
+| Situation | Action |
+|-----------|--------|
+| Absent value | Nullable type handled at the edge, or an empty collection; no sentinel `null` crossing layers |
+| Failure signalled by a code | Throw or return a typed result |
+| `catch` that does nothing | Handle, rethrow with cause, or remove |
+| Vendor exception leaking | Translate at the adapter |
 
-See: [error-handling.md](error-handling.md)
+Detail: [error-handling.md](error-handling.md)
 
-## 5. Unit Testing
+## 5. Tests
 
-Tests are first-class code — clean, readable, maintained with the same discipline as
-production code.
+| Situation | Action |
+|-----------|--------|
+| Layout | given / when / then, visibly separated |
+| Name | Scenario plus outcome |
+| Flaky | Inject the clock, stub the network, isolate the database |
+| Noisy setup | Builders and helpers named after the domain |
 
-| Context | Pattern | Example |
-|---------|---------|---------|
-| Test structure | Arrange-Act-Assert | Setup, execute, verify — clearly separated |
-| Test naming | Scenario + expected behavior | `shouldRejectExpiredToken` not `test1` |
-| Flaky tests | Remove external dependencies | Mock time, network, file system |
-| Test readability | Domain-specific helpers | `assertThatInvoice(inv).isPaidInFull()` |
+Detail: [testing-principles.md](testing-principles.md)
 
-See: [testing-principles.md](testing-principles.md)
+## 6. Smells
 
-## 6. Code Smells and Heuristics
+| Smell | Remedy |
+|-------|--------|
+| Copy-paste logic | Extract one shared function |
+| Method more interested in another class's data | Move it there |
+| Unused code | Delete |
+| Unexplained literal | Named constant |
 
-| Context | Pattern | Example |
-|---------|---------|---------|
-| Duplication | Extract shared logic | Common validation → `validateEmail()` helper |
-| Long parameter list | Introduce parameter object | `SearchCriteria` groups related params |
-| Feature envy | Move method to data's class | `order.calculateTotal()` not `calculator.total(order)` |
-| Dead code | Delete it | Remove unused functions, unreachable branches |
-| Magic numbers | Named constants | `MAX_LOGIN_ATTEMPTS = 5` not bare `5` |
+Detail: [code-smells.md](code-smells.md)
 
-See: [code-smells.md](code-smells.md)
+## Quick diagnostic
 
-## Quick Diagnostic
+| Ask | If the answer is no |
+|-----|---------------------|
+| Can each function be understood from its name and signature? | Rename |
+| Does each function fit on one screen and do one thing? | Extract |
+| Is every comment explaining why? | Delete or rewrite |
+| Is the happy path free of error plumbing? | Move error handling out |
+| Does each class have one reason to change? | Split |
+| Does every public behaviour have a test that can fail? | Add one before editing further |
+| Does every literal with meaning have a name? | Extract a constant |
 
-| Question | If No | Action |
-|----------|-------|--------|
-| Can you understand each function without reading its body? | Names don't reveal intent | Rename functions to describe what they do |
-| Are all functions under 20 lines? | Functions do too many things | Extract sub-operations into named helpers |
-| Are there zero commented-out code blocks? | Dead code creating confusion | Delete them — version control has history |
-| Is error handling separate from business logic? | Try-catch cluttering main flow | Extract error handling; use exceptions not return codes |
-| Does every class have a single responsibility? | Classes accumulate unrelated duties | Split into focused classes with clear names |
-| Is there a test for every public method? | No safety net for changes | Add tests before making further changes |
-| Are magic numbers replaced with named constants? | Intent hidden behind raw values | Extract constants with descriptive names |
+## Optional 0–10 score (interactive aside only)
 
-## Optional 0–10 Score (interactive aside only)
+Give it only when a person asks. It is never the verdict and never replaces the findings
+table; inside a caller with its own fields (such as `match_pct`) fill those as the caller
+defines them and omit this score.
 
-Give it only when a person asks for a score. It is never the verdict and never replaces
-the findings table; inside a caller with its own fields (e.g. `match_pct`) fill those as
-the caller defines them and leave this score out.
-
-- **9–10:** Names reveal intent, functions small and focused, error handling consistent, tests clean and comprehensive
-- **7–8:** Mostly clean with minor naming ambiguities or a few long functions
-- **5–6:** Mixed quality — some good patterns alongside unclear names or duplicated logic
-- **3–4:** Significant readability issues — long functions, misleading names, poor or missing tests
-- **1–2:** Code works but is nearly unreadable — magic numbers, cryptic abbreviations, no tests
+- **9–10:** intent is obvious everywhere, small focused functions, uniform error handling, strong readable tests
+- **7–8:** mostly clean; a few vague names or one or two long functions
+- **5–6:** uneven; good patterns beside unclear names or duplicated logic
+- **3–4:** hard to read; long functions, misleading names, thin or absent tests
+- **1–2:** works but opaque; cryptic abbreviations, magic values, no tests
