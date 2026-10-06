@@ -2,8 +2,8 @@
 name: bug-diagnoser
 effort: high
 description: >-
-  Use when something is broken, errors, or gives a wrong result and the cause is unproven — repro loop before any
-  theory. Triggers on: "fix this bug", "debug this", "고쳐줘", "안 돼요", "에러 나요", "왜 이러죠", "갑자기 안 돼", "디버깅".
+  Use when a bug, failing test, error, or wrong result is reported and the cause is unproven — invoke before reading or
+  editing code. Triggers on: "fix this bug", "debug this", "why is this failing", "고쳐줘", "안 돼요", "에러 나요", "왜 이러죠", "갑자기 안 돼", "디버깅".
 scenarios:
   - "Page 2 of the product list shows 9 items instead of 10 — find out why and fix it"
   - "This endpoint started returning 500 after yesterday's deploy and I don't know why"
