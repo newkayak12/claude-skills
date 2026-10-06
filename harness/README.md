@@ -261,6 +261,7 @@ are always gated. Fail-open everywhere (v0 lesson).
   dry-runs first and refuses mismatched versions or a release note supplied in only one language.
 
 ## Status
+- v1.22.8 — codex-control gains a Related Skills section and Korean scenarios (repo audit)
 - v1.22.7 — repo scripts moved under `_repo/`; the patch skill runs `_repo/scripts/validate_plugins.py`
 - v1.22.6 — harness-aware skill write:writing-plans renamed write:plans
 - v1.22.5 — All five skills now carry a standard What Claude Does / What You Do table.

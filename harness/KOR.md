@@ -250,6 +250,7 @@ plan·goal-spec·sound critique가 디스크에 있는 fallback run). 대화 속
   버전이 어긋나거나 둘 중 한쪽 언어 노트가 빠지면 거부합니다.
 
 ## 상태
+- v1.22.8 — codex-control에 Related Skills 섹션과 한국어 시나리오 추가(레포 점검)
 - v1.22.7 — 저장소 스크립트가 `_repo/`로 이동; patch 스킬이 `_repo/scripts/validate_plugins.py`를 실행
 - v1.22.6 — 하네스 대응 스킬 write:writing-plans가 write:plans로 이름 변경
 - v1.22.5 — 다섯 스킬 모두 What Claude Does / What You Do 표 형식으로 통일.
