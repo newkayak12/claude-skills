@@ -229,6 +229,13 @@ Missing / Weak / Strong gap table, rewritten text per section, and a list of wha
 achievement numbers, scope and dates are never altered. Output is in the same language as the
 input. Checked against the resume-tailorer it absorbed on the same resume and JD (`evals/`).
 
+**No numbers to put in?** It asks, it never guesses: metric types for your role (money, time, %,
+volume, quality, frequency), scale / impact / before-after questions, and where the data might live
+(dashboards, tickets, PR counts, release notes). It never proposes a value. A figure you give
+yourself is kept as written and tagged `(본인 추정)`; without a baseline `feedback` still treats it as
+incomplete. No data at all: the marker stays, or the line is dropped or merged
+(`skills/rewrite/references/metric-discovery.md`).
+
 ```
 "모니터링 시스템을 구축했습니다" — rewrite this and the three bullets under it
 so they read at senior level.
