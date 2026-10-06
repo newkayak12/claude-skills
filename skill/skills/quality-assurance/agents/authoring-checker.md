@@ -73,9 +73,15 @@ Read the body sentence by sentence. Three kinds of sentence cost load and change
 
 Check: quote each hit with its line number and the action (delete / add target or scar).
 
+### 8. Step completion criteria
+
+Every Process step must end on an observable completion criterion. Test: could a reader tell, without asking, that the step is done? "Look at each report and sort it" fails: nothing says when sorting is finished. "Every report sits in exactly one bucket" passes.
+
+Check: quote each Process step that lacks one with its line number, and name the missing bar or propose one.
+
 ## How to respond
 
-Before issuing PASS / WARN / FAIL, if `think-tool` is available, invoke it to weigh all seven criteria — a skill can pass on description but fail badly on compaction ordering.
+Before issuing PASS / WARN / FAIL, if `think-tool` is available, invoke it to weigh all eight criteria — a skill can pass on description but fail badly on compaction ordering.
 
 ```
 ### 2. Authoring Principles — [PASS / WARN / FAIL]
@@ -102,6 +108,9 @@ Before issuing PASS / WARN / FAIL, if `think-tool` is available, invoke it to we
 
 **Pruning:** [OK / n hits]
   [L<n> no-op: "<quote>" → delete] [L<n> cache: "<quote>" → delete] [L<n> bare prohibition: "<quote>" → add target or scar]
+
+**Step completion:** [OK / n steps without a done-criterion]
+  [L<n> step: "<quote>" → missing bar; proposed: "<criterion>"]
 
 **Findings:**
 [2–4 sentences. What does following or violating these principles mean for this skill's runtime behavior?]
