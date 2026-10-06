@@ -1,5 +1,6 @@
 ---
 name: dispatching-parallel-agents
+effort: high
 description: >-
   Use when facing 2+ independent jobs that can run concurrently — fan out in
   parallel, each on its best-fit persona. Triggers: "병렬로 처리해줘", "동시에 여러 작업",
@@ -21,6 +22,12 @@ compatibility:
     think-tool이 있으면 병렬 실행 전 에이전트 간 파일 충돌·인과 관계가 없는지, 각 job에 어떤 persona가
     맞는지 확인할 수 있습니다. Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS confirm independence (no shared files, no causal link) before fanning out.
+- ALWAYS match each job to its best-fit persona by what the job is; no clean fit means general-purpose.
+- ALWAYS give each agent a focused, self-contained brief with no shared context.
+- NEVER let two agents touch the same files or contend for the same resource.
 
 # Dispatching Parallel Agents
 

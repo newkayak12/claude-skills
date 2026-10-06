@@ -1,5 +1,6 @@
 ---
 name: performance-profiling-optimization
+effort: high
 description: >-
   Use when something is slow and you need data-driven profiling. Triggers on: "API가 느려요", "병목 찾아줘", "메모리 계속 늘어나",
   "p99 latency spike", "profile this endpoint", "high CPU". Not for SQL rewrites or pool sizing.
@@ -19,6 +20,13 @@ compatibility:
     think-tool은 여러 병목 후보 중 우선순위를 결정하는 데 활용됩니다.
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
+## Standing Mandates
+
+- ALWAYS capture a baseline before touching anything.
+- ALWAYS change one thing at a time, so the delta has one cause.
+- ALWAYS run the correctness check first — a speedup that changes results does not count.
+- NEVER optimize without data or guess at bottlenecks.
+- NEVER keep a change that is neutral or worse — revert it.
 
 # Performance Profiling & Optimization
 
