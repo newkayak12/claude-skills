@@ -84,3 +84,5 @@ Value H/M, kept out of this round to stay small; revisit after 2 and 3 ship.
    reload may lose.
 5. **Release with the plugin.** A mod change bumps that plugin's version and its
    README/KOR (or CHANGELOG/CHANGELOG.KOR for teams) like any other change.
+6. **Plugin files via `$.plugin.root`.** `CLAUDE_PLUGIN_ROOT` is not set in a
+   `$.process.run` child (00-spike-findings §4).

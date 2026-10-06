@@ -1,4 +1,61 @@
-# 00 — Spike findings
+# 00 — Spike findings (2026-10-07)
+
+Scratch plugin `spike-mod` (outside the repo, under `~/.claude/dev-mods/<session>/`): a
+`hooks.json` with `"modules": ["./register.ts"]` plus a `PreToolUse` command hook on Write
+(`echo.mjs` appends to `/tmp/spike-cmd.txt`). The module stores what it sees with `$.store`
+(`~/.claude/plugins/store/spike-mod_inline-*.json`). Builds on disk: 2.1.284 … 2.1.292 (the
+oldest is 2.1.284, not 2.1.289 as the plan assumed).
+
+## 1. Command hooks and a module in one hooks.json — YES
+
+`claude plugin validate spike-mod` → passes, lists both:
+`hooks.PreToolUse: … node ${CLAUDE_PLUGIN_ROOT}/hooks/echo.mjs` (warns: quote the placeholder)
+and `./register.ts hooks: session.start, tool.call{tool=Write}, command.run{name=spike-view}`.
+It also warns `gating hook without .catch` for `tool.call`/`command.run` (shared rule 3).
+
+2.1.292, `claude --plugin-dir spike-mod -p "<Write a file>"`: `/tmp/spike-cmd.txt` got
+`cmd hook fired …` AND the store got `moduleSawWrite` → both fired on one Write.
+The toast itself is unverified (headless has no surface) — see "Open".
+
+## 2. An older build ignores the `modules` key — YES (with one stderr line)
+
+2.1.284, same plugin: `-p "say ok"` → stdout `ok`, exit 0; the Write prompt → file written,
+command hook fired. It prints, on **stderr** only (stdout with `2>/dev/null` is just `ok`):
+
+    spike-mod: hooks module not loaded: hooks modules are not turned on for installed plugins
+    in this process (early access: set CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 …)
+
+Verdict: README rule 1 holds; no separate `<plugin>-mod` plugin needed. Adapters that read
+`claude -p` stdout are unaffected; anything that treats stderr as failure would see the line.
+
+## 3. Headless detection — HALF (headless side verified)
+
+`claude -p` on 2.1.292: `session.start` stored `surfaces: { n: 0, list: [] }`. So the
+`surfaces().length > 0` guard (shared rule 2) turns the mod off in headless runs.
+Interactive ≥ 1: not run yet — see "Open".
+
+## 4. `$.process.run(['node', …])` from a module — YES
+
+From `session.start` (headless, 2.1.292): `node <repo>/teams/scripts/view.mjs --once` →
+`exit 0`, first line `tasks under ~/.harness/tasks:`, 221 ms (far under the 30 s default).
+
+Path resolution: **`$.plugin.root`** works (stored the plugin's absolute folder).
+`CLAUDE_PLUGIN_ROOT` is **unset** in a `$.process.run` child — don't rely on it.
+So `02`'s `VIEW` = `` `${$.plugin.root}/scripts/view.mjs` `` (teams' own copy).
+`import.meta.url` not tried (not needed).
+
+## Open (needs one interactive session)
+
+Run `claude --plugin-dir ~/.claude/dev-mods/<session>/spike-mod` in a terminal, then:
+Write any file → toast `module saw Write`; `/spike-view` → `exit=0 …`; the store's
+`surfaces.n` ≥ 1. 
+
+## Plan changes
+
+- README "Shared rules": nothing contradicted. Add: resolve plugin files with
+  `$.plugin.root`; `CLAUDE_PLUGIN_ROOT` is not in `$.process.run`'s env.
+- `02` Task 4: `VIEW` = `${$.plugin.root}/scripts/view.mjs`.
+- Builds before 2.1.292 (or with modules off) print one stderr line per run per plugin.
 
 ## Task 6 (trophy), 2026-10-07, Claude Code 2.1.292
 
