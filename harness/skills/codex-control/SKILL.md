@@ -7,6 +7,8 @@ scenarios:
   - "Harness Implement stage needs to run Codex from plugin mode"
   - "Harness Test stage needs a Codex verification-only pass"
   - "Resolve codex-exec-adapter.mjs before falling back to Claude"
+  - "하네스 Implement 단계를 로컬 Codex CLI로 돌려줘"
+  - "Test 단계는 Codex로 검증만 시키고 구현은 건드리지 마"
 compatibility:
   optional: []
 related:
@@ -50,3 +52,8 @@ Claude/Sonnet path.
 | Resolves the Codex adapter and runs `--detect` first | Provides `codex_adapter_path` if a custom adapter is used |
 | Runs separate Codex processes for Implement and Test; Test is verification-only | Reviews the stage artifacts |
 | Reads adapter JSON and produces the stage's artifact; falls back to Claude/Sonnet if no adapter | Nothing when the adapter is found |
+
+## Related Skills
+
+- `harness:harness` — the engine whose Implement and Test stages call this skill
+- `harness:install` — installs the harness layouts this skill resolves against

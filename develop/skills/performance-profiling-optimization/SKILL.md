@@ -215,3 +215,10 @@ Before declaring the investigation done:
 | Forms hypotheses and guides profiling to confirm the bottleneck | Run the profiler in your environment and share the output |
 | Proposes one targeted change at a time | Apply the change |
 | Verifies the improvement with before/after numbers | Provide post-fix metrics |
+
+## Related Skills
+
+- `develop:database-optimizer` — when the bottleneck is database infrastructure
+- `develop:connection-pool-tuner` — pool exhaustion and latency spikes
+- `develop:incident-response-playbook` — when the regression is an active production incident
+- `completion:verification-before-completion` — confirm the improvement with fresh evidence

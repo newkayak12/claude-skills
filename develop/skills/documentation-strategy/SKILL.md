@@ -156,3 +156,10 @@ Add to your team's PR template:
 | Names audience and maintenance owner per doc type | Confirm the owners |
 | Writes the highest-pain missing doc from the template | Pick the doc type to start with |
 | Adds the doc to the index/README | Get a reviewer who matches the target audience |
+
+## Related Skills
+
+- `develop:code-documenter` — inline docs, docstrings, OpenAPI
+- `develop:architecture-designer` — architecture docs and ADRs
+- `develop:incident-response-playbook` — RCA content to store and maintain
+- `write:spec` — drafting one substantial document

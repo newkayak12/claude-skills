@@ -2,13 +2,15 @@
 name: bug-diagnoser
 effort: high
 description: >-
-  Use when code is broken, throws, gives a wrong result, or regressed and must be fixed before its cause is proven —
-  repro loop before any theory. Triggers on: "fix this bug", "debug this", "고쳐줘", "안 돼요", "디버깅".
+  Use when something is broken, errors, or gives a wrong result and the cause is unproven — repro loop before any
+  theory. Triggers on: "fix this bug", "debug this", "고쳐줘", "안 돼요", "에러 나요", "왜 이러죠", "갑자기 안 돼", "디버깅".
 scenarios:
   - "Page 2 of the product list shows 9 items instead of 10 — find out why and fix it"
   - "This endpoint started returning 500 after yesterday's deploy and I don't know why"
   - "상품 목록 2페이지만 개수가 하나 모자라요, 원인 찾아서 고쳐줘"
   - "어제 배포 후로 정산 금액이 가끔 틀려요, 디버깅해줘"
+  - "주문 수량이 가끔 음수로 저장돼요, 왜 이러는지 모르겠어요"
+  - "저번 주까지 되던 업로드가 갑자기 안 돼요, 봐줄래요?"
 compatibility:
   recommended:
     - think-tool

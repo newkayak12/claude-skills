@@ -2,14 +2,14 @@
 name: subagent-driven-development
 description: >-
   Use when running a plan's tasks sequentially in plan order, a fresh subagent
-  per task. Triggers on: "계획 실행해줘", "서브에이전트로 구현해줘", "subagent-driven",
-  "plan 실행", "태스크별로 에이전트 배포해줘", "두 단계 리뷰로 구현", "현재 세션에서 계획 실행".
+  per task. Triggers on: "서브에이전트로 구현해줘", "subagent-driven",
+  "태스크별로 에이전트 배포해줘", "두 단계 리뷰로 구현", "현재 세션에서 서브에이전트로 실행".
 scenarios:
   - "이 구현 계획 서브에이전트로 실행해줘"
   - "각 태스크마다 새 에이전트로 구현하고 리뷰해줘"
   - "Execute this plan with fresh subagents per task"
   - "두 단계 리뷰(spec + 품질)로 구현해줘"
-  - "계획 있는데 현재 세션에서 에이전트로 실행해줘"
+  - "계획 있는데 현재 세션에서 서브에이전트로 태스크별 실행해줘"
   - "Implement each task with subagent + review cycle"
 compatibility:
   recommended:
@@ -179,3 +179,11 @@ See `references/example-workflow.md` for a full concrete trace. For context on w
 | Runs spec and code-quality review in parallel after each task | Set up the isolated branch or worktree |
 | Handles implementer status such as BLOCKED | Decide on blocked tasks Claude can't resolve |
 | Settles the done-verdict via `completion:verification-before-completion` | Close the branch: PR or merge per the repo's flow |
+
+## Related Skills
+
+- `planning:executing-plans` — gates the plan and routes sequential steps here
+- `write:plans` — produces the plan this skill executes
+- `develop:test-driven-development` — each subagent drives its task test-first
+- `completion:verification-before-completion` — settles the done-verdict
+- `agents:dispatching-parallel-agents` — for independent tasks that can run concurrently
