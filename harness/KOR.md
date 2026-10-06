@@ -43,7 +43,7 @@ Plan(opus) → SetGoal(opus) → Implement(Codex 사용 시) → Test(Codex 사�
 | 기본 그래프 오케스트레이션 경로를 연결하거나 확인하고 싶다 | `graph:install` |
 | 프로젝트에 게이트·훅·컨벤션·CLAUDE.md 블록을 심고 싶다 | `install` |
 | 프로젝트에서 하네스 거버넌스를 걷어내고 싶다 | `remove` |
-| 하네스 플러그인 소스의 패치 릴리스를 준비하고 싶다 | `patch` |
+| 플러그인 버전을 올린 뒤 이 프로젝트에 설치된 하네스 복사본을 최신으로 맞추고 싶다 | `update` |
 | 설치 형태와 무관하게 Implement/Test를 로컬 Codex CLI에 위임하고 싶다 | `codex-control` |
 
 ## 스킬
@@ -124,37 +124,21 @@ node "<plugin>/skills/remove/remove.mjs" '{
 
 멱등합니다 — 두 번째 실행은 실패가 아니라 `absent`로 보고합니다.
 
-### `patch`
+### `update`
 
-하네스 플러그인 **소스**의 패치 릴리스를 준비합니다. 두 매니페스트의 `x.y.Z`를 올리고 README와
-KOR.md 양쪽 Status 로그 맨 위에 각각 영문/한글 한 줄짜리 노트를 넣어요. 이 마켓플레이스
-체크아웃용이지, 애플리케이션 프로젝트에 설치된 파일을 갱신하는 용도가 아닙니다. 기능/브레이킹
-릴리스에도 쓰지 마세요 — 그건 minor/major를 직접 올려야 합니다.
+플러그인 버전을 올린 뒤 프로젝트에 설치된 하네스 복사본을 최신으로 맞춥니다. 설치 모드는 디스크에서
+판별하고(`.claude/harness/`가 있으면 임베드), 임베드된 내용으로 embed 설정을 다시 만들어
+`install.mjs`를 `"refresh": true`로 실행합니다 — 새 스크립트는 없습니다. 플러그인 소유 복사본
+(`goal-gate.mjs`, `.claude/harness/**`)은 `refreshed` 또는 `unchanged`로 보고하고, 게이트·컨벤션·
+CLAUDE.md 블록·`settings.json`은 건드리지 않습니다. 소스를 찾지 못한 임베드 항목이 있으면 멈추고
+그 이름을 알려줍니다.
 
 ```
-하네스 패치 릴리스 준비해줘 — 이번 diff 요약해서 Status에 한 줄 넣고 버전 올려줘.
+하네스 플러그인 올렸는데 이 프로젝트 복사본도 최신으로 맞춰줘.
 ```
 
-```sh
-node "<plugin>/skills/patch/patch.mjs" '{
-  "repoRoot": "<claude-skills 체크아웃 절대경로>",
-  "summary": "<간결한 status 한 줄>",
-  "summary_ko": "<간결한 한국어 status 한 줄>",
-  "dryRun": true
-}'
-```
-
-먼저 dry-run으로 이전/다음 버전을 확인하고, 그다음 `"dryRun": false`로 다시 돌립니다. 플러그인과
-마켓플레이스 버전이 다르거나, README의 `## Status` 또는 KOR.md의 `## 상태` 헤딩이 없거나,
-`summary`/`summary_ko` 중 하나라도 비었거나 여러 줄이거나 빠졌으면 쓰기를 거부합니다 — 한쪽
-언어만 있는 릴리스 노트는 이 스킬이 막으려는 바로 그 문제라 허용하지 않습니다. 건드리는 파일:
-
-| 파일 | 변경 |
-|---|---|
-| `harness/.claude-plugin/plugin.json` | `version` 패치 증가 |
-| `.claude-plugin/marketplace.json` | `harness` 항목의 `version` |
-| `harness/README.md` | `## Status`의 새 첫 항목 |
-| `harness/KOR.md` | `## 상태`의 새 첫 항목 |
+이 소스의 패치 릴리스를 만드는 메인테이너는 `node _repo/scripts/patch-harness.mjs`를 씁니다(저장소
+CLAUDE.md의 Update Workflow 참고). 사용자용 스킬이 아닙니다.
 
 ### `codex-control`
 
@@ -245,11 +229,11 @@ plan·goal-spec·sound critique가 디스크에 있는 fallback run). 대화 속
 
 - **`harness:remove`** — 설치된 훅, 등록, 게이트, 임베드 런타임, 마커 캐시, CLAUDE.md 블록,
   gitignore 항목을 제거합니다. 프로젝트 소유 컨벤션은 명시적으로 요청하지 않는 한 보존됩니다.
-- **`harness:patch`** — 소스 패치 릴리스를 준비합니다. 두 매니페스트의 패치 버전을 올리고,
-  영문/한글 릴리스 노트를 각각 README와 이 파일의 Status 섹션 맨 위에 넣습니다. 먼저 dry-run하고,
-  버전이 어긋나거나 둘 중 한쪽 언어 노트가 빠지면 거부합니다.
+- **`harness:update`** — 플러그인 버전을 올린 뒤 `install.mjs`를 `"refresh": true`로 실행해
+  설치된 복사본을 갱신합니다. 사용자 소유 파일은 건드리지 않습니다.
 
 ## 상태
+- v1.23.0 — `harness:patch`가 사용자 스킬에서 빠짐(메인테이너 스크립트는 `_repo/scripts/patch-harness.mjs`로 이동); 새 `harness:update`가 `install.mjs` `"refresh": true`로 설치된 복사본을 갱신
 - v1.22.8 — codex-control에 Related Skills 섹션과 한국어 시나리오 추가(레포 점검)
 - v1.22.7 — 저장소 스크립트가 `_repo/`로 이동; patch 스킬이 `_repo/scripts/validate_plugins.py`를 실행
 - v1.22.6 — 하네스 대응 스킬 write:writing-plans가 write:plans로 이름 변경
@@ -262,5 +246,5 @@ plan·goal-spec·sound critique가 디스크에 있는 fallback run). 대화 속
   [README의 Status](README.md#status) 섹션에서 볼 수 있습니다.
 
 진입점: [`harness`](skills/harness/SKILL.md), [`install`](skills/install/SKILL.md),
-[`remove`](skills/remove/SKILL.md), [`patch`](skills/patch/SKILL.md),
+[`remove`](skills/remove/SKILL.md), [`update`](skills/update/SKILL.md),
 [`codex-control`](skills/codex-control/SKILL.md).

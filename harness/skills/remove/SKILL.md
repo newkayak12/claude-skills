@@ -12,7 +12,7 @@ compatibility:
   optional: []
 related:
   - install
-  - patch
+  - update
 ---
 
 # remove — uninstall project-local harness governance
@@ -55,5 +55,5 @@ unless `purgeConventions` is explicitly true.
 ## Related
 
 - `install` — scaffold the project-local governance files
-- `patch` — bump the harness plugin's source release version
+- `update` — refresh installed copies after a plugin version bump
 - `remove.mjs` — deterministic removal and settings/marker cleanup
