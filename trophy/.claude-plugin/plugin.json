@@ -5,6 +5,7 @@
   "author": {
     "name": "newkayak12"
   },
+  "category": "productivity",
   "repository": "https://github.com/newkayak12/claude-skills",
   "license": "MIT",
   "types": "./types/index.d.ts"
