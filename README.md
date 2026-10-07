@@ -15,6 +15,7 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 /plugin install cognition@newkayak12-claude-skills
 /plugin install completion@newkayak12-claude-skills
 /plugin install develop@newkayak12-claude-skills
+/plugin install diag@newkayak12-claude-skills
 /plugin install graph@newkayak12-claude-skills
 /plugin install harness@newkayak12-claude-skills
 /plugin install knowledge@newkayak12-claude-skills
@@ -35,6 +36,7 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 | [cognition](./cognition/README.md) · [한국어](./cognition/KOR.md) | Thinking quality: assumptions, biases, fallacies, mental models, trade-offs |
 | [completion](./completion/README.md) · [한국어](./completion/KOR.md) | Verification before completion |
 | [develop](./develop/README.md) · [한국어](./develop/KOR.md) | Engineering: CLI, SQL, architecture, Spring Boot, Kotlin, TDD, and more |
+| [diag](./diag/README.md) · [한국어](./diag/KOR.md) | Beta: records failures of this marketplace's skills and MCP tools, `/diag` pane, opt-in error codes via trophy consent |
 | [graph](./graph/README.md) | Graph-owned harness orchestration, MCP installation, routing, and adjudication |
 | [harness](./harness/README.md) · [한국어](./harness/KOR.md) | Six-stage planning, implementation, verification, quality gate, and reporting |
 | [knowledge](./knowledge/README.md) · [한국어](./knowledge/KOR.md) | Knowledge bases, ontologies, graphs, RAG corpora, and querying |
