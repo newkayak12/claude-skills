@@ -1008,6 +1008,18 @@ export const triggers = [
     ]
   },
   {
+    "skill": "trophy:list",
+    "plugin": "trophy",
+    "phrases": [
+      "achievements",
+      "trophy list",
+      "내 트로피",
+      "스킬 사용 현황",
+      "어떤 스킬을 놓쳤지?",
+      "업적 보여줘"
+    ]
+  },
+  {
     "skill": "write:like-me",
     "plugin": "write",
     "phrases": [
