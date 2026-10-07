@@ -28,7 +28,6 @@ trophy 동의가 **동의 문구 버전 2에서 yes**일 때만 전송합니다 
 | `diag_skill_error` | `skill`, `plugin`, `reason` (`is_error`, `unsuccessful`, `forked_unsuccessful`), `count`, `day` |
 | `diag_mcp_error` | `tool` (MCP 도구 이름), `plugin`, `reason` (`mcp_error`), `count`, `day` |
 | `diag_user_report` | `reason` (`user_report`), `count`, `day`, 알 수 있으면 `skill`, `plugin` |
-| `diag_hook_error` | 예약: 정의만 있고 이 버전은 보내지 않음 |
 
 각 이벤트에는 `timestamp`(해당 날짜 12:00 UTC)와 `$process_person_profile: false`도 들어갑니다. 모든 이벤트에는 무작위 install id (첫 실행 때 생성, 사용자나 기기에서 유도하지 않음)가 함께 갑니다. 동의 후 첫 전송은 어제만이 아니라 그 이전의 로컬 날짜도 포함합니다 (코드만). 실패한 전송은 보관했다가 다음 세션에서 다시 시도합니다. 전송 본문은 패널 미리보기와 정확히 같습니다.
 
