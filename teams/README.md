@@ -299,6 +299,35 @@ explanation of every key is in [docs/configuration.md](docs/configuration.md#con
 
 `goal_judges` and `auto_reassign` are call arguments only, not `team.json` keys.
 
+## Mod (Claude Code live UI)
+
+teams ships a small mod: a status line, toasts and a pane for the runs of the current session. It is early access and optional. Nothing in teams depends on it.
+
+**Version.** Modules load on Claude Code 2.1.292 and newer. The module API is early access and may change between releases. An older build skips the module: 2.1.284 was checked, it prints one stderr line (`hooks module not loaded: …`) and the command hooks, MCP server and CLIs work unchanged. If a build says modules are not turned on for installed plugins, set `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`.
+
+| Where it runs | Mod |
+|---|---|
+| Interactive terminal | on |
+| Desktop app, Code tab | on |
+| `claude -p` and headless adapters | off (no UI surface), except the `team_status` guard below, which runs headless too |
+| Codex, or no plugin | not applicable, nothing is lost |
+
+**Features**
+
+- **Status line.** `teams: <id> <done>/<total> <current> · …`, one entry per run of this session; empty when nothing runs.
+- **`[board]` / `[inbox <n>]`** above the prompt open the pane; the inbox button shows when `<n>` nodes wait for you.
+- **`/teams-live`** opens the pane. Tabs `[tickets]`, `[pipeline]`, `[events]` follow the last run you started with `tm_open` or `tm_run`. Before that it says `No teams run in this session.`
+- **Toasts** for events after the session started (`<id8>` is the first 8 characters of the task id):
+  - `E-<id8> <node_id> failed`
+  - `E-<id8> needs you: <node_id>`
+  - `E-<id8> paused: provider limit`
+  - `E-<id8> finished: <state>`
+  - `E-<id8> stopped: daemon restarts used up`
+  - `E-<id8> <package>: fix rounds used up`
+- **`team_status` guard.** `team_status` with `full: true` and no `node_id` is denied with `team_status full:true dumps every node; pass node_id or read detail_path (teams:orchestrate NEVER rule)`. This runs in headless sessions too.
+
+Known limitation: a session that started with no UI surface (headless or SDK-hosted) keeps the mod off even if a client attaches later; start a new session to get it (a reload of an unchanged mod does not re-fire session.start).
+
 ## More
 
 - [CHANGELOG.md](CHANGELOG.md): every release, newest first.
