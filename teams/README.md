@@ -332,7 +332,7 @@ later with `wiki_accept`). If the wiki fails, the task runs as before.
 
 ## Mod (Claude Code live UI)
 
-teams ships a small mod: a status line, toasts and a pane for the runs of the current session. It is early access and optional. Nothing in teams depends on it.
+teams ships a small mod: a band above the prompt, a status line that appears only when you must act, toasts and a pane for the runs of the current session. It is early access and optional. Nothing in teams depends on it.
 
 **Version.** Modules load on Claude Code 2.1.292 and newer. The module API is early access and may change between releases. An older build skips the module: 2.1.284 was checked, it prints one stderr line (`hooks module not loaded: …`) and the command hooks, MCP server and CLIs work unchanged. If a build says modules are not turned on for installed plugins, set `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`.
 
@@ -345,9 +345,10 @@ teams ships a small mod: a status line, toasts and a pane for the runs of the cu
 
 **Features**
 
-- **Status line.** `teams: <id> <done>/<total> <current> · …`, one entry per run of this session; empty when nothing runs.
-- **`[board]` / `[inbox <n>]`** above the prompt open the pane; the inbox button shows when `<n>` nodes wait for you.
-- **`/teams-live`** opens the pane. Tabs `[tickets]`, `[pipeline]`, `[events]` follow the last run you started with `tm_open` or `tm_run`. With none, it shows the newest running task of this directory; with neither, `No teams run in this session.`
+- **Band.** One row above the prompt, shown only while a run in this folder is running: title, what it is doing now, `<done>/<total>` progress, and the buttons `board` (opens the pane) and `needs you <n>` (shown when `<n>` nodes wait for you). Other mods' bands stay visible below it.
+- **Status line.** Shown only when you must act: `needs you: <n> waiting - open /teams-live`. The engine adds the `teams: ` prefix and draws it as a notice. Otherwise there is no status line.
+- **`/teams-live`** opens the pane: a header (title, state, day, done/total) and tabs Summary, Work and Log. Summary says what it is doing now, whether you are needed, the stages and the work. Work lists one line per card and a reason only for failed ones. Log lists events as sentences with local time. The pane follows the last run you started with `tm_open` or `tm_run`. With none, it falls back to the newest running task of this folder; with neither, `No teams run in this session.`
+- **Language.** English by default; Korean when Claude Code's `language` setting is Korean.
 - **Toasts** for events after the session started (`<id8>` is the first 8 characters of the task id):
   - `E-<id8> <node_id> failed`
   - `E-<id8> needs you: <node_id>`
