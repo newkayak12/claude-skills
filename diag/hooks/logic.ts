@@ -149,3 +149,51 @@ export function buildBatch(log: readonly Entry[], sentThrough: string | undefine
   }
   return Array.from(groups.values())
 }
+
+export const POSTHOG_URL = 'https://us.i.posthog.com/batch/'
+// Write-only project token: public by design (same as trophy's).
+export const POSTHOG_KEY = 'phc_r4NATbMFBZvmQYiJ8MPMJSWHprgbsTkbCddtc6aYAoUg'
+export const CONSENT_VERSION = 2
+
+// The exact request body: the /diag preview shows this string and the sender posts it.
+export function batchBody(events: readonly SentEvent[], installId: string): string {
+  return JSON.stringify({
+    api_key: POSTHOG_KEY,
+    batch: events.map(e => ({
+      event: e.event,
+      distinct_id: installId,
+      timestamp: `${e.properties.day}T12:00:00Z`,
+      properties: { ...e.properties, $process_person_profile: false },
+    })),
+  })
+}
+
+// Sending follows trophy's consent: 'yes' stored at the current consent text version.
+export const sendsOn = (consent: unknown, version: unknown): boolean =>
+  consent === 'yes' && version === CONSENT_VERSION
+
+export const PANE_ROWS = 30
+
+// Newest first, at most 30.
+export const newest = (log: readonly Entry[]): Entry[] => log.slice(-PANE_ROWS).reverse()
+
+export const rowTitle = (e: Entry): string =>
+  [e.day, e.kind, e.reason, e.plugin && e.skill ? `${e.plugin}:${e.skill}` : (e.tool ?? e.plugin ?? '-')].join(' · ')
+
+// First five lines of the local raw text, note or slug.
+export function rowDetail(e: Entry): string[] {
+  const raw = e.local.text ?? e.local.note ?? [e.local.slug, e.local.subgoal].filter(Boolean).join(' ')
+  return (raw ?? '').split('\n').slice(0, 5)
+}
+
+// A ready-to-file bug body; raw text stays on this machine unless the person pastes it.
+export function copyBody(e: Entry): string {
+  const target = e.plugin && e.skill ? `${e.plugin}:${e.skill}` : (e.tool ?? e.plugin ?? '-')
+  return [
+    `skill: ${target}`,
+    `reason: ${e.reason}`,
+    `day: ${e.day}`,
+    `text:`,
+    e.local.text ?? e.local.note ?? [e.local.slug, e.local.subgoal].filter(Boolean).join(' '),
+  ].join('\n')
+}
