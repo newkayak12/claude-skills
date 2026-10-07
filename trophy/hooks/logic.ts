@@ -177,3 +177,20 @@ export function triggerLists(sum: Record<string, Counts>, index: readonly Trigge
     never: index.filter(t => !sum[t.skill] || sum[t.skill]!.hit + sum[t.skill]!.unmatched === 0).map(t => t.skill),
   }
 }
+
+// What trophy:list reads: no `uses`, no session ids.
+export function buildProfile(
+  uses: readonly Use[],
+  unlocked: Record<string, string>,
+  counts: DayCounts,
+  catalog: readonly Achievement[],
+  index: readonly TriggerEntry[],
+  now: number,
+) {
+  return {
+    updated: new Date(now).toISOString(),
+    unlocked,
+    progress: Object.fromEntries(catalog.map(a => [a.id, progress(uses, a)])),
+    triggers7d: triggerLists(sumDays(counts, dayOf(now), 7), index),
+  }
+}
