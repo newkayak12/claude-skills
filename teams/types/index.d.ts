@@ -5,6 +5,7 @@ declare module 'claude-code' {
     teams: {
       cursor: number
       watch: string[]
+      cwdTask: string | null
       status: string
       waiting: number
       view: 'tickets' | 'pipeline' | 'events'
