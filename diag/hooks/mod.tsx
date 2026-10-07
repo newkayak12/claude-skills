@@ -3,7 +3,7 @@ import type { Register } from 'claude-code'
 
 import {
   appendEntry, batchBody, buildBatch, copyBody, goalFailed, harnessResult, marketplaceCandidates, newest,
-  ownedMcpTool, ownedSkill, rowDetail, rowTitle, sendsOn,
+  ownedMcpTool, ownedSkill, POSTHOG_URL, rowDetail, rowTitle, sendsOn,
 } from './logic.ts'
 import type { Entry } from './logic.ts'
 
@@ -24,6 +24,8 @@ type Owned = { skills: Record<string, string[]>; servers: Record<string, string[
 // What this marketplace ships, read once per session from $.plugin.root; empty when unreadable, so
 // nothing is recorded (fails toward privacy).
 let owned: Owned = { skills: {}, servers: {} }
+// One send attempt per session, on the first main-loop turn.complete.
+let sendTried = false
 
 const readJson = async ($: any, path: string) => JSON.parse(await $.fs.read(path))
 
@@ -76,8 +78,12 @@ const cut = (v: unknown) => String(v ?? '').slice(0, TEXT_MAX)
 export const register: Register = on => {
   // Non-interactive sessions (every `claude -p`) record and register nothing.
   on('session.start', async ($, e, next) => {
-    if (!e.isInteractive) return next(e)
+    if (!e.isInteractive) {
+      await update($, active, () => false) // state may carry over from an interactive session
+      return next(e)
+    }
 
+    sendTried = false
     await update($, active, () => true)
     await update($, lastSkill, () => '')
     owned = await loadOwned($)
@@ -197,6 +203,32 @@ export const register: Register = on => {
     } catch {
       return { text: 'Could not record the report.' }
     }
+  }).catch(($, e, next) => next(e))
+
+  // Sends the days not yet sent, up to yesterday, only while trophy's consent is yes at version 2.
+  // The body is exactly what the pane previews: batchBody(buildBatch(...)). A failed send changes nothing.
+  on('turn.complete', async ($, e, next) => {
+    if (e.agentId === undefined && !sendTried && (await read($, active))) {
+      sendTried = true
+      await safe(async () => {
+        if (!sendsOn(await read($, trophyConsent), await read($, trophyVersion))) return
+        const through = new Date(((await $.clock.now()) as number) - DAY_MS).toISOString().slice(0, 10)
+        const sentThrough = (await $.store.get('diag.sentThrough')) as string | undefined
+        if (sentThrough !== undefined && sentThrough >= through) return
+        const events = buildBatch(((await $.store.get('diag.log')) ?? []) as Entry[], sentThrough, through)
+        if (events.length > 0) {
+          const installId = String((await $.store.get('diag.installId')) ?? '')
+          const res = await $.http.fetch(POSTHOG_URL, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: batchBody(events, installId),
+          })
+          if (!res.ok) return
+        }
+        await $.store.set('diag.sentThrough', through)
+      })
+    }
+    return next(e)
   }).catch(($, e, next) => next(e))
 
   // `/diag` opens the pane; `/diag bug <note>` is handled above.
