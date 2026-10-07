@@ -49,8 +49,10 @@ EPIC이 끝나면 지식이 사라진다. `docs.mjs`가 `10-prd.md`·`60-qa.md`�
   단독 사용 시엔 사람이 `wiki_accept`한다.
 - **구현 위치.** `teams/mcp/wiki.mjs` (stdio JSON-RPC는 `taskmanager.mjs`의 패턴 복사),
   `teams/.mcp.json`에 `teams-wiki` 서버 추가. 동시 수락은 `store.mjs`와 같은 lock 디렉터리 방식.
-- **런타임.** `node:sqlite`는 Node 24+ 또는 22.5–23 + `--experimental-sqlite`. teams는 "Node 18+"을
-  표방하므로 **wiki 서버만** 이 요구를 갖고, 불가하면 명확한 오류를 내고 teams 본체는 영향 없이 돈다.
+- **런타임.** **Node 24+.** 실측(2026-10-07): Node 22.12는 `--experimental-sqlite`로 `node:sqlite`가
+  로드돼도 FTS5 모듈이 없다(`no such module: fts5`). teams는 "Node 18+"을 표방하므로 **wiki 서버만** 이
+  요구를 갖는다 — sqlite는 첫 도구 호출 때 지연 로드, 그 아래 버전에선 서버는 뜨고 `tools/list`도 되지만
+  `wiki_*` 호출은 "Node 24 필요" 오류를 낸다. teams 본체는 영향 없음.
 
 ### 2단계 — teams에 녹이기
 
@@ -75,7 +77,7 @@ EPIC이 끝나면 지식이 사라진다. `docs.mjs`가 `10-prd.md`·`60-qa.md`�
 - [ ] 외부 모델·네트워크 호출 0 (임베딩 없음).
 - [ ] 두 프로세스가 동시에 accept해도 md·인덱스가 깨지지 않는다.
 - [ ] stdio 스모크: `tools/list`가 도구 8개를 돌려준다.
-- [ ] Node 22.12(현 로컬)와 24에서 기동 확인.
+- [ ] Node 24에서 전 기능, Node 22.12에서 기동 + `tools/list` + 명확한 "Node 24 필요" 오류.
 
 2단계
 - [ ] bench fixture에서 EPIC 1이 제안 → gate 수락 → EPIC 2가 `wiki_resume`으로 이어받아 investigate가 그 페이지 id를 인용.
@@ -99,7 +101,7 @@ EPIC이 끝나면 지식이 사라진다. `docs.mjs`가 `10-prd.md`·`60-qa.md`�
 - **틀린 기억의 전파:** source·updated 필수, 반박 시 supersede. gate가 근거 없는 제안을 거절.
 - **knowledge 플러그인과 기능 중복:** 의도적. teams는 knowledge에 결합하지 않는다 (설치 안 해도 동작).
   검색 방식은 복사해 오되 코드 import는 하지 않는다.
-- **Node 버전:** wiki 서버만 22.5+/24+. README에 명시.
+- **Node 버전:** wiki 서버만 24+. README에 명시.
 
 ## 5. 열린 질문
 
