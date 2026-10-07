@@ -87,7 +87,7 @@ registers no timer and opens nothing; with `['terminal']` it registers the comma
 **Files:** modify `teams/hooks/mod.tsx`, `teams/hooks/mod.test.ts`.
 **Interfaces:** consumes Task 2's CLI through
 `$.process.run(['node', VIEW, '--once', '--format', 'events', '--since', String(cursor)])`
-and `... '--format', 'status', '--cwd', <session cwd>` (`VIEW` resolved as the spike found).
+and `... '--format', 'status', '--cwd', <session cwd>` (`VIEW` = `${$.plugin.root}/scripts/view.mjs`, per 00-spike-findings §4).
 **Pass bar:** mod test with `$.process.run` mocked: tick 1 returns two events → two
 `$.ui.toast` calls, `cursor` = the later ts; tick 2 returns the same events → no toast;
 status output `{"line":"","waiting":0}` → `$.ui.status(undefined)`, `waiting` 0; a run that exits non-zero → no toast, no throw,

@@ -5,7 +5,7 @@
 // future timestamps ignored.
 import assert from 'node:assert/strict';
 import { spawnSync, execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, utimesSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, utimesSync, rmSync, chmodSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -290,6 +290,8 @@ test('LL-G2b: an inline script that only mentions a gated path is allowed; one t
     "git commit -q -F - <<'EOF'\nfix teams/mcp/a.mjs\nEOF",
     "git commit -q -F - <<'EOF'\nremove stale teams/mcp/a.mjs, open the rest\nEOF",
     "cat > notes.txt <<EOF\nopen teams/mcp/a.mjs later\nEOF",
+    // a data heredoc into a non-code file that is never run is prose, whatever verbs it holds
+    "cat > notes.txt <<EOF\nrm a.mjs\nEOF",
   ];
   for (const c of allow) assert.equal(run(bash(dir, c)), 'allow', c);
   const deny = [
@@ -306,8 +308,7 @@ test('LL-G2b: an inline script that only mentions a gated path is allowed; one t
     'grep -n "<<EOF" x\ncp y a.mjs',
     // a heredoc that never closes is judged as a whole command
     'cat <<EOF\nrm a.mjs',
-    // a data heredoc whose body writes, or whose file is a script or is run later, counts
-    "cat > notes.txt <<EOF\nrm a.mjs\nEOF",
+    // a data heredoc whose file is a script or is run later, and whose body writes, counts
     "cat > /tmp/gen.py <<EOF\nopen('a.mjs','w')\nEOF",
     "cat > /tmp/x.sh <<EOF\necho hi > a.mjs.bak\ntouch a.mjs\nEOF\nbash /tmp/x.sh",
     "cat > /tmp/run.txt <<EOF\nwriteFileSync a.mjs\nEOF\nnode /tmp/run.txt",
@@ -331,6 +332,141 @@ test('fail-open: bad JSON input, bad regex config', () => {
   const dir = project();
   write(join(dir, '.claude', 'harness-gate.json'), JSON.stringify({ patterns: ['('] }));
   assert.equal(run(edit(dir, join(dir, 'a.mjs'))), 'allow');
+});
+
+// ---- data mentions are not writes: a gated path named in prose is not a write of it ----
+
+// bashWriteTargets in a child: importing the hook here would run its main().
+function writeTargets(command, cwd) {
+  const code = `import(${JSON.stringify(process.env.GATE_HOOK || HOOK)}).then((m) => process.stdout.write(JSON.stringify(m.bashWriteTargets(${JSON.stringify(command)}, ${JSON.stringify(cwd)}))))`;
+  return JSON.parse(execFileSync('node', ['--input-type=commonjs', '-e', code], { encoding: 'utf8' }));
+}
+
+test('data mentions are not writes: R1', () => {
+  const dir = project();
+  const cmd = "mkdir -p d && cat > d/request.md <<'EOF'\nthen install the patch in packages/csv/src/record.mjs; rm the old one\nEOF";
+  const t = writeTargets(cmd, dir);
+  assert.ok(!t.includes(join(dir, 'packages/csv/src/record.mjs')), t.join(' '));
+});
+
+test("data mentions are not writes: R2'", () => {
+  const dir = project();
+  const cmd = "git commit -F - <<'EOF'\nfix: install skill\nrm stale harness/skills/install/SKILL.md\nEOF";
+  const t = writeTargets(cmd, dir);
+  assert.ok(!t.includes(join(dir, 'harness/skills/install/SKILL.md')), t.join(' '));
+});
+
+test("data mentions are not writes: R3'", () => {
+  const dir = project();
+  const cmd = "for p in $(pgrep -f 'teams/mcp/taskmanager.mjs'); do ps -o pid,cmd -p $p; done; rm -f /tmp/y";
+  const t = writeTargets(cmd, dir);
+  assert.ok(!t.includes(join(dir, 'teams/mcp/taskmanager.mjs')), t.join(' '));
+  assert.ok(t.includes('/tmp/y'), t.join(' '));
+});
+
+const KEEP = {
+  K1: ["cat > teams/mcp/x.mjs <<'EOF'\nhi\nEOF", 'teams/mcp/x.mjs'],
+  K2: ["bash <<'EOF'\nsed -i s/a/b/ teams/mcp/x.mjs\nEOF", 'teams/mcp/x.mjs'],
+  K3: ['node -e "require(\'fs\').writeFileSync(\'teams/mcp/x.mjs\',\'\')"', 'teams/mcp/x.mjs'],
+  K4: ['cp a.mjs teams/mcp/x.mjs', 'teams/mcp/x.mjs'],
+  K5: ["cat > go.sh <<'EOF'\nrm teams/mcp/x.mjs\nEOF\nbash go.sh", 'teams/mcp/x.mjs'],
+  // a path reaching a writer through argv of a heredoc-fed interpreter, a run-later script,
+  // a shell variable, a pipe into xargs, or a for-loop list
+  K6: ["python3 - teams/mcp/x.mjs <<'EOF'\nimport sys; open(sys.argv[1],'w')\nEOF", 'teams/mcp/x.mjs'],
+  K7: ["cat > /tmp/g.sh <<'EOF'\nrm \"$1\"\nEOF\nbash /tmp/g.sh teams/mcp/x.mjs", 'teams/mcp/x.mjs'],
+  K8: ['F=teams/mcp/x.mjs; rm "$F"', 'teams/mcp/x.mjs'],
+  K9: ['echo teams/mcp/x.mjs | xargs rm', 'teams/mcp/x.mjs'],
+  K10: ['for f in teams/mcp/x.mjs; do rm "$f"; done', 'teams/mcp/x.mjs'],
+  // the targets come from a list file, stdin or a heredoc, not from the writer's own argv
+  K11: ['echo teams/mcp/x.mjs > /tmp/l; xargs rm < /tmp/l', 'teams/mcp/x.mjs'],
+  K12: ['echo teams/mcp/x.mjs > /tmp/l; xargs -a /tmp/l rm', 'teams/mcp/x.mjs'],
+  K13: ['echo teams/mcp/x.mjs | git rm --pathspec-from-file=-', 'teams/mcp/x.mjs'],
+  K14: ['echo teams/mcp/x.mjs | parallel rm', 'teams/mcp/x.mjs'],
+  K15: ['while read f; do rm "$f"; done <<EOF\nteams/mcp/x.mjs\nEOF', 'teams/mcp/x.mjs'],
+  K16: ["git rm -q --pathspec-from-file=- <<'EOF'\nteams/mcp/x.mjs\nEOF", 'teams/mcp/x.mjs'],
+  K17: ["cat > /tmp/p.txt <<'EOF'\nrm teams/mcp/x.mjs\nEOF\ncd /tmp && bash p.txt", 'teams/mcp/x.mjs'],
+  K18: ["cat > /tmp/p.txt <<'EOF'\nrm teams/mcp/x.mjs\nEOF\nbash /tmp/p.t*", 'teams/mcp/x.mjs'],
+  K20: ["cat > /tmp/p.txt <<'EOF'\nrm teams/mcp/x.mjs\nEOF\ntimeout 60 bash /tmp/p.txt", 'teams/mcp/x.mjs'],
+  K21: ["cat > /tmp/p.txt <<'EOF'\nrm teams/mcp/x.mjs\nEOF\nX=1 bash /tmp/p.txt", 'teams/mcp/x.mjs'],
+  K22: ["cat > /tmp/p.txt <<'EOF'\nrm teams/mcp/x.mjs\nEOF\ncd /tmp && chmod +x p.txt && ./p.txt", 'teams/mcp/x.mjs'],
+  K23: ["cat > /tmp/run <<'EOF'\nrm teams/mcp/x.mjs\nEOF\nchmod +x /tmp/run && /tmp/run", 'teams/mcp/x.mjs'],
+  K24: ["cat > /tmp/p.txt <<'EOF'\nrm teams/mcp/x.mjs\nEOF\nbash /tmp/p.txt <<'EOF2'\ny\nEOF2", 'teams/mcp/x.mjs'],
+  K19: ['while read f; do rm "$f"; done <<< teams/mcp/x.mjs', 'teams/mcp/x.mjs'],
+  K25: ["F=teams/mcp/x.mjs\npython3 - \"$F\" <<'EOF'\nimport sys,os; os.remove(sys.argv[1])\nEOF", 'teams/mcp/x.mjs'],
+  K26: ["export F=teams/mcp/x.mjs\npython3 - <<'EOF'\nimport os; os.remove(os.environ['F'])\nEOF", 'teams/mcp/x.mjs'],
+  K27: ['F=teams/mcp/x.mjs\nnode - "$F" <<EOF\nrequire("fs").unlinkSync(process.argv[2])\nEOF', 'teams/mcp/x.mjs'],
+  K28: ['F=teams/mcp/x.mjs\nbash -s "$F" <<EOF\nrm $1\nEOF', 'teams/mcp/x.mjs'],
+  K29: ['F=teams/mcp/x.mjs\nbash <<EOF\nrm $F\nEOF', 'teams/mcp/x.mjs'],
+  K30: ["for f in teams/mcp/x.mjs; do\npython3 - \"$f\" <<'EOF'\nimport sys,os; os.remove(sys.argv[1])\nEOF\ndone", 'teams/mcp/x.mjs'],
+  K31: ['echo teams/mcp/x.mjs | git checkout-index --stdin -f', 'teams/mcp/x.mjs'],
+};
+for (const [id, [cmd, rel]] of Object.entries(KEEP)) {
+  test(`data mentions are not writes: ${id}`, () => {
+    const dir = project();
+    const t = writeTargets(cmd, dir);
+    assert.ok(t.includes(join(dir, rel)), t.join(' '));
+  });
+}
+
+// ---- last decision: the gate records its last gated decision for the mod ----
+
+const DECISION = (dir) => join(dir, '.claude', '.harness-last-decision.json');
+function rawRun(input) {
+  const r = spawnSync('node', [HOOK], { input: JSON.stringify(input), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: '' } });
+  return { stdout: r.stdout, status: r.status };
+}
+
+test('last decision: a denied gated Write records deny and the target', () => {
+  const dir = project();
+  assert.equal(run({ tool_name: 'Write', cwd: dir, session_id: 'sd', tool_input: { file_path: join(dir, 'a.mjs') } }), 'deny');
+  const d = JSON.parse(readFileSync(DECISION(dir), 'utf8'));
+  assert.equal(d.decision, 'deny');
+  assert.equal(d.target, '/a.mjs');
+  assert.equal(d.tool, 'Write');
+  assert.equal(d.session_id, 'sd');
+  assert.equal(typeof d.ts, 'number');
+  assert.ok(d.reason);
+});
+
+test('last decision: an engaged gated Write records allow', () => {
+  const dir = project();
+  const t = transcript(dir, [toolUse('g1', 'mcp__graph__graph_open', {}), toolResult('g1', false)]);
+  assert.equal(run({ tool_name: 'Write', cwd: dir, session_id: 'sa', transcript_path: t, tool_input: { file_path: join(dir, 'a.mjs') } }), 'allow');
+  const d = JSON.parse(readFileSync(DECISION(dir), 'utf8'));
+  assert.equal(d.decision, 'allow');
+  assert.equal(d.target, '/a.mjs');
+});
+
+test('last decision: an ungated Write creates no decision file', () => {
+  const dir = project();
+  assert.equal(run({ tool_name: 'Write', cwd: dir, session_id: 'su', tool_input: { file_path: join(dir, 'a.txt') } }), 'allow');
+  assert.equal(existsSync(DECISION(dir)), false);
+});
+
+test('last decision: a read-only .claude dir leaves stdout and exit code unchanged', () => {
+  const input = (dir) => ({ tool_name: 'Write', cwd: dir, session_id: 'sr', tool_input: { file_path: join(dir, 'a.mjs') } });
+  const a = project();
+  const b = project();
+  const before = rawRun(input(a));
+  chmodSync(join(b, '.claude'), 0o555);
+  try {
+    const after = rawRun(input(b));
+    assert.equal(after.status, before.status);
+    assert.equal(after.stdout, before.stdout);
+    assert.equal(existsSync(DECISION(b)), false);
+  } finally {
+    chmodSync(join(b, '.claude'), 0o755);
+  }
+});
+
+test('last decision: the decision file never lands in .harness-markers', () => {
+  const dir = project();
+  run({ tool_name: 'Write', cwd: dir, session_id: 'sm', tool_input: { file_path: join(dir, 'a.mjs') } });
+  const t = transcript(dir, [toolUse('g2', 'mcp__graph__graph_open', {}), toolResult('g2', false)]);
+  run({ tool_name: 'Write', cwd: dir, session_id: 'sm', transcript_path: t, tool_input: { file_path: join(dir, 'a.mjs') } });
+  const m = join(dir, '.claude', '.harness-markers');
+  const files = existsSync(m) ? readdirSync(m) : [];
+  assert.ok(!files.some((f) => /decision/.test(f)), files.join(' '));
 });
 
 // ---- parity: the repo's installed copy is the plugin's hook ----

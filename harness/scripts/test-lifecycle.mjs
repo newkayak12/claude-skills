@@ -114,13 +114,19 @@ try {
   const installed = run(INSTALL, { projectDir: old, gate: { patterns: ['\\.[cm]?js$'] } });
   assert.equal(installed.actions.settings, 'widened');
   assert.match(readJson(join(old, '.claude', 'settings.json')).hooks.PreToolUse[0].matcher, /\|Bash\|?/);
-  assert.equal(readFileSync(join(old, '.gitignore'), 'utf8'), 'node_modules/\n.claude/.harness-markers/\n.harness-run/\n.claude/settings.local.json\n');
+  assert.equal(readFileSync(join(old, '.gitignore'), 'utf8'), 'node_modules/\n.claude/.harness-markers/\n.harness-run/\n.claude/.harness-last-decision.json\n.claude/settings.local.json\n');
   const fresh = join(scratch, 'fresh-install');
   mkdirSync(fresh, { recursive: true });
   const freshReport = run(INSTALL, { projectDir: fresh, gate: { patterns: ['\\.[cm]?js$'] } });
   assert.equal(freshReport.actions.settings, 'created');
   assert.match(readJson(join(fresh, '.claude', 'settings.json')).hooks.PreToolUse[0].matcher, /Bash/);
   assert.equal(run(INSTALL, { projectDir: fresh }).actions.gitignore, 'present');
+  // install -> remove on a fresh repo leaves no decision file and no .gitignore.
+  write(join(fresh, '.claude', '.harness-last-decision.json'), '{}\n');
+  const freshRemoved = run(REMOVE, { projectDir: fresh });
+  assert.equal(freshRemoved.actions.decision, 'removed');
+  assert.equal(existsSync(join(fresh, '.claude', '.harness-last-decision.json')), false);
+  assert.equal(existsSync(join(fresh, '.gitignore')), false);
 
   // patch: synchronized dry-run and write across both manifests + bilingual README/KOR status.
   const repo = join(scratch, 'repo');
