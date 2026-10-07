@@ -5,7 +5,7 @@
 // future timestamps ignored.
 import assert from 'node:assert/strict';
 import { spawnSync, execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, utimesSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, utimesSync, rmSync, chmodSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -407,6 +407,67 @@ for (const [id, [cmd, rel]] of Object.entries(KEEP)) {
     assert.ok(t.includes(join(dir, rel)), t.join(' '));
   });
 }
+
+// ---- last decision: the gate records its last gated decision for the mod ----
+
+const DECISION = (dir) => join(dir, '.claude', '.harness-last-decision.json');
+function rawRun(input) {
+  const r = spawnSync('node', [HOOK], { input: JSON.stringify(input), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: '' } });
+  return { stdout: r.stdout, status: r.status };
+}
+
+test('last decision: a denied gated Write records deny and the target', () => {
+  const dir = project();
+  assert.equal(run({ tool_name: 'Write', cwd: dir, session_id: 'sd', tool_input: { file_path: join(dir, 'a.mjs') } }), 'deny');
+  const d = JSON.parse(readFileSync(DECISION(dir), 'utf8'));
+  assert.equal(d.decision, 'deny');
+  assert.equal(d.target, '/a.mjs');
+  assert.equal(d.tool, 'Write');
+  assert.equal(d.session_id, 'sd');
+  assert.equal(typeof d.ts, 'number');
+  assert.ok(d.reason);
+});
+
+test('last decision: an engaged gated Write records allow', () => {
+  const dir = project();
+  const t = transcript(dir, [toolUse('g1', 'mcp__graph__graph_open', {}), toolResult('g1', false)]);
+  assert.equal(run({ tool_name: 'Write', cwd: dir, session_id: 'sa', transcript_path: t, tool_input: { file_path: join(dir, 'a.mjs') } }), 'allow');
+  const d = JSON.parse(readFileSync(DECISION(dir), 'utf8'));
+  assert.equal(d.decision, 'allow');
+  assert.equal(d.target, '/a.mjs');
+});
+
+test('last decision: an ungated Write creates no decision file', () => {
+  const dir = project();
+  assert.equal(run({ tool_name: 'Write', cwd: dir, session_id: 'su', tool_input: { file_path: join(dir, 'a.txt') } }), 'allow');
+  assert.equal(existsSync(DECISION(dir)), false);
+});
+
+test('last decision: a read-only .claude dir leaves stdout and exit code unchanged', () => {
+  const input = (dir) => ({ tool_name: 'Write', cwd: dir, session_id: 'sr', tool_input: { file_path: join(dir, 'a.mjs') } });
+  const a = project();
+  const b = project();
+  const before = rawRun(input(a));
+  chmodSync(join(b, '.claude'), 0o555);
+  try {
+    const after = rawRun(input(b));
+    assert.equal(after.status, before.status);
+    assert.equal(after.stdout, before.stdout);
+    assert.equal(existsSync(DECISION(b)), false);
+  } finally {
+    chmodSync(join(b, '.claude'), 0o755);
+  }
+});
+
+test('last decision: the decision file never lands in .harness-markers', () => {
+  const dir = project();
+  run({ tool_name: 'Write', cwd: dir, session_id: 'sm', tool_input: { file_path: join(dir, 'a.mjs') } });
+  const t = transcript(dir, [toolUse('g2', 'mcp__graph__graph_open', {}), toolResult('g2', false)]);
+  run({ tool_name: 'Write', cwd: dir, session_id: 'sm', transcript_path: t, tool_input: { file_path: join(dir, 'a.mjs') } });
+  const m = join(dir, '.claude', '.harness-markers');
+  const files = existsSync(m) ? readdirSync(m) : [];
+  assert.ok(!files.some((f) => /decision/.test(f)), files.join(' '));
+});
 
 // ---- parity: the repo's installed copy is the plugin's hook ----
 
