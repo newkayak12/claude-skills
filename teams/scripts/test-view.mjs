@@ -1756,3 +1756,34 @@ test('a task whose daemon and drivers are all dead reads stalled, not running (i
     assert.equal(collectTask(root, taskId).state, 'running', 'no daemon ever: driven by hand, left alone');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('--once --format summary prints { status, task }: status is --format status verbatim, task is the human summary with no internal ids', async () => {
+  await withOpenTask({ planning: false, qa: true }, async ({ tm, g, cwd, root, task_id }) => {
+    await driveToQaDefectFound(tm, g, task_id);
+    const run = (...a) => spawnSync('node', [VIEW, '--once', '--cwd', cwd, '--tasks-dir', root, ...a], { encoding: 'utf8' });
+
+    const r = run('--format', 'summary');
+    assert.equal(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assert.deepEqual(Object.keys(out).sort(), ['status', 'task']);
+    assert.deepEqual(out.status, JSON.parse(run('--format', 'status').stdout));
+    assert.deepEqual(Object.keys(out.task).sort(), ['cost', 'day', 'done', 'key', 'log', 'now', 'stages', 'state', 'title', 'total', 'work', 'you']);
+
+    const text = JSON.stringify(out.task);
+    for (const tok of ['verdict', 'match_pct', 'dispatch:', 'gate:goal', 'accept:', '/Users/', '/var/', '/tmp/']) {
+      assert.ok(!text.includes(tok), `task leaks ${tok}`);
+    }
+
+    const named = JSON.parse(run('--format', 'summary', '--task', task_id).stdout);
+    assert.equal(named.task.key, out.task.key);
+  });
+});
+
+test('--once --format summary: no running task in the cwd and no --task gives task null', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'view-test-root-'));
+  try {
+    const r = spawnSync('node', [VIEW, '--once', '--format', 'summary', '--cwd', root, '--tasks-dir', root], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(JSON.parse(r.stdout).task, null);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
