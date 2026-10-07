@@ -1,0 +1,42 @@
+import type { Achievement } from '../hooks/logic.ts'
+
+export const achievements: Achievement[] = [
+  { id: 'first-blood', title: '첫 스킬', description: '스킬을 처음 사용했다', rule: { kind: 'collect', count: 1 } },
+  { id: 'first-develop', title: 'develop 입문', description: 'develop 플러그인의 스킬을 처음 사용했다', rule: { kind: 'first_use', plugin: 'develop' } },
+  { id: 'first-think', title: 'think 입문', description: 'think 플러그인의 스킬을 처음 사용했다', rule: { kind: 'first_use', plugin: 'think' } },
+  { id: 'first-write', title: 'write 입문', description: 'write 플러그인의 스킬을 처음 사용했다', rule: { kind: 'first_use', plugin: 'write' } },
+  { id: 'first-knowledge', title: 'knowledge 입문', description: 'knowledge 플러그인의 스킬을 처음 사용했다', rule: { kind: 'first_use', plugin: 'knowledge' } },
+  { id: 'first-agents', title: 'agents 입문', description: 'agents 플러그인의 스킬을 처음 사용했다', rule: { kind: 'first_use', plugin: 'agents' } },
+  { id: 'first-planning', title: 'planning 입문', description: 'planning 플러그인의 스킬을 처음 사용했다', rule: { kind: 'first_use', plugin: 'planning' } },
+  { id: 'first-skill', title: 'skill 입문', description: 'skill 플러그인의 스킬을 처음 사용했다', rule: { kind: 'first_use', plugin: 'skill' } },
+  { id: 'first-completion', title: 'completion 입문', description: 'completion 플러그인의 스킬을 처음 사용했다', rule: { kind: 'first_use', plugin: 'completion' } },
+  { id: 'first-portfolio', title: 'portfolio 입문', description: 'portfolio 플러그인의 스킬을 처음 사용했다', rule: { kind: 'first_use', plugin: 'portfolio' } },
+  { id: 'first-cognition', title: 'cognition 입문', description: 'cognition 플러그인의 스킬을 처음 사용했다', rule: { kind: 'first_use', plugin: 'cognition' } },
+  { id: 'first-harness', title: 'harness 입문', description: 'harness 플러그인의 스킬을 처음 사용했다', rule: { kind: 'first_use', plugin: 'harness' } },
+  { id: 'first-graph', title: 'graph 입문', description: 'graph 플러그인의 스킬을 처음 사용했다', rule: { kind: 'first_use', plugin: 'graph' } },
+  { id: 'first-teams', title: 'teams 입문', description: 'teams 플러그인의 스킬을 처음 사용했다', rule: { kind: 'first_use', plugin: 'teams' } },
+  { id: 'collector-10', title: '수집가', description: '서로 다른 스킬 10개를 사용했다', rule: { kind: 'collect', count: 10 } },
+  { id: 'collector-30', title: '도감 채우는 중', description: '서로 다른 스킬 30개를 사용했다', rule: { kind: 'collect', count: 30 } },
+  { id: 'thinker', title: '생각하는 사람', description: 'think 스킬 5종을 사용했다', rule: { kind: 'collect', count: 5, plugin: 'think' } },
+  {
+    id: 'full-cycle',
+    title: '설계부터 검증까지',
+    description: '한 세션에서 brainstorming, plans, harness를 차례로 사용했다',
+    rule: { kind: 'combo', sequence: ['think:brainstorming', 'write:plans', 'harness:harness'] },
+  },
+  {
+    id: 'red-green',
+    title: '빨강 다음 초록',
+    description: '한 세션에서 TDD 다음 verification-before-completion을 사용했다',
+    rule: { kind: 'combo', sequence: ['develop:test-driven-development', 'completion:verification-before-completion'] },
+  },
+  { id: 'streak-7', title: '일주일 개근', description: '7일 연속 스킬을 사용했다', rule: { kind: 'streak', days: 7 } },
+  { id: 'streak-30', title: '한 달 개근', description: '30일 연속 스킬을 사용했다', rule: { kind: 'streak', days: 30 } },
+  {
+    id: 'punching-bag',
+    title: '샌드백',
+    description: 'devils-advocate를 3번 사용했다',
+    hidden: true,
+    rule: { kind: 'repeat', skill: 'think:devils-advocate', count: 3 },
+  },
+]
