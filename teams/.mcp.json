@@ -11,6 +11,14 @@
       "args": [
         "${CLAUDE_PLUGIN_ROOT}/mcp/taskmanager.mjs"
       ]
+    },
+    "teams-wiki": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/mcp/wiki.mjs",
+        "--root",
+        "${CLAUDE_PROJECT_DIR}"
+      ]
     }
   }
 }

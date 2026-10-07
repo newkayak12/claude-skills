@@ -17,7 +17,7 @@ single code change you want to drive in one session.
 | | `graph` | `teams` |
 |---|---|---|
 | Good for | one code request, one run | sized/split requests, documents, PRDs, QA, backlogs |
-| MCP servers | `graph-engineering` (`graph_*`) | `teams-engineering` (`team_*`) + `task-manager` (`tm_*`) |
+| MCP servers | `graph-engineering` (`graph_*`) | `teams-engineering` (`team_*`) + `task-manager` (`tm_*`) + `teams-wiki` (`wiki_*`) |
 | Who drives | your session | a background daemon; your session only watches |
 | Run files | `.harness-run/broker/` | `.teams_output/broker/` (runs), `~/.harness/tasks/` (tasks) |
 | Version line | 1.x | 0.x |
@@ -209,8 +209,8 @@ stateDiagram-v2
 
 ## Quick start
 
-**Install.** Install `teams@newkayak12-claude-skills`; that registers both MCP servers (reload
-Claude Code if the `tm_*`/`team_*` tools do not show). `teams:install` is optional. It pins
+**Install.** Install `teams@newkayak12-claude-skills`; that registers its three MCP servers (reload
+Claude Code if the `tm_*`/`team_*`/`wiki_*` tools do not show). `teams:install` is optional. It pins
 project defaults in `.claude/team.json`, adds a dispatch gate, and adds `.claude/conventions/`.
 Without it, the built-in defaults apply. Details:
 [docs/configuration.md#install](docs/configuration.md#install).
@@ -298,6 +298,31 @@ explanation of every key is in [docs/configuration.md](docs/configuration.md#con
 | `initiative` | `null` | A label that groups several EPICs on the board; display only. |
 
 `goal_judges` and `auto_reassign` are call arguments only, not `team.json` keys.
+
+## Wiki memory (teams-wiki)
+
+`teams-wiki` is a third MCP server in this plugin: project memory that outlives a session. It is
+independent of the task engine, so a task does not need it and it does not need a task.
+
+Pages are markdown under `.teams_wiki/<space>/<slug>.md`, git-tracked and hand-editable; that is the
+source. `.teams_wiki/.index.sqlite` (FTS5 search plus the `[[link]]` graph) is disposable: delete it
+and the next call rebuilds it from the md files.
+
+| Tool | What it does |
+|---|---|
+| `wiki_search` | Search pages (Korean and English). |
+| `wiki_get` | One page with its links and backlinks. |
+| `wiki_resume` | Session start: the most recent `log/*` pages and the pages they link to. |
+| `wiki_list` | Pages grouped by space. |
+| `wiki_propose` | Write a proposal to `_proposed/`; never a page. |
+| `wiki_accept` | Turn a proposal into a page. |
+| `wiki_reject` | Move a proposal to `_rejected/` with the reason. |
+| `wiki_status` | Page count, pending proposals, index freshness, broken links. |
+
+Nothing writes a page directly: a model proposes, and only `wiki_accept` publishes.
+
+Needs Node 24+, or a Node 22/23 build whose SQLite includes FTS5. On any other Node the `wiki_*`
+tools return one clear error and the rest of teams is unaffected.
 
 ## More
 
