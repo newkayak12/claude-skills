@@ -96,6 +96,8 @@ status unchanged.
 - [ ] 1: tests (red) → 2: `$.clock.every(3000, tick)`; tick keeps one run in flight at a time;
   appends to `events` (last 200) → 3: green → 4: commit
 
+> 2026-10-07 amendment: status line pinned only while waiting > 0, text without the 'teams' prefix (the engine adds it); progress moved to the band; one data process per tick.
+
 ### Task 5: `/teams-live` pane
 **Files:** modify `teams/hooks/mod.tsx`, `teams/hooks/mod.test.ts`.
 **Interfaces:** `command.run` `{ command: 'teams-live' }` opens pane `teams-live`;
@@ -130,6 +132,8 @@ the status text + Buttons `[board]` (opens the pane) and `[inbox <n>]` when `$.s
 with both buttons; `[board]` press opens pane `teams-live`.
 
 - [ ] 1: tests (red) → 2: implement → 3: green → 4: commit
+
+> 2026-10-07 amendment: band shown while a task in this cwd is running, drawn above next(e), buttons 'board' / 'needs you <n>' without brackets.
 
 ### Task 8: Guard the NEVER rule on `team_status({full:true})`
 **Files:** modify `teams/hooks/mod.tsx`, `teams/hooks/mod.test.ts`.
