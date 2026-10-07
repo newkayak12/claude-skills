@@ -1,0 +1,11 @@
+{
+  "name": "trophy",
+  "description": "Steam-style achievements for using this marketplace's skills: a toast on unlock, an /achievements pane, trophy:list in conversation, and a view of which skills your prompts should have triggered. Opt-in anonymous daily counts (off by default).",
+  "version": "0.1.0",
+  "author": {
+    "name": "newkayak12"
+  },
+  "repository": "https://github.com/newkayak12/claude-skills",
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}
