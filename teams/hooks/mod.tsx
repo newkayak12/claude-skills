@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
 import type { TeamsEvent } from '../types'
 
@@ -8,6 +8,12 @@ const status = atom({ plugin: 'teams', key: 'status' } as const, '')
 const waiting = atom({ plugin: 'teams', key: 'waiting' } as const, 0)
 const events = atom({ plugin: 'teams', key: 'events' } as const, [] as TeamsEvent[])
 const watch = atom({ plugin: 'teams', key: 'watch' } as const, [] as string[])
+const view = atom({ plugin: 'teams', key: 'view' } as const, 'tickets' as 'tickets' | 'pipeline' | 'events')
+
+const board = atom({ plugin: 'teams', key: 'board' } as const, '')
+
+const PANE = 'teams-live'
+const NO_RUN = 'No teams run in this session.'
 
 const asRecord = (v: unknown): Record<string, unknown> | undefined =>
   typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : undefined
@@ -25,6 +31,19 @@ function taskIdOf(r: { result?: unknown; text?: unknown }): string | undefined {
     return typeof id === 'string' && id !== '' ? id : undefined
   } catch {
     return undefined
+  }
+}
+
+// the pane text for the last watched task; the tick and a pane button write it, the render only reads it
+async function refreshBoard($: EngineInterface) {
+  const kind = await read($, view)
+  const id = (await read($, watch)).at(-1)
+  if (id === undefined || kind === 'events') return
+  try {
+    const out = await $.process.run(['node', `${$.plugin.root}/scripts/view.mjs`, '--once', '--task', id, '--view', kind])
+    await update($, board, () => (out.exitCode === 0 ? out.stdout : `teams view failed (exit ${out.exitCode})`))
+  } catch {
+    await update($, board, () => 'teams view failed')
   }
 }
 
@@ -75,6 +94,9 @@ export const register: Register = on => {
           await update($, status, () => parsed.line)
           await update($, waiting, () => parsed.waiting)
         }
+
+        // the pane text is produced here, only while the pane is open
+        if ((await $.ui.panes()).some(p => p.id === PANE)) await refreshBoard($)
       } catch {
         // a failed run or unreadable output leaves the last status as it was
       } finally {
@@ -94,9 +116,55 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'teams-live' }, async () => ({
-    text: 'teams-live: the status line and toasts report teams runs of this session.',
-  }))
+  // asked for by the person: the pane seats at any width
+  on('command.run', { command: 'teams-live' }, async $ => {
+    await $.ui.open({ id: PANE, title: 'Teams' })
+    return { text: 'teams-live: pane opened; the status line and toasts report teams runs of this session.' }
+  })
+
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const { Box, Button, Text } = $.ui.resolve(e)
+    const kind = await read($, view)
+    const list = await read($, watch)
+    const id = list[list.length - 1]
+    let body = NO_RUN
+    if (id !== undefined) {
+      if (kind === 'events') {
+        const lines = (await read($, events)).filter(one => one.task_id === id).slice(-20).map(one => one.text)
+        body = lines.length > 0 ? lines.join('\n') : 'No events yet.'
+      } else {
+        body = (await read($, board)) || 'Loading...'
+      }
+    }
+    return (
+      <Box flexDirection="column">
+        <Box>
+          {(['tickets', 'pipeline', 'events'] as const).map(one => (
+            <Button key={one} label={`[${one}]`} onPress={async () => {
+              await update($, view, () => one)
+              await refreshBoard($)
+            }} />
+          ))}
+        </Box>
+        <Text>{body}</Text>
+      </Box>
+    )
+  })
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const line = await read($, status)
+    if (line === '' || e.props.hasSurvey) return next(e)
+    const n = await read($, waiting)
+    const { Box, Button, Text } = $.ui.resolve(e)
+    const open = () => $.ui.open({ id: PANE, title: 'Teams' })
+    return (
+      <Box>
+        <Text dimColor wrap="truncate-end">{line} </Text>
+        <Button key="board" label="[board]" onPress={open} />
+        {n > 0 && <Button key="inbox" label={`[inbox ${n}]`} onPress={open} />}
+      </Box>
+    )
+  })
 
   // react only: the result goes back unchanged; interactive sessions only
   on('tool.call', { tool: /__(tm_open|tm_run)$/ }, async ($, e, next) => {

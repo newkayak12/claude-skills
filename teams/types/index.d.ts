@@ -9,6 +9,7 @@ declare module 'claude-code' {
       waiting: number
       view: 'tickets' | 'pipeline' | 'events'
       events: TeamsEvent[]
+      board: string
     }
   }
 }
