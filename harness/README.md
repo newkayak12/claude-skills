@@ -110,8 +110,8 @@ bump, re-run with `"refresh": true` — it re-copies only plugin-owned files (`g
 ### `remove`
 
 Uninstalls project-local harness governance: the hook, its `settings.json` registration,
-`.claude/harness-gate.json`, `.claude/harness/`, `.claude/.harness-markers/`, the fenced
-CLAUDE.md block, and the `.gitignore` line. `.claude/conventions/` is project-owned and is
+`.claude/harness-gate.json`, `.claude/.harness-last-decision.json`, `.claude/harness/`,
+`.claude/.harness-markers/`, the fenced CLAUDE.md block, and the `.gitignore` line. `.claude/conventions/` is project-owned and is
 **preserved by default** — purging it requires explicit confirmation. A malformed `settings.json`
 or unmatched CLAUDE markers are left in place and reported for manual cleanup rather than deleted
 to force completion.
@@ -240,6 +240,29 @@ are always gated. Fail-open everywhere (v0 lesson).
   unless their removal is explicitly requested.
 - **`harness:update`** refreshes a project's installed copies after a plugin bump by running
   `install.mjs` with `"refresh": true`; user-owned files are never touched.
+
+## Mod (Claude Code live UI)
+
+harness ships a small mod: a gate status line and a pane that explains the last gate decision. It is early access and optional. The gate itself is the command hook and works without it.
+
+**Version.** Modules load on Claude Code 2.1.292 and newer. The module API is early access and may change between releases. An older build skips the module: 2.1.284 was checked, it prints one stderr line (`hooks module not loaded: …`) and the command hooks, MCP and CLIs work unchanged. If a build says modules are not turned on for installed plugins, set `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`.
+
+| Where it runs | Mod |
+|---|---|
+| Interactive terminal | on |
+| Desktop app, Code tab | on |
+| `claude -p` and headless adapters | off (no UI surface) |
+| Codex, or no plugin | not applicable, nothing is lost |
+
+**Features**
+
+- **Status line**, only when the gate config exists in the project:
+  - `gate: armed (<n> patterns)`
+  - `gate: denied <target> — /harness-gate`, for 10 minutes after a deny.
+- **`/harness-gate`** opens a pane: the gated patterns, the engagement window, the last decision (allow or deny, tool, target, age, reason) and how to engage the harness. Without a gate config it says so.
+- The last decision comes from `.claude/.harness-last-decision.json`, written by the gate hook. It is a local runtime file, gitignored by `install`, and removed by `remove`.
+
+Known limitations: the status reads the gate config relative to the session's working directory. A session that started with no UI surface (headless or SDK-hosted) keeps the mod off even if a client attaches later; start a new session to get it (a reload of an unchanged mod does not re-fire session.start).
 
 ## Status
 - v1.23.0 — `harness:patch` leaves the user surface (maintainer script moved to `_repo/scripts/patch-harness.mjs`); new `harness:update` refreshes installed copies via `install.mjs` `"refresh": true`
