@@ -56,3 +56,16 @@ own plugin folder: env var, `import.meta.url`, or `$` API — record which works
 rules" updated if Task 2 or 3 contradicts them.
 
 - [ ] 1: write → 2: re-read `02-*.md` and `03-*.md` and fix any step that relied on a disproved assumption
+
+---
+
+### Task 6: trophy facts (added by 04-trophy.md)
+**Files:** scratch `spike-mod` (outside the repo); findings in `00-spike-findings.md` "Task 6".
+**Pass bar:** a "Task 6" section answering each, with the command and output:
+(a) `skill.prompt` fires for a typed `/think:brainstorming` and for a model Skill-tool call, and the exact `e.skill` value in each;
+(b) `session.start` `isInteractive` is `false` under `claude -p`;
+(c) `$.fs.write` can create `<HOME>/.claude/trophy/profile.json` (HOME via `$.env.get`);
+(d) `$.http.fetch('https://us.i.posthog.com/batch/', { method: 'POST', ... })` returns 200;
+(e) a module can `import` a sibling `./logic.ts`.
+
+- [ ] 1: append → 2: run in scratch → 3: record → 4: commit
