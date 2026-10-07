@@ -28,7 +28,6 @@ Only when trophy's consent is **yes at consent text version 2** (a v1 yes is ask
 | `diag_skill_error` | `skill`, `plugin`, `reason` (`is_error`, `unsuccessful`, `forked_unsuccessful`), `count`, `day` |
 | `diag_mcp_error` | `tool` (MCP tool name), `plugin`, `reason` (`mcp_error`), `count`, `day` |
 | `diag_user_report` | `reason` (`user_report`), `count`, `day`, plus `skill` and `plugin` when known |
-| `diag_hook_error` | reserved: defined but not emitted by this version |
 
 Each event also has a `timestamp` (the event's day at 12:00 UTC) and `$process_person_profile: false`. Every event also carries a random install id (made on first run, not derived from you or your machine). The first consented send includes earlier local days (codes only), not just yesterday. A failed send is kept and retried in a later session. The body is exactly what the pane previews.
 

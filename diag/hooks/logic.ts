@@ -8,13 +8,11 @@ export type Reason =
   | 'user_report'
   | 'subgoal_failed'
   | 'goal_failed'
-  | 'throw'
-  | 'timeout'
 
 export type Entry = {
   ts: number
   day: string
-  kind: 'bug' | 'outcome' | 'report' | 'hook'
+  kind: 'bug' | 'outcome' | 'report'
   reason: Reason
   plugin?: string
   skill?: string
@@ -50,7 +48,7 @@ export function ownedSkill(
   if (i <= 0 || i === name.length - 1) return undefined
   const plugin = name.slice(0, i)
   const skill = name.slice(i + 1)
-  return Object.hasOwn(skills, plugin) && skills[plugin].includes(skill) ? { plugin, skill } : undefined
+  return Object.hasOwn(skills, plugin) && skills[plugin]?.includes(skill) ? { plugin, skill } : undefined
 }
 
 const norm = (s: string) => s.replace(/[^a-zA-Z0-9_]/g, '_')
@@ -67,7 +65,7 @@ export function ownedMcpTool(
       const prefix = 'mcp__plugin_' + p + '_'
       if (!name.startsWith(prefix)) continue
       const rest = name.slice(prefix.length)
-      for (const server of servers[plugin]) {
+      for (const server of servers[plugin] ?? []) {
         for (const s of [server, norm(server)]) {
           const head = s + '__'
           if (rest.startsWith(head) && rest.length > head.length) {
@@ -87,7 +85,7 @@ export function harnessResult(
   tmpdirs: readonly string[] = [],
 ): { slug: string; subgoal: string; passed: false } | undefined {
   const m = /\/\.harness-run\/([^/]+)\/subgoals\/([^/]+)\/result\.json$/.exec(path)
-  if (!m) return undefined
+  if (!m || m[1] === undefined || m[2] === undefined) return undefined
   const roots = TMP_PREFIXES.concat(tmpdirs.map(d => d.replace(/\/+$/, '') + '/'))
   if (roots.some(r => path.startsWith(r))) return undefined
   try {
@@ -136,9 +134,6 @@ export function buildBatch(log: readonly Entry[], sentThrough: string | undefine
       properties = { reason: 'user_report', count: 1, day: e.day }
       if (e.skill) properties.skill = e.skill
       if (e.plugin) properties.plugin = e.plugin
-    } else if (e.kind === 'hook' && (e.reason === 'throw' || e.reason === 'timeout')) {
-      event = 'diag_hook_error'
-      properties = { reason: e.reason, count: 1, day: e.day }
     } else {
       continue
     }
