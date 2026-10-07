@@ -129,7 +129,7 @@
     {
       "name": "teams",
       "description": "A sibling of graph for requests too big for one pass: a TaskManager MCP (task-manager) sizes the request; size L is planned into a PRD and user stories, split into packages that each run the full harness in their own worktree, integrated, QA'd and gated by a background daemon; size S is handed to the development harness. Entry skills teams:orchestrate/develop/document/plan/qa/sprint, board and ticket views (tm_board, teams:board). Runs are kept under .teams_output/ and ~/.harness/tasks/. Zero runtime dependencies beyond Node 18+.",
-      "version": "0.45.0",
+      "version": "0.45.1",
       "author": {
         "name": "newkayak12"
       },
@@ -139,7 +139,7 @@
     {
       "name": "trophy",
       "description": "Steam-style achievements for using this marketplace's skills: a toast on unlock, an /achievements pane, trophy:list in conversation, and a view of which skills your prompts should have triggered. Opt-in anonymous daily counts (off by default).",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "author": {
         "name": "newkayak12"
       },
@@ -149,7 +149,7 @@
     {
       "name": "mods",
       "description": "Beta Claude Code mods for the claude-skills workflow: skill toasts, harness run band, safety guards for worktrees, running scripts, push/bump and subagent models.",
-      "version": "0.1.0-beta.1",
+      "version": "0.1.0-beta.2",
       "author": {
         "name": "newkayak12"
       },
@@ -159,7 +159,7 @@
     {
       "name": "diag",
       "description": "Beta. Records failures of this marketplace's skills and MCP tools in interactive sessions, shows them in a /diag pane, and sends only fixed error codes and counts when trophy's consent is yes.",
-      "version": "0.1.0-beta.1",
+      "version": "0.1.0-beta.2",
       "author": {
         "name": "newkayak12"
       },
