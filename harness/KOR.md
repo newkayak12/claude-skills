@@ -256,6 +256,7 @@ harness는 작은 mod를 함께 제공합니다. 게이트 상태 줄과, 마지
 알려진 제약: 상태 줄은 게이트 설정을 세션의 작업 디렉터리 기준으로 읽습니다. UI 표면 없이(헤드리스 또는 SDK 호스팅) 시작한 세션은 나중에 클라이언트가 붙어도 mod가 꺼진 채로 남습니다. 새 세션을 시작해야 켜집니다(바뀌지 않은 mod를 다시 로드해도 session.start는 다시 발생하지 않습니다).
 
 ## 상태
+- v1.24.0 — Mod(Claude Code 2.1.292+, 얼리 액세스): 게이트 상태 줄과 `/harness-gate` 패널; goal gate가 마지막 판정을 `.claude/.harness-last-decision.json`에 기록(install/remove가 이 파일을 관리)하고 간접 경로로 쓰는 대상도 판정
 - v1.23.0 — `harness:patch`가 사용자 스킬에서 빠짐(메인테이너 스크립트는 `_repo/scripts/patch-harness.mjs`로 이동); 새 `harness:update`가 `install.mjs` `"refresh": true`로 설치된 복사본을 갱신
 - v1.22.8 — codex-control에 Related Skills 섹션과 한국어 시나리오 추가(레포 점검)
 - v1.22.7 — 저장소 스크립트가 `_repo/`로 이동; patch 스킬이 `_repo/scripts/validate_plugins.py`를 실행
