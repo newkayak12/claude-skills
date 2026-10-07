@@ -23,22 +23,27 @@ EPIC이 끝나면 지식이 사라진다. `docs.mjs`가 `10-prd.md`·`60-qa.md`�
   사람이 직접 열어 보고 고쳐도 된다 — 그게 "사용자에게 보이는 산출물"이다.
 - **인덱스 = 버릴 수 있는 부산물.** `.teams_wiki/.index.sqlite` (`.teams_wiki/.gitignore`로 제외).
   md mtime이 바뀌면 다시 색인한다. 지워도 md에서 똑같이 재생성된다.
-- **검색 = SQLite FTS5 + 벡터, rank fusion(RRF).**
-  - 벡터는 Float32 BLOB 컬럼에 저장, cosine은 JS에서 전수 계산 (페이지 수백 개 규모 — sqlite-vec 같은
-    네이티브 확장은 의존성이라 쓰지 않는다).
-  - 임베딩은 Ollama `/api/embed` (`TEAMS_WIKI_EMBED_URL`, `TEAMS_WIKI_EMBED_MODEL`). 닿지 않으면
-    FTS만으로 동작하고 `wiki_status`가 `lexical-only`라고 말한다. 조용히 품질이 떨어지지 않게.
-  - 한국어: FTS5 trigram + 2음절 prefix (knowledge의 방식 그대로).
-- **도구 7개.**
+- **검색 = SQLite FTS5만. 벡터·임베딩 없음** (2026-10-07 사용자 결정: Ollama 안 씀, 외부 모델 의존 없음).
+  한국어는 FTS5 trigram + 2음절 prefix (knowledge의 방식 그대로). 찾는 것보다 **이어지는 것**이 핵심이다.
+- **이어짐 = 링크 그래프.** 페이지 본문의 `[[space/slug]]`를 파싱해 sqlite `links(from, to)` 테이블에 둔다.
+  - `wiki_get`은 전문과 함께 **나가는 링크·백링크**(제목 한 줄씩)를 돌려준다 — 한 페이지를 열면 이웃이 보인다.
+  - `wiki_propose`는 본문에 링크가 하나도 없고 비슷한 기존 페이지(FTS 상위)가 있으면 경고한다 — 고립 페이지 방지.
+  - 깨진 링크(없는 페이지를 가리킴)는 `wiki_status`가 목록으로 낸다.
+- **컨텍스트 유실 방지 = 이어받기 페이지.** 세션(EPIC) 하나가 끝날 때 `log/<날짜>-<source>` 페이지를 남긴다:
+  무엇을 결정했고, 무엇이 열려 있고, 어떤 페이지를 읽고/고쳤는지 — 모두 `[[링크]]`로.
+  다음 세션은 `wiki_resume()` 한 번으로 최근 log 페이지와 그 링크 1-hop을 받는다. 처음부터 다시 묻지 않는다.
+- **`INDEX.md`(렌더 뷰).** 페이지마다 한 줄 `[[id]] — 요약`. 수락 때마다 다시 쓴다. 사람에게는 목차, 모델에게는 지도.
+- **도구 8개.**
 
   | 도구 | 하는 일 |
   |---|---|
-  | `wiki_search(query, space?, k=5)` | 하이브리드 검색. id·title·snippet·path. superseded는 기본 제외 |
-  | `wiki_get(id)` | 페이지 전문 |
+  | `wiki_search(query, space?, k=5)` | FTS 검색. id·title·snippet. superseded는 기본 제외 |
+  | `wiki_get(id)` | 페이지 전문 + 나가는 링크 + 백링크 |
+  | `wiki_resume(k=3)` | 최근 log 페이지 k개 + 그 링크 1-hop (제목·요약) — 세션 시작용 |
   | `wiki_list(space?)` | space/페이지 트리 |
-  | `wiki_propose(space, slug, title, body, source, supersedes?)` | `_proposed/`에 제안 작성, 기존 페이지와의 diff 반환 |
-  | `wiki_accept(proposal_id)` / `wiki_reject(proposal_id, reason)` | 제안 반영(재색인) / 거절 사유 기록 |
-  | `wiki_status()` | 페이지 수, 인덱스 신선도, 임베딩 모드 |
+  | `wiki_propose(space, slug, title, body, source, supersedes?)` | `_proposed/`에 제안 작성, 기존 페이지와의 diff·고립 경고 반환 |
+  | `wiki_accept(proposal_id)` / `wiki_reject(proposal_id, reason)` | 제안 반영(재색인·INDEX 갱신) / 거절 사유 기록 |
+  | `wiki_status()` | 페이지 수, 인덱스 신선도, 깨진 링크 |
 
 - **쓰기는 항상 제안 → 수락.** 작성자가 곧바로 원본을 바꾸지 못한다 (Principle 2를 MCP 수준에서 강제).
   단독 사용 시엔 사람이 `wiki_accept`한다.
@@ -49,9 +54,10 @@ EPIC이 끝나면 지식이 사라진다. `docs.mjs`가 `10-prd.md`·`60-qa.md`�
 
 ### 2단계 — teams에 녹이기
 
-- **읽기:** investigate/plan 단계 프롬프트(`prompts.mjs`)에 "`wiki_search`로 먼저 찾고, 쓴 페이지는
-  id로 인용" 추가. 결과는 snippet만, k≤5 (프롬프트 비대 방지).
-- **쓰기:** EPIC report 단계가 이번 EPIC의 결정·PRD 결론·QA 교훈을 `wiki_propose`(source=EPIC id).
+- **읽기:** EPIC 시작(sizing) 때 `wiki_resume()` 결과를 task에 붙여 investigate/plan 프롬프트(`prompts.mjs`)로
+  넘긴다. 단계마다 `wiki_search`/`wiki_get`으로 더 따라가고, 쓴 페이지는 id로 인용. 요약만, k≤5 (프롬프트 비대 방지).
+- **쓰기:** EPIC report 단계가 이번 EPIC의 결정·PRD 결론·QA 교훈을 `wiki_propose`(source=EPIC id),
+  그리고 이어받기용 `log/` 페이지 하나 — 읽은 페이지·고친 페이지·열린 질문을 링크로.
   기존 페이지와 모순되면 `supersedes`로 대체 제안 — 지우지 않는다.
 - **판정:** EPIC 최종 gate가 report와 함께 제안들을 accept/reject. 새 노드를 만들지 않는다.
 - **보이기:** report 문서(`docs.mjs`)에 "Wiki 변경" 절 — 수락/거절된 페이지, 경로, 사유.
@@ -63,13 +69,17 @@ EPIC이 끝나면 지식이 사라진다. `docs.mjs`가 `10-prd.md`·`60-qa.md`�
 - [ ] `node --test`: propose → accept → search가 한국어·영어 키워드로 해당 페이지를 1위로 찾는다.
 - [ ] supersede된 페이지는 기본 검색에서 빠지고 `superseded_by`로 새 페이지를 가리킨다.
 - [ ] `.index.sqlite`를 지우고 재색인해도 같은 검색 결과.
-- [ ] Ollama 없을 때 FTS만으로 검색되고 `wiki_status`가 `lexical-only`.
+- [ ] `[[링크]]`가 links 테이블에 들어가고 `wiki_get`이 백링크를 돌려준다. 깨진 링크는 `wiki_status`에 나온다.
+- [ ] `wiki_resume`이 최근 log 페이지와 그 링크 1-hop을 돌려준다.
+- [ ] 링크 없는 제안이 비슷한 기존 페이지가 있을 때 고립 경고를 받는다.
+- [ ] 외부 모델·네트워크 호출 0 (임베딩 없음).
 - [ ] 두 프로세스가 동시에 accept해도 md·인덱스가 깨지지 않는다.
-- [ ] stdio 스모크: `tools/list`가 도구 7개를 돌려준다.
+- [ ] stdio 스모크: `tools/list`가 도구 8개를 돌려준다.
 - [ ] Node 22.12(현 로컬)와 24에서 기동 확인.
 
 2단계
-- [ ] bench fixture에서 EPIC 1이 제안 → gate 수락 → EPIC 2의 investigate가 그 페이지 id를 인용.
+- [ ] bench fixture에서 EPIC 1이 제안 → gate 수락 → EPIC 2가 `wiki_resume`으로 이어받아 investigate가 그 페이지 id를 인용.
+- [ ] EPIC 2가 EPIC 1에서 이미 결정된 질문을 다시 사람에게 묻지 않는다 (컨텍스트 유실 없음의 실측).
 - [ ] report md에 "Wiki 변경" 절이 나온다.
 - [ ] wiki 서버가 꺼져 있어도 EPIC이 끝까지 돈다 (wiki는 선택 기능).
 
