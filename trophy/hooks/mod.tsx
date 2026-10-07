@@ -9,7 +9,9 @@ import {
   buildBatch,
   buildProfile,
   closeTurn,
+  CONSENT_VERSION,
   dayOf,
+  effectiveConsent,
   evaluate,
   matchTriggers,
   POSTHOG_URL,
@@ -28,6 +30,7 @@ const turnFired = atom({ plugin: 'trophy', key: 'turnFired' } as const, [] as st
 const turnTyped = atom({ plugin: 'trophy', key: 'turnTyped' } as const, false)
 const tab = atom({ plugin: 'trophy', key: 'tab' } as const, 'trophies' as 'trophies' | 'triggers')
 const consent = atom({ plugin: 'trophy', key: 'consent' } as const, 'unasked' as 'unasked' | 'yes' | 'no')
+const consentVersion = atom({ plugin: 'trophy', key: 'consentVersion' } as const, 0)
 
 const PANE = 'trophy'
 const BATCH_PANE = 'trophy-batch'
@@ -36,7 +39,9 @@ type Consent = 'unasked' | 'yes' | 'no'
 // The one place consent changes: the store keeps it, the state redraws the band.
 async function setConsent($: EngineInterface, value: Consent) {
   await $.store.set('trophy.consent', value)
+  await $.store.set('trophy.consentVersion', CONSENT_VERSION)
   await update($, consent, () => value)
+  await update($, consentVersion, () => CONSENT_VERSION)
 }
 
 const DAY_MS = 86_400_000
@@ -83,7 +88,11 @@ async function recordPlugins($: EngineInterface) {
 
 // Sends the days not yet sent, up to yesterday, for a person who said yes; a failed send changes nothing.
 async function sendIfDue($: EngineInterface) {
-  if ((await $.store.get('trophy.consent')) !== 'yes') return
+  const answer = effectiveConsent(
+    (await $.store.get('trophy.consent')) as Consent | undefined,
+    (await $.store.get('trophy.consentVersion')) as number | undefined,
+  )
+  if (answer !== 'yes') return
   const through = await yesterday($)
   const sent = (await $.store.get('trophy.sentThrough')) as string | undefined
   if (sent !== undefined && sent >= through) return
@@ -145,8 +154,11 @@ export const register: Register = on => {
     if (!e.isInteractive) return next(e)
 
     await update($, active, () => true)
-    const saved = ((await $.store.get('trophy.consent')) as Consent | undefined) ?? 'unasked'
+    const savedVersion = (await $.store.get('trophy.consentVersion')) as number | undefined
+    // An older yes reads as unasked (the band asks once more); the stored value stays until answered.
+    const saved = effectiveConsent((await $.store.get('trophy.consent')) as Consent | undefined, savedVersion)
     await update($, consent, () => saved)
+    await update($, consentVersion, () => savedVersion ?? 0)
     if ((await $.store.get('trophy.installId')) === undefined) {
       await $.store.set('trophy.installId', crypto.randomUUID())
     }
@@ -267,7 +279,11 @@ export const register: Register = on => {
       await setConsent($, arg === 'on' ? 'yes' : 'no')
       return { text: `trophy telemetry: ${arg === 'on' ? 'yes' : 'no'}` }
     }
-    if (arg === 'status') return { text: `trophy telemetry: ${await read($, consent)}` }
+    if (arg === 'status') {
+      const now = await read($, consent)
+      const old = now === 'unasked' && (await $.store.get('trophy.consent')) === 'yes'
+      return { text: `trophy telemetry: ${old ? 'unasked (v1 yes — 재동의 필요)' : now === 'yes' ? `yes (v${CONSENT_VERSION})` : now}` }
+    }
     return { text: 'usage: /trophy-telemetry on|off|status' }
   }).catch(failOpen)
 
@@ -277,7 +293,7 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(e)
     return (
       <Box>
-        <Text>trophy: 익명 사용 통계를 보낼까요? (스킬명·일별 횟수만, 프롬프트·경로 없음) </Text>
+        <Text>trophy: 익명 사용 통계를 보낼까요? (스킬명·일별 횟수·오류 코드만, 프롬프트·경로 없음) </Text>
         <Button key="send" label="보내기" onPress={() => setConsent($, 'yes')} />
         <Button key="decline" label="안 보내기" onPress={() => setConsent($, 'no')} />
         <Button key="show" label="내용 보기" onPress={() => $.ui.open({ id: BATCH_PANE, title: 'Telemetry preview' })} />
