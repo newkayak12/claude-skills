@@ -19,7 +19,7 @@
 // Both the HTML page's /state.json and --once's text tree come from ONE collect() function
 // (teams/scripts/lib/view-collect.mjs) - this file only renders it two ways.
 import { createServer } from 'node:http';
-import { readFileSync, existsSync, openSync, readSync, fstatSync, closeSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, openSync, readSync, fstatSync, closeSync, statSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tasksRoot } from '../mcp/taskmanager.mjs';
@@ -82,13 +82,19 @@ function tailLines(path) {
 
 // Running tasks, decided by collectTask(): state 'running' (a dead daemon reads 'stalled'). A
 // task.json-less dir is never listed, and an unreadable one carries `error`, so unknown = not running.
+// Same directory through different paths (/var -> /private/var, any symlink) must match. A path
+// that no longer exists (a deleted temp repo) falls back to resolve().
+function samePath(p) {
+  try { return realpathSync(p); } catch { return resolve(p); }
+}
+
 function runningModels(tasksDir, cwd) {
-  const want = cwd ? resolve(cwd) : null;
+  const want = cwd ? samePath(cwd) : null;
   const out = [];
   for (const row of listTasks(tasksDir)) {
     const m = collectTask(tasksDir, row.task_id);
     if (m.error || m.state !== 'running') continue;
-    if (want && (!m.cwd || resolve(m.cwd) !== want)) continue;
+    if (want && (!m.cwd || samePath(m.cwd) !== want)) continue;
     out.push(m);
   }
   return out;
@@ -112,7 +118,7 @@ function statusOutput(tasksDir, cwd) {
 // daemon_exhausted are written after a task stops running, so a running-only filter would never
 // deliver them. A task.json-less dir is not listed and an unreadable one carries `error`; both skipped.
 function eventsOutput(tasksDir, cwd, since) {
-  const want = cwd ? resolve(cwd) : null;
+  const want = cwd ? samePath(cwd) : null;
   const out = [];
   for (const row of listTasks(tasksDir)) {
     if (row.error) continue;
@@ -120,7 +126,7 @@ function eventsOutput(tasksDir, cwd, since) {
     try { if (statSync(ledger).mtimeMs <= since) continue; } catch { continue; }
     if (want) {
       const m = collectTask(tasksDir, row.task_id);
-      if (m.error || !m.cwd || resolve(m.cwd) !== want) continue;
+      if (m.error || !m.cwd || samePath(m.cwd) !== want) continue;
     }
     out.push(...notableEvents(tailLines(ledger), since));
   }
