@@ -168,7 +168,7 @@ const SURFACES = ['terminal', 'desktop'] as const
 const TICKETS = 'TICKETS-TEXT P1 implement'
 
 // Engine beneath: a Map-backed $.state, process.run for view.mjs, ui.open recorded.
-function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly ('terminal' | 'desktop')[] = ['terminal']) {
+function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly ('terminal' | 'desktop')[] = ['terminal'], latest?: string) {
   const store = new Map<string, unknown>(Object.entries(init))
   const seen = { argv: [] as (readonly string[])[], opened: [] as string[] }
   on('session.surfaces', () => ({ value: surfaces }))
@@ -179,7 +179,7 @@ function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly 
   })
   on('process.run', (_$, e) => {
     seen.argv.push(e.argv)
-    return { value: ok(e.argv.includes('status') ? '{"line":"","waiting":0}' : e.argv.includes('events') ? '' : TICKETS) }
+    return { value: ok(e.argv.includes('status') ? `{"line":"","waiting":0${latest === undefined ? '' : `,"latest":"${latest}"`}}` : e.argv.includes('events') ? '' : TICKETS) }
   })
   on('ui.open', (_$, e) => {
     seen.opened.push(e.id)
@@ -285,4 +285,41 @@ test('/teams-live answers and opens the pane; session start alone opens nothing'
   const r = await $.command.run({ command: 'teams-live', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
   expect(seen.opened).toEqual(['teams-live'])
   expect(JSON.stringify(r)).toContain('pane opened')
+})
+
+// ---- pane fallback: the newest running task of this cwd ----
+async function openPaneTick($: Engine, on: On, init: Record<string, unknown>, latest?: string) {
+  const clock = mock.clock(on, { now: 1000 })
+  const seen = uiWorld(on, init, ['terminal'], latest)
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('session.cwd', () => ({ value: '/proj' }))
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('ui.panes', () => ({ value: [{ id: 'teams-live', title: 'Teams', isPlaced: true }] }) as never)
+  await start($)
+  await clock.advance(3000)
+  return seen
+}
+const taskOf = (argv: readonly string[]) => argv[argv.indexOf('--task') + 1]
+
+test('pane fallback: empty watch shows the newest running task of this cwd', async ($, on) => {
+  const seen = await openPaneTick($, on, {}, 'E-run1')
+  expect(seen.argv.some(a => a.includes('--view') && taskOf(a) === 'E-run1')).toBe(true)
+  const n = seen.argv.length
+  const ui = await pane($, 'terminal')
+  expect(await ui.find({ type: 'Text', text: TICKETS })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'No teams run in this session.' })).toBeUndefined()
+  expect(seen.argv).toHaveLength(n)
+})
+
+test('pane fallback: a watched task wins over the cwd task', async ($, on) => {
+  const seen = await openPaneTick($, on, { watch: ['abc'] }, 'E-run1')
+  const views = seen.argv.filter(a => a.includes('--view'))
+  expect(views.length > 0 && views.every(a => taskOf(a) === 'abc')).toBe(true)
+})
+
+test('pane fallback: no watch and no cwd task draws the no-run text', async ($, on) => {
+  const seen = await openPaneTick($, on, {})
+  expect(seen.argv.some(a => a.includes('--view'))).toBe(false)
+  const ui = await pane($, 'terminal')
+  expect(await ui.find({ type: 'Text', text: 'No teams run in this session.' })).toBeDefined()
 })

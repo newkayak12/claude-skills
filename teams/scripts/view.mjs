@@ -111,7 +111,8 @@ function statusOutput(tasksDir, cwd) {
   });
   // waiting = nodes in state waiting_human, counted from task.json (no ledger records that event).
   const waiting = models.reduce((s, m) => s + ((m.counts && m.counts.waiting_human) || 0), 0);
-  return JSON.stringify({ line: statusLine(rows), waiting }) + '\n';
+  const newest = models.reduce((a, m) => (!a || (m.created_at || 0) > (a.created_at || 0) ? m : a), null);
+  return JSON.stringify({ line: statusLine(rows), waiting, latest: newest ? newest.task_id : null }) + '\n';
 }
 
 // Ledgers whose file changed after `since` (mtime, ms), whatever the task's state: daemon_done and

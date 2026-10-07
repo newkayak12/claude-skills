@@ -10,6 +10,9 @@ const events = atom({ plugin: 'teams', key: 'events' } as const, [] as TeamsEven
 const watch = atom({ plugin: 'teams', key: 'watch' } as const, [] as string[])
 const view = atom({ plugin: 'teams', key: 'view' } as const, 'tickets' as 'tickets' | 'pipeline' | 'events')
 
+// full id of the newest running task of this cwd (from the tick's status call); the pane's fallback
+const cwdTask = atom({ plugin: 'teams', key: 'cwdTask' } as const, null as string | null)
+
 const board = atom({ plugin: 'teams', key: 'board' } as const, '')
 
 const PANE = 'teams-live'
@@ -34,10 +37,15 @@ function taskIdOf(r: { result?: unknown; text?: unknown }): string | undefined {
   }
 }
 
-// the pane text for the last watched task; the tick and a pane button write it, the render only reads it
+// the pane's task: the last watched one, else this cwd's newest running one
+async function paneTask($: EngineInterface): Promise<string | undefined> {
+  return (await read($, watch)).at(-1) ?? (await read($, cwdTask)) ?? undefined
+}
+
+// the pane text for the pane's task; the tick and a pane button write it, the render only reads it
 async function refreshBoard($: EngineInterface) {
   const kind = await read($, view)
-  const id = (await read($, watch)).at(-1)
+  const id = await paneTask($)
   if (id === undefined || kind === 'events') return
   try {
     const out = await $.process.run(['node', `${$.plugin.root}/scripts/view.mjs`, '--once', '--task', id, '--view', kind])
@@ -89,10 +97,11 @@ export const register: Register = on => {
 
         const st = await $.process.run(['node', VIEW, '--once', '--format', 'status', '--cwd', cwd])
         if (st.exitCode === 0) {
-          const parsed = JSON.parse(st.stdout) as { line: string; waiting: number }
+          const parsed = JSON.parse(st.stdout) as { line: string; waiting: number; latest?: string | null }
           $.ui.status(parsed.line === '' ? undefined : parsed.line)
           await update($, status, () => parsed.line)
           await update($, waiting, () => parsed.waiting)
+          await update($, cwdTask, () => parsed.latest ?? null)
         }
 
         // the pane text is produced here, only while the pane is open
@@ -125,8 +134,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const kind = await read($, view)
-    const list = await read($, watch)
-    const id = list[list.length - 1]
+    const id = await paneTask($)
     let body = NO_RUN
     if (id !== undefined) {
       if (kind === 'events') {
