@@ -1,7 +1,22 @@
-import { atom, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import { atom, read, update } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
+
+import { triggers } from '../data/triggers.ts'
+import { recordUse, resolveSkill } from './logic.ts'
+import type { Use } from './logic.ts'
 
 const active = atom({ plugin: 'trophy', key: 'active' } as const, false)
+const turnFired = atom({ plugin: 'trophy', key: 'turnFired' } as const, [] as string[])
+
+// Records one skill use; always called before `next`, so a throw here falls to the hook's `.catch`.
+async function note($: EngineInterface, name: string) {
+  if (!(await read($, active))) return
+  const hit = resolveSkill(name, triggers)
+  if (!hit) return
+  const uses = ((await $.store.get('trophy.uses')) ?? []) as Use[]
+  await $.store.set('trophy.uses', recordUse(uses, hit.skill, await $.clock.now(), await $.session.id()))
+  await update($, turnFired, list => [...list, hit.skill])
+}
 
 export const register: Register = on => {
   // Non-interactive sessions (every `claude -p`, so every teams/graph adapter) stay idle.
@@ -22,6 +37,23 @@ export const register: Register = on => {
       argumentHint: 'on|off|status',
     })
 
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  // skill.prompt is skipped for user-tier hooks under some organizations' policy (00-spike-findings),
+  // so the Skill tool and the typed command report the same uses.
+  on('skill.prompt', async ($, e, next) => {
+    await note($, e.skill)
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  on('tool.call', { tool: 'Skill' }, async ($, e, next) => {
+    await note($, e.skill)
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  on('classic.UserPromptExpansion', async ($, e, next) => {
+    if (e.expansion_type === 'slash_command') await note($, e.command_name)
     return next(e)
   }).catch(($, e, next) => next(e))
 }
