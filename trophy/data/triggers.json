@@ -1,0 +1,1064 @@
+[
+  {
+    "skill": "agents:agent-task-decomposer",
+    "plugin": "agents",
+    "phrases": [
+      "agent에게 어떻게 전달해?",
+      "subtask로 나눠줘",
+      "task decomposition",
+      "병렬 작업 계획 잡아줘",
+      "에이전트 분리해줘",
+      "이 작업 어떻게 나눠야 해?",
+      "큰 작업 분해해줘"
+    ]
+  },
+  {
+    "skill": "agents:dispatching-parallel-agents",
+    "plugin": "agents",
+    "phrases": [
+      "multiple independent failures",
+      "parallel agents",
+      "각자 전문가한테 맡겨줘",
+      "독립적인 작업들 한번에",
+      "동시에 여러 작업",
+      "병렬로 처리해줘"
+    ]
+  },
+  {
+    "skill": "agents:subagent-driven-development",
+    "plugin": "agents",
+    "phrases": [
+      "subagent-driven",
+      "두 단계 리뷰로 구현",
+      "서브에이전트로 구현해줘",
+      "태스크별로 에이전트 배포해줘",
+      "현재 세션에서 서브에이전트로 실행"
+    ]
+  },
+  {
+    "skill": "cognition:assumption-extractor",
+    "plugin": "cognition",
+    "phrases": []
+  },
+  {
+    "skill": "cognition:bias-auditor",
+    "plugin": "cognition",
+    "phrases": [
+      "audit my reasoning",
+      "bias check",
+      "내 판단 비뚤어진 것 같아",
+      "편향 점검",
+      "확신이 과한 것 같아"
+    ]
+  },
+  {
+    "skill": "cognition:clarity-toolkit",
+    "plugin": "cognition",
+    "phrases": [
+      "overthinking",
+      "too vague",
+      "목표가 너무 막연해",
+      "분석만 하다 결정을 못 해",
+      "정보가 너무 많아서 뭐가 중요한지 모르겠어"
+    ]
+  },
+  {
+    "skill": "cognition:critical-thinking-workflow",
+    "plugin": "cognition",
+    "phrases": [
+      "critical thinking full process",
+      "decision stress-test",
+      "high-stakes decision review",
+      "결정 제대로 검토해줘",
+      "논리 전체 점검",
+      "전략 검토 전체"
+    ]
+  },
+  {
+    "skill": "cognition:epistemic-reasoner",
+    "plugin": "cognition",
+    "phrases": []
+  },
+  {
+    "skill": "cognition:fallacy-detector",
+    "plugin": "cognition",
+    "phrases": [
+      "post hoc",
+      "spot the fallacy",
+      "strawman",
+      "논리에 허점 있어?",
+      "원인이 너무 깔끔한데",
+      "이거 억지 아냐?"
+    ]
+  },
+  {
+    "skill": "cognition:mental-model-toolkit",
+    "plugin": "cognition",
+    "phrases": [
+      "blind spots",
+      "mental model",
+      "unknown unknowns",
+      "내가 뭘 놓치고 있지?",
+      "다른 관점이 필요해",
+      "해볼 건 다 해봤는데"
+    ]
+  },
+  {
+    "skill": "cognition:question-upgrader",
+    "plugin": "cognition",
+    "phrases": [
+      "am i asking the right question",
+      "better question",
+      "이 질문이 맞는 질문일까?",
+      "질문 자체가 틀린 건 아닐까?",
+      "질문 좀 더 좋게"
+    ]
+  },
+  {
+    "skill": "cognition:second-order-thinker",
+    "plugin": "cognition",
+    "phrases": []
+  },
+  {
+    "skill": "cognition:tradeoff-articulator",
+    "plugin": "cognition",
+    "phrases": [
+      "tradeoff",
+      "장단점",
+      "트레이드오프"
+    ]
+  },
+  {
+    "skill": "completion:verification-before-completion",
+    "plugin": "completion",
+    "phrases": [
+      "bug is fixed",
+      "done",
+      "pr 올릴게",
+      "should pass",
+      "버그 고쳤어",
+      "빌드 성공",
+      "완료했어",
+      "커밋할게",
+      "테스트 통과"
+    ]
+  },
+  {
+    "skill": "develop:architecture-designer",
+    "plugin": "develop",
+    "phrases": []
+  },
+  {
+    "skill": "develop:architecture-review",
+    "plugin": "develop",
+    "phrases": [
+      "where should we refactor this repo",
+      "어디부터 리팩토링할까",
+      "코드가 얽혀서 손대기 힘들어"
+    ]
+  },
+  {
+    "skill": "develop:architecture-workflow",
+    "plugin": "develop",
+    "phrases": [
+      "system architecture from scratch"
+    ]
+  },
+  {
+    "skill": "develop:bug-diagnoser",
+    "plugin": "develop",
+    "phrases": [
+      "debug this",
+      "fix this bug",
+      "why is this failing",
+      "갑자기 안 돼",
+      "고쳐줘",
+      "디버깅",
+      "안 돼요",
+      "에러 나요",
+      "왜 이러죠"
+    ]
+  },
+  {
+    "skill": "develop:chaos-engineer",
+    "plugin": "develop",
+    "phrases": [
+      "chaos experiment",
+      "game day 준비",
+      "kill a pod in staging",
+      "pod 죽여보고 싶어",
+      "simulate zone outage",
+      "장애 주입 테스트"
+    ]
+  },
+  {
+    "skill": "develop:circuit-breaker-tuner",
+    "plugin": "develop",
+    "phrases": []
+  },
+  {
+    "skill": "develop:clean-architecture",
+    "plugin": "develop",
+    "phrases": [
+      "레이어 아키텍처",
+      "의존성 규칙"
+    ]
+  },
+  {
+    "skill": "develop:clean-code",
+    "plugin": "develop",
+    "phrases": [
+      "code review",
+      "pr 리뷰",
+      "review this branch",
+      "리팩토링",
+      "어떻게 구현해?",
+      "이 브랜치 리뷰해줘",
+      "코드 리뷰"
+    ]
+  },
+  {
+    "skill": "develop:cli-developer",
+    "plugin": "develop",
+    "phrases": []
+  },
+  {
+    "skill": "develop:code-documenter",
+    "plugin": "develop",
+    "phrases": [
+      "add jsdoc",
+      "generate openapi spec",
+      "swagger 문서 만들어줘",
+      "write a readme tutorial",
+      "문서 사이트 만들어줘",
+      "주석/독스트링 달아줘"
+    ]
+  },
+  {
+    "skill": "develop:connection-pool-tuner",
+    "plugin": "develop",
+    "phrases": [
+      "connection timeout",
+      "hikaricp 사이즈 어떻게 잡아?",
+      "pgbouncer tuning",
+      "pool exhaustion",
+      "커넥션 풀 고갈",
+      "트래픽 몰리면 타임아웃"
+    ]
+  },
+  {
+    "skill": "develop:database-optimizer",
+    "plugin": "develop",
+    "phrases": [
+      "innodb buffer pool",
+      "lock contention",
+      "shared_buffers 튜닝",
+      "stale statistics",
+      "vacuum 밀림",
+      "락 경합",
+      "파티셔닝 설계"
+    ]
+  },
+  {
+    "skill": "develop:database-workflow",
+    "plugin": "develop",
+    "phrases": [
+      "database performance investigation",
+      "database workflow",
+      "db 성능 전체",
+      "db 전체 점검"
+    ]
+  },
+  {
+    "skill": "develop:deprecation-and-migration",
+    "plugin": "develop",
+    "phrases": [
+      "drop this column",
+      "이 api 없애자",
+      "컬럼 지우는 마이그레이션"
+    ]
+  },
+  {
+    "skill": "develop:dev-quality-workflow",
+    "plugin": "develop",
+    "phrases": [
+      "dev quality process",
+      "full dev cycle",
+      "개발 품질 전체",
+      "새 기능 처음부터 제대로"
+    ]
+  },
+  {
+    "skill": "develop:dockerfile-optimizer",
+    "plugin": "develop",
+    "phrases": [
+      "docker optimize",
+      "dockerfile",
+      "도커 최적화",
+      "빌드 시간",
+      "이거 좀 봐줘",
+      "이미지 크기",
+      "컨테이너 최적화"
+    ]
+  },
+  {
+    "skill": "develop:documentation-strategy",
+    "plugin": "develop",
+    "phrases": [
+      "doc coverage map",
+      "documentation audit",
+      "런북/adr 체계",
+      "문서 뭐부터 써야 해?",
+      "온보딩 문서 정리"
+    ]
+  },
+  {
+    "skill": "develop:domain-driven-design",
+    "plugin": "develop",
+    "phrases": [
+      "bounded context",
+      "ddd",
+      "domain-driven design",
+      "도메인 모델링",
+      "바운디드 컨텍스트"
+    ]
+  },
+  {
+    "skill": "develop:event-storming",
+    "plugin": "develop",
+    "phrases": [
+      "map our business flow",
+      "workshop with domain experts",
+      "도메인 모델링 워크숍",
+      "도메인 이벤트 뽑아보자",
+      "이벤트 스토밍"
+    ]
+  },
+  {
+    "skill": "develop:flaky-test-analyzer",
+    "plugin": "develop",
+    "phrases": [
+      "flaky test"
+    ]
+  },
+  {
+    "skill": "develop:frontend-developer",
+    "plugin": "develop",
+    "phrases": [
+      "build a react component"
+    ]
+  },
+  {
+    "skill": "develop:incident-response-playbook",
+    "plugin": "develop",
+    "phrases": [
+      "prod is down",
+      "severity 분류",
+      "write an rca",
+      "장애 났어",
+      "포스트모템 써줘",
+      "프로덕션 터졌어"
+    ]
+  },
+  {
+    "skill": "develop:kotlin-specialist",
+    "plugin": "develop",
+    "phrases": [
+      "kotlin coroutines"
+    ]
+  },
+  {
+    "skill": "develop:microservices-architect",
+    "plugin": "develop",
+    "phrases": [
+      "decompose the monolith",
+      "msa로 쪼갤까?",
+      "saga design",
+      "sync vs async calls",
+      "분산 시스템 설계",
+      "서비스 간 통신 rest vs 이벤트"
+    ]
+  },
+  {
+    "skill": "develop:operations-workflow",
+    "plugin": "develop",
+    "phrases": [
+      "going to prod",
+      "pre-launch ops check",
+      "production readiness review",
+      "system hardening",
+      "운영 준비"
+    ]
+  },
+  {
+    "skill": "develop:performance-profiling-optimization",
+    "plugin": "develop",
+    "phrases": [
+      "api가 느려요",
+      "high cpu",
+      "p99 latency spike",
+      "profile this endpoint",
+      "메모리 계속 늘어나",
+      "병목 찾아줘"
+    ]
+  },
+  {
+    "skill": "develop:scenario-actor",
+    "plugin": "develop",
+    "phrases": [
+      "run this scenario",
+      "spec=… base_url=…",
+      "이 spec 실행해줘",
+      "이 시나리오 하나만 돌려줘"
+    ]
+  },
+  {
+    "skill": "develop:scenario-director",
+    "plugin": "develop",
+    "phrases": [
+      "api 시나리오 테스트",
+      "flow test",
+      "시나리오 ci 붙여줘",
+      "시나리오 md 읽고 서버에 돌려줘"
+    ]
+  },
+  {
+    "skill": "develop:security-auditor",
+    "plugin": "develop",
+    "phrases": [
+      "is this exploitable",
+      "보안 점검",
+      "취약점 찾아줘"
+    ]
+  },
+  {
+    "skill": "develop:service-boundary-validator",
+    "plugin": "develop",
+    "phrases": [
+      "db 공유 문제 없나?",
+      "distributed monolith",
+      "split or merge",
+      "validate this service boundary",
+      "결합도 너무 높은 것 같아",
+      "서비스 쪼개도 될까?"
+    ]
+  },
+  {
+    "skill": "develop:spring-boot-engineer",
+    "plugin": "develop",
+    "phrases": []
+  },
+  {
+    "skill": "develop:sql-pro",
+    "plugin": "develop",
+    "phrases": []
+  },
+  {
+    "skill": "develop:sre-engineer",
+    "plugin": "develop",
+    "phrases": [
+      "burn-rate alert",
+      "golden signals dashboard",
+      "slo 정하고 싶어",
+      "반복 작업(toil) 줄이기",
+      "알람 피로",
+      "에러 버짓"
+    ]
+  },
+  {
+    "skill": "develop:test-driven-development",
+    "plugin": "develop",
+    "phrases": [
+      "red-green-refactor",
+      "tdd",
+      "test-first",
+      "테스트 먼저 작성"
+    ]
+  },
+  {
+    "skill": "develop:test-master",
+    "plugin": "develop",
+    "phrases": [
+      "defect report",
+      "test case writing",
+      "test plan",
+      "단위 테스트",
+      "커버리지 분석",
+      "테스트 작성",
+      "테스트 케이스 작성"
+    ]
+  },
+  {
+    "skill": "develop:testing-workflow",
+    "plugin": "develop",
+    "phrases": [
+      "tdd부터 커버리지까지",
+      "testing workflow",
+      "테스트 전체 프로세스"
+    ]
+  },
+  {
+    "skill": "develop:transaction-boundary-reviewer",
+    "plugin": "develop",
+    "phrases": [
+      "@transactional 범위",
+      "deadlock under load",
+      "isolation level",
+      "two writes atomic",
+      "데이터 정합성 깨져",
+      "트랜잭션 락 타임아웃"
+    ]
+  },
+  {
+    "skill": "graph:install",
+    "plugin": "graph",
+    "phrases": []
+  },
+  {
+    "skill": "graph:orchestrate",
+    "plugin": "graph",
+    "phrases": [
+      "graph-engineering 노드 루프",
+      "graph-engineering으로 돌려줘",
+      "graph-owned harness flow"
+    ]
+  },
+  {
+    "skill": "harness:codex-control",
+    "plugin": "harness",
+    "phrases": []
+  },
+  {
+    "skill": "harness:harness",
+    "plugin": "harness",
+    "phrases": [
+      "6단계로 처리해줘",
+      "do this properly with verification",
+      "run the harness",
+      "검증까지 해서",
+      "메타스크립트로",
+      "이거 제대로 해줘",
+      "하네스 돌려줘"
+    ]
+  },
+  {
+    "skill": "harness:install",
+    "plugin": "harness",
+    "phrases": [
+      "convention 스캐폴딩해줘",
+      "harness install",
+      "set up the harness here",
+      "게이트 켜줘",
+      "이 프로젝트에 하네스 적용해줘",
+      "하네스 설치해줘"
+    ]
+  },
+  {
+    "skill": "harness:remove",
+    "plugin": "harness",
+    "phrases": [
+      "harness remove",
+      "uninstall harness",
+      "하네스 삭제",
+      "하네스 제거"
+    ]
+  },
+  {
+    "skill": "harness:update",
+    "plugin": "harness",
+    "phrases": [
+      "harness update",
+      "refresh harness copies",
+      "하네스 업데이트",
+      "하네스 최신으로"
+    ]
+  },
+  {
+    "skill": "knowledge:base-builder",
+    "plugin": "knowledge",
+    "phrases": []
+  },
+  {
+    "skill": "knowledge:graph-builder",
+    "plugin": "knowledge",
+    "phrases": []
+  },
+  {
+    "skill": "knowledge:ontology-builder",
+    "plugin": "knowledge",
+    "phrases": [
+      "class·relation 정리",
+      "controlled vocabulary",
+      "design an ontology",
+      "온톨로지 설계",
+      "용어/관계 체계 잡아줘"
+    ]
+  },
+  {
+    "skill": "knowledge:query",
+    "plugin": "knowledge",
+    "phrases": [
+      "answer with citations",
+      "vault에서 알려줘",
+      "근거 달아서 답해줘",
+      "이 knowledge base에서 찾아줘"
+    ]
+  },
+  {
+    "skill": "knowledge:rag-corpus-builder",
+    "plugin": "knowledge",
+    "phrases": []
+  },
+  {
+    "skill": "knowledge:render-graph-view",
+    "plugin": "knowledge",
+    "phrases": []
+  },
+  {
+    "skill": "knowledge:sqlite-index-builder",
+    "plugin": "knowledge",
+    "phrases": []
+  },
+  {
+    "skill": "knowledge:workflow",
+    "plugin": "knowledge",
+    "phrases": [
+      "eval 점수 개선 루프",
+      "repair retrieval loop",
+      "vault 처음부터 끝까지",
+      "검색 품질이 안 올라"
+    ]
+  },
+  {
+    "skill": "planning:executing-plans",
+    "plugin": "planning",
+    "phrases": [
+      "execute this plan",
+      "plan 리뷰하고 가자",
+      "plan 실행",
+      "계획 실행해줘",
+      "실행 전에 기준 잡아줘",
+      "이 계획 검토하고 진행"
+    ]
+  },
+  {
+    "skill": "planning:roadmap-planning",
+    "plugin": "planning",
+    "phrases": [
+      "feature list를 outcome 기반으로 바꿔줘",
+      "q2 로드맵",
+      "roadmap planning",
+      "로드맵 만들어줘",
+      "분기 계획",
+      "분기별 계획 세워줘",
+      "이니셔티브 우선순위 정해줘",
+      "이해관계자 정렬"
+    ]
+  },
+  {
+    "skill": "portfolio:deck-builder",
+    "plugin": "portfolio",
+    "phrases": []
+  },
+  {
+    "skill": "portfolio:feedback",
+    "plugin": "portfolio",
+    "phrases": [
+      "고친 버전 비교",
+      "서류 통과할까",
+      "숫자 근거 있어?",
+      "시니어로 읽혀?",
+      "포트폴리오 피드백 해줘"
+    ]
+  },
+  {
+    "skill": "portfolio:feedback-beta",
+    "plugin": "portfolio",
+    "phrases": [
+      "beta feedback with patterns",
+      "feedback beta",
+      "피드백 베타로",
+      "피드백이랑 문체 패턴까지 같이 봐줘"
+    ]
+  },
+  {
+    "skill": "portfolio:fit",
+    "plugin": "portfolio",
+    "phrases": [
+      "jd랑 비교해줘",
+      "which companies fit me",
+      "네이버 지원하려는데 어때?",
+      "서류 통과할까?",
+      "어느 회사에 잘 맞아?",
+      "이 공고에 맞아?"
+    ]
+  },
+  {
+    "skill": "portfolio:interview-plan",
+    "plugin": "portfolio",
+    "phrases": [
+      "interview prep plan",
+      "면접 준비 계획"
+    ]
+  },
+  {
+    "skill": "portfolio:job-application-workflow",
+    "plugin": "portfolio",
+    "phrases": [
+      "career transition",
+      "job application workflow",
+      "job search process",
+      "이직 준비 전체",
+      "취업 프로세스 시작"
+    ]
+  },
+  {
+    "skill": "portfolio:mock-interview",
+    "plugin": "portfolio",
+    "phrases": [
+      "grill me on my portfolio",
+      "mock interview",
+      "모의 면접 해줘",
+      "인터뷰 연습"
+    ]
+  },
+  {
+    "skill": "portfolio:pattern",
+    "plugin": "portfolio",
+    "phrases": [
+      "오너십이 잘 드러나나",
+      "패턴 분석해줘",
+      "피동형 많이 썼나"
+    ]
+  },
+  {
+    "skill": "portfolio:rewrite",
+    "plugin": "portfolio",
+    "phrases": [
+      "rewrite my resume bullet",
+      "tailor resume to jd",
+      "공고에 맞게 이력서 최적화",
+      "이력서 문장 고쳐줘",
+      "포트폴리오 임팩트 있게 바꿔줘"
+    ]
+  },
+  {
+    "skill": "skill:audit",
+    "plugin": "skill",
+    "phrases": [
+      "what am i missing",
+      "what skills or plugins do i have here",
+      "뭘 더 설치하면 좋아?",
+      "워크스페이스 점검"
+    ]
+  },
+  {
+    "skill": "skill:create",
+    "plugin": "skill",
+    "phrases": [
+      "create a skill",
+      "새 스킬 뼈대",
+      "스킬 만들어줘",
+      "우리 스킬처럼 만들어줘",
+      "이걸 스킬로"
+    ]
+  },
+  {
+    "skill": "skill:quality-assurance",
+    "plugin": "skill",
+    "phrases": []
+  },
+  {
+    "skill": "skill:retro",
+    "plugin": "skill",
+    "phrases": [
+      "session retro",
+      "stop repeating this mistake",
+      "또 같은 실수네",
+      "이번 세션 회고해서 다음에 같은 실수 안 하게 해줘"
+    ]
+  },
+  {
+    "skill": "skill:trigger-validator",
+    "plugin": "skill",
+    "phrases": [
+      "description 개선해줘",
+      "description이 너무 keyword만 있어",
+      "skill not firing",
+      "skill 발동 조건 점검",
+      "trigger coverage audit",
+      "스킬이 트리거 안 돼",
+      "한국어 트리거 추가해줘"
+    ]
+  },
+  {
+    "skill": "teams:board",
+    "plugin": "teams",
+    "phrases": [
+      "show me the board",
+      "what epics are running",
+      "보드 보여줘",
+      "티켓 현황"
+    ]
+  },
+  {
+    "skill": "teams:develop",
+    "plugin": "teams",
+    "phrases": []
+  },
+  {
+    "skill": "teams:document",
+    "plugin": "teams",
+    "phrases": []
+  },
+  {
+    "skill": "teams:inbox",
+    "plugin": "teams",
+    "phrases": [
+      "show my inbox",
+      "what's waiting on me",
+      "나 기다리는 카드 있어?",
+      "내 할 일 뭐 있어"
+    ]
+  },
+  {
+    "skill": "teams:install",
+    "plugin": "teams",
+    "phrases": []
+  },
+  {
+    "skill": "teams:log",
+    "plugin": "teams",
+    "phrases": [
+      "p2 지금 뭐 하고 있어",
+      "tail the log for e-xxx/p2",
+      "what is this story doing",
+      "로그 보여줘"
+    ]
+  },
+  {
+    "skill": "teams:orchestrate",
+    "plugin": "teams",
+    "phrases": [
+      "orchestrate this run",
+      "run it through the mcp",
+      "그래프 돌려줘",
+      "노드 단위로 돌려줘"
+    ]
+  },
+  {
+    "skill": "teams:patch",
+    "plugin": "teams",
+    "phrases": []
+  },
+  {
+    "skill": "teams:plan",
+    "plugin": "teams",
+    "phrases": []
+  },
+  {
+    "skill": "teams:qa",
+    "plugin": "teams",
+    "phrases": []
+  },
+  {
+    "skill": "teams:remove",
+    "plugin": "teams",
+    "phrases": []
+  },
+  {
+    "skill": "teams:sprint",
+    "plugin": "teams",
+    "phrases": [
+      "run this as a sprint",
+      "sprint this backlog",
+      "다음 스프린트로 이어가줘",
+      "스프린트 돌려줘"
+    ]
+  },
+  {
+    "skill": "teams:submit",
+    "plugin": "teams",
+    "phrases": [
+      "submit my answer",
+      "완료 보고할게",
+      "이 카드 제출할게",
+      "작업 다 했어 제출해줘"
+    ]
+  },
+  {
+    "skill": "teams:take",
+    "plugin": "teams",
+    "phrases": [
+      "assign this to me",
+      "take e-xxx/p2",
+      "나한테 배정해줘",
+      "이 카드 내가 할게"
+    ]
+  },
+  {
+    "skill": "teams:ticket",
+    "plugin": "teams",
+    "phrases": [
+      "last verdict on this story",
+      "p2 상태가 뭐야",
+      "show me ticket e-xxx/p2",
+      "이 티켓 상세"
+    ]
+  },
+  {
+    "skill": "think:back-to-basics",
+    "plugin": "think",
+    "phrases": [
+      "first principles",
+      "가정을 의심해봐",
+      "기본부터 다시 생각해",
+      "왜 이렇게 해야 해?",
+      "처음부터 설계하면"
+    ]
+  },
+  {
+    "skill": "think:brainstorming",
+    "plugin": "think",
+    "phrases": [
+      "design this feature",
+      "how should we build x?",
+      "기능 설계해줘",
+      "발산해줘",
+      "아키텍처 잡아줘",
+      "어떻게 만들지?",
+      "옵션 더 뽑아줘"
+    ]
+  },
+  {
+    "skill": "think:devils-advocate",
+    "plugin": "think",
+    "phrases": [
+      "devil's advocate",
+      "punch holes in",
+      "steel-man this",
+      "반론 던져줘",
+      "비판해줘",
+      "약점 찾아줘",
+      "이 계획 문제점이 뭐야?",
+      "치명적 약점"
+    ]
+  },
+  {
+    "skill": "think:grill",
+    "plugin": "think",
+    "phrases": [
+      "grill me",
+      "interview me about this plan",
+      "나 좀 빡세게 질문해줘",
+      "내 계획 질문으로 털어줘",
+      "설계하기 전에 질문으로 털어줘"
+    ]
+  },
+  {
+    "skill": "think:mentor",
+    "plugin": "think",
+    "phrases": [
+      "how would a senior think about this",
+      "mentor me",
+      "멘토링 해줘",
+      "선배처럼 조언",
+      "커리어 고민"
+    ]
+  },
+  {
+    "skill": "think:negotiate",
+    "plugin": "think",
+    "phrases": [
+      "negotiate my offer",
+      "계약 조건 봐줘",
+      "상사한테 어떻게 말해",
+      "설득해야 해",
+      "연봉 협상",
+      "협상 준비"
+    ]
+  },
+  {
+    "skill": "think:redefine-problem",
+    "plugin": "think",
+    "phrases": [
+      "solutions feel off",
+      "wrong problem",
+      "계속 이 문제가 반복돼",
+      "다른 각도로 봐야 할 것 같아",
+      "뭔가 잘못된 것 같아",
+      "이 문제 자체가 맞는 건지",
+      "증상만 자꾸 잡는 느낌"
+    ]
+  },
+  {
+    "skill": "think:untangle-thoughts",
+    "plugin": "think",
+    "phrases": [
+      "mind map",
+      "outline 만들어줘",
+      "글 쓰기 전에 구조 잡아줘",
+      "노트 정리",
+      "머릿속이 복잡해",
+      "산만한 생각 정리",
+      "생각 정리해줘",
+      "아이디어 구조화",
+      "이거 어떻게 엮어야 해?"
+    ]
+  },
+  {
+    "skill": "write:like-me",
+    "plugin": "write",
+    "phrases": [
+      "sound like me",
+      "write it in my voice",
+      "내 말투로",
+      "내 문체로",
+      "내가 쓴 것처럼"
+    ]
+  },
+  {
+    "skill": "write:plans",
+    "plugin": "write",
+    "phrases": [
+      "adr 써줘",
+      "prd 작성",
+      "구현 계획 써줘",
+      "티켓으로 쪼개줘"
+    ]
+  },
+  {
+    "skill": "write:spec",
+    "plugin": "write",
+    "phrases": [
+      "turn this conversation into a spec",
+      "대화 내용으로 스펙 써줘",
+      "방금 얘기한 거 spec으로 정리해줘"
+    ]
+  },
+  {
+    "skill": "write:writer-verification",
+    "plugin": "write",
+    "phrases": [
+      "ai 티 나",
+      "pr 설명 써줘",
+      "proofread",
+      "글 검토해줘",
+      "글 다듬어줘",
+      "맞춤법 확인",
+      "사람이 쓴 것처럼"
+    ]
+  },
+  {
+    "skill": "write:writing-skills",
+    "plugin": "write",
+    "phrases": [
+      "fix this skill",
+      "skill documentation",
+      "skill 개선해줘",
+      "skill.md 고쳐줘",
+      "skill이 안 떠",
+      "스킬 문서 작성"
+    ]
+  }
+]
