@@ -17,7 +17,7 @@
 | | `graph` | `teams` |
 |---|---|---|
 | 잘 맞는 일 | 코드 요청 하나, 런 하나 | 크기를 재고 쪼개야 하는 요청, 문서, PRD, QA, 백로그 |
-| MCP 서버 | `graph-engineering` (`graph_*`) | `teams-engineering` (`team_*`) + `task-manager` (`tm_*`) |
+| MCP 서버 | `graph-engineering` (`graph_*`) | `teams-engineering` (`team_*`) + `task-manager` (`tm_*`) + `teams-wiki` (`wiki_*`) |
 | 누가 이끄나 | 내 세션 | 백그라운드 데몬 (세션은 지켜보기만 함) |
 | 런 파일 | `.harness-run/broker/` | `.teams_output/broker/` (런), `~/.harness/tasks/` (태스크) |
 | 버전 | 1.x | 0.x |
@@ -206,7 +206,7 @@ stateDiagram-v2
 
 ## 빠른 시작
 
-**설치.** `teams@newkayak12-claude-skills`를 설치하면 두 MCP 서버가 등록됩니다(`tm_*`/`team_*`
+**설치.** `teams@newkayak12-claude-skills`를 설치하면 세 MCP 서버가 등록됩니다(`tm_*`/`team_*`/`wiki_*`
 도구가 안 보이면 Claude Code를 다시 불러오세요). `teams:install`은 선택입니다. 프로젝트 기본값을
 `.claude/team.json`에 고정하고, 디스패치 게이트와 `.claude/conventions/`를 추가합니다. 설치하지
 않으면 내장 기본값으로 돕니다. 자세한 내용:
@@ -295,6 +295,31 @@ node teams/scripts/run.mjs --resume <task_id>
 | `initiative` | `null` | 여러 EPIC을 보드에서 묶는 라벨. 표시용일 뿐입니다. |
 
 `goal_judges`와 `auto_reassign`은 호출 인자로만 줄 수 있고 `team.json` 키가 아닙니다.
+
+## 위키 메모리 (teams-wiki)
+
+`teams-wiki`는 이 플러그인의 세 번째 MCP 서버로, 세션보다 오래 가는 프로젝트 메모리입니다. 태스크
+엔진과 독립이라 태스크가 위키를 필요로 하지 않고, 위키도 태스크 없이 동작합니다.
+
+페이지는 `.teams_wiki/<space>/<slug>.md`의 마크다운이며 git으로 추적하고 직접 고칠 수 있습니다. 이
+파일이 원본입니다. `.teams_wiki/.index.sqlite`(FTS5 검색과 `[[link]]` 그래프)는 버려도 되는 산출물이라,
+지우면 다음 호출에서 md 파일로 다시 만듭니다.
+
+| 도구 | 하는 일 |
+|---|---|
+| `wiki_search` | 페이지 검색(한국어, 영어). |
+| `wiki_get` | 페이지 하나와 그 링크, 백링크. |
+| `wiki_resume` | 세션 시작용: 최근 `log/*` 페이지와 그 페이지가 링크한 페이지. |
+| `wiki_list` | space별 페이지 목록. |
+| `wiki_propose` | 제안을 `_proposed/`에 씁니다. 페이지는 아닙니다. |
+| `wiki_accept` | 제안을 페이지로 만듭니다. |
+| `wiki_reject` | 제안을 사유와 함께 `_rejected/`로 옮깁니다. |
+| `wiki_status` | 페이지 수, 대기 중인 제안, 인덱스 최신 여부, 깨진 링크. |
+
+페이지를 직접 쓰는 도구는 없습니다. 모델은 제안만 하고, `wiki_accept`만 게시합니다.
+
+Node 24+가 필요합니다(또는 SQLite에 FTS5가 들어 있는 Node 22/23 빌드). 그 밖의 Node에서는 `wiki_*`
+도구가 명확한 오류 하나를 돌려주고, teams의 나머지는 영향이 없습니다.
 
 ## 더 보기
 
