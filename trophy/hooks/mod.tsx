@@ -6,17 +6,20 @@ import { triggers } from '../data/triggers.ts'
 import {
   achievementRow,
   addTurn,
+  buildBatch,
   buildProfile,
   closeTurn,
   dayOf,
   evaluate,
   matchTriggers,
+  POSTHOG_URL,
   recordUse,
   resolveSkill,
+  scrub,
   sumDays,
   triggerLists,
 } from './logic.ts'
-import type { DayCounts, Use } from './logic.ts'
+import type { BatchStore, DayCounts, Use } from './logic.ts'
 
 const active = atom({ plugin: 'trophy', key: 'active' } as const, false)
 const turnMatched = atom({ plugin: 'trophy', key: 'turnMatched' } as const, [] as string[])
@@ -26,12 +29,75 @@ const tab = atom({ plugin: 'trophy', key: 'tab' } as const, 'trophies' as 'troph
 const consent = atom({ plugin: 'trophy', key: 'consent' } as const, 'unasked' as 'unasked' | 'yes' | 'no')
 
 const PANE = 'trophy'
+const BATCH_PANE = 'trophy-batch'
 type Consent = 'unasked' | 'yes' | 'no'
 
 // The one place consent changes: the store keeps it, the state redraws the band.
 async function setConsent($: EngineInterface, value: Consent) {
   await $.store.set('trophy.consent', value)
   await update($, consent, () => value)
+}
+
+const DAY_MS = 86_400_000
+const MARKETPLACE_PLUGINS = new Set(triggers.map(t => t.plugin))
+
+// Every hook fails open: the event goes on, and the failure is kept (scrubbed) for the next send.
+async function failOpen($: EngineInterface, e: unknown, next: any) {
+  try {
+    const errors = (((await $.store.get('trophy.errors')) ?? []) as BatchStore['errors']).slice(-49)
+    const day = dayOf(await $.clock.now())
+    await $.store.set('trophy.errors', [...errors, { day, message: scrub(String(next.error?.message ?? 'hook failed')) }])
+  } catch {
+    // keeping the error is best effort
+  }
+  return next(e)
+}
+
+async function readBatchStore($: EngineInterface): Promise<BatchStore> {
+  const get = async (key: string, empty: unknown) => (await $.store.get(key)) ?? empty
+  return {
+    installId: String(await get('trophy.installId', '')),
+    sentThrough: (await $.store.get('trophy.sentThrough')) as string | undefined,
+    uses: (await get('trophy.uses', [])) as Use[],
+    triggers: (await get('trophy.triggers', {})) as DayCounts,
+    unlocked: (await get('trophy.unlocked', {})) as Record<string, string>,
+    errors: (await get('trophy.errors', [])) as BatchStore['errors'],
+    plugins: (await get('trophy.plugins', {})) as Record<string, string[]>,
+  }
+}
+
+const yesterday = async ($: EngineInterface) => dayOf((await $.clock.now()) - DAY_MS)
+
+// Which of this marketplace's plugins the session lists skills from, kept per day.
+async function recordPlugins($: EngineInterface) {
+  const usage = await $.session.usage({ breakdown: 'summary' })
+  const names = (usage.context.breakdown?.skills?.skillFrontmatter ?? []).flatMap(s =>
+    s.pluginName && MARKETPLACE_PLUGINS.has(s.pluginName) ? [s.pluginName] : [],
+  )
+  if (names.length === 0) return
+  const day = dayOf(await $.clock.now())
+  const all = ((await $.store.get('trophy.plugins')) ?? {}) as Record<string, string[]>
+  await $.store.set('trophy.plugins', { ...all, [day]: [...new Set([...(all[day] ?? []), ...names])].sort() })
+}
+
+// Sends the days not yet sent, up to yesterday, for a person who said yes; a failed send changes nothing.
+async function sendIfDue($: EngineInterface) {
+  if ((await $.store.get('trophy.consent')) !== 'yes') return
+  const through = await yesterday($)
+  const sent = (await $.store.get('trophy.sentThrough')) as string | undefined
+  if (sent !== undefined && sent >= through) return
+  const body = buildBatch(await readBatchStore($), through)
+  if (body.batch.length > 0) {
+    const res = await $.http.fetch(POSTHOG_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) return
+  }
+  const errors = (((await $.store.get('trophy.errors')) ?? []) as BatchStore['errors']).filter(e => e.day > through)
+  await $.store.set('trophy.errors', errors)
+  await $.store.set('trophy.sentThrough', through)
 }
 
 // The file trophy:list reads. Written after every store change; a failed write never blocks the prompt.
@@ -92,26 +158,28 @@ export const register: Register = on => {
       description: 'Anonymous usage counts: on, off or status',
       argumentHint: 'on|off|status',
     })
+    await recordPlugins($).catch(() => {})
+    await sendIfDue($).catch(() => {})
 
     return next(e)
-  }).catch(($, e, next) => next(e))
+  }).catch(failOpen)
 
   // skill.prompt is skipped for user-tier hooks under some organizations' policy (00-spike-findings),
   // so the Skill tool and the typed command report the same uses.
   on('skill.prompt', async ($, e, next) => {
     await note($, e.skill)
     return next(e)
-  }).catch(($, e, next) => next(e))
+  }).catch(failOpen)
 
   on('tool.call', { tool: 'Skill' }, async ($, e, next) => {
     await note($, e.skill)
     return next(e)
-  }).catch(($, e, next) => next(e))
+  }).catch(failOpen)
 
   on('classic.UserPromptExpansion', async ($, e, next) => {
     if (e.expansion_type === 'slash_command') await note($, e.command_name)
     return next(e)
-  }).catch(($, e, next) => next(e))
+  }).catch(failOpen)
 
   // A prompt's trigger phrases are matched on the way in and judged against the skills that fired when the turn ends.
   on('prompt.submit', async ($, e, next) => {
@@ -121,7 +189,7 @@ export const register: Register = on => {
       await update($, turnTyped, () => e.text.trimStart().startsWith('/'))
     }
     return next(e)
-  }).catch(($, e, next) => next(e))
+  }).catch(failOpen)
 
   on('turn.complete', async ($, e, next) => {
     if ((await read($, active)) && e.agentId === undefined && !(await read($, turnTyped))) {
@@ -135,13 +203,13 @@ export const register: Register = on => {
       }
     }
     return next(e)
-  }).catch(($, e, next) => next(e))
+  }).catch(failOpen)
 
   // The pane opens only from its command.
   on('command.run', { command: 'achievements' }, async $ => {
     await $.ui.open({ id: PANE, title: 'Achievements' })
     return { text: 'Achievements pane opened.' }
-  }).catch(($, e, next) => next(e))
+  }).catch(failOpen)
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Button, Text } = $.ui.resolve(e)
@@ -187,7 +255,7 @@ export const register: Register = on => {
         ))}
       </Box>
     )
-  }).catch(($, e, next) => next(e))
+  }).catch(failOpen)
 
   on('command.run', { command: 'trophy-telemetry' }, async ($, e) => {
     const arg = e.args.trim()
@@ -197,7 +265,7 @@ export const register: Register = on => {
     }
     if (arg === 'status') return { text: `trophy telemetry: ${await read($, consent)}` }
     return { text: 'usage: /trophy-telemetry on|off|status' }
-  }).catch(($, e, next) => next(e))
+  }).catch(failOpen)
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey || !(await read($, active)) || (await read($, consent)) !== 'unasked') return next(e)
@@ -208,7 +276,20 @@ export const register: Register = on => {
         <Text>trophy: 익명 사용 통계를 보낼까요? (스킬명·일별 횟수만, 프롬프트·경로 없음) </Text>
         <Button key="send" label="보내기" onPress={() => setConsent($, 'yes')} />
         <Button key="decline" label="안 보내기" onPress={() => setConsent($, 'no')} />
+        <Button key="show" label="내용 보기" onPress={() => $.ui.open({ id: BATCH_PANE, title: 'Telemetry preview' })} />
       </Box>
     )
-  }).catch(($, e, next) => next(e))
+  }).catch(failOpen)
+
+  // Exactly what the next send would carry.
+  on('ui.render', { component: 'Pane', requestId: BATCH_PANE }, async ($, e) => {
+    const { Box, Text } = $.ui.resolve(e)
+    const body = buildBatch(await readBatchStore($), await yesterday($))
+    return (
+      <Box flexDirection="column">
+        <Text dimColor>POST {POSTHOG_URL} — {body.batch.length} events</Text>
+        <Text>{JSON.stringify(body, null, 2)}</Text>
+      </Box>
+    )
+  }).catch(failOpen)
 }

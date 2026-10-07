@@ -14,7 +14,7 @@ const bottom = (on: On) => {
 const start = { cwd: '/w', surface: 'terminal', isInteractive: true } as const
 const run = ($: any, args: string) => $.command.run({ command: 'trophy-telemetry', args } as any)
 
-test('a fresh store asks: one row, two buttons; [안 보내기] sets no and the band goes', async ($, on) => {
+test('a fresh store asks: one row, three buttons; [안 보내기] sets no and the band goes', async ($, on) => {
   const store = memoryStore(on)
   sessionAt(on)
   bottom(on)
@@ -23,6 +23,7 @@ test('a fresh store asks: one row, two buttons; [안 보내기] sets no and the 
 
   expect(await ui.find({ key: 'send' })).toBeDefined()
   expect(await ui.find({ key: 'decline' })).toBeDefined()
+  expect(await ui.find({ key: 'show' })).toBeDefined()
   expect(await ui.find({ text: /프롬프트·경로 없음/ })).toBeDefined()
   await ui.press({ key: 'decline' })
 
