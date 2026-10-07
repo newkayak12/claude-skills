@@ -338,7 +338,7 @@ teams는 작은 mod를 함께 제공합니다. 현재 세션의 실행을 보여
 
 - **상태 줄.** `teams: <id> <done>/<total> <current> · …`, 이 세션의 실행마다 한 항목. 실행이 없으면 비어 있습니다.
 - 프롬프트 위의 **`[board]` / `[inbox <n>]`**이 패널을 엽니다. 사용자를 기다리는 노드가 `<n>`개일 때 inbox 버튼이 보입니다.
-- **`/teams-live`**가 패널을 엽니다. `[tickets]`, `[pipeline]`, `[events]` 탭은 `tm_open`이나 `tm_run`으로 마지막에 시작한 실행을 따라갑니다. 그 전에는 `No teams run in this session.`이 표시됩니다.
+- **`/teams-live`**가 패널을 엽니다. `[tickets]`, `[pipeline]`, `[events]` 탭은 `tm_open`이나 `tm_run`으로 마지막에 시작한 실행을 따라갑니다. 그런 실행이 없으면 이 디렉터리에서 가장 최근에 돌고 있는 작업을 보여 주고, 그것도 없으면 `No teams run in this session.`이 표시됩니다.
 - **토스트**는 세션 시작 이후의 이벤트에 뜹니다(`<id8>`은 태스크 id 앞 8자):
   - `E-<id8> <node_id> failed`
   - `E-<id8> needs you: <node_id>`

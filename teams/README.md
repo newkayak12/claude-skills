@@ -341,7 +341,7 @@ teams ships a small mod: a status line, toasts and a pane for the runs of the cu
 
 - **Status line.** `teams: <id> <done>/<total> <current> · …`, one entry per run of this session; empty when nothing runs.
 - **`[board]` / `[inbox <n>]`** above the prompt open the pane; the inbox button shows when `<n>` nodes wait for you.
-- **`/teams-live`** opens the pane. Tabs `[tickets]`, `[pipeline]`, `[events]` follow the last run you started with `tm_open` or `tm_run`. Before that it says `No teams run in this session.`
+- **`/teams-live`** opens the pane. Tabs `[tickets]`, `[pipeline]`, `[events]` follow the last run you started with `tm_open` or `tm_run`. With none, it shows the newest running task of this directory; with neither, `No teams run in this session.`
 - **Toasts** for events after the session started (`<id8>` is the first 8 characters of the task id):
   - `E-<id8> <node_id> failed`
   - `E-<id8> needs you: <node_id>`
