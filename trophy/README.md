@@ -80,6 +80,7 @@ view (most hit, most missed, never fired).
 
 ## Status log
 
+- 0.2.1 — the consent band no longer hides the bands beneath it.
 - 0.2.0 — consent text v2 names error codes; the answer is stored with its version, a v1 yes is
   asked once more and nothing is sent until answered. `diag_*` rows listed in the telemetry table.
 - 0.1.1 — typed `/skill` commands are recorded: under a team organization `skill.prompt` and
