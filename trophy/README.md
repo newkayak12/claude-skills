@@ -26,8 +26,9 @@ interactive session; removing the `modules` line from `hooks/hooks.json` leaves 
 | Turn anonymous counts on / off / check | `/trophy-telemetry on`, `off`, `status` |
 
 A skill use is recorded when it runs: typed as `/name`, called by the model through the Skill tool, or
-preloaded. The 22 achievements are in `data/achievements.ts` (first use of each plugin, collecting
-10 / 30 distinct skills, two skill combos in one session, 7- and 30-day streaks, one hidden).
+preloaded. The 80 achievements are in `data/achievements.ts`: first use of each plugin, collecting
+1–100 distinct skills (overall and per plugin), streaks from 3 to 365 days, repeat counts of
+favourite skills, 15 skill combos in one session, and 5 hidden ones.
 
 Sessions that are not interactive (`claude -p`, so every teams/graph adapter session) record nothing.
 

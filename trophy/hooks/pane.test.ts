@@ -31,7 +31,7 @@ const bottom = (on: On) => {
 }
 
 for (const surface of ['terminal', 'desktop'] as const) {
-  test(`${surface}: an empty profile draws 0 / 22 and 22 locked rows with one ???`, async ($, on) => {
+  test(`${surface}: an empty profile draws 0 / 80 and 80 locked rows with five ???`, async ($, on) => {
     memoryStore(on)
     sessionAt(on, NOW)
     bottom(on)
@@ -39,9 +39,9 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
     const lines = texts(await ui.drawn())
 
-    expect(lines.some(l => l.includes('0 / 22 해금'))).toBe(true)
-    expect(lines.filter(l => l.startsWith('🔒'))).toHaveLength(22)
-    expect(lines.filter(l => l === '🔒 ???')).toHaveLength(1)
+    expect(lines.some(l => l.includes('0 / 80 해금'))).toBe(true)
+    expect(lines.filter(l => l.startsWith('🔒'))).toHaveLength(80)
+    expect(lines.filter(l => l === '🔒 ???')).toHaveLength(5)
   })
 
   test(`${surface}: an unlocked trophy shows its date; [트리거] draws the three lists`, async ($, on) => {
@@ -53,7 +53,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     bottom(on)
     const ui = await $.ui.mount({ plugin: 'trophy', surface, component: 'Pane', requestId: 'trophy', props: PANE })
 
-    expect(texts(await ui.drawn()).some(l => l.includes('🏆 첫 스킬 · 2026-10-06'))).toBe(true)
+    expect(texts(await ui.drawn()).some(l => l.includes('🏆 First Blood · 2026-10-06'))).toBe(true)
     await ui.press({ key: 'tab-triggers' })
     const lines = texts(await ui.drawn())
 
