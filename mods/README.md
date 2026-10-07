@@ -41,7 +41,7 @@ The `claude -p` count is per session: only processes started below this session'
 
 ## Status and known limits
 
-- Beta (`0.1.0-beta.1`).
+- Beta (`0.1.0-beta.2`): the run band now draws the bands beneath it instead of hiding them.
 - The run band depends on the engine drawing the slot above the prompt; it has not been verified live on every surface (terminal and desktop).
 - The skill toast needs the marketplace file to be readable from the plugin location; if not, no toast is shown.
 - The Agent guard also flags subagent types whose definition already pins a model, because it only sees the call's own `model` argument.
