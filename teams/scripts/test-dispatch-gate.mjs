@@ -2,7 +2,7 @@
 process.env.TEAMS_RUNS_DIR ??= 'off';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -124,4 +124,23 @@ test('a task that finished long ago, for this or another project, does not open 
     writeFileSync(join(tasks, 'a', 'ledger.jsonl'), JSON.stringify({ event: 'tm_open' }) + '\n');
     assert.equal(run(dir, { file_path: join(dir, 'src/a.mjs'), content: 'x'.repeat(5000) }, 'Write', { HARNESS_TASKS_DIR: tasks }).status, 0, 'this project\'s open task: nodes write');
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a task opened through a symlink of this project counts as open, both ways', () => {
+  const dir = project({ paths: ['src/**'] });
+  const linkDir = mkdtempSync(join(tmpdir(), 'dispatch-gate-link-'));
+  const link = join(linkDir, 'proj');
+  const tasks = join(dir, '.tasks');
+  try {
+    symlinkSync(dir, link);
+    mkdirSync(join(tasks, 'a'), { recursive: true });
+    writeFileSync(join(tasks, 'a', 'ledger.jsonl'), JSON.stringify({ event: 'tm_open' }) + '\n');
+    writeFileSync(join(tasks, 'a', 'task.json'), JSON.stringify({ cwd: link }));
+    assert.equal(run(dir, { file_path: join(dir, 'src/a.mjs'), content: 'x'.repeat(5000) }, 'Write', { HARNESS_TASKS_DIR: tasks }).status, 0, 'task cwd is the link, session is the real dir');
+    writeFileSync(join(tasks, 'a', 'task.json'), JSON.stringify({ cwd: dir }));
+    assert.equal(run(link, { file_path: join(link, 'src/a.mjs'), content: 'x'.repeat(5000) }, 'Write', { HARNESS_TASKS_DIR: tasks }).status, 0, 'task cwd is the real dir, session is the link');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(linkDir, { recursive: true, force: true });
+  }
 });

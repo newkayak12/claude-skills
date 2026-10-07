@@ -18,7 +18,7 @@
 //
 // Fails open on every error, every ambiguity, every unreadable file. A hook that blocks
 // a session because it could not parse its own config is worse than no hook.
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 
 const ALLOW = 0;
@@ -52,14 +52,15 @@ function matches(pattern, path) {
 // not that some task ever ran on this machine. The old test (any file under ~/.harness/tasks)
 // was true forever after a machine's first task, and the gate never fired again.
 const RUN_FRESH_MS = 2 * 60 * 60 * 1000;
+function samePath(p) { try { return realpathSync(p); } catch { return resolve(p); } }
 function taskOpenFor(cwd, tasksRoot) {
   let ids = [];
   try { ids = readdirSync(tasksRoot); } catch { return false; }
-  const here = resolve(cwd);
+  const here = samePath(cwd);
   for (const id of ids) {
     let task;
     try { task = JSON.parse(readFileSync(join(tasksRoot, id, 'task.json'), 'utf8')); } catch { continue; }
-    if (!task || resolve(String(task.cwd || '')) !== here) continue;
+    if (!task || samePath(String(task.cwd || '')) !== here) continue;
     let ledger = '';
     try { ledger = readFileSync(join(tasksRoot, id, 'ledger.jsonl'), 'utf8'); } catch { /* no ledger yet: just opened */ }
     const last = ledger.trim().split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
