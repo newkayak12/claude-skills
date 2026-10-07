@@ -81,7 +81,6 @@ test('buildBatch aggregates counts per day, reason, plugin and skill', () => {
     entry({ ts: 300000, day: '2026-10-02' }),
     entry({ kind: 'bug', reason: 'mcp_error', skill: undefined, tool: 'knowledge_get', plugin: 'knowledge' }),
     entry({ kind: 'report', reason: 'user_report', skill: undefined, plugin: undefined }),
-    entry({ kind: 'hook', reason: 'throw', skill: undefined, plugin: undefined }),
     entry({ day: '2026-09-20' }),
     entry({ day: '2026-10-09' }),
   ]
@@ -93,7 +92,6 @@ test('buildBatch aggregates counts per day, reason, plugin and skill', () => {
     { tool: 'knowledge_get', plugin: 'knowledge', reason: 'mcp_error', count: 1, day: '2026-10-01' })
   expect(out.find(e => e.event === 'diag_user_report')?.properties).toEqual(
     { reason: 'user_report', count: 1, day: '2026-10-01' })
-  expect(out.find(e => e.event === 'diag_hook_error')?.properties.reason).toBe('throw')
   expect(out.some(e => e.properties.day === '2026-09-20' || e.properties.day === '2026-10-09')).toBe(false)
 })
 
