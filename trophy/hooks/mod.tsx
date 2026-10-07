@@ -3,13 +3,27 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import { achievements } from '../data/achievements.ts'
 import { triggers } from '../data/triggers.ts'
-import { addTurn, closeTurn, dayOf, evaluate, matchTriggers, recordUse, resolveSkill } from './logic.ts'
+import {
+  achievementRow,
+  addTurn,
+  closeTurn,
+  dayOf,
+  evaluate,
+  matchTriggers,
+  recordUse,
+  resolveSkill,
+  sumDays,
+  triggerLists,
+} from './logic.ts'
 import type { DayCounts, Use } from './logic.ts'
 
 const active = atom({ plugin: 'trophy', key: 'active' } as const, false)
 const turnMatched = atom({ plugin: 'trophy', key: 'turnMatched' } as const, [] as string[])
 const turnFired = atom({ plugin: 'trophy', key: 'turnFired' } as const, [] as string[])
 const turnTyped = atom({ plugin: 'trophy', key: 'turnTyped' } as const, false)
+const tab = atom({ plugin: 'trophy', key: 'tab' } as const, 'trophies' as 'trophies' | 'triggers')
+
+const PANE = 'trophy'
 
 // Records one skill use; always called before `next`, so a throw here falls to the hook's `.catch`.
 async function note($: EngineInterface, name: string) {
@@ -89,5 +103,57 @@ export const register: Register = on => {
       }
     }
     return next(e)
+  }).catch(($, e, next) => next(e))
+
+  // The pane opens only from its command.
+  on('command.run', { command: 'achievements' }, async $ => {
+    await $.ui.open({ id: PANE, title: 'Achievements' })
+    return { text: 'Achievements pane opened.' }
+  }).catch(($, e, next) => next(e))
+
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const { Box, Button, Text } = $.ui.resolve(e)
+    const current = await read($, tab)
+    const unlocked = ((await $.store.get('trophy.unlocked')) ?? {}) as Record<string, string>
+    const header = (
+      <Box>
+        <Text key="count" bold>
+          {Object.keys(unlocked).length} / {achievements.length} 해금{' '}
+        </Text>
+        <Button key="tab-trophies" label="업적" onPress={() => update($, tab, () => 'trophies')} />
+        <Button key="tab-triggers" label="트리거" onPress={() => update($, tab, () => 'triggers')} />
+      </Box>
+    )
+
+    if (current === 'triggers') {
+      const counts = ((await $.store.get('trophy.triggers')) ?? {}) as DayCounts
+      const lists = triggerLists(sumDays(counts, dayOf(await $.clock.now()), 7), triggers)
+      const never = lists.never.slice(0, 5).join(', ')
+      return (
+        <Box flexDirection="column">
+          {header}
+          <Text bold>가장 많이 맞은 스킬 (7일)</Text>
+          {lists.hit.map(([skill, n]) => (
+            <Text>{skill} · {n}</Text>
+          ))}
+          <Text bold>가장 많이 놓친 스킬 (트리거 문구는 있었는데 안 쓴)</Text>
+          {lists.miss.map(([skill, n]) => (
+            <Text>{skill} · {n}</Text>
+          ))}
+          <Text bold>한 번도 안 쓴 스킬 ({lists.never.length})</Text>
+          <Text dimColor>{never}</Text>
+        </Box>
+      )
+    }
+
+    const uses = ((await $.store.get('trophy.uses')) ?? []) as Use[]
+    return (
+      <Box flexDirection="column">
+        {header}
+        {achievements.map(a => (
+          <Text key={`row-${a.id}`}>{achievementRow(a, uses, unlocked[a.id])}</Text>
+        ))}
+      </Box>
+    )
   }).catch(($, e, next) => next(e))
 }

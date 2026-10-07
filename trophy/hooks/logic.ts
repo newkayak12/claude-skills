@@ -128,3 +128,52 @@ export function addTurn(counts: DayCounts, day: string, turn: TurnResult): DayCo
   }
   return { ...counts, [day]: today }
 }
+
+const BAR_CELLS = 5
+
+export function bar(have: number, need: number) {
+  const filled = Math.round((have / need) * BAR_CELLS)
+  return '▓'.repeat(filled) + '░'.repeat(BAR_CELLS - filled)
+}
+
+// One row of the achievements list, as the pane and trophy:list draw it.
+export function achievementRow(a: Achievement, uses: readonly Use[], unlockedOn: string | undefined) {
+  if (unlockedOn !== undefined) return `🏆 ${a.title} · ${unlockedOn}`
+  if (a.hidden) return '🔒 ???'
+  const [have, need] = progress(uses, a)
+  return `🔒 ${a.title}  ${bar(have, need)} ${have}/${need}`
+}
+
+// Counts of the last `days` days up to and including `today`, summed per skill.
+export function sumDays(counts: DayCounts, today: string, days: number): Record<string, Counts> {
+  const from = Date.parse(today) - (days - 1) * 86_400_000
+  const sum: Record<string, Counts> = {}
+  for (const [day, skills] of Object.entries(counts)) {
+    const t = Date.parse(day)
+    if (t < from || t > Date.parse(today)) continue
+    for (const [skill, c] of Object.entries(skills)) {
+      const s = (sum[skill] ??= { hit: 0, miss: 0, unmatched: 0 })
+      s.hit += c.hit
+      s.miss += c.miss
+      s.unmatched += c.unmatched
+    }
+  }
+  return sum
+}
+
+export type TriggerLists = { hit: [string, number][]; miss: [string, number][]; never: string[] }
+
+// Most hit, most missed (routing gaps), and skills that never fired in the window.
+export function triggerLists(sum: Record<string, Counts>, index: readonly TriggerEntry[], top = 5): TriggerLists {
+  const ranked = (kind: 'hit' | 'miss') =>
+    Object.entries(sum)
+      .filter(([, c]) => c[kind] > 0)
+      .sort((a, b) => b[1][kind] - a[1][kind])
+      .slice(0, top)
+      .map(([skill, c]): [string, number] => [skill, c[kind]])
+  return {
+    hit: ranked('hit'),
+    miss: ranked('miss'),
+    never: index.filter(t => !sum[t.skill] || sum[t.skill]!.hit + sum[t.skill]!.unmatched === 0).map(t => t.skill),
+  }
+}
