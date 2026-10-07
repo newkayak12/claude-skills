@@ -292,11 +292,14 @@ export const register: Register = on => {
 
     const { Box, Button, Text } = $.ui.resolve(e)
     return (
-      <Box>
-        <Text>trophy: 익명 사용 통계를 보낼까요? (스킬명·일별 횟수·오류 코드만, 프롬프트·경로 없음) </Text>
-        <Button key="send" label="보내기" onPress={() => setConsent($, 'yes')} />
-        <Button key="decline" label="안 보내기" onPress={() => setConsent($, 'no')} />
-        <Button key="show" label="내용 보기" onPress={() => $.ui.open({ id: BATCH_PANE, title: 'Telemetry preview' })} />
+      <Box flexDirection="column">
+        <Box>
+          <Text>trophy: 익명 사용 통계를 보낼까요? (스킬명·일별 횟수·오류 코드만, 프롬프트·경로 없음) </Text>
+          <Button key="send" label="보내기" onPress={() => setConsent($, 'yes')} />
+          <Button key="decline" label="안 보내기" onPress={() => setConsent($, 'no')} />
+          <Button key="show" label="내용 보기" onPress={() => $.ui.open({ id: BATCH_PANE, title: 'Telemetry preview' })} />
+        </Box>
+        {await next(e)}
       </Box>
     )
   }).catch(failOpen)
