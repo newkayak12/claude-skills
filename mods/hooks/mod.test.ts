@@ -119,10 +119,19 @@ for (const surface of ['terminal', 'desktop'] as const) {
     $.ui.mount({ plugin: 'mods', surface, component: 'AbovePrompt', props: { hasSurvey, isWorking: false, maxRows: 5, bodyColumns: 80 } } as never)
 
   test(`${surface}: band shows one open run`, async ($, on) => {
+    on('ui.render', (_$, e) => (e.component === 'AbovePrompt' ? { type: 'Text', children: ['engine band'] } : undefined) as never)
     world(on, { surfaces: [surface], state: { runs: [RUN] } })
     const ui = await band($)
     expect(await ui.find({ type: 'Text', text: /harness mods-beta: implement/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /1\/2 passed/ })).toBeDefined()
+  })
+
+  test(`${surface}: band shows the open run and the engine band beneath it`, async ($, on) => {
+    on('ui.render', (_$, e) => (e.component === 'AbovePrompt' ? { type: 'Text', children: ['engine band'] } : undefined) as never)
+    world(on, { surfaces: [surface], state: { runs: [RUN] } })
+    const ui = await band($)
+    expect(await ui.find({ type: 'Text', text: /harness mods-beta: implement/ })).toBeDefined()
+    expect(await ui.find({ text: 'engine band' })).toBeDefined()
   })
 
   test(`${surface}: no open run yields to the engine band`, async ($, on) => {

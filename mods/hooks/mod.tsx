@@ -98,6 +98,7 @@ export const register: Register = (on, options) => {
             {run.total > 0 ? ` · ${run.passed}/${run.total} passed${run.failed ? `, ${run.failed} failed` : ''}` : ''}
           </Text>
         ))}
+        {await next(e)}
       </Box>
     )
   })

@@ -32,6 +32,19 @@ test('a fresh store asks: one row, three buttons; [안 보내기] sets no and th
   expect(await ui.find({ key: 'decline' })).toBeUndefined()
 })
 
+test('the consent band draws the band beneath it', async ($, on) => {
+  memoryStore(on)
+  sessionAt(on)
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('ui.render', (_$, e) => (e.component === 'AbovePrompt' ? { type: 'Text', children: ['engine band'] } : undefined) as any)
+  await $.session.start(start)
+  const ui = await $.ui.mount({ plugin: 'trophy', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+
+  expect(await ui.find({ key: 'send' })).toBeDefined()
+  expect(await ui.find({ text: 'engine band' })).toBeDefined()
+})
+
 test('nothing is asked in a non-interactive session', async ($, on) => {
   memoryStore(on)
   sessionAt(on)
