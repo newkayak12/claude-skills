@@ -19,7 +19,7 @@
 // Both the HTML page's /state.json and --once's text tree come from ONE collect() function
 // (teams/scripts/lib/view-collect.mjs) - this file only renders it two ways.
 import { createServer } from 'node:http';
-import { readFileSync, existsSync, openSync, readSync, fstatSync, closeSync } from 'node:fs';
+import { readFileSync, existsSync, openSync, readSync, fstatSync, closeSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tasksRoot } from '../mcp/taskmanager.mjs';
@@ -108,10 +108,21 @@ function statusOutput(tasksDir, cwd) {
   return JSON.stringify({ line: statusLine(rows), waiting }) + '\n';
 }
 
+// Ledgers whose file changed after `since` (mtime, ms), whatever the task's state: daemon_done and
+// daemon_exhausted are written after a task stops running, so a running-only filter would never
+// deliver them. A task.json-less dir is not listed and an unreadable one carries `error`; both skipped.
 function eventsOutput(tasksDir, cwd, since) {
+  const want = cwd ? resolve(cwd) : null;
   const out = [];
-  for (const m of runningModels(tasksDir, cwd)) {
-    out.push(...notableEvents(tailLines(join(tasksDir, m.task_id, 'ledger.jsonl')), since));
+  for (const row of listTasks(tasksDir)) {
+    if (row.error) continue;
+    const ledger = join(tasksDir, row.task_id, 'ledger.jsonl');
+    try { if (statSync(ledger).mtimeMs <= since) continue; } catch { continue; }
+    if (want) {
+      const m = collectTask(tasksDir, row.task_id);
+      if (m.error || !m.cwd || resolve(m.cwd) !== want) continue;
+    }
+    out.push(...notableEvents(tailLines(ledger), since));
   }
   out.sort((a, b) => a.ts - b.ts);
   return out.map((e) => JSON.stringify(e) + '\n').join('');
