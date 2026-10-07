@@ -1,8 +1,9 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
+import { achievements } from '../data/achievements.ts'
 import { triggers } from '../data/triggers.ts'
-import { recordUse, resolveSkill } from './logic.ts'
+import { dayOf, evaluate, recordUse, resolveSkill } from './logic.ts'
 import type { Use } from './logic.ts'
 
 const active = atom({ plugin: 'trophy', key: 'active' } as const, false)
@@ -14,8 +15,16 @@ async function note($: EngineInterface, name: string) {
   const hit = resolveSkill(name, triggers)
   if (!hit) return
   const uses = ((await $.store.get('trophy.uses')) ?? []) as Use[]
-  await $.store.set('trophy.uses', recordUse(uses, hit.skill, await $.clock.now(), await $.session.id()))
+  const now = await $.clock.now()
+  const recorded = recordUse(uses, hit.skill, now, await $.session.id())
+  await $.store.set('trophy.uses', recorded)
   await update($, turnFired, list => [...list, hit.skill])
+
+  const unlocked = ((await $.store.get('trophy.unlocked')) ?? {}) as Record<string, string>
+  const fresh = evaluate(recorded, achievements, unlocked)
+  if (fresh.length === 0) return
+  await $.store.set('trophy.unlocked', { ...unlocked, ...Object.fromEntries(fresh.map(id => [id, dayOf(now)])) })
+  for (const a of achievements.filter(a => fresh.includes(a.id))) $.ui.toast(`🏆 ${a.title} — ${a.description}`)
 }
 
 export const register: Register = on => {
