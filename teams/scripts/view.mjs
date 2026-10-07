@@ -26,6 +26,7 @@ import { tasksRoot } from '../mcp/taskmanager.mjs';
 import { collectTask, listTasks } from './lib/view-collect.mjs';
 import { renderText, renderIndexText, renderTicketsText, renderResourcesText } from './lib/view-render-text.mjs';
 import { notableEvents, statusLine } from './lib/view-events.mjs';
+import { summarize } from './lib/view-summary.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -53,7 +54,7 @@ function parseArgs(argv) {
 }
 
 function usage() {
-  return 'usage: node view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--once] [--view pipeline|tickets|resources] [--once --format status|events [--since <ts>] [--cwd <dir>]]\n';
+  return 'usage: node view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--once] [--view pipeline|tickets|resources] [--once --format status|events|summary [--since <ts>] [--cwd <dir>]]\n';
 }
 
 // ---------- --once --format status|events (the teams-live mod's data) ----------
@@ -113,6 +114,15 @@ function statusOutput(tasksDir, cwd) {
   const waiting = models.reduce((s, m) => s + ((m.counts && m.counts.waiting_human) || 0), 0);
   const newest = models.reduce((a, m) => (!a || (m.created_at || 0) > (a.created_at || 0) ? m : a), null);
   return JSON.stringify({ line: statusLine(rows), waiting, latest: newest ? newest.task_id : null }) + '\n';
+}
+
+// { status, task }: status is exactly --format status; task is the human summary of --task, else of
+// status.latest, else null (nothing running, or the task file is unreadable).
+function summaryOutput(tasksDir, cwd, taskId) {
+  const status = JSON.parse(statusOutput(tasksDir, cwd));
+  const id = taskId || status.latest;
+  const m = id ? collectTask(tasksDir, id) : null;
+  return JSON.stringify({ status, task: m && !m.error ? summarize(m) : null }) + '\n';
 }
 
 // Ledgers whose file changed after `since` (mtime, ms), whatever the task's state: daemon_done and
@@ -196,6 +206,7 @@ async function main() {
 
   if (args.once) {
     if (args.format === 'status') { process.stdout.write(statusOutput(tasksDir, args.cwd)); return; }
+    if (args.format === 'summary') { process.stdout.write(summaryOutput(tasksDir, args.cwd, args.task)); return; }
     if (args.format === 'events') { process.stdout.write(eventsOutput(tasksDir, args.cwd, args.since || 0)); return; }
     if (args.task) {
       process.stdout.write(render(collectTask(tasksDir, args.task)));
