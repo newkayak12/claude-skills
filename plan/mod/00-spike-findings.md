@@ -11,3 +11,10 @@ Scratch plugin `spike-mod` under `$TMPDIR/trophy-spike/`, run with `claude -p ..
 | (c) | `$.fs.write` creates `<HOME>/.claude/<new dir>/file` | after `rm -rf ~/.claude/trophy-spike`, the module's `$.fs.write("${HOME}/.claude/trophy-spike/start-false.json")` created dir and file | Proven (parent dirs are created) |
 | (d) | PostHog `/batch/` | `POST https://us.i.posthog.com/batch/` with the project token returned 200 `{"status":"Ok"}` (proven before this task) | Proven |
 | (e) | module imports sibling `./logic.ts` | `import { tag } from './helper.ts'` loaded under `claude -p`; `tag('x')` = `helper:x` in the written file; `claude plugin validate` passes | Proven |
+
+### Added during 04-trophy Task 9
+
+| | Question | Evidence | Verdict |
+|---|----------|----------|---------|
+| (f) | a module can read which plugins' skills the session lists | `session.start` hook calling `$.session.usage({ breakdown: 'summary' })` under `claude -p`: `context.breakdown.skills.skillFrontmatter` had 128 entries, each with `name`, `source`, `pluginName` (e.g. `think`, `develop`) | Proven (non-interactive; same call is used at interactive start) |
+| (g) | a module cannot import JSON | `claude plugin validate`: `"../data/x.json" ... is not named like code and was not loaded` | Proven; data files are `.ts` |

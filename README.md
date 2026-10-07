@@ -42,4 +42,5 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 | [skill](./skill/README.md) · [한국어](./skill/KOR.md) | Skill creation, improvement, and validation |
 | [teams](./teams/README.md) · [한국어](./teams/KOR.md) | TaskManager MCP and per-flow teams (develop, document, plan, qa) with an EPIC/STORY board |
 | [think](./think/README.md) · [한국어](./think/KOR.md) | Brainstorming, devil's advocate, problem reframing, and more |
+| [trophy](./trophy/README.md) · [한국어](./trophy/KOR.md) | Steam-style achievements for skill use; opt-in anonymous counts |
 | [write](./write/README.md) · [한국어](./write/KOR.md) | Documentation, writing plans, and content review |
